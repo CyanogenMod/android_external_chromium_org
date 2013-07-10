@@ -11,20 +11,19 @@
 
 #include "base/file_util.h"
 #include "base/mac/mac_util.h"
-#include "base/memory/scoped_nsobject.h"
 #include "base/strings/string16.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
-#include "chrome/browser/bookmarks/imported_bookmark_entry.h"
+#include "base/time/time.h"
 #include "chrome/browser/favicon/favicon_util.h"
-#include "chrome/browser/favicon/imported_favicon_usage.h"
 #include "chrome/browser/importer/importer_bridge.h"
+#include "chrome/common/importer/imported_bookmark_entry.h"
+#include "chrome/common/importer/imported_favicon_usage.h"
 #include "chrome/common/url_constants.h"
-#include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "net/base/data_url.h"
 #include "sql/statement.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -319,7 +318,7 @@ void SafariImporter::ImportPasswords() {
 }
 
 void SafariImporter::ImportHistory() {
-  history::URLRows rows;
+  std::vector<ImporterURLRow> rows;
   ParseHistoryItems(&rows);
 
   if (!rows.empty() && !cancelled()) {
@@ -336,7 +335,8 @@ double SafariImporter::HistoryTimeToEpochTime(NSString* history_time) {
       kCFAbsoluteTimeIntervalSince1970;
 }
 
-void SafariImporter::ParseHistoryItems(history::URLRows* history_items) {
+void SafariImporter::ParseHistoryItems(
+    std::vector<ImporterURLRow>* history_items) {
   DCHECK(history_items);
 
   // Construct ~/Library/Safari/History.plist path
@@ -366,7 +366,7 @@ void SafariImporter::ParseHistoryItems(history::URLRows* history_items) {
     if (!CanImportSafariURL(url))
       continue;
 
-    history::URLRow row(url);
+    ImporterURLRow row(url);
     NSString* title_ns = [history_item objectForKey:@"title"];
 
     // Sometimes items don't have a title, in which case we just substitue
@@ -374,14 +374,14 @@ void SafariImporter::ParseHistoryItems(history::URLRows* history_items) {
     if (!title_ns)
       title_ns = url_ns;
 
-    row.set_title(base::SysNSStringToUTF16(title_ns));
+    row.title = base::SysNSStringToUTF16(title_ns);
     int visit_count = [[history_item objectForKey:@"visitCount"]
                           intValue];
-    row.set_visit_count(visit_count);
+    row.visit_count = visit_count;
     // Include imported URLs in autocompletion - don't hide them.
-    row.set_hidden(0);
+    row.hidden = 0;
     // Item was never typed before in the omnibox.
-    row.set_typed_count(0);
+    row.typed_count = 0;
 
     NSString* last_visit_str = [history_item objectForKey:@"lastVisitedDate"];
     // The last visit time should always be in the history item, but if not
@@ -392,7 +392,7 @@ void SafariImporter::ParseHistoryItems(history::URLRows* history_items) {
 
     // Convert Safari's last visit time to Unix Epoch time.
     double seconds_since_unix_epoch = HistoryTimeToEpochTime(last_visit_str);
-    row.set_last_visit(base::Time::FromDoubleT(seconds_since_unix_epoch));
+    row.last_visit = base::Time::FromDoubleT(seconds_since_unix_epoch);
 
     history_items->push_back(row);
   }

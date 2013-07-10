@@ -9,7 +9,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "cc/animation/animation_events.h"
 #include "cc/base/completion_event.h"
 #include "cc/resources/resource_update_controller.h"
@@ -17,6 +17,8 @@
 #include "cc/scheduler/scheduler.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "cc/trees/proxy.h"
+
+namespace base { class SingleThreadTaskRunner; }
 
 namespace cc {
 
@@ -26,15 +28,15 @@ class LayerTreeHost;
 class ResourceUpdateQueue;
 class Scheduler;
 class ScopedThreadProxy;
-class Thread;
 
 class ThreadProxy : public Proxy,
                     LayerTreeHostImplClient,
                     SchedulerClient,
                     ResourceUpdateControllerClient {
  public:
-  static scoped_ptr<Proxy> Create(LayerTreeHost* layer_tree_host,
-                                  scoped_ptr<Thread> impl_thread);
+  static scoped_ptr<Proxy> Create(
+      LayerTreeHost* layer_tree_host,
+      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
 
   virtual ~ThreadProxy();
 
@@ -108,7 +110,8 @@ class ThreadProxy : public Proxy,
   virtual void ReadyToFinalizeTextureUpdates() OVERRIDE;
 
  private:
-  ThreadProxy(LayerTreeHost* layer_tree_host, scoped_ptr<Thread> impl_thread);
+  ThreadProxy(LayerTreeHost* layer_tree_host,
+              scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
 
   struct BeginFrameAndCommitState {
     BeginFrameAndCommitState();

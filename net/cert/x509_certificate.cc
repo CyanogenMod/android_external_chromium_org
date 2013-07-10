@@ -21,7 +21,7 @@
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/lock.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "googleurl/src/url_canon.h"
 #include "net/base/net_util.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
@@ -218,9 +218,10 @@ void SplitOnChar(const base::StringPiece& src,
 
 }  // namespace
 
-bool X509Certificate::LessThan::operator()(X509Certificate* lhs,
-                                           X509Certificate* rhs) const {
-  if (lhs == rhs)
+bool X509Certificate::LessThan::operator()(
+    const scoped_refptr<X509Certificate>& lhs,
+    const scoped_refptr<X509Certificate>& rhs) const {
+  if (lhs.get() == rhs.get())
     return false;
 
   int rv = memcmp(lhs->fingerprint_.data, rhs->fingerprint_.data,

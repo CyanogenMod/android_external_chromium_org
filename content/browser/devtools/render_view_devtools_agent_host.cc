@@ -120,37 +120,26 @@ void DevToolsAgentHost::ConnectRenderViewHost(const std::string& cookie,
 //static
 std::vector<RenderViewHost*> DevToolsAgentHost::GetValidRenderViewHosts() {
   std::vector<RenderViewHost*> result;
-  for (RenderProcessHost::iterator it(RenderProcessHost::AllHostsIterator());
-       !it.IsAtEnd(); it.Advance()) {
-    RenderProcessHost* render_process_host = it.GetCurrentValue();
-    DCHECK(render_process_host);
-
+  RenderWidgetHost::List widgets = RenderWidgetHost::GetRenderWidgetHosts();
+  for (size_t i = 0; i < widgets.size(); ++i) {
     // Ignore processes that don't have a connection, such as crashed contents.
-    if (!render_process_host->HasConnection())
+    if (!widgets[i]->GetProcess()->HasConnection())
+      continue;
+    if (!widgets[i]->IsRenderView())
       continue;
 
-    RenderProcessHost::RenderWidgetHostsIterator rwit(
-        render_process_host->GetRenderWidgetHostsIterator());
-    for (; !rwit.IsAtEnd(); rwit.Advance()) {
-      const RenderWidgetHost* widget = rwit.GetCurrentValue();
-      DCHECK(widget);
-      if (!widget || !widget->IsRenderView())
-        continue;
+    RenderViewHost* rvh = RenderViewHost::From(widgets[i]);
+    // Don't report swapped out views.
+    if (static_cast<RenderViewHostImpl*>(rvh)->is_swapped_out())
+      continue;
 
-      RenderViewHost* rvh =
-          RenderViewHost::From(const_cast<RenderWidgetHost*>(widget));
-      // Don't report swapped out views.
-      if (static_cast<RenderViewHostImpl*>(rvh)->is_swapped_out())
-        continue;
+    WebContents* web_contents = WebContents::FromRenderViewHost(rvh);
+    // Don't report a RenderViewHost if it is not the current RenderViewHost
+    // for some WebContents.
+    if (!web_contents || rvh != web_contents->GetRenderViewHost())
+      continue;
 
-      WebContents* web_contents = WebContents::FromRenderViewHost(rvh);
-      // Don't report a RenderViewHost if it is not the current RenderViewHost
-      // for some WebContents.
-      if (!web_contents || rvh != web_contents->GetRenderViewHost())
-        continue;
-
-      result.push_back(rvh);
-    }
+    result.push_back(rvh);
   }
   return result;
 }
@@ -209,6 +198,10 @@ void RenderViewDevToolsAgentHost::OnClientAttached() {
 
   ChildProcessSecurityPolicyImpl::GetInstance()->GrantReadRawCookies(
       render_view_host_->GetProcess()->GetID());
+
+  // TODO(kaznacheev): Move this call back to DevToolsManagerImpl when
+  // ExtensionProcessManager no longer relies on this notification.
+  DevToolsManagerImpl::GetInstance()->NotifyObservers(this, true);
 }
 
 void RenderViewDevToolsAgentHost::OnClientDetached() {
@@ -231,6 +224,10 @@ void RenderViewDevToolsAgentHost::OnClientDetached() {
     ChildProcessSecurityPolicyImpl::GetInstance()->RevokeReadRawCookies(
         render_process_host->GetID());
   }
+
+  // TODO(kaznacheev): Move this call back to DevToolsManagerImpl when
+  // ExtensionProcessManager no longer relies on this notification.
+  DevToolsManagerImpl::GetInstance()->NotifyObservers(this, false);
 }
 
 RenderViewDevToolsAgentHost::~RenderViewDevToolsAgentHost() {
@@ -265,6 +262,19 @@ void RenderViewDevToolsAgentHost::RenderViewGone(
     default:
       break;
   }
+}
+
+void RenderViewDevToolsAgentHost::DidAttachInterstitialPage() {
+  if (!render_view_host_)
+    return;
+  // The rvh set in AboutToNavigateRenderView turned out to be interstitial.
+  // Connect back to the real one.
+  WebContents* web_contents =
+    WebContents::FromRenderViewHost(render_view_host_);
+  if (!web_contents)
+    return;
+  DisconnectRenderViewHost();
+  ConnectRenderViewHost(web_contents->GetRenderViewHost(), true);
 }
 
 void RenderViewDevToolsAgentHost::ConnectRenderViewHost(RenderViewHost* rvh,

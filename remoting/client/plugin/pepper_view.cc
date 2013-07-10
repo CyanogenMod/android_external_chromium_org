@@ -9,7 +9,7 @@
 #include "base/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "ppapi/cpp/completion_callback.h"
 #include "ppapi/cpp/dev/graphics_2d_dev.h"
 #include "ppapi/cpp/dev/view_dev.h"
@@ -104,7 +104,7 @@ void PepperView::SetView(const pp::View& view) {
 
     // Create a 2D rendering context at the chosen frame dimensions.
     pp::Size pp_size = pp::Size(view_size_.width(), view_size_.height());
-    graphics2d_ = pp::Graphics2D(instance_, pp_size, true);
+    graphics2d_ = pp::Graphics2D(instance_, pp_size, false);
 
     // Specify the scale from our coordinates to DIPs.
     pp::Graphics2D_Dev graphics2d_dev(graphics2d_);
@@ -278,6 +278,11 @@ void PepperView::FlushBuffer(const SkIRect& clip_area,
           &PepperView::OnFlushDone, AsWeakPtr(), start_time, buffer)));
   CHECK(error == PP_OK_COMPLETIONPENDING);
   flush_pending_ = true;
+
+  // If the buffer we just rendered has a shape then pass that to JavaScript.
+  const SkRegion* buffer_shape = producer_->GetBufferShape();
+  if (buffer_shape)
+    instance_->SetDesktopShape(*buffer_shape);
 }
 
 void PepperView::OnFlushDone(base::Time paint_start,

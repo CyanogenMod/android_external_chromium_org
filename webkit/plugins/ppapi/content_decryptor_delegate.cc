@@ -167,7 +167,7 @@ bool DeserializeAudioFrames(PP_Resource audio_frames,
 
     scoped_refptr<media::DataBuffer> frame =
         media::DataBuffer::CopyFrom(cur, frame_size);
-    frame->SetTimestamp(base::TimeDelta::FromMicroseconds(timestamp));
+    frame->set_timestamp(base::TimeDelta::FromMicroseconds(timestamp));
     frames->push_back(frame);
 
     cur += frame_size;
@@ -294,12 +294,10 @@ void ContentDecryptorDelegate::Initialize(const std::string& key_system) {
 void ContentDecryptorDelegate::SetKeyEventCallbacks(
     const media::KeyAddedCB& key_added_cb,
     const media::KeyErrorCB& key_error_cb,
-    const media::KeyMessageCB& key_message_cb,
-    const media::NeedKeyCB& need_key_cb) {
+    const media::KeyMessageCB& key_message_cb) {
   key_added_cb_ = key_added_cb;
   key_error_cb_ = key_error_cb;
   key_message_cb_ = key_message_cb;
-  need_key_cb_ = need_key_cb;
 }
 
 bool ContentDecryptorDelegate::GenerateKeyRequest(const std::string& type,
@@ -647,10 +645,10 @@ void ContentDecryptorDelegate::KeyMessage(PP_Var key_system_var,
   ArrayBufferVar* message_array_buffer =
       ArrayBufferVar::FromPPVar(message_var);
 
-  std::string message;
+  std::vector<uint8> message;
   if (message_array_buffer) {
-    const char* data = static_cast<const char*>(message_array_buffer->Map());
-    message.assign(data, message_array_buffer->ByteLength());
+    const uint8* data = static_cast<const uint8*>(message_array_buffer->Map());
+    message.assign(data, data + message_array_buffer->ByteLength());
   }
 
   StringVar* default_url_string = StringVar::FromPPVar(default_url_var);
@@ -871,6 +869,7 @@ void ContentDecryptorDelegate::DeliverFrame(
           frame_data + frame_info->plane_offsets[PP_DECRYPTEDFRAMEPLANES_V],
           base::TimeDelta::FromMicroseconds(
               frame_info->tracking_info.timestamp),
+          ppb_buffer->shared_memory()->handle(),
           media::BindToLoop(
               base::MessageLoopProxy::current(),
               base::Bind(&BufferNoLongerNeeded, ppb_buffer,

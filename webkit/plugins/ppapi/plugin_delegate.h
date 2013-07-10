@@ -15,8 +15,7 @@
 #include "base/process.h"
 #include "base/shared_memory.h"
 #include "base/sync_socket.h"
-#include "base/time.h"
-#include "googleurl/src/gurl.h"
+#include "base/time/time.h"
 #include "ipc/ipc_platform_file.h"
 #include "media/video/capture/video_capture.h"
 #include "media/video/video_decode_accelerator.h"
@@ -28,14 +27,15 @@
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_stdint.h"
+#include "ppapi/c/ppb_tcp_socket.h"
 #include "ppapi/c/private/ppb_flash.h"
 #include "ppapi/c/private/ppb_tcp_socket_private.h"
 #include "ppapi/c/private/ppb_udp_socket_private.h"
 #include "ppapi/shared_impl/dir_contents.h"
 #include "ui/gfx/size.h"
+#include "url/gurl.h"
 #include "webkit/common/fileapi/file_system_types.h"
 #include "webkit/common/quota/quota_types.h"
-#include "webkit/glue/clipboard_client.h"
 #include "webkit/plugins/webkit_plugins_export.h"
 
 class GURL;
@@ -69,6 +69,7 @@ struct Mailbox;
 namespace ppapi {
 class PepperFilePath;
 class PPB_X509Certificate_Fields;
+class SocketOptionData;
 struct DeviceRefData;
 struct HostPortPair;
 struct Preferences;
@@ -91,7 +92,6 @@ class WebURLResponse;
 }
 
 namespace webkit_glue {
-class ClipboardClient;
 class P2PTransport;
 class NetworkListObserver;
 }  // namespace webkit_glue
@@ -494,7 +494,7 @@ class PluginDelegate {
             quota::QuotaLimitType quota_policy,
             const NotifyCloseFileCallback& close_file_callback)>
       AsyncOpenFileSystemURLCallback;
-  virtual bool AsyncOpenFileSystemURL(
+  virtual void AsyncOpenFileSystemURL(
       const GURL& path,
       int flags,
       const AsyncOpenFileSystemURLCallback& callback) = 0;
@@ -507,30 +507,30 @@ class PluginDelegate {
   typedef base::Callback<void(
       const base::PlatformFileInfo& file_info)> MetadataCallback;
 
-  virtual bool MakeDirectory(
+  virtual void MakeDirectory(
       const GURL& path,
       bool recursive,
       const StatusCallback& callback) = 0;
-  virtual bool Query(const GURL& path,
+  virtual void Query(const GURL& path,
                      const MetadataCallback& success_callback,
                      const StatusCallback& error_callback) = 0;
-  virtual bool ReadDirectoryEntries(
+  virtual void ReadDirectoryEntries(
       const GURL& path,
       const ReadDirectoryCallback& success_callback,
       const StatusCallback& error_callback) = 0;
-  virtual bool Touch(const GURL& path,
+  virtual void Touch(const GURL& path,
                      const base::Time& last_access_time,
                      const base::Time& last_modified_time,
                      const StatusCallback& callback) = 0;
-  virtual bool SetLength(const GURL& path,
+  virtual void SetLength(const GURL& path,
                          int64_t length,
                          const StatusCallback& callback) = 0;
-  virtual bool Delete(const GURL& path,
+  virtual void Delete(const GURL& path,
                       const StatusCallback& callback) = 0;
-  virtual bool Rename(const GURL& file_path,
+  virtual void Rename(const GURL& file_path,
                       const GURL& new_file_path,
                       const StatusCallback& callback) = 0;
-  virtual bool ReadDirectory(
+  virtual void ReadDirectory(
       const GURL& directory_path,
       const ReadDirectoryCallback& success_callback,
       const StatusCallback& error_callback) = 0;
@@ -571,9 +571,9 @@ class PluginDelegate {
   virtual void TCPSocketRead(uint32 socket_id, int32_t bytes_to_read) = 0;
   virtual void TCPSocketWrite(uint32 socket_id, const std::string& buffer) = 0;
   virtual void TCPSocketDisconnect(uint32 socket_id) = 0;
-  virtual void TCPSocketSetBoolOption(uint32 socket_id,
-                                      PP_TCPSocketOption_Private name,
-                                      bool value) = 0;
+  virtual void TCPSocketSetOption(uint32 socket_id,
+                                  PP_TCPSocket_Option name,
+                                  const ::ppapi::SocketOptionData& value) = 0;
   virtual void RegisterTCPSocket(PPB_TCPSocket_Private_Impl* socket,
                                  uint32 socket_id) = 0;
 

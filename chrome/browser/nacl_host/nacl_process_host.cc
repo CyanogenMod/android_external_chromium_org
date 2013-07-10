@@ -23,11 +23,9 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/windows_version.h"
 #include "build/build_config.h"
-#include "chrome/browser/extensions/extension_info_map.h"
 #include "chrome/browser/nacl_host/nacl_browser.h"
 #include "chrome/browser/nacl_host/nacl_host_message_filter.h"
 #include "chrome/browser/renderer_host/pepper/chrome_browser_pepper_host_factory.h"
-#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_process_type.h"
 #include "chrome/common/chrome_switches.h"
@@ -37,12 +35,12 @@
 #include "chrome/common/nacl_host_messages.h"
 #include "chrome/common/nacl_messages.h"
 #include "chrome/common/render_messages.h"
+#include "components/nacl/common/nacl_switches.h"
 #include "content/public/browser/browser_child_process_host.h"
 #include "content/public/browser/browser_ppapi_host.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/process_type.h"
-#include "extensions/common/constants.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_switches.h"
 #include "native_client/src/shared/imc/nacl_imc_c.h"
@@ -282,10 +280,10 @@ void NaClProcessHost::EarlyStartup() {
 void NaClProcessHost::Launch(
     NaClHostMessageFilter* nacl_host_message_filter,
     IPC::Message* reply_msg,
-    scoped_refptr<ExtensionInfoMap> extension_info_map) {
+    const base::FilePath& manifest_path) {
   nacl_host_message_filter_ = nacl_host_message_filter;
   reply_msg_ = reply_msg;
-  extension_info_map_ = extension_info_map;
+  manifest_path_ = manifest_path;
 
   // Start getting the IRT open asynchronously while we launch the NaCl process.
   // We'll make sure this actually finished in StartWithLaunchedProcess, below.
@@ -374,10 +372,9 @@ bool NaClProcessHost::LaunchNaClGdb() {
   std::replace(irt_path.begin(), irt_path.end(), '\\', '/');
   cmd_line.AppendArgNative(FILE_PATH_LITERAL("nacl-irt \"") + irt_path +
                            FILE_PATH_LITERAL("\""));
-  base::FilePath manifest_path = GetManifestPath();
-  if (!manifest_path.empty()) {
+  if (!manifest_path_.empty()) {
     cmd_line.AppendArg("--eval-command");
-    base::FilePath::StringType manifest_path_value(manifest_path.value());
+    base::FilePath::StringType manifest_path_value(manifest_path_.value());
     std::replace(manifest_path_value.begin(), manifest_path_value.end(),
                  '\\', '/');
     cmd_line.AppendArgNative(FILE_PATH_LITERAL("nacl-manifest \"") +
@@ -392,18 +389,6 @@ bool NaClProcessHost::LaunchNaClGdb() {
     cmd_line.AppendArgNative(script.value());
   }
   return base::LaunchProcess(cmd_line, base::LaunchOptions(), NULL);
-}
-
-base::FilePath NaClProcessHost::GetManifestPath() {
-  const extensions::Extension* extension = extension_info_map_->extensions()
-      .GetExtensionOrAppByURL(ExtensionURLInfo(manifest_url_));
-  if (extension != NULL &&
-      manifest_url_.SchemeIs(extensions::kExtensionScheme)) {
-    std::string path = manifest_url_.path();
-    TrimString(path, "/", &path);  // Remove first slash
-    return extension->path().AppendASCII(path);
-  }
-  return base::FilePath();
 }
 
 bool NaClProcessHost::LaunchSelLdr() {
@@ -443,12 +428,9 @@ bool NaClProcessHost::LaunchSelLdr() {
 #if defined(OS_WIN)
   // On Windows 64-bit NaCl loader is called nacl64.exe instead of chrome.exe
   if (RunningOnWOW64()) {
-    base::FilePath module_path;
-    if (!PathService::Get(base::FILE_MODULE, &module_path)) {
-      LOG(ERROR) << "NaCl process launch failed: could not resolve module";
+    if (!NaClBrowser::GetInstance()->GetNaCl64ExePath(&exe_path)) {
       return false;
     }
-    exe_path = module_path.DirName().Append(chrome::kNaClAppName);
   }
 #endif
 

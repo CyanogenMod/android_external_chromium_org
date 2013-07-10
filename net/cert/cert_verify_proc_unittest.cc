@@ -141,7 +141,6 @@ TEST_F(CertVerifyProcTest, WithoutRevocationChecking) {
 #define MAYBE_EVVerification EVVerification
 #endif
 TEST_F(CertVerifyProcTest, MAYBE_EVVerification) {
-  // This certificate will expire Jun 21, 2013.
   CertificateList certs = CreateCertificateListFromFile(
       GetTestCertsDirectory(),
       "comodo.chain.pem",
@@ -396,28 +395,38 @@ TEST_F(CertVerifyProcTest, RejectWeakKeys) {
   }
 }
 
-// Test for bug 108514.
-// The certificate will expire on 2012-07-20. The test will still
-// pass if error == ERR_CERT_DATE_INVALID.  TODO(rsleevi): generate test
-// certificates for this unit test.  http://crbug.com/111730
-TEST_F(CertVerifyProcTest, ExtraneousMD5RootCert) {
+// Regression test for http://crbug.com/108514.
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+// Disabled on OS X - Security.framework doesn't ignore superflous certificates
+// provided by servers. See CertVerifyProcTest.CybertrustGTERoot for further
+// details.
+#define MAYBE_ExtraneousMD5RootCert DISABLED_ExtraneousMD5RootCert
+#elif defined(USE_OPENSSL) || defined(OS_ANDROID)
+// Disabled for OpenSSL / Android - Android and OpenSSL do not attempt to find
+// a minimal certificate chain, thus prefer the MD5 root over the SHA-1 root.
+#define MAYBE_ExtraneousMD5RootCert DISABLED_ExtraneousMD5RootCert
+#else
+#define MAYBE_ExtraneousMD5RootCert ExtraneousMD5RootCert
+#endif
+TEST_F(CertVerifyProcTest, MAYBE_ExtraneousMD5RootCert) {
   base::FilePath certs_dir = GetTestCertsDirectory();
 
   scoped_refptr<X509Certificate> server_cert =
-      ImportCertFromFile(certs_dir, "images_etrade_wallst_com.pem");
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), server_cert);
+      ImportCertFromFile(certs_dir, "cross-signed-leaf.pem");
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), server_cert.get());
 
-  scoped_refptr<X509Certificate> intermediate_cert =
-      ImportCertFromFile(certs_dir, "globalsign_orgv1_ca.pem");
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), intermediate_cert);
+  scoped_refptr<X509Certificate> extra_cert =
+      ImportCertFromFile(certs_dir, "cross-signed-root-md5.pem");
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), extra_cert.get());
 
-  scoped_refptr<X509Certificate> md5_root_cert =
-      ImportCertFromFile(certs_dir, "globalsign_root_ca_md5.pem");
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), md5_root_cert);
+  scoped_refptr<X509Certificate> root_cert =
+      ImportCertFromFile(certs_dir, "cross-signed-root-sha1.pem");
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), root_cert.get());
+
+  ScopedTestRoot scoped_root(root_cert.get());
 
   X509Certificate::OSCertHandles intermediates;
-  intermediates.push_back(intermediate_cert->os_cert_handle());
-  intermediates.push_back(md5_root_cert->os_cert_handle());
+  intermediates.push_back(extra_cert->os_cert_handle());
   scoped_refptr<X509Certificate> cert_chain =
       X509Certificate::CreateFromHandle(server_cert->os_cert_handle(),
                                         intermediates);
@@ -425,16 +434,22 @@ TEST_F(CertVerifyProcTest, ExtraneousMD5RootCert) {
   CertVerifyResult verify_result;
   int flags = 0;
   int error = Verify(cert_chain.get(),
-                     "images.etrade.wallst.com",
+                     "127.0.0.1",
                      flags,
                      NULL,
                      empty_cert_list_,
                      &verify_result);
-  if (error != OK)
-    EXPECT_EQ(ERR_CERT_DATE_INVALID, error);
+  EXPECT_EQ(OK, error);
+
+  // The extra MD5 root should be discarded
+  ASSERT_TRUE(verify_result.verified_cert.get());
+  ASSERT_EQ(1u,
+            verify_result.verified_cert->GetIntermediateCertificates().size());
+  EXPECT_TRUE(X509Certificate::IsSameOSCert(
+        verify_result.verified_cert->GetIntermediateCertificates().front(),
+        root_cert->os_cert_handle()));
 
   EXPECT_FALSE(verify_result.has_md5);
-  EXPECT_FALSE(verify_result.has_md5_ca);
 }
 
 // Test for bug 94673.
@@ -820,7 +835,7 @@ TEST_F(CertVerifyProcTest, AdditionalTrustAnchors) {
 
   // |ca_cert| is the issuer of |cert|.
   CertificateList ca_cert_list = CreateCertificateListFromFile(
-      GetTestCertsDirectory(), "root_ca_cert.crt",
+      GetTestCertsDirectory(), "root_ca_cert.pem",
       X509Certificate::FORMAT_AUTO);
   ASSERT_EQ(1U, ca_cert_list.size());
   scoped_refptr<X509Certificate> ca_cert(ca_cert_list[0]);
@@ -887,7 +902,7 @@ TEST_F(CertVerifyProcTest, CybertrustGTERoot) {
                          "cybertrust_baltimore_root.pem");
   ASSERT_TRUE(baltimore_root.get());
 
-  ScopedTestRoot scoped_root(baltimore_root);
+  ScopedTestRoot scoped_root(baltimore_root.get());
 
   // Ensure that ONLY the Baltimore CyberTrust Root is trusted. This
   // simulates Keychain removing support for the GTE CyberTrust Root.
@@ -902,8 +917,12 @@ TEST_F(CertVerifyProcTest, CybertrustGTERoot) {
   // works. Only the first two certificates are included in the chain.
   int flags = 0;
   CertVerifyResult verify_result;
-  int error = Verify(cybertrust_basic, "cacert.omniroot.com", flags, NULL,
-                     empty_cert_list_, &verify_result);
+  int error = Verify(cybertrust_basic.get(),
+                     "cacert.omniroot.com",
+                     flags,
+                     NULL,
+                     empty_cert_list_,
+                     &verify_result);
   EXPECT_EQ(OK, error);
   EXPECT_EQ(0U, verify_result.cert_status);
 
@@ -921,8 +940,12 @@ TEST_F(CertVerifyProcTest, CybertrustGTERoot) {
   scoped_refptr<X509Certificate> baltimore_chain_1 =
       X509Certificate::CreateFromHandle(cybertrust_basic->os_cert_handle(),
                                         intermediate_chain_1);
-  error = Verify(baltimore_chain_1, "cacert.omniroot.com", flags, NULL,
-                 empty_cert_list_, &verify_result);
+  error = Verify(baltimore_chain_1.get(),
+                 "cacert.omniroot.com",
+                 flags,
+                 NULL,
+                 empty_cert_list_,
+                 &verify_result);
   EXPECT_EQ(OK, error);
   EXPECT_EQ(0U, verify_result.cert_status);
 
@@ -940,8 +963,12 @@ TEST_F(CertVerifyProcTest, CybertrustGTERoot) {
   scoped_refptr<X509Certificate> baltimore_chain_2 =
       X509Certificate::CreateFromHandle(cybertrust_basic->os_cert_handle(),
                                         intermediate_chain_2);
-  error = Verify(baltimore_chain_2, "cacert.omniroot.com", flags, NULL,
-                 empty_cert_list_, &verify_result);
+  error = Verify(baltimore_chain_2.get(),
+                 "cacert.omniroot.com",
+                 flags,
+                 NULL,
+                 empty_cert_list_,
+                 &verify_result);
   EXPECT_EQ(OK, error);
   EXPECT_EQ(0U, verify_result.cert_status);
 
@@ -956,8 +983,12 @@ TEST_F(CertVerifyProcTest, CybertrustGTERoot) {
   scoped_refptr<X509Certificate> baltimore_chain_with_root =
       X509Certificate::CreateFromHandle(cybertrust_basic->os_cert_handle(),
                                         intermediate_chain_2);
-  error = Verify(baltimore_chain_with_root, "cacert.omniroot.com", flags,
-                 NULL, empty_cert_list_, &verify_result);
+  error = Verify(baltimore_chain_with_root.get(),
+                 "cacert.omniroot.com",
+                 flags,
+                 NULL,
+                 empty_cert_list_,
+                 &verify_result);
   EXPECT_EQ(OK, error);
   EXPECT_EQ(0U, verify_result.cert_status);
 
@@ -1091,8 +1122,6 @@ struct WeakDigestTestData {
   bool expected_has_md5;
   bool expected_has_md4;
   bool expected_has_md2;
-  bool expected_has_md5_ca;
-  bool expected_has_md2_ca;
 };
 
 // GTest 'magic' pretty-printer, so that if/when a test fails, it knows how
@@ -1152,8 +1181,6 @@ TEST_P(CertVerifyProcWeakDigestTest, Verify) {
   EXPECT_EQ(data.expected_has_md5, verify_result.has_md5);
   EXPECT_EQ(data.expected_has_md4, verify_result.has_md4);
   EXPECT_EQ(data.expected_has_md2, verify_result.has_md2);
-  EXPECT_EQ(data.expected_has_md5_ca, verify_result.has_md5_ca);
-  EXPECT_EQ(data.expected_has_md2_ca, verify_result.has_md2_ca);
   EXPECT_FALSE(verify_result.is_issued_by_additional_trust_anchor);
 
   // Ensure that MD4 and MD2 are tagged as invalid.
@@ -1199,14 +1226,14 @@ TEST_P(CertVerifyProcWeakDigestTest, Verify) {
 // The signature algorithm of the root CA should not matter.
 const WeakDigestTestData kVerifyRootCATestData[] = {
   { "weak_digest_md5_root.pem", "weak_digest_sha1_intermediate.pem",
-    "weak_digest_sha1_ee.pem", false, false, false, false, false },
+    "weak_digest_sha1_ee.pem", false, false, false },
 #if defined(USE_OPENSSL) || defined(OS_WIN)
   // MD4 is not supported by OS X / NSS
   { "weak_digest_md4_root.pem", "weak_digest_sha1_intermediate.pem",
-    "weak_digest_sha1_ee.pem", false, false, false, false, false },
+    "weak_digest_sha1_ee.pem", false, false, false },
 #endif
   { "weak_digest_md2_root.pem", "weak_digest_sha1_intermediate.pem",
-    "weak_digest_sha1_ee.pem", false, false, false, false, false },
+    "weak_digest_sha1_ee.pem", false, false, false },
 };
 INSTANTIATE_TEST_CASE_P(VerifyRoot, CertVerifyProcWeakDigestTest,
                         testing::ValuesIn(kVerifyRootCATestData));
@@ -1214,14 +1241,14 @@ INSTANTIATE_TEST_CASE_P(VerifyRoot, CertVerifyProcWeakDigestTest,
 // The signature algorithm of intermediates should be properly detected.
 const WeakDigestTestData kVerifyIntermediateCATestData[] = {
   { "weak_digest_sha1_root.pem", "weak_digest_md5_intermediate.pem",
-    "weak_digest_sha1_ee.pem", true, false, false, true, false },
+    "weak_digest_sha1_ee.pem", true, false, false },
 #if defined(USE_OPENSSL) || defined(OS_WIN)
   // MD4 is not supported by OS X / NSS
   { "weak_digest_sha1_root.pem", "weak_digest_md4_intermediate.pem",
-    "weak_digest_sha1_ee.pem", false, true, false, false, false },
+    "weak_digest_sha1_ee.pem", false, true, false },
 #endif
   { "weak_digest_sha1_root.pem", "weak_digest_md2_intermediate.pem",
-    "weak_digest_sha1_ee.pem", false, false, true, false, true },
+    "weak_digest_sha1_ee.pem", false, false, true },
 };
 // Disabled on NSS - MD4 is not supported, and MD2 and MD5 are disabled.
 #if defined(USE_NSS) || defined(OS_IOS)
@@ -1237,14 +1264,14 @@ WRAPPED_INSTANTIATE_TEST_CASE_P(
 // The signature algorithm of end-entity should be properly detected.
 const WeakDigestTestData kVerifyEndEntityTestData[] = {
   { "weak_digest_sha1_root.pem", "weak_digest_sha1_intermediate.pem",
-    "weak_digest_md5_ee.pem", true, false, false, false, false },
+    "weak_digest_md5_ee.pem", true, false, false },
 #if defined(USE_OPENSSL) || defined(OS_WIN)
   // MD4 is not supported by OS X / NSS
   { "weak_digest_sha1_root.pem", "weak_digest_sha1_intermediate.pem",
-    "weak_digest_md4_ee.pem", false, true, false, false, false },
+    "weak_digest_md4_ee.pem", false, true, false },
 #endif
   { "weak_digest_sha1_root.pem", "weak_digest_sha1_intermediate.pem",
-    "weak_digest_md2_ee.pem", false, false, true, false, false },
+    "weak_digest_md2_ee.pem", false, false, true },
 };
 // Disabled on NSS - NSS caches chains/signatures in such a way that cannot
 // be cleared until NSS is cleanly shutdown, which is not presently supported
@@ -1261,14 +1288,14 @@ WRAPPED_INSTANTIATE_TEST_CASE_P(MAYBE_VerifyEndEntity,
 // Incomplete chains should still report the status of the intermediate.
 const WeakDigestTestData kVerifyIncompleteIntermediateTestData[] = {
   { NULL, "weak_digest_md5_intermediate.pem", "weak_digest_sha1_ee.pem",
-    true, false, false, true, false },
+    true, false, false },
 #if defined(USE_OPENSSL) || defined(OS_WIN)
   // MD4 is not supported by OS X / NSS
   { NULL, "weak_digest_md4_intermediate.pem", "weak_digest_sha1_ee.pem",
-    false, true, false, false, false },
+    false, true, false },
 #endif
   { NULL, "weak_digest_md2_intermediate.pem", "weak_digest_sha1_ee.pem",
-    false, false, true, false, true },
+    false, false, true },
 };
 // Disabled on NSS - libpkix does not return constructed chains on error,
 // preventing us from detecting/inspecting the verified chain.
@@ -1286,14 +1313,14 @@ WRAPPED_INSTANTIATE_TEST_CASE_P(
 // Incomplete chains should still report the status of the end-entity.
 const WeakDigestTestData kVerifyIncompleteEETestData[] = {
   { NULL, "weak_digest_sha1_intermediate.pem", "weak_digest_md5_ee.pem",
-    true, false, false, false, false },
+    true, false, false },
 #if defined(USE_OPENSSL) || defined(OS_WIN)
   // MD4 is not supported by OS X / NSS
   { NULL, "weak_digest_sha1_intermediate.pem", "weak_digest_md4_ee.pem",
-    false, true, false, false, false },
+    false, true, false },
 #endif
   { NULL, "weak_digest_sha1_intermediate.pem", "weak_digest_md2_ee.pem",
-    false, false, true, false, false },
+    false, false, true },
 };
 // Disabled on NSS - libpkix does not return constructed chains on error,
 // preventing us from detecting/inspecting the verified chain.
@@ -1311,13 +1338,13 @@ WRAPPED_INSTANTIATE_TEST_CASE_P(
 // reported.
 const WeakDigestTestData kVerifyMixedTestData[] = {
   { "weak_digest_sha1_root.pem", "weak_digest_md5_intermediate.pem",
-    "weak_digest_md2_ee.pem", true, false, true, true, false },
+    "weak_digest_md2_ee.pem", true, false, true },
   { "weak_digest_sha1_root.pem", "weak_digest_md2_intermediate.pem",
-    "weak_digest_md5_ee.pem", true, false, true, false, true },
+    "weak_digest_md5_ee.pem", true, false, true },
 #if defined(USE_OPENSSL) || defined(OS_WIN)
   // MD4 is not supported by OS X / NSS
   { "weak_digest_sha1_root.pem", "weak_digest_md4_intermediate.pem",
-    "weak_digest_md2_ee.pem", false, true, true, false, false },
+    "weak_digest_md2_ee.pem", false, true, true },
 #endif
 };
 // NSS does not support MD4 and does not enable MD2 by default, making all

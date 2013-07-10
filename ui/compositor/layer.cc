@@ -16,9 +16,9 @@
 #include "cc/layers/solid_color_layer.h"
 #include "cc/layers/texture_layer.h"
 #include "cc/output/delegated_frame_data.h"
+#include "cc/output/filter_operation.h"
+#include "cc/output/filter_operations.h"
 #include "cc/resources/transferable_resource.h"
-#include "third_party/WebKit/public/platform/WebFilterOperation.h"
-#include "third_party/WebKit/public/platform/WebFilterOperations.h"
 #include "ui/base/animation/animation.h"
 #include "ui/compositor/compositor_switches.h"
 #include "ui/compositor/dip_util.h"
@@ -47,7 +47,6 @@ Layer::Layer()
       compositor_(NULL),
       parent_(NULL),
       visible_(true),
-      is_drawn_(true),
       force_render_surface_(false),
       fills_bounds_opaquely_(true),
       layer_updated_externally_(false),
@@ -72,7 +71,6 @@ Layer::Layer(LayerType type)
       compositor_(NULL),
       parent_(NULL),
       visible_(true),
-      is_drawn_(true),
       force_render_surface_(false),
       fills_bounds_opaquely_(true),
       layer_updated_externally_(false),
@@ -142,7 +140,6 @@ void Layer::Add(Layer* child) {
   children_.push_back(child);
   cc_layer_->AddChild(child->cc_layer_);
   child->OnDeviceScaleFactorChanged(device_scale_factor_);
-  child->UpdateIsDrawn();
   if (GetCompositor())
     child->SendPendingThreadedAnimations();
 }
@@ -314,22 +311,22 @@ void Layer::SetBackgroundZoom(float zoom, int inset) {
 }
 
 void Layer::SetLayerFilters() {
-  WebKit::WebFilterOperations filters;
+  cc::FilterOperations filters;
   if (layer_saturation_) {
-    filters.append(WebKit::WebFilterOperation::createSaturateFilter(
+    filters.Append(cc::FilterOperation::CreateSaturateFilter(
         layer_saturation_));
   }
   if (layer_grayscale_) {
-    filters.append(WebKit::WebFilterOperation::createGrayscaleFilter(
+    filters.Append(cc::FilterOperation::CreateGrayscaleFilter(
         layer_grayscale_));
   }
   if (layer_inverted_)
-    filters.append(WebKit::WebFilterOperation::createInvertFilter(1.0));
+    filters.Append(cc::FilterOperation::CreateInvertFilter(1.0));
   // Brightness goes last, because the resulting colors neeed clamping, which
   // cause further color matrix filters to be applied separately. In this order,
   // they all can be combined in a single pass.
   if (layer_brightness_) {
-    filters.append(WebKit::WebFilterOperation::createSaturatingBrightnessFilter(
+    filters.Append(cc::FilterOperation::CreateSaturatingBrightnessFilter(
         layer_brightness_));
   }
 
@@ -337,14 +334,12 @@ void Layer::SetLayerFilters() {
 }
 
 void Layer::SetLayerBackgroundFilters() {
-  WebKit::WebFilterOperations filters;
-  if (zoom_ != 1) {
-    filters.append(WebKit::WebFilterOperation::createZoomFilter(zoom_,
-                                                                zoom_inset_));
-  }
+  cc::FilterOperations filters;
+  if (zoom_ != 1)
+    filters.Append(cc::FilterOperation::CreateZoomFilter(zoom_, zoom_inset_));
 
   if (background_blur_radius_) {
-    filters.append(WebKit::WebFilterOperation::createBlurFilter(
+    filters.Append(cc::FilterOperation::CreateBlurFilter(
         background_blur_radius_));
   }
 
@@ -370,21 +365,10 @@ bool Layer::GetTargetVisibility() const {
 }
 
 bool Layer::IsDrawn() const {
-  return is_drawn_;
-}
-
-void Layer::UpdateIsDrawn() {
-  bool updated_is_drawn = visible_ && (!parent_ || parent_->IsDrawn());
-
-  if (updated_is_drawn == is_drawn_)
-    return;
-
-  is_drawn_ = updated_is_drawn;
-  cc_layer_->SetIsDrawable(is_drawn_ && type_ != LAYER_NOT_DRAWN);
-
-  for (size_t i = 0; i < children_.size(); ++i) {
-    children_[i]->UpdateIsDrawn();
-  }
+  const Layer* layer = this;
+  while (layer && layer->visible_)
+    layer = layer->parent_;
+  return layer == NULL;
 }
 
 bool Layer::ShouldDraw() const {
@@ -478,7 +462,8 @@ void Layer::SwitchToLayer(scoped_refptr<cc::Layer> new_layer) {
   cc_layer_->SetAnchorPoint(gfx::PointF());
   cc_layer_->SetContentsOpaque(fills_bounds_opaquely_);
   cc_layer_->SetForceRenderSurface(force_render_surface_);
-  cc_layer_->SetIsDrawable(IsDrawn());
+  cc_layer_->SetIsDrawable(type_ != LAYER_NOT_DRAWN);
+  cc_layer_->SetHideLayerAndSubtree(!visible_);
 }
 
 void Layer::SwitchCCLayerForTest() {
@@ -773,7 +758,7 @@ void Layer::SetVisibilityImmediately(bool visible) {
     return;
 
   visible_ = visible;
-  UpdateIsDrawn();
+  cc_layer_->SetHideLayerAndSubtree(!visible_);
 }
 
 void Layer::SetBrightnessImmediately(float brightness) {

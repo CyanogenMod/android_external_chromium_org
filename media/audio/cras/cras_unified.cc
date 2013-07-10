@@ -87,8 +87,6 @@ CrasUnifiedStream::CrasUnifiedStream(const AudioParameters& params,
       volume_(1.0),
       manager_(manager),
       source_callback_(NULL),
-      input_bus_(NULL),
-      output_bus_(NULL),
       stream_direction_(CRAS_STREAM_OUTPUT) {
   DCHECK(manager_);
   DCHECK(params_.channels()  > 0);
@@ -303,6 +301,8 @@ uint32 CrasUnifiedStream::DispatchCallback(size_t frames,
     case CRAS_STREAM_UNIFIED:
       return ReadWriteAudio(frames, input_samples, output_samples,
                             input_ts, output_ts);
+    default:
+      break;
   }
 
   return 0;

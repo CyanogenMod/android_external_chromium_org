@@ -11,7 +11,7 @@
 
 #include "base/basictypes.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 class AutocompleteInput;
 class AutocompleteProvider;
@@ -120,7 +120,8 @@ class AutocompleteResult {
 #endif
 
   // Compute the "alternate navigation URL" for a given match. This is obtained
-  // by interpreting the user input directly as a URL.
+  // by interpreting the user input directly as a URL. See comments on
+  // |alternate_nav_url_|.
   static GURL ComputeAlternateNavUrl(const AutocompleteInput& input,
                                      const AutocompleteMatch& match);
 

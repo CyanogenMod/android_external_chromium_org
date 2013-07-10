@@ -19,10 +19,10 @@
 #include "content/public/common/url_constants.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
 #include "webkit/browser/fileapi/file_permission_policy.h"
+#include "webkit/browser/fileapi/file_system_mount_point_provider.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
 #include "webkit/browser/fileapi/file_system_options.h"
 #include "webkit/browser/fileapi/file_system_task_runners.h"
-#include "webkit/browser/fileapi/sandbox_mount_point_provider.h"
 #include "webkit/browser/quota/quota_manager.h"
 
 namespace content {
@@ -66,16 +66,31 @@ scoped_refptr<fileapi::FileSystemContext> CreateFileSystemContext(
   // Setting up additional mount point providers.
   ScopedVector<fileapi::FileSystemMountPointProvider> additional_providers;
   GetContentClient()->browser()->GetAdditionalFileSystemMountPointProviders(
-      profile_path, &additional_providers);
-
-  return new fileapi::FileSystemContext(
-      task_runners.Pass(),
-      external_mount_points,
-      special_storage_policy,
-      quota_manager_proxy,
-      additional_providers.Pass(),
       profile_path,
-      CreateBrowserFileSystemOptions(is_incognito));
+      special_storage_policy,
+      external_mount_points,
+      &additional_providers);
+
+  scoped_refptr<fileapi::FileSystemContext> file_system_context =
+      new fileapi::FileSystemContext(
+          task_runners.Pass(),
+          external_mount_points,
+          special_storage_policy,
+          quota_manager_proxy,
+          additional_providers.Pass(),
+          profile_path,
+          CreateBrowserFileSystemOptions(is_incognito));
+
+  std::vector<fileapi::FileSystemType> types;
+  file_system_context->GetFileSystemTypes(&types);
+  for (size_t i = 0; i < types.size(); ++i) {
+    ChildProcessSecurityPolicyImpl::GetInstance()->
+        RegisterFileSystemPermissionPolicy(
+            types[i],
+            fileapi::FileSystemContext::GetPermissionPolicy(types[i]));
+  }
+
+  return file_system_context;
 }
 
 bool CheckFileSystemPermissionsForProcess(
@@ -101,29 +116,9 @@ bool CheckFileSystemPermissionsForProcess(
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
 
-  switch (mount_point_provider->GetPermissionPolicy(url, permissions)) {
-    case fileapi::FILE_PERMISSION_ALWAYS_DENY:
-      *error = base::PLATFORM_FILE_ERROR_SECURITY;
-      return false;
-    case fileapi::FILE_PERMISSION_ALWAYS_ALLOW:
-      CHECK(mount_point_provider == context->sandbox_provider());
-      return true;
-    case fileapi::FILE_PERMISSION_USE_FILE_PERMISSION: {
-      const bool success = policy->HasPermissionsForFile(
-          process_id, url.path(), permissions);
-      if (!success)
-        *error = base::PLATFORM_FILE_ERROR_SECURITY;
-      return success;
-    }
-    case fileapi::FILE_PERMISSION_USE_FILESYSTEM_PERMISSION: {
-      const bool success = policy->HasPermissionsForFileSystem(
-          process_id, url.mount_filesystem_id(), permissions);
-      if (!success)
-        *error = base::PLATFORM_FILE_ERROR_SECURITY;
-      return success;
-    }
-  }
-  NOTREACHED();
+  if (policy->HasPermissionsForFileSystemFile(process_id, url, permissions))
+    return true;
+
   *error = base::PLATFORM_FILE_ERROR_SECURITY;
   return false;
 }

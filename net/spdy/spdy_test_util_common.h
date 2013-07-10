@@ -5,6 +5,9 @@
 #ifndef NET_SPDY_SPDY_TEST_UTIL_COMMON_H_
 #define NET_SPDY_SPDY_TEST_UTIL_COMMON_H_
 
+#include <string>
+#include <vector>
+
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "crypto/ec_private_key.h"
@@ -42,6 +45,10 @@ class SpdyStreamRequest;
 const char kDefaultURL[] = "http://www.google.com";
 const char kUploadData[] = "hello!";
 const int kUploadDataSize = arraysize(kUploadData)-1;
+
+// SpdyNextProtos returns a vector of NPN protocol strings for negotiating
+// SPDY.
+std::vector<std::string> SpdyNextProtos();
 
 // Chop a frame into an array of MockWrites.
 // |data| is the frame to chop.
@@ -248,6 +255,8 @@ NextProto NextProtoFromSpdyVersion(SpdyMajorVersion spdy_version);
 // spdy_session.cc.
 SpdyMajorVersion SpdyVersionFromNextProto(NextProto next_proto);
 
+AlternateProtocol AlternateProtocolFromNextProto(NextProto next_proto);
+
 class SpdyTestUtil {
  public:
   explicit SpdyTestUtil(NextProto protocol);
@@ -387,10 +396,6 @@ class SpdyTestUtil {
   // |extra_headers| are the extra header-value pairs, which typically
   // will vary the most between calls.
   // Returns a SpdyFrame.
-  SpdyFrame* ConstructSpdyPush(const char* const extra_headers[],
-                               int extra_header_count,
-                               int stream_id,
-                               int associated_stream_id);
   SpdyFrame* ConstructSpdyPush(const char* const extra_headers[],
                                int extra_header_count,
                                int stream_id,

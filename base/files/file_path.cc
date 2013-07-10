@@ -577,6 +577,14 @@ std::string FilePath::AsUTF8Unsafe() const {
 #endif
 }
 
+string16 FilePath::AsUTF16Unsafe() const {
+#if defined(OS_MACOSX) || defined(OS_CHROMEOS)
+  return UTF8ToUTF16(value());
+#else
+  return WideToUTF16(SysNativeMBToWide(value()));
+#endif
+}
+
 // The *Hack functions are temporary while we fix the remainder of the code.
 // Remember to remove the #includes at the top when you remove these.
 
@@ -591,6 +599,15 @@ FilePath FilePath::FromUTF8Unsafe(const std::string& utf8) {
   return FilePath(utf8);
 #else
   return FilePath(SysWideToNativeMB(UTF8ToWide(utf8)));
+#endif
+}
+
+// static
+FilePath FilePath::FromUTF16Unsafe(const string16& utf16) {
+#if defined(OS_MACOSX) || defined(OS_CHROMEOS)
+  return FilePath(UTF16ToUTF8(utf16));
+#else
+  return FilePath(SysWideToNativeMB(UTF16ToWide(utf16)));
 #endif
 }
 
@@ -609,6 +626,10 @@ std::string FilePath::AsUTF8Unsafe() const {
   return WideToUTF8(value());
 }
 
+string16 FilePath::AsUTF16Unsafe() const {
+  return value();
+}
+
 // static
 FilePath FilePath::FromWStringHack(const std::wstring& wstring) {
   return FilePath(wstring);
@@ -617,6 +638,11 @@ FilePath FilePath::FromWStringHack(const std::wstring& wstring) {
 // static
 FilePath FilePath::FromUTF8Unsafe(const std::string& utf8) {
   return FilePath(UTF8ToWide(utf8));
+}
+
+// static
+FilePath FilePath::FromUTF16Unsafe(const string16& utf16) {
+  return FilePath(utf16);
 }
 #endif
 
@@ -1145,7 +1171,7 @@ int FilePath::HFSFastUnicodeCompare(const StringType& string1,
 }
 
 StringType FilePath::GetHFSDecomposedForm(const StringType& string) {
-  mac::ScopedCFTypeRef<CFStringRef> cfstring(
+  ScopedCFTypeRef<CFStringRef> cfstring(
       CFStringCreateWithBytesNoCopy(
           NULL,
           reinterpret_cast<const UInt8*>(string.c_str()),
@@ -1192,7 +1218,7 @@ int FilePath::CompareIgnoreCase(const StringType& string1,
   // GetHFSDecomposedForm() returns an empty string in an error case.
   if (hfs1.empty() || hfs2.empty()) {
     NOTREACHED();
-    mac::ScopedCFTypeRef<CFStringRef> cfstring1(
+    ScopedCFTypeRef<CFStringRef> cfstring1(
         CFStringCreateWithBytesNoCopy(
             NULL,
             reinterpret_cast<const UInt8*>(string1.c_str()),
@@ -1200,7 +1226,7 @@ int FilePath::CompareIgnoreCase(const StringType& string1,
             kCFStringEncodingUTF8,
             false,
             kCFAllocatorNull));
-    mac::ScopedCFTypeRef<CFStringRef> cfstring2(
+    ScopedCFTypeRef<CFStringRef> cfstring2(
         CFStringCreateWithBytesNoCopy(
             NULL,
             reinterpret_cast<const UInt8*>(string2.c_str()),

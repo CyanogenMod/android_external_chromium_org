@@ -14,8 +14,8 @@
 # We use the C++ compiler for everything and then use the -Wl,-as-needed flag
 # in the linker to drop libc++ unless it's actually needed.
 #
-HOST_CC ?= gcc
-HOST_CXX ?= g++
+HOST_CC ?= $(NACL_COMPILER_PREFIX) gcc
+HOST_CXX ?= $(NACL_COMPILER_PREFIX) g++
 HOST_LINK ?= g++
 HOST_LIB ?= ar
 HOST_STRIP ?= strip
@@ -41,15 +41,19 @@ define C_COMPILER_RULE
 -include $(call SRC_TO_DEP,$(1))
 $(call SRC_TO_OBJ,$(1)): $(1) $(TOP_MAKE) | $(dir $(call SRC_TO_OBJ,$(1)))dir.stamp
 	$(call LOG,CC  ,$$@,$(HOST_CC) -o $$@ -c $$< -fPIC $(POSIX_FLAGS) $(2) $(LINUX_FLAGS))
+	@$(FIXDEPS) $(call SRC_TO_DEP,$(1))
 endef
 
 define CXX_COMPILER_RULE
 -include $(call SRC_TO_DEP,$(1))
 $(call SRC_TO_OBJ,$(1)): $(1) $(TOP_MAKE) | $(dir $(call SRC_TO_OBJ,$(1)))dir.stamp
 	$(call LOG,CXX ,$$@,$(HOST_CXX) -o $$@ -c $$< -fPIC $(POSIX_FLAGS) $(2) $(LINUX_FLAGS))
+	@$(FIXDEPS) $(call SRC_TO_DEP,$(1))
 endef
 
-
+#
+# Compile Macro
+#
 # $1 = Source Name
 # $2 = POSIX Compile Flags
 # $3 = VC Flags (unused)

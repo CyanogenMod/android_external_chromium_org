@@ -205,9 +205,10 @@ class ChromiumSequentialFile: public SequentialFile {
 
   virtual Status Skip(uint64_t n) {
     if (fseek(file_, n, SEEK_CUR)) {
+      int saved_errno = errno;
       uma_logger_->RecordErrorAt(kSequentialFileSkip);
       return MakeIOError(
-          filename_, strerror(errno), kSequentialFileSkip, errno);
+          filename_, strerror(saved_errno), kSequentialFileSkip, saved_errno);
     }
     return Status::OK();
   }
@@ -471,8 +472,10 @@ Status ChromiumWritableFile::Append(const Slice& data) {
 
   size_t r = fwrite_wrapper(data.data(), 1, data.size(), file_);
   if (r != data.size()) {
-    uma_logger_->RecordOSError(kWritableFileAppend, errno);
-    return MakeIOError(filename_, strerror(errno), kWritableFileAppend, errno);
+    int saved_errno = errno;
+    uma_logger_->RecordOSError(kWritableFileAppend, saved_errno);
+    return MakeIOError(
+        filename_, strerror(saved_errno), kWritableFileAppend, saved_errno);
   }
   return Status::OK();
 }
@@ -583,8 +586,10 @@ Status ChromiumEnv::NewWritableFile(const std::string& fname,
   *result = NULL;
   FILE* f = fopen_internal(fname.c_str(), "wb");
   if (f == NULL) {
+    int saved_errno = errno;
     RecordErrorAt(kNewWritableFile);
-    return MakeIOError(fname, strerror(errno), kNewWritableFile, errno);
+    return MakeIOError(
+        fname, strerror(saved_errno), kNewWritableFile, saved_errno);
   } else {
     *result = new ChromiumWritableFile(fname, f, this, this);
     return Status::OK();
@@ -614,7 +619,7 @@ Status ChromiumEnv::GetChildren(const std::string& dir,
 Status ChromiumEnv::DeleteFile(const std::string& fname) {
   Status result;
   // TODO(jorlow): Should we assert this is a file?
-  if (!::file_util::Delete(CreateFilePath(fname), false)) {
+  if (!::base::Delete(CreateFilePath(fname), false)) {
     result = MakeIOError(fname, "Could not delete file.", kDeleteFile);
     RecordErrorAt(kDeleteFile);
   }
@@ -629,15 +634,15 @@ Status ChromiumEnv::CreateDir(const std::string& name) {
     if (::file_util::CreateDirectoryAndGetError(CreateFilePath(name), &error))
       return result;
   } while (retrier.ShouldKeepTrying(error));
-  result = MakeIOError(name, "Could not create directory.", kCreateDir);
-  RecordErrorAt(kCreateDir);
+  result = MakeIOError(name, "Could not create directory.", kCreateDir, error);
+  RecordOSError(kCreateDir, error);
   return result;
 }
 
 Status ChromiumEnv::DeleteDir(const std::string& name) {
   Status result;
   // TODO(jorlow): Should we assert this is a directory?
-  if (!::file_util::Delete(CreateFilePath(name), false)) {
+  if (!::base::Delete(CreateFilePath(name), false)) {
     result = MakeIOError(name, "Could not delete directory.", kDeleteDir);
     RecordErrorAt(kDeleteDir);
   }
@@ -667,10 +672,8 @@ Status ChromiumEnv::RenameFile(const std::string& src, const std::string& dst) {
   Retrier retrier(kRenameFile, this);
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   do {
-    if (::file_util::ReplaceFileAndGetError(
-            src_file_path, destination, &error)) {
+    if (base::ReplaceFile(src_file_path, destination, &error))
       return result;
-    }
   } while (retrier.ShouldKeepTrying(error));
 
   DCHECK(error != base::PLATFORM_FILE_OK);

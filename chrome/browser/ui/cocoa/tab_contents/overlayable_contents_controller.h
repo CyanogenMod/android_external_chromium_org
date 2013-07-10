@@ -7,12 +7,11 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/common/instant_types.h"
 
 class Browser;
-@class BrowserWindowController;
 class InstantOverlayControllerMac;
 
 namespace content {
@@ -33,7 +32,7 @@ class WebContents;
 @interface OverlayableContentsController : NSViewController {
  @private
   // Container view for the "active" contents.
-  scoped_nsobject<NSView> activeContainer_;
+  base::scoped_nsobject<NSView> activeContainer_;
 
   // The overlay WebContents. Will be NULL if no overlay is currently showing.
   content::WebContents* overlayContents_;  // weak
@@ -44,41 +43,12 @@ class WebContents;
   // The desired height of the overlay and units.
   CGFloat overlayHeight_;
   InstantSizeUnits overlayHeightUnits_;
-
-  // If true then a shadow is drawn below the overlay. This is used to make the
-  // overlay "float" over the tab's web contents.
-  BOOL drawDropShadow_;
-
-  // View responsible for drawing a drop shadow.
-  scoped_nsobject<NSView> dropShadowView_;
-
-  // View responsible for drawing a separator at the top. The separator is
-  // only visible when the overlay is positioned right next to the omnibox.
-  scoped_nsobject<NSView> topSeparatorView_;
-
-  BrowserWindowController* windowController_;
-
-  // The vertical offset between the top of the view and the active container.
-  // This is used to push the active container below the bookmark bar. Normally
-  // this is set to the height of the bookmark bar so that the bookmark bar is
-  // not obscured.
-  CGFloat activeContainerOffset_;
-
-  // The vertical offset between the top of the view and the overlay. This is
-  // used in presentation mode to push the overlay below the floating toolbar
-  // view.
-  CGFloat overlayContentsOffset_;
 }
 
 @property(readonly, nonatomic) NSView* activeContainer;
-@property(readonly, nonatomic) NSView* dropShadowView;
-@property(readonly, nonatomic) BOOL drawDropShadow;
-@property(assign, nonatomic) CGFloat activeContainerOffset;
-@property(assign, nonatomic) CGFloat overlayContentsOffset;
 
 // Initialization.
-- (id)initWithBrowser:(Browser*)browser
-     windowController:(BrowserWindowController*)windowController;
+- (id)initWithBrowser:(Browser*)browser;
 
 // Sets the current overlay and installs its WebContentsView into the view
 // hierarchy. Hides the active view. If |overlay| is NULL then closes the
@@ -92,12 +62,9 @@ class WebContents;
 // if it's the overlay being activated (and adjust internal state accordingly).
 - (void)onActivateTabWithContents:(content::WebContents*)contents;
 
-// Returns YES if the overlay contents is currently showing.
-- (BOOL)isShowingOverlay;
-
 - (InstantOverlayControllerMac*)instantOverlayController;
 
-- (void)activeContentsCompositingIOSurfaceCreated;
+- (BOOL)isShowingOverlay;
 
 @end
 

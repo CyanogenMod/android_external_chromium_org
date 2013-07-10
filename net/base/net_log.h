@@ -14,7 +14,7 @@
 #include "base/observer_list.h"
 #include "base/strings/string16.h"
 #include "base/synchronization/lock.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/net_export.h"
 
 namespace base {
@@ -33,7 +33,9 @@ namespace net {
 // is usually accessed through a BoundNetLog, which will always pass in a
 // specific source ID.
 //
-// All NetLog methods must be thread-safe.
+// All methods are thread safe, with the exception that no NetLog or
+// NetLog::ThreadSafeObserver functions may be called by an observer's
+// OnAddEntry() method.  Doing so will result in a deadlock.
 //
 // For a broader introduction see the design document:
 // https://sites.google.com/a/chromium.org/dev/developers/design-documents/network-stack/netlog

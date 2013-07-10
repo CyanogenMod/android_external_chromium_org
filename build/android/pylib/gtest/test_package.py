@@ -144,6 +144,7 @@ class TestPackage(object):
     # to output the CRASHED marker when a crash happens.
     re_crash = re.compile('\[ CRASHED      \](.*)\r\n')
 
+    log = ''
     try:
       while True:
         full_test_name = None
@@ -179,13 +180,15 @@ class TestPackage(object):
                                              self.device)
       if full_test_name:
         results.AddResult(base_test_result.BaseTestResult(
-            full_test_name, base_test_result.ResultType.CRASH, log=log))
+            full_test_name, base_test_result.ResultType.CRASH,
+            log=p.before.replace('\r', '')))
     except pexpect.TIMEOUT:
       logging.error('Test terminated after %d second timeout.',
                     self.timeout)
       if full_test_name:
         results.AddResult(base_test_result.BaseTestResult(
-            full_test_name, base_test_result.ResultType.TIMEOUT, log=log))
+            full_test_name, base_test_result.ResultType.TIMEOUT,
+            log=p.before.replace('\r', '')))
     finally:
       p.close()
 

@@ -9,11 +9,10 @@
 #include "base/logging.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
-#include "base/memory/scoped_nsobject.h"
 #include "grit/webkit_chromium_resources.h"
 #include "skia/ext/skia_utils_mac.h"
-#include "third_party/WebKit/public/web/WebCursorInfo.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
+#include "third_party/WebKit/public/web/WebCursorInfo.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/point_conversions.h"
 #include "ui/gfx/size_conversions.h"
@@ -158,18 +157,17 @@ CGImageRef CreateCGImageFromCustomData(const std::vector<char>& custom_data,
     data = NULL;
   }
 
-  base::mac::ScopedCFTypeRef<CGColorSpaceRef> cg_color(
+  base::ScopedCFTypeRef<CGColorSpaceRef> cg_color(
       CGColorSpaceCreateDeviceRGB());
   // The settings here match SetCustomData() below; keep in sync.
-  base::mac::ScopedCFTypeRef<CGContextRef> context(
-      CGBitmapContextCreate(data,
-                            size.width(),
-                            size.height(),
-                            8,
-                            size.width()*4,
-                            cg_color.get(),
-                            kCGImageAlphaPremultipliedLast |
-                            kCGBitmapByteOrder32Big));
+  base::ScopedCFTypeRef<CGContextRef> context(CGBitmapContextCreate(
+      data,
+      size.width(),
+      size.height(),
+      8,
+      size.width() * 4,
+      cg_color.get(),
+      kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big));
   return CGBitmapContextCreateImage(context.get());
 }
 

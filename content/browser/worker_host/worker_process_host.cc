@@ -23,7 +23,7 @@
 #include "content/browser/devtools/worker_devtools_manager.h"
 #include "content/browser/devtools/worker_devtools_message_filter.h"
 #include "content/browser/fileapi/fileapi_message_filter.h"
-#include "content/browser/in_process_webkit/indexed_db_dispatcher_host.h"
+#include "content/browser/indexed_db/indexed_db_dispatcher_host.h"
 #include "content/browser/mime_registry_message_filter.h"
 #include "content/browser/renderer_host/database_message_filter.h"
 #include "content/browser/renderer_host/file_utilities_message_filter.h"
@@ -272,6 +272,7 @@ void WorkerProcessHost::CreateMessageFilters(int render_process_id) {
           new URLRequestContextSelector(url_request_context,
                                         media_url_request_context),
           resource_context_);
+  socket_stream_dispatcher_host_ = socket_stream_dispatcher_host;
   process_->GetHost()->AddFilter(socket_stream_dispatcher_host);
   process_->GetHost()->AddFilter(
       new WorkerDevToolsMessageFilter(process_->GetData().id));
@@ -467,6 +468,19 @@ void WorkerProcessHost::RelayMessage(
   }
 }
 
+void WorkerProcessHost::ShutdownSocketStreamDispatcherHostIfNecessary() {
+  if (!instances_.size() && socket_stream_dispatcher_host_.get()) {
+    // We can assume that this object is going to delete, because
+    // currently a WorkerInstance will never be added to a WorkerProcessHost
+    // once it is initialized.
+
+    // SocketStreamDispatcherHost should be notified now that the worker
+    // process will shutdown soon.
+    socket_stream_dispatcher_host_->Shutdown();
+    socket_stream_dispatcher_host_ = NULL;
+  }
+}
+
 void WorkerProcessHost::FilterShutdown(WorkerMessageFilter* filter) {
   for (Instances::iterator i = instances_.begin(); i != instances_.end();) {
     bool shutdown = false;
@@ -483,6 +497,7 @@ void WorkerProcessHost::FilterShutdown(WorkerMessageFilter* filter) {
       ++i;
     }
   }
+  ShutdownSocketStreamDispatcherHostIfNecessary();
 }
 
 bool WorkerProcessHost::CanShutdown() {
@@ -536,6 +551,7 @@ void WorkerProcessHost::DocumentDetached(WorkerMessageFilter* filter,
       ++i;
     }
   }
+  ShutdownSocketStreamDispatcherHostIfNecessary();
 }
 
 void WorkerProcessHost::TerminateWorker(int worker_route_id) {

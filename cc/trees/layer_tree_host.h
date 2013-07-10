@@ -14,7 +14,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "cc/animation/animation_events.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/scoped_ptr_vector.h"
@@ -74,7 +74,6 @@ struct CC_EXPORT RendererCapabilities {
   unsigned best_texture_format;
   bool using_partial_swap;
   bool using_set_visibility;
-  bool using_gpu_memory_manager;
   bool using_egl_image;
   bool allow_partial_texture_updates;
   bool using_offscreen_context3d;
@@ -85,9 +84,10 @@ struct CC_EXPORT RendererCapabilities {
 
 class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
  public:
-  static scoped_ptr<LayerTreeHost> Create(LayerTreeHostClient* client,
-                                          const LayerTreeSettings& settings,
-                                          scoped_ptr<Thread> impl_thread);
+  static scoped_ptr<LayerTreeHost> Create(
+      LayerTreeHostClient* client,
+      const LayerTreeSettings& settings,
+      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
   virtual ~LayerTreeHost();
 
   void SetLayerTreeHostClientReady();
@@ -255,13 +255,9 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
 
   bool in_paint_layer_contents() const { return in_paint_layer_contents_; }
 
-  void IncrementLCDTextMetrics(
-      bool update_total_num_cc_layers_can_use_lcd_text,
-      bool update_total_num_cc_layers_will_use_lcd_text);
-
  protected:
   LayerTreeHost(LayerTreeHostClient* client, const LayerTreeSettings& settings);
-  bool Initialize(scoped_ptr<Thread> impl_thread);
+  bool Initialize(scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
   bool InitializeForTesting(scoped_ptr<Proxy> proxy_for_testing);
 
  private:
@@ -270,8 +266,7 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   bool PaintLayerContents(const LayerList& render_surface_layer_list,
                           ResourceUpdateQueue* quue);
   bool PaintMasksForRenderSurface(Layer* render_surface_layer,
-                                  ResourceUpdateQueue* queue,
-                                  RenderingStats* stats);
+                                  ResourceUpdateQueue* queue);
   void UpdateLayers(Layer* root_layer, ResourceUpdateQueue* queue);
   void UpdateHudLayer();
   void TriggerPrepaint();
@@ -285,6 +280,8 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   size_t CalculateMemoryForRenderSurfaces(const LayerList& update_list);
 
   bool AnimateLayersRecursive(Layer* current, base::TimeTicks time);
+
+  void CalculateLCDTextMetricsCallback(Layer* layer);
 
   bool animating_;
   bool needs_full_tree_sync_;

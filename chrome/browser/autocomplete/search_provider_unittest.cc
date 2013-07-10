@@ -4,12 +4,13 @@
 
 #include "chrome/browser/autocomplete/search_provider.h"
 
+#include "base/command_line.h"
 #include "base/metrics/field_trial.h"
 #include "base/prefs/pref_service.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
@@ -25,7 +26,7 @@
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "chrome/common/instant_types.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/metrics/entropy_provider.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
@@ -35,7 +36,8 @@
 #include "net/url_request/url_request_status.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using content::BrowserThread;
+
+// SearchProviderTest ---------------------------------------------------------
 
 // The following environment is configured for these tests:
 // . The TemplateURL default_t_url_ is set as the default provider.
@@ -49,26 +51,6 @@ using content::BrowserThread;
 class SearchProviderTest : public testing::Test,
                            public AutocompleteProviderListener {
  public:
-  SearchProviderTest()
-      : default_t_url_(NULL),
-        term1_(UTF8ToUTF16("term1")),
-        keyword_t_url_(NULL),
-        keyword_term_(UTF8ToUTF16("keyword")),
-        ui_thread_(BrowserThread::UI, &message_loop_),
-        io_thread_(BrowserThread::IO),
-        quit_when_done_(false) {
-    io_thread_.Start();
-  }
-
-  static void SetUpTestCase();
-
-  static void TearDownTestCase();
-
-  // See description above class for what this registers.
-  virtual void SetUp();
-
-  virtual void TearDown();
-
   struct ResultInfo {
     ResultInfo() : result_type(AutocompleteMatchType::NUM_TYPES) {
     }
@@ -79,15 +61,35 @@ class SearchProviderTest : public testing::Test,
         result_type(result_type),
         fill_into_edit(fill_into_edit) {
     }
+
     const GURL gurl;
     const AutocompleteMatch::Type result_type;
     const string16 fill_into_edit;
   };
+
   struct TestData {
     const string16 input;
     const size_t num_results;
     const ResultInfo output[3];
   };
+
+  SearchProviderTest()
+      : default_t_url_(NULL),
+        term1_(ASCIIToUTF16("term1")),
+        keyword_t_url_(NULL),
+        keyword_term_(ASCIIToUTF16("keyword")),
+        ui_thread_(content::BrowserThread::UI, &message_loop_),
+        io_thread_(content::BrowserThread::IO),
+        quit_when_done_(false) {
+    io_thread_.Start();
+  }
+
+  static void SetUpTestCase();
+  static void TearDownTestCase();
+
+  // See description above class for what this registers.
+  virtual void SetUp() OVERRIDE;
+  virtual void TearDown() OVERRIDE;
 
   void RunTest(TestData* cases, int num_cases, bool prefer_keyword);
 
@@ -166,8 +168,6 @@ class SearchProviderTest : public testing::Test,
 
 // static
 base::FieldTrialList* SearchProviderTest::field_trial_list_ = NULL;
-
-// static
 const std::string SearchProviderTest::kNotApplicable = "Not Applicable";
 
 // static
@@ -237,6 +237,41 @@ void SearchProviderTest::SetUp() {
   provider_->kMinimumTimeBetweenSuggestQueriesMs = 0;
 }
 
+void SearchProviderTest::TearDown() {
+  message_loop_.RunUntilIdle();
+
+  // Shutdown the provider before the profile.
+  provider_ = NULL;
+}
+
+void SearchProviderTest::RunTest(TestData* cases,
+                                 int num_cases,
+                                 bool prefer_keyword) {
+  ACMatches matches;
+  for (int i = 0; i < num_cases; ++i) {
+    AutocompleteInput input(cases[i].input, string16::npos, string16(), GURL(),
+                            false, prefer_keyword, true,
+                            AutocompleteInput::ALL_MATCHES);
+    provider_->Start(input, false);
+    matches = provider_->matches();
+    string16 diagnostic_details = ASCIIToUTF16("Input was: ") + cases[i].input +
+        ASCIIToUTF16("; prefer_keyword was: ") +
+        (prefer_keyword ? ASCIIToUTF16("true") : ASCIIToUTF16("false"));
+    EXPECT_EQ(cases[i].num_results, matches.size()) << diagnostic_details;
+    if (matches.size() == cases[i].num_results) {
+      for (size_t j = 0; j < cases[i].num_results; ++j) {
+        EXPECT_EQ(cases[i].output[j].gurl, matches[j].destination_url) <<
+            diagnostic_details;
+        EXPECT_EQ(cases[i].output[j].result_type, matches[j].type) <<
+            diagnostic_details;
+        EXPECT_EQ(cases[i].output[j].fill_into_edit,
+                  matches[j].fill_into_edit) <<
+            diagnostic_details;
+      }
+    }
+  }
+}
+
 void SearchProviderTest::OnProviderUpdate(bool updated_matches) {
   if (quit_when_done_ && provider_->done()) {
     quit_when_done_ = false;
@@ -286,7 +321,6 @@ void SearchProviderTest::QueryForInputAndSetWYTMatch(
   QueryForInput(text, false, false);
   profile_.BlockUntilHistoryProcessesPendingRequests();
   ASSERT_NO_FATAL_FAILURE(FinishDefaultSuggestQuery());
-  EXPECT_NE(chrome::IsInstantExtendedAPIEnabled(), provider_->done());
   if (!wyt_match)
     return;
   ASSERT_GE(provider_->matches().size(), 1u);
@@ -294,41 +328,6 @@ void SearchProviderTest::QueryForInputAndSetWYTMatch(
       default_t_url_->url_ref().ReplaceSearchTerms(
           TemplateURLRef::SearchTermsArgs(text))),
       wyt_match));
-}
-
-void SearchProviderTest::TearDown() {
-  message_loop_.RunUntilIdle();
-
-  // Shutdown the provider before the profile.
-  provider_ = NULL;
-}
-
-void SearchProviderTest::RunTest(TestData* cases,
-                                 int num_cases,
-                                 bool prefer_keyword) {
-  ACMatches matches;
-  for (int i = 0; i < num_cases; ++i) {
-    AutocompleteInput input(cases[i].input, string16::npos, string16(), GURL(),
-                            false, prefer_keyword, true,
-                            AutocompleteInput::ALL_MATCHES);
-    provider_->Start(input, false);
-    matches = provider_->matches();
-    string16 diagnostic_details = ASCIIToUTF16("Input was: ") + cases[i].input +
-        ASCIIToUTF16("; prefer_keyword was: ") +
-        (prefer_keyword ? ASCIIToUTF16("true") : ASCIIToUTF16("false"));
-    EXPECT_EQ(cases[i].num_results, matches.size()) << diagnostic_details;
-    if (matches.size() == cases[i].num_results) {
-      for (size_t j = 0; j < cases[i].num_results; ++j) {
-        EXPECT_EQ(cases[i].output[j].gurl, matches[j].destination_url) <<
-            diagnostic_details;
-        EXPECT_EQ(cases[i].output[j].result_type, matches[j].type) <<
-            diagnostic_details;
-        EXPECT_EQ(cases[i].output[j].fill_into_edit,
-                  matches[j].fill_into_edit) <<
-            diagnostic_details;
-      }
-    }
-  }
 }
 
 GURL SearchProviderTest::AddSearchToHistory(TemplateURL* t_url,
@@ -382,7 +381,8 @@ void SearchProviderTest::FinishDefaultSuggestQuery() {
   default_fetcher->delegate()->OnURLFetchComplete(default_fetcher);
 }
 
-// Tests -----------------------------------------------------------------------
+
+// Actual Tests ---------------------------------------------------------------
 
 // Make sure we query history for the default provider and a URLFetcher is
 // created for the default provider suggest results.
@@ -438,7 +438,7 @@ TEST_F(SearchProviderTest, HonorPreventInlineAutocomplete) {
 // is queried as well as URLFetchers getting created.
 TEST_F(SearchProviderTest, QueryKeywordProvider) {
   string16 term = keyword_term_.substr(0, keyword_term_.length() - 1);
-  QueryForInput(keyword_t_url_->keyword() + UTF8ToUTF16(" ") + term,
+  QueryForInput(keyword_t_url_->keyword() + ASCIIToUTF16(" ") + term,
                 false,
                 false);
 
@@ -508,191 +508,6 @@ TEST_F(SearchProviderTest, DontSendPrivateDataToSuggest) {
     // Run till the history results complete.
     RunTillProviderDone();
   }
-}
-
-// Make sure FinalizeInstantQuery works.
-TEST_F(SearchProviderTest, FinalizeInstantQuery) {
-  chrome::EnableInstantExtendedAPIForTesting();
-
-  ASSERT_NO_FATAL_FAILURE(QueryForInputAndSetWYTMatch(ASCIIToUTF16("foo"),
-                                                      NULL));
-
-  // Tell the provider Instant is done.
-  provider_->FinalizeInstantQuery(ASCIIToUTF16("foo"),
-                                  InstantSuggestion(ASCIIToUTF16("bar"),
-                                                    INSTANT_COMPLETE_NOW,
-                                                    INSTANT_SUGGESTION_SEARCH,
-                                                    string16(),
-                                                    kNoMatchIndex));
-
-  // The provider should now be done.
-  EXPECT_TRUE(provider_->done());
-
-  // There should be two matches, one for what you typed, the other for
-  // 'foobar'.
-  EXPECT_EQ(2u, provider_->matches().size());
-  GURL instant_url(default_t_url_->url_ref().ReplaceSearchTerms(
-      TemplateURLRef::SearchTermsArgs(ASCIIToUTF16("foobar"))));
-  AutocompleteMatch instant_match;
-  EXPECT_TRUE(FindMatchWithDestination(instant_url, &instant_match));
-
-  // And the 'foobar' match should not have a description, it'll be set later.
-  EXPECT_TRUE(instant_match.description.empty());
-
-  // Make sure the what you typed match has no description.
-  AutocompleteMatch wyt_match;
-  EXPECT_TRUE(FindMatchWithDestination(
-      GURL(default_t_url_->url_ref().ReplaceSearchTerms(
-          TemplateURLRef::SearchTermsArgs(ASCIIToUTF16("foo")))),
-          &wyt_match));
-  EXPECT_TRUE(wyt_match.description.empty());
-
-  // Instant search suggestions are never inline autocompleted, so they should
-  // score less than the WYT match.
-  EXPECT_LT(instant_match.relevance, wyt_match.relevance);
-}
-
-// Make sure FinalizeInstantQuery works with URL suggestions.
-TEST_F(SearchProviderTest, FinalizeInstantURL) {
-  chrome::EnableInstantExtendedAPIForTesting();
-
-  ASSERT_NO_FATAL_FAILURE(QueryForInputAndSetWYTMatch(ASCIIToUTF16("ex"),
-                                                      NULL));
-
-  // Tell the provider Instant is done.
-  provider_->FinalizeInstantQuery(ASCIIToUTF16("ex"),
-                                  InstantSuggestion(
-                                      ASCIIToUTF16("http://example.com/"),
-                                      INSTANT_COMPLETE_NOW,
-                                      INSTANT_SUGGESTION_URL,
-                                      string16(),
-                                      kNoMatchIndex));
-
-  // The provider should now be done.
-  EXPECT_TRUE(provider_->done());
-
-  // There should be two matches, one for what you typed, the other for
-  // "http://example.com/".
-  EXPECT_EQ(2u, provider_->matches().size());
-  GURL instant_url("http://example.com");
-  AutocompleteMatch instant_match;
-  EXPECT_TRUE(FindMatchWithDestination(instant_url, &instant_match));
-
-  // The Instant match should not have a description, it'll be set later.
-  EXPECT_TRUE(instant_match.description.empty());
-
-  // Make sure the what you typed match has no description.
-  AutocompleteMatch wyt_match;
-  EXPECT_TRUE(FindMatchWithDestination(
-      GURL(default_t_url_->url_ref().ReplaceSearchTerms(
-          TemplateURLRef::SearchTermsArgs(ASCIIToUTF16("ex")))),
-          &wyt_match));
-  EXPECT_TRUE(wyt_match.description.empty());
-
-  // The Instant URL should be more relevant.
-  EXPECT_GT(instant_match.relevance, wyt_match.relevance);
-}
-
-// An Instant URL suggestion should behave the same way whether the input text
-// is classified as UNKNOWN or as an URL. Otherwise if the user types
-// "example.co" url-what-you-typed will displace the Instant suggestion for
-// "example.com".
-TEST_F(SearchProviderTest, FinalizeInstantURLWithURLText) {
-  chrome::EnableInstantExtendedAPIForTesting();
-
-  ASSERT_NO_FATAL_FAILURE(QueryForInputAndSetWYTMatch(
-      ASCIIToUTF16("example.co"), NULL));
-
-  // Tell the provider Instant is done.
-  provider_->FinalizeInstantQuery(ASCIIToUTF16("example.co"),
-                                  InstantSuggestion(
-                                      ASCIIToUTF16("http://example.com/"),
-                                      INSTANT_COMPLETE_NOW,
-                                      INSTANT_SUGGESTION_URL,
-                                      string16(),
-                                      kNoMatchIndex));
-
-  // The provider should now be done.
-  EXPECT_TRUE(provider_->done());
-
-  // There should be two matches, one for what you typed, the other for
-  // "http://example.com/".
-  EXPECT_EQ(2u, provider_->matches().size());
-  GURL instant_url("http://example.com");
-  AutocompleteMatch instant_match;
-  EXPECT_TRUE(FindMatchWithDestination(instant_url, &instant_match));
-
-  // The Instant match should not have a description, it'll be set later.
-  EXPECT_TRUE(instant_match.description.empty());
-
-  // The Instant URL should be more relevant than a URL_WHAT_YOU_TYPED match.
-  EXPECT_GT(instant_match.relevance,
-            HistoryURLProvider::kScoreForWhatYouTypedResult);
-}
-
-// Make sure that if FinalizeInstantQuery is invoked before suggest results
-// return, the suggest text from FinalizeInstantQuery is remembered.
-TEST_F(SearchProviderTest, RememberInstantQuery) {
-  chrome::EnableInstantExtendedAPIForTesting();
-
-  QueryForInput(ASCIIToUTF16("foo"), false, false);
-
-  // Finalize the Instant query immediately.
-  provider_->FinalizeInstantQuery(ASCIIToUTF16("foo"),
-                                  InstantSuggestion(ASCIIToUTF16("bar"),
-                                                    INSTANT_COMPLETE_NOW,
-                                                    INSTANT_SUGGESTION_SEARCH,
-                                                    string16(),
-                                                    kNoMatchIndex));
-
-  // There should be two matches, one for what you typed, the other for
-  // 'foobar'.
-  EXPECT_EQ(2u, provider_->matches().size());
-  GURL instant_url(default_t_url_->url_ref().ReplaceSearchTerms(
-      TemplateURLRef::SearchTermsArgs(ASCIIToUTF16("foobar"))));
-  AutocompleteMatch instant_match;
-  EXPECT_TRUE(FindMatchWithDestination(instant_url, &instant_match));
-
-  // Wait until history and the suggest query complete.
-  profile_.BlockUntilHistoryProcessesPendingRequests();
-  ASSERT_NO_FATAL_FAILURE(FinishDefaultSuggestQuery());
-
-  // Provider should be done.
-  EXPECT_TRUE(provider_->done());
-
-  // There should be two matches, one for what you typed, the other for
-  // 'foobar'.
-  EXPECT_EQ(2u, provider_->matches().size());
-  EXPECT_TRUE(FindMatchWithDestination(instant_url, &instant_match));
-
-  // And the 'foobar' match should not have a description, it'll be set later.
-  EXPECT_TRUE(instant_match.description.empty());
-}
-
-// Make sure that if trailing whitespace is added to the text supplied to
-// AutocompleteInput the default suggest text is cleared.
-TEST_F(SearchProviderTest, DifferingText) {
-  chrome::EnableInstantExtendedAPIForTesting();
-
-  ASSERT_NO_FATAL_FAILURE(QueryForInputAndSetWYTMatch(ASCIIToUTF16("foo"),
-                                                      NULL));
-
-  // Finalize the Instant query immediately.
-  provider_->FinalizeInstantQuery(ASCIIToUTF16("foo"),
-                                  InstantSuggestion(ASCIIToUTF16("bar"),
-                                                    INSTANT_COMPLETE_NOW,
-                                                    INSTANT_SUGGESTION_SEARCH,
-                                                    string16(),
-                                                    kNoMatchIndex));
-
-  // Query with the same input text, but trailing whitespace.
-  AutocompleteMatch instant_match;
-  ASSERT_NO_FATAL_FAILURE(QueryForInputAndSetWYTMatch(ASCIIToUTF16("foo "),
-                                                      &instant_match));
-
-  // There should only one match, for what you typed.
-  EXPECT_EQ(1u, provider_->matches().size());
-  EXPECT_FALSE(instant_match.destination_url.is_empty());
 }
 
 TEST_F(SearchProviderTest, DontAutocompleteURLLikeTerms) {
@@ -981,6 +796,38 @@ TEST_F(SearchProviderTest, KeywordVerbatim) {
   RunTest(cases, arraysize(cases), true);
 }
 
+// Ensures command-line flags are reflected in the URLs the search provider
+// generates.
+TEST_F(SearchProviderTest, CommandLineOverrides) {
+  TemplateURLService* turl_model =
+      TemplateURLServiceFactory::GetForProfile(&profile_);
+
+  TemplateURLData data;
+  data.short_name = ASCIIToUTF16("default");
+  data.SetKeyword(data.short_name);
+  data.SetURL("{google:baseURL}{searchTerms}");
+  default_t_url_ = new TemplateURL(&profile_, data);
+  turl_model->Add(default_t_url_);
+  turl_model->SetDefaultSearchProvider(default_t_url_);
+
+  CommandLine::ForCurrentProcess()->AppendSwitchASCII(switches::kGoogleBaseURL,
+                                                      "http://www.bar.com/");
+  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+      switches::kExtraSearchQueryParams, "a=b");
+
+  TestData cases[] = {
+    { ASCIIToUTF16("k a"), 2,
+      { ResultInfo(GURL("http://keyword/a"),
+                   AutocompleteMatchType::SEARCH_OTHER_ENGINE,
+                   ASCIIToUTF16("k a")),
+        ResultInfo(GURL("http://www.bar.com/k%20a?a=b"),
+                   AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED,
+                   ASCIIToUTF16("k a")) } },
+  };
+
+  RunTest(cases, arraysize(cases), false);
+}
+
 // Verifies Navsuggest results don't set a TemplateURL, which Instant relies on.
 // Also verifies that just the *first* navigational result is listed as a match
 // if suggested relevance scores were not sent.
@@ -1201,9 +1048,10 @@ TEST_F(SearchProviderTest, DefaultFetcherSuggestRelevance) {
     fetcher->delegate()->OnURLFetchComplete(fetcher);
     RunTillProviderDone();
 
-   const std::string description = "for input with json=" + cases[i].json;
+    const std::string description = "for input with json=" + cases[i].json;
     const ACMatches& matches = provider_->matches();
     // The top match must inline and score as highly as calculated verbatim.
+    ASSERT_FALSE(matches.empty());
     EXPECT_NE(string16::npos, matches[0].inline_autocomplete_offset) <<
         description;
     EXPECT_GE(matches[0].relevance, 1300) << description;
@@ -1567,21 +1415,20 @@ TEST_F(SearchProviderTest, KeywordFetcherSuggestRelevance) {
         { "k a", false },
         { kNotApplicable, false } } },
     // Check when there is neither verbatim nor a query suggestion that,
-    // because we can demote navsuggestions below a query suggestion,
+    // because we can't demote navsuggestions below a query suggestion,
     // we abandon suggested relevance scores entirely.  One consequence is
     // that this means we restore the keyword verbatim match.  Note
     // that in this case of abandoning suggested relevance scores, we still
-    // keep the navsuggestions in order by their original scores (just
-    // not at their original scores), and continue to allow multiple
-    // navsuggestions to appear.
+    // keep the navsuggestions in the same order, but we revert to only allowing
+    // one navigation to appear because the scores are completely local.
     { "[\"a\",[\"http://a1.com\", \"http://a2.com\"],[],[],"
        "{\"google:suggesttype\":[\"NAVIGATION\", \"NAVIGATION\"],"
         "\"google:verbatimrelevance\":0,"
         "\"google:suggestrelevance\":[9998, 9999]}]",
       { { "a", true },
         { "a2.com", false },
-        { "a1.com", false },
         { "k a", false },
+        { kNotApplicable, false },
         { kNotApplicable, false } } },
     { "[\"a\",[\"http://a1.com\", \"http://a2.com\"],[],[],"
        "{\"google:suggesttype\":[\"NAVIGATION\", \"NAVIGATION\"],"
@@ -1589,8 +1436,8 @@ TEST_F(SearchProviderTest, KeywordFetcherSuggestRelevance) {
         "\"google:suggestrelevance\":[9999, 9998]}]",
       { { "a", true },
         { "a1.com", false },
-        { "a2.com", false },
         { "k a", false },
+        { kNotApplicable, false },
         { kNotApplicable, false } } },
     // More checks that everything works when it's not necessary to demote.
     { "[\"a\",[\"http://a1.com\", \"http://a2.com\", \"a3\"],[],[],"
@@ -1637,6 +1484,7 @@ TEST_F(SearchProviderTest, KeywordFetcherSuggestRelevance) {
     const std::string description = "for input with json=" + cases[i].json;
     const ACMatches& matches = provider_->matches();
     // The top match must inline and score as highly as calculated verbatim.
+    ASSERT_FALSE(matches.empty());
     EXPECT_NE(string16::npos, matches[0].inline_autocomplete_offset) <<
         description;
     EXPECT_GE(matches[0].relevance, 1300) << description;
@@ -1652,6 +1500,112 @@ TEST_F(SearchProviderTest, KeywordFetcherSuggestRelevance) {
     // Ensure that no expected matches are missing.
     for (; j < ARRAYSIZE_UNSAFE(cases[i].matches); ++j)
       EXPECT_EQ(kNotApplicable, cases[i].matches[j].contents) <<
+          "Case # " << i << " " << description;
+  }
+}
+
+TEST_F(SearchProviderTest, LocalAndRemoteRelevances) {
+  // Enable Instant Extended in order to allow an increased number of
+  // suggestions.
+  chrome::EnableInstantExtendedAPIForTesting();
+
+  // We hardcode the string "term1" below, so ensure that the search term that
+  // got added to history already is that string.
+  ASSERT_EQ(ASCIIToUTF16("term1"), term1_);
+  string16 term = term1_.substr(0, term1_.length() - 1);
+
+  AddSearchToHistory(default_t_url_, term + ASCIIToUTF16("2"), 2);
+  profile_.BlockUntilHistoryProcessesPendingRequests();
+
+  struct {
+    const string16 input;
+    const std::string json;
+    const std::string matches[6];
+  } cases[] = {
+    // The history results outscore the default verbatim score.  term2 has more
+    // visits so it outscores term1.  The suggestions are still returned since
+    // they're server-scored.
+    { term,
+      "[\"term\",[\"a1\", \"a2\", \"a3\"],[],[],"
+       "{\"google:suggesttype\":[\"QUERY\", \"QUERY\", \"QUERY\"],"
+        "\"google:suggestrelevance\":[1, 2, 3]}]",
+      { "term2", "term1", "term", "a3", "a2", "a1" } },
+    // Because we already have three suggestions by the time we see the history
+    // results, they don't get returned.
+    { term,
+      "[\"term\",[\"a1\", \"a2\", \"a3\"],[],[],"
+       "{\"google:suggesttype\":[\"QUERY\", \"QUERY\", \"QUERY\"],"
+        "\"google:verbatimrelevance\":1450,"
+        "\"google:suggestrelevance\":[1440, 1430, 1420]}]",
+      { "term", "a1", "a2", "a3", kNotApplicable, kNotApplicable } },
+    // If we only have two suggestions, we have room for a history result.
+    { term,
+      "[\"term\",[\"a1\", \"a2\"],[],[],"
+       "{\"google:suggesttype\":[\"QUERY\", \"QUERY\"],"
+        "\"google:verbatimrelevance\":1450,"
+        "\"google:suggestrelevance\":[1430, 1410]}]",
+      { "term", "a1", "a2", "term2", kNotApplicable, kNotApplicable } },
+    // If we have more than three suggestions, they should all be returned as
+    // long as we have enough total space for them.
+    { term,
+      "[\"term\",[\"a1\", \"a2\", \"a3\", \"a4\"],[],[],"
+       "{\"google:suggesttype\":[\"QUERY\", \"QUERY\", \"QUERY\", \"QUERY\"],"
+        "\"google:verbatimrelevance\":1450,"
+        "\"google:suggestrelevance\":[1440, 1430, 1420, 1410]}]",
+      { "term", "a1", "a2", "a3", "a4", kNotApplicable } },
+    { term,
+      "[\"term\",[\"a1\", \"a2\", \"a3\", \"a4\", \"a5\", \"a6\"],[],[],"
+       "{\"google:suggesttype\":[\"QUERY\", \"QUERY\", \"QUERY\", \"QUERY\","
+                                "\"QUERY\", \"QUERY\"],"
+        "\"google:verbatimrelevance\":1450,"
+        "\"google:suggestrelevance\":[1440, 1430, 1420, 1410, 1400, 1390]}]",
+      { "term", "a1", "a2", "a3", "a4", "a5" } },
+    { term,
+      "[\"term\",[\"a1\", \"a2\", \"a3\", \"a4\"],[],[],"
+       "{\"google:suggesttype\":[\"QUERY\", \"QUERY\", \"QUERY\", \"QUERY\"],"
+        "\"google:verbatimrelevance\":1450,"
+        "\"google:suggestrelevance\":[1430, 1410, 1390, 1370]}]",
+      { "term", "a1", "a2", "term2", "a3", "a4" } },
+    // When the input looks like a URL, we disallow having a query as the
+    // highest-ranking result.  If the query was provided by a suggestion, we
+    // reset the suggest scores to enforce this (see
+    // SearchProvider::UpdateMatches()).  Even if we reset the suggest scores,
+    // however, we should still allow navsuggestions to be treated as
+    // server-provided.
+    { ASCIIToUTF16("a.com"),
+      "[\"a.com\",[\"a1\", \"a2\", \"a.com/1\", \"a.com/2\"],[],[],"
+       "{\"google:suggesttype\":[\"QUERY\", \"QUERY\", \"NAVIGATION\","
+                                "\"NAVIGATION\"],"
+        // A verbatim query for URL-like input scores 850, so the navigation
+        // scores here should bracket it.
+        "\"google:suggestrelevance\":[9999, 9998, 900, 800]}]",
+      { "a.com/1", "a.com", "a.com/2", "a1", kNotApplicable, kNotApplicable } },
+  };
+
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); i++) {
+    QueryForInput(cases[i].input, false, false);
+    net::TestURLFetcher* fetcher = WaitUntilURLFetcherIsReady(
+        SearchProvider::kDefaultProviderURLFetcherID);
+    ASSERT_TRUE(fetcher);
+    fetcher->set_response_code(200);
+    fetcher->SetResponseString(cases[i].json);
+    fetcher->delegate()->OnURLFetchComplete(fetcher);
+    RunTillProviderDone();
+
+    const std::string description = "for input with json=" + cases[i].json;
+    const ACMatches& matches = provider_->matches();
+
+    // Ensure no extra matches are present.
+    ASSERT_LE(matches.size(), 6U);
+
+    size_t j = 0;
+    // Ensure that the returned matches equal the expectations.
+    for (; j < matches.size(); ++j)
+      EXPECT_EQ(ASCIIToUTF16(cases[i].matches[j]),
+                matches[j].contents) << description;
+    // Ensure that no expected matches are missing.
+    for (; j < ARRAYSIZE_UNSAFE(cases[i].matches); ++j)
+      EXPECT_EQ(kNotApplicable, cases[i].matches[j]) <<
           "Case # " << i << " " << description;
   }
 }
@@ -1928,9 +1882,10 @@ TEST_F(SearchProviderTest, NavigationInline) {
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); i++) {
     QueryForInput(ASCIIToUTF16(cases[i].input), false, false);
-    SearchProvider::NavigationResult result(
-        *provider_.get(), GURL(cases[i].url), string16(), false, 0);
-    AutocompleteMatch match(provider_->NavigationToMatch(result));
+    AutocompleteMatch match(
+        provider_->NavigationToMatch(SearchProvider::NavigationResult(
+            *provider_.get(), GURL(cases[i].url), string16(), false, 0,
+            false)));
     EXPECT_EQ(cases[i].inline_offset, match.inline_autocomplete_offset);
     EXPECT_EQ(ASCIIToUTF16(cases[i].fill_into_edit), match.fill_into_edit);
   }
@@ -1941,7 +1896,7 @@ TEST_F(SearchProviderTest, NavigationInlineSchemeSubstring) {
   const string16 input(ASCIIToUTF16("ht"));
   const string16 url(ASCIIToUTF16("http://a.com"));
   const SearchProvider::NavigationResult result(
-      *provider_.get(), GURL(url), string16(), false, 0);
+      *provider_.get(), GURL(url), string16(), false, 0, false);
 
   // Check the offset and strings when inline autocompletion is allowed.
   QueryForInput(input, false, false);
@@ -1961,10 +1916,10 @@ TEST_F(SearchProviderTest, NavigationInlineSchemeSubstring) {
 // Verifies that input "w" marks a more significant domain label than "www.".
 TEST_F(SearchProviderTest, NavigationInlineDomainClassify) {
   QueryForInput(ASCIIToUTF16("w"), false, false);
-  const GURL url("http://www.wow.com");
-  const SearchProvider::NavigationResult result(
-      *provider_.get(), url, string16(), false, 0);
-  AutocompleteMatch match(provider_->NavigationToMatch(result));
+  AutocompleteMatch match(
+      provider_->NavigationToMatch(SearchProvider::NavigationResult(
+          *provider_.get(), GURL("http://www.wow.com"), string16(), false, 0,
+          false)));
   EXPECT_EQ(5U, match.inline_autocomplete_offset);
   EXPECT_EQ(ASCIIToUTF16("www.wow.com"), match.fill_into_edit);
   EXPECT_EQ(ASCIIToUTF16("www.wow.com"), match.contents);
@@ -2124,15 +2079,14 @@ TEST_F(SearchProviderTest, RemoveStaleResultsTest) {
         break;
       if (cases[i].results[j].is_navigation_result) {
         provider_->default_results_.navigation_results.push_back(
-            SearchProvider::NavigationResult(*provider_.get(),
-                                             GURL(suggestion),
-                                             string16(),
-                                             false,
-                                             cases[i].results[j].relevance));
+            SearchProvider::NavigationResult(
+                *provider_.get(), GURL(suggestion), string16(), false,
+                cases[i].results[j].relevance, false));
       } else {
         provider_->default_results_.suggest_results.push_back(
             SearchProvider::SuggestResult(ASCIIToUTF16(suggestion), false,
-                                          cases[i].results[j].relevance));
+                                          cases[i].results[j].relevance,
+                                          false));
       }
     }
 

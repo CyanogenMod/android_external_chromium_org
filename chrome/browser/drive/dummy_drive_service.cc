@@ -4,7 +4,20 @@
 
 #include "chrome/browser/drive/dummy_drive_service.h"
 
-namespace google_apis {
+using google_apis::AuthorizeAppCallback;
+using google_apis::CancelCallback;
+using google_apis::DownloadActionCallback;
+using google_apis::EntryActionCallback;
+using google_apis::GetAboutResourceCallback;
+using google_apis::GetAppListCallback;
+using google_apis::GetContentCallback;
+using google_apis::GetResourceEntryCallback;
+using google_apis::GetResourceListCallback;
+using google_apis::InitiateUploadCallback;
+using google_apis::ProgressCallback;
+using google_apis::UploadRangeCallback;
+
+namespace drive {
 
 DummyDriveService::DummyDriveService() {}
 
@@ -75,9 +88,8 @@ CancelCallback DummyDriveService::DeleteResource(
     const EntryActionCallback& callback) { return CancelCallback(); }
 
 CancelCallback DummyDriveService::DownloadFile(
-    const base::FilePath& virtual_path,
     const base::FilePath& local_cache_path,
-    const GURL& download_url,
+    const std::string& resource_id,
     const DownloadActionCallback& download_action_callback,
     const GetContentCallback& get_content_callback,
     const ProgressCallback& progress_callback) { return CancelCallback(); }
@@ -120,7 +132,6 @@ CancelCallback DummyDriveService::AddNewDirectory(
     const GetResourceEntryCallback& callback) { return CancelCallback(); }
 
 CancelCallback DummyDriveService::InitiateUploadNewFile(
-    const base::FilePath& drive_file_path,
     const std::string& content_type,
     int64 content_length,
     const std::string& parent_resource_id,
@@ -128,7 +139,6 @@ CancelCallback DummyDriveService::InitiateUploadNewFile(
     const InitiateUploadCallback& callback) { return CancelCallback(); }
 
 CancelCallback DummyDriveService::InitiateUploadExistingFile(
-    const base::FilePath& drive_file_path,
     const std::string& content_type,
     int64 content_length,
     const std::string& resource_id,
@@ -136,7 +146,6 @@ CancelCallback DummyDriveService::InitiateUploadExistingFile(
     const InitiateUploadCallback& callback) { return CancelCallback(); }
 
 CancelCallback DummyDriveService::ResumeUpload(
-    const base::FilePath& drive_file_path,
     const GURL& upload_url,
     int64 start_position,
     int64 end_position,
@@ -147,7 +156,6 @@ CancelCallback DummyDriveService::ResumeUpload(
     const ProgressCallback& progress_callback) { return CancelCallback(); }
 
 CancelCallback DummyDriveService::GetUploadStatus(
-    const base::FilePath& drive_file_path,
     const GURL& upload_url,
     int64 content_length,
     const UploadRangeCallback& callback) { return CancelCallback(); }
@@ -157,4 +165,4 @@ CancelCallback DummyDriveService::AuthorizeApp(
     const std::string& app_id,
     const AuthorizeAppCallback& callback) { return CancelCallback(); }
 
-}  // namespace google_apis
+}  // namespace drive

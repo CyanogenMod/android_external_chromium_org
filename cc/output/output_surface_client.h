@@ -6,7 +6,7 @@
 #define CC_OUTPUT_OUTPUT_SURFACE_CLIENT_H_
 
 #include "base/memory/ref_counted.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "cc/base/cc_export.h"
 #include "cc/output/begin_frame_args.h"
 #include "cc/output/context_provider.h"
@@ -19,6 +19,7 @@ class Transform;
 namespace cc {
 
 class CompositorFrameAck;
+struct ManagedMemoryPolicy;
 
 class CC_EXPORT OutputSurfaceClient {
  public:
@@ -33,6 +34,8 @@ class CC_EXPORT OutputSurfaceClient {
   virtual void DidLoseOutputSurface() = 0;
   virtual void SetExternalDrawConstraints(const gfx::Transform& transform,
                                           gfx::Rect viewport) = 0;
+  virtual void SetMemoryPolicy(const ManagedMemoryPolicy& policy,
+                               bool discard_backbuffer_when_not_visible) = 0;
 
  protected:
   virtual ~OutputSurfaceClient() {}

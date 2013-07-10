@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "net/base/net_log.h"
@@ -22,6 +23,23 @@ base::Value* NetLogQuicPacketCallback(const IPEndPoint* self_address,
   dict->SetString("self_address", self_address->ToString());
   dict->SetString("peer_address", peer_address->ToString());
   dict->SetInteger("size", packet_size);
+  return dict;
+}
+
+base::Value* NetLogQuicPacketSentCallback(
+    QuicPacketSequenceNumber sequence_number,
+    EncryptionLevel level,
+    size_t packet_size,
+    int rv,
+    NetLog::LogLevel /* log_level */) {
+  base::DictionaryValue* dict = new base::DictionaryValue();
+  dict->SetInteger("encryption_level", level);
+  dict->SetString("packet_sequence_number",
+                  base::Uint64ToString(sequence_number));
+  dict->SetInteger("size", packet_size);
+  if (rv < 0) {
+    dict->SetInteger("net_error", rv);
+  }
   return dict;
 }
 
@@ -114,7 +132,7 @@ base::Value* NetLogQuicRstStreamFrameCallback(
     NetLog::LogLevel /* log_level */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetInteger("stream_id", frame->stream_id);
-  dict->SetInteger("error_code", frame->error_code);
+  dict->SetInteger("quic_rst_stream_error", frame->error_code);
   dict->SetString("details", frame->error_details);
   return dict;
 }
@@ -123,21 +141,81 @@ base::Value* NetLogQuicConnectionCloseFrameCallback(
     const QuicConnectionCloseFrame* frame,
     NetLog::LogLevel /* log_level */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
-  dict->SetInteger("error_code", frame->error_code);
+  dict->SetInteger("quic_error", frame->error_code);
   dict->SetString("details", frame->error_details);
   return dict;
+}
+
+void UpdatePacketGapSentHistogram(size_t num_consecutive_missing_packets) {
+  UMA_HISTOGRAM_COUNTS("Net.QuicSession.PacketGapSent",
+                       num_consecutive_missing_packets);
 }
 
 }  // namespace
 
 QuicConnectionLogger::QuicConnectionLogger(const BoundNetLog& net_log)
-    : net_log_(net_log) {
+    : net_log_(net_log),
+      last_received_packet_sequence_number_(0),
+      largest_received_packet_sequence_number_(0),
+      largest_received_missing_packet_sequence_number_(0),
+      out_of_order_recieved_packet_count_(0) {
 }
 
 QuicConnectionLogger::~QuicConnectionLogger() {
+  UMA_HISTOGRAM_COUNTS("Net.QuicSession.OutOfOrderPacketsReceived",
+                       out_of_order_recieved_packet_count_);
 }
 
-  // QuicConnectionDebugVisitorInterface
+void QuicConnectionLogger::OnFrameAddedToPacket(const QuicFrame& frame) {
+  switch (frame.type) {
+    case PADDING_FRAME:
+      break;
+    case STREAM_FRAME:
+      net_log_.AddEvent(
+          NetLog::TYPE_QUIC_SESSION_STREAM_FRAME_SENT,
+          base::Bind(&NetLogQuicStreamFrameCallback, frame.stream_frame));
+      break;
+    case ACK_FRAME:
+      net_log_.AddEvent(
+          NetLog::TYPE_QUIC_SESSION_ACK_FRAME_SENT,
+          base::Bind(&NetLogQuicAckFrameCallback, frame.ack_frame));
+      break;
+    case CONGESTION_FEEDBACK_FRAME:
+      net_log_.AddEvent(
+          NetLog::TYPE_QUIC_SESSION_CONGESTION_FEEDBACK_FRAME_SENT,
+          base::Bind(&NetLogQuicCongestionFeedbackFrameCallback,
+                     frame.congestion_feedback_frame));
+      break;
+    case RST_STREAM_FRAME:
+      net_log_.AddEvent(
+          NetLog::TYPE_QUIC_SESSION_RST_STREAM_FRAME_SENT,
+          base::Bind(&NetLogQuicRstStreamFrameCallback,
+                     frame.rst_stream_frame));
+      break;
+    case CONNECTION_CLOSE_FRAME:
+      net_log_.AddEvent(
+          NetLog::TYPE_QUIC_SESSION_CONNECTION_CLOSE_FRAME_SENT,
+          base::Bind(&NetLogQuicConnectionCloseFrameCallback,
+                     frame.connection_close_frame));
+      break;
+    case GOAWAY_FRAME:
+      break;
+    default:
+      DCHECK(false) << "Illegal frame type: " << frame.type;
+  }
+}
+
+void QuicConnectionLogger::OnPacketSent(
+    QuicPacketSequenceNumber sequence_number,
+    EncryptionLevel level,
+    const QuicEncryptedPacket& packet,
+    int rv) {
+  net_log_.AddEvent(
+      NetLog::TYPE_QUIC_SESSION_PACKET_SENT,
+      base::Bind(&NetLogQuicPacketSentCallback, sequence_number, level,
+                 packet.length(), rv));
+}
+
 void QuicConnectionLogger::OnPacketReceived(const IPEndPoint& self_address,
                                             const IPEndPoint& peer_address,
                                             const QuicEncryptedPacket& packet) {
@@ -155,6 +233,22 @@ void QuicConnectionLogger::OnPacketHeader(const QuicPacketHeader& header) {
   net_log_.AddEvent(
       NetLog::TYPE_QUIC_SESSION_PACKET_HEADER_RECEIVED,
       base::Bind(&NetLogQuicPacketHeaderCallback, &header));
+  if (largest_received_packet_sequence_number_ <
+      header.packet_sequence_number) {
+    QuicPacketSequenceNumber delta = header.packet_sequence_number -
+        largest_received_packet_sequence_number_;
+    if (delta > 1) {
+      // There is a gap between the largest packet previously received and
+      // the current packet.  This indicates either loss, or out-of-order
+      // delivery.
+      UMA_HISTOGRAM_COUNTS("Net.QuicSession.PacketGapReceived", delta - 1);
+    }
+    largest_received_packet_sequence_number_ = header.packet_sequence_number;
+  }
+  if (header.packet_sequence_number < last_received_packet_sequence_number_) {
+    ++out_of_order_recieved_packet_count_;
+  }
+  last_received_packet_sequence_number_ = header.packet_sequence_number;
 }
 
 void QuicConnectionLogger::OnStreamFrame(const QuicStreamFrame& frame) {
@@ -167,6 +261,41 @@ void QuicConnectionLogger::OnAckFrame(const QuicAckFrame& frame) {
   net_log_.AddEvent(
       NetLog::TYPE_QUIC_SESSION_ACK_FRAME_RECEIVED,
       base::Bind(&NetLogQuicAckFrameCallback, &frame));
+
+  if (frame.received_info.missing_packets.empty())
+    return;
+
+  SequenceNumberSet missing_packets = frame.received_info.missing_packets;
+  SequenceNumberSet::const_iterator it = missing_packets.lower_bound(
+      largest_received_missing_packet_sequence_number_);
+  if (it == missing_packets.end())
+    return;
+
+  if (*it == largest_received_missing_packet_sequence_number_) {
+    ++it;
+    if (it == missing_packets.end())
+      return;
+  }
+  // Scan through the list and log consecutive ranges of missing packets.
+  size_t num_consecutive_missing_packets = 0;
+  QuicPacketSequenceNumber previous_missing_packet = *it - 1;
+  while (it != missing_packets.end()) {
+    if (previous_missing_packet == *it - 1) {
+      ++num_consecutive_missing_packets;
+    } else {
+      DCHECK_NE(0u, num_consecutive_missing_packets);
+      UpdatePacketGapSentHistogram(num_consecutive_missing_packets);
+      // Make sure this packet it included in the count.
+      num_consecutive_missing_packets = 1;
+    }
+    previous_missing_packet = *it;
+    ++it;
+  }
+  if (num_consecutive_missing_packets != 0) {
+    UpdatePacketGapSentHistogram(num_consecutive_missing_packets);
+  }
+  largest_received_missing_packet_sequence_number_ =
+        *missing_packets.rbegin();
 }
 
 void QuicConnectionLogger::OnCongestionFeedbackFrame(

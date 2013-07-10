@@ -5,12 +5,12 @@
 #ifndef CONTENT_BROWSER_WEB_CONTENTS_NAVIGATION_CONTROLLER_IMPL_H_
 #define CONTENT_BROWSER_WEB_CONTENTS_NAVIGATION_CONTROLLER_IMPL_H_
 
-#include "build/build_config.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/linked_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
+#include "build/build_config.h"
 #include "content/browser/ssl/ssl_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_type.h"
@@ -213,8 +213,6 @@ class CONTENT_EXPORT NavigationControllerImpl
 
   // Helper class to smooth out runs of duplicate timestamps while still
   // allowing time to jump backwards.
-  //
-  // TODO(akalin): Use CONTENT_EXPORT_PRIVATE once we have that.
   class CONTENT_EXPORT TimeSmoother {
    public:
     // Returns |t| with possibly some time added on.

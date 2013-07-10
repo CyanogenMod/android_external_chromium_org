@@ -9,6 +9,7 @@
 #include "net/base/rand_callback.h"
 #include "net/base/test_completion_callback.h"
 #include "net/dns/mdns_client_impl.h"
+#include "net/dns/mock_mdns_socket_factory.h"
 #include "net/dns/record_rdata.h"
 #include "net/udp/udp_client_socket.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -29,374 +30,284 @@ namespace {
 
 const char kSamplePacket1[] = {
   // Header
-  0x00, 0x00,               // ID is zeroed out
-  0x81, 0x80,               // Standard query response, RA, no error
-  0x00, 0x00,               // No questions (for simplicity)
-  0x00, 0x02,               // 2 RRs (answers)
-  0x00, 0x00,               // 0 authority RRs
-  0x00, 0x00,               // 0 additional RRs
+  '\x00', '\x00',               // ID is zeroed out
+  '\x81', '\x80',               // Standard query response, RA, no error
+  '\x00', '\x00',               // No questions (for simplicity)
+  '\x00', '\x02',               // 2 RRs (answers)
+  '\x00', '\x00',               // 0 authority RRs
+  '\x00', '\x00',               // 0 additional RRs
 
   // Answer 1
-  0x07, '_', 'p', 'r', 'i', 'v', 'e', 't',
-  0x04, '_', 't', 'c', 'p',
-  0x05, 'l', 'o', 'c', 'a', 'l',
-  0x00,
-  0x00, 0x0c,        // TYPE is PTR.
-  0x00, 0x01,        // CLASS is IN.
-  0x00, 0x00,        // TTL (4 bytes) is 1 second;
-  0x00, 0x01,
-  0x00, 0x08,        // RDLENGTH is 8 bytes.
-  0x05, 'h', 'e', 'l', 'l', 'o',
-  0xc0, 0x0c,
+  '\x07', '_', 'p', 'r', 'i', 'v', 'e', 't',
+  '\x04', '_', 't', 'c', 'p',
+  '\x05', 'l', 'o', 'c', 'a', 'l',
+  '\x00',
+  '\x00', '\x0c',        // TYPE is PTR.
+  '\x00', '\x01',        // CLASS is IN.
+  '\x00', '\x00',        // TTL (4 bytes) is 1 second;
+  '\x00', '\x01',
+  '\x00', '\x08',        // RDLENGTH is 8 bytes.
+  '\x05', 'h', 'e', 'l', 'l', 'o',
+  '\xc0', '\x0c',
 
   // Answer 2
-  0x08, '_', 'p', 'r', 'i', 'n', 't', 'e', 'r',
-  0xc0, 0x14,         // Pointer to "._tcp.local"
-  0x00, 0x0c,        // TYPE is PTR.
-  0x00, 0x01,        // CLASS is IN.
-  0x00, 0x01,        // TTL (4 bytes) is 20 hours, 47 minutes, 49 seconds.
-  0x24, 0x75,
-  0x00, 0x08,        // RDLENGTH is 8 bytes.
-  0x05, 'h', 'e', 'l', 'l', 'o',
-  0xc0, 0x32
+  '\x08', '_', 'p', 'r', 'i', 'n', 't', 'e', 'r',
+  '\xc0', '\x14',         // Pointer to "._tcp.local"
+  '\x00', '\x0c',        // TYPE is PTR.
+  '\x00', '\x01',        // CLASS is IN.
+  '\x00', '\x01',        // TTL (4 bytes) is 20 hours, 47 minutes, 49 seconds.
+  '\x24', '\x75',
+  '\x00', '\x08',        // RDLENGTH is 8 bytes.
+  '\x05', 'h', 'e', 'l', 'l', 'o',
+  '\xc0', '\x32'
 };
 
 const char kCorruptedPacketBadQuestion[] = {
   // Header
-  0x00, 0x00,               // ID is zeroed out
-  0x81, 0x80,               // Standard query response, RA, no error
-  0x00, 0x01,               // One question
-  0x00, 0x02,               // 2 RRs (answers)
-  0x00, 0x00,               // 0 authority RRs
-  0x00, 0x00,               // 0 additional RRs
+  '\x00', '\x00',               // ID is zeroed out
+  '\x81', '\x80',               // Standard query response, RA, no error
+  '\x00', '\x01',               // One question
+  '\x00', '\x02',               // 2 RRs (answers)
+  '\x00', '\x00',               // 0 authority RRs
+  '\x00', '\x00',               // 0 additional RRs
 
   // Question is corrupted and cannot be read.
-  0x99, 'h', 'e', 'l', 'l', 'o',
-  0x00,
-  0x00, 0x00,
-  0x00, 0x00,
+  '\x99', 'h', 'e', 'l', 'l', 'o',
+  '\x00',
+  '\x00', '\x00',
+  '\x00', '\x00',
 
   // Answer 1
-  0x07, '_', 'p', 'r', 'i', 'v', 'e', 't',
-  0x04, '_', 't', 'c', 'p',
-  0x05, 'l', 'o', 'c', 'a', 'l',
-  0x00,
-  0x00, 0x0c,        // TYPE is PTR.
-  0x00, 0x01,        // CLASS is IN.
-  0x00, 0x01,        // TTL (4 bytes) is 20 hours, 47 minutes, 48 seconds.
-  0x24, 0x74,
-  0x00, 0x99,        // RDLENGTH is impossible
-  0x05, 'h', 'e', 'l', 'l', 'o',
-  0xc0, 0x0c,
+  '\x07', '_', 'p', 'r', 'i', 'v', 'e', 't',
+  '\x04', '_', 't', 'c', 'p',
+  '\x05', 'l', 'o', 'c', 'a', 'l',
+  '\x00',
+  '\x00', '\x0c',        // TYPE is PTR.
+  '\x00', '\x01',        // CLASS is IN.
+  '\x00', '\x01',        // TTL (4 bytes) is 20 hours, 47 minutes, 48 seconds.
+  '\x24', '\x74',
+  '\x00', '\x99',        // RDLENGTH is impossible
+  '\x05', 'h', 'e', 'l', 'l', 'o',
+  '\xc0', '\x0c',
 
   // Answer 2
-  0x08, '_', 'p', 'r',  // Useless trailing data.
+  '\x08', '_', 'p', 'r',  // Useless trailing data.
 };
 
 const char kCorruptedPacketUnsalvagable[] = {
   // Header
-  0x00, 0x00,               // ID is zeroed out
-  0x81, 0x80,               // Standard query response, RA, no error
-  0x00, 0x00,               // No questions (for simplicity)
-  0x00, 0x02,               // 2 RRs (answers)
-  0x00, 0x00,               // 0 authority RRs
-  0x00, 0x00,               // 0 additional RRs
+  '\x00', '\x00',               // ID is zeroed out
+  '\x81', '\x80',               // Standard query response, RA, no error
+  '\x00', '\x00',               // No questions (for simplicity)
+  '\x00', '\x02',               // 2 RRs (answers)
+  '\x00', '\x00',               // 0 authority RRs
+  '\x00', '\x00',               // 0 additional RRs
 
   // Answer 1
-  0x07, '_', 'p', 'r', 'i', 'v', 'e', 't',
-  0x04, '_', 't', 'c', 'p',
-  0x05, 'l', 'o', 'c', 'a', 'l',
-  0x00,
-  0x00, 0x0c,        // TYPE is PTR.
-  0x00, 0x01,        // CLASS is IN.
-  0x00, 0x01,        // TTL (4 bytes) is 20 hours, 47 minutes, 48 seconds.
-  0x24, 0x74,
-  0x00, 0x99,        // RDLENGTH is impossible
-  0x05, 'h', 'e', 'l', 'l', 'o',
-  0xc0, 0x0c,
+  '\x07', '_', 'p', 'r', 'i', 'v', 'e', 't',
+  '\x04', '_', 't', 'c', 'p',
+  '\x05', 'l', 'o', 'c', 'a', 'l',
+  '\x00',
+  '\x00', '\x0c',        // TYPE is PTR.
+  '\x00', '\x01',        // CLASS is IN.
+  '\x00', '\x01',        // TTL (4 bytes) is 20 hours, 47 minutes, 48 seconds.
+  '\x24', '\x74',
+  '\x00', '\x99',        // RDLENGTH is impossible
+  '\x05', 'h', 'e', 'l', 'l', 'o',
+  '\xc0', '\x0c',
 
   // Answer 2
-  0x08, '_', 'p', 'r',  // Useless trailing data.
+  '\x08', '_', 'p', 'r',  // Useless trailing data.
 };
 
 const char kCorruptedPacketDoubleRecord[] = {
   // Header
-  0x00, 0x00,               // ID is zeroed out
-  0x81, 0x80,               // Standard query response, RA, no error
-  0x00, 0x00,               // No questions (for simplicity)
-  0x00, 0x02,               // 2 RRs (answers)
-  0x00, 0x00,               // 0 authority RRs
-  0x00, 0x00,               // 0 additional RRs
+  '\x00', '\x00',               // ID is zeroed out
+  '\x81', '\x80',               // Standard query response, RA, no error
+  '\x00', '\x00',               // No questions (for simplicity)
+  '\x00', '\x02',               // 2 RRs (answers)
+  '\x00', '\x00',               // 0 authority RRs
+  '\x00', '\x00',               // 0 additional RRs
 
   // Answer 1
-  0x06, 'p', 'r', 'i', 'v', 'e', 't',
-  0x05, 'l', 'o', 'c', 'a', 'l',
-  0x00,
-  0x00, 0x01,        // TYPE is A.
-  0x00, 0x01,        // CLASS is IN.
-  0x00, 0x01,        // TTL (4 bytes) is 20 hours, 47 minutes, 48 seconds.
-  0x24, 0x74,
-  0x00, 0x04,        // RDLENGTH is 4
-  0x05, 0x03,
-  0xc0, 0x0c,
+  '\x06', 'p', 'r', 'i', 'v', 'e', 't',
+  '\x05', 'l', 'o', 'c', 'a', 'l',
+  '\x00',
+  '\x00', '\x01',        // TYPE is A.
+  '\x00', '\x01',        // CLASS is IN.
+  '\x00', '\x01',        // TTL (4 bytes) is 20 hours, 47 minutes, 48 seconds.
+  '\x24', '\x74',
+  '\x00', '\x04',        // RDLENGTH is 4
+  '\x05', '\x03',
+  '\xc0', '\x0c',
 
   // Answer 2 -- Same key
-  0x06, 'p', 'r', 'i', 'v', 'e', 't',
-  0x05, 'l', 'o', 'c', 'a', 'l',
-  0x00,
-  0x00, 0x01,        // TYPE is A.
-  0x00, 0x01,        // CLASS is IN.
-  0x00, 0x01,        // TTL (4 bytes) is 20 hours, 47 minutes, 48 seconds.
-  0x24, 0x74,
-  0x00, 0x04,        // RDLENGTH is 4
-  0x02, 0x03,
-  0x04, 0x05,
+  '\x06', 'p', 'r', 'i', 'v', 'e', 't',
+  '\x05', 'l', 'o', 'c', 'a', 'l',
+  '\x00',
+  '\x00', '\x01',        // TYPE is A.
+  '\x00', '\x01',        // CLASS is IN.
+  '\x00', '\x01',        // TTL (4 bytes) is 20 hours, 47 minutes, 48 seconds.
+  '\x24', '\x74',
+  '\x00', '\x04',        // RDLENGTH is 4
+  '\x02', '\x03',
+  '\x04', '\x05',
 };
 
 const char kCorruptedPacketSalvagable[] = {
   // Header
-  0x00, 0x00,               // ID is zeroed out
-  0x81, 0x80,               // Standard query response, RA, no error
-  0x00, 0x00,               // No questions (for simplicity)
-  0x00, 0x02,               // 2 RRs (answers)
-  0x00, 0x00,               // 0 authority RRs
-  0x00, 0x00,               // 0 additional RRs
+  '\x00', '\x00',               // ID is zeroed out
+  '\x81', '\x80',               // Standard query response, RA, no error
+  '\x00', '\x00',               // No questions (for simplicity)
+  '\x00', '\x02',               // 2 RRs (answers)
+  '\x00', '\x00',               // 0 authority RRs
+  '\x00', '\x00',               // 0 additional RRs
 
   // Answer 1
-  0x07, '_', 'p', 'r', 'i', 'v', 'e', 't',
-  0x04, '_', 't', 'c', 'p',
-  0x05, 'l', 'o', 'c', 'a', 'l',
-  0x00,
-  0x00, 0x0c,        // TYPE is PTR.
-  0x00, 0x01,        // CLASS is IN.
-  0x00, 0x01,        // TTL (4 bytes) is 20 hours, 47 minutes, 48 seconds.
-  0x24, 0x74,
-  0x00, 0x08,        // RDLENGTH is 8 bytes.
-  0x99, 'h', 'e', 'l', 'l', 'o',   // Bad RDATA format.
-  0xc0, 0x0c,
+  '\x07', '_', 'p', 'r', 'i', 'v', 'e', 't',
+  '\x04', '_', 't', 'c', 'p',
+  '\x05', 'l', 'o', 'c', 'a', 'l',
+  '\x00',
+  '\x00', '\x0c',        // TYPE is PTR.
+  '\x00', '\x01',        // CLASS is IN.
+  '\x00', '\x01',        // TTL (4 bytes) is 20 hours, 47 minutes, 48 seconds.
+  '\x24', '\x74',
+  '\x00', '\x08',        // RDLENGTH is 8 bytes.
+  '\x99', 'h', 'e', 'l', 'l', 'o',   // Bad RDATA format.
+  '\xc0', '\x0c',
 
   // Answer 2
-  0x08, '_', 'p', 'r', 'i', 'n', 't', 'e', 'r',
-  0xc0, 0x14,         // Pointer to "._tcp.local"
-  0x00, 0x0c,        // TYPE is PTR.
-  0x00, 0x01,        // CLASS is IN.
-  0x00, 0x01,        // TTL (4 bytes) is 20 hours, 47 minutes, 49 seconds.
-  0x24, 0x75,
-  0x00, 0x08,        // RDLENGTH is 8 bytes.
-  0x05, 'h', 'e', 'l', 'l', 'o',
-  0xc0, 0x32
+  '\x08', '_', 'p', 'r', 'i', 'n', 't', 'e', 'r',
+  '\xc0', '\x14',         // Pointer to "._tcp.local"
+  '\x00', '\x0c',        // TYPE is PTR.
+  '\x00', '\x01',        // CLASS is IN.
+  '\x00', '\x01',        // TTL (4 bytes) is 20 hours, 47 minutes, 49 seconds.
+  '\x24', '\x75',
+  '\x00', '\x08',        // RDLENGTH is 8 bytes.
+  '\x05', 'h', 'e', 'l', 'l', 'o',
+  '\xc0', '\x32'
 };
 
 const char kSamplePacket2[] = {
   // Header
-  0x00, 0x00,               // ID is zeroed out
-  0x81, 0x80,               // Standard query response, RA, no error
-  0x00, 0x00,               // No questions (for simplicity)
-  0x00, 0x02,               // 2 RRs (answers)
-  0x00, 0x00,               // 0 authority RRs
-  0x00, 0x00,               // 0 additional RRs
+  '\x00', '\x00',               // ID is zeroed out
+  '\x81', '\x80',               // Standard query response, RA, no error
+  '\x00', '\x00',               // No questions (for simplicity)
+  '\x00', '\x02',               // 2 RRs (answers)
+  '\x00', '\x00',               // 0 authority RRs
+  '\x00', '\x00',               // 0 additional RRs
 
   // Answer 1
-  0x07, '_', 'p', 'r', 'i', 'v', 'e', 't',
-  0x04, '_', 't', 'c', 'p',
-  0x05, 'l', 'o', 'c', 'a', 'l',
-  0x00,
-  0x00, 0x0c,        // TYPE is PTR.
-  0x00, 0x01,        // CLASS is IN.
-  0x00, 0x01,        // TTL (4 bytes) is 20 hours, 47 minutes, 48 seconds.
-  0x24, 0x74,
-  0x00, 0x08,        // RDLENGTH is 8 bytes.
-  0x05, 'z', 'z', 'z', 'z', 'z',
-  0xc0, 0x0c,
+  '\x07', '_', 'p', 'r', 'i', 'v', 'e', 't',
+  '\x04', '_', 't', 'c', 'p',
+  '\x05', 'l', 'o', 'c', 'a', 'l',
+  '\x00',
+  '\x00', '\x0c',        // TYPE is PTR.
+  '\x00', '\x01',        // CLASS is IN.
+  '\x00', '\x01',        // TTL (4 bytes) is 20 hours, 47 minutes, 48 seconds.
+  '\x24', '\x74',
+  '\x00', '\x08',        // RDLENGTH is 8 bytes.
+  '\x05', 'z', 'z', 'z', 'z', 'z',
+  '\xc0', '\x0c',
 
   // Answer 2
-  0x08, '_', 'p', 'r', 'i', 'n', 't', 'e', 'r',
-  0xc0, 0x14,         // Pointer to "._tcp.local"
-  0x00, 0x0c,        // TYPE is PTR.
-  0x00, 0x01,        // CLASS is IN.
-  0x00, 0x01,        // TTL (4 bytes) is 20 hours, 47 minutes, 48 seconds.
-  0x24, 0x74,
-  0x00, 0x08,        // RDLENGTH is 8 bytes.
-  0x05, 'z', 'z', 'z', 'z', 'z',
-  0xc0, 0x32
+  '\x08', '_', 'p', 'r', 'i', 'n', 't', 'e', 'r',
+  '\xc0', '\x14',         // Pointer to "._tcp.local"
+  '\x00', '\x0c',        // TYPE is PTR.
+  '\x00', '\x01',        // CLASS is IN.
+  '\x00', '\x01',        // TTL (4 bytes) is 20 hours, 47 minutes, 48 seconds.
+  '\x24', '\x74',
+  '\x00', '\x08',        // RDLENGTH is 8 bytes.
+  '\x05', 'z', 'z', 'z', 'z', 'z',
+  '\xc0', '\x32'
 };
 
 const char kQueryPacketPrivet[] = {
   // Header
-  0x00, 0x00,               // ID is zeroed out
-  0x00, 0x00,               // No flags.
-  0x00, 0x01,               // One question.
-  0x00, 0x00,               // 0 RRs (answers)
-  0x00, 0x00,               // 0 authority RRs
-  0x00, 0x00,               // 0 additional RRs
+  '\x00', '\x00',               // ID is zeroed out
+  '\x00', '\x00',               // No flags.
+  '\x00', '\x01',               // One question.
+  '\x00', '\x00',               // 0 RRs (answers)
+  '\x00', '\x00',               // 0 authority RRs
+  '\x00', '\x00',               // 0 additional RRs
 
   // Question
   // This part is echoed back from the respective query.
-  0x07, '_', 'p', 'r', 'i', 'v', 'e', 't',
-  0x04, '_', 't', 'c', 'p',
-  0x05, 'l', 'o', 'c', 'a', 'l',
-  0x00,
-  0x00, 0x0c,        // TYPE is PTR.
-  0x00, 0x01,        // CLASS is IN.
+  '\x07', '_', 'p', 'r', 'i', 'v', 'e', 't',
+  '\x04', '_', 't', 'c', 'p',
+  '\x05', 'l', 'o', 'c', 'a', 'l',
+  '\x00',
+  '\x00', '\x0c',        // TYPE is PTR.
+  '\x00', '\x01',        // CLASS is IN.
 };
 
 const char kSamplePacketAdditionalOnly[] = {
   // Header
-  0x00, 0x00,               // ID is zeroed out
-  0x81, 0x80,               // Standard query response, RA, no error
-  0x00, 0x00,               // No questions (for simplicity)
-  0x00, 0x00,               // 2 RRs (answers)
-  0x00, 0x00,               // 0 authority RRs
-  0x00, 0x01,               // 0 additional RRs
+  '\x00', '\x00',               // ID is zeroed out
+  '\x81', '\x80',               // Standard query response, RA, no error
+  '\x00', '\x00',               // No questions (for simplicity)
+  '\x00', '\x00',               // 2 RRs (answers)
+  '\x00', '\x00',               // 0 authority RRs
+  '\x00', '\x01',               // 0 additional RRs
 
   // Answer 1
-  0x07, '_', 'p', 'r', 'i', 'v', 'e', 't',
-  0x04, '_', 't', 'c', 'p',
-  0x05, 'l', 'o', 'c', 'a', 'l',
-  0x00,
-  0x00, 0x0c,        // TYPE is PTR.
-  0x00, 0x01,        // CLASS is IN.
-  0x00, 0x01,        // TTL (4 bytes) is 20 hours, 47 minutes, 48 seconds.
-  0x24, 0x74,
-  0x00, 0x08,        // RDLENGTH is 8 bytes.
-  0x05, 'h', 'e', 'l', 'l', 'o',
-  0xc0, 0x0c,
+  '\x07', '_', 'p', 'r', 'i', 'v', 'e', 't',
+  '\x04', '_', 't', 'c', 'p',
+  '\x05', 'l', 'o', 'c', 'a', 'l',
+  '\x00',
+  '\x00', '\x0c',        // TYPE is PTR.
+  '\x00', '\x01',        // CLASS is IN.
+  '\x00', '\x01',        // TTL (4 bytes) is 20 hours, 47 minutes, 48 seconds.
+  '\x24', '\x74',
+  '\x00', '\x08',        // RDLENGTH is 8 bytes.
+  '\x05', 'h', 'e', 'l', 'l', 'o',
+  '\xc0', '\x0c',
 };
 
-class MockDatagramServerSocket : public DatagramServerSocket {
- public:
-  // DatagramServerSocket implementation:
-  int Listen(const IPEndPoint& address) {
-    return ListenInternal(address.ToString());
-  }
+const char kSamplePacketNsec[] = {
+  // Header
+  '\x00', '\x00',               // ID is zeroed out
+  '\x81', '\x80',               // Standard query response, RA, no error
+  '\x00', '\x00',               // No questions (for simplicity)
+  '\x00', '\x01',               // 1 RR (answers)
+  '\x00', '\x00',               // 0 authority RRs
+  '\x00', '\x00',               // 0 additional RRs
 
-  MOCK_METHOD1(ListenInternal, int(const std::string& address));
-
-  MOCK_METHOD4(RecvFrom, int(IOBuffer* buffer, int size,
-                             IPEndPoint* address,
-                             const CompletionCallback& callback));
-
-  int SendTo(IOBuffer* buf, int buf_len, const IPEndPoint& address,
-             const CompletionCallback& callback) {
-    return SendToInternal(std::string(buf->data(), buf_len), address.ToString(),
-                          callback);
-  }
-
-  MOCK_METHOD3(SendToInternal, int(const std::string& packet,
-                                   const std::string address,
-                                   const CompletionCallback& callback));
-
-  MOCK_METHOD1(SetReceiveBufferSize, bool(int32 size));
-  MOCK_METHOD1(SetSendBufferSize, bool(int32 size));
-
-  MOCK_METHOD0(Close, void());
-
-  MOCK_CONST_METHOD1(GetPeerAddress, int(IPEndPoint* address));
-  MOCK_CONST_METHOD1(GetLocalAddress, int(IPEndPoint* address));
-  MOCK_CONST_METHOD0(NetLog, const BoundNetLog&());
-
-  MOCK_METHOD0(AllowAddressReuse, void());
-  MOCK_METHOD0(AllowBroadcast, void());
-
-  int JoinGroup(const IPAddressNumber& group_address) const {
-    return JoinGroupInternal(IPAddressToString(group_address));
-  }
-
-  MOCK_CONST_METHOD1(JoinGroupInternal, int(const std::string& group));
-
-  int LeaveGroup(const IPAddressNumber& group_address) const {
-    return LeaveGroupInternal(IPAddressToString(group_address));
-  }
-
-  MOCK_CONST_METHOD1(LeaveGroupInternal, int(const std::string& group));
-
-  MOCK_METHOD1(SetMulticastTimeToLive, int(int ttl));
-
-  MOCK_METHOD1(SetMulticastLoopbackMode, int(bool loopback));
-
-  void SetResponsePacket(std::string response_packet) {
-    response_packet_ = response_packet;
-  }
-
-  int HandleRecvNow(IOBuffer* buffer, int size, IPEndPoint* address,
-                    const CompletionCallback& callback) {
-    int size_returned =
-        std::min(response_packet_.size(), static_cast<size_t>(size));
-    memcpy(buffer->data(), response_packet_.data(), size_returned);
-    return size_returned;
-  }
-
-  int HandleRecvLater(IOBuffer* buffer, int size, IPEndPoint* address,
-                      const CompletionCallback& callback) {
-    int rv = HandleRecvNow(buffer, size, address, callback);
-    base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(callback, rv));
-    return ERR_IO_PENDING;
-  }
-
- private:
-  std::string response_packet_;
+  // Answer 1
+  '\x07', '_', 'p', 'r', 'i', 'v', 'e', 't',
+  '\x04', '_', 't', 'c', 'p',
+  '\x05', 'l', 'o', 'c', 'a', 'l',
+  '\x00',
+  '\x00', '\x2f',        // TYPE is NSEC.
+  '\x00', '\x01',        // CLASS is IN.
+  '\x00', '\x01',        // TTL (4 bytes) is 20 hours, 47 minutes, 48 seconds.
+  '\x24', '\x74',
+  '\x00', '\x06',        // RDLENGTH is 6 bytes.
+  '\xc0', '\x0c',
+  '\x00', '\x02', '\x00', '\x08'  // Only A record present
 };
 
-class MockSocketFactory
-    : public MDnsConnection::SocketFactory {
- public:
-  MockSocketFactory() {
-  }
+const char kSamplePacketAPrivet[] = {
+  // Header
+  '\x00', '\x00',               // ID is zeroed out
+  '\x81', '\x80',               // Standard query response, RA, no error
+  '\x00', '\x00',               // No questions (for simplicity)
+  '\x00', '\x01',               // 1 RR (answers)
+  '\x00', '\x00',               // 0 authority RRs
+  '\x00', '\x00',               // 0 additional RRs
 
-  virtual ~MockSocketFactory() {
-  }
-
-  virtual scoped_ptr<DatagramServerSocket> CreateSocket() OVERRIDE {
-    scoped_ptr<MockDatagramServerSocket> new_socket(
-        new NiceMock<MockDatagramServerSocket>);
-
-    ON_CALL(*new_socket, SendToInternal(_, _, _))
-        .WillByDefault(Invoke(
-            this,
-            &MockSocketFactory::SendToInternal));
-
-    ON_CALL(*new_socket, RecvFrom(_, _, _, _))
-        .WillByDefault(Invoke(
-            this,
-            &MockSocketFactory::RecvFromInternal));
-
-    return new_socket.PassAs<DatagramServerSocket>();
-  }
-
-  void SimulateReceive(const char* packet, int size) {
-    DCHECK(recv_buffer_size_ >= size);
-    DCHECK(recv_buffer_.get());
-    DCHECK(!recv_callback_.is_null());
-
-    memcpy(recv_buffer_->data(), packet, size);
-    CompletionCallback recv_callback = recv_callback_;
-    recv_callback_.Reset();
-    recv_callback.Run(size);
-  }
-
-  MOCK_METHOD1(OnSendTo, void(const std::string&));
-
- private:
-  int SendToInternal(const std::string& packet, const std::string& address,
-                     const CompletionCallback& callback) {
-    OnSendTo(packet);
-    return packet.size();
-  }
-
-  // The latest receive callback is always saved, since the MDnsConnection
-  // does not care which socket a packet is received on.
-  int RecvFromInternal(IOBuffer* buffer, int size,
-                       IPEndPoint* address,
-                       const CompletionCallback& callback) {
-    recv_buffer_ = buffer;
-    recv_buffer_size_ = size;
-    recv_callback_ = callback;
-    return ERR_IO_PENDING;
-  }
-
-  scoped_refptr<IOBuffer> recv_buffer_;
-  int recv_buffer_size_;
-  CompletionCallback recv_callback_;
+  // Answer 1
+  '\x07', '_', 'p', 'r', 'i', 'v', 'e', 't',
+  '\x04', '_', 't', 'c', 'p',
+  '\x05', 'l', 'o', 'c', 'a', 'l',
+  '\x00',
+  '\x00', '\x01',        // TYPE is A.
+  '\x00', '\x01',        // CLASS is IN.
+  '\x00', '\x01',        // TTL (4 bytes) is 20 hours, 47 minutes, 48 seconds.
+  '\x24', '\x74',
+  '\x00', '\x04',        // RDLENGTH is 4 bytes.
+  '\xc0', '\x0c',
+  '\x00', '\x02',
 };
 
 class PtrRecordCopyContainer {
@@ -436,6 +347,7 @@ class MDnsTest : public ::testing::Test {
  public:
   MDnsTest();
   virtual ~MDnsTest();
+  virtual void SetUp() OVERRIDE;
   virtual void TearDown() OVERRIDE;
   void DeleteTransaction();
   void DeleteBothListeners();
@@ -455,7 +367,7 @@ class MDnsTest : public ::testing::Test {
 
   scoped_ptr<MDnsClientImpl> test_client_;
   IPEndPoint mdns_ipv4_endpoint_;
-  StrictMock<MockSocketFactory>* socket_factory_;
+  StrictMock<MockMDnsSocketFactory>* socket_factory_;
 
   // Transactions and listeners that can be deleted by class methods for
   // reentrancy tests.
@@ -474,7 +386,7 @@ class MockListenerDelegate : public MDnsListener::Delegate {
 };
 
 MDnsTest::MDnsTest() {
-  socket_factory_ = new StrictMock<MockSocketFactory>();
+  socket_factory_ = new StrictMock<MockMDnsSocketFactory>();
   test_client_.reset(new MDnsClientImpl(
       scoped_ptr<MDnsConnection::SocketFactory>(socket_factory_)));
 }
@@ -482,21 +394,18 @@ MDnsTest::MDnsTest() {
 MDnsTest::~MDnsTest() {
 }
 
+void MDnsTest::SetUp() {
+  test_client_->StartListening();
+}
+
 void MDnsTest::TearDown() {
-  base::MessageLoop::current()->RunUntilIdle();
-
-  ASSERT_FALSE(test_client_->IsListeningForTests());
-
-  base::MessageLoop::current()->AssertIdle();
 }
 
 void MDnsTest::SimulatePacketReceive(const char* packet, unsigned size) {
   socket_factory_->SimulateReceive(packet, size);
 }
 
-void MDnsTest::ExpectPacket(
-    const char* packet,
-    unsigned size) {
+void MDnsTest::ExpectPacket(const char* packet, unsigned size) {
   EXPECT_CALL(*socket_factory_, OnSendTo(std::string(packet, size)))
       .Times(2);
 }
@@ -527,7 +436,6 @@ void MDnsTest::Stop() {
 TEST_F(MDnsTest, PassiveListeners) {
   StrictMock<MockListenerDelegate> delegate_privet;
   StrictMock<MockListenerDelegate> delegate_printer;
-  StrictMock<MockListenerDelegate> delegate_ptr;
 
   PtrRecordCopyContainer record_privet;
   PtrRecordCopyContainer record_printer;
@@ -536,14 +444,9 @@ TEST_F(MDnsTest, PassiveListeners) {
       dns_protocol::kTypePTR, "_privet._tcp.local", &delegate_privet);
   scoped_ptr<MDnsListener> listener_printer = test_client_->CreateListener(
       dns_protocol::kTypePTR, "_printer._tcp.local", &delegate_printer);
-  scoped_ptr<MDnsListener> listener_ptr = test_client_->CreateListener(
-      dns_protocol::kTypePTR, "", &delegate_ptr);
 
   ASSERT_TRUE(listener_privet->Start());
   ASSERT_TRUE(listener_printer->Start());
-  ASSERT_TRUE(listener_ptr->Start());
-
-  ASSERT_TRUE(test_client_->IsListeningForTests());
 
   // Send the same packet twice to ensure no records are double-counted.
 
@@ -559,8 +462,6 @@ TEST_F(MDnsTest, PassiveListeners) {
           &record_printer,
           &PtrRecordCopyContainer::SaveWithDummyArg));
 
-  EXPECT_CALL(delegate_ptr, OnRecordUpdate(MDnsListener::RECORD_ADDED, _))
-      .Times(Exactly(2));
 
   SimulatePacketReceive(kSamplePacket1, sizeof(kSamplePacket1));
   SimulatePacketReceive(kSamplePacket1, sizeof(kSamplePacket1));
@@ -573,13 +474,6 @@ TEST_F(MDnsTest, PassiveListeners) {
 
   listener_privet.reset();
   listener_printer.reset();
-
-  ASSERT_TRUE(test_client_->IsListeningForTests());
-
-  EXPECT_CALL(delegate_ptr, OnRecordUpdate(MDnsListener::RECORD_ADDED, _))
-      .Times(Exactly(2));
-
-  SimulatePacketReceive(kSamplePacket2, sizeof(kSamplePacket2));
 }
 
 TEST_F(MDnsTest, PassiveListenersCacheCleanup) {
@@ -592,8 +486,6 @@ TEST_F(MDnsTest, PassiveListenersCacheCleanup) {
       dns_protocol::kTypePTR, "_privet._tcp.local", &delegate_privet);
 
   ASSERT_TRUE(listener_privet->Start());
-
-  ASSERT_TRUE(test_client_->IsListeningForTests());
 
   EXPECT_CALL(delegate_privet, OnRecordUpdate(MDnsListener::RECORD_ADDED, _))
       .Times(Exactly(1))
@@ -628,8 +520,6 @@ TEST_F(MDnsTest, MalformedPacket) {
       dns_protocol::kTypePTR, "_printer._tcp.local", &delegate_printer);
 
   ASSERT_TRUE(listener_printer->Start());
-
-  ASSERT_TRUE(test_client_->IsListeningForTests());
 
   EXPECT_CALL(delegate_printer, OnRecordUpdate(MDnsListener::RECORD_ADDED, _))
       .Times(Exactly(1))
@@ -667,8 +557,6 @@ TEST_F(MDnsTest, TransactionWithEmptyCache) {
 
   ASSERT_TRUE(transaction_privet->Start());
 
-  EXPECT_TRUE(test_client_->IsListeningForTests());
-
   PtrRecordCopyContainer record_privet;
 
   EXPECT_CALL(*this, MockableRecordCallback(MDnsTransaction::RESULT_RECORD, _))
@@ -696,8 +584,6 @@ TEST_F(MDnsTest, TransactionCacheOnlyNoResult) {
       .Times(Exactly(1));
 
   ASSERT_TRUE(transaction_privet->Start());
-
-  EXPECT_FALSE(test_client_->IsListeningForTests());
 }
 
 TEST_F(MDnsTest, TransactionWithCache) {
@@ -708,8 +594,6 @@ TEST_F(MDnsTest, TransactionWithCache) {
       &delegate_irrelevant);
 
   ASSERT_TRUE(listener_irrelevant->Start());
-
-  EXPECT_TRUE(test_client_->IsListeningForTests());
 
   SimulatePacketReceive(kSamplePacket1, sizeof(kSamplePacket1));
 
@@ -746,15 +630,14 @@ TEST_F(MDnsTest, AdditionalRecords) {
 
   ASSERT_TRUE(listener_privet->Start());
 
-  ASSERT_TRUE(test_client_->IsListeningForTests());
-
   EXPECT_CALL(delegate_privet, OnRecordUpdate(MDnsListener::RECORD_ADDED, _))
       .Times(Exactly(1))
       .WillOnce(Invoke(
           &record_privet,
           &PtrRecordCopyContainer::SaveWithDummyArg));
 
-  SimulatePacketReceive(kSamplePacketAdditionalOnly, sizeof(kSamplePacket1));
+  SimulatePacketReceive(kSamplePacketAdditionalOnly,
+                        sizeof(kSamplePacketAdditionalOnly));
 
   EXPECT_TRUE(record_privet.IsRecordWith("_privet._tcp.local",
                                          "hello._privet._tcp.local"));
@@ -773,8 +656,6 @@ TEST_F(MDnsTest, TransactionTimeout) {
                      base::Unretained(this)));
 
   ASSERT_TRUE(transaction_privet->Start());
-
-  EXPECT_TRUE(test_client_->IsListeningForTests());
 
   EXPECT_CALL(*this,
               MockableRecordCallback(MDnsTransaction::RESULT_NO_RESULTS, NULL))
@@ -796,8 +677,6 @@ TEST_F(MDnsTest, TransactionMultipleRecords) {
                      base::Unretained(this)));
 
   ASSERT_TRUE(transaction_privet->Start());
-
-  EXPECT_TRUE(test_client_->IsListeningForTests());
 
   PtrRecordCopyContainer record_privet;
   PtrRecordCopyContainer record_privet2;
@@ -837,8 +716,6 @@ TEST_F(MDnsTest, TransactionReentrantDelete) {
 
   ASSERT_TRUE(transaction_->Start());
 
-  EXPECT_TRUE(test_client_->IsListeningForTests());
-
   EXPECT_CALL(*this, MockableRecordCallback(MDnsTransaction::RESULT_NO_RESULTS,
                                             NULL))
       .Times(Exactly(1))
@@ -856,8 +733,6 @@ TEST_F(MDnsTest, TransactionReentrantDeleteFromCache) {
       dns_protocol::kTypeA, "codereview.chromium.local",
       &delegate_irrelevant);
   ASSERT_TRUE(listener_irrelevant->Start());
-
-  ASSERT_TRUE(test_client_->IsListeningForTests());
 
   SimulatePacketReceive(kSamplePacket1, sizeof(kSamplePacket1));
 
@@ -907,8 +782,6 @@ TEST_F(MDnsTest, TransactionReentrantCacheLookupStart) {
 
   ASSERT_TRUE(transaction1->Start());
 
-  EXPECT_TRUE(test_client_->IsListeningForTests());
-
   SimulatePacketReceive(kSamplePacket1, sizeof(kSamplePacket1));
 }
 
@@ -934,8 +807,6 @@ TEST_F(MDnsTest, ListenerReentrantDelete) {
   EXPECT_CALL(delegate_privet, OnRecordUpdate(MDnsListener::RECORD_ADDED, _))
       .Times(Exactly(1))
       .WillOnce(InvokeWithoutArgs(this, &MDnsTest::DeleteBothListeners));
-
-  EXPECT_TRUE(test_client_->IsListeningForTests());
 
   SimulatePacketReceive(kSamplePacket1, sizeof(kSamplePacket1));
 
@@ -969,6 +840,119 @@ TEST_F(MDnsTest, DoubleRecordDisagreeing) {
   EXPECT_EQ("2.3.4.5", IPAddressToString(address));
 }
 
+TEST_F(MDnsTest, NsecWithListener) {
+  StrictMock<MockListenerDelegate> delegate_privet;
+  scoped_ptr<MDnsListener> listener_privet = test_client_->CreateListener(
+      dns_protocol::kTypeA, "_privet._tcp.local", &delegate_privet);
+
+  // Test to make sure nsec callback is NOT called for PTR
+  // (which is marked as existing).
+  StrictMock<MockListenerDelegate> delegate_privet2;
+  scoped_ptr<MDnsListener> listener_privet2 = test_client_->CreateListener(
+      dns_protocol::kTypePTR, "_privet._tcp.local", &delegate_privet2);
+
+  ASSERT_TRUE(listener_privet->Start());
+
+  EXPECT_CALL(delegate_privet,
+              OnNsecRecord("_privet._tcp.local", dns_protocol::kTypeA));
+
+  SimulatePacketReceive(kSamplePacketNsec,
+                        sizeof(kSamplePacketNsec));
+}
+
+TEST_F(MDnsTest, NsecWithTransactionFromNetwork) {
+  scoped_ptr<MDnsTransaction> transaction_privet =
+      test_client_->CreateTransaction(
+          dns_protocol::kTypeA, "_privet._tcp.local",
+          MDnsTransaction::QUERY_NETWORK |
+          MDnsTransaction::QUERY_CACHE |
+          MDnsTransaction::SINGLE_RESULT,
+          base::Bind(&MDnsTest::MockableRecordCallback,
+                     base::Unretained(this)));
+
+  EXPECT_CALL(*socket_factory_, OnSendTo(_))
+      .Times(2);
+
+  ASSERT_TRUE(transaction_privet->Start());
+
+  EXPECT_CALL(*this,
+              MockableRecordCallback(MDnsTransaction::RESULT_NSEC, NULL));
+
+  SimulatePacketReceive(kSamplePacketNsec,
+                        sizeof(kSamplePacketNsec));
+}
+
+TEST_F(MDnsTest, NsecWithTransactionFromCache) {
+  // Force mDNS to listen.
+  StrictMock<MockListenerDelegate> delegate_irrelevant;
+  scoped_ptr<MDnsListener> listener_irrelevant =
+      test_client_->CreateListener(dns_protocol::kTypePTR, "_privet._tcp.local",
+                                   &delegate_irrelevant);
+  listener_irrelevant->Start();
+
+  SimulatePacketReceive(kSamplePacketNsec,
+                        sizeof(kSamplePacketNsec));
+
+  EXPECT_CALL(*this,
+              MockableRecordCallback(MDnsTransaction::RESULT_NSEC, NULL));
+
+  scoped_ptr<MDnsTransaction> transaction_privet_a =
+      test_client_->CreateTransaction(
+          dns_protocol::kTypeA, "_privet._tcp.local",
+          MDnsTransaction::QUERY_NETWORK |
+          MDnsTransaction::QUERY_CACHE |
+          MDnsTransaction::SINGLE_RESULT,
+          base::Bind(&MDnsTest::MockableRecordCallback,
+                     base::Unretained(this)));
+
+  ASSERT_TRUE(transaction_privet_a->Start());
+
+  // Test that a PTR transaction does NOT consider the same NSEC record to be a
+  // valid answer to the query
+
+  scoped_ptr<MDnsTransaction> transaction_privet_ptr =
+      test_client_->CreateTransaction(
+          dns_protocol::kTypePTR, "_privet._tcp.local",
+          MDnsTransaction::QUERY_NETWORK |
+          MDnsTransaction::QUERY_CACHE |
+          MDnsTransaction::SINGLE_RESULT,
+          base::Bind(&MDnsTest::MockableRecordCallback,
+                     base::Unretained(this)));
+
+  EXPECT_CALL(*socket_factory_, OnSendTo(_))
+      .Times(2);
+
+  ASSERT_TRUE(transaction_privet_ptr->Start());
+}
+
+TEST_F(MDnsTest, NsecConflictRemoval) {
+  StrictMock<MockListenerDelegate> delegate_privet;
+  scoped_ptr<MDnsListener> listener_privet = test_client_->CreateListener(
+      dns_protocol::kTypeA, "_privet._tcp.local", &delegate_privet);
+
+  ASSERT_TRUE(listener_privet->Start());
+
+  const RecordParsed* record1;
+  const RecordParsed* record2;
+
+  EXPECT_CALL(delegate_privet, OnRecordUpdate(MDnsListener::RECORD_ADDED, _))
+      .WillOnce(SaveArg<1>(&record1));
+
+  SimulatePacketReceive(kSamplePacketAPrivet,
+                        sizeof(kSamplePacketAPrivet));
+
+  EXPECT_CALL(delegate_privet, OnRecordUpdate(MDnsListener::RECORD_REMOVED, _))
+      .WillOnce(SaveArg<1>(&record2));
+
+  EXPECT_CALL(delegate_privet,
+              OnNsecRecord("_privet._tcp.local", dns_protocol::kTypeA));
+
+  SimulatePacketReceive(kSamplePacketNsec,
+                        sizeof(kSamplePacketNsec));
+
+  EXPECT_EQ(record1, record2);
+}
+
 
 // Note: These tests assume that the ipv4 socket will always be created first.
 // This is a simplifying assumption based on the way the code works now.
@@ -982,14 +966,14 @@ class SimpleMockSocketFactory
   }
 
   virtual scoped_ptr<DatagramServerSocket> CreateSocket() OVERRIDE {
-    scoped_ptr<MockDatagramServerSocket> socket(
-        new StrictMock<MockDatagramServerSocket>);
+    scoped_ptr<MockMDnsDatagramServerSocket> socket(
+        new StrictMock<MockMDnsDatagramServerSocket>);
     sockets_.push(socket.get());
     return socket.PassAs<DatagramServerSocket>();
   }
 
-  MockDatagramServerSocket* PopFirstSocket() {
-    MockDatagramServerSocket* socket = sockets_.front();
+  MockMDnsDatagramServerSocket* PopFirstSocket() {
+    MockMDnsDatagramServerSocket* socket = sockets_.front();
     sockets_.pop();
     return socket;
   }
@@ -999,7 +983,7 @@ class SimpleMockSocketFactory
   }
 
  private:
-  std::queue<MockDatagramServerSocket*> sockets_;
+  std::queue<MockMDnsDatagramServerSocket*> sockets_;
 };
 
 class MockMDnsConnectionDelegate : public MDnsConnection::Delegate {
@@ -1049,8 +1033,8 @@ class MDnsConnectionTest : public ::testing::Test {
 
   StrictMock<MockMDnsConnectionDelegate> delegate_;
 
-  MockDatagramServerSocket* socket_ipv4_;
-  MockDatagramServerSocket* socket_ipv6_;
+  MockMDnsDatagramServerSocket* socket_ipv4_;
+  MockMDnsDatagramServerSocket* socket_ipv6_;
   SimpleMockSocketFactory factory_;
   MDnsConnection connection_;
   TestCompletionCallback callback_;
@@ -1065,7 +1049,7 @@ TEST_F(MDnsConnectionTest, ReceiveSynchronous) {
       .WillOnce(Return(ERR_IO_PENDING));
   EXPECT_CALL(*socket_ipv6_, RecvFrom(_, _, _, _))
       .WillOnce(
-          Invoke(socket_ipv6_, &MockDatagramServerSocket::HandleRecvNow))
+          Invoke(socket_ipv6_, &MockMDnsDatagramServerSocket::HandleRecvNow))
       .WillOnce(Return(ERR_IO_PENDING));
 
   EXPECT_CALL(delegate_, HandlePacketInternal(sample_packet));
@@ -1081,7 +1065,7 @@ TEST_F(MDnsConnectionTest, ReceiveAsynchronous) {
       .WillOnce(Return(ERR_IO_PENDING));
   EXPECT_CALL(*socket_ipv6_, RecvFrom(_, _, _, _))
       .WillOnce(
-          Invoke(socket_ipv6_, &MockDatagramServerSocket::HandleRecvLater))
+          Invoke(socket_ipv6_, &MockMDnsDatagramServerSocket::HandleRecvLater))
       .WillOnce(Return(ERR_IO_PENDING));
 
   ASSERT_TRUE(InitConnection());

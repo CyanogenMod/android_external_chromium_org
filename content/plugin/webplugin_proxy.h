@@ -16,7 +16,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/shared_memory.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_message.h"
 #include "skia/ext/refptr.h"
@@ -185,7 +185,7 @@ class WebPluginProxy : public webkit::npapi::WebPlugin {
       const TransportDIB::Handle& dib_handle,
       const gfx::Rect& window_rect,
       scoped_ptr<TransportDIB>* dib_out,
-      base::mac::ScopedCFTypeRef<CGContextRef>* cg_context_out);
+      base::ScopedCFTypeRef<CGContextRef>* cg_context_out);
 #elif defined(USE_X11)
   static void CreateDIBAndCanvasFromHandle(
       const TransportDIB::Handle& dib_handle,
@@ -243,7 +243,7 @@ class WebPluginProxy : public webkit::npapi::WebPlugin {
   int windowless_buffer_index_;
 #if defined(OS_MACOSX)
   scoped_ptr<TransportDIB> windowless_dibs_[2];
-  base::mac::ScopedCFTypeRef<CGContextRef> windowless_contexts_[2];
+  base::ScopedCFTypeRef<CGContextRef> windowless_contexts_[2];
   scoped_ptr<WebPluginAcceleratedSurfaceProxy> accelerated_surface_;
 #else
   skia::RefPtr<SkCanvas> windowless_canvases_[2];

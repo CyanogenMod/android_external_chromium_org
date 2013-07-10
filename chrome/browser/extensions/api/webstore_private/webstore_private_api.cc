@@ -20,8 +20,6 @@
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/extensions/install_tracker.h"
-#include "chrome/browser/extensions/install_tracker_factory.h"
 #include "chrome/browser/extensions/webstore_installer.h"
 #include "chrome/browser/gpu/gpu_feature_checker.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -168,8 +166,8 @@ const char kUserCancelledError[] = "User cancelled install";
 
 // Helper to create a dictionary with login properties set from the appropriate
 // values in the passed-in |profile|.
-DictionaryValue* CreateLoginResult(Profile* profile) {
-  DictionaryValue* dictionary = new DictionaryValue();
+base::DictionaryValue* CreateLoginResult(Profile* profile) {
+  base::DictionaryValue* dictionary = new base::DictionaryValue();
   std::string username = profile->GetPrefs()->GetString(
       prefs::kGoogleServicesUsername);
   dictionary->SetString(kLoginKey, username);
@@ -222,7 +220,7 @@ InstallBundleFunction::InstallBundleFunction() {}
 InstallBundleFunction::~InstallBundleFunction() {}
 
 bool InstallBundleFunction::RunImpl() {
-  ListValue* extensions = NULL;
+  base::ListValue* extensions = NULL;
   EXTENSION_FUNCTION_VALIDATE(args_->GetList(0, &extensions));
 
   BundleInstaller::ItemList items;
@@ -237,10 +235,10 @@ bool InstallBundleFunction::RunImpl() {
   return true;
 }
 
-bool InstallBundleFunction::ReadBundleInfo(ListValue* extensions,
+bool InstallBundleFunction::ReadBundleInfo(base::ListValue* extensions,
                                            BundleInstaller::ItemList* items) {
   for (size_t i = 0; i < extensions->GetSize(); ++i) {
-    DictionaryValue* details = NULL;
+    base::DictionaryValue* details = NULL;
     EXTENSION_FUNCTION_VALIDATE(extensions->GetDictionary(i, &details));
 
     BundleInstaller::Item item;
@@ -286,7 +284,7 @@ BeginInstallWithManifestFunction::BeginInstallWithManifestFunction()
 BeginInstallWithManifestFunction::~BeginInstallWithManifestFunction() {}
 
 bool BeginInstallWithManifestFunction::RunImpl() {
-  DictionaryValue* details = NULL;
+  base::DictionaryValue* details = NULL;
   EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(0, &details));
   CHECK(details);
 
@@ -401,7 +399,7 @@ void BeginInstallWithManifestFunction::SetResultCode(ResultCode code) {
 void BeginInstallWithManifestFunction::OnWebstoreParseSuccess(
     const std::string& id,
     const SkBitmap& icon,
-    DictionaryValue* parsed_manifest) {
+    base::DictionaryValue* parsed_manifest) {
   CHECK_EQ(id_, id);
   CHECK(parsed_manifest);
   icon_ = icon;
@@ -584,20 +582,9 @@ void CompleteInstallFunction::AfterMaybeInstallAppLauncher(bool ok) {
     LOG(ERROR) << "Error installing app launcher";
   std::string id = approval_->extension_id;
   if (apps::IsAppLauncherEnabled()) {
-    std::string name;
-    if (!approval_->manifest->value()->GetString(extension_manifest_keys::kName,
-                                                 &name)) {
-      NOTREACHED();
-    }
     // Show the app list so it receives install progress notifications.
     if (approval_->manifest->is_app())
       AppListService::Get()->ShowAppList(profile());
-
-    extensions::InstallTracker* tracker =
-        extensions::InstallTrackerFactory::GetForProfile(profile());
-    tracker->OnBeginExtensionInstall(
-        id, name, approval_->installing_icon, approval_->manifest->is_app(),
-        approval_->manifest->is_platform_app());
   }
 
   // The extension will install through the normal extension install flow, but
@@ -626,9 +613,6 @@ void CompleteInstallFunction::OnExtensionInstallFailure(
     const std::string& id,
     const std::string& error,
     WebstoreInstaller::FailureReason reason) {
-  extensions::InstallTracker* tracker =
-      extensions::InstallTrackerFactory::GetForProfile(profile());
-  tracker->OnInstallFailure(id);
   if (test_webstore_installer_delegate) {
     test_webstore_installer_delegate->OnExtensionInstallFailure(
         id, error, reason);
@@ -641,14 +625,6 @@ void CompleteInstallFunction::OnExtensionInstallFailure(
 
   // Matches the AddRef in RunImpl().
   Release();
-}
-
-void CompleteInstallFunction::OnExtensionDownloadProgress(
-    const std::string& id,
-    content::DownloadItem* item) {
-  extensions::InstallTracker* tracker =
-      extensions::InstallTrackerFactory::GetForProfile(profile());
-  tracker->OnDownloadProgress(id, item->PercentComplete());
 }
 
 EnableAppLauncherFunction::EnableAppLauncherFunction() {}
@@ -710,6 +686,13 @@ void GetWebGLStatusFunction::OnFeatureCheck(bool feature_allowed) {
 
 bool GetIsLauncherEnabledFunction::RunImpl() {
   SetResult(Value::CreateBooleanValue(apps::IsAppLauncherEnabled()));
+  SendResponse(true);
+  return true;
+}
+
+bool IsInIncognitoModeFunction::RunImpl() {
+  SetResult(
+      Value::CreateBooleanValue(profile_ != profile_->GetOriginalProfile()));
   SendResponse(true);
   return true;
 }

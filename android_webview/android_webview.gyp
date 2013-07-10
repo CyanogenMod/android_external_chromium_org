@@ -28,7 +28,6 @@
       'target_name': 'android_webview_pak',
       'type': 'none',
       'dependencies': [
-        '<(DEPTH)/content/browser/devtools/devtools_resources.gyp:devtools_resources',
         '<(DEPTH)/content/content_resources.gyp:content_resources',
         '<(DEPTH)/net/net.gyp:net_resources',
         '<(DEPTH)/ui/ui.gyp:ui_resources',
@@ -45,7 +44,6 @@
               '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_100_percent.pak',
-              '<(SHARED_INTERMEDIATE_DIR)/webkit/devtools_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources_100_percent.pak',
             ],
@@ -68,6 +66,7 @@
       'dependencies': [
         '../android_webview/native/webview_native.gyp:webview_native',
         '../components/components.gyp:auto_login_parser',
+        '../components/components.gyp:autofill_content_renderer',
         '../components/components.gyp:navigation_interception',
         '../components/components.gyp:visitedlink_browser',
         '../components/components.gyp:visitedlink_renderer',
@@ -85,8 +84,6 @@
         '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/',
       ],
       'sources': [
-        'browser/aw_autofill_manager_delegate.cc',
-        'browser/aw_autofill_manager_delegate.h',
         'browser/aw_browser_context.cc',
         'browser/aw_browser_context.h',
         'browser/aw_browser_main_parts.cc',

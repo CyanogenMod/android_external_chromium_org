@@ -56,16 +56,10 @@ function Gallery(context) {
 
   this.dataModel_ = new cr.ui.ArrayDataModel([]);
   this.selectionModel_ = new cr.ui.ListSelectionModel();
+  this.displayStringFunction_ = context.displayStringFunction;
 
-  var strf = context.displayStringFunction;
-  this.displayStringFunction_ = function(id, formatArgs) {
-    var args = Array.prototype.slice.call(arguments);
-    args[0] = 'GALLERY_' + id.toUpperCase();
-    return strf.apply(null, args);
-  };
-
-  this.initListeners_();
   this.initDom_();
+  this.initListeners_();
 }
 
 /**
@@ -326,10 +320,14 @@ Gallery.prototype.initDom_ = function() {
     cr.dispatchSimpleEvent(this, 'image-saved');
   }.bind(this));
 
-  var deleteButton = this.createToolbarButton_('delete', 'delete');
-  deleteButton.addEventListener('click', this.onDelete_.bind(this));
+  this.printButton_ = this.createToolbarButton_('print', 'GALLERY_PRINT');
+  this.printButton_.setAttribute('disabled', '');
+  this.printButton_.addEventListener('click', this.print_.bind(this));
 
-  this.shareButton_ = this.createToolbarButton_('share', 'share');
+  var deleteButton = this.createToolbarButton_('delete', 'GALLERY_DELETE');
+  deleteButton.addEventListener('click', this.delete_.bind(this));
+
+  this.shareButton_ = this.createToolbarButton_('share', 'GALLERY_SHARE');
   this.shareButton_.setAttribute('disabled', '');
   this.shareButton_.addEventListener('click', this.toggleShare_.bind(this));
 
@@ -341,22 +339,19 @@ Gallery.prototype.initDom_ = function() {
   this.dataModel_.addEventListener('content', this.onContentChange_.bind(this));
 
   this.selectionModel_.addEventListener('change', this.onSelection_.bind(this));
-
   this.slideMode_.addEventListener('useraction', this.onUserAction_.bind(this));
-
-  document.body.setAttribute('new-ui', '');
 };
 
 /**
  * Creates toolbar button.
  *
- * @param {string} clazz Class to add.
+ * @param {string} className Class to add.
  * @param {string} title Button title.
  * @return {HTMLElement} Newly created button.
  * @private
  */
-Gallery.prototype.createToolbarButton_ = function(clazz, title) {
-  var button = util.createChild(this.toolbar_, clazz, 'button');
+Gallery.prototype.createToolbarButton_ = function(className, title) {
+  var button = util.createChild(this.toolbar_, className, 'button');
   button.title = this.displayStringFunction_(title);
   return button;
 };
@@ -506,8 +501,15 @@ Gallery.prototype.setCurrentMode_ = function(mode) {
     var oppositeMode =
         mode == this.slideMode_ ? this.mosaicMode_ : this.slideMode_;
     this.modeButton_.title =
-        this.displayStringFunction_(oppositeMode.getName());
+        this.displayStringFunction_(oppositeMode.getTitle());
   }
+
+  // Printing is available only in the slide view.
+  if (mode == this.slideMode_)
+    this.printButton_.removeAttribute('disabled');
+  else
+    this.printButton_.setAttribute('disabled', '');
+
   this.container_.setAttribute('mode', this.currentMode_.getName());
   this.updateSelectionAndState_();
 };
@@ -564,10 +566,10 @@ Gallery.prototype.toggleMode_ = function(opt_callback, opt_event) {
 };
 
 /**
- * Delete event handler.
+ * Deletes the selected items.
  * @private
  */
-Gallery.prototype.onDelete_ = function() {
+Gallery.prototype.delete_ = function() {
   this.onUserAction_();
 
   // Clone the sorted selected indexes array.
@@ -600,12 +602,14 @@ Gallery.prototype.onDelete_ = function() {
     this.document_.body.addEventListener('keydown', this.keyDownBound_);
   }.bind(this);
 
-  cr.ui.dialogs.BaseDialog.OK_LABEL = this.displayStringFunction_('OK_LABEL');
+  cr.ui.dialogs.BaseDialog.OK_LABEL = this.displayStringFunction_(
+      'GALLERY_OK_LABEL');
   cr.ui.dialogs.BaseDialog.CANCEL_LABEL =
-      this.displayStringFunction_('CANCEL_LABEL');
+      this.displayStringFunction_('GALLERY_CANCEL_LABEL');
   var confirm = new cr.ui.dialogs.ConfirmDialog(this.container_);
-  confirm.show(this.displayStringFunction_(
-      plural ? 'CONFIRM_DELETE_SOME' : 'CONFIRM_DELETE_ONE', param),
+  confirm.show(
+      this.displayStringFunction_(plural ? 'GALLERY_CONFIRM_DELETE_SOME' :
+          'GALLERY_CONFIRM_DELETE_ONE', param),
       function() {
         restoreListener();
         this.selectionModel_.unselectAll();
@@ -620,6 +624,15 @@ Gallery.prototype.onDelete_ = function() {
         // Restore the listener after a timeout so that ESC is processed.
         setTimeout(restoreListener, 0);
       });
+};
+
+/**
+ * Prints the current item.
+ * @private
+ */
+Gallery.prototype.print_ = function() {
+  this.onUserAction_();
+  window.print();
 };
 
 /**
@@ -709,11 +722,16 @@ Gallery.prototype.onKeyDown_ = function(event) {
 
     case 'U+0056':  // 'v'
       this.slideMode_.startSlideshow(SlideMode.SLIDESHOW_INTERVAL_FIRST, event);
-      return;
+      break;
+
+    case 'Ctrl-U+0050':  // Ctrl+'p' prints the current image.
+      if (this.currentMode_ == this.slideMode_)
+        this.print_();
+      break;
 
     case 'U+007F':  // Delete
     case 'Shift-U+0033':  // Shift+'3' (Delete key might be missing).
-      this.onDelete_();
+      this.delete_();
       break;
   }
 };
@@ -743,7 +761,8 @@ Gallery.prototype.updateSelectionAndState_ = function() {
     path = this.context_.curDirEntry.fullPath;
     window.top.document.title = this.context_.curDirEntry.name;
     displayName =
-        this.displayStringFunction_('ITEMS_SELECTED', selectedItems.length);
+        this.displayStringFunction_('GALLERY_ITEMS_SELECTED',
+                                    selectedItems.length);
   }
 
   window.top.util.updateAppState(path,

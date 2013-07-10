@@ -11,7 +11,6 @@
 
 #include "base/basictypes.h"
 #include "base/strings/string16.h"
-#include "chrome/common/instant_types.h"
 
 class GURL;
 class Profile;
@@ -30,20 +29,12 @@ class PrefRegistrySyncable;
 namespace chrome {
 
 enum OptInState {
-  // The user has not manually opted in/out of InstantExtended,
-  // either local or regular. The in/out for local or not may
-  // occur concurrently, but only once for each (local or not).
+  // The user has not manually opted in/out of InstantExtended.
   INSTANT_EXTENDED_NOT_SET,
   // The user has opted-in to InstantExtended.
   INSTANT_EXTENDED_OPT_IN,
   // The user has opted-out of InstantExtended.
   INSTANT_EXTENDED_OPT_OUT,
-  // The user has opted-in to Local InstantExtended.
-  INSTANT_EXTENDED_OPT_IN_LOCAL,
-  // The user has opted-out of Local InstantExtended.
-  INSTANT_EXTENDED_OPT_OUT_LOCAL,
-  // The user has opted-out of both Local and regular InstantExtended.
-  INSTANT_EXTENDED_OPT_OUT_BOTH,
   INSTANT_EXTENDED_OPT_IN_STATE_ENUM_COUNT,
 };
 
@@ -55,16 +46,12 @@ extern const int kDisableStartMargin;
 bool IsInstantExtendedAPIEnabled();
 
 // Returns the value to pass to the &espv CGI parameter when loading the
-// embedded search page from the user's default search provider. Will be
-// 0 if the Instant Extended API is not enabled, or if the local-only Instant
-// Extended API is enabled, or if in incognito mode.
-uint64 EmbeddedSearchPageVersion(Profile* profile);
+// embedded search page from the user's default search provider. Returns 0 if
+// the Instant Extended API is not enabled.
+uint64 EmbeddedSearchPageVersion();
 
 // Returns whether query extraction is enabled.
-bool IsQueryExtractionEnabled(Profile* profile);
-
-// Returns whether the local-only version of Instant Extended API is enabled.
-bool IsLocalOnlyInstantExtendedAPIEnabled();
+bool IsQueryExtractionEnabled();
 
 // Extracts and returns search terms from |url|. Returns empty string if the URL
 // is not secure or doesn't have a search term replacement key.  Does not
@@ -149,8 +136,12 @@ bool IsInstantEnabled(Profile* profile);
 // to always show the remote NTP on browser startup.
 bool ShouldPreferRemoteNTPOnStartup();
 
-// Should the Instant NTP be preloaded if local-only InstantExtended is enabled.
-bool ShouldPreloadLocalOnlyNTP();
+// Returns true if the Instant NTP should be shown and false if not.
+bool ShouldShowInstantNTP();
+
+// Returns true if the recent tabs link should be shown on the local NTP in
+// field trials.
+bool ShouldShowRecentTabsOnNTP();
 
 // Returns true if |my_url| matches |other_url|.
 bool MatchesOriginAndPath(const GURL& my_url, const GURL& other_url);
@@ -176,9 +167,6 @@ bool IsPrivilegedURLForInstant(const GURL& url);
 // Returns the staleness timeout (in seconds) that should be used to refresh the
 // InstantLoader.
 int GetInstantLoaderStalenessTimeoutSec();
-
-// Returns true if |contents| corresponds to an Instant overlay.
-bool IsInstantOverlay(const content::WebContents* contents);
 
 // Returns true if |contents| corresponds to a preloaded instant extended NTP.
 bool IsPreloadedInstantExtendedNTP(const content::WebContents* contents);
@@ -227,12 +215,6 @@ bool GetBoolValueForFlagWithDefault(const std::string& flag,
                                     bool default_value,
                                     const FieldTrialFlags& flags);
 
-// Coerces the commandline Instant URL to look like a template URL, so that we
-// can extract search terms from it. Exposed for testing only.
-GURL CoerceCommandLineURLToTemplateURL(const GURL& instant_url,
-                                       const TemplateURLRef& ref,
-                                       int start_margin);
-
 // Returns whether the default search provider has a valid Instant URL in its
 // template. Exposed for testing only.
 bool DefaultSearchProviderSupportsInstant(Profile* profile);
@@ -240,11 +222,6 @@ bool DefaultSearchProviderSupportsInstant(Profile* profile);
 // Let tests reset the gate that prevents metrics from being sent more than
 // once.
 void ResetInstantExtendedOptInStateGateForTest();
-
-// Returns true if |items_a| and |items_b| are equal.
-bool AreMostVisitedItemsEqual(
-    const std::vector<InstantMostVisitedItem>& items_a,
-    const std::vector<InstantMostVisitedItem>& items_b);
 
 }  // namespace chrome
 

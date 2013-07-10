@@ -12,8 +12,10 @@
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
+#include "chrome/common/url_constants.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "grit/generated_resources.h"
+#include "net/base/data_url.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace {
@@ -22,15 +24,13 @@ namespace {
 const char kLocallyManagedUserCreationScreen[] =
     "locally-managed-user-creation";
 
-const char kLocallyManagedWebURL[] =
-    "www.chrome.com/SomeTBDURL";
-
 }  // namespace
 
 namespace chromeos {
 
 LocallyManagedUserCreationScreenHandler::
-    LocallyManagedUserCreationScreenHandler() {}
+LocallyManagedUserCreationScreenHandler() : delegate_(NULL) {
+}
 
 LocallyManagedUserCreationScreenHandler::
     ~LocallyManagedUserCreationScreenHandler() {}
@@ -59,13 +59,13 @@ void LocallyManagedUserCreationScreenHandler::DeclareLocalizedValues(
                IDS_CREATE_LOCALLY_MANAGED_INTRO_TEXT_2);
   builder->AddF("createManagedUserIntroText3",
                IDS_CREATE_LOCALLY_MANAGED_INTRO_TEXT_3,
-               UTF8ToUTF16(kLocallyManagedWebURL));
+               UTF8ToUTF16(chrome::kSupervisedUserManagementDisplayURL));
 
   builder->Add("createManagedUserPickManagerTitle",
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PICK_MANAGER_TITLE);
   builder->AddF("createManagedUserPickManagerTitleExplanation",
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PICK_MANAGER_EXPLANATION,
-               UTF8ToUTF16(kLocallyManagedWebURL));
+               UTF8ToUTF16(chrome::kSupervisedUserManagementDisplayURL));
   builder->Add("createManagedUserManagerPasswordHint",
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_MANAGER_PASSWORD_HINT);
   builder->Add("createManagedUserWrongManagerPasswordText",
@@ -101,21 +101,15 @@ void LocallyManagedUserCreationScreenHandler::DeclareLocalizedValues(
   builder->Add("createManagedUserCreated1Text2",
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATED_1_TEXT_2);
   builder->Add("createManagedUserCreated1Text3",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATED_3_TEXT_3);
+               IDS_CREATE_LOCALLY_MANAGED_USER_CREATED_1_TEXT_3);
 
-  builder->Add("createManagedUserCreated2Text1",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATED_2_TEXT_1);
-  builder->Add("createManagedUserCreated2Text2",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATED_2_TEXT_2);
+  builder->Add("managementURL", chrome::kSupervisedUserManagementDisplayURL);
 
-  builder->Add("createManagedUserCreated3Text1",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATED_3_TEXT_1);
-  builder->Add("createManagedUserCreated3Text2",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATED_3_TEXT_2);
-  builder->Add("createManagedUserCreated3Text3",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATED_3_TEXT_3);
-
-  builder->Add("managementURL", kLocallyManagedWebURL);
+  // TODO(antrim) : this is an explicit code duplications with UserImageScreen.
+  // It should be removed by issue 251179.
+  builder->Add("takePhoto", IDS_OPTIONS_CHANGE_PICTURE_TAKE_PHOTO);
+  builder->Add("discardPhoto", IDS_OPTIONS_CHANGE_PICTURE_DISCARD_PHOTO);
+  builder->Add("flipPhoto", IDS_OPTIONS_CHANGE_PICTURE_FLIP_PHOTO);
 }
 
 void LocallyManagedUserCreationScreenHandler::Initialize() {}
@@ -139,6 +133,20 @@ void LocallyManagedUserCreationScreenHandler::RegisterMessages() {
   AddCallback("managerSelectedOnLocallyManagedUserCreationFlow",
               &LocallyManagedUserCreationScreenHandler::
                   HandleManagerSelected);
+
+  // TODO(antrim) : this is an explicit code duplications with UserImageScreen.
+  // It should be removed by issue 251179.
+  AddCallback("supervisedUserGetImages",
+              &LocallyManagedUserCreationScreenHandler::
+                  HandleGetImages);
+
+  AddCallback("supervisedUserPhotoTaken",
+              &LocallyManagedUserCreationScreenHandler::HandlePhotoTaken);
+  AddCallback("supervisedUserSelectImage",
+              &LocallyManagedUserCreationScreenHandler::HandleSelectImage);
+  AddCallback("supervisedUserCheckCameraPresence",
+              &LocallyManagedUserCreationScreenHandler::
+                  HandleCheckCameraPresence);
 }
 
 void LocallyManagedUserCreationScreenHandler::PrepareToShow() {}
@@ -160,6 +168,10 @@ void LocallyManagedUserCreationScreenHandler::Show() {
   }
   data->Set("managers", users_list.release());
   ShowScreen(OobeUI::kScreenManagedUserCreationFlow, data.get());
+
+  if (!delegate_)
+    return;
+  delegate_->CheckCameraPresence();
 }
 
 void LocallyManagedUserCreationScreenHandler::Hide() {}
@@ -268,6 +280,51 @@ void LocallyManagedUserCreationScreenHandler::HandleAuthenticateManager(
   UserManager::Get()->SetUserFlow(manager_username, flow);
 
   delegate_->AuthenticateManager(manager_username, manager_password);
+}
+
+// TODO(antrim) : this is an explicit code duplications with UserImageScreen.
+// It should be removed by issue 251179.
+void LocallyManagedUserCreationScreenHandler::HandleGetImages() {
+  base::ListValue image_urls;
+  for (int i = kFirstDefaultImageIndex; i < kDefaultImagesCount; ++i) {
+    scoped_ptr<base::DictionaryValue> image_data(new base::DictionaryValue);
+    image_data->SetString("url", GetDefaultImageUrl(i));
+    image_data->SetString(
+        "author", l10n_util::GetStringUTF16(kDefaultImageAuthorIDs[i]));
+    image_data->SetString(
+        "website", l10n_util::GetStringUTF16(kDefaultImageWebsiteIDs[i]));
+    image_data->SetString("title", GetDefaultImageDescription(i));
+    image_urls.Append(image_data.release());
+  }
+  CallJS("login.LocallyManagedUserCreationScreen.setDefaultImages", image_urls);
+}
+
+void LocallyManagedUserCreationScreenHandler::HandlePhotoTaken
+    (const std::string& image_url) {
+  std::string mime_type, charset, raw_data;
+  if (!net::DataURL::Parse(GURL(image_url), &mime_type, &charset, &raw_data))
+    NOTREACHED();
+  DCHECK_EQ("image/png", mime_type);
+
+  if (delegate_)
+    delegate_->OnPhotoTaken(raw_data);
+}
+
+void LocallyManagedUserCreationScreenHandler::HandleCheckCameraPresence() {
+  if (!delegate_)
+    return;
+  delegate_->CheckCameraPresence();
+}
+
+void LocallyManagedUserCreationScreenHandler::HandleSelectImage(
+    const std::string& image_url,
+    const std::string& image_type) {
+  if (delegate_)
+    delegate_->OnImageSelected(image_type, image_url);
+}
+
+void LocallyManagedUserCreationScreenHandler::SetCameraPresent(bool present) {
+  CallJS("login.LocallyManagedUserCreationScreen.setCameraPresent", present);
 }
 
 }  // namespace chromeos

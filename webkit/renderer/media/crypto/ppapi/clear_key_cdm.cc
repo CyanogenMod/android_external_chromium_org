@@ -12,7 +12,7 @@
 #include "base/bind.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/decrypt_config.h"
 #include "webkit/renderer/media/crypto/ppapi/cdm_video_decoder.h"
@@ -173,7 +173,7 @@ void ClearKeyCdm::Client::KeyError(const std::string& session_id,
 }
 
 void ClearKeyCdm::Client::KeyMessage(const std::string& session_id,
-                                     const std::string& message,
+                                     const std::vector<uint8>& message,
                                      const std::string& default_url) {
   status_ = kKeyMessage;
   session_id_ = session_id;
@@ -181,21 +181,10 @@ void ClearKeyCdm::Client::KeyMessage(const std::string& session_id,
   default_url_ = default_url;
 }
 
-void ClearKeyCdm::Client::NeedKey(const std::string& session_id,
-                                  const std::string& type,
-                                  scoped_ptr<uint8[]> init_data,
-                                  int init_data_length) {
-  // In the current implementation of AesDecryptor, NeedKey is not used.
-  // If no key is available to decrypt an input buffer, it returns kNoKey to
-  // the caller instead of firing NeedKey.
-  NOTREACHED();
-}
-
 ClearKeyCdm::ClearKeyCdm(cdm::Host* host)
     : decryptor_(base::Bind(&Client::KeyAdded, base::Unretained(&client_)),
                  base::Bind(&Client::KeyError, base::Unretained(&client_)),
-                 base::Bind(&Client::KeyMessage, base::Unretained(&client_)),
-                 base::Bind(&Client::NeedKey, base::Unretained(&client_))),
+                 base::Bind(&Client::KeyMessage, base::Unretained(&client_))),
       host_(host),
       timer_delay_ms_(kInitialTimerDelayMs),
       timer_set_(false) {
@@ -226,7 +215,8 @@ cdm::Status ClearKeyCdm::GenerateKeyRequest(const char* type, int type_size,
 
   host_->SendKeyMessage(
       client_.session_id().data(), client_.session_id().size(),
-      client_.key_message().data(), client_.key_message().size(),
+      reinterpret_cast<const char*>(&client_.key_message()[0]),
+      client_.key_message().size(),
       client_.default_url().data(), client_.default_url().size());
 
   // Only save the latest session ID for heartbeat messages.

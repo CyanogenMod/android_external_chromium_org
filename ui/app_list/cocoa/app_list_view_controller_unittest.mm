@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #import "testing/gtest_mac.h"
 #import "ui/app_list/cocoa/app_list_view_controller.h"
 #import "ui/app_list/cocoa/apps_grid_controller.h"
@@ -25,7 +25,7 @@ class AppListViewControllerTest : public AppsGridControllerTestHelper {
 
   virtual void TearDown() OVERRIDE {
     [app_list_view_controller_
-        setDelegate:scoped_ptr<app_list::AppListViewDelegate>(NULL)];
+        setDelegate:scoped_ptr<app_list::AppListViewDelegate>()];
     app_list_view_controller_.reset();
     AppsGridControllerTestHelper::TearDown();
   }
@@ -37,7 +37,7 @@ class AppListViewControllerTest : public AppsGridControllerTestHelper {
   }
 
  protected:
-  scoped_nsobject<AppListViewController> app_list_view_controller_;
+  base::scoped_nsobject<AppListViewController> app_list_view_controller_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AppListViewControllerTest);

@@ -240,7 +240,7 @@ FileTable.decorate = function(self, metadataCache, fullPage) {
 
   var tableColumnModelClass;
   tableColumnModelClass = FileTableColumnModel;
-  if (!self.noCheckboxes) {
+  if (self.showCheckboxes) {
     columns.push(new cr.ui.table.TableColumn('selection',
                                              '',
                                              50, true));
@@ -971,10 +971,9 @@ filelist.updateListItemDriveProps = function(li, driveProps) {
       li.classList.remove('dim-offline');
     else
       li.classList.add('dim-offline');
-    if (driveProps.availableWhenMetered)
-      li.classList.remove('dim-metered');
-    else
-      li.classList.add('dim-metered');
+    // TODO(mtomasz): Consider adding some vidual indication for files which
+    // are not cached on LTE. Currently we show them as normal files.
+    // crbug.com/246611.
   }
 
   if (driveProps.driveApps.length > 0) {

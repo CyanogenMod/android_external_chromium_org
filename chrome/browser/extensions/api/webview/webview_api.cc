@@ -5,7 +5,7 @@
 #include "chrome/browser/extensions/api/webview/webview_api.h"
 
 #include "chrome/browser/extensions/tab_helper.h"
-#include "chrome/browser/webview/webview_guest.h"
+#include "chrome/browser/guestview/webview/webview_guest.h"
 #include "chrome/common/extensions/api/webview.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
@@ -32,7 +32,7 @@ bool WebviewExecuteCodeFunction::Init() {
   if (!guest_instance_id_)
     return false;
 
-  DictionaryValue* details_value = NULL;
+  base::DictionaryValue* details_value = NULL;
   if (!args_->GetDictionary(1, &details_value))
     return false;
   scoped_ptr<InjectDetails> details(new InjectDetails());
@@ -52,7 +52,7 @@ bool WebviewExecuteCodeFunction::CanExecuteScriptOnPage() {
 }
 
 extensions::ScriptExecutor* WebviewExecuteCodeFunction::GetScriptExecutor() {
-  chrome::WebViewGuest* guest = chrome::WebViewGuest::From(
+  WebViewGuest* guest = WebViewGuest::From(
       render_view_host()->GetProcess()->GetID(), guest_instance_id_);
   if (!guest)
     return NULL;
@@ -64,11 +64,14 @@ bool WebviewExecuteCodeFunction::IsWebView() const {
   return true;
 }
 
+WebviewExecuteScriptFunction::WebviewExecuteScriptFunction() {
+}
+
 void WebviewExecuteScriptFunction::OnExecuteCodeFinished(
     const std::string& error,
     int32 on_page_id,
     const GURL& on_url,
-    const ListValue& result) {
+    const base::ListValue& result) {
   content::RecordAction(content::UserMetricsAction("WebView.ExecuteScript"));
   if (error.empty())
     SetResult(result.DeepCopy());
@@ -76,7 +79,31 @@ void WebviewExecuteScriptFunction::OnExecuteCodeFinished(
                                                     result);
 }
 
+WebviewInsertCSSFunction::WebviewInsertCSSFunction() {
+}
+
 bool WebviewInsertCSSFunction::ShouldInsertCSS() const {
   return true;
 }
 
+WebviewGoFunction::WebviewGoFunction() {
+}
+
+WebviewGoFunction::~WebviewGoFunction() {
+}
+
+bool WebviewGoFunction::RunImpl() {
+  int instance_id = 0;
+  EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(0, &instance_id));
+
+  int relative_index = 0;
+  EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(1, &relative_index));
+
+  WebViewGuest* guest = WebViewGuest::From(
+      render_view_host()->GetProcess()->GetID(), instance_id);
+  if (!guest)
+    return false;
+
+  guest->Go(relative_index);
+  return true;
+}

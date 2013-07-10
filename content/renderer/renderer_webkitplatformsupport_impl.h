@@ -15,12 +15,16 @@
 #include "third_party/WebKit/public/platform/WebIDBFactory.h"
 #include "webkit/renderer/compositor_bindings/web_compositor_support_impl.h"
 
+namespace base {
+class MessageLoopProxy;
+}
+
 namespace cc {
 class ContextProvider;
 }
 
-namespace webkit_glue {
-class WebClipboardImpl;
+namespace IPC {
+class SyncMessageFilter;
 }
 
 namespace WebKit {
@@ -31,6 +35,7 @@ namespace content {
 class GamepadSharedMemoryReader;
 class RendererClipboardClient;
 class ThreadSafeSender;
+class WebClipboardImpl;
 class WebFileSystemImpl;
 class WebSharedWorkerRepositoryImpl;
 
@@ -64,8 +69,7 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
       const WebKit::WebURL&, double, const char*, size_t);
   virtual WebKit::WebString defaultLocale();
   virtual void suddenTerminationChanged(bool enabled);
-  virtual WebKit::WebStorageNamespace* createLocalStorageNamespace(
-      const WebKit::WebString& path, unsigned quota);
+  virtual WebKit::WebStorageNamespace* createLocalStorageNamespace();
   virtual WebKit::Platform::FileHandle databaseOpenFile(
       const WebKit::WebString& vfs_file_name, int desired_flags);
   virtual int databaseDeleteFile(const WebKit::WebString& vfs_file_name,
@@ -104,8 +108,14 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
       double sample_rate, WebKit::WebAudioDevice::RenderCallback* callback,
       const WebKit::WebString& input_device_id);
 
+  virtual bool loadAudioResource(
+      WebKit::WebAudioBus* destination_bus, const char* audio_file_data,
+      size_t data_size, double sample_rate);
+
   virtual WebKit::WebContentDecryptionModule* createContentDecryptionModule(
       const WebKit::WebString& key_system);
+  virtual WebKit::WebMIDIAccessor*
+      createMIDIAccessor(WebKit::WebMIDIAccessorClient* client);
 
   virtual WebKit::WebBlobRegistry* blobRegistry();
   virtual void sampleGamepads(WebKit::WebGamepads&);
@@ -142,7 +152,7 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   bool CheckPreparsedJsCachingEnabled() const;
 
   scoped_ptr<RendererClipboardClient> clipboard_client_;
-  scoped_ptr<webkit_glue::WebClipboardImpl> clipboard_;
+  scoped_ptr<WebClipboardImpl> clipboard_;
 
   class FileUtilities;
   scoped_ptr<FileUtilities> file_utilities_;
@@ -177,6 +187,8 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
 
   scoped_ptr<GamepadSharedMemoryReader> gamepad_shared_memory_reader_;
 
+  scoped_refptr<base::MessageLoopProxy> child_thread_loop_;
+  scoped_refptr<IPC::SyncMessageFilter> sync_message_filter_;
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
 
   scoped_refptr<cc::ContextProvider> shared_offscreen_context_;

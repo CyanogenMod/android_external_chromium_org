@@ -4,9 +4,9 @@
 
 #include "ppapi/tests/test_host_resolver.h"
 
-#include "ppapi/cpp/dev/host_resolver_dev.h"
-#include "ppapi/cpp/dev/net_address_dev.h"
-#include "ppapi/cpp/dev/tcp_socket_dev.h"
+#include "ppapi/cpp/host_resolver.h"
+#include "ppapi/cpp/net_address.h"
+#include "ppapi/cpp/tcp_socket.h"
 #include "ppapi/cpp/var.h"
 #include "ppapi/tests/test_utils.h"
 #include "ppapi/tests/testing_instance.h"
@@ -18,11 +18,11 @@ TestHostResolver::TestHostResolver(TestingInstance* instance)
 }
 
 bool TestHostResolver::Init() {
-  bool host_resolver_is_available = pp::HostResolver_Dev::IsAvailable();
+  bool host_resolver_is_available = pp::HostResolver::IsAvailable();
   if (!host_resolver_is_available)
     instance_->AppendError("PPB_HostResolver interface not available");
 
-  bool tcp_socket_is_available = pp::TCPSocket_Dev::IsAvailable();
+  bool tcp_socket_is_available = pp::TCPSocket::IsAvailable();
   if (!tcp_socket_is_available)
     instance_->AppendError("PPB_TCPSocket interface not available");
 
@@ -45,8 +45,8 @@ void TestHostResolver::RunTests(const std::string& filter) {
 }
 
 std::string TestHostResolver::SyncConnect(
-    pp::TCPSocket_Dev* socket,
-    const pp::NetAddress_Dev& address) {
+    pp::TCPSocket* socket,
+    const pp::NetAddress& address) {
   TestCompletionCallback callback(instance_->pp_instance(), callback_type());
   callback.WaitForResult(socket->Connect(address, callback.GetCallback()));
   CHECK_CALLBACK_BEHAVIOR(callback);
@@ -54,7 +54,7 @@ std::string TestHostResolver::SyncConnect(
   PASS();
 }
 
-std::string TestHostResolver::SyncRead(pp::TCPSocket_Dev* socket,
+std::string TestHostResolver::SyncRead(pp::TCPSocket* socket,
                                        char* buffer,
                                        int32_t num_bytes,
                                        int32_t* bytes_read) {
@@ -67,7 +67,7 @@ std::string TestHostResolver::SyncRead(pp::TCPSocket_Dev* socket,
   PASS();
 }
 
-std::string TestHostResolver::SyncWrite(pp::TCPSocket_Dev* socket,
+std::string TestHostResolver::SyncWrite(pp::TCPSocket* socket,
                                         const char* buffer,
                                         int32_t num_bytes,
                                         int32_t* bytes_written) {
@@ -80,7 +80,7 @@ std::string TestHostResolver::SyncWrite(pp::TCPSocket_Dev* socket,
   PASS();
 }
 
-std::string TestHostResolver::CheckHTTPResponse(pp::TCPSocket_Dev* socket,
+std::string TestHostResolver::CheckHTTPResponse(pp::TCPSocket* socket,
                                                 const std::string& request,
                                                 const std::string& response) {
   int32_t rv = 0;
@@ -98,10 +98,10 @@ std::string TestHostResolver::CheckHTTPResponse(pp::TCPSocket_Dev* socket,
 }
 
 std::string TestHostResolver::SyncResolve(
-    pp::HostResolver_Dev* host_resolver,
+    pp::HostResolver* host_resolver,
     const std::string& host,
     uint16_t port,
-    const PP_HostResolver_Hint_Dev& hint) {
+    const PP_HostResolver_Hint& hint) {
   TestCompletionCallback callback(instance_->pp_instance(), callback_type());
   callback.WaitForResult(
       host_resolver->Resolve(host.c_str(), port, hint, callback.GetCallback()));
@@ -111,20 +111,20 @@ std::string TestHostResolver::SyncResolve(
 }
 
 std::string TestHostResolver::ParameterizedTestResolve(
-    const PP_HostResolver_Hint_Dev& hint) {
-  pp::HostResolver_Dev host_resolver(instance_);
+    const PP_HostResolver_Hint& hint) {
+  pp::HostResolver host_resolver(instance_);
 
   ASSERT_SUBTEST_SUCCESS(SyncResolve(&host_resolver, host_, port_, hint));
 
   size_t size = host_resolver.GetNetAddressCount();
   ASSERT_TRUE(size >= 1);
 
-  pp::NetAddress_Dev address;
+  pp::NetAddress address;
   for (size_t i = 0; i < size; ++i) {
     address = host_resolver.GetNetAddress(i);
     ASSERT_NE(0, address.pp_resource());
 
-    pp::TCPSocket_Dev socket(instance_);
+    pp::TCPSocket socket(instance_);
     ASSERT_SUBTEST_SUCCESS(SyncConnect(&socket, address));
     ASSERT_SUBTEST_SUCCESS(CheckHTTPResponse(&socket,
                                              "GET / HTTP/1.0\r\n\r\n",
@@ -146,24 +146,24 @@ std::string TestHostResolver::ParameterizedTestResolve(
 }
 
 std::string TestHostResolver::TestEmpty() {
-  pp::HostResolver_Dev host_resolver(instance_);
+  pp::HostResolver host_resolver(instance_);
   ASSERT_EQ(0, host_resolver.GetNetAddressCount());
-  pp::NetAddress_Dev address = host_resolver.GetNetAddress(0);
+  pp::NetAddress address = host_resolver.GetNetAddress(0);
   ASSERT_EQ(0, address.pp_resource());
 
   PASS();
 }
 
 std::string TestHostResolver::TestResolve() {
-  PP_HostResolver_Hint_Dev hint;
+  PP_HostResolver_Hint hint;
   hint.family = PP_NETADDRESS_FAMILY_UNSPECIFIED;
-  hint.flags = PP_HOSTRESOLVER_FLAGS_CANONNAME;
+  hint.flags = PP_HOSTRESOLVER_FLAG_CANONNAME;
   return ParameterizedTestResolve(hint);
 }
 
 std::string TestHostResolver::TestResolveIPv4() {
-  PP_HostResolver_Hint_Dev hint;
+  PP_HostResolver_Hint hint;
   hint.family = PP_NETADDRESS_FAMILY_IPV4;
-  hint.flags = PP_HOSTRESOLVER_FLAGS_CANONNAME;
+  hint.flags = PP_HOSTRESOLVER_FLAG_CANONNAME;
   return ParameterizedTestResolve(hint);
 }

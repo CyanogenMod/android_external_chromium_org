@@ -7,6 +7,7 @@
 
 #include <deque>
 #include <set>
+#include <vector>
 
 #include "cc/resources/raster_worker_pool.h"
 
@@ -28,6 +29,8 @@ class CC_EXPORT PixelBufferRasterWorkerPool : public RasterWorkerPool {
 
   // Overridden from RasterWorkerPool:
   virtual void ScheduleTasks(RasterTask::Queue* queue) OVERRIDE;
+  virtual void OnRasterTasksFinished() OVERRIDE;
+  virtual void OnRasterTasksRequiredForActivationFinished() OVERRIDE;
 
  private:
   PixelBufferRasterWorkerPool(ResourceProvider* resource_provider,
@@ -43,11 +46,13 @@ class CC_EXPORT PixelBufferRasterWorkerPool : public RasterWorkerPool {
       bool was_canceled,
       bool needs_upload);
   void DidCompleteRasterTask(internal::RasterWorkerPoolTask* task);
-  void OnRasterFinished(int64 schedule_more_tasks_count);
+  unsigned PendingRasterTaskCount() const;
+  bool HasPendingTasks() const;
+  bool HasPendingTasksRequiredForActivation() const;
 
-  static void RunRasterFinishedTask(
-      scoped_refptr<base::MessageLoopProxy> origin_loop,
-      const base::Closure& on_raster_finished_callback);
+  const char* StateName() const;
+  scoped_ptr<base::Value> StateAsValue() const;
+  scoped_ptr<base::Value> ThrottleStateAsValue() const;
 
   bool shutdown_;
 
@@ -57,13 +62,17 @@ class CC_EXPORT PixelBufferRasterWorkerPool : public RasterWorkerPool {
   TaskDeque tasks_with_pending_upload_;
   TaskDeque completed_tasks_;
 
+  typedef std::set<internal::RasterWorkerPoolTask*> TaskSet;
+  TaskSet tasks_required_for_activation_;
+
+  size_t scheduled_raster_task_count_;
   size_t bytes_pending_upload_;
   bool has_performed_uploads_since_last_flush_;
   base::CancelableClosure check_for_completed_raster_tasks_callback_;
   bool check_for_completed_raster_tasks_pending_;
 
-  base::WeakPtrFactory<PixelBufferRasterWorkerPool> weak_ptr_factory_;
-  int64 schedule_more_tasks_count_;
+  bool should_notify_client_if_no_tasks_are_pending_;
+  bool should_notify_client_if_no_tasks_required_for_activation_are_pending_;
 
   DISALLOW_COPY_AND_ASSIGN(PixelBufferRasterWorkerPool);
 };

@@ -29,6 +29,17 @@ const char kAshCopyHostBackgroundAtBoot[] = "ash-copy-host-background-at-boot";
 // Enable keyboard shortcuts useful for debugging.
 const char kAshDebugShortcuts[] = "ash-debug-shortcuts";
 
+// Default wallpaper to use in guest mode (as paths to trusted,
+// non-user-writable JPEG files).
+const char kAshDefaultGuestWallpaperLarge[] =
+    "ash-default-guest-wallpaper-large";
+const char kAshDefaultGuestWallpaperSmall[] =
+    "ash-default-guest-wallpaper-small";
+
+// Default wallpaper to use (as paths to trusted, non-user-writable JPEG files).
+const char kAshDefaultWallpaperLarge[] = "ash-default-wallpaper-large";
+const char kAshDefaultWallpaperSmall[] = "ash-default-wallpaper-small";
+
 // Disable auto window maximization logic.
 const char kAshDisableAutoMaximizing[] = "ash-disable-auto-maximizing";
 
@@ -63,6 +74,10 @@ const char kAshDisableUIScaling[] = "ash-disable-ui-scaling";
 #if defined(OS_CHROMEOS)
 // Disable compositor based mirroring.
 const char kAshDisableSoftwareMirroring[] = "ash-disable-software-mirroring";
+
+// Disable the notification when a low-power USB charger is connected.
+const char kAshDisableUsbChargerNotification[] =
+    "ash-disable-usb-charger-notification";
 #endif
 
 // Extend the status tray volume item to allow the user to choose an audio
@@ -177,6 +192,13 @@ bool UseAlternateShelfLayout() {
   return CommandLine::ForCurrentProcess()->
         HasSwitch(ash::switches::kAshUseAlternateShelfLayout);
 }
+
+#if defined(OS_CHROMEOS)
+bool UseUsbChargerNotification() {
+  return !CommandLine::ForCurrentProcess()->
+        HasSwitch(ash::switches::kAshDisableUsbChargerNotification);
+}
+#endif
 
 }  // namespace switches
 }  // namespace ash

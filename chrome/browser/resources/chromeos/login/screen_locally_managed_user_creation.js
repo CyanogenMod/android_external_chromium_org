@@ -8,6 +8,8 @@
 
 login.createScreen('LocallyManagedUserCreationScreen',
                    'managed-user-creation', function() {
+  var UserImagesGrid = options.UserImagesGrid;
+
   var ManagerPod = cr.ui.define(function() {
     var node = $('managed-user-creation-manager-template').cloneNode(true);
     node.removeAttribute('id');
@@ -34,7 +36,8 @@ login.createScreen('LocallyManagedUserCreationScreen',
       var screen = $('managed-user-creation');
       var managerPod = this;
       var hideManagerPasswordError = function(element) {
-        managerPod.passwordErrorElement.hidden = true;
+        managerPod.passwordElement.classList.remove('password-error');
+        $('bubble').hide();
       };
 
       screen.configureTextInput(
@@ -59,7 +62,12 @@ login.createScreen('LocallyManagedUserCreationScreen',
     },
 
     showPasswordError: function() {
-      this.passwordErrorElement.hidden = false;
+      this.passwordElement.classList.add('password-error');
+      $('bubble').showTextForElement(
+          this.passwordElement,
+          loadTimeData.getString('createManagedUserWrongManagerPasswordText'),
+          cr.ui.Bubble.Attachment.BOTTOM,
+          24, 4);
     },
 
     /**
@@ -99,15 +107,6 @@ login.createScreen('LocallyManagedUserCreationScreen',
      */
     get passwordElement() {
       return this.querySelector('.managed-user-creation-manager-password');
-    },
-
-    /**
-     * Gets password error element.
-     * @type {!HTMLDivElement}
-     */
-    get passwordErrorElement() {
-      return this.
-          querySelector('.managed-user-creation-manager-wrong-password');
     },
 
     /**
@@ -210,6 +209,8 @@ login.createScreen('LocallyManagedUserCreationScreen',
       'showStatusError',
       'showTutorialPage',
       'showUsernamePage',
+      'setDefaultImages',
+      'setCameraPresent',
     ],
 
     lastVerifiedName_: null,
@@ -234,7 +235,8 @@ login.createScreen('LocallyManagedUserCreationScreen',
       var creationScreen = this;
 
       var hideUserPasswordError = function(element) {
-        creationScreen.passwordErrorVisible = false;
+        $('bubble').hide();
+        $('managed-user-creation-password').classList.remove('password-error');
       };
 
       this.configureTextInput(userNameField,
@@ -244,7 +246,6 @@ login.createScreen('LocallyManagedUserCreationScreen',
                                 passwordField.focus();
                               },
                               this.clearUserNameError_.bind(this));
-
       this.configureTextInput(passwordField,
                               this.updateNextButtonForUser_.bind(this),
                               this.validIfNotEmpty_.bind(this),
@@ -264,6 +265,53 @@ login.createScreen('LocallyManagedUserCreationScreen',
         creationScreen.handleErrorButtonPressed_();
         e.stopPropagation();
       });
+
+      /*
+      TODO(antrim) : this is an explicit code duplications with UserImageScreen.
+      It should be removed by issue 251179.
+      */
+      var imageGrid = this.getScreenElement('image-grid');
+      UserImagesGrid.decorate(imageGrid);
+
+      // Preview image will track the selected item's URL.
+      var previewElement = this.getScreenElement('image-preview');
+      previewElement.oncontextmenu = function(e) { e.preventDefault(); };
+
+      imageGrid.previewElement = previewElement;
+      imageGrid.selectionType = 'default';
+
+      imageGrid.addEventListener('select',
+                                 this.handleSelect_.bind(this));
+      imageGrid.addEventListener('phototaken',
+                                 this.handlePhotoTaken_.bind(this));
+      imageGrid.addEventListener('photoupdated',
+                                 this.handlePhotoUpdated_.bind(this));
+
+      // Set the title for camera item in the grid.
+      imageGrid.setCameraTitles(
+          loadTimeData.getString('takePhoto'),
+          loadTimeData.getString('photoFromCamera'));
+
+      this.getScreenElement('take-photo').addEventListener(
+          'click', this.handleTakePhoto_.bind(this));
+      this.getScreenElement('discard-photo').addEventListener(
+          'click', this.handleDiscardPhoto_.bind(this));
+
+      // Toggle 'animation' class for the duration of WebKit transition.
+      this.getScreenElement('flip-photo').addEventListener(
+          'click', function(e) {
+            previewElement.classList.add('animation');
+            imageGrid.flipPhoto = !imageGrid.flipPhoto;
+          });
+      this.getScreenElement('image-stream-crop').addEventListener(
+          'webkitTransitionEnd', function(e) {
+            previewElement.classList.remove('animation');
+          });
+      this.getScreenElement('image-preview-img').addEventListener(
+          'webkitTransitionEnd', function(e) {
+            previewElement.classList.remove('animation');
+          });
+      chrome.send('supervisedUserGetImages');
     },
 
     buttonIds: [],
@@ -422,7 +470,7 @@ login.createScreen('LocallyManagedUserCreationScreen',
           'gotit',
           'managedUserCreationFlow',
           this.gotItButtonPressed_.bind(this),
-          ['created-1', 'created-2', 'created-3'],
+          ['created-1'],
           ['custom-appearance', 'button-fancy', 'button-blue']));
       return buttons;
     },
@@ -517,8 +565,11 @@ login.createScreen('LocallyManagedUserCreationScreen',
       var userNameField = $('managed-user-creation-name');
       if (userNameField.value == this.lastIncorrectUserName_) {
         this.nameErrorVisible = true;
-        $('managed-user-creation-name-error').textContent = errorText;
-
+        $('bubble').showTextForElement(
+            $('managed-user-creation-name'),
+            errorText,
+            cr.ui.Bubble.Attachment.RIGHT,
+            24, 4);
         this.setButtonDisabledStatus('next', true);
       }
     },
@@ -541,10 +592,14 @@ login.createScreen('LocallyManagedUserCreationScreen',
      * @param {string} errorText - reason why this password is invalid.
      */
     showPasswordError: function(errorText) {
-      $('managed-user-creation-password-error').textContent = errorText;
-      this.passwordErrorVisible = true;
+      $('bubble').showTextForElement(
+          $('managed-user-creation-password'),
+          errorText,
+          cr.ui.Bubble.Attachment.RIGHT,
+          24, 4);
+      $('managed-user-creation-password').classList.add('password-error');
       $('managed-user-creation-password').focus();
-
+      this.disabled = false;
       this.setButtonDisabledStatus('next', true);
     },
 
@@ -553,23 +608,10 @@ login.createScreen('LocallyManagedUserCreationScreen',
      * @type {boolean}
      */
     set nameErrorVisible(value) {
-      $('managed-user-creation-name-error').
-          classList.toggle('error', value);
       $('managed-user-creation-name').
           classList.toggle('duplicate-name', value);
       if (!value)
-        $('managed-user-creation-name-error').textContent = '';
-    },
-
-    /**
-     * True if user name error should be displayed.
-     * @type {boolean}
-     */
-    set passwordErrorVisible(value) {
-      $('managed-user-creation-password-error').
-          classList.toggle('error', value);
-      if (!value)
-        $('managed-user-creation-password-error').textContent = '';
+        $('bubble').hide();
     },
 
     /**
@@ -626,14 +668,10 @@ login.createScreen('LocallyManagedUserCreationScreen',
                        'manager',
                        'username',
                        'error',
-                       'created-1',
-                       'created-2',
-                       'created-3'];
+                       'created-1'];
       var pageButtons = {'intro' : 'start',
                          'error' : 'error',
-                         'created-1' : 'gotit',
-                         'created-2' : 'gotit',
-                         'created-3' : 'gotit'};
+                         'created-1' : 'gotit'};
       this.hideStatus_();
       for (i in pageNames) {
         var pageName = pageNames[i];
@@ -658,6 +696,17 @@ login.createScreen('LocallyManagedUserCreationScreen',
         this.getScreenButton(pageButtons[visiblePage]).focus();
 
       this.currentPage_ = visiblePage;
+
+      if (visiblePage == 'username') {
+        var imageGrid = this.getScreenElement('image-grid');
+        // select some image.
+        var selected = this.imagesData_[
+            Math.floor(Math.random() * this.imagesData_.length)];
+        imageGrid.selectedItemUrl = selected.url;
+        chrome.send('supervisedUserSelectImage',
+                    [selected.url, 'default']);
+        this.getScreenElement('image-grid').redraw();
+      }
     },
 
     setButtonDisabledStatus: function(buttonName, status) {
@@ -666,14 +715,6 @@ login.createScreen('LocallyManagedUserCreationScreen',
     },
 
     gotItButtonPressed_: function() {
-      if (this.currentPage_ == 'created-1') {
-        this.setVisiblePage_('created-2');
-        return;
-      }
-      if (this.currentPage_ == 'created-2') {
-        this.setVisiblePage_('created-3');
-        return;
-      }
       chrome.send('finishLocalManagedUserCreation');
     },
 
@@ -731,6 +772,8 @@ login.createScreen('LocallyManagedUserCreationScreen',
       if (data['managers']) {
         this.loadManagers(data['managers']);
       }
+      var imageGrid = this.getScreenElement('image-grid');
+      imageGrid.updateAndFocus();
     },
 
     /**
@@ -738,6 +781,7 @@ login.createScreen('LocallyManagedUserCreationScreen',
      */
     onBeforeHide: function() {
       $('login-header-bar').signinUIState = SIGNIN_UI_STATE.HIDDEN;
+      this.getScreenElement('image-grid').stopCamera();
     },
 
     /**
@@ -784,7 +828,7 @@ login.createScreen('LocallyManagedUserCreationScreen',
      */
     cancel: function() {
       var notSignedInPages = ['intro', 'manager'];
-      var postCreationPages = ['created-1', 'created-2', 'created-3'];
+      var postCreationPages = ['created-1'];
       if (notSignedInPages.indexOf(this.currentPage_) >= 0) {
         // Make sure no manager password is kept:
         this.managerList_.clearPods();
@@ -807,24 +851,22 @@ login.createScreen('LocallyManagedUserCreationScreen',
       this.updateElementText_('created-1-text-1',
           'createManagedUserCreated1Text1',
           this.context_.managedName);
+      this.updateElementText_('created-1-text-2',
+          'createManagedUserCreated1Text2',
+          loadTimeData.getString('managementURL'), this.context_.managedName);
       this.updateElementText_('created-1-text-3',
           'createManagedUserCreated1Text3',
-          managerId);
-      this.updateElementText_('created-3-text-2',
-          'createManagedUserCreated3Text2',
-          loadTimeData.getStringF('managementURL'),
-          managerId);
-      this.updateElementText_('created-3-text-3',
-          'createManagedUserCreated3Text3',
           managerId);
       this.updateElementText_('name-explanation',
           'createManagedUserNameExplanation',
           managerId);
     },
 
-    updateElementText_: function(localId, templateName, value) {
+    updateElementText_: function(localId, templateName) {
+      var args = Array.prototype.slice.call(arguments);
+      args.shift();
       this.getScreenElement(localId).innerHTML =
-          loadTimeData.getStringF(templateName, value);
+          loadTimeData.getStringF.apply(loadTimeData, args);
     },
 
     showIntroPage: function() {
@@ -835,6 +877,7 @@ login.createScreen('LocallyManagedUserCreationScreen',
       this.lastVerifiedName_ = null;
       this.lastIncorrectUserName_ = null;
       this.passwordErrorVisible = false;
+      $('managed-user-creation-password').classList.remove('password-error');
       this.nameErrorVisible = false;
 
       this.setVisiblePage_('intro');
@@ -863,7 +906,89 @@ login.createScreen('LocallyManagedUserCreationScreen',
     showManagerPasswordError: function() {
       this.disabled = false;
       this.showSelectedManagerPasswordError_();
-    }
+    },
+
+    /*
+    TODO(antrim) : this is an explicit code duplications with UserImageScreen.
+    It should be removed by issue 251179.
+    */
+    /**
+     * Currently selected user image index (take photo button is with zero
+     * index).
+     * @type {number}
+     */
+    selectedUserImage_: -1,
+    imagesData: [],
+
+    setDefaultImages: function(imagesData) {
+      var imageGrid = this.getScreenElement('image-grid');
+      for (var i = 0, data; data = imagesData[i]; i++) {
+        var item = imageGrid.addItem(data.url, data.title);
+        item.type = 'default';
+        item.author = data.author || '';
+        item.website = data.website || '';
+      }
+      this.imagesData_ = imagesData;
+    },
+
+    /**
+     * Handles selection change.
+     * @param {cr.Event} e Selection change event.
+     * @private
+     */
+    handleSelect_: function(e) {
+      var imageGrid = this.getScreenElement('image-grid');
+      if (!(imageGrid.selectionType == 'camera' && imageGrid.cameraLive)) {
+        chrome.send('supervisedUserSelectImage',
+                    [imageGrid.selectedItemUrl, imageGrid.selectionType]);
+      }
+      // Start/stop camera on (de)selection.
+      if (!imageGrid.inProgramSelection &&
+          imageGrid.selectionType != e.oldSelectionType) {
+        if (imageGrid.selectionType == 'camera') {
+          // Programmatic selection of camera item is done in
+          // startCamera callback where streaming is started by itself.
+          imageGrid.startCamera(
+              function() {
+                // Start capture if camera is still the selected item.
+                return imageGrid.selectedItem == imageGrid.cameraImage;
+              });
+        } else {
+          imageGrid.stopCamera();
+        }
+      }
+    },
+
+    /**
+     * Handle photo capture from the live camera stream.
+     */
+    handleTakePhoto_: function(e) {
+      this.getScreenElement('image-grid').takePhoto();
+    },
+
+    handlePhotoTaken_: function(e) {
+      chrome.send('supervisedUserPhotoTaken', [e.dataURL]);
+    },
+
+    /**
+     * Handle photo updated event.
+     * @param {cr.Event} e Event with 'dataURL' property containing a data URL.
+     */
+    handlePhotoUpdated_: function(e) {
+      chrome.send('supervisedUserPhotoTaken', [e.dataURL]);
+    },
+
+    /**
+     * Handle discarding the captured photo.
+     */
+    handleDiscardPhoto_: function(e) {
+      var imageGrid = this.getScreenElement('image-grid');
+      imageGrid.discardPhoto();
+    },
+
+    setCameraPresent: function(present) {
+      this.getScreenElement('image-grid').cameraPresent = present;
+    },
   };
 });
 

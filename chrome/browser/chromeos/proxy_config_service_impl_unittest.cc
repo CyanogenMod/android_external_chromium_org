@@ -245,14 +245,11 @@ class ProxyConfigServiceImplTest : public testing::Test {
 
     service_test->AddService("stub_wifi2", "wifi2_PSK",
                              flimflam::kTypeWifi, flimflam::kStateOnline,
-                             true /* add to watchlist */);
+                             true /* visible */, true /* watch */);
     service_test->SetServiceProperty("stub_wifi2",
                                      flimflam::kGuidProperty,
                                      base::StringValue("stub_wifi2"));
-    service_test->SetServiceProperty("stub_wifi2",
-                                     flimflam::kProfileProperty,
-                                     base::StringValue(kUserProfilePath));
-    profile_test->AddService("stub_wifi2");
+    profile_test->AddService(kUserProfilePath, "stub_wifi2");
 
     loop_.RunUntilIdle();
   }

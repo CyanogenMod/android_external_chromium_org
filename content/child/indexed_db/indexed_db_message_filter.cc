@@ -8,8 +8,8 @@
 #include "base/location.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/pickle.h"
-#include "content/child/child_thread.h"
 #include "content/child/indexed_db/indexed_db_dispatcher.h"
+#include "content/child/thread_safe_sender.h"
 #include "content/common/indexed_db/indexed_db_messages.h"
 #include "webkit/child/worker_task_runner.h"
 
@@ -17,8 +17,10 @@ using webkit_glue::WorkerTaskRunner;
 
 namespace content {
 
-IndexedDBMessageFilter::IndexedDBMessageFilter() :
-    main_thread_loop_proxy_(base::MessageLoopProxy::current()) {
+IndexedDBMessageFilter::IndexedDBMessageFilter(
+    ThreadSafeSender* thread_safe_sender)
+    : main_thread_loop_proxy_(base::MessageLoopProxy::current()),
+      thread_safe_sender_(thread_safe_sender) {
 }
 
 bool IndexedDBMessageFilter::OnMessageReceived(const IPC::Message& msg) {
@@ -44,7 +46,8 @@ bool IndexedDBMessageFilter::OnMessageReceived(const IPC::Message& msg) {
 IndexedDBMessageFilter::~IndexedDBMessageFilter() {}
 
 void IndexedDBMessageFilter::DispatchMessage(const IPC::Message& msg) {
-  IndexedDBDispatcher::ThreadSpecificInstance()->OnMessageReceived(msg);
+  IndexedDBDispatcher::ThreadSpecificInstance(thread_safe_sender_.get())
+      ->OnMessageReceived(msg);
 }
 
 void IndexedDBMessageFilter::OnStaleMessageReceived(const IPC::Message& msg) {
@@ -62,17 +65,13 @@ void IndexedDBMessageFilter::OnStaleSuccessIDBDatabase(
     int32 ipc_database_callbacks_id,
     int32 ipc_database_id,
     const IndexedDBDatabaseMetadata& idb_metadata) {
-  scoped_refptr<IPC::SyncMessageFilter> filter(
-      ChildThread::current()->sync_message_filter());
-  filter->Send(
+  thread_safe_sender_->Send(
       new IndexedDBHostMsg_DatabaseClose(ipc_database_id));
 }
 
 void IndexedDBMessageFilter::OnStaleUpgradeNeeded(
     const IndexedDBMsg_CallbacksUpgradeNeeded_Params& p) {
-  scoped_refptr<IPC::SyncMessageFilter> filter(
-      ChildThread::current()->sync_message_filter());
-  filter->Send(
+  thread_safe_sender_->Send(
       new IndexedDBHostMsg_DatabaseClose(p.ipc_database_id));
 }
 

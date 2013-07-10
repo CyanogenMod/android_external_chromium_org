@@ -18,7 +18,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/process.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "cc/input/top_controls_state.h"
 #include "content/common/content_export.h"
@@ -27,7 +27,6 @@
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/navigation_gesture.h"
 #include "content/common/view_message_enums.h"
-#include "content/public/common/context_menu_source_type.h"
 #include "content/public/common/javascript_message_type.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/referrer.h"
@@ -56,6 +55,7 @@
 #include "third_party/WebKit/public/web/WebPageVisibilityState.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/web/WebViewClient.h"
+#include "ui/base/ui_base_types.h"
 #include "ui/surface/transport_dib.h"
 #include "webkit/common/webpreferences.h"
 #include "webkit/plugins/npapi/webplugin_page_delegate.h"
@@ -80,7 +80,6 @@ struct PP_NetAddress_Private;
 struct ViewMsg_Navigate_Params;
 struct ViewMsg_PostMessage_Params;
 struct ViewMsg_StopFinding_Params;
-struct WebDropData;
 
 namespace ui {
 struct SelectedFileInfo;
@@ -93,12 +92,6 @@ class PluginInstance;
 }  // namespace ppapi
 
 }  // namespace webkit
-
-#if defined(OS_ANDROID)
-namespace webkit_media {
-class WebMediaPlayerManagerAndroid;
-}
-#endif
 
 namespace WebKit {
 class WebApplicationCacheHost;
@@ -169,12 +162,14 @@ class SpeechRecognitionDispatcher;
 class StatsCollectionController;
 class WebPluginDelegateProxy;
 struct CustomContextMenuContext;
+struct DropData;
 struct FaviconURL;
 struct FileChooserParams;
 struct RenderViewImplParams;
 
 #if defined(OS_ANDROID)
-class WebMediaPlayerProxyImplAndroid;
+class WebMediaPlayerManagerAndroid;
+class WebMediaPlayerProxyAndroid;
 #endif
 
 // We need to prevent a page from trying to create infinite popups. It is not
@@ -259,7 +254,7 @@ class CONTENT_EXPORT RenderViewImpl
   }
 
 #if defined(OS_ANDROID)
-  webkit_media::WebMediaPlayerManagerAndroid* media_player_manager() {
+  WebMediaPlayerManagerAndroid* media_player_manager() {
     return media_player_manager_.get();
   }
 #endif
@@ -425,8 +420,7 @@ class CONTENT_EXPORT RenderViewImpl
   virtual WebKit::WebExternalPopupMenu* createExternalPopupMenu(
       const WebKit::WebPopupMenuInfo& popup_menu_info,
       WebKit::WebExternalPopupMenuClient* popup_menu_client);
-  virtual WebKit::WebStorageNamespace* createSessionStorageNamespace(
-      unsigned quota);
+  virtual WebKit::WebStorageNamespace* createSessionStorageNamespace();
   virtual void didAddMessageToConsole(
       const WebKit::WebConsoleMessage& message,
       const WebKit::WebString& source_name,
@@ -609,7 +603,7 @@ class CONTENT_EXPORT RenderViewImpl
                                const WebKit::WebString& title,
                                WebKit::WebTextDirection direction);
   virtual void didChangeIcon(WebKit::WebFrame*,
-                             WebKit::WebIconURL::Type) OVERRIDE;
+                             WebKit::WebIconURL::Type);
   virtual void didFinishDocumentLoad(WebKit::WebFrame* frame);
   virtual void didHandleOnloadEvents(WebKit::WebFrame* frame);
   virtual void didFailLoad(WebKit::WebFrame* frame,
@@ -651,8 +645,8 @@ class CONTENT_EXPORT RenderViewImpl
                                         v8::Handle<v8::Context>,
                                         int world_id);
   virtual void didChangeScrollOffset(WebKit::WebFrame* frame);
-  virtual void willInsertBody(WebKit::WebFrame* frame) OVERRIDE;
-  virtual void didFirstVisuallyNonEmptyLayout(WebKit::WebFrame*) OVERRIDE;
+  virtual void willInsertBody(WebKit::WebFrame* frame);
+  virtual void didFirstVisuallyNonEmptyLayout(WebKit::WebFrame*);
   virtual void didChangeContentsSize(WebKit::WebFrame* frame,
                                      const WebKit::WebSize& size);
   virtual void reportFindInPageMatchCount(int request_id,
@@ -681,21 +675,21 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void willOpenSocketStream(
       WebKit::WebSocketStreamHandle* handle);
   virtual void willStartUsingPeerConnectionHandler(WebKit::WebFrame* frame,
-      WebKit::WebRTCPeerConnectionHandler* handler) OVERRIDE;
+      WebKit::WebRTCPeerConnectionHandler* handler);
   virtual bool willCheckAndDispatchMessageEvent(
       WebKit::WebFrame* sourceFrame,
       WebKit::WebFrame* targetFrame,
       WebKit::WebSecurityOrigin targetOrigin,
-      WebKit::WebDOMMessageEvent event) OVERRIDE;
-  virtual WebKit::WebString acceptLanguages() OVERRIDE;
+      WebKit::WebDOMMessageEvent event);
+  virtual WebKit::WebString acceptLanguages();
   virtual WebKit::WebString userAgentOverride(
       WebKit::WebFrame* frame,
-      const WebKit::WebURL& url) OVERRIDE;
-  virtual WebKit::WebString doNotTrackValue(WebKit::WebFrame* frame) OVERRIDE;
-  virtual bool allowWebGL(WebKit::WebFrame* frame, bool default_value) OVERRIDE;
+      const WebKit::WebURL& url);
+  virtual WebKit::WebString doNotTrackValue(WebKit::WebFrame* frame);
+  virtual bool allowWebGL(WebKit::WebFrame* frame, bool default_value);
   virtual void didLoseWebGLContext(
       WebKit::WebFrame* frame,
-      int arb_robustness_status_code) OVERRIDE;
+      int arb_robustness_status_code);
 
   // WebKit::WebPageSerializerClient implementation ----------------------------
 
@@ -821,6 +815,7 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void GetSelectionBounds(gfx::Rect* start, gfx::Rect* end) OVERRIDE;
   virtual void GetCompositionCharacterBounds(
       std::vector<gfx::Rect>* character_bounds) OVERRIDE;
+  virtual void GetCompositionRange(ui::Range* range) OVERRIDE;
   virtual bool CanComposeInline() OVERRIDE;
   virtual void DidCommitCompositorFrame() OVERRIDE;
   virtual void InstrumentWillBeginFrame() OVERRIDE;
@@ -847,6 +842,8 @@ class CONTENT_EXPORT RenderViewImpl
   FRIEND_TEST_ALL_PREFIXES(ExternalPopupMenuRemoveTest, RemoveOnChange);
   FRIEND_TEST_ALL_PREFIXES(ExternalPopupMenuTest, NormalCase);
   FRIEND_TEST_ALL_PREFIXES(ExternalPopupMenuTest, ShowPopupThenNavigate);
+  FRIEND_TEST_ALL_PREFIXES(RendererAccessibilityTest,
+                           AccessibilityMessagesQueueWhileSwappedOut);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, DecideNavigationPolicyForWebUI);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
                            DidFailProvisionalLoadWithErrorForError);
@@ -864,6 +861,8 @@ class CONTENT_EXPORT RenderViewImpl
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnNavStateChanged);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnSetTextDirection);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnUpdateWebPreferences);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
+                           ChromeNativeSchemeCommitsSynchronously);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, SendSwapOutACK);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, ReloadWhileSwappedOut);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
@@ -984,7 +983,7 @@ class CONTENT_EXPORT RenderViewImpl
   void OnDragTargetDrop(const gfx::Point& client_pt,
                         const gfx::Point& screen_pt,
                         int key_modifiers);
-  void OnDragTargetDragEnter(const WebDropData& drop_data,
+  void OnDragTargetDragEnter(const DropData& drop_data,
                              const gfx::Point& client_pt,
                              const gfx::Point& screen_pt,
                              WebKit::WebDragOperationsMask operations_allowed,
@@ -1455,10 +1454,10 @@ class CONTENT_EXPORT RenderViewImpl
 
   // Proxy class for WebMediaPlayer to communicate with the real media player
   // objects in browser process.
-  WebMediaPlayerProxyImplAndroid* media_player_proxy_;
+  WebMediaPlayerProxyAndroid* media_player_proxy_;
 
   // The media player manager for managing all the media players on this view.
-  scoped_ptr<webkit_media::WebMediaPlayerManagerAndroid> media_player_manager_;
+  scoped_ptr<WebMediaPlayerManagerAndroid> media_player_manager_;
 
   // A date/time picker object for date and time related input elements.
   scoped_ptr<RendererDateTimePicker> date_time_picker_client_;
@@ -1557,7 +1556,7 @@ class CONTENT_EXPORT RenderViewImpl
   scoped_ptr<RenderViewPepperHelper> pepper_helper_;
   scoped_ptr<StatsCollectionObserver> stats_collection_observer_;
 
-  ContextMenuSourceType context_menu_source_type_;
+  ui::MenuSourceType context_menu_source_type_;
   gfx::Point touch_editing_context_menu_location_;
 
   // ---------------------------------------------------------------------------

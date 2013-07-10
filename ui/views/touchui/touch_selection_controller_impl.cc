@@ -4,7 +4,7 @@
 
 #include "ui/views/touchui/touch_selection_controller_impl.h"
 
-#include "base/time.h"
+#include "base/time/time.h"
 #include "grit/ui_resources.h"
 #include "grit/ui_strings.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -41,7 +41,7 @@ views::Widget* CreateTouchSelectionPopupWidget(
   views::Widget* widget = new views::Widget;
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_TOOLTIP);
   params.can_activate = false;
-  params.transparent = true;
+  params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.context = context;
   params.delegate = widget_delegate;

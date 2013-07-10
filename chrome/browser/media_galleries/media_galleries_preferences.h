@@ -14,7 +14,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/strings/string16.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/storage_monitor/removable_storage_observer.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 
@@ -103,6 +103,15 @@ struct MediaGalleryPrefInfo {
   // 1 if the display_name is only set externally when it is overriding
   // the name constructed from volume metadata.
   int prefs_version;
+
+  // Called by views to provide details for the gallery permission entries.
+  string16 GetGalleryDisplayName() const;
+  string16 GetGalleryTooltip() const;
+  string16 GetGalleryAdditionalDetails() const;
+
+  // Returns true if the gallery is currently a removable device gallery which
+  // is now attached, or a fixed storage gallery.
+  bool IsGalleryAvailable() const;
 };
 
 typedef std::map<MediaGalleryPrefId, MediaGalleryPrefInfo>

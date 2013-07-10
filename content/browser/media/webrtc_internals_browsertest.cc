@@ -5,7 +5,7 @@
 #include "base/command_line.h"
 #include "base/json/json_reader.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
@@ -125,9 +125,11 @@ class WebRTCInternalsBrowserTest: public ContentBrowserTest {
 
   virtual void SetUpOnMainThread() OVERRIDE {
     // We need fake devices in this test since we want to run on naked VMs. We
-    // assume this switch is set by default in content_browsertests.
+    // assume these switches are set by default in content_browsertests.
     ASSERT_TRUE(CommandLine::ForCurrentProcess()->HasSwitch(
         switches::kUseFakeDeviceForMediaStream));
+    ASSERT_TRUE(CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kUseFakeUIForMediaStream));
   }
 
  protected:

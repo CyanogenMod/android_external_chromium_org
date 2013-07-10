@@ -6,10 +6,10 @@
 #include <windows.h>
 #include <unknwn.h>
 #include <intshcut.h>
-#include <shlguid.h>
-#include <urlhist.h>
-#include <shlobj.h>
 #include <propvarutil.h>
+#include <shlguid.h>
+#include <shlobj.h>
+#include <urlhist.h>
 
 #include <algorithm>
 #include <vector>
@@ -28,21 +28,20 @@
 #include "base/win/scoped_comptr.h"
 #include "base/win/scoped_propvariant.h"
 #include "base/win/windows_version.h"
-#include "chrome/browser/bookmarks/imported_bookmark_entry.h"
-#include "chrome/browser/favicon/imported_favicon_usage.h"
 #include "chrome/browser/importer/external_process_importer_host.h"
 #include "chrome/browser/importer/ie_importer.h"
 #include "chrome/browser/importer/ie_importer_test_registry_overrider_win.h"
 #include "chrome/browser/importer/ie_importer_utils_win.h"
 #include "chrome/browser/importer/importer_bridge.h"
-#include "chrome/browser/importer/importer_data_types.h"
-#include "chrome/browser/importer/importer_host.h"
 #include "chrome/browser/importer/importer_progress_observer.h"
 #include "chrome/browser/importer/importer_unittest_utils.h"
 #include "chrome/browser/importer/pstore_declarations.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/importer/imported_bookmark_entry.h"
+#include "chrome/common/importer/imported_favicon_usage.h"
+#include "chrome/common/importer/importer_data_types.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/common/password_form.h"
@@ -485,9 +484,9 @@ IN_PROC_BROWSER_TEST_F(IEImporterBrowserTest, IEImporter) {
 
   // Starts to import the above settings.
   // Deletes itself.
-  ImporterHost* host = new ExternalProcessImporterHost;
+  ExternalProcessImporterHost* host = new ExternalProcessImporterHost;
   TestObserver* observer = new TestObserver();
-  host->SetObserver(observer);
+  host->set_observer(observer);
 
   importer::SourceProfile source_profile;
   source_profile.importer_type = importer::TYPE_IE;
@@ -561,10 +560,10 @@ IN_PROC_BROWSER_TEST_F(IEImporterBrowserTest,
 
     // Starts to import the above settings.
     // Deletes itself.
-    ImporterHost* host = new ExternalProcessImporterHost;
+    ExternalProcessImporterHost* host = new ExternalProcessImporterHost;
     MalformedFavoritesRegistryTestObserver* observer =
         new MalformedFavoritesRegistryTestObserver();
-    host->SetObserver(observer);
+    host->set_observer(observer);
 
     importer::SourceProfile source_profile;
     source_profile.importer_type = importer::TYPE_IE;

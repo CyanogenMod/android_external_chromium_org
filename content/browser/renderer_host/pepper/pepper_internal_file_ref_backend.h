@@ -36,7 +36,7 @@ class PepperInternalFileRefBackend : public PepperFileRefBackend {
                         PP_Time last_modified_time) OVERRIDE;
   virtual int32_t Delete(ppapi::host::ReplyMessageContext context) OVERRIDE;
   virtual int32_t Rename(ppapi::host::ReplyMessageContext context,
-                         PP_Resource new_file_ref) OVERRIDE;
+                         PepperFileRefHost* new_file_ref) OVERRIDE;
   virtual int32_t Query(ppapi::host::ReplyMessageContext context) OVERRIDE;
   virtual int32_t ReadDirectoryEntries(
       ppapi::host::ReplyMessageContext context) OVERRIDE;
@@ -44,6 +44,7 @@ class PepperInternalFileRefBackend : public PepperFileRefBackend {
       OVERRIDE;
 
   virtual fileapi::FileSystemURL GetFileSystemURL() const OVERRIDE;
+  virtual int32_t HasPermissions(int permissions) const OVERRIDE;
 
  private:
   // Generic reply callback.
@@ -63,10 +64,6 @@ class PepperInternalFileRefBackend : public PepperFileRefBackend {
       bool has_more);
 
   scoped_refptr<fileapi::FileSystemContext> GetFileSystemContext() const;
-
-  bool HasPermissionsForFile(const fileapi::FileSystemURL& url,
-                             int permissions,
-                             base::PlatformFileError* error) const;
 
   ppapi::host::PpapiHost* host_;
   int render_process_id_;

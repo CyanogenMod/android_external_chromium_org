@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_CHROMEOS_CROS_NETWORK_LIBRARY_IMPL_CROS_H_
 #define CHROME_BROWSER_CHROMEOS_CROS_NETWORK_LIBRARY_IMPL_CROS_H_
 
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/chromeos/cros/network_library_impl_base.h"
 
 namespace chromeos {
@@ -75,10 +75,6 @@ class NetworkLibraryImplCros : public NetworkLibraryImplBase  {
       const std::string& device_path,
       HardwareAddressFormat format,
       const NetworkGetIPConfigsCallback& callback) OVERRIDE;
-  virtual NetworkIPConfigVector GetIPConfigsAndBlock(
-      const std::string& device_path,
-      std::string* hardware_address,
-      HardwareAddressFormat format) OVERRIDE;
   virtual void SetIPParameters(const std::string& service_path,
                                const std::string& address,
                                const std::string& netmask,

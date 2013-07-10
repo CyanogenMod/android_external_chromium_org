@@ -9,7 +9,7 @@
 #include <utility>
 
 #include "base/basictypes.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "ui/base/ui_export.h"
 
 namespace ui {
@@ -17,11 +17,20 @@ namespace ui {
 enum LatencyComponentType {
   // Timestamp when the input event is sent from RenderWidgetHost to renderer.
   INPUT_EVENT_LATENCY_RWH_COMPONENT,
+  // Timestamp when the injected event is sent from RenderWidgetHost to
+  // renderer. For example, in Aura, touch event's LatencyInfo is carried over
+  // to the injected gesture event. So gesture event's
+  // INPUT_EVENT_LATENCY_RWH_COMPONENT is the timestamp when its original touch
+  // events is sent from RWH to renderer. In non-aura platform,
+  // INPUT_EVENT_LATENCY_RWH_COMPONENT is the same as
+  // INPUT_EVENT_LATENCY_INJECTED_RWH_COMPONENT.
+  INPUT_EVENT_LATENCY_INJECTED_RWH_COMPONENT,
   // Original timestamp for input event (e.g. timestamp from kernel).
   INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT,
   // Timestamp when the UI event is created.
   INPUT_EVENT_LATENCY_UI_COMPONENT,
-  // Timestamp when the event is acked from renderer.
+  // Timestamp when the event is acked from renderer. This is currently set
+  // only for touch events.
   INPUT_EVENT_LATENCY_ACKED_COMPONENT
 };
 
@@ -62,6 +71,13 @@ struct UI_EXPORT LatencyInfo {
                                      int64 component_sequence_number,
                                      base::TimeTicks time,
                                      uint32 event_count);
+
+  // Returns true if the a component with |type| and |id| is found in
+  // the latency_components and the component is stored to |output| if
+  // |output| is not NULL. Returns false if no such component is found.
+  bool FindLatency(LatencyComponentType type,
+                   int64 id,
+                   LatencyComponent* output) const;
 
   void Clear();
 

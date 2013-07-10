@@ -6,7 +6,9 @@
 #define WEBKIT_RENDERER_MEDIA_CRYPTO_PPAPI_DECRYPTOR_H_
 
 #include <string>
+#include <vector>
 
+#include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "media/base/decryptor.h"
@@ -38,7 +40,6 @@ class PpapiDecryptor : public media::MediaKeys, public media::Decryptor {
       const media::KeyAddedCB& key_added_cb,
       const media::KeyErrorCB& key_error_cb,
       const media::KeyMessageCB& key_message_cb,
-      const media::NeedKeyCB& need_key_cb,
       const base::Closure& destroy_plugin_cb);
 
   virtual ~PpapiDecryptor();
@@ -51,9 +52,9 @@ class PpapiDecryptor : public media::MediaKeys, public media::Decryptor {
                       const uint8* init_data, int init_data_length,
                       const std::string& session_id) OVERRIDE;
   virtual void CancelKeyRequest(const std::string& session_id) OVERRIDE;
+  virtual Decryptor* GetDecryptor() OVERRIDE;
 
   // media::Decryptor implementation.
-  virtual media::MediaKeys* GetMediaKeys() OVERRIDE;
   virtual void RegisterNewKeyCB(StreamType stream_type,
                                 const NewKeyCB& key_added_cb) OVERRIDE;
   virtual void Decrypt(StreamType stream_type,
@@ -80,7 +81,6 @@ class PpapiDecryptor : public media::MediaKeys, public media::Decryptor {
       const media::KeyAddedCB& key_added_cb,
       const media::KeyErrorCB& key_error_cb,
       const media::KeyMessageCB& key_message_cb,
-      const media::NeedKeyCB& need_key_cb,
       const base::Closure& destroy_plugin_cb);
 
   void ReportFailureToCallPlugin(const std::string& session_id);
@@ -93,11 +93,8 @@ class PpapiDecryptor : public media::MediaKeys, public media::Decryptor {
                 media::MediaKeys::KeyError error_code,
                 int system_code);
   void KeyMessage(const std::string& session_id,
-                  const std::string& message,
+                  const std::vector<uint8>& message,
                   const std::string& default_url);
-  void NeedKey(const std::string& session_id,
-               const std::string& type,
-               scoped_ptr<uint8[]> init_data, int init_data_size);
 
   // Hold a reference of the plugin instance to make sure the plugin outlives
   // the |plugin_cdm_delegate_|. This is needed because |plugin_cdm_delegate_|
@@ -110,7 +107,6 @@ class PpapiDecryptor : public media::MediaKeys, public media::Decryptor {
   media::KeyAddedCB key_added_cb_;
   media::KeyErrorCB key_error_cb_;
   media::KeyMessageCB key_message_cb_;
-  media::NeedKeyCB need_key_cb_;
 
   // Called to destroy the helper plugin when this class no longer needs it.
   base::Closure destroy_plugin_cb_;

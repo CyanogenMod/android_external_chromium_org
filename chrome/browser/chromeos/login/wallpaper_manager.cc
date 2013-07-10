@@ -20,7 +20,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/worker_pool.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
@@ -393,7 +393,7 @@ void WallpaperManager::ResizeAndSaveWallpaper(const UserImage& wallpaper,
   if (layout == ash::WALLPAPER_LAYOUT_CENTER) {
     // TODO(bshe): Generates cropped custom wallpaper for CENTER layout.
     if (file_util::PathExists(path))
-      file_util::Delete(path, false);
+      base::Delete(path, false);
     return;
   }
   scoped_refptr<base::RefCountedBytes> data;
@@ -490,25 +490,10 @@ void WallpaperManager::SetCustomWallpaper(const std::string& username,
 }
 
 void WallpaperManager::SetDefaultWallpaper() {
-  ash::DesktopBackgroundController* controller =
-      ash::Shell::GetInstance()->desktop_background_controller();
-  ash::WallpaperResolution resolution = controller->GetAppropriateResolution();
-  ash::WallpaperInfo info;
-  if (UserManager::Get()->IsLoggedInAsGuest()) {
-    info = (resolution == ash::WALLPAPER_RESOLUTION_LARGE) ?
-        ash::kGuestLargeWallpaper : ash::kGuestSmallWallpaper;
-  } else {
-    info = (resolution == ash::WALLPAPER_RESOLUTION_LARGE) ?
-        ash::kDefaultLargeWallpaper : ash::kDefaultSmallWallpaper;
-  }
-
-  // Prevents loading of the same wallpaper as the currently loading/loaded one.
-  if (controller->GetWallpaperIDR() == info.idr)
-    return;
-
   current_wallpaper_path_.clear();
-  loaded_wallpapers_++;
-  controller->SetDefaultWallpaper(info);
+  if (ash::Shell::GetInstance()->desktop_background_controller()->
+          SetDefaultWallpaper(UserManager::Get()->IsLoggedInAsGuest()))
+    loaded_wallpapers_++;
 }
 
 void WallpaperManager::SetInitialUserWallpaper(const std::string& username,
@@ -690,7 +675,7 @@ void WallpaperManager::DeleteAllExcept(const base::FilePath& path) {
     for (base::FilePath current = files.Next(); !current.empty();
          current = files.Next()) {
       if (current != path)
-        file_util::Delete(current, false);
+        base::Delete(current, false);
     }
   }
 }
@@ -702,8 +687,8 @@ void WallpaperManager::DeleteWallpaperInList(
     base::FilePath path = *it;
     // Some users may still have legacy wallpapers with png extension. We need
     // to delete these wallpapers too.
-    if (!file_util::Delete(path, true) &&
-        !file_util::Delete(path.AddExtension(".png"), false)) {
+    if (!base::Delete(path, true) &&
+        !base::Delete(path.AddExtension(".png"), false)) {
       LOG(ERROR) << "Failed to remove user wallpaper at " << path.value();
     }
   }
@@ -866,14 +851,14 @@ void WallpaperManager::MoveCustomWallpapersOnWorker(const UserList& users) {
       // Appends DUMMY to the file name of moved custom wallpaper. This way we
       // do not need to update WallpaperInfo for user.
       to_path = GetCustomWallpaperPath(kSmallWallpaperSubDir, email, "DUMMY");
-      file_util::Move(from_path, to_path);
+      base::Move(from_path, to_path);
     }
     from_path = GetWallpaperPathForUser(email, false);
     if (!file_util::PathExists(from_path))
       from_path = from_path.AddExtension(".png");
     if (file_util::PathExists(from_path)) {
       to_path = GetCustomWallpaperPath(kLargeWallpaperSubDir, email, "DUMMY");
-      file_util::Move(from_path, to_path);
+      base::Move(from_path, to_path);
     }
     from_path = GetOriginalWallpaperPathForUser(email);
     if (!file_util::PathExists(from_path))
@@ -881,7 +866,7 @@ void WallpaperManager::MoveCustomWallpapersOnWorker(const UserList& users) {
     if (file_util::PathExists(from_path)) {
       to_path = GetCustomWallpaperPath(kOriginalWallpaperSubDir, email,
                                        "DUMMY");
-      file_util::Move(from_path, to_path);
+      base::Move(from_path, to_path);
     }
   }
 }

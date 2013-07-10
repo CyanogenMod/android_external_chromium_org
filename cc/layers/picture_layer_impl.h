@@ -38,7 +38,6 @@ class CC_EXPORT PictureLayerImpl
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
   virtual void AppendQuads(QuadSink* quad_sink,
                            AppendQuadsData* append_quads_data) OVERRIDE;
-  virtual void DumpLayerProperties(std::string* str, int indent) const OVERRIDE;
   virtual void UpdateTilePriorities() OVERRIDE;
   virtual void DidBecomeActive() OVERRIDE;
   virtual void DidBeginTracing() OVERRIDE;
@@ -55,6 +54,7 @@ class CC_EXPORT PictureLayerImpl
   // PictureLayerTilingClient overrides.
   virtual scoped_refptr<Tile> CreateTile(PictureLayerTiling* tiling,
                                          gfx::Rect content_rect) OVERRIDE;
+  virtual void DestroyTile(Tile* tile) OVERRIDE;
   virtual void UpdatePile(Tile* tile) OVERRIDE;
   virtual gfx::Size CalculateTileSize(
       gfx::Size content_bounds) const OVERRIDE;
@@ -67,8 +67,7 @@ class CC_EXPORT PictureLayerImpl
   void SyncTiling(const PictureLayerTiling* tiling);
   void UpdateTwinLayer();
 
-  void CreateTilingSet();
-  void TransferTilingSet(scoped_ptr<PictureLayerTilingSet> tilings);
+  void CreateTilingSetIfNeeded();
 
   // Mask-related functions
   void SetIsMask(bool is_mask);
@@ -91,7 +90,7 @@ class CC_EXPORT PictureLayerImpl
   void CleanUpTilingsOnActiveLayer(
       std::vector<PictureLayerTiling*> used_tilings);
   float MinimumContentsScale() const;
-  void UpdateLCDTextStatus();
+  void UpdateLCDTextStatus(bool new_status);
   void ResetRasterScale();
   void MarkVisibleResourcesAsRequired() const;
 

@@ -15,7 +15,10 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,android_webview_native_webview_native_gyp)/android_webview_native_webview_native_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,base_base_static_gyp)/base_base_static_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,base_third_party_dynamic_annotations_dynamic_annotations_gyp)/base_third_party_dynamic_annotations_dynamic_annotations_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,components_autofill_browser_gyp)/components_autofill_browser_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,components_autofill_content_browser_gyp)/components_autofill_content_browser_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,components_autofill_content_risk_proto_gyp)/components_autofill_content_risk_proto_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_protobuf_protobuf_lite_gyp)/third_party_protobuf_protobuf_lite_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,components_autofill_core_browser_gyp)/components_autofill_core_browser_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_autofill_core_common_gyp)/components_autofill_core_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,base_base_gyp)/base_base_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,base_allocator_allocator_extension_thunks_gyp)/base_allocator_allocator_extension_thunks_gyp.a \
@@ -54,14 +57,15 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,ui_ui_resources_gyp)/ui_resources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_libjpeg_libjpeg_gyp)/libjpeg.stamp \
 	$(call intermediates-dir-for,GYP,ui_ui_jni_headers_gyp)/ui_jni_headers.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_command_buffer_common_gyp)/gpu_command_buffer_common_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_command_buffer_gles2_utils_gyp)/gpu_command_buffer_gles2_utils_gyp.a \
+	$(call intermediates-dir-for,GYP,third_party_khronos_khronos_headers_gyp)/khronos_headers.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,media_shared_memory_support_gyp)/media_shared_memory_support_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,media_shared_memory_support_sse_gyp)/media_shared_memory_support_sse_gyp.a \
 	$(call intermediates-dir-for,GYP,media_media_android_jni_headers_gyp)/media_android_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,media_media_player_jni_headers_gyp)/media_player_jni_headers.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,media_player_android_gyp)/media_player_android_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_command_buffer_gles2_utils_gyp)/gpu_command_buffer_gles2_utils_gyp.a \
-	$(call intermediates-dir-for,GYP,third_party_khronos_khronos_headers_gyp)/khronos_headers.stamp \
 	$(call intermediates-dir-for,GYP,third_party_mesa_mesa_headers_gyp)/mesa_headers.stamp \
 	$(call intermediates-dir-for,GYP,ui_gl_gl_jni_headers_gyp)/gl_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,ui_gl_surface_texture_jni_headers_gyp)/surface_texture_jni_headers.stamp \
@@ -73,18 +77,14 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,media_media_sse2_gyp)/media_media_sse2_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_shell_dialogs_gyp)/ui_shell_dialogs_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_common_user_agent_user_agent_gyp)/webkit_common_user_agent_user_agent_gyp.a \
-	$(call intermediates-dir-for,GYP,build_temp_gyp_googleurl_gyp)/googleurl.stamp \
 	$(call intermediates-dir-for,GYP,webkit_common_user_agent_webkit_version_gyp)/webkit_version.stamp \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp)/content_resources.stamp \
 	$(call intermediates-dir-for,GYP,content_generate_content_resources_gyp)/generate_content_resources.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,cc_cc_gyp)/cc_cc_gyp.a \
 	$(call intermediates-dir-for,GYP,gpu_gpu_gyp)/gpu.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_command_buffer_client_gyp)/gpu_command_buffer_client_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_command_buffer_common_gyp)/gpu_command_buffer_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_command_buffer_service_gyp)/gpu_command_buffer_service_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_disk_cache_proto_gyp)/gpu_disk_cache_proto_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_protobuf_protobuf_lite_gyp)/third_party_protobuf_protobuf_lite_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_surface_surface_gyp)/ui_surface_surface_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_angle_dx11_src_translator_glsl_gyp)/third_party_angle_dx11_src_translator_glsl_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_angle_dx11_src_translator_common_gyp)/third_party_angle_dx11_src_translator_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_angle_dx11_src_preprocessor_gyp)/third_party_angle_dx11_src_preprocessor_gyp.a \
@@ -111,10 +111,10 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_inspector_protocol_sources_gyp)/inspector_protocol_sources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_generate_inspector_protocol_version_gyp)/generate_inspector_protocol_version.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_inspector_instrumentation_sources_gyp)/inspector_instrumentation_sources.stamp \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_make_derived_sources_gyp)/make_derived_sources.stamp \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_generate_test_support_idls_gyp)/generate_test_support_idls.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_bindings_bindings_derived_sources_gyp)/bindings_derived_sources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_bindings_supplemental_dependencies_gyp)/supplemental_dependencies.stamp \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_generate_test_support_idls_gyp)/generate_test_support_idls.stamp \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_make_derived_sources_gyp)/make_derived_sources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_config_gyp)/config.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_weborigin_weborigin_gyp)/third_party_WebKit_Source_weborigin_weborigin_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_iccjpeg_iccjpeg_gyp)/third_party_iccjpeg_iccjpeg_gyp.a \
@@ -162,6 +162,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_plugins_gyp)/webkit_support_plugins_gyp.a \
 	$(call intermediates-dir-for,GYP,ppapi_ppapi_c_gyp)/ppapi_c.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ppapi_ppapi_shared_gyp)/ppapi_ppapi_shared_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_surface_surface_gyp)/ui_surface_surface_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_webkit_common_gyp)/webkit_support_webkit_common_gyp.a \
 	$(call intermediates-dir-for,GYP,webkit_support_webkit_resources_gyp)/webkit_resources.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_webkit_media_gyp)/webkit_support_webkit_media_gyp.a \
@@ -219,13 +220,12 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,sandbox_sandbox_services_headers_gyp)/sandbox_services_headers.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_webdata_common_gyp)/components_webdata_common_gyp.a \
 	$(call intermediates-dir-for,GYP,components_component_strings_gyp)/component_strings.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,components_autofill_content_browser_gyp)/components_autofill_content_browser_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,components_autofill_content_risk_proto_gyp)/components_autofill_content_risk_proto_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_web_contents_delegate_android_gyp)/components_web_contents_delegate_android_gyp.a \
 	$(call intermediates-dir-for,GYP,components_web_contents_delegate_android_jni_headers_gyp)/web_contents_delegate_android_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,android_webview_native_android_webview_native_jni_gyp)/android_webview_native_jni.stamp \
 	$(call intermediates-dir-for,GYP,android_webview_native_android_jar_jni_headers_gyp)/android_jar_jni_headers.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_auto_login_parser_gyp)/components_auto_login_parser_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,components_autofill_content_renderer_gyp)/components_autofill_content_renderer_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_navigation_interception_gyp)/components_navigation_interception_gyp.a \
 	$(call intermediates-dir-for,GYP,components_navigation_interception_jni_headers_gyp)/navigation_interception_jni_headers.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_visitedlink_browser_gyp)/components_visitedlink_browser_gyp.a \
@@ -254,7 +254,7 @@ LOCAL_SRC_FILES := \
 
 
 # Flags passed to both C and C++ files.
-MY_CFLAGS := \
+MY_CFLAGS_Debug := \
 	--param=ssp-buffer-size=4 \
 	-Werror \
 	-fno-exceptions \
@@ -288,9 +288,7 @@ MY_CFLAGS := \
 	-fdata-sections \
 	-ffunction-sections
 
-MY_CFLAGS_C :=
-
-MY_DEFS := \
+MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DUSE_LINUX_BREAKPAD' \
@@ -314,10 +312,9 @@ MY_DEFS := \
 	'-DWTF_USE_DYNAMIC_ANNOTATIONS=1' \
 	'-D_DEBUG'
 
-LOCAL_CFLAGS := $(MY_CFLAGS_C) $(MY_CFLAGS) $(MY_DEFS)
 
 # Include paths placed before CFLAGS/CPPFLAGS
-LOCAL_C_INCLUDES := \
+LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
@@ -328,10 +325,9 @@ LOCAL_C_INCLUDES := \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
 
-LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 
 # Flags passed to only C++ (and not C) files.
-LOCAL_CPPFLAGS := \
+LOCAL_CPPFLAGS_Debug := \
 	-fno-rtti \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
@@ -340,9 +336,100 @@ LOCAL_CPPFLAGS := \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
+
+# Flags passed to both C and C++ files.
+MY_CFLAGS_Release := \
+	--param=ssp-buffer-size=4 \
+	-Werror \
+	-fno-exceptions \
+	-fno-strict-aliasing \
+	-Wall \
+	-Wno-unused-parameter \
+	-Wno-missing-field-initializers \
+	-fvisibility=hidden \
+	-pipe \
+	-fPIC \
+	-m32 \
+	-mmmx \
+	-march=pentium4 \
+	-msse2 \
+	-mfpmath=sse \
+	-fuse-ld=gold \
+	-ffunction-sections \
+	-funwind-tables \
+	-g \
+	-fno-short-enums \
+	-finline-limit=64 \
+	-Wa,--noexecstack \
+	-U_FORTIFY_SOURCE \
+	-Wno-extra \
+	-Wno-ignored-qualifiers \
+	-Wno-type-limits \
+	-fno-stack-protector \
+	-Os \
+	-fno-ident \
+	-fdata-sections \
+	-ffunction-sections \
+	-fomit-frame-pointer \
+	-fno-unwind-tables \
+	-fno-asynchronous-unwind-tables
+
+MY_DEFS_Release := \
+	'-DANGLE_DX11' \
+	'-D_FILE_OFFSET_BITS=64' \
+	'-DUSE_LINUX_BREAKPAD' \
+	'-DNO_TCMALLOC' \
+	'-DDISABLE_NACL' \
+	'-DCHROMIUM_BUILD' \
+	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_GPU=1' \
+	'-DUSE_OPENSSL=1' \
+	'-DENABLE_EGLIMAGE=1' \
+	'-DENABLE_LANGUAGE_DETECTION=1' \
+	'-D__STDC_CONSTANT_MACROS' \
+	'-D__STDC_FORMAT_MACROS' \
+	'-DANDROID' \
+	'-D__GNU_SOURCE=1' \
+	'-DUSE_STLPORT=1' \
+	'-D_STLP_USE_PTR_SPECIALIZATIONS=1' \
+	'-DCHROME_BUILD_ID=""' \
+	'-DNDEBUG' \
+	'-DNVALGRIND' \
+	'-DDYNAMIC_ANNOTATIONS_ENABLED=0' \
+	'-D_FORTIFY_SOURCE=2'
+
+
+# Include paths placed before CFLAGS/CPPFLAGS
+LOCAL_C_INCLUDES_Release := \
+	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
+	$(LOCAL_PATH)/third_party/khronos \
+	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH) \
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
+
+
+# Flags passed to only C++ (and not C) files.
+LOCAL_CPPFLAGS_Release := \
+	-fno-rtti \
+	-fno-threadsafe-statics \
+	-fvisibility-inlines-hidden \
+	-Wsign-compare \
+	-Wno-error=c++0x-compat \
+	-Wno-non-virtual-dtor \
+	-Wno-sign-promo
+
+
+LOCAL_CFLAGS := $(MY_CFLAGS_$(GYP_CONFIGURATION)) $(MY_DEFS_$(GYP_CONFIGURATION))
+LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES_$(GYP_CONFIGURATION))
+LOCAL_CPPFLAGS := $(LOCAL_CPPFLAGS_$(GYP_CONFIGURATION))
 ### Rules for final target.
 
-LOCAL_LDFLAGS := \
+LOCAL_LDFLAGS_Debug := \
 	-Wl,-z,now \
 	-Wl,-z,relro \
 	-Wl,-z,noexecstack \
@@ -359,13 +446,35 @@ LOCAL_LDFLAGS := \
 	-Wl,--as-needed
 
 
+LOCAL_LDFLAGS_Release := \
+	-Wl,-z,now \
+	-Wl,-z,relro \
+	-Wl,-z,noexecstack \
+	-fPIC \
+	-Wl,--no-fatal-warnings \
+	-m32 \
+	-fuse-ld=gold \
+	-nostdlib \
+	-Wl,--no-undefined \
+	-Wl,--exclude-libs=ALL \
+	-Wl,-shared,-Bsymbolic \
+	-Wl,-O1 \
+	-Wl,--as-needed \
+	-Wl,--gc-sections
+
+
+LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
+
 LOCAL_STATIC_LIBRARIES := \
 	cpufeatures \
 	android_webview_android_webview_common_gyp \
 	android_webview_native_webview_native_gyp \
 	base_base_static_gyp \
 	base_third_party_dynamic_annotations_dynamic_annotations_gyp \
-	components_autofill_browser_gyp \
+	components_autofill_content_browser_gyp \
+	components_autofill_content_risk_proto_gyp \
+	third_party_protobuf_protobuf_lite_gyp \
+	components_autofill_core_browser_gyp \
 	components_autofill_core_common_gyp \
 	base_base_gyp \
 	base_allocator_allocator_extension_thunks_gyp \
@@ -389,11 +498,12 @@ LOCAL_STATIC_LIBRARIES := \
 	sdch_sdch_gyp \
 	url_url_lib_gyp \
 	third_party_libpng_libpng_gyp \
+	gpu_command_buffer_common_gyp \
+	gpu_command_buffer_gles2_utils_gyp \
 	media_shared_memory_support_gyp \
 	media_shared_memory_support_sse_gyp \
 	media_player_android_gyp \
 	ui_gl_gl_gyp \
-	gpu_command_buffer_gles2_utils_gyp \
 	media_media_asm_gyp \
 	media_media_mmx_gyp \
 	media_media_sse_gyp \
@@ -402,11 +512,8 @@ LOCAL_STATIC_LIBRARIES := \
 	webkit_common_user_agent_user_agent_gyp \
 	cc_cc_gyp \
 	gpu_command_buffer_client_gyp \
-	gpu_command_buffer_common_gyp \
 	gpu_command_buffer_service_gyp \
 	gpu_disk_cache_proto_gyp \
-	third_party_protobuf_protobuf_lite_gyp \
-	ui_surface_surface_gyp \
 	third_party_angle_dx11_src_translator_glsl_gyp \
 	third_party_angle_dx11_src_translator_common_gyp \
 	third_party_angle_dx11_src_preprocessor_gyp \
@@ -460,6 +567,7 @@ LOCAL_STATIC_LIBRARIES := \
 	webkit_support_glue_common_gyp \
 	webkit_support_plugins_gyp \
 	ppapi_ppapi_shared_gyp \
+	ui_surface_surface_gyp \
 	webkit_support_webkit_common_gyp \
 	webkit_support_webkit_media_gyp \
 	components_encryptor_gyp \
@@ -487,10 +595,9 @@ LOCAL_STATIC_LIBRARIES := \
 	sandbox_sandbox_services_gyp \
 	sandbox_seccomp_bpf_gyp \
 	components_webdata_common_gyp \
-	components_autofill_content_browser_gyp \
-	components_autofill_content_risk_proto_gyp \
 	components_web_contents_delegate_android_gyp \
 	components_auto_login_parser_gyp \
+	components_autofill_content_renderer_gyp \
 	components_navigation_interception_gyp \
 	components_visitedlink_browser_gyp \
 	components_visitedlink_common_gyp \

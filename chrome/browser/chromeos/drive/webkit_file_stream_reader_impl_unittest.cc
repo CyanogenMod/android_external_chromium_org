@@ -11,7 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/threading/thread.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/chromeos/drive/fake_file_system.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
@@ -40,23 +40,16 @@ class WebkitFileStreamReaderImplTest : public ::testing::Test {
     ASSERT_TRUE(worker_thread_->Start());
 
     // Initialize FakeDriveService.
-    fake_drive_service_.reset(new google_apis::FakeDriveService);
+    fake_drive_service_.reset(new FakeDriveService);
     fake_drive_service_->LoadResourceListForWapi(
-        "chromeos/gdata/root_feed.json");
+        "gdata/root_feed.json");
     fake_drive_service_->LoadAccountMetadataForWapi(
-        "chromeos/gdata/account_metadata.json");
+        "gdata/account_metadata.json");
 
     // Create a testee instance.
     fake_file_system_.reset(
         new test_util::FakeFileSystem(fake_drive_service_.get()));
     fake_file_system_->Initialize();
-  }
-
-  virtual void TearDown() OVERRIDE {
-    fake_file_system_.reset();
-    fake_drive_service_.reset();
-
-    worker_thread_.reset();
   }
 
   FileSystemInterface* GetFileSystem() {
@@ -72,7 +65,7 @@ class WebkitFileStreamReaderImplTest : public ::testing::Test {
 
   scoped_ptr<base::Thread> worker_thread_;
 
-  scoped_ptr<google_apis::FakeDriveService> fake_drive_service_;
+  scoped_ptr<FakeDriveService> fake_drive_service_;
   scoped_ptr<test_util::FakeFileSystem> fake_file_system_;
 };
 

@@ -33,6 +33,7 @@
 #include "chrome/common/extensions/extension.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/devtools_client_host.h"
+#include "content/public/browser/devtools_http_handler.h"
 #include "content/public/browser/devtools_manager.h"
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/navigation_entry.h"
@@ -48,10 +49,10 @@
 #include "extensions/common/error_utils.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "webkit/glue/webkit_glue.h"
 
 using content::DevToolsAgentHost;
 using content::DevToolsClientHost;
+using content::DevToolsHttpHandler;
 using content::DevToolsManager;
 using content::RenderProcessHost;
 using content::RenderViewHost;
@@ -454,7 +455,7 @@ void ExtensionDevToolsClientHost::SendMessageToBackend(
     DebuggerSendCommandFunction* function,
     const std::string& method,
     SendCommand::Params::CommandParams* command_params) {
-  DictionaryValue protocol_request;
+  base::DictionaryValue protocol_request;
   int request_id = ++last_request_id_;
   pending_requests_[request_id] = function;
   protocol_request.SetInteger("id", request_id);
@@ -517,7 +518,8 @@ void ExtensionDevToolsClientHost::DispatchOnInspectorFrontend(
   scoped_ptr<Value> result(base::JSONReader::Read(message));
   if (!result->IsType(Value::TYPE_DICTIONARY))
     return;
-  DictionaryValue* dictionary = static_cast<DictionaryValue*>(result.get());
+  base::DictionaryValue* dictionary =
+      static_cast<base::DictionaryValue*>(result.get());
 
   int id;
   if (!dictionary->GetInteger("id", &id)) {
@@ -526,7 +528,7 @@ void ExtensionDevToolsClientHost::DispatchOnInspectorFrontend(
       return;
 
     OnEvent::Params params;
-    DictionaryValue* params_value;
+    base::DictionaryValue* params_value;
     if (dictionary->GetDictionary("params", &params_value))
       params.additional_properties.Swap(params_value);
 
@@ -635,8 +637,8 @@ bool DebuggerAttachFunction::RunImpl() {
   if (!InitAgentHost())
     return false;
 
-  if (!webkit_glue::IsInspectorProtocolVersionSupported(
-      params->required_version)) {
+  if (!DevToolsHttpHandler::IsSupportedProtocolVersion(
+          params->required_version)) {
     error_ = ErrorUtils::FormatErrorMessage(
         keys::kProtocolVersionNotSupportedError,
         params->required_version);
@@ -715,7 +717,7 @@ bool DebuggerSendCommandFunction::RunImpl() {
 }
 
 void DebuggerSendCommandFunction::SendResponseBody(
-    DictionaryValue* response) {
+    base::DictionaryValue* response) {
   Value* error_body;
   if (response->Get("error", &error_body)) {
     base::JSONWriter::Write(error_body, &error_);
@@ -723,7 +725,7 @@ void DebuggerSendCommandFunction::SendResponseBody(
     return;
   }
 
-  DictionaryValue* result_body;
+  base::DictionaryValue* result_body;
   SendCommand::Results::Result result;
   if (response->GetDictionary("result", &result_body))
     result.additional_properties.Swap(result_body);

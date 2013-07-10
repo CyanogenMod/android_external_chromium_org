@@ -139,6 +139,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       pending_seek_seconds_(0.0f),
       client_(client),
       delegate_(delegate),
+      defer_load_cb_(params.defer_load_cb()),
       media_log_(params.media_log()),
       accelerated_compositing_reported_(false),
       incremented_externally_allocated_memory_(false),
@@ -172,12 +173,13 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
 
   if (WebKit::WebRuntimeFeatures::isLegacyEncryptedMediaEnabled()) {
     decryptor_.reset(new ProxyDecryptor(
+#if defined(ENABLE_PEPPER_CDMS)
         client,
         frame,
+#endif
         BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnKeyAdded),
         BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnKeyError),
-        BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnKeyMessage),
-        BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnNeedKey)));
+        BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnKeyMessage)));
   }
 
   // Use the null sink if no sink was provided.
@@ -241,37 +243,26 @@ URLSchemeForHistogram URLScheme(const GURL& url) {
 }  // anonymous namespace
 
 void WebMediaPlayerImpl::load(const WebKit::WebURL& url, CORSMode cors_mode) {
-  DCHECK(main_loop_->BelongsToCurrentThread());
-
-  LoadSetup(url);
-
-  // Otherwise it's a regular request which requires resolving the URL first.
-  GURL gurl(url);
-  data_source_.reset(new BufferedDataSource(
-      main_loop_,
-      frame_,
-      media_log_.get(),
-      base::Bind(&WebMediaPlayerImpl::NotifyDownloading, AsWeakPtr())));
-  data_source_->Initialize(
-      url, static_cast<BufferedResourceLoader::CORSMode>(cors_mode),
-      base::Bind(
-          &WebMediaPlayerImpl::DataSourceInitialized,
-          AsWeakPtr(), gurl));
-
-  is_local_source_ = !gurl.SchemeIs("http") && !gurl.SchemeIs("https");
+  load(url, NULL, cors_mode);
 }
 
 void WebMediaPlayerImpl::load(const WebKit::WebURL& url,
                               WebKit::WebMediaSource* media_source,
                               CORSMode cors_mode) {
-  LoadSetup(url);
-
-  // Media source pipelines can start immediately.
-  supports_save_ = false;
-  StartPipeline(media_source);
+  if (!defer_load_cb_.is_null()) {
+    defer_load_cb_.Run(base::Bind(
+        &WebMediaPlayerImpl::DoLoad, AsWeakPtr(), url, media_source,
+        cors_mode));
+    return;
+  }
+  DoLoad(url, media_source, cors_mode);
 }
 
-void WebMediaPlayerImpl::LoadSetup(const WebKit::WebURL& url) {
+void WebMediaPlayerImpl::DoLoad(const WebKit::WebURL& url,
+                                WebKit::WebMediaSource* media_source,
+                                CORSMode cors_mode) {
+  DCHECK(main_loop_->BelongsToCurrentThread());
+
   GURL gurl(url);
   UMA_HISTOGRAM_ENUMERATION("Media.URLScheme", URLScheme(gurl), kMaxURLScheme);
 
@@ -285,6 +276,27 @@ void WebMediaPlayerImpl::LoadSetup(const WebKit::WebURL& url) {
   SetNetworkState(WebMediaPlayer::NetworkStateLoading);
   SetReadyState(WebMediaPlayer::ReadyStateHaveNothing);
   media_log_->AddEvent(media_log_->CreateLoadEvent(url.spec()));
+
+  // Media source pipelines can start immediately.
+  if (media_source) {
+    supports_save_ = false;
+    StartPipeline(media_source);
+    return;
+  }
+
+  // Otherwise it's a regular request which requires resolving the URL first.
+  data_source_.reset(new BufferedDataSource(
+      main_loop_,
+      frame_,
+      media_log_.get(),
+      base::Bind(&WebMediaPlayerImpl::NotifyDownloading, AsWeakPtr())));
+  data_source_->Initialize(
+      url, static_cast<BufferedResourceLoader::CORSMode>(cors_mode),
+      base::Bind(
+          &WebMediaPlayerImpl::DataSourceInitialized,
+          AsWeakPtr(), gurl));
+
+  is_local_source_ = !gurl.SchemeIs("http") && !gurl.SchemeIs("https");
 }
 
 void WebMediaPlayerImpl::play() {
@@ -325,17 +337,17 @@ bool WebMediaPlayerImpl::supportsSave() const {
 void WebMediaPlayerImpl::seek(double seconds) {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
+  base::TimeDelta seek_time = ConvertSecondsToTimestamp(seconds);
+
   if (starting_ || seeking_) {
     pending_seek_ = true;
     pending_seek_seconds_ = seconds;
     if (chunk_demuxer_)
-      chunk_demuxer_->CancelPendingSeek();
+      chunk_demuxer_->CancelPendingSeek(seek_time);
     return;
   }
 
   media_log_->AddEvent(media_log_->CreateSeekEvent(seconds));
-
-  base::TimeDelta seek_time = ConvertSecondsToTimestamp(seconds);
 
   // Update our paused time.
   if (paused_)
@@ -344,7 +356,7 @@ void WebMediaPlayerImpl::seek(double seconds) {
   seeking_ = true;
 
   if (chunk_demuxer_)
-    chunk_demuxer_->StartWaitingForSeek();
+    chunk_demuxer_->StartWaitingForSeek(seek_time);
 
   // Kick off the asynchronous seek!
   pipeline_->Seek(
@@ -436,9 +448,6 @@ double WebMediaPlayerImpl::duration() const {
 
   if (ready_state_ == WebMediaPlayer::ReadyStateHaveNothing)
     return std::numeric_limits<double>::quiet_NaN();
-
-  if (chunk_demuxer_)
-    return chunk_demuxer_->GetDuration();
 
   return GetPipelineDuration();
 }
@@ -591,30 +600,49 @@ bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
     base::AutoLock auto_lock(lock_);
     video_frame = current_frame_;
   }
-  if (video_frame.get() &&
-      video_frame->format() == media::VideoFrame::NATIVE_TEXTURE &&
-      video_frame->texture_target() == GL_TEXTURE_2D) {
-    uint32 source_texture = video_frame->texture_id();
-    // The video is stored in a unmultiplied format, so premultiply
-    // if necessary.
-    web_graphics_context->pixelStorei(GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM,
-        premultiply_alpha);
-    // Application itself needs to take care of setting the right flip_y
-    // value down to get the expected result.
-    // flip_y==true means to reverse the video orientation while
-    // flip_y==false means to keep the intrinsic orientation.
-    web_graphics_context->pixelStorei(GL_UNPACK_FLIP_Y_CHROMIUM, flip_y);
-    web_graphics_context->copyTextureCHROMIUM(GL_TEXTURE_2D,
-        source_texture, texture, level, internal_format, type);
-    web_graphics_context->pixelStorei(GL_UNPACK_FLIP_Y_CHROMIUM, false);
-    web_graphics_context->pixelStorei(GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM,
-        false);
-    // The flush() operation is not necessary here. It is kept since the
-    // performance will be better when it is added than not.
-    web_graphics_context->flush();
-    return true;
-  }
-  return false;
+
+  if (!video_frame.get())
+    return false;
+  if (video_frame->format() != media::VideoFrame::NATIVE_TEXTURE)
+    return false;
+  if (video_frame->texture_target() != GL_TEXTURE_2D)
+    return false;
+
+  scoped_refptr<media::VideoFrame::MailboxHolder> mailbox_holder =
+      video_frame->texture_mailbox();
+
+  uint32 source_texture = web_graphics_context->createTexture();
+
+  web_graphics_context->waitSyncPoint(mailbox_holder->sync_point());
+  web_graphics_context->bindTexture(GL_TEXTURE_2D, source_texture);
+  web_graphics_context->consumeTextureCHROMIUM(GL_TEXTURE_2D,
+                                               mailbox_holder->mailbox().name);
+
+  // The video is stored in a unmultiplied format, so premultiply
+  // if necessary.
+  web_graphics_context->pixelStorei(GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM,
+                                    premultiply_alpha);
+  // Application itself needs to take care of setting the right flip_y
+  // value down to get the expected result.
+  // flip_y==true means to reverse the video orientation while
+  // flip_y==false means to keep the intrinsic orientation.
+  web_graphics_context->pixelStorei(GL_UNPACK_FLIP_Y_CHROMIUM, flip_y);
+  web_graphics_context->copyTextureCHROMIUM(GL_TEXTURE_2D,
+                                            source_texture,
+                                            texture,
+                                            level,
+                                            internal_format,
+                                            type);
+  web_graphics_context->pixelStorei(GL_UNPACK_FLIP_Y_CHROMIUM, false);
+  web_graphics_context->pixelStorei(GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM,
+                                    false);
+
+  web_graphics_context->deleteTexture(source_texture);
+
+  // The flush() operation is not necessary here. It is kept since the
+  // performance will be better when it is added than not.
+  web_graphics_context->flush();
+  return true;
 }
 
 // Helper functions to report media EME related stats to UMA. They follow the
@@ -622,7 +650,7 @@ bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
 // UMA_HISTOGRAM_COUNTS. The reason that we cannot use those macros directly is
 // that UMA_* macros require the names to be constant throughout the process'
 // lifetime.
-static void EmeUMAHistogramEnumeration(const std::string& key_system,
+static void EmeUMAHistogramEnumeration(const WebKit::WebString& key_system,
                                        const std::string& method,
                                        int sample,
                                        int boundary_value) {
@@ -632,7 +660,7 @@ static void EmeUMAHistogramEnumeration(const std::string& key_system,
       base::Histogram::kUmaTargetedHistogramFlag)->Add(sample);
 }
 
-static void EmeUMAHistogramCounts(const std::string& key_system,
+static void EmeUMAHistogramCounts(const WebKit::WebString& key_system,
                                   const std::string& method,
                                   int sample) {
   // Use the same parameters as UMA_HISTOGRAM_COUNTS.
@@ -673,7 +701,7 @@ static void ReportMediaKeyExceptionToUMA(
   MediaKeyException result_id = MediaKeyExceptionForUMA(e);
   DCHECK_NE(result_id, kUnknownResultId) << e;
   EmeUMAHistogramEnumeration(
-      key_system.utf8(), method, result_id, kMaxMediaKeyException);
+      key_system, method, result_id, kMaxMediaKeyException);
 }
 
 WebMediaPlayer::MediaKeyException
@@ -846,7 +874,7 @@ void WebMediaPlayerImpl::OnPipelineError(PipelineStatus error) {
   SetNetworkState(PipelineErrorToNetworkState(error));
 
   if (error == media::PIPELINE_ERROR_DECRYPT)
-    EmeUMAHistogramCounts(current_key_system_.utf8(), "DecryptError", 1);
+    EmeUMAHistogramCounts(current_key_system_, "DecryptError", 1);
 
   // Repaint to trigger UI update.
   Repaint();
@@ -868,7 +896,11 @@ void WebMediaPlayerImpl::OnPipelineBufferingState(
       }
       break;
     case media::Pipeline::kPrerollCompleted:
-      SetReadyState(WebMediaPlayer::ReadyStateHaveEnoughData);
+      // Only transition to ReadyStateHaveEnoughData if we don't have
+      // any pending seeks because the transition can cause Blink to
+      // report that the most recent seek has completed.
+      if (!pending_seek_)
+        SetReadyState(WebMediaPlayer::ReadyStateHaveEnoughData);
       break;
   }
 
@@ -885,7 +917,7 @@ void WebMediaPlayerImpl::OnDemuxerOpened(
 
 void WebMediaPlayerImpl::OnKeyAdded(const std::string& session_id) {
   DCHECK(main_loop_->BelongsToCurrentThread());
-  EmeUMAHistogramCounts(current_key_system_.utf8(), "KeyAdded", 1);
+  EmeUMAHistogramCounts(current_key_system_, "KeyAdded", 1);
   GetClient()->keyAdded(current_key_system_,
                         WebString::fromUTF8(session_id));
 }
@@ -934,7 +966,7 @@ void WebMediaPlayerImpl::OnKeyError(const std::string& session_id,
                                     int system_code) {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
-  EmeUMAHistogramEnumeration(current_key_system_.utf8(), "KeyError",
+  EmeUMAHistogramEnumeration(current_key_system_, "KeyError",
                              error_code, media::MediaKeys::kMaxKeyError);
 
   GetClient()->keyError(
@@ -945,7 +977,7 @@ void WebMediaPlayerImpl::OnKeyError(const std::string& session_id,
 }
 
 void WebMediaPlayerImpl::OnKeyMessage(const std::string& session_id,
-                                      const std::string& message,
+                                      const std::vector<uint8>& message,
                                       const std::string& default_url) {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
@@ -955,7 +987,7 @@ void WebMediaPlayerImpl::OnKeyMessage(const std::string& session_id,
 
   GetClient()->keyMessage(current_key_system_,
                           WebString::fromUTF8(session_id),
-                          reinterpret_cast<const uint8*>(message.data()),
+                          message.empty() ? NULL : &message[0],
                           message.size(),
                           default_url_gurl);
 }
@@ -1008,12 +1040,19 @@ void WebMediaPlayerImpl::StartPipeline(WebKit::WebMediaSource* media_source) {
     DCHECK(!chunk_demuxer_);
     DCHECK(!data_source_);
 
+    media::AddTextTrackCB add_text_track_cb;
+
+    if (cmd_line->HasSwitch(switches::kEnableInbandTextTracks)) {
+      add_text_track_cb =
+          base::Bind(&WebMediaPlayerImpl::OnTextTrack, base::Unretained(this));
+    }
+
     scoped_ptr<WebKit::WebMediaSource> ms(media_source);
     chunk_demuxer_ = new media::ChunkDemuxer(
         BIND_TO_RENDER_LOOP_1(&WebMediaPlayerImpl::OnDemuxerOpened,
                               base::Passed(&ms)),
         BIND_TO_RENDER_LOOP_1(&WebMediaPlayerImpl::OnNeedKey, ""),
-        base::Bind(&WebMediaPlayerImpl::OnTextTrack, base::Unretained(this)),
+        add_text_track_cb,
         base::Bind(&LogMediaSourceError, media_log_));
     demuxer_.reset(chunk_demuxer_);
 

@@ -22,7 +22,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/plugin_service_filter.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 #include "webkit/plugins/npapi/plugin_list.h"
 
 #include "widevine_cdm_version.h"  // In SHARED_INTERMEDIATE_DIR.
@@ -47,13 +47,13 @@ bool ShouldUseJavaScriptSettingForPlugin(const WebPluginInfo& plugin) {
   if (plugin.name == ASCIIToUTF16(chrome::ChromeContentClient::kNaClPluginName))
     return true;
 
-#if defined(WIDEVINE_CDM_AVAILABLE)
+#if defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS)
   // Treat CDM invocations like JavaScript.
   if (plugin.name == ASCIIToUTF16(kWidevineCdmDisplayName)) {
     DCHECK(plugin.type == WebPluginInfo::PLUGIN_TYPE_PEPPER_OUT_OF_PROCESS);
     return true;
   }
-#endif  // WIDEVINE_CDM_AVAILABLE
+#endif  // defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS)
 
   return false;
 }

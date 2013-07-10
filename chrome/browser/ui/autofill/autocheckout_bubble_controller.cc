@@ -4,7 +4,7 @@
 
 #include "chrome/browser/ui/autofill/autocheckout_bubble_controller.h"
 
-#include "components/autofill/browser/autofill_metrics.h"
+#include "components/autofill/core/browser/autofill_metrics.h"
 #include "grit/generated_resources.h"
 #include "grit/ui_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -44,26 +44,20 @@ base::string16 AutocheckoutBubbleController::PromptText() {
                         IDS_AUTOCHECKOUT_BUBBLE_PROMPT_NOT_SIGNED_IN);
 }
 
+// TODO(ahutter): Change these functions back to not returning a "Buy With
+// Google" button after UX has finalized the non-Google user experience. See
+// http://crbug.com/253681.
 gfx::Image AutocheckoutBubbleController::NormalImage() {
-  if (!is_google_user_)
-    return gfx::Image();
-
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   return rb.GetImageNamed(IDR_BUY_WITH_GOOGLE_BUTTON);
 }
 
 gfx::Image AutocheckoutBubbleController::HoverImage() {
-  if (!is_google_user_)
-    return gfx::Image();
-
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   return rb.GetImageNamed(IDR_BUY_WITH_GOOGLE_BUTTON_H);
 }
 
 gfx::Image AutocheckoutBubbleController::PressedImage() {
-  if (!is_google_user_)
-    return gfx::Image();
-
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   return rb.GetImageNamed(IDR_BUY_WITH_GOOGLE_BUTTON_P);
 }

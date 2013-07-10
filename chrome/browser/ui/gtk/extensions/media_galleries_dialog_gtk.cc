@@ -127,19 +127,15 @@ void MediaGalleriesDialogGtk::InitWidgets() {
                              checkbox_container);
   }
 
-  // Holds the "add gallery" and cancel/confirm buttons.
-  GtkWidget* add_folder_area = gtk_hbox_new(FALSE, ui::kControlSpacing);
-  gtk_box_pack_start(GTK_BOX(contents_.get()), add_folder_area,
-                     FALSE, FALSE, 0);
+  GtkWidget* bottom_area = gtk_hbox_new(FALSE, ui::kControlSpacing);
 
   // Add gallery button.
   GtkWidget* add_folder = gtk_button_new_with_label(
       l10n_util::GetStringUTF8(IDS_MEDIA_GALLERIES_DIALOG_ADD_GALLERY).c_str());
   g_signal_connect(add_folder, "clicked", G_CALLBACK(OnAddFolderThunk), this);
-  gtk_box_pack_start(GTK_BOX(add_folder_area), add_folder, FALSE, FALSE, 0);
+  gtk_box_pack_start(GTK_BOX(bottom_area), add_folder, FALSE, FALSE, 0);
 
   // Confirm/cancel button.
-  GtkWidget* bottom_area = gtk_hbox_new(FALSE, ui::kControlSpacing);
   confirm_ = gtk_button_new_with_label(l10n_util::GetStringUTF8(
       IDS_MEDIA_GALLERIES_DIALOG_CONFIRM).c_str());
   gtk_button_set_image(
@@ -180,8 +176,7 @@ void MediaGalleriesDialogGtk::UpdateGalleryInContainer(
   g_signal_connect(widget, "toggled", G_CALLBACK(OnToggledThunk), this);
   gtk_box_pack_start(GTK_BOX(checkbox_container), hbox, FALSE, FALSE, 0);
   gtk_box_pack_start(GTK_BOX(hbox), widget, FALSE, FALSE, 0);
-  std::string details = UTF16ToUTF8(
-      MediaGalleriesDialogController::GetGalleryAdditionalDetails(gallery));
+  std::string details = UTF16ToUTF8(gallery.GetGalleryAdditionalDetails());
   GtkWidget* details_label = gtk_label_new(details.c_str());
   gtk_label_set_line_wrap(GTK_LABEL(details_label), FALSE);
   gtk_util::SetLabelColor(details_label, &kDeemphasizedTextColor);
@@ -190,14 +185,11 @@ void MediaGalleriesDialogGtk::UpdateGalleryInContainer(
   gtk_widget_show(hbox);
   checkbox_map_[gallery.pref_id] = widget;
 
-  std::string tooltip_text = UTF16ToUTF8(
-      MediaGalleriesDialogController::GetGalleryTooltip(gallery));
+  std::string tooltip_text = UTF16ToUTF8(gallery.GetGalleryTooltip());
   gtk_widget_set_tooltip_text(widget, tooltip_text.c_str());
 
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget), permitted);
-  std::string label = UTF16ToUTF8(
-      MediaGalleriesDialogController::GetGalleryDisplayNameNoAttachment(
-          gallery));
+  std::string label = UTF16ToUTF8(gallery.GetGalleryDisplayName());
   gtk_button_set_label(GTK_BUTTON(widget), label.c_str());
 }
 

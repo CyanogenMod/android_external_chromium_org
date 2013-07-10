@@ -4,8 +4,6 @@
 
 #import "chrome/browser/ui/cocoa/hover_close_button.h"
 
-#include "base/memory/scoped_nsobject.h"
-#include "base/memory/scoped_ptr.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
@@ -78,22 +76,6 @@ NSString* const kFadeOutValueKeyPath = @"fadeOutValue";
 
 - (void)animationDidEnd:(NSAnimation*)animation {
   [self animationDidStop:animation];
-}
-
-// Override to only accept clicks within the bounds of the defined path, not
-// the entire bounding box. |aPoint| is in the superview's coordinate system.
-- (NSView*)hitTest:(NSPoint)point {
-  NSPoint localPoint = [self convertPoint:point fromView:[self superview]];
-  NSRect pointRect = NSMakeRect(localPoint.x, localPoint.y, 1, 1);
-
-  NSImage* hoverImage = [self imageForHoverState:kHoverStateMouseOver];
-  if ([hoverImage hitTestRect:pointRect
-      withImageDestinationRect:[self bounds]
-                       context:nil
-                         hints:nil
-                       flipped:YES])
-    return [super hitTest:point];
-  return nil;
 }
 
 - (void)drawRect:(NSRect)dirtyRect {

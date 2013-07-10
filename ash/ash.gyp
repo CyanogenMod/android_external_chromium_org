@@ -92,6 +92,8 @@
         'display/display_error_dialog.h',
         'display/display_info.h',
         'display/display_info.cc',
+        'display/display_layout.h',
+        'display/display_layout.cc',
         'display/display_manager.cc',
         'display/display_manager.h',
         'display/display_pref_util.h',
@@ -127,6 +129,8 @@
         'keyboard_overlay/keyboard_overlay_delegate.h',
         'keyboard_overlay/keyboard_overlay_view.cc',
         'keyboard_overlay/keyboard_overlay_view.h',
+        'launcher/alternate_app_list_button.cc',
+        'launcher/alternate_app_list_button.h',
         'launcher/app_list_button.cc',
         'launcher/app_list_button.h',
         'launcher/launcher.cc',
@@ -231,6 +235,8 @@
         'system/chromeos/network/tray_sms.h',
         'system/chromeos/network/tray_vpn.cc',
         'system/chromeos/network/tray_vpn.h',
+        'system/chromeos/power/power_status.cc',
+        'system/chromeos/power/power_status.h',
         'system/chromeos/power/power_status_view.cc',
         'system/chromeos/power/power_status_view.h',
         'system/chromeos/power/tray_power.cc',
@@ -343,6 +349,10 @@
         'system/user/user_observer.h',
         'system/web_notification/web_notification_tray.cc',
         'system/web_notification/web_notification_tray.h',
+        'touch/touch_hud_debug.cc',
+        'touch/touch_hud_debug.h',
+        'touch/touch_hud_projection.cc',
+        'touch/touch_hud_projection.h',
         'touch/touch_observer_hud.cc',
         'touch/touch_observer_hud.h',
         'touch/touch_uma.cc',
@@ -412,6 +422,8 @@
         'wm/panels/panel_frame_view.h',
         'wm/panels/panel_layout_manager.cc',
         'wm/panels/panel_layout_manager.h',
+        'wm/panels/panel_window_event_handler.cc',
+        'wm/panels/panel_window_event_handler.h',
         'wm/panels/panel_window_resizer.cc',
         'wm/panels/panel_window_resizer.h',
         'wm/partial_screenshot_view.cc',
@@ -539,6 +551,8 @@
         ['chromeos==1', {
           'dependencies': [
             '../chromeos/chromeos.gyp:chromeos',
+            # Ash #includes power_supply_properties.pb.h directly.
+            '../chromeos/chromeos.gyp:power_manager_proto',
           ],
         }, { # else: chromeos!=1
           'sources/': [
@@ -625,6 +639,7 @@
         '../ui/compositor/compositor.gyp:compositor',
         '../ui/keyboard/keyboard.gyp:keyboard',
         '../ui/message_center/message_center.gyp:message_center',
+        '../ui/message_center/message_center.gyp:message_center_test_support',
         '../ui/ui.gyp:ui',
         '../ui/ui.gyp:ui_resources',
         '../ui/ui.gyp:ui_test_support',
@@ -694,6 +709,10 @@
         'shell/window_watcher.cc',
         'shell/window_watcher_unittest.cc',
         'system/chromeos/network/network_state_notifier_unittest.cc',
+        'system/chromeos/power/power_status_unittest.cc',
+        'system/chromeos/power/tray_power_unittest.cc',
+        'system/chromeos/screen_security/screen_tray_item_unittest.cc',
+        'system/chromeos/tray_display_unittest.cc',
         'system/tray/system_tray_unittest.cc',
         'system/user/tray_user_unittest.cc',
         'system/web_notification/web_notification_tray_unittest.cc',
@@ -779,6 +798,10 @@
         ['chromeos!=1', {
           'sources/': [
             ['exclude', 'display/display_error_dialog_unittest.cc'],
+          ],
+        }, {  # chromeos==1
+          'dependencies': [
+            '../chromeos/chromeos.gyp:power_manager_proto',
           ],
         }],
       ],

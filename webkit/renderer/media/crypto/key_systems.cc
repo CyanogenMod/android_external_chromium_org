@@ -112,6 +112,11 @@ bool KeySystems::IsSupportedKeySystemWithMediaMimeType(
     const std::string& mime_type,
     const std::vector<std::string>& codecs,
     const std::string& key_system) {
+  // This method is only used by the canPlaytType() path (not the EME methods),
+  // so we check for suppressed key_systems here.
+  if(IsCanPlayTypeSuppressed(key_system))
+    return false;
+
   if (codecs.empty())
     return IsSupportedKeySystemWithContainerAndCodec(
         mime_type, std::string(), key_system);
@@ -137,12 +142,8 @@ bool IsSupportedKeySystemWithMediaMimeType(
       mime_type, codecs, key_system);
 }
 
-std::string KeySystemNameForUMA(const std::string& key_system) {
-  return KeySystemNameForUMAGeneric(key_system);
-}
-
 std::string KeySystemNameForUMA(const WebKit::WebString& key_system) {
-  return KeySystemNameForUMAGeneric(std::string(key_system.utf8().data()));
+  return KeySystemNameForUMAInternal(key_system);
 }
 
 bool CanUseAesDecryptor(const std::string& key_system) {
@@ -159,5 +160,16 @@ std::string GetPepperType(const std::string& key_system) {
   return std::string();
 }
 #endif  // defined(ENABLE_PEPPER_CDMS)
+
+#if defined(OS_ANDROID)
+std::vector<uint8> GetUUID(const std::string& key_system) {
+  for (int i = 0; i < kNumKeySystemToUUIDMapping; ++i) {
+    if (kKeySystemToUUIDMapping[i].key_system == key_system)
+      return std::vector<uint8>(kKeySystemToUUIDMapping[i].uuid,
+                                kKeySystemToUUIDMapping[i].uuid + 16);
+  }
+  return std::vector<uint8>();
+}
+#endif  // defined(OS_ANDROID)
 
 }  // namespace webkit_media

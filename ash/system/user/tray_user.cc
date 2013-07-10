@@ -694,6 +694,7 @@ void UserView::Layout() {
       // between the two.
       remaining_width -= kTrayPopupPaddingBetweenItems;
     }
+    user_card_area.set_width(remaining_width);
     user_card_view_->SetBoundsRect(user_card_area);
     logout_button_->SetBoundsRect(logout_area);
   } else if (user_card_view_) {
@@ -809,22 +810,28 @@ void UserView::AddUserCard(SystemTrayItem* owner,
   views::Label* username = NULL;
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
   if (!multiprofile_index_) {
-    username = new views::Label(
+    base::string16 user_name_string =
         login == ash::user::LOGGED_IN_GUEST ?
             bundle.GetLocalizedString(IDS_ASH_STATUS_TRAY_GUEST_LABEL) :
-            delegate->GetUserDisplayName(multiprofile_index_));
-    username->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+            delegate->GetUserDisplayName(multiprofile_index_);
+    if (!user_name_string.empty()) {
+      username = new views::Label(user_name_string);
+      username->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+    }
   }
 
   views::Label* additional = NULL;
   if (login != ash::user::LOGGED_IN_GUEST) {
-    additional = new views::Label();
-    additional->SetText(login == ash::user::LOGGED_IN_LOCALLY_MANAGED ?
-        bundle.GetLocalizedString(IDS_ASH_STATUS_TRAY_LOCALLY_MANAGED_LABEL) :
-        UTF8ToUTF16(delegate->GetUserEmail(multiprofile_index_)));
-
-    additional->SetFont(bundle.GetFont(ui::ResourceBundle::SmallFont));
-    additional->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+    base::string16 user_email_string =
+        login == ash::user::LOGGED_IN_LOCALLY_MANAGED ?
+            bundle.GetLocalizedString(
+                IDS_ASH_STATUS_TRAY_LOCALLY_MANAGED_LABEL) :
+            UTF8ToUTF16(delegate->GetUserEmail(multiprofile_index_));
+    if (!user_email_string.empty()) {
+      additional = new views::Label(user_email_string);
+      additional->SetFont(bundle.GetFont(ui::ResourceBundle::SmallFont));
+      additional->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+    }
   }
 
   // Adjust text properties dependent on if it is an active or inactive user.
@@ -910,7 +917,7 @@ void UserView::ToggleAddUserMenuOption() {
   params.context = this->GetWidget()->GetNativeWindow();
   params.accept_events = true;
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-  params.transparent = true;
+  params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   add_menu_option_->Init(params);
   add_menu_option_->SetOpacity(0xFF);
   add_menu_option_->GetNativeWindow()->set_owned_by_parent(false);

@@ -5,7 +5,6 @@
 #include "cc/trees/layer_tree_host.h"
 
 #include "base/basictypes.h"
-#include "cc/base/thread_impl.h"
 #include "cc/layers/content_layer.h"
 #include "cc/layers/heads_up_display_layer.h"
 #include "cc/layers/io_surface_layer.h"
@@ -16,6 +15,7 @@
 #include "cc/layers/texture_layer_impl.h"
 #include "cc/layers/video_layer.h"
 #include "cc/layers/video_layer_impl.h"
+#include "cc/output/filter_operations.h"
 #include "cc/test/fake_content_layer.h"
 #include "cc/test/fake_content_layer_client.h"
 #include "cc/test/fake_content_layer_impl.h"
@@ -35,7 +35,6 @@
 #include "cc/trees/single_thread_proxy.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "media/base/media.h"
-#include "third_party/WebKit/public/platform/WebFilterOperations.h"
 
 using media::VideoFrame;
 using WebKit::WebGraphicsContext3D;
@@ -135,7 +134,7 @@ class LayerTreeHostContextTest : public LayerTreeTest {
 
   virtual scoped_refptr<cc::ContextProvider>
   OffscreenContextProviderForMainThread() OVERRIDE {
-    DCHECK(!ImplThread());
+    DCHECK(!HasImplThread());
 
     if (!offscreen_contexts_main_thread_.get() ||
         offscreen_contexts_main_thread_->DestroyedOnMainThread()) {
@@ -151,7 +150,7 @@ class LayerTreeHostContextTest : public LayerTreeTest {
 
   virtual scoped_refptr<cc::ContextProvider>
   OffscreenContextProviderForCompositorThread() OVERRIDE {
-    DCHECK(ImplThread());
+    DCHECK(HasImplThread());
 
     if (!offscreen_contexts_compositor_thread_.get() ||
         offscreen_contexts_compositor_thread_->DestroyedOnMainThread()) {
@@ -420,8 +419,8 @@ class LayerTreeHostContextTestLostContextSucceedsWithContent
     if (use_surface_) {
       content_->SetForceRenderSurface(true);
       // Filters require us to create an offscreen context.
-      WebKit::WebFilterOperations filters;
-      filters.append(WebKit::WebFilterOperation::createGrayscaleFilter(0.5f));
+      FilterOperations filters;
+      filters.Append(FilterOperation::CreateGrayscaleFilter(0.5f));
       content_->SetFilters(filters);
       content_->SetBackgroundFilters(filters);
     }
@@ -551,8 +550,8 @@ class LayerTreeHostContextTestOffscreenContextFails
     content_->SetIsDrawable(true);
     content_->SetForceRenderSurface(true);
     // Filters require us to create an offscreen context.
-    WebKit::WebFilterOperations filters;
-    filters.append(WebKit::WebFilterOperation::createGrayscaleFilter(0.5f));
+    FilterOperations filters;
+    filters.Append(FilterOperation::CreateGrayscaleFilter(0.5f));
     content_->SetFilters(filters);
     content_->SetBackgroundFilters(filters);
 
@@ -829,8 +828,9 @@ class LayerTreeHostContextTestLostContextAndEvictTextures
   }
 
   void PostEvictTextures() {
-    if (ImplThread()) {
-      ImplThread()->PostTask(
+    if (HasImplThread()) {
+      ImplThreadTaskRunner()->PostTask(
+          FROM_HERE,
           base::Bind(
               &LayerTreeHostContextTestLostContextAndEvictTextures::
               EvictTexturesOnImplThread,
@@ -842,7 +842,7 @@ class LayerTreeHostContextTestLostContextAndEvictTextures
   }
 
   void EvictTexturesOnImplThread() {
-    impl_host_->EnforceManagedMemoryPolicy(ManagedMemoryPolicy(0));
+    impl_host_->EvictTexturesForTesting();
     if (lose_after_evict_)
       LoseContext();
   }
@@ -1141,23 +1141,19 @@ class LayerTreeHostContextTestDontUseLostResources
     video_color_->SetIsDrawable(true);
     root_->AddChild(video_color_);
 
-    if (!delegating_renderer()) {
-      // TODO(danakj): Hardware video decode can not be transported.
-      // crbug.com/179729
-      scoped_refptr<VideoLayer> video_hw_ = VideoLayer::Create(
-          &hw_frame_provider_);
-      video_hw_->SetBounds(gfx::Size(10, 10));
-      video_hw_->SetAnchorPoint(gfx::PointF());
-      video_hw_->SetIsDrawable(true);
-      root_->AddChild(video_hw_);
+    scoped_refptr<VideoLayer> video_hw_ = VideoLayer::Create(
+        &hw_frame_provider_);
+    video_hw_->SetBounds(gfx::Size(10, 10));
+    video_hw_->SetAnchorPoint(gfx::PointF());
+    video_hw_->SetIsDrawable(true);
+    root_->AddChild(video_hw_);
 
-      scoped_refptr<VideoLayer> video_scaled_hw_ = VideoLayer::Create(
-          &scaled_hw_frame_provider_);
-      video_scaled_hw_->SetBounds(gfx::Size(10, 10));
-      video_scaled_hw_->SetAnchorPoint(gfx::PointF());
-      video_scaled_hw_->SetIsDrawable(true);
-      root_->AddChild(video_scaled_hw_);
-    }
+    scoped_refptr<VideoLayer> video_scaled_hw_ = VideoLayer::Create(
+        &scaled_hw_frame_provider_);
+    video_scaled_hw_->SetBounds(gfx::Size(10, 10));
+    video_scaled_hw_->SetAnchorPoint(gfx::PointF());
+    video_scaled_hw_->SetIsDrawable(true);
+    root_->AddChild(video_scaled_hw_);
 
     if (!delegating_renderer()) {
       // TODO(danakj): IOSurface layer can not be transported. crbug.com/239335
@@ -1240,17 +1236,28 @@ class LayerTreeHostContextTestDontUseLostResources
           ResourceProvider::TextureUsageAny);
       ResourceProvider::ScopedWriteLockGL lock(resource_provider, texture);
 
+      gpu::Mailbox mailbox;
+      resource_provider->GraphicsContext3D()->genMailboxCHROMIUM(mailbox.name);
+      unsigned sync_point =
+          resource_provider->GraphicsContext3D()->insertSyncPoint();
+
       color_video_frame_ = VideoFrame::CreateColorFrame(
           gfx::Size(4, 4), 0x80, 0x80, 0x80, base::TimeDelta());
       hw_video_frame_ = VideoFrame::WrapNativeTexture(
-          lock.texture_id(),
+          new VideoFrame::MailboxHolder(
+              mailbox,
+              sync_point,
+              VideoFrame::MailboxHolder::TextureNoLongerNeededCallback()),
           GL_TEXTURE_2D,
           gfx::Size(4, 4), gfx::Rect(0, 0, 4, 4), gfx::Size(4, 4),
           base::TimeDelta(),
           VideoFrame::ReadPixelsCB(),
           base::Closure());
       scaled_hw_video_frame_ = VideoFrame::WrapNativeTexture(
-          lock.texture_id(),
+          new VideoFrame::MailboxHolder(
+              mailbox,
+              sync_point,
+              VideoFrame::MailboxHolder::TextureNoLongerNeededCallback()),
           GL_TEXTURE_2D,
           gfx::Size(4, 4), gfx::Rect(0, 0, 3, 2), gfx::Size(4, 4),
           base::TimeDelta(),
@@ -1576,18 +1583,18 @@ class LayerTreeHostTestCannotCreateIfCannotCreateOutputSurface
                bool delegating_renderer,
                bool impl_side_painting) {
     scoped_ptr<base::Thread> impl_thread;
-    scoped_ptr<cc::Thread> impl_ccthread;
     if (threaded) {
       impl_thread.reset(new base::Thread("LayerTreeTest"));
-      impl_ccthread = cc::ThreadImpl::CreateForDifferentThread(
-          impl_thread->message_loop_proxy());
-      ASSERT_TRUE(impl_ccthread);
+      ASSERT_TRUE(impl_thread->Start());
+      ASSERT_TRUE(impl_thread->message_loop_proxy().get());
     }
 
     LayerTreeSettings settings;
     settings.impl_side_painting = impl_side_painting;
-    scoped_ptr<LayerTreeHost> layer_tree_host =
-        LayerTreeHost::Create(this, settings, impl_ccthread.Pass());
+    scoped_ptr<LayerTreeHost> layer_tree_host = LayerTreeHost::Create(
+        this,
+        settings,
+        impl_thread ? impl_thread->message_loop_proxy() : NULL);
     EXPECT_FALSE(layer_tree_host);
   }
 };

@@ -4,12 +4,13 @@
 
 #import <Cocoa/Cocoa.h>
 
-#import "base/memory/scoped_nsobject.h"
+#import "base/mac/scoped_nsobject.h"
 #import "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #import "chrome/app/chrome_command_ids.h"  // For translate menu command ids.
 #include "chrome/browser/infobars/infobar_service.h"
 #import "chrome/browser/translate/translate_infobar_delegate.h"
+#include "chrome/browser/translate/translate_language_list.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #import "chrome/browser/ui/cocoa/infobars/before_translate_infobar_controller.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar.h"
@@ -61,6 +62,7 @@ class TranslationInfoBarTest : public CocoaProfileTest {
   // Each test gets a single Mock translate delegate for the lifetime of
   // the test.
   virtual void SetUp() {
+    TranslateLanguageList::DisableUpdate();
     CocoaProfileTest::SetUp();
     web_contents_.reset(
         WebContents::Create(WebContents::CreateParams(profile())));
@@ -105,7 +107,7 @@ class TranslationInfoBarTest : public CocoaProfileTest {
 
   scoped_ptr<WebContents> web_contents_;
   scoped_ptr<MockTranslateInfoBarDelegate> infobar_delegate_;
-  scoped_nsobject<TranslateInfoBarControllerBase> infobar_controller_;
+  base::scoped_nsobject<TranslateInfoBarControllerBase> infobar_controller_;
 };
 
 // Check that we can instantiate a Translate Infobar correctly.

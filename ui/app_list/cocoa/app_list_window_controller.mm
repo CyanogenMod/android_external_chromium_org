@@ -29,7 +29,7 @@
 @implementation AppListWindowController;
 
 - (id)init {
-  scoped_nsobject<NSWindow> controlledWindow(
+  base::scoped_nsobject<NSWindow> controlledWindow(
       [[AppListWindow alloc] initWithContentRect:ui::kWindowSizeDeterminedLater
                                        styleMask:NSBorderlessWindowMask
                                          backing:NSBackingStoreBuffered
@@ -38,6 +38,7 @@
   [controlledWindow setBackgroundColor:[NSColor clearColor]];
   [controlledWindow setOpaque:NO];
   [controlledWindow setHasShadow:YES];
+  [controlledWindow setLevel:NSDockWindowLevel];
 
   if ((self = [super initWithWindow:controlledWindow])) {
     appListViewController_.reset([[AppListViewController alloc] init]);

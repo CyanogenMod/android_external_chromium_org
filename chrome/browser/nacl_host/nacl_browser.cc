@@ -19,7 +19,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/common/url_pattern.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -101,7 +101,7 @@ void WriteCache(const base::FilePath& filename, const Pickle* pickle) {
 
 void RemoveCache(const base::FilePath& filename,
                  const base::Closure& callback) {
-  file_util::Delete(filename, false);
+  base::Delete(filename, false);
   content::BrowserThread::PostTask(content::BrowserThread::IO, FROM_HERE,
                                    callback);
 }
@@ -196,6 +196,18 @@ void NaClBrowser::InitIrtFilePath() {
     irt_filepath_ = plugin_dir.Append(NaClIrtName());
   }
 }
+
+#if defined(OS_WIN)
+bool NaClBrowser::GetNaCl64ExePath(base::FilePath* exe_path) {
+  base::FilePath module_path;
+  if (!PathService::Get(base::FILE_MODULE, &module_path)) {
+    LOG(ERROR) << "NaCl process launch failed: could not resolve module";
+    return false;
+  }
+  *exe_path = module_path.DirName().Append(L"nacl64");
+  return true;
+}
+#endif
 
 NaClBrowser* NaClBrowser::GetInstance() {
   return Singleton<NaClBrowser>::get();

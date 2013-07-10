@@ -29,8 +29,7 @@ class MEDIA_EXPORT AesDecryptor : public MediaKeys, public Decryptor {
  public:
   AesDecryptor(const KeyAddedCB& key_added_cb,
                const KeyErrorCB& key_error_cb,
-               const KeyMessageCB& key_message_cb,
-               const NeedKeyCB& need_key_cb);
+               const KeyMessageCB& key_message_cb);
   virtual ~AesDecryptor();
 
   // MediaKeys implementation.
@@ -41,9 +40,9 @@ class MEDIA_EXPORT AesDecryptor : public MediaKeys, public Decryptor {
                       const uint8* init_data, int init_data_length,
                       const std::string& session_id) OVERRIDE;
   virtual void CancelKeyRequest(const std::string& session_id) OVERRIDE;
+  virtual Decryptor* GetDecryptor() OVERRIDE;
 
   // Decryptor implementation.
-  virtual MediaKeys* GetMediaKeys() OVERRIDE;
   virtual void RegisterNewKeyCB(StreamType stream_type,
                                 const NewKeyCB& key_added_cb) OVERRIDE;
   virtual void Decrypt(StreamType stream_type,
@@ -98,7 +97,6 @@ class MEDIA_EXPORT AesDecryptor : public MediaKeys, public Decryptor {
   KeyAddedCB key_added_cb_;
   KeyErrorCB key_error_cb_;
   KeyMessageCB key_message_cb_;
-  NeedKeyCB need_key_cb_;
 
   // KeyMap owns the DecryptionKey* and must delete them when they are
   // not needed any more.

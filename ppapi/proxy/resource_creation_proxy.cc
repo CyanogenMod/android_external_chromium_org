@@ -263,24 +263,43 @@ PP_Resource ResourceCreationProxy::CreateHostResolverPrivate(
 
 PP_Resource ResourceCreationProxy::CreateImageData(
     PP_Instance instance,
-    PPB_ImageData_Shared::ImageDataType type,
     PP_ImageDataFormat format,
     const PP_Size* size,
     PP_Bool init_to_zero) {
-  return PPB_ImageData_Proxy::CreateProxyResource(instance, type,
-                                                  format, *size, init_to_zero);
+  // On the plugin side, we create PlatformImageData resources for trusted
+  // plugins and SimpleImageData resources for untrusted ones.
+  PPB_ImageData_Shared::ImageDataType type =
+#if !defined(OS_NACL)
+      PPB_ImageData_Shared::PLATFORM;
+#else
+      PPB_ImageData_Shared::SIMPLE;
+#endif
+  return PPB_ImageData_Proxy::CreateProxyResource(
+      instance, type,
+      format, *size, init_to_zero);
+}
+
+PP_Resource ResourceCreationProxy::CreateImageDataSimple(
+    PP_Instance instance,
+    PP_ImageDataFormat format,
+    const PP_Size* size,
+    PP_Bool init_to_zero) {
+  return PPB_ImageData_Proxy::CreateProxyResource(
+      instance,
+      PPB_ImageData_Shared::SIMPLE,
+      format, *size, init_to_zero);
 }
 
 PP_Resource ResourceCreationProxy::CreateNetAddressFromIPv4Address(
     PP_Instance instance,
-    const PP_NetAddress_IPv4_Dev* ipv4_addr) {
+    const PP_NetAddress_IPv4* ipv4_addr) {
   return (new NetAddressResource(GetConnection(), instance,
                                  *ipv4_addr))->GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreateNetAddressFromIPv6Address(
     PP_Instance instance,
-    const PP_NetAddress_IPv6_Dev* ipv6_addr) {
+    const PP_NetAddress_IPv6* ipv6_addr) {
   return (new NetAddressResource(GetConnection(), instance,
                                  *ipv6_addr))->GetReference();
 }
@@ -327,6 +346,17 @@ PP_Resource ResourceCreationProxy::CreateUDPSocketPrivate(
     PP_Instance instance) {
   return (new UDPSocketPrivateResource(
       GetConnection(), instance))->GetReference();
+}
+
+PP_Resource ResourceCreationProxy::CreateVideoDestination(
+    PP_Instance instance) {
+  return (new VideoDestinationResource(GetConnection(),
+                                       instance))->GetReference();
+}
+
+PP_Resource ResourceCreationProxy::CreateVideoSource(
+    PP_Instance instance) {
+  return (new VideoSourceResource(GetConnection(), instance))->GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreateWebSocket(PP_Instance instance) {
@@ -416,17 +446,6 @@ PP_Resource ResourceCreationProxy::CreateVideoDecoder(
     PP_VideoDecoder_Profile profile) {
   return PPB_VideoDecoder_Proxy::CreateProxyResource(
       instance, context3d_id, profile);
-}
-
-PP_Resource ResourceCreationProxy::CreateVideoDestination(
-    PP_Instance instance) {
-  return (new VideoDestinationResource(GetConnection(),
-                                       instance))->GetReference();
-}
-
-PP_Resource ResourceCreationProxy::CreateVideoSource(
-    PP_Instance instance) {
-  return (new VideoSourceResource(GetConnection(), instance))->GetReference();
 }
 
 #endif  // !defined(OS_NACL)

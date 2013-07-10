@@ -33,7 +33,6 @@
 #include "chrome/tools/profiles/thumbnail-inl.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_utils.h"
-#include "googleurl/src/gurl.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
@@ -41,6 +40,7 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/codec/jpeg_codec.h"
+#include "url/gurl.h"
 
 using content::BrowserThread;
 
@@ -1199,8 +1199,8 @@ TEST_F(TopSitesLikelyImplTest, CreateTopSitesThenHistory) {
 
   // Remove the TopSites file. This forces TopSites to wait until history loads
   // before TopSites is considered loaded.
-  file_util::Delete(profile()->GetPath().Append(chrome::kTopSitesFilename),
-                    false);
+  sql::Connection::Delete(
+      profile()->GetPath().Append(chrome::kTopSitesFilename));
 
   // Create TopSites, but not History.
   profile()->CreateTopSites();

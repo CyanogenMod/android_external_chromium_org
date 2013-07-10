@@ -7,7 +7,7 @@
 
 #include "chrome/browser/ui/views/frame/immersive_mode_controller.h"
 
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/aura/window_observer.h"
@@ -108,8 +108,6 @@ class ImmersiveModeControllerAsh : public ImmersiveModeController,
   virtual void OnWindowPropertyChanged(aura::Window* window,
                                        const void* key,
                                        intptr_t old) OVERRIDE;
-  virtual void OnWindowAddedToRootWindow(aura::Window* window) OVERRIDE;
-  virtual void OnWindowRemovingFromRootWindow(aura::Window* window) OVERRIDE;
 
   // Testing interface.
   void SetForceHideTabIndicatorsForTest(bool force);
@@ -219,11 +217,7 @@ class ImmersiveModeControllerAsh : public ImmersiveModeController,
   // bounds, above it, or within a few pixels below it. This allow the container
   // to steal enough pixels to detect a swipe in and handles the case that there
   // is a bezel sensor above the top container.
-  bool ShouldHandleEvent(const gfx::Point& location) const;
-
-  // Call Add/RemovePreTargerHandler since either the RootWindow has changed or
-  // the enabled state of observing has changed.
-  void UpdatePreTargetHandler();
+  bool ShouldHandleGestureEvent(const gfx::Point& location) const;
 
   // Injected dependencies. Not owned.
   Delegate* delegate_;
@@ -251,6 +245,10 @@ class ImmersiveModeControllerAsh : public ImmersiveModeController,
   // The cursor x position in root coordinates when the cursor first hit
   // the top edge of the screen.
   int mouse_x_when_hit_top_;
+
+  // Tracks if the controller has seen a ET_GESTURE_SCROLL_BEGIN, without the
+  // following events.
+  bool gesture_begun_;
 
   // The current visible bounds of the find bar, in screen coordinates. This is
   // an empty rect if the find bar is not visible.
@@ -283,10 +281,6 @@ class ImmersiveModeControllerAsh : public ImmersiveModeController,
   content::NotificationRegistrar registrar_;
 
   base::WeakPtrFactory<ImmersiveModeControllerAsh> weak_ptr_factory_;
-
-  // Tracks if the controller has seen a ET_GESTURE_SCROLL_BEGIN, without the
-  // following events.
-  bool gesture_begun_;
 
   DISALLOW_COPY_AND_ASSIGN(ImmersiveModeControllerAsh);
 };

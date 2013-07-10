@@ -17,7 +17,7 @@
 #include "base/process_util.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "base/values.h"
 #include "cc/base/switches.h"
 #include "chrome/browser/browser_process.h"
@@ -90,6 +90,7 @@ std::string DeriveCommandLine(const GURL& start_url,
       ::switches::kEnableBeginFrameScheduling,
       ::switches::kEnableBrowserInputController,
       ::switches::kEnableCompositingForFixedPosition,
+      ::switches::kEnableEncodedScreenCapture,
       ::switches::kEnableEncryptedMedia,
       ::switches::kEnableGestureTapHighlight,
       ::switches::kDisableGestureTapHighlight,
@@ -130,16 +131,20 @@ std::string DeriveCommandLine(const GURL& start_url,
       ::switches::kUseExynosVda,
       ::switches::kV,
       ::switches::kEnableWebGLDraftExtensions,
-      ash::switches::kAshTouchHud,
-      ash::switches::kAuraLegacyPowerButton,
+      ash::switches::kAshDefaultGuestWallpaperLarge,
+      ash::switches::kAshDefaultGuestWallpaperSmall,
+      ash::switches::kAshDefaultWallpaperLarge,
+      ash::switches::kAshDefaultWallpaperSmall,
       ash::switches::kAshDisableNewAudioHandler,
       ash::switches::kAshEnableAudioDeviceMenu,
+      ash::switches::kAshHostWindowBounds,
+      ash::switches::kAshTouchHud,
+      ash::switches::kAuraLegacyPowerButton,
       // Please keep these in alphabetical order. Non-UI Compositor switches
       // here should also be added to
       // content/browser/renderer_host/render_process_host_impl.cc.
       cc::switches::kBackgroundColorInsteadOfCheckerboard,
       cc::switches::kCompositeToMailbox,
-      cc::switches::kDisableColorEstimator,
       cc::switches::kDisableImplSidePainting,
       cc::switches::kDisableThreadedAnimation,
       cc::switches::kEnableImplSidePainting,
@@ -153,7 +158,6 @@ std::string DeriveCommandLine(const GURL& start_url,
       cc::switches::kMaxUnusedResourceMemoryUsagePercentage,
       cc::switches::kNumRasterThreads,
       cc::switches::kShowCompositedLayerBorders,
-      cc::switches::kShowCompositedLayerTree,
       cc::switches::kShowFPSCounter,
       cc::switches::kShowNonOccludingRects,
       cc::switches::kShowOccludingRects,

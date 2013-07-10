@@ -26,8 +26,8 @@
 struct PP_Flash_Menu;
 struct PP_FontDescription_Dev;
 struct PP_BrowserFont_Trusted_Description;
-struct PP_NetAddress_IPv4_Dev;
-struct PP_NetAddress_IPv6_Dev;
+struct PP_NetAddress_IPv4;
+struct PP_NetAddress_IPv6;
 struct PP_NetAddress_Private;
 struct PP_Size;
 
@@ -133,16 +133,19 @@ class ResourceCreationAPI {
   virtual PP_Resource CreateHostResolver(PP_Instance instance) = 0;
   virtual PP_Resource CreateHostResolverPrivate(PP_Instance instance) = 0;
   virtual PP_Resource CreateImageData(PP_Instance instance,
-                                      PPB_ImageData_Shared::ImageDataType type,
                                       PP_ImageDataFormat format,
                                       const PP_Size* size,
                                       PP_Bool init_to_zero) = 0;
+  virtual PP_Resource CreateImageDataSimple(PP_Instance instance,
+                                            PP_ImageDataFormat format,
+                                            const PP_Size* size,
+                                            PP_Bool init_to_zero) = 0;
   virtual PP_Resource CreateNetAddressFromIPv4Address(
       PP_Instance instance,
-      const PP_NetAddress_IPv4_Dev* ipv4_addr) = 0;
+      const PP_NetAddress_IPv4* ipv4_addr) = 0;
   virtual PP_Resource CreateNetAddressFromIPv6Address(
       PP_Instance instance,
-      const PP_NetAddress_IPv6_Dev* ipv6_addr) = 0;
+      const PP_NetAddress_IPv6* ipv6_addr) = 0;
   virtual PP_Resource CreateNetAddressFromNetAddressPrivate(
       PP_Instance instance,
       const PP_NetAddress_Private& private_addr) = 0;
@@ -156,6 +159,8 @@ class ResourceCreationAPI {
   virtual PP_Resource CreateTCPSocketPrivate(PP_Instance instace) = 0;
   virtual PP_Resource CreateUDPSocket(PP_Instance instace) = 0;
   virtual PP_Resource CreateUDPSocketPrivate(PP_Instance instace) = 0;
+  virtual PP_Resource CreateVideoDestination(PP_Instance instance) = 0;
+  virtual PP_Resource CreateVideoSource(PP_Instance instance) = 0;
   virtual PP_Resource CreateWebSocket(PP_Instance instance) = 0;
   virtual PP_Resource CreateX509CertificatePrivate(PP_Instance instance) = 0;
 #if !defined(OS_NACL)
@@ -181,8 +186,6 @@ class ResourceCreationAPI {
       PP_Instance instance,
       PP_Resource context3d_id,
       PP_VideoDecoder_Profile profile) = 0;
-  virtual PP_Resource CreateVideoDestination(PP_Instance instance) = 0;
-  virtual PP_Resource CreateVideoSource(PP_Instance instance) = 0;
 #endif  // !defined(OS_NACL)
 
   static const ApiID kApiID = API_ID_RESOURCE_CREATION;

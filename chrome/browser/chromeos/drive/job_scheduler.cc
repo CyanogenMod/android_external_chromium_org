@@ -4,8 +4,6 @@
 
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
 
-#include <math.h>
-
 #include "base/message_loop.h"
 #include "base/prefs/pref_service.h"
 #include "base/rand_util.h"
@@ -30,20 +28,18 @@ const int kMaxRetryCount = kMaxThrottleCount - 1;
 // Parameter struct for RunUploadNewFile.
 struct UploadNewFileParams {
   std::string parent_resource_id;
-  base::FilePath drive_file_path;
   base::FilePath local_file_path;
   std::string title;
   std::string content_type;
-  google_apis::UploadCompletionCallback callback;
+  UploadCompletionCallback callback;
   google_apis::ProgressCallback progress_callback;
 };
 
 // Helper function to work around the arity limitation of base::Bind.
 google_apis::CancelCallback RunUploadNewFile(
-    google_apis::DriveUploaderInterface* uploader,
+    DriveUploaderInterface* uploader,
     const UploadNewFileParams& params) {
   return uploader->UploadNewFile(params.parent_resource_id,
-                                 params.drive_file_path,
                                  params.local_file_path,
                                  params.title,
                                  params.content_type,
@@ -54,20 +50,18 @@ google_apis::CancelCallback RunUploadNewFile(
 // Parameter struct for RunUploadExistingFile.
 struct UploadExistingFileParams {
   std::string resource_id;
-  base::FilePath drive_file_path;
   base::FilePath local_file_path;
   std::string content_type;
   std::string etag;
-  google_apis::UploadCompletionCallback callback;
+  UploadCompletionCallback callback;
   google_apis::ProgressCallback progress_callback;
 };
 
 // Helper function to work around the arity limitation of base::Bind.
 google_apis::CancelCallback RunUploadExistingFile(
-    google_apis::DriveUploaderInterface* uploader,
+    DriveUploaderInterface* uploader,
     const UploadExistingFileParams& params) {
   return uploader->UploadExistingFile(params.resource_id,
-                                      params.drive_file_path,
                                       params.local_file_path,
                                       params.content_type,
                                       params.etag,
@@ -78,23 +72,49 @@ google_apis::CancelCallback RunUploadExistingFile(
 // Parameter struct for RunResumeUploadFile.
 struct ResumeUploadFileParams {
   GURL upload_location;
-  base::FilePath drive_file_path;
   base::FilePath local_file_path;
   std::string content_type;
-  google_apis::UploadCompletionCallback callback;
+  UploadCompletionCallback callback;
   google_apis::ProgressCallback progress_callback;
 };
 
 // Helper function to adjust the return type.
 google_apis::CancelCallback RunResumeUploadFile(
-    google_apis::DriveUploaderInterface* uploader,
+    DriveUploaderInterface* uploader,
     const ResumeUploadFileParams& params) {
   return uploader->ResumeUploadFile(params.upload_location,
-                                    params.drive_file_path,
                                     params.local_file_path,
                                     params.content_type,
                                     params.callback,
                                     params.progress_callback);
+}
+
+// Helper for CreateErrorRunCallback.
+template<typename P1>
+struct CreateErrorRunCallbackHelper {
+  static void Run(
+      const base::Callback<void(google_apis::GDataErrorCode, P1)>& callback,
+      google_apis::GDataErrorCode error) {
+    callback.Run(error, P1());
+  }
+};
+
+template<typename P1>
+struct CreateErrorRunCallbackHelper<const P1&> {
+  static void Run(
+      const base::Callback<void(google_apis::GDataErrorCode,
+                                const P1&)>& callback,
+      google_apis::GDataErrorCode error) {
+    callback.Run(error, P1());
+  }
+};
+
+// Returns a callback with the tail parameter bound to its default value.
+// In other words, returned_callback.Run(error) runs callback.Run(error, T()).
+template<typename P1>
+base::Callback<void(google_apis::GDataErrorCode)> CreateErrorRunCallback(
+    const base::Callback<void(google_apis::GDataErrorCode, P1)>& callback) {
+  return base::Bind(&CreateErrorRunCallbackHelper<P1>::Run, callback);
 }
 
 }  // namespace
@@ -123,11 +143,12 @@ struct JobScheduler::ResumeUploadParams {
 
 JobScheduler::JobScheduler(
     Profile* profile,
-    google_apis::DriveServiceInterface* drive_service)
+    DriveServiceInterface* drive_service,
+    base::SequencedTaskRunner* blocking_task_runner)
     : throttle_count_(0),
       disable_throttling_(false),
       drive_service_(drive_service),
-      uploader_(new google_apis::DriveUploader(drive_service)),
+      uploader_(new DriveUploader(drive_service, blocking_task_runner)),
       profile_(profile),
       weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -171,9 +192,15 @@ void JobScheduler::CancelJob(JobID job_id) {
 
   JobEntry* job = job_map_.Lookup(job_id);
   if (job) {
-    // TODO(kinaba): crbug.com/251116 Support cancelling jobs not yet started.
-    if (!job->cancel_callback.is_null())
-      job->cancel_callback.Run();
+    if (job->job_info.state == STATE_RUNNING) {
+      // If the job is running an HTTP request, cancel it via |cancel_callback|
+      // returned from the request, and wait for termination in the normal
+      // callback handler, OnJobDone.
+      if (!job->cancel_callback.is_null())
+        job->cancel_callback.Run();
+    } else {
+      AbortNotRunningJob(job, google_apis::GDATA_CANCELLED);
+    }
   }
 }
 
@@ -193,12 +220,13 @@ void JobScheduler::GetAboutResource(
 
   JobEntry* new_job = CreateNewJob(TYPE_GET_ABOUT_RESOURCE);
   new_job->task = base::Bind(
-      &google_apis::DriveServiceInterface::GetAboutResource,
+      &DriveServiceInterface::GetAboutResource,
       base::Unretained(drive_service_),
       base::Bind(&JobScheduler::OnGetAboutResourceJobDone,
                  weak_ptr_factory_.GetWeakPtr(),
                  new_job->job_info.job_id,
                  callback));
+  new_job->abort_callback = CreateErrorRunCallback(callback);
   StartJob(new_job);
 }
 
@@ -209,12 +237,13 @@ void JobScheduler::GetAppList(
 
   JobEntry* new_job = CreateNewJob(TYPE_GET_APP_LIST);
   new_job->task = base::Bind(
-      &google_apis::DriveServiceInterface::GetAppList,
+      &DriveServiceInterface::GetAppList,
       base::Unretained(drive_service_),
       base::Bind(&JobScheduler::OnGetAppListJobDone,
                  weak_ptr_factory_.GetWeakPtr(),
                  new_job->job_info.job_id,
                  callback));
+  new_job->abort_callback = CreateErrorRunCallback(callback);
   StartJob(new_job);
 }
 
@@ -225,12 +254,13 @@ void JobScheduler::GetAllResourceList(
 
   JobEntry* new_job = CreateNewJob(TYPE_GET_ALL_RESOURCE_LIST);
   new_job->task = base::Bind(
-      &google_apis::DriveServiceInterface::GetAllResourceList,
+      &DriveServiceInterface::GetAllResourceList,
       base::Unretained(drive_service_),
       base::Bind(&JobScheduler::OnGetResourceListJobDone,
                  weak_ptr_factory_.GetWeakPtr(),
                  new_job->job_info.job_id,
                  callback));
+  new_job->abort_callback = CreateErrorRunCallback(callback);
   StartJob(new_job);
 }
 
@@ -243,13 +273,14 @@ void JobScheduler::GetResourceListInDirectory(
   JobEntry* new_job = CreateNewJob(
       TYPE_GET_RESOURCE_LIST_IN_DIRECTORY);
   new_job->task = base::Bind(
-      &google_apis::DriveServiceInterface::GetResourceListInDirectory,
+      &DriveServiceInterface::GetResourceListInDirectory,
       base::Unretained(drive_service_),
       directory_resource_id,
       base::Bind(&JobScheduler::OnGetResourceListJobDone,
                  weak_ptr_factory_.GetWeakPtr(),
                  new_job->job_info.job_id,
                  callback));
+  new_job->abort_callback = CreateErrorRunCallback(callback);
   StartJob(new_job);
 }
 
@@ -261,13 +292,14 @@ void JobScheduler::Search(
 
   JobEntry* new_job = CreateNewJob(TYPE_SEARCH);
   new_job->task = base::Bind(
-      &google_apis::DriveServiceInterface::Search,
+      &DriveServiceInterface::Search,
       base::Unretained(drive_service_),
       search_query,
       base::Bind(&JobScheduler::OnGetResourceListJobDone,
                  weak_ptr_factory_.GetWeakPtr(),
                  new_job->job_info.job_id,
                  callback));
+  new_job->abort_callback = CreateErrorRunCallback(callback);
   StartJob(new_job);
 }
 
@@ -279,13 +311,14 @@ void JobScheduler::GetChangeList(
 
   JobEntry* new_job = CreateNewJob(TYPE_GET_CHANGE_LIST);
   new_job->task = base::Bind(
-      &google_apis::DriveServiceInterface::GetChangeList,
+      &DriveServiceInterface::GetChangeList,
       base::Unretained(drive_service_),
       start_changestamp,
       base::Bind(&JobScheduler::OnGetResourceListJobDone,
                  weak_ptr_factory_.GetWeakPtr(),
                  new_job->job_info.job_id,
                  callback));
+  new_job->abort_callback = CreateErrorRunCallback(callback);
   StartJob(new_job);
 }
 
@@ -297,13 +330,14 @@ void JobScheduler::ContinueGetResourceList(
 
   JobEntry* new_job = CreateNewJob(TYPE_CONTINUE_GET_RESOURCE_LIST);
   new_job->task = base::Bind(
-      &google_apis::DriveServiceInterface::ContinueGetResourceList,
+      &DriveServiceInterface::ContinueGetResourceList,
       base::Unretained(drive_service_),
       next_url,
       base::Bind(&JobScheduler::OnGetResourceListJobDone,
                  weak_ptr_factory_.GetWeakPtr(),
                  new_job->job_info.job_id,
                  callback));
+  new_job->abort_callback = CreateErrorRunCallback(callback);
   StartJob(new_job);
 }
 
@@ -317,13 +351,14 @@ void JobScheduler::GetResourceEntry(
   JobEntry* new_job = CreateNewJob(TYPE_GET_RESOURCE_ENTRY);
   new_job->context = context;
   new_job->task = base::Bind(
-      &google_apis::DriveServiceInterface::GetResourceEntry,
+      &DriveServiceInterface::GetResourceEntry,
       base::Unretained(drive_service_),
       resource_id,
       base::Bind(&JobScheduler::OnGetResourceEntryJobDone,
                  weak_ptr_factory_.GetWeakPtr(),
                  new_job->job_info.job_id,
                  callback));
+  new_job->abort_callback = CreateErrorRunCallback(callback);
   StartJob(new_job);
 }
 
@@ -335,7 +370,7 @@ void JobScheduler::DeleteResource(
 
   JobEntry* new_job = CreateNewJob(TYPE_DELETE_RESOURCE);
   new_job->task = base::Bind(
-      &google_apis::DriveServiceInterface::DeleteResource,
+      &DriveServiceInterface::DeleteResource,
       base::Unretained(drive_service_),
       resource_id,
       "",  // etag
@@ -343,6 +378,7 @@ void JobScheduler::DeleteResource(
                  weak_ptr_factory_.GetWeakPtr(),
                  new_job->job_info.job_id,
                  callback));
+  new_job->abort_callback = callback;
   StartJob(new_job);
 }
 
@@ -356,7 +392,7 @@ void JobScheduler::CopyResource(
 
   JobEntry* new_job = CreateNewJob(TYPE_COPY_RESOURCE);
   new_job->task = base::Bind(
-      &google_apis::DriveServiceInterface::CopyResource,
+      &DriveServiceInterface::CopyResource,
       base::Unretained(drive_service_),
       resource_id,
       parent_resource_id,
@@ -365,6 +401,7 @@ void JobScheduler::CopyResource(
                  weak_ptr_factory_.GetWeakPtr(),
                  new_job->job_info.job_id,
                  callback));
+  new_job->abort_callback = CreateErrorRunCallback(callback);
   StartJob(new_job);
 }
 
@@ -377,7 +414,7 @@ void JobScheduler::CopyHostedDocument(
 
   JobEntry* new_job = CreateNewJob(TYPE_COPY_HOSTED_DOCUMENT);
   new_job->task = base::Bind(
-      &google_apis::DriveServiceInterface::CopyHostedDocument,
+      &DriveServiceInterface::CopyHostedDocument,
       base::Unretained(drive_service_),
       resource_id,
       new_name,
@@ -385,6 +422,7 @@ void JobScheduler::CopyHostedDocument(
                  weak_ptr_factory_.GetWeakPtr(),
                  new_job->job_info.job_id,
                  callback));
+  new_job->abort_callback = CreateErrorRunCallback(callback);
   StartJob(new_job);
 }
 
@@ -397,7 +435,7 @@ void JobScheduler::RenameResource(
 
   JobEntry* new_job = CreateNewJob(TYPE_RENAME_RESOURCE);
   new_job->task = base::Bind(
-      &google_apis::DriveServiceInterface::RenameResource,
+      &DriveServiceInterface::RenameResource,
       base::Unretained(drive_service_),
       resource_id,
       new_name,
@@ -405,6 +443,7 @@ void JobScheduler::RenameResource(
                  weak_ptr_factory_.GetWeakPtr(),
                  new_job->job_info.job_id,
                  callback));
+  new_job->abort_callback = callback;
   StartJob(new_job);
 }
 
@@ -418,7 +457,7 @@ void JobScheduler::TouchResource(
 
   JobEntry* new_job = CreateNewJob(TYPE_TOUCH_RESOURCE);
   new_job->task = base::Bind(
-      &google_apis::DriveServiceInterface::TouchResource,
+      &DriveServiceInterface::TouchResource,
       base::Unretained(drive_service_),
       resource_id,
       modified_date,
@@ -427,6 +466,7 @@ void JobScheduler::TouchResource(
                  weak_ptr_factory_.GetWeakPtr(),
                  new_job->job_info.job_id,
                  callback));
+  new_job->abort_callback = CreateErrorRunCallback(callback);
   StartJob(new_job);
 }
 
@@ -439,7 +479,7 @@ void JobScheduler::AddResourceToDirectory(
 
   JobEntry* new_job = CreateNewJob(TYPE_ADD_RESOURCE_TO_DIRECTORY);
   new_job->task = base::Bind(
-      &google_apis::DriveServiceInterface::AddResourceToDirectory,
+      &DriveServiceInterface::AddResourceToDirectory,
       base::Unretained(drive_service_),
       parent_resource_id,
       resource_id,
@@ -447,6 +487,7 @@ void JobScheduler::AddResourceToDirectory(
                  weak_ptr_factory_.GetWeakPtr(),
                  new_job->job_info.job_id,
                  callback));
+  new_job->abort_callback = callback;
   StartJob(new_job);
 }
 
@@ -458,7 +499,7 @@ void JobScheduler::RemoveResourceFromDirectory(
 
   JobEntry* new_job = CreateNewJob(TYPE_REMOVE_RESOURCE_FROM_DIRECTORY);
   new_job->task = base::Bind(
-      &google_apis::DriveServiceInterface::RemoveResourceFromDirectory,
+      &DriveServiceInterface::RemoveResourceFromDirectory,
       base::Unretained(drive_service_),
       parent_resource_id,
       resource_id,
@@ -466,6 +507,7 @@ void JobScheduler::RemoveResourceFromDirectory(
                  weak_ptr_factory_.GetWeakPtr(),
                  new_job->job_info.job_id,
                  callback));
+  new_job->abort_callback = callback;
   StartJob(new_job);
 }
 
@@ -477,7 +519,7 @@ void JobScheduler::AddNewDirectory(
 
   JobEntry* new_job = CreateNewJob(TYPE_ADD_NEW_DIRECTORY);
   new_job->task = base::Bind(
-      &google_apis::DriveServiceInterface::AddNewDirectory,
+      &DriveServiceInterface::AddNewDirectory,
       base::Unretained(drive_service_),
       parent_resource_id,
       directory_name,
@@ -485,13 +527,14 @@ void JobScheduler::AddNewDirectory(
                  weak_ptr_factory_.GetWeakPtr(),
                  new_job->job_info.job_id,
                  callback));
+  new_job->abort_callback = CreateErrorRunCallback(callback);
   StartJob(new_job);
 }
 
 JobID JobScheduler::DownloadFile(
     const base::FilePath& virtual_path,
     const base::FilePath& local_cache_path,
-    const GURL& download_url,
+    const std::string& resource_id,
     const ClientContext& context,
     const google_apis::DownloadActionCallback& download_action_callback,
     const google_apis::GetContentCallback& get_content_callback) {
@@ -501,11 +544,10 @@ JobID JobScheduler::DownloadFile(
   new_job->job_info.file_path = virtual_path;
   new_job->context = context;
   new_job->task = base::Bind(
-      &google_apis::DriveServiceInterface::DownloadFile,
+      &DriveServiceInterface::DownloadFile,
       base::Unretained(drive_service_),
-      virtual_path,
       local_cache_path,
-      download_url,
+      resource_id,
       base::Bind(&JobScheduler::OnDownloadActionJobDone,
                  weak_ptr_factory_.GetWeakPtr(),
                  new_job->job_info.job_id,
@@ -514,7 +556,7 @@ JobID JobScheduler::DownloadFile(
       base::Bind(&JobScheduler::UpdateProgress,
                  weak_ptr_factory_.GetWeakPtr(),
                  new_job->job_info.job_id));
-
+  new_job->abort_callback = CreateErrorRunCallback(download_action_callback);
   StartJob(new_job);
   return new_job->job_info.job_id;
 }
@@ -535,13 +577,11 @@ void JobScheduler::UploadNewFile(
 
   UploadNewFileParams params;
   params.parent_resource_id = parent_resource_id;
-  params.drive_file_path = drive_file_path;
   params.local_file_path = local_file_path;
   params.title = title;
   params.content_type = content_type;
 
   ResumeUploadParams resume_params;
-  resume_params.drive_file_path = params.drive_file_path;
   resume_params.local_file_path = params.local_file_path;
   resume_params.content_type = params.content_type;
 
@@ -554,7 +594,7 @@ void JobScheduler::UploadNewFile(
                                         weak_ptr_factory_.GetWeakPtr(),
                                         new_job->job_info.job_id);
   new_job->task = base::Bind(&RunUploadNewFile, uploader_.get(), params);
-
+  new_job->abort_callback = CreateErrorRunCallback(callback);
   StartJob(new_job);
 }
 
@@ -574,13 +614,11 @@ void JobScheduler::UploadExistingFile(
 
   UploadExistingFileParams params;
   params.resource_id = resource_id;
-  params.drive_file_path = drive_file_path;
   params.local_file_path = local_file_path;
   params.content_type = content_type;
   params.etag = etag;
 
   ResumeUploadParams resume_params;
-  resume_params.drive_file_path = params.drive_file_path;
   resume_params.local_file_path = params.local_file_path;
   resume_params.content_type = params.content_type;
 
@@ -593,7 +631,7 @@ void JobScheduler::UploadExistingFile(
                                         weak_ptr_factory_.GetWeakPtr(),
                                         new_job->job_info.job_id);
   new_job->task = base::Bind(&RunUploadExistingFile, uploader_.get(), params);
-
+  new_job->abort_callback = CreateErrorRunCallback(callback);
   StartJob(new_job);
 }
 
@@ -614,13 +652,11 @@ void JobScheduler::CreateFile(
 
   UploadNewFileParams params;
   params.parent_resource_id = parent_resource_id;
-  params.drive_file_path = drive_file_path;
   params.local_file_path = kDevNull;  // Upload an empty file.
   params.title = title;
   params.content_type = content_type;
 
   ResumeUploadParams resume_params;
-  resume_params.drive_file_path = params.drive_file_path;
   resume_params.local_file_path = params.local_file_path;
   resume_params.content_type = params.content_type;
 
@@ -632,7 +668,7 @@ void JobScheduler::CreateFile(
   params.progress_callback = google_apis::ProgressCallback();
 
   new_job->task = base::Bind(&RunUploadNewFile, uploader_.get(), params);
-
+  new_job->abort_callback = CreateErrorRunCallback(callback);
   StartJob(new_job);
 }
 
@@ -667,11 +703,23 @@ void JobScheduler::QueueJob(JobID job_id) {
 void JobScheduler::DoJobLoop(QueueType queue_type) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  JobID job_id = -1;
-  if (!queue_[queue_type]->PopForRun(GetCurrentAcceptedPriority(queue_type),
-                                     &job_id)) {
-    return;
+  const int accepted_priority = GetCurrentAcceptedPriority(queue_type);
+
+  // Abort all USER_INITAITED jobs when not accepted.
+  if (accepted_priority < USER_INITIATED) {
+    std::vector<JobID> jobs;
+    queue_[queue_type]->GetQueuedJobs(USER_INITIATED, &jobs);
+    for (size_t i = 0; i < jobs.size(); ++i) {
+      JobEntry* job = job_map_.Lookup(jobs[i]);
+      DCHECK(job);
+      AbortNotRunningJob(job, google_apis::GDATA_NO_CONNECTION);
+    }
   }
+
+  // Run the job with the highest priority in the queue.
+  JobID job_id = -1;
+  if (!queue_[queue_type]->PopForRun(accepted_priority, &job_id))
+    return;
 
   JobEntry* entry = job_map_.Lookup(job_id);
   DCHECK(entry);
@@ -693,8 +741,7 @@ int JobScheduler::GetCurrentAcceptedPriority(QueueType queue_type) {
 
   const int kNoJobShouldRun = -1;
 
-  // Should stop if the gdata feature was disabled while running the fetch
-  // loop.
+  // Should stop if Drive was disabled while running the fetch loop.
   if (profile_->GetPrefs()->GetBoolean(prefs::kDisableDrive))
     return kNoJobShouldRun;
 
@@ -724,8 +771,9 @@ void JobScheduler::ThrottleAndContinueJobLoop(QueueType queue_type) {
   if (disable_throttling_) {
     delay = base::TimeDelta::FromSeconds(0);
   } else {
+    // Exponential backoff: https://developers.google.com/drive/handle-errors.
     delay =
-      base::TimeDelta::FromSeconds(pow(2, throttle_count_ - 1)) +
+      base::TimeDelta::FromSeconds(1 << (throttle_count_ - 1)) +
       base::TimeDelta::FromMilliseconds(base::RandInt(0, 1000));
   }
   VLOG(1) << "Throttling for " << delay.InMillisecondsF();
@@ -785,7 +833,7 @@ bool JobScheduler::OnJobDone(JobID job_id, google_apis::GDataErrorCode error) {
   } else {
     NotifyJobDone(*job_info, error);
     // The job has finished, no retry will happen in the scheduler. Now we can
-    // remove the job info from the map. This is the only place of the removal.
+    // remove the job info from the map.
     job_map_.Remove(job_id);
 
     ResetThrottleAndContinueJobLoop(queue_type);
@@ -884,7 +932,6 @@ void JobScheduler::OnUploadCompletionJobDone(
 
     ResumeUploadFileParams params;
     params.upload_location = upload_location;
-    params.drive_file_path = resume_params.drive_file_path;
     params.local_file_path = resume_params.local_file_path;
     params.content_type = resume_params.content_type;
     params.callback = base::Bind(&JobScheduler::OnUploadCompletionJobDone,
@@ -915,14 +962,11 @@ void JobScheduler::OnConnectionTypeChanged(
     net::NetworkChangeNotifier::ConnectionType type) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  // Resume the job loop if the network is back online. Note that we don't
-  // need to check the type of the network as it will be checked in
-  // ShouldStopJobLoop() as soon as the loop is resumed.
-  if (!net::NetworkChangeNotifier::IsOffline()) {
-    for (int i = METADATA_QUEUE; i < NUM_QUEUES; ++i) {
-      DoJobLoop(static_cast<QueueType>(i));
-    }
-  }
+  // Resume the job loop.
+  // Note that we don't need to check the network connection status as it will
+  // be checked in GetCurrentAcceptedPriority().
+  for (int i = METADATA_QUEUE; i < NUM_QUEUES; ++i)
+    DoJobLoop(static_cast<QueueType>(i));
 }
 
 JobScheduler::QueueType JobScheduler::GetJobQueueType(JobType type) {
@@ -953,6 +997,26 @@ JobScheduler::QueueType JobScheduler::GetJobQueueType(JobType type) {
   }
   NOTREACHED();
   return FILE_QUEUE;
+}
+
+void JobScheduler::AbortNotRunningJob(JobEntry* job,
+                                      google_apis::GDataErrorCode error) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  const base::TimeDelta elapsed = base::Time::Now() - job->job_info.start_time;
+  const QueueType queue_type = GetJobQueueType(job->job_info.job_type);
+  util::Log("Job aborted: %s => %s (elapsed time: %sms) - %s",
+            job->job_info.ToString().c_str(),
+            GDataErrorCodeToString(error).c_str(),
+            base::Int64ToString(elapsed.InMilliseconds()).c_str(),
+            GetQueueInfo(queue_type).c_str());
+
+  base::Callback<void(google_apis::GDataErrorCode)> callback =
+      job->abort_callback;
+  queue_[GetJobQueueType(job->job_info.job_type)]->Remove(job->job_info.job_id);
+  job_map_.Remove(job->job_info.job_id);
+  base::MessageLoopProxy::current()->PostTask(FROM_HERE,
+                                              base::Bind(callback, error));
 }
 
 void JobScheduler::NotifyJobAdded(const JobInfo& job_info) {

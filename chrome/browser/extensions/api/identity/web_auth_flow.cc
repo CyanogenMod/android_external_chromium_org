@@ -4,6 +4,7 @@
 
 #include "chrome/browser/extensions/api/identity/web_auth_flow.h"
 
+#include "apps/shell_window.h"
 #include "base/base64.h"
 #include "base/location.h"
 #include "base/message_loop.h"
@@ -15,7 +16,6 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/extensions/shell_window.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
@@ -30,6 +30,7 @@
 #include "googleurl/src/gurl.h"
 #include "grit/browser_resources.h"
 
+using apps::ShellWindow;
 using content::RenderViewHost;
 using content::ResourceRedirectDetails;
 using content::WebContents;
@@ -77,7 +78,7 @@ void WebAuthFlow::Start() {
   DCHECK(success);
 
   // identityPrivate.onWebFlowRequest(shell_window_key, provider_url_, mode_)
-  scoped_ptr<ListValue> args(new ListValue());
+  scoped_ptr<base::ListValue> args(new base::ListValue());
   args->AppendString(shell_window_key_);
   args->AppendString(provider_url_.spec());
   if (mode_ == WebAuthFlow::INTERACTIVE)
@@ -123,6 +124,8 @@ void WebAuthFlow::OnShellWindowAdded(ShellWindow* shell_window) {
         content::NotificationService::AllBrowserContextsAndSources());
   }
 }
+
+void WebAuthFlow::OnShellWindowIconChanged(ShellWindow* shell_window) {}
 
 void WebAuthFlow::OnShellWindowRemoved(ShellWindow* shell_window) {
   if (shell_window->window_key() == shell_window_key_ &&

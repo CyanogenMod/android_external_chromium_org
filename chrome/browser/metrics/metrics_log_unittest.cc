@@ -12,7 +12,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/tracked_objects.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/metrics/metrics_log.h"
@@ -25,9 +25,9 @@
 #include "chrome/installer/util/google_update_settings.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_utils.h"
-#include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/size.h"
+#include "url/gurl.h"
 #include "webkit/plugins/webplugininfo.h"
 
 #if defined(OS_CHROMEOS)

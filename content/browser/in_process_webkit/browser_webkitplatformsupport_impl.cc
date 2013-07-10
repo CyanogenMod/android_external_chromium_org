@@ -8,10 +8,7 @@
 #include "base/logging.h"
 #include "base/sys_info.h"
 #include "content/browser/gpu/browser_gpu_channel_host_factory.h"
-#include "third_party/WebKit/public/platform/WebData.h"
 #include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebURL.h"
-#include "webkit/base/file_path_string_conversions.h"
 
 namespace content {
 
@@ -64,20 +61,6 @@ BrowserWebKitPlatformSupportImpl::createMessagePortChannel() {
   return NULL;
 }
 
-void BrowserWebKitPlatformSupportImpl::setCookies(
-    const WebKit::WebURL& url,
-    const WebKit::WebURL& first_party_for_cookies,
-    const WebKit::WebString& value) {
-  NOTREACHED();
-}
-
-WebKit::WebString BrowserWebKitPlatformSupportImpl::cookies(
-    const WebKit::WebURL& url,
-    const WebKit::WebURL& first_party_for_cookies) {
-  NOTREACHED();
-  return WebKit::WebString();
-}
-
 void BrowserWebKitPlatformSupportImpl::prefetchHostName(
     const WebKit::WebString&) {
   NOTREACHED();
@@ -109,22 +92,16 @@ void BrowserWebKitPlatformSupportImpl::getPluginList(bool refresh,
   NOTREACHED();
 }
 
-WebKit::WebData BrowserWebKitPlatformSupportImpl::loadResource(
-    const char* name) {
-  NOTREACHED();
-  return WebKit::WebData();
-}
-
 int BrowserWebKitPlatformSupportImpl::databaseDeleteFile(
     const WebKit::WebString& vfs_file_name, bool sync_dir) {
-  const base::FilePath path = webkit_base::WebStringToFilePath(vfs_file_name);
-  return file_util::Delete(path, false) ? 0 : 1;
+  const base::FilePath& path = base::FilePath::FromUTF16Unsafe(vfs_file_name);
+  return base::Delete(path, false) ? 0 : 1;
 }
 
 long long BrowserWebKitPlatformSupportImpl::availableDiskSpaceInBytes(
     const WebKit::WebString& fileName) {
   return base::SysInfo::AmountOfFreeDiskSpace(
-      webkit_base::WebStringToFilePath(fileName));
+      base::FilePath::FromUTF16Unsafe(fileName));
 }
 
 }  // namespace content

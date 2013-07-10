@@ -110,24 +110,20 @@ void TextureLayerImpl::DidDraw(ResourceProvider* resource_provider) {
   LayerImpl::DidDraw(resource_provider);
   if (uses_mailbox_ || !external_texture_resource_)
     return;
-  // FIXME: the following assert will not be true when sending resources to a
-  // parent compositor. A synchronization scheme (double-buffering or
+  // TODO(danakj): the following assert will not be true when sending resources
+  // to a parent compositor. A synchronization scheme (double-buffering or
   // pipelining of updates) for the client will need to exist to solve this.
   DCHECK(!resource_provider->InUseByConsumer(external_texture_resource_));
   resource_provider->DeleteResource(external_texture_resource_);
   external_texture_resource_ = 0;
 }
 
-void TextureLayerImpl::DumpLayerProperties(std::string* str, int indent) const {
-  str->append(IndentString(indent));
-  base::StringAppendF(str,
-                      "texture layer texture id: %u premultiplied: %d\n",
-                      texture_id_,
-                      premultiplied_alpha_);
-  LayerImpl::DumpLayerProperties(str, indent);
-}
-
 void TextureLayerImpl::DidLoseOutputSurface() {
+  if (external_texture_resource_ && !uses_mailbox_) {
+    ResourceProvider* resource_provider =
+        layer_tree_impl()->resource_provider();
+    resource_provider->DeleteResource(external_texture_resource_);
+  }
   texture_id_ = 0;
   external_texture_resource_ = 0;
 }

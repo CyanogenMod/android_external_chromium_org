@@ -26,7 +26,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
@@ -66,7 +66,6 @@
 #include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/pepper_broker_infobar_delegate.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
-#include "chrome/browser/printing/cloud_print/cloud_print_setup_flow.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_destroyer.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -108,7 +107,7 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
-#include "chrome/browser/ui/extensions/shell_window.h"
+#include "chrome/browser/ui/fast_unload_controller.h"
 #include "chrome/browser/ui/find_bar/find_bar.h"
 #include "chrome/browser/ui/find_bar/find_bar_controller.h"
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
@@ -191,7 +190,7 @@
 #include "chrome/browser/ssl/ssl_error_info.h"
 #include "chrome/browser/task_manager/task_manager.h"
 #include "chrome/browser/ui/view_ids.h"
-#include "components/autofill/browser/autofill_ie_toolbar_import_win.h"
+#include "components/autofill/core/browser/autofill_ie_toolbar_import_win.h"
 #include "ui/base/win/shell.h"
 #include "ui/views/win/hwnd_util.h"
 #endif  // OS_WIN
@@ -232,6 +231,12 @@ const int kUIUpdateCoalescingTimeMS = 200;
 
 BrowserWindow* CreateBrowserWindow(Browser* browser) {
   return BrowserWindow::CreateBrowserWindow(browser);
+}
+
+// Is the fast tab unload experiment enabled?
+bool IsFastTabUnloadEnabled() {
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kEnableFastUnload);
 }
 
 }  // namespace
@@ -333,7 +338,6 @@ Browser::Browser(const CreateParams& params)
       initial_show_state_(params.initial_show_state),
       is_session_restore_(params.is_session_restore),
       host_desktop_type_(params.host_desktop_type),
-      unload_controller_(new chrome::UnloadController(this)),
       weak_factory_(this),
       content_setting_bubble_model_delegate_(
           new BrowserContentSettingBubbleModelDelegate(this)),
@@ -348,6 +352,12 @@ Browser::Browser(const CreateParams& params)
   // that is disallowed by policy. The crash prevents the disabled window type
   // from opening at all, but the path that triggered it should be fixed.
   CHECK(IncognitoModePrefs::CanOpenBrowser(profile_));
+
+  // TODO(jeremy): Move to initializer list once flag is removed.
+  if (IsFastTabUnloadEnabled())
+    fast_unload_controller_.reset(new chrome::FastUnloadController(this));
+  else
+    unload_controller_.reset(new chrome::UnloadController(this));
 
   if (!app_name_.empty())
     chrome::RegisterAppPrefs(app_name_, profile_);
@@ -483,6 +493,10 @@ Browser::~Browser() {
   // is destroyed to make sure the chrome.windows.onRemoved event is sent.
   extension_window_controller_.reset();
 
+  // Destroy BrowserInstantController before the incongnito profile is destroyed
+  // because the InstantController destructor depends on this profile.
+  instant_controller_.reset();
+
   if (profile_->IsOffTheRecord() &&
       !BrowserList::IsOffTheRecordSessionActiveForProfile(profile_)) {
     // An incognito profile is no longer needed, this indirectly frees
@@ -582,18 +596,19 @@ bool Browser::ShouldCloseWindow() {
   if (!CanCloseWithInProgressDownloads())
     return false;
 
+  if (IsFastTabUnloadEnabled())
+    return fast_unload_controller_->ShouldCloseWindow();
   return unload_controller_->ShouldCloseWindow();
 }
 
-bool Browser::TabsNeedBeforeUnloadFired() {
-  return unload_controller_->TabsNeedBeforeUnloadFired();
-}
-
 bool Browser::HasCompletedUnloadProcessing() const {
-  return unload_controller_->HasCompletedUnloadProcessing();
+  DCHECK(IsFastTabUnloadEnabled());
+  return fast_unload_controller_->HasCompletedUnloadProcessing();
 }
 
 bool Browser::IsAttemptingToCloseBrowser() const {
+  if (IsFastTabUnloadEnabled())
+    return fast_unload_controller_->is_attempting_to_close_browser();
   return unload_controller_->is_attempting_to_close_browser();
 }
 
@@ -636,6 +651,9 @@ void Browser::OnWindowClosing() {
       chrome::NOTIFICATION_BROWSER_CLOSING,
       content::Source<Browser>(this),
       content::NotificationService::NoDetails());
+
+  if (!IsFastTabUnloadEnabled())
+    tab_strip_model_->CloseAllTabs();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1083,6 +1101,7 @@ void Browser::TabReplacedAt(TabStripModel* tab_strip_model,
                             WebContents* new_contents,
                             int index) {
   TabDetachedAtImpl(old_contents, index, DETACH_TYPE_REPLACE);
+  fullscreen_controller_->OnTabClosing(old_contents);
   SessionService* session_service =
       SessionServiceFactory::GetForProfile(profile_);
   if (session_service)
@@ -1170,6 +1189,12 @@ bool Browser::PreHandleKeyboardEvent(content::WebContents* source,
 void Browser::HandleKeyboardEvent(content::WebContents* source,
                                   const NativeWebKeyboardEvent& event) {
   window()->HandleKeyboardEvent(event);
+}
+
+bool Browser::TabsNeedBeforeUnloadFired() {
+  if (IsFastTabUnloadEnabled())
+    return fast_unload_controller_->TabsNeedBeforeUnloadFired();
+  return unload_controller_->TabsNeedBeforeUnloadFired();
 }
 
 bool Browser::IsMouseLocked() const {
@@ -1305,7 +1330,13 @@ void Browser::LoadingStateChanged(WebContents* source) {
 }
 
 void Browser::CloseContents(WebContents* source) {
-  if (unload_controller_->CanCloseContents(source))
+  bool can_close_contents;
+  if (IsFastTabUnloadEnabled())
+    can_close_contents = fast_unload_controller_->CanCloseContents(source);
+  else
+    can_close_contents = unload_controller_->CanCloseContents(source);
+
+  if (can_close_contents)
     chrome::CloseWebContents(this, source, true);
 }
 
@@ -1368,8 +1399,13 @@ gfx::Rect Browser::GetRootWindowResizerRect() const {
 void Browser::BeforeUnloadFired(WebContents* web_contents,
                                 bool proceed,
                                 bool* proceed_to_fire_unload) {
-  *proceed_to_fire_unload =
-      unload_controller_->BeforeUnloadFired(web_contents, proceed);
+  if (IsFastTabUnloadEnabled()) {
+    *proceed_to_fire_unload =
+        fast_unload_controller_->BeforeUnloadFired(web_contents, proceed);
+  } else {
+    *proceed_to_fire_unload =
+        unload_controller_->BeforeUnloadFired(web_contents, proceed);
+  }
 }
 
 bool Browser::ShouldFocusLocationBarByDefault(WebContents* source) {

@@ -8,8 +8,8 @@
 #include "base/compiler_specific.h"
 #include "base/strings/string16.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_types.h"
-#include "components/autofill/browser/field_types.h"
 #include "components/autofill/content/browser/wallet/wallet_items.h"
+#include "components/autofill/core/browser/field_types.h"
 
 namespace gfx {
 class Image;
@@ -194,6 +194,20 @@ class FullWalletShippingWrapper : public DataModelWrapper {
   wallet::FullWallet* full_wallet_;
 
   DISALLOW_COPY_AND_ASSIGN(FullWalletShippingWrapper);
+};
+
+// A DataModelWrapper to copy the output of one section to the input of another.
+class DetailOutputWrapper : public DataModelWrapper {
+ public:
+  explicit DetailOutputWrapper(const DetailOutputMap& outputs);
+  virtual ~DetailOutputWrapper();
+
+  virtual base::string16 GetInfo(AutofillFieldType type) const OVERRIDE;
+
+ private:
+  const DetailOutputMap& outputs_;
+
+  DISALLOW_COPY_AND_ASSIGN(DetailOutputWrapper);
 };
 
 }  // namespace autofill

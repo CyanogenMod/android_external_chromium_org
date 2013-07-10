@@ -57,9 +57,6 @@ namespace {
 // Path for a stripped down login page that does not have OOBE elements.
 const char kLoginPath[] = "login#login";
 
-// Path for the enterprise enrollment gaia page hosting.
-const char kEnterpriseEnrollmentGaiaLoginPath[] = "gaialogin";
-
 const char kStringsJSPath[] = "strings.js";
 const char kLoginJSPath[] = "login.js";
 const char kOobeJSPath[] = "oobe.js";
@@ -110,8 +107,6 @@ content::WebUIDataSource* CreateOobeUIDataSource(
                           IDR_LOGIN_HTML);
   source->AddResourcePath(kLoginJSPath,
                           IDR_LOGIN_JS);
-  source->AddResourcePath(kEnterpriseEnrollmentGaiaLoginPath,
-                          IDR_GAIA_LOGIN_HTML);
   source->AddResourcePath(kKeyboardUtilsJSPath,
                           IDR_KEYBOARD_UTILS_JS);
   source->OverrideContentSecurityPolicyFrameSrc(
@@ -354,7 +349,7 @@ void OobeUI::GetLocalizedStrings(base::DictionaryValue* localized_strings) {
 
   bool keyboard_driven_oobe = false;
   system::StatisticsProvider::GetInstance()->GetMachineFlag(
-      chromeos::kOemKeyboardDrivenOobeKey, &keyboard_driven_oobe);
+      chromeos::system::kOemKeyboardDrivenOobeKey, &keyboard_driven_oobe);
   localized_strings->SetString("highlightStrength",
                                keyboard_driven_oobe ? "strong" : "normal");
 }

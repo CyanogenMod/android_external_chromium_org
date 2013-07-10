@@ -356,20 +356,20 @@ TEST_F(WidgetTest, WidgetInitParams) {
 
   // Widgets are not transparent by default.
   Widget::InitParams init1;
-  EXPECT_FALSE(init1.transparent);
+  EXPECT_EQ(Widget::InitParams::INFER_OPACITY, init1.opacity);
 
   // Non-window widgets are not transparent either.
   Widget::InitParams init2(Widget::InitParams::TYPE_MENU);
-  EXPECT_FALSE(init2.transparent);
+  EXPECT_EQ(Widget::InitParams::INFER_OPACITY, init2.opacity);
 
   // A ViewsDelegate can set windows transparent by default.
   views_delegate().SetUseTransparentWindows(true);
   Widget::InitParams init3;
-  EXPECT_TRUE(init3.transparent);
+  EXPECT_EQ(Widget::InitParams::TRANSLUCENT_WINDOW, init3.opacity);
 
   // Non-window widgets stay opaque.
   Widget::InitParams init4(Widget::InitParams::TYPE_MENU);
-  EXPECT_FALSE(init4.transparent);
+  EXPECT_EQ(Widget::InitParams::INFER_OPACITY, init4.opacity);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1675,9 +1675,8 @@ TEST_F(WidgetTest, MouseEventsHandled) {
   View* root_view = widget->GetRootView();
 
 #if defined(USE_AURA)
-  aura::test::TestCursorClient cursor_client;
-  aura::client::SetCursorClient(
-      widget->GetNativeView()->GetRootWindow(), &cursor_client);
+  aura::test::TestCursorClient cursor_client(
+      widget->GetNativeView()->GetRootWindow());
 #endif
 
   EventCountView* v1 = new EventCountView();
@@ -1726,8 +1725,6 @@ TEST_F(WidgetTest, MouseEventsHandled) {
   EXPECT_EQ(0, v2->GetEventCount(ui::ET_MOUSE_ENTERED));
   EXPECT_EQ(0, v1->GetEventCount(ui::ET_MOUSE_EXITED));
   EXPECT_EQ(0, v2->GetEventCount(ui::ET_MOUSE_EXITED));
-
-  cursor_client.EnableMouseEvents();
 #endif
 }
 

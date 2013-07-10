@@ -72,6 +72,7 @@ AUHALStream::AUHALStream(
       volume_(1),
       hardware_latency_frames_(0),
       stopped_(false),
+      notified_for_possible_device_change_(false),
       input_buffer_list_(NULL) {
   // We must have a manager.
   DCHECK(manager_);
@@ -159,6 +160,7 @@ void AUHALStream::Start(AudioSourceCallback* callback) {
   }
 
   stopped_ = false;
+  notified_for_possible_device_change_ = false;
   {
     base::AutoLock auto_lock(source_lock_);
     source_ = callback;
@@ -209,6 +211,16 @@ OSStatus AUHALStream::Render(
     // In this case either audio input or audio output will be broken,
     // so just output silence.
     ZeroBufferList(io_data);
+
+    // In case we missed a device notification, notify the AudioManager that the
+    // device has changed.  HandleDeviceChanges() will check to make sure the
+    // device has actually changed before taking any action.
+    if (!notified_for_possible_device_change_) {
+      notified_for_possible_device_change_ = true;
+      manager_->GetMessageLoop()->PostTask(FROM_HERE, base::Bind(
+          &AudioManagerMac::HandleDeviceChanges, base::Unretained(manager_)));
+    }
+
     return noErr;
   }
 
@@ -445,12 +457,6 @@ bool AUHALStream::ConfigureAUHAL() {
     return false;
   }
 
-  result = AudioUnitInitialize(audio_unit_);
-  if (result != noErr) {
-    OSSTATUS_DLOG(WARNING, result) << "AudioUnitInitialize() failed.";
-    return false;
-  }
-
   // Enable input and output as appropriate.
   if (!EnableIO(input_channels_ > 0, kAudioUnitScope_Input))
     return false;
@@ -523,6 +529,12 @@ bool AUHALStream::ConfigureAUHAL() {
       sizeof(callback));
   if (result != noErr)
     return false;
+
+  result = AudioUnitInitialize(audio_unit_);
+  if (result != noErr) {
+    OSSTATUS_DLOG(WARNING, result) << "AudioUnitInitialize() failed.";
+    return false;
+  }
 
   return true;
 }

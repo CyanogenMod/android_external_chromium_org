@@ -75,10 +75,12 @@ bool MediaPlayerManagerImpl::OnMessageReceived(const IPC::Message& msg) {
                         OnDurationChanged)
     IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_MediaSeekRequestAck,
                         OnMediaSeekRequestAck)
-    IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_GenerateKeyRequest,
+    IPC_MESSAGE_HANDLER(MediaKeysHostMsg_InitializeCDM,
+                        OnInitializeCDM)
+    IPC_MESSAGE_HANDLER(MediaKeysHostMsg_GenerateKeyRequest,
                         OnGenerateKeyRequest)
-    IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_AddKey, OnAddKey)
-    IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_CancelKeyRequest,
+    IPC_MESSAGE_HANDLER(MediaKeysHostMsg_AddKey, OnAddKey)
+    IPC_MESSAGE_HANDLER(MediaKeysHostMsg_CancelKeyRequest,
                         OnCancelKeyRequest)
 #if defined(GOOGLE_TV)
     IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_NotifyExternalSurface,
@@ -116,9 +118,9 @@ void MediaPlayerManagerImpl::FullscreenPlayerSeek(int msec) {
 void MediaPlayerManagerImpl::ExitFullscreen(bool release_media_player) {
   Send(new MediaPlayerMsg_DidExitFullscreen(
       routing_id(), fullscreen_player_id_));
-  fullscreen_player_id_ = -1;
   video_view_.reset();
   MediaPlayerAndroid* player = GetFullscreenPlayer();
+  fullscreen_player_id_ = -1;
   if (!player)
     return;
   if (release_media_player)
@@ -192,9 +194,8 @@ void MediaPlayerManagerImpl::OnVideoSizeChanged(
 }
 
 void MediaPlayerManagerImpl::OnReadFromDemuxer(
-    int player_id, media::DemuxerStream::Type type, bool seek_done) {
-  Send(new MediaPlayerMsg_ReadFromDemuxer(
-      routing_id(), player_id, type, seek_done));
+    int player_id, media::DemuxerStream::Type type) {
+  Send(new MediaPlayerMsg_ReadFromDemuxer(routing_id(), player_id, type));
 }
 
 void MediaPlayerManagerImpl::RequestMediaResources(int player_id) {
@@ -284,23 +285,23 @@ void MediaPlayerManagerImpl::OnMediaConfigRequest(int player_id) {
 
 void MediaPlayerManagerImpl::OnKeyAdded(int media_keys_id,
                                         const std::string& session_id) {
-  Send(new MediaPlayerMsg_KeyAdded(routing_id(), media_keys_id, session_id));
+  Send(new MediaKeysMsg_KeyAdded(routing_id(), media_keys_id, session_id));
 }
 
 void MediaPlayerManagerImpl::OnKeyError(int media_keys_id,
                                         const std::string& session_id,
                                         media::MediaKeys::KeyError error_code,
                                         int system_code) {
-  Send(new MediaPlayerMsg_KeyError(routing_id(), media_keys_id,
-                                   session_id, error_code, system_code));
+  Send(new MediaKeysMsg_KeyError(routing_id(), media_keys_id,
+                                 session_id, error_code, system_code));
 }
 
 void MediaPlayerManagerImpl::OnKeyMessage(int media_keys_id,
                                           const std::string& session_id,
-                                          const std::string& message,
+                                          const std::vector<uint8>& message,
                                           const std::string& destination_url) {
-  Send(new MediaPlayerMsg_KeyMessage(routing_id(), media_keys_id, session_id,
-                                     message, destination_url));
+  Send(new MediaKeysMsg_KeyMessage(routing_id(), media_keys_id,
+                                   session_id, message, destination_url));
 }
 
 #if defined(GOOGLE_TV)
@@ -435,15 +436,21 @@ void MediaPlayerManagerImpl::OnMediaSeekRequestAck(
     player->OnSeekRequestAck(seek_request_id);
 }
 
+void MediaPlayerManagerImpl::OnInitializeCDM(int media_keys_id,
+                                             const std::vector<uint8>& uuid) {
+  AddDrmBridge(media_keys_id, uuid);
+  // In EME v0.1b MediaKeys lives in the media element. So the |media_keys_id|
+  // is the same as the |player_id|.
+  OnSetMediaKeys(media_keys_id, media_keys_id);
+}
+
 void MediaPlayerManagerImpl::OnGenerateKeyRequest(
     int media_keys_id,
     const std::string& type,
     const std::vector<uint8>& init_data) {
-  // TODO(qinmin): add a new MediaDrmBridge if GetDrmBridge() returns NULL.
   MediaDrmBridge* drm_bridge = GetDrmBridge(media_keys_id);
-  if (drm_bridge) {
+  if (drm_bridge)
     drm_bridge->GenerateKeyRequest(type, &init_data[0], init_data.size());
-  }
 }
 
 void MediaPlayerManagerImpl::OnAddKey(int media_keys_id,
@@ -486,6 +493,12 @@ void MediaPlayerManagerImpl::RemovePlayer(int player_id) {
   }
 }
 
+void MediaPlayerManagerImpl::AddDrmBridge(int media_keys_id,
+                                          const std::vector<uint8>& uuid) {
+  DCHECK(!GetDrmBridge(media_keys_id));
+  drm_bridges_.push_back(MediaDrmBridge::Create(media_keys_id, uuid, this));
+}
+
 void MediaPlayerManagerImpl::RemoveDrmBridge(int media_keys_id) {
   for (ScopedVector<MediaDrmBridge>::iterator it = drm_bridges_.begin();
       it != drm_bridges_.end(); ++it) {
@@ -494,6 +507,18 @@ void MediaPlayerManagerImpl::RemoveDrmBridge(int media_keys_id) {
       break;
     }
   }
+}
+
+void MediaPlayerManagerImpl::OnSetMediaKeys(int player_id, int media_keys_id) {
+  MediaPlayerAndroid* player = GetPlayer(player_id);
+  MediaDrmBridge* drm_bridge = GetDrmBridge(media_keys_id);
+  if (!player || !drm_bridge) {
+    NOTREACHED() << "OnSetMediaKeys(): Player and MediaKeys must be present.";
+    return;
+  }
+  // TODO(qinmin): add the logic to decide whether we should create the
+  // fullscreen surface for EME lv1.
+  player->SetDrmBridge(drm_bridge);
 }
 
 }  // namespace content

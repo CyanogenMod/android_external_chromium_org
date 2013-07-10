@@ -11,8 +11,8 @@
 #include "base/single_thread_task_runner.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/non_thread_safe.h"
+#include "base/win/message_window.h"
 #include "remoting/host/client_session_control.h"
-#include "remoting/host/win/message_window.h"
 #include "third_party/skia/include/core/SkPoint.h"
 
 namespace remoting {
@@ -36,8 +36,7 @@ class LocalInputMonitorWin : public base::NonThreadSafe,
 
  private:
   // The actual implementation resides in LocalInputMonitorWin::Core class.
-  class Core : public base::RefCountedThreadSafe<Core>,
-               public win::MessageWindow::Delegate {
+  class Core : public base::RefCountedThreadSafe<Core> {
    public:
     Core(scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner,
          scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
@@ -56,12 +55,11 @@ class LocalInputMonitorWin : public base::NonThreadSafe,
     // Handles WM_INPUT messages.
     LRESULT OnInput(HRAWINPUT input_handle);
 
-    // win::MessageWindow::Delegate interface.
-    virtual bool HandleMessage(HWND hwnd,
-                               UINT message,
-                               WPARAM wparam,
-                               LPARAM lparam,
-                               LRESULT* result) OVERRIDE;
+    // Handles messages received by |window_|.
+    bool HandleMessage(UINT message,
+                       WPARAM wparam,
+                       LPARAM lparam,
+                       LRESULT* result);
 
     // Task runner on which public methods of this class must be called.
     scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner_;
@@ -70,7 +68,7 @@ class LocalInputMonitorWin : public base::NonThreadSafe,
     scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner_;
 
     // Used to receive raw input.
-    scoped_ptr<win::MessageWindow> window_;
+    scoped_ptr<base::win::MessageWindow> window_;
 
     // Points to the object receiving mouse event notifications.
     base::WeakPtr<ClientSessionControl> client_session_control_;
@@ -127,8 +125,9 @@ LocalInputMonitorWin::Core::~Core() {
 void LocalInputMonitorWin::Core::StartOnUiThread() {
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
 
-  window_.reset(new win::MessageWindow());
-  if (!window_->Create(this)) {
+  window_.reset(new base::win::MessageWindow());
+  if (!window_->Create(base::Bind(&Core::HandleMessage,
+                                  base::Unretained(this)))) {
     LOG_GETLASTERROR(ERROR) << "Failed to create the raw input window";
     window_.reset();
 
@@ -206,7 +205,7 @@ LRESULT LocalInputMonitorWin::Core::OnInput(HRAWINPUT input_handle) {
 }
 
 bool LocalInputMonitorWin::Core::HandleMessage(
-    HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, LRESULT* result) {
+    UINT message, WPARAM wparam, LPARAM lparam, LRESULT* result) {
   switch (message) {
     case WM_CREATE: {
       // Register to receive raw mouse input.
@@ -214,7 +213,7 @@ bool LocalInputMonitorWin::Core::HandleMessage(
       device.dwFlags = RIDEV_INPUTSINK;
       device.usUsagePage = kGenericDesktopPage;
       device.usUsage = kMouseUsage;
-      device.hwndTarget = hwnd;
+      device.hwndTarget = window_->hwnd();
       if (RegisterRawInputDevices(&device, 1, sizeof(device))) {
         *result = 0;
       } else {

@@ -31,7 +31,9 @@ class MediaStreamInfoBarDelegate : public ConfirmInfoBarDelegate {
                      const content::MediaResponseCallback& callback);
 
  private:
+  friend class MediaStreamInfobarTest;
   friend class WebrtcBrowserTest;
+  friend class WebrtcVideoQualityBrowserTest;
 
   // MediaStreamInfoBarDelegate takes the ownership of the |controller|.
   MediaStreamInfoBarDelegate(

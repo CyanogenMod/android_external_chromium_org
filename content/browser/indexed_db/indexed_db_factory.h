@@ -13,8 +13,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
-#include "content/browser/indexed_db/indexed_db_callbacks_wrapper.h"
-#include "content/browser/indexed_db/indexed_db_database_callbacks_wrapper.h"
+#include "content/browser/indexed_db/indexed_db_callbacks.h"
+#include "content/browser/indexed_db/indexed_db_database_callbacks.h"
 #include "content/browser/indexed_db/indexed_db_factory.h"
 #include "content/common/content_export.h"
 
@@ -33,20 +33,20 @@ class CONTENT_EXPORT IndexedDBFactory
   // Notifications from weak pointers.
   void RemoveIDBDatabaseBackend(const string16& unique_identifier);
 
-  void GetDatabaseNames(scoped_refptr<IndexedDBCallbacksWrapper> callbacks,
-                        const string16& database_identifier,
+  void GetDatabaseNames(scoped_refptr<IndexedDBCallbacks> callbacks,
+                        const std::string& origin_identifier,
                         const base::FilePath& data_directory);
   void Open(const string16& name,
             int64 version,
             int64 transaction_id,
-            scoped_refptr<IndexedDBCallbacksWrapper> callbacks,
-            scoped_refptr<IndexedDBDatabaseCallbacksWrapper> database_callbacks,
-            const string16& database_identifier,
+            scoped_refptr<IndexedDBCallbacks> callbacks,
+            scoped_refptr<IndexedDBDatabaseCallbacks> database_callbacks,
+            const std::string& origin_identifier,
             const base::FilePath& data_directory);
 
   void DeleteDatabase(const string16& name,
-                      scoped_refptr<IndexedDBCallbacksWrapper> callbacks,
-                      const string16& database_identifier,
+                      scoped_refptr<IndexedDBCallbacks> callbacks,
+                      const std::string& origin_identifier,
                       const base::FilePath& data_directory);
 
  protected:
@@ -56,15 +56,16 @@ class CONTENT_EXPORT IndexedDBFactory
   virtual ~IndexedDBFactory();
 
   scoped_refptr<IndexedDBBackingStore> OpenBackingStore(
-      const string16& database_identifier,
-      const base::FilePath& data_directory);
+      const std::string& origin_identifier,
+      const base::FilePath& data_directory,
+      WebKit::WebIDBCallbacks::DataLoss* data_loss);
 
  private:
   typedef std::map<string16, scoped_refptr<IndexedDBDatabase> >
       IndexedDBDatabaseMap;
   IndexedDBDatabaseMap database_backend_map_;
 
-  typedef std::map<string16, base::WeakPtr<IndexedDBBackingStore> >
+  typedef std::map<std::string, base::WeakPtr<IndexedDBBackingStore> >
       IndexedDBBackingStoreMap;
   IndexedDBBackingStoreMap backing_store_map_;
 

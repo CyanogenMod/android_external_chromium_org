@@ -134,6 +134,7 @@ class UserManagerImpl
   virtual void SetAppModeChromeClientOAuthInfo(
       const std::string& chrome_client_id,
       const std::string& chrome_client_secret) OVERRIDE;
+  virtual bool AreLocallyManagedUsersAllowed() const OVERRIDE;
 
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
@@ -357,6 +358,11 @@ class UserManagerImpl
   // policy yet.
   bool ephemeral_users_enabled_;
 
+  // Cached flag indicating whether the locally managed users are enabled by
+  // policy. Defaults to |false| if the value has not been read from trusted
+  // device policy yet.
+  bool locally_managed_users_enabled_by_policy_;
+
   // Merge session state (cookie restore process state).
   MergeSessionState merge_session_state_;
 
@@ -392,7 +398,8 @@ class UserManagerImpl
   // Lazy-initialized default flow.
   mutable scoped_ptr<UserFlow> default_flow_;
 
-  // Specific flows by user e-mail.
+  // Specific flows by user e-mail. Keys should be canonicalized before
+  // access.
   FlowMap specific_flows_;
 
   // User sessions that have to be restored after browser crash.

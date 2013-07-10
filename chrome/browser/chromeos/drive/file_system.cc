@@ -24,6 +24,7 @@
 #include "chrome/browser/chromeos/drive/file_system/remove_operation.h"
 #include "chrome/browser/chromeos/drive/file_system/search_operation.h"
 #include "chrome/browser/chromeos/drive/file_system/touch_operation.h"
+#include "chrome/browser/chromeos/drive/file_system/truncate_operation.h"
 #include "chrome/browser/chromeos/drive/file_system/update_operation.h"
 #include "chrome/browser/chromeos/drive/file_system_observer.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
@@ -31,9 +32,9 @@
 #include "chrome/browser/chromeos/drive/remove_stale_cache_files.h"
 #include "chrome/browser/chromeos/drive/search_metadata.h"
 #include "chrome/browser/chromeos/drive/sync_client.h"
+#include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/drive/drive_service_interface.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/drive_api_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
@@ -72,7 +73,7 @@ void GetFileCallbackToFileOperationCallbackAdapter(
 FileSystem::FileSystem(
     Profile* profile,
     internal::FileCache* cache,
-    google_apis::DriveServiceInterface* drive_service,
+    DriveServiceInterface* drive_service,
     JobScheduler* scheduler,
     internal::ResourceMetadata* resource_metadata,
     base::SequencedTaskRunner* blocking_task_runner,
@@ -129,6 +130,13 @@ void FileSystem::Initialize() {
                                        cache_));
   touch_operation_.reset(new file_system::TouchOperation(
       blocking_task_runner_.get(), observer, scheduler_, resource_metadata_));
+  truncate_operation_.reset(
+      new file_system::TruncateOperation(blocking_task_runner_.get(),
+                                         observer,
+                                         scheduler_,
+                                         resource_metadata_,
+                                         cache_,
+                                         temporary_file_directory_));
   download_operation_.reset(
       new file_system::DownloadOperation(blocking_task_runner_.get(),
                                          observer,
@@ -341,6 +349,14 @@ void FileSystem::TouchFile(const base::FilePath& file_path,
   DCHECK(!callback.is_null());
   touch_operation_->TouchFile(
       file_path, last_access_time, last_modified_time, callback);
+}
+
+void FileSystem::TruncateFile(const base::FilePath& file_path,
+                              int64 length,
+                              const FileOperationCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+  truncate_operation_->Truncate(file_path, length, callback);
 }
 
 void FileSystem::Pin(const base::FilePath& file_path,
@@ -564,7 +580,7 @@ void FileSystem::GetResourceEntryByPathAfterGetEntry2(
 
 void FileSystem::ReadDirectoryByPath(
     const base::FilePath& directory_path,
-    const ReadDirectoryWithSettingCallback& callback) {
+    const ReadDirectoryCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
@@ -624,17 +640,13 @@ void FileSystem::LoadDirectoryIfNeededAfterGetEntry(
 
 void FileSystem::ReadDirectoryByPathAfterLoad(
     const base::FilePath& directory_path,
-    const ReadDirectoryWithSettingCallback& callback,
+    const ReadDirectoryCallback& callback,
     FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  if (error != FILE_ERROR_OK) {
-    callback.Run(error,
-                 hide_hosted_docs_,
-                 scoped_ptr<ResourceEntryVector>());
-    return;
-  }
+  DLOG_IF(INFO, error != FILE_ERROR_OK) << "LoadIfNeeded failed. "
+                                        << FileErrorToString(error);
 
   resource_metadata_->ReadDirectoryByPathOnUIThread(
       directory_path,
@@ -644,7 +656,7 @@ void FileSystem::ReadDirectoryByPathAfterLoad(
 }
 
 void FileSystem::ReadDirectoryByPathAfterRead(
-    const ReadDirectoryWithSettingCallback& callback,
+    const ReadDirectoryCallback& callback,
     FileError error,
     scoped_ptr<ResourceEntryVector> entries) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -652,13 +664,21 @@ void FileSystem::ReadDirectoryByPathAfterRead(
 
   if (error != FILE_ERROR_OK) {
     callback.Run(error,
-                 hide_hosted_docs_,
                  scoped_ptr<ResourceEntryVector>());
     return;
   }
   DCHECK(entries.get());  // This is valid for empty directories too.
 
-  callback.Run(FILE_ERROR_OK, hide_hosted_docs_, entries.Pass());
+  // TODO(satorux): Stop handling hide_hosted_docs_ here. crbug.com/256520.
+  scoped_ptr<ResourceEntryVector> filtered(new ResourceEntryVector);
+  for (size_t i = 0; i < entries->size(); ++i) {
+    if (hide_hosted_docs_ &&
+        entries->at(i).file_specific_info().is_hosted_document()) {
+      continue;
+    }
+    filtered->push_back(entries->at(i));
+  }
+  callback.Run(FILE_ERROR_OK, filtered.Pass());
 }
 
 void FileSystem::RefreshDirectory(

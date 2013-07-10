@@ -22,7 +22,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/test_file_util.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
@@ -101,7 +101,6 @@
 #include "content/public/test/test_utils.h"
 #include "content/test/net/url_request_failed_job.h"
 #include "content/test/net/url_request_mock_http_job.h"
-#include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
@@ -115,6 +114,7 @@
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "url/gurl.h"
 #include "webkit/plugins/npapi/plugin_utils.h"
 #include "webkit/plugins/plugin_constants.h"
 #include "webkit/plugins/webplugininfo.h"
@@ -1499,20 +1499,19 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, HomepageLocation) {
 IN_PROC_BROWSER_TEST_F(PolicyTest, IncognitoEnabled) {
   // Verifies that incognito windows can't be opened when disabled by policy.
 
-  // Only test this on the native desktop.
-  const BrowserList* native_browser_list =
-      BrowserList::GetInstance(chrome::HOST_DESKTOP_TYPE_NATIVE);
+  const BrowserList* active_browser_list =
+      BrowserList::GetInstance(chrome::GetActiveDesktop());
 
   // Disable incognito via policy and verify that incognito windows can't be
   // opened.
-  EXPECT_EQ(1u, native_browser_list->size());
+  EXPECT_EQ(1u, active_browser_list->size());
   EXPECT_FALSE(BrowserList::IsOffTheRecordSessionActive());
   PolicyMap policies;
   policies.Set(key::kIncognitoEnabled, POLICY_LEVEL_MANDATORY,
                POLICY_SCOPE_USER, base::Value::CreateBooleanValue(false));
   UpdateProviderPolicy(policies);
   EXPECT_FALSE(chrome::ExecuteCommand(browser(), IDC_NEW_INCOGNITO_WINDOW));
-  EXPECT_EQ(1u, native_browser_list->size());
+  EXPECT_EQ(1u, active_browser_list->size());
   EXPECT_FALSE(BrowserList::IsOffTheRecordSessionActive());
 
   // Enable via policy and verify that incognito windows can be opened.
@@ -1520,7 +1519,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, IncognitoEnabled) {
                POLICY_SCOPE_USER, base::Value::CreateBooleanValue(true));
   UpdateProviderPolicy(policies);
   EXPECT_TRUE(chrome::ExecuteCommand(browser(), IDC_NEW_INCOGNITO_WINDOW));
-  EXPECT_EQ(2u, native_browser_list->size());
+  EXPECT_EQ(2u, active_browser_list->size());
   EXPECT_TRUE(BrowserList::IsOffTheRecordSessionActive());
 }
 

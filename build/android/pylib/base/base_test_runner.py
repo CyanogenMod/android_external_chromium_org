@@ -93,11 +93,19 @@ class BaseTestRunner(object):
     """Run once before all tests are run."""
     Forwarder.KillDevice(self.adb, self.tool)
     self.InstallTestPackage()
+    push_size_before = self.adb.GetPushSizeInfo()
     if self._push_deps:
-      logging.info('Pushing data deps to device.')
+      logging.warning('Pushing data files to device.')
       self.PushDataDeps()
+      push_size_after = self.adb.GetPushSizeInfo()
+      logging.warning(
+          'Total data: %0.3fMB' %
+          ((push_size_after[0] - push_size_before[0]) / float(2 ** 20)))
+      logging.warning(
+          'Total data transferred: %0.3fMB' %
+          ((push_size_after[1] - push_size_before[1]) / float(2 ** 20)))
     else:
-      logging.warning('Skipping pushing data deps to device.')
+      logging.warning('Skipping pushing data to device.')
 
   def TearDown(self):
     """Run once after all tests are run."""
@@ -140,7 +148,7 @@ class BaseTestRunner(object):
     """Creates a forwarder instance if needed and forward a port."""
     if not self._forwarder:
       self._forwarder = Forwarder(self.adb, self.build_type)
-    self._forwarder.Run(port_pairs, self.tool, '127.0.0.1')
+    self._forwarder.Run(port_pairs, self.tool)
 
   def StartForwarder(self, port_pairs):
     """Starts TCP traffic forwarding for the given |port_pairs|.

@@ -23,7 +23,8 @@ extern const char kHomePageIsNewTabPage[];
 extern const char kHomePage[];
 extern const char kManagedModeManualHosts[];
 extern const char kManagedModeManualURLs[];
-extern const char kManagedUserCustodian[];
+extern const char kManagedUserCustodianEmail[];
+extern const char kManagedUserCustodianName[];
 extern const char kSessionExitedCleanly[];
 extern const char kSessionExitType[];
 extern const char kRestoreOnStartup[];
@@ -291,9 +292,6 @@ extern const char kChromeOSReleaseNotesVersion[];
 extern const char kUseSharedProxies[];
 extern const char kDisplayPowerState[];
 extern const char kDisplayProperties[];
-extern const char kPrimaryDisplayID[];
-extern const char kSecondaryDisplayLayout[];
-extern const char kSecondaryDisplayOffset[];
 extern const char kSecondaryDisplays[];
 extern const char kSessionStartTime[];
 extern const char kSessionLengthLimit[];
@@ -307,12 +305,12 @@ extern const char kPowerBatteryScreenOffDelayMs[];
 extern const char kPowerBatteryScreenLockDelayMs[];
 extern const char kPowerBatteryIdleWarningDelayMs[];
 extern const char kPowerBatteryIdleDelayMs[];
-extern const char kPowerIdleAction[];
+extern const char kPowerAcIdleAction[];
+extern const char kPowerBatteryIdleAction[];
 extern const char kPowerLidClosedAction[];
 extern const char kPowerUseAudioActivity[];
 extern const char kPowerUseVideoActivity[];
 extern const char kPowerAllowScreenWakeLocks[];
-extern const char kPowerPresentationIdleDelayFactor[];
 extern const char kPowerPresentationScreenDimDelayFactor[];
 extern const char kPowerUserActivityScreenDimDelayFactor[];
 extern const char kTermsOfServiceURL[];
@@ -341,7 +339,7 @@ extern const char kAllowDeletingBrowserHistory[];
 extern const char kForceSafeSearch[];
 extern const char kDeleteTimePeriod[];
 extern const char kLastClearBrowsingDataTime[];
-#if defined(TOOLKIT_GTK)
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
 extern const char kUsesSystemTheme[];
 #endif
 extern const char kCurrentThemePackFilename[];
@@ -426,10 +424,12 @@ extern const char kPrintPreviewDisabled[];
 
 extern const char kDefaultManagedModeFilteringBehavior[];
 
+extern const char kManagedUserCreationAllowed[];
 extern const char kManagedUsers[];
 
 extern const char kMessageCenterDisabledExtensionIds[];
 extern const char kMessageCenterDisabledSystemComponentIds[];
+extern const char kMessageCenterEnabledSyncNotifierIds[];
 
 // Local state prefs. Please add Profile prefs above instead.
 extern const char kCertRevocationCheckingEnabled[];
@@ -670,6 +670,8 @@ extern const char kSyncPromoShowOnFirstRunAllowed[];
 extern const char kSyncPromoShowNTPBubble[];
 extern const char kSyncPromoErrorMessage[];
 
+extern const char kSyncFaviconsEnabled[];
+
 extern const char kProfileGAIAInfoUpdateTime[];
 extern const char kProfileGAIAInfoPictureURL[];
 
@@ -830,6 +832,8 @@ extern const char kDisableCloudPolicyOnSignin[];
 
 extern const char kFactoryResetRequested[];
 
+extern const char kMessageCenterShowedFirstRunBalloon[];
+
 extern const char kRecoveryComponentVersion[];
 extern const char kComponentUpdaterState[];
 
@@ -885,6 +889,7 @@ extern const char kMinTouchDownDurationInSecondsForClick[];
 extern const char kPointsBufferedForVelocity[];
 extern const char kRailBreakProportion[];
 extern const char kRailStartProportion[];
+extern const char kScrollPredictionSeconds[];
 extern const char kSemiLongPressTimeInSeconds[];
 extern const char kTabScrubActivationDelayInMS[];
 extern const char kFlingAccelerationCurveCoefficient0[];

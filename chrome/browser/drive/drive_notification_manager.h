@@ -7,15 +7,15 @@
 
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "base/timer.h"
-#include "chrome/browser/google_apis/drive_notification_observer.h"
+#include "base/timer/timer.h"
+#include "chrome/browser/drive/drive_notification_observer.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "sync/notifier/invalidation_handler.h"
 
 class Profile;
 class ProfileSyncService;
 
-namespace google_apis {
+namespace drive {
 
 // Informs observers when they should check Google Drive for updates.
 // Conditions under which updates should be searched:
@@ -90,6 +90,6 @@ class DriveNotificationManager
   DISALLOW_COPY_AND_ASSIGN(DriveNotificationManager);
 };
 
-}  // namespace google_apis
+}  // namespace drive
 
 #endif  // CHROME_BROWSER_DRIVE_DRIVE_NOTIFICATION_MANAGER_H_

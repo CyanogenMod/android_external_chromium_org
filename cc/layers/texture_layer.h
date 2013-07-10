@@ -76,8 +76,7 @@ class CC_EXPORT TextureLayer : public Layer {
   virtual void SetLayerTreeHost(LayerTreeHost* layer_tree_host) OVERRIDE;
   virtual bool DrawsContent() const OVERRIDE;
   virtual void Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker* occlusion,
-                      RenderingStats* stats) OVERRIDE;
+                      const OcclusionTracker* occlusion) OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
   virtual bool BlocksPendingCommit() const OVERRIDE;
 
@@ -94,7 +93,7 @@ class CC_EXPORT TextureLayer : public Layer {
      public:
       explicit MainThreadReference(MailboxHolder* holder);
       ~MainThreadReference();
-      MailboxHolder* holder() { return holder_; }
+      MailboxHolder* holder() { return holder_.get(); }
 
      private:
       scoped_refptr<MailboxHolder> holder_;

@@ -20,6 +20,7 @@
 #include "ui/views/controls/progress_bar.h"
 #include "ui/views/controls/scroll_view.h"
 #include "ui/views/controls/styled_label_listener.h"
+#include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/widget/widget_observer.h"
@@ -36,6 +37,7 @@ class Image;
 namespace views {
 class Checkbox;
 class Combobox;
+class FocusableBorder;
 class FocusManager;
 class ImageButton;
 class ImageView;
@@ -43,7 +45,6 @@ class Label;
 class Link;
 class MenuRunner;
 class StyledLabel;
-class Textfield;
 class WebView;
 class Widget;
 }  // namespace views
@@ -62,14 +63,13 @@ struct DetailInput;
 // imperative autocomplete API call.
 class AutofillDialogViews : public AutofillDialogView,
                             public TestableAutofillDialogView,
-                            public views::DialogDelegate,
+                            public views::DialogDelegateView,
                             public views::WidgetObserver,
                             public views::ButtonListener,
                             public views::TextfieldController,
                             public views::FocusChangeListener,
                             public views::ComboboxListener,
-                            public views::StyledLabelListener,
-                            public ui::AcceleratorTarget {
+                            public views::StyledLabelListener {
  public:
   explicit AutofillDialogViews(AutofillDialogController* controller);
   virtual ~AutofillDialogViews();
@@ -78,6 +78,7 @@ class AutofillDialogViews : public AutofillDialogView,
   virtual void Show() OVERRIDE;
   virtual void Hide() OVERRIDE;
   virtual void UpdateAccountChooser() OVERRIDE;
+  virtual void UpdateAutocheckoutStepsArea() OVERRIDE;
   virtual void UpdateButtonStrip() OVERRIDE;
   virtual void UpdateDetailArea() OVERRIDE;
   virtual void UpdateForErrors() OVERRIDE;
@@ -102,6 +103,9 @@ class AutofillDialogViews : public AutofillDialogView,
   virtual string16 GetTextContentsOfInput(const DetailInput& input) OVERRIDE;
   virtual void SetTextContentsOfInput(const DetailInput& input,
                                       const string16& contents) OVERRIDE;
+  virtual void SetTextContentsOfSuggestionInput(
+      DialogSection section,
+      const base::string16& text) OVERRIDE;
   virtual void ActivateInput(const DetailInput& input) OVERRIDE;
   virtual gfx::Size GetSize() const OVERRIDE;
 
@@ -109,13 +113,15 @@ class AutofillDialogViews : public AutofillDialogView,
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
   virtual bool CanHandleAccelerators() const OVERRIDE;
 
+  // views::View implementation.
+  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual void Layout() OVERRIDE;
+  virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
+
   // views::DialogDelegate implementation:
   virtual string16 GetWindowTitle() const OVERRIDE;
   virtual void WindowClosing() OVERRIDE;
   virtual void DeleteDelegate() OVERRIDE;
-  virtual views::Widget* GetWidget() OVERRIDE;
-  virtual const views::Widget* GetWidget() const OVERRIDE;
-  virtual views::View* GetContentsView() OVERRIDE;
   virtual views::View* CreateOverlayView() OVERRIDE;
   virtual int GetDialogButtons() const OVERRIDE;
   virtual string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
@@ -159,26 +165,6 @@ class AutofillDialogViews : public AutofillDialogView,
       OVERRIDE;
 
  private:
-  // A view that contains a single child view, and adds a vertical scrollbar
-  // after a certain maximum height is reached.
-  class SizeLimitedScrollView : public views::ScrollView {
-   public:
-    explicit SizeLimitedScrollView(views::View* scroll_contents);
-    virtual ~SizeLimitedScrollView();
-
-    // views::View implementation.
-    virtual void Layout() OVERRIDE;
-    virtual gfx::Size GetPreferredSize() OVERRIDE;
-
-    // Sets the maximum height for the viewport.
-    void SetMaximumHeight(int max_height);
-
-   private:
-    int max_height_;
-
-    DISALLOW_COPY_AND_ASSIGN(SizeLimitedScrollView);
-  };
-
   // A class that creates and manages a widget for error messages.
   class ErrorBubble : public views::WidgetObserver {
    public:
@@ -211,28 +197,35 @@ class AutofillDialogViews : public AutofillDialogView,
 
   // A class which holds a textfield and draws extra stuff on top, like
   // invalid content indications.
-  class DecoratedTextfield : public views::View {
+  class DecoratedTextfield : public views::Textfield {
    public:
     DecoratedTextfield(const string16& default_value,
                        const string16& placeholder,
                        views::TextfieldController* controller);
     virtual ~DecoratedTextfield();
 
-    // The wrapped text field.
-    views::Textfield* textfield() { return textfield_; }
-
     // Sets whether to indicate the textfield has invalid content.
     void SetInvalid(bool invalid);
     bool invalid() const { return invalid_; }
+
+    // Sets the icon to be displayed inside the textfield at the end of the
+    // text.
+    void SetIcon(const gfx::Image& icon);
 
     // views::View implementation.
     virtual const char* GetClassName() const OVERRIDE;
     virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
     virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-    virtual void RequestFocus() OVERRIDE;
 
    private:
-    views::Textfield* textfield_;
+    // We draw the border.
+    views::FocusableBorder* border_;  // Weak.
+
+    // The icon that goes at the right side of the textfield.
+    gfx::Image icon_;
+
+    // Whether the text contents are "invalid" (i.e. should special markers be
+    // shown to indicate invalidness).
     bool invalid_;
 
     DISALLOW_COPY_AND_ASSIGN(DecoratedTextfield);
@@ -379,7 +372,7 @@ class AutofillDialogViews : public AutofillDialogView,
     // Shows an auxiliary textfield to the right of the suggestion icon and
     // text. This is currently only used to show a CVC field for the CC section.
     void ShowTextfield(const string16& placeholder_text,
-                       const gfx::ImageSkia& icon);
+                       const gfx::Image& icon);
 
     DecoratedTextfield* decorated_textfield() { return decorated_; }
 
@@ -423,13 +416,26 @@ class AutofillDialogViews : public AutofillDialogView,
     views::ImageButton* suggested_button;
   };
 
+  // Area for displaying that status of various steps in an Autocheckout flow.
+  class AutocheckoutStepsArea : public views::View {
+   public:
+    AutocheckoutStepsArea();
+    virtual ~AutocheckoutStepsArea() {}
+
+    // Display the given steps.
+    void SetSteps(const std::vector<DialogAutocheckoutStep>& steps);
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(AutocheckoutStepsArea);
+  };
+
   class AutocheckoutProgressBar : public views::ProgressBar {
    public:
     AutocheckoutProgressBar();
     virtual ~AutocheckoutProgressBar();
 
    private:
-    // Overidden from View:
+    // Overriden from View
     virtual gfx::Size GetPreferredSize() OVERRIDE;
 
     DISALLOW_COPY_AND_ASSIGN(AutocheckoutProgressBar);
@@ -533,9 +539,6 @@ class AutofillDialogViews : public AutofillDialogView,
   // dialog is closing.
   views::Widget* window_;
 
-  // The top-level View for the dialog. Owned by the constrained window.
-  views::View* contents_;
-
   // A DialogSection-keyed map of the DetailGroup structs.
   DetailGroupMap detail_groups_;
 
@@ -552,14 +555,14 @@ class AutofillDialogViews : public AutofillDialogView,
   // sign-in.
   views::WebView* sign_in_webview_;
 
-  // View to host everything that isn't related to sign-in.
-  views::View* main_container_;
-
   // View that wraps |details_container_| and makes it scroll vertically.
-  SizeLimitedScrollView* scrollable_area_;
+  views::ScrollView* scrollable_area_;
 
   // View to host details sections.
   views::View* details_container_;
+
+  // A view that overlays |this| (for "loading..." messages).
+  views::Label* loading_shield_;
 
   // The view that completely overlays the dialog (used for the splash page).
   views::View* overlay_view_;
@@ -570,6 +573,9 @@ class AutofillDialogViews : public AutofillDialogView,
   // This checkbox controls whether new details are saved to the Autofill
   // database. It lives in |extra_view_|.
   views::Checkbox* save_in_chrome_checkbox_;
+
+  // View to host Autocheckout steps.
+  AutocheckoutStepsArea* autocheckout_steps_area_;
 
   // View to host |autocheckout_progress_bar_| and its label.
   views::View* autocheckout_progress_bar_view_;

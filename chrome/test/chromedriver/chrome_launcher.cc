@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/base64.h"
+#include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
@@ -23,7 +24,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/platform_thread.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/test/chromedriver/chrome/chrome_android_impl.h"
 #include "chrome/test/chromedriver/chrome/chrome_desktop_impl.h"
@@ -39,6 +40,9 @@
 #include "chrome/test/chromedriver/net/url_request_context_getter.h"
 
 namespace {
+
+const char* kCommonSwitches[] = {
+  "ignore-certificate-errors", "metrics-recording-only"};
 
 Status UnpackAutomationExtension(const base::FilePath& temp_dir,
                                  base::FilePath* automation_extension) {
@@ -194,9 +198,13 @@ Status LaunchDesktopChrome(
   CommandLine command(CommandLine::NO_PROGRAM);
   base::ScopedTempDir user_data_dir;
   base::ScopedTempDir extension_dir;
-  PrepareCommandLine(port, capabilities,
-                     &command, &user_data_dir, &extension_dir);
-  command.AppendSwitch("ignore-certificate-errors");
+  Status status = PrepareCommandLine(port, capabilities,
+                                     &command, &user_data_dir, &extension_dir);
+  if (status.IsError())
+    return status;
+
+  for (size_t i = 0; i < arraysize(kCommonSwitches); i++)
+    command.AppendSwitch(kCommonSwitches[i]);
   base::LaunchOptions options;
 
 #if !defined(OS_WIN)
@@ -224,7 +232,7 @@ Status LaunchDesktopChrome(
   scoped_ptr<DevToolsHttpClient> devtools_client;
   std::string version;
   int build_no;
-  Status status = WaitForDevToolsAndCheckVersion(
+  status = WaitForDevToolsAndCheckVersion(
       port, context_getter, socket_factory, log, &devtools_client, &version,
       &build_no);
 
@@ -292,7 +300,13 @@ Status LaunchAndroidChrome(
   }
   if (!status.IsOk())
     return status;
-  status = device->StartChrome(capabilities.android_package, port);
+
+  std::string args(capabilities.android_args);
+  for (size_t i = 0; i < arraysize(kCommonSwitches); i++)
+    args += "--" + std::string(kCommonSwitches[i]) + " ";
+  args += "--disable-fre --enable-remote-debugging";
+
+  status = device->StartChrome(capabilities.android_package, port, args);
   if (!status.IsOk())
     return status;
 

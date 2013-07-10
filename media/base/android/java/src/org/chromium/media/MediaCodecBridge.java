@@ -142,7 +142,25 @@ class MediaCodecBridge {
     @CalledByNative
     private void queueInputBuffer(
             int index, int offset, int size, long presentationTimeUs, int flags) {
-        mMediaCodec.queueInputBuffer(index, offset, size, presentationTimeUs, flags);
+        try {
+            mMediaCodec.queueInputBuffer(index, offset, size, presentationTimeUs, flags);
+        } catch(IllegalStateException e) {
+            Log.e(TAG, "Failed to queue input buffer " + e.toString());
+        }
+    }
+
+    @CalledByNative
+    private void queueSecureInputBuffer(
+            int index, int offset, byte[] iv, byte[] keyId, int[] numBytesOfClearData,
+            int[] numBytesOfEncryptedData, int numSubSamples, long presentationTimeUs) {
+        try {
+            MediaCodec.CryptoInfo cryptoInfo = new MediaCodec.CryptoInfo();
+            cryptoInfo.set(numSubSamples, numBytesOfClearData, numBytesOfEncryptedData,
+                    keyId, iv, MediaCodec.CRYPTO_MODE_AES_CTR);
+            mMediaCodec.queueSecureInputBuffer(index, offset, cryptoInfo, presentationTimeUs, 0);
+        } catch(IllegalStateException e) {
+            Log.e(TAG, "Failed to queue secure input buffer " + e.toString());
+        }
     }
 
     @CalledByNative
@@ -218,6 +236,8 @@ class MediaCodecBridge {
                 int channelCount = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
                 int channelConfig = (channelCount == 1) ? AudioFormat.CHANNEL_OUT_MONO :
                         AudioFormat.CHANNEL_OUT_STEREO;
+                // Using 16bit PCM for output. Keep this value in sync with
+                // kBytesPerAudioOutputSample in media_codec_bridge.cc.
                 int minBufferSize = AudioTrack.getMinBufferSize(sampleRate, channelConfig,
                         AudioFormat.ENCODING_PCM_16BIT);
                 mAudioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, sampleRate, channelConfig,

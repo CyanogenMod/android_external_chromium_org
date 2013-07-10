@@ -26,6 +26,16 @@ struct WhitelistedComponentExtensionIME {
   const char* id;
   const char* path;
 } whitelisted_component_extension[] = {
+  {
+    // ChromeOS Keyboards extension.
+    "jhffeifommiaekmbkkjlpmilogcfdohp",
+    "/usr/share/chromeos-assets/input_methods/keyboard_layouts",
+  },
+  {
+    // ChromeOS Hangul Input.
+    "bdgdidmhaijohebebipajioienkglgfo",
+    "/usr/share/chromeos-assets/input_methods/hangul",
+  },
 #if defined(OFFICIAL_BUILD)
   {
     // Official Google Japanese Input.
@@ -53,16 +63,26 @@ struct WhitelistedComponentExtensionIME {
     "/usr/share/chromeos-assets/input_methods/wubi",
   },
   {
-    // Chromeos Keyboard Layouts.
-    "jhffeifommiaekmbkkjlpmilogcfdohp",
-    "/usr/share/chromeos-assets/input_methods/keyboard_layouts",
-  },
-  {
     // Google input tools.
     "gjaehgfemfahhmlgpdfknkhdnemmolop",
     "/usr/share/chromeos-assets/input_methods/input_tools",
   },
 #else
+  {
+    // Open-sourced Pinyin Chinese Input Method.
+    "cpgalbafkoofkjmaeonnfijgpfennjjn",
+    "/usr/share/chromeos-assets/input_methods/pinyin",
+  },
+  {
+    // Open-sourced Zhuyin Chinese Input Method.
+    "ekbifjdfhkmdeeajnolmgdlmkllopefi",
+    "/usr/share/chromeos-assets/input_methods/zhuyin",
+  },
+  {
+    // Open-sourced Cangjie Chinese Input Method.
+    "aeebooiibjahgpgmhkeocbeekccfknbj",
+    "/usr/share/chromeos-assets/input_methods/cangjie",
+  },
   {
     // Open-sourced Mozc Japanese Input.
     "bbaiamgfapehflhememkfglaehiobjnk",

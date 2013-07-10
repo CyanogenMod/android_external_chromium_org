@@ -364,7 +364,6 @@ void OmniboxViewViews::Update(const content::WebContents* contents) {
   bool changed_security_level = (security_level != security_level_);
   security_level_ = security_level;
 
-  // TODO(msw|oshima): Copied from GTK, determine correct Win/CrOS behavior.
   if (contents) {
     RevertAll();
     const OmniboxState* state = static_cast<OmniboxState*>(
@@ -377,7 +376,30 @@ void OmniboxViewViews::Update(const content::WebContents* contents) {
       ClearEditHistory();
     }
   } else if (visibly_changed_permanent_text) {
+    // Not switching tabs, just updating the permanent text.  (In the case where
+    // we _were_ switching tabs, the RevertAll() above already drew the new
+    // permanent text.)
+
+    // Tweak: if the user had all the text selected, select all the new text.
+    // This makes one particular case better: the user clicks in the box to
+    // change it right before the permanent URL is changed.  Since the new URL
+    // is still fully selected, the user's typing will replace the edit contents
+    // as they'd intended.
+    const ui::Range range(GetSelectedRange());
+    const bool was_select_all = (range.length() == text().length());
+
     RevertAll();
+
+    // Only select all when we have focus.  If we don't have focus, selecting
+    // all is unnecessary since the selection will change on regaining focus,
+    // and can in fact cause artifacts, e.g. if the user is on the NTP and
+    // clicks a link to navigate, causing |was_select_all| to be vacuously true
+    // for the empty omnibox, and we then select all here, leading to the
+    // trailing portion of a long URL being scrolled into view.  We could try
+    // and address cases like this, but it seems better to just not muck with
+    // things when the omnibox isn't focused to begin with.
+    if (was_select_all && model()->has_focus())
+      SelectAll(range.is_reversed());
   } else if (changed_security_level) {
     EmphasizeURLComponents();
   }
@@ -585,10 +607,16 @@ bool OmniboxViewViews::IsImeShowingPopup() const {
 #if defined(OS_CHROMEOS)
   return ime_candidate_window_open_;
 #else
-  // TODO(yukishiino): Implement detection of candidate windows on Windows.
-  // We can detect whether any candidate window is open or not on Windows.
-  // Currently we simply fall back to IsImeComposing() as a second best way.
-  return IsImeComposing();
+  // We need const_cast here because there is no const version of
+  // View::GetInputMethod().  It's because Widget::GetInputMethod(), called from
+  // View::GetInputMethod(), creates a new views::InputMethod at the first-time
+  // call.  Except for this point, none of this method, View::GetInputMethod()
+  // or Widget::GetInputMethod() modifies the state of their instances.
+  // TODO(yukishiino): Make {View,Widget}::GetInputMethod() const and make the
+  // underlying input method object mutable.
+  const views::InputMethod* input_method =
+      const_cast<OmniboxViewViews*>(this)->GetInputMethod();
+  return input_method && input_method->IsCandidatePopupOpen();
 #endif
 }
 
@@ -741,7 +769,7 @@ void OmniboxViewViews::UpdateContextMenu(ui::SimpleMenuModel* menu_contents) {
   menu_contents->AddItemWithStringId(IDC_EDIT_SEARCH_ENGINES,
       IDS_EDIT_SEARCH_ENGINES);
 
-  if (chrome::IsQueryExtractionEnabled(model()->profile())) {
+  if (chrome::IsQueryExtractionEnabled()) {
     int copy_position = menu_contents->GetIndexOfCommandId(IDS_APP_COPY);
     DCHECK(copy_position >= 0);
     menu_contents->InsertItemWithStringIdAt(

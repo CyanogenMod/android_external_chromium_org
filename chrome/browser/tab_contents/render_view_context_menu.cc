@@ -17,7 +17,7 @@
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
@@ -40,7 +40,6 @@
 #include "chrome/browser/printing/print_view_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_io_data.h"
-#include "chrome/browser/search/instant_extended_context_menu_observer.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
@@ -596,7 +595,8 @@ void RenderViewContextMenu::InitMenu() {
     }
   }
 
-  if (has_link) {
+  // Do not show link related items for guest.
+  if (has_link && !is_guest_) {
     AppendLinkItems();
     if (params_.media_type != WebContextMenuData::MediaTypeNone)
       menu_model_.AddSeparator(ui::NORMAL_SEPARATOR);
@@ -644,13 +644,8 @@ void RenderViewContextMenu::InitMenu() {
       print_preview_menu_observer_.reset(
           new PrintPreviewContextMenuObserver(source_web_contents_));
     }
-    if (!instant_extended_observer_.get()) {
-      instant_extended_observer_.reset(
-          new InstantExtendedContextMenuObserver(source_web_contents_));
-    }
 
     observers_.AddObserver(print_preview_menu_observer_.get());
-    observers_.AddObserver(instant_extended_observer_.get());
   }
 }
 
@@ -732,12 +727,15 @@ void RenderViewContextMenu::AppendPanelItems() {
 
   bool has_selection = !params_.selection_text.empty();
 
+  // Checking link should take precedence before checking selection since on Mac
+  // right-clicking a link will also make it selected.
+  if (params_.unfiltered_link_url.is_valid())
+    AppendLinkItems();
+
   if (params_.is_editable)
     AppendEditableItems();
   else if (has_selection)
     AppendCopyItem();
-  else if (params_.unfiltered_link_url.is_valid())
-    AppendLinkItems();
 
   // Only add extension items from this extension.
   int index = 0;
@@ -1777,7 +1775,7 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
       // Since the user decided to translate for that language and site, clears
       // any preferences for not translating them.
       TranslatePrefs prefs(profile_->GetPrefs());
-      prefs.RemoveLanguageFromBlacklist(original_lang);
+      prefs.UnblockLanguage(original_lang);
       prefs.RemoveSiteFromBlacklist(params_.page_url.HostNoBrackets());
       TranslateManager::GetInstance()->TranslatePage(
           source_web_contents_, original_lang, target_lang);

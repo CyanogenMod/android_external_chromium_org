@@ -11,6 +11,7 @@
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "content/common/content_export.h"
 #include "content/common/gpu/client/command_buffer_proxy_impl.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "googleurl/src/gurl.h"
@@ -51,6 +52,11 @@ namespace content {
 class GpuChannelHost;
 class GpuChannelHostFactory;
 struct GpuMemoryAllocationForRenderer;
+
+const size_t kDefaultCommandBufferSize = 1024 * 1024;
+const size_t kDefaultStartTransferBufferSize = 1 * 1024 * 1024;
+const size_t kDefaultMinTransferBufferSize = 1 * 256 * 1024;
+const size_t kDefaultMaxTransferBufferSize = 16 * 1024 * 1024;
 
 // TODO(piman): move this logic to the compositor and remove it from the
 // context...
@@ -110,10 +116,11 @@ class WebGraphicsContext3DCommandBufferImpl
 
   // Create & initialize a WebGraphicsContext3DCommandBufferImpl.  Return NULL
   // on any failure.
-  static WebGraphicsContext3DCommandBufferImpl* CreateOffscreenContext(
-      GpuChannelHostFactory* factory,
-      const WebGraphicsContext3D::Attributes& attributes,
-      const GURL& active_url);
+  static CONTENT_EXPORT WebGraphicsContext3DCommandBufferImpl*
+      CreateOffscreenContext(
+          GpuChannelHostFactory* factory,
+          const WebGraphicsContext3D::Attributes& attributes,
+          const GURL& active_url);
 
   //----------------------------------------------------------------------
   // WebGraphicsContext3D methods
@@ -130,6 +137,10 @@ class WebGraphicsContext3DCommandBufferImpl
   virtual void waitSyncPoint(unsigned int sync_point);
   virtual void signalSyncPoint(unsigned sync_point,
                                WebGraphicsSyncPointCallback* callback);
+  virtual void signalQuery(unsigned query,
+                           WebGraphicsSyncPointCallback* callback);
+
+  virtual void loseContextCHROMIUM(WGC3Denum current, WGC3Denum other);
 
   virtual void reshape(int width, int height);
   virtual void reshapeWithScaleFactor(
@@ -558,6 +569,7 @@ class WebGraphicsContext3DCommandBufferImpl
                                            const WGC3Dchar* uniform);
 
   virtual void shallowFlushCHROMIUM();
+  virtual void shallowFinishCHROMIUM();
 
   virtual void genMailboxCHROMIUM(WGC3Dbyte* mailbox);
   virtual void produceTextureCHROMIUM(WGC3Denum target,

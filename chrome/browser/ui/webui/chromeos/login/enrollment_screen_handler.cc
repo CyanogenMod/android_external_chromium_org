@@ -182,6 +182,8 @@ void EnrollmentScreenHandler::ShowAuthError(
     case GoogleServiceAuthError::HOSTED_NOT_ALLOWED:
     case GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS:
     case GoogleServiceAuthError::REQUEST_CANCELED:
+    case GoogleServiceAuthError::UNEXPECTED_SERVICE_RESPONSE:
+    case GoogleServiceAuthError::SERVICE_ERROR:
       ShowError(IDS_ENTERPRISE_ENROLLMENT_AUTH_FATAL_ERROR, false);
       return;
     case GoogleServiceAuthError::USER_NOT_SIGNED_UP:
@@ -273,14 +275,6 @@ void EnrollmentScreenHandler::ShowEnrollmentStatus(
       return;
   }
   NOTREACHED();
-}
-
-void EnrollmentScreenHandler::SubmitTestCredentials(
-    const std::string& email,
-    const std::string& password) {
-  test_email_ = email;
-  test_password_ = password;
-  DoShow();
 }
 
 // EnrollmentScreenHandler BaseScreenHandler implementation -----
@@ -465,10 +459,6 @@ void EnrollmentScreenHandler::DoShow() {
   screen_data.SetString("gaiaUrl", GaiaUrls::GetInstance()->gaia_url().spec());
   screen_data.SetBoolean("is_auto_enrollment", is_auto_enrollment_);
   screen_data.SetBoolean("prevent_cancellation", !can_exit_enrollment_);
-  if (!test_email_.empty()) {
-    screen_data.SetString("test_email", test_email_);
-    screen_data.SetString("test_password", test_password_);
-  }
 
   ShowScreen(OobeUI::kScreenOobeEnrollment, &screen_data);
 }

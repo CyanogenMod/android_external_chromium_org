@@ -13,8 +13,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/strings/string16.h"
 #include "base/supports_user_data.h"
-#include "base/time.h"
 #include "base/threading/non_thread_safe.h"
+#include "base/time/time.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/auth.h"
 #include "net/base/completion_callback.h"
@@ -420,6 +420,21 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   const HttpRequestHeaders& extra_request_headers() const {
     return extra_request_headers_;
   }
+
+  // Gets the full request headers sent to the server.
+  //
+  // Return true and overwrites headers if it can get the request headers;
+  // otherwise, returns false and does not modify headers.  (Always returns
+  // false for request types that don't have headers, like file requests.)
+  //
+  // This is guaranteed to succeed if:
+  //
+  // 1. A redirect or auth callback is currently running.  Once it ends, the
+  //    headers may become unavailable as a new request with the new address
+  //    or credentials is made.
+  //
+  // 2. The OnResponseStarted callback is currently running or has run.
+  bool GetFullRequestHeaders(HttpRequestHeaders* headers) const;
 
   // Returns the current load state for the request. |param| is an optional
   // parameter describing details related to the load state. Not all load states

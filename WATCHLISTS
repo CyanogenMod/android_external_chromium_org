@@ -151,8 +151,8 @@
                   'chrome/browser/chromeos/net/',
     },
     'chromeos_power': {
-      'filepath': 'chromeos/dbus/power_.*|'\
-                  'chromeos/power/|'\
+      'filepath': 'ash/system/chromeos/power/|'\
+                  'chromeos/dbus/power_.*|'\
                   'chrome/browser/chromeos/power/',
     },
     'chromeos_webui': {
@@ -302,6 +302,16 @@
       'filepath': 'media/|third_party/(ffmpeg|openmax)/|webmediaplayer|'\
         'audio_message_filter|video_layer|media_internals',
     },
+    'media_galleries': {
+      'filepath': 'chrome/browser/extensions/api/media_galleries/'\
+                  '|chrome/browser/extensions/api/media_galleries_private/'\
+                  '|chrome/browser/media_galleries/'\
+                  '|chrome/browser/storage_monitor/'\
+                  '|chrome/common/media_galleries/'\
+                  '|chrome/test/data/extensions/api_test/media_galleries/'\
+                  '|chrome/utility/itunes*'\
+                  '|chrome/utility/picasa*',
+    },
     'message_loop': {
       'filepath': 'base/message_'
     },
@@ -423,6 +433,9 @@
     },
     'sync': {
       'filepath': 'chrome/browser/sync/|sync/',
+    },
+    'syncfs': {
+      'filepath': 'sync_file_system',
     },
     'sync_proto': {
       'filepath': 'sync/protocol/',
@@ -591,7 +604,8 @@
     'cookie_monster': ['erikwright@chromium.org'],
     'deep_memory_profiler': ['dmikurube+memory@chromium.org'],
     'devtools': ['pfeldman@chromium.org', 'yurys@chromium.org',
-                 'vsevik@chromium.org'],
+                 'vsevik@chromium.org', 'aandrey+blink@chromium.org',
+                 'paulirish+reviews@chromium.org'],
     'disk_cache': ['gavinp+disk@chromium.org'],
     'dns': ['mmenke@chromium.org'],
     'download_database': ['benjhayden+dwatch@chromium.org'],
@@ -626,6 +640,8 @@
     'linux_seccomp_bpf': ['jln+watch@chromium.org'],
     'managed_users': ['pam+watch@chromium.org'],
     'media': ['feature-media-reviews@chromium.org'],
+    'media_galleries': ['gbillock@chromium.org', 'thestig@chromium.org',
+                        'tommycli@chromium.org', 'vandebo@chromium.org'],
     'message_loop': ['sadrul@chromium.org'],
     'metrics': ['jar@chromium.org',
                 'isherman@chromium.org',
@@ -674,10 +690,12 @@
     'spellcheck': ['groby+spellwatch@chromium.org',
                    'rlp@chromium.org',
                    'rouslan+spellwatch@chromium.org'],
-    'sync': ['akalin@chromium.org',
-             'haitaol@chromium.org',
-             'rsimha@chromium.org',
-             'tim@chromium.org'],
+    'sync': ['haitaol+watch@chromium.org',
+             'rsimha+watch@chromium.org',
+             'tim+watch@chromium.org'],
+    'syncfs': ['kinuko+watch@chromium.org',
+               'tzik+watch@chromium.org',
+               'nhiroki+watch@chromium.org'],
     'sync_proto': ['albertb+watch@chromium.org'],
     'tab_contents': ['avi@chromium.org',
                      'creis+watch@chromium.org', 'ajwong+watch@chromium.org'],

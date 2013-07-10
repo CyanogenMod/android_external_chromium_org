@@ -4,21 +4,19 @@
 
 #include "chrome/browser/ui/views/chrome_views_delegate.h"
 
-#include "base/time.h"
-#include "chrome/browser/chromeos/login/startup_utils.h"
+#include "base/time/time.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/system/statistics_provider.h"
 #include "chromeos/chromeos_constants.h"
 
 base::TimeDelta
 ChromeViewsDelegate::GetDefaultTextfieldObscuredRevealDuration() {
-  // Enable password echo during OOBE when keyboard driven flag is set.
+  // Enable password echo on login screen when the keyboard driven flag is set.
   if (chromeos::UserManager::IsInitialized() &&
-      !chromeos::UserManager::Get()->IsUserLoggedIn() &&
-      !chromeos::StartupUtils::IsOobeCompleted()) {
+      !chromeos::UserManager::Get()->IsUserLoggedIn()) {
     bool keyboard_driven_oobe = false;
     chromeos::system::StatisticsProvider::GetInstance()->GetMachineFlag(
-        chromeos::kOemKeyboardDrivenOobeKey, &keyboard_driven_oobe);
+        chromeos::system::kOemKeyboardDrivenOobeKey, &keyboard_driven_oobe);
     if (keyboard_driven_oobe)
       return base::TimeDelta::FromSeconds(1);
   }

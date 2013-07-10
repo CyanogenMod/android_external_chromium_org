@@ -87,7 +87,7 @@ base::FilePath InstallExtension(const base::FilePath& unpacked_source_dir,
   }
   base::FilePath crx_temp_source =
       extension_temp_dir.path().Append(unpacked_source_dir.BaseName());
-  if (!file_util::Move(unpacked_source_dir, crx_temp_source)) {
+  if (!base::Move(unpacked_source_dir, crx_temp_source)) {
     LOG(ERROR) << "Moving extension from : " << unpacked_source_dir.value()
                << " to : " << crx_temp_source.value() << " failed.";
     return base::FilePath();
@@ -111,7 +111,7 @@ base::FilePath InstallExtension(const base::FilePath& unpacked_source_dir,
     return base::FilePath();
   }
 
-  if (!file_util::Move(crx_temp_source, version_dir)) {
+  if (!base::Move(crx_temp_source, version_dir)) {
     LOG(ERROR) << "Installing extension from : " << crx_temp_source.value()
                << " into : " << version_dir.value() << " failed.";
     return base::FilePath();
@@ -125,7 +125,7 @@ void UninstallExtension(const base::FilePath& extensions_dir,
   // We don't care about the return value. If this fails (and it can, due to
   // plugins that aren't unloaded yet), it will get cleaned up by
   // ExtensionService::GarbageCollectExtensions.
-  file_util::Delete(extensions_dir.AppendASCII(id), true);  // recursive.
+  base::Delete(extensions_dir.AppendASCII(id), true);  // recursive.
 }
 
 scoped_refptr<Extension> LoadExtension(const base::FilePath& extension_path,
@@ -345,7 +345,7 @@ void GarbageCollectExtensions(
     // Clean up temporary files left if Chrome crashed or quit in the middle
     // of an extension install.
     if (basename.value() == kTempDirectoryName) {
-      file_util::Delete(extension_path, true);  // Recursive
+      base::Delete(extension_path, true);  // Recursive
       continue;
     }
 
@@ -362,7 +362,7 @@ void GarbageCollectExtensions(
                        "directory: " << basename.value();
       DVLOG(1) << "Deleting invalid extension directory "
                << extension_path.value() << ".";
-      file_util::Delete(extension_path, true);  // Recursive.
+      base::Delete(extension_path, true);  // Recursive.
       continue;
     }
 
@@ -375,7 +375,7 @@ void GarbageCollectExtensions(
     if (iter_pair.first == iter_pair.second) {
       DVLOG(1) << "Deleting unreferenced install for directory "
                << extension_path.LossyDisplayName() << ".";
-      file_util::Delete(extension_path, true);  // Recursive.
+      base::Delete(extension_path, true);  // Recursive.
       continue;
     }
 
@@ -396,7 +396,7 @@ void GarbageCollectExtensions(
       if (!knownVersion) {
         DVLOG(1) << "Deleting old version for directory "
                  << version_dir.LossyDisplayName() << ".";
-        file_util::Delete(version_dir, true);  // Recursive.
+        base::Delete(version_dir, true);  // Recursive.
       }
     }
   }
@@ -570,7 +570,7 @@ base::FilePath GetInstallTempDir(const base::FilePath& extensions_dir) {
 }
 
 void DeleteFile(const base::FilePath& path, bool recursive) {
-  file_util::Delete(path, recursive);
+  base::Delete(path, recursive);
 }
 
 }  // namespace extension_file_util

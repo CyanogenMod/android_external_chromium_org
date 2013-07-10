@@ -935,10 +935,6 @@ void RenderWidgetHostViewWin::ProcessAckedTouchEvent(
       INPUT_EVENT_ACK_STATE_CONSUMED) ? ui::ER_HANDLED : ui::ER_UNHANDLED;
   for (ScopedVector<ui::TouchEvent>::iterator iter = events.begin(),
       end = events.end(); iter != end; ++iter)  {
-    (*iter)->latency()->AddLatencyNumber(
-        ui::INPUT_EVENT_LATENCY_ACKED_COMPONENT,
-        static_cast<int64>(ack_result),
-        0);
     scoped_ptr<ui::GestureRecognizer::Gestures> gestures;
     gestures.reset(gesture_recognizer_->ProcessTouchEventForGesture(
         *(*iter), result, this));
@@ -1801,6 +1797,44 @@ LRESULT RenderWidgetHostViewWin::OnMouseEvent(UINT message, WPARAM wparam,
     msg.lParam = lparam;
     SendMessage(tooltip_hwnd_, TTM_RELAYEVENT, NULL,
                 reinterpret_cast<LPARAM>(&msg));
+  }
+
+  // Due to a bug in Windows, the simulated mouse events for a touch event
+  // outside our bounds are delivered to us if we were previously focused
+  // causing crbug.com/159982. As a workaround, we check if this event is a
+  // simulated mouse event outside our bounds, and if so, we send it to the
+  // right window.
+  if ((message == WM_LBUTTONDOWN || message == WM_LBUTTONUP) &&
+      ui::IsMouseEventFromTouch(message)) {
+    CPoint cursor_pos(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
+    ClientToScreen(&cursor_pos);
+    if (!GetPixelBounds().Contains(cursor_pos.x, cursor_pos.y)) {
+      HWND window = WindowFromPoint(cursor_pos);
+      if (window) {
+        LRESULT nc_hit_result = SendMessage(window, WM_NCHITTEST, 0,
+            MAKELPARAM(cursor_pos.x, cursor_pos.y));
+        const bool in_client_area = (nc_hit_result == HTCLIENT);
+        int event_type;
+        if (message == WM_LBUTTONDOWN)
+          event_type = in_client_area ? WM_LBUTTONDOWN : WM_NCLBUTTONDOWN;
+        else
+          event_type = in_client_area ? WM_LBUTTONUP : WM_NCLBUTTONUP;
+
+        // Convert the coordinates to the target window.
+        RECT window_bounds;
+        ::GetWindowRect(window, &window_bounds);
+        int window_x = cursor_pos.x - window_bounds.left;
+        int window_y = cursor_pos.y - window_bounds.top;
+        if (in_client_area) {
+          ::PostMessage(window, event_type, wparam,
+              MAKELPARAM(window_x, window_y));
+        } else {
+          ::PostMessage(window, event_type, nc_hit_result,
+              MAKELPARAM(cursor_pos.x, cursor_pos.y));
+        }
+        return 0;
+      }
+    }
   }
 
   // TODO(jcampan): I am not sure if we should forward the message to the
@@ -2866,7 +2900,8 @@ bool RenderWidgetHostViewWin::ForwardGestureEventToRenderer(
     render_widget_host_->ForwardGestureEvent(
         CreateFlingCancelEvent(gesture->time_stamp().InSecondsF()));
   }
-  render_widget_host_->ForwardGestureEvent(web_gesture);
+  render_widget_host_->ForwardGestureEventWithLatencyInfo(web_gesture,
+                                                          *gesture->latency());
   return true;
 }
 

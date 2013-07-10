@@ -8,7 +8,7 @@
 #include "base/debug/trace_event.h"
 #include "base/hash.h"
 #include "base/shared_memory.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "content/common/gpu/gpu_channel.h"
 #include "content/common/gpu/gpu_channel_manager.h"
@@ -29,6 +29,7 @@
 #include "gpu/command_buffer/service/gl_state_restorer_impl.h"
 #include "gpu/command_buffer/service/logger.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
+#include "gpu/command_buffer/service/query_manager.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_switches.h"
 
@@ -140,10 +141,15 @@ GpuCommandBufferStub::GpuCommandBufferStub(
   if (share_group) {
     context_group_ = share_group->context_group_;
   } else {
+    gpu::StreamTextureManager* stream_texture_manager = NULL;
+#if defined(OS_ANDROID)
+    stream_texture_manager = channel_->stream_texture_manager();
+#endif
     context_group_ = new gpu::gles2::ContextGroup(
         mailbox_manager,
         image_manager,
         new GpuCommandBufferMemoryTracker(channel),
+        stream_texture_manager,
         true);
   }
 }
@@ -210,6 +216,8 @@ bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
                         OnRetireSyncPoint)
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_SignalSyncPoint,
                         OnSignalSyncPoint)
+    IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_SignalQuery,
+                        OnSignalQuery)
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_SendClientManagedMemoryStats,
                         OnReceivedClientManagedMemoryStats)
     IPC_MESSAGE_HANDLER(
@@ -533,10 +541,6 @@ void GpuCommandBufferStub::OnInitialize(
                    base::Unretained(this)));
   }
 
-#if defined(OS_ANDROID)
-  decoder_->SetStreamTextureManager(channel_->stream_texture_manager());
-#endif
-
   if (!command_buffer_->SetSharedStateBuffer(shared_state_shm.Pass())) {
     DLOG(ERROR) << "Failed to map shared stae buffer.";
     OnInitializeFailed(reply_message);
@@ -813,6 +817,26 @@ void GpuCommandBufferStub::OnSignalSyncPoint(uint32 sync_point, uint32 id) {
 void GpuCommandBufferStub::OnSignalSyncPointAck(uint32 id) {
   Send(new GpuCommandBufferMsg_SignalSyncPointAck(route_id_, id));
 }
+
+void GpuCommandBufferStub::OnSignalQuery(uint32 query_id, uint32 id) {
+  if (decoder_) {
+    gpu::gles2::QueryManager* query_manager = decoder_->GetQueryManager();
+    if (query_manager) {
+      gpu::gles2::QueryManager::Query* query =
+          query_manager->GetQuery(query_id);
+      if (query) {
+        query->AddCallback(
+          base::Bind(&GpuCommandBufferStub::OnSignalSyncPointAck,
+                     this->AsWeakPtr(),
+                     id));
+        return;
+      }
+    }
+  }
+  // Something went wrong, run callback immediately.
+  OnSignalSyncPointAck(id);
+}
+
 
 void GpuCommandBufferStub::OnReceivedClientManagedMemoryStats(
     const GpuManagedMemoryStats& stats) {

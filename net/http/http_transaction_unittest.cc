@@ -9,7 +9,7 @@
 #include "base/bind.h"
 #include "base/message_loop.h"
 #include "base/strings/stringprintf.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/load_flags.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/net_errors.h"
@@ -324,6 +324,11 @@ int MockNetworkTransaction::Read(net::IOBuffer* buf, int buf_len,
 }
 
 void MockNetworkTransaction::StopCaching() {}
+
+bool MockNetworkTransaction::GetFullRequestHeaders(
+    net::HttpRequestHeaders* headers) const {
+  return false;
+}
 
 void MockNetworkTransaction::DoneReading() {
   if (transaction_factory_.get())

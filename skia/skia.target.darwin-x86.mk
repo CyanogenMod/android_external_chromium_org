@@ -83,6 +83,9 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/ports/SkThread_pthread.cpp \
 	third_party/skia/src/ports/SkTime_Unix.cpp \
 	third_party/skia/src/sfnt/SkOTUtils.cpp \
+	third_party/skia/src/utils/debugger/SkDebugCanvas.cpp \
+	third_party/skia/src/utils/debugger/SkDrawCommand.cpp \
+	third_party/skia/src/utils/debugger/SkObjectParser.cpp \
 	third_party/skia/src/utils/SkBase64.cpp \
 	third_party/skia/src/utils/SkBitSet.cpp \
 	third_party/skia/src/utils/SkDeferredCanvas.cpp \
@@ -110,9 +113,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkBlitMask_D32.cpp \
 	third_party/skia/src/core/SkBlitRow_D16.cpp \
 	third_party/skia/src/core/SkBlitRow_D32.cpp \
-	third_party/skia/src/core/SkBlitRow_D4444.cpp \
 	third_party/skia/src/core/SkBlitter.cpp \
-	third_party/skia/src/core/SkBlitter_4444.cpp \
 	third_party/skia/src/core/SkBlitter_A1.cpp \
 	third_party/skia/src/core/SkBlitter_A8.cpp \
 	third_party/skia/src/core/SkBlitter_ARGB32.cpp \
@@ -399,7 +400,7 @@ LOCAL_SRC_FILES := \
 
 
 # Flags passed to both C and C++ files.
-MY_CFLAGS := \
+MY_CFLAGS_Debug := \
 	--param=ssp-buffer-size=4 \
 	-fno-exceptions \
 	-fno-strict-aliasing \
@@ -436,9 +437,7 @@ MY_CFLAGS := \
 	-fdata-sections \
 	-ffunction-sections
 
-MY_CFLAGS_C :=
-
-MY_DEFS := \
+MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DUSE_LINUX_BREAKPAD' \
@@ -470,7 +469,6 @@ MY_DEFS := \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(8*1024*1024)' \
 	'-DUSE_CHROMIUM_SKIA' \
-	'-DSK_IGNORE_MAC_TEXT_BOUNDS_FIX' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \
@@ -480,10 +478,9 @@ MY_DEFS := \
 	'-DWTF_USE_DYNAMIC_ANNOTATIONS=1' \
 	'-D_DEBUG'
 
-LOCAL_CFLAGS := $(MY_CFLAGS_C) $(MY_CFLAGS) $(MY_DEFS)
 
 # Include paths placed before CFLAGS/CPPFLAGS
-LOCAL_C_INCLUDES := \
+LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/include/config \
@@ -512,10 +509,9 @@ LOCAL_C_INCLUDES := \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
 
-LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 
 # Flags passed to only C++ (and not C) files.
-LOCAL_CPPFLAGS := \
+LOCAL_CPPFLAGS_Debug := \
 	-fno-rtti \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
@@ -525,9 +521,138 @@ LOCAL_CPPFLAGS := \
 	-Wno-sign-promo \
 	-Wno-non-virtual-dtor
 
+
+# Flags passed to both C and C++ files.
+MY_CFLAGS_Release := \
+	--param=ssp-buffer-size=4 \
+	-fno-exceptions \
+	-fno-strict-aliasing \
+	-Wno-unused-parameter \
+	-Wno-missing-field-initializers \
+	-fvisibility=hidden \
+	-pipe \
+	-fPIC \
+	-Wno-format \
+	-m32 \
+	-mmmx \
+	-march=pentium4 \
+	-msse2 \
+	-mfpmath=sse \
+	-fuse-ld=gold \
+	-ffunction-sections \
+	-funwind-tables \
+	-g \
+	-fno-short-enums \
+	-finline-limit=64 \
+	-Wa,--noexecstack \
+	-U_FORTIFY_SOURCE \
+	-Wno-extra \
+	-Wno-ignored-qualifiers \
+	-Wno-type-limits \
+	-Wno-address \
+	-Wno-format-security \
+	-Wno-return-type \
+	-Wno-sequence-point \
+	-fno-stack-protector \
+	-Os \
+	-fno-ident \
+	-fdata-sections \
+	-ffunction-sections \
+	-fomit-frame-pointer \
+	-fno-unwind-tables \
+	-fno-asynchronous-unwind-tables
+
+MY_DEFS_Release := \
+	'-DANGLE_DX11' \
+	'-D_FILE_OFFSET_BITS=64' \
+	'-DUSE_LINUX_BREAKPAD' \
+	'-DNO_TCMALLOC' \
+	'-DDISABLE_NACL' \
+	'-DCHROMIUM_BUILD' \
+	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_GPU=1' \
+	'-DUSE_OPENSSL=1' \
+	'-DENABLE_EGLIMAGE=1' \
+	'-DENABLE_LANGUAGE_DETECTION=1' \
+	'-DSK_USE_POSIX_THREADS' \
+	'-DSK_BUILD_NO_IMAGE_ENCODE' \
+	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
+	'-DGR_STATIC_RECT_VB=1' \
+	'-DGR_AGGRESSIVE_SHADER_OPTS=1' \
+	'-DSK_DEFERRED_CANVAS_USES_GPIPE=1' \
+	'-DSK_ENABLE_INST_COUNT=0' \
+	'-DSK_ALLOW_OVER_32K_BITMAPS' \
+	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
+	'-DSK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK' \
+	'-DIGNORE_ROT_AA_RECT_OPT' \
+	'-DSK_GAMMA_APPLY_TO_A8' \
+	'-DSK_GAMMA_EXPONENT=1.4' \
+	'-DSK_GAMMA_CONTRAST=0.0' \
+	'-DHAVE_PTHREADS' \
+	'-DOS_ANDROID' \
+	'-DSK_BUILD_FOR_ANDROID' \
+	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(8*1024*1024)' \
+	'-DUSE_CHROMIUM_SKIA' \
+	'-DANDROID' \
+	'-D__GNU_SOURCE=1' \
+	'-DUSE_STLPORT=1' \
+	'-D_STLP_USE_PTR_SPECIALIZATIONS=1' \
+	'-DCHROME_BUILD_ID=""' \
+	'-DNDEBUG' \
+	'-DNVALGRIND' \
+	'-DDYNAMIC_ANNOTATIONS_ENABLED=0'
+
+
+# Include paths placed before CFLAGS/CPPFLAGS
+LOCAL_C_INCLUDES_Release := \
+	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
+	$(LOCAL_PATH)/third_party/skia/include/config \
+	$(LOCAL_PATH)/third_party/skia/include/core \
+	$(LOCAL_PATH)/third_party/skia/include/effects \
+	$(LOCAL_PATH)/third_party/skia/include/images \
+	$(LOCAL_PATH)/third_party/skia/include/lazy \
+	$(LOCAL_PATH)/third_party/skia/include/pathops \
+	$(LOCAL_PATH)/third_party/skia/include/pdf \
+	$(LOCAL_PATH)/third_party/skia/include/pipe \
+	$(LOCAL_PATH)/third_party/skia/include/ports \
+	$(LOCAL_PATH)/third_party/skia/include/utils \
+	$(LOCAL_PATH)/third_party/skia/src/core \
+	$(LOCAL_PATH)/third_party/skia/src/image \
+	$(LOCAL_PATH)/third_party/skia/src/sfnt \
+	$(LOCAL_PATH)/third_party/skia/src/utils \
+	$(LOCAL_PATH)/third_party/skia/src/lazy \
+	$(LOCAL_PATH)/third_party/skia/include/gpu \
+	$(LOCAL_PATH)/third_party/skia/include/gpu/gl \
+	$(LOCAL_PATH)/third_party/skia/src/gpu \
+	$(LOCAL_PATH)/third_party/expat/files/lib \
+	$(LOCAL_PATH)/third_party/zlib \
+	$(PWD)/external/expat/lib \
+	$(LOCAL_PATH)/third_party/freetype/include \
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
+
+
+# Flags passed to only C++ (and not C) files.
+LOCAL_CPPFLAGS_Release := \
+	-fno-rtti \
+	-fno-threadsafe-statics \
+	-fvisibility-inlines-hidden \
+	-Wno-deprecated \
+	-Wno-error=c++0x-compat \
+	-Wno-non-virtual-dtor \
+	-Wno-sign-promo \
+	-Wno-non-virtual-dtor
+
+
+LOCAL_CFLAGS := $(MY_CFLAGS_$(GYP_CONFIGURATION)) $(MY_DEFS_$(GYP_CONFIGURATION))
+LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES_$(GYP_CONFIGURATION))
+LOCAL_CPPFLAGS := $(LOCAL_CPPFLAGS_$(GYP_CONFIGURATION))
 ### Rules for final target.
 
-LOCAL_LDFLAGS := \
+LOCAL_LDFLAGS_Debug := \
 	-Wl,-z,now \
 	-Wl,-z,relro \
 	-Wl,-z,noexecstack \
@@ -541,6 +666,23 @@ LOCAL_LDFLAGS := \
 	-Wl,-O1 \
 	-Wl,--as-needed
 
+
+LOCAL_LDFLAGS_Release := \
+	-Wl,-z,now \
+	-Wl,-z,relro \
+	-Wl,-z,noexecstack \
+	-fPIC \
+	-m32 \
+	-fuse-ld=gold \
+	-nostdlib \
+	-Wl,--no-undefined \
+	-Wl,--exclude-libs=ALL \
+	-Wl,-O1 \
+	-Wl,--as-needed \
+	-Wl,--gc-sections
+
+
+LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
 LOCAL_STATIC_LIBRARIES :=
 

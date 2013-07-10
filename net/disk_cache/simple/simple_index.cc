@@ -19,7 +19,7 @@
 #include "base/strings/string_tokenizer.h"
 #include "base/task_runner.h"
 #include "base/threading/worker_pool.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/net_errors.h"
 #include "net/disk_cache/simple/simple_entry_format.h"
 #include "net/disk_cache/simple/simple_index_file.h"
@@ -41,6 +41,8 @@ const int kDefaultWriteToDiskOnBackgroundDelayMSecs = 100;
 // Divides the cache space into this amount of parts to evict when only one part
 // is left.
 const uint32 kEvictionMarginDivisor = 20;
+
+const uint32 kBytesInKb = 1024;
 
 // Utility class used for timestamp comparisons in entry metadata while sorting.
 class CompareHashesForTimestamp {
@@ -177,26 +179,14 @@ int SimpleIndex::ExecuteWhenReady(const net::CompletionCallback& task) {
   return net::ERR_IO_PENDING;
 }
 
-scoped_ptr<std::vector<uint64> > SimpleIndex::RemoveEntriesBetween(
+scoped_ptr<SimpleIndex::HashList> SimpleIndex::RemoveEntriesBetween(
     const base::Time initial_time, const base::Time end_time) {
-  DCHECK_EQ(true, initialized_);
-  const base::Time extended_end_time =
-      end_time.is_null() ? base::Time::Max() : end_time;
-  DCHECK(extended_end_time >= initial_time);
-  scoped_ptr<std::vector<uint64> > ret_hashes(new std::vector<uint64>());
-  for (EntrySet::iterator it = entries_set_.begin(), end = entries_set_.end();
-       it != end;) {
-    EntryMetadata& metadata = it->second;
-    base::Time entry_time = metadata.GetLastUsedTime();
-    if (initial_time <= entry_time && entry_time < extended_end_time) {
-      ret_hashes->push_back(it->first);
-      cache_size_ -= metadata.GetEntrySize();
-      entries_set_.erase(it++);
-    } else {
-      it++;
-    }
-  }
-  return ret_hashes.Pass();
+  return ExtractEntriesBetween(initial_time, end_time, true);
+}
+
+scoped_ptr<SimpleIndex::HashList> SimpleIndex::GetAllHashes() {
+  const base::Time null_time = base::Time();
+  return ExtractEntriesBetween(null_time, null_time, false);
 }
 
 int32 SimpleIndex::GetEntryCount() const {
@@ -231,11 +221,10 @@ void SimpleIndex::Remove(const std::string& key) {
   PostponeWritingToDisk();
 }
 
-bool SimpleIndex::Has(const std::string& key) const {
+bool SimpleIndex::Has(uint64 hash) const {
   DCHECK(io_thread_checker_.CalledOnValidThread());
   // If not initialized, always return true, forcing it to go to the disk.
-  return !initialized_ ||
-         entries_set_.count(simple_util::GetEntryHashKey(key)) > 0;
+  return !initialized_ || entries_set_.count(hash) > 0;
 }
 
 bool SimpleIndex::UseIfExists(const std::string& key) {
@@ -259,8 +248,10 @@ void SimpleIndex::StartEvictionIfNeeded() {
   // Take all live key hashes from the index and sort them by time.
   eviction_in_progress_ = true;
   eviction_start_time_ = base::TimeTicks::Now();
-  UMA_HISTOGRAM_COUNTS("SimpleCache.Eviction.CacheSizeOnStart", cache_size_);
-  UMA_HISTOGRAM_COUNTS("SimpleCache.Eviction.MaxCacheSizeOnStart", max_size_);
+  UMA_HISTOGRAM_MEMORY_KB("SimpleCache.Eviction.CacheSizeOnStart2",
+                          cache_size_ / kBytesInKb);
+  UMA_HISTOGRAM_MEMORY_KB("SimpleCache.Eviction.MaxCacheSizeOnStart2",
+                          max_size_ / kBytesInKb);
   scoped_ptr<std::vector<uint64> > entry_hashes(new std::vector<uint64>());
   for (EntrySet::const_iterator it = entries_set_.begin(),
        end = entries_set_.end(); it != end; ++it) {
@@ -288,8 +279,8 @@ void SimpleIndex::StartEvictionIfNeeded() {
   UMA_HISTOGRAM_COUNTS("SimpleCache.Eviction.EntryCount", entry_hashes->size());
   UMA_HISTOGRAM_TIMES("SimpleCache.Eviction.TimeToSelectEntries",
                       base::TimeTicks::Now() - eviction_start_time_);
-  UMA_HISTOGRAM_COUNTS("SimpleCache.Eviction.SizeOfEvicted",
-                       evicted_so_far_size);
+  UMA_HISTOGRAM_MEMORY_KB("SimpleCache.Eviction.SizeOfEvicted2",
+                          evicted_so_far_size / kBytesInKb);
 
   index_file_->DoomEntrySet(
       entry_hashes.Pass(),
@@ -316,7 +307,8 @@ void SimpleIndex::EvictionDone(int result) {
   UMA_HISTOGRAM_BOOLEAN("SimpleCache.Eviction.Result", result == net::OK);
   UMA_HISTOGRAM_TIMES("SimpleCache.Eviction.TimeToDone",
                       base::TimeTicks::Now() - eviction_start_time_);
-  UMA_HISTOGRAM_COUNTS("SimpleCache.Eviction.SizeWhenDone", cache_size_);
+  UMA_HISTOGRAM_MEMORY_KB("SimpleCache.Eviction.SizeWhenDone2",
+                          cache_size_ / kBytesInKb);
 }
 
 // static
@@ -426,6 +418,31 @@ void SimpleIndex::WriteToDisk() {
 
   index_file_->WriteToDisk(entries_set_, cache_size_,
                            start, app_on_background_);
+}
+
+scoped_ptr<SimpleIndex::HashList> SimpleIndex::ExtractEntriesBetween(
+    const base::Time initial_time, const base::Time end_time,
+    bool delete_entries) {
+  DCHECK_EQ(true, initialized_);
+  const base::Time extended_end_time =
+      end_time.is_null() ? base::Time::Max() : end_time;
+  DCHECK(extended_end_time >= initial_time);
+  scoped_ptr<HashList> ret_hashes(new HashList());
+  for (EntrySet::iterator it = entries_set_.begin(), end = entries_set_.end();
+       it != end;) {
+    EntryMetadata& metadata = it->second;
+    base::Time entry_time = metadata.GetLastUsedTime();
+    if (initial_time <= entry_time && entry_time < extended_end_time) {
+      ret_hashes->push_back(it->first);
+      if (delete_entries) {
+        cache_size_ -= metadata.GetEntrySize();
+        entries_set_.erase(it++);
+        continue;
+      }
+    }
+    ++it;
+  }
+  return ret_hashes.Pass();
 }
 
 }  // namespace disk_cache

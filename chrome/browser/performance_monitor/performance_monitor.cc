@@ -14,7 +14,7 @@
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/threading/worker_pool.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/extensions/crx_installer.h"
@@ -618,23 +618,19 @@ void PerformanceMonitor::AddRendererClosedEvent(
       details.status == base::TERMINATION_STATUS_PROCESS_WAS_KILLED ?
       EVENT_RENDERER_KILLED : EVENT_RENDERER_CRASH;
 
-  content::RenderProcessHost::RenderWidgetHostsIterator iter =
-      host->GetRenderWidgetHostsIterator();
-
   // A RenderProcessHost may contain multiple render views - for each valid
   // render view, extract the url, and append it to the string, comma-separating
   // the entries.
   std::string url_list;
-  for (; !iter.IsAtEnd(); iter.Advance()) {
-    const content::RenderWidgetHost* widget = iter.GetCurrentValue();
-    DCHECK(widget);
-    if (!widget || !widget->IsRenderView())
+  content::RenderWidgetHost::List widgets =
+      content::RenderWidgetHost::GetRenderWidgetHosts();
+  for (size_t i = 0; i < widgets.size(); ++i) {
+    if (widgets[i]->GetProcess()->GetID() != host->GetID())
+      continue;
+    if (!widgets[i]->IsRenderView())
       continue;
 
-    content::RenderViewHost* view =
-        content::RenderViewHost::From(
-            const_cast<content::RenderWidgetHost*>(widget));
-
+    content::RenderViewHost* view = content::RenderViewHost::From(widgets[i]);
     std::string url;
     if (!MaybeGetURLFromRenderView(view, &url))
       continue;

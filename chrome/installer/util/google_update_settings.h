@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/strings/string16.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/version.h"
 #include "chrome/installer/util/util_constants.h"
 
@@ -30,6 +30,7 @@ class GoogleUpdateSettings {
     UPDATES_DISABLED    = 0,
     AUTOMATIC_UPDATES   = 1,
     MANUAL_UPDATES_ONLY = 2,
+    AUTO_UPDATES_ONLY   = 3,
   };
 
   // Defines product data that is tracked/used by Google Update.

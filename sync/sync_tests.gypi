@@ -241,7 +241,7 @@
           'engine/apply_control_data_updates_unittest.cc',
           'engine/apply_updates_and_resolve_conflicts_command_unittest.cc',
           'engine/backoff_delay_provider_unittest.cc',
-          'engine/download_updates_command_unittest.cc',
+          'engine/download_unittest.cc',
           'engine/model_changing_syncer_command_unittest.cc',
           'engine/process_commit_response_command_unittest.cc',
           'engine/process_updates_command_unittest.cc',
@@ -268,7 +268,6 @@
           'syncable/syncable_unittest.cc',
           'syncable/syncable_util_unittest.cc',
           'util/cryptographer_unittest.cc',
-          'util/data_encryption_win_unittest.cc',
           'util/data_type_histogram_unittest.cc',
           'util/get_session_name_unittest.cc',
           'util/nigori_unittest.cc',
@@ -327,9 +326,6 @@
       'direct_dependent_settings': {
         'include_dirs': [
           '..',
-        ],
-        'sources': [
-          'notifier/invalidator_factory_unittest.cc',
         ],
         'conditions': [
           ['OS != "android"', {

@@ -30,30 +30,28 @@ namespace internal {
 class CC_EXPORT RasterWorkerPoolTask
     : public base::RefCounted<RasterWorkerPoolTask> {
  public:
-  typedef std::vector<scoped_refptr<RasterWorkerPoolTask> > TaskVector;
+  typedef std::vector<scoped_refptr<WorkerPoolTask> > TaskVector;
 
   // Returns true if |device| was written to. False indicate that
   // the content of |device| is undefined and the resource doesn't
   // need to be initialized.
-  virtual bool RunOnThread(SkDevice* device, unsigned thread_index) = 0;
-  virtual void DispatchCompletionCallback() = 0;
+  virtual bool RunOnWorkerThread(SkDevice* device, unsigned thread_index) = 0;
+  virtual void CompleteOnOriginThread() = 0;
 
   void DidRun(bool was_canceled);
   bool HasFinishedRunning() const;
   bool WasCanceled() const;
+  void WillComplete();
   void DidComplete();
   bool HasCompleted() const;
 
   const Resource* resource() const { return resource_; }
-  const WorkerPoolTask::TaskVector& dependencies() const {
-    return dependencies_;
-  }
+  const TaskVector& dependencies() const { return dependencies_; }
 
  protected:
   friend class base::RefCounted<RasterWorkerPoolTask>;
 
-  RasterWorkerPoolTask(const Resource* resource,
-                       WorkerPoolTask::TaskVector* dependencies);
+  RasterWorkerPoolTask(const Resource* resource, TaskVector* dependencies);
   virtual ~RasterWorkerPoolTask();
 
  private:
@@ -61,7 +59,7 @@ class CC_EXPORT RasterWorkerPoolTask
   bool did_complete_;
   bool was_canceled_;
   const Resource* resource_;
-  WorkerPoolTask::TaskVector dependencies_;
+  TaskVector dependencies_;
 };
 
 }  // namespace internal
@@ -79,14 +77,16 @@ template <> struct hash<cc::internal::RasterWorkerPoolTask*> {
 
 namespace cc {
 
-// Low quality implies no lcd test;
-// high quality implies lcd text.
-// Note that the order of these matters, from "better" to "worse" in terms of
-// quality.
+// Low quality implies no lcd test; high quality implies lcd text.
+// Note that the order of these matters. It is organized in the order in which
+// we can promote tiles. That is, we always move from higher number enum to
+// lower number: low quality can be re-rastered as high quality with or without
+// LCD text; high quality LCD can only move to high quality no LCD mode. We
+// currently don't support moving from no LCD to LCD high quality.
 // TODO(vmpstr): Find a better place for this.
 enum RasterMode {
-  HIGH_QUALITY_RASTER_MODE = 0,
-  HIGH_QUALITY_NO_LCD_RASTER_MODE = 1,
+  HIGH_QUALITY_NO_LCD_RASTER_MODE = 0,
+  HIGH_QUALITY_RASTER_MODE = 1,
   LOW_QUALITY_RASTER_MODE = 2,
   NUM_RASTER_MODES = 3
 };
@@ -105,6 +105,8 @@ struct RasterTaskMetadata {
 class CC_EXPORT RasterWorkerPoolClient {
  public:
   virtual bool ShouldForceTasksRequiredForActivationToComplete() const = 0;
+  virtual void DidFinishedRunningTasks() = 0;
+  virtual void DidFinishedRunningTasksRequiredForActivation() = 0;
 
  protected:
   virtual ~RasterWorkerPoolClient() {}
@@ -128,7 +130,7 @@ class CC_EXPORT RasterWorkerPool : public WorkerPool {
       friend class RasterWorkerPool;
       friend class RasterWorkerPoolTest;
 
-      typedef internal::WorkerPoolTask::TaskVector TaskVector;
+      typedef internal::RasterWorkerPoolTask::TaskVector TaskVector;
       TaskVector tasks_;
     };
 
@@ -157,8 +159,6 @@ class CC_EXPORT RasterWorkerPool : public WorkerPool {
 
     class CC_EXPORT Queue {
      public:
-      typedef internal::RasterWorkerPoolTask::TaskVector TaskVector;
-
       Queue();
       ~Queue();
 
@@ -167,6 +167,8 @@ class CC_EXPORT RasterWorkerPool : public WorkerPool {
      private:
       friend class RasterWorkerPool;
 
+      typedef std::vector<scoped_refptr<internal::RasterWorkerPoolTask> >
+          TaskVector;
       TaskVector tasks_;
       typedef base::hash_set<internal::RasterWorkerPoolTask*> TaskSet;
       TaskSet tasks_required_for_activation_;
@@ -182,7 +184,6 @@ class CC_EXPORT RasterWorkerPool : public WorkerPool {
     void Reset();
 
    protected:
-    friend class PixelBufferRasterWorkerPool;
     friend class RasterWorkerPool;
     friend class RasterWorkerPoolTest;
 
@@ -206,18 +207,16 @@ class CC_EXPORT RasterWorkerPool : public WorkerPool {
   // even if they later get canceled by another call to ScheduleTasks().
   virtual void ScheduleTasks(RasterTask::Queue* queue) = 0;
 
-  // TODO(vmpstr): Try to elimiate some variables.
   static RasterTask CreateRasterTask(
       const Resource* resource,
       PicturePileImpl* picture_pile,
       gfx::Rect content_rect,
       float contents_scale,
       RasterMode raster_mode,
-      bool use_color_estimator,
       const RasterTaskMetadata& metadata,
       RenderingStatsInstrumentation* rendering_stats,
       const RasterTask::Reply& reply,
-      Task::Set& dependencies);
+      Task::Set* dependencies);
 
   static Task CreateImageDecodeTask(
       skia::LazyPixelRef* pixel_ref,
@@ -226,28 +225,19 @@ class CC_EXPORT RasterWorkerPool : public WorkerPool {
       const Task::Reply& reply);
 
  protected:
-  class RootTask {
-   public:
-    RootTask();
-    explicit RootTask(internal::WorkerPoolTask::TaskVector* dependencies);
-    RootTask(const base::Closure& callback,
-             internal::WorkerPoolTask::TaskVector* dependencies);
-    ~RootTask();
-
-   protected:
-    friend class RasterWorkerPool;
-
-    scoped_refptr<internal::WorkerPoolTask> internal_;
-  };
-
+  typedef std::vector<scoped_refptr<internal::WorkerPoolTask> > TaskVector;
+  typedef std::vector<scoped_refptr<internal::RasterWorkerPoolTask> >
+      RasterTaskVector;
   typedef internal::RasterWorkerPoolTask* TaskMapKey;
   typedef base::hash_map<TaskMapKey,
                          scoped_refptr<internal::WorkerPoolTask> > TaskMap;
 
   RasterWorkerPool(ResourceProvider* resource_provider, size_t num_threads);
 
+  virtual void OnRasterTasksFinished() = 0;
+  virtual void OnRasterTasksRequiredForActivationFinished() = 0;
+
   void SetRasterTasks(RasterTask::Queue* queue);
-  void ScheduleRasterTasks(const RootTask& root);
   bool IsRasterTaskRequiredForActivation(
       internal::RasterWorkerPoolTask* task) const;
 
@@ -256,15 +246,48 @@ class CC_EXPORT RasterWorkerPool : public WorkerPool {
   const RasterTask::Queue::TaskVector& raster_tasks() const {
     return raster_tasks_;
   }
+  void set_raster_finished_task(
+      scoped_refptr<internal::WorkerPoolTask> raster_finished_task) {
+    raster_finished_task_ = raster_finished_task;
+  }
+  void set_raster_required_for_activation_finished_task(
+      scoped_refptr<internal::WorkerPoolTask>
+          raster_required_for_activation_finished_task) {
+    raster_required_for_activation_finished_task_ =
+        raster_required_for_activation_finished_task;
+  }
+
+  scoped_refptr<internal::WorkerPoolTask> CreateRasterFinishedTask();
+  scoped_refptr<internal::WorkerPoolTask>
+      CreateRasterRequiredForActivationFinishedTask();
+
+  scoped_ptr<base::Value> ScheduledStateAsValue() const;
+
+  static internal::GraphNode* CreateGraphNodeForTask(
+      internal::WorkerPoolTask* task,
+      unsigned priority,
+      TaskGraph* graph);
+
+  static internal::GraphNode* CreateGraphNodeForRasterTask(
+      internal::WorkerPoolTask* raster_task,
+      const TaskVector& decode_tasks,
+      unsigned priority,
+      TaskGraph* graph);
 
  private:
+  void OnRasterFinished(const internal::WorkerPoolTask* source);
+  void OnRasterRequiredForActivationFinished(
+      const internal::WorkerPoolTask* source);
+
   RasterWorkerPoolClient* client_;
   ResourceProvider* resource_provider_;
   RasterTask::Queue::TaskVector raster_tasks_;
   RasterTask::Queue::TaskSet raster_tasks_required_for_activation_;
 
-  // The root task that is a dependent of all other tasks.
-  scoped_refptr<internal::WorkerPoolTask> root_;
+  base::WeakPtrFactory<RasterWorkerPool> weak_ptr_factory_;
+  scoped_refptr<internal::WorkerPoolTask> raster_finished_task_;
+  scoped_refptr<internal::WorkerPoolTask>
+      raster_required_for_activation_finished_task_;
 };
 
 }  // namespace cc

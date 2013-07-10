@@ -23,8 +23,7 @@ HeadsUpDisplayLayer::HeadsUpDisplayLayer() : Layer() {
 HeadsUpDisplayLayer::~HeadsUpDisplayLayer() {}
 
 void HeadsUpDisplayLayer::Update(ResourceUpdateQueue*,
-                                 const OcclusionTracker*,
-                                 RenderingStats*) {
+                                 const OcclusionTracker*) {
   const LayerTreeDebugState& debug_state = layer_tree_host()->debug_state();
   int max_texture_size =
       layer_tree_host()->GetRendererCapabilities().max_texture_size;
@@ -40,7 +39,7 @@ void HeadsUpDisplayLayer::Update(ResourceUpdateQueue*,
   gfx::Transform matrix;
   matrix.MakeIdentity();
 
-  if (debug_state.show_platform_layer_tree || debug_state.ShowHudRects()) {
+  if (debug_state.ShowHudRects()) {
     int width =
         std::min(max_texture_size, device_viewport_in_layout_pixels_width);
     int height =

@@ -15,7 +15,8 @@
 #include "base/message_loop.h"
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
+#include "chrome/browser/invalidation/invalidation_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/token_service_factory.h"
@@ -41,7 +42,6 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_browser_thread.h"
 #include "google_apis/gaia/gaia_constants.h"
-#include "googleurl/src/gurl.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/change_record.h"
 #include "sync/internal_api/public/read_node.h"
@@ -54,6 +54,7 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/ui_base_types.h"
+#include "url/gurl.h"
 
 using browser_sync::SessionChangeProcessor;
 using browser_sync::SessionDataTypeController;
@@ -205,6 +206,8 @@ class ProfileSyncServiceSessionTest
     // Don't want the profile to create a real ProfileSyncService.
     ProfileSyncServiceFactory::GetInstance()->SetTestingFactory(profile,
                                                                 NULL);
+    invalidation::InvalidationServiceFactory::GetInstance()->
+        SetBuildOnlyFakeInvalidatorsForTest(true);
     return profile;
   }
 

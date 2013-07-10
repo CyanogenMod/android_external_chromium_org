@@ -13,22 +13,22 @@
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_html_reader.h"
-#include "chrome/browser/bookmarks/imported_bookmark_entry.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/favicon/favicon_util.h"
-#include "chrome/browser/favicon/imported_favicon_usage.h"
+#include "chrome/browser/importer/bookmark_html_reader.h"
 #include "chrome/browser/importer/firefox_importer_utils.h"
 #include "chrome/browser/importer/importer_bridge.h"
 #include "chrome/browser/importer/nss_decryptor.h"
-#include "chrome/browser/search_engines/template_url.h"
+#include "chrome/common/importer/imported_bookmark_entry.h"
+#include "chrome/common/importer/imported_favicon_usage.h"
+#include "chrome/common/importer/importer_url_row.h"
 #include "chrome/common/time_format.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/password_form.h"
-#include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "sql/connection.h"
 #include "sql/statement.h"
+#include "url/gurl.h"
 
 using content::BrowserThread;
 
@@ -42,24 +42,6 @@ enum BookmarkItemType {
   TYPE_SEPARATOR = 3,
   TYPE_DYNAMIC_CONTAINER = 4
 };
-
-// Creates a TemplateURL with the |keyword| and |url|. |title| may be empty.
-// This function transfers ownership of the created TemplateURL to the caller.
-TemplateURL* CreateTemplateURL(const string16& title,
-                               const string16& keyword,
-                               const GURL& url) {
-  // Skip if the keyword or url is invalid.
-  if (keyword.empty() || !url.is_valid())
-    return NULL;
-
-  TemplateURLData data;
-  // We set short name by using the title if it exists.
-  // Otherwise, we use the shortcut.
-  data.short_name = title.empty() ? keyword : title;
-  data.SetKeyword(keyword);
-  data.SetURL(TemplateURLRef::DisplayURLToURLRef(UTF8ToUTF16(url.spec())));
-  return new TemplateURL(NULL, data);
-}
 
 // Loads the default bookmarks in the Firefox installed at |app_path|,
 // and stores their locations in |urls|.
@@ -95,10 +77,6 @@ struct Firefox3Importer::BookmarkItem {
 };
 
 Firefox3Importer::Firefox3Importer() {
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  locale_ = g_browser_process->GetApplicationLocale();
-#endif
 }
 
 Firefox3Importer::~Firefox3Importer() {
@@ -108,12 +86,13 @@ void Firefox3Importer::StartImport(
     const importer::SourceProfile& source_profile,
     uint16 items,
     ImporterBridge* bridge) {
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-#endif
   bridge_ = bridge;
   source_path_ = source_profile.source_path;
   app_path_ = source_profile.app_path;
+
+#if defined(OS_POSIX)
+  locale_ = source_profile.locale;
+#endif
 
   // The order here is important!
   bridge_->NotifyStarted();
@@ -169,7 +148,7 @@ void Firefox3Importer::ImportHistory() {
 
   sql::Statement s(db.GetUniqueStatement(query));
 
-  history::URLRows rows;
+  std::vector<ImporterURLRow> rows;
   while (s.Step() && !cancelled()) {
     GURL url(s.ColumnString(0));
 
@@ -177,12 +156,12 @@ void Firefox3Importer::ImportHistory() {
     if (!CanImportURL(url))
       continue;
 
-    history::URLRow row(url);
-    row.set_title(s.ColumnString16(1));
-    row.set_visit_count(s.ColumnInt(2));
-    row.set_hidden(s.ColumnInt(3) == 1);
-    row.set_typed_count(s.ColumnInt(4));
-    row.set_last_visit(base::Time::FromTimeT(s.ColumnInt64(5)/1000000));
+    ImporterURLRow row(url);
+    row.title = s.ColumnString16(1);
+    row.visit_count = s.ColumnInt(2);
+    row.hidden = s.ColumnInt(3) == 1;
+    row.typed_count = s.ColumnInt(4);
+    row.last_visit = base::Time::FromTimeT(s.ColumnInt64(5)/1000000);
 
     rows.push_back(row);
   }
@@ -223,7 +202,7 @@ void Firefox3Importer::ImportBookmarks() {
     GetWholeBookmarkFolder(&db, &list, i, NULL);
 
   std::vector<ImportedBookmarkEntry> bookmarks;
-  std::vector<TemplateURL*> template_urls;
+  std::vector<importer::URLKeywordInfo> url_keywords;
   FaviconMap favicon_map;
 
   // TODO(jcampan): http://b/issue?id=1196285 we do not support POST based
@@ -311,11 +290,14 @@ void Firefox3Importer::ImportBookmarks() {
       if (item->favicon)
         favicon_map[item->favicon].insert(item->url);
 
-      // This bookmark has a keyword, we import it to our TemplateURL model.
-      TemplateURL* t_url = CreateTemplateURL(
-          item->title, UTF8ToUTF16(item->keyword), item->url);
-      if (t_url)
-        template_urls.push_back(t_url);
+      // This bookmark has a keyword, we should import it.
+      if (!item->keyword.empty() && item->url.is_valid()) {
+        importer::URLKeywordInfo url_keyword_info;
+        url_keyword_info.url = item->url;
+        url_keyword_info.keyword.assign(UTF8ToUTF16(item->keyword));
+        url_keyword_info.display_name = item->title;
+        url_keywords.push_back(url_keyword_info);
+      }
     }
   }
 
@@ -327,10 +309,9 @@ void Firefox3Importer::ImportBookmarks() {
         bridge_->GetLocalizedString(IDS_BOOKMARK_GROUP_FROM_FIREFOX);
     bridge_->AddBookmarks(bookmarks, first_folder_name);
   }
-  if (!template_urls.empty() && !cancelled())
-    bridge_->SetKeywords(template_urls, false);
-  else
-    STLDeleteElements(&template_urls);
+  if (!url_keywords.empty() && !cancelled()) {
+    bridge_->SetKeywords(url_keywords, false);
+  }
   if (!favicon_map.empty() && !cancelled()) {
     std::vector<ImportedFaviconUsage> favicons;
     LoadFavicons(&db, favicon_map, &favicons);
@@ -371,13 +352,10 @@ void Firefox3Importer::ImportPasswords() {
 }
 
 void Firefox3Importer::ImportSearchEngines() {
-  std::vector<base::FilePath> files;
-  GetSearchEnginesXMLFiles(&files);
+  std::vector<std::string> search_engine_data;
+  GetSearchEnginesXMLData(&search_engine_data);
 
-  std::vector<TemplateURL*> search_engines;
-  ParseSearchEnginesFromXMLFiles(files, &search_engines);
-
-  bridge_->SetKeywords(search_engines, true);
+  bridge_->SetFirefoxSearchEnginesXMLData(search_engine_data);
 }
 
 void Firefox3Importer::ImportHomepage() {
@@ -387,8 +365,8 @@ void Firefox3Importer::ImportHomepage() {
   }
 }
 
-void Firefox3Importer::GetSearchEnginesXMLFiles(
-    std::vector<base::FilePath>* files) {
+void Firefox3Importer::GetSearchEnginesXMLData(
+    std::vector<std::string>* search_engine_data) {
   base::FilePath file = source_path_.AppendASCII("search.sqlite");
   if (!file_util::PathExists(file))
     return;
@@ -435,16 +413,19 @@ void Firefox3Importer::GetSearchEnginesXMLFiles(
         // Looks like absolute path to the file.
         file = base::FilePath::FromUTF8Unsafe(engine);
       }
-      files->push_back(file);
+      std::string file_data;
+      file_util::ReadFileToString(file, &file_data);
+      search_engine_data->push_back(file_data);
     } while (s.Step() && !cancelled());
   }
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(OS_POSIX)
   // Ubuntu-flavored Firefox3 supports locale-specific search engines via
   // locale-named subdirectories. They fall back to en-US.
   // See http://crbug.com/53899
   // TODO(jshin): we need to make sure our locale code matches that of
   // Firefox.
+  DCHECK(!locale_.empty());
   base::FilePath locale_app_path = app_path.AppendASCII(locale_);
   base::FilePath default_locale_app_path = app_path.AppendASCII("en-US");
   if (file_util::DirectoryExists(locale_app_path))
@@ -457,7 +438,9 @@ void Firefox3Importer::GetSearchEnginesXMLFiles(
   base::FileEnumerator engines(app_path, false, base::FileEnumerator::FILES);
   for (base::FilePath engine_path = engines.Next();
        !engine_path.value().empty(); engine_path = engines.Next()) {
-    files->push_back(engine_path);
+    std::string file_data;
+    file_util::ReadFileToString(file, &file_data);
+    search_engine_data->push_back(file_data);
   }
 }
 

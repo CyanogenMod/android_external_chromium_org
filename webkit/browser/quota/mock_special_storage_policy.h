@@ -8,7 +8,7 @@
 #include <set>
 #include <string>
 
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 #include "webkit/browser/quota/special_storage_policy.h"
 
 namespace quota {
@@ -51,6 +51,10 @@ class MockSpecialStoragePolicy : public quota::SpecialStoragePolicy {
 
   void AddIsolated(const GURL& origin) {
     isolated_.insert(origin);
+  }
+
+  void RemoveIsolated(const GURL& origin) {
+    isolated_.erase(origin);
   }
 
   void SetAllUnlimited(bool all_unlimited) {

@@ -6,6 +6,7 @@
 
 #include "ppapi/c/pp_size.h"
 #include "ppapi/shared_impl/ppb_audio_config_shared.h"
+#include "ppapi/shared_impl/ppb_image_data_shared.h"
 #include "ppapi/shared_impl/ppb_input_event_shared.h"
 #include "ppapi/shared_impl/ppb_resource_array_shared.h"
 #include "ppapi/shared_impl/var.h"
@@ -136,11 +137,21 @@ PP_Resource ResourceCreationImpl::CreateHostResolverPrivate(
 
 PP_Resource ResourceCreationImpl::CreateImageData(
     PP_Instance instance,
-    ::ppapi::PPB_ImageData_Shared::ImageDataType type,
     PP_ImageDataFormat format,
     const PP_Size* size,
     PP_Bool init_to_zero) {
-  return PPB_ImageData_Impl::Create(instance, type,
+  return PPB_ImageData_Impl::Create(instance,
+                                    ::ppapi::PPB_ImageData_Shared::PLATFORM,
+                                    format, *size, init_to_zero);
+}
+
+PP_Resource ResourceCreationImpl::CreateImageDataSimple(
+    PP_Instance instance,
+    PP_ImageDataFormat format,
+    const PP_Size* size,
+    PP_Bool init_to_zero) {
+  return PPB_ImageData_Impl::Create(instance,
+                                    ::ppapi::PPB_ImageData_Shared::SIMPLE,
                                     format, *size, init_to_zero);
 }
 
@@ -193,13 +204,13 @@ PP_Resource ResourceCreationImpl::CreateMouseInputEvent(
 
 PP_Resource ResourceCreationImpl::CreateNetAddressFromIPv4Address(
     PP_Instance instance,
-    const PP_NetAddress_IPv4_Dev* ipv4_addr) {
+    const PP_NetAddress_IPv4* ipv4_addr) {
   return 0;  // Not supported in-process.
 }
 
 PP_Resource ResourceCreationImpl::CreateNetAddressFromIPv6Address(
     PP_Instance instance,
-    const PP_NetAddress_IPv6_Dev* ipv6_addr) {
+    const PP_NetAddress_IPv6* ipv6_addr) {
   return 0;  // Not supported in-process.
 }
 

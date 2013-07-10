@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "cc/base/thread.h"
 #include "cc/layers/texture_layer_client.h"
 #include "cc/layers/texture_layer_impl.h"
 #include "cc/trees/layer_tree_host.h"
@@ -168,22 +167,18 @@ bool TextureLayer::DrawsContent() const {
 }
 
 void TextureLayer::Update(ResourceUpdateQueue* queue,
-                          const OcclusionTracker* occlusion,
-                          RenderingStats* stats) {
+                          const OcclusionTracker* occlusion) {
   if (client_) {
     if (uses_mailbox_) {
       TextureMailbox mailbox;
-      if (client_->PrepareTextureMailbox(&mailbox)) {
-        if (mailbox.IsTexture())
-          DCHECK(client_->Context3d());
+      if (client_->PrepareTextureMailbox(&mailbox))
         SetTextureMailbox(mailbox);
-      }
     } else {
       DCHECK(client_->Context3d());
       texture_id_ = client_->PrepareTexture(queue);
+      context_lost_ = client_->Context3d() &&
+          client_->Context3d()->getGraphicsResetStatusARB() != GL_NO_ERROR;
     }
-    context_lost_ = client_->Context3d() &&
-        client_->Context3d()->getGraphicsResetStatusARB() != GL_NO_ERROR;
   }
 
   needs_display_ = false;

@@ -5,8 +5,8 @@
 #include "webkit/common/fileapi/file_system_util.h"
 
 #include "base/files/file_path.h"
-#include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace fileapi {
 namespace {
@@ -119,6 +119,20 @@ TEST_F(FileSystemUtilTest, IsAbsolutePath) {
   EXPECT_TRUE(VirtualPath::IsAbsolute(FILE_PATH_LITERAL("/foo/bar")));
   EXPECT_FALSE(VirtualPath::IsAbsolute(base::FilePath::StringType()));
   EXPECT_FALSE(VirtualPath::IsAbsolute(FILE_PATH_LITERAL("foo/bar")));
+}
+
+TEST_F(FileSystemUtilTest, IsRootPath) {
+  EXPECT_TRUE(VirtualPath::IsRootPath(base::FilePath(FILE_PATH_LITERAL(""))));
+  EXPECT_TRUE(VirtualPath::IsRootPath(base::FilePath()));
+  EXPECT_TRUE(VirtualPath::IsRootPath(base::FilePath(FILE_PATH_LITERAL("/"))));
+  EXPECT_TRUE(VirtualPath::IsRootPath(base::FilePath(FILE_PATH_LITERAL("//"))));
+  EXPECT_FALSE(VirtualPath::IsRootPath(
+      base::FilePath(FILE_PATH_LITERAL("c:/"))));
+#if defined(FILE_PATH_USES_WIN_SEPARATORS)
+  EXPECT_TRUE(VirtualPath::IsRootPath(base::FilePath(FILE_PATH_LITERAL("\\"))));
+  EXPECT_FALSE(VirtualPath::IsRootPath(
+      base::FilePath(FILE_PATH_LITERAL("c:\\"))));
+#endif
 }
 
 TEST_F(FileSystemUtilTest, VirtualPathGetComponents) {

@@ -148,6 +148,13 @@ cr.define('options', function() {
         chrome.send('themesReset');
       };
 
+      if (loadTimeData.getBoolean('profileIsManaged')) {
+        if ($('themes-GTK-button'))
+          $('themes-GTK-button').disabled = true;
+        $('themes-reset').disabled = true;
+        $('themes-gallery').disabled = true;
+      }
+
       // Device section (ChromeOS only).
       if (cr.isChromeOS) {
         $('keyboard-settings-button').onclick = function(evt) {
@@ -231,9 +238,9 @@ cr.define('options', function() {
           chrome.send('coreOptionsUserMetricsAction', ['Import_ShowDlg']);
         };
 
-        if ($('themes-GTK-button')) {
-          $('themes-GTK-button').onclick = function(event) {
-            chrome.send('themesSetGTK');
+        if ($('themes-native-button')) {
+          $('themes-native-button').onclick = function(event) {
+            chrome.send('themesSetNative');
           };
         }
       }
@@ -378,6 +385,9 @@ cr.define('options', function() {
         $('autoOpenFileTypesResetToDefault').onclick = function(event) {
           chrome.send('autoOpenFileTypesAction');
         };
+      } else {
+        $('disable-drive-row').hidden =
+            UIAccountTweaks.loggedInAsLocallyManagedUser();
       }
 
       // HTTPS/SSL section.
@@ -1072,7 +1082,7 @@ cr.define('options', function() {
     },
 
     /**
-    * Reports a remote error (e.g., a network error during limited-user
+    * Reports a remote error (e.g., a network error during managed-user
     * registration) to the "create" overlay during profile creation.
     * @private
     */
@@ -1110,9 +1120,10 @@ cr.define('options', function() {
              'There should always be a current profile, but none found.');
     },
 
-    setGtkThemeButtonEnabled_: function(enabled) {
-      if (!cr.isChromeOS && navigator.platform.match(/linux|BSD/i))
-        $('themes-GTK-button').disabled = !enabled;
+    setNativeThemeButtonEnabled_: function(enabled) {
+      var button = $('themes-native-button');
+      if (button)
+        button.disabled = !enabled;
     },
 
     setThemesResetButtonEnabled_: function(enabled) {
@@ -1461,7 +1472,7 @@ cr.define('options', function() {
     'setAutoOpenFileTypesDisplayed',
     'setBluetoothState',
     'setFontSize',
-    'setGtkThemeButtonEnabled',
+    'setNativeThemeButtonEnabled',
     'setHighContrastCheckboxState',
     'setMetricsReportingCheckboxState',
     'setMetricsReportingSettingVisibility',

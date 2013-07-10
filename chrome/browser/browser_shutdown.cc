@@ -20,7 +20,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "chrome/browser/about_flags.h"
 #include "chrome/browser/browser_process.h"
@@ -267,7 +267,7 @@ void ReadLastShutdownFile(ShutdownType type,
   int64 shutdown_ms = 0;
   if (file_util::ReadFileToString(shutdown_ms_file, &shutdown_ms_str))
     base::StringToInt64(shutdown_ms_str, &shutdown_ms);
-  file_util::Delete(shutdown_ms_file, false);
+  base::Delete(shutdown_ms_file, false);
 
   if (type == NOT_VALID || shutdown_ms == 0 || num_procs == 0)
     return;

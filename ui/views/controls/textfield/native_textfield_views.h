@@ -7,7 +7,7 @@
 
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "ui/base/events/event_constants.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/base/models/simple_menu_model.h"
@@ -116,7 +116,6 @@ class VIEWS_EXPORT NativeTextfieldViews : public View,
   virtual void SelectAll(bool reversed) OVERRIDE;
   virtual void ClearSelection() OVERRIDE;
   virtual void UpdateBorder() OVERRIDE;
-  virtual void UpdateBorderColor() OVERRIDE;
   virtual void UpdateTextColor() OVERRIDE;
   virtual void UpdateBackgroundColor() OVERRIDE;
   virtual void UpdateReadOnly() OVERRIDE;

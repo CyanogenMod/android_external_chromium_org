@@ -17,7 +17,6 @@
 #include "cc/animation/animation_registrar.h"
 #include "cc/animation/layer_animation_controller.h"
 #include "cc/base/math_util.h"
-#include "cc/base/thread.h"
 #include "cc/debug/overdraw_metrics.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
 #include "cc/input/top_controls_manager.h"
@@ -48,7 +47,6 @@ RendererCapabilities::RendererCapabilities()
     : best_texture_format(0),
       using_partial_swap(false),
       using_set_visibility(false),
-      using_gpu_memory_manager(false),
       using_egl_image(false),
       allow_partial_texture_updates(false),
       using_offscreen_context3d(false),
@@ -65,10 +63,10 @@ bool LayerTreeHost::AnyLayerTreeHostInstanceExists() {
 scoped_ptr<LayerTreeHost> LayerTreeHost::Create(
     LayerTreeHostClient* client,
     const LayerTreeSettings& settings,
-    scoped_ptr<Thread> impl_thread) {
+    scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
   scoped_ptr<LayerTreeHost> layer_tree_host(new LayerTreeHost(client,
                                                               settings));
-  if (!layer_tree_host->Initialize(impl_thread.Pass()))
+  if (!layer_tree_host->Initialize(impl_task_runner))
     return scoped_ptr<LayerTreeHost>();
   return layer_tree_host.Pass();
 }
@@ -106,9 +104,10 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
       debug_state_.RecordRenderingStats());
 }
 
-bool LayerTreeHost::Initialize(scoped_ptr<Thread> impl_thread) {
-  if (impl_thread)
-    return InitializeProxy(ThreadProxy::Create(this, impl_thread.Pass()));
+bool LayerTreeHost::Initialize(
+    scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
+  if (impl_task_runner.get())
+    return InitializeProxy(ThreadProxy::Create(this, impl_task_runner));
   else
     return InitializeProxy(SingleThreadProxy::Create(this));
 }
@@ -485,7 +484,7 @@ void LayerTreeHost::SetNeedsRedraw() {
 
 void LayerTreeHost::SetNeedsRedrawRect(gfx::Rect damage_rect) {
   proxy_->SetNeedsRedraw(damage_rect);
-  if (!proxy_->ImplThread())
+  if (!proxy_->HasImplThread())
     client_->ScheduleComposite();
 }
 
@@ -556,7 +555,7 @@ void LayerTreeHost::SetDebugState(const LayerTreeDebugState& debug_state) {
   rendering_stats_instrumentation_->set_record_rendering_stats(
       debug_state_.RecordRenderingStats());
 
-  SetNeedsCommit();
+  SetNeedsRedraw();
 }
 
 void LayerTreeHost::SetViewportSize(gfx::Size device_viewport_size) {
@@ -671,39 +670,15 @@ static Layer* FindFirstScrollableLayer(Layer* layer) {
   return NULL;
 }
 
-class CalculateLCDTextMetricsFunctor {
- public:
-  void operator()(Layer* layer) {
-    LayerTreeHost* layer_tree_host = layer->layer_tree_host();
-    if (!layer_tree_host)
-      return;
+void LayerTreeHost::CalculateLCDTextMetricsCallback(Layer* layer) {
+  if (!layer->SupportsLCDText())
+    return;
 
-    if (!layer->SupportsLCDText())
-      return;
-
-    bool update_total_num_cc_layers_can_use_lcd_text = false;
-    bool update_total_num_cc_layers_will_use_lcd_text = false;
-    if (layer->draw_properties().can_use_lcd_text) {
-      update_total_num_cc_layers_can_use_lcd_text = true;
-      if (layer->contents_opaque())
-        update_total_num_cc_layers_will_use_lcd_text = true;
-    }
-
-    layer_tree_host->IncrementLCDTextMetrics(
-        update_total_num_cc_layers_can_use_lcd_text,
-        update_total_num_cc_layers_will_use_lcd_text);
-  }
-};
-
-void LayerTreeHost::IncrementLCDTextMetrics(
-    bool update_total_num_cc_layers_can_use_lcd_text,
-    bool update_total_num_cc_layers_will_use_lcd_text) {
   lcd_text_metrics_.total_num_cc_layers++;
-  if (update_total_num_cc_layers_can_use_lcd_text)
+  if (layer->draw_properties().can_use_lcd_text) {
     lcd_text_metrics_.total_num_cc_layers_can_use_lcd_text++;
-  if (update_total_num_cc_layers_will_use_lcd_text) {
-    DCHECK(update_total_num_cc_layers_can_use_lcd_text);
-    lcd_text_metrics_.total_num_cc_layers_will_use_lcd_text++;
+    if (layer->contents_opaque())
+      lcd_text_metrics_.total_num_cc_layers_will_use_lcd_text++;
   }
 }
 
@@ -733,8 +708,10 @@ void LayerTreeHost::UpdateLayers(Layer* root_layer,
 
     if (total_frames_used_for_lcd_text_metrics_ <=
         kTotalFramesToUseForLCDTextMetrics) {
-      LayerTreeHostCommon::CallFunctionForSubtree<
-          CalculateLCDTextMetricsFunctor, Layer>(root_layer);
+      LayerTreeHostCommon::CallFunctionForSubtree(
+          root_layer,
+          base::Bind(&LayerTreeHost::CalculateLCDTextMetricsCallback,
+                     base::Unretained(this)));
       total_frames_used_for_lcd_text_metrics_++;
     }
 
@@ -777,19 +754,17 @@ void LayerTreeHost::TriggerPrepaint() {
   SetNeedsCommit();
 }
 
-class LayerTreeHostReduceMemoryFunctor {
- public:
-  void operator()(Layer* layer) {
-    layer->ReduceMemoryUsage();
-  }
-};
+static void LayerTreeHostReduceMemoryCallback(Layer* layer) {
+  layer->ReduceMemoryUsage();
+}
 
 void LayerTreeHost::ReduceMemoryUsage() {
   if (!root_layer())
     return;
 
-  LayerTreeHostCommon::CallFunctionForSubtree<
-      LayerTreeHostReduceMemoryFunctor, Layer>(root_layer());
+  LayerTreeHostCommon::CallFunctionForSubtree(
+      root_layer(),
+      base::Bind(&LayerTreeHostReduceMemoryCallback));
 }
 
 void LayerTreeHost::SetPrioritiesForSurfaces(size_t surface_memory_bytes) {
@@ -866,7 +841,7 @@ size_t LayerTreeHost::CalculateMemoryForRenderSurfaces(
                                   GL_RGBA);
     contents_texture_bytes += bytes;
 
-    if (render_surface_layer->background_filters().isEmpty())
+    if (render_surface_layer->background_filters().IsEmpty())
       continue;
 
     if (bytes > max_background_texture_bytes)
@@ -880,8 +855,7 @@ size_t LayerTreeHost::CalculateMemoryForRenderSurfaces(
 }
 
 bool LayerTreeHost::PaintMasksForRenderSurface(Layer* render_surface_layer,
-                                               ResourceUpdateQueue* queue,
-                                               RenderingStats* stats) {
+                                               ResourceUpdateQueue* queue) {
   // Note: Masks and replicas only exist for layers that own render surfaces. If
   // we reach this point in code, we already know that at least something will
   // be drawn into this render surface, so the mask and replica should be
@@ -890,7 +864,7 @@ bool LayerTreeHost::PaintMasksForRenderSurface(Layer* render_surface_layer,
   bool need_more_updates = false;
   Layer* mask_layer = render_surface_layer->mask_layer();
   if (mask_layer) {
-    mask_layer->Update(queue, NULL, stats);
+    mask_layer->Update(queue, NULL);
     need_more_updates |= mask_layer->NeedMoreUpdates();
   }
 
@@ -898,7 +872,7 @@ bool LayerTreeHost::PaintMasksForRenderSurface(Layer* render_surface_layer,
       render_surface_layer->replica_layer() ?
       render_surface_layer->replica_layer()->mask_layer() : NULL;
   if (replica_mask_layer) {
-    replica_mask_layer->Update(queue, NULL, stats);
+    replica_mask_layer->Update(queue, NULL);
     need_more_updates |= replica_mask_layer->NeedMoreUpdates();
   }
   return need_more_updates;
@@ -926,11 +900,6 @@ bool LayerTreeHost::PaintLayerContents(
   PrioritizeTextures(render_surface_layer_list,
                      occlusion_tracker.overdraw_metrics());
 
-  // TODO(egraether): Use RenderingStatsInstrumentation in Layer::update()
-  RenderingStats stats;
-  RenderingStats* stats_ptr =
-      debug_state_.RecordRenderingStats() ? &stats : NULL;
-
   in_paint_layer_contents_ = true;
 
   LayerIteratorType end = LayerIteratorType::End(&render_surface_layer_list);
@@ -944,10 +913,10 @@ bool LayerTreeHost::PaintLayerContents(
     if (it.represents_target_render_surface()) {
       DCHECK(it->render_surface()->draw_opacity() ||
              it->render_surface()->draw_opacity_is_animating());
-      need_more_updates |= PaintMasksForRenderSurface(*it, queue, stats_ptr);
+      need_more_updates |= PaintMasksForRenderSurface(*it, queue);
     } else if (it.represents_itself()) {
       DCHECK(!it->paint_properties().bounds.IsEmpty());
-      it->Update(queue, &occlusion_tracker, stats_ptr);
+      it->Update(queue, &occlusion_tracker);
       need_more_updates |= it->NeedMoreUpdates();
     }
 
@@ -955,8 +924,6 @@ bool LayerTreeHost::PaintLayerContents(
   }
 
   in_paint_layer_contents_ = false;
-
-  rendering_stats_instrumentation_->AddStats(stats);
 
   occlusion_tracker.overdraw_metrics()->RecordMetrics(this);
 
@@ -997,7 +964,7 @@ void LayerTreeHost::StartRateLimiter(WebKit::WebGraphicsContext3D* context3d) {
     it->second->Start();
   } else {
     scoped_refptr<RateLimiter> rate_limiter =
-        RateLimiter::Create(context3d, this, proxy_->MainThread());
+        RateLimiter::Create(context3d, this, proxy_->MainThreadTaskRunner());
     rate_limiters_[context3d] = rate_limiter;
     rate_limiter->Start();
   }
@@ -1041,7 +1008,8 @@ void LayerTreeHost::UpdateTopControlsState(TopControlsState constraints,
     return;
 
   // Top controls are only used in threaded mode.
-  proxy_->ImplThread()->PostTask(
+  proxy_->ImplThreadTaskRunner()->PostTask(
+      FROM_HERE,
       base::Bind(&TopControlsManager::UpdateTopControlsState,
                  top_controls_manager_weak_ptr_,
                  constraints,

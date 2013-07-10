@@ -13,7 +13,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
 #include "base/prefs/pref_service.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/extensions/file_manager/zip_file_creator.h"
@@ -782,18 +782,13 @@ class ValidatePathNameLengthFunction : public AsyncExtensionFunction {
   virtual bool RunImpl() OVERRIDE;
 };
 
-// Implements the chrome.fileBrowserPrivate.newWindow method.
-class OpenNewWindowFunction : public AsyncExtensionFunction {
+class ZoomFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION("fileBrowserPrivate.openNewWindow",
-                             FILEBROWSERPRIVATE_OPENNEWWINDOW)
-
-  OpenNewWindowFunction();
+  DECLARE_EXTENSION_FUNCTION("fileBrowserPrivate.zoom",
+                             FILEBROWSERPRIVATE_ZOOM);
 
  protected:
-  virtual ~OpenNewWindowFunction();
-
-  // AsyncExtensionFunction overrides.
+  virtual ~ZoomFunction() {}
   virtual bool RunImpl() OVERRIDE;
 };
 

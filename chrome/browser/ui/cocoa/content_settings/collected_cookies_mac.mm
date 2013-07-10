@@ -82,7 +82,7 @@ CollectedCookiesMac::CollectedCookiesMac(content::WebContents* web_contents) {
       initWithWebContents:web_contents
       collectedCookiesMac:this]);
 
-  scoped_nsobject<CustomConstrainedWindowSheet> sheet(
+  base::scoped_nsobject<CustomConstrainedWindowSheet> sheet(
       [[CustomConstrainedWindowSheet alloc]
           initWithCustomWindow:[sheet_controller_ window]]);
   window_.reset(new ConstrainedWindowMac(
@@ -170,7 +170,7 @@ void CollectedCookiesMac::OnConstrainedWindowClosed(
                                 green:kBannerGradientColorBottom[1]
                                  blue:kBannerGradientColorBottom[2]
                                 alpha:1.0];
-  scoped_nsobject<NSGradient> bannerGradient(
+  base::scoped_nsobject<NSGradient> bannerGradient(
       [[NSGradient alloc] initWithStartingColor:bannerStartingColor
                                     endingColor:bannerEndingColor]);
   [infoBar_ setGradient:bannerGradient];
@@ -243,7 +243,7 @@ void CollectedCookiesMac::OnConstrainedWindowClosed(
     CookieTreeHostNode* host_node =
         static_cast<CookieTreeHostNode*>(cookie);
     host_node->CreateContentException(
-        CookieSettings::Factory::GetForProfile(profile), setting);
+        CookieSettings::Factory::GetForProfile(profile).get(), setting);
     if (!lastDomain.empty())
       multipleDomainsChanged = YES;
     lastDomain = host_node->GetTitle();
@@ -382,7 +382,7 @@ void CollectedCookiesMac::OnConstrainedWindowClosed(
   // Create the Cocoa model.
   CookieTreeNode* root =
       static_cast<CookieTreeNode*>(allowedTreeModel_->GetRoot());
-  scoped_nsobject<CocoaCookieTreeNode> model(
+  base::scoped_nsobject<CocoaCookieTreeNode> model(
       [[CocoaCookieTreeNode alloc] initWithNode:root]);
   [self setCocoaAllowedTreeModel:model.get()];  // Takes ownership.
   root = static_cast<CookieTreeNode*>(blockedTreeModel_->GetRoot());

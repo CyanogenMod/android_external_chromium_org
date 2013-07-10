@@ -75,7 +75,7 @@ class MinidumpTest: public testing::Test {
     }
 
     dump_file_handle_.Close();
-    EXPECT_TRUE(file_util::Delete(dump_file_, false));
+    EXPECT_TRUE(base::Delete(dump_file_, false));
   }
 
   void EnsureDumpMapped() {
@@ -434,11 +434,10 @@ int main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);
   CommandLine::Init(argc, argv);
 
-  logging::InitLogging(
-      L"CON",
-      logging::LOG_TO_BOTH_FILE_AND_SYSTEM_DEBUG_LOG,
-      logging::DONT_LOCK_LOG_FILE,
-      logging::APPEND_TO_OLD_LOG_FILE,
-      logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS);
+  logging::LoggingSettings settings;
+  settings.logging_dest = logging::LOG_TO_ALL;
+  settings.log_file = L"CON";
+  settings.lock_log = logging::DONT_LOCK_LOG_FILE;
+  logging::InitLogging(settings);
   return RUN_ALL_TESTS();
 }

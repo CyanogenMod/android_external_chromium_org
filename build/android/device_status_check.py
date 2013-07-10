@@ -18,7 +18,7 @@ from pylib import constants
 from pylib.cmd_helper import GetCmdOutput
 
 
-def DeviceInfo(serial):
+def DeviceInfo(serial, options):
   """Gathers info on a device via various adb calls.
 
   Args:
@@ -33,6 +33,9 @@ def DeviceInfo(serial):
     return GetCmdOutput('adb -s %s shell %s' % (serial, cmd),
                         shell=True).strip()
 
+  device_adb = android_commands.AndroidCommands(serial)
+
+  # TODO(navabi): Replace AdbShellCmd with device_adb.
   device_type = AdbShellCmd('getprop ro.build.product')
   device_build = AdbShellCmd('getprop ro.build.id')
   device_build_type = AdbShellCmd('getprop ro.build.type')
@@ -71,8 +74,9 @@ def DeviceInfo(serial):
 
   errors = []
   if battery_level < 15:
-    errors += ['Device critically low in battery. Do not use for testing.']
-  if not setup_wizard_disabled and device_build_type != 'user':
+    errors += ['Device critically low in battery. Turning off device.']
+  if (not setup_wizard_disabled and device_build_type != 'user' and
+      not options.no_provisioning_check):
     errors += ['Setup wizard not disabled. Was it provisioned correctly?']
   if device_product_name == 'mantaray' and ac_power != 'true':
     errors += ['Mantaray device not connected to AC power.']
@@ -81,13 +85,13 @@ def DeviceInfo(serial):
   # if install_speed < 500:
   #   errors += ['Device install speed too low. Do not use for testing.']
 
-  # TODO(navabi): Determine if device status check step should fail on slow
-  # install speed. The original CL caused the step to fail but was reverted
-  # because it caused too many early failures. Determine if it was just flake.
-  # Also, do not fail on 'Unknown' caused by offline device, because other
-  # devices can still be used for tests.
-  fail_step = (battery_level == 'Unknown' or battery_level >= 15)
-  return device_type, device_build, '\n'.join(report), errors, fail_step
+  # Causing the device status check step fail for slow install speed or low
+  # battery currently is too disruptive to the bots (especially try bots).
+  # Turn off devices with low battery and the step does not fail.
+  if battery_level < 15:
+    device_adb.EnableAdbRoot()
+    AdbShellCmd('reboot -p')
+  return device_type, device_build, '\n'.join(report), errors, True
 
 
 def CheckForMissingDevices(options, adb_online_devs):
@@ -182,6 +186,8 @@ def main():
                     help='Directory where the device path is stored',
                     default=os.path.join(os.path.dirname(__file__), '..',
                                          '..', 'out'))
+  parser.add_option('--no-provisioning-check',
+                    help='Will not check if devices are provisioned properly.')
 
   options, args = parser.parse_args()
   if args:
@@ -190,8 +196,8 @@ def main():
   types, builds, reports, errors = [], [], [], []
   fail_step_lst = []
   if devices:
-    types, builds, reports, errors, fail_step_lst = zip(*[DeviceInfo(dev)
-                                                          for dev in devices])
+    types, builds, reports, errors, fail_step_lst = (
+        zip(*[DeviceInfo(dev, options) for dev in devices]))
 
   err_msg = CheckForMissingDevices(options, devices) or []
 

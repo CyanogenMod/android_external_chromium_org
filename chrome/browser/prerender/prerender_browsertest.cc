@@ -54,7 +54,6 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
-#include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/url_request/url_request_context.h"
@@ -62,6 +61,7 @@
 #include "net/url_request/url_request_filter.h"
 #include "net/url_request/url_request_job.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "url/gurl.h"
 
 using content::BrowserThread;
 using content::DevToolsAgentHost;
@@ -1884,7 +1884,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
 // See crbug.com/131836.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, DISABLED_PrerenderTaskManager) {
   // Show the task manager. This populates the model.
-  chrome::OpenTaskManager(current_browser(), false);
+  chrome::OpenTaskManager(current_browser());
   // Wait for the model of task manager to start.
   TaskManagerBrowserTestUtil::WaitForWebResourceChange(1);
 
@@ -2737,11 +2737,6 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
 class PrerenderBrowserTestWithExtensions : public PrerenderBrowserTest,
                                            public ExtensionApiTest {
  public:
-  PrerenderBrowserTestWithExtensions() {
-    autostart_test_server_ = false;
-  }
-  virtual ~PrerenderBrowserTestWithExtensions() {}
-
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     PrerenderBrowserTest::SetUpCommandLine(command_line);
     ExtensionApiTest::SetUpCommandLine(command_line);
@@ -2765,7 +2760,7 @@ class PrerenderBrowserTestWithExtensions : public PrerenderBrowserTest,
 // http://crbug.com/177163
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTestWithExtensions,
                        DISABLED_WebNavigation) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   extensions::FrameNavigationState::set_allow_extension_scheme(true);
 
   CommandLine::ForCurrentProcess()->AppendSwitch(
@@ -2796,7 +2791,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTestWithExtensions,
 #define MAYBE_TabsApi TabsApi
 #endif  // defined(OS_WIN)
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTestWithExtensions, MAYBE_TabsApi) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   extensions::FrameNavigationState::set_allow_extension_scheme(true);
 
   // Wait for the extension to set itself up and return control to us.

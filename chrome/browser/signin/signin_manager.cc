@@ -13,7 +13,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/profiles/profile_io_data.h"
 #include "chrome/browser/signin/about_signin_internals.h"
 #include "chrome/browser/signin/about_signin_internals_factory.h"
@@ -101,6 +101,10 @@ void SigninManager::SetSigninProcess(int process_id) {
   registrar_.Add(this,
                  content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
                  content::Source<content::RenderProcessHost>(process));
+}
+
+void SigninManager::ClearSigninProcess() {
+  signin_process_id_ = kInvalidProcessId;
 }
 
 bool SigninManager::IsSigninProcess(int process_id) const {

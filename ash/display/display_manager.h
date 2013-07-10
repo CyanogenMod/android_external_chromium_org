@@ -10,6 +10,7 @@
 
 #include "ash/ash_export.h"
 #include "ash/display/display_info.h"
+#include "ash/display/display_layout.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "ui/aura/root_window_observer.h"
@@ -54,6 +55,12 @@ class ASH_EXPORT DisplayManager :
   // Returns next valid UI scale.
   static float GetNextUIScale(const DisplayInfo& info, bool up);
 
+  // Updates the bounds of |secondary_display| according to |layout|.
+  static void UpdateDisplayBoundsForLayout(
+      const DisplayLayout& layout,
+      const gfx::Display& primary_display,
+      gfx::Display* secondary_display);
+
   // When set to true, the MonitorManager calls OnDisplayBoundsChanged
   // even if the display's bounds didn't change. Used to swap primary
   // display.
@@ -88,9 +95,6 @@ class ASH_EXPORT DisplayManager :
   // that the insets size should be specified in DIP size. It also triggers the
   // display's bounds change.
   void SetOverscanInsets(int64 display_id, const gfx::Insets& insets_in_dip);
-
-  // Clears the overscan insets
-  void ClearCustomOverscanInsets(int64 display_id);
 
   // Sets the display's rotation.
   void SetDisplayRotation(int64 display_id, gfx::Display::Rotation rotation);
@@ -187,7 +191,7 @@ class ASH_EXPORT DisplayManager :
   void SetSoftwareMirroring(bool enabled);
 #endif
 
- private:
+private:
   FRIEND_TEST_ALL_PREFIXES(ExtendedDesktopTest, ConvertPoint);
   FRIEND_TEST_ALL_PREFIXES(DisplayManagerTest, TestNativeDisplaysChanged);
   FRIEND_TEST_ALL_PREFIXES(DisplayManagerTest,
@@ -225,6 +229,14 @@ class ASH_EXPORT DisplayManager :
 
   // Creates a display object from the DisplayInfo for |display_id|.
   gfx::Display CreateDisplayFromDisplayInfoById(int64 display_id);
+
+  // Updates the bounds of the secondary display in |display_list|
+  // using the layout registered for the display pair and set the
+  // index of display updated to |updated_index|. Returns true
+  // if the secondary display's bounds has been changed from current
+  // value, or false otherwise.
+  bool UpdateSecondaryDisplayBoundsForLayout(DisplayList* display_list,
+                                             size_t* updated_index) const;
 
   int64 first_display_id_;
 

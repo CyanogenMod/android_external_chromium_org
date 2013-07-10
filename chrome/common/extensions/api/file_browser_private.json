@@ -5,7 +5,7 @@
 [
   {
     "namespace":"fileBrowserPrivate",
-    "nodoc": "true",
+    "description": "none",
     "types": [
       {
         "id": "FileBrowserTask",
@@ -98,6 +98,11 @@
             "type": "string",
             "optional": true,
             "description": "URL to the Drive thumbnail image for this file."
+          },
+          "shareUrl": {
+            "type": "string",
+            "optional": true,
+            "description": "Drive share URL for this file."
           },
           "isPinned": {
             "type": "boolean",
@@ -450,7 +455,7 @@
             "optional": true,
             "parameters": []
           }
-        ]        
+        ]
       },
       {
         "name": "getFileTasks",
@@ -1136,7 +1141,7 @@
           {
             "name": "callback",
             "type": "function",
-            "description": "Called back when the check is finished.", 
+            "description": "Called back when the check is finished.",
             "parameters": [
               {
                 "name": "result",
@@ -1148,13 +1153,13 @@
         ]
       },
       {
-        "name": "openNewWindow",
-        "description": "Opens a new window of the Files.app.",
+        "name": "zoom",
+        "description": "Changes the zoom factor of the Files.app.",
         "parameters": [
           {
-            "name": "url",
+            "name": "operation",
             "type": "string",
-            "description": "Internal url to be opened."
+            "enum": ["in", "out", "reset"]
           }
         ]
       }

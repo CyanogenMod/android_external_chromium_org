@@ -248,15 +248,6 @@ bool ShouldSaveOrRestoreWindowPos() {
   return true;
 }
 
-// Returns whether immersive mode should replace fullscreen, which should only
-// occur for "browser-fullscreen" and not for "tab-fullscreen" (which has a URL
-// for the tab entering fullscreen).
-bool UseImmersiveFullscreenForUrl(const GURL& url) {
-  bool is_browser_fullscreen = url.is_empty();
-  return is_browser_fullscreen &&
-         ImmersiveFullscreenConfiguration::UseImmersiveFullscreen();
-}
-
 }  // namespace
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -341,97 +332,50 @@ BookmarkExtensionBackground::BookmarkExtensionBackground(
 void BookmarkExtensionBackground::Paint(gfx::Canvas* canvas,
                                         views::View* view) const {
   int toolbar_overlap = host_view_->GetToolbarOverlap();
-  // The client edge is drawn below the toolbar bounds.
-  if (toolbar_overlap)
-    toolbar_overlap += views::NonClientFrameView::kClientEdgeThickness;
-  if (host_view_->IsDetached()) {
-    // As 'hidden' according to the animation is the full in-tab state,
-    // we invert the value - when current_state is at '0', we expect the
-    // bar to be docked.
-    double current_state = 1 - host_view_->GetAnimationValue();
-
-    // In Search NTP, the detached bookmark bar is different from regular NTP:
-    // - there's no padding around the bar
-    // - there's a separator below the bar
-    // - if animating between pinned and unpinned states:
-    //   - cross-fade the bar backgrounds
-    //   - fade in/out the separator between toolbar and bookmark bar.
-    if (chrome::IsInstantExtendedAPIEnabled()) {
-      ThemeService* ts =
-          ThemeServiceFactory::GetForProfile(browser_->profile());
-      if (current_state == 0.0 || current_state == 1.0) {
-        PaintDetachedBookmarkBar(canvas, host_view_, ts);
-        return;
-      }
-      // While animating, set opacity to cross-fade between attached and
-      // detached backgrounds including their respective separators.
-      int detached_alpha = static_cast<uint8>(current_state * 255);
-      int attached_alpha = 255 - detached_alpha;
-      if (browser_->bookmark_bar_state() == BookmarkBar::DETACHED) {
-        // To animate from attached to detached state:
-        // - fade out attached background
-        // - fade in detached background.
-        canvas->SaveLayerAlpha(attached_alpha);
-        PaintAttachedBookmarkBar(canvas, host_view_, browser_view_,
-                                 browser_->host_desktop_type(),
-                                 toolbar_overlap);
-        canvas->Restore();
-        canvas->SaveLayerAlpha(detached_alpha);
-        PaintDetachedBookmarkBar(canvas, host_view_, ts);
-      } else {
-        // To animate from detached to attached state:
-        // - fade out detached background
-        // - fade in attached background.
-        canvas->SaveLayerAlpha(detached_alpha);
-        PaintDetachedBookmarkBar(canvas, host_view_, ts);
-        canvas->Restore();
-        canvas->SaveLayerAlpha(attached_alpha);
-        PaintAttachedBookmarkBar(canvas, host_view_, browser_view_,
-                                 browser_->host_desktop_type(),
-                                 toolbar_overlap);
-      }
-      canvas->Restore();
-      return;
-    }
-
-    // Draw the background to match the new tab page.
-    ui::ThemeProvider* tp = host_view_->GetThemeProvider();
-    int height = 0;
-    WebContents* contents = browser_->tab_strip_model()->GetActiveWebContents();
-    if (contents && contents->GetView())
-      height = contents->GetView()->GetContainerSize().height();
-    NtpBackgroundUtil::PaintBackgroundDetachedMode(
-        tp, canvas,
-        gfx::Rect(0, toolbar_overlap, host_view_->width(),
-                  host_view_->height() - toolbar_overlap),
-        height);
-
-    double h_padding =
-        static_cast<double>(BookmarkBarView::kNewtabHorizontalPadding) *
-        current_state;
-    double v_padding =
-        static_cast<double>(BookmarkBarView::kNewtabVerticalPadding) *
-        current_state;
-
-    SkRect rect;
-    double roundness = 0;
-    DetachableToolbarView::CalculateContentArea(current_state, h_padding,
-        v_padding, &rect, &roundness, host_view_);
-    DetachableToolbarView::PaintContentAreaBackground(canvas, tp, rect,
-                                                      roundness);
-    DetachableToolbarView::PaintContentAreaBorder(canvas, tp, rect, roundness);
-    if (!toolbar_overlap)
-      DetachableToolbarView::PaintHorizontalBorderForState(canvas, host_view_);
-  } else {
-    gfx::Point background_image_offset =
-        browser_view_->OffsetPointForToolbarBackgroundImage(
-            gfx::Point(host_view_->GetMirroredX(), host_view_->y()));
-    DetachableToolbarView::PaintBackgroundAttachedMode(canvas,
-        host_view_->GetThemeProvider(), host_view_->GetLocalBounds(),
-        background_image_offset, browser_->host_desktop_type());
-    if (host_view_->height() >= toolbar_overlap)
-      DetachableToolbarView::PaintHorizontalBorderForState(canvas, host_view_);
+  if (!host_view_->IsDetached()) {
+    PaintAttachedBookmarkBar(canvas, host_view_, browser_view_,
+                             browser_->host_desktop_type(), toolbar_overlap);
+    return;
   }
+
+  // As 'hidden' according to the animation is the full in-tab state, we invert
+  // the value - when current_state is at '0', we expect the bar to be docked.
+  double current_state = 1 - host_view_->GetAnimationValue();
+
+  ThemeService* ts =
+      ThemeServiceFactory::GetForProfile(browser_->profile());
+  if (current_state == 0.0 || current_state == 1.0) {
+    PaintDetachedBookmarkBar(canvas, host_view_, ts);
+    return;
+  }
+  // While animating, set opacity to cross-fade between attached and detached
+  // backgrounds including their respective separators.
+  int detached_alpha = static_cast<uint8>(current_state * 255);
+  int attached_alpha = 255 - detached_alpha;
+  if (browser_->bookmark_bar_state() == BookmarkBar::DETACHED) {
+    // To animate from attached to detached state:
+    // - fade out attached background
+    // - fade in detached background.
+    canvas->SaveLayerAlpha(attached_alpha);
+    PaintAttachedBookmarkBar(canvas, host_view_, browser_view_,
+                             browser_->host_desktop_type(),
+                             toolbar_overlap);
+    canvas->Restore();
+    canvas->SaveLayerAlpha(detached_alpha);
+    PaintDetachedBookmarkBar(canvas, host_view_, ts);
+  } else {
+    // To animate from detached to attached state:
+    // - fade out detached background
+    // - fade in attached background.
+    canvas->SaveLayerAlpha(detached_alpha);
+    PaintDetachedBookmarkBar(canvas, host_view_, ts);
+    canvas->Restore();
+    canvas->SaveLayerAlpha(attached_alpha);
+    PaintAttachedBookmarkBar(canvas, host_view_, browser_view_,
+                             browser_->host_desktop_type(),
+                             toolbar_overlap);
+  }
+  canvas->Restore();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -541,6 +485,10 @@ BrowserView* BrowserView::GetBrowserViewForNativeWindow(
 // static
 BrowserView* BrowserView::GetBrowserViewForBrowser(const Browser* browser) {
   return static_cast<BrowserView*>(browser->window());
+}
+
+void BrowserView::InitStatusBubble() {
+  status_bubble_.reset(new StatusBubbleViews(contents_container_));
 }
 
 gfx::Rect BrowserView::GetToolbarBounds() const {
@@ -886,7 +834,7 @@ void BrowserView::UpdateFullscreenExitBubbleContent(
   // Immersive mode has no exit bubble because it has a visible strip at the
   // top that gives the user a hover target.
   // TODO(jamescook): Figure out what to do with mouse-lock.
-  if (bubble_type == FEB_TYPE_NONE || UseImmersiveFullscreenForUrl(url)) {
+  if (bubble_type == FEB_TYPE_NONE || ShouldUseImmersiveFullscreenForUrl(url)) {
     fullscreen_bubble_.reset();
   } else if (fullscreen_bubble_.get()) {
     fullscreen_bubble_->UpdateContent(url, bubble_type);
@@ -1824,15 +1772,20 @@ bool BrowserView::CanClose() {
   if (!browser_->ShouldCloseWindow())
     return false;
 
+  bool fast_tab_closing_enabled =
+    CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableFastUnload);
+
   if (!browser_->tab_strip_model()->empty()) {
     // Tab strip isn't empty.  Hide the frame (so it appears to have closed
     // immediately) and close all the tabs, allowing the renderers to shut
     // down. When the tab strip is empty we'll be called back again.
     frame_->Hide();
     browser_->OnWindowClosing();
-    browser_->tab_strip_model()->CloseAllTabs();
+    if (fast_tab_closing_enabled)
+      browser_->tab_strip_model()->CloseAllTabs();
     return false;
-  } else if (!browser_->HasCompletedUnloadProcessing()) {
+  } else if (fast_tab_closing_enabled &&
+        !browser_->HasCompletedUnloadProcessing()) {
     // The browser needs to finish running unload handlers.
     // Hide the frame (so it appears to have closed immediately), and
     // the browser will call us back again when it is ready to close.
@@ -2048,7 +2001,7 @@ void BrowserView::InitViews() {
   AddChildView(contents_split_);
   set_contents_view(contents_split_);
 
-  status_bubble_.reset(new StatusBubbleViews(contents_container_));
+  InitStatusBubble();
 
   // Top container holds tab strip and toolbar and lives at the front of the
   // view hierarchy.
@@ -2396,7 +2349,7 @@ void BrowserView::ProcessFullscreen(bool fullscreen,
   }
 
   // Enable immersive before the browser refreshes its list of enabled commands.
-  if (UseImmersiveFullscreenForUrl(url))
+  if (ShouldUseImmersiveFullscreenForUrl(url))
     immersive_mode_controller_->SetEnabled(fullscreen);
 
   browser_->WindowFullscreenStateChanged();
@@ -2404,7 +2357,7 @@ void BrowserView::ProcessFullscreen(bool fullscreen,
   if (fullscreen) {
     if (!chrome::IsRunningInAppMode() &&
         type != FOR_METRO &&
-        !UseImmersiveFullscreenForUrl(url)) {
+        !ShouldUseImmersiveFullscreenForUrl(url)) {
       fullscreen_bubble_.reset(new FullscreenExitBubbleViews(
           this, url, bubble_type));
     }
@@ -2425,6 +2378,12 @@ void BrowserView::ProcessFullscreen(bool fullscreen,
   // indirectly via UpdateUIForContents().
   ignore_layout_ = false;
   ToolbarSizeChanged(false);
+}
+
+bool BrowserView::ShouldUseImmersiveFullscreenForUrl(const GURL& url) const {
+  bool is_browser_fullscreen = url.is_empty();
+  return ImmersiveFullscreenConfiguration::UseImmersiveFullscreen() &&
+      is_browser_fullscreen && IsBrowserTypeNormal();
 }
 
 void BrowserView::LoadAccelerators() {

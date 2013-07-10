@@ -12,8 +12,8 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
 #include "base/strings/stringprintf.h"
-#include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 #include "webkit/browser/fileapi/async_file_test_helper.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
@@ -68,10 +68,7 @@ class LocalFileSystemOperationTest
     quota_manager_proxy_ = new quota::MockQuotaManagerProxy(
         quota_manager(), base::MessageLoopProxy::current().get());
     sandbox_file_system_.SetUp(base_dir, quota_manager_proxy_.get());
-    sandbox_file_system_.file_system_context()->sandbox_provider()->
-        AddFileChangeObserver(sandbox_file_system_.type(),
-                              &change_observer_,
-                              NULL);
+    sandbox_file_system_.AddFileChangeObserver(&change_observer_);
   }
 
   virtual void TearDown() OVERRIDE {

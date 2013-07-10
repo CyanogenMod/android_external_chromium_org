@@ -1161,13 +1161,17 @@ BackingStore* RenderWidgetHostViewAura::AllocBackingStore(
   return new BackingStoreAura(host_, size);
 }
 
-void RenderWidgetHostViewAura::CopyFromCompositingSurfaceHelper(
+void RenderWidgetHostViewAura::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
-    const gfx::Size& dst_size_in_pixel,
+    const gfx::Size& dst_size,
     const base::Callback<void(bool, const SkBitmap&)>& callback) {
+
   base::ScopedClosureRunner scoped_callback_runner(
       base::Bind(callback, false, SkBitmap()));
+  if (!current_surface_.get())
+    return;
 
+  const gfx::Size& dst_size_in_pixel = ConvertViewSizeToPixel(this, dst_size);
   SkBitmap output;
   output.setConfig(SkBitmap::kARGB_8888_Config,
                    dst_size_in_pixel.width(), dst_size_in_pixel.height());
@@ -1186,10 +1190,8 @@ void RenderWidgetHostViewAura::CopyFromCompositingSurfaceHelper(
   // own completion handlers (where we can try to free the frontbuffer).
   base::Callback<void(bool)> wrapper_callback = base::Bind(
       &RenderWidgetHostViewAura::CopyFromCompositingSurfaceFinished,
-      AsWeakPtr(),
       output,
       callback);
-  ++pending_thumbnail_tasks_;
 
   // Convert |src_subrect| from the views coordinate (upper-left origin) into
   // the OpenGL coordinate (lower-left origin).
@@ -1206,20 +1208,6 @@ void RenderWidgetHostViewAura::CopyFromCompositingSurfaceHelper(
       dst_size_in_pixel,
       addr,
       wrapper_callback);
-}
-
-void RenderWidgetHostViewAura::CopyFromCompositingSurface(
-    const gfx::Rect& src_subrect,
-    const gfx::Size& dst_size,
-    const base::Callback<void(bool, const SkBitmap&)>& callback) {
-  if (!current_surface_.get()) {
-    callback.Run(false, SkBitmap());
-    return;
-  }
-
-  CopyFromCompositingSurfaceHelper(src_subrect,
-                                   ConvertViewSizeToPixel(this, dst_size),
-                                   callback);
 }
 
 void RenderWidgetHostViewAura::CopyFromCompositingSurfaceToVideoFrame(
@@ -1778,15 +1766,10 @@ void RenderWidgetHostViewAura::SetSurfaceNotInUseByCompositor(
 }
 
 void RenderWidgetHostViewAura::CopyFromCompositingSurfaceFinished(
-    base::WeakPtr<RenderWidgetHostViewAura> render_widget_host_view,
     const SkBitmap& bitmap,
     const base::Callback<void(bool, const SkBitmap&)>& callback,
     bool result) {
   callback.Run(result, bitmap);
-
-  if (!render_widget_host_view)
-    return;
-  --render_widget_host_view->pending_thumbnail_tasks_;
 }
 
 void RenderWidgetHostViewAura::GetScreenInfo(WebScreenInfo* results) {
@@ -1818,10 +1801,6 @@ void RenderWidgetHostViewAura::ProcessAckedTouchEvent(
       INPUT_EVENT_ACK_STATE_CONSUMED) ? ui::ER_HANDLED : ui::ER_UNHANDLED;
   for (ScopedVector<ui::TouchEvent>::iterator iter = events.begin(),
       end = events.end(); iter != end; ++iter) {
-    (*iter)->latency()->AddLatencyNumber(
-        ui::INPUT_EVENT_LATENCY_ACKED_COMPONENT,
-        static_cast<int64>(ack_result),
-        0);
     root->ProcessedTouchEvent((*iter), window_, result);
   }
 }
@@ -2222,7 +2201,11 @@ void RenderWidgetHostViewAura::OnPaint(gfx::Canvas* canvas) {
       software_latency_info_.Clear();
     }
   } else if (aura::Env::GetInstance()->render_white_bg()) {
-    canvas->DrawColor(SK_ColorWHITE);
+    // For non-opaque windows, we don't draw anything, since we depend on the
+    // canvas coming from the compositor to already be initialized as
+    // transparent.
+    if (window_->layer()->fills_bounds_opaquely())
+      canvas->DrawColor(SK_ColorWHITE);
   }
 }
 
@@ -2547,7 +2530,7 @@ void RenderWidgetHostViewAura::OnGestureEvent(ui::GestureEvent* event) {
   }
 
   if (gesture.type != WebKit::WebInputEvent::Undefined) {
-    host_->ForwardGestureEvent(gesture);
+    host_->ForwardGestureEventWithLatencyInfo(gesture, *event->latency());
 
     if (event->type() == ui::ET_GESTURE_SCROLL_BEGIN ||
         event->type() == ui::ET_GESTURE_SCROLL_UPDATE ||
@@ -2985,6 +2968,7 @@ void RenderWidgetHostViewAura::AddedToRootWindow() {
     cursor_client->AddObserver(this);
     NotifyRendererOfCursorVisibilityState(cursor_client->IsCursorVisible());
   }
+  UpdateExternalTexture();
 }
 
 void RenderWidgetHostViewAura::RemovingFromRootWindow() {
@@ -2996,13 +2980,12 @@ void RenderWidgetHostViewAura::RemovingFromRootWindow() {
   event_filter_for_popup_exit_.reset();
   window_->GetRootWindow()->RemoveRootWindowObserver(this);
   host_->ParentChanged(0);
-  // We are about to disconnect ourselves from the compositor, we need to issue
-  // the callbacks now, because we won't get notified when the frame is done.
-  // TODO(piman): this might in theory cause a race where the GPU process starts
-  // drawing to the buffer we haven't yet displayed. This will only show for 1
-  // frame though, because we will reissue a new frame right away without that
-  // composited data.
   ui::Compositor* compositor = GetCompositor();
+  // We can't get notification for commits after this point, which would
+  // guarantee that the compositor isn't using an old texture any more, so
+  // instead we force the texture to NULL which synchronizes with the compositor
+  // thread, and makes it safe to run the callback.
+  window_->layer()->SetExternalTexture(NULL);
   RunOnCommitCallbacks();
   resize_lock_.reset();
   host_->WasResized();

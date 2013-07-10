@@ -91,8 +91,7 @@ bool DeviceMediaAsyncFileUtil::CreateOrOpen(
   if (!callback.is_null()) {
     base::PlatformFile invalid_file = base::kInvalidPlatformFileValue;
     callback.Run(base::PLATFORM_FILE_ERROR_SECURITY,
-                 base::PassPlatformFile(&invalid_file),
-                 false);
+                 base::PassPlatformFile(&invalid_file));
   }
   return true;
 }
@@ -246,6 +245,16 @@ bool DeviceMediaAsyncFileUtil::DeleteDirectory(
   NOTIMPLEMENTED();
   if (!callback.is_null())
     callback.Run(base::PLATFORM_FILE_ERROR_SECURITY);
+  return true;
+}
+
+bool DeviceMediaAsyncFileUtil::DeleteRecursively(
+    scoped_ptr<FileSystemOperationContext> context,
+    const FileSystemURL& url,
+    const StatusCallback& callback) {
+  DCHECK(IsOnIOThread(context.get()));
+  if (!callback.is_null())
+    callback.Run(base::PLATFORM_FILE_ERROR_INVALID_OPERATION);
   return true;
 }
 

@@ -10,6 +10,7 @@
 
 #include "base/base64.h"
 #include "base/debug/debugger.h"
+#include "base/files/file_path.h"
 #include "base/md5.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
@@ -17,13 +18,14 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/public/renderer/history_item_serialization.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_visitor.h"
 #include "content/public/test/layouttest_support.h"
 #include "content/shell/common/shell_messages.h"
 #include "content/shell/common/webkit_test_helpers.h"
+#include "content/shell/renderer/shell_media_stream_client.h"
 #include "content/shell/renderer/shell_render_process_observer.h"
 #include "media/base/media_log.h"
 #include "net/base/net_errors.h"
@@ -39,6 +41,10 @@
 #include "third_party/WebKit/public/platform/WebURLError.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
+#include "third_party/WebKit/public/testing/WebTask.h"
+#include "third_party/WebKit/public/testing/WebTestInterfaces.h"
+#include "third_party/WebKit/public/testing/WebTestProxy.h"
+#include "third_party/WebKit/public/testing/WebTestRunner.h"
 #include "third_party/WebKit/public/web/WebArrayBufferView.h"
 #include "third_party/WebKit/public/web/WebContextMenuData.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
@@ -52,15 +58,9 @@
 #include "third_party/WebKit/public/web/WebScriptSource.h"
 #include "third_party/WebKit/public/web/WebTestingSupport.h"
 #include "third_party/WebKit/public/web/WebView.h"
-#include "third_party/WebKit/Tools/DumpRenderTree/chromium/TestRunner/public/WebTask.h"
-#include "third_party/WebKit/Tools/DumpRenderTree/chromium/TestRunner/public/WebTestInterfaces.h"
-#include "third_party/WebKit/Tools/DumpRenderTree/chromium/TestRunner/public/WebTestProxy.h"
-#include "third_party/WebKit/Tools/DumpRenderTree/chromium/TestRunner/public/WebTestRunner.h"
 #include "ui/gfx/rect.h"
-#include "webkit/base/file_path_string_conversions.h"
 #include "webkit/common/webpreferences.h"
 #include "webkit/glue/webkit_glue.h"
-#include "webkit/mocks/test_media_stream_client.h"
 #include "webkit/renderer/media/webmediaplayer_impl.h"
 #include "webkit/renderer/media/webmediaplayer_ms.h"
 #include "webkit/renderer/media/webmediaplayer_params.h"
@@ -104,7 +104,7 @@ void InvokeTaskHelper(void* context) {
 #if !defined(OS_MACOSX)
 void MakeBitmapOpaque(SkBitmap* bitmap) {
   SkAutoLockPixels lock(*bitmap);
-  DCHECK(bitmap->config() == SkBitmap::kARGB_8888_Config);
+  DCHECK_EQ(bitmap->config(), SkBitmap::kARGB_8888_Config);
   for (int y = 0; y < bitmap->height(); ++y) {
     uint32_t* row = bitmap->getAddr32(0, y);
     for (int x = 0; x < bitmap->width(); ++x)
@@ -116,7 +116,8 @@ void MakeBitmapOpaque(SkBitmap* bitmap) {
 void CopyCanvasToBitmap(SkCanvas* canvas,  SkBitmap* snapshot) {
   SkDevice* device = skia::GetTopDevice(*canvas);
   const SkBitmap& bitmap = device->accessBitmap(false);
-  bitmap.copyTo(snapshot, SkBitmap::kARGB_8888_Config);
+  const bool success = bitmap.copyTo(snapshot, SkBitmap::kARGB_8888_Config);
+  DCHECK(success);
 
 #if !defined(OS_MACOSX)
   // Only the expected PNGs for Mac have a valid alpha channel.
@@ -235,7 +236,7 @@ WebString WebKitTestRunner::registerIsolatedFileSystem(
     const WebKit::WebVector<WebKit::WebString>& absolute_filenames) {
   std::vector<base::FilePath> files;
   for (size_t i = 0; i < absolute_filenames.size(); ++i)
-    files.push_back(webkit_base::WebStringToFilePath(absolute_filenames[i]));
+    files.push_back(base::FilePath::FromUTF16Unsafe(absolute_filenames[i]));
   std::string filesystem_id;
   Send(new ShellViewHostMsg_RegisterIsolatedFileSystem(
       routing_id(), files, &filesystem_id));
@@ -250,18 +251,14 @@ long long WebKitTestRunner::getCurrentTimeInMillisecond() {
 
 WebString WebKitTestRunner::getAbsoluteWebStringFromUTF8Path(
     const std::string& utf8_path) {
-#if defined(OS_WIN)
-  base::FilePath path(UTF8ToWide(utf8_path));
-#else
-  base::FilePath path(base::SysWideToNativeMB(base::SysUTF8ToWide(utf8_path)));
-#endif
+  base::FilePath path = base::FilePath::FromUTF8Unsafe(utf8_path);
   if (!path.IsAbsolute()) {
     GURL base_url =
         net::FilePathToFileURL(test_config_.current_working_directory.Append(
             FILE_PATH_LITERAL("foo")));
     net::FileURLToFilePath(base_url.Resolve(utf8_path), &path);
   }
-  return webkit_base::FilePathToWebString(path);
+  return path.AsUTF16Unsafe();
 }
 
 WebURL WebKitTestRunner::localFileToDataURL(const WebURL& file_url) {
@@ -518,30 +515,34 @@ void WebKitTestRunner::captureHistoryForWindow(
   history->swap(result);
 }
 
+// TODO(scherkus): Remove once https://codereview.chromium.org/18130006
+// rolls into Chromium.
 WebMediaPlayer* WebKitTestRunner::createWebMediaPlayer(
-    WebFrame* frame, const WebURL& url, WebMediaPlayerClient* client)
-{
-  if (!test_media_stream_client_) {
-    test_media_stream_client_.reset(
-        new webkit_glue::TestMediaStreamClient());
+    WebFrame* frame,
+    const WebURL& url,
+    WebMediaPlayerClient* client) {
+  if (!shell_media_stream_client_) {
+    shell_media_stream_client_.reset(new ShellMediaStreamClient());
   }
 
-  if (test_media_stream_client_->IsMediaStream(url)) {
+  if (shell_media_stream_client_->IsMediaStream(url)) {
     return new webkit_media::WebMediaPlayerMS(
         frame,
         client,
         base::WeakPtr<webkit_media::WebMediaPlayerDelegate>(),
-        test_media_stream_client_.get(),
+        shell_media_stream_client_.get(),
         new media::MediaLog());
   }
 
 #if defined(OS_ANDROID)
   return NULL;
 #else
-  // TODO(scherkus): Use RenderViewImpl::createMediaPlayer() instead of
-  // duplicating code here, see http://crbug.com/239826
   webkit_media::WebMediaPlayerParams params(
-      GetMediaThreadMessageLoopProxy(), NULL, NULL, new media::MediaLog());
+      GetMediaThreadMessageLoopProxy(),
+      base::Callback<void(const base::Closure&)>(),
+      NULL,
+      NULL,
+      new media::MediaLog());
   return new webkit_media::WebMediaPlayerImpl(
       frame,
       client,
@@ -647,23 +648,7 @@ void WebKitTestRunner::CaptureDump() {
 
       SkAutoLockPixels snapshot_lock(snapshot);
       base::MD5Digest digest;
-#if defined(OS_ANDROID)
-      // On Android, pixel layout is RGBA, however, other Chrome platforms use
-      // BGRA.
-      const uint8_t* raw_pixels =
-          reinterpret_cast<const uint8_t*>(snapshot.getPixels());
-      size_t snapshot_size = snapshot.getSize();
-      scoped_ptr<uint8_t[]> reordered_pixels(new uint8_t[snapshot_size]);
-      for (size_t i = 0; i < snapshot_size; i += 4) {
-        reordered_pixels[i] = raw_pixels[i + 2];
-        reordered_pixels[i + 1] = raw_pixels[i + 1];
-        reordered_pixels[i + 2] = raw_pixels[i];
-        reordered_pixels[i + 3] = raw_pixels[i + 3];
-      }
-      base::MD5Sum(reordered_pixels.get(), snapshot_size, &digest);
-#else
       base::MD5Sum(snapshot.getPixels(), snapshot.getSize(), &digest);
-#endif
       std::string actual_pixel_hash = base::MD5DigestToBase16(digest);
 
       if (actual_pixel_hash == test_config_.expected_pixel_hash) {

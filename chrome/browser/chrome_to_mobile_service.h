@@ -16,16 +16,16 @@
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "base/values.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "google_apis/gaia/oauth2_access_token_consumer.h"
-#include "googleurl/src/gurl.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "sync/notifier/invalidation_handler.h"
+#include "url/gurl.h"
 
 class OAuth2AccessTokenFetcher;
 class Browser;
@@ -201,9 +201,9 @@ class ChromeToMobileService : public BrowserContextKeyedService,
 
   Profile* profile_;
 
-  // Sync invalidation service state. Chrome To Mobile requires this service to
-  // to keep the mobile device list up to date and prevent page send failures.
-  bool sync_invalidation_enabled_;
+  // Invalidation service state. Chrome To Mobile requires this service to keep
+  // the mobile device list up to date and prevent page send failures.
+  bool invalidation_enabled_;
 
   // Used to recieve TokenService notifications for GaiaOAuth2LoginRefreshToken.
   content::NotificationRegistrar registrar_;

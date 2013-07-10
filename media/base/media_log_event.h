@@ -5,7 +5,7 @@
 #ifndef MEDIA_BASE_MEDIA_LOG_EVENT_H_
 #define MEDIA_BASE_MEDIA_LOG_EVENT_H_
 
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 
 namespace media {
@@ -20,7 +20,7 @@ struct MediaLogEvent {
   MediaLogEvent& operator=(const MediaLogEvent& event) {
     id = event.id;
     type = event.type;
-    scoped_ptr<DictionaryValue> event_copy(event.params.DeepCopy());
+    scoped_ptr<base::DictionaryValue> event_copy(event.params.DeepCopy());
     params.Swap(event_copy.get());
     time = event.time;
     return *this;
@@ -92,7 +92,7 @@ struct MediaLogEvent {
   int32 id;
   Type type;
   base::DictionaryValue params;
-  base::Time time;
+  base::TimeTicks time;
 };
 
 }  // namespace media

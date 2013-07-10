@@ -17,7 +17,6 @@
 #include "chrome/browser/automation/automation_provider.h"
 #include "chrome/browser/automation/automation_provider_json.h"
 #include "chrome/browser/history/history_service.h"
-#include "chrome/browser/importer/importer_list_observer.h"
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/common/page_type.h"
@@ -26,12 +25,11 @@
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 
 #if defined(OS_CHROMEOS)
-// TODO(sque): move to a ChromeOS-specific class. See crosbug.com/22081.
-class PowerManagerClientObserverForTesting;
-#endif  // defined(OS_CHROMEOS)
+#include "chromeos/dbus/power_manager/power_supply_properties.pb.h"
+#include "chromeos/dbus/power_manager_client.h"
+#endif
 
 class CreditCard;
-class ImporterList;
 
 namespace base {
 class DictionaryValue;
@@ -53,7 +51,9 @@ struct WebPluginInfo;
 // This is an automation provider containing testing calls.
 class TestingAutomationProvider : public AutomationProvider,
                                   public chrome::BrowserListObserver,
-                                  public importer::ImporterListObserver,
+#if defined(OS_CHROMEOS)
+                                  public chromeos::PowerManagerClient::Observer,
+#endif
                                   public content::NotificationObserver {
  public:
   explicit TestingAutomationProvider(Profile* profile);
@@ -65,27 +65,21 @@ class TestingAutomationProvider : public AutomationProvider,
   virtual void OnChannelError() OVERRIDE;
 
  private:
-  // Storage for ImportSettings() to resume operations after a callback.
-  struct ImportSettingsData {
-    string16 browser_name;
-    int import_items;
-    Browser* browser;
-    IPC::Message* reply_message;
-  };
-
   virtual ~TestingAutomationProvider();
 
   // chrome::BrowserListObserver:
   virtual void OnBrowserAdded(Browser* browser) OVERRIDE;
   virtual void OnBrowserRemoved(Browser* browser) OVERRIDE;
 
-  // importer::ImporterListObserver:
-  virtual void OnSourceProfilesLoaded() OVERRIDE;
-
   // content::NotificationObserver:
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
+
+#if defined(OS_CHROMEOS)
+  // chromeos::PowerManagerClient::Observer:
+  virtual void PowerChanged(const power_manager::PowerSupplyProperties& proto);
+#endif
 
   // IPC Message callbacks.
   void CloseBrowser(int handle, IPC::Message* reply_message);
@@ -455,12 +449,6 @@ class TestingAutomationProvider : public AutomationProvider,
   void SaveTabContents(Browser* browser,
                        base::DictionaryValue* args,
                        IPC::Message* reply_message);
-
-  // Import the given settings from the given browser.
-  // Uses the JSON interface for input/output.
-  void ImportSettings(Browser* browser,
-                      base::DictionaryValue* args,
-                      IPC::Message* reply_message);
 
   // Add a new entry to the password store based on the password information
   // provided. This method can also be used to add a blacklisted site (which
@@ -1443,21 +1431,13 @@ class TestingAutomationProvider : public AutomationProvider,
   void EnsureTabSelected(Browser* browser, content::WebContents* tab);
 
 #if defined(OS_CHROMEOS)
-  // Avoid scoped ptr here to avoid having to define it completely in the
-  // non-ChromeOS code.
-  PowerManagerClientObserverForTesting* power_manager_observer_;
+  power_manager::PowerSupplyProperties power_supply_properties_;
 #endif  // defined(OS_CHROMEOS)
 
   std::map<std::string, JsonHandler> handler_map_;
   std::map<std::string, BrowserJsonHandler> browser_handler_map_;
 
   content::NotificationRegistrar registrar_;
-
-  // Used to enumerate browser profiles.
-  scoped_refptr<ImporterList> importer_list_;
-
-  // The stored data for the ImportSettings operation.
-  ImportSettingsData import_settings_data_;
 
   // The automation event observer queue. It is lazily created when an observer
   // is added to avoid overhead when not needed.

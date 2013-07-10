@@ -35,6 +35,7 @@
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/session_length_limiter.h"
 #include "chrome/browser/chromeos/settings/cros_settings_names.h"
+#include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -205,6 +206,7 @@ UserManagerImpl::UserManagerImpl()
       is_current_user_new_(false),
       is_current_user_ephemeral_regular_user_(false),
       ephemeral_users_enabled_(false),
+      locally_managed_users_enabled_by_policy_(false),
       merge_session_state_(MERGE_STATUS_NOT_STARTED),
       observed_sync_service_(NULL),
       user_image_manager_(new UserImageManagerImpl) {
@@ -215,6 +217,10 @@ UserManagerImpl::UserManagerImpl()
   registrar_.Add(this, chrome::NOTIFICATION_LOGIN_USER_PROFILE_PREPARED,
       content::NotificationService::AllSources());
   RetrieveTrustedDevicePolicies();
+  cros_settings_->AddSettingsObserver(kAccountsPrefDeviceLocalAccounts,
+                                      this);
+  cros_settings_->AddSettingsObserver(kAccountsPrefSupervisedUsersEnabled,
+                                      this);
   UpdateLoginState();
 }
 
@@ -237,6 +243,9 @@ void UserManagerImpl::Shutdown() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   cros_settings_->RemoveSettingsObserver(kAccountsPrefDeviceLocalAccounts,
                                          this);
+  cros_settings_->RemoveSettingsObserver(
+      kAccountsPrefSupervisedUsersEnabled,
+      this);
   // Stop the session length limiter.
   session_length_limiter_.reset();
 
@@ -436,8 +445,7 @@ const User* UserManagerImpl::CreateLocallyManagedUserRecord(
   prefs_new_users_update->Insert(0, new base::StringValue(e_mail));
   users_.insert(users_.begin(), new_user);
 
-
-  const User* manager = FindUser(manager_id);
+  const User* manager = FindUser(gaia::CanonicalizeEmail(manager_id));
   CHECK(manager);
 
   DictionaryPrefUpdate manager_update(local_state, kManagedUserManagers);
@@ -713,11 +721,14 @@ void UserManagerImpl::Observe(int type,
         }
       }
       break;
-    case chrome::NOTIFICATION_SYSTEM_SETTING_CHANGED:
-      DCHECK_EQ(*content::Details<const std::string>(details).ptr(),
-                kAccountsPrefDeviceLocalAccounts);
+    case chrome::NOTIFICATION_SYSTEM_SETTING_CHANGED: {
+      std::string changed_setting =
+          *content::Details<const std::string>(details).ptr();
+      DCHECK(changed_setting == kAccountsPrefDeviceLocalAccounts ||
+             changed_setting == kAccountsPrefSupervisedUsersEnabled);
       RetrieveTrustedDevicePolicies();
       break;
+    }
     default:
       NOTREACHED();
   }
@@ -1010,6 +1021,7 @@ void UserManagerImpl::EnsureUsersLoaded() {
 
 void UserManagerImpl::RetrieveTrustedDevicePolicies() {
   ephemeral_users_enabled_ = false;
+  locally_managed_users_enabled_by_policy_ = false;
   owner_email_ = "";
 
   // Schedule a callback if device policy has not yet been verified.
@@ -1021,6 +1033,8 @@ void UserManagerImpl::RetrieveTrustedDevicePolicies() {
 
   cros_settings_->GetBoolean(kAccountsPrefEphemeralUsersEnabled,
                              &ephemeral_users_enabled_);
+  cros_settings_->GetBoolean(kAccountsPrefSupervisedUsersEnabled,
+                             &locally_managed_users_enabled_by_policy_);
   cros_settings_->GetString(kDeviceOwner, &owner_email_);
 
   EnsureUsersLoaded();
@@ -1052,9 +1066,6 @@ void UserManagerImpl::RetrieveTrustedDevicePolicies() {
 
   if (changed)
     NotifyUserListChanged();
-
-  cros_settings_->AddSettingsObserver(kAccountsPrefDeviceLocalAccounts,
-                                      this);
 }
 
 bool UserManagerImpl::AreEphemeralUsersEnabled() const {
@@ -1542,7 +1553,9 @@ UserFlow* UserManagerImpl::GetCurrentUserFlow() const {
 
 UserFlow* UserManagerImpl::GetUserFlow(const std::string& email) const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  FlowMap::const_iterator it = specific_flows_.find(email);
+  std::string canonical_email = email.empty() ? email :
+      gaia::CanonicalizeEmail(email);
+  FlowMap::const_iterator it = specific_flows_.find(canonical_email);
   if (it != specific_flows_.end())
     return it->second;
   return GetDefaultUserFlow();
@@ -1550,13 +1563,15 @@ UserFlow* UserManagerImpl::GetUserFlow(const std::string& email) const {
 
 void UserManagerImpl::SetUserFlow(const std::string& email, UserFlow* flow) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  ResetUserFlow(email);
-  specific_flows_[email] = flow;
+  std::string canonical_email = gaia::CanonicalizeEmail(email);
+  ResetUserFlow(canonical_email);
+  specific_flows_[canonical_email] = flow;
 }
 
 void UserManagerImpl::ResetUserFlow(const std::string& email) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  FlowMap::iterator it = specific_flows_.find(email);
+  std::string canonical_email = gaia::CanonicalizeEmail(email);
+  FlowMap::iterator it = specific_flows_.find(canonical_email);
   if (it != specific_flows_.end()) {
     delete it->second;
     specific_flows_.erase(it);
@@ -1584,6 +1599,12 @@ void UserManagerImpl::SetAppModeChromeClientOAuthInfo(
 
   chrome_client_id_ = chrome_client_id;
   chrome_client_secret_ = chrome_client_secret;
+}
+
+bool UserManagerImpl::AreLocallyManagedUsersAllowed() const {
+  return ManagedUserService::AreManagedUsersEnabled() &&
+        (locally_managed_users_enabled_by_policy_ ||
+         !g_browser_process->browser_policy_connector()->IsEnterpriseManaged());
 }
 
 UserFlow* UserManagerImpl::GetDefaultUserFlow() const {

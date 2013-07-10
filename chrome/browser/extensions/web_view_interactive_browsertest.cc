@@ -1,13 +1,13 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/stringprintf.h"
+#include "apps/shell_window.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/extensions/platform_app_browsertest_util.h"
 #include "chrome/browser/extensions/shell_window_registry.h"
-#include "chrome/browser/ui/extensions/shell_window.h"
 #include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/test_launcher_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -18,8 +18,11 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/test/browser_test_utils.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/test/ui_controls.h"
+
+using apps::ShellWindow;
 
 class WebViewInteractiveTest
     : public extensions::PlatformAppBrowserTest {
@@ -101,7 +104,7 @@ class WebViewInteractiveTest
 
   void NewWindowTestHelper(const std::string& test_name,
                            const std::string& app_location) {
-    ASSERT_TRUE(StartTestServer());  // For serving guest pages.
+    ASSERT_TRUE(StartEmbeddedTestServer());  // For serving guest pages.
     ExtensionTestMessageListener launched_listener("Launched", false);
     LoadAndLaunchPlatformApp(app_location.c_str());
     ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
@@ -122,12 +125,12 @@ class WebViewInteractiveTest
 
   void SetupTest(const std::string& app_name,
                  const std::string& guest_url_spec) {
-    ASSERT_TRUE(StartTestServer());
+    ASSERT_TRUE(StartEmbeddedTestServer());
     GURL::Replacements replace_host;
     std::string host_str("localhost");  // Must stay in scope with replace_host.
     replace_host.SetHostStr(host_str);
 
-    GURL guest_url = test_server()->GetURL(guest_url_spec);
+    GURL guest_url = embedded_test_server()->GetURL(guest_url_spec);
     guest_url = guest_url.ReplaceComponents(replace_host);
 
     ui_test_utils::UrlLoadObserver guest_observer(
@@ -290,7 +293,7 @@ class WebViewInteractiveTest
 
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, PointerLock) {
   SetupTest("web_view/pointer_lock",
-            "files/extensions/platform_apps/web_view/pointer_lock/guest.html");
+            "/extensions/platform_apps/web_view/pointer_lock/guest.html");
 
   // Move the mouse over the Lock Pointer button.
   ASSERT_TRUE(ui_test_utils::SendMouseMoveSync(
@@ -364,7 +367,7 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, PointerLock) {
 
 // Tests that setting focus on the <webview> sets focus on the guest.
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, DISABLED_Focus) {
-  ASSERT_TRUE(StartTestServer());  // For serving guest pages.
+  ASSERT_TRUE(StartEmbeddedTestServer());  // For serving guest pages.
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/focus"))
       << message_;
 }
@@ -372,7 +375,7 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, DISABLED_Focus) {
 // Tests that guests receive edit commands and respond appropriately.
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, EditCommands) {
   SetupTest("web_view/edit_commands",
-            "files/extensions/platform_apps/web_view/edit_commands/guest.html");
+            "/extensions/platform_apps/web_view/edit_commands/guest.html");
 
   ASSERT_TRUE(ui_test_utils::ShowAndFocusNativeWindow(
       GetPlatformAppWindow()));
@@ -390,7 +393,7 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, EditCommands) {
 // Tests that guests receive edit commands and respond appropriately.
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, EditCommandsNoMenu) {
   SetupTest("web_view/edit_commands_no_menu",
-      "files/extensions/platform_apps/web_view/edit_commands_no_menu/"
+      "/extensions/platform_apps/web_view/edit_commands_no_menu/"
       "guest.html");
 
   ASSERT_TRUE(ui_test_utils::ShowAndFocusNativeWindow(
@@ -436,7 +439,7 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, NewWindow_WebRequest) {
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, ExecuteCode) {
-  ASSERT_TRUE(StartTestServer());  // For serving guest pages.
+  ASSERT_TRUE(StartEmbeddedTestServer());  // For serving guest pages.
   ASSERT_TRUE(RunPlatformAppTestWithArg(
       "platform_apps/web_view/common", "execute_code")) << message_;
 }
@@ -444,7 +447,7 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, ExecuteCode) {
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, PopupPositioning) {
   SetupTest(
       "web_view/popup_positioning",
-      "files/extensions/platform_apps/web_view/popup_positioning/guest.html");
+      "/extensions/platform_apps/web_view/popup_positioning/guest.html");
   ASSERT_TRUE(guest_web_contents());
 
   PopupTestHelper(gfx::Point());
@@ -461,7 +464,7 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, PopupPositioning) {
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, DISABLED_PopupPositioningMoved) {
   SetupTest(
       "web_view/popup_positioning_moved",
-      "files/extensions/platform_apps/web_view/popup_positioning_moved"
+      "/extensions/platform_apps/web_view/popup_positioning_moved"
       "/guest.html");
   ASSERT_TRUE(guest_web_contents());
 

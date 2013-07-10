@@ -4,12 +4,8 @@
 
 #include "cc/resources/worker_pool.h"
 
-#if defined(OS_ANDROID)
-// TODO(epenner): Move thread priorities to base. (crbug.com/170549)
-#include <sys/resource.h>
-#endif
-
-#include <map>
+#include <algorithm>
+#include <queue>
 
 #include "base/bind.h"
 #include "base/containers/hash_tables.h"
@@ -27,13 +23,6 @@ WorkerPoolTask::WorkerPoolTask()
     : did_schedule_(false),
       did_run_(false),
       did_complete_(false) {
-}
-
-WorkerPoolTask::WorkerPoolTask(TaskVector* dependencies)
-    : did_schedule_(false),
-      did_run_(false),
-      did_complete_(false) {
-  dependencies_.swap(*dependencies);
 }
 
 WorkerPoolTask::~WorkerPoolTask() {
@@ -57,6 +46,10 @@ void WorkerPoolTask::DidRun() {
   did_run_ = true;
 }
 
+void WorkerPoolTask::WillComplete() {
+  DCHECK(!did_complete_);
+}
+
 void WorkerPoolTask::DidComplete() {
   DCHECK(did_schedule_);
   DCHECK(!did_complete_);
@@ -69,6 +62,15 @@ bool WorkerPoolTask::HasFinishedRunning() const {
 
 bool WorkerPoolTask::HasCompleted() const {
   return did_complete_;
+}
+
+GraphNode::GraphNode(internal::WorkerPoolTask* task, unsigned priority)
+    : task_(task),
+      priority_(priority),
+      num_dependencies_(0) {
+}
+
+GraphNode::~GraphNode() {
 }
 
 }  // namespace internal
@@ -92,9 +94,22 @@ class WorkerPool::Inner : public base::DelegateSimpleThread::Delegate {
   void SetTaskGraph(TaskGraph* graph);
 
   // Collect all completed tasks in |completed_tasks|.
-  void CollectCompletedTasks(TaskDeque* completed_tasks);
+  void CollectCompletedTasks(TaskVector* completed_tasks);
 
  private:
+  class PriorityComparator {
+   public:
+    bool operator()(const internal::GraphNode* a,
+                    const internal::GraphNode* b) {
+      // In this system, numerically lower priority is run first.
+      if (a->priority() != b->priority())
+        return a->priority() > b->priority();
+
+      // Run task with most dependents first when priority is the same.
+      return a->dependents().size() < b->dependents().size();
+    }
+  };
+
   // Overridden from base::DelegateSimpleThread:
   virtual void Run() OVERRIDE;
 
@@ -119,15 +134,16 @@ class WorkerPool::Inner : public base::DelegateSimpleThread::Delegate {
   GraphNodeMap pending_tasks_;
 
   // Ordered set of tasks that are ready to run.
-  // TODO(reveman): priority_queue might be more efficient.
-  typedef std::map<unsigned, internal::WorkerPoolTask*> TaskMap;
-  TaskMap ready_to_run_tasks_;
+  typedef std::priority_queue<internal::GraphNode*,
+                              std::vector<internal::GraphNode*>,
+                              PriorityComparator> TaskQueue;
+  TaskQueue ready_to_run_tasks_;
 
   // This set contains all currently running tasks.
   GraphNodeMap running_tasks_;
 
   // Completed tasks not yet collected by origin thread.
-  TaskDeque completed_tasks_;
+  TaskVector completed_tasks_;
 
   ScopedPtrDeque<base::DelegateSimpleThread> workers_;
 
@@ -151,6 +167,9 @@ WorkerPool::Inner::Inner(
                 "Worker%u",
                 static_cast<unsigned>(workers_.size() + 1)).c_str()));
     worker->Start();
+#if defined(OS_ANDROID) || defined(OS_LINUX)
+    worker->SetThreadPriority(base::kThreadPriority_Background);
+#endif
     workers_.push_back(worker.Pass());
   }
 }
@@ -193,7 +212,7 @@ void WorkerPool::Inner::SetTaskGraph(TaskGraph* graph) {
 
   GraphNodeMap new_pending_tasks;
   GraphNodeMap new_running_tasks;
-  TaskMap new_ready_to_run_tasks;
+  TaskQueue new_ready_to_run_tasks;
 
   new_pending_tasks.swap(*graph);
 
@@ -202,28 +221,20 @@ void WorkerPool::Inner::SetTaskGraph(TaskGraph* graph) {
 
     // First remove all completed tasks from |new_pending_tasks| and
     // adjust number of dependencies.
-    for (TaskDeque::iterator it = completed_tasks_.begin();
+    for (TaskVector::iterator it = completed_tasks_.begin();
          it != completed_tasks_.end(); ++it) {
       internal::WorkerPoolTask* task = it->get();
 
-      scoped_ptr<GraphNode> node = new_pending_tasks.take_and_erase(task);
+      scoped_ptr<internal::GraphNode> node = new_pending_tasks.take_and_erase(
+          task);
       if (node) {
-        for (GraphNode::Vector::const_iterator it = node->dependents().begin();
+        for (internal::GraphNode::Vector::const_iterator it =
+                 node->dependents().begin();
              it != node->dependents().end(); ++it) {
-          GraphNode* dependent_node = *it;
+          internal::GraphNode* dependent_node = *it;
           dependent_node->remove_dependency();
         }
       }
-    }
-
-    // Move tasks not present in |new_pending_tasks| to |completed_tasks_|.
-    for (GraphNodeMap::iterator it = pending_tasks_.begin();
-         it != pending_tasks_.end(); ++it) {
-      internal::WorkerPoolTask* task = it->first;
-
-      // Task has completed if not present in |new_pending_tasks|.
-      if (!new_pending_tasks.contains(task))
-        completed_tasks_.push_back(task);
     }
 
     // Build new running task set.
@@ -242,7 +253,8 @@ void WorkerPool::Inner::SetTaskGraph(TaskGraph* graph) {
     for (GraphNodeMap::iterator it = new_pending_tasks.begin();
          it != new_pending_tasks.end(); ++it) {
       internal::WorkerPoolTask* task = it->first;
-      GraphNode* node = it->second;
+      DCHECK(task);
+      internal::GraphNode* node = it->second;
 
       // Completed tasks should not exist in |new_pending_tasks|.
       DCHECK(!task->HasFinishedRunning());
@@ -251,16 +263,27 @@ void WorkerPool::Inner::SetTaskGraph(TaskGraph* graph) {
       // Note: This is only for debugging purposes.
       task->DidSchedule();
 
-      DCHECK_EQ(0u, new_ready_to_run_tasks.count(node->priority()));
       if (!node->num_dependencies())
-        new_ready_to_run_tasks[node->priority()] = task;
+        new_ready_to_run_tasks.push(node);
+
+      // Erase the task from old pending tasks.
+      pending_tasks_.erase(task);
+    }
+
+    completed_tasks_.reserve(completed_tasks_.size() + pending_tasks_.size());
+
+    // The items left in |pending_tasks_| need to be canceled.
+    for (GraphNodeMap::const_iterator it = pending_tasks_.begin();
+         it != pending_tasks_.end();
+         ++it) {
+      completed_tasks_.push_back(it->first);
     }
 
     // Swap task sets.
     // Note: old tasks are intentionally destroyed after releasing |lock_|.
     pending_tasks_.swap(new_pending_tasks);
     running_tasks_.swap(new_running_tasks);
-    ready_to_run_tasks_.swap(new_ready_to_run_tasks);
+    std::swap(ready_to_run_tasks_, new_ready_to_run_tasks);
 
     // If |ready_to_run_tasks_| is empty, it means we either have
     // running tasks, or we have no pending tasks.
@@ -273,7 +296,7 @@ void WorkerPool::Inner::SetTaskGraph(TaskGraph* graph) {
   }
 }
 
-void WorkerPool::Inner::CollectCompletedTasks(TaskDeque* completed_tasks) {
+void WorkerPool::Inner::CollectCompletedTasks(TaskVector* completed_tasks) {
   base::AutoLock lock(lock_);
 
   DCHECK_EQ(0u, completed_tasks->size());
@@ -281,12 +304,6 @@ void WorkerPool::Inner::CollectCompletedTasks(TaskDeque* completed_tasks) {
 }
 
 void WorkerPool::Inner::Run() {
-#if defined(OS_ANDROID)
-  base::PlatformThread::SetThreadPriority(
-      base::PlatformThread::CurrentHandle(),
-      base::kThreadPriority_Background);
-#endif
-
   base::AutoLock lock(lock_);
 
   // Get a unique thread index.
@@ -305,8 +322,8 @@ void WorkerPool::Inner::Run() {
 
     // Take top priority task from |ready_to_run_tasks_|.
     scoped_refptr<internal::WorkerPoolTask> task(
-        ready_to_run_tasks_.begin()->second);
-    ready_to_run_tasks_.erase(ready_to_run_tasks_.begin());
+        ready_to_run_tasks_.top()->task());
+    ready_to_run_tasks_.pop();
 
     // Move task from |pending_tasks_| to |running_tasks_|.
     DCHECK(pending_tasks_.contains(task.get()));
@@ -322,7 +339,7 @@ void WorkerPool::Inner::Run() {
     {
       base::AutoUnlock unlock(lock_);
 
-      task->RunOnThread(thread_index);
+      task->RunOnWorkerThread(thread_index);
     }
 
     // This will mark task as finished running.
@@ -330,23 +347,19 @@ void WorkerPool::Inner::Run() {
 
     // Now iterate over all dependents to remove dependency and check
     // if they are ready to run.
-    scoped_ptr<GraphNode> node = running_tasks_.take_and_erase(task.get());
+    scoped_ptr<internal::GraphNode> node = running_tasks_.take_and_erase(
+        task.get());
     if (node) {
-      for (GraphNode::Vector::const_iterator it = node->dependents().begin();
+      for (internal::GraphNode::Vector::const_iterator it =
+               node->dependents().begin();
            it != node->dependents().end(); ++it) {
-        GraphNode* dependent_node = *it;
+        internal::GraphNode* dependent_node = *it;
 
         dependent_node->remove_dependency();
-        // Dependent is not ready unless number of dependencies are 0.
-        if (dependent_node->num_dependencies())
-          continue;
-
-        // Task is ready. Add it to |ready_to_run_tasks_|.
-        DCHECK(!ready_to_run_tasks_.count(dependent_node->priority()) ||
-               ready_to_run_tasks_[dependent_node->priority()] ==
-               dependent_node->task());
-        ready_to_run_tasks_[dependent_node->priority()] =
-            dependent_node->task();
+        // Task is ready if it has no dependencies. Add it to
+        // |ready_to_run_tasks_|.
+        if (!dependent_node->num_dependencies())
+          ready_to_run_tasks_.push(dependent_node);
       }
     }
 
@@ -357,15 +370,6 @@ void WorkerPool::Inner::Run() {
   // We noticed we should exit. Wake up the next worker so it knows it should
   // exit as well (because the Shutdown() code only signals once).
   has_ready_to_run_tasks_cv_.Signal();
-}
-
-WorkerPool::GraphNode::GraphNode(internal::WorkerPoolTask* task)
-    : task_(task),
-      priority_(0),
-      num_dependencies_(0) {
-}
-
-WorkerPool::GraphNode::~GraphNode() {
 }
 
 WorkerPool::WorkerPool(size_t num_threads,
@@ -390,83 +394,38 @@ void WorkerPool::CheckForCompletedTasks() {
 
   DCHECK(!in_dispatch_completion_callbacks_);
 
-  TaskDeque completed_tasks;
+  TaskVector completed_tasks;
   inner_->CollectCompletedTasks(&completed_tasks);
-  DispatchCompletionCallbacks(&completed_tasks);
+  ProcessCompletedTasks(completed_tasks);
 }
 
-void WorkerPool::DispatchCompletionCallbacks(TaskDeque* completed_tasks) {
-  TRACE_EVENT0("cc", "WorkerPool::DispatchCompletionCallbacks");
+void WorkerPool::ProcessCompletedTasks(
+    const TaskVector& completed_tasks) {
+  TRACE_EVENT0("cc", "WorkerPool::ProcessCompletedTasks");
 
   // Worker pool instance is not reentrant while processing completed tasks.
   in_dispatch_completion_callbacks_ = true;
 
-  while (!completed_tasks->empty()) {
-    internal::WorkerPoolTask* task = completed_tasks->front().get();
+  for (TaskVector::const_iterator it = completed_tasks.begin();
+       it != completed_tasks.end();
+       ++it) {
+    internal::WorkerPoolTask* task = it->get();
 
+    task->WillComplete();
+    task->CompleteOnOriginThread();
     task->DidComplete();
-    task->DispatchCompletionCallback();
-
-    completed_tasks->pop_front();
   }
 
   in_dispatch_completion_callbacks_ = false;
 }
 
 void WorkerPool::SetTaskGraph(TaskGraph* graph) {
-  TRACE_EVENT0("cc", "WorkerPool::SetTaskGraph");
+  TRACE_EVENT1("cc", "WorkerPool::SetTaskGraph",
+               "num_tasks", graph->size());
 
   DCHECK(!in_dispatch_completion_callbacks_);
 
   inner_->SetTaskGraph(graph);
-}
-
-// static
-unsigned WorkerPool::BuildTaskGraphRecursive(
-    internal::WorkerPoolTask* task,
-    GraphNode* dependent,
-    unsigned priority,
-    TaskGraph* graph) {
-  GraphNodeMap::iterator it = graph->find(task);
-  if (it != graph->end()) {
-    GraphNode* node = it->second;
-    node->add_dependent(dependent);
-    return priority;
-  }
-
-  scoped_ptr<GraphNode> node(new GraphNode(task));
-
-  typedef internal::WorkerPoolTask::TaskVector TaskVector;
-  for (TaskVector::iterator dependency_it = task->dependencies().begin();
-       dependency_it != task->dependencies().end(); ++dependency_it) {
-    internal::WorkerPoolTask* dependency = dependency_it->get();
-    // Skip sub-tree if task has already completed.
-    if (dependency->HasCompleted())
-      continue;
-
-    node->add_dependency();
-
-    priority = BuildTaskGraphRecursive(dependency,
-                                       node.get(),
-                                       priority,
-                                       graph);
-  }
-
-  node->set_priority(priority);
-  if (dependent)
-    node->add_dependent(dependent);
-
-  graph->set(task, node.Pass());
-
-  return priority + 1;
-}
-
-// static
-void WorkerPool::BuildTaskGraph(
-    internal::WorkerPoolTask* root, TaskGraph* graph) {
-  const unsigned kBasePriority = 0u;
-  if (root && !root->HasCompleted())
-    BuildTaskGraphRecursive(root, NULL, kBasePriority, graph);
 }
 
 }  // namespace cc

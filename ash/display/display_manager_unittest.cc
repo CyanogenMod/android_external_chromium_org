@@ -11,6 +11,7 @@
 #include "ash/test/display_manager_test_api.h"
 #include "ash/test/mirror_window_test_api.h"
 #include "base/format_macros.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
@@ -26,6 +27,14 @@ using std::vector;
 using std::string;
 
 using base::StringPrintf;
+
+namespace {
+
+std::string ToDisplayName(int64 id) {
+  return "x-" + base::Int64ToString(id);
+}
+
+}  // namespace
 
 class DisplayManagerTest : public test::AshTestBase,
                            public gfx::DisplayObserver,
@@ -118,7 +127,7 @@ class DisplayManagerTest : public test::AshTestBase,
   DISALLOW_COPY_AND_ASSIGN(DisplayManagerTest);
 };
 
-TEST_F(DisplayManagerTest, NativeDisplayTest) {
+TEST_F(DisplayManagerTest, UpdateDisplayTest) {
   if (!SupportsMultipleDisplays())
     return;
 
@@ -209,6 +218,15 @@ TEST_F(DisplayManagerTest, NativeDisplayTest) {
   EXPECT_EQ("1000,1000 600x400",
             GetDisplayInfoAt(1).bounds_in_pixel().ToString());
   reset();
+
+  // Changing primary will update secondary as well.
+  UpdateDisplay("0+0-800x600,1000+1000-600x400");
+  EXPECT_EQ("2 0 0", GetCountSummary());
+  reset();
+  EXPECT_EQ("0,0 800x600",
+            display_manager()->GetDisplayAt(0)->bounds().ToString());
+  EXPECT_EQ("800,0 600x400",
+            display_manager()->GetDisplayAt(1)->bounds().ToString());
 }
 
 // Test in emulation mode (use_fullscreen_host_window=false)
@@ -365,6 +383,9 @@ TEST_F(DisplayManagerTest, ZeroOverscanInsets) {
 }
 
 TEST_F(DisplayManagerTest, TestDeviceScaleOnlyChange) {
+  if (!SupportsHostWindowResize())
+    return;
+
   UpdateDisplay("1000x600");
   EXPECT_EQ(1,
             Shell::GetPrimaryRootWindow()->compositor()->device_scale_factor());
@@ -378,13 +399,13 @@ TEST_F(DisplayManagerTest, TestDeviceScaleOnlyChange) {
 }
 
 DisplayInfo CreateDisplayInfo(int64 id, const gfx::Rect& bounds) {
-  DisplayInfo info(id, StringPrintf("x-%d", static_cast<int>(id)), false);
+  DisplayInfo info(id, ToDisplayName(id), false);
   info.SetBounds(bounds);
   return info;
 }
 
 TEST_F(DisplayManagerTest, TestNativeDisplaysChanged) {
-  const int internal_display_id =
+  const int64 internal_display_id =
       test::DisplayManagerTestApi(display_manager()).
       SetFirstDisplayAsInternalDisplay();
   const int external_id = 10;
@@ -426,20 +447,24 @@ TEST_F(DisplayManagerTest, TestNativeDisplaysChanged) {
   EXPECT_FALSE(display_manager()->mirrored_display().is_valid());
   EXPECT_EQ(external_id, Shell::GetScreen()->GetPrimaryDisplay().id());
 
+  EXPECT_EQ(internal_display_id, gfx::Display::InternalDisplayId());
+
   // Primary connected, with different bounds.
   display_info_list.clear();
   display_info_list.push_back(internal_display_info);
   display_info_list.push_back(external_display_info);
   display_manager()->OnNativeDisplaysChanged(display_info_list);
   EXPECT_EQ(2U, display_manager()->GetNumDisplays());
-  // need to remember which is primary
+  EXPECT_EQ(internal_display_id, Shell::GetScreen()->GetPrimaryDisplay().id());
+
+  // This combinatino is new, so internal display becomes primary.
   EXPECT_EQ("0,0 500x500",
             FindDisplayForId(internal_display_id).bounds().ToString());
   EXPECT_EQ("1,1 100x100",
             FindDisplayInfoForId(10).bounds_in_pixel().ToString());
   EXPECT_EQ(2U, display_manager()->num_connected_displays());
   EXPECT_FALSE(display_manager()->mirrored_display().is_valid());
-  EXPECT_EQ(StringPrintf("x-%d", internal_display_id),
+  EXPECT_EQ(ToDisplayName(internal_display_id),
             display_manager()->GetDisplayNameForId(internal_display_id));
 
   // Emulate suspend.
@@ -452,7 +477,7 @@ TEST_F(DisplayManagerTest, TestNativeDisplaysChanged) {
             FindDisplayInfoForId(10).bounds_in_pixel().ToString());
   EXPECT_EQ(2U, display_manager()->num_connected_displays());
   EXPECT_FALSE(display_manager()->mirrored_display().is_valid());
-  EXPECT_EQ(StringPrintf("x-%d", internal_display_id),
+  EXPECT_EQ(ToDisplayName(internal_display_id),
             display_manager()->GetDisplayNameForId(internal_display_id));
 
   // External display has disconnected then resumed.
@@ -500,7 +525,7 @@ TEST_F(DisplayManagerTest, TestNativeDisplaysChanged) {
   EXPECT_TRUE(display_manager()->IsMirrored());
 
   // Test display name.
-  EXPECT_EQ(StringPrintf("x-%d", internal_display_id),
+  EXPECT_EQ(ToDisplayName(internal_display_id),
             display_manager()->GetDisplayNameForId(internal_display_id));
   EXPECT_EQ("x-10", display_manager()->GetDisplayNameForId(10));
   EXPECT_EQ("x-11", display_manager()->GetDisplayNameForId(11));
@@ -690,43 +715,6 @@ TEST_F(DisplayManagerTest, NativeDisplaysChangedAfterPrimaryChange) {
   EXPECT_EQ("0,0 100x100", FindDisplayForId(10).bounds().ToString());
 }
 
-TEST_F(DisplayManagerTest, AutomaticOverscanInsets) {
-  if (!SupportsMultipleDisplays())
-    return;
-
-  UpdateDisplay("200x200,400x400");
-
-  std::vector<DisplayInfo> display_info_list;
-  display_info_list.push_back(GetDisplayInfoAt(0));
-  display_info_list.push_back(GetDisplayInfoAt(1));
-  display_info_list[1].set_has_overscan_for_test(true);
-  int64 id = display_info_list[1].id();
-  // SetDefaultOverscanInsets(&display_info_list[1]);
-  display_manager()->OnNativeDisplaysChanged(display_info_list);
-  // It has overscan insets, although SetOverscanInsets() isn't called.
-  EXPECT_EQ("380x380",
-            GetDisplayInfoAt(1).size_in_pixel().ToString());
-
-  // If custom overscan insets is specified, the specified value is used.
-  display_manager()->SetOverscanInsets(id, gfx::Insets(5, 6, 7, 8));
-  display_manager()->OnNativeDisplaysChanged(display_info_list);
-  EXPECT_EQ("386x388",
-            GetDisplayInfoAt(1).size_in_pixel().ToString());
-
-  // Do not overscan even though it has 'has_overscan' flag, if the custom
-  // insets is empty.
-  display_manager()->SetOverscanInsets(id, gfx::Insets());
-  display_manager()->OnNativeDisplaysChanged(display_info_list);
-  EXPECT_EQ("400x400",
-            GetDisplayInfoAt(1).size_in_pixel().ToString());
-
-  // Clearing the custom overscan should set the bounds to
-  // original.
-  display_manager()->ClearCustomOverscanInsets(id);
-  EXPECT_EQ("380x380",
-            GetDisplayInfoAt(1).size_in_pixel().ToString());
-}
-
 TEST_F(DisplayManagerTest, Rotate) {
   if (!SupportsMultipleDisplays())
     return;
@@ -755,6 +743,20 @@ TEST_F(DisplayManagerTest, Rotate) {
             GetDisplayInfoAt(1).bounds_in_pixel().ToString());
   EXPECT_EQ("300x400",
             GetDisplayInfoAt(1).size_in_pixel().ToString());
+
+  // Just Rotating display will change the bounds on both display.
+  UpdateDisplay("100x200/l,300x400");
+  EXPECT_EQ("2 0 0", GetCountSummary());
+  reset();
+
+  // Updating tothe same configuration should report no changes.
+  UpdateDisplay("100x200/l,300x400");
+  EXPECT_EQ("0 0 0", GetCountSummary());
+  reset();
+
+  UpdateDisplay("100x200/l,300x400");
+  EXPECT_EQ("0 0 0", GetCountSummary());
+  reset();
 
   UpdateDisplay("200x200");
   EXPECT_EQ("1 0 1", GetCountSummary());

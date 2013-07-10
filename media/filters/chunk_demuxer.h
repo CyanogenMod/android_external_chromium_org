@@ -62,8 +62,29 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   virtual base::TimeDelta GetStartTime() const OVERRIDE;
 
   // Methods used by an external object to control this demuxer.
-  void StartWaitingForSeek();
-  void CancelPendingSeek();
+  //
+  // Indicates that a new Seek() call is on its way. Any pending Reads on the
+  // DemuxerStream objects should be aborted immediately inside this call and
+  // future Read calls should return kAborted until the Seek() call occurs.
+  // This method MUST ALWAYS be called before Seek() is called to signal that
+  // the next Seek() call represents the seek point we actually want to return
+  // data for.
+  // |seek_time| - The presentation timestamp for the seek that triggered this
+  // call. It represents the most recent position the caller is trying to seek
+  // to.
+  void StartWaitingForSeek(base::TimeDelta seek_time);
+
+  // Indicates that a Seek() call is on its way, but another seek has been
+  // requested that will override the impending Seek() call. Any pending Reads
+  // on the DemuxerStream objects should be aborted immediately inside this call
+  // and future Read calls should return kAborted until the next
+  // StartWaitingForSeek() call. This method also arranges for the next Seek()
+  // call received before a StartWaitingForSeek() call to immediately call its
+  // callback without waiting for any data.
+  // |seek_time| - The presentation timestamp for the seek request that
+  // triggered this call. It represents the most recent position the caller is
+  // trying to seek to.
+  void CancelPendingSeek(base::TimeDelta seek_time);
 
   // Registers a new |id| to use for AppendData() calls. |type| indicates
   // the MIME type for the data that we intend to append for this ID.
@@ -107,6 +128,8 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   void EndOfStream(PipelineStatus status);
   void Shutdown();
 
+  void SetMemoryLimitsForTesting(int memory_limit);
+
  private:
   enum State {
     WAITING_FOR_INIT,
@@ -124,7 +147,7 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   void ReportError_Locked(PipelineStatus error);
 
   // Returns true if any stream has seeked to a time without buffered data.
-  bool IsSeekPending_Locked() const;
+  bool IsSeekWaitingForData_Locked() const;
 
   // Returns true if all streams can successfully call EndOfStream,
   // false if any can not.
@@ -139,9 +162,6 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   bool OnVideoBuffers(const StreamParser::BufferQueue& buffers);
   bool OnTextBuffers(TextTrack* text_track,
                      const StreamParser::BufferQueue& buffers);
-  bool OnNeedKey(const std::string& type,
-                 scoped_ptr<uint8[]> init_data,
-                 int init_data_size);
   void OnNewMediaSegment(const std::string& source_id,
                          base::TimeDelta start_timestamp);
 
@@ -176,6 +196,7 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
 
   mutable base::Lock lock_;
   State state_;
+  bool cancel_next_seek_;
 
   DemuxerHost* host_;
   base::Closure open_cb_;

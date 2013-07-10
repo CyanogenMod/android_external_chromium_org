@@ -81,16 +81,6 @@ typedef base::Callback<void(FileError error,
                             const base::Closure& cancel_download_closure)>
     GetFileContentInitializedCallback;
 
-// Used to read a directory from the file system.
-// Similar to ReadDirectoryCallback but this one provides
-// |hide_hosted_documents|
-// If |error| is not FILE_ERROR_OK, |entries| is set to NULL.
-// |entries| are contents, both files and directories, of the directory.
-typedef base::Callback<void(FileError error,
-                            bool hide_hosted_documents,
-                            scoped_ptr<ResourceEntryVector> entries)>
-    ReadDirectoryWithSettingCallback;
-
 // Used to get drive content search results.
 // If |error| is not FILE_ERROR_OK, |result_paths| is empty.
 typedef base::Callback<void(
@@ -259,8 +249,6 @@ class FileSystemInterface {
   // needs to be present in in-memory representation of the file system that
   // in order to be removed.
   //
-  // TODO(satorux): is_recursive is not supported yet. crbug.com/138282
-  //
   // |callback| must not be null.
   virtual void Remove(const base::FilePath& file_path,
                       bool is_recursive,
@@ -298,6 +286,13 @@ class FileSystemInterface {
                          const base::Time& last_access_time,
                          const base::Time& last_modified_time,
                          const FileOperationCallback& callback) = 0;
+
+  // Truncates the file content at |file_path| to the |length|.
+  //
+  // |callback| must not be null.
+  virtual void TruncateFile(const base::FilePath& file_path,
+                            int64 length,
+                            const FileOperationCallback& callback) = 0;
 
   // Pins a file at |file_path|.
   //
@@ -375,7 +370,7 @@ class FileSystemInterface {
   // |callback| must not be null.
   virtual void ReadDirectoryByPath(
       const base::FilePath& file_path,
-      const ReadDirectoryWithSettingCallback& callback) = 0;
+      const ReadDirectoryCallback& callback) = 0;
 
   // Refreshes the directory pointed by |file_path| (i.e. fetches the latest
   // metadata of files in the target directory).

@@ -13,6 +13,7 @@
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/khronos/GLES2/gl2.h"
+#include "ui/gfx/android/device_display_info.h"
 #include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
 namespace content {
@@ -38,15 +39,13 @@ class DirectGLImageTransportFactory : public ImageTransportFactoryAndroid {
   }
   virtual void AcquireTexture(
       uint32 texture_id, const signed char* mailbox_name) OVERRIDE {}
-  virtual void ReleaseTexture(
-      uint32 texture_id, const signed char* mailbox_name) OVERRIDE {}
   virtual WebKit::WebGraphicsContext3D* GetContext3D() OVERRIDE {
     return context_.get();
   }
   virtual GLHelper* GetGLHelper() OVERRIDE { return NULL; }
 
  private:
-  scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl> context_;
+  scoped_ptr<WebKit::WebGraphicsContext3D> context_;
 
   DISALLOW_COPY_AND_ASSIGN(DirectGLImageTransportFactory);
 };
@@ -55,11 +54,12 @@ DirectGLImageTransportFactory::DirectGLImageTransportFactory() {
   WebKit::WebGraphicsContext3D::Attributes attrs;
   attrs.shareResources = true;
   attrs.noAutomaticFlushes = true;
-  context_.reset(webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl::
-                     CreateViewContext(attrs, NULL));
+  context_ = webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl::
+      CreateViewContext(attrs, NULL);
   if (context_->makeContextCurrent())
     context_->pushGroupMarkerEXT(
-        base::StringPrintf("DirectGLImageTransportFactory-%p", this).c_str());
+        base::StringPrintf("DirectGLImageTransportFactory-%p",
+                           context_.get()).c_str());
 }
 
 DirectGLImageTransportFactory::~DirectGLImageTransportFactory() {
@@ -75,8 +75,6 @@ class CmdBufferImageTransportFactory : public ImageTransportFactoryAndroid {
   virtual uint32_t CreateTexture() OVERRIDE;
   virtual void DeleteTexture(uint32_t id) OVERRIDE;
   virtual void AcquireTexture(
-      uint32 texture_id, const signed char* mailbox_name) OVERRIDE;
-  virtual void ReleaseTexture(
       uint32 texture_id, const signed char* mailbox_name) OVERRIDE;
   virtual WebKit::WebGraphicsContext3D* GetContext3D() OVERRIDE {
     return context_.get();
@@ -100,14 +98,27 @@ CmdBufferImageTransportFactory::CmdBufferImageTransportFactory() {
                                                            url,
                                                            factory,
                                                            swap_client));
-  context_->InitializeWithDefaultBufferSizes(
+  static const size_t kBytesPerPixel = 4;
+  gfx::DeviceDisplayInfo display_info;
+  size_t full_screen_texture_size_in_bytes =
+      display_info.GetDisplayHeight() *
+      display_info.GetDisplayWidth() *
+      kBytesPerPixel;
+  context_->Initialize(
       attrs,
       false,
-      CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE);
+      CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE,
+      64 * 1024,  // command buffer size
+      std::min(full_screen_texture_size_in_bytes,
+               kDefaultStartTransferBufferSize),
+      kDefaultMinTransferBufferSize,
+      std::min(3 * full_screen_texture_size_in_bytes,
+               kDefaultMaxTransferBufferSize));
 
   if (context_->makeContextCurrent())
     context_->pushGroupMarkerEXT(
-        base::StringPrintf("CmdBufferImageTransportFactory-%p", this).c_str());
+        base::StringPrintf("CmdBufferImageTransportFactory-%p",
+                           context_.get()).c_str());
 }
 
 CmdBufferImageTransportFactory::~CmdBufferImageTransportFactory() {
@@ -154,16 +165,6 @@ void CmdBufferImageTransportFactory::AcquireTexture(
   context_->bindTexture(GL_TEXTURE_2D, texture_id);
   context_->consumeTextureCHROMIUM(GL_TEXTURE_2D, mailbox_name);
   context_->flush();
-}
-
-void CmdBufferImageTransportFactory::ReleaseTexture(
-    uint32 texture_id, const signed char* mailbox_name) {
-  if (!context_->makeContextCurrent()) {
-    LOG(ERROR) << "Failed to make helper context current.";
-    return;
-  }
-  context_->bindTexture(GL_TEXTURE_2D, texture_id);
-  context_->produceTextureCHROMIUM(GL_TEXTURE_2D, mailbox_name);
 }
 
 GLHelper* CmdBufferImageTransportFactory::GetGLHelper() {

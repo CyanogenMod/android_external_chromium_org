@@ -26,12 +26,12 @@ class SequencedTaskRunner;
 
 namespace google_apis {
 class AboutResource;
-class DriveServiceInterface;
 class ResourceEntry;
 }
 
 namespace drive {
 
+class DriveServiceInterface;
 class FileCacheEntry;
 class FileSystemObserver;
 class JobScheduler;
@@ -52,6 +52,7 @@ class OperationObserver;
 class RemoveOperation;
 class SearchOperation;
 class TouchOperation;
+class TruncateOperation;
 class UpdateOperation;
 }  // namespace file_system
 
@@ -62,7 +63,7 @@ class FileSystem : public FileSystemInterface,
  public:
   FileSystem(Profile* profile,
              internal::FileCache* cache,
-             google_apis::DriveServiceInterface* drive_service,
+             DriveServiceInterface* drive_service,
              JobScheduler* scheduler,
              internal::ResourceMetadata* resource_metadata,
              base::SequencedTaskRunner* blocking_task_runner,
@@ -116,6 +117,9 @@ class FileSystem : public FileSystemInterface,
                          const base::Time& last_access_time,
                          const base::Time& last_modified_time,
                          const FileOperationCallback& callback) OVERRIDE;
+  virtual void TruncateFile(const base::FilePath& file_path,
+                            int64 length,
+                            const FileOperationCallback& callback) OVERRIDE;
   virtual void Pin(const base::FilePath& file_path,
                    const FileOperationCallback& callback) OVERRIDE;
   virtual void Unpin(const base::FilePath& file_path,
@@ -141,7 +145,7 @@ class FileSystem : public FileSystemInterface,
       const GetResourceEntryCallback& callback) OVERRIDE;
   virtual void ReadDirectoryByPath(
       const base::FilePath& directory_path,
-      const ReadDirectoryWithSettingCallback& callback) OVERRIDE;
+      const ReadDirectoryCallback& callback) OVERRIDE;
   virtual void RefreshDirectory(
       const base::FilePath& directory_path,
       const FileOperationCallback& callback) OVERRIDE;
@@ -301,10 +305,10 @@ class FileSystem : public FileSystemInterface,
   // |callback| must not be null.
   void ReadDirectoryByPathAfterLoad(
       const base::FilePath& directory_path,
-      const ReadDirectoryWithSettingCallback& callback,
+      const ReadDirectoryCallback& callback,
       FileError error);
   void ReadDirectoryByPathAfterRead(
-      const ReadDirectoryWithSettingCallback& callback,
+      const ReadDirectoryCallback& callback,
       FileError error,
       scoped_ptr<ResourceEntryVector> entries);
 
@@ -358,7 +362,7 @@ class FileSystem : public FileSystemInterface,
 
   // Sub components owned by DriveIntegrationService.
   internal::FileCache* cache_;
-  google_apis::DriveServiceInterface* drive_service_;
+  DriveServiceInterface* drive_service_;
   JobScheduler* scheduler_;
   internal::ResourceMetadata* resource_metadata_;
 
@@ -394,12 +398,10 @@ class FileSystem : public FileSystemInterface,
   scoped_ptr<file_system::MoveOperation> move_operation_;
   scoped_ptr<file_system::RemoveOperation> remove_operation_;
   scoped_ptr<file_system::TouchOperation> touch_operation_;
+  scoped_ptr<file_system::TruncateOperation> truncate_operation_;
   scoped_ptr<file_system::DownloadOperation> download_operation_;
   scoped_ptr<file_system::UpdateOperation> update_operation_;
   scoped_ptr<file_system::SearchOperation> search_operation_;
-
-  // Polling interval for checking updates in seconds.
-  int polling_interval_sec_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate the weak pointers before any other members are destroyed.

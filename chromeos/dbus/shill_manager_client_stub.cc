@@ -28,11 +28,11 @@ namespace {
 // Used to compare values for finding entries to erase in a ListValue.
 // (ListValue only implements a const_iterator version of Find).
 struct ValueEquals {
-  explicit ValueEquals(const Value* first) : first_(first) {}
-  bool operator()(const Value* second) const {
+  explicit ValueEquals(const base::Value* first) : first_(first) {}
+  bool operator()(const base::Value* second) const {
     return first_->Equals(second);
   }
-  const Value* first_;
+  const base::Value* first_;
 };
 
 }  // namespace
@@ -65,10 +65,6 @@ void ShillManagerClientStub::GetProperties(
           &ShillManagerClientStub::PassStubProperties,
           weak_ptr_factory_.GetWeakPtr(),
           callback));
-}
-
-base::DictionaryValue* ShillManagerClientStub::CallGetPropertiesAndBlock() {
-  return stub_properties_.DeepCopy();
 }
 
 void ShillManagerClientStub::GetNetworksForGeolocation(
@@ -213,7 +209,8 @@ void ShillManagerClientStub::ConfigureService(
     // Add a new service to the service client stub because none exists, yet.
     service_client->AddServiceWithIPConfig(service_path, guid, type,
                                            flimflam::kStateIdle, ipconfig_path,
-                                           true);  // Add service to watch list.
+                                           true /* visible */,
+                                           true /* watch */);
     existing_properties = service_client->GetServiceProperties(service_path);
   }
 
@@ -227,9 +224,14 @@ void ShillManagerClientStub::ConfigureService(
     service_client->SetServiceProperty(service_path, iter.key(), iter.value());
   }
 
-  ShillProfileClient::TestInterface* profile_test =
-      DBusThreadManager::Get()->GetShillProfileClient()->GetTestInterface();
-  profile_test->AddService(service_path);
+  // If the Profile property is set, add it to ProfileClient.
+  std::string profile_path;
+  merged_properties->GetStringWithoutPathExpansion(flimflam::kProfileProperty,
+                                                   &profile_path);
+  if (!profile_path.empty()) {
+    DBusThreadManager::Get()->GetShillProfileClient()->GetTestInterface()->
+        AddService(profile_path, service_path);
+  }
 
   if (!callback.is_null()) {
     base::MessageLoop::current()->PostTask(
@@ -393,8 +395,14 @@ void ShillManagerClientStub::MoveServiceToIndex(
 }
 
 void ShillManagerClientStub::AddManagerService(const std::string& service_path,
+                                               bool add_to_visible_list,
                                                bool add_to_watch_list) {
-  if (GetListProperty(flimflam::kServicesProperty)->AppendIfNotPresent(
+  // Always add to ServiceCompleteListProperty.
+  GetListProperty(shill::kServiceCompleteListProperty)->AppendIfNotPresent(
+      base::Value::CreateStringValue(service_path));
+  // If visible, add to Services and notify if new.
+  if (add_to_visible_list &&
+      GetListProperty(flimflam::kServicesProperty)->AppendIfNotPresent(
       base::Value::CreateStringValue(service_path))) {
     CallNotifyObserversPropertyChanged(flimflam::kServicesProperty, 0);
   }
@@ -409,6 +417,8 @@ void ShillManagerClientStub::RemoveManagerService(
       service_path_value, NULL)) {
     CallNotifyObserversPropertyChanged(flimflam::kServicesProperty, 0);
   }
+  GetListProperty(shill::kServiceCompleteListProperty)->Remove(
+      service_path_value, NULL);
   if (GetListProperty(flimflam::kServiceWatchListProperty)->Remove(
       service_path_value, NULL)) {
     CallNotifyObserversPropertyChanged(
@@ -418,6 +428,7 @@ void ShillManagerClientStub::RemoveManagerService(
 
 void ShillManagerClientStub::ClearManagerServices() {
   GetListProperty(flimflam::kServicesProperty)->Clear();
+  GetListProperty(shill::kServiceCompleteListProperty)->Clear();
   GetListProperty(flimflam::kServiceWatchListProperty)->Clear();
   CallNotifyObserversPropertyChanged(flimflam::kServicesProperty, 0);
   CallNotifyObserversPropertyChanged(flimflam::kServiceWatchListProperty, 0);
@@ -468,7 +479,7 @@ void ShillManagerClientStub::PassStubProperties(
     const DictionaryValueCallback& callback) const {
   scoped_ptr<base::DictionaryValue> stub_properties(
       stub_properties_.DeepCopy());
-  // Remove disabled services from the list
+  // Remove disabled services from the list.
   stub_properties->SetWithoutPathExpansion(
       flimflam::kServicesProperty,
       GetEnabledServiceList(flimflam::kServicesProperty));

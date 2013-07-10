@@ -11,9 +11,6 @@
 #include "chrome/browser/google_apis/drive_api_parser.h"
 #include "chrome/browser/google_apis/request_util.h"
 #include "chrome/browser/google_apis/time_util.h"
-#include "content/public/browser/browser_thread.h"
-
-using content::BrowserThread;
 
 namespace google_apis {
 namespace {
@@ -29,7 +26,6 @@ void ParseJsonAndRun(
     const base::Callback<void(GDataErrorCode, scoped_ptr<T>)>& callback,
     GDataErrorCode error,
     scoped_ptr<base::Value> value) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
   scoped_ptr<T> resource;
@@ -53,7 +49,6 @@ void ParseFileResourceWithUploadRangeAndRun(
     const drive::UploadRangeCallback& callback,
     const UploadRangeResponse& response,
     scoped_ptr<base::Value> value) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
   scoped_ptr<FileResource> file_resource;
@@ -77,11 +72,10 @@ void ParseFileResourceWithUploadRangeAndRun(
 //============================== GetAboutRequest =============================
 
 GetAboutRequest::GetAboutRequest(
-    RequestSender* runner,
-    net::URLRequestContextGetter* url_request_context_getter,
+    RequestSender* sender,
     const DriveApiUrlGenerator& url_generator,
     const GetAboutResourceCallback& callback)
-    : GetDataRequest(runner, url_request_context_getter,
+    : GetDataRequest(sender,
                      base::Bind(&ParseJsonAndRun<AboutResource>, callback)),
       url_generator_(url_generator) {
   DCHECK(!callback.is_null());
@@ -96,11 +90,10 @@ GURL GetAboutRequest::GetURL() const {
 //============================== GetApplistRequest ===========================
 
 GetApplistRequest::GetApplistRequest(
-    RequestSender* runner,
-    net::URLRequestContextGetter* url_request_context_getter,
+    RequestSender* sender,
     const DriveApiUrlGenerator& url_generator,
     const GetDataCallback& callback)
-    : GetDataRequest(runner, url_request_context_getter, callback),
+    : GetDataRequest(sender, callback),
       url_generator_(url_generator) {
   DCHECK(!callback.is_null());
 }
@@ -114,14 +107,13 @@ GURL GetApplistRequest::GetURL() const {
 //============================ GetChangelistRequest ==========================
 
 GetChangelistRequest::GetChangelistRequest(
-    RequestSender* runner,
-    net::URLRequestContextGetter* url_request_context_getter,
+    RequestSender* sender,
     const DriveApiUrlGenerator& url_generator,
     bool include_deleted,
     int64 start_changestamp,
     int max_results,
     const GetDataCallback& callback)
-    : GetDataRequest(runner, url_request_context_getter, callback),
+    : GetDataRequest(sender, callback),
       url_generator_(url_generator),
       include_deleted_(include_deleted),
       start_changestamp_(start_changestamp),
@@ -139,13 +131,12 @@ GURL GetChangelistRequest::GetURL() const {
 //============================= GetFilelistRequest ===========================
 
 GetFilelistRequest::GetFilelistRequest(
-    RequestSender* runner,
-    net::URLRequestContextGetter* url_request_context_getter,
+    RequestSender* sender,
     const DriveApiUrlGenerator& url_generator,
     const std::string& search_string,
     int max_results,
     const GetDataCallback& callback)
-    : GetDataRequest(runner, url_request_context_getter, callback),
+    : GetDataRequest(sender, callback),
       url_generator_(url_generator),
       search_string_(search_string),
       max_results_(max_results) {
@@ -161,12 +152,11 @@ GURL GetFilelistRequest::GetURL() const {
 //=============================== GetFileRequest =============================
 
 GetFileRequest::GetFileRequest(
-    RequestSender* runner,
-    net::URLRequestContextGetter* url_request_context_getter,
+    RequestSender* sender,
     const DriveApiUrlGenerator& url_generator,
     const std::string& file_id,
     const FileResourceCallback& callback)
-    : GetDataRequest(runner, url_request_context_getter,
+    : GetDataRequest(sender,
                      base::Bind(&ParseJsonAndRun<FileResource>, callback)),
       url_generator_(url_generator),
       file_id_(file_id) {
@@ -184,11 +174,10 @@ namespace drive {
 //======================= ContinueGetFileListRequest =========================
 
 ContinueGetFileListRequest::ContinueGetFileListRequest(
-    RequestSender* runner,
-    net::URLRequestContextGetter* url_request_context_getter,
+    RequestSender* sender,
     const GURL& url,
     const GetDataCallback& callback)
-    : GetDataRequest(runner, url_request_context_getter, callback),
+    : GetDataRequest(sender, callback),
       url_(url) {
   DCHECK(!callback.is_null());
 }
@@ -202,13 +191,12 @@ GURL ContinueGetFileListRequest::GetURL() const {
 //========================== CreateDirectoryRequest ==========================
 
 CreateDirectoryRequest::CreateDirectoryRequest(
-    RequestSender* runner,
-    net::URLRequestContextGetter* url_request_context_getter,
+    RequestSender* sender,
     const DriveApiUrlGenerator& url_generator,
     const std::string& parent_resource_id,
     const std::string& directory_name,
     const FileResourceCallback& callback)
-    : GetDataRequest(runner, url_request_context_getter,
+    : GetDataRequest(sender,
                      base::Bind(&ParseJsonAndRun<FileResource>, callback)),
       url_generator_(url_generator),
       parent_resource_id_(parent_resource_id),
@@ -253,13 +241,12 @@ bool CreateDirectoryRequest::GetContentData(std::string* upload_content_type,
 //=========================== RenameResourceRequest ==========================
 
 RenameResourceRequest::RenameResourceRequest(
-    RequestSender* runner,
-    net::URLRequestContextGetter* url_request_context_getter,
+    RequestSender* sender,
     const DriveApiUrlGenerator& url_generator,
     const std::string& resource_id,
     const std::string& new_name,
     const EntryActionCallback& callback)
-    : EntryActionRequest(runner, url_request_context_getter, callback),
+    : EntryActionRequest(sender, callback),
       url_generator_(url_generator),
       resource_id_(resource_id),
       new_name_(new_name) {
@@ -299,14 +286,13 @@ bool RenameResourceRequest::GetContentData(std::string* upload_content_type,
 //=========================== TouchResourceRequest ===========================
 
 TouchResourceRequest::TouchResourceRequest(
-    RequestSender* runner,
-    net::URLRequestContextGetter* url_request_context_getter,
+    RequestSender* sender,
     const DriveApiUrlGenerator& url_generator,
     const std::string& resource_id,
     const base::Time& modified_date,
     const base::Time& last_viewed_by_me_date,
     const FileResourceCallback& callback)
-    : GetDataRequest(runner, url_request_context_getter,
+    : GetDataRequest(sender,
                      base::Bind(&ParseJsonAndRun<FileResource>, callback)),
       url_generator_(url_generator),
       resource_id_(resource_id),
@@ -352,14 +338,13 @@ bool TouchResourceRequest::GetContentData(std::string* upload_content_type,
 //=========================== CopyResourceRequest ============================
 
 CopyResourceRequest::CopyResourceRequest(
-    RequestSender* runner,
-    net::URLRequestContextGetter* url_request_context_getter,
+    RequestSender* sender,
     const DriveApiUrlGenerator& url_generator,
     const std::string& resource_id,
     const std::string& parent_resource_id,
     const std::string& new_name,
     const FileResourceCallback& callback)
-    : GetDataRequest(runner, url_request_context_getter,
+    : GetDataRequest(sender,
                      base::Bind(&ParseJsonAndRun<FileResource>, callback)),
       url_generator_(url_generator),
       resource_id_(resource_id),
@@ -405,12 +390,11 @@ bool CopyResourceRequest::GetContentData(std::string* upload_content_type,
 //=========================== TrashResourceRequest ===========================
 
 TrashResourceRequest::TrashResourceRequest(
-    RequestSender* runner,
-    net::URLRequestContextGetter* url_request_context_getter,
+    RequestSender* sender,
     const DriveApiUrlGenerator& url_generator,
     const std::string& resource_id,
     const EntryActionCallback& callback)
-    : EntryActionRequest(runner, url_request_context_getter, callback),
+    : EntryActionRequest(sender, callback),
       url_generator_(url_generator),
       resource_id_(resource_id) {
   DCHECK(!callback.is_null());
@@ -429,13 +413,12 @@ net::URLFetcher::RequestType TrashResourceRequest::GetRequestType() const {
 //========================== InsertResourceRequest ===========================
 
 InsertResourceRequest::InsertResourceRequest(
-    RequestSender* runner,
-    net::URLRequestContextGetter* url_request_context_getter,
+    RequestSender* sender,
     const DriveApiUrlGenerator& url_generator,
     const std::string& parent_resource_id,
     const std::string& resource_id,
     const EntryActionCallback& callback)
-    : EntryActionRequest(runner, url_request_context_getter, callback),
+    : EntryActionRequest(sender, callback),
       url_generator_(url_generator),
       parent_resource_id_(parent_resource_id),
       resource_id_(resource_id) {
@@ -468,13 +451,12 @@ bool InsertResourceRequest::GetContentData(std::string* upload_content_type,
 //========================== DeleteResourceRequest ===========================
 
 DeleteResourceRequest::DeleteResourceRequest(
-    RequestSender* runner,
-    net::URLRequestContextGetter* url_request_context_getter,
+    RequestSender* sender,
     const DriveApiUrlGenerator& url_generator,
     const std::string& parent_resource_id,
     const std::string& resource_id,
     const EntryActionCallback& callback)
-    : EntryActionRequest(runner, url_request_context_getter, callback),
+    : EntryActionRequest(sender, callback),
       url_generator_(url_generator),
       parent_resource_id_(parent_resource_id),
       resource_id_(resource_id) {
@@ -495,19 +477,15 @@ net::URLFetcher::RequestType DeleteResourceRequest::GetRequestType() const {
 //======================= InitiateUploadNewFileRequest =======================
 
 InitiateUploadNewFileRequest::InitiateUploadNewFileRequest(
-    RequestSender* runner,
-    net::URLRequestContextGetter* url_request_context_getter,
+    RequestSender* sender,
     const DriveApiUrlGenerator& url_generator,
-    const base::FilePath& drive_file_path,
     const std::string& content_type,
     int64 content_length,
     const std::string& parent_resource_id,
     const std::string& title,
     const InitiateUploadCallback& callback)
-    : InitiateUploadRequestBase(runner,
-                                url_request_context_getter,
+    : InitiateUploadRequestBase(sender,
                                 callback,
-                                drive_file_path,
                                 content_type,
                                 content_length),
       url_generator_(url_generator),
@@ -556,19 +534,15 @@ bool InitiateUploadNewFileRequest::GetContentData(
 //===================== InitiateUploadExistingFileRequest ====================
 
 InitiateUploadExistingFileRequest::InitiateUploadExistingFileRequest(
-    RequestSender* runner,
-    net::URLRequestContextGetter* url_request_context_getter,
+    RequestSender* sender,
     const DriveApiUrlGenerator& url_generator,
-    const base::FilePath& drive_file_path,
     const std::string& content_type,
     int64 content_length,
     const std::string& resource_id,
     const std::string& etag,
     const InitiateUploadCallback& callback)
-    : InitiateUploadRequestBase(runner,
-                                url_request_context_getter,
+    : InitiateUploadRequestBase(sender,
                                 callback,
-                                drive_file_path,
                                 content_type,
                                 content_length),
       url_generator_(url_generator),
@@ -598,9 +572,7 @@ InitiateUploadExistingFileRequest::GetExtraRequestHeaders() const {
 //============================ ResumeUploadRequest ===========================
 
 ResumeUploadRequest::ResumeUploadRequest(
-    RequestSender* runner,
-    net::URLRequestContextGetter* url_request_context_getter,
-    const base::FilePath& drive_file_path,
+    RequestSender* sender,
     const GURL& upload_location,
     int64 start_position,
     int64 end_position,
@@ -609,9 +581,7 @@ ResumeUploadRequest::ResumeUploadRequest(
     const base::FilePath& local_file_path,
     const UploadRangeCallback& callback,
     const ProgressCallback& progress_callback)
-    : ResumeUploadRequestBase(runner,
-                              url_request_context_getter,
-                              drive_file_path,
+    : ResumeUploadRequestBase(sender,
                               upload_location,
                               start_position,
                               end_position,
@@ -626,7 +596,9 @@ ResumeUploadRequest::ResumeUploadRequest(
 ResumeUploadRequest::~ResumeUploadRequest() {}
 
 void ResumeUploadRequest::OnRangeRequestComplete(
-    const UploadRangeResponse& response, scoped_ptr<base::Value> value) {
+    const UploadRangeResponse& response,
+    scoped_ptr<base::Value> value) {
+  DCHECK(CalledOnValidThread());
   ParseFileResourceWithUploadRangeAndRun(callback_, response, value.Pass());
 }
 
@@ -639,15 +611,11 @@ void ResumeUploadRequest::OnURLFetchUploadProgress(
 //========================== GetUploadStatusRequest ==========================
 
 GetUploadStatusRequest::GetUploadStatusRequest(
-    RequestSender* runner,
-    net::URLRequestContextGetter* url_request_context_getter,
-    const base::FilePath& drive_file_path,
+    RequestSender* sender,
     const GURL& upload_url,
     int64 content_length,
     const UploadRangeCallback& callback)
-    : GetUploadStatusRequestBase(runner,
-                                 url_request_context_getter,
-                                 drive_file_path,
+    : GetUploadStatusRequestBase(sender,
                                  upload_url,
                                  content_length),
       callback_(callback) {
@@ -657,8 +625,32 @@ GetUploadStatusRequest::GetUploadStatusRequest(
 GetUploadStatusRequest::~GetUploadStatusRequest() {}
 
 void GetUploadStatusRequest::OnRangeRequestComplete(
-    const UploadRangeResponse& response, scoped_ptr<base::Value> value) {
+    const UploadRangeResponse& response,
+    scoped_ptr<base::Value> value) {
+  DCHECK(CalledOnValidThread());
   ParseFileResourceWithUploadRangeAndRun(callback_, response, value.Pass());
+}
+
+//========================== DownloadFileRequest ==========================
+
+DownloadFileRequest::DownloadFileRequest(
+    RequestSender* sender,
+    const DriveApiUrlGenerator& url_generator,
+    const std::string& resource_id,
+    const base::FilePath& output_file_path,
+    const DownloadActionCallback& download_action_callback,
+    const GetContentCallback& get_content_callback,
+    const ProgressCallback& progress_callback)
+    : DownloadFileRequestBase(
+          sender,
+          download_action_callback,
+          get_content_callback,
+          progress_callback,
+          url_generator.GenerateDownloadFileUrl(resource_id),
+          output_file_path) {
+}
+
+DownloadFileRequest::~DownloadFileRequest() {
 }
 
 }  // namespace drive

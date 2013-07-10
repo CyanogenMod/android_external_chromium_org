@@ -17,11 +17,11 @@
 #include "base/metrics/sparse_histogram.h"
 #include "base/metrics/stats_counters.h"
 #include "base/stl_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "crypto/ec_private_key.h"
 #include "crypto/ec_signature_creator.h"
@@ -169,7 +169,7 @@ base::Value* NetLogSpdySessionWindowUpdateCallback(
     int32 delta,
     int32 window_size,
     NetLog::LogLevel /* log_level */) {
-  DictionaryValue* dict = new DictionaryValue();
+  base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetInteger("delta", delta);
   dict->SetInteger("window_size", window_size);
   return dict;
@@ -310,6 +310,26 @@ void SpdyStreamRequest::Reset() {
   net_log_ = BoundNetLog();
   callback_.Reset();
 }
+
+SpdySession::ActiveStreamInfo::ActiveStreamInfo()
+    : stream(NULL),
+      waiting_for_syn_reply(false) {}
+
+SpdySession::ActiveStreamInfo::ActiveStreamInfo(SpdyStream* stream)
+    : stream(stream),
+      waiting_for_syn_reply(stream->type() != SPDY_PUSH_STREAM) {}
+
+SpdySession::ActiveStreamInfo::~ActiveStreamInfo() {}
+
+SpdySession::PushedStreamInfo::PushedStreamInfo() : stream_id(0) {}
+
+SpdySession::PushedStreamInfo::PushedStreamInfo(
+    SpdyStreamId stream_id,
+    base::TimeTicks creation_time)
+    : stream_id(stream_id),
+      creation_time(creation_time) {}
+
+SpdySession::PushedStreamInfo::~PushedStreamInfo() {}
 
 SpdySession::SpdySession(const SpdySessionKey& spdy_session_key,
                          SpdySessionPool* spdy_session_pool,
@@ -463,18 +483,6 @@ Error SpdySession::InitializeWithSocket(
   buffered_spdy_framer_->set_visitor(this);
   SendInitialSettings();
   UMA_HISTOGRAM_ENUMERATION("Net.SpdyVersion", protocol, kProtoMaximumVersion);
-
-  if (flow_control_state_ == FLOW_CONTROL_STREAM_AND_SESSION) {
-    // Bump up the receive window size to the real initial value. This
-    // has to go here since the WINDOW_UPDATE frame sent by
-    // IncreaseRecvWindowSize() call uses |buffered_spdy_framer_|.
-    DCHECK_GT(kDefaultInitialRecvWindowSize, session_recv_window_size_);
-    // This condition implies that |kDefaultInitialRecvWindowSize| -
-    // |session_recv_window_size_| doesn't overflow.
-    DCHECK_GT(session_recv_window_size_, 0);
-    IncreaseRecvWindowSize(
-        kDefaultInitialRecvWindowSize - session_recv_window_size_);
-  }
 
   net_log_.AddEvent(
       NetLog::TYPE_SPDY_SESSION_INITIALIZED,
@@ -705,7 +713,7 @@ scoped_ptr<SpdyFrame> SpdySession::CreateSynStream(
     const SpdyHeaderBlock& headers) {
   ActiveStreamMap::const_iterator it = active_streams_.find(stream_id);
   CHECK(it != active_streams_.end());
-  CHECK_EQ(it->second->stream_id(), stream_id);
+  CHECK_EQ(it->second.stream->stream_id(), stream_id);
 
   SendPrefacePingIfNoneInFlight();
 
@@ -772,7 +780,7 @@ scoped_ptr<SpdyBuffer> SpdySession::CreateDataBuffer(SpdyStreamId stream_id,
                                                      SpdyDataFlags flags) {
   ActiveStreamMap::const_iterator it = active_streams_.find(stream_id);
   CHECK(it != active_streams_.end());
-  SpdyStream* stream = it->second;
+  SpdyStream* stream = it->second.stream;
   CHECK_EQ(stream->stream_id(), stream_id);
 
   if (len < 0) {
@@ -889,63 +897,42 @@ scoped_ptr<SpdyBuffer> SpdySession::CreateDataBuffer(SpdyStreamId stream_id,
 }
 
 void SpdySession::CloseActiveStream(SpdyStreamId stream_id, int status) {
-  DCHECK_NE(0u, stream_id);
+  DCHECK_NE(stream_id, 0u);
 
-  // TODO(mbelshe): We should send a RST_STREAM control frame here
-  //                so that the server can cancel a large send.
-
-  // For push streams, if they are being deleted normally, we leave
-  // the stream in the unclaimed_pushed_streams_ list.  However, if
-  // the stream is errored out, clean it up entirely.
-  if (status != OK) {
-    for (PushedStreamMap::iterator it = unclaimed_pushed_streams_.begin();
-         it != unclaimed_pushed_streams_.end(); ++it) {
-      if (stream_id == it->second.first->stream_id()) {
-        unclaimed_pushed_streams_.erase(it);
-        break;
-      }
-    }
+  ActiveStreamMap::iterator it = active_streams_.find(stream_id);
+  if (it == active_streams_.end()) {
+    NOTREACHED();
+    return;
   }
 
-  // The stream might have been deleted.
-  ActiveStreamMap::iterator it = active_streams_.find(stream_id);
-  if (it == active_streams_.end())
-    return;
-
-  scoped_ptr<SpdyStream> owned_stream(it->second);
-  active_streams_.erase(it);
-
-  DeleteStream(owned_stream.Pass(), status);
+  CloseActiveStreamIterator(it, status);
 }
 
 void SpdySession::CloseCreatedStream(
     const base::WeakPtr<SpdyStream>& stream, int status) {
-  DCHECK_EQ(0u, stream->stream_id());
+  DCHECK_EQ(stream->stream_id(), 0u);
 
-  scoped_ptr<SpdyStream> owned_stream(stream.get());
-  created_streams_.erase(stream.get());
+  CreatedStreamSet::iterator it = created_streams_.find(stream.get());
+  if (it == created_streams_.end()) {
+    NOTREACHED();
+    return;
+  }
 
-  DeleteStream(owned_stream.Pass(), status);
+  CloseCreatedStreamIterator(it, status);
 }
 
 void SpdySession::ResetStream(SpdyStreamId stream_id,
-                              RequestPriority priority,
                               SpdyRstStreamStatus status,
                               const std::string& description) {
-  net_log().AddEvent(
-      NetLog::TYPE_SPDY_SESSION_SEND_RST_STREAM,
-      base::Bind(&NetLogSpdyRstCallback, stream_id, status, &description));
+  DCHECK_NE(stream_id, 0u);
 
-  DCHECK(buffered_spdy_framer_.get());
-  scoped_ptr<SpdyFrame> rst_frame(
-      buffered_spdy_framer_->CreateRstStream(stream_id, status));
+  ActiveStreamMap::iterator it = active_streams_.find(stream_id);
+  if (it == active_streams_.end()) {
+    NOTREACHED();
+    return;
+  }
 
-  // Removes any pending writes for |stream_id| except for possibly an
-  // in-flight one.
-  CloseActiveStream(stream_id, ERR_SPDY_PROTOCOL_ERROR);
-  EnqueueSessionWrite(priority, RST_STREAM, rst_frame.Pass());
-  RecordProtocolErrorHistogram(
-      static_cast<SpdyProtocolErrorDetails>(status + STATUS_CODE_INVALID));
+  ResetStreamIterator(it, status, description);
 }
 
 bool SpdySession::IsStreamActive(SpdyStreamId stream_id) const {
@@ -970,6 +957,74 @@ LoadState SpdySession::GetLoadState() const {
 void SpdySession::OnReadComplete(int bytes_read) {
   DCHECK_NE(state_, STATE_DO_READ);
   DoLoop(bytes_read);
+}
+
+
+void SpdySession::CloseActiveStreamIterator(ActiveStreamMap::iterator it,
+                                            int status) {
+  // TODO(mbelshe): We should send a RST_STREAM control frame here
+  //                so that the server can cancel a large send.
+
+  // For push streams, if they are being deleted normally, we leave
+  // the stream in the unclaimed_pushed_streams_ list.  However, if
+  // the stream is errored out, clean it up entirely.
+  if (status != OK) {
+    for (PushedStreamMap::iterator it2 = unclaimed_pushed_streams_.begin();
+         it2 != unclaimed_pushed_streams_.end(); ++it2) {
+      if (it2->second.stream_id == it->first) {
+        unclaimed_pushed_streams_.erase(it2);
+        break;
+      }
+    }
+  }
+
+  scoped_ptr<SpdyStream> owned_stream(it->second.stream);
+  active_streams_.erase(it);
+
+  DeleteStream(owned_stream.Pass(), status);
+}
+
+void SpdySession::CloseCreatedStreamIterator(CreatedStreamSet::iterator it,
+                                             int status) {
+  scoped_ptr<SpdyStream> owned_stream(*it);
+  created_streams_.erase(it);
+  DeleteStream(owned_stream.Pass(), status);
+}
+
+void SpdySession::ResetStreamIterator(ActiveStreamMap::iterator it,
+                                      SpdyRstStreamStatus status,
+                                      const std::string& description) {
+  // Make sure CloseActiveStreamIterator() does not release the last
+  // reference to |this|.
+  scoped_refptr<SpdySession> self(this);
+
+  SpdyStreamId stream_id = it->first;
+  RequestPriority priority = it->second.stream->priority();
+  // Removes any pending writes for the stream except for possibly an
+  // in-flight one.
+  CloseActiveStreamIterator(it, ERR_SPDY_PROTOCOL_ERROR);
+
+  SendResetStreamFrame(stream_id, priority, status, description);
+}
+
+void SpdySession::SendResetStreamFrame(SpdyStreamId stream_id,
+                                       RequestPriority priority,
+                                       SpdyRstStreamStatus status,
+                                       const std::string& description) {
+  DCHECK_NE(stream_id, 0u);
+  DCHECK(active_streams_.find(stream_id) == active_streams_.end());
+
+  net_log().AddEvent(
+      NetLog::TYPE_SPDY_SESSION_SEND_RST_STREAM,
+      base::Bind(&NetLogSpdyRstCallback, stream_id, status, &description));
+
+  DCHECK(buffered_spdy_framer_.get());
+  scoped_ptr<SpdyFrame> rst_frame(
+      buffered_spdy_framer_->CreateRstStream(stream_id, status));
+
+  EnqueueSessionWrite(priority, RST_STREAM, rst_frame.Pass());
+  RecordProtocolErrorHistogram(
+      static_cast<SpdyProtocolErrorDetails>(status + STATUS_CODE_INVALID));
 }
 
 void SpdySession::StartRead() {
@@ -1163,7 +1218,7 @@ void SpdySession::WriteSocket() {
         break;
 
       if (stream.get())
-        DCHECK(!stream->closed());
+        DCHECK(!stream->IsClosed());
 
       // Activate the stream only when sending the SYN_STREAM frame to
       // guarantee monotonically-increasing stream IDs.
@@ -1238,16 +1293,15 @@ void SpdySession::CloseAllStreamsAfter(SpdyStreamId last_good_stream_id,
         active_streams_.lower_bound(last_good_stream_id + 1);
     if (it == active_streams_.end())
       break;
-    SpdyStreamId stream_id = it->first;
     streams_abandoned_count_++;
-    LogAbandonedStream(it->second, status);
-    CloseActiveStream(stream_id, status);
+    LogAbandonedStream(it->second.stream, status);
+    CloseActiveStreamIterator(it, status);
   }
 
   while (!created_streams_.empty()) {
     CreatedStreamSet::iterator it = created_streams_.begin();
     LogAbandonedStream(*it, status);
-    CloseCreatedStream((*it)->GetWeakPtr(), status);
+    CloseCreatedStreamIterator(it, status);
   }
 
   write_queue_.RemovePendingWritesForStreamsAfter(last_good_stream_id);
@@ -1436,7 +1490,8 @@ void SpdySession::InsertActivatedStream(scoped_ptr<SpdyStream> stream) {
   SpdyStreamId stream_id = stream->stream_id();
   DCHECK_NE(stream_id, 0u);
   std::pair<ActiveStreamMap::iterator, bool> result =
-      active_streams_.insert(std::make_pair(stream_id, stream.get()));
+      active_streams_.insert(
+          std::make_pair(stream_id, ActiveStreamInfo(stream.get())));
   if (result.second) {
     ignore_result(stream.release());
   } else {
@@ -1475,14 +1530,21 @@ base::WeakPtr<SpdyStream> SpdySession::GetActivePushStream(
   base::StatsCounter used_push_streams("spdy.claimed_push_streams");
 
   PushedStreamMap::iterator it = unclaimed_pushed_streams_.find(path);
-  if (it != unclaimed_pushed_streams_.end()) {
-    net_log_.AddEvent(NetLog::TYPE_SPDY_STREAM_ADOPTED_PUSH_STREAM);
-    base::WeakPtr<SpdyStream> stream = it->second.first->GetWeakPtr();
-    unclaimed_pushed_streams_.erase(it);
-    used_push_streams.Increment();
-    return stream;
+  if (it == unclaimed_pushed_streams_.end())
+    return base::WeakPtr<SpdyStream>();
+
+  SpdyStreamId stream_id = it->second.stream_id;
+  unclaimed_pushed_streams_.erase(it);
+
+  ActiveStreamMap::iterator it2 = active_streams_.find(stream_id);
+  if (it2 == active_streams_.end()) {
+    NOTREACHED();
+    return base::WeakPtr<SpdyStream>();
   }
-  return base::WeakPtr<SpdyStream>();
+
+  net_log_.AddEvent(NetLog::TYPE_SPDY_STREAM_ADOPTED_PUSH_STREAM);
+  used_push_streams.Increment();
+  return it2->second.stream->GetWeakPtr();
 }
 
 bool SpdySession::GetSSLInfo(SSLInfo* ssl_info,
@@ -1517,12 +1579,16 @@ void SpdySession::OnError(SpdyFramer::SpdyError error_code) {
 
 void SpdySession::OnStreamError(SpdyStreamId stream_id,
                                 const std::string& description) {
-  ActiveStreamMap::const_iterator it = active_streams_.find(stream_id);
-  // We still want to reset the stream even if we don't know anything
-  // about it.
-  RequestPriority priority =
-      (it == active_streams_.end()) ? IDLE : it->second->priority();
-  ResetStream(stream_id, priority, RST_STREAM_PROTOCOL_ERROR, description);
+  ActiveStreamMap::iterator it = active_streams_.find(stream_id);
+  if (it == active_streams_.end()) {
+    // We still want to send a frame to reset the stream even if we
+    // don't know anything about it.
+    SendResetStreamFrame(
+        stream_id, IDLE, RST_STREAM_PROTOCOL_ERROR, description);
+    return;
+  }
+
+  ResetStreamIterator(it, RST_STREAM_PROTOCOL_ERROR, description);
 }
 
 void SpdySession::OnStreamFrameData(SpdyStreamId stream_id,
@@ -1536,11 +1602,21 @@ void SpdySession::OnStreamFrameData(SpdyStreamId stream_id,
         base::Bind(&NetLogSpdyDataCallback, stream_id, len, fin));
   }
 
-  ActiveStreamMap::const_iterator it = active_streams_.find(stream_id);
+  ActiveStreamMap::iterator it = active_streams_.find(stream_id);
 
   // By the time data comes in, the stream may already be inactive.
   if (it == active_streams_.end())
     return;
+
+  SpdyStream* stream = it->second.stream;
+  CHECK_EQ(stream->stream_id(), stream_id);
+
+  if (it->second.waiting_for_syn_reply) {
+    const std::string& error = "Data received before SYN_REPLY.";
+    stream->LogStreamError(ERR_SPDY_PROTOCOL_ERROR, error);
+    ResetStreamIterator(it, RST_STREAM_PROTOCOL_ERROR, error);
+    return;
+  }
 
   scoped_ptr<SpdyBuffer> buffer;
   if (data) {
@@ -1556,7 +1632,7 @@ void SpdySession::OnStreamFrameData(SpdyStreamId stream_id,
   } else {
     DCHECK_EQ(len, 0u);
   }
-  it->second->OnDataReceived(buffer.Pass());
+  stream->OnDataReceived(buffer.Pass());
 }
 
 void SpdySession::OnSettings(bool clear_persisted) {
@@ -1599,17 +1675,24 @@ void SpdySession::OnSynStreamCompressed(
 }
 
 
-bool SpdySession::Respond(const SpdyHeaderBlock& headers, SpdyStream* stream) {
-  int rv = OK;
+int SpdySession::OnInitialResponseHeadersReceived(
+    const SpdyHeaderBlock& response_headers,
+    base::Time response_time,
+    base::TimeTicks recv_first_byte_time,
+    SpdyStream* stream) {
+  // Make sure the stream being closed does not release the last
+  // reference to |this|.
+  scoped_refptr<SpdySession> self(this);
+
   SpdyStreamId stream_id = stream->stream_id();
   // May invalidate |stream|.
-  rv = stream->OnResponseHeadersReceived(headers);
+  int rv = stream->OnInitialResponseHeadersReceived(
+      response_headers, response_time, recv_first_byte_time);
   if (rv < 0) {
     DCHECK_NE(rv, ERR_IO_PENDING);
-    CloseActiveStream(stream_id, rv);
-    return false;
+    DCHECK(active_streams_.find(stream_id) == active_streams_.end());
   }
-  return true;
+  return rv;
 }
 
 void SpdySession::OnSynStream(SpdyStreamId stream_id,
@@ -1619,6 +1702,9 @@ void SpdySession::OnSynStream(SpdyStreamId stream_id,
                               bool fin,
                               bool unidirectional,
                               const SpdyHeaderBlock& headers) {
+  base::Time response_time = base::Time::Now();
+  base::TimeTicks recv_first_byte_time = base::TimeTicks::Now();
+
   if (net_log_.IsLoggingAllEvents()) {
     net_log_.AddEvent(
         NetLog::TYPE_SPDY_SESSION_PUSHED_SYN_STREAM,
@@ -1645,8 +1731,8 @@ void SpdySession::OnSynStream(SpdyStreamId stream_id,
     std::string description = base::StringPrintf(
         "Received invalid OnSyn associated stream id %d for stream %d",
         associated_stream_id, stream_id);
-    ResetStream(stream_id, request_priority,
-                RST_STREAM_REFUSED_STREAM, description);
+    SendResetStreamFrame(stream_id, request_priority,
+                         RST_STREAM_REFUSED_STREAM, description);
     return;
   }
 
@@ -1657,8 +1743,8 @@ void SpdySession::OnSynStream(SpdyStreamId stream_id,
   // Verify that the response had a URL for us.
   GURL gurl = GetUrlFromHeaderBlock(headers, GetProtocolVersion(), true);
   if (!gurl.is_valid()) {
-    ResetStream(stream_id, request_priority, RST_STREAM_PROTOCOL_ERROR,
-                "Pushed stream url was invalid: " + gurl.spec());
+    SendResetStreamFrame(stream_id, request_priority, RST_STREAM_PROTOCOL_ERROR,
+                         "Pushed stream url was invalid: " + gurl.spec());
     return;
   }
   const std::string& url = gurl.spec();
@@ -1667,10 +1753,11 @@ void SpdySession::OnSynStream(SpdyStreamId stream_id,
   ActiveStreamMap::iterator associated_it =
       active_streams_.find(associated_stream_id);
   if (associated_it == active_streams_.end()) {
-    ResetStream(stream_id, request_priority, RST_STREAM_INVALID_STREAM,
-                base::StringPrintf(
-                    "Received OnSyn with inactive associated stream %d",
-                    associated_stream_id));
+    SendResetStreamFrame(
+        stream_id, request_priority, RST_STREAM_INVALID_STREAM,
+        base::StringPrintf(
+            "Received OnSyn with inactive associated stream %d",
+            associated_stream_id));
     return;
   }
 
@@ -1680,26 +1767,28 @@ void SpdySession::OnSynStream(SpdyStreamId stream_id,
   if (trusted_spdy_proxy_.Equals(host_port_pair())) {
     // Disallow pushing of HTTPS content.
     if (gurl.SchemeIs("https")) {
-      ResetStream(stream_id, request_priority, RST_STREAM_REFUSED_STREAM,
-                  base::StringPrintf(
-                      "Rejected push of Cross Origin HTTPS content %d",
-                      associated_stream_id));
+      SendResetStreamFrame(
+          stream_id, request_priority, RST_STREAM_REFUSED_STREAM,
+          base::StringPrintf(
+              "Rejected push of Cross Origin HTTPS content %d",
+              associated_stream_id));
     }
   } else {
-    GURL associated_url(associated_it->second->GetUrl());
+    GURL associated_url(associated_it->second.stream->GetUrl());
     if (associated_url.GetOrigin() != gurl.GetOrigin()) {
-      ResetStream(stream_id, request_priority, RST_STREAM_REFUSED_STREAM,
-                  base::StringPrintf(
-                      "Rejected Cross Origin Push Stream %d",
-                      associated_stream_id));
+      SendResetStreamFrame(
+          stream_id, request_priority, RST_STREAM_REFUSED_STREAM,
+          base::StringPrintf(
+              "Rejected Cross Origin Push Stream %d",
+              associated_stream_id));
       return;
     }
   }
 
   // There should not be an existing pushed stream with the same path.
   if (unclaimed_pushed_streams_.find(url) != unclaimed_pushed_streams_.end()) {
-    ResetStream(stream_id, request_priority, RST_STREAM_PROTOCOL_ERROR,
-                "Received duplicate pushed stream with url: " + url);
+    SendResetStreamFrame(stream_id, request_priority, RST_STREAM_PROTOCOL_ERROR,
+                         "Received duplicate pushed stream with url: " + url);
     return;
   }
 
@@ -1712,10 +1801,8 @@ void SpdySession::OnSynStream(SpdyStreamId stream_id,
   stream->set_stream_id(stream_id);
 
   DeleteExpiredPushedStreams();
-  unclaimed_pushed_streams_[url] =
-      std::pair<SpdyStream*, base::TimeTicks>(stream.get(), time_func_());
+  unclaimed_pushed_streams_[url] = PushedStreamInfo(stream_id, time_func_());
 
-  stream->set_response_received();
   InsertActivatedStream(stream.Pass());
 
   ActiveStreamMap::iterator it = active_streams_.find(stream_id);
@@ -1725,7 +1812,9 @@ void SpdySession::OnSynStream(SpdyStreamId stream_id,
   }
 
   // Parse the headers.
-  if (!Respond(headers, it->second))
+  if (OnInitialResponseHeadersReceived(
+          headers, response_time,
+          recv_first_byte_time, it->second.stream) != OK)
     return;
 
   base::StatsCounter push_requests("spdy.pushed_streams");
@@ -1740,27 +1829,33 @@ void SpdySession::DeleteExpiredPushedStreams() {
   if (time_func_() < next_unclaimed_push_stream_sweep_time_)
     return;
 
-  // Delete old streams.
+  // Gather old streams to delete.
   base::TimeTicks minimum_freshness = time_func_() -
       base::TimeDelta::FromSeconds(kMinPushedStreamLifetimeSeconds);
-  PushedStreamMap::iterator it;
-  for (it = unclaimed_pushed_streams_.begin();
-      it != unclaimed_pushed_streams_.end(); ) {
-    SpdyStream* stream = it->second.first;
-    base::TimeTicks creation_time = it->second.second;
-    // CloseActiveStream() will invalidate the current iterator, so
-    // move to next.
-    ++it;
-    if (minimum_freshness > creation_time) {
-      base::StatsCounter abandoned_push_streams(
-          "spdy.abandoned_push_streams");
-      base::StatsCounter abandoned_streams("spdy.abandoned_streams");
-      abandoned_push_streams.Increment();
-      abandoned_streams.Increment();
-      streams_abandoned_count_++;
-      CloseActiveStream(stream->stream_id(), ERR_INVALID_SPDY_STREAM);
-    }
+  std::vector<SpdyStreamId> streams_to_close;
+  for (PushedStreamMap::iterator it = unclaimed_pushed_streams_.begin();
+       it != unclaimed_pushed_streams_.end(); ++it) {
+    if (minimum_freshness > it->second.creation_time)
+      streams_to_close.push_back(it->second.stream_id);
   }
+
+  for (std::vector<SpdyStreamId>::const_iterator it = streams_to_close.begin();
+       it != streams_to_close.end(); ++it) {
+    ActiveStreamMap::iterator it2 = active_streams_.find(*it);
+    if (it2 == active_streams_.end())
+      continue;
+
+    base::StatsCounter abandoned_push_streams(
+        "spdy.abandoned_push_streams");
+    base::StatsCounter abandoned_streams("spdy.abandoned_streams");
+    abandoned_push_streams.Increment();
+    abandoned_streams.Increment();
+    streams_abandoned_count_++;
+    // CloseActiveStreamIterator() will remove the stream from
+    // |unclaimed_pushed_streams_|.
+    CloseActiveStreamIterator(it2, ERR_INVALID_SPDY_STREAM);
+  }
+
   next_unclaimed_push_stream_sweep_time_ = time_func_() +
       base::TimeDelta::FromSeconds(kMinPushedStreamLifetimeSeconds);
 }
@@ -1768,6 +1863,9 @@ void SpdySession::DeleteExpiredPushedStreams() {
 void SpdySession::OnSynReply(SpdyStreamId stream_id,
                              bool fin,
                              const SpdyHeaderBlock& headers) {
+  base::Time response_time = base::Time::Now();
+  base::TimeTicks recv_first_byte_time = base::TimeTicks::Now();
+
   if (net_log().IsLoggingAllEvents()) {
     net_log().AddEvent(
         NetLog::TYPE_SPDY_SESSION_SYN_REPLY,
@@ -1782,19 +1880,20 @@ void SpdySession::OnSynReply(SpdyStreamId stream_id,
     return;
   }
 
-  SpdyStream* stream = it->second;
+  SpdyStream* stream = it->second.stream;
   CHECK_EQ(stream->stream_id(), stream_id);
 
-  if (stream->response_received()) {
-    stream->LogStreamError(ERR_SYN_REPLY_NOT_RECEIVED,
-                           "Received duplicate SYN_REPLY for stream.");
-    RecordProtocolErrorHistogram(PROTOCOL_ERROR_SYN_REPLY_NOT_RECEIVED);
-    CloseActiveStream(stream->stream_id(), ERR_SPDY_PROTOCOL_ERROR);
+  if (!it->second.waiting_for_syn_reply) {
+    const std::string& error =
+        "Received duplicate SYN_REPLY for stream.";
+    stream->LogStreamError(ERR_SPDY_PROTOCOL_ERROR, error);
+    ResetStreamIterator(it, RST_STREAM_STREAM_IN_USE, error);
     return;
   }
-  stream->set_response_received();
+  it->second.waiting_for_syn_reply = false;
 
-  Respond(headers, stream);
+  ignore_result(OnInitialResponseHeadersReceived(
+      headers, response_time, recv_first_byte_time, stream));
 }
 
 void SpdySession::OnHeaders(SpdyStreamId stream_id,
@@ -1815,12 +1914,13 @@ void SpdySession::OnHeaders(SpdyStreamId stream_id,
     return;
   }
 
-  CHECK_EQ(it->second->stream_id(), stream_id);
+  SpdyStream* stream = it->second.stream;
+  CHECK_EQ(stream->stream_id(), stream_id);
 
-  int rv = it->second->OnHeaders(headers);
+  int rv = stream->OnAdditionalResponseHeadersReceived(headers);
   if (rv < 0) {
     DCHECK_NE(rv, ERR_IO_PENDING);
-    CloseActiveStream(stream_id, rv);
+    DCHECK(active_streams_.find(stream_id) == active_streams_.end());
   }
 }
 
@@ -1839,21 +1939,21 @@ void SpdySession::OnRstStream(SpdyStreamId stream_id,
     return;
   }
 
-  CHECK_EQ(it->second->stream_id(), stream_id);
+  CHECK_EQ(it->second.stream->stream_id(), stream_id);
 
   if (status == 0) {
-    it->second->OnDataReceived(scoped_ptr<SpdyBuffer>());
+    it->second.stream->OnDataReceived(scoped_ptr<SpdyBuffer>());
   } else if (status == RST_STREAM_REFUSED_STREAM) {
-    CloseActiveStream(stream_id, ERR_SPDY_SERVER_REFUSED_STREAM);
+    CloseActiveStreamIterator(it, ERR_SPDY_SERVER_REFUSED_STREAM);
   } else {
     RecordProtocolErrorHistogram(
         PROTOCOL_ERROR_RST_STREAM_FOR_NON_ACTIVE_STREAM);
-    it->second->LogStreamError(
+    it->second.stream->LogStreamError(
         ERR_SPDY_PROTOCOL_ERROR,
         base::StringPrintf("SPDY stream closed with status: %d", status));
     // TODO(mbelshe): Map from Spdy-protocol errors to something sensical.
     //                For now, it doesn't matter much - it is a protocol error.
-    CloseActiveStream(stream_id, ERR_SPDY_PROTOCOL_ERROR);
+    CloseActiveStreamIterator(it, ERR_SPDY_PROTOCOL_ERROR);
   }
 }
 
@@ -1934,25 +2034,29 @@ void SpdySession::OnWindowUpdate(SpdyStreamId stream_id,
       return;
     }
 
-    ActiveStreamMap::const_iterator it = active_streams_.find(stream_id);
+    ActiveStreamMap::iterator it = active_streams_.find(stream_id);
 
     if (it == active_streams_.end()) {
-      // TODO(akalin): Record an error and close the session.
+      // NOTE:  it may just be that the stream was cancelled.
       LOG(WARNING) << "Received WINDOW_UPDATE for invalid stream " << stream_id;
       return;
     }
 
+    SpdyStream* stream = it->second.stream;
+    CHECK_EQ(stream->stream_id(), stream_id);
+
     if (delta_window_size < 1u) {
-      ResetStream(stream_id, it->second->priority(),
-                  RST_STREAM_FLOW_CONTROL_ERROR,
-                  base::StringPrintf(
-                      "Received WINDOW_UPDATE with an invalid "
-                      "delta_window_size %ud", delta_window_size));
+      ResetStreamIterator(it,
+                          RST_STREAM_FLOW_CONTROL_ERROR,
+                          base::StringPrintf(
+                              "Received WINDOW_UPDATE with an invalid "
+                              "delta_window_size %ud", delta_window_size));
       return;
     }
 
-    CHECK_EQ(it->second->stream_id(), stream_id);
-    it->second->IncreaseSendWindowSize(static_cast<int32>(delta_window_size));
+    CHECK_EQ(it->second.stream->stream_id(), stream_id);
+    it->second.stream->IncreaseSendWindowSize(
+        static_cast<int32>(delta_window_size));
   }
 }
 
@@ -1961,12 +2065,13 @@ void SpdySession::SendStreamWindowUpdate(SpdyStreamId stream_id,
   CHECK_GE(flow_control_state_, FLOW_CONTROL_STREAM);
   ActiveStreamMap::const_iterator it = active_streams_.find(stream_id);
   CHECK(it != active_streams_.end());
-  CHECK_EQ(it->second->stream_id(), stream_id);
-  SendWindowUpdateFrame(stream_id, delta_window_size, it->second->priority());
+  CHECK_EQ(it->second.stream->stream_id(), stream_id);
+  SendWindowUpdateFrame(
+      stream_id, delta_window_size, it->second.stream->priority());
 }
 
 void SpdySession::SendInitialSettings() {
-  // First notify the server about the settings they should use when
+  // First, notify the server about the settings they should use when
   // communicating with us.
   if (GetProtocolVersion() >= 2 && enable_sending_initial_settings_) {
     SettingsMap settings_map;
@@ -1983,7 +2088,21 @@ void SpdySession::SendInitialSettings() {
     SendSettings(settings_map);
   }
 
-  // Next notify the server about the settings they have previously
+  // Next, notify the server about our initial recv window size.
+  if (flow_control_state_ == FLOW_CONTROL_STREAM_AND_SESSION &&
+      enable_sending_initial_settings_) {
+    // Bump up the receive window size to the real initial value. This
+    // has to go here since the WINDOW_UPDATE frame sent by
+    // IncreaseRecvWindowSize() call uses |buffered_spdy_framer_|.
+    DCHECK_GT(kDefaultInitialRecvWindowSize, session_recv_window_size_);
+    // This condition implies that |kDefaultInitialRecvWindowSize| -
+    // |session_recv_window_size_| doesn't overflow.
+    DCHECK_GT(session_recv_window_size_, 0);
+    IncreaseRecvWindowSize(
+        kDefaultInitialRecvWindowSize - session_recv_window_size_);
+  }
+
+  // Finally, notify the server about the settings they have previously
   // told us to use when communicating with them.
   const SettingsMap& settings_map =
       http_server_properties_->GetSpdySettings(host_port_pair());
@@ -2061,7 +2180,7 @@ void SpdySession::UpdateStreamsSendWindowSize(int32 delta_window_size) {
   DCHECK_GE(flow_control_state_, FLOW_CONTROL_STREAM);
   for (ActiveStreamMap::iterator it = active_streams_.begin();
        it != active_streams_.end(); ++it) {
-    it->second->AdjustSendWindowSize(delta_window_size);
+    it->second.stream->AdjustSendWindowSize(delta_window_size);
   }
 
   for (CreatedStreamSet::const_iterator it = created_streams_.begin();
@@ -2090,7 +2209,7 @@ void SpdySession::SendWindowUpdateFrame(SpdyStreamId stream_id,
   CHECK_GE(flow_control_state_, FLOW_CONTROL_STREAM);
   ActiveStreamMap::const_iterator it = active_streams_.find(stream_id);
   if (it != active_streams_.end()) {
-    CHECK_EQ(it->second->stream_id(), stream_id);
+    CHECK_EQ(it->second.stream->stream_id(), stream_id);
   } else {
     CHECK_EQ(flow_control_state_, FLOW_CONTROL_STREAM_AND_SESSION);
     CHECK_EQ(stream_id, kSessionFlowControlStreamId);
@@ -2444,7 +2563,7 @@ void SpdySession::ResumeSendStalledStreams() {
     // to its own send window) but that's okay -- it'll then be
     // resumed once its send window increases.
     if (it != active_streams_.end())
-      it->second->PossiblyResumeIfSendStalled();
+      it->second.stream->PossiblyResumeIfSendStalled();
 
     // The size should decrease unless we got send-stalled again.
     if (!IsSendStalled())

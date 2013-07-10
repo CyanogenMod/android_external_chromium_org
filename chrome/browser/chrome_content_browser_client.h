@@ -59,10 +59,15 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       bool* in_memory) OVERRIDE;
   virtual content::WebContentsViewDelegate* GetWebContentsViewDelegate(
       content::WebContents* web_contents) OVERRIDE;
+  virtual void GuestWebContentsCreated(
+      content::WebContents* guest_web_contents,
+      content::WebContents* opener_web_contents,
+      scoped_ptr<base::DictionaryValue> extra_params) OVERRIDE;
   virtual void GuestWebContentsAttached(
       content::WebContents* guest_web_contents,
       content::WebContents* embedder_web_contents,
-      int browser_plugin_instance_id) OVERRIDE;
+      int browser_plugin_instance_id,
+      const base::DictionaryValue& extra_params) OVERRIDE;
   virtual void RenderProcessHostCreated(
       content::RenderProcessHost* host) OVERRIDE;
   virtual bool ShouldUseProcessPerSite(content::BrowserContext* browser_context,
@@ -237,6 +242,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       std::vector<std::string>* additional_schemes) OVERRIDE;
   virtual void GetAdditionalFileSystemMountPointProviders(
       const base::FilePath& storage_partition_path,
+      quota::SpecialStoragePolicy* special_storage_policy,
+      fileapi::ExternalMountPoints* external_mount_points,
       ScopedVector<fileapi::FileSystemMountPointProvider>*
           additional_providers) OVERRIDE;
 

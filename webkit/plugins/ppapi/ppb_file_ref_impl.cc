@@ -8,7 +8,6 @@
 #include "base/platform_file.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/escape.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/shared_impl/file_type_conversion.h"
@@ -16,6 +15,7 @@
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_file_system_api.h"
+#include "url/gurl.h"
 #include "webkit/common/fileapi/directory_entry.h"
 #include "webkit/common/fileapi/file_system_util.h"
 #include "webkit/plugins/ppapi/common.h"
@@ -312,10 +312,9 @@ int32_t PPB_FileRef_Impl::MakeDirectory(
   PluginInstance* plugin_instance = ResourceHelper::GetPluginInstance(this);
   if (!plugin_instance)
     return PP_ERROR_FAILED;
-  if (!plugin_instance->delegate()->MakeDirectory(
-          GetFileSystemURL(), PP_ToBool(make_ancestors),
-          base::Bind(&DidFinishFileOperation, callback)))
-    return PP_ERROR_FAILED;
+  plugin_instance->delegate()->MakeDirectory(
+      GetFileSystemURL(), PP_ToBool(make_ancestors),
+      base::Bind(&DidFinishFileOperation, callback));
   return PP_OK_COMPLETIONPENDING;
 }
 
@@ -328,12 +327,11 @@ int32_t PPB_FileRef_Impl::Touch(PP_Time last_access_time,
   PluginInstance* plugin_instance = ResourceHelper::GetPluginInstance(this);
   if (!plugin_instance)
     return PP_ERROR_FAILED;
-  if (!plugin_instance->delegate()->Touch(
-          GetFileSystemURL(),
-          PPTimeToTime(last_access_time),
-          PPTimeToTime(last_modified_time),
-          base::Bind(&DidFinishFileOperation, callback)))
-    return PP_ERROR_FAILED;
+  plugin_instance->delegate()->Touch(
+      GetFileSystemURL(),
+      PPTimeToTime(last_access_time),
+      PPTimeToTime(last_modified_time),
+      base::Bind(&DidFinishFileOperation, callback));
   return PP_OK_COMPLETIONPENDING;
 }
 
@@ -344,10 +342,9 @@ int32_t PPB_FileRef_Impl::Delete(scoped_refptr<TrackedCallback> callback) {
   PluginInstance* plugin_instance = ResourceHelper::GetPluginInstance(this);
   if (!plugin_instance)
     return PP_ERROR_FAILED;
-  if (!plugin_instance->delegate()->Delete(
-          GetFileSystemURL(),
-          base::Bind(&DidFinishFileOperation, callback)))
-    return PP_ERROR_FAILED;
+  plugin_instance->delegate()->Delete(
+      GetFileSystemURL(),
+      base::Bind(&DidFinishFileOperation, callback));
   return PP_OK_COMPLETIONPENDING;
 }
 
@@ -368,10 +365,9 @@ int32_t PPB_FileRef_Impl::Rename(PP_Resource new_pp_file_ref,
   PluginInstance* plugin_instance = ResourceHelper::GetPluginInstance(this);
   if (!plugin_instance)
     return PP_ERROR_FAILED;
-  if (!plugin_instance->delegate()->Rename(
-          GetFileSystemURL(), new_file_ref->GetFileSystemURL(),
-          base::Bind(&DidFinishFileOperation, callback)))
-    return PP_ERROR_FAILED;
+  plugin_instance->delegate()->Rename(
+      GetFileSystemURL(), new_file_ref->GetFileSystemURL(),
+      base::Bind(&DidFinishFileOperation, callback));
   return PP_OK_COMPLETIONPENDING;
 }
 
@@ -474,12 +470,10 @@ int32_t PPB_FileRef_Impl::QueryInHost(
 
     PP_FileSystemType file_system_type =
         delegate->GetFileSystemType(pp_instance(), file_system_);
-    if (!plugin_instance->delegate()->Query(
-            GetFileSystemURL(),
-            base::Bind(&DidReadMetadata, callback, info, file_system_type),
-            base::Bind(&DidFinishFileOperation, callback)))
-      return PP_ERROR_FAILED;
-
+    plugin_instance->delegate()->Query(
+        GetFileSystemURL(),
+        base::Bind(&DidReadMetadata, callback, info, file_system_type),
+        base::Bind(&DidFinishFileOperation, callback));
   }
   return PP_OK_COMPLETIONPENDING;
 }
@@ -504,12 +498,11 @@ int32_t PPB_FileRef_Impl::ReadDirectoryEntriesInHost(
 
   // TODO(yzshen): Passing base::Unretained(this) to the callback could
   // be dangerous.
-  if (!plugin_instance->delegate()->ReadDirectoryEntries(
-          GetFileSystemURL(),
-          base::Bind(&DidReadDirectory,
-                     callback, base::Unretained(this), files, file_types),
-          base::Bind(&DidFinishFileOperation, callback)))
-    return PP_ERROR_FAILED;
+  plugin_instance->delegate()->ReadDirectoryEntries(
+      GetFileSystemURL(),
+      base::Bind(&DidReadDirectory,
+                 callback, base::Unretained(this), files, file_types),
+      base::Bind(&DidFinishFileOperation, callback));
   return PP_OK_COMPLETIONPENDING;
 }
 

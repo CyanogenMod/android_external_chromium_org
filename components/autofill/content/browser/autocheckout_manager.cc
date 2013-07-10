@@ -7,15 +7,17 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/strings/utf_string_conversions.h"
-#include "components/autofill/browser/autofill_country.h"
-#include "components/autofill/browser/autofill_field.h"
-#include "components/autofill/browser/autofill_manager.h"
-#include "components/autofill/browser/autofill_metrics.h"
-#include "components/autofill/browser/autofill_profile.h"
-#include "components/autofill/browser/credit_card.h"
-#include "components/autofill/browser/field_types.h"
-#include "components/autofill/browser/form_structure.h"
 #include "components/autofill/content/browser/autocheckout_request_manager.h"
+#include "components/autofill/content/browser/autocheckout_statistic.h"
+#include "components/autofill/content/browser/autocheckout_steps.h"
+#include "components/autofill/core/browser/autofill_country.h"
+#include "components/autofill/core/browser/autofill_field.h"
+#include "components/autofill/core/browser/autofill_manager.h"
+#include "components/autofill/core/browser/autofill_metrics.h"
+#include "components/autofill/core/browser/autofill_profile.h"
+#include "components/autofill/core/browser/credit_card.h"
+#include "components/autofill/core/browser/field_types.h"
+#include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/common/autofill_messages.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_field_data.h"
@@ -63,14 +65,16 @@ FormData BuildAutocheckoutFormData() {
   formdata.fields.push_back(BuildField("cc-exp-month"));
   formdata.fields.push_back(BuildField("cc-exp-year"));
   formdata.fields.push_back(BuildField("cc-csc"));
-  formdata.fields.push_back(BuildField("billing street-address"));
+  formdata.fields.push_back(BuildField("billing address-line1"));
+  formdata.fields.push_back(BuildField("billing address-line2"));
   formdata.fields.push_back(BuildField("billing locality"));
   formdata.fields.push_back(BuildField("billing region"));
   formdata.fields.push_back(BuildField("billing country"));
   formdata.fields.push_back(BuildField("billing postal-code"));
   formdata.fields.push_back(BuildField("billing tel"));
   formdata.fields.push_back(BuildField("shipping name"));
-  formdata.fields.push_back(BuildField("shipping street-address"));
+  formdata.fields.push_back(BuildField("shipping address-line1"));
+  formdata.fields.push_back(BuildField("shipping address-line2"));
   formdata.fields.push_back(BuildField("shipping locality"));
   formdata.fields.push_back(BuildField("shipping region"));
   formdata.fields.push_back(BuildField("shipping country"));
@@ -195,6 +199,8 @@ void AutocheckoutManager::FillForms() {
       page_meta_data_->click_elements_before_form_fill,
       page_meta_data_->click_elements_after_form_fill,
       page_meta_data_->proceed_element_descriptor));
+  // Record time taken for navigating current page.
+  RecordTimeTaken(page_meta_data_->current_page_number);
 }
 
 void AutocheckoutManager::OnClickFailed(AutocheckoutStatus status) {
@@ -202,6 +208,9 @@ void AutocheckoutManager::OnClickFailed(AutocheckoutStatus status) {
   DCHECK_NE(MISSING_FIELDMAPPING, status);
 
   SendAutocheckoutStatus(status);
+  SetStepProgressForPage(page_meta_data_->current_page_number,
+                         AUTOCHECKOUT_STEP_FAILED);
+
   autofill_manager_->delegate()->OnAutocheckoutError();
   in_autocheckout_flow_ = false;
 }
@@ -246,20 +255,29 @@ void AutocheckoutManager::OnLoadedPageMetaData(
     status = CANNOT_PROCEED;
   }
 
-  // Encountered an error during the Autocheckout flow.
+  // Encountered an error during the Autocheckout flow, probably to
+  // do with a problem on the previous page.
   if (!in_autocheckout_flow_) {
+    if (old_meta_data) {
+      SetStepProgressForPage(old_meta_data->current_page_number,
+                             AUTOCHECKOUT_STEP_FAILED);
+    }
     SendAutocheckoutStatus(status);
     autofill_manager_->delegate()->OnAutocheckoutError();
     return;
   }
 
-  // Add 1.0 since page numbers are 0-indexed.
-  autofill_manager_->delegate()->UpdateProgressBar(
-      (1.0 + page_meta_data_->current_page_number) /
-          page_meta_data_->total_pages);
+  SetStepProgressForPage(old_meta_data->current_page_number,
+                         AUTOCHECKOUT_STEP_COMPLETED);
+  SetStepProgressForPage(page_meta_data_->current_page_number,
+                         AUTOCHECKOUT_STEP_STARTED);
+
   FillForms();
-  // If the current page is the last page in the flow, close the dialog.
+  // If the current page is the last page in the flow, set in-progress
+  // steps to 'completed', and send status.
   if (page_meta_data_->IsEndOfAutofillableFlow()) {
+    SetStepProgressForPage(page_meta_data_->current_page_number,
+                           AUTOCHECKOUT_STEP_COMPLETED);
     SendAutocheckoutStatus(status);
     autofill_manager_->delegate()->OnAutocheckoutSuccess();
     in_autocheckout_flow_ = false;
@@ -268,6 +286,10 @@ void AutocheckoutManager::OnLoadedPageMetaData(
 
 void AutocheckoutManager::OnFormsSeen() {
   autocheckout_offered_ = false;
+}
+
+bool AutocheckoutManager::ShouldIgnoreAjax() {
+  return in_autocheckout_flow_ && page_meta_data_->ignore_ajax;
 }
 
 void AutocheckoutManager::MaybeShowAutocheckoutBubble(
@@ -316,6 +338,8 @@ void AutocheckoutManager::ReturnAutocheckoutData(
     return;
   }
 
+  latency_statistics_.clear();
+  last_step_completion_timestamp_ = base::TimeTicks().Now();
   google_transaction_id_ = google_transaction_id;
   in_autocheckout_flow_ = true;
   metric_logger_->LogAutocheckoutBuyFlowMetric(
@@ -346,14 +370,19 @@ void AutocheckoutManager::ReturnAutocheckoutData(
     }
   }
 
-  // Add 1.0 since page numbers are 0-indexed.
-  autofill_manager_->delegate()->UpdateProgressBar(
-      (1.0 + page_meta_data_->current_page_number) /
-          page_meta_data_->total_pages);
+  // Page types only available in first-page meta data, so save
+  // them for use later as we navigate.
+  page_types_ = page_meta_data_->page_types;
+  SetStepProgressForPage(page_meta_data_->current_page_number,
+                         AUTOCHECKOUT_STEP_STARTED);
+
   FillForms();
 
-  // If the current page is the last page in the flow, close the dialog.
+  // If the current page is the last page in the flow, set in-progress
+  // steps to 'completed', and send status.
   if (page_meta_data_->IsEndOfAutofillableFlow()) {
+    SetStepProgressForPage(page_meta_data_->current_page_number,
+                           AUTOCHECKOUT_STEP_COMPLETED);
     SendAutocheckoutStatus(SUCCESS);
     autofill_manager_->delegate()->OnAutocheckoutSuccess();
     in_autocheckout_flow_ = false;
@@ -381,6 +410,14 @@ void AutocheckoutManager::MaybeShowAutocheckoutDialog(
                  weak_ptr_factory_.GetWeakPtr());
   autofill_manager_->ShowRequestAutocompleteDialog(
       form, frame_url, DIALOG_TYPE_AUTOCHECKOUT, callback);
+
+  for (std::map<int, std::vector<AutocheckoutStepType> >::const_iterator
+          it = page_meta_data_->page_types.begin();
+      it != page_meta_data_->page_types.end(); ++it) {
+    for (size_t i = 0; i < it->second.size(); ++i) {
+      autofill_manager_->delegate()->AddAutocheckoutStep(it->second[i]);
+    }
+  }
 }
 
 void AutocheckoutManager::ShowAutocheckoutBubble(
@@ -473,6 +510,7 @@ void AutocheckoutManager::SendAutocheckoutStatus(AutocheckoutStatus status) {
   autocheckout_request_manager->SendAutocheckoutStatus(
       status,
       autofill_manager_->GetWebContents()->GetURL(),
+      latency_statistics_,
       google_transaction_id_);
 
   // Log the result of this Autocheckout flow to UMA.
@@ -480,6 +518,34 @@ void AutocheckoutManager::SendAutocheckoutStatus(AutocheckoutStatus status) {
       AutocheckoutStatusToUmaMetric(status));
 
   google_transaction_id_ = kTransactionIdNotSet;
+}
+
+void AutocheckoutManager::SetStepProgressForPage(
+    int page_number,
+    AutocheckoutStepStatus status) {
+  if (page_types_.count(page_number) == 1) {
+    for (size_t i = 0; i < page_types_[page_number].size(); ++i) {
+      autofill_manager_->delegate()->UpdateAutocheckoutStep(
+          page_types_[page_number][i], status);
+    }
+  }
+}
+
+void AutocheckoutManager::RecordTimeTaken(int page_number) {
+  AutocheckoutStatistic statistic;
+  statistic.page_number = page_number;
+  if (page_types_.count(page_number) == 1) {
+    for (size_t i = 0; i < page_types_[page_number].size(); ++i) {
+      statistic.steps.push_back(page_types_[page_number][i]);
+    }
+  }
+
+  statistic.time_taken =
+      base::TimeTicks().Now() - last_step_completion_timestamp_;
+  latency_statistics_.push_back(statistic);
+
+  // Reset timestamp.
+  last_step_completion_timestamp_ = base::TimeTicks().Now();
 }
 
 }  // namespace autofill

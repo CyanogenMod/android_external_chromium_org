@@ -135,6 +135,11 @@ bool Supported(const base::FilePath& input_file) {
       format = "ELF 32 X86";
       result = true;
       break;
+
+    case courgette::EXE_ELF_32_ARM:
+      format = "ELF 32 ARM";
+      result = true;
+      break;
   }
 
   printf("%s Executable\n", format.c_str());
@@ -419,12 +424,10 @@ int main(int argc, const char* argv[]) {
   CommandLine::Init(argc, argv);
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
-  (void)logging::InitLogging(
-      FILE_PATH_LITERAL("courgette.log"),
-      logging::LOG_TO_BOTH_FILE_AND_SYSTEM_DEBUG_LOG,
-      logging::LOCK_LOG_FILE,
-      logging::APPEND_TO_OLD_LOG_FILE,
-      logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS);
+  logging::LoggingSettings settings;
+  settings.logging_dest = logging::LOG_TO_ALL;
+  settings.log_file = FILE_PATH_LITERAL("courgette.log");
+  (void)logging::InitLogging(settings);
   logging::SetMinLogLevel(logging::LOG_VERBOSE);
 
   bool cmd_sup = command_line.HasSwitch("supported");

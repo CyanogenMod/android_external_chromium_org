@@ -57,7 +57,7 @@
 #include "remoting/host/log_to_server.h"
 #include "remoting/host/logging.h"
 #include "remoting/host/me2me_desktop_environment.h"
-#include "remoting/host/network_settings.h"
+#include "remoting/host/pairing_registry_delegate.h"
 #include "remoting/host/policy_hack/policy_watcher.h"
 #include "remoting/host/service_urls.h"
 #include "remoting/host/session_manager_factory.h"
@@ -65,6 +65,7 @@
 #include "remoting/host/token_validator_factory_impl.h"
 #include "remoting/host/ui_strings.h"
 #include "remoting/host/usage_stats_consent.h"
+#include "remoting/jingle_glue/network_settings.h"
 #include "remoting/jingle_glue/xmpp_signal_strategy.h"
 #include "remoting/protocol/me2me_host_authenticator_factory.h"
 #include "remoting/protocol/pairing_registry.h"
@@ -476,14 +477,9 @@ void HostProcess::CreateAuthenticatorFactory() {
     return;
   }
 
-  // TODO(jamiewalch): Add a pairing registry here once all the code
+  // TODO(jamiewalch): Create a pairing registry here once all the code
   // is committed.
-  scoped_refptr<remoting::protocol::PairingRegistry> pairing_registry;
-  //scoped_refptr<protocol::PairingRegistry> pairing_registry(
-  //    new protocol::PairingRegistry(
-  //        scoped_ptr<protocol::PairingRegistry::Delegate>(
-  //            new protocol::NotImplementedPairingRegistryDelegate),
-  //        protocol::PairingRegistry::PairedClients()));
+  scoped_refptr<remoting::protocol::PairingRegistry> pairing_registry = NULL;
 
   scoped_ptr<protocol::AuthenticatorFactory> factory;
 

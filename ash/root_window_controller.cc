@@ -9,7 +9,7 @@
 #include "ash/ash_constants.h"
 #include "ash/ash_switches.h"
 #include "ash/desktop_background/desktop_background_widget_controller.h"
-#include "ash/display/display_controller.h"
+#include "ash/desktop_background/user_wallpaper_delegate.h"
 #include "ash/display/display_manager.h"
 #include "ash/focus_cycler.h"
 #include "ash/session_state_delegate.h"
@@ -22,11 +22,15 @@
 #include "ash/shell_window_ids.h"
 #include "ash/system/status_area_widget.h"
 #include "ash/system/tray/system_tray_delegate.h"
+#include "ash/touch/touch_hud_debug.h"
+#include "ash/touch/touch_hud_projection.h"
 #include "ash/touch/touch_observer_hud.h"
+#include "ash/wm/always_on_top_controller.h"
 #include "ash/wm/base_layout_manager.h"
 #include "ash/wm/boot_splash_screen.h"
 #include "ash/wm/dock/docked_window_layout_manager.h"
 #include "ash/wm/panels/panel_layout_manager.h"
+#include "ash/wm/panels/panel_window_event_handler.h"
 #include "ash/wm/property_util.h"
 #include "ash/wm/root_window_layout_manager.h"
 #include "ash/wm/screen_dimmer.h"
@@ -39,14 +43,13 @@
 #include "ash/wm/window_util.h"
 #include "ash/wm/workspace_controller.h"
 #include "base/command_line.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/tooltip_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/models/menu_model.h"
-#include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
 #include "ui/keyboard/keyboard_controller.h"
 #include "ui/keyboard/keyboard_util.h"
@@ -170,11 +173,12 @@ RootWindowController::RootWindowController(aura::RootWindow* root_window)
       root_window_layout_(NULL),
       docked_layout_manager_(NULL),
       panel_layout_manager_(NULL),
-      touch_observer_hud_(NULL) {
+      touch_hud_debug_(NULL),
+      touch_hud_projection_(NULL) {
   SetRootWindowController(root_window, this);
   screen_dimmer_.reset(new ScreenDimmer(root_window));
 
-  stacking_controller_.reset(new ash::StackingController);
+  stacking_controller_.reset(new StackingController);
   aura::client::SetStackingClient(root_window, stacking_controller_.get());
 }
 
@@ -199,7 +203,36 @@ RootWindowController* RootWindowController::ForActiveRootWindow() {
   return GetRootWindowController(Shell::GetActiveRootWindow());
 }
 
+void RootWindowController::EnableTouchHudProjection() {
+  if (touch_hud_projection_)
+    return;
+  set_touch_hud_projection(new TouchHudProjection(root_window_.get()));
+}
+
+void RootWindowController::DisableTouchHudProjection() {
+  if (!touch_hud_projection_)
+    return;
+  touch_hud_projection_->Remove();
+}
+
+void RootWindowController::SetWallpaperController(
+    DesktopBackgroundWidgetController* controller) {
+  wallpaper_controller_.reset(controller);
+}
+
+void RootWindowController::SetAnimatingWallpaperController(
+    AnimatingDesktopController* controller) {
+  if (animating_wallpaper_controller_.get())
+    animating_wallpaper_controller_->StopAnimating();
+  animating_wallpaper_controller_.reset(controller);
+}
+
 void RootWindowController::Shutdown() {
+  if (animating_wallpaper_controller_.get())
+    animating_wallpaper_controller_->StopAnimating();
+  wallpaper_controller_.reset();
+  animating_wallpaper_controller_.reset();
+
   CloseChildWindows();
   if (Shell::GetActiveRootWindow() == root_window_) {
     Shell::GetInstance()->set_active_root_window(
@@ -246,92 +279,26 @@ aura::Window* RootWindowController::GetContainer(int container_id) {
   return root_window_->GetChildById(container_id);
 }
 
-void RootWindowController::InitLayoutManagers() {
-  root_window_layout_ =
-      new RootWindowLayoutManager(root_window_.get());
-  root_window_->SetLayoutManager(root_window_layout_);
-
-  aura::Window* default_container =
-      GetContainer(kShellWindowId_DefaultContainer);
-  // Workspace manager has its own layout managers.
-  workspace_controller_.reset(
-      new WorkspaceController(default_container));
-
-  aura::Window* always_on_top_container =
-      GetContainer(kShellWindowId_AlwaysOnTopContainer);
-  always_on_top_container->SetLayoutManager(
-      new BaseLayoutManager(
-          always_on_top_container->GetRootWindow()));
-}
-
-void RootWindowController::InitForPrimaryDisplay() {
-  DCHECK(!shelf_.get());
-  aura::Window* shelf_container =
-      GetContainer(ash::internal::kShellWindowId_ShelfContainer);
-  // TODO(harrym): Remove when status area is view.
-  aura::Window* status_container =
-      GetContainer(ash::internal::kShellWindowId_StatusContainer);
-  shelf_.reset(new ash::ShelfWidget(
-      shelf_container, status_container, workspace_controller()));
-
-  // Create Docked windows layout manager
-  aura::Window* docked_container = GetContainer(
-      internal::kShellWindowId_DockedContainer);
-  docked_layout_manager_ =
-      new internal::DockedWindowLayoutManager(docked_container);
-  docked_container_handler_.reset(
-      new ToplevelWindowEventHandler(docked_container));
-  docked_container->SetLayoutManager(docked_layout_manager_);
-
-  // Create Panel layout manager
-  aura::Window* panel_container = GetContainer(
-      internal::kShellWindowId_PanelContainer);
-  panel_layout_manager_ =
-      new internal::PanelLayoutManager(panel_container);
-  panel_container_handler_.reset(
-      new ToplevelWindowEventHandler(panel_container));
-  panel_container->SetLayoutManager(panel_layout_manager_);
-
-  // TODO(stevenjb/oshima): Remove this call to CreateLauncher() and call
-  // ash::Shell::CreateLauncher() explicitly in ash_shell and ash_unittests
-  // so that the behavior and construction order is consistent betwheen Ash
-  // and Chrome.
-  if (Shell::GetInstance()->session_state_delegate()->NumberOfLoggedInUsers())
-    shelf_->CreateLauncher();
-
-  InitKeyboard();
-}
-
-void RootWindowController::CreateContainers() {
+void RootWindowController::Init(bool first_run_after_boot) {
+  root_window_->SetCursor(ui::kCursorPointer);
   CreateContainersInRootWindow(root_window_.get());
+  CreateSystemBackground(first_run_after_boot);
 
-  // Create touch observer HUD if needed. HUD should be created after the
-  // containers have been created, so that its widget can be added to them.
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kAshTouchHud))
-    touch_observer_hud_ = new TouchObserverHUD(root_window_.get());
+  InitLayoutManagers();
+  InitKeyboard();
+  InitTouchHuds();
+
+  if (Shell::GetPrimaryRootWindowController()->
+      GetSystemModalLayoutManager(NULL)->has_modal_background()) {
+    GetSystemModalLayoutManager(NULL)->CreateModalBackground();
+  }
 }
 
-void RootWindowController::CreateSystemBackground(
-    bool is_first_run_after_boot) {
-  SkColor color = SK_ColorBLACK;
-#if defined(OS_CHROMEOS)
-  if (is_first_run_after_boot)
-    color = kChromeOsBootColor;
-#endif
-  system_background_.reset(
-      new SystemBackgroundController(root_window_.get(), color));
-
-#if defined(OS_CHROMEOS)
-  // Make a copy of the system's boot splash screen so we can composite it
-  // onscreen until the desktop background is ready.
-  if (is_first_run_after_boot &&
-      (CommandLine::ForCurrentProcess()->HasSwitch(
-           switches::kAshCopyHostBackgroundAtBoot) ||
-       CommandLine::ForCurrentProcess()->HasSwitch(
-           switches::kAshAnimateFromBootSplashScreen)))
-    boot_splash_screen_.reset(new BootSplashScreen(root_window_.get()));
-#endif
+void RootWindowController::ShowLauncher() {
+  if (!shelf_->launcher())
+    return;
+  shelf_->launcher()->SetVisible(true);
+  shelf_->status_area_widget()->Show();
 }
 
 void RootWindowController::OnLauncherCreated() {
@@ -341,23 +308,13 @@ void RootWindowController::OnLauncherCreated() {
     docked_layout_manager_->SetLauncher(shelf_->launcher());
 }
 
-void RootWindowController::ShowLauncher() {
-  if (!shelf_.get() || !shelf_->launcher())
-    return;
-  shelf_->launcher()->SetVisible(true);
-  shelf_->status_area_widget()->Show();
-}
-
 void RootWindowController::OnLoginStateChanged(user::LoginStatus status) {
-  // TODO(oshima): remove if when launcher per display is enabled by
-  // default.
-  if (shelf_)
-    shelf_->shelf_layout_manager()->UpdateVisibilityState();
+  shelf_->shelf_layout_manager()->UpdateVisibilityState();
 }
 
 void RootWindowController::UpdateAfterLoginStatusChange(
     user::LoginStatus status) {
-  if (shelf_.get() && shelf_->status_area_widget())
+  if (shelf_->status_area_widget())
     shelf_->status_area_widget()->UpdateAfterLoginStatusChange(status);
 }
 
@@ -372,12 +329,31 @@ void RootWindowController::HandleInitialDesktopBackgroundAnimationStarted() {
   }
 }
 
-void RootWindowController::HandleDesktopBackgroundVisible() {
+void RootWindowController::OnWallpaperAnimationFinished(views::Widget* widget) {
+  // Make sure the wallpaper is visible.
   system_background_->SetColor(SK_ColorBLACK);
   boot_splash_screen_.reset();
+
+  Shell::GetInstance()->user_wallpaper_delegate()->
+      OnWallpaperAnimationFinished();
+  // Only removes old component when wallpaper animation finished. If we
+  // remove the old one before the new wallpaper is done fading in there will
+  // be a white flash during the animation.
+  if (animating_wallpaper_controller()) {
+    DesktopBackgroundWidgetController* controller =
+        animating_wallpaper_controller()->GetController(true);
+    // |desktop_widget_| should be the same animating widget we try to move
+    // to |kDesktopController|. Otherwise, we may close |desktop_widget_|
+    // before move it to |kDesktopController|.
+    DCHECK_EQ(controller->widget(), widget);
+    // Release the old controller and close its background widget.
+    SetWallpaperController(controller);
+  }
 }
 
 void RootWindowController::CloseChildWindows() {
+  if (!shelf_.get())
+    return;
   // panel_layout_manager_ needs to be shut down before windows are destroyed.
   if (panel_layout_manager_) {
     panel_layout_manager_->Shutdown();
@@ -385,17 +361,14 @@ void RootWindowController::CloseChildWindows() {
   }
 
   // TODO(harrym): Remove when Status Area Widget is a child view.
-  if (shelf_)
-    shelf_->ShutdownStatusAreaWidget();
+  shelf_->ShutdownStatusAreaWidget();
 
-  if (shelf_.get() && shelf_->shelf_layout_manager())
+  if (shelf_->shelf_layout_manager())
     shelf_->shelf_layout_manager()->set_workspace_controller(NULL);
 
   // Close background widget first as it depends on tooltip.
-  root_window_->SetProperty(kDesktopController,
-      static_cast<DesktopBackgroundWidgetController*>(NULL));
-  root_window_->SetProperty(kAnimatingDesktopController,
-                            static_cast<AnimatingDesktopController*>(NULL));
+  wallpaper_controller_.reset();
+  animating_wallpaper_controller_.reset();
 
   workspace_controller_.reset();
   aura::client::SetTooltipClient(root_window_.get(), NULL);
@@ -416,13 +389,13 @@ void RootWindowController::MoveWindowsTo(aura::RootWindow* dst) {
 }
 
 ShelfLayoutManager* RootWindowController::GetShelfLayoutManager() {
-  return shelf_.get() ? shelf_->shelf_layout_manager() : NULL;
+  return shelf_->shelf_layout_manager();
 }
 
 SystemTray* RootWindowController::GetSystemTray() {
   // We assume in throughout the code that this will not return NULL. If code
   // triggers this for valid reasons, it should test status_area_widget first.
-  CHECK(shelf_.get() && shelf_->status_area_widget());
+  CHECK(shelf_->status_area_widget());
   return shelf_->status_area_widget()->system_tray();
 }
 
@@ -434,15 +407,13 @@ void RootWindowController::ShowContextMenu(const gfx::Point& location_in_screen,
   if (!menu_model)
     return;
 
-  internal::DesktopBackgroundWidgetController* background =
-      root_window_->GetProperty(kDesktopController);
   // Background controller may not be set yet if user clicked on status are
   // before initial animation completion. See crbug.com/222218
-  if (!background)
+  if (!wallpaper_controller_.get())
     return;
 
   views::MenuRunner menu_runner(menu_model.get());
-  if (menu_runner.RunMenuAt(background->widget(),
+  if (menu_runner.RunMenuAt(wallpaper_controller_->widget(),
           NULL, gfx::Rect(location_in_screen, gfx::Size()),
           views::MenuItemView::TOPLEFT, source_type,
           views::MenuRunner::CONTEXT_MENU) ==
@@ -461,7 +432,7 @@ aura::Window* RootWindowController::GetFullscreenWindow() const {
   aura::Window* container = workspace_controller_->GetActiveWorkspaceWindow();
   for (size_t i = 0; i < container->children().size(); ++i) {
     aura::Window* child = container->children()[i];
-    if (ash::wm::IsWindowFullscreen(child))
+    if (wm::IsWindowFullscreen(child))
       return child;
   }
   return NULL;
@@ -489,6 +460,83 @@ void RootWindowController::InitKeyboard() {
 
 ////////////////////////////////////////////////////////////////////////////////
 // RootWindowController, private:
+
+void RootWindowController::InitLayoutManagers() {
+  root_window_layout_ =
+      new RootWindowLayoutManager(root_window_.get());
+  root_window_->SetLayoutManager(root_window_layout_);
+
+  aura::Window* default_container =
+      GetContainer(kShellWindowId_DefaultContainer);
+  // Workspace manager has its own layout managers.
+  workspace_controller_.reset(
+      new WorkspaceController(default_container));
+
+  aura::Window* always_on_top_container =
+      GetContainer(kShellWindowId_AlwaysOnTopContainer);
+  always_on_top_container->SetLayoutManager(
+      new BaseLayoutManager(
+          always_on_top_container->GetRootWindow()));
+  always_on_top_controller_.reset(new internal::AlwaysOnTopController);
+  always_on_top_controller_->SetAlwaysOnTopContainer(always_on_top_container);
+
+  DCHECK(!shelf_.get());
+  aura::Window* shelf_container =
+      GetContainer(internal::kShellWindowId_ShelfContainer);
+  // TODO(harrym): Remove when status area is view.
+  aura::Window* status_container =
+      GetContainer(internal::kShellWindowId_StatusContainer);
+  shelf_.reset(new ShelfWidget(
+      shelf_container, status_container, workspace_controller()));
+
+  // Create Docked windows layout manager
+  aura::Window* docked_container = GetContainer(
+      internal::kShellWindowId_DockedContainer);
+  docked_layout_manager_ =
+      new internal::DockedWindowLayoutManager(docked_container);
+  docked_container_handler_.reset(
+      new ToplevelWindowEventHandler(docked_container));
+  docked_container->SetLayoutManager(docked_layout_manager_);
+
+  // Create Panel layout manager
+  aura::Window* panel_container = GetContainer(
+      internal::kShellWindowId_PanelContainer);
+  panel_layout_manager_ =
+      new internal::PanelLayoutManager(panel_container);
+  panel_container_handler_.reset(
+      new PanelWindowEventHandler(panel_container));
+  panel_container->SetLayoutManager(panel_layout_manager_);
+}
+
+void RootWindowController::InitTouchHuds() {
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kAshTouchHud))
+    set_touch_hud_debug(new TouchHudDebug(root_window_.get()));
+  if (Shell::GetInstance()->is_touch_hud_projection_enabled())
+    EnableTouchHudProjection();
+}
+
+void RootWindowController::CreateSystemBackground(
+    bool is_first_run_after_boot) {
+  SkColor color = SK_ColorBLACK;
+#if defined(OS_CHROMEOS)
+  if (is_first_run_after_boot)
+    color = kChromeOsBootColor;
+#endif
+  system_background_.reset(
+      new SystemBackgroundController(root_window_.get(), color));
+
+#if defined(OS_CHROMEOS)
+  // Make a copy of the system's boot splash screen so we can composite it
+  // onscreen until the desktop background is ready.
+  if (is_first_run_after_boot &&
+      (CommandLine::ForCurrentProcess()->HasSwitch(
+           switches::kAshCopyHostBackgroundAtBoot) ||
+       CommandLine::ForCurrentProcess()->HasSwitch(
+           switches::kAshAnimateFromBootSplashScreen)))
+    boot_splash_screen_.reset(new BootSplashScreen(root_window_.get()));
+#endif
+}
 
 void RootWindowController::CreateContainersInRootWindow(
     aura::RootWindow* root_window) {

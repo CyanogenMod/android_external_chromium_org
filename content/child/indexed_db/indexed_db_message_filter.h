@@ -16,10 +16,11 @@ class MessageLoopProxy;
 
 namespace content {
 class IndexedDBDispatcher;
+class ThreadSafeSender;
 
 class IndexedDBMessageFilter : public IPC::ChannelProxy::MessageFilter {
  public:
-  IndexedDBMessageFilter();
+  explicit IndexedDBMessageFilter(ThreadSafeSender* thread_safe_sender);
 
   // IPC::Listener implementation.
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
@@ -38,6 +39,7 @@ class IndexedDBMessageFilter : public IPC::ChannelProxy::MessageFilter {
   void OnStaleUpgradeNeeded(const IndexedDBMsg_CallbacksUpgradeNeeded_Params&);
 
   scoped_refptr<base::MessageLoopProxy> main_thread_loop_proxy_;
+  scoped_refptr<ThreadSafeSender> thread_safe_sender_;
 
   DISALLOW_COPY_AND_ASSIGN(IndexedDBMessageFilter);
 };

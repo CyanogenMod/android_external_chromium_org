@@ -18,7 +18,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/download/download_prefs.h"
@@ -117,7 +117,6 @@ void ReadDirectoryCallback(size_t max_saved,
                            std::vector<std::string>* saved_screenshots,
                            base::Closure callback,
                            drive::FileError error,
-                           bool hide_hosted_documents,
                            scoped_ptr<drive::ResourceEntryVector> entries) {
   if (error != drive::FILE_ERROR_OK) {
     callback.Run();

@@ -1,22 +1,27 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.content.browser;
 
 import android.app.Activity;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.database.ContentObserver;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Rect;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.ResultReceiver;
+import android.provider.Settings;
+import android.provider.Settings.Secure;
 import android.text.Editable;
 import android.util.Log;
 import android.util.Pair;
@@ -30,7 +35,10 @@ import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityManager;
+import android.view.accessibility.AccessibilityManager.AccessibilityStateChangeListener;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.accessibility.AccessibilityNodeProvider;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
@@ -44,9 +52,11 @@ import org.chromium.base.WeakContext;
 import org.chromium.content.R;
 import org.chromium.content.browser.ContentViewGestureHandler.MotionEventDelegate;
 import org.chromium.content.browser.accessibility.AccessibilityInjector;
+import org.chromium.content.browser.accessibility.BrowserAccessibilityManager;
 import org.chromium.content.browser.input.AdapterInputConnection;
 import org.chromium.content.browser.input.HandleView;
 import org.chromium.content.browser.input.ImeAdapter;
+import org.chromium.content.browser.input.InputMethodManagerWrapper;
 import org.chromium.content.browser.input.ImeAdapter.AdapterInputConnectionFactory;
 import org.chromium.content.browser.input.InsertionHandleController;
 import org.chromium.content.browser.input.SelectPopupDialog;
@@ -58,6 +68,8 @@ import org.chromium.ui.WindowAndroid;
 import org.chromium.ui.gfx.DeviceDisplayInfo;
 
 import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -68,7 +80,9 @@ import java.util.Map;
  * being tied to the view system.
  */
 @JNINamespace("content")
-public class ContentViewCore implements MotionEventDelegate, NavigationClient {
+    public class ContentViewCore implements MotionEventDelegate,
+                                            NavigationClient,
+                                            AccessibilityStateChangeListener {
     /**
      * Indicates that input events are batched together and delivered just before vsync.
      */
@@ -151,11 +165,6 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
          * @see View#onConfigurationChanged(Configuration)
          */
         void super_onConfigurationChanged(Configuration newConfig);
-
-        /**
-         * @see View#onScrollChanged(int, int, int, int)
-         */
-        void onScrollChanged(int lPix, int tPix, int oldlPix, int oldtPix);
 
         /**
          * @see View#awakenScrollBars()
@@ -353,6 +362,15 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     // The AccessibilityInjector that handles loading Accessibility scripts into the web page.
     private AccessibilityInjector mAccessibilityInjector;
 
+    // Handles native accessibility, i.e. without any script injection.
+    private BrowserAccessibilityManager mBrowserAccessibilityManager;
+
+    // System accessibility service.
+    private final AccessibilityManager mAccessibilityManager;
+
+    // Allows us to dynamically respond when the accessibility script injection flag changes.
+    private ContentObserver mAccessibilityScriptInjectionObserver;
+
     // Temporary notification to tell onSizeChanged to focus a form element,
     // because the OSK was just brought up.
     private boolean mUnfocusOnNextSizeChanged = false;
@@ -374,6 +392,7 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
 
     private ViewAndroid mViewAndroid;
 
+
     /**
      * Constructs a new ContentViewCore. Embedders must call initialize() after constructing
      * a ContentViewCore and before using it.
@@ -393,6 +412,8 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
         mStartHandlePoint = mRenderCoordinates.createNormalizedPoint();
         mEndHandlePoint = mRenderCoordinates.createNormalizedPoint();
         mInsertionHandlePoint = mRenderCoordinates.createNormalizedPoint();
+        mAccessibilityManager = (AccessibilityManager)
+                getContext().getSystemService(Context.ACCESSIBILITY_SERVICE);
     }
 
     /**
@@ -490,9 +511,8 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     }
 
     private ImeAdapter createImeAdapter(Context context) {
-        return new ImeAdapter(context, getSelectionHandleController(),
-                getInsertionHandleController(),
-                new ImeAdapter.ViewEmbedder() {
+        return new ImeAdapter(new InputMethodManagerWrapper(context),
+                new ImeAdapter.ImeAdapterDelegate() {
                     @Override
                     public void onImeEvent(boolean isFinish) {
                         getContentViewClient().onImeEvent();
@@ -539,6 +559,12 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
                                 }
                             }
                         };
+                    }
+
+                    @Override
+                    public void hideSelectionAndInsertionHandles() {
+                        getInsertionHandleController().hideAndDisallowAutomaticShowing();
+                        getSelectionHandleController().hideAndDisallowAutomaticShowing();
                     }
                 }
         );
@@ -639,7 +665,6 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
         initializeContainerView(internalDispatcher, inputEventDeliveryMode);
 
         mAccessibilityInjector = AccessibilityInjector.newInstance(this);
-        mAccessibilityInjector.addOrRemoveAccessibilityApisIfNecessary();
 
         String contentDescription = "Web View";
         if (R.string.accessibility_content_view == 0) {
@@ -778,6 +803,11 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
         mContentSettings = null;
         mJavaScriptInterfaces.clear();
         mRetainedJavaScriptObjects.clear();
+        if (mAccessibilityScriptInjectionObserver != null) {
+            getContext().getContentResolver().unregisterContentObserver(
+                    mAccessibilityScriptInjectionObserver);
+            mAccessibilityScriptInjectionObserver = null;
+        }
     }
 
     /**
@@ -1177,10 +1207,7 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
         if (lastInputEventForVSync && isVSyncNotificationEnabled()) {
             assert type == ContentViewGestureHandler.GESTURE_SCROLL_BY ||
                     type == ContentViewGestureHandler.GESTURE_PINCH_BY;
-            // TODO(brianderson): Set this back to true once we've figured out
-            // race conditions and what to do with timestamps when sending
-            // BeginFrame early. crbug.com/247043.
-            mDidSignalVSyncUsingInputEvent = false;
+            mDidSignalVSyncUsingInputEvent = true;
         }
         switch (type) {
             case ContentViewGestureHandler.GESTURE_SHOW_PRESSED_STATE:
@@ -1293,7 +1320,6 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
         TraceEvent.begin();
         hidePopupDialog();
         nativeOnHide(mNativeContentViewCore);
-        setAccessibilityState(false);
         TraceEvent.end();
     }
 
@@ -1302,7 +1328,7 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
      */
     public void onActivityResume() {
         nativeOnShow(mNativeContentViewCore);
-        setAccessibilityState(true);
+        setAccessibilityState(mAccessibilityManager.isEnabled());
     }
 
     /**
@@ -1310,7 +1336,7 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
      */
     public void onShow() {
         nativeOnShow(mNativeContentViewCore);
-        setAccessibilityState(true);
+        setAccessibilityState(mAccessibilityManager.isEnabled());
     }
 
     /**
@@ -1318,7 +1344,7 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
      */
     public void onHide() {
         hidePopupDialog();
-        setAccessibilityState(false);
+        setInjectedAccessibility(false);
         nativeOnHide(mNativeContentViewCore);
     }
 
@@ -1352,6 +1378,7 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     void hideSelectActionBar() {
         if (mActionMode != null) {
             mActionMode.finish();
+            mActionMode = null;
         }
     }
 
@@ -1369,9 +1396,14 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
             int pid = nativeGetCurrentRenderProcessId(mNativeContentViewCore);
             if (pid > 0) {
                 ChildProcessLauncher.bindAsHighPriority(pid);
+                // Normally the initial binding is removed in onRenderProcessSwap(), but it is
+                // possible to construct WebContents and spawn the renderer before passing it to
+                // ContentViewCore. In this case there will be no onRendererSwap() call and the
+                // initial binding will be removed here.
+                ChildProcessLauncher.removeInitialBinding(pid);
             }
         }
-        setAccessibilityState(true);
+        setAccessibilityState(mAccessibilityManager.isEnabled());
     }
 
     /**
@@ -1386,7 +1418,7 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
                 ChildProcessLauncher.unbindAsHighPriority(pid);
             }
         }
-        setAccessibilityState(false);
+        setInjectedAccessibility(false);
         hidePopupDialog();
         mZoomControlsDelegate.dismissZoomPicker();
     }
@@ -1614,6 +1646,9 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     public boolean onHoverEvent(MotionEvent event) {
         TraceEvent.begin("onHoverEvent");
         mContainerView.removeCallbacks(mFakeMouseMoveRunnable);
+        if (mBrowserAccessibilityManager != null) {
+            return mBrowserAccessibilityManager.onHoverEvent(event);
+        }
         if (mNativeContentViewCore != 0) {
             nativeSendMouseMoveEvent(mNativeContentViewCore, event.getEventTime(),
                     event.getX(), event.getY());
@@ -2149,14 +2184,6 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
 
         if (needHidePopupZoomer) mPopupZoomer.hide(true);
 
-        if (scrollChanged) {
-            mContainerViewInternals.onScrollChanged(
-                    (int) mRenderCoordinates.fromLocalCssToPix(scrollOffsetX),
-                    (int) mRenderCoordinates.fromLocalCssToPix(scrollOffsetY),
-                    (int) mRenderCoordinates.getScrollXPix(),
-                    (int) mRenderCoordinates.getScrollYPix());
-        }
-
         if (pageScaleChanged) {
             // This function should be called back from native as soon
             // as the scroll is applied to the backbuffer.  We should only
@@ -2184,6 +2211,9 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
                 controlsOffsetPix, contentOffsetYPix, overdrawBottomHeightPix);
 
         mPendingRendererFrame = true;
+        if (mBrowserAccessibilityManager != null) {
+            mBrowserAccessibilityManager.notifyFrameInfoInitialized();
+        }
     }
 
     @SuppressWarnings("unused")
@@ -2337,6 +2367,12 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
             if (newPid > 0) {
                 ChildProcessLauncher.bindAsHighPriority(newPid);
             }
+        }
+
+        // We want to remove the initial binding even if the ContentView is not attached, so that
+        // renderers for ContentViews loading in background do not retain the high priority.
+        if (newPid > 0) {
+            ChildProcessLauncher.removeInitialBinding(newPid);
         }
     }
 
@@ -2566,6 +2602,11 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
         getContentViewClient().onStartContentIntent(getContext(), contentUrl);
     }
 
+    @Override
+    public void onAccessibilityStateChanged(boolean enabled) {
+        setAccessibilityState(enabled);
+    }
+
     /**
      * Determines whether or not this ContentViewCore can handle this accessibility action.
      * @param action The action to perform.
@@ -2594,9 +2635,44 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     }
 
     /**
+     * Set the BrowserAccessibilityManager, used for native accessibility
+     * (not script injection). This is only set when system accessibility
+     * has been enabled.
+     * @param manager The new BrowserAccessibilityManager.
+     */
+    public void setBrowserAccessibilityManager(BrowserAccessibilityManager manager) {
+        mBrowserAccessibilityManager = manager;
+    }
+
+    /**
+     * Get the BrowserAccessibilityManager, used for native accessibility
+     * (not script injection). This will return null when system accessibility
+     * is not enabled.
+     * @return This view's BrowserAccessibilityManager.
+     */
+    public BrowserAccessibilityManager getBrowserAccessibilityManager() {
+        return mBrowserAccessibilityManager;
+    }
+
+    /**
+     * If native accessibility (not script injection) is enabled, and if this is
+     * running on JellyBean or later, returns an AccessibilityNodeProvider that
+     * implements native accessibility for this view. Returns null otherwise.
+     * @return The AccessibilityNodeProvider, if available, or null otherwise.
+     */
+    public AccessibilityNodeProvider getAccessibilityNodeProvider() {
+        if (mBrowserAccessibilityManager != null) {
+            return mBrowserAccessibilityManager.getAccessibilityNodeProvider();
+        } else {
+            return null;
+        }
+    }
+
+    /**
      * @see View#onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo)
      */
     public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+        // Note: this is only used by the script-injecting accessibility code.
         mAccessibilityInjector.onInitializeAccessibilityNodeInfo(info);
     }
 
@@ -2604,6 +2680,7 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
      * @see View#onInitializeAccessibilityEvent(AccessibilityEvent)
      */
     public void onInitializeAccessibilityEvent(AccessibilityEvent event) {
+        // Note: this is only used by the script-injecting accessibility code.
         event.setClassName(this.getClass().getName());
 
         // Identify where the top-left of the screen currently points to.
@@ -2625,6 +2702,46 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     }
 
     /**
+     * Returns whether accessibility script injection is enabled on the device
+     */
+    public boolean isDeviceAccessibilityScriptInjectionEnabled() {
+        try {
+            if (!mContentSettings.getJavaScriptEnabled()) {
+                return false;
+            }
+
+            int result = getContext().checkCallingOrSelfPermission(
+                    android.Manifest.permission.INTERNET);
+            if (result != PackageManager.PERMISSION_GRANTED) {
+                return false;
+            }
+
+            Field field = Settings.Secure.class.getField("ACCESSIBILITY_SCRIPT_INJECTION");
+            field.setAccessible(true);
+            String accessibilityScriptInjection = (String) field.get(null);
+            ContentResolver contentResolver = getContext().getContentResolver();
+
+            if (mAccessibilityScriptInjectionObserver == null) {
+                ContentObserver contentObserver = new ContentObserver(new Handler()) {
+                    public void onChange(boolean selfChange, Uri uri) {
+                        setAccessibilityState(mAccessibilityManager.isEnabled());
+                    }
+                };
+                contentResolver.registerContentObserver(
+                    Settings.Secure.getUriFor(accessibilityScriptInjection),
+                    false,
+                    contentObserver);
+                mAccessibilityScriptInjectionObserver = contentObserver;
+            }
+
+            return Settings.Secure.getInt(contentResolver, accessibilityScriptInjection, 0) == 1;
+        } catch (NoSuchFieldException e) {
+        } catch (IllegalAccessException e) {
+        }
+        return false;
+    }
+
+    /**
      * Returns whether or not accessibility injection is being used.
      */
     public boolean isInjectingAccessibilityScript() {
@@ -2632,10 +2749,40 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     }
 
     /**
-     * Enable or disable accessibility features.
+     * Turns browser accessibility on or off.
+     * If |state| is |false|, this turns off both native and injected accessibility.
+     * Otherwise, if accessibility script injection is enabled, this will enable the injected
+     * accessibility scripts, and if it is disabled this will enable the native accessibility.
      */
     public void setAccessibilityState(boolean state) {
-        mAccessibilityInjector.setScriptEnabled(state);
+        boolean injectedAccessibility = false;
+        boolean nativeAccessibility = false;
+        if (state) {
+            if (isDeviceAccessibilityScriptInjectionEnabled()) {
+                injectedAccessibility = true;
+            } else {
+                nativeAccessibility = true;
+            }
+        }
+        setInjectedAccessibility(injectedAccessibility);
+        setNativeAccessibilityState(nativeAccessibility);
+    }
+
+    /**
+     * Enable or disable native accessibility features.
+     */
+    public void setNativeAccessibilityState(boolean enabled) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            nativeSetAccessibilityEnabled(mNativeContentViewCore, enabled);
+        }
+    }
+
+    /**
+     * Enable or disable injected accessibility features
+     */
+    public void setInjectedAccessibility(boolean enabled) {
+        mAccessibilityInjector.addOrRemoveAccessibilityApisIfNecessary();
+        mAccessibilityInjector.setScriptEnabled(enabled);
     }
 
     /**
@@ -2968,4 +3115,7 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
 
     private native void nativeDetachExternalVideoSurface(
             int nativeContentViewCoreImpl, int playerId);
+
+    private native void nativeSetAccessibilityEnabled(
+            int nativeContentViewCoreImpl, boolean enabled);
 }

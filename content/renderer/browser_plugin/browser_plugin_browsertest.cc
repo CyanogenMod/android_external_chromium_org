@@ -7,6 +7,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/singleton.h"
 #include "base/path_service.h"
+#include "base/pickle.h"
 #include "content/public/common/content_constants.h"
 #include "content/renderer/browser_plugin/browser_plugin.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager_factory.h"
@@ -163,7 +164,14 @@ MockBrowserPlugin* BrowserPluginTest::GetCurrentPluginWithAttachParams(
   if (!msg)
     return NULL;
 
-  BrowserPluginHostMsg_Attach::Read(msg, &instance_id, params);
+  PickleIterator iter(*msg);
+  if (!iter.ReadInt(&instance_id))
+    return NULL;
+
+  if (!IPC::ParamTraits<BrowserPluginHostMsg_Attach_Params>::Read(
+      msg, &iter, params))
+    return NULL;
+
   return static_cast<MockBrowserPlugin*>(
       browser_plugin_manager()->GetBrowserPlugin(instance_id));
 }
@@ -445,53 +453,6 @@ TEST_F(BrowserPluginTest, RemovePluginBeforeNavigation) {
       BrowserPluginHostMsg_PluginDestroyed::ID));
 }
 
-TEST_F(BrowserPluginTest, CustomEvents) {
-  const char* kAddEventListener =
-    "var url;"
-    "function nav(e) {"
-    "  url = JSON.parse(e.detail).url;"
-    "}"
-    "document.getElementById('browserplugin')."
-    "    addEventListener('-internal-loadcommit', nav);";
-  const char* kRemoveEventListener =
-    "document.getElementById('browserplugin')."
-    "    removeEventListener('-internal-loadcommit', nav);";
-  const char* kGetSrc =
-      "document.getElementById('browserplugin').src";
-  const char* kGoogleURL = "http://www.google.com/";
-  const char* kGoogleNewsURL = "http://news.google.com/";
-
-  LoadHTML(GetHTMLForBrowserPluginObject().c_str());
-  ExecuteJavaScript(kAddEventListener);
-
-  MockBrowserPlugin* browser_plugin = GetCurrentPlugin();
-  ASSERT_TRUE(browser_plugin);
-  int instance_id = browser_plugin->instance_id();
-
-  {
-    BrowserPluginMsg_LoadCommit_Params navigate_params;
-    navigate_params.is_top_level = true;
-    navigate_params.url = GURL(kGoogleURL);
-    BrowserPluginMsg_LoadCommit msg(instance_id, navigate_params);
-    browser_plugin->OnMessageReceived(msg);
-    EXPECT_EQ(kGoogleURL, ExecuteScriptAndReturnString("url"));
-    EXPECT_EQ(kGoogleURL, ExecuteScriptAndReturnString(kGetSrc));
-  }
-  ExecuteJavaScript(kRemoveEventListener);
-  {
-    BrowserPluginMsg_LoadCommit_Params navigate_params;
-    navigate_params.is_top_level = false;
-    navigate_params.url = GURL(kGoogleNewsURL);
-    BrowserPluginMsg_LoadCommit msg(instance_id, navigate_params);
-    browser_plugin->OnMessageReceived(msg);
-    // The URL variable should not change because we've removed the event
-    // listener.
-    EXPECT_EQ(kGoogleURL, ExecuteScriptAndReturnString("url"));
-    // The src attribute should not change if this is a top-level navigation.
-    EXPECT_EQ(kGoogleURL, ExecuteScriptAndReturnString(kGetSrc));
-  }
-}
-
 TEST_F(BrowserPluginTest, StopMethod) {
   const char* kCallStop =
     "document.getElementById('browserplugin').stop();";
@@ -647,79 +608,6 @@ TEST_F(BrowserPluginTest, ImmutableAttributesAfterNavigation) {
   partition_value = ExecuteScriptAndReturnString(
       "document.getElementById('browserplugin').partition");
   EXPECT_STREQ("storage", partition_value.c_str());
-}
-
-// This test verifies that we can mutate the event listener vector
-// within an event listener.
-TEST_F(BrowserPluginTest, RemoveEventListenerInEventListener) {
-  const char* kAddEventListener =
-    "var url;"
-    "function nav(e) {"
-    "  url = JSON.parse(e.detail).url;"
-    "  document.getElementById('browserplugin')."
-    "      removeEventListener('-internal-loadcommit', nav);"
-    "}"
-    "document.getElementById('browserplugin')."
-    "    addEventListener('-internal-loadcommit', nav);";
-  const char* kGoogleURL = "http://www.google.com/";
-  const char* kGoogleNewsURL = "http://news.google.com/";
-
-  LoadHTML(GetHTMLForBrowserPluginObject().c_str());
-  ExecuteJavaScript(kAddEventListener);
-
-  MockBrowserPlugin* browser_plugin = GetCurrentPlugin();
-  ASSERT_TRUE(browser_plugin);
-  int instance_id = browser_plugin->instance_id();
-
-  {
-    BrowserPluginMsg_LoadCommit_Params navigate_params;
-    navigate_params.url = GURL(kGoogleURL);
-    BrowserPluginMsg_LoadCommit msg(instance_id, navigate_params);
-    browser_plugin->OnMessageReceived(msg);
-    EXPECT_EQ(kGoogleURL, ExecuteScriptAndReturnString("url"));
-  }
-  {
-    BrowserPluginMsg_LoadCommit_Params navigate_params;
-    navigate_params.url = GURL(kGoogleNewsURL);
-    BrowserPluginMsg_LoadCommit msg(instance_id, navigate_params);
-    browser_plugin->OnMessageReceived(msg);
-    // The URL variable should not change because we've removed the event
-    // listener.
-    EXPECT_EQ(kGoogleURL, ExecuteScriptAndReturnString("url"));
-  }
-}
-
-// This test verifies that multiple event listeners fire that are registered
-// on a single event type.
-TEST_F(BrowserPluginTest, MultipleEventListeners) {
-  const char* kAddEventListener =
-    "var count = 0;"
-    "function nava(u) {"
-    "  count++;"
-    "}"
-    "function navb(u) {"
-    "  count++;"
-    "}"
-    "document.getElementById('browserplugin')."
-    "    addEventListener('-internal-loadcommit', nava);"
-    "document.getElementById('browserplugin')."
-    "    addEventListener('-internal-loadcommit', navb);";
-  const char* kGoogleURL = "http://www.google.com/";
-
-  LoadHTML(GetHTMLForBrowserPluginObject().c_str());
-  ExecuteJavaScript(kAddEventListener);
-
-  MockBrowserPlugin* browser_plugin = GetCurrentPlugin();
-  ASSERT_TRUE(browser_plugin);
-  int instance_id = browser_plugin->instance_id();
-
-  {
-    BrowserPluginMsg_LoadCommit_Params navigate_params;
-    navigate_params.url = GURL(kGoogleURL);
-    BrowserPluginMsg_LoadCommit msg(instance_id, navigate_params);
-    browser_plugin->OnMessageReceived(msg);
-    EXPECT_EQ(2, ExecuteScriptAndReturnInt("count"));
-  }
 }
 
 TEST_F(BrowserPluginTest, RemoveBrowserPluginOnExit) {

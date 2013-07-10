@@ -4,96 +4,187 @@
 
 #include "content/renderer/media/webcontentdecryptionmodule_impl.h"
 
+#include <map>
+#include <vector>
+
 #include "base/basictypes.h"
+#include "base/bind.h"
+#include "base/callback_helpers.h"
 #include "base/logging.h"
-#include "media/base/decrypt_config.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebURL.h"
+#include "base/memory/weak_ptr.h"
+#include "base/strings/string_util.h"
+#include "content/renderer/media/webcontentdecryptionmodulesession_impl.h"
+#include "media/base/media_keys.h"
+#include "webkit/renderer/media/crypto/content_decryption_module_factory.h"
 
 namespace content {
 
-class WebContentDecryptionModuleSessionImpl
-    : public WebKit::WebContentDecryptionModuleSession {
+// Forwards the session ID-based callbacks of the MediaKeys interface to the
+// appropriate session object.
+class SessionIdAdapter {
  public:
-  explicit WebContentDecryptionModuleSessionImpl(
-      WebKit::WebContentDecryptionModuleSession::Client* client);
-  virtual ~WebContentDecryptionModuleSessionImpl();
+  SessionIdAdapter();
+  ~SessionIdAdapter();
 
-  // WebKit::WebContentDecryptionModuleSession implementation.
-  virtual WebKit::WebString sessionId() const { return session_id_; }
-  virtual void generateKeyRequest(const WebKit::WebString& mime_type,
-                                  const uint8* init_data,
-                                  size_t init_data_length);
-  virtual void update(const uint8* key, size_t key_length);
-  virtual void close();
+  // On success, creates a MediaKeys, returns it in |media_keys|, returns true.
+  bool Initialize(const std::string& key_system,
+                  scoped_ptr<media::MediaKeys>* media_keys);
+
+  // Adds a session to the internal map. Does not take ownership of the session.
+  void AddSession(const std::string& session_id,
+                  WebContentDecryptionModuleSessionImpl* session);
+
+  // Removes a session from the internal map.
+  void RemoveSession(const std::string& session_id);
 
  private:
-  WebKit::WebContentDecryptionModuleSession::Client* client_;
-  WebKit::WebString session_id_;
+  typedef std::map<std::string, WebContentDecryptionModuleSessionImpl*>
+      SessionMap;
 
-  DISALLOW_COPY_AND_ASSIGN(WebContentDecryptionModuleSessionImpl);
+  // Callbacks for firing key events.
+  void KeyAdded(const std::string& session_id);
+  void KeyError(const std::string& session_id,
+                media::MediaKeys::KeyError error_code,
+                int system_code);
+  void KeyMessage(const std::string& session_id,
+                  const std::vector<uint8>& message,
+                  const std::string& destination_url);
+
+  // Helper function of the callbacks.
+  WebContentDecryptionModuleSessionImpl* GetSession(
+      const std::string& session_id);
+
+  base::WeakPtrFactory<SessionIdAdapter> weak_ptr_factory_;
+
+  SessionMap sessions_;
+
+  DISALLOW_COPY_AND_ASSIGN(SessionIdAdapter);
 };
 
-WebContentDecryptionModuleSessionImpl::WebContentDecryptionModuleSessionImpl(
-    WebKit::WebContentDecryptionModuleSession::Client* client)
-    : client_(client) {
-  // TODO(ddorwin): Populate session_id_ from the real implementation.
+SessionIdAdapter::SessionIdAdapter()
+    : weak_ptr_factory_(this) {
 }
 
-WebContentDecryptionModuleSessionImpl::
-~WebContentDecryptionModuleSessionImpl() {
+SessionIdAdapter::~SessionIdAdapter() {
 }
 
-void WebContentDecryptionModuleSessionImpl::generateKeyRequest(
-    const WebKit::WebString& mime_type,
-    const uint8* init_data, size_t init_data_length) {
-  // TODO(ddorwin): Call a real implementation and remove stub event triggers.
-  NOTIMPLEMENTED();
-  client_->keyMessage(NULL, 0, WebKit::WebURL());
+bool SessionIdAdapter::Initialize(const std::string& key_system,
+                                  scoped_ptr<media::MediaKeys>* media_keys) {
+  DCHECK(media_keys);
+  DCHECK(!*media_keys);
+
+  base::WeakPtr<SessionIdAdapter> weak_this = weak_ptr_factory_.GetWeakPtr();
+  scoped_ptr<media::MediaKeys> created_media_keys =
+      webkit_media::ContentDecryptionModuleFactory::Create(
+          // TODO(ddorwin): Address lower in the stack: http://crbug.com/252065
+          "webkit-" + key_system,
+#if defined(ENABLE_PEPPER_CDMS)
+          // TODO(ddorwin): Support Pepper-based CDMs: http://crbug.com/250049
+          NULL,
+          NULL,
+          base::Closure(),
+#elif defined(OS_ANDROID)
+          // TODO(xhwang): Support Android.
+          scoped_ptr<media::MediaKeys>(),
+#endif  // defined(ENABLE_PEPPER_CDMS)
+        base::Bind(&SessionIdAdapter::KeyAdded, weak_this),
+        base::Bind(&SessionIdAdapter::KeyError, weak_this),
+        base::Bind(&SessionIdAdapter::KeyMessage, weak_this));
+  if (!created_media_keys)
+    return false;
+
+  *media_keys = created_media_keys.Pass();
+  return true;
 }
 
-void WebContentDecryptionModuleSessionImpl::update(const uint8* key,
-                                                   size_t key_length) {
-  DCHECK(key);
-
-  // TODO(ddorwin): Call a real implementation and remove stub event triggers.
-  NOTIMPLEMENTED();
-  // TODO(ddorwin): Remove when we have a real implementation that passes tests.
-  if (key_length !=
-      static_cast<size_t>(media::DecryptConfig::kDecryptionKeySize)) {
-    client_->keyError(
-        WebKit::WebContentDecryptionModuleSession::Client::
-        MediaKeyErrorCodeUnknown,
-        0);
-    return;
-  }
-  client_->keyAdded();
+void SessionIdAdapter::AddSession(
+    const std::string& session_id,
+    WebContentDecryptionModuleSessionImpl* session) {
+  DCHECK(sessions_.find(session_id) == sessions_.end());
+  sessions_[session_id] = session;
 }
 
-void WebContentDecryptionModuleSessionImpl::close() {
-  // TODO(ddorwin): Call a real implementation.
-  NOTIMPLEMENTED();
+void SessionIdAdapter::RemoveSession(const std::string& session_id) {
+  DCHECK(sessions_.find(session_id) != sessions_.end());
+  sessions_.erase(session_id);
+}
+
+void SessionIdAdapter::KeyAdded(const std::string& session_id) {
+  GetSession(session_id)->KeyAdded();
+}
+
+void SessionIdAdapter::KeyError(const std::string& session_id,
+                                media::MediaKeys::KeyError error_code,
+                                int system_code) {
+  GetSession(session_id)->KeyError(error_code, system_code);
+}
+
+void SessionIdAdapter::KeyMessage(const std::string& session_id,
+                                  const std::vector<uint8>& message,
+                                  const std::string& destination_url) {
+  GetSession(session_id)->KeyMessage(message, destination_url);
+}
+
+WebContentDecryptionModuleSessionImpl* SessionIdAdapter::GetSession(
+    const std::string& session_id) {
+  // TODO(ddorwin): Map session IDs correctly. For now, we only support one.
+  std::string session_object_id = "";
+  WebContentDecryptionModuleSessionImpl* session = sessions_[session_object_id];
+  DCHECK(session); // It must have been present.
+  return session;
 }
 
 //------------------------------------------------------------------------------
 
 WebContentDecryptionModuleImpl*
 WebContentDecryptionModuleImpl::Create(const string16& key_system) {
-  // TODO(ddorwin): Verify we can create the internal objects & load CDM first.
-  return new WebContentDecryptionModuleImpl(key_system);
+  // TODO(ddorwin): Guard against this in supported types check and remove this.
+  // Chromium only supports ASCII key systems.
+  if (!IsStringASCII(key_system)) {
+    NOTREACHED();
+    return NULL;
+  }
+
+  // SessionIdAdapter creates the MediaKeys so it can provide its callbacks to
+  // during creation of the MediaKeys.
+  scoped_ptr<media::MediaKeys> media_keys;
+  scoped_ptr<SessionIdAdapter> adapter(new SessionIdAdapter());
+  if (!adapter->Initialize(UTF16ToASCII(key_system), &media_keys))
+    return NULL;
+
+  return new WebContentDecryptionModuleImpl(media_keys.Pass(), adapter.Pass());
 }
 
 WebContentDecryptionModuleImpl::WebContentDecryptionModuleImpl(
-    const string16& key_system) {
+    scoped_ptr<media::MediaKeys> media_keys,
+    scoped_ptr<SessionIdAdapter> adapter)
+    : media_keys_(media_keys.Pass()),
+      adapter_(adapter.Pass()) {
 }
 
 WebContentDecryptionModuleImpl::~WebContentDecryptionModuleImpl() {
 }
 
+// The caller owns the created session.
 WebKit::WebContentDecryptionModuleSession*
 WebContentDecryptionModuleImpl::createSession(
     WebKit::WebContentDecryptionModuleSession::Client* client) {
-  return new WebContentDecryptionModuleSessionImpl(client);
+  DCHECK(media_keys_);
+  WebContentDecryptionModuleSessionImpl* session =
+      new WebContentDecryptionModuleSessionImpl(
+          media_keys_.get(),
+          client,
+          base::Bind(&WebContentDecryptionModuleImpl::OnSessionClosed,
+                     base::Unretained(this)));
+
+  // TODO(ddorwin): session_id is not populated yet!
+  adapter_->AddSession(session->session_id(), session);
+  return session;
+}
+
+void WebContentDecryptionModuleImpl::OnSessionClosed(
+    const std::string& session_id) {
+  adapter_->RemoveSession(session_id);
 }
 
 }  // namespace content

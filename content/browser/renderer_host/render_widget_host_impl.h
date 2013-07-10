@@ -20,8 +20,8 @@
 #include "base/observer_list.h"
 #include "base/process_util.h"
 #include "base/strings/string16.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "content/browser/renderer_host/smooth_scroll_gesture_controller.h"
 #include "content/common/browser_rendering_stats.h"
@@ -93,6 +93,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
                        RenderProcessHost* process,
                        int routing_id);
   virtual ~RenderWidgetHostImpl();
+
+  // Similar to RenderWidgetHost::FromID, but returning the Impl object.
+  static RenderWidgetHostImpl* FromID(int32 process_id, int32 routing_id);
 
   // Use RenderWidgetHostImpl::From(rwh) to downcast a
   // RenderWidgetHost to a RenderWidgetHostImpl.  Internally, this
@@ -261,6 +264,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // Forwards the given message to the renderer. These are called by the view
   // when it has received a message.
   void ForwardGestureEvent(const WebKit::WebGestureEvent& gesture_event);
+  void ForwardGestureEventWithLatencyInfo(
+      const WebKit::WebGestureEvent& gesture_event,
+      const ui::LatencyInfo& ui_latency);
   virtual void ForwardTouchEventWithLatencyInfo(
       const WebKit::WebTouchEvent& touch_event,
       const ui::LatencyInfo& ui_latency);
@@ -492,6 +498,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // other way around.
   bool should_auto_resize() { return should_auto_resize_; }
 
+  void ComputeTouchLatency(const ui::LatencyInfo& latency_info);
   void FrameSwapped(const ui::LatencyInfo& latency_info);
 
   // Returns the ID that uniquely describes this component to the latency

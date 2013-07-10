@@ -14,7 +14,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/renderer/safe_browsing/features.h"
 #include "chrome/renderer/safe_browsing/mock_feature_extractor_clock.h"
 #include "chrome/renderer/safe_browsing/test_utils.h"
@@ -223,8 +223,7 @@ TEST_F(PhishingDOMFeatureExtractorTest, ScriptAndImageFeatures) {
   ExpectFeatureMapsAreEqual(features, expected_features);
 }
 
-// TODO(kbr): http://crbug.com/251376
-TEST_F(PhishingDOMFeatureExtractorTest, DISABLED_SubFrames) {
+TEST_F(PhishingDOMFeatureExtractorTest, SubFrames) {
   // This test doesn't exercise the extraction timing.
   EXPECT_CALL(clock_, Now()).WillRepeatedly(Return(base::TimeTicks::Now()));
 

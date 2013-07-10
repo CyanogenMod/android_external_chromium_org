@@ -11,6 +11,7 @@
 #include "android_webview/browser/net_disk_cache_remover.h"
 #include "android_webview/browser/renderer_host/aw_resource_dispatcher_host_delegate.h"
 #include "android_webview/common/aw_hit_test_data.h"
+#include "android_webview/native/aw_autofill_manager_delegate.h"
 #include "android_webview/native/aw_browser_dependency_factory.h"
 #include "android_webview/native/aw_contents_client_bridge.h"
 #include "android_webview/native/aw_contents_io_thread_client_impl.h"
@@ -22,15 +23,16 @@
 #include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
 #include "base/android/scoped_java_ref.h"
+#include "base/atomicops.h"
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/message_loop.h"
 #include "base/pickle.h"
 #include "base/strings/string16.h"
 #include "base/supports_user_data.h"
-#include "components/autofill/browser/autofill_manager.h"
-#include "components/autofill/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/content/browser/autofill_driver_impl.h"
+#include "components/autofill/core/browser/autofill_manager.h"
+#include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/navigation_interception/intercept_navigation_delegate.h"
 #include "content/public/browser/android/content_view_core.h"
 #include "content/public/browser/browser_thread.h"
@@ -103,6 +105,8 @@ class AwContentsUserData : public base::SupportsUserData::Data {
   AwContents* contents_;
 };
 
+base::subtle::Atomic32 g_instance_count = 0;
+
 }  // namespace
 
 // static
@@ -127,6 +131,7 @@ AwContents::AwContents(scoped_ptr<WebContents> web_contents)
       browser_view_renderer_(
           new InProcessViewRenderer(this, java_renderer_helper(),
                                     web_contents_.get())) {
+  base::subtle::NoBarrier_AtomicIncrement(&g_instance_count, 1);
   icon_helper_.reset(new IconHelper(web_contents_.get()));
   icon_helper_->SetListener(this);
   web_contents_->SetUserData(kAwContentsUserDataKey,
@@ -135,8 +140,7 @@ AwContents::AwContents(scoped_ptr<WebContents> web_contents)
       new AwRenderViewHostExt(this, web_contents_.get()));
 
   AwAutofillManagerDelegate* autofill_manager_delegate =
-      AwBrowserContext::FromWebContents(web_contents_.get())->
-          AutofillManagerDelegate();
+      AwAutofillManagerDelegate::FromWebContents(web_contents_.get());
   if (autofill_manager_delegate)
     InitAutofillIfNecessary(autofill_manager_delegate->GetSaveFormData());
 }
@@ -180,10 +184,8 @@ void AwContents::SetSaveFormData(bool enabled) {
   // We need to check for the existence, since autofill_manager_delegate
   // may not be created when the setting is false.
   if (AutofillDriverImpl::FromWebContents(web_contents_.get())) {
-    AwAutofillManagerDelegate* autofill_manager_delegate =
-        AwBrowserContext::FromWebContents(web_contents_.get())->
-            AutofillManagerDelegate();
-    autofill_manager_delegate->SetSaveFormData(enabled);
+    AwAutofillManagerDelegate::FromWebContents(web_contents_.get())->
+        SetSaveFormData(enabled);
   }
 }
 
@@ -191,18 +193,27 @@ void AwContents::InitAutofillIfNecessary(bool enabled) {
   // Do not initialize if the feature is not enabled.
   if (!enabled)
     return;
-  // Check if the autofill manager already exists.
+  // Check if the autofill driver already exists.
   content::WebContents* web_contents = web_contents_.get();
   if (AutofillDriverImpl::FromWebContents(web_contents))
     return;
 
+  AwBrowserContext::FromWebContents(web_contents)->
+      CreateUserPrefServiceIfNecessary();
+  AwAutofillManagerDelegate::CreateForWebContents(web_contents);
   AutofillDriverImpl::CreateForWebContentsAndDelegate(
       web_contents,
-      AwBrowserContext::FromWebContents(web_contents)->
-          CreateAutofillManagerDelegate(enabled),
+      AwAutofillManagerDelegate::FromWebContents(web_contents),
       l10n_util::GetDefaultLocale(),
-      AutofillManager::DISABLE_AUTOFILL_DOWNLOAD_MANAGER,
-      true);
+      AutofillManager::DISABLE_AUTOFILL_DOWNLOAD_MANAGER);
+}
+
+void AwContents::SetAwAutofillManagerDelegate(jobject delegate) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return;
+  Java_AwContents_setAwAutofillManagerDelegate(env, obj.obj(), delegate);
 }
 
 AwContents::~AwContents() {
@@ -212,6 +223,7 @@ AwContents::~AwContents() {
     find_helper_->SetListener(NULL);
   if (icon_helper_.get())
     icon_helper_->SetListener(NULL);
+  base::subtle::NoBarrier_AtomicIncrement(&g_instance_count, -1);
 }
 
 jint AwContents::GetWebContents(JNIEnv* env, jobject obj) {
@@ -245,6 +257,11 @@ static void SetAwDrawGLFunctionTable(JNIEnv* env, jclass, jint function_table) {
 
 static jint GetAwDrawGLFunction(JNIEnv* env, jclass) {
   return reinterpret_cast<jint>(&DrawGLFunction);
+}
+
+// static
+jint GetNativeInstanceCount(JNIEnv* env, jclass) {
+  return base::subtle::NoBarrier_Load(&g_instance_count);
 }
 
 jint AwContents::GetAwDrawGLViewContext(JNIEnv* env, jobject obj) {
@@ -580,10 +597,8 @@ void AwContents::OnSizeChanged(JNIEnv* env, jobject obj,
   browser_view_renderer_->OnSizeChanged(w, h);
 }
 
-void AwContents::SetWindowViewVisibility(JNIEnv* env, jobject obj,
-                                         bool window_visible,
-                                         bool view_visible) {
-  browser_view_renderer_->OnVisibilityChanged(window_visible, view_visible);
+void AwContents::SetVisibility(JNIEnv* env, jobject obj, bool visible) {
+  browser_view_renderer_->OnVisibilityChanged(visible);
 }
 
 void AwContents::OnAttachedToWindow(JNIEnv* env, jobject obj, int w, int h) {
@@ -636,7 +651,7 @@ bool AwContents::OnDraw(JNIEnv* env,
                         jint clip_bottom) {
   return browser_view_renderer_->OnDraw(canvas,
                                         is_hardware_accelerated,
-                                        gfx::Point(scroll_x, scroll_y),
+                                        gfx::Vector2d(scroll_x, scroll_y),
                                         gfx::Rect(clip_left,
                                                   clip_top,
                                                   clip_right - clip_left,
@@ -674,6 +689,24 @@ gfx::Point AwContents::GetLocationOnScreen() {
       Java_AwContents_getLocationOnScreen(env, obj.obj()).obj(),
       &location);
   return gfx::Point(location[0], location[1]);
+}
+
+void AwContents::ScrollContainerViewTo(gfx::Vector2d new_value) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return;
+  Java_AwContents_scrollContainerViewTo(
+      env, obj.obj(), new_value.x(), new_value.y());
+}
+
+
+void AwContents::SetDipScale(JNIEnv* env, jobject obj, jfloat dipScale) {
+  browser_view_renderer_->SetDipScale(dipScale);
+}
+
+void AwContents::ScrollTo(JNIEnv* env, jobject obj, jint xPix, jint yPix) {
+  browser_view_renderer_->ScrollTo(gfx::Vector2d(xPix, yPix));
 }
 
 void AwContents::OnPageScaleFactorChanged(float page_scale_factor) {

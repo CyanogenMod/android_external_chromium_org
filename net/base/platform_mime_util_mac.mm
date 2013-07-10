@@ -10,7 +10,6 @@
 
 #include "base/mac/foundation_util.h"
 #include "base/mac/scoped_cftyperef.h"
-#import "base/memory/scoped_nsobject.h"
 #include "base/strings/sys_string_conversions.h"
 
 #if defined(OS_IOS)
@@ -36,17 +35,15 @@ bool PlatformMimeUtil::GetPlatformMimeTypeFromExtension(
   std::string ext_nodot = ext;
   if (ext_nodot.length() >= 1 && ext_nodot[0] == L'.')
     ext_nodot.erase(ext_nodot.begin());
-  base::mac::ScopedCFTypeRef<CFStringRef> ext_ref(
+  base::ScopedCFTypeRef<CFStringRef> ext_ref(
       base::SysUTF8ToCFStringRef(ext_nodot));
   if (!ext_ref)
     return false;
-  base::mac::ScopedCFTypeRef<CFStringRef> uti(
-      UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension,
-                                            ext_ref,
-                                            NULL));
+  base::ScopedCFTypeRef<CFStringRef> uti(UTTypeCreatePreferredIdentifierForTag(
+      kUTTagClassFilenameExtension, ext_ref, NULL));
   if (!uti)
     return false;
-  base::mac::ScopedCFTypeRef<CFStringRef> mime_ref(
+  base::ScopedCFTypeRef<CFStringRef> mime_ref(
       UTTypeCopyPreferredTagWithClass(uti, kUTTagClassMIMEType));
   if (!mime_ref)
     return false;
@@ -57,17 +54,15 @@ bool PlatformMimeUtil::GetPlatformMimeTypeFromExtension(
 
 bool PlatformMimeUtil::GetPreferredExtensionForMimeType(
     const std::string& mime_type, base::FilePath::StringType* ext) const {
-  base::mac::ScopedCFTypeRef<CFStringRef> mime_ref(
+  base::ScopedCFTypeRef<CFStringRef> mime_ref(
       base::SysUTF8ToCFStringRef(mime_type));
   if (!mime_ref)
     return false;
-  base::mac::ScopedCFTypeRef<CFStringRef> uti(
-      UTTypeCreatePreferredIdentifierForTag(kUTTagClassMIMEType,
-                                            mime_ref,
-                                            NULL));
+  base::ScopedCFTypeRef<CFStringRef> uti(UTTypeCreatePreferredIdentifierForTag(
+      kUTTagClassMIMEType, mime_ref, NULL));
   if (!uti)
     return false;
-  base::mac::ScopedCFTypeRef<CFStringRef> ext_ref(
+  base::ScopedCFTypeRef<CFStringRef> ext_ref(
       UTTypeCopyPreferredTagWithClass(uti, kUTTagClassFilenameExtension));
   if (!ext_ref)
     return false;

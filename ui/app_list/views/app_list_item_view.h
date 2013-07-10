@@ -9,7 +9,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "ui/app_list/app_list_export.h"
 #include "ui/app_list/app_list_item_model_observer.h"
 #include "ui/app_list/views/cached_label.h"
@@ -29,6 +29,7 @@ namespace app_list {
 
 class AppListItemModel;
 class AppsGridView;
+class ProgressBarView;
 
 class APP_LIST_EXPORT AppListItemView : public views::CustomButton,
                                         public views::ContextMenuController,
@@ -47,6 +48,8 @@ class APP_LIST_EXPORT AppListItemView : public views::CustomButton,
   AppListItemModel* model() const { return model_; }
 
   const views::Label* title() const { return title_; }
+
+  gfx::ImageSkia GetDragImage();
 
  private:
   enum UIState {
@@ -102,6 +105,7 @@ class APP_LIST_EXPORT AppListItemView : public views::CustomButton,
   AppsGridView* apps_grid_view_;  // Owned by views hierarchy.
   views::ImageView* icon_;  // Owned by views hierarchy.
   CachedLabel* title_;  // Owned by views hierarchy.
+  ProgressBarView* progress_bar_;  // Owned by views hierarchy.
 
   scoped_ptr<views::MenuRunner> context_menu_runner_;
 

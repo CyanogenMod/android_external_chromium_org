@@ -126,12 +126,10 @@ static scoped_refptr<DecoderBuffer> DecryptData(const DecoderBuffer& input,
 
 AesDecryptor::AesDecryptor(const KeyAddedCB& key_added_cb,
                            const KeyErrorCB& key_error_cb,
-                           const KeyMessageCB& key_message_cb,
-                           const NeedKeyCB& need_key_cb)
+                           const KeyMessageCB& key_message_cb)
     : key_added_cb_(key_added_cb),
       key_error_cb_(key_error_cb),
-      key_message_cb_(key_message_cb),
-      need_key_cb_(need_key_cb) {
+      key_message_cb_(key_message_cb) {
 }
 
 AesDecryptor::~AesDecryptor() {
@@ -145,11 +143,9 @@ bool AesDecryptor::GenerateKeyRequest(const std::string& type,
 
   // For now, the AesDecryptor does not care about |type|;
   // just fire the event with the |init_data| as the request.
-  std::string message;
-  if (init_data && init_data_length) {
-    message = std::string(reinterpret_cast<const char*>(init_data),
-                          init_data_length);
-  }
+  std::vector<uint8> message;
+  if (init_data && init_data_length)
+    message.assign(init_data, init_data + init_data_length);
 
   key_message_cb_.Run(session_id_string, message, std::string());
   return true;
@@ -211,7 +207,7 @@ void AesDecryptor::AddKey(const uint8* key,
 void AesDecryptor::CancelKeyRequest(const std::string& session_id) {
 }
 
-MediaKeys* AesDecryptor::GetMediaKeys() {
+Decryptor* AesDecryptor::GetDecryptor() {
   return this;
 }
 

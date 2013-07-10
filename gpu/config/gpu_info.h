@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/version.h"
 #include "build/build_config.h"
 #include "gpu/config/dx_diag_node.h"
@@ -123,9 +123,6 @@ struct GPU_EXPORT GPUInfo {
   // The device semantics, i.e. whether the Vista and Windows 7 specific
   // semantics are available.
   bool can_lose_context;
-
-  // Whether gpu or driver is accessible.
-  bool gpu_accessible;
 
   // By default all values are 0.
   GpuPerformanceStats performance_stats;

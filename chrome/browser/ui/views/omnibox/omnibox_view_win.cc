@@ -639,26 +639,27 @@ void OmniboxViewWin::Update(const WebContents* tab_for_state_restoring) {
     // we _were_ switching tabs, the RevertAll() above already drew the new
     // permanent text.)
 
-    // Tweak: if the edit was previously nonempty and had all the text selected,
-    // select all the new text.  This makes one particular case better: the
-    // user clicks in the box to change it right before the permanent URL is
-    // changed.  Since the new URL is still fully selected, the user's typing
-    // will replace the edit contents as they'd intended.
-    //
-    // NOTE: The selection can be longer than the text length if the edit is in
-    // in rich text mode and the user has selected the "phantom newline" at the
-    // end, so use ">=" instead of "==" to see if all the text is selected.  In
-    // theory we prevent this case from ever occurring, but this is still safe.
+    // Tweak: if the user had all the text selected, select all the new text.
+    // This makes one particular case better: the user clicks in the box to
+    // change it right before the permanent URL is changed.  Since the new URL
+    // is still fully selected, the user's typing will replace the edit contents
+    // as they'd intended.
     CHARRANGE sel;
     GetSelection(sel);
-    const bool was_reversed = (sel.cpMin > sel.cpMax);
-    const bool was_sel_all = (sel.cpMin != sel.cpMax) &&
-      IsSelectAllForRange(sel);
+    const bool was_select_all = IsSelectAllForRange(sel);
 
     RevertAll();
 
-    if (was_sel_all)
-      SelectAll(was_reversed);
+    // Only select all when we have focus.  If we don't have focus, selecting
+    // all is unnecessary since the selection will change on regaining focus,
+    // and can in fact cause artifacts, e.g. if the user is on the NTP and
+    // clicks a link to navigate, causing |was_select_all| to be vacuously true
+    // for the empty omnibox, and we then select all here, leading to the
+    // trailing portion of a long URL being scrolled into view.  We could try
+    // and address cases like this, but it seems better to just not muck with
+    // things when the omnibox isn't focused to begin with.
+    if (was_select_all && model()->has_focus())
+      SelectAll(sel.cpMin > sel.cpMax);
   } else if (changed_security_level) {
     // Only the security style changed, nothing else.  Redraw our text using it.
     EmphasizeURLComponents();
@@ -2784,7 +2785,7 @@ void OmniboxViewWin::BuildContextMenu() {
     context_menu_contents_->AddSeparator(ui::NORMAL_SEPARATOR);
     context_menu_contents_->AddItemWithStringId(IDC_CUT, IDS_CUT);
     context_menu_contents_->AddItemWithStringId(IDC_COPY, IDS_COPY);
-    if (chrome::IsQueryExtractionEnabled(model()->profile()))
+    if (chrome::IsQueryExtractionEnabled())
       context_menu_contents_->AddItemWithStringId(IDC_COPY_URL, IDS_COPY_URL);
     context_menu_contents_->AddItemWithStringId(IDC_PASTE, IDS_PASTE);
     // GetContextualLabel() will override this next label with the

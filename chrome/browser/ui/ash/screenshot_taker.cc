@@ -15,7 +15,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
@@ -355,7 +355,8 @@ void ScreenshotTaker::ShowNotification(
   // TODO(sschmitz): make this work for Windows.
   DesktopNotificationService* const service =
       DesktopNotificationServiceFactory::GetForProfile(GetProfile());
-  if (service->IsSystemComponentEnabled(message_center::Notifier::SCREENSHOT)) {
+  if (service->IsNotifierEnabled(
+          message_center::NotifierId(message_center::NotifierId::SCREENSHOT))) {
     scoped_ptr<Notification> notification(
         CreateNotification(screenshot_result, screenshot_path));
     g_browser_process->notification_ui_manager()->Add(*notification,

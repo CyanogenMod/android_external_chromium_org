@@ -7,13 +7,13 @@
 
 #include <string>
 
-#include "ppapi/c/dev/ppb_host_resolver_dev.h"
+#include "ppapi/c/ppb_host_resolver.h"
 #include "ppapi/tests/test_case.h"
 
 namespace pp {
-class HostResolver_Dev;
-class NetAddress_Dev;
-class TCPSocket_Dev;
+class HostResolver;
+class NetAddress;
+class TCPSocket;
 }  // namespace pp
 
 class TestHostResolver : public TestCase {
@@ -25,24 +25,24 @@ class TestHostResolver : public TestCase {
   virtual void RunTests(const std::string& filter);
 
  private:
-  std::string SyncConnect(pp::TCPSocket_Dev* socket,
-                          const pp::NetAddress_Dev& address);
-  std::string SyncRead(pp::TCPSocket_Dev* socket,
+  std::string SyncConnect(pp::TCPSocket* socket,
+                          const pp::NetAddress& address);
+  std::string SyncRead(pp::TCPSocket* socket,
                        char* buffer,
                        int32_t num_bytes,
                        int32_t* bytes_read);
-  std::string SyncWrite(pp::TCPSocket_Dev* socket,
+  std::string SyncWrite(pp::TCPSocket* socket,
                         const char* buffer,
                         int32_t num_bytes,
                         int32_t* bytes_written);
-  std::string CheckHTTPResponse(pp::TCPSocket_Dev* socket,
+  std::string CheckHTTPResponse(pp::TCPSocket* socket,
                                 const std::string& request,
                                 const std::string& response);
-  std::string SyncResolve(pp::HostResolver_Dev* host_resolver,
+  std::string SyncResolve(pp::HostResolver* host_resolver,
                           const std::string& host,
                           uint16_t port,
-                          const PP_HostResolver_Hint_Dev& hint);
-  std::string ParameterizedTestResolve(const PP_HostResolver_Hint_Dev& hint);
+                          const PP_HostResolver_Hint& hint);
+  std::string ParameterizedTestResolve(const PP_HostResolver_Hint& hint);
 
   std::string TestEmpty();
   std::string TestResolve();

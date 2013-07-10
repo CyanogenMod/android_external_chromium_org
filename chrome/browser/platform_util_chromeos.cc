@@ -12,7 +12,7 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/browser_thread.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 using content::BrowserThread;
 
@@ -29,6 +29,7 @@ void OpenURL(const std::string& url) {
   chrome::NavigateParams params(
       browser, GURL(url), content::PAGE_TRANSITION_LINK);
   params.disposition = NEW_FOREGROUND_TAB;
+  params.window_action = chrome::NavigateParams::SHOW_WINDOW;
   chrome::Navigate(&params);
 }
 
@@ -61,6 +62,9 @@ void OpenExternal(const GURL& url) {
     string_url.append(url.spec());
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                             base::Bind(OpenURL, string_url));
+  } else if (url.is_valid()) {
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+                            base::Bind(OpenURL, url.spec()));
   }
 }
 

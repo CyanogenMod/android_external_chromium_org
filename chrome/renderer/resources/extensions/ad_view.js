@@ -10,17 +10,17 @@
 // TODO(rpaquay): This file is currently very similar to "web_view.js". Do we
 //                want to refactor to extract common pieces?
 
-var adViewCustom = require('adViewCustom');
+var eventBindings = require('event_bindings');
+var process = requireNative('process');
 var watchForTag = require('tagWatcher').watchForTag;
 
 /**
- * Define "allowCustomAdNetworks" function such that it returns "true" if the
- * "adViewCustom" module was injected. This is so that the
+ * Define "allowCustomAdNetworks" function such that the
  * "kEnableAdviewSrcAttribute" flag is respected.
  */
-var allowCustomAdNetworks = (function(allow){
-  return function() { return Boolean(allow); }
-})(adViewCustom ? adViewCustom.enabled : false);
+function allowCustomAdNetworks() {
+  return process.HasSwitch('enable-adview-src-attribute');
+}
 
 /**
  * List of attribute names to "blindly" sync between <adview> tag and internal
@@ -74,6 +74,13 @@ var AD_VIEW_EVENTS = {
   'sizechanged': ['oldHeight', 'oldWidth', 'newHeight', 'newWidth'],
 };
 
+var createEvent = function(name) {
+  var eventOpts = {supportsListeners: true, supportsFilters: true};
+  return new eventBindings.Event(name, undefined, eventOpts);
+};
+
+var AdviewLoadCommitEvent = createEvent('adview.onLoadCommit');
+
 /**
  * List of supported ad-networks.
  *
@@ -125,6 +132,7 @@ function AdView(adviewNode) {
 AdView.prototype.createBrowserPluginNode_ = function() {
   var browserPluginNode = document.createElement('object');
   browserPluginNode.type = 'application/browser-plugin';
+  browserPluginNode.setAttribute('api', 'adview');
   // The <object> node fills in the <adview> container.
   browserPluginNode.style.width = '100%';
   browserPluginNode.style.height = '100%';
@@ -160,7 +168,7 @@ AdView.prototype.setupAdviewNodeMethods_ = function() {
   var self = this;
   $Array.forEach(AD_VIEW_API_METHODS, function(apiMethod) {
     self.adviewNode_[apiMethod] = function(var_args) {
-      return self.browserPluginNode_[apiMethod].apply(
+      return $Function.apply(self.browserPluginNode_[apiMethod],
         self.browserPluginNode_, arguments);
     };
   }, this);
@@ -175,7 +183,7 @@ AdView.prototype.setupAdviewNodeObservers_ = function() {
   var handleMutation = $Function.bind(function(mutation) {
     this.handleAdviewAttributeMutation_(mutation);
   }, this);
-  var observer = new WebKitMutationObserver(function(mutations) {
+  var observer = new MutationObserver(function(mutations) {
     $Array.forEach(mutations, handleMutation);
   });
   observer.observe(
@@ -192,7 +200,7 @@ AdView.prototype.setupAdviewNodeCustomObservers_ = function() {
   var handleMutation = $Function.bind(function(mutation) {
     this.handleAdviewCustomAttributeMutation_(mutation);
   }, this);
-  var observer = new WebKitMutationObserver(function(mutations) {
+  var observer = new MutationObserver(function(mutations) {
     $Array.forEach(mutations, handleMutation);
   });
   var customAttributeNames =
@@ -209,7 +217,7 @@ AdView.prototype.setupBrowserPluginNodeObservers_ = function() {
   var handleMutation = $Function.bind(function(mutation) {
     this.handleBrowserPluginAttributeMutation_(mutation);
   }, this);
-  var objectObserver = new WebKitMutationObserver(function(mutations) {
+  var objectObserver = new MutationObserver(function(mutations) {
     $Array.forEach(mutations, handleMutation);
   });
   objectObserver.observe(
@@ -431,6 +439,21 @@ AdView.prototype.handleSrcMutation = function(mutation) {
  * @private
  */
 AdView.prototype.setupAdviewNodeEvents_ = function() {
+  var adviewNode = this.adviewNode_;
+  // TODO(fsamuel): Generalize this further as we add more events.
+  var onAttached = function(e) {
+    var detail = e.detail ? JSON.parse(e.detail) : {};
+    AdviewLoadCommitEvent.addListener(function(event) {
+      var adviewEvent = new Event('loadcommit', {bubbles: true});
+      var attribs = AD_VIEW_EVENTS['loadcommit'];
+      $Array.forEach(attribs, function(attribName) {
+        adviewEvent[attribName] = event[attribName];
+      });
+      adviewNode.dispatchEvent(adviewEvent);
+    }, {instanceId: detail.windowId});
+  };
+  this.browserPluginNode_.addEventListener('-internal-attached', onAttached);
+
   for (var eventName in AD_VIEW_EVENTS) {
     this.setupEvent_(eventName, AD_VIEW_EVENTS[eventName]);
   }

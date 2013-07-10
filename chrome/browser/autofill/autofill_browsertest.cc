@@ -13,7 +13,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
@@ -27,16 +27,16 @@
 #include "chrome/common/render_messages.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/autofill/browser/autofill_common_test.h"
-#include "components/autofill/browser/autofill_external_delegate.h"
-#include "components/autofill/browser/autofill_manager.h"
-#include "components/autofill/browser/autofill_manager_test_delegate.h"
-#include "components/autofill/browser/autofill_profile.h"
-#include "components/autofill/browser/credit_card.h"
-#include "components/autofill/browser/personal_data_manager.h"
-#include "components/autofill/browser/personal_data_manager_observer.h"
-#include "components/autofill/browser/validation.h"
 #include "components/autofill/content/browser/autofill_driver_impl.h"
+#include "components/autofill/core/browser/autofill_common_test.h"
+#include "components/autofill/core/browser/autofill_external_delegate.h"
+#include "components/autofill/core/browser/autofill_manager.h"
+#include "components/autofill/core/browser/autofill_manager_test_delegate.h"
+#include "components/autofill/core/browser/autofill_profile.h"
+#include "components/autofill/core/browser/credit_card.h"
+#include "components/autofill/core/browser/personal_data_manager.h"
+#include "components/autofill/core/browser/personal_data_manager_observer.h"
+#include "components/autofill/core/browser/validation.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -232,11 +232,9 @@ class AutofillTest : public InProcessBrowserTest {
     AutofillDriverImpl* autofill_driver =
         AutofillDriverImpl::FromWebContents(web_contents);
     AutofillManager* autofill_manager = autofill_driver->autofill_manager();
-    if (autofill_manager->IsNativeUiEnabled()) {
-      scoped_ptr<AutofillExternalDelegate> external_delegate(
-          new TestAutofillExternalDelegate(web_contents, autofill_manager));
-      autofill_driver->SetAutofillExternalDelegate(external_delegate.Pass());
-    }
+    scoped_ptr<AutofillExternalDelegate> external_delegate(
+        new TestAutofillExternalDelegate(web_contents, autofill_manager));
+    autofill_driver->SetAutofillExternalDelegate(external_delegate.Pass());
     autofill_manager->SetTestDelegate(&test_delegate_);
   }
 
@@ -471,14 +469,6 @@ class AutofillTest : public InProcessBrowserTest {
   }
 
   void SendKeyToPopupAndWait(ui::KeyboardCode key) {
-    // TODO(isherman): Remove this condition once the WebKit popup UI code is
-    // removed.
-    if (!external_delegate()) {
-      // When testing the WebKit-based UI, route all keys to the page.
-      SendKeyToPageAndWait(key);
-      return;
-    }
-
     // When testing the native UI, route popup-targeted key presses via the
     // external delegate.
     content::NativeWebKeyboardEvent event;

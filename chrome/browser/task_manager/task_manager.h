@@ -15,7 +15,7 @@
 #include "base/observer_list.h"
 #include "base/process_util.h"
 #include "base/strings/string16.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/renderer_host/web_cache_manager.h"
 #include "chrome/browser/task_manager/resource_provider.h"
 #include "chrome/browser/ui/host_desktop.h"
@@ -82,11 +82,6 @@ class TaskManager {
   TaskManagerModel* model() const { return model_.get(); }
 
   void OpenAboutMemory(chrome::HostDesktopType desktop_type);
-
-  // Returns the number of background pages that will be displayed in the
-  // TaskManager. Used by the wrench menu code to display a count of background
-  // pages in the "View Background Pages" menu item.
-  static int GetBackgroundPageCount();
 
  private:
   FRIEND_TEST_ALL_PREFIXES(TaskManagerTest, Basic);

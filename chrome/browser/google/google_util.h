@@ -69,22 +69,31 @@ enum PortPermission {
   DISALLOW_NON_STANDARD_PORTS,
 };
 
-// True if |url| is an HTTP[S] request with host "[www.]google.<TLD>". If
-// |subdomain_permission| is ALLOW_SUBDOMAIN, this checks against host
-// "*.google.<TLD>" instead. If |port_permission| is ALLOW_NON_STANDARD_PORTS,
-// this also allows ports other than 80 for http or 443 for https.
-bool IsGoogleDomainUrl(const std::string& url,
-                       SubdomainPermission subdomain_permission,
-                       PortPermission port_permission);
+// Returns true if a Google base URL was specified on the command line and |url|
+// begins with that base URL.  This uses a simple string equality check.
+bool StartsWithCommandLineGoogleBaseURL(const GURL& url);
+
 // True if |host| is "[www.]google.<TLD>" with a valid TLD. If
 // |subdomain_permission| is ALLOW_SUBDOMAIN, we check against host
 // "*.google.<TLD>" instead.
+//
+// If the Google base URL has been overridden on the command line, this function
+// will also return true for any URL whose hostname exactly matches the hostname
+// of the URL specified on the command line.  In this case,
+// |subdomain_permission| is ignored.
 bool IsGoogleHostname(const std::string& host,
                       SubdomainPermission subdomain_permission);
+// True if |url| is a valid URL with a host that returns true for
+// IsGoogleHostname(), and an HTTP or HTTPS scheme.  If |port_permission| is
+// DISALLOW_NON_STANDARD_PORTS, this also requires |url| to use the standard
+// port for its scheme (80 for HTTP, 443 for HTTPS).
+bool IsGoogleDomainUrl(const GURL& url,
+                       SubdomainPermission subdomain_permission,
+                       PortPermission port_permission);
 // True if |url| represents a valid Google home page URL.
-bool IsGoogleHomePageUrl(const std::string& url);
+bool IsGoogleHomePageUrl(const GURL& url);
 // True if |url| represents a valid Google search URL.
-bool IsGoogleSearchUrl(const std::string& url);
+bool IsGoogleSearchUrl(const GURL& url);
 
 // True if a build is strictly organic, according to its brand code.
 bool IsOrganic(const std::string& brand);

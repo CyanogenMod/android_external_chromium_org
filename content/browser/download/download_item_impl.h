@@ -13,8 +13,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "content/browser/download/download_net_log_parameters.h"
 #include "content/browser/download/download_request_handle.h"
 #include "content/common/content_export.h"
@@ -276,6 +276,13 @@ class CONTENT_EXPORT DownloadItemImpl
     MAX_DOWNLOAD_INTERNAL_STATE,
   };
 
+  // Used with TransitionTo() to indicate whether or not to call
+  // UpdateObservers() after the state transition.
+  enum ShouldUpdateObservers {
+    UPDATE_OBSERVERS,
+    DONT_UPDATE_OBSERVERS
+  };
+
   // Normal progression of a download ------------------------------------------
 
   // These are listed in approximately chronological order.  There are also
@@ -346,7 +353,10 @@ class CONTENT_EXPORT DownloadItemImpl
   bool IsDownloadReadyForCompletion(const base::Closure& state_change_notify);
 
   // Call to transition state; all state transitions should go through this.
-  void TransitionTo(DownloadInternalState new_state);
+  // |notify_action| specifies whether or not to call UpdateObservers() after
+  // the state transition.
+  void TransitionTo(DownloadInternalState new_state,
+                    ShouldUpdateObservers notify_action);
 
   // Set the |danger_type_| and invoke obserers if necessary.
   void SetDangerType(DownloadDangerType danger_type);

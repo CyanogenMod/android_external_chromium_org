@@ -214,7 +214,7 @@ MetadataDispatcher.prototype.processOneFile = function(fileURL, callback) {
 // the 'this' keyword in lambdas.
 var global = self;
 
-if (global.constructor.name == 'SharedWorkerContext') {
+if (global.constructor.name == 'SharedWorkerGlobalScope') {
   global.addEventListener('connect', function(e) {
     var port = e.ports[0];
     new MetadataDispatcher(port);

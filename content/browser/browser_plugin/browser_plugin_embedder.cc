@@ -4,6 +4,7 @@
 
 #include "content/browser/browser_plugin/browser_plugin_embedder.h"
 
+#include "base/values.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/browser_plugin/browser_plugin_guest_manager.h"
 #include "content/browser/browser_plugin/browser_plugin_host_factory.h"
@@ -166,7 +167,8 @@ void BrowserPluginEmbedder::OnAllocateInstanceID(int request_id) {
 
 void BrowserPluginEmbedder::OnAttach(
     int instance_id,
-    const BrowserPluginHostMsg_Attach_Params& params) {
+    const BrowserPluginHostMsg_Attach_Params& params,
+    const base::DictionaryValue& extra_params) {
   if (!GetBrowserPluginGuestManager()->CanEmbedderAccessInstanceIDMaybeKill(
           web_contents()->GetRenderProcessHost()->GetID(), instance_id))
     return;
@@ -177,30 +179,32 @@ void BrowserPluginEmbedder::OnAttach(
 
 
   if (guest) {
-    // On attachment, GuestWebContentsAttached needs to be called first to make
-    // the BrowserPlugin to guest association prior to resource loads to allow
-    // APIs to intercept and associate resource loads with a particular
-    // BrowserPlugin.
+    // There is an implicit order expectation here:
+    // 1. The content embedder is made aware of the attachment.
+    // 2. BrowserPluginGuest::Attach is called.
+    // 3. The content embedder issues queued events if any that happened
+    //    prior to attachment.
     GetContentClient()->browser()->GuestWebContentsAttached(
         guest->GetWebContents(),
         web_contents(),
-        params.browser_plugin_instance_id);
-
+        params.browser_plugin_instance_id,
+        extra_params);
     guest->Attach(static_cast<WebContentsImpl*>(web_contents()), params);
     return;
   }
 
+  scoped_ptr<base::DictionaryValue> copy_extra_params(extra_params.DeepCopy());
   guest = GetBrowserPluginGuestManager()->CreateGuest(
-      web_contents()->GetSiteInstance(), instance_id, params);
+      web_contents()->GetSiteInstance(),
+      instance_id, params,
+      copy_extra_params.Pass());
   if (guest) {
-    guest->Initialize(static_cast<WebContentsImpl*>(web_contents()), params);
-    // On creation, GuestWebContentsAttached cannot be called until after
-    // initialization because there is no process to send a message to until
-    // the guest is initialized.
     GetContentClient()->browser()->GuestWebContentsAttached(
         guest->GetWebContents(),
         web_contents(),
-        params.browser_plugin_instance_id);
+        params.browser_plugin_instance_id,
+        extra_params);
+    guest->Initialize(static_cast<WebContentsImpl*>(web_contents()), params);
   }
 }
 

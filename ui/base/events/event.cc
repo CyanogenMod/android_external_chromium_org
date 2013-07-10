@@ -35,6 +35,8 @@ base::NativeEvent CopyNativeEvent(const base::NativeEvent& event) {
   return copy;
 #elif defined(OS_WIN)
   return event;
+#elif defined(USE_OZONE)
+  return event;
 #else
   NOTREACHED() <<
       "Don't know how to copy base::NativeEvent for this platform";
@@ -95,6 +97,7 @@ std::string EventTypeName(ui::EventType type) {
     CASE_TYPE(ET_SCROLL_FLING_START);
     CASE_TYPE(ET_SCROLL_FLING_CANCEL);
     CASE_TYPE(ET_CANCEL_MODE);
+    CASE_TYPE(ET_UMA_DATA);
     case ui::ET_LAST: NOTREACHED(); return std::string();
     // Don't include default, so that we get an error when new type is added.
   }
@@ -416,6 +419,12 @@ MouseWheelEvent::MouseWheelEvent(const MouseEvent& mouse_event,
   DCHECK(type() == ET_MOUSEWHEEL);
 }
 
+MouseWheelEvent::MouseWheelEvent(const MouseWheelEvent& mouse_wheel_event)
+    : MouseEvent(mouse_wheel_event),
+      offset_(mouse_wheel_event.offset()) {
+  DCHECK(type() == ET_MOUSEWHEEL);
+}
+
 #if defined(OS_WIN)
 // This value matches windows WHEEL_DELTA.
 // static
@@ -424,6 +433,18 @@ const int MouseWheelEvent::kWheelDelta = 120;
 // This value matches GTK+ wheel scroll amount.
 const int MouseWheelEvent::kWheelDelta = 53;
 #endif
+
+void MouseWheelEvent::UpdateForRootTransform(
+    const gfx::Transform& inverted_root_transform) {
+  LocatedEvent::UpdateForRootTransform(inverted_root_transform);
+  gfx::DecomposedTransform decomp;
+  bool success = gfx::DecomposeTransform(&decomp, inverted_root_transform);
+  DCHECK(success);
+  if (decomp.scale[0])
+    offset_.set_x(offset_.x() * decomp.scale[0]);
+  if (decomp.scale[1])
+    offset_.set_y(offset_.y() * decomp.scale[1]);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // TouchEvent

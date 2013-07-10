@@ -370,7 +370,11 @@ void Preferences::RegisterUserPrefs(
       600000,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterIntegerPref(
-      prefs::kPowerIdleAction,
+      prefs::kPowerAcIdleAction,
+      PowerPolicyController::ACTION_SUSPEND,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kPowerBatteryIdleAction,
       PowerPolicyController::ACTION_SUSPEND,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterIntegerPref(
@@ -388,10 +392,6 @@ void Preferences::RegisterUserPrefs(
   registry->RegisterBooleanPref(
       prefs::kPowerAllowScreenWakeLocks,
       true,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterDoublePref(
-      prefs::kPowerPresentationIdleDelayFactor,
-      2.0,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterDoublePref(
       prefs::kPowerPresentationScreenDimDelayFactor,
@@ -525,7 +525,9 @@ void Preferences::InitUserPrefs(PrefServiceSyncable* prefs) {
       prefs::kPowerBatteryIdleWarningDelayMs, prefs, callback);
   power_battery_idle_delay_ms_.Init(
       prefs::kPowerBatteryIdleDelayMs, prefs, callback);
-  power_idle_action_.Init(prefs::kPowerIdleAction, prefs, callback);
+  power_ac_idle_action_.Init(prefs::kPowerAcIdleAction, prefs, callback);
+  power_battery_idle_action_.Init(
+      prefs::kPowerBatteryIdleAction, prefs, callback);
   power_lid_closed_action_.Init(prefs::kPowerLidClosedAction, prefs, callback);
   power_use_audio_activity_.Init(
       prefs::kPowerUseAudioActivity, prefs, callback);
@@ -625,22 +627,26 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
     const int sensitivity = mouse_sensitivity_.GetValue();
     system::mouse_settings::SetSensitivity(sensitivity);
     if (pref_name) {
-      UMA_HISTOGRAM_CUSTOM_COUNTS(
-          "Mouse.Sensitivity.Changed", sensitivity, 1, 5, 5);
+      UMA_HISTOGRAM_ENUMERATION("Mouse.PointerSensitivity.Changed",
+                                sensitivity,
+                                system::kMaxPointerSensitivity + 1);
     } else {
-      UMA_HISTOGRAM_CUSTOM_COUNTS(
-          "Mouse.Sensitivity.Started", sensitivity, 1, 5, 5);
+      UMA_HISTOGRAM_ENUMERATION("Mouse.PointerSensitivity.Started",
+                                sensitivity,
+                                system::kMaxPointerSensitivity + 1);
     }
   }
   if (!pref_name || *pref_name == prefs::kTouchpadSensitivity) {
     const int sensitivity = touchpad_sensitivity_.GetValue();
     system::touchpad_settings::SetSensitivity(sensitivity);
     if (pref_name) {
-      UMA_HISTOGRAM_CUSTOM_COUNTS(
-          "Touchpad.Sensitivity.Changed", sensitivity, 1, 5, 5);
+      UMA_HISTOGRAM_ENUMERATION("Touchpad.PointerSensitivity.Changed",
+                                sensitivity,
+                                system::kMaxPointerSensitivity + 1);
     } else {
-      UMA_HISTOGRAM_CUSTOM_COUNTS(
-          "Touchpad.Sensitivity.Started", sensitivity, 1, 5, 5);
+      UMA_HISTOGRAM_ENUMERATION("Touchpad.PointerSensitivity.Started",
+                                sensitivity,
+                                system::kMaxPointerSensitivity + 1);
     }
   }
   if (!pref_name || *pref_name == prefs::kPrimaryMouseButtonRight) {
@@ -733,6 +739,7 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
   // Do not check |*pref_name| of the prefs for remembering current/previous
   // input methods here. We're only interested in initial values of the prefs.
 
+  // TODO(nona): remove all IME preference entries. crbug.com/256102
   for (size_t i = 0; i < language_prefs::kNumChewingBooleanPrefs; ++i) {
     if (!pref_name ||
         *pref_name == language_prefs::kChewingBooleanPrefs[i].pref_name) {
@@ -770,9 +777,13 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
   }
   if (!pref_name ||
       *pref_name == prefs::kLanguageHangulKeyboard) {
-    SetLanguageConfigString(language_prefs::kHangulSectionName,
-                            language_prefs::kHangulKeyboardConfigName,
-                            hangul_keyboard_.GetValue());
+    std::vector<std::string> new_input_method_ids;
+    if (input_method_manager_->MigrateKoreanKeyboard(
+            hangul_keyboard_.GetValue(),
+            &new_input_method_ids)) {
+      preload_engines_.SetValue(JoinString(new_input_method_ids, ','));
+      hangul_keyboard_.SetValue("dummy_value_already_migrated");
+    }
   }
   if (!pref_name || *pref_name == prefs::kLanguageHangulHanjaBindingKeys) {
     SetLanguageConfigString(language_prefs::kHangulSectionName,
@@ -855,7 +866,8 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
       *pref_name == prefs::kPowerBatteryScreenLockDelayMs ||
       *pref_name == prefs::kPowerBatteryIdleWarningDelayMs ||
       *pref_name == prefs::kPowerBatteryIdleDelayMs ||
-      *pref_name == prefs::kPowerIdleAction ||
+      *pref_name == prefs::kPowerAcIdleAction ||
+      *pref_name == prefs::kPowerBatteryIdleAction ||
       *pref_name == prefs::kPowerLidClosedAction ||
       *pref_name == prefs::kPowerUseAudioActivity ||
       *pref_name == prefs::kPowerUseVideoActivity ||
@@ -879,8 +891,10 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
     values.battery_idle_warning_delay_ms =
         power_battery_idle_warning_delay_ms_.GetValue();
     values.battery_idle_delay_ms = power_battery_idle_delay_ms_.GetValue();
-    values.idle_action = static_cast<PowerPolicyController::Action>(
-        power_idle_action_.GetValue());
+    values.ac_idle_action = static_cast<PowerPolicyController::Action>(
+        power_ac_idle_action_.GetValue());
+    values.battery_idle_action = static_cast<PowerPolicyController::Action>(
+        power_battery_idle_action_.GetValue());
     values.lid_closed_action = static_cast<PowerPolicyController::Action>(
         power_lid_closed_action_.GetValue());
     values.use_audio_activity = power_use_audio_activity_.GetValue();

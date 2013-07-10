@@ -54,9 +54,6 @@
 
 namespace {
 
-// Default "system" color for text cursor.
-const SkColor kDefaultCursorColor = SK_ColorBLACK;
-
 void ConvertRectToScreen(const views::View* src, gfx::Rect* r) {
   DCHECK(src);
 
@@ -221,6 +218,7 @@ void NativeTextfieldViews::OnGestureEvent(ui::GestureEvent* event) {
         if (touch_selection_controller_.get())
           event->SetHandled();
       } else if (switches::IsTouchDragDropEnabled()) {
+        initiating_drag_ = true;
         touch_selection_controller_.reset();
       } else {
         if (!touch_selection_controller_.get())
@@ -559,16 +557,6 @@ void NativeTextfieldViews::UpdateBorder() {
     text_border_->SetInsets(0, 0, 0, 0);
   UpdateHorizontalMargins();
   UpdateVerticalMargins();
-  UpdateBorderColor();
-}
-
-void NativeTextfieldViews::UpdateBorderColor() {
-  if (textfield_->use_default_border_color())
-    text_border_->UseDefaultColor();
-  else
-    text_border_->SetColor(textfield_->border_color());
-
-  SchedulePaint();
 }
 
 void NativeTextfieldViews::UpdateTextColor() {
@@ -967,7 +955,18 @@ void NativeTextfieldViews::InsertChar(char16 ch, int flags) {
 }
 
 gfx::NativeWindow NativeTextfieldViews::GetAttachedWindow() const {
-  return GetWidget()->GetNativeWindow();
+  // Imagine the following hierarchy.
+  //   [NativeWidget A] - FocusManager
+  //     [View]
+  //     [NativeWidget B]
+  //       [View]
+  //         [View X]
+  // An important thing is that [NativeWidget A] owns Win32 input focus even
+  // when [View X] is logically focused by FocusManager. As a result, an Win32
+  // IME may want to interact with the native view of [NativeWidget A] rather
+  // than that of [NativeWidget B]. This is why we need to call
+  // GetTopLevelWidget() here.
+  return GetWidget()->GetTopLevelWidget()->GetNativeView();
 }
 
 ui::TextInputType NativeTextfieldViews::GetTextInputType() const {
@@ -1127,13 +1126,11 @@ void NativeTextfieldViews::UpdateColorsFromTheme(const ui::NativeTheme* theme) {
   UpdateTextColor();
   UpdateBackgroundColor();
   gfx::RenderText* render_text = GetRenderText();
-  render_text->set_cursor_color(kDefaultCursorColor);
+  render_text->set_cursor_color(textfield_->GetTextColor());
   render_text->set_selection_color(theme->GetSystemColor(
       ui::NativeTheme::kColorId_TextfieldSelectionColor));
   render_text->set_selection_background_focused_color(theme->GetSystemColor(
       ui::NativeTheme::kColorId_TextfieldSelectionBackgroundFocused));
-  render_text->set_selection_background_unfocused_color(theme->GetSystemColor(
-      ui::NativeTheme::kColorId_TextfieldSelectionBackgroundUnfocused));
 }
 
 void NativeTextfieldViews::UpdateCursor() {

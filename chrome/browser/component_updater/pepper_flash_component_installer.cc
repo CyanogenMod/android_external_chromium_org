@@ -250,6 +250,9 @@ class PepperFlashComponentInstaller : public ComponentInstaller {
   virtual bool Install(const base::DictionaryValue& manifest,
                        const base::FilePath& unpack_path) OVERRIDE;
 
+  virtual bool GetInstalledFile(const std::string& file,
+                                base::FilePath* installed_file) OVERRIDE;
+
  private:
   Version current_version_;
 };
@@ -279,7 +282,7 @@ bool PepperFlashComponentInstaller::Install(
       GetPepperFlashBaseDirectory().AppendASCII(version.GetString());
   if (file_util::PathExists(path))
     return false;
-  if (!file_util::Move(unpack_path, path))
+  if (!base::Move(unpack_path, path))
     return false;
   // Installation is done. Now tell the rest of chrome. Both the path service
   // and to the plugin service.
@@ -290,6 +293,11 @@ bool PepperFlashComponentInstaller::Install(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&RegisterPepperFlashWithChrome, path, version));
   return true;
+}
+
+bool PepperFlashComponentInstaller::GetInstalledFile(
+    const std::string& file, base::FilePath* installed_file) {
+  return false;
 }
 
 bool CheckPepperFlashManifest(const base::DictionaryValue& manifest,
@@ -377,7 +385,7 @@ void StartPepperFlashUpdateRegistration(ComponentUpdateService* cus) {
   // Remove older versions of Pepper Flash.
   for (std::vector<base::FilePath>::iterator iter = older_dirs.begin();
        iter != older_dirs.end(); ++iter) {
-    file_util::Delete(*iter, true);
+    base::Delete(*iter, true);
   }
 }
 #endif  // defined(GOOGLE_CHROME_BUILD) && !defined(OS_LINUX)

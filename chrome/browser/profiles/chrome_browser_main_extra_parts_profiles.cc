@@ -25,6 +25,7 @@
 #include "chrome/browser/extensions/api/bookmarks/bookmarks_api.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/api/cookies/cookies_api.h"
+#include "chrome/browser/extensions/api/developer_private/developer_private_api_factory.h"
 #include "chrome/browser/extensions/api/dial/dial_api_factory.h"
 #include "chrome/browser/extensions/api/discovery/suggested_links_registry_factory.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
@@ -62,6 +63,8 @@
 #include "chrome/browser/google/google_url_tracker_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/shortcuts_backend_factory.h"
+#include "chrome/browser/invalidation/invalidation_service_factory.h"
+#include "chrome/browser/media_galleries/media_galleries_preferences_factory.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/plugins/plugin_prefs_factory.h"
@@ -100,6 +103,7 @@
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/policy/recommendation_restorer_factory.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_token_forwarder_factory.h"
 #else
@@ -202,6 +206,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   extensions::BluetoothAPIFactory::GetInstance();
   extensions::CommandService::GetFactoryInstance();
   extensions::CookiesAPI::GetFactoryInstance();
+  extensions::DeveloperPrivateAPIFactory::GetInstance();
   extensions::DialAPIFactory::GetInstance();
   extensions::ExtensionActionAPI::GetFactoryInstance();
   extensions::ExtensionPrefsFactory::GetInstance();
@@ -255,6 +260,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   GlobalErrorServiceFactory::GetInstance();
   GoogleURLTrackerFactory::GetInstance();
   HistoryServiceFactory::GetInstance();
+  invalidation::InvalidationServiceFactory::GetInstance();
 #if defined(ENABLE_MANAGED_USERS)
   ManagedUserServiceFactory::GetInstance();
 #endif
@@ -273,6 +279,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   policy::ProfilePolicyConnectorFactory::GetInstance();
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #if defined(OS_CHROMEOS)
+  policy::RecommendationRestorerFactory::GetInstance();
   policy::UserCloudPolicyManagerFactoryChromeOS::GetInstance();
   policy::UserCloudPolicyTokenForwarderFactory::GetInstance();
 #else

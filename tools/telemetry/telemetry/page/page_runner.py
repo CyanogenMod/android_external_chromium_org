@@ -127,7 +127,7 @@ class PageState(object):
   def __init__(self):
     self._did_login = False
 
-  def PreparePage(self, page, tab, test):
+  def PreparePage(self, page, tab, test=None):
     parsed_url = urlparse.urlparse(page.url)
     if parsed_url[0] == 'file':
       serving_dirs, filename = page.serving_dirs_and_file
@@ -143,12 +143,15 @@ class PageState(object):
       self._did_login = True
 
     if test:
+      if test.clear_cache_before_each_run:
+        tab.ClearCache()
       test.WillNavigateToPage(page, tab)
-      tab.Navigate(target_side_url, page.script_to_evaluate_on_commit)
+    tab.Navigate(target_side_url, page.script_to_evaluate_on_commit)
+    if test:
       test.DidNavigateToPage(page, tab)
 
-      page.WaitToLoad(tab, 60)
-      tab.WaitForDocumentReadyStateToBeInteractiveOrBetter()
+    page.WaitToLoad(tab, 60)
+    tab.WaitForDocumentReadyStateToBeInteractiveOrBetter()
 
   def CleanUpPage(self, page, tab):
     if page.credentials and self._did_login:
@@ -315,7 +318,7 @@ def _CheckArchives(page_set, pages, results):
 
     if not page.archive_path:
       pages_missing_archive_path.append(page)
-    if not os.path.isfile(page.archive_path):
+    elif not os.path.isfile(page.archive_path):
       pages_missing_archive_data.append(page)
 
   if pages_missing_archive_path:

@@ -9,9 +9,8 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
-#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
@@ -421,20 +420,26 @@ TemplateURL* AutocompleteMatch::GetTemplateURL(
 
 void AutocompleteMatch::RecordAdditionalInfo(const std::string& property,
                                              const std::string& value) {
-  DCHECK(property.size());
-  DCHECK(value.size());
+  DCHECK(!property.empty());
+  DCHECK(!value.empty());
   additional_info[property] = value;
 }
 
 void AutocompleteMatch::RecordAdditionalInfo(const std::string& property,
                                              int value) {
-  RecordAdditionalInfo(property, base::StringPrintf("%d", value));
+  RecordAdditionalInfo(property, base::IntToString(value));
 }
 
 void AutocompleteMatch::RecordAdditionalInfo(const std::string& property,
                                              const base::Time& value) {
   RecordAdditionalInfo(property,
                        UTF16ToUTF8(base::TimeFormatShortDateAndTime(value)));
+}
+
+std::string AutocompleteMatch::GetAdditionalInfo(
+    const std::string& property) const {
+  AdditionalInfo::const_iterator i(additional_info.find(property));
+  return (i == additional_info.end()) ? std::string() : i->second;
 }
 
 #ifndef NDEBUG

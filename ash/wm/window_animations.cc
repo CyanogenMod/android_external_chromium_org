@@ -13,14 +13,14 @@
 #include "ash/screen_ash.h"
 #include "ash/shell.h"
 #include "ash/wm/window_util.h"
-#include "ash/wm/workspace_controller.h"
 #include "ash/wm/workspace/workspace_animations.h"
+#include "ash/wm/workspace_controller.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/stl_util.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
@@ -396,13 +396,22 @@ base::TimeDelta CrossFadeImpl(aura::Window* window,
 }
 
 void CrossFadeToBounds(aura::Window* window, const gfx::Rect& new_bounds) {
-  DCHECK(window->TargetVisibility());
+  // Some test results in invoking CrossFadeToBounds when window is not visible.
+  // No animation is necessary in that case, thus just change the bounds and
+  // quit.
+  if (!window->TargetVisibility()) {
+    window->SetBounds(new_bounds);
+    return;
+  }
+
   const gfx::Rect old_bounds = window->bounds();
 
   // Create fresh layers for the window and all its children to paint into.
   // Takes ownership of the old layer and all its children, which will be
   // cleaned up after the animation completes.
-  ui::Layer* old_layer = views::corewm::RecreateWindowLayers(window, false);
+  // Specify |set_bounds| to true here to keep the old bounds in the child
+  // windows of |window|.
+  ui::Layer* old_layer = views::corewm::RecreateWindowLayers(window, true);
   ui::Layer* new_layer = window->layer();
 
   // Resize the window to the new size, which will force a layout and paint.

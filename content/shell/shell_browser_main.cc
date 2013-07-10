@@ -24,16 +24,12 @@
 #include "net/base/net_util.h"
 #include "webkit/support/webkit_support.h"
 
-namespace {
-
 #if defined(OS_ANDROID)
-// Path to search for when translating a layout test path to an URL.
-const char kAndroidLayoutTestPath[] =
-    "/data/local/tmp/third_party/WebKit/LayoutTests/";
-
-// The base URL from which layout tests are being served on Android.
-const char kAndroidLayoutTestBase[] = "http://127.0.0.1:8000/all-tests/";
+#include "base/run_loop.h"
+#include "content/shell/shell_layout_tests_android.h"
 #endif
+
+namespace {
 
 GURL GetURLForLayoutTest(const std::string& test_name,
                          base::FilePath* current_working_directory,
@@ -60,19 +56,13 @@ GURL GetURLForLayoutTest(const std::string& test_name,
   if (expected_pixel_hash)
     *expected_pixel_hash = pixel_hash;
 
+  GURL test_url;
 #if defined(OS_ANDROID)
-  // On Android, all passed tests will be paths to a local temporary directory.
-  // However, because we can't transfer all test files to the device, translate
-  // those paths to a local, forwarded URL so the host can serve them.
-  if (path_or_url.find(kAndroidLayoutTestPath) != std::string::npos) {
-    std::string test_location(kAndroidLayoutTestBase);
-    test_location.append(path_or_url.substr(strlen(kAndroidLayoutTestPath)));
-
-    return GURL(test_location);
-  }
+  if (content::GetTestUrlForAndroid(path_or_url, &test_url))
+    return test_url;
 #endif
 
-  GURL test_url(path_or_url);
+  test_url = GURL(path_or_url);
   if (!(test_url.is_valid() && test_url.has_scheme())) {
     // We're outside of the message loop here, and this is a test.
     base::ThreadRestrictions::ScopedAllowIO allow_io;
@@ -119,13 +109,12 @@ bool GetNextTest(const CommandLine::StringVector& args,
 }  // namespace
 
 // Main routine for running as the Browser process.
-int ShellBrowserMain(const content::MainFunctionParams& parameters,
-                     scoped_ptr<content::BrowserMainRunner>& main_runner) {
+int ShellBrowserMain(
+    const content::MainFunctionParams& parameters,
+    const scoped_ptr<content::BrowserMainRunner>& main_runner) {
   bool layout_test_mode =
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree);
   base::ScopedTempDir browser_context_path_for_layout_tests;
-
-  // TODO(beverloo): Create the FIFOs required for Android layout tests.
 
   if (layout_test_mode) {
     CHECK(browser_context_path_for_layout_tests.CreateUniqueTempDir());
@@ -133,10 +122,14 @@ int ShellBrowserMain(const content::MainFunctionParams& parameters,
     CommandLine::ForCurrentProcess()->AppendSwitchASCII(
         switches::kContentShellDataPath,
         browser_context_path_for_layout_tests.path().MaybeAsASCII());
+
+#if defined(OS_ANDROID)
+    content::EnsureInitializeForAndroidLayoutTests();
+#endif
   }
 
   int exit_code = main_runner->Initialize(parameters);
-  DCHECK(exit_code < 0)
+  DCHECK_LT(exit_code, 0)
       << "BrowserMainRunner::Initialize failed in ShellBrowserMain";
 
   if (exit_code >= 0)
@@ -189,7 +182,15 @@ int ShellBrowserMain(const content::MainFunctionParams& parameters,
       }
 
       ran_at_least_once = true;
+#if defined(OS_ANDROID)
+      // The message loop on Android is provided by the system, and does not
+      // offer a blocking Run() method. For layout tests, use a nested loop
+      // together with a base::RunLoop so it can block until a QuitClosure.
+      base::RunLoop run_loop;
+      run_loop.Run();
+#else
       main_runner->Run();
+#endif
 
       if (!content::WebKitTestController::Get()->ResetAfterLayoutTest())
         break;

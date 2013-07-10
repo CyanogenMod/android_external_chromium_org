@@ -787,7 +787,7 @@ void OnDeterminingFilenameWillDispatchCallback(
     ExtensionDownloadsEventRouterData* data,
     Profile* profile,
     const extensions::Extension* extension,
-    ListValue* event_args) {
+    base::ListValue* event_args) {
   *any_determiners = true;
   base::Time installed = extensions::ExtensionSystem::Get(
       profile)->extension_service()->extension_prefs()->
@@ -1046,7 +1046,7 @@ bool DownloadsAcceptDangerFunction::RunImpl() {
   DownloadItem* download_item = GetDownloadIfInProgress(
       profile(), include_incognito(), params->download_id);
   content::WebContents* web_contents =
-      dispatcher()->delegate()->GetAssociatedWebContents();
+      dispatcher()->delegate()->GetVisibleWebContents();
   if (!download_item ||
       !download_item->IsDangerous() ||
       !web_contents) {
@@ -1128,7 +1128,7 @@ bool DownloadsDragFunction::RunImpl() {
   DownloadItem* download_item = GetDownload(
       profile(), include_incognito(), params->download_id);
   content::WebContents* web_contents =
-      dispatcher()->delegate()->GetAssociatedWebContents();
+      dispatcher()->delegate()->GetVisibleWebContents();
   if (!download_item || !web_contents) {
     error_ = download_extension_errors::kInvalidOperationError;
     return false;

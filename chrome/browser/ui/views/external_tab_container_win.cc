@@ -19,7 +19,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/win/win_util.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/app/chrome_dll_resource.h"
@@ -342,6 +342,7 @@ bool ExternalTabContainerWin::Init(Profile* profile,
   params.desktop_root_window_host =
       new ExternalTabRootWindowHost(widget_, native_widget, params.bounds);
   params.type = views::Widget::InitParams::TYPE_WINDOW_FRAMELESS;
+  params.opacity = views::Widget::InitParams::OPAQUE_WINDOW;
 #endif
   widget_->Init(params);
 
@@ -831,7 +832,12 @@ void ExternalTabContainerWin::CanDownload(
 void ExternalTabContainerWin::RegisterRenderViewHostForAutomation(
     bool pending_view,
     RenderViewHost* render_view_host) {
-  if (render_view_host) {
+  if (!GetTabHandle()) {
+    // This method is being called when it shouldn't be on the win_rel trybot;
+    // see http://crbug.com/250965. Don't crash release builds in that case
+    // until the root cause can be diagnosed and fixed. TODO(grt): fix this.
+    DLOG(FATAL) << "tab_handle_ unset";
+  } else if (render_view_host) {
     AutomationResourceMessageFilter::RegisterRenderView(
         render_view_host->GetProcess()->GetID(),
         render_view_host->GetRoutingID(),

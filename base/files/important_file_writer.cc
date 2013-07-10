@@ -17,7 +17,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/task_runner.h"
 #include "base/threading/thread.h"
-#include "base/time.h"
+#include "base/time/time.h"
 
 namespace base {
 
@@ -73,20 +73,20 @@ bool ImportantFileWriter::WriteFileAtomically(const FilePath& path,
 
   if (!ClosePlatformFile(tmp_file)) {
     LogFailure(path, FAILED_CLOSING, "failed to close temporary file");
-    file_util::Delete(tmp_file_path, false);
+    base::Delete(tmp_file_path, false);
     return false;
   }
 
   if (bytes_written < static_cast<int>(data.length())) {
     LogFailure(path, FAILED_WRITING, "error writing, bytes_written=" +
                IntToString(bytes_written));
-    file_util::Delete(tmp_file_path, false);
+    base::Delete(tmp_file_path, false);
     return false;
   }
 
-  if (!file_util::ReplaceFile(tmp_file_path, path)) {
+  if (!base::ReplaceFile(tmp_file_path, path, NULL)) {
     LogFailure(path, FAILED_RENAMING, "could not rename temporary file");
-    file_util::Delete(tmp_file_path, false);
+    base::Delete(tmp_file_path, false);
     return false;
   }
 

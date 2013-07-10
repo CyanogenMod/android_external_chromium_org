@@ -8,12 +8,12 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "chrome/browser/importer/importer_data_types.h"
 #include "chrome/browser/importer/importer_list_observer.h"
 #include "chrome/browser/importer/importer_progress_observer.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
+#include "chrome/common/importer/importer_data_types.h"
 
-class ImporterHost;
+class ExternalProcessImporterHost;
 class ImporterList;
 
 namespace options {
@@ -51,7 +51,7 @@ class ImportDataHandler : public OptionsPageUIHandler,
 
   // If non-null it means importing is in progress. ImporterHost takes care
   // of deleting itself when import is complete.
-  ImporterHost* importer_host_;  // weak
+  ExternalProcessImporterHost* importer_host_;  // weak
 
   bool import_did_succeed_;
 

@@ -7,10 +7,11 @@
 #include "base/bind.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 #include "webkit/browser/blob/file_stream_reader.h"
 #include "webkit/browser/fileapi/copy_or_move_file_validator.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
+#include "webkit/browser/fileapi/file_permission_policy.h"
 #include "webkit/browser/fileapi/file_stream_writer.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
 #include "webkit/browser/fileapi/file_system_operation.h"
@@ -30,10 +31,6 @@
 #include "webkit/browser/quota/quota_manager.h"
 #include "webkit/browser/quota/special_storage_policy.h"
 #include "webkit/common/fileapi/file_system_util.h"
-
-#if defined(OS_CHROMEOS)
-#include "webkit/browser/chromeos/fileapi/cros_mount_point_provider.h"
-#endif
 
 using quota::QuotaClient;
 
@@ -56,6 +53,51 @@ void DidOpenFileSystem(
 }
 
 }  // namespace
+
+// static
+int FileSystemContext::GetPermissionPolicy(FileSystemType type) {
+  switch (type) {
+    case kFileSystemTypeTemporary:
+    case kFileSystemTypePersistent:
+    case kFileSystemTypeSyncable:
+      return FILE_PERMISSION_SANDBOX;
+
+    case kFileSystemTypeDrive:
+    case kFileSystemTypeNativeForPlatformApp:
+    case kFileSystemTypeNativeLocal:
+      return FILE_PERMISSION_USE_FILE_PERMISSION;
+
+    case kFileSystemTypeRestrictedNativeLocal:
+      return FILE_PERMISSION_READ_ONLY |
+             FILE_PERMISSION_USE_FILE_PERMISSION;
+
+    // Following types are only accessed via IsolatedFileSystem, and
+    // don't have their own permission policies.
+    case kFileSystemTypeDeviceMedia:
+    case kFileSystemTypeDragged:
+    case kFileSystemTypeForTransientFile:
+    case kFileSystemTypeItunes:
+    case kFileSystemTypeNativeMedia:
+    case kFileSystemTypePicasa:
+      return FILE_PERMISSION_ALWAYS_DENY;
+
+    // Following types only appear as mount_type, and will not be
+    // queried for their permission policies.
+    case kFileSystemTypeIsolated:
+    case kFileSystemTypeExternal:
+      return FILE_PERMISSION_ALWAYS_DENY;
+
+    // Following types should not be used to access files by FileAPI clients.
+    case kFileSystemTypeTest:
+    case kFileSystemTypeSyncableForInternalSync:
+    case kFileSystemInternalTypeEnumEnd:
+    case kFileSystemInternalTypeEnumStart:
+    case kFileSystemTypeUnknown:
+      return FILE_PERMISSION_ALWAYS_DENY;
+  }
+  NOTREACHED();
+  return FILE_PERMISSION_ALWAYS_DENY;
+}
 
 FileSystemContext::FileSystemContext(
     scoped_ptr<FileSystemTaskRunners> task_runners,
@@ -88,19 +130,6 @@ FileSystemContext::FileSystemContext(
 
   RegisterMountPointProvider(sandbox_provider_.get());
   RegisterMountPointProvider(isolated_provider_.get());
-
-#if defined(OS_CHROMEOS)
-  // TODO(kinuko): Move this out of webkit/fileapi layer.
-  DCHECK(external_mount_points);
-  chromeos::CrosMountPointProvider* cros_mount_provider =
-      new chromeos::CrosMountPointProvider(
-          special_storage_policy,
-          external_mount_points,
-          ExternalMountPoints::GetSystemInstance());
-  cros_mount_provider->AddSystemMountPoints();
-  external_provider_.reset(cros_mount_provider);
-  RegisterMountPointProvider(external_provider_.get());
-#endif
 
   for (ScopedVector<FileSystemMountPointProvider>::const_iterator iter =
           additional_providers_.begin();
@@ -188,6 +217,10 @@ FileSystemMountPointProvider* FileSystemContext::GetMountPointProvider(
   return NULL;
 }
 
+bool FileSystemContext::IsSandboxFileSystem(FileSystemType type) const {
+  return GetQuotaUtil(type) != NULL;
+}
+
 const UpdateObserverList* FileSystemContext::GetUpdateObservers(
     FileSystemType type) const {
   // Currently update observer is only available in SandboxMountPointProvider
@@ -195,8 +228,8 @@ const UpdateObserverList* FileSystemContext::GetUpdateObservers(
   // TODO(kinuko): Probably GetUpdateObservers() virtual method should be
   // added to FileSystemMountPointProvider interface and be called like
   // other GetFoo() methods do.
-  if (SandboxMountPointProvider::IsSandboxType(type))
-    return sandbox_provider()->GetUpdateObservers(type);
+  if (sandbox_provider_->CanHandleType(type))
+    return sandbox_provider_->GetUpdateObservers(type);
   if (type != kFileSystemTypeTest)
     return NULL;
   FileSystemMountPointProvider* mount_point_provider =
@@ -208,19 +241,23 @@ const UpdateObserverList* FileSystemContext::GetUpdateObservers(
 const AccessObserverList* FileSystemContext::GetAccessObservers(
     FileSystemType type) const {
   // Currently access observer is only available in SandboxMountPointProvider.
-  if (SandboxMountPointProvider::IsSandboxType(type))
-    return sandbox_provider()->GetAccessObservers(type);
+  if (sandbox_provider_->CanHandleType(type))
+    return sandbox_provider_->GetAccessObservers(type);
   return NULL;
 }
 
-SandboxMountPointProvider*
-FileSystemContext::sandbox_provider() const {
-  return sandbox_provider_.get();
+void FileSystemContext::GetFileSystemTypes(
+    std::vector<FileSystemType>* types) const {
+  types->clear();
+  for (MountPointProviderMap::const_iterator iter = provider_map_.begin();
+       iter != provider_map_.end(); ++iter)
+    types->push_back(iter->first);
 }
 
 ExternalFileSystemMountPointProvider*
 FileSystemContext::external_provider() const {
-  return external_provider_.get();
+  return static_cast<ExternalFileSystemMountPointProvider*>(
+      GetMountPointProvider(kFileSystemTypeExternal));
 }
 
 void FileSystemContext::OpenFileSystem(
@@ -237,29 +274,13 @@ void FileSystemContext::OpenFileSystem(
     return;
   }
 
-  GURL root_url = GetFileSystemRootURI(origin_url, type);
+  GURL root_url;
+  if (type == kFileSystemTypeSyncable)
+    root_url = sync_file_system::GetSyncableFileSystemRootURI(origin_url);
+  else
+    root_url = GetFileSystemRootURI(origin_url, type);
   std::string name = GetFileSystemName(origin_url, type);
 
-  mount_point_provider->OpenFileSystem(
-      origin_url, type, mode,
-      base::Bind(&DidOpenFileSystem, callback, root_url, name));
-}
-
-void FileSystemContext::OpenSyncableFileSystem(
-    const GURL& origin_url,
-    FileSystemType type,
-    OpenFileSystemMode mode,
-    const OpenFileSystemCallback& callback) {
-  DCHECK(!callback.is_null());
-
-  DCHECK(type == kFileSystemTypeSyncable);
-
-  GURL root_url = sync_file_system::GetSyncableFileSystemRootURI(origin_url);
-  std::string name = GetFileSystemName(origin_url, kFileSystemTypeSyncable);
-
-  FileSystemMountPointProvider* mount_point_provider =
-      GetMountPointProvider(type);
-  DCHECK(mount_point_provider);
   mount_point_provider->OpenFileSystem(
       origin_url, type, mode,
       base::Bind(&DidOpenFileSystem, callback, root_url, name));
@@ -337,6 +358,12 @@ FileSystemURL FileSystemContext::CreateCrackedFileSystemURL(
     const base::FilePath& path) const {
   return CrackFileSystemURL(FileSystemURL(origin, type, path));
 }
+
+#if defined(OS_CHROMEOS) && defined(GOOGLE_CHROME_BUILD)
+void FileSystemContext::EnableTemporaryFileSystemInIncognito() {
+  sandbox_provider_->set_enable_temporary_file_system_in_incognito(true);
+}
+#endif
 
 FileSystemContext::~FileSystemContext() {
   task_runners_->file_task_runner()->DeleteSoon(

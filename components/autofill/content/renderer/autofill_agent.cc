@@ -10,7 +10,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "components/autofill/content/renderer/form_autofill_util.h"
 #include "components/autofill/content/renderer/page_click_tracker.h"
 #include "components/autofill/content/renderer/password_autofill_agent.h"
@@ -26,18 +26,18 @@
 #include "content/public/common/ssl_status.h"
 #include "content/public/renderer/render_view.h"
 #include "grit/component_strings.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDataSource.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFormControlElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFormElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNode.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNodeCollection.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebOptionElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/public/web/WebDataSource.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebFormControlElement.h"
+#include "third_party/WebKit/public/web/WebFormElement.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebNode.h"
+#include "third_party/WebKit/public/web/WebNodeCollection.h"
+#include "third_party/WebKit/public/web/WebOptionElement.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -744,8 +744,11 @@ void AutofillAgent::OnRequestAutocompleteResult(
   if (in_flight_request_form_.isNull())
     return;
 
-  if (result == WebFormElement::AutocompleteResultSuccess)
+  if (result == WebFormElement::AutocompleteResultSuccess) {
     FillFormIncludingNonFocusableElements(form_data, in_flight_request_form_);
+    if (!in_flight_request_form_.checkValidityWithoutDispatchingEvents())
+      result = WebFormElement::AutocompleteResultErrorInvalid;
+  }
 
   in_flight_request_form_.finishRequestAutocomplete(result);
   in_flight_request_form_.reset();

@@ -4,7 +4,7 @@
 
 #import "chrome/browser/ui/cocoa/profile_menu_controller.h"
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/profiles/avatar_menu_model.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -71,8 +71,8 @@ class ProfileMenuControllerTest : public CocoaProfileTest {
   NSMenuItem* menu_item() { return item_.get(); }
 
  private:
-  scoped_nsobject<NSMenuItem> item_;
-  scoped_nsobject<ProfileMenuController> controller_;
+  base::scoped_nsobject<NSMenuItem> item_;
+  base::scoped_nsobject<ProfileMenuController> controller_;
 };
 
 TEST_F(ProfileMenuControllerTest, InitializeMenu) {
@@ -124,7 +124,7 @@ TEST_F(ProfileMenuControllerTest, RebuildMenu) {
 }
 
 TEST_F(ProfileMenuControllerTest, InsertItems) {
-  scoped_nsobject<NSMenu> menu([[NSMenu alloc] initWithTitle: @""]);
+  base::scoped_nsobject<NSMenu> menu([[NSMenu alloc] initWithTitle:@""]);
   ASSERT_EQ(0, [menu numberOfItems]);
 
   // With only one profile, insertItems should be a no-op.
@@ -197,8 +197,7 @@ TEST_F(ProfileMenuControllerTest, SetActiveAndRemove) {
   ASSERT_EQ(7, [menu numberOfItems]);
 
   // Create a browser and "show" it.
-  Browser::CreateParams profile2_params(profile2,
-                                        chrome::HOST_DESKTOP_TYPE_NATIVE);
+  Browser::CreateParams profile2_params(profile2, chrome::GetActiveDesktop());
   scoped_ptr<Browser> p2_browser(
       chrome::CreateBrowserWithTestWindowForParams(&profile2_params));
   BrowserList::SetLastActive(p2_browser.get());
@@ -209,8 +208,7 @@ TEST_F(ProfileMenuControllerTest, SetActiveAndRemove) {
   VerifyProfileNamedIsActive(@"Profile 2", __LINE__);
 
   // Open a new browser and make sure it takes effect.
-  Browser::CreateParams profile3_params(profile3,
-                                        chrome::HOST_DESKTOP_TYPE_NATIVE);
+  Browser::CreateParams profile3_params(profile3, chrome::GetActiveDesktop());
   scoped_ptr<Browser> p3_browser(
       chrome::CreateBrowserWithTestWindowForParams(&profile3_params));
   BrowserList::SetLastActive(p3_browser.get());

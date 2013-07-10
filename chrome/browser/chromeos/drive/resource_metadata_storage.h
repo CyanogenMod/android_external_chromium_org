@@ -10,8 +10,13 @@
 
 #include "base/basictypes.h"
 #include "base/files/file_path.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
+
+namespace base {
+class SequencedTaskRunner;
+}
 
 namespace leveldb {
 class DB;
@@ -23,20 +28,24 @@ namespace drive {
 class ResourceEntry;
 class ResourceMetadataHeader;
 
+namespace internal {
+
 // Storage for ResourceMetadata which is responsible to manage resource
 // entries and child-parent relationships between entries.
 class ResourceMetadataStorage {
  public:
   // This should be incremented when incompatibility change is made to DB
   // format.
-  static const int kDBVersion = 6;
+  static const int kDBVersion = 7;
 
+  // Object to iterate over entries stored in this storage.
   class Iterator {
    public:
     explicit Iterator(scoped_ptr<leveldb::Iterator> it);
     ~Iterator();
 
-    // Returns true if this iterator cannot advance any more.
+    // Returns true if this iterator cannot advance any more and does not point
+    // to a valid entry. Get() and Advance() should not be called in such cases.
     bool IsAtEnd() const;
 
     // Returns the entry currently pointed by this object.
@@ -55,8 +64,51 @@ class ResourceMetadataStorage {
     DISALLOW_COPY_AND_ASSIGN(Iterator);
   };
 
-  explicit ResourceMetadataStorage(const base::FilePath& directory_path);
-  virtual ~ResourceMetadataStorage();
+  // Object to iterate over cache entries stored in this storage.
+  class CacheEntryIterator {
+   public:
+    explicit CacheEntryIterator(scoped_ptr<leveldb::Iterator> it);
+    ~CacheEntryIterator();
+
+    // Returns true if this iterator cannot advance any more and does not point
+    // to a valid entry. GetID(), GetValue() and Advance() should not be called
+    // in such cases.
+    bool IsAtEnd() const;
+
+    // Returns the ID of the entry currently pointed by this object.
+    const std::string& GetID() const;
+
+    // Returns the value of the entry currently pointed by this object.
+    const FileCacheEntry& GetValue() const;
+
+    // Advances to the next entry.
+    void Advance();
+
+    // Returns true if this object has encountered any error.
+    bool HasError() const;
+
+   private:
+    // Used to implement Advance().
+    void AdvanceInternal();
+
+    scoped_ptr<leveldb::Iterator> it_;
+    std::string resource_id_;
+    FileCacheEntry entry_;
+
+    DISALLOW_COPY_AND_ASSIGN(CacheEntryIterator);
+  };
+
+  ResourceMetadataStorage(const base::FilePath& directory_path,
+                          base::SequencedTaskRunner* blocking_task_runner);
+
+  const base::FilePath& directory_path() const { return directory_path_; }
+
+  // Returns true if the DB used by this storage was opened, not created, during
+  // Initialize().
+  bool opened_existing_db() const { return opened_existing_db_; }
+
+  // Destroys this object.
+  void Destroy();
 
   // Initializes this object.
   bool Initialize();
@@ -87,8 +139,27 @@ class ResourceMetadataStorage {
   void GetChildren(const std::string& parent_resource_id,
                    std::vector<std::string>* children);
 
+  // Puts the cache entry to this storage.
+  bool PutCacheEntry(const std::string& resource_id,
+                     const FileCacheEntry& entry);
+
+  // Gets a cache entry stored in this storage.
+  bool GetCacheEntry(const std::string& resource_id, FileCacheEntry* out_entry);
+
+  // Removes a cache entry from this storage.
+  bool RemoveCacheEntry(const std::string& resource_id);
+
+  // Returns an object to iterate over cache entries stored in this storage.
+  scoped_ptr<CacheEntryIterator> GetCacheEntryIterator();
+
  private:
   friend class ResourceMetadataStorageTest;
+
+  // To destruct this object, use Destroy().
+  ~ResourceMetadataStorage();
+
+  // Used to implement Destroy().
+  void DestroyOnBlockingPool();
 
   // Returns a string to be used as a key for child entry.
   static std::string GetChildEntryKey(const std::string& parent_resource_id,
@@ -98,7 +169,7 @@ class ResourceMetadataStorage {
   bool PutHeader(const ResourceMetadataHeader& header);
 
   // Gets header.
-  scoped_ptr<ResourceMetadataHeader> GetHeader();
+  bool GetHeader(ResourceMetadataHeader* out_header);
 
   // Checks validity of the data.
   bool CheckValidity();
@@ -106,12 +177,17 @@ class ResourceMetadataStorage {
   // Path to the directory where the data is stored.
   base::FilePath directory_path_;
 
+  bool opened_existing_db_;
+
   // Entries stored in this storage.
   scoped_ptr<leveldb::DB> resource_map_;
+
+  scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceMetadataStorage);
 };
 
+}  // namespace internal
 }  // namespace drive
 
 #endif  // CHROME_BROWSER_CHROMEOS_DRIVE_RESOURCE_METADATA_STORAGE_H_

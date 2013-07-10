@@ -15,14 +15,13 @@
 #include "base/observer_list.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/platform_thread.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "chromeos/dbus/power_manager/input_event.pb.h"
 #include "chromeos/dbus/power_manager/peripheral_battery_status.pb.h"
 #include "chromeos/dbus/power_manager/policy.pb.h"
 #include "chromeos/dbus/power_manager/power_supply_properties.pb.h"
 #include "chromeos/dbus/power_manager/suspend.pb.h"
-#include "chromeos/dbus/video_activity_update.pb.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
 #include "dbus/object_path.h"
@@ -251,23 +250,13 @@ class PowerManagerClientImpl : public PowerManagerClient {
     SimpleMethodCallToPowerManager(power_manager::kHandleUserActivityMethod);
   }
 
-  virtual void NotifyVideoActivity(
-      const base::TimeTicks& last_activity_time,
-      bool is_fullscreen) OVERRIDE {
+  virtual void NotifyVideoActivity(bool is_fullscreen) OVERRIDE {
     dbus::MethodCall method_call(
         power_manager::kPowerManagerInterface,
         power_manager::kHandleVideoActivityMethod);
     dbus::MessageWriter writer(&method_call);
+    writer.AppendBool(is_fullscreen);
 
-    VideoActivityUpdate protobuf;
-    protobuf.set_last_activity_time(last_activity_time.ToInternalValue());
-    protobuf.set_is_fullscreen(is_fullscreen);
-
-    if (!writer.AppendProtoAsArrayOfBytes(protobuf)) {
-      LOG(ERROR) << "Error calling "
-                 << power_manager::kHandleVideoActivityMethod;
-      return;
-    }
     power_manager_proxy_->CallMethod(
         &method_call,
         dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
@@ -383,7 +372,7 @@ class PowerManagerClientImpl : public PowerManagerClient {
     dbus::MessageReader reader(signal);
     power_manager::PowerSupplyProperties protobuf;
     if (reader.PopArrayOfBytesAsProto(&protobuf)) {
-      HandlePowerSupplyProperties(protobuf);
+      FOR_EACH_OBSERVER(Observer, observers_, PowerChanged(protobuf));
     } else {
       LOG(ERROR) << "Unable to decode "
                  << power_manager::kPowerSupplyPollSignal << "signal";
@@ -400,7 +389,7 @@ class PowerManagerClientImpl : public PowerManagerClient {
     dbus::MessageReader reader(response);
     power_manager::PowerSupplyProperties protobuf;
     if (reader.PopArrayOfBytesAsProto(&protobuf)) {
-      HandlePowerSupplyProperties(protobuf);
+      FOR_EACH_OBSERVER(Observer, observers_, PowerChanged(protobuf));
     } else {
       LOG(ERROR) << "Unable to decode "
                  << power_manager::kGetPowerSupplyPropertiesMethod
@@ -627,54 +616,6 @@ class PowerManagerClientImpl : public PowerManagerClient {
         dbus::ObjectProxy::EmptyResponseCallback());
   }
 
-  // Handles a PowerSupplyProperties protocol buffer from the power manager.
-  void HandlePowerSupplyProperties(
-      const power_manager::PowerSupplyProperties& protobuf) {
-    // TODO(derat): Kill PowerSupplyStatus and just use the
-    // PowerSupplyProperties protobuf within Ash.
-    PowerSupplyStatus status;
-    status.line_power_on = protobuf.external_power() !=
-        power_manager::PowerSupplyProperties_ExternalPower_DISCONNECTED;
-    status.battery_is_present = protobuf.battery_state() !=
-        power_manager::PowerSupplyProperties_BatteryState_NOT_PRESENT;
-    status.battery_is_full = protobuf.battery_state() ==
-        power_manager::PowerSupplyProperties_BatteryState_FULL;
-    status.battery_seconds_to_empty = protobuf.battery_time_to_empty_sec();
-    status.battery_seconds_to_full = protobuf.battery_time_to_full_sec();
-    status.battery_percentage = protobuf.battery_percent();
-    status.is_calculating_battery_time = protobuf.is_calculating_battery_time();
-
-    switch (protobuf.external_power()) {
-      case power_manager::PowerSupplyProperties_ExternalPower_AC:
-        status.battery_state = PowerSupplyStatus::CHARGING;
-        break;
-      case power_manager::PowerSupplyProperties_ExternalPower_DISCONNECTED:
-        status.battery_state = PowerSupplyStatus::DISCHARGING;
-        break;
-      case power_manager::PowerSupplyProperties_ExternalPower_USB:
-        status.battery_state = PowerSupplyStatus::CONNECTED_TO_USB;
-        break;
-      default:
-        NOTREACHED() << "Unhandled external power state "
-                     << protobuf.external_power();
-    }
-
-    // Check power status values are consistent
-    if (!status.is_calculating_battery_time) {
-      int64 battery_seconds_to_goal = status.line_power_on ?
-          status.battery_seconds_to_full : status.battery_seconds_to_empty;
-      if (battery_seconds_to_goal < 0) {
-        LOG(ERROR) << "Received power supply status with negative seconds to "
-            << (status.line_power_on ? "full" : "empty")
-            << ". Assume time is still being calculated.";
-        status.is_calculating_battery_time = true;
-      }
-    }
-
-    VLOG(1) << "Power status: " << status.ToString();
-    FOR_EACH_OBSERVER(Observer, observers_, PowerChanged(status));
-  }
-
   // Origin thread (i.e. the UI thread in production).
   base::PlatformThreadId origin_thread_id_;
 
@@ -790,9 +731,7 @@ class PowerManagerClientStubImpl : public PowerManagerClient {
   }
 
   virtual void NotifyUserActivity() OVERRIDE {}
-  virtual void NotifyVideoActivity(
-      const base::TimeTicks& last_activity_time,
-      bool is_fullscreen) OVERRIDE {}
+  virtual void NotifyVideoActivity(bool is_fullscreen) OVERRIDE {}
   virtual void SetPolicy(
       const power_manager::PowerManagementPolicy& policy) OVERRIDE {}
   virtual void SetIsProjecting(bool is_projecting) OVERRIDE {}
@@ -804,41 +743,69 @@ class PowerManagerClientStubImpl : public PowerManagerClient {
   void UpdateStatus() {
     if (pause_count_ > 0) {
       pause_count_--;
+      if (pause_count_ == 2)
+        discharging_ = !discharging_;
     } else {
-      int discharge_amt = battery_percentage_ <= 10 ? 1 : 10;
-      battery_percentage_ += (discharging_ ? -discharge_amt : discharge_amt);
+      if (discharging_)
+        battery_percentage_ -= (battery_percentage_ <= 10 ? 1 : 10);
+      else
+        battery_percentage_ += (battery_percentage_ >= 10 ? 10 : 1);
       battery_percentage_ = std::min(std::max(battery_percentage_, 0), 100);
       // We pause at 0 and 100% so that it's easier to check those conditions.
       if (battery_percentage_ == 0 || battery_percentage_ == 100) {
-        discharging_ = !discharging_;
         pause_count_ = 4;
         if (battery_percentage_ == 100)
           cycle_count_ = (cycle_count_ + 1) % 3;
       }
     }
-    const int kSecondsToEmptyFullBattery(3 * 60 * 60);  // 3 hours.
 
-    status_.is_calculating_battery_time = (pause_count_ > 1);
-    status_.line_power_on = !discharging_;
-    status_.battery_is_present = true;
-    status_.battery_percentage = battery_percentage_;
-    if (cycle_count_ != 2) {
-      status_.battery_state = discharging_ ?
-          PowerSupplyStatus::DISCHARGING : PowerSupplyStatus::CHARGING;
-    } else {
-      status_.battery_state = PowerSupplyStatus::CONNECTED_TO_USB;
-    }
-
+    const int kSecondsToEmptyFullBattery = 3 * 60 * 60;  // 3 hours.
     int64 remaining_battery_time =
         std::max(1, battery_percentage_ * kSecondsToEmptyFullBattery / 100);
-    status_.battery_seconds_to_empty =
-        status_.battery_state == PowerSupplyStatus::DISCHARGING ?
-        remaining_battery_time : 0;
-    status_.battery_seconds_to_full =
-        status_.battery_state == PowerSupplyStatus::DISCHARGING ?
-        0 : std::max(static_cast<int64>(1),
-                     kSecondsToEmptyFullBattery - remaining_battery_time);
-    FOR_EACH_OBSERVER(Observer, observers_, PowerChanged(status_));
+
+    props_.Clear();
+
+    switch (cycle_count_) {
+      case 0:
+        // Say that the system is charging with AC connected and
+        // discharging without any charger connected.
+        props_.set_external_power(discharging_ ?
+            power_manager::PowerSupplyProperties_ExternalPower_DISCONNECTED :
+            power_manager::PowerSupplyProperties_ExternalPower_AC);
+        break;
+      case 1:
+        // Say that the system is both charging and discharging on USB
+        // (i.e. a low-power charger).
+        props_.set_external_power(
+            power_manager::PowerSupplyProperties_ExternalPower_USB);
+        break;
+      case 2:
+        // Say that the system is both charging and discharging on AC.
+        props_.set_external_power(
+            power_manager::PowerSupplyProperties_ExternalPower_AC);
+        break;
+      default:
+        NOTREACHED() << "Unhandled cycle " << cycle_count_;
+    }
+
+    if (battery_percentage_ == 100 && !discharging_) {
+      props_.set_battery_state(
+          power_manager::PowerSupplyProperties_BatteryState_FULL);
+    } else if (!discharging_) {
+      props_.set_battery_state(
+          power_manager::PowerSupplyProperties_BatteryState_CHARGING);
+      props_.set_battery_time_to_full_sec(std::max(static_cast<int64>(1),
+          kSecondsToEmptyFullBattery - remaining_battery_time));
+    } else {
+      props_.set_battery_state(
+          power_manager::PowerSupplyProperties_BatteryState_DISCHARGING);
+      props_.set_battery_time_to_empty_sec(remaining_battery_time);
+    }
+
+    props_.set_battery_percent(battery_percentage_);
+    props_.set_is_calculating_battery_time(pause_count_ > 1);
+
+    FOR_EACH_OBSERVER(Observer, observers_, PowerChanged(props_));
   }
 
   void SetBrightness(double percent, bool user_initiated) {
@@ -859,7 +826,7 @@ class PowerManagerClientStubImpl : public PowerManagerClient {
   int cycle_count_;
   ObserverList<Observer> observers_;
   base::RepeatingTimer<PowerManagerClientStubImpl> update_timer_;
-  PowerSupplyStatus status_;
+  power_manager::PowerSupplyProperties props_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.

@@ -15,7 +15,7 @@
 #include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/host_port_pair.h"
 #include "net/http/http_request_headers.h"
@@ -204,9 +204,6 @@ class URLFetcherCore
 
   // Read response bytes from the request.
   void ReadResponse();
-
-  // Drop ownership of any file managed by |file_path_|.
-  void DisownFile();
 
   // Notify Delegate about the progress of upload/download.
   void InformDelegateUploadProgress();

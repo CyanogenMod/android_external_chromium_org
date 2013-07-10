@@ -6,7 +6,6 @@
 #define ASH_SYSTEM_CHROMEOS_SETTINGS_TRAY_SETTINGS_H_
 
 #include "ash/system/tray/system_tray_item.h"
-#include "chromeos/power/power_manager_handler.h"
 
 namespace ash {
 namespace internal {
@@ -15,8 +14,7 @@ namespace tray {
 class SettingsDefaultView;
 }
 
-class TraySettings : public SystemTrayItem,
-                     public chromeos::PowerManagerHandler::Observer {
+class TraySettings : public SystemTrayItem {
  public:
   explicit TraySettings(SystemTray* system_tray);
   virtual ~TraySettings();
@@ -30,10 +28,6 @@ class TraySettings : public SystemTrayItem,
   virtual void DestroyDefaultView() OVERRIDE;
   virtual void DestroyDetailedView() OVERRIDE;
   virtual void UpdateAfterLoginStatusChange(user::LoginStatus status) OVERRIDE;
-
-  // Overridden from chromeos::PowerManagerHandler::Observer.
-  virtual void OnPowerStatusChanged(
-      const chromeos::PowerSupplyStatus& status) OVERRIDE;
 
   tray::SettingsDefaultView* default_view_;
 

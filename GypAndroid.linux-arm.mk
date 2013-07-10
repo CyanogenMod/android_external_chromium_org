@@ -2,7 +2,7 @@
 
 
 LOCAL_PATH := $(call my-dir)
-GYP_DEFAULT_CONFIGURATION := Debug
+GYP_CONFIGURATION ?= Debug
 
 include $(LOCAL_PATH)/android_webview/All.target.linux-arm.mk
 include $(LOCAL_PATH)/android_webview/android_webview_common.target.linux-arm.mk
@@ -21,12 +21,12 @@ include $(LOCAL_PATH)/base/base_prefs.target.linux-arm.mk
 include $(LOCAL_PATH)/base/base_static.target.linux-arm.mk
 include $(LOCAL_PATH)/base/symbolize.target.linux-arm.mk
 include $(LOCAL_PATH)/base/third_party/dynamic_annotations/dynamic_annotations.target.linux-arm.mk
-include $(LOCAL_PATH)/build/temp_gyp/googleurl.target.linux-arm.mk
 include $(LOCAL_PATH)/cc/cc.target.linux-arm.mk
 include $(LOCAL_PATH)/components/auto_login_parser.target.linux-arm.mk
-include $(LOCAL_PATH)/components/autofill_browser.target.linux-arm.mk
 include $(LOCAL_PATH)/components/autofill_content_browser.target.linux-arm.mk
+include $(LOCAL_PATH)/components/autofill_content_renderer.target.linux-arm.mk
 include $(LOCAL_PATH)/components/autofill_content_risk_proto.target.linux-arm.mk
+include $(LOCAL_PATH)/components/autofill_core_browser.target.linux-arm.mk
 include $(LOCAL_PATH)/components/autofill_core_common.target.linux-arm.mk
 include $(LOCAL_PATH)/components/autofill_jni_headers.target.linux-arm.mk
 include $(LOCAL_PATH)/components/autofill_regexes.target.linux-arm.mk

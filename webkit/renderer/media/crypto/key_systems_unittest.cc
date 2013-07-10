@@ -169,7 +169,6 @@ TEST_F(KeySystemsTest, ClearKey_Basic) {
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", no_codecs(), "org.w3.clearkey"));
 
-  EXPECT_STREQ("ClearKey", KeySystemNameForUMA(std::string(kClearKey)).c_str());
   EXPECT_STREQ("ClearKey",
                KeySystemNameForUMA(WebString::fromUTF8(kClearKey)).c_str());
 
@@ -188,8 +187,6 @@ TEST_F(KeySystemsTest, ClearKey_Parent) {
       "video/webm", no_codecs(), kClearKeyParent));
 
   // The parent is not supported for most things.
-  EXPECT_STREQ("Unknown",
-               KeySystemNameForUMA(std::string(kClearKeyParent)).c_str());
   EXPECT_STREQ("Unknown",
       KeySystemNameForUMA(WebString::fromUTF8(kClearKeyParent)).c_str());
   EXPECT_FALSE(CanUseAesDecryptor(kClearKeyParent));
@@ -355,9 +352,6 @@ TEST_F(KeySystemsTest, ExternalClearKey_Basic) {
   // External Clear Key does not have a UMA name because it is for testing.
   EXPECT_STREQ(
       "Unknown",
-      KeySystemNameForUMA(std::string(kExternalClearKey)).c_str());
-  EXPECT_STREQ(
-      "Unknown",
       KeySystemNameForUMA(WebString::fromUTF8(kExternalClearKey)).c_str());
 
   EXPECT_FALSE(CanUseAesDecryptor(kExternalClearKey));
@@ -377,9 +371,6 @@ TEST_F(KeySystemsTest, ExternalClearKey_Parent) {
       "video/webm", no_codecs(), kExternalClearKeyParent));
 
   // The parent is not supported for most things.
-  EXPECT_STREQ(
-      "Unknown",
-      KeySystemNameForUMA(std::string(kExternalClearKeyParent)).c_str());
   EXPECT_STREQ("Unknown",
                KeySystemNameForUMA(
                    WebString::fromUTF8(kExternalClearKeyParent)).c_str());
@@ -540,7 +531,13 @@ TEST_F(KeySystemsTest,
 //
 
 TEST_F(KeySystemsTest, Widevine_Basic) {
+#if defined(WIDEVINE_CDM_AVAILABLE) && \
+    defined(DISABLE_WIDEVINE_CDM_CANPLAYTYPE)
+  EXPECT_TRUE(IsSupportedKeySystem(WebString::fromUTF8(kWidevineAlpha)));
+#else
   EXPECT_WV(IsSupportedKeySystem(WebString::fromUTF8(kWidevineAlpha)));
+#endif
+
   EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", no_codecs(), kWidevineAlpha));
 
@@ -549,9 +546,6 @@ TEST_F(KeySystemsTest, Widevine_Basic) {
 #else
   const char* const kWidevineUmaName = "Unknown";
 #endif
-  EXPECT_STREQ(
-      kWidevineUmaName,
-      KeySystemNameForUMA(std::string(kWidevineAlpha)).c_str());
   EXPECT_STREQ(
       kWidevineUmaName,
       KeySystemNameForUMA(WebString::fromUTF8(kWidevineAlpha)).c_str());
@@ -571,13 +565,16 @@ TEST_F(KeySystemsTest, Widevine_Basic) {
 TEST_F(KeySystemsTest, Widevine_Parent) {
   const char* const kWidevineParent = kWidevine;
 
+#if defined(WIDEVINE_CDM_AVAILABLE) && \
+    defined(DISABLE_WIDEVINE_CDM_CANPLAYTYPE)
+  EXPECT_TRUE(IsSupportedKeySystem(WebString::fromUTF8(kWidevineParent)));
+#else
   EXPECT_WV(IsSupportedKeySystem(WebString::fromUTF8(kWidevineParent)));
+#endif
   EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", no_codecs(), kWidevineParent));
 
   // The parent is not supported for most things.
-  EXPECT_STREQ("Unknown",
-               KeySystemNameForUMA(std::string(kWidevineParent)).c_str());
   EXPECT_STREQ("Unknown",
       KeySystemNameForUMA(WebString::fromUTF8(kWidevineParent)).c_str());
   EXPECT_FALSE(CanUseAesDecryptor(kWidevineParent));
@@ -752,5 +749,23 @@ TEST_F(KeySystemsTest, IsSupportedKeySystemWithMediaMimeType_Widevine_MP4) {
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       "audio/mp4", vorbis_codec(), kWidevineAlpha));
 }
+
+#if defined(OS_ANDROID)
+TEST_F(KeySystemsTest, GetUUID_Widevine) {
+  std::vector<uint8> uuid = GetUUID(kWidevineAlpha);
+#if defined(WIDEVINE_CDM_AVAILABLE)
+  EXPECT_EQ(16u, uuid.size());
+  EXPECT_EQ(0xED, uuid[15]);
+#else
+  EXPECT_TRUE(uuid.empty());
+#endif
+}
+
+TEST_F(KeySystemsTest, GetUUID_Unrecognized) {
+  EXPECT_TRUE(GetUUID(kWidevine).empty());
+  EXPECT_TRUE(GetUUID(kClearKey).empty());
+  EXPECT_TRUE(GetUUID("").empty());
+}
+#endif  // defined(OS_ANDROID)
 
 }  // namespace webkit_media

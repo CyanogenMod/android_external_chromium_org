@@ -39,7 +39,7 @@
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/system_tray_notifier.h"
 #include "ash/system/web_notification/web_notification_tray.h"
-#include "ash/touch/touch_observer_hud.h"
+#include "ash/touch/touch_hud_debug.h"
 #include "ash/volume_control_delegate.h"
 #include "ash/wm/partial_screenshot_view.h"
 #include "ash/wm/power_button_controller.h"
@@ -561,8 +561,8 @@ bool AcceleratorController::PerformAction(int action,
     case TOUCH_HUD_CLEAR: {
       internal::RootWindowController* controller =
           internal::RootWindowController::ForActiveRootWindow();
-      if (controller->touch_observer_hud()) {
-        controller->touch_observer_hud()->Clear();
+      if (controller->touch_hud_debug()) {
+        controller->touch_hud_debug()->Clear();
         return true;
       }
       return false;
@@ -570,11 +570,16 @@ bool AcceleratorController::PerformAction(int action,
     case TOUCH_HUD_MODE_CHANGE: {
       internal::RootWindowController* controller =
           internal::RootWindowController::ForActiveRootWindow();
-      if (controller->touch_observer_hud()) {
-        controller->touch_observer_hud()->ChangeToNextMode();
+      if (controller->touch_hud_debug()) {
+        controller->touch_hud_debug()->ChangeToNextMode();
         return true;
       }
       return false;
+    }
+    case TOUCH_HUD_PROJECTION_TOGGLE: {
+      bool enabled = Shell::GetInstance()->is_touch_hud_projection_enabled();
+      Shell::GetInstance()->SetTouchHudProjectionEnabled(!enabled);
+      return true;
     }
     case DISABLE_GPU_WATCHDOG:
       content::GpuDataManager::GetInstance()->DisableGpuWatchdog();
@@ -762,32 +767,32 @@ bool AcceleratorController::PerformAction(int action,
       if (ime_control_delegate_)
         return ime_control_delegate_->HandleSwitchIme(accelerator);
       break;
-    case SELECT_WIN_0:
-      Launcher::ForPrimaryDisplay()->SwitchToWindow(0);
+    case LAUNCH_APP_0:
+      Launcher::ForPrimaryDisplay()->LaunchAppIndexAt(0);
       return true;
-    case SELECT_WIN_1:
-      Launcher::ForPrimaryDisplay()->SwitchToWindow(1);
+    case LAUNCH_APP_1:
+      Launcher::ForPrimaryDisplay()->LaunchAppIndexAt(1);
       return true;
-    case SELECT_WIN_2:
-      Launcher::ForPrimaryDisplay()->SwitchToWindow(2);
+    case LAUNCH_APP_2:
+      Launcher::ForPrimaryDisplay()->LaunchAppIndexAt(2);
       return true;
-    case SELECT_WIN_3:
-      Launcher::ForPrimaryDisplay()->SwitchToWindow(3);
+    case LAUNCH_APP_3:
+      Launcher::ForPrimaryDisplay()->LaunchAppIndexAt(3);
       return true;
-    case SELECT_WIN_4:
-      Launcher::ForPrimaryDisplay()->SwitchToWindow(4);
+    case LAUNCH_APP_4:
+      Launcher::ForPrimaryDisplay()->LaunchAppIndexAt(4);
       return true;
-    case SELECT_WIN_5:
-      Launcher::ForPrimaryDisplay()->SwitchToWindow(5);
+    case LAUNCH_APP_5:
+      Launcher::ForPrimaryDisplay()->LaunchAppIndexAt(5);
       return true;
-    case SELECT_WIN_6:
-      Launcher::ForPrimaryDisplay()->SwitchToWindow(6);
+    case LAUNCH_APP_6:
+      Launcher::ForPrimaryDisplay()->LaunchAppIndexAt(6);
       return true;
-    case SELECT_WIN_7:
-      Launcher::ForPrimaryDisplay()->SwitchToWindow(7);
+    case LAUNCH_APP_7:
+      Launcher::ForPrimaryDisplay()->LaunchAppIndexAt(7);
       return true;
-    case SELECT_LAST_WIN:
-      Launcher::ForPrimaryDisplay()->SwitchToWindow(-1);
+    case LAUNCH_LAST_APP:
+      Launcher::ForPrimaryDisplay()->LaunchAppIndexAt(-1);
       return true;
     case WINDOW_SNAP_LEFT:
     case WINDOW_SNAP_RIGHT: {
@@ -831,10 +836,6 @@ bool AcceleratorController::PerformAction(int action,
       return true;
     }
     case TOGGLE_MAXIMIZED: {
-      if (key_code == ui::VKEY_MEDIA_LAUNCH_APP2) {
-        shell->delegate()->RecordUserMetricsAction(
-            UMA_ACCEL_MAXIMIZE_RESTORE_F4);
-      }
       shell->delegate()->ToggleMaximized();
       return true;
     }

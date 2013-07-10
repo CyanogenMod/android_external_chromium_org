@@ -46,7 +46,7 @@ class Firefox3Importer : public Importer {
   // Import the user's home page, unless it is set to default home page as
   // defined in browserconfig.properties.
   void ImportHomepage();
-  void GetSearchEnginesXMLFiles(std::vector<base::FilePath>* files);
+  void GetSearchEnginesXMLData(std::vector<std::string>* search_engine_data);
 
   // The struct stores the information about a bookmark item.
   struct BookmarkItem;
@@ -78,9 +78,8 @@ class Firefox3Importer : public Importer {
   base::FilePath source_path_;
   base::FilePath app_path_;
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
-  // Stored because we can only access it from the UI thread. Not usable
-  // in Mac because no access from out-of-process import.
+#if defined(OS_POSIX)
+  // Stored because we can only access it from the UI thread.
   std::string locale_;
 #endif
 

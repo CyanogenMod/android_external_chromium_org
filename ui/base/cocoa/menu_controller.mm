@@ -107,7 +107,7 @@
     label16 = [MenuController elideMenuTitle:label16 toWidth:maxWidth];
 
   NSString* label = l10n_util::FixUpWindowsStyleLabel(label16);
-  scoped_nsobject<NSMenuItem> item(
+  base::scoped_nsobject<NSMenuItem> item(
       [[NSMenuItem alloc] initWithTitle:label
                                  action:@selector(itemSelected:)
                           keyEquivalent:@""]);
@@ -179,6 +179,16 @@
       model->GetIconAt(modelIndex, &icon);
       [(id)item setImage:icon.IsEmpty() ? nil : icon.ToNSImage()];
     }
+    const gfx::Font* font = model->GetLabelFontAt(modelIndex);
+    if (font) {
+      NSDictionary *attributes =
+          [NSDictionary dictionaryWithObject:font->GetNativeFont()
+                                      forKey:NSFontAttributeName];
+      base::scoped_nsobject<NSAttributedString> title(
+          [[NSAttributedString alloc] initWithString:[(id)item title]
+                                          attributes:attributes]);
+      [(id)item setAttributedTitle:title.get()];
+    }
     return model->IsEnabledAt(modelIndex);
   }
   return NO;
@@ -207,7 +217,7 @@
     // complicate creation logic, and since the tags are model indexes, they
     // are unaffected by the extra item.
     if (useWithPopUpButtonCell_) {
-      scoped_nsobject<NSMenuItem> blankItem(
+      base::scoped_nsobject<NSMenuItem> blankItem(
           [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""]);
       [menu_ insertItem:blankItem atIndex:0];
     }

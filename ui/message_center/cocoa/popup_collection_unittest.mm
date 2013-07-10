@@ -4,7 +4,7 @@
 
 #import "ui/message_center/cocoa/popup_collection.h"
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/run_loop.h"
@@ -111,7 +111,7 @@ class PopupCollectionTest : public ui::CocoaTest {
   base::MessageLoop message_loop_;
   scoped_ptr<base::RunLoop> nested_run_loop_;
   message_center::MessageCenter* center_;
-  scoped_nsobject<MCPopupCollection> collection_;
+  base::scoped_nsobject<MCPopupCollection> collection_;
 };
 
 TEST_F(PopupCollectionTest, AddThreeCloseOne) {
@@ -311,9 +311,7 @@ TEST_F(PopupCollectionTest, UpdateIconAndBody) {
   EXPECT_EQ("3", [[popups objectAtIndex:2] notificationID]);
 }
 
-// Test sometimes timesout. See http://crbug.com/249131
-TEST_F(PopupCollectionTest,
-       DISABLED_CloseCollectionBeforeNewPopupAnimationEnds) {
+TEST_F(PopupCollectionTest, CloseCollectionBeforeNewPopupAnimationEnds) {
   // Add a notification and don't wait for the animation to finish.
   scoped_ptr<message_center::Notification> notification;
   notification.reset(new message_center::Notification(

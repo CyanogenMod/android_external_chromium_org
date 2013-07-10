@@ -13,12 +13,13 @@
 #include "base/process.h"
 #include "base/strings/string16.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/win/scoped_comptr.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_message_macros.h"
 #include "ui/aura/remote_root_window_host_win.h"
 #include "ui/metro_viewer/metro_viewer_messages.h"
+#include "win8/viewer/metro_viewer_constants.h"
 
 namespace win8 {
 
@@ -32,11 +33,10 @@ void MetroViewerProcessHost::InternalMessageFilter::OnChannelConnected(
 }
 
 MetroViewerProcessHost::MetroViewerProcessHost(
-    const std::string& ipc_channel_name,
     base::SingleThreadTaskRunner* ipc_task_runner) {
 
   channel_.reset(new IPC::ChannelProxy(
-      ipc_channel_name.c_str(),
+      kMetroViewerIPCChannelName,
       IPC::Channel::MODE_NAMED_SERVER,
       this,
       ipc_task_runner));

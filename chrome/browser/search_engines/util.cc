@@ -12,7 +12,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_vector.h"
 #include "base/prefs/pref_service.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_prepopulate_data.h"
@@ -37,6 +37,21 @@ string16 GetDefaultSearchEngineName(Profile* profile) {
     return string16();
   }
   return default_provider->short_name();
+}
+
+GURL GetDefaultSearchURLForSearchTerms(Profile* profile,
+                                       const string16& terms) {
+  DCHECK(profile);
+  const TemplateURL* default_provider =
+      TemplateURLServiceFactory::GetForProfile(profile)->
+      GetDefaultSearchProvider();
+  if (!default_provider)
+    return GURL();
+  const TemplateURLRef& search_url = default_provider->url_ref();
+  DCHECK(search_url.SupportsReplacement());
+  TemplateURLRef::SearchTermsArgs search_terms_args(terms);
+  search_terms_args.append_extra_query_params = true;
+  return GURL(search_url.ReplaceSearchTerms(search_terms_args));
 }
 
 void RemoveDuplicatePrepopulateIDs(

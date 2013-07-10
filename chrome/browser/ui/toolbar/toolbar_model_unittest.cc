@@ -10,6 +10,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
 #include "chrome/browser/search/search.h"
+#include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -182,6 +183,7 @@ void ToolbarModelTest::SetUp() {
       profile(), &TemplateURLServiceFactory::BuildInstanceFor);
   AutocompleteClassifierFactory::GetInstance()->SetTestingFactoryAndUse(
       profile(), &AutocompleteClassifierFactory::BuildInstanceFor);
+  UIThreadSearchTermsData::SetGoogleBaseURL("http://google.com/");
 }
 
 void ToolbarModelTest::ResetDefaultTemplateURL() {
@@ -203,7 +205,7 @@ void ToolbarModelTest::NavigateAndCheckText(
 void ToolbarModelTest::ResetTemplateURLForInstant(const GURL& instant_url) {
   TemplateURLData data;
   data.short_name = ASCIIToUTF16("Google");
-  data.SetURL("http://google.com/search?q={searchTerms}");
+  data.SetURL("{google:baseURL}search?q={searchTerms}");
   data.instant_url = instant_url.spec();
   data.search_terms_replacement_key = "{google:instantExtendedEnabledKey}";
   TemplateURL* search_template_url = new TemplateURL(profile(), data);
@@ -254,16 +256,13 @@ void ToolbarModelTest::NavigateAndCheckTextImpl(const GURL& url,
 
 // Test that we don't replace any URLs when the query extraction is disabled.
 TEST_F(ToolbarModelTest, ShouldDisplayURLQueryExtractionDisabled) {
-  ASSERT_FALSE(chrome::IsQueryExtractionEnabled(profile()))
+  ASSERT_FALSE(chrome::IsQueryExtractionEnabled())
       << "This test expects query extraction to be disabled.";
-  ResetDefaultTemplateURL();
   AddTab(browser(), GURL(content::kAboutBlankURL));
   for (size_t i = 0; i < arraysize(test_items); ++i) {
     const TestItem& test_item = test_items[i];
-    NavigateAndCheckText(test_item.url,
-                         test_item.expected_text,
-                         test_item.expected_replace_text_inactive,
-                         false,
+    NavigateAndCheckText(test_item.url, test_item.expected_text,
+                         test_item.expected_replace_text_inactive, false,
                          test_item.should_display);
   }
 }
@@ -271,15 +270,12 @@ TEST_F(ToolbarModelTest, ShouldDisplayURLQueryExtractionDisabled) {
 // Test that we replace URLs when the query extraction API is enabled.
 TEST_F(ToolbarModelTest, ShouldDisplayURLQueryExtractionEnabled) {
   chrome::EnableInstantExtendedAPIForTesting();
-  ResetDefaultTemplateURL();
   AddTab(browser(), GURL(content::kAboutBlankURL));
   for (size_t i = 0; i < arraysize(test_items); ++i) {
     const TestItem& test_item = test_items[i];
-    NavigateAndCheckText(test_item.url,
-                         test_item.expected_text,
+    NavigateAndCheckText(test_item.url, test_item.expected_text,
                          test_item.expected_replace_text_active,
-                         test_item.would_replace,
-                         test_item.should_display);
+                         test_item.would_replace, test_item.should_display);
   }
 }
 
@@ -306,4 +302,31 @@ TEST_F(ToolbarModelTest, SearchTermsWhileLoading) {
   controller->GetVisibleEntry()->GetSSL().security_style =
       content::SECURITY_STYLE_UNKNOWN;
   EXPECT_FALSE(toolbar_model->WouldReplaceSearchURLWithSearchTerms());
+}
+
+// When the Google base URL is overridden on the command line, we should extract
+// search terms from URLs that start with that base URL even when they're not
+// secure.
+TEST_F(ToolbarModelTest, GoogleBaseURL) {
+  chrome::EnableInstantExtendedAPIForTesting();
+  AddTab(browser(), GURL(content::kAboutBlankURL));
+
+  // If the Google base URL wasn't specified on the command line, then if it's
+  // HTTP, we should not extract search terms.
+  UIThreadSearchTermsData::SetGoogleBaseURL("http://www.foo.com/");
+  NavigateAndCheckText(
+      GURL("http://www.foo.com/search?q=tractor+supply&espv=1"),
+      ASCIIToUTF16("www.foo.com/search?q=tractor+supply&espv=1"),
+      ASCIIToUTF16("www.foo.com/search?q=tractor+supply&espv=1"), false,
+      true);
+
+  // The same URL, when specified on the command line, should allow search term
+  // extraction.
+  UIThreadSearchTermsData::SetGoogleBaseURL(std::string());
+  CommandLine::ForCurrentProcess()->AppendSwitchASCII(switches::kGoogleBaseURL,
+                                                      "http://www.foo.com/");
+  NavigateAndCheckText(
+      GURL("http://www.foo.com/search?q=tractor+supply&espv=1"),
+      ASCIIToUTF16("www.foo.com/search?q=tractor+supply&espv=1"),
+      ASCIIToUTF16("tractor supply"), true, true);
 }

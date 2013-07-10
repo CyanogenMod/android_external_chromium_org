@@ -32,6 +32,9 @@
  */
 var HTTP_OK = 200;
 
+var HTTP_UNAUTHORIZED = 401;
+var HTTP_FORBIDDEN = 403;
+
 /**
  * Initial period for polling for Google Now Notifications cards to use when the
  * period from the server is not available.
@@ -68,6 +71,20 @@ var RETRY_DISMISS_TASK_NAME = 'retry-dismiss';
 
 var LOCATION_WATCH_NAME = 'location-watch';
 
+var WELCOME_TOAST_NOTIFICATION_ID = 'enable-now-toast';
+
+/**
+ * The indices of the buttons that are displayed on the welcome toast.
+ * @enum {number}
+ */
+var ToastButtonIndex = {YES: 0, NO: 1};
+
+/**
+ * The action that the user performed on the welcome toast.
+ * @enum {number}
+ */
+var ToastOptionResponse = {CHOSE_YES: 1, CHOSE_NO: 2};
+
 /**
  * Checks if a new task can't be scheduled when another task is already
  * scheduled.
@@ -98,6 +115,8 @@ function areTasksConflicting(newTaskName, scheduledTaskName) {
 var tasks = buildTaskManager(areTasksConflicting);
 
 // Add error processing to API calls.
+tasks.instrumentApiFunction(chrome.identity, 'getAuthToken', 1);
+tasks.instrumentApiFunction(chrome.identity, 'removeCachedAuthToken', 1);
 tasks.instrumentApiFunction(chrome.location.onLocationUpdate, 'addListener', 0);
 tasks.instrumentApiFunction(chrome.notifications, 'create', 2);
 tasks.instrumentApiFunction(chrome.notifications, 'update', 2);
@@ -134,7 +153,9 @@ var DiagnosticEvent = {
   DISMISS_REQUEST_SUCCESS: 4,
   LOCATION_REQUEST: 5,
   LOCATION_UPDATE: 6,
-  EVENTS_TOTAL: 7  // EVENTS_TOTAL is not an event; all new events need to be
+  EXTENSION_START: 7,
+  SHOW_WELCOME_TOAST: 8,
+  EVENTS_TOTAL: 9  // EVENTS_TOTAL is not an event; all new events need to be
                    // added before it.
 };
 
@@ -152,6 +173,47 @@ function recordEvent(event) {
   };
 
   chrome.metricsPrivate.recordValue(metricDescription, event);
+}
+
+/**
+ * Adds authorization behavior to the request.
+ * @param {XMLHttpRequest} request Server request.
+ * @param {function(boolean)} callbackBoolean Completion callback with 'success'
+ *     parameter.
+ */
+function setAuthorization(request, callbackBoolean) {
+  tasks.debugSetStepName('setAuthorization-getAuthToken');
+  chrome.identity.getAuthToken({interactive: false}, function(token) {
+    var errorMessage =
+        chrome.runtime.lastError && chrome.runtime.lastError.message;
+    console.log('setAuthorization: error=' + errorMessage +
+                ', token=' + (token && 'non-empty'));
+    if (chrome.runtime.lastError || !token) {
+      callbackBoolean(false);
+      return;
+    }
+
+    request.setRequestHeader('Authorization', 'Bearer ' + token);
+
+    // Instrument onloadend to remove stale auth tokens.
+    var originalOnLoadEnd = request.onloadend;
+    request.onloadend = tasks.wrapCallback(function(event) {
+      if (request.status == HTTP_FORBIDDEN ||
+          request.status == HTTP_UNAUTHORIZED) {
+        tasks.debugSetStepName('setAuthorization-removeCachedAuthToken');
+        chrome.identity.removeCachedAuthToken({token: token}, function() {
+          // After purging the token cache, call getAuthToken() again to let
+          // Chrome know about the problem with the token.
+          chrome.identity.getAuthToken({interactive: false}, function() {});
+          originalOnLoadEnd(event);
+        });
+      } else {
+        originalOnLoadEnd(event);
+      }
+    });
+
+    callbackBoolean(true);
+  });
 }
 
 /**
@@ -343,10 +405,9 @@ function requestNotificationCards(position, callback) {
       ',' + position.coords.longitude +
       ',' + position.coords.accuracy;
 
-  // TODO(vadimt): Figure out how to send user's identity to the server.
   var request = buildServerRequest('notifications');
 
-  request.onloadend = tasks.wrapCallback(function(event) {
+  request.onloadend = function(event) {
     console.log('requestNotificationCards-onloadend ' + request.status);
     if (request.status == HTTP_OK) {
       recordEvent(DiagnosticEvent.REQUEST_FOR_CARDS_SUCCESS);
@@ -354,10 +415,16 @@ function requestNotificationCards(position, callback) {
     } else {
       callback();
     }
-  });
+  };
 
-  tasks.debugSetStepName('requestNotificationCards-send-request');
-  request.send(requestParameters);
+  setAuthorization(request, function(success) {
+    if (success) {
+      tasks.debugSetStepName('requestNotificationCards-send-request');
+      request.send(requestParameters);
+    } else {
+      callback();
+    }
+  });
 }
 
 /**
@@ -411,16 +478,22 @@ function requestCardDismissal(
   var requestParameters = 'id=' + notificationId +
                           '&dismissalAge=' + (Date.now() - dismissalTimeMs);
   var request = buildServerRequest('dismiss');
-  request.onloadend = tasks.wrapCallback(function(event) {
+  request.onloadend = function(event) {
     console.log('requestDismissingCard-onloadend ' + request.status);
     if (request.status == HTTP_OK)
       recordEvent(DiagnosticEvent.DISMISS_REQUEST_SUCCESS);
 
     callbackBoolean(request.status == HTTP_OK);
-  });
+  };
 
-  tasks.debugSetStepName('requestCardDismissal-send-request');
-  request.send(requestParameters);
+  setAuthorization(request, function(success) {
+    if (success) {
+      tasks.debugSetStepName('requestCardDismissal-send-request');
+      request.send(requestParameters);
+    } else {
+      callbackBoolean(false);
+    }
+  });
 }
 
 /**
@@ -522,6 +595,28 @@ function onNotificationClicked(notificationId, selector) {
 }
 
 /**
+ * Responds to a click of one of the buttons on the welcome toast.
+ * @param {number} buttonIndex The index of the button which was clicked.
+ */
+function onToastNotificationClicked(buttonIndex) {
+  if (buttonIndex == ToastButtonIndex.YES) {
+    chrome.metricsPrivate.recordUserAction('GoogleNow.WelcomeToastClickedYes');
+    storage.set({toastState: ToastOptionResponse.CHOSE_YES});
+
+    // TODO(zturner): Update chrome geolocation setting once the settings
+    // API is in place.
+    startPollingCards();
+  } else {
+    chrome.metricsPrivate.recordUserAction('GoogleNow.WelcomeToastClickedNo');
+    storage.set({toastState: ToastOptionResponse.CHOSE_NO});
+  }
+
+  chrome.notifications.clear(
+      WELCOME_TOAST_NOTIFICATION_ID,
+      function(wasCleared) {});
+}
+
+/**
  * Callback for chrome.notifications.onClosed event.
  * @param {string} notificationId Unique identifier of the notification.
  * @param {boolean} byUser Whether the notification was closed by the user.
@@ -530,6 +625,15 @@ function onNotificationClosed(notificationId, byUser) {
   if (!byUser)
     return;
 
+  if (notificationId == WELCOME_TOAST_NOTIFICATION_ID) {
+    // Even though they only closed the notification without clicking no, treat
+    // it as though they clicked No anwyay, and don't show the toast again.
+    chrome.metricsPrivate.recordUserAction('GoogleNow.WelcomeToastDismissed');
+    storage.set({toastState: ToastOptionResponse.CHOSE_NO});
+    return;
+  }
+
+  // At this point we are guaranteed that the notification is a now card.
   chrome.metricsPrivate.recordUserAction('GoogleNow.Dismissed');
 
   tasks.add(DISMISS_CARD_TASK_NAME, function(callback) {
@@ -557,14 +661,56 @@ function onNotificationClosed(notificationId, byUser) {
 }
 
 /**
- * Initializes the event page on install or on browser startup.
+ * Initializes the polling system to start monitoring location and fetching
+ * cards.
  */
-function initialize() {
+function startPollingCards() {
   // Create an update timer for a case when for some reason location request
   // gets stuck.
   updateCardsAttempts.start(MAXIMUM_POLLING_PERIOD_SECONDS);
 
   requestLocation();
+}
+
+/**
+ * Initializes the event page on install or on browser startup.
+ */
+function initialize() {
+  recordEvent(DiagnosticEvent.EXTENSION_START);
+  storage.get('toastState', function(items) {
+    // The toast state might be undefined (e.g. not in storage yet) if this is
+    // the first time ever being prompted.
+
+    // TODO(zturner): Get the value of isGeolocationEnabled from the settings
+    // api and additionally make sure it is true.
+    if (!items.toastState) {
+      showWelcomeToast();
+    } else if (items.toastState == ToastOptionResponse.CHOSE_YES) {
+      startPollingCards();
+    }
+  });
+}
+
+/**
+ * Displays a toast to the user asking if they want to opt in to receiving
+ * Google Now cards.
+ */
+function showWelcomeToast() {
+  recordEvent(DiagnosticEvent.SHOW_WELCOME_TOAST);
+  // TODO(zturner): Localize this once the component extension localization
+  // api is complete.
+  // TODO(zturner): Add icons.
+  var buttons = [{title: 'Yes'}, {title: 'No'}];
+  var options = {
+    type: 'basic',
+    title: 'Enable Google Now Cards',
+    message: 'Would you like to be shown Google Now cards?',
+    iconUrl: 'http://www.gstatic.com/googlenow/chrome/default.png',
+    priority: 2,
+    buttons: buttons
+  };
+  chrome.notifications.create(WELCOME_TOAST_NOTIFICATION_ID, options,
+      function(notificationId) {});
 }
 
 chrome.runtime.onInstalled.addListener(function(details) {
@@ -589,14 +735,18 @@ chrome.notifications.onClicked.addListener(
 
 chrome.notifications.onButtonClicked.addListener(
     function(notificationId, buttonIndex) {
-      chrome.metricsPrivate.recordUserAction(
-          'GoogleNow.ButtonClicked' + buttonIndex);
-      onNotificationClicked(notificationId, function(actionUrls) {
-        if (!Array.isArray(actionUrls.buttonUrls))
-          return undefined;
+      if (notificationId == WELCOME_TOAST_NOTIFICATION_ID) {
+        onToastNotificationClicked(buttonIndex);
+      } else {
+        chrome.metricsPrivate.recordUserAction(
+            'GoogleNow.ButtonClicked' + buttonIndex);
+        onNotificationClicked(notificationId, function(actionUrls) {
+          if (!Array.isArray(actionUrls.buttonUrls))
+            return undefined;
 
-        return actionUrls.buttonUrls[buttonIndex];
-      });
+          return actionUrls.buttonUrls[buttonIndex];
+        });
+      }
     });
 
 chrome.notifications.onClosed.addListener(onNotificationClosed);

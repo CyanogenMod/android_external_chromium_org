@@ -49,6 +49,7 @@
 #include "grit/generated_resources.h"
 #include "ipc/ipc_test_sink.h"
 #include "net/url_request/test_url_fetcher_factory.h"
+#include "net/url_request/url_fetcher_delegate.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "third_party/WebKit/public/web/WebContextMenuData.h"
 #include "third_party/WebKit/public/web/WebKit.h"
@@ -180,7 +181,7 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
   }
 
   void ExpireTranslateScriptImmediately() {
-    TranslateManager::GetInstance()->set_translate_script_expiration_delay(0);
+    TranslateManager::GetInstance()->SetTranslateScriptExpirationDelay(0);
   }
 
   // If there is 1 infobar and it is a translate infobar, deny translation and
@@ -235,7 +236,7 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
     // case it was zeroed in a previous test).
     TranslateManager::GetInstance()->ClearTranslateScript();
     TranslateManager::GetInstance()->
-        set_translate_script_expiration_delay(60 * 60 * 1000);
+        SetTranslateScriptExpirationDelay(60 * 60 * 1000);
     TranslateManager::GetInstance()->set_translate_max_reload_attemps(0);
 
     ChromeRenderViewHostTestHarness::SetUp();
@@ -632,16 +633,12 @@ TEST_F(TranslateManagerBrowserTest, FetchLanguagesFromTranslateServer) {
   server_languages.push_back("fr-FR");
   server_languages.push_back("xx");
 
-  // First, get the default languages list:
+  // First, get the default languages list. Note that calling
+  // GetSupportedLanguages() invokes RequestLanguageList() internally.
   std::vector<std::string> default_supported_languages;
   TranslateManager::GetSupportedLanguages(&default_supported_languages);
   // To make sure we got the defaults and don't confuse them with the mocks.
   ASSERT_NE(default_supported_languages.size(), server_languages.size());
-
-  Profile* profile =
-      Profile::FromBrowserContext(web_contents()->GetBrowserContext());
-  PrefService* prefs = profile->GetPrefs();
-  TranslateManager::GetInstance()->FetchLanguageListFromTranslateServer(prefs);
 
   // Check that we still get the defaults until the URLFetch has completed.
   std::vector<std::string> current_supported_languages;
@@ -655,7 +652,6 @@ TEST_F(TranslateManagerBrowserTest, FetchLanguagesFromTranslateServer) {
   EXPECT_EQ(default_supported_languages, current_supported_languages);
 
   // Now check that we got the appropriate set of languages from the server.
-  TranslateManager::GetInstance()->FetchLanguageListFromTranslateServer(prefs);
   SimulateSupportedLanguagesURLFetch(true, server_languages);
   current_supported_languages.clear();
   TranslateManager::GetSupportedLanguages(&current_supported_languages);
@@ -1089,11 +1085,11 @@ TEST_F(TranslateManagerBrowserTest, NeverTranslateLanguagePref) {
   registrar.Add(TranslatePrefs::kPrefTranslateLanguageBlacklist,
                 pref_callback_);
   TranslatePrefs translate_prefs(prefs);
-  EXPECT_FALSE(translate_prefs.IsLanguageBlacklisted("fr"));
+  EXPECT_FALSE(translate_prefs.IsBlockedLanguage("fr"));
   EXPECT_TRUE(translate_prefs.CanTranslateLanguage(profile, "fr"));
   SetPrefObserverExpectation(TranslatePrefs::kPrefTranslateLanguageBlacklist);
-  translate_prefs.BlacklistLanguage("fr");
-  EXPECT_TRUE(translate_prefs.IsLanguageBlacklisted("fr"));
+  translate_prefs.BlockLanguage("fr");
+  EXPECT_TRUE(translate_prefs.IsBlockedLanguage("fr"));
   EXPECT_FALSE(translate_prefs.IsSiteBlacklisted(url.host()));
   EXPECT_FALSE(translate_prefs.CanTranslateLanguage(profile, "fr"));
 
@@ -1108,8 +1104,8 @@ TEST_F(TranslateManagerBrowserTest, NeverTranslateLanguagePref) {
 
   // Remove the language from the blacklist.
   SetPrefObserverExpectation(TranslatePrefs::kPrefTranslateLanguageBlacklist);
-  translate_prefs.RemoveLanguageFromBlacklist("fr");
-  EXPECT_FALSE(translate_prefs.IsLanguageBlacklisted("fr"));
+  translate_prefs.UnblockLanguage("fr");
+  EXPECT_FALSE(translate_prefs.IsBlockedLanguage("fr"));
   EXPECT_FALSE(translate_prefs.IsSiteBlacklisted(url.host()));
   EXPECT_TRUE(translate_prefs.CanTranslateLanguage(profile, "fr"));
 
@@ -1234,9 +1230,9 @@ TEST_F(TranslateManagerBrowserTest, ContextMenu) {
   Profile* profile =
       Profile::FromBrowserContext(web_contents()->GetBrowserContext());
   TranslatePrefs translate_prefs(profile->GetPrefs());
-  translate_prefs.BlacklistLanguage("fr");
+  translate_prefs.BlockLanguage("fr");
   translate_prefs.BlacklistSite(url.host());
-  EXPECT_TRUE(translate_prefs.IsLanguageBlacklisted("fr"));
+  EXPECT_TRUE(translate_prefs.IsBlockedLanguage("fr"));
   EXPECT_TRUE(translate_prefs.IsSiteBlacklisted(url.host()));
 
   // Simulate navigating to a page in French. The translate menu should show but
@@ -1273,7 +1269,7 @@ TEST_F(TranslateManagerBrowserTest, ContextMenu) {
   process()->sink().ClearMessages();
 
   // This should also have reverted the blacklisting of this site and language.
-  EXPECT_FALSE(translate_prefs.IsLanguageBlacklisted("fr"));
+  EXPECT_FALSE(translate_prefs.IsBlockedLanguage("fr"));
   EXPECT_FALSE(translate_prefs.IsSiteBlacklisted(url.host()));
 
   // Let's simulate the page being translated.
@@ -1413,7 +1409,7 @@ TEST_F(TranslateManagerBrowserTest, BeforeTranslateExtraButtons) {
   }
   // Simulate the user pressing "Never translate French".
   infobar->NeverTranslatePageLanguage();
-  EXPECT_TRUE(translate_prefs.IsLanguageBlacklisted("de"));
+  EXPECT_TRUE(translate_prefs.IsBlockedLanguage("de"));
   // No translation should have occured and the infobar should be gone.
   EXPECT_FALSE(GetTranslateMessage(&page_id, &original_lang, &target_lang));
   process()->sink().ClearMessages();

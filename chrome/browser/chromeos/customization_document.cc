@@ -14,7 +14,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/system/statistics_provider.h"
@@ -46,8 +46,6 @@ const char kInitialStartPageAttr[] = "initial_start_page";
 const char kSupportPageAttr[] = "support_page";
 
 const char kAcceptedManifestVersion[] = "1.0";
-
-const char kHardwareClass[] = "hardware_class";
 
 // Path to OEM partner startup customization manifest.
 const char kStartupCustomizationManifestPath[] =
@@ -175,7 +173,8 @@ void StartupCustomizationDocument::Init(
     root_->GetString(kRegistrationUrlAttr, &registration_url_);
 
     std::string hwid;
-    if (statistics_provider->GetMachineStatistic(kHardwareClass, &hwid)) {
+    if (statistics_provider->GetMachineStatistic(
+            chromeos::system::kHardwareClass, &hwid)) {
       ListValue* hwid_list = NULL;
       if (root_->GetList(kHwidMapAttr, &hwid_list)) {
         for (size_t i = 0; i < hwid_list->GetSize(); ++i) {

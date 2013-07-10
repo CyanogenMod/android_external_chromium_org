@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/test/test_simple_task_runner.h"
+#include "cc/output/managed_memory_policy.h"
 #include "cc/output/output_surface.h"
 #include "cc/output/output_surface_client.h"
 #include "cc/output/software_output_device.h"
@@ -10,6 +11,8 @@
 #include "cc/test/test_web_graphics_context_3d.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using WebKit::WebGraphicsMemoryAllocation;
 
 namespace cc {
 namespace {
@@ -43,7 +46,7 @@ class TestOutputSurface : public OutputSurface {
   }
 
   void BeginFrameForTesting() {
-    BeginFrame(BeginFrameArgs::CreateForTesting());
+    OutputSurface::BeginFrame(BeginFrameArgs::CreateExpiredForTesting());
   }
 
   void DidSwapBuffersForTesting() {
@@ -57,6 +60,22 @@ class TestOutputSurface : public OutputSurface {
   void OnSwapBuffersCompleteForTesting() {
     OnSwapBuffersComplete(NULL);
   }
+
+  void SetRetroactiveBeginFramePeriod(base::TimeDelta period) {
+    retroactive_begin_frame_period_ = period;
+  }
+
+ protected:
+  virtual void PostCheckForRetroactiveBeginFrame() OVERRIDE {
+    // For testing purposes, we check immediately rather than posting a task.
+    CheckForRetroactiveBeginFrame();
+  }
+
+  virtual base::TimeDelta RetroactiveBeginFramePeriod() OVERRIDE {
+    return retroactive_begin_frame_period_;
+  }
+
+  base::TimeDelta retroactive_begin_frame_period_;
 };
 
 class FakeOutputSurfaceClient : public OutputSurfaceClient {
@@ -65,7 +84,9 @@ class FakeOutputSurfaceClient : public OutputSurfaceClient {
       : begin_frame_count_(0),
         deferred_initialize_result_(true),
         deferred_initialize_called_(false),
-        did_lose_output_surface_called_(false) {}
+        did_lose_output_surface_called_(false),
+        memory_policy_(0),
+        discard_backbuffer_when_not_visible_(false) {}
 
   virtual bool DeferredInitialize(
       scoped_refptr<ContextProvider> offscreen_context_provider) OVERRIDE {
@@ -82,6 +103,12 @@ class FakeOutputSurfaceClient : public OutputSurfaceClient {
   }
   virtual void SetExternalDrawConstraints(const gfx::Transform& transform,
                                           gfx::Rect viewport) OVERRIDE {}
+  virtual void SetMemoryPolicy(
+      const ManagedMemoryPolicy& policy,
+      bool discard_backbuffer_when_not_visible) OVERRIDE {
+    memory_policy_ = policy;
+    discard_backbuffer_when_not_visible_ = discard_backbuffer_when_not_visible;
+  }
 
   int begin_frame_count() {
     return begin_frame_count_;
@@ -99,11 +126,19 @@ class FakeOutputSurfaceClient : public OutputSurfaceClient {
     return did_lose_output_surface_called_;
   }
 
+  const ManagedMemoryPolicy& memory_policy() const { return memory_policy_; }
+
+  bool discard_backbuffer_when_not_visible() const {
+    return discard_backbuffer_when_not_visible_;
+  }
+
  private:
   int begin_frame_count_;
   bool deferred_initialize_result_;
   bool deferred_initialize_called_;
   bool did_lose_output_surface_called_;
+  ManagedMemoryPolicy memory_policy_;
+  bool discard_backbuffer_when_not_visible_;
 };
 
 TEST(OutputSurfaceTest, ClientPointerIndicatesBindToClientSuccess) {
@@ -221,6 +256,8 @@ TEST(OutputSurfaceTest, BeginFrameEmulation) {
       display_refresh_interval);
 
   output_surface.SetMaxFramesPending(2);
+  output_surface.SetRetroactiveBeginFramePeriod(
+      base::TimeDelta::FromSeconds(-1));
 
   // We should start off with 0 BeginFrames
   EXPECT_EQ(client.begin_frame_count(), 0);
@@ -278,27 +315,105 @@ TEST(OutputSurfaceTest, BeginFrameEmulation) {
   EXPECT_FALSE(task_runner->HasPendingTask());
   EXPECT_EQ(client.begin_frame_count(), 4);
   EXPECT_EQ(output_surface.pending_swap_buffers(), 1);
+}
 
-  // Optimistically injected BeginFrames without a SetNeedsBeginFrame should be
-  // allowed.
+TEST(OutputSurfaceTest, OptimisticAndRetroactiveBeginFrames) {
+  scoped_ptr<TestWebGraphicsContext3D> context3d =
+      TestWebGraphicsContext3D::Create();
+
+  TestOutputSurface output_surface(
+      context3d.PassAs<WebKit::WebGraphicsContext3D>());
+  EXPECT_FALSE(output_surface.HasClientForTesting());
+
+  FakeOutputSurfaceClient client;
+  EXPECT_TRUE(output_surface.BindToClient(&client));
+  EXPECT_TRUE(output_surface.HasClientForTesting());
+  EXPECT_FALSE(client.deferred_initialize_called());
+
+  output_surface.SetMaxFramesPending(2);
+
+  // Enable retroactive BeginFrames.
+  output_surface.SetRetroactiveBeginFramePeriod(
+    base::TimeDelta::FromSeconds(100000));
+
+  // Optimistically injected BeginFrames should be throttled if
+  // SetNeedsBeginFrame is false...
+  output_surface.SetNeedsBeginFrame(false);
   output_surface.BeginFrameForTesting();
-  EXPECT_EQ(client.begin_frame_count(), 5);
-  EXPECT_EQ(output_surface.pending_swap_buffers(), 1);
+  EXPECT_EQ(client.begin_frame_count(), 0);
+  // ...and retroactively triggered by a SetNeedsBeginFrame.
+  output_surface.SetNeedsBeginFrame(true);
+  EXPECT_EQ(client.begin_frame_count(), 1);
 
-  // Optimistically injected BeginFrames without a SetNeedsBeginFrame should
-  // still be throttled by pending begin frames however.
+  // Optimistically injected BeginFrames should be throttled by pending
+  // BeginFrames...
   output_surface.BeginFrameForTesting();
-  EXPECT_EQ(client.begin_frame_count(), 5);
-  EXPECT_EQ(output_surface.pending_swap_buffers(), 1);
-
-  // Optimistically injected BeginFrames without a SetNeedsBeginFrame should
-  // also be throttled by pending swap buffers.
+  EXPECT_EQ(client.begin_frame_count(), 1);
+  // ...and retroactively triggered by a SetNeedsBeginFrame.
+  output_surface.SetNeedsBeginFrame(true);
+  EXPECT_EQ(client.begin_frame_count(), 2);
+  // ...or retroactively triggered by a Swap.
+  output_surface.BeginFrameForTesting();
+  EXPECT_EQ(client.begin_frame_count(), 2);
   output_surface.DidSwapBuffersForTesting();
-  EXPECT_EQ(client.begin_frame_count(), 5);
+  EXPECT_EQ(client.begin_frame_count(), 3);
+  EXPECT_EQ(output_surface.pending_swap_buffers(), 1);
+
+  // Optimistically injected BeginFrames should be by throttled by pending
+  // swap buffers...
+  output_surface.DidSwapBuffersForTesting();
+  EXPECT_EQ(client.begin_frame_count(), 3);
   EXPECT_EQ(output_surface.pending_swap_buffers(), 2);
   output_surface.BeginFrameForTesting();
-  EXPECT_EQ(client.begin_frame_count(), 5);
-  EXPECT_EQ(output_surface.pending_swap_buffers(), 2);
+  EXPECT_EQ(client.begin_frame_count(), 3);
+  // ...and retroactively triggered by OnSwapBuffersComplete
+  output_surface.OnSwapBuffersCompleteForTesting();
+  EXPECT_EQ(client.begin_frame_count(), 4);
+}
+
+TEST(OutputSurfaceTest, MemoryAllocation) {
+  scoped_ptr<TestWebGraphicsContext3D> scoped_context =
+      TestWebGraphicsContext3D::Create();
+  TestWebGraphicsContext3D* context = scoped_context.get();
+
+  TestOutputSurface output_surface(
+      scoped_context.PassAs<WebKit::WebGraphicsContext3D>());
+
+  FakeOutputSurfaceClient client;
+  EXPECT_TRUE(output_surface.BindToClient(&client));
+
+  WebGraphicsMemoryAllocation allocation;
+  allocation.suggestHaveBackbuffer = true;
+  allocation.bytesLimitWhenVisible = 1234;
+  allocation.priorityCutoffWhenVisible =
+      WebGraphicsMemoryAllocation::PriorityCutoffAllowVisibleOnly;
+  allocation.bytesLimitWhenNotVisible = 4567;
+  allocation.priorityCutoffWhenNotVisible =
+      WebGraphicsMemoryAllocation::PriorityCutoffAllowNothing;
+
+  context->SetMemoryAllocation(allocation);
+
+  EXPECT_EQ(1234u, client.memory_policy().bytes_limit_when_visible);
+  EXPECT_EQ(ManagedMemoryPolicy::CUTOFF_ALLOW_REQUIRED_ONLY,
+            client.memory_policy().priority_cutoff_when_visible);
+  EXPECT_EQ(4567u, client.memory_policy().bytes_limit_when_not_visible);
+  EXPECT_EQ(ManagedMemoryPolicy::CUTOFF_ALLOW_NOTHING,
+            client.memory_policy().priority_cutoff_when_not_visible);
+  EXPECT_FALSE(client.discard_backbuffer_when_not_visible());
+
+  allocation.suggestHaveBackbuffer = false;
+  context->SetMemoryAllocation(allocation);
+  EXPECT_TRUE(client.discard_backbuffer_when_not_visible());
+
+  allocation.priorityCutoffWhenVisible =
+      WebGraphicsMemoryAllocation::PriorityCutoffAllowEverything;
+  allocation.priorityCutoffWhenNotVisible =
+      WebGraphicsMemoryAllocation::PriorityCutoffAllowVisibleAndNearby;
+  context->SetMemoryAllocation(allocation);
+  EXPECT_EQ(ManagedMemoryPolicy::CUTOFF_ALLOW_EVERYTHING,
+            client.memory_policy().priority_cutoff_when_visible);
+  EXPECT_EQ(ManagedMemoryPolicy::CUTOFF_ALLOW_NICE_TO_HAVE,
+            client.memory_policy().priority_cutoff_when_not_visible);
 }
 
 }  // namespace

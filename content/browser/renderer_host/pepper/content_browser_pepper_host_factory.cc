@@ -10,11 +10,12 @@
 #include "content/browser/renderer_host/pepper/pepper_file_system_browser_host.h"
 #include "content/browser/renderer_host/pepper/pepper_flash_file_message_filter.h"
 #include "content/browser/renderer_host/pepper/pepper_gamepad_host.h"
-#include "content/browser/renderer_host/pepper/pepper_host_resolver_private_message_filter.h"
+#include "content/browser/renderer_host/pepper/pepper_host_resolver_message_filter.h"
+#include "content/browser/renderer_host/pepper/pepper_network_proxy_host.h"
 #include "content/browser/renderer_host/pepper/pepper_print_settings_manager.h"
 #include "content/browser/renderer_host/pepper/pepper_printing_host.h"
 #include "content/browser/renderer_host/pepper/pepper_truetype_font_list_host.h"
-#include "content/browser/renderer_host/pepper/pepper_udp_socket_private_message_filter.h"
+#include "content/browser/renderer_host/pepper/pepper_udp_socket_message_filter.h"
 #include "ppapi/host/message_filter_host.h"
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/host/resource_host.h"
@@ -59,9 +60,21 @@ scoped_ptr<ResourceHost> ContentBrowserPepperHostFactory::CreateResourceHost(
       return scoped_ptr<ResourceHost>(new PepperFileSystemBrowserHost(
           host_, instance, params.pp_resource(), file_system_type));
     }
-    case PpapiHostMsg_Gamepad_Create::ID:
+    case PpapiHostMsg_Gamepad_Create::ID: {
       return scoped_ptr<ResourceHost>(new PepperGamepadHost(
           host_, instance, params.pp_resource()));
+    }
+    case PpapiHostMsg_NetworkProxy_Create::ID: {
+      return scoped_ptr<ResourceHost>(new PepperNetworkProxyHost(
+          host_, instance, params.pp_resource()));
+    }
+    case PpapiHostMsg_HostResolver_Create::ID: {
+      scoped_refptr<ResourceMessageFilter> host_resolver(
+          new PepperHostResolverMessageFilter(host_, instance, false));
+      return scoped_ptr<ResourceHost>(new MessageFilterHost(
+          host_->GetPpapiHost(), instance, params.pp_resource(),
+          host_resolver));
+    }
     case PpapiHostMsg_FileRef_CreateInternal::ID: {
       PP_Resource file_system;
       std::string internal_path;
@@ -73,17 +86,23 @@ scoped_ptr<ResourceHost> ContentBrowserPepperHostFactory::CreateResourceHost(
       return scoped_ptr<ResourceHost>(new PepperFileRefHost(
           host_, instance, params.pp_resource(), file_system, internal_path));
     }
+    case PpapiHostMsg_UDPSocket_Create::ID: {
+      scoped_refptr<ResourceMessageFilter> udp_socket(
+          new PepperUDPSocketMessageFilter(host_, instance, false));
+      return scoped_ptr<ResourceHost>(new MessageFilterHost(
+          host_->GetPpapiHost(), instance, params.pp_resource(), udp_socket));
+    }
   }
 
   // Dev interfaces.
   if (GetPermissions().HasPermission(ppapi::PERMISSION_DEV)) {
     switch (message.type()) {
       case PpapiHostMsg_Printing_Create::ID: {
-         scoped_ptr<PepperPrintSettingsManager> manager(
-             new PepperPrintSettingsManagerImpl());
-         return scoped_ptr<ResourceHost>(new PepperPrintingHost(
-             host_->GetPpapiHost(), instance,
-             params.pp_resource(), manager.Pass()));
+        scoped_ptr<PepperPrintSettingsManager> manager(
+            new PepperPrintSettingsManagerImpl());
+        return scoped_ptr<ResourceHost>(new PepperPrintingHost(
+            host_->GetPpapiHost(), instance,
+            params.pp_resource(), manager.Pass()));
       }
       case PpapiHostMsg_TrueTypeFontSingleton_Create::ID: {
         return scoped_ptr<ResourceHost>(new PepperTrueTypeFontListHost(
@@ -107,15 +126,15 @@ scoped_ptr<ResourceHost> ContentBrowserPepperHostFactory::CreateResourceHost(
   // thread). Currently these interfaces are available only for
   // whitelisted apps which may not have access to the other private
   // interfaces.
-  if (message.type() == PpapiHostMsg_HostResolverPrivate_Create::ID) {
+  if (message.type() == PpapiHostMsg_HostResolver_CreatePrivate::ID) {
     scoped_refptr<ResourceMessageFilter> host_resolver(
-        new PepperHostResolverPrivateMessageFilter(host_, instance));
+        new PepperHostResolverMessageFilter(host_, instance, true));
     return scoped_ptr<ResourceHost>(new MessageFilterHost(
         host_->GetPpapiHost(), instance, params.pp_resource(), host_resolver));
   }
-  if (message.type() == PpapiHostMsg_UDPSocketPrivate_Create::ID) {
+  if (message.type() == PpapiHostMsg_UDPSocket_CreatePrivate::ID) {
     scoped_refptr<ResourceMessageFilter> udp_socket(
-        new PepperUDPSocketPrivateMessageFilter(host_, instance));
+        new PepperUDPSocketMessageFilter(host_, instance, true));
     return scoped_ptr<ResourceHost>(new MessageFilterHost(
         host_->GetPpapiHost(), instance, params.pp_resource(), udp_socket));
   }

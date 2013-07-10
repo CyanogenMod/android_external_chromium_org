@@ -142,7 +142,7 @@ void SyncFileSystemRequestFileSystemFunction::DidInitializeFileSystemContext(
 
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      Bind(&fileapi::FileSystemContext::OpenSyncableFileSystem,
+      Bind(&fileapi::FileSystemContext::OpenFileSystem,
            GetFileSystemContext(),
            source_url().GetOrigin(),
            fileapi::kFileSystemTypeSyncable,
@@ -171,7 +171,7 @@ void SyncFileSystemRequestFileSystemFunction::DidOpenFileSystem(
     return;
   }
 
-  DictionaryValue* dict = new DictionaryValue();
+  base::DictionaryValue* dict = new base::DictionaryValue();
   SetResult(dict);
   dict->SetString("name", file_system_name);
   dict->SetString("root", root_url.spec());
@@ -220,7 +220,7 @@ SyncFileSystemGetFileStatusesFunction::~SyncFileSystemGetFileStatusesFunction(
 
 bool SyncFileSystemGetFileStatusesFunction::RunImpl() {
   // All FileEntries converted into array of URL Strings in JS custom bindings.
-  ListValue* file_entry_urls = NULL;
+  base::ListValue* file_entry_urls = NULL;
   EXTENSION_FUNCTION_VALIDATE(args_->GetList(0, &file_entry_urls));
 
   scoped_refptr<fileapi::FileSystemContext> file_system_context =
@@ -274,7 +274,7 @@ void SyncFileSystemGetFileStatusesFunction::DidGetFileStatus(
   base::ListValue* status_array = new base::ListValue();
   for (URLToStatusMap::iterator it = file_sync_statuses_.begin();
        it != file_sync_statuses_.end(); ++it) {
-    DictionaryValue* dict = new DictionaryValue();
+    base::DictionaryValue* dict = new base::DictionaryValue();
     status_array->Append(dict);
 
     fileapi::FileSystemURL url = it->first;
@@ -357,7 +357,7 @@ bool SyncFileSystemSetConflictResolutionPolicyFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &policy_string));
   ConflictResolutionPolicy policy = ExtensionEnumToConflictResolutionPolicy(
       api::sync_file_system::ParseConflictResolutionPolicy(policy_string));
-  if (policy == sync_file_system::CONFLICT_RESOLUTION_UNKNOWN) {
+  if (policy == sync_file_system::CONFLICT_RESOLUTION_POLICY_UNKNOWN) {
     SetError(base::StringPrintf(kUnsupportedConflictResolutionPolicy,
                                 policy_string.c_str()));
     return false;

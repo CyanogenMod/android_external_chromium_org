@@ -21,11 +21,11 @@
 #include "cc/layers/layer_lists.h"
 #include "cc/layers/layer_position_constraint.h"
 #include "cc/layers/render_surface_impl.h"
+#include "cc/output/filter_operations.h"
 #include "cc/quads/render_pass.h"
 #include "cc/quads/shared_quad_state.h"
 #include "cc/resources/resource_provider.h"
 #include "skia/ext/refptr.h"
-#include "third_party/WebKit/public/platform/WebFilterOperations.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "third_party/skia/include/core/SkPicture.h"
@@ -84,7 +84,8 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   void ClearChildList();
 
   void PassCopyRequests(ScopedPtrVector<CopyOutputRequest>* requests);
-  void TakeCopyRequests(ScopedPtrVector<CopyOutputRequest>* request);
+  void TakeCopyRequestsAndTransformToTarget(
+      ScopedPtrVector<CopyOutputRequest>* request);
   bool HasCopyRequest() const { return !copy_requests_.empty(); }
 
   void SetMaskLayer(scoped_ptr<LayerImpl> mask_layer);
@@ -133,6 +134,9 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   void SetDrawsContent(bool draws_content);
   bool DrawsContent() const { return draws_content_; }
 
+  void SetHideLayerAndSubtree(bool hide);
+  bool hide_layer_and_subtree() const { return hide_layer_and_subtree_; }
+
   bool force_render_surface() const { return force_render_surface_; }
   void SetForceRenderSurface(bool force) { force_render_surface_ = force; }
 
@@ -148,11 +152,11 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   // non-opaque color.  Tries to return background_color(), if possible.
   SkColor SafeOpaqueBackgroundColor() const;
 
-  void SetFilters(const WebKit::WebFilterOperations& filters);
-  const WebKit::WebFilterOperations& filters() const { return filters_; }
+  void SetFilters(const FilterOperations& filters);
+  const FilterOperations& filters() const { return filters_; }
 
-  void SetBackgroundFilters(const WebKit::WebFilterOperations& filters);
-  const WebKit::WebFilterOperations& background_filters() const {
+  void SetBackgroundFilters(const FilterOperations& filters);
+  const FilterOperations& background_filters() const {
     return background_filters_;
   }
 
@@ -375,7 +379,6 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   }
   const gfx::RectF& update_rect() const { return update_rect_; }
 
-  std::string LayerTreeAsText() const;
   virtual base::DictionaryValue* LayerTreeAsJson() const;
 
   void SetStackingOrderChanged(bool stacking_order_changed);
@@ -449,9 +452,6 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
                              SkColor color,
                              float width) const;
 
-  virtual void DumpLayerProperties(std::string* str, int indent) const;
-  static std::string IndentString(int indent);
-
   virtual void AsValueInto(base::DictionaryValue* dict) const;
 
   void NoteLayerSurfacePropertyChanged();
@@ -465,8 +465,6 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   void UpdateScrollbarPositions();
 
   virtual const char* LayerTypeAsString() const;
-
-  void DumpLayer(std::string* str, int indent) const;
 
   // Properties internal to LayerImpl
   LayerImpl* parent_;
@@ -518,6 +516,7 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   gfx::Transform transform_;
 
   bool draws_content_;
+  bool hide_layer_and_subtree_;
   bool force_render_surface_;
 
   // Set for the layer that other layers are fixed to.
@@ -541,8 +540,8 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   std::string debug_name_;
   CompositingReasons compositing_reasons_;
 
-  WebKit::WebFilterOperations filters_;
-  WebKit::WebFilterOperations background_filters_;
+  FilterOperations filters_;
+  FilterOperations background_filters_;
   skia::RefPtr<SkImageFilter> filter_;
 
  protected:

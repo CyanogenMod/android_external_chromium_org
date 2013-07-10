@@ -10,11 +10,9 @@
 #include "base/command_line.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
-#import "base/memory/scoped_nsobject.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"  // IDC_*
-#include "chrome/browser/bookmarks/bookmark_editor.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/devtools/devtools_window.h"
@@ -25,6 +23,7 @@
 #include "chrome/browser/signin/signin_ui_util.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
+#include "chrome/browser/ui/bookmarks/bookmark_editor.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_command_controller.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -49,6 +48,7 @@
 #import "chrome/browser/ui/cocoa/fullscreen_window.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_container_controller.h"
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_editor.h"
+#import "chrome/browser/ui/cocoa/nsview_additions.h"
 #import "chrome/browser/ui/cocoa/presentation_mode_controller.h"
 #import "chrome/browser/ui/cocoa/status_bubble_mac.h"
 #import "chrome/browser/ui/cocoa/tab_contents/overlayable_contents_controller.h"
@@ -268,11 +268,10 @@ enum {
     windowShim_.reset(new BrowserWindowCocoa(browser, self));
 
     // Eagerly enable core animation if requested.
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kUseCoreAnimation) &&
-        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-            switches::kUseCoreAnimation) != "lazy") {
+    if ([self coreAnimationStatus] ==
+            browser_window_controller::kCoreAnimationEnabledAlways) {
       [[[self window] contentView] setWantsLayer:YES];
+      [[self tabStripView] setWantsLayer:YES];
     }
 
     // Set different minimum sizes on tabbed windows vs non-tabbed, e.g. popups.
@@ -345,8 +344,7 @@ enum {
     // Create the overlayable contents controller.  This provides the switch
     // view that TabStripController needs.
     overlayableContentsController_.reset(
-        [[OverlayableContentsController alloc] initWithBrowser:browser
-                                              windowController:self]);
+        [[OverlayableContentsController alloc] initWithBrowser:browser]);
     [[overlayableContentsController_ view]
         setFrame:[[devToolsController_ view] bounds]];
     [[devToolsController_ view]
@@ -598,15 +596,20 @@ enum {
   // have to save the window position before we call orderOut:.
   [self saveWindowPositionIfNeeded];
 
+  bool fast_tab_closing_enabled =
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableFastUnload);
+
   if (!browser_->tab_strip_model()->empty()) {
-    // Tab strip isn't empty.  Hide the window (so it appears to have closed
+    // Tab strip isn't empty.  Hide the frame (so it appears to have closed
     // immediately) and close all the tabs, allowing the renderers to shut
     // down. When the tab strip is empty we'll be called back again.
     [[self window] orderOut:self];
     browser_->OnWindowClosing();
-    browser_->tab_strip_model()->CloseAllTabs();
+    if (fast_tab_closing_enabled)
+      browser_->tab_strip_model()->CloseAllTabs();
     return NO;
-  } else if (!browser_->HasCompletedUnloadProcessing()) {
+  } else if (fast_tab_closing_enabled &&
+        !browser_->HasCompletedUnloadProcessing()) {
     // The browser needs to finish running unload handlers.
     // Hide the window (so it appears to have closed immediately), and
     // the browser will call us back again when it is ready to close.
@@ -1636,9 +1639,8 @@ enum {
 }
 
 - (void)userChangedTheme {
-  // TODO(dmaclach): Instead of redrawing the whole window, views that care
-  // about the active window state should be registering for notifications.
-  [[self window] setViewsNeedDisplay:YES];
+  NSView* contentView = [[self window] contentView];
+  [[contentView superview] cr_recursivelySetNeedsDisplay:YES];
 }
 
 - (ui::ThemeProvider*)themeProvider {
@@ -1955,17 +1957,13 @@ willAnimateFromState:(BookmarkBar::State)oldState
   NSView* toolbarView = [toolbarController_ view];
   NSRect anchorRect = [toolbarView frame];
 
-  // Adjust to account for height and possible bookmark bar.
+  // Adjust to account for height and possible bookmark bar. Compress by 1
+  // to account for the separator.
   anchorRect.origin.y =
-      NSMaxY(anchorRect) - [toolbarController_ desiredHeightForCompression:0];
+      NSMaxY(anchorRect) - [toolbarController_ desiredHeightForCompression:1];
 
   // Shift to window base coordinates.
   return [[toolbarView superview] convertRect:anchorRect toView:nil];
-}
-
-- (void)commitInstant {
-  if (BrowserInstantController* controller = browser_->instant_controller())
-    controller->instant()->CommitIfPossible(INSTANT_COMMIT_FOCUS_LOST);
 }
 
 - (NSRect)instantFrame {
@@ -1993,13 +1991,6 @@ willAnimateFromState:(BookmarkBar::State)oldState
          returnCode:(NSInteger)code
             context:(void*)context {
   [sheet orderOut:self];
-}
-
-- (void)updateBookmarkBarStateForInstantOverlay {
-  [toolbarController_ setDividerOpacity:[self toolbarDividerOpacity]];
-  [self updateContentOffsets];
-  [self updateSubviewZOrder:[self inPresentationMode]];
-  [self updateInfoBarTipVisibility];
 }
 
 - (void)onFindBarVisibilityChanged {

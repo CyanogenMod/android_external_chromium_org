@@ -10,12 +10,12 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "googleurl/src/gurl.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
 #include "third_party/leveldatabase/src/include/leveldb/iterator.h"
 #include "third_party/leveldatabase/src/include/leveldb/options.h"
 #include "third_party/leveldatabase/src/include/leveldb/status.h"
 #include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
+#include "url/gurl.h"
 
 
 namespace {
@@ -296,7 +296,7 @@ bool SessionStorageDatabase::LazyOpen(bool create_if_needed) {
     DCHECK(db == NULL);
 
     // Clear the directory and try again.
-    file_util::Delete(file_path_, true);
+    base::Delete(file_path_, true);
     s = TryToOpen(&db);
     if (!s.ok()) {
       LOG(WARNING) << "Failed to open leveldb in " << file_path_.value()

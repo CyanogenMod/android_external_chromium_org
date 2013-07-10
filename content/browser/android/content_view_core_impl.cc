@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -32,6 +32,7 @@
 #include "content/browser/web_contents/web_contents_view_android.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
+#include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/notification_details.h"
@@ -173,11 +174,9 @@ ContentViewCoreImpl::ContentViewCoreImpl(JNIEnv* env, jobject obj,
       "A ContentViewCoreImpl should be created with a valid WebContents.";
 
   // When a tab is restored (from a saved state), it does not have a renderer
-  // process.  We treat it like the tab is crashed. If the content is loaded
-  // when the tab is shown, tab_crashed_ will be reset.  Since
-  // RenderWidgetHostView is associated with the lifetime of the renderer
-  // process, we use it to test whether there is a renderer process.
-  tab_crashed_ = !(web_contents->GetRenderWidgetHostView());
+  // process. We treat it like the tab is crashed. If the content is loaded
+  // when the tab is shown, tab_crashed_ will be reset.
+  UpdateTabCrashedFlag();
 
   // TODO(leandrogracia): make use of the hardware_accelerated argument.
 
@@ -345,6 +344,9 @@ void ContentViewCoreImpl::OnShow(JNIEnv* env, jobject obj) {
 
 void ContentViewCoreImpl::Show() {
   GetWebContents()->WasShown();
+  // Displaying WebContents may trigger a lazy reload, spawning a new renderer
+  // for the tab.
+  UpdateTabCrashedFlag();
 }
 
 void ContentViewCoreImpl::Hide() {
@@ -358,7 +360,7 @@ void ContentViewCoreImpl::OnTabCrashed() {
     return;
   Java_ContentViewCore_resetVSyncNotification(env, obj.obj());
 
-  // if tab_crashed_ is already true, just return. e.g. if two tabs share the
+  // If |tab_crashed_| is already true, just return. e.g. if two tabs share the
   // render process, this will be called for each tab when the render process
   // crashed. If user reload one tab, a new render process is created. It can be
   // shared by the other tab. But if user closes the tab before reload the other
@@ -707,7 +709,7 @@ void ContentViewCoreImpl::RemoveLayer(scoped_refptr<cc::Layer> layer) {
 void ContentViewCoreImpl::LoadUrl(
     NavigationController::LoadURLParams& params) {
   GetWebContents()->GetController().LoadURLWithParams(params);
-  tab_crashed_ = false;
+  UpdateTabCrashedFlag();
 }
 
 void ContentViewCoreImpl::SetNeedsBeginFrame(bool enabled) {
@@ -957,6 +959,12 @@ void ContentViewCoreImpl::SendGestureEvent(
     rwhv->SendGestureEvent(event);
 }
 
+void ContentViewCoreImpl::UpdateTabCrashedFlag() {
+  // Since RenderWidgetHostView is associated with the lifetime of the renderer
+  // process, we use it to test whether there is a renderer process.
+  tab_crashed_ = !(web_contents_->GetRenderWidgetHostView());
+}
+
 void ContentViewCoreImpl::ScrollBegin(JNIEnv* env, jobject obj, jlong time_ms,
                                       jfloat x, jfloat y) {
   WebGestureEvent event = MakeGestureEvent(
@@ -979,6 +987,12 @@ void ContentViewCoreImpl::ScrollBy(JNIEnv* env, jobject obj, jlong time_ms,
   event.data.scrollUpdate.deltaY = -dy / GetDpiScale();
 
   SendGestureEvent(event);
+
+  // TODO(brianderson): Clean up last_input_event_for_vsync. crbug.com/247043
+  if (last_input_event_for_vsync) {
+    SendBeginFrame(base::TimeTicks() +
+                   base::TimeDelta::FromMilliseconds(time_ms));
+  }
 }
 
 void ContentViewCoreImpl::FlingStart(JNIEnv* env, jobject obj, jlong time_ms,
@@ -1108,6 +1122,12 @@ void ContentViewCoreImpl::PinchBy(JNIEnv* env, jobject obj, jlong time_ms,
   event.data.pinchUpdate.scale = delta;
 
   SendGestureEvent(event);
+
+  // TODO(brianderson): Clean up last_input_event_for_vsync. crbug.com/247043
+  if (last_input_event_for_vsync) {
+    SendBeginFrame(base::TimeTicks() +
+                   base::TimeDelta::FromMilliseconds(time_ms));
+  }
 }
 
 void ContentViewCoreImpl::SelectBetweenCoordinates(JNIEnv* env, jobject obj,
@@ -1143,22 +1163,24 @@ jboolean ContentViewCoreImpl::CanGoToOffset(JNIEnv* env, jobject obj,
 
 void ContentViewCoreImpl::GoBack(JNIEnv* env, jobject obj) {
   web_contents_->GetController().GoBack();
-  tab_crashed_ = false;
+  UpdateTabCrashedFlag();
 }
 
 void ContentViewCoreImpl::GoForward(JNIEnv* env, jobject obj) {
   web_contents_->GetController().GoForward();
-  tab_crashed_ = false;
+  UpdateTabCrashedFlag();
 }
 
 void ContentViewCoreImpl::GoToOffset(JNIEnv* env, jobject obj, jint offset) {
   web_contents_->GetController().GoToOffset(offset);
+  UpdateTabCrashedFlag();
 }
 
 void ContentViewCoreImpl::GoToNavigationIndex(JNIEnv* env,
                                               jobject obj,
                                               jint index) {
   web_contents_->GetController().GoToIndex(index);
+  UpdateTabCrashedFlag();
 }
 
 void ContentViewCoreImpl::StopLoading(JNIEnv* env, jobject obj) {
@@ -1172,7 +1194,7 @@ void ContentViewCoreImpl::Reload(JNIEnv* env, jobject obj) {
     web_contents_->GetController().LoadIfNecessary();
   else
     web_contents_->GetController().Reload(true);
-  tab_crashed_ = false;
+  UpdateTabCrashedFlag();
 }
 
 void ContentViewCoreImpl::CancelPendingReload(JNIEnv* env, jobject obj) {
@@ -1241,12 +1263,16 @@ void ContentViewCoreImpl::UpdateVSyncParameters(JNIEnv* env, jobject /* obj */,
 
 void ContentViewCoreImpl::OnVSync(JNIEnv* env, jobject /* obj */,
                                   jlong frame_time_micros) {
+  base::TimeTicks frame_time =
+      base::TimeTicks::FromInternalValue(frame_time_micros);
+  SendBeginFrame(frame_time);
+}
+
+void ContentViewCoreImpl::SendBeginFrame(base::TimeTicks frame_time) {
   RenderWidgetHostViewAndroid* view = GetRenderWidgetHostViewAndroid();
   if (!view)
     return;
 
-  base::TimeTicks frame_time =
-      base::TimeTicks::FromInternalValue(frame_time_micros);
   base::TimeTicks display_time = frame_time + vsync_interval_;
   base::TimeTicks deadline = display_time - expected_browser_composite_time_;
 
@@ -1560,6 +1586,24 @@ void ContentViewCoreImpl::SetUseDesktopUserAgent(
     NavigationControllerImpl& controller =
         static_cast<NavigationControllerImpl&>(web_contents_->GetController());
     controller.ReloadOriginalRequestURL(false);
+  }
+}
+
+void ContentViewCoreImpl::SetAccessibilityEnabled(JNIEnv* env, jobject obj,
+                                                  bool enabled) {
+  RenderWidgetHostViewAndroid* host_view = GetRenderWidgetHostViewAndroid();
+  if (!host_view)
+    return;
+  RenderWidgetHostImpl* host_impl = RenderWidgetHostImpl::From(
+      host_view->GetRenderWidgetHost());
+  if (enabled) {
+    BrowserAccessibilityState::GetInstance()->EnableAccessibility();
+    if (host_impl)
+      host_impl->SetAccessibilityMode(AccessibilityModeComplete);
+  } else {
+    BrowserAccessibilityState::GetInstance()->DisableAccessibility();
+    if (host_impl)
+      host_impl->SetAccessibilityMode(AccessibilityModeOff);
   }
 }
 

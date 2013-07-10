@@ -5,7 +5,8 @@
 #include "ui/app_list/cocoa/scroll_view_with_no_scrollbars.h"
 
 #include "base/mac/mac_util.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_cftyperef.h"
+#include "base/mac/scoped_nsobject.h"
 
 #if !defined(MAC_OS_X_VERSION_10_7) || \
     MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
@@ -52,7 +53,7 @@ typedef NSUInteger NSEventPhase;
     [self setHasHorizontalScroller:base::mac::IsOSLionOrLater()];
     NSRect horizontalScrollerRect = [self bounds];
     horizontalScrollerRect.size.height = 0;
-    scoped_nsobject<InvisibleScroller> horizontalScroller(
+    base::scoped_nsobject<InvisibleScroller> horizontalScroller(
         [[InvisibleScroller alloc] initWithFrame:horizontalScrollerRect]);
     [self setHorizontalScroller:horizontalScroller];
   }
@@ -66,6 +67,24 @@ typedef NSUInteger NSEventPhase;
 }
 
 - (void)scrollWheel:(NSEvent*)event {
+  if ([event subtype] == NSMouseEventSubtype) {
+    // Since the scroll view has no vertical scroller, regular up and down mouse
+    // wheel events would be ignored. This maps mouse wheel events to a
+    // horizontal scroll event of one line, to turn pages.
+    BOOL downOrRight;
+    if ([event deltaX] != 0)
+      downOrRight = [event deltaX] > 0;
+    else if ([event deltaY] != 0)
+      downOrRight = [event deltaY] > 0;
+    else
+      return;
+
+    base::ScopedCFTypeRef<CGEventRef> cgEvent(CGEventCreateScrollWheelEvent(
+        NULL, kCGScrollEventUnitLine, 2, 0, downOrRight ? 1 : -1));
+    [super scrollWheel:[NSEvent eventWithCGEvent:cgEvent]];
+    return;
+  }
+
   [super scrollWheel:event];
   if (![event respondsToSelector:@selector(momentumPhase)])
     return;

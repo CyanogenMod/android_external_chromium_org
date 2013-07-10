@@ -11,14 +11,14 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/field_trial.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/metrics/proto/study.pb.h"
 #include "chrome/browser/metrics/proto/trials_seed.pb.h"
 #include "chrome/browser/metrics/variations/variations_request_scheduler.h"
 #include "chrome/browser/web_resource/resource_request_allowed_notifier.h"
 #include "chrome/common/chrome_version_info.h"
-#include "googleurl/src/gurl.h"
 #include "net/url_request/url_fetcher_delegate.h"
+#include "url/gurl.h"
 
 #if defined(OS_WIN)
 #include "chrome/browser/metrics/variations/variations_registry_syncer_win.h"

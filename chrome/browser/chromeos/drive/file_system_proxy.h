@@ -10,7 +10,7 @@
 
 namespace fileapi {
 class FileSystemURL;
-}
+}  // namespace fileapi
 
 namespace drive {
 
@@ -18,6 +18,10 @@ class FileSystemInterface;
 class ResourceEntry;
 
 typedef std::vector<ResourceEntry> ResourceEntryVector;
+
+namespace internal {
+class FileApiWorker;
+}  // namespace internal
 
 // Implementation of File API's remote file system proxy for Drive-backed
 // file system.
@@ -113,38 +117,6 @@ class FileSystemProxy : public fileapi::RemoteFileSystemProxyInterface {
   void CallFileSystemMethodOnUIThreadInternal(
       const base::Closure& method_call);
 
-  // Helper callback for relaying reply for status callbacks to the
-  // calling thread.
-  void OnStatusCallback(
-      const fileapi::FileSystemOperation::StatusCallback& callback,
-      FileError error);
-
-  // Helper callback for relaying reply for metadata retrieval request to the
-  // calling thread.
-  void OnGetMetadata(
-      const fileapi::FileSystemOperation::GetMetadataCallback&
-          callback,
-      FileError error,
-      scoped_ptr<ResourceEntry> entry);
-
-  // Helper callback for relaying reply for GetResourceEntryByPath() to the
-  // calling thread.
-  void OnGetResourceEntryByPath(
-      const base::FilePath& entry_path,
-      const fileapi::FileSystemOperation::SnapshotFileCallback&
-          callback,
-      FileError error,
-      scoped_ptr<ResourceEntry> entry);
-
-  // Helper callback for relaying reply for ReadDirectory() to the calling
-  // thread.
-  void OnReadDirectory(
-      const fileapi::FileSystemOperation::ReadDirectoryCallback&
-          callback,
-      FileError error,
-      bool hide_hosted_documents,
-      scoped_ptr<ResourceEntryVector> resource_entries);
-
   // Helper callback for relaying reply for CreateWritableSnapshotFile() to
   // the calling thread.
   void OnCreateWritableSnapshotFile(
@@ -160,53 +132,13 @@ class FileSystemProxy : public fileapi::RemoteFileSystemProxyInterface {
       const base::FilePath& virtual_path,
       const base::FilePath& local_path);
 
-  // Invoked during Truncate() operation. This is called when a local modifiable
-  // cache is ready for truncation.
-  void OnFileOpenedForTruncate(
-      const base::FilePath& virtual_path,
-      int64 length,
-      const fileapi::FileSystemOperation::StatusCallback& callback,
-      FileError open_result,
-      const base::FilePath& local_cache_path);
-
-  // Invoked during Truncate() operation. This is called when the truncation of
-  // a local cache file is finished on FILE thread.
-  void DidTruncate(
-      const base::FilePath& virtual_path,
-      const fileapi::FileSystemOperation::StatusCallback& callback,
-      base::PlatformFileError truncate_result);
-
-  // Invoked during OpenFile() operation when truncate or write flags are set.
-  // This is called when a local modifiable cached file is ready for such
-  // operation.
-  void OnOpenFileForWriting(
-      int file_flags,
-      base::ProcessHandle peer_handle,
-      const OpenFileCallback& callback,
-      FileError file_error,
-      const base::FilePath& local_cache_path);
-
-  // Invoked during OpenFile() operation when file create flags are set.
-  void OnCreateFileForOpen(
-      const base::FilePath& file_path,
-      int file_flags,
-      base::ProcessHandle peer_handle,
-      const OpenFileCallback& callback,
-      FileError file_error);
-
-  // Invoked during OpenFile() operation when base::PLATFORM_FILE_OPEN_TRUNCATED
-  // flag is set. This is called when the truncation of a local cache file is
-  // finished on FILE thread.
-  void OnOpenAndTruncate(
-      base::ProcessHandle peer_handle,
-      const OpenFileCallback& callback,
-      base::PlatformFile* platform_file,
-      base::PlatformFileError* truncate_result);
-
   // Returns |file_system_| on UI thread.
   FileSystemInterface* GetFileSystemOnUIThread();
 
+  // TODO(hidehiko): Remove |file_system_| when all the core implementation
+  // is moved to FileApiWorker.
   FileSystemInterface* file_system_;
+  scoped_ptr<internal::FileApiWorker> worker_;
 };
 
 }  // namespace drive

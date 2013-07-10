@@ -32,8 +32,8 @@
 #include "ui/base/win/shell.h"
 #endif
 
-#if defined(USE_AURA) && !defined(USE_ASH) && defined(OS_LINUX)
-#include "ui/linux_ui/linux_ui.h"
+#if defined(ENABLE_MANAGED_USERS)
+#include "chrome/browser/managed_mode/managed_user_service.h"
 #endif
 
 using content::BrowserThread;
@@ -104,15 +104,20 @@ void ThemeService::Init(Profile* profile) {
 gfx::Image ThemeService::GetImageNamed(int id) const {
   DCHECK(CalledOnValidThread());
 
+  // For a managed user, use the special frame instead of the default one.
+  // TODO(akuegel): Remove this once we have the default managed user theme.
+  if (IsManagedUser()) {
+    if (id == IDR_THEME_FRAME)
+      id = IDR_MANAGED_USER_THEME_FRAME;
+    else if (id == IDR_THEME_FRAME_INACTIVE)
+      id = IDR_MANAGED_USER_THEME_FRAME_INACTIVE;
+    else if (id == IDR_THEME_TAB_BACKGROUND || id == IDR_THEME_TAB_BACKGROUND_V)
+      id = IDR_MANAGED_USER_THEME_TAB_BACKGROUND;
+  }
+
   gfx::Image image;
   if (theme_pack_.get())
     image = theme_pack_->GetImageNamed(id);
-
-#if defined(USE_AURA) && !defined(USE_ASH) && defined(OS_LINUX)
-  const ui::LinuxUI* linux_ui = ui::LinuxUI::instance();
-  if (image.IsEmpty() && linux_ui)
-    image = linux_ui->GetThemeImageNamed(id);
-#endif
 
   if (image.IsEmpty())
     image = rb_.GetNativeImageNamed(id);
@@ -132,15 +137,17 @@ gfx::ImageSkia* ThemeService::GetImageSkiaNamed(int id) const {
 SkColor ThemeService::GetColor(int id) const {
   DCHECK(CalledOnValidThread());
 
+  // TODO(akuegel): Remove this once we have the default managed user theme.
+  if (IsManagedUser()) {
+    if (id == Properties::COLOR_FRAME)
+      id = Properties::COLOR_FRAME_MANAGED_USER;
+    else if (id == Properties::COLOR_FRAME_INACTIVE)
+      id = Properties::COLOR_FRAME_MANAGED_USER_INACTIVE;
+  }
+
   SkColor color;
   if (theme_pack_.get() && theme_pack_->GetColor(id, &color))
     return color;
-
-#if defined(USE_AURA) && !defined(USE_ASH) && defined(OS_LINUX)
-  const ui::LinuxUI* linux_ui = ui::LinuxUI::instance();
-  if (linux_ui && linux_ui->GetColor(id, &color))
-    return color;
-#endif
 
   // For backward compat with older themes, some newer colors are generated from
   // older ones if they are missing.
@@ -156,12 +163,14 @@ SkColor ThemeService::GetColor(int id) const {
     case Properties::COLOR_NTP_TEXT_LIGHT:
       return IncreaseLightness(GetColor(Properties::COLOR_NTP_TEXT), 0.40);
     case Properties::COLOR_MANAGED_USER_LABEL:
-      return color_utils::GetReadableColor(
-          SK_ColorWHITE,
-          GetColor(Properties::COLOR_MANAGED_USER_LABEL_BACKGROUND));
+      // TODO(akuegel): Use GetReadableColor() once we want to support other
+      // themes as well.
+      return SkColorSetRGB(231, 245, 255);
     case Properties::COLOR_MANAGED_USER_LABEL_BACKGROUND:
-      return color_utils::BlendTowardOppositeLuminance(
-          GetColor(Properties::COLOR_FRAME), 0x80);
+      // TODO(akuegel): Replace this constant by a color calculated from the
+      // frame color once the default managed user theme is finished and we
+      // allow managed users to install other themes.
+      return SkColorSetRGB(108, 167, 210);
   }
 
   return Properties::GetDefaultColor(id);
@@ -417,6 +426,13 @@ void ThemeService::BuildFromExtension(const Extension* extension) {
 
   SavePackName(pack_path);
   theme_pack_ = pack;
+}
+
+bool ThemeService::IsManagedUser() const {
+#if defined(ENABLE_MANAGED_USERS)
+  return ManagedUserService::ProfileIsManaged(profile_);
+#endif
+  return false;
 }
 
 void ThemeService::OnInfobarDisplayed() {

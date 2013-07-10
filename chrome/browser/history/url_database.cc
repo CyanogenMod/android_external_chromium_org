@@ -12,9 +12,9 @@
 #include "base/i18n/case_conversion.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/common/url_constants.h"
-#include "googleurl/src/gurl.h"
 #include "sql/statement.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "url/gurl.h"
 
 namespace history {
 
@@ -356,6 +356,32 @@ bool URLDatabase::FindShortestURLFromBase(const std::string& base,
   DCHECK(info);
   FillURLRow(statement, info);
   return true;
+}
+
+bool URLDatabase::GetTextMatches(const string16& query,
+                                 URLRows* results) {
+  ScopedVector<QueryNode> query_nodes;
+  query_parser_.ParseQueryNodes(query, &query_nodes.get());
+
+  results->clear();
+  sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
+      "SELECT" HISTORY_URL_ROW_FIELDS "FROM urls WHERE hidden = 0"));
+
+  while (statement.Step()) {
+    std::vector<QueryWord> query_words;
+    string16 url = base::i18n::ToLower(statement.ColumnString16(1));
+    query_parser_.ExtractQueryWords(url, &query_words);
+    string16 title = base::i18n::ToLower(statement.ColumnString16(2));
+    query_parser_.ExtractQueryWords(title, &query_words);
+
+    if (query_parser_.DoesQueryMatch(query_words, query_nodes.get())) {
+      history::URLResult info;
+      FillURLRow(statement, &info);
+      if (info.url().is_valid())
+        results->push_back(info);
+    }
+  }
+  return !results->empty();
 }
 
 bool URLDatabase::InitKeywordSearchTermsTable() {

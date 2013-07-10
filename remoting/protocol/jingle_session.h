@@ -11,7 +11,7 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "crypto/rsa_private_key.h"
 #include "net/base/completion_callback.h"
 #include "remoting/jingle_glue/iq_sender.h"
@@ -70,6 +70,7 @@ class JingleSession : public Session,
                                       const TransportRoute& route) OVERRIDE;
   virtual void OnTransportReady(Transport* transport,
                                 bool ready) OVERRIDE;
+  virtual void OnTransportFailed(Transport* transport) OVERRIDE;
   virtual void OnTransportDeleted(Transport* transport) OVERRIDE;
 
  private:

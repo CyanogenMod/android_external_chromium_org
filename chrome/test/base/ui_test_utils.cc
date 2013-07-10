@@ -21,7 +21,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/test_timeouts.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
@@ -158,11 +158,10 @@ Browser* WaitForBrowserNotInSet(std::set<Browser*> excluded_browsers) {
 }
 
 Browser* OpenURLOffTheRecord(Profile* profile, const GURL& url) {
-  chrome::OpenURLOffTheRecord(profile, url, chrome::HOST_DESKTOP_TYPE_NATIVE);
+  chrome::HostDesktopType active_desktop = chrome::GetActiveDesktop();
+  chrome::OpenURLOffTheRecord(profile, url, active_desktop);
   Browser* browser = chrome::FindTabbedBrowser(
-      profile->GetOffTheRecordProfile(),
-      false,
-      chrome::HOST_DESKTOP_TYPE_NATIVE);
+      profile->GetOffTheRecordProfile(), false, active_desktop);
   WaitForNavigations(
       &browser->tab_strip_model()->GetActiveWebContents()->GetController(),
       1);

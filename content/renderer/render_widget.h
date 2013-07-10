@@ -13,8 +13,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "cc/debug/rendering_stats.h"
 #include "content/common/browser_rendering_stats.h"
 #include "content/common/content_export.h"
@@ -222,6 +222,8 @@ class CONTENT_EXPORT RenderWidget
   virtual bool AllowPartialSwap() const;
   bool UsingSynchronousRendererCompositor() const;
 
+  bool is_swapped_out() { return is_swapped_out_; }
+
  protected:
   // Friend RefCounted so that the dtor can be non-public. Using this class
   // without ref-counting is an error.
@@ -421,9 +423,7 @@ class CONTENT_EXPORT RenderWidget
   // Checks if the composition range or composition character bounds have been
   // changed. If they are changed, the new value will be sent to the browser
   // process.
-  virtual void UpdateCompositionInfo(
-      const ui::Range& range,
-      const std::vector<gfx::Rect>& character_bounds);
+  virtual void UpdateCompositionInfo(bool should_update_range);
 
   // Override point to obtain that the current input method state and caret
   // position.
@@ -438,6 +438,10 @@ class CONTENT_EXPORT RenderWidget
   // character is zero width rectangle.
   virtual void GetCompositionCharacterBounds(
       std::vector<gfx::Rect>* character_bounds);
+
+  // Returns the range of the text that is being composed or the selection if
+  // the composition does not exist.
+  virtual void GetCompositionRange(ui::Range* range);
 
   // Returns true if the composition range or composition character bounds
   // should be sent to the browser process.

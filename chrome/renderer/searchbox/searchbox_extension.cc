@@ -572,6 +572,10 @@ class SearchBoxExtensionWrapper : public v8::Extension {
   // Gets the font size of the text in the omnibox.
   static void GetFontSize(const v8::FunctionCallbackInfo<v8::Value>& args);
 
+  // Gets whether or not the app launcher is enabled.
+  static void GetAppLauncherEnabled(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
+
   // Navigates the window to a URL represented by either a URL string or a
   // restricted ID. The two variants handle restricted IDs in their
   // respective namespaces.
@@ -600,6 +604,10 @@ class SearchBoxExtensionWrapper : public v8::Extension {
   // Like |SetQuery| but uses a restricted autocomplete result ID to identify
   // the text.
   static void SetQueryFromAutocompleteResult(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  // Indicates whether the page supports voice search.
+  static void SetVoiceSearchSupported(
       const v8::FunctionCallbackInfo<v8::Value>& args);
 
   // Requests the overlay be shown with the specified contents and height.
@@ -697,6 +705,8 @@ v8::Handle<v8::FunctionTemplate> SearchBoxExtensionWrapper::GetNativeFunction(
     return v8::FunctionTemplate::New(GetFont);
   if (name->Equals(v8::String::New("GetFontSize")))
     return v8::FunctionTemplate::New(GetFontSize);
+  if (name->Equals(v8::String::New("GetAppLauncherEnabled")))
+    return v8::FunctionTemplate::New(GetAppLauncherEnabled);
   if (name->Equals(v8::String::New("NavigateSearchBox")))
     return v8::FunctionTemplate::New(NavigateSearchBox);
   if (name->Equals(v8::String::New("NavigateNewTabPage")))
@@ -713,6 +723,8 @@ v8::Handle<v8::FunctionTemplate> SearchBoxExtensionWrapper::GetNativeFunction(
     return v8::FunctionTemplate::New(SetQuery);
   if (name->Equals(v8::String::New("SetQueryFromAutocompleteResult")))
     return v8::FunctionTemplate::New(SetQueryFromAutocompleteResult);
+  if (name->Equals(v8::String::New("SetVoiceSearchSupported")))
+    return v8::FunctionTemplate::New(SetVoiceSearchSupported);
   if (name->Equals(v8::String::New("ShowOverlay")))
     return v8::FunctionTemplate::New(ShowOverlay);
   if (name->Equals(v8::String::New("FocusOmnibox")))
@@ -1025,6 +1037,16 @@ void SearchBoxExtensionWrapper::GetFontSize(
 }
 
 // static
+void SearchBoxExtensionWrapper::GetAppLauncherEnabled(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  content::RenderView* render_view = GetRenderView();
+  if (!render_view) return;
+
+  args.GetReturnValue().Set(
+      SearchBox::Get(render_view)->app_launcher_enabled());
+}
+
+// static
 void SearchBoxExtensionWrapper::NavigateSearchBox(
     const v8::FunctionCallbackInfo<v8::Value>& args) {
   content::RenderView* render_view = GetRenderView();
@@ -1261,6 +1283,16 @@ void SearchBoxExtensionWrapper::SetQueryFromAutocompleteResult(
 
   search_box->SetSuggestions(suggestions);
   search_box->MarkQueryAsRestricted();
+}
+
+// static
+void SearchBoxExtensionWrapper::SetVoiceSearchSupported(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  content::RenderView* render_view = GetRenderView();
+  if (!render_view || args.Length() < 1) return;
+
+  DVLOG(1) << render_view << " SetVoiceSearchSupported";
+  SearchBox::Get(render_view)->SetVoiceSearchSupported(args[0]->BooleanValue());
 }
 
 // static

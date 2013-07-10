@@ -28,6 +28,7 @@
 #include "ui/gfx/gdi_util.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/sys_color_change_listener.h"
 #include "ui/native_theme/common_theme.h"
 
 // This was removed from Winvers.h but is still used.
@@ -54,8 +55,6 @@ const SkColor kEnabledMenuItemForegroundColor = SkColorSetRGB(6, 45, 117);
 const SkColor kDisabledMenuItemForegroundColor = SkColorSetRGB(161, 161, 146);
 const SkColor kFocusedMenuItemBackgroundColor = SkColorSetRGB(246, 249, 253);
 const SkColor kMenuSeparatorColor = SkColorSetARGB(50, 0, 0, 0);
-// Textfield:
-const SkColor kTextfieldSelectionBackgroundUnfocused = SK_ColorLTGRAY;
 // Table:
 const SkColor kTreeSelectionBackgroundUnfocused = SkColorSetRGB(240, 240, 240);
 
@@ -499,6 +498,8 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
 
     // Dialogs
     case kColorId_DialogBackground:
+      if (gfx::IsInvertedColorScheme())
+        return color_utils::InvertColor(kDialogBackgroundColor);
       return kDialogBackgroundColor;
 
     // FocusableBorder
@@ -550,8 +551,6 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
       return system_colors_[COLOR_HIGHLIGHTTEXT];
     case kColorId_TextfieldSelectionBackgroundFocused:
       return system_colors_[COLOR_HIGHLIGHT];
-    case kColorId_TextfieldSelectionBackgroundUnfocused:
-      return kTextfieldSelectionBackgroundUnfocused;
 
     // Tree
     // NOTE: these aren't right for all themes, but as close as I could get.

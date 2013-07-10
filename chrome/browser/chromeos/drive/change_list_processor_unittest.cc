@@ -23,7 +23,7 @@ namespace internal {
 namespace {
 
 const int64 kBaseResourceListChangestamp = 123;
-const char kBaseResourceListFile[] = "chromeos/gdata/root_feed.json";
+const char kBaseResourceListFile[] = "gdata/root_feed.json";
 
 enum FileOrDirectory {
   FILE,
@@ -41,13 +41,14 @@ class ChangeListProcessorTest : public testing::Test {
  protected:
   virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    metadata_.reset(new internal::ResourceMetadata(
-        temp_dir_.path(), base::MessageLoopProxy::current()));
-    ASSERT_EQ(FILE_ERROR_OK, metadata_->Initialize());
-  }
 
-  virtual void TearDown() OVERRIDE {
-    metadata_.reset();
+    metadata_storage_.reset(new ResourceMetadataStorage(
+        temp_dir_.path(), base::MessageLoopProxy::current()));
+    ASSERT_TRUE(metadata_storage_->Initialize());
+
+    metadata_.reset(new internal::ResourceMetadata(
+        metadata_storage_.get(), base::MessageLoopProxy::current()));
+    ASSERT_EQ(FILE_ERROR_OK, metadata_->Initialize());
   }
 
   // Parses a json file at |test_data_path| relative to Chrome test directory
@@ -98,8 +99,9 @@ class ChangeListProcessorTest : public testing::Test {
 
   content::TestBrowserThreadBundle thread_bundle_;
   base::ScopedTempDir temp_dir_;
-  scoped_ptr<internal::ResourceMetadata, test_util::DestroyHelperForTests>
-      metadata_;
+  scoped_ptr<ResourceMetadataStorage,
+             test_util::DestroyHelperForTests> metadata_storage_;
+  scoped_ptr<ResourceMetadata, test_util::DestroyHelperForTests> metadata_;
 };
 
 }  // namespace
@@ -159,7 +161,7 @@ TEST_F(ChangeListProcessorTest, ApplyFullResourceList) {
 
 TEST_F(ChangeListProcessorTest, DeltaFileAddedInNewDirectory) {
   const char kTestJson[] =
-      "chromeos/gdata/delta_file_added_in_new_directory.json";
+      "gdata/delta_file_added_in_new_directory.json";
 
   ChangeListProcessor::ResourceEntryMap entry_map;
   ChangeListProcessor::ConvertToMap(
@@ -200,7 +202,7 @@ TEST_F(ChangeListProcessorTest, DeltaFileAddedInNewDirectory) {
 
 TEST_F(ChangeListProcessorTest, DeltaDirMovedFromRootToDirectory) {
   const char kTestJson[] =
-      "chromeos/gdata/delta_dir_moved_from_root_to_directory.json";
+      "gdata/delta_dir_moved_from_root_to_directory.json";
 
   ChangeListProcessor::ResourceEntryMap entry_map;
   ChangeListProcessor::ConvertToMap(
@@ -241,7 +243,7 @@ TEST_F(ChangeListProcessorTest, DeltaDirMovedFromRootToDirectory) {
 
 TEST_F(ChangeListProcessorTest, DeltaFileMovedFromDirectoryToRoot) {
   const char kTestJson[] =
-      "chromeos/gdata/delta_file_moved_from_directory_to_root.json";
+      "gdata/delta_file_moved_from_directory_to_root.json";
 
   ChangeListProcessor::ResourceEntryMap entry_map;
   ChangeListProcessor::ConvertToMap(
@@ -277,7 +279,7 @@ TEST_F(ChangeListProcessorTest, DeltaFileMovedFromDirectoryToRoot) {
 
 TEST_F(ChangeListProcessorTest, DeltaFileRenamedInDirectory) {
   const char kTestJson[] =
-      "chromeos/gdata/delta_file_renamed_in_directory.json";
+      "gdata/delta_file_renamed_in_directory.json";
 
   ChangeListProcessor::ResourceEntryMap entry_map;
   ChangeListProcessor::ConvertToMap(
@@ -315,9 +317,9 @@ TEST_F(ChangeListProcessorTest, DeltaFileRenamedInDirectory) {
 
 TEST_F(ChangeListProcessorTest, DeltaAddAndDeleteFileInRoot) {
   const char kTestJsonAdd[] =
-      "chromeos/gdata/delta_file_added_in_root.json";
+      "gdata/delta_file_added_in_root.json";
   const char kTestJsonDelete[] =
-      "chromeos/gdata/delta_file_deleted_in_root.json";
+      "gdata/delta_file_deleted_in_root.json";
 
   const std::string kParentId("fake_root");
   const std::string kFileId("document:added_in_root_id");
@@ -365,9 +367,9 @@ TEST_F(ChangeListProcessorTest, DeltaAddAndDeleteFileInRoot) {
 
 TEST_F(ChangeListProcessorTest, DeltaAddAndDeleteFileFromExistingDirectory) {
   const char kTestJsonAdd[] =
-      "chromeos/gdata/delta_file_added_in_directory.json";
+      "gdata/delta_file_added_in_directory.json";
   const char kTestJsonDelete[] =
-      "chromeos/gdata/delta_file_deleted_in_directory.json";
+      "gdata/delta_file_deleted_in_directory.json";
 
   const std::string kParentId("folder:1_folder_resource_id");
   const std::string kFileId("document:added_in_root_id");
@@ -423,7 +425,7 @@ TEST_F(ChangeListProcessorTest, DeltaAddFileToNewButDeletedDirectory) {
   // 2) but the new directory is marked "deleted" (i.e. moved to Trash)
   // Hence, the PDF file should be just ignored.
   const char kTestJson[] =
-      "chromeos/gdata/delta_file_added_in_new_but_deleted_directory.json";
+      "gdata/delta_file_added_in_new_but_deleted_directory.json";
 
   ChangeListProcessor::ResourceEntryMap entry_map;
   ChangeListProcessor::ConvertToMap(

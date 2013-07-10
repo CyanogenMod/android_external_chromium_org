@@ -36,7 +36,7 @@
 // the MS was first constructed.  Note that even though the initial log is
 // commonly sent a full minute after startup, the initial log does not include
 // much in the way of user stats.   The most common interlog period (delay)
-// is 20 minutes. That time period starts when the first user action causes a
+// is 30 minutes. That time period starts when the first user action causes a
 // logging event.  This means that if there is no user action, there may be long
 // periods without any (ongoing) log transmissions.  Ongoing logs typically
 // contain very detailed records of user activities (ex: opened tab, closed
@@ -188,6 +188,7 @@
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_otr_state.h"
+#include "chrome/browser/ui/search/search_tab_helper.h"
 #include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_process_type.h"
@@ -291,9 +292,9 @@ ResponseStatus ResponseCodeToStatus(int response_code) {
 }
 
 // The argument used to generate a non-identifying entropy source. We want no
-// more than 13 bits of entropy, so use this max to return a number between 1
-// and 2^13 = 8192 as the entropy source.
-const uint32 kMaxLowEntropySize = (1 << 13);
+// more than 13 bits of entropy, so use this max to return a number in the range
+// [0, 7999] as the entropy source (12.97 bits of entropy).
+const int kMaxLowEntropySize = 8000;
 
 // Default prefs value for prefs::kMetricsLowEntropySource to indicate that the
 // value has not yet been set.
@@ -705,9 +706,13 @@ void MetricsService::Observe(int type,
       LogLoadComplete(type, source, details);
       break;
 
-    case content::NOTIFICATION_LOAD_START:
-      LogLoadStarted();
+    case content::NOTIFICATION_LOAD_START: {
+      content::NavigationController* controller =
+          content::Source<content::NavigationController>(source).ptr();
+      content::WebContents* web_contents = controller->GetWebContents();
+      LogLoadStarted(web_contents);
       break;
+    }
 
     case content::NOTIFICATION_RENDERER_PROCESS_CLOSED: {
         content::RenderProcessHost::RendererClosedDetails* process_details =
@@ -1043,13 +1048,17 @@ int MetricsService::GetLowEntropySource() {
   // Only try to load the value from prefs if the user did not request a reset.
   // Otherwise, skip to generating a new value.
   if (!command_line->HasSwitch(switches::kResetVariationState)) {
-    const int value = local_state->GetInteger(prefs::kMetricsLowEntropySource);
-    if (value != kLowEntropySourceNotSet) {
-      // Ensure the prefs value is in the range [0, kMaxLowEntropySize). Old
-      // versions of the code would generate values in the range of [1, 8192],
-      // so the below line ensures 8192 gets mapped to 0 and also guards against
-      // the case of corrupted values.
-      low_entropy_source_ = value % kMaxLowEntropySize;
+    int value = local_state->GetInteger(prefs::kMetricsLowEntropySource);
+    // Old versions of the code would generate values in the range of [1, 8192],
+    // before the range was switched to [0, 8191] and then to [0, 7999]. Map
+    // 8192 to 0, so that the 0th bucket remains uniform, while re-generating
+    // the low entropy source for old values in the [8000, 8191] range.
+    if (value == 8192)
+      value = 0;
+    // If the value is outside the [0, kMaxLowEntropySize) range, re-generate
+    // it below.
+    if (value >= 0 && value < kMaxLowEntropySize) {
+      low_entropy_source_ = value;
       UMA_HISTOGRAM_BOOLEAN("UMA.GeneratedLowEntropySource", false);
       return low_entropy_source_;
     }
@@ -1569,13 +1578,23 @@ void MetricsService::IncrementLongPrefsValue(const char* path) {
   pref->SetInt64(path, value + 1);
 }
 
-void MetricsService::LogLoadStarted() {
+void MetricsService::LogLoadStarted(content::WebContents* web_contents) {
   content::RecordAction(content::UserMetricsAction("PageLoad"));
   HISTOGRAM_ENUMERATION("Chrome.UmaPageloadCounter", 1, 2);
   IncrementPrefValue(prefs::kStabilityPageLoadCount);
   IncrementLongPrefsValue(prefs::kUninstallMetricsPageLoadCount);
   // We need to save the prefs, as page load count is a critical stat, and it
   // might be lost due to a crash :-(.
+
+  // Track whether the page loaded is a search results page.
+  if (web_contents) {
+    SearchTabHelper* search_tab_helper =
+        SearchTabHelper::FromWebContents(web_contents);
+    if (search_tab_helper) {
+      if (search_tab_helper->model()->mode().is_search_results())
+        content::RecordAction(content::UserMetricsAction("PageLoadSRP"));
+    }
+  }
 }
 
 void MetricsService::LogRendererCrash(content::RenderProcessHost* host,

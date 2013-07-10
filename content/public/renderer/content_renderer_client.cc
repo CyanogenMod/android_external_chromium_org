@@ -37,14 +37,9 @@ bool ContentRendererClient::HasErrorPage(int http_status_code,
   return false;
 }
 
-webkit_media::WebMediaPlayerImpl*
-ContentRendererClient::OverrideCreateWebMediaPlayer(
-    RenderView* render_view,
-    WebKit::WebFrame* frame,
-    WebKit::WebMediaPlayerClient* client,
-    base::WeakPtr<webkit_media::WebMediaPlayerDelegate> delegate,
-    const webkit_media::WebMediaPlayerParams& params) {
-  return NULL;
+void ContentRendererClient::DeferMediaLoad(RenderView* render_view,
+                                           const base::Closure& closure) {
+  closure.Run();
 }
 
 WebKit::WebMediaStreamCenter*
@@ -59,11 +54,18 @@ ContentRendererClient::OverrideCreateWebRTCPeerConnectionHandler(
   return NULL;
 }
 
-WebKit::WebClipboard* ContentRendererClient::OverrideWebClipboard() {
+webkit_media::MediaStreamClient*
+ContentRendererClient::OverrideCreateMediaStreamClient() {
   return NULL;
 }
 
-WebKit::WebMimeRegistry* ContentRendererClient::OverrideWebMimeRegistry() {
+WebKit::WebMIDIAccessor*
+ContentRendererClient::OverrideCreateMIDIAccessor(
+    WebKit::WebMIDIAccessorClient* client) {
+  return NULL;
+}
+
+WebKit::WebClipboard* ContentRendererClient::OverrideWebClipboard() {
   return NULL;
 }
 

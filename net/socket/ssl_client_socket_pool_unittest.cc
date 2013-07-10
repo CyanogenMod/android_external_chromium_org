@@ -8,7 +8,7 @@
 #include "base/compiler_specific.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/auth.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/load_timing_info_test_util.h"
@@ -27,12 +27,10 @@
 #include "net/socket/socket_test_util.h"
 #include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_session_pool.h"
-#include "net/spdy/spdy_test_util_spdy2.h"
+#include "net/spdy/spdy_test_util_common.h"
 #include "net/ssl/ssl_config_service_defaults.h"
 #include "net/test/test_certificate_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-using namespace net::test_spdy2;
 
 namespace net {
 

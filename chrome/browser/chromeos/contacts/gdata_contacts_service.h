@@ -13,7 +13,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "googleurl/src/gurl.h"
 
 class Profile;
@@ -108,8 +108,6 @@ class GDataContactsService : public GDataContactsServiceInterface {
   // Invoked by a download request once it's finished (either successfully or
   // unsuccessfully).
   void OnRequestComplete(DownloadContactsRequest* request);
-
-  net::URLRequestContextGetter* url_request_context_getter_;  // not owned
 
   scoped_ptr<google_apis::RequestSender> sender_;
 

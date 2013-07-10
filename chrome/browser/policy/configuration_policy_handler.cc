@@ -29,9 +29,9 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
-#include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "policy/policy_constants.h"
+#include "url/gurl.h"
 
 #if !defined(OS_ANDROID)
 #include "chrome/browser/policy/policy_path_parser.h"
@@ -292,6 +292,8 @@ bool StringToIntEnumListPolicyHandler::CheckPolicySettings(
 void StringToIntEnumListPolicyHandler::ApplyPolicySettings(
     const PolicyMap& policies,
     PrefValueMap* prefs) {
+  if (!pref_path_)
+    return;
   const base::Value* value = policies.GetValue(policy_name());
   scoped_ptr<base::ListValue> list(new base::ListValue());
   if (value && Convert(value, list.get(), NULL))
@@ -360,6 +362,8 @@ IntRangePolicyHandler::~IntRangePolicyHandler() {
 
 void IntRangePolicyHandler::ApplyPolicySettings(const PolicyMap& policies,
                                                 PrefValueMap* prefs) {
+  if (!pref_path_)
+    return;
   const base::Value* value = policies.GetValue(policy_name());
   int value_in_range;
   if (value && EnsureInRange(value, &value_in_range, NULL)) {
@@ -386,6 +390,8 @@ IntPercentageToDoublePolicyHandler::~IntPercentageToDoublePolicyHandler() {
 void IntPercentageToDoublePolicyHandler::ApplyPolicySettings(
     const PolicyMap& policies,
     PrefValueMap* prefs) {
+  if (!pref_path_)
+    return;
   const base::Value* value = policies.GetValue(policy_name());
   int percentage;
   if (value && EnsureInRange(value, &percentage, NULL)) {
@@ -616,6 +622,8 @@ bool ExtensionURLPatternListPolicyHandler::CheckPolicySettings(
 void ExtensionURLPatternListPolicyHandler::ApplyPolicySettings(
     const PolicyMap& policies,
     PrefValueMap* prefs) {
+  if (!pref_path_)
+    return;
   const Value* value = policies.GetValue(policy_name());
   if (value)
     prefs->SetValue(pref_path_, value->DeepCopy());
@@ -636,6 +644,8 @@ SimplePolicyHandler::~SimplePolicyHandler() {
 
 void SimplePolicyHandler::ApplyPolicySettings(const PolicyMap& policies,
                                               PrefValueMap* prefs) {
+  if (!pref_path_)
+    return;
   const Value* value = policies.GetValue(policy_name());
   if (value)
     prefs->SetValue(pref_path_, value->DeepCopy());

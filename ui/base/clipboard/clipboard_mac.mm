@@ -11,7 +11,8 @@
 #include "base/logging.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
-#include "base/memory/scoped_nsobject.h"
+#import "base/mac/scoped_nsexception_enabler.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/stl_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -159,21 +160,21 @@ void Clipboard::WriteBitmap(const char* pixel_data, const char* size_data) {
   const gfx::Size* size = reinterpret_cast<const gfx::Size*>(size_data);
 
   // Safe because the image goes away before the call returns.
-  base::mac::ScopedCFTypeRef<CFDataRef> data(
+  base::ScopedCFTypeRef<CFDataRef> data(
       CFDataCreateWithBytesNoCopy(kCFAllocatorDefault,
                                   reinterpret_cast<const UInt8*>(pixel_data),
-                                  size->width()*size->height()*4,
+                                  size->width() * size->height() * 4,
                                   kCFAllocatorNull));
 
-  base::mac::ScopedCFTypeRef<CGDataProviderRef> data_provider(
+  base::ScopedCFTypeRef<CGDataProviderRef> data_provider(
       CGDataProviderCreateWithCFData(data));
 
-  base::mac::ScopedCFTypeRef<CGImageRef> cgimage(
+  base::ScopedCFTypeRef<CGImageRef> cgimage(
       CGImageCreate(size->width(),
                     size->height(),
                     8,
                     32,
-                    size->width()*4,
+                    size->width() * 4,
                     base::mac::GetSRGBColorSpace(),  // TODO(avi): do better
                     kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host,
                     data_provider,
@@ -185,11 +186,11 @@ void Clipboard::WriteBitmap(const char* pixel_data, const char* size_data) {
   data_provider.reset();
   data.reset();
 
-  scoped_nsobject<NSBitmapImageRep> bitmap(
+  base::scoped_nsobject<NSBitmapImageRep> bitmap(
       [[NSBitmapImageRep alloc] initWithCGImage:cgimage]);
   cgimage.reset();
 
-  scoped_nsobject<NSImage> image([[NSImage alloc] init]);
+  base::scoped_nsobject<NSImage> image([[NSImage alloc] init]);
   [image addRepresentation:bitmap];
 
   // An API to ask the NSImage to write itself to the clipboard comes in 10.6 :(
@@ -343,8 +344,12 @@ SkBitmap Clipboard::ReadImage(Buffer buffer) const {
   DCHECK(CalledOnValidThread());
   DCHECK_EQ(buffer, BUFFER_STANDARD);
 
-  scoped_nsobject<NSImage> image(
-      [[NSImage alloc] initWithPasteboard:GetPasteboard()]);
+  // If the pasteboard's image data is not to its liking, the guts of NSImage
+  // may throw, and that exception will leak. Prevent a crash in that case;
+  // a blank image is better.
+  base::scoped_nsobject<NSImage> image(base::mac::RunBlockIgnoringExceptions(^{
+      return [[NSImage alloc] initWithPasteboard:GetPasteboard()];
+  }));
   if (!image.get())
     return SkBitmap();
 

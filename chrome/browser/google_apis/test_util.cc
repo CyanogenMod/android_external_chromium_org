@@ -11,6 +11,7 @@
 #include "base/path_service.h"
 #include "base/pending_task.h"
 #include "base/rand_util.h"
+#include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -20,9 +21,9 @@
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/google_apis/gdata_wapi_requests.h"
 #include "content/public/browser/browser_thread.h"
-#include "googleurl/src/gurl.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
+#include "url/gurl.h"
 
 namespace google_apis {
 namespace test_util {
@@ -79,16 +80,16 @@ void RunBlockingPoolTask() {
 
     TaskObserver task_observer;
     base::MessageLoop::current()->AddTaskObserver(&task_observer);
-    base::MessageLoop::current()->RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
     base::MessageLoop::current()->RemoveTaskObserver(&task_observer);
     if (!task_observer.posted())
       break;
   }
 }
 
-void RunAndQuit(const base::Closure& closure) {
+void RunAndQuit(base::RunLoop* run_loop, const base::Closure& closure) {
   closure.Run();
-  base::MessageLoop::current()->Quit();
+  run_loop->Quit();
 }
 
 bool WriteStringToFile(const base::FilePath& file_path,
@@ -138,7 +139,7 @@ scoped_ptr<net::test_server::BasicHttpResponse> CreateHttpResponseFromFile(
 
   scoped_ptr<net::test_server::BasicHttpResponse> http_response(
       new net::test_server::BasicHttpResponse);
-  http_response->set_code(net::test_server::SUCCESS);
+  http_response->set_code(net::HTTP_OK);
   http_response->set_content(content);
   http_response->set_content_type(content_type);
   return http_response.Pass();

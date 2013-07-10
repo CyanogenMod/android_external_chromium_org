@@ -9,6 +9,7 @@
 #include "ash/shell.h"
 #include "ash/shell/shell_delegate_impl.h"
 #include "ash/shell/window_watcher.h"
+#include "ash/system/user/login_status.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/i18n/icu_util.h"
@@ -18,7 +19,7 @@
 #include "base/threading/thread_restrictions.h"
 #include "content/public/common/content_switches.h"
 #include "content/shell/shell_browser_context.h"
-#include "googleurl/src/gurl.h"
+#include "content/shell/shell_net_log.h"
 #include "net/base/net_module.h"
 #include "ui/aura/client/stacking_client.h"
 #include "ui/aura/env.h"
@@ -39,7 +40,6 @@
 #if defined(OS_CHROMEOS)
 #include "chromeos/audio/cras_audio_handler.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/power/power_manager_handler.h"
 #endif
 
 namespace ash {
@@ -102,7 +102,9 @@ void ShellBrowserMainParts::PostMainMessageLoopStart() {
 }
 
 void ShellBrowserMainParts::PreMainMessageLoopRun() {
-  browser_context_.reset(new content::ShellBrowserContext(false));
+  net_log_.reset(new content::ShellNetLog());
+  browser_context_.reset(new content::ShellBrowserContext(
+      false, net_log_.get()));
 
   // A ViewsDelegate is required.
   if (!views::ViewsDelegate::views_delegate)
@@ -119,11 +121,13 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
     // is absent.
     chromeos::CrasAudioHandler::InitializeForTesting();
   }
-  chromeos::PowerManagerHandler::Initialize();
 #endif
 
   ash::Shell::CreateInstance(delegate_);
   ash::Shell::GetInstance()->set_browser_context(browser_context_.get());
+  ash::Shell::GetInstance()->CreateLauncher();
+  ash::Shell::GetInstance()->UpdateAfterLoginStatusChange(
+      user::LOGGED_IN_USER);
 
   window_watcher_.reset(new ash::shell::WindowWatcher);
   gfx::Screen* screen = Shell::GetInstance()->GetScreen();
@@ -132,12 +136,8 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
 
   ash::shell::InitWindowTypeLauncher();
 
-  DesktopBackgroundController* controller =
-      Shell::GetInstance()->desktop_background_controller();
-  if (controller->GetAppropriateResolution() == WALLPAPER_RESOLUTION_LARGE)
-    controller->SetDefaultWallpaper(kDefaultLargeWallpaper);
-  else
-    controller->SetDefaultWallpaper(kDefaultSmallWallpaper);
+  Shell::GetInstance()->desktop_background_controller()->SetDefaultWallpaper(
+      false /* is_guest */);
 
   ash::Shell::GetPrimaryRootWindow()->ShowRootWindow();
 }
@@ -155,7 +155,6 @@ void ShellBrowserMainParts::PostMainMessageLoopRun() {
   message_center::MessageCenter::Shutdown();
 
 #if defined(OS_CHROMEOS)
-  chromeos::PowerManagerHandler::Shutdown();
   if (ash::switches::UseNewAudioHandler())
     chromeos::CrasAudioHandler::Shutdown();
 #endif

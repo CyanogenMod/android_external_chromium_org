@@ -13,10 +13,10 @@
 #include "chrome/browser/sync_file_system/mock_local_change_processor.h"
 #include "chrome/browser/sync_file_system/remote_change_processor.h"
 #include "chrome/browser/sync_file_system/remote_file_sync_service.h"
-#include "googleurl/src/gurl.h"
+#include "chrome/browser/sync_file_system/sync_direction.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "url/gurl.h"
 #include "webkit/browser/fileapi/syncable/sync_callbacks.h"
-#include "webkit/browser/fileapi/syncable/sync_direction.h"
 #include "webkit/browser/fileapi/syncable/sync_file_metadata.h"
 
 namespace sync_file_system {
@@ -51,9 +51,9 @@ class MockRemoteFileSyncService : public RemoteFileSyncService {
                      RemoteServiceState());
   MOCK_METHOD1(GetOriginStatusMap,
                void(RemoteFileSyncService::OriginStatusMap* status_map));
-  MOCK_METHOD1(
-      GetFileMetadataMap,
-      void(RemoteFileSyncService::OriginFileMetadataMap* metadata_map));
+  MOCK_METHOD2(GetFileMetadataMap,
+               void(const GURL& origin,
+                    RemoteFileSyncService::FileMetadataMap* metadata_map));
   MOCK_METHOD1(SetSyncEnabled, void(bool));
   MOCK_METHOD1(SetConflictResolutionPolicy,
                SyncStatusCode(ConflictResolutionPolicy));

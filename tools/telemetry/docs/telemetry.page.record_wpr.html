@@ -8,7 +8,7 @@
 <td valign=bottom>&nbsp;<br>
 <font color="#ffffff" face="helvetica, arial">&nbsp;<br><big><big><strong><a href="telemetry.html"><font color="#ffffff">telemetry</font></a>.<a href="telemetry.page.html"><font color="#ffffff">page</font></a>.record_wpr</strong></big></big></font></td
 ><td align=right valign=bottom
-><font color="#ffffff" face="helvetica, arial"><a href=".">index</a><br><a href="file:/Users/nduca/Local/chrome/src/tools/telemetry/telemetry/page/record_wpr.py">/Users/nduca/Local/chrome/src/tools/telemetry/telemetry/page/record_wpr.py</a></font></td></tr></table>
+><font color="#ffffff" face="helvetica, arial"><a href=".">index</a><br><a href="../telemetry/page/record_wpr.py">telemetry/page/record_wpr.py</a></font></td></tr></table>
     <p><tt>#&nbsp;Copyright&nbsp;(c)&nbsp;2012&nbsp;The&nbsp;Chromium&nbsp;Authors.&nbsp;All&nbsp;rights&nbsp;reserved.<br>
 #&nbsp;Use&nbsp;of&nbsp;this&nbsp;source&nbsp;code&nbsp;is&nbsp;governed&nbsp;by&nbsp;a&nbsp;BSD-style&nbsp;license&nbsp;that&nbsp;can&nbsp;be<br>
 #&nbsp;found&nbsp;in&nbsp;the&nbsp;LICENSE&nbsp;file.</tt></p>
@@ -19,19 +19,17 @@
 <font color="#ffffff" face="helvetica, arial"><big><strong>Modules</strong></big></font></td></tr>
     
 <tr><td bgcolor="#aa55cc"><tt>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</tt></td><td>&nbsp;</td>
-<td width="100%"><table width="100%" summary="list"><tr><td width="25%" valign=top><a href="telemetry.core.browser_finder.html">telemetry.core.browser_finder</a><br>
-<a href="telemetry.core.browser_options.html">telemetry.core.browser_options</a><br>
+<td width="100%"><table width="100%" summary="list"><tr><td width="25%" valign=top><a href="telemetry.core.browser_options.html">telemetry.core.browser_options</a><br>
 <a href="telemetry.core.discover.html">telemetry.core.discover</a><br>
 <a href="logging.html">logging</a><br>
 </td><td width="25%" valign=top><a href="os.html">os</a><br>
 <a href="telemetry.page.page_measurement.html">telemetry.page.page_measurement</a><br>
 <a href="telemetry.page.page_runner.html">telemetry.page.page_runner</a><br>
-<a href="telemetry.page.page_set.html">telemetry.page.page_set</a><br>
-</td><td width="25%" valign=top><a href="telemetry.page.page_test.html">telemetry.page.page_test</a><br>
-<a href="telemetry.page.page_test_results.html">telemetry.page.page_test_results</a><br>
+</td><td width="25%" valign=top><a href="telemetry.page.page_set.html">telemetry.page.page_set</a><br>
+<a href="telemetry.page.page_test.html">telemetry.page.page_test</a><br>
 <a href="sys.html">sys</a><br>
-<a href="tempfile.html">tempfile</a><br>
-</td><td width="25%" valign=top><a href="time.html">time</a><br>
+</td><td width="25%" valign=top><a href="tempfile.html">tempfile</a><br>
+<a href="time.html">time</a><br>
 <a href="telemetry.core.wpr_modes.html">telemetry.core.wpr_modes</a><br>
 </td></tr></table></td></tr></table><p>
 <table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
@@ -117,6 +115,10 @@ Data descriptors inherited from <a href="telemetry.page.page_test.html#PageTest"
 </dl>
 <dl><dt><strong>action_name_to_run</strong></dt>
 </dl>
+<dl><dt><strong>clear_cache_before_each_run</strong></dt>
+<dd><tt>When&nbsp;set&nbsp;to&nbsp;True,&nbsp;the&nbsp;browser's&nbsp;disk&nbsp;and&nbsp;memory&nbsp;cache&nbsp;will&nbsp;be&nbsp;cleared<br>
+before&nbsp;each&nbsp;run.</tt></dd>
+</dl>
 <dl><dt><strong>discard_first_result</strong></dt>
 <dd><tt>When&nbsp;set&nbsp;to&nbsp;True,&nbsp;the&nbsp;first&nbsp;run&nbsp;of&nbsp;the&nbsp;test&nbsp;is&nbsp;discarded.&nbsp;&nbsp;This&nbsp;is<br>
 useful&nbsp;for&nbsp;cases&nbsp;where&nbsp;it's&nbsp;desirable&nbsp;to&nbsp;have&nbsp;some&nbsp;test&nbsp;resource&nbsp;cached&nbsp;so<br>
@@ -132,6 +134,6 @@ the&nbsp;first&nbsp;run&nbsp;of&nbsp;the&nbsp;test&nbsp;can&nbsp;warm&nbsp;thing
 <font color="#ffffff" face="helvetica, arial"><big><strong>Functions</strong></big></font></td></tr>
     
 <tr><td bgcolor="#eeaa77"><tt>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</tt></td><td>&nbsp;</td>
-<td width="100%"><dl><dt><a name="-Main"><strong>Main</strong></a>(measurement_dir)</dt></dl>
+<td width="100%"><dl><dt><a name="-Main"><strong>Main</strong></a>(base_dir)</dt></dl>
 </td></tr></table>
 </body></html>

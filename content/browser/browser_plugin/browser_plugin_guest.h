@@ -28,7 +28,7 @@
 #include "base/id_map.h"
 #include "base/memory/weak_ptr.h"
 #include "base/shared_memory.h"
-#include "base/time.h"
+#include "base/values.h"
 #include "content/common/browser_plugin/browser_plugin_message_enums.h"
 #include "content/common/edit_command.h"
 #include "content/port/common/input_event_ack_state.h"
@@ -52,7 +52,6 @@ struct ViewHostMsg_ShowPopup_Params;
 #endif
 struct ViewHostMsg_UpdateRect_Params;
 class WebCursor;
-struct WebDropData;
 
 namespace cc {
 class CompositorFrameAck;
@@ -69,6 +68,7 @@ class BrowserPluginEmbedder;
 class BrowserPluginGuestManager;
 class RenderProcessHost;
 class RenderWidgetHostView;
+struct DropData;
 struct MediaStreamRequest;
 
 // A browser plugin guest provides functionality for WebContents to operate in
@@ -92,7 +92,8 @@ class CONTENT_EXPORT BrowserPluginGuest
 
   static BrowserPluginGuest* Create(
       int instance_id,
-      WebContentsImpl* web_contents);
+      WebContentsImpl* web_contents,
+      scoped_ptr<base::DictionaryValue> extra_params);
 
   static BrowserPluginGuest* CreateWithOpener(
       int instance_id,
@@ -146,14 +147,6 @@ class CONTENT_EXPORT BrowserPluginGuest
                        const NotificationDetails& details) OVERRIDE;
 
   // WebContentsObserver implementation.
-  virtual void DidStartProvisionalLoadForFrame(
-      int64 frame_id,
-      int64 parent_frame_id,
-      bool is_main_frame,
-      const GURL& validated_url,
-      bool is_error_page,
-      bool is_iframe_srcdoc,
-      RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidFailProvisionalLoad(
       int64 frame_id,
       bool is_main_frame,
@@ -297,14 +290,6 @@ class CONTENT_EXPORT BrowserPluginGuest
   base::SharedMemory* GetDamageBufferFromEmbedder(
       const BrowserPluginHostMsg_ResizeGuest_Params& params);
 
-  // Called after the load handler is called in the guest's main frame.
-  void LoadHandlerCalled();
-
-  // Called when a redirect notification occurs.
-  void LoadRedirect(const GURL& old_url,
-                    const GURL& new_url,
-                    bool is_top_level);
-
   bool InAutoSizeBounds(const gfx::Size& size) const;
 
   void RequestNewWindowPermission(WebContentsImpl* new_contents,
@@ -332,15 +317,12 @@ class CONTENT_EXPORT BrowserPluginGuest
   // renderer.
   void OnDragStatusUpdate(int instance_id,
                           WebKit::WebDragStatus drag_status,
-                          const WebDropData& drop_data,
+                          const DropData& drop_data,
                           WebKit::WebDragOperationsMask drag_mask,
                           const gfx::Point& location);
   // Instructs the guest to execute an edit command decoded in the embedder.
   void OnExecuteEditCommand(int instance_id,
                             const std::string& command);
-  // If possible, navigate the guest to |relative_index| entries away from the
-  // current navigation entry.
-  virtual void OnGo(int instance_id, int relative_index);
   // Overriden in tests.
   virtual void OnHandleInputEvent(int instance_id,
                                   const gfx::Rect& guest_window_rect,

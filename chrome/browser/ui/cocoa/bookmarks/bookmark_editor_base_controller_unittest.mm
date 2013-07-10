@@ -4,7 +4,6 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
@@ -95,8 +94,7 @@ class BookmarkEditorBaseControllerTest : public CocoaProfileTest {
   }
 
   virtual Browser* CreateBrowser() OVERRIDE {
-    Browser::CreateParams native_params(profile(),
-                                        chrome::HOST_DESKTOP_TYPE_NATIVE);
+    Browser::CreateParams native_params(profile(), chrome::GetActiveDesktop());
     return chrome::CreateBrowserWithTestWindowForParams(&native_params);
   }
 };

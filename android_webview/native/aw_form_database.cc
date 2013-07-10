@@ -9,8 +9,8 @@
 #include "android_webview/browser/aw_form_database_service.h"
 #include "base/android/jni_android.h"
 #include "base/logging.h"
-#include "base/time.h"
-#include "components/autofill/browser/webdata/autofill_webdata_service.h"
+#include "base/time/time.h"
+#include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "jni/AwFormDatabase_jni.h"
 
 // static

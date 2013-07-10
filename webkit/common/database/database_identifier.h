@@ -2,11 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef WEBKIT_COMMON_DATABASE_DATABASE_IDENTIFIER_H_
+#define WEBKIT_COMMON_DATABASE_DATABASE_IDENTIFIER_H_
+
 #include <string>
 
 #include "base/basictypes.h"
 #include "base/strings/string_piece.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 #include "webkit/common/webkit_storage_common_export.h"
 
 namespace webkit_database {
@@ -47,3 +50,5 @@ class WEBKIT_STORAGE_COMMON_EXPORT DatabaseIdentifier {
 };
 
 }  // namespace webkit_database
+
+#endif  // WEBKIT_COMMON_DATABASE_DATABASE_IDENTIFIER_H_

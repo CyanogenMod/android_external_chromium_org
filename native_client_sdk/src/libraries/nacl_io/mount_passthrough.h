@@ -6,6 +6,7 @@
 #define LIBRARIES_NACL_IO_MOUNT_PASSTHROUGH_H_
 
 #include "nacl_io/mount.h"
+#include "nacl_io/typed_mount_factory.h"
 
 class MountPassthrough : public Mount {
  protected:
@@ -15,16 +16,17 @@ class MountPassthrough : public Mount {
   virtual void Destroy();
 
  public:
-  virtual Error Open(const Path& path, int mode, MountNode** out_node);
-  virtual Error OpenResource(const Path& path, MountNode** out_node);
+  virtual Error Access(const Path& path, int a_mode);
+  virtual Error Open(const Path& path, int mode, ScopedMountNode* out_node);
+  virtual Error OpenResource(const Path& path, ScopedMountNode* out_node);
   virtual Error Unlink(const Path& path);
   virtual Error Mkdir(const Path& path, int perm);
   virtual Error Rmdir(const Path& path);
   virtual Error Remove(const Path& path);
 
 private:
-  friend class Mount;
-  DISALLOW_COPY_AND_ASSIGN(MountPassthrough);
+ friend class TypedMountFactory<MountPassthrough>;
+ DISALLOW_COPY_AND_ASSIGN(MountPassthrough);
 };
 
 #endif  // LIBRARIES_NACL_IO_MOUNT_PASSTHROUGH_H_

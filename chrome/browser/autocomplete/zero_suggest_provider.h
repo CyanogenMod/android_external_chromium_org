@@ -70,14 +70,13 @@ class ZeroSuggestProvider : public AutocompleteProvider,
   // net::URLFetcherDelegate
   virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
 
-  // Initiates a new fetch for the given |url|, limiting suggestions to those
-  // matching |user_text|. |user_text| may be non-empty if the user previously
-  // interacted with zero-suggest suggestions and then unfocused the omnibox.
-  // |permanent_text| is the text version of |url| displayed in the omnibox.
+  // Initiates a new fetch for the given |url|. |user_text| is the user input
+  // and may be non-empty if the user previously interacted with
+  // zero-suggest suggestions and then unfocused the omnibox. |permanent_text|
+  // is the omnibox text for the current page.
   // TODO(jered): Rip out |user_text| once the first match is decoupled from
   // the current typing in the omnibox.
   void StartZeroSuggest(const GURL& url,
-                        const string16& user_text,
                         const string16& permanent_text);
 
  private:
@@ -102,21 +101,22 @@ class ZeroSuggestProvider : public AutocompleteProvider,
                    SearchProvider::SuggestResults* suggest_results,
                    SearchProvider::NavigationResults* navigation_results);
 
-  // Creates AutocompleteMatches for "Search |provider_keyword| for
-  // <suggestion>" for all suggestions in |results|, and adds them to |map|.
+  // Creates AutocompleteMatches to search |template_url| for "<suggestion>" for
+  // all suggestions in |results|, and adds them to |map|.
   void AddSuggestResultsToMap(const SearchProvider::SuggestResults& results,
-                              const string16& provider_keyword,
+                              const TemplateURL* template_url,
                               SearchProvider::MatchMap* map);
 
-  // Creates an AutocompleteMatch for "Search |provider_keyword| for
-  // |query_string|".  The supplied |relevance| and |type| and
-  // |accepted_suggestion| will also be used to create the AutocompleteMatch.
+  // Creates an AutocompleteMatch with the provided |relevance| and |type| to
+  // search |template_url| for |query_string|.  |accepted_suggestion| will be
+  // used to generate Assisted Query Stats.
+  //
   // Adds this match to |map|; if such a match already exists, whichever one
   // has lower relevance is eliminated.
-  void AddMatchToMap(const string16& query_string,
-                     const string16& provider_keyword,
-                     int relevance,
+  void AddMatchToMap(int relevance,
                      AutocompleteMatch::Type type,
+                     const TemplateURL* template_url,
+                     const string16& query_string,
                      int accepted_suggestion,
                      SearchProvider::MatchMap* map);
 
@@ -124,21 +124,16 @@ class ZeroSuggestProvider : public AutocompleteProvider,
   AutocompleteMatch NavigationToMatch(
       const SearchProvider::NavigationResult& navigation);
 
-  // Sets |user_text_modified_| if the user has modified the omnibox text, based
-  // on the user input |user_text|.
-  void CheckIfTextModfied(const string16& user_text);
-
   // Fetches zero-suggest suggestions for |current_query_|.
   void Run();
 
   // Parses results from the zero-suggest server and updates results.
   void ParseSuggestResults(const base::Value& root_val);
 
-  // Converts the parsed results to a set of AutocompleteMatches, based on user
-  // input |user_text|, and adds them to |matches_|.  If |update_histograms| is
-  // true, also update the histograms for how many results were received.
-  void ConvertResultsToAutocompleteMatches(string16 user_text,
-                                           bool update_histograms);
+  // Converts the parsed results to a set of AutocompleteMatches and adds them
+  // to |matches_|.  Also update the histograms for how many results were
+  // received.
+  void ConvertResultsToAutocompleteMatches();
 
   // Returns an AutocompleteMatch for the current URL. The match should be in
   // the top position so that pressing enter has the effect of reloading the
@@ -151,12 +146,8 @@ class ZeroSuggestProvider : public AutocompleteProvider,
   // The URL for which a suggestion fetch is pending.
   std::string current_query_;
 
-  // What the user has typed.
-  string16 original_user_text_;
   // Copy of OmniboxEditModel::permanent_text_.
   string16 permanent_text_;
-  // Whether the user has modified the omnibox since the zero suggest request.
-  bool user_text_modified_;
 
   // Fetcher used to retrieve results.
   scoped_ptr<net::URLFetcher> fetcher_;

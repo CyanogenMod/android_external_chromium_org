@@ -133,9 +133,9 @@ bool IsValid(const NetAddress* net_addr) {
 PP_NetAddressFamily_Private GetFamily(const PP_NetAddress_Private* addr) {
   const NetAddress* net_addr = ToNetAddress(addr);
   if (!IsValid(net_addr))
-    return PP_NETADDRESSFAMILY_UNSPECIFIED;
+    return PP_NETADDRESSFAMILY_PRIVATE_UNSPECIFIED;
   return net_addr->is_ipv6 ?
-         PP_NETADDRESSFAMILY_IPV6 : PP_NETADDRESSFAMILY_IPV4;
+         PP_NETADDRESSFAMILY_PRIVATE_IPV6 : PP_NETADDRESSFAMILY_PRIVATE_IPV4;
 }
 
 uint16_t GetPort(const PP_NetAddress_Private* addr) {
@@ -519,7 +519,7 @@ std::string NetAddressPrivateImpl::DescribeNetAddress(
 
 // static
 void NetAddressPrivateImpl::CreateNetAddressPrivateFromIPv4Address(
-    const PP_NetAddress_IPv4_Dev& ipv4_addr,
+    const PP_NetAddress_IPv4& ipv4_addr,
     PP_NetAddress_Private* addr) {
   CreateFromIPv4Address(ipv4_addr.addr, ConvertFromNetEndian16(ipv4_addr.port),
                         addr);
@@ -527,14 +527,14 @@ void NetAddressPrivateImpl::CreateNetAddressPrivateFromIPv4Address(
 
 // static
 void NetAddressPrivateImpl::CreateNetAddressPrivateFromIPv6Address(
-    const PP_NetAddress_IPv6_Dev& ipv6_addr,
+    const PP_NetAddress_IPv6& ipv6_addr,
     PP_NetAddress_Private* addr) {
   CreateFromIPv6Address(ipv6_addr.addr, 0,
                         ConvertFromNetEndian16(ipv6_addr.port), addr);
 }
 
 // static
-PP_NetAddress_Family_Dev NetAddressPrivateImpl::GetFamilyFromNetAddressPrivate(
+PP_NetAddress_Family NetAddressPrivateImpl::GetFamilyFromNetAddressPrivate(
     const PP_NetAddress_Private& addr) {
   const NetAddress* net_addr = ToNetAddress(&addr);
   if (!IsValid(net_addr))
@@ -546,7 +546,7 @@ PP_NetAddress_Family_Dev NetAddressPrivateImpl::GetFamilyFromNetAddressPrivate(
 // static
 bool NetAddressPrivateImpl::DescribeNetAddressPrivateAsIPv4Address(
    const PP_NetAddress_Private& addr,
-   PP_NetAddress_IPv4_Dev* ipv4_addr) {
+   PP_NetAddress_IPv4* ipv4_addr) {
   if (!ipv4_addr)
     return false;
 
@@ -566,7 +566,7 @@ bool NetAddressPrivateImpl::DescribeNetAddressPrivateAsIPv4Address(
 // static
 bool NetAddressPrivateImpl::DescribeNetAddressPrivateAsIPv6Address(
     const PP_NetAddress_Private& addr,
-    PP_NetAddress_IPv6_Dev* ipv6_addr) {
+    PP_NetAddress_IPv6* ipv6_addr) {
   if (!ipv6_addr)
     return false;
 

@@ -198,20 +198,14 @@ class CHROMEOS_EXPORT CrosDisksClient {
   // A callback to handle the result of Mount.
   typedef base::Callback<void()> MountCallback;
 
-  // A callback to handle the result of Unmount.
-  // The argument is the device path.
-  typedef base::Callback<void(const std::string& device_path)> UnmountCallback;
-
   // A callback to handle the result of EnumerateAutoMountableDevices.
   // The argument is the enumerated device paths.
   typedef base::Callback<void(const std::vector<std::string>& device_paths)
                          > EnumerateAutoMountableDevicesCallback;
 
   // A callback to handle the result of FormatDevice.
-  // The first argument is the device path.
-  // The second argument is true when formatting succeeded, false otherwise.
-  typedef base::Callback<void(const std::string& device_path,
-                              bool format_succeeded)> FormatDeviceCallback;
+  // The argument is true when formatting succeeded.
+  typedef base::Callback<void(bool format_succeeded)> FormatDeviceCallback;
 
   // A callback to handle the result of GetDeviceProperties.
   // The argument is the information about the specified device.
@@ -258,8 +252,8 @@ class CHROMEOS_EXPORT CrosDisksClient {
   // otherwise, |error_callback| is called.
   virtual void Unmount(const std::string& device_path,
                        UnmountOptions options,
-                       const UnmountCallback& callback,
-                       const UnmountCallback& error_callback) = 0;
+                       const base::Closure& callback,
+                       const base::Closure& error_callback) = 0;
 
   // Calls EnumerateAutoMountableDevices method.  |callback| is called after the
   // method call succeeds, otherwise, |error_callback| is called.

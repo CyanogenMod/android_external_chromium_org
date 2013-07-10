@@ -18,7 +18,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
@@ -42,6 +42,7 @@
 #include "chrome/browser/chromeos/policy/auto_enrollment_client.h"
 #include "chrome/browser/chromeos/system/statistics_provider.h"
 #include "chrome/browser/chromeos/system/timezone_settings.h"
+#include "chrome/browser/chromeos/ui/focus_ring_controller.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/managed_mode/managed_mode.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
@@ -261,9 +262,14 @@ LoginDisplayHostImpl::LoginDisplayHostImpl(const gfx::Rect& background_bounds)
 
   bool keyboard_driven_oobe = false;
   system::StatisticsProvider::GetInstance()->GetMachineFlag(
-      chromeos::kOemKeyboardDrivenOobeKey, &keyboard_driven_oobe);
-  if (keyboard_driven_oobe)
+      chromeos::system::kOemKeyboardDrivenOobeKey,
+      &keyboard_driven_oobe);
+  if (keyboard_driven_oobe) {
     views::FocusManager::set_arrow_key_traversal_enabled(true);
+
+    focus_ring_controller_.reset(new FocusRingController);
+    focus_ring_controller_->SetVisible(true);
+  }
 }
 
 LoginDisplayHostImpl::~LoginDisplayHostImpl() {
@@ -753,7 +759,7 @@ void LoginDisplayHostImpl::InitLoginWindowAndView() {
       views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);
   params.bounds = background_bounds();
   params.show_state = ui::SHOW_STATE_FULLSCREEN;
-  params.transparent = true;
+  params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.parent =
       ash::Shell::GetContainer(
           ash::Shell::GetPrimaryRootWindow(),

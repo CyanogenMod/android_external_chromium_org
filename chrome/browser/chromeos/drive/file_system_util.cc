@@ -114,7 +114,7 @@ void MoveAllFilesFromDirectory(const base::FilePath& directory_from,
        file_from = enumerator.Next()) {
     const base::FilePath file_to = directory_to.Append(file_from.BaseName());
     if (!file_util::PathExists(file_to))  // Do not overwrite existing files.
-      file_util::Move(file_from, file_to);
+      base::Move(file_from, file_to);
   }
 }
 
@@ -323,7 +323,7 @@ void MigrateCacheFilesFromOldDirectories(
 
   // Move all files inside "persistent" to "files".
   MoveAllFilesFromDirectory(persistent_directory, cache_file_directory);
-  file_util::Delete(persistent_directory,  true /* recursive */);
+  base::Delete(persistent_directory,  true /* recursive */);
 
   // Move all files inside "tmp" to "files".
   MoveAllFilesFromDirectory(tmp_directory, cache_file_directory);

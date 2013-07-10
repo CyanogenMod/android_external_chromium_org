@@ -3,7 +3,7 @@
     <div id="managed-user-creation-intro" class="step-no-logo">
       <div id="managed-user-creation-marketing-intro"
           class="marketing">
-        Marketing placeholder.
+        <img src="chrome://theme/IDR_SUPERVISED_ILLUSTRATION_START">
       </div>
       <div class="below-marketing">
         <div i18n-content="createManagedUserIntroText1"></div>
@@ -48,81 +48,61 @@
           <div class="page-title-explanation inline"
               i18n-content="createManagedUserPasswordExplanation"></div>
         </div>
-      <div id="managed-user-creation-password-block">
-          <div>
-            <input id="managed-user-creation-password" type="password"
-                i18n-values="placeholder:createManagedUserPasswordHint" />
-            <span id="managed-user-creation-password-error" class="no-error">
-            </span>
+        <div id="managed-user-creation-password-block">
+            <div>
+              <input id="managed-user-creation-password" type="password"
+                  i18n-values="placeholder:createManagedUserPasswordHint" />
+            </div>
+            <div>
+              <input id="managed-user-creation-password-confirm"
+                  type="password"
+                  i18n-values="
+                      placeholder:createManagedUserPasswordConfirmHint" />
+            </div>
           </div>
-          <div>
-            <input id="managed-user-creation-password-confirm"
-                type="password"
-                i18n-values="placeholder:createManagedUserPasswordConfirmHint" />
+      </div>
+      <div id="managed-user-creation-image-picker" class="logo-padded-text">
+        <grid id="managed-user-creation-image-grid">
+        </grid>
+        <div id="managed-user-creation-image-preview">
+          <img id="managed-user-creation-image-preview-img" alt="">
+          <div class="managed-user-creation-image-stream-area">
+            <div class="perspective-box">
+              <div id="managed-user-creation-image-stream-crop">
+                <video class="managed-user-creation-image-stream" autoplay>
+                </video>
+              </div>
+            </div>
+            <div class="spinner"></div>
           </div>
+          <p id="managed-user-creation-image-preview-caption"></p>
+          <button id="managed-user-creation-flip-photo"
+              class="custom-appearance"
+              i18n-values="title:flipPhoto"></button>
+          <button id="managed-user-creation-discard-photo"
+              i18n-values="title:discardPhoto"></button>
+          <button id="managed-user-creation-take-photo"
+              i18n-values="title:takePhoto"></button>
         </div>
       </div>
     </div>
     <div id="managed-user-creation-created-1" class="step-no-logo" hidden>
       <div class="marketing">
+        <img src="chrome://theme/IDR_SUPERVISED_ILLUSTRATION_DONE">
       </div>
       <div class="below-marketing">
         <div>
           <div id="managed-user-creation-created-1-text-1"
               class="page-title centred"></div>
-          <div i18n-content="createManagedUserCreated1Text2"
+          <div id="managed-user-creation-created-1-text-2"
               class="page-title centred"></div>
           <div id="managed-user-creation-created-1-text-3"
               class="page-title-explanation centred"></div>
         </div>
       </div>
-      <div class="progress-dots">
-        <div class="dot-on"></div>
-        <div class="dot-off"></div>
-        <div class="dot-off"></div>
-      </div>
-    </div>
-    <div id="managed-user-creation-created-2" class="step-no-logo" hidden>
-      <div class="marketing">
-        Marketing placeholder 2.
-      </div>
-      <div class="below-marketing">
-        <div>
-          <div i18n-content="createManagedUserCreated2Text1"
-              class="page-title centred"></div>
-          <div id="managed-user-creation-created-2-text-2"
-              i18n-content="createManagedUserCreated2Text2"
-              class="page-title-explanation centred"></div>
-        </div>
-      </div>
-      <div class="progress-dots">
-        <div class="dot-off"></div>
-        <div class="dot-on"></div>
-        <div class="dot-off"></div>
-      </div>
-    </div>
-    <div id="managed-user-creation-created-3" class="step-no-logo" hidden>
-      <div class="marketing">
-        Marketing placeholder 3.
-      </div>
-      <div class="below-marketing">
-        <div>
-          <div i18n-content="createManagedUserCreated3Text1"
-              class="page-title centred"></div>
-          <div id="managed-user-creation-created-3-text-2"
-              class="page-title-explanation centred"></div>
-          <div id="managed-user-creation-created-3-text-3"
-              class="page-title-explanation centred"></div>
-        </div>
-      </div>
-      <div class="progress-dots">
-        <div class="dot-off"></div>
-        <div class="dot-off"></div>
-        <div class="dot-on"></div>
-      </div>
     </div>
     <div id="managed-user-creation-error" hidden>
-      <img alt class="error-icon" src="chrome://theme/IDR_FATAL_ERROR">
+      <img alt class="error-icon" src="chrome://theme/IDR_TECHNICAL_ERROR">
       <div id="managed-user-creation-error-title" class="error-title"></div>
       <div id="managed-user-creation-error-text"
           class="error-message-paragraph"></div>
@@ -151,9 +131,6 @@
     <div class="password-block" hidden>
       <input class="managed-user-creation-manager-password" type="password"
           i18n-values="placeholder:createManagedUserManagerPasswordHint" />
-      <span class="managed-user-creation-manager-wrong-password"
-          i18n-content="createManagedUserWrongManagerPasswordText"
-          hidden />
     </div>
   </div>
 </div>

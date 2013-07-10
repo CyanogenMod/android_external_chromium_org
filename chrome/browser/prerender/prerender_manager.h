@@ -17,8 +17,8 @@
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/predictors/logged_in_predictor_table.h"
 #include "chrome/browser/prerender/prerender_config.h"
 #include "chrome/browser/prerender/prerender_contents.h"
@@ -27,8 +27,8 @@
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "googleurl/src/gurl.h"
 #include "net/cookies/cookie_monster.h"
+#include "url/gurl.h"
 
 class Profile;
 struct ChromeCookieDetails;

@@ -10,7 +10,7 @@
 #include "ash/shell.h"
 #include "ash/volume_control_delegate.h"
 #include "base/message_loop.h"
-#include "base/time.h"
+#include "base/time/time.h"
 
 namespace ash {
 namespace test {
@@ -53,6 +53,7 @@ class TestVolumeControlDelegate : public VolumeControlDelegate {
 TestSystemTrayDelegate::TestSystemTrayDelegate()
     : bluetooth_enabled_(true),
       caps_lock_enabled_(false),
+      should_show_display_notification_(false),
       volume_control_delegate_(new TestVolumeControlDelegate) {
 }
 
@@ -104,6 +105,11 @@ const std::string TestSystemTrayDelegate::GetLocallyManagedUserManager() const {
   return std::string();
 }
 
+const base::string16 TestSystemTrayDelegate::GetLocallyManagedUserManagerName()
+    const {
+  return string16();
+}
+
 const base::string16 TestSystemTrayDelegate::GetLocallyManagedUserMessage()
     const {
   return string16();
@@ -131,6 +137,10 @@ void TestSystemTrayDelegate::ShowBluetoothSettings() {
 }
 
 void TestSystemTrayDelegate::ShowDisplaySettings() {
+}
+
+bool TestSystemTrayDelegate::ShouldShowDisplayNotification() {
+  return should_show_display_notification_;
 }
 
 void TestSystemTrayDelegate::ShowDriveSettings() {

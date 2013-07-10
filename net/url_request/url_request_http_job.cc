@@ -15,7 +15,7 @@
 #include "base/metrics/histogram.h"
 #include "base/rand_util.h"
 #include "base/strings/string_util.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/filter.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/load_flags.h"
@@ -1269,6 +1269,14 @@ bool URLRequestHttpJob::ReadRawData(IOBuffer* buf, int buf_size,
 void URLRequestHttpJob::StopCaching() {
   if (transaction_.get())
     transaction_->StopCaching();
+}
+
+bool URLRequestHttpJob::GetFullRequestHeaders(
+    HttpRequestHeaders* headers) const {
+  if (!transaction_)
+    return false;
+
+  return transaction_->GetFullRequestHeaders(headers);
 }
 
 void URLRequestHttpJob::DoneReading() {

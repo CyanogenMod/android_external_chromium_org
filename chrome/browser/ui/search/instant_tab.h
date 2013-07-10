@@ -13,7 +13,7 @@
 // that supports the Instant API.
 class InstantTab : public InstantPage {
  public:
-  explicit InstantTab(InstantPage::Delegate* delegate);
+  InstantTab(InstantPage::Delegate* delegate, bool is_incognito);
   virtual ~InstantTab();
 
   // Start observing |contents| for messages. Sends a message to determine if
@@ -23,7 +23,6 @@ class InstantTab : public InstantPage {
  private:
   // Overridden from InstantPage:
   virtual bool ShouldProcessAboutToNavigateMainFrame() OVERRIDE;
-  virtual bool ShouldProcessSetSuggestions() OVERRIDE;
   virtual bool ShouldProcessFocusOmnibox() OVERRIDE;
   virtual bool ShouldProcessNavigateToURL() OVERRIDE;
   virtual bool ShouldProcessDeleteMostVisitedItem() OVERRIDE;

@@ -14,7 +14,6 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
-#include "googleurl/src/gurl.h"
 
 namespace base {
 class Value;
@@ -97,11 +96,11 @@ class MessageLoopRunner : public base::RefCounted<MessageLoopRunner> {
 // |source|. When a notification of the expected type from the expected source
 // is received, the condition is met.
 // More complex conditions can be specified by providing a |notification_type|
-// and a |callback|. The callback encapsulates the logic that determines whether
-// the condition has been met. If the callback returns |true|, the condition is
-// met. Otherwise, the condition is not yet met and the callback will be invoked
-// again every time a notification of the expected type is received until the
-// callback returns |true|.
+// and a |callback|. The callback is called whenever the notification is fired.
+// If the callback returns |true|, the condition is met. Otherwise, the
+// condition is not yet met and the callback will be invoked again every time a
+// notification of the expected type is received until the callback returns
+// |true|.
 //
 // This helper class exists to avoid the following common pattern in tests:
 //   PerformAction()

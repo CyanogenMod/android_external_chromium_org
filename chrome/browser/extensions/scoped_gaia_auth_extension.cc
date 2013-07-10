@@ -34,7 +34,7 @@ void LoadGaiaAuthExtension(Profile* profile) {
   if (command_line->HasSwitch(switches::kAuthExtensionPath)) {
     base::FilePath auth_extension_path =
         command_line->GetSwitchValuePath(switches::kAuthExtensionPath);
-    component_loader->Add(IDR_GAIA_TEST_AUTH_MANIFEST, auth_extension_path);
+    component_loader->Add(IDR_GAIA_AUTH_MANIFEST, auth_extension_path);
     return;
   }
 
@@ -42,7 +42,7 @@ void LoadGaiaAuthExtension(Profile* profile) {
 #if defined(OS_CHROMEOS)
   chromeos::system::StatisticsProvider* provider =
       chromeos::system::StatisticsProvider::GetInstance();
-  provider->GetMachineFlag(chromeos::kOemKeyboardDrivenOobeKey,
+  provider->GetMachineFlag(chromeos::system::kOemKeyboardDrivenOobeKey,
                            &force_keyboard_oobe);
 #endif // OS_CHROMEOS
   if (force_keyboard_oobe) {

@@ -6,7 +6,9 @@
 
 #include <string>
 
+#include "base/file_util.h"
 #include "base/logging.h"
+#include "base/md5.h"
 #include "base/message_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -23,8 +25,39 @@
 #include "net/base/url_util.h"
 
 using content::BrowserThread;
+using google_apis::AboutResource;
+using google_apis::AccountMetadata;
+using google_apis::AppList;
+using google_apis::AuthorizeAppCallback;
+using google_apis::CancelCallback;
+using google_apis::DownloadActionCallback;
+using google_apis::EntryActionCallback;
+using google_apis::GDataErrorCode;
+using google_apis::GDATA_FILE_ERROR;
+using google_apis::GDATA_NO_CONNECTION;
+using google_apis::GDATA_OTHER_ERROR;
+using google_apis::GetAboutResourceCallback;
+using google_apis::GetAppListCallback;
+using google_apis::GetContentCallback;
+using google_apis::GetResourceEntryCallback;
+using google_apis::GetResourceListCallback;
+using google_apis::HTTP_BAD_REQUEST;
+using google_apis::HTTP_CREATED;
+using google_apis::HTTP_NOT_FOUND;
+using google_apis::HTTP_PRECONDITION;
+using google_apis::HTTP_RESUME_INCOMPLETE;
+using google_apis::HTTP_SUCCESS;
+using google_apis::InitiateUploadCallback;
+using google_apis::Link;
+using google_apis::ProgressCallback;
+using google_apis::ResourceEntry;
+using google_apis::ResourceList;
+using google_apis::UploadRangeCallback;
+using google_apis::UploadRangeResponse;
+namespace test_util = google_apis::test_util;
+namespace util = google_apis::util;
 
-namespace google_apis {
+namespace drive {
 namespace {
 
 // Rel property of upload link in the entries dictionary value.
@@ -66,28 +99,6 @@ bool EntryMatchWithQuery(const ResourceEntry& entry,
   return true;
 }
 
-// Gets the upload URL from the given entry. Returns an empty URL if not
-// found.
-GURL GetUploadUrl(const base::DictionaryValue& entry) {
-  std::string upload_url;
-  const base::ListValue* links = NULL;
-  if (entry.GetList("link", &links) && links) {
-    for (size_t link_index = 0;
-         link_index < links->GetSize();
-         ++link_index) {
-      const base::DictionaryValue* link = NULL;
-      std::string rel;
-      if (links->GetDictionary(link_index, &link) &&
-          link && link->GetString("rel", &rel) &&
-          rel == kUploadUrlRel &&
-          link->GetString("href", &upload_url)) {
-        break;
-      }
-    }
-  }
-  return GURL(upload_url);
-}
-
 // Returns |url| without query parameter.
 GURL RemoveQueryParameter(const GURL& url) {
   GURL::Replacements replacements;
@@ -95,11 +106,57 @@ GURL RemoveQueryParameter(const GURL& url) {
   return url.ReplaceComponents(replacements);
 }
 
+void ScheduleUploadRangeCallback(const UploadRangeCallback& callback,
+                                 int64 start_position,
+                                 int64 end_position,
+                                 GDataErrorCode error,
+                                 scoped_ptr<ResourceEntry> entry) {
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(callback,
+                 UploadRangeResponse(error,
+                                     start_position,
+                                     end_position),
+                 base::Passed(&entry)));
+}
+
 }  // namespace
+
+struct FakeDriveService::UploadSession {
+  std::string content_type;
+  int64 content_length;
+  std::string parent_resource_id;
+  std::string resource_id;
+  std::string etag;
+  std::string title;
+
+  int64 uploaded_size;
+
+  UploadSession()
+      : content_length(0),
+        uploaded_size(0) {}
+
+  UploadSession(
+      std::string content_type,
+      int64 content_length,
+      std::string parent_resource_id,
+      std::string resource_id,
+      std::string etag,
+      std::string title)
+    : content_type(content_type),
+      content_length(content_length),
+      parent_resource_id(parent_resource_id),
+      resource_id(resource_id),
+      etag(etag),
+      title(title),
+      uploaded_size(0) {
+  }
+};
 
 FakeDriveService::FakeDriveService()
     : largest_changestamp_(0),
       published_date_seq_(0),
+      next_upload_sequence_number_(0),
       default_max_results_(0),
       resource_id_count_(0),
       resource_list_load_count_(0),
@@ -472,25 +529,29 @@ CancelCallback FakeDriveService::DeleteResource(
       if (entries->GetDictionary(i, &entry) &&
           entry->GetString("gd$resourceId.$t", &current_resource_id) &&
           resource_id == current_resource_id) {
-        entries->Remove(i, NULL);
+        GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
+        if (entry->HasKey("gd$deleted")) {
+          error = HTTP_NOT_FOUND;
+        } else {
+          entry->Set("gd$deleted", new DictionaryValue);
+          AddNewChangestampAndETag(entry);
+          error = HTTP_SUCCESS;
+        }
         base::MessageLoop::current()->PostTask(
-            FROM_HERE, base::Bind(callback, HTTP_SUCCESS));
+            FROM_HERE, base::Bind(callback, error));
         return CancelCallback();
       }
     }
   }
 
-  // TODO(satorux): Add support for returning "deleted" entries in
-  // changelists from GetResourceList().
   base::MessageLoop::current()->PostTask(
       FROM_HERE, base::Bind(callback, HTTP_NOT_FOUND));
   return CancelCallback();
 }
 
 CancelCallback FakeDriveService::DownloadFile(
-    const base::FilePath& virtual_path,
     const base::FilePath& local_cache_path,
-    const GURL& download_url,
+    const std::string& resource_id,
     const DownloadActionCallback& download_action_callback,
     const GetContentCallback& get_content_callback,
     const ProgressCallback& progress_callback) {
@@ -507,7 +568,7 @@ CancelCallback FakeDriveService::DownloadFile(
   }
 
   // The field content.src is the URL to download the file.
-  base::DictionaryValue* entry = FindEntryByContentUrl(download_url);
+  base::DictionaryValue* entry = FindEntryByResourceId(resource_id);
   if (!entry) {
     base::MessageLoopProxy::current()->PostTask(
         FROM_HERE,
@@ -518,7 +579,6 @@ CancelCallback FakeDriveService::DownloadFile(
   // Write "x"s of the file size specified in the entry.
   std::string file_size_string;
   entry->GetString("docs$size.$t", &file_size_string);
-  // TODO(satorux): To be correct, we should update docs$md5Checksum.$t here.
   int64 file_size = 0;
   if (base::StringToInt64(file_size_string, &file_size)) {
     base::BinaryValue* content_binary_data;
@@ -620,7 +680,7 @@ CancelCallback FakeDriveService::CopyResource(
         link->SetString("href", GetFakeLinkUrl(parent_resource_id).spec());
         links->Append(link);
 
-        AddNewChangestamp(copied_entry.get());
+        AddNewChangestampAndETag(copied_entry.get());
 
         // Parse the new entry.
         scoped_ptr<ResourceEntry> resource_entry =
@@ -671,7 +731,7 @@ CancelCallback FakeDriveService::RenameResource(
   base::DictionaryValue* entry = FindEntryByResourceId(resource_id);
   if (entry) {
     entry->SetString("title.$t", new_name);
-    AddNewChangestamp(entry);
+    AddNewChangestampAndETag(entry);
     base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(callback, HTTP_SUCCESS));
     return CancelCallback();
@@ -713,7 +773,7 @@ CancelCallback FakeDriveService::TouchResource(
                    util::FormatTimeAsString(modified_date));
   entry->SetString("gd$lastViewed.$t",
                    util::FormatTimeAsString(last_viewed_by_me_date));
-  AddNewChangestamp(entry);
+  AddNewChangestampAndETag(entry);
 
   scoped_ptr<ResourceEntry> parsed_entry(ResourceEntry::CreateFrom(*entry));
   base::MessageLoop::current()->PostTask(
@@ -753,7 +813,7 @@ CancelCallback FakeDriveService::AddResourceToDirectory(
         "href", GetFakeLinkUrl(parent_resource_id).spec());
     links->Append(link);
 
-    AddNewChangestamp(entry);
+    AddNewChangestampAndETag(entry);
     base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(callback, HTTP_SUCCESS));
     return CancelCallback();
@@ -792,7 +852,7 @@ CancelCallback FakeDriveService::RemoveResourceFromDirectory(
             rel == "http://schemas.google.com/docs/2007#parent" &&
             GURL(href) == parent_content_url) {
           links->Remove(i, NULL);
-          AddNewChangestamp(entry);
+          AddNewChangestampAndETag(entry);
           base::MessageLoop::current()->PostTask(
               FROM_HERE, base::Bind(callback, HTTP_SUCCESS));
           return CancelCallback();
@@ -846,7 +906,6 @@ CancelCallback FakeDriveService::AddNewDirectory(
 }
 
 CancelCallback FakeDriveService::InitiateUploadNewFile(
-    const base::FilePath& drive_file_path,
     const std::string& content_type,
     int64 content_length,
     const std::string& parent_resource_id,
@@ -862,32 +921,29 @@ CancelCallback FakeDriveService::InitiateUploadNewFile(
     return CancelCallback();
   }
 
-  // Content length should be zero, as we'll create an empty file first. The
-  // content will be added in ResumeUpload().
-  const base::DictionaryValue* new_entry = AddNewEntry(content_type,
-                                                       "",  // content_data
-                                                       parent_resource_id,
-                                                       title,
-                                                       false,  // shared_with_me
-                                                       "file");
-  if (!new_entry) {
+  if (parent_resource_id != GetRootResourceId() &&
+      !FindEntryByResourceId(parent_resource_id)) {
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback, HTTP_NOT_FOUND, GURL()));
     return CancelCallback();
   }
-  const GURL upload_url = GetUploadUrl(*new_entry);
-  DCHECK(upload_url.is_valid());
+
+  GURL session_url = GetNewUploadSessionUrl();
+  upload_sessions_[session_url] =
+      UploadSession(content_type, content_length,
+                    parent_resource_id,
+                    "",  // resource_id
+                    "",  // etag
+                    title);
 
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
-      base::Bind(callback, HTTP_SUCCESS,
-                 net::AppendQueryParameter(upload_url, "mode", "newfile")));
+      base::Bind(callback, HTTP_SUCCESS, session_url));
   return CancelCallback();
 }
 
 CancelCallback FakeDriveService::InitiateUploadExistingFile(
-    const base::FilePath& drive_file_path,
     const std::string& content_type,
     int64 content_length,
     const std::string& resource_id,
@@ -919,20 +975,22 @@ CancelCallback FakeDriveService::InitiateUploadExistingFile(
         base::Bind(callback, HTTP_PRECONDITION, GURL()));
     return CancelCallback();
   }
-  entry->SetString("docs$size.$t", "0");
 
-  const GURL upload_url = GetUploadUrl(*entry);
-  DCHECK(upload_url.is_valid());
+  GURL session_url = GetNewUploadSessionUrl();
+  upload_sessions_[session_url] =
+      UploadSession(content_type, content_length,
+                    "",  // parent_resource_id
+                    resource_id,
+                    entry_etag,
+                    "" /* title */);
 
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
-      base::Bind(callback, HTTP_SUCCESS,
-                 net::AppendQueryParameter(upload_url, "mode", "existing")));
+      base::Bind(callback, HTTP_SUCCESS, session_url));
   return CancelCallback();
 }
 
 CancelCallback FakeDriveService::GetUploadStatus(
-    const base::FilePath& drive_file_path,
     const GURL& upload_url,
     int64 content_length,
     const UploadRangeCallback& callback) {
@@ -942,7 +1000,6 @@ CancelCallback FakeDriveService::GetUploadStatus(
 }
 
 CancelCallback FakeDriveService::ResumeUpload(
-      const base::FilePath& drive_file_path,
       const GURL& upload_url,
       int64 start_position,
       int64 end_position,
@@ -954,50 +1011,28 @@ CancelCallback FakeDriveService::ResumeUpload(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  scoped_ptr<ResourceEntry> result_entry;
+  GetResourceEntryCallback completion_callback
+      = base::Bind(&ScheduleUploadRangeCallback,
+                   callback, start_position, end_position);
 
   if (offline_) {
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(callback,
-                   UploadRangeResponse(GDATA_NO_CONNECTION,
-                                       start_position,
-                                       end_position),
-                   base::Passed(&result_entry)));
+    completion_callback.Run(GDATA_NO_CONNECTION, scoped_ptr<ResourceEntry>());
     return CancelCallback();
   }
 
-  DictionaryValue* entry = NULL;
-  entry = FindEntryByUploadUrl(RemoveQueryParameter(upload_url));
-  if (!entry) {
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(callback,
-                   UploadRangeResponse(HTTP_NOT_FOUND,
-                                       start_position,
-                                       end_position),
-                   base::Passed(&result_entry)));
+  if (!upload_sessions_.count(upload_url)) {
+    completion_callback.Run(HTTP_NOT_FOUND, scoped_ptr<ResourceEntry>());
     return CancelCallback();
   }
+
+  UploadSession* session = &upload_sessions_[upload_url];
 
   // Chunks are required to be sent in such a ways that they fill from the start
   // of the not-yet-uploaded part with no gaps nor overlaps.
-  std::string current_size_string;
-  int64 current_size;
-  if (!entry->GetString("docs$size.$t", &current_size_string) ||
-      !base::StringToInt64(current_size_string, &current_size) ||
-      current_size != start_position) {
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(callback,
-                   UploadRangeResponse(HTTP_BAD_REQUEST,
-                                       start_position,
-                                       end_position),
-                   base::Passed(&result_entry)));
+  if (session->uploaded_size != start_position) {
+    completion_callback.Run(HTTP_BAD_REQUEST, scoped_ptr<ResourceEntry>());
     return CancelCallback();
   }
-
-  entry->SetString("docs$size.$t", base::Int64ToString(end_position));
 
   if (!progress_callback.is_null()) {
     // In the real GDataWapi/Drive DriveService, progress is reported in
@@ -1014,35 +1049,62 @@ CancelCallback FakeDriveService::ResumeUpload(
   }
 
   if (content_length != end_position) {
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(callback,
-                   UploadRangeResponse(HTTP_RESUME_INCOMPLETE,
-                                       start_position,
-                                       end_position),
-                    base::Passed(&result_entry)));
+    session->uploaded_size = end_position;
+    completion_callback.Run(HTTP_RESUME_INCOMPLETE,
+                            scoped_ptr<ResourceEntry>());
     return CancelCallback();
   }
 
-  AddNewChangestamp(entry);
-  result_entry = ResourceEntry::CreateFrom(*entry).Pass();
+  std::string content_data;
+  if (!file_util::ReadFileToString(local_file_path, &content_data)) {
+    session->uploaded_size = end_position;
+    completion_callback.Run(GDATA_FILE_ERROR, scoped_ptr<ResourceEntry>());
+    return CancelCallback();
+  }
+  session->uploaded_size = end_position;
 
-  std::string upload_mode;
-  bool upload_mode_found =
-      net::GetValueForKeyInQuery(upload_url, "mode", &upload_mode);
-  DCHECK(upload_mode_found &&
-         (upload_mode == "newfile" || upload_mode == "existing"));
+  // |resource_id| is empty if the upload is for new file.
+  if (session->resource_id.empty()) {
+    DCHECK(!session->parent_resource_id.empty());
+    DCHECK(!session->title.empty());
+    const DictionaryValue* new_entry = AddNewEntry(
+        session->content_type,
+        content_data,
+        session->parent_resource_id,
+        session->title,
+        false,  // shared_with_me
+        "file");
+    if (!new_entry) {
+      completion_callback.Run(HTTP_NOT_FOUND, scoped_ptr<ResourceEntry>());
+      return CancelCallback();
+    }
 
-  GDataErrorCode return_code =
-      upload_mode == "newfile" ? HTTP_CREATED : HTTP_SUCCESS;
+    completion_callback.Run(HTTP_CREATED,
+                            ResourceEntry::CreateFrom(*new_entry));
+    return CancelCallback();
+  }
 
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(callback,
-                 UploadRangeResponse(return_code,
-                                     start_position,
-                                     end_position),
-                 base::Passed(&result_entry)));
+  DictionaryValue* entry = FindEntryByResourceId(session->resource_id);
+  if (!entry) {
+    completion_callback.Run(HTTP_NOT_FOUND, scoped_ptr<ResourceEntry>());
+    return CancelCallback();
+  }
+
+  std::string entry_etag;
+  entry->GetString("gd$etag", &entry_etag);
+  if (entry_etag.empty() || session->etag != entry_etag) {
+    completion_callback.Run(HTTP_PRECONDITION, scoped_ptr<ResourceEntry>());
+    return CancelCallback();
+  }
+
+  entry->SetString("docs$md5Checksum.$t", base::MD5String(content_data));
+  entry->Set("test$data",
+             base::BinaryValue::CreateWithCopiedBuffer(
+                 content_data.data(), content_data.size()));
+  entry->SetString("docs$size.$t", base::Int64ToString(end_position));
+  AddNewChangestampAndETag(entry);
+
+  completion_callback.Run(HTTP_SUCCESS, ResourceEntry::CreateFrom(*entry));
   return CancelCallback();
 }
 
@@ -1184,40 +1246,6 @@ base::DictionaryValue* FakeDriveService::FindEntryByContentUrl(
   return NULL;
 }
 
-base::DictionaryValue* FakeDriveService::FindEntryByUploadUrl(
-    const GURL& upload_url) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  base::ListValue* entries = NULL;
-  // Go through entries and return the one that matches |upload_url|.
-  if (resource_list_value_->GetList("entry", &entries)) {
-    for (size_t i = 0; i < entries->GetSize(); ++i) {
-      base::DictionaryValue* entry = NULL;
-      base::ListValue* links = NULL;
-      if (entries->GetDictionary(i, &entry) &&
-          entry->GetList("link", &links) &&
-          links) {
-        for (size_t link_index = 0;
-            link_index < links->GetSize();
-            ++link_index) {
-          base::DictionaryValue* link = NULL;
-          std::string rel;
-          std::string found_upload_url;
-          if (links->GetDictionary(link_index, &link) &&
-              link && link->GetString("rel", &rel) &&
-              rel == kUploadUrlRel &&
-              link->GetString("href", &found_upload_url) &&
-              GURL(found_upload_url) == upload_url) {
-            return entry;
-          }
-        }
-      }
-    }
-  }
-
-  return NULL;
-}
-
 std::string FakeDriveService::GetNewResourceId() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -1225,10 +1253,12 @@ std::string FakeDriveService::GetNewResourceId() {
   return base::StringPrintf("resource_id_%d", resource_id_count_);
 }
 
-void FakeDriveService::AddNewChangestamp(base::DictionaryValue* entry) {
+void FakeDriveService::AddNewChangestampAndETag(base::DictionaryValue* entry) {
   ++largest_changestamp_;
   entry->SetString("docs$changestamp.value",
                    base::Int64ToString(largest_changestamp_));
+  entry->SetString("gd$etag",
+                   "etag_" + base::Int64ToString(largest_changestamp_));
 }
 
 const base::DictionaryValue* FakeDriveService::AddNewEntry(
@@ -1260,9 +1290,8 @@ const base::DictionaryValue* FakeDriveService::AddNewEntry(
             content_data.c_str(), content_data.size()));
     new_entry->SetString("docs$size.$t",
                          base::Int64ToString(content_data.size()));
-    // TODO(satorux): Set the correct MD5 here.
     new_entry->SetString("docs$md5Checksum.$t",
-                         "3b4385ebefec6e743574c76bbd0575de");
+                         base::MD5String(content_data));
   }
 
   // Add "category" which sets the resource type to |entry_kind|.
@@ -1311,7 +1340,7 @@ const base::DictionaryValue* FakeDriveService::AddNewEntry(
   links->Append(upload_link);
   new_entry->Set("link", links);
 
-  AddNewChangestamp(new_entry.get());
+  AddNewChangestampAndETag(new_entry.get());
 
   base::Time published_date =
       base::Time() + base::TimeDelta::FromMilliseconds(++published_date_seq_);
@@ -1390,6 +1419,11 @@ void FakeDriveService::GetResourceListInternal(
     if (start_changestamp > 0 && entry->changestamp() < start_changestamp)
       should_exclude = true;
 
+    // If the caller requests other list than change list by specifying
+    // zero-|start_changestamp|, exclude deleted entry from the result.
+    if (!start_changestamp && entry->deleted())
+      should_exclude = true;
+
     // The entry matched the criteria for inclusion.
     if (!should_exclude)
       ++num_entries_matched;
@@ -1447,4 +1481,9 @@ void FakeDriveService::GetResourceListInternal(
                  base::Passed(&resource_list)));
 }
 
-}  // namespace google_apis
+GURL FakeDriveService::GetNewUploadSessionUrl() {
+  return GURL("https://upload_session_url/" +
+              base::Int64ToString(next_upload_sequence_number_++));
+}
+
+}  // namespace drive

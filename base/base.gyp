@@ -40,16 +40,6 @@
             ['chromeos==1', {
               'sources/': [ ['include', '_chromeos\\.cc$'] ]
             }],
-            ['linux_use_tcmalloc==0', {
-              'defines': [
-                'NO_TCMALLOC',
-              ],
-              'direct_dependent_settings': {
-                'defines': [
-                  'NO_TCMALLOC',
-                ],
-              },
-            }],
             ['toolkit_uses_gtk==1', {
               'dependencies': [
                 '../build/linux/system.gyp:gtk',
@@ -187,6 +177,18 @@
               '-ldl',
             ],
           },
+          'conditions': [
+            ['linux_use_tcmalloc==0', {
+              'defines': [
+                'NO_TCMALLOC',
+              ],
+              'direct_dependent_settings': {
+                'defines': [
+                  'NO_TCMALLOC',
+                ],
+              },
+            }],
+          ],
         }],
         ['OS == "mac" or (OS == "ios" and _toolset == "host")', {
           'link_settings': {
@@ -461,6 +463,7 @@
         'callback_unittest.nc',
         'cancelable_callback_unittest.cc',
         'command_line_unittest.cc',
+        'containers/hash_tables_unittest.cc',
         'containers/linked_list_unittest.cc',
         'containers/mru_cache_unittest.cc',
         'containers/small_map_unittest.cc',
@@ -468,6 +471,7 @@
         'cpu_unittest.cc',
         'debug/crash_logging_unittest.cc',
         'debug/leak_tracker_unittest.cc',
+        'debug/proc_maps_linux_unittest.cc',
         'debug/stack_trace_unittest.cc',
         'debug/trace_event_unittest.cc',
         'debug/trace_event_unittest.h',
@@ -483,7 +487,6 @@
         'files/scoped_temp_dir_unittest.cc',
         'gmock_unittest.cc',
         'guid_unittest.cc',
-        'hi_res_timer_manager_unittest.cc',
         'id_map_unittest.cc',
         'i18n/break_iterator_unittest.cc',
         'i18n/char_iterator_unittest.cc',
@@ -509,6 +512,7 @@
         'mac/libdispatch_task_runner_unittest.cc',
         'mac/mac_util_unittest.mm',
         'mac/objc_property_releaser_unittest.mm',
+        'mac/scoped_nsobject_unittest.mm',
         'mac/scoped_sending_event_unittest.mm',
         'md5_unittest.cc',
         'memory/aligned_memory_unittest.cc',
@@ -516,7 +520,6 @@
         'memory/linked_ptr_unittest.cc',
         'memory/ref_counted_memory_unittest.cc',
         'memory/ref_counted_unittest.cc',
-        'memory/scoped_nsobject_unittest.mm',
         'memory/scoped_ptr_unittest.cc',
         'memory/scoped_ptr_unittest.nc',
         'memory/scoped_vector_unittest.cc',
@@ -547,7 +550,6 @@
         'posix/file_descriptor_shuffle_unittest.cc',
         'posix/unix_domain_socket_linux_unittest.cc',
         'power_monitor/power_monitor_unittest.cc',
-        'pr_time_unittest.cc',
         'prefs/default_pref_store_unittest.cc',
         'prefs/json_pref_store_unittest.cc',
         'prefs/mock_pref_change_callback.h',
@@ -560,8 +562,9 @@
         'prefs/pref_value_store_unittest.cc',
         'process_util_unittest.cc',
         'process_util_unittest_ios.cc',
-        'process_util_unittest_mac.h',
-        'process_util_unittest_mac.mm',
+        'process/memory_unittest.cc',
+        'process/memory_unittest_mac.h',
+        'process/memory_unittest_mac.mm',
         'profiler/tracked_time_unittest.cc',
         'rand_util_unittest.cc',
         'safe_numerics_unittest.cc',
@@ -612,9 +615,11 @@
         'threading/watchdog_unittest.cc',
         'threading/worker_pool_posix_unittest.cc',
         'threading/worker_pool_unittest.cc',
-        'time_unittest.cc',
-        'time_win_unittest.cc',
-        'timer_unittest.cc',
+        'time/pr_time_unittest.cc',
+        'time/time_unittest.cc',
+        'time/time_win_unittest.cc',
+        'timer/hi_res_timer_manager_unittest.cc',
+        'timer/timer_unittest.cc',
         'tools_sanity_unittest.cc',
         'tracked_objects_unittest.cc',
         'tuple_unittest.cc',
@@ -628,6 +633,7 @@
         'win/event_trace_provider_unittest.cc',
         'win/i18n_unittest.cc',
         'win/iunknown_impl_unittest.cc',
+        'win/message_window_unittest.cc',
         'win/object_watcher_unittest.cc',
         'win/pe_image_unittest.cc',
         'win/registry_unittest.cc',
@@ -636,9 +642,9 @@
         'win/scoped_comptr_unittest.cc',
         'win/scoped_handle_unittest.cc',
         'win/scoped_process_information_unittest.cc',
+        'win/scoped_variant_unittest.cc',
         'win/shortcut_unittest.cc',
         'win/startup_information_unittest.cc',
-        'win/scoped_variant_unittest.cc',
         'win/win_util_unittest.cc',
         'win/wrapped_window_proc_unittest.cc',
       ],
@@ -662,6 +668,11 @@
         'module_dir': 'base'
       },
       'conditions': [
+        ['use_glib==1 or (OS == "android" and _toolset == "target")', {
+          'defines': [
+            'USE_SYMBOLIZE',
+          ],
+        }],
         ['OS == "android"', {
           'dependencies': [
             'android/jni_generator/jni_generator.gyp:jni_generator_tests',
@@ -681,7 +692,8 @@
         ['OS == "ios" and _toolset != "host"', {
           'sources/': [
             # Only test the iOS-meaningful portion of process_utils.
-            ['exclude', '^process_util_unittest'],
+            ['exclude', '^process_util_unittest\\.cc$'],
+            ['exclude', '^process/memory_unittest'],
             ['include', '^process_util_unittest_ios\\.cc$'],
             # Requires spawning processes.
             ['exclude', '^metrics/stats_table_unittest\\.cc$'],
@@ -726,12 +738,6 @@
             'file_version_info_unittest.cc',
           ],
           'conditions': [
-            [ 'linux_use_tcmalloc==1', {
-                'dependencies': [
-                  'allocator/allocator.gyp:allocator',
-                ],
-              },
-            ],
             [ 'toolkit_uses_gtk==1', {
               'sources': [
                 'nix/xdg_util_unittest.cc',
@@ -756,6 +762,12 @@
             'message_loop/message_pump_glib_unittest.cc',
           ]
         }],
+        ['OS == "linux" and linux_use_tcmalloc==1', {
+            'dependencies': [
+              'allocator/allocator.gyp:allocator',
+            ],
+          },
+        ],
         ['OS == "win"', {
           # This is needed to trigger the dll copy step on windows.
           # TODO(mark): This should not be necessary.
@@ -793,7 +805,7 @@
           ],
           'sources!': [
             'debug/trace_event_win_unittest.cc',
-            'time_win_unittest.cc',
+            'time/time_win_unittest.cc',
             'win/win_util_unittest.cc',
           ],
         }],
@@ -810,7 +822,13 @@
             # by file name rules).
             ['include', '^mac/objc_property_releaser_unittest\\.mm$'],
             ['include', '^mac/bind_objc_block_unittest\\.mm$'],
+            ['include', '^mac/scoped_nsobject_unittest\\.mm$'],
             ['include', '^sys_string_conversions_mac_unittest\\.mm$'],
+          ],
+        }],
+        ['OS == "android"', {
+          'sources/': [
+            ['include', '^debug/proc_maps_linux_unittest\\.cc$'],
           ],
         }],
       ],  # target_conditions
@@ -887,6 +905,8 @@
         'test/test_file_util_mac.cc',
         'test/test_file_util_posix.cc',
         'test/test_file_util_win.cc',
+        'test/test_launcher.cc',
+        'test/test_launcher.h',
         'test/test_listener_ios.h',
         'test/test_listener_ios.mm',
         'test/test_pending_task.cc',
@@ -1152,6 +1172,7 @@
             'android/java/src/org/chromium/base/PathUtils.java',
             'android/java/src/org/chromium/base/PowerMonitor.java',
             'android/java/src/org/chromium/base/SystemMessageHandler.java',
+            'android/java/src/org/chromium/base/SysUtils.java',
             'android/java/src/org/chromium/base/ThreadUtils.java',
           ],
           'conditions': [

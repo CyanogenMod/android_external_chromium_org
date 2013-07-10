@@ -51,7 +51,6 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
     public SyncManager,
     public net::NetworkChangeNotifier::IPAddressObserver,
     public net::NetworkChangeNotifier::ConnectionTypeObserver,
-    public InvalidationHandler,
     public JsBackend,
     public SyncEngineEventListener,
     public ServerConnectionEventListener,
@@ -74,7 +73,6 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
       ExtensionsActivityMonitor* extensions_activity_monitor,
       SyncManager::ChangeDelegate* change_delegate,
       const SyncCredentials& credentials,
-      scoped_ptr<Invalidator> invalidator,
       const std::string& invalidator_client_id,
       const std::string& restored_key_for_bootstrapping,
       const std::string& restored_keystore_key_for_bootstrapping,
@@ -90,28 +88,20 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
       ModelTypeSet types) OVERRIDE;
   virtual bool PurgePartiallySyncedTypes() OVERRIDE;
   virtual void UpdateCredentials(const SyncCredentials& credentials) OVERRIDE;
-  virtual void UpdateEnabledTypes(ModelTypeSet enabled_types) OVERRIDE;
-  virtual void RegisterInvalidationHandler(
-      InvalidationHandler* handler) OVERRIDE;
-  virtual void UpdateRegisteredInvalidationIds(
-      InvalidationHandler* handler,
-      const ObjectIdSet& ids) OVERRIDE;
-  virtual void UnregisterInvalidationHandler(
-      InvalidationHandler* handler) OVERRIDE;
-  virtual void AcknowledgeInvalidation(
-      const invalidation::ObjectId& id,
-      const syncer::AckHandle& ack_handle) OVERRIDE;
   virtual void StartSyncingNormally(
       const ModelSafeRoutingInfo& routing_info) OVERRIDE;
   virtual void ConfigureSyncer(
       ConfigureReason reason,
       ModelTypeSet to_download,
+      ModelTypeSet to_purge,
       ModelTypeSet to_journal,
       ModelTypeSet to_unapply,
-      ModelTypeSet to_ignore,
       const ModelSafeRoutingInfo& new_routing_info,
       const base::Closure& ready_task,
       const base::Closure& retry_task) OVERRIDE;
+  virtual void OnInvalidatorStateChange(InvalidatorState state) OVERRIDE;
+  virtual void OnIncomingInvalidation(
+      const ObjectIdInvalidationMap& invalidation_map) OVERRIDE;
   virtual void AddObserver(SyncManager::Observer* observer) OVERRIDE;
   virtual void RemoveObserver(SyncManager::Observer* observer) OVERRIDE;
   virtual SyncStatus GetDetailedStatus() const OVERRIDE;
@@ -177,11 +167,6 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
       syncable::BaseTransaction* trans,
       std::vector<int64>* entries_changed) OVERRIDE;
 
-  // InvalidationHandler implementation.
-  virtual void OnInvalidatorStateChange(InvalidatorState state) OVERRIDE;
-  virtual void OnIncomingInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map) OVERRIDE;
-
   // Handle explicit requests to fetch updates for the given types.
   virtual void RefreshTypes(ModelTypeSet types) OVERRIDE;
 
@@ -212,7 +197,7 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
     std::string payload;
 
     // Returned pointer owned by the caller.
-    DictionaryValue* ToValue() const;
+    base::DictionaryValue* ToValue() const;
   };
 
   base::TimeDelta GetNudgeDelayTimeDelta(const ModelType& model_type);
@@ -241,13 +226,11 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   // Open the directory named with |username|.
   bool OpenDirectory(const std::string& username);
 
-  // Purge those types from |previously_enabled_types| that are no longer
-  // enabled in |currently_enabled_types|. |to_journal| and |to_unapply|
-  // specify types that require special handling. |to_journal| types are saved
-  // into the delete journal, while |to_unapply| have only their local data
-  // deleted, while their server data is preserved.
-  bool PurgeDisabledTypes(ModelTypeSet previously_enabled_types,
-                          ModelTypeSet currently_enabled_types,
+  // Purge those disabled types as specified by |to_purge|. |to_journal| and
+  // |to_unapply| specify subsets that require special handling. |to_journal|
+  // types are saved into the delete journal, while |to_unapply| have only
+  // their local data deleted, while their server data is preserved.
+  bool PurgeDisabledTypes(ModelTypeSet to_purge,
                           ModelTypeSet to_journal,
                           ModelTypeSet to_unapply);
 
@@ -279,7 +262,7 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
     const std::string& name, UnboundJsMessageHandler unbound_message_handler);
 
   // Returned pointer is owned by the caller.
-  static DictionaryValue* NotificationInfoToValue(
+  static base::DictionaryValue* NotificationInfoToValue(
       const NotificationInfoMap& notification_info);
 
   static std::string NotificationInfoToString(
@@ -337,9 +320,6 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   // The scheduler that runs the Syncer. Needs to be explicitly
   // Start()ed.
   scoped_ptr<SyncScheduler> scheduler_;
-
-  // The Invalidator which notifies us when updates need to be downloaded.
-  scoped_ptr<Invalidator> invalidator_;
 
   // A multi-purpose status watch object that aggregates stats from various
   // sync components.

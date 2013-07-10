@@ -19,14 +19,8 @@ class AdViewTest : public extensions::PlatformAppBrowserTest {
 
 // This test checks the "loadcommit" event is called when the page inside an
 // <adview> is loaded.
-#if defined(OS_MACOSX)
-// Very flaky on MacOS 10.8.
-#define MAYBE_LoadCommitEventIsCalled DISABLED_LoadCommitEventIsCalled
-#else
-#define MAYBE_LoadCommitEventIsCalled LoadCommitEventIsCalled
-#endif
-IN_PROC_BROWSER_TEST_F(AdViewTest, MAYBE_LoadCommitEventIsCalled) {
-  ASSERT_TRUE(StartTestServer());
+IN_PROC_BROWSER_TEST_F(AdViewTest, LoadCommitEventIsCalled) {
+  ASSERT_TRUE(StartEmbeddedTestServer());
 
   ASSERT_TRUE(RunPlatformAppTest(
       "platform_apps/ad_view/loadcommit_event")) << message_;
@@ -35,7 +29,7 @@ IN_PROC_BROWSER_TEST_F(AdViewTest, MAYBE_LoadCommitEventIsCalled) {
 // This test checks the "loadabort" event is called when the "src" attribute
 // of an <adview> is an invalid URL.
 IN_PROC_BROWSER_TEST_F(AdViewTest, LoadAbortEventIsCalled) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
 
   ASSERT_TRUE(RunPlatformAppTest(
       "platform_apps/ad_view/loadabort_event")) << message_;
@@ -51,7 +45,7 @@ IN_PROC_BROWSER_TEST_F(AdViewTest, LoadAbortEventIsCalled) {
 #define MAYBE_CommitMessageFromAdNetwork CommitMessageFromAdNetwork
 #endif
 IN_PROC_BROWSER_TEST_F(AdViewTest, MAYBE_CommitMessageFromAdNetwork) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
 
   ASSERT_TRUE(RunPlatformAppTest(
       "platform_apps/ad_view/onloadcommit_ack")) << message_;
@@ -63,7 +57,7 @@ IN_PROC_BROWSER_TEST_F(AdViewTest, MAYBE_CommitMessageFromAdNetwork) {
 //       file (image035.png) which the trybots don't process correctly when
 //       first checked-in.
 IN_PROC_BROWSER_TEST_F(AdViewTest, DISABLED_DisplayFirstAd) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
 
   ASSERT_TRUE(RunPlatformAppTest(
       "platform_apps/ad_view/display_first_ad")) << message_;
@@ -72,7 +66,7 @@ IN_PROC_BROWSER_TEST_F(AdViewTest, DISABLED_DisplayFirstAd) {
 // This test checks that <adview> attributes are also exposed as properties
 // (with the same name and value).
 IN_PROC_BROWSER_TEST_F(AdViewTest, PropertiesAreInSyncWithAttributes) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
 
   ASSERT_TRUE(RunPlatformAppTest(
       "platform_apps/ad_view/properties_exposed")) << message_;
@@ -81,7 +75,7 @@ IN_PROC_BROWSER_TEST_F(AdViewTest, PropertiesAreInSyncWithAttributes) {
 // This test checks an <adview> element has no behavior when the "adview"
 // permission is missing from the application manifest.
 IN_PROC_BROWSER_TEST_F(AdViewTest, AdViewPermissionIsRequired) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
 
   ASSERT_TRUE(RunPlatformAppTest(
       "platform_apps/ad_view/permission_required")) << message_;
@@ -90,8 +84,14 @@ IN_PROC_BROWSER_TEST_F(AdViewTest, AdViewPermissionIsRequired) {
 // This test checks that 1) it is possible change the value of the "ad-network"
 // attribute of an <adview> element and 2) changing the value will reset the
 // "src" attribute.
-IN_PROC_BROWSER_TEST_F(AdViewTest, ChangeAdNetworkValue) {
-  ASSERT_TRUE(StartTestServer());
+#if defined(OS_MACOSX)
+// Very flaky on MacOS 10.8 - crbug.com/253644.
+#define MAYBE_ChangeAdNetworkValue DISABLED_ChangeAdNetworkValue
+#else
+#define MAYBE_ChangeAdNetworkValue ChangeAdNetworkValue
+#endif
+IN_PROC_BROWSER_TEST_F(AdViewTest, MAYBE_ChangeAdNetworkValue) {
+  ASSERT_TRUE(StartEmbeddedTestServer());
 
   ASSERT_TRUE(RunPlatformAppTest(
       "platform_apps/ad_view/change_ad_network")) << message_;
@@ -109,7 +109,7 @@ class AdViewNoSrcTest : public extensions::PlatformAppBrowserTest {
 // This test checks an invalid "ad-network" value (i.e. not whitelisted)
 // is ignored.
 IN_PROC_BROWSER_TEST_F(AdViewNoSrcTest, InvalidAdNetworkIsIgnored) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
 
   ASSERT_TRUE(RunPlatformAppTest(
       "platform_apps/ad_view/invalid_ad_network")) << message_;
@@ -118,7 +118,7 @@ IN_PROC_BROWSER_TEST_F(AdViewNoSrcTest, InvalidAdNetworkIsIgnored) {
 // This test checks the "src" attribute is ignored when the
 // "kEnableAdviewSrcAttribute" is missing.
 IN_PROC_BROWSER_TEST_F(AdViewNoSrcTest, EnableAdviewSrcAttributeFlagRequired) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
 
   ASSERT_TRUE(RunPlatformAppTest(
       "platform_apps/ad_view/src_flag_required")) << message_;
@@ -158,7 +158,7 @@ class AdViewNotEnabledTest : public extensions::PlatformAppBrowserTest {
 // This test checks an <adview> element has no behavior when the "kEnableAdview"
 // flag is missing.
 IN_PROC_BROWSER_TEST_F(AdViewNotEnabledTest, EnableAdviewFlagRequired) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
 
   ASSERT_TRUE(RunPlatformAppTest(
       "platform_apps/ad_view/flag_required")) << message_;

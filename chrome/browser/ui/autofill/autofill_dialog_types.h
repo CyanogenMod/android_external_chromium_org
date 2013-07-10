@@ -10,8 +10,8 @@
 
 #include "base/callback_forward.h"
 #include "base/strings/string16.h"
-#include "components/autofill/browser/autofill_metrics.h"
-#include "components/autofill/browser/field_types.h"
+#include "components/autofill/core/browser/autofill_metrics.h"
+#include "components/autofill/core/browser/field_types.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/image/image.h"
@@ -126,6 +126,35 @@ class DialogNotification {
   // example, WALLET_USAGE_CONFIRMATION notifications set this to false after
   // the submit flow has started.
   bool interactive_;
+};
+
+// A notification to show in the autofill dialog. Ranges from information to
+// seriously scary security messages, and will give you the color it should be
+// displayed (if you ask it).
+class DialogAutocheckoutStep {
+ public:
+  DialogAutocheckoutStep(AutocheckoutStepType type,
+                         AutocheckoutStepStatus status);
+
+  // Returns the appropriate color for the display text based on |status_|.
+  SkColor GetTextColor() const;
+
+  // Returns the appropriate font for the display text based on |status_|.
+  gfx::Font GetTextFont() const;
+
+  // Returns whether the icon for the view should be visable based on |status_|.
+  bool IsIconVisible() const;
+
+  // Returns the display text based on |type_| and |status_|.
+  string16 GetDisplayText() const;
+
+  AutocheckoutStepStatus status() { return status_; }
+
+  AutocheckoutStepType type() { return type_; }
+
+ private:
+  AutocheckoutStepType type_;
+  AutocheckoutStepStatus status_;
 };
 
 extern SkColor const kWarningColor;

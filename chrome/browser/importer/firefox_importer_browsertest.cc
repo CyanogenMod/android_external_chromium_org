@@ -11,17 +11,16 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/imported_bookmark_entry.h"
-#include "chrome/browser/favicon/imported_favicon_usage.h"
 #include "chrome/browser/importer/external_process_importer_host.h"
 #include "chrome/browser/importer/firefox_importer_unittest_utils.h"
-#include "chrome/browser/importer/importer_data_types.h"
-#include "chrome/browser/importer/importer_host.h"
 #include "chrome/browser/importer/importer_progress_observer.h"
 #include "chrome/browser/importer/importer_unittest_utils.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/importer/imported_bookmark_entry.h"
+#include "chrome/common/importer/imported_favicon_usage.h"
+#include "chrome/common/importer/importer_data_types.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "content/public/common/password_form.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -220,7 +219,7 @@ class FirefoxProfileImporterBrowserTest : public InProcessBrowserTest {
     // Creates a new profile in a new subdirectory in the temp directory.
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     base::FilePath test_path = temp_dir_.path().AppendASCII("ImporterTest");
-    file_util::Delete(test_path, true);
+    base::Delete(test_path, true);
     file_util::CreateDirectory(test_path);
     profile_path_ = test_path.AppendASCII("profile");
     app_path_ = test_path.AppendASCII("app");
@@ -262,20 +261,15 @@ class FirefoxProfileImporterBrowserTest : public InProcessBrowserTest {
     source_profile.importer_type = importer::TYPE_FIREFOX3;
     source_profile.app_path = app_path_;
     source_profile.source_path = profile_path_;
+    source_profile.locale = "en-US";
 
     int items = importer::HISTORY | importer::PASSWORDS | importer::FAVORITES;
     if (import_search_plugins)
       items = items | importer::SEARCH_ENGINES;
 
     // Deletes itself.
-    // TODO(gab): Use ExternalProcessImporterHost on Linux as well.
-    ImporterHost* host;
-#if defined(OS_MACOSX) || defined(OS_WIN)
-    host = new ExternalProcessImporterHost;
-#else
-    host = new ImporterHost;
-#endif
-    host->SetObserver(observer);
+    ExternalProcessImporterHost* host = new ExternalProcessImporterHost;
+    host->set_observer(observer);
     host->StartImportSettings(source_profile,
                               browser()->profile(),
                               items,

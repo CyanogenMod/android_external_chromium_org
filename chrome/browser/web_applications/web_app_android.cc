@@ -10,7 +10,8 @@ namespace internals {
 bool CreatePlatformShortcuts(
     const base::FilePath& web_app_path,
     const ShellIntegration::ShortcutInfo& shortcut_info,
-    const ShellIntegration::ShortcutLocations& creation_locations) {
+    const ShellIntegration::ShortcutLocations& creation_locations,
+    ShortcutCreationPolicy creation_policy) {
   return true;
 }
 
@@ -22,6 +23,8 @@ void UpdatePlatformShortcuts(
     const base::FilePath& web_app_path,
     const string16& old_app_title,
     const ShellIntegration::ShortcutInfo& shortcut_info) {}
+
+void DeleteAllShortcutsForProfile(const base::FilePath& profile_path) {}
 
 }  // namespace internals
 }  // namespace web_app

@@ -13,7 +13,6 @@
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_cell.h"
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_editor.h"
 #include "chrome/browser/ui/cocoa/omnibox/omnibox_popup_view_mac.h"
@@ -139,8 +138,11 @@ OmniboxViewMac::OmniboxViewMac(OmniboxEditController* controller,
                                CommandUpdater* command_updater,
                                AutocompleteTextField* field)
     : OmniboxView(profile, controller, toolbar_model, command_updater),
-      popup_view_(OmniboxPopupViewMac::Create(this, model(), field)),
+      popup_view_(new OmniboxPopupViewMac(this, model(), field)),
       field_(field),
+      saved_temporary_selection_(NSMakeRange(0, 0)),
+      selection_before_change_(NSMakeRange(0, 0)),
+      marked_range_before_change_(NSMakeRange(0, 0)),
       delete_was_pressed_(false),
       delete_at_end_pressed_(false) {
   [field_ setObserver:this];
@@ -149,8 +151,8 @@ OmniboxViewMac::OmniboxViewMac(OmniboxEditController* controller,
   [field_ setAllowsEditingTextAttributes:YES];
 
   // Get the appropriate line height for the font that we use.
-  scoped_nsobject<NSLayoutManager>
-      layoutManager([[NSLayoutManager alloc] init]);
+  base::scoped_nsobject<NSLayoutManager> layoutManager(
+      [[NSLayoutManager alloc] init]);
   [layoutManager setUsesScreenFonts:YES];
 }
 
@@ -435,8 +437,8 @@ void OmniboxViewMac::ApplyTextAttributes(const string16& display_text,
 
   // Make a paragraph style locking in the standard line height as the maximum,
   // otherwise the baseline may shift "downwards".
-  scoped_nsobject<NSMutableParagraphStyle>
-      paragraph_style([[NSMutableParagraphStyle alloc] init]);
+  base::scoped_nsobject<NSMutableParagraphStyle> paragraph_style(
+      [[NSMutableParagraphStyle alloc] init]);
   CGFloat line_height = [[field_ cell] lineHeight];
   [paragraph_style setMaximumLineHeight:line_height];
   [paragraph_style setMinimumLineHeight:line_height];
@@ -665,16 +667,12 @@ bool OmniboxViewMac::OnDoCommandBySelector(SEL cmd) {
   }
 
   if (model()->popup_model()->IsOpen()) {
-    // If instant extended is enabled then allow users to press tab to select
-    // results from the omnibox popup.
-    BOOL enableTabAutocomplete = chrome::IsInstantExtendedAPIEnabled();
-
     if (cmd == @selector(insertBacktab:)) {
       if (model()->popup_model()->selected_line_state() ==
             OmniboxPopupModel::KEYWORD) {
         model()->ClearKeyword(GetText());
         return true;
-      } else if (enableTabAutocomplete) {
+      } else {
         model()->OnUpOrDownKeyPressed(-1);
         return true;
       }
@@ -682,7 +680,7 @@ bool OmniboxViewMac::OnDoCommandBySelector(SEL cmd) {
 
     if ((cmd == @selector(insertTab:) ||
         cmd == @selector(insertTabIgnoringFieldEditor:)) &&
-        !model()->is_keyword_hint() && enableTabAutocomplete) {
+        !model()->is_keyword_hint()) {
       model()->OnUpOrDownKeyPressed(1);
       return true;
     }
@@ -902,7 +900,6 @@ void OmniboxViewMac::OnFrameChanged() {
   // things even cheaper by refactoring between the popup-placement
   // code and the matrix-population code.
   popup_view_->UpdatePopupAppearance();
-  model()->OnPopupBoundsChanged(popup_view_->GetTargetBounds());
 
   // Give controller a chance to rearrange decorations.
   model()->OnChanged();
@@ -953,11 +950,8 @@ void OmniboxViewMac::FocusLocation(bool select_all) {
 // static
 NSFont* OmniboxViewMac::GetFieldFont() {
   // This value should be kept in sync with InstantPage::InitializeFonts.
-  if (chrome::IsInstantExtendedAPIEnabled())
-    return [NSFont fontWithName:@"Helvetica Neue" size:16];
-
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  return rb.GetFont(ResourceBundle::BaseFont).GetNativeFont();
+  return rb.GetFont(ResourceBundle::BaseFont).DeriveFont(1).GetNativeFont();
 }
 
 int OmniboxViewMac::GetOmniboxTextLength() const {

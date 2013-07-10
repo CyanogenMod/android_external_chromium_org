@@ -7,8 +7,8 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
-#include "components/autofill/browser/webdata/autofill_table.h"
-#include "components/autofill/browser/webdata/autofill_webdata_service.h"
+#include "components/autofill/core/browser/webdata/autofill_table.h"
+#include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/webdata/common/web_database.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/escape.h"
@@ -238,8 +238,10 @@ syncer::SyncError AutocompleteSyncableService::ProcessSyncChanges(
   DCHECK(sync_processor_.get());
 
   if (!sync_processor_.get()) {
-    syncer::SyncError error(FROM_HERE, "Models not yet associated.",
-                    syncer::AUTOFILL);
+    syncer::SyncError error(FROM_HERE,
+                            syncer::SyncError::DATATYPE_ERROR,
+                            "Models not yet associated.",
+                            syncer::AUTOFILL);
     return error;
   }
 

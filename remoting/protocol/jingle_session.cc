@@ -8,7 +8,7 @@
 #include "base/rand_util.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "remoting/base/constants.h"
 #include "remoting/jingle_glue/iq_sender.h"
 #include "remoting/protocol/authenticator.h"
@@ -108,7 +108,7 @@ void JingleSession::StartConnection(
   // Send session-initiate message.
   JingleMessage message(peer_jid_, JingleMessage::SESSION_INITIATE,
                         session_id_);
-  message.from = session_manager_->signal_strategy_->GetLocalJid();
+  message.initiator = session_manager_->signal_strategy_->GetLocalJid();
   message.description.reset(
       new ContentDescription(candidate_config_->Clone(),
                              authenticator_->GetNextMessage()));
@@ -285,6 +285,10 @@ void JingleSession::OnTransportRouteChange(Transport* transport,
 void JingleSession::OnTransportReady(Transport* transport, bool ready) {
   if (event_handler_)
     event_handler_->OnSessionChannelReady(transport->name(), ready);
+}
+
+void JingleSession::OnTransportFailed(Transport* transport) {
+  CloseInternal(CHANNEL_CONNECTION_ERROR);
 }
 
 void JingleSession::OnTransportDeleted(Transport* transport) {

@@ -6,7 +6,7 @@
 #define UI_APP_LIST_VIEWS_APP_LIST_MAIN_VIEW_H_
 
 #include "base/memory/scoped_vector.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "ui/app_list/apps_grid_view_delegate.h"
 #include "ui/app_list/search_box_view_delegate.h"
 #include "ui/app_list/search_result_list_view_delegate.h"
@@ -69,6 +69,9 @@ class AppListMainView : public views::View,
 
   // Overridden from AppsGridViewDelegate:
   virtual void ActivateApp(AppListItemModel* item, int event_flags) OVERRIDE;
+  virtual void GetShortcutPathForApp(
+      const std::string& app_id,
+      const base::Callback<void(const base::FilePath&)>& callback) OVERRIDE;
 
   // Overridden from SearchBoxViewDelegate:
   virtual void QueryChanged(SearchBoxView* sender) OVERRIDE;

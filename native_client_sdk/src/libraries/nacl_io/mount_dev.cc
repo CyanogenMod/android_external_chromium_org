@@ -1,4 +1,4 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
+/* Copyright (c) 2013 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
@@ -8,11 +8,17 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <pthread.h>
 #include <string.h>
+
+#include <deque>
+
+#include "nacl_io/ioctl.h"
 #include "nacl_io/kernel_wrap_real.h"
 #include "nacl_io/mount_dev.h"
 #include "nacl_io/mount_node.h"
 #include "nacl_io/mount_node_dir.h"
+#include "nacl_io/osunistd.h"
 #include "nacl_io/pepper_interface.h"
 #include "sdk_util/auto_lock.h"
 
@@ -66,11 +72,25 @@ class ConsoleNode : public NullNode {
 class TtyNode : public NullNode {
  public:
   explicit TtyNode(Mount* mount);
+  ~TtyNode();
+
+  virtual Error Ioctl(int request,
+                      char* arg);
+
+  virtual Error Read(size_t offs,
+                     void* buf,
+                     size_t count,
+                     int* out_bytes);
 
   virtual Error Write(size_t offs,
                       const void* buf,
                       size_t count,
                       int* out_bytes);
+
+ private:
+  std::deque<char> input_buffer_;
+  pthread_cond_t is_readable_;
+  std::string prefix_;
 };
 
 class ZeroNode : public MountNode {
@@ -175,7 +195,14 @@ Error ConsoleNode::Write(size_t offs,
   return 0;
 }
 
-TtyNode::TtyNode(Mount* mount) : NullNode(mount) {}
+TtyNode::TtyNode(Mount* mount) : NullNode(mount) {
+  prefix_ = "_default_:";
+  pthread_cond_init(&is_readable_, NULL);
+}
+
+TtyNode::~TtyNode() {
+  pthread_cond_destroy(&is_readable_);
+}
 
 Error TtyNode::Write(size_t offs,
                      const void* buf,
@@ -189,13 +216,66 @@ Error TtyNode::Write(size_t offs,
   if (!(var_intr && msg_intr))
     return ENOSYS;
 
+  // We append the prefix_ to the data in buf, then package it up
+  // and post it as a message.
   const char* data = static_cast<const char*>(buf);
-  uint32_t len = static_cast<uint32_t>(count);
-  struct PP_Var val = var_intr->VarFromUtf8(data, len);
+  std::string message;
+  {
+    AutoLock lock(&lock_);
+    message = prefix_;
+  }
+  message.append(data, count);
+  uint32_t len = static_cast<uint32_t>(message.size());
+  struct PP_Var val = var_intr->VarFromUtf8(message.data(), len);
   msg_intr->PostMessage(mount_->ppapi()->GetInstance(), val);
-
   *out_bytes = count;
   return 0;
+}
+
+Error TtyNode::Read(size_t offs, void* buf, size_t count, int* out_bytes) {
+  AutoLock lock(&lock_);
+  while (input_buffer_.size() <= 0) {
+    pthread_cond_wait(&is_readable_, &lock_);
+  }
+
+  // Copies data from the input buffer into buf.
+  size_t bytes_to_copy = std::min(count, input_buffer_.size());
+  std::copy(input_buffer_.begin(), input_buffer_.begin() + bytes_to_copy,
+            static_cast<char*>(buf));
+  *out_bytes = bytes_to_copy;
+  input_buffer_.erase(input_buffer_.begin(),
+                      input_buffer_.begin() + bytes_to_copy);
+  return 0;
+}
+
+Error TtyNode::Ioctl(int request, char* arg) {
+  if (request == TIOCNACLPREFIX) {
+    // This ioctl is used to change the prefix for this tty node.
+    // The prefix is used to distinguish messages intended for this
+    // tty node from all the other messages cluttering up the
+    // javascript postMessage() channel.
+    AutoLock lock(&lock_);
+    prefix_ = arg;
+    return 0;
+  } else if (request == TIOCNACLINPUT) {
+    // This ioctl is used to deliver data from the user to this tty node's
+    // input buffer. We check if the prefix in the input data matches the
+    // prefix for this node, and only deliver the data if so.
+    struct tioc_nacl_input_string* message =
+      reinterpret_cast<struct tioc_nacl_input_string*>(arg);
+    AutoLock lock(&lock_);
+    if (message->length >= prefix_.size() &&
+        strncmp(message->buffer, prefix_.data(), prefix_.size()) == 0) {
+      input_buffer_.insert(input_buffer_.end(),
+                           message->buffer + prefix_.size(),
+                           message->buffer + message->length);
+      pthread_cond_broadcast(&is_readable_);
+      return 0;
+    }
+    return ENOTTY;
+  } else {
+    return EINVAL;
+  }
 }
 
 ZeroNode::ZeroNode(Mount* mount) : MountNode(mount) { stat_.st_mode = S_IFCHR; }
@@ -269,23 +349,28 @@ Error UrandomNode::Write(size_t offs,
 
 }  // namespace
 
-Error MountDev::Open(const Path& path, int mode, MountNode** out_node) {
-  *out_node = NULL;
+Error MountDev::Access(const Path& path, int a_mode) {
+  ScopedMountNode node;
+  int error = root_->FindChild(path.Join(), &node);
+  if (error)
+    return error;
 
+  // Don't allow execute access.
+  if (a_mode & X_OK)
+    return EACCES;
+
+  return 0;
+}
+
+Error MountDev::Open(const Path& path, int mode, ScopedMountNode* out_node) {
+  out_node->reset(NULL);
   AutoLock lock(&lock_);
 
   // Don't allow creating any files.
   if (mode & O_CREAT)
     return EINVAL;
 
-  MountNode* node = NULL;
-  int error = root_->FindChild(path.Join(), &node);
-  if (error)
-    return error;
-
-  node->Acquire();
-  *out_node = node;
-  return 0;
+  return root_->FindChild(path.Join(), out_node);
 }
 
 Error MountDev::Unlink(const Path& path) { return EINVAL; }
@@ -298,14 +383,14 @@ Error MountDev::Remove(const Path& path) { return EINVAL; }
 
 MountDev::MountDev() {}
 
-#define INITIALIZE_DEV_NODE(path, klass)          \
-  error = root_->AddChild(path, new klass(this)); \
-  if (error)                                      \
+#define INITIALIZE_DEV_NODE(path, klass)                           \
+  error = root_->AddChild(path, ScopedMountNode(new klass(this))); \
+  if (error)                                                       \
     return error;
 
-#define INITIALIZE_DEV_NODE_1(path, klass, arg)        \
-  error = root_->AddChild(path, new klass(this, arg)); \
-  if (error)                                           \
+#define INITIALIZE_DEV_NODE_1(path, klass, arg)                         \
+  error = root_->AddChild(path, ScopedMountNode(new klass(this, arg))); \
+  if (error)                                                            \
     return error;
 
 Error MountDev::Init(int dev, StringMap_t& args, PepperInterface* ppapi) {
@@ -313,7 +398,7 @@ Error MountDev::Init(int dev, StringMap_t& args, PepperInterface* ppapi) {
   if (error)
     return error;
 
-  root_ = new MountNodeDir(this);
+  root_.reset(new MountNodeDir(this));
 
   INITIALIZE_DEV_NODE("/null", NullNode);
   INITIALIZE_DEV_NODE("/zero", ZeroNode);
@@ -330,8 +415,3 @@ Error MountDev::Init(int dev, StringMap_t& args, PepperInterface* ppapi) {
   return 0;
 }
 
-void MountDev::Destroy() {
-  if (root_)
-    root_->Release();
-  root_ = NULL;
-}

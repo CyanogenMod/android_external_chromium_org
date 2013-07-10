@@ -62,10 +62,11 @@ class FakeSyncManager : public SyncManager {
   ConfigureReason GetAndResetConfigureReason();
 
   // Posts a method to invalidate the given IDs on the sync thread.
-  void Invalidate(const ObjectIdInvalidationMap& invalidation_map);
+  virtual void OnIncomingInvalidation(
+      const ObjectIdInvalidationMap& invalidation_map) OVERRIDE;
 
   // Posts a method to update the invalidator state on the sync thread.
-  void UpdateInvalidatorState(InvalidatorState state);
+  virtual void OnInvalidatorStateChange(InvalidatorState state) OVERRIDE;
 
   // Block until the sync thread has finished processing any pending messages.
   void WaitForSyncThread();
@@ -84,7 +85,6 @@ class FakeSyncManager : public SyncManager {
       ExtensionsActivityMonitor* extensions_activity_monitor,
       ChangeDelegate* change_delegate,
       const SyncCredentials& credentials,
-      scoped_ptr<Invalidator> invalidator,
       const std::string& invalidator_client_id,
       const std::string& restored_key_for_bootstrapping,
       const std::string& restored_keystore_key_for_bootstrapping,
@@ -100,25 +100,14 @@ class FakeSyncManager : public SyncManager {
       ModelTypeSet types) OVERRIDE;
   virtual bool PurgePartiallySyncedTypes() OVERRIDE;
   virtual void UpdateCredentials(const SyncCredentials& credentials) OVERRIDE;
-  virtual void UpdateEnabledTypes(ModelTypeSet types) OVERRIDE;
-  virtual void RegisterInvalidationHandler(
-      InvalidationHandler* handler) OVERRIDE;
-  virtual void UpdateRegisteredInvalidationIds(
-      InvalidationHandler* handler,
-      const ObjectIdSet& ids) OVERRIDE;
-  virtual void UnregisterInvalidationHandler(
-      InvalidationHandler* handler) OVERRIDE;
-  virtual void AcknowledgeInvalidation(
-      const invalidation::ObjectId& id,
-      const syncer::AckHandle& ack_handle) OVERRIDE;
   virtual void StartSyncingNormally(
       const ModelSafeRoutingInfo& routing_info) OVERRIDE;
   virtual void ConfigureSyncer(
       ConfigureReason reason,
       ModelTypeSet to_download,
+      ModelTypeSet to_purge,
       ModelTypeSet to_journal,
       ModelTypeSet to_unapply,
-      ModelTypeSet to_ignore,
       const ModelSafeRoutingInfo& new_routing_info,
       const base::Closure& ready_task,
       const base::Closure& retry_task) OVERRIDE;
@@ -136,10 +125,6 @@ class FakeSyncManager : public SyncManager {
   virtual void RefreshTypes(ModelTypeSet types) OVERRIDE;
 
  private:
-  void InvalidateOnSyncThread(
-      const ObjectIdInvalidationMap& invalidation_map);
-  void UpdateInvalidatorStateOnSyncThread(InvalidatorState state);
-
   scoped_refptr<base::SequencedTaskRunner> sync_task_runner_;
 
   ObserverList<SyncManager::Observer> observers_;

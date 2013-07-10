@@ -14,7 +14,9 @@
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/fake_free_disk_space_getter.h"
+#include "chrome/browser/chromeos/drive/file_cache_metadata.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/chromeos/drive/resource_metadata_storage.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
 #include "chrome/browser/google_apis/test_util.h"
 #include "content/public/browser/browser_thread.h"
@@ -73,13 +75,27 @@ class FileCacheTestOnUIThread : public testing::Test {
         content::BrowserThread::GetBlockingPool();
     blocking_task_runner_ =
         pool->GetSequencedTaskRunner(pool->GetSequenceToken());
+
+    metadata_storage_.reset(new ResourceMetadataStorage(
+        temp_dir_.path(), blocking_task_runner_));
+
+    bool success = false;
+    base::PostTaskAndReplyWithResult(
+        blocking_task_runner_,
+        FROM_HERE,
+        base::Bind(&ResourceMetadataStorage::Initialize,
+                   base::Unretained(metadata_storage_.get())),
+        google_apis::test_util::CreateCopyResultCallback(&success));
+    google_apis::test_util::RunBlockingPoolTask();
+    ASSERT_TRUE(success);
+
     cache_.reset(new FileCache(
-        temp_dir_.path().Append(util::kMetadataDirectory),
+        metadata_storage_.get(),
         temp_dir_.path().Append(util::kCacheFileDirectory),
         blocking_task_runner_.get(),
         fake_free_disk_space_getter_.get()));
 
-    bool success = false;
+    success = false;
     base::PostTaskAndReplyWithResult(
         blocking_task_runner_,
         FROM_HERE,
@@ -88,10 +104,6 @@ class FileCacheTestOnUIThread : public testing::Test {
         google_apis::test_util::CreateCopyResultCallback(&success));
     google_apis::test_util::RunBlockingPoolTask();
     ASSERT_TRUE(success);
-  }
-
-  virtual void TearDown() OVERRIDE {
-    cache_.reset();
   }
 
   void TestGetFileFromCacheByResourceIdAndMd5(
@@ -418,6 +430,8 @@ class FileCacheTestOnUIThread : public testing::Test {
   base::ScopedTempDir temp_dir_;
   base::FilePath dummy_file_path_;
 
+  scoped_ptr<ResourceMetadataStorage, test_util::DestroyHelperForTests>
+      metadata_storage_;
   scoped_ptr<FileCache, test_util::DestroyHelperForTests> cache_;
   scoped_ptr<FakeFreeDiskSpaceGetter> fake_free_disk_space_getter_;
 
@@ -852,20 +866,6 @@ TEST_F(FileCacheTestOnUIThread, StoreToCacheNoSpace) {
   EXPECT_EQ(0U, CountCacheFiles(resource_id, md5));
 }
 
-// Don't use TEST_F, as we don't want SetUp() and TearDown() for this test.
-TEST(FileCacheExtraTest, InitializationFailure) {
-  content::TestBrowserThreadBundle thread_bundle;
-
-  // Set the cache root to a non existent path, so the initialization fails.
-  scoped_ptr<FileCache, test_util::DestroyHelperForTests> cache(new FileCache(
-      base::FilePath::FromUTF8Unsafe("/somewhere/nonexistent/blah/meta"),
-      base::FilePath::FromUTF8Unsafe("/somewhere/nonexistent/blah/files"),
-      base::MessageLoopProxy::current(),
-      NULL /* free_disk_space_getter */));
-
-  EXPECT_FALSE(cache->Initialize());
-}
-
 TEST_F(FileCacheTestOnUIThread, UpdatePinnedCache) {
   std::string resource_id("pdf:1a2b");
   std::string md5("abcdef0123456789");
@@ -896,41 +896,58 @@ class FileCacheTest : public testing::Test {
 
     fake_free_disk_space_getter_.reset(new FakeFreeDiskSpaceGetter);
 
-    cache_.reset(new FileCache(
+    metadata_storage_.reset(new ResourceMetadataStorage(
         temp_dir_.path().Append(util::kMetadataDirectory),
+        base::MessageLoopProxy::current()));
+    ASSERT_TRUE(metadata_storage_->Initialize());
+
+    cache_.reset(new FileCache(
+        metadata_storage_.get(),
         temp_dir_.path().Append(util::kCacheFileDirectory),
         base::MessageLoopProxy::current(),
         fake_free_disk_space_getter_.get()));
-
     ASSERT_TRUE(cache_->Initialize());
   }
 
-  virtual void TearDown() OVERRIDE {
-    cache_.reset();
+  static bool ImportOldDB(FileCache* cache, const base::FilePath& old_db_path) {
+    return cache->ImportOldDB(old_db_path);
   }
 
   content::TestBrowserThreadBundle thread_bundle_;
   base::ScopedTempDir temp_dir_;
 
+  scoped_ptr<ResourceMetadataStorage, test_util::DestroyHelperForTests>
+      metadata_storage_;
   scoped_ptr<FileCache, test_util::DestroyHelperForTests> cache_;
   scoped_ptr<FakeFreeDiskSpaceGetter> fake_free_disk_space_getter_;
 };
 
 TEST_F(FileCacheTest, ScanCacheFile) {
   // Set up files in the cache directory.
-  const base::FilePath directory =
+  const base::FilePath file_directory =
       temp_dir_.path().Append(util::kCacheFileDirectory);
   ASSERT_TRUE(google_apis::test_util::WriteStringToFile(
-      directory.AppendASCII("id_foo.md5foo"), "foo"));
+      file_directory.AppendASCII("id_foo.md5foo"), "foo"));
   ASSERT_TRUE(google_apis::test_util::WriteStringToFile(
-      directory.AppendASCII("id_bar.local"), "bar"));
+      file_directory.AppendASCII("id_bar.local"), "bar"));
 
   // Remove the existing DB.
-  ASSERT_TRUE(file_util::Delete(
-      temp_dir_.path().Append(util::kMetadataDirectory), true /* recursive */));
+  const base::FilePath metadata_directory =
+      temp_dir_.path().Append(util::kMetadataDirectory);
+  ASSERT_TRUE(base::Delete(metadata_directory, true /* recursive */));
+
+  // Put an empty file with the same name as old DB.
+  // This file cannot be opened by ImportOldDB() and will be dismissed.
+  ASSERT_TRUE(file_util::CreateDirectory(metadata_directory));
+  ASSERT_TRUE(google_apis::test_util::WriteStringToFile(
+      metadata_directory.Append(FileCache::kOldCacheMetadataDBName), ""));
 
   // Create a new cache and initialize it.
-  cache_.reset(new FileCache(temp_dir_.path().Append(util::kMetadataDirectory),
+  metadata_storage_.reset(new ResourceMetadataStorage(
+      metadata_directory, base::MessageLoopProxy::current()));
+  ASSERT_TRUE(metadata_storage_->Initialize());
+
+  cache_.reset(new FileCache(metadata_storage_.get(),
                              temp_dir_.path().Append(util::kCacheFileDirectory),
                              base::MessageLoopProxy::current(),
                              fake_free_disk_space_getter_.get()));
@@ -987,6 +1004,42 @@ TEST_F(FileCacheTest, FreeDiskSpaceIfNeededFor) {
   // Returns false when disk space cannot be freed.
   fake_free_disk_space_getter_->set_default_value(0);
   EXPECT_FALSE(cache_->FreeDiskSpaceIfNeededFor(kNeededBytes));
+}
+
+TEST_F(FileCacheTest, ImportOldDB) {
+  const base::FilePath old_db_path = temp_dir_.path().AppendASCII("old_db.db");
+
+  const std::string key1 = "key1";
+  const std::string md5_1 = "md5_1";
+  const std::string key2 = "key2";
+  const std::string md5_2 = "md5_2";
+
+  // Set up data to be imported.
+  {
+    FileCacheMetadata old_metadata(NULL);
+    ASSERT_TRUE(old_metadata.Initialize(old_db_path));
+
+    FileCacheEntry entry;
+    entry.set_md5(md5_1);
+    old_metadata.AddOrUpdateCacheEntry(key1, entry);
+
+    entry.set_md5(md5_2);
+    old_metadata.AddOrUpdateCacheEntry(key2, entry);
+  }
+  EXPECT_TRUE(file_util::PathExists(old_db_path));
+
+  // Do import.
+  EXPECT_TRUE(ImportOldDB(cache_.get(), old_db_path));
+
+  // Old DB should be removed.
+  EXPECT_FALSE(file_util::PathExists(old_db_path));
+
+  // Data is imported correctly.
+  FileCacheEntry entry;
+  EXPECT_TRUE(cache_->GetCacheEntry(key1, std::string(), &entry));
+  EXPECT_EQ(md5_1, entry.md5());
+  EXPECT_TRUE(cache_->GetCacheEntry(key2, std::string(), &entry));
+  EXPECT_EQ(md5_2, entry.md5());
 }
 
 }  // namespace internal

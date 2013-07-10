@@ -11,7 +11,15 @@
 namespace cc {
 namespace {
 
-class LayerTreeHostFiltersPixelTest : public LayerTreePixelTest {};
+class LayerTreeHostFiltersPixelTest : public LayerTreePixelTest {
+  virtual void BeginTest() OVERRIDE;
+};
+
+void LayerTreeHostFiltersPixelTest::BeginTest() {
+  LayerTreePixelTest::BeginTest();
+  pixel_comparator_.reset(
+      new FuzzyPixelComparator(true, 100.f, 0.f, 1.f, 2, 0));
+}
 
 TEST_F(LayerTreeHostFiltersPixelTest, BackgroundFilterBlur) {
   scoped_refptr<SolidColorLayer> background = CreateSolidColorLayer(
@@ -26,13 +34,13 @@ TEST_F(LayerTreeHostFiltersPixelTest, BackgroundFilterBlur) {
   background->AddChild(green);
   background->AddChild(blur);
 
-  WebKit::WebFilterOperations filters;
-  filters.append(WebKit::WebFilterOperation::createBlurFilter(2));
+  FilterOperations filters;
+  filters.Append(FilterOperation::CreateBlurFilter(2.f));
   blur->SetBackgroundFilters(filters);
 
-  RunPixelTest(background,
-               base::FilePath(FILE_PATH_LITERAL(
-                   "background_filter_blur.png")));
+  RunPixelTest(GL_WITH_BITMAP,
+               background,
+               base::FilePath(FILE_PATH_LITERAL("background_filter_blur.png")));
 }
 
 TEST_F(LayerTreeHostFiltersPixelTest, BackgroundFilterBlurOutsets) {
@@ -51,11 +59,12 @@ TEST_F(LayerTreeHostFiltersPixelTest, BackgroundFilterBlurOutsets) {
   background->AddChild(green_border);
   background->AddChild(blur);
 
-  WebKit::WebFilterOperations filters;
-  filters.append(WebKit::WebFilterOperation::createBlurFilter(5));
+  FilterOperations filters;
+  filters.Append(FilterOperation::CreateBlurFilter(5.f));
   blur->SetBackgroundFilters(filters);
 
-  RunPixelTest(background,
+  RunPixelTest(GL_WITH_BITMAP,
+               background,
                base::FilePath(FILE_PATH_LITERAL(
                    "background_filter_blur_outsets.png")));
 }
@@ -88,8 +97,8 @@ TEST_F(LayerTreeHostFiltersPixelTest, BackgroundFilterBlurOffAxis) {
   blur_transform.Translate(-60.0, -60.0);
   blur->SetTransform(blur_transform);
 
-  WebKit::WebFilterOperations filters;
-  filters.append(WebKit::WebFilterOperation::createBlurFilter(2));
+  FilterOperations filters;
+  filters.Append(FilterOperation::CreateBlurFilter(2.f));
   blur->SetBackgroundFilters(filters);
 
 #if defined(OS_WIN)
@@ -108,7 +117,8 @@ TEST_F(LayerTreeHostFiltersPixelTest, BackgroundFilterBlurOffAxis) {
       small_error_allowed));
 #endif
 
-  RunPixelTest(background,
+  RunPixelTest(GL_WITH_BITMAP,
+               background,
                base::FilePath(FILE_PATH_LITERAL(
                    "background_filter_blur_off_axis.png")));
 }

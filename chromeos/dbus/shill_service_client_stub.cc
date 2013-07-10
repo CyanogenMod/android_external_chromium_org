@@ -284,6 +284,38 @@ bool ShillServiceClientStub::CallActivateCellularModemAndBlock(
   return true;
 }
 
+void ShillServiceClientStub::GetLoadableProfileEntries(
+    const dbus::ObjectPath& service_path,
+    const DictionaryValueCallback& callback) {
+  if (callback.is_null())
+    return;
+
+  // Provide a dictionary with a single { profile_path, service_path } entry
+  // if the Profile property is set, or an empty dictionary.
+  scoped_ptr<base::DictionaryValue> result_properties(
+      new base::DictionaryValue);
+  base::DictionaryValue* service_properties =
+      GetModifiableServiceProperties(service_path.value());
+  if (service_properties) {
+    std::string profile_path;
+    if (service_properties->GetStringWithoutPathExpansion(
+            flimflam::kProfileProperty, &profile_path)) {
+      result_properties->SetStringWithoutPathExpansion(
+          profile_path, service_path.value());
+    }
+  } else {
+    LOG(WARNING) << "Service not in profile: " << service_path.value();
+  }
+
+  DBusMethodCallStatus call_status = DBUS_METHOD_CALL_SUCCESS;
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&PassStubServiceProperties,
+                 callback,
+                 call_status,
+                 base::Owned(result_properties.release())));
+}
+
 ShillServiceClient::TestInterface* ShillServiceClientStub::GetTestInterface() {
   return this;
 }
@@ -294,9 +326,10 @@ void ShillServiceClientStub::AddService(const std::string& service_path,
                                         const std::string& name,
                                         const std::string& type,
                                         const std::string& state,
+                                        bool add_to_visible_list,
                                         bool add_to_watch_list) {
   AddServiceWithIPConfig(service_path, name, type, state, "",
-                         add_to_watch_list);
+                         add_to_visible_list, add_to_watch_list);
 }
 
 void ShillServiceClientStub::AddServiceWithIPConfig(
@@ -305,9 +338,10 @@ void ShillServiceClientStub::AddServiceWithIPConfig(
     const std::string& type,
     const std::string& state,
     const std::string& ipconfig_path,
+    bool add_to_visible_list,
     bool add_to_watch_list) {
   DBusThreadManager::Get()->GetShillManagerClient()->GetTestInterface()->
-      AddManagerService(service_path, add_to_watch_list);
+      AddManagerService(service_path, add_to_visible_list, add_to_watch_list);
 
   base::DictionaryValue* properties =
       GetModifiableServiceProperties(service_path);
@@ -359,6 +393,7 @@ void ShillServiceClientStub::ClearServices() {
 }
 
 void ShillServiceClientStub::SetDefaultProperties() {
+  const bool add_to_visible = true;
   const bool add_to_watchlist = true;
 
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
@@ -366,13 +401,13 @@ void ShillServiceClientStub::SetDefaultProperties() {
     AddService("eth1", "eth1",
                flimflam::kTypeEthernet,
                flimflam::kStateOnline,
-               add_to_watchlist);
+               add_to_visible, add_to_watchlist);
   }
 
   AddService("wifi1", "wifi1",
              flimflam::kTypeWifi,
              flimflam::kStateOnline,
-             add_to_watchlist);
+             add_to_visible, add_to_watchlist);
   SetServiceProperty("wifi1",
                      flimflam::kSecurityProperty,
                      base::StringValue(flimflam::kSecurityWep));
@@ -380,7 +415,7 @@ void ShillServiceClientStub::SetDefaultProperties() {
   AddService("wifi2", "wifi2_PSK",
              flimflam::kTypeWifi,
              flimflam::kStateIdle,
-             add_to_watchlist);
+             add_to_visible, add_to_watchlist);
   SetServiceProperty("wifi2",
                      flimflam::kSecurityProperty,
                      base::StringValue(flimflam::kSecurityPsk));
@@ -392,7 +427,7 @@ void ShillServiceClientStub::SetDefaultProperties() {
   AddService("cellular1", "cellular1",
              flimflam::kTypeCellular,
              flimflam::kStateIdle,
-             add_to_watchlist);
+             add_to_visible, add_to_watchlist);
   base::StringValue technology_value(flimflam::kNetworkTechnologyGsm);
   SetServiceProperty("cellular1",
                      flimflam::kNetworkTechnologyProperty,
@@ -407,12 +442,12 @@ void ShillServiceClientStub::SetDefaultProperties() {
   AddService("vpn1", "vpn1",
              flimflam::kTypeVPN,
              flimflam::kStateOnline,
-             add_to_watchlist);
+             add_to_visible, add_to_watchlist);
 
   AddService("vpn2", "vpn2",
              flimflam::kTypeVPN,
              flimflam::kStateOffline,
-             add_to_watchlist);
+             add_to_visible, add_to_watchlist);
 }
 
 void ShillServiceClientStub::NotifyObserversPropertyChanged(

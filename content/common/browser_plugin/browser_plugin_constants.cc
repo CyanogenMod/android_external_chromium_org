@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,7 +25,11 @@ const char kMethodInternalAttachWindowTo[] = "-internal-attachWindowTo";
 const char kMethodInternalPersistObject[] = "-internal-persistObject";
 const char kMethodInternalSetPermission[] = "-internal-setPermission";
 
+// Internal events.
+const char kEventInternalAttached[] = "attached";
+
 // Attributes.
+const char kAttributeApi[] = "api";
 const char kAttributeAutoSize[] = "autosize";
 const char kAttributeContentWindow[] = "contentWindow";
 const char kAttributeMaxHeight[] = "maxheight";
@@ -39,13 +43,9 @@ const char kAttributeSrc[] = "src";
 // Events.
 const char kEventClose[] = "close";
 const char kEventConsoleMessage[] = "consolemessage";
-const char kEventContentLoad[] = "contentload";
 const char kEventExit[] = "exit";
 const char kEventLoadAbort[] = "loadabort";
-const char kEventLoadCommit[] = "loadcommit";
-const char kEventLoadRedirect[] = "loadredirect";
 const char kEventLoadStart[] = "loadstart";
-const char kEventLoadStop[] = "loadstop";
 const char kEventNewWindow[] = "newwindow";
 const char kEventRequestPermission[] = "permissionrequest";
 const char kEventResponsive[] = "responsive";
@@ -61,10 +61,8 @@ const char kLevel[] = "level";
 const char kLine[] = "line";
 const char kMessage[] = "message";
 const char kName[] = "name";
-const char kNewURL[] = "newUrl";
 const char kNewHeight[] = "newHeight";
 const char kNewWidth[] = "newWidth";
-const char kOldURL[] = "oldUrl";
 const char kOldHeight[] = "oldHeight";
 const char kOldWidth[] = "oldWidth";
 const char kPermission[] = "permission";

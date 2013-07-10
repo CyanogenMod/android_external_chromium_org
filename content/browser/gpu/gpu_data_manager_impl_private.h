@@ -108,6 +108,8 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
   void SetDisplayCount(unsigned int display_count);
   unsigned int GetDisplayCount() const;
 
+  void OnGpuProcessInitFailure();
+
   virtual ~GpuDataManagerImplPrivate();
 
  private:
@@ -213,7 +215,7 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
 
   const scoped_refptr<GpuDataManagerObserverList> observer_list_;
 
-  ListValue log_messages_;
+  base::ListValue log_messages_;
 
   bool use_swiftshader_;
 
@@ -237,6 +239,8 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
   GpuDataManagerImpl* owner_;
 
   unsigned int display_count_;
+
+  bool gpu_process_accessible_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuDataManagerImplPrivate);
 };

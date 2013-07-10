@@ -12,7 +12,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/test/test_timeouts.h"
-#include "base/time.h"
+#include "base/time/time.h"
+#include "chrome/browser/invalidation/invalidation_service_factory.h"
 #include "chrome/browser/password_manager/mock_password_store.h"
 #include "chrome/browser/password_manager/password_store.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
@@ -153,18 +154,22 @@ class ProfileSyncServicePasswordTest : public AbstractProfileSyncServiceTest {
 
   virtual void SetUp() {
     AbstractProfileSyncServiceTest::SetUp();
-    profile_.CreateRequestContext();
+    profile_.reset(new ProfileMock);
+    profile_->CreateRequestContext();
+    invalidation::InvalidationServiceFactory::GetInstance()->
+        SetBuildOnlyFakeInvalidatorsForTest(true);
     password_store_ = static_cast<MockPasswordStore*>(
         PasswordStoreFactory::GetInstance()->SetTestingFactoryAndUse(
-            &profile_, MockPasswordStore::Build).get());
+            profile_.get(), MockPasswordStore::Build).get());
   }
 
   virtual void TearDown() {
     if (password_store_.get())
       password_store_->ShutdownOnUIThread();
       ProfileSyncServiceFactory::GetInstance()->SetTestingFactory(
-          &profile_, NULL);
-      profile_.ResetRequestContext();
+          profile_.get(), NULL);
+      profile_->ResetRequestContext();
+      profile_.reset();
       AbstractProfileSyncServiceTest::TearDown();
   }
 
@@ -184,18 +189,18 @@ class ProfileSyncServicePasswordTest : public AbstractProfileSyncServiceTest {
                         const base::Closure& node_callback) {
     if (!sync_service_) {
       SigninManagerBase* signin =
-          SigninManagerFactory::GetForProfile(&profile_);
-      signin->SetAuthenticatedUsername("test_user");
+          SigninManagerFactory::GetForProfile(profile_.get());
+      signin->SetAuthenticatedUsername("test_user@gmail.com");
       token_service_ = static_cast<TokenService*>(
           TokenServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-              &profile_, BuildTokenService));
+              profile_.get(), BuildTokenService));
       ProfileOAuth2TokenServiceFactory::GetInstance()->SetTestingFactory(
-          &profile_, FakeOAuth2TokenService::BuildTokenService);
+          profile_.get(), FakeOAuth2TokenService::BuildTokenService);
 
       PasswordTestProfileSyncService* sync =
           static_cast<PasswordTestProfileSyncService*>(
               ProfileSyncServiceFactory::GetInstance()->
-                  SetTestingFactoryAndUse(&profile_,
+                  SetTestingFactoryAndUse(profile_.get(),
                       &PasswordTestProfileSyncService::Build));
       sync->set_backend_init_callback(root_callback);
       sync->set_passphrase_accept_callback(node_callback);
@@ -207,7 +212,7 @@ class ProfileSyncServicePasswordTest : public AbstractProfileSyncServiceTest {
       sync_service_->ChangePreferredDataTypes(preferred_types);
       PasswordDataTypeController* data_type_controller =
           new PasswordDataTypeController(sync_service_->factory(),
-                                         &profile_,
+                                         profile_.get(),
                                          sync_service_);
       ProfileSyncComponentsFactoryMock* components =
           sync_service_->components_factory_mock();
@@ -311,7 +316,7 @@ class ProfileSyncServicePasswordTest : public AbstractProfileSyncServiceTest {
   }
 
   content::MockNotificationObserver observer_;
-  ProfileMock profile_;
+  scoped_ptr<ProfileMock> profile_;
   scoped_refptr<MockPasswordStore> password_store_;
   content::NotificationRegistrar registrar_;
 };
@@ -353,7 +358,7 @@ TEST_F(ProfileSyncServicePasswordTest, MAYBE_FailModelAssociation) {
 TEST_F(ProfileSyncServicePasswordTest, MAYBE_FailPasswordStoreLoad) {
   password_store_ = static_cast<NullPasswordStore*>(
       PasswordStoreFactory::GetInstance()->SetTestingFactoryAndUse(
-          &profile_, NullPasswordStore::Build).get());
+          profile_.get(), NullPasswordStore::Build).get());
   StartSyncService(base::Closure(), base::Closure());
   EXPECT_FALSE(sync_service_->HasUnrecoverableError());
   syncer::ModelTypeSet failed_types =

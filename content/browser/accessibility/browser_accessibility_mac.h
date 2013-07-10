@@ -9,7 +9,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/memory/scoped_nsobject.h"
 #include "content/browser/accessibility/browser_accessibility.h"
 
 @class BrowserAccessibilityCocoa;

@@ -72,6 +72,10 @@
 #include "chrome/browser/ui/webui/policy_ui.h"
 #endif
 
+#if defined(ENABLE_WEBRTC)
+#include "chrome/browser/ui/webui/media/webrtc_logs_ui.h"
+#endif
+
 #if defined(OS_ANDROID)
 #include "chrome/browser/ui/webui/welcome_ui_android.h"
 #else
@@ -96,6 +100,7 @@
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/browser/ui/webui/chromeos/mobile_setup_ui.h"
 #include "chrome/browser/ui/webui/chromeos/proxy_settings_ui.h"
+#include "chrome/browser/ui/webui/chromeos/salsa_ui.h"
 #include "chrome/browser/ui/webui/chromeos/sim_unlock_ui.h"
 #include "chrome/browser/ui/webui/chromeos/system_info_ui.h"
 #endif
@@ -107,7 +112,7 @@
 #endif
 
 #if !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
-#include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
+#include "chrome/browser/ui/sync/sync_promo_ui.h"
 #endif
 
 #if defined(OS_WIN)
@@ -250,6 +255,10 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<UserActionsUI>;
   if (url.host() == chrome::kChromeUIVersionHost)
     return &NewWebUI<VersionUI>;
+#if defined(ENABLE_WEBRTC)
+  if (url.host() == chrome::kChromeUIWebRtcLogsHost)
+    return &NewWebUI<WebRtcLogsUI>;
+#endif
 
   /****************************************************************************
    * OS Specific #defines
@@ -341,6 +350,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<chromeos::OobeUI>;
   if (url.host() == chrome::kChromeUIProxySettingsHost)
     return &NewWebUI<chromeos::ProxySettingsUI>;
+  if (url.host() == chrome::kChromeUISalsaHost)
+    return &NewWebUI<SalsaUI>;
   if (url.host() == chrome::kChromeUISimUnlockHost)
     return &NewWebUI<chromeos::SimUnlockUI>;
   if (url.host() == chrome::kChromeUISystemInfoHost)

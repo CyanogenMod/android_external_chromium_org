@@ -20,7 +20,9 @@ namespace chromeos {
 // call NetworkStateHandler::GetNetworkState(path) to retrieve the state for
 // the network.
 class CHROMEOS_EXPORT NetworkState : public ManagedState {
- public:
+public:
+  typedef std::vector<int> FrequencyList;
+
   explicit NetworkState(const std::string& path);
   virtual ~NetworkState();
 
@@ -59,6 +61,7 @@ class CHROMEOS_EXPORT NetworkState : public ManagedState {
   bool connectable() const { return connectable_; }
   // Wifi property accessors
   bool passphrase_required() const { return passphrase_required_; }
+  const FrequencyList& wifi_frequencies() const { return wifi_frequencies_; }
   // Cellular property accessors
   const std::string& technology() const { return technology_; }
   const std::string& activation_state() const { return activation_state_; }
@@ -67,6 +70,10 @@ class CHROMEOS_EXPORT NetworkState : public ManagedState {
     return activate_over_non_cellular_networks_;
   }
   bool cellular_out_of_credits() const { return cellular_out_of_credits_; }
+  const std::string& usage_url() const { return usage_url_; }
+  const std::string& payment_url() const { return payment_url_; }
+  const std::string& post_method() const { return post_method_; }
+  const std::string& post_data() const { return post_data_; }
 
   bool IsConnectedState() const;
   bool IsConnectingState() const;
@@ -97,6 +104,8 @@ class CHROMEOS_EXPORT NetworkState : public ManagedState {
     dns_servers_ = dns_servers;
   }
 
+  // TODO(gauravsh): Audit the list of properties that we are caching. We should
+  // only be doing this for commonly accessed properties. crbug.com/252553
   // Common Network Service properties
   std::string security_;
   std::string device_path_;
@@ -124,12 +133,18 @@ class CHROMEOS_EXPORT NetworkState : public ManagedState {
   std::string hex_ssid_;
   std::string country_code_;
   bool passphrase_required_;
+  FrequencyList wifi_frequencies_;
   // Cellular properties
   std::string technology_;
   std::string activation_state_;
   std::string roaming_;
   bool activate_over_non_cellular_networks_;
   bool cellular_out_of_credits_;
+  // Cellular payment portal properties.
+  std::string usage_url_;
+  std::string payment_url_;
+  std::string post_method_;
+  std::string post_data_;
 
   DISALLOW_COPY_AND_ASSIGN(NetworkState);
 };

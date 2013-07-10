@@ -220,10 +220,15 @@ NPObject* WebPluginProxy::GetWindowScriptNPObject() {
   if (!success)
     return NULL;
 
+  // PluginChannel creates a dummy owner identifier for unknown owners, so
+  // use that.
+  NPP owner = channel_->GetExistingNPObjectOwner(MSG_ROUTING_NONE);
+
   window_npobject_ = NPObjectProxy::Create(channel_.get(),
                                            npobject_route_id,
                                            host_render_view_routing_id_,
-                                           page_url_);
+                                           page_url_,
+                                           owner);
 
   return window_npobject_;
 }
@@ -239,10 +244,15 @@ NPObject* WebPluginProxy::GetPluginElement() {
   if (!success)
     return NULL;
 
+  // PluginChannel creates a dummy owner identifier for unknown owners, so
+  // use that.
+  NPP owner = channel_->GetExistingNPObjectOwner(MSG_ROUTING_NONE);
+
   plugin_element_ = NPObjectProxy::Create(channel_.get(),
                                           npobject_route_id,
                                           host_render_view_routing_id_,
-                                          page_url_);
+                                          page_url_,
+                                          owner);
 
   return plugin_element_;
 }
@@ -493,7 +503,7 @@ void WebPluginProxy::CreateDIBAndCGContextFromHandle(
     const TransportDIB::Handle& dib_handle,
     const gfx::Rect& window_rect,
     scoped_ptr<TransportDIB>* dib_out,
-    base::mac::ScopedCFTypeRef<CGContextRef>* cg_context_out) {
+    base::ScopedCFTypeRef<CGContextRef>* cg_context_out) {
   // Convert the shared memory handle to a handle that works in our process,
   // and then use that to create a CGContextRef.
   TransportDIB* dib = TransportDIB::Map(dib_handle);

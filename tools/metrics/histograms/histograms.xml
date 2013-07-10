@@ -55,10 +55,144 @@ other types of suffix sets.
 
 <histograms>
 
+<histogram name="Accessibility.CrosAlwaysShowA11yMenu" enum="BooleanEnabled">
+  <summary>
+    Whether the Chrome OS Accessibility Menu is set to be shown regardless of
+    the state of a11y features.(checked once 45 secs after startup).
+  </summary>
+</histogram>
+
+<histogram name="Accessibility.CrosHighContrast" enum="BooleanEnabled">
+  <summary>
+    Whether the Chrome OS High Constrast mode feature is on (checked once 45
+    secs after startup).
+  </summary>
+</histogram>
+
+<histogram name="Accessibility.CrosLargeCursor" enum="BooleanEnabled">
+  <summary>
+    Whether the Chrome OS Large Cursor feature is on (checked once 45 secs after
+    startup).
+  </summary>
+</histogram>
+
+<histogram name="Accessibility.CrosScreenMagnifier" enum="BooleanEnabled">
+  <summary>
+    Whether the Chrome OS Screen Magnifier feature is on (checked once 45 secs
+    after startup).
+  </summary>
+</histogram>
+
+<histogram name="Accessibility.CrosSpokenFeedback" enum="BooleanEnabled">
+  <summary>
+    Whether the Chrome OS Spoken Feedback feature is on (checked once 45 secs
+    after startup).
+  </summary>
+</histogram>
+
+<histogram name="Accessibility.CrosVirtualKeyboard" enum="BooleanEnabled">
+  <summary>
+    Whether the Chrome OS Virtual Keyboard feature is on (checked once 45 secs
+    after startup).
+  </summary>
+</histogram>
+
+<histogram name="Accessibility.InvertedColors" enum="BooleanEnabled">
+  <summary>
+    Whether Windows system settings show that high-contrast mode is enabled and
+    the user has selected a light-on-dark color scheme (checked once 45 secs
+    after startup). This causes Chrome to prompt the user with a bubble to
+    optionally install a High Contrast extension and theme.
+  </summary>
+</histogram>
+
+<histogram name="Accessibility.ManuallyEnabled" enum="BooleanEnabled">
+  <summary>
+    Whether Chrome has enabled accessibility support because the user passed the
+    --force-renderer-accessibility flag on the command-line (checked once 45
+    secs after startup).
+  </summary>
+</histogram>
+
+<histogram name="Accessibility.State" enum="BooleanEnabled">
+  <summary>
+    Whether Chrome has enabled accessibility support because it detects
+    supported assistive technology running, or due to being manually enabled via
+    a command-line flag (checked once 45 secs after startup).
+  </summary>
+</histogram>
+
+<histogram name="Accessibility.WinAudioDescription" enum="BooleanEnabled">
+  <summary>
+    Whether Windows system settings show that audio descriptions are enabled
+    (checked once 45 secs after startup).
+  </summary>
+</histogram>
+
+<histogram name="Accessibility.WinJAWS" enum="BooleanEnabled">
+  <summary>
+    Whether the third-party JAWS screen reader is running (checked once 45 secs
+    after startup).
+  </summary>
+</histogram>
+
+<histogram name="Accessibility.WinNVDA" enum="BooleanEnabled">
+  <summary>
+    Whether the third-party NVDA screen reader is running (checked once 45 secs
+    after startup).
+  </summary>
+</histogram>
+
+<histogram name="Accessibility.WinSAToGo" enum="BooleanEnabled">
+  <summary>
+    Whether the third-party System Access To Go screen reader is running
+    (checked once 45 secs after startup).
+  </summary>
+</histogram>
+
+<histogram name="Accessibility.WinScreenReader" enum="BooleanEnabled">
+  <summary>
+    Whether Windows system settings show that a screen reader is running
+    (checked once 45 secs after startup). Note that this does not necessarily
+    mean that Chrome has detected a supported screen reader and has enabled its
+    accessibility mode.
+  </summary>
+</histogram>
+
+<histogram name="Accessibility.WinStickyKeys" enum="BooleanEnabled">
+  <summary>
+    Whether Windows system settings show that Sticky Keys are enabled.
+  </summary>
+</histogram>
+
+<histogram name="Accessibility.WinZoomText" enum="BooleanEnabled">
+  <summary>
+    Whether the third-party ZoomText screen magnifier is running.
+  </summary>
+</histogram>
+
 <histogram name="Apps.AppLaunch" enum="AppLaunch">
   <summary>
     The number of times v2 packaged apps are launched grouped by
     extension_misc::AppLaunchBuckets. See also Extensions.AppLaunch.
+  </summary>
+</histogram>
+
+<histogram name="Apps.AppLauncherPromo" enum="AppLauncherPromo">
+  <summary>Interactions with the App Launcher promo dialog.</summary>
+</histogram>
+
+<histogram name="Apps.AppListSearchCommenced" units="searches">
+  <summary>
+    The number of searches that are started in the app list. This is gathered
+    each time the app list search box transitions from empty to non-empty.
+  </summary>
+</histogram>
+
+<histogram name="Apps.AppListSearchResultOpenType" enum="AppListSearchResult">
+  <summary>
+    The type of app list search result that was opened by the user. This is
+    gathered per click of a search result.
   </summary>
 </histogram>
 
@@ -3147,10 +3281,33 @@ other types of suffix sets.
   <summary>Events in Google Now component extension.</summary>
 </histogram>
 
+<histogram name="History.TopSitesVisitsByRank" units="rank">
+  <summary>
+    Page visits to each of a user's top 50 sites. Visits to all other sites go
+    into the 51st bucket. Only count the page visit if it came from user
+    browsing and only count it once when cycling through a redirect chain.
+  </summary>
+</histogram>
+
+<histogram name="HistoryPage.ClickPosition">
+  <summary>
+    Number of entries that the clicked entry is older than in History page. Last
+    bucket is any entry of that value or higher.
+  </summary>
+</histogram>
+
 <histogram name="HistoryPage.OtherSessionsMenu" enum="NtpOtherSessionsType">
   <summary>
     Histogram for usage of the section in the history page that allows the user
     to access tabs from other devices.
+  </summary>
+</histogram>
+
+<histogram name="HistoryPage.RemoveEntryPosition">
+  <summary>
+    Number of entries that the deleted entry is older than in History page. Last
+    bucket is any entry of that value or higher. Confirmed removal is not
+    guaranteed, just an initiation of 'Remove selected items'.
   </summary>
 </histogram>
 
@@ -3330,7 +3487,18 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="InstantExtended.NewOptInState"
+    enum="InstantExtended_NewOptInState">
+  <summary>
+    Records, on startup, whether the user has chosen to opt-in to or opt-out of
+    InstantExtended via chrome://flags.
+  </summary>
+</histogram>
+
 <histogram name="InstantExtended.OptInState" enum="InstantExtended_OptInState">
+  <obsolete>
+    Deprecated 2013-06. As of m30 use InstantExtended.NewOptInState.
+  </obsolete>
   <summary>
     Records, on startup, whether the user has chosen to opt-in to or opt-out of
     InstantExtended via chrome://flags.
@@ -3536,6 +3704,10 @@ other types of suffix sets.
 
 <histogram name="Media.AudioInputController" units="ms">
   <summary>Measures the time taken for AudioInputController::</summary>
+</histogram>
+
+<histogram name="Media.AudioInputDeviceManager" units="ms">
+  <summary>Measures the time taken for AudioInputDeviceManager::</summary>
 </histogram>
 
 <histogram name="Media.AudioOutputController" units="ms">
@@ -3970,6 +4142,10 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Media.VideoCaptureManager" units="ms">
+  <summary>Measures the time taken for VideoCaptureManager::</summary>
+</histogram>
+
 <histogram name="Media.VideoCodec" enum="VideoCodec">
   <summary>Video codec used in HTML5 media.</summary>
 </histogram>
@@ -4077,6 +4253,34 @@ other types of suffix sets.
     the foreground - we count LowMemory notification vs particular levels of
     TrimMemory foreground notification.
   </summary>
+</histogram>
+
+<histogram name="Mouse.PointerSensitivity.Changed" enum="PointerSensitivity">
+  <summary>
+    Tracks mouse sensitivity setting changes by the user. This replaces the old
+    Mouse.Sensitivity.Changed metric.
+  </summary>
+</histogram>
+
+<histogram name="Mouse.PointerSensitivity.Started" enum="PointerSensitivity">
+  <summary>
+    Tracks mouse sensitivity setting on startup. This replaces the old
+    Mouse.Sensitivity.Started metric.
+  </summary>
+</histogram>
+
+<histogram name="Mouse.Sensitivity.Changed" enum="PointerSensitivity">
+  <obsolete>
+    Deprecated as of 6/2013, replaced by Mouse.PointerSensitivity.Changed.
+  </obsolete>
+  <summary>Tracks mouse sensitivity setting.</summary>
+</histogram>
+
+<histogram name="Mouse.Sensitivity.Started" enum="PointerSensitivity">
+  <obsolete>
+    Deprecated as of 6/2013, replaced by Mouse.PointerSensitivity.Started.
+  </obsolete>
+  <summary>Tracks mouse sensitivity setting on startup.</summary>
 </histogram>
 
 <histogram name="MouseEventPrefetch.MouseDownDuration_Click" units="ms">
@@ -4914,7 +5118,7 @@ other types of suffix sets.
   </summary>
 </histogram>
 
-<histogram name="Net.HttpContentFreshnessLifetime" units="milliseconds">
+<histogram name="Net.HttpContentFreshnessLifetime" units="seconds">
   <summary>Length of time that a received resource will be cacheable.</summary>
 </histogram>
 
@@ -5539,6 +5743,41 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Net.QuicSession.CloseSessionOnError" enum="NetErrorCodes">
+  <summary>
+    The network error code which resulted in the session being closed.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicSession.ConnectionCloseErrorCode"
+    enum="QuicErrorCodes">
+  <summary>
+    The QUIC error code which resulted in the connection being closed.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicSession.OutOfOrderPacketsReceived">
+  <summary>
+    The number of times packets the current received packet had a lower sequence
+    number than the previously received packet sequence number.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicSession.PacketGapReceived">
+  <summary>
+    The number of missing packets between the current received packet and the
+    previously largest received packet sequence number.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicSession.PacketGapSent">
+  <summary>
+    The number of missing packets between the current received packet and the
+    previously largest received packet sequence number, as reported by the
+    remote end of the connection.
+  </summary>
+</histogram>
+
 <histogram name="Net.RenegotiationExtensionSupported">
   <summary>
     True if the HTTP request was sent to a server which supports the TLS
@@ -5900,6 +6139,10 @@ other types of suffix sets.
   <summary>
     The SPDY protocol version that is used to talk to SPDY servers.
   </summary>
+</histogram>
+
+<histogram name="Net.SSL_CipherSuite" enum="SSLCipherSuite">
+  <summary>The SSL/TLS cipher suite that was negotiated.</summary>
 </histogram>
 
 <histogram name="Net.SSL_Connection_Latency" units="milliseconds">
@@ -7305,6 +7548,20 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Network.Shill.WiFi.ScanResult" enum="WiFiScanResult">
+  <summary>
+    Chrome OS network usage metric describing, for a wifi scan attempt, what
+    scan method is used and whether it ends in a connection.
+  </summary>
+</histogram>
+
+<histogram name="Network.Shill.WiFi.ScanTimeInEbusy" units="milliseconds">
+  <summary>
+    Chrome OS network usage metric describing, for a wifi scan attempt, how many
+    milliseconds were spent waiting to talk to the kernel/drivers.
+  </summary>
+</histogram>
+
 <histogram name="Network.Shill.Wifi.Security" enum="NetworkSecurityType">
   <summary>
     Chrome OS network usage metric.  The security setting for each successful
@@ -7342,6 +7599,14 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Network.Shill.Wifi.TimeToConnect" units="milliseconds">
+  <summary>
+    Chrome OS network performance metric sampling the time to connect to a WiFi
+    Basic Service Set (which consists of the access point and associated
+    stations on a particular WiFi channel for a specific network).
+  </summary>
+</histogram>
+
 <histogram name="Network.Shill.Wifi.TimeToInitialize" units="milliseconds">
   <summary>
     Chrome OS network performance metric sampling the time to initialize an
@@ -7375,6 +7640,15 @@ other types of suffix sets.
   <summary>
     Chrome OS network performance metric sampling the time to scan WiFi until a
     connection is found.
+  </summary>
+</histogram>
+
+<histogram name="Network.Shill.Wifi.TimeToScanAndConnect" units="milliseconds">
+  <summary>
+    Chrome OS network performance metric sampling the time between the beginning
+    of a WiFi scan (if the scan includes both a progressive scan and a full
+    scan, the TimeToScanAndConnect starts with the first scan of the series) and
+    the completion of a successful connection.
   </summary>
 </histogram>
 
@@ -8130,6 +8404,486 @@ other types of suffix sets.
 
 <histogram name="Platform.StatefulUsage" units="%">
   <summary>Chrome OS stateful partition usage level.</summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Cpu.Swap0.Time1" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Cpu.Swap0.Time2" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Cpu.Swap0.Time3" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Cpu.Swap0.Time4" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Cpu.Swap1.Time1" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Cpu.Swap1.Time2" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Cpu.Swap1.Time3" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Cpu.Swap1.Time4" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Cpu.Swap2.Time1" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Cpu.Swap2.Time2" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Cpu.Swap2.Time3" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Cpu.Swap2.Time4" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Cpu.Swap3.Time1" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Cpu.Swap3.Time2" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Cpu.Swap3.Time3" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Cpu.Swap3.Time4" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Faults.Swap0.Time1"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Faults.Swap0.Time2"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Faults.Swap0.Time3"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Faults.Swap0.Time4"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Faults.Swap1.Time1"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Faults.Swap1.Time2"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Faults.Swap1.Time3"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Faults.Swap1.Time4"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Faults.Swap2.Time1"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Faults.Swap2.Time2"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Faults.Swap2.Time3"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Faults.Swap2.Time4"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Faults.Swap3.Time1"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Faults.Swap3.Time2"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Faults.Swap3.Time3"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.Scroll.Faults.Swap3.Time4"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    scroll event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Cpu.Swap0.Time1" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a tab
+    switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Cpu.Swap0.Time2" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a tab
+    switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Cpu.Swap0.Time3" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a tab
+    switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Cpu.Swap0.Time4" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a tab
+    switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Cpu.Swap1.Time1" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a tab
+    switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Cpu.Swap1.Time2" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a tab
+    switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Cpu.Swap1.Time3" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a tab
+    switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Cpu.Swap1.Time4" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a tab
+    switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Cpu.Swap2.Time1" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a tab
+    switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Cpu.Swap2.Time2" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a tab
+    switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Cpu.Swap2.Time3" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a tab
+    switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Cpu.Swap2.Time4" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a tab
+    switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Cpu.Swap3.Time1" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a tab
+    switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Cpu.Swap3.Time2" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a tab
+    switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Cpu.Swap3.Time3" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a tab
+    switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Cpu.Swap3.Time4" units="%">
+  <summary>
+    CPU utilization for the specified swap group and time interval after a tab
+    switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Faults.Swap0.Time1"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    tab switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Faults.Swap0.Time2"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    tab switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Faults.Swap0.Time3"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    tab switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Faults.Swap0.Time4"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    tab switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Faults.Swap1.Time1"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    tab switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Faults.Swap1.Time2"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    tab switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Faults.Swap1.Time3"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    tab switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Faults.Swap1.Time4"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    tab switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Faults.Swap2.Time1"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    tab switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Faults.Swap2.Time2"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    tab switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Faults.Swap2.Time3"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    tab switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Faults.Swap2.Time4"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    tab switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Faults.Swap3.Time1"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    tab switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Faults.Swap3.Time2"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    tab switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Faults.Swap3.Time3"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    tab switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapJank.TabSwitch.Faults.Swap3.Time4"
+    units="page faults/second">
+  <summary>
+    Page faults/second for the specified swap group and time interval after a
+    tab switch event.  See src/chrome/browser/chromeos/swap_metrics.cc.
+  </summary>
 </histogram>
 
 <histogram name="Platform.Temperature.Junction" units="Celsius">
@@ -10757,11 +11511,21 @@ other types of suffix sets.
   <summary>The size of the cache at the beginning of an eviction.</summary>
 </histogram>
 
+<histogram name="SimpleCache.Eviction.CacheSizeOnStart2" units="KB">
+  <summary>The size of the cache at the beginning of an eviction.</summary>
+</histogram>
+
 <histogram name="SimpleCache.Eviction.EntryCount">
   <summary>The number of entries to be erased in an eviction.</summary>
 </histogram>
 
 <histogram name="SimpleCache.Eviction.MaxCacheSizeOnStart" units="bytes">
+  <summary>
+    The maximum allowed size of the cache at the beginning of an eviction.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Eviction.MaxCacheSizeOnStart2" units="KB">
   <summary>
     The maximum allowed size of the cache at the beginning of an eviction.
   </summary>
@@ -10775,7 +11539,15 @@ other types of suffix sets.
   <summary>The number of bytes to be erased in an eviction.</summary>
 </histogram>
 
+<histogram name="SimpleCache.Eviction.SizeOfEvicted2" units="KB">
+  <summary>The amount of memory freed in an eviction.</summary>
+</histogram>
+
 <histogram name="SimpleCache.Eviction.SizeWhenDone" units="bytes">
+  <summary>The size of the cache after running an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Eviction.SizeWhenDone2" units="KB">
   <summary>The size of the cache after running an eviction.</summary>
 </histogram>
 
@@ -11195,6 +11967,13 @@ other types of suffix sets.
   <summary>Tracks touchpad device state.</summary>
 </histogram>
 
+<histogram name="Touchpad.Metrics" enum="TouchpadProblemType">
+  <summary>
+    Tracks unusual CrOS touchpad operational states (e.g. running into the noisy
+    ground issue). This is sampled at every touchpad event.
+  </summary>
+</histogram>
+
 <histogram name="Touchpad.NaturalScroll.Changed" enum="BooleanEnabled">
   <summary>Tracks touchpad natural scroll setting changes by the user.</summary>
 </histogram>
@@ -11203,11 +11982,31 @@ other types of suffix sets.
   <summary>Tracks touchpad natural scroll setting on startup.</summary>
 </histogram>
 
+<histogram name="Touchpad.PointerSensitivity.Changed" enum="PointerSensitivity">
+  <summary>
+    Tracks touchpad sensitivity setting changes by the user. This replaces the
+    old Touchpad.Sensitivity.Changed metric.
+  </summary>
+</histogram>
+
+<histogram name="Touchpad.PointerSensitivity.Started" enum="PointerSensitivity">
+  <summary>
+    Tracks touchpad sensitivity setting on startup. This replaces the old
+    Touchpad.Sensitivity.Started metric.
+  </summary>
+</histogram>
+
 <histogram name="Touchpad.Sensitivity.Changed" enum="PointerSensitivity">
+  <obsolete>
+    Deprecated as of 6/2013, replaced by Touchpad.PointerSensitivity.Changed.
+  </obsolete>
   <summary>Tracks touchpad sensitivity setting changes by the user.</summary>
 </histogram>
 
 <histogram name="Touchpad.Sensitivity.Started" enum="PointerSensitivity">
+  <obsolete>
+    Deprecated as of 6/2013, replaced by Touchpad.PointerSensitivity.Started.
+  </obsolete>
   <summary>Tracks touchpad sensitivity setting on startup.</summary>
 </histogram>
 
@@ -11291,7 +12090,14 @@ other types of suffix sets.
     enum="TranslateLanguageVerification">
   <summary>
     For each page load, measures whether the provided Content-Language header
-    matches the language determined by CLD.
+    matches the language determined by CLD.  Beyond directly matching or
+    mismatching the Content-Language header, CLD can complement the
+    Content-Language.  For example, suppose the Content-Language header
+    specifies 'zh' (general Chinese), a language code that the Translate server
+    does not support.  In this case, CLD can detect a subcode like '-TW' or
+    '-CN', resulting in language codes 'zh-TW' and 'zh-CN', which the Translate
+    server supports.  This is referred to as &quot;complementing a language
+    subcode&quot;.
   </summary>
 </histogram>
 
@@ -11767,10 +12573,31 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="WebCore.IndexedDB.LevelDBOpenErrors.Corruption"
+    enum="LevelDBCorruptionTypes">
+  Types of corruption that LevelDB encounters when opening a database.
+</histogram>
+
 <histogram name="WebCore.IndexedDB.LevelDBOpenErrors.EnvMethod"
     enum="LevelDBIOErrorMethods">
   <summary>
     LevelDBEnv methods that generated IO errors when opening a database.
+  </summary>
+</histogram>
+
+<histogram name="WebCore.IndexedDB.LevelDBOpenErrors.Errno"
+    enum="OSAgnosticErrno">
+  <summary>
+    Errno errors encountered by a single LevelDBEnv method when opening an
+    IndexedDB instance.
+  </summary>
+</histogram>
+
+<histogram name="WebCore.IndexedDB.LevelDBOpenErrors.PFE"
+    enum="PlatformFileError">
+  <summary>
+    PlatformFileErrors encountered by a single LevelDBEnv method when opening an
+    IndexedDB instance.
   </summary>
 </histogram>
 
@@ -11780,10 +12607,31 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="WebCore.IndexedDB.LevelDBWriteErrors.Corruption"
+    enum="LevelDBCorruptionTypes">
+  Types of corruption returned by LevelDB when it failed to write to a database.
+</histogram>
+
 <histogram name="WebCore.IndexedDB.LevelDBWriteErrors.EnvMethod"
     enum="LevelDBIOErrorMethods">
   <summary>
     LevelDBEnv methods that generated IO errors when writing to a database.
+  </summary>
+</histogram>
+
+<histogram name="WebCore.IndexedDB.LevelDBWriteErrors.Errno"
+    enum="OSAgnosticErrno">
+  <summary>
+    Errno errors encountered by a single LevelDBEnv method when writing to an
+    IndexedDB instance.
+  </summary>
+</histogram>
+
+<histogram name="WebCore.IndexedDB.LevelDBWriteErrors.PFE"
+    enum="PlatformFileError">
+  <summary>
+    PlatformFileErrors encountered by a single LevelDBEnv method when writing to
+    an IndexedDB instance.
   </summary>
 </histogram>
 
@@ -12027,6 +12875,13 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="WrenchMenu.RecentTabsSubMenu" enum="RecentTabsAction">
+  <summary>
+    The number of times each tab or window restore option in the Recent Tabs
+    submenu is clicked.
+  </summary>
+</histogram>
+
 <histogram name="ZeroSuggest.AllResults">
   <summary>
     The number of results (either query or URL) from ZeroSuggest. This is set
@@ -12114,6 +12969,20 @@ other types of suffix sets.
   <int value="1" label="LAUNCH_PANEL"/>
   <int value="2" label="LAUNCH_TAB"/>
   <int value="3" label="LAUNCH_NONE (v2 packaged apps)"/>
+</enum>
+
+<enum name="AppLauncherPromo" type="int">
+  <int value="0" label="Already installed"/>
+  <int value="1" label="Shown"/>
+  <int value="2" label="Dismissed"/>
+  <int value="3" label="Learn more"/>
+</enum>
+
+<enum name="AppListSearchResult" type="int">
+  <int value="0" label="OMNIBOX"/>
+  <int value="1" label="APP"/>
+  <int value="2" label="WEBSTORE"/>
+  <int value="3" label="SEARCH_WEBSTORE"/>
 </enum>
 
 <enum name="AppPromoAction" type="int">
@@ -13777,7 +14646,7 @@ other types of suffix sets.
   <int value="138" label="BLUETOOTH_GETLOCALOUTOFBANDPAIRINGDATA"/>
   <int value="139" label="SYSTEMPRIVATE_GETUPDATESTATUS"/>
   <int value="140" label="FONTSETTINGS_CLEARMINIMUMFONTSIZE"/>
-  <int value="141" label="FILEBROWSERPRIVATE_GETFILELOCATIONS"/>
+  <int value="141" label="DELETED_FILEBROWSERPRIVATE_GETFILELOCATIONS"/>
   <int value="142" label="EXPERIMENTAL_DISCOVERY_SUGGEST"/>
   <int value="143" label="FILEBROWSERPRIVATE_SETDEFAULTTASK"/>
   <int value="144" label="BROWSERACTION_GETBADGETEXT"/>
@@ -14097,9 +14966,44 @@ other types of suffix sets.
   <int value="458" label="AUDIO_SETACTIVEDEVICES"/>
   <int value="459" label="AUDIO_SETPROPERTIES"/>
   <int value="460" label="USB_RESETDEVICE"/>
-  <int value="461" label="SYSTEMINFO_CPU_GET"/>
-  <int value="462" label="SYSTEMINFO_MEMORY_GET"/>
-  <int value="463" label="ACTIVITYLOGPRIVATE_GETEXTENSIONACTIVITIES"/>
+  <int value="461" label="SOCKET_MULTICAST_JOIN_GROUP"/>
+  <int value="462" label="SOCKET_MULTICAST_LEAVE_GROUP"/>
+  <int value="463" label="SOCKET_MULTICAST_SET_TIME_TO_LIVE"/>
+  <int value="464" label="SOCKET_MULTICAST_SET_LOOPBACK_MODE"/>
+  <int value="465" label="SOCKET_MULTICAST_GET_JOINED_GROUPS"/>
+  <int value="466"
+      label="EXPERIMENTAL_ACCESSIBILITY_SETNATIVEACCESSIBILITYENABLED"/>
+  <int value="467" label="RUNTIME_GETPLATFORMINFO"/>
+  <int value="468" label="WEBVIEW_INSERTCSS"/>
+  <int value="469" label="METRICSPRIVATE_GETISCRASHRECORDINGENABLED"/>
+  <int value="470" label="IDENTITYPRIVATE_GETRESOURCES"/>
+  <int value="471" label="NOTIFICATIONS_GET_ALL"/>
+  <int value="472" label="USB_LISTINTERFACES"/>
+  <int value="473" label="FILESYSTEM_RETAINENTRY"/>
+  <int value="474" label="FILESYSTEM_ISRESTORABLE"/>
+  <int value="475" label="FILESYSTEM_RESTOREENTRY"/>
+  <int value="476" label="RUNTIME_SETUNINSTALLURL"/>
+  <int value="477" label="INPUTMETHODPRIVATE_STARTIME"/>
+  <int value="478" label="MUSICMANAGERPRIVATE_GETDEVICEID"/>
+  <int value="479" label="TTS_PAUSE"/>
+  <int value="480" label="TTS_RESUME"/>
+  <int value="481" label="SYSTEMINFO_CPU_GET"/>
+  <int value="482" label="EXPERIMENTAL_SYSTEMINFO_STORAGE_ADDWATCH"/>
+  <int value="483" label="EXPERIMENTAL_SYSTEMINFO_STORAGE_REMOVEWATCH"/>
+  <int value="484" label="EXPERIMENTAL_SYSTEMINFO_STORAGE_GETALLWATCH"/>
+  <int value="485" label="EXPERIMENTAL_SYSTEMINFO_STORAGE_REMOVEALLWATCH"/>
+  <int value="486" label="SYSTEMINFO_MEMORY_GET"/>
+  <int value="487" label="ACTIVITYLOGPRIVATE_GETEXTENSIONACTIVITIES"/>
+  <int value="488" label="RUNTIME_GETPACKAGEDIRECTORYENTRY"/>
+  <int value="489" label="SYSTEMINFO_DISPLAY_SETDISPLAYPROPERTIES"/>
+  <int value="490" label="FEEDBACKPRIVATE_GETUSEREMAIL"/>
+  <int value="491" label="FEEDBACKPRIVATE_GETSYSTEMINFORMATION"/>
+  <int value="492" label="FEEDBACKPRIVATE_SENDFEEDBACK"/>
+  <int value="493" label="EXPERIMENTAL_INPUT_VIRTUALKEYBOARD_INSERTTEXT"/>
+  <int value="494" label="DIAGNOSTICS_SENDPACKET"/>
+  <int value="495" label="METRICSPRIVATE_GETFIELDTRIAL"/>
+  <int value="496" label="FILEBROWSERPRIVATE_ZOOM"/>
+  <int value="497" label="WEBVIEW_GO"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">
@@ -14827,6 +15731,8 @@ other types of suffix sets.
   <int value="4" label="DISMISS_REQUEST_SUCCESS"/>
   <int value="5" label="LOCATION_REQUEST"/>
   <int value="6" label="LOCATION_UPDATE"/>
+  <int value="7" label="EXTENSION_START"/>
+  <int value="8" label="SHOW_WELCOME_TOAST"/>
 </enum>
 
 <enum name="HttpAuthCount" type="int">
@@ -15012,7 +15918,16 @@ other types of suffix sets.
   <int value="4" label="Non-extended navigation"/>
 </enum>
 
+<enum name="InstantExtended_NewOptInState" type="int">
+  <int value="0" label="Default"/>
+  <int value="1" label="Opted in"/>
+  <int value="2" label="Opted out"/>
+</enum>
+
 <enum name="InstantExtended_OptInState" type="int">
+  <obsolete>
+    Deprecated 2013-06.
+  </obsolete>
   <int value="0" label="Default"/>
   <int value="1" label="Opted in"/>
   <int value="2" label="Opted out"/>
@@ -15610,6 +16525,41 @@ other types of suffix sets.
   <int value="8026721" label="Zaza"/>
 </enum>
 
+<enum name="LevelDBCorruptionTypes" type="int">
+  <int value="0" label="other"/>
+  <int value="1" label="missing files"/>
+  <int value="2" label="log record too small"/>
+  <int value="3" label="corrupted internal key"/>
+  <int value="4" label="partial record"/>
+  <int value="5" label="missing start of fragmented record"/>
+  <int value="6" label="error in middle of record"/>
+  <int value="7" label="unknown record type"/>
+  <int value="8" label="truncated record at end"/>
+  <int value="9" label="bad record length"/>
+  <int value="10" label="VersionEdit"/>
+  <int value="11" label="FileReader invoked with unexpected value"/>
+  <int value="12" label="corrupted key"/>
+  <int value="13" label="CURRENT file does not end with newline"/>
+  <int value="14" label="no meta-nextfile entry"/>
+  <int value="15" label="no meta-lognumber entry"/>
+  <int value="16" label="no last-sequence-number entry"/>
+  <int value="17" label="malformed WriteBatch"/>
+  <int value="18" label="bad WriteBatch Put"/>
+  <int value="19" label="bad WriteBatch Delete"/>
+  <int value="20" label="unknown WriteBatch tag"/>
+  <int value="21" label="WriteBatch has wrong count"/>
+  <int value="22" label="bad entry in block"/>
+  <int value="23" label="bad block contents"/>
+  <int value="24" label="bad block handle"/>
+  <int value="25" label="truncated block read"/>
+  <int value="26" label="block checksum mismatch"/>
+  <int value="27" label="checksum mismatch"/>
+  <int value="28" label="corrupted compressed block contents"/>
+  <int value="29" label="bad block type"/>
+  <int value="30" label="bad magic number"/>
+  <int value="31" label="file is too short"/>
+</enum>
+
 <enum name="LevelDBErrorCount" type="int">
   <int value="1" label="Failure"/>
 </enum>
@@ -15641,6 +16591,7 @@ other types of suffix sets.
   <int value="16" label="UnlockFile"/>
   <int value="17" label="GetTestDirectory"/>
   <int value="18" label="NewLogger"/>
+  <int value="19" label="SyncParent"/>
 </enum>
 
 <enum name="LinkMonitorFailureType" type="int">
@@ -17186,11 +18137,67 @@ other types of suffix sets.
   <int value="22" label="DOMAIN_NUM_EVENTS"/>
 </enum>
 
+<enum name="QuicErrorCodes" type="int">
+  <int value="0" label="NO_ERROR"/>
+  <int value="1" label="INTERNAL_ERROR"/>
+  <int value="2" label="STREAM_DATA_AFTER_TERMINATION"/>
+  <int value="3" label="INVALID_PACKET_HEADER"/>
+  <int value="4" label="INVALID_FRAME_DATA"/>
+  <int value="5" label="INVALID_FEC_DATA"/>
+  <int value="6" label="INVALID_RST_STREAM_DATA"/>
+  <int value="7" label="INVALID_CONNECTION_CLOSE_DATA"/>
+  <int value="8" label="INVALID_GOAWAY_DATA"/>
+  <int value="9" label="INVALID_ACK_DATA"/>
+  <int value="10" label="INVALID_VERSION_NEGOTIATION_PACKET"/>
+  <int value="11" label="INVALID_PUBLIC_RST_PACKET"/>
+  <int value="12" label="DECRYPTION_FAILURE"/>
+  <int value="13" label="ENCRYPTION_FAILURE"/>
+  <int value="14" label="PACKET_TOO_LARGE"/>
+  <int value="15" label="PACKET_FOR_NONEXISTENT_STREAM"/>
+  <int value="16" label="PEER_GOING_AWAY"/>
+  <int value="17" label="INVALID_STREAM_ID"/>
+  <int value="18" label="TOO_MANY_OPEN_STREAMS"/>
+  <int value="19" label="PUBLIC_RESET"/>
+  <int value="20" label="INVALID_VERSION"/>
+  <int value="21" label="STREAM_RST_BEFORE_HEADERS_DECOMPRESSED"/>
+  <int value="22" label="INVALID_HEADER_ID"/>
+  <int value="23" label="INVALID_NEGOTIATED_VALUE"/>
+  <int value="24" label="DECOMPRESSION_FAILURE"/>
+  <int value="25" label="CONNECTION_TIMED_OUT"/>
+  <int value="26" label="ERROR_MIGRATING_ADDRESS"/>
+  <int value="27" label="PACKET_WRITE_ERROR"/>
+  <int value="28" label="HANDSHAKE_FAILED"/>
+  <int value="29" label="CRYPTO_TAGS_OUT_OF_ORDER"/>
+  <int value="30" label="CRYPTO_TOO_MANY_ENTRIES"/>
+  <int value="31" label="CRYPTO_INVALID_VALUE_LENGTH"/>
+  <int value="32" label="CRYPTO_MESSAGE_AFTER_HANDSHAKE_COMPLETE"/>
+  <int value="33" label="INVALID_CRYPTO_MESSAGE_TYPE"/>
+  <int value="34" label="INVALID_CRYPTO_MESSAGE_PARAMETER"/>
+  <int value="35" label="CRYPTO_MESSAGE_PARAMETER_NOT_FOUND"/>
+  <int value="36" label="CRYPTO_MESSAGE_PARAMETER_NO_OVERLAP"/>
+  <int value="37" label="CRYPTO_MESSAGE_INDEX_NOT_FOUND"/>
+  <int value="38" label="CRYPTO_INTERNAL_ERROR"/>
+  <int value="39" label="CRYPTO_VERSION_NOT_SUPPORTED"/>
+  <int value="40" label="CRYPTO_NO_SUPPORT"/>
+  <int value="41" label="CRYPTO_TOO_MANY_REJECTS"/>
+  <int value="42" label="PROOF_INVALID"/>
+  <int value="43" label="CRYPTO_DUPLICATE_TAG"/>
+  <int value="44" label="CRYPTO_ENCRYPTION_LEVEL_INCORRECT"/>
+  <int value="45" label="CRYPTO_SERVER_CONFIG_EXPIRED"/>
+</enum>
+
 <enum name="QuicHandshakeState" type="int">
   <int value="0" label="STARTED"/>
   <int value="1" label="ENCRYPTION_ESTABLISHED"/>
   <int value="2" label="HANDSHAKE_CONFIRMED"/>
   <int value="3" label="FAILED"/>
+</enum>
+
+<enum name="RecentTabsAction" type="int">
+  <int value="0" label="Local Session Tab"/>
+  <int value="1" label="Other Device Tab"/>
+  <int value="2" label="Restore Window"/>
+  <int value="3" label="Show More"/>
 </enum>
 
 <enum name="ResolutionCategory" type="int">
@@ -17839,6 +18846,324 @@ other types of suffix sets.
   <int value="20" label="SQLITE_IOERR_SHMLOCK">Unused</int>
 </enum>
 
+<enum name="SSLCipherSuite" type="int">
+  <summary>SSL/TLS cipher suites from the IANA registry</summary>
+  <int value="0" label="TLS_NULL_WITH_NULL_NULL"/>
+  <int value="1" label="TLS_RSA_WITH_NULL_MD5"/>
+  <int value="2" label="TLS_RSA_WITH_NULL_SHA"/>
+  <int value="3" label="TLS_RSA_EXPORT_WITH_RC4_40_MD5"/>
+  <int value="4" label="TLS_RSA_WITH_RC4_128_MD5"/>
+  <int value="5" label="TLS_RSA_WITH_RC4_128_SHA"/>
+  <int value="6" label="TLS_RSA_EXPORT_WITH_RC2_CBC_40_MD5"/>
+  <int value="7" label="TLS_RSA_WITH_IDEA_CBC_SHA"/>
+  <int value="8" label="TLS_RSA_EXPORT_WITH_DES40_CBC_SHA"/>
+  <int value="9" label="TLS_RSA_WITH_DES_CBC_SHA"/>
+  <int value="10" label="TLS_RSA_WITH_3DES_EDE_CBC_SHA"/>
+  <int value="11" label="TLS_DH_DSS_EXPORT_WITH_DES40_CBC_SHA"/>
+  <int value="12" label="TLS_DH_DSS_WITH_DES_CBC_SHA"/>
+  <int value="13" label="TLS_DH_DSS_WITH_3DES_EDE_CBC_SHA"/>
+  <int value="14" label="TLS_DH_RSA_EXPORT_WITH_DES40_CBC_SHA"/>
+  <int value="15" label="TLS_DH_RSA_WITH_DES_CBC_SHA"/>
+  <int value="16" label="TLS_DH_RSA_WITH_3DES_EDE_CBC_SHA"/>
+  <int value="17" label="TLS_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA"/>
+  <int value="18" label="TLS_DHE_DSS_WITH_DES_CBC_SHA"/>
+  <int value="19" label="TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA"/>
+  <int value="20" label="TLS_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA"/>
+  <int value="21" label="TLS_DHE_RSA_WITH_DES_CBC_SHA"/>
+  <int value="22" label="TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA"/>
+  <int value="23" label="TLS_DH_anon_EXPORT_WITH_RC4_40_MD5"/>
+  <int value="24" label="TLS_DH_anon_WITH_RC4_128_MD5"/>
+  <int value="25" label="TLS_DH_anon_EXPORT_WITH_DES40_CBC_SHA"/>
+  <int value="26" label="TLS_DH_anon_WITH_DES_CBC_SHA"/>
+  <int value="27" label="TLS_DH_anon_WITH_3DES_EDE_CBC_SHA"/>
+  <int value="30" label="TLS_KRB5_WITH_DES_CBC_SHA"/>
+  <int value="31" label="TLS_KRB5_WITH_3DES_EDE_CBC_SHA"/>
+  <int value="32" label="TLS_KRB5_WITH_RC4_128_SHA"/>
+  <int value="33" label="TLS_KRB5_WITH_IDEA_CBC_SHA"/>
+  <int value="34" label="TLS_KRB5_WITH_DES_CBC_MD5"/>
+  <int value="35" label="TLS_KRB5_WITH_3DES_EDE_CBC_MD5"/>
+  <int value="36" label="TLS_KRB5_WITH_RC4_128_MD5"/>
+  <int value="37" label="TLS_KRB5_WITH_IDEA_CBC_MD5"/>
+  <int value="38" label="TLS_KRB5_EXPORT_WITH_DES_CBC_40_SHA"/>
+  <int value="39" label="TLS_KRB5_EXPORT_WITH_RC2_CBC_40_SHA"/>
+  <int value="40" label="TLS_KRB5_EXPORT_WITH_RC4_40_SHA"/>
+  <int value="41" label="TLS_KRB5_EXPORT_WITH_DES_CBC_40_MD5"/>
+  <int value="42" label="TLS_KRB5_EXPORT_WITH_RC2_CBC_40_MD5"/>
+  <int value="43" label="TLS_KRB5_EXPORT_WITH_RC4_40_MD5"/>
+  <int value="44" label="TLS_PSK_WITH_NULL_SHA"/>
+  <int value="45" label="TLS_DHE_PSK_WITH_NULL_SHA"/>
+  <int value="46" label="TLS_RSA_PSK_WITH_NULL_SHA"/>
+  <int value="47" label="TLS_RSA_WITH_AES_128_CBC_SHA"/>
+  <int value="48" label="TLS_DH_DSS_WITH_AES_128_CBC_SHA"/>
+  <int value="49" label="TLS_DH_RSA_WITH_AES_128_CBC_SHA"/>
+  <int value="50" label="TLS_DHE_DSS_WITH_AES_128_CBC_SHA"/>
+  <int value="51" label="TLS_DHE_RSA_WITH_AES_128_CBC_SHA"/>
+  <int value="52" label="TLS_DH_anon_WITH_AES_128_CBC_SHA"/>
+  <int value="53" label="TLS_RSA_WITH_AES_256_CBC_SHA"/>
+  <int value="54" label="TLS_DH_DSS_WITH_AES_256_CBC_SHA"/>
+  <int value="55" label="TLS_DH_RSA_WITH_AES_256_CBC_SHA"/>
+  <int value="56" label="TLS_DHE_DSS_WITH_AES_256_CBC_SHA"/>
+  <int value="57" label="TLS_DHE_RSA_WITH_AES_256_CBC_SHA"/>
+  <int value="58" label="TLS_DH_anon_WITH_AES_256_CBC_SHA"/>
+  <int value="59" label="TLS_RSA_WITH_NULL_SHA256"/>
+  <int value="60" label="TLS_RSA_WITH_AES_128_CBC_SHA256"/>
+  <int value="61" label="TLS_RSA_WITH_AES_256_CBC_SHA256"/>
+  <int value="62" label="TLS_DH_DSS_WITH_AES_128_CBC_SHA256"/>
+  <int value="63" label="TLS_DH_RSA_WITH_AES_128_CBC_SHA256"/>
+  <int value="64" label="TLS_DHE_DSS_WITH_AES_128_CBC_SHA256"/>
+  <int value="65" label="TLS_RSA_WITH_CAMELLIA_128_CBC_SHA"/>
+  <int value="66" label="TLS_DH_DSS_WITH_CAMELLIA_128_CBC_SHA"/>
+  <int value="67" label="TLS_DH_RSA_WITH_CAMELLIA_128_CBC_SHA"/>
+  <int value="68" label="TLS_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA"/>
+  <int value="69" label="TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA"/>
+  <int value="70" label="TLS_DH_anon_WITH_CAMELLIA_128_CBC_SHA"/>
+  <int value="103" label="TLS_DHE_RSA_WITH_AES_128_CBC_SHA256"/>
+  <int value="104" label="TLS_DH_DSS_WITH_AES_256_CBC_SHA256"/>
+  <int value="105" label="TLS_DH_RSA_WITH_AES_256_CBC_SHA256"/>
+  <int value="106" label="TLS_DHE_DSS_WITH_AES_256_CBC_SHA256"/>
+  <int value="107" label="TLS_DHE_RSA_WITH_AES_256_CBC_SHA256"/>
+  <int value="108" label="TLS_DH_anon_WITH_AES_128_CBC_SHA256"/>
+  <int value="109" label="TLS_DH_anon_WITH_AES_256_CBC_SHA256"/>
+  <int value="132" label="TLS_RSA_WITH_CAMELLIA_256_CBC_SHA"/>
+  <int value="133" label="TLS_DH_DSS_WITH_CAMELLIA_256_CBC_SHA"/>
+  <int value="134" label="TLS_DH_RSA_WITH_CAMELLIA_256_CBC_SHA"/>
+  <int value="135" label="TLS_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA"/>
+  <int value="136" label="TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA"/>
+  <int value="137" label="TLS_DH_anon_WITH_CAMELLIA_256_CBC_SHA"/>
+  <int value="138" label="TLS_PSK_WITH_RC4_128_SHA"/>
+  <int value="139" label="TLS_PSK_WITH_3DES_EDE_CBC_SHA"/>
+  <int value="140" label="TLS_PSK_WITH_AES_128_CBC_SHA"/>
+  <int value="141" label="TLS_PSK_WITH_AES_256_CBC_SHA"/>
+  <int value="142" label="TLS_DHE_PSK_WITH_RC4_128_SHA"/>
+  <int value="143" label="TLS_DHE_PSK_WITH_3DES_EDE_CBC_SHA"/>
+  <int value="144" label="TLS_DHE_PSK_WITH_AES_128_CBC_SHA"/>
+  <int value="145" label="TLS_DHE_PSK_WITH_AES_256_CBC_SHA"/>
+  <int value="146" label="TLS_RSA_PSK_WITH_RC4_128_SHA"/>
+  <int value="147" label="TLS_RSA_PSK_WITH_3DES_EDE_CBC_SHA"/>
+  <int value="148" label="TLS_RSA_PSK_WITH_AES_128_CBC_SHA"/>
+  <int value="149" label="TLS_RSA_PSK_WITH_AES_256_CBC_SHA"/>
+  <int value="150" label="TLS_RSA_WITH_SEED_CBC_SHA"/>
+  <int value="151" label="TLS_DH_DSS_WITH_SEED_CBC_SHA"/>
+  <int value="152" label="TLS_DH_RSA_WITH_SEED_CBC_SHA"/>
+  <int value="153" label="TLS_DHE_DSS_WITH_SEED_CBC_SHA"/>
+  <int value="154" label="TLS_DHE_RSA_WITH_SEED_CBC_SHA"/>
+  <int value="155" label="TLS_DH_anon_WITH_SEED_CBC_SHA"/>
+  <int value="156" label="TLS_RSA_WITH_AES_128_GCM_SHA256"/>
+  <int value="157" label="TLS_RSA_WITH_AES_256_GCM_SHA384"/>
+  <int value="158" label="TLS_DHE_RSA_WITH_AES_128_GCM_SHA256"/>
+  <int value="159" label="TLS_DHE_RSA_WITH_AES_256_GCM_SHA384"/>
+  <int value="160" label="TLS_DH_RSA_WITH_AES_128_GCM_SHA256"/>
+  <int value="161" label="TLS_DH_RSA_WITH_AES_256_GCM_SHA384"/>
+  <int value="162" label="TLS_DHE_DSS_WITH_AES_128_GCM_SHA256"/>
+  <int value="163" label="TLS_DHE_DSS_WITH_AES_256_GCM_SHA384"/>
+  <int value="164" label="TLS_DH_DSS_WITH_AES_128_GCM_SHA256"/>
+  <int value="165" label="TLS_DH_DSS_WITH_AES_256_GCM_SHA384"/>
+  <int value="166" label="TLS_DH_anon_WITH_AES_128_GCM_SHA256"/>
+  <int value="167" label="TLS_DH_anon_WITH_AES_256_GCM_SHA384"/>
+  <int value="168" label="TLS_PSK_WITH_AES_128_GCM_SHA256"/>
+  <int value="169" label="TLS_PSK_WITH_AES_256_GCM_SHA384"/>
+  <int value="170" label="TLS_DHE_PSK_WITH_AES_128_GCM_SHA256"/>
+  <int value="171" label="TLS_DHE_PSK_WITH_AES_256_GCM_SHA384"/>
+  <int value="172" label="TLS_RSA_PSK_WITH_AES_128_GCM_SHA256"/>
+  <int value="173" label="TLS_RSA_PSK_WITH_AES_256_GCM_SHA384"/>
+  <int value="174" label="TLS_PSK_WITH_AES_128_CBC_SHA256"/>
+  <int value="175" label="TLS_PSK_WITH_AES_256_CBC_SHA384"/>
+  <int value="176" label="TLS_PSK_WITH_NULL_SHA256"/>
+  <int value="177" label="TLS_PSK_WITH_NULL_SHA384"/>
+  <int value="178" label="TLS_DHE_PSK_WITH_AES_128_CBC_SHA256"/>
+  <int value="179" label="TLS_DHE_PSK_WITH_AES_256_CBC_SHA384"/>
+  <int value="180" label="TLS_DHE_PSK_WITH_NULL_SHA256"/>
+  <int value="181" label="TLS_DHE_PSK_WITH_NULL_SHA384"/>
+  <int value="182" label="TLS_RSA_PSK_WITH_AES_128_CBC_SHA256"/>
+  <int value="183" label="TLS_RSA_PSK_WITH_AES_256_CBC_SHA384"/>
+  <int value="184" label="TLS_RSA_PSK_WITH_NULL_SHA256"/>
+  <int value="185" label="TLS_RSA_PSK_WITH_NULL_SHA384"/>
+  <int value="186" label="TLS_RSA_WITH_CAMELLIA_128_CBC_SHA256"/>
+  <int value="187" label="TLS_DH_DSS_WITH_CAMELLIA_128_CBC_SHA256"/>
+  <int value="188" label="TLS_DH_RSA_WITH_CAMELLIA_128_CBC_SHA256"/>
+  <int value="189" label="TLS_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA256"/>
+  <int value="190" label="TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA256"/>
+  <int value="191" label="TLS_DH_anon_WITH_CAMELLIA_128_CBC_SHA256"/>
+  <int value="192" label="TLS_RSA_WITH_CAMELLIA_256_CBC_SHA256"/>
+  <int value="193" label="TLS_DH_DSS_WITH_CAMELLIA_256_CBC_SHA256"/>
+  <int value="194" label="TLS_DH_RSA_WITH_CAMELLIA_256_CBC_SHA256"/>
+  <int value="195" label="TLS_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA256"/>
+  <int value="196" label="TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA256"/>
+  <int value="197" label="TLS_DH_anon_WITH_CAMELLIA_256_CBC_SHA256"/>
+  <int value="255" label="TLS_EMPTY_RENEGOTIATION_INFO_SCSV"/>
+  <int value="49153" label="TLS_ECDH_ECDSA_WITH_NULL_SHA"/>
+  <int value="49154" label="TLS_ECDH_ECDSA_WITH_RC4_128_SHA"/>
+  <int value="49155" label="TLS_ECDH_ECDSA_WITH_3DES_EDE_CBC_SHA"/>
+  <int value="49156" label="TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA"/>
+  <int value="49157" label="TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA"/>
+  <int value="49158" label="TLS_ECDHE_ECDSA_WITH_NULL_SHA"/>
+  <int value="49159" label="TLS_ECDHE_ECDSA_WITH_RC4_128_SHA"/>
+  <int value="49160" label="TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA"/>
+  <int value="49161" label="TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA"/>
+  <int value="49162" label="TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA"/>
+  <int value="49163" label="TLS_ECDH_RSA_WITH_NULL_SHA"/>
+  <int value="49164" label="TLS_ECDH_RSA_WITH_RC4_128_SHA"/>
+  <int value="49165" label="TLS_ECDH_RSA_WITH_3DES_EDE_CBC_SHA"/>
+  <int value="49166" label="TLS_ECDH_RSA_WITH_AES_128_CBC_SHA"/>
+  <int value="49167" label="TLS_ECDH_RSA_WITH_AES_256_CBC_SHA"/>
+  <int value="49168" label="TLS_ECDHE_RSA_WITH_NULL_SHA"/>
+  <int value="49169" label="TLS_ECDHE_RSA_WITH_RC4_128_SHA"/>
+  <int value="49170" label="TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA"/>
+  <int value="49171" label="TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA"/>
+  <int value="49172" label="TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA"/>
+  <int value="49173" label="TLS_ECDH_anon_WITH_NULL_SHA"/>
+  <int value="49174" label="TLS_ECDH_anon_WITH_RC4_128_SHA"/>
+  <int value="49175" label="TLS_ECDH_anon_WITH_3DES_EDE_CBC_SHA"/>
+  <int value="49176" label="TLS_ECDH_anon_WITH_AES_128_CBC_SHA"/>
+  <int value="49177" label="TLS_ECDH_anon_WITH_AES_256_CBC_SHA"/>
+  <int value="49178" label="TLS_SRP_SHA_WITH_3DES_EDE_CBC_SHA"/>
+  <int value="49179" label="TLS_SRP_SHA_RSA_WITH_3DES_EDE_CBC_SHA"/>
+  <int value="49180" label="TLS_SRP_SHA_DSS_WITH_3DES_EDE_CBC_SHA"/>
+  <int value="49181" label="TLS_SRP_SHA_WITH_AES_128_CBC_SHA"/>
+  <int value="49182" label="TLS_SRP_SHA_RSA_WITH_AES_128_CBC_SHA"/>
+  <int value="49183" label="TLS_SRP_SHA_DSS_WITH_AES_128_CBC_SHA"/>
+  <int value="49184" label="TLS_SRP_SHA_WITH_AES_256_CBC_SHA"/>
+  <int value="49185" label="TLS_SRP_SHA_RSA_WITH_AES_256_CBC_SHA"/>
+  <int value="49186" label="TLS_SRP_SHA_DSS_WITH_AES_256_CBC_SHA"/>
+  <int value="49187" label="TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256"/>
+  <int value="49188" label="TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384"/>
+  <int value="49189" label="TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA256"/>
+  <int value="49190" label="TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA384"/>
+  <int value="49191" label="TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"/>
+  <int value="49192" label="TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384"/>
+  <int value="49193" label="TLS_ECDH_RSA_WITH_AES_128_CBC_SHA256"/>
+  <int value="49194" label="TLS_ECDH_RSA_WITH_AES_256_CBC_SHA384"/>
+  <int value="49195" label="TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"/>
+  <int value="49196" label="TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"/>
+  <int value="49197" label="TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256"/>
+  <int value="49198" label="TLS_ECDH_ECDSA_WITH_AES_256_GCM_SHA384"/>
+  <int value="49199" label="TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"/>
+  <int value="49200" label="TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"/>
+  <int value="49201" label="TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256"/>
+  <int value="49202" label="TLS_ECDH_RSA_WITH_AES_256_GCM_SHA384"/>
+  <int value="49203" label="TLS_ECDHE_PSK_WITH_RC4_128_SHA"/>
+  <int value="49204" label="TLS_ECDHE_PSK_WITH_3DES_EDE_CBC_SHA"/>
+  <int value="49205" label="TLS_ECDHE_PSK_WITH_AES_128_CBC_SHA"/>
+  <int value="49206" label="TLS_ECDHE_PSK_WITH_AES_256_CBC_SHA"/>
+  <int value="49207" label="TLS_ECDHE_PSK_WITH_AES_128_CBC_SHA256"/>
+  <int value="49208" label="TLS_ECDHE_PSK_WITH_AES_256_CBC_SHA384"/>
+  <int value="49209" label="TLS_ECDHE_PSK_WITH_NULL_SHA"/>
+  <int value="49210" label="TLS_ECDHE_PSK_WITH_NULL_SHA256"/>
+  <int value="49211" label="TLS_ECDHE_PSK_WITH_NULL_SHA384"/>
+  <int value="49212" label="TLS_RSA_WITH_ARIA_128_CBC_SHA256"/>
+  <int value="49213" label="TLS_RSA_WITH_ARIA_256_CBC_SHA384"/>
+  <int value="49214" label="TLS_DH_DSS_WITH_ARIA_128_CBC_SHA256"/>
+  <int value="49215" label="TLS_DH_DSS_WITH_ARIA_256_CBC_SHA384"/>
+  <int value="49216" label="TLS_DH_RSA_WITH_ARIA_128_CBC_SHA256"/>
+  <int value="49217" label="TLS_DH_RSA_WITH_ARIA_256_CBC_SHA384"/>
+  <int value="49218" label="TLS_DHE_DSS_WITH_ARIA_128_CBC_SHA256"/>
+  <int value="49219" label="TLS_DHE_DSS_WITH_ARIA_256_CBC_SHA384"/>
+  <int value="49220" label="TLS_DHE_RSA_WITH_ARIA_128_CBC_SHA256"/>
+  <int value="49221" label="TLS_DHE_RSA_WITH_ARIA_256_CBC_SHA384"/>
+  <int value="49222" label="TLS_DH_anon_WITH_ARIA_128_CBC_SHA256"/>
+  <int value="49223" label="TLS_DH_anon_WITH_ARIA_256_CBC_SHA384"/>
+  <int value="49224" label="TLS_ECDHE_ECDSA_WITH_ARIA_128_CBC_SHA256"/>
+  <int value="49225" label="TLS_ECDHE_ECDSA_WITH_ARIA_256_CBC_SHA384"/>
+  <int value="49226" label="TLS_ECDH_ECDSA_WITH_ARIA_128_CBC_SHA256"/>
+  <int value="49227" label="TLS_ECDH_ECDSA_WITH_ARIA_256_CBC_SHA384"/>
+  <int value="49228" label="TLS_ECDHE_RSA_WITH_ARIA_128_CBC_SHA256"/>
+  <int value="49229" label="TLS_ECDHE_RSA_WITH_ARIA_256_CBC_SHA384"/>
+  <int value="49230" label="TLS_ECDH_RSA_WITH_ARIA_128_CBC_SHA256"/>
+  <int value="49231" label="TLS_ECDH_RSA_WITH_ARIA_256_CBC_SHA384"/>
+  <int value="49232" label="TLS_RSA_WITH_ARIA_128_GCM_SHA256"/>
+  <int value="49233" label="TLS_RSA_WITH_ARIA_256_GCM_SHA384"/>
+  <int value="49234" label="TLS_DHE_RSA_WITH_ARIA_128_GCM_SHA256"/>
+  <int value="49235" label="TLS_DHE_RSA_WITH_ARIA_256_GCM_SHA384"/>
+  <int value="49236" label="TLS_DH_RSA_WITH_ARIA_128_GCM_SHA256"/>
+  <int value="49237" label="TLS_DH_RSA_WITH_ARIA_256_GCM_SHA384"/>
+  <int value="49238" label="TLS_DHE_DSS_WITH_ARIA_128_GCM_SHA256"/>
+  <int value="49239" label="TLS_DHE_DSS_WITH_ARIA_256_GCM_SHA384"/>
+  <int value="49240" label="TLS_DH_DSS_WITH_ARIA_128_GCM_SHA256"/>
+  <int value="49241" label="TLS_DH_DSS_WITH_ARIA_256_GCM_SHA384"/>
+  <int value="49242" label="TLS_DH_anon_WITH_ARIA_128_GCM_SHA256"/>
+  <int value="49243" label="TLS_DH_anon_WITH_ARIA_256_GCM_SHA384"/>
+  <int value="49244" label="TLS_ECDHE_ECDSA_WITH_ARIA_128_GCM_SHA256"/>
+  <int value="49245" label="TLS_ECDHE_ECDSA_WITH_ARIA_256_GCM_SHA384"/>
+  <int value="49246" label="TLS_ECDH_ECDSA_WITH_ARIA_128_GCM_SHA256"/>
+  <int value="49247" label="TLS_ECDH_ECDSA_WITH_ARIA_256_GCM_SHA384"/>
+  <int value="49248" label="TLS_ECDHE_RSA_WITH_ARIA_128_GCM_SHA256"/>
+  <int value="49249" label="TLS_ECDHE_RSA_WITH_ARIA_256_GCM_SHA384"/>
+  <int value="49250" label="TLS_ECDH_RSA_WITH_ARIA_128_GCM_SHA256"/>
+  <int value="49251" label="TLS_ECDH_RSA_WITH_ARIA_256_GCM_SHA384"/>
+  <int value="49252" label="TLS_PSK_WITH_ARIA_128_CBC_SHA256"/>
+  <int value="49253" label="TLS_PSK_WITH_ARIA_256_CBC_SHA384"/>
+  <int value="49254" label="TLS_DHE_PSK_WITH_ARIA_128_CBC_SHA256"/>
+  <int value="49255" label="TLS_DHE_PSK_WITH_ARIA_256_CBC_SHA384"/>
+  <int value="49256" label="TLS_RSA_PSK_WITH_ARIA_128_CBC_SHA256"/>
+  <int value="49257" label="TLS_RSA_PSK_WITH_ARIA_256_CBC_SHA384"/>
+  <int value="49258" label="TLS_PSK_WITH_ARIA_128_GCM_SHA256"/>
+  <int value="49259" label="TLS_PSK_WITH_ARIA_256_GCM_SHA384"/>
+  <int value="49260" label="TLS_DHE_PSK_WITH_ARIA_128_GCM_SHA256"/>
+  <int value="49261" label="TLS_DHE_PSK_WITH_ARIA_256_GCM_SHA384"/>
+  <int value="49262" label="TLS_RSA_PSK_WITH_ARIA_128_GCM_SHA256"/>
+  <int value="49263" label="TLS_RSA_PSK_WITH_ARIA_256_GCM_SHA384"/>
+  <int value="49264" label="TLS_ECDHE_PSK_WITH_ARIA_128_CBC_SHA256"/>
+  <int value="49265" label="TLS_ECDHE_PSK_WITH_ARIA_256_CBC_SHA384"/>
+  <int value="49266" label="TLS_ECDHE_ECDSA_WITH_CAMELLIA_128_CBC_SHA256"/>
+  <int value="49267" label="TLS_ECDHE_ECDSA_WITH_CAMELLIA_256_CBC_SHA384"/>
+  <int value="49268" label="TLS_ECDH_ECDSA_WITH_CAMELLIA_128_CBC_SHA256"/>
+  <int value="49269" label="TLS_ECDH_ECDSA_WITH_CAMELLIA_256_CBC_SHA384"/>
+  <int value="49270" label="TLS_ECDHE_RSA_WITH_CAMELLIA_128_CBC_SHA256"/>
+  <int value="49271" label="TLS_ECDHE_RSA_WITH_CAMELLIA_256_CBC_SHA384"/>
+  <int value="49272" label="TLS_ECDH_RSA_WITH_CAMELLIA_128_CBC_SHA256"/>
+  <int value="49273" label="TLS_ECDH_RSA_WITH_CAMELLIA_256_CBC_SHA384"/>
+  <int value="49274" label="TLS_RSA_WITH_CAMELLIA_128_GCM_SHA256"/>
+  <int value="49275" label="TLS_RSA_WITH_CAMELLIA_256_GCM_SHA384"/>
+  <int value="49276" label="TLS_DHE_RSA_WITH_CAMELLIA_128_GCM_SHA256"/>
+  <int value="49277" label="TLS_DHE_RSA_WITH_CAMELLIA_256_GCM_SHA384"/>
+  <int value="49278" label="TLS_DH_RSA_WITH_CAMELLIA_128_GCM_SHA256"/>
+  <int value="49279" label="TLS_DH_RSA_WITH_CAMELLIA_256_GCM_SHA384"/>
+  <int value="49280" label="TLS_DHE_DSS_WITH_CAMELLIA_128_GCM_SHA256"/>
+  <int value="49281" label="TLS_DHE_DSS_WITH_CAMELLIA_256_GCM_SHA384"/>
+  <int value="49282" label="TLS_DH_DSS_WITH_CAMELLIA_128_GCM_SHA256"/>
+  <int value="49283" label="TLS_DH_DSS_WITH_CAMELLIA_256_GCM_SHA384"/>
+  <int value="49284" label="TLS_DH_anon_WITH_CAMELLIA_128_GCM_SHA256"/>
+  <int value="49285" label="TLS_DH_anon_WITH_CAMELLIA_256_GCM_SHA384"/>
+  <int value="49286" label="TLS_ECDHE_ECDSA_WITH_CAMELLIA_128_GCM_SHA256"/>
+  <int value="49287" label="TLS_ECDHE_ECDSA_WITH_CAMELLIA_256_GCM_SHA384"/>
+  <int value="49288" label="TLS_ECDH_ECDSA_WITH_CAMELLIA_128_GCM_SHA256"/>
+  <int value="49289" label="TLS_ECDH_ECDSA_WITH_CAMELLIA_256_GCM_SHA384"/>
+  <int value="49290" label="TLS_ECDHE_RSA_WITH_CAMELLIA_128_GCM_SHA256"/>
+  <int value="49291" label="TLS_ECDHE_RSA_WITH_CAMELLIA_256_GCM_SHA384"/>
+  <int value="49292" label="TLS_ECDH_RSA_WITH_CAMELLIA_128_GCM_SHA256"/>
+  <int value="49293" label="TLS_ECDH_RSA_WITH_CAMELLIA_256_GCM_SHA384"/>
+  <int value="49294" label="TLS_PSK_WITH_CAMELLIA_128_GCM_SHA256"/>
+  <int value="49295" label="TLS_PSK_WITH_CAMELLIA_256_GCM_SHA384"/>
+  <int value="49296" label="TLS_DHE_PSK_WITH_CAMELLIA_128_GCM_SHA256"/>
+  <int value="49297" label="TLS_DHE_PSK_WITH_CAMELLIA_256_GCM_SHA384"/>
+  <int value="49298" label="TLS_RSA_PSK_WITH_CAMELLIA_128_GCM_SHA256"/>
+  <int value="49299" label="TLS_RSA_PSK_WITH_CAMELLIA_256_GCM_SHA384"/>
+  <int value="49300" label="TLS_PSK_WITH_CAMELLIA_128_CBC_SHA256"/>
+  <int value="49301" label="TLS_PSK_WITH_CAMELLIA_256_CBC_SHA384"/>
+  <int value="49302" label="TLS_DHE_PSK_WITH_CAMELLIA_128_CBC_SHA256"/>
+  <int value="49303" label="TLS_DHE_PSK_WITH_CAMELLIA_256_CBC_SHA384"/>
+  <int value="49304" label="TLS_RSA_PSK_WITH_CAMELLIA_128_CBC_SHA256"/>
+  <int value="49305" label="TLS_RSA_PSK_WITH_CAMELLIA_256_CBC_SHA384"/>
+  <int value="49306" label="TLS_ECDHE_PSK_WITH_CAMELLIA_128_CBC_SHA256"/>
+  <int value="49307" label="TLS_ECDHE_PSK_WITH_CAMELLIA_256_CBC_SHA384"/>
+  <int value="49308" label="TLS_RSA_WITH_AES_128_CCM"/>
+  <int value="49309" label="TLS_RSA_WITH_AES_256_CCM"/>
+  <int value="49310" label="TLS_DHE_RSA_WITH_AES_128_CCM"/>
+  <int value="49311" label="TLS_DHE_RSA_WITH_AES_256_CCM"/>
+  <int value="49312" label="TLS_RSA_WITH_AES_128_CCM_8"/>
+  <int value="49313" label="TLS_RSA_WITH_AES_256_CCM_8"/>
+  <int value="49314" label="TLS_DHE_RSA_WITH_AES_128_CCM_8"/>
+  <int value="49315" label="TLS_DHE_RSA_WITH_AES_256_CCM_8"/>
+  <int value="49316" label="TLS_PSK_WITH_AES_128_CCM"/>
+  <int value="49317" label="TLS_PSK_WITH_AES_256_CCM"/>
+  <int value="49318" label="TLS_DHE_PSK_WITH_AES_128_CCM"/>
+  <int value="49319" label="TLS_DHE_PSK_WITH_AES_256_CCM"/>
+  <int value="49320" label="TLS_PSK_WITH_AES_128_CCM_8"/>
+  <int value="49321" label="TLS_PSK_WITH_AES_256_CCM_8"/>
+  <int value="49322" label="TLS_PSK_DHE_WITH_AES_128_CCM_8"/>
+  <int value="49323" label="TLS_PSK_DHE_WITH_AES_256_CCM_8"/>
+</enum>
+
 <enum name="SuspendStatus" type="int">
   <int value="0" label="Success"/>
   <int value="1" label="Failure"/>
@@ -17857,6 +19182,8 @@ other types of suffix sets.
   <int value="1" label="Evicted and reloaded"/>
   <int value="2" label="Reloaded due to cold start"/>
   <int value="3" label="Partially evicted"/>
+  <int value="4" label="Reloaded due to backgrounding"/>
+  <int value="5" label="Reloaded due to incognito"/>
 </enum>
 
 <enum name="TabSwitchedToForegroundLaunchedWithURL" type="int">
@@ -17910,6 +19237,16 @@ other types of suffix sets.
   </int>
 </enum>
 
+<enum name="TouchpadProblemType" type="int">
+  <int value="0" label="All events">
+    All observed input events from touchpad. Serves as a reference.
+  </int>
+  <int value="1" label="Noisy Ground">
+    The touchpad noise events (e.g. abrupt cursor jumps) caused by the noisy
+    ground.
+  </int>
+</enum>
+
 <enum name="TranslateError" type="int">
   <int value="0" label="No error"/>
   <int value="1" label="Network error"/>
@@ -17945,6 +19282,8 @@ other types of suffix sets.
   <int value="2" label="CLD can not determine a language"/>
   <int value="3" label="CLD agrees with Content-Language"/>
   <int value="4" label="CLD disagrees with Content-Language"/>
+  <int value="5" label="CLD can be trusted"/>
+  <int value="6" label="CLD can complement a sub code"/>
 </enum>
 
 <enum name="TranslateScheme" type="int">
@@ -18249,6 +19588,19 @@ other types of suffix sets.
   <int value="38" label="kReasonCodeSetupRequired"/>
   <int value="39" label="kReasonCodeTimeout"/>
   <int value="45" label="kReasonCodeCipherSuiteNotSupported"/>
+</enum>
+
+<enum name="WiFiScanResult" type="int">
+  <int value="0" label="ProgressiveScan connected"/>
+  <int value="1" label="ProgressiveScan error then FullScan didn't connect"/>
+  <int value="2" label="ProgressiveScan error then FullScan connected"/>
+  <int value="3"
+      label="ProgressiveScan didn't connect then FullScan didn't connect"/>
+  <int value="4"
+      label="ProgressiveScan didn't connect then FullScan connected"/>
+  <int value="5" label="FullScan didn't connect"/>
+  <int value="6" label="FullScan connected"/>
+  <int value="7" label="Internal error"/>
 </enum>
 
 <enum name="WiFiStatusType" type="int">
@@ -18559,6 +19911,36 @@ other types of suffix sets.
   <affected-histogram name="NetConnectivity.Pipeline.Success"/>
 </fieldtrial>
 
+<fieldtrial name="IndexedDBLevelDBErrnoMethods" separator=".">
+  <group name="NewLogger" label="ChromiumEnv::NewLogger"/>
+  <group name="NewSequentialFile" label="ChromiumEnv::NewSequentialFile"/>
+  <group name="NewWritableFile" label="ChromiumEnv::NewWritableFile"/>
+  <group name="SequentialFileRead" label="ChromiumSequentialFile::Read"/>
+  <group name="SequentialFileSkip" label="ChromiumSequentialFile::Skip"/>
+  <group name="WritableFileAppend" label="ChromiumWritableFile::Append"/>
+  <group name="WritableFileClose" label="ChromiumWritableFile::Close"/>
+  <group name="WritableFileFlush" label="ChromiumWritableFile::Flush"/>
+  <group name="WritableFileSync" label="ChromiumWritableFile::Sync"/>
+  <group name="WritableFileSyncParent"
+      label="ChromiumWritableFile::SyncParent"/>
+  <affected-histogram name="WebCore.IndexedDB.LevelDBOpenErrors.Errno"/>
+  <affected-histogram name="WebCore.IndexedDB.LevelDBWriteErrors.Errno"/>
+</fieldtrial>
+
+<fieldtrial name="IndexedDBLevelDBPFEMethods" separator=".">
+  <group name="CreateDir" label="ChromiumEnv::CreateDir"/>
+  <group name="DeleteDir" label="ChromiumEnv::DeleteDir"/>
+  <group name="DeleteFile" label="ChromiumEnv::DeleteFile"/>
+  <group name="GetFileSize" label="ChromiumEnv::GetFileSize"/>
+  <group name="LockFile" label="ChromiumEnv::LockFile"/>
+  <group name="NewRandomAccessFile" label="ChromiumEnv::NewRandomAccessFile"/>
+  <group name="RandomAccessFileRead" label="ChromiumRandomAccessFile::Read"/>
+  <group name="RenameFile" label="ChromiumEnv::RenameFile"/>
+  <group name="UnlockFile" label="ChromiumEnv::UnlockFile"/>
+  <affected-histogram name="WebCore.IndexedDB.LevelDBOpenErrors.PFE"/>
+  <affected-histogram name="WebCore.IndexedDB.LevelDBWriteErrors.PFE"/>
+</fieldtrial>
+
 <fieldtrial name="InstallerDownloadSources" separator="">
   <group name="HttpServer" label="Download Source: HTTP Server"/>
   <group name="HttpsServer" label="Download Source: HTTPS Server"/>
@@ -18617,6 +19999,7 @@ other types of suffix sets.
 </fieldtrial>
 
 <fieldtrial name="LevelDBEnvPlatformFileErrors" separator="">
+  <group name="CreateDir" label="ChromiumEnv::CreateDir"/>
   <group name="LockFile" label="ChromiumEnv::LockFile"/>
   <group name="NewRandomAccessFile" label="ChromiumEnv::NewRandomAccessFile"/>
   <group name="RenameFile" label="ChromiumEnv::RenameFile"/>
@@ -18651,6 +20034,14 @@ other types of suffix sets.
   <affected-histogram name="Media.AudioInputController"/>
 </fieldtrial>
 
+<fieldtrial name="MediaAudioInputDeviceManagerTime" separator=".">
+  <group name="OpenOnDeviceThreadTime"
+      label="Measures the time taken for OpenOnDeviceThread()."/>
+  <group name="EnumerateOnDeviceThreadTime"
+      label="Measures the time taken for EnumerateOnDeviceThread()."/>
+  <affected-histogram name="Media.AudioInputDeviceManager"/>
+</fieldtrial>
+
 <fieldtrial name="MediaAudioOutputControllerTime" separator=".">
   <group name="CloseTime" label="Measures the time taken for DoClose()."/>
   <group name="CreateTime" label="Measures the time taken for DoCreate()."/>
@@ -18661,6 +20052,16 @@ other types of suffix sets.
       label="Measures the time taken for DoPlay(). Technically only the
              worker method AudioOutputController::PollAndStartIfDataReady()."/>
   <affected-histogram name="Media.AudioOutputController"/>
+</fieldtrial>
+
+<fieldtrial name="MediaVideoCaptureManagerTime" separator=".">
+  <group name="OnEnumerateDevicesTime"
+      label="Measures the time taken for OnEnumerateDevices()."/>
+  <group name="OnOpenTime" label="Measures the time taken for OnOpen()."/>
+  <group name="OnCloseTime" label="Measures the time taken for OnClose()."/>
+  <group name="OnStartTime" label="Measures the time taken for OnStart()."/>
+  <group name="OnStopTime" label="Measures the time taken for OnStop()."/>
+  <affected-histogram name="Media.VideoCaptureManager"/>
 </fieldtrial>
 
 <fieldtrial name="NetConnectivity" separator=".">
@@ -19617,6 +21018,21 @@ other types of suffix sets.
   <affected-histogram name="Prerender.TimeUntilUsed2"/>
 </fieldtrial>
 
+<fieldtrial name="ProgressiveScan">
+  <group name="FullScan" label="Using WPA_supplicant to scan."/>
+  <group name="33Percent_4MinMax"
+      label="Progressive scan @ 33%, 4 frequency bins."/>
+  <group name="50Percent_4MinMax"
+      label="Progressive scan @ 50%, 4 frequency bins."/>
+  <group name="50Percent_8MinMax"
+      label="Progressive scan @ 50%, 8 frequency bins."/>
+  <group name="100Percent_8MinMax"
+      label="Progressive scan @ 100%, 8 frequency bins."/>
+  <affected-histogram name="Network.Shill.WiFi.ScanResult"/>
+  <affected-histogram name="Network.Shill.Wifi.TimeToScan"/>
+  <affected-histogram name="Network.Shill.Wifi.TimeToScanAndConnect"/>
+</fieldtrial>
+
 <fieldtrial name="ProxyConnectionImpact">
   <group name="proxy_connections_16"
       label="with 16 connections per proxy server"/>
@@ -19727,6 +21143,7 @@ other types of suffix sets.
   <group name="DomainBoundCerts" label="DomainBoundCerts"/>
   <group name="DomStorageDatabase" label="DomStorageDatabase"/>
   <group name="History" label="History"/>
+  <group name="Predictor" label="Predictor"/>
   <group name="Quota" label="Quota"/>
   <group name="SyncDirectory" label="SyncDirectory"/>
   <group name="Text" label="Text"/>

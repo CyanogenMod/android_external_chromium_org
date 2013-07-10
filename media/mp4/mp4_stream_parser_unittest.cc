@@ -9,7 +9,7 @@
 #include "base/bind_helpers.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/stream_parser_buffer.h"
@@ -87,13 +87,12 @@ class MP4StreamParserTest : public testing::Test {
     return true;
   }
 
-  bool KeyNeededF(const std::string& type,
+  void KeyNeededF(const std::string& type,
                   scoped_ptr<uint8[]> init_data, int init_data_size) {
     DVLOG(1) << "KeyNeededF: " << init_data_size;
     EXPECT_EQ(kMp4InitDataType, type);
     EXPECT_TRUE(init_data.get());
     EXPECT_GT(init_data_size, 0);
-    return true;
   }
 
   scoped_ptr<TextTrack> AddTextTrackF(
@@ -187,6 +186,23 @@ TEST_F(MP4StreamParserTest, TestMPEG2_AAC_LC) {
   audio_object_types.insert(kISO_13818_7_AAC_LC);
   parser_.reset(new MP4StreamParser(audio_object_types, false));
   ParseMP4File("bear-mpeg2-aac-only_frag.mp4", 512);
+}
+
+// Test that a moov box is not always required after Flush() is called.
+TEST_F(MP4StreamParserTest, TestNoMoovAfterFlush) {
+  InitializeParser();
+
+  scoped_refptr<DecoderBuffer> buffer =
+      ReadTestDataFile("bear-1280x720-av_frag.mp4");
+  EXPECT_TRUE(AppendDataInPieces(buffer->GetData(),
+                                 buffer->GetDataSize(),
+                                 512));
+  parser_->Flush();
+
+  const int kFirstMoofOffset = 1307;
+  EXPECT_TRUE(AppendDataInPieces(buffer->GetData() + kFirstMoofOffset,
+                                 buffer->GetDataSize() - kFirstMoofOffset,
+                                 512));
 }
 
 // TODO(strobe): Create and test media which uses CENC auxiliary info stored

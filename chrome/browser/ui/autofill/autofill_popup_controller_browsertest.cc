@@ -9,9 +9,9 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
-#include "components/autofill/browser/autofill_manager.h"
-#include "components/autofill/browser/test_autofill_external_delegate.h"
 #include "components/autofill/content/browser/autofill_driver_impl.h"
+#include "components/autofill/core/browser/autofill_manager.h"
+#include "components/autofill/core/browser/test_autofill_external_delegate.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/test/test_utils.h"
@@ -97,11 +97,16 @@ class AutofillPopupControllerBrowserTest
   scoped_ptr<TestAutofillExternalDelegate> autofill_external_delegate_;
 };
 
+#if defined(OS_LINUX)
+#define MAYBE_HidePopupOnWindowConfiguration DISABLED_HidePopupOnWindowConfiguration
+#else
+#define MAYBE_HidePopupOnWindowConfiguration HidePopupOnWindowConfiguration
+#endif
 // Autofill UI isn't currently hidden on window move on Mac.
 // http://crbug.com/180566
 #if !defined(OS_MACOSX)
 IN_PROC_BROWSER_TEST_F(AutofillPopupControllerBrowserTest,
-                       HidePopupOnWindowConfiguration) {
+                       MAYBE_HidePopupOnWindowConfiguration) {
   GenerateTestAutofillPopup(autofill_external_delegate_.get());
 
   EXPECT_FALSE(autofill_external_delegate_->popup_hidden());

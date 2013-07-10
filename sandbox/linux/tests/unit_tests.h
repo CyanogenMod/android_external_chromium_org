@@ -6,9 +6,16 @@
 #define SANDBOX_LINUX_TESTS_UNIT_TESTS_H__
 
 #include "base/basictypes.h"
+#include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace sandbox {
+
+#if defined(THREAD_SANITIZER)
+#define DISABLE_ON_TSAN(test_name) DISABLED_##test_name
+#else
+#define DISABLE_ON_TSAN(test_name) test_name
+#endif  // defined(THREAD_SANITIZER)
 
 // While it is perfectly OK for a complex test to provide its own DeathCheck
 // function. Most death tests have very simple requirements. These tests should

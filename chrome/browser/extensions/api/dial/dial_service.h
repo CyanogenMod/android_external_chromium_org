@@ -12,7 +12,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/threading/thread_checker.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "net/base/net_log.h"
 #include "net/udp/udp_socket.h"
 
@@ -112,6 +112,12 @@ class DialServiceImpl : public DialService,
  private:
   // Starts the control flow for one discovery cycle.
   void StartDiscovery();
+
+#if defined(OS_CHROMEOS)
+  // Returns the IP address of the preferred interface to bind the socket. This
+  // ChromeOS version can prioritize wifi and ethernet interfaces.
+  net::IPAddressNumber GetBestBindAddressChromeOS();
+#endif
 
   // Establishes the UDP socket that is used for requests and responses,
   // establishes a read callback on the socket, and sends the first discovery

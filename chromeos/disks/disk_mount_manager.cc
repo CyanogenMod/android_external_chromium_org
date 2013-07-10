@@ -90,11 +90,13 @@ class DiskMountManagerImpl : public DiskMountManager {
                                 base::Bind(&DiskMountManagerImpl::OnUnmountPath,
                                            weak_ptr_factory_.GetWeakPtr(),
                                            callback,
-                                           true),
+                                           true,
+                                           mount_path),
                                 base::Bind(&DiskMountManagerImpl::OnUnmountPath,
                                            weak_ptr_factory_.GetWeakPtr(),
                                            callback,
-                                           false));
+                                           false,
+                                           mount_path));
   }
 
   // DiskMountManager override.
@@ -173,9 +175,15 @@ class DiskMountManagerImpl : public DiskMountManager {
           devices_to_unmount[i],
           UNMOUNT_OPTIONS_NONE,
           base::Bind(&DiskMountManagerImpl::OnUnmountDeviceRecursively,
-                     weak_ptr_factory_.GetWeakPtr(), cb_data, true),
+                     weak_ptr_factory_.GetWeakPtr(),
+                     cb_data,
+                     true,
+                     devices_to_unmount[i]),
           base::Bind(&DiskMountManagerImpl::OnUnmountDeviceRecursively,
-                     weak_ptr_factory_.GetWeakPtr(), cb_data, false));
+                     weak_ptr_factory_.GetWeakPtr(),
+                     cb_data,
+                     false,
+                     devices_to_unmount[i]));
     }
   }
 
@@ -385,7 +393,8 @@ class DiskMountManagerImpl : public DiskMountManager {
         device_path,
         kFormatVFAT,
         base::Bind(&DiskMountManagerImpl::OnFormatDevice,
-                   weak_ptr_factory_.GetWeakPtr()),
+                   weak_ptr_factory_.GetWeakPtr(),
+                   device_path),
         base::Bind(&DiskMountManagerImpl::OnFormatDevice,
                    weak_ptr_factory_.GetWeakPtr(),
                    device_path,
@@ -395,8 +404,7 @@ class DiskMountManagerImpl : public DiskMountManager {
   // Callback for FormatDevice.
   // TODO(tbarzic): Pass FormatError instead of bool.
   void OnFormatDevice(const std::string& device_path, bool success) {
-    FormatError error_code =
-        success ? FORMAT_ERROR_NONE : FORMAT_ERROR_UNKNOWN;
+    FormatError error_code = success ? FORMAT_ERROR_NONE : FORMAT_ERROR_UNKNOWN;
     NotifyFormatStatusUpdate(FORMAT_STARTED, error_code, device_path);
   }
 

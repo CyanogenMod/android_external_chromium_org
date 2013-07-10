@@ -16,8 +16,8 @@
 #include "base/sequenced_task_runner.h"
 #include "base/single_thread_task_runner.h"
 #include "base/task_runner_util.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
+#include "url/gurl.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_quota_util.h"
 #include "webkit/browser/fileapi/file_system_task_runners.h"
@@ -68,8 +68,11 @@ quota::QuotaStatusCode DeleteOriginOnFileThread(
     FileSystemContext* context,
     const GURL& origin,
     FileSystemType type) {
+  FileSystemMountPointProvider* provider = context->GetMountPointProvider(type);
+  if (!provider || !provider->GetQuotaUtil())
+    return quota::kQuotaErrorNotSupported;
   base::PlatformFileError result =
-      context->sandbox_provider()->DeleteOriginDataOnFileThread(
+      provider->GetQuotaUtil()->DeleteOriginDataOnFileThread(
           context, context->quota_manager_proxy(), origin, type);
   if (result == base::PLATFORM_FILE_OK)
     return quota::kQuotaStatusOk;

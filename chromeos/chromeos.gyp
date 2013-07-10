@@ -26,7 +26,6 @@
         '../url/url.gyp:url_lib',
         'ime/input_method.gyp:gencode',
         'power_manager_proto',
-        'video_activity_update_proto',
       ],
       'defines': [
         'CHROMEOS_IMPLEMENTATION',
@@ -167,8 +166,6 @@
         'dbus/power_manager_client.h',
         'dbus/power_policy_controller.cc',
         'dbus/power_policy_controller.h',
-        'dbus/power_supply_status.cc',
-        'dbus/power_supply_status.h',
         'dbus/session_manager_client.cc',
         'dbus/session_manager_client.h',
         'dbus/sms_client.cc',
@@ -224,6 +221,8 @@
         'network/cros_network_functions.h',
         'network/device_state.cc',
         'network/device_state.h',
+        'network/favorite_state.cc',
+        'network/favorite_state.h',
         'network/geolocation_handler.cc',
         'network/geolocation_handler.h',
         'network/managed_network_configuration_handler.cc',
@@ -288,8 +287,6 @@
         'network/shill_property_handler.h',
         'network/sms_watcher.cc',
         'network/sms_watcher.h',
-        'power/power_manager_handler.cc',
-        'power/power_manager_handler.h',
         'process_proxy/process_output_watcher.cc',
         'process_proxy/process_output_watcher.h',
         'process_proxy/process_proxy.cc',
@@ -508,7 +505,6 @@
         'network/onc/onc_utils_unittest.cc',
         'network/onc/onc_validator_unittest.cc',
         'network/shill_property_handler_unittest.cc',
-    	'power/power_manager_handler_unittest.cc',
         'process_proxy/process_output_watcher_unittest.cc',
         'process_proxy/process_proxy_unittest.cc',
         'system/name_value_pairs_parser_unittest.cc',
@@ -527,7 +523,6 @@
     },
     {
       # Protobuf compiler/generator for power-manager related protocol buffers.
-      # TODO(derat): Remove other protocol buffers in favor of these.
       'target_name': 'power_manager_proto',
       'type': 'static_library',
       'sources': [
@@ -540,20 +535,6 @@
       'variables': {
         'proto_in_dir': '../third_party/cros_system_api/dbus/power_manager',
         'proto_out_dir': 'chromeos/dbus/power_manager',
-      },
-      'includes': ['../build/protoc.gypi'],
-    },
-    {
-      # Protobuf compiler / generator for the VideoActivityUpdate protocol
-      # buffer.
-      'target_name': 'video_activity_update_proto',
-      'type': 'static_library',
-      'sources': [
-        '../third_party/cros_system_api/dbus/video_activity_update.proto',
-      ],
-      'variables': {
-        'proto_in_dir': '../third_party/cros_system_api/dbus/',
-        'proto_out_dir': 'chromeos/dbus',
       },
       'includes': ['../build/protoc.gypi'],
     },

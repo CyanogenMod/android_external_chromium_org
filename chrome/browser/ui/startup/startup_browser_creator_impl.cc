@@ -65,11 +65,11 @@
 #include "chrome/browser/ui/startup/obsolete_os_infobar_delegate.h"
 #include "chrome/browser/ui/startup/session_crashed_prompt.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
+#include "chrome/browser/ui/sync/sync_promo_ui.h"
 #include "chrome/browser/ui/tabs/pinned_tab_codec.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/ntp/app_launcher_handler.h"
 #include "chrome/browser/ui/webui/sync_promo/sync_promo_trial.h"
-#include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
@@ -830,8 +830,7 @@ Browser* StartupBrowserCreatorImpl::OpenTabsInBrowser(
     params.extension_app_id = tabs[i].app_id;
 
 #if defined(ENABLE_RLZ)
-    if (process_startup &&
-        google_util::IsGoogleHomePageUrl(tabs[i].url.spec())) {
+    if (process_startup && google_util::IsGoogleHomePageUrl(tabs[i].url)) {
       params.extra_headers = RLZTracker::GetAccessPointHttpHeader(
           RLZTracker::CHROME_HOME_PAGE);
     }

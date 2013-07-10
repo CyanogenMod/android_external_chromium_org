@@ -11,7 +11,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/auth.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
@@ -116,6 +116,8 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
   virtual bool ReadRawData(IOBuffer* buf, int buf_size,
                            int* bytes_read) OVERRIDE;
   virtual void StopCaching() OVERRIDE;
+  virtual bool GetFullRequestHeaders(
+      HttpRequestHeaders* headers) const OVERRIDE;
   virtual void DoneReading() OVERRIDE;
   virtual HostPortPair GetSocketAddress() const OVERRIDE;
   virtual void NotifyURLRequestDestroyed() OVERRIDE;

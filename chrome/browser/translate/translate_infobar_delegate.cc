@@ -74,6 +74,16 @@ void TranslateInfoBarDelegate::Create(
                                    original_language, target_language));
   infobar->UpdateBackgroundAnimation(old_delegate);
 
+  // Do not create the after translate infobar if we are auto translating.
+  if (infobar_type == TranslateInfoBarDelegate::AFTER_TRANSLATE ||
+      infobar_type == TranslateInfoBarDelegate::TRANSLATING) {
+    TranslateTabHelper* translate_tab_helper =
+      TranslateTabHelper::FromWebContents(infobar_service->web_contents());
+    if (!translate_tab_helper ||
+         translate_tab_helper->language_state().InTranslateNavigation())
+      return;
+  }
+
   // Add the new delegate if necessary.
   if (!old_delegate) {
     infobar_service->AddInfoBar(infobar.PassAs<InfoBarDelegate>());
@@ -126,14 +136,6 @@ void TranslateInfoBarDelegate::TranslationDeclined() {
   UMA_HISTOGRAM_BOOLEAN(kDeclineTranslate, true);
 }
 
-bool TranslateInfoBarDelegate::InTranslateNavigation() {
-  TranslateTabHelper* translate_tab_helper =
-      TranslateTabHelper::FromWebContents(web_contents());
-  if (!translate_tab_helper)
-    return false;
-  return translate_tab_helper->language_state().InTranslateNavigation();
-}
-
 bool TranslateInfoBarDelegate::IsTranslatableLanguageByPrefs() {
   Profile* profile =
       Profile::FromBrowserContext(web_contents()->GetBrowserContext());
@@ -144,10 +146,10 @@ bool TranslateInfoBarDelegate::IsTranslatableLanguageByPrefs() {
 
 void TranslateInfoBarDelegate::ToggleTranslatableLanguageByPrefs() {
   const std::string& original_lang = original_language_code();
-  if (prefs_.IsLanguageBlacklisted(original_lang)) {
-    prefs_.RemoveLanguageFromBlacklist(original_lang);
+  if (prefs_.IsBlockedLanguage(original_lang)) {
+    prefs_.UnblockLanguage(original_lang);
   } else {
-    prefs_.BlacklistLanguage(original_lang);
+    prefs_.BlockLanguage(original_lang);
     RemoveSelf();
   }
 }
@@ -194,8 +196,8 @@ void TranslateInfoBarDelegate::AlwaysTranslatePageLanguage() {
 
 void TranslateInfoBarDelegate::NeverTranslatePageLanguage() {
   std::string original_lang = original_language_code();
-  DCHECK(!prefs_.IsLanguageBlacklisted(original_lang));
-  prefs_.BlacklistLanguage(original_lang);
+  DCHECK(!prefs_.IsBlockedLanguage(original_lang));
+  prefs_.BlockLanguage(original_lang);
   RemoveSelf();
 }
 

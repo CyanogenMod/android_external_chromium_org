@@ -414,12 +414,6 @@ RootWindowHostX11::RootWindowHostX11(const gfx::Rect& bounds)
                   PropModeReplace,
                   reinterpret_cast<unsigned char*>(&pid), 1);
 
-  // crbug.com/120229 - set the window title so gtalk can find the primary root
-  // window to broadcast.
-  // TODO(jhorwich) Remove this once Chrome supports window-based broadcasting.
-  static int root_window_number = 0;
-  std::string name = base::StringPrintf("aura_root_%d", root_window_number++);
-  XStoreName(xdisplay_, xwindow_, name.c_str());
   XRRSelectInput(xdisplay_, x_root_window_,
                  RRScreenChangeNotifyMask | RROutputChangeNotifyMask);
   Env::GetInstance()->AddObserver(this);
@@ -442,9 +436,10 @@ bool RootWindowHostX11::Dispatch(const base::NativeEvent& event) {
     return DispatchEventForRootWindow(event);
 
   switch (xev->type) {
-    case EnterNotify: {
-      ui::MouseEvent mouseenter_event(xev);
-      TranslateAndDispatchMouseEvent(&mouseenter_event);
+    case EnterNotify:
+    case LeaveNotify: {
+      ui::MouseEvent mouse_event(xev);
+      TranslateAndDispatchMouseEvent(&mouse_event);
       break;
     }
     case Expose: {
@@ -775,31 +770,7 @@ void RootWindowHostX11::UnConfineCursor() {
 }
 
 void RootWindowHostX11::OnCursorVisibilityChanged(bool show) {
-#if defined(OS_CHROMEOS)
-  // Temporarily pause tap-to-click when the cursor is hidden.
-  Atom prop = atom_cache_.GetAtom("Tap Paused");
-  unsigned char value = !show;
-  XIDeviceList dev_list =
-      ui::DeviceListCacheX::GetInstance()->GetXI2DeviceList(xdisplay_);
-
-  // Only slave pointer devices could possibly have tap-paused property.
-  for (int i = 0; i < dev_list.count; i++) {
-    if (dev_list[i].use == XISlavePointer) {
-      Atom old_type;
-      int old_format;
-      unsigned long old_nvalues, bytes;
-      unsigned char* data;
-      int result = XIGetProperty(xdisplay_, dev_list[i].deviceid, prop, 0, 0,
-                                 False, AnyPropertyType, &old_type, &old_format,
-                                 &old_nvalues, &bytes, &data);
-      if (result != Success)
-        continue;
-      XFree(data);
-      XIChangeProperty(xdisplay_, dev_list[i].deviceid, prop, XA_INTEGER, 8,
-                       PropModeReplace, &value, 1);
-    }
-  }
-#endif
+  SetCrOSTapPaused(!show);
 }
 
 void RootWindowHostX11::MoveCursorTo(const gfx::Point& location) {
@@ -914,6 +885,10 @@ void RootWindowHostX11::OnRootWindowInitialized(RootWindow* root_window) {
   if (!delegate_ || root_window != GetRootWindow())
     return;
   UpdateIsInternalDisplay();
+
+  // We have to enable Tap-to-click by default because the cursor is set to
+  // visible in Shell::InitRootWindowController.
+  SetCrOSTapPaused(false);
 }
 
 bool RootWindowHostX11::DispatchEventForRootWindow(
@@ -1027,6 +1002,8 @@ void RootWindowHostX11::DispatchXI2Event(const base::NativeEvent& event) {
       delegate_->OnHostScrollEvent(&scrollev);
       break;
     }
+    case ui::ET_UMA_DATA:
+      break;
     case ui::ET_UNKNOWN:
       break;
     default:
@@ -1090,6 +1067,34 @@ void RootWindowHostX11::UpdateIsInternalDisplay() {
   gfx::Screen* screen = gfx::Screen::GetScreenFor(root_window);
   gfx::Display display = screen->GetDisplayNearestWindow(root_window);
   is_internal_display_ = display.IsInternal();
+}
+
+void RootWindowHostX11::SetCrOSTapPaused(bool state) {
+#if defined(OS_CHROMEOS)
+  // Temporarily pause tap-to-click when the cursor is hidden.
+  Atom prop = atom_cache_.GetAtom("Tap Paused");
+  unsigned char value = state;
+  XIDeviceList dev_list =
+      ui::DeviceListCacheX::GetInstance()->GetXI2DeviceList(xdisplay_);
+
+  // Only slave pointer devices could possibly have tap-paused property.
+  for (int i = 0; i < dev_list.count; i++) {
+    if (dev_list[i].use == XISlavePointer) {
+      Atom old_type;
+      int old_format;
+      unsigned long old_nvalues, bytes;
+      unsigned char* data;
+      int result = XIGetProperty(xdisplay_, dev_list[i].deviceid, prop, 0, 0,
+                                 False, AnyPropertyType, &old_type, &old_format,
+                                 &old_nvalues, &bytes, &data);
+      if (result != Success)
+        continue;
+      XFree(data);
+      XIChangeProperty(xdisplay_, dev_list[i].deviceid, prop, XA_INTEGER, 8,
+                       PropModeReplace, &value, 1);
+    }
+  }
+#endif
 }
 
 // static

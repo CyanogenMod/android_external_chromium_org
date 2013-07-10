@@ -9,7 +9,7 @@
 #include "base/files/file_path.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/logging.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/google_apis/test_util.h"
 #include "chrome/browser/google_apis/time_util.h"
@@ -23,7 +23,7 @@ namespace google_apis {
 TEST(GDataWAPIParserTest, ResourceListJsonParser) {
   std::string error;
   scoped_ptr<base::Value> document =
-      test_util::LoadJSONFile("chromeos/gdata/basic_feed.json");
+      test_util::LoadJSONFile("gdata/basic_feed.json");
   ASSERT_TRUE(document.get());
   ASSERT_EQ(base::Value::TYPE_DICTIONARY, document->GetType());
   scoped_ptr<ResourceList> feed(ResourceList::ExtractAndParse(*document));
@@ -152,7 +152,7 @@ TEST(GDataWAPIParserTest, ResourceListJsonParser) {
 TEST(GDataWAPIParserTest, ResourceEntryJsonParser) {
   std::string error;
   scoped_ptr<base::Value> document =
-      test_util::LoadJSONFile("chromeos/gdata/file_entry.json");
+      test_util::LoadJSONFile("gdata/file_entry.json");
   ASSERT_TRUE(document.get());
   ASSERT_EQ(base::Value::TYPE_DICTIONARY, document->GetType());
   scoped_ptr<ResourceEntry> entry(ResourceEntry::ExtractAndParse(*document));
@@ -233,7 +233,7 @@ TEST(GDataWAPIParserTest, ResourceEntryJsonParser) {
 
 TEST(GDataWAPIParserTest, AccountMetadataParser) {
   scoped_ptr<base::Value> document =
-      test_util::LoadJSONFile("chromeos/gdata/account_metadata.json");
+      test_util::LoadJSONFile("gdata/account_metadata.json");
   ASSERT_TRUE(document.get());
   base::DictionaryValue* document_dict = NULL;
   base::DictionaryValue* entry_value = NULL;

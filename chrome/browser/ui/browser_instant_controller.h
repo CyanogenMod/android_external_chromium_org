@@ -13,14 +13,12 @@
 #include "chrome/browser/ui/search/instant_controller.h"
 #include "chrome/browser/ui/search/instant_unload_handler.h"
 #include "chrome/browser/ui/search/search_model_observer.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "net/base/network_change_notifier.h"
 #include "ui/base/window_open_disposition.h"
 
 class Browser;
 struct InstantSuggestion;
 class Profile;
-class ThemeService;
 
 namespace content {
 class WebContents;
@@ -30,8 +28,9 @@ namespace gfx {
 class Rect;
 }
 
-class BrowserInstantController : public content::NotificationObserver,
-                                 public SearchModelObserver {
+class BrowserInstantController
+    : public SearchModelObserver,
+      public net::NetworkChangeNotifier::NetworkChangeObserver {
  public:
   explicit BrowserInstantController(Browser* browser);
   virtual ~BrowserInstantController();
@@ -59,27 +58,11 @@ class BrowserInstantController : public content::NotificationObserver,
   // this BrowserInstantController.
   InstantController* instant() { return &instant_; }
 
-  // Invoked by |instant_| to commit the |overlay| by merging it into the active
-  // tab or adding it as a new tab.
-  void CommitInstant(scoped_ptr<content::WebContents> overlay, bool in_new_tab);
-
-  // Invoked by |instant_| to autocomplete the |suggestion| into the omnibox.
-  void SetInstantSuggestion(const InstantSuggestion& suggestion);
-
-  // Invoked by |instant_| to get the bounds that the overlay is placed at,
-  // in screen coordinates.
-  gfx::Rect GetInstantBounds();
-
-  // Invoked by |instant_| to notify that the overlay gained focus, usually due
-  // to the user clicking on it.
-  void InstantOverlayFocused();
-
   // Invoked by |instant_| to give the omnibox focus, with the option of making
   // the caret invisible.
   void FocusOmnibox(bool caret_visibility);
 
-  // Invoked by |instant_| to get the currently active tab, over which the
-  // overlay would be shown.
+  // Invoked by |instant_| to get the currently active tab.
   content::WebContents* GetActiveWebContents() const;
 
   // Invoked by |browser_| when the active tab changes.
@@ -88,9 +71,6 @@ class BrowserInstantController : public content::NotificationObserver,
   // Invoked by |browser_| when the active tab is about to be deactivated.
   void TabDeactivated(content::WebContents* contents);
 
-  // Invoked by |instant_| to update theme information for NTP.
-  void UpdateThemeInfo();
-
   // Invoked by the InstantController when it wants to open a URL.
   void OpenURL(const GURL& url,
                content::PageTransition transition,
@@ -98,6 +78,10 @@ class BrowserInstantController : public content::NotificationObserver,
 
   // Sets the stored omnibox bounds.
   void SetOmniboxBounds(const gfx::Rect& bounds);
+
+  // Updates the location bar to reflect the active page contents Instant
+  // support state.
+  void UpdateLocationBar();
 
   // Notifies |instant_| to toggle voice search.
   void ToggleVoiceSearch();
@@ -111,19 +95,15 @@ class BrowserInstantController : public content::NotificationObserver,
   virtual void ModelChanged(const SearchModel::State& old_state,
                             const SearchModel::State& new_state) OVERRIDE;
 
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
-  // Helper for handling theme change.
-  void OnThemeChanged(ThemeService* theme_service);
-
   // Called when the default search provider changes. Revokes the searchbox API
   // privileges for any existing WebContents (that belong to the erstwhile
   // default search provider) by simply reloading all such WebContents. This
   // ensures that they are reloaded in a non-privileged renderer process.
   void OnDefaultSearchProviderChanged(const std::string& pref_name);
+
+  // Overridden from net::NetworkChangeNotifier::NetworkChangeObserver:
+  virtual void OnNetworkChanged(net::NetworkChangeNotifier::ConnectionType type)
+      OVERRIDE;
 
   // Replaces the contents at tab |index| with |new_contents| and deletes the
   // existing contents.
@@ -135,13 +115,7 @@ class BrowserInstantController : public content::NotificationObserver,
   InstantController instant_;
   InstantUnloadHandler instant_unload_handler_;
 
-  // Theme-related data for NTP overlay to adopt themes.
-  bool initialized_theme_info_;  // True if theme_info_ has been initialized.
-  ThemeBackgroundInfo theme_info_;
-
   PrefChangeRegistrar profile_pref_registrar_;
-
-  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserInstantController);
 };

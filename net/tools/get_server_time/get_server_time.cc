@@ -27,7 +27,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "googleurl/src/gurl.h"
@@ -230,12 +230,9 @@ int main(int argc, char* argv[]) {
 
   base::AtExitManager exit_manager;
   CommandLine::Init(argc, argv);
-  logging::InitLogging(
-      NULL,
-      logging::LOG_ONLY_TO_SYSTEM_DEBUG_LOG,
-      logging::LOCK_LOG_FILE,
-      logging::DELETE_OLD_LOG_FILE,
-      logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS);
+  logging::LoggingSettings settings;
+  settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
+  logging::InitLogging(settings);
 
   const CommandLine& parsed_command_line = *CommandLine::ForCurrentProcess();
   GURL url(parsed_command_line.GetSwitchValueASCII("url"));

@@ -49,6 +49,63 @@ const struct MigrationInputMethodList {
   { "mozc", "_comp_ime_fpfbhcjppmaeaijcidgiibchfbnhbeljnacl_mozc_us" },
   { "mozc-jp", "_comp_ime_fpfbhcjppmaeaijcidgiibchfbnhbeljnacl_mozc_jp" },
   { "mozc-dv", "_comp_ime_fpfbhcjppmaeaijcidgiibchfbnhbeljnacl_mozc_us" },
+  { "pinyin", "_comp_ime_nmblnjkfdkabgdofidlkienfnnbjhnabzh-t-i0-pinyin" },
+  { "pinyin-dv", "_comp_ime_nmblnjkfdkabgdofidlkienfnnbjhnabzh-t-i0-pinyin" },
+  { "mozc-chewing",
+    "_comp_ime_ekbifjdfhkmdeeajnolmgdlmkllopefizh-hant-t-i0-und "},
+  { "m17n:zh:cangjie",
+    "_comp_ime_gjhclobljhjhgoebiipblnmdodbmpdgdzh-hant-t-i0-cangjie-1987" },
+  // TODO(nona): Remove following migration map in M31.
+  { "m17n:ta:itrans",
+    "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_ta_itrans" },
+  { "m17n:ta:tamil99",
+    "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_ta_tamil99" },
+  { "m17n:ta:typewriter",
+    "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_ta_typewriter" },
+  { "m17n:ta:inscript",
+    "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_ta_phone" },
+  { "m17n:ta:phonetic",
+    "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_ta_inscript" },
+  { "m17n:th:pattachote",
+    "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_th_pattajoti" },
+  { "m17n:th:tis820", "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_th_tis" },
+  { "m17n:th:kesmanee",
+    "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_th" },
+  { "m17n:vi:tcvn", "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_vi_tcvn" },
+  { "m17n:vi:viqr", "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_vi_viqr" },
+  { "m17n:vi:telex",
+    "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_vi_telex" },
+  { "m17n:am:sera",
+    "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_ethi" },
+  { "m17n:bn:itrans",
+    "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_bn_phone" },
+  { "m17n:gu:itrans",
+    "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_gu_phone" },
+  { "m17n:hi:itrans",
+    "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_deva_phone" },
+  { "m17n:kn:itrans",
+    "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_kn_phone" },
+  { "m17n:ml:itrans",
+    "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_ml_phone" },
+  { "m17n:mr:itrans",
+    "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_deva_phone-" },
+  { "m17n:te:itrans",
+    "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_te_phone" },
+  { "m17n:fa:isiri", "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_fa" },
+  // TODO(nona): Remove following migration map in M32
+  { "m17n:zh:quick",
+    "_comp_ime_ekbifjdfhkmdeeajnolmgdlmkllopefizh-hant-t-i0-und" },
+};
+
+const struct MigrationHangulKeyboardToInputMethodID {
+  const char* keyboard_id;
+  const char* ime_id;
+} kMigrationHangulKeyboardToInputMethodID[] = {
+  { "2", "_comp_ime_bdgdidmhaijohebebipajioienkglgfohangul_2set" },
+  { "3f", "_comp_ime_bdgdidmhaijohebebipajioienkglgfohangul_3setfinal" },
+  { "39", "_comp_ime_bdgdidmhaijohebebipajioienkglgfohangul_3set390" },
+  { "3s", "_comp_ime_bdgdidmhaijohebebipajioienkglgfohangul_3setnoshift" },
+  { "ro", "_comp_ime_bdgdidmhaijohebebipajioienkglgfohangul_romaja" },
 };
 
 }  // namespace
@@ -261,6 +318,28 @@ bool InputMethodManagerImpl::MigrateOldInputMethods(
   return rewritten;
 }
 
+bool InputMethodManagerImpl::MigrateKoreanKeyboard(
+    const std::string& keyboard_id,
+    std::vector<std::string>* input_method_ids) {
+  std::vector<std::string>::iterator it =
+      std::find(active_input_method_ids_.begin(),
+                active_input_method_ids_.end(),
+                "mozc-hangul");
+  if (it == active_input_method_ids_.end())
+    return false;
+
+  for (size_t i = 0;
+       i < ARRAYSIZE_UNSAFE(kMigrationHangulKeyboardToInputMethodID); ++i) {
+    if (kMigrationHangulKeyboardToInputMethodID[i].keyboard_id == keyboard_id) {
+      *it = kMigrationHangulKeyboardToInputMethodID[i].ime_id;
+      input_method_ids->assign(active_input_method_ids_.begin(),
+                               active_input_method_ids_.end());
+      return true;
+    }
+  }
+  return false;
+}
+
 bool InputMethodManagerImpl::SetInputMethodConfig(
     const std::string& section,
     const std::string& config_name,
@@ -270,6 +349,7 @@ bool InputMethodManagerImpl::SetInputMethodConfig(
 
   if (state_ == STATE_TERMINATING)
     return false;
+
   return ibus_controller_->SetInputMethodConfig(section, config_name, value);
 }
 
@@ -633,10 +713,6 @@ bool InputMethodManagerImpl::SwitchInputMethod(
     case ui::VKEY_DBE_DBCSCHAR:
       input_method_ids_to_switch.push_back(nacl_mozc_jp_id);
       input_method_ids_to_switch.push_back("xkb:jp::jpn");
-      break;
-    case ui::VKEY_HANGUL:  // Hangul (or right Alt) key on Korean keyboard
-      input_method_ids_to_switch.push_back("mozc-hangul");
-      input_method_ids_to_switch.push_back("xkb:kr:kr104:kor");
       break;
     default:
       NOTREACHED();

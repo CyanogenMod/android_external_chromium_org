@@ -13,12 +13,12 @@
 #include "base/metrics/histogram.h"
 #include "base/metrics/stats_counters.h"
 #include "base/process_util.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/safe_browsing/prefix_set.h"
 #include "chrome/browser/safe_browsing/safe_browsing_store_file.h"
 #include "content/public/browser/browser_thread.h"
 #include "crypto/sha2.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
@@ -1486,7 +1486,7 @@ void SafeBrowsingDatabaseNew::LoadPrefixSet() {
   // TODO(shess): Track failure to delete?
   base::FilePath bloom_filter_filename =
       BloomFilterForFilename(browse_filename_);
-  file_util::Delete(bloom_filter_filename, false);
+  base::Delete(bloom_filter_filename, false);
 
   const base::TimeTicks before = base::TimeTicks::Now();
   browse_prefix_set_.reset(safe_browsing::PrefixSet::LoadFile(
@@ -1522,24 +1522,24 @@ bool SafeBrowsingDatabaseNew::Delete() {
 
   base::FilePath bloom_filter_filename =
       BloomFilterForFilename(browse_filename_);
-  const bool r5 = file_util::Delete(bloom_filter_filename, false);
+  const bool r5 = base::Delete(bloom_filter_filename, false);
   if (!r5)
     RecordFailure(FAILURE_DATABASE_FILTER_DELETE);
 
-  const bool r6 = file_util::Delete(browse_prefix_set_filename_, false);
+  const bool r6 = base::Delete(browse_prefix_set_filename_, false);
   if (!r6)
     RecordFailure(FAILURE_BROWSE_PREFIX_SET_DELETE);
 
-  const bool r7 = file_util::Delete(extension_blacklist_filename_, false);
+  const bool r7 = base::Delete(extension_blacklist_filename_, false);
   if (!r7)
     RecordFailure(FAILURE_EXTENSION_BLACKLIST_DELETE);
 
-  const bool r8 = file_util::Delete(side_effect_free_whitelist_filename_,
+  const bool r8 = base::Delete(side_effect_free_whitelist_filename_,
                                     false);
   if (!r8)
     RecordFailure(FAILURE_SIDE_EFFECT_FREE_WHITELIST_DELETE);
 
-  const bool r9 = file_util::Delete(
+  const bool r9 = base::Delete(
       side_effect_free_whitelist_prefix_set_filename_,
       false);
   if (!r9)

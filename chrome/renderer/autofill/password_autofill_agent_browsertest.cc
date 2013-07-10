@@ -65,7 +65,7 @@ class PasswordAutofillAgentTest : public ChromeRenderViewTest {
   // protected.
   void SimulateOnFillPasswordForm(
       const PasswordFormFillData& fill_data) {
-    AutofillMsg_FillPasswordForm msg(0, fill_data, false);
+    AutofillMsg_FillPasswordForm msg(0, fill_data);
     password_autofill_->OnMessageReceived(msg);
   }
 
@@ -92,8 +92,12 @@ class PasswordAutofillAgentTest : public ChromeRenderViewTest {
     password_field.form_control_type = "password";
     fill_data_.basic_data.fields.push_back(password_field);
 
-    fill_data_.additional_logins[username2_] = password2_;
-    fill_data_.additional_logins[username3_] = password3_;
+    PasswordAndRealm password2;
+    password2.password = password2_;
+    fill_data_.additional_logins[username2_] = password2;
+    PasswordAndRealm password3;
+    password3.password = password3_;
+    fill_data_.additional_logins[username3_] = password3;
 
     UsernamesCollectionKey key;
     key.username = username3_;
@@ -279,6 +283,21 @@ TEST_F(PasswordAutofillAgentTest, NoInitialAutocompleteForFilledField) {
 
   // Neither field should be autocompleted.
   CheckTextFieldsState("bogus", false, std::string(), false);
+}
+
+// Tests that changing the username does not fill a field specifying
+// autocomplete="off".
+TEST_F(PasswordAutofillAgentTest, NoInitialAutocompleteForAutocompleteOff) {
+  password_element_.setAttribute(WebString::fromUTF8("autocomplete"),
+                                 WebString::fromUTF8("off"));
+
+  // Simulate the browser sending back the login info, it triggers the
+  // autocomplete.
+  SimulateOnFillPasswordForm(fill_data_);
+
+  // Only the username should have been autocompleted.
+  // TODO(jcivelli): may be we should not event fill the username?
+  CheckTextFieldsState(kAliceUsername, true, std::string(), false);
 }
 
 TEST_F(PasswordAutofillAgentTest, NoAutocompleteForTextFieldPasswords) {

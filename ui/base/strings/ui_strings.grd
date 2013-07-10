@@ -437,7 +437,7 @@ need to be translated for each locale.-->
       </message>
 
       <!-- Message center -->
-      <message name="IDS_MESSAGE_CENTER_ACCESSIBLE_NAME" desc="The button label to enter quiet mode in one day.">
+      <message name="IDS_MESSAGE_CENTER_ACCESSIBLE_NAME" desc="The accessible name for the Notification Center window.">
         Notification Center
       </message>
       <message name="IDS_MESSAGE_CENTER_EXTENSIONS_DISABLE" desc="The menu entry for disabling extensions from a notification.">
@@ -452,6 +452,9 @@ need to be translated for each locale.-->
       <message name="IDS_MESSAGE_CENTER_SETTINGS_BUTTON_LABEL" desc="The button label for visiting the appropriate settings page in the footer of the message center.">
         Settings
       </message>
+      <message name="IDS_MESSAGE_CENTER_SETTINGS_GO_BACK_BUTTON_TOOLTIP" desc="The tooltip on back button that returns from settings to the notification list.">
+        Go back to notifications
+      </message>
       <message name="IDS_MESSAGE_CENTER_SETTINGS_DIALOG_DESCRIPTION" desc="The label to describe the settings dialog.">
         Allow notifications from the following:
       </message>
@@ -461,20 +464,27 @@ need to be translated for each locale.-->
       <message name="IDS_MESSAGE_CENTER_CLEAR_ALL" desc="The button for clearing all notifications.">
         Clear All
       </message>
-      <message name="IDS_MESSAGE_CENTER_QUIET_MODE_BUTTON_TOOLTIP" desc="The tooltip text for the quiet mode button.">
-        Do not disturb
-      </message>
+      <if expr="not pp_ifdef('use_titlecase')">
+        <message name="IDS_MESSAGE_CENTER_QUIET_MODE_BUTTON_TOOLTIP" desc="The tooltip text for the do not disturb button.">
+          Do not disturb
+        </message>
+      </if>
+      <if expr="pp_ifdef('use_titlecase')">
+        <message name="IDS_MESSAGE_CENTER_QUIET_MODE_BUTTON_TOOLTIP" desc="In Title Case: The tooltip text for the do not disturb button.">
+          Do Not Disturb
+        </message>
+      </if>
       <message name="IDS_MESSAGE_CENTER_NO_MESSAGES" desc="The message displayed in the message center when there are no notifications.">
         Nothing to see here, move along.
       </message>
-      <message name="IDS_MESSAGE_CENTER_QUIET_MODE" desc="The button label for quiet mode.">
-        Quiet mode
+      <message name="IDS_MESSAGE_CENTER_QUIET_MODE" desc="The button label for do not disturb mode.">
+        Do not disturb
       </message>
-      <message name="IDS_MESSAGE_CENTER_QUIET_MODE_1HOUR" desc="The button label to enter quiet mode in one hour.">
-        Quiet mode for one hour
+      <message name="IDS_MESSAGE_CENTER_QUIET_MODE_1HOUR" desc="The button label to enter do not disturb mode in one hour.">
+        Do not disturb for one hour
       </message>
-      <message name="IDS_MESSAGE_CENTER_QUIET_MODE_1DAY" desc="The button label to enter quiet mode in one day.">
-        Quiet mode for one day
+      <message name="IDS_MESSAGE_CENTER_QUIET_MODE_1DAY" desc="The button label to enter do not disturb mode in one day.">
+        Do not disturb for one day
       </message>
       <message name="IDS_MESSAGE_CENTER_CLOSE_NOTIFICATION_BUTTON_ACCESSIBLE_NAME" desc="The spoken feedback text for the close button in a notification. Usually 'button' is suffixed to this text automatically.">
 	Notification close
@@ -487,6 +497,9 @@ need to be translated for each locale.-->
       </message>
       <message name="IDS_MESSAGE_CENTER_TOOLTIP_UNREAD" desc="Tooltip for notification tray icon with unread notifications">
         <ph name="product">$1<ex>Chrome</ex></ph> - Notifications (<ph name="QUANTITY">$2<ex>3</ex></ph> unread)
+      </message>
+      <message name="IDS_MESSAGE_CENTER_SAMPLE_SYNCED_NOTIFICATION_SERVICE_NAME" desc="The name of the only source for synced notifications. TODO and note for translators: this text must be replaced by the real name by the branch point.  See crbug.com/254617">
+        Sample app
       </message>
       <message name="IDS_MESSAGE_CENTER_NOTIFIER_SCREENSHOT_NAME" desc="The name of screenshot notifier that is a system componet">
         Screenshot

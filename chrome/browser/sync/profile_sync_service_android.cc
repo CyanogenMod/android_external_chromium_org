@@ -13,7 +13,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/oauth2_token_service.h"
@@ -60,7 +60,6 @@ enum {
 ProfileSyncServiceAndroid::ProfileSyncServiceAndroid(JNIEnv* env, jobject obj)
     : profile_(NULL),
       sync_service_(NULL),
-      sync_prefs_(NULL),
       weak_java_profile_sync_service_(env, obj) {
   if (g_browser_process == NULL ||
       g_browser_process->profile_manager() == NULL) {

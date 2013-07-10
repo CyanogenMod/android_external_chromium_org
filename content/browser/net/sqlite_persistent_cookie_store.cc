@@ -25,7 +25,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/cookie_store_factory.h"
 #include "googleurl/src/gurl.h"
@@ -831,7 +831,7 @@ bool SQLitePersistentCookieStore::Backend::EnsureDatabaseVersion() {
 
     meta_table_.Reset();
     db_.reset(new sql::Connection);
-    if (!file_util::Delete(path_, false) ||
+    if (!base::Delete(path_, false) ||
         !db_->Open(path_) ||
         !meta_table_.Init(
             db_.get(), kCurrentVersionNumber, kCompatibleVersionNumber)) {

@@ -124,7 +124,7 @@ bool MapBufferToVideoFrame(
   // letterboxing/pillarboxing).  Only do this once, since this is performed on
   // all planes in the VideoFrame here.
   if (plane == 0)
-    media::LetterboxYUV(target, region_in_frame);
+    media::LetterboxYUV(target.get(), region_in_frame);
 
   if (buf) {
     int packed_width = region_in_frame.width();
@@ -248,7 +248,7 @@ CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create(int window_number) {
 
   scoped_refptr<CompositingIOSurfaceContext> context =
       CompositingIOSurfaceContext::Get(window_number);
-  if (!context) {
+  if (!context.get()) {
     LOG(ERROR) << "Failed to create context for IOSurface";
     return NULL;
   }
@@ -347,7 +347,7 @@ void CompositingIOSurfaceMac::SwitchToContextOnNewWindow(NSView* view,
 
   scoped_refptr<CompositingIOSurfaceContext> new_context =
       CompositingIOSurfaceContext::Get(window_number);
-  if (!new_context)
+  if (!new_context.get())
     return;
 
   // Having two NSOpenGLContexts bound to an NSView concurrently will cause
@@ -569,10 +569,6 @@ bool CompositingIOSurfaceMac::DrawIOSurface(
   latency_info_.swap_timestamp = base::TimeTicks::HighResNow();
   RenderWidgetHostImpl::CompositorFrameDrawn(latency_info_);
   latency_info_.Clear();
-
-  // For latency_tests.cc:
-  UNSHIPPED_TRACE_EVENT_INSTANT0("test_gpu", "CompositorSwapBuffersComplete",
-                                 TRACE_EVENT_SCOPE_THREAD);
 
   // Try to finish previous copy requests after flush to get better pipelining.
   std::vector<base::Closure> copy_done_callbacks;
@@ -825,7 +821,7 @@ base::Closure CompositingIOSurfaceMac::CopyToSelectedOutputWithinContext(
     const SkBitmap* bitmap_output,
     const scoped_refptr<media::VideoFrame>& video_frame_output,
     const base::Callback<void(bool)>& done_callback) {
-  DCHECK_NE(bitmap_output != NULL, video_frame_output != NULL);
+  DCHECK_NE(bitmap_output != NULL, video_frame_output.get() != NULL);
   DCHECK(!done_callback.is_null());
 
   const bool async_copy = IsAsynchronousReadbackSupported();
@@ -1067,10 +1063,10 @@ bool CompositingIOSurfaceMac::SynchronousReadbackForCopy(
                  copy_context->output_texture_sizes[i].height(),
                  GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
                  buf); CHECK_AND_SAVE_GL_ERROR();
-    if (video_frame_output) {
+    if (video_frame_output.get()) {
       if (!temp_readback_buffer) {
         // Apply letterbox black-out around view region.
-        media::LetterboxYUV(video_frame_output, dst_pixel_rect);
+        media::LetterboxYUV(video_frame_output.get(), dst_pixel_rect);
       } else {
         // Copy from temporary buffer and fully render the VideoFrame.
         success &= MapBufferToVideoFrame(video_frame_output, dst_pixel_rect,

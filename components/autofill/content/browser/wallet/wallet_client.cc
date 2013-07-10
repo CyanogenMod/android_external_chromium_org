@@ -10,13 +10,13 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_util.h"
-#include "components/autofill/browser/autofill_metrics.h"
 #include "components/autofill/content/browser/wallet/form_field_error.h"
 #include "components/autofill/content/browser/wallet/instrument.h"
 #include "components/autofill/content/browser/wallet/wallet_address.h"
 #include "components/autofill/content/browser/wallet/wallet_client_delegate.h"
 #include "components/autofill/content/browser/wallet/wallet_items.h"
 #include "components/autofill/content/browser/wallet/wallet_service_url.h"
+#include "components/autofill/core/browser/autofill_metrics.h"
 #include "crypto/random.h"
 #include "google_apis/google_api_keys.h"
 #include "net/http/http_status_code.h"
@@ -219,6 +219,7 @@ const char kSelectedInstrumentIdKey[] = "selected_instrument_id";
 const char kSessionMaterialKey[] = "session_material";
 const char kShippingAddressIdKey[] = "shipping_address_id";
 const char kShippingAddressKey[] = "shipping_address";
+const char kAutocheckoutStepsKey[] = "steps";
 const char kSuccessKey[] = "success";
 const char kUpgradedBillingAddressKey[] = "upgraded_billing_address";
 const char kUpgradedInstrumentIdKey[] = "upgraded_instrument_id";
@@ -462,6 +463,7 @@ void WalletClient::SaveInstrumentAndAddress(
 void WalletClient::SendAutocheckoutStatus(
     AutocheckoutStatus status,
     const GURL& source_url,
+    const std::vector<AutocheckoutStatistic>& latency_statistics,
     const std::string& google_transaction_id) {
   DVLOG(1) << "Sending Autocheckout Status: " << status
            << " for: " << source_url;
@@ -470,6 +472,7 @@ void WalletClient::SendAutocheckoutStatus(
                                       base::Unretained(this),
                                       status,
                                       source_url,
+                                      latency_statistics,
                                       google_transaction_id));
     return;
   }
@@ -485,6 +488,16 @@ void WalletClient::SendAutocheckoutStatus(
                          source_url.GetWithEmptyPath().spec());
   if (!success)
     request_dict.SetString(kReasonKey, AutocheckoutStatusToString(status));
+  if (!latency_statistics.empty()) {
+    scoped_ptr<base::ListValue> latency_statistics_json(
+        new base::ListValue());
+    for (size_t i = 0; i < latency_statistics.size(); ++i) {
+      latency_statistics_json->Append(
+          latency_statistics[i].ToDictionary().release());
+    }
+    request_dict.Set(kAutocheckoutStepsKey,
+                     latency_statistics_json.release());
+  }
   request_dict.SetString(kGoogleTransactionIdKey, google_transaction_id);
 
   std::string post_body;

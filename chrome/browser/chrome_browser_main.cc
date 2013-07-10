@@ -34,7 +34,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
 #include "base/threading/platform_thread.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/about_flags.h"
@@ -427,9 +427,15 @@ bool ProcessSingletonNotificationCallback(
         command_line.GetSwitchValueASCII(switches::kOriginalProcessStartTime);
     int64 remote_start_time;
     if (base::StringToInt64(start_time_string, &remote_start_time)) {
-      UMA_HISTOGRAM_LONG_TIMES(
-          "Startup.WarmStartTimeFromRemoteProcessStart",
-          base::Time::Now() - base::Time::FromInternalValue(remote_start_time));
+      base::TimeDelta elapsed =
+          base::Time::Now() - base::Time::FromInternalValue(remote_start_time);
+      if (command_line.HasSwitch(switches::kFastStart)) {
+        UMA_HISTOGRAM_LONG_TIMES(
+            "Startup.WarmStartTimeFromRemoteProcessStartFast", elapsed);
+      } else {
+        UMA_HISTOGRAM_LONG_TIMES(
+            "Startup.WarmStartTimeFromRemoteProcessStart", elapsed);
+      }
     }
   }
 
@@ -610,11 +616,13 @@ void ChromeBrowserMainParts::SetupMetricsAndFieldTrials() {
   // Ensure any field trials specified on the command line are initialized.
   // Also stop the metrics service so that we don't pollute UMA.
   if (command_line->HasSwitch(switches::kForceFieldTrials)) {
-    std::string persistent = command_line->GetSwitchValueASCII(
-        switches::kForceFieldTrials);
-    bool ret = base::FieldTrialList::CreateTrialsFromString(persistent);
-    CHECK(ret) << "Invalid --" << switches::kForceFieldTrials <<
-                  " list specified.";
+    // Create field trials without activating them, so that this behaves in a
+    // consistent manner with field trials created from the server.
+    bool result = base::FieldTrialList::CreateTrialsFromString(
+        command_line->GetSwitchValueASCII(switches::kForceFieldTrials),
+        base::FieldTrialList::DONT_ACTIVATE_TRIALS);
+    CHECK(result) << "Invalid --" << switches::kForceFieldTrials
+                  << " list specified.";
   }
 
   chrome_variations::VariationsService* variations_service =
@@ -834,10 +842,13 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
   chrome::UMABrowsingActivityObserver::Init();
 #endif
 
+#if !defined(OS_CHROMEOS)
   // Convert active labs into switches. This needs to be done before
   // ResourceBundle::InitSharedInstanceWithLocale as some loaded resources are
   // affected by experiment flags (--touch-optimized-ui in particular). Not
   // needed on Android as there aren't experimental flags.
+  // On ChromeOS system level flags are applied from the device settings from
+  // the session manager.
   {
     TRACE_EVENT0("startup",
         "ChromeBrowserMainParts::PreCreateThreadsImpl:ConvertFlags");
@@ -846,6 +857,7 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
     about_flags::ConvertFlagsToSwitches(&flags_storage_,
                                         CommandLine::ForCurrentProcess());
   }
+#endif
 
   local_state_->UpdateCommandLinePrefStore(
       new CommandLinePrefStore(CommandLine::ForCurrentProcess()));
@@ -1069,10 +1081,8 @@ void ChromeBrowserMainParts::PostBrowserStart() {
 #if !defined(OS_ANDROID)
 void ChromeBrowserMainParts::RunPageCycler() {
   CommandLine* command_line = CommandLine::ForCurrentProcess();
-  // We assume a native desktop for tests, but we will need to find a way to
-  // get the proper host desktop type once we start running these tests in ASH.
-  Browser* browser = chrome::FindBrowserWithProfile(
-      profile_, chrome::HOST_DESKTOP_TYPE_NATIVE);
+  Browser* browser = chrome::FindBrowserWithProfile(profile_,
+                                                    chrome::GetActiveDesktop());
   DCHECK(browser);
   PageCycler* page_cycler = NULL;
   base::FilePath input_file =
@@ -1554,14 +1564,10 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
 #endif
       }
 
-#if !defined(OS_CHROMEOS)
-      // TODO(mad): Move this call in a proper place on CrOS.
-      // http://crosbug.com/17687
       if (translate_manager_ != NULL) {
         translate_manager_->FetchLanguageListFromTranslateServer(
             profile_->GetPrefs());
       }
-#endif
     }
 
     run_message_loop_ = true;

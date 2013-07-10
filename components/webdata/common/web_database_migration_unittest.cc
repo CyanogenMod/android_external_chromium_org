@@ -8,25 +8,25 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/guid.h"
 #include "base/message_loop.h"
+#include "base/path_service.h"
 #include "base/stl_util.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/webdata/keyword_table.h"
 #include "chrome/browser/webdata/logins_table.h"
 #include "chrome/browser/webdata/token_service_table.h"
 #include "chrome/browser/webdata/web_apps_table.h"
 #include "chrome/browser/webdata/web_intents_table.h"
-#include "chrome/test/base/ui_test_utils.h"
-#include "components/autofill/browser/autofill_country.h"
-#include "components/autofill/browser/autofill_profile.h"
-#include "components/autofill/browser/autofill_type.h"
-#include "components/autofill/browser/credit_card.h"
-#include "components/autofill/browser/webdata/autofill_change.h"
-#include "components/autofill/browser/webdata/autofill_entry.h"
-#include "components/autofill/browser/webdata/autofill_table.h"
+#include "components/autofill/core/browser/autofill_country.h"
+#include "components/autofill/core/browser/autofill_profile.h"
+#include "components/autofill/core/browser/autofill_type.h"
+#include "components/autofill/core/browser/credit_card.h"
+#include "components/autofill/core/browser/webdata/autofill_change.h"
+#include "components/autofill/core/browser/webdata/autofill_entry.h"
+#include "components/autofill/core/browser/webdata/autofill_table.h"
 #include "components/webdata/common/web_database.h"
 #include "sql/statement.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -207,13 +207,18 @@ class WebDatabaseMigrationTest : public testing::Test {
   }
 
   // The textual contents of |file| are read from
-  // "chrome/test/data/web_database" and returned in the string |contents|.
+  // "components/test/data/web_database" and returned in the string |contents|.
   // Returns true if the file exists and is read successfully, false otherwise.
   bool GetWebDatabaseData(const base::FilePath& file, std::string* contents) {
-    base::FilePath path = ui_test_utils::GetTestFilePath(
-        base::FilePath(FILE_PATH_LITERAL("web_database")), file);
-    return file_util::PathExists(path) &&
-        file_util::ReadFileToString(path, contents);
+    base::FilePath source_path;
+    PathService::Get(base::DIR_SOURCE_ROOT, &source_path);
+    source_path = source_path.AppendASCII("components");
+    source_path = source_path.AppendASCII("test");
+    source_path = source_path.AppendASCII("data");
+    source_path = source_path.AppendASCII("web_database");
+    source_path = source_path.Append(file);
+    return file_util::PathExists(source_path) &&
+        file_util::ReadFileToString(source_path, contents);
   }
 
   static int VersionFromConnection(sql::Connection* connection) {

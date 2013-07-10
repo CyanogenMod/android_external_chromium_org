@@ -196,7 +196,7 @@ class ExtensionSettingsApiTest : public ExtensionApiTest {
       Namespace settings_namespace,
       const std::string& action,
       bool is_final_action) {
-    scoped_ptr<DictionaryValue> message(new DictionaryValue());
+    scoped_ptr<base::DictionaryValue> message(new base::DictionaryValue());
     message->SetString("namespace", ToString(settings_namespace));
     message->SetString("action", action);
     message->SetBoolean("isFinalAction", is_final_action);
@@ -454,7 +454,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, PolicyDomainDescriptor) {
   policy::PolicyService* service = connector->policy_service();
   scoped_refptr<const policy::PolicyDomainDescriptor> descriptor =
       service->GetPolicyDomainDescriptor(policy::POLICY_DOMAIN_EXTENSIONS);
-  EXPECT_TRUE(descriptor);
+  EXPECT_TRUE(descriptor.get());
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, ManagedStorage) {

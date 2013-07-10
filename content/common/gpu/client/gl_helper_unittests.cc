@@ -18,7 +18,7 @@
 #include "base/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/common/gpu/client/gl_helper.h"
 #include "content/common/gpu/client/gl_helper_scaling.h"
 #include "content/public/test/unittest_test_suite.h"
@@ -59,9 +59,8 @@ class GLHelperTest : public testing::Test {
  protected:
   virtual void SetUp() {
     WebGraphicsContext3D::Attributes attributes;
-    context_.reset(
-        webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl::
-        CreateOffscreenContext(attributes));
+    context_ = webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl::
+        CreateOffscreenContext(attributes);
     context_->makeContextCurrent();
     helper_.reset(new content::GLHelper(context_.get()));
     helper_scaling_.reset(new content::GLHelperScaling(

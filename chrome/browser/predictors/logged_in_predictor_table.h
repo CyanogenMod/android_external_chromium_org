@@ -8,9 +8,9 @@
 #include <string>
 
 #include "base/containers/hash_tables.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/predictors/predictor_table_base.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace sql {
 class Statement;

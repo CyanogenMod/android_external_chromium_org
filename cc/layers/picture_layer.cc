@@ -41,13 +41,12 @@ void PictureLayer::PushPropertiesTo(LayerImpl* base_layer) {
   layer_impl->UpdateTwinLayer();
 
   layer_impl->SetIsMask(is_mask_);
-  layer_impl->CreateTilingSet();
+  layer_impl->CreateTilingSetIfNeeded();
   // Unlike other properties, invalidation must always be set on layer_impl.
   // See PictureLayerImpl::PushPropertiesTo for more details.
   layer_impl->invalidation_.Clear();
   layer_impl->invalidation_.Swap(&pile_invalidation_);
-  layer_impl->pile_ = PicturePileImpl::CreateFromOther(
-      pile_.get(), layer_impl->is_using_lcd_text_);
+  layer_impl->pile_ = PicturePileImpl::CreateFromOther(pile_.get());
   layer_impl->SyncFromActiveLayer();
 }
 
@@ -75,8 +74,7 @@ void PictureLayer::SetNeedsDisplayRect(const gfx::RectF& layer_rect) {
 }
 
 void PictureLayer::Update(ResourceUpdateQueue*,
-                          const OcclusionTracker*,
-                          RenderingStats* stats) {
+                          const OcclusionTracker*) {
   // Do not early-out of this function so that PicturePile::Update has a chance
   // to record pictures due to changing visibility of this layer.
 
@@ -96,7 +94,7 @@ void PictureLayer::Update(ResourceUpdateQueue*,
                 contents_opaque(),
                 pile_invalidation_,
                 visible_layer_rect,
-                stats);
+                rendering_stats_instrumentation());
 }
 
 void PictureLayer::SetIsMask(bool is_mask) {

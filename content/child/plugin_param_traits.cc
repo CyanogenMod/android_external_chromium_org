@@ -5,9 +5,9 @@
 #include "content/child/plugin_param_traits.h"
 
 #include "base/strings/string_number_conversions.h"
+#include "content/child/npruntime_util.h"
 #include "ipc/ipc_message_utils.h"
 #include "third_party/WebKit/public/web/WebBindings.h"
-#include "webkit/glue/npruntime_util.h"
 #include "webkit/plugins/npapi/plugin_host.h"
 
 namespace content {
@@ -24,7 +24,8 @@ NPVariant_Param::NPVariant_Param()
       bool_value(false),
       int_value(0),
       double_value(0),
-      npobject_routing_id(-1) {
+      npobject_routing_id(-1),
+      npobject_owner_id(-1) {
 }
 
 NPVariant_Param::~NPVariant_Param() {
@@ -53,6 +54,9 @@ void ParamTraits<NPVariant_Param>::Write(Message* m, const param_type& p) {
     // process with NPObjectStub in this process or to identify the raw
     // npobject pointer to be used in the callee process.
     WriteParam(m, p.npobject_routing_id);
+    // This is a routing Id used to identify the plugin instance that owns
+    // the object, for ownership-tracking purposes.
+    WriteParam(m, p.npobject_owner_id);
   } else {
     DCHECK(p.type == content::NPVARIANT_PARAM_VOID ||
            p.type == content::NPVARIANT_PARAM_NULL);
@@ -79,6 +83,7 @@ bool ParamTraits<NPVariant_Param>::Read(const Message* m,
   } else if (r->type == content::NPVARIANT_PARAM_SENDER_OBJECT_ROUTING_ID ||
              r->type == content::NPVARIANT_PARAM_RECEIVER_OBJECT_ROUTING_ID) {
     result = ReadParam(m, iter, &r->npobject_routing_id);
+    result = ReadParam(m, iter, &r->npobject_owner_id);
   } else if ((r->type == content::NPVARIANT_PARAM_VOID) ||
              (r->type == content::NPVARIANT_PARAM_NULL)) {
     result = true;
@@ -110,13 +115,13 @@ void ParamTraits<NPVariant_Param>::Log(const param_type& p, std::string* l) {
 }
 
 void ParamTraits<NPIdentifier_Param>::Write(Message* m, const param_type& p) {
-  webkit_glue::SerializeNPIdentifier(p.identifier, m);
+  content::SerializeNPIdentifier(p.identifier, m);
 }
 
 bool ParamTraits<NPIdentifier_Param>::Read(const Message* m,
                                            PickleIterator* iter,
                                            param_type* r) {
-  return webkit_glue::DeserializeNPIdentifier(iter, &r->identifier);
+  return content::DeserializeNPIdentifier(iter, &r->identifier);
 }
 
 void ParamTraits<NPIdentifier_Param>::Log(const param_type& p, std::string* l) {

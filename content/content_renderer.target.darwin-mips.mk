@@ -59,6 +59,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/dom_storage/dom_storage_dispatcher.cc \
 	content/renderer/dom_storage/webstoragearea_impl.cc \
 	content/renderer/dom_storage/webstoragenamespace_impl.cc \
+	content/renderer/drop_data_builder.cc \
 	content/renderer/external_popup_menu.cc \
 	content/renderer/gamepad_shared_memory_reader.cc \
 	content/renderer/geolocation_dispatcher.cc \
@@ -80,21 +81,30 @@ LOCAL_SRC_FILES := \
 	content/renderer/java/java_bridge_channel.cc \
 	content/renderer/java/java_bridge_dispatcher.cc \
 	content/renderer/load_progress_tracker.cc \
+	content/renderer/media/android/audio_decoder_android.cc \
+	content/renderer/media/android/media_info_loader.cc \
+	content/renderer/media/android/media_source_delegate.cc \
+	content/renderer/media/android/proxy_media_keys.cc \
+	content/renderer/media/android/stream_texture_factory_android.cc \
+	content/renderer/media/android/webmediaplayer_android.cc \
+	content/renderer/media/android/webmediaplayer_manager_android.cc \
+	content/renderer/media/android/webmediaplayer_proxy_android.cc \
 	content/renderer/media/audio_device_factory.cc \
 	content/renderer/media/audio_input_message_filter.cc \
 	content/renderer/media/audio_message_filter.cc \
 	content/renderer/media/audio_renderer_mixer_manager.cc \
+	content/renderer/media/midi_message_filter.cc \
 	content/renderer/media/pepper_platform_video_decoder_impl.cc \
 	content/renderer/media/render_media_log.cc \
 	content/renderer/media/renderer_gpu_video_decoder_factories.cc \
 	content/renderer/media/renderer_webaudiodevice_impl.cc \
+	content/renderer/media/renderer_webmidiaccessor_impl.cc \
 	content/renderer/media/rtc_video_renderer.cc \
-	content/renderer/media/stream_texture_factory_impl_android.cc \
 	content/renderer/media/video_capture_impl.cc \
 	content/renderer/media/video_capture_impl_manager.cc \
 	content/renderer/media/video_capture_message_filter.cc \
 	content/renderer/media/webcontentdecryptionmodule_impl.cc \
-	content/renderer/media/webmediaplayer_proxy_impl_android.cc \
+	content/renderer/media/webcontentdecryptionmodulesession_impl.cc \
 	content/renderer/memory_benchmarking_extension.cc \
 	content/renderer/mhtml_generator.cc \
 	content/renderer/mouse_lock_dispatcher.cc \
@@ -116,6 +126,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/ime_event_guard.cc \
 	content/renderer/render_frame_impl.cc \
 	content/renderer/render_process_impl.cc \
+	content/renderer/render_process_visibility_manager.cc \
 	content/renderer/render_thread_impl.cc \
 	content/renderer/render_view_impl.cc \
 	content/renderer/render_view_impl_android.cc \
@@ -135,12 +146,14 @@ LOCAL_SRC_FILES := \
 	content/renderer/renderer_webkitplatformsupport_impl.cc \
 	content/renderer/rendering_benchmark.cc \
 	content/renderer/savable_resources.cc \
+	content/renderer/scoped_clipboard_writer_glue.cc \
 	content/renderer/skia_benchmarking_extension.cc \
 	content/renderer/speech_recognition_dispatcher.cc \
 	content/renderer/stats_collection_controller.cc \
 	content/renderer/stats_collection_observer.cc \
 	content/renderer/text_input_client_observer.cc \
 	content/renderer/v8_value_converter_impl.cc \
+	content/renderer/webclipboard_impl.cc \
 	content/renderer/web_ui_extension.cc \
 	content/renderer/web_ui_extension_data.cc \
 	content/renderer/webplugin_delegate_proxy.cc \
@@ -149,7 +162,7 @@ LOCAL_SRC_FILES := \
 
 
 # Flags passed to both C and C++ files.
-MY_CFLAGS := \
+MY_CFLAGS_Debug := \
 	-fstack-protector \
 	--param=ssp-buffer-size=4 \
 	 \
@@ -180,9 +193,7 @@ MY_CFLAGS := \
 	-fdata-sections \
 	-ffunction-sections
 
-MY_CFLAGS_C :=
-
-MY_DEFS := \
+MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
@@ -213,6 +224,7 @@ MY_DEFS := \
 	'-DNO_SOUND_SYSTEM' \
 	'-DANDROID' \
 	'-DPOSIX' \
+	'-DI18N_PHONENUMBERS_USE_ICU_REGEXP=1' \
 	'-DPROTOBUF_USE_DLLS' \
 	'-DGOOGLE_PROTOBUF_NO_RTTI' \
 	'-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER' \
@@ -226,10 +238,9 @@ MY_DEFS := \
 	'-DWTF_USE_DYNAMIC_ANNOTATIONS=1' \
 	'-D_DEBUG'
 
-LOCAL_CFLAGS := $(MY_CFLAGS_C) $(MY_CFLAGS) $(MY_DEFS)
 
 # Include paths placed before CFLAGS/CPPFLAGS
-LOCAL_C_INCLUDES := \
+LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH) \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
@@ -245,6 +256,7 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/skia/include/pdf \
 	$(LOCAL_PATH)/third_party/skia/include/gpu \
 	$(LOCAL_PATH)/third_party/skia/include/gpu/gl \
+	$(LOCAL_PATH)/third_party/skia/include/lazy \
 	$(LOCAL_PATH)/third_party/skia/include/pathops \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
@@ -274,10 +286,9 @@ LOCAL_C_INCLUDES := \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
 
-LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 
 # Flags passed to only C++ (and not C) files.
-LOCAL_CPPFLAGS := \
+LOCAL_CPPFLAGS_Debug := \
 	-fno-rtti \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
@@ -287,9 +298,152 @@ LOCAL_CPPFLAGS := \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
+
+# Flags passed to both C and C++ files.
+MY_CFLAGS_Release := \
+	-fstack-protector \
+	--param=ssp-buffer-size=4 \
+	 \
+	-fno-exceptions \
+	-fno-strict-aliasing \
+	-Wall \
+	-Wno-unused-parameter \
+	-Wno-missing-field-initializers \
+	-fvisibility=hidden \
+	-pipe \
+	-fPIC \
+	-EL \
+	-mhard-float \
+	-ffunction-sections \
+	-funwind-tables \
+	-g \
+	-fstack-protector \
+	-fno-short-enums \
+	-finline-limit=64 \
+	-Wa,--noexecstack \
+	-U_FORTIFY_SOURCE \
+	-Wno-extra \
+	-Wno-ignored-qualifiers \
+	-Wno-type-limits \
+	-Os \
+	-fno-ident \
+	-fdata-sections \
+	-ffunction-sections \
+	-fomit-frame-pointer
+
+MY_DEFS_Release := \
+	'-DCONTENT_IMPLEMENTATION' \
+	'-DANGLE_DX11' \
+	'-D_FILE_OFFSET_BITS=64' \
+	'-DNO_TCMALLOC' \
+	'-DDISABLE_NACL' \
+	'-DCHROMIUM_BUILD' \
+	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_GPU=1' \
+	'-DUSE_OPENSSL=1' \
+	'-DENABLE_EGLIMAGE=1' \
+	'-DENABLE_LANGUAGE_DETECTION=1' \
+	'-DPOSIX_AVOID_MMAP' \
+	'-DSK_BUILD_NO_IMAGE_ENCODE' \
+	'-DSK_DEFERRED_CANVAS_USES_GPIPE=1' \
+	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
+	'-DGR_AGGRESSIVE_SHADER_OPTS=1' \
+	'-DSK_ENABLE_INST_COUNT=0' \
+	'-DSK_USE_POSIX_THREADS' \
+	'-DSK_BUILD_FOR_ANDROID' \
+	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DFEATURE_ENABLE_SSL' \
+	'-DFEATURE_ENABLE_VOICEMAIL' \
+	'-DEXPAT_RELATIVE_PATH' \
+	'-DGTEST_RELATIVE_PATH' \
+	'-DJSONCPP_RELATIVE_PATH' \
+	'-DNO_MAIN_THREAD_WRAPPING' \
+	'-DNO_SOUND_SYSTEM' \
+	'-DANDROID' \
+	'-DPOSIX' \
+	'-DI18N_PHONENUMBERS_USE_ICU_REGEXP=1' \
+	'-DPROTOBUF_USE_DLLS' \
+	'-DGOOGLE_PROTOBUF_NO_RTTI' \
+	'-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER' \
+	'-D__STDC_CONSTANT_MACROS' \
+	'-D__STDC_FORMAT_MACROS' \
+	'-D__GNU_SOURCE=1' \
+	'-DUSE_STLPORT=1' \
+	'-D_STLP_USE_PTR_SPECIALIZATIONS=1' \
+	'-DCHROME_BUILD_ID=""' \
+	'-DNDEBUG' \
+	'-DNVALGRIND' \
+	'-DDYNAMIC_ANNOTATIONS_ENABLED=0' \
+	'-D_FORTIFY_SOURCE=2'
+
+
+# Include paths placed before CFLAGS/CPPFLAGS
+LOCAL_C_INCLUDES_Release := \
+	$(LOCAL_PATH) \
+	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
+	$(LOCAL_PATH)/third_party/khronos \
+	$(LOCAL_PATH)/gpu \
+	$(gyp_shared_intermediate_dir)/content \
+	$(LOCAL_PATH)/skia/config \
+	$(LOCAL_PATH)/third_party/skia/src/core \
+	$(LOCAL_PATH)/third_party/skia/include/config \
+	$(LOCAL_PATH)/third_party/skia/include/core \
+	$(LOCAL_PATH)/third_party/skia/include/effects \
+	$(LOCAL_PATH)/third_party/skia/include/pdf \
+	$(LOCAL_PATH)/third_party/skia/include/gpu \
+	$(LOCAL_PATH)/third_party/skia/include/gpu/gl \
+	$(LOCAL_PATH)/third_party/skia/include/lazy \
+	$(LOCAL_PATH)/third_party/skia/include/pathops \
+	$(LOCAL_PATH)/third_party/skia/include/pipe \
+	$(LOCAL_PATH)/third_party/skia/include/ports \
+	$(LOCAL_PATH)/third_party/skia/include/utils \
+	$(LOCAL_PATH)/skia/ext \
+	$(LOCAL_PATH)/third_party/WebKit \
+	$(LOCAL_PATH)/third_party/hyphen \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
+	$(LOCAL_PATH)/third_party/libjingle/overrides \
+	$(LOCAL_PATH)/third_party/libjingle/source \
+	$(LOCAL_PATH)/testing/gtest/include \
+	$(LOCAL_PATH)/third_party \
+	$(LOCAL_PATH)/third_party/webrtc \
+	$(PWD)/external/expat/lib \
+	$(LOCAL_PATH)/third_party/jsoncpp/overrides/include \
+	$(LOCAL_PATH)/third_party/jsoncpp/source/include \
+	$(LOCAL_PATH)/third_party/npapi \
+	$(LOCAL_PATH)/third_party/npapi/bindings \
+	$(LOCAL_PATH)/v8/include \
+	$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber \
+	$(LOCAL_PATH)/third_party/libphonenumber/src \
+	$(gyp_shared_intermediate_dir)/protoc_out \
+	$(LOCAL_PATH)/third_party/protobuf \
+	$(LOCAL_PATH)/third_party/protobuf/src \
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
+
+
+# Flags passed to only C++ (and not C) files.
+LOCAL_CPPFLAGS_Release := \
+	-fno-rtti \
+	-fno-threadsafe-statics \
+	-fvisibility-inlines-hidden \
+	-Wsign-compare \
+	-Wno-uninitialized \
+	-Wno-error=c++0x-compat \
+	-Wno-non-virtual-dtor \
+	-Wno-sign-promo
+
+
+LOCAL_CFLAGS := $(MY_CFLAGS_$(GYP_CONFIGURATION)) $(MY_DEFS_$(GYP_CONFIGURATION))
+LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES_$(GYP_CONFIGURATION))
+LOCAL_CPPFLAGS := $(LOCAL_CPPFLAGS_$(GYP_CONFIGURATION))
 ### Rules for final target.
 
-LOCAL_LDFLAGS := \
+LOCAL_LDFLAGS_Debug := \
 	-Wl,-z,now \
 	-Wl,-z,relro \
 	-Wl,-z,noexecstack \
@@ -303,6 +457,23 @@ LOCAL_LDFLAGS := \
 	-Wl,-O1 \
 	-Wl,--as-needed
 
+
+LOCAL_LDFLAGS_Release := \
+	-Wl,-z,now \
+	-Wl,-z,relro \
+	-Wl,-z,noexecstack \
+	-fPIC \
+	-EL \
+	-Wl,--no-keep-memory \
+	-nostdlib \
+	-Wl,--no-undefined \
+	-Wl,--exclude-libs=ALL \
+	-Wl,-O1 \
+	-Wl,--as-needed \
+	-Wl,--gc-sections
+
+
+LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
 LOCAL_STATIC_LIBRARIES := \
 	cpufeatures \

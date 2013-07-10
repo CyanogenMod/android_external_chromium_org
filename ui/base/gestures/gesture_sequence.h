@@ -5,7 +5,7 @@
 #ifndef UI_BASE_GESTURES_GESTURE_SEQUENCE_H_
 #define UI_BASE_GESTURES_GESTURE_SEQUENCE_H_
 
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "ui/base/events/event_constants.h"
 #include "ui/base/gestures/gesture_point.h"
 #include "ui/base/gestures/gesture_recognizer.h"
@@ -186,6 +186,11 @@ class UI_EXPORT GestureSequence {
   // The center of the bounding box used in the latest multi-finger scroll
   // update gesture.
   gfx::Point latest_multi_scroll_update_location_;
+
+  // The last scroll update prediction offset. This is removed from the scroll
+  // distance on the next update since the page has already been scrolled this
+  // distance.
+  gfx::Vector2dF last_scroll_prediction_offset_;
 
   // For pinch, the 'distance' represents the diagonal distance of
   // |bounding_box_|.

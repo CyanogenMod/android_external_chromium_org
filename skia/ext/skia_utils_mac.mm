@@ -8,7 +8,7 @@
 
 #include "base/logging.h"
 #include "base/mac/scoped_cftyperef.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #include "skia/ext/bitmap_platform_device_mac.h"
 #include "third_party/skia/include/core/SkRegion.h"
@@ -32,7 +32,7 @@ SkBitmap NSImageOrNSImageRepToSkBitmap(
 
   bitmap.setIsOpaque(is_opaque);
 
-  base::mac::ScopedCFTypeRef<CGColorSpaceRef> color_space(
+  base::ScopedCFTypeRef<CGColorSpaceRef> color_space(
       CGColorSpaceCreateWithName(kCGColorSpaceGenericRGB));
   void* data = bitmap.getPixels();
 
@@ -42,11 +42,14 @@ SkBitmap NSImageOrNSImageRepToSkBitmap(
             (SK_A32_SHIFT == (a) && SK_R32_SHIFT == (r) \
              && SK_G32_SHIFT == (g) && SK_B32_SHIFT == (b))
 #if defined(SK_CPU_LENDIAN) && HAS_ARGB_SHIFTS(24, 16, 8, 0)
-  base::mac::ScopedCFTypeRef<CGContextRef> context(
-    CGBitmapContextCreate(data, size.width, size.height, 8, size.width*4,
-                          color_space,
-                          kCGImageAlphaPremultipliedFirst |
-                              kCGBitmapByteOrder32Host));
+  base::ScopedCFTypeRef<CGContextRef> context(CGBitmapContextCreate(
+      data,
+      size.width,
+      size.height,
+      8,
+      size.width * 4,
+      color_space,
+      kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host));
 #else
 #error We require that Skia's and CoreGraphics's recommended \
        image memory layout match.
@@ -170,6 +173,18 @@ NSColor* SkColorToDeviceNSColor(SkColor color) {
                                alpha:SkColorGetA(color) / 255.0];
 }
 
+NSColor* SkColorToSRGBNSColor(SkColor color) {
+  const CGFloat components[] = {
+    SkColorGetR(color) / 255.0,
+    SkColorGetG(color) / 255.0,
+    SkColorGetB(color) / 255.0,
+    SkColorGetA(color) / 255.0
+  };
+  return [NSColor colorWithColorSpace:[NSColorSpace sRGBColorSpace]
+                           components:components
+                                count:4];
+}
+
 SkBitmap CGImageToSkBitmap(CGImageRef image) {
   if (!image)
     return SkBitmap();
@@ -212,7 +227,7 @@ SkBitmap NSImageRepToSkBitmap(
 }
 
 NSBitmapImageRep* SkBitmapToNSBitmapImageRep(const SkBitmap& skiaBitmap) {
-  base::mac::ScopedCFTypeRef<CGColorSpaceRef> color_space(
+  base::ScopedCFTypeRef<CGColorSpaceRef> color_space(
       CGColorSpaceCreateWithName(kCGColorSpaceGenericRGB));
   return SkBitmapToNSBitmapImageRepWithColorSpace(skiaBitmap, color_space);
 }
@@ -221,11 +236,11 @@ NSBitmapImageRep* SkBitmapToNSBitmapImageRepWithColorSpace(
     const SkBitmap& skiaBitmap,
     CGColorSpaceRef colorSpace) {
   // First convert SkBitmap to CGImageRef.
-  base::mac::ScopedCFTypeRef<CGImageRef> cgimage(
+  base::ScopedCFTypeRef<CGImageRef> cgimage(
       SkCreateCGImageRefWithColorspace(skiaBitmap, colorSpace));
 
   // Now convert to NSBitmapImageRep.
-  scoped_nsobject<NSBitmapImageRep> bitmap(
+  base::scoped_nsobject<NSBitmapImageRep> bitmap(
       [[NSBitmapImageRep alloc] initWithCGImage:cgimage]);
   return [bitmap.release() autorelease];
 }
@@ -235,7 +250,7 @@ NSImage* SkBitmapToNSImageWithColorSpace(const SkBitmap& skiaBitmap,
   if (skiaBitmap.isNull())
     return nil;
 
-  scoped_nsobject<NSImage> image([[NSImage alloc] init]);
+  base::scoped_nsobject<NSImage> image([[NSImage alloc] init]);
   [image addRepresentation:
       SkBitmapToNSBitmapImageRepWithColorSpace(skiaBitmap, colorSpace)];
   [image setSize:NSMakeSize(skiaBitmap.width(), skiaBitmap.height())];
@@ -243,7 +258,7 @@ NSImage* SkBitmapToNSImageWithColorSpace(const SkBitmap& skiaBitmap,
 }
 
 NSImage* SkBitmapToNSImage(const SkBitmap& skiaBitmap) {
-  base::mac::ScopedCFTypeRef<CGColorSpaceRef> colorSpace(
+  base::ScopedCFTypeRef<CGColorSpaceRef> colorSpace(
       CGColorSpaceCreateWithName(kCGColorSpaceGenericRGB));
   return SkBitmapToNSImageWithColorSpace(skiaBitmap, colorSpace.get());
 }
@@ -363,7 +378,7 @@ CGContextRef SkiaBitLocker::cgContext() {
     bitmap_.allocPixels();
     bitmap_.eraseColor(0);
   }
-  base::mac::ScopedCFTypeRef<CGColorSpaceRef> colorSpace(
+  base::ScopedCFTypeRef<CGColorSpaceRef> colorSpace(
       CGColorSpaceCreateDeviceRGB());
   cgContext_ = CGBitmapContextCreate(bitmap_.getPixels(), bitmap_.width(),
     bitmap_.height(), 8, bitmap_.rowBytes(), colorSpace, 

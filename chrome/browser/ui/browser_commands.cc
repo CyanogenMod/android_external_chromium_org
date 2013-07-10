@@ -53,9 +53,9 @@
 #include "chrome/browser/ui/webui/ntp/app_launcher_handler.h"
 #include "chrome/browser/upgrade_detector.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/devtools_agent_host.h"
@@ -375,8 +375,8 @@ void Home(Browser* browser, WindowOpenDisposition disposition) {
   // If the home page is a Google home page, add the RLZ header to the request.
   PrefService* pref_service = browser->profile()->GetPrefs();
   if (pref_service) {
-    std::string home_page = pref_service->GetString(prefs::kHomePage);
-    if (google_util::IsGoogleHomePageUrl(home_page)) {
+    if (google_util::IsGoogleHomePageUrl(
+        GURL(pref_service->GetString(prefs::kHomePage)))) {
       extra_headers = RLZTracker::GetAccessPointHttpHeader(
           RLZTracker::CHROME_HOME_PAGE);
     }
@@ -892,9 +892,9 @@ bool CanOpenTaskManager() {
 #endif
 }
 
-void OpenTaskManager(Browser* browser, bool highlight_background_resources) {
+void OpenTaskManager(Browser* browser) {
   content::RecordAction(UserMetricsAction("TaskManager"));
-  chrome::ShowTaskManager(browser, highlight_background_resources);
+  chrome::ShowTaskManager(browser);
 }
 
 void OpenFeedbackDialog(Browser* browser) {
@@ -964,10 +964,13 @@ void ToggleRequestTabletSite(Browser* browser) {
     entry->SetIsOverridingUserAgent(false);
   } else {
     entry->SetIsOverridingUserAgent(true);
+    chrome::VersionInfo version_info;
+    std::string product;
+    if (version_info.is_valid())
+      product = version_info.ProductNameAndVersionForUserAgent();
     current_tab->SetUserAgentOverride(
         webkit_glue::BuildUserAgentFromOSAndProduct(
-            kOsOverrideForTabletSite,
-            ChromeContentClient::GetProductImpl()));
+            kOsOverrideForTabletSite, product));
   }
   controller.ReloadOriginalRequestURL(true);
 }

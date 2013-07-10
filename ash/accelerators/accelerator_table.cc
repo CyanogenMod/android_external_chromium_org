@@ -74,6 +74,8 @@ const AcceleratorData kAcceleratorData[] = {
     TOUCH_HUD_MODE_CHANGE },
   { true, ui::VKEY_I, ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN | ui::EF_SHIFT_DOWN,
     TOUCH_HUD_CLEAR },
+  { true, ui::VKEY_9, ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN,
+    TOUCH_HUD_PROJECTION_TOGGLE },
   // Accessibility: Spoken feedback shortcuts. The first one is to toggle
   // spoken feedback on or off. The others are only valid when
   // spoken feedback is enabled.
@@ -109,7 +111,7 @@ const AcceleratorData kAcceleratorData[] = {
   // extended keyboard shortcuts.
   { false, ui::VKEY_LWIN, ui::EF_NONE, TOGGLE_APP_LIST },
   { false, ui::VKEY_LWIN, ui::EF_ALT_DOWN, TOGGLE_CAPS_LOCK },
-  { true, ui::VKEY_MEDIA_LAUNCH_APP2, ui::EF_NONE, TOGGLE_MAXIMIZED },
+  { true, ui::VKEY_MEDIA_LAUNCH_APP2, ui::EF_NONE, TOGGLE_FULLSCREEN },
   { true, ui::VKEY_MEDIA_LAUNCH_APP2, ui::EF_SHIFT_DOWN, TOGGLE_FULLSCREEN },
   { true, ui::VKEY_VOLUME_MUTE, ui::EF_NONE, VOLUME_MUTE },
   { true, ui::VKEY_VOLUME_DOWN, ui::EF_NONE, VOLUME_DOWN },
@@ -130,15 +132,15 @@ const AcceleratorData kAcceleratorData[] = {
   { true, ui::VKEY_S, ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN,
     SHOW_SYSTEM_TRAY_BUBBLE },
   { true, ui::VKEY_ESCAPE, ui::EF_SHIFT_DOWN, SHOW_TASK_MANAGER },
-  { true, ui::VKEY_1, ui::EF_ALT_DOWN, SELECT_WIN_0 },
-  { true, ui::VKEY_2, ui::EF_ALT_DOWN, SELECT_WIN_1 },
-  { true, ui::VKEY_3, ui::EF_ALT_DOWN, SELECT_WIN_2 },
-  { true, ui::VKEY_4, ui::EF_ALT_DOWN, SELECT_WIN_3 },
-  { true, ui::VKEY_5, ui::EF_ALT_DOWN, SELECT_WIN_4 },
-  { true, ui::VKEY_6, ui::EF_ALT_DOWN, SELECT_WIN_5 },
-  { true, ui::VKEY_7, ui::EF_ALT_DOWN, SELECT_WIN_6 },
-  { true, ui::VKEY_8, ui::EF_ALT_DOWN, SELECT_WIN_7 },
-  { true, ui::VKEY_9, ui::EF_ALT_DOWN, SELECT_LAST_WIN },
+  { true, ui::VKEY_1, ui::EF_ALT_DOWN, LAUNCH_APP_0 },
+  { true, ui::VKEY_2, ui::EF_ALT_DOWN, LAUNCH_APP_1 },
+  { true, ui::VKEY_3, ui::EF_ALT_DOWN, LAUNCH_APP_2 },
+  { true, ui::VKEY_4, ui::EF_ALT_DOWN, LAUNCH_APP_3 },
+  { true, ui::VKEY_5, ui::EF_ALT_DOWN, LAUNCH_APP_4 },
+  { true, ui::VKEY_6, ui::EF_ALT_DOWN, LAUNCH_APP_5 },
+  { true, ui::VKEY_7, ui::EF_ALT_DOWN, LAUNCH_APP_6 },
+  { true, ui::VKEY_8, ui::EF_ALT_DOWN, LAUNCH_APP_7 },
+  { true, ui::VKEY_9, ui::EF_ALT_DOWN, LAUNCH_LAST_APP },
 
   // Window management shortcuts.
   { true, ui::VKEY_OEM_4, ui::EF_ALT_DOWN, WINDOW_SNAP_LEFT },

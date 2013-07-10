@@ -16,7 +16,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "sql/sql_export.h"
 
 struct sqlite3;
@@ -223,6 +223,18 @@ class SQL_EXPORT Connection {
   // The value from Raze() is returned, with Close() called in all
   // cases.
   bool RazeAndClose();
+
+  // Delete the underlying database files associated with |path|.
+  // This should be used on a database which has no existing
+  // connections.  If any other connections are open to the same
+  // database, this could cause odd results or corruption (for
+  // instance if a hot journal is deleted but the associated database
+  // is not).
+  //
+  // Returns true if the database file and associated journals no
+  // longer exist, false otherwise.  If the database has never
+  // existed, this will return true.
+  static bool Delete(const base::FilePath& path);
 
   // Transactions --------------------------------------------------------------
 

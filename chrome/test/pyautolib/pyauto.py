@@ -288,8 +288,9 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
         '--skip-oauth-login',
         # Enables injection of test content script for webui login automation
         '--auth-ext-path=%s' % auth_ext_path,
-        # Enable automation provider and chromeos net logs
-        '--vmodule=*/browser/automation/*=2,*/chromeos/net/*=2',
+        # Enable automation provider, chromeos net and chromeos login logs
+        '--vmodule=*/browser/automation/*=2,*/chromeos/net/*=2,' +
+            '*/chromeos/login/*=2',
       ]
     else:
       return []
@@ -2994,33 +2995,6 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
       return all_data
     finally:
       shutil.rmtree(tempdir, ignore_errors=True)
-
-  def ImportSettings(self, import_from, import_items, windex=0):
-    """Import the specified import items from the specified browser.
-
-    Implements the features available in the "Import Settings" part of the
-    first-run UI dialog.
-
-    Args:
-      import_from: A string indicating which browser to import from. Possible
-                   strings (depending on which browsers are installed on the
-                   machine) are: 'Mozilla Firefox', 'Google Toolbar',
-                   'Microsoft Internet Explorer', 'Safari'
-      import_items: A list of strings indicating which items to import.
-                    Strings that can be in the list are:
-                    HISTORY, FAVORITES, PASSWORDS, SEARCH_ENGINES, HOME_PAGE,
-                    ALL (note: COOKIES is not supported by the browser yet)
-      windex: window index, defaults to 0.
-
-    Raises:
-      pyauto_errors.JSONInterfaceError if the automation call returns an error.
-    """
-    cmd_dict = {  # Prepare command for the json interface
-      'command': 'ImportSettings',
-      'import_from': import_from,
-      'import_items': import_items
-    }
-    return self._GetResultFromJSONRequest(cmd_dict, windex=windex)
 
   def AddSavedPassword(self, password_dict, windex=0):
     """Adds the given username-password combination to the saved passwords.

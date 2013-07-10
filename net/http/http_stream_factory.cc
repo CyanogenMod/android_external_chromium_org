@@ -143,6 +143,7 @@ void HttpStreamFactory::EnableNpnSpdy() {
   set_use_alternate_protocols(true);
   std::vector<std::string> next_protos;
   next_protos.push_back("http/1.1");
+  next_protos.push_back("quic");
   next_protos.push_back("spdy/2");
   SetNextProtos(next_protos);
 }
@@ -163,6 +164,7 @@ void HttpStreamFactory::EnableNpnSpdy3() {
   set_use_alternate_protocols(true);
   std::vector<std::string> next_protos;
   next_protos.push_back("http/1.1");
+  next_protos.push_back("quic");
   next_protos.push_back("spdy/2");
   next_protos.push_back("spdy/3");
   SetNextProtos(next_protos);
@@ -173,9 +175,22 @@ void HttpStreamFactory::EnableNpnSpdy31() {
   set_use_alternate_protocols(true);
   std::vector<std::string> next_protos;
   next_protos.push_back("http/1.1");
+  next_protos.push_back("quic");
   next_protos.push_back("spdy/2");
   next_protos.push_back("spdy/3");
   next_protos.push_back("spdy/3.1");
+  SetNextProtos(next_protos);
+}
+
+// static
+void HttpStreamFactory::EnableNpnSpdy4a2() {
+  set_use_alternate_protocols(true);
+  std::vector<std::string> next_protos;
+  next_protos.push_back("http/1.1");
+  next_protos.push_back("spdy/2");
+  next_protos.push_back("spdy/3");
+  next_protos.push_back("spdy/3.1");
+  next_protos.push_back("spdy/4a2");
   SetNextProtos(next_protos);
 }
 

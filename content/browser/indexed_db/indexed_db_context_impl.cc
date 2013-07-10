@@ -11,17 +11,17 @@
 #include "base/file_util.h"
 #include "base/files/file_enumerator.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/sequenced_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/threading/thread_restrictions.h"
+#include "content/browser/browser_main_loop.h"
+#include "content/browser/indexed_db/indexed_db_connection.h"
+#include "content/browser/indexed_db/indexed_db_factory.h"
 #include "content/browser/indexed_db/indexed_db_quota_client.h"
-#include "content/browser/indexed_db/webidbdatabase_impl.h"
-#include "content/browser/indexed_db/webidbfactory_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/indexed_db_info.h"
 #include "content/public/common/content_switches.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "webkit/base/file_path_string_conversions.h"
 #include "webkit/browser/database/database_util.h"
 #include "webkit/browser/quota/quota_manager.h"
 #include "webkit/browser/quota/special_storage_policy.h"
@@ -41,10 +41,12 @@ static const base::FilePath::CharType kLevelDBExtension[] =
 
 namespace {
 
+// This may be called after the IndexedDBContext is destroyed.
 void GetAllOriginsAndPaths(const base::FilePath& indexeddb_path,
                            std::vector<GURL>* origins,
                            std::vector<base::FilePath>* file_paths) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
+  // TODO(jsbell): DCHECK that this is running on an IndexedDB thread,
+  // if a global handle to it is ever available.
   if (indexeddb_path.empty())
     return;
   base::FileEnumerator file_enumerator(
@@ -62,11 +64,12 @@ void GetAllOriginsAndPaths(const base::FilePath& indexeddb_path,
   }
 }
 
-// Deletes session-only databases.
+// This will be called after the IndexedDBContext is destroyed.
 void ClearSessionOnlyOrigins(
     const base::FilePath& indexeddb_path,
     scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
+  // TODO(jsbell): DCHECK that this is running on an IndexedDB thread,
+  // if a global handle to it is ever available.
   std::vector<GURL> origins;
   std::vector<base::FilePath> file_paths;
   GetAllOriginsAndPaths(indexeddb_path, &origins, &file_paths);
@@ -80,7 +83,7 @@ void ClearSessionOnlyOrigins(
       continue;
     if (special_storage_policy->IsStorageProtected(*iter))
       continue;
-    file_util::Delete(*file_path_iter, true);
+    base::Delete(*file_path_iter, true);
   }
 }
 
@@ -90,32 +93,32 @@ IndexedDBContextImpl::IndexedDBContextImpl(
     const base::FilePath& data_path,
     quota::SpecialStoragePolicy* special_storage_policy,
     quota::QuotaManagerProxy* quota_manager_proxy,
-    base::MessageLoopProxy* webkit_thread_loop)
+    base::SequencedTaskRunner* task_runner)
     : force_keep_session_state_(false),
       special_storage_policy_(special_storage_policy),
-      quota_manager_proxy_(quota_manager_proxy) {
+      quota_manager_proxy_(quota_manager_proxy),
+      task_runner_(task_runner) {
   if (!data_path.empty())
     data_path_ = data_path.Append(kIndexedDBDirectory);
   if (quota_manager_proxy &&
       !CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess)) {
-    quota_manager_proxy->RegisterClient(
-        new IndexedDBQuotaClient(webkit_thread_loop, this));
+    quota_manager_proxy->RegisterClient(new IndexedDBQuotaClient(this));
   }
 }
 
-WebIDBFactoryImpl* IndexedDBContextImpl::GetIDBFactory() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
+IndexedDBFactory* IndexedDBContextImpl::GetIDBFactory() {
+  DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
   if (!idb_factory_) {
     // Prime our cache of origins with existing databases so we can
     // detect when dbs are newly created.
     GetOriginSet();
-    idb_factory_.reset(new content::WebIDBFactoryImpl());
+    idb_factory_ = IndexedDBFactory::Create();
   }
-  return idb_factory_.get();
+  return idb_factory_;
 }
 
 std::vector<GURL> IndexedDBContextImpl::GetAllOrigins() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
+  DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
   std::vector<GURL> origins;
   std::set<GURL>* origins_set = GetOriginSet();
   for (std::set<GURL>::const_iterator iter = origins_set->begin();
@@ -127,6 +130,7 @@ std::vector<GURL> IndexedDBContextImpl::GetAllOrigins() {
 }
 
 std::vector<IndexedDBInfo> IndexedDBContextImpl::GetAllOriginsInfo() {
+  DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
   std::vector<GURL> origins = GetAllOrigins();
   std::vector<IndexedDBInfo> result;
   for (std::vector<GURL>::const_iterator iter = origins.begin();
@@ -144,6 +148,7 @@ std::vector<IndexedDBInfo> IndexedDBContextImpl::GetAllOriginsInfo() {
 }
 
 int64 IndexedDBContextImpl::GetOriginDiskUsage(const GURL& origin_url) {
+  DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
   if (data_path_.empty() || !IsInOriginSet(origin_url))
     return 0;
   EnsureDiskUsageCacheInitialized(origin_url);
@@ -151,6 +156,7 @@ int64 IndexedDBContextImpl::GetOriginDiskUsage(const GURL& origin_url) {
 }
 
 base::Time IndexedDBContextImpl::GetOriginLastModified(const GURL& origin_url) {
+  DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
   if (data_path_.empty() || !IsInOriginSet(origin_url))
     return base::Time();
   base::FilePath idb_directory = GetFilePath(origin_url);
@@ -161,7 +167,7 @@ base::Time IndexedDBContextImpl::GetOriginLastModified(const GURL& origin_url) {
 }
 
 void IndexedDBContextImpl::DeleteForOrigin(const GURL& origin_url) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
+  DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
   ForceClose(origin_url);
   if (data_path_.empty() || !IsInOriginSet(origin_url))
     return;
@@ -169,7 +175,7 @@ void IndexedDBContextImpl::DeleteForOrigin(const GURL& origin_url) {
   base::FilePath idb_directory = GetFilePath(origin_url);
   EnsureDiskUsageCacheInitialized(origin_url);
   const bool recursive = true;
-  bool deleted = file_util::Delete(idb_directory, recursive);
+  bool deleted = base::Delete(idb_directory, recursive);
 
   QueryDiskAndUpdateQuotaUsage(origin_url);
   if (deleted) {
@@ -180,7 +186,7 @@ void IndexedDBContextImpl::DeleteForOrigin(const GURL& origin_url) {
 }
 
 void IndexedDBContextImpl::ForceClose(const GURL& origin_url) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
+  DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
   if (data_path_.empty() || !IsInOriginSet(origin_url))
     return;
 
@@ -189,9 +195,9 @@ void IndexedDBContextImpl::ForceClose(const GURL& origin_url) {
     ConnectionSet::iterator it = connections.begin();
     while (it != connections.end()) {
       // Remove before closing so callbacks don't double-erase
-      WebIDBDatabaseImpl* db = *it;
+      IndexedDBConnection* connection = *it;
       connections.erase(it++);
-      db->forceClose();
+      connection->ForceClose();
     }
     DCHECK_EQ(connections_[origin_url].size(), 0UL);
     connections_.erase(origin_url);
@@ -199,8 +205,7 @@ void IndexedDBContextImpl::ForceClose(const GURL& origin_url) {
 }
 
 base::FilePath IndexedDBContextImpl::GetFilePath(const GURL& origin_url) {
-  std::string origin_id =
-      webkit_database::GetIdentifierFromOrigin(origin_url);
+  std::string origin_id = webkit_database::GetIdentifierFromOrigin(origin_url);
   return GetIndexedDBFilePath(origin_id);
 }
 
@@ -209,8 +214,15 @@ base::FilePath IndexedDBContextImpl::GetFilePathForTesting(
   return GetIndexedDBFilePath(origin_id);
 }
 
+void IndexedDBContextImpl::SetTaskRunnerForTesting(
+    base::SequencedTaskRunner* task_runner) {
+  DCHECK(!task_runner_);
+  task_runner_ = task_runner;
+}
+
 void IndexedDBContextImpl::ConnectionOpened(const GURL& origin_url,
-                                            WebIDBDatabaseImpl* connection) {
+                                            IndexedDBConnection* connection) {
+  DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
   DCHECK_EQ(connections_[origin_url].count(connection), 0UL);
   if (quota_manager_proxy()) {
     quota_manager_proxy()->NotifyStorageAccessed(
@@ -229,7 +241,8 @@ void IndexedDBContextImpl::ConnectionOpened(const GURL& origin_url,
 }
 
 void IndexedDBContextImpl::ConnectionClosed(const GURL& origin_url,
-                                            WebIDBDatabaseImpl* connection) {
+                                            IndexedDBConnection* connection) {
+  DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
   // May not be in the map if connection was forced to close
   if (connections_.find(origin_url) == connections_.end() ||
       connections_[origin_url].count(connection) != 1)
@@ -270,15 +283,17 @@ bool IndexedDBContextImpl::IsOverQuota(const GURL& origin_url) {
 }
 
 quota::QuotaManagerProxy* IndexedDBContextImpl::quota_manager_proxy() {
-  return quota_manager_proxy_.get();
+  return quota_manager_proxy_;
 }
 
 IndexedDBContextImpl::~IndexedDBContextImpl() {
-  WebIDBFactoryImpl* factory = idb_factory_.release();
-  if (factory) {
-    if (!BrowserThread::DeleteSoon(
-            BrowserThread::WEBKIT_DEPRECATED, FROM_HERE, factory))
-      delete factory;
+  if (idb_factory_) {
+    IndexedDBFactory* factory = idb_factory_;
+    factory->AddRef();
+    idb_factory_ = NULL;
+    if (!task_runner_->ReleaseSoon(FROM_HERE, factory)) {
+      factory->Release();
+    }
   }
 
   if (data_path_.empty())
@@ -288,17 +303,14 @@ IndexedDBContextImpl::~IndexedDBContextImpl() {
     return;
 
   bool has_session_only_databases =
-      special_storage_policy_.get() &&
+      special_storage_policy_ &&
       special_storage_policy_->HasSessionOnlyOrigins();
 
   // Clearning only session-only databases, and there are none.
   if (!has_session_only_databases)
     return;
 
-  // No WEBKIT thread here means we are running in a unit test where no clean
-  // up is needed.
-  BrowserThread::PostTask(
-      BrowserThread::WEBKIT_DEPRECATED,
+  TaskRunner()->PostTask(
       FROM_HERE,
       base::Bind(
           &ClearSessionOnlyOrigins, data_path_, special_storage_policy_));
@@ -307,18 +319,16 @@ IndexedDBContextImpl::~IndexedDBContextImpl() {
 base::FilePath IndexedDBContextImpl::GetIndexedDBFilePath(
     const std::string& origin_id) const {
   DCHECK(!data_path_.empty());
-  return data_path_.AppendASCII(origin_id).
-      AddExtension(kIndexedDBExtension).
-      AddExtension(kLevelDBExtension);
+  return data_path_.AppendASCII(origin_id).AddExtension(kIndexedDBExtension)
+      .AddExtension(kLevelDBExtension);
 }
 
 int64 IndexedDBContextImpl::ReadUsageFromDisk(const GURL& origin_url) const {
   if (data_path_.empty())
     return 0;
-  std::string origin_id =
-      webkit_database::GetIdentifierFromOrigin(origin_url);
+  std::string origin_id = webkit_database::GetIdentifierFromOrigin(origin_url);
   base::FilePath file_path = GetIndexedDBFilePath(origin_id);
-  return file_util::ComputeDirectorySize(file_path);
+  return base::ComputeDirectorySize(file_path);
 }
 
 void IndexedDBContextImpl::EnsureDiskUsageCacheInitialized(
@@ -356,25 +366,24 @@ void IndexedDBContextImpl::GotUsageAndQuota(const GURL& origin_url,
     // We seem to no longer care to wait around for the answer.
     return;
   }
-  BrowserThread::PostTask(BrowserThread::WEBKIT_DEPRECATED,
-                          FROM_HERE,
-                          base::Bind(&IndexedDBContextImpl::GotUpdatedQuota,
-                                     this,
-                                     origin_url,
-                                     usage,
-                                     quota));
+  TaskRunner()->PostTask(FROM_HERE,
+                         base::Bind(&IndexedDBContextImpl::GotUpdatedQuota,
+                                    this,
+                                    origin_url,
+                                    usage,
+                                    quota));
 }
 
 void IndexedDBContextImpl::GotUpdatedQuota(const GURL& origin_url,
                                            int64 usage,
                                            int64 quota) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
+  DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
   space_available_map_[origin_url] = quota - usage;
 }
 
 void IndexedDBContextImpl::QueryAvailableQuota(const GURL& origin_url) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
+    DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
     if (quota_manager_proxy()) {
       BrowserThread::PostTask(
           BrowserThread::IO,
@@ -411,6 +420,10 @@ void IndexedDBContextImpl::ResetCaches() {
   origin_set_.reset();
   origin_size_map_.clear();
   space_available_map_.clear();
+}
+
+base::TaskRunner* IndexedDBContextImpl::TaskRunner() const {
+  return task_runner_;
 }
 
 }  // namespace content

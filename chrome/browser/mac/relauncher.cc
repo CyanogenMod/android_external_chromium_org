@@ -34,15 +34,6 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 
-// RTLD_MAIN_ONLY is supported as of Mac OS X 10.5, but <dlfcn.h> does not
-// define it in the 10.5 SDK. It is present in the 10.6 SDK and is documented
-// as working on 10.5 and later. The source code for the version of dyld that
-// shipped in 10.5, dyld-95.3/src/dyldAPIs.cpp, confirms that this feature is
-// supported. Provide a fallback definition here.
-#if MAC_OS_X_VERSION_MAX_ALLOWED == MAC_OS_X_VERSION_10_5  // 10.5 SDK
-#define RTLD_MAIN_ONLY ((void*)-5)  // Search main executable only.
-#endif
-
 namespace mac_relauncher {
 
 const char* const kRelauncherDMGDeviceArg = "--dmg-device=";
@@ -294,7 +285,7 @@ int RelauncherMain(const content::MainFunctionParams& main_parameters) {
   // won't contain the argv[0] of the relauncher process, the
   // RelauncherTypeArg() at argv[1], kRelauncherArgSeparator, or the
   // executable path of the process to be launched.
-  base::mac::ScopedCFTypeRef<CFMutableArrayRef> relaunch_args(
+  base::ScopedCFTypeRef<CFMutableArrayRef> relaunch_args(
       CFArrayCreateMutable(NULL, argc - 4, &kCFTypeArrayCallBacks));
   if (!relaunch_args) {
     LOG(ERROR) << "CFArrayCreateMutable";
@@ -335,7 +326,7 @@ int RelauncherMain(const content::MainFunctionParams& main_parameters) {
         relaunch_executable.assign(arg);
         seen_relaunch_executable = true;
       } else {
-        base::mac::ScopedCFTypeRef<CFStringRef> arg_cf(
+        base::ScopedCFTypeRef<CFStringRef> arg_cf(
             base::SysUTF8ToCFStringRef(arg));
         if (!arg_cf) {
           LOG(ERROR) << "base::SysUTF8ToCFStringRef failed for " << arg;

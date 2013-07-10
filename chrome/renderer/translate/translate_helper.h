@@ -9,7 +9,7 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/common/translate/translate_errors.h"
 #include "content/public/renderer/render_view_observer.h"
 
@@ -87,6 +87,7 @@ class TranslateHelper : public content::RenderViewObserver {
   virtual double ExecuteScriptAndGetDoubleResult(const std::string& script);
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(TranslateHelperTest, IsValidLanguageCode);
   FRIEND_TEST_ALL_PREFIXES(TranslateHelperTest, AdoptHtmlLang);
   FRIEND_TEST_ALL_PREFIXES(TranslateHelperTest,
                            CLDAgreeWithLanguageCodeHavingCountryCode);
@@ -106,8 +107,8 @@ class TranslateHelper : public content::RenderViewObserver {
   // Converts language code to the one used in server supporting list.
   static void ConvertLanguageCodeSynonym(std::string* code);
 
-  // Resets language code if the specified string is apparently invalid.
-  static void ResetInvalidLanguageCode(std::string* code);
+  // Checks if the language code's format is valid.
+  static bool IsValidLanguageCode(const std::string& code);
 
   // Applies a series of language code modification in proper order.
   static void ApplyLanguageCodeCorrection(std::string* code);
@@ -122,6 +123,11 @@ class TranslateHelper : public content::RenderViewObserver {
   // configuration.
   static bool MaybeServerWrongConfiguration(const std::string& page_language,
                                             const std::string& cld_language);
+
+  // Checks if CLD can complement a sub code when the page language doesn't
+  // know the sub code.
+  static bool CanCLDComplementSubCode(const std::string& page_language,
+                                      const std::string& cld_language);
 
   // Determines content page language from Content-Language code and contents.
   static std::string DeterminePageLanguage(const std::string& code,

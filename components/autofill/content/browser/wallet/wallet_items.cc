@@ -8,8 +8,8 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "components/autofill/browser/autofill_type.h"
-#include "components/autofill/browser/credit_card.h"
+#include "components/autofill/core/browser/autofill_type.h"
+#include "components/autofill/core/browser/credit_card.h"
 #include "googleurl/src/gurl.h"
 #include "grit/component_strings.h"
 #include "grit/webkit_resources.h"
@@ -269,8 +269,6 @@ base::string16 WalletItems::MaskedInstrument::TypeAndLastFourDigits() const {
     display_type = CreditCard::TypeForDisplay(kDiscoverCard);
   else if (type_ == MASTER_CARD)
     display_type = CreditCard::TypeForDisplay(kMasterCard);
-  else if (type_ == SOLO)
-    display_type = CreditCard::TypeForDisplay(kSoloCard);
   else if (type_ == VISA)
     display_type = CreditCard::TypeForDisplay(kVisaCard);
   else
@@ -295,14 +293,11 @@ const gfx::Image& WalletItems::MaskedInstrument::CardIcon() const {
       idr = IDR_AUTOFILL_CC_MASTERCARD;
       break;
 
-    case SOLO:
-      idr = IDR_AUTOFILL_CC_SOLO;
-      break;
-
     case VISA:
       idr = IDR_AUTOFILL_CC_VISA;
       break;
 
+    case SOLO:
     case MAESTRO:
     case SWITCH:
     case UNKNOWN:

@@ -155,9 +155,10 @@ cr.define('policy', function() {
       // Determine whether the contents of the value column overflows. The
       // visibility of the contents, replacement link and additional row
       // containing the complete value that depend on this are handled by CSS.
-      this.classList.toggle(
-          'has-overflowed-value',
-          valueContainer.offsetWidth < valueContainer.valueWidth);
+      if (valueContainer.offsetWidth < valueContainer.valueWidth)
+        this.classList.add('has-overflowed-value');
+      else
+        this.classList.remove('has-overflowed-value');
     },
 
     /**
@@ -272,8 +273,10 @@ cr.define('policy', function() {
             policy.unset && !showUnset ||
             policy.name.toLowerCase().indexOf(this.filterPattern_) == -1;
       }
-      this.parentElement.classList.toggle(
-          'empty', !this.querySelector('tbody:not([hidden])'));
+      if (this.querySelector('tbody:not([hidden])'))
+        this.parentElement.classList.remove('empty');
+      else
+        this.parentElement.classList.add('empty');
       setTimeout(this.checkOverflow_.bind(this), 0);
     },
 
@@ -319,7 +322,25 @@ cr.define('policy', function() {
    * @param {Object} names Dictionary containing all known policy names.
    */
   Page.setPolicyNames = function(names) {
-    this.getInstance().policyTable.setPolicyNames(names);
+    var page = this.getInstance();
+
+    // Clear all policy tables.
+    page.mainSection.innerHTML = '';
+    page.policyTables = {};
+
+    // Create tables and set known policy names for Chrome and extensions.
+    if (names.hasOwnProperty('chromePolicyNames')) {
+      var table = page.appendNewTable('chrome', 'Chrome policies', '');
+      table.setPolicyNames(names.chromePolicyNames);
+    }
+
+    if (names.hasOwnProperty('extensionPolicyNames')) {
+      for (var ext in names.extensionPolicyNames) {
+        var table = page.appendNewTable('extension-' + ext,
+            names.extensionPolicyNames[ext].name, 'ID: ' + ext);
+        table.setPolicyNames(names.extensionPolicyNames[ext].policyNames);
+      }
+    }
   };
 
   /**
@@ -329,7 +350,19 @@ cr.define('policy', function() {
    * @param {Object} values Dictionary containing the current policy values.
    */
   Page.setPolicyValues = function(values) {
-    this.getInstance().policyTable.setPolicyValues(values);
+    var page = this.getInstance();
+    if (values.hasOwnProperty('chromePolicies')) {
+      var table = page.policyTables['chrome'];
+      table.setPolicyValues(values.chromePolicies);
+    }
+
+    if (values.hasOwnProperty('extensionPolicies')) {
+      for (var extensionId in values.extensionPolicies) {
+        var table = page.policyTables['extension-' + extensionId];
+        if (table)
+          table.setPolicyValues(values.extensionPolicies[extensionId]);
+      }
+    }
   };
 
   /**
@@ -355,26 +388,108 @@ cr.define('policy', function() {
      */
     initialize: function() {
       uber.onContentFrameLoaded();
-      this.policyTable = $('policy-table');
-      cr.ui.decorate(this.policyTable, PolicyTable);
+
+      this.mainSection = $('main-section');
+      this.policyTables = {};
 
       // Place the initial focus on the filter input field.
       $('filter').focus();
 
       var self = this;
       $('filter').onsearch = function(event) {
-        self.policyTable.setFilterPattern(this.value);
+        for (policyTable in self.policyTables) {
+          self.policyTables[policyTable].setFilterPattern(this.value);
+        }
       };
       $('reload-policies').onclick = function(event) {
         this.disabled = true;
         chrome.send('reloadPolicies');
       };
-      $('show-unset').onchange = this.policyTable.filter.bind(this.policyTable);
+
+      $('show-unset').onchange = function() {
+        for (policyTable in self.policyTables) {
+          self.policyTables[policyTable].filter();
+        }
+      };
 
       // Notify the browser that the page has loaded, causing it to send the
       // list of all known policies, the current policy values and the cloud
       // policy status.
       chrome.send('initialized');
+    },
+
+   /**
+     * Creates a new policy table section, adds the section to the page,
+     * and returns the new table from that section.
+     * @param {string} id The key for storing the new table in policyTables.
+     * @param {string} label_title Title for this policy table.
+     * @param {string} label_content Description for the policy table.
+     * @return {Element} The newly created table.
+     */
+    appendNewTable: function(id, label_title, label_content) {
+      var newSection = this.createPolicyTableSection(id, label_title,
+          label_content);
+      this.mainSection.appendChild(newSection);
+      return this.policyTables[id];
+    },
+
+    /**
+     * Creates a new section containing a title, description and table of
+     * policies.
+     * @param {id} id The key for storing the new table in policyTables.
+     * @param {string} label_title Title for this policy table.
+     * @param {string} label_content Description for the policy table.
+     * @return {Element} The newly created section.
+     */
+    createPolicyTableSection: function(id, label_title, label_content) {
+      var section = document.createElement('section');
+      section.setAttribute('class', 'policy-table-section');
+
+      // Add title and description.
+      var title = window.document.createElement('h3');
+      title.textContent = label_title;
+      section.appendChild(title);
+
+      if (label_content) {
+        var description = window.document.createElement('div');
+        description.classList.add('table-description');
+        description.textContent = label_content;
+        section.appendChild(description);
+      }
+
+      // Add 'No Policies Set' element.
+      var noPolicies = window.document.createElement('div');
+      noPolicies.classList.add('no-policies-set');
+      noPolicies.textContent = loadTimeData.getString('noPoliciesSet');
+      section.appendChild(noPolicies);
+
+      // Add table of policies.
+      var newTable = this.createPolicyTable();
+      this.policyTables[id] = newTable;
+      section.appendChild(newTable);
+
+      return section;
+    },
+
+    /**
+     * Creates a new table for displaying policies.
+     * @return {Element} The newly created table.
+     */
+    createPolicyTable: function() {
+      var newTable = window.document.createElement('table');
+      var tableHead = window.document.createElement('thead');
+      var tableRow = window.document.createElement('tr');
+      var tableHeadings = ['headerScope', 'headerLevel',
+                           'headerName', 'headerValue', 'headerStatus'];
+      for (var i = 0; i < tableHeadings.length; i++) {
+        var tableHeader = window.document.createElement('th');
+        tableHeader.textContent = loadTimeData.getString(tableHeadings[i]);
+        tableRow.appendChild(tableHeader);
+      }
+      tableHead.appendChild(tableRow);
+      newTable.appendChild(tableHead);
+      cr.ui.decorate(newTable, PolicyTable);
+      return newTable;
     },
 
     /**
@@ -388,7 +503,7 @@ cr.define('policy', function() {
       while (container.firstChild)
         container.removeChild(container.firstChild);
       // Hide the status section.
-      var section = $('status');
+      var section = $('status-section');
       section.hidden = true;
 
       // Add a status box for each scope that has a cloud policy status.

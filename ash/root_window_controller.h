@@ -5,6 +5,8 @@
 #ifndef ASH_ROOT_WINDOW_CONTROLLER_H_
 #define ASH_ROOT_WINDOW_CONTROLLER_H_
 
+#include <map>
+
 #include "ash/ash_export.h"
 #include "ash/shelf/shelf_types.h"
 #include "ash/system/user/login_status.h"
@@ -25,6 +27,8 @@ class Point;
 }
 
 namespace views {
+class Widget;
+
 namespace corewm {
 class InputMethodEventFilter;
 class RootWindowEventFilter;
@@ -43,7 +47,10 @@ class ToplevelWindowEventHandler;
 
 namespace internal {
 
+class AlwaysOnTopController;
+class AnimatingDesktopController;
 class BootSplashScreen;
+class DesktopBackgroundWidgetController;
 class DockedWindowLayoutManager;
 class PanelLayoutManager;
 class RootWindowLayoutManager;
@@ -52,7 +59,8 @@ class ShelfLayoutManager;
 class StatusAreaWidget;
 class SystemBackgroundController;
 class SystemModalContainerLayoutManager;
-class TouchObserverHUD;
+class TouchHudDebug;
+class TouchHudProjection;
 class WorkspaceController;
 
 // This class maintains the per root window state for ash. This class
@@ -85,19 +93,50 @@ class ASH_EXPORT RootWindowController {
     return workspace_controller_.get();
   }
 
+  AlwaysOnTopController* always_on_top_controller() {
+    return always_on_top_controller_.get();
+  }
+
   ScreenDimmer* screen_dimmer() { return screen_dimmer_.get(); }
 
   // Access the shelf associated with this root window controller,
   // NULL if no such shelf exists.
   ShelfWidget* shelf() { return shelf_.get(); }
 
-  TouchObserverHUD* touch_observer_hud() { return touch_observer_hud_; }
-
-  // Sets the touch HUD. The RootWindowController will not own this HUD; its
-  // lifetime is managed by itself.
-  void set_touch_observer_hud(TouchObserverHUD* hud) {
-    touch_observer_hud_ = hud;
+  // Get touch HUDs associated with this root window controller.
+  TouchHudDebug* touch_hud_debug() const {
+    return touch_hud_debug_;
   }
+  TouchHudProjection* touch_hud_projection() const {
+    return touch_hud_projection_;
+  }
+
+  // Set touch HUDs for this root window controller. The root window controller
+  // will not own the HUDs; their lifetimes are managed by themselves. Whenever
+  // the widget showing a HUD is being destroyed (e.g. because of detaching a
+  // display), the HUD deletes itself.
+  void set_touch_hud_debug(TouchHudDebug* hud) {
+    touch_hud_debug_ = hud;
+  }
+  void set_touch_hud_projection(TouchHudProjection* hud) {
+    touch_hud_projection_ = hud;
+  }
+
+  // Enables projection touch HUD.
+  void EnableTouchHudProjection();
+
+  // Disables projection touch HUD.
+  void DisableTouchHudProjection();
+
+  DesktopBackgroundWidgetController* wallpaper_controller() {
+    return wallpaper_controller_.get();
+  }
+  void SetWallpaperController(DesktopBackgroundWidgetController* controller);
+  AnimatingDesktopController* animating_wallpaper_controller() {
+    return animating_wallpaper_controller_.get();
+  }
+  void SetAnimatingWallpaperController(AnimatingDesktopController* controller);
+
   // Access the shelf layout manager associated with this root
   // window controller, NULL if no such shelf exists.
   ShelfLayoutManager* GetShelfLayoutManager();
@@ -124,16 +163,9 @@ class ASH_EXPORT RootWindowController {
 
   aura::Window* GetContainer(int container_id);
 
-  void InitLayoutManagers();
-  void CreateContainers();
-
-  // Initializs the RootWindowController for primary display. This
-  // creates
-  void InitForPrimaryDisplay();
-
-  // Initializes |system_background_| and possibly also |boot_splash_screen_|.
-  // |is_first_run_after_boot| determines the background's initial color.
-  void CreateSystemBackground(bool is_first_run_after_boot);
+  // Initializes the RootWindowController. |first_run_after_boot| is
+  // set to true only for primary root window after boot.
+  void Init(bool first_run_after_boot);
 
   // Show launcher view if it was created hidden (before session has started).
   void ShowLauncher();
@@ -153,9 +185,11 @@ class ASH_EXPORT RootWindowController {
   // hiding animation (if the screen is non-NULL).
   void HandleInitialDesktopBackgroundAnimationStarted();
 
-  // Called when the login background is fully visible.  Updates |background_|
-  // to be black and drops |boot_splash_screen_|.
-  void HandleDesktopBackgroundVisible();
+  // Called when the wallpaper ainmation is finished. Updates |background_|
+  // to be black and drops |boot_splash_screen_| and moves the wallpaper
+  // controller into the root window controller. |widget| holds the wallpaper
+  // image, or NULL if the background is a solid color.
+  void OnWallpaperAnimationFinished(views::Widget* widget);
 
   // Deletes associated objects and clears the state, but doesn't delete
   // the root window yet. This is used to delete a secondary displays'
@@ -172,12 +206,21 @@ class ASH_EXPORT RootWindowController {
   // Force the shelf to query for it's current visibility state.
   void UpdateShelfVisibility();
 
+  // Initialize touch HUDs if necessary.
+  void InitTouchHuds();
+
   // Returns the window, if any, which is in fullscreen mode in the active
   // workspace. Exposed here so clients of Ash don't need to know the details
   // of workspace management.
   aura::Window* GetFullscreenWindow() const;
 
  private:
+  void InitLayoutManagers();
+
+  // Initializes |system_background_| and possibly also |boot_splash_screen_|.
+  // |is_first_run_after_boot| determines the background's initial color.
+  void CreateSystemBackground(bool is_first_run_after_boot);
+
   // Creates each of the special window containers that holds windows of various
   // types in the shell UI.
   void CreateContainersInRootWindow(aura::RootWindow* root_window);
@@ -206,10 +249,12 @@ class ASH_EXPORT RootWindowController {
 
   scoped_ptr<ScreenDimmer> screen_dimmer_;
   scoped_ptr<WorkspaceController> workspace_controller_;
+  scoped_ptr<AlwaysOnTopController> always_on_top_controller_;
 
-  // Heads-up display for touch events. The RootWindowController does not own
-  // this HUD; its lifetime is managed by itself.
-  TouchObserverHUD* touch_observer_hud_;
+  // Heads-up displays for touch events. These HUDs are not owned by the root
+  // window controller and manage their own lifetimes.
+  TouchHudDebug* touch_hud_debug_;
+  TouchHudProjection* touch_hud_projection_;
 
   // We need to own event handlers for various containers.
   scoped_ptr<ToplevelWindowEventHandler> default_container_handler_;
@@ -218,6 +263,9 @@ class ASH_EXPORT RootWindowController {
   scoped_ptr<ToplevelWindowEventHandler> lock_modal_container_handler_;
   scoped_ptr<ToplevelWindowEventHandler> panel_container_handler_;
   scoped_ptr<ToplevelWindowEventHandler> docked_container_handler_;
+
+  scoped_ptr<DesktopBackgroundWidgetController> wallpaper_controller_;
+  scoped_ptr<AnimatingDesktopController> animating_wallpaper_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(RootWindowController);
 };

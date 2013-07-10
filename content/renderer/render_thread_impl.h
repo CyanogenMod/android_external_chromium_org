@@ -11,9 +11,8 @@
 
 #include "base/observer_list.h"
 #include "base/strings/string16.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "build/build_config.h"
-#include "content/child/child_process.h"
 #include "content/child/child_thread.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
@@ -81,6 +80,7 @@ class InputEventFilter;
 class InputHandlerManager;
 class MediaStreamCenter;
 class MediaStreamDependencyFactory;
+class MIDIMessageFilter;
 class P2PSocketDispatcher;
 class PeerConnectionTracker;
 class RendererWebKitPlatformSupportImpl;
@@ -154,25 +154,6 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   virtual void ReleaseCachedFonts() OVERRIDE;
 #endif
 
-  // ChildThread:
-  virtual bool IsWebFrameValid(WebKit::WebFrame* frame) OVERRIDE;
-
-  // GpuChannelHostFactory implementation:
-  virtual bool IsMainThread() OVERRIDE;
-  virtual base::MessageLoop* GetMainLoop() OVERRIDE;
-  virtual scoped_refptr<base::MessageLoopProxy> GetIOLoopProxy() OVERRIDE;
-  virtual base::WaitableEvent* GetShutDownEvent() OVERRIDE;
-  virtual scoped_ptr<base::SharedMemory> AllocateSharedMemory(
-      size_t size) OVERRIDE;
-  virtual int32 CreateViewCommandBuffer(
-      int32 surface_id,
-      const GPUCreateCommandBufferConfig& init_params) OVERRIDE;
-  virtual void CreateImage(
-      gfx::PluginWindowHandle window,
-      int32 image_id,
-      const CreateImageCallback& callback) OVERRIDE;
-  virtual void DeleteImage(int32 image_id, int32 sync_point) OVERRIDE;
-
   // Synchronously establish a channel to the GPU plugin if not previously
   // established or if it has been lost (for example if the GPU plugin crashed).
   // If there is a pending asynchronous request, it will be completed by the
@@ -227,6 +208,9 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
     return audio_message_filter_.get();
   }
 
+  MIDIMessageFilter* midi_message_filter() {
+    return midi_message_filter_.get();
+  }
 
   // Creates the embedder implementation of WebMediaStreamCenter.
   // The resulting object is owned by WebKit and deleted by WebKit at tear-down.
@@ -347,7 +331,24 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
                                const std::vector<float>& new_touchscreen);
 
  private:
+  // ChildThread
   virtual bool OnControlMessageReceived(const IPC::Message& msg) OVERRIDE;
+
+  // GpuChannelHostFactory implementation:
+  virtual bool IsMainThread() OVERRIDE;
+  virtual base::MessageLoop* GetMainLoop() OVERRIDE;
+  virtual scoped_refptr<base::MessageLoopProxy> GetIOLoopProxy() OVERRIDE;
+  virtual base::WaitableEvent* GetShutDownEvent() OVERRIDE;
+  virtual scoped_ptr<base::SharedMemory> AllocateSharedMemory(
+      size_t size) OVERRIDE;
+  virtual int32 CreateViewCommandBuffer(
+      int32 surface_id,
+      const GPUCreateCommandBufferConfig& init_params) OVERRIDE;
+  virtual void CreateImage(
+      gfx::PluginWindowHandle window,
+      int32 image_id,
+      const CreateImageCallback& callback) OVERRIDE;
+  virtual void DeleteImage(int32 image_id, int32 sync_point) OVERRIDE;
 
   void Init();
 
@@ -379,6 +380,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   scoped_refptr<DBMessageFilter> db_message_filter_;
   scoped_refptr<AudioInputMessageFilter> audio_input_message_filter_;
   scoped_refptr<AudioMessageFilter> audio_message_filter_;
+  scoped_refptr<MIDIMessageFilter> midi_message_filter_;
   scoped_refptr<DevToolsAgentFilter> devtools_agent_message_filter_;
 
   scoped_ptr<MediaStreamDependencyFactory> media_stream_factory_;
@@ -424,6 +426,11 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 
   // The channel from the renderer process to the GPU process.
   scoped_refptr<GpuChannelHost> gpu_channel_;
+
+  // Cache of variables that are needed on the compositor thread by
+  // GpuChannelHostFactory methods.
+  scoped_refptr<base::MessageLoopProxy> io_message_loop_proxy_;
+  base::WaitableEvent* shutdown_event_;
 
   // A lazily initiated thread on which file operations are run.
   scoped_ptr<base::Thread> file_thread_;

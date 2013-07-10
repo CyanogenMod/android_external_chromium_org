@@ -12,7 +12,6 @@
       'dependencies': [
         '../../base/base.gyp:base_static',
         '../../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../../components/components.gyp:autofill_browser',
         '../../components/components.gyp:autofill_content_browser',
         '../../components/components.gyp:web_contents_delegate_android',
         '../../cc/cc.gyp:cc',
@@ -35,6 +34,8 @@
         'android_protocol_handler.h',
         'android_webview_jni_registrar.cc',
         'android_webview_jni_registrar.h',
+        'aw_autofill_manager_delegate.cc',
+        'aw_autofill_manager_delegate.h',
         'aw_browser_dependency_factory.cc',
         'aw_browser_dependency_factory.h',
         'aw_contents.cc',
@@ -86,6 +87,7 @@
       'type': 'none',
       'sources': [
           '../java/src/org/chromium/android_webview/AndroidProtocolHandler.java',
+          '../java/src/org/chromium/android_webview/AwAutofillManagerDelegate.java',
           '../java/src/org/chromium/android_webview/AwContents.java',
           '../java/src/org/chromium/android_webview/AwContentsClientBridge.java',
           '../java/src/org/chromium/android_webview/AwContentsIoThreadClient.java',

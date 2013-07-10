@@ -10,9 +10,10 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/task_runner.h"
 #include "base/values.h"
-#include "chrome/browser/bookmarks/imported_bookmark_entry.h"
-#include "chrome/browser/favicon/imported_favicon_usage.h"
-#include "chrome/browser/importer/profile_import_process_messages.h"
+#include "chrome/common/importer/imported_bookmark_entry.h"
+#include "chrome/common/importer/imported_favicon_usage.h"
+#include "chrome/common/importer/importer_data_types.h"
+#include "chrome/common/importer/profile_import_process_messages.h"
 #include "content/public/common/password_form.h"
 #include "ipc/ipc_sender.h"
 
@@ -103,7 +104,7 @@ void ExternalProcessImporterBridge::SetFavicons(
 }
 
 void ExternalProcessImporterBridge::SetHistoryItems(
-    const history::URLRows& rows,
+    const std::vector<ImporterURLRow>& rows,
     history::VisitSource visit_source) {
   Send(new ProfileImportProcessHostMsg_NotifyHistoryImportStart(rows.size()));
 
@@ -111,9 +112,10 @@ void ExternalProcessImporterBridge::SetHistoryItems(
   // Debug bounds-check which prevents pushing an iterator beyond its end()
   // (i.e., |it + 2 < s.end()| crashes in debug mode if |i + 1 == s.end()|).
   int rows_left = rows.end() - rows.begin();
-  for (history::URLRows::const_iterator it = rows.begin(); it < rows.end();) {
-    history::URLRows row_group;
-    history::URLRows::const_iterator end_group =
+  for (std::vector<ImporterURLRow>::const_iterator it = rows.begin();
+       it < rows.end();) {
+    std::vector<ImporterURLRow> row_group;
+    std::vector<ImporterURLRow>::const_iterator end_group =
         it + std::min(rows_left, kNumHistoryRowsToSend);
     row_group.assign(it, end_group);
 
@@ -126,11 +128,16 @@ void ExternalProcessImporterBridge::SetHistoryItems(
 }
 
 void ExternalProcessImporterBridge::SetKeywords(
-    const std::vector<TemplateURL*>& template_urls,
+    const std::vector<importer::URLKeywordInfo>& url_keywords,
     bool unique_on_host_and_path) {
-  Send(new ProfileImportProcessHostMsg_NotifyKeywordsReady(template_urls,
-      unique_on_host_and_path));
-  STLDeleteContainerPointers(template_urls.begin(), template_urls.end());
+  Send(new ProfileImportProcessHostMsg_NotifyKeywordsReady(
+      url_keywords, unique_on_host_and_path));
+}
+
+void ExternalProcessImporterBridge::SetFirefoxSearchEnginesXMLData(
+    const std::vector<std::string>& search_engine_data) {
+  Send(new ProfileImportProcessHostMsg_NotifyFirefoxSearchEngData(
+      search_engine_data));
 }
 
 void ExternalProcessImporterBridge::SetPasswordForm(

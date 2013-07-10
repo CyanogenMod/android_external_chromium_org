@@ -99,9 +99,9 @@ bool MessagePumpIOSForIO::WatchFileDescriptor(
 
   CFFileDescriptorRef fdref = controller->fdref_;
   if (fdref == NULL) {
-    base::mac::ScopedCFTypeRef<CFFileDescriptorRef> scoped_fdref(
-        CFFileDescriptorCreate(kCFAllocatorDefault, fd, false, HandleFdIOEvent,
-                               &source_context));
+    base::ScopedCFTypeRef<CFFileDescriptorRef> scoped_fdref(
+        CFFileDescriptorCreate(
+            kCFAllocatorDefault, fd, false, HandleFdIOEvent, &source_context));
     if (scoped_fdref == NULL) {
       NOTREACHED() << "CFFileDescriptorCreate failed";
       return false;
@@ -110,10 +110,9 @@ bool MessagePumpIOSForIO::WatchFileDescriptor(
     CFFileDescriptorEnableCallBacks(scoped_fdref, callback_types);
 
     // TODO(wtc): what should the 'order' argument be?
-    base::mac::ScopedCFTypeRef<CFRunLoopSourceRef> scoped_fd_source(
-        CFFileDescriptorCreateRunLoopSource(kCFAllocatorDefault,
-                                            scoped_fdref,
-                                            0));
+    base::ScopedCFTypeRef<CFRunLoopSourceRef> scoped_fd_source(
+        CFFileDescriptorCreateRunLoopSource(
+            kCFAllocatorDefault, scoped_fdref, 0));
     if (scoped_fd_source == NULL) {
       NOTREACHED() << "CFFileDescriptorCreateRunLoopSource failed";
       return false;
@@ -180,7 +179,7 @@ void MessagePumpIOSForIO::HandleFdIOEvent(CFFileDescriptorRef fdref,
   // Ensure that |fdref| will remain live for the duration of this function
   // call even if |controller| is deleted or |StopWatchingFileDescriptor()| is
   // called, either of which will cause |fdref| to be released.
-  mac::ScopedCFTypeRef<CFFileDescriptorRef> scoped_fdref(
+  ScopedCFTypeRef<CFFileDescriptorRef> scoped_fdref(
       fdref, base::scoped_policy::RETAIN);
 
   int fd = CFFileDescriptorGetNativeDescriptor(fdref);

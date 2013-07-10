@@ -69,7 +69,7 @@
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_checker.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/browser/renderer_host/media/video_capture_oracle.h"
 #include "content/browser/renderer_host/media/web_contents_capture_util.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
@@ -591,7 +591,8 @@ void ContentCaptureSubscription::Observe(
 
   // This message occurs on window resizes and visibility changes even when
   // accelerated compositing is active, so we need to filter out these cases.
-  if (!rwh || !rwh->GetView() || rwh->is_accelerated_compositing_active())
+  if (!rwh || !rwh->GetView() || (rwh->is_accelerated_compositing_active() &&
+                                  rwh->GetView()->IsSurfaceAvailableForCopy()))
     return;
 
   TRACE_EVENT1("mirroring", "ContentCaptureSubscription::Observe",
@@ -873,8 +874,8 @@ RenderWidgetHost* CaptureMachine::GetTarget() {
   RenderWidgetHost* rwh = NULL;
   if (fullscreen_widget_id_ != MSG_ROUTING_NONE) {
     RenderProcessHost* process = web_contents()->GetRenderProcessHost();
-    rwh = process ? process->GetRenderWidgetHostByID(fullscreen_widget_id_)
-                  : NULL;
+    if (process)
+      rwh = RenderWidgetHost::FromID(process->GetID(), fullscreen_widget_id_);
   } else {
     rwh = web_contents()->GetRenderViewHost();
   }
@@ -1237,14 +1238,13 @@ media::VideoCaptureDevice* WebContentsVideoCaptureDevice::Create(
                                                        &render_view_id))
     return NULL;
 
-  media::VideoCaptureDevice::Name name;
-  base::SStringPrintf(&name.device_name,
+  std::string device_name;
+  base::SStringPrintf(&device_name,
                       "WebContents[%.*s]",
                       static_cast<int>(device_id.size()), device_id.data());
-  name.unique_id = device_id;
-
   return new WebContentsVideoCaptureDevice(
-      name, render_process_id, render_view_id);
+      media::VideoCaptureDevice::Name(device_name, device_id),
+      render_process_id, render_view_id);
 }
 
 void WebContentsVideoCaptureDevice::Allocate(

@@ -14,7 +14,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_offset_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "cc/layers/texture_layer.h"
 #include "ppapi/c/dev/ppb_find_dev.h"
 #include "ppapi/c/dev/ppb_zoom_dev.h"
@@ -2212,6 +2212,7 @@ PP_Bool PluginInstance::GetScreenSize(PP_Instance instance, PP_Size* size) {
     case ::ppapi::FLASH_FILE_SINGLETON_ID:
     case ::ppapi::FLASH_FULLSCREEN_SINGLETON_ID:
     case ::ppapi::FLASH_SINGLETON_ID:
+    case ::ppapi::NETWORK_PROXY_SINGLETON_ID:
     case ::ppapi::PDF_SINGLETON_ID:
     case ::ppapi::TRUETYPE_FONT_SINGLETON_ID:
       NOTIMPLEMENTED();

@@ -13,7 +13,6 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "googleurl/src/gurl.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
@@ -21,6 +20,7 @@
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebPlugin.h"
 #include "ui/gfx/native_widget_types.h"
+#include "url/gurl.h"
 #include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/webkit_plugins_export.h"
 
@@ -239,7 +239,9 @@ class WEBKIT_PLUGINS_EXPORT WebPluginImpl :
 
   // Handles HTTP multipart responses, i.e. responses received with a HTTP
   // status code of 206.
-  void HandleHttpMultipartResponse(const WebKit::WebURLResponse& response,
+  // Returns false if response is not multipart (may be if we requested
+  // single range).
+  bool HandleHttpMultipartResponse(const WebKit::WebURLResponse& response,
                                    WebPluginResourceClient* client);
 
   void HandleURLRequestInternal(const char* url,

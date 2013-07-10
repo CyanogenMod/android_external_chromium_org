@@ -10,7 +10,7 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "sync/protocol/sync.pb.h"
 
 namespace syncer {
@@ -58,6 +58,10 @@ class DataTypeTracker {
 
   // Returns the most recent invalidation payload.
   std::string GetMostRecentInvalidationPayload() const;
+
+  // Fills in the legacy invalidaiton payload information fields.
+  void SetLegacyNotificationHint(
+      sync_pb::DataTypeProgressMarker* progress) const;
 
   // Fills some type-specific contents of a GetUpdates request protobuf.  These
   // messages provide the server with the information it needs to decide how to

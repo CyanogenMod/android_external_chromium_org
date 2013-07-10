@@ -11,7 +11,7 @@
 #include "base/shared_memory.h"
 #include "base/values.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/permissions/bluetooth_device_permission_data.h"
+#include "chrome/common/extensions/permissions/bluetooth_permission_data.h"
 #include "chrome/common/extensions/permissions/media_galleries_permission_data.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/common/extensions/permissions/socket_permission_data.h"
@@ -171,10 +171,6 @@ IPC_STRUCT_TRAITS_BEGIN(extensions::SocketPermissionData)
   IPC_STRUCT_TRAITS_MEMBER(match_subdomains())
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(extensions::BluetoothDevicePermissionData)
-  IPC_STRUCT_TRAITS_MEMBER(device_address())
-IPC_STRUCT_TRAITS_END()
-
 IPC_STRUCT_TRAITS_BEGIN(extensions::UsbDevicePermissionData)
   IPC_STRUCT_TRAITS_MEMBER(vendor_id())
   IPC_STRUCT_TRAITS_MEMBER(product_id())
@@ -182,6 +178,10 @@ IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(extensions::MediaGalleriesPermissionData)
   IPC_STRUCT_TRAITS_MEMBER(permission())
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(extensions::BluetoothPermissionData)
+  IPC_STRUCT_TRAITS_MEMBER(uuid())
 IPC_STRUCT_TRAITS_END()
 
 // Singly-included section for custom IPC traits.
@@ -426,7 +426,7 @@ IPC_MESSAGE_ROUTED4(ExtensionMsg_DispatchOnConnect,
 // Deliver a message sent with ExtensionHostMsg_PostMessage.
 IPC_MESSAGE_ROUTED2(ExtensionMsg_DeliverMessage,
                     int /* target_port_id */,
-                    base::ListValue /* message args, a 0-or-1 length list */)
+                    std::string /* message */)
 
 // Dispatch the Port.onDisconnect event for message channels.
 IPC_MESSAGE_ROUTED2(ExtensionMsg_DispatchOnDisconnect,
@@ -536,7 +536,7 @@ IPC_SYNC_MESSAGE_CONTROL4_1(ExtensionHostMsg_OpenChannelToTab,
 // by ViewHostMsg_OpenChannelTo*.
 IPC_MESSAGE_ROUTED2(ExtensionHostMsg_PostMessage,
                     int /* port_id */,
-                    base::ListValue /* message args, a 0-or-1 length list */)
+                    std::string /* message */)
 
 // Send a message to an extension process.  The handle is the value returned
 // by ViewHostMsg_OpenChannelTo*.

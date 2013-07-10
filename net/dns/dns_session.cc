@@ -11,7 +11,7 @@
 #include "base/metrics/sample_vector.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
 #include "net/dns/dns_config_service.h"
@@ -64,7 +64,7 @@ base::LazyInstance<DnsSession::RttBuckets>::Leaky DnsSession::rtt_buckets_ =
     LAZY_INSTANCE_INITIALIZER;
 
 DnsSession::RttBuckets::RttBuckets() : base::BucketRanges(kRTTBucketCount + 1) {
-  base::Histogram::InitializeBucketRanges(1, 5000, kRTTBucketCount, this);
+  base::Histogram::InitializeBucketRanges(1, 5000, this);
 }
 
 DnsSession::SocketLease::SocketLease(scoped_refptr<DnsSession> session,

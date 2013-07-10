@@ -8,12 +8,12 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "chrome/browser/favicon/favicon_types.h"
 #include "chrome/browser/favicon/favicon_util.h"
-#include "chrome/browser/favicon/imported_favicon_usage.h"
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/select_favicon_frames.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
+#include "chrome/common/importer/imported_favicon_usage.h"
 #include "chrome/common/url_constants.h"
 #include "extensions/common/constants.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -314,6 +314,8 @@ void FaviconService::RunFaviconImageCallbackWithBitmapResults(
       favicon_bitmap_results,
       FaviconUtil::GetFaviconScaleFactors(),
       desired_size_in_dip);
+  FaviconUtil::SetFaviconColorSpace(&image_result.image);
+
   image_result.icon_url = image_result.image.IsEmpty() ?
       GURL() : favicon_bitmap_results[0].icon_url;
   callback.Run(image_result);

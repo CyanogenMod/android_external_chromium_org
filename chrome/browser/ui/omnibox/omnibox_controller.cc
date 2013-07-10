@@ -25,23 +25,6 @@
 #include "extensions/common/constants.h"
 #include "ui/gfx/rect.h"
 
-using predictors::AutocompleteActionPredictor;
-
-namespace {
-
-string16 GetDefaultSearchProviderKeyword(Profile* profile) {
-  TemplateURLService* template_url_service =
-      TemplateURLServiceFactory::GetForProfile(profile);
-  if (template_url_service) {
-    TemplateURL* template_url =
-        template_url_service->GetDefaultSearchProvider();
-    if (template_url)
-      return template_url->keyword();
-  }
-  return string16();
-}
-
-}  // namespace
 
 OmniboxController::OmniboxController(OmniboxEditModel* omnibox_edit_model,
                                      Profile* profile)
@@ -59,6 +42,7 @@ OmniboxController::~OmniboxController() {
 void OmniboxController::StartAutocomplete(
     string16 user_text,
     size_t cursor_position,
+    const GURL& current_url,
     bool prevent_inline_autocomplete,
     bool prefer_keyword,
     bool allow_exact_keyword_match,
@@ -66,20 +50,6 @@ void OmniboxController::StartAutocomplete(
   ClearPopupKeywordMode();
   popup_->SetHoveredLine(OmniboxPopupModel::kNoMatch);
 
-#if defined(HTML_INSTANT_EXTENDED_POPUP)
-  InstantController* instant_controller = GetInstantController();
-  if (instant_controller) {
-    instant_controller->OnAutocompleteStart();
-    // If the embedded page for InstantExtended is fetching its own suggestions,
-    // suppress search suggestions from SearchProvider. We still need
-    // SearchProvider to run for FinalizeInstantQuery.
-    // TODO(dcblack): Once we are done refactoring the omnibox so we don't need
-    // to use FinalizeInstantQuery anymore, we can take out this check and
-    // remove this provider from kInstantExtendedOmniboxProviders.
-    if (instant_controller->WillFetchCompletions())
-      autocomplete_controller_->search_provider()->SuppressSearchSuggestions();
-  }
-#endif
   if (chrome::IsInstantExtendedAPIEnabled()) {
     autocomplete_controller_->search_provider()->
         SetOmniboxStartMargin(omnibox_start_margin);
@@ -88,7 +58,7 @@ void OmniboxController::StartAutocomplete(
   // We don't explicitly clear OmniboxPopupModel::manually_selected_match, as
   // Start ends up invoking OmniboxPopupModel::OnResultChanged which clears it.
   autocomplete_controller_->Start(AutocompleteInput(
-      user_text, cursor_position, string16(), GURL(),
+      user_text, cursor_position, string16(), current_url,
       prevent_inline_autocomplete, prefer_keyword, allow_exact_keyword_match,
       AutocompleteInput::ALL_MATCHES));
 }
@@ -121,7 +91,7 @@ void OmniboxController::OnResultChanged(bool default_match_changed) {
 
       if (!prerender::IsOmniboxEnabled(profile_))
         DoPreconnect(*match);
-      omnibox_edit_model_->OnCurrentMatchChanged(false);
+      omnibox_edit_model_->OnCurrentMatchChanged();
     } else {
       InvalidateCurrentMatch();
       popup_->OnResultChanged();
@@ -132,137 +102,21 @@ void OmniboxController::OnResultChanged(bool default_match_changed) {
     popup_->OnResultChanged();
   }
 
-  // TODO(beaudoin): This may no longer be needed now that instant classic is
-  // gone.
-  if (popup_->IsOpen()) {
-    // The popup size may have changed, let instant know.
-    OnPopupBoundsChanged(popup_->view()->GetTargetBounds());
-
-#if defined(HTML_INSTANT_EXTENDED_POPUP)
-    InstantController* instant_controller = GetInstantController();
-    if (instant_controller && !omnibox_edit_model_->in_revert()) {
-      instant_controller->HandleAutocompleteResults(
-          *autocomplete_controller_->providers(),
-          autocomplete_controller_->result());
-    }
-#endif
-  } else if (was_open) {
+  if (!popup_->IsOpen() && was_open) {
     // Accept the temporary text as the user text, because it makes little sense
     // to have temporary text when the popup is closed.
     omnibox_edit_model_->AcceptTemporaryTextAsUserText();
-    // The popup has been closed, let instant know.
-    OnPopupBoundsChanged(gfx::Rect());
   }
-}
-
-bool OmniboxController::DoInstant(const AutocompleteMatch& match,
-                                  string16 user_text,
-                                  string16 full_text,
-                                  size_t selection_start,
-                                  size_t selection_end,
-                                  bool user_input_in_progress,
-                                  bool in_escape_handler,
-                                  bool just_deleted_text,
-                                  bool keyword_is_selected) {
-#if defined(HTML_INSTANT_EXTENDED_POPUP)
-  InstantController* instant_controller = GetInstantController();
-  if (!instant_controller)
-    return false;
-
-  // Remove "?" if we're in forced query mode.
-  AutocompleteInput::RemoveForcedQueryStringIfNecessary(
-      autocomplete_controller_->input().type(), &user_text);
-  AutocompleteInput::RemoveForcedQueryStringIfNecessary(
-      autocomplete_controller_->input().type(), &full_text);
-  return instant_controller->Update(
-      match, user_text, full_text, selection_start, selection_end,
-      UseVerbatimInstant(just_deleted_text), user_input_in_progress,
-      popup_->IsOpen(), in_escape_handler, keyword_is_selected);
-#else
-  return false;
-#endif
-}
-
-void OmniboxController::FinalizeInstantQuery(
-    const string16& input_text,
-    const InstantSuggestion& suggestion) {
-// Should only get called for the HTML popup.
-#if defined(HTML_INSTANT_EXTENDED_POPUP)
-  if (!popup_model()->result().empty()) {
-    // We need to finalize the instant query in all cases where the
-    // |popup_model| holds some result. It is not enough to check whether the
-    // popup is open, since when an IME is active the popup may be closed while
-    // |popup_model| contains a non-empty result.
-    SearchProvider* search_provider =
-        autocomplete_controller_->search_provider();
-    // There may be no providers during testing; guard against that.
-    if (search_provider)
-      search_provider->FinalizeInstantQuery(input_text, suggestion);
-  }
-#endif
 }
 
 void OmniboxController::SetInstantSuggestion(
     const InstantSuggestion& suggestion) {
-// Should only get called for the HTML popup.
-#if defined(HTML_INSTANT_EXTENDED_POPUP)
-  switch (suggestion.behavior) {
-    case INSTANT_COMPLETE_NOW:
-      // Set blue suggestion text.
-      // TODO(beaudoin): This currently goes to the SearchProvider. Instead we
-      // should just create a valid current_match_ and call
-      // omnibox_edit_model_->OnCurrentMatchChanged. This way we can get rid of
-      // FinalizeInstantQuery entirely.
-      if (!suggestion.text.empty())
-        FinalizeInstantQuery(omnibox_edit_model_->GetViewText(), suggestion);
-      return;
-
-    case INSTANT_COMPLETE_NEVER: {
-      DCHECK_EQ(INSTANT_SUGGESTION_SEARCH, suggestion.type);
-
-      // Set gray suggestion text.
-      // Remove "?" if we're in forced query mode.
-      gray_suggestion_ = suggestion.text;
-
-      // TODO(beaudoin): The following should no longer be needed once the
-      // instant suggestion no longer goes through the search provider.
-      SearchProvider* search_provider =
-          autocomplete_controller_->search_provider();
-      if (search_provider)
-        search_provider->ClearInstantSuggestion();
-
-      omnibox_edit_model_->OnGrayTextChanged();
-      return;
-    }
-
-    case INSTANT_COMPLETE_REPLACE:
-      // Replace the entire omnibox text by the suggestion the user just arrowed
-      // to.
-      CreateAndSetInstantMatch(suggestion.text, suggestion.text,
-                               suggestion.type == INSTANT_SUGGESTION_SEARCH ?
-                                   AutocompleteMatchType::SEARCH_SUGGEST :
-                                   AutocompleteMatchType::URL_WHAT_YOU_TYPED);
-
-      omnibox_edit_model_->OnCurrentMatchChanged(true);
-      return;
-  }
-#endif
+  // TODO(jered): Delete this.
 }
 
 void OmniboxController::InvalidateCurrentMatch() {
   current_match_ = AutocompleteMatch();
 }
-
-const AutocompleteMatch& OmniboxController::CurrentMatch(
-    GURL* alternate_nav_url) const {
-  if (alternate_nav_url && current_match_.destination_url.is_valid()) {
-    *alternate_nav_url = AutocompleteResult::ComputeAlternateNavUrl(
-        autocomplete_controller_->input(), current_match_);
-  }
-
-  return current_match_;
-}
-
 
 void OmniboxController::ClearPopupKeywordMode() const {
   if (popup_->IsOpen() &&
@@ -278,18 +132,12 @@ void OmniboxController::DoPreconnect(const AutocompleteMatch& match) {
     if (profile_->GetNetworkPredictor()) {
       profile_->GetNetworkPredictor()->AnticipateOmniboxUrl(
           match.destination_url,
-          AutocompleteActionPredictor::IsPreconnectable(match));
+          predictors::AutocompleteActionPredictor::IsPreconnectable(match));
     }
     // We could prefetch the alternate nav URL, if any, but because there
     // can be many of these as a user types an initial series of characters,
     // the OS DNS cache could suffer eviction problems for minimal gain.
   }
-}
-
-void OmniboxController::OnPopupBoundsChanged(const gfx::Rect& bounds) {
-  InstantController* instant_controller = GetInstantController();
-  if (instant_controller)
-    instant_controller->SetPopupBounds(bounds);
 }
 
 bool OmniboxController::UseVerbatimInstant(bool just_deleted_text) const {
@@ -320,11 +168,17 @@ void OmniboxController::CreateAndSetInstantMatch(
     string16 query_string,
     string16 input_text,
     AutocompleteMatchType::Type match_type) {
-  string16 keyword = GetDefaultSearchProviderKeyword(profile_);
-  if (keyword.empty())
-    return;  // CreateSearchSuggestion needs a keyword.
+  TemplateURLService* template_url_service =
+      TemplateURLServiceFactory::GetForProfile(profile_);
+  if (!template_url_service)
+    return;
+
+  TemplateURL* template_url =
+      template_url_service->GetDefaultSearchProvider();
+  if (!template_url)
+    return;
 
   current_match_ = SearchProvider::CreateSearchSuggestion(
-      profile_, NULL, AutocompleteInput(), query_string, input_text, 0,
-      match_type, 0, false, keyword, -1);
+      NULL, 0, match_type, template_url, query_string, input_text,
+      AutocompleteInput(), false, 0, -1, true);
 }

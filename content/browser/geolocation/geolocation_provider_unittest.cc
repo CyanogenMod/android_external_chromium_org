@@ -8,13 +8,12 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/strings/string16.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/browser/geolocation/geolocation_provider_impl.h"
 #include "content/browser/geolocation/mock_location_arbitrator.h"
 #include "content/public/browser/access_token_store.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread.h"
-#include "googleurl/src/gurl.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -97,7 +96,7 @@ class GeopositionEqMatcher
     *os << "which matches the expected position";
   }
 
-  virtual void DescribeNegationTo(::std::ostream* os) const OVERRIDE{
+  virtual void DescribeNegationTo(::std::ostream* os) const OVERRIDE {
     *os << "which does not match the expected position";
   }
 

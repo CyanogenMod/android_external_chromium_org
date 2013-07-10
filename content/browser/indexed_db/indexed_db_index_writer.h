@@ -17,13 +17,8 @@
 
 namespace content {
 
-class IndexedDBDatabase;
 class IndexedDBTransaction;
 struct IndexedDBObjectStoreMetadata;
-
-// TODO(alecflett): this namespace is temporary until we move its contents out
-// to their own home.
-namespace IndexedDBObjectStoreImpl {
 
 class IndexWriter {
  public:
@@ -39,7 +34,7 @@ class IndexWriter {
                        int64 index_id,
                        bool* can_add_keys,
                        const IndexedDBKey& primary_key,
-                       string16* error_message = 0) const WARN_UNUSED_RESULT;
+                       string16* error_message) const WARN_UNUSED_RESULT;
 
   void WriteIndexKeys(const IndexedDBBackingStore::RecordIdentifier& record,
                       IndexedDBBackingStore* store,
@@ -75,7 +70,6 @@ bool MakeIndexWriters(
     ScopedVector<IndexWriter>* index_writers,
     string16* error_message,
     bool* completed) WARN_UNUSED_RESULT;
-};
 
 }  // namespace content
 

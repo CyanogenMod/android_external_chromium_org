@@ -4,29 +4,22 @@
 
 #include "webkit/glue/simple_webmimeregistry_impl.h"
 
+#include "base/files/file_path.h"
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "media/filters/stream_parser_factory.h"
 #include "net/base/mime_util.h"
 #include "third_party/WebKit/public/platform/WebString.h"
-#include "webkit/base/file_path_string_conversions.h"
-#include "webkit/renderer/media/crypto/key_systems.h"
 
 using WebKit::WebString;
 using WebKit::WebMimeRegistry;
 
-namespace {
+namespace webkit_glue {
 
-// Convert a WebString to ASCII, falling back on an empty string in the case
-// of a non-ASCII string.
-std::string ToASCIIOrEmpty(const WebString& string) {
+//static
+std::string SimpleWebMimeRegistryImpl::ToASCIIOrEmpty(const WebString& string) {
   return IsStringASCII(string) ? UTF16ToASCII(string) : std::string();
 }
-
-}  // namespace
-
-namespace webkit_glue {
 
 WebMimeRegistry::SupportsType SimpleWebMimeRegistryImpl::supportsMIMEType(
     const WebString& mime_type) {
@@ -51,72 +44,23 @@ WebMimeRegistry::SupportsType
 // see TestShellWebMimeRegistryImpl.
 WebMimeRegistry::SupportsType SimpleWebMimeRegistryImpl::supportsMediaMIMEType(
     const WebString& mime_type, const WebString& codecs) {
-  return supportsMediaMIMEType(mime_type, codecs, WebString());
+  // Media features are only supported at the content/ layer.
+  return IsNotSupported;
 }
 
 WebMimeRegistry::SupportsType SimpleWebMimeRegistryImpl::supportsMediaMIMEType(
     const WebString& mime_type,
     const WebString& codecs,
     const WebString& key_system) {
-  const std::string mime_type_ascii = ToASCIIOrEmpty(mime_type);
-  // Not supporting the container is a flat-out no.
-  if (!net::IsSupportedMediaMimeType(mime_type_ascii))
-    return IsNotSupported;
-
-  if (!key_system.isEmpty()) {
-    // Check whether the key system is supported with the mime_type and codecs.
-
-    // Not supporting the key system is a flat-out no.
-    if (!webkit_media::IsSupportedKeySystem(key_system))
-      return IsNotSupported;
-
-    std::vector<std::string> strict_codecs;
-    bool strip_suffix = !net::IsStrictMediaMimeType(mime_type_ascii);
-    net::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, strip_suffix);
-
-    if (!webkit_media::IsSupportedKeySystemWithMediaMimeType(
-            mime_type_ascii, strict_codecs, ToASCIIOrEmpty(key_system)))
-      return IsNotSupported;
-
-    // Continue processing the mime_type and codecs.
-  }
-
-  // Check list of strict codecs to see if it is supported.
-  if (net::IsStrictMediaMimeType(mime_type_ascii)) {
-    // We support the container, but no codecs were specified.
-    if (codecs.isNull())
-      return MayBeSupported;
-
-    // Check if the codecs are a perfect match.
-    std::vector<std::string> strict_codecs;
-    net::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, false);
-    if (!net::IsSupportedStrictMediaMimeType(mime_type_ascii, strict_codecs))
-      return IsNotSupported;
-
-    // Good to go!
-    return IsSupported;
-  }
-
-  // If we don't recognize the codec, it's possible we support it.
-  std::vector<std::string> parsed_codecs;
-  net::ParseCodecString(ToASCIIOrEmpty(codecs), &parsed_codecs, true);
-  if (!net::AreSupportedMediaCodecs(parsed_codecs))
-    return MayBeSupported;
-
-  // Otherwise we have a perfect match.
-  return IsSupported;
+  // Media features are only supported at the content/ layer.
+  return IsNotSupported;
 }
 
 bool SimpleWebMimeRegistryImpl::supportsMediaSourceMIMEType(
-    const WebKit::WebString& mime_type,
+    const WebString& mime_type,
     const WebString& codecs) {
-  const std::string mime_type_ascii = ToASCIIOrEmpty(mime_type);
-  std::vector<std::string> parsed_codec_ids;
-  net::ParseCodecString(ToASCIIOrEmpty(codecs), &parsed_codec_ids, false);
-  if (mime_type_ascii.empty() || parsed_codec_ids.size() == 0)
-    return false;
-  return media::StreamParserFactory::IsTypeSupported(
-      mime_type_ascii, parsed_codec_ids);
+  // Media features are only supported at the content/ layer.
+  return IsNotSupported;
 }
 
 WebMimeRegistry::SupportsType
@@ -130,24 +74,24 @@ WebString SimpleWebMimeRegistryImpl::mimeTypeForExtension(
     const WebString& file_extension) {
   std::string mime_type;
   net::GetMimeTypeFromExtension(
-      webkit_base::WebStringToFilePathString(file_extension), &mime_type);
-  return ASCIIToUTF16(mime_type);
+      base::FilePath::FromUTF16Unsafe(file_extension).value(), &mime_type);
+  return WebString::fromUTF8(mime_type);
 }
 
 WebString SimpleWebMimeRegistryImpl::wellKnownMimeTypeForExtension(
     const WebString& file_extension) {
   std::string mime_type;
   net::GetWellKnownMimeTypeFromExtension(
-      webkit_base::WebStringToFilePathString(file_extension), &mime_type);
-  return ASCIIToUTF16(mime_type);
+      base::FilePath::FromUTF16Unsafe(file_extension).value(), &mime_type);
+  return WebString::fromUTF8(mime_type);
 }
 
 WebString SimpleWebMimeRegistryImpl::mimeTypeFromFile(
     const WebString& file_path) {
   std::string mime_type;
-  net::GetMimeTypeFromFile(webkit_base::WebStringToFilePath(file_path),
+  net::GetMimeTypeFromFile(base::FilePath::FromUTF16Unsafe(file_path),
                            &mime_type);
-  return ASCIIToUTF16(mime_type);
+  return WebString::fromUTF8(mime_type);
 }
 
 WebString SimpleWebMimeRegistryImpl::preferredExtensionForMIMEType(
@@ -155,7 +99,7 @@ WebString SimpleWebMimeRegistryImpl::preferredExtensionForMIMEType(
   base::FilePath::StringType file_extension;
   net::GetPreferredExtensionForMimeType(ToASCIIOrEmpty(mime_type),
                                         &file_extension);
-  return webkit_base::FilePathStringToWebString(file_extension);
+  return base::FilePath(file_extension).AsUTF16Unsafe();
 }
 
 }  // namespace webkit_glue

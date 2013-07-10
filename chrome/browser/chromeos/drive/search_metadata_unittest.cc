@@ -67,14 +67,18 @@ class SearchMetadataTest : public testing::Test {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     fake_free_disk_space_getter_.reset(new FakeFreeDiskSpaceGetter);
 
-    cache_.reset(new internal::FileCache(temp_dir_.path(),
-                                         temp_dir_.path(),
-                                         base::MessageLoopProxy::current(),
-                                         fake_free_disk_space_getter_.get()));
+    metadata_storage_.reset(new ResourceMetadataStorage(
+        temp_dir_.path(), base::MessageLoopProxy::current()));
+    ASSERT_TRUE(metadata_storage_->Initialize());
+
+    cache_.reset(new FileCache(metadata_storage_.get(),
+                               temp_dir_.path(),
+                               base::MessageLoopProxy::current(),
+                               fake_free_disk_space_getter_.get()));
     ASSERT_TRUE(cache_->Initialize());
 
     resource_metadata_.reset(
-        new ResourceMetadata(temp_dir_.path(),
+        new ResourceMetadata(metadata_storage_.get(),
                              base::MessageLoopProxy::current()));
     ASSERT_EQ(FILE_ERROR_OK, resource_metadata_->Initialize());
 
@@ -188,6 +192,8 @@ class SearchMetadataTest : public testing::Test {
   content::TestBrowserThreadBundle thread_bundle_;
   base::ScopedTempDir temp_dir_;
   scoped_ptr<FakeFreeDiskSpaceGetter> fake_free_disk_space_getter_;
+  scoped_ptr<ResourceMetadataStorage,
+             test_util::DestroyHelperForTests> metadata_storage_;
   scoped_ptr<ResourceMetadata, test_util::DestroyHelperForTests>
       resource_metadata_;
   scoped_ptr<FileCache, test_util::DestroyHelperForTests> cache_;
@@ -550,28 +556,6 @@ TEST(SearchMetadataSimpleTest, FindAndHighlight_IgnoreCase) {
   std::string highlighted_text;
   EXPECT_TRUE(FindAndHighlight("HeLLo", "hello", &highlighted_text));
   EXPECT_EQ("<b>HeLLo</b>", highlighted_text);
-}
-
-TEST(SearchMetadataSimpleTest, FindAndHighlight_IgnoreCaseNonASCII) {
-  std::string highlighted_text;
-
-  // Case and accent ignorance in Greek. Find "socra" in "Socra'tes".
-  EXPECT_TRUE(FindAndHighlight(
-      "\xCE\xA3\xCF\x89\xCE\xBA\xCF\x81\xCE\xAC\xCF\x84\xCE\xB7\xCF\x82",
-      "\xCF\x83\xCF\x89\xCE\xBA\xCF\x81\xCE\xB1", &highlighted_text));
-  EXPECT_EQ(
-      "<b>\xCE\xA3\xCF\x89\xCE\xBA\xCF\x81\xCE\xAC</b>\xCF\x84\xCE\xB7\xCF\x82",
-      highlighted_text);
-
-  // In Japanese characters.
-  // Find Hiragana "pi" + "(small)ya" in Katakana "hi" + semi-voiced-mark + "ya"
-  EXPECT_TRUE(FindAndHighlight(
-      "\xE3\x81\xB2\xE3\x82\x9A\xE3\x82\x83\xE3\x83\xBC",
-      "\xE3\x83\x94\xE3\x83\xA4",
-      &highlighted_text));
-  EXPECT_EQ(
-      "<b>\xE3\x81\xB2\xE3\x82\x9A\xE3\x82\x83</b>\xE3\x83\xBC",
-      highlighted_text);
 }
 
 TEST(SearchMetadataSimpleTest, FindAndHighlight_MetaChars) {

@@ -9,7 +9,7 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/strings/stringprintf.h"
-#include "chrome/browser/media_galleries/fileapi/picasa/picasa_album_table_reader.h"
+#include "chrome/common/media_galleries/picasa_types.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 
@@ -89,13 +89,20 @@ void PicasaDataProvider::UniquifyNames(const std::vector<AlbumInfo>& info_list,
 }
 
 bool PicasaDataProvider::ReadData() {
-  PicasaAlbumTableReader album_table_reader(database_path_);
-
-  if (!album_table_reader.Init())
-    return false;
-
-  InitializeWith(album_table_reader.albums(),
-                 album_table_reader.folders());
+  // TODO(tommycli): Disabled until utility process host client implemented.
+  // PicasaAlbumTableFiles album_table_files(database_path_);
+  // PicasaAlbumTableReader album_table_reader((album_table_files));
+  //
+  // bool read_success = album_table_reader.Init();
+  //
+  // ClosePicasaAlbumTableFiles(&album_table_files);
+  //
+  // if (read_success) {
+  //   InitializeWith(album_table_reader.albums(),
+  //                  album_table_reader.folders());
+  // }
+  //
+  //  return read_success;
 
   return true;
 }

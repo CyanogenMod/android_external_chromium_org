@@ -35,6 +35,9 @@ extern const char kDisableBackingStoreLimit[];
 CONTENT_EXPORT extern const char kDisableDatabases[];
 extern const char kDisableDesktopNotifications[];
 CONTENT_EXPORT extern const char kDisableDeviceOrientation[];
+#if defined(OS_CHROMEOS)
+CONTENT_EXPORT extern const char kEnableEncodedScreenCapture[];
+#endif
 #if defined(OS_ANDROID)
 CONTENT_EXPORT extern const char kEnableExperimentalWebGL[];
 #else
@@ -63,6 +66,7 @@ CONTENT_EXPORT extern const char kDisableJavaScript[];
 extern const char kDisableJavaScriptI18NAPI[];
 CONTENT_EXPORT extern const char kDisableLocalStorage[];
 CONTENT_EXPORT extern const char kDisableLogging[];
+CONTENT_EXPORT extern const char kLogNetLog[];
 CONTENT_EXPORT extern const char kDisableSmoothScrolling[];
 CONTENT_EXPORT extern const char kDisablePlugins[];
 extern const char kDisableRemoteFonts[];
@@ -128,6 +132,7 @@ extern const char kDisableWebKitMediaSource[];
 extern const char kEnableEncryptedMedia[];
 extern const char kDisableLegacyEncryptedMedia[];
 CONTENT_EXPORT extern const char kUseFakeDeviceForMediaStream[];
+CONTENT_EXPORT extern const char kUseFakeUIForMediaStream[];
 extern const char kEnableMonitorProfile[];
 extern const char kEnableUserMediaScreenCapturing[];
 extern const char kEnablePinch[];
@@ -264,8 +269,6 @@ extern const char kUseCoreAnimation[];
 #if defined(USE_AURA)
 CONTENT_EXPORT extern const char kTestCompositor[];
 #endif
-
-extern const char kEnableWebPInAcceptHeader[];
 
 CONTENT_EXPORT extern const char kOverscrollHistoryNavigation[];
 CONTENT_EXPORT extern const char kEnableOverscrollNotifications[];

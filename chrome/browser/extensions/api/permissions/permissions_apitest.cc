@@ -84,7 +84,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, OptionalPermissionsGranted) {
 
   PermissionsRequestFunction::SetIgnoreUserGestureForTests(true);
   host_resolver()->AddRule("*.com", "127.0.0.1");
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   EXPECT_TRUE(RunExtensionTest("permissions/optional")) << message_;
 }
 
@@ -95,18 +95,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, OptionalPermissionsAutoConfirm) {
   PermissionsRequestFunction::SetAutoConfirmForTests(true);
   PermissionsRequestFunction::SetIgnoreUserGestureForTests(true);
   host_resolver()->AddRule("*.com", "127.0.0.1");
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   EXPECT_TRUE(RunExtensionTest("permissions/optional")) << message_;
-}
-
-// Tests that the optional permissions API works correctly with complex
-// permissions.
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, ComplexOptionalPermissions) {
-  // Rather than setting the granted permissions, set the UI autoconfirm flag
-  // and run the same tests.
-  PermissionsRequestFunction::SetAutoConfirmForTests(true);
-  PermissionsRequestFunction::SetIgnoreUserGestureForTests(true);
-  EXPECT_TRUE(RunExtensionTest("permissions/complex_optional")) << message_;
 }
 
 // Test that denying the optional permissions confirmation dialog works.
@@ -114,7 +104,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, OptionalPermissionsDeny) {
   PermissionsRequestFunction::SetAutoConfirmForTests(false);
   PermissionsRequestFunction::SetIgnoreUserGestureForTests(true);
   host_resolver()->AddRule("*.com", "127.0.0.1");
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   EXPECT_TRUE(RunExtensionTest("permissions/optional_deny")) << message_;
 }
 
@@ -123,7 +113,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, OptionalPermissionsDeny) {
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, OptionalPermissionsGesture) {
   PermissionsRequestFunction::SetIgnoreUserGestureForTests(false);
   host_resolver()->AddRule("*.com", "127.0.0.1");
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   EXPECT_TRUE(RunExtensionTest("permissions/optional_gesture")) << message_;
 }
 

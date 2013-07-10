@@ -9,7 +9,7 @@
 #include "base/compiler_specific.h"
 #include "base/event_types.h"
 #include "base/logging.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/events/event_constants.h"
 #include "ui/base/gestures/gesture_types.h"
@@ -82,6 +82,7 @@ class UI_EXPORT Event {
   }
 
   LatencyInfo* latency() { return &latency_; }
+  const LatencyInfo* latency() const { return &latency_; }
   void set_latency(const LatencyInfo& latency) { latency_ = latency; }
 
   // By default, events are "cancelable", this means any default processing that
@@ -172,6 +173,10 @@ class UI_EXPORT Event {
   bool IsFlingScrollEvent() const {
     return type_ == ET_SCROLL_FLING_CANCEL ||
            type_ == ET_SCROLL_FLING_START;
+  }
+
+  bool IsMouseWheelEvent() const {
+    return type_ == ET_MOUSEWHEEL;
   }
 
   // Returns true if the event has a valid |native_event_|.
@@ -396,8 +401,6 @@ class UI_EXPORT MouseEvent : public LocatedEvent {
   // recent enough and within a small enough distance.
   static int GetRepeatCount(const MouseEvent& click_event);
 
-  gfx::Point root_location_;
-
   // See description above getter for details.
   int changed_button_flags_;
 
@@ -414,6 +417,7 @@ class UI_EXPORT MouseWheelEvent : public MouseEvent {
   explicit MouseWheelEvent(const base::NativeEvent& native_event);
   explicit MouseWheelEvent(const ScrollEvent& scroll_event);
   MouseWheelEvent(const MouseEvent& mouse_event, int x_offset, int y_offset);
+  MouseWheelEvent(const MouseWheelEvent& mouse_wheel_event);
 
   template <class T>
   MouseWheelEvent(const MouseWheelEvent& model,
@@ -431,10 +435,12 @@ class UI_EXPORT MouseWheelEvent : public MouseEvent {
   int y_offset() const { return offset_.y(); }
   const gfx::Vector2d& offset() const { return offset_; }
 
+  // Overridden from LocatedEvent.
+  virtual void UpdateForRootTransform(
+      const gfx::Transform& inverted_root_transform) OVERRIDE;
+
  private:
   gfx::Vector2d offset_;
-
-  DISALLOW_COPY_AND_ASSIGN(MouseWheelEvent);
 };
 
 class UI_EXPORT TouchEvent : public LocatedEvent {

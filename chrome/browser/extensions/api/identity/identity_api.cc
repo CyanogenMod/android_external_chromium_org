@@ -18,6 +18,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
@@ -31,10 +32,13 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "google_apis/gaia/gaia_constants.h"
+#include "google_apis/gaia/gaia_urls.h"
 #include "googleurl/src/gurl.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/settings/device_oauth2_token_service.h"
+#include "chrome/browser/chromeos/settings/device_oauth2_token_service_factory.h"
 #endif
 
 namespace extensions {
@@ -88,7 +92,8 @@ bool IdentityGetAuthTokenFunction::RunImpl() {
   const OAuth2Info& oauth2_info = OAuth2Info::GetOAuth2Info(GetExtension());
 
   // Check that the necessary information is present in the manifest.
-  if (oauth2_info.client_id.empty()) {
+  oauth2_client_id_ = GetOAuth2ClientId();
+  if (oauth2_client_id_.empty()) {
     error_ = identity_constants::kInvalidClientId;
     return false;
   }
@@ -100,6 +105,14 @@ bool IdentityGetAuthTokenFunction::RunImpl() {
 
   // Balanced in CompleteFunctionWithResult|CompleteFunctionWithError
   AddRef();
+
+#if defined(OS_CHROMEOS)
+  if (chromeos::UserManager::Get()->IsLoggedInAsKioskApp() &&
+      g_browser_process->browser_policy_connector()->IsEnterpriseManaged()) {
+    StartMintTokenFlow(IdentityMintRequestQueue::MINT_TYPE_NONINTERACTIVE);
+    return true;
+  }
+#endif
 
   if (!HasLoginToken()) {
     if (!should_prompt_for_signin_) {
@@ -206,11 +219,21 @@ void IdentityGetAuthTokenFunction::StartMintToken(
       case IdentityTokenCacheValue::CACHE_STATUS_NOTFOUND:
 #if defined(OS_CHROMEOS)
         // Always force minting token for ChromeOS kiosk app.
-        if (chrome::IsRunningInForcedAppMode()) {
-          StartGaiaRequest(OAuth2MintTokenFlow::MODE_MINT_TOKEN_FORCE);
+        if (chromeos::UserManager::Get()->IsLoggedInAsKioskApp()) {
+          if (g_browser_process->browser_policy_connector()->
+                  IsEnterpriseManaged()) {
+            OAuth2TokenService::ScopeSet scope_set(oauth2_info.scopes.begin(),
+                                                   oauth2_info.scopes.end());
+            device_token_request_ =
+                chromeos::DeviceOAuth2TokenServiceFactory::Get()->StartRequest(
+                    scope_set, this);
+          } else {
+            StartGaiaRequest(OAuth2MintTokenFlow::MODE_MINT_TOKEN_FORCE);
+          }
           return;
         }
 #endif
+
         if (oauth2_info.auto_approve)
           // oauth2_info.auto_approve is protected by a whitelist in
           // _manifest_features.json hence only selected extensions take
@@ -330,8 +353,6 @@ void IdentityGetAuthTokenFunction::OnGaiaFlowFailure(
       error = MapOAuth2ErrorToDescription(oauth_error);
       break;
 
-      // TODO(courage): load failure tests
-
     case GaiaWebAuthFlow::LOAD_FAILED:
       error = identity_constants::kPageLoadFailure;
       break;
@@ -362,6 +383,32 @@ void IdentityGetAuthTokenFunction::OnGaiaFlowCompleted(
   CompleteFunctionWithResult(access_token);
 }
 
+void IdentityGetAuthTokenFunction::OnGetTokenSuccess(
+    const OAuth2TokenService::Request* request,
+    const std::string& access_token,
+    const base::Time& expiration_time) {
+  DCHECK_EQ(device_token_request_.get(), request);
+  device_token_request_.reset();
+
+  const OAuth2Info& oauth2_info = OAuth2Info::GetOAuth2Info(GetExtension());
+  IdentityTokenCacheValue token(access_token,
+                                expiration_time - base::Time::Now());
+  IdentityAPI::GetFactoryInstance()->GetForProfile(profile())->SetCachedToken(
+      GetExtension()->id(), oauth2_info.scopes, token);
+
+  CompleteMintTokenFlow();
+  CompleteFunctionWithResult(access_token);
+}
+
+void IdentityGetAuthTokenFunction::OnGetTokenFailure(
+    const OAuth2TokenService::Request* request,
+    const GoogleServiceAuthError& error) {
+  DCHECK_EQ(device_token_request_.get(), request);
+  device_token_request_.reset();
+
+  OnGaiaFlowFailure(GaiaWebAuthFlow::SERVICE_AUTH_ERROR, error, std::string());
+}
+
 void IdentityGetAuthTokenFunction::StartGaiaRequest(
     OAuth2MintTokenFlow::Mode mode) {
   mint_token_flow_.reset(CreateMintTokenFlow(mode));
@@ -387,6 +434,7 @@ void IdentityGetAuthTokenFunction::ShowOAuthApprovalDialog(
 OAuth2MintTokenFlow* IdentityGetAuthTokenFunction::CreateMintTokenFlow(
     OAuth2MintTokenFlow::Mode mode) {
   const OAuth2Info& oauth2_info = OAuth2Info::GetOAuth2Info(GetExtension());
+
   OAuth2MintTokenFlow* mint_token_flow =
       new OAuth2MintTokenFlow(
           profile()->GetRequestContext(),
@@ -394,7 +442,7 @@ OAuth2MintTokenFlow* IdentityGetAuthTokenFunction::CreateMintTokenFlow(
           OAuth2MintTokenFlow::Parameters(
               refresh_token_,
               GetExtension()->id(),
-              oauth2_info.client_id,
+              oauth2_client_id_,
               oauth2_info.scopes,
               mode));
 #if defined(OS_CHROMEOS)
@@ -427,6 +475,19 @@ std::string IdentityGetAuthTokenFunction::MapOAuth2ErrorToDescription(
     return std::string(identity_constants::kInvalidScopes);
   else
     return std::string(identity_constants::kAuthFailure) + error;
+}
+
+std::string IdentityGetAuthTokenFunction::GetOAuth2ClientId() const {
+  const OAuth2Info& oauth2_info = OAuth2Info::GetOAuth2Info(GetExtension());
+  std::string client_id = oauth2_info.client_id;
+
+  // Component apps using auto_approve may use Chrome's client ID by
+  // omitting the field.
+  if (client_id.empty() && GetExtension()->location() == Manifest::COMPONENT &&
+      oauth2_info.auto_approve) {
+    client_id = GaiaUrls::GetInstance()->oauth2_chrome_client_id();
+  }
+  return client_id;
 }
 
 IdentityRemoveCachedAuthTokenFunction::IdentityRemoveCachedAuthTokenFunction() {

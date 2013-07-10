@@ -5,6 +5,7 @@
 #ifndef PPAPI_SIMPLE_PS_INSTANCE_H_
 #define PPAPI_SIMPLE_PS_INSTANCE_H_
 
+#include <stdarg.h>
 #include <map>
 
 #include "ppapi/c/pp_instance.h"
@@ -14,6 +15,7 @@
 #include "ppapi/c/ppb_view.h"
 
 #include "ppapi/cpp/fullscreen.h"
+#include "ppapi/cpp/graphics_3d_client.h"
 #include "ppapi/cpp/instance.h"
 #include "ppapi/cpp/message_loop.h"
 #include "ppapi/cpp/mouse_lock.h"
@@ -28,13 +30,18 @@
 
 typedef std::map<std::string, std::string> PropertyMap_t;
 
-class PSInstance : public pp::Instance {
+// The basic instance class which also inherits the MouseLock and
+// Graphics3DClient interfaces.
+class PSInstance : public pp::Instance, pp::MouseLock, pp::Graphics3DClient {
  public:
+  // Verbosity levels, ecplicitly numbered since we pass these
+  // in from html attributes as numberic values.
   enum Verbosity {
-    PSV_SILENT,
-    PSV_ERROR,
-    PSV_WARN,
-    PSV_LOG,
+    PSV_SILENT = 0,
+    PSV_ERROR = 1,
+    PSV_WARN = 2,
+    PSV_LOG = 3,
+    PSV_TRACE = 4,
   };
 
   // Returns a pointer to the global instance
@@ -56,6 +63,7 @@ class PSInstance : public pp::Instance {
 
   // Logging Functions
   void SetVerbosity(Verbosity verbosity);
+  void Trace(const char *fmt, ...);
   void Log(const char *fmt, ...);
   void Warn(const char *fmt, ...);
   void Error(const char *fmt, ...);
@@ -81,6 +89,10 @@ class PSInstance : public pp::Instance {
   // This function will create a new thread which will run the pseudo main.
   virtual bool Init(uint32_t argc, const char* argn[], const char* argv[]);
 
+  // Output log message to stderr if the current verbosity is set
+  // at or above the given verbosity.
+  void VALog(Verbosity verbosity, const char *fmt, va_list args);
+
   // Called whenever the in-browser window changes size, it will pass a
   // context change request to whichever thread is handling rendering.
   virtual void DidChangeView(const pp::View& view);
@@ -94,6 +106,12 @@ class PSInstance : public pp::Instance {
   // Called by the browser to handle incoming input events.  Events are Q'd
   // and can later be processed on a sperate processing thread.
   virtual bool HandleInputEvent(const pp::InputEvent& event);
+
+  // Called by the browser when the 3D context is lost.
+  virtual void Graphics3DContextLost();
+
+  // Called by the browser when the mouselock is lost.
+  virtual void MouseLockLost();
 
   // Called by Init to processes default and embed tag arguments prior to
   // launching the 'ppapi_main' thread.
@@ -109,13 +127,16 @@ class PSInstance : public pp::Instance {
   ThreadSafeQueue<PSEvent> event_queue_;
   uint32_t events_enabled_;
   Verbosity verbosity_;
+  int fd_tty_;
 
   PSMainFunc_t main_cb_;
 
   const PPB_Core* ppb_core_;
   const PPB_Var* ppb_var_;
   const PPB_View* ppb_view_;
+
+  friend class PSGraphics3DClient;
+  friend class PSMouseLock;
 };
 
 #endif  // PPAPI_MAIN_PS_INSTANCE_H_
-

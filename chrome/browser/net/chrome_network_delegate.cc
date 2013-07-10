@@ -136,8 +136,8 @@ std::string AddSafeSearchParameters(const std::string& query) {
 // Sets the query part of |new_url| with the new value of the parameters.
 void ForceGoogleSafeSearch(net::URLRequest* request,
                            GURL* new_url) {
-  if (!google_util::IsGoogleSearchUrl(request->url().spec()) &&
-      !google_util::IsGoogleHomePageUrl(request->url().spec()))
+  if (!google_util::IsGoogleSearchUrl(request->url()) &&
+      !google_util::IsGoogleHomePageUrl(request->url()))
     return;
 
   std::string query = request->url().query();
@@ -327,7 +327,8 @@ void StoreAccumulatedContentLength(int received_content_length,
 }
 
 void RecordContentLengthHistograms(
-    int64 received_content_length, int64 original_content_length,
+    int64 received_content_length,
+    int64 original_content_length,
     const base::TimeDelta& freshness_lifetime) {
 #if defined(OS_ANDROID)
   // Add the current resource to these histograms only when a valid
@@ -349,10 +350,11 @@ void RecordContentLengthHistograms(
                        original_content_length);
   UMA_HISTOGRAM_COUNTS("Net.HttpContentLengthDifference",
                        original_content_length - received_content_length);
-  UMA_HISTOGRAM_CUSTOM_TIMES("Net.HttpContentFreshnessLifetime",
-                             freshness_lifetime,
-                             base::TimeDelta::FromHours(1),
-                             base::TimeDelta::FromDays(30), 100);
+  UMA_HISTOGRAM_CUSTOM_COUNTS("Net.HttpContentFreshnessLifetime",
+                              freshness_lifetime.InSeconds(),
+                              base::TimeDelta::FromHours(1).InSeconds(),
+                              base::TimeDelta::FromDays(30).InSeconds(),
+                              100);
   if (freshness_lifetime.InSeconds() <= 0)
     return;
   UMA_HISTOGRAM_COUNTS("Net.HttpContentLengthCacheable",

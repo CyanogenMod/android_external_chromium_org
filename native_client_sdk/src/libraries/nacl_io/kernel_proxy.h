@@ -5,21 +5,14 @@
 #ifndef LIBRARIES_NACL_IO_KERNEL_PROXY_H_
 #define LIBRARIES_NACL_IO_KERNEL_PROXY_H_
 
-#include <ppapi/c/pp_instance.h>
-#include <ppapi/c/ppb.h>
-#include <pthread.h>
 #include <map>
 #include <string>
-#include <vector>
 
 #include "nacl_io/kernel_object.h"
-#include "nacl_io/mount.h"
+#include "nacl_io/mount_factory.h"
 #include "nacl_io/ostypes.h"
-#include "nacl_io/path.h"
+#include "nacl_io/osutime.h"
 
-class KernelHandle;
-class Mount;
-class MountNode;
 class PepperInterface;
 
 // KernelProxy provide one-to-one mapping for libc kernel calls.  Calls to the
@@ -29,9 +22,7 @@ class PepperInterface;
 // other classes should return Error (as defined by nacl_io/error.h).
 class KernelProxy : protected KernelObject {
  public:
-  typedef Error (*MountFactory_t)(int, StringMap_t&, PepperInterface*, Mount**);
-  typedef std::map<std::string, std::string> StringMap_t;
-  typedef std::map<std::string, MountFactory_t> MountFactoryMap_t;
+  typedef std::map<std::string, MountFactory*> MountFactoryMap_t;
 
   KernelProxy();
   virtual ~KernelProxy();
@@ -40,7 +31,7 @@ class KernelProxy : protected KernelObject {
   virtual void Init(PepperInterface* ppapi);
 
   // KernelHandle and FD allocation and manipulation functions.
-  virtual int open(const char *path, int oflag);
+  virtual int open(const char* path, int oflag);
   virtual int close(int fd);
   virtual int dup(int fd);
   virtual int dup2(int fd, int newfd);
@@ -52,6 +43,12 @@ class KernelProxy : protected KernelObject {
   virtual int mount(const char *source, const char *target,
       const char *filesystemtype, unsigned long mountflags, const void *data);
   virtual int umount(const char *path);
+
+  // Stub system calls that don't do anything (yet), handled by KernelProxy.
+  virtual int chown(const char* path, uid_t owner, gid_t group);
+  virtual int fchown(int fd, uid_t owner, gid_t group);
+  virtual int lchown(const char* path, uid_t owner, gid_t group);
+  virtual int utime(const char* filename, const struct utimbuf* times);
 
   // System calls that take a path as an argument:
   // The kernel proxy will look for the Node associated to the path. To
@@ -76,6 +73,7 @@ class KernelProxy : protected KernelObject {
   virtual int ftruncate(int fd, off_t length);
   virtual int fsync(int fd);
   virtual int isatty(int fd);
+  virtual int ioctl(int d, int request, char *argp);
 
   // lseek() relies on the mount's Stat() to determine whether or not the
   // file handle corresponding to fd is a directory
@@ -93,7 +91,11 @@ class KernelProxy : protected KernelObject {
   virtual int link(const char* oldpath, const char* newpath);
   virtual int symlink(const char* oldpath, const char* newpath);
 
-  virtual void* mmap(void* addr, size_t length, int prot, int flags, int fd,
+  virtual void* mmap(void* addr,
+                     size_t length,
+                     int prot,
+                     int flags,
+                     int fd,
                      size_t offset);
   virtual int munmap(void* addr, size_t length);
 

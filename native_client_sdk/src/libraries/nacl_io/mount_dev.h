@@ -6,13 +6,14 @@
 #define LIBRARIES_NACL_IO_MOUNT_DEV_H_
 
 #include "nacl_io/mount.h"
+#include "nacl_io/typed_mount_factory.h"
 
 class MountNode;
 
 class MountDev : public Mount {
  public:
-  virtual Error Open(const Path& path, int mode, MountNode** out_node);
-
+  virtual Error Access(const Path& path, int a_mode);
+  virtual Error Open(const Path& path, int mode, ScopedMountNode* out_node);
   virtual Error Unlink(const Path& path);
   virtual Error Mkdir(const Path& path, int permissions);
   virtual Error Rmdir(const Path& path);
@@ -22,12 +23,12 @@ class MountDev : public Mount {
   MountDev();
 
   virtual Error Init(int dev, StringMap_t& args, PepperInterface* ppapi);
-  virtual void Destroy();
 
  private:
-  MountNode* root_;
+  ScopedMountNode root_;
 
-  friend class Mount;
+  friend class TypedMountFactory<MountDev>;
+  DISALLOW_COPY_AND_ASSIGN(MountDev);
 };
 
 #endif  // LIBRARIES_NACL_IO_MOUNT_DEV_H_

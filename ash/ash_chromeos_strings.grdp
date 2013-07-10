@@ -3,6 +3,14 @@
      Everything in this file is wrapped in <if expr="pp_ifdef('chromeos')">. -->
 <grit-part>
 
+  <!-- Status tray charging strings. -->
+  <message name="IDS_ASH_STATUS_TRAY_LOW_POWER_CHARGER_TITLE" desc="The title of a notification indicating that a low-current USB charger has been connected.">
+    Low-power charger connected
+  </message>
+  <message name="IDS_ASH_STATUS_TRAY_LOW_POWER_CHARGER_MESSAGE" desc="The message body of a notification indicating that a low-current USB charger has been connected.">
+    Your Chromebook may not charge while it is turned on. Consider using the official charger.
+  </message>
+  
   <!-- Status Tray Network strings -->
   <message name="IDS_ASH_STATUS_TRAY_NETWORK" desc="The label used in the network dialog header.">
     Network
@@ -250,10 +258,10 @@ Server message: <ph name="server_msg">$3<ex>Incorrect password</ex></ph>
     Stop
   </message>
   <message name="IDS_ASH_STATUS_TRAY_SCREEN_SHARE_BEING_HELPED" desc="label for screen sharing notification">
-    You are being helped
+    Sharing control of your screen via Hangouts.
   </message>
   <message name="IDS_ASH_STATUS_TRAY_SCREEN_SHARE_BEING_HELPED_NAME" desc="label for screen sharing notification with name">
-    You are being helped by <ph name="HELPER_NAME">$1<ex>Walder Frey</ex></ph>
+    Sharing control of your screen with <ph name="HELPER_NAME">$1<ex>Walder Frey</ex></ph> via Hangouts.
   </message>
 
 </grit-part>

@@ -30,6 +30,10 @@
 #include "ui/gfx/point.h"
 #include "ui/gfx/screen.h"
 
+#if defined(OS_CHROMEOS)
+#include "ash/system/chromeos/tray_display.h"
+#endif
+
 #if defined(OS_WIN)
 #include "ash/test/test_metro_viewer_process_host.h"
 #include "base/test/test_process_killer_win.h"
@@ -124,8 +128,7 @@ void AshTestBase::SetUp() {
     ipc_thread_->StartWithOptions(options);
 
     metro_viewer_host_.reset(
-        new TestMetroViewerProcessHost("viewer",
-                                       ipc_thread_->message_loop_proxy()));
+        new TestMetroViewerProcessHost(ipc_thread_->message_loop_proxy()));
     CHECK(metro_viewer_host_->LaunchViewerAndWaitForConnection(
         win8::test::kDefaultTestAppUserModelId));
     aura::RemoteRootWindowHostWin* root_window_host =
@@ -182,6 +185,15 @@ aura::test::EventGenerator& AshTestBase::GetEventGenerator() {
 
 // static
 bool AshTestBase::SupportsMultipleDisplays() {
+#if defined(OS_WIN)
+  return base::win::GetVersion() < base::win::VERSION_WIN8;
+#else
+  return true;
+#endif
+}
+
+// static
+bool AshTestBase::SupportsHostWindowResize() {
 #if defined(OS_WIN)
   return base::win::GetVersion() < base::win::VERSION_WIN8;
 #else

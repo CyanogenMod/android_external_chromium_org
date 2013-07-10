@@ -48,7 +48,7 @@ namespace {
 
 void LogSuccess(const std::string& extension_id,
                 const std::string& api_name,
-                scoped_ptr<ListValue> args,
+                scoped_ptr<base::ListValue> args,
                 Profile* profile) {
   // The ActivityLog can only be accessed from the main (UI) thread.  If we're
   // running on the wrong thread, re-dispatch from the main thread.
@@ -70,7 +70,7 @@ void LogSuccess(const std::string& extension_id,
 
 void LogFailure(const std::string& extension_id,
                 const std::string& api_name,
-                scoped_ptr<ListValue> args,
+                scoped_ptr<base::ListValue> args,
                 extensions::BlockedAction::Reason reason,
                 Profile* profile) {
   // The ActivityLog can only be accessed from the main (UI) thread.  If we're
@@ -224,6 +224,11 @@ ExtensionFunctionDispatcher::Delegate::GetExtensionWindowController()
 content::WebContents*
 ExtensionFunctionDispatcher::Delegate::GetAssociatedWebContents() const {
   return NULL;
+}
+
+content::WebContents*
+ExtensionFunctionDispatcher::Delegate::GetVisibleWebContents() const {
+  return GetAssociatedWebContents();
 }
 
 void ExtensionFunctionDispatcher::GetAllFunctionNames(

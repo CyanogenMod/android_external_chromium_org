@@ -71,6 +71,14 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
     : public base::RefCountedThreadSafe<FileSystemContext,
                                         DefaultContextDeleter> {
  public:
+  // Returns file permission policy we should apply for the given |type|.
+  // The return value must be bitwise-or'd of FilePermissionPolicy.
+  //
+  // Note: if a part of a filesystem is returned via 'Isolated' mount point,
+  // its per-filesystem permission overrides the underlying filesystem's
+  // permission policy.
+  static int GetPermissionPolicy(FileSystemType type);
+
   // task_runners->file_task_runner() is used as default TaskRunner.
   // Unless a MountPointProvider is overridden in CreateFileSystemOperation,
   // it is used for all file operations and file related meta operations.
@@ -129,14 +137,18 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
   FileSystemMountPointProvider* GetMountPointProvider(
       FileSystemType type) const;
 
+  // Returns true for sandboxed filesystems. Currently this does
+  // the same as GetQuotaUtil(type) != NULL. (In an assumption that
+  // all sandboxed filesystems must cooperate with QuotaManager so that
+  // they can get deleted)
+  bool IsSandboxFileSystem(FileSystemType type) const;
+
   // Returns observers for the given filesystem type.
   const UpdateObserverList* GetUpdateObservers(FileSystemType type) const;
   const AccessObserverList* GetAccessObservers(FileSystemType type) const;
 
-  // Returns a FileSystemMountPointProvider instance for sandboxed filesystem
-  // types (e.g. TEMPORARY or PERSISTENT).  This is equivalent to calling
-  // GetMountPointProvider(kFileSystemType{Temporary, Persistent}).
-  SandboxMountPointProvider* sandbox_provider() const;
+  // Returns all registered filesystem types.
+  void GetFileSystemTypes(std::vector<FileSystemType>* types) const;
 
   // Returns a FileSystemMountPointProvider instance for external filesystem
   // type, which is used only by chromeos for now.  This is equivalent to
@@ -158,17 +170,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
   // (e.g. by creating the root directory or initializing the database
   // entry etc).
   void OpenFileSystem(
-      const GURL& origin_url,
-      FileSystemType type,
-      OpenFileSystemMode mode,
-      const OpenFileSystemCallback& callback);
-
-  // Opens a syncable filesystem for the given |origin_url|.
-  // The file system is internally mounted as an external file system at the
-  // given |mount_name|.
-  // Currently only kFileSystemTypeSyncable type is supported.
-  // TODO(kinuko): Deprecate this method. (http://crbug.com/177137)
-  void OpenSyncableFileSystem(
       const GURL& origin_url,
       FileSystemType type,
       OpenFileSystemMode mode,
@@ -229,12 +230,20 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
                                            FileSystemType type,
                                            const base::FilePath& path) const;
 
+#if defined(OS_CHROMEOS) && defined(GOOGLE_CHROME_BUILD)
+  // Used only on ChromeOS for now.
+  void EnableTemporaryFileSystemInIncognito();
+#endif
+
  private:
   typedef std::map<FileSystemType, FileSystemMountPointProvider*>
       MountPointProviderMap;
 
   // For CreateFileSystemOperation.
   friend class FileSystemOperationRunner;
+
+  // For sandbox_provider().
+  friend class SandboxFileSystemTestHelper;
 
   // Deleters.
   friend struct DefaultContextDeleter;
@@ -269,6 +278,11 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
   // the constructor.
   void RegisterMountPointProvider(FileSystemMountPointProvider* provider);
 
+  // Returns a FileSystemMountPointProvider, used only by test code.
+  SandboxMountPointProvider* sandbox_provider() const {
+    return sandbox_provider_.get();
+  }
+
   scoped_ptr<FileSystemTaskRunners> task_runners_;
 
   scoped_refptr<quota::QuotaManagerProxy> quota_manager_proxy_;
@@ -276,7 +290,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
   // Regular mount point providers.
   scoped_ptr<SandboxMountPointProvider> sandbox_provider_;
   scoped_ptr<IsolatedMountPointProvider> isolated_provider_;
-  scoped_ptr<ExternalFileSystemMountPointProvider> external_provider_;
 
   // Additional mount point providers.
   ScopedVector<FileSystemMountPointProvider> additional_providers_;

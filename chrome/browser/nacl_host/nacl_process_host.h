@@ -16,14 +16,13 @@
 #include "chrome/common/nacl_types.h"
 #include "content/public/browser/browser_child_process_host_delegate.h"
 #include "content/public/browser/browser_child_process_host_iterator.h"
-#include "googleurl/src/gurl.h"
 #include "ipc/ipc_channel_handle.h"
 #include "net/socket/tcp_listen_socket.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
+#include "url/gurl.h"
 
 class NaClHostMessageFilter;
 class CommandLine;
-class ExtensionInfoMap;
 
 namespace content {
 class BrowserChildProcessHost;
@@ -65,7 +64,7 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
   // message reply_msg.
   void Launch(NaClHostMessageFilter* nacl_host_message_filter,
               IPC::Message* reply_msg,
-              scoped_refptr<ExtensionInfoMap> extension_info_map);
+              const base::FilePath& manifest_path);
 
   virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
 
@@ -107,8 +106,6 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
   // is enabled.
   SocketDescriptor GetDebugStubSocketHandle();
 #endif
-  // Get path to manifest on local disk if possible.
-  base::FilePath GetManifestPath();
   bool LaunchSelLdr();
 
   // BrowserChildProcessHostDelegate implementation:
@@ -181,9 +178,9 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
   scoped_ptr<IPC::Message> attach_debug_exception_handler_reply_msg_;
 #endif
 
-  // Set of extensions for (NaCl) manifest auto-detection. The file path to
-  // manifest is passed to nacl-gdb when it is used to debug the NaCl loader.
-  scoped_refptr<ExtensionInfoMap> extension_info_map_;
+  // The file path to the manifest is passed to nacl-gdb when it is used to
+  // debug the NaCl loader.
+  base::FilePath manifest_path_;
 
   // Socket pairs for the NaCl process and renderer.
   scoped_ptr<NaClInternal> internal_;

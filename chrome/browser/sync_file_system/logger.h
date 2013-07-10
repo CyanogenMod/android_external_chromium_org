@@ -10,7 +10,7 @@
 
 #include "base/location.h"
 #include "base/logging.h"
-#include "chrome/browser/google_apis/event_logger.h"
+#include "chrome/browser/drive/event_logger.h"
 
 namespace sync_file_system {
 // Originally wanted to use 'logging' here, but it conflicts with
@@ -30,7 +30,7 @@ void Log(logging::LogSeverity level,
 
 // Returns the log history.
 // This function can be called from any thread.
-std::vector<google_apis::EventLogger::Event> GetLogHistory();
+std::vector< ::drive::EventLogger::Event> GetLogHistory();
 
 }  // namespace util
 }  // namespace sync_file_system

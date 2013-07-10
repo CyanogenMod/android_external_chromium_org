@@ -186,16 +186,7 @@ class ImageTransportClientTexture : public OwnedTexture {
   }
 
   virtual std::string Produce() OVERRIDE {
-    std::string name;
-    if (!mailbox_name_.empty()) {
-      DCHECK(host_context_ && texture_id_);
-      host_context_->bindTexture(GL_TEXTURE_2D, texture_id_);
-      host_context_->produceTextureCHROMIUM(
-          GL_TEXTURE_2D,
-          reinterpret_cast<const signed char*>(mailbox_name_.c_str()));
-      mailbox_name_.swap(name);
-    }
-    return name;
+    return mailbox_name_;
   }
 
  protected:
@@ -485,12 +476,12 @@ class BrowserCompositorOutputSurface
       public base::NonThreadSafe {
  public:
   BrowserCompositorOutputSurface(
-      WebGraphicsContext3DCommandBufferImpl* context,
+      scoped_ptr<WebKit::WebGraphicsContext3D> context,
       int surface_id,
       BrowserCompositorOutputSurfaceProxy* output_surface_proxy,
       base::MessageLoopProxy* compositor_message_loop,
       base::WeakPtr<ui::Compositor> compositor)
-      : OutputSurface(scoped_ptr<WebKit::WebGraphicsContext3D>(context)),
+      : OutputSurface(context.Pass()),
         surface_id_(surface_id),
         output_surface_proxy_(output_surface_proxy),
         compositor_message_loop_(compositor_message_loop),
@@ -628,10 +619,16 @@ class GpuProcessTransportFactory
     DCHECK(per_compositor_data_.empty());
   }
 
-  virtual WebGraphicsContext3DCommandBufferImpl* CreateOffscreenContext()
-      OVERRIDE {
+  scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
+  CreateOffscreenCommandBufferContext() {
     base::WeakPtr<WebGraphicsContext3DSwapBuffersClient> swap_client;
     return CreateContextCommon(swap_client, 0);
+  }
+
+  virtual scoped_ptr<WebKit::WebGraphicsContext3D> CreateOffscreenContext()
+      OVERRIDE {
+    return CreateOffscreenCommandBufferContext()
+        .PassAs<WebKit::WebGraphicsContext3D>();
   }
 
   virtual cc::OutputSurface* CreateOutputSurface(
@@ -639,12 +636,11 @@ class GpuProcessTransportFactory
     PerCompositorData* data = per_compositor_data_[compositor];
     if (!data)
       data = CreatePerCompositorData(compositor);
-    WebGraphicsContext3DCommandBufferImpl* context =
-        CreateContextCommon(data->swap_client->AsWeakPtr(),
-                            data->surface_id);
     BrowserCompositorOutputSurface* surface =
         new BrowserCompositorOutputSurface(
-            context,
+            CreateContextCommon(data->swap_client->AsWeakPtr(),
+                                data->surface_id)
+                .PassAs<WebKit::WebGraphicsContext3D>(),
             per_compositor_data_[compositor]->surface_id,
             output_surface_proxy_.get(),
             base::MessageLoopProxy::current(),
@@ -818,7 +814,7 @@ class GpuProcessTransportFactory
     return data;
   }
 
-  WebGraphicsContext3DCommandBufferImpl* CreateContextCommon(
+  scoped_ptr<WebGraphicsContext3DCommandBufferImpl> CreateContextCommon(
       const base::WeakPtr<WebGraphicsContext3DSwapBuffersClient>& swap_client,
       int surface_id) {
     WebKit::WebGraphicsContext3D::Attributes attrs;
@@ -839,8 +835,8 @@ class GpuProcessTransportFactory
         attrs,
         false,
         CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE))
-      return NULL;
-    return context.release();
+      return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
+    return context.Pass();
   }
 
   // Crash given that we are unable to show any UI whatsoever. On Windows we
@@ -873,7 +869,7 @@ class GpuProcessTransportFactory
 
     virtual scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
         CreateOffscreenContext3d() OVERRIDE {
-      return make_scoped_ptr(factory_->CreateOffscreenContext());
+      return factory_->CreateOffscreenCommandBufferContext();
     }
 
     virtual void OnLostContext() OVERRIDE {
@@ -917,7 +913,7 @@ class GpuProcessTransportFactory
 
     virtual scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
         CreateOffscreenContext3d() OVERRIDE {
-      return make_scoped_ptr(factory_->CreateOffscreenContext());
+      return factory_->CreateOffscreenCommandBufferContext();
     }
 
    private:
@@ -996,8 +992,9 @@ class SoftwareContextFactory : public ui::ContextFactory {
  public:
   SoftwareContextFactory() {}
   virtual ~SoftwareContextFactory() {}
-  virtual WebKit::WebGraphicsContext3D* CreateOffscreenContext() OVERRIDE {
-    return NULL;
+  virtual scoped_ptr<WebKit::WebGraphicsContext3D> CreateOffscreenContext()
+      OVERRIDE {
+    return scoped_ptr<WebKit::WebGraphicsContext3D>();
   }
   virtual cc::OutputSurface* CreateOutputSurface(
       ui::Compositor* compositor) OVERRIDE {

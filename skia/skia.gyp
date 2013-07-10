@@ -129,6 +129,12 @@
         '../third_party/skia/include/utils/mac/SkCGUtils.h',
         '../third_party/skia/include/utils/SkDeferredCanvas.h',
         '../third_party/skia/include/utils/SkMatrix44.h',
+        '../third_party/skia/src/utils/debugger/SkDebugCanvas.cpp',
+        '../third_party/skia/src/utils/debugger/SkDebugCanvas.h',
+        '../third_party/skia/src/utils/debugger/SkDrawCommand.cpp',
+        '../third_party/skia/src/utils/debugger/SkDrawCommand.h',
+        '../third_party/skia/src/utils/debugger/SkObjectParser.cpp',
+        '../third_party/skia/src/utils/debugger/SkObjectParser.h',
         '../third_party/skia/src/utils/mac/SkCreateCGImageRef.cpp',
         '../third_party/skia/src/utils/SkBase64.cpp',
         '../third_party/skia/src/utils/SkBase64.h',
@@ -261,8 +267,7 @@
             '../third_party/skia/gyp/gpu.gypi',
           ],
           'sources': [
-            '<@(gr_sources)',
-            '<@(skgr_sources)',
+            '<@(skgpu_sources)',
           ],
           'include_dirs': [
             '../third_party/skia/include/gpu',
@@ -273,16 +278,6 @@
           'defines': [
             'SK_SUPPORT_GPU=0',
           ],
-        }],
-        ['release_valgrind_build == 1', {
-          'defines': [
-            'SK_DEBUG_PATH_REF=1',
-          ],
-          'direct_dependent_settings': {
-            'defines': [
-              'SK_DEBUG_PATH_REF=1',
-            ],
-          },
         }],
         #Settings for text blitting, chosen to approximate the system browser.
         [ 'OS == "linux"', {
@@ -517,6 +512,9 @@
           ],
         }],
         [ 'OS == "win"', {
+          'defines': [
+            'SK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS'
+          ],
           'sources!': [
             '../third_party/skia/src/ports/SkOSFile_posix.cpp',
             '../third_party/skia/src/ports/SkThread_pthread.cpp',
@@ -581,6 +579,7 @@
           '../third_party/skia/include/pdf',
           '../third_party/skia/include/gpu',
           '../third_party/skia/include/gpu/gl',
+          '../third_party/skia/include/lazy',
           '../third_party/skia/include/pathops',
           '../third_party/skia/include/pipe',
           '../third_party/skia/include/ports',

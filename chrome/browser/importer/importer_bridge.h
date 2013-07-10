@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_IMPORTER_IMPORTER_BRIDGE_H_
 #define CHROME_BROWSER_IMPORTER_IMPORTER_BRIDGE_H_
 
+#include <string>
 #include <vector>
 
 #include "base/basictypes.h"
@@ -12,15 +13,17 @@
 #include "base/strings/string16.h"
 #include "build/build_config.h"
 #include "chrome/browser/history/history_types.h"
-#include "chrome/browser/importer/importer_data_types.h"
+#include "chrome/common/importer/importer_data_types.h"
+#include "chrome/common/importer/importer_url_row.h"
 
 class GURL;
 struct IE7PasswordInfo;
 struct ImportedBookmarkEntry;
 struct ImportedFaviconUsage;
-class TemplateURL;
-// TODO: remove this, see friend declaration in ImporterBridge.
-class Toolbar5Importer;
+
+namespace importer {
+struct URLKeywordInfo;
+}
 
 namespace content {
 struct PasswordForm;
@@ -43,13 +46,17 @@ class ImporterBridge : public base::RefCountedThreadSafe<ImporterBridge> {
   virtual void SetFavicons(
       const std::vector<ImportedFaviconUsage>& favicons) = 0;
 
-  virtual void SetHistoryItems(const history::URLRows& rows,
+  virtual void SetHistoryItems(const std::vector<ImporterURLRow>& rows,
                                history::VisitSource visit_source) = 0;
 
-  // WARNING: This function takes ownership of (and deletes) the pointers in
-  // |template_urls|!
-  virtual void SetKeywords(const std::vector<TemplateURL*>& template_urls,
-                           bool unique_on_host_and_path) = 0;
+  virtual void SetKeywords(
+      const std::vector<importer::URLKeywordInfo>& url_keywords,
+      bool unique_on_host_and_path) = 0;
+
+  // The search_engine_data vector contains XML data retrieved from the Firefox
+  // profile and its sqlite db.
+  virtual void SetFirefoxSearchEnginesXMLData(
+      const std::vector<std::string>& search_engine_data) = 0;
 
   virtual void SetPasswordForm(const content::PasswordForm& form) = 0;
 
@@ -75,10 +82,6 @@ class ImporterBridge : public base::RefCountedThreadSafe<ImporterBridge> {
 
  protected:
   friend class base::RefCountedThreadSafe<ImporterBridge>;
-  // TODO: In order to run Toolbar5Importer OOP we need to cut this
-  // connection, but as an interim step we allow Toolbar5Import to break
-  // the abstraction here and assume import is in-process.
-  friend class Toolbar5Importer;
 
   virtual ~ImporterBridge();
 

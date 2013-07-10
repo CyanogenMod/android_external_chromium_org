@@ -8,6 +8,7 @@
 // are hidden via Shadow DOM.
 
 var watchForTag = require('tagWatcher').watchForTag;
+var eventBindings = require('event_bindings');
 
 /** @type {Array.<string>} */
 var WEB_VIEW_ATTRIBUTES = ['name', 'src', 'partition', 'autosize', 'minheight',
@@ -17,12 +18,6 @@ var WEB_VIEW_ATTRIBUTES = ['name', 'src', 'partition', 'autosize', 'minheight',
 // All exposed api methods for <webview>, these are forwarded to the browser
 // plugin.
 var WEB_VIEW_API_METHODS = [
-  'back',
-  'canGoBack',
-  'canGoForward',
-  'forward',
-  'getProcessId',
-  'go',
   'reload',
   'stop',
   'terminate'
@@ -31,21 +26,79 @@ var WEB_VIEW_API_METHODS = [
 var WEB_VIEW_EVENTS = {
   'close': [],
   'consolemessage': ['level', 'message', 'line', 'sourceId'],
-  'contentload' : [],
   'exit' : ['processId', 'reason'],
   'loadabort' : ['url', 'isTopLevel', 'reason'],
-  'loadcommit' : ['url', 'isTopLevel'],
-  'loadredirect' : ['oldUrl', 'newUrl', 'isTopLevel'],
-  'loadstart' : ['url', 'isTopLevel'],
-  'loadstop' : [],
   'responsive' : ['processId'],
   'sizechanged': ['oldHeight', 'oldWidth', 'newHeight', 'newWidth'],
   'unresponsive' : ['processId']
 };
 
-window.addEventListener('DOMContentLoaded', function() {
-  watchForTag('WEBVIEW', function(addedNode) { new WebView(addedNode); });
-});
+var createEvent = function(name) {
+  var eventOpts = {supportsListeners: true, supportsFilters: true};
+  return new eventBindings.Event(name, undefined, eventOpts);
+};
+
+var contentLoadEvent = createEvent('webview.onContentLoad');
+var loadCommitEvent = createEvent('webview.onLoadCommit');
+var loadRedirectEvent = createEvent('webview.onLoadRedirect');
+var loadStartEvent = createEvent('webview.onLoadStart');
+var loadStopEvent = createEvent('webview.onLoadStop');
+
+var WEB_VIEW_EXT_EVENTS = {
+  'contentload': {
+    evt: contentLoadEvent,
+    fields: []
+  },
+  'loadcommit': {
+    customHandler: function(webview, event) {
+      webview.currentEntryIndex_ = event.currentEntryIndex;
+      webview.entryCount_ = event.entryCount;
+      webview.processId_ = event.processId;
+    },
+    evt: loadCommitEvent,
+    fields: ['url', 'isTopLevel']
+  },
+  'loadredirect': {
+    evt: loadRedirectEvent,
+    fields: ['isTopLevel', 'oldUrl', 'newUrl']
+  },
+  'loadstart': {
+    evt: loadStartEvent,
+    fields: ['url', 'isTopLevel']
+  },
+  'loadstop': {
+    evt: loadStopEvent,
+    fields: []
+  }
+};
+
+
+// The <webview> tags we wish to watch for (watchForTag) does not belong to the
+// current scope's "document" reference. We need to wait until the document
+// begins loading, since only then will the "document" reference
+// point to the page's document (it will be reset between now and then).
+// We can't listen for the "readystatechange" event on the document (because
+// the object that it's dispatched on doesn't exist yet), but we can instead
+// do it at the window level in the capturing phase.
+window.addEventListener('readystatechange', function(e) {
+  if (document.readyState != 'loading') {
+    return;
+  }
+
+  document.addEventListener('DOMContentLoaded', function(e) {
+    watchForTag('WEBVIEW', function(addedNode) { new WebView(addedNode); });
+  });
+}, true /* useCapture */);
+
+
+/** @type {number} */
+WebView.prototype.entryCount_;
+
+/** @type {number} */
+WebView.prototype.currentEntryIndex_;
+
+/** @type {number} */
+WebView.prototype.processId_;
 
 /**
  * @constructor
@@ -72,6 +125,7 @@ function WebView(webviewNode) {
 WebView.prototype.createBrowserPluginNode_ = function() {
   var browserPluginNode = document.createElement('object');
   browserPluginNode.type = 'application/browser-plugin';
+  browserPluginNode.setAttribute('api', 'webview');
   // The <object> node fills in the <webview> container.
   browserPluginNode.style.width = '100%';
   browserPluginNode.style.height = '100%';
@@ -122,11 +176,42 @@ WebView.prototype.setupFocusPropagation_ = function() {
 WebView.prototype.setupWebviewNodeMethods_ = function() {
   // this.browserPluginNode_[apiMethod] are not necessarily defined immediately
   // after the shadow object is appended to the shadow root.
+  var webviewNode = this.webviewNode_;
+  var browserPluginNode = this.browserPluginNode_;
   var self = this;
+
+  webviewNode['canGoBack'] = function() {
+    return self.entryCount_ > 1 && self.currentEntryIndex_ > 0;
+  };
+
+  webviewNode['canGoForward'] = function() {
+    return self.currentEntryIndex_ >=0 &&
+        self.currentEntryIndex_ < (self.entryCount_ - 1);
+  };
+
+  webviewNode['back'] = function() {
+    webviewNode.go(-1);
+  };
+
+  webviewNode['forward'] = function() {
+    webviewNode.go(1);
+  };
+
+  webviewNode['getProcessId'] = function() {
+    return self.processId_;
+  };
+
+  webviewNode['go'] = function(relativeIndex) {
+    var instanceId = browserPluginNode.getGuestInstanceId();
+    if (!instanceId)
+      return;
+    chrome.webview.go(instanceId, relativeIndex);
+  };
+
   $Array.forEach(WEB_VIEW_API_METHODS, function(apiMethod) {
-    self.webviewNode_[apiMethod] = function(var_args) {
-      return self.browserPluginNode_[apiMethod].apply(
-          self.browserPluginNode_, arguments);
+    webviewNode[apiMethod] = function(var_args) {
+      return $Function.apply(browserPluginNode[apiMethod],
+          browserPluginNode, arguments);
     };
   }, this);
   this.setupExecuteCodeAPI_();
@@ -158,10 +243,8 @@ WebView.prototype.setupWebviewNodeProperties_ = function() {
   // getter value.
   Object.defineProperty(this.webviewNode_, 'contentWindow', {
     get: function() {
-      // TODO(fsamuel): This is a workaround to enable
-      // contentWindow.postMessage until http://crbug.com/152006 is fixed.
       if (browserPluginNode.contentWindow)
-        return browserPluginNode.contentWindow.self;
+        return browserPluginNode.contentWindow;
       console.error(ERROR_MSG_CONTENTWINDOW_NOT_AVAILABLE);
     },
     // No setter.
@@ -186,7 +269,7 @@ WebView.prototype.setupWebviewNodeObservers_ = function() {
   var handleMutation = $Function.bind(function(mutation) {
     this.handleWebviewAttributeMutation_(mutation);
   }, this);
-  var observer = new WebKitMutationObserver(function(mutations) {
+  var observer = new MutationObserver(function(mutations) {
     $Array.forEach(mutations, handleMutation);
   });
   observer.observe(
@@ -201,7 +284,7 @@ WebView.prototype.setupBrowserPluginNodeObservers_ = function() {
   var handleMutation = $Function.bind(function(mutation) {
     this.handleBrowserPluginAttributeMutation_(mutation);
   }, this);
-  var objectObserver = new WebKitMutationObserver(function(mutations) {
+  var objectObserver = new MutationObserver(function(mutations) {
     $Array.forEach(mutations, handleMutation);
   });
   objectObserver.observe(
@@ -252,6 +335,16 @@ WebView.prototype.handleBrowserPluginAttributeMutation_ = function(mutation) {
  * @private
  */
 WebView.prototype.setupWebviewNodeEvents_ = function() {
+  var self = this;
+  var webviewNode = this.webviewNode_;
+  this.browserPluginNode_.addEventListener('-internal-attached', function(e) {
+    var detail = e.detail ? JSON.parse(e.detail) : {};
+    self.instanceId_ = detail.windowId;
+    for (var eventName in WEB_VIEW_EXT_EVENTS) {
+      self.setupExtEvent_(eventName, WEB_VIEW_EXT_EVENTS[eventName]);
+    }
+  });
+
   for (var eventName in WEB_VIEW_EVENTS) {
     this.setupEvent_(eventName, WEB_VIEW_EVENTS[eventName]);
   }
@@ -262,11 +355,29 @@ WebView.prototype.setupWebviewNodeEvents_ = function() {
 /**
  * @private
  */
-WebView.prototype.setupEvent_ = function(eventname, attribs) {
+WebView.prototype.setupExtEvent_ = function(eventName, eventInfo) {
+  var self = this;
   var webviewNode = this.webviewNode_;
-  var internalname = '-internal-' + eventname;
+  eventInfo.evt.addListener(function(event) {
+    var webviewEvent = new Event(eventName, {bubbles: true});
+    $Array.forEach(eventInfo.fields, function(field) {
+      webviewEvent[field] = event[field];
+    });
+    if (eventInfo.customHandler) {
+      eventInfo.customHandler(self, event);
+    }
+    webviewNode.dispatchEvent(webviewEvent);
+  }, {instanceId: self.instanceId_});
+};
+
+/**
+ * @private
+ */
+WebView.prototype.setupEvent_ = function(eventName, attribs) {
+  var webviewNode = this.webviewNode_;
+  var internalname = '-internal-' + eventName;
   this.browserPluginNode_.addEventListener(internalname, function(e) {
-    var evt = new Event(eventname, { bubbles: true });
+    var evt = new Event(eventName, { bubbles: true });
     var detail = e.detail ? JSON.parse(e.detail) : {};
     $Array.forEach(attribs, function(attribName) {
       evt[attribName] = detail[attribName];
@@ -303,7 +414,7 @@ WebView.prototype.setupNewWindowEvent_ = function() {
     var evt = new Event('newwindow', { bubbles: true, cancelable: true });
     var detail = e.detail ? JSON.parse(e.detail) : {};
 
-    NEW_WINDOW_EVENT_ATTRIBUTES.forEach(function(attribName) {
+    $Array.forEach(NEW_WINDOW_EVENT_ATTRIBUTES, function(attribName) {
       evt[attribName] = detail[attribName];
     });
     var requestId = detail.requestId;
@@ -375,15 +486,15 @@ WebView.prototype.setupExecuteCodeAPI_ = function() {
 
   this.webviewNode_['executeScript'] = function(var_args) {
     validateCall();
-    var args = [self.browserPluginNode_.getGuestInstanceId()].concat(
-        Array.prototype.slice.call(arguments));
-    chrome.webview.executeScript.apply(null, args);
+    var args = $Array.concat([self.browserPluginNode_.getGuestInstanceId()],
+                             $Array.slice(arguments));
+    $Function.apply(chrome.webview.executeScript, null, args);
   }
   this.webviewNode_['insertCSS'] = function(var_args) {
     validateCall();
-    var args = [self.browserPluginNode_.getGuestInstanceId()].concat(
-        Array.prototype.slice.call(arguments));
-    chrome.webview.insertCSS.apply(null, args);
+    var args = $Array.concat([self.browserPluginNode_.getGuestInstanceId()],
+                             $Array.slice(arguments));
+    $Function.apply(chrome.webview.insertCSS, null, args);
   }
 };
 

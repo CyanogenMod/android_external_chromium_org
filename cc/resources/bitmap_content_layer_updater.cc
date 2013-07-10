@@ -24,8 +24,7 @@ BitmapContentLayerUpdater::Resource::~Resource() {}
 void BitmapContentLayerUpdater::Resource::Update(ResourceUpdateQueue* queue,
                                                  gfx::Rect source_rect,
                                                  gfx::Vector2d dest_offset,
-                                                 bool partial_update,
-                                                 RenderingStats* stats) {
+                                                 bool partial_update) {
   updater_->UpdateTexture(
       queue, texture(), source_rect, dest_offset, partial_update);
 }
@@ -60,8 +59,7 @@ void BitmapContentLayerUpdater::PrepareToUpdate(
     gfx::Size tile_size,
     float contents_width_scale,
     float contents_height_scale,
-    gfx::Rect* resulting_opaque_rect,
-    RenderingStats* stats) {
+    gfx::Rect* resulting_opaque_rect) {
   devtools_instrumentation::ScopedLayerTask paint_layer(
       devtools_instrumentation::kPaintLayer, layer_id_);
   if (canvas_size_ != content_rect.size()) {
@@ -72,19 +70,18 @@ void BitmapContentLayerUpdater::PrepareToUpdate(
         canvas_size_.width(), canvas_size_.height(), opaque_));
   }
 
-  base::TimeTicks paint_start_time;
-  if (stats)
-    paint_start_time = base::TimeTicks::HighResNow();
+  base::TimeTicks start_time =
+      rendering_stats_instrumentation_->StartRecording();
   PaintContents(canvas_.get(),
                 content_rect,
                 contents_width_scale,
                 contents_height_scale,
-                resulting_opaque_rect,
-                stats);
-  if (stats) {
-    stats->total_paint_time += base::TimeTicks::HighResNow() - paint_start_time;
-    stats->total_pixels_painted += content_rect.width() * content_rect.height();
-  }
+                resulting_opaque_rect);
+  base::TimeDelta duration =
+      rendering_stats_instrumentation_->EndRecording(start_time);
+  rendering_stats_instrumentation_->AddPaint(
+      duration,
+      content_rect.width() * content_rect.height());
 }
 
 void BitmapContentLayerUpdater::UpdateTexture(ResourceUpdateQueue* queue,

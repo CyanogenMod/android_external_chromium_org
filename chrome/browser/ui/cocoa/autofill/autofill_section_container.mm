@@ -7,6 +7,7 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_controller.h"
+#import "chrome/browser/ui/cocoa/autofill/autofill_pop_up_button.h"
 #import "chrome/browser/ui/cocoa/autofill/autofill_section_view.h"
 #import "chrome/browser/ui/cocoa/autofill/autofill_suggestion_container.h"
 #import "chrome/browser/ui/cocoa/autofill/autofill_textfield.h"
@@ -91,12 +92,11 @@ void BreakSuggestionText(const string16& text,
 }
 
 - (void)getInputs:(autofill::DetailOutputMap*)output {
-  for (id input in [inputs_ subviews]) {
+  for (NSControl<AutofillInputField>* input in [inputs_ subviews]) {
     const autofill::DetailInput* detailInput =
         reinterpret_cast<autofill::DetailInput*>([input tag]);
     DCHECK(detailInput);
-    NSString* value = [input isKindOfClass:[NSPopUpButton class]] ?
-        [input titleOfSelectedItem] : [input stringValue];
+    NSString* value = [input fieldValue];
     output->insert(
         std::make_pair(detailInput,base::SysNSStringToUTF16(value)));
   }
@@ -126,7 +126,6 @@ void BreakSuggestionText(const string16& text,
 - (void)loadView {
   inputs_.reset([[self makeInputControls] retain]);
   string16 labelText = controller_->LabelForSection(section_);
-
   label_.reset([[self makeDetailSectionLabel:
                    base::SysUTF16ToNSString(labelText)] retain]);
 
@@ -141,6 +140,9 @@ void BreakSuggestionText(const string16& text,
 }
 
 - (NSSize)preferredSize {
+  if ([view_ isHidden])
+    return NSMakeSize(0, 0);
+
   NSSize labelSize = [label_ frame].size;  // Assumes sizeToFit was called.
   CGFloat controlHeight = [inputs_ preferredHeightForWidth:kDetailsWidth];
   if ([inputs_ isHidden])
@@ -154,6 +156,9 @@ void BreakSuggestionText(const string16& text,
 }
 
 - (void)performLayout {
+  if ([view_ isHidden])
+    return;
+
   NSSize buttonSize = [suggestButton_ frame].size;  // Assume sizeToFit.
   NSSize labelSize = [label_ frame].size;  // Assumes sizeToFit was called.
   CGFloat controlHeight = [inputs_ preferredHeightForWidth:kDetailsWidth];
@@ -198,12 +203,11 @@ void BreakSuggestionText(const string16& text,
 }
 
 - (NSTextField*)makeDetailSectionLabel:(NSString*)labelText {
-  scoped_nsobject<NSTextField> label([[NSTextField alloc] init]);
+  base::scoped_nsobject<NSTextField> label([[NSTextField alloc] init]);
   [label setFont:
       [[NSFontManager sharedFontManager] convertFont:[label font]
                                          toHaveTrait:NSBoldFontMask]];
   [label setStringValue:labelText];
-  [label sizeToFit];
   [label setEditable:NO];
   [label setBordered:NO];
   [label sizeToFit];
@@ -211,7 +215,7 @@ void BreakSuggestionText(const string16& text,
 }
 
 - (MenuButton*)makeSuggestionButton {
-  scoped_nsobject<MenuButton> button([[MenuButton alloc] init]);
+  base::scoped_nsobject<MenuButton> button([[MenuButton alloc] init]);
 
   [button setOpenMenuOnClick:YES];
   [button setBordered:NO];
@@ -245,7 +249,7 @@ void BreakSuggestionText(const string16& text,
   const autofill::DetailInputs& inputs =
       controller_->RequestedFieldsForSection(section_);
 
-  scoped_nsobject<LayoutView> view([[LayoutView alloc] init]);
+  base::scoped_nsobject<LayoutView> view([[LayoutView alloc] init]);
   [view setLayoutManager:
       scoped_ptr<SimpleGridLayout>(new SimpleGridLayout(view))];
   SimpleGridLayout* layout = [view layoutManager];
@@ -273,30 +277,30 @@ void BreakSuggestionText(const string16& text,
 
     ui::ComboboxModel* input_model =
         controller_->ComboboxModelForAutofillType(input.type);
+    base::scoped_nsprotocol<NSControl<AutofillInputField>*> control;
     if (input_model) {
-      scoped_nsobject<NSPopUpButton> popup(
-          [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:YES]);
+      base::scoped_nsobject<AutofillPopUpButton> popup(
+          [[AutofillPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO]);
       for (int i = 0; i < input_model->GetItemCount(); ++i) {
         [popup addItemWithTitle:
             base::SysUTF16ToNSString(input_model->GetItemAt(i))];
       }
-      [popup selectItemWithTitle:base::SysUTF16ToNSString(input.initial_value)];
-      [popup sizeToFit];
-      [popup setTag:reinterpret_cast<NSInteger>(&input)];
-      layout->AddView(popup);
+      control.reset(popup.release());
     } else {
-      scoped_nsobject<AutofillTextField> field(
+      base::scoped_nsobject<AutofillTextField> field(
           [[AutofillTextField alloc] init]);
       [[field cell] setPlaceholderString:
           l10n_util::GetNSStringWithFixup(input.placeholder_text_rid)];
       [[field cell] setIcon:
           controller_->IconForField(
               input.type, input.initial_value).AsNSImage()];
-      [[field cell] setInvalid:YES];
-      [field sizeToFit];
-      [field setTag:reinterpret_cast<NSInteger>(&input)];
-      layout->AddView(field);
+      control.reset(field.release());
     }
+    [control setFieldValue:base::SysUTF16ToNSString(input.initial_value)];
+    [control setInvalid:YES];
+    [control sizeToFit];
+    [control setTag:reinterpret_cast<NSInteger>(&input)];
+    layout->AddView(control);
   }
 
   return view.autorelease();
@@ -326,6 +330,7 @@ void BreakSuggestionText(const string16& text,
     [suggestContainer_ showTextfield:extraText withIcon:extraIcon];
   }
   [view_ setShouldHighlightOnHover:showSuggestions];
+  [view_ setHidden:!controller_->SectionIsActive(section_)];
 }
 
 - (void)update {

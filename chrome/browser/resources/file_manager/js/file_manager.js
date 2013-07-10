@@ -193,9 +193,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       spaceInnerBar.style.width =
           (100 * usedSpace / sizeStatsResult.totalSizeKB) + '%';
 
-      spaceOuterBar.style.display = '';
+      spaceOuterBar.hidden = false;
     } else {
-      spaceOuterBar.style.display = 'none';
+      spaceOuterBar.hidden = true;
       spaceInfoLabel.textContent = str('FAILED_SPACE_INFO');
     }
   };
@@ -320,9 +320,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
               this.viewOptions_[key] = window.appState.viewOptions[key];
           }
         }
-        // TODO(hirono): Remove this line after the user test.
-        // crbug.com/249242
-        this.noCheckboxes_ = !!this.viewOptions_.noCheckboxes;
         done();
       }.bind(this));
     }.bind(this));
@@ -330,10 +327,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     // Get the command line option.
     group.add(function(done) {
       chrome.commandLinePrivate.hasSwitch(
-          'file-manager-no-checkboxes', function(flag) {
-        // TODO(hirono): Update this line after the user test.
-        // crbug.com/249242
-        this.noCheckboxes_ = this.noCheckboxes_ || flag;
+          'file-manager-show-checkboxes', function(flag) {
+        this.showCheckboxes_ = flag;
         done();
       }.bind(this));
     }.bind(this));
@@ -583,6 +578,14 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.hostedButton.checkable = true;
     this.detailViewButton_.checkable = true;
     this.thumbnailViewButton_.checkable = true;
+
+    if (util.platform.runningInBrowser()) {
+      // Supresses the default context menu.
+      this.dialogDom_.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+    }
   };
 
   FileManager.prototype.onMaximize = function() {
@@ -630,7 +633,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         Commands.newFolderCommand, this, this.directoryModel_);
 
     CommandUtil.registerCommand(doc, 'newwindow',
-        Commands.newWindowCommand, this);
+        Commands.newWindowCommand, this, this.directoryModel_);
 
     CommandUtil.registerCommand(doc, 'change-default-app',
         Commands.changeDefaultAppCommand, this);
@@ -678,6 +681,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     CommandUtil.registerCommand(doc, 'zip-selection',
         Commands.zipSelectionCommand, this, this.directoryModel_);
 
+    CommandUtil.registerCommand(doc, 'share', Commands.shareCommand, this);
+
     CommandUtil.registerCommand(doc, 'search', Commands.searchCommand, this,
         this.dialogDom_.querySelector('#search-box'));
 
@@ -690,6 +695,10 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
                                   this.volumeList_,
                                   i);
     }
+
+    CommandUtil.registerCommand(doc, 'zoom-in', Commands.zoomInCommand);
+    CommandUtil.registerCommand(doc, 'zoom-out', Commands.zoomOutCommand);
+    CommandUtil.registerCommand(doc, 'zoom-reset', Commands.zoomResetCommand);
 
     CommandUtil.registerCommand(doc, 'cut', Commands.defaultCommand, doc);
     CommandUtil.registerCommand(doc, 'copy', Commands.defaultCommand, doc);
@@ -789,11 +798,19 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @private
    */
   FileManager.prototype.initStrings_ = function(callback) {
-    chrome.fileBrowserPrivate.getStrings(function(strings) {
-      loadTimeData.data = strings;
-      this.loadTimeDataAvailable = true;
-      callback();
-    });
+    // Fetch the strings via the private api if running in the browser window.
+    // Otherwise, read cached strings from the local storage.
+    if (util.platform.runningInBrowser()) {
+      chrome.fileBrowserPrivate.getStrings(function(strings) {
+        loadTimeData.data = strings;
+        callback();
+      });
+    } else {
+      chrome.storage.local.get('strings', function(items) {
+        loadTimeData.data = items['strings'];
+        callback();
+      });
+    }
   };
 
   /**
@@ -832,8 +849,18 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
     this.metadataCache_ = MetadataCache.createFull();
 
-    this.okButton_ = this.dialogDom_.querySelector('.ok');
-    this.cancelButton_ = this.dialogDom_.querySelector('.cancel');
+    this.hasFooterPanel_ =
+        this.dialogType == DialogType.SELECT_SAVEAS_FILE ||
+        this.dialogType == DialogType.SELECT_FOLDER;
+
+    // If the footer panel exists, the buttons are placed there. Otherwise,
+    // the buttons are on the preview panel.
+    var parentPanelOfButtons = this.dialogDom_.querySelector(
+        !this.hasFooterPanel_ ? '.preview-panel' : '.dialog-footer');
+    parentPanelOfButtons.classList.add('button-panel');
+    this.fileTypeSelector_ = parentPanelOfButtons.querySelector('.file-type');
+    this.okButton_ = parentPanelOfButtons.querySelector('.ok');
+    this.cancelButton_ = parentPanelOfButtons.querySelector('.cancel');
 
     // Pre-populate the static localized strings.
     i18nTemplate.process(this.document_, loadTimeData);
@@ -896,7 +923,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.table_ = dom.querySelector('.detail-table');
     this.grid_ = dom.querySelector('.thumbnail-grid');
     this.spinner_ = dom.querySelector('#spinner-with-text');
-    this.showSpinner_(false);
+    this.showSpinner_(true);
 
     this.searchBreadcrumbs_ = new BreadcrumbsController(
          dom.querySelector('#search-breadcrumbs'), this.metadataCache_);
@@ -905,7 +932,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.searchBreadcrumbs_.setHideLast(false);
 
     // Check the option to hide the selecting checkboxes.
-    this.table_.noCheckboxes = this.noCheckboxes_;
+    this.table_.showCheckboxes = this.showCheckboxes_;
 
     var fullPage = this.dialogType == DialogType.FULL_PAGE;
     FileTable.decorate(this.table_, this.metadataCache_, fullPage);
@@ -976,9 +1003,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
     this.dialogDom_.ownerDocument.defaultView.addEventListener(
         'resize', this.onResize_.bind(this));
-
-    if (loadTimeData.getBoolean('ASH'))
-      this.dialogDom_.setAttribute('ash', 'true');
 
     this.filePopup_ = null;
 
@@ -1066,7 +1090,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.defaultActionMenuItem_.addEventListener('activate',
         this.dispatchSelectionAction_.bind(this));
 
-    this.fileTypeSelector_ = this.dialogDom_.querySelector('#file-type');
     this.initFileTypeFilter_();
 
     util.addIsFocusedMethod();
@@ -1163,6 +1186,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     var dragEndBound = this.onDragEnd_.bind(this);
     this.table_.list.addEventListener('dragend', dragEndBound);
     this.grid_.addEventListener('dragend', dragEndBound);
+    // This event is published by DragSelector because drag end event is not
+    // published at the end of drag selection.
+    this.table_.list.addEventListener('dragselectionend', dragEndBound);
 
     // TODO(mtomasz, yoshiki): Create sidebar earlier, and here just attach
     // the directory model.
@@ -1250,9 +1276,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       sortField: sortStatus.field,
       sortDirection: sortStatus.direction,
       columns: [],
-      listType: this.listType_,
-      // TODO(hirono): Remove this line after the user test. crbug.com/249242
-      noCheckboxes: !!this.noCheckboxes_
+      listType: this.listType_
     };
     var cm = this.table_.columnModel;
     for (var i = 0; i < cm.totalSize; i++) {
@@ -1333,11 +1357,11 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     if (type == FileManager.ListType.DETAIL) {
       this.table_.dataModel = this.directoryModel_.getFileList();
       this.table_.selectionModel = this.directoryModel_.getFileListSelection();
-      this.table_.style.display = '';
-      this.grid_.style.display = 'none';
+      this.table_.hidden = false;
+      this.grid_.hidden = true;
       this.grid_.selectionModel = this.emptySelectionModel_;
       this.grid_.dataModel = this.emptyDataModel_;
-      this.table_.style.display = '';
+      this.table_.hidden = false;
       /** @type {cr.ui.List} */
       this.currentList_ = this.table_.list;
       this.detailViewButton_.setAttribute('checked', '');
@@ -1347,11 +1371,11 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     } else if (type == FileManager.ListType.THUMBNAIL) {
       this.grid_.dataModel = this.directoryModel_.getFileList();
       this.grid_.selectionModel = this.directoryModel_.getFileListSelection();
-      this.grid_.style.display = '';
-      this.table_.style.display = 'none';
+      this.grid_.hidden = false;
+      this.table_.hidden = true;
       this.table_.selectionModel = this.emptySelectionModel_;
       this.table_.dataModel = this.emptyDataModel_;
-      this.grid_.style.display = '';
+      this.grid_.hidden = false;
       /** @type {cr.ui.List} */
       this.currentList_ = this.grid_;
       this.thumbnailViewButton_.setAttribute('checked', '');
@@ -1537,7 +1561,10 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       this.grid_.relayout();
     else
       this.table_.relayout();
-    this.directoryTree_.relayout();
+
+    // May not be available during initialization.
+    if (this.directoryTree_)
+      this.directoryTree_.relayout();
 
     // TODO(mtomasz, yoshiki): Initialize volume list earlier, before
     // file system is available.
@@ -1558,11 +1585,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    */
   FileManager.prototype.onPreviewPanelVisibilityChanged_ = function(visible) {
     var panelHeight = visible ? this.getPreviewPanelHeight_() : 0;
-
-    if (this.listType_ == FileManager.ListType.THUMBNAIL)
-      this.grid_.setBottomMarginForPanel(panelHeight);
-    else
-      this.table_.setBottomMarginForPanel(panelHeight);
+    this.grid_.setBottomMarginForPanel(panelHeight);
+    this.table_.setBottomMarginForPanel(panelHeight);
     this.directoryTree_.setBottomMarginForPanel(panelHeight);
   };
 
@@ -1770,10 +1794,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     }
 
     this.okButton_.textContent = okLabel;
-
-    var dialogTitle = this.params_.title || defaultTitle;
-    this.dialogDom_.querySelector('.dialog-title').textContent = dialogTitle;
-
     this.dialogDom_.setAttribute('type', this.dialogType);
   };
 
@@ -2164,6 +2184,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         this.directoryModel_.getCurrentDirEntry();
   };
 
+  /**
+   * Deletes the selected file and directories recursively.
+   */
   FileManager.prototype.deleteSelection = function() {
     // TODO(mtomasz): Remove this temporary dialog. crbug.com/167364
     var entries = this.getSelection().entries;
@@ -2175,6 +2198,17 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     }.bind(this));
   };
 
+  /**
+   * Shows the share dialog for the selected file.
+   */
+  FileManager.prototype.shareSelection = function() {
+    // TODO(mtomasz): Implement it. crbug.com/141396
+  };
+
+  /**
+   * Blinks the selection. Used to give feedback when copying or cutting the
+   * selection.
+   */
   FileManager.prototype.blinkSelection = function() {
     var selection = this.getSelection();
     if (!selection || selection.totalCount == 0)
@@ -2615,15 +2649,18 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       clearTimeout(this.scanCompletedTimer_);
       this.scanCompletedTimer_ = null;
     }
+
     if (this.scanUpdatedTimer_) {
       clearTimeout(this.scanUpdatedTimer_);
       this.scanUpdatedTimer_ = null;
     }
 
-    this.cancelSpinnerTimeout_();
-    this.showSpinner_(false);
-    this.showSpinnerTimeout_ =
-        setTimeout(this.showSpinner_.bind(this, true), 500);
+    if (!this.spinner_.hidden) {
+      this.cancelSpinnerTimeout_();
+      this.showSpinner_(false);
+      this.showSpinnerTimeout_ =
+          setTimeout(this.showSpinner_.bind(this, true), 500);
+    }
   };
 
   /**
@@ -3072,7 +3109,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
     var shade = this.document_.createElement('div');
     shade.className = 'shade';
-    var footer = this.document_.querySelector('.dialog-footer');
+    var footer = this.dialogDom_.querySelector('.button-panel');
     var progress = footer.querySelector('.progress-track');
     progress.style.width = '0%';
     var cancelled = false;
@@ -3801,16 +3838,5 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.ctrlKeyPressed_ = flag;
     this.document_.querySelector('#drive-clear-local-cache').canExecuteChange();
     this.document_.querySelector('#drive-reload').canExecuteChange();
-  };
-
-  /**
-   * Set the flag to hide the selecting checkboxes.
-   * This is the alternative for about:flags and to be removed.
-   * TODO(hirono): Remove this function after the user test.
-   * @param {boolean} flag If it's true, the selecting checkboxes are hidden.
-   */
-  window.setNoCheckboxesFlag = function(flag) {
-    fileManager.noCheckboxes_ = flag;
-    fileManager.updateStartupPrefs_();
   };
 })();

@@ -95,7 +95,7 @@ namespace connection_state {
 const char kConnected[] = "Connected";
 const char kConnecting[] = "Connecting";
 const char kNotConnected[] = "NotConnected";
-}  // namespace status
+}  // namespace connection_state
 
 namespace ethernet {
 const char kAuthentication[] = "Authentication";
@@ -117,6 +117,8 @@ namespace wifi {
 const char kAutoConnect[] = "AutoConnect";
 const char kBSSID[] = "BSSID";
 const char kEAP[] = "EAP";
+const char kFrequency[] = "Frequency";
+const char kFrequencyList[] = "FrequencyList";
 const char kHiddenSSID[] = "HiddenSSID";
 const char kNone[] = "None";
 const char kPassphrase[] = "Passphrase";
@@ -138,6 +140,7 @@ const char kEmailAddress[] = "EmailAddress";
 const char kEnrollmentURI[] = "EnrollmentURI";
 const char kGUID[] = "GUID";
 const char kIssuerCARef[] = "IssuerCARef";
+const char kIssuerCAPEMs[] = "IssuerCAPEMs";
 const char kIssuer[] = "Issuer";
 const char kLocality[] = "Locality";
 const char kNone[] = "None";
@@ -190,34 +193,51 @@ const char kPAP[] = "PAP";
 const char kPEAP[] = "PEAP";
 const char kPassword[] = "Password";
 const char kSaveCredentials[] = "SaveCredentials";
+const char kServerCAPEMs[] = "ServerCAPEMs";
 const char kServerCARef[] = "ServerCARef";
 const char kUseSystemCAs[] = "UseSystemCAs";
 }  // namespace eap
 
 namespace vpn {
-const char kAuthNoCache[] = "AuthNoCache";
-const char kAuthRetry[] = "AuthRetry";
-const char kAuth[] = "Auth";
-const char kAuthenticationType[] = "AuthenticationType";
 const char kAutoConnect[] = "AutoConnect";
-const char kCert[] = "Cert";
-const char kCipher[] = "Cipher";
 const char kClientCertPattern[] = "ClientCertPattern";
 const char kClientCertRef[] = "ClientCertRef";
 const char kClientCertType[] = "ClientCertType";
-const char kCompLZO[] = "CompLZO";
-const char kCompNoAdapt[] = "CompNoAdapt";
+const char kHost[] = "Host";
+const char kIPsec[] = "IPsec";
+const char kL2TP[] = "L2TP";
+const char kOpenVPN[] = "OpenVPN";
+const char kPassword[] = "Password";
+const char kSaveCredentials[] = "SaveCredentials";
+const char kTypeL2TP_IPsec[] = "L2TP-IPsec";
+const char kType[] = "Type";
+const char kUsername[] = "Username";
+}  // namespace vpn
+
+namespace ipsec {
+const char kAuthenticationType[] = "AuthenticationType";
+const char kCert[] = "Cert";
 const char kEAP[] = "EAP";
 const char kGroup[] = "Group";
-const char kHost[] = "Host";
 const char kIKEVersion[] = "IKEVersion";
-const char kIPsec[] = "IPsec";
-const char kKeyDirection[] = "KeyDirection";
-const char kL2TP[] = "L2TP";
-const char kNsCertType[] = "NsCertType";
-const char kOpenVPN[] = "OpenVPN";
 const char kPSK[] = "PSK";
-const char kPassword[] = "Password";
+const char kServerCARef[] = "ServerCARef";
+const char kServerCAPEMs[] = "ServerCAPEMs";
+const char kXAUTH[] = "XAUTH";
+}  // namespace ipsec
+
+namespace openvpn {
+const char kAuthNoCache[] = "AuthNoCache";
+const char kAuthRetry[] = "AuthRetry";
+const char kAuth[] = "Auth";
+const char kCipher[] = "Cipher";
+const char kCompLZO[] = "CompLZO";
+const char kCompNoAdapt[] = "CompNoAdapt";
+const char kInteract[] = "interact";
+const char kKeyDirection[] = "KeyDirection";
+const char kNoInteract[] = "nointeract";
+const char kNone[] = "none";
+const char kNsCertType[] = "NsCertType";
 const char kPort[] = "Port";
 const char kProto[] = "Proto";
 const char kPushPeerInfo[] = "PushPeerInfo";
@@ -225,26 +245,17 @@ const char kRemoteCertEKU[] = "RemoteCertEKU";
 const char kRemoteCertKU[] = "RemoteCertKU";
 const char kRemoteCertTLS[] = "RemoteCertTLS";
 const char kRenegSec[] = "RenegSec";
-const char kSaveCredentials[] = "SaveCredentials";
 const char kServerCARef[] = "ServerCARef";
+const char kServerCAPEMs[] = "ServerCAPEMs";
+const char kServerCertPEM[] = "ServerCertPEM";
 const char kServerCertRef[] = "ServerCertRef";
 const char kServerPollTimeout[] = "ServerPollTimeout";
+const char kServer[] = "server";
 const char kShaper[] = "Shaper";
 const char kStaticChallenge[] = "StaticChallenge";
 const char kTLSAuthContents[] = "TLSAuthContents";
 const char kTLSRemote[] = "TLSRemote";
-const char kTypeL2TP_IPsec[] = "L2TP-IPsec";
-const char kType[] = "Type";
-const char kUsername[] = "Username";
 const char kVerb[] = "Verb";
-const char kXAUTH[] = "XAUTH";
-}  // namespace vpn
-
-namespace openvpn {
-const char kNone[] = "none";
-const char kInteract[] = "interact";
-const char kNoInteract[] = "nointeract";
-const char kServer[] = "server";
 }  // namespace openvpn
 
 namespace proxy {

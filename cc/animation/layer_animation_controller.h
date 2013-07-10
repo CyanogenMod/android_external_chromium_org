@@ -10,22 +10,19 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "cc/animation/animation_events.h"
 #include "cc/animation/layer_animation_event_observer.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/scoped_ptr_vector.h"
 #include "ui/gfx/transform.h"
 
-namespace WebKit {
-class WebAnimationDelegate;
-}
-
 namespace gfx { class Transform; }
 
 namespace cc {
 
 class Animation;
+class AnimationDelegate;
 class AnimationRegistrar;
 class KeyframeValueList;
 class LayerAnimationValueObserver;
@@ -99,7 +96,7 @@ class CC_EXPORT LayerAnimationController
   void AddEventObserver(LayerAnimationEventObserver* observer);
   void RemoveEventObserver(LayerAnimationEventObserver* observer);
 
-  void set_layer_animation_delegate(WebKit::WebAnimationDelegate* delegate) {
+  void set_layer_animation_delegate(AnimationDelegate* delegate) {
     layer_animation_delegate_ = delegate;
   }
 
@@ -161,7 +158,7 @@ class CC_EXPORT LayerAnimationController
   ObserverList<LayerAnimationValueObserver> value_observers_;
   ObserverList<LayerAnimationEventObserver> event_observers_;
 
-  WebKit::WebAnimationDelegate* layer_animation_delegate_;
+  AnimationDelegate* layer_animation_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerAnimationController);
 };

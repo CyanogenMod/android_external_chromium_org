@@ -5,6 +5,7 @@
 #include "chrome/browser/extensions/api/file_system/file_system_api.h"
 
 #include "apps/saved_files_service.h"
+#include "apps/shell_window.h"
 #include "base/bind.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
@@ -13,13 +14,14 @@
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/value_conversions.h"
+#include "base/values.h"
 #include "chrome/browser/extensions/api/file_handlers/app_file_handler_util.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/shell_window_registry.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
-#include "chrome/browser/ui/extensions/shell_window.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/api/file_system.h"
 #include "chrome/common/extensions/permissions/api_permission.h"
@@ -50,6 +52,7 @@
 
 using apps::SavedFileEntry;
 using apps::SavedFilesService;
+using apps::ShellWindow;
 using fileapi::IsolatedContext;
 
 const char kInvalidParameters[] = "Invalid parameters";
@@ -85,12 +88,8 @@ const int kWhitelistedPaths[] = {
 // Retrieves the localized display name for the base name of the given path.
 // If the path is not localized, this will just return the base name.
 std::string GetDisplayBaseName(const base::FilePath& path) {
-  base::mac::ScopedCFTypeRef<CFURLRef> url(
-      CFURLCreateFromFileSystemRepresentation(
-          NULL,
-          (const UInt8*)path.value().c_str(),
-          path.value().length(),
-          true));
+  base::ScopedCFTypeRef<CFURLRef> url(CFURLCreateFromFileSystemRepresentation(
+      NULL, (const UInt8*)path.value().c_str(), path.value().length(), true));
   if (!url)
     return path.BaseName().value();
 
@@ -338,9 +337,39 @@ bool GetFileTypesFromAcceptOption(
   return true;
 }
 
+// Key for the path of the directory of the file last chosen by the user in
+// response to a chrome.fileSystem.chooseEntry() call.
+const char kLastChooseEntryDirectory[] = "last_choose_file_directory";
+
 }  // namespace
 
 namespace extensions {
+
+namespace file_system_api {
+
+bool GetLastChooseEntryDirectory(const ExtensionPrefs* prefs,
+                                 const std::string& extension_id,
+                                 base::FilePath* path) {
+  std::string string_path;
+  if (!prefs->ReadPrefAsString(extension_id,
+                               kLastChooseEntryDirectory,
+                               &string_path)) {
+    return false;
+  }
+
+  *path = base::FilePath::FromUTF8Unsafe(string_path);
+  return true;
+}
+
+void SetLastChooseEntryDirectory(ExtensionPrefs* prefs,
+                                 const std::string& extension_id,
+                                 const base::FilePath& path) {
+  prefs->UpdateExtensionPref(extension_id,
+                             kLastChooseEntryDirectory,
+                             base::CreateFilePathValue(path));
+}
+
+}  // namespace file_system_api
 
 bool FileSystemGetDisplayPathFunction::RunImpl() {
   std::string filesystem_name;
@@ -405,7 +434,7 @@ void FileSystemEntryFunction::RegisterFileSystemAndSendResponseWithIdOverride(
           GetExtension()->id(), render_view_host_->GetProcess()->GetID(), path,
           writable);
 
-  DictionaryValue* dict = new DictionaryValue();
+  base::DictionaryValue* dict = new base::DictionaryValue();
   SetResult(dict);
   dict->SetString("fileSystemId", file_entry.filesystem_id);
   dict->SetString("baseName", file_entry.registered_name);
@@ -643,9 +672,10 @@ void FileSystemChooseEntryFunction::SetInitialPathOnFileThread(
 
 void FileSystemChooseEntryFunction::FileSelected(const base::FilePath& path,
                                                  EntryType entry_type) {
-  extensions::ExtensionSystem::Get(profile())->extension_service()->
-      extension_prefs()->SetLastChooseEntryDirectory(
-          GetExtension()->id(), path.DirName());
+  file_system_api::SetLastChooseEntryDirectory(
+      ExtensionPrefs::Get(profile()),
+      GetExtension()->id(),
+      path.DirName());
   if (entry_type == WRITABLE) {
     CheckWritableFile(path);
     return;
@@ -755,9 +785,10 @@ bool FileSystemChooseEntryFunction::RunImpl() {
   file_type_info.support_drive = true;
 
   base::FilePath previous_path;
-  extensions::ExtensionSystem::Get(profile())->extension_service()->
-      extension_prefs()->GetLastChooseEntryDirectory(
-          GetExtension()->id(), &previous_path);
+  file_system_api::GetLastChooseEntryDirectory(
+      ExtensionPrefs::Get(profile()),
+      GetExtension()->id(),
+      &previous_path);
 
   content::BrowserThread::PostTaskAndReply(
       content::BrowserThread::FILE,

@@ -9,16 +9,13 @@
 #include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/message_loop.h"
-#include "base/rand_util.h"
-#include "base/sequenced_task_runner.h"
+#include "base/run_loop.h"
 #include "base/threading/thread.h"
 #include "chrome/browser/chromeos/drive/fake_file_system.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/local_file_reader.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
 #include "chrome/browser/drive/fake_drive_service.h"
-#include "chrome/browser/google_apis/task_util.h"
 #include "chrome/browser/google_apis/test_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "net/base/io_buffer.h"
@@ -54,10 +51,6 @@ class LocalReaderProxyTest : public ::testing::Test {
     ASSERT_TRUE(worker_thread_->Start());
   }
 
-  virtual void TearDown() OVERRIDE {
-    worker_thread_.reset();
-  }
-
   content::TestBrowserThreadBundle thread_bundle_;
 
   base::ScopedTempDir temp_dir_;
@@ -78,7 +71,7 @@ TEST_F(LocalReaderProxyTest, Read) {
   // Test instance.
   LocalReaderProxy proxy(file_reader.Pass(), file_content_.size());
 
-  // Make sure the read contant is as same as the file.
+  // Make sure the read content is as same as the file.
   std::string content;
   ASSERT_EQ(net::OK, test_util::ReadAllData(&proxy, &content));
   EXPECT_EQ(file_content_, content);
@@ -99,7 +92,7 @@ TEST_F(LocalReaderProxyTest, ReadWithLimit) {
   // Test instance.
   LocalReaderProxy proxy(file_reader.Pass(), expected_content.size());
 
-  // Make sure the read contant is as same as the file.
+  // Make sure the read content is as same as the file.
   std::string content;
   ASSERT_EQ(net::OK, test_util::ReadAllData(&proxy, &content));
   EXPECT_EQ(expected_content, content);
@@ -295,11 +288,11 @@ class DriveFileStreamReaderTest : public ::testing::Test {
     ASSERT_TRUE(worker_thread_->Start());
 
     // Initialize FakeDriveService.
-    fake_drive_service_.reset(new google_apis::FakeDriveService);
+    fake_drive_service_.reset(new FakeDriveService);
     fake_drive_service_->LoadResourceListForWapi(
-        "chromeos/gdata/root_feed.json");
+        "gdata/root_feed.json");
     fake_drive_service_->LoadAccountMetadataForWapi(
-        "chromeos/gdata/account_metadata.json");
+        "gdata/account_metadata.json");
 
     // Create a testee instance.
     fake_file_system_.reset(
@@ -327,7 +320,7 @@ class DriveFileStreamReaderTest : public ::testing::Test {
 
   scoped_ptr<base::Thread> worker_thread_;
 
-  scoped_ptr<google_apis::FakeDriveService> fake_drive_service_;
+  scoped_ptr<FakeDriveService> fake_drive_service_;
   scoped_ptr<test_util::FakeFileSystem> fake_file_system_;
 };
 
@@ -343,14 +336,16 @@ TEST_F(DriveFileStreamReaderTest, Read) {
 
   int error = net::ERR_FAILED;
   scoped_ptr<ResourceEntry> entry;
-  reader->Initialize(
-      kDriveFile,
-      net::HttpByteRange(),
-      google_apis::CreateComposedCallback(
-          base::Bind(&google_apis::test_util::RunAndQuit),
-                     google_apis::test_util::CreateCopyResultCallback(
-                         &error, &entry)));
-  base::MessageLoop::current()->Run();
+  {
+    base::RunLoop run_loop;
+    reader->Initialize(
+        kDriveFile,
+        net::HttpByteRange(),
+        google_apis::test_util::CreateQuitCallback(
+            &run_loop,
+            google_apis::test_util::CreateCopyResultCallback(&error, &entry)));
+    run_loop.Run();
+  }
   EXPECT_EQ(net::OK, error);
   ASSERT_TRUE(entry);
   EXPECT_TRUE(reader->IsInitialized());
@@ -370,14 +365,16 @@ TEST_F(DriveFileStreamReaderTest, Read) {
 
   error = net::ERR_FAILED;
   entry.reset();
-  reader->Initialize(
-      kDriveFile,
-      net::HttpByteRange(),
-      google_apis::CreateComposedCallback(
-          base::Bind(&google_apis::test_util::RunAndQuit),
-                     google_apis::test_util::CreateCopyResultCallback(
-                         &error, &entry)));
-  base::MessageLoop::current()->Run();
+  {
+    base::RunLoop run_loop;
+    reader->Initialize(
+        kDriveFile,
+        net::HttpByteRange(),
+        google_apis::test_util::CreateQuitCallback(
+            &run_loop,
+            google_apis::test_util::CreateCopyResultCallback(&error, &entry)));
+    run_loop.Run();
+  }
   EXPECT_EQ(net::OK, error);
   ASSERT_TRUE(entry);
   EXPECT_TRUE(reader->IsInitialized());
@@ -413,14 +410,16 @@ TEST_F(DriveFileStreamReaderTest, ReadRange) {
   byte_range.set_first_byte_position(kRangeOffset);
   // Last byte position is inclusive.
   byte_range.set_last_byte_position(kRangeOffset + kRangeLength - 1);
-  reader->Initialize(
-      kDriveFile,
-      byte_range,
-      google_apis::CreateComposedCallback(
-          base::Bind(&google_apis::test_util::RunAndQuit),
-                     google_apis::test_util::CreateCopyResultCallback(
-                         &error, &entry)));
-  base::MessageLoop::current()->Run();
+  {
+    base::RunLoop run_loop;
+    reader->Initialize(
+        kDriveFile,
+        byte_range,
+        google_apis::test_util::CreateQuitCallback(
+            &run_loop,
+            google_apis::test_util::CreateCopyResultCallback(&error, &entry)));
+    run_loop.Run();
+  }
   EXPECT_EQ(net::OK, error);
   ASSERT_TRUE(entry);
   EXPECT_TRUE(reader->IsInitialized());
@@ -441,14 +440,16 @@ TEST_F(DriveFileStreamReaderTest, ReadRange) {
 
   error = net::ERR_FAILED;
   entry.reset();
-  reader->Initialize(
-      kDriveFile,
-      byte_range,
-      google_apis::CreateComposedCallback(
-          base::Bind(&google_apis::test_util::RunAndQuit),
-                     google_apis::test_util::CreateCopyResultCallback(
-                         &error, &entry)));
-  base::MessageLoop::current()->Run();
+  {
+    base::RunLoop run_loop;
+    reader->Initialize(
+        kDriveFile,
+        byte_range,
+        google_apis::test_util::CreateQuitCallback(
+            &run_loop,
+            google_apis::test_util::CreateCopyResultCallback(&error, &entry)));
+    run_loop.Run();
+  }
   EXPECT_EQ(net::OK, error);
   ASSERT_TRUE(entry);
   EXPECT_TRUE(reader->IsInitialized());
@@ -480,14 +481,16 @@ TEST_F(DriveFileStreamReaderTest, OutOfRangeError) {
   byte_range.set_first_byte_position(kRangeOffset);
   // Last byte position is inclusive.
   byte_range.set_last_byte_position(kRangeOffset + kRangeLength - 1);
-  reader->Initialize(
-      kDriveFile,
-      byte_range,
-      google_apis::CreateComposedCallback(
-          base::Bind(&google_apis::test_util::RunAndQuit),
-                     google_apis::test_util::CreateCopyResultCallback(
-                         &error, &entry)));
-  base::MessageLoop::current()->Run();
+  {
+    base::RunLoop run_loop;
+    reader->Initialize(
+        kDriveFile,
+        byte_range,
+        google_apis::test_util::CreateQuitCallback(
+            &run_loop,
+            google_apis::test_util::CreateCopyResultCallback(&error, &entry)));
+    run_loop.Run();
+  }
   EXPECT_EQ(net::ERR_REQUEST_RANGE_NOT_SATISFIABLE, error);
   EXPECT_FALSE(entry);
 }

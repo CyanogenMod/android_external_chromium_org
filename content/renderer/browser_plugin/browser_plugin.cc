@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,6 +19,7 @@
 #include "content/renderer/browser_plugin/browser_plugin_bindings.h"
 #include "content/renderer/browser_plugin/browser_plugin_compositing_helper.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
+#include "content/renderer/drop_data_builder.h"
 #include "content/renderer/render_process_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/v8_value_converter_impl.h"
@@ -127,8 +128,6 @@ BrowserPlugin::BrowserPlugin(
       size_changed_in_flight_(false),
       before_first_navigation_(true),
       browser_plugin_manager_(render_view->GetBrowserPluginManager()),
-      current_nav_entry_index_(0),
-      nav_entry_count_(0),
       compositing_enabled_(false),
       weak_ptr_factory_(this) {
 }
@@ -171,10 +170,6 @@ bool BrowserPlugin::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_GuestUnresponsive, OnGuestUnresponsive)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_LoadAbort, OnLoadAbort)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_LoadCommit, OnLoadCommit)
-    IPC_MESSAGE_HANDLER(BrowserPluginMsg_LoadHandlerCalled, OnLoadHandlerCalled)
-    IPC_MESSAGE_HANDLER(BrowserPluginMsg_LoadRedirect, OnLoadRedirect)
-    IPC_MESSAGE_HANDLER(BrowserPluginMsg_LoadStart, OnLoadStart)
-    IPC_MESSAGE_HANDLER(BrowserPluginMsg_LoadStop, OnLoadStop)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_RequestPermission, OnRequestPermission)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_SetCursor, OnSetCursor)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_ShouldAcceptTouchEvents,
@@ -234,6 +229,10 @@ std::string BrowserPlugin::GetNameAttribute() const {
 
 std::string BrowserPlugin::GetSrcAttribute() const {
   return GetDOMAttributeValue(browser_plugin::kAttributeSrc);
+}
+
+std::string BrowserPlugin::GetApiAttribute() const {
+  return GetDOMAttributeValue(browser_plugin::kAttributeApi);
 }
 
 bool BrowserPlugin::GetAutoSizeAttribute() const {
@@ -416,20 +415,32 @@ void BrowserPlugin::Attach(int guest_instance_id) {
   guest_instance_id_ = guest_instance_id;
   browser_plugin_manager()->AddBrowserPlugin(guest_instance_id, this);
 
-  BrowserPluginHostMsg_Attach_Params create_guest_params;
-  create_guest_params.browser_plugin_instance_id = instance_id_;
-  create_guest_params.focused = ShouldGuestBeFocused();
-  create_guest_params.visible = visible_;
-  create_guest_params.name = GetNameAttribute();
-  create_guest_params.storage_partition_id = storage_partition_id_;
-  create_guest_params.persist_storage = persist_storage_;
-  create_guest_params.src = GetSrcAttribute();
-  GetDamageBufferWithSizeParams(&create_guest_params.auto_size_params,
-                                &create_guest_params.resize_guest_params);
+  std::map<std::string, base::Value*> props;
+  props[browser_plugin::kWindowID] =
+      new base::FundamentalValue(guest_instance_id);
+  TriggerEvent(browser_plugin::kEventInternalAttached, &props);
 
+  BrowserPluginHostMsg_Attach_Params attach_params;
+  attach_params.browser_plugin_instance_id = instance_id_;
+  attach_params.focused = ShouldGuestBeFocused();
+  attach_params.visible = visible_;
+  attach_params.name = GetNameAttribute();
+  attach_params.storage_partition_id = storage_partition_id_;
+  attach_params.persist_storage = persist_storage_;
+  attach_params.src = GetSrcAttribute();
+  GetDamageBufferWithSizeParams(&attach_params.auto_size_params,
+                                &attach_params.resize_guest_params);
+
+  // TODO(fsamuel): These params should be populated by a new internal attach
+  // API in the near future. This will permit shims that use BrowserPlugin to
+  // propagate shim-specific data on attachment that will be handled by the
+  // content embedder.
+  base::DictionaryValue extra_params;
+  extra_params.SetString(browser_plugin::kAttributeApi, GetApiAttribute());
   browser_plugin_manager()->Send(
       new BrowserPluginHostMsg_Attach(render_view_routing_id_,
-                                      guest_instance_id_, create_guest_params));
+                                      guest_instance_id_, attach_params,
+                                      extra_params));
 }
 
 void BrowserPlugin::DidCommitCompositorFrame() {
@@ -467,18 +478,16 @@ void BrowserPlugin::OnAttachACK(
   }
 }
 
-void BrowserPlugin::OnBuffersSwapped(int guest_instance_id,
-                                     const gfx::Size& size,
-                                     std::string mailbox_name,
-                                     int gpu_route_id,
-                                     int gpu_host_id) {
+void BrowserPlugin::OnBuffersSwapped(
+    int guest_instance_id,
+    const BrowserPluginMsg_BuffersSwapped_Params& params) {
   DCHECK(guest_instance_id == guest_instance_id_);
   EnableCompositing(true);
 
-  compositing_helper_->OnBuffersSwapped(size,
-                                        mailbox_name,
-                                        gpu_route_id,
-                                        gpu_host_id,
+  compositing_helper_->OnBuffersSwapped(params.size,
+                                        params.mailbox_name,
+                                        params.route_id,
+                                        params.host_id,
                                         GetDeviceScaleFactor());
 }
 
@@ -569,44 +578,6 @@ void BrowserPlugin::OnLoadCommit(
   guest_crashed_ = false;
   if (params.is_top_level)
     UpdateDOMAttribute(browser_plugin::kAttributeSrc, params.url.spec());
-
-  current_nav_entry_index_ = params.current_entry_index;
-  nav_entry_count_ = params.entry_count;
-
-  std::map<std::string, base::Value*> props;
-  props[browser_plugin::kURL] = new base::StringValue(params.url.spec());
-  props[browser_plugin::kIsTopLevel] =
-      new base::FundamentalValue(params.is_top_level);
-  TriggerEvent(browser_plugin::kEventLoadCommit, &props);
-}
-
-void BrowserPlugin::OnLoadHandlerCalled(int guest_instance_id) {
-  TriggerEvent(browser_plugin::kEventContentLoad, NULL);
-}
-
-void BrowserPlugin::OnLoadRedirect(int guest_instance_id,
-                                   const GURL& old_url,
-                                   const GURL& new_url,
-                                   bool is_top_level) {
-  std::map<std::string, base::Value*> props;
-  props[browser_plugin::kOldURL] = new base::StringValue(old_url.spec());
-  props[browser_plugin::kNewURL] = new base::StringValue(new_url.spec());
-  props[browser_plugin::kIsTopLevel] = new base::FundamentalValue(is_top_level);
-  TriggerEvent(browser_plugin::kEventLoadRedirect, &props);
-}
-
-void BrowserPlugin::OnLoadStart(int guest_instance_id,
-                                const GURL& url,
-                                bool is_top_level) {
-  std::map<std::string, base::Value*> props;
-  props[browser_plugin::kURL] = new base::StringValue(url.spec());
-  props[browser_plugin::kIsTopLevel] = new base::FundamentalValue(is_top_level);
-
-  TriggerEvent(browser_plugin::kEventLoadStart, &props);
-}
-
-void BrowserPlugin::OnLoadStop(int guest_instance_id) {
-  TriggerEvent(browser_plugin::kEventLoadStop, NULL);
 }
 
 void BrowserPlugin::OnRequestPermission(
@@ -879,15 +850,6 @@ bool BrowserPlugin::HasGuestInstanceID() const {
   return guest_instance_id_ != browser_plugin::kInstanceIDNone;
 }
 
-bool BrowserPlugin::CanGoBack() const {
-  return nav_entry_count_ > 1 && current_nav_entry_index_ > 0;
-}
-
-bool BrowserPlugin::CanGoForward() const {
-  return current_nav_entry_index_ >= 0 &&
-      current_nav_entry_index_ < (nav_entry_count_ - 1);
-}
-
 bool BrowserPlugin::ParsePartitionAttribute(std::string* error_message) {
   if (HasNavigated()) {
     *error_message = browser_plugin::kErrorAlreadyNavigated;
@@ -1054,31 +1016,6 @@ void BrowserPlugin::WeakCallbackForPersistObject(
                    plugin,
                    request_id));
   }
-}
-
-void BrowserPlugin::Back() {
-  if (!HasGuestInstanceID())
-    return;
-  browser_plugin_manager()->Send(
-      new BrowserPluginHostMsg_Go(render_view_routing_id_,
-                                  guest_instance_id_, -1));
-}
-
-void BrowserPlugin::Forward() {
-  if (!HasGuestInstanceID())
-    return;
-  browser_plugin_manager()->Send(
-      new BrowserPluginHostMsg_Go(render_view_routing_id_,
-                                  guest_instance_id_, 1));
-}
-
-void BrowserPlugin::Go(int relative_index) {
-  if (!HasGuestInstanceID())
-    return;
-  browser_plugin_manager()->Send(
-      new BrowserPluginHostMsg_Go(render_view_routing_id_,
-                                  guest_instance_id_,
-                                  relative_index));
 }
 
 void BrowserPlugin::TerminateGuest() {
@@ -1330,10 +1267,6 @@ bool BrowserPlugin::ShouldForwardToBrowserPlugin(
     case BrowserPluginMsg_GuestUnresponsive::ID:
     case BrowserPluginMsg_LoadAbort::ID:
     case BrowserPluginMsg_LoadCommit::ID:
-    case BrowserPluginMsg_LoadHandlerCalled::ID:
-    case BrowserPluginMsg_LoadRedirect::ID:
-    case BrowserPluginMsg_LoadStart::ID:
-    case BrowserPluginMsg_LoadStop::ID:
     case BrowserPluginMsg_RequestPermission::ID:
     case BrowserPluginMsg_SetCursor::ID:
     case BrowserPluginMsg_ShouldAcceptTouchEvents::ID:
@@ -1564,7 +1497,7 @@ bool BrowserPlugin::handleDragStatusUpdate(WebKit::WebDragStatus drag_status,
         render_view_routing_id_,
         guest_instance_id_,
         drag_status,
-        WebDropData(drag_data),
+        DropDataBuilder::Build(drag_data),
         mask,
         position));
   return true;

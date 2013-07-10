@@ -8,6 +8,7 @@
 #include <string>
 
 #include "apps/app_shim/app_shim_launch.h"
+#include "base/files/file_path.h"
 
 class Profile;
 
@@ -23,7 +24,7 @@ class AppShimHandler {
     virtual void OnAppClosed() = 0;
 
     // Allows the handler to determine which app this host corresponds to.
-    virtual Profile* GetProfile() const = 0;
+    virtual base::FilePath GetProfilePath() const = 0;
     virtual std::string GetAppId() const = 0;
 
    protected:
@@ -56,7 +57,10 @@ class AppShimHandler {
   virtual void OnShimClose(Host* host) = 0;
 
   // Invoked by the shim host when the shim process receives a focus event.
-  virtual void OnShimFocus(Host* host) = 0;
+  virtual void OnShimFocus(Host* host, AppShimFocusType focus_type) = 0;
+
+  // Invoked by the shim host when the shim process is hidden or shown.
+  virtual void OnShimSetHidden(Host* host, bool hidden) = 0;
 
   // Invoked by the shim host when the shim process receives a quit event.
   virtual void OnShimQuit(Host* host) = 0;

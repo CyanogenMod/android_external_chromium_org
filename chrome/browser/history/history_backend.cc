@@ -14,7 +14,6 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop.h"
@@ -22,11 +21,10 @@
 #include "base/rand_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/bookmarks/bookmark_service.h"
 #include "chrome/browser/favicon/favicon_changed_details.h"
-#include "chrome/browser/favicon/imported_favicon_usage.h"
 #include "chrome/browser/history/download_row.h"
 #include "chrome/browser/history/history_db_task.h"
 #include "chrome/browser/history/history_notifications.h"
@@ -39,12 +37,13 @@
 #include "chrome/browser/history/visit_filter.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/importer/imported_favicon_usage.h"
 #include "chrome/common/url_constants.h"
-#include "googleurl/src/gurl.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "sql/error_delegate_util.h"
+#include "url/gurl.h"
 
 #if defined(OS_ANDROID)
 #include "chrome/browser/history/android/android_provider_backend.h"
@@ -102,6 +101,11 @@ static const int kMaxRedirectCount = 32;
 // The number of days old a history entry can be before it is considered "old"
 // and is archived.
 static const int kArchiveDaysThreshold = 90;
+
+#if defined(OS_ANDROID)
+// The maximum number of top sites to track when recording top page visit stats.
+static const size_t kPageVisitStatsMaxTopSites = 50;
+#endif
 
 // Converts from PageUsageData to MostVisitedURL. |redirects| is a
 // list of redirects for this URL. Empty list means no redirects.
@@ -247,7 +251,7 @@ HistoryBackend::~HistoryBackend() {
   }
 
 #if defined(OS_ANDROID)
-  file_util::Delete(GetAndroidCacheFileName(), false);
+  sql::Connection::Delete(GetAndroidCacheFileName());
 #endif
 }
 
@@ -256,6 +260,9 @@ void HistoryBackend::Init(const std::string& languages, bool force_fail) {
     InitImpl(languages);
   delegate_->DBLoaded(id_);
   typed_url_syncable_service_.reset(new TypedUrlSyncableService(this));
+#if defined(OS_ANDROID)
+  PopulateMostVisitedURLMap();
+#endif
 }
 
 void HistoryBackend::SetOnBackendDestroyTask(base::MessageLoop* message_loop,
@@ -706,7 +713,7 @@ void HistoryBackend::InitImpl(const std::string& languages) {
     // See needs_version_17_migration() decl for more. In this case, we want
     // to delete the archived database and need to do so before we try to
     // open the file. We can ignore any error (maybe the file doesn't exist).
-    file_util::Delete(archived_name, false);
+    sql::Connection::Delete(archived_name);
   }
   archived_db_.reset(new ArchivedDatabase());
   if (!archived_db_->Init(archived_name)) {
@@ -799,6 +806,15 @@ std::pair<URLID, VisitID> HistoryBackend::AddPageVisit(
       !content::PageTransitionIsRedirect(transition)) ||
       transition_type == content::PAGE_TRANSITION_KEYWORD_GENERATED)
     typed_increment = 1;
+
+#if defined(OS_ANDROID)
+  // Only count the page visit if it came from user browsing and only count it
+  // once when cycling through a redirect chain.
+  if (visit_source == SOURCE_BROWSED &&
+      (transition & content::PAGE_TRANSITION_CHAIN_END) != 0) {
+    RecordTopPageVisitStats(url);
+  }
+#endif
 
   // See if this URL is already in the DB.
   URLRow url_info(url);
@@ -1358,8 +1374,14 @@ void HistoryBackend::QueryHistory(scoped_refptr<QueryHistoryRequest> request,
       // if (archived_db_.get() &&
       //     expirer_.GetCurrentArchiveTime() - TimeDelta::FromDays(7)) {
     } else {
-      // Full text history query.
-      QueryHistoryFTS(text_query, options, &request->value);
+      // Text history query.
+      QueryHistoryText(db_.get(), db_.get(), text_query, options,
+                       &request->value);
+      if (archived_db_.get() &&
+          expirer_.GetCurrentArchiveTime() >= options.begin_time) {
+        QueryHistoryText(archived_db_.get(), archived_db_.get(), text_query,
+                         options, &request->value);
+      }
     }
   }
 
@@ -1421,6 +1443,43 @@ void HistoryBackend::QueryHistoryBasic(URLDatabase* url_db,
   }
 
   if (!has_more_results && options.begin_time <= first_recorded_time_)
+    result->set_reached_beginning(true);
+}
+
+// Text-based querying of history.
+void HistoryBackend::QueryHistoryText(URLDatabase* url_db,
+                                      VisitDatabase* visit_db,
+                                      const string16& text_query,
+                                      const QueryOptions& options,
+                                      QueryResults* result) {
+  URLRows text_matches;
+  url_db->GetTextMatches(text_query, &text_matches);
+
+  std::vector<URLResult> matching_visits;
+  VisitVector visits;    // Declare outside loop to prevent re-construction.
+  for (size_t i = 0; i < text_matches.size(); i++) {
+    const URLRow& text_match = text_matches[i];
+    // Get all visits for given URL match.
+    visit_db->GetVisitsForURLWithOptions(text_match.id(), options, &visits);
+    for (size_t j = 0; j < visits.size(); j++) {
+      URLResult url_result(text_match);
+      url_result.set_visit_time(visits[j].visit_time);
+      matching_visits.push_back(url_result);
+    }
+  }
+
+  std::sort(matching_visits.begin(), matching_visits.end(),
+            URLResult::CompareVisitTime);
+
+  size_t max_results = options.max_count == 0 ?
+      std::numeric_limits<size_t>::max() : static_cast<int>(options.max_count);
+  for (std::vector<URLResult>::iterator it = matching_visits.begin();
+       it != matching_visits.end() && result->size() < max_results; ++it) {
+    result->AppendURLBySwapping(&(*it));
+  }
+
+  if (matching_visits.size() == result->size() &&
+      options.begin_time <= first_recorded_time_)
     result->set_reached_beginning(true);
 }
 
@@ -1923,8 +1982,7 @@ void HistoryBackend::MergeFavicon(
 
   if (!favicon_id) {
     // There is no favicon at |icon_url|, create it.
-    favicon_id = thumbnail_db_->AddFavicon(icon_url, icon_type,
-                                           GetDefaultFaviconSizes());
+    favicon_id = thumbnail_db_->AddFavicon(icon_url, icon_type);
   }
 
   std::vector<FaviconBitmapIDSize> bitmap_id_sizes;
@@ -2083,8 +2141,7 @@ void HistoryBackend::SetFavicons(
     if (!icon_id) {
       // TODO(pkotwicz): Remove the favicon sizes attribute from
       // ThumbnailDatabase::AddFavicon().
-      icon_id = thumbnail_db_->AddFavicon(icon_url, icon_type,
-                                          GetDefaultFaviconSizes());
+      icon_id = thumbnail_db_->AddFavicon(icon_url, icon_type);
       data_modified = true;
     }
     icon_ids.push_back(icon_id);
@@ -2153,7 +2210,6 @@ void HistoryBackend::SetImportedFavicons(
       favicon_id = thumbnail_db_->AddFavicon(
           favicon_usage[i].favicon_url,
           chrome::FAVICON,
-          GetDefaultFaviconSizes(),
           new base::RefCountedBytes(favicon_usage[i].png_data),
           now,
           gfx::Size());
@@ -2438,7 +2494,7 @@ bool HistoryBackend::GetFaviconBitmapResultsForBestMatch(
   GURL icon_url;
   chrome::IconType icon_type;
   if (!thumbnail_db_->GetFaviconHeader(best_favicon_id, &icon_url,
-                                       &icon_type, NULL)) {
+                                       &icon_type)) {
     return false;
   }
 
@@ -2934,7 +2990,7 @@ void HistoryBackend::DeleteAllHistory() {
     // Close the database and delete the file.
     archived_db_.reset();
     base::FilePath archived_file_name = GetArchivedFileName();
-    file_util::Delete(archived_file_name, false);
+    sql::Connection::Delete(archived_file_name);
 
     // Now re-initialize the database (which may fail).
     archived_db_.reset(new ArchivedDatabase());
@@ -2963,7 +3019,7 @@ bool HistoryBackend::ClearAllThumbnailHistory(URLRows* kept_urls) {
     // error opening it. In this case, we just try to blow it away to try to
     // fix the error if it exists. This may fail, in which case either the
     // file doesn't exist or there's no more we can do.
-    file_util::Delete(GetThumbnailFileName(), false);
+    sql::Connection::Delete(GetThumbnailFileName());
     return true;
   }
 
@@ -3073,5 +3129,29 @@ void HistoryBackend::NotifyVisitObservers(const VisitRow& visit) {
   if (delegate_)
     delegate_->NotifyVisitDBObserversOnAddVisit(info);
 }
+
+#if defined(OS_ANDROID)
+void HistoryBackend::PopulateMostVisitedURLMap() {
+  MostVisitedURLList most_visited_urls;
+  QueryMostVisitedURLsImpl(kPageVisitStatsMaxTopSites, kSegmentDataRetention,
+                           &most_visited_urls);
+
+  DCHECK_LE(most_visited_urls.size(), kPageVisitStatsMaxTopSites);
+  for (size_t i = 0; i < most_visited_urls.size(); ++i) {
+    most_visited_urls_map_[most_visited_urls[i].url] = i;
+    for (size_t j = 0; j < most_visited_urls[i].redirects.size(); ++j)
+      most_visited_urls_map_[most_visited_urls[i].redirects[j]] = i;
+  }
+}
+
+void HistoryBackend::RecordTopPageVisitStats(const GURL& url) {
+  int rank = kPageVisitStatsMaxTopSites;
+  std::map<GURL, int>::const_iterator it = most_visited_urls_map_.find(url);
+  if (it != most_visited_urls_map_.end())
+    rank = (*it).second;
+  UMA_HISTOGRAM_ENUMERATION("History.TopSitesVisitsByRank",
+                            rank, kPageVisitStatsMaxTopSites + 1);
+}
+#endif
 
 }  // namespace history

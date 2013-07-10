@@ -13,7 +13,7 @@
 #include "chrome/browser/chromeos/drive/file_errors.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
-#include "chrome/browser/google_apis/drive_notification_observer.h"
+#include "chrome/browser/drive/drive_notification_observer.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
@@ -22,15 +22,12 @@ class FilePath;
 class SequencedTaskRunner;
 }
 
-namespace google_apis {
-class DriveServiceInterface;
-}
-
 namespace drive {
 
 class DebugInfoCollector;
 class DownloadHandler;
 class DriveAppRegistry;
+class DriveServiceInterface;
 class FileSystemInterface;
 class FileSystemProxy;
 class FileWriteHelper;
@@ -39,6 +36,7 @@ class JobListInterface;
 namespace internal {
 class FileCache;
 class ResourceMetadata;
+class ResourceMetadataStorage;
 }  // namespace internal
 
 // Interface for classes that need to observe events from
@@ -67,14 +65,14 @@ class DriveIntegrationServiceObserver {
 // created per-profile.
 class DriveIntegrationService
     : public BrowserContextKeyedService,
-      public google_apis::DriveNotificationObserver {
+      public DriveNotificationObserver {
  public:
   // test_drive_service, test_cache_root and test_file_system are used by tests
   // to inject customized instances.
   // Pass NULL or the empty value when not interested.
   DriveIntegrationService(
       Profile* profile,
-      google_apis::DriveServiceInterface* test_drive_service,
+      DriveServiceInterface* test_drive_service,
       const base::FilePath& test_cache_root,
       FileSystemInterface* test_file_system);
   virtual ~DriveIntegrationService();
@@ -90,11 +88,11 @@ class DriveIntegrationService
   void AddObserver(DriveIntegrationServiceObserver* observer);
   void RemoveObserver(DriveIntegrationServiceObserver* observer);
 
-  // google_apis::DriveNotificationObserver implementation.
+  // DriveNotificationObserver implementation.
   virtual void OnNotificationReceived() OVERRIDE;
   virtual void OnPushNotificationEnabled(bool enabled) OVERRIDE;
 
-  google_apis::DriveServiceInterface* drive_service() {
+  DriveServiceInterface* drive_service() {
     return drive_service_.get();
   }
 
@@ -149,8 +147,10 @@ class DriveIntegrationService
 
   base::FilePath cache_root_directory_;
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
+  scoped_ptr<internal::ResourceMetadataStorage,
+             util::DestroyHelper> metadata_storage_;
   scoped_ptr<internal::FileCache, util::DestroyHelper> cache_;
-  scoped_ptr<google_apis::DriveServiceInterface> drive_service_;
+  scoped_ptr<DriveServiceInterface> drive_service_;
   scoped_ptr<JobScheduler> scheduler_;
   scoped_ptr<DriveAppRegistry> drive_app_registry_;
   scoped_ptr<internal::ResourceMetadata,

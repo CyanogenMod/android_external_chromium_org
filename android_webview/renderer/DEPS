@@ -3,12 +3,13 @@ include_rules = [
   "+android_webview/common",
   "+android_webview/renderer",
 
+  "+components/autofill/content/renderer",
   "+components/visitedlink/renderer",
 
   "+content/public/renderer",
 
-  "+third_party/WebKit/Source/WebKit/chromium/public",
   "+third_party/WebKit/public/platform",
+  "+third_party/WebKit/public/web",
 
   "+ui/gl/gpu_memory_buffer.h",
 ]

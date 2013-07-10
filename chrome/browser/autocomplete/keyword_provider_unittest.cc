@@ -2,15 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/command_line.h"
 #include "base/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/keyword_provider.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 class KeywordProviderTest : public testing::Test {
  protected:
@@ -33,23 +35,25 @@ class KeywordProviderTest : public testing::Test {
                ResultType AutocompleteMatch::* member);
 
  protected:
+  static const TemplateURLService::Initializer kTestData[];
+
   scoped_refptr<KeywordProvider> kw_provider_;
   scoped_ptr<TemplateURLService> model_;
 };
 
-void KeywordProviderTest::SetUp() {
-  static const TemplateURLService::Initializer kTestKeywordData[] = {
-    { "aa", "aa.com?foo=%s", "aa" },
-    { "aaaa", "http://aaaa/?aaaa=1&b=%s&c", "aaaa" },
-    { "aaaaa", "%s", "aaaaa" },
-    { "ab", "bogus URL %s", "ab" },
-    { "weasel", "weasel%sweasel", "weasel" },
-    { "www", " +%2B?=%sfoo ", "www" },
-    { "z", "%s=z", "z" },
-  };
+// static
+const TemplateURLService::Initializer KeywordProviderTest::kTestData[] = {
+  { "aa", "aa.com?foo=%s", "aa" },
+  { "aaaa", "http://aaaa/?aaaa=1&b=%s&c", "aaaa" },
+  { "aaaaa", "%s", "aaaaa" },
+  { "ab", "bogus URL %s", "ab" },
+  { "weasel", "weasel%sweasel", "weasel" },
+  { "www", " +%2B?=%sfoo ", "www" },
+  { "z", "%s=z", "z" },
+};
 
-  model_.reset(new TemplateURLService(kTestKeywordData,
-                                    arraysize(kTestKeywordData)));
+void KeywordProviderTest::SetUp() {
+  model_.reset(new TemplateURLService(kTestData, arraysize(kTestData)));
   kw_provider_ = new KeywordProvider(NULL, model_.get());
 }
 
@@ -134,22 +138,22 @@ TEST_F(KeywordProviderTest, Edit) {
 TEST_F(KeywordProviderTest, URL) {
   test_data<GURL> url_cases[] = {
     // No query input -> empty destination URL.
-    {ASCIIToUTF16("z"),               1, {GURL()}},
-    {ASCIIToUTF16("z    \t"),         1, {GURL()}},
+    {ASCIIToUTF16("z"),           1, {GURL()}},
+    {ASCIIToUTF16("z    \t"),     1, {GURL()}},
 
     // Check that tokenization only collapses whitespace between first tokens
     // and query input, but not rest of URL, is escaped.
-    {ASCIIToUTF16("w  bar +baz"),     2, {GURL(" +%2B?=bar+%2Bbazfoo "),
-                                          GURL("bar+%2Bbaz=z")}},
+    {ASCIIToUTF16("w  bar +baz"), 2, {GURL(" +%2B?=bar+%2Bbazfoo "),
+                                      GURL("bar+%2Bbaz=z")}},
 
     // Substitution should work with various locations of the "%s".
-    {ASCIIToUTF16("aaa 1a2b"),        2, {GURL("http://aaaa/?aaaa=1&b=1a2b&c"),
-                                          GURL("1a2b")}},
-    {ASCIIToUTF16("a 1 2 3"),         3, {GURL("aa.com?foo=1+2+3"),
-                                          GURL("bogus URL 1+2+3"),
-                                        GURL("http://aaaa/?aaaa=1&b=1+2+3&c")}},
-    {ASCIIToUTF16("www.w w"),         2, {GURL(" +%2B?=wfoo "),
-                                          GURL("weaselwweasel")}},
+    {ASCIIToUTF16("aaa 1a2b"),    2, {GURL("http://aaaa/?aaaa=1&b=1a2b&c"),
+                                      GURL("1a2b")}},
+    {ASCIIToUTF16("a 1 2 3"),     3, {GURL("aa.com?foo=1+2+3"),
+                                      GURL("bogus URL 1+2+3"),
+                                      GURL("http://aaaa/?aaaa=1&b=1+2+3&c")}},
+    {ASCIIToUTF16("www.w w"),     2, {GURL(" +%2B?=wfoo "),
+                                      GURL("weaselwweasel")}},
   };
 
   RunTest<GURL>(url_cases, arraysize(url_cases),
@@ -189,27 +193,7 @@ TEST_F(KeywordProviderTest, Contents) {
   };
 
   RunTest<string16>(contents_cases, arraysize(contents_cases),
-                        &AutocompleteMatch::contents);
-}
-
-TEST_F(KeywordProviderTest, DISABLED_Description) {
-  test_data<string16> description_cases[] = {
-    // Whole keyword should be returned for both exact and inexact matches.
-    {ASCIIToUTF16("z foo"),           1, {ASCIIToUTF16("(Keyword: z)")}},
-    {ASCIIToUTF16("a foo"),           3, {ASCIIToUTF16("(Keyword: aa)"),
-                                          ASCIIToUTF16("(Keyword: ab)"),
-                                          ASCIIToUTF16("(Keyword: aaaa)")}},
-    {ASCIIToUTF16("ftp://www.www w"), 0, {}},
-    {ASCIIToUTF16("http://www.ab w"), 1, {ASCIIToUTF16("(Keyword: ab)")}},
-
-    // Keyword should be returned regardless of query input.
-    {ASCIIToUTF16("z"),               1, {ASCIIToUTF16("(Keyword: z)")}},
-    {ASCIIToUTF16("z    \t"),         1, {ASCIIToUTF16("(Keyword: z)")}},
-    {ASCIIToUTF16("z   a   b   c++"), 1, {ASCIIToUTF16("(Keyword: z)")}},
-  };
-
-  RunTest<string16>(description_cases, arraysize(description_cases),
-                        &AutocompleteMatch::description);
+                    &AutocompleteMatch::contents);
 }
 
 TEST_F(KeywordProviderTest, AddKeyword) {
@@ -293,4 +277,20 @@ TEST_F(KeywordProviderTest, GetSubstitutingTemplateURLForInput) {
     EXPECT_EQ(ASCIIToUTF16(cases[i].updated_text), input.text());
     EXPECT_EQ(cases[i].updated_cursor_position, input.cursor_position());
   }
+}
+
+// If extra query params are specified on the command line, they should be
+// reflected (only) in the default search provider's destination URL.
+TEST_F(KeywordProviderTest, ExtraQueryParams) {
+  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+      switches::kExtraSearchQueryParams, "a=b");
+
+  test_data<GURL> url_cases[] = {
+    {ASCIIToUTF16("a 1 2 3"), 3, {GURL("aa.com?a=b&foo=1+2+3"),
+                                  GURL("bogus URL 1+2+3"),
+                                  GURL("http://aaaa/?aaaa=1&b=1+2+3&c")}},
+  };
+
+  RunTest<GURL>(url_cases, arraysize(url_cases),
+                &AutocompleteMatch::destination_url);
 }

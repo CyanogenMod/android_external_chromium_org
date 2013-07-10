@@ -201,6 +201,12 @@
       # Set to 1 to enable dcheck in release without having to use the flag.
       'dcheck_always_on%': 0,
 
+      # Set to 1 to make a build that logs like an official build, but is not
+      # necessarily an official build, ie DCHECK and DLOG are disabled and
+      # removed completely in release builds, to minimize binary footprint.
+      # Note: this setting is ignored if buildtype=="Official".
+      'logging_like_official_build%': 0,
+
       # Disable file manager component extension by default.
       'file_manager_extension%': 0,
 
@@ -761,6 +767,7 @@
     'image_loader_extension%': '<(image_loader_extension)',
     'fastbuild%': '<(fastbuild)',
     'dcheck_always_on%': '<(dcheck_always_on)',
+    'logging_like_official_build%': '<(logging_like_official_build)',
     'python_ver%': '<(python_ver)',
     'arm_version%': '<(arm_version)',
     'armv7%': '<(armv7)',
@@ -818,6 +825,7 @@
     'use_system_libjpeg%': '<(use_system_libjpeg)',
     'android_webview_build%': '<(android_webview_build)',
     'gyp_managed_install%': 0,
+    'create_standalone_apk%': 1,
     'google_tv%': '<(google_tv)',
     'enable_app_list%': '<(enable_app_list)',
     'use_default_render_theme%': '<(use_default_render_theme)',
@@ -955,6 +963,8 @@
     # Enable sampling based profiler.
     # See http://google-perftools.googlecode.com/svn/trunk/doc/cpuprofile.html
     'profiling%': '0',
+    # Profile without optimizing out stack frames when profiling==1.
+    'profiling_full_stack_frames%': '0',
 
     # Enable strict glibc debug mode.
     'glibcxx_debug%': 0,
@@ -1076,6 +1086,10 @@
     # do a developer build.
     'android_app_version_name%': 'Developer Build',
     'android_app_version_code%': 0,
+
+
+    # Contains data about the attached devices for gyp_managed_install.
+    'build_device_config_path': '<(PRODUCT_DIR)/build_devices.cfg',
 
     'sas_dll_exists': '<!(python <(DEPTH)/build/dir_exists.py <(sas_dll_path))',
     'wix_exists': '<!(python <(DEPTH)/build/dir_exists.py <(wix_path))',
@@ -1572,6 +1586,9 @@
       ['use_concatenated_impulse_responses==1', {
         'grit_defines': ['-D', 'use_concatenated_impulse_responses'],
       }],
+      ['enable_webrtc==1', {
+        'grit_defines': ['-D', 'enable_webrtc'],
+      }],
       ['clang_use_chrome_plugins==1 and OS!="win"', {
         'clang_chrome_plugins_flags': [
           '<!@(<(DEPTH)/tools/clang/scripts/plugin_flags.sh)'
@@ -2049,6 +2066,9 @@
       ['dcheck_always_on!=0', {
         'defines': ['DCHECK_ALWAYS_ON=1'],
       }],  # dcheck_always_on!=0
+      ['logging_like_official_build!=0', {
+        'defines': ['LOGGING_IS_OFFICIAL_BUILD=1'],
+      }],  # logging_like_official_build!=0
       ['win_use_allocator_shim==0', {
         'conditions': [
           ['OS=="win"', {
@@ -2741,10 +2761,22 @@
             ],
             'conditions' : [
               ['OS=="android"', {
-                # Only link with needed input sections. This is to avoid getting
-                # undefined reference to __cxa_bad_typeid in the CDU library.
                 'ldflags': [
+                  '-Wl,--fatal-warnings',
+                  # Only link with needed input sections. This is to avoid
+                  # getting undefined reference to __cxa_bad_typeid in the CDU
+                  # library.
                   '-Wl,--gc-sections',
+                  # Warn in case of text relocations.
+                  '-Wl,--warn-shared-textrel',
+                ],
+              }],
+              ['OS=="android" and android_webview_build==1', {
+                'ldflags!': [
+                  # Must not turn on --fatal-warnings or warn-shared-textrel,
+                  # see crbug.com/157326.
+                  '-Wl,--fatal-warnings',
+                  '-Wl,--warn-shared-textrel',
                 ],
               }],
               ['OS=="android" and android_full_debug==0', {
@@ -2814,6 +2846,19 @@
                 'cflags': [
                   '-fomit-frame-pointer',
                 ],
+                'ldflags': [
+                  '-Wl,--fatal-warnings',
+                  # Warn in case of text relocations.
+                  '-Wl,--warn-shared-textrel',
+                ],
+              }],
+              ['OS=="android" and android_webview_build==1', {
+                'ldflags!': [
+                  # Must not turn on --fatal-warnings or
+                  # shared-text-rel, see crbug.com/157326.
+                  '-Wl,--fatal-warnings',
+                  '-Wl,--warn-shared-textrel',
+                ],
               }],
               ['clang==1', {
                 'cflags!': [
@@ -2824,6 +2869,14 @@
                 'cflags': [
                   '-fno-omit-frame-pointer',
                   '-g',
+                ],
+                'conditions' : [
+                  ['profiling_full_stack_frames==1', {
+                    'cflags': [
+                      '-fno-inline',
+                      '-fno-optimize-sibling-calls',
+                    ],
+                  }],
                 ],
               }],
               # Can be omitted to reduce output size. Does not seem to affect
@@ -3101,6 +3154,11 @@
               # suffix. However, this is used heavily in NaCl code, so disable
               # the warning for now.
               '-Wno-reserved-user-defined-literal',
+
+              # Clang considers the `register` keyword as deprecated, but e.g.
+              # code generated by flex (used in angle) contains that keyword.
+              # http://crbug.com/255186
+              '-Wno-deprecated-register',
             ],
             'cflags_cc': [
               # See the comment in the Mac section for what it takes to move
@@ -3798,6 +3856,11 @@
 
                 # Warns when a const char[] is converted to bool.
                 '-Wstring-conversion',
+
+                # Clang considers the `register` keyword as deprecated, but e.g.
+                # code generated by flex (used in angle) contains that keyword.
+                # http://crbug.com/255186
+                '-Wno-deprecated-register',
               ],
               'OTHER_CPLUSPLUSFLAGS': [
                 # gnu++11 instead of c++11 is needed because some code uses
@@ -4430,7 +4493,11 @@
                   '/ignore:4199',
                   '/ignore:4221',
                   '/nxcompat',
-                  '/largeaddressaware',
+                ],
+                'conditions': [
+                  ['asan==0', {
+                    'AdditionalOptions': ['/largeaddressaware'],
+                  }],
                 ],
               },
             },
@@ -4552,7 +4619,6 @@
         ],
       }],
       ['OS=="ios"', {
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
         # Just build armv7, until armv7s is correctly tested.
         'VALID_ARCHS': 'armv7 i386',
         # Target both iPhone and iPad.

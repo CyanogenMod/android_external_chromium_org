@@ -6,14 +6,17 @@
 #define LIBRARIES_NACL_IO_MOUNT_HTML5FS_H_
 
 #include <pthread.h>
+
 #include "nacl_io/mount.h"
 #include "nacl_io/pepper_interface.h"
+#include "nacl_io/typed_mount_factory.h"
 
 class MountNode;
 
 class MountHtml5Fs : public Mount {
  public:
-  virtual Error Open(const Path& path, int mode, MountNode** out_node);
+  virtual Error Access(const Path& path, int a_mode);
+  virtual Error Open(const Path& path, int mode, ScopedMountNode* out_node);
   virtual Error Unlink(const Path& path);
   virtual Error Mkdir(const Path& path, int permissions);
   virtual Error Rmdir(const Path& path);
@@ -38,7 +41,7 @@ class MountHtml5Fs : public Mount {
   Error filesystem_open_error_;      // protected by lock_.
   pthread_cond_t filesystem_open_cond_;
 
-  friend class Mount;
+  friend class TypedMountFactory<MountHtml5Fs>;
 };
 
 #endif  // LIBRARIES_NACL_IO_MOUNT_HTML5FS_H_

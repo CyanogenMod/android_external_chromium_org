@@ -18,6 +18,8 @@
 #include "crypto/encryptor.h"
 #include "crypto/hmac.h"
 #include "crypto/symmetric_key.h"
+#include "net/cert/pem_tokenizer.h"
+#include "net/cert/x509_certificate.h"
 
 #define ONC_LOG_WARNING(message) NET_LOG_WARNING("ONC", message)
 #define ONC_LOG_ERROR(message) NET_LOG_ERROR("ONC", message)
@@ -179,14 +181,14 @@ void ExpandField(const std::string fieldname,
   std::string login_id;
   if (substitution.GetSubstitute(substitutes::kLoginIDField, &login_id)) {
     ReplaceSubstringsAfterOffset(&user_string, 0,
-                                 onc::substitutes::kLoginIDField,
+                                 substitutes::kLoginIDField,
                                  login_id);
   }
 
   std::string email;
   if (substitution.GetSubstitute(substitutes::kEmailField, &email)) {
     ReplaceSubstringsAfterOffset(&user_string, 0,
-                                 onc::substitutes::kEmailField,
+                                 substitutes::kEmailField,
                                  email);
   }
 
@@ -224,10 +226,10 @@ void ExpandStringsInOncObject(
 
 namespace {
 
-class OncMaskValues : public onc::Mapper {
+class OncMaskValues : public Mapper {
  public:
   static scoped_ptr<base::DictionaryValue> Mask(
-      const onc::OncValueSignature& signature,
+      const OncValueSignature& signature,
       const base::DictionaryValue& onc_object,
       const std::string& mask) {
     OncMaskValues masker(mask);
@@ -242,15 +244,15 @@ class OncMaskValues : public onc::Mapper {
 
   virtual scoped_ptr<base::Value> MapField(
       const std::string& field_name,
-      const onc::OncValueSignature& object_signature,
+      const OncValueSignature& object_signature,
       const base::Value& onc_value,
       bool* found_unknown_field,
       bool* error) OVERRIDE {
-    if (onc::FieldIsCredential(object_signature, field_name)) {
+    if (FieldIsCredential(object_signature, field_name)) {
       return scoped_ptr<base::Value>(new base::StringValue(mask_));
     } else {
-      return onc::Mapper::MapField(field_name, object_signature, onc_value,
-                                   found_unknown_field, error);
+      return Mapper::MapField(field_name, object_signature, onc_value,
+                              found_unknown_field, error);
     }
   }
 
@@ -261,91 +263,292 @@ class OncMaskValues : public onc::Mapper {
 }  // namespace
 
 scoped_ptr<base::DictionaryValue> MaskCredentialsInOncObject(
-    const onc::OncValueSignature& signature,
+    const OncValueSignature& signature,
     const base::DictionaryValue& onc_object,
     const std::string& mask) {
   return OncMaskValues::Mask(signature, onc_object, mask);
 }
 
-bool ParseAndValidateOncForImport(
-    const std::string& onc_blob,
-    chromeos::onc::ONCSource onc_source,
-    const std::string& passphrase,
-    base::ListValue* network_configs,
-    base::ListValue* certificates) {
+bool ParseAndValidateOncForImport(const std::string& onc_blob,
+                                  ONCSource onc_source,
+                                  const std::string& passphrase,
+                                  base::ListValue* network_configs,
+                                  base::ListValue* certificates) {
   certificates->Clear();
   network_configs->Clear();
   if (onc_blob.empty())
     return true;
 
   scoped_ptr<base::DictionaryValue> toplevel_onc =
-      onc::ReadDictionaryFromJson(onc_blob);
+      ReadDictionaryFromJson(onc_blob);
   if (toplevel_onc.get() == NULL) {
-    LOG(ERROR) << "ONC loaded from " << onc::GetSourceAsString(onc_source)
+    LOG(ERROR) << "ONC loaded from " << GetSourceAsString(onc_source)
                << " is not a valid JSON dictionary.";
     return false;
   }
 
   // Check and see if this is an encrypted ONC file. If so, decrypt it.
   std::string onc_type;
-  toplevel_onc->GetStringWithoutPathExpansion(onc::toplevel_config::kType,
+  toplevel_onc->GetStringWithoutPathExpansion(toplevel_config::kType,
                                               &onc_type);
-  if (onc_type == onc::toplevel_config::kEncryptedConfiguration) {
-    toplevel_onc = onc::Decrypt(passphrase, *toplevel_onc);
+  if (onc_type == toplevel_config::kEncryptedConfiguration) {
+    toplevel_onc = Decrypt(passphrase, *toplevel_onc);
     if (toplevel_onc.get() == NULL) {
       LOG(ERROR) << "Couldn't decrypt the ONC from "
-                 << onc::GetSourceAsString(onc_source);
+                 << GetSourceAsString(onc_source);
       return false;
     }
   }
 
-  bool from_policy = (onc_source == onc::ONC_SOURCE_USER_POLICY ||
-                      onc_source == onc::ONC_SOURCE_DEVICE_POLICY);
+  bool from_policy = (onc_source == ONC_SOURCE_USER_POLICY ||
+                      onc_source == ONC_SOURCE_DEVICE_POLICY);
 
   // Validate the ONC dictionary. We are liberal and ignore unknown field
   // names and ignore invalid field names in kRecommended arrays.
-  onc::Validator validator(false,  // Ignore unknown fields.
-                           false,  // Ignore invalid recommended field names.
-                           true,   // Fail on missing fields.
-                           from_policy);
+  Validator validator(false,  // Ignore unknown fields.
+                      false,  // Ignore invalid recommended field names.
+                      true,   // Fail on missing fields.
+                      from_policy);
   validator.SetOncSource(onc_source);
 
-  onc::Validator::Result validation_result;
+  Validator::Result validation_result;
   toplevel_onc = validator.ValidateAndRepairObject(
-      &onc::kToplevelConfigurationSignature,
+      &kToplevelConfigurationSignature,
       *toplevel_onc,
       &validation_result);
 
   if (from_policy) {
     UMA_HISTOGRAM_BOOLEAN("Enterprise.ONC.PolicyValidation",
-                          validation_result == onc::Validator::VALID);
+                          validation_result == Validator::VALID);
   }
 
   bool success = true;
-  if (validation_result == onc::Validator::VALID_WITH_WARNINGS) {
-    LOG(WARNING) << "ONC from " << onc::GetSourceAsString(onc_source)
+  if (validation_result == Validator::VALID_WITH_WARNINGS) {
+    LOG(WARNING) << "ONC from " << GetSourceAsString(onc_source)
                  << " produced warnings.";
     success = false;
-  } else if (validation_result == onc::Validator::INVALID ||
-             toplevel_onc == NULL) {
-    LOG(ERROR) << "ONC from " << onc::GetSourceAsString(onc_source)
+  } else if (validation_result == Validator::INVALID || toplevel_onc == NULL) {
+    LOG(ERROR) << "ONC from " << GetSourceAsString(onc_source)
                << " is invalid and couldn't be repaired.";
     return false;
   }
 
   base::ListValue* validated_certs = NULL;
-  if (toplevel_onc->GetListWithoutPathExpansion(
-          onc::toplevel_config::kCertificates, &validated_certs)) {
+  if (toplevel_onc->GetListWithoutPathExpansion(toplevel_config::kCertificates,
+                                                &validated_certs)) {
     certificates->Swap(validated_certs);
   }
 
   base::ListValue* validated_networks = NULL;
   if (toplevel_onc->GetListWithoutPathExpansion(
-          onc::toplevel_config::kNetworkConfigurations, &validated_networks)) {
+          toplevel_config::kNetworkConfigurations, &validated_networks)) {
     network_configs->Swap(validated_networks);
   }
 
   return success;
+}
+
+namespace {
+
+std::string DecodePEM(const std::string& pem_encoded) {
+  // The PEM block header used for DER certificates
+  static const char kCertificateHeader[] = "CERTIFICATE";
+  // This is an older PEM marker for DER certificates.
+  static const char kX509CertificateHeader[] = "X509 CERTIFICATE";
+
+  std::vector<std::string> pem_headers;
+  pem_headers.push_back(kCertificateHeader);
+  pem_headers.push_back(kX509CertificateHeader);
+
+  net::PEMTokenizer pem_tokenizer(pem_encoded, pem_headers);
+  std::string decoded;
+  if (pem_tokenizer.GetNext()) {
+    decoded = pem_tokenizer.data();
+  } else {
+    // If we failed to read the data as a PEM file, then try plain base64 decode
+    // in case the PEM marker strings are missing. For this to work, there has
+    // to be no white space, and it has to only contain the base64-encoded data.
+    if (!base::Base64Decode(pem_encoded, &decoded)) {
+      LOG(ERROR) << "Unable to base64 decode X509 data: " << pem_encoded;
+      return std::string();
+    }
+  }
+  return decoded;
+}
+
+}  // namespace
+
+scoped_refptr<net::X509Certificate> DecodePEMCertificate(
+    const std::string& pem_encoded) {
+  std::string decoded = DecodePEM(pem_encoded);
+  scoped_refptr<net::X509Certificate> cert =
+      net::X509Certificate::CreateFromBytes(decoded.data(), decoded.size());
+  LOG_IF(ERROR, !cert) << "Couldn't create certificate from X509 data: "
+                       << decoded;
+  return cert;
+}
+
+namespace {
+
+bool GUIDRefToPEMEncoding(const CertsByGUIDMap& certs_by_guid,
+                          const std::string& guid_ref,
+                          std::string* pem_encoded) {
+  CertsByGUIDMap::const_iterator it = certs_by_guid.find(guid_ref);
+  if (it == certs_by_guid.end()) {
+    LOG(ERROR) << "Couldn't resolve certificate reference " << guid_ref;
+    return false;
+  }
+  if (!net::X509Certificate::GetPEMEncoded(it->second->os_cert_handle(),
+                                           pem_encoded)) {
+    LOG(ERROR) << "Couldn't PEM-encode certificate with GUID " << guid_ref;
+    return false;
+  }
+  return true;
+}
+
+bool ResolveSingleCertRef(const CertsByGUIDMap& certs_by_guid,
+                          const std::string& key_guid_ref,
+                          const std::string& key_pem,
+                          base::DictionaryValue* onc_object) {
+  std::string guid_ref;
+  if (!onc_object->GetStringWithoutPathExpansion(key_guid_ref, &guid_ref))
+    return true;
+
+  std::string pem_encoded;
+  if (!GUIDRefToPEMEncoding(certs_by_guid, guid_ref, &pem_encoded))
+    return false;
+
+  onc_object->RemoveWithoutPathExpansion(key_guid_ref, NULL);
+  onc_object->SetStringWithoutPathExpansion(key_pem, pem_encoded);
+  return true;
+}
+
+bool ResolveCertRefList(const CertsByGUIDMap& certs_by_guid,
+                        const std::string& key_guid_ref_list,
+                        const std::string& key_pem_list,
+                        base::DictionaryValue* onc_object) {
+  const base::ListValue* guid_ref_list = NULL;
+  if (!onc_object->GetListWithoutPathExpansion(key_guid_ref_list,
+                                               &guid_ref_list)) {
+    return true;
+  }
+
+  scoped_ptr<base::ListValue> pem_list(new base::ListValue);
+  for (base::ListValue::const_iterator it = guid_ref_list->begin();
+       it != guid_ref_list->end(); ++it) {
+    std::string guid_ref;
+    (*it)->GetAsString(&guid_ref);
+
+    std::string pem_encoded;
+    if (!GUIDRefToPEMEncoding(certs_by_guid, guid_ref, &pem_encoded))
+      return false;
+
+    pem_list->AppendString(pem_encoded);
+  }
+
+  onc_object->RemoveWithoutPathExpansion(key_guid_ref_list, NULL);
+  onc_object->SetWithoutPathExpansion(key_pem_list, pem_list.release());
+  return true;
+}
+
+bool ResolveSingleCertRefToList(const CertsByGUIDMap& certs_by_guid,
+                                const std::string& key_guid_ref,
+                                const std::string& key_pem_list,
+                                base::DictionaryValue* onc_object) {
+  std::string guid_ref;
+  if (!onc_object->GetStringWithoutPathExpansion(key_guid_ref, &guid_ref))
+    return true;
+
+  std::string pem_encoded;
+  if (!GUIDRefToPEMEncoding(certs_by_guid, guid_ref, &pem_encoded))
+    return false;
+
+  scoped_ptr<base::ListValue> pem_list(new base::ListValue);
+  pem_list->AppendString(pem_encoded);
+  onc_object->RemoveWithoutPathExpansion(key_guid_ref, NULL);
+  onc_object->SetWithoutPathExpansion(key_pem_list, pem_list.release());
+  return true;
+}
+
+bool ResolveServerCertRefsInObject(const CertsByGUIDMap& certs_by_guid,
+                                   const OncValueSignature& signature,
+                                   base::DictionaryValue* onc_object) {
+  if (&signature == &kCertificatePatternSignature) {
+    if (!ResolveCertRefList(certs_by_guid, certificate::kIssuerCARef,
+                            certificate::kIssuerCAPEMs, onc_object)) {
+      return false;
+    }
+  } else if (&signature == &kEAPSignature) {
+    if (!ResolveSingleCertRefToList(certs_by_guid, eap::kServerCARef,
+                                    eap::kServerCAPEMs, onc_object)) {
+      return false;
+    }
+  } else if (&signature == &kIPsecSignature) {
+    if (!ResolveSingleCertRefToList(certs_by_guid, ipsec::kServerCARef,
+                                    ipsec::kServerCAPEMs, onc_object)) {
+      return false;
+    }
+  } else if (&signature == &kIPsecSignature ||
+             &signature == &kOpenVPNSignature) {
+    if (!ResolveSingleCertRef(certs_by_guid, openvpn::kServerCertRef,
+                              openvpn::kServerCertPEM, onc_object) ||
+        !ResolveSingleCertRefToList(certs_by_guid, openvpn::kServerCARef,
+                                    openvpn::kServerCAPEMs, onc_object)) {
+      return false;
+    }
+  }
+
+  // Recurse into nested objects.
+  for (base::DictionaryValue::Iterator it(*onc_object); !it.IsAtEnd();
+       it.Advance()) {
+    base::DictionaryValue* inner_object = NULL;
+    if (!onc_object->GetDictionaryWithoutPathExpansion(it.key(), &inner_object))
+      continue;
+
+    const OncFieldSignature* field_signature =
+        GetFieldSignature(signature, it.key());
+    if (!field_signature)
+      continue;
+
+    if (!ResolveServerCertRefsInObject(certs_by_guid,
+                                       *field_signature->value_signature,
+                                       inner_object)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+}  // namespace
+
+bool ResolveServerCertRefsInNetworks(const CertsByGUIDMap& certs_by_guid,
+                                     base::ListValue* network_configs) {
+  bool success = true;
+  for (base::ListValue::iterator it = network_configs->begin();
+       it != network_configs->end(); ) {
+    base::DictionaryValue* network = NULL;
+    (*it)->GetAsDictionary(&network);
+    if (!ResolveServerCertRefsInNetwork(certs_by_guid, network)) {
+      std::string guid;
+      network->GetStringWithoutPathExpansion(network_config::kGUID, &guid);
+      // This might happen even with correct validation, if the referenced
+      // certificate couldn't be imported.
+      LOG(ERROR) << "Couldn't resolve some certificate reference of network "
+                 << guid;
+      it = network_configs->Erase(it, NULL);
+      success = false;
+      continue;
+    }
+    ++it;
+  }
+  return success;
+}
+
+bool ResolveServerCertRefsInNetwork(const CertsByGUIDMap& certs_by_guid,
+                                    base::DictionaryValue* network_config) {
+  return ResolveServerCertRefsInObject(certs_by_guid,
+                                       kNetworkConfigurationSignature,
+                                       network_config);
 }
 
 }  // namespace onc

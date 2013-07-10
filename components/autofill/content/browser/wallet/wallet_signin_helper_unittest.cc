@@ -7,13 +7,14 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/strings/stringprintf.h"
-#include "chrome/test/base/testing_profile.h"
 #include "components/autofill/content/browser/wallet/wallet_service_url.h"
 #include "components/autofill/content/browser/wallet/wallet_signin_helper_delegate.h"
+#include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "google_apis/gaia/google_service_auth_error.h"
+#include "net/http/http_status_code.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -75,21 +76,17 @@ class WalletSigninHelperForTesting : public WalletSigninHelper {
 
 class WalletSigninHelperTest : public testing::Test {
  public:
-  WalletSigninHelperTest() : io_thread_(content::BrowserThread::IO) {}
+  WalletSigninHelperTest() {}
 
   virtual void SetUp() OVERRIDE {
-    io_thread_.StartIOThread();
-    profile_.CreateRequestContext();
     signin_helper_.reset(new WalletSigninHelperForTesting(
         &mock_delegate_,
-        profile_.GetRequestContext()));
+        browser_context_.GetRequestContext()));
     EXPECT_EQ(WalletSigninHelperForTesting::IDLE, state());
   }
 
   virtual void TearDown() OVERRIDE {
     signin_helper_.reset();
-    profile_.ResetRequestContext();
-    io_thread_.Stop();
   }
 
  protected:
@@ -113,7 +110,7 @@ class WalletSigninHelperTest : public testing::Test {
 
   void MockSuccessfulOAuthLoginResponse() {
     SetUpFetcherResponseAndCompleteRequest(
-        GaiaUrls::GetInstance()->client_login_url(), 200,
+        GaiaUrls::GetInstance()->client_login_url(), net::HTTP_OK,
         net::ResponseCookies(),
         "SID=sid\nLSID=lsid\nAuth=auth");
   }
@@ -121,14 +118,14 @@ class WalletSigninHelperTest : public testing::Test {
   void MockFailedOAuthLoginResponse404() {
     SetUpFetcherResponseAndCompleteRequest(
         GaiaUrls::GetInstance()->client_login_url(),
-        404,
+        net::HTTP_NOT_FOUND,
         net::ResponseCookies(),
         std::string());
   }
 
   void MockSuccessfulGaiaUserInfoResponse(const std::string& username) {
     SetUpFetcherResponseAndCompleteRequest(
-        GaiaUrls::GetInstance()->get_user_info_url(), 200,
+        GaiaUrls::GetInstance()->get_user_info_url(), net::HTTP_OK,
         net::ResponseCookies(),
         "email=" + username);
   }
@@ -136,14 +133,14 @@ class WalletSigninHelperTest : public testing::Test {
   void MockFailedGaiaUserInfoResponse404() {
     SetUpFetcherResponseAndCompleteRequest(
         GaiaUrls::GetInstance()->get_user_info_url(),
-        404,
+        net::HTTP_NOT_FOUND,
         net::ResponseCookies(),
         std::string());
   }
 
   void MockSuccessfulGetAccountInfoResponse(const std::string& username) {
     SetUpFetcherResponseAndCompleteRequest(
-        signin_helper_->GetGetAccountInfoUrlForTesting(), 200,
+        signin_helper_->GetGetAccountInfoUrlForTesting(), net::HTTP_OK,
         net::ResponseCookies(),
         base::StringPrintf(
             kGetAccountInfoValidResponseFormat,
@@ -153,21 +150,28 @@ class WalletSigninHelperTest : public testing::Test {
   void MockFailedGetAccountInfoResponse404() {
     SetUpFetcherResponseAndCompleteRequest(
         signin_helper_->GetGetAccountInfoUrlForTesting(),
-        404,
+        net::HTTP_NOT_FOUND,
         net::ResponseCookies(),
         std::string());
   }
 
-  void MockSuccessfulPassiveAuthUrlMergeAndRedirectResponse() {
+  void MockSuccessfulPassiveSignInResponse() {
     SetUpFetcherResponseAndCompleteRequest(wallet::GetPassiveAuthUrl().spec(),
-                                           200,
+                                           net::HTTP_OK,
                                            net::ResponseCookies(),
-                                           std::string());
+                                           "YES");
   }
 
-  void MockFailedPassiveAuthUrlMergeAndRedirectResponse404() {
+  void MockFailedPassiveSignInResponseNo() {
     SetUpFetcherResponseAndCompleteRequest(wallet::GetPassiveAuthUrl().spec(),
-                                           404,
+                                           net::HTTP_OK,
+                                           net::ResponseCookies(),
+                                           "NOOOOOOOOOOOOOOO");
+  }
+
+  void MockFailedPassiveSignInResponse404() {
+    SetUpFetcherResponseAndCompleteRequest(wallet::GetPassiveAuthUrl().spec(),
+                                           net::HTTP_NOT_FOUND,
                                            net::ResponseCookies(),
                                            std::string());
   }
@@ -180,29 +184,33 @@ class WalletSigninHelperTest : public testing::Test {
   MockWalletSigninHelperDelegate mock_delegate_;
 
  private:
-  // The profile's request context must be released on the IO thread.
-  content::TestBrowserThread io_thread_;
   net::TestURLFetcherFactory factory_;
-  TestingProfile profile_;
+  content::TestBrowserContext browser_context_;
 };
 
 TEST_F(WalletSigninHelperTest, PassiveSigninSuccessful) {
   EXPECT_CALL(mock_delegate_, OnPassiveSigninSuccess("user@gmail.com"));
   signin_helper_->StartPassiveSignin();
-  MockSuccessfulPassiveAuthUrlMergeAndRedirectResponse();
+  MockSuccessfulPassiveSignInResponse();
   MockSuccessfulGetAccountInfoResponse("user@gmail.com");
 }
 
-TEST_F(WalletSigninHelperTest, PassiveSigninFailedSignin) {
+TEST_F(WalletSigninHelperTest, PassiveSigninFailedSignin404) {
   EXPECT_CALL(mock_delegate_, OnPassiveSigninFailure(_));
   signin_helper_->StartPassiveSignin();
-  MockFailedPassiveAuthUrlMergeAndRedirectResponse404();
+  MockFailedPassiveSignInResponse404();
+}
+
+TEST_F(WalletSigninHelperTest, PassiveSigninFailedSigninNo) {
+  EXPECT_CALL(mock_delegate_, OnPassiveSigninFailure(_));
+  signin_helper_->StartPassiveSignin();
+  MockFailedPassiveSignInResponseNo();
 }
 
 TEST_F(WalletSigninHelperTest, PassiveSigninFailedUserInfo) {
   EXPECT_CALL(mock_delegate_, OnPassiveSigninFailure(_));
   signin_helper_->StartPassiveSignin();
-  MockSuccessfulPassiveAuthUrlMergeAndRedirectResponse();
+  MockSuccessfulPassiveSignInResponse();
   MockFailedGetAccountInfoResponse404();
 }
 
@@ -223,7 +231,7 @@ TEST_F(WalletSigninHelperTest, AutomaticSigninSuccessful) {
   signin_helper_->StartAutomaticSignin("123SID", "123LSID");
   MockSuccessfulGaiaUserInfoResponse("user@gmail.com");
   MockSuccessfulOAuthLoginResponse();
-  MockSuccessfulPassiveAuthUrlMergeAndRedirectResponse();
+  MockSuccessfulPassiveSignInResponse();
 }
 
 TEST_F(WalletSigninHelperTest, AutomaticSigninFailedGetUserInfo) {
@@ -239,12 +247,20 @@ TEST_F(WalletSigninHelperTest, AutomaticSigninFailedOAuthLogin) {
   MockFailedOAuthLoginResponse404();
 }
 
-TEST_F(WalletSigninHelperTest, AutomaticSigninFailedSignin) {
+TEST_F(WalletSigninHelperTest, AutomaticSigninFailedSignin404) {
   EXPECT_CALL(mock_delegate_, OnAutomaticSigninFailure(_));
   signin_helper_->StartAutomaticSignin("123SID", "123LSID");
   MockSuccessfulGaiaUserInfoResponse("user@gmail.com");
   MockSuccessfulOAuthLoginResponse();
-  MockFailedPassiveAuthUrlMergeAndRedirectResponse404();
+  MockFailedPassiveSignInResponse404();
+}
+
+TEST_F(WalletSigninHelperTest, AutomaticSigninFailedSigninNo) {
+  EXPECT_CALL(mock_delegate_, OnAutomaticSigninFailure(_));
+  signin_helper_->StartAutomaticSignin("123SID", "123LSID");
+  MockSuccessfulGaiaUserInfoResponse("user@gmail.com");
+  MockSuccessfulOAuthLoginResponse();
+  MockFailedPassiveSignInResponseNo();
 }
 
 // TODO(aruslan): http://crbug.com/188317 Need more tests.

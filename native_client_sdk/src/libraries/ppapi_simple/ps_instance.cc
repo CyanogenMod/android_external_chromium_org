@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
-#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include "nacl_io/ioctl.h"
 #include "nacl_io/kernel_wrap.h"
 #include "nacl_io/nacl_io.h"
 
@@ -31,7 +32,13 @@
 
 #include "ppapi_simple/ps_event.h"
 #include "ppapi_simple/ps_instance.h"
+#include "ppapi_simple/ps_interface.h"
 #include "ppapi_simple/ps_main.h"
+
+#if defined(WIN32)
+#define open _open
+#define dup2 _dup2
+#endif
 
 static PSInstance* s_InstanceObject = NULL;
 
@@ -49,7 +56,7 @@ struct StartInfo {
 // The starting point for 'main'.  We create this thread to hide the real
 // main pepper thread which must never be blocked.
 void* PSInstance::MainThreadThunk(void *info) {
-  s_InstanceObject->Log("Got MainThreadThunk.\n");
+  s_InstanceObject->Trace("Got MainThreadThunk.\n");
   StartInfo* si = static_cast<StartInfo*>(info);
   si->inst_->main_loop_ = new pp::MessageLoop(si->inst_);
   si->inst_->main_loop_->AttachToCurrentThread();
@@ -61,31 +68,38 @@ void* PSInstance::MainThreadThunk(void *info) {
   delete[] si->argv_;
   delete si;
 
+  // Exit the entire process once the 'main' thread returns.
+  // The error code will be available to javascript via
+  // the exitcode paramater of the crash event.
+  exit(ret);
   return NULL;
 }
 
 // The default implementation supports running a 'C' main.
 int PSInstance::MainThread(int argc, char *argv[]) {
-  if (main_cb_) {
-    Log("Starting MAIN.\n");
-    int ret = main_cb_(argc, argv);
-    Log("Main thread returned with %d.\n", ret);
-    return ret;
+  if (!main_cb_) {
+    Error("No main defined.\n");
+    return 0;
   }
 
-  Error("No main defined.\n");
-  return 0;
+  Trace("Starting MAIN.\n");
+  int ret = main_cb_(argc, argv);
+  Log("Main thread returned with %d.\n", ret);
+  return ret;
 }
 
 PSInstance::PSInstance(PP_Instance instance, const char *argv[])
     : pp::Instance(instance),
+      pp::MouseLock(this),
+      pp::Graphics3DClient(this),
       main_loop_(NULL),
-      verbosity_(PSV_LOG),
-      events_enabled_(PSE_NONE) {
+      verbosity_(PSV_WARN),
+      events_enabled_(PSE_NONE),
+      fd_tty_(-1) {
   // Set the single Instance object
   s_InstanceObject = this;
 
-#ifdef DEBUG
+#ifdef NACL_SDK_DEBUG
   SetVerbosity(PSV_LOG);
 #endif
 
@@ -100,15 +114,6 @@ PSInstance::PSInstance(PP_Instance instance, const char *argv[])
                      PP_INPUTEVENT_CLASS_KEYBOARD |
                      PP_INPUTEVENT_CLASS_WHEEL |
                      PP_INPUTEVENT_CLASS_TOUCH);
-
-  ppb_core_ = static_cast<const PPB_Core*>(
-      pp::Module::Get()->GetBrowserInterface(PPB_CORE_INTERFACE));
-
-  ppb_var_ = static_cast<const PPB_Var*>(
-      pp::Module::Get()->GetBrowserInterface(PPB_VAR_INTERFACE));
-
-  ppb_view_ = static_cast<const PPB_View*>(
-      pp::Module::Get()->GetBrowserInterface(PPB_VIEW_INTERFACE));
 }
 
 PSInstance::~PSInstance() {}
@@ -128,13 +133,7 @@ bool PSInstance::Init(uint32_t arg,
   si->argv_[0] = NULL;
 
   // Process arguments passed into Module INIT from JavaScript
-  for (uint32_t i=0; i < arg; i++) {
-    if (argv[i]) {
-      Log("ARG %s=%s\n", argn[i], argv[i]);
-    } else {
-      Log("ARG %s\n", argn[i]);
-    }
-
+  for (uint32_t i = 0; i < arg; i++) {
     // If we start with PM prefix set the instance argument map
     if (0 == strncmp(argn[i], "ps_", 3)) {
       std::string key = argn[i];
@@ -143,25 +142,33 @@ bool PSInstance::Init(uint32_t arg,
       continue;
     }
 
+    // Chrome passed @dev as an internal extra attribute in
+    // some cases.  Ignore this.
+    if (0 == strcmp(argn[i], "@dev")) {
+      continue;
+    }
+
     // If this is the 'src' tag, then get the NMF name.
     if (!strcmp("src", argn[i])) {
       char *name = new char[strlen(argv[i]) + 1];
       strcpy(name, argv[i]);
       si->argv_[0] = name;
-    }
-    else {
-      // Otherwise turn it into arguments
-      char *key = new char[strlen(argn[i]) + 3];
-      key[0] = '-';
-      key[1] = '-';
-      strcpy(&key[2], argn[i]);
+    } else {
+      // Otherwise turn html tag attributes into arguments
+      // that get passed to the main funciton.  Attributes
+      // without values get transformed into "--name" and
+      // attributes with values become "--name=value".
+      int arglen = strlen(argn[i]) + 3;
+      if (argv[i] && argv[i][0])
+        arglen += strlen(argv[i]) + 1;
 
-      si->argv_[si->argc_++] = key;
-      if (argv[i] && argv[i][0]) {
-        char *val = new char[strlen(argv[i]) + 1];
-        strcpy(val, argv[i]);
-        si->argv_[si->argc_++] = val;
-      }
+      char* arg = new char[arglen];
+      if (argv[i] && argv[i][0])
+        sprintf(arg, "--%s=%s", argn[i], argv[i]);
+      else
+        sprintf(arg, "--%s", argn[i]);
+
+      si->argv_[si->argc_++] = arg;
     }
   }
 
@@ -172,15 +179,33 @@ bool PSInstance::Init(uint32_t arg,
     si->argv_[0] = name;
   }
 
-  if (ProcessProperties()) {
-    pthread_t main_thread;
-    int ret = pthread_create(&main_thread, NULL, MainThreadThunk, si);
-    Log("Created thread: %d.\n", ret);
-    return ret == 0;
+  PSInterfaceInit();
+  bool props_processed = ProcessProperties();
+
+  // Log arg values only once ProcessProperties has been
+  // called so that the ps_verbosity attribute will be in
+  // effect.
+  for (uint32_t i = 0; i < arg; i++) {
+    if (argv[i]) {
+      Trace("attribs[%d] '%s=%s'\n", i, argn[i], argv[i]);
+    } else {
+      Trace("attribs[%d] '%s'\n", i, argn[i]);
+    }
   }
 
-  Log("Skipping create thread.\n");
-  return false;
+  for (uint32_t i = 0; i < si->argc_; i++) {
+    Trace("argv[%d] '%s'\n", i, si->argv_[i]);
+  }
+
+  if (!props_processed) {
+    Warn("Skipping create thread.\n");
+    return false;
+  }
+
+  pthread_t main_thread;
+  int ret = pthread_create(&main_thread, NULL, MainThreadThunk, si);
+  Trace("Created thread: %d.\n", ret);
+  return ret == 0;
 }
 
 const char* PSInstance::GetProperty(const char* key, const char* def) {
@@ -191,7 +216,7 @@ const char* PSInstance::GetProperty(const char* key, const char* def) {
   return def;
 }
 
-// Processes the properties passed fixed at compile time via the
+// Processes the properties set at compile time via the
 // initialization macro, or via dynamically set embed attributes
 // through instance DidCreate.
 bool PSInstance::ProcessProperties() {
@@ -200,6 +225,7 @@ bool PSInstance::ProcessProperties() {
   const char* stdout_path = GetProperty("ps_stdout", "/dev/stdout");
   const char* stderr_path = GetProperty("ps_stderr", "/dev/console3");
   const char* verbosity = GetProperty("ps_verbosity", NULL);
+  const char* tty_prefix = GetProperty("ps_tty_prefix", NULL);
 
   // Reset verbosity if passed in
   if (verbosity) SetVerbosity(static_cast<Verbosity>(atoi(verbosity)));
@@ -215,9 +241,20 @@ bool PSInstance::ProcessProperties() {
   int fd2 = open(stderr_path, O_WRONLY);
   dup2(fd2, 2);
 
+  if (tty_prefix) {
+    fd_tty_ = open("/dev/tty", O_WRONLY);
+    if (fd_tty_ >= 0) {
+      ioctl(fd_tty_, TIOCNACLPREFIX, const_cast<char*>(tty_prefix));
+    } else {
+      Error("Failed to open /dev/tty.\n");
+    }
+  }
+
   // Set line buffering on stdout and stderr
+#if !defined(WIN32)
   setvbuf(stderr, NULL, _IOLBF, 0);
   setvbuf(stdout, NULL, _IOLBF, 0);
+#endif
   return true;
 }
 
@@ -225,28 +262,39 @@ void PSInstance::SetVerbosity(Verbosity verbosity) {
   verbosity_ = verbosity;
 }
 
-void PSInstance::Log(const char *fmt, ...) {
-  if (verbosity_ >= PSV_LOG) {
-    va_list ap;
-    va_start(ap, fmt);
-    vfprintf(stdout, fmt, ap);
+void PSInstance::VALog(Verbosity verbosity, const char *fmt, va_list args) {
+  if (verbosity <= verbosity_) {
+    fprintf(stderr, "ps: ");
+    vfprintf(stderr, fmt, args);
   }
+}
+
+void PSInstance::Trace(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  VALog(PSV_TRACE, fmt, ap);
+  va_end(ap);
+}
+
+void PSInstance::Log(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  VALog(PSV_LOG, fmt, ap);
+  va_end(ap);
 }
 
 void PSInstance::Warn(const char *fmt, ...) {
-  if (verbosity_ >= PSV_WARN) {
-    va_list ap;
-    va_start(ap, fmt);
-    vfprintf(stdout, fmt, ap);
-  }
+  va_list ap;
+  va_start(ap, fmt);
+  VALog(PSV_WARN, fmt, ap);
+  va_end(ap);
 }
 
 void PSInstance::Error(const char *fmt, ...) {
-  if (verbosity_ >= PSV_ERROR) {
-    va_list ap;
-    va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
-  }
+  va_list ap;
+  va_start(ap, fmt);
+  VALog(PSV_ERROR, fmt, ap);
+  va_end(ap);
 }
 
 void PSInstance::SetEnabledEvents(uint32_t mask) {
@@ -283,7 +331,7 @@ void PSInstance::PostEvent(PSEventType type, PP_Resource resource) {
 
   if (events_enabled_ & type) {
     if (resource) {
-      ppb_core_->AddRefResource(resource);
+      PSInterfaceCore()->AddRefResource(resource);
     }
     PSEvent *env = (PSEvent *) malloc(sizeof(PSEvent));
     memset(env, 0, sizeof(*env));
@@ -296,8 +344,32 @@ void PSInstance::PostEvent(PSEventType type, PP_Resource resource) {
 void PSInstance::PostEvent(PSEventType type, const PP_Var& var) {
   assert(PSE_INSTANCE_HANDLEMESSAGE == type);
 
+  // If the user has specified a tty_prefix_ (using ioctl), then we'll give the
+  // tty node a chance to vacuum up any messages beginning with that prefix. If
+  // the message does not start with the prefix, the ioctl call will return
+  // ENOENT and we'll pass the message through to the event queue.
+  if (fd_tty_ >= 0 && var.type == PP_VARTYPE_STRING) {
+    uint32_t message_len;
+    const char* message = PSInterfaceVar()->VarToUtf8(var, &message_len);
+    std::string message_str(message, message + message_len);
+
+    // Since our message may contain null characters, we can't send it as a
+    // naked C string, so we package it up in this struct before sending it
+    // to the ioctl.
+    struct tioc_nacl_input_string ioctl_message;
+    ioctl_message.length = message_len;
+    ioctl_message.buffer = message_str.data();
+    int ret =
+      ioctl(fd_tty_, TIOCNACLINPUT, reinterpret_cast<char*>(&ioctl_message));
+    if (ret != ENOTTY) {
+      Error("ioctl returned unexpected error: %d.\n", ret);
+    }
+
+    return;
+  }
+
   if (events_enabled_ & type) {
-    ppb_var_->AddRef(var);
+    PSInterfaceVar()->AddRef(var);
     PSEvent *env = (PSEvent *) malloc(sizeof(PSEvent));
     memset(env, 0, sizeof(*env));
     env->type = type;
@@ -318,12 +390,12 @@ void PSInstance::ReleaseEvent(PSEvent* event) {
   if (event) {
     switch(event->type) {
       case PSE_INSTANCE_HANDLEMESSAGE:
-        ppb_var_->Release(event->as_var);
+        PSInterfaceVar()->Release(event->as_var);
         break;
       case PSE_INSTANCE_HANDLEINPUT:
       case PSE_INSTANCE_DIDCHANGEVIEW:
         if (event->as_resource) {
-          ppb_core_->ReleaseResource(event->as_resource);
+          PSInterfaceCore()->ReleaseResource(event->as_resource);
         }
         break;
       default:
@@ -334,12 +406,11 @@ void PSInstance::ReleaseEvent(PSEvent* event) {
 }
 
 void PSInstance::HandleMessage(const pp::Var& message) {
-  Log("Got Message\n");
+  Trace("Got Message\n");
   PostEvent(PSE_INSTANCE_HANDLEMESSAGE, message.pp_var());
 }
 
 bool PSInstance::HandleInputEvent(const pp::InputEvent& event) {
-  Log("Got Input\n");
   PostEvent(PSE_INSTANCE_HANDLEINPUT, event.pp_resource());
   return true;
 }
@@ -355,3 +426,12 @@ void PSInstance::DidChangeFocus(bool focus) {
   PostEvent(PSE_INSTANCE_DIDCHANGEFOCUS, focus ? PP_TRUE : PP_FALSE);
 }
 
+void PSInstance::Graphics3DContextLost() {
+  Log("Graphics3DContextLost\n");
+  PostEvent(PSE_GRAPHICS3D_GRAPHICS3DCONTEXTLOST);
+}
+
+void PSInstance::MouseLockLost() {
+  Log("MouseLockLost\n");
+  PostEvent(PSE_MOUSELOCK_MOUSELOCKLOST);
+}

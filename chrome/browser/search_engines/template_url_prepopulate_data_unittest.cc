@@ -304,15 +304,25 @@ TEST_F(TemplateURLPrepopulateDataTest, GetEngineTypeAdvanced) {
               TemplateURLPrepopulateData::GetEngineType(kYahooURLs[i]));
   }
   // URLs for engines not present in country-specific lists.
-  std::string kNigmaURL = "http://www.nigma.ru/?s={searchTerms}&arg1=value1";
   EXPECT_EQ(SEARCH_ENGINE_NIGMA,
-            TemplateURLPrepopulateData::GetEngineType(kNigmaURL));
+            TemplateURLPrepopulateData::GetEngineType(
+                "http://www.nigma.ru/?s={searchTerms}&arg1=value1"));
   // Search URL for which no prepopulated search provider exists.
-  std::string kExampleSearchURL = "http://example.net/search?q={searchTerms}";
   EXPECT_EQ(SEARCH_ENGINE_OTHER,
-            TemplateURLPrepopulateData::GetEngineType(kExampleSearchURL));
+            TemplateURLPrepopulateData::GetEngineType(
+                "http://example.net/search?q={searchTerms}"));
   EXPECT_EQ(SEARCH_ENGINE_OTHER,
             TemplateURLPrepopulateData::GetEngineType("invalid:search:url"));
+
+  // URL that doesn't look Google-related, but matches a Google base URL
+  // specified on the command line.
+  const std::string foo_url("http://www.foo.com/search?q={searchTerms}");
+  EXPECT_EQ(SEARCH_ENGINE_OTHER,
+            TemplateURLPrepopulateData::GetEngineType(foo_url));
+  CommandLine::ForCurrentProcess()->AppendSwitchASCII(switches::kGoogleBaseURL,
+                                                      "http://www.foo.com/");
+  EXPECT_EQ(SEARCH_ENGINE_GOOGLE,
+            TemplateURLPrepopulateData::GetEngineType(foo_url));
 }
 
 TEST(TemplateURLPrepopulateDataTest, GetLogoURLGoogle) {

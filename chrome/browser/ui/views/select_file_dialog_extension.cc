@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/views/select_file_dialog_extension.h"
 
+#include "apps/shell_window.h"
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/logging.h"
@@ -24,7 +25,6 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/browser/ui/extensions/native_app_window.h"
-#include "chrome/browser/ui/extensions/shell_window.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/extensions/extension_dialog.h"
@@ -33,15 +33,13 @@
 #include "ui/base/base_window.h"
 #include "ui/shell_dialogs/selected_file_info.h"
 
+using apps::ShellWindow;
 using content::BrowserThread;
 
 namespace {
 
-const int kFileManagerWidth = 954;  // pixels
+const int kFileManagerWidth = 972;  // pixels
 const int kFileManagerHeight = 640;  // pixels
-
-const int kFileManagerMinimumWidth = kFileManagerWidth * 2 / 3;  // pixels
-const int kFileManagerMinimumHeight = kFileManagerHeight * 2 / 3;  // pixels
 
 // Holds references to file manager dialogs that have callbacks pending
 // to their listeners.
@@ -354,8 +352,8 @@ void SelectFileDialogExtension::SelectFileImpl(
   ExtensionDialog* dialog = ExtensionDialog::Show(file_browser_url,
       base_window, profile_, web_contents,
       kFileManagerWidth, kFileManagerHeight,
-      kFileManagerMinimumWidth,
-      kFileManagerMinimumHeight,
+      kFileManagerWidth,
+      kFileManagerHeight,
 #if defined(USE_AURA)
       file_manager_util::GetTitleFromType(type),
 #else

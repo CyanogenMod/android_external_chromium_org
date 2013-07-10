@@ -13,7 +13,7 @@
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
 #include "chrome/browser/ui/cocoa/key_equivalent_constants.h"
 #import "chrome/browser/ui/cocoa/styled_text_field_cell.h"
-#include "components/autofill/browser/password_generator.h"
+#include "components/autofill/core/browser/password_generator.h"
 #include "components/autofill/core/common/autofill_messages.h"
 #include "components/autofill/core/common/password_generation_util.h"
 #include "content/public/browser/render_view_host.h"
@@ -69,8 +69,8 @@ const CGFloat kIconSize = 26.0;
  @private
   PasswordGenerationBubbleController* controller_;
   BOOL hovering_;
-  scoped_nsobject<NSImage> normalImage_;
-  scoped_nsobject<NSImage> hoverImage_;
+  base::scoped_nsobject<NSImage> normalImage_;
+  base::scoped_nsobject<NSImage> hoverImage_;
 }
 
 - (void)setUpWithController:(PasswordGenerationBubbleController*)controller
@@ -260,12 +260,10 @@ const CGFloat kIconSize = 26.0;
 - (void)setUpTrackingAreaInRect:(NSRect)frame
                          ofView:(PasswordGenerationTextField*)view {
   NSRect iconFrame = [self getIconFrame:frame];
-  scoped_nsobject<CrTrackingArea> area(
+  base::scoped_nsobject<CrTrackingArea> area(
       [[CrTrackingArea alloc] initWithRect:iconFrame
                                    options:NSTrackingMouseEnteredAndExited |
-                                           NSTrackingActiveAlways
-                                     owner:view
-                                  userInfo:nil]);
+          NSTrackingActiveAlways owner:view userInfo:nil]);
   [view addTrackingArea:area];
 }
 
@@ -308,7 +306,7 @@ const CGFloat kIconSize = 26.0;
                     kTopBorderOffset +
                     info_bubble::kBubbleArrowHeight);
   NSRect contentRect = NSMakeRect(0, 0, width, height);
-  scoped_nsobject<InfoBubbleWindow> window(
+  base::scoped_nsobject<InfoBubbleWindow> window(
       [[InfoBubbleWindow alloc] initWithContentRect:contentRect
                                           styleMask:NSBorderlessWindowMask
                                             backing:NSBackingStoreBuffered
@@ -364,12 +362,11 @@ const CGFloat kIconSize = 26.0;
   [button setAction:@selector(fillPassword:)];
   [contentView addSubview:button];
 
-  scoped_nsobject<NSTextField> title([[NSTextField alloc]
-                         initWithFrame:NSMakeRect(
-                             kBorderSize,
-                             kBorderSize + kTextFieldHeight + kVerticalSpacing,
-                             kTitleWidth,
-                             kTitleHeight)]);
+  base::scoped_nsobject<NSTextField> title([[NSTextField alloc] initWithFrame:
+          NSMakeRect(kBorderSize,
+                     kBorderSize + kTextFieldHeight + kVerticalSpacing,
+                     kTitleWidth,
+                     kTitleHeight)]);
   [title setEditable:NO];
   [title setBordered:NO];
   [title setStringValue:l10n_util::GetNSString(

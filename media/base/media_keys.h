@@ -6,6 +6,7 @@
 #define MEDIA_BASE_MEDIA_KEYS_H_
 
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/callback.h"
@@ -13,6 +14,8 @@
 #include "media/base/media_export.h"
 
 namespace media {
+
+class Decryptor;
 
 // Performs media key operations.
 //
@@ -56,6 +59,11 @@ class MEDIA_EXPORT MediaKeys {
   // Cancels the key request specified by |session_id|.
   virtual void CancelKeyRequest(const std::string& session_id) = 0;
 
+  // Gets the Decryptor object associated with the MediaKeys. Returns NULL if
+  // no Decryptor object is associated. The returned object is only guaranteed
+  // to be valid during the MediaKeys' lifetime.
+  virtual Decryptor* GetDecryptor();
+
  private:
   DISALLOW_COPY_AND_ASSIGN(MediaKeys);
 };
@@ -69,7 +77,7 @@ typedef base::Callback<void(const std::string& session_id,
                             int system_code)> KeyErrorCB;
 
 typedef base::Callback<void(const std::string& session_id,
-                            const std::string& message,
+                            const std::vector<uint8>& message,
                             const std::string& default_url)> KeyMessageCB;
 
 typedef base::Callback<void(const std::string& session_id,

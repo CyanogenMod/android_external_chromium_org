@@ -50,7 +50,7 @@ class SyncableKernelTest : public testing::Test {};
 
 TEST_F(SyncableKernelTest, ToValue) {
   EntryKernel kernel;
-  scoped_ptr<DictionaryValue> value(kernel.ToValue(NULL));
+  scoped_ptr<base::DictionaryValue> value(kernel.ToValue(NULL));
   if (value) {
     // Not much to check without repeating the ToValue() code.
     EXPECT_TRUE(value->HasKey("isDirty"));
@@ -392,7 +392,7 @@ TEST_F(SyncableGeneralTest, ToValue) {
     Entry e(&rtrans, GET_BY_ID, id);
     EXPECT_FALSE(e.good());  // Hasn't been written yet.
 
-    scoped_ptr<DictionaryValue> value(e.ToValue(NULL));
+    scoped_ptr<base::DictionaryValue> value(e.ToValue(NULL));
     ExpectDictBooleanValue(false, *value, "good");
     EXPECT_EQ(1u, value->size());
   }
@@ -405,7 +405,7 @@ TEST_F(SyncableGeneralTest, ToValue) {
     me.Put(ID, id);
     me.Put(BASE_VERSION, 1);
 
-    scoped_ptr<DictionaryValue> value(me.ToValue(NULL));
+    scoped_ptr<base::DictionaryValue> value(me.ToValue(NULL));
     ExpectDictBooleanValue(true, *value, "good");
     EXPECT_TRUE(value->HasKey("kernel"));
     ExpectDictStringValue("Bookmarks", *value, "modelType");
@@ -1669,7 +1669,7 @@ class OnDiskSyncableDirectoryTest : public SyncableDirectoryTest {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     file_path_ = temp_dir_.path().Append(
         FILE_PATH_LITERAL("Test.sqlite3"));
-    file_util::Delete(file_path_, true);
+    base::Delete(file_path_, true);
     CreateDirectory();
   }
 
@@ -1677,7 +1677,7 @@ class OnDiskSyncableDirectoryTest : public SyncableDirectoryTest {
     // This also closes file handles.
     dir_->SaveChanges();
     dir_.reset();
-    file_util::Delete(file_path_, true);
+    base::Delete(file_path_, true);
   }
 
   // Creates a new directory.  Deletes the old directory, if it exists.
@@ -2125,7 +2125,7 @@ TEST_F(SyncableDirectoryManagement, TestFileRelease) {
   dir.Close();
 
   // Closing the directory should have released the backing database file.
-  ASSERT_TRUE(file_util::Delete(path, true));
+  ASSERT_TRUE(base::Delete(path, true));
 }
 
 class StressTransactionsDelegate : public base::PlatformThread::Delegate {

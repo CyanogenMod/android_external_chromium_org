@@ -16,16 +16,16 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/scoped_vector.h"
 #include "base/strings/string16.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/favicon/favicon_types.h"
 #include "chrome/browser/history/snippet.h"
 #include "chrome/browser/search_engines/template_url_id.h"
 #include "chrome/common/ref_counted_util.h"
 #include "chrome/common/thumbnail_score.h"
 #include "content/public/common/page_transition_types.h"
-#include "googleurl/src/gurl.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/size.h"
+#include "url/gurl.h"
 
 class PageUsageData;
 
@@ -294,6 +294,7 @@ class URLResult : public URLRow {
   // Constructor that create a URLResult from the specified URL and title match
   // positions from title_matches.
   URLResult(const GURL& url, const Snippet::MatchPositions& title_matches);
+  explicit URLResult(const URLRow& url_row);
   virtual ~URLResult();
 
   base::Time visit_time() const { return visit_time_; }
@@ -314,6 +315,8 @@ class URLResult : public URLRow {
   }
 
   void SwapResult(URLResult* other);
+
+  static bool CompareVisitTime(const URLResult& lhs, const URLResult& rhs);
 
  private:
   friend class HistoryBackend;
@@ -608,8 +611,6 @@ struct Images {
   // scoped_refptr<base::RefCountedBytes> favicon;
 };
 
-typedef std::vector<MostVisitedURL> MostVisitedURLList;
-
 struct MostVisitedURLWithRank {
   MostVisitedURL url;
   int rank;
@@ -696,19 +697,6 @@ struct IconMapping {
   // The type of icon.
   chrome::IconType icon_type;
 };
-
-// FaviconSizes represents the sizes that the thumbnail database knows a
-// favicon is available from the web. FaviconSizes has several entries
-// only if FaviconSizes is for an .ico file. FaviconSizes can be different
-// from the pixel sizes of the entries in the |favicon_bitmaps| table. For
-// instance, if a web page has a .ico favicon with bitmaps of pixel sizes
-// (16x16, 32x32), FaviconSizes will have both sizes regardless of whether
-// either of these bitmaps is cached in the favicon_bitmaps database table.
-typedef std::vector<gfx::Size> FaviconSizes;
-
-// Returns the default FaviconSizes to use if the favicon sizes for a FaviconID
-// are unknown.
-const FaviconSizes& GetDefaultFaviconSizes();
 
 // Defines a favicon bitmap and its associated pixel size.
 struct FaviconBitmapIDSize {

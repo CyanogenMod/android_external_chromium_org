@@ -255,7 +255,7 @@ void ListDesktopShortcutsWithCommandLine(const base::FilePath& chrome_exe,
 // Renames the given desktop shortcut and informs the shell of this change.
 bool RenameDesktopShortcut(const base::FilePath& old_shortcut_path,
                            const base::FilePath& new_shortcut_path) {
-  if (!file_util::Move(old_shortcut_path, new_shortcut_path))
+  if (!base::Move(old_shortcut_path, new_shortcut_path))
     return false;
 
   // Notify the shell of the rename, which allows the icon to keep its position
@@ -292,7 +292,7 @@ void RenameChromeDesktopShortcutForProfile(
     const base::FilePath possible_new_system_shortcut =
         system_shortcuts_directory.Append(new_shortcut_filename);
     if (file_util::PathExists(possible_new_system_shortcut))
-      file_util::Delete(old_shortcut_path, false);
+      base::Delete(old_shortcut_path, false);
     else if (!RenameDesktopShortcut(old_shortcut_path, new_shortcut_path))
       DLOG(ERROR) << "Could not rename Windows profile desktop shortcut.";
   } else {
@@ -437,9 +437,9 @@ void DeleteDesktopShortcutsAndIconFile(const base::FilePath& profile_path,
 
   BrowserDistribution* distribution = BrowserDistribution::GetDistribution();
   for (size_t i = 0; i < shortcuts.size(); ++i) {
-    // Use file_util::Delete() instead of ShellUtil::RemoveShortcut(), as the
+    // Use base::Delete() instead of ShellUtil::RemoveShortcut(), as the
     // latter causes non-profile taskbar shortcuts to be unpinned.
-    file_util::Delete(shortcuts[i], false);
+    base::Delete(shortcuts[i], false);
     // Notify the shell that the shortcut was deleted to ensure desktop refresh.
     SHChangeNotify(SHCNE_DELETE, SHCNF_PATH, shortcuts[i].value().c_str(),
                    NULL);
@@ -447,7 +447,7 @@ void DeleteDesktopShortcutsAndIconFile(const base::FilePath& profile_path,
 
   const base::FilePath icon_path =
       profile_path.AppendASCII(profiles::internal::kProfileIconFileName);
-  file_util::Delete(icon_path, false);
+  base::Delete(icon_path, false);
 
   // If |ensure_shortcuts_remain| is true and deleting this profile caused the
   // last shortcuts to be removed, re-create a regular non-profile shortcut.
@@ -557,8 +557,7 @@ string16 CreateProfileShortcutFlags(const base::FilePath& profile_path) {
 // static
 bool ProfileShortcutManager::IsFeatureEnabled() {
   return BrowserDistribution::GetDistribution()->CanCreateDesktopShortcuts() &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(switches::kUserDataDir) &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(switches::kShowAppList);
+      !CommandLine::ForCurrentProcess()->HasSwitch(switches::kUserDataDir);
 }
 
 // static

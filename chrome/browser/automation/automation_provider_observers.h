@@ -20,8 +20,8 @@
 #include "base/values.h"
 #include "chrome/browser/automation/automation_provider_json.h"
 #include "chrome/browser/bookmarks/bookmark_model_observer.h"
-#include "components/autofill/browser/personal_data_manager.h"
-#include "components/autofill/browser/personal_data_manager_observer.h"
+#include "components/autofill/core/browser/personal_data_manager.h"
+#include "components/autofill/core/browser/personal_data_manager_observer.h"
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/login/enrollment/enrollment_screen.h"
@@ -33,7 +33,6 @@
 #include "chrome/browser/download/all_download_item_notifier.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_types.h"
-#include "chrome/browser/importer/importer_data_types.h"
 #include "chrome/browser/importer/importer_progress_observer.h"
 #include "chrome/browser/memory_details.h"
 #include "chrome/browser/password_manager/password_store_change.h"
@@ -42,6 +41,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/automation_constants.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "chrome/common/importer/importer_data_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
@@ -934,28 +934,6 @@ class VirtualConnectObserver
   std::string service_name_;
 
   DISALLOW_COPY_AND_ASSIGN(VirtualConnectObserver);
-};
-
-// Waits for enterprise device enrollment to complete and returns the status to
-// the automation provider.
-class EnrollmentObserver
-    : public chromeos::EnrollmentScreen::TestingObserver {
- public:
-  EnrollmentObserver(AutomationProvider* automation,
-                     IPC::Message* reply_message,
-                     chromeos::EnrollmentScreen* enrollment_screen);
-
-  virtual ~EnrollmentObserver();
-
-  // chromeos::EnrollmentScreen::Observer implementation.
-  virtual void OnEnrollmentComplete(bool succeeded);
-
- private:
-  base::WeakPtr<AutomationProvider> automation_;
-  scoped_ptr<IPC::Message> reply_message_;
-  chromeos::EnrollmentScreen* enrollment_screen_;
-
-  DISALLOW_COPY_AND_ASSIGN(EnrollmentObserver);
 };
 
 #endif  // defined(OS_CHROMEOS)

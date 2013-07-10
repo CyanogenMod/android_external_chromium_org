@@ -84,10 +84,19 @@ IN_PROC_BROWSER_TEST_F(PowerPolicyBrowserTest, SetPowerPolicy) {
 
   pm::PowerManagementPolicy power_management_policy =
       original_power_management_policy;
-  power_management_policy.set_idle_action(
+  power_management_policy.set_ac_idle_action(
       pm::PowerManagementPolicy::STOP_SESSION);
   SetUserPolicy(
-      key::kIdleAction,
+      key::kIdleActionAC,
+      base::Value::CreateIntegerValue(pm::PowerManagementPolicy::STOP_SESSION));
+  EXPECT_EQ(GetDebugString(power_management_policy),
+            GetDebugString(power_manager_client_->get_policy()));
+
+  power_management_policy = original_power_management_policy;
+  power_management_policy.set_battery_idle_action(
+      pm::PowerManagementPolicy::STOP_SESSION);
+  SetUserPolicy(
+      key::kIdleActionBattery,
       base::Value::CreateIntegerValue(pm::PowerManagementPolicy::STOP_SESSION));
   EXPECT_EQ(GetDebugString(power_management_policy),
             GetDebugString(power_manager_client_->get_policy()));
@@ -181,8 +190,8 @@ IN_PROC_BROWSER_TEST_F(PowerPolicyBrowserTest, SetPowerPolicy) {
             GetDebugString(power_manager_client_->get_policy()));
 
   power_management_policy = original_power_management_policy;
-  power_management_policy.set_presentation_idle_delay_factor(3.0);
-  SetUserPolicy(key::kPresentationIdleDelayScale,
+  power_management_policy.set_presentation_screen_dim_delay_factor(3.0);
+  SetUserPolicy(key::kPresentationScreenDimDelayScale,
                 base::Value::CreateIntegerValue(300));
   EXPECT_EQ(GetDebugString(power_management_policy),
             GetDebugString(power_manager_client_->get_policy()));
@@ -211,7 +220,10 @@ IN_PROC_BROWSER_TEST_F(PowerPolicyBrowserTest, AllowScreenWakeLocks) {
   policy.mutable_ac_delays()->set_screen_off_ms(0);
   policy.mutable_battery_delays()->set_screen_dim_ms(0);
   policy.mutable_battery_delays()->set_screen_off_ms(0);
-  policy.set_idle_action(power_manager_client_->get_policy().idle_action());
+  policy.set_ac_idle_action(
+      power_manager_client_->get_policy().ac_idle_action());
+  policy.set_battery_idle_action(
+      power_manager_client_->get_policy().battery_idle_action());
   policy.set_reason(power_manager_client_->get_policy().reason());
   EXPECT_EQ(GetDebugString(policy),
             GetDebugString(power_manager_client_->get_policy()));
@@ -220,7 +232,10 @@ IN_PROC_BROWSER_TEST_F(PowerPolicyBrowserTest, AllowScreenWakeLocks) {
   SetUserPolicy(key::kAllowScreenWakeLocks,
                 base::Value::CreateBooleanValue(false));
   policy = baseline_policy;
-  policy.set_idle_action(power_manager_client_->get_policy().idle_action());
+  policy.set_ac_idle_action(
+      power_manager_client_->get_policy().ac_idle_action());
+  policy.set_battery_idle_action(
+      power_manager_client_->get_policy().battery_idle_action());
   policy.set_reason(power_manager_client_->get_policy().reason());
   EXPECT_EQ(GetDebugString(policy),
             GetDebugString(power_manager_client_->get_policy()));

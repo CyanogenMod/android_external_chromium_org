@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/file_util.h"
 #include "base/i18n/case_conversion.h"
-#include "base/json/json_writer.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -15,6 +14,7 @@
 #include "chrome/browser/chromeos/drive/file_task_executor.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_browser_handler.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
+#include "chrome/browser/chromeos/fileapi/cros_mount_point_provider.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -36,7 +36,6 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "net/base/escape.h"
-#include "webkit/browser/chromeos/fileapi/cros_mount_point_provider.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/isolated_context.h"
@@ -172,6 +171,15 @@ bool GetFileBrowserHandlers(Profile* profile,
   return true;
 }
 
+fileapi::FileSystemContext* GetFileSystemContextForExtension(
+    Profile* profile,
+    const std::string& extension_id) {
+  GURL site = extensions::ExtensionSystem::Get(profile)->
+      extension_service()->GetSiteForExtensionId(extension_id);
+  return BrowserContext::GetStoragePartitionForSite(profile, site)->
+      GetFileSystemContext();
+}
+
 // Checks if the file browser extension has permissions for the files in its
 // file system context.
 bool FileBrowserHasAccessPermissionForFiles(
@@ -179,12 +187,9 @@ bool FileBrowserHasAccessPermissionForFiles(
     const GURL& source_url,
     const std::string& file_browser_id,
     const std::vector<FileSystemURL>& files) {
-  GURL site = extensions::ExtensionSystem::Get(profile)->extension_service()->
-      GetSiteForExtensionId(file_browser_id);
   fileapi::ExternalFileSystemMountPointProvider* external_provider =
-      BrowserContext::GetStoragePartitionForSite(profile, site)->
-          GetFileSystemContext()->external_provider();
-
+      GetFileSystemContextForExtension(profile, file_browser_id)->
+      external_provider();
   if (!external_provider)
     return false;
 
@@ -491,22 +496,19 @@ bool GetTaskForURLAndPath(Profile* profile,
 }
 
 // ExtensionTaskExecutor executes tasks with kTaskFile type.
-// TODO(hashimoto): Make this non ref-counted. crbug.com/231173
-class ExtensionTaskExecutor
-    : public base::RefCountedThreadSafe<ExtensionTaskExecutor> {
+class ExtensionTaskExecutor {
  public:
   ExtensionTaskExecutor(Profile* profile,
                         const Extension* extension,
                         int32 tab_id,
                         const std::string& action_id);
 
-  // Executes the task for each file. When true is returned, |done| will be run
-  // with the execution result.
-  bool Execute(const std::vector<FileSystemURL>& file_urls,
+  // Executes the task for each file. |done| will be run with the result.
+  void Execute(const std::vector<FileSystemURL>& file_urls,
                const FileTaskFinishedCallback& done);
 
  private:
-  friend class base::RefCountedThreadSafe<ExtensionTaskExecutor>;
+  // This object is responsible to delete itself.
   virtual ~ExtensionTaskExecutor();
 
   struct FileDefinition {
@@ -519,13 +521,23 @@ class ExtensionTaskExecutor
   };
 
   typedef std::vector<FileDefinition> FileDefinitionList;
-  class ExecuteTasksFileSystemCallbackDispatcher;
+
+  // Checks legitimacy of file url and grants file RO access permissions from
+  // handler (target) extension and its renderer process.
+  static FileDefinitionList SetupFileAccessPermissions(
+      scoped_refptr<fileapi::FileSystemContext> file_system_context_handler,
+      const scoped_refptr<const Extension>& handler_extension,
+      const std::vector<FileSystemURL>& file_urls);
+
+  void DidOpenFileSystem(const std::vector<FileSystemURL>& file_urls,
+                         base::PlatformFileError result,
+                         const std::string& file_system_name,
+                         const GURL& file_system_root);
 
   void ExecuteDoneOnUIThread(bool success);
   void ExecuteFileActionsOnUIThread(const std::string& file_system_name,
                                     const GURL& file_system_root,
-                                    const FileDefinitionList& file_list,
-                                    int handler_pid);
+                                    const FileDefinitionList& file_list);
   void SetupPermissionsAndDispatchEvent(const std::string& file_system_name,
                                         const GURL& file_system_root,
                                         const FileDefinitionList& file_list,
@@ -544,6 +556,9 @@ class ExtensionTaskExecutor
   int32 tab_id_;
   const std::string action_id_;
   FileTaskFinishedCallback done_;
+  base::WeakPtrFactory<ExtensionTaskExecutor> weak_ptr_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(ExtensionTaskExecutor);
 };
 
 bool ExecuteFileTask(Profile* profile,
@@ -578,9 +593,13 @@ bool ExecuteFileTask(Profile* profile,
 
   // Execute the task.
   if (task_type == kTaskFile) {
-    scoped_refptr<ExtensionTaskExecutor> executor(
-        new ExtensionTaskExecutor(profile, extension, tab_id, action_id));
-    return executor->Execute(file_urls, done);
+    // Forbid calling undeclared handlers.
+    if (!FindFileBrowserHandler(extension, action_id))
+      return false;
+
+    (new ExtensionTaskExecutor(
+        profile, extension, tab_id, action_id))->Execute(file_urls, done);
+    return true;
   } else if (task_type == kTaskApp) {
     for (size_t i = 0; i != file_urls.size(); ++i) {
       extensions::LaunchPlatformAppWithFileHandler(
@@ -601,99 +620,21 @@ ExtensionTaskExecutor::FileDefinition::FileDefinition() : is_directory(false) {
 ExtensionTaskExecutor::FileDefinition::~FileDefinition() {
 }
 
-class ExtensionTaskExecutor::ExecuteTasksFileSystemCallbackDispatcher {
- public:
-  static fileapi::FileSystemContext::OpenFileSystemCallback CreateCallback(
-      ExtensionTaskExecutor* executor,
-      scoped_refptr<fileapi::FileSystemContext> file_system_context_handler,
-      scoped_refptr<const Extension> handler_extension,
-      int handler_pid,
-      const std::string& action_id,
-      const std::vector<FileSystemURL>& file_urls) {
-    return base::Bind(
-        &ExecuteTasksFileSystemCallbackDispatcher::DidOpenFileSystem,
-        base::Owned(new ExecuteTasksFileSystemCallbackDispatcher(
-            executor, file_system_context_handler, handler_extension,
-            handler_pid, action_id, file_urls)));
-  }
+// static
+ExtensionTaskExecutor::FileDefinitionList
+ExtensionTaskExecutor::SetupFileAccessPermissions(
+    scoped_refptr<fileapi::FileSystemContext> file_system_context_handler,
+    const scoped_refptr<const Extension>& handler_extension,
+    const std::vector<FileSystemURL>& file_urls) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK(handler_extension.get());
 
-  void DidOpenFileSystem(base::PlatformFileError result,
-                         const std::string& file_system_name,
-                         const GURL& file_system_root) {
-    if (result != base::PLATFORM_FILE_OK) {
-      DidFail(result);
-      return;
-    }
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-    ExtensionTaskExecutor::FileDefinitionList file_list;
-    for (std::vector<FileSystemURL>::iterator iter = urls_.begin();
-         iter != urls_.end();
-         ++iter) {
-      // Set up file permission access.
-      ExtensionTaskExecutor::FileDefinition file;
-      if (!SetupFileAccessPermissions(*iter, &file))
-        continue;
-      file_list.push_back(file);
-    }
-    if (file_list.empty()) {
-      BrowserThread::PostTask(
-          BrowserThread::UI, FROM_HERE,
-          base::Bind(
-              &ExtensionTaskExecutor::ExecuteDoneOnUIThread,
-              executor_,
-              false));
-      return;
-    }
+  fileapi::ExternalFileSystemMountPointProvider* external_provider_handler =
+      file_system_context_handler->external_provider();
 
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        base::Bind(
-            &ExtensionTaskExecutor::ExecuteFileActionsOnUIThread,
-            executor_,
-            file_system_name,
-            file_system_root,
-            file_list,
-            handler_pid_));
-  }
-
-  void DidFail(base::PlatformFileError error_code) {
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        base::Bind(
-            &ExtensionTaskExecutor::ExecuteDoneOnUIThread,
-            executor_,
-            false));
-  }
-
- private:
-  ExecuteTasksFileSystemCallbackDispatcher(
-      ExtensionTaskExecutor* executor,
-      scoped_refptr<fileapi::FileSystemContext> file_system_context_handler,
-      const scoped_refptr<const Extension>& handler_extension,
-      int handler_pid,
-      const std::string& action_id,
-      const std::vector<FileSystemURL>& file_urls)
-      : executor_(executor),
-        file_system_context_handler_(file_system_context_handler),
-        handler_extension_(handler_extension),
-        handler_pid_(handler_pid),
-        action_id_(action_id),
-        urls_(file_urls) {
-    DCHECK(executor_.get());
-  }
-
-  // Checks legitimacy of file url and grants file RO access permissions from
-  // handler (target) extension and its renderer process.
-  bool SetupFileAccessPermissions(const FileSystemURL& url,
-                                  FileDefinition* file) {
-    if (!handler_extension_.get())
-      return false;
-
-    if (handler_pid_ == 0)
-      return false;
-
-    fileapi::ExternalFileSystemMountPointProvider* external_provider_handler =
-        file_system_context_handler_->external_provider();
+  FileDefinitionList file_list;
+  for (size_t i = 0; i < file_urls.size(); ++i) {
+    const FileSystemURL& url = file_urls[i];
 
     // Check if this file system entry exists first.
     base::PlatformFileInfo file_info;
@@ -704,13 +645,13 @@ class ExtensionTaskExecutor::ExecuteTasksFileSystemCallbackDispatcher {
     bool is_drive_file = url.type() == fileapi::kFileSystemTypeDrive;
     DCHECK(!is_drive_file || drive::util::IsUnderDriveMountPoint(local_path));
 
-    // If the file is under gdata mount point, there is no actual file to be
+    // If the file is under drive mount point, there is no actual file to be
     // found on the url.path().
     if (!is_drive_file) {
       if (!file_util::PathExists(local_path) ||
           file_util::IsLink(local_path) ||
           !file_util::GetFileInfo(local_path, &file_info)) {
-        return false;
+        continue;
       }
     }
 
@@ -718,23 +659,17 @@ class ExtensionTaskExecutor::ExecuteTasksFileSystemCallbackDispatcher {
     // ensure that the target extension can access only this FS entry and
     // prevent from traversing FS hierarchy upward.
     external_provider_handler->GrantFileAccessToExtension(
-        handler_extension_->id(), virtual_path);
+        handler_extension->id(), virtual_path);
 
     // Output values.
-    file->virtual_path = virtual_path;
-    file->is_directory = file_info.is_directory;
-    file->absolute_path = local_path;
-    return true;
+    FileDefinition file;
+    file.virtual_path = virtual_path;
+    file.is_directory = file_info.is_directory;
+    file.absolute_path = local_path;
+    file_list.push_back(file);
   }
-
-  scoped_refptr<ExtensionTaskExecutor> executor_;
-  scoped_refptr<fileapi::FileSystemContext> file_system_context_handler_;
-  scoped_refptr<const Extension> handler_extension_;
-  int handler_pid_;
-  std::string action_id_;
-  std::vector<FileSystemURL> urls_;
-  DISALLOW_COPY_AND_ASSIGN(ExecuteTasksFileSystemCallbackDispatcher);
-};
+  return file_list;
+}
 
 ExtensionTaskExecutor::ExtensionTaskExecutor(
     Profile* profile,
@@ -744,65 +679,77 @@ ExtensionTaskExecutor::ExtensionTaskExecutor(
     : profile_(profile),
       extension_(extension),
       tab_id_(tab_id),
-      action_id_(action_id) {
+      action_id_(action_id),
+      weak_ptr_factory_(this) {
 }
 
 ExtensionTaskExecutor::~ExtensionTaskExecutor() {}
 
-bool ExtensionTaskExecutor::Execute(const std::vector<FileSystemURL>& file_urls,
+void ExtensionTaskExecutor::Execute(const std::vector<FileSystemURL>& file_urls,
                                     const FileTaskFinishedCallback& done) {
-  // Forbid calling undeclared handlers.
-  if (!FindFileBrowserHandler(extension_, action_id_))
-    return false;
-
-  int extension_pid = ExtractProcessFromExtensionId(profile_, extension_->id());
-  if (extension_pid <= 0) {
-    if (!extensions::BackgroundInfo::HasLazyBackgroundPage(extension_))
-      return false;
-  }
-
   done_ = done;
 
   // Get file system context for the extension to which onExecute event will be
-  // send. The file access permissions will be granted to the extension in the
+  // sent. The file access permissions will be granted to the extension in the
   // file system context for the files in |file_urls|.
-  GURL site = extensions::ExtensionSystem::Get(profile_)->extension_service()->
-      GetSiteForExtensionId(extension_->id());
-  scoped_refptr<fileapi::FileSystemContext> file_system_context_handler =
-      BrowserContext::GetStoragePartitionForSite(profile_, site)->
-      GetFileSystemContext();
+  GetFileSystemContextForExtension(profile_, extension_->id())->OpenFileSystem(
+      Extension::GetBaseURLFromExtensionId(extension_->id()).GetOrigin(),
+      fileapi::kFileSystemTypeExternal,
+      fileapi::OPEN_FILE_SYSTEM_FAIL_IF_NONEXISTENT,
+      base::Bind(&ExtensionTaskExecutor::DidOpenFileSystem,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 file_urls));
+}
 
-  GURL origin_url =
-      Extension::GetBaseURLFromExtensionId(extension_->id()).GetOrigin();
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE,
-      base::Bind(&fileapi::FileSystemContext::OpenFileSystem,
-                 file_system_context_handler,
-                 origin_url, fileapi::kFileSystemTypeExternal,
-                 fileapi::OPEN_FILE_SYSTEM_FAIL_IF_NONEXISTENT,
-                 ExecuteTasksFileSystemCallbackDispatcher::CreateCallback(
-                     this,
-                     file_system_context_handler,
-                     extension_,
-                     extension_pid,
-                     action_id_,
-                     file_urls)));
-  return true;
+void ExtensionTaskExecutor::DidOpenFileSystem(
+    const std::vector<FileSystemURL>& file_urls,
+    base::PlatformFileError result,
+    const std::string& file_system_name,
+    const GURL& file_system_root) {
+  if (result != base::PLATFORM_FILE_OK) {
+    ExecuteDoneOnUIThread(false);
+    return;
+  }
+
+  scoped_refptr<fileapi::FileSystemContext> file_system_context(
+      GetFileSystemContextForExtension(profile_, extension_->id()));
+  BrowserThread::PostTaskAndReplyWithResult(
+      BrowserThread::FILE,
+      FROM_HERE,
+      base::Bind(&SetupFileAccessPermissions,
+                 file_system_context,
+                 extension_,
+                 file_urls),
+      base::Bind(&ExtensionTaskExecutor::ExecuteFileActionsOnUIThread,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 file_system_name,
+                 file_system_root));
 }
 
 void ExtensionTaskExecutor::ExecuteDoneOnUIThread(bool success) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (!done_.is_null())
     done_.Run(success);
-  done_.Reset();
+  delete this;
 }
 
 void ExtensionTaskExecutor::ExecuteFileActionsOnUIThread(
     const std::string& file_system_name,
     const GURL& file_system_root,
-    const FileDefinitionList& file_list,
-    int handler_pid) {
+    const FileDefinitionList& file_list) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  if (file_list.empty()) {
+    ExecuteDoneOnUIThread(false);
+    return;
+  }
+
+  int handler_pid = ExtractProcessFromExtensionId(profile_, extension_->id());
+  if (handler_pid <= 0 &&
+      !extensions::BackgroundInfo::HasLazyBackgroundPage(extension_)) {
+    ExecuteDoneOnUIThread(false);
+    return;
+  }
 
   if (handler_pid > 0) {
     SetupPermissionsAndDispatchEvent(file_system_name, file_system_root,
@@ -819,7 +766,10 @@ void ExtensionTaskExecutor::ExecuteFileActionsOnUIThread(
     queue->AddPendingTask(
         profile_, extension_->id(),
         base::Bind(&ExtensionTaskExecutor::SetupPermissionsAndDispatchEvent,
-                   this, file_system_name, file_system_root, file_list,
+                   weak_ptr_factory_.GetWeakPtr(),
+                   file_system_name,
+                   file_system_root,
+                   file_list,
                    handler_pid));
   }
 }

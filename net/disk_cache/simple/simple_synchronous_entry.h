@@ -13,7 +13,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/disk_cache/simple/simple_entry_format.h"
 
 namespace net {
@@ -38,7 +38,6 @@ class SimpleSynchronousEntry {
 
   static void OpenEntry(
       const base::FilePath& path,
-      const std::string& key,
       uint64 entry_hash,
       SimpleSynchronousEntry** out_entry,
       int* out_result);
@@ -120,8 +119,8 @@ class SimpleSynchronousEntry {
                                       uint64 entry_hash);
 
   const base::FilePath path_;
-  const std::string key_;
   const uint64 entry_hash_;
+  std::string key_;
 
   bool have_open_files_;
   bool initialized_;

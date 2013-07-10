@@ -7,7 +7,7 @@
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop.h"
 #include "base/strings/stringprintf.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/prerender/prerender_contents.h"
 #include "chrome/browser/prerender/prerender_handle.h"
 #include "chrome/browser/prerender/prerender_link_manager.h"
@@ -18,9 +18,9 @@
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/test/test_browser_thread.h"
-#include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/size.h"
+#include "url/gurl.h"
 
 using base::Time;
 using base::TimeDelta;

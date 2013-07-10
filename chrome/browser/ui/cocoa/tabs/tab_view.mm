@@ -142,12 +142,8 @@ const CGFloat kRapidCloseDist = 2.5;
 // view or our child close button.
 - (NSView*)hitTest:(NSPoint)aPoint {
   NSPoint viewPoint = [self convertPoint:aPoint fromView:[self superview]];
-  if (![closeButton_ isHidden]) {
-    if (NSPointInRect(viewPoint,[closeButton_ frame]) &&
-        [closeButton_ hitTest:viewPoint]) {
-      return closeButton_;
-    }
-  }
+  if (![closeButton_ isHidden])
+    if (NSPointInRect(viewPoint, [closeButton_ frame])) return closeButton_;
 
   NSRect pointRect = NSMakeRect(viewPoint.x, viewPoint.y, 1, 1);
 
@@ -215,7 +211,7 @@ const CGFloat kRapidCloseDist = 2.5;
   // strip and then deallocated. This will also result in *us* being
   // deallocated. Both these are bad, so we prevent this by retaining the
   // controller.
-  scoped_nsobject<TabController> controller([controller_ retain]);
+  base::scoped_nsobject<TabController> controller([controller_ retain]);
 
   // Try to initiate a drag. This will spin a custom event loop and may
   // dispatch other mouse events.
@@ -383,7 +379,7 @@ const CGFloat kRapidCloseDist = 2.5;
     // Draw a mouse hover gradient for the default themes.
     if (!selected && hoverAlpha > 0) {
       if (themeProvider && !hasCustomTheme) {
-        scoped_nsobject<NSGradient> glow([NSGradient alloc]);
+        base::scoped_nsobject<NSGradient> glow([NSGradient alloc]);
         [glow initWithStartingColor:[NSColor colorWithCalibratedWhite:1.0
                                         alpha:1.0 * hoverAlpha]
                         endingColor:[NSColor colorWithCalibratedWhite:1.0
@@ -438,6 +434,13 @@ const CGFloat kRapidCloseDist = 2.5;
   [self drawStroke:dirtyRect];
 }
 
+- (void)setFrameOrigin:(NSPoint)origin {
+  // The background color depends on the view's vertical position.
+  if (NSMinY([self frame]) != origin.y)
+    [self setNeedsDisplay:YES];
+  [super setFrameOrigin:origin];
+}
+
 // Override this to catch the text so that we can choose when to display it.
 - (void)setToolTip:(NSString*)string {
   toolTipText_.reset([string retain]);
@@ -455,6 +458,13 @@ const CGFloat kRapidCloseDist = 2.5;
   if ([self window]) {
     [controller_ updateTitleColor];
   }
+}
+
+- (void)setState:(NSCellStateValue)state {
+  if (state_ == state)
+    return;
+  state_ = state;
+  [self setNeedsDisplay:YES];
 }
 
 - (void)setClosing:(BOOL)closing {
@@ -671,7 +681,7 @@ const CGFloat kRapidCloseDist = 2.5;
 
   // Image masks must be in the DeviceGray colorspace. Create a context and
   // draw the mask into it.
-  base::mac::ScopedCFTypeRef<CGColorSpaceRef> colorspace(
+  base::ScopedCFTypeRef<CGColorSpaceRef> colorspace(
       CGColorSpaceCreateDeviceGray());
   CGContextRef maskContext =
       CGBitmapContextCreate(NULL, tabWidth * scale, kMaskHeight * scale,

@@ -239,7 +239,7 @@ const Extension* ExtensionBrowserTest::LoadExtensionAsComponent(
 base::FilePath ExtensionBrowserTest::PackExtension(
     const base::FilePath& dir_path) {
   base::FilePath crx_path = temp_dir_.path().AppendASCII("temp.crx");
-  if (!file_util::Delete(crx_path, false)) {
+  if (!base::Delete(crx_path, false)) {
     ADD_FAILURE() << "Failed to delete crx: " << crx_path.value();
     return base::FilePath();
   }
@@ -252,7 +252,7 @@ base::FilePath ExtensionBrowserTest::PackExtension(
   if (!file_util::PathExists(pem_path)) {
     pem_path = base::FilePath();
     pem_path_out = crx_path.DirName().AppendASCII("temp.pem");
-    if (!file_util::Delete(pem_path_out, false)) {
+    if (!base::Delete(pem_path_out, false)) {
       ADD_FAILURE() << "Failed to delete pem: " << pem_path_out.value();
       return base::FilePath();
     }
@@ -452,7 +452,7 @@ const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
   return service->GetExtensionById(last_loaded_extension_id_, false);
 }
 
-void ExtensionBrowserTest::ReloadExtension(const std::string& extension_id) {
+void ExtensionBrowserTest::ReloadExtension(const std::string extension_id) {
   ExtensionService* service = extensions::ExtensionSystem::Get(
       profile())->extension_service();
   service->ReloadExtension(extension_id);

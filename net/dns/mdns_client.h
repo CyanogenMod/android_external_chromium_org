@@ -23,7 +23,7 @@ class RecordParsed;
 // by querying the network (it may choose to query either or both based on its
 // creation flags, see MDnsTransactionFlags). Network-based transactions will
 // time out after a reasonable number of seconds.
-class MDnsTransaction {
+class NET_EXPORT MDnsTransaction {
  public:
   // Used to signify what type of result the transaction has recieved.
   enum Result {
@@ -79,7 +79,7 @@ class MDnsTransaction {
 // A listener listens for updates regarding a specific record or set of records.
 // Created by the MDnsClient (see |MDnsClient::CreateListener|) and used to keep
 // track of listeners.
-class MDnsListener {
+class NET_EXPORT MDnsListener {
  public:
   // Used in the MDnsListener delegate to signify what type of change has been
   // made to a record.
@@ -124,12 +124,11 @@ class MDnsListener {
 // of new records, or by creating an |MDnsTransaction| to look up the value of a
 // specific records. When all listeners and active transactions are destroyed,
 // the client stops listening on the network and destroys the cache.
-class MDnsClient {
+class NET_EXPORT MDnsClient {
  public:
   virtual ~MDnsClient() {}
 
-  // Create listener object for RRType |rrtype| and name |name|.  If |name| is
-  // an empty string, listen to all notification of type |rrtype|.
+  // Create listener object for RRType |rrtype| and name |name|.
   virtual scoped_ptr<MDnsListener> CreateListener(
       uint16 rrtype,
       const std::string& name,
@@ -144,12 +143,15 @@ class MDnsClient {
       int flags,
       const MDnsTransaction::ResultCallback& callback) = 0;
 
-  // Lazily create and return static instance for MDnsClient.
-  static MDnsClient* GetInstance();
+  virtual bool StartListening() = 0;
 
-  // Set the global instance (for testing). MUST be called before the first call
-  // to GetInstance.
-  static void SetInstance(MDnsClient* instance);
+  // Do not call this inside callbacks from related MDnsListener and
+  // MDnsTransaction objects.
+  virtual void StopListening() = 0;
+  virtual bool IsListening() const = 0;
+
+  // Create the default MDnsClient
+  static scoped_ptr<MDnsClient> CreateDefault();
 };
 
 }  // namespace net

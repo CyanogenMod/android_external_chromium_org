@@ -59,8 +59,9 @@ cr.define('options', function() {
       };
 
       if (loadTimeData.getBoolean('managedUsersEnabled')) {
-        $('create-profile-limited-container').hidden = false;
+        $('create-profile-managed-container').hidden = false;
       }
+
       $('manage-profile-cancel').onclick =
           $('delete-profile-cancel').onclick = function(event) {
         OptionsPage.closeOverlay();
@@ -76,12 +77,12 @@ cr.define('options', function() {
         chrome.send('removeProfileShortcut', [self.profileInfo_.filePath]);
       };
 
-      $('create-profile-limited-signed-in-link').onclick = function(event) {
+      $('create-profile-managed-signed-in-link').onclick = function(event) {
         OptionsPage.navigateToPage('managedUserLearnMore');
         return false;
       };
 
-      $('create-profile-limited-not-signed-in-link').onclick = function(event) {
+      $('create-profile-managed-not-signed-in-link').onclick = function(event) {
         // The signin process will open an overlay to configure sync, which
         // would replace this overlay. It's smoother to close this one now.
         // TODO(pamg): Move the sync-setup overlay to a higher layer so this one
@@ -143,8 +144,9 @@ cr.define('options', function() {
      *     profileInfo = {
      *       name: "Profile Name",
      *       iconURL: "chrome://path/to/icon/image",
-     *       filePath: "/path/to/profile/data/on/disk"
+     *       filePath: "/path/to/profile/data/on/disk",
      *       isCurrentProfile: false,
+     *       isManaged: false
      *     };
      * @param {string} mode A label that specifies the type of dialog
      *     box which is currently being viewed (i.e. 'create' or
@@ -308,7 +310,7 @@ cr.define('options', function() {
       var name = $('create-profile-name').value;
       var iconUrl = $('create-profile-icon-grid').selectedItem;
       var createShortcut = $('create-shortcut').checked;
-      var isManaged = $('create-profile-limited').checked;
+      var isManaged = $('create-profile-managed').checked;
 
       // 'createProfile' is handled by the BrowserOptionsHandler.
       chrome.send('createProfile',
@@ -370,6 +372,7 @@ cr.define('options', function() {
           loadTimeData.getStringF('deleteProfileMessage', profileInfo.name);
       $('delete-profile-message').style.backgroundImage = 'url("' +
           profileInfo.iconURL + '")';
+      $('delete-managed-profile-addendum').hidden = !profileInfo.isManaged;
 
       // Because this dialog isn't useful when refreshing or as part of the
       // history, don't create a history entry for it when showing.
@@ -415,12 +418,16 @@ cr.define('options', function() {
     // Inherit from ManageProfileOverlay.
     __proto__: ManageProfileOverlay.prototype,
 
+    // The signed-in email address of the current profile, or empty if they're
+    // not signed in.
+    signedInEmail_: '',
+
     /**
      * Configures the overlay to the "create user" mode.
      * @override
      */
     didShowPage: function() {
-      chrome.send('requestSignedInText');
+      chrome.send('requestCreateProfileUpdate');
       chrome.send('requestDefaultProfileIcons');
       chrome.send('requestNewProfileDefaults');
 
@@ -439,6 +446,9 @@ cr.define('options', function() {
       $('create-profile-name-label').hidden = true;
       $('create-profile-name').hidden = true;
       $('create-profile-ok').disabled = true;
+      $('create-profile-managed-signed-in').disabled = true;
+      $('create-profile-managed-signed-in').hidden = true;
+      $('create-profile-managed-not-signed-in').hidden = true;
     },
 
     /** @override */
@@ -470,7 +480,7 @@ cr.define('options', function() {
       $('create-profile-icon-grid').disabled = inProgress;
       $('create-profile-name').disabled = inProgress;
       $('create-shortcut').disabled = inProgress;
-      $('create-profile-limited').disabled = inProgress;
+      $('create-profile-managed').disabled = inProgress;
       $('create-profile-ok').disabled = inProgress;
 
       $('create-profile-throbber').hidden = !inProgress;
@@ -511,7 +521,7 @@ cr.define('options', function() {
     },
 
     /**
-     * For new limited users, shows a confirmation page after successfully
+     * For new supervised users, shows a confirmation page after successfully
      * creating a new profile; otherwise, the handler will open a new window.
      * @param {Object} profileInfo An object of the form:
      *     profileInfo = {
@@ -525,6 +535,7 @@ cr.define('options', function() {
       this.updateCreateInProgress_(false);
       OptionsPage.closeOverlay();
       if (profileInfo.isManaged) {
+        profileInfo.custodianEmail = this.signedInEmail_;
         ManagedUserCreateConfirmOverlay.setProfileInfo(profileInfo);
         OptionsPage.navigateToPage('managedUserCreateConfirm');
       }
@@ -532,20 +543,47 @@ cr.define('options', function() {
 
     /**
      * Updates the signed-in or not-signed-in UI when in create mode. Called by
-     * the handler in response to the 'requestSignedInText' message.
-     * @param {string} text The text to show for a signed-in user. An empty
-     *     string indicates that the user is not signed in.
+     * the handler in response to the 'requestCreateProfileUpdate' message.
+     * @param {string} email The email address of the currently signed-in user.
+     *     An empty string indicates that the user is not signed in.
      * @private
      */
-    updateSignedInStatus_: function(text) {
-      var isSignedIn = text !== '';
-      $('create-profile-limited-signed-in').hidden = !isSignedIn;
-      $('create-profile-limited-not-signed-in').hidden = isSignedIn;
-      $('create-profile-limited').disabled = !isSignedIn;
-      if (!isSignedIn)
-        $('create-profile-limited').checked = false;
+    updateSignedInStatus_: function(email) {
+      this.signedInEmail_ = email;
+      var isSignedIn = email !== '';
+      $('create-profile-managed-signed-in').hidden = !isSignedIn;
+      $('create-profile-managed-not-signed-in').hidden = isSignedIn;
 
-      $('create-profile-limited-signed-in-label').textContent = text;
+      if (isSignedIn) {
+        $('create-profile-managed-signed-in-label').textContent =
+            loadTimeData.getStringF(
+                'manageProfilesManagedSignedInLabel', email);
+      } else {
+        $('create-profile-managed').checked = false;
+      }
+    },
+
+    /**
+     * Updates the status of the "create managed user" checkbox. Called by the
+     * handler in response to the 'requestCreateProfileUpdate' message or a
+     * change in the (policy-controlled) pref that prohibits creating managed
+     * users, after the signed-in status has been updated.
+     * @param {boolean} allowed True if creating managed users should be
+     *     allowed.
+     * @private
+     */
+    updateManagedUsersAllowed_: function(allowed) {
+      var isSignedIn = this.signedInEmail_ !== '';
+      $('create-profile-managed').disabled = !isSignedIn || !allowed;
+
+      $('create-profile-managed-not-signed-in-link').hidden = !allowed;
+      if (!allowed) {
+        $('create-profile-managed').checked = false;
+        $('create-profile-managed-indicator').setAttribute('controlled-by',
+                                                           'policy');
+      } else {
+        $('create-profile-managed-indicator').removeAttribute('controlled-by');
+      }
     },
   };
 
@@ -556,6 +594,7 @@ cr.define('options', function() {
     'onRemoteError',
     'onSuccess',
     'updateCreateInProgress',
+    'updateManagedUsersAllowed',
     'updateSignedInStatus',
   ].forEach(function(name) {
     CreateProfileOverlay[name] = function() {

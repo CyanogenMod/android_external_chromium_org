@@ -11,8 +11,8 @@
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "ui/base/accessibility/accessibility_types.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/base/animation/slide_animation.h"
@@ -43,9 +43,11 @@ const int kToastMargin = kMarginBetweenItems;
 }  // namespace.
 
 MessagePopupCollection::MessagePopupCollection(gfx::NativeView parent,
-                                               MessageCenter* message_center)
+                                               MessageCenter* message_center,
+                                               MessageCenterTray* tray)
     : parent_(parent),
       message_center_(message_center),
+      tray_(tray),
       defer_counter_(0),
       latest_toast_entered_(NULL),
       user_is_closing_toasts_by_clicking_(false) {
@@ -53,9 +55,28 @@ MessagePopupCollection::MessagePopupCollection(gfx::NativeView parent,
   defer_timer_.reset(new base::OneShotTimer<MessagePopupCollection>);
   DoUpdateIfPossible();
   message_center_->AddObserver(this);
+  gfx::Screen* screen = NULL;
+  if (!parent_) {
+    // On Win+Aura, we don't have a parent since the popups currently show up
+    // on the Windows desktop, not in the Aura/Ash desktop.  This code will
+    // display the popups on the primary display.
+    screen = gfx::Screen::GetNativeScreen();
+    gfx::Display display = screen->GetPrimaryDisplay();
+    display_id_ = display.id();
+    work_area_ = display.work_area();
+  } else {
+    screen = gfx::Screen::GetScreenFor(parent_);
+    gfx::Display display = screen->GetDisplayNearestWindow(parent_);
+    display_id_ = display.id();
+    work_area_ = display.work_area();
+  }
+  screen->AddObserver(this);
 }
 
 MessagePopupCollection::~MessagePopupCollection() {
+  gfx::Screen* screen = parent_ ?
+      gfx::Screen::GetScreenFor(parent_) : gfx::Screen::GetNativeScreen();
+  screen->RemoveObserver(this);
   message_center_->RemoveObserver(this);
   CloseAllWidgets();
 }
@@ -78,15 +99,8 @@ void MessagePopupCollection::UpdateWidgets() {
     return;
   }
 
-  gfx::Point base_position = GetWorkAreaBottomRight();
-#if defined(OS_CHROMEOS)
-  // In ChromeOS, RTL UI language mirrors the whole desktop layout, so the toast
-  // widgets should be at the bottom-left instead of bottom right.
-  if (base::i18n::IsRTL())
-    base_position.set_x(work_area_.x() + kToastMargin);
-#endif
   int bottom = toasts_.empty() ?
-      base_position.y() : toasts_.back()->origin().y();
+      work_area_.bottom() : toasts_.back()->origin().y();
   bottom -= kToastMargin;
   // Iterate in the reverse order to keep the oldest toasts on screen. Newer
   // items may be ignored if there are no room to place them.
@@ -98,6 +112,7 @@ void MessagePopupCollection::UpdateWidgets() {
     MessageView* view =
         NotificationView::Create(*(*iter),
                                  message_center_,
+                                 tray_,
                                  true,  // Create expanded.
                                  true); // Create top-level notification.
     int view_height = ToastContentsView::GetToastSizeForView(view).height();
@@ -112,11 +127,10 @@ void MessagePopupCollection::UpdateWidgets() {
     toast->SetContents(view);
     toasts_.push_back(toast);
 
-    gfx::Point origin(base_position.x() - kToastMargin, bottom);
-#if defined(OS_CHROMEOS)
-    if (base::i18n::IsRTL())
-      origin.set_x(base_position.x() + toast->GetPreferredSize().width());
-#endif
+    gfx::Size preferred_size = toast->GetPreferredSize();
+    gfx::Point origin(
+        GetToastOriginX(gfx::Rect(preferred_size)) + preferred_size.width(),
+        bottom);
     toast->RevealWithAnimation(origin);
     bottom -= view_height + kToastMargin;
 
@@ -166,29 +180,22 @@ void MessagePopupCollection::CloseAllWidgets() {
   DCHECK(toasts_.empty());
 }
 
-gfx::Point MessagePopupCollection::GetWorkAreaBottomRight() {
-  if (!work_area_.IsEmpty())
-    return work_area_.bottom_right();
-
-  if (!parent_) {
-    // On Win+Aura, we don't have a parent since the popups currently show up
-    // on the Windows desktop, not in the Aura/Ash desktop.  This code will
-    // display the popups on the primary display.
-    gfx::Screen* screen = gfx::Screen::GetNativeScreen();
-    work_area_ = screen->GetPrimaryDisplay().work_area();
-  } else {
-    gfx::Screen* screen = gfx::Screen::GetScreenFor(parent_);
-    work_area_ = screen->GetDisplayNearestWindow(parent_).work_area();
-  }
-
-  return work_area_.bottom_right();
+int MessagePopupCollection::GetToastOriginX(const gfx::Rect& toast_bounds) {
+#if defined(OS_CHROMEOS)
+  // In ChromeOS, RTL UI language mirrors the whole desktop layout, so the toast
+  // widgets should be at the bottom-left instead of bottom right.
+  if (base::i18n::IsRTL())
+    return work_area_.x() + kToastMargin;
+#endif
+  return work_area_.right() - kToastMargin - toast_bounds.width();
 }
 
 void MessagePopupCollection::RepositionWidgets() {
-  int bottom = GetWorkAreaBottomRight().y() - kToastMargin;
+  int bottom = work_area_.bottom() - kToastMargin;
   for (Toasts::iterator iter = toasts_.begin(); iter != toasts_.end();) {
     Toasts::iterator curr = iter++;
     gfx::Rect bounds((*curr)->bounds());
+    bounds.set_x(GetToastOriginX(bounds));
     bounds.set_y(bottom - bounds.height());
     // The notification may scrolls the top boundary of the screen due to image
     // load and such notifications should disappear. Do not call
@@ -292,6 +299,7 @@ void MessagePopupCollection::OnNotificationUpdated(
     MessageView* view =
         NotificationView::Create(*(*iter),
                                  message_center_,
+                                 tray_,
                                  true,  // Create expanded.
                                  true); // Create top-level notification.
     (*toast_iter)->SetContents(view);
@@ -359,6 +367,23 @@ void MessagePopupCollection::DoUpdateIfPossible() {
   // transition animations were started.
   if (run_loop_for_test_.get())
     run_loop_for_test_->Quit();
+}
+
+void MessagePopupCollection::OnDisplayBoundsChanged(
+    const gfx::Display& display) {
+  if (display.id() != display_id_)
+    return;
+  if (work_area_ == display.work_area())
+    return;
+
+  work_area_ = display.work_area();
+  RepositionWidgets();
+}
+
+void MessagePopupCollection::OnDisplayAdded(const gfx::Display& new_display) {
+}
+
+void MessagePopupCollection::OnDisplayRemoved(const gfx::Display& old_display) {
 }
 
 views::Widget* MessagePopupCollection::GetWidgetForTest(const std::string& id) {

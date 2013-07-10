@@ -16,7 +16,6 @@
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "cc/base/switches.h"
-#include "cc/base/thread_impl.h"
 #include "cc/input/input_handler.h"
 #include "cc/layers/layer.h"
 #include "cc/output/context_provider.h"
@@ -173,7 +172,7 @@ class ContextProviderFromContextFactory : public cc::ContextProvider {
   bool InitializeOnMainThread() {
     if (context3d_)
       return true;
-    context3d_.reset(factory_->CreateOffscreenContext());
+    context3d_ = factory_->CreateOffscreenContext();
     return !!context3d_;
   }
 
@@ -202,11 +201,11 @@ bool DefaultContextFactory::Initialize() {
 
 cc::OutputSurface* DefaultContextFactory::CreateOutputSurface(
     Compositor* compositor) {
-  return new cc::OutputSurface(
-      make_scoped_ptr(CreateContextCommon(compositor, false)));
+  return new cc::OutputSurface(CreateContextCommon(compositor, false).Pass());
 }
 
-WebKit::WebGraphicsContext3D* DefaultContextFactory::CreateOffscreenContext() {
+scoped_ptr<WebKit::WebGraphicsContext3D>
+DefaultContextFactory::CreateOffscreenContext() {
   return CreateContextCommon(NULL, true);
 }
 
@@ -246,9 +245,9 @@ DefaultContextFactory::OffscreenContextProviderForCompositorThread() {
 void DefaultContextFactory::RemoveCompositor(Compositor* compositor) {
 }
 
-WebKit::WebGraphicsContext3D* DefaultContextFactory::CreateContextCommon(
-    Compositor* compositor,
-    bool offscreen) {
+scoped_ptr<WebKit::WebGraphicsContext3D>
+DefaultContextFactory::CreateContextCommon(Compositor* compositor,
+                                           bool offscreen) {
   DCHECK(offscreen || compositor);
   WebKit::WebGraphicsContext3D::Attributes attrs;
   attrs.depth = false;
@@ -256,14 +255,14 @@ WebKit::WebGraphicsContext3D* DefaultContextFactory::CreateContextCommon(
   attrs.antialias = false;
   attrs.shareResources = true;
   using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
-  WebKit::WebGraphicsContext3D* context =
-      offscreen ?
-      WebGraphicsContext3DInProcessCommandBufferImpl::CreateOffscreenContext(
-          attrs) :
-      WebGraphicsContext3DInProcessCommandBufferImpl::CreateViewContext(
-          attrs, compositor->widget());
+  scoped_ptr<WebKit::WebGraphicsContext3D> context(
+      offscreen
+          ? WebGraphicsContext3DInProcessCommandBufferImpl::
+                CreateOffscreenContext(attrs)
+          : WebGraphicsContext3DInProcessCommandBufferImpl::CreateViewContext(
+                attrs, compositor->widget()));
   if (!context)
-    return NULL;
+    return context.Pass();
 
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (!offscreen) {
@@ -273,7 +272,7 @@ WebKit::WebGraphicsContext3D* DefaultContextFactory::CreateContextCommon(
     gl_context->SetSwapInterval(vsync ? 1 : 0);
     gl_context->ReleaseCurrent(NULL);
   }
-  return context;
+  return context.Pass();
 }
 
 TestContextFactory::TestContextFactory() {}
@@ -282,13 +281,15 @@ TestContextFactory::~TestContextFactory() {}
 
 cc::OutputSurface* TestContextFactory::CreateOutputSurface(
     Compositor* compositor) {
-  return new cc::OutputSurface(make_scoped_ptr(CreateOffscreenContext()));
+  return new cc::OutputSurface(CreateOffscreenContext());
 }
 
-WebKit::WebGraphicsContext3D* TestContextFactory::CreateOffscreenContext() {
-  ui::TestWebGraphicsContext3D* context = new ui::TestWebGraphicsContext3D;
+scoped_ptr<WebKit::WebGraphicsContext3D>
+TestContextFactory::CreateOffscreenContext() {
+  scoped_ptr<ui::TestWebGraphicsContext3D> context(
+      new ui::TestWebGraphicsContext3D);
   context->Initialize();
-  return context;
+  return context.PassAs<WebKit::WebGraphicsContext3D>();
 }
 
 scoped_refptr<Reflector> TestContextFactory::CreateReflector(
@@ -508,8 +509,6 @@ Compositor::Compositor(CompositorDelegate* delegate,
       command_line->HasSwitch(cc::switches::kUIShowFPSCounter);
   settings.initial_debug_state.show_paint_rects =
       command_line->HasSwitch(switches::kUIShowPaintRects);
-  settings.initial_debug_state.show_platform_layer_tree =
-      command_line->HasSwitch(cc::switches::kUIShowCompositedLayerTree);
   settings.initial_debug_state.show_property_changed_rects =
       command_line->HasSwitch(cc::switches::kUIShowPropertyChangedRects);
   settings.initial_debug_state.show_surface_damage_rects =
@@ -523,13 +522,10 @@ Compositor::Compositor(CompositorDelegate* delegate,
   settings.initial_debug_state.show_non_occluding_rects =
       command_line->HasSwitch(cc::switches::kUIShowNonOccludingRects);
 
-  scoped_ptr<cc::Thread> thread;
-  if (g_compositor_thread) {
-    thread = cc::ThreadImpl::CreateForDifferentThread(
-        g_compositor_thread->message_loop_proxy());
-  }
+  scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner =
+      g_compositor_thread ? g_compositor_thread->message_loop_proxy() : NULL;
 
-  host_ = cc::LayerTreeHost::Create(this, settings, thread.Pass());
+  host_ = cc::LayerTreeHost::Create(this, settings, compositor_task_runner);
   host_->SetRootLayer(root_web_layer_);
   host_->SetLayerTreeHostClientReady();
 }

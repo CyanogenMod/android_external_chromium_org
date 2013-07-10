@@ -22,14 +22,14 @@
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/job_list.h"
 #include "chrome/browser/chromeos/drive/logging.h"
+#include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/drive/drive_notification_manager.h"
 #include "chrome/browser/drive/drive_notification_manager_factory.h"
 #include "chrome/browser/drive/drive_service_interface.h"
+#include "chrome/browser/drive/drive_switches.h"
+#include "chrome/browser/drive/event_logger.h"
 #include "chrome/browser/google_apis/auth_service.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/drive_api_util.h"
-#include "chrome/browser/google_apis/drive_switches.h"
-#include "chrome/browser/google_apis/event_logger.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/google_apis/time_util.h"
@@ -209,11 +209,11 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
   void UpdateDriveRelatedFlagsSection();
   void UpdateDriveRelatedPreferencesSection();
   void UpdateAuthStatusSection(
-      google_apis::DriveServiceInterface* drive_service);
+      drive::DriveServiceInterface* drive_service);
   void UpdateAboutResourceSection(
-      google_apis::DriveServiceInterface* drive_service);
+      drive::DriveServiceInterface* drive_service);
   void UpdateAppListSection(
-      google_apis::DriveServiceInterface* drive_service);
+      drive::DriveServiceInterface* drive_service);
   void UpdateLocalMetadataSection(
       drive::DebugInfoCollector* debug_info_collector);
   void UpdateDeltaUpdateStatusSection(
@@ -238,7 +238,6 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
   // Called when ReadDirectoryByPath() is complete.
   void OnReadDirectoryByPath(const base::FilePath& parent_path,
                              drive::FileError error,
-                             bool hide_hosted_documents,
                              scoped_ptr<drive::ResourceEntryVector> entries);
 
   // Called as the iterator for DebugInfoCollector::IterateFileCache().
@@ -375,7 +374,7 @@ void DriveInternalsWebUIHandler::OnPageLoaded(const base::ListValue* args) {
   if (!integration_service)
     return;
 
-  google_apis::DriveServiceInterface* drive_service =
+  drive::DriveServiceInterface* drive_service =
       integration_service->drive_service();
   DCHECK(drive_service);
   drive::DebugInfoCollector* debug_info_collector =
@@ -406,7 +405,7 @@ void DriveInternalsWebUIHandler::UpdateDriveRelatedFlagsSection() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   const char* kDriveRelatedFlags[] = {
-    google_apis::switches::kEnableDriveV2Api,
+    drive::switches::kEnableDriveV2Api,
     chromeos::switches::kDisableDrive,
   };
 
@@ -454,7 +453,7 @@ void DriveInternalsWebUIHandler::UpdateDriveRelatedPreferencesSection() {
 }
 
 void DriveInternalsWebUIHandler::UpdateAuthStatusSection(
-    google_apis::DriveServiceInterface* drive_service) {
+    drive::DriveServiceInterface* drive_service) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(drive_service);
 
@@ -467,7 +466,7 @@ void DriveInternalsWebUIHandler::UpdateAuthStatusSection(
 }
 
 void DriveInternalsWebUIHandler::UpdateAboutResourceSection(
-    google_apis::DriveServiceInterface* drive_service) {
+    drive::DriveServiceInterface* drive_service) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(drive_service);
 
@@ -477,7 +476,7 @@ void DriveInternalsWebUIHandler::UpdateAboutResourceSection(
 }
 
 void DriveInternalsWebUIHandler::UpdateAppListSection(
-    google_apis::DriveServiceInterface* drive_service) {
+    drive::DriveServiceInterface* drive_service) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(drive_service);
 
@@ -550,8 +549,8 @@ void DriveInternalsWebUIHandler::OnGetFilesystemMetadataForDeltaUpdate(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   Profile* profile = Profile::FromWebUI(web_ui());
-  google_apis::DriveNotificationManager* drive_notification_manager =
-      google_apis::DriveNotificationManagerFactory::GetForProfile(profile);
+  drive::DriveNotificationManager* drive_notification_manager =
+      drive::DriveNotificationManagerFactory::GetForProfile(profile);
   if (!drive_notification_manager)
     return;
 
@@ -674,7 +673,7 @@ void DriveInternalsWebUIHandler::UpdateCacheContentsSection(
 void DriveInternalsWebUIHandler::UpdateEventLogSection() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  const std::vector<google_apis::EventLogger::Event> log =
+  const std::vector<drive::EventLogger::Event> log =
       drive::util::GetLogHistory();
 
   base::ListValue list;
@@ -722,7 +721,6 @@ void DriveInternalsWebUIHandler::OnGetResourceEntryByPath(
 void DriveInternalsWebUIHandler::OnReadDirectoryByPath(
     const base::FilePath& parent_path,
     drive::FileError error,
-    bool hide_hosted_documents,
     scoped_ptr<drive::ResourceEntryVector> entries) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 

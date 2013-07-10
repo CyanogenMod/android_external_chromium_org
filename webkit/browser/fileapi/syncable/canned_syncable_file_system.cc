@@ -4,6 +4,8 @@
 
 #include "webkit/browser/fileapi/syncable/canned_syncable_file_system.h"
 
+#include <iterator>
+
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/file_util.h"
@@ -126,6 +128,20 @@ void OnCreateSnapshotFile(
   callback.Run(result);
 }
 
+void OnReadDirectory(
+    CannedSyncableFileSystem::FileEntryList* entries_out,
+    const CannedSyncableFileSystem::StatusCallback& callback,
+    base::PlatformFileError error,
+    const fileapi::FileSystemOperation::FileEntryList& entries,
+    bool has_more) {
+  DCHECK(entries_out);
+  entries_out->reserve(entries_out->size() + entries.size());
+  std::copy(entries.begin(), entries.end(), std::back_inserter(*entries_out));
+
+  if (!has_more)
+    callback.Run(error);
+}
+
 class WriteHelper {
  public:
   WriteHelper() : bytes_written_(0) {}
@@ -210,6 +226,12 @@ void CannedSyncableFileSystem::SetUp() {
                                     base::MessageLoopProxy::current().get(),
                                     storage_policy.get());
 
+  std::vector<std::string> additional_allowed_schemes;
+  additional_allowed_schemes.push_back(origin_.scheme());
+  fileapi::FileSystemOptions options(
+      fileapi::FileSystemOptions::PROFILE_MODE_NORMAL,
+      additional_allowed_schemes);
+
   file_system_context_ = new FileSystemContext(
       make_scoped_ptr(
           new fileapi::FileSystemTaskRunners(io_task_runner_.get(),
@@ -218,12 +240,7 @@ void CannedSyncableFileSystem::SetUp() {
       storage_policy.get(),
       quota_manager_->proxy(),
       ScopedVector<fileapi::FileSystemMountPointProvider>(),
-      data_dir_.path(),
-      fileapi::CreateAllowFileAccessOptions());
-
-  // In testing we override this setting to support directory operations
-  // by default.
-  SetEnableSyncFSDirectoryOperation(true);
+      data_dir_.path(), options);
 
   is_filesystem_set_up_ = true;
 }
@@ -231,7 +248,6 @@ void CannedSyncableFileSystem::SetUp() {
 void CannedSyncableFileSystem::TearDown() {
   quota_manager_ = NULL;
   file_system_context_ = NULL;
-  SetEnableSyncFSDirectoryOperation(false);
 
   // Make sure we give some more time to finish tasks on other threads.
   EnsureLastTaskRuns(io_task_runner_.get());
@@ -249,7 +265,7 @@ FileSystemURL CannedSyncableFileSystem::URL(const std::string& path) const {
 PlatformFileError CannedSyncableFileSystem::OpenFileSystem() {
   EXPECT_TRUE(is_filesystem_set_up_);
   EXPECT_FALSE(is_filesystem_opened_);
-  file_system_context_->OpenSyncableFileSystem(
+  file_system_context_->OpenFileSystem(
       origin_, type_,
       fileapi::OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
       base::Bind(&CannedSyncableFileSystem::DidOpenFileSystem,
@@ -415,6 +431,18 @@ PlatformFileError CannedSyncableFileSystem::GetMetadataAndPlatformPath(
                  platform_path));
 }
 
+PlatformFileError CannedSyncableFileSystem::ReadDirectory(
+    const fileapi::FileSystemURL& url,
+    FileEntryList* entries) {
+  return RunOnThread<PlatformFileError>(
+      io_task_runner_.get(),
+      FROM_HERE,
+      base::Bind(&CannedSyncableFileSystem::DoReadDirectory,
+          base::Unretained(this),
+          url,
+          entries));
+}
+
 int64 CannedSyncableFileSystem::Write(
     net::URLRequestContext* url_request_context,
     const FileSystemURL& url, const GURL& blob_url) {
@@ -578,6 +606,15 @@ void CannedSyncableFileSystem::DoGetMetadataAndPlatformPath(
   EXPECT_TRUE(is_filesystem_opened_);
   operation_runner()->CreateSnapshotFile(
       url, base::Bind(&OnCreateSnapshotFile, info, platform_path, callback));
+}
+
+void CannedSyncableFileSystem::DoReadDirectory(
+    const FileSystemURL& url,
+    FileEntryList* entries,
+    const StatusCallback& callback) {
+  EXPECT_TRUE(is_filesystem_opened_);
+  operation_runner()->ReadDirectory(
+      url, base::Bind(&OnReadDirectory, entries, callback));
 }
 
 void CannedSyncableFileSystem::DoWrite(

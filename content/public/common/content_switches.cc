@@ -165,6 +165,10 @@ const char kDisableLocalStorage[]           = "disable-local-storage";
 // builds.
 const char kDisableLogging[]                = "disable-logging";
 
+// Enables displaying net log events on the command line, or writing the events
+// to a separate file if a file name is given.
+const char kLogNetLog[]                     = "log-net-log";
+
 // Prevent plugins from running.
 const char kDisablePlugins[]                = "disable-plugins";
 
@@ -318,6 +322,11 @@ const char kEnableDeviceMotion[]            = "enable-device-motion";
 // Enables restarting interrupted downloads.
 const char kEnableDownloadResumption[]      = "enable-download-resumption";
 
+#if defined(OS_CHROMEOS)
+// Enables hardware-encoded screen capture.
+const char kEnableEncodedScreenCapture[]    = "enable-encoded-screen-capture";
+#endif
+
 // Enables WebKit features that are in development.
 const char kEnableExperimentalWebKitFeatures[] =
     "enable-experimental-webkit-features";
@@ -377,6 +386,10 @@ const char kDisableLegacyEncryptedMedia[] = "disable-legacy-encrypted-media";
 
 // Use fake device for MediaStream to replace actual camera and microphone.
 const char kUseFakeDeviceForMediaStream[] = "use-fake-device-for-media-stream";
+
+// Bypass the media stream infobar by selecting the default device for media
+// streams (e.g. WebRTC). Works with --use-fake-device-for-media-stream.
+const char kUseFakeUIForMediaStream[]     = "use-fake-ui-for-media-stream";
 
 // On Windows, converts the page to the currently-installed monitor profile.
 // This does NOT enable color management for images. The source is still
@@ -853,9 +866,6 @@ const char kOverscrollHistoryNavigation[] =
 
 // Forward overscroll event data from the renderer to the browser.
 const char kEnableOverscrollNotifications[] = "enable-overscroll-notifications";
-
-// Enables 'image/webp' accept header for image requests.
-const char kEnableWebPInAcceptHeader[] = "enable-webp-in-accept-header";
 
 // Enables WebGL extensions not yet approved by the community.
 const char kEnableWebGLDraftExtensions[] = "enable-webgl-draft-extensions";

@@ -12,7 +12,6 @@
 #include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
-#include "cc/base/hash_pair.h"
 #include "cc/base/region.h"
 #include "cc/base/tiling_data.h"
 #include "cc/resources/tile.h"
@@ -30,15 +29,13 @@ class CC_EXPORT PictureLayerTilingClient {
   virtual scoped_refptr<Tile> CreateTile(
     PictureLayerTiling* tiling,
     gfx::Rect content_rect) = 0;
+  virtual void DestroyTile(Tile* tile) = 0;
   virtual void UpdatePile(Tile* tile) = 0;
   virtual gfx::Size CalculateTileSize(
     gfx::Size content_bounds) const = 0;
   virtual const Region* GetInvalidation() = 0;
   virtual const PictureLayerTiling* GetTwinTiling(
       const PictureLayerTiling* tiling) = 0;
-
-  // This is on the client so tests can override behaviour.
-  virtual bool TileMayHaveLCDText(Tile* tile);
 
  protected:
   virtual ~PictureLayerTilingClient() {}
@@ -54,7 +51,11 @@ class CC_EXPORT PictureLayerTiling {
       gfx::Size layer_bounds,
       PictureLayerTilingClient* client);
   gfx::Size layer_bounds() const { return layer_bounds_; }
-  void DestroyAndRecreateTilesWithText();
+  void SetLayerBounds(gfx::Size layer_bounds);
+  void Invalidate(const Region& layer_region);
+  void CreateMissingTilesInLiveTilesRect();
+
+  void SetCanUseLCDText(bool can_use_lcd_text);
 
   void SetClient(PictureLayerTilingClient* client);
   void set_resolution(TileResolution resolution) { resolution_ = resolution; }
@@ -62,6 +63,8 @@ class CC_EXPORT PictureLayerTiling {
 
   gfx::Rect ContentRect() const;
   gfx::SizeF ContentSizeF() const;
+  gfx::Rect live_tiles_rect() const { return live_tiles_rect_; }
+  gfx::Size tile_size() const { return tiling_data_.max_texture_size(); }
   float contents_scale() const { return contents_scale_; }
 
   void CreateAllTilesForTesting() {
@@ -144,6 +147,8 @@ class CC_EXPORT PictureLayerTiling {
   // The src_tree priority is reset to the lowest priority possible.  This
   // also updates the pile on each tile to be the current client's pile.
   void DidBecomeActive();
+
+  void UpdateTilesToCurrentPile();
 
   bool NeedsUpdateForFrameAtTime(double frame_time_in_seconds) {
     return frame_time_in_seconds != last_impl_frame_time_in_seconds_;

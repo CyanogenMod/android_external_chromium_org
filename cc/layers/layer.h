@@ -21,23 +21,19 @@
 #include "cc/layers/layer_position_constraint.h"
 #include "cc/layers/paint_properties.h"
 #include "cc/layers/render_surface.h"
+#include "cc/output/filter_operations.h"
 #include "cc/trees/occlusion_tracker.h"
 #include "skia/ext/refptr.h"
-#include "third_party/WebKit/public/platform/WebFilterOperations.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_f.h"
 #include "ui/gfx/transform.h"
 
-namespace WebKit {
-class WebAnimationDelegate;
-class WebLayerScrollClient;
-}
-
 namespace cc {
 
 class Animation;
+class AnimationDelegate;
 struct AnimationEvent;
 class CopyOutputRequest;
 class LayerAnimationDelegate;
@@ -50,7 +46,6 @@ class RenderingStatsInstrumentation;
 class ResourceUpdateQueue;
 class ScrollbarLayer;
 struct AnimationEvent;
-struct RenderingStats;
 
 // Base class for composited layers. Special layer types are derived from
 // this class.
@@ -118,8 +113,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool OpacityIsAnimating() const;
   virtual bool OpacityCanAnimateOnImplThread() const;
 
-  void SetFilters(const WebKit::WebFilterOperations& filters);
-  const WebKit::WebFilterOperations& filters() const { return filters_; }
+  void SetFilters(const FilterOperations& filters);
+  const FilterOperations& filters() const { return filters_; }
 
   void SetFilter(const skia::RefPtr<SkImageFilter>& filter);
   skia::RefPtr<SkImageFilter> filter() const { return filter_; }
@@ -127,8 +122,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   // Background filters are filters applied to what is behind this layer, when
   // they are viewed through non-opaque regions in this layer. They are used
   // through the WebLayer interface, and are not exposed to HTML.
-  void SetBackgroundFilters(const WebKit::WebFilterOperations& filters);
-  const WebKit::WebFilterOperations& background_filters() const {
+  void SetBackgroundFilters(const FilterOperations& filters);
+  const FilterOperations& background_filters() const {
     return background_filters_;
   }
 
@@ -234,8 +229,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
     return touch_event_handler_region_;
   }
 
-  void set_layer_scroll_client(WebKit::WebLayerScrollClient* client) {
-    layer_scroll_client_ = client;
+  void set_did_scroll_callback(const base::Closure& callback) {
+    did_scroll_callback_ = callback;
   }
 
   void SetDrawCheckerboardForMissingTiles(bool checkerboard);
@@ -268,6 +263,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   void SetIsDrawable(bool is_drawable);
 
+  void SetHideLayerAndSubtree(bool hide);
+  bool hide_layer_and_subtree() const { return hide_layer_and_subtree_; }
+
   void SetReplicaLayer(Layer* layer);
   Layer* replica_layer() { return replica_layer_.get(); }
   const Layer* replica_layer() const { return replica_layer_.get(); }
@@ -283,8 +281,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   virtual bool DrawsContent() const;
   virtual void SavePaintProperties();
   virtual void Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker* occlusion,
-                      RenderingStats* stats) {}
+                      const OcclusionTracker* occlusion) {}
   virtual bool NeedMoreUpdates();
   virtual void SetIsMask(bool is_mask) {}
   virtual void ReduceMemoryUsage() {}
@@ -331,7 +328,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void SetLayerAnimationControllerForTest(
       scoped_refptr<LayerAnimationController> controller);
 
-  void set_layer_animation_delegate(WebKit::WebAnimationDelegate* delegate) {
+  void set_layer_animation_delegate(AnimationDelegate* delegate) {
     layer_animation_controller_->set_layer_animation_delegate(delegate);
   }
 
@@ -459,12 +456,13 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   CompositingReasons compositing_reasons_;
   float opacity_;
   skia::RefPtr<SkImageFilter> filter_;
-  WebKit::WebFilterOperations filters_;
-  WebKit::WebFilterOperations background_filters_;
+  FilterOperations filters_;
+  FilterOperations background_filters_;
   float anchor_point_z_;
   bool is_container_for_fixed_position_layers_;
   LayerPositionConstraint position_constraint_;
   bool is_drawable_;
+  bool hide_layer_and_subtree_;
   bool masks_to_bounds_;
   bool contents_opaque_;
   bool double_sided_;
@@ -484,7 +482,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   ScopedPtrVector<CopyOutputRequest> copy_requests_;
 
-  WebKit::WebLayerScrollClient* layer_scroll_client_;
+  base::Closure did_scroll_callback_;
 
   DrawProperties<Layer, RenderSurface> draw_properties_;
 

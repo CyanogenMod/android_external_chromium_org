@@ -27,7 +27,6 @@ no matter how burnt", he snickered.
 
 The pause was filled with the sound of thunder.
 
-
 CHAPTER 2:
 The jelly was as dark as night, and just as runny.
 The Domo-Kun shuddered, remembering the way Mr. Usagi had speared his waffles
@@ -50,17 +49,16 @@ Perhaps he shouldn't have been so cold and sarcastic, after the unimaginable
 horror that had occurred, just the week before.
 
 Next time, there won't be any sushi. Why sushi with waffles anyway?  It's like
-adorning breakfast cereal with halibut. Completely shameful.
+adorning breakfast cereal with halibut -- shameful.
 
 CHAPTER 4:
 The taste of stable sushi in his mouth the next morning was unbearable. He
 wondered where the sushi came from as he attempted to wash the taste away with
-a bottle of 3000¥ sake. He tries to recall the cook's face.  Purple? Or Pink?
+a bottle of 3000¥ sake. He tries to recall the cook's face.  Purple?
 
 CHAPTER 5:
 Many years later, Mr. Usagi would laugh at the memory of the earnest,
 well-intentioned Domo-Kun. Another day in the life...
-
 
 TRUISMS (1978-1983)
 JENNY HOLZER
@@ -70,6 +68,6 @@ A MAN CAN'T KNOW WHAT IT IS TO BE A MOTHER
 A NAME MEANS A LOT JUST BY ITSELF
 A POSITIVE ATTITUDE MEANS ALL THE DIFFERENCE IN THE WORLD
 A RELAXED MAN IS NOT NECESSARILY A BETTER MAN
-NO ONE SHOULD EVER HAVE TO USE SVN
+NO ONE SHOULD EVER USE SVN
 AN INFLEXIBLE POSITION SOMETIMES IS A SIGN OF PARALYSIS
 IT IS MANS FATE TO OUTSMART HIMSELF

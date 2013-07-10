@@ -16,7 +16,7 @@
 #include "base/strings/string_util.h"
 #include "base/sys_info.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/web_resource/promo_resource_service.h"
@@ -24,8 +24,8 @@
 #include "chrome/common/pref_names.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/user_metrics.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/url_util.h"
+#include "url/gurl.h"
 
 #if defined(OS_ANDROID)
 #include "base/command_line.h"

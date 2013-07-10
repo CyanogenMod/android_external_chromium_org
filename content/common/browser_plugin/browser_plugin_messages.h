@@ -17,6 +17,7 @@
 #include "content/common/content_param_traits.h"
 #include "content/common/edit_command.h"
 #include "content/public/common/common_param_traits.h"
+#include "content/public/common/drop_data.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_message_utils.h"
@@ -25,7 +26,6 @@
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
-#include "webkit/common/webdropdata.h"
 #include "webkit/common/cursors/webcursor.h"
 
 #undef IPC_MESSAGE_EXPORT
@@ -80,16 +80,19 @@ IPC_STRUCT_BEGIN(BrowserPluginMsg_Attach_ACK_Params)
   IPC_STRUCT_MEMBER(std::string, name)
 IPC_STRUCT_END()
 
+IPC_STRUCT_BEGIN(BrowserPluginMsg_BuffersSwapped_Params)
+  IPC_STRUCT_MEMBER(gfx::Size, size)
+  IPC_STRUCT_MEMBER(gfx::Rect, damage_rect)
+  IPC_STRUCT_MEMBER(std::string, mailbox_name)
+  IPC_STRUCT_MEMBER(int, route_id)
+  IPC_STRUCT_MEMBER(int, host_id)
+IPC_STRUCT_END()
+
 IPC_STRUCT_BEGIN(BrowserPluginMsg_LoadCommit_Params)
   // The current URL of the guest.
   IPC_STRUCT_MEMBER(GURL, url)
   // Indicates whether the navigation was on the top-level frame.
   IPC_STRUCT_MEMBER(bool, is_top_level)
-  // The index of the current navigation entry after this navigation was
-  // committed.
-  IPC_STRUCT_MEMBER(int, current_entry_index)
-  // The number of navigation entries after this navigation was committed.
-  IPC_STRUCT_MEMBER(int, entry_count)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(BrowserPluginMsg_UpdateRect_Params)
@@ -168,20 +171,15 @@ IPC_MESSAGE_ROUTED3(
 // |params| is the state of the BrowserPlugin taking ownership of
 // the guest. If a guest doesn't already exist with the given |instance_id|,
 // a new one will be created.
-IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_Attach,
+IPC_MESSAGE_ROUTED3(BrowserPluginHostMsg_Attach,
                     int /* instance_id */,
-                    BrowserPluginHostMsg_Attach_Params /* params */)
+                    BrowserPluginHostMsg_Attach_Params /* params */,
+                    base::DictionaryValue /* extra_params */)
 
 // Tells the browser process to terminate the guest associated with the
 // browser plugin associated with the provided |instance_id|.
 IPC_MESSAGE_ROUTED1(BrowserPluginHostMsg_TerminateGuest,
                     int /* instance_id */)
-
-// Tells the guest to navigate to an entry |relative_index| away from the
-// current navigation entry.
-IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_Go,
-                    int /* instance_id */,
-                    int /* relative_index */)
 
 // Tells the guest to focus or defocus itself.
 IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_SetFocus,
@@ -251,7 +249,7 @@ IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_SetVisibility,
 IPC_MESSAGE_ROUTED5(BrowserPluginHostMsg_DragStatusUpdate,
                     int /* instance_id */,
                     WebKit::WebDragStatus /* drag_status */,
-                    WebDropData /* drop_data */,
+                    content::DropData /* drop_data */,
                     WebKit::WebDragOperationsMask /* operation_mask */,
                     gfx::Point /* plugin_location */)
 
@@ -334,19 +332,6 @@ IPC_MESSAGE_CONTROL2(BrowserPluginMsg_GuestContentWindowReady,
                      int /* instance_id */,
                      int /* source_routing_id */)
 
-// After the load handler of the guest's main frame is called, the browser
-// process informs the embedder through the BrowserPluginMsg_LoadHandlerCalled
-// message.
-IPC_MESSAGE_CONTROL1(BrowserPluginMsg_LoadHandlerCalled,
-                     int /* instance_id */)
-
-// When the guest begins to load a page, the browser process informs the
-// embedder through the BrowserPluginMsg_LoadStart message.
-IPC_MESSAGE_CONTROL3(BrowserPluginMsg_LoadStart,
-                     int /* instance_id */,
-                     GURL /* url */,
-                     bool /* is_top_level */)
-
 // If the guest fails to commit a page load then it will inform the
 // embedder through the BrowserPluginMsg_LoadAbort. A description
 // of the error will be stored in |type|.  The list of known error
@@ -357,24 +342,11 @@ IPC_MESSAGE_CONTROL4(BrowserPluginMsg_LoadAbort,
                      bool /* is_top_level */,
                      std::string /* type */)
 
-// When the guest redirects a navigation, the browser process informs the
-// embedder through the BrowserPluginMsg_LoadRedirect message.
-IPC_MESSAGE_CONTROL4(BrowserPluginMsg_LoadRedirect,
-                     int /* instance_id */,
-                     GURL /* old_url */,
-                     GURL /* new_url */,
-                     bool /* is_top_level */)
-
 // When the guest commits a navigation, the browser process informs
 // the embedder through the BrowserPluginMsg_LoadCommit message.
 IPC_MESSAGE_CONTROL2(BrowserPluginMsg_LoadCommit,
                      int /* instance_id */,
                      BrowserPluginMsg_LoadCommit_Params)
-
-// When the guest page has completed loading (including subframes), the browser
-// process informs the embedder through the BrowserPluginMsg_LoadStop message.
-IPC_MESSAGE_CONTROL1(BrowserPluginMsg_LoadStop,
-                     int /* instance_id */)
 
 // When the guest crashes, the browser process informs the embedder through this
 // message.
@@ -435,12 +407,9 @@ IPC_MESSAGE_CONTROL2(BrowserPluginMsg_UpdatedName,
 // When HW accelerated buffers are swapped in the guest, the message
 // is forwarded to the embedder to notify it of a new texture
 // available for compositing.
-IPC_MESSAGE_CONTROL5(BrowserPluginMsg_BuffersSwapped,
+IPC_MESSAGE_CONTROL2(BrowserPluginMsg_BuffersSwapped,
                      int /* instance_id */,
-                     gfx::Size /* size */,
-                     std::string /* mailbox_name */,
-                     int /* route_id */,
-                     int /* gpu_host_id */)
+                     BrowserPluginMsg_BuffersSwapped_Params)
 
 IPC_MESSAGE_CONTROL4(BrowserPluginMsg_CompositorFrameSwapped,
                      int /* instance_id */,

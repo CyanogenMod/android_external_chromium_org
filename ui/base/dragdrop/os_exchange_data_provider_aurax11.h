@@ -15,30 +15,28 @@
 #include "base/files/file_path.h"
 #include "base/message_loop/message_pump_dispatcher.h"
 #include "base/pickle.h"
-#include "googleurl/src/gurl.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/x/selection_owner.h"
 #include "ui/base/x/selection_requestor.h"
+#include "ui/base/x/selection_utils.h"
 #include "ui/base/x/x11_atom_cache.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/vector2d.h"
+#include "url/gurl.h"
 
 namespace ui {
 
 class Clipboard;
-class DesktopSelectionProviderAuraX11;
 
 // OSExchangeData::Provider implementation for aura on linux.
 class UI_EXPORT OSExchangeDataProviderAuraX11
     : public OSExchangeData::Provider,
       public base::MessagePumpDispatcher {
  public:
-  // Creates a Provider for drag receiving. |x_window| is the window the cursor
-  // is over, and |targets| are the MIME types being offered by the other
-  // process.
-  OSExchangeDataProviderAuraX11(ui::DesktopSelectionProviderAuraX11* provider,
-                                ::Window x_window,
-                                const std::vector< ::Atom> targets);
+  // |x_window| is the window the cursor is over, and |selection| is the set of
+  // data being offered.
+  OSExchangeDataProviderAuraX11(::Window x_window,
+                                const SelectionFormatMap& selection);
 
   // Creates a Provider for sending drag information. This creates its own,
   // hidden X11 window to own send data.
@@ -46,33 +44,42 @@ class UI_EXPORT OSExchangeDataProviderAuraX11
 
   virtual ~OSExchangeDataProviderAuraX11();
 
-  // If we are receiving, we receive messages from a DesktopRootWindowHost
-  // through this interface.
-  void OnSelectionNotify(const XSelectionEvent& event);
+  // After all the Set* methods have built up the data we're offering, call
+  // this to take ownership of the XdndSelection clipboard.
+  void TakeOwnershipOfSelection() const;
+
+  // Retrieves a list of types we're offering. Noop if we haven't taken the
+  // selection.
+  void RetrieveTargets(std::vector<Atom>* targets) const;
+
+  // Makes a copy of the format map currently being offered.
+  SelectionFormatMap GetFormatMap() const;
 
   // Overridden from OSExchangeData::Provider:
-  virtual void SetString(const string16& data) OVERRIDE;
-  virtual void SetURL(const GURL& url, const string16& title) OVERRIDE;
+  virtual Provider* Clone() const OVERRIDE;
+  virtual void SetString(const base::string16& data) OVERRIDE;
+  virtual void SetURL(const GURL& url, const base::string16& title) OVERRIDE;
   virtual void SetFilename(const base::FilePath& path) OVERRIDE;
   virtual void SetFilenames(
       const std::vector<OSExchangeData::FileInfo>& filenames) OVERRIDE;
   virtual void SetPickledData(const OSExchangeData::CustomFormat& format,
-                              const Pickle& data) OVERRIDE;
-  virtual bool GetString(string16* data) const OVERRIDE;
-  virtual bool GetURLAndTitle(GURL* url, string16* title) const OVERRIDE;
+                              const Pickle& pickle) OVERRIDE;
+  virtual bool GetString(base::string16* data) const OVERRIDE;
+  virtual bool GetURLAndTitle(GURL* url, base::string16* title) const OVERRIDE;
   virtual bool GetFilename(base::FilePath* path) const OVERRIDE;
   virtual bool GetFilenames(
       std::vector<OSExchangeData::FileInfo>* filenames) const OVERRIDE;
   virtual bool GetPickledData(const OSExchangeData::CustomFormat& format,
-                              Pickle* data) const OVERRIDE;
+                              Pickle* pickle) const OVERRIDE;
   virtual bool HasString() const OVERRIDE;
   virtual bool HasURL() const OVERRIDE;
   virtual bool HasFile() const OVERRIDE;
   virtual bool HasCustomFormat(const OSExchangeData::CustomFormat& format) const
       OVERRIDE;
 
-  virtual void SetHtml(const string16& html, const GURL& base_url) OVERRIDE;
-  virtual bool GetHtml(string16* html, GURL* base_url) const OVERRIDE;
+  virtual void SetHtml(const base::string16& html,
+                       const GURL& base_url) OVERRIDE;
+  virtual bool GetHtml(base::string16* html, GURL* base_url) const OVERRIDE;
   virtual bool HasHtml() const OVERRIDE;
   virtual void SetDragImage(const gfx::ImageSkia& image,
                             const gfx::Vector2d& cursor_offset) OVERRIDE;
@@ -88,6 +95,9 @@ class UI_EXPORT OSExchangeDataProviderAuraX11
   // Returns true if |formats_| contains a string format and the string can be
   // parsed as a URL.
   bool GetPlainTextURL(GURL* url) const;
+
+  // Returns the targets in |format_map_|.
+  std::vector< ::Atom> GetTargets() const;
 
   // Drag image and offset data.
   gfx::ImageSkia drag_image_;
@@ -105,19 +115,17 @@ class UI_EXPORT OSExchangeDataProviderAuraX11
   // our own xwindow just to receive events on it.
   const bool own_window_;
 
-  // When we don't own the window, we keep track of the object that does so we
-  // can receive messages from it.
-  ui::DesktopSelectionProviderAuraX11* selection_event_provider_;
-
   ::Window x_window_;
 
   X11AtomCache atom_cache_;
 
-  mutable SelectionRequestor selection_requestor_;
-  mutable SelectionOwner selection_owner_;
+  // A representation of data. This is either passed to us from the other
+  // process, or built up through a sequence of Set*() calls. It can be passed
+  // to |selection_owner_| when we take the selection.
+  SelectionFormatMap format_map_;
 
-  // The mime types we have been offered by the source window.
-  std::vector< ::Atom> targets_;
+  // Takes a snapshot of |format_map_| and offers it to other windows.
+  mutable SelectionOwner selection_owner_;
 
   DISALLOW_COPY_AND_ASSIGN(OSExchangeDataProviderAuraX11);
 };

@@ -63,7 +63,8 @@ void InitNavigateParams(ViewHostMsg_FrameNavigate_Params* params,
 
 TestRenderWidgetHostView::TestRenderWidgetHostView(RenderWidgetHost* rwh)
     : rwh_(RenderWidgetHostImpl::From(rwh)),
-      is_showing_(false) {
+      is_showing_(false),
+      did_swap_compositor_frame_(false) {
   rwh_->SetView(this);
 }
 
@@ -207,6 +208,12 @@ gfx::NativeView TestRenderWidgetHostView::BuildInputMethodsGtkMenu() {
   return NULL;
 }
 #endif  // defined(TOOLKIT_GTK)
+
+void TestRenderWidgetHostView::OnSwapCompositorFrame(
+    scoped_ptr<cc::CompositorFrame> frame) {
+  did_swap_compositor_frame_ = true;
+}
+
 
 gfx::GLSurfaceHandle TestRenderWidgetHostView::GetCompositingSurface() {
   return gfx::GLSurfaceHandle();
@@ -376,7 +383,7 @@ void TestRenderViewHost::SimulateWasShown() {
 }
 
 void TestRenderViewHost::TestOnStartDragging(
-    const WebDropData& drop_data) {
+    const DropData& drop_data) {
   WebKit::WebDragOperationsMask drag_operation = WebKit::WebDragOperationEvery;
   DragEventSourceInfo event_info;
   OnStartDragging(drop_data, drag_operation, SkBitmap(), gfx::Vector2d(),

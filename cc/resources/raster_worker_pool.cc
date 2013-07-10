@@ -17,6 +17,29 @@ namespace cc {
 
 namespace {
 
+// Flag to indicate whether we should try and detect that
+// a tile is of solid color.
+const bool kUseColorEstimator = true;
+
+scoped_ptr<base::Value> RasterModeAsValue(RasterMode raster_mode) {
+  switch (raster_mode) {
+    case HIGH_QUALITY_NO_LCD_RASTER_MODE:
+      return scoped_ptr<base::Value>(
+          base::Value::CreateStringValue("HIGH_QUALITY_NO_LCD_RASTER_MODE"));
+    case HIGH_QUALITY_RASTER_MODE:
+      return scoped_ptr<base::Value>(
+          base::Value::CreateStringValue("HIGH_QUALITY_RASTER_MODE"));
+    case LOW_QUALITY_RASTER_MODE:
+      return scoped_ptr<base::Value>(
+          base::Value::CreateStringValue("LOW_QUALITY_RASTER_MODE"));
+    case NUM_RASTER_MODES:
+    default:
+      NOTREACHED() << "Unrecognized RasterMode value " << raster_mode;
+      return scoped_ptr<base::Value>(
+          base::Value::CreateStringValue("<unknown RasterMode value>"));
+  }
+}
+
 class DisableLCDTextFilter : public SkDrawFilter {
  public:
   // SkDrawFilter interface.
@@ -29,43 +52,6 @@ class DisableLCDTextFilter : public SkDrawFilter {
   }
 };
 
-void Noop() {}
-
-class RootWorkerPoolTaskImpl : public internal::WorkerPoolTask {
- public:
-  RootWorkerPoolTaskImpl(const base::Closure& callback,
-                         const base::Closure& reply)
-      : callback_(callback), reply_(reply) {}
-
-  explicit RootWorkerPoolTaskImpl(
-      internal::WorkerPoolTask::TaskVector* dependencies)
-      : internal::WorkerPoolTask(dependencies),
-        callback_(base::Bind(&Noop)),
-        reply_(base::Bind(&Noop)) {}
-
-  RootWorkerPoolTaskImpl(const base::Closure& callback,
-                         internal::WorkerPoolTask::TaskVector* dependencies)
-      : internal::WorkerPoolTask(dependencies),
-        callback_(callback),
-        reply_(base::Bind(&Noop)) {}
-
-  // Overridden from internal::WorkerPoolTask:
-  virtual void RunOnThread(unsigned thread_index) OVERRIDE {
-    callback_.Run();
-  }
-  virtual void DispatchCompletionCallback() OVERRIDE {
-    reply_.Run();
-  }
-
- private:
-  virtual ~RootWorkerPoolTaskImpl() {}
-
-  const base::Closure callback_;
-  const base::Closure reply_;
-
-  DISALLOW_COPY_AND_ASSIGN(RootWorkerPoolTaskImpl);
-};
-
 class RasterWorkerPoolTaskImpl : public internal::RasterWorkerPoolTask {
  public:
   RasterWorkerPoolTaskImpl(const Resource* resource,
@@ -73,17 +59,15 @@ class RasterWorkerPoolTaskImpl : public internal::RasterWorkerPoolTask {
                            gfx::Rect content_rect,
                            float contents_scale,
                            RasterMode raster_mode,
-                           bool use_color_estimator,
                            const RasterTaskMetadata& metadata,
                            RenderingStatsInstrumentation* rendering_stats,
                            const RasterWorkerPool::RasterTask::Reply& reply,
-                           internal::WorkerPoolTask::TaskVector* dependencies)
+                           TaskVector* dependencies)
       : internal::RasterWorkerPoolTask(resource, dependencies),
         picture_pile_(picture_pile),
         content_rect_(content_rect),
         contents_scale_(contents_scale),
         raster_mode_(raster_mode),
-        use_color_estimator_(use_color_estimator),
         metadata_(metadata),
         rendering_stats_(rendering_stats),
         reply_(reply) {}
@@ -113,13 +97,18 @@ class RasterWorkerPoolTaskImpl : public internal::RasterWorkerPoolTask {
                                             analysis_.is_solid_color);
 
     // Clear the flag if we're not using the estimator.
-    analysis_.is_solid_color &= use_color_estimator_;
+    analysis_.is_solid_color &= kUseColorEstimator;
   }
 
   bool RunRasterOnThread(SkDevice* device, unsigned thread_index) {
-    TRACE_EVENT1(
-        "cc", "RasterWorkerPoolTaskImpl::RunRasterOnThread",
-        "metadata", TracedValue::FromValue(metadata_.AsValue().release()));
+    TRACE_EVENT2(
+        "cc",
+        "RasterWorkerPoolTaskImpl::RunRasterOnThread",
+        "metadata",
+        TracedValue::FromValue(metadata_.AsValue().release()),
+        "raster_mode",
+        TracedValue::FromValue(RasterModeAsValue(raster_mode_).release()));
+
     devtools_instrumentation::ScopedLayerTask raster_task(
         devtools_instrumentation::kRasterTask, metadata_.layer_id);
 
@@ -175,11 +164,12 @@ class RasterWorkerPoolTaskImpl : public internal::RasterWorkerPoolTask {
   }
 
   // Overridden from internal::RasterWorkerPoolTask:
-  virtual bool RunOnThread(SkDevice* device, unsigned thread_index) OVERRIDE {
+  virtual bool RunOnWorkerThread(SkDevice* device, unsigned thread_index)
+      OVERRIDE {
     RunAnalysisOnThread(thread_index);
     return RunRasterOnThread(device, thread_index);
   }
-  virtual void DispatchCompletionCallback() OVERRIDE {
+  virtual void CompleteOnOriginThread() OVERRIDE {
     reply_.Run(analysis_, !HasFinishedRunning() || WasCanceled());
   }
 
@@ -192,7 +182,6 @@ class RasterWorkerPoolTaskImpl : public internal::RasterWorkerPoolTask {
   gfx::Rect content_rect_;
   float contents_scale_;
   RasterMode raster_mode_;
-  bool use_color_estimator_;
   RasterTaskMetadata metadata_;
   RenderingStatsInstrumentation* rendering_stats_;
   const RasterWorkerPool::RasterTask::Reply reply_;
@@ -212,8 +201,8 @@ class ImageDecodeWorkerPoolTaskImpl : public internal::WorkerPoolTask {
         reply_(reply) {}
 
   // Overridden from internal::WorkerPoolTask:
-  virtual void RunOnThread(unsigned thread_index) OVERRIDE {
-    TRACE_EVENT0("cc", "ImageDecodeWorkerPoolTaskImpl::RunOnThread");
+  virtual void RunOnWorkerThread(unsigned thread_index) OVERRIDE {
+    TRACE_EVENT0("cc", "ImageDecodeWorkerPoolTaskImpl::RunOnWorkerThread");
     devtools_instrumentation::ScopedLayerTask image_decode_task(
         devtools_instrumentation::kImageDecodeTask, layer_id_);
     base::TimeTicks start_time = rendering_stats_->StartRecording();
@@ -221,7 +210,7 @@ class ImageDecodeWorkerPoolTaskImpl : public internal::WorkerPoolTask {
     base::TimeDelta duration = rendering_stats_->EndRecording(start_time);
     rendering_stats_->AddDeferredImageDecode(duration);
   }
-  virtual void DispatchCompletionCallback() OVERRIDE {
+  virtual void CompleteOnOriginThread() OVERRIDE {
     reply_.Run(!HasFinishedRunning());
   }
 
@@ -237,6 +226,40 @@ class ImageDecodeWorkerPoolTaskImpl : public internal::WorkerPoolTask {
   DISALLOW_COPY_AND_ASSIGN(ImageDecodeWorkerPoolTaskImpl);
 };
 
+class RasterFinishedWorkerPoolTaskImpl : public internal::WorkerPoolTask {
+ public:
+  typedef base::Callback<void(const internal::WorkerPoolTask* source)>
+      Callback;
+
+  RasterFinishedWorkerPoolTaskImpl(
+      const Callback& on_raster_finished_callback)
+      : origin_loop_(base::MessageLoopProxy::current().get()),
+        on_raster_finished_callback_(on_raster_finished_callback) {
+  }
+
+  // Overridden from internal::WorkerPoolTask:
+  virtual void RunOnWorkerThread(unsigned thread_index) OVERRIDE {
+    TRACE_EVENT0("cc", "RasterFinishedWorkerPoolTaskImpl::RunOnWorkerThread");
+    origin_loop_->PostTask(
+        FROM_HERE,
+        base::Bind(&RasterFinishedWorkerPoolTaskImpl::RunOnOriginThread,
+                   this));
+  }
+  virtual void CompleteOnOriginThread() OVERRIDE {}
+
+ private:
+  virtual ~RasterFinishedWorkerPoolTaskImpl() {}
+
+  void RunOnOriginThread() const {
+    on_raster_finished_callback_.Run(this);
+  }
+
+  scoped_refptr<base::MessageLoopProxy> origin_loop_;
+  const Callback on_raster_finished_callback_;
+
+  DISALLOW_COPY_AND_ASSIGN(RasterFinishedWorkerPoolTaskImpl);
+};
+
 const char* kWorkerThreadNamePrefix = "CompositorRaster";
 
 }  // namespace
@@ -244,8 +267,7 @@ const char* kWorkerThreadNamePrefix = "CompositorRaster";
 namespace internal {
 
 RasterWorkerPoolTask::RasterWorkerPoolTask(
-    const Resource* resource,
-    WorkerPoolTask::TaskVector* dependencies)
+    const Resource* resource, TaskVector* dependencies)
     : did_run_(false),
       did_complete_(false),
       was_canceled_(false),
@@ -268,6 +290,10 @@ bool RasterWorkerPoolTask::HasFinishedRunning() const {
 
 bool RasterWorkerPoolTask::WasCanceled() const {
   return was_canceled_;
+}
+
+void RasterWorkerPoolTask::WillComplete() {
+  DCHECK(!did_complete_);
 }
 
 void RasterWorkerPoolTask::DidComplete() {
@@ -345,23 +371,6 @@ void RasterWorkerPool::RasterTask::Reset() {
 RasterWorkerPool::RasterTask::~RasterTask() {
 }
 
-RasterWorkerPool::RootTask::RootTask() {
-}
-
-RasterWorkerPool::RootTask::RootTask(
-    internal::WorkerPoolTask::TaskVector* dependencies)
-    : internal_(new RootWorkerPoolTaskImpl(dependencies)) {
-}
-
-RasterWorkerPool::RootTask::RootTask(
-    const base::Closure& callback,
-    internal::WorkerPoolTask::TaskVector* dependencies)
-    : internal_(new RootWorkerPoolTaskImpl(callback, dependencies)) {
-}
-
-RasterWorkerPool::RootTask::~RootTask() {
-}
-
 // static
 RasterWorkerPool::RasterTask RasterWorkerPool::CreateRasterTask(
     const Resource* resource,
@@ -369,21 +378,19 @@ RasterWorkerPool::RasterTask RasterWorkerPool::CreateRasterTask(
     gfx::Rect content_rect,
     float contents_scale,
     RasterMode raster_mode,
-    bool use_color_estimator,
     const RasterTaskMetadata& metadata,
     RenderingStatsInstrumentation* rendering_stats,
     const RasterTask::Reply& reply,
-    Task::Set& dependencies) {
+    Task::Set* dependencies) {
   return RasterTask(new RasterWorkerPoolTaskImpl(resource,
                                                  picture_pile,
                                                  content_rect,
                                                  contents_scale,
                                                  raster_mode,
-                                                 use_color_estimator,
                                                  metadata,
                                                  rendering_stats,
                                                  reply,
-                                                 &dependencies.tasks_));
+                                                 &dependencies->tasks_));
 }
 
 // static
@@ -402,7 +409,8 @@ RasterWorkerPool::RasterWorkerPool(ResourceProvider* resource_provider,
                                    size_t num_threads)
     : WorkerPool(num_threads, kWorkerThreadNamePrefix),
       client_(NULL),
-      resource_provider_(resource_provider) {
+      resource_provider_(resource_provider),
+      weak_ptr_factory_(this) {
 }
 
 RasterWorkerPool::~RasterWorkerPool() {
@@ -414,7 +422,10 @@ void RasterWorkerPool::SetClient(RasterWorkerPoolClient* client) {
 
 void RasterWorkerPool::Shutdown() {
   raster_tasks_.clear();
+  TaskGraph empty;
+  SetTaskGraph(&empty);
   WorkerPool::Shutdown();
+  weak_ptr_factory_.InvalidateWeakPtrs();
 }
 
 void RasterWorkerPool::SetRasterTasks(RasterTask::Queue* queue) {
@@ -423,21 +434,107 @@ void RasterWorkerPool::SetRasterTasks(RasterTask::Queue* queue) {
       queue->tasks_required_for_activation_);
 }
 
-void RasterWorkerPool::ScheduleRasterTasks(const RootTask& root) {
-  scoped_refptr<internal::WorkerPoolTask> new_root(root.internal_);
-
-  TaskGraph graph;
-  BuildTaskGraph(new_root.get(), &graph);
-  WorkerPool::SetTaskGraph(&graph);
-
-  root_.swap(new_root);
-}
-
 bool RasterWorkerPool::IsRasterTaskRequiredForActivation(
     internal::RasterWorkerPoolTask* task) const {
   return
       raster_tasks_required_for_activation_.find(task) !=
       raster_tasks_required_for_activation_.end();
+}
+
+scoped_refptr<internal::WorkerPoolTask>
+    RasterWorkerPool::CreateRasterFinishedTask() {
+  return make_scoped_refptr(
+      new RasterFinishedWorkerPoolTaskImpl(
+          base::Bind(&RasterWorkerPool::OnRasterFinished,
+                     weak_ptr_factory_.GetWeakPtr())));
+}
+
+scoped_refptr<internal::WorkerPoolTask>
+    RasterWorkerPool::CreateRasterRequiredForActivationFinishedTask() {
+  return make_scoped_refptr(
+      new RasterFinishedWorkerPoolTaskImpl(
+          base::Bind(&RasterWorkerPool::OnRasterRequiredForActivationFinished,
+                     weak_ptr_factory_.GetWeakPtr())));
+}
+
+void RasterWorkerPool::OnRasterFinished(
+    const internal::WorkerPoolTask* source) {
+  TRACE_EVENT0("cc", "RasterWorkerPool::OnRasterFinished");
+
+  // Early out if current |raster_finished_task_| is not the source.
+  if (source != raster_finished_task_.get())
+    return;
+
+  OnRasterTasksFinished();
+}
+
+void RasterWorkerPool::OnRasterRequiredForActivationFinished(
+    const internal::WorkerPoolTask* source) {
+  TRACE_EVENT0("cc", "RasterWorkerPool::OnRasterRequiredForActivationFinished");
+
+  // Early out if current |raster_required_for_activation_finished_task_|
+  // is not the source.
+  if (source != raster_required_for_activation_finished_task_.get())
+    return;
+
+  OnRasterTasksRequiredForActivationFinished();
+}
+
+scoped_ptr<base::Value> RasterWorkerPool::ScheduledStateAsValue() const {
+  scoped_ptr<base::DictionaryValue> scheduled_state(new base::DictionaryValue);
+  scheduled_state->SetInteger("task_count", raster_tasks_.size());
+  scheduled_state->SetInteger("task_required_for_activation_count",
+                              raster_tasks_required_for_activation_.size());
+  return scheduled_state.PassAs<base::Value>();
+}
+
+// static
+internal::GraphNode* RasterWorkerPool::CreateGraphNodeForTask(
+    internal::WorkerPoolTask* task,
+    unsigned priority,
+    TaskGraph* graph) {
+  internal::GraphNode* node = new internal::GraphNode(task, priority);
+  DCHECK(graph->find(task) == graph->end());
+  graph->set(task, make_scoped_ptr(node));
+  return node;
+}
+
+// static
+internal::GraphNode* RasterWorkerPool::CreateGraphNodeForRasterTask(
+    internal::WorkerPoolTask* raster_task,
+    const TaskVector& decode_tasks,
+    unsigned priority,
+    TaskGraph* graph) {
+  DCHECK(!raster_task->HasCompleted());
+
+  internal::GraphNode* raster_node = CreateGraphNodeForTask(
+      raster_task, priority, graph);
+
+  // Insert image decode tasks.
+  for (TaskVector::const_iterator it = decode_tasks.begin();
+       it != decode_tasks.end(); ++it) {
+    internal::WorkerPoolTask* decode_task = it->get();
+
+    // Skip if already decoded.
+    if (decode_task->HasCompleted())
+      continue;
+
+    raster_node->add_dependency();
+
+    // Check if decode task already exists in graph.
+    GraphNodeMap::iterator decode_it = graph->find(decode_task);
+    if (decode_it != graph->end()) {
+      internal::GraphNode* decode_node = decode_it->second;
+      decode_node->add_dependent(raster_node);
+      continue;
+    }
+
+    internal::GraphNode* decode_node = CreateGraphNodeForTask(
+        decode_task, priority, graph);
+    decode_node->add_dependent(raster_node);
+  }
+
+  return raster_node;
 }
 
 }  // namespace cc

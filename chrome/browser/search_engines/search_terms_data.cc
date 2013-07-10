@@ -19,7 +19,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 #if defined(ENABLE_RLZ)
 #include "chrome/browser/rlz/rlz.h"
@@ -38,11 +38,6 @@ std::string SearchTermsData::GoogleBaseURLValue() const {
 }
 
 std::string SearchTermsData::GoogleBaseSuggestURLValue() const {
-  std::string base_suggest_url = CommandLine::ForCurrentProcess()->
-      GetSwitchValueASCII(switches::kGoogleBaseSuggestURL);
-  if (!base_suggest_url.empty())
-    return base_suggest_url;
-
   // Start with the Google base URL.
   const GURL base_url(GoogleBaseURLValue());
   DCHECK(base_url.is_valid());
@@ -74,6 +69,10 @@ std::string SearchTermsData::GetSearchClient() const {
   return std::string();
 }
 
+std::string SearchTermsData::GetSuggestClient() const {
+  return std::string();
+}
+
 std::string SearchTermsData::InstantEnabledParam() const {
   return std::string();
 }
@@ -100,6 +99,10 @@ std::string UIThreadSearchTermsData::GoogleBaseURLValue() const {
       BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (google_base_url_)
     return *google_base_url_;
+  std::string base_url = CommandLine::ForCurrentProcess()->
+      GetSwitchValueASCII(switches::kGoogleBaseURL);
+  if (!base_url.empty())
+    return base_url;
   return profile_ ? GoogleURLTracker::GoogleURL(profile_).spec() :
       SearchTermsData::GoogleBaseURLValue();
 }
@@ -141,6 +144,12 @@ std::string UIThreadSearchTermsData::GetSearchClient() const {
 }
 #endif
 
+std::string UIThreadSearchTermsData::GetSuggestClient() const {
+  DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
+      BrowserThread::CurrentlyOn(BrowserThread::UI));
+  return chrome::IsInstantExtendedAPIEnabled() ? "chrome-omni" : "chrome";
+}
+
 std::string UIThreadSearchTermsData::InstantEnabledParam() const {
   DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
          BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -150,8 +159,7 @@ std::string UIThreadSearchTermsData::InstantEnabledParam() const {
 std::string UIThreadSearchTermsData::InstantExtendedEnabledParam() const {
   DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
          BrowserThread::CurrentlyOn(BrowserThread::UI));
-  uint64 instant_extended_api_version =
-      chrome::EmbeddedSearchPageVersion(profile_);
+  uint64 instant_extended_api_version = chrome::EmbeddedSearchPageVersion();
   if (instant_extended_api_version) {
     return std::string(google_util::kInstantExtendedAPIParam) + "=" +
         base::Uint64ToString(instant_extended_api_version) + "&";

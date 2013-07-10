@@ -7,6 +7,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
+#include "chrome/browser/chromeos/drive/change_list_loader_observer.h"
 #include "chrome/browser/chromeos/drive/file_cache.h"
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
@@ -20,24 +21,73 @@
 namespace drive {
 namespace internal {
 
+class TestChangeListLoaderObserver : public ChangeListLoaderObserver {
+ public:
+  explicit TestChangeListLoaderObserver(ChangeListLoader* loader)
+      : loader_(loader),
+        load_from_server_complete_count_(0),
+        initial_load_complete_count_(0) {
+    loader_->AddObserver(this);
+  }
+
+  virtual ~TestChangeListLoaderObserver() {
+    loader_->RemoveObserver(this);
+  }
+
+  const std::set<base::FilePath>& changed_directories() const {
+    return changed_directories_;
+  }
+  int load_from_server_complete_count() const {
+    return load_from_server_complete_count_;
+  }
+  int initial_load_complete_count() const {
+    return initial_load_complete_count_;
+  }
+
+  // ChageListObserver overrides:
+  virtual void OnDirectoryChanged(
+      const base::FilePath& directory_path) OVERRIDE {
+    changed_directories_.insert(directory_path);
+  }
+  virtual void OnLoadFromServerComplete() OVERRIDE {
+    ++load_from_server_complete_count_;
+  }
+  virtual void OnInitialLoadComplete() OVERRIDE {
+    ++initial_load_complete_count_;
+  }
+
+ private:
+  ChangeListLoader* loader_;
+  std::set<base::FilePath> changed_directories_;
+  int load_from_server_complete_count_;
+  int initial_load_complete_count_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestChangeListLoaderObserver);
+};
+
 class ChangeListLoaderTest : public testing::Test {
  protected:
   virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     profile_.reset(new TestingProfile);
 
-    drive_service_.reset(new google_apis::FakeDriveService);
+    drive_service_.reset(new FakeDriveService);
     ASSERT_TRUE(drive_service_->LoadResourceListForWapi(
-        "chromeos/gdata/root_feed.json"));
+        "gdata/root_feed.json"));
     ASSERT_TRUE(drive_service_->LoadAccountMetadataForWapi(
-        "chromeos/gdata/account_metadata.json"));
+        "gdata/account_metadata.json"));
 
-    scheduler_.reset(new JobScheduler(profile_.get(), drive_service_.get()));
-    metadata_.reset(new ResourceMetadata(temp_dir_.path(),
+    scheduler_.reset(new JobScheduler(profile_.get(), drive_service_.get(),
+                                      base::MessageLoopProxy::current()));
+    metadata_storage_.reset(new ResourceMetadataStorage(
+        temp_dir_.path(), base::MessageLoopProxy::current()));
+    ASSERT_TRUE(metadata_storage_->Initialize());
+
+    metadata_.reset(new ResourceMetadata(metadata_storage_.get(),
                                          base::MessageLoopProxy::current()));
     ASSERT_EQ(FILE_ERROR_OK, metadata_->Initialize());
 
-    cache_.reset(new FileCache(temp_dir_.path(),
+    cache_.reset(new FileCache(metadata_storage_.get(),
                                temp_dir_.path(),
                                base::MessageLoopProxy::current(),
                                NULL /* free_disk_space_getter */));
@@ -50,8 +100,10 @@ class ChangeListLoaderTest : public testing::Test {
   content::TestBrowserThreadBundle thread_bundle_;
   base::ScopedTempDir temp_dir_;
   scoped_ptr<TestingProfile> profile_;
-  scoped_ptr<google_apis::FakeDriveService> drive_service_;
+  scoped_ptr<FakeDriveService> drive_service_;
   scoped_ptr<JobScheduler> scheduler_;
+  scoped_ptr<ResourceMetadataStorage,
+             test_util::DestroyHelperForTests> metadata_storage_;
   scoped_ptr<ResourceMetadata, test_util::DestroyHelperForTests> metadata_;
   scoped_ptr<FileCache, test_util::DestroyHelperForTests> cache_;
   scoped_ptr<ChangeListLoader> change_list_loader_;
@@ -61,6 +113,8 @@ TEST_F(ChangeListLoaderTest, LoadIfNeeded) {
   EXPECT_FALSE(change_list_loader_->IsRefreshing());
 
   // Start initial load.
+  TestChangeListLoaderObserver observer(change_list_loader_.get());
+
   FileError error = FILE_ERROR_FAILED;
   change_list_loader_->LoadIfNeeded(
       DirectoryFetchInfo(),
@@ -72,6 +126,9 @@ TEST_F(ChangeListLoaderTest, LoadIfNeeded) {
   EXPECT_FALSE(change_list_loader_->IsRefreshing());
   EXPECT_LT(0, metadata_->GetLargestChangestamp());
   EXPECT_EQ(1, drive_service_->resource_list_load_count());
+  EXPECT_EQ(1, observer.initial_load_complete_count());
+  EXPECT_EQ(1, observer.load_from_server_complete_count());
+  EXPECT_TRUE(observer.changed_directories().empty());
 
   // Reload. This should result in no-op.
   int64 previous_changestamp = metadata_->GetLargestChangestamp();

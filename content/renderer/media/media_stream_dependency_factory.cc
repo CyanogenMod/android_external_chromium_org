@@ -32,6 +32,11 @@
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/libjingle/source/talk/app/webrtc/mediaconstraintsinterface.h"
+
+#if defined(ENABLE_WEBRTC)
+#include "content/renderer/media/rtc_encoding_video_capturer_factory.h"
+#endif
 
 #if defined(USE_OPENSSL)
 #include "third_party/libjingle/source/talk/base/ssladapter.h"
@@ -56,13 +61,13 @@ struct {
   const char* value;
 } const kWebAudioConstraints[] = {
     {webrtc::MediaConstraintsInterface::kEchoCancellation,
-     webrtc::MediaConstraintsInterface::kValueFalse},
+     webrtc::MediaConstraintsInterface::kValueTrue},
     {webrtc::MediaConstraintsInterface::kAutoGainControl,
-     webrtc::MediaConstraintsInterface::kValueFalse},
+     webrtc::MediaConstraintsInterface::kValueTrue},
     {webrtc::MediaConstraintsInterface::kNoiseSuppression,
-     webrtc::MediaConstraintsInterface::kValueFalse},
+     webrtc::MediaConstraintsInterface::kValueTrue},
     {webrtc::MediaConstraintsInterface::kHighpassFilter,
-     webrtc::MediaConstraintsInterface::kValueFalse},
+     webrtc::MediaConstraintsInterface::kValueTrue},
 };
 
 class WebAudioConstraints : public RTCMediaConstraints {
@@ -105,23 +110,26 @@ class P2PPortAllocatorFactory : public webrtc::PortAllocatorFactoryInterface {
       config.stun_server = stun_servers[0].server.hostname();
       config.stun_server_port = stun_servers[0].server.port();
     }
-    if (turn_configurations.size() > 0) {
-      config.legacy_relay = false;
-      config.relay_server = turn_configurations[0].server.hostname();
-      config.relay_server_port = turn_configurations[0].server.port();
-      config.relay_username = turn_configurations[0].username;
-      config.relay_password = turn_configurations[0].password;
-      config.relay_transport_type = turn_configurations[0].transport_type;
-      // Use the turn server as the stun server.
-      config.stun_server = config.relay_server;
-      config.stun_server_port = config.relay_server_port;
+    config.legacy_relay = false;
+    for (size_t i = 0; i < turn_configurations.size(); ++i) {
+      P2PPortAllocator::Config::RelayServerConfig relay_config;
+      relay_config.server_address = turn_configurations[i].server.hostname();
+      relay_config.port = turn_configurations[i].server.port();
+      relay_config.username = turn_configurations[i].username;
+      relay_config.password = turn_configurations[i].password;
+      relay_config.transport_type = turn_configurations[i].transport_type;
+      config.relays.push_back(relay_config);
     }
 
-    return new P2PPortAllocator(web_frame_,
-                                socket_dispatcher_.get(),
-                                network_manager_,
-                                socket_factory_,
-                                config);
+    // Use first turn server as the stun server.
+    if (turn_configurations.size() > 0) {
+      config.stun_server = config.relays[0].server_address;
+      config.stun_server_port = config.relays[0].port;
+    }
+
+    return new P2PPortAllocator(
+        web_frame_, socket_dispatcher_.get(), network_manager_,
+        socket_factory_, config);
   }
 
  protected:
@@ -312,11 +320,9 @@ void MediaStreamDependencyFactory::CreateNativeMediaSources(
     }
 
     const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-    // TODO(grunell): Change hard coded string to
-    // RTCMediaConstraints::kInternalAecDump when libjingle has been rolled.
     if (command_line.HasSwitch(switches::kEnableWebRtcAecRecordings)) {
       native_audio_constraints.AddOptional(
-          "internalAecDump", "true");
+          RTCMediaConstraints::kInternalAecDump, "true");
     }
 
     // Creates a LocalAudioSource object which holds audio options.
@@ -485,17 +491,32 @@ bool MediaStreamDependencyFactory::CreatePeerConnectionFactory() {
     audio_device_ = new WebRtcAudioDeviceImpl();
 
     cricket::WebRtcVideoDecoderFactory* decoder_factory = NULL;
+    cricket::WebRtcVideoEncoderFactory* encoder_factory = NULL;
+
 #if defined(GOOGLE_TV)
     // PeerConnectionFactory will hold the ownership of this
     // VideoDecoderFactory.
     decoder_factory = decoder_factory_tv_ = new RTCVideoDecoderFactoryTv;
 #endif
 
+#if defined(ENABLE_WEBRTC) && defined(OS_CHROMEOS)
+    const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+    if (command_line.HasSwitch(switches::kEnableEncodedScreenCapture)) {
+      // PeerConnectionFactory owns the encoder factory. Pass a weak pointer of
+      // encoder factory to |vc_manager_| because the manager outlives it.
+      RtcEncodingVideoCapturerFactory* rtc_encoding_capturer_factory =
+          new RtcEncodingVideoCapturerFactory();
+      encoder_factory = rtc_encoding_capturer_factory;
+      vc_manager_->set_encoding_capturer_factory(
+          rtc_encoding_capturer_factory->AsWeakPtr());
+    }
+#endif
+
     scoped_refptr<webrtc::PeerConnectionFactoryInterface> factory(
         webrtc::CreatePeerConnectionFactory(worker_thread_,
                                             signaling_thread_,
                                             audio_device_.get(),
-                                            NULL,
+                                            encoder_factory,
                                             decoder_factory));
     if (factory.get())
       pc_factory_ = factory;

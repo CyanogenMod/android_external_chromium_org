@@ -16,14 +16,17 @@
 
 @implementation FastResizeView
 
-@synthesize contentOffset = contentOffset_;
-
 - (void)setFastResizeMode:(BOOL)fastResizeMode {
+  if (fastResizeMode_ == fastResizeMode)
+    return;
+
   fastResizeMode_ = fastResizeMode;
 
   // Force a relayout when coming out of fast resize mode.
   if (!fastResizeMode_)
     [self layoutSubviews];
+
+  [self setNeedsDisplay:YES];
 }
 
 - (void)resizeSubviewsWithOldSize:(NSSize)oldSize {
@@ -37,27 +40,14 @@
   if (!fastResizeMode_)
     return;
 
-  // Don't draw on the non-content area.
-  NSRect clipRect = [self bounds];
-  clipRect.size.height -= contentOffset_;
-  NSRectClip(clipRect);
-
   [[NSColor whiteColor] set];
   NSRectFill(dirtyRect);
-}
-
-- (NSView*)hitTest:(NSPoint)point {
-  NSView* result = [super hitTest:point];
-  // Never return this view during hit testing. This allows overlapping views to
-  // get events even when they are not topmost.
-  if ([result isEqual:self])
-    return nil;
-  return result;
 }
 
 @end
 
 @implementation FastResizeView (PrivateMethods)
+
 - (void)layoutSubviews {
   // There should never be more than one subview.  There can be zero, if we are
   // in the process of switching tabs or closing the window.  In those cases, no
@@ -79,4 +69,5 @@
     [subview setFrame:bounds];
   }
 }
+
 @end

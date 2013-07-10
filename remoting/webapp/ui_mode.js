@@ -128,6 +128,10 @@ remoting.setMode = function(mode) {
                               false);
     document.removeEventListener('webkitvisibilitychange',
                                  remoting.onVisibilityChanged, false);
+    // TODO(jamiewalch): crbug.com/252796: Remove this once crbug.com/240772
+    // is fixed.
+    var htmlNode = /** @type {HTMLElement} */ (document.body.parentNode);
+    htmlNode.classList.remove('no-scroll');
   }
 };
 
@@ -195,7 +199,7 @@ remoting.resetInfographics = function() {
  */
 remoting.initModalDialogs = function() {
   var dialogs = document.querySelectorAll('.kd-modaldialog');
-  var observer = new WebKitMutationObserver(confineOrRestoreFocus_);
+  var observer = new MutationObserver(confineOrRestoreFocus_);
   var options = {
     subtree: false,
     attributes: true

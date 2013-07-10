@@ -4,14 +4,13 @@
 
 #include "chrome/browser/renderer_host/pepper/pepper_flash_browser_host.h"
 
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_ppapi_host.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
-#include "googleurl/src/gurl.h"
 #include "ipc/ipc_message_macros.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/private/ppb_flash.h"
@@ -19,6 +18,7 @@
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/resource_message_params.h"
 #include "ppapi/shared_impl/time_conversion.h"
+#include "url/gurl.h"
 
 #if defined(OS_WIN)
 #include <windows.h>

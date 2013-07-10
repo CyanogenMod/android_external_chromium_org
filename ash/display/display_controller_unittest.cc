@@ -21,6 +21,12 @@
 #include "ui/gfx/screen.h"
 #include "ui/views/widget/widget.h"
 
+#if defined(USE_X11)
+#include "ui/base/x/x11_util.h"
+#include <X11/Xlib.h>
+#undef RootWindow
+#endif
+
 namespace ash {
 namespace test {
 namespace {
@@ -113,8 +119,11 @@ class TestEventHandler : public ui::EventHandler {
   virtual ~TestEventHandler() {}
 
   virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE {
-    if (event->flags() & ui::EF_IS_SYNTHESIZED)
+    if (event->flags() & ui::EF_IS_SYNTHESIZED &&
+        event->type() != ui::ET_MOUSE_EXITED &&
+        event->type() != ui::ET_MOUSE_ENTERED) {
       return;
+    }
     aura::Window* target = static_cast<aura::Window*>(event->target());
     mouse_location_ = event->root_location();
     target_root_ = target->GetRootWindow();
@@ -183,6 +192,21 @@ gfx::Display::Rotation GetStoredRotation(int64 id) {
 float GetStoredUIScale(int64 id) {
   return Shell::GetInstance()->display_manager()->GetDisplayInfo(id).ui_scale();
 }
+
+#if defined(USE_X11)
+void GetPrimaryAndSeconary(aura::RootWindow** primary,
+                           aura::RootWindow** secondary) {
+  *primary = Shell::GetPrimaryRootWindow();
+  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  *secondary = root_windows[0] == *primary ? root_windows[1] : root_windows[0];
+}
+
+std::string GetXWindowName(aura::RootWindow* window) {
+  char* name = NULL;
+  XFetchName(ui::GetXDisplay(), window->GetAcceleratedWidget(), &name);
+  return std::string(name);
+}
+#endif
 
 }  // namespace
 
@@ -721,13 +745,26 @@ TEST_F(DisplayControllerTest, OverscanInsets) {
   generator.MoveMouseToInHost(20, 25);
   EXPECT_EQ("5,15", event_handler.GetLocationAndReset());
 
-  display_controller->ClearCustomOverscanInsets(display1.id());
+  display_controller->SetOverscanInsets(display1.id(), gfx::Insets());
   EXPECT_EQ("0,0 120x200", root_windows[0]->bounds().ToString());
   EXPECT_EQ("120,0 150x200",
             ScreenAsh::GetSecondaryDisplay().bounds().ToString());
 
   generator.MoveMouseToInHost(30, 20);
   EXPECT_EQ("30,20", event_handler.GetLocationAndReset());
+
+  // Make sure the root window transformer uses correct scale
+  // factor when swapping display. Test crbug.com/253690.
+  UpdateDisplay("400x300*2,600x400/o");
+  root_windows = Shell::GetAllRootWindows();
+  gfx::Point point;
+  Shell::GetAllRootWindows()[1]->GetRootTransform().TransformPoint(point);
+  EXPECT_EQ("15,10", point.ToString());
+
+  display_controller->SwapPrimaryDisplay();
+  point.SetPoint(0, 0);
+  Shell::GetAllRootWindows()[1]->GetRootTransform().TransformPoint(point);
+  EXPECT_EQ("15,10", point.ToString());
 
   Shell::GetInstance()->RemovePreTargetHandler(&event_handler);
 }
@@ -783,6 +820,7 @@ TEST_F(DisplayControllerTest, Rotate) {
   EXPECT_EQ(gfx::Display::ROTATE_90, GetStoredRotation(display1.id()));
   EXPECT_EQ(gfx::Display::ROTATE_270, GetStoredRotation(display2_id));
 
+#if !defined(OS_WIN)
   aura::test::EventGenerator generator2(root_windows[1]);
   generator2.MoveMouseToInHost(50, 40);
   EXPECT_EQ("179,25", event_handler.GetLocationAndReset());
@@ -799,6 +837,7 @@ TEST_F(DisplayControllerTest, Rotate) {
 
   generator1.MoveMouseToInHost(50, 40);
   EXPECT_EQ("69,159", event_handler.GetLocationAndReset());
+#endif
 
   Shell::GetInstance()->RemovePreTargetHandler(&event_handler);
 }
@@ -932,6 +971,30 @@ TEST_F(DisplayControllerTest, ConvertHostToRootCoords) {
 
   Shell::GetInstance()->RemovePreTargetHandler(&event_handler);
 }
+
+#if defined(USE_X11)
+TEST_F(DisplayControllerTest, XWidowNameForRootWindow) {
+  EXPECT_EQ("aura_root_0", GetXWindowName(Shell::GetPrimaryRootWindow()));
+
+  // Multiple display.
+  UpdateDisplay("200x200,300x300");
+  aura::RootWindow* primary, *secondary;
+  GetPrimaryAndSeconary(&primary, &secondary);
+  EXPECT_EQ("aura_root_0", GetXWindowName(primary));
+  EXPECT_EQ("aura_root_x", GetXWindowName(secondary));
+
+  // Swap primary.
+  primary = secondary = NULL;
+  Shell::GetInstance()->display_controller()->SwapPrimaryDisplay();
+  GetPrimaryAndSeconary(&primary, &secondary);
+  EXPECT_EQ("aura_root_0", GetXWindowName(primary));
+  EXPECT_EQ("aura_root_x", GetXWindowName(secondary));
+
+  // Switching back to single display.
+  UpdateDisplay("300x400");
+  EXPECT_EQ("aura_root_0", GetXWindowName(Shell::GetPrimaryRootWindow()));
+}
+#endif
 
 }  // namespace test
 }  // namespace ash

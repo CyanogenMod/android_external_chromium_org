@@ -9,22 +9,56 @@
 
 #include "base/bind.h"
 #include "base/message_loop.h"
-#include "base/strings/stringprintf.h"
 #include "base/values.h"
+#include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/google_apis/auth_service.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/drive_api_util.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/google_apis/gdata_wapi_requests.h"
 #include "chrome/browser/google_apis/gdata_wapi_url_generator.h"
 #include "chrome/browser/google_apis/request_sender.h"
-#include "chrome/browser/google_apis/time_util.h"
 #include "content/public/browser/browser_thread.h"
-#include "net/base/url_util.h"
 
 using content::BrowserThread;
+using google_apis::AboutResource;
+using google_apis::AccountMetadata;
+using google_apis::AddResourceToDirectoryRequest;
+using google_apis::AppList;
+using google_apis::AuthorizeAppCallback;
+using google_apis::AuthorizeAppRequest;
+using google_apis::AuthService;
+using google_apis::CancelCallback;
+using google_apis::CopyHostedDocumentRequest;
+using google_apis::CreateDirectoryRequest;
+using google_apis::DeleteResourceRequest;
+using google_apis::DownloadActionCallback;
+using google_apis::DownloadFileRequest;
+using google_apis::EntryActionCallback;
+using google_apis::GDataErrorCode;
+using google_apis::GDATA_PARSE_ERROR;
+using google_apis::GetAboutResourceCallback;
+using google_apis::GetAccountMetadataRequest;
+using google_apis::GetAppListCallback;
+using google_apis::GetContentCallback;
+using google_apis::GetResourceEntryCallback;
+using google_apis::GetResourceEntryRequest;
+using google_apis::GetResourceListCallback;
+using google_apis::GetResourceListRequest;
+using google_apis::GetUploadStatusRequest;
+using google_apis::HTTP_NOT_IMPLEMENTED;
+using google_apis::InitiateUploadCallback;
+using google_apis::InitiateUploadExistingFileRequest;
+using google_apis::InitiateUploadNewFileRequest;
+using google_apis::ProgressCallback;
+using google_apis::RemoveResourceFromDirectoryRequest;
+using google_apis::RenameResourceRequest;
+using google_apis::RequestSender;
+using google_apis::ResourceEntry;
+using google_apis::ResumeUploadRequest;
+using google_apis::SearchByTitleRequest;
+using google_apis::UploadRangeCallback;
 
-namespace google_apis {
+namespace drive {
 
 namespace {
 
@@ -95,10 +129,13 @@ void ParseAppListAndRun(
 
 GDataWapiService::GDataWapiService(
     net::URLRequestContextGetter* url_request_context_getter,
+    base::TaskRunner* blocking_task_runner,
     const GURL& base_url,
+    const GURL& base_download_url,
     const std::string& custom_user_agent)
     : url_request_context_getter_(url_request_context_getter),
-      url_generator_(base_url),
+      blocking_task_runner_(blocking_task_runner),
+      url_generator_(base_url, base_download_url),
       custom_user_agent_(custom_user_agent) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
@@ -165,13 +202,12 @@ CancelCallback GDataWapiService::GetAllResourceList(
 
   return sender_->StartRequestWithRetry(
       new GetResourceListRequest(sender_.get(),
-                                   url_request_context_getter_,
-                                   url_generator_,
-                                   GURL(),         // No override url
-                                   0,              // start changestamp
-                                   std::string(),  // empty search query
-                                   std::string(),  // no directory resource id
-                                   callback));
+                                 url_generator_,
+                                 GURL(),         // No override url
+                                 0,              // start changestamp
+                                 std::string(),  // empty search query
+                                 std::string(),  // no directory resource id
+                                 callback));
 }
 
 CancelCallback GDataWapiService::GetResourceListInDirectory(
@@ -183,13 +219,12 @@ CancelCallback GDataWapiService::GetResourceListInDirectory(
 
   return sender_->StartRequestWithRetry(
       new GetResourceListRequest(sender_.get(),
-                                   url_request_context_getter_,
-                                   url_generator_,
-                                   GURL(),         // No override url
-                                   0,              // start changestamp
-                                   std::string(),  // empty search query
-                                   directory_resource_id,
-                                   callback));
+                                 url_generator_,
+                                 GURL(),         // No override url
+                                 0,              // start changestamp
+                                 std::string(),  // empty search query
+                                 directory_resource_id,
+                                 callback));
 }
 
 CancelCallback GDataWapiService::Search(
@@ -201,13 +236,12 @@ CancelCallback GDataWapiService::Search(
 
   return sender_->StartRequestWithRetry(
       new GetResourceListRequest(sender_.get(),
-                                   url_request_context_getter_,
-                                   url_generator_,
-                                   GURL(),         // No override url
-                                   0,              // start changestamp
-                                   search_query,
-                                   std::string(),  // no directory resource id
-                                   callback));
+                                 url_generator_,
+                                 GURL(),         // No override url
+                                 0,              // start changestamp
+                                 search_query,
+                                 std::string(),  // no directory resource id
+                                 callback));
 }
 
 CancelCallback GDataWapiService::SearchByTitle(
@@ -219,13 +253,11 @@ CancelCallback GDataWapiService::SearchByTitle(
   DCHECK(!callback.is_null());
 
   return sender_->StartRequestWithRetry(
-      new SearchByTitleRequest(
-          sender_.get(),
-          url_request_context_getter_,
-          url_generator_,
-          title,
-          directory_resource_id,
-          callback));
+      new SearchByTitleRequest(sender_.get(),
+                               url_generator_,
+                               title,
+                               directory_resource_id,
+                               callback));
 }
 
 CancelCallback GDataWapiService::GetChangeList(
@@ -236,13 +268,12 @@ CancelCallback GDataWapiService::GetChangeList(
 
   return sender_->StartRequestWithRetry(
       new GetResourceListRequest(sender_.get(),
-                                   url_request_context_getter_,
-                                   url_generator_,
-                                   GURL(),         // No override url
-                                   start_changestamp,
-                                   std::string(),  // empty search query
-                                   std::string(),  // no directory resource id
-                                   callback));
+                                 url_generator_,
+                                 GURL(),         // No override url
+                                 start_changestamp,
+                                 std::string(),  // empty search query
+                                 std::string(),  // no directory resource id
+                                 callback));
 }
 
 CancelCallback GDataWapiService::ContinueGetResourceList(
@@ -254,13 +285,12 @@ CancelCallback GDataWapiService::ContinueGetResourceList(
 
   return sender_->StartRequestWithRetry(
       new GetResourceListRequest(sender_.get(),
-                                   url_request_context_getter_,
-                                   url_generator_,
-                                   override_url,
-                                   0,              // start changestamp
-                                   std::string(),  // empty search query
-                                   std::string(),  // no directory resource id
-                                   callback));
+                                 url_generator_,
+                                 override_url,
+                                 0,              // start changestamp
+                                 std::string(),  // empty search query
+                                 std::string(),  // no directory resource id
+                                 callback));
 }
 
 CancelCallback GDataWapiService::GetResourceEntry(
@@ -270,12 +300,11 @@ CancelCallback GDataWapiService::GetResourceEntry(
   DCHECK(!callback.is_null());
 
   return sender_->StartRequestWithRetry(
-      new GetResourceEntryRequest(
-          sender_.get(),
-          url_request_context_getter_,
-          url_generator_,
-          resource_id,
-          base::Bind(&ParseResourceEntryAndRun, callback)));
+      new GetResourceEntryRequest(sender_.get(),
+                                  url_generator_,
+                                  resource_id,
+                                  base::Bind(&ParseResourceEntryAndRun,
+                                             callback)));
 }
 
 CancelCallback GDataWapiService::GetAboutResource(
@@ -286,7 +315,6 @@ CancelCallback GDataWapiService::GetAboutResource(
   return sender_->StartRequestWithRetry(
       new GetAccountMetadataRequest(
           sender_.get(),
-          url_request_context_getter_,
           url_generator_,
           base::Bind(&ParseAboutResourceAndRun, callback),
           false));  // Exclude installed apps.
@@ -298,18 +326,15 @@ CancelCallback GDataWapiService::GetAppList(
   DCHECK(!callback.is_null());
 
   return sender_->StartRequestWithRetry(
-      new GetAccountMetadataRequest(
-          sender_.get(),
-          url_request_context_getter_,
-          url_generator_,
-          base::Bind(&ParseAppListAndRun, callback),
-          true));  // Include installed apps.
+      new GetAccountMetadataRequest(sender_.get(),
+                                    url_generator_,
+                                    base::Bind(&ParseAppListAndRun, callback),
+                                    true));  // Include installed apps.
 }
 
 CancelCallback GDataWapiService::DownloadFile(
-    const base::FilePath& virtual_path,
     const base::FilePath& local_cache_path,
-    const GURL& download_url,
+    const std::string& resource_id,
     const DownloadActionCallback& download_action_callback,
     const GetContentCallback& get_content_callback,
     const ProgressCallback& progress_callback) {
@@ -319,12 +344,11 @@ CancelCallback GDataWapiService::DownloadFile(
 
   return sender_->StartRequestWithRetry(
       new DownloadFileRequest(sender_.get(),
-                              url_request_context_getter_,
+                              url_generator_,
                               download_action_callback,
                               get_content_callback,
                               progress_callback,
-                              download_url,
-                              virtual_path,
+                              resource_id,
                               local_cache_path));
 }
 
@@ -337,11 +361,10 @@ CancelCallback GDataWapiService::DeleteResource(
 
   return sender_->StartRequestWithRetry(
       new DeleteResourceRequest(sender_.get(),
-                                  url_request_context_getter_,
-                                  url_generator_,
-                                  callback,
-                                  resource_id,
-                                  etag));
+                                url_generator_,
+                                callback,
+                                resource_id,
+                                etag));
 }
 
 CancelCallback GDataWapiService::AddNewDirectory(
@@ -353,12 +376,11 @@ CancelCallback GDataWapiService::AddNewDirectory(
 
   return sender_->StartRequestWithRetry(
       new CreateDirectoryRequest(sender_.get(),
-                                   url_request_context_getter_,
-                                   url_generator_,
-                                   base::Bind(&ParseResourceEntryAndRun,
-                                              callback),
-                                   parent_resource_id,
-                                   directory_name));
+                                 url_generator_,
+                                 base::Bind(&ParseResourceEntryAndRun,
+                                            callback),
+                                 parent_resource_id,
+                                 directory_name));
 }
 
 CancelCallback GDataWapiService::CopyResource(
@@ -384,13 +406,12 @@ CancelCallback GDataWapiService::CopyHostedDocument(
   DCHECK(!callback.is_null());
 
   return sender_->StartRequestWithRetry(
-      new CopyHostedDocumentRequest(
-          sender_.get(),
-          url_request_context_getter_,
-          url_generator_,
-          base::Bind(&ParseResourceEntryAndRun, callback),
-          resource_id,
-          new_name));
+      new CopyHostedDocumentRequest(sender_.get(),
+                                    url_generator_,
+                                    base::Bind(&ParseResourceEntryAndRun,
+                                               callback),
+                                    resource_id,
+                                    new_name));
 }
 
 CancelCallback GDataWapiService::RenameResource(
@@ -402,11 +423,10 @@ CancelCallback GDataWapiService::RenameResource(
 
   return sender_->StartRequestWithRetry(
       new RenameResourceRequest(sender_.get(),
-                                  url_request_context_getter_,
-                                  url_generator_,
-                                  callback,
-                                  resource_id,
-                                  new_name));
+                                url_generator_,
+                                callback,
+                                resource_id,
+                                new_name));
 }
 
 CancelCallback GDataWapiService::TouchResource(
@@ -437,11 +457,10 @@ CancelCallback GDataWapiService::AddResourceToDirectory(
 
   return sender_->StartRequestWithRetry(
       new AddResourceToDirectoryRequest(sender_.get(),
-                                          url_request_context_getter_,
-                                          url_generator_,
-                                          callback,
-                                          parent_resource_id,
-                                          resource_id));
+                                        url_generator_,
+                                        callback,
+                                        parent_resource_id,
+                                        resource_id));
 }
 
 CancelCallback GDataWapiService::RemoveResourceFromDirectory(
@@ -453,15 +472,13 @@ CancelCallback GDataWapiService::RemoveResourceFromDirectory(
 
   return sender_->StartRequestWithRetry(
       new RemoveResourceFromDirectoryRequest(sender_.get(),
-                                               url_request_context_getter_,
-                                               url_generator_,
-                                               callback,
-                                               parent_resource_id,
-                                               resource_id));
+                                             url_generator_,
+                                             callback,
+                                             parent_resource_id,
+                                             resource_id));
 }
 
 CancelCallback GDataWapiService::InitiateUploadNewFile(
-    const base::FilePath& drive_file_path,
     const std::string& content_type,
     int64 content_length,
     const std::string& parent_resource_id,
@@ -473,18 +490,15 @@ CancelCallback GDataWapiService::InitiateUploadNewFile(
 
   return sender_->StartRequestWithRetry(
       new InitiateUploadNewFileRequest(sender_.get(),
-                                         url_request_context_getter_,
-                                         url_generator_,
-                                         callback,
-                                         drive_file_path,
-                                         content_type,
-                                         content_length,
-                                         parent_resource_id,
-                                         title));
+                                       url_generator_,
+                                       callback,
+                                       content_type,
+                                       content_length,
+                                       parent_resource_id,
+                                       title));
 }
 
 CancelCallback GDataWapiService::InitiateUploadExistingFile(
-    const base::FilePath& drive_file_path,
     const std::string& content_type,
     int64 content_length,
     const std::string& resource_id,
@@ -496,18 +510,15 @@ CancelCallback GDataWapiService::InitiateUploadExistingFile(
 
   return sender_->StartRequestWithRetry(
       new InitiateUploadExistingFileRequest(sender_.get(),
-                                              url_request_context_getter_,
-                                              url_generator_,
-                                              callback,
-                                              drive_file_path,
-                                              content_type,
-                                              content_length,
-                                              resource_id,
-                                              etag));
+                                            url_generator_,
+                                            callback,
+                                            content_type,
+                                            content_length,
+                                            resource_id,
+                                            etag));
 }
 
 CancelCallback GDataWapiService::ResumeUpload(
-    const base::FilePath& drive_file_path,
     const GURL& upload_url,
     int64 start_position,
     int64 end_position,
@@ -521,20 +532,17 @@ CancelCallback GDataWapiService::ResumeUpload(
 
   return sender_->StartRequestWithRetry(
       new ResumeUploadRequest(sender_.get(),
-                                url_request_context_getter_,
-                                callback,
-                                progress_callback,
-                                drive_file_path,
-                                upload_url,
-                                start_position,
-                                end_position,
-                                content_length,
-                                content_type,
-                                local_file_path));
+                              callback,
+                              progress_callback,
+                              upload_url,
+                              start_position,
+                              end_position,
+                              content_length,
+                              content_type,
+                              local_file_path));
 }
 
 CancelCallback GDataWapiService::GetUploadStatus(
-    const base::FilePath& drive_file_path,
     const GURL& upload_url,
     int64 content_length,
     const UploadRangeCallback& callback) {
@@ -543,11 +551,9 @@ CancelCallback GDataWapiService::GetUploadStatus(
 
   return sender_->StartRequestWithRetry(
       new GetUploadStatusRequest(sender_.get(),
-                                   url_request_context_getter_,
-                                   callback,
-                                   drive_file_path,
-                                   upload_url,
-                                   content_length));
+                                 callback,
+                                 upload_url,
+                                 content_length));
 }
 
 CancelCallback GDataWapiService::AuthorizeApp(
@@ -558,13 +564,11 @@ CancelCallback GDataWapiService::AuthorizeApp(
   DCHECK(!callback.is_null());
 
   return sender_->StartRequestWithRetry(
-      new AuthorizeAppRequest(
-          sender_.get(),
-          url_request_context_getter_,
-          url_generator_,
-          callback,
-          resource_id,
-          app_id));
+      new AuthorizeAppRequest(sender_.get(),
+                              url_generator_,
+                              callback,
+                              resource_id,
+                              app_id));
 }
 
 bool GDataWapiService::HasAccessToken() const {
@@ -600,4 +604,4 @@ void GDataWapiService::OnOAuth2RefreshTokenChanged() {
   }
 }
 
-}  // namespace google_apis
+}  // namespace drive

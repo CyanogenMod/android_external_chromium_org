@@ -32,6 +32,7 @@ class ScreensaverController;
 class SessionManagerObserver;
 class StorageMonitorCros;
 class SuspendObserver;
+class SwapMetrics;
 class UserActivityNotifier;
 class VideoActivityNotifier;
 
@@ -44,7 +45,6 @@ class DBusServices;
 }
 
 namespace system {
-class AutomaticRebootManager;
 class DeviceChangeHandler;
 }
 
@@ -72,8 +72,6 @@ class ChromeBrowserMainPartsChromeos : public ChromeBrowserMainPartsLinux {
   virtual void SetupPlatformFieldTrials() OVERRIDE;
 
  private:
-  void SetupZramFieldTrial();
-
   scoped_ptr<contacts::ContactManager> contact_manager_;
   scoped_ptr<BrightnessObserver> brightness_observer_;
   scoped_ptr<DisplayConfigurationObserver> display_configuration_observer_;
@@ -88,9 +86,9 @@ class ChromeBrowserMainPartsChromeos : public ChromeBrowserMainPartsLinux {
   scoped_ptr<UserActivityNotifier> user_activity_notifier_;
   scoped_ptr<VideoActivityNotifier> video_activity_notifier_;
   scoped_ptr<StorageMonitorCros> storage_monitor_;
-  scoped_ptr<system::AutomaticRebootManager> automatic_reboot_manager_;
   scoped_ptr<IdleActionWarningObserver> idle_action_warning_observer_;
   scoped_ptr<system::DeviceChangeHandler> device_change_handler_;
+  scoped_ptr<SwapMetrics> swap_metrics_;
 
   scoped_ptr<internal::DBusServices> dbus_services_;
 

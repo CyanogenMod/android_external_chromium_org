@@ -17,7 +17,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/common/cancelable_request.h"
@@ -887,7 +887,9 @@ bool PrerenderManager::IsValidHttpMethod(const std::string& method) {
 
 // static
 bool PrerenderManager::DoesURLHaveValidScheme(const GURL& url) {
-  return IsWebURL(url) || url.SchemeIs(extensions::kExtensionScheme);
+  return (IsWebURL(url) ||
+          url.SchemeIs(extensions::kExtensionScheme) ||
+          url.SchemeIs("data"));
 }
 
 DictionaryValue* PrerenderManager::GetAsValue() const {

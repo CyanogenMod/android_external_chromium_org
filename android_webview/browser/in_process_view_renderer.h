@@ -7,8 +7,10 @@
 
 #include "android_webview/browser/browser_view_renderer.h"
 
+#include "base/cancelable_callback.h"
 #include "base/memory/weak_ptr.h"
 #include "content/public/browser/android/synchronous_compositor_client.h"
+#include "ui/gfx/vector2d_f.h"
 
 namespace content {
 class SynchronousCompositor;
@@ -36,16 +38,17 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   // BrowserViewRenderer overrides
   virtual bool OnDraw(jobject java_canvas,
                       bool is_hardware_canvas,
-                      const gfx::Point& scroll,
+                      const gfx::Vector2d& scroll_,
                       const gfx::Rect& clip) OVERRIDE;
   virtual void DrawGL(AwDrawGLInfo* draw_info) OVERRIDE;
   virtual base::android::ScopedJavaLocalRef<jobject> CapturePicture() OVERRIDE;
   virtual void EnableOnNewPicture(bool enabled) OVERRIDE;
-  virtual void OnVisibilityChanged(
-      bool view_visible, bool window_visible) OVERRIDE;
+  virtual void OnVisibilityChanged(bool visible) OVERRIDE;
   virtual void OnSizeChanged(int width, int height) OVERRIDE;
+  virtual void ScrollTo(gfx::Vector2d new_value) OVERRIDE;
   virtual void OnAttachedToWindow(int width, int height) OVERRIDE;
   virtual void OnDetachedFromWindow() OVERRIDE;
+  virtual void SetDipScale(float dip_scale) OVERRIDE;
   virtual bool IsAttachedToWindow() OVERRIDE;
   virtual bool IsViewVisible() OVERRIDE;
   virtual gfx::Rect GetScreenRect() OVERRIDE;
@@ -56,24 +59,30 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   virtual void DidDestroyCompositor(
       content::SynchronousCompositor* compositor) OVERRIDE;
   virtual void SetContinuousInvalidate(bool invalidate) OVERRIDE;
-  virtual void SetTotalRootLayerScrollOffset(gfx::Vector2dF new_value) OVERRIDE;
+  virtual void SetTotalRootLayerScrollOffset(
+      gfx::Vector2dF new_value_css) OVERRIDE;
   virtual gfx::Vector2dF GetTotalRootLayerScrollOffset() OVERRIDE;
 
   void WebContentsGone();
 
  private:
   void EnsureContinuousInvalidation(AwDrawGLInfo* draw_info);
+  void DoEnsureContinuousInvalidation(AwDrawGLInfo* draw_info);
   bool DrawSWInternal(jobject java_canvas,
                       const gfx::Rect& clip_bounds);
-  bool RenderSW(SkCanvas* canvas);
   bool CompositeSW(SkCanvas* canvas);
+
+  // If we call up view invalidate and OnDraw is not called before a deadline,
+  // then we keep ticking the SynchronousCompositor so it can make progress.
+  void FallbackTickFired();
 
   BrowserViewRenderer::Client* client_;
   BrowserViewRenderer::JavaHelper* java_helper_;
   content::WebContents* web_contents_;
   content::SynchronousCompositor* compositor_;
 
-  bool view_visible_;
+  bool visible_;
+  float dip_scale_;
 
   // When true, we should continuously invalidate and keep drawing, for example
   // to drive animation.
@@ -82,6 +91,12 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   // compositor draw which may switch continuous_invalidate on and off in the
   // process.
   bool block_invalidates_;
+  // Holds a callback to FallbackTickFired while it is pending.
+  base::CancelableClosure fallback_tick_;
+
+  // TODO(boliu): Remove these when we are no longer starving native tasks.
+  bool do_ensure_continuous_invalidation_task_pending_;
+  base::WeakPtrFactory<InProcessViewRenderer> weak_factory_;
 
   int width_;
   int height_;
@@ -95,9 +110,10 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   EGLContext last_egl_context_;
 
   // Last View scroll when View.onDraw() was called.
-  gfx::Point scroll_at_start_of_frame_;
+  gfx::Vector2d scroll_at_start_of_frame_;
 
-  gfx::Vector2dF scroll_offset_;
+  // Current scroll offset in CSS pixels.
+  gfx::Vector2dF scroll_offset_css_;
 
   DISALLOW_COPY_AND_ASSIGN(InProcessViewRenderer);
 };

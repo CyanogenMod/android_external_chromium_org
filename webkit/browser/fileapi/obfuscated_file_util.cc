@@ -17,8 +17,8 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
-#include "googleurl/src/gurl.h"
+#include "base/time/time.h"
+#include "url/gurl.h"
 #include "webkit/browser/fileapi/file_observers.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
@@ -901,7 +901,7 @@ bool ObfuscatedFileUtil::DeleteDirectoryForOriginAndType(
     // implementation.
     // Information about failure would be useful for debugging.
     DestroyDirectoryDatabase(origin, type);
-    if (!file_util::Delete(origin_type_path, true /* recursive */))
+    if (!base::Delete(origin_type_path, true /* recursive */))
       return false;
   }
 
@@ -935,7 +935,7 @@ bool ObfuscatedFileUtil::DeleteDirectoryForOriginAndType(
     origin_database_->RemovePathForOrigin(
         webkit_database::GetIdentifierFromOrigin(origin));
   }
-  if (!file_util::Delete(origin_path, true /* recursive */))
+  if (!base::Delete(origin_path, true /* recursive */))
     return false;
 
   return true;
@@ -969,14 +969,9 @@ ObfuscatedFileUtil::CreateOriginEnumerator() {
 
 bool ObfuscatedFileUtil::DestroyDirectoryDatabase(
     const GURL& origin, FileSystemType type) {
-  std::string type_string = GetFileSystemTypeString(type);
-  if (type_string.empty()) {
-    LOG(WARNING) << "Unknown filesystem type requested:" << type;
+  std::string key = GetDirectoryDatabaseKey(origin, type);
+  if (key.empty())
     return true;
-  }
-  std::string key =
-      webkit_database::GetIdentifierFromOrigin(origin) +
-      type_string;
   DirectoryMap::iterator iter = directories_.find(key);
   if (iter != directories_.end()) {
     SandboxDirectoryDatabase* database = iter->second;
@@ -1109,7 +1104,7 @@ PlatformFileError ObfuscatedFileUtil::CreateFile(
     created = true;
   } else {
     if (file_util::PathExists(dest_local_path)) {
-      if (!file_util::Delete(dest_local_path, true /* recursive */)) {
+      if (!base::Delete(dest_local_path, true /* recursive */)) {
         NOTREACHED();
         return base::PLATFORM_FILE_ERROR_FAILED;
       }
@@ -1134,7 +1129,7 @@ PlatformFileError ObfuscatedFileUtil::CreateFile(
     if (handle) {
       DCHECK_NE(base::kInvalidPlatformFileValue, *handle);
       base::ClosePlatformFile(*handle);
-      file_util::Delete(dest_local_path, false /* recursive */);
+      base::Delete(dest_local_path, false /* recursive */);
     }
     return base::PLATFORM_FILE_ERROR_FAILED;
   }
@@ -1150,7 +1145,7 @@ PlatformFileError ObfuscatedFileUtil::CreateFile(
       DCHECK_NE(base::kInvalidPlatformFileValue, *handle);
       base::ClosePlatformFile(*handle);
     }
-    file_util::Delete(dest_local_path, false /* recursive */);
+    base::Delete(dest_local_path, false /* recursive */);
     return base::PLATFORM_FILE_ERROR_FAILED;
   }
   TouchDirectory(db, dest_file_info->parent_id);
@@ -1176,8 +1171,8 @@ std::string ObfuscatedFileUtil::GetDirectoryDatabaseKey(
     return std::string();
   }
   // For isolated origin we just use a type string as a key.
-  if (special_storage_policy_.get() &&
-      special_storage_policy_->HasIsolatedStorage(origin)) {
+  if (HasIsolatedStorage(origin)) {
+    CHECK_EQ(isolated_origin_.spec(), origin.spec());
     return type_string;
   }
   return webkit_database::GetIdentifierFromOrigin(origin) +
@@ -1215,12 +1210,8 @@ SandboxDirectoryDatabase* ObfuscatedFileUtil::GetDirectoryDatabase(
 
 base::FilePath ObfuscatedFileUtil::GetDirectoryForOrigin(
     const GURL& origin, bool create, base::PlatformFileError* error_code) {
-  if (special_storage_policy_.get() &&
-      special_storage_policy_->HasIsolatedStorage(origin)) {
-    if (isolated_origin_.is_empty())
-      isolated_origin_ = origin;
-    CHECK_EQ(isolated_origin_.spec(), origin.spec())
-        << "multiple origins for an isolated site";
+  if (HasIsolatedStorage(origin)) {
+    CHECK_EQ(isolated_origin_.spec(), origin.spec());
   }
 
   if (!InitOriginDatabase(create)) {
@@ -1249,7 +1240,7 @@ base::FilePath ObfuscatedFileUtil::GetDirectoryForOrigin(
   base::FilePath path = file_system_directory_.Append(directory_name);
   bool exists_in_fs = file_util::DirectoryExists(path);
   if (!exists_in_db && exists_in_fs) {
-    if (!file_util::Delete(path, true)) {
+    if (!base::Delete(path, true)) {
       if (error_code)
         *error_code = base::PLATFORM_FILE_ERROR_FAILED;
       return base::FilePath();
@@ -1316,7 +1307,6 @@ bool ObfuscatedFileUtil::InitOriginDatabase(bool create) {
   }
 
   if (!isolated_origin_.is_empty()) {
-    DCHECK(special_storage_policy_->HasIsolatedStorage(isolated_origin_));
     origin_database_.reset(
         new SandboxIsolatedOriginDatabase(
             webkit_database::GetIdentifierFromOrigin(isolated_origin_),
@@ -1441,6 +1431,25 @@ PlatformFileError ObfuscatedFileUtil::CreateOrOpenInternal(
         &FileChangeObserver::OnModifyFile, MakeTuple(url));
   }
   return error;
+}
+
+bool ObfuscatedFileUtil::HasIsolatedStorage(const GURL& origin) {
+  if (special_storage_policy_.get() &&
+      special_storage_policy_->HasIsolatedStorage(origin)) {
+    if (isolated_origin_.is_empty())
+      isolated_origin_ = origin;
+    CHECK_EQ(isolated_origin_.spec(), origin.spec())
+        << "multiple origins for an isolated site";
+    return true;
+  }
+  // This could happen when the origin is already unloaded and
+  // special_storage_policy_->HasIsolatedStorage(origin) returns false
+  // for the same origin.
+  if (!isolated_origin_.is_empty()) {
+    CHECK_EQ(isolated_origin_.spec(), origin.spec());
+    return true;
+  }
+  return false;
 }
 
 }  // namespace fileapi

@@ -10,7 +10,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "cc/animation/animation_events.h"
 #include "cc/animation/animation_registrar.h"
 #include "cc/base/cc_export.h"
@@ -20,6 +20,7 @@
 #include "cc/layers/layer_lists.h"
 #include "cc/layers/render_pass_sink.h"
 #include "cc/output/begin_frame_args.h"
+#include "cc/output/managed_memory_policy.h"
 #include "cc/output/output_surface_client.h"
 #include "cc/output/renderer.h"
 #include "cc/quads/render_pass.h"
@@ -176,6 +177,9 @@ class CC_EXPORT LayerTreeHostImpl
   // the URL bar and non-overlay scrollbars.
   gfx::SizeF VisibleViewportSize() const;
 
+  // Evict all textures by enforcing a memory policy with an allocation of 0.
+  void EvictTexturesForTesting();
+
   // RendererClient implementation
   virtual gfx::Rect DeviceViewport() const OVERRIDE;
  private:
@@ -183,10 +187,6 @@ class CC_EXPORT LayerTreeHostImpl
   virtual const LayerTreeSettings& Settings() const OVERRIDE;
  public:
   virtual void SetFullRootLayerDamage() OVERRIDE;
-  virtual void SetManagedMemoryPolicy(const ManagedMemoryPolicy& policy)
-      OVERRIDE;
-  virtual void EnforceManagedMemoryPolicy(const ManagedMemoryPolicy& policy)
-      OVERRIDE;
   virtual bool HasImplThread() const OVERRIDE;
   virtual bool ShouldClearRootRenderPass() const OVERRIDE;
   virtual CompositorFrameMetadata MakeCompositorFrameMetadata() const OVERRIDE;
@@ -194,20 +194,20 @@ class CC_EXPORT LayerTreeHostImpl
 
   // TileManagerClient implementation.
   virtual void DidInitializeVisibleTile() OVERRIDE;
-  virtual bool ShouldForceTileUploadsRequiredForActivationToComplete() const
-      OVERRIDE;
   virtual void NotifyReadyToActivate() OVERRIDE;
 
   // OutputSurfaceClient implementation.
   virtual bool DeferredInitialize(
       scoped_refptr<ContextProvider> offscreen_context_provider) OVERRIDE;
   virtual void SetNeedsRedrawRect(gfx::Rect rect) OVERRIDE;
-  virtual void BeginFrame(const BeginFrameArgs& args)
-      OVERRIDE;
+  virtual void BeginFrame(const BeginFrameArgs& args) OVERRIDE;
   virtual void SetExternalDrawConstraints(const gfx::Transform& transform,
                                           gfx::Rect viewport) OVERRIDE;
   virtual void DidLoseOutputSurface() OVERRIDE;
   virtual void OnSwapBuffersComplete(const CompositorFrameAck* ack) OVERRIDE;
+  virtual void SetMemoryPolicy(
+      const ManagedMemoryPolicy& policy,
+      bool discard_backbuffer_when_not_visible) OVERRIDE;
 
   // Called from LayerTreeImpl.
   void OnCanDrawStateChangedForTree();
@@ -216,7 +216,6 @@ class CC_EXPORT LayerTreeHostImpl
   bool CanDraw();
   OutputSurface* output_surface() const { return output_surface_.get(); }
 
-  std::string LayerTreeAsText() const;
   std::string LayerTreeAsJson() const;
 
   void FinishAllRendering();
@@ -399,8 +398,10 @@ class CC_EXPORT LayerTreeHostImpl
   Proxy* proxy_;
 
  private:
-  bool DoInitializeRenderer(scoped_ptr<OutputSurface> output_surface,
-                            bool is_deffered_init);
+  void CreateAndSetRenderer(OutputSurface* output_surface,
+                            ResourceProvider* resource_provider);
+  void ReleaseTreeResources();
+  void EnforceZeroBudget(bool zero_budget);
 
   void AnimatePageScale(base::TimeTicks monotonic_time);
   void AnimateScrollbars(base::TimeTicks monotonic_time);
@@ -424,23 +425,20 @@ class CC_EXPORT LayerTreeHostImpl
   // if this helper function is called.
   bool CalculateRenderPasses(FrameData* frame);
 
-  void SendDidLoseOutputSurfaceRecursive(LayerImpl* current);
-  void ClearRenderSurfaces();
+  void SendReleaseResourcesRecursive(LayerImpl* current);
   bool EnsureRenderSurfaceLayerList();
   void ClearCurrentlyScrollingLayer();
 
   void AnimateScrollbarsRecursive(LayerImpl* layer,
                                   base::TimeTicks time);
 
-  void DumpRenderSurfaces(std::string* str,
-                          int indent,
-                          const LayerImpl* layer) const;
-
   static LayerImpl* GetNonCompositedContentLayerRecursive(LayerImpl* layer);
 
   void UpdateCurrentFrameTime(base::TimeTicks* ticks, base::Time* now) const;
 
   void StartScrollbarAnimationRecursive(LayerImpl* layer, base::TimeTicks time);
+  void SetManagedMemoryPolicy(const ManagedMemoryPolicy& policy);
+  void EnforceManagedMemoryPolicy(const ManagedMemoryPolicy& policy);
 
   scoped_ptr<OutputSurface> output_surface_;
 
@@ -504,6 +502,7 @@ class CC_EXPORT LayerTreeHostImpl
   size_t last_sent_memory_visible_bytes_;
   size_t last_sent_memory_visible_and_nearby_bytes_;
   size_t last_sent_memory_use_bytes_;
+  bool zero_budget_;
 
   // Viewport size passed in from the main thread, in physical pixels.
   gfx::Size device_viewport_size_;

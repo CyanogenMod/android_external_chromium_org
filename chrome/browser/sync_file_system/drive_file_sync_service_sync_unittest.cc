@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,51 +6,71 @@
 
 #include <algorithm>
 
-#include "base/format_macros.h"
+#include "base/file_util.h"
 #include "base/message_loop.h"
-#include "base/rand_util.h"
+#include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/sync_file_system/drive/fake_api_util.h"
-#include "chrome/browser/sync_file_system/drive/metadata_db_migration_util.h"
+#include "base/threading/sequenced_worker_pool.h"
+#include "chrome/browser/drive/drive_uploader.h"
+#include "chrome/browser/drive/fake_drive_service.h"
+#include "chrome/browser/sync_file_system/drive_backend/api_util.h"
+#include "chrome/browser/sync_file_system/drive_backend/fake_drive_service_helper.h"
 #include "chrome/browser/sync_file_system/drive_file_sync_util.h"
 #include "chrome/browser/sync_file_system/drive_metadata_store.h"
 #include "chrome/browser/sync_file_system/fake_remote_change_processor.h"
-#include "chrome/browser/sync_file_system/sync_file_system.pb.h"
+#include "chrome/browser/sync_file_system/local_file_sync_service.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/browser/fileapi/syncable/canned_syncable_file_system.h"
+#include "webkit/browser/fileapi/syncable/local_file_sync_context.h"
 #include "webkit/browser/fileapi/syncable/syncable_file_system_util.h"
+
+#define FPL(path) FILE_PATH_LITERAL(path)
+
+using content::BrowserThread;
+
+using google_apis::GDataErrorCode;
+using google_apis::ResourceEntry;
 
 namespace sync_file_system {
 
+using drive_backend::APIUtil;
+using drive_backend::APIUtilInterface;
+using drive_backend::FakeDriveServiceHelper;
+
 namespace {
 
-const char kAppId[] = "app-id";
-const char kAppOrigin[] = "chrome-extension://app-id";
-
-std::string GetSyncRootResourceId() {
-  const std::string kSyncRootResourceId("folder:sync_root_resource_id");
-  return IsDriveAPIDisabled() ? kSyncRootResourceId
-                              : drive::RemoveWapiIdPrefix(kSyncRootResourceId);
-}
-
-std::string GetParentResourceId() {
-  const std::string kParentResourceId("folder:parent_resource_id");
-  return IsDriveAPIDisabled() ? kParentResourceId
-                              : drive::RemoveWapiIdPrefix(kParentResourceId);
-}
-
-void DidInitialize(bool* done, SyncStatusCode status, bool created) {
-  EXPECT_EQ(SYNC_STATUS_OK, status);
+void SyncResultCallback(bool* done,
+                        SyncStatusCode* status_out,
+                        fileapi::FileSystemURL* url_out,
+                        SyncStatusCode status,
+                        const fileapi::FileSystemURL& url) {
+  EXPECT_FALSE(*done);
+  *status_out = status;
+  *url_out = url;
   *done = true;
 }
 
-void DidProcessRemoteChange(bool* done,
-                            SyncStatusCode* status_out,
-                            SyncStatusCode status,
-                            const fileapi::FileSystemURL& url) {
+void SyncStatusResultCallback(bool* done,
+                              SyncStatusCode* status_out,
+                              SyncStatusCode status) {
+  EXPECT_FALSE(*done);
   *status_out = status;
+  *done = true;
+}
+
+void DatabaseInitResultCallback(bool* done,
+                                SyncStatusCode* status_out,
+                                bool* created_out,
+                                SyncStatusCode status,
+                                bool created) {
+  EXPECT_FALSE(*done);
+  *status_out = status;
+  *created_out = created;
   *done = true;
 }
 
@@ -59,488 +79,556 @@ void DidProcessRemoteChange(bool* done,
 class DriveFileSyncServiceSyncTest : public testing::Test {
  public:
   DriveFileSyncServiceSyncTest()
-      : ui_thread_(content::BrowserThread::UI, &message_loop_),
-        file_thread_(content::BrowserThread::FILE, &message_loop_),
-        fake_api_util_(NULL),
-        metadata_store_(NULL),
-        resource_count_(0) {}
+      : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP) {}
 
   virtual ~DriveFileSyncServiceSyncTest() {
   }
 
   virtual void SetUp() OVERRIDE {
-    SetEnableSyncFSDirectoryOperation(true);
+    // TODO(tzik): Set up TestExtensionSystem to support simulated relaunch.
+
     RegisterSyncableFileSystem();
+    local_sync_service_.reset(new LocalFileSyncService(&profile_));
+
+    fake_drive_service_ = new ::drive::FakeDriveService();
+    fake_drive_service_->Initialize(&profile_);
+    ASSERT_TRUE(fake_drive_service_->LoadAccountMetadataForWapi(
+        "sync_file_system/account_metadata.json"));
+    ASSERT_TRUE(fake_drive_service_->LoadResourceListForWapi(
+        "gdata/root_feed.json"));
+
+    drive_uploader_ = new ::drive::DriveUploader(
+        fake_drive_service_, base::MessageLoopProxy::current().get());
+
+    fake_drive_helper_.reset(new FakeDriveServiceHelper(
+        fake_drive_service_, drive_uploader_));
+
+    bool done = false;
+    SyncStatusCode status = SYNC_STATUS_UNKNOWN;
+    bool created = false;
+    scoped_ptr<DriveMetadataStore> metadata_store(
+        new DriveMetadataStore(fake_drive_helper_->base_dir_path(),
+                               base::MessageLoopProxy::current().get()));
+    metadata_store->Initialize(
+        base::Bind(&DatabaseInitResultCallback, &done, &status, &created));
+    FlushMessageLoop();
+    EXPECT_TRUE(done);
+    EXPECT_EQ(SYNC_STATUS_OK, status);
+    EXPECT_TRUE(created);
+
+    scoped_ptr<APIUtil> api_util(APIUtil::CreateForTesting(
+        &profile_,
+        scoped_ptr< ::drive::DriveServiceInterface>(fake_drive_service_),
+        scoped_ptr< ::drive::DriveUploaderInterface>(drive_uploader_)));
+
+    remote_sync_service_ = DriveFileSyncService::CreateForTesting(
+        &profile_,
+        fake_drive_helper_->base_dir_path(),
+        api_util.PassAs<APIUtilInterface>(),
+        metadata_store.Pass());
+
+    local_sync_service_->SetLocalChangeProcessor(remote_sync_service_.get());
+    remote_sync_service_->SetRemoteChangeProcessor(local_sync_service_.get());
   }
 
   virtual void TearDown() OVERRIDE {
-    SetDisableDriveAPI(false);
+    drive_uploader_ = NULL;
+    fake_drive_service_ = NULL;
+    remote_sync_service_.reset();
+    local_sync_service_.reset();
+    FlushMessageLoop();
+
+    typedef std::map<GURL, CannedSyncableFileSystem*>::iterator iterator;
+    for (iterator itr = file_systems_.begin();
+         itr != file_systems_.end(); ++itr) {
+      itr->second->TearDown();
+      delete itr->second;
+    }
+    file_systems_.clear();
+
+    FlushMessageLoop();
     RevokeSyncableFileSystem();
-    SetEnableSyncFSDirectoryOperation(false);
   }
 
  protected:
-  struct SyncEvent {
-    std::string description;
-    base::Closure callback;
+  void RegisterOrigin(const GURL& origin) {
+    if (!ContainsKey(file_systems_, origin)) {
+      CannedSyncableFileSystem* file_system = new CannedSyncableFileSystem(
+          origin,
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO).get(),
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)
+              .get());
 
-    SyncEvent(const std::string& description,
-              base::Closure callback)
-        : description(description),
-          callback(callback) {
+      bool done = false;
+      SyncStatusCode status = SYNC_STATUS_UNKNOWN;
+      file_system->SetUp();
+      local_sync_service_->MaybeInitializeFileSystemContext(
+          origin, file_system->file_system_context(),
+          base::Bind(&SyncStatusResultCallback, &done, &status));
+      FlushMessageLoop();
+      EXPECT_TRUE(done);
+      EXPECT_EQ(SYNC_STATUS_OK, status);
+
+      file_system->file_system_context()->sync_context()->
+          set_mock_notify_changes_duration_in_sec(0);
+
+      EXPECT_EQ(base::PLATFORM_FILE_OK, file_system->OpenFileSystem());
+      file_systems_[origin] = file_system;
     }
-  };
 
-  SyncEvent CreateRemoteFileAddOrUpdateEvent(const std::string& title) {
-    return SyncEvent(
-        "SyncEvent: Add or Update remote file [" + title + "]",
-        base::Bind(&DriveFileSyncServiceSyncTest::AddOrUpdateResource,
-                   base::Unretained(this), title, SYNC_FILE_TYPE_FILE));
-  }
-
-  SyncEvent CreateRemoteDirectoryAddEvent(const std::string& title) {
-    return SyncEvent(
-        "SyncEvent: Add remote directory [" + title + "]",
-        base::Bind(&DriveFileSyncServiceSyncTest::AddOrUpdateResource,
-                   base::Unretained(this), title, SYNC_FILE_TYPE_DIRECTORY));
-  }
-
-  SyncEvent CreateRemoteFileDeleteEvent(const std::string& title) {
-    return SyncEvent(
-        "SyncEvent: Delete remote file [" + title + "]",
-        base::Bind(&DriveFileSyncServiceSyncTest::DeleteResource,
-                   base::Unretained(this), title));
-  }
-
-  SyncEvent CreateRelaunchEvent() {
-    return SyncEvent(
-        "SyncEvent: Relaunch service",
-        base::Bind(&DriveFileSyncServiceSyncTest::RelaunchService,
-                   base::Unretained(this)));
-  }
-
-  SyncEvent CreateFetchEvent() {
-    return SyncEvent(
-        "SyncEvent: Fetch remote changes",
-        base::Bind(&DriveFileSyncServiceSyncTest::FetchRemoteChange,
-                   base::Unretained(this)));
-  }
-
-  SyncEvent CreateProcessRemoteChangeEvent() {
-    return SyncEvent(
-        "SyncEvent: Process remote change",
-        base::Bind(
-            base::IgnoreResult(
-                &DriveFileSyncServiceSyncTest::ProcessRemoteChange),
-            base::Unretained(this)));
-  }
-
-  template <size_t array_size>
-  std::vector<SyncEvent> CreateTestCase(const SyncEvent (&events)[array_size]) {
-    return std::vector<SyncEvent>(events, events + array_size);
-  }
-
-  void ShuffleTestCase(std::vector<SyncEvent>* events) {
-    std::random_shuffle(events->begin(), events->end(), base::RandGenerator);
-  }
-
-  void RunTest(const std::vector<SyncEvent>& events) {
-    base::ScopedTempDir scoped_base_dir_;
-    ASSERT_TRUE(scoped_base_dir_.CreateUniqueTempDir());
-    base_dir_ = scoped_base_dir_.path();
-
-    SetUpForTestCase();
-
-    typedef std::vector<SyncEvent>::const_iterator iterator;
-    std::ostringstream out;
-    out << '\n';
-    for (iterator itr = events.begin(); itr != events.end(); ++itr)
-      out << itr->description << '\n';
-    SCOPED_TRACE(out.str());
-
-    for (iterator itr = events.begin(); itr != events.end(); ++itr)
-      itr->callback.Run();
-
-    FetchRemoteChange();
-    while (ProcessRemoteChange()) {}
-
-    VerifyResult();
-    TearDownForTestCase();
-
-    base_dir_ = base::FilePath();
-  }
-
-  void AddFileTest_Body();
-  void UpdateFileTest_Body();
-  void DeleteFileTest_Body();
-  void RelaunchTest_Body();
-  void SquashedFileAddTest_Body();
-  void RelaunchTestWithSquashedDeletion_Body();
-  void CreateDirectoryTest_Body();
-  void DeleteDirectoryTest_Body();
-
- private:
-  void SetUpForTestCase() {
-    fake_api_util_ = new drive::FakeAPIUtil;
-    fake_remote_processor_.reset(new FakeRemoteChangeProcessor);
-
-    metadata_store_ = new DriveMetadataStore(
-        base_dir_, base::MessageLoopProxy::current().get());
-
-    bool done = false;
-    metadata_store_->Initialize(base::Bind(&DidInitialize, &done));
-    message_loop_.RunUntilIdle();
-    EXPECT_TRUE(done);
-
-    metadata_store_->SetSyncRootDirectory(GetSyncRootResourceId());
-    metadata_store_->AddIncrementalSyncOrigin(GURL(kAppOrigin),
-                                              GetParentResourceId());
-
-    sync_service_ = DriveFileSyncService::CreateForTesting(
-        &profile_,
-        base_dir_,
-        scoped_ptr<drive::APIUtilInterface>(fake_api_util_),
-        scoped_ptr<DriveMetadataStore>(metadata_store_)).Pass();
-    sync_service_->SetRemoteChangeProcessor(fake_remote_processor_.get());
-  }
-
-  void TearDownForTestCase() {
-    metadata_store_ = NULL;
-    fake_api_util_ = NULL;
-    sync_service_.reset();
-    fake_remote_processor_.reset();
-    message_loop_.RunUntilIdle();
-  }
-
-  void AddOrUpdateResource(const std::string& title,
-                           SyncFileType type) {
-    typedef ResourceIdByTitle::iterator iterator;
-    std::pair<iterator, bool> inserted =
-        resources_.insert(std::make_pair(title, std::string()));
-    if (inserted.second) {
-      switch (type) {
-        case SYNC_FILE_TYPE_UNKNOWN:
-          NOTREACHED();
-          break;
-        case SYNC_FILE_TYPE_FILE:
-          inserted.first->second = IsDriveAPIDisabled()
-              ? base::StringPrintf("file:%" PRId64, ++resource_count_)
-              : base::StringPrintf("%" PRId64, ++resource_count_);
-          break;
-        case SYNC_FILE_TYPE_DIRECTORY:
-          inserted.first->second = IsDriveAPIDisabled()
-              ? base::StringPrintf("folder:%" PRId64, ++resource_count_)
-              : base::StringPrintf("%" PRId64, ++resource_count_);
-          break;
-      }
-    }
-    std::string resource_id = inserted.first->second;
-    std::string md5_checksum;
-    if (type == SYNC_FILE_TYPE_FILE)
-      md5_checksum = base::StringPrintf("%" PRIx64, base::RandUint64());
-
-    fake_api_util_->PushRemoteChange(GetParentResourceId(),
-                                     kAppId,
-                                     title,
-                                     resource_id,
-                                     md5_checksum,
-                                     type,
-                                     false /* deleted */);
-    message_loop_.RunUntilIdle();
-  }
-
-  void DeleteResource(const std::string& title) {
-    ResourceIdByTitle::iterator found = resources_.find(title);
-    if (found == resources_.end())
-      return;
-    std::string resource_id = found->second;
-    resources_.erase(found);
-    fake_api_util_->PushRemoteChange(GetParentResourceId(),
-                                     kAppId,
-                                     title,
-                                     resource_id,
-                                     std::string(),
-                                     SYNC_FILE_TYPE_UNKNOWN,
-                                     true /* deleted */);
-    message_loop_.RunUntilIdle();
-  }
-
-  void RelaunchService() {
-    metadata_store_ = NULL;
-    scoped_ptr<drive::APIUtilInterface> api_util =
-        DriveFileSyncService::DestroyAndPassAPIUtilForTesting(
-            sync_service_.Pass());
-    message_loop_.RunUntilIdle();
-
-    metadata_store_ = new DriveMetadataStore(
-        base_dir_, base::MessageLoopProxy::current().get());
-
-    bool done = false;
-    metadata_store_->Initialize(base::Bind(&DidInitialize, &done));
-    message_loop_.RunUntilIdle();
-    EXPECT_TRUE(done);
-
-    sync_service_ = DriveFileSyncService::CreateForTesting(
-        &profile_,
-        base_dir_,
-        api_util.Pass(),
-        scoped_ptr<DriveMetadataStore>(metadata_store_)).Pass();
-    sync_service_->SetRemoteChangeProcessor(fake_remote_processor_.get());
-  }
-
-  void FetchRemoteChange() {
-    sync_service_->may_have_unfetched_changes_ = true;
-    sync_service_->MaybeStartFetchChanges();
-    message_loop_.RunUntilIdle();
-  }
-
-  bool ProcessRemoteChange() {
     bool done = false;
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    sync_service_->ProcessRemoteChange(
-        base::Bind(&DidProcessRemoteChange, &done, &status));
-    message_loop_.RunUntilIdle();
+    remote_sync_service_->RegisterOriginForTrackingChanges(
+        origin, base::Bind(&SyncStatusResultCallback, &done, &status));
+    FlushMessageLoop();
     EXPECT_TRUE(done);
-    return status != SYNC_STATUS_NO_CHANGE_TO_SYNC;
+    EXPECT_EQ(SYNC_STATUS_OK, status);
   }
 
+  void AddLocalFolder(const GURL& origin,
+                      const base::FilePath& path) {
+    ASSERT_TRUE(ContainsKey(file_systems_, origin));
+    EXPECT_EQ(base::PLATFORM_FILE_OK,
+              file_systems_[origin]->CreateDirectory(
+                  CreateSyncableFileSystemURL(origin, path)));
+  }
 
-  void VerifyResult() {
-    typedef drive::FakeAPIUtil::RemoteResourceByResourceId RemoteResourceMap;
-    typedef drive::FakeAPIUtil::RemoteResource RemoteResource;
-    typedef FakeRemoteChangeProcessor::URLToFileChangesMap
-        AppliedRemoteChangeMap;
+  void AddOrUpdateLocalFile(const GURL& origin,
+                            const base::FilePath& path,
+                            const std::string& content) {
+    fileapi::FileSystemURL url(CreateSyncableFileSystemURL(origin, path));
+    ASSERT_TRUE(ContainsKey(file_systems_, origin));
+    EXPECT_EQ(base::PLATFORM_FILE_OK, file_systems_[origin]->CreateFile(url));
+    int64 bytes_written = file_systems_[origin]->WriteString(url, content);
+    EXPECT_EQ(static_cast<int64>(content.size()), bytes_written);
+    FlushMessageLoop();
+  }
 
-    const RemoteResourceMap& remote_resources =
-        fake_api_util_->remote_resources();
-    const AppliedRemoteChangeMap applied_changes =
-        fake_remote_processor_->GetAppliedRemoteChanges();
+  void UpdateLocalFile(const GURL& origin,
+                       const base::FilePath& path,
+                       const std::string& content) {
+    ASSERT_TRUE(ContainsKey(file_systems_, origin));
+    int64 bytes_written = file_systems_[origin]->WriteString(
+        CreateSyncableFileSystemURL(origin, path), content);
+    EXPECT_EQ(static_cast<int64>(content.size()), bytes_written);
+    FlushMessageLoop();
+  }
 
-    std::set<std::string> local_resources;
-    for (AppliedRemoteChangeMap::const_iterator itr = applied_changes.begin();
-         itr != applied_changes.end(); ++itr) {
-      const fileapi::FileSystemURL& url = itr->first;
-      const FileChange& applied_change = itr->second.back();
+  void RemoveLocal(const GURL& origin, const base::FilePath& path) {
+    ASSERT_TRUE(ContainsKey(file_systems_, origin));
+    EXPECT_EQ(base::PLATFORM_FILE_OK,
+              file_systems_[origin]->Remove(
+                  CreateSyncableFileSystemURL(origin, path),
+                  true /* recursive */));
+    FlushMessageLoop();
+  }
 
-      DriveMetadata metadata;
-      SyncStatusCode status = metadata_store_->ReadEntry(itr->first, &metadata);
-      if (applied_change.IsDelete()) {
-        EXPECT_EQ(SYNC_DATABASE_ERROR_NOT_FOUND, status);
-        continue;
+  SyncStatusCode ProcessLocalChange() {
+    bool done = false;
+    SyncStatusCode status = SYNC_STATUS_UNKNOWN;
+    fileapi::FileSystemURL url;
+    local_sync_service_->ProcessLocalChange(
+        base::Bind(&SyncResultCallback, &done, &status, &url));
+    FlushMessageLoop();
+    EXPECT_TRUE(done);
+    if (status != SYNC_STATUS_NO_CHANGE_TO_SYNC)
+      local_sync_service_->ClearSyncFlagForURL(url);
+    return status;
+  }
+
+  SyncStatusCode ProcessRemoteChange() {
+    bool done = false;
+    SyncStatusCode status = SYNC_STATUS_UNKNOWN;
+    fileapi::FileSystemURL url;
+    remote_sync_service_->ProcessRemoteChange(
+        base::Bind(&SyncResultCallback, &done, &status, &url));
+    FlushMessageLoop();
+    EXPECT_TRUE(done);
+    if (status != SYNC_STATUS_NO_CHANGE_TO_SYNC)
+      local_sync_service_->ClearSyncFlagForURL(url);
+    return status;
+  }
+
+  SyncStatusCode ProcessChangesUntilDone() {
+    remote_sync_service_->OnNotificationReceived();
+    FlushMessageLoop();
+
+    SyncStatusCode local_sync_status;
+    SyncStatusCode remote_sync_status;
+    do {
+      local_sync_status = ProcessLocalChange();
+      if (local_sync_status != SYNC_STATUS_OK &&
+          local_sync_status != SYNC_STATUS_NO_CHANGE_TO_SYNC)
+        return local_sync_status;
+
+      remote_sync_status = ProcessRemoteChange();
+      if (remote_sync_status != SYNC_STATUS_OK &&
+          remote_sync_status != SYNC_STATUS_NO_CHANGE_TO_SYNC)
+        return remote_sync_status;
+    } while (local_sync_status != SYNC_STATUS_NO_CHANGE_TO_SYNC &&
+             remote_sync_status != SYNC_STATUS_NO_CHANGE_TO_SYNC);
+    return SYNC_STATUS_OK;
+  }
+
+  // Verifies local and remote files/folders are consistent.
+  // This function checks:
+  //  - Each registered origin has corresponding remote folder.
+  //  - Each local file/folder has corresponding remote one.
+  //  - Each remote file/folder has corresponding local one.
+  // TODO(tzik): Handle conflict case. i.e. allow remote file has different
+  // file content if the corresponding local file conflicts to it.
+  void VerifyConsistency() {
+    std::string sync_root_folder_id;
+    GDataErrorCode error =
+        fake_drive_helper_->GetSyncRootFolderID(&sync_root_folder_id);
+    if (sync_root_folder_id.empty()) {
+      EXPECT_EQ(google_apis::HTTP_NOT_FOUND, error);
+      EXPECT_TRUE(file_systems_.empty());
+      return;
+    }
+    EXPECT_EQ(google_apis::HTTP_SUCCESS, error);
+
+    ScopedVector<ResourceEntry> remote_entries;
+    EXPECT_EQ(google_apis::HTTP_SUCCESS,
+              fake_drive_helper_->ListFilesInFolder(
+                  sync_root_folder_id, &remote_entries));
+    std::map<std::string, const ResourceEntry*> origin_root_by_title;
+    for (ScopedVector<ResourceEntry>::iterator itr = remote_entries.begin();
+         itr != remote_entries.end();
+         ++itr) {
+      const ResourceEntry& remote_entry = **itr;
+      EXPECT_FALSE(ContainsKey(origin_root_by_title, remote_entry.title()));
+      origin_root_by_title[remote_entry.title()] = *itr;
+    }
+
+    for (std::map<GURL, CannedSyncableFileSystem*>::const_iterator itr =
+             file_systems_.begin();
+         itr != file_systems_.end(); ++itr) {
+      const GURL& origin = itr->first;
+      SCOPED_TRACE(testing::Message() << "Verifying origin: " << origin);
+      CannedSyncableFileSystem* file_system = itr->second;
+      ASSERT_TRUE(ContainsKey(origin_root_by_title, origin.host()));
+      VerifyConsistencyForFolder(
+          origin, base::FilePath(),
+          origin_root_by_title[origin.host()]->resource_id(),
+          file_system);
+    }
+  }
+
+  void VerifyConsistencyForOrigin(const GURL& origin) {
+    std::string sync_root_folder_id;
+    ASSERT_EQ(google_apis::HTTP_SUCCESS,
+              fake_drive_helper_->GetSyncRootFolderID(&sync_root_folder_id));
+    ASSERT_FALSE(sync_root_folder_id.empty());
+
+    ScopedVector<ResourceEntry> origin_folder;
+    EXPECT_EQ(google_apis::HTTP_SUCCESS,
+              fake_drive_helper_->SearchByTitle(
+                  sync_root_folder_id, origin.host(), &origin_folder));
+    ASSERT_EQ(1u, origin_folder.size());
+
+    ASSERT_TRUE(ContainsKey(file_systems_, origin));
+    VerifyConsistencyForFolder(
+        origin, base::FilePath(),
+        origin_folder[0]->resource_id(),
+        file_systems_[origin]);
+  }
+
+  void VerifyConsistencyForFolder(const GURL& origin,
+                                  const base::FilePath& path,
+                                  const std::string& folder_id,
+                                  CannedSyncableFileSystem* file_system) {
+    SCOPED_TRACE(testing::Message() << "Verifying path: " << path.value());
+
+    ScopedVector<ResourceEntry> remote_entries;
+    EXPECT_EQ(google_apis::HTTP_SUCCESS,
+              fake_drive_helper_->ListFilesInFolder(
+                  folder_id, &remote_entries));
+    std::map<std::string, const ResourceEntry*> remote_entry_by_title;
+    for (ScopedVector<ResourceEntry>::iterator itr = remote_entries.begin();
+         itr != remote_entries.end();
+         ++itr) {
+      const ResourceEntry& remote_entry = **itr;
+      EXPECT_FALSE(ContainsKey(remote_entry_by_title, remote_entry.title()));
+      remote_entry_by_title[remote_entry.title()] = *itr;
+    }
+
+    fileapi::FileSystemURL url(CreateSyncableFileSystemURL(origin, path));
+    CannedSyncableFileSystem::FileEntryList local_entries;
+    EXPECT_EQ(base::PLATFORM_FILE_OK,
+              file_system->ReadDirectory(url, &local_entries));
+    for (CannedSyncableFileSystem::FileEntryList::iterator itr =
+             local_entries.begin();
+         itr != local_entries.end();
+         ++itr) {
+      const fileapi::DirectoryEntry& local_entry = *itr;
+      fileapi::FileSystemURL entry_url(
+          CreateSyncableFileSystemURL(origin, path.Append(local_entry.name)));
+      std::string title = DriveFileSyncService::PathToTitle(entry_url.path());
+      ASSERT_TRUE(ContainsKey(remote_entry_by_title, title));
+      const ResourceEntry& remote_entry = *remote_entry_by_title[title];
+      if (local_entry.is_directory) {
+        ASSERT_TRUE(remote_entry.is_folder());
+        VerifyConsistencyForFolder(origin, entry_url.path(),
+                                   remote_entry.resource_id(),
+                                   file_system);
+      } else {
+        ASSERT_TRUE(remote_entry.is_file());
+        VerifyConsistencyForFile(origin, entry_url.path(),
+                                 remote_entry.resource_id(),
+                                 file_system);
       }
-
-      EXPECT_EQ(SYNC_STATUS_OK, status);
-      EXPECT_FALSE(metadata.resource_id().empty());
-      EXPECT_FALSE(metadata.conflicted());
-      EXPECT_FALSE(metadata.to_be_fetched());
-      EXPECT_TRUE(metadata.type() == DriveMetadata::RESOURCE_TYPE_FOLDER ||
-                  !metadata.md5_checksum().empty());
-
-      RemoteResourceMap::const_iterator found =
-          remote_resources.find(metadata.resource_id());
-      ASSERT_TRUE(found != remote_resources.end());
-      const RemoteResource& remote_resource = found->second;
-
-      EXPECT_EQ(base::FilePath::FromUTF8Unsafe(remote_resource.title),
-                url.path());
-      EXPECT_EQ(remote_resource.md5_checksum, metadata.md5_checksum());
-      EXPECT_FALSE(remote_resource.deleted);
-
-      EXPECT_TRUE(local_resources.insert(metadata.resource_id()).second);
+      remote_entry_by_title.erase(title);
     }
 
-    for (RemoteResourceMap::const_iterator itr = remote_resources.begin();
-         itr != remote_resources.end(); ++itr) {
-      if (!itr->second.deleted)
-        EXPECT_TRUE(ContainsKey(local_resources, itr->first));
-      else
-        EXPECT_FALSE(ContainsKey(local_resources, itr->first));
-    }
+    EXPECT_TRUE(remote_entry_by_title.empty());
   }
 
-  base::MessageLoop message_loop_;
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread file_thread_;
+  void VerifyConsistencyForFile(const GURL& origin,
+                                const base::FilePath& path,
+                                const std::string& file_id,
+                                CannedSyncableFileSystem* file_system) {
+    fileapi::FileSystemURL url(CreateSyncableFileSystemURL(origin, path));
+    std::string file_content;
+    EXPECT_EQ(google_apis::HTTP_SUCCESS,
+              fake_drive_helper_->ReadFile(file_id, &file_content));
+    EXPECT_EQ(base::PLATFORM_FILE_OK,
+              file_system->VerifyFile(url, file_content));
+  }
+
+  void FlushMessageLoop() {
+    base::MessageLoop::current()->RunUntilIdle();
+    BrowserThread::GetBlockingPool()->FlushForTesting();
+    base::MessageLoop::current()->RunUntilIdle();
+  }
+
+  void TestInitialization();
+  void TestLocalToRemoteBasic();
+  void TestRemoteToLocalBasic();
+  void TestLocalFileUpdate();
+  void TestRemoteFileUpdate();
+  void TestLocalFileDeletion();
+  void TestRemoteFileDeletion();
+
+  content::TestBrowserThreadBundle thread_bundle_;
 
   TestingProfile profile_;
-  base::FilePath base_dir_;
 
-  drive::FakeAPIUtil* fake_api_util_;  // Owned by |sync_service_|.
-  scoped_ptr<FakeRemoteChangeProcessor> fake_remote_processor_;
-  DriveMetadataStore* metadata_store_;  // Owned by |sync_service_|.
+  ::drive::FakeDriveService* fake_drive_service_;
+  ::drive::DriveUploader* drive_uploader_;
+  scoped_ptr<FakeDriveServiceHelper> fake_drive_helper_;
+  std::map<GURL, CannedSyncableFileSystem*> file_systems_;
 
-  scoped_ptr<DriveFileSyncService> sync_service_;
-
-  typedef std::map<std::string, std::string> ResourceIdByTitle;
-  ResourceIdByTitle resources_;
-  int64 resource_count_;
+  scoped_ptr<DriveFileSyncService> remote_sync_service_;
+  scoped_ptr<LocalFileSyncService> local_sync_service_;
 
   DISALLOW_COPY_AND_ASSIGN(DriveFileSyncServiceSyncTest);
 };
 
-void DriveFileSyncServiceSyncTest::AddFileTest_Body() {
-  std::string kFile1 = "file title 1";
-  SyncEvent sync_event[] = {
-    CreateRemoteFileAddOrUpdateEvent(kFile1),
-  };
-
-  RunTest(CreateTestCase(sync_event));
+void DriveFileSyncServiceSyncTest::TestInitialization() {
+  EXPECT_EQ(SYNC_STATUS_OK, ProcessChangesUntilDone());
+  VerifyConsistency();
 }
 
-void DriveFileSyncServiceSyncTest::UpdateFileTest_Body() {
-  std::string kFile1 = "file title 1";
-  SyncEvent sync_event[] = {
-    CreateRemoteFileAddOrUpdateEvent(kFile1),
-    CreateRemoteFileAddOrUpdateEvent(kFile1),
-  };
+void DriveFileSyncServiceSyncTest::TestLocalToRemoteBasic() {
+  const GURL kOrigin("chrome-extension://example");
 
-  RunTest(CreateTestCase(sync_event));
+  RegisterOrigin(kOrigin);
+  AddOrUpdateLocalFile(kOrigin, base::FilePath(FPL("file")), "abcde");
+
+  EXPECT_EQ(SYNC_STATUS_OK, ProcessChangesUntilDone());
+  VerifyConsistency();
 }
 
-void DriveFileSyncServiceSyncTest::DeleteFileTest_Body() {
-  std::string kFile1 = "file title 1";
-  SyncEvent sync_event[] = {
-    CreateRemoteFileAddOrUpdateEvent(kFile1),
-    CreateFetchEvent(),
-    CreateProcessRemoteChangeEvent(),
-    CreateRemoteFileDeleteEvent(kFile1),
-  };
+void DriveFileSyncServiceSyncTest::TestRemoteToLocalBasic() {
+  const GURL kOrigin("chrome-extension://example");
 
-  RunTest(CreateTestCase(sync_event));
+  std::string sync_root_folder_id;
+  EXPECT_EQ(google_apis::HTTP_CREATED,
+            fake_drive_helper_->AddOrphanedFolder(
+                APIUtil::GetSyncRootDirectoryName(),
+                &sync_root_folder_id));
+
+  std::string origin_root_folder_id;
+  EXPECT_EQ(google_apis::HTTP_CREATED,
+            fake_drive_helper_->AddFolder(
+                sync_root_folder_id, kOrigin.host(), &origin_root_folder_id));
+
+  RegisterOrigin(kOrigin);
+
+  std::string file_id;
+  EXPECT_EQ(google_apis::HTTP_SUCCESS,
+            fake_drive_helper_->AddFile(
+                origin_root_folder_id, "file", "abcde", &file_id));
+
+  EXPECT_EQ(SYNC_STATUS_OK, ProcessChangesUntilDone());
+  VerifyConsistency();
 }
 
-void DriveFileSyncServiceSyncTest::RelaunchTest_Body() {
-  SyncEvent sync_event[] = {
-    CreateRelaunchEvent(),
-  };
+void DriveFileSyncServiceSyncTest::TestLocalFileUpdate() {
+  const GURL kOrigin("chrome-extension://example");
+  const base::FilePath kPath(FPL("file"));
 
-  RunTest(CreateTestCase(sync_event));
+  RegisterOrigin(kOrigin);
+  AddOrUpdateLocalFile(kOrigin, kPath, "abcde");
+
+  EXPECT_EQ(SYNC_STATUS_OK, ProcessChangesUntilDone());
+  VerifyConsistencyForOrigin(kOrigin);
+
+  UpdateLocalFile(kOrigin, kPath, "1234567890");
+
+  EXPECT_EQ(SYNC_STATUS_OK, ProcessChangesUntilDone());
+  VerifyConsistency();
 }
 
-void DriveFileSyncServiceSyncTest::SquashedFileAddTest_Body() {
-  std::string kFile1 = "file title 1";
-  SyncEvent sync_event[] = {
-    CreateRemoteFileAddOrUpdateEvent(kFile1),
-    CreateFetchEvent(),
-    CreateRemoteFileDeleteEvent(kFile1),
-  };
-  RunTest(CreateTestCase(sync_event));
+void DriveFileSyncServiceSyncTest::TestRemoteFileUpdate() {
+  const GURL kOrigin("chrome-extension://example");
+  const base::FilePath kPath(FPL("file"));
+  const std::string kTitle(DriveFileSyncService::PathToTitle(kPath));
+
+  std::string sync_root_folder_id;
+  EXPECT_EQ(google_apis::HTTP_CREATED,
+            fake_drive_helper_->AddOrphanedFolder(
+                APIUtil::GetSyncRootDirectoryName(),
+                &sync_root_folder_id));
+
+  std::string origin_root_folder_id;
+  EXPECT_EQ(google_apis::HTTP_CREATED,
+            fake_drive_helper_->AddFolder(
+                sync_root_folder_id, kOrigin.host(), &origin_root_folder_id));
+
+  std::string remote_file_id;
+  EXPECT_EQ(google_apis::HTTP_SUCCESS,
+            fake_drive_helper_->AddFile(
+                origin_root_folder_id, kTitle, "abcde", &remote_file_id));
+
+  RegisterOrigin(kOrigin);
+  EXPECT_EQ(SYNC_STATUS_OK, ProcessChangesUntilDone());
+  VerifyConsistencyForOrigin(kOrigin);
+
+  EXPECT_EQ(google_apis::HTTP_SUCCESS,
+            fake_drive_helper_->UpdateFile(remote_file_id, "1234567890"));
+
+  EXPECT_EQ(SYNC_STATUS_OK, ProcessChangesUntilDone());
+  VerifyConsistency();
 }
 
-void DriveFileSyncServiceSyncTest::RelaunchTestWithSquashedDeletion_Body() {
-  std::string kFile1 = "file title 1";
-  std::string kFile2 = "file title 2";
-  SyncEvent sync_event[] = {
-    CreateRemoteFileAddOrUpdateEvent(kFile1),
-    CreateFetchEvent(),
-    CreateProcessRemoteChangeEvent(),
+void DriveFileSyncServiceSyncTest::TestLocalFileDeletion() {
+  const GURL kOrigin("chrome-extension://example");
+  const base::FilePath kPath(FPL("file"));
 
-    CreateRemoteFileDeleteEvent(kFile1),
-    CreateRemoteFileAddOrUpdateEvent(kFile2),
-    CreateRemoteFileAddOrUpdateEvent(kFile1),
+  RegisterOrigin(kOrigin);
+  AddOrUpdateLocalFile(kOrigin, kPath, "abcde");
 
-    CreateFetchEvent(),
-    CreateProcessRemoteChangeEvent(),
-    CreateRelaunchEvent(),
-  };
-  RunTest(CreateTestCase(sync_event));
+  EXPECT_EQ(SYNC_STATUS_OK, ProcessChangesUntilDone());
+  VerifyConsistencyForOrigin(kOrigin);
+
+  RemoveLocal(kOrigin, kPath);
+
+  EXPECT_EQ(SYNC_STATUS_OK, ProcessChangesUntilDone());
+  VerifyConsistency();
 }
 
-void DriveFileSyncServiceSyncTest::CreateDirectoryTest_Body() {
-  std::string kDir = "dir title";
-  SyncEvent sync_event[] = {
-    CreateRemoteDirectoryAddEvent(kDir),
-  };
-  RunTest(CreateTestCase(sync_event));
+void DriveFileSyncServiceSyncTest::TestRemoteFileDeletion() {
+  const GURL kOrigin("chrome-extension://example");
+  const base::FilePath kPath(FPL("file"));
+  const std::string kTitle(DriveFileSyncService::PathToTitle(kPath));
+
+  std::string sync_root_folder_id;
+  EXPECT_EQ(google_apis::HTTP_CREATED,
+            fake_drive_helper_->AddOrphanedFolder(
+                APIUtil::GetSyncRootDirectoryName(),
+                &sync_root_folder_id));
+
+  std::string origin_root_folder_id;
+  EXPECT_EQ(google_apis::HTTP_CREATED,
+            fake_drive_helper_->AddFolder(
+                sync_root_folder_id, kOrigin.host(), &origin_root_folder_id));
+
+  std::string remote_file_id;
+  EXPECT_EQ(google_apis::HTTP_SUCCESS,
+            fake_drive_helper_->AddFile(
+                origin_root_folder_id, kTitle, "abcde", &remote_file_id));
+
+  RegisterOrigin(kOrigin);
+  EXPECT_EQ(SYNC_STATUS_OK, ProcessChangesUntilDone());
+  VerifyConsistencyForOrigin(kOrigin);
+
+  EXPECT_EQ(google_apis::HTTP_SUCCESS,
+            fake_drive_helper_->RemoveResource(remote_file_id));
+
+  EXPECT_EQ(SYNC_STATUS_OK, ProcessChangesUntilDone());
+  VerifyConsistency();
 }
 
-void DriveFileSyncServiceSyncTest::DeleteDirectoryTest_Body() {
-  std::string kDir = "dir title";
-  SyncEvent sync_event[] = {
-    CreateRemoteDirectoryAddEvent(kDir),
-    CreateRemoteFileDeleteEvent(kDir),
-  };
-  RunTest(CreateTestCase(sync_event));
-}
-
-TEST_F(DriveFileSyncServiceSyncTest, AddFileTest) {
+TEST_F(DriveFileSyncServiceSyncTest, InitializationTest) {
   ASSERT_FALSE(IsDriveAPIDisabled());
-  AddFileTest_Body();
+  TestInitialization();
 }
 
-TEST_F(DriveFileSyncServiceSyncTest, AddFileTest_WAPI) {
-  SetDisableDriveAPI(true);
-  AddFileTest_Body();
+TEST_F(DriveFileSyncServiceSyncTest, InitializationTest_WAPI) {
+  ScopedDisableDriveAPI disable_drive_api;
+  TestInitialization();
 }
 
-TEST_F(DriveFileSyncServiceSyncTest, UpdateFileTest) {
+TEST_F(DriveFileSyncServiceSyncTest, LocalToRemoteBasicTest) {
   ASSERT_FALSE(IsDriveAPIDisabled());
-  UpdateFileTest_Body();
+  TestLocalToRemoteBasic();
 }
 
-TEST_F(DriveFileSyncServiceSyncTest, UpdateFileTest_WAPI) {
-  SetDisableDriveAPI(true);
-  UpdateFileTest_Body();
+TEST_F(DriveFileSyncServiceSyncTest, LocalToRemoteBasicTest_WAPI) {
+  ScopedDisableDriveAPI disable_drive_api;
+  TestLocalToRemoteBasic();
 }
 
-TEST_F(DriveFileSyncServiceSyncTest, DeleteFileTest) {
+TEST_F(DriveFileSyncServiceSyncTest, RemoteToLocalBasicTest) {
   ASSERT_FALSE(IsDriveAPIDisabled());
-  DeleteFileTest_Body();
+  TestRemoteToLocalBasic();
 }
 
-TEST_F(DriveFileSyncServiceSyncTest, DeleteFileTest_WAPI) {
-  SetDisableDriveAPI(true);
-  DeleteFileTest_Body();
+TEST_F(DriveFileSyncServiceSyncTest, RemoteToLocalBasicTest_WAPI) {
+  ScopedDisableDriveAPI disable_drive_api;
+  TestRemoteToLocalBasic();
 }
 
-TEST_F(DriveFileSyncServiceSyncTest, RelaunchTest) {
+TEST_F(DriveFileSyncServiceSyncTest, LocalFileUpdateTest) {
   ASSERT_FALSE(IsDriveAPIDisabled());
-  RelaunchTest_Body();
+  TestLocalFileUpdate();
 }
 
-TEST_F(DriveFileSyncServiceSyncTest, RelaunchTest_WAPI) {
-  SetDisableDriveAPI(true);
-  RelaunchTest_Body();
+TEST_F(DriveFileSyncServiceSyncTest, LocalFileUpdateTest_WAPI) {
+  ScopedDisableDriveAPI disable_drive_api;
+  TestLocalFileUpdate();
 }
 
-TEST_F(DriveFileSyncServiceSyncTest, SquashedFileAddTest) {
+TEST_F(DriveFileSyncServiceSyncTest, RemoteFileUpdateTest) {
   ASSERT_FALSE(IsDriveAPIDisabled());
-  SquashedFileAddTest_Body();
+  TestRemoteFileUpdate();
 }
 
-TEST_F(DriveFileSyncServiceSyncTest, SquashedFileAddTest_WAPI) {
-  SetDisableDriveAPI(true);
-  SquashedFileAddTest_Body();
+TEST_F(DriveFileSyncServiceSyncTest, RemoteFileUpdateTest_WAPI) {
+  ScopedDisableDriveAPI disable_drive_api;
+  TestRemoteFileUpdate();
 }
 
-TEST_F(DriveFileSyncServiceSyncTest, RelaunchTestWithSquashedDeletion) {
+TEST_F(DriveFileSyncServiceSyncTest, LocalFileDeletionTest) {
   ASSERT_FALSE(IsDriveAPIDisabled());
-  RelaunchTestWithSquashedDeletion_Body();
+  TestLocalFileDeletion();
 }
 
-TEST_F(DriveFileSyncServiceSyncTest, RelaunchTestWithSquashedDeletion_WAPI) {
-  SetDisableDriveAPI(true);
-  RelaunchTestWithSquashedDeletion_Body();
+TEST_F(DriveFileSyncServiceSyncTest, LocalFileDeletionTest_WAPI) {
+  ScopedDisableDriveAPI disable_drive_api;
+  TestLocalFileDeletion();
 }
 
-TEST_F(DriveFileSyncServiceSyncTest, CreateDirectoryTest) {
+TEST_F(DriveFileSyncServiceSyncTest, RemoteFileDeletionTest) {
   ASSERT_FALSE(IsDriveAPIDisabled());
-  CreateDirectoryTest_Body();
+  TestRemoteFileDeletion();
 }
 
-TEST_F(DriveFileSyncServiceSyncTest, CreateDirectoryTest_WAPI) {
-  SetDisableDriveAPI(true);
-  CreateDirectoryTest_Body();
-}
-
-TEST_F(DriveFileSyncServiceSyncTest, DeleteDirectoryTest) {
-  ASSERT_FALSE(IsDriveAPIDisabled());
-  DeleteDirectoryTest_Body();
-}
-
-TEST_F(DriveFileSyncServiceSyncTest, DeleteDirectoryTest_WAPI) {
-  SetDisableDriveAPI(true);
-  DeleteDirectoryTest_Body();
+TEST_F(DriveFileSyncServiceSyncTest, RemoteFileDeletionTest_WAPI) {
+  ScopedDisableDriveAPI disable_drive_api;
+  TestRemoteFileDeletion();
 }
 
 }  // namespace sync_file_system

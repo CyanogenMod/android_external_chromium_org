@@ -7,6 +7,7 @@
 #include "apps/app_load_service.h"
 #include "apps/app_restore_service.h"
 #include "apps/saved_files_service.h"
+#include "apps/shell_window.h"
 #include "base/auto_reset.h"
 #include "base/base64.h"
 #include "base/bind.h"
@@ -43,7 +44,6 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
-#include "chrome/browser/ui/extensions/shell_window.h"
 #include "chrome/browser/ui/webui/extensions/extension_basic_info.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -65,6 +65,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/site_instance.h"
+#include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
@@ -319,7 +320,7 @@ void ExtensionSettingsHandler::GetLocalizedValues(
   source->AddString("extensionSettingsPolicyControlled",
      l10n_util::GetStringUTF16(IDS_EXTENSIONS_POLICY_CONTROLLED));
   source->AddString("extensionSettingsManagedMode",
-     l10n_util::GetStringUTF16(IDS_EXTENSIONS_LOCKED_MANAGED_MODE));
+     l10n_util::GetStringUTF16(IDS_EXTENSIONS_LOCKED_MANAGED_USER));
   source->AddString("sideloadWipeoutUrl",
       chrome::kSideloadWipeoutHelpURL);
   source->AddString("sideloadWipoutLearnMore",
@@ -885,6 +886,8 @@ void ExtensionSettingsHandler::HandleLoadUnpackedExtensionMessage(
       base::FilePath::StringType(),
       web_ui()->GetWebContents()->GetView()->GetTopLevelNativeWindow(),
       NULL);
+
+  content::RecordComputedAction("Options_LoadUnpackedExtension");
 }
 
 void ExtensionSettingsHandler::ShowAlert(const std::string& message) {

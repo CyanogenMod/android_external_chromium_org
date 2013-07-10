@@ -9,7 +9,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/platform_thread.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -1538,7 +1538,7 @@ TEST_F(DiskCacheEntryTest, MissingData) {
 
   disk_cache::Addr address(0x80000001);
   base::FilePath name = cache_impl_->GetFileName(address);
-  EXPECT_TRUE(file_util::Delete(name, false));
+  EXPECT_TRUE(base::Delete(name, false));
 
   // Attempt to read the data.
   ASSERT_EQ(net::OK, OpenEntry(key, &entry));

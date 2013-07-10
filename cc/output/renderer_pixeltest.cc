@@ -87,9 +87,9 @@ scoped_ptr<DrawQuad> CreateTestRenderPassDrawQuad(
                0,             // mask_resource_id
                rect,          // contents_changed_since_last_frame
                gfx::RectF(),  // mask_uv_rect
-               WebKit::WebFilterOperations(),   // foreground filters
+               FilterOperations(),   // foreground filters
                skia::RefPtr<SkImageFilter>(),   // foreground filter
-               WebKit::WebFilterOperations());  // background filters
+               FilterOperations());  // background filters
 
   return quad.PassAs<DrawQuad>();
 }
@@ -221,7 +221,7 @@ TYPED_TEST(RendererPixelTest, SimpleGreenRect_NonRootRenderPass) {
 class VideoGLRendererPixelTest : public GLRendererPixelTest {
  protected:
   scoped_ptr<YUVVideoDrawQuad> CreateTestYUVVideoDrawQuad(
-      SharedQuadState* shared_state, bool with_alpha) {
+      SharedQuadState* shared_state, bool with_alpha, bool is_transparent) {
     gfx::Rect rect(this->device_viewport_size_);
     gfx::Rect opaque_rect(0, 0, 0, 0);
 
@@ -264,7 +264,7 @@ class VideoGLRendererPixelTest : public GLRendererPixelTest {
     memset(u_plane.get(), 43, uv_plane_size);
     memset(v_plane.get(), 21, uv_plane_size);
     if (with_alpha)
-      memset(a_plane.get(), 128, y_plane_size);
+      memset(a_plane.get(), is_transparent ? 0 : 128, y_plane_size);
 
     resource_provider_->SetPixels(y_resource, y_plane.get(), rect, rect,
                                   gfx::Vector2d());
@@ -294,7 +294,7 @@ TEST_F(VideoGLRendererPixelTest, SimpleYUVRect) {
       CreateTestSharedQuadState(gfx::Transform(), rect);
 
   scoped_ptr<YUVVideoDrawQuad> yuv_quad =
-      CreateTestYUVVideoDrawQuad(shared_state.get(), false);
+      CreateTestYUVVideoDrawQuad(shared_state.get(), false, false);
 
   pass->quad_list.push_back(yuv_quad.PassAs<DrawQuad>());
 
@@ -317,7 +317,7 @@ TEST_F(VideoGLRendererPixelTest, SimpleYUVARect) {
       CreateTestSharedQuadState(gfx::Transform(), rect);
 
   scoped_ptr<YUVVideoDrawQuad> yuv_quad =
-      CreateTestYUVVideoDrawQuad(shared_state.get(), true);
+      CreateTestYUVVideoDrawQuad(shared_state.get(), true, false);
 
   pass->quad_list.push_back(yuv_quad.PassAs<DrawQuad>());
 
@@ -332,6 +332,34 @@ TEST_F(VideoGLRendererPixelTest, SimpleYUVARect) {
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
       base::FilePath(FILE_PATH_LITERAL("green_alpha.png")),
+      ExactPixelComparator(true)));
+}
+
+TEST_F(VideoGLRendererPixelTest, FullyTransparentYUVARect) {
+  gfx::Rect rect(this->device_viewport_size_);
+
+  RenderPass::Id id(1, 1);
+  scoped_ptr<RenderPass> pass = CreateTestRootRenderPass(id, rect);
+
+  scoped_ptr<SharedQuadState> shared_state =
+      CreateTestSharedQuadState(gfx::Transform(), rect);
+
+  scoped_ptr<YUVVideoDrawQuad> yuv_quad =
+      CreateTestYUVVideoDrawQuad(shared_state.get(), true, true);
+
+  pass->quad_list.push_back(yuv_quad.PassAs<DrawQuad>());
+
+  scoped_ptr<SolidColorDrawQuad> color_quad = SolidColorDrawQuad::Create();
+  color_quad->SetNew(shared_state.get(), rect, SK_ColorBLACK, false);
+
+  pass->quad_list.push_back(color_quad.PassAs<DrawQuad>());
+
+  RenderPassList pass_list;
+  pass_list.push_back(pass.Pass());
+
+  EXPECT_TRUE(this->RunPixelTest(
+      &pass_list,
+      base::FilePath(FILE_PATH_LITERAL("black.png")),
       ExactPixelComparator(true)));
 }
 
@@ -416,9 +444,9 @@ TYPED_TEST(RendererPixelTest, FastPassColorFilterAlpha) {
                            0,
                            pass_rect,
                            gfx::RectF(),
-                           WebKit::WebFilterOperations(),
+                           FilterOperations(),
                            filter,
-                           WebKit::WebFilterOperations());
+                           FilterOperations());
 
   root_pass->quad_list.push_back(render_pass_quad.PassAs<DrawQuad>());
 
@@ -518,9 +546,9 @@ TYPED_TEST(RendererPixelTest, FastPassColorFilterAlphaTranslation) {
                            0,
                            pass_rect,
                            gfx::RectF(),
-                           WebKit::WebFilterOperations(),
+                           FilterOperations(),
                            filter,
-                           WebKit::WebFilterOperations());
+                           FilterOperations());
 
   root_pass->quad_list.push_back(render_pass_quad.PassAs<DrawQuad>());
   RenderPassList pass_list;
@@ -654,18 +682,10 @@ TYPED_TEST(RendererPixelTest, EnlargedRenderPassTextureWithAntiAliasing) {
 
   this->renderer_->SetEnlargePassTextureAmountForTesting(gfx::Vector2d(50, 75));
 
-#if defined(OS_WIN)
-  // Windows has 1 pixel off by one in GL mode: crbug.com/225027
-  // In software mode, any pixel can be off by one.
-  FuzzyPixelComparator comparator(true, 100.f, 0.f, 1.f, 1, 0);
-#else
-  FuzzyForSoftwareOnlyPixelComparator<TypeParam> comparator(true);
-#endif
-
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
       base::FilePath(FILE_PATH_LITERAL("blue_yellow_anti_aliasing.png")),
-      comparator));
+      FuzzyPixelOffByOneComparator(true)));
 }
 
 template <typename RendererType>
@@ -717,7 +737,7 @@ class RendererPixelTestWithBackgroundFilter
           0,  // mask_resource_id
           filter_pass_content_rect_,  // contents_changed_since_last_frame
           gfx::RectF(),  // mask_uv_rect
-          WebKit::WebFilterOperations(),  // filters
+          FilterOperations(),  // filters
           skia::RefPtr<SkImageFilter>(),  // filter
           this->background_filters_);
       root_pass->quad_list.push_back(filter_pass_quad.PassAs<DrawQuad>());
@@ -779,7 +799,7 @@ class RendererPixelTestWithBackgroundFilter
   }
 
   RenderPassList pass_list_;
-  WebKit::WebFilterOperations background_filters_;
+  FilterOperations background_filters_;
   gfx::Transform filter_pass_to_target_transform_;
   gfx::Rect filter_pass_content_rect_;
 };
@@ -794,8 +814,8 @@ GLRendererPixelTestWithBackgroundFilter;
 
 // TODO(skaslev): The software renderer does not support filters yet.
 TEST_F(GLRendererPixelTestWithBackgroundFilter, InvertFilter) {
-  this->background_filters_.append(
-      WebKit::WebFilterOperation::createInvertFilter(1.f));
+  this->background_filters_.Append(
+      FilterOperation::CreateInvertFilter(1.f));
 
   this->filter_pass_content_rect_ = gfx::Rect(this->device_viewport_size_);
   this->filter_pass_content_rect_.Inset(12, 14, 16, 18);
@@ -849,7 +869,7 @@ TEST_F(GLRendererPixelTest, AntiAliasing) {
   EXPECT_TRUE(this->RunPixelTest(
       &pass_list,
       base::FilePath(FILE_PATH_LITERAL("anti_aliasing.png")),
-      ExactPixelComparator(true)));
+      FuzzyPixelOffByOneComparator(true)));
 }
 
 // This test tests that anti-aliasing works for axis aligned quads.
@@ -943,6 +963,46 @@ TEST_F(GLRendererPixelTest, ForceAntiAliasingOff) {
       &pass_list,
       base::FilePath(FILE_PATH_LITERAL("force_anti_aliasing_off.png")),
       ExactPixelComparator(false)));
+}
+
+TEST_F(GLRendererPixelTest, AntiAliasingPerspective) {
+  gfx::Rect rect(this->device_viewport_size_);
+
+  scoped_ptr<RenderPass> pass =
+      CreateTestRootRenderPass(RenderPass::Id(1, 1), rect);
+
+  gfx::Rect red_rect(0, 0, 180, 500);
+  gfx::Transform red_content_to_target_transform(
+      1.0,  2.4520,  10.6206, 19.0,
+      0.0,  0.3528,  5.9737,  9.5,
+      0.0, -0.2250, -0.9744,  0.0,
+      0.0,  0.0225,  0.0974,  1.0);
+  scoped_ptr<SharedQuadState> red_shared_state =
+      CreateTestSharedQuadState(red_content_to_target_transform, red_rect);
+  scoped_ptr<SolidColorDrawQuad> red = SolidColorDrawQuad::Create();
+  red->SetNew(red_shared_state.get(), red_rect, SK_ColorRED, false);
+  pass->quad_list.push_back(red.PassAs<DrawQuad>());
+
+  gfx::Rect green_rect(19, 7, 180, 10);
+  scoped_ptr<SharedQuadState> green_shared_state =
+      CreateTestSharedQuadState(gfx::Transform(), green_rect);
+  scoped_ptr<SolidColorDrawQuad> green = SolidColorDrawQuad::Create();
+  green->SetNew(green_shared_state.get(), green_rect, SK_ColorGREEN, false);
+  pass->quad_list.push_back(green.PassAs<DrawQuad>());
+
+  scoped_ptr<SharedQuadState> blue_shared_state =
+      CreateTestSharedQuadState(gfx::Transform(), rect);
+  scoped_ptr<SolidColorDrawQuad> blue = SolidColorDrawQuad::Create();
+  blue->SetNew(blue_shared_state.get(), rect, SK_ColorBLUE, false);
+  pass->quad_list.push_back(blue.PassAs<DrawQuad>());
+
+  RenderPassList pass_list;
+  pass_list.push_back(pass.Pass());
+
+  EXPECT_TRUE(this->RunPixelTest(
+      &pass_list,
+      base::FilePath(FILE_PATH_LITERAL("anti_aliasing_perspective.png")),
+      FuzzyPixelOffByOneComparator(true)));
 }
 
 TYPED_TEST(RendererPixelTestWithSkiaGPUBackend, PictureDrawQuadIdentityScale) {

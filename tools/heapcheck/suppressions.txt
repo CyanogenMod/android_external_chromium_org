@@ -208,7 +208,7 @@
    fun:GtkThemeService::GtkThemeService
    fun:ThemeServiceFactory::BuildServiceInstanceFor
    fun:BrowserContextKeyedServiceFactory::GetServiceForBrowserContext
-   fun:BrowserContextKeyedServiceFactory::CreateServiceNow
+   fun:*
    fun:BrowserContextDependencyManager::CreateBrowserContextServices
    fun:TestingProfile::Init
    fun:TestingProfile::TestingProfile
@@ -260,26 +260,6 @@
    fun:*Invoke
    fun:v8::internal::Execution::Call
    fun:v8::Function::Call
-}
-{
-   bug_19775_a
-   Heapcheck:Leak
-   ...
-   fun:history::InMemoryHistoryBackend::Init
-   fun:history::HistoryBackend::InitImpl
-}
-{
-   bug_19775_b
-   Heapcheck:Leak
-   ...
-   fun:history::HistoryBackend::InitImpl
-   fun:history::HistoryBackend::Init
-}
-{
-   bug_19775_d
-   Heapcheck:Leak
-   ...
-   fun:ProfileManagerTest_CreateAndUseTwoProfiles_Test::TestBody
 }
 {
    bug_49300_a
@@ -345,13 +325,6 @@
    fun:*ScriptDataToV8String
    fun:net::ProxyResolverV8::Context::InitV8
    fun:net::ProxyResolverV8::SetPacScript
-}
-{
-   bug_79328
-   Heapcheck:Leak
-   ...
-   fun:TestingProfile::CreateRequestContext
-   fun:*
 }
 {
    bug_82974a
@@ -610,7 +583,6 @@
    fun:ash::CursorManager::SetDeviceScaleFactor
    fun:ash::Shell::Init
 }
-# TODO(thestig): bug_169185_a may be obsolete?
 {
    bug_169185_a
    Heapcheck:Leak
@@ -664,6 +636,26 @@
    fun:v8::internal::RegExpMacroAssemblerX64::GetCode
    fun:v8::internal::RegExpCompiler::Assemble
    fun:v8::internal::RegExpEngine::Compile
+}
+{
+   bug_169185_e
+   Heapcheck:Leak
+   fun:v8::internal::SkipList::Update
+   fun:v8::internal::PagedSpace::AllocateRaw
+   fun:v8::internal::Heap::CreateCode
+   fun:v8::internal::Factory::NewCode
+   fun:v8::internal::CodeGenerator::MakeCodeEpilogue
+   fun:v8::internal::FullCodeGenerator::MakeCode
+   fun:GenerateCode
+   fun:MakeCode
+   fun:MakeFunctionInfo
+   fun:v8::internal::Compiler::Compile
+   fun:v8::Script::New
+   fun:v8::Script::Compile
+   fun:v8::Script::Compile
+   fun:V8UnitTest::ExecuteScriptInContext
+   fun:V8UnitTest::ExecuteJavascriptLibraries
+   fun:V8UnitTest::RunJavascriptTestF
 }
 {
    bug_169678
@@ -871,7 +863,7 @@
    fun:gfx::OSMESAApiBase::OSMesaMakeCurrentFn
    fun:gfx::GLContextOSMesa::MakeCurrent
    fun:gpu::gles2::GLES2DecoderImpl::MakeCurrent
-   fun:webkit::gpu::GLInProcessContext::PumpCommands
+   fun:PumpCommands
 }
 {
    bug_251034_b
@@ -879,8 +871,8 @@
    ...
    fun:gfx::OSMESAApiBase::OSMesaMakeCurrentFn
    fun:gfx::GLContextOSMesa::MakeCurrent
-   fun:webkit::gpu::GLInProcessContext::Initialize
-   fun:webkit::gpu::GLInProcessContext::CreateContext
+   fun:Initialize
+   fun:gpu::GLInProcessContext::CreateContext
    fun:webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl::MaybeInitializeGL
    fun:webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl::makeContextCurrent
    fun:ui::DefaultContextFactory::CreateContextCommon
@@ -891,7 +883,7 @@
    fun:cc::LayerTreeHost::Initialize
    fun:cc::LayerTreeHost::Create
    fun:Compositor
-   fun:ui::TestCompositorHostLinux::Show
+   fun:ui::TestCompositorHostX11::Show
    fun:SetUp
 }
 {
@@ -903,7 +895,7 @@
    fun:ScopedMakeCurrent
    fun:gfx::GLSurfaceOSMesa::Resize
    fun:gfx::NativeViewGLSurfaceOSMesa::Resize
-   fun:webkit::gpu::GLInProcessContext::OnResizeView
+   fun:OnResizeView
 }
 {
    bug_251034_d
@@ -917,5 +909,80 @@
    fun:~scoped_ptr
    fun:gfx::GLSurfaceOSMesa::Resize
    fun:gfx::NativeViewGLSurfaceOSMesa::Resize
-   fun:webkit::gpu::GLInProcessContext::OnResizeView
+   fun:OnResizeView
+}
+{
+   bug_251827_a
+   Heapcheck:Leak
+   fun:MakePlanarBuffer
+   fun:media::AudioBufferTest*
+}
+{
+   bug_251827_b
+   Heapcheck:Leak
+   fun:MakeInterleavedBuffer
+   fun:media::AudioBufferTest*
+}
+{
+   bug_252615
+   Heapcheck:Leak
+   fun:XGetWindowProperty
+   fun:GetXWindowName
+   fun:ash::test::DisplayControllerTest_XWidowNameForRootWindow_Test::TestBody
+}
+{
+   bug_255729a
+   Heapcheck:Leak
+   fun:v8::internal::Malloced::New
+   fun:v8::internal::Zone::NewSegment
+   fun:v8::internal::Zone::NewExpand
+   fun:v8::internal::Zone::New
+   fun:v8::internal::ZoneAllocationPolicy::New
+   fun:v8::internal::List::NewData
+   fun:v8::internal::List::Resize
+   fun:v8::internal::List::ResizeAddInternal
+   fun:v8::internal::List::ResizeAdd
+   fun:v8::internal::List::Add
+   fun:v8::internal::ZoneList::Add
+   fun:v8::internal::HGraph::GetNextValueID
+   fun:v8::internal::HValue::SetBlock
+   fun:v8::internal::HInstruction::InsertAfter
+}
+{
+   bug_255729b
+   Heapcheck:Leak
+   fun:v8::internal::Malloced::New
+   fun:v8::internal::Zone::NewSegment
+   fun:v8::internal::Zone::NewExpand
+   fun:v8::internal::Zone::New
+   fun:v8::internal::ZoneObject::operator new
+   fun:v8::internal::HOptimizedGraphBuilder::SetUpScope
+   fun:v8::internal::HOptimizedGraphBuilder::BuildGraph
+   fun:v8::internal::HGraphBuilder::CreateGraph
+   fun:v8::internal::OptimizingCompiler::CreateGraph
+   fun:v8::internal::Compiler::RecompileParallel
+   fun:__RT_impl_Runtime_ParallelRecompile
+   fun:v8::internal::Runtime_ParallelRecompile
+}
+{
+   bug_255729c
+   Heapcheck:Leak
+   fun:v8::internal::Malloced::New
+   fun:v8::internal::Zone::NewSegment
+   fun:v8::internal::Zone::NewExpand
+   fun:v8::internal::Zone::New
+   fun:v8::internal::ZoneObject::operator new
+   fun:v8::internal::Parser::ParseLazy
+   fun:v8::internal::Parser::ParseLazy
+   fun:v8::internal::Parser::Parse
+   fun:v8::internal::Parser::Parse
+   fun:v8::internal::Compiler::RecompileParallel
+   fun:__RT_impl_Runtime_ParallelRecompile
+   fun:v8::internal::Runtime_ParallelRecompile
+}
+{
+   bug_257069
+   Heapcheck:Leak
+   fun:base::Value::CreateIntegerValue
+   fun:TestBody
 }

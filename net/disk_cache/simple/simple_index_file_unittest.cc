@@ -7,9 +7,11 @@
 #include "base/hash.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/pickle.h"
+#include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/disk_cache/simple/simple_entry_format.h"
 #include "net/disk_cache/simple/simple_index.h"
 #include "net/disk_cache/simple/simple_index_file.h"
@@ -21,9 +23,7 @@ using disk_cache::SimpleIndex;
 
 namespace disk_cache {
 
-class IndexMetadataTest : public testing::Test {};
-
-TEST_F(IndexMetadataTest, Basics) {
+TEST(IndexMetadataTest, Basics) {
   SimpleIndexFile::IndexMetadata index_metadata;
 
   EXPECT_EQ(disk_cache::kSimpleIndexMagicNumber, index_metadata.magic_number_);
@@ -34,7 +34,7 @@ TEST_F(IndexMetadataTest, Basics) {
   EXPECT_TRUE(index_metadata.CheckIndexMetadata());
 }
 
-TEST_F(IndexMetadataTest, Serialize) {
+TEST(IndexMetadataTest, Serialize) {
   SimpleIndexFile::IndexMetadata index_metadata(123, 456);
   Pickle pickle;
   index_metadata.Serialize(&pickle);
@@ -51,6 +51,24 @@ TEST_F(IndexMetadataTest, Serialize) {
   EXPECT_TRUE(new_index_metadata.CheckIndexMetadata());
 }
 
+// This friend derived class is able to reexport its ancestors private methods
+// as public, for use in tests.
+class WrappedSimpleIndexFile : public SimpleIndexFile {
+ public:
+  using SimpleIndexFile::Deserialize;
+  using SimpleIndexFile::IsIndexFileStale;
+  using SimpleIndexFile::kIndexFileName;
+  using SimpleIndexFile::LoadFromDisk;
+  using SimpleIndexFile::Serialize;
+
+  explicit WrappedSimpleIndexFile(const base::FilePath& index_file_directory)
+      : SimpleIndexFile(base::MessageLoopProxy::current().get(),
+                        base::MessageLoopProxy::current().get(),
+                        index_file_directory) {}
+  virtual ~WrappedSimpleIndexFile() {
+  }
+};
+
 class SimpleIndexFileTest : public testing::Test {
  public:
   bool CompareTwoEntryMetadata(const EntryMetadata& a, const EntryMetadata& b) {
@@ -58,6 +76,39 @@ class SimpleIndexFileTest : public testing::Test {
            a.entry_size_ == b.entry_size_;
   }
 
+ protected:
+  struct IndexCompletionCallbackResult {
+    IndexCompletionCallbackResult(
+        scoped_ptr<SimpleIndex::EntrySet> index_file_entries,
+        bool force_index_flush)
+        : index_file_entries(index_file_entries.Pass()),
+          force_index_flush(force_index_flush) {
+    }
+
+    const scoped_ptr<SimpleIndex::EntrySet> index_file_entries;
+    const bool force_index_flush;
+  };
+
+  SimpleIndexFile::IndexCompletionCallback GetCallback() {
+    return base::Bind(&SimpleIndexFileTest::IndexCompletionCallback,
+                      base::Unretained(this));
+  }
+
+  IndexCompletionCallbackResult* callback_result() {
+    return callback_result_.get();
+  }
+
+ private:
+  void IndexCompletionCallback(
+      scoped_ptr<SimpleIndex::EntrySet> index_file_entries,
+      bool force_index_flush) {
+    EXPECT_FALSE(callback_result_);
+    callback_result_.reset(
+        new IndexCompletionCallbackResult(index_file_entries.Pass(),
+                                          force_index_flush));
+  }
+
+  scoped_ptr<IndexCompletionCallbackResult> callback_result_;
 };
 
 TEST_F(SimpleIndexFileTest, Serialize) {
@@ -75,13 +126,13 @@ TEST_F(SimpleIndexFileTest, Serialize) {
     SimpleIndex::InsertInEntrySet(hash, metadata_entries[i], &entries);
   }
 
-  scoped_ptr<Pickle> pickle = SimpleIndexFile::Serialize(
+  scoped_ptr<Pickle> pickle = WrappedSimpleIndexFile::Serialize(
       index_metadata, entries);
   EXPECT_TRUE(pickle.get() != NULL);
 
-  scoped_ptr<SimpleIndex::EntrySet> new_entries = SimpleIndexFile::Deserialize(
-      reinterpret_cast<const char*>(pickle->data()),
-      pickle->size());
+  scoped_ptr<SimpleIndex::EntrySet> new_entries =
+      WrappedSimpleIndexFile::Deserialize(
+          static_cast<const char*>(pickle->data()), pickle->size());
   EXPECT_TRUE(new_entries.get() != NULL);
   EXPECT_EQ(entries.size(), new_entries->size());
 
@@ -99,26 +150,96 @@ TEST_F(SimpleIndexFileTest, IsIndexFileStale) {
   const std::string kIndexFileName = "simple-index";
   const base::FilePath index_path =
       temp_dir.path().AppendASCII(kIndexFileName);
-  EXPECT_TRUE(SimpleIndexFile::IsIndexFileStale(index_path));
+  EXPECT_TRUE(WrappedSimpleIndexFile::IsIndexFileStale(index_path));
   const std::string kDummyData = "nothing to be seen here";
   EXPECT_EQ(static_cast<int>(kDummyData.size()),
             file_util::WriteFile(index_path,
                                  kDummyData.data(),
                                  kDummyData.size()));
-  EXPECT_FALSE(SimpleIndexFile::IsIndexFileStale(index_path));
+  EXPECT_FALSE(WrappedSimpleIndexFile::IsIndexFileStale(index_path));
 
   const base::Time past_time = base::Time::Now() -
       base::TimeDelta::FromSeconds(10);
   EXPECT_TRUE(file_util::TouchFile(index_path, past_time, past_time));
   EXPECT_TRUE(file_util::TouchFile(temp_dir.path(), past_time, past_time));
-  EXPECT_FALSE(SimpleIndexFile::IsIndexFileStale(index_path));
+  EXPECT_FALSE(WrappedSimpleIndexFile::IsIndexFileStale(index_path));
 
   EXPECT_EQ(static_cast<int>(kDummyData.size()),
             file_util::WriteFile(temp_dir.path().AppendASCII("other_file"),
                                  kDummyData.data(),
                                  kDummyData.size()));
 
-  EXPECT_TRUE(SimpleIndexFile::IsIndexFileStale(index_path));
+  EXPECT_TRUE(WrappedSimpleIndexFile::IsIndexFileStale(index_path));
 }
 
+TEST_F(SimpleIndexFileTest, WriteThenLoadIndex) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+
+  const base::FilePath index_path =
+      temp_dir.path().AppendASCII(WrappedSimpleIndexFile::kIndexFileName);
+  EXPECT_TRUE(WrappedSimpleIndexFile::IsIndexFileStale(index_path));
+
+  SimpleIndex::EntrySet entries;
+  static const uint64 kHashes[] = { 11, 22, 33 };
+  static const size_t kNumHashes = arraysize(kHashes);
+  EntryMetadata metadata_entries[kNumHashes];
+  for (size_t i = 0; i < kNumHashes; ++i) {
+    uint64 hash = kHashes[i];
+    metadata_entries[i] =
+        EntryMetadata(Time::FromInternalValue(hash), hash);
+    SimpleIndex::InsertInEntrySet(hash, metadata_entries[i], &entries);
+  }
+
+  const uint64 kCacheSize = 456U;
+  {
+    WrappedSimpleIndexFile simple_index_file(temp_dir.path());
+    simple_index_file.WriteToDisk(entries, kCacheSize,
+                                  base::TimeTicks(), false);
+    base::RunLoop().RunUntilIdle();
+    EXPECT_TRUE(file_util::PathExists(index_path));
+  }
+
+  WrappedSimpleIndexFile simple_index_file(temp_dir.path());
+  simple_index_file.LoadIndexEntries(base::MessageLoopProxy::current(),
+                                     GetCallback());
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_TRUE(file_util::PathExists(index_path));
+  ASSERT_TRUE(callback_result());
+  EXPECT_FALSE(callback_result()->force_index_flush);
+  const SimpleIndex::EntrySet* read_entries =
+      callback_result()->index_file_entries.get();
+  ASSERT_TRUE(read_entries);
+
+  EXPECT_EQ(kNumHashes, read_entries->size());
+  for (size_t i = 0; i < kNumHashes; ++i)
+    EXPECT_EQ(1U, read_entries->count(kHashes[i]));
 }
+
+TEST_F(SimpleIndexFileTest, LoadCorruptIndex) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+
+  const base::FilePath index_path =
+      temp_dir.path().AppendASCII(WrappedSimpleIndexFile::kIndexFileName);
+  EXPECT_TRUE(WrappedSimpleIndexFile::IsIndexFileStale(index_path));
+  const std::string kDummyData = "nothing to be seen here";
+  EXPECT_EQ(static_cast<int>(kDummyData.size()),
+            file_util::WriteFile(index_path,
+                                 kDummyData.data(),
+                                 kDummyData.size()));
+  EXPECT_FALSE(WrappedSimpleIndexFile::IsIndexFileStale(index_path));
+
+  WrappedSimpleIndexFile simple_index_file(temp_dir.path());
+  simple_index_file.LoadIndexEntries(base::MessageLoopProxy::current().get(),
+                                     GetCallback());
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_FALSE(file_util::PathExists(index_path));
+  ASSERT_TRUE(callback_result());
+  EXPECT_TRUE(callback_result()->force_index_flush);
+  EXPECT_TRUE(callback_result()->index_file_entries);
+}
+
+}  // namespace disk_cache

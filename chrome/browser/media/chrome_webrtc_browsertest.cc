@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,7 @@
 #include "base/path_service.h"
 #include "base/process_util.h"
 #include "base/strings/stringprintf.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/media/media_stream_infobar_delegate.h"
@@ -21,7 +21,7 @@
 #include "chrome/test/ui/ui_test.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/browser_test_utils.h"
-#include "net/test/spawned_test_server/spawned_test_server.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 
 static const base::FilePath::CharType kPeerConnectionServer[] =
 #if defined(OS_WIN)
@@ -31,7 +31,7 @@ static const base::FilePath::CharType kPeerConnectionServer[] =
 #endif
 
 static const char kMainWebrtcTestHtmlPage[] =
-    "files/webrtc/webrtc_jsep01_test.html";
+    "/webrtc/webrtc_jsep01_test.html";
 
 // Top-level integration test for WebRTC. Requires a real webcam and microphone
 // on the running system. This test is not meant to run in the main browser
@@ -58,6 +58,8 @@ class WebrtcBrowserTest : public InProcessBrowserTest {
     // device; it will not work with fake devices.
     EXPECT_FALSE(command_line->HasSwitch(
         switches::kUseFakeDeviceForMediaStream));
+    EXPECT_FALSE(command_line->HasSwitch(
+        switches::kUseFakeUIForMediaStream));
   }
 
   // TODO(phoglund): This ugly poll method is only here while we transition
@@ -216,10 +218,10 @@ class WebrtcBrowserTest : public InProcessBrowserTest {
 
 IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest,
                        MANUAL_RunsAudioVideoWebRTCCallInTwoTabs) {
-  EXPECT_TRUE(test_server()->Start());
+  EXPECT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
   ui_test_utils::NavigateToURL(
-      browser(), test_server()->GetURL(kMainWebrtcTestHtmlPage));
+      browser(), embedded_test_server()->GetURL(kMainWebrtcTestHtmlPage));
   content::WebContents* left_tab =
       browser()->tab_strip_model()->GetActiveWebContents();
   GetUserMedia(left_tab);
@@ -228,7 +230,7 @@ IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest,
   content::WebContents* right_tab =
       browser()->tab_strip_model()->GetActiveWebContents();
   ui_test_utils::NavigateToURL(
-        browser(), test_server()->GetURL(kMainWebrtcTestHtmlPage));
+        browser(), embedded_test_server()->GetURL(kMainWebrtcTestHtmlPage));
   GetUserMedia(right_tab);
 
   ConnectToPeerConnectionServer("peer 1", left_tab);
@@ -255,10 +257,10 @@ IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest,
                        MANUAL_TestMediaStreamTrackEnableDisable) {
-  EXPECT_TRUE(test_server()->Start());
+  EXPECT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
   ui_test_utils::NavigateToURL(
-      browser(), test_server()->GetURL(kMainWebrtcTestHtmlPage));
+      browser(), embedded_test_server()->GetURL(kMainWebrtcTestHtmlPage));
   content::WebContents* left_tab =
       browser()->tab_strip_model()->GetActiveWebContents();
   GetUserMedia(left_tab);
@@ -267,7 +269,7 @@ IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest,
   content::WebContents* right_tab =
       browser()->tab_strip_model()->GetActiveWebContents();
   ui_test_utils::NavigateToURL(
-        browser(), test_server()->GetURL(kMainWebrtcTestHtmlPage));
+        browser(), embedded_test_server()->GetURL(kMainWebrtcTestHtmlPage));
   GetUserMedia(right_tab);
 
   ConnectToPeerConnectionServer("peer 1", left_tab);

@@ -14,6 +14,7 @@
 #include "content/renderer/render_thread_impl.h"
 #include "googleurl/src/gurl.h"
 #include "media/audio/audio_manager_base.h"
+#include "ppapi/shared_impl/ppb_audio_config_shared.h"
 
 namespace content {
 
@@ -40,7 +41,7 @@ PepperPlatformAudioInputImpl* PepperPlatformAudioInputImpl::Create(
 void PepperPlatformAudioInputImpl::StartCapture() {
   DCHECK(main_message_loop_proxy_->BelongsToCurrentThread());
 
-  ChildProcess::current()->io_message_loop()->PostTask(
+  io_message_loop_proxy_->PostTask(
       FROM_HERE,
       base::Bind(&PepperPlatformAudioInputImpl::StartCaptureOnIOThread, this));
 }
@@ -48,7 +49,7 @@ void PepperPlatformAudioInputImpl::StartCapture() {
 void PepperPlatformAudioInputImpl::StopCapture() {
   DCHECK(main_message_loop_proxy_->BelongsToCurrentThread());
 
-  ChildProcess::current()->io_message_loop()->PostTask(
+  io_message_loop_proxy_->PostTask(
       FROM_HERE,
       base::Bind(&PepperPlatformAudioInputImpl::StopCaptureOnIOThread, this));
 }
@@ -63,7 +64,7 @@ void PepperPlatformAudioInputImpl::ShutDown() {
   // Called on the main thread to stop all audio callbacks. We must only change
   // the client on the main thread, and the delegates from the I/O thread.
   client_ = NULL;
-  ChildProcess::current()->io_message_loop()->PostTask(
+  io_message_loop_proxy_->PostTask(
       FROM_HERE,
       base::Bind(&PepperPlatformAudioInputImpl::ShutDownOnIOThread, this));
 }
@@ -129,6 +130,7 @@ PepperPlatformAudioInputImpl::~PepperPlatformAudioInputImpl() {
 PepperPlatformAudioInputImpl::PepperPlatformAudioInputImpl()
     : client_(NULL),
       main_message_loop_proxy_(base::MessageLoopProxy::current()),
+      io_message_loop_proxy_(ChildProcess::current()->io_message_loop_proxy()),
       create_stream_sent_(false) {
 }
 
@@ -151,8 +153,9 @@ bool PepperPlatformAudioInputImpl::Initialize(
   client_ = client;
 
   params_.Reset(media::AudioParameters::AUDIO_PCM_LINEAR,
-                media::CHANNEL_LAYOUT_MONO, 1, 0,
-                sample_rate, 16, frames_per_buffer);
+                media::CHANNEL_LAYOUT_MONO, ppapi::kAudioInputChannels, 0,
+                sample_rate, ppapi::kBitsPerAudioInputSample,
+                frames_per_buffer);
 
   // We need to open the device and obtain the label and session ID before
   // initializing.
@@ -166,8 +169,7 @@ bool PepperPlatformAudioInputImpl::Initialize(
 }
 
 void PepperPlatformAudioInputImpl::InitializeOnIOThread(int session_id) {
-  DCHECK(ChildProcess::current()->io_message_loop_proxy()->
-      BelongsToCurrentThread());
+  DCHECK(io_message_loop_proxy_->BelongsToCurrentThread());
 
   if (!ipc_)
     return;
@@ -178,16 +180,14 @@ void PepperPlatformAudioInputImpl::InitializeOnIOThread(int session_id) {
 }
 
 void PepperPlatformAudioInputImpl::StartCaptureOnIOThread() {
-  DCHECK(ChildProcess::current()->io_message_loop_proxy()->
-      BelongsToCurrentThread());
+  DCHECK(io_message_loop_proxy_->BelongsToCurrentThread());
 
   if (ipc_)
     ipc_->RecordStream();
 }
 
 void PepperPlatformAudioInputImpl::StopCaptureOnIOThread() {
-  DCHECK(ChildProcess::current()->io_message_loop_proxy()->
-      BelongsToCurrentThread());
+  DCHECK(io_message_loop_proxy_->BelongsToCurrentThread());
 
   // TODO(yzshen): We cannot re-start capturing if the stream is closed.
   if (ipc_ && create_stream_sent_) {
@@ -197,8 +197,7 @@ void PepperPlatformAudioInputImpl::StopCaptureOnIOThread() {
 }
 
 void PepperPlatformAudioInputImpl::ShutDownOnIOThread() {
-  DCHECK(ChildProcess::current()->io_message_loop_proxy()->
-      BelongsToCurrentThread());
+  DCHECK(io_message_loop_proxy_->BelongsToCurrentThread());
 
   StopCaptureOnIOThread();
 
@@ -222,7 +221,7 @@ void PepperPlatformAudioInputImpl::OnDeviceOpened(int request_id,
     if (client_) {
       int session_id = plugin_delegate_->GetSessionID(
           PP_DEVICETYPE_DEV_AUDIOCAPTURE, label);
-      ChildProcess::current()->io_message_loop()->PostTask(
+      io_message_loop_proxy_->PostTask(
           FROM_HERE,
           base::Bind(&PepperPlatformAudioInputImpl::InitializeOnIOThread,
                      this, session_id));

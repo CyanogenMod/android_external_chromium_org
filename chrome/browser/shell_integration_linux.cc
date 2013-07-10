@@ -36,8 +36,8 @@
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_constants.h"
 #include "content/public/browser/browser_thread.h"
-#include "googleurl/src/gurl.h"
 #include "ui/gfx/image/image_family.h"
+#include "url/gurl.h"
 
 using content::BrowserThread;
 
@@ -170,7 +170,7 @@ bool CreateShortcutOnDesktop(const base::FilePath& shortcut_filename,
 void DeleteShortcutOnDesktop(const base::FilePath& shortcut_filename) {
   base::FilePath desktop_path;
   if (PathService::Get(base::DIR_USER_DESKTOP, &desktop_path))
-    file_util::Delete(desktop_path.Append(shortcut_filename), false);
+    base::Delete(desktop_path.Append(shortcut_filename), false);
 }
 
 // Creates a shortcut with |shortcut_filename| and |contents| in the system
@@ -436,6 +436,22 @@ bool GetNoDisplayFromDesktopFile(const std::string& shortcut_contents) {
 
   g_key_file_free(key_file);
   return nodisplay;
+}
+
+// Gets the path to the Chrome executable or wrapper script.
+// Returns an empty path if the executable path could not be found.
+base::FilePath GetChromeExePath() {
+  // Try to get the name of the wrapper script that launched Chrome.
+  scoped_ptr<base::Environment> environment(base::Environment::Create());
+  std::string wrapper_script;
+  if (environment->GetVar("CHROME_WRAPPER", &wrapper_script)) {
+    return base::FilePath(wrapper_script);
+  }
+
+  // Just return the name of the executable path for Chrome.
+  base::FilePath chrome_exe_path;
+  PathService::Get(base::FILE_EXE, &chrome_exe_path);
+  return chrome_exe_path;
 }
 
 } // namespace
@@ -786,9 +802,8 @@ bool CreateDesktopShortcut(
 
   bool success = true;
 
-  // Get the path to the Chrome executable.
-  base::FilePath chrome_exe_path;
-  if (!PathService::Get(base::FILE_EXE, &chrome_exe_path)) {
+  base::FilePath chrome_exe_path = GetChromeExePath();
+  if (chrome_exe_path.empty()) {
     LOG(WARNING) << "Could not get executable path.";
     return false;
   }

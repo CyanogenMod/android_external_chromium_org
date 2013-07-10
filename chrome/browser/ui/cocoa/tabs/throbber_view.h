@@ -7,8 +7,6 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
-
 @protocol ThrobberDataDelegate;
 
 // A class that knows how to draw an animated state to indicate progress.

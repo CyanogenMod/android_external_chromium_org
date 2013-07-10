@@ -9,12 +9,12 @@
 #include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/file_util.h"
-#include "base/time.h"
-#include "googleurl/src/gurl.h"
+#include "base/time/time.h"
 #include "sql/connection.h"
 #include "sql/meta_table.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
+#include "url/gurl.h"
 #include "webkit/browser/quota/special_storage_policy.h"
 
 namespace quota {
@@ -558,11 +558,7 @@ bool QuotaDatabase::ResetSchema() {
   db_.reset();
   meta_table_.reset();
 
-  if (!file_util::Delete(db_file_path_, true))
-    return false;
-
-  // Make sure the steps above actually deleted things.
-  if (file_util::PathExists(db_file_path_))
+  if (!sql::Connection::Delete(db_file_path_))
     return false;
 
   // So we can't go recursive.

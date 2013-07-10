@@ -6,8 +6,8 @@
 
 #include "base/logging.h"
 #include "base/strings/sys_string_conversions.h"
-#include "googleurl/src/gurl.h"
 #import "third_party/mozilla/NSPasteboard+Utils.h"
+#include "url/gurl.h"
 
 namespace ui {
 
@@ -16,7 +16,7 @@ NSString* const kChromeDragDummyPboardType = @"org.chromium.drag-dummy-type";
 NSString* const kChromeDragImageHTMLPboardType = @"org.chromium.image-html";
 
 BOOL PopulateURLAndTitleFromPasteboard(GURL* url,
-                                       string16* title,
+                                       base::string16* title,
                                        NSPasteboard* pboard,
                                        BOOL convert_filenames) {
   CHECK(url);

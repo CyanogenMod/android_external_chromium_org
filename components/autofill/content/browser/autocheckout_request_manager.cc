@@ -4,7 +4,7 @@
 
 #include "components/autofill/content/browser/autocheckout_request_manager.h"
 
-#include "components/autofill/browser/autofill_manager_delegate.h"
+#include "components/autofill/core/browser/autofill_manager_delegate.h"
 #include "content/public/browser/browser_context.h"
 
 namespace {
@@ -39,9 +39,11 @@ AutocheckoutRequestManager* AutocheckoutRequestManager::FromBrowserContext(
 void AutocheckoutRequestManager::SendAutocheckoutStatus(
     AutocheckoutStatus status,
     const GURL& source_url,
+    const std::vector<AutocheckoutStatistic>& latency_statistics,
     const std::string& google_transaction_id) {
   wallet_client_.SendAutocheckoutStatus(status,
                                         source_url,
+                                        latency_statistics,
                                         google_transaction_id);
 }
 

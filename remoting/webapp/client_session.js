@@ -652,6 +652,15 @@ remoting.ClientSession.prototype.setScreenMode_ =
   if (needsScrollReset) {
     this.scroll_(0, 0);
   }
+
+  // TODO(jamiewalch): crbug.com/252796: Remove this once crbug.com/240772
+  // is fixed.
+  var htmlNode = /** @type {HTMLElement} */ (document.body.parentNode);
+  if (this.shrinkToFit_) {
+    htmlNode.classList.add('no-scroll');
+  } else {
+    htmlNode.classList.remove('no-scroll');
+  }
 }
 
 /**

@@ -355,6 +355,9 @@ IPC_MESSAGE_ROUTED2(ChromeViewMsg_SearchBoxFontInformation,
                     string16 /* omnibox_font */,
                     size_t /* omnibox_font_size */)
 
+IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxPromoInformation,
+                    bool /* is_app_launcher_enabled */)
+
 IPC_MESSAGE_ROUTED2(ChromeViewMsg_SearchBoxFocusChanged,
                     OmniboxFocusState /* new_focus_state */,
                     OmniboxFocusChangeReason /* reason */)
@@ -711,6 +714,11 @@ IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_SearchBoxShowBars,
 // Sent by Instant to hide any attached bars.
 IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_SearchBoxHideBars,
                     int /* page_id */)
+
+// Sent by Instant to indicate whether the page supports voice search.
+IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_SetVoiceSearchSupported,
+                    int /* page_id */,
+                    bool /* supported */)
 
 // The currently displayed PDF has an unsupported feature.
 IPC_MESSAGE_ROUTED0(ChromeViewHostMsg_PDFHasUnsupportedFeature)

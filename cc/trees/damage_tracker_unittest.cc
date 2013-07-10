@@ -6,19 +6,16 @@
 
 #include "cc/base/math_util.h"
 #include "cc/layers/layer_impl.h"
+#include "cc/output/filter_operation.h"
+#include "cc/output/filter_operations.h"
 #include "cc/test/fake_impl_proxy.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/geometry_test_utils.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebFilterOperation.h"
-#include "third_party/WebKit/public/platform/WebFilterOperations.h"
 #include "third_party/skia/include/effects/SkBlurImageFilter.h"
 #include "ui/gfx/quad_f.h"
-
-using WebKit::WebFilterOperation;
-using WebKit::WebFilterOperations;
 
 namespace cc {
 namespace {
@@ -420,10 +417,10 @@ TEST_F(DamageTrackerTest, VerifyDamageForBlurredSurface) {
   LayerImpl* surface = root->children()[0];
   LayerImpl* child = surface->children()[0];
 
-  WebFilterOperations filters;
-  filters.append(WebFilterOperation::createBlurFilter(5));
+  FilterOperations filters;
+  filters.Append(FilterOperation::CreateBlurFilter(5.f));
   int outset_top, outset_right, outset_bottom, outset_left;
-  filters.getOutsets(outset_top, outset_right, outset_bottom, outset_left);
+  filters.GetOutsets(&outset_top, &outset_right, &outset_bottom, &outset_left);
 
   // Setting the filter will damage the whole surface.
   ClearDamageForAllSurfaces(root.get());
@@ -494,10 +491,10 @@ TEST_F(DamageTrackerTest, VerifyDamageForBackgroundBlurredChild) {
   // Allow us to set damage on child1 too.
   child1->SetDrawsContent(true);
 
-  WebFilterOperations filters;
-  filters.append(WebFilterOperation::createBlurFilter(2));
+  FilterOperations filters;
+  filters.Append(FilterOperation::CreateBlurFilter(2.f));
   int outset_top, outset_right, outset_bottom, outset_left;
-  filters.getOutsets(outset_top, outset_right, outset_bottom, outset_left);
+  filters.GetOutsets(&outset_top, &outset_right, &outset_bottom, &outset_left);
 
   // Setting the filter will damage the whole surface.
   ClearDamageForAllSurfaces(root.get());
@@ -812,11 +809,10 @@ TEST_F(DamageTrackerTest, VerifyDamageForSurfaceChangeFromAncestorLayer) {
   // the entire child1 surface, but the damage tracker still needs the correct
   // logic to compute the exposed region on the root surface.
 
-  // FIXME: the expectations of this test case should change when we add
-  //        support for a unique scissor_rect per RenderSurface. In that case,
-  //        the child1 surface should be completely unchanged, since we are
-  //        only transforming it, while the root surface would be damaged
-  //        appropriately.
+  // TODO(shawnsingh): the expectations of this test case should change when we
+  // add support for a unique scissor_rect per RenderSurface. In that case, the
+  // child1 surface should be completely unchanged, since we are only
+  // transforming it, while the root surface would be damaged appropriately.
 
   scoped_ptr<LayerImpl> root = CreateAndSetUpTestTreeWithTwoSurfaces();
   LayerImpl* child1 = root->children()[0];
@@ -1312,7 +1308,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForEmptyLayerList) {
       false,
       gfx::Rect(),
       NULL,
-      WebFilterOperations(),
+      FilterOperations(),
       NULL);
 
   gfx::RectF damage_rect =

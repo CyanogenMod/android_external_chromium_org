@@ -4,13 +4,16 @@
 
 #include "ui/views/widget/desktop_aura/desktop_root_window_host_x11.h"
 
+#include <X11/extensions/shape.h>
 #include <X11/extensions/XInput2.h>
 #include <X11/Xatom.h>
+#include <X11/Xregion.h>
 #include <X11/Xutil.h>
 
 #include "base/message_loop/message_pump_aurax11.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "third_party/skia/include/core/SkPath.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/client/user_action_client.h"
 #include "ui/aura/focus_manager.h"
@@ -21,6 +24,7 @@
 #include "ui/base/touch/touch_factory_x11.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/gfx/insets.h"
+#include "ui/gfx/path_x11.h"
 #include "ui/linux_ui/linux_ui.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/corewm/compound_event_filter.h"
@@ -70,6 +74,7 @@ const char* kAtomsToCache[] = {
   "_NET_WM_PID",
   "_NET_WM_PING",
   "_NET_WM_STATE",
+  "_NET_WM_STATE_ABOVE",
   "_NET_WM_STATE_FULLSCREEN",
   "_NET_WM_STATE_HIDDEN",
   "_NET_WM_STATE_MAXIMIZED_HORZ",
@@ -111,8 +116,7 @@ DesktopRootWindowHostX11::DesktopRootWindowHostX11(
       focus_when_shown_(false),
       current_cursor_(ui::kCursorNull),
       native_widget_delegate_(native_widget_delegate),
-      desktop_native_widget_aura_(desktop_native_widget_aura),
-      drop_handler_(NULL) {
+      desktop_native_widget_aura_(desktop_native_widget_aura) {
 }
 
 DesktopRootWindowHostX11::~DesktopRootWindowHostX11() {
@@ -507,8 +511,11 @@ gfx::Rect DesktopRootWindowHostX11::GetWorkAreaBoundsInScreen() const {
 }
 
 void DesktopRootWindowHostX11::SetShape(gfx::NativeRegion native_region) {
-  // TODO(erg):
-  NOTIMPLEMENTED();
+  SkPath path;
+  native_region->getBoundaryPath(&path);
+  Region region = gfx::CreateRegionFromSkPath(path);
+  XShapeCombineRegion(xdisplay_, xwindow_, ShapeBounding, 0, 0, region, false);
+  XDestroyRegion(region);
 }
 
 void DesktopRootWindowHostX11::Activate() {
@@ -571,8 +578,9 @@ bool DesktopRootWindowHostX11::HasCapture() const {
 }
 
 void DesktopRootWindowHostX11::SetAlwaysOnTop(bool always_on_top) {
-  // TODO(erg):
-  NOTIMPLEMENTED();
+  SetWMSpecState(always_on_top,
+                 atom_cache_.GetAtom("_NET_WM_STATE_ABOVE"),
+                 None);
 }
 
 void DesktopRootWindowHostX11::SetWindowTitle(const string16& title) {
@@ -620,6 +628,10 @@ bool DesktopRootWindowHostX11::ShouldUseNativeFrame() {
 }
 
 void DesktopRootWindowHostX11::FrameTypeChanged() {
+  // Replace the frame and layout the contents. Even though we don't have a
+  // swapable glass frame like on Windows, we still replace the frame because
+  // the button assets don't update otherwise.
+  native_widget_delegate_->AsWidget()->non_client_view()->UpdateFrame(true);
 }
 
 NonClientFrameView* DesktopRootWindowHostX11::CreateNonClientFrameView() {
@@ -907,20 +919,6 @@ void DesktopRootWindowHostX11::PrepareForShutdown() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// DesktopRootWindowHostX11, ui::DesktopSelectionProviderAuraX11 implementation:
-
-void DesktopRootWindowHostX11::SetDropHandler(
-    ui::OSExchangeDataProviderAuraX11* handler) {
-  if (handler) {
-    DCHECK(!drop_handler_);
-    drop_handler_ = handler;
-  } else {
-    DCHECK(drop_handler_);
-    drop_handler_ = NULL;
-  }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // DesktopRootWindowHostX11, MessageLoop::Dispatcher implementation:
 
 bool DesktopRootWindowHostX11::Dispatch(const base::NativeEvent& event) {
@@ -1194,8 +1192,7 @@ bool DesktopRootWindowHostX11::Dispatch(const base::NativeEvent& event) {
       break;
     }
     case SelectionNotify: {
-      if (drop_handler_)
-        drop_handler_->OnSelectionNotify(xev->xselection);
+      drag_drop_client_->OnSelectionNotify(xev->xselection);
       break;
     }
   }

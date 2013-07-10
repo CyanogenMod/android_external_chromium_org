@@ -13,7 +13,9 @@
 #include "base/message_loop.h"
 #include "base/threading/thread.h"
 #include "media/base/android/media_codec_bridge.h"
+#include "media/base/android/media_drm_bridge.h"
 #include "media/base/android/media_player_manager.h"
+#include "media/base/audio_timestamp_helper.h"
 
 namespace {
 
@@ -21,6 +23,10 @@ namespace {
 // DequeInputBuffer() can take about 150 milliseconds, use 250 milliseconds
 // here. See b/9357571.
 const int kMediaCodecTimeoutInMicroseconds = 250000;
+
+// Use 16bit PCM for audio output. Keep this value in sync with the output
+// format we passed to AudioTrack in MediaCodecBridge.
+const int kBytesPerAudioOutputSample = 2;
 
 class DecoderThread : public base::Thread {
  public:
@@ -73,8 +79,8 @@ class AudioDecoderJob : public MediaDecoderJob {
   virtual ~AudioDecoderJob() {}
 
   static AudioDecoderJob* Create(
-      const AudioCodec audio_codec, int sample_rate,
-      int channel_count, const uint8* extra_data, size_t extra_data_size);
+      const AudioCodec audio_codec, int sample_rate, int channel_count,
+      const uint8* extra_data, size_t extra_data_size, jobject media_crypto);
 
  private:
   AudioDecoderJob(MediaCodecBridge* media_codec_bridge);
@@ -86,7 +92,8 @@ class VideoDecoderJob : public MediaDecoderJob {
   virtual ~VideoDecoderJob() {}
 
   static VideoDecoderJob* Create(
-      const VideoCodec video_codec, const gfx::Size& size, jobject surface);
+      const VideoCodec video_codec, const gfx::Size& size, jobject surface,
+      jobject media_crypto);
 
  private:
   VideoDecoderJob(MediaCodecBridge* media_codec_bridge);
@@ -94,7 +101,7 @@ class VideoDecoderJob : public MediaDecoderJob {
 
 void MediaDecoderJob::Decode(
     const MediaPlayerHostMsg_ReadFromDemuxerAck_Params::AccessUnit& unit,
-    const base::TimeTicks& start_wallclock_time,
+    const base::TimeTicks& start_time_ticks,
     const base::TimeDelta& start_presentation_timestamp,
     const MediaDecoderJob::DecoderCallback& callback) {
   DCHECK(!is_decoding_);
@@ -102,14 +109,14 @@ void MediaDecoderJob::Decode(
   is_decoding_ = true;
   decoder_loop_->PostTask(FROM_HERE, base::Bind(
       &MediaDecoderJob::DecodeInternal, base::Unretained(this), unit,
-      start_wallclock_time, start_presentation_timestamp, needs_flush_,
+      start_time_ticks, start_presentation_timestamp, needs_flush_,
       callback));
   needs_flush_ = false;
 }
 
 void MediaDecoderJob::DecodeInternal(
     const MediaPlayerHostMsg_ReadFromDemuxerAck_Params::AccessUnit& unit,
-    const base::TimeTicks& start_wallclock_time,
+    const base::TimeTicks& start_time_ticks,
     const base::TimeDelta& start_presentation_timestamp,
     bool needs_flush,
     const MediaDecoderJob::DecoderCallback& callback) {
@@ -120,17 +127,29 @@ void MediaDecoderJob::DecodeInternal(
   int input_buf_index = media_codec_bridge_->DequeueInputBuffer(timeout);
   if (input_buf_index == MediaCodecBridge::INFO_MEDIA_CODEC_ERROR) {
     ui_loop_->PostTask(FROM_HERE, base::Bind(
-        callback, DECODE_FAILED, start_presentation_timestamp,
-        start_wallclock_time, false));
+        callback, DECODE_FAILED, start_presentation_timestamp, 0, false));
     return;
   }
   // TODO(qinmin): skip frames if video is falling far behind.
   if (input_buf_index >= 0) {
-    if (unit.end_of_stream) {
+    if (unit.end_of_stream || unit.data.empty()) {
       media_codec_bridge_->QueueEOS(input_buf_index);
-    } else {
+    } else if (unit.key_id.empty()){
       media_codec_bridge_->QueueInputBuffer(
           input_buf_index, &unit.data[0], unit.data.size(), unit.timestamp);
+    } else {
+      if (unit.iv.empty() || unit.subsamples.empty()) {
+        LOG(ERROR) << "The access unit doesn't have iv or subsamples while it "
+                   << "has key IDs!";
+        ui_loop_->PostTask(FROM_HERE, base::Bind(
+            callback, DECODE_FAILED, start_presentation_timestamp, 0, false));
+        return;
+      }
+      media_codec_bridge_->QueueSecureInputBuffer(
+          input_buf_index, &unit.data[0], unit.data.size(),
+          reinterpret_cast<const uint8*>(&unit.key_id[0]), unit.key_id.size(),
+          reinterpret_cast<const uint8*>(&unit.iv[0]), unit.iv.size(),
+          &unit.subsamples[0], unit.subsamples.size(), unit.timestamp);
     }
   }
 
@@ -160,9 +179,10 @@ void MediaDecoderJob::DecodeInternal(
       if (size == 0 && end_of_stream)
         break;
       base::TimeDelta time_to_render;
-      if (!start_wallclock_time.is_null()) {
+      DCHECK(!start_time_ticks.is_null());
+      if (!is_audio_) {
         time_to_render = presentation_timestamp - (base::TimeTicks::Now() -
-            start_wallclock_time + start_presentation_timestamp);
+            start_time_ticks + start_presentation_timestamp);
       }
       if (time_to_render >= base::TimeDelta()) {
         base::MessageLoop::current()->PostDelayedTask(
@@ -173,7 +193,7 @@ void MediaDecoderJob::DecodeInternal(
             time_to_render);
       } else {
         // TODO(qinmin): The codec is lagging behind, need to recalculate the
-        // |start_presentation_timestamp_| and |start_wallclock_time_|.
+        // |start_presentation_timestamp_| and |start_time_ticks_|.
         DVLOG(1) << (is_audio_ ? "audio " : "video ")
             << "codec is lagging behind :" << time_to_render.InMicroseconds();
         ReleaseOutputBuffer(outputBufferIndex, size, presentation_timestamp,
@@ -182,8 +202,7 @@ void MediaDecoderJob::DecodeInternal(
       return;
   }
   ui_loop_->PostTask(FROM_HERE, base::Bind(
-      callback, decode_status, start_presentation_timestamp,
-      start_wallclock_time, end_of_stream));
+      callback, decode_status, start_presentation_timestamp, 0, end_of_stream));
 }
 
 void MediaDecoderJob::ReleaseOutputBuffer(
@@ -198,8 +217,8 @@ void MediaDecoderJob::ReleaseOutputBuffer(
   }
   media_codec_bridge_->ReleaseOutputBuffer(outputBufferIndex, !is_audio_);
   ui_loop_->PostTask(FROM_HERE, base::Bind(
-      callback, DECODE_SUCCEEDED, presentation_timestamp,
-      base::TimeTicks::Now(), end_of_stream));
+      callback, DECODE_SUCCEEDED, presentation_timestamp, is_audio_ ? size : 0,
+      end_of_stream));
 }
 
 void MediaDecoderJob::OnDecodeCompleted() {
@@ -234,9 +253,10 @@ void MediaDecoderJob::Release() {
 }
 
 VideoDecoderJob* VideoDecoderJob::Create(
-    const VideoCodec video_codec, const gfx::Size& size, jobject surface) {
+    const VideoCodec video_codec, const gfx::Size& size, jobject surface,
+    jobject media_crypto) {
   scoped_ptr<VideoCodecBridge> codec(VideoCodecBridge::Create(video_codec));
-  if (codec->Start(video_codec, size, surface))
+  if (codec->Start(video_codec, size, surface, media_crypto))
     return new VideoDecoderJob(codec.release());
   return NULL;
 }
@@ -251,10 +271,11 @@ AudioDecoderJob* AudioDecoderJob::Create(
     int sample_rate,
     int channel_count,
     const uint8* extra_data,
-    size_t extra_data_size) {
+    size_t extra_data_size,
+    jobject media_crypto) {
   scoped_ptr<AudioCodecBridge> codec(AudioCodecBridge::Create(audio_codec));
   if (codec->Start(audio_codec, sample_rate, channel_count, extra_data,
-                   extra_data_size, true)) {
+                   extra_data_size, true, media_crypto)) {
     return new AudioDecoderJob(codec.release());
   }
   return NULL;
@@ -280,13 +301,18 @@ MediaSourcePlayer::MediaSourcePlayer(
       audio_finished_(true),
       video_finished_(true),
       playing_(false),
+      is_audio_encrypted_(false),
+      is_video_encrypted_(false),
+      clock_(&default_tick_clock_),
       reconfig_audio_decoder_(false),
       reconfig_video_decoder_(false),
       audio_access_unit_index_(0),
       video_access_unit_index_(0),
       waiting_for_audio_data_(false),
       waiting_for_video_data_(false),
-      weak_this_(this) {
+      sync_decoder_jobs_(true),
+      weak_this_(this),
+      drm_bridge_(NULL) {
 }
 
 MediaSourcePlayer::~MediaSourcePlayer() {
@@ -329,7 +355,7 @@ void MediaSourcePlayer::Pause() {
   // MediaDecoderCallback(). In that case, decoding will continue when
   // MediaDecoderCallback() is called.
   playing_ = false;
-  start_wallclock_time_ = base::TimeTicks();
+  start_time_ticks_ = base::TimeTicks();
 }
 
 bool MediaSourcePlayer::IsPlaying() {
@@ -345,13 +371,15 @@ int MediaSourcePlayer::GetVideoHeight() {
 }
 
 void MediaSourcePlayer::SeekTo(base::TimeDelta timestamp) {
-  last_presentation_timestamp_ = timestamp;
+  clock_.SetTime(timestamp, timestamp);
+  if (audio_timestamp_helper_)
+    audio_timestamp_helper_->SetBaseTimestamp(timestamp);
   pending_event_ |= SEEK_EVENT_PENDING;
   ProcessPendingEvents();
 }
 
 base::TimeDelta MediaSourcePlayer::GetCurrentTime() {
-  return last_presentation_timestamp_;
+  return clock_.Elapsed();
 }
 
 base::TimeDelta MediaSourcePlayer::GetDuration() {
@@ -405,14 +433,10 @@ void MediaSourcePlayer::StartInternal() {
     return;
   }
 
-  if (HasAudio() && !audio_decoder_job_->is_decoding()) {
-    audio_finished_ = false;
-    DecodeMoreAudio();
-  }
-  if (HasVideo() && !video_decoder_job_->is_decoding()) {
-    video_finished_ = false;
-    DecodeMoreVideo();
-  }
+  audio_finished_ = false;
+  video_finished_ = false;
+  sync_decoder_jobs_ = true;
+  SyncAndStartDecoderJobs();
 }
 
 void MediaSourcePlayer::DemuxerReady(
@@ -425,6 +449,12 @@ void MediaSourcePlayer::DemuxerReady(
   audio_codec_ = params.audio_codec;
   video_codec_ = params.video_codec;
   audio_extra_data_ = params.audio_extra_data;
+  is_audio_encrypted_ = params.is_audio_encrypted;
+  is_video_encrypted_ = params.is_video_encrypted;
+  clock_.SetDuration(duration_);
+  audio_timestamp_helper_.reset(new AudioTimestampHelper(
+      kBytesPerAudioOutputSample * num_channels_, sampling_rate_));
+  audio_timestamp_helper_->SetBaseTimestamp(GetCurrentTime());
   OnMediaMetadataChanged(duration_, width_, height_, true);
   if (pending_event_ & CONFIG_CHANGE_EVENT_PENDING) {
     if (reconfig_audio_decoder_)
@@ -444,6 +474,7 @@ void MediaSourcePlayer::DemuxerReady(
 
 void MediaSourcePlayer::ReadFromDemuxerAck(
     const MediaPlayerHostMsg_ReadFromDemuxerAck_Params& params) {
+  DCHECK_LT(0u, params.access_units.size());
   if (params.type == DemuxerStream::AUDIO)
     waiting_for_audio_data_ = false;
   else
@@ -457,18 +488,47 @@ void MediaSourcePlayer::ReadFromDemuxerAck(
   if (params.type == DemuxerStream::AUDIO) {
     DCHECK_EQ(0u, audio_access_unit_index_);
     received_audio_ = params;
-    if (!pending_event_)
-      DecodeMoreAudio();
   } else {
     DCHECK_EQ(0u, video_access_unit_index_);
     received_video_ = params;
-    if (!pending_event_)
-      DecodeMoreVideo();
   }
+
+  if (pending_event_ != NO_EVENT_PENDING || !playing_)
+    return;
+
+  if (sync_decoder_jobs_) {
+    SyncAndStartDecoderJobs();
+    return;
+  }
+
+  if (params.type == DemuxerStream::AUDIO)
+    DecodeMoreAudio();
+  else
+    DecodeMoreVideo();
 }
 
 void MediaSourcePlayer::DurationChanged(const base::TimeDelta& duration) {
   duration_ = duration;
+  clock_.SetDuration(duration_);
+}
+
+void MediaSourcePlayer::SetDrmBridge(MediaDrmBridge* drm_bridge) {
+  if (!is_audio_encrypted_ && !is_video_encrypted_)
+    return;
+
+  // Currently we don't support DRM change during the middle of playback, even
+  // if the player is paused.
+  // TODO(qinmin): support DRM change after playback has started.
+  // http://crbug.com/253792.
+  DCHECK(!audio_decoder_job_ || !audio_decoder_job_->is_decoding());
+  DCHECK(!video_decoder_job_ || !video_decoder_job_->is_decoding());
+  DCHECK_EQ(0u, audio_access_unit_index_);
+  DCHECK_EQ(0u, video_access_unit_index_);
+
+  drm_bridge_ = drm_bridge;
+
+  if (playing_)
+    StartInternal();
 }
 
 void MediaSourcePlayer::OnSeekRequestAck(unsigned seek_request_id) {
@@ -481,14 +541,15 @@ void MediaSourcePlayer::OnSeekRequestAck(unsigned seek_request_id) {
 }
 
 void MediaSourcePlayer::UpdateTimestamps(
-    const base::TimeDelta& presentation_timestamp,
-    const base::TimeTicks& wallclock_time) {
-  last_presentation_timestamp_ = presentation_timestamp;
-  OnTimeUpdated();
-  if (start_wallclock_time_.is_null() && playing_) {
-    start_wallclock_time_ = wallclock_time;
-    start_presentation_timestamp_ = last_presentation_timestamp_;
+    const base::TimeDelta& presentation_timestamp, size_t audio_output_bytes) {
+  if (audio_output_bytes > 0) {
+    audio_timestamp_helper_->AddBytes(audio_output_bytes);
+    clock_.SetMaxTime(audio_timestamp_helper_->GetTimestamp());
+  } else {
+    clock_.SetMaxTime(presentation_timestamp);
   }
+
+  OnTimeUpdated();
 }
 
 void MediaSourcePlayer::ProcessPendingEvents() {
@@ -501,11 +562,11 @@ void MediaSourcePlayer::ProcessPendingEvents() {
   if (pending_event_ & SEEK_EVENT_PENDING) {
     ClearDecodingData();
     manager()->OnMediaSeekRequest(
-        player_id(), last_presentation_timestamp_, ++seek_request_id_);
+        player_id(), GetCurrentTime(), ++seek_request_id_);
     return;
   }
 
-  start_wallclock_time_ = base::TimeTicks();
+  start_time_ticks_ = base::TimeTicks();
   if (pending_event_ & CONFIG_CHANGE_EVENT_PENDING) {
     DCHECK(reconfig_audio_decoder_ || reconfig_video_decoder_);
     manager()->OnMediaConfigRequest(player_id());
@@ -524,12 +585,15 @@ void MediaSourcePlayer::ProcessPendingEvents() {
 
 void MediaSourcePlayer::MediaDecoderCallback(
     bool is_audio, MediaDecoderJob::DecodeStatus decode_status,
-    const base::TimeDelta& presentation_timestamp,
-    const base::TimeTicks& wallclock_time, bool end_of_stream) {
+    const base::TimeDelta& presentation_timestamp, size_t audio_output_bytes,
+    bool end_of_stream) {
   if (is_audio && audio_decoder_job_)
     audio_decoder_job_->OnDecodeCompleted();
   if (!is_audio && video_decoder_job_)
     video_decoder_job_->OnDecodeCompleted();
+
+  if (is_audio)
+    decoder_starvation_callback_.Cancel();
 
   if (decode_status == MediaDecoderJob::DECODE_FAILED) {
     Release();
@@ -548,32 +612,54 @@ void MediaSourcePlayer::MediaDecoderCallback(
   }
 
   if (is_audio || !HasAudio())
-    UpdateTimestamps(presentation_timestamp, wallclock_time);
+    UpdateTimestamps(presentation_timestamp, audio_output_bytes);
 
   if (end_of_stream) {
     PlaybackCompleted(is_audio);
     return;
   }
 
-  if (!playing_)
+  if (!playing_) {
+    if (is_audio || !HasAudio())
+      clock_.Pause();
     return;
+  }
 
-  if (is_audio)
-    DecodeMoreAudio();
+  if (sync_decoder_jobs_) {
+    SyncAndStartDecoderJobs();
+    return;
+  }
+
+  base::TimeDelta current_timestamp = GetCurrentTime();
+  if (is_audio) {
+    base::TimeDelta timeout =
+        audio_timestamp_helper_->GetTimestamp() - current_timestamp;
+    StartStarvationCallback(timeout);
+    if (!HasAudioData())
+      RequestAudioData();
+    else
+      DecodeMoreAudio();
+    return;
+  }
+
+  if (!HasAudio()) {
+    DCHECK(current_timestamp <= presentation_timestamp);
+    // For video only streams, fps can be estimated from the difference
+    // between the previous and current presentation timestamps. The
+    // previous presentation timestamp is equal to current_timestamp.
+    // TODO(qinmin): determine whether 2 is a good coefficient for estimating
+    // video frame timeout.
+    StartStarvationCallback(2 * (presentation_timestamp - current_timestamp));
+  }
+  if (!HasVideoData())
+    RequestVideoData();
   else
     DecodeMoreVideo();
 }
 
 void MediaSourcePlayer::DecodeMoreAudio() {
-  if (audio_access_unit_index_ >= received_audio_.access_units.size()) {
-    if (!waiting_for_audio_data_) {
-      manager()->OnReadFromDemuxer(player_id(), DemuxerStream::AUDIO, true);
-      received_audio_ = MediaPlayerHostMsg_ReadFromDemuxerAck_Params();
-      audio_access_unit_index_ = 0;
-      waiting_for_audio_data_ = true;
-    }
-    return;
-  }
+  DCHECK(!audio_decoder_job_->is_decoding());
+  DCHECK(HasAudioData());
 
   if (DemuxerStream::kConfigChanged ==
       received_audio_.access_units[audio_access_unit_index_].status) {
@@ -588,21 +674,14 @@ void MediaSourcePlayer::DecodeMoreAudio() {
 
   audio_decoder_job_->Decode(
       received_audio_.access_units[audio_access_unit_index_],
-      start_wallclock_time_, start_presentation_timestamp_,
+      start_time_ticks_, start_presentation_timestamp_,
       base::Bind(&MediaSourcePlayer::MediaDecoderCallback,
                  weak_this_.GetWeakPtr(), true));
 }
 
 void MediaSourcePlayer::DecodeMoreVideo() {
-  if (video_access_unit_index_ >= received_video_.access_units.size()) {
-    if (!waiting_for_video_data_) {
-      manager()->OnReadFromDemuxer(player_id(), DemuxerStream::VIDEO, true);
-      received_video_ = MediaPlayerHostMsg_ReadFromDemuxerAck_Params();
-      video_access_unit_index_ = 0;
-      waiting_for_video_data_ = true;
-    }
-    return;
-  }
+  DCHECK(!video_decoder_job_->is_decoding());
+  DCHECK(HasVideoData());
 
   if (DemuxerStream::kConfigChanged ==
       received_video_.access_units[video_access_unit_index_].status) {
@@ -617,11 +696,10 @@ void MediaSourcePlayer::DecodeMoreVideo() {
 
   video_decoder_job_->Decode(
       received_video_.access_units[video_access_unit_index_],
-      start_wallclock_time_, start_presentation_timestamp_,
+      start_time_ticks_, start_presentation_timestamp_,
       base::Bind(&MediaSourcePlayer::MediaDecoderCallback,
                  weak_this_.GetWeakPtr(), false));
 }
-
 
 void MediaSourcePlayer::PlaybackCompleted(bool is_audio) {
   if (is_audio)
@@ -631,7 +709,8 @@ void MediaSourcePlayer::PlaybackCompleted(bool is_audio) {
 
   if ((!HasAudio() || audio_finished_) && (!HasVideo() || video_finished_)) {
     playing_ = false;
-    start_wallclock_time_ = base::TimeTicks();
+    clock_.Pause();
+    start_time_ticks_ = base::TimeTicks();
     OnPlaybackComplete();
   }
 }
@@ -641,7 +720,7 @@ void MediaSourcePlayer::ClearDecodingData() {
     audio_decoder_job_->Flush();
   if (video_decoder_job_)
     video_decoder_job_->Flush();
-  start_wallclock_time_ = base::TimeTicks();
+  start_time_ticks_ = base::TimeTicks();
   received_audio_ = MediaPlayerHostMsg_ReadFromDemuxerAck_Params();
   received_video_ = MediaPlayerHostMsg_ReadFromDemuxerAck_Params();
   audio_access_unit_index_ = 0;
@@ -665,13 +744,32 @@ void MediaSourcePlayer::ConfigureAudioDecoderJob() {
   }
 
   // Create audio decoder job only if config changes.
-  if (HasAudio() && (reconfig_audio_decoder_ || !audio_decoder_job_)) {
-    audio_decoder_job_.reset(AudioDecoderJob::Create(
-        audio_codec_, sampling_rate_, num_channels_,
-        &audio_extra_data_[0], audio_extra_data_.size()));
-    if (audio_decoder_job_)
-      reconfig_audio_decoder_ =  false;
+  if (audio_decoder_job_ && !reconfig_audio_decoder_)
+    return;
+
+  base::android::ScopedJavaLocalRef<jobject> media_codec;
+  if (is_audio_encrypted_) {
+    if (drm_bridge_) {
+      media_codec = drm_bridge_->GetMediaCrypto();
+      // TODO(qinmin): currently we assume MediaCrypto is available whenever
+      // MediaDrmBridge is constructed. This will change if we want to support
+      // more general uses cases of EME.
+      DCHECK(!media_codec.is_null());
+    } else {
+      // Don't create the decoder job if |drm_bridge_| is not set,
+      // so StartInternal() will not proceed.
+      LOG(INFO) << "MediaDrmBridge is not available when creating decoder "
+                << "for encrypted audio stream.";
+      return;
+    }
   }
+
+  audio_decoder_job_.reset(AudioDecoderJob::Create(
+      audio_codec_, sampling_rate_, num_channels_, &audio_extra_data_[0],
+      audio_extra_data_.size(), media_codec.obj()));
+
+  if (audio_decoder_job_)
+    reconfig_audio_decoder_ =  false;
 }
 
 void MediaSourcePlayer::ConfigureVideoDecoderJob() {
@@ -680,20 +778,104 @@ void MediaSourcePlayer::ConfigureVideoDecoderJob() {
     return;
   }
 
-  if (reconfig_video_decoder_ || !video_decoder_job_) {
-    // Release the old VideoDecoderJob first so the surface can get released.
-    video_decoder_job_.reset();
-    // Create the new VideoDecoderJob.
-    video_decoder_job_.reset(VideoDecoderJob::Create(
-        video_codec_, gfx::Size(width_, height_), surface_.j_surface().obj()));
-    if (video_decoder_job_)
-      reconfig_video_decoder_ = false;
+  // Create video decoder job only if config changes.
+  if (video_decoder_job_ && !reconfig_video_decoder_)
+    return;
+
+  base::android::ScopedJavaLocalRef<jobject> media_codec;
+  if (is_video_encrypted_) {
+    if (drm_bridge_) {
+      media_codec = drm_bridge_->GetMediaCrypto();
+      DCHECK(!media_codec.is_null());
+    } else {
+      LOG(INFO) << "MediaDrmBridge is not available when creating decoder "
+                << "for encrypted video stream.";
+      return;
+    }
   }
+
+  // Release the old VideoDecoderJob first so the surface can get released.
+  // Android does not allow 2 MediaCodec instances use the same surface.
+  video_decoder_job_.reset();
+  // Create the new VideoDecoderJob.
+  video_decoder_job_.reset(VideoDecoderJob::Create(
+      video_codec_, gfx::Size(width_, height_), surface_.j_surface().obj(),
+      media_codec.obj()));
+  if (video_decoder_job_)
+    reconfig_video_decoder_ = false;
 
   // Inform the fullscreen view the player is ready.
   // TODO(qinmin): refactor MediaPlayerBridge so that we have a better way
   // to inform ContentVideoView.
   OnMediaMetadataChanged(duration_, width_, height_, true);
+}
+
+void MediaSourcePlayer::OnDecoderStarved() {
+  sync_decoder_jobs_ = true;
+}
+
+void MediaSourcePlayer::StartStarvationCallback(
+    const base::TimeDelta& timeout) {
+  decoder_starvation_callback_.Reset(
+      base::Bind(&MediaSourcePlayer::OnDecoderStarved,
+                 weak_this_.GetWeakPtr()));
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE, decoder_starvation_callback_.callback(), timeout);
+}
+
+void MediaSourcePlayer::SyncAndStartDecoderJobs() {
+  // For streams with both audio and video, send the request for video too.
+  // However, don't wait for the response so that we won't have lots of
+  // noticeable pauses in the audio. Video will sync with audio by itself.
+  if (HasVideo() && !HasVideoData()) {
+    RequestVideoData();
+    if (!HasAudio())
+      return;
+  }
+  if (HasAudio() && !HasAudioData()) {
+    RequestAudioData();
+    return;
+  }
+  start_time_ticks_ = base::TimeTicks::Now();
+  start_presentation_timestamp_ = GetCurrentTime();
+  if (!clock_.IsPlaying())
+    clock_.Play();
+  if (HasAudioData() && !audio_decoder_job_->is_decoding())
+    DecodeMoreAudio();
+  if (HasVideoData() && !video_decoder_job_->is_decoding())
+    DecodeMoreVideo();
+  sync_decoder_jobs_ = false;
+}
+
+void MediaSourcePlayer::RequestAudioData() {
+  DCHECK(HasAudio());
+
+  if (waiting_for_audio_data_)
+    return;
+
+  manager()->OnReadFromDemuxer(player_id(), DemuxerStream::AUDIO);
+  received_audio_ = MediaPlayerHostMsg_ReadFromDemuxerAck_Params();
+  audio_access_unit_index_ = 0;
+  waiting_for_audio_data_ = true;
+}
+
+void MediaSourcePlayer::RequestVideoData() {
+  DCHECK(HasVideo());
+  if (waiting_for_video_data_)
+    return;
+
+  manager()->OnReadFromDemuxer(player_id(), DemuxerStream::VIDEO);
+  received_video_ = MediaPlayerHostMsg_ReadFromDemuxerAck_Params();
+  video_access_unit_index_ = 0;
+  waiting_for_video_data_ = true;
+}
+
+bool MediaSourcePlayer::HasAudioData() const {
+  return audio_access_unit_index_ < received_audio_.access_units.size();
+}
+
+bool MediaSourcePlayer::HasVideoData() const {
+  return video_access_unit_index_ < received_video_.access_units.size();
 }
 
 }  // namespace media

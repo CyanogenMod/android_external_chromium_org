@@ -30,17 +30,9 @@ class UploadDataStream;
 class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
                                           public HttpStream {
  public:
-  // |spdy_session| may be NULL, but in that case some functions must
-  // not be called (see comments below).
+  // |spdy_session| must not be NULL.
   SpdyHttpStream(SpdySession* spdy_session, bool direct);
   virtual ~SpdyHttpStream();
-
-  // Initializes this SpdyHttpStream by wrapping an existing
-  // SpdyStream. In particular, this must be called instead of
-  // InitializeStream() if a NULL SpdySession was passed into the
-  // constructor.
-  void InitializeWithExistingStream(
-      const base::WeakPtr<SpdyStream>& spdy_stream);
 
   SpdyStream* stream() { return stream_.get(); }
 
@@ -49,8 +41,6 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
 
   // HttpStream implementation.
 
-  // Must not be called if a NULL SpdySession was passed into the
-  // constructor.
   virtual int InitializeStream(const HttpRequestInfo* request_info,
                                RequestPriority priority,
                                const BoundNetLog& net_log,
@@ -86,10 +76,9 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
 
   // SpdyStream::Delegate implementation.
   virtual void OnRequestHeadersSent() OVERRIDE;
-  virtual int OnResponseHeadersReceived(const SpdyHeaderBlock& response,
-                                        base::Time response_time,
-                                        int status) OVERRIDE;
-  virtual int OnDataReceived(scoped_ptr<SpdyBuffer> buffer) OVERRIDE;
+  virtual SpdyResponseHeadersStatus OnResponseHeadersUpdated(
+      const SpdyHeaderBlock& response_headers) OVERRIDE;
+  virtual void OnDataReceived(scoped_ptr<SpdyBuffer> buffer) OVERRIDE;
   virtual void OnDataSent() OVERRIDE;
   virtual void OnClose(int status) OVERRIDE;
 
@@ -140,7 +129,9 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
 
   scoped_ptr<HttpResponseInfo> push_response_info_;
 
-  bool response_headers_received_;  // Indicates waiting for more HEADERS.
+  // We don't use SpdyStream's |response_header_status_| as we
+  // sometimes call back into our delegate before it is updated.
+  SpdyResponseHeadersStatus response_headers_status_;
 
   // We buffer the response body as it arrives asynchronously from the stream.
   SpdyReadQueue response_body_queue_;

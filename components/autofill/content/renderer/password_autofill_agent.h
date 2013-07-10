@@ -11,7 +11,7 @@
 #include "base/memory/weak_ptr.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
 #include "content/public/renderer/render_view_observer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputElement.h"
+#include "third_party/WebKit/public/web/WebInputElement.h"
 
 namespace WebKit {
 class WebInputElement;
@@ -80,8 +80,7 @@ class PasswordAutofillAgent : public content::RenderViewObserver {
   virtual void FrameWillClose(WebKit::WebFrame* frame) OVERRIDE;
 
   // RenderView IPC handlers:
-  void OnFillPasswordForm(const PasswordFormFillData& form_data,
-                          bool disable_popup);
+  void OnFillPasswordForm(const PasswordFormFillData& form_data);
 
   // Scans the given frame for password forms and sends them up to the browser.
   // If |only_visible| is true, only forms visible in the layout are sent.
@@ -89,7 +88,8 @@ class PasswordAutofillAgent : public content::RenderViewObserver {
 
   void GetSuggestions(const PasswordFormFillData& fill_data,
                       const base::string16& input,
-                      std::vector<base::string16>* suggestions);
+                      std::vector<base::string16>* suggestions,
+                      std::vector<base::string16>* realms);
 
   bool ShowSuggestionPopup(const PasswordFormFillData& fill_data,
                            const WebKit::WebInputElement& user_input);
@@ -119,9 +119,6 @@ class PasswordAutofillAgent : public content::RenderViewObserver {
 
   // The logins we have filled so far with their associated info.
   LoginToPasswordInfoMap login_to_password_info_;
-
-  // Used to disable and hide the popup.
-  bool disable_popup_;
 
   // Used for UMA stats.
   OtherPossibleUsernamesUsage usernames_usage_;

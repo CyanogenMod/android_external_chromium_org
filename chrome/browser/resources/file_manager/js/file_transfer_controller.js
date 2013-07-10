@@ -263,7 +263,8 @@ FileTransferController.prototype = {
     // Option 2. Thumbnail image available, then render it without
     // a label.
     if (thumbnailImage) {
-      contents.classList.add('drag-image-thumbnail');
+      thumbnailImage.classList.add('drag-thumbnail');
+      contents.classList.add('for-image');
       contents.appendChild(this.preloadedThumbnailImageNode_);
       return container;
     }
@@ -289,7 +290,7 @@ FileTransferController.prototype = {
   onDragStart_: function(list, event) {
     // Check if a drag selection should be initiated or not.
     // TODO(hirono): Support drag selection on the grid view. crbug.com/247278
-    if (list.id == 'file-list') {
+    if (list.id == 'file-list' && list.parentNode.id == 'detail-table') {
       if (list.parentNode.shouldStartDragSelection(event)) {
         this.dragSelector_.startDragSelection(list, event);
         return;
@@ -394,22 +395,6 @@ FileTransferController.prototype = {
     } else {
       this.clearDropTarget_();
     }
-  },
-
-  /**
-   * @this {FileTransferController}
-   * @param {HTMLElement} breadcrumbsContainer Element which contains target
-   *     breadcrumbs.
-   * @param {Event} event A dragenter event of DOM.
-   */
-  onDragEnterBreadcrumbs_: function(breadcrumbsContainer, event) {
-    event.preventDefault();  // Required to prevent the cursor flicker.
-    this.lastEnteredTarget_ = event.target;
-    var path = breadcrumbsContainer.getTargetPath(event);
-    if (!path)
-      return;
-
-    this.setDropTarget_(event.target, true, event.dataTransfer, path);
   },
 
   /**

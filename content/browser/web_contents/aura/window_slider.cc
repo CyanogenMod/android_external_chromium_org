@@ -4,6 +4,8 @@
 
 #include "content/browser/web_contents/aura/window_slider.h"
 
+#include <algorithm>
+
 #include "base/bind.h"
 #include "base/callback.h"
 #include "content/browser/web_contents/aura/shadow_layer_delegate.h"
@@ -67,13 +69,13 @@ WindowSlider::WindowSlider(Delegate* delegate,
 }
 
 WindowSlider::~WindowSlider() {
-  delegate_->OnWindowSliderDestroyed();
   if (event_window_) {
     event_window_->RemovePreTargetHandler(this);
     event_window_->RemoveObserver(this);
   }
   if (owner_)
     owner_->RemoveObserver(this);
+  delegate_->OnWindowSliderDestroyed();
 }
 
 void WindowSlider::ChangeOwner(aura::Window* new_owner) {
@@ -84,6 +86,11 @@ void WindowSlider::ChangeOwner(aura::Window* new_owner) {
     owner_->AddObserver(this);
     UpdateForScroll(0.f, 0.f);
   }
+}
+
+bool WindowSlider::IsSlideInProgress() const {
+  return fabs(delta_x_) >= min_start_threshold_ || slider_.get() ||
+      weak_factory_.HasWeakPtrs();
 }
 
 void WindowSlider::SetupSliderLayer() {
@@ -100,10 +107,8 @@ void WindowSlider::SetupSliderLayer() {
 void WindowSlider::UpdateForScroll(float x_offset, float y_offset) {
   float old_delta = delta_x_;
   delta_x_ += x_offset;
-  if (fabs(delta_x_) < min_start_threshold_) {
-    ResetScroll();
+  if (fabs(delta_x_) < min_start_threshold_ && !slider_.get())
     return;
-  }
 
   if ((old_delta < 0 && delta_x_ > 0) ||
       (old_delta > 0 && delta_x_ < 0)) {
@@ -114,23 +119,25 @@ void WindowSlider::UpdateForScroll(float x_offset, float y_offset) {
   float translate = 0.f;
   ui::Layer* translate_layer = NULL;
 
+  if (!slider_.get()) {
+    slider_.reset(delta_x_ < 0 ? delegate_->CreateFrontLayer() :
+                                 delegate_->CreateBackLayer());
+    if (!slider_.get())
+      return;
+    SetupSliderLayer();
+  }
+
   if (delta_x_ <= -min_start_threshold_) {
-    if (!slider_.get()) {
-      slider_.reset(delegate_->CreateFrontLayer());
-      SetupSliderLayer();
-    }
-    translate = event_window_->bounds().width() -
-        fabs(delta_x_ - min_start_threshold_);
+    translate = owner_->bounds().width() +
+        std::max(delta_x_ + min_start_threshold_,
+                 static_cast<float>(-owner_->bounds().width()));
     translate_layer = slider_.get();
   } else if (delta_x_ >= min_start_threshold_) {
-    if (!slider_.get()) {
-      slider_.reset(delegate_->CreateBackLayer());
-      SetupSliderLayer();
-    }
-    translate = delta_x_ - min_start_threshold_;
+    translate = std::min(delta_x_ - min_start_threshold_,
+                         static_cast<float>(owner_->bounds().width()));
     translate_layer = owner_->layer();
   } else {
-    NOTREACHED();
+    return;
   }
 
   if (!shadow_.get())
@@ -142,7 +149,7 @@ void WindowSlider::UpdateForScroll(float x_offset, float y_offset) {
 }
 
 void WindowSlider::UpdateForFling(float x_velocity, float y_velocity) {
-  if (fabs(delta_x_) < min_start_threshold_)
+  if (!slider_.get())
     return;
 
   int width = owner_->bounds().width();
@@ -214,11 +221,17 @@ void WindowSlider::CancelScroll() {
 }
 
 void WindowSlider::CompleteWindowSlideAfterAnimation() {
+  weak_factory_.InvalidateWeakPtrs();
+  shadow_.reset();
+  slider_.reset();
+  delta_x_ = 0.f;
+
   delegate_->OnWindowSlideComplete();
-  delete this;
 }
 
 void WindowSlider::AbortWindowSlideAfterAnimation() {
+  weak_factory_.InvalidateWeakPtrs();
+
   delegate_->OnWindowSlideAborted();
 }
 
@@ -281,8 +294,7 @@ void WindowSlider::OnWindowRemovingFromRootWindow(aura::Window* window) {
   } else if (window == owner_) {
     window->RemoveObserver(this);
     owner_ = NULL;
-    if (!slider_.get())
-      delete this;
+    delete this;
   } else {
     NOTREACHED();
   }

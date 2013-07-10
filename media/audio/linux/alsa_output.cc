@@ -41,7 +41,7 @@
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/stl_util.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/audio/linux/alsa_util.h"
 #include "media/audio/linux/alsa_wrapper.h"
 #include "media/audio/linux/audio_manager_linux.h"
@@ -307,8 +307,8 @@ void AlsaPcmOutputStream::Start(AudioSourceCallback* callback) {
   // Ensure the first buffer is silence to avoid startup glitches.
   int buffer_size = GetAvailableFrames() * bytes_per_output_frame_;
   scoped_refptr<DataBuffer> silent_packet = new DataBuffer(buffer_size);
-  silent_packet->SetDataSize(buffer_size);
-  memset(silent_packet->GetWritableData(), 0, silent_packet->GetDataSize());
+  silent_packet->set_data_size(buffer_size);
+  memset(silent_packet->writable_data(), 0, silent_packet->data_size());
   buffer_->Append(silent_packet);
   WritePacket();
 
@@ -380,10 +380,10 @@ void AlsaPcmOutputStream::BufferPacket(bool* source_exhausted) {
     // and sanitized since it may come from an untrusted source such as NaCl.
     output_bus->Scale(volume_);
     output_bus->ToInterleaved(
-        frames_filled, bytes_per_sample_, packet->GetWritableData());
+        frames_filled, bytes_per_sample_, packet->writable_data());
 
     if (packet_size > 0) {
-      packet->SetDataSize(packet_size);
+      packet->set_data_size(packet_size);
       // Add the packet to the buffer.
       buffer_->Append(packet);
     } else {

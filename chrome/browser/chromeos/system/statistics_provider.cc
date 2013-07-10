@@ -13,7 +13,7 @@
 #include "base/path_service.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chromeos/app_mode/kiosk_oem_manifest_parser.h"
 #include "chromeos/chromeos_constants.h"
 #include "chromeos/chromeos_switches.h"
@@ -74,6 +74,22 @@ const CommandLine::CharType kOemManifestFilePath[] =
     FILE_PATH_LITERAL("/usr/share/oem/oobe/manifest.json");
 
 }  // namespace
+
+// Key values for GetMachineStatistic()/GetMachineFlag() calls.
+const char kDevSwitchBootMode[] = "devsw_boot";
+const char kHardwareClass[] = "hardware_class";
+const char kMachineInfoBoard[] =
+    "CHROMEOS_RELEASE_BOARD";
+const char kOffersCouponCodeKey[] = "ubind_attribute";
+const char kOffersGroupCodeKey[] = "gbind_attribute";
+const char kOemCanExitEnterpriseEnrollmentKey[] =
+    "oem_can_exit_enrollment";
+const char kOemDeviceRequisitionKey[] =
+    "oem_device_requisition";
+const char kOemIsEnterpriseManagedKey[] =
+    "oem_enterprise_managed";
+const char kOemKeyboardDrivenOobeKey[] =
+    "oem_keyboard_driven_oobe";
 
 // The StatisticsProvider implementation used in production.
 class StatisticsProviderImpl : public StatisticsProvider {
@@ -252,13 +268,13 @@ void StatisticsProviderImpl::LoadOemManifestFromFile(
   if (!KioskOemManifestParser::Load(file, &oem_manifest))
     return;
 
-  machine_info_[chromeos::kOemDeviceRequisitionKey] =
+  machine_info_[kOemDeviceRequisitionKey] =
       oem_manifest.device_requisition;
-  machine_flags_[chromeos::kOemIsEnterpriseManagedKey] =
+  machine_flags_[kOemIsEnterpriseManagedKey] =
       oem_manifest.enterprise_managed;
-  machine_flags_[chromeos::kOemCanExitEnterpriseEnrollmentKey] =
+  machine_flags_[kOemCanExitEnterpriseEnrollmentKey] =
       oem_manifest.can_exit_enrollment;
-  machine_flags_[chromeos::kOemKeyboardDrivenOobeKey] =
+  machine_flags_[kOemKeyboardDrivenOobeKey] =
       oem_manifest.keyboard_driven_oobe;
 }
 

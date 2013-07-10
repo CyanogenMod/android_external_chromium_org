@@ -19,8 +19,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 
-using base::FileEnumerator;
-using base::FilePath;
+namespace base {
 
 namespace {
 
@@ -35,28 +34,14 @@ static const int kMaxUniqueFiles = 100;
 
 }  // namespace
 
-namespace file_util {
-
 bool g_bug108724_debug = false;
 
-void InsertBeforeExtension(FilePath* path, const FilePath::StringType& suffix) {
-  FilePath::StringType& value =
-      const_cast<FilePath::StringType&>(path->value());
-
-  const FilePath::StringType::size_type last_dot =
-      value.rfind(kExtensionSeparator);
-  const FilePath::StringType::size_type last_separator =
-      value.find_last_of(FilePath::StringType(FilePath::kSeparators));
-
-  if (last_dot == FilePath::StringType::npos ||
-      (last_separator != std::wstring::npos && last_dot < last_separator)) {
-    // The path looks something like "C:\pics.old\jojo" or "C:\pics\jojo".
-    // We should just append the suffix to the entire path.
-    value.append(suffix);
-    return;
-  }
-
-  value.insert(last_dot, suffix);
+int64 ComputeDirectorySize(const FilePath& root_path) {
+  int64 running_size = 0;
+  FileEnumerator file_iter(root_path, true, FileEnumerator::FILES);
+  while (!file_iter.Next().empty())
+    running_size += file_iter.GetInfo().GetSize();
+  return running_size;
 }
 
 bool Move(const FilePath& from_path, const FilePath& to_path) {
@@ -65,10 +50,16 @@ bool Move(const FilePath& from_path, const FilePath& to_path) {
   return MoveUnsafe(from_path, to_path);
 }
 
-bool ReplaceFile(const base::FilePath& from_path,
-                 const base::FilePath& to_path) {
-  return ReplaceFileAndGetError(from_path, to_path, NULL);
-}
+}  // namespace base
+
+// -----------------------------------------------------------------------------
+
+namespace file_util {
+
+using base::FileEnumerator;
+using base::FilePath;
+using base::kExtensionSeparator;
+using base::kMaxUniqueFiles;
 
 bool CopyFile(const FilePath& from_path, const FilePath& to_path) {
   if (from_path.ReferencesParent() || to_path.ReferencesParent())
@@ -270,12 +261,4 @@ int GetUniquePathNumber(
   return -1;
 }
 
-int64 ComputeDirectorySize(const FilePath& root_path) {
-  int64 running_size = 0;
-  FileEnumerator file_iter(root_path, true, FileEnumerator::FILES);
-  while (!file_iter.Next().empty())
-    running_size += file_iter.GetInfo().GetSize();
-  return running_size;
-}
-
-}  // namespace
+}  // namespace file_util

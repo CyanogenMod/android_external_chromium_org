@@ -44,8 +44,8 @@
     'engine/conflict_resolver.h',
     'engine/conflict_util.cc',
     'engine/conflict_util.h',
-    'engine/download_updates_command.cc',
-    'engine/download_updates_command.h',
+    'engine/download.cc',
+    'engine/download.h',
     'engine/get_commit_ids_command.cc',
     'engine/get_commit_ids_command.h',
     'engine/model_changing_syncer_command.cc',
@@ -167,12 +167,6 @@
     'syncable/write_transaction_info.h',
     'util/cryptographer.cc',
     'util/cryptographer.h',
-
-    # TODO(akalin): Figure out a better place to put
-    # data_encryption_win*; it's also used by autofill.
-    'util/data_encryption_win.cc',
-    'util/data_encryption_win.h',
-
     'util/data_type_histogram.h',
     'util/encryptor.h',
     'util/extensions_activity_monitor.cc',

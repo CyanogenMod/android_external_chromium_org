@@ -35,6 +35,8 @@
       <structure name="IDR_EXTENSIONS_HTML" file="resources\extensions\extensions.html" flattenhtml="true" type="chrome_html" />
       <structure name="IDR_HELP_CSS" file="resources\help\help.css" flattenhtml="true" type="chrome_html" />
       <structure name="IDR_HELP_HTML" file="resources\help\help.html" flattenhtml="true" type="chrome_html" />
+      <structure name="IDR_HELP_CHANNEL_CHANGE_PAGE_CSS" file="resources\help\channel_change_page.css" flattenhtml="true" type="chrome_html" />
+      <structure name="IDR_HELP_CHANNEL_CHANGE_PAGE_HTML" file="resources\help\channel_change_page.html" flattenhtml="true" type="chrome_html" />
       <structure name="IDR_INCOGNITO_TAB_HTML" file="resources\incognito_tab.html" flattenhtml="true" type="chrome_html" />
       <if expr="pp_ifdef('chromeos')">
         <structure name="IDR_LOGIN_HTML" file="resources\chromeos\login\login.html" flattenhtml="true" type="chrome_html" variables="OOBE=login" expand_variables="true"/>
@@ -93,9 +95,6 @@
       </if>
       <if expr="pp_ifdef('enable_printing')">
         <include name="IDR_CLOUDPRINT_MANIFEST" file="resources\cloud_print_app\manifest.json" type="BINDATA" />
-        <include name="IDR_CLOUD_PRINT_SETUP_DONE_HTML" file="resources\cloud_print\cloud_print_setup_done.html" flattenhtml="true" type="BINDATA" />
-        <include name="IDR_CLOUD_PRINT_SETUP_FLOW_HTML" file="resources\cloud_print\cloud_print_setup_flow.html" flattenhtml="true" type="BINDATA" />
-        <include name="IDR_CLOUD_PRINT_SETUP_LOGIN_HTML" file="resources\cloud_print\cloud_print_setup_login.html" flattenhtml="true" type="BINDATA" />
       </if>
       <include name="IDR_CRASHES_HTML" file="resources\crashes.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       <include name="IDR_CRASHES_JS" file="resources\crashes.js" type="BINDATA" />
@@ -120,10 +119,8 @@
       </if>
       <include name="IDR_FLAGS_HTML" file="resources\flags.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_FLAGS_JS" file="resources\flags.js" type="BINDATA" />
-      <if expr="not is_android">
-        <include name="IDR_GAIA_LOGIN_HTML" file="sync\resources\gaia_login.html" flattenhtml="true" type="BINDATA" />
-      </if>
       <include name="IDR_HELP_JS" file="resources\help\help.js" flattenhtml="true" type="BINDATA" />
+      <include name="IDR_CHANNEL_CHANGE_PAGE_JS" file="resources\help\channel_change_page.js" flattenhtml="true" type="BINDATA" />
       <include name="IDR_HISTORY_HTML" file="resources\history\history.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       <include name="IDR_HISTORY_JS" file="resources\history\history.js" flattenhtml="true" type="BINDATA" />
       <include name="IDR_OTHER_DEVICES_JS" file="resources\history\other_devices.js" flattenhtml="true" type="BINDATA" />
@@ -158,9 +155,7 @@
       <include name="IDR_LOCAL_NTP_HTML" file="resources\local_ntp\local_ntp.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       <include name="IDR_LOCAL_NTP_CSS" file="resources\local_ntp\local_ntp.css" type="BINDATA" />
       <include name="IDR_LOCAL_NTP_JS" file="resources\local_ntp\local_ntp.js" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_LOCAL_NTP_IMAGES_LOGO_PNG" file="resources\local_ntp\images\ntp_google_logo.png" type="BINDATA" />
       <include name="IDR_LOCAL_NTP_IMAGES_2X_LOGO_PNG" file="resources\local_ntp\images\2x\ntp_google_logo.png" type="BINDATA" />
-      <include name="IDR_LOCAL_NTP_IMAGES_WHITE_LOGO_PNG" file="resources\local_ntp\images\ntp_white_google_logo.png" type="BINDATA" />
       <include name="IDR_LOCAL_NTP_IMAGES_2X_WHITE_LOGO_PNG" file="resources\local_ntp\images\2x\ntp_white_google_logo.png" type="BINDATA" />
       <include name="IDR_LOCAL_OMNIBOX_POPUP_IMAGES_HISTORY_ICON_PNG" file="resources\local_omnibox_popup\images\history_icon.png" type="BINDATA" />
       <include name="IDR_LOCAL_OMNIBOX_POPUP_IMAGES_2X_HISTORY_ICON_PNG" file="resources\local_omnibox_popup\images\2x\history_icon.png" type="BINDATA" />
@@ -259,6 +254,10 @@
       <include name="IDR_USER_ACTIONS_HTML" file="resources\user_actions\user_actions.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       <include name="IDR_USER_ACTIONS_CSS" file="resources\user_actions\user_actions.css" type="BINDATA" />
       <include name="IDR_USER_ACTIONS_JS" file="resources\user_actions\user_actions.js" type="BINDATA" />
+      <if expr="pp_ifdef('enable_webrtc')">
+        <include name="IDR_WEBRTC_LOGS_HTML" file="resources\media\webrtc_logs.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
+        <include name="IDR_WEBRTC_LOGS_JS" file="resources\media\webrtc_logs.js" type="BINDATA" />
+      </if>
       <include name="IDR_WEBSTORE_MANIFEST" file="resources\webstore_app\manifest.json" type="BINDATA" />
       <if expr="pp_ifdef('use_ash')">
         <include name="IDR_TASK_MANAGER_HTML" file="resources\task_manager\main.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
@@ -274,7 +273,6 @@
       </if>
       <include name="IDR_GAIA_AUTH_MANIFEST" file="resources\gaia_auth\manifest.json" type="BINDATA" />
       <include name="IDR_GAIA_AUTH_KEYBOARD_MANIFEST" file="resources\gaia_auth\manifest_keyboard.json" type="BINDATA" />
-      <include name="IDR_GAIA_TEST_AUTH_MANIFEST" file="resources\gaia_auth\manifest_test.json" type="BINDATA" />
       <if expr="pp_ifdef('chromeos')">
         <include name="IDR_ABOUT_SYS_HTML" file="resources\chromeos\about_sys.html" flattenhtml="true" type="BINDATA" />
         <include name="IDR_BACKLOADER_MANIFEST" file="resources\backloader\manifest.json" type="BINDATA" />
@@ -340,6 +338,11 @@
         <include name="IDR_QUICK_OFFICE_MANIFEST" file="resources\quick_office\manifest.json" type="BINDATA" />
         <include name="IDR_QUICKOFFICE_EDITOR_MANIFEST"
         file="resources\quick_office\manifest_experimental.json" type="BINDATA" />
+      </if>
+      <if expr="pp_ifdef('chromeos')">
+        <include name="IDR_SALSA_CSS" file="resources\chromeos\salsa.css" type="BINDATA" />
+        <include name="IDR_SALSA_HTML" file="resources\chromeos\salsa.html" type="BINDATA" />
+        <include name="IDR_SALSA_JS" file="resources\chromeos\salsa.js" type="BINDATA" />
       </if>
       <if expr="pp_ifdef('use_ash')">
         <include name="IDR_GESTURE_CONFIG_CSS" file="resources\gesture_config.css" type="BINDATA" />

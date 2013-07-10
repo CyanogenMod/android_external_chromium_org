@@ -7,7 +7,7 @@
 #include <cmath>
 
 #include "base/mac/scoped_nsautorelease_pool.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "grit/ui_resources.h"
 #include "grit/ui_strings.h"
 #include "skia/ext/skia_utils_mac.h"
@@ -18,6 +18,7 @@
 #import "ui/message_center/cocoa/settings_controller.h"
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/message_center_style.h"
+#include "ui/message_center/notifier_settings.h"
 
 const int kBackButtonSize = 16;
 
@@ -124,7 +125,7 @@ const CGFloat kTrayBottomMargin = 75;
 
 - (void)loadView {
   // Configure the root view as a background-colored box.
-  scoped_nsobject<NSBox> view([[NSBox alloc] initWithFrame:NSMakeRect(
+  base::scoped_nsobject<NSBox> view([[NSBox alloc] initWithFrame:NSMakeRect(
       0, 0, [MCTrayViewController trayWidth], kControlAreaHeight)]);
   [view setBorderType:NSNoBorder];
   [view setBoxType:NSBoxCustom];
@@ -138,7 +139,7 @@ const CGFloat kTrayBottomMargin = 75;
   [self layoutControlArea];
 
   // Configure the scroll view in which all the notifications go.
-  scoped_nsobject<NSView> documentView(
+  base::scoped_nsobject<NSView> documentView(
       [[NSView alloc] initWithFrame:NSZeroRect]);
   scrollView_.reset([[NSScrollView alloc] initWithFrame:[view frame]]);
   clipView_.reset(
@@ -168,7 +169,7 @@ const CGFloat kTrayBottomMargin = 75;
 
   std::map<std::string, MCNotificationController*> newMap;
 
-  scoped_nsobject<NSShadow> shadow([[NSShadow alloc] init]);
+  base::scoped_nsobject<NSShadow> shadow([[NSShadow alloc] init]);
   [shadow setShadowColor:[NSColor colorWithDeviceWhite:0 alpha:0.55]];
   [shadow setShadowOffset:NSMakeSize(0, -1)];
   [shadow setShadowBlurRadius:2.0];
@@ -187,7 +188,7 @@ const CGFloat kTrayBottomMargin = 75;
     const auto& existing = notificationsMap_.find((*it)->id());
     MCNotificationController* notification = nil;
     if (existing == notificationsMap_.end()) {
-      scoped_nsobject<MCNotificationController> controller(
+      base::scoped_nsobject<MCNotificationController> controller(
           [[MCNotificationController alloc]
               initWithNotification:*it
                      messageCenter:messageCenter_]);
@@ -279,19 +280,10 @@ const CGFloat kTrayBottomMargin = 75;
   if (settingsController_)
     return [self hideSettings:sender];
 
-  {
-    // ShowNotificationSettingsDialog() returns an object owned by an
-    // autoreleased controller. Use a local autorelease pool to make sure this
-    // controller doesn't outlive self if self destroyed before the runloop
-    // flushes autoreleased objects (for example, in tests).
-    base::mac::ScopedNSAutoreleasePool pool;
-    // This ends up calling message_center::ShowSettings() and will set up the
-    // NotifierSettingsProvider along the way.
-    message_center::NotifierSettingsDelegateMac* delegate =
-        static_cast<message_center::NotifierSettingsDelegateMac*>(
-            messageCenter_->ShowNotificationSettingsDialog([self view]));
-    settingsController_.reset([delegate->cocoa_controller() retain]);
-  }
+  message_center::NotifierSettingsProvider* provider =
+      messageCenter_->GetNotifierSettingsProvider();
+  settingsController_.reset(
+      [[MCSettingsController alloc] initWithProvider:provider]);
 
   [[self view] addSubview:[settingsController_ view]];
 
@@ -302,12 +294,16 @@ const CGFloat kTrayBottomMargin = 75;
   [backButton_ setHidden:NO];
   [clearAllButton_ setEnabled:NO];
 
+  [scrollView_ setHidden:YES];
+
   [[[self view] window] recalculateKeyViewLoop];
 
   [self updateTrayViewAndWindow];
 }
 
 - (void)hideSettings:(id)sender {
+  [scrollView_ setHidden:NO];
+
   [[settingsController_ view] removeFromSuperview];
   settingsController_.reset();
 
@@ -387,7 +383,7 @@ const CGFloat kTrayBottomMargin = 75;
   [title_ setStringValue:
       l10n_util::GetNSString(IDS_MESSAGE_CENTER_FOOTER_TITLE)];
   [title_ setTextColor:gfx::SkColorToCalibratedNSColor(
-      message_center::kFooterTextColor)];
+      message_center::kRegularTextColor)];
   [title_ sizeToFit];
 
   NSRect titleFrame = [title_ frame];
@@ -421,10 +417,15 @@ const CGFloat kTrayBottomMargin = 75;
   configureButton(backButton_);
   [backButton_ setHidden:YES];
   [backButton_ setKeyEquivalent:@"\e"];
+  [backButton_ setToolTip:l10n_util::GetNSString(
+      IDS_MESSAGE_CENTER_SETTINGS_GO_BACK_BUTTON_TOOLTIP)];
+  [[backButton_ cell]
+      accessibilitySetOverrideValue:[backButton_ toolTip]
+                       forAttribute:NSAccessibilityDescriptionAttribute];
   [[self view] addSubview:backButton_];
 
   // Create the divider line between the control area and the notifications.
-  scoped_nsobject<NSBox> divider(
+  base::scoped_nsobject<NSBox> divider(
       [[NSBox alloc] initWithFrame:NSMakeRect(0, 0, NSWidth([view frame]), 1)]);
   [divider setAutoresizingMask:NSViewMinYMargin];
   [divider setBorderType:NSNoBorder];
@@ -459,6 +460,9 @@ const CGFloat kTrayBottomMargin = 75;
       rb.GetNativeImageNamed(IDR_NOTIFICATION_SETTINGS_PRESSED).ToNSImage()];
   [settingsButton_ setToolTip:
       l10n_util::GetNSString(IDS_MESSAGE_CENTER_SETTINGS_BUTTON_LABEL)];
+  [[settingsButton_ cell]
+      accessibilitySetOverrideValue:[settingsButton_ toolTip]
+                       forAttribute:NSAccessibilityDescriptionAttribute];
   [settingsButton_ setAction:@selector(showSettings:)];
   configureButton(settingsButton_);
   [view addSubview:settingsButton_];
@@ -477,6 +481,9 @@ const CGFloat kTrayBottomMargin = 75;
       rb.GetNativeImageNamed(IDR_NOTIFICATION_CLEAR_ALL_PRESSED).ToNSImage()];
   [clearAllButton_ setToolTip:
       l10n_util::GetNSString(IDS_MESSAGE_CENTER_CLEAR_ALL)];
+  [[clearAllButton_ cell]
+      accessibilitySetOverrideValue:[clearAllButton_ toolTip]
+                       forAttribute:NSAccessibilityDescriptionAttribute];
   [clearAllButton_ setAction:@selector(clearAllNotifications:)];
   configureButton(clearAllButton_);
   [view addSubview:clearAllButton_];
@@ -494,6 +501,9 @@ const CGFloat kTrayBottomMargin = 75;
       rb.GetNativeImageNamed(IDR_NOTIFICATION_PAUSE_PRESSED).ToNSImage()];
   [pauseButton_ setToolTip:
       l10n_util::GetNSString(IDS_MESSAGE_CENTER_QUIET_MODE_BUTTON_TOOLTIP)];
+  [[pauseButton_ cell]
+      accessibilitySetOverrideValue:[pauseButton_ toolTip]
+                       forAttribute:NSAccessibilityDescriptionAttribute];
   [pauseButton_ setAction:@selector(toggleQuietMode:)];
   configureButton(pauseButton_);
   [view addSubview:pauseButton_];
@@ -588,7 +598,7 @@ const CGFloat kTrayBottomMargin = 75;
 }
 
 - (void)hideNotificationsPendingRemoval {
-  scoped_nsobject<NSMutableArray> animationDataArray(
+  base::scoped_nsobject<NSMutableArray> animationDataArray(
       [[NSMutableArray alloc] init]);
 
   // Fade-out those notifications pending removal.
@@ -619,7 +629,7 @@ const CGFloat kTrayBottomMargin = 75;
 }
 
 - (void)moveUpRemainingNotifications {
-  scoped_nsobject<NSMutableArray> animationDataArray(
+  base::scoped_nsobject<NSMutableArray> animationDataArray(
       [[NSMutableArray alloc] init]);
 
   // Compute the position where the remaining notifications should start.
@@ -695,7 +705,7 @@ const CGFloat kTrayBottomMargin = 75;
     NSViewAnimationEndFrameKey : [NSValue valueWithRect:newFrame],
     NSViewAnimationEffectKey : NSViewAnimationFadeOutEffect
   };
-  scoped_nsobject<NSViewAnimation> animation([[NSViewAnimation alloc]
+  base::scoped_nsobject<NSViewAnimation> animation([[NSViewAnimation alloc]
       initWithViewAnimations:[NSArray arrayWithObject:animationDict]]);
   [animation setDuration:animationDuration_];
   [animation setDelegate:self];

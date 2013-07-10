@@ -13,7 +13,8 @@
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "content/browser/indexed_db/webidbfactory_impl.h"
+#include "content/browser/browser_main_loop.h"
+#include "content/browser/indexed_db/indexed_db_factory.h"
 #include "content/public/browser/indexed_db_context.h"
 #include "googleurl/src/gurl.h"
 #include "webkit/common/quota/quota_types.h"
@@ -22,7 +23,7 @@ class GURL;
 
 namespace base {
 class FilePath;
-class MessageLoopProxy;
+class SequencedTaskRunner;
 }
 
 namespace quota {
@@ -32,7 +33,7 @@ class SpecialStoragePolicy;
 
 namespace content {
 
-class WebIDBDatabaseImpl;
+class IndexedDBConnection;
 
 class CONTENT_EXPORT IndexedDBContextImpl
     : NON_EXPORTED_BASE(public IndexedDBContext) {
@@ -41,9 +42,9 @@ class CONTENT_EXPORT IndexedDBContextImpl
   IndexedDBContextImpl(const base::FilePath& data_path,
                        quota::SpecialStoragePolicy* special_storage_policy,
                        quota::QuotaManagerProxy* quota_manager_proxy,
-                       base::MessageLoopProxy* webkit_thread_loop);
+                       base::SequencedTaskRunner* task_runner);
 
-  WebIDBFactoryImpl* GetIDBFactory();
+  IndexedDBFactory* GetIDBFactory();
 
   // The indexed db directory.
   static const base::FilePath::CharType kIndexedDBDirectory[];
@@ -52,6 +53,7 @@ class CONTENT_EXPORT IndexedDBContextImpl
   void SetForceKeepSessionState() { force_keep_session_state_ = true; }
 
   // IndexedDBContext implementation:
+  virtual base::TaskRunner* TaskRunner() const OVERRIDE;
   virtual std::vector<GURL> GetAllOrigins() OVERRIDE;
   virtual std::vector<IndexedDBInfo> GetAllOriginsInfo() OVERRIDE;
   virtual int64 GetOriginDiskUsage(const GURL& origin_url) OVERRIDE;
@@ -59,10 +61,12 @@ class CONTENT_EXPORT IndexedDBContextImpl
   virtual void DeleteForOrigin(const GURL& origin_url) OVERRIDE;
   virtual base::FilePath GetFilePathForTesting(
       const std::string& origin_id) const OVERRIDE;
+  virtual void SetTaskRunnerForTesting(
+      base::SequencedTaskRunner* task_runner) OVERRIDE;
 
   // Methods called by IndexedDBDispatcherHost for quota support.
-  void ConnectionOpened(const GURL& origin_url, WebIDBDatabaseImpl* db);
-  void ConnectionClosed(const GURL& origin_url, WebIDBDatabaseImpl* db);
+  void ConnectionOpened(const GURL& origin_url, IndexedDBConnection* db);
+  void ConnectionClosed(const GURL& origin_url, IndexedDBConnection* db);
   void TransactionComplete(const GURL& origin_url);
   bool WouldBeOverQuota(const GURL& origin_url, int64 additional_bytes);
   bool IsOverQuota(const GURL& origin_url);
@@ -113,19 +117,21 @@ class CONTENT_EXPORT IndexedDBContextImpl
   void RemoveFromOriginSet(const GURL& origin_url) {
     GetOriginSet()->erase(origin_url);
   }
+
   // Only for testing.
   void ResetCaches();
 
-  scoped_ptr<WebIDBFactoryImpl> idb_factory_;
+  scoped_refptr<IndexedDBFactory> idb_factory_;
   base::FilePath data_path_;
   // If true, nothing (not even session-only data) should be deleted on exit.
   bool force_keep_session_state_;
   scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy_;
   scoped_refptr<quota::QuotaManagerProxy> quota_manager_proxy_;
+  base::SequencedTaskRunner* task_runner_;
   scoped_ptr<std::set<GURL> > origin_set_;
   OriginToSizeMap origin_size_map_;
   OriginToSizeMap space_available_map_;
-  typedef std::set<WebIDBDatabaseImpl*> ConnectionSet;
+  typedef std::set<IndexedDBConnection*> ConnectionSet;
   std::map<GURL, ConnectionSet> connections_;
 
   DISALLOW_COPY_AND_ASSIGN(IndexedDBContextImpl);

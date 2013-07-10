@@ -49,6 +49,8 @@
         'public/test/mock_render_thread.h',
         'public/test/mock_resource_context.cc',
         'public/test/mock_resource_context.h',
+        'public/test/nested_message_pump_android.cc',
+        'public/test/nested_message_pump_android.h',
         'public/test/render_view_fake_resources_test.cc',
         'public/test/render_view_fake_resources_test.h',
         'public/test/render_view_test.cc',
@@ -231,6 +233,11 @@
             '../third_party/libvpx/libvpx.gyp:libvpx',
           ],
         }],
+        ['OS=="android"', {
+          'dependencies': [
+            'test_support_content_jni_headers',
+          ],
+        }],
       ],
     },
     {
@@ -277,6 +284,7 @@
         'browser/download/file_metadata_unittest_linux.cc',
         'browser/download/rate_estimator_unittest.cc',
         'browser/download/save_package_unittest.cc',
+        'browser/fileapi/fileapi_message_filter_unittest.cc',
         'browser/gamepad/gamepad_provider_unittest.cc',
         'browser/gamepad/gamepad_test_helpers.cc',
         'browser/gamepad/gamepad_test_helpers.h',
@@ -310,8 +318,10 @@
         'browser/loader/resource_dispatcher_host_unittest.cc',
         'browser/loader/resource_loader_unittest.cc',
         'browser/loader/resource_scheduler_unittest.cc',
+        'browser/loader/upload_data_stream_builder_unittest.cc',
         'browser/mach_broker_mac_unittest.cc',
         'browser/media/media_internals_unittest.cc',
+        'browser/media/webrtc_identity_store_unittest.cc',
         'browser/net/sqlite_persistent_cookie_store_unittest.cc',
         'browser/notification_service_impl_unittest.cc',
         'browser/plugin_loader_posix_unittest.cc',
@@ -380,6 +390,7 @@
         'common/inter_process_time_ticks_converter_unittest.cc',
         'common/mac/attributed_string_coder_unittest.mm',
         'common/mac/font_descriptor_unittest.mm',
+        'common/page_state_serialization_unittest.cc',
         'common/page_zoom_unittest.cc',
         'common/sandbox_mac_diraccess_unittest.mm',
         'common/sandbox_mac_fontloading_unittest.mm',
@@ -396,11 +407,13 @@
         'renderer/gpu/input_handler_proxy_unittest.cc',
         'renderer/hyphenator/hyphenator_unittest.cc',
         'renderer/ico_image_decoder_unittest.cc',
+        'renderer/media/android/media_info_loader_unittest.cc',
         'renderer/media/audio_message_filter_unittest.cc',
         'renderer/media/audio_renderer_mixer_manager_unittest.cc',
         'renderer/media/video_capture_impl_unittest.cc',
         'renderer/media/video_capture_message_filter_unittest.cc',
         'renderer/paint_aggregator_unittest.cc',
+        'renderer/skia_benchmarking_extension_unittest.cc',
         'renderer/pepper/pepper_broker_impl_unittest.cc',
         'renderer/render_thread_impl_unittest.cc',
         'renderer/render_view_impl_unittest.cc',
@@ -433,8 +446,6 @@
         '../webkit/browser/blob/local_file_stream_reader_unittest.cc',
         '../webkit/browser/blob/mock_blob_url_request_context.cc',
         '../webkit/browser/blob/mock_blob_url_request_context.h',
-        '../webkit/browser/chromeos/fileapi/cros_mount_point_provider_unittest.cc',
-        '../webkit/browser/chromeos/fileapi/file_access_permissions_unittest.cc',
         '../webkit/browser/database/database_quota_client_unittest.cc',
         '../webkit/browser/database/database_tracker_unittest.cc',
         '../webkit/browser/database/database_util_unittest.cc',
@@ -497,9 +508,7 @@
         '../webkit/common/database/database_identifier_unittest.cc',
         '../webkit/common/dom_storage/dom_storage_map_unittest.cc',
         '../webkit/common/fileapi/file_system_util_unittest.cc',
-        '../webkit/glue/glue_serialize_unittest.cc',
         '../webkit/glue/multipart_response_delegate_unittest.cc',
-        '../webkit/glue/resource_request_body_unittest.cc',
         '../webkit/glue/webkit_glue_unittest.cc',
         '../webkit/mocks/mock_weburlloader.cc',
         '../webkit/mocks/mock_weburlloader.h',
@@ -533,7 +542,6 @@
         '../webkit/renderer/media/buffered_resource_loader_unittest.cc',
         '../webkit/renderer/media/cache_util_unittest.cc',
         '../webkit/renderer/media/crypto/key_systems_unittest.cc',
-        '../webkit/renderer/media/media_info_loader_unittest.cc',
         '../webkit/renderer/media/test_response_generator.cc',
         '../webkit/renderer/media/test_response_generator.h',
         '../webkit/renderer/media/webaudiosourceprovider_impl_unittest.cc',
@@ -645,7 +653,7 @@
              'renderer/active_notification_tracker_unittest.cc',
            ],
         }],
-        ['use_x11 == 1', {
+        ['OS=="linux"', {
           'dependencies': [
             '../build/linux/system.gyp:dbus',
             '../dbus/dbus.gyp:dbus_test_support',
@@ -747,7 +755,6 @@
             '../skia/skia.gyp:skia',
             '../testing/gmock.gyp:gmock',
             '../testing/gtest.gyp:gtest',
-            '../third_party/WebKit/Tools/DumpRenderTree/DumpRenderTree.gyp/DumpRenderTree.gyp:TestRunner_resources',
             '../third_party/mesa/mesa.gyp:osmesa',
             '../third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
             '../ui/gl/gl.gyp:gl',
@@ -790,12 +797,13 @@
             'browser/download/save_package_browsertest.cc',
             'browser/fileapi/file_system_browsertest.cc',
             'browser/gpu/gpu_crash_browsertest.cc',
+            'browser/gpu/gpu_ipc_browsertests.cc',
             'browser/gpu/gpu_functional_browsertest.cc',
             'browser/gpu/gpu_memory_test.cc',
             'browser/gpu/gpu_pixel_browsertest.cc',
             'browser/gpu/webgl_conformance_test.cc',
             'browser/gpu/webgl_conformance_test_list_autogen.h',
-            'browser/in_process_webkit/indexed_db_browsertest.cc',
+            'browser/indexed_db/indexed_db_browsertest.cc',
             'browser/loader/resource_dispatcher_host_browsertest.cc',
             'browser/media/encrypted_media_browsertest.cc',
             'browser/media/media_browsertest.cc',
@@ -844,8 +852,6 @@
             'renderer/savable_resources_browsertest.cc',
             'test/accessibility_browser_test_utils.cc',
             'test/accessibility_browser_test_utils.h',
-            'test/browser_test_message_pump_android.cc',
-            'test/browser_test_message_pump_android.h',
             'test/content_browser_test.h',
             'test/content_browser_test.cc',
             'test/content_browser_test_utils.cc',
@@ -945,7 +951,6 @@
               # npapi test plugin doesn't build on android or ios
               'dependencies': [
                 # Runtime dependencies
-                '../third_party/WebKit/Tools/DumpRenderTree/DumpRenderTree.gyp/DumpRenderTree.gyp:copy_TestNetscapePlugIn',
                 '../webkit/plugins/webkit_plugins.gyp:copy_npapi_test_plugin',
               ],
             }],
@@ -962,8 +967,11 @@
                 'renderer/pepper/pepper_file_chooser_host_unittest.cc',
                 'renderer/pepper/pepper_graphics_2d_host_unittest.cc',
               ],
-            }, {  # enable_plugins==1
+            }],
+            ['enable_pepper_cdms==1', {
               'dependencies': [
+                # Runtime dependencies.
+                '../third_party/widevine/cdm/widevine_cdm.gyp:widevinecdmadapter',
                 '../webkit/support/webkit_support.gyp:clearkeycdmadapter',
               ],
             }],
@@ -992,6 +1000,7 @@
           ],
           'sources': [
             'common/gpu/client/gl_helper_unittests.cc',
+            'common/gpu/client/gpu_in_process_context_tests.cc',
           ],
         },
         {
@@ -1133,6 +1142,7 @@
           'dependencies': [
             'content_browsertests',
             'content_java',
+            'content_java_test_support',
             'content_shell_java',
           ],
           'variables': {
@@ -1161,6 +1171,22 @@
     }],
     ['OS == "android"', {
       'targets': [
+        {
+          'target_name': 'test_support_content_jni_headers',
+          'type': 'none',
+          'sources': [
+            'public/test/android/javatests/src/org/chromium/content/browser/test/NestedSystemMessageHandler.java',
+          ],
+          'direct_dependent_settings': {
+            'include_dirs': [
+              '<(SHARED_INTERMEDIATE_DIR)/content/public/test',
+            ],
+          },
+          'variables': {
+            'jni_gen_package': 'content/public/test',
+          },
+          'includes': [ '../build/jni_generator.gypi' ],
+        },
         {
           'target_name': 'content_java_test_support',
           'type': 'none',

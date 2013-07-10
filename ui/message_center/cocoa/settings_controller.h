@@ -7,7 +7,7 @@
 
 #import <Cocoa/Cocoa.h>
 
-#import "base/memory/scoped_nsobject.h"
+#import "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/message_center/message_center_export.h"
 #include "ui/message_center/notifier_settings.h"
@@ -17,23 +17,20 @@
 namespace message_center {
 
 // Bridge class between C++ and Cocoa world.
-class NotifierSettingsDelegateMac : public NotifierSettingsDelegate {
+class NotifierSettingsObserverMac : public NotifierSettingsObserver {
  public:
-  NotifierSettingsDelegateMac(MCSettingsController* settings_controller)
+  NotifierSettingsObserverMac(MCSettingsController* settings_controller)
       : settings_controller_(settings_controller) {}
-  virtual ~NotifierSettingsDelegateMac();
+  virtual ~NotifierSettingsObserverMac();
 
-  MCSettingsController* cocoa_controller() { return settings_controller_; }
-
-  // Overridden from NotifierSettingsDelegate:
-  virtual void UpdateIconImage(const std::string& id,
+  // Overridden from NotifierSettingsObserver:
+  virtual void UpdateIconImage(const NotifierId& notifier_id,
                                const gfx::Image& icon) OVERRIDE;
-  virtual void UpdateFavicon(const GURL& url, const gfx::Image& icon) OVERRIDE;
 
  private:
   MCSettingsController* settings_controller_;  // weak, owns this
 
-  DISALLOW_COPY_AND_ASSIGN(NotifierSettingsDelegateMac);
+  DISALLOW_COPY_AND_ASSIGN(NotifierSettingsObserverMac);
 };
 
 }  // namespace message_center
@@ -43,26 +40,23 @@ class NotifierSettingsDelegateMac : public NotifierSettingsDelegate {
 MESSAGE_CENTER_EXPORT
 @interface MCSettingsController : NSViewController {
  @private
-  scoped_ptr<message_center::NotifierSettingsDelegateMac> delegate_;
+  scoped_ptr<message_center::NotifierSettingsObserverMac> observer_;
   message_center::NotifierSettingsProvider* provider_;
 
   // The "Settings" text at the top.
-  scoped_nsobject<NSTextField> settingsText_;
+  base::scoped_nsobject<NSTextField> settingsText_;
 
   // The smaller text below the "Settings" text.
-  scoped_nsobject<NSTextField> detailsText_;
+  base::scoped_nsobject<NSTextField> detailsText_;
 
   // Container for all the checkboxes.
-  scoped_nsobject<NSScrollView> scrollView_;
+  base::scoped_nsobject<NSScrollView> scrollView_;
 
   std::vector<message_center::Notifier*> notifiers_;
 }
 
 // Designated initializer.
 - (id)initWithProvider:(message_center::NotifierSettingsProvider*)provider;
-
-// Returns the bridge object for this controller.
-- (message_center::NotifierSettingsDelegateMac*)delegate;
 
 @end
 

@@ -14,8 +14,6 @@
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 
-class Profile;
-
 namespace IPC {
 struct ChannelHandle;
 class ChannelProxy;
@@ -40,10 +38,6 @@ class AppShimHost : public IPC::Listener,
   void ServeChannel(const IPC::ChannelHandle& handle);
 
  protected:
-
-  // Used internally; virtual so they can be mocked for testing.
-  virtual Profile* FetchProfileForDirectory(const base::FilePath& profile_dir);
-
   // IPC::Listener implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void OnChannelError() OVERRIDE;
@@ -60,17 +54,17 @@ class AppShimHost : public IPC::Listener,
                    std::string app_id,
                    apps::AppShimLaunchType launch_type);
 
-  // Called when the app shim process notifies that the app should be brought
-  // to the front (i.e. the user has clicked on the app's icon in the dock or
-  // Cmd+Tabbed to it.)
-  void OnFocus();
+  // Called when the app shim process notifies that the app was focused.
+  void OnFocus(apps::AppShimFocusType focus_type);
+
+  void OnSetHidden(bool hidden);
 
   // Called when the app shim process notifies that the app should quit.
   void OnQuit();
 
   // apps::AppShimHandler::Host overrides:
   virtual void OnAppClosed() OVERRIDE;
-  virtual Profile* GetProfile() const OVERRIDE;
+  virtual base::FilePath GetProfilePath() const OVERRIDE;
   virtual std::string GetAppId() const OVERRIDE;
 
   // Closes the channel and destroys the AppShimHost.
@@ -78,7 +72,7 @@ class AppShimHost : public IPC::Listener,
 
   scoped_ptr<IPC::ChannelProxy> channel_;
   std::string app_id_;
-  Profile* profile_;
+  base::FilePath profile_path_;
 };
 
 #endif  // CHROME_BROWSER_WEB_APPLICATIONS_APP_SHIM_HOST_MAC_H_

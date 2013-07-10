@@ -13,6 +13,7 @@
 #include "base/memory/weak_ptr.h"
 #include "net/base/completion_callback.h"
 #include "net/base/host_port_pair.h"
+#include "net/base/load_timing_info.h"
 #include "net/base/net_log.h"
 #include "net/http/http_auth_controller.h"
 #include "net/http/http_request_headers.h"
@@ -92,10 +93,9 @@ class NET_EXPORT_PRIVATE SpdyProxyClientSocket : public ProxyClientSocket,
 
   // SpdyStream::Delegate implementation.
   virtual void OnRequestHeadersSent() OVERRIDE;
-  virtual int OnResponseHeadersReceived(const SpdyHeaderBlock& response,
-                                        base::Time response_time,
-                                        int status) OVERRIDE;
-  virtual int OnDataReceived(scoped_ptr<SpdyBuffer> buffer) OVERRIDE;
+  virtual SpdyResponseHeadersStatus OnResponseHeadersUpdated(
+      const SpdyHeaderBlock& response_headers) OVERRIDE;
+  virtual void OnDataReceived(scoped_ptr<SpdyBuffer> buffer) OVERRIDE;
   virtual void OnDataSent() OVERRIDE;
   virtual void OnClose(int status) OVERRIDE;
 
@@ -159,7 +159,9 @@ class NET_EXPORT_PRIVATE SpdyProxyClientSocket : public ProxyClientSocket,
   // True if the transport socket has ever sent data.
   bool was_ever_used_;
 
-  scoped_ptr<SpdyHttpStream> response_stream_;
+  // Used only for redirects.
+  bool redirect_has_load_timing_info_;
+  LoadTimingInfo redirect_load_timing_info_;
 
   base::WeakPtrFactory<SpdyProxyClientSocket> weak_factory_;
 

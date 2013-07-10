@@ -80,7 +80,6 @@ class CC_EXPORT LayerTreeImpl {
   const LayerTreeDebugState& debug_state() const;
   float device_scale_factor() const;
   gfx::Size device_viewport_size() const;
-  std::string layer_tree_as_text() const;
   DebugRectHistory* debug_rect_history() const;
   scoped_ptr<base::Value> AsValue() const;
 
@@ -149,8 +148,6 @@ class CC_EXPORT LayerTreeImpl {
 
   void set_needs_full_tree_sync(bool needs) { needs_full_tree_sync_ = needs; }
   bool needs_full_tree_sync() const { return needs_full_tree_sync_; }
-
-  void ClearRenderSurfaces();
 
   const LayerImplList& RenderSurfaceLayerList() const;
 
@@ -236,6 +233,7 @@ class CC_EXPORT LayerTreeImpl {
 
   ui::LatencyInfo latency_info_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(LayerTreeImpl);
 };
 

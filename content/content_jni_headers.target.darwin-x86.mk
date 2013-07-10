@@ -16,7 +16,7 @@ GYP_TARGET_DEPENDENCIES := \
 
 
 ### Generated for rule "content_content_gyp_content_jni_headers_target_generate_jni_headers":
-# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/content/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['public/android/java/src/org/chromium/content/app/ChildProcessService.java', 'public/android/java/src/org/chromium/content/app/ContentMain.java', 'public/android/java/src/org/chromium/content/app/LibraryLoader.java', 'public/android/java/src/org/chromium/content/browser/AndroidBrowserProcess.java', 'public/android/java/src/org/chromium/content/browser/ChildProcessLauncher.java', 'public/android/java/src/org/chromium/content/browser/ContentSettings.java', 'public/android/java/src/org/chromium/content/browser/ContentVideoView.java', 'public/android/java/src/org/chromium/content/browser/ContentViewCore.java', 'public/android/java/src/org/chromium/content/browser/ContentViewRenderView.java', 'public/android/java/src/org/chromium/content/browser/ContentViewStatics.java', 'public/android/java/src/org/chromium/content/browser/DeviceMotionAndOrientation.java', 'public/android/java/src/org/chromium/content/browser/DownloadController.java', 'public/android/java/src/org/chromium/content/browser/input/ImeAdapter.java', 'public/android/java/src/org/chromium/content/browser/input/DateTimeChooserAndroid.java', 'public/android/java/src/org/chromium/content/browser/InterstitialPageDelegateAndroid.java', 'public/android/java/src/org/chromium/content/browser/LoadUrlParams.java', 'public/android/java/src/org/chromium/content/browser/LocationProvider.java', 'public/android/java/src/org/chromium/content/browser/MediaResourceGetter.java', 'public/android/java/src/org/chromium/content/browser/SmoothScroller.java', 'public/android/java/src/org/chromium/content/browser/SpeechRecognition.java', 'public/android/java/src/org/chromium/content/browser/TouchPoint.java', 'public/android/java/src/org/chromium/content/browser/TracingIntentHandler.java', 'public/android/java/src/org/chromium/content/browser/WebContentsObserverAndroid.java', 'public/android/java/src/org/chromium/content/common/CommandLine.java', 'public/android/java/src/org/chromium/content/common/DeviceTelephonyInfo.java', 'public/android/java/src/org/chromium/content/common/TraceEvent.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/content/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
+# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/content/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['public/android/java/src/org/chromium/content/app/ChildProcessService.java', 'public/android/java/src/org/chromium/content/app/ContentMain.java', 'public/android/java/src/org/chromium/content/app/LibraryLoader.java', 'public/android/java/src/org/chromium/content/browser/accessibility/BrowserAccessibilityManager.java', 'public/android/java/src/org/chromium/content/browser/AndroidBrowserProcess.java', 'public/android/java/src/org/chromium/content/browser/ChildProcessLauncher.java', 'public/android/java/src/org/chromium/content/browser/ContentSettings.java', 'public/android/java/src/org/chromium/content/browser/ContentVideoView.java', 'public/android/java/src/org/chromium/content/browser/ContentViewCore.java', 'public/android/java/src/org/chromium/content/browser/ContentViewRenderView.java', 'public/android/java/src/org/chromium/content/browser/ContentViewStatics.java', 'public/android/java/src/org/chromium/content/browser/DeviceMotionAndOrientation.java', 'public/android/java/src/org/chromium/content/browser/DownloadController.java', 'public/android/java/src/org/chromium/content/browser/input/ImeAdapter.java', 'public/android/java/src/org/chromium/content/browser/input/DateTimeChooserAndroid.java', 'public/android/java/src/org/chromium/content/browser/InterstitialPageDelegateAndroid.java', 'public/android/java/src/org/chromium/content/browser/LoadUrlParams.java', 'public/android/java/src/org/chromium/content/browser/LocationProvider.java', 'public/android/java/src/org/chromium/content/browser/MediaResourceGetter.java', 'public/android/java/src/org/chromium/content/browser/SmoothScroller.java', 'public/android/java/src/org/chromium/content/browser/SpeechRecognition.java', 'public/android/java/src/org/chromium/content/browser/TouchPoint.java', 'public/android/java/src/org/chromium/content/browser/TracingIntentHandler.java', 'public/android/java/src/org/chromium/content/browser/WebContentsObserverAndroid.java', 'public/android/java/src/org/chromium/content/common/CommandLine.java', 'public/android/java/src/org/chromium/content/common/DeviceTelephonyInfo.java', 'public/android/java/src/org/chromium/content/common/TraceEvent.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/content/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/content/jni/ChildProcessService_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/content/jni/ChildProcessService_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/ChildProcessService_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
@@ -46,6 +46,16 @@ $(gyp_shared_intermediate_dir)/content/jni/LibraryLoader_jni.h: $(LOCAL_PATH)/co
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/LibraryLoader_jni.h
+
+$(gyp_shared_intermediate_dir)/content/jni/BrowserAccessibilityManager_jni.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/content/jni/BrowserAccessibilityManager_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/content/jni/BrowserAccessibilityManager_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
+$(gyp_shared_intermediate_dir)/content/jni/BrowserAccessibilityManager_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
+$(gyp_shared_intermediate_dir)/content/jni/BrowserAccessibilityManager_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/accessibility/BrowserAccessibilityManager.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/accessibility/BrowserAccessibilityManager.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt
+
+.PHONY: content_content_jni_headers_gyp_rule_trigger
+content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/BrowserAccessibilityManager_jni.h
 
 $(gyp_shared_intermediate_dir)/content/jni/AndroidBrowserProcess_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/content/jni/AndroidBrowserProcess_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -283,6 +293,7 @@ GYP_GENERATED_OUTPUTS := \
 	$(gyp_shared_intermediate_dir)/content/jni/ChildProcessService_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/ContentMain_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/LibraryLoader_jni.h \
+	$(gyp_shared_intermediate_dir)/content/jni/BrowserAccessibilityManager_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/AndroidBrowserProcess_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/ChildProcessLauncher_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/ContentSettings_jni.h \
@@ -314,6 +325,7 @@ LOCAL_GENERATED_SOURCES := \
 	$(gyp_shared_intermediate_dir)/content/jni/ChildProcessService_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/ContentMain_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/LibraryLoader_jni.h \
+	$(gyp_shared_intermediate_dir)/content/jni/BrowserAccessibilityManager_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/AndroidBrowserProcess_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/ChildProcessLauncher_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/ContentSettings_jni.h \
@@ -345,7 +357,7 @@ LOCAL_SRC_FILES :=
 
 
 # Flags passed to both C and C++ files.
-MY_CFLAGS := \
+MY_CFLAGS_Debug := \
 	--param=ssp-buffer-size=4 \
 	-Werror \
 	-fno-exceptions \
@@ -379,9 +391,7 @@ MY_CFLAGS := \
 	-fdata-sections \
 	-ffunction-sections
 
-MY_CFLAGS_C :=
-
-MY_DEFS := \
+MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
@@ -406,18 +416,16 @@ MY_DEFS := \
 	'-DWTF_USE_DYNAMIC_ANNOTATIONS=1' \
 	'-D_DEBUG'
 
-LOCAL_CFLAGS := $(MY_CFLAGS_C) $(MY_CFLAGS) $(MY_DEFS)
 
 # Include paths placed before CFLAGS/CPPFLAGS
-LOCAL_C_INCLUDES := \
+LOCAL_C_INCLUDES_Debug := \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
 
-LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 
 # Flags passed to only C++ (and not C) files.
-LOCAL_CPPFLAGS := \
+LOCAL_CPPFLAGS_Debug := \
 	-fno-rtti \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
@@ -426,6 +434,92 @@ LOCAL_CPPFLAGS := \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
+
+# Flags passed to both C and C++ files.
+MY_CFLAGS_Release := \
+	--param=ssp-buffer-size=4 \
+	-Werror \
+	-fno-exceptions \
+	-fno-strict-aliasing \
+	-Wall \
+	-Wno-unused-parameter \
+	-Wno-missing-field-initializers \
+	-fvisibility=hidden \
+	-pipe \
+	-fPIC \
+	-m32 \
+	-mmmx \
+	-march=pentium4 \
+	-msse2 \
+	-mfpmath=sse \
+	-fuse-ld=gold \
+	-ffunction-sections \
+	-funwind-tables \
+	-g \
+	-fno-short-enums \
+	-finline-limit=64 \
+	-Wa,--noexecstack \
+	-U_FORTIFY_SOURCE \
+	-Wno-extra \
+	-Wno-ignored-qualifiers \
+	-Wno-type-limits \
+	-fno-stack-protector \
+	-Os \
+	-fno-ident \
+	-fdata-sections \
+	-ffunction-sections \
+	-fomit-frame-pointer \
+	-fno-unwind-tables \
+	-fno-asynchronous-unwind-tables
+
+MY_DEFS_Release := \
+	'-DCONTENT_IMPLEMENTATION' \
+	'-DANGLE_DX11' \
+	'-D_FILE_OFFSET_BITS=64' \
+	'-DUSE_LINUX_BREAKPAD' \
+	'-DNO_TCMALLOC' \
+	'-DDISABLE_NACL' \
+	'-DCHROMIUM_BUILD' \
+	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_GPU=1' \
+	'-DUSE_OPENSSL=1' \
+	'-DENABLE_EGLIMAGE=1' \
+	'-DENABLE_LANGUAGE_DETECTION=1' \
+	'-D__STDC_CONSTANT_MACROS' \
+	'-D__STDC_FORMAT_MACROS' \
+	'-DANDROID' \
+	'-D__GNU_SOURCE=1' \
+	'-DUSE_STLPORT=1' \
+	'-D_STLP_USE_PTR_SPECIALIZATIONS=1' \
+	'-DCHROME_BUILD_ID=""' \
+	'-DNDEBUG' \
+	'-DNVALGRIND' \
+	'-DDYNAMIC_ANNOTATIONS_ENABLED=0' \
+	'-D_FORTIFY_SOURCE=2'
+
+
+# Include paths placed before CFLAGS/CPPFLAGS
+LOCAL_C_INCLUDES_Release := \
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
+
+
+# Flags passed to only C++ (and not C) files.
+LOCAL_CPPFLAGS_Release := \
+	-fno-rtti \
+	-fno-threadsafe-statics \
+	-fvisibility-inlines-hidden \
+	-Wsign-compare \
+	-Wno-error=c++0x-compat \
+	-Wno-non-virtual-dtor \
+	-Wno-sign-promo
+
+
+LOCAL_CFLAGS := $(MY_CFLAGS_$(GYP_CONFIGURATION)) $(MY_DEFS_$(GYP_CONFIGURATION))
+LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES_$(GYP_CONFIGURATION))
+LOCAL_CPPFLAGS := $(LOCAL_CPPFLAGS_$(GYP_CONFIGURATION))
 ### Rules for final target.
 # Add target alias to "gyp_all_modules" target.
 .PHONY: gyp_all_modules

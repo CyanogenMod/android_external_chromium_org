@@ -51,10 +51,10 @@ void WriteToDiskInternal(const base::FilePath& index_filename,
     // TODO(felipeg): Add better error handling.
     LOG(ERROR) << "Could not write Simple Cache index to temporary file: "
                << temp_filename.value();
-    file_util::Delete(temp_filename, /* recursive = */ false);
+    base::Delete(temp_filename, /* recursive = */ false);
   } else {
     // Swap temp and index_file.
-    bool result = file_util::ReplaceFile(temp_filename, index_filename);
+    bool result = base::ReplaceFile(temp_filename, index_filename, NULL);
     DCHECK(result);
   }
   if (app_on_background) {
@@ -69,6 +69,9 @@ void WriteToDiskInternal(const base::FilePath& index_filename,
 }  // namespace
 
 namespace disk_cache {
+
+// static
+const char SimpleIndexFile::kIndexFileName[] = "the-real-index";
 
 SimpleIndexFile::IndexMetadata::IndexMetadata() :
     magic_number_(kSimpleIndexMagicNumber),
@@ -111,7 +114,8 @@ SimpleIndexFile::SimpleIndexFile(
     const base::FilePath& index_file_directory)
     : cache_thread_(cache_thread),
       worker_pool_(worker_pool),
-      index_file_path_(index_file_directory.AppendASCII("the-real-index")) {}
+      index_file_path_(index_file_directory.AppendASCII(kIndexFileName)) {
+}
 
 SimpleIndexFile::~SimpleIndexFile() {}
 
@@ -174,10 +178,18 @@ scoped_ptr<SimpleIndex::EntrySet> SimpleIndexFile::LoadFromDisk(
   std::string contents;
   if (!file_util::ReadFileToString(index_filename, &contents)) {
     LOG(WARNING) << "Could not read Simple Index file.";
+    base::Delete(index_filename, false);
     return scoped_ptr<SimpleIndex::EntrySet>();
   }
 
-  return SimpleIndexFile::Deserialize(contents.data(), contents.size());
+  scoped_ptr<SimpleIndex::EntrySet> entries =
+      SimpleIndexFile::Deserialize(contents.data(), contents.size());
+  if (!entries) {
+    base::Delete(index_filename, false);
+    return scoped_ptr<SimpleIndex::EntrySet>();
+  }
+
+  return entries.Pass();
 }
 
 // static
@@ -266,7 +278,7 @@ void SimpleIndexFile::LoadIndexEntriesInternal(
     UMA_HISTOGRAM_TIMES("SimpleCache.IndexLoadTime",
                         base::TimeTicks::Now() - start);
     UMA_HISTOGRAM_COUNTS("SimpleCache.IndexEntriesLoaded",
-                         index_file_entries->size());
+                         index_file_entries ? index_file_entries->size() : 0);
   }
 
   UMA_HISTOGRAM_BOOLEAN("SimpleCache.IndexStale", index_stale);
@@ -319,7 +331,7 @@ scoped_ptr<SimpleIndex::EntrySet> SimpleIndexFile::RestoreFromDisk(
     const base::FilePath& index_file_path) {
   LOG(INFO) << "Simple Cache Index is being restored from disk.";
 
-  file_util::Delete(index_file_path, /* recursive = */ false);
+  base::Delete(index_file_path, /* recursive = */ false);
   scoped_ptr<SimpleIndex::EntrySet> index_file_entries(
       new SimpleIndex::EntrySet());
 

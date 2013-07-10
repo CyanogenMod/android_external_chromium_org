@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,7 +26,11 @@ extern const char kMethodInternalAttachWindowTo[];
 extern const char kMethodInternalPersistObject[];
 extern const char kMethodInternalSetPermission[];
 
+// Internal events
+extern const char kEventInternalAttached[];
+
 // Attributes.
+extern const char kAttributeApi[];
 extern const char kAttributeAutoSize[];
 extern const char kAttributeContentWindow[];
 extern const char kAttributeMaxHeight[];
@@ -40,13 +44,9 @@ extern const char kAttributeSrc[];
 // Events.
 extern const char kEventClose[];
 extern const char kEventConsoleMessage[];
-extern const char kEventContentLoad[];
 extern const char kEventExit[];
 extern const char kEventLoadAbort[];
-extern const char kEventLoadCommit[];
-extern const char kEventLoadRedirect[];
 extern const char kEventLoadStart[];
-extern const char kEventLoadStop[];
 extern const char kEventNewWindow[];
 extern const char kEventRequestPermission[];
 extern const char kEventResponsive[];
@@ -62,10 +62,8 @@ extern const char kLevel[];
 extern const char kLine[];
 extern const char kMessage[];
 extern const char kName[];
-extern const char kNewURL[];
 extern const char kNewHeight[];
 extern const char kNewWidth[];
-extern const char kOldURL[];
 extern const char kOldHeight[];
 extern const char kOldWidth[];
 extern const char kPermission[];

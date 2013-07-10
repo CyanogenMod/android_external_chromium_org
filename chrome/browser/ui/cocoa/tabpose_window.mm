@@ -89,11 +89,11 @@ const CGFloat kSelectionInset = 5;
 }
 
 - (void)drawInContext:(CGContextRef)context {
-  base::mac::ScopedCFTypeRef<CGColorSpaceRef> grayColorSpace(
+  base::ScopedCFTypeRef<CGColorSpaceRef> grayColorSpace(
       CGColorSpaceCreateWithName(kCGColorSpaceGenericGray));
   CGFloat grays[] = { startGray_, 1.0, endGray_, 1.0 };
   CGFloat locations[] = { 0, 1 };
-  base::mac::ScopedCFTypeRef<CGGradientRef> gradient(
+  base::ScopedCFTypeRef<CGGradientRef> gradient(
       CGGradientCreateWithColorComponents(
           grayColorSpace.get(), grays, locations, arraysize(locations)));
   CGPoint topLeft = CGPointMake(0.0, self.bounds.size.height);
@@ -120,7 +120,7 @@ class ThumbnailLoader;
 
   // If the backing store couldn't be used and a thumbnail was returned from a
   // renderer process, it's stored in |thumbnail_|.
-  base::mac::ScopedCFTypeRef<CGImageRef> thumbnail_;
+  base::ScopedCFTypeRef<CGImageRef> thumbnail_;
 
   // True if the layer already sent a thumbnail request to a renderer.
   BOOL didSendLoad_;
@@ -976,10 +976,10 @@ void AnimateCALayerOpacityFromTo(
                 showZoom:(BOOL)showZoom
                    slomo:(BOOL)slomo
        animationDelegate:(id)animationDelegate {
-  scoped_nsobject<CALayer> layer([[ThumbnailLayer alloc]
-      initWithWebContents:tile.web_contents()
-                 fullSize:tile.GetStartRectRelativeTo(
-                     tileSet_->selected_tile()).size]);
+  base::scoped_nsobject<CALayer> layer(
+      [[ThumbnailLayer alloc] initWithWebContents:tile.web_contents()
+                                         fullSize:tile.GetStartRectRelativeTo(
+                                             tileSet_->selected_tile()).size]);
   [layer setNeedsDisplay];
 
   NSTimeInterval interval =
@@ -1031,7 +1031,7 @@ void AnimateCALayerOpacityFromTo(
   NSFont* font = [NSFont systemFontOfSize:tile.title_font_size()];
   tile.set_font_metrics([font ascender], -[font descender]);
 
-  base::mac::ScopedCFTypeRef<CGImageRef> favicon(
+  base::ScopedCFTypeRef<CGImageRef> favicon(
       base::mac::CopyNSImageToCGImage(tile.favicon()));
 
   CALayer* faviconLayer = [CALayer layer];
@@ -1611,15 +1611,15 @@ void AnimateCALayerOpacityFromTo(
   tileSet_->MoveTileFromTo(from, to);
 
   // Move corresponding layers from |from| to |to|.
-  scoped_nsobject<CALayer> thumbLayer(
+  base::scoped_nsobject<CALayer> thumbLayer(
       [[allThumbnailLayers_ objectAtIndex:from] retain]);
   [allThumbnailLayers_ removeObjectAtIndex:from];
   [allThumbnailLayers_ insertObject:thumbLayer.get() atIndex:to];
-  scoped_nsobject<CALayer> faviconLayer(
+  base::scoped_nsobject<CALayer> faviconLayer(
       [[allFaviconLayers_ objectAtIndex:from] retain]);
   [allFaviconLayers_ removeObjectAtIndex:from];
   [allFaviconLayers_ insertObject:faviconLayer.get() atIndex:to];
-  scoped_nsobject<CALayer> titleLayer(
+  base::scoped_nsobject<CALayer> titleLayer(
       [[allTitleLayers_ objectAtIndex:from] retain]);
   [allTitleLayers_ removeObjectAtIndex:from];
   [allTitleLayers_ insertObject:titleLayer.get() atIndex:to];

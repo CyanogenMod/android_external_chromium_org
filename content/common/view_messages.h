@@ -14,13 +14,13 @@
 #include "content/common/browser_rendering_stats.h"
 #include "content/common/content_export.h"
 #include "content/common/content_param_traits.h"
+#include "content/common/cookie_data.h"
 #include "content/common/navigation_gesture.h"
 #include "content/common/pepper_renderer_instance_data.h"
 #include "content/common/view_message_enums.h"
 #include "content/port/common/input_event_ack_state.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/context_menu_params.h"
-#include "content/public/common/context_menu_source_type.h"
 #include "content/public/common/favicon_url.h"
 #include "content/public/common/file_chooser_params.h"
 #include "content/public/common/frame_navigate_params.h"
@@ -50,6 +50,7 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/base/range/range.h"
+#include "ui/base/ui_base_types.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_f.h"
@@ -57,7 +58,6 @@
 #include "ui/gfx/vector2d_f.h"
 #include "ui/shell_dialogs/selected_file_info.h"
 #include "webkit/common/webmenuitem.h"
-#include "webkit/glue/webcookie.h"
 #include "webkit/plugins/npapi/webplugin.h"
 
 #if defined(OS_MACOSX)
@@ -78,7 +78,6 @@ IPC_ENUM_TRAITS(WebKit::WebPopupType)
 IPC_ENUM_TRAITS(WebKit::WebTextDirection)
 IPC_ENUM_TRAITS(WebMenuItem::Type)
 IPC_ENUM_TRAITS(WindowContainerType)
-IPC_ENUM_TRAITS(content::ContextMenuSourceType)
 IPC_ENUM_TRAITS(content::FaviconURL::IconType)
 IPC_ENUM_TRAITS(content::FileChooserParams::Mode)
 IPC_ENUM_TRAITS(content::JavaScriptMessageType)
@@ -90,6 +89,7 @@ IPC_ENUM_TRAITS(content::StopFindAction)
 IPC_ENUM_TRAITS(content::ThreeDAPIType)
 IPC_ENUM_TRAITS(media::ChannelLayout)
 IPC_ENUM_TRAITS(media::MediaLogEvent::Type)
+IPC_ENUM_TRAITS(ui::MenuSourceType)
 IPC_ENUM_TRAITS(ui::TextInputType)
 
 #if defined(OS_MACOSX)
@@ -267,7 +267,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::RendererPreferences)
   IPC_STRUCT_TRAITS_MEMBER(touchscreen_fling_profile)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(webkit_glue::WebCookie)
+IPC_STRUCT_TRAITS_BEGIN(content::CookieData)
   IPC_STRUCT_TRAITS_MEMBER(name)
   IPC_STRUCT_TRAITS_MEMBER(value)
   IPC_STRUCT_TRAITS_MEMBER(domain)
@@ -303,6 +303,10 @@ IPC_STRUCT_TRAITS_END()
 IPC_STRUCT_TRAITS_BEGIN(content::BrowserRenderingStats)
   IPC_STRUCT_TRAITS_MEMBER(input_event_count)
   IPC_STRUCT_TRAITS_MEMBER(total_input_latency)
+  IPC_STRUCT_TRAITS_MEMBER(touch_ui_count)
+  IPC_STRUCT_TRAITS_MEMBER(total_touch_ui_latency)
+  IPC_STRUCT_TRAITS_MEMBER(touch_acked_count)
+  IPC_STRUCT_TRAITS_MEMBER(total_touch_acked_latency)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_BEGIN(ViewHostMsg_CreateWindow_Params)
@@ -373,6 +377,7 @@ IPC_STRUCT_BEGIN(ViewHostMsg_DateTimeDialogValue_Params)
   IPC_STRUCT_MEMBER(int, hour)
   IPC_STRUCT_MEMBER(int, minute)
   IPC_STRUCT_MEMBER(int, second)
+  IPC_STRUCT_MEMBER(int, week)
   IPC_STRUCT_MEMBER(double, minimum)
   IPC_STRUCT_MEMBER(double, maximum)
 IPC_STRUCT_END()
@@ -1649,7 +1654,7 @@ IPC_SYNC_MESSAGE_ROUTED2_1(ViewHostMsg_GetCookies,
 IPC_SYNC_MESSAGE_CONTROL2_1(ViewHostMsg_GetRawCookies,
                             GURL /* url */,
                             GURL /* first_party_for_cookies */,
-                            std::vector<webkit_glue::WebCookie>
+                            std::vector<content::CookieData>
                                 /* raw_cookies */)
 
 // Used to delete cookie for the given URL and name
@@ -1790,21 +1795,21 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_DidContentsPreferredSizeChange,
 // ViewHostMsg_DidChangeScrollOffset works properly in this case.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_DidChangeScrollOffset)
 
-// Notifies that the scrollbars-visible state of the content changed.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_DidChangeScrollOffsetPinningForMainFrame,
-                    bool /* has_horizontal_scrollbar */,
-                    bool /* has_vertical_scrollbar */)
-
 // Notifies that the pinned-to-side state of the content changed.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_DidChangeScrollbarsForMainFrame,
+IPC_MESSAGE_ROUTED2(ViewHostMsg_DidChangeScrollOffsetPinningForMainFrame,
                     bool /* pinned_to_left */,
                     bool /* pinned_to_right */)
+
+// Notifies that the scrollbars-visible state of the content changed.
+IPC_MESSAGE_ROUTED2(ViewHostMsg_DidChangeScrollbarsForMainFrame,
+                    bool /* has_horizontal_scrollbar */,
+                    bool /* has_vertical_scrollbar */)
 
 // Notifies that the number of JavaScript scroll handlers changed.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_DidChangeNumWheelEvents,
                     int /* count */)
 
-// Notifies whether there are JavaScript touche event handlers or not.
+// Notifies whether there are JavaScript touch event handlers or not.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_HasTouchEventHandlers,
                     bool /* has_handlers */)
 

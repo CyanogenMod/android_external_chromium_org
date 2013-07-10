@@ -28,7 +28,6 @@ bool IsSupportedKeySystemWithMediaMimeType(
     const std::string& key_system);
 
 // Returns a name for |key_system| suitable to UMA logging.
-std::string KeySystemNameForUMA(const std::string& key_system);
 std::string KeySystemNameForUMA(const WebKit::WebString& key_system);
 
 // Returns whether AesDecryptor can be used for the given |key_system|.
@@ -38,6 +37,11 @@ bool CanUseAesDecryptor(const std::string& key_system);
 // Returns the Pepper MIME type for |key_system|.
 // Returns an empty string if |key_system| is unknown or not Pepper-based.
 std::string GetPepperType(const std::string& key_system);
+#endif
+
+#if defined(OS_ANDROID)
+// Convert |key_system| to 16-byte Android UUID.
+std::vector<uint8> GetUUID(const std::string& key_system);
 #endif
 
 }  // namespace webkit_media

@@ -17,7 +17,7 @@
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/chromeos/drive/resource_entry_conversion.h"
-#include "chrome/browser/google_apis/drive_api_util.h"
+#include "chrome/browser/drive/drive_api_util.h"
 #include "content/public/browser/browser_thread.h"
 
 using content::BrowserThread;
@@ -56,7 +56,7 @@ CopyOperation::CopyOperation(base::SequencedTaskRunner* blocking_task_runner,
                              JobScheduler* scheduler,
                              internal::ResourceMetadata* metadata,
                              internal::FileCache* cache,
-                             google_apis::DriveServiceInterface* drive_service,
+                             DriveServiceInterface* drive_service,
                              const base::FilePath& temporary_file_directory)
   : blocking_task_runner_(blocking_task_runner),
     observer_(observer),
@@ -327,7 +327,7 @@ void CopyOperation::CopyAfterGetResourceEntryPair(
   }
 
   // If Drive API v2 is enabled, we can copy resources on server side.
-  if (google_apis::util::IsDriveV2ApiEnabled()) {
+  if (util::IsDriveV2ApiEnabled()) {
     base::FilePath new_name = dest_file_path.BaseName();
     if (src_file_proto->file_specific_info().is_hosted_document()) {
       // Drop the document extension, which should not be in the title.

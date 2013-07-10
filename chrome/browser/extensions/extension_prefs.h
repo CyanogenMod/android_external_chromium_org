@@ -11,7 +11,7 @@
 
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_scoped_prefs.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
@@ -80,6 +80,17 @@ class ExtensionPrefs : public ExtensionScopedPrefs,
     // the default for the NTP and chrome.management.launchApp().
     LAUNCH_DEFAULT = LAUNCH_REGULAR
   };
+
+  // This enum is used to store the reason an extension's install has been
+  // delayed.  Do not remove items or re-order this enum as it is used in
+  // preferences.
+  enum DelayReason {
+    DELAY_REASON_NONE = 0,
+    DELAY_REASON_GC = 1,
+    DELAY_REASON_WAIT_FOR_IDLE = 2,
+    DELAY_REASON_WAIT_FOR_IMPORTS = 3,
+  };
+
 
   // Creates base::Time classes. The default implementation is just to return
   // the current time, but tests can inject alternative implementations.
@@ -394,9 +405,10 @@ class ExtensionPrefs : public ExtensionScopedPrefs,
       const std::string& extension_id) const;
 
   // We've downloaded an updated .crx file for the extension, but are waiting
-  // for idle time to install it.
+  // to install it.
   void SetDelayedInstallInfo(const Extension* extension,
                              Extension::State initial_state,
+                             DelayReason delay_reason,
                              const syncer::StringOrdinal& page_ordinal);
 
   // Removes any delayed install information we have for the given
@@ -410,6 +422,8 @@ class ExtensionPrefs : public ExtensionScopedPrefs,
   // for |extension_id|, if we have any. Otherwise returns NULL.
   scoped_ptr<ExtensionInfo> GetDelayedInstallInfo(
       const std::string& extension_id) const;
+
+  DelayReason GetDelayedInstallReason(const std::string& extension_id) const;
 
   // Returns information about all the extensions that have delayed install
   // information.
@@ -429,6 +443,9 @@ class ExtensionPrefs : public ExtensionScopedPrefs,
 
   // Returns the creation flags mask for the extension.
   int GetCreationFlags(const std::string& extension_id) const;
+
+  // Returns the creation flags mask for a delayed install extension.
+  int GetDelayedInstallCreationFlags(const std::string& extension_id) const;
 
   // Returns true if the extension was installed from the Chrome Web Store.
   bool IsFromWebStore(const std::string& extension_id) const;
@@ -477,13 +494,6 @@ class ExtensionPrefs : public ExtensionScopedPrefs,
         const std::string& extension_id) const;
   void SetGeometryCache(const std::string& extension_id,
                         scoped_ptr<base::DictionaryValue> cache);
-
-  // The path of the directory containing the last file chosen by the user in
-  // response to a chrome.fileSystem.chooseEntry() call for this extension.
-  bool GetLastChooseEntryDirectory(const std::string& extension_id,
-                                   base::FilePath* result) const;
-  void SetLastChooseEntryDirectory(const std::string& extension_id,
-                                   const base::FilePath& value);
 
  private:
   friend class ExtensionPrefsBlacklistedExtensions;  // Unit test.

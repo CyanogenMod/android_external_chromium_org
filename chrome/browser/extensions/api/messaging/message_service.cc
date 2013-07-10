@@ -6,7 +6,6 @@
 
 #include "base/atomic_sequence_num.h"
 #include "base/bind.h"
-#include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
@@ -71,7 +70,7 @@ struct MessageService::MessageChannel {
 
 struct MessageService::OpenChannelParams {
   content::RenderProcessHost* source;
-  DictionaryValue source_tab;
+  base::DictionaryValue source_tab;
   scoped_ptr<MessagePort> receiver;
   int receiver_port_id;
   std::string source_extension_id;
@@ -81,7 +80,7 @@ struct MessageService::OpenChannelParams {
 
   // Takes ownership of receiver.
   OpenChannelParams(content::RenderProcessHost* source,
-                    scoped_ptr<DictionaryValue> source_tab,
+                    scoped_ptr<base::DictionaryValue> source_tab,
                     MessagePort* receiver,
                     int receiver_port_id,
                     const std::string& source_extension_id,
@@ -241,7 +240,7 @@ void MessageService::OpenChannelToExtension(
       source_process_id, source_routing_id);
 
   // Include info about the opener's tab (if it was a tab).
-  scoped_ptr<DictionaryValue> source_tab;
+  scoped_ptr<base::DictionaryValue> source_tab;
   GURL source_url_for_tab;
 
   if (source_contents && ExtensionTabUtil::GetTabId(source_contents) >= 0) {
@@ -356,8 +355,8 @@ void MessageService::OpenChannelToTab(
 
   scoped_ptr<OpenChannelParams> params(new OpenChannelParams(
         source,
-        scoped_ptr<DictionaryValue>(),  // Source tab doesn't make sense for
-                                        // opening to tabs.
+        scoped_ptr<base::DictionaryValue>(),  // Source tab doesn't make sense
+                                              // for opening to tabs.
         receiver.release(),
         receiver_port_id,
         extension_id,
@@ -458,7 +457,7 @@ void MessageService::CloseChannelImpl(
 }
 
 void MessageService::PostMessage(
-    int source_port_id, scoped_ptr<base::ListValue> message) {
+    int source_port_id, const std::string& message) {
   int channel_id = GET_CHANNEL_ID(source_port_id);
   MessageChannelMap::iterator iter = channels_.find(channel_id);
   if (iter == channels_.end()) {
@@ -469,9 +468,7 @@ void MessageService::PostMessage(
       lazy_background_task_queue_->AddPendingTask(
           pending->second.first, pending->second.second,
           base::Bind(&MessageService::PendingPostMessage,
-                     weak_factory_.GetWeakPtr(),
-                     source_port_id,
-                     base::Passed(&message)));
+                     weak_factory_.GetWeakPtr(), source_port_id, message));
     }
     return;
   }
@@ -481,13 +478,12 @@ void MessageService::PostMessage(
   MessagePort* port = IS_OPENER_PORT_ID(dest_port_id) ?
       iter->second->opener.get() : iter->second->receiver.get();
 
-  port->DispatchOnMessage(message.Pass(), dest_port_id);
+  port->DispatchOnMessage(message, dest_port_id);
 }
 
-void MessageService::PostMessageFromNativeProcess(
-    int port_id,
-    scoped_ptr<base::ListValue> message) {
-  PostMessage(port_id, message.Pass());
+void MessageService::PostMessageFromNativeProcess(int port_id,
+                                                  const std::string& message) {
+  PostMessage(port_id, message);
 }
 
 void MessageService::Observe(int type,

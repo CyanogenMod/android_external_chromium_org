@@ -5,14 +5,14 @@
 #include "content/browser/gamepad/gamepad_platform_data_fetcher_mac.h"
 
 #include "base/mac/foundation_util.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 
-#include <IOKit/hid/IOHIDKeys.h>
 #import <Foundation/Foundation.h>
+#include <IOKit/hid/IOHIDKeys.h>
 
 using WebKit::WebGamepad;
 using WebKit::WebGamepads;
@@ -60,7 +60,7 @@ GamepadPlatformDataFetcherMac::GamepadPlatformDataFetcherMac()
     return;
   }
 
-  scoped_nsobject<NSArray> criteria([[NSArray alloc] initWithObjects:
+  base::scoped_nsobject<NSArray> criteria([[NSArray alloc] initWithObjects:
       DeviceMatching(kGenericDesktopUsagePage, kJoystickUsageNumber),
       DeviceMatching(kGenericDesktopUsagePage, kGameUsageNumber),
       DeviceMatching(kGenericDesktopUsagePage, kMultiAxisUsageNumber),
@@ -269,7 +269,7 @@ void GamepadPlatformDataFetcherMac::DeviceAdd(IOHIDDeviceRef device) {
   [as16 getBytes:data_.items[slot].id
           length:kOutputLengthBytes - sizeof(WebKit::WebUChar)];
 
-  base::mac::ScopedCFTypeRef<CFArrayRef> elements(
+  base::ScopedCFTypeRef<CFArrayRef> elements(
       IOHIDDeviceCopyMatchingElements(device, NULL, kIOHIDOptionsTypeNone));
   AddButtonsAndAxes(CFToNSCast(elements), slot);
 

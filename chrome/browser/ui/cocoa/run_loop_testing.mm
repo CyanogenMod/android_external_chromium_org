@@ -6,7 +6,7 @@
 
 #import <Foundation/Foundation.h>
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/message_loop/message_pump_mac.h"
 
 // This class is scheduled with a delayed selector to quit the message pump.
@@ -42,8 +42,8 @@ void NSRunLoopRunAllPending() {
 
   // Put a delayed selector on the queue. All other pending delayed selectors
   // will run before this, after which the internal loop can end.
-  scoped_nsobject<CocoaQuitTask> quit_task(
-      [[CocoaQuitTask alloc] initWithMessagePump:message_pump]);
+  base::scoped_nsobject<CocoaQuitTask> quit_task(
+      [[CocoaQuitTask alloc] initWithMessagePump:message_pump.get()]);
 
   [quit_task performSelector:@selector(doQuit)
                   withObject:nil

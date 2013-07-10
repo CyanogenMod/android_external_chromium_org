@@ -17,15 +17,10 @@
 #include "base/platform_file.h"
 #include "base/strings/string16.h"
 #include "third_party/WebKit/public/platform/WebCanvas.h"
-#include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
 #include "webkit/glue/webkit_glue_export.h"
 
 class SkBitmap;
 class SkCanvas;
-
-namespace net {
-class URLRequest;
-}
 
 namespace WebKit {
 struct WebFileInfo;
@@ -74,17 +69,6 @@ WEBKIT_GLUE_EXPORT WebKit::WebCanvas* ToWebCanvas(SkCanvas*);
 // There can be many such pages (maps of 256 character -> glyph) so this is
 // used to get memory usage statistics.
 WEBKIT_GLUE_EXPORT int GetGlyphPageCount();
-
-// Returns WebKit Web Inspector protocol version.
-std::string GetInspectorProtocolVersion();
-
-// Tells caller whether the given protocol version is supported by the.
-WEBKIT_GLUE_EXPORT bool IsInspectorProtocolVersionSupported(
-    const std::string& version);
-
-// Configures the URLRequest according to the referrer policy.
-WEBKIT_GLUE_EXPORT void ConfigureURLRequestForReferrerPolicy(
-    net::URLRequest* request, WebKit::WebReferrerPolicy referrer_policy);
 
 // Returns an estimate of the memory usage of the renderer process. Different
 // platforms implement this function differently, and count in different

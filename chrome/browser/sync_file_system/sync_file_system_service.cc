@@ -18,6 +18,7 @@
 #include "chrome/browser/sync_file_system/drive_file_sync_service.h"
 #include "chrome/browser/sync_file_system/local_file_sync_service.h"
 #include "chrome/browser/sync_file_system/logger.h"
+#include "chrome/browser/sync_file_system/sync_direction.h"
 #include "chrome/browser/sync_file_system/sync_event_observer.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
@@ -25,9 +26,8 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/syncable/sync_direction.h"
 #include "webkit/browser/fileapi/syncable/sync_file_metadata.h"
 #include "webkit/browser/fileapi/syncable/sync_status_code.h"
 #include "webkit/browser/fileapi/syncable/syncable_file_system_util.h"
@@ -180,43 +180,31 @@ void SyncFileSystemService::GetExtensionStatusMap(
 }
 
 void SyncFileSystemService::GetFileMetadataMap(
-    RemoteFileSyncService::OriginFileMetadataMap* metadata_map,
+    const GURL& origin,
+    RemoteFileSyncService::FileMetadataMap* metadata_map,
     size_t* num_results,
     const SyncStatusCallback& callback) {
   DCHECK(metadata_map);
+  DCHECK(!origin.is_empty());
   DCHECK(num_results);
-  remote_file_service_->GetFileMetadataMap(metadata_map);
+  remote_file_service_->GetFileMetadataMap(origin, metadata_map);
 
   // Figure out how many results have to be waited on before callback.
-  size_t expected_results = 0;
-  RemoteFileSyncService::OriginFileMetadataMap::iterator origin_itr;
-  for (origin_itr = metadata_map->begin();
-       origin_itr != metadata_map->end();
-       ++origin_itr)
-    expected_results += origin_itr->second.size();
-  if (expected_results == 0) {
-    callback.Run(SYNC_STATUS_OK);
-    return;
-  }
+  size_t expected_results = metadata_map->size();
 
   // After all metadata loaded, sync status can be added to each entry.
-  for (origin_itr = metadata_map->begin();
-       origin_itr != metadata_map->end();
-       ++origin_itr) {
-    RemoteFileSyncService::FileMetadataMap::iterator file_path_itr;
-    for (file_path_itr = origin_itr->second.begin();
-         file_path_itr != origin_itr->second.end();
-         ++file_path_itr) {
-      const GURL& origin = origin_itr->first;
-      const base::FilePath& file_path = file_path_itr->first;
-      const FileSystemURL url = CreateSyncableFileSystemURL(origin, file_path);
-      FileMetadata& metadata = file_path_itr->second;
-      GetFileSyncStatus(url, base::Bind(&DidGetFileSyncStatus,
-                                        callback,
-                                        &metadata,
-                                        expected_results,
-                                        num_results));
-    }
+  RemoteFileSyncService::FileMetadataMap::iterator file_path_itr;
+  for (file_path_itr = metadata_map->begin();
+       file_path_itr != metadata_map->end();
+       ++file_path_itr) {
+    const base::FilePath& file_path = file_path_itr->first;
+    const FileSystemURL url = CreateSyncableFileSystemURL(origin, file_path);
+    FileMetadata& metadata = file_path_itr->second;
+    GetFileSyncStatus(url, base::Bind(&DidGetFileSyncStatus,
+                                      callback,
+                                      &metadata,
+                                      expected_results,
+                                      num_results));
   }
 }
 

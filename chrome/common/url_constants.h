@@ -61,6 +61,7 @@ extern const char kChromeUIPluginsURL[];
 extern const char kChromeUIPolicyURL[];
 extern const char kChromeUIProfileSigninConfirmationURL[];
 extern const char kChromeUIPrintURL[];
+extern const char kChromeUIRestartURL[];
 extern const char kChromeUISessionFaviconURL[];
 extern const char kChromeUISettingsURL[];
 extern const char kChromeUISettingsFrameURL[];
@@ -113,10 +114,16 @@ extern const char kChromeUIFileManagerURL[];
 #if defined(USE_AURA)
 extern const char kChromeUIGestureConfigURL[];
 extern const char kChromeUIGestureConfigHost[];
+extern const char kChromeUISalsaURL[];
+extern const char kChromeUISalsaHost[];
 #endif
 
 #if (defined(OS_LINUX) && defined(TOOLKIT_VIEWS)) || defined(USE_AURA)
 extern const char kChromeUITabModalConfirmDialogURL[];
+#endif
+
+#if defined(ENABLE_WEBRTC)
+extern const char kChromeUIWebRtcLogsURL[];
 #endif
 
 // chrome components of URLs. Should be kept in sync with the full URLs above.
@@ -180,6 +187,7 @@ extern const char kChromeUIPredictorsHost[];
 extern const char kChromeUIPrintHost[];
 extern const char kChromeUIProfilerHost[];
 extern const char kChromeUIQuotaInternalsHost[];
+extern const char kChromeUIRestartHost[];
 extern const char kChromeUISessionFaviconHost[];
 extern const char kChromeUISettingsHost[];
 extern const char kChromeUISettingsFrameHost[];
@@ -263,6 +271,10 @@ extern const char kChromeUIFileManagerHost[];
 extern const char kChromeUITabModalConfirmDialogHost[];
 #endif
 
+#if defined(ENABLE_WEBRTC)
+extern const char kChromeUIWebRtcLogsHost[];
+#endif
+
 // Options sub-pages.
 extern const char kAutofillSubPage[];
 extern const char kClearBrowserDataSubPage[];
@@ -316,6 +328,13 @@ extern const char kChromeSyncLearnMoreURL[];
 
 // "Learn more" URL for the enterprise sign-in confirmation dialog.
 extern const char kChromeEnterpriseSignInLearnMoreURL[];
+
+// Management URL for the supervised users.
+extern const char kSupervisedUserManagementURL[];
+
+// Management URL for the supervised users - version without scheme, used
+// for display.
+extern const char kSupervisedUserManagementDisplayURL[];
 
 // Help URL for the settings page's search feature.
 extern const char kSettingsSearchHelpURL[];
@@ -395,6 +414,8 @@ extern const char kNaturalScrollHelpURL[];
 // The URL for the Learn More page about enterprise enrolled devices.
 extern const char kLearnMoreEnterpriseURL[];
 #endif
+
+extern const char kNotificationsHelpURL[];
 
 // "Debug" pages which are dangerous and not for general consumption.
 extern const char* const kChromeDebugURLs[];

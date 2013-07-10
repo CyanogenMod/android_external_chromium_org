@@ -28,6 +28,7 @@
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/printing/print_dialog_cloud.h"
+#include "chrome/browser/profiles/profile_info_cache_observer.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/service/service_process_control.h"
 #include "chrome/browser/sessions/session_restore.h"
@@ -190,7 +191,56 @@ void RecordLastRunAppBundlePath() {
 - (BOOL)userWillWaitForInProgressDownloads:(int)downloadCount;
 - (BOOL)shouldQuitWithInProgressDownloads;
 - (void)executeApplication:(id)sender;
+- (void)profileWasRemoved:(const base::FilePath&)profilePath;
 @end
+
+class AppControllerProfileObserver : public ProfileInfoCacheObserver {
+ public:
+  AppControllerProfileObserver(
+      ProfileManager* profile_manager, AppController* app_controller)
+      : profile_manager_(profile_manager),
+        app_controller_(app_controller) {
+    DCHECK(profile_manager_);
+    DCHECK(app_controller_);
+    profile_manager_->GetProfileInfoCache().AddObserver(this);
+  }
+
+  virtual ~AppControllerProfileObserver() {
+    DCHECK(profile_manager_);
+    profile_manager_->GetProfileInfoCache().RemoveObserver(this);
+  }
+
+ private:
+  // ProfileInfoCacheObserver implementation:
+
+  virtual void OnProfileAdded(const base::FilePath& profile_path) OVERRIDE {
+  }
+
+  virtual void OnProfileWasRemoved(const base::FilePath& profile_path,
+                                   const string16& profile_name) OVERRIDE {
+    // When a profile is deleted we need to notify the AppController,
+    // so it can correctly update its pointer to the last used profile.
+    [app_controller_ profileWasRemoved:profile_path];
+  }
+
+  virtual void OnProfileWillBeRemoved(
+      const base::FilePath& profile_path) OVERRIDE {
+  }
+
+  virtual void OnProfileNameChanged(const base::FilePath& profile_path,
+                                    const string16& old_profile_name) OVERRIDE {
+  }
+
+  virtual void OnProfileAvatarChanged(
+      const base::FilePath& profile_path) OVERRIDE {
+  }
+
+  ProfileManager* profile_manager_;
+
+  AppController* app_controller_;  // Weak; owns us.
+
+  DISALLOW_COPY_AND_ASSIGN(AppControllerProfileObserver);
+};
 
 @implementation AppController
 
@@ -585,6 +635,11 @@ void RecordLastRunAppBundlePath() {
   EncodingMenuControllerDelegate::BuildEncodingMenu([self lastProfile],
                                                     encodingMenu);
 
+  // Instantiate the ProfileInfoCache observer so that we can get
+  // notified when a profile is deleted.
+  profileInfoCacheObserver_.reset(new AppControllerProfileObserver(
+      g_browser_process->profile_manager(), self));
+
   // Since Chrome is localized to more languages than the OS, tell Cocoa which
   // menu is the Help so it can add the search item to it.
   [NSApp setHelpMenu:helpMenu_];
@@ -659,8 +714,8 @@ void RecordLastRunAppBundlePath() {
       IDS_DOWNLOAD_REMOVE_CONFIRM_CANCEL_BUTTON_LABEL);
 
   // 'waitButton' is the default choice.
-  int choice = NSRunAlertPanel(titleText, explanationText,
-                               waitTitle, exitTitle, nil);
+  int choice = NSRunAlertPanel(titleText, @"%@",
+                               waitTitle, exitTitle, nil, explanationText);
   return choice == NSAlertDefaultReturn ? YES : NO;
 }
 
@@ -712,6 +767,18 @@ void RecordLastRunAppBundlePath() {
   TabRestoreService* service =
       TabRestoreServiceFactory::GetForProfile([self lastProfile]);
   return service && !service->entries().empty();
+}
+
+// Called from the AppControllerProfileObserver every time a profile is deleted.
+- (void)profileWasRemoved:(const base::FilePath&)profilePath {
+  Profile* lastProfile = [self lastProfile];
+
+  // If the lastProfile has been deleted, the profile manager has
+  // already loaded a new one, so the pointer needs to be updated;
+  // otherwise we will try to start up a browser window with a pointer
+  // to the old profile.
+  if (profilePath == lastProfile->GetPath())
+    lastProfile_ = g_browser_process->profile_manager()->GetLastUsedProfile();
 }
 
 // Returns true if there is a modal window (either window- or application-
@@ -928,7 +995,7 @@ void RecordLastRunAppBundlePath() {
       break;
     case IDC_TASK_MANAGER:
       content::RecordAction(UserMetricsAction("TaskManager"));
-      TaskManagerMac::Show(false);
+      TaskManagerMac::Show();
       break;
     case IDC_OPTIONS:
       [self showPreferences:sender];
@@ -1226,7 +1293,7 @@ void RecordLastRunAppBundlePath() {
     [dockMenu addItem:[NSMenuItem separatorItem]];
 
   NSString* titleStr = l10n_util::GetNSStringWithFixup(IDS_NEW_WINDOW_MAC);
-  scoped_nsobject<NSMenuItem> item(
+  base::scoped_nsobject<NSMenuItem> item(
       [[NSMenuItem alloc] initWithTitle:titleStr
                                  action:@selector(commandFromDock:)
                           keyEquivalent:@""]);
@@ -1255,31 +1322,23 @@ void RecordLastRunAppBundlePath() {
       int position = 0;
       NSString* menuStr =
           l10n_util::GetNSStringWithFixup(IDS_BACKGROUND_APPS_MAC);
-      scoped_nsobject<NSMenu> appMenu([[NSMenu alloc] initWithTitle:menuStr]);
+      base::scoped_nsobject<NSMenu> appMenu(
+          [[NSMenu alloc] initWithTitle:menuStr]);
       for (extensions::ExtensionList::const_iterator cursor =
                applications.begin();
            cursor != applications.end();
            ++cursor, ++position) {
-        DCHECK_EQ(applications.GetPosition(*cursor), position);
+        DCHECK_EQ(applications.GetPosition(cursor->get()), position);
         NSString* itemStr =
             base::SysUTF16ToNSString(UTF8ToUTF16((*cursor)->name()));
-        scoped_nsobject<NSMenuItem> appItem([[NSMenuItem alloc]
-            initWithTitle:itemStr
-                   action:@selector(executeApplication:)
-            keyEquivalent:@""]);
+        base::scoped_nsobject<NSMenuItem> appItem(
+            [[NSMenuItem alloc] initWithTitle:itemStr
+                                       action:@selector(executeApplication:)
+                                keyEquivalent:@""]);
         [appItem setTarget:self];
         [appItem setTag:position];
         [appMenu addItem:appItem];
       }
-
-      scoped_nsobject<NSMenuItem> appMenuItem([[NSMenuItem alloc]
-          initWithTitle:menuStr
-                 action:@selector(executeApplication:)
-          keyEquivalent:@""]);
-      [appMenuItem setTarget:self];
-      [appMenuItem setTag:IDC_VIEW_BACKGROUND_PAGES];
-      [appMenuItem setSubmenu:appMenu];
-      [dockMenu addItem:appMenuItem];
     }
   }
 

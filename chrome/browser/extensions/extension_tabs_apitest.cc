@@ -22,15 +22,14 @@
 #define MAYBE_UpdateWindowShowState DISABLED_UpdateWindowShowState
 #else
 
-#if defined(USE_AURA) || defined(OS_MACOSX) || defined(OS_WIN)
+#if defined(USE_AURA) || defined(OS_MACOSX)
 // Maximizing/fullscreen popup window doesn't work on aura's managed mode.
 // See bug crbug.com/116305.
 // Mac: http://crbug.com/103912
-// Failing on Win7: http://crbug.com/176683
 #define MAYBE_UpdateWindowShowState DISABLED_UpdateWindowShowState
 #else
 #define MAYBE_UpdateWindowShowState UpdateWindowShowState
-#endif  // defined(USE_AURA) || defined(OS_MACOSX) || defined(OS_WIN)
+#endif  // defined(USE_AURA) || defined(OS_MACOSX)
 
 #define MAYBE_UpdateWindowResize UpdateWindowResize
 #endif  // defined(OS_LINUX) && !defined(USE_AURA)
@@ -140,7 +139,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_TabGetCurrent) {
 
 // Flaky on the trybots. See http://crbug.com/96725.
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_TabConnect) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunExtensionTest("tabs/connect")) << message_;
 }
 
@@ -156,7 +155,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_TabReload) {
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_CaptureVisibleTabJpeg) {
   host_resolver()->AddRule("a.com", "127.0.0.1");
   host_resolver()->AddRule("b.com", "127.0.0.1");
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunExtensionSubtest("tabs/capture_visible_tab",
                                   "test_jpeg.html")) << message_;
 }
@@ -164,7 +163,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_CaptureVisibleTabJpeg) {
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_CaptureVisibleTabPng) {
   host_resolver()->AddRule("a.com", "127.0.0.1");
   host_resolver()->AddRule("b.com", "127.0.0.1");
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunExtensionSubtest("tabs/capture_visible_tab",
                                   "test_png.html")) << message_;
 }

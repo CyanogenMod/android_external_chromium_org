@@ -119,16 +119,19 @@ class ResourceCreationProxy : public InterfaceProxy,
   virtual PP_Resource CreateHostResolver(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateHostResolverPrivate(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateImageData(PP_Instance instance,
-                                      PPB_ImageData_Shared::ImageDataType type,
                                       PP_ImageDataFormat format,
                                       const PP_Size* size,
                                       PP_Bool init_to_zero) OVERRIDE;
+  virtual PP_Resource CreateImageDataSimple(PP_Instance instance,
+                                            PP_ImageDataFormat format,
+                                            const PP_Size* size,
+                                            PP_Bool init_to_zero) OVERRIDE;
   virtual PP_Resource CreateNetAddressFromIPv4Address(
       PP_Instance instance,
-      const PP_NetAddress_IPv4_Dev* ipv4_addr) OVERRIDE;
+      const PP_NetAddress_IPv4* ipv4_addr) OVERRIDE;
   virtual PP_Resource CreateNetAddressFromIPv6Address(
       PP_Instance instance,
-      const PP_NetAddress_IPv6_Dev* ipv6_addr) OVERRIDE;
+      const PP_NetAddress_IPv6* ipv6_addr) OVERRIDE;
   virtual PP_Resource CreateNetAddressFromNetAddressPrivate(
       PP_Instance instance,
       const PP_NetAddress_Private& private_addr) OVERRIDE;
@@ -143,6 +146,8 @@ class ResourceCreationProxy : public InterfaceProxy,
   virtual PP_Resource CreateTCPSocketPrivate(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateUDPSocket(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateUDPSocketPrivate(PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateVideoDestination(PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateVideoSource(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateWebSocket(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateX509CertificatePrivate(
       PP_Instance instance) OVERRIDE;
@@ -170,8 +175,6 @@ class ResourceCreationProxy : public InterfaceProxy,
       PP_Instance instance,
       PP_Resource context3d_id,
       PP_VideoDecoder_Profile profile) OVERRIDE;
-  virtual PP_Resource CreateVideoDestination(PP_Instance instance) OVERRIDE;
-  virtual PP_Resource CreateVideoSource(PP_Instance instance) OVERRIDE;
 #endif  // !defined(OS_NACL)
 
   virtual bool Send(IPC::Message* msg) OVERRIDE;

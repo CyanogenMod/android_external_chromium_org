@@ -61,25 +61,6 @@ ConfigureReason FakeSyncManager::GetAndResetConfigureReason() {
   return reason;
 }
 
-void FakeSyncManager::Invalidate(
-    const ObjectIdInvalidationMap& invalidation_map) {
-  if (!sync_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&FakeSyncManager::InvalidateOnSyncThread,
-                 base::Unretained(this), invalidation_map))) {
-    NOTREACHED();
-  }
-}
-
-void FakeSyncManager::UpdateInvalidatorState(InvalidatorState state) {
-  if (!sync_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&FakeSyncManager::UpdateInvalidatorStateOnSyncThread,
-                 base::Unretained(this), state))) {
-    NOTREACHED();
-  }
-}
-
 void FakeSyncManager::WaitForSyncThread() {
   // Post a task to |sync_task_runner_| and block until it runs.
   base::RunLoop run_loop;
@@ -103,7 +84,6 @@ void FakeSyncManager::Init(
     ExtensionsActivityMonitor* extensions_activity_monitor,
     ChangeDelegate* change_delegate,
     const SyncCredentials& credentials,
-    scoped_ptr<Invalidator> invalidator,
     const std::string& invalidator_client_id,
     const std::string& restored_key_for_bootstrapping,
     const std::string& restored_keystore_key_for_bootstrapping,
@@ -161,31 +141,6 @@ void FakeSyncManager::UpdateCredentials(const SyncCredentials& credentials) {
   NOTIMPLEMENTED();
 }
 
-void FakeSyncManager::UpdateEnabledTypes(ModelTypeSet types) {
-  enabled_types_ = types;
-}
-
-void FakeSyncManager::RegisterInvalidationHandler(
-    InvalidationHandler* handler) {
-  registrar_.RegisterHandler(handler);
-}
-
-void FakeSyncManager::UpdateRegisteredInvalidationIds(
-    InvalidationHandler* handler,
-    const ObjectIdSet& ids) {
-  registrar_.UpdateRegisteredIds(handler, ids);
-}
-
-void FakeSyncManager::UnregisterInvalidationHandler(
-    InvalidationHandler* handler) {
-  registrar_.UnregisterHandler(handler);
-}
-
-void FakeSyncManager::AcknowledgeInvalidation(const invalidation::ObjectId& id,
-                                              const AckHandle& ack_handle) {
-  // Do nothing.
-}
-
 void FakeSyncManager::StartSyncingNormally(
       const ModelSafeRoutingInfo& routing_info) {
   // Do nothing.
@@ -194,27 +149,24 @@ void FakeSyncManager::StartSyncingNormally(
 void FakeSyncManager::ConfigureSyncer(
     ConfigureReason reason,
     ModelTypeSet to_download,
+    ModelTypeSet to_purge,
     ModelTypeSet to_journal,
     ModelTypeSet to_unapply,
-    ModelTypeSet to_ignore,
     const ModelSafeRoutingInfo& new_routing_info,
     const base::Closure& ready_task,
     const base::Closure& retry_task) {
   last_configure_reason_ = reason;
-  ModelTypeSet enabled_types = GetRoutingInfoTypes(new_routing_info);
-  ModelTypeSet disabled_types = Difference(
-      ModelTypeSet::All(), enabled_types);
-  disabled_types.RemoveAll(to_ignore);
+  enabled_types_ = GetRoutingInfoTypes(new_routing_info);
   ModelTypeSet success_types = to_download;
   success_types.RemoveAll(configure_fail_types_);
 
   DVLOG(1) << "Faking configuration. Downloading: "
            << ModelTypeSetToString(success_types) << ". Cleaning: "
-           << ModelTypeSetToString(disabled_types);
+           << ModelTypeSetToString(to_purge);
 
   // Update our fake directory by clearing and fake-downloading as necessary.
   UserShare* share = GetUserShare();
-  share->directory->PurgeEntriesWithTypeIn(disabled_types,
+  share->directory->PurgeEntriesWithTypeIn(to_purge,
                                            to_journal,
                                            to_unapply);
   for (ModelTypeSet::Iterator it = success_types.First(); it.Good(); it.Inc()) {
@@ -228,9 +180,9 @@ void FakeSyncManager::ConfigureSyncer(
   // TODO(sync): consider only cleaning those types that were recently disabled,
   // if this isn't the first cleanup, which more accurately reflects the
   // behavior of the real cleanup logic.
-  initial_sync_ended_types_.RemoveAll(disabled_types);
-  progress_marker_types_.RemoveAll(disabled_types);
-  cleaned_types_.PutAll(disabled_types);
+  initial_sync_ended_types_.RemoveAll(to_purge);
+  progress_marker_types_.RemoveAll(to_purge);
+  cleaned_types_.PutAll(to_purge);
 
   // Now simulate the actual configuration for those types that successfully
   // download + apply.
@@ -294,20 +246,17 @@ void FakeSyncManager::RefreshTypes(ModelTypeSet types) {
   last_refresh_request_types_ = types;
 }
 
-void FakeSyncManager::InvalidateOnSyncThread(
-    const ObjectIdInvalidationMap& invalidation_map) {
-  DCHECK(sync_task_runner_->RunsTasksOnCurrentThread());
-  registrar_.DispatchInvalidationsToHandlers(invalidation_map);
-}
-
-void FakeSyncManager::UpdateInvalidatorStateOnSyncThread(
-    InvalidatorState state) {
-  DCHECK(sync_task_runner_->RunsTasksOnCurrentThread());
-  registrar_.UpdateInvalidatorState(state);
+void FakeSyncManager::OnIncomingInvalidation(
+      const ObjectIdInvalidationMap& invalidation_map) {
+  // Do nothing.
 }
 
 ModelTypeSet FakeSyncManager::GetLastRefreshRequestTypes() {
   return last_refresh_request_types_;
+}
+
+void FakeSyncManager::OnInvalidatorStateChange(InvalidatorState state) {
+  // Do nothing.
 }
 
 }  // namespace syncer

@@ -20,7 +20,7 @@
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/cross_site_request_manager.h"
@@ -57,7 +57,7 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/context_menu_params.h"
-#include "content/public/common/context_menu_source_type.h"
+#include "content/public/common/drop_data.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
@@ -69,7 +69,6 @@
 #include "ui/shell_dialogs/selected_file_info.h"
 #include "ui/snapshot/snapshot.h"
 #include "webkit/browser/fileapi/isolated_context.h"
-#include "webkit/common/webdropdata.h"
 
 #if defined(OS_MACOSX)
 #include "content/browser/renderer_host/popup_menu_helper_mac.h"
@@ -118,10 +117,8 @@ g_created_callbacks = LAZY_INSTANCE_INITIALIZER;
 // static
 RenderViewHost* RenderViewHost::FromID(int render_process_id,
                                        int render_view_id) {
-  RenderProcessHost* process = RenderProcessHost::FromID(render_process_id);
-  if (!process)
-    return NULL;
-  RenderWidgetHost* widget = process->GetRenderWidgetHostByID(render_view_id);
+  RenderWidgetHost* widget =
+      RenderWidgetHost::FromID(render_process_id, render_view_id);
   if (!widget || !widget->IsRenderView())
     return NULL;
   return static_cast<RenderViewHostImpl*>(RenderWidgetHostImpl::From(widget));
@@ -480,10 +477,11 @@ void RenderViewHostImpl::WasSwappedOut() {
 
     // Count the number of widget hosts for the process, which is equivalent to
     // views using the process as of this writing.
-    RenderProcessHost::RenderWidgetHostsIterator iter(
-        GetProcess()->GetRenderWidgetHostsIterator());
-    for (; !iter.IsAtEnd(); iter.Advance())
-      ++views;
+    RenderWidgetHost::List widgets = RenderWidgetHost::GetRenderWidgetHosts();
+    for (size_t i = 0; i < widgets.size(); ++i) {
+      if (widgets[i]->GetProcess()->GetID() == GetProcess()->GetID())
+        ++views;
+    }
 
     if (!RenderProcessHost::run_renderer_in_process() &&
         process_handle && views <= 1) {
@@ -573,7 +571,7 @@ void RenderViewHostImpl::RequestFindMatchRects(int current_version) {
 #endif
 
 void RenderViewHostImpl::DragTargetDragEnter(
-    const WebDropData& drop_data,
+    const DropData& drop_data,
     const gfx::Point& client_pt,
     const gfx::Point& screen_pt,
     WebDragOperationsMask operations_allowed,
@@ -584,13 +582,13 @@ void RenderViewHostImpl::DragTargetDragEnter(
 
   // The URL could have been cobbled together from any highlighted text string,
   // and can't be interpreted as a capability.
-  WebDropData filtered_data(drop_data);
+  DropData filtered_data(drop_data);
   FilterURL(policy, GetProcess(), true, &filtered_data.url);
 
   // The filenames vector, on the other hand, does represent a capability to
   // access the given files.
   fileapi::IsolatedContext::FileInfoSet files;
-  for (std::vector<WebDropData::FileInfo>::iterator iter(
+  for (std::vector<DropData::FileInfo>::iterator iter(
            filtered_data.filenames.begin());
        iter != filtered_data.filenames.end(); ++iter) {
     // A dragged file may wind up as the value of an input element, or it
@@ -1446,7 +1444,7 @@ void RenderViewHostImpl::OnRunBeforeUnloadConfirm(const GURL& frame_url,
 }
 
 void RenderViewHostImpl::OnStartDragging(
-    const WebDropData& drop_data,
+    const DropData& drop_data,
     WebDragOperationsMask drag_operations_mask,
     const SkBitmap& bitmap,
     const gfx::Vector2d& bitmap_offset_in_dip,
@@ -1455,7 +1453,7 @@ void RenderViewHostImpl::OnStartDragging(
   if (!view)
     return;
 
-  WebDropData filtered_data(drop_data);
+  DropData filtered_data(drop_data);
   RenderProcessHost* process = GetProcess();
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
@@ -1473,7 +1471,7 @@ void RenderViewHostImpl::OnStartDragging(
   //    still fire though, which causes read permissions to be granted to the
   //    renderer for any file paths in the drop.
   filtered_data.filenames.clear();
-  for (std::vector<WebDropData::FileInfo>::const_iterator it =
+  for (std::vector<DropData::FileInfo>::const_iterator it =
            drop_data.filenames.begin();
        it != drop_data.filenames.end(); ++it) {
     base::FilePath path(base::FilePath::FromUTF8Unsafe(UTF16ToUTF8(it->path)));

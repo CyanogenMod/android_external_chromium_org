@@ -185,8 +185,6 @@ size_t CalculatePositionsInFrame(
 @implementation AutocompleteTextFieldCell
 
 - (CGFloat)topTextFrameOffset {
-  if (chrome::IsInstantExtendedAPIEnabled())
-    return 2.0;
   return 3.0;
 }
 
@@ -208,9 +206,7 @@ size_t CalculatePositionsInFrame(
 }
 
 - (CGFloat)lineHeight {
-  if (chrome::IsInstantExtendedAPIEnabled())
-    return 19;
-  return 16;
+  return 17;
 }
 
 - (void)clearDecorations {
@@ -551,7 +547,7 @@ size_t CalculatePositionsInFrame(
       }
 
       NSDictionary* info = [self getDictionaryForButtonDecoration:button];
-      scoped_nsobject<CrTrackingArea> area(
+      base::scoped_nsobject<CrTrackingArea> area(
           [[CrTrackingArea alloc] initWithRect:decorationFrames[i]
                                        options:NSTrackingMouseEnteredAndExited |
                                                NSTrackingActiveAlways

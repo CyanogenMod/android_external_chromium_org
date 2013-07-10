@@ -12,7 +12,9 @@
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "base/threading/thread_checker.h"
+#include "base/time/time.h"
 #include "components/autofill/content/browser/autocheckout_page_meta_data.h"
+#include "components/autofill/content/browser/autocheckout_statistic.h"
 #include "components/autofill/core/common/autocheckout_status.h"
 
 class GURL;
@@ -60,6 +62,10 @@ class AutocheckoutManager {
 
   // Called when a page containing forms is loaded.
   void OnFormsSeen();
+
+  // Whether ajax on the current page should be ignored during
+  // an Autocheckout flow.
+  bool ShouldIgnoreAjax();
 
   // Causes the Autocheckout bubble to be displayed if the user hasn't seen it
   // yet for the current page. |frame_url| is the page where Autocheckout is
@@ -116,6 +122,13 @@ class AutocheckoutManager {
   // field type specified by |field|.
   void SetValue(const AutofillField& field, FormFieldData* field_to_fill);
 
+  // Sets the progress of all steps for the given page to the provided value.
+  void SetStepProgressForPage(int page_number, AutocheckoutStepStatus status);
+
+  // Account time spent between now and |last_step_completion_timestamp_|
+  // towards |page_number|.
+  void RecordTimeTaken(int page_number);
+
   AutofillManager* autofill_manager_;  // WEAK; owns us
 
   // Credit card verification code.
@@ -145,6 +158,15 @@ class AutocheckoutManager {
 
   // Whether or not the user is in an Autocheckout flow.
   bool in_autocheckout_flow_;
+
+  // AutocheckoutStepTypes for the various pages of the flow.
+  std::map<int, std::vector<AutocheckoutStepType> > page_types_;
+
+  // Timestamp of last step's completion.
+  base::TimeTicks last_step_completion_timestamp_;
+
+  // Per page latency statistics.
+  std::vector<AutocheckoutStatistic> latency_statistics_;
 
   std::string google_transaction_id_;
 

@@ -1,0 +1,47 @@
+<!--
+  -- Copyright (c) 2013 The Chromium Authors. All rights reserved.
+  -- Use of this source code is governed by a BSD-style license that can be
+  -- found in the LICENSE file.
+  -->
+
+<element name="kb-keyset" attributes="toKeyset" on-key-up="keyUp"
+    on-key-longpress="keyLongpress">
+  <template>
+    <style>
+      @host {
+        * {
+          -webkit-box-orient: vertical;
+          -webkit-box-flex: 1;
+          display: -webkit-box;
+        }
+      }
+    </style>
+    <content select="kb-row"></content>
+    <content select="kb-accent-container" id="accentContainer"
+        touch-action="none"></content>
+  </template>
+  <script>
+    Polymer.register(this, {
+      keyLongpress: function(event, detail) {
+        if (detail.accents) {
+          var accentContainer = this.$.accentContainer.getDistributedNodes()[0];
+          accentContainer.keyset = detail.accents;
+          var activeAccentKeySet = accentContainer.querySelector('#' +
+              detail.accents);
+          activeAccentKeySet.style.width = event.target.clientWidth *
+              activeAccentKeySet.childElementCount + 'px';
+          activeAccentKeySet.style.height = event.target.clientHeight + 'px';
+          activeAccentKeySet.style.top = event.target.offsetTop + 'px';
+          var leftOffset = activeAccentKeySet.offset * event.target.clientWidth;
+          activeAccentKeySet.style.left = event.target.offsetLeft - leftOffset +
+              'px';
+          accentContainer.hidden = false;
+        }
+      },
+      keyUp: function(event, detail) {
+        if (!detail.toKeyset)
+          detail.toKeyset = this.toKeyset;
+      }
+    });
+  </script>
+</element>

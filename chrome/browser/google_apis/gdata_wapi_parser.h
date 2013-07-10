@@ -13,9 +13,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/strings/string_piece.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/google_apis/drive_entry_kinds.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace base {
 class FilePath;

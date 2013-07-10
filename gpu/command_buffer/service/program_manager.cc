@@ -15,7 +15,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/feature_info.h"
@@ -1150,7 +1150,7 @@ Program* ProgramManager::CreateProgram(
 
 Program* ProgramManager::GetProgram(GLuint client_id) {
   ProgramMap::iterator it = programs_.find(client_id);
-  return it != programs_.end() ? it->second : NULL;
+  return it != programs_.end() ? it->second.get() : NULL;
 }
 
 bool ProgramManager::GetClientId(GLuint service_id, GLuint* client_id) const {

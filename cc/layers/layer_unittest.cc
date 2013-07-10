@@ -6,7 +6,6 @@
 
 #include "cc/animation/keyframed_animation_curve.h"
 #include "cc/base/math_util.h"
-#include "cc/base/thread.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/resources/layer_painter.h"
 #include "cc/test/animation_test_common.h"
@@ -41,7 +40,7 @@ class MockLayerTreeHost : public LayerTreeHost {
  public:
   explicit MockLayerTreeHost(LayerTreeHostClient* client)
       : LayerTreeHost(client, LayerTreeSettings()) {
-    Initialize(scoped_ptr<Thread>());
+    Initialize(NULL);
   }
 
   MOCK_METHOD0(SetNeedsCommit, void());
@@ -529,6 +528,7 @@ TEST_F(LayerTest, CheckPropertyChangeCausesCorrectBehavior) {
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetDrawCheckerboardForMissingTiles(
       !test_layer->DrawCheckerboardForMissingTiles()));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetForceRenderSurface(true));
+  EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetHideLayerAndSubtree(true));
 
   EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, test_layer->SetMaskLayer(
       dummy_layer1.get()));
@@ -734,13 +734,11 @@ class LayerTreeHostFactory {
       : client_(FakeLayerTreeHostClient::DIRECT_3D) {}
 
   scoped_ptr<LayerTreeHost> Create() {
-    return LayerTreeHost::Create(
-        &client_, LayerTreeSettings(), scoped_ptr<Thread>()).Pass();
+    return LayerTreeHost::Create(&client_, LayerTreeSettings(), NULL).Pass();
   }
 
   scoped_ptr<LayerTreeHost> Create(LayerTreeSettings settings) {
-    return LayerTreeHost::Create(&client_, settings, scoped_ptr<Thread>())
-        .Pass();
+    return LayerTreeHost::Create(&client_, settings, NULL).Pass();
   }
 
  private:

@@ -17,7 +17,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
-#include "cc/base/hash_pair.h"
 #include "skia/ext/lazy_pixel_ref.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkPixelRef.h"
@@ -35,7 +34,7 @@ class AnalysisCanvas;
 namespace cc {
 
 class ContentLayerClient;
-struct RenderingStats;
+class RenderingStatsInstrumentation;
 
 class CC_EXPORT Picture
     : public base::RefCountedThreadSafe<Picture> {
@@ -61,11 +60,11 @@ class CC_EXPORT Picture
   // playback on a different thread this can only be called once.
   void Record(ContentLayerClient* client,
               const SkTileGridPicture::TileGridInfo& tile_grid_info,
-              RenderingStats* stats);
+              RenderingStatsInstrumentation* stats_instrumentation);
 
   // Gather pixel refs from recording.
   void GatherPixelRefs(const SkTileGridPicture::TileGridInfo& tile_grid_info,
-                       RenderingStats* stats);
+                       RenderingStatsInstrumentation* stats_instrumentation);
 
   // Has Record() been called yet?
   bool HasRecording() const { return picture_.get() != NULL; }
@@ -75,6 +74,10 @@ class CC_EXPORT Picture
               SkDrawPictureCallback* callback,
               gfx::Rect content_rect,
               float contents_scale);
+
+  // Draw the picture directly into the given canvas, without applying any
+  // clip/scale/layer transformations.
+  void Replay(SkCanvas* canvas);
 
   scoped_ptr<base::Value> AsValue() const;
 

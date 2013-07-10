@@ -9,19 +9,19 @@
 #include <string>
 #include "nacl_io/mount.h"
 #include "nacl_io/pepper_interface.h"
+#include "nacl_io/typed_mount_factory.h"
 
 class MountNode;
-class MountNodeDir;
-class MountNodeHttp;
 class MountHttpMock;
 
 std::string NormalizeHeaderKey(const std::string& s);
 
 class MountHttp : public Mount {
  public:
-  typedef std::map<std::string, MountNode*> NodeMap_t;
+  typedef std::map<std::string, ScopedMountNode> NodeMap_t;
 
-  virtual Error Open(const Path& path, int mode, MountNode** out_node);
+  virtual Error Access(const Path& path, int a_mode);
+  virtual Error Open(const Path& path, int mode, ScopedMountNode* out_node);
   virtual Error Unlink(const Path& path);
   virtual Error Mkdir(const Path& path, int permissions);
   virtual Error Rmdir(const Path& path);
@@ -36,11 +36,15 @@ class MountHttp : public Mount {
 
   virtual Error Init(int dev, StringMap_t& args, PepperInterface* ppapi);
   virtual void Destroy();
-  Error FindOrCreateDir(const Path& path, MountNodeDir** out_node);
+  Error FindOrCreateDir(const Path& path, ScopedMountNode* out_node);
   Error LoadManifest(const std::string& path, char** out_manifest);
   Error ParseManifest(char *text);
 
  private:
+  // Gets the URL to fetch for |path|.
+  // |path| is relative to the mount point for the HTTP filesystem.
+  std::string MakeUrl(const Path& path);
+
   std::string url_root_;
   StringMap_t headers_;
   NodeMap_t node_cache_;
@@ -49,7 +53,7 @@ class MountHttp : public Mount {
   bool cache_stat_;
   bool cache_content_;
 
-  friend class Mount;
+  friend class TypedMountFactory<MountHttp>;
   friend class MountNodeHttp;
   friend class MountHttpMock;
 };

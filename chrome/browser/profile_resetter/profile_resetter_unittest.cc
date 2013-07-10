@@ -4,11 +4,14 @@
 
 #include "chrome/browser/profile_resetter/profile_resetter.h"
 
-#include "base/bind.h"
 #include "base/prefs/pref_service.h"
+#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/extensions/extension_service_unittest.h"
 #include "chrome/browser/extensions/tab_helper.h"
+#include "chrome/browser/notifications/desktop_notification_service.h"
+#include "chrome/browser/notifications/desktop_notification_service_factory.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
+#include "chrome/browser/profile_resetter/profile_resetter_test_base.h"
 #include "chrome/browser/search_engines/template_url_service_test_util.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
@@ -17,51 +20,13 @@
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
-#include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/test/test_utils.h"
-#include "testing/gmock/include/gmock/gmock.h"
+
 
 namespace {
 
 using extensions::Extension;
 using extensions::Manifest;
-
-class MockObject {
- public:
-  void RunLoop() {
-    EXPECT_CALL(*this, Callback());
-    runner_ = new content::MessageLoopRunner;
-    runner_->Run();
-  }
-
-  void StopLoop() {
-    DCHECK(runner_.get());
-    Callback();
-    runner_->Quit();
-  }
-
- private:
-  MOCK_METHOD0(Callback, void(void));
-
-  scoped_refptr<content::MessageLoopRunner> runner_;
-};
-
-class ProfileResetterTestBase {
- public:
-  ProfileResetterTestBase();
-  ~ProfileResetterTestBase();
- protected:
-  testing::StrictMock<MockObject> mock_object_;
-  scoped_ptr<ProfileResetter> resetter_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ProfileResetterTestBase);
-};
-
-ProfileResetterTestBase::ProfileResetterTestBase() {}
-
-ProfileResetterTestBase::~ProfileResetterTestBase() {}
 
 class ProfileResetterTest : public testing::Test,
                             public ProfileResetterTestBase {
@@ -95,9 +60,6 @@ void ExtensionsResetTest::SetUp() {
   resetter_.reset(new ProfileResetter(profile_.get()));
 }
 
-// Returns a barebones test Extension object with the specified |name|.  The
-// returned extension will include background permission iff
-// |background_permission| is true.
 scoped_refptr<Extension> CreateExtension(const std::string& name,
                                          const base::FilePath& path,
                                          Manifest::Location location,
@@ -140,10 +102,17 @@ content::WebContents* PinnedTabsResetTest::CreateWebContents() {
 /********************* Tests *********************/
 
 TEST_F(ProfileResetterTest, ResetDefaultSearchEngine) {
+  PrefService* prefs = test_util_.profile()->GetPrefs();
+  DCHECK(prefs);
+  prefs->SetString(prefs::kLastPromptedGoogleURL, "http://www.foo.com/");
+
   resetter_->Reset(
       ProfileResetter::DEFAULT_SEARCH_ENGINE,
-      base::Bind(&MockObject::StopLoop, base::Unretained(&mock_object_)));
+      base::Bind(&ProfileResetterMockObject::StopLoop,
+                 base::Unretained(&mock_object_)));
   mock_object_.RunLoop();
+
+  EXPECT_EQ("", prefs->GetString(prefs::kLastPromptedGoogleURL));
 }
 
 TEST_F(ProfileResetterTest, ResetHomepage) {
@@ -155,7 +124,8 @@ TEST_F(ProfileResetterTest, ResetHomepage) {
 
   resetter_->Reset(
       ProfileResetter::HOMEPAGE,
-      base::Bind(&MockObject::StopLoop, base::Unretained(&mock_object_)));
+      base::Bind(&ProfileResetterMockObject::StopLoop,
+                 base::Unretained(&mock_object_)));
   mock_object_.RunLoop();
 
   EXPECT_TRUE(prefs->GetBoolean(prefs::kHomePageIsNewTabPage));
@@ -164,17 +134,102 @@ TEST_F(ProfileResetterTest, ResetHomepage) {
 }
 
 TEST_F(ProfileResetterTest, ResetContentSettings) {
+  HostContentSettingsMap* host_content_settings_map =
+      test_util_.profile()->GetHostContentSettingsMap();
+  DesktopNotificationService* notification_service =
+      DesktopNotificationServiceFactory::GetForProfile(test_util_.profile());
+  ContentSettingsPattern pattern =
+      ContentSettingsPattern::FromString("[*.]example.org");
+  std::map<ContentSettingsType, ContentSetting> default_settings;
+
+  for (int type = 0; type < CONTENT_SETTINGS_NUM_TYPES; ++type) {
+    if (type == CONTENT_SETTINGS_TYPE_NOTIFICATIONS) {
+      notification_service->SetDefaultContentSetting(CONTENT_SETTING_BLOCK);
+      notification_service->GrantPermission(GURL("http://foo.de"));
+    } else if (type == CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE ||
+               type == CONTENT_SETTINGS_TYPE_MIXEDSCRIPT ||
+               type == CONTENT_SETTINGS_TYPE_PROTOCOL_HANDLERS) {
+      // These types are excluded because one can't call
+      // GetDefaultContentSetting() for them.
+    } else {
+      ContentSettingsType content_type = static_cast<ContentSettingsType>(type);
+      ContentSetting default_setting =
+          host_content_settings_map->GetDefaultContentSetting(content_type,
+                                                              NULL);
+      default_settings[content_type] = default_setting;
+      ContentSetting wildcard_setting =
+          default_setting == CONTENT_SETTING_BLOCK ? CONTENT_SETTING_ALLOW
+                                                   : CONTENT_SETTING_BLOCK;
+      ContentSetting site_setting =
+          default_setting == CONTENT_SETTING_ALLOW ? CONTENT_SETTING_ALLOW
+                                                   : CONTENT_SETTING_BLOCK;
+      if (HostContentSettingsMap::IsSettingAllowedForType(
+              test_util_.profile()->GetPrefs(),
+              wildcard_setting,
+              content_type)) {
+        host_content_settings_map->SetDefaultContentSetting(
+            content_type,
+            wildcard_setting);
+      }
+      if (!HostContentSettingsMap::ContentTypeHasCompoundValue(content_type) &&
+          HostContentSettingsMap::IsValueAllowedForType(
+              test_util_.profile()->GetPrefs(),
+              Value::CreateIntegerValue(site_setting),
+              content_type)) {
+        host_content_settings_map->SetContentSetting(
+            pattern,
+            ContentSettingsPattern::Wildcard(),
+            content_type,
+            std::string(),
+            site_setting);
+        ContentSettingsForOneType host_settings;
+        host_content_settings_map->GetSettingsForOneType(
+            content_type, std::string(), &host_settings);
+        EXPECT_EQ(2U, host_settings.size());
+      }
+    }
+  }
+
   resetter_->Reset(
       ProfileResetter::CONTENT_SETTINGS,
-      base::Bind(&MockObject::StopLoop, base::Unretained(&mock_object_)));
+      base::Bind(&ProfileResetterMockObject::StopLoop,
+                 base::Unretained(&mock_object_)));
   mock_object_.RunLoop();
-}
 
-TEST_F(ProfileResetterTest, ResetCookiesAndSiteData) {
-  resetter_->Reset(
-      ProfileResetter::COOKIES_AND_SITE_DATA,
-      base::Bind(&MockObject::StopLoop, base::Unretained(&mock_object_)));
-  mock_object_.RunLoop();
+  for (int type = 0; type < CONTENT_SETTINGS_NUM_TYPES; ++type) {
+    if (type == CONTENT_SETTINGS_TYPE_NOTIFICATIONS) {
+      EXPECT_EQ(CONTENT_SETTING_ASK,
+                notification_service->GetDefaultContentSetting(NULL));
+      EXPECT_EQ(CONTENT_SETTING_ASK,
+                notification_service->GetContentSetting(GURL("http://foo.de")));
+    } else {
+      ContentSettingsType content_type = static_cast<ContentSettingsType>(type);
+      if (HostContentSettingsMap::ContentTypeHasCompoundValue(content_type) ||
+          type == CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE ||
+          content_type == CONTENT_SETTINGS_TYPE_MIXEDSCRIPT ||
+          content_type == CONTENT_SETTINGS_TYPE_PROTOCOL_HANDLERS)
+        continue;
+      ContentSetting default_setting =
+          host_content_settings_map->GetDefaultContentSetting(content_type,
+                                                              NULL);
+      EXPECT_TRUE(default_settings.count(content_type));
+      EXPECT_EQ(default_settings[content_type], default_setting);
+      if (!HostContentSettingsMap::ContentTypeHasCompoundValue(content_type)) {
+        ContentSetting site_setting =
+            host_content_settings_map->GetContentSetting(
+                GURL("example.org"),
+                GURL(),
+                content_type,
+                std::string());
+        EXPECT_EQ(default_setting, site_setting);
+      }
+
+      ContentSettingsForOneType host_settings;
+      host_content_settings_map->GetSettingsForOneType(
+          content_type, std::string(), &host_settings);
+      EXPECT_EQ(1U, host_settings.size());
+    }
+  }
 }
 
 TEST_F(ExtensionsResetTest, ResetExtensionsByDisabling) {
@@ -216,7 +271,8 @@ TEST_F(ExtensionsResetTest, ResetExtensionsByDisabling) {
 
   resetter_->Reset(
       ProfileResetter::EXTENSIONS,
-      base::Bind(&MockObject::StopLoop, base::Unretained(&mock_object_)));
+      base::Bind(&ProfileResetterMockObject::StopLoop,
+                 base::Unretained(&mock_object_)));
   mock_object_.RunLoop();
 
   EXPECT_EQ(2u, service_->extensions()->size());
@@ -236,7 +292,8 @@ TEST_F(ProfileResetterTest, ResetStartPage) {
 
   resetter_->Reset(
       ProfileResetter::STARTUP_PAGES,
-      base::Bind(&MockObject::StopLoop, base::Unretained(&mock_object_)));
+      base::Bind(&ProfileResetterMockObject::StopLoop,
+                 base::Unretained(&mock_object_)));
   mock_object_.RunLoop();
 
   startup_pref = SessionStartupPref::GetStartupPref(prefs);
@@ -250,20 +307,20 @@ TEST_F(PinnedTabsResetTest, ResetPinnedTabs) {
       base::FilePath(FILE_PATH_LITERAL("//nonexistent")),
       Manifest::INVALID_LOCATION,
       false);
-  content::WebContents* contents1 = CreateWebContents();
-  extensions::TabHelper::CreateForWebContents(contents1);
-  extensions::TabHelper::FromWebContents(contents1)->
+  scoped_ptr<content::WebContents> contents1(CreateWebContents());
+  extensions::TabHelper::CreateForWebContents(contents1.get());
+  extensions::TabHelper::FromWebContents(contents1.get())->
       SetExtensionApp(extension_app.get());
-  content::WebContents* contents2 = CreateWebContents();
-  content::WebContents* contents3 = CreateWebContents();
-  content::WebContents* contents4 = CreateWebContents();
+  scoped_ptr<content::WebContents> contents2(CreateWebContents());
+  scoped_ptr<content::WebContents> contents3(CreateWebContents());
+  scoped_ptr<content::WebContents> contents4(CreateWebContents());
   TabStripModel* tab_strip_model = browser()->tab_strip_model();
 
-  tab_strip_model->AppendWebContents(contents4, true);
-  tab_strip_model->AppendWebContents(contents3, true);
-  tab_strip_model->AppendWebContents(contents2, true);
+  tab_strip_model->AppendWebContents(contents4.get(), true);
+  tab_strip_model->AppendWebContents(contents3.get(), true);
+  tab_strip_model->AppendWebContents(contents2.get(), true);
   tab_strip_model->SetTabPinned(2, true);
-  tab_strip_model->AppendWebContents(contents1, true);
+  tab_strip_model->AppendWebContents(contents1.get(), true);
   tab_strip_model->SetTabPinned(3, true);
 
   EXPECT_EQ(contents2, tab_strip_model->GetWebContentsAt(0));
@@ -274,7 +331,8 @@ TEST_F(PinnedTabsResetTest, ResetPinnedTabs) {
 
   resetter_->Reset(
       ProfileResetter::PINNED_TABS,
-      base::Bind(&MockObject::StopLoop, base::Unretained(&mock_object_)));
+      base::Bind(&ProfileResetterMockObject::StopLoop,
+                 base::Unretained(&mock_object_)));
   mock_object_.RunLoop();
 
   EXPECT_EQ(contents1, tab_strip_model->GetWebContentsAt(0));
@@ -288,7 +346,8 @@ TEST_F(ProfileResetterTest, ResetFewFlags) {
   // mock_object_ is a StrictMock, so we verify that it is called only once.
   resetter_->Reset(
       ProfileResetter::DEFAULT_SEARCH_ENGINE | ProfileResetter::HOMEPAGE,
-      base::Bind(&MockObject::StopLoop, base::Unretained(&mock_object_)));
+      base::Bind(&ProfileResetterMockObject::StopLoop,
+                 base::Unretained(&mock_object_)));
   mock_object_.RunLoop();
 }
 

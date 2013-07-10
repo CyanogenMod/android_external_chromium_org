@@ -4,7 +4,11 @@
 
 #include "chrome/browser/extensions/api/runtime/runtime_api.h"
 
+#include <utility>
+
+#include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_host.h"
@@ -19,7 +23,6 @@
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/api/runtime.h"
 #include "chrome/common/extensions/background_info.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/omaha_query_params/omaha_query_params.h"
@@ -42,6 +45,7 @@ const char kOnInstalledEvent[] = "runtime.onInstalled";
 const char kOnUpdateAvailableEvent[] = "runtime.onUpdateAvailable";
 const char kOnBrowserUpdateAvailableEvent[] =
     "runtime.onBrowserUpdateAvailable";
+const char kOnRestartRequiredEvent[] = "runtime.onRestartRequired";
 const char kNoBackgroundPageError[] = "You do not have a background page.";
 const char kPageLoadError[] = "Background page failed to load.";
 const char kInstallReason[] = "reason";
@@ -100,7 +104,7 @@ static void DispatchOnStartupEventImpl(
     return;
   }
 
-  scoped_ptr<base::ListValue> event_args(new ListValue());
+  scoped_ptr<base::ListValue> event_args(new base::ListValue());
   scoped_ptr<Event> event(new Event(kOnStartupEvent, event_args.Pass()));
   system->event_router()->DispatchEventToExtension(extension_id, event.Pass());
 }
@@ -143,7 +147,7 @@ void RuntimeEventRouter::DispatchOnInstalledEvent(
   // chance to register for events. So we register on its behalf. If the
   // extension does not actually have a listener, the event will just be
   // ignored.
-  scoped_ptr<base::ListValue> event_args(new ListValue());
+  scoped_ptr<base::ListValue> event_args(new base::ListValue());
   base::DictionaryValue* info = new base::DictionaryValue();
   event_args->Append(info);
   if (old_version.IsValid()) {
@@ -166,12 +170,12 @@ void RuntimeEventRouter::DispatchOnInstalledEvent(
 void RuntimeEventRouter::DispatchOnUpdateAvailableEvent(
     Profile* profile,
     const std::string& extension_id,
-    const DictionaryValue* manifest) {
+    const base::DictionaryValue* manifest) {
   ExtensionSystem* system = ExtensionSystem::Get(profile);
   if (!system)
     return;
 
-  scoped_ptr<ListValue> args(new ListValue);
+  scoped_ptr<base::ListValue> args(new base::ListValue);
   args->Append(manifest->DeepCopy());
   DCHECK(system->event_router());
   scoped_ptr<Event> event(new Event(kOnUpdateAvailableEvent, args.Pass()));
@@ -185,7 +189,7 @@ void RuntimeEventRouter::DispatchOnBrowserUpdateAvailableEvent(
   if (!system)
     return;
 
-  scoped_ptr<ListValue> args(new ListValue);
+  scoped_ptr<base::ListValue> args(new base::ListValue);
   DCHECK(system->event_router());
   scoped_ptr<Event> event(new Event(kOnBrowserUpdateAvailableEvent,
                                     args.Pass()));
@@ -193,8 +197,25 @@ void RuntimeEventRouter::DispatchOnBrowserUpdateAvailableEvent(
 }
 
 // static
+void RuntimeEventRouter::DispatchOnRestartRequiredEvent(
+    Profile* profile,
+    const std::string& app_id,
+    api::runtime::OnRestartRequired::Reason reason) {
+  ExtensionSystem* system = ExtensionSystem::Get(profile);
+  if (!system)
+    return;
+
+  scoped_ptr<Event> event(
+      new Event(kOnRestartRequiredEvent,
+                api::runtime::OnRestartRequired::Create(reason)));
+
+  DCHECK(system->event_router());
+  system->event_router()->DispatchEventToExtension(app_id, event.Pass());
+}
+
+// static
 void RuntimeEventRouter::OnExtensionUninstalled(
-    Profile *profile,
+    Profile* profile,
     const std::string& extension_id) {
 #if defined(ENABLE_EXTENSIONS)
   GURL uninstall_url(GetUninstallUrl(ExtensionPrefs::Get(profile),
@@ -409,7 +430,7 @@ bool RuntimeGetPackageDirectoryEntryFunction::RunImpl() {
   if (!policy->CanReadFile(renderer_id, path))
     policy->GrantReadFile(renderer_id, path);
 
-  DictionaryValue* dict = new DictionaryValue();
+  base::DictionaryValue* dict = new base::DictionaryValue();
   SetResult(dict);
   dict->SetString("fileSystemId", filesystem_id);
   dict->SetString("baseName", relative_path);

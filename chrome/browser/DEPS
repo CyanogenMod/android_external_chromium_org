@@ -5,12 +5,12 @@ include_rules = [
   "+chrome/installer",
   "+chrome/tools/profiles",  # For history unit tests.
   "+chromeos",
-  "+components/autofill/browser",
   "+components/autofill/content/browser",
+  "+components/autofill/core/browser",
   "+components/autofill/core/common",
   "+components/auto_login_parser",
-  "+components/breakpad",
   "+components/browser_context_keyed_service",
+  "+components/nacl/common",
   "+components/navigation_interception",
   "+components/user_prefs",
   "+components/visitedlink/browser",
@@ -52,9 +52,6 @@ include_rules = [
   # TODO(stuartmorgan): Remove these by refactoring necessary code out of
   # webkit/. See crbug.com/146251
   # DO NOT ADD ANY MORE ITEMS TO THE LIST BELOW!
-  "+webkit/base/origin_url_conversions.h",
-  "+webkit/common/cursors/webcursor.h",
-  "+webkit/dom_storage/dom_storage_types.h",
   "+webkit/plugins",  # Defines some types that are marshalled over IPC.
 
   # TODO(kinuko): Remove all other webkit/* dependencies after we cleaned
@@ -62,12 +59,14 @@ include_rules = [
   "+webkit/browser",
   "+webkit/common",
 
+  # TODO(ananta): remove me when
+  # bug https://code.google.com/p/chromium/issues/detail?id=237249 is fixed.
+  "!content/public/child/image_decoder_utils.h",
+
   # webkit/glue files are listed individually since they aren't conceptually
   # grouped like the other webkit/ files, and can therefore be tackled one at
   # a time.
-  "+webkit/glue/image_decoder.h",
   "+webkit/glue/resource_type.h",
-  "+webkit/glue/webkit_glue.h",
   # DO NOT ADD ANY MORE ITEMS TO THE ABOVE LIST!
 
   "-chrome/browser/ui/views",
@@ -89,4 +88,32 @@ include_rules = [
   "+third_party/re2",
   "+third_party/sqlite",
   "+third_party/undoview",
+
+  # No inclusion of WebKit from the browser, other than strictly enum/POD,
+  # header-only types, and some selected common code.
+  "-third_party/WebKit",
+  "+third_party/WebKit/public/platform/WebCString.h",
+  "+third_party/WebKit/public/platform/WebRect.h",
+  "+third_party/WebKit/public/platform/WebReferrerPolicy.h",
+  "+third_party/WebKit/public/platform/WebScreenInfo.h",
+  "+third_party/WebKit/public/platform/WebString.h",
+  "+third_party/WebKit/public/platform/WebURL.h",
+  "+third_party/WebKit/public/web/WebAutofillClient.h",
+  "+third_party/WebKit/public/web/WebCache.h",
+  "+third_party/WebKit/public/web/WebContextMenuData.h",
+  "+third_party/WebKit/public/web/WebCursorInfo.h",
+  "+third_party/WebKit/public/web/WebDevToolsAgent.h",
+  "+third_party/WebKit/public/web/WebFindOptions.h",
+  "+third_party/WebKit/public/web/WebInputEvent.h",
+  "+third_party/WebKit/public/web/WebMediaPlayerAction.h",
+  "+third_party/WebKit/public/web/WebNotificationPresenter.h",
+  "+third_party/WebKit/public/web/WebPluginAction.h",
+  "+third_party/WebKit/public/web/WebScreenInfo.h",
+  "+third_party/WebKit/public/web/WebTextDirection.h",
+
+  # These should be burned down. http://crbug.com/237267
+  "!third_party/WebKit/public/web/WebKit.h",
+  "!third_party/WebKit/public/web/WebSecurityOrigin.h",
+  "!third_party/WebKit/public/web/WebSecurityPolicy.h",
+  "!third_party/WebKit/public/web/WebView.h",
 ]

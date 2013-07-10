@@ -13,12 +13,11 @@
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/platform_thread.h"
+#include "base/win/message_window.h"
 #include "base/win/scoped_hglobal.h"
 #include "base/win/windows_version.h"
-#include "base/win/wrapped_window_proc.h"
 #include "remoting/base/constants.h"
 #include "remoting/base/util.h"
-#include "remoting/host/win/message_window.h"
 #include "remoting/proto/event.pb.h"
 #include "remoting/protocol/clipboard_stub.h"
 
@@ -100,8 +99,7 @@ typedef BOOL (WINAPI RemoveClipboardFormatListenerFn)(HWND);
 
 namespace remoting {
 
-class ClipboardWin : public Clipboard,
-                     public win::MessageWindow::Delegate {
+class ClipboardWin : public Clipboard {
  public:
   ClipboardWin();
 
@@ -114,19 +112,18 @@ class ClipboardWin : public Clipboard,
  private:
   void OnClipboardUpdate();
 
-  // win::MessageWindow::Delegate interface.
-  virtual bool HandleMessage(HWND hwnd,
-                             UINT message,
-                             WPARAM wparam,
-                             LPARAM lparam,
-                             LRESULT* result) OVERRIDE;
+  // Handles messages received by |window_|.
+  bool HandleMessage(UINT message,
+                     WPARAM wparam,
+                     LPARAM lparam,
+                     LRESULT* result);
 
   scoped_ptr<protocol::ClipboardStub> client_clipboard_;
   AddClipboardFormatListenerFn* add_clipboard_format_listener_;
   RemoveClipboardFormatListenerFn* remove_clipboard_format_listener_;
 
   // Used to subscribe to WM_CLIPBOARDUPDATE messages.
-  scoped_ptr<win::MessageWindow> window_;
+  scoped_ptr<base::win::MessageWindow> window_;
 
   DISALLOW_COPY_AND_ASSIGN(ClipboardWin);
 };
@@ -162,8 +159,9 @@ void ClipboardWin::Start(
     LOG(WARNING) << "AddClipboardFormatListener() is not available.";
   }
 
-  window_.reset(new win::MessageWindow());
-  if (!window_->Create(this)) {
+  window_.reset(new base::win::MessageWindow());
+  if (!window_->Create(base::Bind(&ClipboardWin::HandleMessage,
+                                  base::Unretained(this)))) {
     LOG(ERROR) << "Couldn't create clipboard window.";
     window_.reset();
     return;
@@ -264,7 +262,7 @@ void ClipboardWin::OnClipboardUpdate() {
 }
 
 bool ClipboardWin::HandleMessage(
-    HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, LRESULT* result) {
+    UINT message, WPARAM wparam, LPARAM lparam, LRESULT* result) {
   if (message == WM_CLIPBOARDUPDATE) {
     OnClipboardUpdate();
     *result = 0;

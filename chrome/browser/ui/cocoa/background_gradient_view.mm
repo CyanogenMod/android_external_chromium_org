@@ -16,6 +16,7 @@
 @end
 
 @implementation BackgroundGradientView
+
 @synthesize showsDivider = showsDivider_;
 
 - (id)initWithFrame:(NSRect)frameRect {
@@ -82,8 +83,12 @@
 }
 
 - (NSColor*)strokeColor {
-  BOOL isActive = [[self window] isMainWindow];
-  ui::ThemeProvider* themeProvider = [[self window] themeProvider];
+  NSWindow* window = [self window];
+  if ([window parentWindow])
+    window = [window parentWindow];
+
+  BOOL isActive = [window isMainWindow];
+  ui::ThemeProvider* themeProvider = [window themeProvider];
   if (!themeProvider)
     return [NSColor blackColor];
   return themeProvider->GetNSColor(
@@ -111,7 +116,7 @@
 
 - (void)windowFocusDidChange:(NSNotification*)notification {
   // The background color depends on the window's focus state.
-  [self setNeedsDisplay:YES];
+  [self cr_recursivelySetNeedsDisplay:YES];
 }
 
 - (void)viewWillMoveToWindow:(NSWindow*)window {

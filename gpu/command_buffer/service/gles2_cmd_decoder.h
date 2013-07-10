@@ -11,7 +11,7 @@
 
 #include "base/callback.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "gpu/command_buffer/service/common_decoder.h"
 #include "gpu/command_buffer/service/logger.h"
@@ -175,8 +175,6 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   // is processed.
   virtual void SetResizeCallback(
       const base::Callback<void(gfx::Size, float)>& callback) = 0;
-
-  virtual void SetStreamTextureManager(StreamTextureManager* manager) = 0;
 
   // Interface to performing async pixel transfers.
   virtual AsyncPixelTransferManager* GetAsyncPixelTransferManager() = 0;

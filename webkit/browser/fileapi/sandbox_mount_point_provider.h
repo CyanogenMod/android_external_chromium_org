@@ -14,7 +14,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 #include "webkit/browser/fileapi/file_system_mount_point_provider.h"
 #include "webkit/browser/fileapi/file_system_options.h"
 #include "webkit/browser/fileapi/file_system_quota_util.h"
@@ -69,8 +69,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxMountPointProvider
   // The FileSystem directory name.
   static const base::FilePath::CharType kFileSystemDirectory[];
 
-  static bool IsSandboxType(FileSystemType type);
-
   // |file_task_runner| is used to validate the root directory and delete the
   // obfuscated file util.
   SandboxMountPointProvider(
@@ -93,9 +91,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxMountPointProvider
   virtual CopyOrMoveFileValidatorFactory* GetCopyOrMoveFileValidatorFactory(
       FileSystemType type,
       base::PlatformFileError* error_code) OVERRIDE;
-  virtual FilePermissionPolicy GetPermissionPolicy(
-      const FileSystemURL& url,
-      int permissions) const OVERRIDE;
   virtual FileSystemOperation* CreateFileSystemOperation(
       const FileSystemURL& url,
       FileSystemContext* context,
@@ -166,6 +161,10 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxMountPointProvider
   void AddFileChangeObserver(FileSystemType type,
                              FileChangeObserver* observer,
                              base::SequencedTaskRunner* task_runner);
+
+  // Performs API-specific validity checks on the given path |url|.
+  // Returns true if access to |url| is valid in this filesystem.
+  bool IsAccessValid(const FileSystemURL& url) const;
 
   void set_enable_temporary_file_system_in_incognito(bool enable) {
     enable_temporary_file_system_in_incognito_ = enable;

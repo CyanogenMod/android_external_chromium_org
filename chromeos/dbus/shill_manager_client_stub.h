@@ -28,7 +28,6 @@ class ShillManagerClientStub : public ShillManagerClient,
   virtual void RemovePropertyChangedObserver(
       ShillPropertyChangedObserver* observer) OVERRIDE;
   virtual void GetProperties(const DictionaryValueCallback& callback) OVERRIDE;
-  virtual base::DictionaryValue* CallGetPropertiesAndBlock() OVERRIDE;
   virtual void GetNetworksForGeolocation(
       const DictionaryValueCallback& callback) OVERRIDE;
   virtual void SetProperty(const std::string& name,
@@ -93,6 +92,7 @@ class ShillManagerClientStub : public ShillManagerClient,
                                   size_t index,
                                   bool add_to_watch_list) OVERRIDE;
   virtual void AddManagerService(const std::string& service_path,
+                                 bool add_to_visible_list,
                                  bool add_to_watch_list) OVERRIDE;
   virtual void RemoveManagerService(const std::string& service_path) OVERRIDE;
   virtual void ClearManagerServices() OVERRIDE;

@@ -250,6 +250,17 @@ void CheckSSLInfo(const SSLInfo& ssl_info) {
   EXPECT_NE(0, cipher_suite);
 }
 
+void CheckFullRequestHeaders(const HttpRequestHeaders& headers,
+                             const GURL& host_url) {
+  std::string sent_value;
+
+  EXPECT_TRUE(headers.GetHeader("Host", &sent_value));
+  EXPECT_EQ(GetHostAndOptionalPort(host_url), sent_value);
+
+  EXPECT_TRUE(headers.GetHeader("Connection", &sent_value));
+  EXPECT_EQ("keep-alive", sent_value);
+}
+
 bool FingerprintsEqual(const HashValueVector& a, const HashValueVector& b) {
   size_t size = a.size();
 
@@ -617,6 +628,9 @@ TEST_F(URLRequestTest, AboutBlankTest) {
     EXPECT_EQ(d.bytes_received(), 0);
     EXPECT_EQ("", r.GetSocketAddress().host());
     EXPECT_EQ(0, r.GetSocketAddress().port());
+
+    HttpRequestHeaders headers;
+    EXPECT_FALSE(r.GetFullRequestHeaders(&headers));
   }
 }
 
@@ -657,6 +671,9 @@ TEST_F(URLRequestTest, DataURLImageTest) {
     EXPECT_EQ(d.bytes_received(), 911);
     EXPECT_EQ("", r.GetSocketAddress().host());
     EXPECT_EQ(0, r.GetSocketAddress().port());
+
+    HttpRequestHeaders headers;
+    EXPECT_FALSE(r.GetFullRequestHeaders(&headers));
   }
 }
 
@@ -683,6 +700,9 @@ TEST_F(URLRequestTest, FileTest) {
     EXPECT_EQ(d.bytes_received(), static_cast<int>(file_size));
     EXPECT_EQ("", r.GetSocketAddress().host());
     EXPECT_EQ(0, r.GetSocketAddress().port());
+
+    HttpRequestHeaders headers;
+    EXPECT_FALSE(r.GetFullRequestHeaders(&headers));
   }
 }
 
@@ -699,7 +719,7 @@ TEST_F(URLRequestTest, FileTestCancel) {
     EXPECT_TRUE(r.is_pending());
     r.Cancel();
   }
-  // Async cancelation should be safe even when URLRequest has been already
+  // Async cancellation should be safe even when URLRequest has been already
   // destroyed.
   base::MessageLoop::current()->RunUntilIdle();
 }
@@ -745,7 +765,7 @@ TEST_F(URLRequestTest, FileTestFullSpecifiedRange) {
     EXPECT_TRUE(partial_buffer_string == d.data_received());
   }
 
-  EXPECT_TRUE(file_util::Delete(temp_path, false));
+  EXPECT_TRUE(base::Delete(temp_path, false));
 }
 
 TEST_F(URLRequestTest, FileTestHalfSpecifiedRange) {
@@ -788,7 +808,7 @@ TEST_F(URLRequestTest, FileTestHalfSpecifiedRange) {
     EXPECT_TRUE(partial_buffer_string == d.data_received());
   }
 
-  EXPECT_TRUE(file_util::Delete(temp_path, false));
+  EXPECT_TRUE(base::Delete(temp_path, false));
 }
 
 TEST_F(URLRequestTest, FileTestMultipleRanges) {
@@ -819,7 +839,7 @@ TEST_F(URLRequestTest, FileTestMultipleRanges) {
     EXPECT_TRUE(d.request_failed());
   }
 
-  EXPECT_TRUE(file_util::Delete(temp_path, false));
+  EXPECT_TRUE(base::Delete(temp_path, false));
 }
 
 TEST_F(URLRequestTest, InvalidUrlTest) {
@@ -2817,6 +2837,44 @@ TEST_F(URLRequestTestHTTP, NetworkDelegateOnAuthRequiredSyncNoAction) {
     GURL url(test_server_.GetURL("auth-basic"));
     URLRequest r(url, &d, &context);
     r.Start();
+
+    base::MessageLoop::current()->Run();
+
+    EXPECT_EQ(URLRequestStatus::SUCCESS, r.status().status());
+    EXPECT_EQ(0, r.status().error());
+    EXPECT_EQ(200, r.GetResponseCode());
+    EXPECT_TRUE(d.auth_required_called());
+    EXPECT_EQ(1, network_delegate.created_requests());
+    EXPECT_EQ(0, network_delegate.destroyed_requests());
+  }
+  EXPECT_EQ(1, network_delegate.destroyed_requests());
+}
+
+TEST_F(URLRequestTestHTTP,
+    NetworkDelegateOnAuthRequiredSyncNoAction_GetFullRequestHeaders) {
+  ASSERT_TRUE(test_server_.Start());
+
+  TestDelegate d;
+  BlockingNetworkDelegate network_delegate(
+      BlockingNetworkDelegate::SYNCHRONOUS);
+
+  TestURLRequestContext context(true);
+  context.set_network_delegate(&network_delegate);
+  context.Init();
+
+  d.set_credentials(AuthCredentials(kUser, kSecret));
+
+  {
+    GURL url(test_server_.GetURL("auth-basic"));
+    URLRequest r(url, &d, &context);
+    r.Start();
+
+    {
+      HttpRequestHeaders headers;
+      EXPECT_TRUE(r.GetFullRequestHeaders(&headers));
+      EXPECT_FALSE(headers.HasHeader("Authorization"));
+    }
+
     base::MessageLoop::current()->Run();
 
     EXPECT_EQ(URLRequestStatus::SUCCESS, r.status().status());
@@ -2859,6 +2917,47 @@ TEST_F(URLRequestTestHTTP, NetworkDelegateOnAuthRequiredSyncSetAuth) {
     EXPECT_FALSE(d.auth_required_called());
     EXPECT_EQ(1, network_delegate.created_requests());
     EXPECT_EQ(0, network_delegate.destroyed_requests());
+  }
+  EXPECT_EQ(1, network_delegate.destroyed_requests());
+}
+
+// Same as above, but also tests that GetFullRequestHeaders returns the proper
+// headers (for the first or second request) when called at the proper times.
+TEST_F(URLRequestTestHTTP,
+    NetworkDelegateOnAuthRequiredSyncSetAuth_GetFullRequestHeaders) {
+  ASSERT_TRUE(test_server_.Start());
+
+  TestDelegate d;
+  BlockingNetworkDelegate network_delegate(
+      BlockingNetworkDelegate::SYNCHRONOUS);
+  network_delegate.set_block_on(BlockingNetworkDelegate::ON_AUTH_REQUIRED);
+  network_delegate.set_auth_retval(
+      NetworkDelegate::AUTH_REQUIRED_RESPONSE_SET_AUTH);
+
+  network_delegate.set_auth_credentials(AuthCredentials(kUser, kSecret));
+
+  TestURLRequestContext context(true);
+  context.set_network_delegate(&network_delegate);
+  context.Init();
+
+  {
+    GURL url(test_server_.GetURL("auth-basic"));
+    URLRequest r(url, &d, &context);
+    r.Start();
+    base::MessageLoop::current()->Run();
+
+    EXPECT_EQ(URLRequestStatus::SUCCESS, r.status().status());
+    EXPECT_EQ(0, r.status().error());
+    EXPECT_EQ(200, r.GetResponseCode());
+    EXPECT_FALSE(d.auth_required_called());
+    EXPECT_EQ(1, network_delegate.created_requests());
+    EXPECT_EQ(0, network_delegate.destroyed_requests());
+
+    {
+      HttpRequestHeaders headers;
+      EXPECT_TRUE(r.GetFullRequestHeaders(&headers));
+      EXPECT_TRUE(headers.HasHeader("Authorization"));
+    }
   }
   EXPECT_EQ(1, network_delegate.destroyed_requests());
 }
@@ -3248,6 +3347,35 @@ TEST_F(URLRequestTestHTTP, GetTest) {
               r.GetSocketAddress().host());
     EXPECT_EQ(test_server_.host_port_pair().port(),
               r.GetSocketAddress().port());
+  }
+}
+
+TEST_F(URLRequestTestHTTP, GetTest_GetFullRequestHeaders) {
+  ASSERT_TRUE(test_server_.Start());
+
+  TestDelegate d;
+  {
+    GURL test_url(test_server_.GetURL(std::string()));
+    URLRequest r(test_url, &d, &default_context_);
+
+    HttpRequestHeaders headers;
+    EXPECT_FALSE(r.GetFullRequestHeaders(&headers));
+
+    r.Start();
+    EXPECT_TRUE(r.is_pending());
+
+    base::MessageLoop::current()->Run();
+
+    EXPECT_EQ(1, d.response_started_count());
+    EXPECT_FALSE(d.received_data_before_response());
+    EXPECT_NE(0, d.bytes_received());
+    EXPECT_EQ(test_server_.host_port_pair().host(),
+              r.GetSocketAddress().host());
+    EXPECT_EQ(test_server_.host_port_pair().port(),
+              r.GetSocketAddress().port());
+
+    EXPECT_TRUE(d.have_full_request_headers());
+    CheckFullRequestHeaders(d.full_request_headers(), test_url);
   }
 }
 
@@ -3805,6 +3933,53 @@ TEST_F(URLRequestTestHTTP, ProcessSTS) {
             domain_state.upgrade_mode);
   EXPECT_TRUE(domain_state.sts_include_subdomains);
   EXPECT_FALSE(domain_state.pkp_include_subdomains);
+#if defined(OS_ANDROID)
+  // Android's CertVerifyProc does not (yet) handle pins.
+#else
+  EXPECT_FALSE(domain_state.HasPublicKeyPins());
+#endif
+}
+
+// Android's CertVerifyProc does not (yet) handle pins. Therefore, it will
+// reject HPKP headers, and a test setting only HPKP headers will fail (no
+// DomainState present because header rejected).
+#if defined(OS_ANDROID)
+#define MAYBE_ProcessPKP DISABLED_ProcessPKP
+#else
+#define MAYBE_ProcessPKP ProcessPKP
+#endif
+
+// Tests that enabling HPKP on a domain does not affect the HSTS
+// validity/expiration.
+TEST_F(URLRequestTestHTTP, MAYBE_ProcessPKP) {
+  SpawnedTestServer::SSLOptions ssl_options;
+  SpawnedTestServer https_test_server(
+      SpawnedTestServer::TYPE_HTTPS,
+      ssl_options,
+      base::FilePath(FILE_PATH_LITERAL("net/data/url_request_unittest")));
+  ASSERT_TRUE(https_test_server.Start());
+
+  TestDelegate d;
+  URLRequest request(
+      https_test_server.GetURL("files/hpkp-headers.html"),
+      &d,
+      &default_context_);
+  request.Start();
+  base::MessageLoop::current()->Run();
+
+  TransportSecurityState* security_state =
+      default_context_.transport_security_state();
+  bool sni_available = true;
+  TransportSecurityState::DomainState domain_state;
+  EXPECT_TRUE(security_state->GetDomainState(
+      SpawnedTestServer::kLocalhost, sni_available, &domain_state));
+  EXPECT_EQ(TransportSecurityState::DomainState::MODE_DEFAULT,
+            domain_state.upgrade_mode);
+  EXPECT_FALSE(domain_state.sts_include_subdomains);
+  EXPECT_FALSE(domain_state.pkp_include_subdomains);
+  EXPECT_TRUE(domain_state.HasPublicKeyPins());
+  EXPECT_NE(domain_state.upgrade_expiry,
+            domain_state.dynamic_spki_hashes_expiry);
 }
 
 TEST_F(URLRequestTestHTTP, ProcessSTSOnce) {
@@ -3873,6 +4048,44 @@ TEST_F(URLRequestTestHTTP, ProcessSTSAndPKP) {
   // the *second* such header, and we MUST process only the first.
   EXPECT_FALSE(domain_state.sts_include_subdomains);
   // includeSubdomains does not occur in the test HPKP header.
+  EXPECT_FALSE(domain_state.pkp_include_subdomains);
+}
+
+// Tests that when multiple HPKP headers are present, asserting different
+// policies, that only the first such policy is processed.
+TEST_F(URLRequestTestHTTP, ProcessSTSAndPKP2) {
+  SpawnedTestServer::SSLOptions ssl_options;
+  SpawnedTestServer https_test_server(
+      SpawnedTestServer::TYPE_HTTPS,
+      ssl_options,
+      base::FilePath(FILE_PATH_LITERAL("net/data/url_request_unittest")));
+  ASSERT_TRUE(https_test_server.Start());
+
+  TestDelegate d;
+  URLRequest request(
+      https_test_server.GetURL("files/hsts-and-hpkp-headers2.html"),
+      &d,
+      &default_context_);
+  request.Start();
+  base::MessageLoop::current()->Run();
+
+  TransportSecurityState* security_state =
+      default_context_.transport_security_state();
+  bool sni_available = true;
+  TransportSecurityState::DomainState domain_state;
+  EXPECT_TRUE(security_state->GetDomainState(
+      SpawnedTestServer::kLocalhost, sni_available, &domain_state));
+  EXPECT_EQ(TransportSecurityState::DomainState::MODE_FORCE_HTTPS,
+            domain_state.upgrade_mode);
+#if defined(OS_ANDROID)
+  // Android's CertVerifyProc does not (yet) handle pins.
+#else
+  EXPECT_TRUE(domain_state.HasPublicKeyPins());
+#endif
+  EXPECT_NE(domain_state.upgrade_expiry,
+            domain_state.dynamic_spki_hashes_expiry);
+
+  EXPECT_TRUE(domain_state.sts_include_subdomains);
   EXPECT_FALSE(domain_state.pkp_include_subdomains);
 }
 
@@ -3999,8 +4212,9 @@ TEST_F(URLRequestTestHTTP, DeferredRedirect) {
   TestDelegate d;
   {
     d.set_quit_on_redirect(true);
-    URLRequest req(
-        test_server_.GetURL("files/redirect-test.html"), &d, &default_context_);
+    GURL test_url(test_server_.GetURL("files/redirect-test.html"));
+    URLRequest req(test_url, &d, &default_context_);
+
     req.Start();
     base::MessageLoop::current()->Run();
 
@@ -4010,6 +4224,48 @@ TEST_F(URLRequestTestHTTP, DeferredRedirect) {
     base::MessageLoop::current()->Run();
 
     EXPECT_EQ(1, d.response_started_count());
+    EXPECT_FALSE(d.received_data_before_response());
+    EXPECT_EQ(URLRequestStatus::SUCCESS, req.status().status());
+
+    base::FilePath path;
+    PathService::Get(base::DIR_SOURCE_ROOT, &path);
+    path = path.Append(FILE_PATH_LITERAL("net"));
+    path = path.Append(FILE_PATH_LITERAL("data"));
+    path = path.Append(FILE_PATH_LITERAL("url_request_unittest"));
+    path = path.Append(FILE_PATH_LITERAL("with-headers.html"));
+
+    std::string contents;
+    EXPECT_TRUE(file_util::ReadFileToString(path, &contents));
+    EXPECT_EQ(contents, d.data_received());
+  }
+}
+
+TEST_F(URLRequestTestHTTP, DeferredRedirect_GetFullRequestHeaders) {
+  ASSERT_TRUE(test_server_.Start());
+
+  TestDelegate d;
+  {
+    d.set_quit_on_redirect(true);
+    GURL test_url(test_server_.GetURL("files/redirect-test.html"));
+    URLRequest req(test_url, &d, &default_context_);
+
+    EXPECT_FALSE(d.have_full_request_headers());
+
+    req.Start();
+    base::MessageLoop::current()->Run();
+
+    EXPECT_EQ(1, d.received_redirect_count());
+    EXPECT_TRUE(d.have_full_request_headers());
+    CheckFullRequestHeaders(d.full_request_headers(), test_url);
+    d.ClearFullRequestHeaders();
+
+    req.FollowDeferredRedirect();
+    base::MessageLoop::current()->Run();
+
+    GURL target_url(test_server_.GetURL("files/with-headers.html"));
+    EXPECT_EQ(1, d.response_started_count());
+    EXPECT_TRUE(d.have_full_request_headers());
+    CheckFullRequestHeaders(d.full_request_headers(), target_url);
     EXPECT_FALSE(d.received_data_before_response());
     EXPECT_EQ(URLRequestStatus::SUCCESS, req.status().status());
 
@@ -4904,6 +5160,11 @@ TEST_F(HTTPSRequestTest, HSTSPreservesPosts) {
   EXPECT_EQ("https", req.url().scheme());
   EXPECT_EQ("POST", req.method());
   EXPECT_EQ(kData, d.data_received());
+
+  LoadTimingInfo load_timing_info;
+  network_delegate.GetLoadTimingInfoBeforeRedirect(&load_timing_info);
+  // LoadTimingInfo of HSTS redirects is similar to that of network cache hits
+  TestLoadTimingCacheHitNoNetwork(load_timing_info);
 }
 
 TEST_F(HTTPSRequestTest, SSLv3Fallback) {

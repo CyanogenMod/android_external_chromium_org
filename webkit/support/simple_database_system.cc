@@ -307,7 +307,7 @@ base::FilePath SimpleDatabaseSystem::GetFullFilePathForVfsFile(
 void SimpleDatabaseSystem::ResetTracker() {
   DCHECK(db_thread_proxy_->BelongsToCurrentThread());
   db_tracker_->CloseTrackerDatabaseAndClearCaches();
-  file_util::Delete(db_tracker_->DatabaseDirectory(), true);
+  base::Delete(db_tracker_->DatabaseDirectory(), true);
 }
 
 void SimpleDatabaseSystem::ThreadCleanup(base::WaitableEvent* done_event) {

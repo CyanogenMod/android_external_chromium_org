@@ -13,10 +13,10 @@
 #include "base/threading/thread_restrictions.h"
 #include "content/public/common/content_switches.h"
 #include "content/shell/shell_browser_context.h"
-#include "googleurl/src/gurl.h"
 #include "ui/views/examples/examples_window_with_content.h"
 #include "ui/views/focus/accelerator_handler.h"
 #include "ui/views/test/desktop_test_views_delegate.h"
+#include "url/gurl.h"
 
 #if defined(USE_AURA)
 #include "ui/aura/env.h"
@@ -36,7 +36,7 @@ ExamplesBrowserMainParts::~ExamplesBrowserMainParts() {
 }
 
 void ExamplesBrowserMainParts::PreMainMessageLoopRun() {
-  browser_context_.reset(new content::ShellBrowserContext(false));
+  browser_context_.reset(new content::ShellBrowserContext(false, NULL));
 
 #if !defined(OS_CHROMEOS) && defined(USE_AURA)
   gfx::Screen::SetScreenInstance(

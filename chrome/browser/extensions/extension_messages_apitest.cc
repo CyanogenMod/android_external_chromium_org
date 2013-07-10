@@ -36,18 +36,19 @@ class MessageSender : public content::NotificationObserver {
   }
 
  private:
-  static scoped_ptr<ListValue> BuildEventArguments(const bool last_message,
-                                                   const std::string& data) {
+  static scoped_ptr<base::ListValue> BuildEventArguments(
+      const bool last_message,
+      const std::string& data) {
     DictionaryValue* event = new DictionaryValue();
     event->SetBoolean("lastMessage", last_message);
     event->SetString("data", data);
-    scoped_ptr<ListValue> arguments(new ListValue());
+    scoped_ptr<base::ListValue> arguments(new base::ListValue());
     arguments->Append(event);
     return arguments.Pass();
   }
 
   static scoped_ptr<extensions::Event> BuildEvent(
-      scoped_ptr<ListValue> event_args,
+      scoped_ptr<base::ListValue> event_args,
       Profile* profile,
       GURL event_url) {
     scoped_ptr<extensions::Event> event(new extensions::Event(
@@ -91,7 +92,7 @@ class MessageSender : public content::NotificationObserver {
 
 // Tests that message passing between extensions and content scripts works.
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, Messaging) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunExtensionTest("messaging/connect")) << message_;
 }
 
@@ -174,6 +175,7 @@ class ExternallyConnectableMessagingTest : public ExtensionApiTest {
         "onConnectExternal",
         "onMessage",
         "onMessageExternal",
+        "onRestartRequired",
         "id",
     };
 

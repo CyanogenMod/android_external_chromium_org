@@ -24,7 +24,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
@@ -61,8 +61,6 @@
 #include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/top_sites.h"
-#include "chrome/browser/importer/importer_host.h"
-#include "chrome/browser/importer/importer_list.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
@@ -112,6 +110,7 @@
 #include "chrome/common/automation_messages.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/background_info.h"
 #include "chrome/common/extensions/extension.h"
@@ -120,7 +119,6 @@
 #include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
-#include "components/breakpad/common/breakpad_paths.h"
 #include "content/public/browser/browser_child_process_host_iterator.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/favicon_status.h"
@@ -136,6 +134,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/common_param_traits.h"
+#include "content/public/common/drop_data.h"
 #include "content/public/common/geoposition.h"
 #include "content/public/common/ssl_status.h"
 #include "extensions/browser/view_type_utils.h"
@@ -146,7 +145,6 @@
 #include "ui/base/events/event_constants.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/ui_base_types.h"
-#include "webkit/common/webdropdata.h"
 #include "webkit/plugins/webplugininfo.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
@@ -249,11 +247,7 @@ const int TestingAutomationProvider::kSynchronousCommands[] = {
 };
 
 TestingAutomationProvider::TestingAutomationProvider(Profile* profile)
-    : AutomationProvider(profile)
-#if defined(OS_CHROMEOS)
-      , power_manager_observer_(NULL)
-#endif
-      {
+    : AutomationProvider(profile) {
   BrowserList::AddObserver(this);
   registrar_.Add(this, chrome::NOTIFICATION_SESSION_END,
                  content::NotificationService::AllSources());
@@ -300,40 +294,6 @@ void TestingAutomationProvider::OnBrowserRemoved(Browser* browser) {
         base::Bind(&TestingAutomationProvider::OnRemoveProvider, this));
   }
 #endif  // !defined(OS_CHROMEOS) && !defined(OS_MACOSX)
-}
-
-void TestingAutomationProvider::OnSourceProfilesLoaded() {
-  DCHECK_NE(static_cast<ImporterList*>(NULL), importer_list_.get());
-
-  // Get the correct profile based on the browser that the user provided.
-  importer::SourceProfile source_profile;
-  size_t i = 0;
-  size_t importers_count = importer_list_->count();
-  for ( ; i < importers_count; ++i) {
-    importer::SourceProfile profile = importer_list_->GetSourceProfileAt(i);
-    if (profile.importer_name == import_settings_data_.browser_name) {
-      source_profile = profile;
-      break;
-    }
-  }
-  // If we made it to the end of the loop, then the input was bad.
-  if (i == importers_count) {
-    AutomationJSONReply(this, import_settings_data_.reply_message)
-        .SendError("Invalid browser name string found.");
-    return;
-  }
-
-  // Deletes itself.
-  ImporterHost* importer_host = new ImporterHost;
-  importer_host->SetObserver(
-      new AutomationProviderImportSettingsObserver(
-          this, import_settings_data_.reply_message));
-
-  Profile* target_profile = import_settings_data_.browser->profile();
-  importer_host->StartImportSettings(source_profile,
-                                     target_profile,
-                                     import_settings_data_.import_items,
-                                     new ProfileWriter(target_profile));
 }
 
 void TestingAutomationProvider::Observe(
@@ -943,7 +903,7 @@ void TestingAutomationProvider::DragAndDropFilePaths(
   }
 
   // Emulate drag and drop to set the file paths to the file upload control.
-  WebDropData drop_data;
+  content::DropData drop_data;
   for (size_t path_index = 0; path_index < paths->GetSize(); ++path_index) {
     string16 path;
     if (!paths->GetString(path_index, &path)) {
@@ -953,7 +913,7 @@ void TestingAutomationProvider::DragAndDropFilePaths(
     }
 
     drop_data.filenames.push_back(
-        WebDropData::FileInfo(path, string16()));
+        content::DropData::FileInfo(path, string16()));
   }
 
   const gfx::Point client(x, y);
@@ -1897,9 +1857,6 @@ void TestingAutomationProvider::BuildJSONHandlerMaps() {
   browser_handler_map_["SaveTabContents"] =
       &TestingAutomationProvider::SaveTabContents;
 
-  browser_handler_map_["ImportSettings"] =
-      &TestingAutomationProvider::ImportSettings;
-
   browser_handler_map_["AddSavedPassword"] =
       &TestingAutomationProvider::AddSavedPassword;
   browser_handler_map_["RemoveSavedPassword"] =
@@ -2238,7 +2195,7 @@ void TestingAutomationProvider::GetBrowserInfo(
   properties->SetString("command_line_string",
       CommandLine::ForCurrentProcess()->GetCommandLineString());
   base::FilePath dumps_path;
-  PathService::Get(breakpad::DIR_CRASH_DUMPS, &dumps_path);
+  PathService::Get(chrome::DIR_CRASH_DUMPS, &dumps_path);
   properties->SetString("DIR_CRASH_DUMPS", dumps_path.value());
 #if defined(USE_AURA)
   properties->SetBoolean("aura", true);
@@ -3235,51 +3192,6 @@ void TestingAutomationProvider::SaveTabContents(
   new SavePackageNotificationObserver(
       BrowserContext::GetDownloadManager(browser->profile()),
       this, reply_message);
-}
-
-// Refer to ImportSettings() in chrome/test/pyautolib/pyauto.py for sample
-// json input.
-// Sample json output: "{}"
-void TestingAutomationProvider::ImportSettings(Browser* browser,
-                                               DictionaryValue* args,
-                                               IPC::Message* reply_message) {
-  // Map from the json string passed over to the import item masks.
-  std::map<std::string, importer::ImportItem> string_to_import_item;
-  string_to_import_item["HISTORY"] = importer::HISTORY;
-  string_to_import_item["FAVORITES"] = importer::FAVORITES;
-  string_to_import_item["COOKIES"] = importer::COOKIES;
-  string_to_import_item["PASSWORDS"] = importer::PASSWORDS;
-  string_to_import_item["SEARCH_ENGINES"] = importer::SEARCH_ENGINES;
-  string_to_import_item["HOME_PAGE"] = importer::HOME_PAGE;
-  string_to_import_item["ALL"] = importer::ALL;
-
-  ListValue* import_items_list = NULL;
-  if (!args->GetString("import_from", &import_settings_data_.browser_name) ||
-      !args->GetList("import_items", &import_items_list)) {
-    AutomationJSONReply(this, reply_message)
-        .SendError("Incorrect type for one or more of the arguments.");
-    return;
-  }
-
-  import_settings_data_.import_items = 0;
-  int num_items = import_items_list->GetSize();
-  for (int i = 0; i < num_items; i++) {
-    std::string item;
-    // If the provided string is not part of the map, error out.
-    if (!import_items_list->GetString(i, &item) ||
-        !ContainsKey(string_to_import_item, item)) {
-      AutomationJSONReply(this, reply_message)
-          .SendError("Invalid item string found in import_items.");
-      return;
-    }
-    import_settings_data_.import_items |= string_to_import_item[item];
-  }
-
-  import_settings_data_.browser = browser;
-  import_settings_data_.reply_message = reply_message;
-
-  importer_list_ = new ImporterList(NULL);
-  importer_list_->DetectSourceProfiles(this);
 }
 
 namespace {

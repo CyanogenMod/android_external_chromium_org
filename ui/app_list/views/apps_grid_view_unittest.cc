@@ -10,7 +10,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/app_list/app_list_item_model.h"
 #include "ui/app_list/app_list_model.h"
@@ -148,7 +148,7 @@ class AppsGridViewTest : public testing::Test {
 
     ui::MouseEvent drag_event(ui::ET_MOUSE_DRAGGED,
                               translated_to, to, 0);
-    apps_grid_view_->UpdateDrag(view, pointer, drag_event);
+    apps_grid_view_->UpdateDragFromItem(pointer, drag_event);
   }
 
   void SimulateKeyPress(ui::KeyboardCode key_code) {

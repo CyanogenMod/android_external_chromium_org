@@ -6,7 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
@@ -128,27 +128,16 @@ void BrowserAccessibilityStateImpl::SetAccessibilityMode(
   if (accessibility_mode_ == mode)
     return;
   accessibility_mode_ = mode;
-  for (RenderProcessHost::iterator it(RenderProcessHost::AllHostsIterator());
-       !it.IsAtEnd(); it.Advance()) {
-    RenderProcessHost* render_process_host = it.GetCurrentValue();
-    DCHECK(render_process_host);
 
+  RenderWidgetHost::List widgets = RenderWidgetHost::GetRenderWidgetHosts();
+  for (size_t i = 0; i < widgets.size(); ++i) {
     // Ignore processes that don't have a connection, such as crashed tabs.
-    if (!render_process_host->HasConnection())
+    if (!widgets[i]->GetProcess()->HasConnection())
+      continue;
+    if (!widgets[i]->IsRenderView())
       continue;
 
-    for (RenderProcessHost::RenderWidgetHostsIterator rwit(
-             render_process_host->GetRenderWidgetHostsIterator());
-         !rwit.IsAtEnd();
-         rwit.Advance()) {
-      RenderWidgetHost* rwh = const_cast<RenderWidgetHost*>(
-          rwit.GetCurrentValue());
-      DCHECK(rwh);
-      if (!rwh || !rwh->IsRenderView())
-        continue;
-      RenderWidgetHostImpl* rwhi = RenderWidgetHostImpl::From(rwh);
-      rwhi->SetAccessibilityMode(mode);
-    }
+    RenderWidgetHostImpl::From(widgets[i])->SetAccessibilityMode(mode);
   }
 }
 

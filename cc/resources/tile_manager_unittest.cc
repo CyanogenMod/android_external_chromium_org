@@ -14,7 +14,7 @@ namespace {
 
 class FakePicturePileImpl : public PicturePileImpl {
  public:
-  FakePicturePileImpl() : PicturePileImpl(false) {
+  FakePicturePileImpl() {
     gfx::Size size(std::numeric_limits<int>::max(),
                    std::numeric_limits<int>::max());
     Resize(size);
@@ -47,6 +47,16 @@ class TilePriorityForNowBin : public TilePriority {
             HIGH_RESOLUTION,
             0,
             0) {}
+};
+
+class TilePriorityRequiredForActivation : public TilePriority {
+ public:
+    TilePriorityRequiredForActivation() : TilePriority(
+            HIGH_RESOLUTION,
+            0,
+            0) {
+      required_for_activation = true;
+    }
 };
 
 class TileManagerTest : public testing::Test {
@@ -92,7 +102,8 @@ class TileManagerTest : public testing::Test {
                                       gfx::Rect(),
                                       1.0,
                                       0,
-                                      0));
+                                      0,
+                                      true));
       tile->SetPriority(ACTIVE_TREE, active_priority);
       tile->SetPriority(PENDING_TREE, pending_priority);
       tiles.push_back(tile);
@@ -104,16 +115,26 @@ class TileManagerTest : public testing::Test {
     return tile_manager_.get();
   }
 
-  int AssignedMemoryCounts(const TileVector& tiles) {
+  int AssignedMemoryCount(const TileVector& tiles) {
     int has_memory_count = 0;
     for (TileVector::const_iterator it = tiles.begin();
          it != tiles.end();
          ++it) {
-      if ((*it)->HasRasterTaskForTesting())
+      if (tile_manager_->HasBeenAssignedMemory(*it))
         ++has_memory_count;
-      (*it)->ResetRasterTaskForTesting();
     }
     return has_memory_count;
+  }
+
+  int TilesWithLCDCount(const TileVector& tiles) {
+    int has_lcd_count = 0;
+    for (TileVector::const_iterator it = tiles.begin();
+         it != tiles.end();
+         ++it) {
+      if ((*it)->GetRasterModeForTesting() == HIGH_QUALITY_RASTER_MODE)
+        ++has_lcd_count;
+    }
+    return has_lcd_count;
   }
 
  private:
@@ -139,17 +160,10 @@ TEST_F(TileManagerTest, EnoughMemoryAllowAnything) {
 
   tile_manager()->ManageTiles();
 
-  EXPECT_EQ(3, AssignedMemoryCounts(active_now));
-  EXPECT_EQ(3, AssignedMemoryCounts(pending_now));
-  EXPECT_EQ(3, AssignedMemoryCounts(active_pending_soon));
-  EXPECT_EQ(1, AssignedMemoryCounts(never_bin));
-
-  active_now.clear();
-  pending_now.clear();
-  active_pending_soon.clear();
-  never_bin.clear();
-
-  TearDown();
+  EXPECT_EQ(3, AssignedMemoryCount(active_now));
+  EXPECT_EQ(3, AssignedMemoryCount(pending_now));
+  EXPECT_EQ(3, AssignedMemoryCount(active_pending_soon));
+  EXPECT_EQ(0, AssignedMemoryCount(never_bin));
 }
 
 TEST_F(TileManagerTest, EnoughMemoryAllowPrepaintOnly) {
@@ -167,16 +181,10 @@ TEST_F(TileManagerTest, EnoughMemoryAllowPrepaintOnly) {
 
   tile_manager()->ManageTiles();
 
-  EXPECT_EQ(3, AssignedMemoryCounts(active_now));
-  EXPECT_EQ(3, AssignedMemoryCounts(pending_now));
-  EXPECT_EQ(3, AssignedMemoryCounts(active_pending_soon));
-  EXPECT_EQ(0, AssignedMemoryCounts(never_bin));
-
-  active_now.clear();
-  pending_now.clear();
-  active_pending_soon.clear();
-  never_bin.clear();
-  TearDown();
+  EXPECT_EQ(3, AssignedMemoryCount(active_now));
+  EXPECT_EQ(3, AssignedMemoryCount(pending_now));
+  EXPECT_EQ(3, AssignedMemoryCount(active_pending_soon));
+  EXPECT_EQ(0, AssignedMemoryCount(never_bin));
 }
 
 TEST_F(TileManagerTest, EnoughMemoryAllowAbsoluteMinimum) {
@@ -194,16 +202,10 @@ TEST_F(TileManagerTest, EnoughMemoryAllowAbsoluteMinimum) {
 
   tile_manager()->ManageTiles();
 
-  EXPECT_EQ(3, AssignedMemoryCounts(active_now));
-  EXPECT_EQ(3, AssignedMemoryCounts(pending_now));
-  EXPECT_EQ(0, AssignedMemoryCounts(active_pending_soon));
-  EXPECT_EQ(0, AssignedMemoryCounts(never_bin));
-
-  active_now.clear();
-  pending_now.clear();
-  active_pending_soon.clear();
-  never_bin.clear();
-  TearDown();
+  EXPECT_EQ(3, AssignedMemoryCount(active_now));
+  EXPECT_EQ(3, AssignedMemoryCount(pending_now));
+  EXPECT_EQ(0, AssignedMemoryCount(active_pending_soon));
+  EXPECT_EQ(0, AssignedMemoryCount(never_bin));
 }
 
 TEST_F(TileManagerTest, EnoughMemoryAllowNothing) {
@@ -221,37 +223,33 @@ TEST_F(TileManagerTest, EnoughMemoryAllowNothing) {
 
   tile_manager()->ManageTiles();
 
-  EXPECT_EQ(0, AssignedMemoryCounts(active_now));
-  EXPECT_EQ(0, AssignedMemoryCounts(pending_now));
-  EXPECT_EQ(0, AssignedMemoryCounts(active_pending_soon));
-  EXPECT_EQ(0, AssignedMemoryCounts(never_bin));
-
-  active_now.clear();
-  pending_now.clear();
-  active_pending_soon.clear();
-  never_bin.clear();
-  TearDown();
+  EXPECT_EQ(0, AssignedMemoryCount(active_now));
+  EXPECT_EQ(0, AssignedMemoryCount(pending_now));
+  EXPECT_EQ(0, AssignedMemoryCount(active_pending_soon));
+  EXPECT_EQ(0, AssignedMemoryCount(never_bin));
 }
 
 TEST_F(TileManagerTest, PartialOOMMemoryToPending) {
-  // 5 tiles on active tree eventually bin, 5 tiles on pending tree now bin,
-  // but only enough memory for 8 tiles. The result is all pending tree tiles
-  // get memory, and 3 of the active tree tiles get memory.
+  // 5 tiles on active tree eventually bin, 5 tiles on pending tree that are
+  // required for activation, but only enough memory for 8 tiles. The result
+  // is all pending tree tiles get memory, and 3 of the active tree tiles
+  // get memory.
 
   Initialize(8, ALLOW_ANYTHING, SMOOTHNESS_TAKES_PRIORITY);
   TileVector active_tree_tiles =
       CreateTiles(5, TilePriorityForEventualBin(), TilePriority());
   TileVector pending_tree_tiles =
-      CreateTiles(5, TilePriority(), TilePriorityForNowBin());
+      CreateTiles(5, TilePriority(), TilePriorityRequiredForActivation());
 
   tile_manager()->ManageTiles();
 
-  EXPECT_EQ(3, AssignedMemoryCounts(active_tree_tiles));
-  EXPECT_EQ(5, AssignedMemoryCounts(pending_tree_tiles));
+  EXPECT_EQ(5, AssignedMemoryCount(active_tree_tiles));
+  EXPECT_EQ(3, AssignedMemoryCount(pending_tree_tiles));
 
-  pending_tree_tiles.clear();
-  active_tree_tiles.clear();
-  TearDown();
+  tile_manager()->ReassignMemoryToOOMTilesRequiredForActivation();
+
+  EXPECT_EQ(3, AssignedMemoryCount(active_tree_tiles));
+  EXPECT_EQ(5, AssignedMemoryCount(pending_tree_tiles));
 }
 
 TEST_F(TileManagerTest, PartialOOMMemoryToActive) {
@@ -267,33 +265,54 @@ TEST_F(TileManagerTest, PartialOOMMemoryToActive) {
 
   tile_manager()->ManageTiles();
 
-  EXPECT_EQ(5, AssignedMemoryCounts(active_tree_tiles));
-  EXPECT_EQ(3, AssignedMemoryCounts(pending_tree_tiles));
-
-  pending_tree_tiles.clear();
-  active_tree_tiles.clear();
-  TearDown();
+  EXPECT_EQ(5, AssignedMemoryCount(active_tree_tiles));
+  EXPECT_EQ(3, AssignedMemoryCount(pending_tree_tiles));
 }
 
 TEST_F(TileManagerTest, TotalOOMMemoryToPending) {
-  // 5 tiles on active tree eventually bin, 5 tiles on pending tree now bin,
-  // but only enough memory for 4 tiles. The result is 4 pending tree tiles
-  // get memory, and none of the active tree tiles get memory.
+  // 5 tiles on active tree eventually bin, 5 tiles on pending tree that are
+  // required for activation, but only enough memory for 4 tiles. The result
+  // is 4 pending tree tiles get memory, and none of the active tree tiles
+  // get memory.
 
   Initialize(4, ALLOW_ANYTHING, SMOOTHNESS_TAKES_PRIORITY);
   TileVector active_tree_tiles =
       CreateTiles(5, TilePriorityForEventualBin(), TilePriority());
   TileVector pending_tree_tiles =
-      CreateTiles(5, TilePriority(), TilePriorityForNowBin());
+      CreateTiles(5, TilePriority(), TilePriorityRequiredForActivation());
 
   tile_manager()->ManageTiles();
 
-  EXPECT_EQ(0, AssignedMemoryCounts(active_tree_tiles));
-  EXPECT_EQ(4, AssignedMemoryCounts(pending_tree_tiles));
+  EXPECT_EQ(4, AssignedMemoryCount(active_tree_tiles));
+  EXPECT_EQ(0, AssignedMemoryCount(pending_tree_tiles));
 
-  pending_tree_tiles.clear();
-  active_tree_tiles.clear();
-  TearDown();
+  tile_manager()->ReassignMemoryToOOMTilesRequiredForActivation();
+
+  EXPECT_EQ(0, AssignedMemoryCount(active_tree_tiles));
+  EXPECT_EQ(4, AssignedMemoryCount(pending_tree_tiles));
+}
+
+TEST_F(TileManagerTest, TotalOOMActiveSoonMemoryToPending) {
+  // 5 tiles on active tree soon bin, 5 tiles on pending tree that are
+  // required for activation, but only enough memory for 4 tiles. The result
+  // is 4 pending tree tiles get memory, and none of the active tree tiles
+  // get memory.
+
+  Initialize(4, ALLOW_ANYTHING, SMOOTHNESS_TAKES_PRIORITY);
+  TileVector active_tree_tiles =
+      CreateTiles(5, TilePriorityForSoonBin(), TilePriority());
+  TileVector pending_tree_tiles =
+      CreateTiles(5, TilePriority(), TilePriorityRequiredForActivation());
+
+  tile_manager()->ManageTiles();
+
+  EXPECT_EQ(4, AssignedMemoryCount(active_tree_tiles));
+  EXPECT_EQ(0, AssignedMemoryCount(pending_tree_tiles));
+
+  tile_manager()->ReassignMemoryToOOMTilesRequiredForActivation();
+
+  EXPECT_EQ(0, AssignedMemoryCount(active_tree_tiles));
+  EXPECT_EQ(4, AssignedMemoryCount(pending_tree_tiles));
 }
 
 TEST_F(TileManagerTest, TotalOOMMemoryToActive) {
@@ -309,12 +328,148 @@ TEST_F(TileManagerTest, TotalOOMMemoryToActive) {
 
   tile_manager()->ManageTiles();
 
-  EXPECT_EQ(4, AssignedMemoryCounts(active_tree_tiles));
-  EXPECT_EQ(0, AssignedMemoryCounts(pending_tree_tiles));
+  EXPECT_EQ(4, AssignedMemoryCount(active_tree_tiles));
+  EXPECT_EQ(0, AssignedMemoryCount(pending_tree_tiles));
+}
 
-  pending_tree_tiles.clear();
-  active_tree_tiles.clear();
-  TearDown();
+TEST_F(TileManagerTest, RasterAsLCD) {
+  Initialize(20, ALLOW_ANYTHING, SMOOTHNESS_TAKES_PRIORITY);
+  TileVector active_tree_tiles =
+      CreateTiles(5, TilePriorityForNowBin(), TilePriority());
+  TileVector pending_tree_tiles =
+      CreateTiles(5, TilePriority(), TilePriorityForNowBin());
+
+  tile_manager()->ManageTiles();
+
+  EXPECT_EQ(5, TilesWithLCDCount(active_tree_tiles));
+  EXPECT_EQ(5, TilesWithLCDCount(pending_tree_tiles));
+}
+
+TEST_F(TileManagerTest, RasterAsNoLCD) {
+  Initialize(20, ALLOW_ANYTHING, SMOOTHNESS_TAKES_PRIORITY);
+  TileVector active_tree_tiles =
+      CreateTiles(5, TilePriorityForNowBin(), TilePriority());
+  TileVector pending_tree_tiles =
+      CreateTiles(5, TilePriority(), TilePriorityForNowBin());
+
+  for (TileVector::iterator it = active_tree_tiles.begin();
+       it != active_tree_tiles.end();
+       ++it) {
+    (*it)->set_can_use_lcd_text(false);
+  }
+  for (TileVector::iterator it = pending_tree_tiles.begin();
+       it != pending_tree_tiles.end();
+       ++it) {
+    (*it)->set_can_use_lcd_text(false);
+  }
+
+  tile_manager()->ManageTiles();
+
+  EXPECT_EQ(0, TilesWithLCDCount(active_tree_tiles));
+  EXPECT_EQ(0, TilesWithLCDCount(pending_tree_tiles));
+}
+
+TEST_F(TileManagerTest, ReRasterAsNoLCD) {
+  Initialize(20, ALLOW_ANYTHING, SMOOTHNESS_TAKES_PRIORITY);
+  TileVector active_tree_tiles =
+      CreateTiles(5, TilePriorityForNowBin(), TilePriority());
+  TileVector pending_tree_tiles =
+      CreateTiles(5, TilePriority(), TilePriorityForNowBin());
+
+  tile_manager()->ManageTiles();
+
+  EXPECT_EQ(5, TilesWithLCDCount(active_tree_tiles));
+  EXPECT_EQ(5, TilesWithLCDCount(pending_tree_tiles));
+
+  for (TileVector::iterator it = active_tree_tiles.begin();
+       it != active_tree_tiles.end();
+       ++it) {
+    (*it)->set_can_use_lcd_text(false);
+  }
+  for (TileVector::iterator it = pending_tree_tiles.begin();
+       it != pending_tree_tiles.end();
+       ++it) {
+    (*it)->set_can_use_lcd_text(false);
+  }
+
+  tile_manager()->ManageTiles();
+
+  EXPECT_EQ(0, TilesWithLCDCount(active_tree_tiles));
+  EXPECT_EQ(0, TilesWithLCDCount(pending_tree_tiles));
+}
+
+TEST_F(TileManagerTest, NoTextDontReRasterAsNoLCD) {
+  Initialize(20, ALLOW_ANYTHING, SMOOTHNESS_TAKES_PRIORITY);
+  TileVector active_tree_tiles =
+      CreateTiles(5, TilePriorityForNowBin(), TilePriority());
+  TileVector pending_tree_tiles =
+      CreateTiles(5, TilePriority(), TilePriorityForNowBin());
+
+  tile_manager()->ManageTiles();
+
+  EXPECT_EQ(5, TilesWithLCDCount(active_tree_tiles));
+  EXPECT_EQ(5, TilesWithLCDCount(pending_tree_tiles));
+
+  for (TileVector::iterator it = active_tree_tiles.begin();
+       it != active_tree_tiles.end();
+       ++it) {
+    (*it)->set_can_use_lcd_text(false);
+    (*it)->tile_version(HIGH_QUALITY_RASTER_MODE).SetSolidColorForTesting(
+        SkColorSetARGB(0, 0, 0, 0));
+    EXPECT_TRUE((*it)->IsReadyToDraw(NULL));
+  }
+  for (TileVector::iterator it = pending_tree_tiles.begin();
+       it != pending_tree_tiles.end();
+       ++it) {
+    (*it)->set_can_use_lcd_text(false);
+    (*it)->tile_version(HIGH_QUALITY_RASTER_MODE).SetSolidColorForTesting(
+        SkColorSetARGB(0, 0, 0, 0));
+    EXPECT_TRUE((*it)->IsReadyToDraw(NULL));
+  }
+
+  tile_manager()->ManageTiles();
+
+  EXPECT_EQ(5, TilesWithLCDCount(active_tree_tiles));
+  EXPECT_EQ(5, TilesWithLCDCount(pending_tree_tiles));
+}
+
+TEST_F(TileManagerTest, TextReRasterAsNoLCD) {
+  Initialize(20, ALLOW_ANYTHING, SMOOTHNESS_TAKES_PRIORITY);
+  TileVector active_tree_tiles =
+      CreateTiles(5, TilePriorityForNowBin(), TilePriority());
+  TileVector pending_tree_tiles =
+      CreateTiles(5, TilePriority(), TilePriorityForNowBin());
+
+  tile_manager()->ManageTiles();
+
+  EXPECT_EQ(5, TilesWithLCDCount(active_tree_tiles));
+  EXPECT_EQ(5, TilesWithLCDCount(pending_tree_tiles));
+
+  for (TileVector::iterator it = active_tree_tiles.begin();
+       it != active_tree_tiles.end();
+       ++it) {
+    (*it)->set_can_use_lcd_text(false);
+    (*it)->tile_version(HIGH_QUALITY_RASTER_MODE).SetSolidColorForTesting(
+        SkColorSetARGB(0, 0, 0, 0));
+    (*it)->tile_version(HIGH_QUALITY_RASTER_MODE).SetHasTextForTesting(true);
+
+    EXPECT_TRUE((*it)->IsReadyToDraw(NULL));
+  }
+  for (TileVector::iterator it = pending_tree_tiles.begin();
+       it != pending_tree_tiles.end();
+       ++it) {
+    (*it)->set_can_use_lcd_text(false);
+    (*it)->tile_version(HIGH_QUALITY_RASTER_MODE).SetSolidColorForTesting(
+        SkColorSetARGB(0, 0, 0, 0));
+    (*it)->tile_version(HIGH_QUALITY_RASTER_MODE).SetHasTextForTesting(true);
+
+    EXPECT_TRUE((*it)->IsReadyToDraw(NULL));
+  }
+
+  tile_manager()->ManageTiles();
+
+  EXPECT_EQ(0, TilesWithLCDCount(active_tree_tiles));
+  EXPECT_EQ(0, TilesWithLCDCount(pending_tree_tiles));
 }
 
 }  // namespace

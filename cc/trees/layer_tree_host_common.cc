@@ -232,6 +232,10 @@ static bool LayerShouldBeSkipped(LayerType* layer) {
 }
 
 static inline bool SubtreeShouldBeSkipped(LayerImpl* layer) {
+  // The embedder can request to hide the entire layer's subtree.
+  if (layer->hide_layer_and_subtree())
+    return true;
+
   // If layer is on the pending tree and opacity is being animated then
   // this subtree can't be skipped as we need to create, prioritize and
   // include tiles for this layer when deciding if tree can be activated.
@@ -245,6 +249,10 @@ static inline bool SubtreeShouldBeSkipped(LayerImpl* layer) {
 }
 
 static inline bool SubtreeShouldBeSkipped(Layer* layer) {
+  // The embedder can request to hide the entire layer's subtree.
+  if (layer->hide_layer_and_subtree())
+    return true;
+
   // If the opacity is being animated then the opacity on the main thread is
   // unreliable (since the impl thread may be using a different opacity), so it
   // should not be trusted.
@@ -311,7 +319,7 @@ static bool SubtreeShouldRenderToSeparateSurface(
   }
 
   // If the layer uses a CSS filter.
-  if (!layer->filters().isEmpty() || !layer->background_filters().isEmpty() ||
+  if (!layer->filters().IsEmpty() || !layer->background_filters().IsEmpty() ||
       layer->filter()) {
     DCHECK(!is_root);
     return true;
@@ -441,8 +449,9 @@ gfx::Transform ComputeSizeDeltaCompensation(
     result_transform.PreconcatTransform(
         container_layer_space_to_target_surface_space);
   } else {
-    // FIXME: A non-invertible matrix could still make meaningful projection.
-    // For example ScaleZ(0) is non-invertible but the layer is still visible.
+    // TODO(shawnsingh): A non-invertible matrix could still make meaningful
+    // projection.  For example ScaleZ(0) is non-invertible but the layer is
+    // still visible.
     return gfx::Transform();
   }
 
@@ -1198,7 +1207,7 @@ static void CalculateDrawPropertiesInternal(
 
     // TODO(senorblanco): make this smarter for the SkImageFilter case (check
     // for pixel-moving filters)
-    if (layer->filters().hasFilterThatMovesPixels() || layer->filter())
+    if (layer->filters().HasFilterThatMovesPixels() || layer->filter())
       nearest_ancestor_that_moves_pixels = render_surface;
 
     // The render surface clip rect is expressed in the space where this surface
@@ -1491,6 +1500,7 @@ static void CalculateDrawPropertiesInternal(
   }
 
   UpdateTilePrioritiesForLayer(layer);
+  SavePaintPropertiesLayer(layer);
 
   // If neither this layer nor any of its children were added, early out.
   if (sorting_start_index == descendants.size())
@@ -1518,8 +1528,6 @@ static void CalculateDrawPropertiesInternal(
     layer->render_target()->render_surface()->
         AddContributingDelegatedRenderPassLayer(layer);
   }
-
-  SavePaintPropertiesLayer(layer);
 }
 
 void LayerTreeHostCommon::CalculateDrawProperties(

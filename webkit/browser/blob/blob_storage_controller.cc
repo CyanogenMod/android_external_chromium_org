@@ -5,7 +5,7 @@
 #include "webkit/browser/blob/blob_storage_controller.h"
 
 #include "base/logging.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 #include "webkit/common/blob/blob_data.h"
 
 namespace webkit_blob {
@@ -173,7 +173,7 @@ bool BlobStorageController::RemoveFromMapHelper(
 BlobData* BlobStorageController::GetBlobDataFromUrl(const GURL& url) {
   BlobMap::iterator found = blob_map_.find(
       BlobUrlHasRef(url) ? ClearBlobUrlRef(url).spec() : url.spec());
-  return (found != blob_map_.end()) ? found->second : NULL;
+  return (found != blob_map_.end()) ? found->second.get() : NULL;
 }
 
 void BlobStorageController::AppendStorageItems(

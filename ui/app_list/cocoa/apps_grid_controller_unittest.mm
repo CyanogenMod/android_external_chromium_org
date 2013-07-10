@@ -2,8 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/foundation_util.h"
+#include "base/mac/scoped_nsobject.h"
+#include "base/strings/utf_string_conversions.h"
+#include "skia/ext/skia_utils_mac.h"
 #import "testing/gtest_mac.h"
+#include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_item_model.h"
 #import "ui/app_list/cocoa/apps_collection_view_drag_manager.h"
 #import "ui/app_list/cocoa/apps_grid_controller.h"
@@ -12,6 +16,7 @@
 #import "ui/app_list/cocoa/test/apps_grid_controller_test_helper.h"
 #include "ui/app_list/test/app_list_test_model.h"
 #include "ui/app_list/test/app_list_test_view_delegate.h"
+#include "ui/base/models/simple_menu_model.h"
 #import "ui/base/test/cocoa_test_event_utils.h"
 
 @interface TestPaginationObserver : NSObject<AppsPaginationModelObserver> {
@@ -84,6 +89,13 @@ class AppsGridControllerTest : public AppsGridControllerTestHelper {
     return owned_delegate_.get();
   }
 
+  NSColor* ButtonTitleColorAt(size_t index) {
+    NSDictionary* attributes =
+        [[[GetItemViewAt(index) cell] attributedTitle] attributesAtIndex:0
+                                                          effectiveRange:NULL];
+    return [attributes objectForKey:NSForegroundColorAttributeName];
+  }
+
   virtual void SetUp() OVERRIDE {
     owned_apps_grid_controller_.reset([[AppsGridController alloc] init]);
     owned_delegate_.reset(new AppListTestViewDelegate);
@@ -102,10 +114,27 @@ class AppsGridControllerTest : public AppsGridControllerTestHelper {
   }
 
  private:
-  scoped_nsobject<AppsGridController> owned_apps_grid_controller_;
+  base::scoped_nsobject<AppsGridController> owned_apps_grid_controller_;
   scoped_ptr<AppListTestViewDelegate> owned_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(AppsGridControllerTest);
+};
+
+class AppListItemWithMenu : public AppListItemModel {
+ public:
+  AppListItemWithMenu(const std::string& title) : menu_model_(NULL) {
+    SetTitle(title);
+    menu_model_.AddItem(0, UTF8ToUTF16("Menu For: " + title));
+  }
+
+  virtual ui::MenuModel* GetContextMenuModel() OVERRIDE {
+    return &menu_model_;
+  }
+
+ private:
+  ui::SimpleMenuModel menu_model_;
+
+  DISALLOW_COPY_AND_ASSIGN(AppListItemWithMenu);
 };
 
 // Generate a mouse event at the centre of the view in |page| with the given
@@ -233,6 +262,22 @@ TEST_F(AppsGridControllerTest, Pagination) {
   ReplaceTestModel(1);
   EXPECT_EQ(1u, [apps_grid_controller_ pageCount]);
   EXPECT_EQ(1u, [[GetPageAt(0) content] count]);
+}
+
+// Tests that selecting an item changes the text color correctly.
+TEST_F(AppsGridControllerTest, SelectionChangesTextColor) {
+  model()->PopulateApps(2);
+  [apps_grid_controller_ selectItemAtIndex:0];
+  EXPECT_NSEQ(ButtonTitleColorAt(0),
+              gfx::SkColorToCalibratedNSColor(app_list::kGridTitleHoverColor));
+  EXPECT_NSEQ(ButtonTitleColorAt(1),
+              gfx::SkColorToCalibratedNSColor(app_list::kGridTitleColor));
+
+  [apps_grid_controller_ selectItemAtIndex:1];
+  EXPECT_NSEQ(ButtonTitleColorAt(0),
+              gfx::SkColorToCalibratedNSColor(app_list::kGridTitleColor));
+  EXPECT_NSEQ(ButtonTitleColorAt(1),
+              gfx::SkColorToCalibratedNSColor(app_list::kGridTitleHoverColor));
 }
 
 // Tests basic keyboard navigation on the first page.
@@ -457,7 +502,7 @@ TEST_F(AppsGridControllerTest, MouseoverSelects) {
 
 // Test AppsGridPaginationObserver totalPagesChanged().
 TEST_F(AppsGridControllerTest, PaginationObserverPagesChanged) {
-  scoped_nsobject<TestPaginationObserver> observer(
+  base::scoped_nsobject<TestPaginationObserver> observer(
       [[TestPaginationObserver alloc] init]);
   [apps_grid_controller_ setPaginationObserver:observer];
 
@@ -483,7 +528,7 @@ TEST_F(AppsGridControllerTest, PaginationObserverPagesChanged) {
 
 // Test AppsGridPaginationObserver selectedPageChanged().
 TEST_F(AppsGridControllerTest, PaginationObserverSelectedPageChanged) {
-  scoped_nsobject<TestPaginationObserver> observer(
+  base::scoped_nsobject<TestPaginationObserver> observer(
       [[TestPaginationObserver alloc] init]);
   [apps_grid_controller_ setPaginationObserver:observer];
   EXPECT_EQ(0, [[NSAnimationContext currentContext] duration]);
@@ -704,7 +749,7 @@ TEST_F(AppsGridControllerTest, DragAndDropMultiPage) {
 
 // Test scrolling when dragging past edge or over the pager.
 TEST_F(AppsGridControllerTest, ScrollingWhileDragging) {
-  scoped_nsobject<TestPaginationObserver> observer(
+  base::scoped_nsobject<TestPaginationObserver> observer(
       [[TestPaginationObserver alloc] init]);
   [apps_grid_controller_ setPaginationObserver:observer];
 
@@ -772,6 +817,24 @@ TEST_F(AppsGridControllerTest, ScrollingWhileDragging) {
   EXPECT_EQ(2u, [apps_grid_controller_ scheduledScrollPage]);
 
   [apps_grid_controller_ setPaginationObserver:nil];
+}
+
+TEST_F(AppsGridControllerTest, ContextMenus) {
+  model()->apps()->AddAt(0, new AppListItemWithMenu("Item One"));
+  model()->apps()->AddAt(1, new AppListItemWithMenu("Item Two"));
+  EXPECT_EQ(2u, [apps_grid_controller_ itemCount]);
+
+  NSCollectionView* page = [apps_grid_controller_ collectionViewAtPageIndex:0];
+  NSEvent* mouse_at_cell_0 = MouseEventInCell(page, 0);
+  NSEvent* mouse_at_cell_1 = MouseEventInCell(page, 1);
+
+  NSMenu* menu = [page menuForEvent:mouse_at_cell_0];
+  EXPECT_EQ(1, [menu numberOfItems]);
+  EXPECT_NSEQ(@"Menu For: Item One", [[menu itemAtIndex:0] title]);
+
+  menu = [page menuForEvent:mouse_at_cell_1];
+  EXPECT_EQ(1, [menu numberOfItems]);
+  EXPECT_NSEQ(@"Menu For: Item Two", [[menu itemAtIndex:0] title]);
 }
 
 }  // namespace test

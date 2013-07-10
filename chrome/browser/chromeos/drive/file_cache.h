@@ -14,6 +14,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
+#include "chrome/browser/chromeos/drive/resource_metadata_storage.h"
 
 class Profile;
 
@@ -40,8 +41,6 @@ typedef base::Callback<void(const std::string& resource_id,
     CacheIterateCallback;
 
 namespace internal {
-
-class FileCacheMetadata;
 
 // Callback for GetFileFromCache.
 typedef base::Callback<void(FileError error,
@@ -74,8 +73,13 @@ class FileCache {
     FILE_OPERATION_COPY,
   };
 
-  // |metadata_directory| stores the metadata and |cache_file_directory| stores
-  // cached files.
+  typedef ResourceMetadataStorage::CacheEntryIterator Iterator;
+
+  // Name of the cache metadata DB previously used.
+  // TODO(hashimoto): Remove this at some point.
+  static const base::FilePath::CharType kOldCacheMetadataDBName[];
+
+  // |cache_file_directory| stores cached files.
   //
   // |blocking_task_runner| is used to post a task to the blocking worker
   // pool for file operations. Must not be null.
@@ -84,7 +88,7 @@ class FileCache {
   // getter for testing. NULL must be passed for production code.
   //
   // Must be called on the UI thread.
-  FileCache(const base::FilePath& metadata_directory,
+  FileCache(ResourceMetadataStorage* storage,
             const base::FilePath& cache_file_directory,
             base::SequencedTaskRunner* blocking_task_runner,
             FreeDiskSpaceGetterInterface* free_disk_space_getter);
@@ -117,10 +121,8 @@ class FileCache {
   void IterateOnUIThread(const CacheIterateCallback& iteration_callback,
                          const base::Closure& completion_callback);
 
-  // Iterates all files in the cache and calls |iteration_callback| for each
-  // file. |completion_callback| is run upon completion.
-  // TODO(hashimoto): Stop using callbacks for this method. crbug.com/242818
-  void Iterate(const CacheIterateCallback& iteration_callback);
+  // Returns an object to iterate over entries.
+  scoped_ptr<Iterator> GetIterator();
 
 
   // Runs FreeDiskSpaceIfNeededFor() on |blocking_task_runner_|, and calls
@@ -293,13 +295,15 @@ class FileCache {
   // bytes, while keeping kMinFreeSpace bytes on the disk.
   bool HasEnoughSpaceFor(int64 num_bytes, const base::FilePath& path);
 
-  const base::FilePath metadata_directory_;
+  // Imports old format DB from |old_db_path| and deletes it.
+  // TODO(hashimoto): Remove this method and FileCacheMetadata at some point.
+  bool ImportOldDB(const base::FilePath& old_db_path);
+
   const base::FilePath cache_file_directory_;
 
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
 
-  // The cache state data. This member must be access only on the blocking pool.
-  scoped_ptr<FileCacheMetadata> metadata_;
+  ResourceMetadataStorage* storage_;
 
   FreeDiskSpaceGetterInterface* free_disk_space_getter_;  // Not owned.
 

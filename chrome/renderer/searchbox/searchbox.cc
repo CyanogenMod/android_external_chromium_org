@@ -28,6 +28,23 @@ namespace {
 // Size of the results cache.
 const size_t kMaxInstantAutocompleteResultItemCacheSize = 100;
 
+// Returns true if items stored in |old_item_id_pairs| and |new_items| are
+// equal.
+bool AreMostVisitedItemsEqual(
+    const std::vector<InstantMostVisitedItemIDPair>& old_item_id_pairs,
+    const std::vector<InstantMostVisitedItem>& new_items) {
+  if (old_item_id_pairs.size() != new_items.size())
+    return false;
+
+  for (size_t i = 0; i < new_items.size(); ++i) {
+    if (new_items[i].url != old_item_id_pairs[i].second.url ||
+        new_items[i].title != old_item_id_pairs[i].second.title) {
+      return false;
+    }
+  }
+  return true;
+}
+
 }  // namespace
 
 namespace internal {  // for testing
@@ -73,6 +90,7 @@ SearchBox::SearchBox(content::RenderView* render_view)
       is_input_in_progress_(false),
       display_instant_results_(false),
       omnibox_font_size_(0),
+      app_launcher_enabled_(false),
       autocomplete_results_cache_(kMaxInstantAutocompleteResultItemCacheSize),
       most_visited_items_cache_(kMaxInstantMostVisitedItemCacheSize) {
 }
@@ -90,6 +108,11 @@ void SearchBox::SetSuggestions(
   // Explicitly allow empty vector to be sent to the browser.
   render_view()->Send(new ChromeViewHostMsg_SetSuggestions(
       render_view()->GetRoutingID(), render_view()->GetPageId(), suggestions));
+}
+
+void SearchBox::SetVoiceSearchSupported(bool supported) {
+  render_view()->Send(new ChromeViewHostMsg_SetVoiceSearchSupported(
+      render_view()->GetRoutingID(), render_view()->GetPageId(), supported));
 }
 
 void SearchBox::MarkQueryAsRestricted() {
@@ -249,6 +272,8 @@ bool SearchBox::OnMessageReceived(const IPC::Message& message) {
                         OnThemeChanged)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SearchBoxFontInformation,
                         OnFontInformationReceived)
+    IPC_MESSAGE_HANDLER(ChromeViewMsg_SearchBoxPromoInformation,
+                        OnPromoInformationReceived)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SearchBoxMostVisitedItemsChanged,
                         OnMostVisitedChanged)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SearchBoxToggleVoiceSearch,
@@ -448,6 +473,10 @@ void SearchBox::OnSetDisplayInstantResults(bool display_instant_results) {
 }
 
 void SearchBox::OnThemeChanged(const ThemeBackgroundInfo& theme_info) {
+  // Do not send duplicate notifications.
+  if (theme_info_ == theme_info)
+    return;
+
   theme_info_ = theme_info;
   if (render_view()->GetWebView() && render_view()->GetWebView()->mainFrame()) {
     extensions_v8::SearchBoxExtension::DispatchThemeChange(
@@ -459,6 +488,10 @@ void SearchBox::OnFontInformationReceived(const string16& omnibox_font,
                                           size_t omnibox_font_size) {
   omnibox_font_ = omnibox_font;
   omnibox_font_size_ = omnibox_font_size;
+}
+
+void SearchBox::OnPromoInformationReceived(bool is_app_launcher_enabled) {
+  app_launcher_enabled_ = is_app_launcher_enabled;
 }
 
 double SearchBox::GetZoom() const {
@@ -497,6 +530,12 @@ void SearchBox::SetQuery(const string16& query, bool verbatim) {
 
 void SearchBox::OnMostVisitedChanged(
     const std::vector<InstantMostVisitedItem>& items) {
+  std::vector<InstantMostVisitedItemIDPair> last_known_items;
+  GetMostVisitedItems(&last_known_items);
+
+  if (AreMostVisitedItemsEqual(last_known_items, items))
+    return;  // Do not send duplicate onmostvisitedchange events.
+
   most_visited_items_cache_.AddItems(items);
   if (render_view()->GetWebView() && render_view()->GetWebView()->mainFrame()) {
     extensions_v8::SearchBoxExtension::DispatchMostVisitedChanged(

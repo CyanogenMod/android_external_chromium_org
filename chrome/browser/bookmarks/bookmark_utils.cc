@@ -14,7 +14,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/history/query_parser.h"
@@ -74,38 +74,6 @@ bool DoesBookmarkContainWords(const BookmarkNode* node,
       DoesBookmarkTextContainWords(net::FormatUrl(
           node->url(), languages, net::kFormatUrlOmitNothing,
           net::UnescapeRule::NORMAL, NULL, NULL, NULL), words);
-}
-
-const BookmarkNode* CreateNewNode(BookmarkModel* model,
-                                  const BookmarkNode* parent,
-                                  const BookmarkEditor::EditDetails& details,
-                                  const string16& new_title,
-                                  const GURL& new_url) {
-  const BookmarkNode* node;
-  // When create the new one to right-clicked folder, add it to the next to the
-  // folder's position. Because |details.index| has a index of the folder when
-  // it was right-clicked, it might cause out of range exception when another
-  // bookmark manager edits contents of the folder.
-  // So we must check the range.
-  int child_count = parent->child_count();
-  int insert_index = (parent == details.parent_node && details.index >= 0 &&
-                      details.index <= child_count) ?
-                      details.index : child_count;
-  if (details.type == BookmarkEditor::EditDetails::NEW_URL) {
-    node = model->AddURL(parent, insert_index, new_title, new_url);
-  } else if (details.type == BookmarkEditor::EditDetails::NEW_FOLDER) {
-    node = model->AddFolder(parent, insert_index, new_title);
-    for (size_t i = 0; i < details.urls.size(); ++i) {
-      model->AddURL(node, node->child_count(), details.urls[i].second,
-                    details.urls[i].first);
-    }
-    model->SetDateFolderModified(parent, Time::Now());
-  } else {
-    NOTREACHED();
-    return NULL;
-  }
-
-  return node;
 }
 
 }  // namespace
@@ -268,50 +236,6 @@ bool DoesBookmarkContainText(const BookmarkNode* node,
     return false;
 
   return (node->is_url() && DoesBookmarkContainWords(node, words, languages));
-}
-
-const BookmarkNode* ApplyEditsWithNoFolderChange(
-    BookmarkModel* model,
-    const BookmarkNode* parent,
-    const BookmarkEditor::EditDetails& details,
-    const string16& new_title,
-    const GURL& new_url) {
-  if (details.type == BookmarkEditor::EditDetails::NEW_URL ||
-      details.type == BookmarkEditor::EditDetails::NEW_FOLDER) {
-    return CreateNewNode(model, parent, details, new_title, new_url);
-  }
-
-  const BookmarkNode* node = details.existing_node;
-  DCHECK(node);
-
-  if (node->is_url())
-    model->SetURL(node, new_url);
-  model->SetTitle(node, new_title);
-
-  return node;
-}
-
-const BookmarkNode* ApplyEditsWithPossibleFolderChange(
-    BookmarkModel* model,
-    const BookmarkNode* new_parent,
-    const BookmarkEditor::EditDetails& details,
-    const string16& new_title,
-    const GURL& new_url) {
-  if (details.type == BookmarkEditor::EditDetails::NEW_URL ||
-      details.type == BookmarkEditor::EditDetails::NEW_FOLDER) {
-    return CreateNewNode(model, new_parent, details, new_title, new_url);
-  }
-
-  const BookmarkNode* node = details.existing_node;
-  DCHECK(node);
-
-  if (new_parent != node->parent())
-    model->Move(node, new_parent, new_parent->child_count());
-  if (node->is_url())
-    model->SetURL(node, new_url);
-  model->SetTitle(node, new_title);
-
-  return node;
 }
 
 void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry) {

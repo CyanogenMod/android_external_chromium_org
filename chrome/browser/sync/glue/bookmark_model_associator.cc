@@ -9,9 +9,11 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/containers/hash_tables.h"
+#include "base/format_macros.h"
 #include "base/location.h"
 #include "base/message_loop.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/profiles/profile.h"
@@ -364,7 +366,10 @@ bool BookmarkModelAssociator::GetSyncIdForTaggedNode(const std::string& tag,
 syncer::SyncError BookmarkModelAssociator::AssociateModels(
     syncer::SyncMergeResult* local_merge_result,
     syncer::SyncMergeResult* syncer_merge_result) {
-  CheckModelSyncState(local_merge_result, syncer_merge_result);
+  syncer::SyncError error = CheckModelSyncState(local_merge_result,
+                                                syncer_merge_result);
+  if (error.IsSet())
+    return error;
 
   scoped_ptr<ScopedAssociationUpdater> association_updater(
       new ScopedAssociationUpdater(bookmark_model_));
@@ -702,16 +707,16 @@ bool BookmarkModelAssociator::CryptoReadyIfNecessary() {
       trans.GetCryptographer()->is_ready();
 }
 
-void BookmarkModelAssociator::CheckModelSyncState(
+syncer::SyncError BookmarkModelAssociator::CheckModelSyncState(
     syncer::SyncMergeResult* local_merge_result,
     syncer::SyncMergeResult* syncer_merge_result) const {
   std::string version_str;
   if (bookmark_model_->root_node()->GetMetaInfo(kBookmarkTransactionVersionKey,
                                                 &version_str)) {
     syncer::ReadTransaction trans(FROM_HERE, user_share_);
-    int64 native_version;
+    int64 native_version = syncer::syncable::kInvalidTransactionVersion;
     if (!base::StringToInt64(version_str, &native_version))
-      return;
+      return syncer::SyncError();
     local_merge_result->set_pre_association_version(native_version);
 
     int64 sync_version = trans.GetModelVersion(syncer::BOOKMARKS);
@@ -721,11 +726,27 @@ void BookmarkModelAssociator::CheckModelSyncState(
       UMA_HISTOGRAM_ENUMERATION("Sync.LocalModelOutOfSync",
                                 ModelTypeToHistogramInt(syncer::BOOKMARKS),
                                 syncer::MODEL_TYPE_COUNT);
+
       // Clear version on bookmark model so that we only report error once.
       bookmark_model_->DeleteNodeMetaInfo(bookmark_model_->root_node(),
                                           kBookmarkTransactionVersionKey);
+
+      // If the native version is higher, there was a sync persistence failure,
+      // and we need to delay association until after a GetUpdates.
+      if (sync_version < native_version) {
+        std::string message = base::StringPrintf(
+            "Native version (%" PRId64 ") does not match sync version (%"
+                PRId64 ")",
+            native_version,
+            sync_version);
+        return syncer::SyncError(FROM_HERE,
+                                 syncer::SyncError::PERSISTENCE_ERROR,
+                                 message,
+                                 syncer::BOOKMARKS);
+      }
     }
   }
+  return syncer::SyncError();
 }
 
 }  // namespace browser_sync

@@ -8,11 +8,11 @@
 #import <Cocoa/Cocoa.h>
 #include <vector>
 
-#include "base/memory/scoped_nsobject.h"
+#include "apps/shell_window.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #import "chrome/browser/ui/cocoa/browser_command_executor.h"
 #include "chrome/browser/ui/extensions/native_app_window.h"
-#include "chrome/browser/ui/extensions/shell_window.h"
 #include "content/public/browser/notification_registrar.h"
 #include "extensions/common/draggable_region.h"
 #include "ui/gfx/rect.h"
@@ -43,8 +43,8 @@ class SkRegion;
 // Cocoa bridge to AppWindow.
 class NativeAppWindowCocoa : public NativeAppWindow {
  public:
-  NativeAppWindowCocoa(ShellWindow* shell_window,
-                       const ShellWindow::CreateParams& params);
+  NativeAppWindowCocoa(apps::ShellWindow* shell_window,
+                       const apps::ShellWindow::CreateParams& params);
 
   // ui::BaseWindow implementation.
   virtual bool IsActive() const OVERRIDE;
@@ -147,7 +147,7 @@ class NativeAppWindowCocoa : public NativeAppWindow {
   void UpdateDraggableRegionsForCustomDrag(
       const std::vector<extensions::DraggableRegion>& regions);
 
-  ShellWindow* shell_window_; // weak - ShellWindow owns NativeAppWindow.
+  apps::ShellWindow* shell_window_; // weak - ShellWindow owns NativeAppWindow.
 
   bool has_frame_;
 
@@ -159,7 +159,7 @@ class NativeAppWindowCocoa : public NativeAppWindow {
   gfx::Size max_size_;
   bool resizable_;
 
-  scoped_nsobject<NativeAppWindowController> window_controller_;
+  base::scoped_nsobject<NativeAppWindowController> window_controller_;
   NSInteger attention_request_id_;  // identifier from requestUserAttention
 
   // Indicates whether system drag or custom drag should be used, depending on

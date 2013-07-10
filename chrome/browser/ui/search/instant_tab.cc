@@ -5,8 +5,9 @@
 #include "chrome/browser/ui/search/instant_tab.h"
 #include "content/public/browser/web_contents.h"
 
-InstantTab::InstantTab(InstantPage::Delegate* delegate)
-    : InstantPage(delegate, "") {
+InstantTab::InstantTab(InstantPage::Delegate* delegate,
+                       bool is_incognito)
+    : InstantPage(delegate, "", is_incognito) {
 }
 
 InstantTab::~InstantTab() {
@@ -14,15 +15,9 @@ InstantTab::~InstantTab() {
 
 void InstantTab::Init(content::WebContents* contents) {
   SetContents(contents);
-  if (!contents->IsWaitingForResponse())
-    DetermineIfPageSupportsInstant();
 }
 
 bool InstantTab::ShouldProcessAboutToNavigateMainFrame() {
-  return true;
-}
-
-bool InstantTab::ShouldProcessSetSuggestions() {
   return true;
 }
 

@@ -19,7 +19,7 @@
 #include "content/shell/shell.h"
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
-#include "googleurl/src/gurl.h"
+#include "gpu/config/gpu_test_config.h"
 #include "net/base/net_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -161,6 +161,10 @@ class GpuPixelBrowserTest : public ContentBrowserTest {
                     int64 ref_img_update_revision,
                     const ReferencePixel* ref_pixels,
                     size_t ref_pixel_count) {
+    // http://crbug.com/255146
+    if (gpu::GPUTestBotConfig::CurrentConfigMatches("LINUX NVIDIA"))
+      return;
+
     if (ref_img_option_ == kReferenceImageLocal) {
       ref_img_revision_no_older_than_ = ref_img_update_revision;
       ObtainLocalRefImageRevision();
@@ -255,7 +259,7 @@ class GpuPixelBrowserTest : public ContentBrowserTest {
           LOG(ERROR) << "Can't save revision file to: "
                      << rev_path.value();
           rt = false;
-          file_util::Delete(img_path, false);
+          base::Delete(img_path, false);
         } else {
           LOG(INFO) << "Saved revision file to: "
                     << rev_path.value();
@@ -425,7 +429,7 @@ class GpuPixelBrowserTest : public ContentBrowserTest {
     }
     ref_img_revision_ = max_revision;
     for (size_t i = 0; i < outdated_revs.size(); ++i)
-      file_util::Delete(outdated_revs[i], false);
+      base::Delete(outdated_revs[i], false);
   }
 
   DISALLOW_COPY_AND_ASSIGN(GpuPixelBrowserTest);
@@ -457,7 +461,7 @@ IN_PROC_BROWSER_TEST_F(GpuPixelBrowserTest, MANUAL_WebGLGreenTriangle) {
 IN_PROC_BROWSER_TEST_F(GpuPixelBrowserTest, MANUAL_CSS3DBlueBox) {
   // If test baseline needs to be updated after a given revision, update the
   // following number. If no revision requirement, then 0.
-  const int64 ref_img_revision_update = 123489;
+  const int64 ref_img_revision_update = 209827;
 
   const ReferencePixel ref_pixels[] = {
     // x, y, r, g, b
@@ -538,7 +542,7 @@ class GpuPixelTestBrowserPlugin : public GpuPixelBrowserTest {
 IN_PROC_BROWSER_TEST_F(GpuPixelTestBrowserPlugin, MANUAL_BrowserPluginBlueBox) {
   // If test baseline needs to be updated after a given revision, update the
   // following number. If no revision requirement, then 0.
-  const int64 ref_img_revision_update = 123489;
+  const int64 ref_img_revision_update = 209445;
 
   const ReferencePixel ref_pixels[] = {
     // x, y, r, g, b

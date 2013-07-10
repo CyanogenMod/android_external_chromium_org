@@ -31,7 +31,6 @@
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service_factory.h"
-#include "chrome/browser/printing/cloud_print/cloud_print_setup_flow.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_url.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
@@ -92,7 +91,6 @@
 #endif
 
 #if !defined(OS_CHROMEOS)
-#include "chrome/browser/printing/cloud_print/cloud_print_setup_handler.h"
 #include "chrome/browser/ui/webui/options/advanced_options_utils.h"
 #include "chromeos/chromeos_switches.h"
 #endif
@@ -116,10 +114,6 @@
 #include "chrome/installer/util/auto_launch_util.h"
 #endif  // defined(OS_WIN)
 
-#if defined(TOOLKIT_GTK)
-#include "chrome/browser/ui/gtk/gtk_theme_service.h"
-#endif  // defined(TOOLKIT_GTK)
-
 using content::BrowserContext;
 using content::BrowserThread;
 using content::DownloadManager;
@@ -131,11 +125,13 @@ namespace options {
 
 namespace {
 
-bool ShouldShowMultiProfilesUserList() {
+bool ShouldShowMultiProfilesUserList(chrome::HostDesktopType desktop_type) {
 #if defined(OS_CHROMEOS)
   // On Chrome OS we use different UI for multi-profiles.
   return false;
 #else
+  if (desktop_type != chrome::HOST_DESKTOP_TYPE_NATIVE)
+    return false;
   return ProfileManager::IsMultipleProfilesEnabled();
 #endif
 }
@@ -338,9 +334,9 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
     { "toolbarShowHomeButton", IDS_OPTIONS_TOOLBAR_SHOW_HOME_BUTTON },
     { "translateEnableTranslate",
       IDS_OPTIONS_TRANSLATE_ENABLE_TRANSLATE },
-#if defined(TOOLKIT_GTK)
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
     { "showWindowDecorations", IDS_SHOW_WINDOW_DECORATIONS },
-    { "themesGTKButton", IDS_THEMES_GTK_BUTTON },
+    { "themesNativeButton", IDS_THEMES_GTK_BUTTON },
     { "themesSetClassic", IDS_THEMES_SET_CLASSIC },
 #else
     { "themes", IDS_THEMES_GROUP_NAME },
@@ -512,7 +508,7 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
       g_browser_process->profile_manager()->GetNumberOfProfiles() > 1);
 #endif
 
-  if (ShouldShowMultiProfilesUserList())
+  if (ShouldShowMultiProfilesUserList(GetDesktopType()))
     values->Set("profilesInfo", GetProfilesInfoList().release());
 
 #if defined(ENABLE_MANAGED_USERS)
@@ -580,10 +576,10 @@ void BrowserOptionsHandler::RegisterMessages() {
       "themesReset",
       base::Bind(&BrowserOptionsHandler::ThemesReset,
                  base::Unretained(this)));
-#if defined(TOOLKIT_GTK)
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
   web_ui()->RegisterMessageCallback(
-      "themesSetGTK",
-      base::Bind(&BrowserOptionsHandler::ThemesSetGTK,
+      "themesSetNative",
+      base::Bind(&BrowserOptionsHandler::ThemesSetNative,
                  base::Unretained(this)));
 #endif
   web_ui()->RegisterMessageCallback(
@@ -1091,7 +1087,7 @@ scoped_ptr<ListValue> BrowserOptionsHandler::GetProfilesInfoList() {
 }
 
 void BrowserOptionsHandler::SendProfilesInfo() {
-  if (!ShouldShowMultiProfilesUserList())
+  if (!ShouldShowMultiProfilesUserList(GetDesktopType()))
     return;
   web_ui()->CallJavascriptFunction("BrowserOptions.setProfilesInfo",
                                    *GetProfilesInfoList());
@@ -1320,31 +1316,35 @@ void BrowserOptionsHandler::CancelProfileRegistration(bool user_initiated) {
 
 void BrowserOptionsHandler::ObserveThemeChanged() {
   Profile* profile = Profile::FromWebUI(web_ui());
-#if defined(TOOLKIT_GTK)
-  GtkThemeService* theme_service = GtkThemeService::GetFrom(profile);
-  bool is_gtk_theme = theme_service->UsingNativeTheme();
-  base::FundamentalValue gtk_enabled(!is_gtk_theme);
-  web_ui()->CallJavascriptFunction("BrowserOptions.setGtkThemeButtonEnabled",
-                                   gtk_enabled);
-#else
+  bool profile_is_managed = ManagedUserService::ProfileIsManaged(profile);
   ThemeService* theme_service = ThemeServiceFactory::GetForProfile(profile);
-  bool is_gtk_theme = false;
+  bool is_native_theme = false;
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  is_native_theme = theme_service->UsingNativeTheme();
+  base::FundamentalValue native_theme_enabled(!is_native_theme &&
+                                              !profile_is_managed);
+  web_ui()->CallJavascriptFunction("BrowserOptions.setNativeThemeButtonEnabled",
+                                   native_theme_enabled);
 #endif
 
-  bool is_classic_theme = !is_gtk_theme && theme_service->UsingDefaultTheme();
-  base::FundamentalValue enabled(!is_classic_theme);
+  bool is_classic_theme = !is_native_theme &&
+                          theme_service->UsingDefaultTheme();
+  base::FundamentalValue enabled(!is_classic_theme && !profile_is_managed);
   web_ui()->CallJavascriptFunction("BrowserOptions.setThemesResetButtonEnabled",
                                    enabled);
 }
 
 void BrowserOptionsHandler::ThemesReset(const ListValue* args) {
-  content::RecordAction(UserMetricsAction("Options_ThemesReset"));
   Profile* profile = Profile::FromWebUI(web_ui());
+  if (ManagedUserService::ProfileIsManaged(profile))
+    return;
+  content::RecordAction(UserMetricsAction("Options_ThemesReset"));
   ThemeServiceFactory::GetForProfile(profile)->UseDefaultTheme();
 }
 
-#if defined(TOOLKIT_GTK)
-void BrowserOptionsHandler::ThemesSetGTK(const ListValue* args) {
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+void BrowserOptionsHandler::ThemesSetNative(const ListValue* args) {
   content::RecordAction(UserMetricsAction("Options_GtkThemeSet"));
   Profile* profile = Profile::FromWebUI(web_ui());
   ThemeServiceFactory::GetForProfile(profile)->SetNativeTheme();
@@ -1439,13 +1439,6 @@ void BrowserOptionsHandler::FileSelected(const base::FilePath& path, int index,
   PrefService* pref_service = Profile::FromWebUI(web_ui())->GetPrefs();
   pref_service->SetFilePath(prefs::kDownloadDefaultDirectory, path);
   pref_service->SetFilePath(prefs::kSaveFileDefaultDirectory, path);
-}
-
-void BrowserOptionsHandler::OnCloudPrintSetupClosed() {
-#if !defined(OS_CHROMEOS)
-  if (cloud_print_connector_ui_enabled_)
-    SetupCloudPrintConnectorSection();
-#endif
 }
 
 #if defined(OS_CHROMEOS)
@@ -1737,8 +1730,8 @@ void BrowserOptionsHandler::SetupProxySettingsSection() {
   bool is_extension_controlled = (proxy_config &&
                                   proxy_config->IsExtensionControlled());
 
-  base::FundamentalValue disabled(profile_pref_registrar_.IsManaged() ||
-                                  is_extension_controlled);
+  base::FundamentalValue disabled(proxy_config &&
+                                  !proxy_config->IsUserModifiable());
   base::FundamentalValue extension_controlled(is_extension_controlled);
   web_ui()->CallJavascriptFunction("BrowserOptions.setupProxySettingsSection",
                                    disabled, extension_controlled);

@@ -47,7 +47,7 @@ class WebstoreProviderTest : public InProcessBrowserTest {
         switches::kAppsGalleryURL, test_server_->base_url().spec());
 
     webstore_provider_.reset(new WebstoreProvider(
-        ProfileManager::GetDefaultProfile()));
+        ProfileManager::GetDefaultProfile(), NULL));
     webstore_provider_->set_webstore_search_fetched_callback(
         base::Bind(&WebstoreProviderTest::OnSearchResultsFetched,
                    base::Unretained(this)));
@@ -98,11 +98,11 @@ class WebstoreProviderTest : public InProcessBrowserTest {
 
     if (request.relative_url.find("/jsonsearch?") != std::string::npos) {
       if (mock_server_response_ == "404") {
-        response->set_code(net::test_server::NOT_FOUND);
+        response->set_code(net::HTTP_NOT_FOUND);
       } else if (mock_server_response_ == "500") {
-        response->set_code(net::test_server::ACCESS_DENIED);
+        response->set_code(net::HTTP_INTERNAL_SERVER_ERROR);
       } else {
-        response->set_code(net::test_server::SUCCESS);
+        response->set_code(net::HTTP_OK);
         response->set_content(mock_server_response_);
       }
     }

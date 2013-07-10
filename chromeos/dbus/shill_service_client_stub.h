@@ -66,6 +66,9 @@ class ShillServiceClientStub : public ShillServiceClient,
   virtual bool CallActivateCellularModemAndBlock(
       const dbus::ObjectPath& service_path,
       const std::string& carrier) OVERRIDE;
+  virtual void GetLoadableProfileEntries(
+      const dbus::ObjectPath& service_path,
+      const DictionaryValueCallback& callback) OVERRIDE;
   virtual ShillServiceClient::TestInterface* GetTestInterface() OVERRIDE;
 
   // ShillServiceClient::TestInterface overrides.
@@ -73,12 +76,14 @@ class ShillServiceClientStub : public ShillServiceClient,
                           const std::string& name,
                           const std::string& type,
                           const std::string& state,
+                          bool add_to_visible_list,
                           bool add_to_watch_list) OVERRIDE;
   virtual void AddServiceWithIPConfig(const std::string& service_path,
                                       const std::string& name,
                                       const std::string& type,
                                       const std::string& state,
                                       const std::string& ipconfig_path,
+                                      bool add_to_visible_list,
                                       bool add_to_watch_list) OVERRIDE;
   virtual void RemoveService(const std::string& service_path) OVERRIDE;
   virtual void SetServiceProperty(const std::string& service_path,

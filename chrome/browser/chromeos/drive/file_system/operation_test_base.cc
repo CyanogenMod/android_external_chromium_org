@@ -51,16 +51,28 @@ void OperationTestBase::SetUp() {
   profile_.reset(new TestingProfile);
   ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
-  fake_drive_service_.reset(new google_apis::FakeDriveService);
+  fake_drive_service_.reset(new FakeDriveService);
   fake_drive_service_->LoadResourceListForWapi(
-      "chromeos/gdata/root_feed.json");
+      "gdata/root_feed.json");
   fake_drive_service_->LoadAccountMetadataForWapi(
-      "chromeos/gdata/account_metadata.json");
+      "gdata/account_metadata.json");
 
-  scheduler_.reset(
-      new JobScheduler(profile_.get(), fake_drive_service_.get()));
+  scheduler_.reset(new JobScheduler(profile_.get(), fake_drive_service_.get(),
+                                    blocking_task_runner_));
 
-  metadata_.reset(new internal::ResourceMetadata(temp_dir_.path(),
+  metadata_storage_.reset(new internal::ResourceMetadataStorage(
+      temp_dir_.path(), blocking_task_runner_));
+  bool success = false;
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_,
+      FROM_HERE,
+      base::Bind(&internal::ResourceMetadataStorage::Initialize,
+                 base::Unretained(metadata_storage_.get())),
+      google_apis::test_util::CreateCopyResultCallback(&success));
+  google_apis::test_util::RunBlockingPoolTask();
+  ASSERT_TRUE(success);
+
+  metadata_.reset(new internal::ResourceMetadata(metadata_storage_.get(),
                                                  blocking_task_runner_));
 
   FileError error = FILE_ERROR_FAILED;
@@ -74,11 +86,11 @@ void OperationTestBase::SetUp() {
   ASSERT_EQ(FILE_ERROR_OK, error);
 
   fake_free_disk_space_getter_.reset(new FakeFreeDiskSpaceGetter);
-  cache_.reset(new internal::FileCache(temp_dir_.path(),
+  cache_.reset(new internal::FileCache(metadata_storage_.get(),
                                        temp_dir_.path(),
                                        blocking_task_runner_.get(),
                                        fake_free_disk_space_getter_.get()));
-  bool success = false;
+  success = false;
   base::PostTaskAndReplyWithResult(
       blocking_task_runner_,
       FROM_HERE,
@@ -97,17 +109,6 @@ void OperationTestBase::SetUp() {
       google_apis::test_util::CreateCopyResultCallback(&error));
   google_apis::test_util::RunBlockingPoolTask();
   ASSERT_EQ(FILE_ERROR_OK, error);
-}
-
-void OperationTestBase::TearDown() {
-  cache_.reset();
-  fake_free_disk_space_getter_.reset();
-  metadata_.reset();
-  scheduler_.reset();
-  fake_drive_service_.reset();
-  profile_.reset();
-
-  blocking_task_runner_ = NULL;
 }
 
 FileError OperationTestBase::GetLocalResourceEntry(const base::FilePath& path,

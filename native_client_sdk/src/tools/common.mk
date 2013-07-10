@@ -28,6 +28,7 @@ TOP_MAKE := $(word 1,$(MAKEFILE_LIST))
 # Figure out which OS we are running on.
 #
 GETOS = python $(NACL_SDK_ROOT)/tools/getos.py
+FIXDEPS = python $(NACL_SDK_ROOT)/tools/fix_deps.py
 OSNAME := $(shell $(GETOS))
 
 
@@ -77,10 +78,23 @@ else  # TOOLCHAIN=all
 # Verify we selected a valid toolchain for this example
 #
 ifeq (,$(findstring $(TOOLCHAIN),$(VALID_TOOLCHAINS)))
+
+# Only fail to build if this is a top-level make. When building recursively, we
+# don't care if an example can't build with this toolchain.
+ifeq ($(MAKELEVEL),0)
   $(warning Availbile choices are: $(VALID_TOOLCHAINS))
   $(error Can not use TOOLCHAIN=$(TOOLCHAIN) on this example.)
+else
+
+# Dummy targets for recursive make with unsupported toolchain...
+.PHONY: all clean install
+all:
+clean:
+install:
+
 endif
 
+else  # TOOLCHAIN is valid...
 
 #
 # Build Configuration
@@ -234,7 +248,7 @@ clean:
 # $3 = Extra Settings
 #
 define DEPEND_RULE
-ifndef $(IGNORE_DEPS)
+ifndef IGNORE_DEPS
 .PHONY: rebuild_$(1)
 
 rebuild_$(1) :| $(STAMPDIR)/dir.stamp
@@ -370,7 +384,7 @@ endif
 #
 # Assign a sensible default to CHROME_PATH.
 #
-CHROME_PATH ?= $(shell python $(NACL_SDK_ROOT)/tools/getos.py --chrome 2> $(DEV_NULL))
+CHROME_PATH ?= $(shell $(GETOS) --chrome 2> $(DEV_NULL))
 
 #
 # Verify we can find the Chrome executable if we need to launch it.
@@ -423,7 +437,7 @@ run_package: check_for_chrome all
 	$(CHROME_PATH) --load-and-launch-app=$(CURDIR) $(CHROME_ARGS)
 
 
-SYSARCH = $(shell python $(NACL_SDK_ROOT)/tools/getos.py --nacl-arch)
+SYSARCH = $(shell $(GETOS) --nacl-arch)
 GDB_ARGS += -D $(TC_PATH)/$(OSNAME)_x86_$(TOOLCHAIN)/bin/$(SYSARCH)-nacl-gdb
 GDB_ARGS += -D $(abspath $(OUTDIR))/$(TARGET)_$(SYSARCH).nexe
 
@@ -442,5 +456,7 @@ CHECK_FOR_CHROME: check_for_chrome
 DEBUG: debug
 LAUNCH: run
 RUN: run
+
+endif  # TOOLCHAIN is valid...
 
 endif  # TOOLCHAIN=all

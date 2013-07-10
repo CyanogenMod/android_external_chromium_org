@@ -2,7 +2,7 @@
 
 
 LOCAL_PATH := $(call my-dir)
-GYP_DEFAULT_CONFIGURATION := Debug
+GYP_CONFIGURATION ?= Debug
 
 include $(LOCAL_PATH)/android_webview/All.target.darwin-mips.mk
 include $(LOCAL_PATH)/android_webview/android_webview_common.target.darwin-mips.mk
@@ -21,12 +21,12 @@ include $(LOCAL_PATH)/base/base_prefs.target.darwin-mips.mk
 include $(LOCAL_PATH)/base/base_static.target.darwin-mips.mk
 include $(LOCAL_PATH)/base/symbolize.target.darwin-mips.mk
 include $(LOCAL_PATH)/base/third_party/dynamic_annotations/dynamic_annotations.target.darwin-mips.mk
-include $(LOCAL_PATH)/build/temp_gyp/googleurl.target.darwin-mips.mk
 include $(LOCAL_PATH)/cc/cc.target.darwin-mips.mk
 include $(LOCAL_PATH)/components/auto_login_parser.target.darwin-mips.mk
-include $(LOCAL_PATH)/components/autofill_browser.target.darwin-mips.mk
 include $(LOCAL_PATH)/components/autofill_content_browser.target.darwin-mips.mk
+include $(LOCAL_PATH)/components/autofill_content_renderer.target.darwin-mips.mk
 include $(LOCAL_PATH)/components/autofill_content_risk_proto.target.darwin-mips.mk
+include $(LOCAL_PATH)/components/autofill_core_browser.target.darwin-mips.mk
 include $(LOCAL_PATH)/components/autofill_core_common.target.darwin-mips.mk
 include $(LOCAL_PATH)/components/autofill_jni_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/components/autofill_regexes.target.darwin-mips.mk

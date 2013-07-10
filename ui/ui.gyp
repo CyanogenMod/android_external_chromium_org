@@ -153,7 +153,6 @@
         'base/default_theme_provider_mac.mm',
         'base/dragdrop/cocoa_dnd_util.h',
         'base/dragdrop/cocoa_dnd_util.mm',
-        'base/dragdrop/desktop_selection_provider_aurax11.h',
         'base/dragdrop/drag_drop_types.h',
         'base/dragdrop/drag_drop_types_win.cc',
         'base/dragdrop/drag_source_win.cc',
@@ -187,8 +186,6 @@
         'base/events/event_target.h',
         'base/events/event_utils.cc',
         'base/events/event_utils.h',
-        'base/events/key_identifier_conversion.cc',
-        'base/events/key_identifier_conversion.h',
         'base/gestures/gesture_configuration.cc',
         'base/gestures/gesture_configuration.h',
         'base/gestures/gesture_point.cc',
@@ -497,6 +494,8 @@
         'gfx/path_gtk.cc',
         'gfx/path_win.cc',
         'gfx/path_win.h',
+        'gfx/path_x11.cc',
+        'gfx/path_x11.h',
         'gfx/platform_font.h',
         'gfx/platform_font_android.cc',
         'gfx/platform_font_ios.h',
@@ -870,8 +869,6 @@
             'base/events/event_handler.h',
             'base/events/event_target.cc',
             'base/events/event_target.h',
-            'base/events/key_identifier_conversion.cc',
-            'base/events/key_identifier_conversion.h',
             'base/x/events_x.cc',
           ],
         }],
@@ -917,6 +914,15 @@
         }],
       ],
     },
+    {
+      'target_name': 'webui_test_support',
+      'type': 'none',
+      'direct_dependent_settings': {
+        'include_dirs': [
+          '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources',
+        ]
+      }
+    }
   ],
   'conditions': [
     ['OS=="android"' , {

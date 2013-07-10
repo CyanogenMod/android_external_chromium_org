@@ -12,10 +12,10 @@
 #include "base/files/file_path.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/foundation_util.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/memory/scoped_nsobject.h"
-#include "base/synchronization/lock.h"
 #include "base/strings/sys_string_conversions.h"
+#include "base/synchronization/lock.h"
 #include "ui/base/resource/resource_handle.h"
 #include "ui/gfx/image/image.h"
 
@@ -120,14 +120,14 @@ gfx::Image& ResourceBundle::GetNativeImageNamed(int resource_id, ImageRTL rtl) {
     }
 
     // Create a data object from the raw bytes.
-    scoped_nsobject<NSData> ns_data(
+    base::scoped_nsobject<NSData> ns_data(
         [[NSData alloc] initWithBytes:data->front() length:data->size()]);
 
     bool is_fallback = PNGContainsFallbackMarker(data->front(), data->size());
     // Create the image from the data.
     CGFloat target_scale = ui::GetScaleFactorScale(scale_factor);
     CGFloat source_scale = is_fallback ? 1.0 : target_scale;
-    scoped_nsobject<UIImage> ui_image(
+    base::scoped_nsobject<UIImage> ui_image(
         [[UIImage alloc] initWithData:ns_data scale:source_scale]);
 
     // If the image is a 1x fallback, scale it up to a full-size representation.
@@ -135,15 +135,16 @@ gfx::Image& ResourceBundle::GetNativeImageNamed(int resource_id, ImageRTL rtl) {
       CGSize source_size = [ui_image size];
       CGSize target_size = CGSizeMake(source_size.width * target_scale,
                                       source_size.height * target_scale);
-      base::mac::ScopedCFTypeRef<CGColorSpaceRef> color_space(
+      base::ScopedCFTypeRef<CGColorSpaceRef> color_space(
           CGColorSpaceCreateDeviceRGB());
-      base::mac::ScopedCFTypeRef<CGContextRef> context(
-          CGBitmapContextCreate(
-              NULL,
-              target_size.width, target_size.height,
-              8, target_size.width * 4,
-              color_space,
-              kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host));
+      base::ScopedCFTypeRef<CGContextRef> context(CGBitmapContextCreate(
+          NULL,
+          target_size.width,
+          target_size.height,
+          8,
+          target_size.width * 4,
+          color_space,
+          kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host));
 
       CGRect target_rect = CGRectMake(0, 0,
                                       target_size.width, target_size.height);
@@ -158,7 +159,7 @@ gfx::Image& ResourceBundle::GetNativeImageNamed(int resource_id, ImageRTL rtl) {
         CGContextFillRect(context, target_rect);
       }
 
-      base::mac::ScopedCFTypeRef<CGImageRef> cg_image(
+      base::ScopedCFTypeRef<CGImageRef> cg_image(
           CGBitmapContextCreateImage(context));
       ui_image.reset([[UIImage alloc] initWithCGImage:cg_image
                                                 scale:target_scale

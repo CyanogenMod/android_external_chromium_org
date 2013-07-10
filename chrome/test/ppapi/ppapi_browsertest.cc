@@ -215,6 +215,10 @@ TEST_PPAPI_IN_PROCESS(Core)
 TEST_PPAPI_OUT_OF_PROCESS(Core)
 TEST_PPAPI_NACL(Core)
 
+TEST_PPAPI_IN_PROCESS(TraceEvent)
+TEST_PPAPI_OUT_OF_PROCESS(TraceEvent)
+TEST_PPAPI_NACL(TraceEvent)
+
 TEST_PPAPI_IN_PROCESS(InputEvent)
 TEST_PPAPI_OUT_OF_PROCESS(InputEvent)
 TEST_PPAPI_NACL(InputEvent)
@@ -802,10 +806,42 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, FileIO) {
   );
 }
 
-TEST_PPAPI_IN_PROCESS_VIA_HTTP(FileRef)
+IN_PROC_BROWSER_TEST_F(PPAPITest, FileRef) {
+  RunTestViaHTTP(
+      LIST_TEST(FileRef_Create)
+      LIST_TEST(FileRef_GetFileSystemType)
+      LIST_TEST(FileRef_GetName)
+      LIST_TEST(FileRef_GetPath)
+      LIST_TEST(FileRef_GetParent)
+      LIST_TEST(FileRef_MakeDirectory)
+      LIST_TEST(FileRef_QueryAndTouchFile)
+      LIST_TEST(FileRef_DeleteFileAndDirectory)
+      LIST_TEST(FileRef_RenameFileAndDirectory)
+      // TODO(teravest): Add in-process support.
+      // LIST_TEST(FileRef_Query)
+      LIST_TEST(FileRef_FileNameEscaping)
+      // TODO(teravest): Add in-process support.
+      // LIST_TEST(FileRef_ReadDirectoryEntries)
+  );
+}
 // OutOfProcessPPAPITest.FileRef times out fairly often.
 // http://crbug.com/241646
-TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(DISABLED_FileRef)
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, FileRef) {
+  RunTestViaHTTP(
+      LIST_TEST(FileRef_Create)
+      LIST_TEST(FileRef_GetFileSystemType)
+      LIST_TEST(FileRef_GetName)
+      LIST_TEST(FileRef_GetPath)
+      LIST_TEST(FileRef_GetParent)
+      LIST_TEST(FileRef_MakeDirectory)
+      LIST_TEST(FileRef_QueryAndTouchFile)
+      LIST_TEST(FileRef_DeleteFileAndDirectory)
+      LIST_TEST(FileRef_RenameFileAndDirectory)
+      LIST_TEST(FileRef_Query)
+      LIST_TEST(FileRef_FileNameEscaping)
+      LIST_TEST(DISABLED_FileRef_ReadDirectoryEntries)
+  );
+}
 IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, FileRef) {
   RunTestViaHTTP(
       LIST_TEST(FileRef_Create)
@@ -1396,12 +1432,18 @@ TEST_PPAPI_IN_PROCESS(MouseCursor)
 TEST_PPAPI_OUT_OF_PROCESS(MouseCursor)
 TEST_PPAPI_NACL(MouseCursor)
 
+// PPB_NetworkProxy is not supported in-process.
+TEST_PPAPI_OUT_OF_PROCESS(NetworkProxy)
+TEST_PPAPI_NACL(NetworkProxy)
+
 TEST_PPAPI_OUT_OF_PROCESS(TrueTypeFont)
 TEST_PPAPI_NACL(TrueTypeFont)
 
-TEST_PPAPI_OUT_OF_PROCESS(VideoSource)
-
 TEST_PPAPI_OUT_OF_PROCESS(VideoDestination)
+TEST_PPAPI_NACL(VideoDestination)
+
+TEST_PPAPI_OUT_OF_PROCESS(VideoSource)
+TEST_PPAPI_NACL(VideoSource)
 
 // PPB_Printing only implemented for out of process.
 TEST_PPAPI_OUT_OF_PROCESS(Printing)

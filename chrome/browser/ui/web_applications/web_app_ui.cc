@@ -43,6 +43,7 @@
 #if defined(OS_WIN)
 #include "base/win/shortcut.h"
 #include "base/win/windows_version.h"
+#include "chrome/browser/web_applications/web_app_win.h"
 #include "ui/gfx/icon_util.h"
 #endif
 
@@ -184,11 +185,13 @@ void UpdateShortcutWorker::DownloadIcon() {
     return;
   }
 
+  int preferred_size = std::max(unprocessed_icons_.back().width,
+                                unprocessed_icons_.back().height);
   web_contents_->DownloadImage(
       unprocessed_icons_.back().url,
       true,  // favicon
-      std::max(unprocessed_icons_.back().width,
-               unprocessed_icons_.back().height),
+      preferred_size,
+      0,  // no maximum size
       base::Bind(&UpdateShortcutWorker::DidDownloadFavicon,
                  base::Unretained(this)));
   unprocessed_icons_.pop_back();

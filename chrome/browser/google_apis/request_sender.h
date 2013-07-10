@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_GOOGLE_APIS_REQUEST_SENDER_H_
 #define CHROME_BROWSER_GOOGLE_APIS_REQUEST_SENDER_H_
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -12,6 +13,7 @@
 #include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/threading/thread_checker.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
 
 class Profile;
@@ -24,7 +26,6 @@ namespace google_apis {
 
 class AuthenticatedRequestInterface;
 class AuthService;
-class RequestRegistry;
 
 // Helper class that sends requests implementing
 // AuthenticatedRequestInterface and handles retries and authentication.
@@ -44,8 +45,9 @@ class RequestSender {
   virtual ~RequestSender();
 
   AuthService* auth_service() { return auth_service_.get(); }
-  RequestRegistry* request_registry() {
-    return request_registry_.get();
+
+  net::URLRequestContextGetter* url_request_context_getter() const {
+    return url_request_context_getter_;
   }
 
   // Prepares the object for use.
@@ -53,11 +55,17 @@ class RequestSender {
 
   // Starts a request implementing the AuthenticatedRequestInterface
   // interface, and makes the request retry upon authentication failures by
-  // calling back to RetryRequest.
+  // calling back to RetryRequest. The |request| object is owned by this
+  // RequestSender. It will be deleted in RequestSender's destructor or
+  // in RequestFinished().
   //
   // Returns a closure to cancel the request. The closure cancels the request
   // if it is in-flight, and does nothing if it is already terminated.
   base::Closure StartRequestWithRetry(AuthenticatedRequestInterface* request);
+
+  // Notifies to this RequestSender that |request| has finished.
+  // TODO(kinaba): refactor the life time management and make this at private.
+  void RequestFinished(AuthenticatedRequestInterface* request);
 
  private:
   // Called when the access token is fetched.
@@ -76,10 +84,13 @@ class RequestSender {
       const base::WeakPtr<AuthenticatedRequestInterface>& request);
 
   Profile* profile_;  // Not owned.
+  net::URLRequestContextGetter* url_request_context_getter_;  // Not owned.
 
   scoped_ptr<AuthService> auth_service_;
-  scoped_ptr<RequestRegistry> request_registry_;
+  std::set<AuthenticatedRequestInterface*> in_flight_requests_;
   const std::string custom_user_agent_;
+
+  base::ThreadChecker thread_checker_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.

@@ -64,36 +64,6 @@ NativeWidget* CreateNativeWidget(NativeWidget* native_widget,
 
 }  // namespace
 
-// This class is used to keep track of the event a Widget is processing, and
-// restore any previously active event afterwards.
-class ScopedEvent {
- public:
-  ScopedEvent(Widget* widget, const ui::Event& event)
-      : widget_(widget),
-        event_(&event) {
-    widget->event_stack_.push(this);
-  }
-
-  ~ScopedEvent() {
-    if (widget_)
-      widget_->event_stack_.pop();
-  }
-
-  void reset() {
-    widget_ = NULL;
-  }
-
-  const ui::Event* event() {
-    return event_;
-  }
-
- private:
-  Widget* widget_;
-  const ui::Event* event_;
-
-  DISALLOW_COPY_AND_ASSIGN(ScopedEvent);
-};
-
 // A default implementation of WidgetDelegate, used by Widget when no
 // WidgetDelegate is supplied.
 class DefaultWidgetDelegate : public WidgetDelegate {
@@ -134,9 +104,9 @@ Widget::InitParams::InitParams()
     : type(TYPE_WINDOW),
       delegate(NULL),
       child(false),
-      transient(false),
-      transparent(ViewsDelegate::views_delegate &&
-                  ViewsDelegate::views_delegate->UseTransparentWindows()),
+      opacity((ViewsDelegate::views_delegate &&
+               ViewsDelegate::views_delegate->UseTransparentWindows()) ?
+              TRANSLUCENT_WINDOW : INFER_OPACITY),
       accept_events(true),
       can_activate(true),
       keep_on_top(false),
@@ -159,10 +129,10 @@ Widget::InitParams::InitParams(Type type)
     : type(type),
       delegate(NULL),
       child(type == TYPE_CONTROL),
-      transient(type == TYPE_BUBBLE || type == TYPE_POPUP || type == TYPE_MENU),
-      transparent(type == TYPE_WINDOW &&
-                  ViewsDelegate::views_delegate &&
-                  ViewsDelegate::views_delegate->UseTransparentWindows()),
+      opacity((type == TYPE_WINDOW &&
+               ViewsDelegate::views_delegate &&
+               ViewsDelegate::views_delegate->UseTransparentWindows()) ?
+              TRANSLUCENT_WINDOW : INFER_OPACITY),
       accept_events(true),
       can_activate(type != TYPE_POPUP && type != TYPE_MENU),
       keep_on_top(type == TYPE_MENU),
@@ -189,7 +159,6 @@ Widget::Widget()
       widget_delegate_(NULL),
       non_client_view_(NULL),
       dragged_view_(NULL),
-      event_stack_(),
       ownership_(InitParams::NATIVE_WIDGET_OWNS_WIDGET),
       is_secondary_widget_(true),
       frame_type_(FRAME_TYPE_DEFAULT),
@@ -208,11 +177,6 @@ Widget::Widget()
 }
 
 Widget::~Widget() {
-  while (!event_stack_.empty()) {
-    event_stack_.top()->reset();
-    event_stack_.pop();
-  }
-
   DestroyRootView();
   if (ownership_ == InitParams::WIDGET_OWNS_NATIVE_WIDGET) {
     delete native_widget_;
@@ -348,14 +312,18 @@ void Widget::Init(const InitParams& in_params) {
        params.type != InitParams::TYPE_CONTROL &&
        params.type != InitParams::TYPE_TOOLTIP);
   params.top_level = is_top_level_;
+  if (params.opacity == InitParams::INFER_OPACITY) {
 #if defined(OS_WIN) && defined(USE_AURA)
-  // It'll need to be faded in if it's top level and not the main window.
-  // Maintain transparent if the creator of the Widget specified transparent
-  // already.
-  params.transparent =
-      params.transparent ||
-      (is_top_level_ && params.type != InitParams::TYPE_WINDOW);
+    // By default, make all top-level windows but the main window transparent
+    // initially so that they can be made to fade in.
+    if (is_top_level_ && params.type != InitParams::TYPE_WINDOW)
+      params.opacity = InitParams::TRANSLUCENT_WINDOW;
+    else
+      params.opacity = InitParams::OPAQUE_WINDOW;
+#else
+    params.opacity = InitParams::OPAQUE_WINDOW;
 #endif
+  }
 
   if (ViewsDelegate::views_delegate)
     ViewsDelegate::views_delegate->OnBeforeWidgetInit(&params, this);
@@ -927,10 +895,6 @@ bool Widget::HasCapture() {
   return native_widget_->HasCapture();
 }
 
-const ui::Event* Widget::GetCurrentEvent() {
-  return event_stack_.empty() ? NULL : event_stack_.top()->event();
-}
-
 void Widget::TooltipTextChanged(View* view) {
   TooltipManager* manager = native_widget_private()->GetTooltipManager();
   if (manager)
@@ -995,7 +959,10 @@ void Widget::EnableInactiveRendering() {
 }
 
 void Widget::OnNativeWidgetActivationChanged(bool active) {
-  if (!active)
+  // On windows we may end up here before we've completed initialization (from
+  // an WM_NCACTIVATE). If that happens the WidgetDelegate likely doesn't know
+  // the Widget and will crash attempting to access it.
+  if (!active && native_widget_initialized_)
     SaveWindowPlacement();
 
   FOR_EACH_OBSERVER(WidgetObserver, observers_,
@@ -1103,7 +1070,7 @@ void Widget::OnNativeWidgetPaint(gfx::Canvas* canvas) {
   // On Linux Aura, we can get here during Init() because of the
   // SetInitialBounds call.
   if (native_widget_initialized_)
-  GetRootView()->Paint(canvas);
+    GetRootView()->Paint(canvas);
 }
 
 int Widget::GetNonClientComponent(const gfx::Point& point) {
@@ -1118,7 +1085,6 @@ int Widget::GetNonClientComponent(const gfx::Point& point) {
 }
 
 void Widget::OnKeyEvent(ui::KeyEvent* event) {
-  ScopedEvent scoped(this, *event);
   static_cast<internal::RootView*>(GetRootView())->
       DispatchKeyEvent(event);
 }
@@ -1127,7 +1093,6 @@ void Widget::OnMouseEvent(ui::MouseEvent* event) {
   if (!IsMouseEventsEnabled())
     return;
 
-  ScopedEvent scoped(this, *event);
   View* root_view = GetRootView();
   switch (event->type()) {
     case ui::ET_MOUSE_PRESSED: {
@@ -1201,19 +1166,16 @@ void Widget::OnMouseCaptureLost() {
 }
 
 void Widget::OnTouchEvent(ui::TouchEvent* event) {
-  ScopedEvent scoped(this, *event);
   static_cast<internal::RootView*>(GetRootView())->
       DispatchTouchEvent(event);
 }
 
 void Widget::OnScrollEvent(ui::ScrollEvent* event) {
-  ScopedEvent scoped(this, *event);
   static_cast<internal::RootView*>(GetRootView())->
       DispatchScrollEvent(event);
 }
 
 void Widget::OnGestureEvent(ui::GestureEvent* event) {
-  ScopedEvent scoped(this, *event);
   switch (event->type()) {
     case ui::ET_GESTURE_TAP_DOWN:
       is_touch_down_ = true;

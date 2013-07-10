@@ -224,7 +224,7 @@ fi
 source ${BUILDDIR}/installer/common/installer.include
 
 get_version_info
-VERSIONFULL="${VERSION}-r${REVISION}"
+VERSIONFULL="${VERSION}-${PACKAGE_RELEASE}"
 
 if [ "$CHROMIUM_BUILD" = "_google_chrome" ]; then
   source "${BUILDDIR}/installer/common/google-chrome.info"
@@ -276,13 +276,12 @@ echo "$DPKG_SHLIB_DEPS" | sed 's/, /\n/g' | \
 
 # Compare the expected dependency list to the generate list.
 BAD_DIFF=0
-diff "$SCRIPTDIR/expected_deps_$TARGETARCH" actual || BAD_DIFF=1
+diff "$SCRIPTDIR/expected_deps" actual || BAD_DIFF=1
 if [ $BAD_DIFF -ne 0 ] && [ -z "${IGNORE_DEPS_CHANGES:-}" ]; then
   echo
   echo "ERROR: Shared library dependencies changed!"
   echo "If this is intentional, please update:"
-  echo "chrome/installer/linux/debian/expected_deps_ia32"
-  echo "chrome/installer/linux/debian/expected_deps_x64"
+  echo "chrome/installer/linux/debian/expected_deps"
   echo
   exit $BAD_DIFF
 fi

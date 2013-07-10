@@ -10,6 +10,7 @@
 
 #include "base/allocator/allocator_extension.h"
 #include "base/bind.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop.h"
@@ -23,7 +24,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
 #include "base/sys_info.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "grit/webkit_chromium_resources.h"
 #include "grit/webkit_resources.h"
 #include "grit/webkit_strings.h"
@@ -42,14 +43,12 @@
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "ui/base/layout.h"
-#include "webkit/base/file_path_string_conversions.h"
 #include "webkit/common/user_agent/user_agent.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/websocketstreamhandle_impl.h"
 #include "webkit/glue/weburlloader_impl.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
 #include "webkit/plugins/webplugininfo.h"
-#include "webkit/renderer/media/audio_decoder.h"
 
 using WebKit::WebAudioBus;
 using WebKit::WebCookie;
@@ -112,14 +111,6 @@ class MemoryUsageCache {
 
   base::Lock lock_;
 };
-
-#if defined(OS_ANDROID)
-void NullRunWebAudioMediaCodec(
-    base::SharedMemoryHandle encoded_data_handle,
-    base::FileDescriptor pcm_output,
-    size_t data_size) {
-}
-#endif
 
 }  // anonymous namespace
 
@@ -406,7 +397,7 @@ void WebKitPlatformSupportImpl::getPluginList(bool refresh,
 
     builder->addPlugin(
         plugin.name, plugin.desc,
-        webkit_base::FilePathStringToWebString(plugin.path.BaseName().value()));
+        plugin.path.BaseName().AsUTF16Unsafe());
 
     for (size_t j = 0; j < plugin.mime_types.size(); ++j) {
       const webkit::WebPluginMimeType& mime_type = plugin.mime_types[j];
@@ -654,7 +645,6 @@ const DataResource kDataResources[] = {
   { "genericCC", IDR_AUTOFILL_CC_GENERIC, ui::SCALE_FACTOR_100P },
   { "jcbCC", IDR_AUTOFILL_CC_JCB, ui::SCALE_FACTOR_100P },
   { "masterCardCC", IDR_AUTOFILL_CC_MASTERCARD, ui::SCALE_FACTOR_100P },
-  { "soloCC", IDR_AUTOFILL_CC_SOLO, ui::SCALE_FACTOR_100P },
   { "visaCC", IDR_AUTOFILL_CC_VISA, ui::SCALE_FACTOR_100P },
   { "generatePassword", IDR_PASSWORD_GENERATION_ICON, ui::SCALE_FACTOR_100P },
   { "generatePasswordHover",
@@ -690,25 +680,6 @@ WebData WebKitPlatformSupportImpl::loadResource(const char* name) {
 
   NOTREACHED() << "Unknown image resource " << name;
   return WebData();
-}
-
-bool WebKitPlatformSupportImpl::loadAudioResource(
-    WebKit::WebAudioBus* destination_bus, const char* audio_file_data,
-    size_t data_size, double sample_rate) {
-#if !defined(OS_ANDROID)
-  return webkit_media::DecodeAudioFileData(destination_bus,
-                                           audio_file_data,
-                                           data_size,
-                                           sample_rate);
-#else
-  webkit_media::WebAudioMediaCodecRunner runner = GetWebAudioMediaCodecRunner();
-  return webkit_media::DecodeAudioFileData(
-      destination_bus,
-      audio_file_data,
-      data_size,
-      sample_rate,
-      runner);
-#endif
 }
 
 WebString WebKitPlatformSupportImpl::queryLocalizedString(
@@ -918,12 +889,5 @@ void WebKitPlatformSupportImpl::ResumeSharedTimer() {
         shared_timer_fire_time_ - monotonicallyIncreasingTime());
   }
 }
-
-#if defined(OS_ANDROID)
-webkit_media::WebAudioMediaCodecRunner
-    WebKitPlatformSupportImpl::GetWebAudioMediaCodecRunner() {
-  return base::Bind(&NullRunWebAudioMediaCodec);
-}
-#endif
 
 }  // namespace webkit_glue

@@ -191,7 +191,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, InstallAccepted) {
   base::ScopedTempDir temp_dir;
   EXPECT_TRUE(temp_dir.CreateUniqueTempDir());
   base::FilePath missing_directory = temp_dir.Take();
-  EXPECT_TRUE(file_util::Delete(missing_directory, true));
+  EXPECT_TRUE(base::Delete(missing_directory, true));
   WebstoreInstaller::SetDownloadDirectoryForTests(&missing_directory);
 
   // Now run the install test, which should succeed.
@@ -199,7 +199,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, InstallAccepted) {
 
   // Cleanup.
   if (file_util::DirectoryExists(missing_directory))
-    EXPECT_TRUE(file_util::Delete(missing_directory, true));
+    EXPECT_TRUE(base::Delete(missing_directory, true));
 }
 
 // Tests passing a localized name.
@@ -239,6 +239,17 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest,
   listener.Wait();
   ASSERT_TRUE(listener.received_success());
   ASSERT_EQ("iladmdjkfniedhfhcfoefgojhgaiaccc", listener.id());
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, IsInIncognitoMode) {
+  GURL page_url = GetTestServerURL("incognito.html");
+  ASSERT_TRUE(
+      RunPageTest(page_url.spec(), ExtensionApiTest::kFlagUseIncognito));
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, IsNotInIncognitoMode) {
+  GURL page_url = GetTestServerURL("not_incognito.html");
+  ASSERT_TRUE(RunPageTest(page_url.spec()));
 }
 
 // Fails often on Windows dbg bots. http://crbug.com/177163.

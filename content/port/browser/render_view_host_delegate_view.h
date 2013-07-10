@@ -10,11 +10,9 @@
 #include "base/basictypes.h"
 #include "content/common/content_export.h"
 #include "content/common/drag_event_source_info.h"
-#include "content/public/common/context_menu_source_type.h"
 #include "third_party/WebKit/public/web/WebDragOperation.h"
 
 class SkBitmap;
-struct WebDropData;
 struct WebMenuItem;
 
 namespace gfx {
@@ -26,6 +24,7 @@ class Vector2d;
 namespace content {
 
 struct ContextMenuParams;
+struct DropData;
 
 // This class provides a way for the RenderViewHost to reach out to its
 // delegate's view. It only needs to be implemented by embedders if they don't
@@ -49,10 +48,10 @@ class CONTENT_EXPORT RenderViewHostDelegateView {
 
   // The user started dragging content of the specified type within the
   // RenderView. Contextual information about the dragged content is supplied
-  // by WebDropData. If the delegate's view cannot start the drag for /any/
+  // by DropData. If the delegate's view cannot start the drag for /any/
   // reason, it must inform the renderer that the drag has ended; otherwise,
   // this results in bugs like http://crbug.com/157134.
-  virtual void StartDragging(const WebDropData& drop_data,
+  virtual void StartDragging(const DropData& drop_data,
                              WebKit::WebDragOperationsMask allowed_ops,
                              const gfx::ImageSkia& image,
                              const gfx::Vector2d& image_offset,

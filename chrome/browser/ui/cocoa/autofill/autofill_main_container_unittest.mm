@@ -4,9 +4,9 @@
 
 #import "chrome/browser/ui/cocoa/autofill/autofill_main_container.h"
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "chrome/browser/ui/autofill/mock_autofill_dialog_controller.h"
-#import "chrome/browser/ui/cocoa/autofill/autofill_account_chooser.h"
+#import "chrome/browser/ui/cocoa/autofill/autofill_section_view.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 #import "ui/base/test/ui_cocoa_test_helper.h"
@@ -23,7 +23,7 @@ class AutofillMainContainerTest : public ui::CocoaTest {
   }
 
  protected:
-  scoped_nsobject<AutofillMainContainer> container_;
+  base::scoped_nsobject<AutofillMainContainer> container_;
   testing::NiceMock<autofill::MockAutofillDialogController> controller_;
 };
 
@@ -33,9 +33,12 @@ TEST_VIEW(AutofillMainContainerTest, [container_ view])
 
 TEST_F(AutofillMainContainerTest, SubViews) {
   bool hasButtons = false;
+  bool hasTextView = false;
+  bool hasDetailsContainer = false;
+  int hasNotificationContainer = false;
 
   // Should have account chooser, button strip, and details section.
-  EXPECT_EQ(2U, [[[container_ view] subviews] count]);
+  EXPECT_EQ(4U, [[[container_ view] subviews] count]);
   for (NSView* view in [[container_ view] subviews]) {
     NSArray* subviews = [view subviews];
     if ([subviews count] == 2) {
@@ -44,8 +47,21 @@ TEST_F(AutofillMainContainerTest, SubViews) {
       EXPECT_TRUE(
           [[subviews objectAtIndex:1] isKindOfClass:[NSButton class]]);
       hasButtons = true;
+    } else if ([view isKindOfClass:[NSTextView class]]) {
+      hasTextView = true;
+    } else if ([subviews count] > 0 &&
+        [[subviews objectAtIndex:0] isKindOfClass:
+            [AutofillSectionView class]]) {
+      hasDetailsContainer = true;
+    } else {
+      // Assume by default this is the notification area view.
+      // There is no way to easily verify that with more detail.
+      hasNotificationContainer = true;
     }
   }
 
   EXPECT_TRUE(hasButtons);
+  EXPECT_TRUE(hasTextView);
+  EXPECT_TRUE(hasDetailsContainer);
+  EXPECT_TRUE(hasNotificationContainer);
 }

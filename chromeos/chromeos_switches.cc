@@ -44,6 +44,9 @@ const char kDisableLocalAccounts[]          = "disable-local-accounts";
 // Avoid doing expensive animations upon login.
 const char kDisableLoginAnimations[]        = "disable-login-animations";
 
+// Disable new channel switcher UI.
+const char kDisableNewChannelSwitcherUI[]   = "disable-new-channel-switcher-ui";
+
 // Disable Quickoffice component app thus handlers won't be registered so
 // it will be possible to install another version as normal app for testing.
 const char kDisableQuickofficeComponentApp[] =
@@ -121,8 +124,11 @@ const char kEnterpriseEnrollmentInitialModulus[] =
 const char kEnterpriseEnrollmentModulusLimit[] =
     "enterprise-enrollment-modulus-limit";
 
-// Hides the selecting checkboxes in the Files.app.
-const char kFileManagerNoCheckboxes[]       = "file-manager-no-checkboxes";
+// Shows the selecting checkboxes in the Files.app.
+const char kFileManagerShowCheckboxes[]     = "file-manager-show-checkboxes";
+
+// Enables the sharing feature in the Files.app.
+const char kFileManagerEnableSharing[]      = "file-manager-enable-sharing";
 
 // Passed to Chrome on first boot. Not passed on restart after sign out.
 const char kFirstBoot[]                     = "first-boot";
@@ -167,6 +173,10 @@ const char kNaturalScrollDefault[]          = "enable-natural-scroll-default";
 // closes inactive tabs to free memory and to attempt to avoid the kernel's
 // out-of-memory process killer.
 const char kNoDiscardTabs[]                 = "no-discard-tabs";
+
+// Disables recording of swap and CPU utilization metrics logging after tab
+// switch and scroll events.
+const char kNoSwapMetrics[]                 = "no-swap-metrics";
 
 #ifndef NDEBUG
 // Skips all other OOBE pages after user login.

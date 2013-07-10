@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "apps/shell_window.h"
 #include "base/bind.h"
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
@@ -29,7 +30,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/extensions/native_app_window.h"
-#include "chrome/browser/ui/extensions/shell_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
@@ -42,8 +42,10 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/test/test_utils.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 #include "googleurl/src/gurl.h"
 
+using apps::ShellWindow;
 using content::WebContents;
 using web_modal::WebContentsModalDialogManager;
 
@@ -303,7 +305,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, AppWithContextMenuClicked) {
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, DisallowNavigation) {
   TabsAddedNotificationObserver observer(2);
 
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/navigation")) << message_;
 
   observer.Wait();
@@ -315,7 +317,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, DisallowNavigation) {
 }
 
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, Iframes) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/iframes")) << message_;
 }
 
@@ -342,11 +344,11 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, PlatformAppsOnly) {
 
 // Tests that platform apps have isolated storage by default.
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, Isolation) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
 
   // Load a (non-app) page under the "localhost" origin that sets a cookie.
-  GURL set_cookie_url = test_server()->GetURL(
-      "files/extensions/platform_apps/isolation/set_cookie.html");
+  GURL set_cookie_url = embedded_test_server()->GetURL(
+      "/extensions/platform_apps/isolation/set_cookie.html");
   GURL::Replacements replace_host;
   std::string host_str("localhost");  // Must stay in scope with replace_host.
   replace_host.SetHostStr(host_str);
@@ -607,7 +609,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, GetDisplayPath) {
 #endif  // defined(OS_CHROMEOS)
 
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, OpenLink) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   content::WindowedNotificationObserver observer(
       chrome::NOTIFICATION_TAB_ADDED,
       content::Source<content::WebContentsDelegate>(browser()));
@@ -644,6 +646,82 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
                        MAYBE_ShellWindowRestoreState) {
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/restore_state"));
+}
+
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
+                       ShellWindowAdjustBoundsToBeVisibleOnScreen) {
+  const Extension* extension = LoadAndLaunchPlatformApp("minimal");
+  ShellWindow* window = CreateShellWindow(extension);
+
+  // The screen bounds didn't change, the cached bounds didn't need to adjust.
+  gfx::Rect cached_bounds(80, 100, 400, 400);
+  gfx::Rect cached_screen_bounds(0, 0, 1600, 900);
+  gfx::Rect current_screen_bounds(0, 0, 1600, 900);
+  gfx::Size minimum_size(200, 200);
+  gfx::Rect bounds;
+  CallAdjustBoundsToBeVisibleOnScreenForShellWindow(window,
+                                                    cached_bounds,
+                                                    cached_screen_bounds,
+                                                    current_screen_bounds,
+                                                    minimum_size,
+                                                    &bounds);
+  EXPECT_EQ(bounds, cached_bounds);
+
+  // We have an empty screen bounds, the cached bounds didn't need to adjust.
+  gfx::Rect empty_screen_bounds;
+  CallAdjustBoundsToBeVisibleOnScreenForShellWindow(window,
+                                                    cached_bounds,
+                                                    empty_screen_bounds,
+                                                    current_screen_bounds,
+                                                    minimum_size,
+                                                    &bounds);
+  EXPECT_EQ(bounds, cached_bounds);
+
+  // Cached bounds is completely off the new screen bounds in horizontal
+  // locations. Expect to reposition the bounds.
+  gfx::Rect horizontal_out_of_screen_bounds(-800, 100, 400, 400);
+  CallAdjustBoundsToBeVisibleOnScreenForShellWindow(
+      window,
+      horizontal_out_of_screen_bounds,
+      gfx::Rect(-1366, 0, 1600, 900),
+      current_screen_bounds,
+      minimum_size,
+      &bounds);
+  EXPECT_EQ(bounds, gfx::Rect(0, 100, 400, 400));
+
+  // Cached bounds is completely off the new screen bounds in vertical
+  // locations. Expect to reposition the bounds.
+  gfx::Rect vertical_out_of_screen_bounds(10, 1000, 400, 400);
+  CallAdjustBoundsToBeVisibleOnScreenForShellWindow(
+      window,
+      vertical_out_of_screen_bounds,
+      gfx::Rect(-1366, 0, 1600, 900),
+      current_screen_bounds,
+      minimum_size,
+      &bounds);
+  EXPECT_EQ(bounds, gfx::Rect(10, 500, 400, 400));
+
+  // From a large screen resulotion to a small one. Expect it fit on screen.
+  gfx::Rect big_cache_bounds(10, 10, 1000, 1000);
+  CallAdjustBoundsToBeVisibleOnScreenForShellWindow(
+      window,
+      big_cache_bounds,
+      gfx::Rect(0, 0, 1600, 1000),
+      gfx::Rect(0, 0, 800, 600),
+      minimum_size,
+      &bounds);
+  EXPECT_EQ(bounds, gfx::Rect(0, 0, 800, 600));
+
+  // Don't resize the bounds smaller than minimum size, when the minimum size is
+  // larger than the screen.
+  CallAdjustBoundsToBeVisibleOnScreenForShellWindow(
+      window,
+      big_cache_bounds,
+      gfx::Rect(0, 0, 1600, 1000),
+      gfx::Rect(0, 0, 800, 600),
+      gfx::Size(900, 900),
+      &bounds);
+  EXPECT_EQ(bounds, gfx::Rect(0, 0, 900, 900));
 }
 
 namespace {

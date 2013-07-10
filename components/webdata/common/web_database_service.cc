@@ -49,7 +49,7 @@ WebDatabaseService::WebDatabaseService(
   // WebDatabaseService should be instantiated on UI thread.
   DCHECK(ui_thread->BelongsToCurrentThread());
   // WebDatabaseService requires DB thread if instantiated.
-  DCHECK(db_thread);
+  DCHECK(db_thread.get());
 }
 
 WebDatabaseService::~WebDatabaseService() {
@@ -150,12 +150,12 @@ void WebDatabaseService::CancelRequest(WebDataServiceBase::Handle h) {
 }
 
 void WebDatabaseService::RegisterDBLoadedCallback(
-    const base::Callback<void(void)>& callback) {
+    const DBLoadedCallback& callback) {
   loaded_callbacks_.push_back(callback);
 }
 
 void WebDatabaseService::RegisterDBErrorCallback(
-    const base::Callback<void(sql::InitStatus)>& callback) {
+    const DBLoadErrorCallback& callback) {
   error_callbacks_.push_back(callback);
 }
 

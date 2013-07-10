@@ -8,6 +8,7 @@
 #include <limits>
 #include <vector>
 
+#include "apps/shell_window.h"
 #include "base/base64.h"
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -34,6 +35,7 @@
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/translate/translate_tab_helper.h"
+#include "chrome/browser/ui/apps/chrome_shell_window_delegate.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -41,7 +43,6 @@
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/extensions/shell_window.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/panels/panel_manager.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -97,6 +98,7 @@
 #include "chrome/browser/extensions/shell_window_registry.h"
 #endif
 
+using apps::ShellWindow;
 using content::BrowserThread;
 using content::NavigationController;
 using content::NavigationEntry;
@@ -328,7 +330,7 @@ bool WindowsGetAllFunction::RunImpl() {
   if (params->get_info.get() && params->get_info->populate.get())
     populate_tabs = *params->get_info->populate;
 
-  ListValue* window_list = new ListValue();
+  base::ListValue* window_list = new base::ListValue();
   const WindowControllerList::ControllerList& windows =
       WindowControllerList::GetInstance()->windows();
   for (WindowControllerList::ControllerList::const_iterator iter =
@@ -396,7 +398,7 @@ bool WindowsCreateFunction::ShouldOpenIncognitoWindow(
 }
 
 bool WindowsCreateFunction::RunImpl() {
-  DictionaryValue* args = NULL;
+  base::DictionaryValue* args = NULL;
   std::vector<GURL> urls;
   TabStripModel* source_tab_strip = NULL;
   int tab_index = -1;
@@ -417,7 +419,8 @@ bool WindowsCreateFunction::RunImpl() {
         url_value->GetAsString(&url_string);
         url_strings.push_back(url_string);
       } else if (url_value->IsType(Value::TYPE_LIST)) {
-        const ListValue* url_list = static_cast<const ListValue*>(url_value);
+        const base::ListValue* url_list =
+            static_cast<const base::ListValue*>(url_value);
         for (size_t i = 0; i < url_list->GetSize(); ++i) {
           std::string url_string;
           EXTENSION_FUNCTION_VALIDATE(url_list->GetString(i, &url_string));
@@ -584,8 +587,9 @@ bool WindowsCreateFunction::RunImpl() {
       create_params.window_type = ShellWindow::WINDOW_TYPE_V1_PANEL;
       create_params.bounds = window_bounds;
       create_params.focused = saw_focus_key && focused;
-      ShellWindow* shell_window =
-          new ShellWindow(window_profile, GetExtension());
+      ShellWindow* shell_window = new ShellWindow(
+          window_profile, new chrome::ChromeShellWindowDelegate(),
+          GetExtension());
       AshPanelContents* ash_panel_contents = new AshPanelContents(shell_window);
       shell_window->Init(urls[0], ash_panel_contents, create_params);
       SetResult(ash_panel_contents->GetExtensionWindowController()->
@@ -689,7 +693,7 @@ bool WindowsCreateFunction::RunImpl() {
 bool WindowsUpdateFunction::RunImpl() {
   int window_id = extension_misc::kUnknownWindowId;
   EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(0, &window_id));
-  DictionaryValue* update_props;
+  base::DictionaryValue* update_props;
   EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(1, &update_props));
 
   WindowController* controller;
@@ -795,6 +799,8 @@ bool WindowsUpdateFunction::RunImpl() {
       error_ = keys::kInvalidWindowStateError;
       return false;
     }
+    // TODO(varkha): Updating bounds during a drag can cause problems and a more
+    // general solution is needed. See http://crbug.com/251813 .
     controller->window()->SetBounds(bounds);
   }
 
@@ -937,7 +943,7 @@ bool TabsQueryFunction::RunImpl() {
         params->query_info.window_type);
   }
 
-  ListValue* result = new ListValue();
+  base::ListValue* result = new base::ListValue();
   for (chrome::BrowserIterator it; !it.done(); it.Next()) {
     Browser* browser = *it;
     if (!profile()->IsSameProfile(browser->profile()))
@@ -1114,7 +1120,8 @@ bool TabsCreateFunction::RunImpl() {
 
   index = std::min(std::max(index, -1), tab_strip->count());
 
-  int add_types = active ? TabStripModel::ADD_ACTIVE : TabStripModel::ADD_NONE;
+  int add_types = active ? TabStripModel::ADD_ACTIVE :
+                             TabStripModel::ADD_NONE;
   add_types |= TabStripModel::ADD_FORCE_INDEX;
   if (pinned)
     add_types |= TabStripModel::ADD_PINNED;
@@ -1134,10 +1141,8 @@ bool TabsCreateFunction::RunImpl() {
   if (opener)
     tab_strip->SetOpenerOfWebContentsAt(new_index, opener);
 
-  if (active) {
-    navigate_params.target_contents->GetDelegate()->ActivateContents(
-        navigate_params.target_contents);
-  }
+  if (active)
+    navigate_params.target_contents->GetView()->SetInitialFocus();
 
   // Return data about the newly created tab.
   if (has_callback()) {
@@ -1345,7 +1350,6 @@ bool TabsUpdateFunction::RunImpl() {
       tab_strip->ActivateTabAt(tab_index, false);
       DCHECK_EQ(contents, tab_strip->GetActiveWebContents());
     }
-    web_contents_->GetDelegate()->ActivateContents(web_contents_);
   }
 
   if (params->update_properties.highlighted.get()) {
@@ -1447,10 +1451,11 @@ void TabsUpdateFunction::PopulateResult() {
   SetResult(ExtensionTabUtil::CreateTabValue(web_contents_, GetExtension()));
 }
 
-void TabsUpdateFunction::OnExecuteCodeFinished(const std::string& error,
-                                              int32 on_page_id,
-                                              const GURL& url,
-                                              const ListValue& script_result) {
+void TabsUpdateFunction::OnExecuteCodeFinished(
+    const std::string& error,
+    int32 on_page_id,
+    const GURL& url,
+    const base::ListValue& script_result) {
   if (error.empty())
     PopulateResult();
   else
@@ -1464,7 +1469,7 @@ bool TabsMoveFunction::RunImpl() {
 
   int new_index = params->move_properties.index;
   int* window_id = params->move_properties.window_id.get();
-  ListValue tab_values;
+  base::ListValue tab_values;
 
   std::vector<int> tab_ids;
   if (params->tab_ids.as_array.get()) {
@@ -1503,7 +1508,7 @@ bool TabsMoveFunction::RunImpl() {
 bool TabsMoveFunction::MoveTab(int tab_id,
                                int *new_index,
                                int iteration,
-                               ListValue* tab_values,
+                               base::ListValue* tab_values,
                                int* window_id) {
   Browser* source_browser = NULL;
   TabStripModel* source_tab_strip = NULL;
@@ -1730,8 +1735,8 @@ bool TabsCaptureVisibleTabFunction::RunImpl() {
   image_quality_ = kDefaultQuality;  // Default quality setting.
 
   if (params->options.get()) {
-    image_format_ = params->options->format;
-    EXTENSION_FUNCTION_VALIDATE(image_format_ != FormatEnum::FORMAT_NONE);
+    if (params->options->format != FormatEnum::FORMAT_NONE)
+      image_format_ = params->options->format;
 
     if (params->options->quality.get())
       image_quality_ = *params->options->quality;
@@ -2026,10 +2031,11 @@ bool TabsExecuteScriptFunction::ShouldInsertCSS() const {
   return false;
 }
 
-void TabsExecuteScriptFunction::OnExecuteCodeFinished(const std::string& error,
-                                                      int32 on_page_id,
-                                                      const GURL& on_url,
-                                                      const ListValue& result) {
+void TabsExecuteScriptFunction::OnExecuteCodeFinished(
+    const std::string& error,
+    int32 on_page_id,
+    const GURL& on_url,
+    const base::ListValue& result) {
   if (error.empty())
     SetResult(result.DeepCopy());
   ExecuteCodeInTabFunction::OnExecuteCodeFinished(error, on_page_id, on_url,
@@ -2046,7 +2052,7 @@ bool ExecuteCodeInTabFunction::Init() {
     EXTENSION_FUNCTION_VALIDATE(tab_id >= 0);
 
   // |details| are not optional.
-  DictionaryValue* details_value = NULL;
+  base::DictionaryValue* details_value = NULL;
   if (!args_->GetDictionary(1, &details_value))
     return false;
   scoped_ptr<InjectDetails> details(new InjectDetails());

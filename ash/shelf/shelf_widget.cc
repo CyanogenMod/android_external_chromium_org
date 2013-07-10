@@ -322,7 +322,7 @@ void ShelfWidget::DelegateView::SetDimmed(bool value) {
     dimmer_.reset(new views::Widget);
     views::Widget::InitParams params(
         views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);
-    params.transparent = true;
+    params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
     params.can_activate = false;
     params.accept_events = false;
     params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
@@ -436,7 +436,7 @@ ShelfWidget::ShelfWidget(aura::Window* shelf_container,
       window_container_(shelf_container) {
   views::Widget::InitParams params(
       views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);
-  params.transparent = true;
+  params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.parent = shelf_container;
   params.delegate = delegate_view_;
@@ -489,6 +489,8 @@ void ShelfWidget::SetAlignment(ShelfAlignment alignment) {
 
 void ShelfWidget::SetDimsShelf(bool dimming) {
   delegate_view_->SetDimmed(dimming);
+  if (launcher_)
+    launcher_->GetAppListButtonView()->SchedulePaint();
 }
 
 bool ShelfWidget::GetDimsShelf() const {
@@ -516,7 +518,7 @@ void ShelfWidget::CreateLauncher() {
 
   launcher_->SetVisible(
       shell->session_state_delegate()->IsActiveUserSessionStarted());
-
+  shelf_layout_manager_->LayoutShelf();
   Show();
 }
 

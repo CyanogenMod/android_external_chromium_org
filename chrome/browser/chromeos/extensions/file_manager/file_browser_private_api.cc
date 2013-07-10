@@ -20,7 +20,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/drive_app_registry.h"
@@ -35,6 +35,7 @@
 #include "chrome/browser/chromeos/extensions/file_manager/file_manager_event_router.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
 #include "chrome/browser/chromeos/extensions/file_manager/zip_file_creator.h"
+#include "chrome/browser/chromeos/fileapi/cros_mount_point_provider.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/system/statistics_provider.h"
 #include "chrome/browser/extensions/api/file_handlers/app_file_handler_util.h"
@@ -59,6 +60,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/storage_partition.h"
+#include "content/public/common/page_zoom.h"
 #include "googleurl/src/gurl.h"
 #include "grit/app_locale_settings.h"
 #include "grit/generated_resources.h"
@@ -67,7 +69,6 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/shell_dialogs/selected_file_info.h"
 #include "ui/webui/web_ui_util.h"
-#include "webkit/browser/chromeos/fileapi/cros_mount_point_provider.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
@@ -356,10 +357,9 @@ void FillDriveEntryPropertiesValue(
       entry_proto.file_specific_info();
 
   property_dict->SetString("thumbnailUrl", file_specific_info.thumbnail_url());
-
+  property_dict->SetString("shareUrl", file_specific_info.share_url());
   property_dict->SetBoolean("isHosted",
                             file_specific_info.is_hosted_document());
-
   property_dict->SetString("contentMimeType",
                            file_specific_info.content_mime_type());
 }
@@ -452,8 +452,7 @@ FileBrowserPrivateAPI::FileBrowserPrivateAPI(Profile* profile)
   registry->RegisterFunction<SetLastModifiedFunction>();
   registry->RegisterFunction<ZipSelectionFunction>();
   registry->RegisterFunction<ValidatePathNameLengthFunction>();
-  registry->RegisterFunction<OpenNewWindowFunction>();
-
+  registry->RegisterFunction<ZoomFunction>();
   event_router_->ObserveFileSystemEvents();
 }
 
@@ -1875,6 +1874,7 @@ bool FileDialogStringsFunction::RunImpl() {
   SET_STRING("GALLERY_SLIDESHOW", IDS_FILE_BROWSER_GALLERY_SLIDESHOW);
 
   SET_STRING("GALLERY_EDIT", IDS_FILE_BROWSER_GALLERY_EDIT);
+  SET_STRING("GALLERY_PRINT", IDS_FILE_BROWSER_GALLERY_PRINT);
   SET_STRING("GALLERY_SHARE", IDS_FILE_BROWSER_GALLERY_SHARE);
   SET_STRING("GALLERY_ENTER_WHEN_DONE",
              IDS_FILE_BROWSER_GALLERY_ENTER_WHEN_DONE);
@@ -1904,6 +1904,8 @@ bool FileDialogStringsFunction::RunImpl() {
   SET_STRING("GALLERY_VIDEO_ERROR", IDS_FILE_BROWSER_GALLERY_VIDEO_ERROR);
   SET_STRING("GALLERY_VIDEO_DECODING_ERROR",
              IDS_FILE_BROWSER_GALLERY_VIDEO_DECODING_ERROR);
+  SET_STRING("GALLERY_VIDEO_LOOPED_MODE",
+             IDS_FILE_BROWSER_GALLERY_VIDEO_LOOPED_MODE);
   SET_STRING("AUDIO_ERROR", IDS_FILE_BROWSER_AUDIO_ERROR);
   SET_STRING("GALLERY_IMAGE_OFFLINE", IDS_FILE_BROWSER_GALLERY_IMAGE_OFFLINE);
   SET_STRING("GALLERY_VIDEO_OFFLINE", IDS_FILE_BROWSER_GALLERY_VIDEO_OFFLINE);
@@ -1995,6 +1997,8 @@ bool FileDialogStringsFunction::RunImpl() {
   SET_STRING("CUT_BUTTON_LABEL", IDS_FILE_BROWSER_CUT_BUTTON_LABEL);
   SET_STRING("ZIP_SELECTION_BUTTON_LABEL",
              IDS_FILE_BROWSER_ZIP_SELECTION_BUTTON_LABEL);
+  SET_STRING("SHARE_BUTTON_LABEL",
+             IDS_FILE_BROWSER_SHARE_BUTTON_LABEL);
 
   SET_STRING("OPEN_WITH_BUTTON_LABEL", IDS_FILE_BROWSER_OPEN_WITH_BUTTON_LABEL);
 
@@ -2113,6 +2117,8 @@ bool FileDialogStringsFunction::RunImpl() {
   SET_STRING("DRIVE_WELCOME_CHECK_ELIGIBILITY",
              IDS_FILE_BROWSER_DRIVE_WELCOME_CHECK_ELIGIBILITY);
   SET_STRING("NO_ACTION_FOR_FILE", IDS_FILE_BROWSER_NO_ACTION_FOR_FILE);
+  SET_STRING("NO_ACTION_FOR_EXECUTABLE",
+             IDS_FILE_BROWSER_NO_ACTION_FOR_EXECUTABLE);
 
   // MP3 metadata extractor plugin
   SET_STRING("ID3_ALBUM", IDS_FILE_BROWSER_ID3_ALBUM);                // TALB
@@ -2255,13 +2261,13 @@ bool FileDialogStringsFunction::RunImpl() {
 #endif
 
   std::string board;
-  const char kMachineInfoBoard[] = "CHROMEOS_RELEASE_BOARD";
   chromeos::system::StatisticsProvider* provider =
       chromeos::system::StatisticsProvider::GetInstance();
-  if (!provider->GetMachineStatistic(kMachineInfoBoard, &board))
+  if (!provider->GetMachineStatistic(chromeos::system::kMachineInfoBoard,
+                                     &board)) {
     board = "unknown";
-  dict->SetString(kMachineInfoBoard, board);
-
+  }
+  dict->SetString(chromeos::system::kMachineInfoBoard, board);
   return true;
 }
 
@@ -3077,13 +3083,21 @@ void ValidatePathNameLengthFunction::OnFilePathLimitRetrieved(
   SendResponse(true);
 }
 
-OpenNewWindowFunction::OpenNewWindowFunction() {}
-
-OpenNewWindowFunction::~OpenNewWindowFunction() {}
-
-bool OpenNewWindowFunction::RunImpl() {
-  std::string url;
-  EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &url));
-  file_manager_util::OpenNewWindow(profile_, GURL(url));
+bool ZoomFunction::RunImpl() {
+  content::RenderViewHost* const view_host = render_view_host();
+  std::string operation;
+  args_->GetString(0, &operation);
+  content::PageZoom zoom_type;
+  if (operation == "in") {
+    zoom_type = content::PAGE_ZOOM_IN;
+  } else if (operation == "out") {
+    zoom_type = content::PAGE_ZOOM_OUT;
+  } else if (operation == "reset") {
+    zoom_type = content::PAGE_ZOOM_RESET;
+  } else {
+    NOTREACHED();
+    return false;
+  }
+  view_host->Zoom(zoom_type);
   return true;
 }

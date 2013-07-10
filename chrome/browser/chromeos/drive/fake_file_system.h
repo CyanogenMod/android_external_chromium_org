@@ -18,7 +18,6 @@
 namespace google_apis {
 
 class AboutResource;
-class DriveServiceInterface;
 class ResourceEntry;
 class ResourceList;
 
@@ -26,6 +25,7 @@ class ResourceList;
 
 namespace drive {
 
+class DriveServiceInterface;
 class FileSystemObserver;
 class ResourceEntry;
 
@@ -39,8 +39,7 @@ namespace test_util {
 // Currently most methods are empty (not implemented).
 class FakeFileSystem : public FileSystemInterface {
  public:
-  explicit FakeFileSystem(
-      google_apis::DriveServiceInterface* drive_service);
+  explicit FakeFileSystem(DriveServiceInterface* drive_service);
   virtual ~FakeFileSystem();
 
   // Initialization for testing. This can be called instead of Initialize
@@ -87,6 +86,9 @@ class FakeFileSystem : public FileSystemInterface {
                          const base::Time& last_access_time,
                          const base::Time& last_modified_time,
                          const FileOperationCallback& callback) OVERRIDE;
+  virtual void TruncateFile(const base::FilePath& file_path,
+                            int64 length,
+                            const FileOperationCallback& callback) OVERRIDE;
   virtual void Pin(const base::FilePath& file_path,
                    const FileOperationCallback& callback) OVERRIDE;
   virtual void Unpin(const base::FilePath& file_path,
@@ -112,7 +114,7 @@ class FakeFileSystem : public FileSystemInterface {
       const GetResourceEntryCallback& callback) OVERRIDE;
   virtual void ReadDirectoryByPath(
       const base::FilePath& file_path,
-      const ReadDirectoryWithSettingCallback& callback) OVERRIDE;
+      const ReadDirectoryCallback& callback) OVERRIDE;
   virtual void RefreshDirectory(
       const base::FilePath& file_path,
       const FileOperationCallback& callback) OVERRIDE;
@@ -153,14 +155,12 @@ class FakeFileSystem : public FileSystemInterface {
   // 3) Otherwise start DownloadFile.
   // 4) Runs the |completion_callback| upon the download completion.
   void GetFileContentByPathAfterGetResourceEntry(
-      const base::FilePath& file_path,
       const GetFileContentInitializedCallback& initialized_callback,
       const google_apis::GetContentCallback& get_content_callback,
       const FileOperationCallback& completion_callback,
       FileError error,
       scoped_ptr<ResourceEntry> entry);
   void GetFileContentByPathAfterGetWapiResourceEntry(
-      const base::FilePath& file_path,
       const GetFileContentInitializedCallback& initialized_callback,
       const google_apis::GetContentCallback& get_content_callback,
       const FileOperationCallback& completion_callback,
@@ -197,7 +197,7 @@ class FakeFileSystem : public FileSystemInterface {
       google_apis::GDataErrorCode gdata_error,
       scoped_ptr<google_apis::ResourceList> resource_list);
 
-  google_apis::DriveServiceInterface* drive_service_;  // Not owned.
+  DriveServiceInterface* drive_service_;  // Not owned.
   base::ScopedTempDir cache_dir_;
 
   // Note: This should remain the last member so it'll be destroyed and

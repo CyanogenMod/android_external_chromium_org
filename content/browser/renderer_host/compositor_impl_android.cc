@@ -14,9 +14,9 @@
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
+#include "base/single_thread_task_runner.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
-#include "cc/base/thread_impl.h"
 #include "cc/input/input_handler.h"
 #include "cc/layers/layer.h"
 #include "cc/output/context_provider.h"
@@ -33,6 +33,7 @@
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
+#include "ui/gfx/android/device_display_info.h"
 #include "ui/gfx/android/java_bitmap.h"
 #include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
@@ -227,12 +228,11 @@ void CompositorImpl::SetVisible(bool visible) {
     if (UsesDirectGL())
       settings.should_clear_root_render_pass = false;
 
-    scoped_ptr<cc::Thread> impl_thread;
-    if (g_impl_thread)
-      impl_thread = cc::ThreadImpl::CreateForDifferentThread(
-          g_impl_thread->message_loop()->message_loop_proxy());
+    scoped_refptr<base::SingleThreadTaskRunner> impl_thread_task_runner =
+        g_impl_thread ? g_impl_thread->message_loop()->message_loop_proxy()
+                      : NULL;
 
-    host_ = cc::LayerTreeHost::Create(this, settings, impl_thread.Pass());
+    host_ = cc::LayerTreeHost::Create(this, settings, impl_thread_task_runner);
     host_->SetRootLayer(root_layer_);
 
     host_->SetVisible(true);
@@ -369,10 +369,22 @@ scoped_ptr<cc::OutputSurface> CompositorImpl::CreateOutputSurface() {
                                                   url,
                                                   factory,
                                                   weak_factory_.GetWeakPtr()));
-    if (!context->InitializeWithDefaultBufferSizes(
+    static const size_t kBytesPerPixel = 4;
+    gfx::DeviceDisplayInfo display_info;
+    size_t full_screen_texture_size_in_bytes =
+        display_info.GetDisplayHeight() *
+        display_info.GetDisplayWidth() *
+        kBytesPerPixel;
+    if (!context->Initialize(
         attrs,
         false,
-        CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE)) {
+        CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE,
+        64 * 1024,  // command buffer size
+        std::min(full_screen_texture_size_in_bytes,
+        kDefaultStartTransferBufferSize),
+        kDefaultMinTransferBufferSize,
+        std::min(3 * full_screen_texture_size_in_bytes,
+                 kDefaultMaxTransferBufferSize))) {
       LOG(ERROR) << "Failed to create 3D context for compositor.";
       return scoped_ptr<cc::OutputSurface>();
     }

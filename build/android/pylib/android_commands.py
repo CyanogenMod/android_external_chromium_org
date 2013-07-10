@@ -178,8 +178,10 @@ def _ComputeFileListHash(md5sum_output):
 
 def _HasAdbPushSucceeded(command_output):
   """Returns whether adb push has succeeded from the provided output."""
+  # TODO(frankf): We should look at the return code instead of the command
+  # output for many of the commands in this file.
   if not command_output:
-    return False
+    return True
   # Success looks like this: "3035 KB/s (12512056 bytes in 4.025s)"
   # Errors look like this: "failed to copy  ... "
   if not re.search('^[0-9]', command_output.splitlines()[-1]):
@@ -219,7 +221,9 @@ class AndroidCommands(object):
     self.logcat_process = None
     self._logcat_tmpoutfile = None
     self._pushed_files = []
-    self._device_utc_offset = self.RunShellCommand('date +%z')[0]
+    self._device_utc_offset = None
+    self._potential_push_size = 0
+    self._actual_push_size = 0
     self._md5sum_build_dir = ''
     self._external_storage = ''
     self._util_wrapper = ''
@@ -708,8 +712,6 @@ class AndroidCommands(object):
     Returns:
       True if the md5sums match.
     """
-    assert os.path.exists(local_path), 'Local path not found %s' % local_path
-
     if not self._md5sum_build_dir:
       default_build_type = os.environ.get('BUILD_TYPE', 'Debug')
       build_dir = '%s/%s/' % (
@@ -723,7 +725,6 @@ class AndroidCommands(object):
       assert _HasAdbPushSucceeded(self._adb.SendCommand(command))
       self._md5sum_build_dir = build_dir
 
-    self._pushed_files.append(device_path)
     hashes_on_device = _ComputeFileListHash(
         self.RunShellCommand(MD5SUM_LD_LIBRARY_PATH + ' ' + self._util_wrapper +
             ' ' + MD5SUM_DEVICE_PATH + ' ' + device_path))
@@ -746,9 +747,15 @@ class AndroidCommands(object):
 
     All pushed files can be removed by calling RemovePushedFiles().
     """
+    assert os.path.exists(local_path), 'Local path not found %s' % local_path
+    size = int(cmd_helper.GetCmdOutput(['du', '-sb', local_path]).split()[0])
+    self._pushed_files.append(device_path)
+    self._potential_push_size += size
+
     if self.CheckMd5Sum(local_path, device_path):
       return
 
+    self._actual_push_size += size
     # They don't match, so remove everything first and then create it.
     if os.path.isdir(local_path):
       self.RunShellCommand('rm -r %s' % device_path, timeout_time=2 * 60)
@@ -761,6 +768,15 @@ class AndroidCommands(object):
     output = self._adb.SendCommand(push_command, timeout_time=30 * 60)
     assert _HasAdbPushSucceeded(output)
 
+  def GetPushSizeInfo(self):
+    """Get total size of pushes to the device done via PushIfNeeded()
+
+    Returns:
+      A tuple:
+        1. Total size of push requests to PushIfNeeded (MB)
+        2. Total size that was actually pushed (MB)
+    """
+    return (self._potential_push_size, self._actual_push_size)
 
   def GetFileContents(self, filename, log_result=False):
     """Gets contents from the file specified by |filename|."""
@@ -848,7 +864,12 @@ class AndroidCommands(object):
                          '(?P<filename>[^\s]+)$')
     return _GetFilesFromRecursiveLsOutput(
         path, self.RunShellCommand('ls -lR %s' % path), re_file,
-        self._device_utc_offset)
+        self.GetUtcOffset())
+
+  def GetUtcOffset(self):
+    if not self._device_utc_offset:
+      self._device_utc_offset = self.RunShellCommand('date +%z')[0]
+    return self._device_utc_offset
 
   def SetJavaAssertsEnabled(self, enable):
     """Sets or removes the device java assertions property.
@@ -898,8 +919,17 @@ class AndroidCommands(object):
     assert build_type
     return build_type
 
+  def GetDescription(self):
+    """Returns the description of the system.
+
+    For example, "yakju-userdebug 4.1 JRN54F 364167 dev-keys".
+    """
+    description = self.RunShellCommand('getprop ro.build.description')[0]
+    assert description
+    return description
+
   def GetProductModel(self):
-    """Returns the namve of the product model (e.g. "Galaxy Nexus") """
+    """Returns the name of the product model (e.g. "Galaxy Nexus") """
     model = self.RunShellCommand('getprop ro.product.model')[0]
     assert model
     return model

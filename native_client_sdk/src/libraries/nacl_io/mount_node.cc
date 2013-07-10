@@ -8,6 +8,8 @@
 #include <fcntl.h>
 #include <string.h>
 #include <sys/stat.h>
+
+#include <algorithm>
 #include <string>
 
 #include "nacl_io/kernel_wrap_real.h"
@@ -46,9 +48,7 @@ void MountNode::Destroy() {
 
 Error MountNode::FSync() { return 0; }
 
-Error MountNode::FTruncate(off_t length) {
-  return EINVAL;
-}
+Error MountNode::FTruncate(off_t length) { return EINVAL; }
 
 Error MountNode::GetDents(size_t offs,
                           struct dirent* pdir,
@@ -64,9 +64,7 @@ Error MountNode::GetStat(struct stat* pstat) {
   return 0;
 }
 
-Error MountNode::Ioctl(int request, char* arg) {
-  return EINVAL;
-}
+Error MountNode::Ioctl(int request, char* arg) { return EINVAL; }
 
 Error MountNode::Read(size_t offs, void* buf, size_t count, int* out_bytes) {
   *out_bytes = 0;
@@ -133,29 +131,21 @@ bool MountNode::IsaFile() { return (stat_.st_mode & S_IFREG) != 0; }
 
 bool MountNode::IsaTTY() { return (stat_.st_mode & S_IFCHR) != 0; }
 
-Error MountNode::AddChild(const std::string& name, MountNode* node) {
+Error MountNode::AddChild(const std::string& name,
+                          const ScopedMountNode& node) {
   return ENOTDIR;
 }
 
-Error MountNode::RemoveChild(const std::string& name) {
+Error MountNode::RemoveChild(const std::string& name) { return ENOTDIR; }
+
+Error MountNode::FindChild(const std::string& name, ScopedMountNode* out_node) {
+  out_node->reset(NULL);
   return ENOTDIR;
 }
 
-Error MountNode::FindChild(const std::string& name, MountNode** out_node) {
-  *out_node = NULL;
-  return ENOTDIR;
-}
+int MountNode::ChildCount() { return 0; }
 
-int MountNode::ChildCount() {
-  return 0;
-}
+void MountNode::Link() { stat_.st_nlink++; }
 
-void MountNode::Link() {
-  Acquire();
-  stat_.st_nlink++;
-}
+void MountNode::Unlink() { stat_.st_nlink--; }
 
-void MountNode::Unlink() {
-  stat_.st_nlink--;
-  Release();
-}

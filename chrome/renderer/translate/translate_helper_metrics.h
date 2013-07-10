@@ -7,7 +7,7 @@
 
 #include <string>
 
-#include "base/time.h"
+#include "base/time/time.h"
 
 namespace TranslateHelperMetrics {
 
@@ -45,6 +45,7 @@ enum LanguageVerificationType {
   LANGUAGE_VERIFICATION_CLD_AGREE,
   LANGUAGE_VERIFICATION_CLD_DISAGREE,
   LANGUAGE_VERIFICATION_TRUST_CLD,
+  LANGUAGE_VERIFICATION_CLD_COMPLEMENT_SUB_CODE,
   LANGUAGE_VERIFICATION_MAX,
 };
 

@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
-#include "base/hi_res_timer_manager.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/metrics/field_trial.h"
@@ -18,6 +17,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/system_monitor/system_monitor.h"
 #include "base/threading/thread_restrictions.h"
+#include "base/timer/hi_res_timer_manager.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/download/save_file_manager.h"
 #include "content/browser/gamepad/gamepad_service.h"
@@ -47,6 +47,7 @@
 #include "crypto/nss_util.h"
 #include "media/audio/audio_manager.h"
 #include "media/base/media.h"
+#include "media/midi/midi_manager.h"
 #include "net/base/network_change_notifier.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/ssl/ssl_config_service.h"
@@ -130,12 +131,20 @@ void SetupSandbox(const CommandLine& parsed_command_line) {
       !parsed_command_line.HasSwitch(switches::kNoSandbox) &&
       !parsed_command_line.HasSwitch(switches::kDisableSetuidSandbox);
 
-  if (want_setuid_sandbox && !sandbox_binary) {
-    // TODO(jln): make this fatal (crbug.com/245376).
-    LOG(ERROR) << "Running without the SUID sandbox! See "
+  if (want_setuid_sandbox) {
+    static const char no_suid_error[] = "Running without the SUID sandbox! See "
         "https://code.google.com/p/chromium/wiki/LinuxSUIDSandboxDevelopment "
-        "for more information on developing with the sandbox on.\n"
-        "This check will be made FATAL. Do it!";
+        "for more information on developing with the sandbox on.";
+    if (!sandbox_binary) {
+      // This needs to be fatal. Talk to security@chromium.org if you feel
+      // otherwise.
+      LOG(FATAL) << no_suid_error;
+    }
+    // TODO(jln): an empty CHROME_DEVEL_SANDBOX environment variable (as
+    // opposed to a non existing one) is not fatal yet. This is needed because
+    // of existing bots and scripts. Fix it (crbug.com/245376).
+    if (sandbox_binary && *sandbox_binary == '\0')
+      LOG(ERROR) << no_suid_error;
   }
 
   std::string sandbox_cmd;
@@ -276,21 +285,12 @@ class BrowserMainLoop::MemoryObserver : public base::MessageLoop::TaskObserver {
 };
 
 
-// static
-media::AudioManager* BrowserMainLoop::GetAudioManager() {
-  return g_current_browser_main_loop->audio_manager_.get();
-}
-
-// static
-AudioMirroringManager* BrowserMainLoop::GetAudioMirroringManager() {
-  return g_current_browser_main_loop->audio_mirroring_manager_.get();
-}
-
-// static
-MediaStreamManager* BrowserMainLoop::GetMediaStreamManager() {
-  return g_current_browser_main_loop->media_stream_manager_.get();
-}
 // BrowserMainLoop construction / destruction =============================
+
+BrowserMainLoop* BrowserMainLoop::GetInstance() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  return g_current_browser_main_loop;
+}
 
 BrowserMainLoop::BrowserMainLoop(const MainFunctionParams& parameters)
     : parameters_(parameters),
@@ -394,7 +394,7 @@ void BrowserMainLoop::MainMessageLoopStart() {
   }
   {
     TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:HighResTimerManager")
-    hi_res_timer_manager_.reset(new HighResolutionTimerManager);
+    hi_res_timer_manager_.reset(new base::HighResolutionTimerManager);
   }
   {
     TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:NetworkChangeNotifier")
@@ -409,7 +409,10 @@ void BrowserMainLoop::MainMessageLoopStart() {
     TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:AudioMan")
     audio_manager_.reset(media::AudioManager::Create());
   }
-
+  {
+    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:MIDIManager")
+    midi_manager_.reset(media::MIDIManager::Create());
+  }
 
 #if !defined(OS_IOS)
   {
@@ -435,17 +438,6 @@ void BrowserMainLoop::MainMessageLoopStart() {
     online_state_observer_.reset(new BrowserOnlineStateObserver);
   }
 #endif  // !defined(OS_IOS)
-
-#if defined(ENABLE_PLUGINS)
-  // Prior to any processing happening on the io thread, we create the
-  // plugin service as it is predominantly used from the io thread,
-  // but must be created on the main thread. The service ctor is
-  // inexpensive and does not invoke the io_thread() accessor.
-  {
-    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:PluginService")
-    PluginService::GetInstance()->Init();
-  }
-#endif
 
 #if defined(OS_WIN)
   system_message_window_.reset(new SystemMessageWindowWin);
@@ -488,9 +480,20 @@ void BrowserMainLoop::CreateThreads() {
 
   if (parts_) {
     TRACE_EVENT0("startup",
-        "BrowserMainLoop::MainMessageLoopStart:PreCreateThreads");
+        "BrowserMainLoop::CreateThreads:PreCreateThreads");
     result_code_ = parts_->PreCreateThreads();
   }
+
+#if defined(ENABLE_PLUGINS)
+  // Prior to any processing happening on the io thread, we create the
+  // plugin service as it is predominantly used from the io thread,
+  // but must be created on the main thread. The service ctor is
+  // inexpensive and does not invoke the io_thread() accessor.
+  {
+    TRACE_EVENT0("startup", "BrowserMainLoop::CreateThreads:PluginService")
+    PluginService::GetInstance()->Init();
+  }
+#endif
 
 #if !defined(OS_IOS) && (!defined(GOOGLE_CHROME_BUILD) || defined(OS_ANDROID))
   // Single-process is an unsupported and not fully tested mode, so
@@ -597,6 +600,11 @@ void BrowserMainLoop::CreateThreads() {
     TRACE_EVENT_END0("startup", "BrowserMainLoop::CreateThreads:start");
 
   }
+
+#if !defined(OS_IOS)
+  indexed_db_thread_.reset(new base::Thread("IndexedDB"));
+  indexed_db_thread_->Start();
+#endif
 
   BrowserThreadsStarted();
 
@@ -746,6 +754,10 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
     }
   }
 
+#if !defined(OS_IOS)
+  indexed_db_thread_.reset();
+#endif
+
   // Close the blocking I/O pool after the other threads. Other threads such
   // as the I/O thread may need to schedule work like closing files or flushing
   // data during shutdown, so the blocking pool needs to be available. There
@@ -828,7 +840,8 @@ void BrowserMainLoop::BrowserThreadsStarted() {
   {
     TRACE_EVENT0("startup",
       "BrowserMainLoop::BrowserThreadsStarted:InitSpeechRecognition");
-    speech_recognition_manager_.reset(new SpeechRecognitionManagerImpl());
+    speech_recognition_manager_.reset(new SpeechRecognitionManagerImpl(
+        audio_manager_.get(), media_stream_manager_.get()));
   }
 
   // Alert the clipboard class to which threads are allowed to access the

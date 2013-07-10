@@ -4,9 +4,10 @@
 
 #import "chrome/browser/ui/cocoa/browser/avatar_menu_bubble_controller.h"
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/message_loop/message_pump_mac.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/avatar_menu_model.h"
 #include "chrome/browser/profiles/avatar_menu_model_observer.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
@@ -27,8 +28,10 @@ class AvatarMenuBubbleControllerTest : public CocoaTest {
     CocoaTest::SetUp();
     ASSERT_TRUE(manager_.SetUp());
 
-    manager_.CreateTestingProfile("test1", ASCIIToUTF16("Test 1"), 1);
-    manager_.CreateTestingProfile("test2", ASCIIToUTF16("Test 2"), 0);
+    manager_.CreateTestingProfile("test1", scoped_ptr<PrefServiceSyncable>(),
+                                  ASCIIToUTF16("Test 1"), 1);
+    manager_.CreateTestingProfile("test2", scoped_ptr<PrefServiceSyncable>(),
+                                  ASCIIToUTF16("Test 2"), 0);
 
     model_ = new AvatarMenuModel(manager_.profile_info_cache(), NULL, NULL);
 
@@ -113,10 +116,11 @@ TEST_F(AvatarMenuBubbleControllerTest, PerformLayout) {
   NSView* contents = [[controller() window] contentView];
   EXPECT_EQ(4U, [[contents subviews] count]);
 
-  scoped_nsobject<NSMutableArray> oldItems([[controller() items] copy]);
+  base::scoped_nsobject<NSMutableArray> oldItems([[controller() items] copy]);
 
   // Now create a new profile and notify the delegate.
-  manager()->CreateTestingProfile("test3", ASCIIToUTF16("Test 3"), 0);
+  manager()->CreateTestingProfile("test3", scoped_ptr<PrefServiceSyncable>(),
+                                  ASCIIToUTF16("Test 3"), 0);
 
   // Testing the bridge is not worth the effort...
   [controller() performLayout];
@@ -176,7 +180,7 @@ TEST_F(AvatarMenuBubbleControllerTest, PerformLayout) {
 @end
 
 TEST_F(AvatarMenuBubbleControllerTest, HighlightForEventType) {
-  scoped_nsobject<TestingAvatarMenuItemController> item(
+  base::scoped_nsobject<TestingAvatarMenuItemController> item(
       [[TestingAvatarMenuItemController alloc] initWithModelIndex:0
                                                    menuController:nil]);
   // Test non-active states first.

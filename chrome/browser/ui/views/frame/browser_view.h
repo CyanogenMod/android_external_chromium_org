@@ -11,7 +11,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/infobars/infobar_container.h"
@@ -127,6 +127,12 @@ class BrowserView : public BrowserWindow,
 
   // Returns a Browser instance of this view.
   Browser* browser() { return browser_.get(); }
+
+  // Initializes (or re-initializes) the status bubble.  We try to only create
+  // the bubble once and re-use it for the life of the browser, but certain
+  // events (such as changing enabling/disabling Aero on Win) can force a need
+  // to change some of the bubble's creation parameters.
+  void InitStatusBubble();
 
   // Returns the apparent bounds of the toolbar, in BrowserView coordinates.
   // These differ from |toolbar_.bounds()| in that they match where the toolbar
@@ -550,6 +556,11 @@ class BrowserView : public BrowserWindow,
                          FullscreenType fullscreen_type,
                          const GURL& url,
                          FullscreenExitBubbleType bubble_type);
+
+  // Returns whether immmersive fullscreen should replace fullscreen. This
+  // should only occur for "browser-fullscreen" for tabbed-typed windows (not
+  // for tab-fullscreen and not for app/popup type windows).
+  bool ShouldUseImmersiveFullscreenForUrl(const GURL& url) const;
 
   // Copy the accelerator table from the app resources into something we can
   // use.

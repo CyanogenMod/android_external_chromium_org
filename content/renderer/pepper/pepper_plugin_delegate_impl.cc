@@ -17,7 +17,7 @@
 #include "base/logging.h"
 #include "base/strings/string_split.h"
 #include "base/sync_socket.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/child/child_process.h"
 #include "content/child/child_thread.h"
 #include "content/child/fileapi/file_system_dispatcher.h"
@@ -81,6 +81,7 @@
 #include "ppapi/shared_impl/ppb_device_ref_shared.h"
 #include "ppapi/shared_impl/ppp_instance_combined.h"
 #include "ppapi/shared_impl/resource_tracker.h"
+#include "ppapi/shared_impl/socket_option_data.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_tcp_server_socket_private_api.h"
 #include "third_party/WebKit/public/web/WebCursorInfo.h"
@@ -1031,80 +1032,79 @@ GURL PepperPluginDelegateImpl::GetFileSystemRootUrl(
   return fs_host ? fs_host->GetRootUrl() : GURL();
 }
 
-bool PepperPluginDelegateImpl::MakeDirectory(
+void PepperPluginDelegateImpl::MakeDirectory(
     const GURL& path,
     bool recursive,
     const StatusCallback& callback) {
   FileSystemDispatcher* file_system_dispatcher =
       ChildThread::current()->file_system_dispatcher();
-  return file_system_dispatcher->Create(
-      path, false, true, recursive, callback);
+  file_system_dispatcher->Create(path, false, true, recursive, callback);
 }
 
-bool PepperPluginDelegateImpl::Query(
+void PepperPluginDelegateImpl::Query(
     const GURL& path,
     const MetadataCallback& success_callback,
     const StatusCallback& error_callback) {
   FileSystemDispatcher* file_system_dispatcher =
       ChildThread::current()->file_system_dispatcher();
-  return file_system_dispatcher->ReadMetadata(
+  file_system_dispatcher->ReadMetadata(
       path, success_callback, error_callback);
 }
 
-bool PepperPluginDelegateImpl::ReadDirectoryEntries(
+void PepperPluginDelegateImpl::ReadDirectoryEntries(
     const GURL& path,
     const ReadDirectoryCallback& success_callback,
     const StatusCallback& error_callback) {
   FileSystemDispatcher* file_system_dispatcher =
       ChildThread::current()->file_system_dispatcher();
-  return file_system_dispatcher->ReadDirectory(
+  file_system_dispatcher->ReadDirectory(
       path, success_callback, error_callback);
 }
 
-bool PepperPluginDelegateImpl::Touch(
+void PepperPluginDelegateImpl::Touch(
     const GURL& path,
     const base::Time& last_access_time,
     const base::Time& last_modified_time,
     const StatusCallback& callback) {
   FileSystemDispatcher* file_system_dispatcher =
       ChildThread::current()->file_system_dispatcher();
-  return file_system_dispatcher->TouchFile(path, last_access_time,
-                                           last_modified_time, callback);
+  file_system_dispatcher->TouchFile(path, last_access_time, last_modified_time,
+                                    callback);
 }
 
-bool PepperPluginDelegateImpl::SetLength(
+void PepperPluginDelegateImpl::SetLength(
     const GURL& path,
     int64_t length,
     const StatusCallback& callback) {
   FileSystemDispatcher* file_system_dispatcher =
       ChildThread::current()->file_system_dispatcher();
-  return file_system_dispatcher->Truncate(path, length, NULL, callback);
+  file_system_dispatcher->Truncate(path, length, NULL, callback);
 }
 
-bool PepperPluginDelegateImpl::Delete(
+void PepperPluginDelegateImpl::Delete(
     const GURL& path,
     const StatusCallback& callback) {
   FileSystemDispatcher* file_system_dispatcher =
       ChildThread::current()->file_system_dispatcher();
-  return file_system_dispatcher->Remove(path, false /* recursive */, callback);
+  file_system_dispatcher->Remove(path, false /* recursive */, callback);
 }
 
-bool PepperPluginDelegateImpl::Rename(
+void PepperPluginDelegateImpl::Rename(
     const GURL& file_path,
     const GURL& new_file_path,
     const StatusCallback& callback) {
   FileSystemDispatcher* file_system_dispatcher =
       ChildThread::current()->file_system_dispatcher();
-  return file_system_dispatcher->Move(file_path, new_file_path, callback);
+  file_system_dispatcher->Move(file_path, new_file_path, callback);
 }
 
-bool PepperPluginDelegateImpl::ReadDirectory(
+void PepperPluginDelegateImpl::ReadDirectory(
     const GURL& directory_path,
     const ReadDirectoryCallback& success_callback,
     const StatusCallback& error_callback) {
   FileSystemDispatcher* file_system_dispatcher =
       ChildThread::current()->file_system_dispatcher();
-  return file_system_dispatcher->ReadDirectory(
+  file_system_dispatcher->ReadDirectory(
       directory_path, success_callback, error_callback);
 }
 
@@ -1123,14 +1123,13 @@ void PepperPluginDelegateImpl::DidUpdateFile(const GURL& path, int64_t delta) {
   ChildThread::current()->Send(new FileSystemHostMsg_DidUpdate(path, delta));
 }
 
-bool PepperPluginDelegateImpl::AsyncOpenFileSystemURL(
+void PepperPluginDelegateImpl::AsyncOpenFileSystemURL(
     const GURL& path,
     int flags,
     const AsyncOpenFileSystemURLCallback& callback) {
-
   FileSystemDispatcher* file_system_dispatcher =
       ChildThread::current()->file_system_dispatcher();
-  return file_system_dispatcher->OpenFile(
+  file_system_dispatcher->OpenFile(
       path, flags,
       base::Bind(&DidOpenFileSystemURL, callback),
       base::Bind(&DidFailOpenFileSystemURL, callback));
@@ -1148,8 +1147,11 @@ PepperPluginDelegateImpl::GetFileThreadMessageLoopProxy() {
 }
 
 uint32 PepperPluginDelegateImpl::TCPSocketCreate() {
+  // This was used for PPB_TCPSocket_Private creation. And it shouldn't be
+  // needed anymore.
+  // TODO(yzshen): Remove TCP socket-related contents from the plugin delegate.
   uint32 socket_id = 0;
-  render_view_->Send(new PpapiHostMsg_PPBTCPSocket_Create(
+  render_view_->Send(new PpapiHostMsg_PPBTCPSocket_CreatePrivate(
       render_view_->routing_id(), 0, &socket_id));
   return socket_id;
 }
@@ -1207,13 +1209,13 @@ void PepperPluginDelegateImpl::TCPSocketDisconnect(uint32 socket_id) {
     tcp_sockets_.Remove(socket_id);
 }
 
-void PepperPluginDelegateImpl::TCPSocketSetBoolOption(
+void PepperPluginDelegateImpl::TCPSocketSetOption(
     uint32 socket_id,
-    PP_TCPSocketOption_Private name,
-    bool value) {
+    PP_TCPSocket_Option name,
+    const ppapi::SocketOptionData& value) {
   DCHECK(tcp_sockets_.Lookup(socket_id));
   render_view_->Send(
-      new PpapiHostMsg_PPBTCPSocket_SetBoolOption(socket_id, name, value));
+      new PpapiHostMsg_PPBTCPSocket_SetOption(socket_id, name, value));
 }
 
 void PepperPluginDelegateImpl::RegisterTCPSocket(
@@ -1491,8 +1493,8 @@ bool PepperPluginDelegateImpl::OnMessageReceived(const IPC::Message& message) {
                         OnTCPSocketSSLHandshakeACK)
     IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_ReadACK, OnTCPSocketReadACK)
     IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_WriteACK, OnTCPSocketWriteACK)
-    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_SetBoolOptionACK,
-                        OnTCPSocketSetBoolOptionACK)
+    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_SetOptionACK,
+                        OnTCPSocketSetOptionACK)
     IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPServerSocket_ListenACK,
                         OnTCPServerSocketListenACK)
     IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPServerSocket_AcceptACK,
@@ -1511,14 +1513,14 @@ void PepperPluginDelegateImpl::OnDestruct() {
 void PepperPluginDelegateImpl::OnTCPSocketConnectACK(
     uint32 plugin_dispatcher_id,
     uint32 socket_id,
-    bool succeeded,
+    int32_t result,
     const PP_NetAddress_Private& local_addr,
     const PP_NetAddress_Private& remote_addr) {
   webkit::ppapi::PPB_TCPSocket_Private_Impl* socket =
       tcp_sockets_.Lookup(socket_id);
   if (socket)
-    socket->OnConnectCompleted(succeeded, local_addr, remote_addr);
-  if (!succeeded)
+    socket->OnConnectCompleted(result, local_addr, remote_addr);
+  if (result != PP_OK)
     tcp_sockets_.Remove(socket_id);
 }
 
@@ -1535,32 +1537,31 @@ void PepperPluginDelegateImpl::OnTCPSocketSSLHandshakeACK(
 
 void PepperPluginDelegateImpl::OnTCPSocketReadACK(uint32 plugin_dispatcher_id,
                                                   uint32 socket_id,
-                                                  bool succeeded,
+                                                  int32_t result,
                                                   const std::string& data) {
   webkit::ppapi::PPB_TCPSocket_Private_Impl* socket =
       tcp_sockets_.Lookup(socket_id);
   if (socket)
-    socket->OnReadCompleted(succeeded, data);
+    socket->OnReadCompleted(result, data);
 }
 
 void PepperPluginDelegateImpl::OnTCPSocketWriteACK(uint32 plugin_dispatcher_id,
                                                    uint32 socket_id,
-                                                   bool succeeded,
-                                                   int32_t bytes_written) {
+                                                   int32_t result) {
   webkit::ppapi::PPB_TCPSocket_Private_Impl* socket =
       tcp_sockets_.Lookup(socket_id);
   if (socket)
-    socket->OnWriteCompleted(succeeded, bytes_written);
+    socket->OnWriteCompleted(result);
 }
 
-void PepperPluginDelegateImpl::OnTCPSocketSetBoolOptionACK(
+void PepperPluginDelegateImpl::OnTCPSocketSetOptionACK(
     uint32 plugin_dispatcher_id,
     uint32 socket_id,
-    bool succeeded) {
+    int32_t result) {
   webkit::ppapi::PPB_TCPSocket_Private_Impl* socket =
       tcp_sockets_.Lookup(socket_id);
   if (socket)
-    socket->OnSetOptionCompleted(succeeded);
+    socket->OnSetOptionCompleted(result);
 }
 
 void PepperPluginDelegateImpl::OnTCPServerSocketListenACK(

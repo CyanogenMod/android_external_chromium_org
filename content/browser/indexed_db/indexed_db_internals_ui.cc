@@ -9,7 +9,6 @@
 
 #include "base/bind.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/memory/scoped_vector.h"
 #include "base/threading/platform_thread.h"
 #include "base/values.h"
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
@@ -23,9 +22,7 @@
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/common/url_constants.h"
 #include "grit/content_resources.h"
-#include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/zlib/google/zip.h"
-#include "webkit/base/file_path_string_conversions.h"
 #include "webkit/common/database/database_identifier.h"
 
 namespace content {
@@ -59,12 +56,14 @@ IndexedDBInternalsUI::IndexedDBInternalsUI(WebUI* web_ui)
 IndexedDBInternalsUI::~IndexedDBInternalsUI() {}
 
 void IndexedDBInternalsUI::AddContextFromStoragePartition(
-    ContextList* contexts,
-    std::vector<base::FilePath>* paths,
     StoragePartition* partition) {
   scoped_refptr<IndexedDBContext> context = partition->GetIndexedDBContext();
-  contexts->push_back(context);
-  paths->push_back(partition->GetPath());
+  context->TaskRunner()->PostTask(
+      FROM_HERE,
+      base::Bind(&IndexedDBInternalsUI::GetAllOriginsOnIndexedDBThread,
+                 base::Unretained(this),
+                 context,
+                 partition->GetPath()));
 }
 
 void IndexedDBInternalsUI::GetAllOrigins(const base::ListValue* args) {
@@ -73,50 +72,30 @@ void IndexedDBInternalsUI::GetAllOrigins(const base::ListValue* args) {
   BrowserContext* browser_context =
       web_ui()->GetWebContents()->GetBrowserContext();
 
-  scoped_ptr<std::vector<base::FilePath> > paths(
-      new std::vector<base::FilePath>);
-  scoped_ptr<ContextList> contexts(new ContextList);
   BrowserContext::StoragePartitionCallback cb =
-      base::Bind(&AddContextFromStoragePartition, contexts.get(), paths.get());
+      base::Bind(&IndexedDBInternalsUI::AddContextFromStoragePartition,
+                 base::Unretained(this));
   BrowserContext::ForEachStoragePartition(browser_context, cb);
-
-  BrowserThread::PostTask(
-      BrowserThread::WEBKIT_DEPRECATED,
-      FROM_HERE,
-      base::Bind(&IndexedDBInternalsUI::GetAllOriginsOnWebkitThread,
-                 base::Unretained(this),
-                 base::Passed(&contexts),
-                 base::Passed(&paths)));
 }
 
-bool HostNameComparator(const IndexedDBInfo& i, const IndexedDBInfo& j) {
+static bool HostNameComparator(const IndexedDBInfo& i, const IndexedDBInfo& j) {
   return i.origin_.host() < j.origin_.host();
 }
 
-void IndexedDBInternalsUI::GetAllOriginsOnWebkitThread(
-    const scoped_ptr<ContextList> contexts,
-    const scoped_ptr<std::vector<base::FilePath> > context_paths) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
-  DCHECK_EQ(contexts->size(), context_paths->size());
+void IndexedDBInternalsUI::GetAllOriginsOnIndexedDBThread(
+    scoped_refptr<IndexedDBContext> context,
+    const base::FilePath& context_path) {
+  DCHECK(context->TaskRunner()->RunsTasksOnCurrentThread());
 
-  std::vector<base::FilePath>::const_iterator path_iter =
-      context_paths->begin();
-  for (ContextList::const_iterator iter = contexts->begin();
-       iter != contexts->end();
-       ++iter, ++path_iter) {
-    IndexedDBContext* context = iter->get();
-    const base::FilePath& context_path = *path_iter;
-
-    scoped_ptr<std::vector<IndexedDBInfo> > info_list(
-        new std::vector<IndexedDBInfo>(context->GetAllOriginsInfo()));
-    std::sort(info_list->begin(), info_list->end(), HostNameComparator);
-    BrowserThread::PostTask(BrowserThread::UI,
-                            FROM_HERE,
-                            base::Bind(&IndexedDBInternalsUI::OnOriginsReady,
-                                       base::Unretained(this),
-                                       base::Passed(&info_list),
-                                       context_path));
-  }
+  scoped_ptr<std::vector<IndexedDBInfo> > info_list(
+      new std::vector<IndexedDBInfo>(context->GetAllOriginsInfo()));
+  std::sort(info_list->begin(), info_list->end(), HostNameComparator);
+  BrowserThread::PostTask(BrowserThread::UI,
+                          FROM_HERE,
+                          base::Bind(&IndexedDBInternalsUI::OnOriginsReady,
+                                     base::Unretained(this),
+                                     base::Passed(&info_list),
+                                     context_path));
 }
 
 void IndexedDBInternalsUI::OnOriginsReady(
@@ -174,23 +153,22 @@ void IndexedDBInternalsUI::DownloadOriginData(const base::ListValue* args) {
       &FindContext, partition_path, &result_partition, &result_context);
   BrowserContext::ForEachStoragePartition(browser_context, cb);
   DCHECK(result_partition);
-  DCHECK(result_context.get());
+  DCHECK(result_context);
 
-  BrowserThread::PostTask(
-      BrowserThread::WEBKIT_DEPRECATED,
+  result_context->TaskRunner()->PostTask(
       FROM_HERE,
-      base::Bind(&IndexedDBInternalsUI::DownloadOriginDataOnWebkitThread,
+      base::Bind(&IndexedDBInternalsUI::DownloadOriginDataOnIndexedDBThread,
                  base::Unretained(this),
                  result_partition->GetPath(),
                  result_context,
                  origin_url));
 }
 
-void IndexedDBInternalsUI::DownloadOriginDataOnWebkitThread(
+void IndexedDBInternalsUI::DownloadOriginDataOnIndexedDBThread(
     const base::FilePath& partition_path,
     const scoped_refptr<IndexedDBContextImpl> context,
     const GURL& origin_url) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
+  DCHECK(context->TaskRunner()->RunsTasksOnCurrentThread());
 
   if (!context->IsInOriginSet(origin_url))
     return;
@@ -205,8 +183,7 @@ void IndexedDBInternalsUI::DownloadOriginDataOnWebkitThread(
   // has completed.
   base::FilePath temp_path = temp_dir.Take();
 
-  std::string origin_id =
-      webkit_database::GetIdentifierFromOrigin(origin_url);
+  std::string origin_id = webkit_database::GetIdentifierFromOrigin(origin_url);
   base::FilePath zip_path =
       temp_path.AppendASCII(origin_id).AddExtension(FILE_PATH_LITERAL("zip"));
 

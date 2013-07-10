@@ -91,7 +91,7 @@ bool DeleteTreeWorkItem::Do() {
     // We can safely delete the key files now.
     for (ptrdiff_t i = 0; !abort && i != num_key_files_; ++i) {
       base::FilePath& key_file = key_paths_[i];
-      if (!file_util::Delete(key_file, true)) {
+      if (!base::Delete(key_file, true)) {
         // This should not really be possible because of the above.
         PLOG(DFATAL) << "Unexpectedly could not delete " << key_file.value();
         abort = true;
@@ -126,7 +126,7 @@ bool DeleteTreeWorkItem::Do() {
         }
       }
     }
-    if (!file_util::Delete(root_path_, true)) {
+    if (!base::Delete(root_path_, true)) {
       LOG(ERROR) << "can not delete " << root_path_.value();
       return ignore_failure_;
     }
@@ -144,7 +144,7 @@ void DeleteTreeWorkItem::Rollback() {
     DCHECK(!backup_path_.path().empty());
     base::FilePath backup = backup_path_.path().Append(root_path_.BaseName());
     if (file_util::PathExists(backup))
-      file_util::Move(backup, root_path_);
+      base::Move(backup, root_path_);
   }
 
   for (ptrdiff_t i = 0; i != num_key_files_; ++i) {
@@ -154,7 +154,7 @@ void DeleteTreeWorkItem::Rollback() {
       base::FilePath backup_file =
           backup_dir.path().Append(key_file.BaseName());
       if (file_util::PathExists(backup_file) &&
-          !file_util::Move(backup_file, key_file)) {
+          !base::Move(backup_file, key_file)) {
         // This could happen if we could not delete the key file to begin with.
         PLOG(WARNING) << "Rollback: Failed to move backup file back in place: "
                       << backup_file.value() << " to " << key_file.value();

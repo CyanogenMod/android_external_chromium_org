@@ -89,8 +89,18 @@ void InputMethodTSF::SetFocusedTextInputClient(TextInputClient* client) {
   if (IsWindowFocused(client)) {
     ui::TSFBridge::GetInstance()->SetFocusedClient(
         GetAttachedWindowHandle(client), client);
+  } else if (!client) {
+    // SetFocusedTextInputClient(NULL) must be interpreted as
+    // "Remove the attached client".
+    ui::TSFBridge::GetInstance()->RemoveFocusedClient(
+        ui::TSFBridge::GetInstance()->GetFocusedTextInputClient());
   }
   InputMethodWin::SetFocusedTextInputClient(client);
+}
+
+bool InputMethodTSF::IsCandidatePopupOpen() const {
+  // TODO(yukishiino): Implement this method.
+  return false;
 }
 
 void InputMethodTSF::OnWillChangeFocusedClient(TextInputClient* focused_before,
@@ -118,12 +128,8 @@ void InputMethodTSF::OnDidChangeFocusedClient(TextInputClient* focused_before,
 }
 
 void InputMethodTSF::ConfirmCompositionText() {
-  if (!IsTextInputTypeNone()) {
-    // TSFBridge has not implemented ConfirmComposition yet. So here cancel
-    // the composition instead as a workaround.
-    // TODO(ime): Implement ConfirmComposition for TSF.
-    ui::TSFBridge::GetInstance()->CancelComposition();
-  }
+  if (!IsTextInputTypeNone())
+    ui::TSFBridge::GetInstance()->ConfirmComposition();
 }
 
 bool InputMethodTSF::IsWindowFocused(const TextInputClient* client) const {

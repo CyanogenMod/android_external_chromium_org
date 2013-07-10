@@ -78,6 +78,7 @@
 #include "ui/views/view_constants.h"
 #include "ui/views/widget/tooltip_manager.h"
 #include "ui/views/widget/widget.h"
+#include "ui/views/window/non_client_view.h"
 
 using content::OpenURLParams;
 using content::PageNavigator;
@@ -133,18 +134,6 @@ static const int kInstructionsPadding = 6;
 
 // Tag for the 'Other bookmarks' button.
 static const int kOtherFolderButtonTag = 1;
-
-// TODO(kuan): change chrome::kNTPBookmarkBarHeight to this new height when
-// search_ntp replaces ntp4; for now, while both versions exist, this new height
-// is only needed locally.
-static const int kSearchNewTabBookmarkBarHeight = 40;
-
-// TODO(kuan): change BookmarkBarView::kNewtabHorizontalPadding and
-// BookmarkBarView::kNewtabVerticalPadding to these new values when search_ntp
-// replaces ntp4; for now, while both versions exist, these new values are only
-// needed locally.
-static const int kSearchNewTabHorizontalPadding = 2;
-static const int kSearchNewTabVerticalPadding = 5;
 
 // Tag for the 'Apps Shortcut' button.
 static const int kAppsShortcutButtonTag = 2;
@@ -336,18 +325,6 @@ void RecordAppLaunch(Profile* profile, GURL url) {
       extension->GetType());
 }
 
-int GetNewtabHorizontalPadding() {
-  return chrome::IsInstantExtendedAPIEnabled()
-         ? kSearchNewTabHorizontalPadding
-         : BookmarkBarView::kNewtabHorizontalPadding;
-}
-
-int GetNewtabVerticalPadding() {
-  return chrome::IsInstantExtendedAPIEnabled()
-         ? kSearchNewTabVerticalPadding
-         : BookmarkBarView::kNewtabVerticalPadding;
-}
-
 }  // namespace
 
 // DropLocation ---------------------------------------------------------------
@@ -440,8 +417,7 @@ class BookmarkBarView::ButtonSeparatorView : public views::View {
 
 // static
 const int BookmarkBarView::kMaxButtonWidth = 150;
-const int BookmarkBarView::kNewtabHorizontalPadding = 8;
-const int BookmarkBarView::kNewtabVerticalPadding = 12;
+const int BookmarkBarView::kNewtabHorizontalPadding = 2;
 const int BookmarkBarView::kToolbarAttachedBookmarkBarOverlap = 3;
 
 static const gfx::ImageSkia& GetDefaultFavicon() {
@@ -529,19 +505,13 @@ void BookmarkBarView::SetBookmarkBarState(
   bookmark_bar_state_ = state;
 }
 
-int BookmarkBarView::GetToolbarOverlap(bool return_max) const {
-  // When not detached, always overlap by the full amount.
-  if (return_max || bookmark_bar_state_ != BookmarkBar::DETACHED)
-    return kToolbarAttachedBookmarkBarOverlap;
-  // When detached with an infobar, overlap by 0 whenever the infobar
-  // is above us (i.e. when we're detached), since drawing over the infobar
-  // looks weird.
-  if (IsDetached() && infobar_visible_)
+int BookmarkBarView::GetFullyDetachedToolbarOverlap() const {
+  if (!infobar_visible_ && browser_->window()->IsFullscreen()) {
+    // There is no client edge to overlap when detached in fullscreen with no
+    // infobars visible.
     return 0;
-  // When detached with no infobar, animate the overlap between the attached and
-  // detached states.
-  return static_cast<int>(
-      kToolbarAttachedBookmarkBarOverlap * size_animation_->GetCurrentValue());
+  }
+  return views::NonClientFrameView::kClientEdgeThickness;
 }
 
 bool BookmarkBarView::is_animating() {
@@ -676,7 +646,23 @@ double BookmarkBarView::GetAnimationValue() const {
 }
 
 int BookmarkBarView::GetToolbarOverlap() const {
-  return GetToolbarOverlap(false);
+  int attached_overlap = kToolbarAttachedBookmarkBarOverlap +
+      views::NonClientFrameView::kClientEdgeThickness;
+  if (!IsDetached())
+    return attached_overlap;
+
+  int detached_overlap = GetFullyDetachedToolbarOverlap();
+
+  // Do not animate the overlap when the infobar is above us (i.e. when we're
+  // detached), since drawing over the infobar looks weird.
+  if (infobar_visible_)
+    return detached_overlap;
+
+  // When detached with no infobar, animate the overlap between the attached and
+  // detached states.
+  return detached_overlap + static_cast<int>(
+      (attached_overlap - detached_overlap) *
+          size_animation_->GetCurrentValue());
 }
 
 gfx::Size BookmarkBarView::GetPreferredSize() {
@@ -689,9 +675,13 @@ gfx::Size BookmarkBarView::GetMinimumSize() {
   // Bookmarks" folder, along with appropriate margins and button padding.
   int width = kLeftMargin;
 
-  if (bookmark_bar_state_ == BookmarkBar::DETACHED) {
+  int height = browser_defaults::kBookmarkBarHeight;
+  if (IsDetached()) {
     double current_state = 1 - size_animation_->GetCurrentValue();
-    width += 2 * static_cast<int>(GetNewtabHorizontalPadding() * current_state);
+    width += 2 * static_cast<int>(kNewtabHorizontalPadding * current_state);
+    height += static_cast<int>(
+        (chrome::kNTPBookmarkBarHeight - browser_defaults::kBookmarkBarHeight) *
+            current_state);
   }
 
   gfx::Size other_bookmarked_pref;
@@ -712,7 +702,7 @@ gfx::Size BookmarkBarView::GetMinimumSize() {
       overflow_pref.width() + kButtonPadding +
       bookmarks_separator_pref.width();
 
-  return gfx::Size(width, browser_defaults::kBookmarkBarHeight);
+  return gfx::Size(width, height);
 }
 
 void BookmarkBarView::Layout() {
@@ -946,10 +936,10 @@ void BookmarkBarView::ShowImportDialog() {
   int64 install_time =
       g_browser_process->local_state()->GetInt64(prefs::kInstallDate);
   int64 time_from_install = base::Time::Now().ToTimeT() - install_time;
-  if (bookmark_bar_state_ == BookmarkBar::SHOW)
+  if (bookmark_bar_state_ == BookmarkBar::SHOW) {
     UMA_HISTOGRAM_COUNTS("Import.ShowDialog.FromBookmarkBarView",
                          time_from_install);
-  else if (bookmark_bar_state_ == BookmarkBar::DETACHED) {
+  } else if (bookmark_bar_state_ == BookmarkBar::DETACHED) {
     UMA_HISTOGRAM_COUNTS("Import.ShowDialog.FromFloatingBookmarkBarView",
                          time_from_install);
   }
@@ -1724,9 +1714,9 @@ gfx::Size BookmarkBarView::LayoutItems(bool compute_bounds_only) {
 
   if (IsDetached()) {
     double current_state = 1 - size_animation_->GetCurrentValue();
-    x += static_cast<int>(GetNewtabHorizontalPadding() * current_state);
+    x += static_cast<int>(kNewtabHorizontalPadding * current_state);
     y += (View::height() - browser_defaults::kBookmarkBarHeight) / 2;
-    width -= static_cast<int>(GetNewtabHorizontalPadding() * current_state);
+    width -= static_cast<int>(kNewtabHorizontalPadding * current_state);
     separator_margin -= static_cast<int>(kSeparatorMargin * current_state);
   } else {
     // For the attached appearance, pin the content to the bottom of the bar
@@ -1747,8 +1737,6 @@ gfx::Size BookmarkBarView::LayoutItems(bool compute_bounds_only) {
       bookmarks_separator_pref.width();
   if (other_bookmarked_button_->visible())
     max_x -= other_bookmarked_pref.width() + kButtonPadding;
-  if (apps_page_shortcut_->visible())
-    max_x -= apps_page_shortcut_pref.width() + kButtonPadding;
 
   // Next, layout out the buttons. Any buttons that are placed beyond the
   // visible region and made invisible.
@@ -1833,15 +1821,12 @@ gfx::Size BookmarkBarView::LayoutItems(bool compute_bounds_only) {
     x += kRightMargin;
     prefsize.set_width(x);
     if (IsDetached()) {
-      x += static_cast<int>(GetNewtabHorizontalPadding() *
+      x += static_cast<int>(kNewtabHorizontalPadding *
           (1 - size_animation_->GetCurrentValue()));
-      int ntp_bookmark_bar_height =
-          chrome::IsInstantExtendedAPIEnabled()
-          ? kSearchNewTabBookmarkBarHeight : chrome::kNTPBookmarkBarHeight;
       prefsize.set_height(
           browser_defaults::kBookmarkBarHeight +
           static_cast<int>(
-              (ntp_bookmark_bar_height -
+              (chrome::kNTPBookmarkBarHeight -
                browser_defaults::kBookmarkBarHeight) *
               (1 - size_animation_->GetCurrentValue())));
     } else {

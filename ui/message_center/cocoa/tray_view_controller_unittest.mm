@@ -4,7 +4,7 @@
 
 #import "ui/message_center/cocoa/tray_view_controller.h"
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
@@ -57,7 +57,7 @@ class TrayViewControllerTest : public ui::CocoaTest {
 
   base::MessageLoop message_loop_;
   scoped_ptr<base::RunLoop> nested_run_loop_;
-  scoped_nsobject<MCTrayViewController> tray_;
+  base::scoped_nsobject<MCTrayViewController> tray_;
 };
 
 TEST_F(TrayViewControllerTest, AddRemoveOne) {
@@ -203,29 +203,11 @@ namespace message_center {
 
 namespace {
 
-class FakeDelegate : public MessageCenter::Delegate {
- public:
-  FakeDelegate(NotifierSettingsProvider* provider) : provider_(provider) {}
-
-  virtual NotifierSettingsDelegate* ShowSettingsDialog(
-        gfx::NativeView context) OVERRIDE {
-    return message_center::ShowSettings(provider_, context);
-  }
-
-  virtual void DisableExtension(const std::string& notification_id) OVERRIDE {}
-  virtual void DisableNotificationsFromSource(
-      const std::string& notification_id) OVERRIDE {}
-  virtual void ShowSettings(const std::string& notification_id) OVERRIDE {}
-
-
-
-  NotifierSettingsProvider* provider_;
-};
-
 Notifier* NewNotifier(const std::string& id,
                       const std::string& title,
                       bool enabled) {
-  return new Notifier(id, base::UTF8ToUTF16(title), enabled);
+  NotifierId notifier_id(NotifierId::APPLICATION, id);
+  return new Notifier(notifier_id, base::UTF8ToUTF16(title), enabled);
 }
 
 }  // namespace
@@ -237,9 +219,7 @@ TEST_F(TrayViewControllerTest, Settings) {
   notifiers.push_back(NewNotifier("id2", "other title", /*enabled=*/false));
 
   FakeNotifierSettingsProvider provider(notifiers);
-  FakeDelegate delegate(&provider);
-
-  center_->SetDelegate(&delegate);
+  center_->SetNotifierSettingsProvider(&provider);
 
   CGFloat trayHeight = NSHeight([[tray_ view] frame]);
   EXPECT_EQ(0, provider.closed_called_count());

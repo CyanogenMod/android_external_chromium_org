@@ -152,8 +152,11 @@ class WEBKIT_STORAGE_BROWSER_EXPORT LocalFileSystemOperation
                      const StatusCallback& callback);
 
   // Synchronously gets the platform path for the given |url|.
-  void SyncGetPlatformPath(const FileSystemURL& url,
-                           base::FilePath* platform_path);
+  // This may fail if |file_system_context| returns NULL on GetFileUtil().
+  // In such a case, base::PLATFORM_FILE_ERROR_INVALID_OPERATION will be
+  // returned.
+  base::PlatformFileError SyncGetPlatformPath(const FileSystemURL& url,
+                                              base::FilePath* platform_path);
 
   FileSystemContext* file_system_context() const {
     return file_system_context_.get();
@@ -218,6 +221,9 @@ class WEBKIT_STORAGE_BROWSER_EXPORT LocalFileSystemOperation
   void DidFileExists(const StatusCallback& callback,
                      base::PlatformFileError rv,
                      const base::PlatformFileInfo& file_info);
+  void DidDeleteRecursively(const FileSystemURL& url,
+                            const StatusCallback& callback,
+                            base::PlatformFileError rv);
   void DidWrite(const FileSystemURL& url,
                 const WriteCallback& callback,
                 base::PlatformFileError rv,
@@ -225,8 +231,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT LocalFileSystemOperation
                 FileWriterDelegate::WriteProgressStatus write_status);
   void DidOpenFile(const OpenFileCallback& callback,
                    base::PlatformFileError rv,
-                   base::PassPlatformFile file,
-                   bool created);
+                   base::PassPlatformFile file);
 
   // Used only for internal assertions.
   // Returns false if there's another inflight pending operation.

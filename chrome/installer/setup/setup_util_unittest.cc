@@ -15,7 +15,7 @@
 #include "base/path_service.h"
 #include "base/process_util.h"
 #include "base/threading/platform_thread.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/windows_version.h"
 #include "chrome/common/chrome_paths.h"
@@ -124,7 +124,7 @@ TEST_F(SetupUtilTestWithDir, GetMaxVersionFromArchiveDirTest) {
       installer::GetMaxVersionFromArchiveDir(test_dir_.path()));
   ASSERT_EQ(version->GetString(), "1.0.0.0");
 
-  file_util::Delete(chrome_dir, true);
+  base::Delete(chrome_dir, true);
   ASSERT_FALSE(file_util::PathExists(chrome_dir));
   ASSERT_TRUE(installer::GetMaxVersionFromArchiveDir(test_dir_.path()) == NULL);
 

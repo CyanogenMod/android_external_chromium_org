@@ -20,7 +20,6 @@
 #include "breakpad/src/client/windows/sender/crash_report_sender.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
-#include "components/breakpad/common/breakpad_paths.h"
 
 namespace {
 
@@ -198,7 +197,7 @@ bool CrashService::Initialize(const std::wstring& command_line) {
   if (cmd_line.HasSwitch(kDumpsDir)) {
     dumps_path = base::FilePath(cmd_line.GetSwitchValueNative(kDumpsDir));
   } else {
-    if (!PathService::Get(breakpad::DIR_CRASH_DUMPS, &dumps_path)) {
+    if (!PathService::Get(chrome::DIR_CRASH_DUMPS, &dumps_path)) {
       LOG(ERROR) << "could not get DIR_CRASH_DUMPS";
       return false;
     }
@@ -373,7 +372,7 @@ void CrashService::OnClientDumpRequest(void* context,
     file_util::CreateDirectoryW(alternate_dump_location);
     alternate_dump_location = alternate_dump_location.Append(
         dump_location.BaseName());
-    file_util::Move(dump_location, alternate_dump_location);
+    base::Move(dump_location, alternate_dump_location);
     dump_location = alternate_dump_location;
   }
 

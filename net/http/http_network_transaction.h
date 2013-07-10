@@ -11,7 +11,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/net_log.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_auth.h"
@@ -24,11 +24,13 @@
 
 namespace net {
 
+class ClientSocketHandle;
 class HttpAuthController;
 class HttpNetworkSession;
 class HttpStreamBase;
 class HttpStreamRequest;
 class IOBuffer;
+class SpdySession;
 struct HttpRequestInfo;
 
 class NET_EXPORT_PRIVATE HttpNetworkTransaction
@@ -57,6 +59,8 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
                    int buf_len,
                    const CompletionCallback& callback) OVERRIDE;
   virtual void StopCaching() OVERRIDE {}
+  virtual bool GetFullRequestHeaders(
+      HttpRequestHeaders* headers) const OVERRIDE;
   virtual void DoneReading() OVERRIDE {}
   virtual const HttpResponseInfo* GetResponseInfo() const OVERRIDE;
   virtual LoadState GetLoadState() const OVERRIDE;
@@ -69,6 +73,10 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   virtual void OnStreamReady(const SSLConfig& used_ssl_config,
                              const ProxyInfo& used_proxy_info,
                              HttpStreamBase* stream) OVERRIDE;
+  virtual void OnWebSocketStreamReady(
+      const SSLConfig& used_ssl_config,
+      const ProxyInfo& used_proxy_info,
+      WebSocketStreamBase* stream) OVERRIDE;
   virtual void OnStreamFailed(int status,
                               const SSLConfig& used_ssl_config) OVERRIDE;
   virtual void OnCertificateError(int status,

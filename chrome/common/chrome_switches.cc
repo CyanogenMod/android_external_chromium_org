@@ -208,7 +208,7 @@ const char kCloudPrintServiceURL[]          = "cloud-print-service";
 
 // Comma-separated options to troubleshoot the component updater. Only valid
 // for the browser process.
-const char kComponentUpdaterDebug[]         = "component-updater-debug";
+const char kComponentUpdater[]              = "component-updater";
 
 // Causes the browser process to inspect loaded and registered DLLs for known
 // conflicts and warn the user.
@@ -352,18 +352,10 @@ const char kDisableIPPooling[]              = "disable-ip-pooling";
 // Disable always using the local NTP for the first NTP load of a new window.
 const char kDisableLocalFirstLoadNTP[] = "disable-local-first-load-ntp";
 
-// Disable local-only Instant extended API.
-const char kDisableLocalOnlyInstantExtendedAPI[] =
-    "disable-local-only-instant-extended-api";
-
 // Disable the behavior that the second click on a launcher item (the click when
 // the item is already active) minimizes the item.
 const char kDisableMinimizeOnSecondLauncherItemClick[] =
     "disable-minimize-on-second-launcher-item-click";
-
-// Disables the native Autofill UI, which is part of the browser process rather
-// than part of the renderer process.  http://crbug.com/51644
-const char kDisableNativeAutofillUi[]       = "disable-new-autofill-ui";
 
 // Disables the menu on the NTP for accessing sessions from other devices.
 const char kDisableNTPOtherSessionsMenu[]   = "disable-ntp-other-sessions-menu";
@@ -490,6 +482,9 @@ const char kEnableAdview[]                  = "enable-adview";
 // (for testing purposes, to skip the whitelist).
 const char kEnableAdviewSrcAttribute[]      = "enable-adview-src-attribute";
 
+// Enables the <window-controls> tag in platform apps.
+const char kEnableAppWindowControls[]       = "enable-app-window-controls";
+
 // Enables the experimental asynchronous DNS client.
 const char kEnableAsyncDns[]                = "enable-async-dns";
 
@@ -497,6 +492,10 @@ const char kEnableAsyncDns[]                = "enable-async-dns";
 // in response to a Negotiate challenge. See
 // HttpAuthHandlerNegotiate::CreateSPN for more background.
 const char kEnableAuthNegotiatePort[]       = "enable-auth-negotiate-port";
+
+// Enable using a public suffix based domain matching for autofill of passwords.
+const char kEnablePasswordAutofillPublicSuffixDomainMatching[] =
+    "enable-password-autofill-public-suffix-domain-matching";
 
 // Enables the pre- and auto-login features. When a user signs in to sync, the
 // browser's cookie jar is pre-filled with GAIA cookies. When the user visits a
@@ -521,14 +520,8 @@ const char kEnableContacts[]                = "enable-contacts";
 // Enables desktop guest mode.
 const char kEnableDesktopGuestMode[]        = "enable-desktop-guest-mode";
 
-// Enables device discovery.
-const char kEnableDeviceDiscovery[]        = "enable-device-discovery";
-
 // If true devtools experimental settings are enabled.
 const char kEnableDevToolsExperiments[]     = "enable-devtools-experiments";
-
-// Enable draggable menu button.
-const char kEnableDraggableMenuButton[]     = "enable-draggable-menu-button";
 
 // Enables extensions to be easily installed from sites other than the web
 // store. Without this flag, they can still be installed, but must be manually
@@ -554,6 +547,11 @@ const char kExtensionsInActionBox[]         = "extensions-in-action-box";
 // Extensions still need to explicitly request access to chrome:// URLs in the
 // manifest.
 const char kExtensionsOnChromeURLs[]        = "extensions-on-chrome-urls";
+
+// Enable the fast unload controller, which speeds up tab/window close by
+// running a tab's onunload js handler independently of the GUI -
+// crbug.com/142458 .
+const char kEnableFastUnload[]         = "enable-fast-unload";
 
 // By default, cookies are not allowed on file://. They are needed for testing,
 // for example page cycler and layout tests. See bug 1157243.
@@ -582,10 +580,6 @@ const char kEnableIPPooling[]               = "enable-ip-pooling";
 
 // Enable always using the local NTP for the first NTP load of a new window.
 const char kEnableLocalFirstLoadNTP[] = "enable-local-first-load-ntp";
-
-// Enable Instant extended API, but use only the local omnibox popup and NTP.
-const char kEnableLocalOnlyInstantExtendedAPI[] =
-    "enable-local-only-instant-extended-api";
 
 // Enables support for user profiles that are managed by another user and can
 // have restrictions applied.
@@ -631,8 +625,11 @@ const char kEnablePanels[]                  = "enable-panels";
 // account creation.
 const char kEnablePasswordGeneration[]      = "enable-password-generation";
 
-// Enables the installation and usage of Portable Native Client.
+// Enables the usage of Portable Native Client.
 const char kEnablePnacl[]                   = "enable-pnacl";
+
+// Disables the installation of Portable Native Client.
+const char kDisablePnaclInstall[]           = "disable-pnacl-install";
 
 // Enables tracking of tasks in profiler for viewing via about:profiler.
 // To predominantly disable tracking (profiling), use the command line switch:
@@ -664,6 +661,9 @@ const char kEnableSdch[]                    = "enable-sdch";
 
 // Disable SPDY/3.1. This is a temporary testing flag.
 const char kDisableSpdy31[]                 = "disable-spdy31";
+
+// Enable SPDY/4 alpha 2. This is a temporary testing flag.
+const char kEnableSpdy4a2[]                 = "enable-spdy4a2";
 
 // Enable SPDY CREDENTIAL frame support.  This is a temporary testing flag.
 const char kEnableSpdyCredentialFrames[]    = "enable-spdy-credential-frames";
@@ -740,11 +740,20 @@ const char kExtensionProcess[]              = "extension-process";
 // Frequency in seconds for Extensions auto-update.
 const char kExtensionsUpdateFrequency[]     = "extensions-update-frequency";
 
+// Additional query params to insert in the search and instant URLs.  Useful for
+// testing.
+const char kExtraSearchQueryParams[]        = "extra-search-query-params";
+
 // Fakes the channel of the browser for purposes of Variations filtering. This
 // is to be used for testing only. Possible values are "stable", "beta", "dev"
 // and "canary". Note that this only applies if the browser's reported channel
 // is UNKNOWN.
 const char kFakeVariationsChannel[]         = "fake-variations-channel";
+
+// If this flag is present then this command line is being delegated to an
+// already running chrome process via the fast path, ie: before chrome.dll is
+// loaded. It is useful to tell the difference for tracking purposes.
+const char kFastStart[]            = "fast-start";
 
 // These two flags are added around the switches about:flags adds to the
 // command line. This is useful to see which switches were added by about:flags
@@ -776,9 +785,8 @@ const char kForceLoadCloudPolicy[]          = "force-load-cloud-policy";
 // Enables using GAIA information to populate profile name and icon.
 const char kGaiaProfileInfo[]               = "gaia-profile-info";
 
-// Specifies an alternate URL to use for retrieving suggestions. Useful for
-// testing.
-const char kGoogleBaseSuggestURL[]    = "google-base-suggest-url";
+// Specifies an alternate URL to use for speaking to Google. Useful for testing.
+const char kGoogleBaseURL[]                 = "google-base-url";
 
 // Specifies an alternate URL to use for retrieving the search domain for
 // Google. Useful for testing.
@@ -837,8 +845,8 @@ const char kHostResolverRetryAttempts[]     = "host-resolver-retry-attempts";
 
 // Causes net::URLFetchers to ignore requests for SSL client certificates,
 // causing them to attempt an unauthenticated SSL/TLS session. This is intended
-// for use when testing various service URLs (eg: kPromoServerURL, kInstantURL,
-// kSbURLPrefix, kSyncServiceURL, etc)
+// for use when testing various service URLs (eg: kPromoServerURL, kSbURLPrefix,
+// kSyncServiceURL, etc)
 const char kIgnoreUrlFetcherCertRequests[]  =
     "ignore-urlfetcher-cert-requests";
 
@@ -851,10 +859,6 @@ const char kInstallFromWebstore[]           = "install-from-webstore";
 
 // Marks a renderer as an Instant process.
 const char kInstantProcess[]                = "instant-process";
-
-// URL to use for instant. If specified this overrides the url from the
-// TemplateURL.
-const char kInstantURL[]                    = "instant-url";
 
 // Used for testing - keeps browser alive after last browser window closes.
 const char kKeepAliveForTest[]              = "keep-alive-for-test";
@@ -879,10 +883,6 @@ const char kDisableCloudPolicyOnSignin[]    = "disable-cloud-policy-on-signin";
 
 // Loads an extension from the specified directory.
 const char kLoadExtension[]                 = "load-extension";
-
-// Enables displaying net log events on the command line, or writing the events
-// to a separate file if a file name is given.
-const char kLogNetLog[]                     = "log-net-log";
 
 // Makes Chrome default browser
 const char kMakeDefaultBrowser[]            = "make-default-browser";
@@ -915,33 +915,6 @@ const char kMetricsRecordingOnly[]          = "metrics-recording-only";
 
 // Enables multiprofile Chrome.
 const char kMultiProfiles[]                 = "multi-profiles";
-
-// Causes the process to run as a NativeClient broker
-// (used for launching NaCl loader processes on 64-bit Windows).
-const char kNaClBrokerProcess[]             = "nacl-broker";
-
-// Uses NaCl manifest URL to choose whether NaCl program will be debugged by
-// debug stub.
-// Switch value format: [!]pattern1,pattern2,...,patternN. Each pattern uses
-// the same syntax as patterns in Chrome extension manifest. The only difference
-// is that * scheme matches all schemes instead of matching only http and https.
-// If the value doesn't start with !, a program will be debugged if manifest URL
-// matches any pattern. If the value starts with !, a program will be debugged
-// if manifest URL does not match any pattern.
-const char kNaClDebugMask[]                 = "nacl-debug-mask";
-
-// Native Client GDB debugger that will be launched automatically when needed.
-const char kNaClGdb[]                       = "nacl-gdb";
-
-// GDB script to pass to the nacl-gdb debugger at startup.
-const char kNaClGdbScript[]                 = "nacl-gdb-script";
-
-// Causes the process to run as a NativeClient loader.
-const char kNaClLoaderProcess[]             = "nacl-loader";
-
-// On POSIX only: the contents of this flag are prepended to the nacl-loader
-// command line. Useful values might be "valgrind" or "xterm -e gdb --args".
-const char kNaClLoaderCmdPrefix[]           = "nacl-loader-cmd-prefix";
 
 // List of native messaging hosts outside of the default location. Used for
 // tests. The value must be comma-separate lists of key-value pairs separated
@@ -1374,9 +1347,6 @@ const char kSyncKeystoreEncryption[]        = "sync-keystore-encryption";
 const char kSyncShortInitialRetryOverride[] =
     "sync-short-initial-retry-override";
 
-// Overrides the default notification method for sync.
-const char kSyncNotificationMethod[]        = "sync-notification-method";
-
 // Overrides the default host:port used for sync notifications.
 const char kSyncNotificationHostPort[]      = "sync-notification-host-port";
 
@@ -1414,9 +1384,6 @@ const char kTabCapture[]                    = "enable-tab-capture";
 
 // Passes the name of the current running automated test to Chrome.
 const char kTestName[]                      = "test-name";
-
-// Runs the security test for the NaCl loader sandbox.
-const char kTestNaClSandbox[]               = "test-nacl-sandbox";
 
 // Type of the current test harness ("browser" or "ui").
 const char kTestType[]                      = "test-type";
@@ -1480,10 +1447,6 @@ const char kVariationsServerURL[]           = "variations-server-url";
 
 // Prints version information and quits.
 const char kVersion[]                       = "version";
-
-// Requests that Chrome connect to a remote viewer process using an IPC
-// channel of the given name.
-const char kViewerConnection[]              = "viewer-connection";
 
 // Cycle through a series of URLs listed in the specified file.
 const char kVisitURLs[]                     = "visit-urls";
@@ -1603,6 +1566,16 @@ const char kWaitForMutex[]                  = "wait-for-mutex";
 // Indicates that chrome was launched to service a search request in Windows 8.
 const char kWindows8Search[]           = "windows8-search";
 
+#endif
+
+#if defined(OS_WIN) && defined(USE_AURA)
+// Requests that Chrome connect to the running Metro viewer process.
+const char kViewerConnect[]                 = "viewer-connect";
+
+// Requests that Chrome launch the Metro viewer process via the given appid
+// (which is assumed to be registered as default browser) and synchronously
+// connect to it.
+const char kViewerLaunchViaAppId[]          = "viewer-launch-via-appid";
 #endif
 
 #ifndef NDEBUG

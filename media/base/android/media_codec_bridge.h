@@ -9,12 +9,14 @@
 #include <string>
 
 #include "base/android/scoped_java_ref.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/video_decoder_config.h"
 #include "ui/gfx/size.h"
 
 namespace media {
+
+struct SubsampleEntry;
 
 // This class serves as a bridge for native code to call java functions inside
 // Android MediaCodec class. For more information on Android MediaCodec, check
@@ -62,6 +64,14 @@ class MEDIA_EXPORT MediaCodecBridge {
   size_t QueueInputBuffer(int index, const uint8* data, int size,
                           const base::TimeDelta& presentation_time);
 
+  // Similar to the above call, but submits a buffer that is encrypted.
+  size_t QueueSecureInputBuffer(
+      int index, const uint8* data, int data_size,
+      const uint8* key_id, int key_id_size,
+      const uint8* iv, int iv_size,
+      const SubsampleEntry* subsamples, int subsamples_size,
+      const base::TimeDelta& presentation_time);
+
   // Submits an empty buffer with a EOS (END OF STREAM) flag.
   void QueueEOS(int input_buffer_index);
 
@@ -98,6 +108,9 @@ class MEDIA_EXPORT MediaCodecBridge {
   jobject media_codec() { return j_media_codec_.obj(); }
 
  private:
+  // Fills a particular input buffer and returns the size of copied data.
+  size_t FillInputBuffer(int index, const uint8* data, int data_size);
+
   // Java MediaCodec instance.
   base::android::ScopedJavaGlobalRef<jobject> j_media_codec_;
 
@@ -113,7 +126,7 @@ class AudioCodecBridge : public MediaCodecBridge {
   // Start the audio codec bridge.
   bool Start(const AudioCodec codec, int sample_rate, int channel_count,
              const uint8* extra_data, size_t extra_data_size,
-             bool play_audio);
+             bool play_audio, jobject media_crypto);
 
   // Play the output buffer. This call must be called after
   // DequeueOutputBuffer() and before ReleaseOutputBuffer.
@@ -135,8 +148,8 @@ class VideoCodecBridge : public MediaCodecBridge {
 
   // Start the video codec bridge.
   // TODO(qinmin): Pass codec specific data if available.
-  bool Start(
-      const VideoCodec codec, const gfx::Size& size, jobject surface);
+  bool Start(const VideoCodec codec, const gfx::Size& size, jobject surface,
+             jobject media_crypto);
 
  private:
   explicit VideoCodecBridge(const char* mime);

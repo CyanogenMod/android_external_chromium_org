@@ -29,10 +29,10 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/sync/signin_histogram.h"
+#include "chrome/browser/ui/sync/sync_promo_ui.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
-#include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -652,7 +652,7 @@ void SyncSetupHandler::RecordSignin() {
 }
 
 void SyncSetupHandler::OnDidClosePage(const ListValue* args) {
-  CloseSyncSetup();
+  CloseOverlay();
 }
 
 void SyncSetupHandler::SyncStartupFailed() {
@@ -932,6 +932,13 @@ void SyncSetupHandler::CloseSyncSetup() {
       if (sync_service) {
         DVLOG(1) << "Sync setup aborted by user action";
         sync_service->OnStopSyncingPermanently();
+#if !defined(OS_CHROMEOS)
+        // Sign out the user on desktop Chrome if they click cancel during
+        // initial setup.
+        // TODO(rsimha): Revisit this for M30. See http://crbug.com/252049.
+        if (sync_service->FirstSetupInProgress())
+          SigninManagerFactory::GetForProfile(GetProfile())->SignOut();
+#endif
       }
     }
 
@@ -1094,9 +1101,6 @@ LoginUIService* SyncSetupHandler::GetLoginUIService() const {
 }
 
 void SyncSetupHandler::CloseOverlay() {
-  // Stop a timer to handle timeout in waiting for sync setup.
-  backend_start_timer_.reset();
-
   CloseSyncSetup();
   web_ui()->CallJavascriptFunction("OptionsPage.closeOverlay");
 }

@@ -5,7 +5,7 @@
 #include "cc/resources/content_layer_updater.h"
 
 #include "base/debug/trace_event.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
 #include "cc/resources/layer_painter.h"
 #include "third_party/skia/include/core/SkCanvas.h"
@@ -27,12 +27,16 @@ ContentLayerUpdater::ContentLayerUpdater(
 
 ContentLayerUpdater::~ContentLayerUpdater() {}
 
+void ContentLayerUpdater::set_rendering_stats_instrumentation(
+    RenderingStatsInstrumentation* rsi) {
+  rendering_stats_instrumentation_ = rsi;
+}
+
 void ContentLayerUpdater::PaintContents(SkCanvas* canvas,
                                         gfx::Rect content_rect,
                                         float contents_width_scale,
                                         float contents_height_scale,
-                                        gfx::Rect* resulting_opaque_rect,
-                                        RenderingStats* stats) {
+                                        gfx::Rect* resulting_opaque_rect) {
   TRACE_EVENT0("cc", "ContentLayerUpdater::PaintContents");
   canvas->save();
   canvas->translate(SkFloatToScalar(-content_rect.x()),

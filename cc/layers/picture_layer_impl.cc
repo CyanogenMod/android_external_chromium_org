@@ -6,7 +6,7 @@
 
 #include <algorithm>
 
-#include "base/time.h"
+#include "base/time/time.h"
 #include "cc/base/math_util.h"
 #include "cc/base/util.h"
 #include "cc/debug/debug_colors.h"
@@ -32,7 +32,7 @@ namespace cc {
 PictureLayerImpl::PictureLayerImpl(LayerTreeImpl* tree_impl, int id)
     : LayerImpl(tree_impl, id),
       twin_layer_(NULL),
-      pile_(PicturePileImpl::Create(true)),
+      pile_(PicturePileImpl::Create()),
       last_content_scale_(0),
       is_mask_(false),
       ideal_page_scale_(0.f),
@@ -60,17 +60,10 @@ scoped_ptr<LayerImpl> PictureLayerImpl::CreateLayerImpl(
   return PictureLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
 }
 
-void PictureLayerImpl::CreateTilingSet() {
+void PictureLayerImpl::CreateTilingSetIfNeeded() {
   DCHECK(layer_tree_impl()->IsPendingTree());
-  DCHECK(!tilings_);
-  tilings_.reset(new PictureLayerTilingSet(this, bounds()));
-}
-
-void PictureLayerImpl::TransferTilingSet(
-    scoped_ptr<PictureLayerTilingSet> tilings) {
-  DCHECK(layer_tree_impl()->IsActiveTree());
-  tilings->SetClient(this);
-  tilings_ = tilings.Pass();
+  if (!tilings_)
+    tilings_.reset(new PictureLayerTilingSet(this, bounds()));
 }
 
 void PictureLayerImpl::PushPropertiesTo(LayerImpl* base_layer) {
@@ -84,16 +77,21 @@ void PictureLayerImpl::PushPropertiesTo(LayerImpl* base_layer) {
   twin_layer_ = NULL;
 
   layer_impl->SetIsMask(is_mask_);
-  layer_impl->TransferTilingSet(tilings_.Pass());
   layer_impl->pile_ = pile_;
-  pile_ = PicturePileImpl::Create(is_using_lcd_text_);
+  pile_ = NULL;
+
+  layer_impl->tilings_.swap(tilings_);
+  layer_impl->tilings_->SetClient(layer_impl);
+  if (tilings_)
+    tilings_->SetClient(this);
 
   layer_impl->raster_page_scale_ = raster_page_scale_;
   layer_impl->raster_device_scale_ = raster_device_scale_;
   layer_impl->raster_source_scale_ = raster_source_scale_;
   layer_impl->raster_contents_scale_ = raster_contents_scale_;
   layer_impl->low_res_raster_contents_scale_ = low_res_raster_contents_scale_;
-  layer_impl->is_using_lcd_text_ = is_using_lcd_text_;
+
+  layer_impl->UpdateLCDTextStatus(is_using_lcd_text_);
 
   // As an optimization, don't make a copy of this potentially complex region,
   // and swap it directly from the pending to the active layer.  In general, any
@@ -299,10 +297,6 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
   CleanUpTilingsOnActiveLayer(seen_tilings);
 }
 
-void PictureLayerImpl::DumpLayerProperties(std::string*, int indent) const {
-  // TODO(enne): implement me
-}
-
 void PictureLayerImpl::UpdateTilePriorities() {
   if (!tilings_->num_tilings())
     return;
@@ -325,7 +319,7 @@ void PictureLayerImpl::UpdateTilePriorities() {
   // At this point, tile priorities are going to be modified.
   layer_tree_impl()->WillModifyTilePriorities();
 
-  UpdateLCDTextStatus();
+  UpdateLCDTextStatus(can_use_lcd_text());
 
   gfx::Transform current_screen_space_transform = screen_space_transform();
 
@@ -457,7 +451,14 @@ scoped_refptr<Tile> PictureLayerImpl::CreateTile(PictureLayerTiling* tiling,
       contents_opaque() ? content_rect : gfx::Rect(),
       tiling->contents_scale(),
       id(),
-      layer_tree_impl()->source_frame_number()));
+      layer_tree_impl()->source_frame_number(),
+      is_using_lcd_text_));
+}
+
+void PictureLayerImpl::DestroyTile(Tile* tile) {
+  WhichTree tree =
+      layer_tree_impl()->IsActiveTree() ? ACTIVE_TREE : PENDING_TREE;
+  tile->SetPriority(tree, TilePriority());
 }
 
 void PictureLayerImpl::UpdatePile(Tile* tile) {
@@ -540,8 +541,7 @@ void PictureLayerImpl::SyncFromActiveLayer() {
 }
 
 void PictureLayerImpl::SyncFromActiveLayer(const PictureLayerImpl* other) {
-  // UpdateLCDTextStatus() depends on LCD text status always being synced.
-  is_using_lcd_text_ = other->is_using_lcd_text_;
+  UpdateLCDTextStatus(other->is_using_lcd_text_);
 
   if (!DrawsContent()) {
     ResetRasterScale();
@@ -560,8 +560,6 @@ void PictureLayerImpl::SyncFromActiveLayer(const PictureLayerImpl* other) {
   // trade-off for memory (use the same pile as much as possible, by switching
   // during DidBecomeActive) and for time (don't bother checking every tile
   // during activation to see if the new pile can still raster it).
-  //
-  // TODO(enne): Clean up this double loop.
   for (int x = 0; x < pile_->num_tiles_x(); ++x) {
     for (int y = 0; y < pile_->num_tiles_y(); ++y) {
       bool previously_had = other->pile_->HasRecordingAt(x, y);
@@ -578,11 +576,19 @@ void PictureLayerImpl::SyncFromActiveLayer(const PictureLayerImpl* other) {
   difference_region.Subtract(gfx::Rect(other->bounds()));
   invalidation_.Union(difference_region);
 
-  tilings_->RemoveAllTilings();
-  if (CanHaveTilings())
-    tilings_->AddTilingsToMatchScales(*other->tilings_, MinimumContentsScale());
-
-  DCHECK(bounds() == tilings_->layer_bounds());
+  if (CanHaveTilings()) {
+    // The recycle tree's tiling set is two frames out of date, so it needs to
+    // have both this frame's invalidation and the previous frame's invalidation
+    // (stored on the active layer).
+    Region tiling_invalidation = other->invalidation_;
+    tiling_invalidation.Union(invalidation_);
+    tilings_->SyncTilings(*other->tilings_,
+                          bounds(),
+                          tiling_invalidation,
+                          MinimumContentsScale());
+  } else {
+    tilings_->RemoveAllTilings();
+  }
 }
 
 void PictureLayerImpl::SyncTiling(
@@ -963,40 +969,16 @@ float PictureLayerImpl::MinimumContentsScale() const {
   return std::max(1.f / min_dimension, setting_min);
 }
 
-void PictureLayerImpl::UpdateLCDTextStatus() {
+void PictureLayerImpl::UpdateLCDTextStatus(bool new_status) {
   // Once this layer is not using lcd text, don't switch back.
   if (!is_using_lcd_text_)
     return;
 
-  if (is_using_lcd_text_ == can_use_lcd_text())
+  if (is_using_lcd_text_ == new_status)
     return;
 
-  is_using_lcd_text_ = can_use_lcd_text();
-
-  // As a trade-off between jank and drawing with the incorrect resources,
-  // don't ever update the active tree's resources in place.  Instead,
-  // update lcd text on the pending tree.  If this is the active tree and
-  // there is no pending twin, then call set needs commit to create one.
-  if (layer_tree_impl()->IsActiveTree() && !twin_layer_) {
-    // TODO(enne): Handle this by updating these resources in-place instead.
-    layer_tree_impl()->SetNeedsCommit();
-    return;
-  }
-
-  // The heuristic of never switching back to lcd text enabled implies that
-  // this property needs to be synchronized to the pending tree right now.
-  PictureLayerImpl* pending_layer =
-      layer_tree_impl()->IsActiveTree() ? twin_layer_ : this;
-  if (layer_tree_impl()->IsActiveTree() &&
-      pending_layer->is_using_lcd_text_ == is_using_lcd_text_)
-    return;
-
-  // Further tiles created due to new tilings should be considered invalidated.
-  pending_layer->invalidation_.Union(gfx::Rect(bounds()));
-  pending_layer->is_using_lcd_text_ = is_using_lcd_text_;
-  pending_layer->pile_ = PicturePileImpl::CreateFromOther(
-      pending_layer->pile_.get(), is_using_lcd_text_);
-  pending_layer->tilings_->DestroyAndRecreateTilesWithText();
+  is_using_lcd_text_ = new_status;
+  tilings_->SetCanUseLCDText(is_using_lcd_text_);
 }
 
 void PictureLayerImpl::ResetRasterScale() {
@@ -1011,8 +993,6 @@ bool PictureLayerImpl::CanHaveTilings() const {
   if (!DrawsContent())
     return false;
   if (pile_->recorded_region().IsEmpty())
-    return false;
-  if (!layer_tree_impl()->tile_manager())
     return false;
   if (draw_properties().can_draw_directly_to_backbuffer &&
       layer_tree_impl()->settings().force_direct_layer_drawing)

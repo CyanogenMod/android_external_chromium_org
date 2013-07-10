@@ -15,7 +15,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_states.h"
 #include "net/base/net_errors.h"
@@ -288,24 +288,20 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
                                           int len,
                                           SpdyDataFlags flags);
 
-  // Close the active stream with the given ID (if it's not already
-  // deleted). Note that that stream may hold the last reference to
-  // the session.
+  // Close the stream with the given ID, which must exist and be
+  // active. Note that that stream may hold the last reference to the
+  // session.
   void CloseActiveStream(SpdyStreamId stream_id, int status);
 
-  // Close the given created stream, which must not yet be
+  // Close the given created stream, which must exist but not yet be
   // active. Note that |stream| may hold the last reference to the
   // session.
   void CloseCreatedStream(const base::WeakPtr<SpdyStream>& stream, int status);
 
-  // If there is an active stream with the given ID, reset it by by
-  // sending a RST_STREAM frame with the given status code at the
-  // given priority, which should be the stream's priority, and
-  // deleting it.  There must be no external references to that active
-  // stream.  Was not piggybacked to CloseStream since not all of the
-  // calls to CloseStream necessitate sending a RST_STREAM.
+  // Send a RST_STREAM frame with the given status code and close the
+  // stream with the given ID, which must exist and be active. Note
+  // that that stream may hold the last reference to the session.
   void ResetStream(SpdyStreamId stream_id,
-                   RequestPriority priority,
                    SpdyRstStreamStatus status,
                    const std::string& description);
 
@@ -483,9 +479,25 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   typedef std::deque<SpdyStreamRequest*> PendingStreamRequestQueue;
   typedef std::set<SpdyStreamRequest*> PendingStreamRequestCompletionSet;
 
-  typedef std::map<SpdyStreamId, SpdyStream*> ActiveStreamMap;
-  typedef std::map<std::string, std::pair<SpdyStream*, base::TimeTicks> >
-      PushedStreamMap;
+  struct ActiveStreamInfo {
+    ActiveStreamInfo();
+    explicit ActiveStreamInfo(SpdyStream* stream);
+    ~ActiveStreamInfo();
+
+    SpdyStream* stream;
+    bool waiting_for_syn_reply;
+  };
+  typedef std::map<SpdyStreamId, ActiveStreamInfo> ActiveStreamMap;
+
+  struct PushedStreamInfo {
+    PushedStreamInfo();
+    PushedStreamInfo(SpdyStreamId stream_id, base::TimeTicks creation_time);
+    ~PushedStreamInfo();
+
+    SpdyStreamId stream_id;
+    base::TimeTicks creation_time;
+  };
+  typedef std::map<std::string, PushedStreamInfo> PushedStreamMap;
 
   typedef std::set<SpdyStream*> CreatedStreamSet;
 
@@ -521,6 +533,26 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // was closed). Processes as many pending stream requests as
   // possible.
   void ProcessPendingStreamRequests();
+
+  // Close the stream pointed to by the given iterator. Note that that
+  // stream may hold the last reference to the session.
+  void CloseActiveStreamIterator(ActiveStreamMap::iterator it, int status);
+
+  // Close the stream pointed to by the given iterator. Note that that
+  // stream may hold the last reference to the session.
+  void CloseCreatedStreamIterator(CreatedStreamSet::iterator it, int status);
+
+  // Calls CloseActiveStreamIterator() and then SendResetStreamFrame().
+  void ResetStreamIterator(ActiveStreamMap::iterator it,
+                           SpdyRstStreamStatus status,
+                           const std::string& description);
+
+  // Send a RST_STREAM frame with the given parameters. There must be
+  // no active stream with the given ID.
+  void SendResetStreamFrame(SpdyStreamId stream_id,
+                            RequestPriority priority,
+                            SpdyRstStreamStatus status,
+                            const std::string& description);
 
   // Start the DoLoop to read data from socket.
   void StartRead();
@@ -618,9 +650,13 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // list), returns NULL otherwise.
   base::WeakPtr<SpdyStream> GetActivePushStream(const std::string& url);
 
-  // Calls OnResponseReceived().
-  // Returns true if successful.
-  bool Respond(const SpdyHeaderBlock& headers, SpdyStream* stream);
+  // Delegates to |stream->OnInitialResponseHeadersReceived()|. If an
+  // error is returned, the last reference to |this| may have been
+  // released.
+  int OnInitialResponseHeadersReceived(const SpdyHeaderBlock& response_headers,
+                                       base::Time response_time,
+                                       base::TimeTicks recv_first_byte_time,
+                                       SpdyStream* stream);
 
   void RecordPingRTTHistogram(base::TimeDelta duration);
   void RecordHistograms();

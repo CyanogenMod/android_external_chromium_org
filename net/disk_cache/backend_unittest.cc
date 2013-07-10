@@ -270,7 +270,7 @@ TEST_F(DiskCacheTest, CreateBackend) {
 TEST_F(DiskCacheBackendTest, CreateBackend_MissingFile) {
   ASSERT_TRUE(CopyTestCache("bad_entry"));
   base::FilePath filename = cache_path_.AppendASCII("data_1");
-  file_util::Delete(filename, false);
+  base::Delete(filename, false);
   base::Thread cache_thread("CacheThread");
   ASSERT_TRUE(cache_thread.StartWithOptions(
       base::Thread::Options(base::MessageLoop::TYPE_IO, 0)));
@@ -2782,7 +2782,7 @@ TEST_F(DiskCacheBackendTest, FileSharing) {
   EXPECT_TRUE(file2.IsValid());
 #endif
 
-  EXPECT_TRUE(file_util::Delete(name, false));
+  EXPECT_TRUE(base::Delete(name, false));
 
   // We should be able to use the file.
   const int kSize = 200;
@@ -3062,6 +3062,11 @@ TEST_F(DiskCacheBackendTest, BlockfileCacheOverSimpleCache) {
   EXPECT_NE(net::OK, cb.GetResult(rv));
   delete cache;
   DisableIntegrityCheck();
+}
+
+TEST_F(DiskCacheBackendTest, SimpleCacheFixEnumerators) {
+  SetSimpleCacheMode();
+  BackendFixEnumerators();
 }
 
 #endif  // !defined(OS_WIN)

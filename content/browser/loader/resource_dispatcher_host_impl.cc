@@ -41,6 +41,7 @@
 #include "content/browser/loader/sync_resource_handler.h"
 #include "content/browser/loader/throttling_resource_handler.h"
 #include "content/browser/loader/transfer_navigation_resource_throttle.h"
+#include "content/browser/loader/upload_data_stream_builder.h"
 #include "content/browser/plugin_service_impl.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -86,10 +87,11 @@
 #include "net/url_request/url_request_job_factory.h"
 #include "webkit/browser/appcache/appcache_interceptor.h"
 #include "webkit/browser/blob/blob_storage_controller.h"
+#include "webkit/browser/fileapi/file_permission_policy.h"
+#include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/common/appcache/appcache_interfaces.h"
 #include "webkit/common/blob/shareable_file_reference.h"
-#include "webkit/glue/resource_request_body.h"
-#include "webkit/glue/webkit_glue.h"
+#include "webkit/common/resource_request_body.h"
 
 using base::Time;
 using base::TimeDelta;
@@ -155,10 +157,28 @@ void AbortRequestBeforeItStarts(ResourceMessageFilter* filter,
   }
 }
 
-GURL MaybeStripReferrer(const GURL& possible_referrer) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kNoReferrers))
-    return GURL();
-  return possible_referrer;
+void SetReferrerForRequest(net::URLRequest* request, const Referrer& referrer) {
+  if (!referrer.url.is_valid() ||
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kNoReferrers)) {
+    request->SetReferrer(std::string());
+  } else {
+    request->SetReferrer(referrer.url.spec());
+  }
+
+  net::URLRequest::ReferrerPolicy net_referrer_policy =
+      net::URLRequest::CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE;
+  switch (referrer.policy) {
+    case WebKit::WebReferrerPolicyDefault:
+      net_referrer_policy =
+          net::URLRequest::CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE;
+      break;
+    case WebKit::WebReferrerPolicyAlways:
+    case WebKit::WebReferrerPolicyNever:
+    case WebKit::WebReferrerPolicyOrigin:
+      net_referrer_policy = net::URLRequest::NEVER_CLEAR_REFERRER;
+      break;
+  }
+  request->set_referrer_policy(net_referrer_policy);
 }
 
 // Consults the RendererSecurity policy to determine whether the
@@ -167,7 +187,8 @@ GURL MaybeStripReferrer(const GURL& possible_referrer) {
 // if the renderer is attempting to upload an unauthorized file.
 bool ShouldServiceRequest(int process_type,
                           int child_id,
-                          const ResourceHostMsg_Request& request_data)  {
+                          const ResourceHostMsg_Request& request_data,
+                          fileapi::FileSystemContext* file_system_context)  {
   if (process_type == PROCESS_TYPE_PLUGIN)
     return true;
 
@@ -192,6 +213,15 @@ bool ShouldServiceRequest(int process_type,
         NOTREACHED() << "Denied unauthorized upload of "
                      << iter->path().value();
         return false;
+      }
+      if (iter->type() == ResourceRequestBody::Element::TYPE_FILE_FILESYSTEM) {
+        fileapi::FileSystemURL url = file_system_context->CrackURL(iter->url());
+        if (!policy->HasPermissionsForFileSystemFile(
+                child_id, url, fileapi::kReadFilePermissions)) {
+          NOTREACHED() << "Denied unauthorized upload of "
+                       << iter->url().spec();
+          return false;
+        }
       }
     }
   }
@@ -225,49 +255,6 @@ net::Error CallbackAndReturn(
       base::Bind(started_cb, static_cast<DownloadItem*>(NULL), net_error));
 
   return net_error;
-}
-
-int BuildLoadFlagsForRequest(
-    const ResourceHostMsg_Request& request_data,
-    int child_id,
-    bool is_sync_load) {
-  int load_flags = request_data.load_flags;
-
-  // Although EV status is irrelevant to sub-frames and sub-resources, we have
-  // to perform EV certificate verification on all resources because an HTTP
-  // keep-alive connection created to load a sub-frame or a sub-resource could
-  // be reused to load a main frame.
-  load_flags |= net::LOAD_VERIFY_EV_CERT;
-  if (request_data.resource_type == ResourceType::MAIN_FRAME) {
-    load_flags |= net::LOAD_MAIN_FRAME;
-  } else if (request_data.resource_type == ResourceType::SUB_FRAME) {
-    load_flags |= net::LOAD_SUB_FRAME;
-  } else if (request_data.resource_type == ResourceType::PREFETCH) {
-    load_flags |= (net::LOAD_PREFETCH | net::LOAD_DO_NOT_PROMPT_FOR_LOGIN);
-  } else if (request_data.resource_type == ResourceType::FAVICON) {
-    load_flags |= net::LOAD_DO_NOT_PROMPT_FOR_LOGIN;
-  }
-
-  if (is_sync_load)
-    load_flags |= net::LOAD_IGNORE_LIMITS;
-
-  ChildProcessSecurityPolicyImpl* policy =
-      ChildProcessSecurityPolicyImpl::GetInstance();
-  if (!policy->CanSendCookiesForOrigin(child_id, request_data.url)) {
-    load_flags |= (net::LOAD_DO_NOT_SEND_COOKIES |
-                   net::LOAD_DO_NOT_SEND_AUTH_DATA |
-                   net::LOAD_DO_NOT_SAVE_COOKIES);
-  }
-
-  // Raw headers are sensitive, as they include Cookie/Set-Cookie, so only
-  // allow requesting them if requester has ReadRawCookies permission.
-  if ((load_flags & net::LOAD_REPORT_RAW_HEADERS)
-      && !policy->CanReadRawCookies(child_id)) {
-    VLOG(1) << "Denied unauthorized request for raw headers";
-    load_flags &= ~net::LOAD_REPORT_RAW_HEADERS;
-  }
-
-  return load_flags;
 }
 
 int GetCertID(net::URLRequest* request, int child_id) {
@@ -450,6 +437,7 @@ void ResourceDispatcherHostImpl::CancelRequestsForContext(
 
 net::Error ResourceDispatcherHostImpl::BeginDownload(
     scoped_ptr<net::URLRequest> request,
+    const Referrer& referrer,
     bool is_content_initiated,
     ResourceContext* context,
     int child_id,
@@ -469,7 +457,8 @@ net::Error ResourceDispatcherHostImpl::BeginDownload(
   base::debug::Alias(url_buf);
   CHECK(ContainsKey(active_resource_contexts_, context));
 
-  request->SetReferrer(MaybeStripReferrer(GURL(request->referrer())).spec());
+  SetReferrerForRequest(request.get(), referrer);
+
   int extra_load_flags = net::LOAD_IS_DOWNLOAD;
   if (prefer_cache) {
     // If there is upload data attached, only retrieve from cache because there
@@ -633,21 +622,6 @@ bool ResourceDispatcherHostImpl::AcceptAuthRequest(
     net::AuthChallengeInfo* auth_info) {
   if (delegate_ && !delegate_->AcceptAuthRequest(loader->request(), auth_info))
     return false;
-
-  // Prevent third-party content from prompting for login, unless it is
-  // a proxy that is trying to authenticate.  This is often the foundation
-  // of a scam to extract credentials for another domain from the user.
-  if (!auth_info->is_proxy) {
-    HttpAuthResourceType resource_type =
-        HttpAuthResourceTypeOf(loader->request());
-    UMA_HISTOGRAM_ENUMERATION("Net.HttpAuthResource",
-                              resource_type,
-                              HTTP_AUTH_RESOURCE_LAST);
-
-    // TODO(tsepez): Return false on HTTP_AUTH_RESOURCE_BLOCKED_CROSS.
-    // The code once did this, but was changed due to http://crbug.com/174129.
-    // http://crbug.com/174179 has been filed to track this issue.
-  }
 
   return true;
 }
@@ -945,13 +919,13 @@ void ResourceDispatcherHostImpl::BeginRequest(
   CHECK(ContainsKey(active_resource_contexts_, resource_context));
 
   if (is_shutdown_ ||
-      !ShouldServiceRequest(process_type, child_id, request_data)) {
+      !ShouldServiceRequest(process_type, child_id, request_data,
+                            filter_->file_system_context())) {
     AbortRequestBeforeItStarts(filter_, sync_result, route_id, request_id);
     return;
   }
 
-  const Referrer referrer(MaybeStripReferrer(request_data.referrer),
-                          request_data.referrer_policy);
+  const Referrer referrer(request_data.referrer, request_data.referrer_policy);
 
   // Allow the observer to block/handle the request.
   if (delegate_ && !delegate_->ShouldBeginRequest(child_id,
@@ -959,8 +933,7 @@ void ResourceDispatcherHostImpl::BeginRequest(
                                                   request_data.method,
                                                   request_data.url,
                                                   request_data.resource_type,
-                                                  resource_context,
-                                                  referrer)) {
+                                                  resource_context)) {
     AbortRequestBeforeItStarts(filter_, sync_result, route_id, request_id);
     return;
   }
@@ -992,9 +965,8 @@ void ResourceDispatcherHostImpl::BeginRequest(
 
     request->set_method(request_data.method);
     request->set_first_party_for_cookies(request_data.first_party_for_cookies);
-    request->SetReferrer(referrer.url.spec());
-    webkit_glue::ConfigureURLRequestForReferrerPolicy(request,
-                                                      referrer.policy);
+    SetReferrerForRequest(request, referrer);
+
     net::HttpRequestHeaders headers;
     headers.AddHeadersFromString(request_data.headers);
     request->SetExtraRequestHeaders(headers);
@@ -1008,12 +980,12 @@ void ResourceDispatcherHostImpl::BeginRequest(
 
   // Resolve elements from request_body and prepare upload data.
   if (request_data.request_body.get()) {
-    request->set_upload(make_scoped_ptr(
-        request_data.request_body->ResolveElementsAndCreateUploadDataStream(
-            filter_->blob_storage_context()->controller(),
-            filter_->file_system_context(),
-            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)
-                .get())));
+    request->set_upload(UploadDataStreamBuilder::Build(
+        request_data.request_body.get(),
+        filter_->blob_storage_context()->controller(),
+        filter_->file_system_context(),
+        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)
+            .get()));
   }
 
   bool allow_download = request_data.allow_download &&
@@ -1276,9 +1248,8 @@ void ResourceDispatcherHostImpl::BeginSaveFile(
   scoped_ptr<net::URLRequest> request(
       request_context->CreateRequest(url, NULL));
   request->set_method("GET");
-  request->SetReferrer(MaybeStripReferrer(referrer.url).spec());
-  webkit_glue::ConfigureURLRequestForReferrerPolicy(request.get(),
-                                                    referrer.policy);
+  SetReferrerForRequest(request.get(), referrer);
+
   // So far, for saving page, we need fetch content from cache, in the
   // future, maybe we can use a configuration to configure this behavior.
   request->set_load_flags(net::LOAD_PREFERRING_CACHE);
@@ -1782,22 +1753,22 @@ void ResourceDispatcherHostImpl::ProcessBlockedRequestsForRoute(
   delete loaders;
 }
 
-ResourceDispatcherHostImpl::HttpAuthResourceType
-ResourceDispatcherHostImpl::HttpAuthResourceTypeOf(net::URLRequest* request) {
-  // Use the same critera as for cookies to determine the sub-resource type
-  // that is requesting to be authenticated.
-  if (!request->first_party_for_cookies().is_valid())
-    return HTTP_AUTH_RESOURCE_TOP;
+ResourceDispatcherHostImpl::HttpAuthRelationType
+ResourceDispatcherHostImpl::HttpAuthRelationTypeOf(
+    const GURL& request_url,
+    const GURL& first_party) {
+  if (!first_party.is_valid())
+    return HTTP_AUTH_RELATION_TOP;
 
   if (net::registry_controlled_domains::SameDomainOrHost(
-          request->first_party_for_cookies(), request->url(),
+          first_party, request_url,
           net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES))
-    return HTTP_AUTH_RESOURCE_SAME_DOMAIN;
+    return HTTP_AUTH_RELATION_SAME_DOMAIN;
 
   if (allow_cross_origin_auth_prompt())
-    return HTTP_AUTH_RESOURCE_ALLOWED_CROSS;
+    return HTTP_AUTH_RELATION_ALLOWED_CROSS;
 
-  return HTTP_AUTH_RESOURCE_BLOCKED_CROSS;
+  return HTTP_AUTH_RELATION_BLOCKED_CROSS;
 }
 
 bool ResourceDispatcherHostImpl::allow_cross_origin_auth_prompt() {
@@ -1846,6 +1817,64 @@ void ResourceDispatcherHostImpl::UnregisterResourceMessageDelegate(
     delete it->second;
     delegate_map_.erase(it);
   }
+}
+
+int ResourceDispatcherHostImpl::BuildLoadFlagsForRequest(
+    const ResourceHostMsg_Request& request_data,
+    int child_id,
+    bool is_sync_load) {
+  int load_flags = request_data.load_flags;
+
+  // Although EV status is irrelevant to sub-frames and sub-resources, we have
+  // to perform EV certificate verification on all resources because an HTTP
+  // keep-alive connection created to load a sub-frame or a sub-resource could
+  // be reused to load a main frame.
+  load_flags |= net::LOAD_VERIFY_EV_CERT;
+  if (request_data.resource_type == ResourceType::MAIN_FRAME) {
+    load_flags |= net::LOAD_MAIN_FRAME;
+  } else if (request_data.resource_type == ResourceType::SUB_FRAME) {
+    load_flags |= net::LOAD_SUB_FRAME;
+  } else if (request_data.resource_type == ResourceType::PREFETCH) {
+    load_flags |= (net::LOAD_PREFETCH | net::LOAD_DO_NOT_PROMPT_FOR_LOGIN);
+  } else if (request_data.resource_type == ResourceType::FAVICON) {
+    load_flags |= net::LOAD_DO_NOT_PROMPT_FOR_LOGIN;
+  } else if (request_data.resource_type == ResourceType::IMAGE) {
+    // Prevent third-party image content from prompting for login, as this
+    // is often a scam to extract credentials for another domain from the user.
+    // Only block image loads, as the attack applies largely to the "src"
+    // property of the <img> tag. It is common for web properties to allow
+    // untrusted values for <img src>; this is considered a fair thing for an
+    // HTML sanitizer to do. Conversely, any HTML sanitizer that didn't
+    // filter sources for <script>, <link>, <embed>, <object>, <iframe> tags
+    // would be considered vulnerable in and of itself.
+    HttpAuthRelationType relation_type = HttpAuthRelationTypeOf(
+        request_data.url, request_data.first_party_for_cookies);
+    if (relation_type == HTTP_AUTH_RELATION_BLOCKED_CROSS) {
+      load_flags |= (net::LOAD_DO_NOT_SEND_AUTH_DATA |
+                     net::LOAD_DO_NOT_PROMPT_FOR_LOGIN);
+    }
+  }
+
+  if (is_sync_load)
+    load_flags |= net::LOAD_IGNORE_LIMITS;
+
+  ChildProcessSecurityPolicyImpl* policy =
+      ChildProcessSecurityPolicyImpl::GetInstance();
+  if (!policy->CanSendCookiesForOrigin(child_id, request_data.url)) {
+    load_flags |= (net::LOAD_DO_NOT_SEND_COOKIES |
+                   net::LOAD_DO_NOT_SEND_AUTH_DATA |
+                   net::LOAD_DO_NOT_SAVE_COOKIES);
+  }
+
+  // Raw headers are sensitive, as they include Cookie/Set-Cookie, so only
+  // allow requesting them if requester has ReadRawCookies permission.
+  if ((load_flags & net::LOAD_REPORT_RAW_HEADERS)
+      && !policy->CanReadRawCookies(child_id)) {
+    VLOG(1) << "Denied unauthorized request for raw headers";
+    load_flags &= ~net::LOAD_REPORT_RAW_HEADERS;
+  }
+
+  return load_flags;
 }
 
 }  // namespace content

@@ -10,11 +10,11 @@
 #include "chrome/browser/ui/autofill/autofill_popup_view.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/autofill/browser/autofill_external_delegate.h"
-#include "components/autofill/browser/autofill_manager.h"
-#include "components/autofill/browser/test_autofill_external_delegate.h"
-#include "components/autofill/browser/test_autofill_manager_delegate.h"
 #include "components/autofill/content/browser/autofill_driver_impl.h"
+#include "components/autofill/core/browser/autofill_external_delegate.h"
+#include "components/autofill/core/browser/autofill_manager.h"
+#include "components/autofill/core/browser/test_autofill_external_delegate.h"
+#include "components/autofill/core/browser/test_autofill_manager_delegate.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/web/WebAutofillClient.h"
@@ -161,8 +161,7 @@ class AutofillPopupControllerUnitTest : public ChromeRenderViewHostTestHarness {
         web_contents(),
         manager_delegate_.get(),
         "en-US",
-        AutofillManager::ENABLE_AUTOFILL_DOWNLOAD_MANAGER,
-        false);
+        AutofillManager::ENABLE_AUTOFILL_DOWNLOAD_MANAGER);
     AutofillDriverImpl* driver =
         AutofillDriverImpl::FromWebContents(web_contents());
     external_delegate_.reset(

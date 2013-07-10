@@ -24,7 +24,7 @@ namespace net {
 
 // A connection to the network for multicast DNS clients. It reads data into
 // DnsResponse objects and alerts the delegate that a packet has been received.
-class MDnsConnection {
+class NET_EXPORT_PRIVATE MDnsConnection {
  public:
   class SocketFactory {
    public:
@@ -97,10 +97,12 @@ class MDnsConnection {
 
 class MDnsListenerImpl;
 
-class MDnsClientImpl : public MDnsClient {
+class NET_EXPORT_PRIVATE MDnsClientImpl : public MDnsClient {
  public:
-  // The core object exists while the MDnsClient is listening, and is
-  // deleted whenever the number of listeners reaches zero.
+  // The core object exists while the MDnsClient is listening, and is deleted
+  // whenever the number of listeners reaches zero. The deletion happens
+  // asychronously, so destroying the last listener does not immediately
+  // invalidate the core.
   class Core : public base::SupportsWeakPtr<Core>, MDnsConnection::Delegate {
    public:
     Core(MDnsClientImpl* client,
@@ -113,8 +115,7 @@ class MDnsClientImpl : public MDnsClient {
     // Send a query with a specific rrtype and name. Returns true on success.
     bool SendQuery(uint16 rrtype, std::string name);
 
-    // Add/remove a listener to the list of listener. May cause network traffic
-    // if listener is active.
+    // Add/remove a listener to the list of listeners.
     void AddListener(MDnsListenerImpl* listener);
     void RemoveListener(MDnsListenerImpl* listener);
 
@@ -128,7 +129,7 @@ class MDnsClientImpl : public MDnsClient {
     virtual void OnConnectionError(int error) OVERRIDE;
 
    private:
-    typedef std::pair<uint16, std::string> ListenerKey;
+    typedef std::pair<std::string, uint16> ListenerKey;
     typedef std::map<ListenerKey, ObserverList<MDnsListenerImpl>* >
     ListenerMap;
 
@@ -144,6 +145,12 @@ class MDnsClientImpl : public MDnsClient {
 
     // Callback for when a record is removed from the cache.
     void OnRecordRemoved(const RecordParsed* record);
+
+    void NotifyNsecRecord(const RecordParsed* record);
+
+    // Delete and erase the observer list for |key|. Only deletes the observer
+    // list if is empty.
+    void CleanupObserverList(const ListenerKey& key);
 
     ListenerMap listeners_;
 
@@ -174,24 +181,14 @@ class MDnsClientImpl : public MDnsClient {
       int flags,
       const MDnsTransaction::ResultCallback& callback) OVERRIDE;
 
-  // Returns true when the client is listening for network packets.
-  bool IsListeningForTests();
-
-  bool AddListenRef();
-  void SubtractListenRef();
+  virtual bool StartListening() OVERRIDE;
+  virtual void StopListening() OVERRIDE;
+  virtual bool IsListening() const OVERRIDE;
 
   Core* core() { return core_.get(); }
 
  private:
-  // This method causes the client to stop listening for packets. The
-  // call for it is deferred through the message loop after the last
-  // listener is removed. If another listener is added after a
-  // shutdown is scheduled but before it actually runs, the shutdown
-  // will be canceled.
-  void Shutdown();
-
   scoped_ptr<Core> core_;
-  int listen_refs_;
 
   scoped_ptr<MDnsConnection::SocketFactory> socket_factory_;
 
@@ -220,6 +217,10 @@ class MDnsListenerImpl : public MDnsListener,
   // Alert the delegate of a record update.
   void AlertDelegate(MDnsListener::UpdateType update_type,
                      const RecordParsed* record_parsed);
+
+  // Alert the delegate of the existence of an Nsec record.
+  void AlertNsecRecord();
+
  private:
   uint16 rrtype_;
   std::string name_;
@@ -268,6 +269,15 @@ class MDnsTransactionImpl : public base::SupportsWeakPtr<MDnsTransactionImpl>,
 
   // Signal the transactionis over and release all related resources.
   void SignalTransactionOver();
+
+  // Reads records from the cache and calls the callback for every
+  // record read.
+  void ServeRecordsFromCache();
+
+  // Send a query to the network and set up a timeout to time out the
+  // transaction. Returns false if it fails to start listening on the network
+  // or if it fails to send a query.
+  bool QueryAndListen();
 
   uint16 rrtype_;
   std::string name_;

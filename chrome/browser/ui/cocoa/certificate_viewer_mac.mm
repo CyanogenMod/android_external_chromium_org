@@ -10,8 +10,6 @@
 
 #include "base/mac/foundation_util.h"
 #include "base/mac/scoped_cftyperef.h"
-#include "base/memory/scoped_nsobject.h"
-#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/certificate_viewer.h"
 #import "chrome/browser/ui/cocoa/constrained_window/constrained_window_mac.h"
 #import "chrome/browser/ui/cocoa/constrained_window/constrained_window_sheet.h"
@@ -80,7 +78,7 @@ void ShowCertificateViewer(content::WebContents* web_contents,
 
 - (id)initWithCertificate:(net::X509Certificate*)certificate {
   if ((self = [super init])) {
-    base::mac::ScopedCFTypeRef<CFArrayRef> cert_chain(
+    base::ScopedCFTypeRef<CFArrayRef> cert_chain(
         certificate->CreateOSCertChainForCert());
     NSArray* certificates = base::mac::CFToNSCast(cert_chain.get());
     certificates_.reset([certificates retain]);
@@ -110,7 +108,7 @@ void ShowCertificateViewer(content::WebContents* web_contents,
   // the certificate viewer UI from displaying which certificate is revoked.
   // This is acceptable, as certificate revocation will still be shown in
   // the page info bubble if a certificate in the chain is actually revoked.
-  base::mac::ScopedCFTypeRef<CFMutableArrayRef> policies(
+  base::ScopedCFTypeRef<CFMutableArrayRef> policies(
       CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks));
   if (!policies.get()) {
     NOTREACHED();

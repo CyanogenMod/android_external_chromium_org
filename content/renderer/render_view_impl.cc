@@ -14,6 +14,7 @@
 #include "base/compiler_specific.h"
 #include "base/debug/alias.h"
 #include "base/debug/trace_event.h"
+#include "base/files/file_path.h"
 #include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
@@ -27,7 +28,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/child/appcache_dispatcher.h"
 #include "content/child/child_thread.h"
 #include "content/child/fileapi/file_system_dispatcher.h"
@@ -51,6 +52,7 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/context_menu_params.h"
+#include "content/public/common/drop_data.h"
 #include "content/public/common/favicon_url.h"
 #include "content/public/common/file_chooser_params.h"
 #include "content/public/common/ssl_status.h"
@@ -77,6 +79,7 @@
 #include "content/renderer/disambiguation_popup_helper.h"
 #include "content/renderer/dom_automation_controller.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
+#include "content/renderer/drop_data_builder.h"
 #include "content/renderer/external_popup_menu.h"
 #include "content/renderer/fetchers/alt_error_page_resource_fetcher.h"
 #include "content/renderer/geolocation_dispatcher.h"
@@ -200,9 +203,7 @@
 #include "ui/gfx/size_conversions.h"
 #include "ui/shell_dialogs/selected_file_info.h"
 #include "v8/include/v8.h"
-#include "webkit/base/file_path_string_conversions.h"
 #include "webkit/common/dom_storage/dom_storage_types.h"
-#include "webkit/common/webdropdata.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/weburlresponse_extradata_impl.h"
 #include "webkit/plugins/npapi/plugin_list.h"
@@ -225,14 +226,14 @@
 #include "content/renderer/android/content_detector.h"
 #include "content/renderer/android/email_detector.h"
 #include "content/renderer/android/phone_number_detector.h"
-#include "content/renderer/media/stream_texture_factory_impl_android.h"
-#include "content/renderer/media/webmediaplayer_proxy_impl_android.h"
+#include "content/renderer/media/android/stream_texture_factory_android.h"
+#include "content/renderer/media/android/webmediaplayer_android.h"
+#include "content/renderer/media/android/webmediaplayer_manager_android.h"
+#include "content/renderer/media/android/webmediaplayer_proxy_android.h"
 #include "third_party/WebKit/public/web/WebHitTestResult.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebFloatRect.h"
 #include "ui/gfx/rect_f.h"
-#include "webkit/renderer/media/android/webmediaplayer_android.h"
-#include "webkit/renderer/media/android/webmediaplayer_manager_android.h"
 
 #if defined(GOOGLE_TV)
 #include "content/renderer/media/rtc_video_decoder_bridge_tv.h"
@@ -593,6 +594,16 @@ static bool ShouldUseFixedPositionCompositing(float device_scale_factor) {
   return DeviceScaleEnsuresTextQuality(device_scale_factor);
 }
 
+static bool ShouldUseAcceleratedCompositingForOverflowScroll(
+    float device_scale_factor) {
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+
+  if (command_line.HasSwitch(switches::kEnableAcceleratedOverflowScroll))
+    return true;
+
+  return DeviceScaleEnsuresTextQuality(device_scale_factor);
+}
+
 static bool ShouldUseTransitionCompositing(float device_scale_factor) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
@@ -680,7 +691,7 @@ bool TouchEnabled() {
 #endif
 }
 
-WebDragData WebDropDataToDragData(const WebDropData& drop_data) {
+WebDragData DropDataToWebDragData(const DropData& drop_data) {
   std::vector<WebDragData::Item> item_list;
 
   // These fields are currently unused when dragging into WebKit.
@@ -716,7 +727,7 @@ WebDragData WebDropDataToDragData(const WebDropData& drop_data) {
     item_list.push_back(item);
   }
 
-  for (std::vector<WebDropData::FileInfo>::const_iterator it =
+  for (std::vector<DropData::FileInfo>::const_iterator it =
            drop_data.filenames.begin();
        it != drop_data.filenames.end();
        ++it) {
@@ -805,12 +816,13 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       handling_select_range_(false),
       next_snapshot_id_(0),
       allow_partial_swap_(params->allow_partial_swap),
-      context_menu_source_type_(content::CONTEXT_MENU_SOURCE_MOUSE) {
+      context_menu_source_type_(ui::MENU_SOURCE_MOUSE) {
 }
 
 void RenderViewImpl::Initialize(RenderViewImplParams* params) {
-  main_render_frame_.reset(new RenderFrameImpl(
-      this, params->main_frame_routing_id));
+  RenderFrameImpl* main_frame = RenderFrameImpl::Create(
+      this, params->main_frame_routing_id);
+  main_render_frame_.reset(main_frame);
 
 #if defined(ENABLE_PLUGINS)
   pepper_helper_.reset(new PepperPluginDelegateImpl(this));
@@ -882,11 +894,13 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
   webview()->setDeviceScaleFactor(device_scale_factor_);
   webview()->settings()->setAcceleratedCompositingForFixedPositionEnabled(
       ShouldUseFixedPositionCompositing(device_scale_factor_));
+  webview()->settings()->setAcceleratedCompositingForOverflowScrollEnabled(
+      ShouldUseAcceleratedCompositingForOverflowScroll(device_scale_factor_));
   webview()->settings()->setAcceleratedCompositingForTransitionEnabled(
       ShouldUseTransitionCompositing(device_scale_factor_));
 
   webkit_glue::ApplyWebPreferences(webkit_preferences_, webview());
-  webview()->initializeMainFrame(this);
+  webview()->initializeMainFrame(main_render_frame_.get());
 
   if (switches::IsTouchDragDropEnabled())
     webview()->settings()->setTouchDragDropEnabled(true);
@@ -910,8 +924,7 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
 #endif  // defined(OS_MACOSX)
 
 #if defined(OS_ANDROID)
-  media_player_manager_.reset(
-      new webkit_media::WebMediaPlayerManagerAndroid());
+  media_player_manager_.reset(new WebMediaPlayerManagerAndroid());
 #endif
 
   // The next group of objects all implement RenderViewObserver, so are deleted
@@ -2196,8 +2209,7 @@ RenderWidgetFullscreenPepper* RenderViewImpl::CreatePepperFullscreenContainer(
 #endif
 }
 
-WebStorageNamespace* RenderViewImpl::createSessionStorageNamespace(
-    unsigned quota) {
+WebStorageNamespace* RenderViewImpl::createSessionStorageNamespace() {
   CHECK(session_storage_namespace_id_ !=
         dom_storage::kInvalidSessionStorageNamespaceId);
   return new WebStorageNamespaceImpl(session_storage_namespace_id_);
@@ -2248,12 +2260,12 @@ bool RenderViewImpl::enumerateChosenDirectory(
   return Send(new ViewHostMsg_EnumerateDirectory(
       routing_id_,
       id,
-      webkit_base::WebStringToFilePath(path)));
+      base::FilePath::FromUTF16Unsafe(path)));
 }
 
 void RenderViewImpl::initializeHelperPluginWebFrame(
     WebKit::WebHelperPlugin* plugin) {
-  plugin->initializeFrame(this);
+  plugin->initializeFrame(main_render_frame_.get());
 }
 
 void RenderViewImpl::didStartLoading() {
@@ -2377,7 +2389,7 @@ bool RenderViewImpl::runFileChooser(
     ipc_params.mode = FileChooserParams::Open;
   ipc_params.title = params.title;
   ipc_params.default_file_name =
-      webkit_base::WebStringToFilePath(params.initialValue);
+      base::FilePath::FromUTF16Unsafe(params.initialValue);
   ipc_params.accept_types.reserve(params.acceptTypes.size());
   for (size_t i = 0; i < params.acceptTypes.size(); ++i)
     ipc_params.accept_types.push_back(params.acceptTypes[i]);
@@ -2452,7 +2464,7 @@ void RenderViewImpl::showContextMenu(
     WebFrame* frame, const WebContextMenuData& data) {
   ContextMenuParams params = ContextMenuParamsBuilder::Build(data);
   params.source_type = context_menu_source_type_;
-  if (context_menu_source_type_ == CONTEXT_MENU_SOURCE_TOUCH_EDIT_MENU) {
+  if (context_menu_source_type_ == ui::MENU_SOURCE_TOUCH_EDIT_MENU) {
     params.x = touch_editing_context_menu_location_.x();
     params.y = touch_editing_context_menu_location_.y();
   }
@@ -2579,7 +2591,7 @@ void RenderViewImpl::startDragging(WebFrame* frame,
                                    WebDragOperationsMask mask,
                                    const WebImage& image,
                                    const WebPoint& webImageOffset) {
-  WebDropData drop_data(data);
+  DropData drop_data(DropDataBuilder::Build(data));
   drop_data.referrer_policy = frame->document().referrerPolicy();
   gfx::Vector2d imageOffset(webImageOffset.x, webImageOffset.y);
   Send(new DragHostMsg_StartDragging(routing_id_,
@@ -2840,7 +2852,14 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
 
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
 #if defined(ENABLE_WEBRTC) && !defined(GOOGLE_TV)
-  if (MediaStreamImpl::CheckMediaStream(url)) {
+  webkit_media::MediaStreamClient* media_stream_client =
+      GetContentClient()->renderer()->OverrideCreateMediaStreamClient();
+  if (!media_stream_client) {
+    EnsureMediaStreamImpl();
+    media_stream_client = media_stream_impl_;
+  }
+
+  if (media_stream_client->IsMediaStream(url)) {
 #if defined(OS_ANDROID) && defined(ARCH_CPU_ARMEL)
     bool found_neon =
         (android_getCpuFeatures() & ANDROID_CPU_ARM_FEATURE_NEON) != 0;
@@ -2848,7 +2867,7 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
 #endif  // defined(OS_ANDROID) && defined(ARCH_CPU_ARMEL)
     EnsureMediaStreamImpl();
     return new webkit_media::WebMediaPlayerMS(
-        frame, client, AsWeakPtr(), media_stream_impl_, new RenderMediaLog());
+        frame, client, AsWeakPtr(), media_stream_client, new RenderMediaLog());
   }
 #endif
 
@@ -2869,17 +2888,17 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
   }
 
   if (!media_player_proxy_) {
-    media_player_proxy_ = new WebMediaPlayerProxyImplAndroid(
+    media_player_proxy_ = new WebMediaPlayerProxyAndroid(
         this, media_player_manager_.get());
   }
-  scoped_ptr<webkit_media::WebMediaPlayerAndroid> web_media_player_android(
-      new webkit_media::WebMediaPlayerAndroid(
+  scoped_ptr<WebMediaPlayerAndroid> web_media_player_android(
+      new WebMediaPlayerAndroid(
           frame,
           client,
           AsWeakPtr(),
           media_player_manager_.get(),
           media_player_proxy_,
-          new StreamTextureFactoryImpl(
+          new StreamTextureFactory(
               context_provider->Context3d(), gpu_channel_host, routing_id_),
           new RenderMediaLog()));
 #if defined(ENABLE_WEBRTC) && defined(GOOGLE_TV)
@@ -2928,15 +2947,14 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
 
   webkit_media::WebMediaPlayerParams params(
       RenderThreadImpl::current()->GetMediaThreadMessageLoopProxy(),
-      sink, gpu_factories, new RenderMediaLog());
-  WebMediaPlayer* media_player =
-      GetContentClient()->renderer()->OverrideCreateWebMediaPlayer(
-          this, frame, client, AsWeakPtr(), params);
-  if (!media_player) {
-    media_player = new webkit_media::WebMediaPlayerImpl(
-        frame, client, AsWeakPtr(), params);
-  }
-  return media_player;
+      base::Bind(&ContentRendererClient::DeferMediaLoad,
+                 base::Unretained(GetContentClient()->renderer()),
+                 static_cast<RenderView*>(this)),
+      sink,
+      gpu_factories,
+      new RenderMediaLog());
+  return new webkit_media::WebMediaPlayerImpl(
+      frame, client, AsWeakPtr(), params);
 }
 
 WebApplicationCacheHost* RenderViewImpl::createApplicationCacheHost(
@@ -4852,7 +4870,7 @@ void RenderViewImpl::SyncSelectionIfRequired() {
 
     range = ui::Range(location, location + length);
 
-    if (webview()->textInputType() != WebKit::WebTextInputTypeNone) {
+    if (webview()->textInputInfo().type != WebKit::WebTextInputTypeNone) {
       // If current focused element is editable, we will send 100 more chars
       // before and after selection. It is for input method surrounding text
       // feature.
@@ -5333,13 +5351,13 @@ void RenderViewImpl::OnAllowBindings(int enabled_bindings_flags) {
   RenderProcess::current()->AddBindings(enabled_bindings_flags);
 }
 
-void RenderViewImpl::OnDragTargetDragEnter(const WebDropData& drop_data,
+void RenderViewImpl::OnDragTargetDragEnter(const DropData& drop_data,
                                            const gfx::Point& client_point,
                                            const gfx::Point& screen_point,
                                            WebDragOperationsMask ops,
                                            int key_modifiers) {
   WebDragOperation operation = webview()->dragTargetDragEnter(
-      WebDropDataToDragData(drop_data),
+      DropDataToWebDragData(drop_data),
       client_point,
       screen_point,
       ops,
@@ -5425,7 +5443,7 @@ void RenderViewImpl::OnEnumerateDirectoryResponse(
 
   WebVector<WebString> ws_file_names(paths.size());
   for (size_t i = 0; i < paths.size(); ++i)
-    ws_file_names[i] = webkit_base::FilePathToWebString(paths[i]);
+    ws_file_names[i] = paths[i].AsUTF16Unsafe();
 
   enumeration_completions_[id]->didChooseFile(ws_file_names);
   enumeration_completions_.erase(id);
@@ -5443,9 +5461,9 @@ void RenderViewImpl::OnFileChooserResponse(
       files.size());
   for (size_t i = 0; i < files.size(); ++i) {
     WebFileChooserCompletion::SelectedFileInfo selected_file;
-    selected_file.path = webkit_base::FilePathToWebString(files[i].local_path);
-    selected_file.displayName = webkit_base::FilePathStringToWebString(
-        files[i].display_name);
+    selected_file.path = files[i].local_path.AsUTF16Unsafe();
+    selected_file.displayName =
+        base::FilePath(files[i].display_name).AsUTF16Unsafe();
     selected_files[i] = selected_file;
   }
 
@@ -5617,15 +5635,14 @@ void RenderViewImpl::OnGetSerializedHtmlDataForCurrentPageWithLocalLinks(
   // Convert std::vector of GURLs to WebVector<WebURL>
   WebVector<WebURL> weburl_links(links);
 
-  // Convert std::vector of std::strings to WebVector<WebString>
+  // Convert std::vector of base::FilePath to WebVector<WebString>
   WebVector<WebString> webstring_paths(local_paths.size());
   for (size_t i = 0; i < local_paths.size(); i++)
-    webstring_paths[i] = webkit_base::FilePathToWebString(local_paths[i]);
+    webstring_paths[i] = local_paths[i].AsUTF16Unsafe();
 
   WebPageSerializer::serialize(webview()->mainFrame(), true, this, weburl_links,
                                webstring_paths,
-                               webkit_base::FilePathToWebString(
-                                   local_directory_name));
+                               local_directory_name.AsUTF16Unsafe());
 }
 
 void RenderViewImpl::OnShouldClose() {
@@ -5951,7 +5968,7 @@ void RenderViewImpl::DidHandleKeyEvent() {
 }
 
 bool RenderViewImpl::WillHandleMouseEvent(const WebKit::WebMouseEvent& event) {
-  context_menu_source_type_ = CONTEXT_MENU_SOURCE_MOUSE;
+  context_menu_source_type_ = ui::MENU_SOURCE_MOUSE;
   possible_drag_event_info_.event_source =
       ui::DragDropTypes::DRAG_EVENT_SOURCE_MOUSE;
   possible_drag_event_info_.event_location =
@@ -5964,13 +5981,13 @@ bool RenderViewImpl::WillHandleMouseEvent(const WebKit::WebMouseEvent& event) {
 }
 
 bool RenderViewImpl::WillHandleKeyEvent(const WebKit::WebKeyboardEvent& event) {
-  context_menu_source_type_ = CONTEXT_MENU_SOURCE_KEYBOARD;
+  context_menu_source_type_ = ui::MENU_SOURCE_KEYBOARD;
   return false;
 }
 
 bool RenderViewImpl::WillHandleGestureEvent(
     const WebKit::WebGestureEvent& event) {
-  context_menu_source_type_ = CONTEXT_MENU_SOURCE_TOUCH;
+  context_menu_source_type_ = ui::MENU_SOURCE_TOUCH;
   possible_drag_event_info_.event_source =
       ui::DragDropTypes::DRAG_EVENT_SOURCE_TOUCH;
   possible_drag_event_info_.event_location =
@@ -6122,10 +6139,8 @@ void RenderViewImpl::SimulateImeConfirmComposition(
 }
 
 void RenderViewImpl::PpapiPluginCancelComposition() {
-  Send(new ViewHostMsg_ImeCancelComposition(routing_id()));
-  const ui::Range range(ui::Range::InvalidRange());
-  const std::vector<gfx::Rect> empty_bounds;
-  UpdateCompositionInfo(range, empty_bounds);
+  Send(new ViewHostMsg_ImeCancelComposition(routing_id()));;
+  UpdateCompositionInfo(true);
 }
 
 void RenderViewImpl::PpapiPluginSelectionChanged() {
@@ -6222,6 +6237,8 @@ void RenderViewImpl::SetDeviceScaleFactor(float device_scale_factor) {
     webview()->setDeviceScaleFactor(device_scale_factor);
     webview()->settings()->setAcceleratedCompositingForFixedPositionEnabled(
         ShouldUseFixedPositionCompositing(device_scale_factor_));
+  webview()->settings()->setAcceleratedCompositingForOverflowScrollEnabled(
+      ShouldUseAcceleratedCompositingForOverflowScroll(device_scale_factor_));
     webview()->settings()->setAcceleratedCompositingForTransitionEnabled(
         ShouldUseTransitionCompositing(device_scale_factor_));
   }
@@ -6256,6 +6273,9 @@ void RenderViewImpl::GetCompositionCharacterBounds(
   DCHECK(bounds);
   bounds->clear();
 
+  if (pepper_helper_->IsPluginFocused()) {
+    return;
+  }
   if (!webview())
     return;
   size_t start_offset = 0;
@@ -6279,6 +6299,13 @@ void RenderViewImpl::GetCompositionCharacterBounds(
     }
     bounds->push_back(webrect);
   }
+}
+
+void RenderViewImpl::GetCompositionRange(ui::Range* range) {
+  if (pepper_helper_->IsPluginFocused()) {
+    return;
+  }
+  RenderWidget::GetCompositionRange(range);
 }
 
 bool RenderViewImpl::CanComposeInline() {
@@ -6597,7 +6624,7 @@ void RenderViewImpl::OnContextMenuClosed(
 }
 
 void RenderViewImpl::OnShowContextMenu(const gfx::Point& location) {
-  context_menu_source_type_ = CONTEXT_MENU_SOURCE_TOUCH_EDIT_MENU;
+  context_menu_source_type_ = ui::MENU_SOURCE_TOUCH_EDIT_MENU;
   touch_editing_context_menu_location_ = location;
   if (webview())
     webview()->showContextMenu();

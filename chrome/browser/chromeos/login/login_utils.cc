@@ -26,7 +26,7 @@
 #include "base/synchronization/lock.h"
 #include "base/task_runner_util.h"
 #include "base/threading/worker_pool.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/about_flags.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_process.h"
@@ -254,7 +254,9 @@ void LoginUtilsImpl::DoBrowserLaunch(Profile* profile,
   CommandLine user_flags(CommandLine::NO_PROGRAM);
   about_flags::PrefServiceFlagsStorage flags_storage_(profile->GetPrefs());
   about_flags::ConvertFlagsToSwitches(&flags_storage_, &user_flags);
-  if (!about_flags::AreSwitchesIdenticalToCurrentCommandLine(
+  // Only restart if needed and if not going into managed mode.
+  if (!UserManager::Get()->IsLoggedInAsLocallyManagedUser() &&
+      !about_flags::AreSwitchesIdenticalToCurrentCommandLine(
           user_flags, *CommandLine::ForCurrentProcess())) {
     CommandLine::StringVector flags;
     // argv[0] is the program name |CommandLine::NO_PROGRAM|.

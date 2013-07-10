@@ -8,7 +8,7 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
@@ -580,7 +580,8 @@ class OmniboxViewTest : public InProcessBrowserTest,
                 GetController())));
 
     GURL url = browser()->tab_strip_model()->GetActiveWebContents()->GetURL();
-    EXPECT_STREQ(kDesiredTLDHostname, url.host().c_str());
+    EXPECT_EQ(kDesiredTLDHostname, url.host());
+    EXPECT_EQ("/", url.path());
   }
 
   void AltEnterTest() {
@@ -616,7 +617,7 @@ class OmniboxViewTest : public InProcessBrowserTest,
             &browser()->tab_strip_model()->GetActiveWebContents()->
                 GetController())));
     GURL url = browser()->tab_strip_model()->GetActiveWebContents()->GetURL();
-    EXPECT_STREQ(kSearchTextURL, url.spec().c_str());
+    EXPECT_EQ(kSearchTextURL, url.spec());
 
     // Test that entering a single character then Enter performs a search.
     chrome::FocusLocationBar(browser());
@@ -637,7 +638,7 @@ class OmniboxViewTest : public InProcessBrowserTest,
             &browser()->tab_strip_model()->GetActiveWebContents()->
                 GetController())));
     url = browser()->tab_strip_model()->GetActiveWebContents()->GetURL();
-    EXPECT_STREQ(kSearchSingleCharURL, url.spec().c_str());
+    EXPECT_EQ(kSearchSingleCharURL, url.spec());
   }
 
   void EscapeToDefaultMatchTest() {
@@ -1336,14 +1337,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_Escape) {
 }
 #undef MAYBE_ESCAPE
 
-// http://crbug.com/131179
-#if defined(OS_LINUX)
-#define MAYBE_DesiredTLD DISABLED_DesiredTLD
-#else
-#define MAYBE_DesiredTLD DesiredTLD
-#endif
-
-IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_DesiredTLD) {
+IN_PROC_BROWSER_TEST_F(OmniboxViewTest, DesiredTLD) {
   DesiredTLDTest();
 }
 

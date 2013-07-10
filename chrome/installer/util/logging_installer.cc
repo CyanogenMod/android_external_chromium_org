@@ -47,8 +47,8 @@ TruncateResult TruncateLogFileIfNeeded(const base::FilePath& log_file) {
     if (old_log_file.IsValid()) {
       result = LOGFILE_DELETED;
       base::FilePath tmp_log(log_file.value() + FILE_PATH_LITERAL(".tmp"));
-      // Note that file_util::Move will attempt to replace existing files.
-      if (file_util::Move(log_file, tmp_log)) {
+      // Note that base::Move will attempt to replace existing files.
+      if (base::Move(log_file, tmp_log)) {
         int64 offset = log_size - kTruncatedInstallerLogFileSize;
         std::string old_log_data(kTruncatedInstallerLogFileSize, 0);
         int bytes_read = base::ReadPlatformFile(old_log_file,
@@ -63,7 +63,7 @@ TruncateResult TruncateLogFileIfNeeded(const base::FilePath& log_file) {
           result = LOGFILE_TRUNCATED;
         }
       }
-    } else if (file_util::Delete(log_file, false)) {
+    } else if (base::Delete(log_file, false)) {
       // Couldn't get sufficient access to the log file, optimistically try to
       // delete it.
       result = LOGFILE_DELETED;
@@ -89,12 +89,10 @@ void InitInstallerLogging(const installer::MasterPreferences& prefs) {
   base::FilePath log_file_path(GetLogFilePath(prefs));
   TruncateLogFileIfNeeded(log_file_path);
 
-  logging::InitLogging(
-      log_file_path.value().c_str(),
-      logging::LOG_ONLY_TO_FILE,
-      logging::LOCK_LOG_FILE,
-      logging::APPEND_TO_OLD_LOG_FILE,
-      logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS);
+  logging::LoggingSettings settings;
+  settings.logging_dest = logging::LOG_TO_FILE;
+  settings.log_file = log_file_path.value().c_str();
+  logging::InitLogging(settings);
 
   if (prefs.GetBool(installer::master_preferences::kVerboseLogging,
                     &value) && value) {

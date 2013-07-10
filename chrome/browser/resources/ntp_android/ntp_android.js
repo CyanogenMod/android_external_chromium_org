@@ -373,6 +373,12 @@ cr.define('ntp', function() {
 
   function setIncognitoMode(incognito) {
     isIncognito = incognito;
+    if (!isIncognito) {
+      chrome.send('getMostVisited');
+      chrome.send('getRecentlyClosedTabs');
+      chrome.send('getForeignSessions');
+      chrome.send('getPromotions');
+    }
   }
 
   /**
@@ -446,11 +452,6 @@ cr.define('ntp', function() {
 
     // Initialize virtual computers for the sync promo.
     createPromoVirtualComputers();
-
-    chrome.send('getMostVisited');
-    chrome.send('getRecentlyClosedTabs');
-    chrome.send('getForeignSessions');
-    chrome.send('getPromotions');
 
     setCurrentBookmarkFolderData(
         localStorage.getItem(DEFAULT_BOOKMARK_FOLDER_KEY));
@@ -707,9 +708,7 @@ cr.define('ntp', function() {
       image.onload = function() {
         var w = image.width;
         var h = image.height;
-        var wDip = w / window.devicePixelRatio;
-        var hDip = h / window.devicePixelRatio;
-        if (Math.floor(wDip) <= 16 || Math.floor(hDip) <= 16) {
+        if (Math.floor(w) <= 16 || Math.floor(h) <= 16) {
           // it's a standard favicon (or at least it's small).
           faviconBox.classList.add('document');
 
@@ -740,13 +739,13 @@ cr.define('ntp', function() {
         } else {
           // It's an html5 icon (or at least it's larger).
           // Rescale it to be no bigger than 64x64 dip.
-          var maxDip = 64; // DIP
-          if (wDip > maxDip || hDip > maxDip) {
-            var scale = (wDip > hDip) ? (maxDip / wDip) : (maxDip / hDip);
-            wDip *= scale;
-            hDip *= scale;
+          var max = 64;
+          if (w > max || h > max) {
+            var scale = (w > h) ? (max / w) : (max / h);
+            w *= scale;
+            h *= scale;
           }
-          faviconIcon.style.backgroundSize = wDip + 'px ' + hDip + 'px';
+          faviconIcon.style.backgroundSize = w + 'px ' + h + 'px';
         }
       };
       faviconBox.appendChild(faviconIcon);
@@ -1796,6 +1795,9 @@ cr.define('ntp', function() {
           // use a section divider.
           var needSectionDivider =
               (tabNum + 1 == tabs.length) && (winNum + 1 < windows.length);
+          tab.icon = tab.icon ||
+            'chrome://session-favicon/size/16@1x/' + tab.url;
+
           openTabsList.push({
             timestamp: tab.timestamp,
             title: tab.title,
@@ -1804,7 +1806,7 @@ cr.define('ntp', function() {
             winNum: winNum,
             sessionId: tab.sessionId,
             icon: tab.icon,
-            iconSize: 32,
+            iconSize: 16,
             divider: needSectionDivider ? 'section' : 'standard',
           });
         }
@@ -2202,7 +2204,7 @@ cr.define('ntp', function() {
     // 'natural' height and width of the thumbnail
     var thumbHeight = 72;
     var thumbWidth = 108;
-    var labelHeight = 20;
+    var labelHeight = 25;
     var labelWidth = thumbWidth + 20;
     var labelLeft = (thumbWidth - labelWidth) / 2;
     var itemHeight = thumbHeight + labelHeight;
@@ -2214,9 +2216,6 @@ cr.define('ntp', function() {
     var itemMarginRight = 20;
 
     var listHeight = 0;
-    // set it to the unscaled size so centerGrid works correctly
-    modifyCssRule('body[device="phone"] .thumbnail-cell',
-        'width', thumbWidth + 'px');
 
     var screenHeight =
         document.documentElement.offsetHeight -
@@ -2225,7 +2224,9 @@ cr.define('ntp', function() {
     if (isPortrait()) {
       mostVisitedList.setAttribute(GRID_COLUMNS, '2');
       listHeight = screenHeight * .85;
-      listHeight = listHeight >= 420 ? 420 : listHeight;
+      // Ensure that listHeight is not too small and not too big.
+      listHeight = Math.max(listHeight, (itemHeight * 3) + 20);
+      listHeight = Math.min(listHeight, 420);
       // Size for 3 rows (4 gutters)
       itemMarginTop = (listHeight - (itemHeight * 3)) / 4;
     } else {
@@ -2241,8 +2242,8 @@ cr.define('ntp', function() {
         var scale = (screenHeight - 2 * labelHeight -
             targetRemainder) / (2 * thumbHeight);
         // update values based on scale
-        thumbWidth *= scale;
-        thumbHeight *= scale;
+        thumbWidth = Math.round(thumbWidth * scale);
+        thumbHeight = Math.round(thumbHeight * scale);
         labelWidth = thumbWidth + 20;
         itemHeight = thumbHeight + labelHeight;
       }

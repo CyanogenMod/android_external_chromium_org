@@ -19,7 +19,7 @@
 #include "base/mac/mac_logging.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/mac/scoped_ioobject.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/sys_string_conversions.h"
@@ -99,7 +99,7 @@ LSSharedFileListItemRef GetLoginItemForApp() {
     return NULL;
   }
 
-  scoped_nsobject<NSArray> login_items_array(
+  base::scoped_nsobject<NSArray> login_items_array(
       CFToNSCast(LSSharedFileListCopySnapshot(login_items, NULL)));
 
   NSURL* url = [NSURL fileURLWithPath:[base::mac::MainBundle() bundlePath]];
@@ -142,6 +142,15 @@ bool FSRefFromPath(const std::string& path, FSRef* ref) {
   OSStatus status = FSPathMakeRef((const UInt8*)path.c_str(),
                                   ref, nil);
   return status == noErr;
+}
+
+CGColorSpaceRef GetGenericRGBColorSpace() {
+  // Leaked. That's OK, it's scoped to the lifetime of the application.
+  static CGColorSpaceRef g_color_space_generic_rgb(
+      CGColorSpaceCreateWithName(kCGColorSpaceGenericRGB));
+  DLOG_IF(ERROR, !g_color_space_generic_rgb) <<
+      "Couldn't get the generic RGB color space";
+  return g_color_space_generic_rgb;
 }
 
 CGColorSpaceRef GetSRGBColorSpace() {
@@ -480,17 +489,17 @@ void RemoveFromLoginItems() {
 bool WasLaunchedAsLoginOrResumeItem() {
   ProcessSerialNumber psn = { 0, kCurrentProcess };
 
-  scoped_nsobject<NSDictionary> process_info(
-      CFToNSCast(ProcessInformationCopyDictionary(&psn,
-                     kProcessDictionaryIncludeAllInformationMask)));
+  base::scoped_nsobject<NSDictionary> process_info(
+      CFToNSCast(ProcessInformationCopyDictionary(
+          &psn, kProcessDictionaryIncludeAllInformationMask)));
 
   long long temp = [[process_info objectForKey:@"ParentPSN"] longLongValue];
   ProcessSerialNumber parent_psn =
       { (temp >> 32) & 0x00000000FFFFFFFFLL, temp & 0x00000000FFFFFFFFLL };
 
-  scoped_nsobject<NSDictionary> parent_info(
-      CFToNSCast(ProcessInformationCopyDictionary(&parent_psn,
-                     kProcessDictionaryIncludeAllInformationMask)));
+  base::scoped_nsobject<NSDictionary> parent_info(
+      CFToNSCast(ProcessInformationCopyDictionary(
+          &parent_psn, kProcessDictionaryIncludeAllInformationMask)));
 
   // Check that creator process code is that of loginwindow.
   BOOL result =

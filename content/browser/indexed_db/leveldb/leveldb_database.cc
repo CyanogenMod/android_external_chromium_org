@@ -4,6 +4,7 @@
 
 #include "content/browser/indexed_db/leveldb/leveldb_database.h"
 
+#include <cerrno>
 #include <string>
 
 #include "base/basictypes.h"
@@ -11,6 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string16.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
 #include "content/browser/indexed_db/leveldb/leveldb_comparator.h"
@@ -90,9 +92,7 @@ static leveldb::Status OpenDB(leveldb::Comparator* comparator,
   // it for IndexedDB. http://crbug.com/81384
   options.compression = leveldb::kNoCompression;
 
-  // 20 max_open_files is the minimum LevelDB allows but its cache behaves
-  // poorly with less than 4 files per shard. As of this writing the latest
-  // leveldb (1.9) hardcodes 16 shards. See
+  // For info about the troubles we've run into with this parameter, see:
   // https://code.google.com/p/chromium/issues/detail?id=227313#c11
   options.max_open_files = 80;
   options.env = env;
@@ -110,10 +110,10 @@ bool LevelDBDatabase::Destroy(const base::FilePath& file_name) {
   return s.ok();
 }
 
-static int CheckFreeSpace(const char* type, const base::FilePath& file_name) {
-  // TODO(dgrogan): Change string16 -> std::string.
-  string16 name = ASCIIToUTF16("WebCore.IndexedDB.LevelDB.Open") +
-                  ASCIIToUTF16(type) + ASCIIToUTF16("FreeDiskSpace");
+static int CheckFreeSpace(const char* const type,
+                          const base::FilePath& file_name) {
+  std::string name =
+      std::string("WebCore.IndexedDB.LevelDB.Open") + type + "FreeDiskSpace";
   int64 free_disk_space_in_k_bytes =
       base::SysInfo::AmountOfFreeDiskSpace(file_name) / 1024;
   if (free_disk_space_in_k_bytes < 0) {
@@ -130,7 +130,7 @@ static int CheckFreeSpace(const char* type, const base::FilePath& file_name) {
                                            : free_disk_space_in_k_bytes;
   const uint64 histogram_max = static_cast<uint64>(1e9);
   COMPILE_ASSERT(histogram_max <= INT_MAX, histogram_max_too_big);
-  base::Histogram::FactoryGet(UTF16ToUTF8(name),
+  base::Histogram::FactoryGet(name,
                               1,
                               histogram_max,
                               11 /*buckets*/,
@@ -139,9 +139,113 @@ static int CheckFreeSpace(const char* type, const base::FilePath& file_name) {
   return clamped_disk_space_k_bytes;
 }
 
+static void ParseAndHistogramIOErrorDetails(const std::string& histogram_name,
+                                            const leveldb::Status& s) {
+  leveldb_env::MethodID method;
+  int error = -1;
+  leveldb_env::ErrorParsingResult result =
+      leveldb_env::ParseMethodAndError(s.ToString().c_str(), &method, &error);
+  if (result == leveldb_env::NONE)
+    return;
+  std::string method_histogram_name(histogram_name);
+  method_histogram_name.append(".EnvMethod");
+  base::LinearHistogram::FactoryGet(
+      method_histogram_name,
+      1,
+      leveldb_env::kNumEntries,
+      leveldb_env::kNumEntries + 1,
+      base::HistogramBase::kUmaTargetedHistogramFlag)->Add(method);
+
+  std::string error_histogram_name(histogram_name);
+
+  if (result == leveldb_env::METHOD_AND_PFE) {
+    DCHECK(error < 0);
+    error_histogram_name.append(std::string(".PFE.") +
+                                leveldb_env::MethodIDToString(method));
+    base::LinearHistogram::FactoryGet(
+        error_histogram_name,
+        1,
+        -base::PLATFORM_FILE_ERROR_MAX,
+        -base::PLATFORM_FILE_ERROR_MAX + 1,
+        base::HistogramBase::kUmaTargetedHistogramFlag)->Add(-error);
+  } else if (result == leveldb_env::METHOD_AND_ERRNO) {
+    error_histogram_name.append(std::string(".Errno.") +
+                                leveldb_env::MethodIDToString(method));
+    base::LinearHistogram::FactoryGet(
+        error_histogram_name,
+        1,
+        ERANGE + 1,
+        ERANGE + 2,
+        base::HistogramBase::kUmaTargetedHistogramFlag)->Add(error);
+  }
+}
+
+static void ParseAndHistogramCorruptionDetails(
+    const std::string& histogram_name,
+    const leveldb::Status& status) {
+  DCHECK(!status.IsIOError());
+  DCHECK(!status.ok());
+  const int kOtherError = 0;
+  int error = kOtherError;
+  const std::string& str_error = status.ToString();
+  // Keep in sync with LevelDBCorruptionTypes in histograms.xml.
+  const char* patterns[] = {
+    "missing files",
+    "log record too small",
+    "corrupted internal key",
+    "partial record",
+    "missing start of fragmented record",
+    "error in middle of record",
+    "unknown record type",
+    "truncated record at end",
+    "bad record length",
+    "VersionEdit",
+    "FileReader invoked with unexpected value",
+    "corrupted key",
+    "CURRENT file does not end with newline",
+    "no meta-nextfile entry",
+    "no meta-lognumber entry",
+    "no last-sequence-number entry",
+    "malformed WriteBatch",
+    "bad WriteBatch Put",
+    "bad WriteBatch Delete",
+    "unknown WriteBatch tag",
+    "WriteBatch has wrong count",
+    "bad entry in block",
+    "bad block contents",
+    "bad block handle",
+    "truncated block read",
+    "block checksum mismatch",
+    "checksum mismatch",
+    "corrupted compressed block contents",
+    "bad block type",
+    "bad magic number",
+    "file is too short",
+  };
+  const size_t kNumPatterns = arraysize(patterns);
+  for (size_t i = 0; i < kNumPatterns; ++i) {
+    if (str_error.find(patterns[i]) != std::string::npos) {
+      error = i + 1;
+      break;
+    }
+  }
+  DCHECK(error >= 0);
+  std::string corruption_histogram_name(histogram_name);
+  corruption_histogram_name.append(".Corruption");
+  base::LinearHistogram::FactoryGet(
+      corruption_histogram_name,
+      1,
+      kNumPatterns + 1,
+      kNumPatterns + 2,
+      base::HistogramBase::kUmaTargetedHistogramFlag)->Add(error);
+}
+
 static void HistogramLevelDBError(const std::string& histogram_name,
                                   const leveldb::Status& s) {
-  DCHECK(!s.ok());
+  if (s.ok()) {
+    NOTREACHED();
+    return;
+  }
   enum {
     LEVEL_DB_NOT_FOUND,
     LEVEL_DB_CORRUPTION,
@@ -162,24 +266,10 @@ static void HistogramLevelDBError(const std::string& histogram_name,
                               LEVEL_DB_MAX_ERROR + 1,
                               base::HistogramBase::kUmaTargetedHistogramFlag)
       ->Add(leveldb_error);
-
-  // The code above histograms the type of error. The code below tries to
-  // histogram the method where the error occurred in ChromiumEnv and, in most
-  // cases, the exact error encountered.
-  leveldb_env::MethodID method;
-  int error = -1;
-  leveldb_env::ErrorParsingResult result =
-      leveldb_env::ParseMethodAndError(s.ToString().c_str(), &method, &error);
-  if (result == leveldb_env::NONE)
-    return;
-  std::string method_histogram_name(histogram_name);
-  method_histogram_name.append(".EnvMethod");
-  base::LinearHistogram::FactoryGet(
-      method_histogram_name,
-      1,
-      leveldb_env::kNumEntries,
-      leveldb_env::kNumEntries + 1,
-      base::HistogramBase::kUmaTargetedHistogramFlag)->Add(method);
+  if (s.IsIOError())
+    ParseAndHistogramIOErrorDetails(histogram_name, s);
+  else
+    ParseAndHistogramCorruptionDetails(histogram_name, s);
 }
 
 scoped_ptr<LevelDBDatabase> LevelDBDatabase::Open(
@@ -371,9 +461,8 @@ scoped_ptr<LevelDBIterator> LevelDBDatabase::CreateIterator(
   read_options.verify_checksums = true;  // TODO(jsbell): Disable this if the
                                          // performance impact is too great.
   read_options.snapshot = snapshot ? snapshot->snapshot_ : 0;
+
   scoped_ptr<leveldb::Iterator> i(db_->NewIterator(read_options));
-  if (!i)  // TODO(jsbell): Double check if we actually need to check this.
-    return scoped_ptr<LevelDBIterator>();
   return scoped_ptr<LevelDBIterator>(new IteratorImpl(i.Pass()));
 }
 

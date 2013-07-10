@@ -6,10 +6,12 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/debug/crash_logging.h"
 #include "base/logging.h"
 #include "base/mac/mac_util.h"
 #include "base/message_loop.h"
 #include "base/prefs/pref_service.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/download/download_shelf.h"
@@ -46,6 +48,7 @@
 #include "chrome/browser/ui/web_applications/web_app_ui.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/crash_keys.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_details.h"
@@ -106,7 +109,8 @@ NSPoint GetPointForBubble(content::WebContents* web_contents,
 void CreateShortcuts(const ShellIntegration::ShortcutInfo& shortcut_info) {
   // creation_locations will be ignored by CreatePlatformShortcuts on Mac.
   ShellIntegration::ShortcutLocations creation_locations;
-  web_app::CreateShortcuts(shortcut_info, creation_locations);
+  web_app::CreateShortcuts(shortcut_info, creation_locations,
+                           web_app::ALLOW_DUPLICATE_SHORTCUTS);
 }
 
 }  // namespace
@@ -304,6 +308,16 @@ void BrowserWindowCocoa::SetStarredState(bool is_starred) {
 }
 
 void BrowserWindowCocoa::ZoomChangedForActiveTab(bool can_show_bubble) {
+  // Debug data for <http://crbug.com/254977>.
+  base::debug::ScopedCrashKey window_type(
+      crash_keys::mac::kZoomBubbleWindowType,
+      base::StringPrintf("type=%d,app_type=%d,app_name=%s",
+          browser_->type(), browser_->app_type(),
+          browser_->app_name().c_str()));
+  base::debug::ScopedCrashKey url(crash_keys::mac::kZoomBubbleURL,
+      browser_->tab_strip_model()->GetActiveWebContents()->GetActiveURL().
+          possibly_invalid_spec());
+
   [controller_ zoomChangedForActiveTab:can_show_bubble ? YES : NO];
 }
 
@@ -497,13 +511,12 @@ void BrowserWindowCocoa::ShowOneClickSigninBubble(
   WebContents* web_contents =
         browser_->tab_strip_model()->GetActiveWebContents();
   if (type == ONE_CLICK_SIGNIN_BUBBLE_TYPE_BUBBLE) {
-    scoped_nsobject<OneClickSigninBubbleController> bubble_controller(
-        [[OneClickSigninBubbleController alloc]
-            initWithBrowserWindowController:cocoa_controller()
-                                webContents:web_contents
-                               errorMessage:base::SysUTF16ToNSString(
-                                                error_message)
-                                   callback:start_sync_callback]);
+    base::scoped_nsobject<OneClickSigninBubbleController> bubble_controller([
+            [OneClickSigninBubbleController alloc]
+        initWithBrowserWindowController:cocoa_controller()
+                            webContents:web_contents
+                           errorMessage:base::SysUTF16ToNSString(error_message)
+                               callback:start_sync_callback]);
     [bubble_controller showWindow:nil];
   } else {
     // Deletes itself when the dialog closes.
@@ -673,7 +686,6 @@ extensions::ActiveTabPermissionGranter*
 
 void BrowserWindowCocoa::ModelChanged(const SearchModel::State& old_state,
                                       const SearchModel::State& new_state) {
-  [controller_ updateBookmarkBarStateForInstantOverlay];
 }
 
 void BrowserWindowCocoa::DestroyBrowser() {

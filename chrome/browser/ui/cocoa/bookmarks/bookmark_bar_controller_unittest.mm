@@ -6,13 +6,14 @@
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/bookmark_model_test_utils.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_constants.h"
@@ -26,12 +27,11 @@
 #import "chrome/browser/ui/cocoa/view_resizer_pong.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/base/model_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
 #include "testing/platform_test.h"
-#include "third_party/ocmock/gtest_support.h"
 #import "third_party/ocmock/OCMock/OCMock.h"
+#include "third_party/ocmock/gtest_support.h"
 #include "ui/base/cocoa/animation_utils.h"
 #include "ui/base/test/cocoa_test_event_utils.h"
 #include "ui/base/theme_provider.h"
@@ -204,7 +204,7 @@
 class FakeTheme : public ui::ThemeProvider {
  public:
   FakeTheme(NSColor* color) : color_(color) {}
-  scoped_nsobject<NSColor> color_;
+  base::scoped_nsobject<NSColor> color_;
 
   virtual gfx::ImageSkia* GetImageSkiaNamed(int id) const OVERRIDE {
     return NULL;
@@ -292,8 +292,8 @@ namespace {
 
 class BookmarkBarControllerTestBase : public CocoaProfileTest {
  public:
-  scoped_nsobject<NSView> parent_view_;
-  scoped_nsobject<ViewResizerPong> resizeDelegate_;
+  base::scoped_nsobject<NSView> parent_view_;
+  base::scoped_nsobject<ViewResizerPong> resizeDelegate_;
 
   virtual void SetUp() {
     CocoaProfileTest::SetUp();
@@ -335,8 +335,8 @@ class BookmarkBarControllerTestBase : public CocoaProfileTest {
 
 class BookmarkBarControllerTest : public BookmarkBarControllerTestBase {
  public:
-  scoped_nsobject<NSButtonCell> cell_;
-  scoped_nsobject<BookmarkBarControllerNoOpen> bar_;
+  base::scoped_nsobject<NSButtonCell> cell_;
+  base::scoped_nsobject<BookmarkBarControllerNoOpen> bar_;
 
   virtual void SetUp() {
     BookmarkBarControllerTestBase::SetUp();
@@ -496,7 +496,7 @@ TEST_F(BookmarkBarControllerTest, StateChanges) {
 
 // Make sure we're watching for frame change notifications.
 TEST_F(BookmarkBarControllerTest, FrameChangeNotification) {
-  scoped_nsobject<BookmarkBarControllerTogglePong> bar;
+  base::scoped_nsobject<BookmarkBarControllerTogglePong> bar;
   bar.reset(
     [[BookmarkBarControllerTogglePong alloc]
           initWithBrowser:browser()
@@ -731,9 +731,10 @@ TEST_F(BookmarkBarControllerTest, OpenBookmark) {
   GURL gurl("http://walla.walla.ding.dong.com");
   scoped_ptr<BookmarkNode> node(new BookmarkNode(gurl));
 
-  scoped_nsobject<BookmarkButtonCell> cell([[BookmarkButtonCell alloc] init]);
+  base::scoped_nsobject<BookmarkButtonCell> cell(
+      [[BookmarkButtonCell alloc] init]);
   [cell setBookmarkNode:node.get()];
-  scoped_nsobject<BookmarkButton> button([[BookmarkButton alloc] init]);
+  base::scoped_nsobject<BookmarkButton> button([[BookmarkButton alloc] init]);
   [button setCell:cell.get()];
   [cell setRepresentedObject:[NSValue valueWithPointer:node.get()]];
 
@@ -830,7 +831,7 @@ TEST_F(BookmarkBarControllerTest, TestButtonLimits) {
 // Make sure that each button we add marches to the right and does not
 // overlap with the previous one.
 TEST_F(BookmarkBarControllerTest, TestButtonMarch) {
-  scoped_nsobject<NSMutableArray> cells([[NSMutableArray alloc] init]);
+  base::scoped_nsobject<NSMutableArray> cells([[NSMutableArray alloc] init]);
 
   CGFloat widths[] = { 10, 10, 100, 10, 500, 500, 80000, 60000, 1, 345 };
   for (unsigned int i = 0; i < arraysize(widths); i++) {
@@ -1168,7 +1169,7 @@ TEST_F(BookmarkBarControllerTest, TestClearOnDealloc) {
     bookmark_utils::AddIfNotBookmarked(model, gurls[i], titles[i]);
 
   // Get and retain the buttons so we can examine them after dealloc.
-  scoped_nsobject<NSArray> buttons([[bar_ buttons] retain]);
+  base::scoped_nsobject<NSArray> buttons([[bar_ buttons] retain]);
   EXPECT_EQ([buttons count], arraysize(titles));
 
   // Make sure that everything is set.
@@ -1238,10 +1239,11 @@ TEST_F(BookmarkBarControllerTest, TestFolderButtons) {
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile());
   const BookmarkNode* root = model->bookmark_bar_node();
   const std::string model_string("1b 2f:[ 2f1b 2f2b ] 3b 4f:[ 4f1b 4f2b ] ");
-  model_test_utils::AddNodesFromModelString(model, root, model_string);
+  BookmarkModelTestUtils::AddNodesFromModelString(model, root, model_string);
 
   // Validate initial model and that we do not have a folder controller.
-  std::string actualModelString = model_test_utils::ModelStringFromNode(root);
+  std::string actualModelString =
+      BookmarkModelTestUtils::ModelStringFromNode(root);
   EXPECT_EQ(model_string, actualModelString);
   EXPECT_FALSE([bar_ folderController]);
 
@@ -1452,10 +1454,11 @@ TEST_F(BookmarkBarControllerTest, MoveRemoveAddButtons) {
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile());
   const BookmarkNode* root = model->bookmark_bar_node();
   const std::string model_string("1b 2f:[ 2f1b 2f2b ] 3b ");
-  model_test_utils::AddNodesFromModelString(model, root, model_string);
+  BookmarkModelTestUtils::AddNodesFromModelString(model, root, model_string);
 
   // Validate initial model.
-  std::string actualModelString = model_test_utils::ModelStringFromNode(root);
+  std::string actualModelString =
+      BookmarkModelTestUtils::ModelStringFromNode(root);
   EXPECT_EQ(model_string, actualModelString);
 
   // Remember how many buttons are showing.
@@ -1525,7 +1528,7 @@ TEST_F(BookmarkBarControllerTest, LastBookmarkResizeBehavior) {
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile());
   const BookmarkNode* root = model->bookmark_bar_node();
   const std::string model_string("1b 2f:[ 2f1b 2f2b ] 3b ");
-  model_test_utils::AddNodesFromModelString(model, root, model_string);
+  BookmarkModelTestUtils::AddNodesFromModelString(model, root, model_string);
   [bar_ frameDidChange];
 
   CGFloat viewWidths[] = { 123.0, 124.0, 151.0, 152.0, 153.0, 154.0, 155.0,
@@ -1561,7 +1564,7 @@ TEST_F(BookmarkBarControllerWithInstantExtendedTest,
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile());
   const BookmarkNode* root = model->bookmark_bar_node();
   const std::string model_string("1b 2f:[ 2f1b 2f2b ] 3b ");
-  model_test_utils::AddNodesFromModelString(model, root, model_string);
+  BookmarkModelTestUtils::AddNodesFromModelString(model, root, model_string);
   [bar_ frameDidChange];
 
   // Apps page shortcut button should be visible.
@@ -1702,9 +1705,9 @@ class BookmarkBarControllerNotificationTest : public CocoaProfileTest {
     // Do not add the bar to a window, yet.
   }
 
-  scoped_nsobject<NSView> parent_view_;
-  scoped_nsobject<ViewResizerPong> resizeDelegate_;
-  scoped_nsobject<BookmarkBarControllerNotificationPong> bar_;
+  base::scoped_nsobject<NSView> parent_view_;
+  base::scoped_nsobject<ViewResizerPong> resizeDelegate_;
+  base::scoped_nsobject<BookmarkBarControllerNotificationPong> bar_;
 };
 
 TEST_F(BookmarkBarControllerNotificationTest, DeregistersForNotifications) {
@@ -1740,7 +1743,7 @@ TEST_F(BookmarkBarControllerNotificationTest, DeregistersForNotifications) {
 
 class BookmarkBarControllerDragDropTest : public BookmarkBarControllerTestBase {
  public:
-  scoped_nsobject<BookmarkBarControllerDragData> bar_;
+  base::scoped_nsobject<BookmarkBarControllerDragData> bar_;
 
   virtual void SetUp() {
     BookmarkBarControllerTestBase::SetUp();
@@ -1765,10 +1768,11 @@ TEST_F(BookmarkBarControllerDragDropTest, DragMoveBarBookmarkToOffTheSide) {
       "3bWithLongName 4bWithLongName 5bWithLongName 6bWithLongName "
       "7bWithLongName 8bWithLongName 9bWithLongName 10bWithLongName "
       "11bWithLongName 12bWithLongName 13b ");
-  model_test_utils::AddNodesFromModelString(model, root, model_string);
+  BookmarkModelTestUtils::AddNodesFromModelString(model, root, model_string);
 
   // Validate initial model.
-  std::string actualModelString = model_test_utils::ModelStringFromNode(root);
+  std::string actualModelString =
+      BookmarkModelTestUtils::ModelStringFromNode(root);
   EXPECT_EQ(model_string, actualModelString);
 
   // Insure that the off-the-side is not showing.
@@ -1817,16 +1821,18 @@ TEST_F(BookmarkBarControllerDragDropTest, DragOffTheSideToOther) {
       "11bWithLongName 12bWithLongName 13bWithLongName 14bWithLongName "
       "15bWithLongName 16bWithLongName 17bWithLongName 18bWithLongName "
       "19bWithLongName 20bWithLongName ");
-  model_test_utils::AddNodesFromModelString(model, root, model_string);
+  BookmarkModelTestUtils::AddNodesFromModelString(model, root, model_string);
 
   const BookmarkNode* other = model->other_node();
   const std::string other_string("1other 2other 3other ");
-  model_test_utils::AddNodesFromModelString(model, other, other_string);
+  BookmarkModelTestUtils::AddNodesFromModelString(model, other, other_string);
 
   // Validate initial model.
-  std::string actualModelString = model_test_utils::ModelStringFromNode(root);
+  std::string actualModelString =
+      BookmarkModelTestUtils::ModelStringFromNode(root);
   EXPECT_EQ(model_string, actualModelString);
-  std::string actualOtherString = model_test_utils::ModelStringFromNode(other);
+  std::string actualOtherString =
+      BookmarkModelTestUtils::ModelStringFromNode(other);
   EXPECT_EQ(other_string, actualOtherString);
 
   // Insure that the off-the-side is showing.
@@ -1870,16 +1876,16 @@ TEST_F(BookmarkBarControllerDragDropTest, DragBookmarkData) {
   const BookmarkNode* root = model->bookmark_bar_node();
   const std::string model_string("1b 2f:[ 2f1b 2f2f:[ 2f2f1b 2f2f2b 2f2f3b ] "
                                   "2f3b ] 3b 4b ");
-  model_test_utils::AddNodesFromModelString(model, root, model_string);
+  BookmarkModelTestUtils::AddNodesFromModelString(model, root, model_string);
   const BookmarkNode* other = model->other_node();
   const std::string other_string("O1b O2b O3f:[ O3f1b O3f2f ] "
                                  "O4f:[ O4f1b O4f2f ] 05b ");
-  model_test_utils::AddNodesFromModelString(model, other, other_string);
+  BookmarkModelTestUtils::AddNodesFromModelString(model, other, other_string);
 
   // Validate initial model.
-  std::string actual = model_test_utils::ModelStringFromNode(root);
+  std::string actual = BookmarkModelTestUtils::ModelStringFromNode(root);
   EXPECT_EQ(model_string, actual);
-  actual = model_test_utils::ModelStringFromNode(other);
+  actual = BookmarkModelTestUtils::ModelStringFromNode(other);
   EXPECT_EQ(other_string, actual);
 
   // Remember the little ones.
@@ -1891,7 +1897,7 @@ TEST_F(BookmarkBarControllerDragDropTest, DragBookmarkData) {
   // Gen up some dragging data.
   const BookmarkNode* newNode = other->GetChild(2);
   [bar_ setDragDataNode:newNode];
-  scoped_nsobject<FakeDragInfo> dragInfo([[FakeDragInfo alloc] init]);
+  base::scoped_nsobject<FakeDragInfo> dragInfo([[FakeDragInfo alloc] init]);
   [dragInfo setDropLocation:[targetButton center]];
   [bar_ dragBookmarkData:(id<NSDraggingInfo>)dragInfo.get()];
 
@@ -1901,7 +1907,7 @@ TEST_F(BookmarkBarControllerDragDropTest, DragBookmarkData) {
   // Verify the model.
   const std::string expected("1b 2f:[ 2f1b 2f2f:[ 2f2f1b 2f2f2b 2f2f3b ] "
                              "2f3b ] O3f:[ O3f1b O3f2f ] 3b 4b ");
-  actual = model_test_utils::ModelStringFromNode(root);
+  actual = BookmarkModelTestUtils::ModelStringFromNode(root);
   EXPECT_EQ(expected, actual);
   oldChildCount = newChildCount;
 
@@ -1921,7 +1927,7 @@ TEST_F(BookmarkBarControllerDragDropTest, DragBookmarkData) {
   const std::string expected1("1b 2f:[ 2f1b 2f2f:[ 2f2f1b 2f2f2b 2f2f3b ] "
                               "2f3b O4f:[ O4f1b O4f2f ] ] O3f:[ O3f1b O3f2f ] "
                               "3b 4b ");
-  actual = model_test_utils::ModelStringFromNode(root);
+  actual = BookmarkModelTestUtils::ModelStringFromNode(root);
   EXPECT_EQ(expected1, actual);
 }
 
@@ -1930,10 +1936,10 @@ TEST_F(BookmarkBarControllerDragDropTest, AddURLs) {
   const BookmarkNode* root = model->bookmark_bar_node();
   const std::string model_string("1b 2f:[ 2f1b 2f2f:[ 2f2f1b 2f2f2b 2f2f3b ] "
                                  "2f3b ] 3b 4b ");
-  model_test_utils::AddNodesFromModelString(model, root, model_string);
+  BookmarkModelTestUtils::AddNodesFromModelString(model, root, model_string);
 
   // Validate initial model.
-  std::string actual = model_test_utils::ModelStringFromNode(root);
+  std::string actual = BookmarkModelTestUtils::ModelStringFromNode(root);
   EXPECT_EQ(model_string, actual);
 
   // Remember the children.
@@ -1953,7 +1959,7 @@ TEST_F(BookmarkBarControllerDragDropTest, AddURLs) {
   // Verify the model.
   const std::string expected("1b 2f:[ 2f1b 2f2f:[ 2f2f1b 2f2f2b 2f2f3b ] "
                              "2f3b ] SiteA SiteB 3b 4b ");
-  actual = model_test_utils::ModelStringFromNode(root);
+  actual = BookmarkModelTestUtils::ModelStringFromNode(root);
   EXPECT_EQ(expected, actual);
 }
 
@@ -1961,10 +1967,11 @@ TEST_F(BookmarkBarControllerDragDropTest, ControllerForNode) {
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile());
   const BookmarkNode* root = model->bookmark_bar_node();
   const std::string model_string("1b 2f:[ 2f1b 2f2b ] 3b ");
-  model_test_utils::AddNodesFromModelString(model, root, model_string);
+  BookmarkModelTestUtils::AddNodesFromModelString(model, root, model_string);
 
   // Validate initial model.
-  std::string actualModelString = model_test_utils::ModelStringFromNode(root);
+  std::string actualModelString =
+      BookmarkModelTestUtils::ModelStringFromNode(root);
   EXPECT_EQ(model_string, actualModelString);
 
   // Find the main bar controller.
@@ -1977,10 +1984,10 @@ TEST_F(BookmarkBarControllerDragDropTest, DropPositionIndicator) {
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile());
   const BookmarkNode* root = model->bookmark_bar_node();
   const std::string model_string("1b 2f:[ 2f1b 2f2b 2f3b ] 3b 4b ");
-  model_test_utils::AddNodesFromModelString(model, root, model_string);
+  BookmarkModelTestUtils::AddNodesFromModelString(model, root, model_string);
 
   // Validate initial model.
-  std::string actualModel = model_test_utils::ModelStringFromNode(root);
+  std::string actualModel = BookmarkModelTestUtils::ModelStringFromNode(root);
   EXPECT_EQ(model_string, actualModel);
 
   // Test a series of points starting at the right edge of the bar.
@@ -2047,10 +2054,10 @@ TEST_F(BookmarkBarControllerDragDropTest, DragBookmarkDataToTrash) {
   const BookmarkNode* root = model->bookmark_bar_node();
   const std::string model_string("1b 2f:[ 2f1b 2f2f:[ 2f2f1b 2f2f2b 2f2f3b ] "
                                   "2f3b ] 3b 4b ");
-  model_test_utils::AddNodesFromModelString(model, root, model_string);
+  BookmarkModelTestUtils::AddNodesFromModelString(model, root, model_string);
 
   // Validate initial model.
-  std::string actual = model_test_utils::ModelStringFromNode(root);
+  std::string actual = BookmarkModelTestUtils::ModelStringFromNode(root);
   EXPECT_EQ(model_string, actual);
 
   int oldChildCount = root->child_count();
@@ -2067,7 +2074,7 @@ TEST_F(BookmarkBarControllerDragDropTest, DragBookmarkDataToTrash) {
   // Verify the model.
   const std::string expected("1b 2f:[ 2f1b 2f2f:[ 2f2f1b 2f2f2b 2f2f3b ] "
                              "2f3b ] 4b ");
-  actual = model_test_utils::ModelStringFromNode(root);
+  actual = BookmarkModelTestUtils::ModelStringFromNode(root);
   EXPECT_EQ(expected, actual);
 
   // Verify that the other bookmark folder can't be deleted.

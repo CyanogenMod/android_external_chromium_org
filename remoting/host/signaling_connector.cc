@@ -6,7 +6,6 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "google_apis/gaia/gaia_urls.h"
 #include "google_apis/google_api_keys.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -61,8 +60,7 @@ void SignalingConnector::EnableOAuth(
     scoped_ptr<OAuthCredentials> oauth_credentials) {
   oauth_credentials_ = oauth_credentials.Pass();
   gaia_oauth_client_.reset(
-      new gaia::GaiaOAuthClient(GaiaUrls::GetInstance()->oauth2_token_url(),
-                                url_request_context_getter_.get()));
+      new gaia::GaiaOAuthClient(url_request_context_getter_.get()));
 }
 
 void SignalingConnector::OnSignalStrategyStateChange(
@@ -127,10 +125,10 @@ void SignalingConnector::OnRefreshTokenResponse(
       base::TimeDelta::FromSeconds(expires_seconds) -
       base::TimeDelta::FromSeconds(kTokenUpdateTimeBeforeExpirySeconds);
 
-  gaia_oauth_client_->GetUserInfo(access_token, 1, this);
+  gaia_oauth_client_->GetUserEmail(access_token, 1, this);
 }
 
-void SignalingConnector::OnGetUserInfoResponse(const std::string& user_email) {
+void SignalingConnector::OnGetUserEmailResponse(const std::string& user_email) {
   DCHECK(CalledOnValidThread());
   DCHECK(oauth_credentials_.get());
   LOG(INFO) << "Received user info.";
@@ -239,8 +237,10 @@ void SignalingConnector::RefreshOAuthToken() {
   };
 
   refreshing_oauth_token_ = true;
+  std::vector<std::string> empty_scope_list;  // (Use scope from refresh token.)
   gaia_oauth_client_->RefreshToken(
-      client_info, oauth_credentials_->refresh_token, 1, this);
+      client_info, oauth_credentials_->refresh_token, empty_scope_list,
+      1, this);
 }
 
 }  // namespace remoting

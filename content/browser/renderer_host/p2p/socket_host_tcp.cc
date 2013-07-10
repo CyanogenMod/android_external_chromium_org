@@ -7,10 +7,13 @@
 #include "base/sys_byteorder.h"
 #include "content/common/p2p_messages.h"
 #include "ipc/ipc_sender.h"
+#include "jingle/glue/fake_ssl_client_socket.h"
+#include "jingle/glue/proxy_resolving_client_socket.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/socket/tcp_client_socket.h"
+#include "net/url_request/url_request_context_getter.h"
 
 namespace {
 
@@ -20,15 +23,23 @@ const int kReadBufferSize = 4096;
 const int kPacketLengthOffset = 2;
 const int kTurnChannelDataHeaderSize = 4;
 
+bool IsSslClientSocket(content::P2PSocketType type) {
+  return (type == content::P2P_SOCKET_SSLTCP_CLIENT ||
+          type == content::P2P_SOCKET_STUN_SSLTCP_CLIENT);
+}
+
 }  // namespace
 
 namespace content {
 
-P2PSocketHostTcpBase::P2PSocketHostTcpBase(IPC::Sender* message_sender,
-                                           int id)
+P2PSocketHostTcpBase::P2PSocketHostTcpBase(
+    IPC::Sender* message_sender, int id,
+    P2PSocketType type, net::URLRequestContextGetter* url_context)
     : P2PSocketHost(message_sender, id),
       write_pending_(false),
-      connected_(false) {
+      connected_(false),
+      type_(type),
+      url_context_(url_context) {
 }
 
 P2PSocketHostTcpBase::~P2PSocketHostTcpBase() {
@@ -44,6 +55,7 @@ bool P2PSocketHostTcpBase::InitAccepted(const net::IPEndPoint& remote_address,
   DCHECK_EQ(state_, STATE_UNINITIALIZED);
 
   remote_address_ = remote_address;
+  // TODO(ronghuawu): Add FakeSSLServerSocket.
   socket_.reset(socket);
   state_ = STATE_OPEN;
   DoRead();
@@ -51,24 +63,43 @@ bool P2PSocketHostTcpBase::InitAccepted(const net::IPEndPoint& remote_address,
 }
 
 bool P2PSocketHostTcpBase::Init(const net::IPEndPoint& local_address,
-                            const net::IPEndPoint& remote_address) {
+                                const net::IPEndPoint& remote_address) {
   DCHECK_EQ(state_, STATE_UNINITIALIZED);
 
   remote_address_ = remote_address;
   state_ = STATE_CONNECTING;
-  scoped_ptr<net::TCPClientSocket> tcp_socket(new net::TCPClientSocket(
-      net::AddressList(remote_address),
-      NULL, net::NetLog::Source()));
-  if (tcp_socket->Bind(local_address) != net::OK) {
-    OnError();
-    return false;
-  }
-  socket_.reset(tcp_socket.release());
 
-  int result = socket_->Connect(
-      base::Bind(&P2PSocketHostTcp::OnConnected, base::Unretained(this)));
-  if (result != net::ERR_IO_PENDING) {
-    OnConnected(result);
+  net::HostPortPair dest_host_port_pair =
+      net::HostPortPair::FromIPEndPoint(remote_address);
+  // TODO(mallinath) - We are ignoring local_address altogether. We should
+  // find a way to inject this into ProxyResolvingClientSocket. This could be
+  // a problem on multi-homed host.
+
+  // The default SSLConfig is good enough for us for now.
+  const net::SSLConfig ssl_config;
+  socket_.reset(new jingle_glue::ProxyResolvingClientSocket(
+                    NULL,     // Default socket pool provided by the net::Proxy.
+                    url_context_,
+                    ssl_config,
+                    dest_host_port_pair));
+  if (IsSslClientSocket(type_)) {
+    socket_.reset(new jingle_glue::FakeSSLClientSocket(socket_.release()));
+  }
+
+  int status = socket_->Connect(
+      base::Bind(&P2PSocketHostTcpBase::OnConnected,
+                 base::Unretained(this)));
+  if (status != net::ERR_IO_PENDING) {
+    // We defer execution of ProcessConnectDone instead of calling it
+    // directly here as the caller may not expect an error/close to
+    // happen here.  This is okay, as from the caller's point of view,
+    // the connect always happens asynchronously.
+    base::MessageLoop* message_loop = base::MessageLoop::current();
+    CHECK(message_loop);
+    message_loop->PostTask(
+        FROM_HERE,
+        base::Bind(&P2PSocketHostTcpBase::OnConnected,
+                   base::Unretained(this), status));
   }
 
   return state_ != STATE_ERROR;
@@ -272,8 +303,11 @@ void P2PSocketHostTcpBase::DidCompleteRead(int result) {
   }
 }
 
-P2PSocketHostTcp::P2PSocketHostTcp(IPC::Sender* message_sender, int id)
-    : P2PSocketHostTcpBase(message_sender, id) {
+P2PSocketHostTcp::P2PSocketHostTcp(
+    IPC::Sender* message_sender, int id,
+    P2PSocketType type, net::URLRequestContextGetter* url_context)
+    : P2PSocketHostTcpBase(message_sender, id, type, url_context) {
+  DCHECK(type == P2P_SOCKET_TCP_CLIENT || type == P2P_SOCKET_SSLTCP_CLIENT);
 }
 
 P2PSocketHostTcp::~P2PSocketHostTcp() {
@@ -306,9 +340,12 @@ void P2PSocketHostTcp::DoSend(const net::IPEndPoint& to,
 }
 
 // P2PSocketHostStunTcp
-P2PSocketHostStunTcp::P2PSocketHostStunTcp(IPC::Sender* message_sender,
-                                           int id)
-    : P2PSocketHostTcpBase(message_sender, id) {
+P2PSocketHostStunTcp::P2PSocketHostStunTcp(
+    IPC::Sender* message_sender, int id,
+    P2PSocketType type, net::URLRequestContextGetter* url_context)
+    : P2PSocketHostTcpBase(message_sender, id, type, url_context) {
+  DCHECK(type == P2P_SOCKET_STUN_TCP_CLIENT ||
+         type == P2P_SOCKET_STUN_SSLTCP_CLIENT);
 }
 
 P2PSocketHostStunTcp::~P2PSocketHostStunTcp() {

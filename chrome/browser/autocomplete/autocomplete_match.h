@@ -13,7 +13,7 @@
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/common/autocomplete_match_type.h"
 #include "content/public/common/page_transition_types.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 class AutocompleteProvider;
 class Profile;
@@ -213,6 +213,10 @@ struct AutocompleteMatch {
   void RecordAdditionalInfo(const std::string& property, int value);
   void RecordAdditionalInfo(const std::string& property,
                             const base::Time& value);
+
+  // Returns the value recorded for |property| in the |additional_info|
+  // dictionary.  Returns the empty string if no such value exists.
+  std::string GetAdditionalInfo(const std::string& property) const;
 
   // The provider of this match, used to remember which provider the user had
   // selected when the input changes. This may be NULL, in which case there is

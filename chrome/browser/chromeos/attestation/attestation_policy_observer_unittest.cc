@@ -19,7 +19,7 @@
 #include "content/public/test/test_browser_thread.h"
 #include "crypto/rsa_private_key.h"
 #include "net/cert/x509_certificate.h"
-#include "net/cert/x509_util_nss.h"
+#include "net/cert/x509_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using testing::_;
@@ -73,6 +73,11 @@ void DBusCallbackFalse(const BoolDBusMethodCallback& callback) {
 void DBusCallbackTrue(const BoolDBusMethodCallback& callback) {
   base::MessageLoop::current()->PostTask(
       FROM_HERE, base::Bind(callback, DBUS_METHOD_CALL_SUCCESS, true));
+}
+
+void DBusCallbackError(const BoolDBusMethodCallback& callback) {
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE, base::Bind(callback, DBUS_METHOD_CALL_FAILURE, false));
 }
 
 void CertCallbackSuccess(const AttestationFlow::CertificateCallback& callback) {
@@ -187,6 +192,7 @@ class AttestationPolicyObserverTest : public ::testing::Test {
     AttestationPolicyObserver observer(&policy_client_,
                                        &cryptohome_client_,
                                        &attestation_flow_);
+    observer.set_retry_delay(0);
     base::RunLoop().RunUntilIdle();
   }
 
@@ -220,19 +226,12 @@ class AttestationPolicyObserverTest : public ::testing::Test {
                                &kTestKeyData[arraysize(kTestKeyData)])));
     if (!test_key.get())
       return false;
-    net::X509Certificate::OSCertHandle handle =
-        net::x509_util::CreateSelfSignedCert(test_key->public_key(),
-                                             test_key->key(),
-                                             "CN=subject",
-                                             12345,
-                                             valid_start,
-                                             valid_expiry);
-
-    if (!handle)
-      return false;
-    bool result = net::X509Certificate::GetDEREncoded(handle, certificate);
-    net::X509Certificate::FreeOSCertHandle(handle);
-    return result;
+    return net::x509_util::CreateSelfSignedCert(test_key.get(),
+                                                "CN=subject",
+                                                12345,
+                                                valid_start,
+                                                valid_expiry,
+                                                certificate);
   }
 
   base::MessageLoop message_loop_;
@@ -292,6 +291,15 @@ TEST_F(AttestationPolicyObserverTest, KeyExistsCertExpired) {
 
 TEST_F(AttestationPolicyObserverTest, IgnoreUnknownCertFormat) {
   SetupMocks(MOCK_KEY_EXISTS | MOCK_KEY_UPLOADED, "unsupported");
+  Run();
+}
+
+TEST_F(AttestationPolicyObserverTest, DBusFailureRetry) {
+  SetupMocks(MOCK_NEW_KEY, "");
+  // Simulate a DBus failure.
+  EXPECT_CALL(cryptohome_client_, TpmAttestationDoesKeyExist(_, _, _))
+      .WillOnce(WithArgs<2>(Invoke(DBusCallbackError)))
+      .WillRepeatedly(WithArgs<2>(Invoke(DBusCallbackFalse)));
   Run();
 }
 

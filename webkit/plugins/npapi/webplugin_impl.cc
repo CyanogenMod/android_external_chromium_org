@@ -13,22 +13,10 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "cc/layers/io_surface_layer.h"
-#include "googleurl/src/gurl.h"
-#include "googleurl/src/url_util.h"
 #include "net/base/escape.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/public/web/WebConsoleMessage.h"
-#include "third_party/WebKit/public/web/WebCursorInfo.h"
-#include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
-#include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "third_party/WebKit/public/web/WebKit.h"
-#include "third_party/WebKit/public/web/WebPluginContainer.h"
-#include "third_party/WebKit/public/web/WebPluginParams.h"
-#include "third_party/WebKit/public/web/WebURLLoaderOptions.h"
-#include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
 #include "third_party/WebKit/public/platform/WebCookieJar.h"
 #include "third_party/WebKit/public/platform/WebData.h"
@@ -39,7 +27,19 @@
 #include "third_party/WebKit/public/platform/WebURLLoader.h"
 #include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
+#include "third_party/WebKit/public/web/WebConsoleMessage.h"
+#include "third_party/WebKit/public/web/WebCursorInfo.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebKit.h"
+#include "third_party/WebKit/public/web/WebPluginContainer.h"
+#include "third_party/WebKit/public/web/WebPluginParams.h"
+#include "third_party/WebKit/public/web/WebURLLoaderOptions.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "ui/gfx/rect.h"
+#include "url/gurl.h"
+#include "url/url_util.h"
 #include "webkit/glue/multipart_response_delegate.h"
 #include "webkit/plugins/npapi/plugin_host.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
@@ -230,6 +230,7 @@ struct WebPluginImpl::ClientInfo {
   linked_ptr<WebKit::WebURLLoader> loader;
   bool notify_redirects;
   bool is_plugin_src_load;
+  int64 data_offset;
 };
 
 bool WebPluginImpl::initialize(WebPluginContainer* container) {
@@ -260,12 +261,17 @@ bool WebPluginImpl::initialize(WebPluginContainer* container) {
 
     WebKit::WebPlugin* replacement_plugin =
         page_delegate_->CreatePluginReplacement(file_path_);
-    if (!replacement_plugin || !replacement_plugin->initialize(container))
+    if (!replacement_plugin)
       return false;
 
-    container->setPlugin(replacement_plugin);
+    // Disable scripting by this plugin before replacing it with the new
+    // one. This plugin also needs destroying, so use destroy(), which will
+    // implicitly disable scripting while un-setting the container.
     destroy();
-    return true;
+
+    // Inform the container of the replacement plugin, then initialize it.
+    container->setPlugin(replacement_plugin);
+    return replacement_plugin->initialize(container);
   }
 
   delegate_ = plugin_delegate;
@@ -921,8 +927,22 @@ void WebPluginImpl::didReceiveResponse(WebURLLoader* loader,
   bool request_is_seekable = true;
   if (client->IsMultiByteResponseExpected()) {
     if (response.httpStatusCode() == kHttpPartialResponseStatusCode) {
-      HandleHttpMultipartResponse(response, client);
-      return;
+      ClientInfo* client_info = GetClientInfoFromLoader(loader);
+      if (!client_info)
+        return;
+      if (HandleHttpMultipartResponse(response, client)) {
+        // Multiple ranges requested, data will be delivered by
+        // MultipartResponseDelegate.
+        client_info->data_offset = 0;
+        return;
+      }
+      int64 upper_bound = 0, instance_size = 0;
+      // Single range requested - go through original processing for
+      // non-multipart requests, but update data offset.
+      MultipartResponseDelegate::ReadContentRanges(response,
+                                                   &client_info->data_offset,
+                                                   &upper_bound,
+                                                   &instance_size);
     } else if (response.httpStatusCode() == kHttpResponseSuccessStatusCode) {
       // If the client issued a byte range request and the server responds with
       // HTTP 200 OK, it indicates that the server does not support byte range
@@ -1010,7 +1030,9 @@ void WebPluginImpl::didReceiveData(WebURLLoader* loader,
                                        encoded_data_length);
   } else {
     loader->setDefersLoading(true);
-    client->DidReceiveData(buffer, data_length, 0);
+    ClientInfo* client_info = GetClientInfoFromLoader(loader);
+    client->DidReceiveData(buffer, data_length, client_info->data_offset);
+    client_info->data_offset += data_length;
   }
 }
 
@@ -1192,6 +1214,7 @@ bool WebPluginImpl::InitiateHTTPRequest(unsigned long resource_id,
   info.pending_failure_notification = false;
   info.notify_redirects = notify_redirects;
   info.is_plugin_src_load = is_plugin_src_load;
+  info.data_offset = 0;
 
   if (range_info) {
     info.request.addHTTPHeaderField(WebString::fromUTF8("Range"),
@@ -1277,13 +1300,12 @@ bool WebPluginImpl::IsOffTheRecord() {
   return false;
 }
 
-void WebPluginImpl::HandleHttpMultipartResponse(
+bool WebPluginImpl::HandleHttpMultipartResponse(
     const WebURLResponse& response, WebPluginResourceClient* client) {
   std::string multipart_boundary;
   if (!MultipartResponseDelegate::ReadMultipartBoundary(
           response, &multipart_boundary)) {
-    NOTREACHED();
-    return;
+    return false;
   }
 
   if (page_delegate_.get())
@@ -1297,6 +1319,7 @@ void WebPluginImpl::HandleHttpMultipartResponse(
                                     response,
                                     multipart_boundary);
   multi_part_response_map_[client] = multi_part_response_handler;
+  return true;
 }
 
 bool WebPluginImpl::ReinitializePluginForResponse(
@@ -1320,10 +1343,17 @@ bool WebPluginImpl::ReinitializePluginForResponse(
   WebPluginDelegate* plugin_delegate = page_delegate_->CreatePluginDelegate(
       file_path_, mime_type_);
 
+  // Store the plugin's unique identifier, used by the container to track its
+  // script objects, and enable script objects (since Initialize may use them
+  // even if it fails).
+  npp_ = plugin_delegate->GetPluginNPP();
+  container_->allowScriptObjects();
+
   bool ok = plugin_delegate && plugin_delegate->Initialize(
       plugin_url_, arg_names_, arg_values_, this, load_manually_);
 
   if (!ok) {
+    container_->clearScriptObjects();
     container_ = NULL;
     // TODO(iyengar) Should we delete the current plugin instance here?
     return false;

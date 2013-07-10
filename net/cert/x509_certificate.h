@@ -13,7 +13,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/string_piece.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/net_export.h"
 #include "net/cert/cert_type.h"
 #include "net/cert/x509_cert_types.h"
@@ -36,10 +36,6 @@ struct CERTCertificateStr;
 
 class Pickle;
 class PickleIterator;
-
-namespace crypto {
-class RSAPrivateKey;
-}  // namespace crypto
 
 namespace net {
 
@@ -85,7 +81,8 @@ class NET_EXPORT X509Certificate
   // Predicate functor used in maps when X509Certificate is used as the key.
   class NET_EXPORT LessThan {
    public:
-    bool operator() (X509Certificate* lhs,  X509Certificate* rhs) const;
+    bool operator()(const scoped_refptr<X509Certificate>& lhs,
+                    const scoped_refptr<X509Certificate>& rhs) const;
   };
 
   enum Format {
@@ -194,29 +191,6 @@ class NET_EXPORT X509Certificate
   static CertificateList CreateCertificateListFromBytes(const char* data,
                                                         int length,
                                                         int format);
-
-  // Create a self-signed certificate containing the public key in |key|.
-  // Subject, serial number and validity period are given as parameters.
-  // The certificate is signed by the private key in |key|. The hashing
-  // algorithm for the signature is SHA-1.
-  //
-  // |subject| is a distinguished name defined in RFC4514.
-  //
-  // An example:
-  // CN=Michael Wong,O=FooBar Corporation,DC=foobar,DC=com
-  //
-  // SECURITY WARNING
-  //
-  // Using self-signed certificates has the following security risks:
-  // 1. Encryption without authentication and thus vulnerable to
-  //    man-in-the-middle attacks.
-  // 2. Self-signed certificates cannot be revoked.
-  //
-  // Use this certificate only after the above risks are acknowledged.
-  static X509Certificate* CreateSelfSigned(crypto::RSAPrivateKey* key,
-                                           const std::string& subject,
-                                           uint32 serial_number,
-                                           base::TimeDelta valid_duration);
 
   // Appends a representation of this object to the given pickle.
   void Persist(Pickle* pickle);

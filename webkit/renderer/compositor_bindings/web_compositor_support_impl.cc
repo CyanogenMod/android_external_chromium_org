@@ -7,13 +7,13 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "cc/animation/transform_operations.h"
-#include "cc/base/thread_impl.h"
 #include "cc/output/output_surface.h"
 #include "cc/output/software_output_device.h"
 #include "webkit/child/webthread_impl.h"
 #include "webkit/renderer/compositor_bindings/web_animation_impl.h"
 #include "webkit/renderer/compositor_bindings/web_content_layer_impl.h"
 #include "webkit/renderer/compositor_bindings/web_external_texture_layer_impl.h"
+#include "webkit/renderer/compositor_bindings/web_filter_operations_impl.h"
 #include "webkit/renderer/compositor_bindings/web_float_animation_curve_impl.h"
 #include "webkit/renderer/compositor_bindings/web_image_layer_impl.h"
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
@@ -28,6 +28,7 @@ using WebKit::WebContentLayer;
 using WebKit::WebContentLayerClient;
 using WebKit::WebExternalTextureLayer;
 using WebKit::WebExternalTextureLayerClient;
+using WebKit::WebFilterOperations;
 using WebKit::WebFloatAnimationCurve;
 using WebKit::WebImageLayer;
 using WebKit::WebLayer;
@@ -98,6 +99,10 @@ WebCompositorSupportImpl::createTransformAnimationCurve() {
 
 WebTransformOperations* WebCompositorSupportImpl::createTransformOperations() {
   return new WebTransformOperationsImpl();
+}
+
+WebFilterOperations* WebCompositorSupportImpl::createFilterOperations() {
+  return new WebFilterOperationsImpl();
 }
 
 }  // namespace webkit

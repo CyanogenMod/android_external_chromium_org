@@ -25,7 +25,7 @@
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/pickle.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "crypto/nss_util.h"
 #include "crypto/scoped_nss_types.h"
 #include "net/base/net_errors.h"
@@ -36,7 +36,7 @@
 #include "net/cert/x509_util_ios.h"
 #include "net/cert/x509_util_nss.h"
 
-using base::mac::ScopedCFTypeRef;
+using base::ScopedCFTypeRef;
 
 namespace net {
 namespace {
@@ -83,18 +83,6 @@ bool X509Certificate::IsIssuedByEncoded(
   }
   return x509_util::IsCertificateIssuedBy(
       nss_chain.cert_chain(), issuers);
-}
-
-// static
-X509Certificate* X509Certificate::CreateSelfSigned(
-    crypto::RSAPrivateKey* key,
-    const std::string& subject,
-    uint32 serial_number,
-    base::TimeDelta valid_duration) {
-  DCHECK(key);
-  DCHECK(!subject.empty());
-  NOTIMPLEMENTED();
-  return NULL;
 }
 
 void X509Certificate::GetSubjectAltName(

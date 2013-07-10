@@ -58,9 +58,20 @@ void LatencyInfo::AddLatencyNumberWithTimestamp(LatencyComponentType component,
   }
 }
 
+bool LatencyInfo::FindLatency(LatencyComponentType type,
+                              int64 id,
+                              LatencyComponent* output) const {
+  LatencyMap::const_iterator it = latency_components.find(
+      std::make_pair(type, id));
+  if (it == latency_components.end())
+    return false;
+  if (output)
+    *output = it->second;
+  return true;
+}
+
 void LatencyInfo::Clear() {
   latency_components.clear();
 }
 
 }  // namespace ui
-

@@ -9,7 +9,6 @@
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
-#include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/stats_counters.h"
 #include "base/strings/string16.h"
@@ -17,7 +16,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "cc/base/switches.h"
 #include "content/browser/browser_plugin/browser_plugin_embedder.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
@@ -161,13 +160,15 @@ g_created_callbacks = LAZY_INSTANCE_INITIALIZER;
 static int StartDownload(content::RenderViewHost* rvh,
                          const GURL& url,
                          bool is_favicon,
-                         int image_size) {
+                         uint32_t preferred_image_size,
+                         uint32_t max_image_size) {
   static int g_next_image_download_id = 0;
   rvh->Send(new ImageMsg_DownloadImage(rvh->GetRoutingID(),
                                        ++g_next_image_download_id,
                                        url,
                                        is_favicon,
-                                       image_size));
+                                       preferred_image_size,
+                                       max_image_size));
   return g_next_image_download_id;
 }
 
@@ -422,13 +423,14 @@ WebContentsImpl* WebContentsImpl::CreateWithOpener(
 BrowserPluginGuest* WebContentsImpl::CreateGuest(
     BrowserContext* browser_context,
     SiteInstance* site_instance,
-    int guest_instance_id) {
+    int guest_instance_id,
+    scoped_ptr<base::DictionaryValue> extra_params) {
   WebContentsImpl* new_contents = new WebContentsImpl(browser_context, NULL);
 
   // This makes |new_contents| act as a guest.
   // For more info, see comment above class BrowserPluginGuest.
-  new_contents->browser_plugin_guest_.reset(
-      BrowserPluginGuest::Create(guest_instance_id, new_contents));
+  BrowserPluginGuest::Create(
+      guest_instance_id, new_contents, extra_params.Pass());
 
   WebContents::CreateParams create_params(browser_context, site_instance);
   new_contents->Init(create_params);
@@ -548,8 +550,10 @@ WebPreferences WebContentsImpl::GetWebkitPrefs(RenderViewHost* rvh,
       !command_line.HasSwitch(switches::kDisableThreadedHTMLParser);
   prefs.experimental_websocket_enabled =
       command_line.HasSwitch(switches::kEnableExperimentalWebSocket);
-  prefs.pinch_virtual_viewport_enabled =
-      command_line.HasSwitch(cc::switches::kEnablePinchVirtualViewport);
+  if (command_line.HasSwitch(cc::switches::kEnablePinchVirtualViewport)) {
+    prefs.pinch_virtual_viewport_enabled = true;
+    prefs.pinch_overlay_scrollbar_thickness = 10;
+  }
 
 #if defined(OS_ANDROID)
   prefs.user_gesture_required_for_media_playback = !command_line.HasSwitch(
@@ -1489,9 +1493,8 @@ void WebContentsImpl::CreateNewWindow(
     int instance_id = GetBrowserPluginGuestManager()->get_next_instance_id();
     WebContentsImpl* new_contents_impl =
         static_cast<WebContentsImpl*>(new_contents);
-    new_contents_impl->browser_plugin_guest_.reset(
-        BrowserPluginGuest::CreateWithOpener(instance_id, new_contents_impl,
-            GetBrowserPluginGuest(), !!new_contents_impl->opener()));
+    BrowserPluginGuest::CreateWithOpener(instance_id, new_contents_impl,
+        GetBrowserPluginGuest(), !!new_contents_impl->opener());
   }
   new_contents->Init(create_params);
 
@@ -2074,10 +2077,12 @@ void WebContentsImpl::DidEndColorChooser() {
 
 int WebContentsImpl::DownloadImage(const GURL& url,
                                    bool is_favicon,
-                                   int image_size,
+                                   uint32_t preferred_image_size,
+                                   uint32_t max_image_size,
                                    const ImageDownloadCallback& callback) {
   RenderViewHost* host = GetRenderViewHost();
-  int id = StartDownload(host, url, is_favicon, image_size);
+  int id = StartDownload(
+      host, url, is_favicon, preferred_image_size, max_image_size);
   image_download_map_[id] = callback;
   return id;
 }
@@ -2419,7 +2424,7 @@ void WebContentsImpl::OnOpenDateTimeDialog(
   date_time_chooser_->ShowDialog(
       ContentViewCore::FromWebContents(this), GetRenderViewHost(),
       value.dialog_type, value.year, value.month, value.day, value.hour,
-      value.minute, value.second, value.minimum, value.maximum);
+      value.minute, value.second, value.week, value.minimum, value.maximum);
 }
 
 #endif
@@ -2671,6 +2676,14 @@ void WebContentsImpl::DidNavigateAnyFramePostCommit(
                     DidNavigateAnyFrame(details, params));
 }
 
+bool WebContentsImpl::ShouldAssignSiteForURL(const GURL& url) {
+  // Neither about:blank nor the chrome-native: scheme should "use up" a new
+  // SiteInstance.  In both cases, the SiteInstance can still be used for a
+  // normal web site.
+  return !url.SchemeIs(chrome::kChromeNativeScheme) &&
+      url != GURL(kAboutBlankURL);
+}
+
 void WebContentsImpl::UpdateMaxPageIDIfNecessary(RenderViewHost* rvh) {
   // If we are creating a RVH for a restored controller, then we need to make
   // sure the RenderView starts with a next_page_id_ larger than the number
@@ -2907,10 +2920,11 @@ void WebContentsImpl::DidNavigate(
   DCHECK(frame_tree_root_.get());
 
   // Update the site of the SiteInstance if it doesn't have one yet, unless
-  // this is for about:blank.  In that case, the SiteInstance can still be
-  // considered unused until a navigation to a real page.
+  // assigning a site is not necessary for this URL.  In that case, the
+  // SiteInstance can still be considered unused until a navigation to a real
+  // page.
   if (!static_cast<SiteInstanceImpl*>(GetSiteInstance())->HasSite() &&
-      params.url != GURL(kAboutBlankURL)) {
+      ShouldAssignSiteForURL(params.url)) {
     static_cast<SiteInstanceImpl*>(GetSiteInstance())->SetSite(params.url);
   }
 
@@ -3467,7 +3481,7 @@ void WebContentsImpl::BeforeUnloadFiredFromRenderManager(
                     BeforeUnloadFired(proceed_time));
   if (delegate_)
     delegate_->BeforeUnloadFired(this, proceed, proceed_to_fire_unload);
-  // Note: |this| can be deleted at this point.
+  // Note: |this| might be deleted at this point.
 }
 
 void WebContentsImpl::RenderViewGoneFromRenderManager(
@@ -3658,6 +3672,11 @@ RenderViewHostImpl* WebContentsImpl::GetRenderViewHostImpl() {
 
 BrowserPluginGuest* WebContentsImpl::GetBrowserPluginGuest() const {
   return browser_plugin_guest_.get();
+}
+
+void WebContentsImpl::SetBrowserPluginGuest(BrowserPluginGuest* guest) {
+  CHECK(!browser_plugin_guest_);
+  browser_plugin_guest_.reset(guest);
 }
 
 BrowserPluginEmbedder* WebContentsImpl::GetBrowserPluginEmbedder() const {

@@ -9,29 +9,30 @@
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
+#include "chrome/browser/chromeos/drive/test_util.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
 
 namespace drive {
+namespace internal {
 
 class ResourceMetadataStorageTest : public testing::Test {
  protected:
   virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
-    storage_.reset(new ResourceMetadataStorage(temp_dir_.path()));
+    storage_.reset(new ResourceMetadataStorage(
+        temp_dir_.path(), base::MessageLoopProxy::current()));
     ASSERT_TRUE(storage_->Initialize());
-  }
-
-  virtual void TearDown() OVERRIDE {
   }
 
   // Overwrites |storage_|'s version.
   void SetDBVersion(int version) {
-    scoped_ptr<ResourceMetadataHeader> header = storage_->GetHeader();
-    ASSERT_TRUE(header);
-    header->set_version(version);
-    storage_->PutHeader(*header);
+    ResourceMetadataHeader header;
+    ASSERT_TRUE(storage_->GetHeader(&header));
+    header.set_version(version);
+    EXPECT_TRUE(storage_->PutHeader(header));
   }
 
   bool CheckValidity() {
@@ -58,8 +59,10 @@ class ResourceMetadataStorageTest : public testing::Test {
                                                   child_base_name));
   }
 
+  content::TestBrowserThreadBundle thread_bundle_;
   base::ScopedTempDir temp_dir_;
-  scoped_ptr<ResourceMetadataStorage> storage_;
+  scoped_ptr<ResourceMetadataStorage,
+             test_util::DestroyHelperForTests> storage_;
 };
 
 TEST_F(ResourceMetadataStorageTest, LargestChangestamp) {
@@ -148,6 +151,11 @@ TEST_F(ResourceMetadataStorageTest, Iterator) {
   for (size_t i = 0; i < entries.size(); ++i)
     EXPECT_TRUE(storage_->PutEntry(entries[i]));
 
+  // Insert some dummy cache entries.
+  FileCacheEntry cache_entry;
+  EXPECT_TRUE(storage_->PutCacheEntry(entries[0].resource_id(), cache_entry));
+  EXPECT_TRUE(storage_->PutCacheEntry(entries[1].resource_id(), cache_entry));
+
   // Iterate and check the result.
   std::map<std::string, ResourceEntry> result;
   scoped_ptr<ResourceMetadataStorage::Iterator> it = storage_->GetIterator();
@@ -161,6 +169,72 @@ TEST_F(ResourceMetadataStorageTest, Iterator) {
   EXPECT_EQ(entries.size(), result.size());
   for (size_t i = 0; i < entries.size(); ++i)
     EXPECT_EQ(1U, result.count(entries[i].resource_id()));
+}
+
+TEST_F(ResourceMetadataStorageTest, PutCacheEntry) {
+  FileCacheEntry entry;
+  const std::string key1 = "abcdefg";
+  const std::string key2 = "abcd";
+  const std::string md5_1 = "foo";
+  const std::string md5_2 = "bar";
+
+  // Put cache entries.
+  entry.set_md5(md5_1);
+  EXPECT_TRUE(storage_->PutCacheEntry(key1, entry));
+  entry.set_md5(md5_2);
+  EXPECT_TRUE(storage_->PutCacheEntry(key2, entry));
+
+  // Get cache entires.
+  EXPECT_TRUE(storage_->GetCacheEntry(key1, &entry));
+  EXPECT_EQ(md5_1, entry.md5());
+  EXPECT_TRUE(storage_->GetCacheEntry(key2, &entry));
+  EXPECT_EQ(md5_2, entry.md5());
+
+  // Remove cache entries.
+  EXPECT_TRUE(storage_->RemoveCacheEntry(key1));
+  EXPECT_FALSE(storage_->GetCacheEntry(key1, &entry));
+
+  EXPECT_TRUE(storage_->RemoveCacheEntry(key2));
+  EXPECT_FALSE(storage_->GetCacheEntry(key2, &entry));
+}
+
+TEST_F(ResourceMetadataStorageTest, CacheEntryIterator) {
+  // Prepare data.
+  std::map<std::string, FileCacheEntry> entries;
+  FileCacheEntry cache_entry;
+
+  cache_entry.set_md5("aA");
+  entries["entry1"] = cache_entry;
+  cache_entry.set_md5("bB");
+  entries["entry2"] = cache_entry;
+  cache_entry.set_md5("cC");
+  entries["entry3"] = cache_entry;
+  cache_entry.set_md5("dD");
+  entries["entry4"] = cache_entry;
+
+  for (std::map<std::string, FileCacheEntry>::iterator it = entries.begin();
+       it != entries.end(); ++it)
+    EXPECT_TRUE(storage_->PutCacheEntry(it->first, it->second));
+
+  // Insert some dummy entries.
+  ResourceEntry entry;
+  entry.set_resource_id("entry1");
+  EXPECT_TRUE(storage_->PutEntry(entry));
+  entry.set_resource_id("entry2");
+  EXPECT_TRUE(storage_->PutEntry(entry));
+
+  // Iterate and check the result.
+  scoped_ptr<ResourceMetadataStorage::CacheEntryIterator> it =
+      storage_->GetCacheEntryIterator();
+  ASSERT_TRUE(it);
+  size_t num_entries = 0;
+  for (; !it->IsAtEnd(); it->Advance()) {
+    EXPECT_EQ(1U, entries.count(it->GetID()));
+    EXPECT_EQ(entries[it->GetID()].md5(), it->GetValue().md5());
+    ++num_entries;
+  }
+  EXPECT_FALSE(it->HasError());
+  EXPECT_EQ(entries.size(), num_entries);
 }
 
 TEST_F(ResourceMetadataStorageTest, GetChildren) {
@@ -190,7 +264,7 @@ TEST_F(ResourceMetadataStorageTest, GetChildren) {
     EXPECT_TRUE(storage_->PutEntry(entry));
   }
 
-  // Put some data.
+  // Put children.
   for (size_t i = 0; i < children_name_id.size(); ++i) {
     for (size_t j = 0; j < children_name_id[i].size(); ++j) {
       ResourceEntry entry;
@@ -199,6 +273,12 @@ TEST_F(ResourceMetadataStorageTest, GetChildren) {
       entry.set_resource_id(children_name_id[i][j].second);
       EXPECT_TRUE(storage_->PutEntry(entry));
     }
+  }
+
+  // Put some dummy cache entries.
+  for (size_t i = 0; i < arraysize(parents_id); ++i) {
+    FileCacheEntry cache_entry;
+    EXPECT_TRUE(storage_->PutCacheEntry(parents_id[i], cache_entry));
   }
 
   // Try to get children.
@@ -231,7 +311,8 @@ TEST_F(ResourceMetadataStorageTest, OpenExistingDB) {
   EXPECT_TRUE(storage_->PutEntry(entry2));
 
   // Close DB and reopen.
-  storage_.reset(new ResourceMetadataStorage(temp_dir_.path()));
+  storage_.reset(new ResourceMetadataStorage(
+      temp_dir_.path(), base::MessageLoopProxy::current()));
   ASSERT_TRUE(storage_->Initialize());
 
   // Can read data.
@@ -262,7 +343,8 @@ TEST_F(ResourceMetadataStorageTest, IncompatibleDB) {
 
   // Set incompatible version and reopen DB.
   SetDBVersion(ResourceMetadataStorage::kDBVersion - 1);
-  storage_.reset(new ResourceMetadataStorage(temp_dir_.path()));
+  storage_.reset(new ResourceMetadataStorage(
+      temp_dir_.path(), base::MessageLoopProxy::current()));
   ASSERT_TRUE(storage_->Initialize());
 
   // Data is erased because of the incompatible version.
@@ -275,7 +357,8 @@ TEST_F(ResourceMetadataStorageTest, WrongPath) {
   base::FilePath path;
   ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir_.path(), &path));
 
-  storage_.reset(new ResourceMetadataStorage(path));
+  storage_.reset(new ResourceMetadataStorage(
+      path, base::MessageLoopProxy::current()));
   // Cannot initialize DB beacause the path does not point a directory.
   ASSERT_FALSE(storage_->Initialize());
 }
@@ -335,6 +418,11 @@ TEST_F(ResourceMetadataStorageTest, CheckValidity) {
   PutChild(key2, name3, key3);
   EXPECT_TRUE(CheckValidity());
 
+  // Add some cache entries.
+  FileCacheEntry cache_entry;
+  EXPECT_TRUE(storage_->PutCacheEntry(key1, cache_entry));
+  EXPECT_TRUE(storage_->PutCacheEntry(key2, cache_entry));
+
   // Remove key2.
   RemoveChild(key1, name2);
   EXPECT_FALSE(CheckValidity());
@@ -352,4 +440,5 @@ TEST_F(ResourceMetadataStorageTest, CheckValidity) {
   EXPECT_TRUE(CheckValidity());
 }
 
+}  // namespace internal
 }  // namespace drive

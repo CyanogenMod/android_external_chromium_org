@@ -8,9 +8,9 @@
 #include "base/basictypes.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
-#include "base/timer.h"
-#include "net/base/network_change_notifier.h"
+#include "base/timer/timer.h"
 #include "google_apis/gaia/gaia_oauth_client.h"
+#include "net/base/network_change_notifier.h"
 #include "remoting/jingle_glue/xmpp_signal_strategy.h"
 
 namespace net {
@@ -80,7 +80,7 @@ class SignalingConnector
                                    int expires_seconds) OVERRIDE;
   virtual void OnRefreshTokenResponse(const std::string& access_token,
                                       int expires_in_seconds) OVERRIDE;
-  virtual void OnGetUserInfoResponse(const std::string& user_email) OVERRIDE;
+  virtual void OnGetUserEmailResponse(const std::string& user_email) OVERRIDE;
   virtual void OnOAuthError() OVERRIDE;
   virtual void OnNetworkError(int response_code) OVERRIDE;
 

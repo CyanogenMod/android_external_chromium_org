@@ -5,7 +5,6 @@
 #include "cc/trees/layer_tree_host.h"
 
 #include "base/memory/weak_ptr.h"
-#include "cc/base/thread_impl.h"
 #include "cc/layers/content_layer.h"
 #include "cc/layers/layer.h"
 #include "cc/layers/layer_impl.h"
@@ -14,7 +13,6 @@
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/layer_tree_test.h"
 #include "cc/trees/layer_tree_impl.h"
-#include "third_party/WebKit/public/platform/WebLayerScrollClient.h"
 #include "ui/gfx/point_conversions.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/vector2d_conversions.h"
@@ -223,9 +221,7 @@ class LayerTreeHostScrollTestFractionalScroll : public LayerTreeHostScrollTest {
 
 MULTI_THREAD_TEST_F(LayerTreeHostScrollTestFractionalScroll);
 
-class LayerTreeHostScrollTestCaseWithChild
-    : public LayerTreeHostScrollTest,
-      public WebKit::WebLayerScrollClient {
+class LayerTreeHostScrollTestCaseWithChild : public LayerTreeHostScrollTest {
  public:
   LayerTreeHostScrollTestCaseWithChild()
       : initial_offset_(10, 20),
@@ -251,7 +247,9 @@ class LayerTreeHostScrollTestCaseWithChild
     root_layer->AddChild(root_scroll_layer_);
 
     child_layer_ = ContentLayer::Create(&fake_content_layer_client_);
-    child_layer_->set_layer_scroll_client(this);
+    child_layer_->set_did_scroll_callback(
+        base::Bind(&LayerTreeHostScrollTestCaseWithChild::DidScroll,
+                   base::Unretained(this)));
     child_layer_->SetBounds(gfx::Size(110, 110));
 
     // Scrolls on the child layer will happen at 5, 5. If they are treated
@@ -281,7 +279,7 @@ class LayerTreeHostScrollTestCaseWithChild
 
   virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
 
-  virtual void didScroll() OVERRIDE {
+  void DidScroll() {
     final_scroll_offset_ = expected_scroll_layer_->scroll_offset();
   }
 
@@ -572,6 +570,11 @@ class ImplSidePaintingScrollTestSimple : public ImplSidePaintingScrollTest {
     return can_activate_;
   }
 
+  virtual bool CanActivatePendingTreeIfNeeded(LayerTreeHostImpl* impl)
+      OVERRIDE {
+    return can_activate_;
+  }
+
   virtual void CommitCompleteOnThread(LayerTreeHostImpl* impl) OVERRIDE {
     // We force a second draw here of the first commit before activating
     // the second commit.
@@ -726,9 +729,7 @@ void BindInputHandlerOnCompositorThread(
 
 TEST(LayerTreeHostFlingTest, DidStopFlingingThread) {
   base::Thread impl_thread("cc");
-  impl_thread.Start();
-  scoped_ptr<Thread> impl_ccthread =
-      ThreadImpl::CreateForDifferentThread(impl_thread.message_loop_proxy());
+  ASSERT_TRUE(impl_thread.Start());
 
   bool received_stop_flinging = false;
   LayerTreeSettings settings;
@@ -737,8 +738,9 @@ TEST(LayerTreeHostFlingTest, DidStopFlingingThread) {
           impl_thread.message_loop_proxy().get(), &received_stop_flinging);
   FakeLayerTreeHostClient client(FakeLayerTreeHostClient::DIRECT_3D);
 
-  scoped_ptr<LayerTreeHost> layer_tree_host =
-      LayerTreeHost::Create(&client, settings, impl_ccthread.Pass());
+  ASSERT_TRUE(impl_thread.message_loop_proxy().get());
+  scoped_ptr<LayerTreeHost> layer_tree_host = LayerTreeHost::Create(
+      &client, settings, impl_thread.message_loop_proxy());
 
   impl_thread.message_loop_proxy()
       ->PostTask(FROM_HERE,
@@ -802,16 +804,16 @@ class LayerTreeHostScrollTestLayerStructureChange
   }
 
  protected:
-  class FakeWebLayerScrollClient : public WebKit::WebLayerScrollClient {
+  class FakeLayerScrollClient {
    public:
-    virtual void didScroll() OVERRIDE {
+    void DidScroll() {
       owner_->DidScroll(layer_);
     }
     LayerTreeHostScrollTestLayerStructureChange* owner_;
     Layer* layer_;
   };
 
-  Layer* CreateScrollLayer(Layer* parent, FakeWebLayerScrollClient* client) {
+  Layer* CreateScrollLayer(Layer* parent, FakeLayerScrollClient* client) {
     scoped_refptr<Layer> scroll_layer =
         ContentLayer::Create(&fake_content_layer_client_);
     scroll_layer->SetBounds(gfx::Size(110, 110));
@@ -820,16 +822,17 @@ class LayerTreeHostScrollTestLayerStructureChange
     scroll_layer->SetIsDrawable(true);
     scroll_layer->SetScrollable(true);
     scroll_layer->SetMaxScrollOffset(gfx::Vector2d(100, 100));
-    scroll_layer->set_layer_scroll_client(client);
+    scroll_layer->set_did_scroll_callback(base::Bind(
+        &FakeLayerScrollClient::DidScroll, base::Unretained(client)));
     client->owner_ = this;
     client->layer_ = scroll_layer.get();
     parent->AddChild(scroll_layer);
     return scroll_layer.get();
   }
 
-  FakeWebLayerScrollClient root_scroll_layer_client_;
-  FakeWebLayerScrollClient sibling_scroll_layer_client_;
-  FakeWebLayerScrollClient child_scroll_layer_client_;
+  FakeLayerScrollClient root_scroll_layer_client_;
+  FakeLayerScrollClient sibling_scroll_layer_client_;
+  FakeLayerScrollClient child_scroll_layer_client_;
 
   FakeContentLayerClient fake_content_layer_client_;
 

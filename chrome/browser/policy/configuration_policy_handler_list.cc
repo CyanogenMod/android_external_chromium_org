@@ -18,6 +18,7 @@
 #include "policy/policy_constants.h"
 
 #if defined(OS_CHROMEOS)
+#include "ash/magnifier/magnifier_constants.h"
 #include "chrome/browser/chromeos/policy/configuration_policy_handler_chromeos.h"
 #endif  // defined(OS_CHROMEOS)
 
@@ -330,6 +331,9 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kContentPackManualBehaviorURLs,
     prefs::kManagedModeManualURLs,
     Value::TYPE_DICTIONARY },
+  { key::kSupervisedUserCreationEnabled,
+    prefs::kManagedUserCreationAllowed,
+    Value::TYPE_BOOLEAN },
 
 #if defined(OS_CHROMEOS)
   { key::kChromeOsLockOnIdleSuspend,
@@ -382,6 +386,15 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
     Value::TYPE_BOOLEAN },
   { key::kHighContrastEnabled,
     prefs::kHighContrastEnabled,
+    Value::TYPE_BOOLEAN },
+  { key::kDeviceLoginScreenDefaultLargeCursorEnabled,
+    NULL,
+    Value::TYPE_BOOLEAN },
+  { key::kDeviceLoginScreenDefaultSpokenFeedbackEnabled,
+    NULL,
+    Value::TYPE_BOOLEAN },
+  { key::kDeviceLoginScreenDefaultHighContrastEnabled,
+    NULL,
     Value::TYPE_BOOLEAN },
   { key::kRebootAfterUpdate,
     prefs::kRebootAfterUpdate,
@@ -517,8 +530,13 @@ ConfigurationPolicyHandlerList::ConfigurationPolicyHandlerList() {
           0, INT_MAX, true));
   handlers_.push_back(
       new IntRangePolicyHandler(
-          key::kIdleAction,
-          prefs::kPowerIdleAction,
+          key::kIdleActionAC,
+          prefs::kPowerAcIdleAction,
+          0, 3, false));
+  handlers_.push_back(
+      new IntRangePolicyHandler(
+          key::kIdleActionBattery,
+          prefs::kPowerBatteryIdleAction,
           0, 3, false));
   handlers_.push_back(
       new IntRangePolicyHandler(
@@ -527,8 +545,8 @@ ConfigurationPolicyHandlerList::ConfigurationPolicyHandlerList() {
           0, 3, false));
   handlers_.push_back(
       new IntPercentageToDoublePolicyHandler(
-          key::kPresentationIdleDelayScale,
-          prefs::kPowerPresentationIdleDelayFactor,
+          key::kPresentationScreenDimDelayScale,
+          prefs::kPowerPresentationScreenDimDelayFactor,
           100, INT_MAX, true));
   handlers_.push_back(
       new IntPercentageToDoublePolicyHandler(
@@ -538,6 +556,10 @@ ConfigurationPolicyHandlerList::ConfigurationPolicyHandlerList() {
   handlers_.push_back(new IntRangePolicyHandler(key::kUptimeLimit,
                                                 prefs::kUptimeLimit,
                                                 3600, INT_MAX, true));
+  handlers_.push_back(new IntRangePolicyHandler(
+      key::kDeviceLoginScreenDefaultScreenMagnifierType,
+      NULL,
+      0, ash::MAGNIFIER_FULL, false));
 #endif  // defined(OS_CHROMEOS)
 }
 

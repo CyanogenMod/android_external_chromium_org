@@ -5,6 +5,7 @@
 #include "media/base/android/media_player_android.h"
 
 #include "base/logging.h"
+#include "media/base/android/media_drm_bridge.h"
 #include "media/base/android/media_player_manager.h"
 
 namespace media {
@@ -86,6 +87,11 @@ GURL MediaPlayerAndroid::GetUrl() {
 
 GURL MediaPlayerAndroid::GetFirstPartyForCookies() {
   return GURL();
+}
+
+void MediaPlayerAndroid::SetDrmBridge(MediaDrmBridge* drm_bridge) {
+  // Not all players support DrmBridge. Do nothing by default.
+  return;
 }
 
 }  // namespace media

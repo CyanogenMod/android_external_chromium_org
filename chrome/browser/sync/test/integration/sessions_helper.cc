@@ -8,7 +8,7 @@
 
 #include "base/stl_util.h"
 #include "base/test/test_timeouts.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/glue/session_model_associator.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -18,7 +18,7 @@
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 using sync_datatype_helper::test;
 

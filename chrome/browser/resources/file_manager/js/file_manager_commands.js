@@ -71,6 +71,14 @@ CommandUtil.canExecuteVisibleOnDriveWithCtrlKeyOnly =
 };
 
 /**
+ * Sets as the command as always enabled.
+ * @param {Event} event Command event to mark.
+ */
+CommandUtil.canExecuteAlways = function(event) {
+  event.canExecute = true;
+};
+
+/**
  * Returns a single selected/passed entry or null.
  * @param {Event} event Command event.
  * @param {FileManager} fileManager FileManager to use.
@@ -239,8 +247,9 @@ Commands.newFolderCommand = {
   },
   canExecute: function(event, fileManager, directoryModel) {
     event.canExecute = !fileManager.isOnReadonlyDirectory() &&
+                       !fileManager.isRenamingInProgress() &&
                        !directoryModel.isSearching() &&
-                       !fileManager.isRenamingInProgress();
+                       !directoryModel.isScanning();
   }
 };
 
@@ -248,8 +257,13 @@ Commands.newFolderCommand = {
  * Initiates new window creation.
  */
 Commands.newWindowCommand = {
-  execute: function(event, fileManager) {
-    chrome.fileBrowserPrivate.openNewWindow(document.location.href);
+  execute: function(event, fileManager, directoryModel) {
+    chrome.runtime.getBackgroundPage(function(background) {
+      var appState = {
+        defaultPath: directoryModel.getCurrentDirPath()
+      };
+      background.launchFileManager(appState);
+    });
   },
   canExecute: function(event, fileManager) {
     event.canExecute = (fileManager.dialogType == DialogType.FULL_PAGE);
@@ -263,9 +277,7 @@ Commands.changeDefaultAppCommand = {
   execute: function(event, fileManager) {
     fileManager.showChangeDefaultAppPicker();
   },
-  canExecute: function(event, fileManager) {
-    event.canExecute = true;
-  }
+  canExecute: CommandUtil.canExecuteAlways
 };
 
 /**
@@ -317,13 +329,11 @@ Commands.renameFileCommand = {
 Commands.volumeHelpCommand = {
   execute: function() {
     if (fileManager.isOnDrive())
-      chrome.tabs.create({ url: FileManager.GOOGLE_DRIVE_HELP });
+      chrome.windows.create({url: FileManager.GOOGLE_DRIVE_HELP});
     else
-      chrome.tabs.create({ url: FileManager.FILES_APP_HELP });
+      chrome.windows.create({url: FileManager.FILES_APP_HELP});
   },
-  canExecute: function(event, fileManager) {
-    event.canExecute = true;
-  }
+  canExecute: CommandUtil.canExecuteAlways
 };
 
 /**
@@ -331,7 +341,7 @@ Commands.volumeHelpCommand = {
  */
 Commands.driveBuySpaceCommand = {
   execute: function() {
-    chrome.tabs.create({ url: FileManager.GOOGLE_DRIVE_BUY_STORAGE });
+    chrome.windows.create({url: FileManager.GOOGLE_DRIVE_BUY_STORAGE});
   },
   canExecute: CommandUtil.canExecuteVisibleOnDriveOnly
 };
@@ -361,7 +371,7 @@ Commands.driveReloadCommand = {
  */
 Commands.driveGoToDriveCommand = {
   execute: function() {
-    chrome.tabs.create({ url: FileManager.GOOGLE_DRIVE_ROOT });
+    chrome.windows.create({url: FileManager.GOOGLE_DRIVE_ROOT});
   },
   canExecute: CommandUtil.canExecuteVisibleOnDriveOnly
 };
@@ -418,42 +428,93 @@ Commands.volumeSwitchCommand = {
 Commands.togglePinnedCommand = {
   execute: function(event, fileManager) {
     var pin = !event.command.checked;
-    var entry = CommandUtil.getSingleEntry(event, fileManager);
-
-    var showError = function(filesystem) {
-      fileManager.alert.showHtml(str('DRIVE_OUT_OF_SPACE_HEADER'),
-          strf('DRIVE_OUT_OF_SPACE_MESSAGE',
-               unescape(entry.name),
-               util.bytesToString(filesystem.size)));
-    };
-
-    var callback = function() {
-      if (chrome.runtime.lastError && pin) {
-        fileManager.metadataCache_.get(entry, 'filesystem', showError);
-      }
-      // We don't have update events yet, so clear the cached data.
-      fileManager.metadataCache_.clear(entry, 'drive');
-      fileManager.metadataCache_.get(entry, 'drive', function(drive) {
-        fileManager.updateMetadataInUI_('drive', [entry.toURL()], [drive]);
-      });
-    };
-
-    chrome.fileBrowserPrivate.pinDriveFile(entry.toURL(), pin, callback);
     event.command.checked = pin;
-  },
-  canExecute: function(event, fileManager) {
-    var entry = CommandUtil.getSingleEntry(event, fileManager);
-    var drive = entry && fileManager.metadataCache_.getCached(entry, 'drive');
+    var entries = this.getTargetEntries_();
+    var currentEntry;
+    var error = false;
+    var steps = {
+      // Pick an entry and pin it.
+      start: function() {
+        // Check if all the entries are pinned or not.
+        if (entries.length == 0)
+          return;
+        currentEntry = entries.shift();
+        chrome.fileBrowserPrivate.pinDriveFile(
+            currentEntry.toURL(),
+            pin,
+            steps.entryPinned);
+      },
 
-    if (!fileManager.isOnDrive() || !entry || entry.isDirectory || !drive ||
-        drive.hosted) {
-      event.canExecute = false;
-      event.command.setHidden(true);
-    } else {
+      // Check the result of pinning
+      entryPinned: function() {
+        // Convert to boolean.
+        error = !!chrome.runtime.lastError;
+        if (error && pin) {
+          fileManager.metadataCache_.get(
+              currentEntry, 'filesystem', steps.showError);
+        }
+        fileManager.metadataCache_.clear(currentEntry, 'drive');
+        fileManager.metadataCache_.get(
+            currentEntry, 'drive', steps.updateUI.bind(this));
+      },
+
+      // Update the user interface accoding to the cache state.
+      updateUI: function(drive) {
+        fileManager.updateMetadataInUI_(
+            'drive', [currentEntry.toURL()], [drive]);
+        if (!error)
+          steps.start();
+      },
+
+      // Show the error
+      showError: function(filesystem) {
+        fileManager.alert.showHtml(str('DRIVE_OUT_OF_SPACE_HEADER'),
+                                   strf('DRIVE_OUT_OF_SPACE_MESSAGE',
+                                        unescape(currentEntry.name),
+                                        util.bytesToString(filesystem.size)));
+      }
+    };
+    steps.start();
+  },
+
+  canExecute: function(event, fileManager) {
+    var entries = this.getTargetEntries_();
+    var checked = true;
+    for (var i = 0; i < entries.length; i++) {
+      checked = checked && entries[i].pinned;
+    }
+    if (entries.length > 0) {
       event.canExecute = true;
       event.command.setHidden(false);
-      event.command.checked = drive.pinned;
+      event.command.checked = checked;
+    } else {
+      event.canExecute = false;
+      event.command.setHidden(true);
     }
+  },
+
+  /**
+   * Obtains target entries from the selection.
+   * If directories are included in the selection, it just returns an empty
+   * array to avoid confusing because pinning directory is not supported
+   * currently.
+   *
+   * @return {Array.<Entry>} Target entries.
+   * @private
+   */
+  getTargetEntries_: function() {
+    var hasDirectory = false;
+    var results = fileManager.getSelection().entries.filter(function(entry) {
+      hasDirectory = hasDirectory || entry.isDirectory;
+      if (!entry || hasDirectory)
+        return false;
+      var metadata = fileManager.metadataCache_.getCached(entry, 'drive');
+        if (!metadata || metadata.hosted)
+          return false;
+      entry.pinned = metadata.pinned;
+      return true;
+    });
+    return hasDirectory ? [] : results;
   }
 };
 
@@ -473,4 +534,50 @@ Commands.zipSelectionCommand = {
         !fileManager.isOnDrive() &&
         selection && selection.totalCount > 0;
   }
+};
+
+/**
+ * Shows the share dialog for the current selection (single only).
+ */
+Commands.shareCommand = {
+  execute: function(event, fileManager) {
+    fileManager.shareSelection();
+  },
+  canExecute: function(event, fileManager) {
+    var selection = fileManager.getSelection();
+    event.canExecute = fileManager.isOnDrive() &&
+        !fileManager.isDriveOffline() &&
+        selection && selection.totalCount == 1;
+    event.command.setHidden(!fileManager.isOnDrive());
+  }
+};
+
+/**
+ * Zoom in to the Files.app.
+ */
+Commands.zoomInCommand = {
+  execute: function(event) {
+    chrome.fileBrowserPrivate.zoom('in');
+  },
+  canExecute: CommandUtil.canExecuteAlways
+};
+
+/**
+ * Zoom out from the Files.app.
+ */
+Commands.zoomOutCommand = {
+  execute: function(event) {
+    chrome.fileBrowserPrivate.zoom('out');
+  },
+  canExecute: CommandUtil.canExecuteAlways
+};
+
+/**
+ * Reset the zoom factor.
+ */
+Commands.zoomResetCommand = {
+  execute: function(event) {
+    chrome.fileBrowserPrivate.zoom('reset');
+  },
+  canExecute: CommandUtil.canExecuteAlways
 };

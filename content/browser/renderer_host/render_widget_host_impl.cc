@@ -10,6 +10,7 @@
 #include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/containers/hash_tables.h"
 #include "base/debug/trace_event.h"
 #include "base/i18n/rtl.h"
 #include "base/lazy_instance.h"
@@ -117,6 +118,12 @@ g_created_callbacks = LAZY_INSTANCE_INITIALIZER;
 }  // namespace
 
 
+typedef std::pair<int32, int32> RenderWidgetHostID;
+typedef base::hash_map<RenderWidgetHostID, RenderWidgetHostImpl*>
+    RoutingIDWidgetMap;
+static base::LazyInstance<RoutingIDWidgetMap> g_routing_id_widget_map =
+    LAZY_INSTANCE_INITIALIZER;
+
 // static
 void RenderWidgetHost::RemoveAllBackingStores() {
   BackingStoreManager::RemoveAllBackingStores();
@@ -196,7 +203,9 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
 
   is_threaded_compositing_enabled_ = IsThreadedCompositingEnabled();
 
-  process_->Attach(this, routing_id_);
+  g_routing_id_widget_map.Get().insert(std::make_pair(
+      RenderWidgetHostID(process->GetID(), routing_id_), this));
+  process_->AddRoute(routing_id_, this);
   // Because the widget initializes as is_hidden_ == false,
   // tell the process host that we're alive.
   process_->WidgetRestored();
@@ -223,10 +232,41 @@ RenderWidgetHostImpl::~RenderWidgetHostImpl() {
   GpuSurfaceTracker::Get()->RemoveSurface(surface_id_);
   surface_id_ = 0;
 
-  process_->Release(routing_id_);
+  process_->RemoveRoute(routing_id_);
+  g_routing_id_widget_map.Get().erase(
+      RenderWidgetHostID(process_->GetID(), routing_id_));
 
   if (delegate_)
     delegate_->RenderWidgetDeleted(this);
+}
+
+// static
+RenderWidgetHost* RenderWidgetHost::FromID(
+    int32 process_id,
+    int32 routing_id) {
+  return RenderWidgetHostImpl::FromID(process_id, routing_id);
+}
+
+// static
+RenderWidgetHostImpl* RenderWidgetHostImpl::FromID(
+    int32 process_id,
+    int32 routing_id) {
+  RoutingIDWidgetMap* widgets = g_routing_id_widget_map.Pointer();
+  RoutingIDWidgetMap::iterator it = widgets->find(
+      RenderWidgetHostID(process_id, routing_id));
+  return it == widgets->end() ? NULL : it->second;
+}
+
+// static
+std::vector<RenderWidgetHost*> RenderWidgetHost::GetRenderWidgetHosts() {
+  std::vector<RenderWidgetHost*> hosts;
+  RoutingIDWidgetMap* widgets = g_routing_id_widget_map.Pointer();
+  for (RoutingIDWidgetMap::const_iterator it = widgets->begin();
+       it != widgets->end();
+       ++it) {
+    hosts.push_back(it->second);
+  }
+  return hosts;
 }
 
 // static
@@ -1060,11 +1100,29 @@ void RenderWidgetHostImpl::ForwardWheelEventWithLatencyInfo(
 
 void RenderWidgetHostImpl::ForwardGestureEvent(
     const WebKit::WebGestureEvent& gesture_event) {
+  ForwardGestureEventWithLatencyInfo(gesture_event, ui::LatencyInfo());
+}
+
+void RenderWidgetHostImpl::ForwardGestureEventWithLatencyInfo(
+    const WebKit::WebGestureEvent& gesture_event,
+    const ui::LatencyInfo& ui_latency) {
   TRACE_EVENT0("input", "RenderWidgetHostImpl::ForwardGestureEvent");
   if (ignore_input_events_ || process_->IgnoreInputEvents())
     return;
 
-  ui::LatencyInfo latency_info = NewInputLatencyInfo();
+  ui::LatencyInfo latency_info;
+  // In Aura, gesture event will carry its original touch event's
+  // INPUT_EVENT_LATENCY_RWH_COMPONENT. For non-aura platform, we add the
+  // INPUT_EVENT_LATENCY_RWH_COMPONENT right here.
+  if (!ui_latency.FindLatency(ui::INPUT_EVENT_LATENCY_RWH_COMPONENT,
+                              GetLatencyComponentId(),
+                              NULL))
+    latency_info = NewInputLatencyInfo();
+
+  latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_INJECTED_RWH_COMPONENT,
+                                GetLatencyComponentId(),
+                                ++last_input_number_);
+  latency_info.MergeWith(ui_latency);
 
   if (!IsInOverscrollGesture() &&
       !gesture_event_filter_->ShouldForward(
@@ -1239,6 +1297,9 @@ void RenderWidgetHostImpl::SendInputEvent(const WebInputEvent& input_event,
                                           int event_size,
                                           const ui::LatencyInfo& latency_info,
                                           bool is_keyboard_shortcut) {
+  DCHECK(latency_info.FindLatency(ui::INPUT_EVENT_LATENCY_RWH_COMPONENT,
+                                  GetLatencyComponentId(),
+                                  NULL));
   input_event_start_time_ = TimeTicks::Now();
   Send(new InputMsg_HandleInputEvent(
       routing_id_, &input_event, latency_info, is_keyboard_shortcut));
@@ -1789,14 +1850,6 @@ void RenderWidgetHostImpl::OnUpdateRect(
       RecordAction(UserMetricsAction("BadMessageTerminate_RWH1"));
       GetProcess()->ReceivedBadMessage();
     } else {
-      UNSHIPPED_TRACE_EVENT_INSTANT2("test_latency", "UpdateRect",
-          TRACE_EVENT_SCOPE_THREAD,
-          "x+y", params.bitmap_rect.x() + params.bitmap_rect.y(),
-          "color", 0xffffff & *static_cast<uint32*>(dib->memory()));
-      UNSHIPPED_TRACE_EVENT_INSTANT1("test_latency", "UpdateRectWidth",
-          TRACE_EVENT_SCOPE_THREAD,
-          "width", params.bitmap_rect.width());
-
       // Scroll the backing store.
       if (!params.scroll_rect.IsEmpty()) {
         ScrollBackingStoreRect(params.scroll_delta,
@@ -1906,9 +1959,6 @@ void RenderWidgetHostImpl::DidUpdateBackingStore(
   // On other platforms, this will be equivalent to MPArch.RWH_OnMsgUpdateRect.
   delta = now - paint_start;
   UMA_HISTOGRAM_TIMES("MPArch.RWH_TotalPaintTime", delta);
-  UNSHIPPED_TRACE_EVENT_INSTANT1("test_latency", "UpdateRectComplete",
-      TRACE_EVENT_SCOPE_THREAD,
-      "x+y", params.bitmap_rect.x() + params.bitmap_rect.y());
 }
 
 void RenderWidgetHostImpl::OnInputEventAck(
@@ -2525,6 +2575,55 @@ void RenderWidgetHostImpl::DetachDelegate() {
   delegate_ = NULL;
 }
 
+void RenderWidgetHostImpl::ComputeTouchLatency(
+    const ui::LatencyInfo& latency_info) {
+  ui::LatencyInfo::LatencyComponent ui_component;
+  ui::LatencyInfo::LatencyComponent rwh_component;
+  ui::LatencyInfo::LatencyComponent acked_component;
+
+  if (!latency_info.FindLatency(ui::INPUT_EVENT_LATENCY_UI_COMPONENT,
+                                0,
+                                &ui_component) ||
+      !latency_info.FindLatency(ui::INPUT_EVENT_LATENCY_RWH_COMPONENT,
+                                GetLatencyComponentId(),
+                                &rwh_component))
+    return;
+
+  DCHECK(ui_component.event_count == 1);
+  DCHECK(rwh_component.event_count == 1);
+
+  base::TimeDelta ui_delta =
+      rwh_component.event_time - ui_component.event_time;
+  rendering_stats_.touch_ui_count++;
+  rendering_stats_.total_touch_ui_latency += ui_delta;
+  UMA_HISTOGRAM_CUSTOM_COUNTS(
+      "Event.Latency.Browser.TouchUI",
+      ui_delta.InMicroseconds(),
+      0,
+      20000,
+      100);
+
+  if (latency_info.FindLatency(ui::INPUT_EVENT_LATENCY_ACKED_COMPONENT,
+                               0,
+                               &acked_component)) {
+    DCHECK(acked_component.event_count == 1);
+    base::TimeDelta acked_delta =
+        acked_component.event_time - rwh_component.event_time;
+    rendering_stats_.touch_acked_count++;
+    rendering_stats_.total_touch_acked_latency += acked_delta;
+    UMA_HISTOGRAM_CUSTOM_COUNTS(
+        "Event.Latency.Browser.TouchAcked",
+        acked_delta.InMicroseconds(),
+        0,
+        1000000,
+        100);
+  }
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableGpuBenchmarking))
+    Send(new ViewMsg_SetBrowserRenderingStats(routing_id_, rendering_stats_));
+}
+
 void RenderWidgetHostImpl::FrameSwapped(const ui::LatencyInfo& latency_info) {
   ui::LatencyInfo::LatencyMap::const_iterator l =
       latency_info.latency_components.find(std::make_pair(
@@ -2554,10 +2653,8 @@ void RenderWidgetHostImpl::CompositorFrameDrawn(
     // Matches with GetLatencyComponentId
     int routing_id = b->first.second & 0xffffffff;
     int process_id = (b->first.second >> 32) & 0xffffffff;
-    RenderProcessHost* host = RenderProcessHost::FromID(process_id);
-    if (!host)
-      continue;
-    RenderWidgetHost* rwh = host->GetRenderWidgetHostByID(routing_id);
+    RenderWidgetHost* rwh =
+        RenderWidgetHost::FromID(process_id, routing_id);
     if (!rwh)
       continue;
     RenderWidgetHostImpl::From(rwh)->FrameSwapped(latency_info);

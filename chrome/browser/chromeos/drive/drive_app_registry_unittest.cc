@@ -20,12 +20,11 @@ class DriveAppRegistryTest : public testing::Test {
   virtual void SetUp() OVERRIDE {
     profile_.reset(new TestingProfile);
 
-    // The fake object will be manually deleted in TearDown().
-    fake_drive_service_.reset(new google_apis::FakeDriveService);
-    fake_drive_service_->LoadAppListForDriveApi("chromeos/drive/applist.json");
+    fake_drive_service_.reset(new FakeDriveService);
+    fake_drive_service_->LoadAppListForDriveApi("drive/applist.json");
 
-    scheduler_.reset(
-        new JobScheduler(profile_.get(), fake_drive_service_.get()));
+    scheduler_.reset(new JobScheduler(profile_.get(), fake_drive_service_.get(),
+                                      base::MessageLoopProxy::current()));
 
     web_apps_registry_.reset(new DriveAppRegistry(scheduler_.get()));
     web_apps_registry_->Update();
@@ -58,7 +57,7 @@ class DriveAppRegistryTest : public testing::Test {
 
   content::TestBrowserThreadBundle thread_bundle_;
   scoped_ptr<TestingProfile> profile_;
-  scoped_ptr<google_apis::FakeDriveService> fake_drive_service_;
+  scoped_ptr<FakeDriveService> fake_drive_service_;
   scoped_ptr<JobScheduler> scheduler_;
   scoped_ptr<DriveAppRegistry> web_apps_registry_;
 };

@@ -6,6 +6,8 @@
 
 #include <string>
 
+#include "base/command_line.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/renderer/extensions/chrome_v8_context.h"
 #include "chrome/renderer/extensions/dispatcher.h"
@@ -14,9 +16,11 @@
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "content/public/renderer/render_view_visitor.h"
+#include "content/public/renderer/v8_value_converter.h"
+#include "grit/renderer_resources.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebView.h"
-#include "third_party/WebKit/public/web/WebScopedMicrotaskSuppression.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "v8/include/v8.h"
 
 namespace extensions {
@@ -56,71 +60,10 @@ AppWindowCustomBindings::AppWindowCustomBindings(
   RouteFunction("GetView",
       base::Bind(&AppWindowCustomBindings::GetView,
                  base::Unretained(this)));
-  RouteFunction("OnContextReady",
-      base::Bind(&AppWindowCustomBindings::OnContextReady,
+
+  RouteFunction("GetWindowControlsHtmlTemplate",
+      base::Bind(&AppWindowCustomBindings::GetWindowControlsHtmlTemplate,
                  base::Unretained(this)));
-}
-
-namespace {
-class LoadWatcher : public content::RenderViewObserver {
- public:
-  LoadWatcher(v8::Isolate* isolate,
-              content::RenderView* view,
-              v8::Handle<v8::Function> cb)
-      : content::RenderViewObserver(view),
-        callback_(cb) {
-  }
-
-  virtual void DidCreateDocumentElement(WebKit::WebFrame* frame) OVERRIDE {
-    CallbackAndDie(frame, true);
-  }
-
-  virtual void DidFailProvisionalLoad(
-      WebKit::WebFrame* frame,
-      const WebKit::WebURLError& error) OVERRIDE {
-    CallbackAndDie(frame, false);
-  }
-
- private:
-  ScopedPersistent<v8::Function> callback_;
-
-  void CallbackAndDie(WebKit::WebFrame* frame, bool succeeded) {
-    v8::HandleScope handle_scope;
-    v8::Local<v8::Context> context = frame->mainWorldScriptContext();
-    v8::Context::Scope scope(context);
-    v8::Local<v8::Object> global = context->Global();
-    {
-      WebKit::WebScopedMicrotaskSuppression suppression;
-      v8::Handle<v8::Value> args[] = {
-        succeeded ? v8::True() : v8::False()
-      };
-      callback_->Call(global, 1, args);
-    }
-    delete this;
-  }
-};
-}  // namespace
-
-void AppWindowCustomBindings::OnContextReady(
-    const v8::FunctionCallbackInfo<v8::Value>& args) {
-  if (args.Length() != 2)
-    return;
-
-  if (!args[0]->IsInt32())
-    return;
-  if (!args[1]->IsFunction())
-    return;
-
-  int view_id = args[0]->Int32Value();
-
-  content::RenderView* view = content::RenderView::FromRoutingID(view_id);
-  if (!view)
-    return;
-
-  v8::Handle<v8::Function> func = v8::Handle<v8::Function>::Cast(args[1]);
-  new LoadWatcher(args.GetIsolate(), view, func);
-
-  args.GetReturnValue().Set(true);
 }
 
 void AppWindowCustomBindings::GetView(
@@ -165,6 +108,23 @@ void AppWindowCustomBindings::GetView(
 
   v8::Local<v8::Value> window = frame->mainWorldScriptContext()->Global();
   args.GetReturnValue().Set(window);
+}
+
+void AppWindowCustomBindings::GetWindowControlsHtmlTemplate(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  CHECK_EQ(args.Length(), 0);
+
+  v8::Handle<v8::Value> result = v8::String::Empty();
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableAppWindowControls)) {
+    base::Value* value = base::Value::CreateStringValue(
+        ResourceBundle::GetSharedInstance().GetRawDataResource(
+            IDR_WINDOW_CONTROLS_TEMPLATE_HTML).as_string());
+    scoped_ptr<content::V8ValueConverter> converter(
+        content::V8ValueConverter::create());
+    result = converter->ToV8Value(value, context()->v8_context());
+  }
+  args.GetReturnValue().Set(result);
 }
 
 }  // namespace extensions

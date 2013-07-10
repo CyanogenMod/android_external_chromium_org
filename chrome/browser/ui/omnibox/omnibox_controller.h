@@ -41,8 +41,10 @@ class OmniboxController : public AutocompleteControllerDelegate {
                     Profile* profile);
   virtual ~OmniboxController();
 
+  // |current_url| is only set for mobile ports.
   void StartAutocomplete(string16 user_text,
                          size_t cursor_position,
+                         const GURL& current_url,
                          bool prevent_inline_autocomplete,
                          bool prefer_keyword,
                          bool allow_exact_keyword_match,
@@ -54,20 +56,6 @@ class OmniboxController : public AutocompleteControllerDelegate {
   AutocompleteController* autocomplete_controller() {
     return autocomplete_controller_.get();
   }
-
-  bool DoInstant(const AutocompleteMatch& match,
-                 string16 user_text,
-                 string16 full_text,
-                 size_t selection_start,
-                 size_t selection_end,
-                 bool user_input_in_progress,
-                 bool in_escape_handler,
-                 bool just_deleted_text,
-                 bool keyword_is_selected);
-
-  // Calls through to SearchProvider::FinalizeInstantQuery.
-  void FinalizeInstantQuery(const string16& input_text,
-                            const InstantSuggestion& suggestion);
 
   // Sets the suggestion text.
   void SetInstantSuggestion(const InstantSuggestion& suggestion);
@@ -84,9 +72,7 @@ class OmniboxController : public AutocompleteControllerDelegate {
   // LocationBarView, making this accessor unnecessary.
   OmniboxPopupModel* popup_model() const { return popup_; }
 
-  const string16& gray_suggestion() const { return gray_suggestion_; }
-
-  const AutocompleteMatch& CurrentMatch(GURL* alternate_nav_url) const;
+  const AutocompleteMatch& current_match() const { return current_match_; }
 
   // Turns off keyword mode for the current match.
   void ClearPopupKeywordMode() const;
@@ -97,11 +83,6 @@ class OmniboxController : public AutocompleteControllerDelegate {
 
   // TODO(beaudoin): Make private once OmniboxEditModel no longer refers to it.
   void DoPreconnect(const AutocompleteMatch& match);
-
-  // TODO(beaudoin): Make private once OmniboxEditModel no longer refers to it.
-  // Invoked when the popup has changed its bounds to |bounds|. |bounds| here
-  // is in screen coordinates.
-  void OnPopupBoundsChanged(const gfx::Rect& bounds);
 
  private:
 
@@ -137,10 +118,6 @@ class OmniboxController : public AutocompleteControllerDelegate {
   // but the ones specifically needed are unclear. We should therefore spend
   // some time to extract these fields and use a tighter structure here.
   AutocompleteMatch current_match_;
-
-  // The completion suggested by instant, displayed in gray text besides
-  // |fill_into_edit|.
-  string16 gray_suggestion_;
 
   DISALLOW_COPY_AND_ASSIGN(OmniboxController);
 };

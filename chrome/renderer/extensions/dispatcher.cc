@@ -56,6 +56,7 @@
 #include "chrome/renderer/extensions/object_backed_native_handler.h"
 #include "chrome/renderer/extensions/page_actions_custom_bindings.h"
 #include "chrome/renderer/extensions/page_capture_custom_bindings.h"
+#include "chrome/renderer/extensions/render_view_observer_natives.h"
 #include "chrome/renderer/extensions/request_sender.h"
 #include "chrome/renderer/extensions/runtime_custom_bindings.h"
 #include "chrome/renderer/extensions/safe_builtins.h"
@@ -304,8 +305,12 @@ class ProcessInfoNativeHandler : public ChromeV8Extension {
     RouteFunction("IsSendRequestDisabled",
         base::Bind(&ProcessInfoNativeHandler::IsSendRequestDisabled,
                    base::Unretained(this)));
+    RouteFunction("HasSwitch",
+        base::Bind(&ProcessInfoNativeHandler::HasSwitch,
+                   base::Unretained(this)));
   }
 
+ private:
   void GetExtensionId(const v8::FunctionCallbackInfo<v8::Value>& args) {
     args.GetReturnValue().Set(v8::String::New(extension_id_.c_str()));
   }
@@ -330,7 +335,13 @@ class ProcessInfoNativeHandler : public ChromeV8Extension {
     }
   }
 
- private:
+  void HasSwitch(const v8::FunctionCallbackInfo<v8::Value>& args) {
+    CHECK(args.Length() == 1 && args[0]->IsString());
+    bool has_switch = CommandLine::ForCurrentProcess()->HasSwitch(
+        *v8::String::AsciiValue(args[0]));
+    args.GetReturnValue().Set(v8::Boolean::New(has_switch));
+  }
+
   std::string extension_id_;
   std::string context_type_;
   bool is_incognito_context_;
@@ -510,7 +521,7 @@ void Dispatcher::OnDispatchOnConnect(
 }
 
 void Dispatcher::OnDeliverMessage(int target_port_id,
-                                  const base::ListValue& message) {
+                                  const std::string& message) {
   MiscellaneousBindings::DeliverMessage(
       v8_context_set_.GetAll(),
       target_port_id,
@@ -826,6 +837,8 @@ void Dispatcher::RegisterNativeHandlers(ModuleSystem* module_system,
       content_watcher_->MakeNatives(context));
   module_system->RegisterNativeHandler("activityLogger",
       scoped_ptr<NativeHandler>(new APIActivityLogger(this, context)));
+  module_system->RegisterNativeHandler("renderViewObserverNatives",
+      scoped_ptr<NativeHandler>(new RenderViewObserverNatives(this, context)));
 
   // Natives used by multiple APIs.
   module_system->RegisterNativeHandler("file_system_natives",
@@ -955,6 +968,7 @@ void Dispatcher::PopulateSourceMap() {
   source_map_.RegisterSource("webRequestInternal",
                              IDR_WEB_REQUEST_INTERNAL_CUSTOM_BINDINGS_JS);
   source_map_.RegisterSource("webstore", IDR_WEBSTORE_CUSTOM_BINDINGS_JS);
+  source_map_.RegisterSource("windowControls", IDR_WINDOW_CONTROLS_JS);
   source_map_.RegisterSource("binding", IDR_BINDING_JS);
 
   // Custom types sources.
@@ -971,10 +985,6 @@ void Dispatcher::PopulateSourceMap() {
                              IDR_WEB_VIEW_EXPERIMENTAL_JS);
   source_map_.RegisterSource("denyWebView", IDR_WEB_VIEW_DENY_JS);
   source_map_.RegisterSource("adView", IDR_AD_VIEW_JS);
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableAdviewSrcAttribute)) {
-    source_map_.RegisterSource("adViewCustom", IDR_AD_VIEW_CUSTOM_JS);
-  }
   source_map_.RegisterSource("denyAdView", IDR_AD_VIEW_DENY_JS);
   source_map_.RegisterSource("platformApp", IDR_PLATFORM_APP_JS);
   source_map_.RegisterSource("injectAppTitlebar", IDR_INJECT_APP_TITLEBAR_JS);
@@ -1077,19 +1087,30 @@ void Dispatcher::DidCreateScriptContext(
           ChromeRenderProcessObserver::is_incognito_process(),
           manifest_version, send_request_disabled)));
 
-
   // chrome.Event is part of the public API (although undocumented). Make it
-  // lazily evalulate to Event from event_bindings.js.
-  v8::Handle<v8::Object> chrome = AsObjectOrEmpty(GetOrCreateChrome(context));
-  if (!chrome.IsEmpty())
-    module_system->SetLazyField(chrome, "Event", kEventModule, "Event");
+  // lazily evalulate to Event from event_bindings.js. For extensions only
+  // though, not all webpages!
+  if (context->extension()) {
+    v8::Handle<v8::Object> chrome = AsObjectOrEmpty(GetOrCreateChrome(context));
+    if (!chrome.IsEmpty())
+      module_system->SetLazyField(chrome, "Event", kEventModule, "Event");
+  }
 
   AddOrRemoveBindingsForContext(context);
 
   bool is_within_platform_app = IsWithinPlatformApp(frame);
   // Inject custom JS into the platform app context.
-  if (is_within_platform_app)
+  if (is_within_platform_app) {
     module_system->Require("platformApp");
+  }
+
+  if (context_type == Feature::BLESSED_EXTENSION_CONTEXT &&
+      is_within_platform_app &&
+      Feature::GetCurrentChannel() <= chrome::VersionInfo::CHANNEL_DEV &&
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableAppWindowControls)) {
+    module_system->Require("windowControls");
+  }
 
   // Only platform apps support the <webview> tag, because the "webView" and
   // "denyWebView" modules will affect the performance of DOM modifications
@@ -1112,10 +1133,6 @@ void Dispatcher::DidCreateScriptContext(
       is_within_platform_app) {
     if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableAdview)) {
       if (extension->HasAPIPermission(APIPermission::kAdView)) {
-        if (CommandLine::ForCurrentProcess()->HasSwitch(
-                switches::kEnableAdviewSrcAttribute)) {
-          module_system->Require("adViewCustom");
-        }
         module_system->Require("adView");
       } else {
         module_system->Require("denyAdView");

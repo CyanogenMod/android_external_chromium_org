@@ -16,8 +16,8 @@
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "media/base/video_frame.h"
 #include "ui/base/latency_info.h"
 #include "ui/gfx/native_widget_types.h"
@@ -322,7 +322,7 @@ class CompositingIOSurfaceMac {
 
   // IOSurface data.
   uint64 io_surface_handle_;
-  base::mac::ScopedCFTypeRef<CFTypeRef> io_surface_;
+  base::ScopedCFTypeRef<CFTypeRef> io_surface_;
 
   // The width and height of the io surface.
   gfx::Size pixel_io_surface_size_;  // In pixels.

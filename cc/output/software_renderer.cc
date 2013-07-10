@@ -74,6 +74,8 @@ SoftwareRenderer::SoftwareRenderer(RendererClient* client,
   // The updater can access bitmaps while the SoftwareRenderer is using them.
   capabilities_.allow_partial_texture_updates = true;
   capabilities_.using_partial_swap = true;
+
+  capabilities_.using_map_image = Settings().use_map_image;
 }
 
 SoftwareRenderer::~SoftwareRenderer() {}
@@ -341,7 +343,7 @@ void SoftwareRenderer::DrawTextureQuad(const DrawingFrame* frame,
     return;
   }
 
-  // FIXME: Add support for non-premultiplied alpha.
+  // TODO(skaslev): Add support for non-premultiplied alpha.
   ResourceProvider::ScopedReadLockSoftware lock(resource_provider_,
                                                 quad->resource_id);
   const SkBitmap* bitmap = lock.sk_bitmap();
@@ -432,7 +434,7 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
     current_paint_.setRasterizer(mask_rasterizer.get());
     current_canvas_->drawRect(dest_rect, current_paint_);
   } else {
-    // FIXME: Apply background filters and blend with content
+    // TODO(skaslev): Apply background filters and blend with content
     current_canvas_->drawRect(dest_rect, current_paint_);
   }
 }
@@ -452,12 +454,20 @@ void SoftwareRenderer::DrawUnsupportedQuad(const DrawingFrame* frame,
 void SoftwareRenderer::CopyCurrentRenderPassToBitmap(
     DrawingFrame* frame,
     scoped_ptr<CopyOutputRequest> request) {
+  gfx::Rect copy_rect = frame->current_render_pass->output_rect;
+  if (request->has_area()) {
+    // Intersect with the request's area, positioned with its origin at the
+    // origin of the full copy_rect.
+    copy_rect.Intersect(request->area() - copy_rect.OffsetFromOrigin());
+  }
+  gfx::Rect window_copy_rect = MoveFromDrawToWindowSpace(copy_rect);
+
   scoped_ptr<SkBitmap> bitmap(new SkBitmap);
   bitmap->setConfig(SkBitmap::kARGB_8888_Config,
-                    current_viewport_rect_.width(),
-                    current_viewport_rect_.height());
+                    window_copy_rect.width(),
+                    window_copy_rect.height());
   current_canvas_->readPixels(
-      bitmap.get(), current_viewport_rect_.x(), current_viewport_rect_.y());
+      bitmap.get(), window_copy_rect.x(), window_copy_rect.y());
 
   request->SendBitmapResult(bitmap.Pass());
 }
@@ -476,6 +486,12 @@ void SoftwareRenderer::SetVisible(bool visible) {
   if (visible_ == visible)
     return;
   visible_ = visible;
+}
+
+void SoftwareRenderer::SetDiscardBackBufferWhenNotVisible(bool discard) {
+  // TODO(piman, skaslev): Can we release the backbuffer? We don't currently
+  // receive memory policy yet anyway.
+  NOTIMPLEMENTED();
 }
 
 }  // namespace cc

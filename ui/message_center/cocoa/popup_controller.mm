@@ -97,12 +97,12 @@ enum {
 - (id)initWithNotification:(const message_center::Notification*)notification
              messageCenter:(message_center::MessageCenter*)messageCenter
            popupCollection:(MCPopupCollection*)popupCollection {
-  scoped_nsobject<MCPopupWindow> window(
+  base::scoped_nsobject<MCPopupWindow> window(
       [[MCPopupWindow alloc] initWithContentRect:ui::kWindowSizeDeterminedLater
-                                  styleMask:NSBorderlessWindowMask |
-                                            NSNonactivatingPanelMask
-                                    backing:NSBackingStoreBuffered
-                                      defer:YES]);
+                                       styleMask:NSBorderlessWindowMask |
+                                                 NSNonactivatingPanelMask
+                                         backing:NSBackingStoreBuffered
+                                           defer:YES]);
   if ((self = [super initWithWindow:window])) {
     messageCenter_ = messageCenter;
     popupCollection_ = popupCollection;
@@ -213,6 +213,7 @@ enum {
     NSViewAnimationEndFrameKey : [NSValue valueWithRect:newBounds],
     NSViewAnimationEffectKey : NSViewAnimationFadeInEffect
   };
+  DCHECK(!boundsAnimation_);
   boundsAnimation_.reset([[NSViewAnimation alloc]
       initWithViewAnimations:[NSArray arrayWithObject:animationDict]]);
   [boundsAnimation_ setDuration:[popupCollection_ popupAnimationDuration]];
@@ -237,6 +238,7 @@ enum {
     NSViewAnimationTargetKey : [self window],
     NSViewAnimationEffectKey : NSViewAnimationFadeOutEffect
   };
+  DCHECK(!boundsAnimation_);
   boundsAnimation_.reset([[NSViewAnimation alloc]
       initWithViewAnimations:[NSArray arrayWithObject:animationDict]]);
   [boundsAnimation_ setDuration:[popupCollection_ popupAnimationDuration]];
@@ -261,6 +263,7 @@ enum {
     NSViewAnimationTargetKey :   [self window],
     NSViewAnimationEndFrameKey : [NSValue valueWithRect:newBounds]
   };
+  DCHECK(!boundsAnimation_);
   boundsAnimation_.reset([[NSViewAnimation alloc]
       initWithViewAnimations:[NSArray arrayWithObject:animationDict]]);
   [boundsAnimation_ setDuration:[popupCollection_ popupAnimationDuration]];

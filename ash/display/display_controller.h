@@ -9,14 +9,14 @@
 #include <vector>
 
 #include "ash/ash_export.h"
+#include "ash/display/display_layout.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "ui/gfx/display_observer.h"
-#include "ui/gfx/display.h"
 
 namespace aura {
 class Display;
@@ -28,61 +28,23 @@ class Value;
 template <typename T> class JSONValueConverter;
 }
 
+namespace gfx {
+class Display;
+class Insets;
+class Point;
+}
+
 namespace ash {
 namespace internal {
 class DisplayManager;
 class FocusActivationStore;
+class MirrorWindowController;
 class RootWindowController;
 }
 
-typedef std::pair<int64, int64> DisplayIdPair;
-
-struct ASH_EXPORT DisplayLayout {
-  // Layout options where the secondary display should be positioned.
-  enum Position {
-    TOP,
-    RIGHT,
-    BOTTOM,
-    LEFT
-  };
-  // Factory method to create DisplayLayout from ints. The |mirrored| is
-  // set to false and |primary_id| is set to gfx::Display::kInvalidDisplayId.
-  // Used for persistence and webui.
-  static DisplayLayout FromInts(int position, int offsets);
-
-  DisplayLayout();
-  DisplayLayout(Position position, int offset);
-
-  // Returns an inverted display layout.
-  DisplayLayout Invert() const WARN_UNUSED_RESULT;
-
-  // Converter functions to/from base::Value.
-  static bool ConvertFromValue(const base::Value& value, DisplayLayout* layout);
-  static bool ConvertToValue(const DisplayLayout& layout, base::Value* value);
-
-  // This method is used by base::JSONValueConverter, you don't need to call
-  // this directly. Instead consider using converter functions above.
-  static void RegisterJSONConverter(
-      base::JSONValueConverter<DisplayLayout>* converter);
-
-  Position position;
-
-  // The offset of the position of the secondary display.  The offset is
-  // based on the top/left edge of the primary display.
-  int offset;
-
-  // True if displays are mirrored.
-  bool mirrored;
-
-  // The id of the display used as a primary display.
-  int64 primary_id;
-
-  // Returns string representation of the layout for debugging/testing.
-  std::string ToString() const;
-};
-
 // DisplayController owns and maintains RootWindows for each attached
 // display, keeping them in sync with display configuration changes.
+// TODO(oshima): Factor out the layout registration class.
 class ASH_EXPORT DisplayController : public gfx::DisplayObserver {
  public:
   class ASH_EXPORT Observer {
@@ -164,7 +126,6 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver {
   // display_manager.h for the details.
   gfx::Insets GetOverscanInsets(int64 display_id) const;
   void SetOverscanInsets(int64 display_id, const gfx::Insets& insets_in_dip);
-  void ClearCustomOverscanInsets(int64 display_id);
 
   const DisplayLayout& default_display_layout() const {
     return default_display_layout_;
@@ -175,22 +136,20 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver {
   void RegisterLayoutForDisplayIdPair(int64 id1,
                                       int64 id2,
                                       const DisplayLayout& layout);
-  // OBSOLETE
-  // TODO(oshima): Remove this in m28.
-  void RegisterLayoutForDisplayId(int64 id, const DisplayLayout& layout);
-
   // Sets the layout for the current display pair. The |layout| specifies
   // the locaion of the secondary display relative to the primary.
   void SetLayoutForCurrentDisplays(const DisplayLayout& layout);
 
   // Returns the display layout used for current displays.
-  DisplayLayout GetCurrentDisplayLayout() const;
+  DisplayLayout GetCurrentDisplayLayout();
 
   // Returns the current display pair.
   DisplayIdPair GetCurrentDisplayIdPair() const;
 
   // Returns the display layout registered for the given display id |pair|.
-  DisplayLayout GetRegisteredDisplayLayout(const DisplayIdPair& pair) const;
+  // If no layout is registered, it creatas new layout using
+  // |default_display_layout_|.
+  DisplayLayout GetRegisteredDisplayLayout(const DisplayIdPair& pair);
 
   // Checks if the mouse pointer is on one of displays, and moves to
   // the center of the nearest display if it's outside of all displays.
@@ -210,6 +169,7 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver {
 
  private:
   friend class internal::DisplayManager;
+  friend class internal::MirrorWindowController;
 
   // Creates a root window for |display| and stores it in the |root_windows_|
   // map.
@@ -230,6 +190,17 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver {
       bool override);
 
   void OnFadeOutForSwapDisplayFinished();
+
+  // Returns the display layout for the display id pair
+  // with display swapping applied.  That is, this returns
+  // flipped layout if the displays are swapped.
+  DisplayLayout ComputeDisplayLayoutForDisplayIdPair(
+      const DisplayIdPair& display_pair);
+
+  void UpdateHostWindowNames();
+
+  // Creates new layout for display pair from |default_display_layout_|.
+  DisplayLayout CreateDisplayLayout(const DisplayIdPair& display_pair);
 
   bool in_bootstrap() const { return in_bootstrap_; }
 

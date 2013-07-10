@@ -22,15 +22,13 @@ const char kInvalidJsonString[] = "$$$";
 
 class FakeGetDataRequest : public GetDataRequest {
  public:
-  explicit FakeGetDataRequest(RequestSender* runner,
+  explicit FakeGetDataRequest(RequestSender* sender,
                               const GetDataCallback& callback)
-      : GetDataRequest(runner, NULL, callback) {
+      : GetDataRequest(sender, callback) {
   }
 
   virtual ~FakeGetDataRequest() {
   }
-
-  using RequestRegistry::Request::NotifyStart;
 
  protected:
   virtual GURL GetURL() const OVERRIDE {
@@ -43,58 +41,31 @@ class FakeGetDataRequest : public GetDataRequest {
 
 class BaseRequestsTest : public testing::Test {
  public:
-  BaseRequestsTest()
-      : parse_json_callback_called_(false),
-        get_data_callback_called_(false) {
-  }
-
-  void ParseJsonCallback(scoped_ptr<base::Value> value) {
-    parse_json_result_ = value.Pass();;
-    parse_json_callback_called_ = true;
-  }
-
-  void GetDataCallback(GDataErrorCode error, scoped_ptr<base::Value> value) {
-    get_data_result_error_ = error;
-    get_data_result_value_ = value.Pass();
-    get_data_callback_called_ = true;
-  }
-
   virtual void SetUp() OVERRIDE {
     profile_.reset(new TestingProfile);
-    runner_.reset(new RequestSender(profile_.get(),
+    sender_.reset(new RequestSender(profile_.get(),
                                     NULL /* url_request_context_getter */,
                                     std::vector<std::string>() /* scopes */,
                                     std::string() /* custom user agent */));
-    runner_->Initialize();
-    LOG(ERROR) << "Initialized.";
+    sender_->Initialize();
   }
 
   content::TestBrowserThreadBundle thread_bundle_;
   scoped_ptr<TestingProfile> profile_;
-  scoped_ptr<RequestSender> runner_;
-
-  // Following members stores data returned with callbacks to be verified
-  // by tests.
-  scoped_ptr<base::Value> parse_json_result_;
-  bool parse_json_callback_called_;
-  GDataErrorCode get_data_result_error_;
-  scoped_ptr<base::Value> get_data_result_value_;
-  bool get_data_callback_called_;
+  scoped_ptr<RequestSender> sender_;
 };
 
 TEST_F(BaseRequestsTest, ParseValidJson) {
+  scoped_ptr<base::Value> json;
   ParseJson(kValidJsonString,
-            base::Bind(&BaseRequestsTest::ParseJsonCallback,
-                       base::Unretained(this)));
+            base::Bind(test_util::CreateCopyResultCallback(&json)));
   // Should wait for a blocking pool task, as the JSON parsing is done in the
   // blocking pool.
   test_util::RunBlockingPoolTask();
 
-  ASSERT_TRUE(parse_json_callback_called_);
-  ASSERT_TRUE(parse_json_result_.get());
-
   DictionaryValue* root_dict = NULL;
-  ASSERT_TRUE(parse_json_result_->GetAsDictionary(&root_dict));
+  ASSERT_TRUE(json);
+  ASSERT_TRUE(json->GetAsDictionary(&root_dict));
 
   int int_value = 0;
   ASSERT_TRUE(root_dict->GetInteger("test", &int_value));
@@ -102,51 +73,49 @@ TEST_F(BaseRequestsTest, ParseValidJson) {
 }
 
 TEST_F(BaseRequestsTest, ParseInvalidJson) {
+  // Initialize with a valid pointer to verify that null is indeed assigned.
+  scoped_ptr<base::Value> json(base::Value::CreateNullValue());
   ParseJson(kInvalidJsonString,
-            base::Bind(&BaseRequestsTest::ParseJsonCallback,
-                       base::Unretained(this)));
+            base::Bind(test_util::CreateCopyResultCallback(&json)));
   // Should wait for a blocking pool task, as the JSON parsing is done in the
   // blocking pool.
   test_util::RunBlockingPoolTask();
 
-  ASSERT_TRUE(parse_json_callback_called_);
-  ASSERT_FALSE(parse_json_result_.get());
+  EXPECT_FALSE(json);
 }
 
 TEST_F(BaseRequestsTest, GetDataRequestParseValidResponse) {
+  GDataErrorCode error = GDATA_OTHER_ERROR;
+  scoped_ptr<base::Value> value;
   FakeGetDataRequest* get_data_request =
       new FakeGetDataRequest(
-          runner_.get(),
-          base::Bind(&BaseRequestsTest::GetDataCallback,
-                     base::Unretained(this)));
-  get_data_request->NotifyStart();
+          sender_.get(),
+          base::Bind(test_util::CreateCopyResultCallback(&error, &value)));
 
   get_data_request->ParseResponse(HTTP_SUCCESS, kValidJsonString);
   // Should wait for a blocking pool task, as the JSON parsing is done in the
   // blocking pool.
   test_util::RunBlockingPoolTask();
 
-  ASSERT_TRUE(get_data_callback_called_);
-  ASSERT_EQ(HTTP_SUCCESS, get_data_result_error_);
-  ASSERT_TRUE(get_data_result_value_.get());
+  EXPECT_EQ(HTTP_SUCCESS, error);
+  EXPECT_TRUE(value);
 }
 
 TEST_F(BaseRequestsTest, GetDataRequestParseInvalidResponse) {
+  GDataErrorCode error = GDATA_OTHER_ERROR;
+  scoped_ptr<base::Value> value;
   FakeGetDataRequest* get_data_request =
       new FakeGetDataRequest(
-          runner_.get(),
-          base::Bind(&BaseRequestsTest::GetDataCallback,
-                     base::Unretained(this)));
-  get_data_request->NotifyStart();
+          sender_.get(),
+          base::Bind(test_util::CreateCopyResultCallback(&error, &value)));
 
   get_data_request->ParseResponse(HTTP_SUCCESS, kInvalidJsonString);
   // Should wait for a blocking pool task, as the JSON parsing is done in the
   // blocking pool.
   test_util::RunBlockingPoolTask();
 
-  ASSERT_TRUE(get_data_callback_called_);
-  ASSERT_EQ(GDATA_PARSE_ERROR, get_data_result_error_);
-  ASSERT_FALSE(get_data_result_value_.get());
+  EXPECT_EQ(GDATA_PARSE_ERROR, error);
+  EXPECT_FALSE(value);
 }
 
 }  // namespace google_apis

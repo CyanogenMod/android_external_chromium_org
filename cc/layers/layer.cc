@@ -6,18 +6,17 @@
 
 #include <algorithm>
 
+#include "base/location.h"
 #include "base/metrics/histogram.h"
+#include "base/single_thread_task_runner.h"
 #include "cc/animation/animation.h"
 #include "cc/animation/animation_events.h"
 #include "cc/animation/layer_animation_controller.h"
-#include "cc/base/thread.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/output/copy_output_result.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_impl.h"
-#include "third_party/WebKit/public/platform/WebAnimationDelegate.h"
-#include "third_party/WebKit/public/platform/WebLayerScrollClient.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "ui/gfx/rect_conversions.h"
 
@@ -46,6 +45,7 @@ Layer::Layer()
       anchor_point_z_(0.f),
       is_container_for_fixed_position_layers_(false),
       is_drawable_(false),
+      hide_layer_and_subtree_(false),
       masks_to_bounds_(false),
       contents_opaque_(false),
       double_sided_(true),
@@ -54,8 +54,7 @@ Layer::Layer()
       draw_checkerboard_for_missing_tiles_(false),
       force_render_surface_(false),
       replica_layer_(NULL),
-      raster_scale_(0.f),
-      layer_scroll_client_(NULL) {
+      raster_scale_(0.f) {
   if (layer_id_ < 0) {
     s_next_layer_id = 1;
     layer_id_ = s_next_layer_id++;
@@ -109,7 +108,7 @@ void Layer::SetLayerTreeHost(LayerTreeHost* host) {
   if (host && layer_animation_controller_->has_any_animation())
     host->SetNeedsCommit();
   if (host &&
-      (!filters_.isEmpty() || !background_filters_.isEmpty() || filter_))
+      (!filters_.IsEmpty() || !background_filters_.IsEmpty() || filter_))
     layer_tree_host_->set_needs_filter_context();
 }
 
@@ -419,14 +418,14 @@ void Layer::SetReplicaLayer(Layer* layer) {
   SetNeedsFullTreeSync();
 }
 
-void Layer::SetFilters(const WebKit::WebFilterOperations& filters) {
+void Layer::SetFilters(const FilterOperations& filters) {
   DCHECK(IsPropertyChangeAllowed());
   if (filters_ == filters)
     return;
   DCHECK(!filter_);
   filters_ = filters;
   SetNeedsCommit();
-  if (!filters.isEmpty() && layer_tree_host_)
+  if (!filters.IsEmpty() && layer_tree_host_)
     layer_tree_host_->set_needs_filter_context();
 }
 
@@ -434,20 +433,20 @@ void Layer::SetFilter(const skia::RefPtr<SkImageFilter>& filter) {
   DCHECK(IsPropertyChangeAllowed());
   if (filter_.get() == filter.get())
     return;
-  DCHECK(filters_.isEmpty());
+  DCHECK(filters_.IsEmpty());
   filter_ = filter;
   SetNeedsCommit();
   if (filter && layer_tree_host_)
     layer_tree_host_->set_needs_filter_context();
 }
 
-void Layer::SetBackgroundFilters(const WebKit::WebFilterOperations& filters) {
+void Layer::SetBackgroundFilters(const FilterOperations& filters) {
   DCHECK(IsPropertyChangeAllowed());
   if (background_filters_ == filters)
     return;
   background_filters_ = filters;
   SetNeedsCommit();
-  if (!filters.isEmpty() && layer_tree_host_)
+  if (!filters.IsEmpty() && layer_tree_host_)
     layer_tree_host_->set_needs_filter_context();
 }
 
@@ -525,8 +524,8 @@ void Layer::SetScrollOffsetFromImplSide(gfx::Vector2d scroll_offset) {
   if (scroll_offset_ == scroll_offset)
     return;
   scroll_offset_ = scroll_offset;
-  if (layer_scroll_client_)
-    layer_scroll_client_->didScroll();
+  if (!did_scroll_callback_.is_null())
+    did_scroll_callback_.Run();
   // Note: didScroll() could potentially change the layer structure.
   //       "this" may have been destroyed during the process.
 }
@@ -611,6 +610,15 @@ void Layer::SetIsDrawable(bool is_drawable) {
   SetNeedsCommit();
 }
 
+void Layer::SetHideLayerAndSubtree(bool hide) {
+  DCHECK(IsPropertyChangeAllowed());
+  if (hide_layer_and_subtree_ == hide)
+    return;
+
+  hide_layer_and_subtree_ = hide;
+  SetNeedsCommit();
+}
+
 void Layer::SetNeedsDisplayRect(const gfx::RectF& dirty_rect) {
   update_rect_.Union(dirty_rect);
   needs_display_ = true;
@@ -657,12 +665,14 @@ static void RunCopyCallbackOnMainThread(scoped_ptr<CopyOutputRequest> request,
   request->SendResult(result.Pass());
 }
 
-static void PostCopyCallbackToMainThread(Thread* main_thread,
-                                         scoped_ptr<CopyOutputRequest> request,
-                                         scoped_ptr<CopyOutputResult> result) {
-  main_thread->PostTask(base::Bind(&RunCopyCallbackOnMainThread,
-                                   base::Passed(&request),
-                                   base::Passed(&result)));
+static void PostCopyCallbackToMainThread(
+    scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner,
+    scoped_ptr<CopyOutputRequest> request,
+    scoped_ptr<CopyOutputResult> result) {
+  main_thread_task_runner->PostTask(FROM_HERE,
+                                    base::Bind(&RunCopyCallbackOnMainThread,
+                                               base::Passed(&request),
+                                               base::Passed(&result)));
 }
 
 void Layer::PushPropertiesTo(LayerImpl* layer) {
@@ -679,6 +689,7 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
       draw_checkerboard_for_missing_tiles_);
   layer->SetForceRenderSurface(force_render_surface_);
   layer->SetDrawsContent(DrawsContent());
+  layer->SetHideLayerAndSubtree(hide_layer_and_subtree_);
   layer->SetFilters(filters());
   layer->SetFilter(filter());
   layer->SetBackgroundFilters(background_filters());
@@ -712,13 +723,15 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   for (ScopedPtrVector<CopyOutputRequest>::iterator it = copy_requests_.begin();
        it != copy_requests_.end();
        ++it) {
+    scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner =
+        layer_tree_host()->proxy()->MainThreadTaskRunner();
     scoped_ptr<CopyOutputRequest> original_request = copy_requests_.take(it);
     const CopyOutputRequest& original_request_ref = *original_request;
     scoped_ptr<CopyOutputRequest> main_thread_request =
         CopyOutputRequest::CreateRelayRequest(
             original_request_ref,
             base::Bind(&PostCopyCallbackToMainThread,
-                       layer_tree_host()->proxy()->MainThread(),
+                       main_thread_task_runner,
                        base::Passed(&original_request)));
     main_thread_copy_requests.push_back(main_thread_request.Pass());
   }

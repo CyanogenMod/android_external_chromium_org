@@ -10,7 +10,7 @@ exports.FindMatchingSelectors = function(cssSelectors) {
   $Array.forEach(cssSelectors, function(selector, index) {
     try {
       if (document.querySelector(selector) != null)
-        result.push(index);
+        $Array.push(result, index);
     } catch (exception) {
       throw new Error("query Selector failed on '" + selector + "': " +
                       exception.stack);
@@ -21,8 +21,7 @@ exports.FindMatchingSelectors = function(cssSelectors) {
 
 // Watches the page for all changes and calls FrameMutated (a C++ callback) in
 // response.
-var mutation_observer = new WebKitMutationObserver(
-  contentWatcherNative.FrameMutated);
+var mutation_observer = new MutationObserver(contentWatcherNative.FrameMutated);
 
 // This runs once per frame, when the module is 'require'd.
 mutation_observer.observe(document, {

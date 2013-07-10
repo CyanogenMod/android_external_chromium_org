@@ -411,9 +411,13 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, BrowserCloseTabWhenOtherTabHasListener) {
   CheckTitle("only_one_unload");
 }
 
-
 class FastUnloadTest : public UnloadTest {
  public:
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    UnloadTest::SetUpCommandLine(command_line);
+    command_line->AppendSwitch(switches::kEnableFastUnload);
+  }
+
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     ASSERT_TRUE(test_server()->Start());
   }

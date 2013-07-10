@@ -5,7 +5,7 @@
 #import "ui/app_list/cocoa/app_list_view_controller.h"
 
 #include "base/mac/foundation_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_model.h"
@@ -141,9 +141,9 @@ const NSTimeInterval kResultsAnimationDuration = 0.2;
           [AppsGridController scrollerPadding]);
 
   contentsView_.reset([[FlippedView alloc] initWithFrame:contentsRect]);
-  scoped_nsobject<BackgroundView> backgroundView(
+  base::scoped_nsobject<BackgroundView> backgroundView(
       [[BackgroundView alloc] initWithFrame:
-          NSMakeRect(0, 0, NSMaxX(contentsRect), NSMaxY(contentsRect))]);
+              NSMakeRect(0, 0, NSMaxX(contentsRect), NSMaxY(contentsRect))]);
   appsSearchBoxController_.reset(
       [[AppsSearchBoxController alloc] initWithFrame:
           NSMakeRect(0, 0, NSWidth(contentsRect), kSearchInputHeight)]);

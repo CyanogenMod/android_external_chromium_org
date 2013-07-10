@@ -8,8 +8,8 @@
 #include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "grit/ash_strings.h"
 #include "ui/aura/root_window.h"
 #include "ui/base/accessibility/accessible_view_state.h"
@@ -26,7 +26,7 @@
 namespace ash {
 namespace {
 
-const int64 kTimeOutMilliseconds = 1000;
+const int64 kTimeOutMilliseconds = 2000;
 const SkColor kForegroundColor = 0xFFFFFFFF;
 const SkColor kBackgroundColor = 0xE0808080;
 const int kHorizontalMarginAroundText = 100;
@@ -168,8 +168,7 @@ void ExitWarningHandler::Show() {
                    ps.width(), ps.height());
   views::Widget::InitParams params;
   params.type = views::Widget::InitParams::TYPE_POPUP;
-  params.transient = true;
-  params.transparent = true;
+  params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.accept_events = false;
   params.can_activate = false;
   params.keep_on_top = true;

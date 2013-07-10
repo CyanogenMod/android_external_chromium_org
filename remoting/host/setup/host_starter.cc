@@ -34,12 +34,10 @@ HostStarter::~HostStarter() {
 }
 
 scoped_ptr<HostStarter> HostStarter::Create(
-    const std::string& oauth2_token_url,
     const std::string& chromoting_hosts_url,
     net::URLRequestContextGetter* url_request_context_getter) {
   scoped_ptr<gaia::GaiaOAuthClient> oauth_client(
-      new gaia::GaiaOAuthClient(
-          oauth2_token_url, url_request_context_getter));
+      new gaia::GaiaOAuthClient(url_request_context_getter));
   scoped_ptr<remoting::ServiceClient> service_client(
       new remoting::ServiceClient(
           chromoting_hosts_url, url_request_context_getter));
@@ -87,7 +85,7 @@ void HostStarter::OnGetTokensResponse(
   refresh_token_ = refresh_token;
   access_token_ = access_token;
   // Get the email corresponding to the access token.
-  oauth_client_->GetUserInfo(access_token_, 1, this);
+  oauth_client_->GetUserEmail(access_token_, 1, this);
 }
 
 void HostStarter::OnRefreshTokenResponse(
@@ -97,10 +95,10 @@ void HostStarter::OnRefreshTokenResponse(
   NOTREACHED();
 }
 
-void HostStarter::OnGetUserInfoResponse(const std::string& user_email) {
+void HostStarter::OnGetUserEmailResponse(const std::string& user_email) {
   if (!main_task_runner_->BelongsToCurrentThread()) {
     main_task_runner_->PostTask(FROM_HERE, base::Bind(
-        &HostStarter::OnGetUserInfoResponse, weak_ptr_, user_email));
+        &HostStarter::OnGetUserEmailResponse, weak_ptr_, user_email));
     return;
   }
   user_email_ = user_email;

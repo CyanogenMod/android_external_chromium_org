@@ -36,14 +36,14 @@
 #include "ppapi/c/pp_time.h"
 #include "ppapi/c/ppb_audio_config.h"
 #include "ppapi/c/ppb_image_data.h"
+#include "ppapi/c/ppb_tcp_socket.h"
+#include "ppapi/c/ppb_udp_socket.h"
 #include "ppapi/c/private/pp_content_decryptor.h"
 #include "ppapi/c/private/pp_private_font_charset.h"
 #include "ppapi/c/private/ppb_flash.h"
 #include "ppapi/c/private/ppb_host_resolver_private.h"
 #include "ppapi/c/private/ppb_net_address_private.h"
 #include "ppapi/c/private/ppb_pdf.h"
-#include "ppapi/c/private/ppb_tcp_socket_private.h"
-#include "ppapi/c/private/ppb_udp_socket_private.h"
 #include "ppapi/c/private/ppp_flash_browser_operations.h"
 #include "ppapi/c/private/ppb_talk_private.h"
 #include "ppapi/proxy/host_resolver_private_resource.h"
@@ -56,6 +56,7 @@
 #include "ppapi/proxy/serialized_var.h"
 #include "ppapi/shared_impl/dir_contents.h"
 #include "ppapi/shared_impl/file_path.h"
+#include "ppapi/shared_impl/file_ref_create_info.h"
 #include "ppapi/shared_impl/ppapi_nacl_channel_args.h"
 #include "ppapi/shared_impl/ppapi_preferences.h"
 #include "ppapi/shared_impl/ppb_device_ref_shared.h"
@@ -64,6 +65,7 @@
 #include "ppapi/shared_impl/ppb_view_shared.h"
 #include "ppapi/shared_impl/ppp_flash_browser_operations_shared.h"
 #include "ppapi/shared_impl/private/ppb_x509_certificate_private_shared.h"
+#include "ppapi/shared_impl/socket_option_data.h"
 #include "ppapi/shared_impl/url_request_info_data.h"
 #include "ppapi/shared_impl/url_response_info_data.h"
 
@@ -83,7 +85,8 @@ IPC_ENUM_TRAITS(PP_FlashSetting)
 IPC_ENUM_TRAITS(PP_ImageDataFormat)
 IPC_ENUM_TRAITS(PP_InputEvent_MouseButton)
 IPC_ENUM_TRAITS(PP_InputEvent_Type)
-IPC_ENUM_TRAITS(PP_NetAddressFamily_Private)
+IPC_ENUM_TRAITS_MAX_VALUE(PP_NetAddressFamily_Private,
+                          PP_NETADDRESSFAMILY_PRIVATE_IPV6)
 IPC_ENUM_TRAITS(PP_NetworkListState_Private)
 IPC_ENUM_TRAITS(PP_NetworkListType_Private)
 IPC_ENUM_TRAITS(PP_PrintOrientation_Dev)
@@ -95,12 +98,16 @@ IPC_ENUM_TRAITS(PP_ResourceString)
 IPC_ENUM_TRAITS_MAX_VALUE(PP_TalkEvent, PP_TALKEVENT_NUM_EVENTS - 1)
 IPC_ENUM_TRAITS_MAX_VALUE(PP_TalkPermission,
                           PP_TALKPERMISSION_NUM_PERMISSIONS - 1)
+IPC_ENUM_TRAITS_MAX_VALUE(PP_TCPSocket_Option,
+                          PP_TCPSOCKET_OPTION_RECV_BUFFER_SIZE)
 IPC_ENUM_TRAITS(PP_TextInput_Type)
 IPC_ENUM_TRAITS(PP_TrueTypeFontFamily_Dev)
 IPC_ENUM_TRAITS(PP_TrueTypeFontStyle_Dev)
 IPC_ENUM_TRAITS(PP_TrueTypeFontWeight_Dev)
 IPC_ENUM_TRAITS(PP_TrueTypeFontWidth_Dev)
 IPC_ENUM_TRAITS(PP_TrueTypeFontCharset_Dev)
+IPC_ENUM_TRAITS_MAX_VALUE(PP_UDPSocket_Option,
+                          PP_UDPSOCKET_OPTION_RECV_BUFFER_SIZE)
 IPC_ENUM_TRAITS(PP_VideoDecodeError_Dev)
 IPC_ENUM_TRAITS(PP_VideoDecoder_Profile)
 
@@ -198,7 +205,6 @@ IPC_STRUCT_TRAITS_END()
 IPC_STRUCT_TRAITS_BEGIN(ppapi::FileRef_CreateInfo)
   IPC_STRUCT_TRAITS_MEMBER(file_system_type)
   IPC_STRUCT_TRAITS_MEMBER(internal_path)
-  IPC_STRUCT_TRAITS_MEMBER(external_path)
   IPC_STRUCT_TRAITS_MEMBER(display_name)
   IPC_STRUCT_TRAITS_MEMBER(pending_host_resource_id)
   IPC_STRUCT_TRAITS_MEMBER(file_system_plugin_resource)
@@ -697,11 +703,11 @@ IPC_MESSAGE_ROUTED4(PpapiMsg_PPPContentDecryptor_DecryptAndDecode,
                     std::string /* serialized_block_info */)
 #endif  // !defined(OS_NACL) && !defined(NACL_WIN64)
 
-// PPB_TCPSocket_Private.
+// PPB_TCPSocket and PPB_TCPSocket_Private.
 IPC_MESSAGE_ROUTED5(PpapiMsg_PPBTCPSocket_ConnectACK,
                     uint32 /* plugin_dispatcher_id */,
                     uint32 /* socket_id */,
-                    bool /* succeeded */,
+                    int32_t /* result */,
                     PP_NetAddress_Private /* local_addr */,
                     PP_NetAddress_Private /* remote_addr */)
 IPC_MESSAGE_ROUTED4(PpapiMsg_PPBTCPSocket_SSLHandshakeACK,
@@ -712,17 +718,16 @@ IPC_MESSAGE_ROUTED4(PpapiMsg_PPBTCPSocket_SSLHandshakeACK,
 IPC_MESSAGE_ROUTED4(PpapiMsg_PPBTCPSocket_ReadACK,
                     uint32 /* plugin_dispatcher_id */,
                     uint32 /* socket_id */,
-                    bool /* succeeded */,
+                    int32_t /* result */,
                     std::string /* data */)
-IPC_MESSAGE_ROUTED4(PpapiMsg_PPBTCPSocket_WriteACK,
+IPC_MESSAGE_ROUTED3(PpapiMsg_PPBTCPSocket_WriteACK,
                     uint32 /* plugin_dispatcher_id */,
                     uint32 /* socket_id */,
-                    bool /* succeeded */,
-                    int32_t /* bytes_written */)
-IPC_MESSAGE_ROUTED3(PpapiMsg_PPBTCPSocket_SetBoolOptionACK,
+                    int32_t /* result */)
+IPC_MESSAGE_ROUTED3(PpapiMsg_PPBTCPSocket_SetOptionACK,
                     uint32 /* plugin_dispatcher_id */,
                     uint32 /* socket_id */,
-                    bool /* succeeded */)
+                    int32_t /* result */)
 
 // PPB_TCPServerSocket_Private.
 
@@ -1182,8 +1187,14 @@ IPC_SYNC_MESSAGE_ROUTED1_0(PpapiHostMsg_PPBFlashMessageLoop_Quit,
                            ppapi::HostResource /* flash_message_loop */)
 #endif  // !defined(OS_NACL) && !defined(NACL_WIN64)
 
-// PPB_TCPSocket_Private.
+// PPB_TCPSocket and PPB_TCPSocket_Private.
+// Creates a PPB_TCPSocket resource.
 IPC_SYNC_MESSAGE_CONTROL2_1(PpapiHostMsg_PPBTCPSocket_Create,
+                            int32 /* routing_id */,
+                            uint32 /* plugin_dispatcher_id */,
+                            uint32 /* socket_id */)
+// Creates a PPB_TCPSocket_Private resource.
+IPC_SYNC_MESSAGE_CONTROL2_1(PpapiHostMsg_PPBTCPSocket_CreatePrivate,
                             int32 /* routing_id */,
                             uint32 /* plugin_dispatcher_id */,
                             uint32 /* socket_id */)
@@ -1210,31 +1221,10 @@ IPC_MESSAGE_CONTROL2(PpapiHostMsg_PPBTCPSocket_Write,
                      std::string /* data */)
 IPC_MESSAGE_CONTROL1(PpapiHostMsg_PPBTCPSocket_Disconnect,
                      uint32 /* socket_id */)
-IPC_MESSAGE_CONTROL3(PpapiHostMsg_PPBTCPSocket_SetBoolOption,
+IPC_MESSAGE_CONTROL3(PpapiHostMsg_PPBTCPSocket_SetOption,
                      uint32 /* socket_id */,
-                     uint32 /* name */,
-                     bool /* value */)
-
-// UDPSocketPrivate.
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_UDPSocketPrivate_Create)
-IPC_MESSAGE_CONTROL2(PpapiHostMsg_UDPSocketPrivate_SetBoolSocketFeature,
-                     int32_t /* name */,
-                     bool /* value */)
-IPC_MESSAGE_CONTROL1(PpapiHostMsg_UDPSocketPrivate_Bind,
-                     PP_NetAddress_Private /* net_addr */)
-IPC_MESSAGE_CONTROL1(PpapiHostMsg_UDPSocketPrivate_RecvFrom,
-                     int32_t /* num_bytes */)
-IPC_MESSAGE_CONTROL2(PpapiHostMsg_UDPSocketPrivate_SendTo,
-                     std::string /* data */,
-                     PP_NetAddress_Private /* net_addr */)
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_UDPSocketPrivate_Close)
-IPC_MESSAGE_CONTROL1(PpapiPluginMsg_UDPSocketPrivate_BindReply,
-                     PP_NetAddress_Private /* bound_addr */)
-IPC_MESSAGE_CONTROL2(PpapiPluginMsg_UDPSocketPrivate_RecvFromReply,
-                     std::string /* data */,
-                     PP_NetAddress_Private /* remote_addr */)
-IPC_MESSAGE_CONTROL1(PpapiPluginMsg_UDPSocketPrivate_SendToReply,
-                     int32_t /* bytes_written */)
+                     PP_TCPSocket_Option /* name */,
+                     ppapi::SocketOptionData /* value */)
 
 // PPB_TCPServerSocket_Private.
 IPC_MESSAGE_CONTROL5(PpapiHostMsg_PPBTCPServerSocket_Listen,
@@ -1536,6 +1526,17 @@ IPC_MESSAGE_CONTROL2(PpapiHostMsg_Graphics2D_ReadImageData,
                      PP_Point /* top_left */)
 IPC_MESSAGE_CONTROL0(PpapiPluginMsg_Graphics2D_ReadImageDataAck)
 
+// NetworkProxy ----------------------------------------------------------------
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_NetworkProxy_Create)
+
+// Query the browser for the proxy server to use for the given URL.
+IPC_MESSAGE_CONTROL1(PpapiHostMsg_NetworkProxy_GetProxyForURL,
+                     std::string /* url */)
+
+// Reply message for GetProxyForURL containing the proxy server.
+IPC_MESSAGE_CONTROL1(PpapiPluginMsg_NetworkProxy_GetProxyForURLReply,
+                     std::string /* proxy */)
+
 // TrueTypeFont.
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_TrueTypeFontSingleton_Create)
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_TrueTypeFontSingleton_GetFontFamilies)
@@ -1561,12 +1562,22 @@ IPC_MESSAGE_CONTROL3(PpapiHostMsg_TrueTypeFont_GetTable,
 IPC_MESSAGE_CONTROL1(PpapiPluginMsg_TrueTypeFont_GetTableReply,
                      std::string /* data */)
 
-// HostResolverPrivate, plugin -> host -> plugin
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_HostResolverPrivate_Create)
-IPC_MESSAGE_CONTROL2(PpapiHostMsg_HostResolverPrivate_Resolve,
+// Host Resolver ---------------------------------------------------------------
+// Creates a PPB_HostResolver resource.
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_HostResolver_Create)
+
+// Creates a PPB_HostResolver_Private resource.
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_HostResolver_CreatePrivate)
+
+// Resolves the given hostname.
+IPC_MESSAGE_CONTROL2(PpapiHostMsg_HostResolver_Resolve,
                      ppapi::HostPortPair /* host_port */,
                      PP_HostResolver_Private_Hint /* hint */)
-IPC_MESSAGE_CONTROL2(PpapiPluginMsg_HostResolverPrivate_ResolveReply,
+
+// This message is a reply to HostResolver_Resolve. On success,
+// |canonical_name| contains the canonical name of the host; |net_address_list|
+// is a list of network addresses. On failure, both fields are set to empty.
+IPC_MESSAGE_CONTROL2(PpapiPluginMsg_HostResolver_ResolveReply,
                      std::string /* canonical_name */,
                      std::vector<PP_NetAddress_Private> /* net_address_list */)
 
@@ -1575,6 +1586,33 @@ IPC_MESSAGE_CONTROL0(PpapiHostMsg_Printing_Create)
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_Printing_GetDefaultPrintSettings)
 IPC_MESSAGE_CONTROL1(PpapiPluginMsg_Printing_GetDefaultPrintSettingsReply,
                      PP_PrintSettings_Dev /* print_settings */)
+
+// UDP Socket ------------------------------------------------------------------
+// Creates a PPB_UDPSocket resource.
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_UDPSocket_Create)
+
+// Creates a PPB_UDPSocket_Private resource.
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_UDPSocket_CreatePrivate)
+
+IPC_MESSAGE_CONTROL2(PpapiHostMsg_UDPSocket_SetOption,
+                     PP_UDPSocket_Option /* name */,
+                     ppapi::SocketOptionData /* value */)
+IPC_MESSAGE_CONTROL0(PpapiPluginMsg_UDPSocket_SetOptionReply)
+IPC_MESSAGE_CONTROL1(PpapiHostMsg_UDPSocket_Bind,
+                     PP_NetAddress_Private /* net_addr */)
+IPC_MESSAGE_CONTROL1(PpapiPluginMsg_UDPSocket_BindReply,
+                     PP_NetAddress_Private /* bound_addr */)
+IPC_MESSAGE_CONTROL1(PpapiHostMsg_UDPSocket_RecvFrom,
+                     int32_t /* num_bytes */)
+IPC_MESSAGE_CONTROL2(PpapiPluginMsg_UDPSocket_RecvFromReply,
+                     std::string /* data */,
+                     PP_NetAddress_Private /* remote_addr */)
+IPC_MESSAGE_CONTROL2(PpapiHostMsg_UDPSocket_SendTo,
+                     std::string /* data */,
+                     PP_NetAddress_Private /* net_addr */)
+IPC_MESSAGE_CONTROL1(PpapiPluginMsg_UDPSocket_SendToReply,
+                     int32_t /* bytes_written */)
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_UDPSocket_Close)
 
 // URLLoader ------------------------------------------------------------------
 
@@ -1642,6 +1680,30 @@ IPC_SYNC_MESSAGE_CONTROL2_2(PpapiHostMsg_SharedMemory_CreateSharedMemory,
                             uint32_t /* size */,
                             int /* host_handle_id */,
                             ppapi::proxy::SerializedHandle /* plugin_handle */)
+
+// MediaStream -----------------------------------------------------------------
+
+// VideoDestination Private.
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_VideoDestination_Create)
+IPC_MESSAGE_CONTROL1(PpapiHostMsg_VideoDestination_Open,
+                     std::string /* stream_url */)
+IPC_MESSAGE_CONTROL0(PpapiPluginMsg_VideoDestination_OpenReply)
+IPC_MESSAGE_CONTROL2(PpapiHostMsg_VideoDestination_PutFrame,
+                     ppapi::HostResource /* image_data */,
+                     PP_TimeTicks /* timestamp */)
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_VideoDestination_Close)
+
+// VideoSource Private.
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_VideoSource_Create)
+IPC_MESSAGE_CONTROL1(PpapiHostMsg_VideoSource_Open,
+                     std::string /* stream_url */)
+IPC_MESSAGE_CONTROL0(PpapiPluginMsg_VideoSource_OpenReply)
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_VideoSource_GetFrame)
+IPC_MESSAGE_CONTROL3(PpapiPluginMsg_VideoSource_GetFrameReply,
+                     ppapi::HostResource /* resource_id */,
+                     PP_ImageDataDesc /* image_data_desc */,
+                     PP_TimeTicks /* timestamp */)
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_VideoSource_Close)
 
 // WebSocket -------------------------------------------------------------------
 
@@ -1978,30 +2040,5 @@ IPC_MESSAGE_CONTROL0(PpapiPluginMsg_Talk_StartRemotingReply)
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_Talk_StopRemoting)
 IPC_MESSAGE_CONTROL0(PpapiPluginMsg_Talk_StopRemotingReply)
 IPC_MESSAGE_CONTROL1(PpapiPluginMsg_Talk_NotifyEvent, PP_TalkEvent /* event */)
-
-// MediaStream -----------------------------------------------------------------
-
-// VideoDestination Private.
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_VideoDestination_Create)
-IPC_MESSAGE_CONTROL1(PpapiHostMsg_VideoDestination_Open,
-                     std::string /* stream_url */)
-IPC_MESSAGE_CONTROL0(PpapiPluginMsg_VideoDestination_OpenReply)
-IPC_MESSAGE_CONTROL2(PpapiHostMsg_VideoDestination_PutFrame,
-                     ppapi::HostResource /* image_data */,
-                     PP_TimeTicks /* timestamp */)
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_VideoDestination_Close)
-
-// VideoSource Private.
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_VideoSource_Create)
-IPC_MESSAGE_CONTROL1(PpapiHostMsg_VideoSource_Open,
-                     std::string /* stream_url */)
-IPC_MESSAGE_CONTROL0(PpapiPluginMsg_VideoSource_OpenReply)
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_VideoSource_GetFrame)
-IPC_MESSAGE_CONTROL4(PpapiPluginMsg_VideoSource_GetFrameReply,
-                     ppapi::HostResource /* resource_id */,
-                     PP_ImageDataDesc /* image_data_desc */,
-                     int /* fd */,
-                     PP_TimeTicks /* timestamp */)
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_VideoSource_Close)
 
 #endif  // !defined(OS_NACL) && !defined(NACL_WIN64)

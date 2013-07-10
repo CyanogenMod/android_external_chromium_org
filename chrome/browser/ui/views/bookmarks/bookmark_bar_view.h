@@ -67,10 +67,9 @@ class BookmarkBarView : public DetachableToolbarView,
   // The internal view class name.
   static const char kViewClassName[];
 
-  // Constants used in Browser View, as well as here.
+  // Constant used in Browser View, as well as here.
   // How inset the bookmarks bar is when displayed on the new tab page.
   static const int kNewtabHorizontalPadding;
-  static const int kNewtabVerticalPadding;
 
   // Maximum size of buttons on the bookmark bar.
   static const int kMaxButtonWidth;
@@ -101,9 +100,8 @@ class BookmarkBarView : public DetachableToolbarView,
   void SetBookmarkBarState(BookmarkBar::State state,
                            BookmarkBar::AnimateChangeType animate_type);
 
-  // How much we want the bookmark bar to overlap the toolbar.  If |return_max|
-  // is true, we return the maximum overlap rather than the current overlap.
-  int GetToolbarOverlap(bool return_max) const;
+  // Returns the toolbar overlap when fully detached.
+  int GetFullyDetachedToolbarOverlap() const;
 
   // Whether or not we are animating.
   bool is_animating();

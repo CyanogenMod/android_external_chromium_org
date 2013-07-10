@@ -12,11 +12,11 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
 #include "chrome/test/chromedriver/chrome/log.h"
 #include "chrome/test/chromedriver/chrome/version.h"
-#include "chrome/test/chromedriver/command_executor_impl.h"
 #include "chrome/test/chromedriver/server/http_handler.h"
 #include "chrome/test/chromedriver/server/http_response.h"
 #include "third_party/mongoose/mongoose.h"
@@ -37,8 +37,8 @@ void ReadRequestBody(const struct mg_request_info* const request_info,
     if (request_info->http_headers[header_index].name == NULL) {
       break;
     }
-    if (strcmp(request_info->http_headers[header_index].name,
-               "Content-Length") == 0) {
+    if (LowerCaseEqualsASCII(request_info->http_headers[header_index].name,
+                             "content-length")) {
       base::StringToInt(
           request_info->http_headers[header_index].value, &content_length);
       break;
@@ -116,6 +116,26 @@ int main(int argc, char *argv[]) {
   std::string url_base;
   int http_threads = 4;
   base::FilePath log_path;
+  Log::Level log_level = Log::kError;
+  if (cmd_line->HasSwitch("h") || cmd_line->HasSwitch("help")) {
+    std::string options;
+    const char* kOptionAndDescriptions[] = {
+        "port=PORT", "port to listen on",
+        "log-path=FILE", "write server log to file instead of stderr, "
+            "increases log level to INFO",
+        "verbose", "log verbosely",
+        "silent", "log nothing",
+        "url-base", "base URL path prefix for commands, e.g. wd/url",
+        "http-threads=THREAD_COUNT", "number of HTTP threads to spawn",
+    };
+    for (size_t i = 0; i < arraysize(kOptionAndDescriptions) - 1; i += 2) {
+      options += base::StringPrintf(
+          "  --%-30s%s\n",
+          kOptionAndDescriptions[i], kOptionAndDescriptions[i + 1]);
+    }
+    printf("Usage: %s [OPTIONS]\n\nOptions\n%s", argv[0], options.c_str());
+    return 0;
+  }
   if (cmd_line->HasSwitch("port"))
     port = cmd_line->GetSwitchValueASCII("port");
   if (cmd_line->HasSwitch("url-base"))
@@ -132,6 +152,7 @@ int main(int argc, char *argv[]) {
     }
   }
   if (cmd_line->HasSwitch("log-path")) {
+    log_level = Log::kLog;
     log_path = cmd_line->GetSwitchValuePath("log-path");
 #if defined(OS_WIN)
     FILE* redir_stderr = _wfreopen(log_path.value().c_str(), L"w", stderr);
@@ -143,13 +164,12 @@ int main(int argc, char *argv[]) {
       return 1;
     }
   }
+  if (cmd_line->HasSwitch("verbose"))
+    log_level = Log::kDebug;
 
-  bool success = InitLogging(
-      NULL,
-      logging::LOG_ONLY_TO_SYSTEM_DEBUG_LOG,
-      logging::DONT_LOCK_LOG_FILE,
-      logging::DELETE_OLD_LOG_FILE,
-      logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS);
+  logging::LoggingSettings settings;
+  settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
+  bool success = logging::InitLogging(settings);
   if (!success) {
     PLOG(ERROR) << "Unable to initialize logging";
   }
@@ -157,14 +177,11 @@ int main(int argc, char *argv[]) {
                        false,  // enable_thread_id
                        false,  // enable_timestamp
                        false); // enable_tickcount
-  Log::Level level = Log::kLog;
-  if (cmd_line->HasSwitch("verbose"))
-    level = Log::kDebug;
+  if (!cmd_line->HasSwitch("verbose"))
+    logging::SetMinLogLevel(logging::LOG_FATAL);
 
-  scoped_ptr<Log> log(new Logger(level));
-  scoped_ptr<CommandExecutor> executor(new CommandExecutorImpl(log.get()));
-  HttpHandler handler(
-      log.get(), executor.Pass(), HttpHandler::CreateCommandMap(), url_base);
+  scoped_ptr<Log> log(new Logger(log_level));
+  HttpHandler handler(log.get(), url_base);
   base::WaitableEvent shutdown_event(false, false);
   MongooseUserData user_data = { &handler, &shutdown_event };
 
@@ -180,7 +197,7 @@ int main(int argc, char *argv[]) {
                                     &user_data,
                                     options.get());
   if (ctx == NULL) {
-    printf("Port already in use. Exiting...\n");
+    printf("Port not available. Exiting...\n");
     return 1;
   }
 
@@ -188,6 +205,7 @@ int main(int argc, char *argv[]) {
     printf("Started ChromeDriver (v%s) on port %s\n",
            kChromeDriverVersion,
            port.c_str());
+    fflush(stdout);
   }
 
 #if defined(OS_POSIX)

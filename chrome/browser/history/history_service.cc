@@ -35,12 +35,11 @@
 #include "base/prefs/pref_service.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/favicon/imported_favicon_usage.h"
 #include "chrome/browser/history/download_row.h"
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/history/history_notifications.h"
@@ -58,6 +57,7 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/importer/imported_favicon_usage.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/thumbnail_score.h"
 #include "chrome/common/url_constants.h"
@@ -155,10 +155,11 @@ class HistoryService::BackendDelegate : public HistoryBackend::Delegate {
   virtual void SetInMemoryBackend(int backend_id,
       history::InMemoryHistoryBackend* backend) OVERRIDE {
     // Send the backend to the history service on the main thread.
+    scoped_ptr<history::InMemoryHistoryBackend> in_memory_backend(backend);
     service_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&HistoryService::SetInMemoryBackend, history_service_,
-                   backend_id, backend));
+                   backend_id, base::Passed(&in_memory_backend)));
   }
 
   virtual void BroadcastNotifications(
@@ -1076,17 +1077,16 @@ syncer::SyncError HistoryService::ProcessLocalDeleteDirective(
       delete_directive);
 }
 
-void HistoryService::SetInMemoryBackend(int backend_id,
-    history::InMemoryHistoryBackend* mem_backend) {
+void HistoryService::SetInMemoryBackend(
+    int backend_id, scoped_ptr<history::InMemoryHistoryBackend> mem_backend) {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (!history_backend_.get() || current_backend_id_ != backend_id) {
     DVLOG(1) << "Message from obsolete backend";
-    // Cleaning up the memory backend.
-    delete mem_backend;
+    // mem_backend is deleted.
     return;
   }
   DCHECK(!in_memory_backend_) << "Setting mem DB twice";
-  in_memory_backend_.reset(mem_backend);
+  in_memory_backend_.reset(mem_backend.release());
 
   // The database requires additional initialization once we own it.
   in_memory_backend_->AttachToHistoryService(profile_);

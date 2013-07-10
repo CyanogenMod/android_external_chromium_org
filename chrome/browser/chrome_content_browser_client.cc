@@ -44,6 +44,9 @@
 #include "chrome/browser/extensions/suggest_permission_util.h"
 #include "chrome/browser/geolocation/chrome_access_token_store.h"
 #include "chrome/browser/google/google_util.h"
+#include "chrome/browser/guestview/adview/adview_guest.h"
+#include "chrome/browser/guestview/guestview_constants.h"
+#include "chrome/browser/guestview/webview/webview_guest.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/metrics/chrome_browser_main_extra_parts_metrics.h"
 #include "chrome/browser/nacl_host/nacl_host_message_filter.h"
@@ -78,13 +81,12 @@
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/toolkit_extra_parts.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
+#include "chrome/browser/ui/sync/sync_promo_ui.h"
 #include "chrome/browser/ui/tab_contents/chrome_web_contents_view_delegate.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
-#include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
 #include "chrome/browser/user_style_sheet_watcher.h"
 #include "chrome/browser/user_style_sheet_watcher_factory.h"
 #include "chrome/browser/validation_message_message_filter.h"
-#include "chrome/browser/webview/webview_guest.h"
 #include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
@@ -134,6 +136,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/message_center/message_center_util.h"
+#include "webkit/browser/fileapi/external_mount_points.h"
 #include "webkit/common/webpreferences.h"
 #include "webkit/plugins/plugin_switches.h"
 
@@ -145,6 +148,7 @@
 #include "chrome/browser/spellchecker/spellcheck_message_filter_mac.h"
 #elif defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/chrome_browser_main_chromeos.h"
+#include "chrome/browser/chromeos/fileapi/cros_mount_point_provider.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/system/statistics_provider.h"
@@ -232,6 +236,7 @@ const char* kPredefinedAllowedSocketOrigins[] = {
   "ghbfeebgmiidnnmeobbbaiamklmpbpii",  // see crbug.com/134099
   "jdfhpkjeckflbbleddjlpimecpbjdeep",  // see crbug.com/142514
   "iabmpiboiopbgfabjmgeedhcmjenhbla",  // see crbug.com/165080
+  "B7CF8A292249681AF81771650BA4CEEAF19A4560", // see crbug.com/165080
   "6EAED1924DB611B6EEF2A664BD077BE7EAD33B8F", // see crbug.com/234789
   "7525AF4F66763A70A883C4700529F647B470E4D2", // see crbug.com/238084
   "0B549507088E1564D672F7942EB87CA4DAD73972", // see crbug.com/238084
@@ -693,28 +698,79 @@ static bool IsExtensionActivityLogEnabledForProfile(Profile* profile) {
   return extensions::ActivityLog::IsLogEnabledOnAnyProfile();
 }
 
+void ChromeContentBrowserClient::GuestWebContentsCreated(
+    WebContents* guest_web_contents,
+    WebContents* opener_web_contents,
+    scoped_ptr<base::DictionaryValue> extra_params) {
+  if (opener_web_contents) {
+    GuestView* guest = GuestView::FromWebContents(opener_web_contents);
+    if (!guest) {
+      NOTREACHED();
+      return;
+    }
+
+    switch (guest->GetViewType()) {
+      case GuestView::WEBVIEW: {
+        new WebViewGuest(guest_web_contents);
+        break;
+      }
+      case GuestView::ADVIEW: {
+        new AdViewGuest(guest_web_contents);
+        break;
+      }
+      default:
+        NOTREACHED();
+        break;
+    }
+    return;
+  }
+
+  if (!extra_params) {
+    NOTREACHED();
+    return;
+  }
+  std::string api_type;
+  extra_params->GetString(guestview::kAttributeApi, &api_type);
+
+  if (api_type == "adview") {
+    new AdViewGuest(guest_web_contents);
+  } else if (api_type == "webview") {
+    new WebViewGuest(guest_web_contents);
+  } else {
+    NOTREACHED();
+  }
+}
+
 void ChromeContentBrowserClient::GuestWebContentsAttached(
     WebContents* guest_web_contents,
     WebContents* embedder_web_contents,
-    int browser_plugin_instance_id) {
+    int browser_plugin_instance_id,
+    const base::DictionaryValue& extra_params) {
   Profile* profile = Profile::FromBrowserContext(
       embedder_web_contents->GetBrowserContext());
   ExtensionService* service =
       extensions::ExtensionSystem::Get(profile)->extension_service();
-  if (!service)
+  if (!service) {
+    NOTREACHED();
     return;
+  }
   const GURL& url = embedder_web_contents->GetSiteInstance()->GetSiteURL();
   const Extension* extension = service->extensions()->
       GetExtensionOrAppByURL(ExtensionURLInfo(url));
-  if (!extension)
+  if (!extension) {
+    NOTREACHED();
     return;
-  std::vector<ExtensionMsg_Loaded_Params> extensions;
-  extensions.push_back(ExtensionMsg_Loaded_Params(extension));
-  guest_web_contents->Send(new ExtensionMsg_Loaded(extensions));
-  new WebViewGuest(guest_web_contents,
-                   embedder_web_contents,
-                   extension->id(),
-                   browser_plugin_instance_id);
+  }
+
+  GuestView* guest = GuestView::FromWebContents(guest_web_contents);
+  if (!guest) {
+    NOTREACHED();
+    return;
+  }
+  guest->Attach(embedder_web_contents,
+                extension->id(),
+                browser_plugin_instance_id,
+                extra_params);
 }
 
 void ChromeContentBrowserClient::RenderProcessHostCreated(
@@ -748,8 +804,12 @@ void ChromeContentBrowserClient::RenderProcessHostCreated(
   host->GetChannel()->AddFilter(new WebRtcLoggingHandlerHost());
 #endif
 #if !defined(DISABLE_NACL)
-  host->GetChannel()->AddFilter(new NaClHostMessageFilter(id, profile,
-    context));
+  ExtensionInfoMap* extension_info_map =
+      extensions::ExtensionSystem::Get(profile)->info_map();
+  host->GetChannel()->AddFilter(new NaClHostMessageFilter(
+      id, profile->IsOffTheRecord(),
+      profile->GetPath(), extension_info_map,
+      context));
 #endif
 
   host->Send(new ChromeViewMsg_SetIsIncognitoProcess(
@@ -1307,6 +1367,7 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kDisableScriptedPrintThrottling,
       switches::kEnableAdview,
       switches::kEnableAdviewSrcAttribute,
+      switches::kEnableAppWindowControls,
       switches::kEnableBenchmarking,
       switches::kEnableExperimentalExtensionApis,
       switches::kEnableIPCFuzzing,
@@ -1987,7 +2048,7 @@ void ChromeContentBrowserClient::OverrideWebkitPrefs(
       !chromeos::StartupUtils::IsOobeCompleted()) {
     bool keyboard_driven_oobe = false;
     chromeos::system::StatisticsProvider::GetInstance()->GetMachineFlag(
-        chromeos::kOemKeyboardDrivenOobeKey, &keyboard_driven_oobe);
+        chromeos::system::kOemKeyboardDrivenOobeKey, &keyboard_driven_oobe);
     if (keyboard_driven_oobe)
        web_prefs->password_echo_enabled = true;
   }
@@ -2236,6 +2297,8 @@ void ChromeContentBrowserClient::GetAdditionalAllowedSchemesForFileSystem(
 
 void ChromeContentBrowserClient::GetAdditionalFileSystemMountPointProviders(
     const base::FilePath& storage_partition_path,
+    quota::SpecialStoragePolicy* special_storage_policy,
+    fileapi::ExternalMountPoints* external_mount_points,
     ScopedVector<fileapi::FileSystemMountPointProvider>* additional_providers) {
 #if !defined(OS_ANDROID)
   base::SequencedWorkerPool* pool = content::BrowserThread::GetBlockingPool();
@@ -2243,6 +2306,17 @@ void ChromeContentBrowserClient::GetAdditionalFileSystemMountPointProviders(
       storage_partition_path,
       pool->GetSequencedTaskRunner(pool->GetNamedSequenceToken(
           MediaFileSystemMountPointProvider::kMediaTaskRunnerName)).get()));
+#endif
+#if defined(OS_CHROMEOS)
+  DCHECK(external_mount_points);
+  chromeos::CrosMountPointProvider* cros_mount_provider =
+      new chromeos::CrosMountPointProvider(
+          special_storage_policy,
+          external_mount_points,
+          fileapi::ExternalMountPoints::GetSystemInstance());
+  cros_mount_provider->AddSystemMountPoints();
+  DCHECK(cros_mount_provider->CanHandleType(fileapi::kFileSystemTypeExternal));
+  additional_providers->push_back(cros_mount_provider);
 #endif
 }
 

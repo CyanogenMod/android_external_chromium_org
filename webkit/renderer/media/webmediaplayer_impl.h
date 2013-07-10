@@ -21,13 +21,14 @@
 #define WEBKIT_RENDERER_MEDIA_WEBMEDIAPLAYER_IMPL_H_
 
 #include <string>
+#include <vector>
 
+#include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
 #include "cc/layers/video_frame_provider.h"
-#include "googleurl/src/gurl.h"
 #include "media/base/audio_renderer_sink.h"
 #include "media/base/decryptor.h"
 #include "media/base/media_keys.h"
@@ -40,6 +41,7 @@
 #include "third_party/WebKit/public/web/WebAudioSourceProvider.h"
 #include "third_party/WebKit/public/web/WebMediaPlayer.h"
 #include "third_party/WebKit/public/web/WebMediaPlayerClient.h"
+#include "url/gurl.h"
 #include "webkit/renderer/media/crypto/proxy_decryptor.h"
 
 class RenderAudioSourceProvider;
@@ -65,7 +67,6 @@ class WebLayerImpl;
 namespace webkit_media {
 
 class BufferedDataSource;
-class MediaStreamClient;
 class WebAudioSourceProviderImpl;
 class WebMediaPlayerDelegate;
 class WebMediaPlayerParams;
@@ -193,7 +194,7 @@ class WebMediaPlayerImpl
                   media::MediaKeys::KeyError error_code,
                   int system_code);
   void OnKeyMessage(const std::string& session_id,
-                    const std::string& message,
+                    const std::vector<uint8>& message,
                     const std::string& default_url);
   void OnNeedKey(const std::string& type,
                  const std::string& session_id,
@@ -205,8 +206,11 @@ class WebMediaPlayerImpl
   void SetOpaque(bool);
 
  private:
-  // Contains common logic used across the different types loading.
-  void LoadSetup(const WebKit::WebURL& url);
+  // Called after |defer_load_cb_| has decided to allow the load. If
+  // |defer_load_cb_| is null this is called immediately.
+  void DoLoad(const WebKit::WebURL& url,
+              WebKit::WebMediaSource* media_source,
+              CORSMode cors_mode);
 
   // Called after asynchronous initialization of a data source completed.
   void DataSourceInitialized(const GURL& gurl, bool success);
@@ -305,7 +309,7 @@ class WebMediaPlayerImpl
 
   base::WeakPtr<WebMediaPlayerDelegate> delegate_;
 
-  MediaStreamClient* media_stream_client_;
+  base::Callback<void(const base::Closure&)> defer_load_cb_;
 
   scoped_refptr<media::MediaLog> media_log_;
 

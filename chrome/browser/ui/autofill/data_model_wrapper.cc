@@ -8,15 +8,15 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_models.h"
-#include "components/autofill/browser/autofill_data_model.h"
-#include "components/autofill/browser/autofill_profile.h"
-#include "components/autofill/browser/autofill_type.h"
-#include "components/autofill/browser/credit_card.h"
-#include "components/autofill/browser/form_structure.h"
-#include "components/autofill/browser/validation.h"
 #include "components/autofill/content/browser/wallet/full_wallet.h"
 #include "components/autofill/content/browser/wallet/wallet_address.h"
 #include "components/autofill/content/browser/wallet/wallet_items.h"
+#include "components/autofill/core/browser/autofill_data_model.h"
+#include "components/autofill/core/browser/autofill_profile.h"
+#include "components/autofill/core/browser/autofill_type.h"
+#include "components/autofill/core/browser/credit_card.h"
+#include "components/autofill/core/browser/form_structure.h"
+#include "components/autofill/core/browser/validation.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
 
@@ -140,12 +140,8 @@ gfx::Image AutofillCreditCardWrapper::GetIcon() {
 }
 
 string16 AutofillCreditCardWrapper::GetDisplayText() {
-  if (!autofill::IsValidCreditCardExpirationDate(
-           card_->GetRawInfo(CREDIT_CARD_EXP_4_DIGIT_YEAR),
-           card_->GetRawInfo(CREDIT_CARD_EXP_MONTH),
-           base::Time::Now())) {
+  if (!card_->IsValid())
     return string16();
-  }
 
   return card_->TypeAndLastFourDigits();
 }
@@ -257,6 +253,20 @@ FullWalletShippingWrapper::~FullWalletShippingWrapper() {}
 string16 FullWalletShippingWrapper::GetInfo(AutofillFieldType type) const {
   return full_wallet_->shipping_address()->GetInfo(
       type, g_browser_process->GetApplicationLocale());
+}
+
+DetailOutputWrapper::DetailOutputWrapper(const DetailOutputMap& outputs)
+    : outputs_(outputs) {}
+
+DetailOutputWrapper::~DetailOutputWrapper() {}
+
+base::string16 DetailOutputWrapper::GetInfo(AutofillFieldType type) const {
+  for (DetailOutputMap::const_iterator it = outputs_.begin();
+       it != outputs_.end(); ++it) {
+    if (type == it->first->type)
+      return it->second;
+  }
+  return base::string16();
 }
 
 }  // namespace autofill

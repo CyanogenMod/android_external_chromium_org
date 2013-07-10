@@ -14,6 +14,7 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/values.h"
 #include "content/public/browser/certificate_request_result_type.h"
 #include "content/public/browser/file_descriptor_info.h"
 #include "content/public/common/content_client.h"
@@ -34,6 +35,7 @@ class GURL;
 struct WebPreferences;
 
 namespace base {
+class DictionaryValue;
 class FilePath;
 }
 namespace crypto {
@@ -65,7 +67,12 @@ class SelectFilePolicy;
 }
 
 namespace fileapi {
+class ExternalMountPoints;
 class FileSystemMountPointProvider;
+}
+
+namespace quota {
+class SpecialStoragePolicy;
 }
 
 namespace content {
@@ -129,13 +136,29 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual WebContentsViewDelegate* GetWebContentsViewDelegate(
       WebContents* web_contents);
 
+  // Notifies that a guest WebContents has been created. A guest WebContents
+  // represents a renderer that's hosted within a BrowserPlugin. Creation can
+  // occur an arbitrary length of time before attachment. If the new guest has
+  // an |opener_web_contents|, then it's a new window created by that opener.
+  // If the guest was created via navigation, then |extra_params| will be
+  // non-NULL. |extra_params| are parameters passed to the BrowserPlugin object
+  // element by the content embedder. These parameters may include the API to
+  // enable for the given guest.
+  virtual void GuestWebContentsCreated(
+      WebContents* guest_web_contents,
+      WebContents* opener_web_contents,
+      scoped_ptr<base::DictionaryValue> extra_params) {}
+
   // Notifies that a guest WebContents has been attached to a BrowserPlugin.
   // A guest is attached to a BrowserPlugin when the guest has acquired an
   // embedder WebContents. This happens on initial navigation or when a new
-  // window is attached to a BrowserPlugin.
-  virtual void GuestWebContentsAttached(WebContents* guest_web_contents,
-                                        WebContents* embedder_web_contents,
-                                        int browser_plugin_instance_id) {}
+  // window is attached to a BrowserPlugin. |extra_params| are params sent
+  // from javascript.
+  virtual void GuestWebContentsAttached(
+      WebContents* guest_web_contents,
+      WebContents* embedder_web_contents,
+      int browser_plugin_instance_id,
+      const base::DictionaryValue& extra_params) {}
 
   // Notifies that a RenderProcessHost has been created. This is called before
   // the content layer adds its own BrowserMessageFilters, so that the
@@ -531,8 +554,16 @@ class CONTENT_EXPORT ContentBrowserClient {
       std::vector<std::string>* additional_schemes) {}
 
   // Returns additional MountPointProviders for FileSystem API.
+  // |special_storage_policy| and |external_mount_points| are needed in the
+  // additional MountPointProviders. |special_storage_policy| is used to grant
+  // permissions. |external_mount_points| has mount points to create objects
+  // returned by additional MountPointProviders. (Note: although it is named
+  // "provider", it acts creating objects based on mount points provided by
+  // |external_mount_points|).
   virtual void GetAdditionalFileSystemMountPointProviders(
       const base::FilePath& storage_partition_path,
+      quota::SpecialStoragePolicy* special_storage_policy,
+      fileapi::ExternalMountPoints* external_mount_points,
       ScopedVector<fileapi::FileSystemMountPointProvider>*
           additional_providers) {}
 

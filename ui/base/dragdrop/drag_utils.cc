@@ -7,7 +7,6 @@
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
-#include "googleurl/src/gurl.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
@@ -15,6 +14,7 @@
 #include "ui/gfx/image/canvas_image_source.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/size.h"
+#include "url/gurl.h"
 
 namespace drag_utils {
 
@@ -48,7 +48,7 @@ class FileDragImageSource : public gfx::CanvasImageSource {
     // Paint the icon.
     canvas->DrawImageInt(icon_, (size().width() - icon_.width()) / 2, 0);
 
-    string16 name = file_name_.BaseName().LossyDisplayName();
+    base::string16 name = file_name_.BaseName().LossyDisplayName();
     const int flags = gfx::Canvas::TEXT_ALIGN_CENTER;
 #if defined(OS_WIN)
     // Paint the file name. We inset it one pixel to allow room for the halo.

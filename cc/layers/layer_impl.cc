@@ -51,6 +51,7 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl, int id)
       use_parent_backface_visibility_(false),
       draw_checkerboard_for_missing_tiles_(false),
       draws_content_(false),
+      hide_layer_and_subtree_(false),
       force_render_surface_(false),
       is_container_for_fixed_position_layers_(false),
       draw_depth_(0.f),
@@ -113,12 +114,26 @@ void LayerImpl::PassCopyRequests(ScopedPtrVector<CopyOutputRequest>* requests) {
   NoteLayerPropertyChangedForSubtree();
 }
 
-void LayerImpl::TakeCopyRequests(ScopedPtrVector<CopyOutputRequest>* requests) {
+void LayerImpl::TakeCopyRequestsAndTransformToTarget(
+    ScopedPtrVector<CopyOutputRequest>* requests) {
   if (copy_requests_.empty())
     return;
 
   requests->insert_and_take(requests->end(), copy_requests_);
   copy_requests_.clear();
+
+  for (size_t i = 0; i < requests->size(); ++i) {
+    CopyOutputRequest* request = requests->at(i);
+    if (!request->has_area())
+      continue;
+
+    gfx::Rect request_in_layer_space = request->area();
+    gfx::Rect request_in_content_space =
+        LayerRectToContentRect(request_in_layer_space);
+    request->set_area(
+        MathUtil::MapClippedRect(draw_properties_.target_space_transform,
+                                 request_in_content_space));
+  }
 }
 
 void LayerImpl::CreateRenderSurface() {
@@ -354,6 +369,7 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
       draw_checkerboard_for_missing_tiles_);
   layer->SetForceRenderSurface(force_render_surface_);
   layer->SetDrawsContent(DrawsContent());
+  layer->SetHideLayerAndSubtree(hide_layer_and_subtree_);
   layer->SetFilters(filters());
   layer->SetFilter(filter());
   layer->SetBackgroundFilters(background_filters());
@@ -395,85 +411,6 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
   // Reset any state that should be cleared for the next update.
   stacking_order_changed_ = false;
   update_rect_ = gfx::RectF();
-}
-
-std::string LayerImpl::IndentString(int indent) {
-  std::string str;
-  for (int i = 0; i != indent; ++i)
-    str.append("  ");
-  return str;
-}
-
-void LayerImpl::DumpLayerProperties(std::string* str, int indent) const {
-  std::string indent_str = IndentString(indent);
-  str->append(indent_str);
-  base::StringAppendF(str, "layer ID: %d\n", layer_id_);
-
-  str->append(indent_str);
-  base::StringAppendF(
-      str, "bounds: %d, %d\n", bounds().width(), bounds().height());
-
-  if (draw_properties_.render_target) {
-    str->append(indent_str);
-    base::StringAppendF(
-        str, "renderTarget: %d\n", draw_properties_.render_target->layer_id_);
-  }
-
-  str->append(indent_str);
-  base::StringAppendF(str, "position: %f, %f\n", position_.x(), position_.y());
-
-  str->append(indent_str);
-  base::StringAppendF(str, "contentsOpaque: %d\n", contents_opaque_);
-
-  str->append(indent_str);
-  const gfx::Transform& transform = draw_properties_.target_space_transform;
-  base::StringAppendF(str,
-                      "drawTransform: %f, %f, %f, %f  //  %f, %f, %f, %f"
-                      "  //  %f, %f, %f, %f  //  %f, %f, %f, %f\n",
-                      transform.matrix().getDouble(0, 0),
-                      transform.matrix().getDouble(0, 1),
-                      transform.matrix().getDouble(0, 2),
-                      transform.matrix().getDouble(0, 3),
-                      transform.matrix().getDouble(1, 0),
-                      transform.matrix().getDouble(1, 1),
-                      transform.matrix().getDouble(1, 2),
-                      transform.matrix().getDouble(1, 3),
-                      transform.matrix().getDouble(2, 0),
-                      transform.matrix().getDouble(2, 1),
-                      transform.matrix().getDouble(2, 2),
-                      transform.matrix().getDouble(2, 3),
-                      transform.matrix().getDouble(3, 0),
-                      transform.matrix().getDouble(3, 1),
-                      transform.matrix().getDouble(3, 2),
-                      transform.matrix().getDouble(3, 3));
-
-  str->append(indent_str);
-  base::StringAppendF(
-      str, "draws_content: %s\n", draws_content_ ? "yes" : "no");
-}
-
-std::string LayerImpl::LayerTreeAsText() const {
-  std::string str;
-  DumpLayer(&str, 0);
-  return str;
-}
-
-void LayerImpl::DumpLayer(std::string* str, int indent) const {
-  str->append(IndentString(indent));
-  base::StringAppendF(str, "%s(%s)\n", LayerTypeAsString(), debug_name_.data());
-  DumpLayerProperties(str, indent+2);
-  if (replica_layer_) {
-    str->append(IndentString(indent+2));
-    str->append("Replica:\n");
-    replica_layer_->DumpLayer(str, indent+3);
-  }
-  if (mask_layer_) {
-    str->append(IndentString(indent+2));
-    str->append("Mask:\n");
-    mask_layer_->DumpLayer(str, indent+3);
-  }
-  for (size_t i = 0; i < children_.size(); ++i)
-    children_[i]->DumpLayer(str, indent+1);
 }
 
 base::DictionaryValue* LayerImpl::LayerTreeAsJson() const {
@@ -669,6 +606,14 @@ void LayerImpl::SetDrawsContent(bool draws_content) {
   NoteLayerPropertyChanged();
 }
 
+void LayerImpl::SetHideLayerAndSubtree(bool hide) {
+  if (hide_layer_and_subtree_ == hide)
+    return;
+
+  hide_layer_and_subtree_ = hide;
+  NoteLayerPropertyChangedForSubtree();
+}
+
 void LayerImpl::SetAnchorPoint(gfx::PointF anchor_point) {
   if (anchor_point_ == anchor_point)
     return;
@@ -712,7 +657,7 @@ SkColor LayerImpl::SafeOpaqueBackgroundColor() const {
   return color;
 }
 
-void LayerImpl::SetFilters(const WebKit::WebFilterOperations& filters) {
+void LayerImpl::SetFilters(const FilterOperations& filters) {
   if (filters_ == filters)
     return;
 
@@ -722,7 +667,7 @@ void LayerImpl::SetFilters(const WebKit::WebFilterOperations& filters) {
 }
 
 void LayerImpl::SetBackgroundFilters(
-    const WebKit::WebFilterOperations& filters) {
+    const FilterOperations& filters) {
   if (background_filters_ == filters)
     return;
 
@@ -734,7 +679,7 @@ void LayerImpl::SetFilter(const skia::RefPtr<SkImageFilter>& filter) {
   if (filter_.get() == filter.get())
     return;
 
-  DCHECK(filters_.isEmpty());
+  DCHECK(filters_.IsEmpty());
   filter_ = filter;
   NoteLayerPropertyChangedForSubtree();
 }

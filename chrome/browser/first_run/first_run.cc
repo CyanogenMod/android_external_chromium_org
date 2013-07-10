@@ -23,10 +23,9 @@
 #include "chrome/browser/first_run/first_run_internal.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/importer/external_process_importer_host.h"
-#include "chrome/browser/importer/importer_host.h"
+#include "chrome/browser/importer/importer_creator.h"
 #include "chrome/browser/importer/importer_list.h"
 #include "chrome/browser/importer/importer_progress_observer.h"
-#include "chrome/browser/importer/importer_type.h"
 #include "chrome/browser/importer/profile_writer.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search_engines/template_url_service.h"
@@ -39,9 +38,9 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
+#include "chrome/browser/ui/sync/sync_promo_ui.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
-#include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -56,7 +55,7 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "google_apis/gaia/gaia_auth_util.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 using content::UserMetricsAction;
 
@@ -231,12 +230,12 @@ void SetImportItem(PrefService* user_prefs,
 // |target_profile| for the items specified in the |items_to_import| bitfield.
 // This may be done in a separate process depending on the platform, but it will
 // always block until done.
-void ImportFromSourceProfile(ImporterHost* importer_host,
+void ImportFromSourceProfile(ExternalProcessImporterHost* importer_host,
                              const importer::SourceProfile& source_profile,
                              Profile* target_profile,
                              uint16 items_to_import) {
   ImportEndedObserver observer;
-  importer_host->SetObserver(&observer);
+  importer_host->set_observer(&observer);
   importer_host->StartImportSettings(source_profile,
                                      target_profile,
                                      items_to_import,
@@ -251,7 +250,7 @@ void ImportFromSourceProfile(ImporterHost* importer_host,
 // Imports bookmarks from an html file whose path is provided by
 // |import_bookmarks_path|.
 void ImportFromFile(Profile* profile,
-                    ImporterHost* file_importer_host,
+                    ExternalProcessImporterHost* file_importer_host,
                     const std::string& import_bookmarks_path) {
   importer::SourceProfile source_profile;
   source_profile.importer_type = importer::TYPE_BOOKMARKS_FILE;
@@ -271,7 +270,7 @@ void ImportFromFile(Profile* profile,
 
 // Imports settings from the first profile in |importer_list|.
 void ImportSettings(Profile* profile,
-                    ImporterHost* importer_host,
+                    ExternalProcessImporterHost* importer_host,
                     scoped_refptr<ImporterList> importer_list,
                     int items_to_import) {
   const importer::SourceProfile& source_profile =
@@ -453,9 +452,6 @@ bool IsOrganicFirstRun() {
 #endif
 
 }  // namespace internal
-}  // namespace first_run
-
-namespace first_run {
 
 MasterPrefs::MasterPrefs()
     : ping_delay(0),
@@ -506,7 +502,7 @@ bool RemoveSentinel() {
   base::FilePath first_run_sentinel;
   if (!internal::GetFirstRunSentinelFilePath(&first_run_sentinel))
     return false;
-  return file_util::Delete(first_run_sentinel, false);
+  return base::Delete(first_run_sentinel, false);
 }
 
 bool SetShowFirstRunBubblePref(FirstRunBubbleOptions show_bubble_option) {
@@ -676,24 +672,16 @@ void AutoImport(
     int import_items,
     int dont_import_items,
     const std::string& import_bookmarks_path) {
-#if !defined(USE_AURA)
   // Deletes itself.
-  ImporterHost* importer_host;
-  // TODO(csilv,mirandac): Out-of-process import has only been qualified on
-  // MacOS X and Windows, so we will only use it on those platforms.
-  // Linux still uses the in-process import (http://crbug.com/56816).
-#if defined(OS_MACOSX) || defined(OS_WIN)
-  importer_host = new ExternalProcessImporterHost;
-#else
-  importer_host = new ImporterHost;
-#endif
+  ExternalProcessImporterHost* importer_host = new ExternalProcessImporterHost;
 
   base::FilePath local_state_path;
   PathService::Get(chrome::FILE_LOCAL_STATE, &local_state_path);
   bool local_state_file_exists = file_util::PathExists(local_state_path);
 
-  scoped_refptr<ImporterList> importer_list(new ImporterList(NULL));
-  importer_list->DetectSourceProfilesHack();
+  scoped_refptr<ImporterList> importer_list(new ImporterList());
+  importer_list->DetectSourceProfilesHack(
+      g_browser_process->GetApplicationLocale());
 
   // Do import if there is an available profile for us to import.
   if (importer_list->count() > 0) {
@@ -753,14 +741,8 @@ void AutoImport(
 
   if (!import_bookmarks_path.empty()) {
     // Deletes itself.
-    ImporterHost* file_importer_host;
-    // TODO(gab): Make Linux use OOP import as well (http://crbug.com/56816) and
-    // get rid of these ugly ifdefs.
-#if defined(OS_MACOSX) || defined(OS_WIN)
-    file_importer_host = new ExternalProcessImporterHost;
-#else
-    file_importer_host = new ImporterHost;
-#endif
+    ExternalProcessImporterHost* file_importer_host =
+        new ExternalProcessImporterHost;
     file_importer_host->set_headless();
 
     ImportFromFile(profile, file_importer_host, import_bookmarks_path);
@@ -768,7 +750,6 @@ void AutoImport(
 
   content::RecordAction(UserMetricsAction("FirstRunDef_Accept"));
 
-#endif  // !defined(USE_AURA)
   g_auto_import_state |= AUTO_IMPORT_CALLED;
 }
 

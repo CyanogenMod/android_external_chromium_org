@@ -15,13 +15,14 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "base/win/shortcut.h"
 #include "base/win/windows_version.h"
 #include "chrome/app/chrome_dll_resource.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -257,10 +258,9 @@ class AppListControllerDelegateWin : public AppListControllerDelegate {
   virtual bool CanPin() OVERRIDE;
   virtual void OnShowExtensionPrompt() OVERRIDE;
   virtual void OnCloseExtensionPrompt() OVERRIDE;
-  virtual bool CanShowCreateShortcutsDialog() OVERRIDE;
-  virtual void ShowCreateShortcutsDialog(
-      Profile* profile,
-      const std::string& extension_id) OVERRIDE;
+  virtual bool CanDoCreateShortcutsFlow(bool is_platform_app) OVERRIDE;
+  virtual void DoCreateShortcutsFlow(Profile* profile,
+                                     const std::string& extension_id) OVERRIDE;
   virtual void CreateNewWindow(Profile* profile, bool incognito) OVERRIDE;
   virtual void ActivateApp(Profile* profile,
                            const extensions::Extension* extension,
@@ -431,14 +431,16 @@ void AppListControllerDelegateWin::OnCloseExtensionPrompt() {
   AppListController::GetInstance()->set_can_close(true);
 }
 
-bool AppListControllerDelegateWin::CanShowCreateShortcutsDialog() {
+bool AppListControllerDelegateWin::CanDoCreateShortcutsFlow(
+    bool is_platform_app) {
   return true;
 }
 
-void AppListControllerDelegateWin::ShowCreateShortcutsDialog(
+void AppListControllerDelegateWin::DoCreateShortcutsFlow(
     Profile* profile,
     const std::string& extension_id) {
-  ExtensionService* service = profile->GetExtensionService();
+  ExtensionService* service =
+      extensions::ExtensionSystem::Get(profile)->extension_service();
   DCHECK(service);
   const extensions::Extension* extension = service->GetInstalledExtension(
       extension_id);
@@ -863,6 +865,28 @@ void AppListController::Init(Profile* initial_profile) {
         ShowAppListDuringModeSwitch(initial_profile);
   }
 
+  // Migrate from legacy app launcher if we are on a non-canary and non-chromium
+  // build.
+#if defined(GOOGLE_CHROME_BUILD)
+  if (!InstallUtil::IsChromeSxSProcess() &&
+      !chrome_launcher_support::GetAnyAppHostPath().empty()) {
+    chrome_launcher_support::InstallationState state =
+        chrome_launcher_support::GetAppLauncherInstallationState();
+    if (state == chrome_launcher_support::NOT_INSTALLED) {
+      // If app_host.exe is found but can't be located in the registry,
+      // skip the migration as this is likely a developer build.
+      return;
+    } else if (state == chrome_launcher_support::INSTALLED_AT_SYSTEM_LEVEL) {
+      chrome_launcher_support::UninstallLegacyAppLauncher(
+          chrome_launcher_support::SYSTEM_LEVEL_INSTALLATION);
+    } else if (state == chrome_launcher_support::INSTALLED_AT_USER_LEVEL) {
+      chrome_launcher_support::UninstallLegacyAppLauncher(
+          chrome_launcher_support::USER_LEVEL_INSTALLATION);
+    }
+    EnableAppList();
+  }
+#endif
+
   // Instantiate AppListController so it listens for profile deletions.
   AppListController::GetInstance();
 
@@ -887,25 +911,21 @@ void AppListController::EnableAppList() {
   // shortcut, they can restore it by pinning the start menu or desktop
   // shortcut.
   PrefService* local_state = g_browser_process->local_state();
-  bool has_been_enabled = local_state->GetBoolean(
-      apps::prefs::kAppLauncherHasBeenEnabled);
-  if (!has_been_enabled) {
-    local_state->SetBoolean(apps::prefs::kAppLauncherHasBeenEnabled, true);
-    ShellIntegration::ShortcutLocations shortcut_locations;
-    shortcut_locations.on_desktop = true;
-    shortcut_locations.in_quick_launch_bar = true;
-    shortcut_locations.in_applications_menu = true;
-    BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-    shortcut_locations.applications_menu_subdir = dist->GetAppShortCutName();
-    base::FilePath user_data_dir(
-        g_browser_process->profile_manager()->user_data_dir());
+  local_state->SetBoolean(apps::prefs::kAppLauncherHasBeenEnabled, true);
+  ShellIntegration::ShortcutLocations shortcut_locations;
+  shortcut_locations.on_desktop = true;
+  shortcut_locations.in_quick_launch_bar = true;
+  shortcut_locations.in_applications_menu = true;
+  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
+  shortcut_locations.applications_menu_subdir = dist->GetAppShortCutName();
+  base::FilePath user_data_dir(
+      g_browser_process->profile_manager()->user_data_dir());
 
-    content::BrowserThread::PostTask(
-        content::BrowserThread::FILE,
-        FROM_HERE,
-        base::Bind(&CreateAppListShortcuts,
-                   user_data_dir, GetAppModelId(), shortcut_locations));
-  }
+  content::BrowserThread::PostTask(
+      content::BrowserThread::FILE,
+      FROM_HERE,
+      base::Bind(&CreateAppListShortcuts,
+                  user_data_dir, GetAppModelId(), shortcut_locations));
 }
 
 void AppListController::DisableAppList() {
@@ -937,7 +957,7 @@ bool AppListController::IsWarmupNeeded() {
 
   // We only need to initialize the view if there's no view already created and
   // there's no profile loading to be shown.
-  return !current_view_ && !profile_loader().AnyProfilesLoading();
+  return !current_view_ && !profile_loader().IsAnyProfileLoading();
 }
 
 void AppListController::LoadProfileForWarmup() {

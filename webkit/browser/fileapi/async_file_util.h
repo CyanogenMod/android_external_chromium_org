@@ -43,7 +43,9 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
   typedef base::Callback<
       void(base::PlatformFileError result)> StatusCallback;
 
-  typedef base::FileUtilProxy::CreateOrOpenCallback CreateOrOpenCallback;
+  typedef base::Callback<
+      void(base::PlatformFileError result,
+           base::PassPlatformFile file)> CreateOrOpenCallback;
 
   typedef base::Callback<
       void(base::PlatformFileError result,
@@ -292,6 +294,26 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
   // - PLATFORM_FILE_ERROR_NOT_EMPTY if |url| is not empty.
   //
   virtual bool DeleteDirectory(
+      scoped_ptr<FileSystemOperationContext> context,
+      const FileSystemURL& url,
+      const StatusCallback& callback) = 0;
+
+  // Removes a single file or a single directory with its contents
+  // (i.e. files/subdirectories under the directory).
+  //
+  // LocalFileSystemOperation::Remove calls this.
+  // On some platforms, such as Chrome OS Drive File System, recursive file
+  // deletion can be implemented more efficiently than calling DeleteFile() and
+  // DeleteDirectory() for each files/directories.
+  // This method is optional, so if not supported,
+  // PLATFORM_ERROR_INVALID_OPERATION should be returned via |callback|.
+  //
+  // This returns false if it fails to post an async task.
+  //
+  // This reports following error code via |callback|:
+  // - PLATFORM_FILE_ERROR_NOT_FOUND if |url| does not exist.
+  // - PLATFORM_ERROR_INVALID_OPERATION if this operation is not supported.
+  virtual bool DeleteRecursively(
       scoped_ptr<FileSystemOperationContext> context,
       const FileSystemURL& url,
       const StatusCallback& callback) = 0;

@@ -31,6 +31,7 @@
 #include "content/browser/renderer_host/render_widget_helper.h"
 #include "content/common/child_process_host_impl.h"
 #include "content/common/child_process_messages.h"
+#include "content/common/cookie_data.h"
 #include "content/common/desktop_notification_messages.h"
 #include "content/common/media/media_param_traits.h"
 #include "content/common/view_messages.h"
@@ -62,8 +63,6 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "third_party/WebKit/public/web/WebNotificationPresenter.h"
 #include "ui/gfx/color_profile.h"
-#include "webkit/glue/webcookie.h"
-#include "webkit/glue/webkit_glue.h"
 #include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/plugin_constants.h"
 #include "webkit/plugins/webplugininfo.h"
@@ -297,6 +296,7 @@ RenderMessageFilter::RenderMessageFilter(
     BrowserContext* browser_context,
     net::URLRequestContextGetter* request_context,
     RenderWidgetHelper* render_widget_helper,
+    media::AudioManager* audio_manager,
     MediaInternals* media_internals,
     DOMStorageContextImpl* dom_storage_context)
     : resource_dispatcher_host_(ResourceDispatcherHostImpl::Get()),
@@ -309,6 +309,7 @@ RenderMessageFilter::RenderMessageFilter(
       dom_storage_context_(dom_storage_context),
       render_process_id_(render_process_id),
       cpu_usage_(0),
+      audio_manager_(audio_manager),
       media_internals_(media_internals) {
   DCHECK(request_context_.get());
 
@@ -439,7 +440,7 @@ base::TaskRunner* RenderMessageFilter::OverrideTaskRunnerForMessage(
 #if defined(OS_MACOSX)
   // OSX CoreAudio calls must all happen on the main thread.
   if (message.type() == ViewHostMsg_GetAudioHardwareConfig::ID)
-    return BrowserMainLoop::GetAudioManager()->GetMessageLoop();
+    return audio_manager_->GetMessageLoop().get();
 #endif
   return NULL;
 }
@@ -802,13 +803,11 @@ void RenderMessageFilter::OnGetAudioHardwareConfig(
     media::AudioParameters* output_params) {
   DCHECK(input_params);
   DCHECK(output_params);
-  media::AudioManager* audio_manager = BrowserMainLoop::GetAudioManager();
-  *output_params = audio_manager->GetDefaultOutputStreamParameters();
+  *output_params = audio_manager_->GetDefaultOutputStreamParameters();
 
   // TODO(henrika): add support for all available input devices.
-  *input_params =
-      audio_manager->GetInputStreamParameters(
-          media::AudioManagerBase::kDefaultDeviceId);
+  *input_params = audio_manager_->GetInputStreamParameters(
+      media::AudioManagerBase::kDefaultDeviceId);
 }
 
 void RenderMessageFilter::OnGetMonitorColorProfile(std::vector<char>* profile) {
@@ -828,12 +827,10 @@ void RenderMessageFilter::OnDownloadUrl(const IPC::Message& message,
   save_info->suggested_name = suggested_name;
   scoped_ptr<net::URLRequest> request(
       resource_context_->GetRequestContext()->CreateRequest(url, NULL));
-  request->SetReferrer(referrer.url.spec());
-  webkit_glue::ConfigureURLRequestForReferrerPolicy(
-      request.get(), referrer.policy);
   RecordDownloadSource(INITIATED_BY_RENDERER);
   resource_dispatcher_host_->BeginDownload(
       request.Pass(),
+      referrer,
       true,  // is_content_initiated
       resource_context_,
       render_process_id_,
@@ -1058,9 +1055,9 @@ void RenderMessageFilter::SendGetCookiesResponse(IPC::Message* reply_msg,
 void RenderMessageFilter::SendGetRawCookiesResponse(
     IPC::Message* reply_msg,
     const net::CookieList& cookie_list) {
-  std::vector<webkit_glue::WebCookie> cookies;
+  std::vector<CookieData> cookies;
   for (size_t i = 0; i < cookie_list.size(); ++i)
-    cookies.push_back(webkit_glue::WebCookie(cookie_list[i]));
+    cookies.push_back(CookieData(cookie_list[i]));
   ViewHostMsg_GetRawCookies::WriteReplyParams(reply_msg, cookies);
   Send(reply_msg);
 }

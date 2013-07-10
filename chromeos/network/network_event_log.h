@@ -10,7 +10,7 @@
 
 #include "base/basictypes.h"
 #include "base/strings/stringprintf.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chromeos/chromeos_export.h"
 
 namespace base {
@@ -94,7 +94,8 @@ CHROMEOS_EXPORT std::string ValueAsString(const base::Value& value);
 #define NET_LOG_ERROR(event, desc) NET_LOG_LEVEL(                       \
     ::chromeos::network_event_log::LOG_LEVEL_ERROR, event, desc)
 
-// User initiated events, e.g. connection request
+// Chrome initiated events, e.g. connection requests, scan requests,
+// configuration removal (either from the UI or from ONC policy application).
 #define NET_LOG_USER(event, desc) NET_LOG_LEVEL(                        \
     ::chromeos::network_event_log::LOG_LEVEL_USER, event, desc)
 

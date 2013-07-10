@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/notifications/balloon.h"
 #include "chrome/browser/notifications/balloon_collection.h"
@@ -59,8 +59,7 @@ class BalloonControllerTest : public ChromeRenderViewHostTestHarness {
     ChromeRenderViewHostTestHarness::SetUp();
     CocoaTest::BootstrapCocoa();
     profile()->CreateRequestContext();
-    Browser::CreateParams native_params(profile(),
-                                        chrome::HOST_DESKTOP_TYPE_NATIVE);
+    Browser::CreateParams native_params(profile(), chrome::GetActiveDesktop());
     browser_.reset(
         chrome::CreateBrowserWithTestWindowForParams(&native_params));
     collection_.reset(new MockBalloonCollection());

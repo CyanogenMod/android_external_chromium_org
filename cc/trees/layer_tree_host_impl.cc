@@ -14,7 +14,6 @@
 #include "cc/animation/scrollbar_animation_controller.h"
 #include "cc/animation/timing_function.h"
 #include "cc/base/math_util.h"
-#include "cc/base/thread.h"
 #include "cc/base/util.h"
 #include "cc/debug/debug_rect_history.h"
 #include "cc/debug/frame_rate_counter.h"
@@ -191,6 +190,7 @@ LayerTreeHostImpl::LayerTreeHostImpl(
       last_sent_memory_visible_bytes_(0),
       last_sent_memory_visible_and_nearby_bytes_(0),
       last_sent_memory_use_bytes_(0),
+      zero_budget_(false),
       device_scale_factor_(1.f),
       overdraw_bottom_height_(0.f),
       animation_registrar_(AnimationRegistrar::Create()),
@@ -227,15 +227,12 @@ LayerTreeHostImpl::~LayerTreeHostImpl() {
     input_handler_client_ = NULL;
   }
 
-  if (active_tree_->root_layer()) {
-    ClearRenderSurfaces();
-    // The layer trees must be destroyed before the layer tree host. We've
-    // made a contract with our animation controllers that the registrar
-    // will outlive them, and we must make good.
-    recycle_tree_.reset();
-    pending_tree_.reset();
-    active_tree_.reset();
-  }
+  // The layer trees must be destroyed before the layer tree host. We've
+  // made a contract with our animation controllers that the registrar
+  // will outlive them, and we must make good.
+  recycle_tree_.reset();
+  pending_tree_.reset();
+  active_tree_.reset();
 }
 
 void LayerTreeHostImpl::BeginCommit() {}
@@ -641,7 +638,8 @@ bool LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
     if (it.represents_target_render_surface()) {
       if (it->HasCopyRequest()) {
         have_copy_request = true;
-        it->TakeCopyRequests(&target_render_pass->copy_requests);
+        it->TakeCopyRequestsAndTransformToTarget(
+            &target_render_pass->copy_requests);
       }
     } else if (it.represents_contributing_render_surface()) {
       RenderPass::Id contributing_render_pass_id =
@@ -750,10 +748,8 @@ bool LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
   RemoveRenderPasses(CullRenderPassesWithNoQuads(), frame);
   if (!output_surface_->ForcedDrawToSoftwareDevice())
     renderer_->DecideRenderPassAllocationsForFrame(frame->render_passes);
-  if (renderer_) {
-    RemoveRenderPasses(CullRenderPassesWithCachedTextures(renderer_.get()),
-                       frame);
-  }
+  RemoveRenderPasses(CullRenderPassesWithCachedTextures(renderer_.get()),
+                     frame);
 
   // If we're making a frame to draw, it better have at least one render pass.
   DCHECK(!frame->render_passes.empty());
@@ -767,6 +763,8 @@ void LayerTreeHostImpl::MainThreadHasStoppedFlinging() {
 
 void LayerTreeHostImpl::UpdateBackgroundAnimateTicking(
     bool should_background_tick) {
+  DCHECK(proxy_->IsImplThread());
+
   bool enabled = should_background_tick &&
                  !animation_registrar_->active_animation_controllers().empty();
 
@@ -775,8 +773,10 @@ void LayerTreeHostImpl::UpdateBackgroundAnimateTicking(
   if (!time_source_client_adapter_) {
     time_source_client_adapter_ = LayerTreeHostImplTimeSourceAdapter::Create(
         this,
-        DelayBasedTimeSource::Create(LowFrequencyAnimationInterval(),
-                                     proxy_->CurrentThread()->TaskRunner()));
+        DelayBasedTimeSource::Create(
+            LowFrequencyAnimationInterval(),
+            proxy_->HasImplThread() ? proxy_->ImplThreadTaskRunner()
+                                    : proxy_->MainThreadTaskRunner()));
   }
 
   time_source_client_adapter_->SetActive(enabled);
@@ -948,6 +948,10 @@ bool LayerTreeHostImpl::PrepareToDraw(FrameData* frame,
   return true;
 }
 
+void LayerTreeHostImpl::EvictTexturesForTesting() {
+  EnforceManagedMemoryPolicy(ManagedMemoryPolicy(0));
+}
+
 void LayerTreeHostImpl::EnforceManagedMemoryPolicy(
     const ManagedMemoryPolicy& policy) {
 
@@ -1005,18 +1009,6 @@ void LayerTreeHostImpl::DidInitializeVisibleTile() {
     client_->DidInitializeVisibleTileOnImplThread();
 }
 
-bool LayerTreeHostImpl::
-    ShouldForceTileUploadsRequiredForActivationToComplete() const {
-  // During shutdown of TileManager, it will attempt to flush its job queue,
-  // which can call this function while this is NULL.
-  if (!tile_manager_)
-    return false;
-
-  TreePriority tree_priority = tile_manager_->GlobalState().tree_priority;
-  return tree_priority != SMOOTHNESS_TAKES_PRIORITY &&
-         animation_registrar_->active_animation_controllers().empty();
-}
-
 void LayerTreeHostImpl::NotifyReadyToActivate() {
   if (pending_tree_)
     ActivatePendingTree();
@@ -1026,10 +1018,26 @@ bool LayerTreeHostImpl::ShouldClearRootRenderPass() const {
   return settings_.should_clear_root_render_pass;
 }
 
+void LayerTreeHostImpl::SetMemoryPolicy(
+    const ManagedMemoryPolicy& policy,
+    bool discard_backbuffer_when_not_visible) {
+  if (policy.bytes_limit_when_visible) {
+    // Just ignore the memory manager when it says to set the limit to zero
+    // bytes. This will happen when the memory manager thinks that the renderer
+    // is not visible (which the renderer knows better).
+    SetManagedMemoryPolicy(policy);
+  }
+  renderer_->SetDiscardBackBufferWhenNotVisible(
+      discard_backbuffer_when_not_visible);
+}
+
 void LayerTreeHostImpl::SetManagedMemoryPolicy(
     const ManagedMemoryPolicy& policy) {
   if (managed_memory_policy_ == policy)
     return;
+
+  if (zero_budget_)
+    DCHECK_EQ(0u, policy.bytes_limit_when_visible);
 
   // If there is already enough memory to draw everything imaginable and the
   // new memory limit does not change this, then do not re-commit. Don't bother
@@ -1122,12 +1130,9 @@ bool LayerTreeHostImpl::AllowPartialSwap() const {
   return !debug_state_.ShowHudRects();
 }
 
-class DidBeginTracingFunctor {
- public:
-  void operator()(LayerImpl* layer) {
-    layer->DidBeginTracing();
-  }
-};
+static void LayerTreeHostImplDidBeginTracingCallback(LayerImpl* layer) {
+  layer->DidBeginTracing();
+}
 
 void LayerTreeHostImpl::DrawLayers(FrameData* frame,
                                    base::TimeTicks frame_begin_time) {
@@ -1169,13 +1174,14 @@ void LayerTreeHostImpl::DrawLayers(FrameData* frame,
   bool is_new_trace;
   TRACE_EVENT_IS_NEW_TRACE(&is_new_trace);
   if (is_new_trace) {
-    if (pending_tree_)
-      LayerTreeHostCommon::CallFunctionForSubtree<
-          DidBeginTracingFunctor, LayerImpl>(
-              pending_tree_->root_layer());
-    LayerTreeHostCommon::CallFunctionForSubtree<
-        DidBeginTracingFunctor, LayerImpl>(
-            active_tree_->root_layer());
+    if (pending_tree_) {
+      LayerTreeHostCommon::CallFunctionForSubtree(
+          pending_tree_->root_layer(),
+          base::Bind(&LayerTreeHostImplDidBeginTracingCallback));
+    }
+    LayerTreeHostCommon::CallFunctionForSubtree(
+        active_tree_->root_layer(),
+        base::Bind(&LayerTreeHostImplDidBeginTracingCallback));
   }
 
   TRACE_EVENT_OBJECT_SNAPSHOT_WITH_ID(
@@ -1214,8 +1220,7 @@ void LayerTreeHostImpl::DidDrawAllLayers(const FrameData& frame) {
 
   // Once all layers have been drawn, pending texture uploads should no
   // longer block future uploads.
-  if (resource_provider_)
-    resource_provider_->MarkPendingUploadsAsNonBlocking();
+  resource_provider_->MarkPendingUploadsAsNonBlocking();
 }
 
 void LayerTreeHostImpl::FinishAllRendering() {
@@ -1343,8 +1348,6 @@ void LayerTreeHostImpl::ActivatePendingTreeIfNeeded() {
   DCHECK(pending_tree_);
   CHECK(settings_.impl_side_painting);
 
-  // This call may activate the tree.
-  CheckForCompletedTileUploads();
   if (!pending_tree_)
     return;
 
@@ -1383,7 +1386,6 @@ void LayerTreeHostImpl::ActivatePendingTree() {
   // tree, rename the pending tree the recycle tree so we can reuse it on the
   // next sync.
   pending_tree_.swap(recycle_tree_);
-  recycle_tree_->ClearRenderSurfaces();
 
   active_tree_->SetRootLayerScrollOffsetDelegate(
       root_layer_scroll_offset_delegate_);
@@ -1436,19 +1438,61 @@ ManagedMemoryPolicy LayerTreeHostImpl::ActualManagedMemoryPolicy() const {
   return actual;
 }
 
+void LayerTreeHostImpl::ReleaseTreeResources() {
+  if (active_tree_->root_layer())
+    SendReleaseResourcesRecursive(active_tree_->root_layer());
+  if (pending_tree_ && pending_tree_->root_layer())
+    SendReleaseResourcesRecursive(pending_tree_->root_layer());
+  if (recycle_tree_ && recycle_tree_->root_layer())
+    SendReleaseResourcesRecursive(recycle_tree_->root_layer());
+}
+
+void LayerTreeHostImpl::CreateAndSetRenderer(
+    OutputSurface* output_surface,
+    ResourceProvider* resource_provider) {
+  DCHECK(!renderer_);
+  if (output_surface->capabilities().delegated_rendering) {
+    renderer_ =
+        DelegatingRenderer::Create(this, output_surface, resource_provider);
+  } else if (output_surface->context3d()) {
+    renderer_ = GLRenderer::Create(this,
+                                   output_surface,
+                                   resource_provider,
+                                   settings_.highp_threshold_min,
+                                   settings_.force_direct_layer_drawing);
+  } else if (output_surface->software_device()) {
+    renderer_ =
+        SoftwareRenderer::Create(this, output_surface, resource_provider);
+  }
+
+  if (renderer_) {
+    renderer_->SetVisible(visible_);
+    SetFullRootLayerDamage();
+  }
+}
+
+void LayerTreeHostImpl::EnforceZeroBudget(bool zero_budget) {
+  if (zero_budget_ == zero_budget)
+    return;
+
+  zero_budget_ = zero_budget;
+
+  ManagedMemoryPolicy new_policy = managed_memory_policy_;
+  if (zero_budget_) {
+    new_policy.bytes_limit_when_visible = 0;
+  } else {
+    new_policy.bytes_limit_when_visible =
+        PrioritizedResourceManager::DefaultMemoryAllocationLimit();
+  }
+  SetManagedMemoryPolicy(new_policy);
+}
+
 bool LayerTreeHostImpl::InitializeRenderer(
     scoped_ptr<OutputSurface> output_surface) {
   // Since we will create a new resource provider, we cannot continue to use
   // the old resources (i.e. render_surfaces and texture IDs). Clear them
   // before we destroy the old resource provider.
-  if (active_tree_->root_layer())
-    ClearRenderSurfaces();
-  if (active_tree_->root_layer())
-    SendDidLoseOutputSurfaceRecursive(active_tree_->root_layer());
-  if (pending_tree_ && pending_tree_->root_layer())
-    SendDidLoseOutputSurfaceRecursive(pending_tree_->root_layer());
-  if (recycle_tree_ && recycle_tree_->root_layer())
-    SendDidLoseOutputSurfaceRecursive(recycle_tree_->root_layer());
+  ReleaseTreeResources();
   if (resource_provider_)
     resource_provider_->DidLoseOutputSurface();
 
@@ -1461,53 +1505,27 @@ bool LayerTreeHostImpl::InitializeRenderer(
   if (!output_surface->BindToClient(this))
     return false;
 
-  return DoInitializeRenderer(output_surface.Pass(),
-                              false /* is_deferred_init */);
-}
+  scoped_ptr<ResourceProvider> resource_provider = ResourceProvider::Create(
+      output_surface.get(), settings_.highp_threshold_min);
+  if (!resource_provider)
+    return false;
 
-bool LayerTreeHostImpl::DoInitializeRenderer(
-    scoped_ptr<OutputSurface> output_surface,
-    bool is_deferred_init) {
-  if (output_surface->capabilities().deferred_gl_initialization &&
-      !is_deferred_init) {
-    // TODO(joth): Defer creating the Renderer too, until GL is initialized.
-    // See http://crbug.com/230197
-    renderer_ = SoftwareRenderer::Create(this, output_surface.get(), NULL);
-  } else {
-    scoped_ptr<ResourceProvider> resource_provider = ResourceProvider::Create(
-        output_surface.get(), settings_.highp_threshold_min);
-    if (!resource_provider)
-      return false;
+  if (output_surface->capabilities().deferred_gl_initialization)
+    EnforceZeroBudget(true);
 
-    if (output_surface->capabilities().delegated_rendering) {
-      renderer_ = DelegatingRenderer::Create(this, output_surface.get(),
-                                             resource_provider.get());
-    } else if (output_surface->context3d()) {
-      renderer_ = GLRenderer::Create(this,
-                                     output_surface.get(),
-                                     resource_provider.get(),
-                                     settings_.highp_threshold_min,
-                                     settings_.force_direct_layer_drawing);
-    } else if (output_surface->software_device()) {
-      renderer_ = SoftwareRenderer::Create(this,
-                                           output_surface.get(),
-                                           resource_provider.get());
-    }
-    if (!renderer_)
-      return false;
+  CreateAndSetRenderer(output_surface.get(), resource_provider.get());
 
-    if (settings_.impl_side_painting) {
-      bool using_map_image = GetRendererCapabilities().using_map_image;
-      tile_manager_ = TileManager::Create(this,
-                                          resource_provider.get(),
-                                          settings_.num_raster_threads,
-                                          settings_.use_color_estimator,
-                                          rendering_stats_instrumentation_,
-                                          using_map_image);
-      UpdateTileManagerMemoryPolicy(ActualManagedMemoryPolicy());
-    }
+  if (!renderer_)
+    return false;
 
-    resource_provider_ = resource_provider.Pass();
+  if (settings_.impl_side_painting) {
+    bool using_map_image = GetRendererCapabilities().using_map_image;
+    tile_manager_ = TileManager::Create(this,
+                                        resource_provider.get(),
+                                        settings_.num_raster_threads,
+                                        rendering_stats_instrumentation_,
+                                        using_map_image);
+    UpdateTileManagerMemoryPolicy(ActualManagedMemoryPolicy());
   }
 
   // Setup BeginFrameEmulation if it's not supported natively
@@ -1518,7 +1536,7 @@ bool LayerTreeHostImpl::DoInitializeRenderer(
           settings_.refresh_rate);
 
     output_surface->InitializeBeginFrameEmulation(
-        proxy_->ImplThread() ? proxy_->ImplThread()->TaskRunner() : NULL,
+        proxy_->ImplThreadTaskRunner(),
         settings_.throttle_frame_production,
         display_refresh_interval);
   }
@@ -1529,10 +1547,8 @@ bool LayerTreeHostImpl::DoInitializeRenderer(
     max_frames_pending = OutputSurface::DEFAULT_MAX_FRAMES_PENDING;
   output_surface->SetMaxFramesPending(max_frames_pending);
 
+  resource_provider_ = resource_provider.Pass();
   output_surface_ = output_surface.Pass();
-
-  if (!visible_)
-    renderer_->SetVisible(visible_);
 
   client_->OnCanDrawStateChanged(CanDraw());
 
@@ -1548,16 +1564,22 @@ bool LayerTreeHostImpl::DoInitializeRenderer(
 bool LayerTreeHostImpl::DeferredInitialize(
     scoped_refptr<ContextProvider> offscreen_context_provider) {
   DCHECK(output_surface_->capabilities().deferred_gl_initialization);
+  DCHECK(settings_.impl_side_painting);
+  DCHECK(settings_.solid_color_scrollbars);
   DCHECK(output_surface_->context3d());
 
-  // TODO(boliu): This is temporary until proper resource clean up is possible
-  // without resetting |tile_manager_| or |resource_provider_|.
-  DCHECK(!resource_provider_);
+  ReleaseTreeResources();
+  renderer_.reset();
+  resource_provider_->Reinitialize(settings_.highp_threshold_min);
+  CreateAndSetRenderer(output_surface_.get(), resource_provider_.get());
 
-  bool success =
-      DoInitializeRenderer(output_surface_.Pass(), true /* is_deferred_init */);
+  bool success = !!renderer_.get();
   client_->DidTryInitializeRendererOnImplThread(success,
                                                 offscreen_context_provider);
+  if (success) {
+    EnforceZeroBudget(false);
+    client_->SetNeedsCommitOnImplThread();
+  }
   return success;
 }
 
@@ -2121,31 +2143,16 @@ base::TimeDelta LayerTreeHostImpl::LowFrequencyAnimationInterval() const {
   return base::TimeDelta::FromSeconds(1);
 }
 
-void LayerTreeHostImpl::SendDidLoseOutputSurfaceRecursive(LayerImpl* current) {
+void LayerTreeHostImpl::SendReleaseResourcesRecursive(LayerImpl* current) {
   DCHECK(current);
+  // TODO(boliu): Rename DidLoseOutputSurface to ReleaseResources.
   current->DidLoseOutputSurface();
   if (current->mask_layer())
-    SendDidLoseOutputSurfaceRecursive(current->mask_layer());
+    SendReleaseResourcesRecursive(current->mask_layer());
   if (current->replica_layer())
-    SendDidLoseOutputSurfaceRecursive(current->replica_layer());
+    SendReleaseResourcesRecursive(current->replica_layer());
   for (size_t i = 0; i < current->children().size(); ++i)
-    SendDidLoseOutputSurfaceRecursive(current->children()[i]);
-}
-
-void LayerTreeHostImpl::ClearRenderSurfaces() {
-  active_tree_->ClearRenderSurfaces();
-  if (pending_tree_)
-    pending_tree_->ClearRenderSurfaces();
-}
-
-std::string LayerTreeHostImpl::LayerTreeAsText() const {
-  std::string str;
-  if (active_tree_->root_layer()) {
-    str = active_tree_->root_layer()->LayerTreeAsText();
-    str +=  "RenderSurfaces:\n";
-    DumpRenderSurfaces(&str, 1, active_tree_->root_layer());
-  }
-  return str;
+    SendReleaseResourcesRecursive(current->children()[i]);
 }
 
 std::string LayerTreeHostImpl::LayerTreeAsJson() const {
@@ -2156,16 +2163,6 @@ std::string LayerTreeHostImpl::LayerTreeAsJson() const {
         json.get(), base::JSONWriter::OPTIONS_PRETTY_PRINT, &str);
   }
   return str;
-}
-
-void LayerTreeHostImpl::DumpRenderSurfaces(std::string* str,
-                                           int indent,
-                                           const LayerImpl* layer) const {
-  if (layer->render_surface())
-    layer->render_surface()->DumpSurface(str, indent);
-
-  for (size_t i = 0; i < layer->children().size(); ++i)
-    DumpRenderSurfaces(str, indent, layer->children()[i]);
 }
 
 int LayerTreeHostImpl::SourceAnimationFrameNumber() const {

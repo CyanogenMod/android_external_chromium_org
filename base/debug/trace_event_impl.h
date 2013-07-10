@@ -20,7 +20,7 @@
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 
 // Older style trace macros with explicit id and extra data
 // Only these macros result in publishing data to ETW as currently implemented.
@@ -391,7 +391,7 @@ class BASE_EXPORT TraceLog {
   // into the event; see "Memory scoping note" and TRACE_EVENT_COPY_XXX above.
   void AddTraceEvent(char phase,
                      const unsigned char* category_group_enabled,
-                     const char* category_group,
+                     const char* name,
                      unsigned long long id,
                      int num_args,
                      const char** arg_names,

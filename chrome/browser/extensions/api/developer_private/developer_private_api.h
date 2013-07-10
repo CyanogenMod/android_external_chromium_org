@@ -8,6 +8,7 @@
 #include "base/platform_file.h"
 #include "chrome/browser/extensions/api/developer_private/entry_picker.h"
 #include "chrome/browser/extensions/api/file_system/file_system_api.h"
+#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_function.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_uninstall_dialog.h"
@@ -54,9 +55,27 @@ typedef std::vector<linked_ptr<developer::ItemInspectView> >
 
 namespace extensions {
 
+class DeveloperPrivateEventRouter : public content::NotificationObserver {
+ public:
+  explicit DeveloperPrivateEventRouter(Profile* profile);
+  virtual ~DeveloperPrivateEventRouter();
+
+ private:
+  // content::NotificationObserver implementation
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
+
+  content::NotificationRegistrar registrar_;
+
+  Profile* profile_;
+
+  DISALLOW_COPY_AND_ASSIGN(DeveloperPrivateEventRouter);
+};
+
 // The profile-keyed service that manages the DeveloperPrivate API.
 class DeveloperPrivateAPI : public BrowserContextKeyedService,
-                            public content::NotificationObserver {
+                            public extensions::EventRouter::Observer {
  public:
   // Convenience method to get the DeveloperPrivateAPI for a profile.
   static DeveloperPrivateAPI* Get(Profile* profile);
@@ -73,19 +92,25 @@ class DeveloperPrivateAPI : public BrowserContextKeyedService,
   // BrowserContextKeyedService implementation
   virtual void Shutdown() OVERRIDE;
 
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // EventRouter::Observer implementation.
+  virtual void OnListenerAdded(const extensions::EventListenerInfo& details)
+      OVERRIDE;
+  virtual void OnListenerRemoved(const extensions::EventListenerInfo& details)
+      OVERRIDE;
 
  private:
   void RegisterNotifications();
+
+  Profile* profile_;
 
   // Used to start the load |load_extension_dialog_| in the last directory that
   // was loaded.
   base::FilePath last_unpacked_directory_;
 
-  content::NotificationRegistrar registrar_;
+  // Created lazily upon OnListenerAdded.
+  scoped_ptr<DeveloperPrivateEventRouter> developer_private_event_router_;
+
+  DISALLOW_COPY_AND_ASSIGN(DeveloperPrivateAPI);
 
 };
 
@@ -351,15 +376,15 @@ class DeveloperPrivateExportSyncfsFolderToLocalfsFunction
 
    void ClearPrexistingDirectoryContent(const base::FilePath& project_path);
 
-   void ReadSyncFileSystemDirectory(const base::FilePath& project_path);
+   void ReadSyncFileSystemDirectory(const base::FilePath& project_path,
+                                    const base::FilePath& destination_path);
 
    void ReadSyncFileSystemDirectoryCb(
        const base::FilePath& project_path,
+       const base::FilePath& destination_path,
        base::PlatformFileError result,
        const fileapi::FileSystemOperation::FileEntryList& file_list,
        bool has_more);
-
-   void CreateFolderAndSendResponse(const base::FilePath& project_path);
 
    void SnapshotFileCallback(
        const base::FilePath& target_path,
@@ -374,7 +399,7 @@ class DeveloperPrivateExportSyncfsFolderToLocalfsFunction
    scoped_refptr<fileapi::FileSystemContext> context_;
 
   private:
-   int pendingCallbacksCount_;
+   int pendingCopyOperationsCount_;
 
    // This is set to false if any of the copyFile operations fail on
    // call of the API. It is returned as a response of the API call.

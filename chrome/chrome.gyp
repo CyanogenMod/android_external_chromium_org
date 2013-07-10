@@ -221,6 +221,10 @@
             '..',
           ],
           'sources': [
+            'browser/devtools/adb/android_usb_device.cc',
+            'browser/devtools/adb/android_usb_device.h',
+            'browser/devtools/adb/android_usb_socket.cc',
+            'browser/devtools/adb/android_usb_socket.h',
             'browser/devtools/adb_client_socket.cc',
             'browser/devtools/adb_client_socket.h',
             'browser/devtools/browser_list_tabcontents_provider.cc',
@@ -285,10 +289,13 @@
             '../base/base.gyp:base',
             '../content/content.gyp:content_utility',
             '../skia/skia.gyp:skia',
+            '../third_party/libxml/libxml.gyp:libxml',
           ],
           'sources': [
             'utility/chrome_content_utility_client.cc',
             'utility/chrome_content_utility_client.h',
+            'utility/itunes_pref_parser_win.cc',
+            'utility/itunes_pref_parser_win.h',
             'utility/profile_import_handler.cc',
             'utility/profile_import_handler.h',
           ],
@@ -299,6 +306,18 @@
             ['toolkit_uses_gtk == 1', {
               'dependencies': [
                 '../build/linux/system.gyp:gtk',
+              ],
+            }],
+            ['OS=="win" or OS=="mac"', {
+              'sources': [
+                'utility/itunes_library_parser.cc',
+                'utility/itunes_library_parser.h',
+                'utility/media_galleries/picasa_album_table_reader.cc',
+                'utility/media_galleries/picasa_album_table_reader.h',
+                'utility/media_galleries/picasa_albums_indexer.cc',
+                'utility/media_galleries/picasa_albums_indexer.h',
+                'utility/media_galleries/pmp_column_reader.cc',
+                'utility/media_galleries/pmp_column_reader.h',
               ],
             }],
             ['OS=="android"', {
@@ -365,8 +384,6 @@
             'service/cloud_print/printer_job_handler.h',
             'service/cloud_print/printer_job_queue_handler.cc',
             'service/cloud_print/printer_job_queue_handler.h',
-            'service/gaia/service_gaia_authenticator.cc',
-            'service/gaia/service_gaia_authenticator.h',
             'service/net/service_url_request_context.cc',
             'service/net/service_url_request_context.h',
           ],

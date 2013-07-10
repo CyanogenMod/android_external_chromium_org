@@ -189,6 +189,7 @@ class VolumeView : public ActionableView,
         device_type_(NULL),
         more_(NULL),
         is_default_view_(is_default_view) {
+    set_focusable(false);
     SetLayoutManager(new views::BoxLayout(views::BoxLayout::kHorizontal,
           kTrayPopupPaddingHorizontal, 0, kTrayPopupPaddingBetweenItems));
 
@@ -444,7 +445,7 @@ class AudioDetailedView : public TrayDetailsView,
         false);  /* no checkmark */
     for (size_t i = 0; i < output_devices_.size(); ++i) {
       HoverHighlightView* container = AddScrollListItem(
-          output_devices_[i].display_name,
+          UTF8ToUTF16(output_devices_[i].display_name),
           gfx::Font::NORMAL,
           output_devices_[i].active);  /* checkmark if active */
       device_map_[container] = output_devices_[i];
@@ -459,7 +460,7 @@ class AudioDetailedView : public TrayDetailsView,
         false);  /* no checkmark */
     for (size_t i = 0; i < input_devices_.size(); ++i) {
       HoverHighlightView* container = AddScrollListItem(
-          input_devices_[i].display_name,
+          UTF8ToUTF16(input_devices_[i].display_name),
           gfx::Font::NORMAL,
           input_devices_[i].active);  /* checkmark if active */
       device_map_[container] = input_devices_[i];
@@ -586,10 +587,12 @@ void TrayAudio::OnMuteToggled() {
   if (tray_view())
       tray_view()->SetVisible(GetInitialVisibility());
 
-  if (volume_view_)
+  if (volume_view_) {
     volume_view_->Update();
-  else
+    SetDetailedViewCloseDelay(kTrayPopupAutoCloseDelayInSeconds);
+  } else {
     PopupDetailedView(kTrayPopupAutoCloseDelayInSeconds, false);
+  }
 }
 
 
@@ -613,9 +616,10 @@ void TrayAudio::OnOutputMuteChanged() {
   if (tray_view())
       tray_view()->SetVisible(GetInitialVisibility());
 
-  if (volume_view_)
+  if (volume_view_) {
     volume_view_->Update();
-  else {
+    SetDetailedViewCloseDelay(kTrayPopupAutoCloseDelayInSeconds);
+  } else {
     pop_up_volume_view_ = true;
     PopupDetailedView(kTrayPopupAutoCloseDelayInSeconds, false);
   }

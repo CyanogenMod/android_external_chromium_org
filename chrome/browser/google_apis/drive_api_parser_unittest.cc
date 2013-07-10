@@ -4,7 +4,7 @@
 
 #include "chrome/browser/google_apis/drive_api_parser.h"
 
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/google_apis/test_util.h"
@@ -20,7 +20,7 @@ namespace google_apis {
 TEST(DriveAPIParserTest, AboutResourceParser) {
   std::string error;
   scoped_ptr<base::Value> document = test_util::LoadJSONFile(
-      "chromeos/drive/about.json");
+      "drive/about.json");
   ASSERT_TRUE(document.get());
 
   ASSERT_EQ(base::Value::TYPE_DICTIONARY, document->GetType());
@@ -56,7 +56,7 @@ TEST(DriveAPIParserTest, AboutResourceFromAccountMetadata) {
 TEST(DriveAPIParserTest, AppListParser) {
   std::string error;
   scoped_ptr<base::Value> document = test_util::LoadJSONFile(
-      "chromeos/drive/applist.json");
+      "drive/applist.json");
   ASSERT_TRUE(document.get());
 
   ASSERT_EQ(base::Value::TYPE_DICTIONARY, document->GetType());
@@ -234,7 +234,7 @@ TEST(DriveAPIParserTest, AppListFromAccountMetadata) {
 TEST(DriveAPIParserTest, FileListParser) {
   std::string error;
   scoped_ptr<base::Value> document = test_util::LoadJSONFile(
-      "chromeos/drive/filelist.json");
+      "drive/filelist.json");
   ASSERT_TRUE(document.get());
 
   ASSERT_EQ(base::Value::TYPE_DICTIONARY, document->GetType());
@@ -350,7 +350,7 @@ TEST(DriveAPIParserTest, FileListParser) {
 TEST(DriveAPIParserTest, ChangeListParser) {
   std::string error;
   scoped_ptr<base::Value> document =
-      test_util::LoadJSONFile("chromeos/drive/changelist.json");
+      test_util::LoadJSONFile("drive/changelist.json");
   ASSERT_TRUE(document.get());
 
   ASSERT_EQ(base::Value::TYPE_DICTIONARY, document->GetType());
@@ -413,9 +413,9 @@ TEST(DriveAPIParserTest, ChangeListParser) {
 
 TEST(DriveAPIParserTest, HasKind) {
   scoped_ptr<base::Value> change_list_json(
-      test_util::LoadJSONFile("chromeos/drive/changelist.json"));
+      test_util::LoadJSONFile("drive/changelist.json"));
   scoped_ptr<base::Value> file_list_json(
-      test_util::LoadJSONFile("chromeos/drive/filelist.json"));
+      test_util::LoadJSONFile("drive/filelist.json"));
 
   EXPECT_TRUE(ChangeList::HasChangeListKind(*change_list_json));
   EXPECT_FALSE(ChangeList::HasChangeListKind(*file_list_json));

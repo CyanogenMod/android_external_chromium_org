@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/base/media_export.h"
 #include "media/base/media_log.h"
 #include "media/mp4/box_definitions.h"
@@ -32,8 +32,6 @@ class MEDIA_EXPORT TrackRunIterator {
   // the lifetime of this object.
   TrackRunIterator(const Movie* moov, const LogCB& log_cb);
   ~TrackRunIterator();
-
-  void Reset();
 
   // Sets up the iterator to handle all the runs from the current fragment.
   bool Init(const MovieFragment& moof);

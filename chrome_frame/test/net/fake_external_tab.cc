@@ -73,6 +73,11 @@
 #include "ui/base/resource/resource_bundle_win.h"
 #include "ui/base/ui_base_paths.h"
 
+#if defined(USE_AURA)
+#include "ui/gfx/screen.h"
+#include "ui/views/widget/desktop_aura/desktop_screen.h"
+#endif
+
 using content::BrowserThread;
 
 namespace {
@@ -257,9 +262,11 @@ void FilterDisabledTests() {
     // certs. So these tests time out waiting for user input. The
     // functionality they test (HTTP Strict Transport Security and
     // HTTP-based Public Key Pinning) does not work in Chrome Frame anyway.
+    "URLRequestTestHTTP.ProcessPKP",
     "URLRequestTestHTTP.ProcessSTS",
     "URLRequestTestHTTP.ProcessSTSOnce",
     "URLRequestTestHTTP.ProcessSTSAndPKP",
+    "URLRequestTestHTTP.ProcessSTSAndPKP2",
 
     // These tests have been disabled as the Chrome cookie policies don't make
     // sense or have not been implemented for the host network stack.
@@ -319,7 +326,10 @@ void FilterDisabledTests() {
     "HTTPSRequestTest.TLSv1Fallback",
     "HTTPSOCSPTest.*",
     "HTTPSEVCRLSetTest.*",
-    "HTTPSCRLSetTest.*"
+    "HTTPSCRLSetTest.*",
+
+    // Chrome Frame doesn't support GetFullRequestHeaders.
+    "URLRequestTest*.*_GetFullRequestHeaders"
   };
 
   const char* ie9_disabled_tests[] = {
@@ -473,7 +483,7 @@ FakeExternalTab::FakeExternalTab() {
   if (file_util::PathExists(user_data_dir_)) {
     VLOG(1) << __FUNCTION__ << " deleting IE Profile user data directory "
             << user_data_dir_.value();
-    bool deleted = file_util::Delete(user_data_dir_, true);
+    bool deleted = base::Delete(user_data_dir_, true);
     LOG_IF(ERROR, !deleted) << "Failed to delete user data directory directory "
                             << user_data_dir_.value();
   }
@@ -534,6 +544,10 @@ void FakeExternalTab::Initialize() {
 }
 
 void FakeExternalTab::InitializePostThreadsCreated() {
+#if defined(USE_AURA)
+  gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE,
+                                 views::CreateDesktopScreen());
+#endif
   base::FilePath profile_path(
       ProfileManager::GetDefaultProfileDir(user_data()));
   Profile* profile =
@@ -724,12 +738,11 @@ void CFUrlRequestUnittestRunner::InitializeLogging() {
   base::FilePath exe;
   PathService::Get(base::FILE_EXE, &exe);
   base::FilePath log_filename = exe.ReplaceExtension(FILE_PATH_LITERAL("log"));
-  logging::InitLogging(
-      log_filename.value().c_str(),
-      logging::LOG_TO_BOTH_FILE_AND_SYSTEM_DEBUG_LOG,
-      logging::LOCK_LOG_FILE,
-      logging::DELETE_OLD_LOG_FILE,
-      logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS);
+  logging::LoggingSettings settings;
+  settings.logging_dest = logging::LOG_TO_ALL;
+  settings.log_file = log_filename.value().c_str();
+  settings.delete_old = logging::DELETE_OLD_LOG_FILE;
+  logging::InitLogging(settings);
   // We want process and thread IDs because we may have multiple processes.
   // Note: temporarily enabled timestamps in an effort to catch bug 6361.
   logging::SetLogItems(true, true, true, true);
@@ -888,7 +901,7 @@ void CFUrlRequestUnittestRunner::StopFileLogger(bool print) {
     }
   }
 
-  if (!log_file_.empty() && !file_util::Delete(log_file_, false))
+  if (!log_file_.empty() && !base::Delete(log_file_, false))
     LOG(ERROR) << "Failed to delete log file " << log_file_.value();
 
   log_file_.clear();

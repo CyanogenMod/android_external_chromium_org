@@ -16,6 +16,7 @@
 
 #include "base/basictypes.h"
 #include "base/event_types.h"
+#include "base/memory/ref_counted_memory.h"
 #include "ui/base/events/event_constants.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/ui_export.h"
@@ -164,6 +165,16 @@ UI_EXPORT bool WindowContainsPoint(XID window, gfx::Point screen_loc);
 // Return true if |window| has any property with |property_name|.
 UI_EXPORT bool PropertyExists(XID window, const std::string& property_name);
 
+// Returns the raw bytes from a property with minimal
+// interpretation. |out_data| should be freed by XFree() after use.
+UI_EXPORT bool GetRawBytesOfProperty(
+    XID window,
+    Atom property,
+    scoped_refptr<base::RefCountedMemory>* out_data,
+    size_t* out_data_bytes,
+    size_t* out_data_items,
+    Atom* out_type);
+
 // Get the value of an int, int array, atom array or string property.  On
 // success, true is returned and the value is stored in |value|.
 //
@@ -171,6 +182,8 @@ UI_EXPORT bool PropertyExists(XID window, const std::string& property_name);
 // should accept an Atom instead of a string.
 UI_EXPORT bool GetIntProperty(XID window, const std::string& property_name,
                               int* value);
+UI_EXPORT bool GetXIDProperty(XID window, const std::string& property_name,
+                              XID* value);
 UI_EXPORT bool GetIntArrayProperty(XID window, const std::string& property_name,
                                    std::vector<int>* value);
 UI_EXPORT bool GetAtomArrayProperty(XID window,
@@ -179,6 +192,7 @@ UI_EXPORT bool GetAtomArrayProperty(XID window,
 UI_EXPORT bool GetStringProperty(
     XID window, const std::string& property_name, std::string* value);
 
+// These setters all make round trips.
 UI_EXPORT bool SetIntProperty(XID window,
                               const std::string& name,
                               const std::string& type,
@@ -187,6 +201,10 @@ UI_EXPORT bool SetIntArrayProperty(XID window,
                                    const std::string& name,
                                    const std::string& type,
                                    const std::vector<int>& value);
+UI_EXPORT bool SetAtomArrayProperty(XID window,
+                                    const std::string& name,
+                                    const std::string& type,
+                                    const std::vector<Atom>& value);
 
 // Gets the X atom for default display corresponding to atom_name.
 Atom GetAtom(const char* atom_name);
@@ -316,6 +334,29 @@ UI_EXPORT void InitXKeyEventForTesting(EventType type,
                                        KeyboardCode key_code,
                                        int flags,
                                        XEvent* event);
+
+// Manages a piece of X11 allocated memory as a RefCountedMemory segment. This
+// object takes ownership over the passed in memory and will free it with the
+// X11 allocator when done.
+class UI_EXPORT XRefcountedMemory : public base::RefCountedMemory {
+ public:
+  XRefcountedMemory(unsigned char* x11_data, size_t length)
+      : x11_data_(length ? x11_data : NULL),
+        length_(length) {
+  }
+
+  // Overridden from RefCountedMemory:
+  virtual const unsigned char* front() const OVERRIDE;
+  virtual size_t size() const OVERRIDE;
+
+ private:
+  virtual ~XRefcountedMemory();
+
+  unsigned char* x11_data_;
+  size_t length_;
+
+  DISALLOW_COPY_AND_ASSIGN(XRefcountedMemory);
+};
 
 // Keeps track of a string returned by an X function (e.g. XGetAtomName) and
 // makes sure it's XFree'd.

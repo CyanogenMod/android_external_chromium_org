@@ -33,7 +33,6 @@
 #include "chrome/browser/gpu/gl_string_manager.h"
 #include "chrome/browser/gpu/gpu_mode_manager.h"
 #include "chrome/browser/intranet_redirect_detector.h"
-#include "chrome/browser/invalidation/invalidator_storage.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/media/media_stream_devices_controller.h"
@@ -77,6 +76,7 @@
 #include "chrome/browser/ui/search_engines/keyword_editor_controller.h"
 #include "chrome/browser/ui/startup/autolaunch_prompt.h"
 #include "chrome/browser/ui/startup/default_browser_prompt.h"
+#include "chrome/browser/ui/sync/sync_promo_ui.h"
 #include "chrome/browser/ui/tabs/pinned_tab_codec.h"
 #include "chrome/browser/ui/webui/extensions/extension_settings_handler.h"
 #include "chrome/browser/ui/webui/flags_ui.h"
@@ -84,13 +84,12 @@
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/browser/ui/webui/plugins_ui.h"
 #include "chrome/browser/ui/webui/print_preview/sticky_settings.h"
-#include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
 #include "chrome/browser/ui/window_snapshot/window_snapshot.h"
 #include "chrome/browser/upgrade_detector.h"
 #include "chrome/browser/web_resource/promo_resource_service.h"
 #include "chrome/common/metrics/entropy_provider.h"
 #include "chrome/common/pref_names.h"
-#include "components/autofill/browser/autofill_manager.h"
+#include "components/autofill/core/browser/autofill_manager.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/render_process_host.h"
 
@@ -284,6 +283,7 @@ void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry) {
   TRACE_EVENT0("browser", "chrome::RegisterUserPrefs");
   // User prefs. Please keep this list alphabetized.
   AlternateErrorPageTabObserver::RegisterUserPrefs(registry);
+  apps::RegisterUserPrefs(registry);
   autofill::AutofillDialogControllerImpl::RegisterUserPrefs(registry);
   autofill::AutofillManager::RegisterUserPrefs(registry);
   BookmarkPromptPrefs::RegisterUserPrefs(registry);
@@ -302,7 +302,6 @@ void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry) {
   HostContentSettingsMap::RegisterUserPrefs(registry);
   IncognitoModePrefs::RegisterUserPrefs(registry);
   InstantUI::RegisterUserPrefs(registry);
-  invalidation::InvalidatorStorage::RegisterUserPrefs(registry);
   MediaCaptureDevicesDispatcher::RegisterUserPrefs(registry);
   MediaStreamDevicesController::RegisterUserPrefs(registry);
   NetPrefObserver::RegisterUserPrefs(registry);

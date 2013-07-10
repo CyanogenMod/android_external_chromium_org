@@ -27,10 +27,10 @@
 #include "base/nix/xdg_util.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/strings/string_util.h"
 #include "base/strings/string_tokenizer.h"
+#include "base/strings/string_util.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "googleurl/src/url_canon.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_util.h"
@@ -974,7 +974,7 @@ class SettingGetterImplKDE : public ProxyConfigServiceLinux::SettingGetter,
   }
 
   virtual base::SingleThreadTaskRunner* GetNotificationTaskRunner() OVERRIDE {
-    return file_loop_ ? file_loop_->message_loop_proxy() : NULL;
+    return file_loop_ ? file_loop_->message_loop_proxy().get() : NULL;
   }
 
   // Implement base::MessagePumpLibevent::Watcher.

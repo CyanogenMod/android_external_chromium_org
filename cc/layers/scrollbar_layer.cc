@@ -210,8 +210,7 @@ void ScrollbarLayer::CreateUpdaterIfNeeded() {
 void ScrollbarLayer::UpdatePart(CachingBitmapContentLayerUpdater* painter,
                                 LayerUpdater::Resource* resource,
                                 gfx::Rect rect,
-                                ResourceUpdateQueue* queue,
-                                RenderingStats* stats) {
+                                ResourceUpdateQueue* queue) {
   if (layer_tree_host()->settings().solid_color_scrollbars)
     return;
 
@@ -233,8 +232,7 @@ void ScrollbarLayer::UpdatePart(CachingBitmapContentLayerUpdater* painter,
                            rect.size(),
                            contents_scale_x(),
                            contents_scale_y(),
-                           &painted_opaque_rect,
-                           stats);
+                           &painted_opaque_rect);
   if (!painter->pixels_did_change() &&
       resource->texture()->have_backing_texture()) {
     TRACE_EVENT_INSTANT0("cc",
@@ -249,7 +247,7 @@ void ScrollbarLayer::UpdatePart(CachingBitmapContentLayerUpdater* painter,
     resource->texture()->ReturnBackingTexture();
 
   gfx::Vector2d dest_offset(0, 0);
-  resource->Update(queue, rect, dest_offset, partial_updates_allowed, stats);
+  resource->Update(queue, rect, dest_offset, partial_updates_allowed);
 }
 
 gfx::Rect ScrollbarLayer::ScrollbarLayerRectToContentRect(
@@ -292,8 +290,7 @@ void ScrollbarLayer::SetTexturePriorities(
 }
 
 void ScrollbarLayer::Update(ResourceUpdateQueue* queue,
-                            const OcclusionTracker* occlusion,
-                            RenderingStats* stats) {
+                            const OcclusionTracker* occlusion) {
   track_rect_ = scrollbar_->TrackRect();
 
   if (layer_tree_host()->settings().solid_color_scrollbars)
@@ -302,7 +299,7 @@ void ScrollbarLayer::Update(ResourceUpdateQueue* queue,
   {
     base::AutoReset<bool> ignore_set_needs_commit(&ignore_set_needs_commit_,
                                                   true);
-    ContentsScalingLayer::Update(queue, occlusion, stats);
+    ContentsScalingLayer::Update(queue, occlusion);
   }
 
   dirty_rect_.Union(update_rect_);
@@ -318,8 +315,7 @@ void ScrollbarLayer::Update(ResourceUpdateQueue* queue,
   UpdatePart(track_updater_.get(),
              track_.get(),
              content_rect,
-             queue,
-             stats);
+             queue);
 
   if (scrollbar_->HasThumb()) {
     thumb_thickness_ = scrollbar_->ThumbThickness();
@@ -329,8 +325,7 @@ void ScrollbarLayer::Update(ResourceUpdateQueue* queue,
       UpdatePart(thumb_updater_.get(),
                  thumb_.get(),
                  origin_thumb_rect,
-                 queue,
-                 stats);
+                 queue);
     }
   }
 

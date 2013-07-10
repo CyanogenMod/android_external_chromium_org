@@ -9,6 +9,7 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "cc/base/math_util.h"
+#include "cc/output/filter_operations.h"
 #include "cc/quads/checkerboard_draw_quad.h"
 #include "cc/quads/debug_border_draw_quad.h"
 #include "cc/quads/io_surface_draw_quad.h"
@@ -22,7 +23,6 @@
 #include "cc/resources/picture_pile_impl.h"
 #include "cc/test/geometry_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebFilterOperations.h"
 #include "third_party/skia/include/effects/SkBlurImageFilter.h"
 #include "ui/gfx/transform.h"
 
@@ -361,11 +361,11 @@ TEST(DrawQuadTest, CopyRenderPassDrawQuad) {
   ResourceProvider::ResourceId mask_resource_id = 78;
   gfx::Rect contents_changed_since_last_frame(42, 11, 74, 24);
   gfx::RectF mask_u_v_rect(-45.f, -21.f, 33.f, 19.f);
-  WebKit::WebFilterOperations filters;
-  filters.append(WebKit::WebFilterOperation::createBlurFilter(1.f));
-  WebKit::WebFilterOperations background_filters;
-  background_filters.append(
-      WebKit::WebFilterOperation::createGrayscaleFilter(1.f));
+  FilterOperations filters;
+  filters.Append(FilterOperation::CreateBlurFilter(1.f));
+  FilterOperations background_filters;
+  background_filters.Append(
+      FilterOperation::CreateGrayscaleFilter(1.f));
   skia::RefPtr<SkImageFilter> filter =
       skia::AdoptRef(new SkBlurImageFilter(SK_Scalar1, SK_Scalar1));
 
@@ -663,7 +663,7 @@ TEST(DrawQuadTest, CopyPictureDrawQuad) {
   gfx::Rect content_rect(30, 40, 20, 30);
   float contents_scale = 3.141592f;
   bool can_draw_direct_to_backbuffer = true;
-  scoped_refptr<PicturePileImpl> picture_pile = PicturePileImpl::Create(false);
+  scoped_refptr<PicturePileImpl> picture_pile = PicturePileImpl::Create();
   CREATE_SHARED_STATE();
 
   CREATE_QUAD_8_NEW(PictureDrawQuad,
@@ -761,11 +761,11 @@ TEST_F(DrawQuadIteratorTest, RenderPassDrawQuad) {
   ResourceProvider::ResourceId mask_resource_id = 78;
   gfx::Rect contents_changed_since_last_frame(42, 11, 74, 24);
   gfx::RectF mask_u_v_rect(-45.f, -21.f, 33.f, 19.f);
-  WebKit::WebFilterOperations filters;
-  filters.append(WebKit::WebFilterOperation::createBlurFilter(1.f));
-  WebKit::WebFilterOperations background_filters;
-  background_filters.append(
-      WebKit::WebFilterOperation::createGrayscaleFilter(1.f));
+  FilterOperations filters;
+  filters.Append(FilterOperation::CreateBlurFilter(1.f));
+  FilterOperations background_filters;
+  background_filters.Append(
+      FilterOperation::CreateGrayscaleFilter(1.f));
   skia::RefPtr<SkImageFilter> filter =
       skia::AdoptRef(new SkBlurImageFilter(SK_Scalar1, SK_Scalar1));
 
@@ -890,7 +890,7 @@ TEST_F(DrawQuadIteratorTest, DISABLED_PictureDrawQuad) {
   gfx::Rect content_rect(30, 40, 20, 30);
   float contents_scale = 3.141592f;
   bool can_draw_direct_to_backbuffer = true;
-  scoped_refptr<PicturePileImpl> picture_pile = PicturePileImpl::Create(false);
+  scoped_refptr<PicturePileImpl> picture_pile = PicturePileImpl::Create();
 
   CREATE_SHARED_STATE();
   CREATE_QUAD_8_NEW(PictureDrawQuad,

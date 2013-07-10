@@ -12,25 +12,27 @@
 #include "content/public/renderer/render_view.h"
 #include "content/public/test/layouttest_support.h"
 #include "content/shell/common/shell_switches.h"
+#include "content/shell/renderer/shell_media_stream_client.h"
 #include "content/shell/renderer/shell_render_process_observer.h"
+#include "content/shell/renderer/shell_render_view_observer.h"
 #include "content/shell/renderer/webkit_test_runner.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamCenter.h"
+#include "third_party/WebKit/public/testing/WebTestInterfaces.h"
+#include "third_party/WebKit/public/testing/WebTestProxy.h"
+#include "third_party/WebKit/public/testing/WebTestRunner.h"
 #include "third_party/WebKit/public/web/WebPluginParams.h"
 #include "third_party/WebKit/public/web/WebView.h"
-#include "third_party/WebKit/Tools/DumpRenderTree/chromium/TestRunner/public/WebTestInterfaces.h"
-#include "third_party/WebKit/Tools/DumpRenderTree/chromium/TestRunner/public/WebTestProxy.h"
-#include "third_party/WebKit/Tools/DumpRenderTree/chromium/TestRunner/public/WebTestRunner.h"
 #include "v8/include/v8.h"
 #include "webkit/mocks/mock_webhyphenator.h"
 #include "webkit/support/mock_webclipboard_impl.h"
-#include "webkit/support/test_shell_webmimeregistry_impl.h"
 
 using WebKit::WebClipboard;
 using WebKit::WebFrame;
 using WebKit::WebHyphenator;
+using WebKit::WebMIDIAccessor;
+using WebKit::WebMIDIAccessorClient;
 using WebKit::WebMediaStreamCenter;
 using WebKit::WebMediaStreamCenterClient;
-using WebKit::WebMimeRegistry;
 using WebKit::WebPlugin;
 using WebKit::WebPluginParams;
 using WebKit::WebRTCPeerConnectionHandler;
@@ -82,6 +84,8 @@ void ShellContentRendererClient::RenderThreadStarted() {
 }
 
 void ShellContentRendererClient::RenderViewCreated(RenderView* render_view) {
+  new ShellRenderViewObserver(render_view);
+
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return;
   WebKitTestRunner* test_runner = WebKitTestRunner::Get(render_view);
@@ -142,20 +146,27 @@ ShellContentRendererClient::OverrideCreateWebRTCPeerConnectionHandler(
 #endif
 }
 
+webkit_media::MediaStreamClient*
+ShellContentRendererClient::OverrideCreateMediaStreamClient() {
+  if (!shell_media_stream_client_)
+    shell_media_stream_client_.reset(new ShellMediaStreamClient());
+  return shell_media_stream_client_.get();
+}
+
+WebMIDIAccessor*
+ShellContentRendererClient::OverrideCreateMIDIAccessor(
+    WebMIDIAccessorClient* client) {
+  WebTestInterfaces* interfaces =
+      ShellRenderProcessObserver::GetInstance()->test_interfaces();
+  return interfaces->createMIDIAccessor(client);
+}
+
 WebClipboard* ShellContentRendererClient::OverrideWebClipboard() {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return NULL;
   if (!clipboard_)
     clipboard_.reset(new MockWebClipboardImpl);
   return clipboard_.get();
-}
-
-WebMimeRegistry* ShellContentRendererClient::OverrideWebMimeRegistry() {
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
-    return NULL;
-  if (!mime_registry_)
-    mime_registry_.reset(new TestShellWebMimeRegistryImpl);
-  return mime_registry_.get();
 }
 
 WebHyphenator* ShellContentRendererClient::OverrideWebHyphenator() {

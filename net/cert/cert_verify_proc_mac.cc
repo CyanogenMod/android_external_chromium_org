@@ -37,7 +37,7 @@
 #define kSecEVOrganizationName CFSTR("Organization")
 #endif
 
-using base::mac::ScopedCFTypeRef;
+using base::ScopedCFTypeRef;
 
 namespace net {
 
@@ -224,14 +224,10 @@ void GetCertChainInfo(CFArrayRef cert_chain,
     const CSSM_OID* alg_oid = &sig_algorithm->algorithm;
     if (CSSMOIDEqual(alg_oid, &CSSMOID_MD2WithRSA)) {
       verify_result->has_md2 = true;
-      if (i != 0)
-        verify_result->has_md2_ca = true;
     } else if (CSSMOIDEqual(alg_oid, &CSSMOID_MD4WithRSA)) {
       verify_result->has_md4 = true;
     } else if (CSSMOIDEqual(alg_oid, &CSSMOID_MD5WithRSA)) {
       verify_result->has_md5 = true;
-      if (i != 0)
-        verify_result->has_md5_ca = true;
     }
   }
   if (!verified_cert)
@@ -593,11 +589,10 @@ int CertVerifyProcMac::VerifyInternal(
       // the user has not explicitly set a trust setting)
       break;
 
+    // According to SecTrust.h, kSecTrustResultConfirm isn't returned on 10.5+,
+    // and it is marked deprecated in the 10.9 SDK.
     case kSecTrustResultDeny:
-    case kSecTrustResultConfirm:
-      // Certificate chain is explicitly untrusted. For kSecTrustResultConfirm,
-      // we're following what Secure Transport does and treating it as
-      // "deny".
+      // Certificate chain is explicitly untrusted.
       verify_result->cert_status |= CERT_STATUS_AUTHORITY_INVALID;
       break;
 

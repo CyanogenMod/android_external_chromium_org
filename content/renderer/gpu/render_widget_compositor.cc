@@ -11,9 +11,8 @@
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/synchronization/lock.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "cc/base/switches.h"
-#include "cc/base/thread_impl.h"
 #include "cc/debug/layer_tree_debug_state.h"
 #include "cc/layers/layer.h"
 #include "cc/trees/layer_tree_host.h"
@@ -140,8 +139,6 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
                                            max_untiled_layer_height);
 
   settings.impl_side_painting = cc::switches::IsImplSidePaintingEnabled();
-  settings.use_color_estimator =
-      !cmd->HasSwitch(cc::switches::kDisableColorEstimator);
 
   settings.calculate_top_controls_position =
       cmd->HasSwitch(cc::switches::kEnableTopControlsPositionCalculation);
@@ -195,8 +192,6 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       cmd->HasSwitch(cc::switches::kShowFPSCounter);
   settings.initial_debug_state.show_paint_rects =
       cmd->HasSwitch(switches::kShowPaintRects);
-  settings.initial_debug_state.show_platform_layer_tree =
-      cmd->HasSwitch(cc::switches::kShowCompositedLayerTree);
   settings.initial_debug_state.show_property_changed_rects =
       cmd->HasSwitch(cc::switches::kShowPropertyChangedRects);
   settings.initial_debug_state.show_surface_damage_rects =
@@ -361,17 +356,11 @@ void RenderWidgetCompositor::SetLatencyInfo(
 }
 
 bool RenderWidgetCompositor::initialize(cc::LayerTreeSettings settings) {
-  scoped_ptr<cc::Thread> impl_thread;
   scoped_refptr<base::MessageLoopProxy> compositor_message_loop_proxy =
       RenderThreadImpl::current()->compositor_message_loop_proxy();
-  threaded_ = !!compositor_message_loop_proxy.get();
-  if (threaded_) {
-    impl_thread = cc::ThreadImpl::CreateForDifferentThread(
-        compositor_message_loop_proxy);
-  }
   layer_tree_host_ = cc::LayerTreeHost::Create(this,
                                                settings,
-                                               impl_thread.Pass());
+                                               compositor_message_loop_proxy);
   return layer_tree_host_;
 }
 

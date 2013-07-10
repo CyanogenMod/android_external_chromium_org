@@ -48,12 +48,14 @@ class CHROMEOS_EXPORT ShillServiceClient {
                             const std::string& name,
                             const std::string& type,
                             const std::string& state,
+                            bool add_to_visible_list,
                             bool add_to_watch_list) = 0;
     virtual void AddServiceWithIPConfig(const std::string& service_path,
                                         const std::string& name,
                                         const std::string& type,
                                         const std::string& state,
                                         const std::string& ipconfig_path,
+                                        bool add_to_visible_list,
                                         bool add_to_watch_list) = 0;
     virtual void RemoveService(const std::string& service_path) = 0;
     virtual void SetServiceProperty(const std::string& service_path,
@@ -151,6 +153,12 @@ class CHROMEOS_EXPORT ShillServiceClient {
   virtual bool CallActivateCellularModemAndBlock(
       const dbus::ObjectPath& service_path,
       const std::string& carrier) = 0;
+
+  // Calls the GetLoadableProfileEntries method.
+  // |callback| is called after the method call succeeds.
+  virtual void GetLoadableProfileEntries(
+      const dbus::ObjectPath& service_path,
+      const DictionaryValueCallback& callback) = 0;
 
   // Returns an interface for testing (stub only), or returns NULL.
   virtual TestInterface* GetTestInterface() = 0;

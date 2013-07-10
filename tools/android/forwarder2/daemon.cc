@@ -40,13 +40,15 @@ const int kNumTries = 100;
 const int kIdleTimeMSec = 20;
 
 void InitLoggingForDaemon(const std::string& log_file) {
-  CHECK(
-      logging::InitLogging(
-          log_file.c_str(),
-          log_file.empty() ?
-              logging::LOG_ONLY_TO_SYSTEM_DEBUG_LOG : logging::LOG_ONLY_TO_FILE,
-          logging::DONT_LOCK_LOG_FILE, logging::APPEND_TO_OLD_LOG_FILE,
-          logging::ENABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS));
+  logging::LoggingSettings settings;
+  settings.logging_dest =
+      log_file.empty() ?
+      logging::LOG_TO_SYSTEM_DEBUG_LOG : logging::LOG_TO_FILE;
+  settings.log_file = log_file.c_str();
+  settings.lock_log = logging::DONT_LOCK_LOG_FILE;
+  settings.dcheck_state =
+      logging::ENABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS;
+  CHECK(logging::InitLogging(settings));
 }
 
 bool RunServerAcceptLoop(const std::string& welcome_message,
@@ -149,7 +151,7 @@ scoped_ptr<Socket> ConnectToUnixDomainSocket(
     }
     return socket.Pass();
   }
-  return scoped_ptr<Socket>(NULL);
+  return scoped_ptr<Socket>();
 }
 
 }  // namespace

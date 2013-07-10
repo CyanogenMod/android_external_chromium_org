@@ -47,11 +47,6 @@ static base::LazyInstance<std::set<WebGraphicsContext3DCommandBufferImpl*> >
 
 namespace {
 
-const size_t kDefaultCommandBufferSize = 1024 * 1024;
-const size_t kDefaultStartTransferBufferSize = 1 * 1024 * 1024;
-const size_t kDefaultMinTransferBufferSize = 1 * 256 * 1024;
-const size_t kDefaultMaxTransferBufferSize = 16 * 1024 * 1024;
-
 void ClearSharedContextsIfInShareSet(
     WebGraphicsContext3DCommandBufferImpl* context) {
   // If the given context isn't in the share set, that means that it
@@ -1423,8 +1418,6 @@ void WebGraphicsContext3DCommandBufferImpl::OnMemoryAllocationChanged(
       WebkitPriorityCutoff(allocation.priority_cutoff_when_not_visible);
   web_allocation.haveBackbufferWhenNotVisible =
       allocation.have_backbuffer_when_not_visible;
-  web_allocation.enforceButDoNotKeepAsPolicy =
-      allocation.enforce_but_do_not_keep_as_policy;
 
   // Populate deprecated WebKit fields. These may be removed when references to
   // them in WebKit are removed.
@@ -1525,7 +1518,8 @@ DELEGATE_TO_GL_6(copyTextureCHROMIUM, CopyTextureCHROMIUM,  WGC3Denum,
 DELEGATE_TO_GL_3(bindUniformLocationCHROMIUM, BindUniformLocationCHROMIUM,
                  WebGLId, WGC3Dint, const WGC3Dchar*)
 
-DELEGATE_TO_GL(shallowFlushCHROMIUM,ShallowFlushCHROMIUM);
+DELEGATE_TO_GL(shallowFlushCHROMIUM, ShallowFlushCHROMIUM);
+DELEGATE_TO_GL(shallowFinishCHROMIUM, ShallowFinishCHROMIUM);
 
 DELEGATE_TO_GL_1(waitSyncPoint, WaitSyncPointCHROMIUM, GLuint)
 
@@ -1543,6 +1537,26 @@ void WebGraphicsContext3DCommandBufferImpl::signalSyncPoint(
   command_buffer_->SignalSyncPoint(
       sync_point,
       base::Bind(&SignalSyncPointCallback, base::Passed(&own_callback)));
+}
+
+void WebGraphicsContext3DCommandBufferImpl::signalQuery(
+    unsigned query,
+    WebGraphicsSyncPointCallback* callback) {
+  // Take ownership of the callback.
+  scoped_ptr<WebGraphicsSyncPointCallback> own_callback(callback);
+  // Flush any pending commands to make sure that the the query
+  // has actually been created/started before we try to attach
+  // a callback to it.
+  gl_->Flush();
+  command_buffer_->SignalQuery(
+      query,
+      base::Bind(&SignalSyncPointCallback, base::Passed(&own_callback)));
+}
+
+void WebGraphicsContext3DCommandBufferImpl::loseContextCHROMIUM(
+    WGC3Denum current, WGC3Denum other) {
+  gl_->LoseContextCHROMIUM(current, other);
+  gl_->Flush();
 }
 
 void WebGraphicsContext3DCommandBufferImpl::genMailboxCHROMIUM(

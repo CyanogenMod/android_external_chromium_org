@@ -6,7 +6,9 @@
 #define WEBKIT_RENDERER_MEDIA_CRYPTO_PROXY_DECRYPTOR_H_
 
 #include <string>
+#include <vector>
 
+#include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/synchronization/lock.h"
@@ -14,12 +16,15 @@
 #include "media/base/media_keys.h"
 
 namespace WebKit {
+#if defined(ENABLE_PEPPER_CDMS)
 class WebFrame;
 class WebMediaPlayerClient;
+#endif  // defined(ENABLE_PEPPER_CDMS)
 }
 
 namespace webkit_media {
 
+// ProxyDecryptor is for EME v0.1b only. It should not be used for the WD API.
 // A decryptor proxy that creates a real decryptor object on demand and
 // forwards decryptor calls to it.
 // TODO(xhwang): Currently we don't support run-time switching among decryptor
@@ -27,12 +32,16 @@ namespace webkit_media {
 // TODO(xhwang): The ProxyDecryptor is not a Decryptor. Find a better name!
 class ProxyDecryptor : public media::MediaKeys {
  public:
-  ProxyDecryptor(WebKit::WebMediaPlayerClient* web_media_player_client,
-                 WebKit::WebFrame* web_frame,
-                 const media::KeyAddedCB& key_added_cb,
-                 const media::KeyErrorCB& key_error_cb,
-                 const media::KeyMessageCB& key_message_cb,
-                 const media::NeedKeyCB& need_key_cb);
+  ProxyDecryptor(
+#if defined(ENABLE_PEPPER_CDMS)
+      WebKit::WebMediaPlayerClient* web_media_player_client,
+      WebKit::WebFrame* web_frame,
+#elif defined(OS_ANDROID)
+    scoped_ptr<media::MediaKeys> media_keys,
+#endif  // defined(ENABLE_PEPPER_CDMS)
+      const media::KeyAddedCB& key_added_cb,
+      const media::KeyErrorCB& key_error_cb,
+      const media::KeyMessageCB& key_message_cb);
   virtual ~ProxyDecryptor();
 
   // Only call this once.
@@ -55,14 +64,8 @@ class ProxyDecryptor : public media::MediaKeys {
   virtual void CancelKeyRequest(const std::string& session_id) OVERRIDE;
 
  private:
-  // Helper functions to create decryptors to handle the given |key_system|.
-  scoped_ptr<media::Decryptor> CreateDecryptor(const std::string& key_system);
-#if defined(ENABLE_PEPPER_CDMS)
-  scoped_ptr<media::Decryptor> CreatePpapiDecryptor(
-      const std::string& key_system);
-  // Callback for cleaning up a Pepper CDM.
-  void DestroyHelperPlugin();
-#endif  // defined(ENABLE_PEPPER_CDMS)
+  // Helper function to create MediaKeys to handle the given |key_system|.
+  scoped_ptr<media::MediaKeys> CreateMediaKeys(const std::string& key_system);
 
   // Callbacks for firing key events.
   void KeyAdded(const std::string& session_id);
@@ -70,33 +73,36 @@ class ProxyDecryptor : public media::MediaKeys {
                 media::MediaKeys::KeyError error_code,
                 int system_code);
   void KeyMessage(const std::string& session_id,
-                  const std::string& message,
+                  const std::vector<uint8>& message,
                   const std::string& default_url);
-  void NeedKey(const std::string& session_id,
-               const std::string& type,
-               scoped_ptr<uint8[]> init_data, int init_data_size);
+
+  base::WeakPtrFactory<ProxyDecryptor> weak_ptr_factory_;
+
+#if defined(ENABLE_PEPPER_CDMS)
+  // Callback for cleaning up a Pepper-based CDM.
+  void DestroyHelperPlugin();
 
   // Needed to create the PpapiDecryptor.
   WebKit::WebMediaPlayerClient* web_media_player_client_;
   WebKit::WebFrame* web_frame_;
+#elif defined(OS_ANDROID)
+  scoped_ptr<media::MediaKeys> proxy_media_keys_;
+#endif  // defined(ENABLE_PEPPER_CDMS)
+
+  // The real MediaKeys that manages key operations for the ProxyDecryptor.
+  // This pointer is protected by the |lock_|.
+  scoped_ptr<media::MediaKeys> media_keys_;
 
   // Callbacks for firing key events.
   media::KeyAddedCB key_added_cb_;
   media::KeyErrorCB key_error_cb_;
   media::KeyMessageCB key_message_cb_;
-  media::NeedKeyCB need_key_cb_;
 
   // Protects the |decryptor_|. Note that |decryptor_| itself should be thread
   // safe as per the Decryptor interface.
   base::Lock lock_;
 
   media::DecryptorReadyCB decryptor_ready_cb_;
-
-  // The real decryptor that does decryption for the ProxyDecryptor.
-  // This pointer is protected by the |lock_|.
-  scoped_ptr<media::Decryptor> decryptor_;
-
-  base::WeakPtrFactory<ProxyDecryptor> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ProxyDecryptor);
 };

@@ -15,7 +15,7 @@
 #include "base/strings/string_tokenizer.h"
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/test/chromedriver/chrome/log.h"
 #include "chrome/test/chromedriver/chrome/status.h"
 #include "chrome/test/chromedriver/net/adb_client_socket.h"
@@ -112,13 +112,12 @@ Status AdbImpl::ForwardPort(
                 device_serial + ": " + response);
 }
 
-Status AdbImpl::SetChromeFlags(const std::string& device_serial) {
+Status AdbImpl::SetChromeArgs(const std::string& device_serial,
+                              const std::string& args) {
   std::string response;
   Status status = ExecuteHostShellCommand(
       device_serial,
-      "echo chrome --disable-fre --metrics-recording-only "
-          "--enable-remote-debugging > /data/local/chrome-command-line;"
-          "echo $?",
+      "echo chrome " + args + "> /data/local/chrome-command-line; echo $?",
       &response);
   if (!status.IsOk())
     return status;

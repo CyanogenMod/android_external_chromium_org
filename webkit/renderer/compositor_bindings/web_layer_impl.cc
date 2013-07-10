@@ -4,6 +4,7 @@
 
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
+#include "base/bind.h"
 #include "base/strings/string_util.h"
 #include "cc/animation/animation.h"
 #include "cc/base/region.h"
@@ -13,9 +14,12 @@
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebFloatRect.h"
 #include "third_party/WebKit/public/platform/WebLayerPositionConstraint.h"
+#include "third_party/WebKit/public/platform/WebLayerScrollClient.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/skia/include/utils/SkMatrix44.h"
 #include "webkit/renderer/compositor_bindings/web_animation_impl.h"
+#include "webkit/renderer/compositor_bindings/web_filter_operations_impl.h"
+#include "webkit/renderer/compositor_bindings/web_to_cc_animation_delegate_adapter.h"
 
 using cc::Animation;
 using cc::Layer;
@@ -155,11 +159,15 @@ WebColor WebLayerImpl::backgroundColor() const {
 }
 
 void WebLayerImpl::setFilters(const WebFilterOperations& filters) {
-  layer_->SetFilters(filters);
+  const WebFilterOperationsImpl& filters_impl =
+      static_cast<const WebFilterOperationsImpl&>(filters);
+  layer_->SetFilters(filters_impl.AsFilterOperations());
 }
 
 void WebLayerImpl::setBackgroundFilters(const WebFilterOperations& filters) {
-  layer_->SetBackgroundFilters(filters);
+  const WebFilterOperationsImpl& filters_impl =
+      static_cast<const WebFilterOperationsImpl&>(filters);
+  layer_->SetBackgroundFilters(filters_impl.AsFilterOperations());
 }
 
 void WebLayerImpl::setFilter(SkImageFilter* filter) {
@@ -177,7 +185,9 @@ void WebLayerImpl::setCompositingReasons(
 
 void WebLayerImpl::setAnimationDelegate(
       WebKit::WebAnimationDelegate* delegate) {
-  layer_->set_layer_animation_delegate(delegate);
+  animation_delegate_adapter_.reset(
+      new WebToCCAnimationDelegateAdapter(delegate));
+  layer_->set_layer_animation_delegate(animation_delegate_adapter_.get());
 }
 
 bool WebLayerImpl::addAnimation(WebKit::WebAnimation* animation) {
@@ -341,11 +351,13 @@ WebKit::WebLayerPositionConstraint WebLayerImpl::positionConstraint() const {
 
 void WebLayerImpl::setScrollClient(
     WebKit::WebLayerScrollClient* scroll_client) {
-  layer_->set_layer_scroll_client(scroll_client);
+  layer_->set_did_scroll_callback(
+      base::Bind(&WebKit::WebLayerScrollClient::didScroll,
+                 base::Unretained(scroll_client)));
 }
 
 bool WebLayerImpl::isOrphan() const { return !layer_->layer_tree_host(); }
 
 Layer* WebLayerImpl::layer() const { return layer_.get(); }
 
-}  // namespace WebKit
+}  // namespace webkit

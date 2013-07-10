@@ -336,7 +336,7 @@ TEST_F(FileUtilTest, FileAndDirectorySize) {
   FilePath file_03 = subsubdir_path.Append(FPL("The file 03.txt"));
   CreateTextFile(file_03, L"123");
 
-  int64 computed_size = file_util::ComputeDirectorySize(temp_dir_.path());
+  int64 computed_size = base::ComputeDirectorySize(temp_dir_.path());
   EXPECT_EQ(size_f1 + size_f2 + 3, computed_size);
 }
 
@@ -664,28 +664,27 @@ TEST_F(FileUtilTest, CreateAndReadSymlinks) {
   ASSERT_TRUE(file_util::CreateSymbolicLink(link_to, link_from))
     << "Failed to create file symlink.";
 
-  // If we created the link properly, we should be able to read the
-  // contents through it.
+  // If we created the link properly, we should be able to read the contents
+  // through it.
   std::wstring contents = ReadTextFile(link_from);
-  ASSERT_EQ(contents, bogus_content);
+  EXPECT_EQ(bogus_content, contents);
 
   FilePath result;
   ASSERT_TRUE(file_util::ReadSymbolicLink(link_from, &result));
-  ASSERT_EQ(link_to.value(), result.value());
+  EXPECT_EQ(link_to.value(), result.value());
 
   // Link to a directory.
   link_from = temp_dir_.path().Append(FPL("from_dir"));
   link_to = temp_dir_.path().Append(FPL("to_dir"));
-  file_util::CreateDirectory(link_to);
-
+  ASSERT_TRUE(file_util::CreateDirectory(link_to));
   ASSERT_TRUE(file_util::CreateSymbolicLink(link_to, link_from))
     << "Failed to create directory symlink.";
 
   // Test failures.
-  ASSERT_FALSE(file_util::CreateSymbolicLink(link_to, link_to));
-  ASSERT_FALSE(file_util::ReadSymbolicLink(link_to, &result));
+  EXPECT_FALSE(file_util::CreateSymbolicLink(link_to, link_to));
+  EXPECT_FALSE(file_util::ReadSymbolicLink(link_to, &result));
   FilePath missing = temp_dir_.path().Append(FPL("missing"));
-  ASSERT_FALSE(file_util::ReadSymbolicLink(missing, &result));
+  EXPECT_FALSE(file_util::ReadSymbolicLink(missing, &result));
 }
 
 // The following test of NormalizeFilePath() require that we create a symlink.
@@ -694,8 +693,6 @@ TEST_F(FileUtilTest, CreateAndReadSymlinks) {
 // TODO(skerner): Investigate the possibility of giving base_unittests the
 // privileges required to create a symlink.
 TEST_F(FileUtilTest, NormalizeFilePathSymlinks) {
-  FilePath normalized_path;
-
   // Link one file to another.
   FilePath link_from = temp_dir_.path().Append(FPL("from_file"));
   FilePath link_to = temp_dir_.path().Append(FPL("to_file"));
@@ -705,20 +702,20 @@ TEST_F(FileUtilTest, NormalizeFilePathSymlinks) {
     << "Failed to create file symlink.";
 
   // Check that NormalizeFilePath sees the link.
+  FilePath normalized_path;
   ASSERT_TRUE(file_util::NormalizeFilePath(link_from, &normalized_path));
-  ASSERT_TRUE(link_to != link_from);
-  ASSERT_EQ(link_to.BaseName().value(), normalized_path.BaseName().value());
-  ASSERT_EQ(link_to.BaseName().value(), normalized_path.BaseName().value());
+  EXPECT_NE(link_from, link_to);
+  EXPECT_EQ(link_to.BaseName().value(), normalized_path.BaseName().value());
+  EXPECT_EQ(link_to.BaseName().value(), normalized_path.BaseName().value());
 
   // Link to a directory.
   link_from = temp_dir_.path().Append(FPL("from_dir"));
   link_to = temp_dir_.path().Append(FPL("to_dir"));
-  file_util::CreateDirectory(link_to);
-
+  ASSERT_TRUE(file_util::CreateDirectory(link_to));
   ASSERT_TRUE(file_util::CreateSymbolicLink(link_to, link_from))
     << "Failed to create directory symlink.";
 
-  ASSERT_FALSE(file_util::NormalizeFilePath(link_from, &normalized_path))
+  EXPECT_FALSE(file_util::NormalizeFilePath(link_from, &normalized_path))
     << "Links to directories should return false.";
 
   // Test that a loop in the links causes NormalizeFilePath() to return false.
@@ -730,7 +727,7 @@ TEST_F(FileUtilTest, NormalizeFilePathSymlinks) {
     << "Failed to create loop symlink b.";
 
   // Infinite loop!
-  ASSERT_FALSE(file_util::NormalizeFilePath(link_from, &normalized_path));
+  EXPECT_FALSE(file_util::NormalizeFilePath(link_from, &normalized_path));
 }
 #endif  // defined(OS_POSIX)
 
@@ -738,9 +735,9 @@ TEST_F(FileUtilTest, DeleteNonExistent) {
   FilePath non_existent = temp_dir_.path().AppendASCII("bogus_file_dne.foobar");
   ASSERT_FALSE(file_util::PathExists(non_existent));
 
-  EXPECT_TRUE(file_util::Delete(non_existent, false));
+  EXPECT_TRUE(base::Delete(non_existent, false));
   ASSERT_FALSE(file_util::PathExists(non_existent));
-  EXPECT_TRUE(file_util::Delete(non_existent, true));
+  EXPECT_TRUE(base::Delete(non_existent, true));
   ASSERT_FALSE(file_util::PathExists(non_existent));
 }
 
@@ -751,7 +748,7 @@ TEST_F(FileUtilTest, DeleteFile) {
   ASSERT_TRUE(file_util::PathExists(file_name));
 
   // Make sure it's deleted
-  EXPECT_TRUE(file_util::Delete(file_name, false));
+  EXPECT_TRUE(base::Delete(file_name, false));
   EXPECT_FALSE(file_util::PathExists(file_name));
 
   // Test recursive case, create a new file
@@ -760,7 +757,7 @@ TEST_F(FileUtilTest, DeleteFile) {
   ASSERT_TRUE(file_util::PathExists(file_name));
 
   // Make sure it's deleted
-  EXPECT_TRUE(file_util::Delete(file_name, true));
+  EXPECT_TRUE(base::Delete(file_name, true));
   EXPECT_FALSE(file_util::PathExists(file_name));
 }
 
@@ -777,7 +774,7 @@ TEST_F(FileUtilTest, DeleteSymlinkToExistentFile) {
       << "Failed to create symlink.";
 
   // Delete the symbolic link.
-  EXPECT_TRUE(file_util::Delete(file_link, false));
+  EXPECT_TRUE(base::Delete(file_link, false));
 
   // Make sure original file is not deleted.
   EXPECT_FALSE(file_util::PathExists(file_link));
@@ -799,7 +796,7 @@ TEST_F(FileUtilTest, DeleteSymlinkToNonExistentFile) {
   EXPECT_FALSE(file_util::PathExists(file_link));
 
   // Delete the symbolic link.
-  EXPECT_TRUE(file_util::Delete(file_link, false));
+  EXPECT_TRUE(base::Delete(file_link, false));
 
   // Make sure the symbolic link is deleted.
   EXPECT_FALSE(file_util::IsLink(file_link));
@@ -843,7 +840,7 @@ TEST_F(FileUtilTest, ChangeFilePermissionsAndRead) {
             file_util::ReadFile(file_name, buffer, buffer_size));
 
   // Delete the file.
-  EXPECT_TRUE(file_util::Delete(file_name, false));
+  EXPECT_TRUE(base::Delete(file_name, false));
   EXPECT_FALSE(file_util::PathExists(file_name));
 
   delete[] buffer;
@@ -888,7 +885,7 @@ TEST_F(FileUtilTest, ChangeFilePermissionsAndWrite) {
   EXPECT_TRUE(file_util::PathIsWritable(file_name));
 
   // Delete the file.
-  EXPECT_TRUE(file_util::Delete(file_name, false));
+  EXPECT_TRUE(base::Delete(file_name, false));
   EXPECT_FALSE(file_util::PathExists(file_name));
 }
 
@@ -940,7 +937,7 @@ TEST_F(FileUtilTest, ChangeDirectoryPermissionsAndEnumerate) {
   EXPECT_EQ(c2.size(), 1);
 
   // Delete the file.
-  EXPECT_TRUE(file_util::Delete(subdir_path, true));
+  EXPECT_TRUE(base::Delete(subdir_path, true));
   EXPECT_FALSE(file_util::PathExists(subdir_path));
 }
 
@@ -965,12 +962,12 @@ TEST_F(FileUtilTest, DeleteWildCard) {
   directory_contents = directory_contents.Append(FPL("*"));
 
   // Delete non-recursively and check that only the file is deleted
-  EXPECT_TRUE(file_util::Delete(directory_contents, false));
+  EXPECT_TRUE(base::Delete(directory_contents, false));
   EXPECT_FALSE(file_util::PathExists(file_name));
   EXPECT_TRUE(file_util::PathExists(subdir_path));
 
   // Delete recursively and make sure all contents are deleted
-  EXPECT_TRUE(file_util::Delete(directory_contents, true));
+  EXPECT_TRUE(base::Delete(directory_contents, true));
   EXPECT_FALSE(file_util::PathExists(file_name));
   EXPECT_FALSE(file_util::PathExists(subdir_path));
 }
@@ -988,11 +985,11 @@ TEST_F(FileUtilTest, DeleteNonExistantWildCard) {
   directory_contents = directory_contents.Append(FPL("*"));
 
   // Delete non-recursively and check nothing got deleted
-  EXPECT_TRUE(file_util::Delete(directory_contents, false));
+  EXPECT_TRUE(base::Delete(directory_contents, false));
   EXPECT_TRUE(file_util::PathExists(subdir_path));
 
   // Delete recursively and check nothing got deleted
-  EXPECT_TRUE(file_util::Delete(directory_contents, true));
+  EXPECT_TRUE(base::Delete(directory_contents, true));
   EXPECT_TRUE(file_util::PathExists(subdir_path));
 }
 #endif
@@ -1017,11 +1014,11 @@ TEST_F(FileUtilTest, DeleteDirNonRecursive) {
   ASSERT_TRUE(file_util::PathExists(subdir_path2));
 
   // Delete non-recursively and check that the empty dir got deleted
-  EXPECT_TRUE(file_util::Delete(subdir_path2, false));
+  EXPECT_TRUE(base::Delete(subdir_path2, false));
   EXPECT_FALSE(file_util::PathExists(subdir_path2));
 
   // Delete non-recursively and check that nothing got deleted
-  EXPECT_FALSE(file_util::Delete(test_subdir, false));
+  EXPECT_FALSE(base::Delete(test_subdir, false));
   EXPECT_TRUE(file_util::PathExists(test_subdir));
   EXPECT_TRUE(file_util::PathExists(file_name));
   EXPECT_TRUE(file_util::PathExists(subdir_path1));
@@ -1047,11 +1044,11 @@ TEST_F(FileUtilTest, DeleteDirRecursive) {
   ASSERT_TRUE(file_util::PathExists(subdir_path2));
 
   // Delete recursively and check that the empty dir got deleted
-  EXPECT_TRUE(file_util::Delete(subdir_path2, true));
+  EXPECT_TRUE(base::Delete(subdir_path2, true));
   EXPECT_FALSE(file_util::PathExists(subdir_path2));
 
   // Delete recursively and check that everything got deleted
-  EXPECT_TRUE(file_util::Delete(test_subdir, true));
+  EXPECT_TRUE(base::Delete(test_subdir, true));
   EXPECT_FALSE(file_util::PathExists(file_name));
   EXPECT_FALSE(file_util::PathExists(subdir_path1));
   EXPECT_FALSE(file_util::PathExists(test_subdir));
@@ -1069,7 +1066,7 @@ TEST_F(FileUtilTest, MoveFileNew) {
       FILE_PATH_LITERAL("Move_Test_File_Destination.txt"));
   ASSERT_FALSE(file_util::PathExists(file_name_to));
 
-  EXPECT_TRUE(file_util::Move(file_name_from, file_name_to));
+  EXPECT_TRUE(base::Move(file_name_from, file_name_to));
 
   // Check everything has been moved.
   EXPECT_FALSE(file_util::PathExists(file_name_from));
@@ -1089,7 +1086,7 @@ TEST_F(FileUtilTest, MoveFileExists) {
   CreateTextFile(file_name_to, L"Old file content");
   ASSERT_TRUE(file_util::PathExists(file_name_to));
 
-  EXPECT_TRUE(file_util::Move(file_name_from, file_name_to));
+  EXPECT_TRUE(base::Move(file_name_from, file_name_to));
 
   // Check everything has been moved.
   EXPECT_FALSE(file_util::PathExists(file_name_from));
@@ -1110,7 +1107,7 @@ TEST_F(FileUtilTest, MoveFileDirExists) {
   file_util::CreateDirectory(dir_name_to);
   ASSERT_TRUE(file_util::PathExists(dir_name_to));
 
-  EXPECT_FALSE(file_util::Move(file_name_from, dir_name_to));
+  EXPECT_FALSE(base::Move(file_name_from, dir_name_to));
 }
 
 
@@ -1135,7 +1132,7 @@ TEST_F(FileUtilTest, MoveNew) {
 
   ASSERT_FALSE(file_util::PathExists(dir_name_to));
 
-  EXPECT_TRUE(file_util::Move(dir_name_from, dir_name_to));
+  EXPECT_TRUE(base::Move(dir_name_from, dir_name_to));
 
   // Check everything has been moved.
   EXPECT_FALSE(file_util::PathExists(dir_name_from));
@@ -1147,10 +1144,10 @@ TEST_F(FileUtilTest, MoveNew) {
   file_name_from = dir_name_to.Append(txt_file_name);
   file_name_to = dir_name_to.Append(FILE_PATH_LITERAL(".."));
   file_name_to = file_name_to.Append(txt_file_name);
-  EXPECT_FALSE(file_util::Move(file_name_from, file_name_to));
+  EXPECT_FALSE(base::Move(file_name_from, file_name_to));
   EXPECT_TRUE(file_util::PathExists(file_name_from));
   EXPECT_FALSE(file_util::PathExists(file_name_to));
-  EXPECT_TRUE(file_util::MoveUnsafe(file_name_from, file_name_to));
+  EXPECT_TRUE(base::MoveUnsafe(file_name_from, file_name_to));
   EXPECT_FALSE(file_util::PathExists(file_name_from));
   EXPECT_TRUE(file_util::PathExists(file_name_to));
 }
@@ -1181,7 +1178,7 @@ TEST_F(FileUtilTest, MoveExist) {
   file_util::CreateDirectory(dir_name_exists);
   ASSERT_TRUE(file_util::PathExists(dir_name_exists));
 
-  EXPECT_TRUE(file_util::Move(dir_name_from, dir_name_to));
+  EXPECT_TRUE(base::Move(dir_name_from, dir_name_to));
 
   // Check everything has been moved.
   EXPECT_FALSE(file_util::PathExists(dir_name_from));
@@ -1695,7 +1692,7 @@ TEST_F(FileUtilTest, CreateTemporaryFileTest) {
   for (int i = 0; i < 3; i++)
     EXPECT_FALSE(temp_files[i] == temp_files[(i+1)%3]);
   for (int i = 0; i < 3; i++)
-    EXPECT_TRUE(file_util::Delete(temp_files[i], false));
+    EXPECT_TRUE(base::Delete(temp_files[i], false));
 }
 
 TEST_F(FileUtilTest, CreateAndOpenTemporaryFileTest) {
@@ -1718,7 +1715,7 @@ TEST_F(FileUtilTest, CreateAndOpenTemporaryFileTest) {
   // Close and delete.
   for (i = 0; i < 3; ++i) {
     EXPECT_TRUE(file_util::CloseFile(fps[i]));
-    EXPECT_TRUE(file_util::Delete(names[i], false));
+    EXPECT_TRUE(base::Delete(names[i], false));
   }
 }
 
@@ -1727,7 +1724,7 @@ TEST_F(FileUtilTest, CreateNewTempDirectoryTest) {
   ASSERT_TRUE(file_util::CreateNewTempDirectory(FilePath::StringType(),
                                                 &temp_dir));
   EXPECT_TRUE(file_util::PathExists(temp_dir));
-  EXPECT_TRUE(file_util::Delete(temp_dir, false));
+  EXPECT_TRUE(base::Delete(temp_dir, false));
 }
 
 TEST_F(FileUtilTest, CreateNewTemporaryDirInDirTest) {
@@ -1738,7 +1735,7 @@ TEST_F(FileUtilTest, CreateNewTemporaryDirInDirTest) {
                   &new_dir));
   EXPECT_TRUE(file_util::PathExists(new_dir));
   EXPECT_TRUE(temp_dir_.path().IsParent(new_dir));
-  EXPECT_TRUE(file_util::Delete(new_dir, false));
+  EXPECT_TRUE(base::Delete(new_dir, false));
 }
 
 TEST_F(FileUtilTest, GetShmemTempDirTest) {
@@ -1771,7 +1768,7 @@ TEST_F(FileUtilTest, CreateDirectoryTest) {
   EXPECT_TRUE(file_util::PathExists(test_path));
   EXPECT_FALSE(file_util::CreateDirectory(test_path));
 
-  EXPECT_TRUE(file_util::Delete(test_root, true));
+  EXPECT_TRUE(base::Delete(test_root, true));
   EXPECT_FALSE(file_util::PathExists(test_root));
   EXPECT_FALSE(file_util::PathExists(test_path));
 
@@ -1817,9 +1814,9 @@ TEST_F(FileUtilTest, DetectDirectoryTest) {
   CreateTextFile(test_path, L"test file");
   EXPECT_TRUE(file_util::PathExists(test_path));
   EXPECT_FALSE(file_util::DirectoryExists(test_path));
-  EXPECT_TRUE(file_util::Delete(test_path, false));
+  EXPECT_TRUE(base::Delete(test_path, false));
 
-  EXPECT_TRUE(file_util::Delete(test_root, true));
+  EXPECT_TRUE(base::Delete(test_root, true));
 }
 
 TEST_F(FileUtilTest, FileEnumeratorTest) {
@@ -1937,13 +1934,13 @@ TEST_F(FileUtilTest, AppendToFile) {
 
   // Create a fresh, empty copy of this directory.
   if (file_util::PathExists(data_dir)) {
-    ASSERT_TRUE(file_util::Delete(data_dir, true));
+    ASSERT_TRUE(base::Delete(data_dir, true));
   }
   ASSERT_TRUE(file_util::CreateDirectory(data_dir));
 
   // Create a fresh, empty copy of this directory.
   if (file_util::PathExists(data_dir)) {
-    ASSERT_TRUE(file_util::Delete(data_dir, true));
+    ASSERT_TRUE(base::Delete(data_dir, true));
   }
   ASSERT_TRUE(file_util::CreateDirectory(data_dir));
   FilePath foobar(data_dir.Append(FILE_PATH_LITERAL("foobar.txt")));
@@ -1965,7 +1962,7 @@ TEST_F(FileUtilTest, TouchFile) {
 
   // Create a fresh, empty copy of this directory.
   if (file_util::PathExists(data_dir)) {
-    ASSERT_TRUE(file_util::Delete(data_dir, true));
+    ASSERT_TRUE(base::Delete(data_dir, true));
   }
   ASSERT_TRUE(file_util::CreateDirectory(data_dir));
 

@@ -6,6 +6,7 @@
 #include "nacl_io/mount_html5fs.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <ppapi/c/pp_completion_callback.h>
 #include <ppapi/c/pp_errors.h>
 #include <stdlib.h>
@@ -24,9 +25,21 @@ int64_t strtoull(const char* nptr, char** endptr, int base) {
 
 }  // namespace
 
-Error MountHtml5Fs::Open(const Path& path, int mode, MountNode** out_node) {
-  *out_node = NULL;
+Error MountHtml5Fs::Access(const Path& path, int a_mode) {
+  // a_mode is unused, since all files are readable, writable and executable.
+  ScopedMountNode node;
+  Error error = Open(path, O_RDONLY, &node);
+  if (error)
+    return error;
 
+  node->Release();
+  return 0;
+}
+
+Error MountHtml5Fs::Open(const Path& path,
+                         int mode,
+                         ScopedMountNode* out_node) {
+  out_node->reset(NULL);
   Error error = BlockUntilFilesystemOpen();
   if (error)
     return error;
@@ -34,14 +47,12 @@ Error MountHtml5Fs::Open(const Path& path, int mode, MountNode** out_node) {
   PP_Resource fileref = ppapi()->GetFileRefInterface()
       ->Create(filesystem_resource_, path.Join().c_str());
   if (!fileref)
-    return ENOSYS;
+    return ENOENT;
 
-  MountNodeHtml5Fs* node = new MountNodeHtml5Fs(this, fileref);
+  ScopedMountNode node(new MountNodeHtml5Fs(this, fileref));
   error = node->Init(mode);
-  if (error) {
-    node->Release();
+  if (error)
     return error;
-  }
 
   *out_node = node;
   return 0;
@@ -59,7 +70,7 @@ Error MountHtml5Fs::Mkdir(const Path& path, int permissions) {
       ppapi()->GetFileRefInterface()->Create(filesystem_resource_,
                                              path.Join().c_str()));
   if (!fileref_resource.pp_resource())
-    return EIO;
+    return ENOENT;
 
   int32_t result = ppapi()->GetFileRefInterface()->MakeDirectory(
       fileref_resource.pp_resource(), PP_FALSE, PP_BlockUntilComplete());
@@ -81,7 +92,7 @@ Error MountHtml5Fs::Remove(const Path& path) {
       ppapi()->GetFileRefInterface()->Create(filesystem_resource_,
                                              path.Join().c_str()));
   if (!fileref_resource.pp_resource())
-    return ENOSYS;
+    return ENOENT;
 
   int32_t result = ppapi()->GetFileRefInterface()
       ->Delete(fileref_resource.pp_resource(), PP_BlockUntilComplete());
@@ -178,3 +189,4 @@ void MountHtml5Fs::FilesystemOpenCallback(int32_t result) {
   filesystem_open_error_ = PPErrorToErrno(result);
   pthread_cond_signal(&filesystem_open_cond_);
 }
+

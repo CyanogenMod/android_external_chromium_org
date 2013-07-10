@@ -16,39 +16,17 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
 #include "chrome/browser/ui/search/instant_controller.h"
-#include "chrome/browser/ui/search/instant_overlay_model_observer.h"
 #include "chrome/common/search_types.h"
 #include "googleurl/src/gurl.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 
+class BrowserInstantController;
 class InstantController;
 class InstantModel;
 class OmniboxView;
 
 namespace content {
 class WebContents;
-};
-
-class InstantTestModelObserver : public InstantOverlayModelObserver {
- public:
-  InstantTestModelObserver(InstantOverlayModel* model,
-                           SearchMode::Type expected_mode_type);
-  virtual ~InstantTestModelObserver();
-
-  // Returns the observed mode type, may be different than the
-  // |expected_mode_type_| that was observed in OverlayStateChanged.
-  SearchMode::Type WaitForExpectedOverlayState();
-
-  // Overridden from InstantOverlayModelObserver:
-  virtual void OverlayStateChanged(const InstantOverlayModel& model) OVERRIDE;
-
- private:
-  InstantOverlayModel* const model_;
-  const SearchMode::Type expected_mode_type_;
-  SearchMode::Type observed_mode_type_;
-  base::RunLoop run_loop_;
-
-  DISALLOW_COPY_AND_ASSIGN(InstantTestModelObserver);
 };
 
 // This utility class is meant to be used in a "mix-in" fashion, giving the
@@ -73,6 +51,10 @@ class InstantTestBase {
     browser_ = browser;
   }
 
+  BrowserInstantController* browser_instant() {
+    return browser_->instant_controller();
+  }
+
   InstantController* instant() {
     return browser_->instant_controller()->instant();
   }
@@ -88,12 +70,9 @@ class InstantTestBase {
   void KillInstantRenderView();
 
   void FocusOmnibox();
-  void FocusOmniboxAndWaitForInstantOverlaySupport();
-  void FocusOmniboxAndWaitForInstantOverlayAndNTPSupport();
+  void FocusOmniboxAndWaitForInstantNTPSupport();
 
   void SetOmniboxText(const std::string& text);
-  bool SetOmniboxTextAndWaitForOverlayToShow(const std::string& text);
-  void SetOmniboxTextAndWaitForSuggestion(const std::string& text);
 
   void PressEnterAndWaitForNavigation();
 
@@ -111,6 +90,8 @@ class InstantTestBase {
                          bool expected) WARN_UNUSED_RESULT;
   bool HasUserInputInProgress();
   bool HasTemporaryText();
+
+  std::string GetOmniboxText();
 
   // Loads a named image from url |image| from the given |rvh| host.  |loaded|
   // returns whether the image was able to load without error.

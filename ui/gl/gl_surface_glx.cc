@@ -19,7 +19,7 @@ extern "C" {
 #include "base/synchronization/lock.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/threading/thread.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "third_party/mesa/src/include/GL/osmesa.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/gl/gl_bindings.h"
@@ -424,9 +424,6 @@ bool NativeViewGLSurfaceGLX::IsOffscreen() {
 
 bool NativeViewGLSurfaceGLX::SwapBuffers() {
   glXSwapBuffers(g_display, window_);
-  // For latency_tests.cc:
-  UNSHIPPED_TRACE_EVENT_INSTANT0("test_gpu", "CompositorSwapBuffersComplete",
-                                 TRACE_EVENT_SCOPE_THREAD);
   return true;
 }
 

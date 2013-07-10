@@ -105,18 +105,6 @@ IsolatedMountPointProvider::GetCopyOrMoveFileValidatorFactory(
   return NULL;
 }
 
-FilePermissionPolicy IsolatedMountPointProvider::GetPermissionPolicy(
-    const FileSystemURL& url, int permissions) const {
-  if (url.type() == kFileSystemTypeDragged && url.path().empty()) {
-    // The root directory of the dragged filesystem must be always read-only.
-    if (permissions & ~fileapi::kReadFilePermissions)
-      return FILE_PERMISSION_ALWAYS_DENY;
-  }
-  // Access to isolated file systems should be checked using per-filesystem
-  // access permission.
-  return FILE_PERMISSION_USE_FILESYSTEM_PERMISSION;
-}
-
 FileSystemOperation* IsolatedMountPointProvider::CreateFileSystemOperation(
     const FileSystemURL& url,
     FileSystemContext* context,
@@ -141,8 +129,8 @@ scoped_ptr<FileStreamWriter> IsolatedMountPointProvider::CreateFileStreamWriter(
     const FileSystemURL& url,
     int64 offset,
     FileSystemContext* context) const {
-  return scoped_ptr<FileStreamWriter>(
-      new LocalFileStreamWriter(url.path(), offset));
+  return scoped_ptr<FileStreamWriter>(new LocalFileStreamWriter(
+      context->task_runners()->file_task_runner(), url.path(), offset));
 }
 
 FileSystemQuotaUtil* IsolatedMountPointProvider::GetQuotaUtil() {

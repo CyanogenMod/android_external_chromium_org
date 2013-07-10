@@ -12,6 +12,10 @@
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_observer.h"
 
+#if defined(OS_WIN)
+#include "ui/base/win/shell.h"
+#endif
+
 // The duration of the fade animation in milliseconds.
 static const int kHideFadeDurationMS = 200;
 
@@ -27,7 +31,7 @@ Widget* CreateBubbleWidget(BubbleDelegateView* bubble) {
   Widget* bubble_widget = new Widget();
   Widget::InitParams bubble_params(Widget::InitParams::TYPE_BUBBLE);
   bubble_params.delegate = bubble;
-  bubble_params.transparent = true;
+  bubble_params.opacity = Widget::InitParams::TRANSLUCENT_WINDOW;
   bubble_params.accept_events = bubble->accept_events();
   if (bubble->parent_window())
     bubble_params.parent = bubble->parent_window();
@@ -36,7 +40,7 @@ Widget* CreateBubbleWidget(BubbleDelegateView* bubble) {
   bubble_params.can_activate = bubble->CanActivate();
 #if defined(OS_WIN) && !defined(USE_AURA)
   bubble_params.type = Widget::InitParams::TYPE_WINDOW_FRAMELESS;
-  bubble_params.transparent = false;
+  bubble_params.opacity = Widget::InitParams::OPAQUE_WINDOW;
 #endif
   bubble_widget->Init(bubble_params);
   return bubble_widget;
@@ -88,7 +92,7 @@ Widget* CreateBorderWidget(BubbleDelegateView* bubble) {
   Widget* border_widget = new Widget();
   Widget::InitParams border_params(Widget::InitParams::TYPE_BUBBLE);
   border_params.delegate = new BubbleBorderDelegate(bubble, border_widget);
-  border_params.transparent = true;
+  border_params.opacity = Widget::InitParams::TRANSLUCENT_WINDOW;
   border_params.parent = bubble->GetWidget()->GetNativeView();
   border_params.can_activate = false;
   border_params.accept_events = bubble->border_accepts_events();
@@ -162,10 +166,17 @@ Widget* BubbleDelegateView::CreateBubble(BubbleDelegateView* bubble_delegate) {
 
   Widget* bubble_widget = CreateBubbleWidget(bubble_delegate);
 
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
+#if defined(USE_AURA)
+  // If glass is enabled, the bubble is allowed to extend outside the bounds of
+  // the parent frame and let DWM handle compositing.  If not, then we don't
+  // want to allow the bubble to extend the frame because it will be clipped.
+  bubble_delegate->set_adjust_if_offscreen(ui::win::IsAeroGlassEnabled());
+#else
   // First set the contents view to initialize view bounds for widget sizing.
   bubble_widget->SetContentsView(bubble_delegate->GetContentsView());
   bubble_delegate->border_widget_ = CreateBorderWidget(bubble_delegate);
+#endif
 #endif
 
   bubble_delegate->SizeToContents();

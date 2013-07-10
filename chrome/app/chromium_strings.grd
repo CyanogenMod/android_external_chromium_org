@@ -268,6 +268,15 @@ be available for now. -->
         <message name="IDS_CHROME_FRAME_READY_MODE_LEARN_MORE_URL" desc="Link to knowledge-base article about Chromium Frame Ready Mode">
           http://www.google.com/support/chrome/bin/answer.py?hl=[GRITLANGCODE]&amp;answer=161796
         </message>
+        <message name="IDS_CHROME_FRAME_TURNDOWN_LEARN_MORE_URL" desc="Link to knowledge-base article about Chromium Frame's turndown">
+          http://support.google.com/chrome/?p=ib_chromeframe
+        </message>
+        <message name="IDS_CHROME_FRAME_TURNDOWN_TEXT_IE_OLDER" desc="Text of Chromium Frame turndown prompt for IE 6, 7, and 8">
+          This site is using the Chromium Frame plug-in which will soon be unsupported. Please uninstall it and upgrade to a modern browser.
+	</message>
+        <message name="IDS_CHROME_FRAME_TURNDOWN_TEXT_IE_NEWER" desc="Text of Chromium Frame turndown prompt for IE 9 and 10">
+          This site is using the Chromium Frame plug-in that will soon be unsupported. Please uninstall it and download a compatible browser.
+	</message>
         <message name="IDS_SHORTCUT_NEW_WINDOW" desc="The text label of the New window shortcut context menu entry as of Windows 8">
           New window
         </message>
@@ -715,6 +724,11 @@ For Chromium, processes used to display diagnostics information (such as this "a
           Nearly up-to-date! Restart your device to finish updating.
         </message>
       </if>
+      <if expr="pp_ifdef('chromeos')">
+        <message name="IDS_UPGRADE_SUCCESSFUL_CHANNEL_SWITCH" desc="Status label: Channel was successfully switched on Chromium OS">
+          Channel changed. Restart your device to apply changes.
+        </message>
+      </if>
       <if expr="not pp_ifdef('chromeos')">
         <message name="IDS_UPGRADE_UP_TO_DATE" desc="Status label: Already up to date (Chromium)">
           Chromium is up to date.
@@ -733,6 +747,11 @@ For Chromium, processes used to display diagnostics information (such as this "a
       <if expr="pp_ifdef('chromeos')">
         <message name="IDS_UPGRADE_UPDATING" desc="Status label: Updating Chromium OS">
           Updating your device...
+        </message>
+      </if>
+      <if expr="pp_ifdef('chromeos')">
+        <message name="IDS_UPGRADE_UPDATING_CHANNEL_SWITCH" desc="Status label: Updating Chromium OS to a specified channel">
+          Updating your device to <ph name="CHANNEL_NAME">$1<ex>stable</ex></ph> channel...
         </message>
       </if>
 
@@ -869,7 +888,7 @@ Signing in anyway will merge Chromium information like bookmarks, history, and o
       <!-- Enterprise sign-in dialog (new-style) -->
       <!-- TODO(dconnelly): remove "new-style" once the old dialog is gone. -->
       <message name="IDS_ENTERPRISE_SIGNIN_TITLE_NEW_STYLE" desc="The title of the dialog to confirm linking the browser profile with the signed-in enterprise account">
-        Save your Chromium data to this account?
+        Link your Chromium data to this account?
       </message>
       <message name="IDS_ENTERPRISE_SIGNIN_EXPLANATION_WITHOUT_PROFILE_CREATION_NEW_STYLE" desc="The warning message displayed to an enterprise user about to link their profile to their Google account. This message is followed by a 'Learn more' link.">
         You are signing in with a managed account and giving its administrator control over your Chromium profile. Your Chromium data, such as your apps, bookmarks, history, passwords, and other settings will become permanently tied to <ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>. You will be able to delete this data via the Google Accounts Dashboard, but you will not be able to associate this data with another account. <ph name="LEARN_MORE">$2<ex>Learn more</ex></ph>
@@ -975,6 +994,16 @@ Signing in anyway will merge Chromium information like bookmarks, history, and o
       <if expr="pp_ifdef('chromeos')">
         <message name="IDS_TERMS_OF_SERVICE_SCREEN_SUBHEADING" desc="Subheading at the top of the Terms of Service screen.">
           <ph name="DOMAIN">$1<ex>example.com</ex></ph> requires that you read and accept the following Terms of Service before using this device. These terms do not expand, modify or limit the Chromium OS Terms.
+        </message>
+      </if>
+
+      <!-- Chrome Notifications center -->
+      <if expr="is_win">
+        <message name="IDS_MESSAGE_CENTER_BALLOON_TITLE" desc="Title of the first run notification ballon describing the notification center.">
+          Chromium Notification Center
+        </message>
+        <message name="IDS_MESSAGE_CENTER_BALLOON_TEXT" desc="Body text for the the first run notification ballon describing the notification center.">
+          You can see all your notifications from Chromium apps, extensions, and websites here.
         </message>
       </if>
     </messages>

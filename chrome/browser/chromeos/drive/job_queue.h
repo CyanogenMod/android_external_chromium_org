@@ -36,6 +36,9 @@ class JobQueue {
   // priority 1 in the queue is picked.
   bool PopForRun(int accepted_priority, JobID* id);
 
+  // Gets queued jobs with the given priority.
+  void GetQueuedJobs(int priority, std::vector<JobID>* jobs) const;
+
   // Marks a running job |id| as finished running. This decreases the count
   // of running parallel jobs and makes room for other jobs to be popped.
   void MarkFinished(JobID id);
@@ -45,6 +48,9 @@ class JobQueue {
 
   // Gets the total number of jobs in the queue.
   size_t GetNumberOfJobs() const;
+
+  // Removes the job from the queue.
+  void Remove(JobID id);
 
  private:
   size_t num_max_concurrent_jobs_;

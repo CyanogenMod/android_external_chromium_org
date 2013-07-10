@@ -40,7 +40,7 @@ SyncFileSystemServiceFactory::SyncFileSystemServiceFactory()
     : BrowserContextKeyedServiceFactory(
         "SyncFileSystemService",
         BrowserContextDependencyManager::GetInstance()) {
-  DependsOn(google_apis::DriveNotificationManagerFactory::GetInstance());
+  DependsOn(::drive::DriveNotificationManagerFactory::GetInstance());
 }
 
 SyncFileSystemServiceFactory::~SyncFileSystemServiceFactory() {}
@@ -68,7 +68,7 @@ SyncFileSystemServiceFactory::BuildServiceInstanceFor(
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(kDisableLastWriteWin)) {
     remote_file_service->SetConflictResolutionPolicy(
-        CONFLICT_RESOLUTION_MANUAL);
+        CONFLICT_RESOLUTION_POLICY_MANUAL);
   }
 
   service->Initialize(local_file_service.Pass(),

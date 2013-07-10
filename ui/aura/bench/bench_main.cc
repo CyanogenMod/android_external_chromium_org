@@ -9,7 +9,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_split.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/skia/include/core/SkXfermode.h"
 #include "ui/aura/client/default_capture_client.h"
@@ -207,7 +207,7 @@ class WebGLBench : public BenchCompositorObserver {
     webgl_.SetBounds(bounds);
     parent_->Add(&webgl_);
 
-    context_.reset(ui::ContextFactory::GetInstance()->CreateOffscreenContext());
+    context_ = ui::ContextFactory::GetInstance()->CreateOffscreenContext();
     context_->makeContextCurrent();
     texture_ = new WebGLTexture(context_.get(), bounds.size());
     fbo_ = context_->createFramebuffer();

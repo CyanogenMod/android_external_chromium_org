@@ -40,7 +40,6 @@
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_source.h"
-#include "googleurl/src/gurl.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -49,6 +48,7 @@
 #include "ui/gfx/favicon_size.h"
 #include "ui/gfx/icon_util.h"
 #include "ui/gfx/image/image_family.h"
+#include "url/gurl.h"
 
 using content::BrowserThread;
 
@@ -736,8 +736,8 @@ void JumpList::RunUpdate() {
   // icon files.
   base::FilePath icon_dir_old(icon_dir_.value() + L"Old");
   if (file_util::PathExists(icon_dir_old))
-    file_util::Delete(icon_dir_old, true);
-  file_util::Move(icon_dir_, icon_dir_old);
+    base::Delete(icon_dir_old, true);
+  base::Move(icon_dir_, icon_dir_old);
   file_util::CreateDirectory(icon_dir_);
 
   // Create temporary icon files for shortcuts in the "Most Visited" category.

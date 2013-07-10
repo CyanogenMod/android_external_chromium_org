@@ -14,6 +14,7 @@
 #include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/managed_mode/managed_mode_url_filter.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -39,6 +40,7 @@ class PrefRegistrySyncable;
 // manual whitelist/blacklist overrides).
 class ManagedUserService : public BrowserContextKeyedService,
                            public extensions::ManagementPolicy::Provider,
+                           public ProfileSyncServiceObserver,
                            public content::NotificationObserver {
  public:
   typedef std::vector<string16> CategoryList;
@@ -52,6 +54,9 @@ class ManagedUserService : public BrowserContextKeyedService,
   explicit ManagedUserService(Profile* profile);
   virtual ~ManagedUserService();
 
+  // ProfileKeyedService override:
+  virtual void Shutdown() OVERRIDE;
+
   bool ProfileIsManaged() const;
 
   // Checks whether the given profile is managed without constructing a
@@ -60,8 +65,9 @@ class ManagedUserService : public BrowserContextKeyedService,
 
   static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
 
-  // Returns whether managed users are enabled by Finch or the command line
-  // flag.
+  // Returns true if managed users are enabled by either Finch or the command
+  // line flag.
+  // TODO(pamg, sergiu): Remove this once the feature is fully launched.
   static bool AreManagedUsersEnabled();
 
   // Returns the URL filter for the IO thread, for filtering network requests
@@ -88,6 +94,10 @@ class ManagedUserService : public BrowserContextKeyedService,
   // Returns the email address of the custodian.
   std::string GetCustodianEmailAddress() const;
 
+  // Returns the name of the custodian, or the email address if the name is
+  // empty.
+  std::string GetCustodianName() const;
+
   // These methods allow querying and modifying the manual filtering behavior.
   // The manual behavior is set by the user and overrides all other settings
   // (whitelists or the default behavior).
@@ -109,9 +119,9 @@ class ManagedUserService : public BrowserContextKeyedService,
   // Marks the profile as managed and initializes it.
   void InitForTesting();
 
-  // Initializes this profile for syncing, using the provided |token| to
-  // authenticate requests.
-  void InitSync(const std::string& token);
+  // Initializes this profile for syncing, using the provided |refresh_token| to
+  // mint access tokens for Sync.
+  void InitSync(const std::string& refresh_token);
 
   // Convenience method that registers this managed user with
   // |registration_service| and initializes sync with the returned token.
@@ -137,6 +147,9 @@ class ManagedUserService : public BrowserContextKeyedService,
                            string16* error) const OVERRIDE;
   virtual bool UserMayModifySettings(const extensions::Extension* extension,
                                      string16* error) const OVERRIDE;
+
+  // ProfileSyncServiceObserver implementation:
+  virtual void OnStateChanged() OVERRIDE;
 
   // content::NotificationObserver implementation:
   virtual void Observe(int type,
@@ -176,10 +189,14 @@ class ManagedUserService : public BrowserContextKeyedService,
     DISALLOW_COPY_AND_ASSIGN(URLFilterContext);
   };
 
+  void OnCustodianProfileDownloaded(const string16& full_name);
+
   void OnManagedUserRegistered(const ProfileManager::CreateCallback& callback,
                                Profile* custodian_profile,
                                const GoogleServiceAuthError& auth_error,
                                const std::string& token);
+
+  void SetupSync();
 
   // Internal implementation for ExtensionManagementPolicy::Delegate methods.
   // If |error| is not NULL, it will be filled with an error message if the
@@ -212,6 +229,9 @@ class ManagedUserService : public BrowserContextKeyedService,
 
   content::NotificationRegistrar registrar_;
   PrefChangeRegistrar pref_change_registrar_;
+
+  // True iff we're waiting for the Sync service to be initialized.
+  bool waiting_for_sync_initialization_;
 
   // Sets a profile in elevated state for testing if set to true.
   bool elevated_for_testing_;

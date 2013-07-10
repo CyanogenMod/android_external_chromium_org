@@ -6,6 +6,7 @@
 
 #include <set>
 
+#include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/rand_util.h"
@@ -146,6 +147,16 @@ int QuicStreamFactory::Job::DoResolveHostComplete(int rv) {
   if (rv != OK)
     return rv;
 
+  // TODO(rch): remove this code!
+  AddressList::iterator it = address_list_.begin();
+  while (it != address_list_.end()) {
+    if (it->GetFamily() == ADDRESS_FAMILY_IPV6) {
+      it = address_list_.erase(it);
+    } else {
+      it++;
+    }
+  }
+
   DCHECK(!factory_->HasActiveSession(host_port_proxy_pair_));
   io_state_ = STATE_CONNECT;
   return OK;
@@ -173,10 +184,13 @@ int QuicStreamRequest::Request(
   } else {
     factory_ = NULL;
   }
+  if (rv == OK)
+    DCHECK(stream_);
   return rv;
 }
 
 void QuicStreamRequest::set_stream(scoped_ptr<QuicHttpStream> stream) {
+  DCHECK(stream);
   stream_ = stream.Pass();
 }
 
@@ -251,17 +265,19 @@ int QuicStreamFactory::Create(const HostPortProxyPair& host_port_proxy_pair,
     return ERR_IO_PENDING;
   }
 
-  Job* job = new Job(this, host_resolver_, host_port_proxy_pair, net_log);
+  scoped_ptr<Job> job(
+      new Job(this, host_resolver_, host_port_proxy_pair, net_log));
   int rv = job->Run(base::Bind(&QuicStreamFactory::OnJobComplete,
-                               base::Unretained(this), job));
+                               base::Unretained(this), job.get()));
 
   if (rv == ERR_IO_PENDING) {
-    active_jobs_[host_port_proxy_pair] = job;
-    job_requests_map_[job].insert(request);
-    active_requests_[request] = job;
+    active_requests_[request] = job.get();
+    job_requests_map_[job.get()].insert(request);
+    active_jobs_[host_port_proxy_pair] = job.release();
   }
   if (rv == OK) {
     DCHECK(HasActiveSession(host_port_proxy_pair));
+    request->set_stream(CreateIfSessionExists(host_port_proxy_pair, net_log));
   }
   return rv;
 }
@@ -271,6 +287,7 @@ void QuicStreamFactory::OnJobComplete(Job* job, int rv) {
     // Create all the streams, but do not notify them yet.
     for (RequestSet::iterator it = job_requests_map_[job].begin();
          it != job_requests_map_[job].end() ; ++it) {
+      DCHECK(HasActiveSession(job->host_port_proxy_pair()));
       (*it)->set_stream(CreateIfSessionExists(job->host_port_proxy_pair(),
                                               (*it)->net_log()));
     }
@@ -297,6 +314,7 @@ scoped_ptr<QuicHttpStream> QuicStreamFactory::CreateIfSessionExists(
     const HostPortProxyPair& host_port_proxy_pair,
     const BoundNetLog& net_log) {
   if (!HasActiveSession(host_port_proxy_pair)) {
+    DLOG(INFO) << "No active session";
     return scoped_ptr<QuicHttpStream>();
   }
 
@@ -332,10 +350,14 @@ void QuicStreamFactory::CancelRequest(QuicStreamRequest* request) {
 
 void QuicStreamFactory::CloseAllSessions(int error) {
   while (!active_sessions_.empty()) {
+    size_t initial_size = active_sessions_.size();
     active_sessions_.begin()->second->CloseSessionOnError(error);
+    DCHECK_NE(initial_size, active_sessions_.size());
   }
   while (!all_sessions_.empty()) {
+    size_t initial_size = all_sessions_.size();
     (*all_sessions_.begin())->CloseSessionOnError(error);
+    DCHECK_NE(initial_size, all_sessions_.size());
   }
   DCHECK(all_sessions_.empty());
 }
@@ -373,6 +395,25 @@ QuicClientSession* QuicStreamFactory::CreateSession(
           DatagramSocket::DEFAULT_BIND, base::Bind(&base::RandInt),
           net_log.net_log(), net_log.source());
   socket->Connect(addr);
+
+  // We should adaptively set this buffer size, but for now, we'll use a size
+  // that is more than large enough for a 100 packet congestion window, and yet
+  // does not consume "too much" memory.  If we see bursty packet loss, we may
+  // revisit this setting and test for its impact.
+  const int32 kSocketBufferSize(kMaxPacketSize * 100);  // Support 100 packets.
+  socket->SetReceiveBufferSize(kSocketBufferSize);
+  // TODO(jar): What should the UDP send buffer be set to?  If the send buffer
+  // is too large, then we might(?) wastefully queue packets in the OS, when
+  // we'd rather construct packets just in time. We do however expect that the
+  // calculated send rate (paced, or ack clocked), will be well below the egress
+  // rate of the local machine, so that *shouldn't* be a problem.
+  // If the buffer setting is too small, then we will starve our outgoing link
+  // on a fast connection, because we won't respond fast enough to the many
+  // async callbacks to get data from us.  On the other hand, until we have real
+  // pacing support (beyond ack-clocked pacing), we get a bit of adhoc-pacing by
+  // requiring the application to refill this OS buffer (ensuring that we don't
+  // blast a pile of packets at the kernel's max egress rate).
+  // socket->SetSendBufferSize(????);
 
   QuicConnectionHelper* helper = new QuicConnectionHelper(
       base::MessageLoop::current()->message_loop_proxy().get(),

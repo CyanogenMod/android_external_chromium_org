@@ -11,8 +11,8 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/chromeos/login/screens/screen_observer.h"
 #include "chrome/browser/chromeos/login/screens/wizard_screen.h"
 #include "googleurl/src/gurl.h"
@@ -29,7 +29,6 @@ namespace chromeos {
 class EnrollmentScreen;
 class ErrorScreen;
 class EulaScreen;
-class FocusRingController;
 class KioskAutolaunchScreen;
 class KioskEnableScreen;
 class LocallyManagedUserCreationScreen;
@@ -308,10 +307,6 @@ class WizardController : public ScreenObserver {
   // Indicates that once image selection screen finishes we should return to
   // a previous screen instead of proceeding with usual flow.
   bool user_image_screen_return_to_previous_hack_;
-
-  // A focus ring controller to draw focus ring around view for keyboard
-  // driven oobe.
-  scoped_ptr<FocusRingController> focus_ring_controller_;
 
   FRIEND_TEST_ALL_PREFIXES(EnrollmentScreenTest, TestCancel);
   FRIEND_TEST_ALL_PREFIXES(WizardControllerFlowTest, Accelerators);

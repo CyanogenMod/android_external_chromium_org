@@ -11,8 +11,8 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
-#include "base/time.h"
-#include "googleurl/src/gurl.h"
+#include "base/time/time.h"
+#include "url/gurl.h"
 #include "webkit/browser/appcache/appcache_database.h"
 #include "webkit/browser/appcache/appcache_entry.h"
 #include "webkit/browser/appcache/manifest_parser.h"

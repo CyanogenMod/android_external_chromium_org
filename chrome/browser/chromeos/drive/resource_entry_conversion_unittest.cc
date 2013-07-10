@@ -17,7 +17,7 @@ namespace drive {
 
 TEST(ResourceEntryConversionTest, ConvertToResourceEntry_File) {
   scoped_ptr<base::Value> value =
-      google_apis::test_util::LoadJSONFile("chromeos/gdata/file_entry.json");
+      google_apis::test_util::LoadJSONFile("gdata/file_entry.json");
   ASSERT_TRUE(value.get());
 
   scoped_ptr<google_apis::ResourceEntry> gdata_resource_entry(
@@ -81,6 +81,8 @@ TEST(ResourceEntryConversionTest, ConvertToResourceEntry_File) {
             entry.file_specific_info().thumbnail_url());
   EXPECT_EQ("https://file_link_alternate/",
             entry.file_specific_info().alternate_url());
+  EXPECT_EQ("https://file_link_share/",
+            entry.file_specific_info().share_url());
 
   // Regular file specific fields.
   EXPECT_EQ(892721,  entry.file_info().size());
@@ -93,7 +95,7 @@ TEST(ResourceEntryConversionTest,
      ConvertToResourceEntry_HostedDocument) {
   scoped_ptr<base::Value> value =
       google_apis::test_util::LoadJSONFile(
-          "chromeos/gdata/hosted_document_entry.json");
+          "gdata/hosted_document_entry.json");
   ASSERT_TRUE(value.get());
 
   scoped_ptr<google_apis::ResourceEntry> gdata_resource_entry(
@@ -174,7 +176,7 @@ TEST(ResourceEntryConversionTest,
      ConvertToResourceEntry_Directory) {
   scoped_ptr<base::Value> value =
       google_apis::test_util::LoadJSONFile(
-          "chromeos/gdata/directory_entry.json");
+          "gdata/directory_entry.json");
   ASSERT_TRUE(value.get());
 
   scoped_ptr<google_apis::ResourceEntry> gdata_resource_entry(
@@ -245,7 +247,7 @@ TEST(ResourceEntryConversionTest,
      ConvertToResourceEntry_DeletedHostedDocument) {
   scoped_ptr<base::Value> value =
       google_apis::test_util::LoadJSONFile(
-          "chromeos/gdata/deleted_hosted_document_entry.json");
+          "gdata/deleted_hosted_document_entry.json");
   ASSERT_TRUE(value.get());
 
   scoped_ptr<google_apis::ResourceEntry> gdata_resource_entry(
@@ -315,6 +317,8 @@ TEST(ResourceEntryConversionTest,
             entry.file_specific_info().thumbnail_url());
   EXPECT_EQ("https://alternate/document%3Adeleted_in_root_id/edit",
             entry.file_specific_info().alternate_url());
+  EXPECT_EQ("",
+            entry.file_specific_info().share_url());
 
   // The size should be 0 for a hosted document.
   EXPECT_EQ(0,  entry.file_info().size());
@@ -323,7 +327,7 @@ TEST(ResourceEntryConversionTest,
 TEST(ResourceEntryConversionTest,
      ConvertToResourceEntry_SharedWithMeEntry) {
   scoped_ptr<base::Value> value = google_apis::test_util::LoadJSONFile(
-      "chromeos/gdata/shared_with_me_entry.json");
+      "gdata/shared_with_me_entry.json");
   ASSERT_TRUE(value.get());
 
   scoped_ptr<google_apis::ResourceEntry> gdata_resource_entry(

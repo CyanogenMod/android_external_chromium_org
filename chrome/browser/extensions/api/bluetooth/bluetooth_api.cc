@@ -15,7 +15,7 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/bluetooth.h"
-#include "chrome/common/extensions/permissions/bluetooth_device_permission.h"
+#include "chrome/common/extensions/permissions/bluetooth_permission.h"
 #include "chrome/common/extensions/permissions/permissions_data.h"
 #include "content/public/browser/browser_thread.h"
 #include "device/bluetooth/bluetooth_adapter.h"
@@ -47,10 +47,10 @@ const char kCouldNotGetLocalOutOfBandPairingData[] =
     "Could not get local Out Of Band Pairing Data";
 const char kCouldNotSetOutOfBandPairingData[] =
     "Could not set Out Of Band Pairing Data";
-const char kDevicePermissionDenied[] = "Permission to access device denied";
 const char kFailedToConnect[] = "Connection failed";
 const char kInvalidDevice[] = "Invalid device";
 const char kInvalidUuid[] = "Invalid UUID";
+const char kPermissionDenied[] = "Permission to add profile denied.";
 const char kPlatformNotSupported[] =
     "This operation is not supported on your platform";
 const char kProfileAlreadyRegistered[] =
@@ -123,6 +123,13 @@ bool BluetoothAddProfileFunction::RunImpl() {
 
   if (!BluetoothDevice::IsUUIDValid(params->profile.uuid)) {
     SetError(kInvalidUuid);
+    return false;
+  }
+
+  BluetoothPermission::CheckParam param(params->profile.uuid);
+  if (!PermissionsData::CheckAPIPermissionWithParam(
+          GetExtension(), APIPermission::kBluetooth, &param)) {
+    SetError(kPermissionDenied);
     return false;
   }
 
@@ -229,7 +236,7 @@ bool BluetoothGetProfilesFunction::DoWork(
 
   BluetoothDevice::ServiceList service_list = device->GetServices();
 
-  ListValue* profiles = new ListValue;
+  base::ListValue* profiles = new base::ListValue;
   for (BluetoothDevice::ServiceList::const_iterator iter = service_list.begin();
        iter != service_list.end();
        ++iter) {
@@ -348,7 +355,7 @@ bool BluetoothGetServicesFunction::DoWork(
     return false;
   }
 
-  ListValue* services = new ListValue;
+  base::ListValue* services = new base::ListValue;
   SetResult(services);
 
   device->GetServiceRecords(
@@ -374,14 +381,6 @@ bool BluetoothConnectFunction::DoWork(scoped_refptr<BluetoothAdapter> adapter) {
   scoped_ptr<Connect::Params> params(Connect::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get() != NULL);
   const bluetooth::ConnectOptions& options = params->options;
-
-  BluetoothDevicePermission::CheckParam param(options.device.address);
-  if (!PermissionsData::CheckAPIPermissionWithParam(
-          GetExtension(), APIPermission::kBluetoothDevice, &param)) {
-    SetError(kDevicePermissionDenied);
-    SendResponse(false);
-    return false;
-  }
 
   if (!BluetoothDevice::IsUUIDValid(options.profile.uuid)) {
     SetError(kInvalidUuid);
@@ -469,10 +468,10 @@ BluetoothWriteFunction::~BluetoothWriteFunction() {}
 bool BluetoothWriteFunction::Prepare() {
   // TODO(bryeung): update to new-style parameter passing when ArrayBuffer
   // support is added
-  DictionaryValue* options;
+  base::DictionaryValue* options;
   EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(0, &options));
 
-  DictionaryValue* socket;
+  base::DictionaryValue* socket;
   EXTENSION_FUNCTION_VALIDATE(options->GetDictionary("socket", &socket));
 
   int socket_id;
@@ -506,8 +505,8 @@ void BluetoothWriteFunction::Work() {
   success_ = socket_->Send(drainable_io_buffer.get());
   if (success_) {
     if (drainable_io_buffer->BytesConsumed() > 0)
-      SetResult(
-          Value::CreateIntegerValue(drainable_io_buffer->BytesConsumed()));
+      SetResult(base::Value::CreateIntegerValue(
+          drainable_io_buffer->BytesConsumed()));
     else
       results_.reset();
   } else {
@@ -532,7 +531,7 @@ bool BluetoothSetOutOfBandPairingDataFunction::DoWork(
     scoped_refptr<BluetoothAdapter> adapter) {
   // TODO(bryeung): update to new-style parameter passing when ArrayBuffer
   // support is added
-  DictionaryValue* options;
+  base::DictionaryValue* options;
   EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(0, &options));
   std::string address;
   EXTENSION_FUNCTION_VALIDATE(options->GetString("deviceAddress", &address));
@@ -545,7 +544,7 @@ bool BluetoothSetOutOfBandPairingDataFunction::DoWork(
   }
 
   if (options->HasKey("data")) {
-    DictionaryValue* data_in;
+    base::DictionaryValue* data_in;
     EXTENSION_FUNCTION_VALIDATE(options->GetDictionary("data", &data_in));
 
     device::BluetoothOutOfBandPairingData data_out;
@@ -593,7 +592,7 @@ void BluetoothGetLocalOutOfBandPairingDataFunction::ReadCallback(
 
   // TODO(bryeung): convert to bluetooth::OutOfBandPairingData
   // when ArrayBuffer support within objects is completed.
-  DictionaryValue* result = new DictionaryValue();
+  base::DictionaryValue* result = new base::DictionaryValue();
   result->Set("hash", hash);
   result->Set("randomizer", randomizer);
 

@@ -10,10 +10,15 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/process_util.h"
 #include "chrome/browser/ui/search/instant_loader.h"
 #include "chrome/browser/ui/search/instant_page.h"
 
 class Profile;
+
+namespace content {
+class RenderViewHost;
+}
 
 // InstantNTP is used to preload an Instant page that will be swapped in when a
 // user navigates to a New Tab Page (NTP). The InstantNTP contents are never
@@ -21,7 +26,8 @@ class Profile;
 class InstantNTP : public InstantPage,
                    public InstantLoader::Delegate {
  public:
-  InstantNTP(InstantPage::Delegate* delegate, const std::string& instant_url);
+  InstantNTP(InstantPage::Delegate* delegate, const std::string& instant_url,
+             bool is_incognito);
   virtual ~InstantNTP();
 
   // Creates a new WebContents and loads |instant_url_| into it. Uses
@@ -37,6 +43,12 @@ class InstantNTP : public InstantPage,
   scoped_ptr<content::WebContents> ReleaseContents();
 
  private:
+  // Overridden from content::WebContentsObserver:
+  virtual void RenderViewCreated(
+      content::RenderViewHost* render_view_host) OVERRIDE;
+  virtual void RenderViewGone(
+      base::TerminationStatus status) OVERRIDE;
+
   // Overriden from InstantLoader::Delegate:
   virtual void OnSwappedContents() OVERRIDE;
   virtual void OnFocus() OVERRIDE;
@@ -46,10 +58,6 @@ class InstantNTP : public InstantPage,
       content::WebContents* source,
       const content::OpenURLParams& params) OVERRIDE;
   virtual void LoadCompletedMainFrame() OVERRIDE;
-
-  // Overridden from InstantPage:
-  virtual bool ShouldProcessRenderViewCreated() OVERRIDE;
-  virtual bool ShouldProcessRenderViewGone() OVERRIDE;
 
   InstantLoader loader_;
 

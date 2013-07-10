@@ -14,6 +14,7 @@
 #include "media/crypto/aes_decryptor.h"
 #include "media/filters/chunk_demuxer.h"
 
+using testing::AnyNumber;
 using testing::AtMost;
 
 namespace media {
@@ -76,7 +77,7 @@ class FakeEncryptedMedia {
     }
 
     virtual void KeyMessage(const std::string& session_id,
-                            const std::string& message,
+                            const std::vector<uint8>& message,
                             const std::string& default_url) = 0;
 
     virtual void NeedKey(const std::string& session_id,
@@ -91,8 +92,6 @@ class FakeEncryptedMedia {
                    base::Bind(&FakeEncryptedMedia::KeyError,
                               base::Unretained(this)),
                    base::Bind(&FakeEncryptedMedia::KeyMessage,
-                              base::Unretained(this)),
-                   base::Bind(&FakeEncryptedMedia::NeedKey,
                               base::Unretained(this))),
         app_(app) {
   }
@@ -113,7 +112,7 @@ class FakeEncryptedMedia {
   }
 
   void KeyMessage(const std::string& session_id,
-                  const std::string& message,
+                  const std::vector<uint8>& message,
                   const std::string& default_url) {
     app_->KeyMessage(session_id, message, default_url);
   }
@@ -138,7 +137,7 @@ class KeyProvidingApp : public FakeEncryptedMedia::AppBase {
   }
 
   virtual void KeyMessage(const std::string& session_id,
-                          const std::string& message,
+                          const std::vector<uint8>& message,
                           const std::string& default_url) OVERRIDE {
     EXPECT_FALSE(session_id.empty());
     EXPECT_FALSE(message.empty());
@@ -185,7 +184,7 @@ class NoResponseApp : public FakeEncryptedMedia::AppBase {
   }
 
   virtual void KeyMessage(const std::string& session_id,
-                          const std::string& message,
+                          const std::vector<uint8>& message,
                           const std::string& default_url) OVERRIDE {
     EXPECT_FALSE(session_id.empty());
     EXPECT_FALSE(message.empty());
@@ -236,8 +235,8 @@ class MockMediaSource {
     need_key_cb_ = need_key_cb;
   }
 
-  void Seek(int new_position, int seek_append_size) {
-    chunk_demuxer_->StartWaitingForSeek();
+  void Seek(base::TimeDelta seek_time, int new_position, int seek_append_size) {
+    chunk_demuxer_->StartWaitingForSeek(seek_time);
 
     chunk_demuxer_->Abort(kSourceId);
 
@@ -383,7 +382,7 @@ class PipelineIntegrationTest
     if (!WaitUntilCurrentTimeIsAfter(start_seek_time))
       return false;
 
-    source.Seek(seek_file_position, seek_append_size);
+    source.Seek(seek_time, seek_file_position, seek_append_size);
     if (!Seek(seek_time))
       return false;
 
@@ -474,6 +473,7 @@ TEST_F(PipelineIntegrationTest,
 }
 
 TEST_F(PipelineIntegrationTest, BasicPlayback_MediaSource_VP8A_WebM) {
+  EXPECT_CALL(*this, OnSetOpaque(false)).Times(AnyNumber());
   MockMediaSource source("bear-vp8a.webm", kVideoOnlyWebM, kAppendWholeFile);
   StartPipelineWithMediaSource(&source);
   source.EndOfStream();
@@ -935,6 +935,7 @@ TEST_F(PipelineIntegrationTest, DISABLED_BasicPlayback_VP9_Opus_WebM) {
 
 // Verify that VP8 video with alpha channel can be played back.
 TEST_F(PipelineIntegrationTest, BasicPlayback_VP8A_WebM) {
+  EXPECT_CALL(*this, OnSetOpaque(false)).Times(AnyNumber());
   ASSERT_TRUE(Start(GetTestDataFilePath("bear-vp8a.webm"),
                     PIPELINE_OK));
   Play();

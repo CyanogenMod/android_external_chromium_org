@@ -14,8 +14,8 @@
 #include "base/logging.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
+#import "base/mac/scoped_nsobject.h"
 #include "base/mac/sdk_forward_declarations.h"
-#import "base/memory/scoped_nsobject.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
@@ -84,12 +84,19 @@ enum CoreAnimationStatus {
 };
 
 static CoreAnimationStatus GetCoreAnimationStatus() {
+  // TODO(sail) Remove this.
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kUseCoreAnimation))
+          switches::kUseCoreAnimation)) {
     return CORE_ANIMATION_DISABLED;
+  }
   if (CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-          switches::kUseCoreAnimation) == "lazy")
+          switches::kUseCoreAnimation) == "lazy") {
     return CORE_ANIMATION_ENABLED_LAZY;
+  }
+  if (CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          switches::kUseCoreAnimation) == "disabled") {
+    return CORE_ANIMATION_DISABLED;
+  }
   return CORE_ANIMATION_ENABLED_ALWAYS;
 }
 
@@ -440,7 +447,6 @@ void RenderWidgetHostViewMac::SetAllowOverlappingViews(bool overlapping) {
   if (GetCoreAnimationStatus() == CORE_ANIMATION_ENABLED_LAZY) {
     if (overlapping) {
       ScopedCAActionDisabler disabler;
-      [[[cocoa_view_ window] contentView] setWantsLayer:YES];
       EnableCoreAnimation();
       return;
     }
@@ -486,7 +492,7 @@ void RenderWidgetHostViewMac::EnableCoreAnimation() {
 
 bool RenderWidgetHostViewMac::CreateCompositedIOSurfaceAndLayer() {
   if (compositing_iosurface_layer_ &&
-      [compositing_iosurface_layer_ context] &&
+      [compositing_iosurface_layer_ context].get() &&
       compositing_iosurface_) {
     return true;
   }
@@ -1097,7 +1103,7 @@ void RenderWidgetHostViewMac::CopyFromCompositingSurfaceToVideoFrame(
       !compositing_iosurface_->HasIOSurface())
     return;
 
-  if (!target) {
+  if (!target.get()) {
     NOTREACHED();
     return;
   }
@@ -1231,8 +1237,6 @@ bool RenderWidgetHostViewMac::CompositorSwapBuffers(
     return true;
   }
 
-  bool should_post_notification = false;
-
   if (use_core_animation_) {
     if (!CreateCompositedIOSurfaceAndLayer()) {
       LOG(ERROR) << "Failed to create CompositingIOSurface or its layer";
@@ -1248,7 +1252,6 @@ bool RenderWidgetHostViewMac::CompositorSwapBuffers(
       return false;
     }
   }
-  should_post_notification = true;
 
   if (!compositing_iosurface_->SetIOSurface(
           surface_handle, size, surface_scale_factor, latency_info)) {
@@ -1278,11 +1281,6 @@ bool RenderWidgetHostViewMac::CompositorSwapBuffers(
         return false;
       }
     }
-  }
-
-  if (should_post_notification && [[cocoa_view_ delegate]
-          respondsToSelector:@selector(compositingIOSurfaceCreated)]) {
-    [[cocoa_view_ delegate] compositingIOSurfaceCreated];
   }
 
   return true;
@@ -1348,8 +1346,15 @@ void RenderWidgetHostViewMac::ThrottledAckPendingSwapBuffers() {
 void RenderWidgetHostViewMac::GotAcceleratedCompositingError() {
   AckPendingSwapBuffers();
   DestroyCompositedIOSurfaceAndLayer();
-  // TODO(ccameron): force the renderer to recreate its output surface, and
-  // potentially fall back to software mode.
+  // The existing GL contexts may be in a bad state, so don't re-use any of the
+  // existing ones anymore, rather, allocate new ones.
+  CompositingIOSurfaceContext::MarkExistingContextsAsNotShareable();
+  // Request that a new frame be generated.
+  if (render_widget_host_)
+    render_widget_host_->ScheduleComposite();
+  // TODO(ccameron): It may be a good idea to request that the renderer recreate
+  // its GL context as well, and fall back to software if this happens
+  // repeatedly.
 }
 
 void RenderWidgetHostViewMac::GetVSyncParameters(
@@ -2137,7 +2142,7 @@ void RenderWidgetHostViewMac::FrameSwapped() {
     return;
   }
 
-  scoped_nsobject<RenderWidgetHostViewCocoa> keepSelfAlive([self retain]);
+  base::scoped_nsobject<RenderWidgetHostViewCocoa> keepSelfAlive([self retain]);
 
   // Records the current marked text state, so that we can know if the marked
   // text was deleted or not after handling the key down event.
@@ -2462,6 +2467,8 @@ void RenderWidgetHostViewMac::FrameSwapped() {
 }
 
 - (void)setFrameSize:(NSSize)newSize {
+  TRACE_EVENT0("browser", "RenderWidgetHostViewCocoa::setFrameSize");
+
   // NB: -[NSView setFrame:] calls through -setFrameSize:, so overriding
   // -setFrame: isn't neccessary.
   [super setFrameSize:newSize];
@@ -2469,6 +2476,13 @@ void RenderWidgetHostViewMac::FrameSwapped() {
     renderWidgetHostView_->render_widget_host_->SendScreenRects();
     renderWidgetHostView_->render_widget_host_->WasResized();
   }
+
+  // This call is necessary to make the window wait for a new frame at the new
+  // size to be available before the resize completes. Calling only
+  // setLayerContentsRedrawPolicy:NSViewLayerContentsRedrawOnSetNeedsDisplay on
+  // this is not sufficient.
+  [renderWidgetHostView_->software_layer_ setNeedsDisplay];
+  [renderWidgetHostView_->compositing_iosurface_layer_ setNeedsDisplay];
 }
 
 - (void)callSetNeedsDisplayInRect {
@@ -2535,7 +2549,7 @@ void RenderWidgetHostViewMac::FrameSwapped() {
 
 - (void)drawRect:(NSRect)dirtyRect {
   TRACE_EVENT0("browser", "RenderWidgetHostViewCocoa::drawRect");
-  DCHECK(!renderWidgetHostView_->use_core_animation_);
+  CHECK(!renderWidgetHostView_->use_core_animation_);
 
   if (!renderWidgetHostView_->render_widget_host_) {
     // TODO(shess): Consider using something more noticable?
@@ -2559,6 +2573,8 @@ void RenderWidgetHostViewMac::FrameSwapped() {
   if (renderWidgetHostView_->last_frame_was_accelerated_ &&
       renderWidgetHostView_->compositing_iosurface_) {
     if (renderWidgetHostView_->allow_overlapping_views_) {
+      CHECK_EQ(CORE_ANIMATION_DISABLED, GetCoreAnimationStatus());
+
       // If overlapping views need to be allowed, punch a hole in the window
       // to expose the GL underlay.
       TRACE_EVENT2("gpu", "NSRectFill clear", "w", damagedRect.width(),
@@ -2616,7 +2632,7 @@ void RenderWidgetHostViewMac::FrameSwapped() {
         // if we haven't created a layer yet, draw the cached bitmap into
         // the window.  The CGLayer will be created the next time the renderer
         // paints.
-        base::mac::ScopedCFTypeRef<CGImageRef> image(
+        base::ScopedCFTypeRef<CGImageRef> image(
             CGBitmapContextCreateImage(backingStore->cg_bitmap()));
         CGRect imageRect = bitmapRect.ToCGRect();
         imageRect.origin.y = yOffset;
@@ -3646,6 +3662,8 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
 // Delegate methods for the software CALayer
 - (void)drawLayer:(CALayer*)layer
         inContext:(CGContextRef)context {
+  TRACE_EVENT0("browser", "CompositingIOSurfaceLayer::drawLayer");
+
   DCHECK(renderWidgetHostView_->use_core_animation_);
   DCHECK([layer isEqual:renderWidgetHostView_->software_layer_]);
 
@@ -3692,8 +3710,8 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
   const std::string& str = renderWidgetHostView_->selected_text();
   if (![types containsObject:NSStringPboardType] || str.empty()) return NO;
 
-  scoped_nsobject<NSString> text([[NSString alloc]
-                                   initWithUTF8String:str.c_str()]);
+  base::scoped_nsobject<NSString> text(
+      [[NSString alloc] initWithUTF8String:str.c_str()]);
   NSArray* toDeclare = [NSArray arrayWithObject:NSStringPboardType];
   [pboard declareTypes:toDeclare owner:nil];
   return [pboard setString:text forType:NSStringPboardType];

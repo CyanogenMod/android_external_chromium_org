@@ -528,8 +528,7 @@
           'installer/linux/debian/changelog.template',
           'installer/linux/debian/control.template',
           'installer/linux/debian/debian.menu',
-          'installer/linux/debian/expected_deps_ia32',
-          'installer/linux/debian/expected_deps_x64',
+          'installer/linux/debian/expected_deps',
           'installer/linux/debian/postinst',
           'installer/linux/debian/postrm',
           'installer/linux/debian/prerm',
@@ -782,7 +781,7 @@
                 '<@(packaging_files_deb)',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-r<(revision)_<(deb_arch).deb',
+                '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-1_<(deb_arch).deb',
               ],
               'action': [ '<@(deb_cmd)', '-c', '<(channel)', ],
             },
@@ -810,7 +809,7 @@
                 '<@(packaging_files_deb)',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-r<(revision)_<(deb_arch).deb',
+                '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-1_<(deb_arch).deb',
               ],
               'action': [ '<@(deb_cmd)', '-c', '<(channel)', ],
             },
@@ -838,7 +837,7 @@
                 '<@(packaging_files_deb)',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-r<(revision)_<(deb_arch).deb',
+                '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-1_<(deb_arch).deb',
               ],
               'action': [ '<@(deb_cmd)', '-c', '<(channel)', ],
             },
@@ -866,7 +865,7 @@
                 '<@(packaging_files_deb)',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-r<(revision)_<(deb_arch).deb',
+                '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-1_<(deb_arch).deb',
               ],
               'action': [ '<@(deb_cmd)', '-c', '<(channel)', ],
             },
@@ -894,7 +893,7 @@
                 '<@(packaging_files_deb)',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-r<(revision)_<(deb_arch).deb',
+                '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-1_<(deb_arch).deb',
               ],
               'action': [ '<@(deb_cmd)', '-c', '<(channel)', ],
             },
@@ -923,7 +922,7 @@
                 '<@(packaging_files_rpm)',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)/google-chrome-<(channel)-<(version)-<(revision).<(rpm_arch).rpm',
+                '<(PRODUCT_DIR)/google-chrome-<(channel)-<(version)-1.<(rpm_arch).rpm',
               ],
               'action': [ '<@(rpm_cmd)', '-c', '<(channel)', ],
             },
@@ -952,7 +951,7 @@
                 '<@(packaging_files_rpm)',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)/google-chrome-<(channel)-<(version)-<(revision).<(rpm_arch).rpm',
+                '<(PRODUCT_DIR)/google-chrome-<(channel)-<(version)-1.<(rpm_arch).rpm',
               ],
               'action': [ '<@(rpm_cmd)', '-c', '<(channel)', ],
             },
@@ -981,7 +980,7 @@
                 '<@(packaging_files_rpm)',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)/google-chrome-<(channel)-<(version)-<(revision).<(rpm_arch).rpm',
+                '<(PRODUCT_DIR)/google-chrome-<(channel)-<(version)-1.<(rpm_arch).rpm',
               ],
               'action': [ '<@(rpm_cmd)', '-c', '<(channel)', ],
             },
@@ -1010,7 +1009,7 @@
                 '<@(packaging_files_rpm)',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)/google-chrome-<(channel)-<(version)-<(revision).<(rpm_arch).rpm',
+                '<(PRODUCT_DIR)/google-chrome-<(channel)-<(version)-1.<(rpm_arch).rpm',
               ],
               'action': [ '<@(rpm_cmd)', '-c', '<(channel)', ],
             },
@@ -1039,7 +1038,7 @@
                 '<@(packaging_files_rpm)',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)/google-chrome-<(channel)-<(version)-<(revision).<(rpm_arch).rpm',
+                '<(PRODUCT_DIR)/google-chrome-<(channel)-<(version)-1.<(rpm_arch).rpm',
               ],
               'action': [ '<@(rpm_cmd)', '-c', '<(channel)', ],
             },

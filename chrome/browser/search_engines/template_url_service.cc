@@ -18,7 +18,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_service.h"
@@ -410,7 +410,7 @@ bool TemplateURLService::CanReplaceKeyword(
 void TemplateURLService::FindMatchingKeywords(
     const string16& prefix,
     bool support_replacement_only,
-    std::vector<string16>* matches) const {
+    TemplateURLVector* matches) const {
   // Sanity check args.
   if (prefix.empty())
     return;
@@ -434,7 +434,7 @@ void TemplateURLService::FindMatchingKeywords(
   for (KeywordToTemplateMap::const_iterator i(match_range.first);
        i != match_range.second; ++i) {
     if (!support_replacement_only || i->second->url_ref().SupportsReplacement())
-      matches->push_back(i->first);
+      matches->push_back(i->second);
   }
 }
 
@@ -890,8 +890,10 @@ syncer::SyncError TemplateURLService::ProcessSyncChanges(
     const tracked_objects::Location& from_here,
     const syncer::SyncChangeList& change_list) {
   if (!models_associated_) {
-    syncer::SyncError error(FROM_HERE, "Models not yet associated.",
-                    syncer::SEARCH_ENGINES);
+    syncer::SyncError error(FROM_HERE,
+                            syncer::SyncError::DATATYPE_ERROR,
+                            "Models not yet associated.",
+                            syncer::SEARCH_ENGINES);
     return error;
   }
   DCHECK(loaded_);
@@ -1391,7 +1393,12 @@ void TemplateURLService::Init(const Initializer* initializers,
       data.short_name = UTF8ToUTF16(initializers[i].content);
       data.SetKeyword(UTF8ToUTF16(initializers[i].keyword));
       data.SetURL(osd_url);
-      AddNoNotify(new TemplateURL(profile_, data), true);
+      TemplateURL* template_url = new TemplateURL(profile_, data);
+      AddNoNotify(template_url, true);
+
+      // Set the first provided identifier to be the default.
+      if (i == 0)
+        SetDefaultSearchProviderNoNotify(template_url);
     }
   }
 

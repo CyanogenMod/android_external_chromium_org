@@ -18,9 +18,9 @@ $(gyp_shared_intermediate_dir)/autofill_regex_constants.cc: gyp_local_path := $(
 $(gyp_shared_intermediate_dir)/autofill_regex_constants.cc: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/autofill_regex_constants.cc: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/autofill_regex_constants.cc: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
-$(gyp_shared_intermediate_dir)/autofill_regex_constants.cc: $(LOCAL_PATH)/build/escape_unicode.py $(LOCAL_PATH)/components/autofill/browser/autofill_regex_constants.cc.utf8 $(GYP_TARGET_DEPENDENCIES)
+$(gyp_shared_intermediate_dir)/autofill_regex_constants.cc: $(LOCAL_PATH)/build/escape_unicode.py $(LOCAL_PATH)/components/autofill/core/browser/autofill_regex_constants.cc.utf8 $(GYP_TARGET_DEPENDENCIES)
 	@echo "Gyp action: components_components_gyp_autofill_regexes_target_autofill_regexes ($@)"
-	$(hide)cd $(gyp_local_path)/components; mkdir -p $(gyp_shared_intermediate_dir); python ../build/escape_unicode.py -o "$(gyp_shared_intermediate_dir)" autofill/browser/autofill_regex_constants.cc.utf8
+	$(hide)cd $(gyp_local_path)/components; mkdir -p $(gyp_shared_intermediate_dir); python ../build/escape_unicode.py -o "$(gyp_shared_intermediate_dir)" autofill/core/browser/autofill_regex_constants.cc.utf8
 
 
 

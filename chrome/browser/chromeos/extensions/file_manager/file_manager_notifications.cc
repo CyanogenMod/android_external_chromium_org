@@ -7,19 +7,14 @@
 #include "base/bind.h"
 #include "base/message_loop.h"
 #include "base/stl_util.h"
-#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/notification_delegate.h"
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/webui/web_ui_util.h"
 
 namespace {
 
@@ -248,29 +243,32 @@ void FileManagerNotifications::ManageNotificationsOnMountCompleted(
   if (it->second.fail_message_finalized)
     return;
 
-  int notification_message_id = 0;
-
   // Do we have a multi-partition device for which at least one mount failed.
   bool fail_on_multipartition_device =
       success ? it->second.non_parent_device_failed
               : it->second.mount_success_exists ||
                 it->second.non_parent_device_failed;
 
+  base::string16 message;
   if (fail_on_multipartition_device) {
     it->second.fail_message_finalized = true;
-    notification_message_id =
-        label.empty() ? IDS_MULTIPART_DEVICE_UNSUPPORTED_DEFAULT_MESSAGE
-                      : IDS_MULTIPART_DEVICE_UNSUPPORTED_MESSAGE;
+    message = label.empty() ?
+        l10n_util::GetStringUTF16(
+            IDS_MULTIPART_DEVICE_UNSUPPORTED_DEFAULT_MESSAGE) :
+        l10n_util::GetStringFUTF16(
+            IDS_MULTIPART_DEVICE_UNSUPPORTED_MESSAGE, UTF8ToUTF16(label));
   } else if (!success) {
     // First device failed.
     if (!is_unsupported) {
-      notification_message_id =
-          label.empty() ? IDS_DEVICE_UNKNOWN_DEFAULT_MESSAGE
-                        : IDS_DEVICE_UNKNOWN_MESSAGE;
+      message = label.empty() ?
+          l10n_util::GetStringUTF16(IDS_DEVICE_UNKNOWN_DEFAULT_MESSAGE) :
+          l10n_util::GetStringFUTF16(IDS_DEVICE_UNKNOWN_MESSAGE,
+                                     UTF8ToUTF16(label));
     } else {
-      notification_message_id =
-          label.empty() ? IDS_DEVICE_UNSUPPORTED_DEFAULT_MESSAGE
-                        : IDS_DEVICE_UNSUPPORTED_MESSAGE;
+      message = label.empty() ?
+          l10n_util::GetStringUTF16(IDS_DEVICE_UNSUPPORTED_DEFAULT_MESSAGE) :
+          l10n_util::GetStringFUTF16(IDS_DEVICE_UNSUPPORTED_MESSAGE,
+                                     UTF8ToUTF16(label));
     }
   }
 
@@ -280,7 +278,7 @@ void FileManagerNotifications::ManageNotificationsOnMountCompleted(
     it->second.non_parent_device_failed |= !is_parent;
   }
 
-  if (notification_message_id == 0)
+  if (message.empty())
     return;
 
   if (it->second.fail_notification_shown) {
@@ -289,14 +287,7 @@ void FileManagerNotifications::ManageNotificationsOnMountCompleted(
     it->second.fail_notification_shown = true;
   }
 
-  if (!label.empty()) {
-    ShowNotificationWithMessage(DEVICE_FAIL, system_path,
-        l10n_util::GetStringFUTF16(notification_message_id,
-                                   ASCIIToUTF16(label)));
-  } else {
-    ShowNotificationWithMessage(DEVICE_FAIL, system_path,
-        l10n_util::GetStringUTF16(notification_message_id));
-  }
+  ShowNotificationWithMessage(DEVICE_FAIL, system_path, message);
 }
 
 void FileManagerNotifications::ShowNotification(NotificationType type,

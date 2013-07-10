@@ -29,6 +29,7 @@ namespace cc {
 
 class CompositorFrame;
 class CompositorFrameAck;
+struct ManagedMemoryPolicy;
 class OutputSurfaceClient;
 class OutputSurfaceCallbacks;
 
@@ -154,6 +155,7 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
   scoped_ptr<FrameRateController> frame_rate_controller_;
   int max_frames_pending_;
   int pending_swap_buffers_;
+  bool needs_begin_frame_;
   bool begin_frame_pending_;
 
   // Forwarded to OutputSurfaceClient but threaded through OutputSurface
@@ -167,11 +169,26 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
   void SetExternalDrawConstraints(const gfx::Transform& transform,
                                   gfx::Rect viewport);
 
+  // virtual for testing.
+  virtual base::TimeDelta RetroactiveBeginFramePeriod();
+  virtual void PostCheckForRetroactiveBeginFrame();
+  void CheckForRetroactiveBeginFrame();
+
  private:
   OutputSurfaceClient* client_;
   friend class OutputSurfaceCallbacks;
 
   void SetContext3D(scoped_ptr<WebKit::WebGraphicsContext3D> context3d);
+  void SetMemoryPolicy(const ManagedMemoryPolicy& policy,
+                       bool discard_backbuffer_when_not_visible);
+
+  // This stores a BeginFrame that we couldn't process immediately, but might
+  // process retroactively in the near future.
+  BeginFrameArgs skipped_begin_frame_args_;
+
+  // check_for_retroactive_begin_frame_pending_ is used to avoid posting
+  // redundant checks for a retroactive BeginFrame.
+  bool check_for_retroactive_begin_frame_pending_;
 
   DISALLOW_COPY_AND_ASSIGN(OutputSurface);
 };

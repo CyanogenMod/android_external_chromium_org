@@ -5,12 +5,12 @@
 #include "chrome/browser/download/download_status_updater.h"
 
 #include "base/mac/foundation_util.h"
-#include "base/memory/scoped_nsobject.h"
-#include "base/supports_user_data.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/strings/sys_string_conversions.h"
-#include "content/public/browser/download_item.h"
+#include "base/supports_user_data.h"
 #import "chrome/browser/ui/cocoa/dock_icon.h"
-#include "googleurl/src/gurl.h"
+#include "content/public/browser/download_item.h"
+#include "url/gurl.h"
 
 // --- Private 10.8 API for showing progress ---
 // rdar://12058866 http://www.openradar.me/12058866
@@ -19,6 +19,11 @@ namespace {
 
 NSString* const kNSProgressAppBundleIdentifierKey =
     @"NSProgressAppBundleIdentifierKey";
+NSString* const kNSProgressEstimatedTimeRemainingKey =
+    @"NSProgressEstimatedTimeRemainingKey";
+
+// NSProgressEstimatedTimeKey is 10.8 SPI only; it became
+// NSProgressEstimatedTimeRemainingKey when NSProgress became API in 10.9.
 NSString* const kNSProgressEstimatedTimeKey =
     @"NSProgressEstimatedTimeKey";
 NSString* const kNSProgressFileCompletedCountKey =
@@ -67,8 +72,19 @@ NSString* ProgressString(NSString* string) {
   NSString* result = [cache objectForKey:string];
   if (!result) {
     NSString** ref = static_cast<NSString**>(
-        CFBundleGetDataPointerForName(foundation,
-                                      base::mac::NSToCFCast(string)));
+        CFBundleGetDataPointerForName(
+            foundation, base::mac::NSToCFCast(string)));
+    if (ref) {
+      result = *ref;
+      [cache setObject:result forKey:string];
+    }
+  }
+
+  if (!result && string == kNSProgressEstimatedTimeRemainingKey) {
+    // Perhaps this is 10.8; try the old name of this key.
+    NSString** ref = static_cast<NSString**>(
+        CFBundleGetDataPointerForName(
+            foundation, base::mac::NSToCFCast(kNSProgressEstimatedTimeKey)));
     if (ref) {
       result = *ref;
       [cache setObject:result forKey:string];
@@ -169,7 +185,7 @@ class CrNSProgressUserData : public base::SupportsUserData::Data {
   void setTarget(const base::FilePath& target) { target_ = target; }
 
  private:
-  scoped_nsobject<NSProgress> progress_;
+  base::scoped_nsobject<NSProgress> progress_;
   base::FilePath target_;
 };
 
@@ -236,6 +252,15 @@ void UpdateNSProgress(content::DownloadItem* download,
   NSProgress* progress = progress_data->progress();
   progress.totalUnitCount = download->GetTotalBytes();
   progress.completedUnitCount = download->GetReceivedBytes();
+  [progress setUserInfoObject:@(download->CurrentSpeed())
+                       forKey:ProgressString(kNSProgressThroughputKey)];
+
+  base::TimeDelta time_remaining;
+  NSNumber* time_remaining_ns = nil;
+  if (download->TimeRemaining(&time_remaining))
+    time_remaining_ns = @(time_remaining.InSeconds());
+  [progress setUserInfoObject:time_remaining_ns
+                   forKey:ProgressString(kNSProgressEstimatedTimeRemainingKey)];
 
   base::FilePath download_path = download->GetFullPath();
   if (progress_data->target() != download_path) {

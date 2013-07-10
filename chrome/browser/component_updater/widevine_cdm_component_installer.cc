@@ -195,6 +195,9 @@ class WidevineCdmComponentInstaller : public ComponentInstaller {
   virtual bool Install(const base::DictionaryValue& manifest,
                        const base::FilePath& unpack_path) OVERRIDE;
 
+  virtual bool GetInstalledFile(const std::string& file,
+                                base::FilePath* installed_file) OVERRIDE;
+
  private:
   base::Version current_version_;
 };
@@ -231,7 +234,7 @@ bool WidevineCdmComponentInstaller::Install(
       GetWidevineCdmBaseDirectory().AppendASCII(version.GetString());
   if (file_util::PathExists(install_path))
     return false;
-  if (!file_util::Move(unpack_path, install_path))
+  if (!base::Move(unpack_path, install_path))
     return false;
 
   base::FilePath adapter_install_path =
@@ -243,6 +246,21 @@ bool WidevineCdmComponentInstaller::Install(
   current_version_ = version;
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, base::Bind(
       &RegisterWidevineCdmWithChrome, adapter_install_path, version));
+  return true;
+}
+
+bool WidevineCdmComponentInstaller::GetInstalledFile(
+    const std::string& file, base::FilePath* installed_file) {
+  // Only the CDM is component-updated.
+  if (file != kWidevineCdmFileName)
+    return false;
+
+  if (current_version_.Equals(base::Version(kNullVersion)))
+    return false;  // No CDM has been installed yet.
+
+  *installed_file =
+      GetWidevineCdmBaseDirectory().AppendASCII(current_version_.GetString())
+          .AppendASCII(kWidevineCdmFileName);
   return true;
 }
 
@@ -284,7 +302,7 @@ void StartWidevineCdmUpdateRegistration(ComponentUpdateService* cus) {
           BrowserThread::UI, FROM_HERE,
           base::Bind(&RegisterWidevineCdmWithChrome, adapter_path, version));
     } else {
-      file_util::Delete(latest_dir, true);
+      base::Delete(latest_dir, true);
       version = base::Version(kNullVersion);
     }
   }
@@ -296,7 +314,7 @@ void StartWidevineCdmUpdateRegistration(ComponentUpdateService* cus) {
   // Remove older versions of Widevine CDM.
   for (std::vector<base::FilePath>::iterator iter = older_dirs.begin();
        iter != older_dirs.end(); ++iter) {
-    file_util::Delete(*iter, true);
+    base::Delete(*iter, true);
   }
 }
 

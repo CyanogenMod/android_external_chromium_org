@@ -42,8 +42,8 @@
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 #include "chrome/browser/ui/zoom/zoom_controller.h"
 #include "chrome/common/chrome_switches.h"
-#include "components/autofill/browser/autofill_manager.h"
 #include "components/autofill/content/browser/autofill_driver_impl.h"
+#include "components/autofill/core/browser/autofill_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/view_type_utils.h"
@@ -109,15 +109,11 @@ void BrowserTabContents::AttachTabHelpers(WebContents* web_contents) {
 
   AlternateErrorPageTabObserver::CreateForWebContents(web_contents);
   TabAutofillManagerDelegate::CreateForWebContents(web_contents);
-  bool native_autofill_ui_enabled =
-      !CommandLine::ForCurrentProcess()->HasSwitch(
-           switches::kDisableNativeAutofillUi);
   AutofillDriverImpl::CreateForWebContentsAndDelegate(
       web_contents,
       TabAutofillManagerDelegate::FromWebContents(web_contents),
       g_browser_process->GetApplicationLocale(),
-      AutofillManager::ENABLE_AUTOFILL_DOWNLOAD_MANAGER,
-      native_autofill_ui_enabled);
+      AutofillManager::ENABLE_AUTOFILL_DOWNLOAD_MANAGER);
   BlockedContentTabHelper::CreateForWebContents(web_contents);
   BookmarkTabHelper::CreateForWebContents(web_contents);
   chrome_browser_net::LoadTimeStatsTabHelper::CreateForWebContents(

@@ -9,6 +9,7 @@
 #include "base/metrics/statistics_recorder.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/search/search.h"
+#include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -80,17 +81,14 @@ TEST(EmbeddedSearchFieldTrialTest, GetFieldTrialInfo) {
   EXPECT_EQ(ZERO, flags.size());
 }
 
-class InstantExtendedAPIEnabledTest : public BrowserWithTestWindowTest {
+class InstantExtendedAPIEnabledTest : public testing::Test {
  public:
   InstantExtendedAPIEnabledTest() : histogram_(NULL) {
   }
  protected:
-  virtual void SetUp() OVERRIDE {
-    BrowserWithTestWindowTest::SetUp();
-
+  virtual void SetUp() {
     field_trial_list_.reset(new base::FieldTrialList(
         new metrics::SHA1EntropyProvider("42")));
-
     base::StatisticsRecorder::Initialize();
     ResetInstantExtendedOptInStateGateForTest();
     previous_metrics_count_.resize(INSTANT_EXTENDED_OPT_IN_STATE_ENUM_COUNT, 0);
@@ -144,133 +142,29 @@ class InstantExtendedAPIEnabledTest : public BrowserWithTestWindowTest {
 TEST_F(InstantExtendedAPIEnabledTest, EnabledViaCommandLineFlag) {
   GetCommandLine()->AppendSwitch(switches::kEnableInstantExtendedAPI);
   EXPECT_TRUE(IsInstantExtendedAPIEnabled());
-  EXPECT_FALSE(IsLocalOnlyInstantExtendedAPIEnabled());
 #if defined(OS_IOS) || defined(OS_ANDROID)
-  EXPECT_EQ(1ul, EmbeddedSearchPageVersion(profile()));
+  EXPECT_EQ(1ul, EmbeddedSearchPageVersion());
 #else
-  EXPECT_EQ(2ul, EmbeddedSearchPageVersion(profile()));
+  EXPECT_EQ(2ul, EmbeddedSearchPageVersion());
 #endif
   ValidateMetrics(INSTANT_EXTENDED_OPT_IN);
 }
 
 TEST_F(InstantExtendedAPIEnabledTest, EnabledViaFinchFlag) {
-  ASSERT_TRUE(base::FieldTrialList::CreateTrialsFromString(
-      "InstantExtended/Group1 espv:42/"));
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("InstantExtended",
+                                                     "Group1 espv:42"));
   EXPECT_TRUE(IsInstantExtendedAPIEnabled());
-  EXPECT_FALSE(IsLocalOnlyInstantExtendedAPIEnabled());
-  EXPECT_EQ(42ul, EmbeddedSearchPageVersion(profile()));
+  EXPECT_EQ(42ul, EmbeddedSearchPageVersion());
   ValidateMetrics(INSTANT_EXTENDED_NOT_SET);
 }
 
 TEST_F(InstantExtendedAPIEnabledTest, DisabledViaCommandLineFlag) {
   GetCommandLine()->AppendSwitch(switches::kDisableInstantExtendedAPI);
-  ASSERT_TRUE(base::FieldTrialList::CreateTrialsFromString(
-      "InstantExtended/Group1 espv:2/"));
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("InstantExtended",
+                                                     "Group1 espv:2"));
   EXPECT_FALSE(IsInstantExtendedAPIEnabled());
-  EXPECT_FALSE(IsLocalOnlyInstantExtendedAPIEnabled());
-  EXPECT_EQ(0ul, EmbeddedSearchPageVersion(profile()));
+  EXPECT_EQ(0ul, EmbeddedSearchPageVersion());
   ValidateMetrics(INSTANT_EXTENDED_OPT_OUT);
-}
-
-TEST_F(InstantExtendedAPIEnabledTest, LocalOnlyEnabledViaCommandLineFlag) {
-  GetCommandLine()->AppendSwitch(switches::kEnableLocalOnlyInstantExtendedAPI);
-  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
-  EXPECT_TRUE(IsLocalOnlyInstantExtendedAPIEnabled());
-  EXPECT_EQ(0ul, EmbeddedSearchPageVersion(profile()));
-  ValidateMetrics(INSTANT_EXTENDED_OPT_IN_LOCAL);
-}
-
-TEST_F(InstantExtendedAPIEnabledTest, LocalOnlyEnabledViaFinch) {
-  ASSERT_TRUE(base::FieldTrialList::CreateTrialsFromString(
-      "InstantExtended/Group1 local_only:1/"));
-  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
-  EXPECT_TRUE(IsLocalOnlyInstantExtendedAPIEnabled());
-  EXPECT_EQ(0ul, EmbeddedSearchPageVersion(profile()));
-  ValidateMetrics(INSTANT_EXTENDED_NOT_SET);
-}
-
-TEST_F(InstantExtendedAPIEnabledTest, BothLocalAndRegularOptOutCommandLine) {
-  GetCommandLine()->AppendSwitch(switches::kDisableLocalOnlyInstantExtendedAPI);
-  GetCommandLine()->AppendSwitch(switches::kDisableInstantExtendedAPI);
-  EXPECT_FALSE(IsInstantExtendedAPIEnabled());
-  EXPECT_FALSE(IsLocalOnlyInstantExtendedAPIEnabled());
-  ValidateMetrics(INSTANT_EXTENDED_OPT_OUT_BOTH);
-}
-
-TEST_F(InstantExtendedAPIEnabledTest, BothLocalAndRegularOptInCommandLine) {
-  GetCommandLine()->AppendSwitch(switches::kEnableLocalOnlyInstantExtendedAPI);
-  GetCommandLine()->AppendSwitch(switches::kEnableInstantExtendedAPI);
-  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
-  EXPECT_TRUE(IsLocalOnlyInstantExtendedAPIEnabled());
-  ValidateMetrics(INSTANT_EXTENDED_OPT_IN_LOCAL);
-}
-
-TEST_F(InstantExtendedAPIEnabledTest,
-       LocalOnlyCommandLineTrumpedByCommandLine) {
-  GetCommandLine()->AppendSwitch(switches::kEnableLocalOnlyInstantExtendedAPI);
-  GetCommandLine()->AppendSwitch(switches::kDisableInstantExtendedAPI);
-  EXPECT_FALSE(IsInstantExtendedAPIEnabled());
-  EXPECT_FALSE(IsLocalOnlyInstantExtendedAPIEnabled());
-  EXPECT_EQ(0ul, EmbeddedSearchPageVersion(profile()));
-  ValidateMetrics(INSTANT_EXTENDED_OPT_OUT);
-}
-
-TEST_F(InstantExtendedAPIEnabledTest, LocalOnlyCommandLineTrumpsFinch) {
-  GetCommandLine()->AppendSwitch(switches::kEnableLocalOnlyInstantExtendedAPI);
-  ASSERT_TRUE(base::FieldTrialList::CreateTrialsFromString(
-      "InstantExtended/Group1 espv:2/"));
-  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
-  EXPECT_TRUE(IsLocalOnlyInstantExtendedAPIEnabled());
-  EXPECT_EQ(0ul, EmbeddedSearchPageVersion(profile()));
-  ValidateMetrics(INSTANT_EXTENDED_OPT_IN_LOCAL);
-}
-
-TEST_F(InstantExtendedAPIEnabledTest, LocalOnlyFinchTrumpedByCommandLine) {
-  ASSERT_TRUE(base::FieldTrialList::CreateTrialsFromString(
-      "InstantExtended/Group1 local_only:1/"));
-  GetCommandLine()->AppendSwitch(switches::kDisableInstantExtendedAPI);
-  EXPECT_FALSE(IsInstantExtendedAPIEnabled());
-  EXPECT_FALSE(IsLocalOnlyInstantExtendedAPIEnabled());
-  EXPECT_EQ(0ul, EmbeddedSearchPageVersion(profile()));
-  ValidateMetrics(INSTANT_EXTENDED_OPT_OUT);
-}
-
-TEST_F(InstantExtendedAPIEnabledTest, LocalOnlyFinchTrumpsFinch) {
-  ASSERT_TRUE(base::FieldTrialList::CreateTrialsFromString(
-      "InstantExtended/Group1 espv:1 local_only:1/"));
-  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
-  EXPECT_TRUE(IsLocalOnlyInstantExtendedAPIEnabled());
-  EXPECT_EQ(0ul, EmbeddedSearchPageVersion(profile()));
-  ValidateMetrics(INSTANT_EXTENDED_NOT_SET);
-}
-
-TEST_F(InstantExtendedAPIEnabledTest, LocalOnlyDisabledViaCommandLineFlag) {
-  GetCommandLine()->AppendSwitch(switches::kDisableLocalOnlyInstantExtendedAPI);
-  ASSERT_TRUE(base::FieldTrialList::CreateTrialsFromString(
-      "InstantExtended/Group1 espv:2/"));
-  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
-  EXPECT_FALSE(IsLocalOnlyInstantExtendedAPIEnabled());
-  EXPECT_EQ(2ul, EmbeddedSearchPageVersion(profile()));
-  ValidateMetrics(INSTANT_EXTENDED_OPT_OUT_LOCAL);
-}
-
-class ShouldPreloadLocalOnlyNTPtest : public InstantExtendedAPIEnabledTest {
-};
-
-TEST_F(ShouldPreloadLocalOnlyNTPtest, PreloadByDefault) {
-  EXPECT_TRUE(ShouldPreloadLocalOnlyNTP());
-}
-
-TEST_F(ShouldPreloadLocalOnlyNTPtest, SuppressPreload) {
-  ASSERT_TRUE(base::FieldTrialList::CreateTrialsFromString(
-      "InstantExtended/Group1 preload_local_only_ntp:0/"));
-  EXPECT_FALSE(ShouldPreloadLocalOnlyNTP());
-}
-
-TEST_F(ShouldPreloadLocalOnlyNTPtest, ForcePreload) {
-  ASSERT_TRUE(base::FieldTrialList::CreateTrialsFromString(
-      "InstantExtended/Group1 preload_local_only_ntp:1/"));
-  EXPECT_TRUE(ShouldPreloadLocalOnlyNTP());
 }
 
 class SearchTest : public BrowserWithTestWindowTest {
@@ -398,17 +292,6 @@ TEST_F(SearchTest, ShouldAssignURLToInstantRendererExtendedEnabled) {
   }
 }
 
-TEST_F(SearchTest, CoerceCommandLineURLToTemplateURL) {
-  TemplateURL* template_url =
-      TemplateURLServiceFactory::GetForProfile(profile())->
-          GetDefaultSearchProvider();
-  EXPECT_EQ(
-      GURL("https://foo.com/dev?bar=bar#bar=bar"),
-      CoerceCommandLineURLToTemplateURL(
-          GURL("http://myserver.com:9000/dev?bar=bar#bar=bar"),
-          template_url->instant_url_ref(), kDisableStartMargin));
-}
-
 const SearchTestCase kInstantNTPTestCases[] = {
   {"https://foo.com/instant?strk",         true,  "Valid Instant URL"},
   {"https://foo.com/instant#strk",         true,  "Valid Instant URL"},
@@ -428,16 +311,6 @@ const SearchTestCase kInstantNTPTestCases[] = {
   {chrome::kChromeSearchLocalGoogleNtpUrl, true,  "Local new tab page"},
   {"https://bar.com/instant?strk=1",       false, "Random non-search page"},
 };
-
-TEST_F(SearchTest, InstantExtendedEmbeddedSearchDisabledForIncognito) {
-#if !defined(OS_IOS) && !defined(OS_ANDROID)
-  EnableInstantExtendedAPIForTesting();
-  profile()->set_incognito(true);
-  EXPECT_TRUE(IsInstantExtendedAPIEnabled());
-  EXPECT_EQ(0ul, EmbeddedSearchPageVersion(profile()));
-  EXPECT_FALSE(IsQueryExtractionEnabled(profile()));
-#endif  // !defined(OS_IOS) && !defined(OS_ANDROID)
-}
 
 TEST_F(SearchTest, InstantNTPExtendedEnabled) {
   EnableInstantExtendedAPIForTesting();
@@ -517,19 +390,6 @@ TEST_F(SearchTest, GetInstantURLExtendedEnabled) {
   EXPECT_EQ(GURL("https://foo.com/instant?foo=foo#foo=foo&strk"),
             GetInstantURL(profile(), kDisableStartMargin));
 
-  // Override the Instant URL on the commandline. Oops, forgot "strk".
-  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
-      switches::kInstantURL,
-      "http://myserver.com:9000/dev?bar=bar#bar=bar");
-  EXPECT_EQ(GURL(), GetInstantURL(profile(), kDisableStartMargin));
-
-  // Override with "strk". For fun, put it in the query, instead of the ref.
-  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
-      switches::kInstantURL,
-      "http://myserver.com:9000/dev?bar=bar&strk#bar=bar");
-  EXPECT_EQ(GURL("http://myserver.com:9000/dev?bar=bar&strk#bar=bar"),
-            GetInstantURL(profile(), kDisableStartMargin));
-
   // Disable suggest. No Instant URL.
   profile()->GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, false);
   EXPECT_EQ(GURL(), GetInstantURL(profile(), kDisableStartMargin));
@@ -573,15 +433,6 @@ TEST_F(SearchTest, DefaultSearchProviderSupportsInstant) {
   profile()->GetPrefs()->SetBoolean(prefs::kSearchInstantEnabled, false);
   EXPECT_TRUE(DefaultSearchProviderSupportsInstant(profile()));
 
-  // Override the Instant URL on the commandline. Oops, forgot "strk".
-  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
-      switches::kInstantURL,
-      "http://myserver.com:9000/dev?bar=bar#bar=bar");
-  EXPECT_EQ(GURL(), GetInstantURL(profile(), kDisableStartMargin));
-
-  // Check that command line overrides don't affect the default search provider.
-  EXPECT_TRUE(DefaultSearchProviderSupportsInstant(profile()));
-
   // Disable suggest. No Instant URL.
   profile()->GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, false);
   EXPECT_EQ(GURL(), GetInstantURL(profile(), kDisableStartMargin));
@@ -600,8 +451,8 @@ TEST_F(SearchTest, IsInstantCheckboxEnabledExtendedEnabledWithInstant) {
   EnableInstantExtendedAPIForTesting();
 
   // Enable Instant.
-  ASSERT_TRUE(base::FieldTrialList::CreateTrialsFromString(
-      "InstantExtended/Group1 allow_instant:1/"));
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("InstantExtended",
+                                                     "Group1 allow_instant:1"));
   ASSERT_TRUE(IsInstantCheckboxVisible());
 
   // Enable suggest.
@@ -691,5 +542,55 @@ TEST_F(SearchTest, IsInstantCheckboxEnabledExtendedEnabledWithoutInstant) {
   EXPECT_FALSE(IsInstantCheckboxChecked(profile()));
 }
 
+TEST_F(SearchTest, CommandLineOverrides) {
+  EnableInstantExtendedAPIForTesting();
+  profile()->GetPrefs()->SetBoolean(prefs::kSearchInstantEnabled, true);
+
+  // GetLocalInstantURL() should default to the non-Google local NTP.
+  SetSearchProvider(false);
+  GURL local_instant_url(GetLocalInstantURL(profile()));
+  EXPECT_EQ(GURL(chrome::kChromeSearchLocalNtpUrl), local_instant_url);
+
+  TemplateURLService* template_url_service =
+      TemplateURLServiceFactory::GetForProfile(profile());
+  TemplateURLData data;
+  data.SetURL("{google:baseURL}search?q={searchTerms}");
+  data.instant_url = "{google:baseURL}webhp?strk";
+  data.search_terms_replacement_key = "strk";
+  TemplateURL* template_url = new TemplateURL(profile(), data);
+  // Takes ownership of |template_url|.
+  template_url_service->Add(template_url);
+  template_url_service->SetDefaultSearchProvider(template_url);
+
+  // By default, Instant Extended forces the instant URL to be HTTPS, so even if
+  // we set a Google base URL that is HTTP, we should get an HTTPS URL.
+  UIThreadSearchTermsData::SetGoogleBaseURL("http://www.foo.com/");
+  GURL instant_url(GetInstantURL(profile(), kDisableStartMargin));
+  ASSERT_TRUE(instant_url.is_valid());
+  EXPECT_EQ("https://www.foo.com/webhp?strk", instant_url.spec());
+
+  // However, if the Google base URL is specified on the command line, the
+  // instant URL should just use it, even if it's HTTP.
+  UIThreadSearchTermsData::SetGoogleBaseURL(std::string());
+  CommandLine::ForCurrentProcess()->AppendSwitchASCII(switches::kGoogleBaseURL,
+                                                      "http://www.bar.com/");
+  instant_url = GetInstantURL(profile(), kDisableStartMargin);
+  ASSERT_TRUE(instant_url.is_valid());
+  EXPECT_EQ("http://www.bar.com/webhp?strk", instant_url.spec());
+
+  // Similarly, setting a Google base URL on the command line should allow you
+  // to get the Google version of the local NTP, even though search provider's
+  // URL doesn't contain "google".
+  local_instant_url = GetLocalInstantURL(profile());
+  EXPECT_EQ(GURL(chrome::kChromeSearchLocalGoogleNtpUrl), local_instant_url);
+
+  // If we specify extra search query params, they should be inserted into the
+  // query portion of the instant URL.
+  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+      switches::kExtraSearchQueryParams, "a=b");
+  instant_url = GetInstantURL(profile(), kDisableStartMargin);
+  ASSERT_TRUE(instant_url.is_valid());
+  EXPECT_EQ("http://www.bar.com/webhp?a=b&strk", instant_url.spec());
+}
 
 }  // namespace chrome

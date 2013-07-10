@@ -14,7 +14,7 @@
 
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/browser/history/history_db_task.h"
@@ -35,9 +35,9 @@
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/page_transition_types.h"
 #include "crypto/secure_hash.h"
-#include "googleurl/src/url_canon.h"
 #include "grit/browser_resources.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "url/url_canon.h"
 
 using content::BrowserThread;
 using content::PageTransition;

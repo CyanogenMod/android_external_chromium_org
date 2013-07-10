@@ -17,14 +17,11 @@
 #include "chrome/browser/translate/translate_browser_metrics.h"
 #include "chrome/browser/translate/translate_event_details.h"
 #include "chrome/browser/translate/translate_manager.h"
+#include "chrome/browser/translate/translate_url_fetcher.h"
 #include "chrome/browser/translate/translate_url_util.h"
-#include "googleurl/src/gurl.h"
-#include "net/base/load_flags.h"
 #include "net/base/url_util.h"
-#include "net/http/http_status_code.h"
-#include "net/url_request/url_fetcher.h"
-#include "net/url_request/url_request_status.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -106,13 +103,16 @@ const char kLanguageListFetchURL[] =
 const char kAlphaLanguageQueryName[] = "alpha";
 const char kAlphaLanguageQueryValue[] = "1";
 
-// Retry parameter for fetching supporting language list.
-const int kMaxRetryLanguageListFetch = 5;
-
 // Assign following IDs to URLFetchers so that tests can distinguish each
 // request in order to simiulate respectively.
 const int kFetcherIdForLanguageList = 1;
 const int kFetcherIdForAlphaLanguageList = 2;
+
+// Represent if the language list updater is disabled.
+bool update_is_disabled = false;
+
+// Retry parameter for fetching.
+const int kMaxRetryOn5xx = 5;
 
 // Show a message in chrome:://translate-internals Event Logs.
 void NotifyEvent(int line, const std::string& message) {
@@ -187,83 +187,22 @@ void SetSupportedLanguages(const std::string& language_list,
   NotifyEvent(__LINE__, message);
 }
 
-}  // namespace
-
-TranslateLanguageList::LanguageListFetcher::LanguageListFetcher(
-    bool include_alpha_languages)
-  : include_alpha_languages_(include_alpha_languages),
-    state_(IDLE) {
-}
-
-TranslateLanguageList::LanguageListFetcher::~LanguageListFetcher() {
-}
-
-bool TranslateLanguageList::LanguageListFetcher::Request(
-    const TranslateLanguageList::LanguageListFetcher::Callback& callback) {
-  // This function is not supporsed to be called before previous operaion is not
-  // finished.
-  if (state_ == REQUESTING) {
-    NOTREACHED();
-    return false;
-  }
-
-  state_ = REQUESTING;
-  callback_ = callback;
-
+// Returns URL to fetch the language list.
+GURL GetLanguageListFetchURL(bool include_alpha_languages) {
   GURL url = GURL(kLanguageListFetchURL);
   url = TranslateURLUtil::AddHostLocaleToUrl(url);
   url = TranslateURLUtil::AddApiKeyToUrl(url);
-  if (include_alpha_languages_) {
+
+  if (include_alpha_languages) {
     url = net::AppendQueryParameter(url,
                                     kAlphaLanguageQueryName,
                                     kAlphaLanguageQueryValue);
   }
 
-  std::string message = base::StringPrintf(
-      "%s list fetch starts (URL: %s)",
-      include_alpha_languages_ ? "Language" : "Alpha language",
-      url.spec().c_str());
-  NotifyEvent(__LINE__, message);
-
-  fetcher_.reset(net::URLFetcher::Create(
-      include_alpha_languages_ ? kFetcherIdForAlphaLanguageList :
-                                 kFetcherIdForLanguageList,
-      url,
-      net::URLFetcher::GET,
-      this));
-  fetcher_->SetLoadFlags(net::LOAD_DO_NOT_SEND_COOKIES |
-                         net::LOAD_DO_NOT_SAVE_COOKIES);
-  fetcher_->SetRequestContext(g_browser_process->system_request_context());
-  fetcher_->SetMaxRetriesOn5xx(kMaxRetryLanguageListFetch);
-  fetcher_->Start();
-
-  return true;
+  return url;
 }
 
-void TranslateLanguageList::LanguageListFetcher::OnURLFetchComplete(
-    const net::URLFetcher* source) {
-  DCHECK(fetcher_.get() == source);
-
-  std::string data;
-  if (source->GetStatus().status() == net::URLRequestStatus::SUCCESS &&
-      source->GetResponseCode() == net::HTTP_OK) {
-    state_ = COMPLETED;
-    source->GetResponseAsString(&data);
-    std::string message = base::StringPrintf(
-        "%s list is updated",
-        include_alpha_languages_ ? "Alpha language" : "Language");
-    NotifyEvent(__LINE__, message);
-  } else {
-    state_ = FAILED;
-    std::string message = base::StringPrintf(
-        "Failed to Fetch languages from: %s",
-        source->GetURL().spec().c_str());
-    NotifyEvent(__LINE__, message);
-  }
-
-  scoped_ptr<const net::URLFetcher> delete_ptr(fetcher_.release());
-  callback_.Run(include_alpha_languages_, state_ == COMPLETED, data);
-}
+}  // namespace
 
 // This must be kept in sync with the &cb= value in the kLanguageListFetchURL.
 const char TranslateLanguageList::kLanguageListCallbackName[] = "sl(";
@@ -277,8 +216,16 @@ TranslateLanguageList::TranslateLanguageList() {
     supported_languages_.insert(kDefaultSupportedLanguages[i]);
   UpdateSupportedLanguages();
 
-  language_list_fetcher_.reset(new LanguageListFetcher(false));
-  alpha_language_list_fetcher_.reset(new LanguageListFetcher(true));
+  if (update_is_disabled)
+    return;
+
+  language_list_fetcher_.reset(
+      new TranslateURLFetcher(kFetcherIdForLanguageList));
+  language_list_fetcher_->set_max_retry_on_5xx(kMaxRetryOn5xx);
+
+  alpha_language_list_fetcher_.reset(
+      new TranslateURLFetcher(kFetcherIdForAlphaLanguageList));
+  alpha_language_list_fetcher_->set_max_retry_on_5xx(kMaxRetryOn5xx);
 }
 
 TranslateLanguageList::~TranslateLanguageList() {
@@ -290,6 +237,11 @@ void TranslateLanguageList::GetSupportedLanguages(
   std::set<std::string>::const_iterator iter = all_supported_languages_.begin();
   for (; iter != all_supported_languages_.end(); ++iter)
     languages->push_back(*iter);
+
+  // Update language lists if they are not updated after Chrome was launched
+  // for later requests.
+  if (language_list_fetcher_.get() || alpha_language_list_fetcher_.get())
+    RequestLanguageList();
 }
 
 std::string TranslateLanguageList::GetLanguageCode(
@@ -316,36 +268,89 @@ bool TranslateLanguageList::IsAlphaLanguage(const std::string& language) {
 }
 
 void TranslateLanguageList::RequestLanguageList() {
+  // If resource requests are not allowed, we'll get a callback when they are.
+  if (resource_request_allowed_notifier_.ResourceRequestsAllowed())
+    OnResourceRequestsAllowed();
+}
+
+void TranslateLanguageList::OnResourceRequestsAllowed() {
   if (language_list_fetcher_.get() &&
-      (language_list_fetcher_->state() == LanguageListFetcher::IDLE ||
-       language_list_fetcher_->state() == LanguageListFetcher::FAILED)) {
-    language_list_fetcher_->Request(
+      (language_list_fetcher_->state() == TranslateURLFetcher::IDLE ||
+       language_list_fetcher_->state() == TranslateURLFetcher::FAILED)) {
+    GURL url = GetLanguageListFetchURL(false);
+
+    std::string message = base::StringPrintf(
+        "Language list fetch starts (URL: %s)",
+        url.spec().c_str());
+    NotifyEvent(__LINE__, message);
+
+    bool result = language_list_fetcher_->Request(
+        url,
         base::Bind(&TranslateLanguageList::OnLanguageListFetchComplete,
                    base::Unretained(this)));
+    if (!result)
+      NotifyEvent(__LINE__, "Request is omitted due to retry limit");
   }
 
   if (alpha_language_list_fetcher_.get() &&
-      (alpha_language_list_fetcher_->state() == LanguageListFetcher::IDLE ||
-       alpha_language_list_fetcher_->state() == LanguageListFetcher::FAILED)) {
-    alpha_language_list_fetcher_->Request(
+      (alpha_language_list_fetcher_->state() == TranslateURLFetcher::IDLE ||
+       alpha_language_list_fetcher_->state() == TranslateURLFetcher::FAILED)) {
+    GURL url = GetLanguageListFetchURL(true);
+
+    std::string message = base::StringPrintf(
+        "Alpha language list fetch starts (URL: %s)",
+        url.spec().c_str());
+    NotifyEvent(__LINE__, message);
+
+    bool result = alpha_language_list_fetcher_->Request(
+        url,
         base::Bind(&TranslateLanguageList::OnLanguageListFetchComplete,
                    base::Unretained(this)));
+    if (!result)
+      NotifyEvent(__LINE__, "Request is omitted due to retry limit");
   }
 }
 
+// static
+void TranslateLanguageList::DisableUpdate() {
+  update_is_disabled = true;
+}
+
 void TranslateLanguageList::OnLanguageListFetchComplete(
-    bool include_alpha_languages,
+    int id,
     bool success,
     const std::string& data) {
-  if (!success)
+  if (!success) {
+    // Since it fails just now, omit to schedule resource requests if
+    // ResourceRequestAllowedNotifier think it's ready. Otherwise, a callback
+    // will be invoked later to request resources again.
+    // The TranslateURLFetcher has a limit for retried requests and aborts
+    // re-try not to invoke OnLanguageListFetchComplete anymore if it's asked to
+    // re-try too many times.
+    GURL url = GetLanguageListFetchURL(id == kFetcherIdForAlphaLanguageList);
+    std::string message = base::StringPrintf(
+        "Failed to Fetch languages from: %s", url.spec().c_str());
+    NotifyEvent(__LINE__, message);
     return;
+  }
 
-  if (!include_alpha_languages) {
-    SetSupportedLanguages(data, &supported_languages_);
-    language_list_fetcher_.reset();
-  } else {
-    SetSupportedLanguages(data, &supported_alpha_languages_);
-    alpha_language_list_fetcher_.reset();
+  std::string message = base::StringPrintf(
+      "%s list is updated",
+      id == kFetcherIdForLanguageList ? "Language" : "Alpha language");
+  NotifyEvent(__LINE__, message);
+
+  switch (id) {
+    case kFetcherIdForLanguageList:
+      SetSupportedLanguages(data, &supported_languages_);
+      language_list_fetcher_.reset();
+      break;
+    case kFetcherIdForAlphaLanguageList:
+      SetSupportedLanguages(data, &supported_alpha_languages_);
+      alpha_language_list_fetcher_.reset();
+      break;
+    default:
+      NOTREACHED();
+      break;
   }
   UpdateSupportedLanguages();
 

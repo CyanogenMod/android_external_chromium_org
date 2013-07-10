@@ -5,9 +5,12 @@
 #ifndef CHROMEOS_NETWORK_ONC_ONC_UTILS_H_
 #define CHROMEOS_NETWORK_ONC_ONC_UTILS_H_
 
+#include <map>
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chromeos/chromeos_export.h"
 #include "chromeos/network/onc/onc_constants.h"
@@ -15,6 +18,10 @@
 namespace base {
 class DictionaryValue;
 class ListValue;
+}
+
+namespace net {
+class X509Certificate;
 }
 
 namespace chromeos {
@@ -25,6 +32,9 @@ struct OncValueSignature;
 // A valid but empty (no networks and no certificates) and unencrypted
 // configuration.
 CHROMEOS_EXPORT extern const char kEmptyUnencryptedConfiguration[];
+
+typedef std::map<std::string,
+                 scoped_refptr<net::X509Certificate> > CertsByGUIDMap;
 
 // Parses |json| according to the JSON format. If |json| is a JSON formatted
 // dictionary, the function returns the dictionary as a DictionaryValue.
@@ -49,8 +59,8 @@ class CHROMEOS_EXPORT StringSubstitution {
   virtual ~StringSubstitution() {}
 
   // Returns the replacement string for |placeholder| in
-  // |substitute|. Currently, onc::substitutes::kLoginIDField and
-  // onc::substitutes::kEmailField are supported.
+  // |substitute|. Currently, substitutes::kLoginIDField and
+  // substitutes::kEmailField are supported.
   virtual bool GetSubstitute(std::string placeholder,
                              std::string* substitute) const = 0;
  private:
@@ -59,8 +69,8 @@ class CHROMEOS_EXPORT StringSubstitution {
 
 // Replaces all expandable fields that are mentioned in the ONC
 // specification. The object of |onc_object| is modified in place. Currently
-// onc::substitutes::kLoginIDField and onc::substitutes::kEmailField are
-// expanded. The replacement strings are obtained from |substitution|.
+// substitutes::kLoginIDField and substitutes::kEmailField are expanded. The
+// replacement strings are obtained from |substitution|.
 CHROMEOS_EXPORT void ExpandStringsInOncObject(
     const OncValueSignature& signature,
     const StringSubstitution& substitution,
@@ -81,10 +91,31 @@ CHROMEOS_EXPORT scoped_ptr<base::DictionaryValue> MaskCredentialsInOncObject(
 // output lists and should be further processed by the caller.
 CHROMEOS_EXPORT bool ParseAndValidateOncForImport(
     const std::string& onc_blob,
-    chromeos::onc::ONCSource onc_source,
+    ONCSource onc_source,
     const std::string& passphrase,
     base::ListValue* network_configs,
     base::ListValue* certificates);
+
+// Parse the given PEM encoded certificate |pem_encoded| and create a
+// X509Certificate from it.
+CHROMEOS_EXPORT scoped_refptr<net::X509Certificate> DecodePEMCertificate(
+    const std::string& pem_encoded);
+
+// Replaces all references by GUID to Server or CA certs by their PEM
+// encoding. Returns true if all references could be resolved. Otherwise returns
+// false and network configurations with unresolveable references are removed
+// from |network_configs|. |network_configs| must be a list of ONC
+// NetworkConfiguration dictionaries.
+CHROMEOS_EXPORT bool ResolveServerCertRefsInNetworks(
+    const CertsByGUIDMap& certs_by_guid,
+    base::ListValue* network_configs);
+
+// Replaces all references by GUID to Server or CA certs by their PEM
+// encoding. Returns true if all references could be resolved. |network_config|
+// must be a ONC NetworkConfiguration.
+CHROMEOS_EXPORT bool ResolveServerCertRefsInNetwork(
+    const CertsByGUIDMap& certs_by_guid,
+    base::DictionaryValue* network_config);
 
 }  // namespace onc
 }  // namespace chromeos

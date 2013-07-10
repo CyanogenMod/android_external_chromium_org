@@ -30,14 +30,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionInstallDialogControllerTest, BasicTest) {
 
   chrome::MockExtensionInstallPromptDelegate delegate;
   ExtensionInstallPrompt::Prompt prompt =
-      chrome::BuildExtensionInstallPrompt(extension_);
+      chrome::BuildExtensionInstallPrompt(extension_.get());
 
   ExtensionInstallDialogController* controller =
       new ExtensionInstallDialogController(show_params,
                                            &delegate,
                                            prompt);
 
-  scoped_nsobject<NSWindow> window(
+  base::scoped_nsobject<NSWindow> window(
       [[[controller->view_controller() view] window] retain]);
   EXPECT_TRUE([window isVisible]);
 
@@ -54,14 +54,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionInstallDialogControllerTest, Permissions) {
 
   chrome::MockExtensionInstallPromptDelegate delegate;
   ExtensionInstallPrompt::Prompt prompt =
-      chrome::BuildExtensionPostInstallPermissionsPrompt(extension_);
+      chrome::BuildExtensionPostInstallPermissionsPrompt(extension_.get());
 
   ExtensionInstallDialogController* controller =
       new ExtensionInstallDialogController(show_params,
                                            &delegate,
                                            prompt);
 
-  scoped_nsobject<NSWindow> window(
+  base::scoped_nsobject<NSWindow> window(
       [[[controller->view_controller() view] window] retain]);
   EXPECT_TRUE([window isVisible]);
 

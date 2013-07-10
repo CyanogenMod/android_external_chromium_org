@@ -13,16 +13,19 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <map>
 #include <string>
 
 #include "base/basictypes.h"
 #include "base/bind.h"
+#include "base/file_util.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/metrics/statistics_recorder.h"
 #include "base/perftimer.h"
 #include "base/posix/eintr_wrapper.h"
-#include "base/time.h"
+#include "base/sys_info.h"
+#include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/metrics/metrics_service.h"
 #include "content/public/browser/browser_thread.h"
@@ -53,6 +56,83 @@ bool CheckLinearValues(const std::string& name, int maximum) {
   return CheckValues(name, 1, maximum, maximum + 1);
 }
 
+// Establishes field trial for wifi scanning in chromeos.  crbug.com/242733.
+void SetupProgressiveScanFieldTrial() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  const char name_of_experiment[] = "ProgressiveScan";
+  const char path_to_group_file[] = "/home/chronos/.progressive_scan_variation";
+  const base::FieldTrial::Probability kDivisor = 1000;
+  scoped_refptr<base::FieldTrial> trial =
+      base::FieldTrialList::FactoryGetFieldTrial(name_of_experiment,
+                                                 kDivisor,
+                                                 "Default",
+                                                 2013, 12, 31, NULL);
+  // Announce the groups with 0 percentage; the actual percentages come from
+  // the server configuration.
+  std::map<int, std::string> group_to_char;
+  group_to_char[trial->AppendGroup("FullScan", 0)] = "c";
+  group_to_char[trial->AppendGroup("33Percent_4MinMax", 0)] = "1";
+  group_to_char[trial->AppendGroup("50Percent_4MinMax", 0)] = "2";
+  group_to_char[trial->AppendGroup("50Percent_8MinMax", 0)] = "3";
+  group_to_char[trial->AppendGroup("100Percent_8MinMax", 0)] = "4";
+
+  // Announce the experiment to any listeners (especially important is the UMA
+  // software, which will append the group names to UMA statistics).
+  const int group_num = trial->group();
+  std::string group_char = "x";
+  if (ContainsKey(group_to_char, group_num))
+    group_char = group_to_char[group_num];
+
+  // Write the group to the file to be read by ChromeOS.
+  const base::FilePath kPathToGroupFile(path_to_group_file);
+
+  if (file_util::WriteFile(kPathToGroupFile, group_char.c_str(),
+                           group_char.length())) {
+    LOG(INFO) << "Configured in group '" << trial->group_name()
+              << "' ('" << group_char << "') for "
+              << name_of_experiment << " field trial";
+  } else {
+    LOG(ERROR) << "Couldn't write to " << path_to_group_file;
+  }
+}
+
+// Sets up field trial for measuring swap and CPU metrics after tab switch
+// and scroll events. crbug.com/253994
+void SetupSwapJankFieldTrial() {
+  const char name_of_experiment[] = "SwapJank64vs32";
+
+  // Determine if this is a 32 or 64 bit build of Chrome.
+  bool is_chrome_64 = sizeof(void*) == 8;
+
+  // Determine if this is a 32 or 64 bit kernel.
+  bool is_kernel_64 = base::SysInfo::OperatingSystemArchitecture() == "x86_64";
+
+  // A 32 bit kernel requires 32 bit Chrome.
+  DCHECK(is_kernel_64 || !is_chrome_64);
+
+  // All groups are either on or off.
+  const base::FieldTrial::Probability kTotalProbability = 1;
+  scoped_refptr<base::FieldTrial> trial =
+      base::FieldTrialList::FactoryGetFieldTrial(name_of_experiment,
+                                                 kTotalProbability,
+                                                 "default",
+                                                 2013, 12, 31, NULL);
+  // Assign probability of 1 to this Chrome's group.  Assign 0 to all other
+  // choices.
+  trial->AppendGroup("kernel_64_chrome_64",
+                     is_kernel_64 && is_chrome_64 ? kTotalProbability : 0);
+  trial->AppendGroup("kernel_64_chrome_32",
+                     is_kernel_64 && !is_chrome_64 ? kTotalProbability : 0);
+  trial->AppendGroup("kernel_32_chrome_32",
+                     !is_kernel_64 && !is_chrome_64 ? kTotalProbability : 0);
+
+  // Announce the experiment to any listeners (especially important is the UMA
+  // software, which will append the group names to UMA statistics).
+  trial->group();
+  DVLOG(1) << "Configured in group '" << trial->group_name() << "' for "
+           << name_of_experiment << " field trial";
+}
+
 }  // namespace
 
 // The interval between external metrics collections in seconds
@@ -72,7 +152,19 @@ void ExternalMetrics::Start() {
   valid_user_actions_.insert("Updater.ServerCertificateChanged");
   valid_user_actions_.insert("Updater.ServerCertificateFailed");
 
-  ScheduleCollector();
+  // Initialize field trials that don't need to read from files.
+  SetupSwapJankFieldTrial();
+
+  // Initialize any chromeos field trials that need to read from a file (e.g.,
+  // those that have an upstart script determine their experimental group for
+  // them) then schedule the data collection.  All of this is done on the file
+  // thread.
+  bool task_posted = BrowserThread::PostTask(
+      BrowserThread::FILE,
+      FROM_HERE,
+      base::Bind(&chromeos::ExternalMetrics::SetupFieldTrialsOnFileThread,
+                 this));
+  DCHECK(task_posted);
 }
 
 void ExternalMetrics::RecordActionUI(std::string action_string) {
@@ -289,6 +381,15 @@ void ExternalMetrics::ScheduleCollector() {
       base::Bind(&chromeos::ExternalMetrics::CollectEventsAndReschedule, this),
       base::TimeDelta::FromSeconds(kExternalMetricsCollectionIntervalSeconds));
   DCHECK(result);
+}
+
+void ExternalMetrics::SetupFieldTrialsOnFileThread() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  // Field trials that do not read from files can be initialized in
+  // ExternalMetrics::Start() above.
+  SetupProgressiveScanFieldTrial();
+
+  ScheduleCollector();
 }
 
 }  // namespace chromeos

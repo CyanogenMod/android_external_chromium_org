@@ -44,7 +44,7 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 
 #if defined(OS_ANDROID)
 #include "base/os_compat_android.h"
@@ -58,51 +58,35 @@
 #include "base/chromeos/chromeos_version.h"
 #endif
 
-using base::FileEnumerator;
-using base::FilePath;
-using base::MakeAbsoluteFilePath;
-
 namespace base {
-
-FilePath MakeAbsoluteFilePath(const FilePath& input) {
-  base::ThreadRestrictions::AssertIOAllowed();
-  char full_path[PATH_MAX];
-  if (realpath(input.value().c_str(), full_path) == NULL)
-    return FilePath();
-  return FilePath(full_path);
-}
-
-}  // namespace base
-
-namespace file_util {
 
 namespace {
 
 #if defined(OS_BSD) || defined(OS_MACOSX)
 typedef struct stat stat_wrapper_t;
 static int CallStat(const char *path, stat_wrapper_t *sb) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   return stat(path, sb);
 }
 static int CallLstat(const char *path, stat_wrapper_t *sb) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   return lstat(path, sb);
 }
 #else
 typedef struct stat64 stat_wrapper_t;
 static int CallStat(const char *path, stat_wrapper_t *sb) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   return stat64(path, sb);
 }
 static int CallLstat(const char *path, stat_wrapper_t *sb) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   return lstat64(path, sb);
 }
 #endif
 
 // Helper for NormalizeFilePath(), defined below.
 bool RealPath(const FilePath& path, FilePath* real_path) {
-  base::ThreadRestrictions::AssertIOAllowed();  // For realpath().
+  ThreadRestrictions::AssertIOAllowed();  // For realpath().
   FilePath::CharType buf[PATH_MAX];
   if (!realpath(path.value().c_str(), buf))
     return false;
@@ -150,11 +134,9 @@ bool VerifySpecificPathControlledByUser(const FilePath& path,
   return true;
 }
 
-}  // namespace
-
-static std::string TempFileName() {
+std::string TempFileName() {
 #if defined(OS_MACOSX)
-  return base::StringPrintf(".%s.XXXXXX", base::mac::BaseBundleID());
+  return StringPrintf(".%s.XXXXXX", base::mac::BaseBundleID());
 #endif
 
 #if defined(GOOGLE_CHROME_BUILD)
@@ -164,12 +146,22 @@ static std::string TempFileName() {
 #endif
 }
 
+}  // namespace
+
+FilePath MakeAbsoluteFilePath(const FilePath& input) {
+  ThreadRestrictions::AssertIOAllowed();
+  char full_path[PATH_MAX];
+  if (realpath(input.value().c_str(), full_path) == NULL)
+    return FilePath();
+  return FilePath(full_path);
+}
+
 // TODO(erikkay): The Windows version of this accepts paths like "foo/bar/*"
 // which works both with and without the recursive flag.  I'm not sure we need
 // that functionality. If not, remove from file_util_win.cc, otherwise add it
 // here.
 bool Delete(const FilePath& path, bool recursive) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   const char* path_str = path.value().c_str();
   stat_wrapper_t file_info;
   int test = CallLstat(path_str, &file_info);
@@ -206,7 +198,7 @@ bool Delete(const FilePath& path, bool recursive) {
 }
 
 bool MoveUnsafe(const FilePath& from_path, const FilePath& to_path) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   // Windows compatibility: if to_path exists, from_path and to_path
   // must be the same type, either both files, or both directories.
   stat_wrapper_t to_file_info;
@@ -223,23 +215,38 @@ bool MoveUnsafe(const FilePath& from_path, const FilePath& to_path) {
   if (rename(from_path.value().c_str(), to_path.value().c_str()) == 0)
     return true;
 
-  if (!CopyDirectory(from_path, to_path, true))
+  if (!file_util::CopyDirectory(from_path, to_path, true))
     return false;
 
   Delete(from_path, true);
   return true;
 }
 
-bool ReplaceFileAndGetError(const FilePath& from_path,
-                            const FilePath& to_path,
-                            base::PlatformFileError* error) {
-  base::ThreadRestrictions::AssertIOAllowed();
+bool ReplaceFile(const FilePath& from_path,
+                 const FilePath& to_path,
+                 PlatformFileError* error) {
+  ThreadRestrictions::AssertIOAllowed();
   if (rename(from_path.value().c_str(), to_path.value().c_str()) == 0)
     return true;
   if (error)
-    *error = base::ErrnoToPlatformFileError(errno);
+    *error = ErrnoToPlatformFileError(errno);
   return false;
 }
+
+}  // namespace base
+
+// -----------------------------------------------------------------------------
+
+namespace file_util {
+
+using base::stat_wrapper_t;
+using base::CallStat;
+using base::CallLstat;
+using base::FileEnumerator;
+using base::FilePath;
+using base::MakeAbsoluteFilePath;
+using base::RealPath;
+using base::VerifySpecificPathControlledByUser;
 
 bool CopyDirectory(const FilePath& from_path,
                    const FilePath& to_path,
@@ -435,7 +442,7 @@ bool SetPosixFilePermissions(const FilePath& path,
 // This function does NOT unlink() the file.
 int CreateAndOpenFdForTemporaryFile(FilePath directory, FilePath* path) {
   base::ThreadRestrictions::AssertIOAllowed();  // For call to mkstemp().
-  *path = directory.Append(TempFileName());
+  *path = directory.Append(base::TempFileName());
   const std::string& tmpdir_string = path->value();
   // this should be OK since mkstemp just replaces characters in place
   char* buffer = const_cast<char*>(tmpdir_string.c_str());
@@ -515,7 +522,8 @@ bool CreateNewTempDirectory(const FilePath::StringType& prefix,
   if (!GetTempDir(&tmpdir))
     return false;
 
-  return CreateTemporaryDirInDirImpl(tmpdir, TempFileName(), new_temp_path);
+  return CreateTemporaryDirInDirImpl(tmpdir, base::TempFileName(),
+                                     new_temp_path);
 }
 
 bool CreateDirectoryAndGetError(const FilePath& full_path,

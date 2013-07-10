@@ -8,6 +8,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/strings/utf_string_conversions.h"
 #include "components/autofill/content/renderer/form_autofill_util.h"
 #include "components/autofill/core/common/autofill_messages.h"
 #include "components/autofill/core/common/form_field_data.h"
@@ -15,15 +16,15 @@
 #include "content/public/common/password_form.h"
 #include "content/public/renderer/password_form_conversion_utils.h"
 #include "content/public/renderer/render_view.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebAutofillClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFormElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
+#include "third_party/WebKit/public/web/WebAutofillClient.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebFormElement.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebSecurityOrigin.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 
 namespace autofill {
@@ -180,8 +181,10 @@ void FillForm(FormElements* fe, const FormData& data) {
   for (FormInputElementMap::iterator it = fe->input_elements.begin();
        it != fe->input_elements.end(); ++it) {
     WebKit::WebInputElement element = it->second;
-    if (!IsElementEditable(element))
-      continue;  // Don't fill uneditable fields.
+
+    // Don't fill uneditable fields or fields with autocomplete disabled.
+    if (!IsElementEditable(element) || !element.autoComplete())
+      continue;
 
     // TODO(tkent): Check maxlength and pattern.
     element.setValue(data_map[it->first]);
@@ -213,7 +216,6 @@ bool DoUsernamesMatch(const base::string16& username1,
 
 PasswordAutofillAgent::PasswordAutofillAgent(content::RenderView* render_view)
     : content::RenderViewObserver(render_view),
-      disable_popup_(false),
       usernames_usage_(NOTHING_TO_AUTOFILL),
       web_view_(render_view->GetWebView()),
       weak_ptr_factory_(this) {
@@ -433,9 +435,7 @@ void PasswordAutofillAgent::FrameWillClose(WebKit::WebFrame* frame) {
 }
 
 void PasswordAutofillAgent::OnFillPasswordForm(
-    const PasswordFormFillData& form_data,
-    bool disable_popup) {
-  disable_popup_ = disable_popup;
+    const PasswordFormFillData& form_data) {
   if (usernames_usage_ == NOTHING_TO_AUTOFILL) {
     if (form_data.other_possible_usernames.size())
       usernames_usage_ = OTHER_POSSIBLE_USERNAMES_PRESENT;
@@ -493,15 +493,20 @@ void PasswordAutofillAgent::OnFillPasswordForm(
 void PasswordAutofillAgent::GetSuggestions(
     const PasswordFormFillData& fill_data,
     const base::string16& input,
-    std::vector<base::string16>* suggestions) {
-  if (StartsWith(fill_data.basic_data.fields[0].value, input, false))
+    std::vector<base::string16>* suggestions,
+    std::vector<base::string16>* realms) {
+  if (StartsWith(fill_data.basic_data.fields[0].value, input, false)) {
     suggestions->push_back(fill_data.basic_data.fields[0].value);
+    realms->push_back(UTF8ToUTF16(fill_data.preferred_realm));
+  }
 
   for (PasswordFormFillData::LoginCollection::const_iterator iter =
            fill_data.additional_logins.begin();
        iter != fill_data.additional_logins.end(); ++iter) {
-    if (StartsWith(iter->first, input, false))
+    if (StartsWith(iter->first, input, false)) {
       suggestions->push_back(iter->first);
+      realms->push_back(UTF8ToUTF16(iter->second.realm));
+    }
   }
 
   for (PasswordFormFillData::UsernamesCollection::const_iterator iter =
@@ -528,42 +533,28 @@ bool PasswordAutofillAgent::ShowSuggestionPopup(
     return false;
 
   std::vector<base::string16> suggestions;
-  GetSuggestions(fill_data, user_input.value(), &suggestions);
+  std::vector<base::string16> realms;
+  GetSuggestions(fill_data, user_input.value(), &suggestions, &realms);
 
-  if (disable_popup_) {
-    FormData form;
-    FormFieldData field;
-    FindFormAndFieldForInputElement(
-        user_input, &form, &field, REQUIRE_NONE);
+  FormData form;
+  FormFieldData field;
+  FindFormAndFieldForInputElement(
+      user_input, &form, &field, REQUIRE_NONE);
 
-    WebKit::WebInputElement selected_element = user_input;
-    gfx::Rect bounding_box(selected_element.boundsInViewportSpace());
+  WebKit::WebInputElement selected_element = user_input;
+  gfx::Rect bounding_box(selected_element.boundsInViewportSpace());
 
-    float scale = web_view_->pageScaleFactor();
-    gfx::RectF bounding_box_scaled(bounding_box.x() * scale,
-                                   bounding_box.y() * scale,
-                                   bounding_box.width() * scale,
-                                   bounding_box.height() * scale);
-    Send(new AutofillHostMsg_ShowPasswordSuggestions(routing_id(),
-                                                     field,
-                                                     bounding_box_scaled,
-                                                     suggestions));
-    return !suggestions.empty();
-  }
-
-
-  if (suggestions.empty()) {
-    webview->hidePopups();
-    return false;
-  }
-
-  std::vector<base::string16> labels(suggestions.size());
-  std::vector<base::string16> icons(suggestions.size());
-  std::vector<int> ids(suggestions.size(),
-                       WebKit::WebAutofillClient::MenuItemIDPasswordEntry);
-  webview->applyAutofillSuggestions(
-      user_input, suggestions, labels, icons, ids);
-  return true;
+  float scale = web_view_->pageScaleFactor();
+  gfx::RectF bounding_box_scaled(bounding_box.x() * scale,
+                                 bounding_box.y() * scale,
+                                 bounding_box.width() * scale,
+                                 bounding_box.height() * scale);
+  Send(new AutofillHostMsg_ShowPasswordSuggestions(routing_id(),
+                                                   field,
+                                                   bounding_box_scaled,
+                                                   suggestions,
+                                                   realms));
+  return !suggestions.empty();
 }
 
 bool PasswordAutofillAgent::FillUserNameAndPassword(
@@ -590,7 +581,7 @@ bool PasswordAutofillAgent::FillUserNameAndPassword(
       if (DoUsernamesMatch(iter->first, current_username,
                            exact_username_match)) {
         username = iter->first;
-        password = iter->second;
+        password = iter->second.password;
         break;
       }
     }

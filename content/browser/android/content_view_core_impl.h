@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -221,6 +221,7 @@ class ContentViewCoreImpl : public ContentViewCore,
                                   jint player_id,
                                   jobject jsurface);
   void DetachExternalVideoSurface(JNIEnv* env, jobject obj, jint player_id);
+  void SetAccessibilityEnabled(JNIEnv* env, jobject obj, bool enabled);
 
   // --------------------------------------------------------------------------
   // Public methods that call to Java via JNI
@@ -324,12 +325,18 @@ class ContentViewCoreImpl : public ContentViewCore,
   WebKit::WebGestureEvent MakeGestureEvent(
       WebKit::WebInputEvent::Type type, long time_ms, float x, float y) const;
 
+  void SendBeginFrame(base::TimeTicks frame_time);
+
   gfx::Size GetViewportSizePix() const;
   gfx::Size GetViewportSizeOffsetPix() const;
 
   void DeleteScaledSnapshotTexture();
 
   void SendGestureEvent(const WebKit::WebGestureEvent& event);
+
+  // Checks if there there is a corresponding renderer process and updates
+  // |tab_crashed_| accordingly.
+  void UpdateTabCrashedFlag();
 
   // A weak reference to the Java ContentViewCore object.
   JavaObjectWeakGlobalRef java_ref_;

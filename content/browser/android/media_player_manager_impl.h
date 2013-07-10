@@ -6,11 +6,14 @@
 #define CONTENT_BROWSER_ANDROID_MEDIA_PLAYER_MANAGER_IMPL_H_
 
 #include <map>
+#include <string>
+#include <vector>
 
+#include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/browser/android/content_video_view.h"
 #include "content/public/browser/render_view_host_observer.h"
 #include "googleurl/src/gurl.h"
@@ -65,10 +68,8 @@ class CONTENT_EXPORT MediaPlayerManagerImpl
   virtual void OnError(int player_id, int error) OVERRIDE;
   virtual void OnVideoSizeChanged(
       int player_id, int width, int height) OVERRIDE;
-  virtual void OnReadFromDemuxer(
-      int player_id,
-      media::DemuxerStream::Type type,
-      bool seek_done) OVERRIDE;
+  virtual void OnReadFromDemuxer(int player_id,
+                                 media::DemuxerStream::Type type) OVERRIDE;
   virtual void RequestMediaResources(int player_id) OVERRIDE;
   virtual void ReleaseMediaResources(int player_id) OVERRIDE;
   virtual media::MediaResourceGetter* GetMediaResourceGetter() OVERRIDE;
@@ -87,7 +88,7 @@ class CONTENT_EXPORT MediaPlayerManagerImpl
                           int system_code) OVERRIDE;
   virtual void OnKeyMessage(int media_keys_id,
                             const std::string& session_id,
-                            const std::string& message,
+                            const std::vector<uint8>& message,
                             const std::string& destination_url) OVERRIDE;
 
 #if defined(GOOGLE_TV)
@@ -123,6 +124,7 @@ class CONTENT_EXPORT MediaPlayerManagerImpl
       int player_id,
       const media::MediaPlayerHostMsg_ReadFromDemuxerAck_Params& params);
   void OnMediaSeekRequestAck(int player_id, unsigned seek_request_id);
+  void OnInitializeCDM(int media_keys_id, const std::vector<uint8>& uuid);
   void OnGenerateKeyRequest(int media_keys_id,
                             const std::string& type,
                             const std::vector<uint8>& init_data);
@@ -132,6 +134,7 @@ class CONTENT_EXPORT MediaPlayerManagerImpl
                 const std::string& session_id);
   void OnCancelKeyRequest(int media_keys_id, const std::string& session_id);
   void OnDurationChanged(int player_id, const base::TimeDelta& duration);
+  void OnSetMediaKeys(int player_id, int media_keys_id);
 
 #if defined(GOOGLE_TV)
   virtual void OnNotifyExternalSurface(
@@ -144,8 +147,11 @@ class CONTENT_EXPORT MediaPlayerManagerImpl
   // Removes the player with the specified id.
   void RemovePlayer(int player_id);
 
+  // Add a new DrmBridge for the given |uuid| and |media_keys_id|.
+  void AddDrmBridge(int media_keys_id, const std::vector<uint8>& uuid);
+
   // Removes the DRM bridge with the specified id.
-  void RemoveDrmBridge(int key_id);
+  void RemoveDrmBridge(int media_keys_id);
 
  private:
   // An array of managed players.

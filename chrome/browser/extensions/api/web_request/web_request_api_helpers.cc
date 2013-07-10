@@ -10,7 +10,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
@@ -216,10 +216,10 @@ net::NetLog::ParametersCallback CreateNetLogExtensionIdCallback(
 Value* NetLogModificationCallback(
     const EventResponseDelta* delta,
     net::NetLog::LogLevel log_level) {
-  DictionaryValue* dict = new DictionaryValue();
+  base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetString("extension_id", delta->extension_id);
 
-  ListValue* modified_headers = new ListValue();
+  base::ListValue* modified_headers = new base::ListValue();
   net::HttpRequestHeaders::Iterator modification(
       delta->modified_request_headers);
   while (modification.GetNext()) {
@@ -228,7 +228,7 @@ Value* NetLogModificationCallback(
   }
   dict->Set("modified_headers", modified_headers);
 
-  ListValue* deleted_headers = new ListValue();
+  base::ListValue* deleted_headers = new base::ListValue();
   for (std::vector<std::string>::const_iterator key =
            delta->deleted_request_headers.begin();
        key != delta->deleted_request_headers.end();
@@ -245,8 +245,8 @@ bool InDecreasingExtensionInstallationTimeOrder(
   return a->extension_install_time > b->extension_install_time;
 }
 
-ListValue* StringToCharList(const std::string& s) {
-  ListValue* result = new ListValue;
+base::ListValue* StringToCharList(const std::string& s) {
+  base::ListValue* result = new base::ListValue;
   for (size_t i = 0, n = s.size(); i < n; ++i) {
     result->Append(
         Value::CreateIntegerValue(
@@ -255,7 +255,7 @@ ListValue* StringToCharList(const std::string& s) {
   return result;
 }
 
-bool CharListToString(const ListValue* list, std::string* out) {
+bool CharListToString(const base::ListValue* list, std::string* out) {
   if (!list)
     return false;
   const size_t list_length = list->GetSize();

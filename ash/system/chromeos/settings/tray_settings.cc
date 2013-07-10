@@ -5,6 +5,7 @@
 #include "ash/system/chromeos/settings/tray_settings.h"
 
 #include "ash/shell.h"
+#include "ash/system/chromeos/power/power_status.h"
 #include "ash/system/chromeos/power/power_status_view.h"
 #include "ash/system/tray/actionable_view.h"
 #include "ash/system/tray/fixed_sized_image_view.h"
@@ -12,7 +13,6 @@
 #include "ash/system/tray/tray_constants.h"
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chromeos/dbus/power_manager_client.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -30,12 +30,14 @@ namespace internal {
 
 namespace tray {
 
-class SettingsDefaultView : public ActionableView {
+class SettingsDefaultView : public ActionableView,
+                            public PowerStatus::Observer {
  public:
   explicit SettingsDefaultView(user::LoginStatus status)
       : login_status_(status),
         label_(NULL),
         power_status_view_(NULL) {
+    PowerStatus::Get()->AddObserver(this);
     SetLayoutManager(new views::BoxLayout(views::BoxLayout::kHorizontal,
         ash::kTrayPopupPaddingHorizontal, 0,
         ash::kTrayPopupPaddingBetweenItems));
@@ -58,27 +60,16 @@ class SettingsDefaultView : public ActionableView {
       power_view_right_align = true;
     }
 
-    chromeos::PowerSupplyStatus power_status =
-        chromeos::PowerManagerHandler::Get()->GetPowerSupplyStatus();
-    if (power_status.battery_is_present) {
+    if (PowerStatus::Get()->IsBatteryPresent()) {
       power_status_view_ = new ash::internal::PowerStatusView(
           ash::internal::PowerStatusView::VIEW_DEFAULT, power_view_right_align);
       AddChildView(power_status_view_);
-      UpdatePowerStatus(power_status);
+      OnPowerStatusChanged();
     }
   }
 
-  virtual ~SettingsDefaultView() {}
-
-  void UpdatePowerStatus(const chromeos::PowerSupplyStatus& status) {
-    if (!power_status_view_)
-      return;
-    power_status_view_->UpdatePowerStatus(status);
-    base::string16 accessible_name = label_ ?
-        label_->text() + ASCIIToUTF16(", ") +
-            power_status_view_->accessible_name() :
-        power_status_view_->accessible_name();
-    SetAccessibleName(accessible_name);
+  virtual ~SettingsDefaultView() {
+    PowerStatus::Get()->RemoveObserver(this);
   }
 
   // Overridden from ash::internal::ActionableView.
@@ -112,6 +103,18 @@ class SettingsDefaultView : public ActionableView {
     Layout();
   }
 
+  // Overridden from PowerStatus::Observer.
+  virtual void OnPowerStatusChanged() OVERRIDE {
+    if (!PowerStatus::Get()->IsBatteryPresent())
+      return;
+
+    base::string16 accessible_name = label_ ?
+        label_->text() + ASCIIToUTF16(", ") +
+            PowerStatus::Get()->GetAccessibleNameString() :
+        PowerStatus::Get()->GetAccessibleNameString();
+    SetAccessibleName(accessible_name);
+  }
+
  private:
   user::LoginStatus login_status_;
   views::Label* label_;
@@ -125,12 +128,9 @@ class SettingsDefaultView : public ActionableView {
 TraySettings::TraySettings(SystemTray* system_tray)
     : SystemTrayItem(system_tray),
       default_view_(NULL) {
-  chromeos::PowerManagerHandler::Get()->AddObserver(this);
 }
 
 TraySettings::~TraySettings() {
-  if (chromeos::PowerManagerHandler::IsInitialized())
-    chromeos::PowerManagerHandler::Get()->RemoveObserver(this);
 }
 
 views::View* TraySettings::CreateTrayView(user::LoginStatus status) {
@@ -139,9 +139,7 @@ views::View* TraySettings::CreateTrayView(user::LoginStatus status) {
 
 views::View* TraySettings::CreateDefaultView(user::LoginStatus status) {
   if ((status == user::LOGGED_IN_NONE || status == user::LOGGED_IN_LOCKED) &&
-      (chromeos::PowerManagerHandler::IsInitialized() &&
-       !chromeos::PowerManagerHandler::Get()->
-           GetPowerSupplyStatus().battery_is_present))
+      !PowerStatus::Get()->IsBatteryPresent())
     return NULL;
 
   CHECK(default_view_ == NULL);
@@ -165,12 +163,6 @@ void TraySettings::DestroyDetailedView() {
 }
 
 void TraySettings::UpdateAfterLoginStatusChange(user::LoginStatus status) {
-}
-
-void TraySettings::OnPowerStatusChanged(
-    const chromeos::PowerSupplyStatus& status) {
-  if (default_view_)
-    default_view_->UpdatePowerStatus(status);
 }
 
 }  // namespace internal

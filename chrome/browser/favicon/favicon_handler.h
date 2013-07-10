@@ -15,9 +15,9 @@
 #include "chrome/common/cancelable_task_tracker.h"
 #include "chrome/common/ref_counted_util.h"
 #include "content/public/common/favicon_url.h"
-#include "googleurl/src/gurl.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/gfx/image/image.h"
+#include "url/gurl.h"
 
 class FaviconHandlerDelegate;
 class Profile;
@@ -122,7 +122,9 @@ class FaviconHandler {
   virtual content::NavigationEntry* GetEntry();
 
   // Asks the render to download favicon, returns the request id.
-  virtual int DownloadFavicon(const GURL& image_url, int image_size);
+  virtual int DownloadFavicon(const GURL& image_url,
+                              int image_size,
+                              chrome::IconType icon_type);
 
   // Ask the favicon from history
   virtual void UpdateFaviconMappingAndFetch(

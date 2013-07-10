@@ -80,6 +80,8 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
   virtual GdkEventButton* GetLastMouseDown() OVERRIDE;
   virtual gfx::NativeView BuildInputMethodsGtkMenu() OVERRIDE;
 #endif  // defined(TOOLKIT_GTK)
+  virtual void OnSwapCompositorFrame(
+      scoped_ptr<cc::CompositorFrame> frame) OVERRIDE;
 
   // RenderWidgetHostViewPort implementation.
   virtual void InitAsPopup(RenderWidgetHostView* parent_host_view,
@@ -171,12 +173,14 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
 #endif
 
   bool is_showing() const { return is_showing_; }
+  bool did_swap_compositor_frame() const { return did_swap_compositor_frame_; }
 
  protected:
   RenderWidgetHostImpl* rwh_;
 
  private:
   bool is_showing_;
+  bool did_swap_compositor_frame_;
 };
 
 #if defined(COMPILER_MSVC)
@@ -258,7 +262,7 @@ class TestRenderViewHost
   void TestOnUpdateStateWithFile(
       int process_id, const base::FilePath& file_path);
 
-  void TestOnStartDragging(const WebDropData& drop_data);
+  void TestOnStartDragging(const DropData& drop_data);
 
   // If set, *delete_counter is incremented when this object destructs.
   void set_delete_counter(int* delete_counter) {

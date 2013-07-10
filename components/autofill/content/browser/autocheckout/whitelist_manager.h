@@ -8,8 +8,8 @@
 #include <string>
 #include <vector>
 
-#include "base/timer.h"
-#include "components/autofill/browser/autofill_metrics.h"
+#include "base/timer/timer.h"
+#include "components/autofill/core/browser/autofill_metrics.h"
 #include "net/url_request/url_fetcher_delegate.h"
 
 class GURL;

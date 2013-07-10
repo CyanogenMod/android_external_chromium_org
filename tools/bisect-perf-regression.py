@@ -80,7 +80,8 @@ DEPOT_DEPS_NAME = {
     "recurse" : True,
     "depends" : None,
     "build_with": 'v8_bleeding_edge',
-    "from" : 'chromium'
+    "from" : 'chromium',
+    "custom_deps": bisect_utils.GCLIENT_CUSTOM_DEPS_V8
   },
   'v8_bleeding_edge' : {
     "src" : "src/v8_bleeding_edge",
@@ -121,6 +122,10 @@ CROS_TEST_KEY_PATH = os.path.join('..', 'cros', 'chromite', 'ssh_keys',
 CROS_SCRIPT_KEY_PATH = os.path.join('..', 'cros', 'src', 'scripts',
                                     'mod_for_test_scripts', 'ssh_keys',
                                     'testing_rsa')
+
+BUILD_RESULT_SUCCEED = 0
+BUILD_RESULT_FAIL = 1
+BUILD_RESULT_SKIPPED = 2
 
 def CalculateTruncatedMean(data_set, truncate_percent):
   """Calculates the truncated mean of a set of values.
@@ -215,8 +220,26 @@ def IsWindows():
   return os.name == 'nt'
 
 
-def RunProcess(command, print_output=False):
-  """Run an arbitrary command, returning its output and return code.
+def RunProcess(command):
+  """Run an arbitrary command. If output from the call is needed, use
+  RunProcessAndRetrieveOutput instead.
+
+  Args:
+    command: A list containing the command and args to execute.
+
+  Returns:
+    The return code of the call.
+  """
+  # On Windows, use shell=True to get PATH interpretation.
+  shell = IsWindows()
+  return subprocess.call(command, shell=shell)
+
+
+def RunProcessAndRetrieveOutput(command):
+  """Run an arbitrary command, returning its output and return code. Since
+  output is collected via communicate(), there will be no output until the
+  call terminates. If you need output while the program runs (ie. so
+  that the buildbot doesn't terminate the script), consider RunProcess().
 
   Args:
     command: A list containing the command and args to execute.
@@ -226,34 +249,16 @@ def RunProcess(command, print_output=False):
   Returns:
     A tuple of the output and return code.
   """
-  if print_output:
-    print 'Running: [%s]' % ' '.join(command)
-
   # On Windows, use shell=True to get PATH interpretation.
   shell = IsWindows()
   proc = subprocess.Popen(command,
                           shell=shell,
                           stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE,
-                          bufsize=0)
+                          stderr=subprocess.PIPE)
 
-  out = ['']
-  def ReadOutputWhileProcessRuns(stdout, print_output, out):
-    while True:
-      line = stdout.readline()
-      out[0] += line
-      if line == '':
-        break
-      if print_output:
-        sys.stdout.write(line)
+  (output, _) = proc.communicate()
 
-  thread = threading.Thread(target=ReadOutputWhileProcessRuns,
-                            args=(proc.stdout, print_output, out))
-  thread.start()
-  proc.wait()
-  thread.join()
-
-  return (out[0], proc.returncode)
+  return (output, proc.returncode)
 
 
 def RunGit(command):
@@ -267,7 +272,7 @@ def RunGit(command):
   """
   command = ['git'] + command
 
-  return RunProcess(command)
+  return RunProcessAndRetrieveOutput(command)
 
 
 def CheckRunGit(command):
@@ -287,24 +292,24 @@ def CheckRunGit(command):
   return output
 
 
-def BuildWithMake(threads, targets, print_output):
+def BuildWithMake(threads, targets):
   cmd = ['make', 'BUILDTYPE=Release', '-j%d' % threads] + targets
 
-  (output, return_code) = RunProcess(cmd, print_output)
+  return_code = RunProcess(cmd)
 
   return not return_code
 
 
-def BuildWithNinja(threads, targets, print_output):
+def BuildWithNinja(threads, targets):
   cmd = ['ninja', '-C', os.path.join('out', 'Release'),
       '-j%d' % threads] + targets
 
-  (output, return_code) = RunProcess(cmd, print_output)
+  return_code = RunProcess(cmd)
 
   return not return_code
 
 
-def BuildWithVisualStudio(targets, print_output):
+def BuildWithVisualStudio(targets):
   path_to_devenv = os.path.abspath(
       os.path.join(os.environ['VS100COMNTOOLS'], '..', 'IDE', 'devenv.com'))
   path_to_sln = os.path.join(os.getcwd(), 'chrome', 'chrome.sln')
@@ -313,7 +318,7 @@ def BuildWithVisualStudio(targets, print_output):
   for t in targets:
     cmd.extend(['/Project', t])
 
-  (output, return_code) = RunProcess(cmd, print_output)
+  return_code = RunProcess(cmd)
 
   return not return_code
 
@@ -346,17 +351,14 @@ class DesktopBuilder(Builder):
 
     build_success = False
     if opts.build_preference == 'make':
-      build_success = BuildWithMake(threads, targets,
-          opts.output_buildbot_annotations)
+      build_success = BuildWithMake(threads, targets)
     elif opts.build_preference == 'ninja':
       if IsWindows():
         targets = [t + '.exe' for t in targets]
-      build_success = BuildWithNinja(threads, targets,
-          opts.output_buildbot_annotations)
+      build_success = BuildWithNinja(threads, targets)
     elif opts.build_preference == 'msvs':
       assert IsWindows(), 'msvs is only supported on Windows.'
-      build_success = BuildWithVisualStudio(targets,
-          opts.output_buildbot_annotations)
+      build_success = BuildWithVisualStudio(targets)
     else:
       assert False, 'No build system defined.'
     return build_success
@@ -376,7 +378,7 @@ class AndroidBuilder(Builder):
     path_to_tool = os.path.join('build', 'android', 'adb_install_apk.py')
     cmd = [path_to_tool, '--apk', 'ContentShell.apk', '--apk_package',
         'org.chromium.content_shell_apk', '--release']
-    (_, return_code) = RunProcess(cmd, opts.output_buildbot_annotations)
+    return_code = RunProcess(cmd)
     return not return_code
 
   def Build(self, depot, opts):
@@ -428,7 +430,7 @@ class CrosBuilder(Builder):
              '--remote=%s' % opts.cros_remote_ip,
              '--board=%s' % opts.cros_board, '--test', '--verbose']
 
-      (_, return_code) = RunProcess(cmd, opts.output_buildbot_annotations)
+      return_code = RunProcess(cmd)
       return not return_code
     except OSError, e:
       return False
@@ -456,7 +458,7 @@ class CrosBuilder(Builder):
 
     cmd += ['BUILDTYPE=Release', './build_packages',
         '--board=%s' % opts.cros_board]
-    (_, return_code) = RunProcess(cmd, True)
+    return_code = RunProcess(cmd)
 
     return not return_code
 
@@ -484,7 +486,7 @@ class CrosBuilder(Builder):
     cmd += ['BUILDTYPE=Release', '--', './build_image',
         '--board=%s' % opts.cros_board, 'test']
 
-    (_, return_code) = RunProcess(cmd, opts.output_buildbot_annotations)
+    return_code = RunProcess(cmd)
 
     return not return_code
 
@@ -817,7 +819,7 @@ class BisectPerformanceMetrics(object):
       cmd = ['repo', 'forall', '-c',
           'git log --format=%%ct --before=%d --after=%d' % (
           revision_range_end, revision_range_start)]
-      (output, return_code) = RunProcess(cmd)
+      (output, return_code) = RunProcessAndRetrieveOutput(cmd)
 
       assert not return_code, 'An error occurred while running'\
                               ' "%s"' % ' '.join(cmd)
@@ -870,7 +872,7 @@ class BisectPerformanceMetrics(object):
       cmd = [CROS_SDK_PATH, '--', 'portageq-%s' % self.opts.cros_board,
              'best_visible', '/build/%s' % self.opts.cros_board, 'ebuild',
              CROS_CHROMEOS_PATTERN]
-      (output, return_code) = RunProcess(cmd)
+      (output, return_code) = RunProcessAndRetrieveOutput(cmd)
 
       assert not return_code, 'An error occurred while running'\
                               ' "%s"' % ' '.join(cmd)
@@ -1018,8 +1020,10 @@ class BisectPerformanceMetrics(object):
     metric_values = []
     for i in xrange(self.opts.repeat_test_count):
       # Can ignore the return code since if the tests fail, it won't return 0.
-      (output, return_code) = RunProcess(args,
-          self.opts.output_buildbot_annotations)
+      (output, return_code) = RunProcessAndRetrieveOutput(args)
+
+      if self.opts.output_buildbot_annotations:
+        print output
 
       metric_values += self.ParseMetricValuesFromOutput(metric, output)
 
@@ -1146,7 +1150,7 @@ class BisectPerformanceMetrics(object):
     cwd = os.getcwd()
     self.ChangeToDepotWorkingDirectory('cros')
     cmd = [CROS_SDK_PATH, '--delete']
-    (_, return_code) = RunProcess(cmd, self.opts.output_buildbot_annotations)
+    return_code = RunProcess(cmd)
     os.chdir(cwd)
     return not return_code
 
@@ -1159,7 +1163,7 @@ class BisectPerformanceMetrics(object):
     cwd = os.getcwd()
     self.ChangeToDepotWorkingDirectory('cros')
     cmd = [CROS_SDK_PATH, '--create']
-    (_, return_code) = RunProcess(cmd, self.opts.output_buildbot_annotations)
+    return_code = RunProcess(cmd)
     os.chdir(cwd)
     return not return_code
 
@@ -1187,7 +1191,31 @@ class BisectPerformanceMetrics(object):
       return self.CreateCrosChroot()
     return True
 
-  def SyncBuildAndRunRevision(self, revision, depot, command_to_run, metric):
+  def ShouldSkipRevision(self, depot, revision):
+    """Some commits can be safely skipped (such as a DEPS roll), since the tool
+    is git based those changes would have no effect.
+
+    Args:
+      depot: The depot being bisected.
+      revision: Current revision we're synced to.
+
+    Returns:
+      True if we should skip building/testing this revision.
+    """
+    if depot == 'chromium':
+      if self.source_control.IsGit():
+        cmd = ['diff-tree', '--no-commit-id', '--name-only', '-r', revision]
+        output = CheckRunGit(cmd)
+
+        files = output.splitlines()
+
+        if len(files) == 1 and files[0] == 'DEPS':
+          return True
+
+    return False
+
+  def SyncBuildAndRunRevision(self, revision, depot, command_to_run, metric,
+      skippable=False):
     """Performs a full sync/build/run of the specified revision.
 
     Args:
@@ -1209,10 +1237,10 @@ class BisectPerformanceMetrics(object):
     revisions_to_sync = self.FindAllRevisionsToSync(revision, depot)
 
     if not revisions_to_sync:
-      return ('Failed to resolve dependant depots.', 1)
+      return ('Failed to resolve dependant depots.', BUILD_RESULT_FAIL)
 
     if not self.PerformPreSyncCleanup(revision, depot):
-      return ('Failed to perform pre-sync cleanup.', 1)
+      return ('Failed to perform pre-sync cleanup.', BUILD_RESULT_FAIL)
 
     success = True
 
@@ -1232,6 +1260,10 @@ class BisectPerformanceMetrics(object):
       success = self.RunPostSync(depot)
 
       if success:
+        if skippable and self.ShouldSkipRevision(depot, revision):
+          return ('Skipped revision: [%s]' % str(revision),
+              BUILD_RESULT_SKIPPED)
+
         if self.BuildCurrentRevision(depot):
           results = self.RunPerformanceTestAndParseResults(command_to_run,
                                                            metric)
@@ -1243,15 +1275,18 @@ class BisectPerformanceMetrics(object):
             if external_revisions:
               return (results[0], results[1], external_revisions)
             else:
-              return ('Failed to parse DEPS file for external revisions.', 1)
+              return ('Failed to parse DEPS file for external revisions.',
+                  BUILD_RESULT_FAIL)
           else:
             return results
         else:
-          return ('Failed to build revision: [%s]' % (str(revision, )), 1)
+          return ('Failed to build revision: [%s]' % (str(revision, )),
+              BUILD_RESULT_FAIL)
       else:
-        return ('Failed to run [gclient runhooks].', 1)
+        return ('Failed to run [gclient runhooks].', BUILD_RESULT_FAIL)
     else:
-      return ('Failed to sync revision: [%s]' % (str(revision, )), 1)
+      return ('Failed to sync revision: [%s]' % (str(revision, )),
+          BUILD_RESULT_FAIL)
 
   def CheckIfRunPassed(self, current_value, known_good_value, known_bad_value):
     """Given known good and bad values, decide if the current_value passed
@@ -1291,7 +1326,9 @@ class BisectPerformanceMetrics(object):
   def PrepareToBisectOnDepot(self,
                              current_depot,
                              end_revision,
-                             start_revision):
+                             start_revision,
+                             previous_depot,
+                             previous_revision):
     """Changes to the appropriate directory and gathers a list of revisions
     to bisect between |start_revision| and |end_revision|.
 
@@ -1299,6 +1336,8 @@ class BisectPerformanceMetrics(object):
       current_depot: The depot we want to bisect.
       end_revision: End of the revision range.
       start_revision: Start of the revision range.
+      previous_depot: The depot we were previously bisecting.
+      previous_revision: The last revision we synced to on |previous_depot|.
 
     Returns:
       A list containing the revisions between |start_revision| and
@@ -1312,6 +1351,16 @@ class BisectPerformanceMetrics(object):
     # V8 (and possibly others) is merged in periodically. Bisecting
     # this directory directly won't give much good info.
     if DEPOT_DEPS_NAME[current_depot].has_key('build_with'):
+      if (DEPOT_DEPS_NAME[current_depot].has_key('custom_deps') and
+          previous_depot == 'chromium'):
+        config_path = os.path.join(self.src_cwd, '..')
+        if bisect_utils.RunGClientAndCreateConfig(self.opts,
+            DEPOT_DEPS_NAME[current_depot]['custom_deps'], cwd=config_path):
+          return []
+        if bisect_utils.RunGClient(
+            ['sync', '--revision', previous_revision], cwd=self.src_cwd):
+          return []
+
       new_depot = DEPOT_DEPS_NAME[current_depot]['build_with']
 
       svn_start_revision = self.source_control.SVNFindRev(start_revision)
@@ -1616,6 +1665,8 @@ class BisectPerformanceMetrics(object):
       good_revision_data['passed'] = 1
       good_revision_data['value'] = known_good_value
 
+      next_revision_depot = target_depot
+
       while True:
         if not revision_list:
           break
@@ -1641,7 +1692,6 @@ class BisectPerformanceMetrics(object):
                 if min_revision_data['external'][current_depot] !=\
                    max_revision_data['external'][current_depot]:
                   external_depot = current_depot
-
                   break
 
             # If there was no change in any of the external depots, the search
@@ -1649,12 +1699,16 @@ class BisectPerformanceMetrics(object):
             if not external_depot:
               break
 
-            earliest_revision = max_revision_data['external'][current_depot]
-            latest_revision = min_revision_data['external'][current_depot]
+            previous_revision = revision_list[min_revision]
+
+            earliest_revision = max_revision_data['external'][external_depot]
+            latest_revision = min_revision_data['external'][external_depot]
 
             new_revision_list = self.PrepareToBisectOnDepot(external_depot,
                                                             latest_revision,
-                                                            earliest_revision)
+                                                            earliest_revision,
+                                                            next_revision_depot,
+                                                            previous_revision)
 
             if not new_revision_list:
               results['error'] = 'An error occurred attempting to retrieve'\
@@ -1675,7 +1729,7 @@ class BisectPerformanceMetrics(object):
             sort_key_ids += len(revision_list)
 
             print 'Regression in metric:%s appears to be the result of changes'\
-                  ' in [%s].' % (metric, current_depot)
+                  ' in [%s].' % (metric, external_depot)
 
             self.PrintRevisionsToBisectMessage(revision_list, external_depot)
 
@@ -1701,7 +1755,7 @@ class BisectPerformanceMetrics(object):
         run_results = self.SyncBuildAndRunRevision(next_revision_id,
                                                    next_revision_depot,
                                                    command_to_run,
-                                                   metric)
+                                                   metric, skippable=True)
 
         if self.opts.output_buildbot_annotations:
           bisect_utils.OutputAnnotationStepClosed()
@@ -1724,7 +1778,10 @@ class BisectPerformanceMetrics(object):
           else:
             min_revision = next_revision_index
         else:
-          next_revision_data['passed'] = 'F'
+          if run_results[1] == BUILD_RESULT_SKIPPED:
+            next_revision_data['passed'] = 'Skipped'
+          elif run_results[1] == BUILD_RESULT_FAIL:
+            next_revision_data['passed'] = 'Failed'
 
           # If the build is broken, remove it and redo search.
           revision_list.pop(next_revision_index)
@@ -1802,7 +1859,7 @@ class BisectPerformanceMetrics(object):
         cmd = ['repo', 'forall', '-c',
             'pwd ; git log --pretty=oneline --before=%d --after=%d' % (
             last_broken_revision, first_working_revision + 1)]
-        (output, return_code) = RunProcess(cmd)
+        (output, return_code) = RunProcessAndRetrieveOutput(cmd)
 
         changes = []
 

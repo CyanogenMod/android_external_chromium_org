@@ -32,7 +32,8 @@ class AppListServiceMacBrowserTest : public InProcessBrowserTest,
 
   void FocusShim() {
     DCHECK(running_);
-    AppShimHandler::GetForAppMode(app_mode::kAppListModeId)->OnShimFocus(this);
+    AppShimHandler::GetForAppMode(app_mode::kAppListModeId)->
+        OnShimFocus(this, apps::APP_SHIM_FOCUS_REOPEN);
   }
 
   void QuitShim() {
@@ -46,8 +47,9 @@ class AppListServiceMacBrowserTest : public InProcessBrowserTest,
     ++close_count_;
     QuitShim();
   }
-  virtual Profile* GetProfile() const OVERRIDE {
-    return NULL;  // Currently unused in this test.
+  virtual base::FilePath GetProfilePath() const OVERRIDE {
+    NOTREACHED();  // Currently unused in this test.
+    return base::FilePath();
   }
   virtual std::string GetAppId() const OVERRIDE {
     return app_mode::kAppListModeId;

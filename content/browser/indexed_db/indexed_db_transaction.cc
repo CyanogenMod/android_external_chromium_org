@@ -10,7 +10,7 @@
 #include "content/browser/indexed_db/indexed_db_backing_store.h"
 #include "content/browser/indexed_db/indexed_db_cursor.h"
 #include "content/browser/indexed_db/indexed_db_database.h"
-#include "content/browser/indexed_db/indexed_db_database_callbacks_wrapper.h"
+#include "content/browser/indexed_db/indexed_db_database_callbacks.h"
 #include "content/browser/indexed_db/indexed_db_tracing.h"
 #include "content/browser/indexed_db/indexed_db_transaction_coordinator.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabaseException.h"
@@ -51,7 +51,7 @@ IndexedDBTransaction::TaskStack::pop() {
 
 scoped_refptr<IndexedDBTransaction> IndexedDBTransaction::Create(
     int64 id,
-    scoped_refptr<IndexedDBDatabaseCallbacksWrapper> callbacks,
+    scoped_refptr<IndexedDBDatabaseCallbacks> callbacks,
     const std::vector<int64>& object_store_ids,
     indexed_db::TransactionMode mode,
     IndexedDBDatabase* database) {
@@ -65,7 +65,7 @@ scoped_refptr<IndexedDBTransaction> IndexedDBTransaction::Create(
 
 IndexedDBTransaction::IndexedDBTransaction(
     int64 id,
-    scoped_refptr<IndexedDBDatabaseCallbacksWrapper> callbacks,
+    scoped_refptr<IndexedDBDatabaseCallbacks> callbacks,
     const std::set<int64>& object_store_ids,
     indexed_db::TransactionMode mode,
     IndexedDBDatabase* database)
@@ -119,7 +119,7 @@ void IndexedDBTransaction::Abort() {
 }
 
 void IndexedDBTransaction::Abort(const IndexedDBDatabaseError& error) {
-  IDB_TRACE("IndexedDBTransaction::abort");
+  IDB_TRACE("IndexedDBTransaction::Abort");
   if (state_ == FINISHED)
     return;
 
@@ -205,7 +205,7 @@ void IndexedDBTransaction::Start() {
 }
 
 void IndexedDBTransaction::Commit() {
-  IDB_TRACE("IndexedDBTransaction::commit");
+  IDB_TRACE("IndexedDBTransaction::Commit");
 
   // In multiprocess ports, front-end may have requested a commit but
   // an abort has already been initiated asynchronously by the
@@ -264,11 +264,11 @@ void IndexedDBTransaction::Commit() {
 }
 
 void IndexedDBTransaction::TaskTimerFired() {
-  IDB_TRACE("IndexedDBTransaction::task_timer_fired");
+  IDB_TRACE("IndexedDBTransaction::TaskTimerFired");
   DCHECK(!IsTaskQueueEmpty());
 
   if (state_ == START_PENDING) {
-    transaction_.begin();
+    transaction_.Begin();
     state_ = RUNNING;
   }
 

@@ -5,14 +5,14 @@
 #import "ui/message_center/cocoa/settings_controller.h"
 
 #include "base/mac/foundation_util.h"
+#import "base/mac/scoped_nsobject.h"
 #include "base/strings/sys_string_conversions.h"
 #include "grit/ui_strings.h"
+#include "skia/ext/skia_utils_mac.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#import "base/memory/scoped_nsobject.h"
 #import "ui/message_center/cocoa/tray_view_controller.h"
 #include "ui/message_center/message_center_style.h"
-#include "skia/ext/skia_utils_mac.h"
 
 const int kMarginWidth = 16;
 const int kEntryHeight = 38;
@@ -27,7 +27,7 @@ const int kCorrectedCheckmarkPadding =
 @interface MCSettingsButtonCell : NSButtonCell {
   // A checkbox's regular image is the checkmark image. This additional image
   // is used for the favicon or app icon shown next to the checkmark.
-  scoped_nsobject<NSImage> extraImage_;
+  base::scoped_nsobject<NSImage> extraImage_;
 }
 - (void)setExtraImage:(NSImage*)extraImage;
 @end
@@ -93,8 +93,8 @@ const int kCorrectedCheckmarkPadding =
 // Sets the icon on the checkbox corresponding to |notifiers_[index]|.
 - (void)setIcon:(NSImage*)icon forNotifierIndex:(size_t)index;
 
-- (void)setIcon:(NSImage*)icon forAppId:(const std::string&)id;
-- (void)setIcon:(NSImage*)icon forURL:(const GURL&)url;
+- (void)setIcon:(NSImage*)icon
+  forNotifierId:(const message_center::NotifierId&)id;
 
 // Returns the NSButton corresponding to the checkbox for |notifiers_[index]|.
 - (NSButton*)buttonForNotifierAtIndex:(size_t)index;
@@ -102,25 +102,11 @@ const int kCorrectedCheckmarkPadding =
 
 namespace message_center {
 
-NotifierSettingsDelegateMac::~NotifierSettingsDelegateMac() {}
+NotifierSettingsObserverMac::~NotifierSettingsObserverMac() {}
 
-void NotifierSettingsDelegateMac::UpdateIconImage(const std::string& id,
+void NotifierSettingsObserverMac::UpdateIconImage(const NotifierId& notifier_id,
                                                   const gfx::Image& icon) {
-  [cocoa_controller() setIcon:icon.AsNSImage() forAppId:id];
-}
-
-void NotifierSettingsDelegateMac::UpdateFavicon(const GURL& url,
-                                                const gfx::Image& icon) {
-  [cocoa_controller() setIcon:icon.AsNSImage() forURL:url];
-}
-
-NotifierSettingsDelegate* ShowSettings(NotifierSettingsProvider* provider,
-                                       gfx::NativeView context) {
-  // The caller of this function (the tray) retains |controller| while it's
-  // visible.
-  MCSettingsController* controller =
-      [[[MCSettingsController alloc] initWithProvider:provider] autorelease];
-  return [controller delegate];
+  [settings_controller_ setIcon:icon.AsNSImage() forNotifierId:notifier_id];
 }
 
 }  // namespace message_center
@@ -129,13 +115,15 @@ NotifierSettingsDelegate* ShowSettings(NotifierSettingsProvider* provider,
 
 - (id)initWithProvider:(message_center::NotifierSettingsProvider*)provider {
   if ((self = [super initWithNibName:nil bundle:nil])) {
-    delegate_.reset(new message_center::NotifierSettingsDelegateMac(self));
+    observer_.reset(new message_center::NotifierSettingsObserverMac(self));
     provider_ = provider;
+    provider_->AddObserver(observer_.get());
   }
   return self;
 }
 
 - (void)dealloc {
+  provider_->RemoveObserver(observer_.get());
   provider_->OnNotifierSettingsClosing();
   [super dealloc];
 }
@@ -157,7 +145,7 @@ NotifierSettingsDelegate* ShowSettings(NotifierSettingsProvider* provider,
   // Container view.
   NSRect fullFrame =
       NSMakeRect(0, 0, [MCTrayViewController trayWidth], maxHeight);
-  scoped_nsobject<NSBox> view([[NSBox alloc] initWithFrame:fullFrame]);
+  base::scoped_nsobject<NSBox> view([[NSBox alloc] initWithFrame:fullFrame]);
   [view setBorderType:NSNoBorder];
   [view setBoxType:NSBoxCustom];
   [view setContentViewMargins:NSZeroSize];
@@ -206,7 +194,7 @@ NotifierSettingsDelegate* ShowSettings(NotifierSettingsProvider* provider,
   // Document view for the notifier settings.
   CGFloat y = 0;
   NSRect documentFrame = NSMakeRect(0, 0, NSWidth(fullFrame), 0);
-  scoped_nsobject<NSView> documentView(
+  base::scoped_nsobject<NSView> documentView(
       [[NSView alloc] initWithFrame:documentFrame]);
   for (int i = notifiers_.size() - 1; i >= 0; --i) {
     message_center::Notifier* notifier = notifiers_[i];
@@ -214,8 +202,9 @@ NotifierSettingsDelegate* ShowSettings(NotifierSettingsProvider* provider,
     // TODO(thakis): Use a custom button cell.
     NSRect frame = NSMakeRect(
         kMarginWidth, y, NSWidth(documentFrame) - kMarginWidth, kEntryHeight);
-    scoped_nsobject<NSButton> button([[NSButton alloc] initWithFrame:frame]);
-    scoped_nsobject<MCSettingsButtonCell> cell(
+    base::scoped_nsobject<NSButton> button(
+        [[NSButton alloc] initWithFrame:frame]);
+    base::scoped_nsobject<MCSettingsButtonCell> cell(
         [[MCSettingsButtonCell alloc]
             initTextCell:base::SysUTF16ToNSString(notifier->name)]);
     [button setCell:cell];
@@ -277,10 +266,6 @@ NotifierSettingsDelegate* ShowSettings(NotifierSettingsProvider* provider,
                                 [sender state] == NSOnState);
 }
 
-- (message_center::NotifierSettingsDelegateMac*)delegate {
-  return delegate_.get();
-}
-
 // Testing API /////////////////////////////////////////////////////////////////
 
 - (NSScrollView*)scrollView {
@@ -295,18 +280,10 @@ NotifierSettingsDelegate* ShowSettings(NotifierSettingsProvider* provider,
   [button setNeedsDisplay:YES];
 }
 
-- (void)setIcon:(NSImage*)icon forAppId:(const std::string&)id {
+- (void)setIcon:(NSImage*)icon
+  forNotifierId:(const message_center::NotifierId&)id {
   for (size_t i = 0; i < notifiers_.size(); ++i) {
-    if (notifiers_[i]->id == id) {
-      [self setIcon:icon forNotifierIndex:i];
-      return;
-    }
-  }
-}
-
-- (void)setIcon:(NSImage*)icon forURL:(const GURL&)url {
-  for (size_t i = 0; i < notifiers_.size(); ++i) {
-    if (notifiers_[i]->url == url) {
+    if (notifiers_[i]->notifier_id == id) {
       [self setIcon:icon forNotifierIndex:i];
       return;
     }

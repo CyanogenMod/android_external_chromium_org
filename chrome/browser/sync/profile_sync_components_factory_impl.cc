@@ -4,13 +4,16 @@
 
 #include "base/command_line.h"
 #include "build/build_config.h"
+#include "chrome/browser/about_flags.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/storage/settings_frontend.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
+#include "chrome/browser/pref_service_flags_storage.h"
 #include "chrome/browser/prefs/pref_model_associator.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/profile.h"
@@ -55,7 +58,7 @@
 #include "chrome/browser/webdata/autofill_profile_syncable_service.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "components/autofill/browser/webdata/autofill_webdata_service.h"
+#include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "sync/api/syncable_service.h"
 
@@ -102,20 +105,6 @@ using browser_sync::TypedUrlDataTypeController;
 using browser_sync::TypedUrlModelAssociator;
 using browser_sync::UIDataTypeController;
 using content::BrowserThread;
-
-namespace {
-// Based on command line switches, make the call to use SyncedNotifications or
-// not.
-// TODO(petewil): Remove this when the SyncedNotifications feature is ready
-// to be turned on by default, and just use a disable switch instead then.
-bool UseSyncedNotifications(CommandLine* command_line) {
-  if (command_line->HasSwitch(switches::kDisableSyncSyncedNotifications))
-    return false;
-  if (command_line->HasSwitch(switches::kEnableSyncSyncedNotifications))
-    return true;
-  return false;
-}
-}  // namespace
 
 ProfileSyncComponentsFactoryImpl::ProfileSyncComponentsFactoryImpl(
     Profile* profile, CommandLine* command_line)
@@ -185,7 +174,19 @@ void ProfileSyncComponentsFactoryImpl::RegisterCommonDataTypes(
         new SessionDataTypeController(this, profile_, pss));
   }
 
+  // Migrate sync flags that should be prefs.
+  // TODO(pastarmovj): Remove this code once enough time has passed to not need
+  // to migrate anymore.
+  about_flags::PrefServiceFlagsStorage flags_storage(
+      g_browser_process->local_state());
   if (command_line_->HasSwitch(switches::kEnableSyncFavicons)) {
+    profile_->GetPrefs()->SetBoolean(prefs::kSyncFaviconsEnabled, true);
+    about_flags::SetExperimentEnabled(&flags_storage,
+                                      syncer::kFaviconSyncFlag,
+                                      false);
+  }
+
+  if (profile_->GetPrefs()->GetBoolean(prefs::kSyncFaviconsEnabled)) {
     pss->RegisterDataTypeController(
         new UIDataTypeController(syncer::FAVICON_IMAGES,
                                  this,
@@ -268,13 +269,16 @@ void ProfileSyncComponentsFactoryImpl::RegisterDesktopDataTypes(
             syncer::APP_SETTINGS, this, profile_, pss));
   }
 
+#if !defined(OS_ANDROID)
   // Synced Notifications sync datatype is disabled by default.
   // TODO(petewil): Switch to enabled by default once datatype support is done.
-  if (UseSyncedNotifications(command_line_)) {
+  if (notifier::ChromeNotifierServiceFactory::UseSyncedNotifications(
+          command_line_)) {
     pss->RegisterDataTypeController(
         new UIDataTypeController(
             syncer::SYNCED_NOTIFICATIONS, this, profile_, pss));
   }
+#endif
 
 #if defined(OS_LINUX) || defined(OS_WIN) || defined(OS_CHROMEOS)
   // Dictionary sync is enabled by default.

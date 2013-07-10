@@ -18,6 +18,7 @@ class Value;
 namespace chromeos {
 
 class DeviceState;
+class FavoriteState;
 class NetworkState;
 
 // Base class for states managed by NetworkStateManger which are associated
@@ -26,6 +27,7 @@ class ManagedState {
  public:
   enum ManagedType {
     MANAGED_TYPE_NETWORK,
+    MANAGED_TYPE_FAVORITE,
     MANAGED_TYPE_DEVICE
   };
 
@@ -39,6 +41,7 @@ class ManagedState {
   // NULL if it is not.
   NetworkState* AsNetworkState();
   DeviceState* AsDeviceState();
+  FavoriteState* AsFavoriteState();
 
   // Called by NetworkStateHandler when a property was received. The return
   // value indicates if the state changed and is used to reduce the number of
@@ -60,8 +63,6 @@ class ManagedState {
   const std::string& path() const { return path_; }
   const std::string& name() const { return name_; }
   const std::string& type() const { return type_; }
-  bool is_observed() const { return is_observed_; }
-  void set_is_observed(bool is_observed) { is_observed_ = is_observed; }
   bool update_requested() const { return update_requested_; }
   void set_update_requested(bool update_requested) {
     update_requested_ = update_requested;
@@ -99,9 +100,6 @@ class ManagedState {
   // Common properties shared by all managed state objects.
   std::string name_;  // flimflam::kNameProperty
   std::string type_;  // flimflam::kTypeProperty
-
-  // Tracks when the state is being observed.
-  bool is_observed_;
 
   // Tracks when an update has been requested.
   bool update_requested_;

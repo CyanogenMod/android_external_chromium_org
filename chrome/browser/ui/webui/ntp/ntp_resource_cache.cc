@@ -8,11 +8,9 @@
 #include <vector>
 
 #include "apps/app_launcher.h"
-#include "apps/field_trial_names.h"
 #include "apps/pref_names.h"
 #include "base/command_line.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/metrics/field_trial.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
@@ -31,10 +29,10 @@
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar_constants.h"
+#include "chrome/browser/ui/sync/sync_promo_ui.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_page_handler.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/browser/ui/webui/ntp/ntp_login_handler.h"
-#include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
 #include "chrome/browser/ui/webui/sync_setup_handler.h"
 #include "chrome/browser/web_resource/notification_promo.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -338,7 +336,6 @@ void NTPResourceCache::CreateNewTabHTML() {
   // Show the profile name in the title and most visited labels if the current
   // profile is not the default.
   PrefService* prefs = profile_->GetPrefs();
-  PrefService* local_state = g_browser_process->local_state();
   DictionaryValue load_time_data;
   load_time_data.SetBoolean("bookmarkbarattached",
       prefs->GetBoolean(prefs::kShowBookmarkBar));
@@ -346,15 +343,8 @@ void NTPResourceCache::CreateNewTabHTML() {
       ThemeServiceFactory::GetForProfile(profile_)->HasCustomImage(
           IDR_THEME_NTP_ATTRIBUTION));
   load_time_data.SetBoolean("showMostvisited", should_show_most_visited_page_);
-  std::string app_launcher_promo_group_name =
-      base::FieldTrialList::FindFullName(apps::kLauncherPromoTrialName);
-  bool show_app_launcher_promo =
-      !apps::IsAppLauncherEnabled() &&
-      local_state->GetBoolean(apps::prefs::kShowAppLauncherPromo) &&
-      (app_launcher_promo_group_name == apps::kShowLauncherPromoOnceGroupName ||
-       app_launcher_promo_group_name ==
-          apps::kResetShowLauncherPromoPrefGroupName);
-  load_time_data.SetBoolean("showAppLauncherPromo", show_app_launcher_promo);
+  load_time_data.SetBoolean("showAppLauncherPromo",
+      apps::ShouldShowAppLauncherPromo());
   load_time_data.SetBoolean("showRecentlyClosed",
       should_show_recently_closed_menu_);
   load_time_data.SetString("title",
@@ -405,6 +395,8 @@ void NTPResourceCache::CreateNewTabHTML() {
       l10n_util::GetStringUTF16(IDS_SYNC_START_SYNC_BUTTON_LABEL));
   load_time_data.SetString("syncLinkText",
       l10n_util::GetStringUTF16(IDS_SYNC_ADVANCED_OPTIONS));
+  load_time_data.SetBoolean("shouldShowSyncLogin",
+                            NTPLoginHandler::ShouldShow(profile_));
   load_time_data.SetString("otherSessions",
       l10n_util::GetStringUTF16(IDS_NEW_TAB_OTHER_SESSIONS_LABEL));
   load_time_data.SetString("otherSessionsEmpty",

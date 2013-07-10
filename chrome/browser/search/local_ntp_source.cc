@@ -9,8 +9,9 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
+#include "chrome/browser/search/instant_io_context.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/common/url_constants.h"
-#include "googleurl/src/gurl.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
 #include "grit/ui_resources.h"
@@ -18,6 +19,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/webui/jstemplate_builder.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -47,11 +49,8 @@ const struct Resource{
     IDR_LOCAL_OMNIBOX_POPUP_IMAGES_SEARCH_ICON_PNG, "image/png" },
   { "images/2x/search_icon.png",
     IDR_LOCAL_OMNIBOX_POPUP_IMAGES_2X_SEARCH_ICON_PNG, "image/png" },
-  { "images/google_logo.png", IDR_LOCAL_NTP_IMAGES_LOGO_PNG, "image/png" },
   { "images/2x/google_logo.png",
     IDR_LOCAL_NTP_IMAGES_2X_LOGO_PNG, "image/png" },
-  { "images/white_google_logo.png",
-    IDR_LOCAL_NTP_IMAGES_WHITE_LOGO_PNG, "image/png" },
   { "images/2x/white_google_logo.png",
     IDR_LOCAL_NTP_IMAGES_2X_WHITE_LOGO_PNG, "image/png" },
 };
@@ -71,6 +70,8 @@ void AddString(base::DictionaryValue* dictionary,
 // Returns a JS dictionary of translated strings for the local NTP.
 std::string GetTranslatedStrings() {
   base::DictionaryValue translated_strings;
+  if (chrome::ShouldShowRecentTabsOnNTP())
+    AddString(&translated_strings, "recentTabs", IDS_RECENT_TABS_MENU);
   AddString(&translated_strings, "thumbnailRemovedNotification",
             IDS_NEW_TAB_THUMBNAIL_REMOVED_NOTIFICATION);
   AddString(&translated_strings, "removeThumbnailTooltip",
@@ -135,6 +136,8 @@ std::string LocalNtpSource::GetMimeType(
 bool LocalNtpSource::ShouldServiceRequest(
     const net::URLRequest* request) const {
   DCHECK(request->url().host() == chrome::kChromeSearchLocalNtpHost);
+  if (!InstantIOContext::ShouldServiceRequest(request))
+    return false;
 
   if (request->url().SchemeIs(chrome::kChromeSearchScheme)) {
     DCHECK(StartsWithASCII(request->url().path(), "/", true));

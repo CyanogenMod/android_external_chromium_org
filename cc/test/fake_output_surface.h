@@ -5,7 +5,7 @@
 #ifndef CC_TEST_FAKE_OUTPUT_SURFACE_H_
 #define CC_TEST_FAKE_OUTPUT_SURFACE_H_
 
-#include "base/time.h"
+#include "base/time/time.h"
 #include "cc/output/begin_frame_args.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/output_surface.h"
@@ -58,10 +58,9 @@ class FakeOutputSurface : public OutputSurface {
   }
 
   static scoped_ptr<FakeOutputSurface> CreateDeferredGL(
-      scoped_ptr<WebKit::WebGraphicsContext3D> context3d,
       scoped_ptr<SoftwareOutputDevice> software_device) {
     scoped_ptr<FakeOutputSurface> result(
-        new FakeOutputSurface(context3d.Pass(), software_device.Pass(), false));
+        new FakeOutputSurface(software_device.Pass(), false));
     result->capabilities_.deferred_gl_initialization = true;
     return result.Pass();
   }
@@ -80,6 +79,9 @@ class FakeOutputSurface : public OutputSurface {
     forced_draw_to_software_device_ = forced;
   }
   virtual bool ForcedDrawToSoftwareDevice() const OVERRIDE;
+
+  bool SetAndInitializeContext3D(
+      scoped_ptr<WebKit::WebGraphicsContext3D> context3d);
 
  protected:
   FakeOutputSurface(

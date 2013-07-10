@@ -6,7 +6,7 @@
 
 #include <string>
 
-#include "base/time.h"
+#include "base/time/time.h"
 #include "components/autofill/core/common/autocheckout_status.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_data_predictions.h"
@@ -22,7 +22,7 @@
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_message_utils.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFormElement.h"
+#include "third_party/WebKit/public/web/WebFormElement.h"
 #include "ui/gfx/rect.h"
 
 #define IPC_MESSAGE_START AutofillMsgStart
@@ -89,9 +89,15 @@ IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(autofill::PasswordFormFillData)
   IPC_STRUCT_TRAITS_MEMBER(basic_data)
+  IPC_STRUCT_TRAITS_MEMBER(preferred_realm)
   IPC_STRUCT_TRAITS_MEMBER(additional_logins)
   IPC_STRUCT_TRAITS_MEMBER(other_possible_usernames)
   IPC_STRUCT_TRAITS_MEMBER(wait_for_username)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(autofill::PasswordAndRealm)
+  IPC_STRUCT_TRAITS_MEMBER(password)
+  IPC_STRUCT_TRAITS_MEMBER(realm)
 IPC_STRUCT_TRAITS_END()
 
 IPC_ENUM_TRAITS(WebKit::WebFormElement::AutocompleteResult)
@@ -119,9 +125,8 @@ IPC_MESSAGE_ROUTED2(AutofillMsg_FormDataFilled,
 // Fill a password form and prepare field autocomplete for multiple
 // matching logins. Lets the renderer know if it should disable the popup
 // because the browser process will own the popup UI.
-IPC_MESSAGE_ROUTED2(AutofillMsg_FillPasswordForm,
-                    autofill::PasswordFormFillData, /* the fill form data*/
-                    bool /* disable popup */ )
+IPC_MESSAGE_ROUTED1(AutofillMsg_FillPasswordForm,
+                    autofill::PasswordFormFillData /* the fill form data*/)
 
 // Send the heuristic and server field type predictions to the renderer.
 IPC_MESSAGE_ROUTED1(
@@ -294,10 +299,11 @@ IPC_MESSAGE_ROUTED2(AutofillHostMsg_AddPasswordFormMapping,
 
 // Instruct the browser to show a popup with the following suggestions from the
 // password manager.
-IPC_MESSAGE_ROUTED3(AutofillHostMsg_ShowPasswordSuggestions,
+IPC_MESSAGE_ROUTED4(AutofillHostMsg_ShowPasswordSuggestions,
                     autofill::FormFieldData /* the form field */,
                     gfx::RectF /* input field bounds, window-relative */,
-                    std::vector<base::string16> /* suggestions */)
+                    std::vector<base::string16> /* suggestions */,
+                    std::vector<base::string16> /* realms */)
 
 // Inform browser of data list values for the curent field.
 IPC_MESSAGE_ROUTED4(AutofillHostMsg_SetDataList,

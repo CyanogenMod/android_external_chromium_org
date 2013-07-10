@@ -12,7 +12,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/win/registry.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/installer/util/browser_distribution.h"
@@ -39,9 +39,6 @@ const GoogleUpdateSettings::UpdatePolicy kGoogleUpdateDefaultUpdatePolicy =
 #endif
 
 bool ReadGoogleUpdateStrKey(const wchar_t* const name, std::wstring* value) {
-  // The registry functions below will end up going to disk.  Do this on another
-  // thread to avoid slowing the IO thread.  http://crbug.com/62121
-  base::ThreadRestrictions::ScopedAllowIO allow_io;
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
   std::wstring reg_path = dist->GetStateKey();
   RegKey key(HKEY_CURRENT_USER, reg_path.c_str(), KEY_READ);
@@ -108,10 +105,6 @@ bool GetChromeChannelInternal(bool system_install,
     return true;
   }
 
-  // The registry functions below will end up going to disk.  Do this on another
-  // thread to avoid slowing the IO thread.  http://crbug.com/62121
-  base::ThreadRestrictions::ScopedAllowIO allow_io;
-
   HKEY root_key = system_install ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
   string16 reg_path = dist->GetStateKey();
   RegKey key(root_key, reg_path.c_str(), KEY_READ);
@@ -147,6 +140,7 @@ bool GetUpdatePolicyFromDword(
     case GoogleUpdateSettings::UPDATES_DISABLED:
     case GoogleUpdateSettings::AUTOMATIC_UPDATES:
     case GoogleUpdateSettings::MANUAL_UPDATES_ONLY:
+    case GoogleUpdateSettings::AUTO_UPDATES_ONLY:
       *update_policy = static_cast<GoogleUpdateSettings::UpdatePolicy>(value);
       return true;
     default:

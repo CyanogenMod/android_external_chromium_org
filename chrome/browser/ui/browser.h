@@ -66,6 +66,7 @@ struct WebApplicationInfo;
 
 namespace chrome {
 class BrowserCommandController;
+class FastUnloadController;
 class UnloadController;
 }
 
@@ -869,6 +870,7 @@ class Browser : public TabStripModelObserver,
   const chrome::HostDesktopType host_desktop_type_;
 
   scoped_ptr<chrome::UnloadController> unload_controller_;
+  scoped_ptr<chrome::FastUnloadController> fast_unload_controller_;
 
   // The following factory is used to close the frame at a later time.
   base::WeakPtrFactory<Browser> weak_factory_;

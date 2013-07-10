@@ -11,6 +11,8 @@
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/cocoa/browser_window_controller.h"
+#import "chrome/browser/ui/cocoa/omnibox/omnibox_popup_cell.h"
+#import "chrome/browser/ui/cocoa/omnibox/omnibox_popup_separator_view.h"
 #include "chrome/browser/ui/cocoa/omnibox/omnibox_view_mac.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
@@ -35,9 +37,6 @@ const CGFloat kCellHeightAdjust = 6.0;
 // Padding between matrix and the top and bottom of the popup window.
 const CGFloat kPopupPaddingVertical = 5.0;
 
-// How far to offset image column from the left.
-const CGFloat kImageXOffset = 5.0;
-
 // How far to offset the text column from the left.
 const CGFloat kTextXOffset = 28.0;
 
@@ -48,21 +47,9 @@ const NSTimeInterval kShrinkAnimationDuration = 0.1;
 // contents.
 const CGFloat kMaxContentsFraction = 0.7;
 
-// NSEvent -buttonNumber for middle mouse button.
-const NSInteger kMiddleButtonNumber = 2;
-
-// Rounding radius of selection and hover background on popup items.
-const CGFloat kCellRoundingRadius = 2.0;
-
 // Background colors for different states of the popup elements.
 NSColor* BackgroundColor() {
   return [NSColor controlBackgroundColor];
-}
-NSColor* SelectedBackgroundColor() {
-  return [NSColor selectedControlColor];
-}
-NSColor* HoveredBackgroundColor() {
-  return [NSColor controlHighlightColor];
 }
 
 NSColor* ContentTextColor() {
@@ -77,111 +64,127 @@ NSColor* URLTextColor() {
 
 }  // namespace
 
-// Helper for MatchText() to allow sharing code between the contents
-// and description cases.  Returns NSMutableAttributedString as a
-// convenience for MatchText().
-NSMutableAttributedString* OmniboxPopupViewMac::DecorateMatchedString(
-    const string16 &matchString,
-    const AutocompleteMatch::ACMatchClassifications &classifications,
-    NSColor* textColor, NSColor* dimTextColor, gfx::Font& font) {
-  // Cache for on-demand computation of the bold version of |font|.
-  NSFont* boldFont = nil;
-
-  // Start out with a string using the default style info.
-  NSString* s = base::SysUTF16ToNSString(matchString);
-  NSDictionary* attributes = [NSDictionary dictionaryWithObjectsAndKeys:
-                                  font.GetNativeFont(), NSFontAttributeName,
-                                  textColor, NSForegroundColorAttributeName,
-                                  nil];
-  NSMutableAttributedString* as =
-      [[[NSMutableAttributedString alloc] initWithString:s
-                                              attributes:attributes]
-        autorelease];
-
-  // As a protective measure, bail if the length of the match string is not
-  // the same as the length of the converted NSString. http://crbug.com/121703
-  if ([s length] != matchString.size())
-    return as;
-
-  // Mark up the runs which differ from the default.
-  for (ACMatchClassifications::const_iterator i = classifications.begin();
-       i != classifications.end(); ++i) {
-    const BOOL isLast = (i+1) == classifications.end();
-    const NSInteger nextOffset =
-        (isLast ? [s length] : static_cast<NSInteger>((i + 1)->offset));
-    const NSInteger location = static_cast<NSInteger>(i->offset);
-    const NSInteger length = nextOffset - static_cast<NSInteger>(i->offset);
-    // Guard against bad, off-the-end classification ranges.
-    if (i->offset >= [s length] || length <= 0)
-      break;
-    const NSRange range = NSMakeRange(location,
-        MIN(length, static_cast<NSInteger>([s length]) - location));
-
-    if (0 != (i->style & ACMatchClassification::URL)) {
-      [as addAttribute:NSForegroundColorAttributeName
-                 value:URLTextColor() range:range];
-    }
-
-    if (0 != (i->style & ACMatchClassification::MATCH)) {
-      if (!boldFont) {
-        NSFontManager* fontManager = [NSFontManager sharedFontManager];
-        boldFont = [fontManager convertFont:font.GetNativeFont()
-                                toHaveTrait:NSBoldFontMask];
-      }
-      [as addAttribute:NSFontAttributeName value:boldFont range:range];
-    }
-
-    if (0 != (i->style & ACMatchClassification::DIM)) {
-      [as addAttribute:NSForegroundColorAttributeName
-                 value:dimTextColor
-                 range:range];
-    }
-  }
-
-  return as;
+OmniboxPopupViewMac::OmniboxPopupViewMac(OmniboxView* omnibox_view,
+                                         OmniboxEditModel* edit_model,
+                                         NSTextField* field)
+    : omnibox_view_(omnibox_view),
+      model_(new OmniboxPopupModel(this, edit_model)),
+      field_(field),
+      popup_(nil),
+      target_popup_frame_(NSZeroRect) {
+  DCHECK(omnibox_view);
+  DCHECK(edit_model);
 }
 
-NSMutableAttributedString* OmniboxPopupViewMac::ElideString(
-    NSMutableAttributedString* aString,
-    const string16 originalString,
-    const gfx::Font& font,
-    const float width) {
-  // If it already fits, nothing to be done.
-  if ([aString size].width <= width) {
-    return aString;
+OmniboxPopupViewMac::~OmniboxPopupViewMac() {
+  // Destroy the popup model before this object is destroyed, because
+  // it can call back to us in the destructor.
+  model_.reset();
+
+  // Break references to |this| because the popup may not be
+  // deallocated immediately.
+  [matrix_ setDelegate:NULL];
+}
+
+bool OmniboxPopupViewMac::IsOpen() const {
+  return popup_ != nil;
+}
+
+void OmniboxPopupViewMac::UpdatePopupAppearance() {
+  DCHECK([NSThread isMainThread]);
+  const AutocompleteResult& result = GetResult();
+  if (result.empty()) {
+    [[popup_ parentWindow] removeChildWindow:popup_];
+    [popup_ orderOut:nil];
+
+    // Break references to |this| because the popup may not be
+    // deallocated immediately.
+    [matrix_ setDelegate:nil];
+    matrix_.reset();
+
+    popup_.reset(nil);
+
+    target_popup_frame_ = NSZeroRect;
+
+    return;
   }
 
-  // If ElideText() decides to do nothing, nothing to be done.
-  const string16 elided =
-      ui::ElideText(originalString, font, width, ui::ELIDE_AT_END);
-  if (0 == elided.compare(originalString)) {
-    return aString;
+  CreatePopupIfNeeded();
+
+  gfx::Font result_font(OmniboxViewMac::GetFieldFont());
+
+  // Calculate the width of the matrix based on backing out the popup's border
+  // from the width of the field.
+  const CGFloat matrix_width = NSWidth([field_ bounds]);
+  DCHECK_GT(matrix_width, 0.0);
+
+  // Load the results into the popup's matrix.
+  const size_t rows = GetResult().size();
+  DCHECK_GT(rows, 0U);
+  [matrix_ renewRows:rows columns:1];
+  for (size_t ii = 0; ii < rows; ++ii) {
+    OmniboxPopupCell* cell = [matrix_ cellAtRow:ii column:0];
+    const AutocompleteMatch& match = GetResult().match_at(ii);
+    [cell setImage:ImageForMatch(match)];
+    [cell setAttributedTitle:MatchText(match, result_font, matrix_width)];
   }
 
-  // If everything was elided away, clear the string.
-  if (elided.empty()) {
-    [aString deleteCharactersInRange:NSMakeRange(0, [aString length])];
-    return aString;
-  }
+  // Set the cell size to fit a line of text in the cell's font.  All
+  // cells should use the same font and each should layout in one
+  // line, so they should all be about the same height.
+  const NSSize cell_size = [[matrix_ cellAtRow:0 column:0] cellSize];
+  DCHECK_GT(cell_size.height, 0.0);
+  const CGFloat cell_height = cell_size.height + kCellHeightAdjust;
+  [matrix_ setCellSize:NSMakeSize(matrix_width, cell_height)];
 
-  // The ellipses should be the last character, and everything before
-  // that should match the original string.
-  const size_t i(elided.length() - 1);
-  DCHECK_NE(0, elided.compare(0, i, originalString));
+  // Update the selection before placing (and displaying) the window.
+  PaintUpdatesNow();
 
-  // Replace the end of |aString| with the ellipses from |elided|.
-  NSString* s = base::SysUTF16ToNSString(elided.substr(i));
-  [aString replaceCharactersInRange:NSMakeRange(i, [aString length] - i)
-                         withString:s];
+  // Calculate the matrix size manually rather than using -sizeToCells
+  // because actually resizing the matrix messed up the popup size
+  // animation.
+  DCHECK_EQ([matrix_ intercellSpacing].height, 0.0);
+  PositionPopup(rows * cell_height);
+}
 
-  return aString;
+gfx::Rect OmniboxPopupViewMac::GetTargetBounds() {
+  // Flip the coordinate system before returning.
+  NSScreen* screen = [[NSScreen screens] objectAtIndex:0];
+  NSRect monitor_frame = [screen frame];
+  gfx::Rect bounds(NSRectToCGRect(target_popup_frame_));
+  bounds.set_y(monitor_frame.size.height - bounds.y() - bounds.height());
+  return bounds;
+}
+
+// This is only called by model in SetSelectedLine() after updating
+// everything.  Popup should already be visible.
+void OmniboxPopupViewMac::PaintUpdatesNow() {
+  [matrix_ selectCellAtRow:model_->selected_line() column:0];
+}
+
+void OmniboxPopupViewMac::OnMatrixRowSelected(OmniboxPopupMatrix* matrix,
+                                              size_t row) {
+  model_->SetSelectedLine(row, false, false);
+}
+
+void OmniboxPopupViewMac::OnMatrixRowClicked(OmniboxPopupMatrix* matrix,
+                                             size_t row) {
+  OpenURLForRow(row,
+                ui::WindowOpenDispositionFromNSEvent([NSApp currentEvent]));
+}
+
+void OmniboxPopupViewMac::OnMatrixRowMiddleClicked(OmniboxPopupMatrix* matrix,
+                                                   size_t row) {
+  OpenURLForRow(row, NEW_BACKGROUND_TAB);
 }
 
 // Return the text to show for the match, based on the match's
 // contents and description.  Result will be in |font|, with the
 // boldfaced version used for matches.
 NSAttributedString* OmniboxPopupViewMac::MatchText(
-    const AutocompleteMatch& match, gfx::Font& font, float cellWidth) {
+    const AutocompleteMatch& match,
+    gfx::Font& font,
+    float cell_width) {
   NSMutableAttributedString *as =
       DecorateMatchedString(match.contents,
                             match.contents_class,
@@ -197,18 +200,17 @@ NSAttributedString* OmniboxPopupViewMac::MatchText(
     // partially visible.
     // TODO(shess): Consider revising our NSCell subclass to have two
     // bits and just draw them right, rather than truncating here.
-    const float textWidth = cellWidth - kTextXOffset;
+    const float text_width = cell_width - kTextXOffset;
     as = ElideString(as, match.contents, font,
-                     textWidth * kMaxContentsFraction);
+                     text_width * kMaxContentsFraction);
 
-    NSDictionary* attributes =
-        [NSDictionary dictionaryWithObjectsAndKeys:
-             font.GetNativeFont(), NSFontAttributeName,
-             ContentTextColor(), NSForegroundColorAttributeName,
-             nil];
-    NSString* rawEnDash = @" \u2013 ";
-    NSAttributedString* enDash =
-        [[[NSAttributedString alloc] initWithString:rawEnDash
+    NSDictionary* attributes = @{
+        NSFontAttributeName :  font.GetNativeFont(),
+        NSForegroundColorAttributeName : ContentTextColor()
+    };
+    NSString* raw_en_dash = @" \u2013 ";
+    NSAttributedString* en_dash =
+        [[[NSAttributedString alloc] initWithString:raw_en_dash
                                          attributes:attributes] autorelease];
 
     // In Windows, a boolean force_dim is passed as true for the
@@ -220,7 +222,7 @@ NSAttributedString* OmniboxPopupViewMac::MatchText(
                               DimContentTextColor(),
                               font);
 
-    [as appendAttributedString:enDash];
+    [as appendAttributedString:en_dash];
     [as appendAttributedString:description];
   }
 
@@ -234,71 +236,109 @@ NSAttributedString* OmniboxPopupViewMac::MatchText(
   return as;
 }
 
-// AutocompleteButtonCell overrides how backgrounds are displayed to
-// handle hover versus selected.  So long as we're in there, it also
-// provides some default initialization.
-
-@interface AutocompleteButtonCell : NSButtonCell {
-}
-@end
-
-// AutocompleteMatrix sets up a tracking area to implement hover by
-// highlighting the cell the mouse is over.
-
-@interface AutocompleteMatrix : NSMatrix {
- @private
-  // Target for click and middle-click.
-  OmniboxPopupViewMac* popupView_;  // weak, owns us.
-}
-
-// Create a zero-size matrix initializing |popupView_|.
-- (id)initWithPopupView:(OmniboxPopupViewMac*)popupView;
-
-// Set |popupView_|.
-- (void)setPopupView:(OmniboxPopupViewMac*)popupView;
-
-// Return the currently highlighted row.  Returns -1 if no row is
-// highlighted.
-- (NSInteger)highlightedRow;
-
-@end
-
 // static
-OmniboxPopupView* OmniboxPopupViewMac::Create(OmniboxView* omnibox_view,
-                                              OmniboxEditModel* edit_model,
-                                              NSTextField* field) {
-#if defined(HTML_INSTANT_EXTENDED_POPUP)
-  if (chrome::IsInstantExtendedAPIEnabled())
-    return new OmniboxPopupNonView(edit_model);
-#endif
-  return new OmniboxPopupViewMac(omnibox_view, edit_model, field);
+NSMutableAttributedString* OmniboxPopupViewMac::DecorateMatchedString(
+    const string16& match_string,
+    const AutocompleteMatch::ACMatchClassifications& classifications,
+    NSColor* text_color,
+    NSColor* dim_text_color,
+    gfx::Font& font) {
+  // Cache for on-demand computation of the bold version of |font|.
+  NSFont* bold_font = nil;
+
+  // Start out with a string using the default style info.
+  NSString* s = base::SysUTF16ToNSString(match_string);
+  NSDictionary* attributes = @{
+      NSFontAttributeName : font.GetNativeFont(),
+      NSForegroundColorAttributeName : text_color
+  };
+  NSMutableAttributedString* as =
+      [[[NSMutableAttributedString alloc] initWithString:s
+                                              attributes:attributes]
+        autorelease];
+
+  // As a protective measure, bail if the length of the match string is not
+  // the same as the length of the converted NSString. http://crbug.com/121703
+  if ([s length] != match_string.size())
+    return as;
+
+  // Mark up the runs which differ from the default.
+  for (ACMatchClassifications::const_iterator i = classifications.begin();
+       i != classifications.end(); ++i) {
+    const BOOL is_last = (i+1) == classifications.end();
+    const NSInteger next_offset =
+        (is_last ? [s length] : static_cast<NSInteger>((i + 1)->offset));
+    const NSInteger location = static_cast<NSInteger>(i->offset);
+    const NSInteger length = next_offset - static_cast<NSInteger>(i->offset);
+    // Guard against bad, off-the-end classification ranges.
+    if (i->offset >= [s length] || length <= 0)
+      break;
+    const NSRange range = NSMakeRange(location,
+        MIN(length, static_cast<NSInteger>([s length]) - location));
+
+    if (0 != (i->style & ACMatchClassification::URL)) {
+      [as addAttribute:NSForegroundColorAttributeName
+                 value:URLTextColor()
+                 range:range];
+    }
+
+    if (0 != (i->style & ACMatchClassification::MATCH)) {
+      if (!bold_font) {
+        NSFontManager* font_manager = [NSFontManager sharedFontManager];
+        bold_font = [font_manager convertFont:font.GetNativeFont()
+                                  toHaveTrait:NSBoldFontMask];
+      }
+      [as addAttribute:NSFontAttributeName value:bold_font range:range];
+    }
+
+    if (0 != (i->style & ACMatchClassification::DIM)) {
+      [as addAttribute:NSForegroundColorAttributeName
+                 value:dim_text_color
+                 range:range];
+    }
+  }
+
+  return as;
 }
 
+NSMutableAttributedString* OmniboxPopupViewMac::ElideString(
+    NSMutableAttributedString* a_string,
+    const string16& original_string,
+    const gfx::Font& font,
+    const float width) {
+  // If it already fits, nothing to be done.
+  if ([a_string size].width <= width) {
+    return a_string;
+  }
 
-OmniboxPopupViewMac::OmniboxPopupViewMac(OmniboxView* omnibox_view,
-                                         OmniboxEditModel* edit_model,
-                                         NSTextField* field)
-    : omnibox_view_(omnibox_view),
-      model_(new OmniboxPopupModel(this, edit_model)),
-      field_(field),
-      popup_(nil),
-      targetPopupFrame_(NSZeroRect) {
-  DCHECK(omnibox_view);
-  DCHECK(edit_model);
+  // If ElideText() decides to do nothing, nothing to be done.
+  const string16 elided =
+      ui::ElideText(original_string, font, width, ui::ELIDE_AT_END);
+  if (0 == elided.compare(original_string)) {
+    return a_string;
+  }
+
+  // If everything was elided away, clear the string.
+  if (elided.empty()) {
+    [a_string deleteCharactersInRange:NSMakeRange(0, [a_string length])];
+    return a_string;
+  }
+
+  // The ellipses should be the last character, and everything before
+  // that should match the original string.
+  const size_t i(elided.length() - 1);
+  DCHECK_NE(0, elided.compare(0, i, original_string));
+
+  // Replace the end of |aString| with the ellipses from |elided|.
+  NSString* s = base::SysUTF16ToNSString(elided.substr(i));
+  [a_string replaceCharactersInRange:NSMakeRange(i, [a_string length] - i)
+                          withString:s];
+
+  return a_string;
 }
 
-OmniboxPopupViewMac::~OmniboxPopupViewMac() {
-  // Destroy the popup model before this object is destroyed, because
-  // it can call back to us in the destructor.
-  model_.reset();
-
-  // Break references to |this| because the popup may not be
-  // deallocated immediately.
-  [autocomplete_matrix_ setPopupView:NULL];
-}
-
-bool OmniboxPopupViewMac::IsOpen() const {
-  return popup_ != nil;
+const AutocompleteResult& OmniboxPopupViewMac::GetResult() const {
+  return model_->result();
 }
 
 void OmniboxPopupViewMac::CreatePopupIfNeeded() {
@@ -308,65 +348,103 @@ void OmniboxPopupViewMac::CreatePopupIfNeeded() {
                                     styleMask:NSBorderlessWindowMask
                                       backing:NSBackingStoreBuffered
                                         defer:YES]);
-    [popup_ setMovableByWindowBackground:NO];
-    // The window shape is determined by the content view.
-    [popup_ setAlphaValue:1.0];
-    [popup_ setOpaque:YES];
-    [popup_ setBackgroundColor:BackgroundColor()];
-    [popup_ setHasShadow:YES];
-    [popup_ setLevel:NSNormalWindowLevel];
+    [popup_ setBackgroundColor:[NSColor clearColor]];
+    [popup_ setOpaque:NO];
+
     // Use a flipped view to pin the matrix top the top left. This is needed
     // for animated resize.
-    scoped_nsobject<FlippedView> contentView(
+    base::scoped_nsobject<FlippedView> contentView(
         [[FlippedView alloc] initWithFrame:NSZeroRect]);
     [popup_ setContentView:contentView];
 
-    autocomplete_matrix_.reset(
-        [[AutocompleteMatrix alloc] initWithPopupView:this]);
-    [contentView addSubview:autocomplete_matrix_];
+    // View to draw a background beneath the matrix.
+    background_view_.reset([[NSBox alloc] initWithFrame:NSZeroRect]);
+    [background_view_ setBoxType:NSBoxCustom];
+    [background_view_ setBorderType:NSNoBorder];
+    [background_view_ setFillColor:BackgroundColor()];
+    [background_view_ setContentViewMargins:NSZeroSize];
+    [contentView addSubview:background_view_];
+
+    matrix_.reset([[OmniboxPopupMatrix alloc] initWithDelegate:this]);
+    [background_view_ addSubview:matrix_];
+
+    top_separator_view_.reset(
+        [[OmniboxPopupTopSeparatorView alloc] initWithFrame:NSZeroRect]);
+    [contentView addSubview:top_separator_view_];
+
+    bottom_separator_view_.reset(
+        [[OmniboxPopupBottomSeparatorView alloc] initWithFrame:NSZeroRect]);
+    [contentView addSubview:bottom_separator_view_];
 
     // TODO(dtseng): Ignore until we provide NSAccessibility support.
     [popup_ accessibilitySetOverrideValue:NSAccessibilityUnknownRole
-        forAttribute:NSAccessibilityRoleAttribute];
+                             forAttribute:NSAccessibilityRoleAttribute];
   }
 }
 
 void OmniboxPopupViewMac::PositionPopup(const CGFloat matrixHeight) {
   BrowserWindowController* controller =
       [BrowserWindowController browserWindowControllerForView:field_];
-  NSRect anchorRectBase = [controller omniboxPopupAnchorRect];
+  NSRect anchor_rect_base = [controller omniboxPopupAnchorRect];
 
   // Calculate the popup's position on the screen.
-  NSRect popupFrame = anchorRectBase;
+  NSRect popup_frame = anchor_rect_base;
   // Size to fit the matrix and shift down by the size.
-  popupFrame.size.height = matrixHeight + kPopupPaddingVertical * 2.0;
-  popupFrame.origin.y -= NSHeight(popupFrame);
+  popup_frame.size.height = matrixHeight + kPopupPaddingVertical * 2.0;
+  popup_frame.size.height += [OmniboxPopupTopSeparatorView preferredHeight];
+  popup_frame.size.height += [OmniboxPopupBottomSeparatorView preferredHeight];
+  popup_frame.origin.y -= NSHeight(popup_frame);
   // Shift to screen coordinates.
-  popupFrame.origin =
-      [[controller window] convertBaseToScreen:popupFrame.origin];
+  popup_frame.origin =
+      [[controller window] convertBaseToScreen:popup_frame.origin];
 
   // Do nothing if the popup is already animating to the given |frame|.
-  if (NSEqualRects(popupFrame, targetPopupFrame_))
+  if (NSEqualRects(popup_frame, target_popup_frame_))
     return;
 
-  NSPoint fieldOriginBase =
-      [field_ convertPoint:[field_ bounds].origin toView:nil];
-  NSRect matrixFrame = NSZeroRect;
-  matrixFrame.origin.x = fieldOriginBase.x - NSMinX(anchorRectBase);
-  matrixFrame.origin.y = kPopupPaddingVertical;
-  matrixFrame.size.width = [autocomplete_matrix_ cellSize].width;
-  matrixFrame.size.height = matrixHeight;
-  [autocomplete_matrix_ setFrame:matrixFrame];
+  // Top separator.
+  NSRect top_separator_frame = NSZeroRect;
+  top_separator_frame.size.width = NSWidth(popup_frame);
+  top_separator_frame.size.height =
+      [OmniboxPopupTopSeparatorView preferredHeight];
+  [top_separator_view_ setFrame:top_separator_frame];
 
-  NSRect currentPopupFrame = [popup_ frame];
-  targetPopupFrame_ = popupFrame;
+  // Bottom separator.
+  NSRect bottom_separator_frame = NSZeroRect;
+  bottom_separator_frame.size.width = NSWidth(popup_frame);
+  bottom_separator_frame.size.height =
+      [OmniboxPopupBottomSeparatorView preferredHeight];
+  bottom_separator_frame.origin.y =
+      NSHeight(popup_frame) - NSHeight(bottom_separator_frame);
+  [bottom_separator_view_ setFrame:bottom_separator_frame];
+
+  // Background view.
+  NSRect background_rect = NSZeroRect;
+  background_rect.size.width = NSWidth(popup_frame);
+  background_rect.size.height = NSHeight(popup_frame) -
+      NSHeight(top_separator_frame) - NSHeight(bottom_separator_frame);
+  background_rect.origin.y = NSMaxY(top_separator_frame);
+  [background_view_ setFrame:background_rect];
+
+  // Matrix.
+  NSPoint field_origin_base =
+      [field_ convertPoint:[field_ bounds].origin toView:nil];
+  NSRect matrix_frame = NSZeroRect;
+  matrix_frame.origin.x = field_origin_base.x - NSMinX(anchor_rect_base);
+  matrix_frame.origin.y = kPopupPaddingVertical;
+  matrix_frame.size.width = [matrix_ cellSize].width;
+  matrix_frame.size.height = matrixHeight;
+  [matrix_ setFrame:matrix_frame];
+
+  NSRect current_poup_frame = [popup_ frame];
+  target_popup_frame_ = popup_frame;
 
   // Animate the frame change if the only change is that the height got smaller.
   // Otherwise, resize immediately.
-  bool animate = (NSHeight(popupFrame) < NSHeight(currentPopupFrame) &&
-                  NSWidth(popupFrame) == NSWidth(currentPopupFrame));
+  bool animate = (NSHeight(popup_frame) < NSHeight(current_poup_frame) &&
+                  NSWidth(popup_frame) == NSWidth(current_poup_frame));
 
-  scoped_nsobject<NSDictionary> savedAnimations;
+  base::scoped_nsobject<NSDictionary> savedAnimations;
   if (!animate) {
     // In an ideal world, running a zero-length animation would cancel any
     // running animations and set the new frame value immediately.  In practice,
@@ -376,16 +454,14 @@ void OmniboxPopupViewMac::PositionPopup(const CGFloat matrixHeight) {
     // convinces AppKit to do the right thing.  Save off the current animations
     // dictionary so it can be restored later.
     savedAnimations.reset([[popup_ animations] copy]);
-    [popup_ setAnimations:
-              [NSDictionary dictionaryWithObjectsAndKeys:[NSNull null],
-                                                         @"frame", nil]];
+    [popup_ setAnimations:@{@"frame" : [NSNull null]}];
   }
 
   [NSAnimationContext beginGrouping];
   // Don't use the GTM additon for the "Steve" slowdown because this can happen
   // async from user actions and the effects could be a surprise.
   [[NSAnimationContext currentContext] setDuration:kShrinkAnimationDuration];
-  [[popup_ animator] setFrame:popupFrame display:YES];
+  [[popup_ animator] setFrame:popup_frame display:YES];
   [NSAnimationContext endGrouping];
 
   if (!animate) {
@@ -408,338 +484,13 @@ NSImage* OmniboxPopupViewMac::ImageForMatch(const AutocompleteMatch& match) {
   return OmniboxViewMac::ImageForResource(resource_id);
 }
 
-void OmniboxPopupViewMac::UpdatePopupAppearance() {
-  DCHECK([NSThread isMainThread]);
-  const AutocompleteResult& result = model_->result();
-  if (result.empty()) {
-    [[popup_ parentWindow] removeChildWindow:popup_];
-    [popup_ orderOut:nil];
+void OmniboxPopupViewMac::OpenURLForRow(size_t row,
+                                        WindowOpenDisposition disposition) {
+  DCHECK_GE(row, 0u);
 
-    // Break references to |this| because the popup may not be
-    // deallocated immediately.
-    [autocomplete_matrix_ setPopupView:NULL];
-    autocomplete_matrix_.reset();
-
-    popup_.reset(nil);
-
-    targetPopupFrame_ = NSZeroRect;
-
-    return;
-  }
-
-  CreatePopupIfNeeded();
-
-  // The popup's font is a slightly smaller version of the field's.
-  NSFont* fieldFont = OmniboxViewMac::GetFieldFont();
-  const CGFloat resultFontSize = [fieldFont pointSize];
-  gfx::Font resultFont(base::SysNSStringToUTF8([fieldFont fontName]),
-                       static_cast<int>(resultFontSize));
-
-  // Calculate the width of the matrix based on backing out the
-  // popup's border from the width of the field.
-  const CGFloat matrixWidth = NSWidth([field_ bounds]);
-  DCHECK_GT(matrixWidth, 0.0);
-
-  // Load the results into the popup's matrix.
-  const size_t rows = model_->result().size();
-  DCHECK_GT(rows, 0U);
-  [autocomplete_matrix_ renewRows:rows columns:1];
-  for (size_t ii = 0; ii < rows; ++ii) {
-    AutocompleteButtonCell* cell = [autocomplete_matrix_ cellAtRow:ii column:0];
-    const AutocompleteMatch& match = model_->result().match_at(ii);
-    [cell setImage:ImageForMatch(match)];
-    [cell setAttributedTitle:MatchText(match, resultFont, matrixWidth)];
-  }
-
-  // Set the cell size to fit a line of text in the cell's font.  All
-  // cells should use the same font and each should layout in one
-  // line, so they should all be about the same height.
-  const NSSize cellSize =
-      [[autocomplete_matrix_ cellAtRow:0 column:0] cellSize];
-  DCHECK_GT(cellSize.height, 0.0);
-  const CGFloat cellHeight = cellSize.height + kCellHeightAdjust;
-  [autocomplete_matrix_ setCellSize:NSMakeSize(matrixWidth, cellHeight)];
-
-  // Update the selection before placing (and displaying) the window.
-  PaintUpdatesNow();
-
-  // Calculate the matrix size manually rather than using -sizeToCells
-  // because actually resizing the matrix messed up the popup size
-  // animation.
-  DCHECK_EQ([autocomplete_matrix_ intercellSpacing].height, 0.0);
-  PositionPopup(rows * cellHeight);
-}
-
-gfx::Rect OmniboxPopupViewMac::GetTargetBounds() {
-  // Flip the coordinate system before returning.
-  NSScreen* screen = [[NSScreen screens] objectAtIndex:0];
-  NSRect monitorFrame = [screen frame];
-  gfx::Rect bounds(NSRectToCGRect(targetPopupFrame_));
-  bounds.set_y(monitorFrame.size.height - bounds.y() - bounds.height());
-  return bounds;
-}
-
-void OmniboxPopupViewMac::SetSelectedLine(size_t line) {
-  model_->SetSelectedLine(line, false, false);
-}
-
-// This is only called by model in SetSelectedLine() after updating
-// everything.  Popup should already be visible.
-void OmniboxPopupViewMac::PaintUpdatesNow() {
-  [autocomplete_matrix_ selectCellAtRow:model_->selected_line() column:0];
-}
-
-void OmniboxPopupViewMac::OpenURLForRow(int row, bool force_background) {
-  DCHECK_GE(row, 0);
-
-  WindowOpenDisposition disposition = NEW_BACKGROUND_TAB;
-  if (!force_background) {
-    disposition = ui::WindowOpenDispositionFromNSEvent([NSApp currentEvent]);
-  }
-
-  // OpenMatch() may close the popup, which will clear the result set
-  // and, by extension, |match| and its contents.  So copy the
-  // relevant match out to make sure it stays alive until the call
-  // completes.
-  AutocompleteMatch match = model_->result().match_at(row);
+  // OpenMatch() may close the popup, which will clear the result set and, by
+  // extension, |match| and its contents.  So copy the relevant match out to
+  // make sure it stays alive until the call completes.
+  AutocompleteMatch match = GetResult().match_at(row);
   omnibox_view_->OpenMatch(match, disposition, GURL(), row);
 }
-
-@implementation AutocompleteButtonCell
-
-- (id)init {
-  self = [super init];
-  if (self) {
-    [self setImagePosition:NSImageLeft];
-    [self setBordered:NO];
-    [self setButtonType:NSRadioButton];
-
-    // Without this highlighting messes up white areas of images.
-    [self setHighlightsBy:NSNoCellMask];
-  }
-  return self;
-}
-
-// The default NSButtonCell drawing leaves the image flush left and
-// the title next to the image.  This spaces things out to line up
-// with the star button and autocomplete field.
-- (void)drawInteriorWithFrame:(NSRect)cellFrame inView:(NSView *)controlView {
-  [BackgroundColor() set];
-  NSRectFill(cellFrame);
-  if ([self state] == NSOnState || [self isHighlighted]) {
-    if ([self state] == NSOnState)
-      [SelectedBackgroundColor() set];
-    else
-      [HoveredBackgroundColor() set];
-    NSBezierPath* path =
-        [NSBezierPath bezierPathWithRoundedRect:cellFrame
-                                        xRadius:kCellRoundingRadius
-                                        yRadius:kCellRoundingRadius];
-    [path fill];
-  }
-
-  // Put the image centered vertically but in a fixed column.
-  NSImage* image = [self image];
-  if (image) {
-    NSRect imageRect = cellFrame;
-    imageRect.size = [image size];
-    imageRect.origin.y +=
-        std::floor((NSHeight(cellFrame) - NSHeight(imageRect)) / 2.0);
-    imageRect.origin.x += kImageXOffset;
-    [image drawInRect:imageRect
-             fromRect:NSZeroRect  // Entire image
-            operation:NSCompositeSourceOver
-             fraction:1.0
-       respectFlipped:YES
-                hints:nil];
-  }
-
-  // Adjust the title position to be lined up under the field's text.
-  NSAttributedString* title = [self attributedTitle];
-  if (title && [title length]) {
-    NSRect titleRect = cellFrame;
-    titleRect.size.width -= kTextXOffset;
-    titleRect.origin.x += kTextXOffset;
-    [self drawTitle:title withFrame:titleRect inView:controlView];
-  }
-}
-
-@end
-
-@implementation AutocompleteMatrix
-
-// Remove all tracking areas and initialize the one we want.  Removing
-// all might be overkill, but it's unclear why there would be others
-// for the popup window.
-- (void)resetTrackingArea {
-  for (NSTrackingArea* trackingArea in [self trackingAreas]) {
-    [self removeTrackingArea:trackingArea];
-  }
-
-  // TODO(shess): Consider overriding -acceptsFirstMouse: and changing
-  // NSTrackingActiveInActiveApp to NSTrackingActiveAlways.
-  NSTrackingAreaOptions options = NSTrackingMouseEnteredAndExited;
-  options |= NSTrackingMouseMoved;
-  options |= NSTrackingActiveInActiveApp;
-  options |= NSTrackingInVisibleRect;
-
-  scoped_nsobject<NSTrackingArea> trackingArea(
-      [[NSTrackingArea alloc] initWithRect:[self frame]
-                                   options:options
-                                     owner:self
-                                  userInfo:nil]);
-  [self addTrackingArea:trackingArea];
-}
-
-- (void)updateTrackingAreas {
-  [self resetTrackingArea];
-  [super updateTrackingAreas];
-}
-
-- (id)initWithPopupView:(OmniboxPopupViewMac*)popupView {
-  self = [super initWithFrame:NSZeroRect];
-  if (self) {
-    popupView_ = popupView;
-
-    [self setCellClass:[AutocompleteButtonCell class]];
-
-    // Cells pack with no spacing.
-    [self setIntercellSpacing:NSMakeSize(0.0, 0.0)];
-
-    [self setDrawsBackground:YES];
-    [self setBackgroundColor:BackgroundColor()];
-    [self renewRows:0 columns:1];
-    [self setAllowsEmptySelection:YES];
-    [self setMode:NSRadioModeMatrix];
-    [self deselectAllCells];
-
-    [self resetTrackingArea];
-  }
-  return self;
-}
-
-- (void)setPopupView:(OmniboxPopupViewMac*)popupView {
-  popupView_ = popupView;
-}
-
-- (void)highlightRowAt:(NSInteger)rowIndex {
-  // highlightCell will be nil if rowIndex is out of range, so no cell
-  // will be highlighted.
-  NSCell* highlightCell = [self cellAtRow:rowIndex column:0];
-
-  for (NSCell* cell in [self cells]) {
-    [cell setHighlighted:(cell == highlightCell)];
-  }
-}
-
-- (void)highlightRowUnder:(NSEvent*)theEvent {
-  NSPoint point = [self convertPoint:[theEvent locationInWindow] fromView:nil];
-  NSInteger row, column;
-  if ([self getRow:&row column:&column forPoint:point]) {
-    [self highlightRowAt:row];
-  } else {
-    [self highlightRowAt:-1];
-  }
-}
-
-// Callbacks from NSTrackingArea.
-- (void)mouseEntered:(NSEvent*)theEvent {
-  [self highlightRowUnder:theEvent];
-}
-- (void)mouseMoved:(NSEvent*)theEvent {
-  [self highlightRowUnder:theEvent];
-}
-- (void)mouseExited:(NSEvent*)theEvent {
-  [self highlightRowAt:-1];
-}
-
-// The tracking area events aren't forwarded during a drag, so handle
-// highlighting manually for middle-click and middle-drag.
-- (void)otherMouseDown:(NSEvent*)theEvent {
-  if ([theEvent buttonNumber] == kMiddleButtonNumber) {
-    [self highlightRowUnder:theEvent];
-  }
-  [super otherMouseDown:theEvent];
-}
-- (void)otherMouseDragged:(NSEvent*)theEvent {
-  if ([theEvent buttonNumber] == kMiddleButtonNumber) {
-    [self highlightRowUnder:theEvent];
-  }
-  [super otherMouseDragged:theEvent];
-}
-
-- (void)otherMouseUp:(NSEvent*)theEvent {
-  // Only intercept middle button.
-  if ([theEvent buttonNumber] != kMiddleButtonNumber) {
-    [super otherMouseUp:theEvent];
-    return;
-  }
-
-  // -otherMouseDragged: should always have been called at this
-  // location, but make sure the user is getting the right feedback.
-  [self highlightRowUnder:theEvent];
-
-  const NSInteger highlightedRow = [self highlightedRow];
-  if (highlightedRow != -1) {
-    DCHECK(popupView_);
-    popupView_->OpenURLForRow(highlightedRow, true);
-  }
-}
-
-// Select cell under |theEvent|, returning YES if a selection is made.
-- (BOOL)selectCellForEvent:(NSEvent*)theEvent {
-  NSPoint point = [self convertPoint:[theEvent locationInWindow] fromView:nil];
-
-  NSInteger row, column;
-  if ([self getRow:&row column:&column forPoint:point]) {
-    DCHECK_EQ(column, 0);
-    DCHECK(popupView_);
-    popupView_->SetSelectedLine(row);
-    return YES;
-  }
-  return NO;
-}
-
-// Track the mouse until released, keeping the cell under the mouse
-// selected.  If the mouse wanders off-view, revert to the
-// originally-selected cell.  If the mouse is released over a cell,
-// call |popupView_| to open the row's URL.
-- (void)mouseDown:(NSEvent*)theEvent {
-  NSCell* selectedCell = [self selectedCell];
-
-  // Clear any existing highlight.
-  [self highlightRowAt:-1];
-
-  do {
-    if (![self selectCellForEvent:theEvent]) {
-      [self selectCell:selectedCell];
-    }
-
-    const NSUInteger mask = NSLeftMouseUpMask | NSLeftMouseDraggedMask;
-    theEvent = [[self window] nextEventMatchingMask:mask];
-  } while ([theEvent type] == NSLeftMouseDragged);
-
-  // Do not message |popupView_| if released outside view.
-  if (![self selectCellForEvent:theEvent]) {
-    [self selectCell:selectedCell];
-  } else {
-    const NSInteger selectedRow = [self selectedRow];
-    DCHECK_GE(selectedRow, 0);
-
-    DCHECK(popupView_);
-    popupView_->OpenURLForRow(selectedRow, false);
-  }
-}
-
-- (NSInteger)highlightedRow {
-  NSArray* cells = [self cells];
-  const NSUInteger count = [cells count];
-  for(NSUInteger i = 0; i < count; ++i) {
-    if ([[cells objectAtIndex:i] isHighlighted]) {
-      return i;
-    }
-  }
-  return -1;
-}
-
-@end

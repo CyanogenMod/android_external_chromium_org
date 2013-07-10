@@ -50,6 +50,7 @@ class WebNotificationTray : public message_center::MessageCenterTrayDelegate,
   virtual void HideMessageCenter() OVERRIDE;
   virtual void UpdatePopups() OVERRIDE;
   virtual void OnMessageCenterTrayChanged() OVERRIDE;
+  virtual bool ShowNotifierSettings() OVERRIDE;
 
   // These are forwarded to WebNotificationTray by
   // NotificationBubbleWrapper classes since they don't have enough
@@ -61,6 +62,13 @@ class WebNotificationTray : public message_center::MessageCenterTrayDelegate,
 
   // StatusIconObserver implementation.
   virtual void OnStatusIconClicked() OVERRIDE;
+#if defined(OS_WIN)
+  virtual void OnBalloonClicked() OVERRIDE;
+
+  // This shows a platform-specific balloon informing the user of the existence
+  // of the message center in the status tray area.
+  void DisplayFirstRunBalloon();
+#endif
 
   // Changes the icon and hovertext based on number of unread notifications.
   void UpdateStatusIcon();
@@ -73,6 +81,10 @@ class WebNotificationTray : public message_center::MessageCenterTrayDelegate,
                            ManyMessageCenterNotifications);
   FRIEND_TEST_ALL_PREFIXES(WebNotificationTrayTest, ManyPopupNotifications);
 
+  // The actual process to show the message center. Set |show_settings| to true
+  // if the message center should be initialized with the settings visible.
+  // Returns true if the center is successfully created.
+  bool ShowMessageCenterInternal(bool show_settings);
   StatusIcon* GetStatusIcon();
   void DestroyStatusIcon();
   void AddQuietModeMenu(StatusIcon* status_icon);

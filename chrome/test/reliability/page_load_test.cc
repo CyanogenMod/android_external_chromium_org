@@ -53,7 +53,7 @@
 #include "base/strings/string_util.h"
 #include "base/test/test_file_util.h"
 #include "base/threading/platform_thread.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/prefs/pref_service_mock_builder.h"
 #include "chrome/common/automation_messages.h"
@@ -70,7 +70,6 @@
 #include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/automation/window_proxy.h"
 #include "chrome/test/ui/ui_test.h"
-#include "components/breakpad/common/breakpad_paths.h"
 #include "net/base/net_util.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "v8/include/v8-testing.h"
@@ -635,7 +634,7 @@ class PageLoadTest : public UITest {
       crash_dumps_dir_path_ = base::FilePath::FromUTF8Unsafe(
           alternate_minidump_location);
     } else {
-      PathService::Get(breakpad::DIR_CRASH_DUMPS, &crash_dumps_dir_path_);
+      PathService::Get(chrome::DIR_CRASH_DUMPS, &crash_dumps_dir_path_);
     }
 
     base::FileEnumerator enumerator(crash_dumps_dir_path_,
@@ -661,7 +660,7 @@ class PageLoadTest : public UITest {
     if (!log_path.empty()) {
       base::FilePath saved_log_file_path =
           ConstructSavedDebugLogPath(log_path, index);
-      if (file_util::Move(log_path, saved_log_file_path)) {
+      if (base::Move(log_path, saved_log_file_path)) {
         log_file << " " << log_id << "=" << saved_log_file_path.value();
       }
     }

@@ -10,9 +10,9 @@
 #include "content/browser/browser_process_sub_thread.h"
 
 class CommandLine;
-class HighResolutionTimerManager;
 
 namespace base {
+class HighResolutionTimerManager;
 class MessageLoop;
 class PowerMonitor;
 class SystemMonitor;
@@ -20,6 +20,7 @@ class SystemMonitor;
 
 namespace media {
 class AudioManager;
+class MIDIManager;
 }
 
 namespace net {
@@ -47,10 +48,12 @@ class DeviceMonitorMac;
 
 // Implements the main browser loop stages called from BrowserMainRunner.
 // See comments in browser_main_parts.h for additional info.
-// All functions are to be called only on the UI thread unless otherwise noted.
-class BrowserMainLoop {
+class CONTENT_EXPORT BrowserMainLoop {
  public:
-  class MemoryObserver;
+  // Returns the current instance. This is used to get access to the getters
+  // that return objects which are owned by this class.
+  static BrowserMainLoop* GetInstance();
+
   explicit BrowserMainLoop(const MainFunctionParams& parameters);
   virtual ~BrowserMainLoop();
 
@@ -72,12 +75,18 @@ class BrowserMainLoop {
 
   int GetResultCode() const { return result_code_; }
 
-  // Can be called on any thread.
-  static media::AudioManager* GetAudioManager();
-  static AudioMirroringManager* GetAudioMirroringManager();
-  static MediaStreamManager* GetMediaStreamManager();
+  media::AudioManager* audio_manager() const { return audio_manager_.get(); }
+  AudioMirroringManager* audio_mirroring_manager() const {
+    return audio_mirroring_manager_.get();
+  }
+  MediaStreamManager* media_stream_manager() const {
+    return media_stream_manager_.get();
+  }
+  media::MIDIManager* midi_manager() const { return midi_manager_.get(); }
+  base::Thread* indexed_db_thread() const { return indexed_db_thread_.get(); }
 
  private:
+  class MemoryObserver;
   // For ShutdownThreadsAndCleanUp.
   friend class BrowserShutdownImpl;
 
@@ -97,9 +106,10 @@ class BrowserMainLoop {
   scoped_ptr<base::MessageLoop> main_message_loop_;
   scoped_ptr<base::SystemMonitor> system_monitor_;
   scoped_ptr<base::PowerMonitor> power_monitor_;
-  scoped_ptr<HighResolutionTimerManager> hi_res_timer_manager_;
+  scoped_ptr<base::HighResolutionTimerManager> hi_res_timer_manager_;
   scoped_ptr<net::NetworkChangeNotifier> network_change_notifier_;
   scoped_ptr<media::AudioManager> audio_manager_;
+  scoped_ptr<media::MIDIManager> midi_manager_;
   scoped_ptr<AudioMirroringManager> audio_mirroring_manager_;
   scoped_ptr<MediaStreamManager> media_stream_manager_;
   // Per-process listener for online state changes.
@@ -134,6 +144,7 @@ class BrowserMainLoop {
   scoped_ptr<BrowserProcessSubThread> process_launcher_thread_;
   scoped_ptr<BrowserProcessSubThread> cache_thread_;
   scoped_ptr<BrowserProcessSubThread> io_thread_;
+  scoped_ptr<base::Thread> indexed_db_thread_;
   scoped_ptr<MemoryObserver> memory_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserMainLoop);

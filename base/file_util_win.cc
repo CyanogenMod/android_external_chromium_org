@@ -23,25 +23,11 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/windows_version.h"
 
-using base::FilePath;
-
 namespace base {
-
-FilePath MakeAbsoluteFilePath(const FilePath& input) {
-  base::ThreadRestrictions::AssertIOAllowed();
-  wchar_t file_path[MAX_PATH];
-  if (!_wfullpath(file_path, input.value().c_str(), MAX_PATH))
-    return FilePath();
-  return FilePath(file_path);
-}
-
-}  // namespace base
-
-namespace file_util {
 
 namespace {
 
@@ -50,8 +36,16 @@ const DWORD kFileShareAll =
 
 }  // namespace
 
+FilePath MakeAbsoluteFilePath(const FilePath& input) {
+  ThreadRestrictions::AssertIOAllowed();
+  wchar_t file_path[MAX_PATH];
+  if (!_wfullpath(file_path, input.value().c_str(), MAX_PATH))
+    return FilePath();
+  return FilePath(file_path);
+}
+
 bool Delete(const FilePath& path, bool recursive) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
 
   if (path.value().length() >= MAX_PATH)
     return false;
@@ -59,8 +53,8 @@ bool Delete(const FilePath& path, bool recursive) {
   if (!recursive) {
     // If not recursing, then first check to see if |path| is a directory.
     // If it is, then remove it with RemoveDirectory.
-    base::PlatformFileInfo file_info;
-    if (GetFileInfo(path, &file_info) && file_info.is_directory)
+    PlatformFileInfo file_info;
+    if (file_util::GetFileInfo(path, &file_info) && file_info.is_directory)
       return RemoveDirectory(path.value().c_str()) != 0;
 
     // Otherwise, it's a file, wildcard or non-existant. Try DeleteFile first
@@ -105,7 +99,7 @@ bool Delete(const FilePath& path, bool recursive) {
 }
 
 bool DeleteAfterReboot(const FilePath& path) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
 
   if (path.value().length() >= MAX_PATH)
     return false;
@@ -116,7 +110,7 @@ bool DeleteAfterReboot(const FilePath& path) {
 }
 
 bool MoveUnsafe(const FilePath& from_path, const FilePath& to_path) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
 
   // NOTE: I suspect we could support longer paths, but that would involve
   // analyzing all our usage of files.
@@ -133,11 +127,11 @@ bool MoveUnsafe(const FilePath& from_path, const FilePath& to_path) {
   bool ret = false;
   DWORD last_error = ::GetLastError();
 
-  if (DirectoryExists(from_path)) {
+  if (file_util::DirectoryExists(from_path)) {
     // MoveFileEx fails if moving directory across volumes. We will simulate
     // the move by using Copy and Delete. Ideally we could check whether
     // from_path and to_path are indeed in different volumes.
-    ret = CopyAndDeleteDirectory(from_path, to_path);
+    ret = file_util::CopyAndDeleteDirectory(from_path, to_path);
   }
 
   if (!ret) {
@@ -149,10 +143,10 @@ bool MoveUnsafe(const FilePath& from_path, const FilePath& to_path) {
   return ret;
 }
 
-bool ReplaceFileAndGetError(const FilePath& from_path,
-                            const FilePath& to_path,
-                            base::PlatformFileError* error) {
-  base::ThreadRestrictions::AssertIOAllowed();
+bool ReplaceFile(const FilePath& from_path,
+                 const FilePath& to_path,
+                 PlatformFileError* error) {
+  ThreadRestrictions::AssertIOAllowed();
   // Try a simple move first.  It will only succeed when |to_path| doesn't
   // already exist.
   if (::MoveFile(from_path.value().c_str(), to_path.value().c_str()))
@@ -166,9 +160,18 @@ bool ReplaceFileAndGetError(const FilePath& from_path,
     return true;
   }
   if (error)
-    *error = base::LastErrorToPlatformFileError(GetLastError());
+    *error = LastErrorToPlatformFileError(GetLastError());
   return false;
 }
+
+}  // namespace base
+
+// -----------------------------------------------------------------------------
+
+namespace file_util {
+
+using base::FilePath;
+using base::kFileShareAll;
 
 bool CopyFileUnsafe(const FilePath& from_path, const FilePath& to_path) {
   base::ThreadRestrictions::AssertIOAllowed();
@@ -418,6 +421,9 @@ bool CreateDirectoryAndGetError(const FilePath& full_path,
     }
     DLOG(WARNING) << "CreateDirectory(" << full_path_str << "), "
                   << "conflicts with existing file.";
+    if (error) {
+      *error = base::PLATFORM_FILE_ERROR_NOT_A_DIRECTORY;
+    }
     return false;
   }
 
@@ -428,10 +434,16 @@ bool CreateDirectoryAndGetError(const FilePath& full_path,
   // directories starting with the highest-level missing parent.
   FilePath parent_path(full_path.DirName());
   if (parent_path.value() == full_path.value()) {
+    if (error) {
+      *error = base::PLATFORM_FILE_ERROR_NOT_FOUND;
+    }
     return false;
   }
   if (!CreateDirectoryAndGetError(parent_path, error)) {
     DLOG(WARNING) << "Failed to create one of the parent directories.";
+    if (error) {
+      DCHECK(*error != base::PLATFORM_FILE_OK);
+    }
     return false;
   }
 

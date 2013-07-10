@@ -80,16 +80,15 @@ class NET_EXPORT WebSocketJob
   // SpdyWebSocketStream::Delegate methods.
   virtual void OnCreatedSpdyStream(int status) OVERRIDE;
   virtual void OnSentSpdyHeaders() OVERRIDE;
-  virtual int OnReceivedSpdyResponseHeader(
-      const SpdyHeaderBlock& headers, int status) OVERRIDE;
+  virtual void OnSpdyResponseHeadersUpdated(
+      const SpdyHeaderBlock& response_headers) OVERRIDE;
   virtual void OnSentSpdyData(size_t bytes_sent) OVERRIDE;
   virtual void OnReceivedSpdyData(scoped_ptr<SpdyBuffer> buffer) OVERRIDE;
   virtual void OnCloseSpdyStream() OVERRIDE;
 
  private:
   friend class WebSocketThrottle;
-  friend class WebSocketJobSpdy2Test;
-  friend class WebSocketJobSpdy3Test;
+  friend class WebSocketJobTest;
   virtual ~WebSocketJob();
 
   bool SendHandshakeRequest(const char* data, int len);

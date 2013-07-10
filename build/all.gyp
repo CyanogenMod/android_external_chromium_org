@@ -28,7 +28,6 @@
         '../ui/snapshot/snapshot.gyp:*',
         '../ui/ui.gyp:*',
         '../url/url.gyp:*',
-        'temp_gyp/googleurl.gyp:*',
       ],
       'conditions': [
         ['OS!="ios"', {
@@ -70,7 +69,7 @@
           ],
         }, { #  'OS=="ios"'
           'dependencies': [
-            '../ios/consumer/ios_consumer.gyp:*',
+            '../ios/ios.gyp:*',
           ],
         }],
         ['os_posix==1 and OS!="android" and OS!="ios"', {
@@ -147,7 +146,6 @@
             '../rlz/rlz.gyp:*',
             '../sandbox/sandbox.gyp:*',
             '<(angle_path)/src/build_angle.gyp:*',
-            '../third_party/bsdiff/bsdiff.gyp:*',
             '../third_party/bspatch/bspatch.gyp:*',
             '../third_party/gles2_book/gles2_book.gyp:*',
           ],
@@ -227,6 +225,7 @@
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
             '../components/components.gyp:components_unittests',
             '../content/content.gyp:content_browsertests',
+            '../content/content.gyp:content_shell',
             '../content/content.gyp:content_unittests',
             '../device/device.gyp:device_unittests',
             '../gpu/gpu.gyp:gpu_unittests',
@@ -454,7 +453,6 @@
           'target_name': 'chromium_builder_chromedriver',
           'type': 'none',
           'dependencies': [
-            '../chrome/chrome.gyp:chromedriver2',
             '../chrome/chrome.gyp:chromedriver2_server',
             '../chrome/chrome.gyp:chromedriver2_tests',
             '../chrome/chrome.gyp:chromedriver2_unittests',
@@ -698,6 +696,7 @@
           'dependencies': [
             '../base/base.gyp:base_unittests',
             '../chrome/chrome.gyp:unit_tests',
+            '../chrome/chrome.gyp:browser_tests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
             '../components/components.gyp:components_unittests',
             '../content/content.gyp:content_unittests',

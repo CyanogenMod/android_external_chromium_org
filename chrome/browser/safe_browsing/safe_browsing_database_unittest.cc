@@ -8,17 +8,17 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/safe_browsing/safe_browsing_database.h"
 #include "chrome/browser/safe_browsing/safe_browsing_store_file.h"
 #include "chrome/browser/safe_browsing/safe_browsing_store_unittest_helper.h"
 #include "content/public/test/test_browser_thread.h"
 #include "crypto/sha2.h"
-#include "googleurl/src/gurl.h"
 #include "sql/connection.h"
 #include "sql/statement.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
+#include "url/gurl.h"
 
 using base::Time;
 using content::BrowserThread;
@@ -1658,7 +1658,7 @@ TEST_F(SafeBrowsingDatabaseTest, FilterFile) {
       &matching_list, &prefix_hits, &full_hashes, now));
 
   // If there is no filter file, the database cannot find malware urls.
-  file_util::Delete(filter_file, false);
+  base::Delete(filter_file, false);
   ASSERT_FALSE(file_util::PathExists(filter_file));
   database_.reset(new SafeBrowsingDatabaseNew);
   database_->Init(database_filename_);

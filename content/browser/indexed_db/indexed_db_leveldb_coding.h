@@ -75,7 +75,7 @@ CONTENT_EXPORT int CompareEncodedIDBKeys(const std::vector<char>& a,
 
 CONTENT_EXPORT int Compare(const LevelDBSlice& a,
                            const LevelDBSlice& b,
-                           bool index_keys = false);
+                           bool index_keys);
 
 class KeyPrefix {
  public:
@@ -194,10 +194,13 @@ class DatabaseNameKey {
   static const char* Decode(const char* start,
                             const char* limit,
                             DatabaseNameKey* result);
-  CONTENT_EXPORT static std::vector<char> Encode(const string16& origin,
-                                                 const string16& database_name);
-  static std::vector<char> EncodeMinKeyForOrigin(const string16& origin);
-  static std::vector<char> EncodeStopKeyForOrigin(const string16& origin);
+  CONTENT_EXPORT static std::vector<char> Encode(
+      const std::string& origin_identifier,
+      const string16& database_name);
+  static std::vector<char> EncodeMinKeyForOrigin(
+      const std::string& origin_identifier);
+  static std::vector<char> EncodeStopKeyForOrigin(
+      const std::string& origin_identifier);
   string16 origin() const { return origin_; }
   string16 database_name() const { return database_name_; }
   int Compare(const DatabaseNameKey& other);
@@ -337,9 +340,8 @@ class ObjectStoreNamesKey {
   string16 object_store_name() const { return object_store_name_; }
 
  private:
-  string16
-      object_store_name_;  // TODO(jsbell): Store the encoded string, or just
-                           // pointers to it.
+  // TODO(jsbell): Store the encoded string, or just pointers to it.
+  string16 object_store_name_;
 };
 
 class IndexNamesKey {
@@ -421,7 +423,7 @@ class IndexDataKey {
       int64 index_id,
       const std::vector<char>& encoded_user_key,
       const std::vector<char>& encoded_primary_key,
-      int64 sequence_number = 0);
+      int64 sequence_number);
   static std::vector<char> Encode(int64 database_id,
                                   int64 object_store_id,
                                   int64 index_id,

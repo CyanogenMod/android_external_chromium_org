@@ -8,13 +8,13 @@
 #include "base/lazy_instance.h"
 #include "base/location.h"
 #include "base/strings/stringprintf.h"
-#include "chrome/browser/google_apis/event_logger.h"
+#include "chrome/browser/drive/event_logger.h"
 
 namespace sync_file_system {
 namespace util {
 namespace {
 
-static base::LazyInstance<google_apis::EventLogger> g_logger =
+static base::LazyInstance<drive::EventLogger> g_logger =
     LAZY_INSTANCE_INITIALIZER;
 
 const char* LogSeverityToString(logging::LogSeverity level) {
@@ -36,7 +36,7 @@ const char* LogSeverityToString(logging::LogSeverity level) {
 }  // namespace
 
 void ClearLog() {
-  g_logger.Pointer()->SetHistorySize(google_apis::kDefaultHistorySize);
+  g_logger.Pointer()->SetHistorySize(::drive::kDefaultHistorySize);
 }
 
 void Log(logging::LogSeverity severity,
@@ -50,20 +50,11 @@ void Log(logging::LogSeverity severity,
   base::StringAppendV(&what, format, args);
   va_end(args);
 
-  // Use same output format as normal console logger.
-  base::FilePath path = base::FilePath::FromUTF8Unsafe(location.file_name());
-  std::string log_output = base::StringPrintf(
-      "[%s: %s(%d)] %s",
-      LogSeverityToString(severity),
-      path.BaseName().AsUTF8Unsafe().c_str(),
-      location.line_number(),
-      what.c_str());
-
   // Log to WebUI regardless of LogSeverity (e.g. ignores command line flags).
   // On thread-safety: LazyInstance guarantees thread-safety for the object
   // creation. EventLogger::Log() internally maintains the lock.
-  google_apis::EventLogger* ptr = g_logger.Pointer();
-  ptr->Log("%s", log_output.c_str());
+  drive::EventLogger* ptr = g_logger.Pointer();
+  ptr->Log("[%s] %s", LogSeverityToString(severity), what.c_str());
 
   // Log to console if the severity is at or above the min level.
   // LOG_VERBOSE logs are also output if the verbosity of this module
@@ -76,8 +67,8 @@ void Log(logging::LogSeverity severity,
       .stream() << what;
 }
 
-std::vector<google_apis::EventLogger::Event> GetLogHistory() {
-  google_apis::EventLogger* ptr = g_logger.Pointer();
+std::vector<drive::EventLogger::Event> GetLogHistory() {
+  drive::EventLogger* ptr = g_logger.Pointer();
   return ptr->GetHistory();
 }
 

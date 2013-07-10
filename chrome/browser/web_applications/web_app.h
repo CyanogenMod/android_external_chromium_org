@@ -24,6 +24,14 @@ class ImageFamily;
 
 namespace web_app {
 
+// Policy on whether to create duplicate shortcuts.
+enum ShortcutCreationPolicy {
+  // Duplicate shortcuts may be created, at the discretion of the
+  // implementation.
+  ALLOW_DUPLICATE_SHORTCUTS,
+  DONT_CREATE_DUPLICATE_SHORTCUTS
+};
+
 // Gets the user data directory for given web app. The path for the directory is
 // based on |extension_id|. If |extension_id| is empty then |url| is used
 // to construct a unique ID.
@@ -56,7 +64,8 @@ std::string GetExtensionIdFromApplicationName(const std::string& app_name);
 // |creation_locations| contains information about where to create them.
 void CreateShortcuts(
     const ShellIntegration::ShortcutInfo& shortcut_info,
-    const ShellIntegration::ShortcutLocations& creation_locations);
+    const ShellIntegration::ShortcutLocations& creation_locations,
+    ShortcutCreationPolicy creation_policy);
 
 // Delete all the shortcuts that have been created for the given
 // |shortcut_data| in the profile with |profile_path|.
@@ -75,7 +84,8 @@ void UpdateAllShortcuts(const string16& old_app_title,
 // |creation_locations| contains information about where to create them.
 bool CreateShortcutsOnFileThread(
     const ShellIntegration::ShortcutInfo& shortcut_info,
-    const ShellIntegration::ShortcutLocations& creation_locations);
+    const ShellIntegration::ShortcutLocations& creation_locations,
+    ShortcutCreationPolicy creation_policy);
 
 // Returns true if given url is a valid web app url.
 bool IsValidUrl(const GURL& url);
@@ -101,9 +111,6 @@ string16 GetAppShortcutsSubdirName();
 namespace internals {
 
 #if defined(OS_WIN)
-bool CheckAndSaveIcon(const base::FilePath& icon_file,
-                      const gfx::ImageFamily& image);
-
 std::vector<base::FilePath> GetShortcutPaths(
     const ShellIntegration::ShortcutLocations& creation_locations);
 #endif
@@ -117,7 +124,8 @@ std::vector<base::FilePath> GetShortcutPaths(
 bool CreatePlatformShortcuts(
     const base::FilePath& shortcut_data_path,
     const ShellIntegration::ShortcutInfo& shortcut_info,
-    const ShellIntegration::ShortcutLocations& creation_locations);
+    const ShellIntegration::ShortcutLocations& creation_locations,
+    ShortcutCreationPolicy creation_policy);
 
 // Delete all the shortcuts we have added for this extension. This is the
 // platform specific implementation of the DeleteAllShortcuts function, and
@@ -133,6 +141,10 @@ void UpdatePlatformShortcuts(
     const base::FilePath& shortcut_data_path,
     const string16& old_app_title,
     const ShellIntegration::ShortcutInfo& shortcut_info);
+
+// Delete all the shortcuts for an entire profile.
+// This is executed on the FILE thread.
+void DeleteAllShortcutsForProfile(const base::FilePath& profile_path);
 
 // Sanitizes |name| and returns a version of it that is safe to use as an
 // on-disk file name .

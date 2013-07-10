@@ -60,6 +60,8 @@ class CC_EXPORT ResourceProvider {
 
   virtual ~ResourceProvider();
 
+  bool Reinitialize(int highp_threshold_min);
+
   void DidLoseOutputSurface() { lost_output_surface_ = true; }
 
   WebKit::WebGraphicsContext3D* GraphicsContext3D();
@@ -271,6 +273,7 @@ class CC_EXPORT ResourceProvider {
     friend class base::RefCounted<Fence>;
     virtual ~Fence() {}
 
+   private:
     DISALLOW_COPY_AND_ASSIGN(Fence);
   };
 
@@ -282,9 +285,6 @@ class CC_EXPORT ResourceProvider {
   // Map/unmap the acquired pixel buffer.
   uint8_t* MapPixelBuffer(ResourceId id);
   void UnmapPixelBuffer(ResourceId id);
-
-  // Update pixels from acquired pixel buffer.
-  void SetPixelsFromBuffer(ResourceId id);
 
   // Asynchronously update pixels from acquired pixel buffer.
   void BeginSetPixels(ResourceId id);

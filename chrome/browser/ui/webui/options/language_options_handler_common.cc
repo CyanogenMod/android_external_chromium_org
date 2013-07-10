@@ -13,7 +13,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
@@ -124,6 +124,13 @@ void LanguageOptionsHandlerCommon::GetLocalizedValues(
       command_line.HasSwitch(switches::kEnableTranslateSettings);
   localized_strings->SetBoolean("enableTranslateSettings",
                                 enable_translate_settings);
+
+  Profile* profile = Profile::FromWebUI(web_ui());
+  PrefService* prefs = profile->GetPrefs();
+  std::string default_target_language =
+      TranslateManager::GetTargetLanguage(prefs);
+  localized_strings->SetString("defaultTargetLanguage",
+                               default_target_language);
 
   std::vector<std::string> languages;
   TranslateManager::GetSupportedLanguages(&languages);

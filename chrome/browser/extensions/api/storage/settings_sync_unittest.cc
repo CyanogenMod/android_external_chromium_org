@@ -24,6 +24,9 @@
 #include "sync/api/sync_error_factory_mock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using base::DictionaryValue;
+using base::ListValue;
+using base::Value;
 using content::BrowserThread;
 
 namespace extensions {
@@ -94,6 +97,7 @@ class MockSyncChangeProcessor : public syncer::SyncChangeProcessor {
     if (fail_all_requests_) {
       return syncer::SyncError(
           FROM_HERE,
+          syncer::SyncError::DATATYPE_ERROR,
           "MockSyncChangeProcessor: configured to fail",
           change_list[0].sync_data().GetDataType());
     }

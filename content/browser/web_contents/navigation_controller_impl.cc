@@ -10,7 +10,7 @@
 #include "base/strings/string_number_conversions.h"  // Temporary
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/browser/browser_url_handler_impl.h"
 #include "content/browser/dom_storage/dom_storage_context_impl.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
@@ -1220,8 +1220,7 @@ void NavigationControllerImpl::CopyStateFrom(
        ++it) {
     SessionStorageNamespaceImpl* source_namespace =
         static_cast<SessionStorageNamespaceImpl*>(it->second.get());
-    session_storage_namespace_map_.insert(
-        make_pair(it->first, source_namespace->Clone()));
+    session_storage_namespace_map_[it->first] = source_namespace->Clone();
   }
 
   FinishRestore(source.last_committed_entry_index_, RESTORE_CURRENT_SESSION);

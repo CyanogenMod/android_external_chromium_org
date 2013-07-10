@@ -20,7 +20,7 @@
 #define ALLOC_EXPORT __attribute__((visibility("default")))
 #endif
 
-#if !defined(OS_MACOSX)
+#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
 // These are used by our new/delete overrides in
 // allocator_shim/allocator_proxy.cc
 AllocateFunction g_alloc = NULL;
@@ -44,7 +44,7 @@ extern "C" {
 // Called from init_webrtc.cc.
 ALLOC_EXPORT
 bool InitializeModule(const CommandLine& command_line,
-#if !defined(OS_MACOSX)
+#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
                       AllocateFunction alloc,
                       DellocateFunction dealloc,
 #endif
@@ -53,7 +53,7 @@ bool InitializeModule(const CommandLine& command_line,
                       webrtc::AddTraceEventPtr trace_add_trace_event,
                       CreateWebRtcMediaEngineFunction* create_media_engine,
                       DestroyWebRtcMediaEngineFunction* destroy_media_engine) {
-#if !defined(OS_MACOSX)
+#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
   g_alloc = alloc;
   g_dealloc = dealloc;
 #endif
@@ -67,12 +67,9 @@ bool InitializeModule(const CommandLine& command_line,
     // done the equivalent thing via the GetCommandLine() API.
     CommandLine::ForCurrentProcess()->AppendArguments(command_line, true);
 #endif
-    logging::InitLogging(
-        NULL,
-        logging::LOG_ONLY_TO_SYSTEM_DEBUG_LOG,
-        logging::LOCK_LOG_FILE,
-        logging::DELETE_OLD_LOG_FILE,
-        logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS);
+    logging::LoggingSettings settings;
+    settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
+    logging::InitLogging(settings);
 
     // Override the log message handler to forward logs to chrome's handler.
     logging::SetLogMessageHandler(log_handler);

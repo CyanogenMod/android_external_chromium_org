@@ -110,12 +110,6 @@ class KeywordProvider : public AutocompleteProvider,
                                       string16* keyword,
                                       string16* remaining_input);
 
-  // Fills in the "destination_url" and "contents" fields of |match| with the
-  // provided user input and keyword data.
-  static void FillInURLAndContents(const string16& remaining_input,
-                                   const TemplateURL* element,
-                                   AutocompleteMatch* match);
-
   // Determines the relevance for some input, given its type, whether the user
   // typed the complete keyword, and whether the user is in "prefer keyword
   // matches" mode, and whether the keyword supports replacement.
@@ -129,12 +123,17 @@ class KeywordProvider : public AutocompleteProvider,
 
   // Creates a fully marked-up AutocompleteMatch from the user's input.
   // If |relevance| is negative, calculate a relevance based on heuristics.
-  AutocompleteMatch CreateAutocompleteMatch(TemplateURLService* model,
-                                            const string16& keyword,
+  AutocompleteMatch CreateAutocompleteMatch(const TemplateURL* template_url,
                                             const AutocompleteInput& input,
                                             size_t prefix_length,
                                             const string16& remaining_input,
                                             int relevance);
+
+  // Fills in the "destination_url" and "contents" fields of |match| with the
+  // provided user input and keyword data.
+  void FillInURLAndContents(const string16& remaining_input,
+                            const TemplateURL* element,
+                            AutocompleteMatch* match) const;
 
   void EnterExtensionKeywordMode(const std::string& extension_id);
   void MaybeEndExtensionKeywordMode();

@@ -268,6 +268,9 @@ PnaclCoordinator::PnaclCoordinator(
     manifest_(new PnaclManifest()),
     pexe_url_(pexe_url),
     pnacl_options_(pnacl_options),
+    use_new_cache_(false),
+    is_cache_hit_(PP_FALSE),
+    nexe_handle_(PP_kInvalidFileHandle),
     error_already_reported_(false),
     off_the_record_(false),
     pnacl_init_time_(0),
@@ -277,6 +280,10 @@ PnaclCoordinator::PnaclCoordinator(
   PLUGIN_PRINTF(("PnaclCoordinator::PnaclCoordinator (this=%p, plugin=%p)\n",
                  static_cast<void*>(this), static_cast<void*>(plugin)));
   callback_factory_.Initialize(this);
+  if (getenv("PNACL_USE_NEW_CACHE")) {
+    PLUGIN_PRINTF(("PnaclCoordinator using new translation cache\n"));
+    use_new_cache_ = true;
+  }
 }
 
 PnaclCoordinator::~PnaclCoordinator() {
@@ -295,8 +302,7 @@ PnaclCoordinator::~PnaclCoordinator() {
 
 void PnaclCoordinator::ReportNonPpapiError(enum PluginErrorCode err_code,
                                            const nacl::string& message) {
-  error_info_.SetReport(err_code,
-                        nacl::string("PnaclCoordinator: ") + message);
+  error_info_.SetReport(err_code, message);
   ExitWithError();
 }
 
@@ -390,6 +396,14 @@ void PnaclCoordinator::TranslateFinished(int32_t pp_error) {
   // pointer to be able to read it again from the beginning.
   temp_nexe_file_->Reset();
 
+  if (use_new_cache_) {
+    // Report to the browser that translation finished. The browser will take
+    // care of caching.
+    plugin_->nacl_interface()->ReportTranslationFinished(
+        plugin_->pp_instance());
+    NexeReadDidOpen(PP_OK);
+    return;
+  }
   if (pnacl_options_.HasCacheKey() && cached_nexe_file_ != NULL) {
     // We are using a cache, but had a cache miss, which is why we did the
     // translation.  Reset cached_nexe_file_ to have a random name,
@@ -668,27 +682,31 @@ void PnaclCoordinator::ResourcesDidLoad(int32_t pp_error) {
   }
 
   if (!off_the_record_) {
-    // Open the local temporary FS to see if we get a hit in the cache.
-    pp::CompletionCallback cb =
-        callback_factory_.NewCallback(&PnaclCoordinator::FileSystemDidOpen);
-    int32_t open_error = file_system_->Open(0, cb);
-    if (open_error != PP_OK_COMPLETIONPENDING) {
-      // At this point, no async request has kicked off to check for
-      // permissions, space, etc., so the only error that can be detected
-      // now is that an open() is already in progress (or a really terrible
-      // error).
-      if (pp_error == PP_ERROR_INPROGRESS) {
+    if (use_new_cache_) {
+      OpenBitcodeStream();
+    } else {
+      // Open the local temporary FS to see if we get a hit in the cache.
+      pp::CompletionCallback cb =
+          callback_factory_.NewCallback(&PnaclCoordinator::FileSystemDidOpen);
+      int32_t open_error = file_system_->Open(0, cb);
+      if (open_error != PP_OK_COMPLETIONPENDING) {
+        // At this point, no async request has kicked off to check for
+        // permissions, space, etc., so the only error that can be detected
+        // now is that an open() is already in progress (or a really terrible
+        // error).
+        if (pp_error == PP_ERROR_INPROGRESS) {
+          ReportPpapiError(
+              ERROR_PNACL_CACHE_OPEN_INPROGRESS,
+              pp_error,
+              "File system for PNaCl translation cache failed to open "
+              "(in progress).");
+          return;
+        }
         ReportPpapiError(
-            ERROR_PNACL_CACHE_OPEN_INPROGRESS,
+            ERROR_PNACL_CACHE_OPEN_OTHER,
             pp_error,
-            "File system for PNaCl translation cache failed to open "
-            "(in progress).");
-        return;
+            "File system for PNaCl translation cache failed to open.");
       }
-      ReportPpapiError(
-          ERROR_PNACL_CACHE_OPEN_OTHER,
-          pp_error,
-          "File system for PNaCl translation cache failed to open.");
     }
   } else {
     // We don't have a cache, so do the non-cached codepath.
@@ -768,28 +786,37 @@ void PnaclCoordinator::OpenBitcodeStream() {
   // SRPCs won't get dropped.
   translate_thread_.reset(new PnaclTranslateThread());
   if (translate_thread_ == NULL) {
-    ReportNonPpapiError(ERROR_PNACL_THREAD_CREATE,
-                        "could not allocate translation thread.");
+    ReportNonPpapiError(
+        ERROR_PNACL_THREAD_CREATE,
+        "PnaclCoordinator: could not allocate translation thread.");
     return;
   }
-  // We also want to open the object file now so the
-  // translator can start writing to it during streaming translation.
-  obj_file_.reset(new TempFile(plugin_));
-  pp::CompletionCallback obj_cb =
-    callback_factory_.NewCallback(&PnaclCoordinator::ObjectFileDidOpen);
-  obj_file_->Open(obj_cb);
+  if (!use_new_cache_) {
+    // We also want to open the object file now so the
+    // translator can start writing to it during streaming translation.
+    obj_file_.reset(new TempFile(plugin_));
+    pp::CompletionCallback obj_cb =
+        callback_factory_.NewCallback(&PnaclCoordinator::ObjectFileDidOpen);
+    obj_file_->Open(obj_cb, true);
+  }
 
   pp::CompletionCallback cb =
       callback_factory_.NewCallback(&PnaclCoordinator::BitcodeStreamDidOpen);
   if (!streaming_downloader_->OpenStream(pexe_url_, cb, this)) {
-    ReportNonPpapiError(ERROR_PNACL_PEXE_FETCH_OTHER,
-                        nacl::string("failed to open stream ") + pexe_url_);
+    ReportNonPpapiError(
+        ERROR_PNACL_PEXE_FETCH_OTHER,
+        nacl::string("PnaclCoordinator: failed to open stream ") + pexe_url_);
+    return;
   }
 }
 
 void PnaclCoordinator::BitcodeStreamDidOpen(int32_t pp_error) {
   if (pp_error != PP_OK) {
     BitcodeStreamDidFinish(pp_error);
+    // In the new cache case, we have not spun up the translation process yet,
+    // so we need to call TranslateFinished here.
+    if (use_new_cache_)
+      TranslateFinished(pp_error);
     return;
   }
 
@@ -813,16 +840,78 @@ void PnaclCoordinator::BitcodeStreamDidOpen(int32_t pp_error) {
       // people from forging the URL for a different origin.
       pnacl_options_.set_cache_validators(cache_validators + url);
     }
-    cached_nexe_file_.reset(new LocalTempFile(
-        plugin_, file_system_.get(),
-        nacl::string(kPnaclTempDir),
-        pnacl_options_.GetCacheKey()));
-    pp::CompletionCallback cb =
-        callback_factory_.NewCallback(&PnaclCoordinator::CachedFileDidOpen);
-    cached_nexe_file_->OpenRead(cb);
+    if (use_new_cache_) {
+      pp::CompletionCallback cb =
+          callback_factory_.NewCallback(&PnaclCoordinator::NexeFdDidOpen);
+      int32_t nexe_fd_err =
+          plugin_->nacl_interface()->GetNexeFd(
+              plugin_->pp_instance(),
+              pnacl_options_.GetCacheKey().c_str(),
+              &is_cache_hit_,
+              &nexe_handle_,
+              cb.pp_completion_callback());
+      if (nexe_fd_err < PP_OK_COMPLETIONPENDING) {
+        ReportPpapiError(ERROR_PNACL_CREATE_TEMP, nexe_fd_err,
+                         nacl::string("Call to GetNexeFd failed"));
+        return;
+      }
+    } else {
+      cached_nexe_file_.reset(new LocalTempFile(
+          plugin_, file_system_.get(),
+          nacl::string(kPnaclTempDir),
+          pnacl_options_.GetCacheKey()));
+      pp::CompletionCallback cb =
+          callback_factory_.NewCallback(&PnaclCoordinator::CachedFileDidOpen);
+      cached_nexe_file_->OpenRead(cb);
+    }
   } else {
     // No cache case.
     CachedFileDidOpen(PP_ERROR_FAILED);
+  }
+}
+
+void PnaclCoordinator::NexeFdDidOpen(int32_t pp_error) {
+  PLUGIN_PRINTF(("PnaclCoordinator::NexeFdDidOpen (pp_error=%"
+                 NACL_PRId32", hit=%d, handle=%d)\n", pp_error,
+                 is_cache_hit_ == PP_TRUE,
+                 nexe_handle_));
+  if (pp_error < PP_OK) {
+    ReportPpapiError(ERROR_PNACL_CREATE_TEMP, pp_error,
+                     nacl::string("GetNexeFd failed"));
+    return;
+  }
+  temp_nexe_file_.reset(new TempFile(plugin_));
+  if (!temp_nexe_file_->SetExistingFd(nexe_handle_)) {
+    ReportNonPpapiError(
+        ERROR_PNACL_CREATE_TEMP,
+        nacl::string(
+            "PnaclCoordinator: Got bad temp file handle from GetNexeFd"));
+    return;
+  }
+  if (is_cache_hit_ == PP_TRUE) {
+    // Cache hit -- no need to stream the rest of the file.
+    streaming_downloader_.reset(NULL);
+    // TODO(dschuff): update UMA stats for hit/miss once there could actually
+    // be hits/misses.
+    // Open it for reading as the cached nexe file.
+    pp::CompletionCallback cb =
+        callback_factory_.NewCallback(&PnaclCoordinator::NexeReadDidOpen);
+    temp_nexe_file_->Open(cb, false);
+  } else {
+    // Open an object file first so the translator can start writing to it
+    // during streaming translation.
+    obj_file_.reset(new TempFile(plugin_));
+    pp::CompletionCallback obj_cb =
+        callback_factory_.NewCallback(&PnaclCoordinator::ObjectFileDidOpen);
+    obj_file_->Open(obj_cb, true);
+
+    // Meanwhile, a miss means we know we need to stream the bitcode, so stream
+    // the rest of it now. (Calling FinishStreaming means that the downloader
+    // will begin handing data to the coordinator, which is safe any time after
+    // the translate_thread_ object has been initialized).
+    pp::CompletionCallback finish_cb = callback_factory_.NewCallback(
+        &PnaclCoordinator::BitcodeStreamDidFinish);
+    streaming_downloader_->FinishStreaming(finish_cb);
   }
 }
 
@@ -941,12 +1030,15 @@ void PnaclCoordinator::ObjectFileDidOpen(int32_t pp_error) {
                      "Failed to open scratch object file.");
     return;
   }
-  // Create the nexe file for connecting ld and sel_ldr.
+  // Open the nexe file for connecting ld and sel_ldr.
   // Start translation when done with this last step of setup!
-  temp_nexe_file_.reset(new TempFile(plugin_));
+  if (!use_new_cache_)
+    // In the new cache case, the TempFile has already been created.
+    temp_nexe_file_.reset(new TempFile(plugin_));
+
   pp::CompletionCallback cb =
       callback_factory_.NewCallback(&PnaclCoordinator::RunTranslate);
-  temp_nexe_file_->Open(cb);
+  temp_nexe_file_->Open(cb, true);
 }
 
 void PnaclCoordinator::RunTranslate(int32_t pp_error) {

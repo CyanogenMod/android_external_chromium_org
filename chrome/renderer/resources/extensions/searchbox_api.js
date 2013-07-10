@@ -55,6 +55,7 @@ if (!chrome.embeddedSearch) {
       native function SetSuggestion();
       native function SetSuggestionFromAutocompleteResult();
       native function SetSuggestions();
+      native function SetVoiceSearchSupported();
       native function ShowOverlay();
       native function FocusOmnibox();
       native function StartCapturingKeyStrokes();
@@ -99,7 +100,7 @@ if (!chrome.embeddedSearch) {
         }
         var dedupedResults = [];
         for (url in urlToResultMap) {
-          dedupedResults.push(urlToResultMap[url]);
+          $Array.push(dedupedResults, urlToResultMap[url]);
         }
         return dedupedResults;
       }
@@ -181,6 +182,9 @@ if (!chrome.embeddedSearch) {
       this.setSuggestions = function(text) {
         SetSuggestions(text);
       };
+      this.setVoiceSearchSupported = function(supported) {
+        SetVoiceSearchSupported(supported);
+      };
       this.setAutocompleteText = function(text, behavior) {
         SetSuggestion(text, behavior);
       };
@@ -254,6 +258,7 @@ if (!chrome.embeddedSearch) {
       native function UndoMostVisitedDeletion();
       native function NavigateNewTabPage();
       native function IsInputInProgress();
+      native function GetAppLauncherEnabled();
 
       function GetMostVisitedItemsWrapper() {
         var mostVisitedItems = GetMostVisitedItems();
@@ -274,6 +279,7 @@ if (!chrome.embeddedSearch) {
       this.__defineGetter__('mostVisited', GetMostVisitedItemsWrapper);
       this.__defineGetter__('themeBackgroundInfo', GetThemeBackgroundInfo);
       this.__defineGetter__('isInputInProgress', IsInputInProgress);
+      this.__defineGetter__('appLauncherEnabled', GetAppLauncherEnabled);
 
       this.deleteMostVisitedItem = function(restrictedId) {
         DeleteMostVisitedItem(restrictedId);

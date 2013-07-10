@@ -19,7 +19,7 @@
 #include "base/observer_list.h"
 #include "base/strings/string16.h"
 #include "base/threading/thread_checker.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/history/delete_directive_handler.h"
@@ -831,8 +831,9 @@ class HistoryService : public CancelableRequestProvider,
 
   // Sets the in-memory URL database. This is called by the backend once the
   // database is loaded to make it available.
-  void SetInMemoryBackend(int backend_id,
-                          history::InMemoryHistoryBackend* mem_backend);
+  void SetInMemoryBackend(
+      int backend_id,
+      scoped_ptr<history::InMemoryHistoryBackend> mem_backend);
 
   // Called by our BackendDelegate when there is a problem reading the database.
   void NotifyProfileError(int backend_id, sql::InitStatus init_status);

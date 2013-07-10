@@ -19,15 +19,9 @@ class DriveIntegrationServiceTest : public testing::Test {
     profile_.reset(new TestingProfile);
     integration_service_.reset(new DriveIntegrationService(
         profile_.get(),
-        new google_apis::DummyDriveService,
+        new DummyDriveService,
         base::FilePath(),
         new DummyFileSystem));
-  }
-
-  virtual void TearDown() OVERRIDE {
-    integration_service_.reset();
-    google_apis::test_util::RunBlockingPoolTask();
-    profile_.reset();
   }
 
  protected:

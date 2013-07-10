@@ -175,7 +175,7 @@ void ContactDatabase::InitFromTaskRunner(const base::FilePath& database_dir,
 
   VLOG(1) << "Opening " << database_dir.value();
   UMA_HISTOGRAM_MEMORY_KB("Contacts.DatabaseSizeBytes",
-                          file_util::ComputeDirectorySize(database_dir));
+                          base::ComputeDirectorySize(database_dir));
   *success = false;
   HistogramInitResult histogram_result = HISTOGRAM_INIT_RESULT_SUCCESS;
 
@@ -200,7 +200,7 @@ void ContactDatabase::InitFromTaskRunner(const base::FilePath& database_dir,
     // Delete the existing database and try again (just once, though).
     if (status.IsCorruption() && delete_and_retry_on_corruption) {
       LOG(WARNING) << "Deleting possibly-corrupt database";
-      file_util::Delete(database_dir, true);
+      base::Delete(database_dir, true);
       delete_and_retry_on_corruption = false;
       histogram_result = HISTOGRAM_INIT_RESULT_DELETED_CORRUPTED;
     } else {

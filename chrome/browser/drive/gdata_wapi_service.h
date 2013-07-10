@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
@@ -20,33 +21,41 @@ class Profile;
 
 namespace base {
 class FilePath;
+class TaskRunner;
+}
+
+namespace google_apis {
+class AuthService;
+class RequestSender;
 }
 
 namespace net {
 class URLRequestContextGetter;
 }  // namespace net
 
-namespace google_apis {
-class AuthService;
-class RequestSender;
+namespace drive {
 
 // This class provides documents feed service calls for WAPI (codename for
 // DocumentsList API).
 // Details of API call are abstracted in each request class and this class
 // works as a thin wrapper for the API.
 class GDataWapiService : public DriveServiceInterface,
-                         public AuthServiceObserver {
+                         public google_apis::AuthServiceObserver {
  public:
   // |url_request_context_getter| is used to initialize URLFetcher.
+  // |blocking_task_runner| is used to run blocking tasks (like parsing JSON).
   // |base_url| is used to generate URLs for communicating with the WAPI
+  // |base_download_url| is used to generate URLs for downloading file with WAPI
   // |custom_user_agent| is used for the User-Agent header in HTTP
   // requests issued through the service if the value is not empty.
   GDataWapiService(net::URLRequestContextGetter* url_request_context_getter,
+                   base::TaskRunner* blocking_task_runner,
                    const GURL& base_url,
+                   const GURL& base_download_url,
                    const std::string& custom_user_agent);
   virtual ~GDataWapiService();
 
-  AuthService* auth_service_for_testing();
+  google_apis::AuthService* auth_service_for_testing();
 
   // DriveServiceInterface Overrides
   virtual void Initialize(Profile* profile) OVERRIDE;
@@ -60,121 +69,117 @@ class GDataWapiService : public DriveServiceInterface,
   virtual void ClearAccessToken() OVERRIDE;
   virtual void ClearRefreshToken() OVERRIDE;
   virtual std::string GetRootResourceId() const OVERRIDE;
-  virtual CancelCallback GetAllResourceList(
-      const GetResourceListCallback& callback) OVERRIDE;
-  virtual CancelCallback GetResourceListInDirectory(
+  virtual google_apis::CancelCallback GetAllResourceList(
+      const google_apis::GetResourceListCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback GetResourceListInDirectory(
       const std::string& directory_resource_id,
-      const GetResourceListCallback& callback) OVERRIDE;
-  virtual CancelCallback Search(
+      const google_apis::GetResourceListCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback Search(
       const std::string& search_query,
-      const GetResourceListCallback& callback) OVERRIDE;
-  virtual CancelCallback SearchByTitle(
+      const google_apis::GetResourceListCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback SearchByTitle(
       const std::string& title,
       const std::string& directory_resource_id,
-      const GetResourceListCallback& callback) OVERRIDE;
-  virtual CancelCallback GetChangeList(
+      const google_apis::GetResourceListCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback GetChangeList(
       int64 start_changestamp,
-      const GetResourceListCallback& callback) OVERRIDE;
-  virtual CancelCallback ContinueGetResourceList(
+      const google_apis::GetResourceListCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback ContinueGetResourceList(
       const GURL& override_url,
-      const GetResourceListCallback& callback) OVERRIDE;
-  virtual CancelCallback GetResourceEntry(
+      const google_apis::GetResourceListCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback GetResourceEntry(
       const std::string& resource_id,
-      const GetResourceEntryCallback& callback) OVERRIDE;
-  virtual CancelCallback GetAboutResource(
-      const GetAboutResourceCallback& callback) OVERRIDE;
-  virtual CancelCallback GetAppList(
-      const GetAppListCallback& callback) OVERRIDE;
-  virtual CancelCallback DeleteResource(
+      const google_apis::GetResourceEntryCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback GetAboutResource(
+      const google_apis::GetAboutResourceCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback GetAppList(
+      const google_apis::GetAppListCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback DeleteResource(
       const std::string& resource_id,
       const std::string& etag,
-      const EntryActionCallback& callback) OVERRIDE;
-  virtual CancelCallback DownloadFile(
-      const base::FilePath& virtual_path,
+      const google_apis::EntryActionCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback DownloadFile(
       const base::FilePath& local_cache_path,
-      const GURL& download_url,
-      const DownloadActionCallback& download_action_callback,
-      const GetContentCallback& get_content_callback,
-      const ProgressCallback& progress_callback) OVERRIDE;
-  virtual CancelCallback CopyResource(
+      const std::string& resource_id,
+      const google_apis::DownloadActionCallback& download_action_callback,
+      const google_apis::GetContentCallback& get_content_callback,
+      const google_apis::ProgressCallback& progress_callback) OVERRIDE;
+  virtual google_apis::CancelCallback CopyResource(
       const std::string& resource_id,
       const std::string& parent_resource_id,
       const std::string& new_name,
-      const GetResourceEntryCallback& callback) OVERRIDE;
-  virtual CancelCallback CopyHostedDocument(
+      const google_apis::GetResourceEntryCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback CopyHostedDocument(
       const std::string& resource_id,
       const std::string& new_name,
-      const GetResourceEntryCallback& callback) OVERRIDE;
-  virtual CancelCallback RenameResource(
+      const google_apis::GetResourceEntryCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback RenameResource(
       const std::string& resource_id,
       const std::string& new_name,
-      const EntryActionCallback& callback) OVERRIDE;
-  virtual CancelCallback TouchResource(
+      const google_apis::EntryActionCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback TouchResource(
       const std::string& resource_id,
       const base::Time& modified_date,
       const base::Time& last_viewed_by_me_date,
-      const GetResourceEntryCallback& callback) OVERRIDE;
-  virtual CancelCallback AddResourceToDirectory(
+      const google_apis::GetResourceEntryCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback AddResourceToDirectory(
       const std::string& parent_resource_id,
       const std::string& resource_id,
-      const EntryActionCallback& callback) OVERRIDE;
-  virtual CancelCallback RemoveResourceFromDirectory(
+      const google_apis::EntryActionCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback RemoveResourceFromDirectory(
       const std::string& parent_resource_id,
       const std::string& resource_id,
-      const EntryActionCallback& callback) OVERRIDE;
-  virtual CancelCallback AddNewDirectory(
+      const google_apis::EntryActionCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback AddNewDirectory(
       const std::string& parent_resource_id,
       const std::string& directory_name,
-      const GetResourceEntryCallback& callback) OVERRIDE;
-  virtual CancelCallback InitiateUploadNewFile(
-      const base::FilePath& drive_file_path,
+      const google_apis::GetResourceEntryCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback InitiateUploadNewFile(
       const std::string& content_type,
       int64 content_length,
       const std::string& parent_resource_id,
       const std::string& title,
-      const InitiateUploadCallback& callback) OVERRIDE;
-  virtual CancelCallback InitiateUploadExistingFile(
-      const base::FilePath& drive_file_path,
+      const google_apis::InitiateUploadCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback InitiateUploadExistingFile(
       const std::string& content_type,
       int64 content_length,
       const std::string& resource_id,
       const std::string& etag,
-      const InitiateUploadCallback& callback) OVERRIDE;
-  virtual CancelCallback ResumeUpload(
-      const base::FilePath& drive_file_path,
+      const google_apis::InitiateUploadCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback ResumeUpload(
       const GURL& upload_url,
       int64 start_position,
       int64 end_position,
       int64 content_length,
       const std::string& content_type,
       const base::FilePath& local_file_path,
-      const UploadRangeCallback& callback,
-      const ProgressCallback& progress_callback) OVERRIDE;
-  virtual CancelCallback GetUploadStatus(
-      const base::FilePath& drive_file_path,
+      const google_apis::UploadRangeCallback& callback,
+      const google_apis::ProgressCallback& progress_callback) OVERRIDE;
+  virtual google_apis::CancelCallback GetUploadStatus(
       const GURL& upload_url,
       int64 content_length,
-      const UploadRangeCallback& callback) OVERRIDE;
-  virtual CancelCallback AuthorizeApp(
+      const google_apis::UploadRangeCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback AuthorizeApp(
       const std::string& resource_id,
       const std::string& app_id,
-      const AuthorizeAppCallback& callback) OVERRIDE;
+      const google_apis::AuthorizeAppCallback& callback) OVERRIDE;
 
  private:
   // AuthService::Observer override.
   virtual void OnOAuth2RefreshTokenChanged() OVERRIDE;
 
   net::URLRequestContextGetter* url_request_context_getter_;  // Not owned.
-  scoped_ptr<RequestSender> sender_;
+  scoped_refptr<base::TaskRunner> blocking_task_runner_;
+  scoped_ptr<google_apis::RequestSender> sender_;
   ObserverList<DriveServiceObserver> observers_;
   // Request objects should hold a copy of this, rather than a const
   // reference, as they may outlive this object.
-  const GDataWapiUrlGenerator url_generator_;
+  const google_apis::GDataWapiUrlGenerator url_generator_;
   const std::string custom_user_agent_;
 
   DISALLOW_COPY_AND_ASSIGN(GDataWapiService);
 };
 
-}  // namespace google_apis
+}  // namespace drive
 
 #endif  // CHROME_BROWSER_DRIVE_GDATA_WAPI_SERVICE_H_

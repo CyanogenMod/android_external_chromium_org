@@ -15,6 +15,8 @@ var EventSourceTypeNames = null;
 var LogLevelType = null;
 var ClientInfo = null;
 var NetError = null;
+var QuicError = null;
+var QuicRstStreamError = null;
 var LoadFlag = null;
 var LoadState = null;
 var AddressFamily = null;
@@ -192,6 +194,7 @@ var MainView = (function() {
       addTab(HttpCacheView);
       addTab(ModulesView);
       addTab(TestView);
+      addTab(CrosLogAnalyzerView);
       addTab(HSTSView);
       addTab(LogsView);
       addTab(BandwidthView);
@@ -200,6 +203,7 @@ var MainView = (function() {
 
       this.tabSwitcher_.showMenuItem(LogsView.TAB_ID, cr.isChromeOS);
       this.tabSwitcher_.showMenuItem(CrosView.TAB_ID, cr.isChromeOS);
+      this.tabSwitcher_.showMenuItem(CrosLogAnalyzerView.TAB_ID, cr.isChromeOS);
     },
 
     /**
@@ -301,6 +305,8 @@ ConstantsObserver.prototype.onReceivedConstants = function(receivedConstants) {
   ClientInfo = Constants.clientInfo;
   LoadFlag = Constants.loadFlag;
   NetError = Constants.netError;
+  QuicError = Constants.quicError;
+  QuicRstStreamError = Constants.quicRstStreamError;
   AddressFamily = Constants.addressFamily;
   LoadState = Constants.loadState;
 
@@ -329,7 +335,7 @@ function areValidConstants(receivedConstants) {
 /**
  * Returns the name for netError.
  *
- * Example: netErrorToString(-105) would return
+ * Example: netErrorToString(-105) should return
  * "ERR_NAME_NOT_RESOLVED".
  * @param {number} netError The net error code.
  * @return {string} The name of the given error.
@@ -339,6 +345,30 @@ function netErrorToString(netError) {
   if (str == '?')
     return str;
   return 'ERR_' + str;
+}
+
+/**
+ * Returns the name for quicError.
+ *
+ * Example: quicErrorToString(25) should return
+ * "TIMED_OUT".
+ * @param {number} quicError The QUIC error code.
+ * @return {string} The name of the given error.
+ */
+function quicErrorToString(quicError) {
+  return getKeyWithValue(QuicError, quicError);
+}
+
+/**
+ * Returns the name for quicRstStreamError.
+ *
+ * Example: quicRstStreamErrorToString(3) should return
+ * "BAD_APPLICATION_PAYLOAD".
+ * @param {number} quicRstStreamError The QUIC RST_STREAM error code.
+ * @return {string} The name of the given error.
+ */
+function quicRstStreamErrorToString(quicRstStreamError) {
+  return getKeyWithValue(QuicRstStreamError, quicRstStreamError);
 }
 
 /**

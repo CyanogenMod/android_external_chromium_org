@@ -29,7 +29,7 @@ const char kDrivePathKey[] = "DrivePath";
 class DriveUserData : public base::SupportsUserData::Data {
  public:
   explicit DriveUserData(const base::FilePath& path) : file_path_(path),
-                                                 is_complete_(false) {}
+                                                       is_complete_(false) {}
   virtual ~DriveUserData() {}
 
   const base::FilePath& file_path() const { return file_path_; }
@@ -72,7 +72,7 @@ void MoveDownloadedFile(const base::FilePath& downloaded_file,
                         const base::FilePath& dest_path) {
   if (error != FILE_ERROR_OK)
     return;
-  file_util::Move(downloaded_file, dest_path);
+  base::Move(downloaded_file, dest_path);
 }
 
 // Used to implement CheckForFileExistence().

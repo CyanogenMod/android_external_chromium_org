@@ -14,6 +14,7 @@
 #include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
+#include "base/memory/discardable_memory.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/stats_table.h"
@@ -33,6 +34,7 @@
 #include "content/child/plugin_messages.h"
 #include "content/child/resource_dispatcher.h"
 #include "content/child/runtime_features.h"
+#include "content/child/thread_safe_sender.h"
 #include "content/child/web_database_observer_impl.h"
 #include "content/common/child_process_messages.h"
 #include "content/common/database_messages.h"
@@ -64,6 +66,7 @@
 #include "content/renderer/media/audio_renderer_mixer_manager.h"
 #include "content/renderer/media/media_stream_center.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
+#include "content/renderer/media/midi_message_filter.h"
 #include "content/renderer/media/peer_connection_tracker.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
 #include "content/renderer/media/video_capture_message_filter.h"
@@ -71,6 +74,7 @@
 #include "content/renderer/p2p/socket_dispatcher.h"
 #include "content/renderer/plugin_channel_host.h"
 #include "content/renderer/render_process_impl.h"
+#include "content/renderer/render_process_visibility_manager.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
 #include "content/renderer/skia_benchmarking_extension.h"
@@ -217,12 +221,16 @@ void AddHistogramSample(void* hist, int sample) {
 class RenderThreadImpl::GpuVDAContextLostCallback
     : public WebKit::WebGraphicsContext3D::WebGraphicsContextLostCallback {
  public:
-  GpuVDAContextLostCallback() {}
+  GpuVDAContextLostCallback()
+      : main_message_loop_(base::MessageLoopProxy::current()) {}
   virtual ~GpuVDAContextLostCallback() {}
   virtual void onContextLost() {
-    ChildThread::current()->message_loop()->PostTask(FROM_HERE, base::Bind(
+    main_message_loop_->PostTask(FROM_HERE, base::Bind(
         &RenderThreadImpl::OnGpuVDAContextLoss));
   }
+
+ private:
+  scoped_refptr<base::MessageLoopProxy> main_message_loop_;
 };
 
 class RenderThreadImpl::RendererContextProviderCommandBuffer
@@ -337,11 +345,13 @@ void RenderThreadImpl::Init() {
   idle_notification_delay_in_ms_ = kInitialIdleHandlerDelayMs;
   idle_notifications_to_skip_ = 0;
   layout_test_mode_ = false;
+  shutdown_event_ = NULL;
 
   appcache_dispatcher_.reset(
       new AppCacheDispatcher(Get(), new appcache::AppCacheFrontendImpl()));
   dom_storage_dispatcher_.reset(new DomStorageDispatcher());
-  main_thread_indexed_db_dispatcher_.reset(new IndexedDBDispatcher());
+  main_thread_indexed_db_dispatcher_.reset(new IndexedDBDispatcher(
+      thread_safe_sender()));
 
   media_stream_center_ = NULL;
 
@@ -366,7 +376,10 @@ void RenderThreadImpl::Init() {
   audio_message_filter_ = new AudioMessageFilter(GetIOMessageLoopProxy());
   AddFilter(audio_message_filter_.get());
 
-  AddFilter(new IndexedDBMessageFilter);
+  midi_message_filter_ = new MIDIMessageFilter(GetIOMessageLoopProxy());
+  AddFilter(midi_message_filter_.get());
+
+  AddFilter(new IndexedDBMessageFilter(thread_safe_sender()));
 
   GetContentClient()->renderer()->RenderThreadStarted();
 
@@ -597,6 +610,10 @@ void RenderThreadImpl::WidgetHidden() {
   DCHECK(hidden_widget_count_ < widget_count_);
   hidden_widget_count_++;
 
+  RenderProcessVisibilityManager* manager =
+      RenderProcessVisibilityManager::GetInstance();
+  manager->WidgetVisibilityChanged(false);
+
   if (!GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden()) {
     return;
   }
@@ -608,6 +625,11 @@ void RenderThreadImpl::WidgetHidden() {
 void RenderThreadImpl::WidgetRestored() {
   DCHECK_GT(hidden_widget_count_, 0);
   hidden_widget_count_--;
+
+  RenderProcessVisibilityManager* manager =
+      RenderProcessVisibilityManager::GetInstance();
+  manager->WidgetVisibilityChanged(true);
+
   if (!GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden()) {
     return;
   }
@@ -709,6 +731,19 @@ void RenderThreadImpl::RegisterSchemes() {
   WebString swappedout_scheme(ASCIIToUTF16(chrome::kSwappedOutScheme));
   WebSecurityPolicy::registerURLSchemeAsDisplayIsolated(swappedout_scheme);
   WebSecurityPolicy::registerURLSchemeAsEmptyDocument(swappedout_scheme);
+
+  // chrome-native: is a scheme used for placeholder navigations that allow
+  // UIs to be drawn with platform native widgets instead of HTML.  These pages
+  // should not be accessible, and should also be treated as empty documents
+  // that can commit synchronously.  No code should be runnable in these pages,
+  // so it should not need to access anything nor should it allow javascript
+  // URLs since it should never be visible to the user.
+  WebString native_scheme(ASCIIToUTF16(chrome::kChromeNativeScheme));
+  WebSecurityPolicy::registerURLSchemeAsDisplayIsolated(native_scheme);
+  WebSecurityPolicy::registerURLSchemeAsEmptyDocument(native_scheme);
+  WebSecurityPolicy::registerURLSchemeAsNoAccess(native_scheme);
+  WebSecurityPolicy::registerURLSchemeAsNotAllowingJavascriptURLs(
+      native_scheme);
 }
 
 void RenderThreadImpl::RecordUserMetrics(const std::string& action) {
@@ -972,17 +1007,6 @@ void RenderThreadImpl::ReleaseCachedFonts() {
 
 #endif  // OS_WIN
 
-bool RenderThreadImpl::IsWebFrameValid(WebKit::WebFrame* web_frame) {
-  if (!web_frame)
-    return false;  // We must be shutting down.
-
-  RenderViewImpl* render_view = RenderViewImpl::FromWebView(web_frame->view());
-  if (!render_view)
-    return false;  // We must be shutting down.
-
-  return true;
-}
-
 bool RenderThreadImpl::IsMainThread() {
   return !!current();
 }
@@ -992,11 +1016,11 @@ base::MessageLoop* RenderThreadImpl::GetMainLoop() {
 }
 
 scoped_refptr<base::MessageLoopProxy> RenderThreadImpl::GetIOLoopProxy() {
-  return ChildProcess::current()->io_message_loop_proxy();
+  return io_message_loop_proxy_;
 }
 
 base::WaitableEvent* RenderThreadImpl::GetShutDownEvent() {
-  return ChildProcess::current()->GetShutDownEvent();
+  return shutdown_event_;
 }
 
 scoped_ptr<base::SharedMemory> RenderThreadImpl::AllocateSharedMemory(
@@ -1019,10 +1043,7 @@ int32 RenderThreadImpl::CreateViewCommandBuffer(
       &route_id);
 
   // Allow calling this from the compositor thread.
-  if (base::MessageLoop::current() == message_loop())
-    ChildThread::Send(message);
-  else
-    sync_message_filter()->Send(message);
+  thread_safe_sender()->Send(message);
 
   return route_id;
 }
@@ -1136,6 +1157,12 @@ GpuChannelHost* RenderThreadImpl::EstablishGpuChannelSync(
   }
 
   GetContentClient()->SetGpuInfo(gpu_info);
+
+  // Cache some variables that are needed on the compositor thread for our
+  // implementation of GpuChannelHostFactory.
+  io_message_loop_proxy_ = ChildProcess::current()->io_message_loop_proxy();
+  shutdown_event_ = ChildProcess::current()->GetShutDownEvent();
+
   gpu_channel_ = GpuChannelHost::Create(
       this, 0, client_id, gpu_info, channel_handle);
   return gpu_channel_.get();

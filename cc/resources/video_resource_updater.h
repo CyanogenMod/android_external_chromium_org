@@ -47,10 +47,6 @@ class VideoFrameExternalResources {
   ResourceType type;
   std::vector<TextureMailbox> mailboxes;
 
-  // TODO(danakj): Remove these when we get a Mailbox from VideoFrame.
-  unsigned hardware_resource;
-  TextureMailbox::ReleaseCallback hardware_release_callback;
-
   // TODO(danakj): Remove these too.
   std::vector<unsigned> software_resources;
   TextureMailbox::ReleaseCallback software_release_callback;
@@ -67,10 +63,7 @@ class VideoResourceUpdater
   explicit VideoResourceUpdater(ResourceProvider* resource_provider);
   ~VideoResourceUpdater();
 
-  VideoFrameExternalResources CreateForHardwarePlanes(
-      const scoped_refptr<media::VideoFrame>& video_frame);
-
-  VideoFrameExternalResources CreateForSoftwarePlanes(
+  VideoFrameExternalResources CreateExternalResourcesFromVideoFrame(
       const scoped_refptr<media::VideoFrame>& video_frame);
 
  private:
@@ -78,20 +71,24 @@ class VideoResourceUpdater
     unsigned resource_id;
     gfx::Size resource_size;
     unsigned resource_format;
-    unsigned sync_point;
+    gpu::Mailbox mailbox;
 
     PlaneResource(unsigned resource_id,
                   gfx::Size resource_size,
                   unsigned resource_format,
-                  unsigned sync_point)
+                  gpu::Mailbox mailbox)
         : resource_id(resource_id),
           resource_size(resource_size),
           resource_format(resource_format),
-          sync_point(sync_point) {}
+          mailbox(mailbox) {}
   };
 
   void DeleteResource(unsigned resource_id);
   bool VerifyFrame(const scoped_refptr<media::VideoFrame>& video_frame);
+  VideoFrameExternalResources CreateForHardwarePlanes(
+      const scoped_refptr<media::VideoFrame>& video_frame);
+  VideoFrameExternalResources CreateForSoftwarePlanes(
+      const scoped_refptr<media::VideoFrame>& video_frame);
 
   struct RecycleResourceData {
     unsigned resource_id;
@@ -103,10 +100,6 @@ class VideoResourceUpdater
                               RecycleResourceData data,
                               unsigned sync_point,
                               bool lost_resource);
-  static void ReturnTexture(base::WeakPtr<VideoResourceUpdater> updater,
-                            unsigned resource_id,
-                            unsigned sync_point,
-                            bool lost_resource);
 
   ResourceProvider* resource_provider_;
   scoped_ptr<media::SkCanvasVideoRenderer> video_renderer_;

@@ -7,14 +7,16 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_types.h"
 #import "chrome/browser/ui/cocoa/autofill/autofill_layout.h"
 
 @class AutofillDetailsContainer;
 @class AutofillDialogWindowController;
+@class AutofillNotificationContainer;
 @class AutofillSectionContainer;
 @class GTMWidthBasedTweaker;
+@class HyperlinkTextView;
 
 namespace autofill {
   class AutofillDialogController;
@@ -23,12 +25,23 @@ namespace autofill {
 // NSViewController for the main portion of the autofill dialog. Contains
 // account chooser, details for current payment instruments, OK/Cancel.
 // Might dynamically add and remove other elements.
-@interface AutofillMainContainer : NSViewController<AutofillLayout> {
+@interface AutofillMainContainer : NSViewController<AutofillLayout,
+                                                    NSTextViewDelegate> {
  @private
-  scoped_nsobject<GTMWidthBasedTweaker> buttonContainer_;
-  scoped_nsobject<AutofillDetailsContainer> detailsContainer_;
+  base::scoped_nsobject<GTMWidthBasedTweaker> buttonContainer_;
+  base::scoped_nsobject<AutofillDetailsContainer> detailsContainer_;
+  base::scoped_nsobject<HyperlinkTextView> legalDocumentsView_;
+  base::scoped_nsobject<AutofillNotificationContainer> notificationContainer_;
   AutofillDialogWindowController* target_;
-  autofill::AutofillDialogController* controller_;  // Not owned.
+
+  // Weak. Owns the dialog.
+  autofill::AutofillDialogController* controller_;
+
+  // Preferred size for legal documents.
+  NSSize legalDocumentsSize_;
+
+  // Dirty marker for preferred size.
+  BOOL legalDocumentsSizeDirty_;
 }
 
 @property(assign, nonatomic) AutofillDialogWindowController* target;
@@ -36,11 +49,20 @@ namespace autofill {
 // Designated initializer.
 - (id)initWithController:(autofill::AutofillDialogController*)controller;
 
+// Sets the anchor point for the notificationView_.
+- (void)setAnchorView:(NSView*)anchorView;
+
 // Returns the view controller responsible for |section|.
 - (AutofillSectionContainer*)sectionForId:(autofill::DialogSection)section;
 
 // Called when the controller-maintained suggestions model has changed.
 - (void)modelChanged;
+
+// Called when the legal documents text might need to be refreshed.
+- (void)updateLegalDocuments;
+
+// Called when there are changes to the notification area.
+- (void)updateNotificationArea;
 
 @end
 

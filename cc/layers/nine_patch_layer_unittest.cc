@@ -4,7 +4,6 @@
 
 #include "cc/layers/nine_patch_layer.h"
 
-#include "cc/base/thread.h"
 #include "cc/debug/overdraw_metrics.h"
 #include "cc/resources/prioritized_resource_manager.h"
 #include "cc/resources/resource_provider.h"
@@ -32,7 +31,7 @@ class MockLayerTreeHost : public LayerTreeHost {
  public:
   explicit MockLayerTreeHost(LayerTreeHostClient* client)
       : LayerTreeHost(client, LayerTreeSettings()) {
-    Initialize(scoped_ptr<Thread>());
+    Initialize(NULL);
   }
 };
 
@@ -73,7 +72,7 @@ TEST_F(NinePatchLayerTest, TriggerFullUploadOnceWhenChangingBitmap) {
 
   // No bitmap set should not trigger any uploads.
   test_layer->SetTexturePriorities(calculator);
-  test_layer->Update(&queue, &occlusion_tracker, NULL);
+  test_layer->Update(&queue, &occlusion_tracker);
   EXPECT_EQ(0u, queue.FullUploadSize());
   EXPECT_EQ(0u, queue.PartialUploadSize());
 
@@ -83,7 +82,7 @@ TEST_F(NinePatchLayerTest, TriggerFullUploadOnceWhenChangingBitmap) {
   bitmap.allocPixels();
   test_layer->SetBitmap(bitmap, gfx::Rect(5, 5, 1, 1));
   test_layer->SetTexturePriorities(calculator);
-  test_layer->Update(&queue, &occlusion_tracker, NULL);
+  test_layer->Update(&queue, &occlusion_tracker);
   EXPECT_EQ(1u, queue.FullUploadSize());
   EXPECT_EQ(0u, queue.PartialUploadSize());
   ResourceUpdate params = queue.TakeFirstFullUpload();
@@ -107,7 +106,7 @@ TEST_F(NinePatchLayerTest, TriggerFullUploadOnceWhenChangingBitmap) {
 
   // Nothing changed, so no repeated upload.
   test_layer->SetTexturePriorities(calculator);
-  test_layer->Update(&queue, &occlusion_tracker, NULL);
+  test_layer->Update(&queue, &occlusion_tracker);
   EXPECT_EQ(0u, queue.FullUploadSize());
   EXPECT_EQ(0u, queue.PartialUploadSize());
   {
@@ -119,7 +118,7 @@ TEST_F(NinePatchLayerTest, TriggerFullUploadOnceWhenChangingBitmap) {
 
   // Reupload after eviction
   test_layer->SetTexturePriorities(calculator);
-  test_layer->Update(&queue, &occlusion_tracker, NULL);
+  test_layer->Update(&queue, &occlusion_tracker);
   EXPECT_EQ(1u, queue.FullUploadSize());
   EXPECT_EQ(0u, queue.PartialUploadSize());
 
@@ -129,7 +128,7 @@ TEST_F(NinePatchLayerTest, TriggerFullUploadOnceWhenChangingBitmap) {
   EXPECT_EQ(NULL, params.texture->resource_manager());
   test_layer->SetTexturePriorities(calculator);
   ResourceUpdateQueue queue2;
-  test_layer->Update(&queue2, &occlusion_tracker, NULL);
+  test_layer->Update(&queue2, &occlusion_tracker);
   EXPECT_EQ(1u, queue2.FullUploadSize());
   EXPECT_EQ(0u, queue2.PartialUploadSize());
   params = queue2.TakeFirstFullUpload();

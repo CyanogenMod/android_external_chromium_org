@@ -171,9 +171,10 @@ void WebKitTestResultPrinter::PrintEncodedBinaryData(
   *output_ << "Content-Transfer-Encoding: base64\n";
 
   std::string data_base64;
-  DCHECK(base::Base64Encode(
+  const bool success = base::Base64Encode(
       base::StringPiece(reinterpret_cast<const char*>(&data[0]), data.size()),
-      &data_base64));
+      &data_base64);
+  DCHECK(success);
 
   *output_ << "Content-Length: " << data_base64.length() << "\n";
   output_->write(data_base64.c_str(), data_base64.length());
@@ -504,9 +505,7 @@ void WebKitTestController::OnImageDump(
     bool discard_transparency = true;
 #endif
 
-    bool success = false;
-#if defined(OS_ANDROID)
-    success = webkit_support::EncodeRGBAPNGWithChecksum(
+    bool success = webkit_support::EncodeBGRAPNGWithChecksum(
         reinterpret_cast<const unsigned char*>(image.getPixels()),
         image.width(),
         image.height(),
@@ -514,16 +513,6 @@ void WebKitTestController::OnImageDump(
         discard_transparency,
         actual_pixel_hash,
         &png);
-#else
-    success = webkit_support::EncodeBGRAPNGWithChecksum(
-        reinterpret_cast<const unsigned char*>(image.getPixels()),
-        image.width(),
-        image.height(),
-        static_cast<int>(image.rowBytes()),
-        discard_transparency,
-        actual_pixel_hash,
-        &png);
-#endif
     if (success)
       printer_->PrintImageBlock(png);
   }

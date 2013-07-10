@@ -9,11 +9,9 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chromeos/chromeos_export.h"
 #include "chromeos/dbus/dbus_client_implementation_type.h"
-
-#include "chromeos/dbus/power_supply_status.h"
 
 namespace dbus {
 class Bus;
@@ -21,6 +19,7 @@ class Bus;
 
 namespace power_manager {
 class PowerManagementPolicy;
+class PowerSupplyProperties;
 }
 
 namespace chromeos {
@@ -59,7 +58,8 @@ class CHROMEOS_EXPORT PowerManagerClient {
     // Called when updated information about the power supply is available.
     // The status is automatically updated periodically, but
     // RequestStatusUpdate() can be used to trigger an immediate update.
-    virtual void PowerChanged(const PowerSupplyStatus& status) {}
+    virtual void PowerChanged(
+        const power_manager::PowerSupplyProperties& proto) {}
 
     // Called when we go idle for threshold time.
     virtual void IdleNotify(int64 threshold_secs) {}
@@ -144,9 +144,7 @@ class CHROMEOS_EXPORT PowerManagerClient {
 
   // Notifies the power manager that a video is currently playing. It also
   // includes whether or not the containing window for the video is fullscreen.
-  virtual void NotifyVideoActivity(
-      const base::TimeTicks& last_activity_time,
-      bool is_fullscreen) = 0;
+  virtual void NotifyVideoActivity(bool is_fullscreen) = 0;
 
   // Tells the power manager to begin using |policy|.
   virtual void SetPolicy(

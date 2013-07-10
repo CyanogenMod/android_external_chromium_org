@@ -10,9 +10,9 @@
 #include "base/android/jni_string.h"
 #include "base/files/file_path.h"
 #include "base/json/json_writer.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/accessibility/browser_accessibility_android.h"
 #include "content/common/accessibility_node_data.h"
 
@@ -52,54 +52,36 @@ void AccessibilityTreeFormatter::AddProperties(
     const BrowserAccessibility& node, DictionaryValue* dict) {
   const BrowserAccessibilityAndroid* android_node =
       static_cast<const BrowserAccessibilityAndroid*>(&node);
-  JNIEnv* env = base::android::AttachCurrentThread();
 
   // Class name.
-  dict->SetString("class", base::android::ConvertJavaStringToUTF8(
-      android_node->GetClassNameJNI(env, NULL)));
+  dict->SetString("class", android_node->GetClassName());
 
   // Bool attributes.
-  dict->SetBoolean("focusable",
-                   android_node->IsFocusableJNI(env, NULL));
-  dict->SetBoolean("focused",
-                   android_node->IsFocusedJNI(env, NULL));
-  dict->SetBoolean("clickable",
-                   android_node->GetClickableJNI(env, NULL));
-  dict->SetBoolean("editable_text",
-                   android_node->IsEditableTextJNI(env, NULL));
-  dict->SetBoolean("checkable",
-                   android_node->IsCheckableJNI(env, NULL));
-  dict->SetBoolean("checked",
-                   android_node->IsCheckedJNI(env, NULL));
-  dict->SetBoolean("disabled",
-                   !android_node->IsEnabledJNI(env, NULL));
-  dict->SetBoolean("scrollable",
-                   android_node->IsScrollableJNI(env, NULL));
-  dict->SetBoolean("password",
-                   android_node->IsPasswordJNI(env, NULL));
-  dict->SetBoolean("selected",
-                   android_node->IsSelectedJNI(env, NULL));
-  dict->SetBoolean("invisible",
-                   !android_node->IsVisibleJNI(env, NULL));
+  dict->SetBoolean("focusable", android_node->IsFocusable());
+  dict->SetBoolean("focused", android_node->IsFocused());
+  dict->SetBoolean("clickable", android_node->IsClickable());
+  dict->SetBoolean("editable_text", android_node->IsEditableText());
+  dict->SetBoolean("checkable", android_node->IsCheckable());
+  dict->SetBoolean("checked", android_node->IsChecked());
+  dict->SetBoolean("disabled", !android_node->IsEnabled());
+  dict->SetBoolean("scrollable", android_node->IsScrollable());
+  dict->SetBoolean("password", android_node->IsPassword());
+  dict->SetBoolean("selected", android_node->IsSelected());
+  dict->SetBoolean("invisible", !android_node->IsVisibleToUser());
 
   // String attributes.
-  dict->SetString("name", base::android::ConvertJavaStringToUTF8(
-      android_node->GetNameJNI(env, NULL)));
+  dict->SetString("name", android_node->GetText());
 
   // Int attributes.
-  dict->SetInteger("item_index",
-                   android_node->GetItemIndexJNI(env, NULL));
-  dict->SetInteger("item_count",
-                   android_node->GetItemCountJNI(env, NULL));
+  dict->SetInteger("item_index", android_node->GetItemIndex());
+  dict->SetInteger("item_count", android_node->GetItemCount());
 }
 
 bool AccessibilityTreeFormatter::IncludeChildren(
     const BrowserAccessibility& node) {
   const BrowserAccessibilityAndroid* android_node =
       static_cast<const BrowserAccessibilityAndroid*>(&node);
-  JNIEnv* env = base::android::AttachCurrentThread();
-
-  return 0 != android_node->GetChildCountJNI(env, NULL);
+  return !android_node->IsLeaf();
 }
 
 string16 AccessibilityTreeFormatter::ToString(const DictionaryValue& dict,

@@ -14,8 +14,8 @@
 #include "base/rand_util.h"
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
+#include "chrome/common/chrome_paths.h"
 #include "chrome/common/descriptors_android.h"
-#include "components/breakpad/common/breakpad_paths.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/file_descriptor_info.h"
@@ -91,7 +91,7 @@ void CrashDumpManager::ProcessMinidump(const base::FilePath& minidump_path,
 
   if (file_size == 0) {
     // Empty minidump, this process did not crash. Just remove the file.
-    r = file_util::Delete(minidump_path, false);
+    r = base::Delete(minidump_path, false);
     DCHECK(r) << "Failed to delete temporary minidump file "
               << minidump_path.value();
     return;
@@ -100,7 +100,7 @@ void CrashDumpManager::ProcessMinidump(const base::FilePath& minidump_path,
   // We are dealing with a valid minidump. Copy it to the crash report
   // directory from where Java code will upload it later on.
   base::FilePath crash_dump_dir;
-  r = PathService::Get(breakpad::DIR_CRASH_DUMPS, &crash_dump_dir);
+  r = PathService::Get(chrome::DIR_CRASH_DUMPS, &crash_dump_dir);
   if (!r) {
     NOTREACHED() << "Failed to retrieve the crash dump directory.";
     return;
@@ -111,11 +111,11 @@ void CrashDumpManager::ProcessMinidump(const base::FilePath& minidump_path,
       base::StringPrintf("chromium-renderer-minidump-%016" PRIx64 ".dmp%d",
                          rand, pid);
   base::FilePath dest_path = crash_dump_dir.Append(filename);
-  r = file_util::Move(minidump_path, dest_path);
+  r = base::Move(minidump_path, dest_path);
   if (!r) {
     LOG(ERROR) << "Failed to move crash dump from " << minidump_path.value()
                << " to " << dest_path.value();
-    file_util::Delete(minidump_path, false);
+    base::Delete(minidump_path, false);
     return;
   }
   LOG(INFO) << "Crash minidump successfully generated: " <<

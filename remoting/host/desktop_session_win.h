@@ -7,17 +7,13 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "base/win/scoped_handle.h"
 #include "ipc/ipc_platform_file.h"
 #include "remoting/host/desktop_session.h"
 #include "remoting/host/win/wts_terminal_observer.h"
 #include "remoting/host/worker_process_ipc_delegate.h"
-
-namespace net {
-class IPEndPoint;
-}  // namespace net
 
 namespace tracked_objects {
 class Location;
@@ -76,11 +72,14 @@ class DesktopSessionWin
   // Called when |session_attach_timer_| expires.
   void OnSessionAttachTimeout();
 
-  // Starts monitoring for session attach/detach events for |client_endpoint|.
-  void StartMonitoring(const net::IPEndPoint& client_endpoint);
+  // Starts monitoring for session attach/detach events for |terminal_id|.
+  void StartMonitoring(const std::string& terminal_id);
 
   // Stops monitoring for session attach/detach events.
   void StopMonitoring();
+
+  // Asks DaemonProcess to terminate this session.
+  void TerminateSession();
 
   // Injects a secure attention sequence into the session.
   virtual void InjectSas() = 0;
@@ -88,7 +87,7 @@ class DesktopSessionWin
   // WorkerProcessIpcDelegate implementation.
   virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnPermanentError() OVERRIDE;
+  virtual void OnPermanentError(int exit_code) OVERRIDE;
 
   // WtsTerminalObserver implementation.
   virtual void OnSessionAttached(uint32 session_id) OVERRIDE;

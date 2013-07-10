@@ -13,7 +13,7 @@
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/autocomplete/autocomplete_controller_delegate.h"
 #include "chrome/browser/autocomplete/bookmark_provider.h"
 #include "chrome/browser/autocomplete/builtin_provider.h"
@@ -310,12 +310,11 @@ void AutocompleteController::Stop(bool clear_result) {
 }
 
 void AutocompleteController::StartZeroSuggest(const GURL& url,
-                                              const string16& user_text,
                                               const string16& permanent_text) {
   if (zero_suggest_provider_ != NULL) {
     DCHECK(!in_start_);  // We should not be already running a query.
     in_zero_suggest_ = true;
-    zero_suggest_provider_->StartZeroSuggest(url, user_text, permanent_text);
+    zero_suggest_provider_->StartZeroSuggest(url, permanent_text);
   }
 }
 
@@ -377,6 +376,7 @@ void AutocompleteController::ResetSession() {
   for (ACProviders::const_iterator i(providers_.begin()); i != providers_.end();
        ++i)
     (*i)->ResetSession();
+  in_zero_suggest_ = false;
 }
 
 void AutocompleteController::UpdateResult(
@@ -464,23 +464,23 @@ void AutocompleteController::UpdateAssociatedKeywords(
     string16 keyword(match->GetSubstitutingExplicitlyInvokedKeyword(profile_));
     if (!keyword.empty()) {
       keywords.insert(keyword);
+      continue;
+    }
+
+    // Only add the keyword if the match does not have a duplicate keyword with
+    // a more relevant match.
+    keyword = match->associated_keyword.get() ?
+        match->associated_keyword->keyword :
+        keyword_provider_->GetKeywordForText(match->fill_into_edit);
+    if (!keyword.empty() && !keywords.count(keyword)) {
+      keywords.insert(keyword);
+
+      if (!match->associated_keyword.get())
+        match->associated_keyword.reset(new AutocompleteMatch(
+            keyword_provider_->CreateAutocompleteMatch(match->fill_into_edit,
+                                                       keyword, input_)));
     } else {
-      string16 keyword = match->associated_keyword.get() ?
-          match->associated_keyword->keyword :
-          keyword_provider_->GetKeywordForText(match->fill_into_edit);
-
-      // Only add the keyword if the match does not have a duplicate keyword
-      // with a more relevant match.
-      if (!keyword.empty() && !keywords.count(keyword)) {
-        keywords.insert(keyword);
-
-        if (!match->associated_keyword.get())
-          match->associated_keyword.reset(new AutocompleteMatch(
-              keyword_provider_->CreateAutocompleteMatch(match->fill_into_edit,
-                  keyword, input_)));
-      } else {
-        match->associated_keyword.reset();
-      }
+      match->associated_keyword.reset();
     }
   }
 }

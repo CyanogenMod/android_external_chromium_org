@@ -20,18 +20,16 @@ namespace base {
 class SequencedTaskRunner;
 }  // namespace base
 
-namespace google_apis {
-class FakeDriveService;
-}  // namespace google_apis
-
 namespace drive {
 
+class FakeDriveService;
 class FakeFreeDiskSpaceGetter;
 class JobScheduler;
 
 namespace internal {
 class FileCache;
 class ResourceMetadata;
+class ResourceMetadataStorage;
 }  // namespace internal
 
 namespace file_system {
@@ -73,7 +71,6 @@ class OperationTestBase : public testing::Test {
 
   // testing::Test overrides.
   virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
 
   // Returns the path of the temporary directory for putting test files.
   base::FilePath temp_dir() const { return temp_dir_.path(); }
@@ -84,7 +81,7 @@ class OperationTestBase : public testing::Test {
                                   ResourceEntry* entry);
 
   // Accessors for the components.
-  google_apis::FakeDriveService* fake_service() {
+  FakeDriveService* fake_service() {
     return fake_drive_service_.get();
   }
   LoggingObserver* observer() { return &observer_; }
@@ -105,8 +102,10 @@ class OperationTestBase : public testing::Test {
   base::ScopedTempDir temp_dir_;
 
   LoggingObserver observer_;
-  scoped_ptr<google_apis::FakeDriveService> fake_drive_service_;
+  scoped_ptr<FakeDriveService> fake_drive_service_;
   scoped_ptr<JobScheduler> scheduler_;
+  scoped_ptr<internal::ResourceMetadataStorage,
+             test_util::DestroyHelperForTests> metadata_storage_;
   scoped_ptr<internal::ResourceMetadata, test_util::DestroyHelperForTests>
       metadata_;
   scoped_ptr<FakeFreeDiskSpaceGetter> fake_free_disk_space_getter_;

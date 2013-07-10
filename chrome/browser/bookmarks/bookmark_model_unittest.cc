@@ -18,18 +18,18 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_model_observer.h"
+#include "chrome/browser/bookmarks/bookmark_model_test_utils.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
-#include "chrome/test/base/model_test_utils.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "content/public/test/test_browser_thread.h"
-#include "googleurl/src/gurl.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/models/tree_node_iterator.h"
 #include "ui/base/models/tree_node_model.h"
+#include "url/gurl.h"
 
 using base::Time;
 using base::TimeDelta;
@@ -596,53 +596,54 @@ TEST_F(BookmarkModelTest, NonMovingMoveCall) {
 TEST_F(BookmarkModelTest, Copy) {
   const BookmarkNode* root = model_.bookmark_bar_node();
   static const std::string model_string("a 1:[ b c ] d 2:[ e f g ] h ");
-  model_test_utils::AddNodesFromModelString(&model_, root, model_string);
+  BookmarkModelTestUtils::AddNodesFromModelString(&model_, root, model_string);
 
   // Validate initial model.
-  std::string actual_model_string = model_test_utils::ModelStringFromNode(root);
+  std::string actual_model_string =
+      BookmarkModelTestUtils::ModelStringFromNode(root);
   EXPECT_EQ(model_string, actual_model_string);
 
   // Copy 'd' to be after '1:b': URL item from bar to folder.
-  const BookmarkNode* nodeToCopy = root->GetChild(2);
+  const BookmarkNode* node_to_copy = root->GetChild(2);
   const BookmarkNode* destination = root->GetChild(1);
-  model_.Copy(nodeToCopy, destination, 1);
-  actual_model_string = model_test_utils::ModelStringFromNode(root);
+  model_.Copy(node_to_copy, destination, 1);
+  actual_model_string = BookmarkModelTestUtils::ModelStringFromNode(root);
   EXPECT_EQ("a 1:[ b d c ] d 2:[ e f g ] h ", actual_model_string);
 
   // Copy '1:d' to be after 'a': URL item from folder to bar.
   const BookmarkNode* folder = root->GetChild(1);
-  nodeToCopy = folder->GetChild(1);
-  model_.Copy(nodeToCopy, root, 1);
-  actual_model_string = model_test_utils::ModelStringFromNode(root);
+  node_to_copy = folder->GetChild(1);
+  model_.Copy(node_to_copy, root, 1);
+  actual_model_string = BookmarkModelTestUtils::ModelStringFromNode(root);
   EXPECT_EQ("a d 1:[ b d c ] d 2:[ e f g ] h ", actual_model_string);
 
   // Copy '1' to be after '2:e': Folder from bar to folder.
-  nodeToCopy = root->GetChild(2);
+  node_to_copy = root->GetChild(2);
   destination = root->GetChild(4);
-  model_.Copy(nodeToCopy, destination, 1);
-  actual_model_string = model_test_utils::ModelStringFromNode(root);
+  model_.Copy(node_to_copy, destination, 1);
+  actual_model_string = BookmarkModelTestUtils::ModelStringFromNode(root);
   EXPECT_EQ("a d 1:[ b d c ] d 2:[ e 1:[ b d c ] f g ] h ",
             actual_model_string);
 
   // Copy '2:1' to be after '2:f': Folder within same folder.
   folder = root->GetChild(4);
-  nodeToCopy = folder->GetChild(1);
-  model_.Copy(nodeToCopy, folder, 3);
-  actual_model_string = model_test_utils::ModelStringFromNode(root);
+  node_to_copy = folder->GetChild(1);
+  model_.Copy(node_to_copy, folder, 3);
+  actual_model_string = BookmarkModelTestUtils::ModelStringFromNode(root);
   EXPECT_EQ("a d 1:[ b d c ] d 2:[ e 1:[ b d c ] f 1:[ b d c ] g ] h ",
             actual_model_string);
 
   // Copy first 'd' to be after 'h': URL item within the bar.
-  nodeToCopy = root->GetChild(1);
-  model_.Copy(nodeToCopy, root, 6);
-  actual_model_string = model_test_utils::ModelStringFromNode(root);
+  node_to_copy = root->GetChild(1);
+  model_.Copy(node_to_copy, root, 6);
+  actual_model_string = BookmarkModelTestUtils::ModelStringFromNode(root);
   EXPECT_EQ("a d 1:[ b d c ] d 2:[ e 1:[ b d c ] f 1:[ b d c ] g ] h d ",
             actual_model_string);
 
   // Copy '2' to be after 'a': Folder within the bar.
-  nodeToCopy = root->GetChild(4);
-  model_.Copy(nodeToCopy, root, 1);
-  actual_model_string = model_test_utils::ModelStringFromNode(root);
+  node_to_copy = root->GetChild(4);
+  model_.Copy(node_to_copy, root, 1);
+  actual_model_string = BookmarkModelTestUtils::ModelStringFromNode(root);
   EXPECT_EQ("a 2:[ e 1:[ b d c ] f 1:[ b d c ] g ] d 1:[ b d c ] "
             "d 2:[ e 1:[ b d c ] f 1:[ b d c ] g ] h d ",
             actual_model_string);
@@ -868,9 +869,7 @@ void PopulateBookmarkNode(TestNode* parent,
 class BookmarkModelTestWithProfile : public testing::Test {
  public:
   BookmarkModelTestWithProfile()
-      : bb_model_(NULL),
-        ui_thread_(BrowserThread::UI, &message_loop_),
-        file_thread_(BrowserThread::FILE, &message_loop_) {}
+      : bb_model_(NULL) {}
 
   // testing::Test:
   virtual void TearDown() OVERRIDE {
@@ -925,9 +924,7 @@ class BookmarkModelTestWithProfile : public testing::Test {
   BookmarkModel* bb_model_;
 
  private:
-  base::MessageLoopForUI message_loop_;
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread file_thread_;
+  content::TestBrowserThreadBundle thread_bundle_;
 };
 
 // Creates a set of nodes in the bookmark bar model, then recreates the
@@ -1114,16 +1111,24 @@ TEST(BookmarkNodeTest, NodeMetaInfo) {
   EXPECT_EQ("value1", out_value);
   EXPECT_FALSE(node.SetMetaInfo("key1", "value1"));
 
-  EXPECT_FALSE(node.GetMetaInfo("key2", &out_value));
-  EXPECT_TRUE(node.SetMetaInfo("key2", "value2"));
-  EXPECT_TRUE(node.GetMetaInfo("key2", &out_value));
+  EXPECT_FALSE(node.GetMetaInfo("key2.subkey1", &out_value));
+  EXPECT_TRUE(node.SetMetaInfo("key2.subkey1", "value2"));
+  EXPECT_TRUE(node.GetMetaInfo("key2.subkey1", &out_value));
   EXPECT_EQ("value2", out_value);
 
+  EXPECT_FALSE(node.GetMetaInfo("key2.subkey2.leaf", &out_value));
+  EXPECT_TRUE(node.SetMetaInfo("key2.subkey2.leaf", ""));
+  EXPECT_TRUE(node.GetMetaInfo("key2.subkey2.leaf", &out_value));
+  EXPECT_EQ("", out_value);
+
   EXPECT_TRUE(node.DeleteMetaInfo("key1"));
-  EXPECT_TRUE(node.DeleteMetaInfo("key2"));
+  EXPECT_TRUE(node.DeleteMetaInfo("key2.subkey1"));
+  EXPECT_TRUE(node.DeleteMetaInfo("key2.subkey2.leaf"));
   EXPECT_FALSE(node.DeleteMetaInfo("key3"));
   EXPECT_FALSE(node.GetMetaInfo("key1", &out_value));
-  EXPECT_FALSE(node.GetMetaInfo("key2", &out_value));
+  EXPECT_FALSE(node.GetMetaInfo("key2.subkey1", &out_value));
+  EXPECT_FALSE(node.GetMetaInfo("key2.subkey2", &out_value));
+  EXPECT_FALSE(node.GetMetaInfo("key2.subkey2.leaf", &out_value));
   EXPECT_TRUE(node.meta_info_str().empty());
 }
 

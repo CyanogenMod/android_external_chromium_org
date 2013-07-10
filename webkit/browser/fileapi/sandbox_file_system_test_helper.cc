@@ -7,7 +7,7 @@
 #include "base/file_util.h"
 #include "base/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
@@ -97,7 +97,7 @@ int64 SandboxFileSystemTestHelper::GetCachedOriginUsage() const {
 
 int64 SandboxFileSystemTestHelper::ComputeCurrentOriginUsage() {
   usage_cache()->CloseCacheFiles();
-  int64 size = file_util::ComputeDirectorySize(GetOriginRootPath());
+  int64 size = base::ComputeDirectorySize(GetOriginRootPath());
   if (file_util::PathExists(GetUsageCachePath()))
     size -= FileSystemUsageCache::kUsageFileSize;
   return size;
@@ -105,7 +105,7 @@ int64 SandboxFileSystemTestHelper::ComputeCurrentOriginUsage() {
 
 int64
 SandboxFileSystemTestHelper::ComputeCurrentDirectoryDatabaseUsage() {
-  return file_util::ComputeDirectorySize(
+  return base::ComputeDirectorySize(
       GetOriginRootPath().AppendASCII("Paths"));
 }
 
@@ -121,6 +121,12 @@ SandboxFileSystemTestHelper::NewOperationContext() {
   context->set_update_observers(
       *file_system_context_->GetUpdateObservers(type_));
   return context;
+}
+
+void SandboxFileSystemTestHelper::AddFileChangeObserver(
+    FileChangeObserver* observer) {
+  file_system_context_->sandbox_provider()->
+      AddFileChangeObserver(type_, observer, NULL);
 }
 
 FileSystemUsageCache* SandboxFileSystemTestHelper::usage_cache() {

@@ -98,7 +98,10 @@
   "chromeosInfoPrivate": {
     "channel": "stable",
     "extension_types": ["extension", "packaged_app"],
-    "location": "component"
+    "whitelist": [
+      "8C3741E3AF0B93B6E8E0DDD499BB0B74839EA578",  // http://crbug.com/234235
+      "E703483CEF33DEC18B4B6DD84B5C776FB9182BDB"   // http://crbug.com/234235
+    ]
   },
   "clipboardRead": {
     "channel": "stable",
@@ -135,6 +138,21 @@
     "channel": "stable",
     "extension_types": ["extension", "packaged_app"]
   },
+  "diagnostics": [
+    {
+      "channel": "dev",
+      "extension_types": ["platform_app"]
+    },
+    {
+      "channel": "stable",
+      "extension_types": ["platform_app"],
+      "whitelist": [
+        "mlocfejafidcakdddnndjdngfmncfbeg",  // CCD Development
+        "ganomidahfnpdchomfgdoppjmmedlhia",  // CCD Testing
+        "eemlkeanncmjljgehlbplemhmdmalhdc"   // CCD Release
+      ]
+    }
+  ],
   "debugger": {
     "channel": "stable",
     "extension_types": ["extension", "packaged_app"]
@@ -186,10 +204,6 @@
       "16CA7A47AAE4BE49B1E75A6B960C3875E945B264"   // Release
     ]
   },
-  "identity": {
-    "channel": "dev",
-    "extension_types": ["extension", "platform_app"]
-  },
   "enterprise.platformKeysPrivate": {
     "channel": "stable",
     "extension_types": ["extension", "packaged_app"],
@@ -208,7 +222,9 @@
     "channel": "stable",
     "extension_types": ["extension", "platform_app"],
     "whitelist": [
-      "7910EAFDAF64B947E1CB31B333A9BD14CA556B6C" // Feedback UI.
+      "7910EAFDAF64B947E1CB31B333A9BD14CA556B6C",  // Feedback UI.
+      "8C3741E3AF0B93B6E8E0DDD499BB0B74839EA578",  // http://crbug.com/234235
+      "E703483CEF33DEC18B4B6DD84B5C776FB9182BDB"   // http://crbug.com/234235
     ]
   },
   "fileBrowserHandler": {
@@ -229,7 +245,7 @@
     "whitelist": [ "2FC374607C2DF285634B67C64A2E356C607091C3" ]
   }],
   "fileSystem.retainFiles": [{
-    "channel": "trunk",
+    "channel": "dev",
     "extension_types": ["platform_app"]
   }],
   "fileSystem.write": [{
@@ -257,6 +273,10 @@
   "history": {
     "channel": "stable",
     "extension_types": ["extension", "packaged_app"]
+  },
+  "identity": {
+    "channel": "stable",
+    "extension_types": ["extension", "platform_app"]
   },
   "identityPrivate": {
     "channel": "stable",
@@ -366,7 +386,10 @@
       "bpmcpldpdmajfigpchkicefoigmkfalc",  // Quickoffice component extension
       "ehibbfinohgbchlgdbfpikodjaojhccn",  // Editor
       "pmofbkohncoogjjhahejjfbppikbjigm",  // Google Now
-      "iejldcgjigodajhjecapkeiggcncflph"   // Google Now dev
+      "khopmbdjffemhegeeobelklnbglcdgfh",  // RU-NTP
+      "mlocfejafidcakdddnndjdngfmncfbeg",  // CCD Development
+      "ganomidahfnpdchomfgdoppjmmedlhia",  // CCD Testing
+      "eemlkeanncmjljgehlbplemhmdmalhdc"   // CCD Release
     ]
   },
   "musicManagerPrivate": {
@@ -377,35 +400,24 @@
       "B8F61FD1B25DE03706DBB8906A73261E4DBB992A"  // Test
     ]
   },
-  "nativeMessaging": [
-    {
-      "channel": "beta",
-      "extension_types": [
-        "extension", "packaged_app", "platform_app"
-      ]
-    },
-    {
-      "channel": "stable",
-      "extension_types": [
-        "extension", "packaged_app", "platform_app"
-      ],
-      "whitelist": [
-        "gbchcmhmhahfdphkhkmpfmihenigjmpp",  // Chrome Remote Desktop
-        "kgngmbheleoaphbjbaiobfdepmghbfah",  // Dogfood Chrome Remote Desktop
-        "odkaodonbgfohohmklejpjiejmcipmib",  // QA Chrome Remote Desktop
-        "ojoimpklfciegopdfgeenehpalipignm"   // Chromoting canary
-      ]
-    }
-  ],
+  "nativeMessaging": {
+    "channel": "stable",
+    "extension_types": [
+      "extension", "packaged_app", "platform_app"
+    ]
+  },
   "networkingPrivate": {
     "channel": "stable",
-    "extension_types": ["extension", "packaged_app"],
+    "extension_types": ["extension", "packaged_app", "platform_app"],
     "whitelist": [
       "pkedcjkdefgpdelpbcmbmeomcjbeemfm",  // Trusted Tester
       "fmfcbgogabcbclcofgocippekhfcmgfj",  // Staging
       "hfaagokkkhdbgiakmmlclaapfelnkoah",  // Canary
       "F155646B5D1CA545F7E1E4E20D573DFDD44C2540",  // Trusted Tester (public)
-      "16CA7A47AAE4BE49B1E75A6B960C3875E945B264"   // Release
+      "16CA7A47AAE4BE49B1E75A6B960C3875E945B264",  // Release
+      "mlocfejafidcakdddnndjdngfmncfbeg",  // CCD Development
+      "ganomidahfnpdchomfgdoppjmmedlhia",  // CCD Testing
+      "eemlkeanncmjljgehlbplemhmdmalhdc"   // CCD Release
     ]
   },
   "notifications": {

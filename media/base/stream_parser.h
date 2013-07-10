@@ -11,7 +11,7 @@
 #include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/base/media_export.h"
 #include "media/base/media_log.h"
 #include "media/base/text_track.h"
@@ -73,10 +73,7 @@ class MEDIA_EXPORT StreamParser {
   //                   stream.
   // Second parameter - The initialization data associated with the stream.
   // Third parameter - Number of bytes of the initialization data.
-  // Return value - True indicates that the initialization data is accepted.
-  //                False if something was wrong with the initialization data
-  //                and a parsing error should be signalled.
-  typedef base::Callback<bool(const std::string&,
+  typedef base::Callback<void(const std::string&,
                               scoped_ptr<uint8[]>, int)> NeedKeyCB;
 
   // Initialize the parser with necessary callbacks. Must be called before any

@@ -47,6 +47,7 @@ enum IPCMessageStart {
   DesktopNotificationMsgStart,
   GeolocationMsgStart,
   AudioMsgStart,
+  MIDIMsgStart,
   ChromeMsgStart,
   DragMsgStart,
   PrintMsgStart,
@@ -84,6 +85,8 @@ enum IPCMessageStart {
   MemoryBenchmarkMsgStart,
   WebSocketMsgStart,
   NaClHostMsgStart,
+  WebRTCIdentityMsgStart,
+  EncodedVideoCaptureMsgStart,
   LastIPCMsgStart      // Must come last.
 };
 

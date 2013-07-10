@@ -116,6 +116,9 @@
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #endif
 
+using base::DictionaryValue;
+using base::ListValue;
+using base::Value;
 using content::BrowserContext;
 using content::BrowserThread;
 using content::DOMStorageContext;
@@ -155,7 +158,8 @@ const char* const unpacked = "cbcdidchbppangcjoddlpdjlenngjldk";
 const char* const updates_from_webstore = "akjooamlhcgeopfifcmlggaebeocgokj";
 
 struct ExtensionsOrder {
-  bool operator()(const Extension* a, const Extension* b) {
+  bool operator()(const scoped_refptr<const Extension>& a,
+                  const scoped_refptr<const Extension>& b) {
     return a->name() < b->name();
   }
 };
@@ -506,13 +510,13 @@ void ExtensionServiceTestBase::InitializeInstalledExtensionService(
   ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
   base::FilePath path = temp_dir_.path();
   path = path.Append(FILE_PATH_LITERAL("TestingExtensionsPath"));
-  file_util::Delete(path, true);
+  base::Delete(path, true);
   file_util::CreateDirectory(path);
   base::FilePath temp_prefs = path.Append(FILE_PATH_LITERAL("Preferences"));
   file_util::CopyFile(prefs_file, temp_prefs);
 
   extensions_install_dir_ = path.Append(FILE_PATH_LITERAL("Extensions"));
-  file_util::Delete(extensions_install_dir_, true);
+  base::Delete(extensions_install_dir_, true);
   file_util::CopyDirectory(source_install_dir, extensions_install_dir_, true);
 
   ExtensionServiceInitParams params;
@@ -542,12 +546,12 @@ void ExtensionServiceTestBase::InitializeExtensionServiceHelper(
   ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
   base::FilePath path = temp_dir_.path();
   path = path.Append(FILE_PATH_LITERAL("TestingExtensionsPath"));
-  file_util::Delete(path, true);
+  base::Delete(path, true);
   file_util::CreateDirectory(path);
   base::FilePath prefs_filename =
       path.Append(FILE_PATH_LITERAL("TestPreferences"));
   extensions_install_dir_ = path.Append(FILE_PATH_LITERAL("Extensions"));
-  file_util::Delete(extensions_install_dir_, true);
+  base::Delete(extensions_install_dir_, true);
   file_util::CreateDirectory(extensions_install_dir_);
 
   ExtensionServiceInitParams params;
@@ -654,7 +658,7 @@ class ExtensionServiceTest
       ASSERT_TRUE(file_util::PathExists(pem_path));
     }
 
-    ASSERT_TRUE(file_util::Delete(crx_path, false));
+    ASSERT_TRUE(base::Delete(crx_path, false));
 
     scoped_ptr<ExtensionCreator> creator(new ExtensionCreator());
     ASSERT_TRUE(creator->Run(dir_path,
@@ -1450,6 +1454,66 @@ TEST_F(ExtensionServiceTest, UpdateOnStartup) {
       prefs->GetDelayedInstallInfo("bjafgdebaacbbbecmhlhpofkepfkgcpa"));
 }
 
+// Test various cases for delayed install because of missing imports.
+TEST_F(ExtensionServiceTest, PendingImports) {
+  InitPluginService();
+
+  base::FilePath source_install_dir = data_dir_
+      .AppendASCII("pending_updates_with_imports")
+      .AppendASCII("Extensions");
+  base::FilePath pref_path = source_install_dir
+      .DirName()
+      .AppendASCII("Preferences");
+
+  InitializeInstalledExtensionService(pref_path, source_install_dir);
+
+  // Verify there are no pending extensions initially.
+  EXPECT_FALSE(service_->pending_extension_manager()->HasPendingExtensions());
+
+  service_->Init();
+  // Wait for GarbageCollectExtensions task to complete.
+  loop_.RunUntilIdle();
+
+  // These extensions are used by the extensions we test below, they must be
+  // installed.
+  EXPECT_TRUE(file_util::PathExists(extensions_install_dir_.AppendASCII(
+      "bjafgdebaacbbbecmhlhpofkepfkgcpa/1.0")));
+  EXPECT_TRUE(file_util::PathExists(extensions_install_dir_.AppendASCII(
+      "hpiknbiabeeppbpihjehijgoemciehgk/2")));
+
+  // Each of these extensions should have been rejected because of dependencies
+  // that cannot be satisfied.
+  ExtensionPrefs* prefs = service_->extension_prefs();
+  EXPECT_FALSE(
+      prefs->GetDelayedInstallInfo("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+  EXPECT_FALSE(
+      prefs->GetInstalledExtensionInfo("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+  EXPECT_FALSE(
+      prefs->GetDelayedInstallInfo("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"));
+  EXPECT_FALSE(
+      prefs->GetInstalledExtensionInfo("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"));
+  EXPECT_FALSE(
+      prefs->GetDelayedInstallInfo("cccccccccccccccccccccccccccccccc"));
+  EXPECT_FALSE(
+      prefs->GetInstalledExtensionInfo("cccccccccccccccccccccccccccccccc"));
+
+  // Make sure the import started for the extension with a dependency.
+  EXPECT_TRUE(
+      prefs->GetDelayedInstallInfo("behllobkkfkfnphdnhnkndlbkcpglgmj"));
+  EXPECT_EQ(ExtensionPrefs::DELAY_REASON_WAIT_FOR_IMPORTS,
+      prefs->GetDelayedInstallReason("behllobkkfkfnphdnhnkndlbkcpglgmj"));
+
+  EXPECT_FALSE(file_util::PathExists(extensions_install_dir_.AppendASCII(
+      "behllobkkfkfnphdnhnkndlbkcpglgmj/1.0.0.0")));
+
+  EXPECT_TRUE(service_->pending_extension_manager()->HasPendingExtensions());
+  std::string pending_id("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
+  EXPECT_TRUE(service_->pending_extension_manager()->IsIdPending(pending_id));
+  // Remove it because we are not testing the pending extension manager's
+  // ability to download and install extensions.
+  EXPECT_TRUE(service_->pending_extension_manager()->Remove(pending_id));
+}
+
 // Test installing extensions. This test tries to install few extensions using
 // crx files. If you need to change those crx files, feel free to repackage
 // them, throw away the key used and change the id's above.
@@ -1974,7 +2038,7 @@ TEST_F(ExtensionServiceTest, PackExtension) {
 
   // Repeat the run with the pem file gone, and no special flags
   // Should refuse to overwrite the existing crx.
-  file_util::Delete(privkey_path, false);
+  base::Delete(privkey_path, false);
   ASSERT_FALSE(creator->Run(input_directory, crx_path, base::FilePath(),
       privkey_path, ExtensionCreator::kNoRunFlags));
 
@@ -2111,9 +2175,9 @@ TEST_F(ExtensionServiceTest, PackExtensionContainingKeyFails) {
   ASSERT_TRUE(file_util::PathExists(crx_path));
   ASSERT_TRUE(file_util::PathExists(privkey_path));
 
-  file_util::Delete(crx_path, false);
+  base::Delete(crx_path, false);
   // Move the pem file into the extension.
-  file_util::Move(privkey_path,
+  base::Move(privkey_path,
                   input_directory.AppendASCII("privkey.pem"));
 
   // This pack should fail because of the contained private key.
@@ -2214,7 +2278,7 @@ TEST_F(ExtensionServiceTest, LoadLocalizedTheme) {
   // directory, and we don't want to copy the whole extension for a unittest.
   base::FilePath theme_file = extension_path.Append(chrome::kThemePackFilename);
   ASSERT_TRUE(file_util::PathExists(theme_file));
-  ASSERT_TRUE(file_util::Delete(theme_file, false));  // Not recursive.
+  ASSERT_TRUE(base::Delete(theme_file, false));  // Not recursive.
 }
 
 // Tests that we can change the ID of an unpacked extension by adding a key
@@ -3944,6 +4008,8 @@ TEST_F(ExtensionServiceTest, ClearExtensionData) {
   IndexedDBContext* idb_context =
       BrowserContext::GetDefaultStoragePartition(profile_.get())->
           GetIndexedDBContext();
+  idb_context->SetTaskRunnerForTesting(
+      base::MessageLoop::current()->message_loop_proxy().get());
   base::FilePath idb_path = idb_context->GetFilePathForTesting(origin_id);
   EXPECT_TRUE(file_util::CreateDirectory(idb_path));
   EXPECT_TRUE(file_util::DirectoryExists(idb_path));
@@ -4059,6 +4125,8 @@ TEST_F(ExtensionServiceTest, ClearAppData) {
   IndexedDBContext* idb_context =
       BrowserContext::GetDefaultStoragePartition(profile_.get())->
           GetIndexedDBContext();
+  idb_context->SetTaskRunnerForTesting(
+      base::MessageLoop::current()->message_loop_proxy().get());
   base::FilePath idb_path = idb_context->GetFilePathForTesting(origin_id);
   EXPECT_TRUE(file_util::CreateDirectory(idb_path));
   EXPECT_TRUE(file_util::DirectoryExists(idb_path));

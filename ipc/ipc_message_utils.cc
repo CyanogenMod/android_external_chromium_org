@@ -10,7 +10,7 @@
 #include "base/strings/nullable_string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "ipc/ipc_channel_handle.h"
 
@@ -134,7 +134,7 @@ bool ReadDictionaryValue(const Message* m, PickleIterator* iter,
 
   for (int i = 0; i < size; ++i) {
     std::string key;
-    Value* subval;
+    base::Value* subval;
     if (!ReadParam(m, iter, &key) ||
         !ReadValue(m, iter, &subval, recursion + 1))
       return false;
@@ -446,7 +446,7 @@ void ParamTraits<base::DictionaryValue>::Write(Message* m,
 bool ParamTraits<base::DictionaryValue>::Read(
     const Message* m, PickleIterator* iter, param_type* r) {
   int type;
-  if (!ReadParam(m, iter, &type) || type != Value::TYPE_DICTIONARY)
+  if (!ReadParam(m, iter, &type) || type != base::Value::TYPE_DICTIONARY)
     return false;
 
   return ReadDictionaryValue(m, iter, r, 0);
@@ -517,7 +517,7 @@ void ParamTraits<base::ListValue>::Write(Message* m, const param_type& p) {
 bool ParamTraits<base::ListValue>::Read(
     const Message* m, PickleIterator* iter, param_type* r) {
   int type;
-  if (!ReadParam(m, iter, &type) || type != Value::TYPE_LIST)
+  if (!ReadParam(m, iter, &type) || type != base::Value::TYPE_LIST)
     return false;
 
   return ReadListValue(m, iter, r, 0);

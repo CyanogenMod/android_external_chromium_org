@@ -12,6 +12,9 @@ const char kAudioBufferSize[] = "audio-buffer-size";
 // Enable EAC3 playback in MSE.
 const char kEnableEac3Playback[] = "enable-eac3-playback";
 
+// Enables support for inband text tracks in media content.
+const char kEnableInbandTextTracks[] = "enable-inband-text-tracks";
+
 // Enables Opus playback in media elements.
 const char kEnableOpusPlayback[] = "enable-opus-playback";
 
@@ -20,6 +23,10 @@ const char kEnableVp8AlphaPlayback[] = "enable-vp8-alpha-playback";
 
 // Set number of threads to use for video decoding.
 const char kVideoThreads[] = "video-threads";
+
+// Override suppressed responses to canPlayType().
+const char kOverrideEncryptedMediaCanPlayType[] =
+    "override-encrypted-media-canplaytype";
 
 #if defined(GOOGLE_TV)
 // Use external video surface for video with more than or equal pixels to

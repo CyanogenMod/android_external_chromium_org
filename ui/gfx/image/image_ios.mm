@@ -4,13 +4,13 @@
 
 #include "ui/gfx/image/image.h"
 
+#import <UIKit/UIKit.h>
 #include <cmath>
 #include <limits>
-#import <UIKit/UIKit.h>
 
 #include "base/logging.h"
 #include "base/mac/scoped_cftyperef.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "ui/base/layout.h"
 #include "ui/gfx/image/image_png_rep.h"
 #include "ui/gfx/image/image_skia.h"
@@ -27,20 +27,19 @@ namespace {
 // Caller takes ownership of returned UIImage.
 UIImage* CreateErrorUIImage(float scale) {
   LOG(ERROR) << "Unable to decode PNG into UIImage.";
-  base::mac::ScopedCFTypeRef<CGColorSpaceRef> color_space(
+  base::ScopedCFTypeRef<CGColorSpaceRef> color_space(
       CGColorSpaceCreateDeviceRGB());
-  base::mac::ScopedCFTypeRef<CGContextRef> context(
-      CGBitmapContextCreate(NULL,  // Allow CG to allocate memory.
-                            16,  // width
-                            16,  // height
-                            8,  // bitsPerComponent
-                            0,  // CG will calculate by default.
-                            color_space,
-                            kCGImageAlphaPremultipliedFirst |
-                                kCGBitmapByteOrder32Host));
+  base::ScopedCFTypeRef<CGContextRef> context(CGBitmapContextCreate(
+      NULL,  // Allow CG to allocate memory.
+      16,    // width
+      16,    // height
+      8,     // bitsPerComponent
+      0,     // CG will calculate by default.
+      color_space,
+      kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host));
   CGContextSetRGBFillColor(context, 1.0, 0.0, 0.0, 1.0);
   CGContextFillRect(context, CGRectMake(0.0, 0.0, 16, 16));
-  base::mac::ScopedCFTypeRef<CGImageRef> cg_image(
+  base::ScopedCFTypeRef<CGImageRef> cg_image(
       CGBitmapContextCreateImage(context));
   return [[UIImage imageWithCGImage:cg_image.get()
                               scale:scale
@@ -118,8 +117,8 @@ ImageSkia* ImageSkiaFromPNG(
   // through UIImage.
   gfx::ImageSkia* image_skia = new gfx::ImageSkia();
   for (size_t i = 0; i < image_png_reps.size(); ++i) {
-    scoped_nsobject<UIImage> uiimage(CreateUIImageFromImagePNGRep(
-        image_png_reps[i]));
+    base::scoped_nsobject<UIImage> uiimage(
+        CreateUIImageFromImagePNGRep(image_png_reps[i]));
     gfx::ImageSkiaRep image_skia_rep = ImageSkiaRepOfScaleFactorFromUIImage(
         uiimage, image_png_reps[i].scale_factor);
     if (!image_skia_rep.is_null())

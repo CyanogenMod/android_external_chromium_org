@@ -54,6 +54,8 @@
             'sources': [
               'app/nacl_fork_delegate_linux.cc',
               'app/nacl_fork_delegate_linux.h',
+              'common/nacl_paths.cc',
+              'common/nacl_paths.h',
             ],
           },],
         ],
@@ -149,14 +151,19 @@
               'dependencies': [
                 '../crypto/crypto.gyp:crypto',
                 '../sandbox/sandbox.gyp:libc_urandom_override',
+                '../sandbox/sandbox.gyp:sandbox',
                 'nacl',
               ],
               'sources': [
                 'nacl/nacl_helper_linux.cc',
+                'nacl/nacl_sandbox_linux.cc',
                 '../base/posix/unix_domain_socket_linux.cc',
                 '../chrome/common/nacl_messages.cc',
                 '../chrome/common/nacl_types.cc',
                 '../content/common/child_process_sandbox_support_impl_shm_linux.cc',
+                '../content/common/sandbox_init_linux.cc',
+                '../content/common/sandbox_seccomp_bpf_linux.cc',
+                '../content/public/common/content_switches.cc',
               ],
               'conditions': [
                 ['toolkit_uses_gtk == 1', {

@@ -92,9 +92,7 @@ class AwContents : public FindHelper::Listener,
   void RequestNewHitTestDataAt(JNIEnv* env, jobject obj, jint x, jint y);
   void UpdateLastHitTestData(JNIEnv* env, jobject obj);
   void OnSizeChanged(JNIEnv* env, jobject obj, int w, int h, int ow, int oh);
-  void SetWindowViewVisibility(JNIEnv* env, jobject obj,
-                               bool window_visible,
-                               bool view_visible);
+  void SetVisibility(JNIEnv* env, jobject obj, bool visible);
   void OnAttachedToWindow(JNIEnv* env, jobject obj, int w, int h);
   void OnDetachedFromWindow(JNIEnv* env, jobject obj);
   base::android::ScopedJavaLocalRef<jbyteArray> GetOpaqueState(
@@ -149,13 +147,19 @@ class AwContents : public FindHelper::Listener,
   virtual void PostInvalidate() OVERRIDE;
   virtual void OnNewPicture() OVERRIDE;
   virtual gfx::Point GetLocationOnScreen() OVERRIDE;
+  virtual void ScrollContainerViewTo(gfx::Vector2d new_value) OVERRIDE;
 
   void ClearCache(JNIEnv* env, jobject obj, jboolean include_disk_files);
   void SetPendingWebContentsForPopup(scoped_ptr<content::WebContents> pending);
   jint ReleasePopupAwContents(JNIEnv* env, jobject obj);
 
+  void ScrollTo(JNIEnv* env, jobject obj, jint xPix, jint yPix);
+  void SetDipScale(JNIEnv* env, jobject obj, jfloat dipScale);
+
   void SetSaveFormData(bool enabled);
 
+  // Sets the java delegate
+  void SetAwAutofillManagerDelegate(jobject delegate);
  private:
   void InitAutofillIfNecessary(bool enabled);
 

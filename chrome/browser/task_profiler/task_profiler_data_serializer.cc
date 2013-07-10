@@ -7,11 +7,11 @@
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/json/json_string_value_serializer.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/tracked_objects.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/process_type.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 using base::DictionaryValue;
 using base::ListValue;

@@ -21,8 +21,6 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
-#include "base/time/default_tick_clock.h"
-#include "base/time/tick_clock.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part_chromeos.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
@@ -72,7 +70,7 @@
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service_factory.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/chromeos/settings/owner_key_util.h"
-#include "chrome/browser/chromeos/system/automatic_reboot_manager.h"
+#include "chrome/browser/chromeos/swap_metrics.h"
 #include "chrome/browser/chromeos/system/device_change_handler.h"
 #include "chrome/browser/chromeos/system/statistics_provider.h"
 #include "chrome/browser/chromeos/system_key_event_listener.h"
@@ -101,7 +99,6 @@
 #include "chromeos/cryptohome/async_method_caller.h"
 #include "chromeos/cryptohome/cryptohome_library.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/power_manager_client.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/disks/disk_mount_manager.h"
 #include "chromeos/ime/input_method_manager.h"
@@ -110,7 +107,6 @@
 #include "chromeos/network/network_change_notifier_chromeos.h"
 #include "chromeos/network/network_change_notifier_factory_chromeos.h"
 #include "chromeos/network/network_handler.h"
-#include "chromeos/power/power_manager_handler.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/power_save_blocker.h"
@@ -119,6 +115,11 @@
 #include "net/base/network_change_notifier.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context_getter.h"
+
+// Exclude X11 dependents for ozone
+#if defined(USE_X11)
+#include "chrome/browser/chromeos/device_uma.h"
+#endif
 
 namespace chromeos {
 
@@ -385,6 +386,8 @@ ChromeBrowserMainPartsChromeos::~ChromeBrowserMainPartsChromeos() {
   if (KioskModeSettings::Get()->IsKioskModeEnabled())
     ShutdownKioskModeScreensaver();
 
+  dbus_services_.reset();
+
   // To be precise, logout (browser shutdown) is not yet done, but the
   // remaining work is negligible, hence we say LogoutDone here.
   BootTimesLoader::Get()->AddLogoutTimeMarker("LogoutDone", false);
@@ -460,11 +463,6 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopStart() {
 // Threads are initialized between MainMessageLoopStart and MainMessageLoopRun.
 // about_flags settings are applied in ChromeBrowserMainParts::PreCreateThreads.
 void ChromeBrowserMainPartsChromeos::PreMainMessageLoopRun() {
-  // Set the crypto thread after the IO thread has been created/started.
-  NetworkHandler::Get()->cert_loader()->SetCryptoTaskRunner(
-      content::BrowserThread::GetMessageLoopProxyForThread(
-          content::BrowserThread::IO));
-
   if (ash::switches::UseNewAudioHandler()) {
     CrasAudioHandler::Initialize(
         AudioDevicesPrefHandler::Create(g_browser_process->local_state()));
@@ -472,8 +470,6 @@ void ChromeBrowserMainPartsChromeos::PreMainMessageLoopRun() {
     AudioHandler::Initialize(
        AudioPrefHandler::Create(g_browser_process->local_state()));
   }
-
-  PowerManagerHandler::Initialize();
 
   if (!StartupUtils::IsOobeCompleted())
     system::StatisticsProvider::GetInstance()->LoadOemManifest();
@@ -542,18 +538,10 @@ void ChromeBrowserMainPartsChromeos::PreProfileInit() {
   //   2) if passed alone, to signal that the indicated user has already
   //      logged in and we should behave accordingly.
   // This handles case 2.
-  if (parsed_command_line().HasSwitch(switches::kLoginUser) &&
-      !parsed_command_line().HasSwitch(switches::kLoginPassword)) {
-    std::string username =
-        parsed_command_line().GetSwitchValueASCII(switches::kLoginUser);
-    UserManager* user_manager = UserManager::Get();
-    // In case of multi-profiles --login-profile will contain user_id_hash.
-    std::string username_hash =
-        parsed_command_line().GetSwitchValueASCII(switches::kLoginProfile);
-    user_manager->UserLoggedIn(username, username_hash, true);
-    VLOG(1) << "Relaunching browser for user: " << username
-            << " with hash: " << username_hash;
-
+  bool immediate_login =
+      parsed_command_line().HasSwitch(switches::kLoginUser) &&
+      !parsed_command_line().HasSwitch(switches::kLoginPassword);
+  if (immediate_login){
     // Redirects Chrome logging to the user data dir.
     logging::RedirectChromeLogging(parsed_command_line());
 
@@ -594,6 +582,18 @@ void ChromeBrowserMainPartsChromeos::PreProfileInit() {
 
   // In Aura builds this will initialize ash::Shell.
   ChromeBrowserMainPartsLinux::PreProfileInit();
+
+  if (immediate_login) {
+    std::string username =
+        parsed_command_line().GetSwitchValueASCII(switches::kLoginUser);
+    UserManager* user_manager = UserManager::Get();
+    // In case of multi-profiles --login-profile will contain user_id_hash.
+    std::string username_hash =
+        parsed_command_line().GetSwitchValueASCII(switches::kLoginProfile);
+    user_manager->UserLoggedIn(username, username_hash, true);
+    VLOG(1) << "Relaunching browser for user: " << username
+            << " with hash: " << username_hash;
+  }
 }
 
 void ChromeBrowserMainPartsChromeos::PostProfileInit() {
@@ -631,11 +631,6 @@ void ChromeBrowserMainPartsChromeos::PostProfileInit() {
     // in the background.
     UserManager::Get()->RestoreActiveSessions();
   }
-
-  // Make sure the NetworkConfigurationUpdater is ready so that it pushes ONC
-  // configuration before login.
-  g_browser_process->browser_policy_connector()->
-      GetNetworkConfigurationUpdater();
 
   // Start loading the machine statistics. Note: if we start loading machine
   // statistics early in PreEarlyInitialization() then the crossystem tool
@@ -697,8 +692,7 @@ void ChromeBrowserMainPartsChromeos::PostProfileInit() {
   display_configuration_observer_.reset(
       new DisplayConfigurationObserver());
 
-  automatic_reboot_manager_.reset(new system::AutomaticRebootManager(
-      scoped_ptr<base::TickClock>(new base::DefaultTickClock)));
+  g_browser_process->platform_part()->InitializeAutomaticRebootManager();
 
   // This observer cannot be created earlier because it requires the shell to be
   // available.
@@ -721,8 +715,17 @@ void ChromeBrowserMainPartsChromeos::PreBrowserStart() {
   // reasons, see http://crosbug.com/24833.
   XInputHierarchyChangedEventListener::GetInstance();
 
+#if defined(USE_X11)
+  // Start the CrOS input device UMA watcher
+  DeviceUMA::GetInstance();
+#endif
+
   // -- This used to be in ChromeBrowserMainParts::PreMainMessageLoopRun()
   // -- immediately after ChildProcess::WaitForDebugger().
+
+  // Swap metrics watcher must be installed before browser is activated.
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kNoSwapMetrics))
+    swap_metrics_.reset(new SwapMetrics);
 
   // Start the out-of-memory priority manager here so that we give the most
   // amount of time for the other services to start up before we start
@@ -747,6 +750,8 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   BootTimesLoader::Get()->AddLogoutTimeMarker("UIMessageLoopEnded", true);
 
   g_browser_process->platform_part()->oom_priority_manager()->Stop();
+
+  swap_metrics_.reset();
 
   // Stops LoginUtils background fetchers. This is needed because IO thread is
   // going to stop soon after this function. The pending background jobs could
@@ -791,6 +796,10 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   // Singletons are finally destroyed in AtExitManager.
   XInputHierarchyChangedEventListener::GetInstance()->Stop();
 
+#if defined(USE_X11)
+  DeviceUMA::GetInstance()->Stop();
+#endif
+
   // SystemKeyEventListener::Shutdown() is always safe to call,
   // even if Initialize() wasn't called.
   SystemKeyEventListener::Shutdown();
@@ -800,8 +809,6 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   } else {
     AudioHandler::Shutdown();
   }
-
-  PowerManagerHandler::Shutdown();
 
   WebSocketProxyController::Shutdown();
 
@@ -830,7 +837,7 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
 
   // Let the AutomaticRebootManager unregister itself as an observer of several
   // subsystems.
-  automatic_reboot_manager_.reset();
+  g_browser_process->platform_part()->ShutdownAutomaticRebootManager();
 
   // Clean up dependency on CrosSettings and stop pending data fetches.
   KioskAppManager::Shutdown();
@@ -845,62 +852,13 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
 }
 
 void ChromeBrowserMainPartsChromeos::PostDestroyThreads() {
-  // Destroy DBus services immediately after threads are stopped.
-  dbus_services_.reset();
-
   ChromeBrowserMainPartsLinux::PostDestroyThreads();
-
   // Destroy DeviceSettingsService after g_browser_process.
   DeviceSettingsService::Shutdown();
 }
 
 void ChromeBrowserMainPartsChromeos::SetupPlatformFieldTrials() {
-  SetupZramFieldTrial();
   default_pinned_apps_field_trial::SetupTrial();
-}
-
-void ChromeBrowserMainPartsChromeos::SetupZramFieldTrial() {
-  // The dice for this experiment have been thrown at boot.  The selected group
-  // number is stored in a file.
-  const base::FilePath kZramGroupPath("/home/chronos/.swap_exp_enrolled");
-  std::string zram_file_content;
-  // If the file does not exist, the experiment has not started.
-  if (!file_util::ReadFileToString(kZramGroupPath, &zram_file_content))
-    return;
-  // The file contains a single significant character, possibly followed by
-  // newline.  "x" means the user has opted out.  "0" through "8" are the valid
-  // group names.  (See src/platform/init/swap-exp.conf in chromiumos repo for
-  // group meanings.)
-  if (zram_file_content.empty()) {
-    LOG(WARNING) << "zram field trial: " << kZramGroupPath.value()
-                 << " is empty";
-    return;
-  }
-  char zram_group = zram_file_content[0];
-  if (zram_group == 'x')
-    return;
-  if (zram_group < '0' || zram_group > '8') {
-    LOG(WARNING) << "zram field trial: invalid group \"" << zram_group << "\"";
-    return;
-  }
-  LOG(WARNING) << "zram field trial: group " << zram_group;
-  const base::FieldTrial::Probability kDivisor = 1;  // on/off only
-  scoped_refptr<base::FieldTrial> trial =
-      base::FieldTrialList::FactoryGetFieldTrial(
-          "ZRAM", kDivisor, "default", 2013, 12, 31, NULL);
-  // Assign probability of 1 to the group Chrome OS has picked.  Assign 0 to
-  // all other choices.
-  trial->AppendGroup("2GB_RAM_no_swap", zram_group == '0' ? 1 : 0);
-  trial->AppendGroup("2GB_RAM_2GB_swap", zram_group == '1' ? 1 : 0);
-  trial->AppendGroup("2GB_RAM_3GB_swap", zram_group == '2' ? 1 : 0);
-  trial->AppendGroup("4GB_RAM_no_swap", zram_group == '3' ? 1 : 0);
-  trial->AppendGroup("4GB_RAM_4GB_swap", zram_group == '4' ? 1 : 0);
-  trial->AppendGroup("4GB_RAM_6GB_swap", zram_group == '5' ? 1 : 0);
-  trial->AppendGroup("snow_no_swap", zram_group == '6' ? 1 : 0);
-  trial->AppendGroup("snow_1GB_swap", zram_group == '7' ? 1 : 0);
-  trial->AppendGroup("snow_2GB_swap", zram_group == '8' ? 1 : 0);
-  // This is necessary to start the experiment as a side effect.
-  trial->group();
 }
 
 }  //  namespace chromeos

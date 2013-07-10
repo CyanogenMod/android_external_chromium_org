@@ -632,6 +632,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kAudio);
   skip.insert(APIPermission::kBrowsingData);
   skip.insert(APIPermission::kContextMenus);
+  skip.insert(APIPermission::kDiagnostics);
   skip.insert(APIPermission::kFontSettings);
   skip.insert(APIPermission::kFullscreen);
   skip.insert(APIPermission::kIdle);
@@ -717,6 +718,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kDevtools);
 
   // Platform apps.
+  skip.insert(APIPermission::kBluetooth);
   skip.insert(APIPermission::kFileSystem);
   skip.insert(APIPermission::kFileSystemRetainFiles);
   skip.insert(APIPermission::kSocket);

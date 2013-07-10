@@ -16,10 +16,10 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/importer/external_process_importer_host.h"
-#include "chrome/browser/importer/importer_host.h"
+#include "chrome/browser/importer/importer_creator.h"
 #include "chrome/browser/importer/importer_list.h"
-#include "chrome/browser/importer/importer_type.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "content/public/browser/web_ui.h"
@@ -35,10 +35,10 @@ ImportDataHandler::ImportDataHandler() : importer_host_(NULL),
 
 ImportDataHandler::~ImportDataHandler() {
   if (importer_list_.get())
-    importer_list_->SetObserver(NULL);
+    importer_list_->set_observer(NULL);
 
   if (importer_host_)
-    importer_host_->SetObserver(NULL);
+    importer_host_->set_observer(NULL);
 }
 
 void ImportDataHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
@@ -64,9 +64,9 @@ void ImportDataHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
 }
 
 void ImportDataHandler::InitializeHandler() {
-  Profile* profile = Profile::FromWebUI(web_ui());
-  importer_list_ = new ImporterList(profile->GetRequestContext());
-  importer_list_->DetectSourceProfiles(this);
+  importer_list_ = new ImporterList();
+  importer_list_->DetectSourceProfiles(
+      g_browser_process->GetApplicationLocale(), this);
 }
 
 void ImportDataHandler::RegisterMessages() {
@@ -109,22 +109,8 @@ void ImportDataHandler::ImportData(const ListValue* args) {
                                      state);
     import_did_succeed_ = false;
 
-    // TODO(gab): Make Linux use OOP import as well (http://crbug.com/56816) and
-    // get rid of these ugly ifdefs.
-#if defined(OS_MACOSX) || defined(OS_WIN)
-    // The Google Toolbar importer doesn't work for the out-of-process import.
-    // This is the only entry point for this importer (it is never used on first
-    // run). See discussion on http://crbug.com/219419 for details.
-    if (source_profile.importer_type == importer::TYPE_GOOGLE_TOOLBAR5)
-      importer_host_ = new ImporterHost;
-    else
-      importer_host_ = new ExternalProcessImporterHost;
-#else
-    importer_host_ = new ImporterHost;
-#endif
-    importer_host_->SetObserver(this);
-    importer_host_->set_browser(
-        chrome::FindBrowserWithWebContents(web_ui()->GetWebContents()));
+    importer_host_ = new ExternalProcessImporterHost();
+    importer_host_->set_observer(this);
     Profile* profile = Profile::FromWebUI(web_ui());
     importer_host_->StartImportSettings(source_profile, profile,
                                         import_services,
@@ -184,7 +170,7 @@ void ImportDataHandler::ImportItemEnded(importer::ImportItem item) {
 }
 
 void ImportDataHandler::ImportEnded() {
-  importer_host_->SetObserver(NULL);
+  importer_host_->set_observer(NULL);
   importer_host_ = NULL;
 
   if (import_did_succeed_) {

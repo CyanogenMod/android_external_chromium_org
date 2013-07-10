@@ -10,6 +10,8 @@
 
 #include "base/logging.h"
 #include "base/strings/string16.h"
+#include "base/strings/string_piece.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/sys_byteorder.h"
 #include "content/browser/indexed_db/leveldb/leveldb_slice.h"
 #include "content/common/indexed_db/indexed_db_key.h"
@@ -1277,24 +1279,24 @@ const char* DatabaseNameKey::Decode(const char* start,
   return slice.begin();
 }
 
-std::vector<char> DatabaseNameKey::Encode(const string16& origin,
+std::vector<char> DatabaseNameKey::Encode(const std::string& origin_identifier,
                                           const string16& database_name) {
   std::vector<char> ret = KeyPrefix::EncodeEmpty();
   ret.push_back(kDatabaseNameTypeByte);
-  EncodeStringWithLength(origin, &ret);
+  EncodeStringWithLength(base::ASCIIToUTF16(origin_identifier), &ret);
   EncodeStringWithLength(database_name, &ret);
   return ret;
 }
 
 std::vector<char> DatabaseNameKey::EncodeMinKeyForOrigin(
-    const string16& origin) {
-  return Encode(origin, string16());
+    const std::string& origin_identifier) {
+  return Encode(origin_identifier, string16());
 }
 
 std::vector<char> DatabaseNameKey::EncodeStopKeyForOrigin(
-    const string16& origin) {
+    const std::string& origin_identifier) {
   // just after origin in collation order
-  return EncodeMinKeyForOrigin(origin + base::char16('\x01'));
+  return EncodeMinKeyForOrigin(origin_identifier + '\x01');
 }
 
 int DatabaseNameKey::Compare(const DatabaseNameKey& other) {
@@ -1823,14 +1825,14 @@ std::vector<char> IndexDataKey::Encode(int64 database_id,
   std::vector<char> encoded_key;
   EncodeIDBKey(user_key, &encoded_key);
   return Encode(
-      database_id, object_store_id, index_id, encoded_key, MinIDBKey());
+      database_id, object_store_id, index_id, encoded_key, MinIDBKey(), 0);
 }
 
 std::vector<char> IndexDataKey::EncodeMinKey(int64 database_id,
                                              int64 object_store_id,
                                              int64 index_id) {
   return Encode(
-      database_id, object_store_id, index_id, MinIDBKey(), MinIDBKey());
+      database_id, object_store_id, index_id, MinIDBKey(), MinIDBKey(), 0);
 }
 
 std::vector<char> IndexDataKey::EncodeMaxKey(int64 database_id,

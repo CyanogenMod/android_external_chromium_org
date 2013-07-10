@@ -19,10 +19,12 @@
 #include "chrome/browser/extensions/api/identity/web_auth_flow.h"
 #include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/signin/oauth2_token_service.h"
 #include "chrome/browser/signin/signin_global_error.h"
 #include "google_apis/gaia/oauth2_mint_token_flow.h"
 
 class GoogleServiceAuthError;
+class MockGetAuthTokenFunction;
 class Profile;
 class SigninManagerBase;
 
@@ -65,7 +67,8 @@ class IdentityGetAuthTokenFunction : public AsyncExtensionFunction,
                                      public GaiaWebAuthFlow::Delegate,
                                      public IdentityMintRequestQueue::Request,
                                      public OAuth2MintTokenFlow::Delegate,
-                                     public IdentitySigninFlow::Delegate {
+                                     public IdentitySigninFlow::Delegate,
+                                     public OAuth2TokenService::Consumer {
  public:
   DECLARE_EXTENSION_FUNCTION("identity.getAuthToken",
                              EXPERIMENTAL_IDENTITY_GETAUTHTOKEN);
@@ -76,7 +79,10 @@ class IdentityGetAuthTokenFunction : public AsyncExtensionFunction,
   virtual ~IdentityGetAuthTokenFunction();
 
  private:
-  friend class GetAuthTokenFunctionTest;
+  FRIEND_TEST_ALL_PREFIXES(GetAuthTokenFunctionTest,
+                           ComponentWithChromeClientId);
+  FRIEND_TEST_ALL_PREFIXES(GetAuthTokenFunctionTest,
+                           ComponentWithNormalClientId);
   friend class MockGetAuthTokenFunction;
 
   // ExtensionFunction:
@@ -113,6 +119,13 @@ class IdentityGetAuthTokenFunction : public AsyncExtensionFunction,
   virtual void OnGaiaFlowCompleted(const std::string& access_token,
                                    const std::string& expiration) OVERRIDE;
 
+  // OAuth2TokenService::Consumer implementation:
+  virtual void OnGetTokenSuccess(const OAuth2TokenService::Request* request,
+                                 const std::string& access_token,
+                                 const base::Time& expiration_time) OVERRIDE;
+  virtual void OnGetTokenFailure(const OAuth2TokenService::Request* request,
+                                 const GoogleServiceAuthError& error) OVERRIDE;
+
   // Starts a mint token request to GAIA.
   void StartGaiaRequest(OAuth2MintTokenFlow::Mode mode);
 
@@ -130,17 +143,21 @@ class IdentityGetAuthTokenFunction : public AsyncExtensionFunction,
   // developer in chrome.runtime.lastError.
   std::string MapOAuth2ErrorToDescription(const std::string& error);
 
+  std::string GetOAuth2ClientId() const;
+
   bool should_prompt_for_scopes_;
   IdentityMintRequestQueue::MintType mint_token_flow_type_;
   scoped_ptr<OAuth2MintTokenFlow> mint_token_flow_;
   std::string refresh_token_;
   bool should_prompt_for_signin_;
 
+  std::string oauth2_client_id_;
   // When launched in interactive mode, and if there is no existing grant,
   // a permissions prompt will be popped up to the user.
   IssueAdviceInfo issue_advice_;
   scoped_ptr<GaiaWebAuthFlow> gaia_web_auth_flow_;
   scoped_ptr<IdentitySigninFlow> signin_flow_;
+  scoped_ptr<OAuth2TokenService::Request> device_token_request_;
 };
 
 class IdentityRemoveCachedAuthTokenFunction : public SyncExtensionFunction {

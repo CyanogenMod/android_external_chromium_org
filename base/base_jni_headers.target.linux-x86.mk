@@ -15,7 +15,7 @@ GYP_TARGET_DEPENDENCIES :=
 
 
 ### Generated for rule "base_base_gyp_base_jni_headers_target_generate_jni_headers":
-# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/base/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['android/java/src/org/chromium/base/ActivityStatus.java', 'android/java/src/org/chromium/base/BuildInfo.java', 'android/java/src/org/chromium/base/CpuFeatures.java', 'android/java/src/org/chromium/base/ImportantFileWriterAndroid.java', 'android/java/src/org/chromium/base/MemoryPressureListener.java', 'android/java/src/org/chromium/base/PathService.java', 'android/java/src/org/chromium/base/PathUtils.java', 'android/java/src/org/chromium/base/PowerMonitor.java', 'android/java/src/org/chromium/base/SystemMessageHandler.java', 'android/java/src/org/chromium/base/ThreadUtils.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/base/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
+# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/base/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['android/java/src/org/chromium/base/ActivityStatus.java', 'android/java/src/org/chromium/base/BuildInfo.java', 'android/java/src/org/chromium/base/CpuFeatures.java', 'android/java/src/org/chromium/base/ImportantFileWriterAndroid.java', 'android/java/src/org/chromium/base/MemoryPressureListener.java', 'android/java/src/org/chromium/base/PathService.java', 'android/java/src/org/chromium/base/PathUtils.java', 'android/java/src/org/chromium/base/PowerMonitor.java', 'android/java/src/org/chromium/base/SystemMessageHandler.java', 'android/java/src/org/chromium/base/SysUtils.java', 'android/java/src/org/chromium/base/ThreadUtils.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/base/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/base/jni/ActivityStatus_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/base/jni/ActivityStatus_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/base/jni/ActivityStatus_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
@@ -106,6 +106,16 @@ $(gyp_shared_intermediate_dir)/base/jni/SystemMessageHandler_jni.h: $(LOCAL_PATH
 .PHONY: base_base_jni_headers_gyp_rule_trigger
 base_base_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/base/jni/SystemMessageHandler_jni.h
 
+$(gyp_shared_intermediate_dir)/base/jni/SysUtils_jni.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/base/jni/SysUtils_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/base/jni/SysUtils_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
+$(gyp_shared_intermediate_dir)/base/jni/SysUtils_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
+$(gyp_shared_intermediate_dir)/base/jni/SysUtils_jni.h: $(LOCAL_PATH)/base/android/java/src/org/chromium/base/SysUtils.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
+	mkdir -p $(gyp_shared_intermediate_dir)/base/jni; cd $(gyp_local_path)/base; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/base/SysUtils.java --output_dir "$(gyp_shared_intermediate_dir)/base/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt
+
+.PHONY: base_base_jni_headers_gyp_rule_trigger
+base_base_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/base/jni/SysUtils_jni.h
+
 $(gyp_shared_intermediate_dir)/base/jni/ThreadUtils_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/base/jni/ThreadUtils_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/base/jni/ThreadUtils_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
@@ -128,6 +138,7 @@ GYP_GENERATED_OUTPUTS := \
 	$(gyp_shared_intermediate_dir)/base/jni/PathUtils_jni.h \
 	$(gyp_shared_intermediate_dir)/base/jni/PowerMonitor_jni.h \
 	$(gyp_shared_intermediate_dir)/base/jni/SystemMessageHandler_jni.h \
+	$(gyp_shared_intermediate_dir)/base/jni/SysUtils_jni.h \
 	$(gyp_shared_intermediate_dir)/base/jni/ThreadUtils_jni.h
 
 # Make sure our deps and generated files are built first.
@@ -143,6 +154,7 @@ LOCAL_GENERATED_SOURCES := \
 	$(gyp_shared_intermediate_dir)/base/jni/PathUtils_jni.h \
 	$(gyp_shared_intermediate_dir)/base/jni/PowerMonitor_jni.h \
 	$(gyp_shared_intermediate_dir)/base/jni/SystemMessageHandler_jni.h \
+	$(gyp_shared_intermediate_dir)/base/jni/SysUtils_jni.h \
 	$(gyp_shared_intermediate_dir)/base/jni/ThreadUtils_jni.h \
 	base_base_jni_headers_gyp_rule_trigger
 
@@ -152,7 +164,7 @@ LOCAL_SRC_FILES :=
 
 
 # Flags passed to both C and C++ files.
-MY_CFLAGS := \
+MY_CFLAGS_Debug := \
 	--param=ssp-buffer-size=4 \
 	-Werror \
 	-fno-exceptions \
@@ -186,9 +198,7 @@ MY_CFLAGS := \
 	-fdata-sections \
 	-ffunction-sections
 
-MY_CFLAGS_C :=
-
-MY_DEFS := \
+MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DUSE_LINUX_BREAKPAD' \
@@ -212,18 +222,16 @@ MY_DEFS := \
 	'-DWTF_USE_DYNAMIC_ANNOTATIONS=1' \
 	'-D_DEBUG'
 
-LOCAL_CFLAGS := $(MY_CFLAGS_C) $(MY_CFLAGS) $(MY_DEFS)
 
 # Include paths placed before CFLAGS/CPPFLAGS
-LOCAL_C_INCLUDES := \
+LOCAL_C_INCLUDES_Debug := \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
 
-LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 
 # Flags passed to only C++ (and not C) files.
-LOCAL_CPPFLAGS := \
+LOCAL_CPPFLAGS_Debug := \
 	-fno-rtti \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
@@ -232,6 +240,91 @@ LOCAL_CPPFLAGS := \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
+
+# Flags passed to both C and C++ files.
+MY_CFLAGS_Release := \
+	--param=ssp-buffer-size=4 \
+	-Werror \
+	-fno-exceptions \
+	-fno-strict-aliasing \
+	-Wall \
+	-Wno-unused-parameter \
+	-Wno-missing-field-initializers \
+	-fvisibility=hidden \
+	-pipe \
+	-fPIC \
+	-m32 \
+	-mmmx \
+	-march=pentium4 \
+	-msse2 \
+	-mfpmath=sse \
+	-fuse-ld=gold \
+	-ffunction-sections \
+	-funwind-tables \
+	-g \
+	-fno-short-enums \
+	-finline-limit=64 \
+	-Wa,--noexecstack \
+	-U_FORTIFY_SOURCE \
+	-Wno-extra \
+	-Wno-ignored-qualifiers \
+	-Wno-type-limits \
+	-fno-stack-protector \
+	-Os \
+	-fno-ident \
+	-fdata-sections \
+	-ffunction-sections \
+	-fomit-frame-pointer \
+	-fno-unwind-tables \
+	-fno-asynchronous-unwind-tables
+
+MY_DEFS_Release := \
+	'-DANGLE_DX11' \
+	'-D_FILE_OFFSET_BITS=64' \
+	'-DUSE_LINUX_BREAKPAD' \
+	'-DNO_TCMALLOC' \
+	'-DDISABLE_NACL' \
+	'-DCHROMIUM_BUILD' \
+	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_GPU=1' \
+	'-DUSE_OPENSSL=1' \
+	'-DENABLE_EGLIMAGE=1' \
+	'-DENABLE_LANGUAGE_DETECTION=1' \
+	'-D__STDC_CONSTANT_MACROS' \
+	'-D__STDC_FORMAT_MACROS' \
+	'-DANDROID' \
+	'-D__GNU_SOURCE=1' \
+	'-DUSE_STLPORT=1' \
+	'-D_STLP_USE_PTR_SPECIALIZATIONS=1' \
+	'-DCHROME_BUILD_ID=""' \
+	'-DNDEBUG' \
+	'-DNVALGRIND' \
+	'-DDYNAMIC_ANNOTATIONS_ENABLED=0' \
+	'-D_FORTIFY_SOURCE=2'
+
+
+# Include paths placed before CFLAGS/CPPFLAGS
+LOCAL_C_INCLUDES_Release := \
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
+
+
+# Flags passed to only C++ (and not C) files.
+LOCAL_CPPFLAGS_Release := \
+	-fno-rtti \
+	-fno-threadsafe-statics \
+	-fvisibility-inlines-hidden \
+	-Wsign-compare \
+	-Wno-error=c++0x-compat \
+	-Wno-non-virtual-dtor \
+	-Wno-sign-promo
+
+
+LOCAL_CFLAGS := $(MY_CFLAGS_$(GYP_CONFIGURATION)) $(MY_DEFS_$(GYP_CONFIGURATION))
+LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES_$(GYP_CONFIGURATION))
+LOCAL_CPPFLAGS := $(LOCAL_CPPFLAGS_$(GYP_CONFIGURATION))
 ### Rules for final target.
 # Add target alias to "gyp_all_modules" target.
 .PHONY: gyp_all_modules

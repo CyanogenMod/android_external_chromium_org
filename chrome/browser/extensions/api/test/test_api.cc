@@ -98,7 +98,7 @@ bool TestCreateIncognitoTabFunction::RunImpl() {
       CreateIncognitoTab::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
   chrome::OpenURLOffTheRecord(profile(), GURL(params->url),
-                              chrome::HOST_DESKTOP_TYPE_NATIVE);
+                              chrome::GetActiveDesktop());
   return true;
 }
 
@@ -124,7 +124,7 @@ void TestSendMessageFunction::Reply(const std::string& message) {
 
 // static
 void TestGetConfigFunction::set_test_config_state(
-    DictionaryValue* value) {
+    base::DictionaryValue* value) {
   TestConfigState* test_config_state = TestConfigState::GetInstance();
   test_config_state->set_config_state(value);
 }

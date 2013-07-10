@@ -15,6 +15,7 @@
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/chromeos/drive/fileapi_worker.h"
 #include "chrome/browser/chromeos/drive/webkit_file_stream_reader_impl.h"
 #include "chrome/browser/google_apis/task_util.h"
 #include "chrome/browser/google_apis/time_util.h"
@@ -36,147 +37,51 @@ namespace drive {
 
 namespace {
 
-typedef fileapi::RemoteFileSystemProxyInterface::OpenFileCallback
-    OpenFileCallback;
-
-// Helper function to run reply on results of base::CreatePlatformFile() on
-// IO thread.
-void OnPlatformFileOpened(
-    const OpenFileCallback& callback,
+// Runs |callback| with |error|, |file| and |peer_handle|.
+void RunOpenFileCallback(
     base::ProcessHandle peer_handle,
-    base::PlatformFileError* open_error,
-    base::PlatformFile platform_file) {
-  callback.Run(*open_error, platform_file, peer_handle);
+    const fileapi::RemoteFileSystemProxyInterface::OpenFileCallback& callback,
+    base::PlatformFileError error,
+    base::PlatformFile file) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+
+  callback.Run(error, file, peer_handle);
 }
 
-// Helper function to run OpenFileCallback from
-// FileSystemProxy::OpenFile().
-void OnGetFileByPathForOpen(
-    const OpenFileCallback& callback,
-    int file_flags,
-    base::ProcessHandle peer_handle,
-    FileError file_error,
-    const base::FilePath& local_path,
-    scoped_ptr<ResourceEntry> entry) {
-  base::PlatformFileError error =
-      FileErrorToPlatformError(file_error);
-  if (error != base::PLATFORM_FILE_OK) {
-    callback.Run(error, base::kInvalidPlatformFileValue, peer_handle);
-    return;
-  }
-
-  base::PlatformFileError* open_error =
-      new base::PlatformFileError(base::PLATFORM_FILE_ERROR_FAILED);
-  base::PostTaskAndReplyWithResult(
-      BrowserThread::GetBlockingPool(),
-      FROM_HERE,
-      base::Bind(&base::CreatePlatformFile,
-                 local_path,
-                 file_flags,
-                 static_cast<bool*>(NULL),
-                 open_error),
-      base::Bind(&OnPlatformFileOpened,
-                 callback,
-                 peer_handle,
-                 base::Owned(open_error)));
-}
-
-// Helper function to run SnapshotFileCallback from
-// FileSystemProxy::CreateSnapshotFile().
-void CallSnapshotFileCallback(
-    const FileSystemOperation::SnapshotFileCallback& callback,
+// Runs |callback| with the arguments based on the given arguments.
+void RunSnapshotFileCallback(
+    const fileapi::FileSystemOperation::SnapshotFileCallback& callback,
+    base::PlatformFileError error,
     const base::PlatformFileInfo& file_info,
-    FileError file_error,
     const base::FilePath& local_path,
-    scoped_ptr<ResourceEntry> entry) {
-  scoped_refptr<ShareableFileReference> file_ref;
-  base::PlatformFileError error =
-      FileErrorToPlatformError(file_error);
+    webkit_blob::ScopedFile::ScopeOutPolicy scope_out_policy) {
+  // ShareableFileReference is thread *unsafe* class. So it is necessary to
+  // create the instance (by invoking GetOrCreate) on IO thread, though
+  // most drive file system related operations run on UI thread.
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
-  // If the file is a hosted document, a temporary JSON file is created to
-  // represent the document. The JSON file is not cached and its lifetime
-  // is managed by ShareableFileReference.
-  if (error == base::PLATFORM_FILE_OK &&
-      entry && entry->file_specific_info().is_hosted_document()) {
-    file_ref = ShareableFileReference::GetOrCreate(
-        local_path, ShareableFileReference::DELETE_ON_FINAL_RELEASE,
-        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE));
-  }
-
-  // When reading file, last modified time specified in file info will be
-  // compared to the last modified time of the local version of the drive file.
-  // Since those two values don't generally match (last modification time on the
-  // drive server vs. last modification time of the local, downloaded file), so
-  // we have to opt out from this check. We do this by unsetting last_modified
-  // value in the file info passed to the CreateSnapshot caller.
-  base::PlatformFileInfo final_file_info(file_info);
-  final_file_info.last_modified = base::Time();
-
-  callback.Run(error, final_file_info, local_path, file_ref);
-}
-
-// Emits debug log when FileSystem::CloseFile() is complete.
-void EmitDebugLogForCloseFile(const base::FilePath& local_path,
-                              FileError file_error) {
-  DVLOG(1) << "Closed: " << local_path.AsUTF8Unsafe() << ": " << file_error;
-}
-
-base::PlatformFileError DoTruncateOnBlockingPool(
-    const base::FilePath& local_cache_path,
-    int64 length) {
-  base::PlatformFileError result = base::PLATFORM_FILE_ERROR_FAILED;
-
-  base::PlatformFile file = base::CreatePlatformFile(
-      local_cache_path,
-      base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_WRITE,
-      NULL,
-      &result);
-  if (result == base::PLATFORM_FILE_OK) {
-    DCHECK_NE(base::kInvalidPlatformFileValue, file);
-    if (!base::TruncatePlatformFile(file, length))
-      result = base::PLATFORM_FILE_ERROR_FAILED;
-    base::ClosePlatformFile(file);
-  }
-  return result;
-}
-
-void DidCloseFileForTruncate(
-    const FileSystemOperation::StatusCallback& callback,
-    base::PlatformFileError truncate_result,
-    FileError close_result) {
-  // Reports the first error.
-  callback.Run(truncate_result == base::PLATFORM_FILE_OK ?
-               FileErrorToPlatformError(close_result) :
-               truncate_result);
+  scoped_refptr<webkit_blob::ShareableFileReference> file_reference =
+      webkit_blob::ShareableFileReference::GetOrCreate(
+          webkit_blob::ScopedFile(
+              local_path, scope_out_policy,
+              BrowserThread::GetMessageLoopProxyForThread(
+                  BrowserThread::FILE)));
+  callback.Run(error, file_info, local_path, file_reference);
 }
 
 }  // namespace
 
-DirectoryEntry ResourceEntryToDirectoryEntry(
-    const ResourceEntry& resource_entry) {
-  base::PlatformFileInfo file_info;
-  util::ConvertResourceEntryToPlatformFileInfo(
-      resource_entry.file_info(), &file_info);
-
-  DirectoryEntry entry;
-  entry.name = resource_entry.base_name();
-  entry.is_directory = file_info.is_directory;
-  entry.size = file_info.size;
-  entry.last_modified_time = file_info.last_modified;
-  return entry;
-}
-
-// FileSystemProxy class implementation.
-
 FileSystemProxy::FileSystemProxy(
     FileSystemInterface* file_system)
-    : file_system_(file_system) {
+    : file_system_(file_system),
+      worker_(new internal::FileApiWorker(file_system)) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
 void FileSystemProxy::DetachFromFileSystem() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   file_system_ = NULL;
+  worker_.reset();
 }
 
 void FileSystemProxy::GetFileInfo(
@@ -194,13 +99,9 @@ void FileSystemProxy::GetFileInfo(
   }
 
   CallFileSystemMethodOnUIThread(
-      base::Bind(&FileSystemInterface::GetResourceEntryByPath,
-                 base::Unretained(file_system_),
-                 file_path,
-                 google_apis::CreateRelayCallback(
-                     base::Bind(&FileSystemProxy::OnGetMetadata,
-                                this,
-                                callback))));
+      base::Bind(&internal::FileApiWorker::GetFileInfo,
+                 base::Unretained(worker_.get()),
+                 file_path, google_apis::CreateRelayCallback(callback)));
 }
 
 void FileSystemProxy::Copy(
@@ -219,14 +120,10 @@ void FileSystemProxy::Copy(
   }
 
   CallFileSystemMethodOnUIThread(
-      base::Bind(&FileSystemInterface::Copy,
-                 base::Unretained(file_system_),
-                 src_file_path,
-                 dest_file_path,
-                 google_apis::CreateRelayCallback(
-                     base::Bind(&FileSystemProxy::OnStatusCallback,
-                                this,
-                                callback))));
+      base::Bind(&internal::FileApiWorker::Copy,
+                 base::Unretained(worker_.get()),
+                 src_file_path, dest_file_path,
+                 google_apis::CreateRelayCallback(callback)));
 }
 
 void FileSystemProxy::Move(
@@ -245,14 +142,10 @@ void FileSystemProxy::Move(
   }
 
   CallFileSystemMethodOnUIThread(
-      base::Bind(&FileSystemInterface::Move,
-                 base::Unretained(file_system_),
-                 src_file_path,
-                 dest_file_path,
-                 google_apis::CreateRelayCallback(
-                     base::Bind(&FileSystemProxy::OnStatusCallback,
-                                this,
-                                callback))));
+      base::Bind(&internal::FileApiWorker::Move,
+                 base::Unretained(worker_.get()),
+                 src_file_path, dest_file_path,
+                 google_apis::CreateRelayCallback(callback)));
 }
 
 void FileSystemProxy::ReadDirectory(
@@ -272,13 +165,9 @@ void FileSystemProxy::ReadDirectory(
   }
 
   CallFileSystemMethodOnUIThread(
-      base::Bind(&FileSystemInterface::ReadDirectoryByPath,
-                 base::Unretained(file_system_),
-                 file_path,
-                 google_apis::CreateRelayCallback(
-                     base::Bind(&FileSystemProxy::OnReadDirectory,
-                                this,
-                                callback))));
+      base::Bind(&internal::FileApiWorker::ReadDirectory,
+                 base::Unretained(worker_.get()),
+                 file_path, google_apis::CreateRelayCallback(callback)));
 }
 
 void FileSystemProxy::Remove(
@@ -296,14 +185,10 @@ void FileSystemProxy::Remove(
   }
 
   CallFileSystemMethodOnUIThread(
-      base::Bind(&FileSystemInterface::Remove,
-                 base::Unretained(file_system_),
-                 file_path,
-                 recursive,
-                 google_apis::CreateRelayCallback(
-                     base::Bind(&FileSystemProxy::OnStatusCallback,
-                                this,
-                                callback))));
+      base::Bind(&internal::FileApiWorker::Remove,
+                 base::Unretained(worker_.get()),
+                 file_path, recursive,
+                 google_apis::CreateRelayCallback(callback)));
 }
 
 void FileSystemProxy::CreateDirectory(
@@ -322,15 +207,10 @@ void FileSystemProxy::CreateDirectory(
   }
 
   CallFileSystemMethodOnUIThread(
-      base::Bind(&FileSystemInterface::CreateDirectory,
-                 base::Unretained(file_system_),
-                 file_path,
-                 exclusive,
-                 recursive,
-                 google_apis::CreateRelayCallback(
-                     base::Bind(&FileSystemProxy::OnStatusCallback,
-                                this,
-                                callback))));
+      base::Bind(&internal::FileApiWorker::CreateDirectory,
+                 base::Unretained(worker_.get()),
+                 file_path, exclusive, recursive,
+                 google_apis::CreateRelayCallback(callback)));
 }
 
 void FileSystemProxy::CreateFile(
@@ -348,14 +228,10 @@ void FileSystemProxy::CreateFile(
   }
 
   CallFileSystemMethodOnUIThread(
-      base::Bind(&FileSystemInterface::CreateFile,
-                 base::Unretained(file_system_),
-                 file_path,
-                 exclusive,
-                 google_apis::CreateRelayCallback(
-                     base::Bind(&FileSystemProxy::OnStatusCallback,
-                                this,
-                                callback))));
+      base::Bind(&internal::FileApiWorker::CreateFile,
+                 base::Unretained(worker_.get()),
+                 file_path, exclusive,
+                 google_apis::CreateRelayCallback(callback)));
 }
 
 void FileSystemProxy::Truncate(
@@ -363,13 +239,6 @@ void FileSystemProxy::Truncate(
     int64 length,
     const FileSystemOperation::StatusCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  if (length < 0) {
-    MessageLoopProxy::current()->PostTask(
-        FROM_HERE,
-        base::Bind(callback, base::PLATFORM_FILE_ERROR_INVALID_OPERATION));
-    return;
-  }
 
   base::FilePath file_path;
   if (!ValidateUrl(file_url, &file_path)) {
@@ -379,133 +248,11 @@ void FileSystemProxy::Truncate(
     return;
   }
 
-  // TODO(kinaba): http://crbug.com/132780.
-  // Optimize the cases for small |length|, at least for |length| == 0.
-  // CreateWritableSnapshotFile downloads the whole content unnecessarily.
   CallFileSystemMethodOnUIThread(
-      base::Bind(&FileSystemInterface::OpenFile,
-                 base::Unretained(file_system_),
-                 file_path,
-                 google_apis::CreateRelayCallback(
-                     base::Bind(&FileSystemProxy::OnFileOpenedForTruncate,
-                                this,
-                                file_path,
-                                length,
-                                callback))));
-}
-
-void FileSystemProxy::OnOpenFileForWriting(
-    int file_flags,
-    base::ProcessHandle peer_handle,
-    const OpenFileCallback& callback,
-    FileError file_error,
-    const base::FilePath& local_cache_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  base::PlatformFileError error =
-      FileErrorToPlatformError(file_error);
-
-  if (error != base::PLATFORM_FILE_OK) {
-    callback.Run(error, base::kInvalidPlatformFileValue, peer_handle);
-    return;
-  }
-
-  // Cache file prepared for modification is available. Truncate it.
-  base::PlatformFileError* result =
-      new base::PlatformFileError(base::PLATFORM_FILE_ERROR_FAILED);
-  bool posted = base::PostTaskAndReplyWithResult(
-      BrowserThread::GetBlockingPool(), FROM_HERE,
-      base::Bind(&base::CreatePlatformFile,
-                 local_cache_path,
-                 file_flags,
-                 static_cast<bool*>(NULL),
-                 result),
-      base::Bind(&OnPlatformFileOpened,
-                 callback,
-                 peer_handle,
-                 base::Owned(result)));
-  DCHECK(posted);
-}
-
-void FileSystemProxy::OnCreateFileForOpen(
-    const base::FilePath& file_path,
-    int file_flags,
-    base::ProcessHandle peer_handle,
-    const OpenFileCallback& callback,
-    FileError file_error) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  base::PlatformFileError create_result =
-      FileErrorToPlatformError(file_error);
-
-  if ((create_result == base::PLATFORM_FILE_OK) ||
-      ((create_result == base::PLATFORM_FILE_ERROR_EXISTS) &&
-       (file_flags & base::PLATFORM_FILE_CREATE_ALWAYS))) {
-    // If we are trying to always create an existing file, then
-    // if it really exists open it as truncated.
-    file_flags &= ~base::PLATFORM_FILE_CREATE;
-    file_flags &= ~base::PLATFORM_FILE_CREATE_ALWAYS;
-    file_flags |= base::PLATFORM_FILE_OPEN_TRUNCATED;
-  } else {
-    callback.Run(create_result, base::kInvalidPlatformFileValue, peer_handle);
-    return;
-  }
-
-  // Open created (or existing) file for writing.
-  CallFileSystemMethodOnUIThread(
-      base::Bind(&FileSystemInterface::OpenFile,
-                 base::Unretained(file_system_),
-                 file_path,
-                 google_apis::CreateRelayCallback(
-                     base::Bind(&FileSystemProxy::OnOpenFileForWriting,
-                                this,
-                                file_flags,
-                                peer_handle,
-                                callback))));
-}
-
-void FileSystemProxy::OnFileOpenedForTruncate(
-    const base::FilePath& virtual_path,
-    int64 length,
-    const fileapi::FileSystemOperation::StatusCallback& callback,
-    FileError open_result,
-    const base::FilePath& local_cache_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  if (open_result != FILE_ERROR_OK) {
-    callback.Run(FileErrorToPlatformError(open_result));
-    return;
-  }
-
-  // Cache file prepared for modification is available. Truncate it.
-  bool posted = base::PostTaskAndReplyWithResult(
-      BrowserThread::GetBlockingPool(),
-      FROM_HERE,
-      base::Bind(&DoTruncateOnBlockingPool,
-                 local_cache_path,
-                 length),
-      base::Bind(&FileSystemProxy::DidTruncate,
-                 this,
-                 virtual_path,
-                 callback));
-  DCHECK(posted);
-}
-
-void FileSystemProxy::DidTruncate(
-    const base::FilePath& virtual_path,
-    const FileSystemOperation::StatusCallback& callback,
-    base::PlatformFileError truncate_result) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  // Truncation finished. We must close the file no matter |truncate_result|
-  // indicates an error or not.
-  CallFileSystemMethodOnUIThread(
-      base::Bind(&FileSystemInterface::CloseFile,
-                 base::Unretained(file_system_),
-                 virtual_path,
-                 google_apis::CreateRelayCallback(
-                     base::Bind(&DidCloseFileForTruncate,
-                                callback,
-                                truncate_result))));
+      base::Bind(&internal::FileApiWorker::Truncate,
+                 base::Unretained(worker_.get()),
+                 file_path, length,
+                 google_apis::CreateRelayCallback(callback)));
 }
 
 void FileSystemProxy::OpenFile(
@@ -526,73 +273,12 @@ void FileSystemProxy::OpenFile(
     return;
   }
 
-  // TODO(zelidrag): Wire all other file open operations.
-  if ((file_flags & base::PLATFORM_FILE_DELETE_ON_CLOSE)) {
-    NOTIMPLEMENTED() << "File create/write operations not yet supported "
-                     << file_path.value();
-    MessageLoopProxy::current()->PostTask(
-        FROM_HERE,
-        base::Bind(callback,
-                   base::PLATFORM_FILE_ERROR_FAILED,
-                   base::kInvalidPlatformFileValue,
-                   peer_handle));
-    return;
-  }
-
-  if ((file_flags & base::PLATFORM_FILE_OPEN) ||
-      (file_flags & base::PLATFORM_FILE_OPEN_ALWAYS) ||
-      (file_flags & base::PLATFORM_FILE_OPEN_TRUNCATED)) {
-    if ((file_flags & base::PLATFORM_FILE_OPEN_TRUNCATED) ||
-        (file_flags & base::PLATFORM_FILE_OPEN_ALWAYS) ||
-        (file_flags & base::PLATFORM_FILE_WRITE) ||
-        (file_flags & base::PLATFORM_FILE_EXCLUSIVE_WRITE)) {
-      // Open existing file for writing.
-      CallFileSystemMethodOnUIThread(
-          base::Bind(&FileSystemInterface::OpenFile,
-                     base::Unretained(file_system_),
-                     file_path,
-                     google_apis::CreateRelayCallback(
-                         base::Bind(&FileSystemProxy::OnOpenFileForWriting,
-                                    this,
-                                    file_flags,
-                                    peer_handle,
-                                    callback))));
-    } else {
-      // Read-only file open.
-      CallFileSystemMethodOnUIThread(
-          base::Bind(&FileSystemInterface::GetFileByPath,
-                     base::Unretained(file_system_),
-                     file_path,
-                     google_apis::CreateRelayCallback(
-                         base::Bind(&OnGetFileByPathForOpen,
-                                    callback,
-                                    file_flags,
-                                    peer_handle))));
-    }
-  } else if ((file_flags & base::PLATFORM_FILE_CREATE) ||
-             (file_flags & base::PLATFORM_FILE_CREATE_ALWAYS)) {
-    // Open existing file for writing.
-    CallFileSystemMethodOnUIThread(
-        base::Bind(&FileSystemInterface::CreateFile,
-                   base::Unretained(file_system_),
-                   file_path,
-                   file_flags & base::PLATFORM_FILE_EXCLUSIVE_WRITE,
-                   google_apis::CreateRelayCallback(
-                       base::Bind(&FileSystemProxy::OnCreateFileForOpen,
-                                  this,
-                                  file_path,
-                                  file_flags,
-                                  peer_handle,
-                                  callback))));
-  } else {
-    NOTREACHED() << "Unhandled file flags combination " << file_flags;
-    MessageLoopProxy::current()->PostTask(
-        FROM_HERE,
-        base::Bind(callback,
-                   base::PLATFORM_FILE_ERROR_FAILED,
-                   base::kInvalidPlatformFileValue,
-                   peer_handle));
-  }
+  CallFileSystemMethodOnUIThread(
+      base::Bind(&internal::FileApiWorker::OpenFile,
+                 base::Unretained(worker_.get()),
+                 file_path, file_flags,
+                 google_apis::CreateRelayCallback(
+                     base::Bind(&RunOpenFileCallback, peer_handle, callback))));
 }
 
 void FileSystemProxy::NotifyCloseFile(const FileSystemURL& url) {
@@ -601,12 +287,8 @@ void FileSystemProxy::NotifyCloseFile(const FileSystemURL& url) {
     return;
 
   CallFileSystemMethodOnUIThread(
-      base::Bind(&FileSystemInterface::CloseFile,
-                 base::Unretained(file_system_),
-                 file_path,
-                 google_apis::CreateRelayCallback(
-                     base::Bind(&EmitDebugLogForCloseFile,
-                                file_path))));
+      base::Bind(&internal::FileApiWorker::CloseFile,
+                 base::Unretained(worker_.get()), file_path));
 }
 
 void FileSystemProxy::TouchFile(
@@ -621,13 +303,10 @@ void FileSystemProxy::TouchFile(
     return;
 
   CallFileSystemMethodOnUIThread(
-      base::Bind(&FileSystemInterface::TouchFile,
-                 base::Unretained(file_system_),
+      base::Bind(&internal::FileApiWorker::TouchFile,
+                 base::Unretained(worker_.get()),
                  file_path, last_access_time, last_modified_time,
-                 google_apis::CreateRelayCallback(
-                     base::Bind(&FileSystemProxy::OnStatusCallback,
-                                this,
-                                callback))));
+                 google_apis::CreateRelayCallback(callback)));
 }
 
 void FileSystemProxy::CreateSnapshotFile(
@@ -643,47 +322,15 @@ void FileSystemProxy::CreateSnapshotFile(
                    base::PLATFORM_FILE_ERROR_NOT_FOUND,
                    base::PlatformFileInfo(),
                    base::FilePath(),
-                   scoped_refptr<ShareableFileReference>(NULL)));
+                   scoped_refptr<ShareableFileReference>()));
     return;
   }
 
   CallFileSystemMethodOnUIThread(
-      base::Bind(&FileSystemInterface::GetResourceEntryByPath,
-                 base::Unretained(file_system_),
-                 file_path,
+      base::Bind(&internal::FileApiWorker::CreateSnapshotFile,
+                 base::Unretained(worker_.get()), file_path,
                  google_apis::CreateRelayCallback(
-                     base::Bind(&FileSystemProxy::OnGetResourceEntryByPath,
-                                this,
-                                file_path,
-                                callback))));
-}
-
-void FileSystemProxy::OnGetResourceEntryByPath(
-    const base::FilePath& entry_path,
-    const FileSystemOperation::SnapshotFileCallback& callback,
-    FileError error,
-    scoped_ptr<ResourceEntry> entry) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  if (error != FILE_ERROR_OK || !entry.get()) {
-    callback.Run(base::PLATFORM_FILE_ERROR_NOT_FOUND,
-                 base::PlatformFileInfo(),
-                 base::FilePath(),
-                 scoped_refptr<ShareableFileReference>(NULL));
-    return;
-  }
-
-  base::PlatformFileInfo file_info;
-  util::ConvertResourceEntryToPlatformFileInfo(entry->file_info(), &file_info);
-
-  CallFileSystemMethodOnUIThread(
-      base::Bind(&FileSystemInterface::GetFileByPath,
-                 base::Unretained(file_system_),
-                 entry_path,
-                 google_apis::CreateRelayCallback(
-                     base::Bind(&CallSnapshotFileCallback,
-                                callback,
-                                file_info))));
+                     base::Bind(&RunSnapshotFileCallback, callback))));
 }
 
 void FileSystemProxy::CreateWritableSnapshotFile(
@@ -767,62 +414,6 @@ void FileSystemProxy::CallFileSystemMethodOnUIThreadInternal(
     method_call.Run();
 }
 
-void FileSystemProxy::OnStatusCallback(
-    const fileapi::FileSystemOperation::StatusCallback& callback,
-    FileError error) {
-  callback.Run(FileErrorToPlatformError(error));
-}
-
-void FileSystemProxy::OnGetMetadata(
-    const FileSystemOperation::GetMetadataCallback& callback,
-    FileError error,
-    scoped_ptr<ResourceEntry> entry) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  if (error != FILE_ERROR_OK) {
-    callback.Run(FileErrorToPlatformError(error),
-                 base::PlatformFileInfo());
-    return;
-  }
-  DCHECK(entry.get());
-
-  base::PlatformFileInfo file_info;
-  util::ConvertResourceEntryToPlatformFileInfo(entry->file_info(), &file_info);
-
-  callback.Run(base::PLATFORM_FILE_OK, file_info);
-}
-
-void FileSystemProxy::OnReadDirectory(
-    const FileSystemOperation::ReadDirectoryCallback&
-    callback,
-    FileError error,
-    bool hide_hosted_documents,
-    scoped_ptr<ResourceEntryVector> resource_entries) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  if (error != FILE_ERROR_OK) {
-    callback.Run(FileErrorToPlatformError(error),
-                 std::vector<DirectoryEntry>(),
-                 false);
-    return;
-  }
-  DCHECK(resource_entries.get());
-
-  std::vector<DirectoryEntry> entries;
-  // Convert Drive files to something File API stack can understand.
-  for (size_t i = 0; i < resource_entries->size(); ++i) {
-    const ResourceEntry& resource_entry = (*resource_entries)[i];
-    if (resource_entry.has_file_specific_info() &&
-        resource_entry.file_specific_info().is_hosted_document() &&
-        hide_hosted_documents) {
-      continue;
-    }
-    entries.push_back(ResourceEntryToDirectoryEntry(resource_entry));
-  }
-
-  callback.Run(base::PLATFORM_FILE_OK, entries, false);
-}
-
 void FileSystemProxy::OnCreateWritableSnapshotFile(
     const base::FilePath& virtual_path,
     const fileapi::WritableSnapshotFile& callback,
@@ -852,12 +443,8 @@ void FileSystemProxy::CloseWritableSnapshotFile(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
   CallFileSystemMethodOnUIThread(
-      base::Bind(&FileSystemInterface::CloseFile,
-                 base::Unretained(file_system_),
-                 virtual_path,
-                 google_apis::CreateRelayCallback(
-                     base::Bind(&EmitDebugLogForCloseFile,
-                                virtual_path))));
+      base::Bind(&internal::FileApiWorker::CloseFile,
+                 base::Unretained(worker_.get()), virtual_path));
 }
 
 FileSystemInterface* FileSystemProxy::GetFileSystemOnUIThread() {

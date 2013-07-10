@@ -13,7 +13,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/android/provider/blocking_ui_thread_async_request.h"
 #include "chrome/browser/android/provider/bookmark_model_observer_task.h"
 #include "chrome/browser/android/provider/run_on_ui_thread_blocking.h"
@@ -894,8 +894,9 @@ class SearchTermTask : public HistoryProviderTask {
         template_service->GetDefaultSearchProvider();
     if (search_engine) {
       const TemplateURLRef* search_url = &search_engine->url_ref();
-      std::string url = search_url->ReplaceSearchTerms(
-                     TemplateURLRef::SearchTermsArgs(row->search_term()));
+      TemplateURLRef::SearchTermsArgs search_terms_args(row->search_term());
+      search_terms_args.append_extra_query_params = true;
+      std::string url = search_url->ReplaceSearchTerms(search_terms_args);
       if (!url.empty()) {
         row->set_url(GURL(url));
         row->set_template_url_id(search_engine->id());

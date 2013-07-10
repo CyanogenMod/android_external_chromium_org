@@ -177,6 +177,19 @@ void DecodeLoginPolicies(const em::ChromeDeviceSettingsProto& policy,
                         container.enable_auto_login_bailout()));
     }
   }
+
+  if (policy.has_supervised_users_settings()) {
+    const em::SupervisedUsersSettingsProto& container =
+        policy.supervised_users_settings();
+    if (container.has_supervised_users_enabled()) {
+      Value* value = Value::CreateBooleanValue(
+          container.supervised_users_enabled());
+      policies->Set(key::kSupervisedUsersEnabled,
+                    POLICY_LEVEL_MANDATORY,
+                    POLICY_SCOPE_MACHINE,
+                    value);
+    }
+  }
 }
 
 void DecodeKioskPolicies(const em::ChromeDeviceSettingsProto& policy,
@@ -416,6 +429,50 @@ void DecodeAutoUpdatePolicies(const em::ChromeDeviceSettingsProto& policy,
   }
 }
 
+void DecodeAccessibilityPolicies(const em::ChromeDeviceSettingsProto& policy,
+                                 PolicyMap* policies) {
+  if (policy.has_accessibility_settings()) {
+    const em::AccessibilitySettingsProto&
+        container(policy.accessibility_settings());
+
+    if (container.has_login_screen_default_large_cursor_enabled()) {
+      policies->Set(
+          key::kDeviceLoginScreenDefaultLargeCursorEnabled,
+          POLICY_LEVEL_MANDATORY,
+          POLICY_SCOPE_MACHINE,
+          Value::CreateBooleanValue(
+              container.login_screen_default_large_cursor_enabled()));
+    }
+
+    if (container.has_login_screen_default_spoken_feedback_enabled()) {
+      policies->Set(
+          key::kDeviceLoginScreenDefaultSpokenFeedbackEnabled,
+          POLICY_LEVEL_MANDATORY,
+          POLICY_SCOPE_MACHINE,
+          Value::CreateBooleanValue(
+              container.login_screen_default_spoken_feedback_enabled()));
+    }
+
+    if (container.has_login_screen_default_high_contrast_enabled()) {
+      policies->Set(
+          key::kDeviceLoginScreenDefaultHighContrastEnabled,
+          POLICY_LEVEL_MANDATORY,
+          POLICY_SCOPE_MACHINE,
+          Value::CreateBooleanValue(
+              container.login_screen_default_high_contrast_enabled()));
+    }
+
+    if (container.has_login_screen_default_screen_magnifier_type()) {
+      policies->Set(
+          key::kDeviceLoginScreenDefaultScreenMagnifierType,
+          POLICY_LEVEL_MANDATORY,
+          POLICY_SCOPE_MACHINE,
+          DecodeIntegerValue(
+              container.login_screen_default_screen_magnifier_type()));
+    }
+  }
+}
+
 void DecodeGenericPolicies(const em::ChromeDeviceSettingsProto& policy,
                            PolicyMap* policies) {
   if (policy.has_device_policy_refresh_rate()) {
@@ -533,6 +590,7 @@ void DecodeDevicePolicy(const em::ChromeDeviceSettingsProto& policy,
   DecodeNetworkPolicies(policy, policies, install_attributes);
   DecodeReportingPolicies(policy, policies);
   DecodeAutoUpdatePolicies(policy, policies);
+  DecodeAccessibilityPolicies(policy, policies);
   DecodeGenericPolicies(policy, policies);
 }
 

@@ -4,7 +4,7 @@
 
 #include "content/renderer/pepper/pepper_video_destination_host.h"
 
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/host/dispatch_host_message.h"
@@ -37,7 +37,7 @@ int32_t PepperVideoDestinationHost::OnResourceMessageReceived(
     HostMessageContext* context) {
   IPC_BEGIN_MESSAGE_MAP(PepperVideoDestinationHost, msg)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_VideoDestination_Open,
-                                        OnHostMsgOpen)
+                                      OnHostMsgOpen)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_VideoDestination_PutFrame,
                                       OnHostMsgPutFrame)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_VideoDestination_Close,

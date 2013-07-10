@@ -4,6 +4,7 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include "base/mac/scoped_nsobject.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
@@ -47,8 +48,9 @@ IN_PROC_BROWSER_TEST_F(BrowserCrApplicationAppleScriptTest, InsertWindow) {
   // Emulate what applescript would do when creating a new window.
   // Emulate a script like |set var to make new window with properties
   // {visible:false}|.
-  scoped_nsobject<WindowAppleScript> aWindow([[WindowAppleScript alloc] init]);
-  scoped_nsobject<NSNumber> var([[aWindow.get() uniqueID] copy]);
+  base::scoped_nsobject<WindowAppleScript> aWindow(
+      [[WindowAppleScript alloc] init]);
+  base::scoped_nsobject<NSNumber> var([[aWindow.get() uniqueID] copy]);
   [aWindow.get() setValue:[NSNumber numberWithBool:YES] forKey:@"isVisible"];
 
   [NSApp insertInAppleScriptWindows:aWindow.get()];
@@ -66,7 +68,7 @@ IN_PROC_BROWSER_TEST_F(BrowserCrApplicationAppleScriptTest, InsertWindow) {
 // Inserting and deleting windows.
 IN_PROC_BROWSER_TEST_F(BrowserCrApplicationAppleScriptTest,
                        InsertAndDeleteWindows) {
-  scoped_nsobject<WindowAppleScript> aWindow;
+  base::scoped_nsobject<WindowAppleScript> aWindow;
   int count;
   // Create a bunch of windows.
   for (int i = 0; i < 5; ++i) {

@@ -143,7 +143,7 @@ LOCAL_SRC_FILES := \
 
 
 # Flags passed to both C and C++ files.
-MY_CFLAGS := \
+MY_CFLAGS_Debug := \
 	-fstack-protector \
 	--param=ssp-buffer-size=4 \
 	 \
@@ -178,9 +178,7 @@ MY_CFLAGS := \
 	-fdata-sections \
 	-ffunction-sections
 
-MY_CFLAGS_C :=
-
-MY_DEFS := \
+MY_DEFS_Debug := \
 	'-DEXPAT_RELATIVE_PATH' \
 	'-DFEATURE_ENABLE_SSL' \
 	'-DGTEST_RELATIVE_PATH' \
@@ -219,10 +217,9 @@ MY_DEFS := \
 	'-DWTF_USE_DYNAMIC_ANNOTATIONS=1' \
 	'-D_DEBUG'
 
-LOCAL_CFLAGS := $(MY_CFLAGS_C) $(MY_CFLAGS) $(MY_DEFS)
 
 # Include paths placed before CFLAGS/CPPFLAGS
-LOCAL_C_INCLUDES := \
+LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/libjingle/overrides \
 	$(LOCAL_PATH)/third_party/libjingle/source \
 	$(LOCAL_PATH)/testing/gtest/include \
@@ -240,10 +237,9 @@ LOCAL_C_INCLUDES := \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
 
-LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 
 # Flags passed to only C++ (and not C) files.
-LOCAL_CPPFLAGS := \
+LOCAL_CPPFLAGS_Debug := \
 	-fno-rtti \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
@@ -254,9 +250,122 @@ LOCAL_CPPFLAGS := \
 	-Wno-sign-promo \
 	-Wno-non-virtual-dtor
 
+
+# Flags passed to both C and C++ files.
+MY_CFLAGS_Release := \
+	-fstack-protector \
+	--param=ssp-buffer-size=4 \
+	 \
+	-fno-exceptions \
+	-fno-strict-aliasing \
+	-Wno-unused-parameter \
+	-Wno-missing-field-initializers \
+	-fvisibility=hidden \
+	-pipe \
+	-fPIC \
+	-Wno-format \
+	-EL \
+	-mhard-float \
+	-ffunction-sections \
+	-funwind-tables \
+	-g \
+	-fstack-protector \
+	-fno-short-enums \
+	-finline-limit=64 \
+	-Wa,--noexecstack \
+	-U_FORTIFY_SOURCE \
+	-Wno-extra \
+	-Wno-ignored-qualifiers \
+	-Wno-type-limits \
+	-Wno-address \
+	-Wno-format-security \
+	-Wno-return-type \
+	-Wno-sequence-point \
+	-Os \
+	-fno-ident \
+	-fdata-sections \
+	-ffunction-sections \
+	-fomit-frame-pointer
+
+MY_DEFS_Release := \
+	'-DEXPAT_RELATIVE_PATH' \
+	'-DFEATURE_ENABLE_SSL' \
+	'-DGTEST_RELATIVE_PATH' \
+	'-DHAVE_SRTP' \
+	'-DHAVE_WEBRTC_VIDEO' \
+	'-DHAVE_WEBRTC_VOICE' \
+	'-DJSONCPP_RELATIVE_PATH' \
+	'-DLOGGING_INSIDE_LIBJINGLE' \
+	'-DNO_MAIN_THREAD_WRAPPING' \
+	'-DNO_SOUND_SYSTEM' \
+	'-DSRTP_RELATIVE_PATH' \
+	'-DUSE_WEBRTC_DEV_BRANCH' \
+	'-DANGLE_DX11' \
+	'-D_FILE_OFFSET_BITS=64' \
+	'-DNO_TCMALLOC' \
+	'-DDISABLE_NACL' \
+	'-DLIBPEERCONNECTION_LIB=1' \
+	'-DSSL_USE_OPENSSL' \
+	'-DHAVE_OPENSSL_SSL_H' \
+	'-DPOSIX' \
+	'-DCHROMIUM_BUILD' \
+	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_GPU=1' \
+	'-DUSE_OPENSSL=1' \
+	'-DENABLE_EGLIMAGE=1' \
+	'-DENABLE_LANGUAGE_DETECTION=1' \
+	'-DPOSIX_AVOID_MMAP' \
+	'-DFEATURE_ENABLE_VOICEMAIL' \
+	'-DANDROID' \
+	'-D__GNU_SOURCE=1' \
+	'-DUSE_STLPORT=1' \
+	'-D_STLP_USE_PTR_SPECIALIZATIONS=1' \
+	'-DCHROME_BUILD_ID=""' \
+	'-DNDEBUG' \
+	'-DNVALGRIND' \
+	'-DDYNAMIC_ANNOTATIONS_ENABLED=0'
+
+
+# Include paths placed before CFLAGS/CPPFLAGS
+LOCAL_C_INCLUDES_Release := \
+	$(LOCAL_PATH)/third_party/libjingle/overrides \
+	$(LOCAL_PATH)/third_party/libjingle/source \
+	$(LOCAL_PATH)/testing/gtest/include \
+	$(LOCAL_PATH)/third_party \
+	$(LOCAL_PATH)/third_party/libyuv/include \
+	$(LOCAL_PATH)/third_party/usrsctp \
+	$(LOCAL_PATH)/third_party/webrtc \
+	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
+	$(LOCAL_PATH) \
+	$(PWD)/external/expat/lib \
+	$(LOCAL_PATH)/third_party/openssl/openssl/include \
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
+
+
+# Flags passed to only C++ (and not C) files.
+LOCAL_CPPFLAGS_Release := \
+	-fno-rtti \
+	-fno-threadsafe-statics \
+	-fvisibility-inlines-hidden \
+	-Wno-deprecated \
+	-Wno-uninitialized \
+	-Wno-error=c++0x-compat \
+	-Wno-non-virtual-dtor \
+	-Wno-sign-promo \
+	-Wno-non-virtual-dtor
+
+
+LOCAL_CFLAGS := $(MY_CFLAGS_$(GYP_CONFIGURATION)) $(MY_DEFS_$(GYP_CONFIGURATION))
+LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES_$(GYP_CONFIGURATION))
+LOCAL_CPPFLAGS := $(LOCAL_CPPFLAGS_$(GYP_CONFIGURATION))
 ### Rules for final target.
 
-LOCAL_LDFLAGS := \
+LOCAL_LDFLAGS_Debug := \
 	-Wl,-z,now \
 	-Wl,-z,relro \
 	-Wl,-z,noexecstack \
@@ -270,6 +379,23 @@ LOCAL_LDFLAGS := \
 	-Wl,-O1 \
 	-Wl,--as-needed
 
+
+LOCAL_LDFLAGS_Release := \
+	-Wl,-z,now \
+	-Wl,-z,relro \
+	-Wl,-z,noexecstack \
+	-fPIC \
+	-EL \
+	-Wl,--no-keep-memory \
+	-nostdlib \
+	-Wl,--no-undefined \
+	-Wl,--exclude-libs=ALL \
+	-Wl,-O1 \
+	-Wl,--as-needed \
+	-Wl,--gc-sections
+
+
+LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
 LOCAL_STATIC_LIBRARIES :=
 

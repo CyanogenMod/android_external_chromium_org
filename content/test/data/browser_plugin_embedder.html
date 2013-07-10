@@ -10,16 +10,6 @@ function loadAbort(evt) {
 function loadStart(evt) {
   document.title = JSON.parse(evt.detail).url;
 }
-function loadStop(evt) {
-  document.title = "loadStop";
-}
-
-var commitIsTopLevel;
-function loadCommit(evt) {
-  var detail = JSON.parse(evt.detail);
-  document.title = "loadCommit:" + detail.url;
-  commitIsTopLevel = detail.isTopLevel;
-}
 
 var redirectOldUrl;
 var redirectNewUrl;
@@ -49,26 +39,6 @@ function PostMessage(data, shouldTargetIframe) {
   } else {
     plugin.contentWindow.frames.postMessage('testing123', '*');
   }
-}
-function Back() {
-  var plugin = document.getElementById('plugin');
-  plugin.back();
-}
-function CanGoBack() {
-  var plugin = document.getElementById('plugin');
-  return plugin.canGoBack();
-}
-function CanGoForward() {
-  var plugin = document.getElementById('plugin');
-  return plugin.canGoForward();
-}
-function Forward() {
-  var plugin = document.getElementById('plugin');
-  plugin.forward();
-}
-function Go(relativeIndex) {
-  var plugin = document.getElementById('plugin');
-  plugin.go(relativeIndex);
 }
 function SetTitle(str) {
   document.title = str;
@@ -106,7 +76,5 @@ function receiveMessage(event) {
   plugin.addEventListener('-internal-loadabort', loadAbort);
   plugin.addEventListener('-internal-loadredirect', loadRedirect);
   window.addEventListener('message', receiveMessage, false);
-  plugin.addEventListener('-internal-loadstop', loadStop);
-  plugin.addEventListener('-internal-loadcommit', loadCommit);
   plugin.addEventListener('-internal-sizechanged', sizeChanged);
 </script>

@@ -18,7 +18,7 @@
               "Recommended": [ "Username", "Password", "UNKNOWN_FIELD" ],
               "ClientCertType": "Pattern",
               "ClientCertPattern": {
-                  "IssuerCARef": [ "openvpn-test-ca" ],
+                  "IssuerCARef": [ "test-ca" ],
                   "Recommended": [ "EnrollmentURI", "IssuerCARef" ]
               }
           },

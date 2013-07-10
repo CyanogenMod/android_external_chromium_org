@@ -17,7 +17,7 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/observer_list.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "ui/aura/client/activation_change_observer.h"
 #include "ui/aura/layout_manager.h"
 #include "ui/gfx/insets.h"
@@ -207,6 +207,7 @@ class ASH_EXPORT ShelfLayoutManager :
     ~TargetBounds();
 
     float opacity;
+    float status_opacity;
     gfx::Rect shelf_bounds_in_root;
     gfx::Rect launcher_bounds_in_shelf;
     gfx::Rect status_bounds_in_shelf;
@@ -237,7 +238,7 @@ class ASH_EXPORT ShelfLayoutManager :
   // Sets the visibility of the shelf to |state|.
   void SetState(ShelfVisibilityState visibility_state);
 
-  // Stops any animations.
+  // Stops any animations and progresses them to the end.
   void StopAnimating();
 
   // Returns the width (if aligned to the side) or height (if aligned to the

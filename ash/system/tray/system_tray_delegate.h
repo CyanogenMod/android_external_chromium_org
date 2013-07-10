@@ -139,6 +139,9 @@ class SystemTrayDelegate {
   // Returns the email of user that manages current locally managed user.
   virtual const std::string GetLocallyManagedUserManager() const = 0;
 
+  // Returns the email of user that manages current locally managed user.
+  virtual const base::string16 GetLocallyManagedUserManagerName() const = 0;
+
   // Returns notification for locally managed users.
   virtual const base::string16 GetLocallyManagedUserMessage() const = 0;
 
@@ -163,6 +166,10 @@ class SystemTrayDelegate {
 
   // Shows settings related to multiple displays.
   virtual void ShowDisplaySettings() = 0;
+
+  // Returns true if the notification for the display configuration change
+  // should appear.
+  virtual bool ShouldShowDisplayNotification() = 0;
 
   // Shows settings related to Google Drive.
   virtual void ShowDriveSettings() = 0;

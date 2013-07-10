@@ -50,9 +50,11 @@ AudioInputRendererHost::AudioEntry::~AudioEntry() {}
 
 AudioInputRendererHost::AudioInputRendererHost(
     media::AudioManager* audio_manager,
-    MediaStreamManager* media_stream_manager)
+    MediaStreamManager* media_stream_manager,
+    AudioMirroringManager* audio_mirroring_manager)
     : audio_manager_(audio_manager),
-      media_stream_manager_(media_stream_manager) {
+      media_stream_manager_(media_stream_manager),
+      audio_mirroring_manager_(audio_mirroring_manager) {
 }
 
 AudioInputRendererHost::~AudioInputRendererHost() {
@@ -268,10 +270,11 @@ void AudioInputRendererHost::OnCreateStream(
   entry->writer.reset(writer.release());
   if (WebContentsCaptureUtil::IsWebContentsDeviceId(device_id)) {
     entry->controller = media::AudioInputController::CreateForStream(
-        audio_manager_->GetWorkerLoop(),
+        audio_manager_->GetMessageLoop(),
         this,
         WebContentsAudioInputStream::Create(
-            device_id, audio_params, audio_manager_->GetWorkerLoop()),
+            device_id, audio_params, audio_manager_->GetWorkerLoop(),
+            audio_mirroring_manager_),
         entry->writer.get());
   } else {
     // TODO(henrika): replace CreateLowLatency() with Create() as soon

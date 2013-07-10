@@ -7,6 +7,7 @@
 #include <set>
 
 #include "base/logging.h"
+#include "base/mac/scoped_nsobject.h"
 
 static const float kAnimationIntervalSeconds = 0.03;  // 30ms, same as windows
 
@@ -29,7 +30,7 @@ static const float kAnimationIntervalSeconds = 0.03;  // 30ms, same as windows
 
 @interface ThrobberFilmstripDelegate : NSObject
                                        <ThrobberDataDelegate> {
-  scoped_nsobject<NSImage> image_;
+  base::scoped_nsobject<NSImage> image_;
   unsigned int numFrames_;  // Number of frames in this animation.
   unsigned int animationFrame_;  // Current frame of the animation,
                                  // [0..numFrames_)
@@ -83,8 +84,8 @@ static const float kAnimationIntervalSeconds = 0.03;  // 30ms, same as windows
 
 @interface ThrobberToastDelegate : NSObject
                                    <ThrobberDataDelegate> {
-  scoped_nsobject<NSImage> image1_;
-  scoped_nsobject<NSImage> image2_;
+  base::scoped_nsobject<NSImage> image1_;
+  base::scoped_nsobject<NSImage> image2_;
   NSSize image1Size_;
   NSSize image2Size_;
   int animationFrame_;  // Current frame of the animation,

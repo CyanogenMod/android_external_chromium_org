@@ -11,8 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_member.h"
-#include "base/time.h"
-#include "chrome/browser/printing/cloud_print/cloud_print_setup_handler.h"
+#include "base/time/time.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search_engines/template_url_service_observer.h"
@@ -38,7 +37,6 @@ namespace options {
 // Chrome browser options page UI handler.
 class BrowserOptionsHandler
     : public OptionsPageUIHandler,
-      public CloudPrintSetupHandlerDelegate,
       public ProfileSyncServiceObserver,
       public ui::SelectFileDialog::Listener,
       public ShellIntegration::DefaultWebClientObserver,
@@ -87,9 +85,6 @@ class BrowserOptionsHandler
   virtual void FileSelected(const base::FilePath& path,
                             int index,
                             void* params) OVERRIDE;
-
-  // CloudPrintSetupHandler::Delegate implementation.
-  virtual void OnCloudPrintSetupClosed() OVERRIDE;
 
 #if defined(OS_CHROMEOS)
   // PointerDeviceObserver::Observer implementation.
@@ -199,8 +194,8 @@ class BrowserOptionsHandler
 
   void ObserveThemeChanged();
   void ThemesReset(const base::ListValue* args);
-#if defined(TOOLKIT_GTK)
-  void ThemesSetGTK(const base::ListValue* args);
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  void ThemesSetNative(const base::ListValue* args);
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -343,7 +338,6 @@ class BrowserOptionsHandler
   StringPrefMember cloud_print_connector_email_;
   BooleanPrefMember cloud_print_connector_enabled_;
   bool cloud_print_connector_ui_enabled_;
-  scoped_ptr<CloudPrintSetupHandler> cloud_print_setup_handler_;
 #endif
 
   StringPrefMember auto_open_files_;

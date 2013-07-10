@@ -10,6 +10,14 @@
 #include "third_party/WebKit/public/platform/WebIDBFactory.h"
 #include "third_party/WebKit/public/platform/WebMimeRegistry.h"
 
+namespace base {
+class MessageLoopProxy;
+}
+
+namespace IPC {
+class SyncMessageFilter;
+}
+
 namespace WebKit {
 class WebFileUtilities;
 }
@@ -21,7 +29,9 @@ class WebFileSystemImpl;
 class WorkerWebKitPlatformSupportImpl : public WebKitPlatformSupportImpl,
                                         public WebKit::WebMimeRegistry {
  public:
-  explicit WorkerWebKitPlatformSupportImpl(ThreadSafeSender* sender);
+  WorkerWebKitPlatformSupportImpl(
+      ThreadSafeSender* sender,
+      IPC::SyncMessageFilter* sync_message_filter);
   virtual ~WorkerWebKitPlatformSupportImpl();
 
   // WebKitPlatformSupport methods:
@@ -43,8 +53,7 @@ class WorkerWebKitPlatformSupportImpl : public WebKitPlatformSupportImpl,
       const WebKit::WebURL& first_party_for_cookies);
   virtual void prefetchHostName(const WebKit::WebString&);
   virtual WebKit::WebString defaultLocale();
-  virtual WebKit::WebStorageNamespace* createLocalStorageNamespace(
-      const WebKit::WebString& path, unsigned quota);
+  virtual WebKit::WebStorageNamespace* createLocalStorageNamespace();
   virtual void dispatchStorageEvent(
       const WebKit::WebString& key, const WebKit::WebString& old_value,
       const WebKit::WebString& new_value, const WebKit::WebString& origin,
@@ -99,6 +108,8 @@ class WorkerWebKitPlatformSupportImpl : public WebKitPlatformSupportImpl,
   scoped_ptr<WebFileSystemImpl> web_file_system_;
   scoped_ptr<WebKit::WebIDBFactory> web_idb_factory_;
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
+  scoped_refptr<base::MessageLoopProxy> child_thread_loop_;
+  scoped_refptr<IPC::SyncMessageFilter> sync_message_filter_;
 };
 
 }  // namespace content

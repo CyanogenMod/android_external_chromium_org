@@ -45,7 +45,10 @@
   // Sends a message asynchronously to the context on the other end of this
   // port.
   Port.prototype.postMessage = function(msg) {
-    miscNatives.PostMessage(this.portId_, msg);
+    // JSON.stringify doesn't support a root object which is undefined.
+    if (msg === undefined)
+      msg = null;
+    miscNatives.PostMessage(this.portId_, $JSON.stringify(msg));
   };
 
   // Disconnects the port from the other end.
@@ -98,19 +101,19 @@
     var errorMsg = [];
     var eventName = isSendMessage ? "runtime.onMessage" : "extension.onRequest";
     if (isSendMessage && !responseCallbackPreserved) {
-      errorMsg.push(
+      $Array.push(errorMsg,
           "The chrome." + eventName + " listener must return true if you " +
           "want to send a response after the listener returns");
     } else {
-      errorMsg.push(
+      $Array.push(errorMsg,
           "Cannot send a response more than once per chrome." + eventName +
           " listener per document");
     }
-    errorMsg.push("(message was sent by extension" + sourceExtensionId);
+    $Array.push(errorMsg, "(message was sent by extension" + sourceExtensionId);
     if (sourceExtensionId != "" && sourceExtensionId != targetExtensionId)
-      errorMsg.push("for extension " + targetExtensionId);
+      $Array.push(errorMsg, "for extension " + targetExtensionId);
     if (sourceUrl != "")
-      errorMsg.push("for URL " + sourceUrl);
+      $Array.push(errorMsg, "for URL " + sourceUrl);
     lastError.set(eventName, errorMsg.join(" ") + ").", null, chrome);
   }
 
@@ -266,8 +269,11 @@
   // Called by native code when a message has been sent to the given port.
   function dispatchOnMessage(msg, portId) {
     var port = ports[portId];
-    if (port)
+    if (port) {
+      if (msg)
+        msg = $JSON.parse(msg);
       port.onMessage.dispatch(msg, port);
+    }
   };
 
   // Shared implementation used by tabs.sendMessage and runtime.sendMessage.
@@ -312,7 +318,7 @@
     // schema validation is expecting, e.g.
     //   extension.sendRequest(req)     -> extension.sendRequest(null, req)
     //   extension.sendRequest(req, cb) -> extension.sendRequest(null, req, cb)
-    var args = Array.prototype.splice.call(arguments, 1);  // skip functionName
+    var args = $Array.splice(arguments, 1);  // skip functionName
     var lastArg = args.length - 1;
 
     // responseCallback (last argument) is optional.

@@ -122,6 +122,8 @@ cr.define('ntp', function() {
       if (loadTimeData.getBoolean('showAppLauncherPromo')) {
         $('app-launcher-promo-close-button').addEventListener('click',
             function() { chrome.send('stopShowingAppLauncherPromo'); });
+        $('apps-promo-learn-more').addEventListener('click',
+            function() { chrome.send('onLearnMore'); });
       }
     }
     if (loadTimeData.getBoolean('isDiscoveryInNTPEnabled'))
@@ -244,7 +246,8 @@ cr.define('ntp', function() {
 
     var loginContainer = getRequiredElement('login-container');
     loginContainer.addEventListener('click', showSyncLoginUI);
-    chrome.send('initializeSyncLogin');
+    if (loadTimeData.getBoolean('shouldShowSyncLogin'))
+      chrome.send('initializeSyncLogin');
 
     doWhenAllSectionsReady(function() {
       // Tell the slider about the pages.

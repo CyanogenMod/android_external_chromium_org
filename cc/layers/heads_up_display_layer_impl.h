@@ -8,7 +8,7 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "cc/base/cc_export.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/resources/memory_history.h"
@@ -93,7 +93,6 @@ class CC_EXPORT HeadsUpDisplayLayerImpl : public LayerImpl {
                       const SkRect& bounds,
                       const Graph& graph) const;
 
-  void DrawPlatformLayerTree(SkCanvas* canvas) const;
   SkRect DrawFPSDisplay(SkCanvas* canvas,
                         const FrameRateCounter* fps_counter,
                         int right,

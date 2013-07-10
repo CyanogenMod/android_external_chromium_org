@@ -54,18 +54,9 @@ class CONTENT_EXPORT MediaStreamImpl
       MediaStreamDependencyFactory* dependency_factory);
   virtual ~MediaStreamImpl();
 
-  // Return true when the |url| is media stream.
-  // This static function has the same functionalilty as IsMediaStream
-  // except that it doesn't require an instance of this class.
-  // This can save some overhead time when the |url| is not media stream.
-  static bool CheckMediaStream(const GURL& url);
-
   // WebKit::WebUserMediaClient implementation
   virtual void requestUserMedia(
-      const WebKit::WebUserMediaRequest& user_media_request,
-      const WebKit::WebVector<WebKit::WebMediaStreamSource>& audio_sources,
-      const WebKit::WebVector<WebKit::WebMediaStreamSource>& video_sources)
-      OVERRIDE;
+      const WebKit::WebUserMediaRequest& user_media_request) OVERRIDE;
   virtual void cancelUserMediaRequest(
       const WebKit::WebUserMediaRequest& user_media_request) OVERRIDE;
 

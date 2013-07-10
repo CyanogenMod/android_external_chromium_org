@@ -39,8 +39,13 @@ const char kManagedModeManualHosts[] = "profile.managed.manual_hosts";
 const char kManagedModeManualURLs[] = "profile.managed.manual_urls";
 
 // Stores the email address associated with the google account of the custodian
-// of the managed user.
-const char kManagedUserCustodian[] = "profile.managed.custodian_email";
+// of the managed user, set when the managed user is created.
+const char kManagedUserCustodianEmail[] = "profile.managed.custodian_email";
+
+// Stores the display name associated with the google account of the custodian
+// of the managed user, updated (if possible) each time the managed user
+// starts a session.
+const char kManagedUserCustodianName[] = "profile.managed.custodian_name";
 
 // Used to determine if the last session exited cleanly. Set to false when
 // first opened, and to true when closing. On startup if the value is false,
@@ -796,21 +801,6 @@ const char kDisplayPowerState[] = "settings.display.power_state";
 // A dictionary pref that stores per display preferences.
 const char kDisplayProperties[] = "settings.display.properties";
 
-// A 64bit integer pref that specifies the name of the primary display device.
-const char kPrimaryDisplayID[] = "settings.display.primary_id";
-
-// An enumeration that specifies the layout of the secondary display.
-//  0 - The secondary display is at the top of the primary display.
-//  1 - The secondary display is at the right of the primary display.
-//  2 - The secondary display is at the bottom of the primary display.
-//  3 - The secondary display is at the left of the primary display.
-// TODO(mukai,oshima): update the format of the multi-display settings.
-const char kSecondaryDisplayLayout[] = "settings.display.secondary_layout";
-
-// An integer pref that specifies how far the secondary display is positioned
-// from the edge of the primary display.
-const char kSecondaryDisplayOffset[] = "settings.display.secondary_offset";
-
 // A dictionary pref that specifies per-display layout/offset information.
 // Its key is the ID of the display and its value is a dictionary for the
 // layout/offset information.
@@ -831,7 +821,7 @@ const char kSessionLengthLimit[] = "session.length_limit";
 // Inactivity time in milliseconds while the system is on AC power before
 // the screen should be dimmed, turned off, or locked, before an
 // IdleActionImminent D-Bus signal should be sent, or before
-// kPowerIdleAction should be performed.  0 disables the delay (N/A for
+// kPowerAcIdleAction should be performed.  0 disables the delay (N/A for
 // kPowerAcIdleDelayMs).
 const char kPowerAcScreenDimDelayMs[] = "power.ac_screen_dim_delay_ms";
 const char kPowerAcScreenOffDelayMs[] = "power.ac_screen_off_delay_ms";
@@ -851,9 +841,11 @@ const char kPowerBatteryIdleWarningDelayMs[] =
 const char kPowerBatteryIdleDelayMs[] =
     "power.battery_idle_delay_ms";
 
-// Action that should be performed when the idle delay is reached.
+// Action that should be performed when the idle delay is reached while the
+// system is on AC power or battery power.
 // Values are from the chromeos::PowerPolicyController::Action enum.
-const char kPowerIdleAction[] = "power.idle_action";
+const char kPowerAcIdleAction[] = "power.ac_idle_action";
+const char kPowerBatteryIdleAction[] = "power.battery_idle_action";
 
 // Action that should be performed when the lid is closed.
 // Values are from the chromeos::PowerPolicyController::Action enum.
@@ -866,11 +858,6 @@ const char kPowerUseVideoActivity[] = "power.use_video_activity";
 // Should extensions be able to use the chrome.power API to override
 // screen-related power management (including locking)?
 const char kPowerAllowScreenWakeLocks[] = "power.allow_screen_wake_locks";
-
-// DEPRECATED: This is replaced by kPowerPresentationScreenDimDelayFactor
-// and has no effect.
-const char kPowerPresentationIdleDelayFactor[] =
-    "power.presentation_idle_delay_factor";
 
 // Amount by which the screen-dim delay should be scaled while the system
 // is in presentation mode. Values are limited to a minimum of 1.0.
@@ -955,8 +942,8 @@ const char kAllowDeletingBrowserHistory[] = "history.deleting_enabled";
 // Boolean controlling whether SafeSearch is mandatory for Google Web Searches.
 const char kForceSafeSearch[] = "settings.force_safesearch";
 
-#if defined(TOOLKIT_GTK)
-// GTK specific preference on whether we should match the system GTK theme.
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+// Linux specific preference on whether we should match the system theme.
 const char kUsesSystemTheme[] = "extensions.theme.use_system";
 #endif
 const char kCurrentThemePackFilename[] = "extensions.theme.pack";
@@ -1237,6 +1224,10 @@ const char kPrintPreviewDisabled[] = "printing.print_preview_disabled";
 const char kDefaultManagedModeFilteringBehavior[] =
     "profile.managed.default_filtering_behavior";
 
+// Whether this user is permitted to create managed users.
+const char kManagedUserCreationAllowed[] =
+    "profile.managed_user_creation_allowed";
+
 // List pref containing the users managed by this user.
 const char kManagedUsers[] = "profile.managed_users";
 
@@ -1249,6 +1240,11 @@ const char kMessageCenterDisabledExtensionIds[] =
 // notifications to the message center.
 const char kMessageCenterDisabledSystemComponentIds[] =
     "message_center.disabled_system_component_ids";
+
+// List pref containing the system component ids which are allowed to send
+// notifications to the message center.
+extern const char kMessageCenterEnabledSyncNotifierIds[] =
+    "message_center.enabled_sync_notifier_ids";
 
 // *************** LOCAL STATE ***************
 // These are attached to the machine/installation
@@ -1852,6 +1848,9 @@ const char kSyncKeystoreEncryptionBootstrapToken[] =
 // passphrase.
 const char kSyncUsingSecondaryPassphrase[] = "sync.using_secondary_passphrase";
 
+// Preferences that follow the status of sync server triggered experiments.
+const char kSyncFaviconsEnabled[] ="sync.favicons_syncing_enabled";
+
 // String the identifies the last user that logged into sync and other
 // google services. As opposed to kGoogleServicesUsername, this value is not
 // cleared on signout, but while the user is signed in the two values will
@@ -2156,6 +2155,11 @@ const char kDisableCloudPolicyOnSignin[] =
 // Indicates that factory reset was requested from options page.
 const char kFactoryResetRequested[] = "FactoryResetRequested";
 
+// Boolean recording whether we have showed a balloon that calls out the message
+// center for desktop notifications.
+const char kMessageCenterShowedFirstRunBalloon[] =
+    "message_center.showed_first_run_balloon";
+
 // *************** SERVICE PREFS ***************
 // These are attached to the service process.
 
@@ -2416,6 +2420,8 @@ const char kRailBreakProportion[] =
     "gesture.rail_break_proportion";
 const char kRailStartProportion[] =
     "gesture.rail_start_proportion";
+const char kScrollPredictionSeconds[] =
+    "gesture.scroll_prediction_seconds";
 const char kSemiLongPressTimeInSeconds[] =
     "gesture.semi_long_press_time_in_seconds";
 const char kTabScrubActivationDelayInMS[] =

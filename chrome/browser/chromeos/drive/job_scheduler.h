@@ -19,6 +19,10 @@
 
 class Profile;
 
+namespace base {
+class SeqencedTaskRunner;
+}
+
 namespace drive {
 
 // The JobScheduler is responsible for queuing and scheduling drive
@@ -48,7 +52,8 @@ class JobScheduler
       public JobListInterface {
  public:
   JobScheduler(Profile* profile,
-               google_apis::DriveServiceInterface* drive_service);
+               DriveServiceInterface* drive_service,
+               base::SequencedTaskRunner* blocking_task_runner);
   virtual ~JobScheduler();
 
   // JobListInterface overrides.
@@ -146,7 +151,7 @@ class JobScheduler
   JobID DownloadFile(
       const base::FilePath& virtual_path,
       const base::FilePath& local_cache_path,
-      const GURL& download_url,
+      const std::string& resource_id,
       const ClientContext& context,
       const google_apis::DownloadActionCallback& download_action_callback,
       const google_apis::GetContentCallback& get_content_callback);
@@ -208,6 +213,10 @@ class JobScheduler
 
     // The callback to cancel the running job. It is returned from task.Run().
     google_apis::CancelCallback cancel_callback;
+
+    // The callback to notify an error to the client of JobScheduler.
+    // This is used to notify cancel of a job that is not running yet.
+    base::Callback<void(google_apis::GDataErrorCode)> abort_callback;
   };
 
   // Parameters for DriveUploader::ResumeUploadFile.
@@ -302,6 +311,9 @@ class JobScheduler
   // For testing only.  Disables throttling so that testing is faster.
   void SetDisableThrottling(bool disable) { disable_throttling_ = disable; }
 
+  // Aborts a job which is not in STATE_RUNNING.
+  void AbortNotRunningJob(JobEntry* job, google_apis::GDataErrorCode error);
+
   // Notifies updates to observers.
   void NotifyJobAdded(const JobInfo& job_info);
   void NotifyJobDone(const JobInfo& job_info,
@@ -332,8 +344,8 @@ class JobScheduler
   // The list of observers for the scheduler.
   ObserverList<JobListObserver> observer_list_;
 
-  google_apis::DriveServiceInterface* drive_service_;
-  scoped_ptr<google_apis::DriveUploaderInterface> uploader_;
+  DriveServiceInterface* drive_service_;
+  scoped_ptr<DriveUploaderInterface> uploader_;
 
   Profile* profile_;
 

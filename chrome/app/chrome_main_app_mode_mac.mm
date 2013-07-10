@@ -17,7 +17,7 @@
 #include "base/mac/mac_logging.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/strings/sys_string_conversions.h"
@@ -47,7 +47,10 @@ class AppShimController;
 }
 
 - (id)initWithController:(AppShimController*)controller;
-
+- (BOOL)applicationOpenUntitledFile:(NSApplication *)app;
+- (void)applicationWillBecomeActive:(NSNotification*)notification;
+- (void)applicationWillHide:(NSNotification*)notification;
+- (void)applicationWillUnhide:(NSNotification*)notification;
 - (void)terminateNow;
 
 @end
@@ -61,8 +64,13 @@ class AppShimController : public IPC::Listener {
   // Connects to Chrome and sends a LaunchApp message.
   void Init();
 
-  // Sends a QuitApp message to Chrome.
-  void QuitApp();
+  void SendSetAppHidden(bool hidden);
+
+  void SendQuitApp();
+
+  // Called when the app is activated, either by the user clicking on it in the
+  // dock or by Cmd+Tabbing to it.
+  void ActivateApp(bool is_reopen);
 
  private:
   // IPC::Listener implemetation.
@@ -73,20 +81,19 @@ class AppShimController : public IPC::Listener {
   // shim process should die.
   void OnLaunchAppDone(bool success);
 
-  // Called when the app is activated, either by the user clicking on it in the
-  // dock or by Cmd+Tabbing to it.
-  void OnDidActivateApplication();
 
   // Terminates the app shim process.
   void Close();
 
   IPC::ChannelProxy* channel_;
-  scoped_nsobject<AppShimDelegate> nsapp_delegate_;
+  base::scoped_nsobject<AppShimDelegate> nsapp_delegate_;
+  bool launch_app_done_;
 
   DISALLOW_COPY_AND_ASSIGN(AppShimController);
 };
 
-AppShimController::AppShimController() : channel_(NULL) {}
+AppShimController::AppShimController() : channel_(NULL),
+                                         launch_app_done_(false) {}
 
 void AppShimController::Init() {
   DCHECK(g_io_thread);
@@ -104,7 +111,7 @@ void AppShimController::Init() {
       user_data_dir.Append(app_mode::kAppShimSocketName);
   IPC::ChannelHandle handle(socket_path.value());
   channel_ = new IPC::ChannelProxy(handle, IPC::Channel::MODE_NAMED_CLIENT,
-      this, g_io_thread->message_loop_proxy());
+      this, g_io_thread->message_loop_proxy().get());
 
   channel_->Send(new AppShimHostMsg_LaunchApp(
       g_info->profile_dir, g_info->app_mode_id,
@@ -116,7 +123,7 @@ void AppShimController::Init() {
   [NSApp setDelegate:nsapp_delegate_];
 }
 
-void AppShimController::QuitApp() {
+void AppShimController::SendQuitApp() {
   channel_->Send(new AppShimHostMsg_QuitApp);
 }
 
@@ -140,24 +147,22 @@ void AppShimController::OnLaunchAppDone(bool success) {
     return;
   }
 
-  [[[NSWorkspace sharedWorkspace] notificationCenter]
-      addObserverForName:NSWorkspaceDidActivateApplicationNotification
-                  object:nil
-                   queue:nil
-              usingBlock:^(NSNotification* notification) {
-      NSRunningApplication* activated_app =
-          [[notification userInfo] objectForKey:NSWorkspaceApplicationKey];
-      if ([activated_app isEqual:[NSRunningApplication currentApplication]])
-        OnDidActivateApplication();
-  }];
+  launch_app_done_ = true;
 }
 
 void AppShimController::Close() {
   [nsapp_delegate_ terminateNow];
 }
 
-void AppShimController::OnDidActivateApplication() {
-  channel_->Send(new AppShimHostMsg_FocusApp);
+void AppShimController::ActivateApp(bool is_reopen) {
+  if (launch_app_done_) {
+    channel_->Send(new AppShimHostMsg_FocusApp(
+        is_reopen ? apps::APP_SHIM_FOCUS_REOPEN : apps::APP_SHIM_FOCUS_NORMAL));
+  }
+}
+
+void AppShimController::SendSetAppHidden(bool hidden) {
+  channel_->Send(new AppShimHostMsg_SetAppHidden(hidden));
 }
 
 @implementation AppShimDelegate
@@ -169,15 +174,32 @@ void AppShimController::OnDidActivateApplication() {
   return self;
 }
 
+- (BOOL)applicationOpenUntitledFile:(NSApplication *)app {
+  appShimController_->ActivateApp(true);
+  return YES;
+}
+
+- (void)applicationWillBecomeActive:(NSNotification*)notification {
+  appShimController_->ActivateApp(false);
+}
+
 - (NSApplicationTerminateReply)
     applicationShouldTerminate:(NSApplication*)sender {
   if (terminateNow_)
     return NSTerminateNow;
 
-  appShimController_->QuitApp();
+  appShimController_->SendQuitApp();
   // Wait for the channel to close before terminating.
   terminateRequested_ = YES;
   return NSTerminateLater;
+}
+
+- (void)applicationWillHide:(NSNotification*)notification {
+  appShimController_->SendSetAppHidden(true);
+}
+
+- (void)applicationWillUnhide:(NSNotification*)notification {
+  appShimController_->SendSetAppHidden(false);
 }
 
 - (void)terminateNow {

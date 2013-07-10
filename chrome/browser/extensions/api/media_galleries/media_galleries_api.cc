@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "apps/shell_window.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
 #include "base/stl_util.h"
@@ -21,7 +22,6 @@
 #include "chrome/browser/media_galleries/media_galleries_dialog_controller.h"
 #include "chrome/browser/storage_monitor/storage_monitor.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
-#include "chrome/browser/ui/extensions/shell_window.h"
 #include "chrome/common/extensions/api/experimental_media_galleries.h"
 #include "chrome/common/extensions/api/media_galleries.h"
 #include "chrome/common/extensions/extension.h"
@@ -39,6 +39,7 @@
 #include "base/strings/sys_string_conversions.h"
 #endif
 
+using apps::ShellWindow;
 using chrome::MediaFileSystemInfo;
 using chrome::MediaFileSystemRegistry;
 using chrome::MediaFileSystemsCallback;
@@ -93,7 +94,7 @@ bool MediaGalleriesGetMediaFileSystemsFunction::RunImpl() {
     interactive = params->details->interactive;
   }
 
-  chrome::StorageMonitor::GetInstance()->Initialize(base::Bind(
+  chrome::StorageMonitor::GetInstance()->EnsureInitialized(base::Bind(
       &MediaGalleriesGetMediaFileSystemsFunction::OnStorageMonitorInit,
       this,
       interactive));
@@ -205,6 +206,13 @@ void MediaGalleriesGetMediaFileSystemsFunction::ShowDialog() {
   WebContents* contents = WebContents::FromRenderViewHost(render_view_host());
   WebContentsModalDialogManager* web_contents_modal_dialog_manager =
       WebContentsModalDialogManager::FromWebContents(contents);
+  // If there's no user gesture associated with the API call, do not show
+  // the dialog.
+  if (!user_gesture()) {
+    GetAndReturnGalleries();
+    return;
+  }
+
   if (!web_contents_modal_dialog_manager) {
     // If there is no WebContentsModalDialogManager, then this contents is
     // probably the background page for an app. Try to find a shell window to

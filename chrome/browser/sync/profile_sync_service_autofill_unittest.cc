@@ -19,7 +19,7 @@
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
@@ -38,12 +38,12 @@
 #include "chrome/browser/webdata/autocomplete_syncable_service.h"
 #include "chrome/browser/webdata/autofill_profile_syncable_service.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
-#include "components/autofill/browser/autofill_common_test.h"
-#include "components/autofill/browser/personal_data_manager.h"
-#include "components/autofill/browser/webdata/autofill_change.h"
-#include "components/autofill/browser/webdata/autofill_entry.h"
-#include "components/autofill/browser/webdata/autofill_table.h"
-#include "components/autofill/browser/webdata/autofill_webdata_service.h"
+#include "components/autofill/core/browser/autofill_common_test.h"
+#include "components/autofill/core/browser/personal_data_manager.h"
+#include "components/autofill/core/browser/webdata/autofill_change.h"
+#include "components/autofill/core/browser/webdata/autofill_entry.h"
+#include "components/autofill/core/browser/webdata/autofill_table.h"
+#include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/webdata/common/web_data_service_test_util.h"
 #include "components/webdata/common/web_database.h"
 #include "content/public/test/test_browser_thread.h"
@@ -565,7 +565,7 @@ class ProfileSyncServiceAutofillTest
     AbstractAutofillFactory* factory = GetFactory(type);
     SigninManagerBase* signin =
         SigninManagerFactory::GetForProfile(profile_.get());
-    signin->SetAuthenticatedUsername("test_user");
+    signin->SetAuthenticatedUsername("test_user@gmail.com");
     sync_service_ = static_cast<TestProfileSyncService*>(
         ProfileSyncServiceFactory::GetInstance()->SetTestingFactoryAndUse(
             profile_.get(), &TestProfileSyncService::BuildAutoStartAsyncInit));

@@ -52,8 +52,7 @@ SystemGestureEventFilter::~SystemGestureEventFilter() {
 }
 
 void SystemGestureEventFilter::OnMouseEvent(ui::MouseEvent* event) {
-// TODO(rjkroege): Remove USE_MESSAGEPUMP_LINUX guard once mice are supported.
-#if defined(OS_CHROMEOS) && !defined(USE_MESSAGEPUMP_LINUX)
+#if defined(OS_CHROMEOS) && !defined(USE_OZONE)
   if (event->type() == ui::ET_MOUSE_PRESSED && event->native_event() &&
       ui::TouchFactory::GetInstance()->IsTouchDevicePresent() &&
       Shell::GetInstance()->delegate()) {
@@ -65,13 +64,13 @@ void SystemGestureEventFilter::OnMouseEvent(ui::MouseEvent* event) {
 
 void SystemGestureEventFilter::OnTouchEvent(ui::TouchEvent* event) {
   aura::Window* target = static_cast<aura::Window*>(event->target());
-  touch_uma_.RecordTouchEvent(target, *event);
+  ash::TouchUMA::GetInstance()->RecordTouchEvent(target, *event);
   long_press_affordance_->ProcessEvent(target, event, event->touch_id());
 }
 
 void SystemGestureEventFilter::OnGestureEvent(ui::GestureEvent* event) {
   aura::Window* target = static_cast<aura::Window*>(event->target());
-  touch_uma_.RecordGestureEvent(target, *event);
+  ash::TouchUMA::GetInstance()->RecordGestureEvent(target, *event);
   long_press_affordance_->ProcessEvent(target, event,
       event->GetLowestTouchId());
 

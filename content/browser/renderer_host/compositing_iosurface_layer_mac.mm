@@ -5,8 +5,10 @@
 #include "content/browser/renderer_host/compositing_iosurface_layer_mac.h"
 
 #include <CoreFoundation/CoreFoundation.h>
+#include <OpenGL/gl.h>
 
 #include "base/mac/sdk_forward_declarations.h"
+#include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_mac.h"
 #include "content/browser/renderer_host/compositing_iosurface_context_mac.h"
 #include "content/browser/renderer_host/compositing_iosurface_mac.h"
@@ -34,7 +36,7 @@
 }
 
 - (BOOL)ensureContext {
-  if (context_)
+  if (context_.get())
     return YES;
 
   if (!renderWidgetHostView_)
@@ -45,12 +47,12 @@
     [context_->nsgl_context() clearDrawable];
   }
 
-  if (!context_) {
+  if (!context_.get()) {
     context_ = content::CompositingIOSurfaceContext::Get(
         renderWidgetHostView_->window_number());
   }
 
-  return context_ ? YES : NO;
+  return context_.get() ? YES : NO;
 }
 
 - (void)updateScaleFactor {
@@ -88,7 +90,7 @@
 }
 
 - (void)releaseCGLContext:(CGLContextObj)glContext {
-  if (!context_)
+  if (!context_.get())
     return;
 
   DCHECK(glContext == context_->cgl_context());
@@ -99,7 +101,9 @@
              pixelFormat:(CGLPixelFormatObj)pixelFormat
             forLayerTime:(CFTimeInterval)timeInterval
              displayTime:(const CVTimeStamp*)timeStamp {
-  if (!context_ || !renderWidgetHostView_ ||
+  TRACE_EVENT0("browser", "CompositingIOSurfaceLayer::drawInCGLContext");
+
+  if (!context_.get() || !renderWidgetHostView_ ||
       !renderWidgetHostView_->compositing_iosurface_) {
     glClearColor(1, 1, 1, 1);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -107,6 +111,17 @@
   }
 
   DCHECK(glContext == context_->cgl_context());
+
+  // If a resize is in progress then GetBackingStore request a frame of the
+  // current window size and block until a frame of the right size comes in.
+  // This makes the window content not lag behind the resize (at the cost of
+  // blocking on the browser's main thread).
+  if (renderWidgetHostView_->render_widget_host_) {
+    renderWidgetHostView_->about_to_validate_and_paint_ = true;
+    (void)renderWidgetHostView_->render_widget_host_->GetBackingStore(true);
+    renderWidgetHostView_->about_to_validate_and_paint_ = false;
+    CGLSetCurrentContext(glContext);
+  }
 
   gfx::Size window_size([self frame].size);
   float window_scale_factor = 1.f;

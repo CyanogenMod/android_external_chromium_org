@@ -39,7 +39,6 @@
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/system_tray_notifier.h"
 #include "ash/wm/activation_controller.h"
-#include "ash/wm/always_on_top_controller.h"
 #include "ash/wm/app_list_controller.h"
 #include "ash/wm/ash_activation_controller.h"
 #include "ash/wm/ash_focus_rules.h"
@@ -107,7 +106,8 @@
 #include "ash/accelerators/nested_dispatcher_controller.h"
 #endif
 
-#if defined(OS_CHROMEOS) && defined(USE_X11)
+#if defined(OS_CHROMEOS)
+#if defined(USE_X11)
 #include "ash/ash_constants.h"
 #include "ash/display/display_change_observer_x11.h"
 #include "ash/display/display_error_dialog.h"
@@ -118,6 +118,8 @@
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/config/gpu_feature_type.h"
+#endif  // defined(USE_X11)
+#include "ash/system/chromeos/power/power_status.h"
 #endif  // defined(OS_CHROMEOS)
 
 namespace ash {
@@ -208,7 +210,8 @@ Shell::Shell(ShellDelegate* delegate)
       cursor_manager_(scoped_ptr<views::corewm::NativeCursorManager>(
           native_cursor_manager_)),
       browser_context_(NULL),
-      simulate_modal_window_open_for_testing_(false) {
+      simulate_modal_window_open_for_testing_(false),
+      is_touch_hud_projection_enabled_(false) {
   DCHECK(delegate_.get());
   display_manager_.reset(new internal::DisplayManager);
   mirror_window_controller_.reset(new internal::MirrorWindowController);
@@ -233,6 +236,10 @@ Shell::Shell(ShellDelegate* delegate)
       output_configurator());
 #endif  // defined(OS_CHROMEOS)
   AddPreTargetHandler(this);
+
+#if defined(OS_CHROMEOS)
+  internal::PowerStatus::Initialize();
+#endif
 }
 
 Shell::~Shell() {
@@ -324,6 +331,10 @@ Shell::~Shell() {
       output_configurator());
   display_change_observer_.reset();
 #endif  // defined(OS_CHROMEOS)
+
+#if defined(OS_CHROMEOS)
+  internal::PowerStatus::Shutdown();
+#endif
 
   DCHECK(instance_ == this);
   instance_ = NULL;
@@ -523,12 +534,6 @@ void Shell::Init() {
   if (keyboard::IsKeyboardEnabled())
     keyboard::InitializeKeyboard();
 
-  internal::RootWindowController* root_window_controller =
-      new internal::RootWindowController(root_window);
-  root_window_controller->CreateContainers();
-  root_window_controller->CreateSystemBackground(
-      delegate_->IsFirstRunAfterBoot());
-
   if (command_line->HasSwitch(ash::switches::kAshDisableNewLockAnimations))
     lock_state_controller_.reset(new SessionStateControllerImpl);
   else
@@ -566,8 +571,6 @@ void Shell::Init() {
 
   event_client_.reset(new internal::EventClientImpl);
 
-  InitRootWindowController(root_window_controller);
-
   // This controller needs to be set before SetupManagedWindowMode.
   desktop_background_controller_.reset(new DesktopBackgroundController());
   user_wallpaper_delegate_.reset(delegate_->CreateUserWallpaperDelegate());
@@ -593,8 +596,10 @@ void Shell::Init() {
   if (!system_tray_delegate_)
     system_tray_delegate_.reset(SystemTrayDelegate::CreateDummyDelegate());
 
-  // Creates StatusAreaWidget.
-  root_window_controller->InitForPrimaryDisplay();
+  internal::RootWindowController* root_window_controller =
+      new internal::RootWindowController(root_window);
+  InitRootWindowController(root_window_controller,
+                           delegate_->IsFirstRunAfterBoot());
 
   // Initialize system_tray_delegate_ after StatusAreaWidget is created.
   system_tray_delegate_->Initialize();
@@ -838,34 +843,47 @@ SystemTray* Shell::GetPrimarySystemTray() {
 
 LauncherDelegate* Shell::GetLauncherDelegate() {
   if (!launcher_delegate_) {
-    if (!launcher_model_)
-      launcher_model_.reset(new LauncherModel);
-    // Attempt to create the Launcher. This may fail if the application is not
-    // ready to create it yet, in which case the app is responsible for calling
-    // ash::Shell::CreateLauncher() when ready.
+    launcher_model_.reset(new LauncherModel);
     launcher_delegate_.reset(
         delegate_->CreateLauncherDelegate(launcher_model_.get()));
   }
   return launcher_delegate_.get();
 }
 
+void Shell::SetTouchHudProjectionEnabled(bool enabled) {
+  if (is_touch_hud_projection_enabled_ == enabled)
+    return;
+
+  RootWindowList roots = GetInstance()->GetAllRootWindows();
+  for (RootWindowList::iterator iter = roots.begin(); iter != roots.end();
+      ++iter) {
+    internal::RootWindowController* controller = GetRootWindowController(*iter);
+    if (enabled)
+      controller->EnableTouchHudProjection();
+    else
+      controller->DisableTouchHudProjection();
+  }
+  is_touch_hud_projection_enabled_ = enabled;
+}
+
 void Shell::InitRootWindowForSecondaryDisplay(aura::RootWindow* root) {
-  aura::client::SetFocusClient(root, focus_client_.get());
   internal::RootWindowController* controller =
       new internal::RootWindowController(root);
-  controller->CreateContainers();
   // Pass false for the |is_first_run_after_boot| parameter so we'll show a
   // black background on this display instead of trying to mimic the boot splash
   // screen.
-  controller->CreateSystemBackground(false);
-  InitRootWindowController(controller);
-  controller->InitForPrimaryDisplay();
+  InitRootWindowController(controller, false);
+
   controller->root_window_layout()->OnWindowResized();
   desktop_background_controller_->OnRootWindowAdded(root);
   high_contrast_controller_->OnRootWindowAdded(root);
   root->ShowRootWindow();
   // Activate new root for testing.
   active_root_window_ = root;
+
+  // Create a launcher if a user is already logged.
+  if (Shell::GetInstance()->session_state_delegate()->NumberOfLoggedInUsers())
+    controller->shelf()->CreateLauncher();
 }
 
 void Shell::DoInitialWorkspaceAnimation() {
@@ -874,7 +892,9 @@ void Shell::DoInitialWorkspaceAnimation() {
 }
 
 void Shell::InitRootWindowController(
-    internal::RootWindowController* controller) {
+    internal::RootWindowController* controller,
+    bool first_run_after_boot) {
+
   aura::RootWindow* root_window = controller->root_window();
   DCHECK(activation_client_);
   DCHECK(visibility_controller_.get());
@@ -906,21 +926,7 @@ void Shell::InitRootWindowController(
   if (user_action_client_)
     aura::client::SetUserActionClient(root_window, user_action_client_.get());
 
-  root_window->SetCursor(ui::kCursorPointer);
-  controller->InitLayoutManagers();
-
-  // TODO(oshima): Move the instance to RootWindowController when
-  // the extended desktop is enabled by default.
-  internal::AlwaysOnTopController* always_on_top_controller =
-      new internal::AlwaysOnTopController;
-  always_on_top_controller->SetAlwaysOnTopContainer(
-      root_window->GetChildById(internal::kShellWindowId_AlwaysOnTopContainer));
-  root_window->SetProperty(internal::kAlwaysOnTopControllerKey,
-                           always_on_top_controller);
-  if (GetPrimaryRootWindowController()->GetSystemModalLayoutManager(NULL)->
-          has_modal_background()) {
-    controller->GetSystemModalLayoutManager(NULL)->CreateModalBackground();
-  }
+  controller->Init(first_run_after_boot);
 
   window_cycle_controller_->OnRootWindowAdded(root_window);
 }

@@ -13,22 +13,21 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "content/browser/indexed_db/indexed_db_backing_store.h"
 #include "content/browser/indexed_db/indexed_db_database.h"
 #include "content/browser/indexed_db/indexed_db_database_error.h"
 
 namespace content {
 
-class IndexedDBDatabase;
 class IndexedDBCursor;
-class IndexedDBDatabaseCallbacksWrapper;
+class IndexedDBDatabaseCallbacks;
 
 class IndexedDBTransaction : public base::RefCounted<IndexedDBTransaction> {
  public:
   static scoped_refptr<IndexedDBTransaction> Create(
       int64 transaction_id,
-      scoped_refptr<IndexedDBDatabaseCallbacksWrapper> callbacks,
+      scoped_refptr<IndexedDBDatabaseCallbacks> callbacks,
       const std::vector<int64>& scope,
       indexed_db::TransactionMode,
       IndexedDBDatabase* db);
@@ -47,12 +46,18 @@ class IndexedDBTransaction : public base::RefCounted<IndexedDBTransaction> {
   void Run();
   indexed_db::TransactionMode mode() const { return mode_; }
   const std::set<int64>& scope() const { return object_store_ids_; }
-  void ScheduleTask(Operation* task, Operation* abort_task = NULL) {
+  void ScheduleTask(Operation* task) {
+    ScheduleTask(IndexedDBDatabase::NORMAL_TASK, task, NULL);
+  }
+  void ScheduleTask(Operation* task, Operation* abort_task) {
     ScheduleTask(IndexedDBDatabase::NORMAL_TASK, task, abort_task);
   }
-  void ScheduleTask(IndexedDBDatabase::TaskType,
+  void ScheduleTask(IndexedDBDatabase::TaskType task_type, Operation* task) {
+    ScheduleTask(task_type, task, NULL);
+  }
+  void ScheduleTask(IndexedDBDatabase::TaskType task_type,
                     Operation* task,
-                    Operation* abort_task = NULL);
+                    Operation* abort_task);
   void RegisterOpenCursor(IndexedDBCursor* cursor);
   void UnregisterOpenCursor(IndexedDBCursor* cursor);
   void AddPreemptiveEvent() { pending_preemptive_events_++; }
@@ -65,22 +70,19 @@ class IndexedDBTransaction : public base::RefCounted<IndexedDBTransaction> {
   }
   int64 id() const { return id_; }
 
-  IndexedDBDatabase* database() const { return database_.get(); }
-  IndexedDBDatabaseCallbacksWrapper* connection() const {
-    return callbacks_.get();
-  }
+  IndexedDBDatabase* database() const { return database_; }
+  IndexedDBDatabaseCallbacks* connection() const { return callbacks_; }
 
  protected:
   virtual ~IndexedDBTransaction();
   friend class base::RefCounted<IndexedDBTransaction>;
 
  private:
-  IndexedDBTransaction(
-      int64 id,
-      scoped_refptr<IndexedDBDatabaseCallbacksWrapper> callbacks,
-      const std::set<int64>& object_store_ids,
-      indexed_db::TransactionMode,
-      IndexedDBDatabase* db);
+  IndexedDBTransaction(int64 id,
+                       scoped_refptr<IndexedDBDatabaseCallbacks> callbacks,
+                       const std::set<int64>& object_store_ids,
+                       indexed_db::TransactionMode,
+                       IndexedDBDatabase* db);
 
   enum State {
     UNUSED,         // Created, but no tasks yet.
@@ -104,7 +106,7 @@ class IndexedDBTransaction : public base::RefCounted<IndexedDBTransaction> {
 
   State state_;
   bool commit_pending_;
-  scoped_refptr<IndexedDBDatabaseCallbacksWrapper> callbacks_;
+  scoped_refptr<IndexedDBDatabaseCallbacks> callbacks_;
   scoped_refptr<IndexedDBDatabase> database_;
 
   class TaskQueue {

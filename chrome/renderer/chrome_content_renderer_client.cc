@@ -193,13 +193,13 @@ bool ShouldUseJavaScriptSettingForPlugin(const WebPluginInfo& plugin) {
   if (plugin.name == ASCIIToUTF16(chrome::ChromeContentClient::kNaClPluginName))
     return true;
 
-#if defined(WIDEVINE_CDM_AVAILABLE)
+#if defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS)
   // Treat CDM invocations like JavaScript.
   if (plugin.name == ASCIIToUTF16(kWidevineCdmDisplayName)) {
     DCHECK(plugin.type == WebPluginInfo::PLUGIN_TYPE_PEPPER_OUT_OF_PROCESS);
     return true;
   }
-#endif  // WIDEVINE_CDM_AVAILABLE
+#endif  // defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS)
 
   return false;
 }
@@ -463,22 +463,21 @@ WebPlugin* ChromeContentRendererClient::CreatePluginReplacement(
   return placeholder->plugin();
 }
 
-webkit_media::WebMediaPlayerImpl*
-ChromeContentRendererClient::OverrideCreateWebMediaPlayer(
+void ChromeContentRendererClient::DeferMediaLoad(
     content::RenderView* render_view,
-    WebKit::WebFrame* frame,
-    WebKit::WebMediaPlayerClient* client,
-    base::WeakPtr<webkit_media::WebMediaPlayerDelegate> delegate,
-    const webkit_media::WebMediaPlayerParams& params) {
+    const base::Closure& closure) {
 #if defined(OS_ANDROID)
   // Chromium for Android doesn't support prerender yet.
-  return NULL;
+  closure.Run();
+  return;
 #else
-  if (!prerender::PrerenderHelper::IsPrerendering(render_view))
-    return NULL;
+  if (!prerender::PrerenderHelper::IsPrerendering(render_view)) {
+    closure.Run();
+    return;
+  }
 
-  return new prerender::PrerenderWebMediaPlayer(
-      render_view, frame, client, delegate, params);
+  // Lifetime is tied to |render_view| via content::RenderViewObserver.
+  new prerender::PrerenderWebMediaPlayer(render_view, closure);
 #endif
 }
 
@@ -768,12 +767,15 @@ bool ChromeContentRendererClient::IsNaClAllowed(
     bool is_nacl_unrestricted,
     const Extension* extension,
     WebPluginParams* params) {
-  // Temporarily allow these URLs to run NaCl apps. We should remove this
-  // code when PNaCl ships.
+  // Temporarily allow these URLs to run NaCl apps, as long as the manifest is
+  // also whitelisted. We should remove this code when PNaCl ships.
   bool is_whitelisted_url =
       app_url.SchemeIs("https") &&
       (app_url.host() == "plus.google.com" ||
-       app_url.host() == "plus.sandbox.google.com");
+       app_url.host() == "plus.sandbox.google.com") &&
+      manifest_url.SchemeIs("https") &&
+      manifest_url.host() == "ssl.gstatic.com" &&
+      (manifest_url.path().find("s2/oz/nacl/") == 1);
 
   bool is_extension_from_webstore =
       extension && extension->from_webstore();

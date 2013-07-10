@@ -10,7 +10,9 @@
 #include "chrome/browser/android/chrome_web_contents_delegate_android.h"
 #include "chrome/browser/android/content_view_util.h"
 #include "chrome/browser/android/dev_tools_server.h"
+#include "chrome/browser/android/favicon_helper.h"
 #include "chrome/browser/android/intent_helper.h"
+#include "chrome/browser/android/most_visited_sites.h"
 #include "chrome/browser/android/provider/chrome_browser_provider.h"
 #include "chrome/browser/android/tab_android.h"
 #include "chrome/browser/autofill/android/personal_data_manager_android.h"
@@ -28,7 +30,7 @@
 #include "chrome/browser/ui/android/ssl_client_certificate_request.h"
 #include "chrome/browser/ui/android/validation_message_bubble_android.h"
 #include "chrome/browser/ui/android/website_settings_popup_android.h"
-#include "components/autofill/browser/android/component_jni_registrar.h"
+#include "components/autofill/core/browser/android/component_jni_registrar.h"
 #include "components/navigation_interception/component_jni_registrar.h"
 #include "components/web_contents_delegate_android/component_jni_registrar.h"
 
@@ -59,9 +61,11 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
     RegisterChromeWebContentsDelegateAndroid },
   { "ContentViewUtil", RegisterContentViewUtil },
   { "DevToolsServer", RegisterDevToolsServer },
+  { "FaviconHelper", FaviconHelper::RegisterFaviconHelper },
   { "IntentHelper", RegisterIntentHelper },
   { "JavascriptAppModalDialog",
     JavascriptAppModalDialogAndroid::RegisterJavascriptAppModalDialog },
+  { "MostVisitedSites", RegisterMostVisitedSites },
   { "NavigationPopup", NavigationPopup::RegisterNavigationPopup },
   { "PersonalDataManagerAndroid",
     autofill::PersonalDataManagerAndroid::Register },
@@ -84,5 +88,5 @@ bool RegisterJni(JNIEnv* env) {
                                arraysize(kChromeRegisteredMethods));
 }
 
-} // namespace android
-} // namespace chrome
+}  // namespace android
+}  // namespace chrome

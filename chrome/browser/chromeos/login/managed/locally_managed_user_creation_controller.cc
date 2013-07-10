@@ -90,6 +90,12 @@ void LocallyManagedUserCreationController::SetManagerProfile(
 
 void LocallyManagedUserCreationController::StartCreation() {
   DCHECK(creation_context_);
+  VLOG(1) << "Starting supervised user creation";
+  timeout_timer_.Start(
+      FROM_HERE, base::TimeDelta::FromSeconds(kUserCreationTimeoutSeconds),
+      this,
+      &LocallyManagedUserCreationController::CreationTimedOut);
+
   UserManager::Get()->StartLocallyManagedUserCreationTransaction(
       creation_context_->display_name);
 
@@ -102,7 +108,7 @@ void LocallyManagedUserCreationController::StartCreation() {
 
   UserManager::Get()->SetLocallyManagedUserCreationTransactionUserId(
       creation_context_->user_id);
-
+  VLOG(1) << "Creating cryptohome";
   authenticator_ = new ManagedUserAuthenticator(this);
   authenticator_->AuthenticateToCreate(user->email(),
                                        creation_context_->password);
@@ -110,6 +116,7 @@ void LocallyManagedUserCreationController::StartCreation() {
 
 void LocallyManagedUserCreationController::OnAuthenticationFailure(
     ManagedUserAuthenticator::AuthState error) {
+  timeout_timer_.Stop();
   ErrorCode code = NO_ERROR;
   switch (error) {
     case ManagedUserAuthenticator::NO_MOUNT:
@@ -138,18 +145,18 @@ void LocallyManagedUserCreationController::OnMountSuccess(
   creation_context_->master_key = StringToLowerASCII(base::HexEncode(
       reinterpret_cast<const void*>(master_key_bytes),
       sizeof(master_key_bytes)));
-  // TODO(antrim): Add this key as secondary as soon as wad@ adds API in
-  // cryptohome.
+  VLOG(1) << "Adding master key";
+  authenticator_->AddMasterKey(creation_context_->user_id,
+                               creation_context_->password,
+                               creation_context_->master_key);
+}
 
-  timeout_timer_.Start(
-      FROM_HERE, base::TimeDelta::FromSeconds(kUserCreationTimeoutSeconds),
-      this,
-      &LocallyManagedUserCreationController::CreationTimedOut);
-
+void LocallyManagedUserCreationController::OnAddKeySuccess() {
   creation_context_->service =
       ManagedUserRegistrationServiceFactory::GetForProfile(
           creation_context_->manager_profile);
 
+  VLOG(1) << "Creating user on server";
   ManagedUserRegistrationInfo info(creation_context_->display_name);
   info.master_key = creation_context_->master_key;
   creation_context_->service->Register(
@@ -161,20 +168,18 @@ void LocallyManagedUserCreationController::OnMountSuccess(
 void LocallyManagedUserCreationController::RegistrationCallback(
     const GoogleServiceAuthError& error,
     const std::string& token) {
-  timeout_timer_.Stop();
   if (error.state() == GoogleServiceAuthError::NONE) {
     TokenFetched(token);
   } else {
-    // Do not report error if we cancelled request.
+    timeout_timer_.Stop();
     LOG(ERROR) << "Managed user creation failed. Error code " << error.state();
-    if (error.state() == GoogleServiceAuthError::REQUEST_CANCELED)
-      return;
     if (consumer_)
       consumer_->OnCreationError(CLOUD_SERVER_ERROR);
   }
 }
 
 void LocallyManagedUserCreationController::CreationTimedOut() {
+  LOG(ERROR) << "Supervised user creation timed out.";
   if (consumer_)
     consumer_->OnCreationTimeout();
 }
@@ -212,6 +217,7 @@ void LocallyManagedUserCreationController::TokenFetched(
 
 void LocallyManagedUserCreationController::OnManagedUserFilesStored(
     bool success) {
+  timeout_timer_.Stop();
   if (!success) {
     if (consumer_)
       consumer_->OnCreationError(TOKEN_WRITE_FAILED);

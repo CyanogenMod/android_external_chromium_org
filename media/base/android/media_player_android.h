@@ -9,7 +9,7 @@
 #include <string>
 
 #include "base/callback.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "googleurl/src/gurl.h"
 #include "media/base/android/demuxer_stream_player_params.h"
 #include "media/base/media_export.h"
@@ -17,6 +17,7 @@
 
 namespace media {
 
+class MediaDrmBridge;
 class MediaPlayerManager;
 
 // This class serves as the base class for different media player
@@ -98,6 +99,9 @@ class MEDIA_EXPORT MediaPlayerAndroid {
 
   // Called when the demuxer has changed the duration.
   virtual void DurationChanged(const base::TimeDelta& duration);
+
+  // Pass a drm bridge to a player.
+  virtual void SetDrmBridge(MediaDrmBridge* drm_bridge);
 
   int player_id() { return player_id_; }
 

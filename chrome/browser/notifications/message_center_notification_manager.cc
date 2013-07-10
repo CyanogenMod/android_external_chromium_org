@@ -25,12 +25,29 @@
 #include "ui/message_center/message_center_tray.h"
 #include "ui/message_center/notifier_settings.h"
 
+namespace {
+// The first-run balloon will be shown |kFirstRunIdleDelaySeconds| after all
+// popups go away and the user has notifications in the message center.
+const int kFirstRunIdleDelaySeconds = 1;
+}  // namespace
+
 MessageCenterNotificationManager::MessageCenterNotificationManager(
-    message_center::MessageCenter* message_center)
+    message_center::MessageCenter* message_center,
+    PrefService* local_state)
     : message_center_(message_center),
+#if defined(OS_WIN)
+      first_run_idle_timeout_(
+          base::TimeDelta::FromSeconds(kFirstRunIdleDelaySeconds)),
+      weak_factory_(this),
+#endif
       settings_controller_(new MessageCenterSettingsController) {
+#if defined(OS_WIN)
+  first_run_pref_.Init(prefs::kMessageCenterShowedFirstRunBalloon, local_state);
+#endif
+
   message_center_->SetDelegate(this);
   message_center_->AddObserver(this);
+  message_center_->SetNotifierSettingsProvider(settings_controller_.get());
 
 #if defined(OS_WIN) || defined(OS_MACOSX) \
   || (defined(USE_AURA) && !defined(USE_ASH))
@@ -43,7 +60,6 @@ MessageCenterNotificationManager::MessageCenterNotificationManager(
 MessageCenterNotificationManager::~MessageCenterNotificationManager() {
   message_center_->RemoveObserver(this);
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////
 // NotificationUIManager
@@ -83,7 +99,7 @@ MessageCenterNotificationManager::GetAllIdsByProfileAndSourceOrigin(
   for (NotificationMap::iterator iter = profile_notifications_.begin();
        iter != profile_notifications_.end(); iter++) {
     if ((*iter).second->notification().origin_url() == source &&
-        profile->IsSameProfile((*iter).second->profile())) {
+        profile == (*iter).second->profile()) {
       notification_ids.insert(iter->first);
     }
   }
@@ -114,7 +130,7 @@ bool MessageCenterNotificationManager::CancelAllByProfile(Profile* profile) {
   for (NotificationMap::iterator loopiter = profile_notifications_.begin();
        loopiter != profile_notifications_.end(); ) {
     NotificationMap::iterator curiter = loopiter++;
-    if (profile->IsSameProfile((*curiter).second->profile())) {
+    if (profile == (*curiter).second->profile()) {
       message_center_->RemoveNotification(curiter->first, /* by_user */ false);
       removed = true;
     }
@@ -164,7 +180,7 @@ bool MessageCenterNotificationManager::UpdateNotification(
     ProfileNotification* old_notification = (*iter).second;
     if (old_notification->notification().replace_id() == replace_id &&
         old_notification->notification().origin_url() == origin_url &&
-        old_notification->profile()->IsSameProfile(profile)) {
+        old_notification->profile() == profile) {
       std::string old_id =
           old_notification->notification().notification_id();
       DCHECK(message_center_->HasNotification(old_id));
@@ -208,7 +224,9 @@ void MessageCenterNotificationManager::DisableExtension(
   DesktopNotificationService* service =
       DesktopNotificationServiceFactory::GetForProfile(
           profile_notification->profile());
-  service->SetExtensionEnabled(extension_id, false);
+  message_center::NotifierId notifier_id(
+      message_center::NotifierId::APPLICATION, extension_id);
+  service->SetNotifierEnabled(notifier_id, false);
 }
 
 void MessageCenterNotificationManager::DisableNotificationsFromSource(
@@ -227,9 +245,9 @@ void MessageCenterNotificationManager::DisableNotificationsFromSource(
       chrome::kChromeUIScheme) {
     const std::string name =
         profile_notification->notification().origin_url().host();
-    const message_center::Notifier::SystemComponentNotifierType type =
-        message_center::ParseSystemComponentName(name);
-    service->SetSystemComponentEnabled(type, false);
+    message_center::NotifierId notifier_id(
+        message_center::ParseSystemComponentName(name));
+    service->SetNotifierEnabled(notifier_id, false);
   } else {
     service->DenyPermission(profile_notification->notification().origin_url());
   }
@@ -257,11 +275,6 @@ void MessageCenterNotificationManager::ShowSettings(
     chrome::ShowExtensions(browser, std::string());
 }
 
-message_center::NotifierSettingsDelegate*
-MessageCenterNotificationManager::ShowSettingsDialog(gfx::NativeView context) {
-  return settings_controller_->ShowSettingsDialog(context);
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // MessageCenter::Observer
 void MessageCenterNotificationManager::OnNotificationRemoved(
@@ -274,12 +287,31 @@ void MessageCenterNotificationManager::OnNotificationRemoved(
       profile_notifications_.find(notification_id);
   if (iter != profile_notifications_.end())
     RemoveProfileNotification(iter->second, by_user);
+
+#if defined(OS_WIN)
+  CheckFirstRunTimer();
+#endif
 }
 
 void MessageCenterNotificationManager::OnNotificationCenterClosed() {
   // When the center is open it halts all notifications, so we need to listen
   // for events indicating it's been closed.
   CheckAndShowNotifications();
+#if defined(OS_WIN)
+  CheckFirstRunTimer();
+#endif
+}
+
+void MessageCenterNotificationManager::OnNotificationUpdated(
+    const std::string& notification_id) {
+#if defined(OS_WIN)
+  CheckFirstRunTimer();
+#endif
+}
+
+void MessageCenterNotificationManager::SetMessageCenterTrayDelegateForTest(
+    message_center::MessageCenterTrayDelegate* delegate) {
+  tray_.reset(delegate);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -377,8 +409,9 @@ void MessageCenterNotificationManager::ImageDownloads::StartDownloadWithImage(
 
   contents->DownloadImage(
       url,
-      false,
-      size,
+      false,  // Not a favicon
+      size,  // Preferred size
+      0,  // No maximum size
       base::Bind(
           &MessageCenterNotificationManager::ImageDownloads::DownloadComplete,
           AsWeakPtr(),
@@ -451,8 +484,10 @@ std::string
       DesktopNotificationServiceFactory::GetForProfile(profile());
   for (ExtensionSet::const_iterator iter = extensions.begin();
        iter != extensions.end(); ++iter) {
-    if (desktop_service->IsExtensionEnabled((*iter)->id()))
+    if (desktop_service->IsNotifierEnabled(message_center::NotifierId(
+            message_center::NotifierId::APPLICATION, (*iter)->id()))) {
       return (*iter)->id();
+    }
   }
   return std::string();
 }

@@ -18,6 +18,7 @@ enum {
   DIR_APP = PATH_START,         // Directory where dlls and data reside.
   DIR_LOGS,                     // Directory where logs should be written.
   DIR_USER_DATA,                // Directory where user data can be written.
+  DIR_CRASH_DUMPS,              // Directory where crash dumps are written.
   DIR_RESOURCES,                // Directory containing separate file resources
                                 // used by Chrome at runtime.
   DIR_INSPECTOR,                // Directory where web inspector is located.
@@ -78,10 +79,6 @@ enum {
                                 // file.
   FILE_PDF_PLUGIN,              // Full path to the internal PDF plugin file.
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
-  FILE_NACL_HELPER,             // Full path to Linux nacl_helper executable.
-  FILE_NACL_HELPER_BOOTSTRAP,   // ... and nacl_helper_bootstrap executable.
-#endif
   FILE_NACL_PLUGIN,             // Full path to the internal NaCl plugin file.
   DIR_PNACL_BASE,               // Full path to the base dir for PNaCl.
   DIR_PNACL_COMPONENT,          // Full path to the latest PNaCl version

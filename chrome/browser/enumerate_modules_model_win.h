@@ -12,9 +12,9 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/singleton.h"
 #include "base/strings/string16.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "content/public/browser/browser_thread.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 class EnumerateModulesModel;
 

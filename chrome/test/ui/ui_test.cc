@@ -31,7 +31,7 @@
 #include "base/test/test_file_util.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/platform_thread.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/profiles/profile_impl.h"
@@ -51,7 +51,6 @@
 #include "chrome/test/base/test_launcher_utils.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/breakpad/common/breakpad_paths.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
 #include "ui/gl/gl_implementation.h"
@@ -425,7 +424,7 @@ bool UITestBase::CloseBrowser(BrowserProxy* browser,
 
 int UITestBase::GetCrashCount() const {
   base::FilePath crash_dump_path;
-  PathService::Get(breakpad::DIR_CRASH_DUMPS, &crash_dump_path);
+  PathService::Get(chrome::DIR_CRASH_DUMPS, &crash_dump_path);
 
   int files_found = 0;
   base::FileEnumerator en(crash_dump_path, false, base::FileEnumerator::FILES);

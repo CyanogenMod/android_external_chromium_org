@@ -5,7 +5,7 @@
 [
   {
     "namespace": "webview",
-    "nodoc": true,
+    "description": "none",
     "functions": [
       {
         "name": "executeScript",
@@ -68,6 +68,20 @@
                 "description": "The result of the script in every injected frame."
               }
             ]
+          }
+        ]
+      },
+      {
+        "name": "go",
+        "type": "function",
+        "parameters": [
+          {
+            "type": "integer",
+            "name": "instanceId"
+          },
+          {
+            "type": "integer",
+            "name": "relativeIndex"
           }
         ]
       }

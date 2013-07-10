@@ -30,7 +30,8 @@ namespace {
 Notifier* NewNotifier(const std::string& id,
                       const std::string& title,
                       bool enabled) {
-  return new Notifier(id, base::UTF8ToUTF16(title), enabled);
+  NotifierId notifier_id(NotifierId::APPLICATION, id);
+  return new Notifier(notifier_id, base::UTF8ToUTF16(title), enabled);
 }
 
 }  // namespace
@@ -42,7 +43,7 @@ TEST_F(CocoaTest, Basic) {
 
   FakeNotifierSettingsProvider provider(notifiers);
 
-  scoped_nsobject<MCSettingsController> controller(
+  base::scoped_nsobject<MCSettingsController> controller(
       [[MCSettingsController alloc] initWithProvider:&provider]);
   [controller view];
 
@@ -58,7 +59,7 @@ TEST_F(CocoaTest, Toggle) {
 
   FakeNotifierSettingsProvider provider(notifiers);
 
-  scoped_nsobject<MCSettingsController> controller(
+  base::scoped_nsobject<MCSettingsController> controller(
       [[MCSettingsController alloc] initWithProvider:&provider]);
   [controller view];
 

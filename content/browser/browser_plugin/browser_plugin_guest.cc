@@ -39,6 +39,7 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/drop_data.h"
 #include "content/public/common/media_stream_request.h"
 #include "content/public/common/result_codes.h"
 #include "net/base/net_errors.h"
@@ -46,7 +47,6 @@
 #include "third_party/WebKit/public/web/WebCursorInfo.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/surface/transport_dib.h"
-#include "webkit/common/webdropdata.h"
 #include "webkit/glue/resource_type.h"
 
 #if defined(OS_MACOSX)
@@ -351,7 +351,6 @@ bool BrowserPluginGuest::OnMessageReceivedFromEmbedder(
                         OnDragStatusUpdate)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_ExecuteEditCommand,
                         OnExecuteEditCommand)
-    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_Go, OnGo)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_HandleInputEvent,
                         OnHandleInputEvent)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_LockMouse_ACK, OnLockMouseAck)
@@ -415,14 +414,6 @@ void BrowserPluginGuest::Initialize(
   // navigations still continue to function inside the app.
   renderer_prefs->browser_handles_all_top_level_requests = false;
 
-  notification_registrar_.Add(
-      this, NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
-      Source<WebContents>(GetWebContents()));
-
-  notification_registrar_.Add(
-      this, NOTIFICATION_RESOURCE_RECEIVED_REDIRECT,
-      Source<WebContents>(GetWebContents()));
-
   // Listen to embedder visibility changes so that the guest is in a 'shown'
   // state if both the embedder is visible and the BrowserPlugin is marked as
   // visible.
@@ -474,11 +465,19 @@ BrowserPluginGuest::~BrowserPluginGuest() {
 // static
 BrowserPluginGuest* BrowserPluginGuest::Create(
     int instance_id,
-    WebContentsImpl* web_contents) {
+    WebContentsImpl* web_contents,
+    scoped_ptr<base::DictionaryValue> extra_params) {
   RecordAction(UserMetricsAction("BrowserPlugin.Guest.Create"));
-  if (factory_)
-    return factory_->CreateBrowserPluginGuest(instance_id, web_contents);
-  return new BrowserPluginGuest(instance_id, web_contents, NULL, false);
+  BrowserPluginGuest* guest = NULL;
+  if (factory_) {
+    guest = factory_->CreateBrowserPluginGuest(instance_id, web_contents);
+  } else {
+    guest = new BrowserPluginGuest(instance_id, web_contents, NULL, false);
+  }
+  web_contents->SetBrowserPluginGuest(guest);
+  GetContentClient()->browser()->GuestWebContentsCreated(
+      web_contents, NULL, extra_params.Pass());
+  return guest;
 }
 
 // static
@@ -487,10 +486,14 @@ BrowserPluginGuest* BrowserPluginGuest::CreateWithOpener(
     WebContentsImpl* web_contents,
     BrowserPluginGuest* opener,
     bool has_render_view) {
-  return new BrowserPluginGuest(instance_id,
-                                web_contents,
-                                opener,
-                                has_render_view);
+  BrowserPluginGuest* guest =
+      new BrowserPluginGuest(
+          instance_id, web_contents, opener, has_render_view);
+  web_contents->SetBrowserPluginGuest(guest);
+  GetContentClient()->browser()->GuestWebContentsCreated(
+      web_contents, opener->GetWebContents(),
+      scoped_ptr<base::DictionaryValue>());
+  return guest;
 }
 
 RenderWidgetHostView* BrowserPluginGuest::GetEmbedderRenderWidgetHostView() {
@@ -512,22 +515,6 @@ void BrowserPluginGuest::Observe(int type,
                                  const NotificationSource& source,
                                  const NotificationDetails& details) {
   switch (type) {
-    case NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME: {
-      DCHECK_EQ(Source<WebContents>(source).ptr(), GetWebContents());
-      LoadHandlerCalled();
-      break;
-    }
-    case NOTIFICATION_RESOURCE_RECEIVED_REDIRECT: {
-      DCHECK_EQ(Source<WebContents>(source).ptr(), GetWebContents());
-      ResourceRedirectDetails* resource_redirect_details =
-            Details<ResourceRedirectDetails>(details).ptr();
-      bool is_top_level =
-          resource_redirect_details->resource_type == ResourceType::MAIN_FRAME;
-      LoadRedirect(resource_redirect_details->url,
-                   resource_redirect_details->new_url,
-                   is_top_level);
-      break;
-    }
     case NOTIFICATION_WEB_CONTENTS_VISIBILITY_CHANGED: {
       DCHECK_EQ(Source<WebContents>(source).ptr(), embedder_web_contents_);
       embedder_visible_ = *Details<bool>(details).ptr();
@@ -763,21 +750,6 @@ bool BrowserPluginGuest::UnlockMouseIfNecessary(
   return true;
 }
 
-void BrowserPluginGuest::DidStartProvisionalLoadForFrame(
-    int64 frame_id,
-    int64 parent_frame_id,
-    bool is_main_frame,
-    const GURL& validated_url,
-    bool is_error_page,
-    bool is_iframe_srcdoc,
-    RenderViewHost* render_view_host) {
-  // Inform the embedder of the loadStart.
-  SendMessageToEmbedder(
-      new BrowserPluginMsg_LoadStart(instance_id(),
-                                     validated_url,
-                                     is_main_frame));
-}
-
 void BrowserPluginGuest::DidFailProvisionalLoad(
     int64 frame_id,
     bool is_main_frame,
@@ -810,10 +782,6 @@ void BrowserPluginGuest::SendMessageToEmbedder(IPC::Message* msg) {
   embedder_web_contents_->Send(msg);
 }
 
-void BrowserPluginGuest::LoadHandlerCalled() {
-  SendMessageToEmbedder(new BrowserPluginMsg_LoadHandlerCalled(instance_id()));
-}
-
 void BrowserPluginGuest::DragSourceEndedAt(int client_x, int client_y,
     int screen_x, int screen_y, WebKit::WebDragOperation operation) {
   web_contents()->GetRenderViewHost()->DragSourceEndedAt(client_x, client_y,
@@ -835,17 +803,6 @@ void BrowserPluginGuest::EndSystemDrag() {
   mouse_event.type = WebKit::WebInputEvent::MouseUp;
   mouse_event.button = WebKit::WebMouseEvent::ButtonLeft;
   guest_rvh->ForwardMouseEvent(mouse_event);
-}
-
-void BrowserPluginGuest::LoadRedirect(
-    const GURL& old_url,
-    const GURL& new_url,
-    bool is_top_level) {
-  SendMessageToEmbedder(
-      new BrowserPluginMsg_LoadRedirect(instance_id(),
-                                        old_url,
-                                        new_url,
-                                        is_top_level));
 }
 
 void BrowserPluginGuest::AskEmbedderForGeolocationPermission(
@@ -916,10 +873,6 @@ void BrowserPluginGuest::DidCommitProvisionalLoadForFrame(
   BrowserPluginMsg_LoadCommit_Params params;
   params.url = url;
   params.is_top_level = is_main_frame;
-  params.current_entry_index =
-      GetWebContents()->GetController().GetCurrentEntryIndex();
-  params.entry_count =
-      GetWebContents()->GetController().GetEntryCount();
   SendMessageToEmbedder(
       new BrowserPluginMsg_LoadCommit(instance_id(), params));
   RecordAction(UserMetricsAction("BrowserPlugin.Guest.DidNavigate"));
@@ -942,7 +895,6 @@ void BrowserPluginGuest::DidStopLoading(RenderViewHost* render_view_host) {
     render_view_host->ExecuteJavascriptInWebFrame(string16(),
                                                   ASCIIToUTF16(script));
   }
-  SendMessageToEmbedder(new BrowserPluginMsg_LoadStop(instance_id()));
 }
 
 void BrowserPluginGuest::RenderViewReady() {
@@ -1003,7 +955,6 @@ bool BrowserPluginGuest::ShouldForwardToBrowserPluginGuest(
     case BrowserPluginHostMsg_CompositorFrameACK::ID:
     case BrowserPluginHostMsg_DragStatusUpdate::ID:
     case BrowserPluginHostMsg_ExecuteEditCommand::ID:
-    case BrowserPluginHostMsg_Go::ID:
     case BrowserPluginHostMsg_HandleInputEvent::ID:
     case BrowserPluginHostMsg_LockMouse_ACK::ID:
     case BrowserPluginHostMsg_NavigateGuest::ID:
@@ -1127,7 +1078,7 @@ void BrowserPluginGuest::OnCompositorFrameACK(
 
 void BrowserPluginGuest::OnDragStatusUpdate(int instance_id,
                                             WebKit::WebDragStatus drag_status,
-                                            const WebDropData& drop_data,
+                                            const DropData& drop_data,
                                             WebKit::WebDragOperationsMask mask,
                                             const gfx::Point& location) {
   RenderViewHost* host = GetWebContents()->GetRenderViewHost();
@@ -1156,10 +1107,6 @@ void BrowserPluginGuest::OnDragStatusUpdate(int instance_id,
 void BrowserPluginGuest::OnExecuteEditCommand(int instance_id,
                                               const std::string& name) {
   Send(new InputMsg_ExecuteEditCommand(routing_id(), name, std::string()));
-}
-
-void BrowserPluginGuest::OnGo(int instance_id, int relative_index) {
-  GetWebContents()->GetController().GoToOffset(relative_index);
 }
 
 void BrowserPluginGuest::OnHandleInputEvent(

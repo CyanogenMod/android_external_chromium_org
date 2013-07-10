@@ -37,7 +37,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/test_file_util.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/prefs/pref_service_mock_builder.h"
 #include "chrome/common/automation_messages.h"
@@ -56,7 +56,6 @@
 #include "chrome_frame/test/ie_event_sink.h"
 #include "chrome_frame/test/reliability/page_load_test.h"
 #include "chrome_frame/utils.h"
-#include "components/breakpad/common/breakpad_paths.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread.h"
 #include "net/base/net_util.h"
@@ -333,7 +332,7 @@ class PageLoadTest : public testing::Test {
  protected:
   virtual void SetUp() {
     // Initialize crash_dumps_dir_path_.
-    PathService::Get(breakpad::DIR_CRASH_DUMPS, &crash_dumps_dir_path_);
+    PathService::Get(chrome::DIR_CRASH_DUMPS, &crash_dumps_dir_path_);
     base::FileEnumerator enumerator(crash_dumps_dir_path_,
                                     false,  // not recursive
                                     base::FileEnumerator::FILES);
@@ -370,7 +369,7 @@ class PageLoadTest : public testing::Test {
     if (!log_path.empty()) {
       base::FilePath saved_log_file_path =
           ConstructSavedDebugLogPath(log_path, index);
-      if (file_util::Move(log_path, saved_log_file_path)) {
+      if (base::Move(log_path, saved_log_file_path)) {
         log_file << " " << log_id << "=" << saved_log_file_path.value();
       }
     }

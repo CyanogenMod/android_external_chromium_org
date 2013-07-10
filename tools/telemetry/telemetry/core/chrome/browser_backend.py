@@ -12,6 +12,7 @@ import sys
 from telemetry.core import util
 from telemetry.core import exceptions
 from telemetry.core import user_agent
+from telemetry.core import web_contents
 from telemetry.core import wpr_modes
 from telemetry.core import wpr_server
 from telemetry.core.chrome import extension_dict_backend
@@ -111,6 +112,10 @@ class BrowserBackend(object):
     component_extension_str = ','.join(component_extensions)
     if len(component_extensions) > 0:
       args.append('--load-component-extension=%s' % component_extension_str)
+
+    if self.options.no_proxy_server:
+      args.append('--no-proxy-server')
+
     return args
 
   @property
@@ -197,7 +202,8 @@ class BrowserBackend(object):
   def supports_tracing(self):
     return self.is_content_shell or self._chrome_branch_number >= 1385
 
-  def StartTracing(self, custom_categories=None):
+  def StartTracing(self, custom_categories=None,
+                   timeout=web_contents.DEFAULT_WEB_CONTENTS_TIMEOUT):
     """ custom_categories is an optional string containing a list of
     comma separated categories that will be traced instead of the
     default category set.  Example: use
@@ -206,7 +212,7 @@ class BrowserBackend(object):
     """
     if self._tracing_backend is None:
       self._tracing_backend = tracing_backend.TracingBackend(self._port)
-    self._tracing_backend.BeginTracing(custom_categories)
+    self._tracing_backend.BeginTracing(custom_categories, timeout)
 
   def StopTracing(self):
     self._tracing_backend.EndTracing()

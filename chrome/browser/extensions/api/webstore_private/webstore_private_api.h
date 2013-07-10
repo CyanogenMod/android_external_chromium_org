@@ -182,9 +182,6 @@ class CompleteInstallFunction
       const std::string& id,
       const std::string& error,
       WebstoreInstaller::FailureReason reason) OVERRIDE;
-  virtual void OnExtensionDownloadProgress(
-      const std::string& id,
-      content::DownloadItem* item) OVERRIDE;
 
  protected:
   virtual ~CompleteInstallFunction();
@@ -288,6 +285,20 @@ class GetIsLauncherEnabledFunction : public AsyncExtensionFunction {
 
  private:
   void OnIsLauncherCheckCompleted(bool is_enabled);
+};
+
+class IsInIncognitoModeFunction : public AsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("webstorePrivate.isInIncognitoMode",
+                             WEBSTOREPRIVATE_ISININCOGNITOMODEFUNCTION)
+
+  IsInIncognitoModeFunction() {}
+
+ protected:
+  virtual ~IsInIncognitoModeFunction() {}
+
+  // ExtensionFunction:
+  virtual bool RunImpl() OVERRIDE;
 };
 
 }  // namespace extensions

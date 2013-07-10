@@ -65,6 +65,7 @@ const char kChromeUIPolicyURL[] = "chrome://policy/";
 const char kChromeUIProfileSigninConfirmationURL[] =
     "chrome://profile-signin-confirmation/";
 const char kChromeUIPrintURL[] = "chrome://print/";
+const char kChromeUIRestartURL[] = "chrome://restart/";
 const char kChromeUISessionFaviconURL[] = "chrome://session-favicon/";
 const char kChromeUISettingsURL[] = "chrome://settings/";
 const char kChromeUISettingsFrameURL[] = "chrome://settings-frame/";
@@ -119,11 +120,17 @@ const char kChromeUIFileManagerURL[] = "chrome://files/";
 #if defined(USE_AURA)
 const char kChromeUIGestureConfigURL[] = "chrome://gesture/";
 const char kChromeUIGestureConfigHost[] = "gesture";
+const char kChromeUISalsaURL[] = "chrome://salsa/";
+const char kChromeUISalsaHost[] = "salsa";
 #endif
 
 #if (defined(OS_LINUX) && defined(TOOLKIT_VIEWS)) || defined(USE_AURA)
 const char kChromeUITabModalConfirmDialogURL[] =
     "chrome://tab-modal-confirm-dialog/";
+#endif
+
+#if defined(ENABLE_WEBRTC)
+const char kChromeUIWebRtcLogsURL[] = "chrome://webrtc-logs/";
 #endif
 
 // Add Chrome UI hosts here, in alphabetical order.
@@ -189,6 +196,7 @@ const char kChromeUIPredictorsHost[] = "predictors";
 const char kChromeUIPrintHost[] = "print";
 const char kChromeUIProfilerHost[] = "profiler";
 const char kChromeUIQuotaInternalsHost[] = "quota-internals";
+const char kChromeUIRestartHost[] = "restart";
 const char kChromeUISessionFaviconHost[] = "session-favicon";
 const char kChromeUISettingsHost[] = "settings";
 const char kChromeUISettingsFrameHost[] = "settings-frame";
@@ -271,6 +279,10 @@ const char kChromeUIFileManagerHost[] = "files";
 
 #if (defined(OS_LINUX) && defined(TOOLKIT_VIEWS)) || defined(USE_AURA)
 const char kChromeUITabModalConfirmDialogHost[] = "tab-modal-confirm-dialog";
+#endif
+
+#if defined(ENABLE_WEBRTC)
+const char kChromeUIWebRtcLogsHost[] = "webrtc-logs";
 #endif
 
 // Option sub pages.
@@ -366,6 +378,10 @@ const char kChromeSyncLearnMoreURL[] =
 
 const char kChromeEnterpriseSignInLearnMoreURL[] =
   "http://support.google.com/chromeos/bin/answer.py?hl=en&answer=1331549";
+
+const char kSupervisedUserManagementURL[] = "https://www.chrome.com/manage";
+
+const char kSupervisedUserManagementDisplayURL[] = "www.chrome.com/manage";
 
 const char kSettingsSearchHelpURL[] =
 #if defined(OS_CHROMEOS)
@@ -488,6 +504,9 @@ const char kLearnMoreEnterpriseURL[] =
     "https://support.google.com/chromeos/bin/answer.py?answer=2535613";
 #endif
 
+const char kNotificationsHelpURL[] =
+    "https://support.google.com/chrome/?p=ui_notifications";
+
 const char* const kChromeDebugURLs[] = {
   content::kChromeUICrashURL,
   content::kChromeUIKillURL,
@@ -497,7 +516,8 @@ const char* const kChromeDebugURLs[] = {
   content::kChromeUIGpuCrashURL,
   content::kChromeUIGpuHangURL,
   content::kChromeUIPpapiFlashCrashURL,
-  content::kChromeUIPpapiFlashHangURL
+  content::kChromeUIPpapiFlashHangURL,
+  chrome::kChromeUIRestartURL
 };
 const int kNumberOfChromeDebugURLs =
     static_cast<int>(arraysize(kChromeDebugURLs));

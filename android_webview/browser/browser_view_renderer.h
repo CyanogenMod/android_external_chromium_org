@@ -8,16 +8,13 @@
 #include "base/android/scoped_java_ref.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/vector2d_f.h"
 
 struct AwDrawGLInfo;
 struct AwDrawSWFunctionTable;
 
 namespace content {
 class ContentViewCore;
-}
-
-namespace gfx {
-class Rect;
 }
 
 namespace android_webview {
@@ -43,6 +40,9 @@ class BrowserViewRenderer {
     // Called to get view's absolute location on the screen.
     virtual gfx::Point GetLocationOnScreen() = 0;
 
+    // Try to set the view's scroll offset to |new_value|.
+    virtual void ScrollContainerViewTo(gfx::Vector2d new_value) = 0;
+
    protected:
     virtual ~Client() {}
   };
@@ -54,7 +54,9 @@ class BrowserViewRenderer {
     virtual base::android::ScopedJavaLocalRef<jobject> CreateBitmap(
         JNIEnv* env,
         int width,
-        int height) = 0;
+        int height,
+        const base::android::JavaRef<jobject>& jcanvas,
+        void* owner_key) = 0;
 
     // Draws the provided Java Bitmap into the provided Java Canvas.
     virtual void DrawBitmapIntoCanvas(
@@ -88,7 +90,7 @@ class BrowserViewRenderer {
   // scroll offset. |clip| is the canvas's clip bounds.
   virtual bool OnDraw(jobject java_canvas,
                       bool is_hardware_canvas,
-                      const gfx::Point& scroll,
+                      const gfx::Vector2d& scroll,
                       const gfx::Rect& clip) = 0;
   // Called in response to a prior Client::RequestDrawGL() call. See
   // AwDrawGLInfo documentation for more details of the contract.
@@ -99,10 +101,16 @@ class BrowserViewRenderer {
   virtual void EnableOnNewPicture(bool enabled) = 0;
 
   // View update notifications.
-  virtual void OnVisibilityChanged(bool view_visible, bool window_visible) = 0;
+  virtual void OnVisibilityChanged(bool visible) = 0;
   virtual void OnSizeChanged(int width, int height) = 0;
   virtual void OnAttachedToWindow(int width, int height) = 0;
   virtual void OnDetachedFromWindow() = 0;
+
+  // Sets the scale for logical<->physical pixel conversions.
+  virtual void SetDipScale(float dip_scale) = 0;
+
+  // Set the root layer scroll offset to |new_value|.
+  virtual void ScrollTo(gfx::Vector2d new_value) = 0;
 
   // Android views hierarchy gluing.
   virtual bool IsAttachedToWindow() = 0;

@@ -6,15 +6,12 @@
 
 #include "base/bind.h"
 #include "base/strings/string_number_conversions.h"
-#include "chrome/browser/bookmarks/imported_bookmark_entry.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/importer/external_process_importer_host.h"
 #include "chrome/browser/importer/firefox_importer_utils.h"
-#include "chrome/browser/importer/importer_host.h"
 #include "chrome/browser/importer/in_process_importer_bridge.h"
-#include "chrome/browser/importer/profile_import_process_messages.h"
-#include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/common/importer/imported_bookmark_entry.h"
+#include "chrome/common/importer/profile_import_process_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/utility_process_host.h"
 #include "grit/generated_resources.h"
@@ -64,6 +61,7 @@ void ExternalProcessImporterClient::Cancel() {
 }
 
 void ExternalProcessImporterClient::OnProcessCrashed(int exit_code) {
+  DLOG(ERROR) << __FUNCTION__;
   if (cancelled_)
     return;
 
@@ -102,6 +100,8 @@ bool ExternalProcessImporterClient::OnMessageReceived(
                         OnPasswordFormImportReady)
     IPC_MESSAGE_HANDLER(ProfileImportProcessHostMsg_NotifyKeywordsReady,
                         OnKeywordsImportReady)
+    IPC_MESSAGE_HANDLER(ProfileImportProcessHostMsg_NotifyFirefoxSearchEngData,
+                        OnFirefoxSearchEngineDataReceived)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -155,7 +155,7 @@ void ExternalProcessImporterClient::OnHistoryImportStart(
 }
 
 void ExternalProcessImporterClient::OnHistoryImportGroup(
-    const history::URLRows& history_rows_group,
+    const std::vector<ImporterURLRow>& history_rows_group,
     int visit_source) {
   if (cancelled_)
     return;
@@ -228,13 +228,18 @@ void ExternalProcessImporterClient::OnPasswordFormImportReady(
 }
 
 void ExternalProcessImporterClient::OnKeywordsImportReady(
-    const std::vector<TemplateURL*>& template_urls,
+    const std::vector<importer::URLKeywordInfo>& url_keywords,
     bool unique_on_host_and_path) {
   if (cancelled_)
     return;
+  bridge_->SetKeywords(url_keywords, unique_on_host_and_path);
+}
 
-  bridge_->SetKeywords(template_urls, unique_on_host_and_path);
-  // The pointers in |template_urls| have now been deleted.
+void ExternalProcessImporterClient::OnFirefoxSearchEngineDataReceived(
+    const std::vector<std::string> search_engine_data) {
+  if (cancelled_)
+    return;
+  bridge_->SetFirefoxSearchEnginesXMLData(search_engine_data);
 }
 
 ExternalProcessImporterClient::~ExternalProcessImporterClient() {}
@@ -286,9 +291,6 @@ void ExternalProcessImporterClient::StartProcessOnIOThread(
   localized_strings.SetString(
       base::IntToString(IDS_IMPORT_FROM_FIREFOX),
       l10n_util::GetStringUTF8(IDS_IMPORT_FROM_FIREFOX));
-  localized_strings.SetString(
-      base::IntToString(IDS_IMPORT_FROM_GOOGLE_TOOLBAR),
-      l10n_util::GetStringUTF8(IDS_IMPORT_FROM_GOOGLE_TOOLBAR));
   localized_strings.SetString(
       base::IntToString(IDS_IMPORT_FROM_SAFARI),
       l10n_util::GetStringUTF8(IDS_IMPORT_FROM_SAFARI));

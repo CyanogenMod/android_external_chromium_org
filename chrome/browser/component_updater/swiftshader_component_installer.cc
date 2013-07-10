@@ -105,6 +105,9 @@ class SwiftShaderComponentInstaller : public ComponentInstaller {
   virtual bool Install(const base::DictionaryValue& manifest,
                        const base::FilePath& unpack_path) OVERRIDE;
 
+  virtual bool GetInstalledFile(const std::string& file,
+                                base::FilePath* installed_file) OVERRIDE;
+
  private:
   Version current_version_;
 };
@@ -140,13 +143,18 @@ bool SwiftShaderComponentInstaller::Install(
       GetSwiftShaderBaseDirectory().AppendASCII(version.GetString());
   if (file_util::PathExists(path))
     return false;
-  if (!file_util::Move(unpack_path, path))
+  if (!base::Move(unpack_path, path))
     return false;
   // Installation is done. Now tell the rest of chrome.
   current_version_ = version;
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
       base::Bind(&RegisterSwiftShaderWithChrome, path));
   return true;
+}
+
+bool SwiftShaderComponentInstaller::GetInstalledFile(
+    const std::string& file, base::FilePath* installed_file) {
+  return false;
 }
 
 void FinishSwiftShaderUpdateRegistration(ComponentUpdateService* cus,
@@ -222,7 +230,7 @@ void RegisterSwiftShaderPath(ComponentUpdateService* cus) {
   // Remove older versions of SwiftShader.
   for (std::vector<base::FilePath>::iterator iter = older_dirs.begin();
        iter != older_dirs.end(); ++iter) {
-    file_util::Delete(*iter, true);
+    base::Delete(*iter, true);
   }
 }
 

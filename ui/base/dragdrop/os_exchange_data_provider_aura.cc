@@ -18,16 +18,33 @@ OSExchangeDataProviderAura::OSExchangeDataProviderAura()
 
 OSExchangeDataProviderAura::~OSExchangeDataProviderAura() {}
 
-void OSExchangeDataProviderAura::SetString(const string16& data) {
+OSExchangeData::Provider* OSExchangeDataProviderAura::Clone() const {
+  OSExchangeDataProviderAura* ret = new OSExchangeDataProviderAura();
+  ret->formats_ = formats_;
+  ret->string_ = string_;
+  ret->url_ = url_;
+  ret->title_ = title_;
+  ret->filenames_ = filenames_;
+  ret->pickle_data_ = pickle_data_;
+  // We skip copying the drag images.
+  ret->html_ = html_;
+  ret->base_url_ = base_url_;
+
+  return ret;
+}
+
+void OSExchangeDataProviderAura::SetString(const base::string16& data) {
   string_ = data;
   formats_ |= OSExchangeData::STRING;
 }
 
 void OSExchangeDataProviderAura::SetURL(const GURL& url,
-                                        const string16& title) {
+                                        const base::string16& title) {
   url_ = url;
   title_ = title;
   formats_ |= OSExchangeData::URL;
+
+  SetString(UTF8ToUTF16(url.spec()));
 }
 
 void OSExchangeDataProviderAura::SetFilename(const base::FilePath& path) {
@@ -49,7 +66,7 @@ void OSExchangeDataProviderAura::SetPickledData(
   formats_ |= OSExchangeData::PICKLED_DATA;
 }
 
-bool OSExchangeDataProviderAura::GetString(string16* data) const {
+bool OSExchangeDataProviderAura::GetString(base::string16* data) const {
   if ((formats_ & OSExchangeData::STRING) == 0)
     return false;
   *data = string_;
@@ -57,7 +74,7 @@ bool OSExchangeDataProviderAura::GetString(string16* data) const {
 }
 
 bool OSExchangeDataProviderAura::GetURLAndTitle(GURL* url,
-                                                string16* title) const {
+                                                base::string16* title) const {
   if ((formats_ & OSExchangeData::URL) == 0) {
     title->clear();
     return GetPlainTextURL(url);
@@ -119,14 +136,14 @@ bool OSExchangeDataProviderAura::HasCustomFormat(
   return pickle_data_.find(format) != pickle_data_.end();
 }
 
-void OSExchangeDataProviderAura::SetHtml(const string16& html,
+void OSExchangeDataProviderAura::SetHtml(const base::string16& html,
                                          const GURL& base_url) {
   formats_ |= OSExchangeData::HTML;
   html_ = html;
   base_url_ = base_url;
 }
 
-bool OSExchangeDataProviderAura::GetHtml(string16* html,
+bool OSExchangeDataProviderAura::GetHtml(base::string16* html,
                                          GURL* base_url) const {
   if ((formats_ & OSExchangeData::HTML) == 0)
     return false;

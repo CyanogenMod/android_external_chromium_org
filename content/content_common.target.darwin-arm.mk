@@ -36,6 +36,7 @@ LOCAL_SRC_FILES := \
 	content/public/common/content_constants.cc \
 	content/public/common/content_switches.cc \
 	content/public/common/context_menu_params.cc \
+	content/public/common/drop_data.cc \
 	content/public/common/favicon_url.cc \
 	content/public/common/file_chooser_params.cc \
 	content/public/common/frame_navigate_params.cc \
@@ -43,7 +44,6 @@ LOCAL_SRC_FILES := \
 	content/public/common/gpu_memory_stats.cc \
 	content/public/common/media_stream_request.cc \
 	content/public/common/page_state.cc \
-	content/public/common/page_state_webkit.cc \
 	content/public/common/page_transition_types.cc \
 	content/public/common/password_form.cc \
 	content/public/common/pepper_plugin_info.cc \
@@ -72,6 +72,7 @@ LOCAL_SRC_FILES := \
 	content/common/content_message_generator.cc \
 	content/common/content_param_traits.cc \
 	content/common/content_paths.cc \
+	content/common/cookie_data.cc \
 	content/common/db_message_filter.cc \
 	content/common/find_match_rect_android.cc \
 	content/common/font_list.cc \
@@ -111,6 +112,7 @@ LOCAL_SRC_FILES := \
 	content/common/message_router.cc \
 	content/common/net/url_fetcher.cc \
 	content/common/net/url_request_user_data.cc \
+	content/common/page_state_serialization.cc \
 	content/common/page_zoom.cc \
 	content/common/pepper_renderer_instance_data.cc \
 	content/common/process_type.cc \
@@ -129,7 +131,7 @@ LOCAL_SRC_FILES := \
 
 
 # Flags passed to both C and C++ files.
-MY_CFLAGS := \
+MY_CFLAGS_Debug := \
 	-fstack-protector \
 	--param=ssp-buffer-size=4 \
 	-Werror \
@@ -141,6 +143,7 @@ MY_CFLAGS := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
+	-Wno-unknown-pragmas \
 	-fno-tree-sra \
 	-fuse-ld=gold \
 	-Wno-psabi \
@@ -161,9 +164,7 @@ MY_CFLAGS := \
 	-fdata-sections \
 	-ffunction-sections
 
-MY_CFLAGS_C :=
-
-MY_DEFS := \
+MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
@@ -198,10 +199,9 @@ MY_DEFS := \
 	'-DWTF_USE_DYNAMIC_ANNOTATIONS=1' \
 	'-D_DEBUG'
 
-LOCAL_CFLAGS := $(MY_CFLAGS_C) $(MY_CFLAGS) $(MY_DEFS)
 
 # Include paths placed before CFLAGS/CPPFLAGS
-LOCAL_C_INCLUDES := \
+LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH) \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
@@ -216,6 +216,7 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/skia/include/pdf \
 	$(LOCAL_PATH)/third_party/skia/include/gpu \
 	$(LOCAL_PATH)/third_party/skia/include/gpu/gl \
+	$(LOCAL_PATH)/third_party/skia/include/lazy \
 	$(LOCAL_PATH)/third_party/skia/include/pathops \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
@@ -234,10 +235,9 @@ LOCAL_C_INCLUDES := \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
 
-LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 
 # Flags passed to only C++ (and not C) files.
-LOCAL_CPPFLAGS := \
+LOCAL_CPPFLAGS_Debug := \
 	-fno-rtti \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
@@ -247,9 +247,132 @@ LOCAL_CPPFLAGS := \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
+
+# Flags passed to both C and C++ files.
+MY_CFLAGS_Release := \
+	-fstack-protector \
+	--param=ssp-buffer-size=4 \
+	-Werror \
+	-fno-exceptions \
+	-fno-strict-aliasing \
+	-Wall \
+	-Wno-unused-parameter \
+	-Wno-missing-field-initializers \
+	-fvisibility=hidden \
+	-pipe \
+	-fPIC \
+	-Wno-unknown-pragmas \
+	-fno-tree-sra \
+	-fuse-ld=gold \
+	-Wno-psabi \
+	-ffunction-sections \
+	-funwind-tables \
+	-g \
+	-fstack-protector \
+	-fno-short-enums \
+	-finline-limit=64 \
+	-Wa,--noexecstack \
+	-U_FORTIFY_SOURCE \
+	-Wno-extra \
+	-Wno-ignored-qualifiers \
+	-Wno-type-limits \
+	-Os \
+	-fno-ident \
+	-fdata-sections \
+	-ffunction-sections \
+	-fomit-frame-pointer
+
+MY_DEFS_Release := \
+	'-DCONTENT_IMPLEMENTATION' \
+	'-DANGLE_DX11' \
+	'-D_FILE_OFFSET_BITS=64' \
+	'-DUSE_LINUX_BREAKPAD' \
+	'-DNO_TCMALLOC' \
+	'-DDISABLE_NACL' \
+	'-DCHROMIUM_BUILD' \
+	'-DUSE_LIBJPEG_TURBO=1' \
+	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_GPU=1' \
+	'-DUSE_OPENSSL=1' \
+	'-DENABLE_EGLIMAGE=1' \
+	'-DENABLE_LANGUAGE_DETECTION=1' \
+	'-DMEDIA_DISABLE_LIBVPX' \
+	'-DPOSIX_AVOID_MMAP' \
+	'-DSK_BUILD_NO_IMAGE_ENCODE' \
+	'-DSK_DEFERRED_CANVAS_USES_GPIPE=1' \
+	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
+	'-DGR_AGGRESSIVE_SHADER_OPTS=1' \
+	'-DSK_ENABLE_INST_COUNT=0' \
+	'-DSK_USE_POSIX_THREADS' \
+	'-DSK_BUILD_FOR_ANDROID' \
+	'-DU_USING_ICU_NAMESPACE=0' \
+	'-D__STDC_CONSTANT_MACROS' \
+	'-D__STDC_FORMAT_MACROS' \
+	'-DANDROID' \
+	'-D__GNU_SOURCE=1' \
+	'-DUSE_STLPORT=1' \
+	'-D_STLP_USE_PTR_SPECIALIZATIONS=1' \
+	'-DCHROME_BUILD_ID=""' \
+	'-DNDEBUG' \
+	'-DNVALGRIND' \
+	'-DDYNAMIC_ANNOTATIONS_ENABLED=0' \
+	'-D_FORTIFY_SOURCE=2'
+
+
+# Include paths placed before CFLAGS/CPPFLAGS
+LOCAL_C_INCLUDES_Release := \
+	$(LOCAL_PATH) \
+	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
+	$(LOCAL_PATH)/third_party/khronos \
+	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH)/skia/config \
+	$(LOCAL_PATH)/third_party/skia/src/core \
+	$(LOCAL_PATH)/third_party/skia/include/config \
+	$(LOCAL_PATH)/third_party/skia/include/core \
+	$(LOCAL_PATH)/third_party/skia/include/effects \
+	$(LOCAL_PATH)/third_party/skia/include/pdf \
+	$(LOCAL_PATH)/third_party/skia/include/gpu \
+	$(LOCAL_PATH)/third_party/skia/include/gpu/gl \
+	$(LOCAL_PATH)/third_party/skia/include/lazy \
+	$(LOCAL_PATH)/third_party/skia/include/pathops \
+	$(LOCAL_PATH)/third_party/skia/include/pipe \
+	$(LOCAL_PATH)/third_party/skia/include/ports \
+	$(LOCAL_PATH)/third_party/skia/include/utils \
+	$(LOCAL_PATH)/skia/ext \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
+	$(gyp_shared_intermediate_dir)/content \
+	$(LOCAL_PATH)/third_party/WebKit \
+	$(LOCAL_PATH)/third_party/npapi \
+	$(LOCAL_PATH)/third_party/npapi/bindings \
+	$(LOCAL_PATH)/v8/include \
+	$(gyp_shared_intermediate_dir)/ui/gl \
+	$(LOCAL_PATH)/third_party/mesa/src/include \
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
+
+
+# Flags passed to only C++ (and not C) files.
+LOCAL_CPPFLAGS_Release := \
+	-fno-rtti \
+	-fno-threadsafe-statics \
+	-fvisibility-inlines-hidden \
+	-Wsign-compare \
+	-Wno-abi \
+	-Wno-error=c++0x-compat \
+	-Wno-non-virtual-dtor \
+	-Wno-sign-promo
+
+
+LOCAL_CFLAGS := $(MY_CFLAGS_$(GYP_CONFIGURATION)) $(MY_DEFS_$(GYP_CONFIGURATION))
+LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES_$(GYP_CONFIGURATION))
+LOCAL_CPPFLAGS := $(LOCAL_CPPFLAGS_$(GYP_CONFIGURATION))
 ### Rules for final target.
 
-LOCAL_LDFLAGS := \
+LOCAL_LDFLAGS_Debug := \
 	-Wl,-z,now \
 	-Wl,-z,relro \
 	-Wl,-z,noexecstack \
@@ -265,6 +388,25 @@ LOCAL_LDFLAGS := \
 	-Wl,-O1 \
 	-Wl,--as-needed
 
+
+LOCAL_LDFLAGS_Release := \
+	-Wl,-z,now \
+	-Wl,-z,relro \
+	-Wl,-z,noexecstack \
+	-fPIC \
+	-Wl,-z,relro \
+	-Wl,-z,now \
+	-fuse-ld=gold \
+	-nostdlib \
+	-Wl,--no-undefined \
+	-Wl,--exclude-libs=ALL \
+	-Wl,--icf=safe \
+	-Wl,-O1 \
+	-Wl,--as-needed \
+	-Wl,--gc-sections
+
+
+LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
 LOCAL_STATIC_LIBRARIES := \
 	skia_skia_gyp \

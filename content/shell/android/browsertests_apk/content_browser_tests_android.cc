@@ -23,10 +23,10 @@
 #include "content/public/app/android_library_loader_hooks.h"
 #include "content/public/app/content_main.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/test/nested_message_pump_android.h"
 #include "content/public/test/test_launcher.h"
 #include "content/shell/android/shell_jni_registrar.h"
 #include "content/shell/app/shell_main_delegate.h"
-#include "content/test/browser_test_message_pump_android.h"
 #include "jni/ContentBrowserTestsActivity_jni.h"
 #include "testing/android/native_test_util.h"
 
@@ -77,6 +77,7 @@ static void RunTests(JNIEnv* env,
   // Append required switches.
   command_line->AppendSwitch(content::kSingleProcessTestsFlag);
   command_line->AppendSwitch(switches::kUseFakeDeviceForMediaStream);
+  command_line->AppendSwitch(switches::kUseFakeUIForMediaStream);
   // Specify a socket name to not conflict with the default one used
   // in content_shell.
   command_line->AppendSwitchASCII(switches::kRemoteDebuggingSocketName,
@@ -106,7 +107,7 @@ JNI_EXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
   if (!content::android::RegisterShellJni(env))
     return -1;
 
-  if (!content::BrowserTestMessagePumpAndroid::RegisterJni(env))
+  if (!content::NestedMessagePumpAndroid::RegisterJni(env))
     return -1;
 
   if (!content::RegisterNativesImpl(env))

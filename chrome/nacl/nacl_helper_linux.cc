@@ -28,6 +28,7 @@
 #include "base/posix/unix_domain_socket_linux.h"
 #include "base/rand_util.h"
 #include "chrome/nacl/nacl_listener.h"
+#include "chrome/nacl/nacl_sandbox_linux.h"
 #include "crypto/nss_util.h"
 #include "ipc/ipc_descriptors.h"
 #include "ipc/ipc_switches.h"
@@ -38,19 +39,25 @@ namespace {
 // The child must mimic the behavior of zygote_main_linux.cc on the child
 // side of the fork. See zygote_main_linux.cc:HandleForkRequest from
 //   if (!child) {
-// Note: this code doesn't attempt to support the SECCOMP sandbox.
 void BecomeNaClLoader(const std::vector<int>& child_fds,
-                      size_t prereserved_sandbox_size) {
+                      size_t prereserved_sandbox_size,
+                      int number_of_cores) {
   VLOG(1) << "NaCl loader: setting up IPC descriptor";
   // don't need zygote FD any more
   if (HANDLE_EINTR(close(kNaClZygoteDescriptor)) != 0)
     LOG(ERROR) << "close(kNaClZygoteDescriptor) failed.";
+  bool sandbox_initialized = InitializeBpfSandbox();
+  if (!sandbox_initialized) {
+    LOG(ERROR) << "Could not initialize NaCl's second "
+      << "layer sandbox (seccomp-bpf).";
+  }
   base::GlobalDescriptors::GetInstance()->Set(kPrimaryIPCChannel,
                                               child_fds[kNaClBrowserFDIndex]);
 
   base::MessageLoopForIO main_message_loop;
   NaClListener listener;
   listener.set_prereserved_sandbox_size(prereserved_sandbox_size);
+  listener.set_number_of_cores(number_of_cores);
   listener.Listen();
   _exit(0);
 }
@@ -58,7 +65,8 @@ void BecomeNaClLoader(const std::vector<int>& child_fds,
 // Some of this code was lifted from
 // content/browser/zygote_main_linux.cc:ForkWithRealPid()
 void HandleForkRequest(const std::vector<int>& child_fds,
-                       size_t prereserved_sandbox_size) {
+                       size_t prereserved_sandbox_size,
+                       int number_of_cores) {
   VLOG(1) << "nacl_helper: forking";
   pid_t childpid = fork();
   if (childpid < 0) {
@@ -96,7 +104,7 @@ void HandleForkRequest(const std::vector<int>& child_fds,
     if (HANDLE_EINTR(close(child_fds[kNaClParentFDIndex])) != 0)
       LOG(ERROR) << "close(child_fds[kNaClParentFDIndex]) failed";
     if (validack) {
-      BecomeNaClLoader(child_fds, prereserved_sandbox_size);
+      BecomeNaClLoader(child_fds, prereserved_sandbox_size, number_of_cores);
     } else {
       LOG(ERROR) << "Failed to synch with zygote";
     }
@@ -234,6 +242,7 @@ int main(int argc, char* argv[]) {
 #endif
   std::vector<int> empty; // for SendMsg() calls
   size_t prereserved_sandbox_size = CheckReservedAtZero();
+  int number_of_cores = sysconf(_SC_NPROCESSORS_ONLN);
 
   CheckRDebug(argv[0]);
 
@@ -270,7 +279,7 @@ int main(int argc, char* argv[]) {
     } else if (msglen == sizeof(kNaClForkRequest) - 1 &&
                memcmp(buf, kNaClForkRequest, msglen) == 0) {
       if (kNaClParentFDIndex + 1 == fds.size()) {
-        HandleForkRequest(fds, prereserved_sandbox_size);
+        HandleForkRequest(fds, prereserved_sandbox_size, number_of_cores);
         continue;  // fork succeeded. Note: child does not return
       } else {
         LOG(ERROR) << "nacl_helper: unexpected number of fds, got "

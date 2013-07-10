@@ -10,12 +10,13 @@
 #import <Cocoa/Cocoa.h>
 #include <vector>
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "ui/base/work_area_watcher_observer.h"
 
+class AppControllerProfileObserver;
 class BookmarkMenuBridge;
 class CommandUpdater;
 class GURL;
@@ -39,6 +40,10 @@ class WorkAreaWatcherObserver;
   // build the user-data specific main menu items.
   Profile* lastProfile_;
 
+  // The ProfileObserver observes the ProfileInfoCache and gets notified
+  // when a profile has been deleted.
+  scoped_ptr<AppControllerProfileObserver> profileInfoCacheObserver_;
+
   // Management of the bookmark menu which spans across all windows
   // (and Browser*s).
   scoped_ptr<BookmarkMenuBridge> bookmarkMenuBridge_;
@@ -46,7 +51,7 @@ class WorkAreaWatcherObserver;
 
   // The profile menu, which appears right before the Help menu. It is only
   // available when multiple profiles is enabled.
-  scoped_nsobject<ProfileMenuController> profileMenuController_;
+  base::scoped_nsobject<ProfileMenuController> profileMenuController_;
 
   // If we're told to open URLs (in particular, via |-application:openFiles:| by
   // Launch Services) before we've launched the browser, we queue them up in
@@ -101,7 +106,7 @@ class WorkAreaWatcherObserver;
 - (IBAction)showPreferences:(id)sender;
 
 // Redirect in the menu item from the expected target of "File's
-// Owner" (NSAppliation) for a Branded About Box
+// Owner" (NSApplication) for a Branded About Box
 - (IBAction)orderFrontStandardAboutPanel:(id)sender;
 
 // Toggles the "Confirm to Quit" preference.

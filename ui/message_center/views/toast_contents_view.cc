@@ -8,11 +8,13 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/base/animation/slide_animation.h"
+#include "ui/gfx/display.h"
+#include "ui/gfx/screen.h"
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/message_center_style.h"
 #include "ui/message_center/notification.h"
@@ -69,12 +71,11 @@ views::Widget* ToastContentsView::CreateWidget(gfx::NativeView parent) {
   views::Widget::InitParams params(
       views::Widget::InitParams::TYPE_POPUP);
   params.keep_on_top = true;
-  params.transparent = true;
   if (parent)
     params.parent = parent;
   else
     params.top_level = true;
-  params.transparent = true;
+  params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.delegate = this;
   views::Widget* widget = new views::Widget();
   widget->set_focus_on_creation(false);
@@ -237,6 +238,18 @@ bool ToastContentsView::CanActivate() const {
 #else
   return false;
 #endif
+}
+
+void ToastContentsView::OnDisplayChanged() {
+  gfx::NativeView native_view = GetWidget()->GetNativeView();
+  collection_->OnDisplayBoundsChanged(gfx::Screen::GetScreenFor(
+      native_view)->GetDisplayNearestWindow(native_view));
+}
+
+void ToastContentsView::OnWorkAreaChanged() {
+  gfx::NativeView native_view = GetWidget()->GetNativeView();
+  collection_->OnDisplayBoundsChanged(gfx::Screen::GetScreenFor(
+      native_view)->GetDisplayNearestWindow(native_view));
 }
 
 // views::View

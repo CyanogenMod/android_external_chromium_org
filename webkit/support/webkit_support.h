@@ -30,8 +30,6 @@ class WebFileSystemCallbacks;
 class WebFrame;
 class WebGamepads;
 class WebLayerTreeView;
-class WebMediaPlayer;
-class WebMediaPlayerClient;
 class WebPlugin;
 class WebStorageNamespace;
 class WebString;
@@ -41,10 +39,6 @@ class WebURLResponse;
 class WebView;
 struct WebPluginParams;
 struct WebURLError;
-}
-
-namespace webkit_media {
-class MediaStreamClient;
 }
 
 // This package provides functions used by DumpRenderTree/chromium.
@@ -72,11 +66,7 @@ base::FilePath GetChromiumRootDirFilePath();
 // SetUpTestEnvironmentForUnitTests() should be used when running in a
 // TestSuite, in which case no AtExitManager is created and ICU is not
 // initialized (as it is already done by the TestSuite).
-void SetUpTestEnvironment();
 void SetUpTestEnvironmentForUnitTests();
-void SetUpTestEnvironment(WebKit::Platform* shadow_platform_delegate);
-void SetUpTestEnvironmentForUnitTests(
-    WebKit::Platform* shadow_platform_delegate);
 void TearDownTestEnvironment();
 
 // Returns a pointer to a Platform implementation for
@@ -87,29 +77,6 @@ WebKit::Platform* GetWebKitPlatformSupport();
 // This is used by WebFrameClient::createPlugin().
 WebKit::WebPlugin* CreateWebPlugin(WebKit::WebFrame* frame,
                                    const WebKit::WebPluginParams& params);
-
-// TODO(wjia): remove CreateMediaPlayer once
-// https://bugs.webkit.org/show_bug.cgi?id=113633 is fixed, since it has been
-// moved into webkit/mocks.
-// This is used by WebFrameClient::createMediaPlayer().
-WebKit::WebMediaPlayer* CreateMediaPlayer(
-    WebKit::WebFrame* frame,
-    const WebKit::WebURL& url,
-    WebKit::WebMediaPlayerClient* client,
-    webkit_media::MediaStreamClient* media_stream_client);
-
-// This is used by WebFrameClient::createMediaPlayer().
-WebKit::WebMediaPlayer* CreateMediaPlayer(
-    WebKit::WebFrame* frame,
-    const WebKit::WebURL& url,
-    WebKit::WebMediaPlayerClient* client);
-
-// This is used by WebFrameClient::createApplicationCacheHost().
-WebKit::WebApplicationCacheHost* CreateApplicationCacheHost(
-    WebKit::WebFrame* frame, WebKit::WebApplicationCacheHostClient* client);
-
-// This is used by WebViewHost::createSessionStorageNamespace().
-WebKit::WebStorageNamespace* CreateSessionStorageNamespace(unsigned quota);
 
 // Returns the root directory of the WebKit code.
 WebKit::WebString GetWebKitRootDir();
@@ -142,8 +109,6 @@ WebKit::WebLayerTreeView* CreateLayerTreeView(
     LayerTreeViewType type,
     DRTLayerTreeViewClient* client,
     WebKit::WebThread* thread);
-
-void SetThreadedCompositorEnabled(bool enabled);
 
 // ------- URL load mocking.
 // Registers the file at |file_path| to be served when |url| is requested.
@@ -243,13 +208,6 @@ WebKit::WebURLError CreateCancelledError(const WebKit::WebURLRequest& request);
 WebKit::WebURLRequest::ExtraData* CreateWebURLRequestExtraData(
     WebKit::WebReferrerPolicy referrer_policy);
 
-// - Database
-void SetDatabaseQuota(int quota);
-void ClearAllDatabases();
-
-// - Resource loader
-void SetAcceptAllCookies(bool accept);
-
 // - Theme engine
 #if defined(OS_WIN) || defined(OS_MACOSX)
 void SetThemeEngine(WebKit::WebThemeEngine* engine);
@@ -258,16 +216,6 @@ WebKit::WebThemeEngine* GetThemeEngine();
 
 // - DevTools
 WebKit::WebURL GetDevToolsPathAsURL();
-
-// - FileSystem
-void OpenFileSystem(WebKit::WebFrame* frame,
-                    WebKit::WebFileSystemType type,
-                    long long size,
-                    bool create,
-                    WebKit::WebFileSystemCallbacks* callbacks);
-void DeleteFileSystem(WebKit::WebFrame* frame,
-                      WebKit::WebFileSystemType type,
-                      WebKit::WebFileSystemCallbacks* callbacks);
 
 // Returns a filesystem ID for the newly created isolated filesystem.
 WebKit::WebString RegisterIsolatedFileSystem(

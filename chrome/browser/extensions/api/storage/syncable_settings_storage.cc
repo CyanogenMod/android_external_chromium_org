@@ -75,7 +75,7 @@ ValueStore::WriteResult SyncableSettingsStorage::Set(
 }
 
 ValueStore::WriteResult SyncableSettingsStorage::Set(
-    WriteOptions options, const DictionaryValue& values) {
+    WriteOptions options, const base::DictionaryValue& values) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   WriteResult result = delegate_->Set(options, values);
   if (result->HasError()) {
@@ -129,7 +129,7 @@ void SyncableSettingsStorage::SyncResultIfEnabled(
 // Sync-related methods.
 
 syncer::SyncError SyncableSettingsStorage::StartSyncing(
-    const DictionaryValue& sync_state,
+    const base::DictionaryValue& sync_state,
     scoped_ptr<SettingsSyncProcessor> sync_processor) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   DCHECK(!sync_processor_.get());
@@ -141,11 +141,12 @@ syncer::SyncError SyncableSettingsStorage::StartSyncing(
   if (maybe_settings->HasError()) {
     return syncer::SyncError(
         FROM_HERE,
+        syncer::SyncError::DATATYPE_ERROR,
         std::string("Failed to get settings: ") + maybe_settings->error(),
         sync_processor_->type());
   }
 
-  const DictionaryValue& settings = *maybe_settings->settings().get();
+  const base::DictionaryValue& settings = *maybe_settings->settings().get();
   if (sync_state.empty())
     return SendLocalSettingsToSync(settings);
   else
@@ -153,11 +154,11 @@ syncer::SyncError SyncableSettingsStorage::StartSyncing(
 }
 
 syncer::SyncError SyncableSettingsStorage::SendLocalSettingsToSync(
-    const DictionaryValue& settings) {
+    const base::DictionaryValue& settings) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
   ValueStoreChangeList changes;
-  for (DictionaryValue::Iterator i(settings); !i.IsAtEnd(); i.Advance()) {
+  for (base::DictionaryValue::Iterator i(settings); !i.IsAtEnd(); i.Advance()) {
     changes.push_back(ValueStoreChange(i.key(), NULL, i.value().DeepCopy()));
   }
 
@@ -172,14 +173,15 @@ syncer::SyncError SyncableSettingsStorage::SendLocalSettingsToSync(
 }
 
 syncer::SyncError SyncableSettingsStorage::OverwriteLocalSettingsWithSync(
-    const DictionaryValue& sync_state, const DictionaryValue& settings) {
+    const base::DictionaryValue& sync_state,
+    const base::DictionaryValue& settings) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   // Treat this as a list of changes to sync and use ProcessSyncChanges.
   // This gives notifications etc for free.
-  scoped_ptr<DictionaryValue> new_sync_state(sync_state.DeepCopy());
+  scoped_ptr<base::DictionaryValue> new_sync_state(sync_state.DeepCopy());
 
   SettingSyncDataList changes;
-  for (DictionaryValue::Iterator it(settings); !it.IsAtEnd(); it.Advance()) {
+  for (base::DictionaryValue::Iterator it(settings); !it.IsAtEnd(); it.Advance()) {
     Value* orphaned_sync_value = NULL;
     if (new_sync_state->RemoveWithoutPathExpansion(
           it.key(), &orphaned_sync_value)) {
@@ -202,13 +204,13 @@ syncer::SyncError SyncableSettingsStorage::OverwriteLocalSettingsWithSync(
               syncer::SyncChange::ACTION_DELETE,
               extension_id_,
               it.key(),
-              scoped_ptr<Value>(new DictionaryValue())));
+              scoped_ptr<Value>(new base::DictionaryValue())));
     }
   }
 
   // Add all new settings to local settings.
   while (!new_sync_state->empty()) {
-    DictionaryValue::Iterator first_entry(*new_sync_state);
+    base::DictionaryValue::Iterator first_entry(*new_sync_state);
     std::string key = first_entry.key();
     Value* value = NULL;
     CHECK(new_sync_state->RemoveWithoutPathExpansion(key, &value));
@@ -239,6 +241,7 @@ syncer::SyncError SyncableSettingsStorage::ProcessSyncChanges(
   if (!sync_processor_.get()) {
     return syncer::SyncError(
         FROM_HERE,
+        syncer::SyncError::DATATYPE_ERROR,
         std::string("Sync is inactive for ") + extension_id_,
         syncer::UNSPECIFIED);
   }
@@ -259,6 +262,7 @@ syncer::SyncError SyncableSettingsStorage::ProcessSyncChanges(
       if (maybe_settings->HasError()) {
         errors.push_back(syncer::SyncError(
             FROM_HERE,
+            syncer::SyncError::DATATYPE_ERROR,
             std::string("Error getting current sync state for ") +
                 extension_id_ + "/" + key + ": " + maybe_settings->error(),
             sync_processor_->type()));
@@ -338,6 +342,7 @@ syncer::SyncError SyncableSettingsStorage::OnSyncAdd(
   if (result->HasError()) {
     return syncer::SyncError(
         FROM_HERE,
+        syncer::SyncError::DATATYPE_ERROR,
         std::string("Error pushing sync add to local settings: ") +
             result->error(),
         sync_processor_->type());
@@ -357,6 +362,7 @@ syncer::SyncError SyncableSettingsStorage::OnSyncUpdate(
   if (result->HasError()) {
     return syncer::SyncError(
         FROM_HERE,
+        syncer::SyncError::DATATYPE_ERROR,
         std::string("Error pushing sync update to local settings: ") +
             result->error(),
         sync_processor_->type());
@@ -374,6 +380,7 @@ syncer::SyncError SyncableSettingsStorage::OnSyncDelete(
   if (result->HasError()) {
     return syncer::SyncError(
         FROM_HERE,
+        syncer::SyncError::DATATYPE_ERROR,
         std::string("Error pushing sync remove to local settings: ") +
             result->error(),
         sync_processor_->type());

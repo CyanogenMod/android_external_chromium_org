@@ -11,26 +11,37 @@
 #include "base/file_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/task_runner_util.h"
-#include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/drive/drive_service_interface.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/power_save_blocker.h"
 
 using content::BrowserThread;
+using google_apis::CancelCallback;
+using google_apis::GDATA_CANCELLED;
+using google_apis::GDataErrorCode;
+using google_apis::GDATA_NO_SPACE;
+using google_apis::HTTP_CONFLICT;
+using google_apis::HTTP_CREATED;
+using google_apis::HTTP_FORBIDDEN;
+using google_apis::HTTP_NOT_FOUND;
+using google_apis::HTTP_PRECONDITION;
+using google_apis::HTTP_RESUME_INCOMPLETE;
+using google_apis::HTTP_SUCCESS;
+using google_apis::ProgressCallback;
+using google_apis::ResourceEntry;
+using google_apis::UploadRangeResponse;
 
-namespace google_apis {
+namespace drive {
 
 // Structure containing current upload information of file, passed between
 // DriveServiceInterface methods and callbacks.
 struct DriveUploader::UploadFileInfo {
-  UploadFileInfo(const base::FilePath& drive_path,
-                 const base::FilePath& local_path,
+  UploadFileInfo(const base::FilePath& local_path,
                  const std::string& content_type,
                  const UploadCompletionCallback& callback,
                  const ProgressCallback& progress_callback)
-      : drive_path(drive_path),
-        file_path(local_path),
+      : file_path(local_path),
         content_type(content_type),
         completion_callback(callback),
         progress_callback(progress_callback),
@@ -50,7 +61,6 @@ struct DriveUploader::UploadFileInfo {
     return "file_path=[" + file_path.AsUTF8Unsafe() +
            "], content_type=[" + content_type +
            "], content_length=[" + base::UintToString(content_length) +
-           "], drive_path=[" + drive_path.AsUTF8Unsafe() +
            "]";
   }
 
@@ -58,9 +68,6 @@ struct DriveUploader::UploadFileInfo {
   CancelCallback GetCancelCallback() {
     return base::Bind(&UploadFileInfo::Cancel, weak_ptr_factory_.GetWeakPtr());
   }
-
-  // Final path in gdata. Looks like /special/drive/MyFolder/MyFile.
-  const base::FilePath drive_path;
 
   // The local file path of the file to be uploaded.
   const base::FilePath file_path;
@@ -105,8 +112,10 @@ struct DriveUploader::UploadFileInfo {
   DISALLOW_COPY_AND_ASSIGN(UploadFileInfo);
 };
 
-DriveUploader::DriveUploader(DriveServiceInterface* drive_service)
+DriveUploader::DriveUploader(DriveServiceInterface* drive_service,
+                             base::TaskRunner* blocking_task_runner)
     : drive_service_(drive_service),
+      blocking_task_runner_(blocking_task_runner),
       weak_ptr_factory_(this) {
 }
 
@@ -114,7 +123,6 @@ DriveUploader::~DriveUploader() {}
 
 CancelCallback DriveUploader::UploadNewFile(
     const std::string& parent_resource_id,
-    const base::FilePath& drive_file_path,
     const base::FilePath& local_file_path,
     const std::string& title,
     const std::string& content_type,
@@ -122,15 +130,13 @@ CancelCallback DriveUploader::UploadNewFile(
     const ProgressCallback& progress_callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!parent_resource_id.empty());
-  DCHECK(!drive_file_path.empty());
   DCHECK(!local_file_path.empty());
   DCHECK(!title.empty());
   DCHECK(!content_type.empty());
   DCHECK(!callback.is_null());
 
   return StartUploadFile(
-      scoped_ptr<UploadFileInfo>(new UploadFileInfo(drive_file_path,
-                                                    local_file_path,
+      scoped_ptr<UploadFileInfo>(new UploadFileInfo(local_file_path,
                                                     content_type,
                                                     callback,
                                                     progress_callback)),
@@ -142,7 +148,6 @@ CancelCallback DriveUploader::UploadNewFile(
 
 CancelCallback DriveUploader::UploadExistingFile(
     const std::string& resource_id,
-    const base::FilePath& drive_file_path,
     const base::FilePath& local_file_path,
     const std::string& content_type,
     const std::string& etag,
@@ -150,14 +155,12 @@ CancelCallback DriveUploader::UploadExistingFile(
     const ProgressCallback& progress_callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!resource_id.empty());
-  DCHECK(!drive_file_path.empty());
   DCHECK(!local_file_path.empty());
   DCHECK(!content_type.empty());
   DCHECK(!callback.is_null());
 
   return StartUploadFile(
-      scoped_ptr<UploadFileInfo>(new UploadFileInfo(drive_file_path,
-                                                    local_file_path,
+      scoped_ptr<UploadFileInfo>(new UploadFileInfo(local_file_path,
                                                     content_type,
                                                     callback,
                                                     progress_callback)),
@@ -169,19 +172,17 @@ CancelCallback DriveUploader::UploadExistingFile(
 
 CancelCallback DriveUploader::ResumeUploadFile(
     const GURL& upload_location,
-    const base::FilePath& drive_file_path,
     const base::FilePath& local_file_path,
     const std::string& content_type,
     const UploadCompletionCallback& callback,
     const ProgressCallback& progress_callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!drive_file_path.empty());
   DCHECK(!local_file_path.empty());
   DCHECK(!content_type.empty());
   DCHECK(!callback.is_null());
 
   scoped_ptr<UploadFileInfo> upload_file_info(new UploadFileInfo(
-      drive_file_path, local_file_path, content_type,
+      local_file_path, content_type,
       callback, progress_callback));
   upload_file_info->upload_location = upload_location;
 
@@ -199,9 +200,10 @@ CancelCallback DriveUploader::StartUploadFile(
 
   UploadFileInfo* info_ptr = upload_file_info.get();
   base::PostTaskAndReplyWithResult(
-      BrowserThread::GetBlockingPool(),
+      blocking_task_runner_.get(),
       FROM_HERE,
-      base::Bind(&file_util::GetFileSize, info_ptr->file_path,
+      base::Bind(&file_util::GetFileSize,
+                 info_ptr->file_path,
                  &info_ptr->content_length),
       base::Bind(&DriveUploader::StartUploadFileAfterGetFileSize,
                  weak_ptr_factory_.GetWeakPtr(),
@@ -237,7 +239,6 @@ void DriveUploader::StartInitiateUploadNewFile(
 
   UploadFileInfo* info_ptr = upload_file_info.get();
   info_ptr->cancel_callback = drive_service_->InitiateUploadNewFile(
-      info_ptr->drive_path,
       info_ptr->content_type,
       info_ptr->content_length,
       parent_resource_id,
@@ -255,7 +256,6 @@ void DriveUploader::StartInitiateUploadExistingFile(
 
   UploadFileInfo* info_ptr = upload_file_info.get();
   info_ptr->cancel_callback = drive_service_->InitiateUploadExistingFile(
-      info_ptr->drive_path,
       info_ptr->content_type,
       info_ptr->content_length,
       resource_id,
@@ -272,7 +272,7 @@ void DriveUploader::OnUploadLocationReceived(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   DVLOG(1) << "Got upload location [" << upload_location.spec()
-           << "] for [" << upload_file_info->drive_path.value() << "]";
+           << "] for [" << upload_file_info->file_path.value() << "]";
 
   if (code != HTTP_SUCCESS) {
     // TODO(achuith): Handle error codes from Google Docs server.
@@ -296,7 +296,6 @@ void DriveUploader::StartGetUploadStatus(
 
   UploadFileInfo* info_ptr = upload_file_info.get();
   info_ptr->cancel_callback = drive_service_->GetUploadStatus(
-      info_ptr->drive_path,
       info_ptr->upload_location,
       info_ptr->content_length,
       base::Bind(&DriveUploader::OnUploadRangeResponseReceived,
@@ -319,7 +318,6 @@ void DriveUploader::UploadNextChunk(
 
   UploadFileInfo* info_ptr = upload_file_info.get();
   info_ptr->cancel_callback = drive_service_->ResumeUpload(
-      info_ptr->drive_path,
       info_ptr->upload_location,
       start_position,
       info_ptr->content_length,
@@ -353,7 +351,7 @@ void DriveUploader::OnUploadRangeResponseReceived(
     // TODO(hidehiko): Upload metadata only for empty files, after GData WAPI
     // code is gone.
     DVLOG(1) << "Successfully created uploaded file=["
-             << upload_file_info->drive_path.value() << "]";
+             << upload_file_info->file_path.value() << "]";
 
     // Done uploading.
     upload_file_info->completion_callback.Run(
@@ -384,7 +382,7 @@ void DriveUploader::OnUploadRangeResponseReceived(
 
   DVLOG(1) << "Received range " << response.start_position_received
            << "-" << response.end_position_received
-           << " for [" << upload_file_info->drive_path.value() << "]";
+           << " for [" << upload_file_info->file_path.value() << "]";
 
   UploadNextChunk(upload_file_info.Pass(), response.end_position_received);
 }
@@ -408,4 +406,4 @@ void DriveUploader::UploadFailed(scoped_ptr<UploadFileInfo> upload_file_info,
       error, upload_file_info->upload_location, scoped_ptr<ResourceEntry>());
 }
 
-}  // namespace google_apis
+}  // namespace drive

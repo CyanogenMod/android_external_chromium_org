@@ -7,9 +7,9 @@
 
 #import <Cocoa/Cocoa.h>
 
-#import "base/memory/scoped_nsobject.h"
-#import "content/browser/accessibility/browser_accessibility_delegate_mac.h"
+#import "base/mac/scoped_nsobject.h"
 #include "content/browser/accessibility/browser_accessibility.h"
+#import "content/browser/accessibility/browser_accessibility_delegate_mac.h"
 #include "content/common/accessibility_node_data.h"
 
 // BrowserAccessibilityCocoa is a cocoa wrapper around the BrowserAccessibility
@@ -19,7 +19,7 @@
 @interface BrowserAccessibilityCocoa : NSObject {
  @private
   content::BrowserAccessibility* browserAccessibility_;
-  scoped_nsobject<NSMutableArray> children_;
+  base::scoped_nsobject<NSMutableArray> children_;
   id<BrowserAccessibilityDelegateCocoa> delegate_;
 }
 
@@ -29,6 +29,11 @@
 // parameters can be null.
 - (id)initWithObject:(content::BrowserAccessibility*)accessibility
             delegate:(id<BrowserAccessibilityDelegateCocoa>)delegate;
+
+// Clear this object's pointer to the wrapped BrowserAccessibility object
+// because the wrapped object has been deleted, but this object may
+// persist if the system still has references to it.
+- (void)detach;
 
 // Invalidate children for a non-ignored ancestor (including self).
 - (void)childrenChanged;

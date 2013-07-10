@@ -79,6 +79,7 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
     RenderWidgetHostImpl* widget_host,
     ContentViewCoreImpl* content_view_core)
     : host_(widget_host),
+      needs_begin_frame_(false),
       are_layers_attached_(true),
       content_view_core_(NULL),
       ime_adapter_android_(this),
@@ -296,15 +297,16 @@ void RenderWidgetHostViewAndroid::Focus() {
   host_->Focus();
   host_->SetInputMethodActive(true);
   ResetClipping();
+  if (overscroll_effect_)
+    overscroll_effect_->SetEnabled(true);
 }
 
 void RenderWidgetHostViewAndroid::Blur() {
   host_->ExecuteEditCommand("Unselect", "");
   host_->SetInputMethodActive(false);
   host_->Blur();
-
   if (overscroll_effect_)
-    overscroll_effect_->Finish();
+    overscroll_effect_->SetEnabled(false);
 }
 
 bool RenderWidgetHostViewAndroid::HasFocus() const {
@@ -425,8 +427,13 @@ void RenderWidgetHostViewAndroid::OnSetNeedsBeginFrame(
     bool enabled) {
   TRACE_EVENT1("cc", "RenderWidgetHostViewAndroid::OnSetNeedsBeginFrame",
                "enabled", enabled);
-  if (content_view_core_)
+  // ContentViewCoreImpl handles multiple subscribers to the BeginFrame, so
+  // we have to make sure calls to ContentViewCoreImpl's SetNeedsBeginFrame
+  // are balanced, even if RenderWidgetHostViewAndroid's may not be.
+  if (content_view_core_ && needs_begin_frame_ != enabled) {
     content_view_core_->SetNeedsBeginFrame(enabled);
+    needs_begin_frame_ = enabled;
+  }
 }
 
 void RenderWidgetHostViewAndroid::OnStartContentIntent(
@@ -700,11 +707,7 @@ void RenderWidgetHostViewAndroid::BuffersSwapped(
   // texture.
   DCHECK(!CompositorImpl::IsThreadingEnabled());
 
-  if (texture_id_in_layer_) {
-    DCHECK(!current_mailbox_.IsZero());
-    ImageTransportFactoryAndroid::GetInstance()->ReleaseTexture(
-        texture_id_in_layer_, current_mailbox_.name);
-  } else {
+  if (!texture_id_in_layer_) {
     texture_id_in_layer_ = factory->CreateTexture();
     texture_layer_->SetIsDrawable(true);
   }
@@ -743,7 +746,7 @@ void RenderWidgetHostViewAndroid::RemoveLayers() {
 }
 
 bool RenderWidgetHostViewAndroid::Animate(base::TimeTicks frame_time) {
-  if (!overscroll_effect_ || !HasFocus())
+  if (!overscroll_effect_)
     return false;
   return overscroll_effect_->Animate(frame_time);
 }
@@ -752,7 +755,7 @@ void RenderWidgetHostViewAndroid::CreateOverscrollEffectIfNecessary() {
   if (!overscroll_effect_enabled_ || overscroll_effect_)
     return;
 
-  overscroll_effect_ = OverscrollGlow::Create();
+  overscroll_effect_ = OverscrollGlow::Create(true);
 
   // Prevent future creation attempts on failure.
   if (!overscroll_effect_)
@@ -779,7 +782,7 @@ void RenderWidgetHostViewAndroid::UpdateAnimationSize(
 void RenderWidgetHostViewAndroid::ScheduleAnimationIfNecessary() {
   if (!content_view_core_)
     return;
-  if (overscroll_effect_ && overscroll_effect_->IsActive())
+  if (overscroll_effect_ && overscroll_effect_->NeedsAnimate())
     content_view_core_->SetNeedsAnimate();
 }
 
@@ -967,6 +970,10 @@ void RenderWidgetHostViewAndroid::SendMouseWheelEvent(
 
 void RenderWidgetHostViewAndroid::SendGestureEvent(
     const WebKit::WebGestureEvent& event) {
+  // Sending a gesture that may trigger overscroll should resume the effect.
+  if (overscroll_effect_)
+    overscroll_effect_->SetEnabled(true);
+
   if (host_)
     host_->ForwardGestureEvent(event);
 }
@@ -1034,7 +1041,7 @@ void RenderWidgetHostViewAndroid::OnOverscrolled(
     gfx::Vector2dF accumulated_overscroll,
     gfx::Vector2dF current_fling_velocity) {
   CreateOverscrollEffectIfNecessary();
-  if (!overscroll_effect_ || !HasFocus())
+  if (!overscroll_effect_)
     return;
 
   overscroll_effect_->OnOverscrolled(base::TimeTicks::Now(),

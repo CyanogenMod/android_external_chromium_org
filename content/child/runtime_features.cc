@@ -24,16 +24,14 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
 #endif
 
 #if defined(OS_ANDROID)
-    bool enable_webaudio = true;
+  bool enable_webaudio = false;
 #if defined(ARCH_CPU_ARMEL)
-    enable_webaudio =
-        ((android_getCpuFeatures() & ANDROID_CPU_ARM_FEATURE_NEON) != 0);
+  enable_webaudio =
+      ((android_getCpuFeatures() & ANDROID_CPU_ARM_FEATURE_NEON) != 0);
 #endif
   WebRuntimeFeatures::enableWebAudio(enable_webaudio);
   // Android does not support the Gamepad API.
   WebRuntimeFeatures::enableGamepad(false);
-  // input[type=week] in Android is incomplete. crbug.com/135938
-  WebRuntimeFeatures::enableInputTypeWeek(false);
   // Android does not have support for PagePopup
   WebRuntimeFeatures::enablePagePopup(false);
   // datalist on Android is not enabled
@@ -124,11 +122,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (command_line.HasSwitch(switches::kEnableWebGLDraftExtensions))
     WebRuntimeFeatures::enableWebGLDraftExtensions(true);
-
-  // Enabled by default for testing.
-  // TODO(urvang): Go back to using the command-line option after a few days.
-  // https://code.google.com/p/chromium/issues/detail?id=234437
-  WebRuntimeFeatures::enableWebPInAcceptHeader(true);
 }
 
 }  // namespace content

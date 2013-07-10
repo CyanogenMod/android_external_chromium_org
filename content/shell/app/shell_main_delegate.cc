@@ -13,11 +13,11 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/layouttest_support.h"
+#include "content/shell/app/webkit_test_platform_support.h"
 #include "content/shell/common/shell_switches.h"
 #include "content/shell/renderer/shell_content_renderer_client.h"
 #include "content/shell/shell_browser_main.h"
 #include "content/shell/shell_content_browser_client.h"
-#include "content/shell/webkit_test_platform_support.h"
 #include "net/cookies/cookie_monster.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_paths.h"
@@ -40,7 +40,7 @@
 #endif
 
 #if defined(OS_MACOSX)
-#include "content/shell/paths_mac.h"
+#include "content/shell/app/paths_mac.h"
 #endif  // OS_MACOSX
 
 #if defined(OS_WIN)
@@ -71,12 +71,11 @@ void InitLogging() {
   base::FilePath log_filename;
   PathService::Get(base::DIR_EXE, &log_filename);
   log_filename = log_filename.AppendASCII("content_shell.log");
-  logging::InitLogging(
-      log_filename.value().c_str(),
-      logging::LOG_TO_BOTH_FILE_AND_SYSTEM_DEBUG_LOG,
-      logging::LOCK_LOG_FILE,
-      logging::DELETE_OLD_LOG_FILE,
-      logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS);
+  logging::LoggingSettings settings;
+  settings.logging_dest = logging::LOG_TO_ALL;
+  settings.log_file = log_filename.value().c_str();
+  settings.delete_old = logging::DELETE_OLD_LOG_FILE;
+  logging::InitLogging(settings);
   logging::SetLogItems(true, true, true, true);
 }
 
@@ -142,6 +141,13 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
       command_line.AppendSwitch(switches::kEnableSoftwareCompositingGLAdapter);
 
     net::CookieMonster::EnableFileScheme();
+
+    // Unless/until WebM files are added to the media layout tests, we need to
+    // avoid removing MP4/H264/AAC so that layout tests can run on Android.
+#if !defined(OS_ANDROID)
+    net::RemoveProprietaryMediaTypesAndCodecsForTests();
+#endif
+
     if (!WebKitTestPlatformInitialize()) {
       if (exit_code)
         *exit_code = 1;

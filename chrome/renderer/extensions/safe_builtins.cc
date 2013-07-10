@@ -28,6 +28,7 @@ const char kClassName[] = "extensions::SafeBuiltins";
 // This is a convenient way to save functions that user scripts may clobber.\n"
 const char kScript[] =
     "(function() {\n"
+    "'use strict';\n"
     "native function Apply();\n"
     "native function Save();\n"
     "\n"
@@ -52,16 +53,69 @@ const char kScript[] =
     "  });\n"
     "}\n"
     "\n"
-    "function getSafeBuiltin(builtin) {\n"
-    "  var safe = {};\n"
+    "function getSafeBuiltin(builtin, includePrototype) {\n"
+    "  var safe = function() {\n"
+    "    throw 'Safe objects cannot be called nor constructed. ' +\n"
+    "          'Use $Foo.self() or new $Foo.self() instead.';\n"
+    "  };\n"
+    "  safe.self = builtin;\n"
     "  makeCallable(builtin, safe, true);\n"
-    "  makeCallable(builtin.prototype, safe, false);\n"
+    "  if (includePrototype)\n"
+    "    makeCallable(builtin.prototype, safe, false);\n"
     "  return safe;\n"
     "}\n"
     "\n"
-    "[Array, Function, Object].forEach(function(builtin) {\n"
-    "  Save(builtin.name, getSafeBuiltin(builtin));\n"
+    "// Built-in types taken from the ECMAScript spec. The spec may change,\n"
+    "// though. It would be nice to generate this somehow.\n"
+    "// Note: no JSON, it needs to handle toJSON being overriden so is\n"
+    "//       implemented by hand.\n"
+    "// Note: no Math, it's static (we also don't need it yet).\n"
+    "// Note: the other things that are commented out are ones that aren't\n"
+    "//       needed to make the clobber tests pass, because running this\n"
+    "//       file is a bit slow.\n"
+    "var builtinTypes = [\n"
+    "    Object, Function, Array, String, /*Boolean, Number,*/\n"
+    "    /*Math, Date,*/ RegExp, /*JSON, Error, EvalError,\n"
+    "    ReferenceError, SyntaxError, TypeError, URIError*/];\n"
+    "builtinTypes.forEach(function(builtin) {\n"
+    "  Save(builtin.name, getSafeBuiltin(builtin, true));\n"
     "});\n"
+    "//Save('Math', getSafeBuiltin(Math, false));\n"
+    "// Save JSON. This is trickier because extensions can override toJSON in\n"
+    "// incompatible ways, and we need to prevent that.\n"
+    "var builtinToJSONs = builtinTypes.map(function(t) {\n"
+    "  return t.toJSON;\n"
+    "});\n"
+    "var builtinArray = Array;\n"
+    "var builtinJSONStringify = JSON.stringify;\n"
+    "Save('JSON', {\n"
+    "  parse: JSON.parse,\n"
+    "  stringify: function(obj) {\n"
+    "    var savedToJSONs = new builtinArray(builtinTypes.length);\n"
+    "    try {\n"
+    "      for (var i = 0; i < builtinTypes.length; ++i) {\n"
+    "        try {\n"
+    "          if (builtinTypes[i].prototype.toJSON !==\n"
+    "              builtinToJSONs[i]) {\n"
+    "            savedToJSONs[i] = builtinTypes[i].prototype.toJSON;\n"
+    "            builtinTypes[i].prototype.toJSON = builtinToJSONs[i];\n"
+    "          }\n"
+    "        } catch (e) {}\n"
+    "      }\n"
+    "    } catch (e) {}\n"
+    "    try {\n"
+    "      return builtinJSONStringify(obj);\n"
+    "    } finally {\n"
+    "      for (var i = 0; i < builtinTypes.length; ++i) {\n"
+    "        try {\n"
+    "          if (i in savedToJSONs)\n"
+    "            builtinTypes[i].prototype.toJSON = savedToJSONs[i];\n"
+    "        } catch (e) {}\n"
+    "      }\n"
+    "    }\n"
+    "  }\n"
+    "});\n"
+    "\n"
     "}());\n";
 
 v8::Local<v8::String> MakeKey(const char* name) {
@@ -101,17 +155,21 @@ class ExtensionImpl : public v8::Extension {
   static void Apply(const v8::FunctionCallbackInfo<v8::Value>& info) {
     CHECK(info.Length() == 5 &&
           info[0]->IsFunction() &&  // function
-          // info[1]->Object()      // recv (will throw error not check)
+          // info[1] could be an object or a string
           info[2]->IsObject() &&    // args
           info[3]->IsInt32() &&     // first_arg_index
           info[4]->IsInt32());      // args_length
-    if (!info[1]->IsObject()) {
+    v8::Local<v8::Function> function = info[0].As<v8::Function>();
+    v8::Local<v8::Object> recv;
+    if (info[1]->IsObject()) {
+      recv = info[1]->ToObject();
+    } else if (info[1]->IsString()) {
+      recv = v8::StringObject::New(info[1]->ToString())->ToObject();
+    } else {
       v8::ThrowException(v8::Exception::TypeError(v8::String::New(
           "The first argument is the receiver and must be an object")));
       return;
     }
-    v8::Local<v8::Function> function = info[0].As<v8::Function>();
-    v8::Local<v8::Object> recv = info[1]->ToObject();
     v8::Local<v8::Object> args = info[2]->ToObject();
     int first_arg_index = static_cast<int>(info[3]->ToInt32()->Value());
     int args_length = static_cast<int>(info[4]->ToInt32()->Value());
@@ -157,8 +215,20 @@ v8::Local<v8::Object> SafeBuiltins::GetFunction() const {
   return Load("Function", context_->v8_context());
 }
 
+v8::Local<v8::Object> SafeBuiltins::GetJSON() const {
+  return Load("JSON", context_->v8_context());
+}
+
 v8::Local<v8::Object> SafeBuiltins::GetObjekt() const {
   return Load("Object", context_->v8_context());
+}
+
+v8::Local<v8::Object> SafeBuiltins::GetRegExp() const {
+  return Load("RegExp", context_->v8_context());
+}
+
+v8::Local<v8::Object> SafeBuiltins::GetString() const {
+  return Load("String", context_->v8_context());
 }
 
 } //  namespace extensions

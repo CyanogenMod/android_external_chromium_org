@@ -16,7 +16,7 @@
 #include "base/process_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/top_sites.h"
@@ -256,7 +256,7 @@ bool GenerateProfile(GenerateProfileTypes types,
   base::FilePath path = file_iterator.Next();
   while (!path.empty()) {
     base::FilePath dst_file = dst_dir.Append(path.BaseName());
-    file_util::Delete(dst_file, false);
+    base::Delete(dst_file, false);
     if (!file_util::CopyFile(path, dst_file)) {
       PLOG(ERROR) << "Copying file failed";
       return false;

@@ -7,8 +7,8 @@ include_rules = [
   "+cc",
 
   "+components/auto_login_parser",
-  "+components/autofill/browser",
   "+components/autofill/content/browser",
+  "+components/autofill/core/browser",
   "+components/autofill/core/common",
   "+components/navigation_interception",
   "+components/user_prefs",
@@ -17,8 +17,6 @@ include_rules = [
 
   "+content/public/browser",
   "+content/public/test",
-
-  "+gpu/command_buffer/client",
 
   "+ui/gfx",
   "+ui/gl",
@@ -30,7 +28,7 @@ include_rules = [
   "!grit/ui_resources.h",
 
   # POD structure required by the find-in-page IPC messages.
-  "+third_party/WebKit/Source/WebKit/chromium/public/WebFindOptions.h",
+  "+third_party/WebKit/public/web/WebFindOptions.h",
   # Interface required for in-process input event handling.
-  "+third_party/WebKit/Source/WebKit/chromium/public/WebCompositorInputHandler.h"
+  "+third_party/WebKit/public/web/WebCompositorInputHandler.h"
 ]

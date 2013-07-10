@@ -25,6 +25,7 @@
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/transform.h"
+#include "ui/gfx/vector2d_conversions.h"
 #include "ui/gfx/vector2d_f.h"
 #include "ui/gl/gl_bindings.h"
 
@@ -274,6 +275,8 @@ AwDrawSWFunctionTable* g_sw_draw_functions = NULL;
 // as a fallback mechanism, which will have an important performance impact.
 bool g_is_skia_version_compatible = false;
 
+const int64 kFallbackTickTimeoutInMilliseconds = 500;
+
 }  // namespace
 
 // static
@@ -305,9 +308,12 @@ InProcessViewRenderer::InProcessViewRenderer(
       java_helper_(java_helper),
       web_contents_(web_contents),
       compositor_(NULL),
-      view_visible_(false),
+      visible_(false),
+      dip_scale_(0.0),
       continuous_invalidate_(false),
       block_invalidates_(false),
+      do_ensure_continuous_invalidation_task_pending_(false),
+      weak_factory_(this),
       width_(0),
       height_(0),
       attached_to_window_(false),
@@ -317,6 +323,7 @@ InProcessViewRenderer::InProcessViewRenderer(
   CHECK(web_contents_);
   web_contents_->SetUserData(kUserDataKey, new UserData(this));
   content::SynchronousCompositor::SetClientForWebContents(web_contents_, this);
+
   // Currently the logic in this class relies on |compositor_| remaining NULL
   // until the DidInitializeCompositor() call, hence it is not set here.
 }
@@ -341,8 +348,9 @@ void InProcessViewRenderer::WebContentsGone() {
 
 bool InProcessViewRenderer::OnDraw(jobject java_canvas,
                                    bool is_hardware_canvas,
-                                   const gfx::Point& scroll,
+                                   const gfx::Vector2d& scroll,
                                    const gfx::Rect& clip) {
+  fallback_tick_.Cancel();
   scroll_at_start_of_frame_  = scroll;
   if (is_hardware_canvas && attached_to_window_ && compositor_ &&
       HardwareEnabled() && client_->RequestDrawGL(java_canvas)) {
@@ -362,7 +370,7 @@ void InProcessViewRenderer::DrawGL(AwDrawGLInfo* draw_info) {
     return;
 
   TRACE_EVENT0("android_webview", "InProcessViewRenderer::DrawGL");
-  DCHECK(view_visible_);
+  DCHECK(visible_);
 
   // We need to watch if the current Android context has changed and enforce
   // a clean-up in the compositor.
@@ -438,10 +446,11 @@ bool InProcessViewRenderer::DrawSWInternal(jobject java_canvas,
   AwPixelInfo* pixels = sw_functions ?
       sw_functions->access_pixels(env, java_canvas) : NULL;
   // Render into an auxiliary bitmap if pixel info is not available.
+  ScopedJavaLocalRef<jobject> jcanvas(env, java_canvas);
   if (pixels == NULL) {
     TRACE_EVENT0("android_webview", "RenderToAuxBitmap");
     ScopedJavaLocalRef<jobject> jbitmap(java_helper_->CreateBitmap(
-        env, clip.width(), clip.height()));
+        env, clip.width(), clip.height(), jcanvas, web_contents_));
     if (!jbitmap.obj()) {
       TRACE_EVENT_INSTANT0("android_webview",
                            "EarlyOut_BitmapAllocFail",
@@ -452,7 +461,7 @@ bool InProcessViewRenderer::DrawSWInternal(jobject java_canvas,
     if (!RasterizeIntoBitmap(env, jbitmap,
                              clip.x() - scroll_at_start_of_frame_.x(),
                              clip.y() - scroll_at_start_of_frame_.y(),
-                             base::Bind(&InProcessViewRenderer::RenderSW,
+                             base::Bind(&InProcessViewRenderer::CompositeSW,
                                         base::Unretained(this)))) {
       TRACE_EVENT_INSTANT0("android_webview",
                            "EarlyOut_RasterizeFail",
@@ -460,7 +469,6 @@ bool InProcessViewRenderer::DrawSWInternal(jobject java_canvas,
       return false;
     }
 
-    ScopedJavaLocalRef<jobject> jcanvas(env, java_canvas);
     java_helper_->DrawBitmapIntoCanvas(env, jbitmap, jcanvas,
                                        clip.x(), clip.y());
     return true;
@@ -493,7 +501,7 @@ bool InProcessViewRenderer::DrawSWInternal(jobject java_canvas,
     canvas.translate(scroll_at_start_of_frame_.x(),
                      scroll_at_start_of_frame_.y());
 
-    succeeded = RenderSW(&canvas);
+    succeeded = CompositeSW(&canvas);
   }
 
   sw_functions->release_pixels(pixels);
@@ -530,12 +538,12 @@ InProcessViewRenderer::CapturePicture() {
   }
 
   // If Skia versions are not compatible, workaround it by rasterizing the
-  // picture into a bitmap and drawing it into a new Java picture. Pass false
-  // for |cache_result| as the picture we create will hold a shallow reference
-  // to the bitmap drawn, and we don't want subsequent draws to corrupt any
-  // previously returned pictures.
+  // picture into a bitmap and drawing it into a new Java picture. Pass null
+  // for |canvas| as we don't have java canvas at this point (and it would be
+  // software anyway).
   ScopedJavaLocalRef<jobject> jbitmap(java_helper_->CreateBitmap(
-      env, picture->width(), picture->height()));
+      env, picture->width(), picture->height(), ScopedJavaLocalRef<jobject>(),
+      NULL));
   if (!jbitmap.obj())
     return ScopedJavaLocalRef<jobject>();
 
@@ -551,16 +559,13 @@ InProcessViewRenderer::CapturePicture() {
 void InProcessViewRenderer::EnableOnNewPicture(bool enabled) {
 }
 
-void InProcessViewRenderer::OnVisibilityChanged(bool view_visible,
-                                                bool window_visible) {
-  TRACE_EVENT_INSTANT2("android_webview",
+void InProcessViewRenderer::OnVisibilityChanged(bool visible) {
+  TRACE_EVENT_INSTANT1("android_webview",
                        "InProcessViewRenderer::OnVisibilityChanged",
                        TRACE_EVENT_SCOPE_THREAD,
-                       "view_visible",
-                       view_visible,
-                       "window_visible",
-                       window_visible);
-  view_visible_ = window_visible && view_visible;
+                       "visible",
+                       visible);
+  visible_ = visible;
 }
 
 void InProcessViewRenderer::OnSizeChanged(int width, int height) {
@@ -601,7 +606,7 @@ bool InProcessViewRenderer::IsAttachedToWindow() {
 }
 
 bool InProcessViewRenderer::IsViewVisible() {
-  return view_visible_;
+  return visible_;
 }
 
 gfx::Rect InProcessViewRenderer::GetScreenRect() {
@@ -639,22 +644,71 @@ void InProcessViewRenderer::SetContinuousInvalidate(bool invalidate) {
                        "invalidate",
                        invalidate);
   continuous_invalidate_ = invalidate;
-  // TODO(boliu): Handle if not attached to window case.
   EnsureContinuousInvalidation(NULL);
 }
 
+void InProcessViewRenderer::SetDipScale(float dip_scale) {
+  dip_scale_ = dip_scale;
+  CHECK(dip_scale_ > 0);
+}
+
+void InProcessViewRenderer::ScrollTo(gfx::Vector2d new_value) {
+  DCHECK(dip_scale_ > 0);
+  // In general we don't guarantee that the scroll offset transforms are
+  // symmetrical. That is if scrolling from JS to offset1 results in a native
+  // offset2 then scrolling from UI to offset2 results in JS being scrolled to
+  // offset1 again.
+  // The reason we explicitly do rounding here is that it seems to yeld the
+  // most stabile transformation.
+  gfx::Vector2dF new_value_css = gfx::ToRoundedVector2d(
+      gfx::ScaleVector2d(new_value, 1.0f / dip_scale_));
+
+  DCHECK(scroll_offset_css_ != new_value_css);
+
+  scroll_offset_css_ = new_value_css;
+
+  if (compositor_)
+    compositor_->DidChangeRootLayerScrollOffset();
+}
+
 void InProcessViewRenderer::SetTotalRootLayerScrollOffset(
-    gfx::Vector2dF new_value) {
-  // TODO(mkosiba): Plumb this all the way through to the view.
-  scroll_offset_ = new_value;
+    gfx::Vector2dF new_value_css) {
+  // TOOD(mkosiba): Add a DCHECK to say that this does _not_ get called during
+  // DrawGl when http://crbug.com/249972 is fixed.
+  if (scroll_offset_css_ == new_value_css)
+    return;
+
+  scroll_offset_css_ = new_value_css;
+
+  DCHECK(dip_scale_ > 0);
+
+  gfx::Vector2d scroll_offset =
+      gfx::ToRoundedVector2d(gfx::ScaleVector2d(new_value_css, dip_scale_));
+
+  client_->ScrollContainerViewTo(scroll_offset);
 }
 
 gfx::Vector2dF InProcessViewRenderer::GetTotalRootLayerScrollOffset() {
-  return scroll_offset_;
+  return scroll_offset_css_;
 }
 
 void InProcessViewRenderer::EnsureContinuousInvalidation(
     AwDrawGLInfo* draw_info) {
+  if (continuous_invalidate_ && !block_invalidates_ &&
+      !do_ensure_continuous_invalidation_task_pending_) {
+    do_ensure_continuous_invalidation_task_pending_ = true;
+
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&InProcessViewRenderer::DoEnsureContinuousInvalidation,
+                   weak_factory_.GetWeakPtr(),
+                   static_cast<AwDrawGLInfo*>(NULL)));
+  }
+}
+
+void InProcessViewRenderer::DoEnsureContinuousInvalidation(
+    AwDrawGLInfo* draw_info) {
+  do_ensure_continuous_invalidation_task_pending_ = false;
   if (continuous_invalidate_ && !block_invalidates_) {
     if (draw_info) {
       draw_info->dirty_left = draw_info->clip_left;
@@ -665,14 +719,33 @@ void InProcessViewRenderer::EnsureContinuousInvalidation(
     } else {
       client_->PostInvalidate();
     }
+
+    // Unretained here is safe because the callback is cancelled when
+    // |fallback_tick_| is destroyed.
+    fallback_tick_.Reset(base::Bind(&InProcessViewRenderer::FallbackTickFired,
+                                    base::Unretained(this)));
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        fallback_tick_.callback(),
+        base::TimeDelta::FromMilliseconds(kFallbackTickTimeoutInMilliseconds));
+
     block_invalidates_ = true;
   }
 }
 
-bool InProcessViewRenderer::RenderSW(SkCanvas* canvas) {
-  // TODO(joth): BrowserViewRendererImpl had a bunch of logic for dpi and page
-  // scale here. Determine what if any needs bringing over to this class.
-  return CompositeSW(canvas);
+void InProcessViewRenderer::FallbackTickFired() {
+  TRACE_EVENT1("android_webview",
+               "InProcessViewRenderer::FallbackTickFired",
+               "continuous_invalidate_",
+               continuous_invalidate_);
+  if (continuous_invalidate_) {
+    SkDevice device(SkBitmap::kARGB_8888_Config, 1, 1);
+    SkCanvas canvas(&device);
+    block_invalidates_ = true;
+    CompositeSW(&canvas);
+  }
+  block_invalidates_ = false;
+  EnsureContinuousInvalidation(NULL);
 }
 
 bool InProcessViewRenderer::CompositeSW(SkCanvas* canvas) {

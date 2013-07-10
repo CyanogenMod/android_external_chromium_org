@@ -16,9 +16,6 @@ const char kBackgroundColorInsteadOfCheckerboard[] =
 
 const char kDisableThreadedAnimation[] = "disable-threaded-animation";
 
-// Do not predict whether the tile will be either solid color or transparent.
-const char kDisableColorEstimator[] = "disable-color-estimator";
-
 // Paint content on the main thread instead of the compositor thread.
 // Overrides the kEnableImplSidePainting flag.
 const char kDisableImplSidePainting[] = "disable-impl-side-painting";
@@ -89,11 +86,6 @@ const char kUIEnablePerTilePainting[] = "ui-enable-per-tile-painting";
 // layer compositing.
 const char kShowCompositedLayerBorders[] = "show-composited-layer-borders";
 const char kUIShowCompositedLayerBorders[] = "ui-show-layer-borders";
-
-// Draws a textual dump of the compositor layer tree to help debug and study
-// layer compositing.
-const char kShowCompositedLayerTree[] = "show-composited-layer-tree";
-const char kUIShowCompositedLayerTree[] = "ui-show-layer-tree";
 
 // Draws a FPS indicator
 const char kShowFPSCounter[] = "show-fps-counter";

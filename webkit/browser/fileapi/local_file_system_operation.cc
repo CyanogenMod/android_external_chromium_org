@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/escape.h"
 #include "net/url_request/url_request.h"
 #include "webkit/browser/fileapi/async_file_util.h"
@@ -144,15 +144,24 @@ void LocalFileSystemOperation::Remove(const FileSystemURL& url,
                                       const StatusCallback& callback) {
   DCHECK(SetPendingOperationType(kOperationRemove));
   DCHECK(!recursive_operation_delegate_);
+
+  if (recursive) {
+    // For recursive removal, try to delegate the operation to AsyncFileUtil
+    // first. If not supported, it is delegated to RemoveOperationDelegate
+    // in DidDeleteRecursively.
+    async_file_util_->DeleteRecursively(
+        operation_context_.Pass(), url,
+        base::Bind(&LocalFileSystemOperation::DidDeleteRecursively,
+                   AsWeakPtr(), url, callback));
+    return;
+  }
+
   recursive_operation_delegate_.reset(
       new RemoveOperationDelegate(
           file_system_context(), url,
           base::Bind(&LocalFileSystemOperation::DidFinishOperation,
                      AsWeakPtr(), callback)));
-  if (recursive)
-    recursive_operation_delegate_->RunRecursively();
-  else
-    recursive_operation_delegate_->Run();
+  recursive_operation_delegate_->Run();
 }
 
 void LocalFileSystemOperation::Write(
@@ -239,14 +248,16 @@ LocalFileSystemOperation::AsLocalFileSystemOperation() {
   return this;
 }
 
-void LocalFileSystemOperation::SyncGetPlatformPath(
+base::PlatformFileError LocalFileSystemOperation::SyncGetPlatformPath(
     const FileSystemURL& url,
     base::FilePath* platform_path) {
   DCHECK(SetPendingOperationType(kOperationGetLocalPath));
   FileSystemFileUtil* file_util = file_system_context()->GetFileUtil(
       url.type());
-  DCHECK(file_util);
+  if (!file_util)
+    return base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
   file_util->GetLocalFilePath(operation_context_.get(), url, platform_path);
+  return base::PLATFORM_FILE_OK;
 }
 
 void LocalFileSystemOperation::CreateSnapshotFile(
@@ -476,6 +487,25 @@ void LocalFileSystemOperation::DidFileExists(
   callback.Run(rv);
 }
 
+void LocalFileSystemOperation::DidDeleteRecursively(
+    const FileSystemURL& url,
+    const StatusCallback& callback,
+    base::PlatformFileError rv) {
+  if (rv == base::PLATFORM_FILE_ERROR_INVALID_OPERATION) {
+    // Recursive removal is not supported on this platform.
+    DCHECK(!recursive_operation_delegate_);
+    recursive_operation_delegate_.reset(
+        new RemoveOperationDelegate(
+            file_system_context(), url,
+            base::Bind(&LocalFileSystemOperation::DidFinishOperation,
+                       AsWeakPtr(), callback)));
+    recursive_operation_delegate_->RunRecursively();
+    return;
+  }
+
+  callback.Run(rv);
+}
+
 void LocalFileSystemOperation::DidWrite(
     const FileSystemURL& url,
     const WriteCallback& write_callback,
@@ -499,8 +529,7 @@ void LocalFileSystemOperation::DidWrite(
 void LocalFileSystemOperation::DidOpenFile(
     const OpenFileCallback& callback,
     base::PlatformFileError rv,
-    base::PassPlatformFile file,
-    bool unused) {
+    base::PassPlatformFile file) {
   if (rv == base::PLATFORM_FILE_OK)
     CHECK_NE(base::kNullProcessHandle, peer_handle_);
   callback.Run(rv, file.ReleaseValue(),

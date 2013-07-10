@@ -11,8 +11,8 @@
 #include "base/basictypes.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/time.h"
-#include "googleurl/src/gurl.h"
+#include "base/time/time.h"
+#include "url/gurl.h"
 #include "webkit/base/webkit_base_export.h"
 
 namespace webkit_base {

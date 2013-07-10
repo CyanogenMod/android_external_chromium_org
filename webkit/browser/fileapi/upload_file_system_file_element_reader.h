@@ -6,9 +6,9 @@
 #define WEBKIT_BROWSER_FILEAPI_UPLOAD_FILE_SYSTEM_FILE_ELEMENT_READER_H_
 
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
-#include "googleurl/src/gurl.h"
+#include "base/time/time.h"
 #include "net/base/upload_element_reader.h"
+#include "url/gurl.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
 
 namespace webkit_blob {
