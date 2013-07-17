@@ -12,6 +12,7 @@
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/content_settings_custom_extension_provider.h"
 #include "chrome/browser/content_settings/content_settings_default_provider.h"
 #include "chrome/browser/content_settings/content_settings_details.h"
@@ -23,7 +24,6 @@
 #include "chrome/browser/content_settings/content_settings_rule.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/pref_names.h"
@@ -138,7 +138,7 @@ void HostContentSettingsMap::RegisterExtensionService(
 #endif
 
 // static
-void HostContentSettingsMap::RegisterUserPrefs(
+void HostContentSettingsMap::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterIntegerPref(
       prefs::kContentSettingsWindowLastTabIndex,
@@ -154,9 +154,9 @@ void HostContentSettingsMap::RegisterUserPrefs(
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 
   // Register the prefs for the content settings providers.
-  content_settings::DefaultProvider::RegisterUserPrefs(registry);
-  content_settings::PrefProvider::RegisterUserPrefs(registry);
-  content_settings::PolicyProvider::RegisterUserPrefs(registry);
+  content_settings::DefaultProvider::RegisterProfilePrefs(registry);
+  content_settings::PrefProvider::RegisterProfilePrefs(registry);
+  content_settings::PolicyProvider::RegisterProfilePrefs(registry);
 }
 
 ContentSetting HostContentSettingsMap::GetDefaultContentSettingFromProvider(
@@ -385,6 +385,7 @@ bool HostContentSettingsMap::IsSettingAllowedForType(
     case CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC:
     case CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA:
     case CONTENT_SETTINGS_TYPE_PPAPI_BROKER:
+    case CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS:
       return setting == CONTENT_SETTING_ASK;
     default:
       return false;

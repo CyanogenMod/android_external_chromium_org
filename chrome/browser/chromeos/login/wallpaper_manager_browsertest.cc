@@ -4,7 +4,7 @@
 
 #include "chrome/browser/chromeos/login/wallpaper_manager.h"
 
-#include "ash/ash_resources/grit/ash_wallpaper_resources.h"
+#include "ash/ash_resources/grit/ash_resources.h"
 #include "ash/desktop_background/desktop_background_controller.h"
 #include "ash/desktop_background/desktop_background_controller_observer.h"
 #include "ash/display/display_manager.h"
@@ -94,7 +94,7 @@ class WallpaperManagerBrowserTest : public CrosInProcessBrowserTest,
                                         const std::string& id) {
     base::FilePath wallpaper_path =
         WallpaperManager::Get()->GetCustomWallpaperPath(sub_dir, email, id);
-    if (!file_util::DirectoryExists(wallpaper_path.DirName()))
+    if (!base::DirectoryExists(wallpaper_path.DirName()))
       file_util::CreateDirectory(wallpaper_path.DirName());
 
     return wallpaper_path;
@@ -291,8 +291,8 @@ IN_PROC_BROWSER_TEST_F(WallpaperManagerBrowserTest,
   EXPECT_EQ(3, LoadedWallpapers());
   base::FilePath new_wallpaper_path = GetCustomWallpaperPath(
       kOriginalWallpaperSubDir, kTestUser1, "DUMMY");
-  EXPECT_FALSE(file_util::PathExists(old_wallpaper_path));
-  EXPECT_TRUE(file_util::PathExists(new_wallpaper_path));
+  EXPECT_FALSE(base::PathExists(old_wallpaper_path));
+  EXPECT_TRUE(base::PathExists(new_wallpaper_path));
 }
 
 // Some users have old user profiles which may have legacy wallpapers. And these

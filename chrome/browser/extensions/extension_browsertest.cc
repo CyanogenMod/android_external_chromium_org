@@ -14,6 +14,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_creator.h"
@@ -29,7 +30,6 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
@@ -170,7 +170,8 @@ const Extension* ExtensionBrowserTest::LoadExtensionWithFlags(
     content::WindowedNotificationObserver load_signal(
         chrome::NOTIFICATION_EXTENSION_LOADED,
         content::Source<Profile>(profile()));
-    CHECK(!service->IsIncognitoEnabled(extension_id));
+    CHECK(!service->IsIncognitoEnabled(extension_id) ||
+          extension->force_incognito_enabled());
 
     if (flags & kFlagEnableIncognito) {
       service->SetIsIncognitoEnabled(extension_id, true);
@@ -239,7 +240,7 @@ const Extension* ExtensionBrowserTest::LoadExtensionAsComponent(
 base::FilePath ExtensionBrowserTest::PackExtension(
     const base::FilePath& dir_path) {
   base::FilePath crx_path = temp_dir_.path().AppendASCII("temp.crx");
-  if (!base::Delete(crx_path, false)) {
+  if (!base::DeleteFile(crx_path, false)) {
     ADD_FAILURE() << "Failed to delete crx: " << crx_path.value();
     return base::FilePath();
   }
@@ -249,10 +250,10 @@ base::FilePath ExtensionBrowserTest::PackExtension(
       dir_path.ReplaceExtension(FILE_PATH_LITERAL(".pem"));
   base::FilePath pem_path_out;
 
-  if (!file_util::PathExists(pem_path)) {
+  if (!base::PathExists(pem_path)) {
     pem_path = base::FilePath();
     pem_path_out = crx_path.DirName().AppendASCII("temp.pem");
-    if (!base::Delete(pem_path_out, false)) {
+    if (!base::DeleteFile(pem_path_out, false)) {
       ADD_FAILURE() << "Failed to delete pem: " << pem_path_out.value();
       return base::FilePath();
     }
@@ -266,12 +267,12 @@ base::FilePath ExtensionBrowserTest::PackExtensionWithOptions(
     const base::FilePath& crx_path,
     const base::FilePath& pem_path,
     const base::FilePath& pem_out_path) {
-  if (!file_util::PathExists(dir_path)) {
+  if (!base::PathExists(dir_path)) {
     ADD_FAILURE() << "Extension dir not found: " << dir_path.value();
     return base::FilePath();
   }
 
-  if (!file_util::PathExists(pem_path) && pem_out_path.empty()) {
+  if (!base::PathExists(pem_path) && pem_out_path.empty()) {
     ADD_FAILURE() << "Must specify a PEM file or PEM output path";
     return base::FilePath();
   }
@@ -287,7 +288,7 @@ base::FilePath ExtensionBrowserTest::PackExtensionWithOptions(
     return base::FilePath();
   }
 
-  if (!file_util::PathExists(crx_path)) {
+  if (!base::PathExists(crx_path)) {
     ADD_FAILURE() << crx_path.value() << " was not created.";
     return base::FilePath();
   }

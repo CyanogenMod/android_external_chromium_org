@@ -19,7 +19,7 @@
 #include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
 #include "content/public/browser/browser_thread.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 using content::BrowserThread;
 
@@ -95,22 +95,6 @@ void ChangeListLoader::LoadIfNeeded(
     return;
   }
   Load(directory_fetch_info, callback);
-}
-
-void ChangeListLoader::LoadDirectoryFromServer(
-    const std::string& directory_resource_id,
-    const FileOperationCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  // First fetch the latest changestamp to see if this directory needs to be
-  // updated.
-  scheduler_->GetAboutResource(
-      base::Bind(
-          &ChangeListLoader::LoadDirectoryFromServerAfterGetAbout,
-          weak_ptr_factory_.GetWeakPtr(),
-          directory_resource_id,
-          callback));
 }
 
 void ChangeListLoader::Load(const DirectoryFetchInfo& directory_fetch_info,
@@ -440,25 +424,6 @@ void ChangeListLoader::LoadChangeListFromServerAfterUpdate() {
   FOR_EACH_OBSERVER(ChangeListLoaderObserver,
                     observers_,
                     OnLoadFromServerComplete());
-}
-
-void ChangeListLoader::LoadDirectoryFromServerAfterGetAbout(
-      const std::string& directory_resource_id,
-      const FileOperationCallback& callback,
-      google_apis::GDataErrorCode status,
-      scoped_ptr<google_apis::AboutResource> about_resource) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  if (util::GDataToFileError(status) == FILE_ERROR_OK) {
-    DCHECK(about_resource);
-    last_known_remote_changestamp_ = about_resource->largest_change_id();
-  }
-
-  const DirectoryFetchInfo directory_fetch_info(
-      directory_resource_id,
-      last_known_remote_changestamp_);
-  DoLoadDirectoryFromServer(directory_fetch_info, callback);
 }
 
 void ChangeListLoader::CheckChangestampAndLoadDirectoryIfNeeded(

@@ -7,11 +7,11 @@
 #include <vector>
 
 #include "base/file_util.h"
+#include "base/memory/shared_memory.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
 #include "base/run_loop.h"
-#include "base/shared_memory.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
 #include "components/visitedlink/browser/visitedlink_delegate.h"
@@ -26,8 +26,8 @@
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_renderer_host.h"
-#include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 using content::BrowserThread;
 using content::MockRenderProcessHost;
@@ -592,15 +592,19 @@ class VisitedLinkRenderProcessHostFactory
 class VisitedLinkEventsTest : public content::RenderViewHostTestHarness {
  public:
   virtual void SetUp() {
-    browser_context_.reset(new VisitCountingContext());
-    master_.reset(new VisitedLinkMaster(context(), &delegate_, true));
-    master_->Init();
     SetRenderProcessHostFactory(&vc_rph_factory_);
     content::RenderViewHostTestHarness::SetUp();
   }
 
-  VisitCountingContext* context() const {
-    return static_cast<VisitCountingContext*>(browser_context_.get());
+  virtual content::BrowserContext* CreateBrowserContext() OVERRIDE {
+    VisitCountingContext* context = new VisitCountingContext();
+    master_.reset(new VisitedLinkMaster(context, &delegate_, true));
+    master_->Init();
+    return context;
+  }
+
+  VisitCountingContext* context() {
+    return static_cast<VisitCountingContext*>(browser_context());
   }
 
   VisitedLinkMaster* master() const {

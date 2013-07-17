@@ -31,7 +31,7 @@
         '<(DEPTH)/content/content_resources.gyp:content_resources',
         '<(DEPTH)/net/net.gyp:net_resources',
         '<(DEPTH)/ui/ui.gyp:ui_resources',
-        '<(DEPTH)/webkit/support/webkit_support.gyp:webkit_resources',
+        '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
       ],
       'variables': {
         'repack_path': '<(DEPTH)/tools/grit/grit/format/repack.py',
@@ -146,7 +146,8 @@
         'browser/renderer_host/aw_resource_dispatcher_host_delegate.cc',
         'browser/renderer_host/aw_resource_dispatcher_host_delegate.h',
         'browser/scoped_allow_wait_for_legacy_web_view_api.h',
-        'browser/scoped_allow_wait_for_legacy_web_view_api.h',
+        'browser/scoped_app_gl_state_restore.cc',
+        'browser/scoped_app_gl_state_restore.h',
         'common/android_webview_message_generator.cc',
         'common/android_webview_message_generator.h',
         'common/aw_content_client.cc',

@@ -50,9 +50,7 @@
           ['OS=="android"', {
             'defines': [
               '__GLIBC__',
-            ],
-            'cflags': [
-              '-include assert.h',
+              '_GNU_SOURCE',
             ],
           }],
           ['OS=="linux"', {
@@ -81,6 +79,9 @@
             # Pick up emulation headers not supported by Visual Studio.
             'include_dirs': [
               'src/include/c99',
+            ],
+            'defines': [
+              '_GLAPI_NO_EXPORTS',
             ],
           }],
         ],

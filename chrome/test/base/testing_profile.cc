@@ -18,6 +18,7 @@
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
@@ -47,11 +48,9 @@
 #include "chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.h"
 #include "chrome/browser/profiles/storage_partition_descriptor.h"
 #include "chrome/browser/search_engines/template_url_fetcher_factory.h"
-#include "chrome/browser/speech/chrome_speech_recognition_preferences.h"
 #include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/bookmark_load_observer.h"
@@ -269,7 +268,7 @@ void TestingProfile::CreateTempProfileDir() {
 
     base::FilePath fallback_dir(
         system_tmp_dir.AppendASCII("TestingProfilePath"));
-    base::Delete(fallback_dir, true);
+    base::DeleteFile(fallback_dir, true);
     file_util::CreateDirectory(fallback_dir);
     if (!temp_dir_.Set(fallback_dir)) {
       // That shouldn't happen, but if it does, try to recover.
@@ -292,7 +291,7 @@ void TestingProfile::Init() {
   else
     CreateTestingPrefService();
 
-  if (!file_util::PathExists(profile_path_))
+  if (!base::PathExists(profile_path_))
     file_util::CreateDirectory(profile_path_);
 
   // TODO(joaodasilva): remove this once this PKS isn't created in ProfileImpl
@@ -360,7 +359,7 @@ void TestingProfile::CreateHistoryService(bool delete_file, bool no_db) {
   if (delete_file) {
     base::FilePath path = GetPath();
     path = path.Append(chrome::kHistoryFilename);
-    base::Delete(path, false);
+    base::DeleteFile(path, false);
   }
   // This will create and init the history service.
   HistoryService* history_service = static_cast<HistoryService*>(
@@ -429,7 +428,7 @@ static BrowserContextKeyedService* BuildBookmarkModel(
 void TestingProfile::CreateBookmarkModel(bool delete_file) {
   if (delete_file) {
     base::FilePath path = GetPath().Append(chrome::kBookmarksFileName);
-    base::Delete(path, false);
+    base::DeleteFile(path, false);
   }
   // This will create a bookmark model.
   BookmarkModel* bookmark_service = static_cast<BookmarkModel*>(
@@ -483,7 +482,7 @@ void TestingProfile::BlockUntilTopSitesLoaded() {
   top_sites_loaded_observer.Wait();
 }
 
-base::FilePath TestingProfile::GetPath() {
+base::FilePath TestingProfile::GetPath() const {
   return profile_path_;
 }
 
@@ -560,7 +559,7 @@ void TestingProfile::CreateTestingPrefService() {
   testing_prefs_ = new TestingPrefServiceSyncable();
   prefs_.reset(testing_prefs_);
   user_prefs::UserPrefs::Set(this, prefs_.get());
-  chrome::RegisterUserPrefs(testing_prefs_->registry());
+  chrome::RegisterUserProfilePrefs(testing_prefs_->registry());
 }
 
 void TestingProfile::CreateProfilePolicyConnector() {
@@ -646,6 +645,15 @@ TestingProfile::GetMediaRequestContextForStoragePartition(
   return NULL;
 }
 
+void TestingProfile::RequestMIDISysExPermission(
+      int render_process_id,
+      int render_view_id,
+      const GURL& requesting_frame,
+      const MIDISysExPermissionCallback& callback) {
+  // Always reject requests for testing.
+  callback.Run(false);
+}
+
 net::URLRequestContextGetter* TestingProfile::GetRequestContextForExtensions() {
   if (!extensions_request_context_.get())
     extensions_request_context_ = new TestExtensionURLRequestContextGetter();
@@ -691,15 +699,6 @@ TestingProfile::GetGeolocationPermissionContext() {
   return ChromeGeolocationPermissionContextFactory::GetForProfile(this);
 }
 
-content::SpeechRecognitionPreferences*
-    TestingProfile::GetSpeechRecognitionPreferences() {
-#if defined(ENABLE_INPUT_SPEECH)
-  return ChromeSpeechRecognitionPreferences::GetForProfile(this).get();
-#else
-  return NULL;
-#endif
-}
-
 std::wstring TestingProfile::GetName() {
   return std::wstring();
 }
@@ -730,8 +729,10 @@ void TestingProfile::set_last_selected_directory(const base::FilePath& path) {
 
 PrefProxyConfigTracker* TestingProfile::GetProxyConfigTracker() {
   if (!pref_proxy_config_tracker_.get()) {
+    // TestingProfile is used in unit tests, where local state is not available.
     pref_proxy_config_tracker_.reset(
-        ProxyServiceFactory::CreatePrefProxyConfigTracker(GetPrefs()));
+        ProxyServiceFactory::CreatePrefProxyConfigTrackerOfProfile(GetPrefs(),
+                                                                   NULL));
   }
   return pref_proxy_config_tracker_.get();
 }
@@ -775,6 +776,9 @@ bool TestingProfile::WasCreatedByVersionOrLater(const std::string& version) {
   return true;
 }
 
+bool TestingProfile::IsGuestSession() const {
+  return false;
+}
 Profile::ExitType TestingProfile::GetLastSessionExitType() {
   return last_session_exited_cleanly_ ? EXIT_NORMAL : EXIT_CRASHED;
 }

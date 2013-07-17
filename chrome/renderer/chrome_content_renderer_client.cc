@@ -55,7 +55,7 @@
 #include "chrome/renderer/plugins/plugin_uma.h"
 #include "chrome/renderer/prerender/prerender_dispatcher.h"
 #include "chrome/renderer/prerender/prerender_helper.h"
-#include "chrome/renderer/prerender/prerender_webmediaplayer.h"
+#include "chrome/renderer/prerender/prerender_media_load_deferrer.h"
 #include "chrome/renderer/prerender/prerenderer_client.h"
 #include "chrome/renderer/printing/print_web_view_helper.h"
 #include "chrome/renderer/safe_browsing/malware_dom_details.h"
@@ -97,7 +97,6 @@
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/webui/jstemplate_builder.h"
-#include "webkit/plugins/npapi/plugin_list.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
 #include "webkit/plugins/ppapi/ppapi_interface_factory.h"
 
@@ -477,7 +476,7 @@ void ChromeContentRendererClient::DeferMediaLoad(
   }
 
   // Lifetime is tied to |render_view| via content::RenderViewObserver.
-  new prerender::PrerenderWebMediaPlayer(render_view, closure);
+  new prerender::PrerenderMediaLoadDeferrer(render_view, closure);
 #endif
 }
 
@@ -850,7 +849,7 @@ bool ChromeContentRendererClient::HasErrorPage(int http_status_code,
 }
 
 void ChromeContentRendererClient::GetNavigationErrorStrings(
-    WebKit::WebFrame* /* frame */,
+    WebKit::WebFrame* frame,
     const WebKit::WebURLRequest& failed_request,
     const WebKit::WebURLError& error,
     std::string* error_html,
@@ -878,11 +877,13 @@ void ChromeContentRendererClient::GetNavigationErrorStrings(
       // error messages?
       resource_id = IDR_ERROR_APP_HTML;
     } else {
-      LocalizedError::GetStrings(
-          error,
-          is_post,
-          RenderThread::Get()->GetLocale(),
-          &error_strings);
+      const std::string locale = RenderThread::Get()->GetLocale();
+      if (!NetErrorHelper::GetErrorStringsForDnsProbe(
+              frame, error, is_post, locale, &error_strings)) {
+        // In most cases, the NetErrorHelper won't provide DNS-probe-specific
+        // error pages, so fall back to LocalizedError.
+        LocalizedError::GetStrings(error, is_post, locale, &error_strings);
+      }
       resource_id = IDR_NET_ERROR_HTML;
     }
 

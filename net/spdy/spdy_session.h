@@ -29,6 +29,7 @@
 #include "net/spdy/buffered_spdy_framer.h"
 #include "net/spdy/spdy_buffer.h"
 #include "net/spdy/spdy_credential_state.h"
+#include "net/spdy/spdy_framer.h"
 #include "net/spdy/spdy_header_block.h"
 #include "net/spdy/spdy_protocol.h"
 #include "net/spdy/spdy_session_pool.h"
@@ -50,9 +51,9 @@ const int kMaxSpdyFrameChunkSize = (2 * kMss) - 8;
 // Specifies the maxiumum concurrent streams server could send (via push).
 const int kMaxConcurrentPushedStreams = 1000;
 
-// Specifies the number of bytes read synchronously (without yielding) if the
-// data is available.
-const int kMaxReadBytes = 32 * 1024;
+// Specifies the maximum number of bytes to read synchronously before
+// yielding.
+const int kMaxReadBytesWithoutYielding = 32 * 1024;
 
 // The initial receive window size for both streams and sessions.
 const int32 kDefaultInitialRecvWindowSize = 10 * 1024 * 1024;  // 10MB
@@ -180,6 +181,7 @@ class NET_EXPORT_PRIVATE SpdyStreamRequest {
 
 class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
                                public BufferedSpdyFramerVisitorInterface,
+                               public SpdyFramerDebugVisitorInterface,
                                public LayeredPool {
  public:
   // TODO(akalin): Use base::TickClock when it becomes available.
@@ -200,14 +202,13 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // |session| is the HttpNetworkSession.  |net_log| is the NetLog that we log
   // network events to.
   SpdySession(const SpdySessionKey& spdy_session_key,
-              SpdySessionPool* spdy_session_pool,
               HttpServerProperties* http_server_properties,
               bool verify_domain_authentication,
               bool enable_sending_initial_settings,
               bool enable_credential_frames,
               bool enable_compression,
               bool enable_ping_based_connection_checking,
-              NextProto default_protocol_,
+              NextProto default_protocol,
               size_t stream_initial_recv_window_size,
               size_t initial_max_concurrent_streams,
               size_t max_concurrent_streams_limit,
@@ -236,11 +237,16 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
       base::WeakPtr<SpdyStream>* spdy_stream,
       const BoundNetLog& stream_net_log);
 
-  // Used by SpdySessionPool to initialize with a pre-existing SSL socket. For
-  // testing, setting is_secure to false allows initialization with a
-  // pre-existing TCP socket.
-  // Returns OK on success, or an error on failure.
-  Error InitializeWithSocket(ClientSocketHandle* connection,
+  // Initialize the session with the given connection. |is_secure|
+  // must indicate whether |connection| uses an SSL socket or not; it
+  // is usually true, but it can be false for testing or when SPDY is
+  // configured to work with non-secure sockets.
+  //
+  // Returns OK on success, or an error on failure. Never returns
+  // ERR_IO_PENDING. If an error is returned, the session must be
+  // destroyed immediately.
+  Error InitializeWithSocket(scoped_ptr<ClientSocketHandle> connection,
+                             SpdySessionPool* spdy_session_pool,
                              bool is_secure,
                              int certificate_error_code);
 
@@ -330,8 +336,9 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   void SendStreamWindowUpdate(SpdyStreamId stream_id,
                               uint32 delta_window_size);
 
-  // If session is closed, no new streams/transactions should be created.
-  bool IsClosed() const { return state_ == STATE_CLOSED; }
+  // Whether the stream is closed, i.e. it has stopped processing data
+  // and is about to be destroyed.
+  bool IsClosed() const { return availability_state_ == STATE_CLOSED; }
 
   // Closes this session.  This will close all active streams and mark
   // the session as permanently closed.
@@ -340,9 +347,7 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // |remove_from_pool| indicates whether to also remove the session from the
   // session pool.
   // |description| indicates the reason for the error.
-  void CloseSessionOnError(Error err,
-                           bool remove_from_pool,
-                           const std::string& description);
+  void CloseSessionOnError(Error err, const std::string& description);
 
   // Retrieves information on the current state of the SPDY session as a
   // Value.  Caller takes possession of the returned value.
@@ -369,10 +374,6 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   bool GetLoadTimingInfo(SpdyStreamId stream_id,
                          LoadTimingInfo* load_timing_info) const;
 
-  void set_spdy_session_pool(SpdySessionPool* pool) {
-    spdy_session_pool_ = NULL;
-  }
-
   // Returns true if session is not currently active
   bool is_active() const {
     return !active_streams_.empty() || !created_streams_.empty();
@@ -386,7 +387,7 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   }
   size_t num_created_streams() const { return created_streams_.size(); }
 
-  size_t pending_create_stream_queues(int priority) {
+  size_t pending_create_stream_queue_size(RequestPriority priority) const {
     DCHECK_LT(priority, NUM_PRIORITIES);
     return pending_create_stream_queues_[priority].size();
   }
@@ -501,12 +502,26 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
 
   typedef std::set<SpdyStream*> CreatedStreamSet;
 
-  enum State {
-    STATE_IDLE,
-    STATE_CONNECTING,
-    STATE_DO_READ,
-    STATE_DO_READ_COMPLETE,
+  enum AvailabilityState {
+    // The session is available in its socket pool and can be used
+    // freely.
+    STATE_AVAILABLE,
+    // The session can process data on existing streams but will
+    // refuse to create new ones.
+    STATE_GOING_AWAY,
+    // The session has been closed, is waiting to be deleted, and will
+    // refuse to process any more data.
     STATE_CLOSED
+  };
+
+  enum ReadState {
+    READ_STATE_DO_READ,
+    READ_STATE_DO_READ_COMPLETE,
+  };
+
+  enum WriteState {
+    WRITE_STATE_DO_WRITE,
+    WRITE_STATE_DO_WRITE_COMPLETE,
   };
 
   virtual ~SpdySession();
@@ -554,24 +569,19 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
                             SpdyRstStreamStatus status,
                             const std::string& description);
 
-  // Start the DoLoop to read data from socket.
-  void StartRead();
-
-  // Try to make progress by reading and processing data.
-  int DoLoop(int result);
-  // The implementations of STATE_DO_READ/STATE_DO_READ_COMPLETE state changes
-  // of the state machine.
+  // Advance the ReadState state machine. |expected_read_state| is the
+  // expected starting read state.
+  int DoReadLoop(ReadState expected_read_state, int result);
+  // The implementations of the states of the ReadState state machine.
   int DoRead();
-  int DoReadComplete(int bytes_read);
+  int DoReadComplete(int result);
 
-  // Check if session is connected or not.
-  bool IsConnected() const {
-    return state_ == STATE_DO_READ || state_ == STATE_DO_READ_COMPLETE;
-  }
-
-  // IO Callbacks
-  void OnReadComplete(int result);
-  void OnWriteComplete(int result);
+  // Advance the WriteState state machine. |expected_write_state| is
+  // the expected starting write state.
+  int DoWriteLoop(WriteState expected_write_state, int result);
+  // The implementations of the states of the WriteState state machine.
+  int DoWrite();
+  int DoWriteComplete(int result);
 
   // Send relevant SETTINGS.  This is generally called on connection setup.
   void SendInitialSettings();
@@ -606,10 +616,6 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // Check the status of the connection. It calls |CloseSessionOnError| if we
   // haven't received any data in |kHungInterval| time period.
   void CheckPingStatus(base::TimeTicks last_check_time);
-
-  // Write current data to the socket.
-  void WriteSocketLater();
-  void WriteSocket();
 
   // Get a new stream id.
   int GetNewStreamId();
@@ -699,9 +705,8 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
       SpdySettingsIds id, uint8 flags, uint32 value) OVERRIDE;
   virtual void OnWindowUpdate(SpdyStreamId stream_id,
                               uint32 delta_window_size) OVERRIDE;
-  virtual void OnSynStreamCompressed(
-      size_t uncompressed_size,
-      size_t compressed_size) OVERRIDE;
+  virtual void OnPushPromise(SpdyStreamId stream_id,
+                             SpdyStreamId promised_stream_id) OVERRIDE;
   virtual void OnSynStream(SpdyStreamId stream_id,
                            SpdyStreamId associated_stream_id,
                            SpdyPriority priority,
@@ -717,6 +722,17 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
       SpdyStreamId stream_id,
       bool fin,
       const SpdyHeaderBlock& headers) OVERRIDE;
+
+  // SpdyFramerDebugVisitorInterface
+  virtual void OnSendCompressedFrame(
+      SpdyStreamId stream_id,
+      SpdyFrameType type,
+      size_t payload_len,
+      size_t frame_len) OVERRIDE;
+  virtual void OnReceiveCompressedFrame(
+      SpdyStreamId stream_id,
+      SpdyFrameType type,
+      size_t frame_len) OVERRIDE {}
 
   // Called when bytes are consumed from a SpdyBuffer for a DATA frame
   // that is to be written or is being written. Increases the send
@@ -874,8 +890,7 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   SpdyWriteQueue write_queue_;
 
   // Data for the frame we are currently sending.
-  // Whether we have a socket write pending completion.
-  bool write_pending_;
+
   // The buffer we're currently writing.
   scoped_ptr<SpdyBuffer> in_flight_write_;
   // The type of the frame in |in_flight_write_|.
@@ -886,9 +901,6 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // the socket completely.
   base::WeakPtr<SpdyStream> in_flight_write_stream_;
 
-  // Flag if we have a pending message scheduled for WriteSocket.
-  bool delayed_write_pending_;
-
   // Flag if we're using an SSL connection for this SpdySession.
   bool is_secure_;
 
@@ -898,11 +910,16 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // Spdy Frame state.
   scoped_ptr<BufferedSpdyFramer> buffered_spdy_framer_;
 
-  // If an error has occurred on the session, the session is effectively
-  // dead.  Record this error here.  When no error has occurred, |error_| will
-  // be OK.
-  Error error_;
-  State state_;
+  // The state variables.
+  AvailabilityState availability_state_;
+  ReadState read_state_;
+  WriteState write_state_;
+
+  // If the session was closed (i.e., |availability_state_| is
+  // STATE_CLOSED), then |error_on_close_| holds the error with which
+  // it was closed, which is < ERR_IO_PENDING. Otherwise, it is set to
+  // OK.
+  Error error_on_close_;
 
   // Limits
   size_t max_concurrent_streams_;  // 0 if no limit
@@ -917,10 +934,6 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // |total_bytes_received_| keeps track of all the bytes read by the
   // SpdySession. It is used by the |Net.SpdySettingsCwnd...| histograms.
   int total_bytes_received_;
-
-  // |bytes_read_| keeps track of number of bytes read continously in the
-  // DoLoop() without yielding.
-  int bytes_read_;
 
   bool sent_settings_;      // Did this session send settings when it started.
   bool received_settings_;  // Did this session receive at least one settings

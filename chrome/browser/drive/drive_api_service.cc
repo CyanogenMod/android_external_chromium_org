@@ -15,12 +15,14 @@
 #include "chrome/browser/google_apis/auth_service.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
 #include "chrome/browser/google_apis/drive_api_requests.h"
+#include "chrome/browser/google_apis/gdata_errorcode.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/google_apis/request_sender.h"
 #include "content/public/browser/browser_thread.h"
 
 using content::BrowserThread;
 using google_apis::AppList;
+using google_apis::AuthStatusCallback;
 using google_apis::AuthorizeAppCallback;
 using google_apis::CancelCallback;
 using google_apis::ChangeList;
@@ -287,6 +289,7 @@ void DriveAPIService::Initialize(Profile* profile) {
   scopes.push_back(kDriveAppsReadonlyScope);
   sender_.reset(new RequestSender(profile,
                                   url_request_context_getter_,
+                                  blocking_task_runner_.get(),
                                   scopes,
                                   custom_user_agent_));
   sender_->Initialize();
@@ -517,7 +520,7 @@ CancelCallback DriveAPIService::DeleteResource(
 
 CancelCallback DriveAPIService::AddNewDirectory(
     const std::string& parent_resource_id,
-    const std::string& directory_name,
+    const std::string& directory_title,
     const GetResourceEntryCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
@@ -527,14 +530,14 @@ CancelCallback DriveAPIService::AddNewDirectory(
           sender_.get(),
           url_generator_,
           parent_resource_id,
-          directory_name,
+          directory_title,
           base::Bind(&ParseResourceEntryAndRun, callback)));
 }
 
 CancelCallback DriveAPIService::CopyResource(
     const std::string& resource_id,
     const std::string& parent_resource_id,
-    const std::string& new_name,
+    const std::string& new_title,
     const GetResourceEntryCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
@@ -545,13 +548,13 @@ CancelCallback DriveAPIService::CopyResource(
           url_generator_,
           resource_id,
           parent_resource_id,
-          new_name,
+          new_title,
           base::Bind(&ParseResourceEntryAndRun, callback)));
 }
 
 CancelCallback DriveAPIService::CopyHostedDocument(
     const std::string& resource_id,
-    const std::string& new_name,
+    const std::string& new_title,
     const GetResourceEntryCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
@@ -562,13 +565,13 @@ CancelCallback DriveAPIService::CopyHostedDocument(
           url_generator_,
           resource_id,
           std::string(),  // parent_resource_id.
-          new_name,
+          new_title,
           base::Bind(&ParseResourceEntryAndRun, callback)));
 }
 
 CancelCallback DriveAPIService::RenameResource(
     const std::string& resource_id,
-    const std::string& new_name,
+    const std::string& new_title,
     const EntryActionCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
@@ -578,7 +581,7 @@ CancelCallback DriveAPIService::RenameResource(
           sender_.get(),
           url_generator_,
           resource_id,
-          new_name,
+          new_title,
           callback));
 }
 
@@ -729,24 +732,36 @@ CancelCallback DriveAPIService::AuthorizeApp(
 
 bool DriveAPIService::HasAccessToken() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
   return sender_->auth_service()->HasAccessToken();
+}
+
+void DriveAPIService::RequestAccessToken(const AuthStatusCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  const std::string access_token = sender_->auth_service()->access_token();
+  if (!access_token.empty()) {
+    callback.Run(google_apis::HTTP_NOT_MODIFIED, access_token);
+    return;
+  }
+
+  // Retrieve the new auth token.
+  sender_->auth_service()->StartAuthentication(callback);
 }
 
 bool DriveAPIService::HasRefreshToken() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
   return sender_->auth_service()->HasRefreshToken();
 }
 
 void DriveAPIService::ClearAccessToken() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return sender_->auth_service()->ClearAccessToken();
+  sender_->auth_service()->ClearAccessToken();
 }
 
 void DriveAPIService::ClearRefreshToken() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return sender_->auth_service()->ClearRefreshToken();
+  sender_->auth_service()->ClearRefreshToken();
 }
 
 void DriveAPIService::OnOAuth2RefreshTokenChanged() {

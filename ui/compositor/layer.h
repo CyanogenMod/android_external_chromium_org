@@ -31,6 +31,7 @@ class SkCanvas;
 
 namespace cc {
 class ContentLayer;
+class CopyOutputRequest;
 class DelegatedFrameData;
 class DelegatedRendererLayer;
 class Layer;
@@ -260,6 +261,10 @@ class COMPOSITOR_EXPORT Layer
   void SetDelegatedFrame(scoped_ptr<cc::DelegatedFrameData> frame,
                          gfx::Size frame_size_in_dip);
 
+  bool has_external_content() {
+    return texture_layer_.get() || delegated_renderer_layer_.get();
+  }
+
   // Gets unused resources to recycle to the child compositor.
   void TakeUnusedResourcesForChildCompositor(
       cc::TransferableResourceArray* array);
@@ -302,6 +307,9 @@ class COMPOSITOR_EXPORT Layer
   // (e.g. the GPU process on UI_COMPOSITOR_IMAGE_TRANSPORT).
   bool layer_updated_externally() const { return layer_updated_externally_; }
 
+  // Requets a copy of the layer's output as a texture or bitmap.
+  void RequestCopyOfOutput(scoped_ptr<cc::CopyOutputRequest> request);
+
   // ContentLayerClient
   virtual void PaintContents(
       SkCanvas* canvas, gfx::Rect clip, gfx::RectF* opaque) OVERRIDE;
@@ -310,9 +318,10 @@ class COMPOSITOR_EXPORT Layer
   cc::Layer* cc_layer() { return cc_layer_; }
 
   // TextureLayerClient
-  virtual unsigned PrepareTexture(cc::ResourceUpdateQueue* queue) OVERRIDE;
+  virtual unsigned PrepareTexture() OVERRIDE;
   virtual WebKit::WebGraphicsContext3D* Context3d() OVERRIDE;
-  virtual bool PrepareTextureMailbox(cc::TextureMailbox* mailbox) OVERRIDE;
+  virtual bool PrepareTextureMailbox(cc::TextureMailbox* mailbox,
+                                     bool use_shared_memory) OVERRIDE;
 
   float device_scale_factor() const { return device_scale_factor_; }
 

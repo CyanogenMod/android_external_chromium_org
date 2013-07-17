@@ -37,10 +37,6 @@ class SearchTabHelper : public content::NotificationObserver,
     return &model_;
   }
 
-  const SearchModel* model() const {
-    return &model_;
-  }
-
   // Sets up the initial state correctly for a preloaded NTP.
   void InitForPreloadedNTP();
 
@@ -107,11 +103,6 @@ class SearchTabHelper : public content::NotificationObserver,
 
   // Handler for when Instant support has been determined.
   void OnInstantSupportDetermined(int page_id, bool supports_instant);
-
-  // Handlers for SearchBox API to show and hide top bars (bookmark and info
-  // bars).
-  void OnSearchBoxShowBars(int page_id);
-  void OnSearchBoxHideBars(int page_id);
 
   // Sets whether the page supports voice search on the model.
   void OnSetVoiceSearchSupported(int page_id, bool supported);

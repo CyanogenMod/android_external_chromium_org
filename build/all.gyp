@@ -35,7 +35,7 @@
             '../cc/cc_tests.gyp:*',
             '../components/components.gyp:*',
             '../device/bluetooth/bluetooth.gyp:*',
-            '../device/device.gyp:*',
+            '../device/device_tests.gyp:*',
             '../device/usb/usb.gyp:*',
             '../gpu/gpu.gyp:*',
             '../gpu/tools/tools.gyp:*',
@@ -145,7 +145,7 @@
             '../courgette/courgette.gyp:*',
             '../rlz/rlz.gyp:*',
             '../sandbox/sandbox.gyp:*',
-            '<(angle_path)/src/build_angle.gyp:*',
+            '../third_party/angle_dx11/src/build_angle.gyp:*',
             '../third_party/bspatch/bspatch.gyp:*',
             '../third_party/gles2_book/gles2_book.gyp:*',
           ],
@@ -227,7 +227,7 @@
             '../content/content.gyp:content_browsertests',
             '../content/content.gyp:content_shell',
             '../content/content.gyp:content_unittests',
-            '../device/device.gyp:device_unittests',
+            '../device/device_tests.gyp:device_unittests',
             '../gpu/gpu.gyp:gpu_unittests',
             '../gpu/gles2_conform_support/gles2_conform_support.gyp:gles2_conform_support',
             '../ipc/ipc.gyp:ipc_tests',
@@ -458,6 +458,20 @@
             '../chrome/chrome.gyp:chromedriver2_unittests',
           ],
         },  # target_name: chromium_builder_chromedriver
+        {
+          'target_name': 'chromium_builder_asan',
+          'type': 'none',
+          'dependencies': [
+            '../chrome/chrome.gyp:chrome',
+
+            # We refer to content_shell directly rather than all_webkit
+            # because we don't want the _unittests binaries.
+            '../content/content.gyp:content_browsertests',  
+            '../content/content.gyp:content_shell',  
+
+            '../net/net.gyp:dns_fuzz_stub',
+         ],
+       },
       ],  # targets
     }],
     ['OS=="mac"', {
@@ -487,7 +501,7 @@
             '../components/components.gyp:components_unittests',
             '../content/content.gyp:content_browsertests',
             '../content/content.gyp:content_unittests',
-            '../device/device.gyp:device_unittests',
+            '../device/device_tests.gyp:device_unittests',
             '../gpu/gpu.gyp:gpu_unittests',
             '../ipc/ipc.gyp:ipc_tests',
             '../jingle/jingle.gyp:jingle_unittests',
@@ -519,7 +533,7 @@
             '../components/components.gyp:components_unittests',
             '../content/content.gyp:content_browsertests',
             '../content/content.gyp:content_unittests',
-            '../device/device.gyp:device_unittests',
+            '../device/device_tests.gyp:device_unittests',
             '../gpu/gpu.gyp:gpu_unittests',
             '../ipc/ipc.gyp:ipc_tests',
             '../jingle/jingle.gyp:jingle_unittests',
@@ -555,12 +569,11 @@
           ],
         },
         {
+          # TODO(dpranke): Update the bots to refer to 'chromium_builder_asan'.
           'target_name': 'chromium_builder_asan_mac',
           'type': 'none',
           'dependencies': [
-            '../chrome/chrome.gyp:chrome',
-            '../net/net.gyp:dns_fuzz_stub',
-            'all_webkit',
+            'chromium_builder_asan'
           ],
         },
         {
@@ -573,7 +586,7 @@
             '../components/components.gyp:components_unittests',
             '../content/content.gyp:content_unittests',
             '../crypto/crypto.gyp:crypto_unittests',
-            '../device/device.gyp:device_unittests',
+            '../device/device_tests.gyp:device_unittests',
             '../ipc/ipc.gyp:ipc_tests',
             '../jingle/jingle.gyp:jingle_unittests',
             '../media/media.gyp:media_unittests',
@@ -616,7 +629,7 @@
             '../chrome/installer/mini_installer.gyp:mini_installer',
             '../chrome_frame/chrome_frame.gyp:npchrome_frame',
             '../courgette/courgette.gyp:courgette_unittests',
-            '../device/device.gyp:device_unittests',
+            '../device/device_tests.gyp:device_unittests',
             '../gpu/gpu.gyp:gpu_unittests',
             '../ipc/ipc.gyp:ipc_tests',
             '../jingle/jingle.gyp:jingle_unittests',
@@ -701,7 +714,7 @@
             '../components/components.gyp:components_unittests',
             '../content/content.gyp:content_unittests',
             '../crypto/crypto.gyp:crypto_unittests',
-            '../device/device.gyp:device_unittests',
+            '../device/device_tests.gyp:device_unittests',
             '../ipc/ipc.gyp:ipc_tests',
             '../jingle/jingle.gyp:jingle_unittests',
             '../media/media.gyp:media_unittests',
@@ -795,7 +808,7 @@
             '../components/components.gyp:components_unittests',
             '../content/content.gyp:content_browsertests',
             '../content/content.gyp:content_unittests',
-            '../device/device.gyp:device_unittests',
+            '../device/device_tests.gyp:device_unittests',
             '../ppapi/ppapi_internal.gyp:ppapi_unittests',
             '../remoting/remoting.gyp:remoting_unittests',
             '../ui/app_list/app_list.gyp:*',
@@ -860,7 +873,7 @@
               'dependencies!': [
                 '../chrome/chrome.gyp:chrome',
                 '../chrome/chrome.gyp:unit_tests',
-                '../device/device.gyp:device_unittests',
+                '../device/device_tests.gyp:device_unittests',
                 '../ui/views/views.gyp:views_unittests',
               ],
             }],

@@ -20,6 +20,7 @@ td {
   padding-left: 0.5em;
   padding-right: 0.5em;
   text-align: left;
+  vertical-align: top;
 }
 
 thead tr {
@@ -37,4 +38,18 @@ tbody tr:nth-child(odd) {
 
 .log-event.error {
   background: rgb(255, 220, 220);
+}
+
+.file-icon {
+  background-image: url('chrome://syncfs-internals/file.png');
+  background-position: 0 2px;
+  background-repeat: no-repeat;
+  padding-left: 18px;
+}
+
+.folder-icon {
+  background-image: url('chrome://syncfs-internals/folder_closed.png');
+  background-position: 0 2px;
+  background-repeat: no-repeat;
+  padding-left: 18px;
 }

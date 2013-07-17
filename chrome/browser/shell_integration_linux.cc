@@ -29,6 +29,7 @@
 #include "base/process_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_tokenizer.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
@@ -170,7 +171,7 @@ bool CreateShortcutOnDesktop(const base::FilePath& shortcut_filename,
 void DeleteShortcutOnDesktop(const base::FilePath& shortcut_filename) {
   base::FilePath desktop_path;
   if (PathService::Get(base::DIR_USER_DESKTOP, &desktop_path))
-    base::Delete(desktop_path.Append(shortcut_filename), false);
+    base::DeleteFile(desktop_path.Append(shortcut_filename), false);
 }
 
 // Creates a shortcut with |shortcut_filename| and |contents| in the system
@@ -551,7 +552,7 @@ ShellIntegration::ShortcutLocations GetExistingShortcutLocations(
   // Determine whether there is a shortcut on desktop.
   if (!desktop_path.empty()) {
     locations.on_desktop =
-        file_util::PathExists(desktop_path.Append(shortcut_filename));
+        base::PathExists(desktop_path.Append(shortcut_filename));
   }
 
   // Determine whether there is a shortcut in the applications directory.
@@ -604,7 +605,7 @@ bool GetExistingShortcutContents(base::Environment* env,
        i != search_paths.end(); ++i) {
     base::FilePath path = i->Append("applications").Append(desktop_filename);
     VLOG(1) << "Looking for desktop file in " << path.value();
-    if (file_util::PathExists(path)) {
+    if (base::PathExists(path)) {
       VLOG(1) << "Found desktop file at " << path.value();
       return file_util::ReadFileToString(path, output);
     }
@@ -626,7 +627,7 @@ base::FilePath GetWebShortcutFilename(const GURL& url) {
   base::FilePath filepath = desktop_path.Append(filename);
   base::FilePath alternative_filepath(filepath.value() + ".desktop");
   for (size_t i = 1; i < 100; ++i) {
-    if (file_util::PathExists(base::FilePath(alternative_filepath))) {
+    if (base::PathExists(base::FilePath(alternative_filepath))) {
       alternative_filepath = base::FilePath(
           filepath.value() + "_" + base::IntToString(i) + ".desktop");
     } else {
@@ -648,6 +649,9 @@ base::FilePath GetExtensionShortcutFilename(const base::FilePath& profile_path,
       .append("-")
       .append(profile_path.BaseName().value());
   file_util::ReplaceIllegalCharactersInPath(&filename, '_');
+  // Spaces in filenames break xdg-desktop-menu
+  // (see https://bugs.freedesktop.org/show_bug.cgi?id=66605).
+  ReplaceChars(filename, " ", "_", &filename);
   return base::FilePath(filename.append(".desktop"));
 }
 

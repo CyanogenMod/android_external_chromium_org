@@ -57,6 +57,7 @@ class CHROMEOS_EXPORT NetworkConnectionHandler
   static const char kErrorConfigurationRequired[];
   static const char kErrorShillError[];
   static const char kErrorConnectFailed[];
+  static const char kErrorDisconnectFailed[];
   static const char kErrorUnknown[];
 
   // Constants for |error_name| from |error_callback| for Disconnect.
@@ -83,7 +84,7 @@ class CHROMEOS_EXPORT NetworkConnectionHandler
                         const network_handler::ErrorCallback& error_callback,
                         bool ignore_error_state);
 
-  // DisconnectToNetwork() will send a Disconnect request to Shill.
+  // DisconnectNetwork() will send a Disconnect request to Shill.
   // On success, |success_callback| will be called.
   // On failure, |error_callback| will be called with |error_name| one of:
   //  kErrorNotFound if no network matching |service_path| is found.
@@ -160,11 +161,6 @@ class CHROMEOS_EXPORT NetworkConnectionHandler
   // Handle success or failure from Shill.Service.Disconnect.
   void HandleShillDisconnectSuccess(const std::string& service_path,
                                     const base::Closure& success_callback);
-  void HandleShillDisconnectFailure(
-      const std::string& service_path,
-      const network_handler::ErrorCallback& error_callback,
-      const std::string& error_name,
-      const std::string& error_message);
 
   // Local references to the associated handler instances.
   CertLoader* cert_loader_;

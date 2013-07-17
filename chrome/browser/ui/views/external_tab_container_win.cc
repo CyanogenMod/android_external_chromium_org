@@ -24,6 +24,7 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/app/chrome_dll_resource.h"
 #include "chrome/browser/automation/automation_provider.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/devtools/devtools_toggle_action.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/file_select_helper.h"
@@ -46,7 +47,6 @@
 #include "chrome/browser/ui/views/tab_contents/render_view_context_menu_win.h"
 #include "chrome/common/automation_messages.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/load_notification_details.h"
@@ -69,7 +69,6 @@
 #include "third_party/WebKit/public/platform/WebCString.h"
 #include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
 #include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/web/WebSecurityPolicy.h"
 #include "ui/base/events/event_utils.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/menu_model.h"
@@ -96,7 +95,6 @@ using content::SSLStatus;
 using content::WebContents;
 using WebKit::WebCString;
 using WebKit::WebReferrerPolicy;
-using WebKit::WebSecurityPolicy;
 using WebKit::WebString;
 
 namespace {
@@ -157,6 +155,43 @@ ContextMenuModel* ConvertMenuModel(const ui::MenuModel* ui_model) {
 
   return new_model;
 }
+
+// Generates a referrer header used by the AutomationProvider on navigation.
+// Based on code from
+// http://src.chromium.org/viewvc/blink/trunk/Source/weborigin/SecurityPolicy.cpp?revision=151498
+bool ShouldHideReferrer(const GURL& url, const GURL& referrer) {
+  bool referrer_is_secure = referrer.SchemeIsSecure();
+  bool referrer_is_web_url = referrer_is_secure || referrer.SchemeIs("http");
+
+  if (!referrer_is_web_url)
+    return true;
+
+  if (!referrer_is_secure)
+    return false;
+
+  return !url.SchemeIsSecure();
+}
+
+GURL GenerateReferrer(WebKit::WebReferrerPolicy policy,
+                      const GURL& url,
+                      const GURL& referrer) {
+  if (referrer.is_empty())
+    return GURL();
+
+  switch (policy) {
+    case WebKit::WebReferrerPolicyNever:
+      return GURL();
+    case WebKit::WebReferrerPolicyAlways:
+      return referrer;
+    case WebKit::WebReferrerPolicyOrigin:
+      return referrer.GetOrigin();
+    default:
+      break;
+  }
+
+  return ShouldHideReferrer(url, referrer) ? GURL() : referrer;
+}
+
 
 }  // namespace
 
@@ -383,9 +418,8 @@ bool ExternalTabContainerWin::Init(Profile* profile,
   web_contents_.reset(existing_contents);
 
   if (!infobars_enabled) {
-    InfoBarService* infobar_service =
-        InfoBarService::FromWebContents(existing_contents);
-    infobar_service->set_infobars_enabled(false);
+    InfoBarService::FromWebContents(existing_contents)->set_infobars_enabled(
+        false);
   }
 
   // Start loading initial URL
@@ -606,10 +640,9 @@ WebContents* ExternalTabContainerWin::OpenURLFromTab(
     case NEW_WINDOW:
     case SAVE_TO_DISK:
       if (automation_) {
-        GURL referrer = GURL(WebSecurityPolicy::generateReferrerHeader(
-            params.referrer.policy,
-            params.url,
-            WebString::fromUTF8(params.referrer.url.spec())).utf8());
+        GURL referrer = GenerateReferrer(params.referrer.policy,
+                                         params.url,
+                                         params.referrer.url);
         automation_->Send(new AutomationMsg_OpenURL(tab_handle_,
                                                     params.url,
                                                     referrer,
@@ -1375,11 +1408,9 @@ void ExternalTabContainerWin::SetupExternalTabView() {
   // widget is torn down.
   external_tab_view_ = new views::View();
 
-  InfoBarContainerView* info_bar_container =
-      new InfoBarContainerView(this, NULL);
-  InfoBarService* infobar_service =
-      InfoBarService::FromWebContents(web_contents_.get());
-  info_bar_container->ChangeInfoBarService(infobar_service);
+  InfoBarContainerView* infobar_container = new InfoBarContainerView(this);
+  infobar_container->ChangeInfoBarService(
+      InfoBarService::FromWebContents(web_contents_.get()));
 
   views::GridLayout* layout = new views::GridLayout(external_tab_view_);
   // Give this column an identifier of 0.
@@ -1394,7 +1425,7 @@ void ExternalTabContainerWin::SetupExternalTabView() {
   external_tab_view_->SetLayoutManager(layout);
 
   layout->StartRow(0, 0);
-  layout->AddView(info_bar_container);
+  layout->AddView(infobar_container);
   layout->StartRow(1, 0);
   layout->AddView(tab_contents_container_);
   widget_->SetContentsView(external_tab_view_);

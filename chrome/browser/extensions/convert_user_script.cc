@@ -23,7 +23,7 @@
 #include "chrome/common/extensions/user_script.h"
 #include "crypto/sha2.h"
 #include "extensions/common/constants.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace keys = extension_manifest_keys;
 namespace values = extension_manifest_values;
@@ -164,8 +164,8 @@ scoped_refptr<Extension> ConvertUserScriptToExtension(
   }
 
   // Write the script file.
-  if (!file_util::CopyFile(user_script_path,
-                           temp_dir.path().AppendASCII("script.js"))) {
+  if (!base::CopyFile(user_script_path,
+                      temp_dir.path().AppendASCII("script.js"))) {
     *error = ASCIIToUTF16("Could not copy script file.");
     return NULL;
   }

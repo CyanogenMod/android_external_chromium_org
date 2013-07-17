@@ -6,7 +6,6 @@
 #define CONTENT_PUBLIC_TEST_LAYOUTTEST_SUPPORT_H_
 
 #include "base/callback_forward.h"
-#include "base/memory/ref_counted.h"
 
 namespace WebKit {
 class WebGamepads;
@@ -15,10 +14,6 @@ struct WebSize;
 
 namespace WebTestRunner {
 class WebTestProxyBase;
-}
-
-namespace base {
-class MessageLoopProxy;
 }
 
 namespace content {
@@ -69,11 +64,8 @@ void EnableAutoResizeMode(RenderView* render_view,
 void DisableAutoResizeMode(RenderView* render_view,
                            const WebKit::WebSize& new_size);
 
-// Return the thread on which media operations should run.
-//
-// TODO(scherkus): We should be using RenderViewImpl::createMediaPlayer(), see
-// http://crbug.com/239826
-scoped_refptr<base::MessageLoopProxy> GetMediaThreadMessageLoopProxy();
+// Forces the |render_view| to use mock media streams.
+void UseMockMediaStreams(RenderView* render_view);
 
 }  // namespace content
 

@@ -17,7 +17,6 @@
 #include "base/strings/string_util.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
-#include "chrome/browser/diagnostics/sqlite_diagnostics.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/cert/x509_certificate.h"
 #include "net/cookies/cookie_util.h"
@@ -201,7 +200,7 @@ void SQLiteServerBoundCertStore::Backend::LoadOnDBThread(
   // Ensure the parent directory for storing certs is created before reading
   // from it.
   const base::FilePath dir = path_.DirName();
-  if (!file_util::PathExists(dir) && !file_util::CreateDirectory(dir))
+  if (!base::PathExists(dir) && !file_util::CreateDirectory(dir))
     return;
 
   int64 db_size = 0;

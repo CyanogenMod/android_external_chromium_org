@@ -95,7 +95,7 @@ MediaStreamDevicesController::~MediaStreamDevicesController() {
 }
 
 // static
-void MediaStreamDevicesController::RegisterUserPrefs(
+void MediaStreamDevicesController::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* prefs) {
   prefs->RegisterBooleanPref(prefs::kVideoCaptureAllowed,
                              true,
@@ -138,8 +138,9 @@ bool MediaStreamDevicesController::DismissInfoBarAndTakeActionOnSettings() {
     return true;
   }
 
-  // Check if any block exception has been made for this request.
-  if (IsRequestBlockedByDefault()) {
+  // Filter any parts of the request that have been blocked by default and deny
+  // it if nothing is left to accept.
+  if (FilterBlockedByDefaultDevices() == 0) {
     Deny(false);
     return true;
   }
@@ -165,24 +166,76 @@ void MediaStreamDevicesController::Accept(bool update_content_setting) {
   content::MediaStreamDevices devices;
   if (microphone_requested_ || webcam_requested_) {
     switch (request_.request_type) {
-      case content::MEDIA_OPEN_DEVICE:
+      case content::MEDIA_OPEN_DEVICE: {
+        const content::MediaStreamDevice* device = NULL;
         // For open device request pick the desired device or fall back to the
         // first available of the given type.
-        MediaCaptureDevicesDispatcher::GetInstance()->GetRequestedDevice(
-            request_.requested_device_id,
-            request_.audio_type == content::MEDIA_DEVICE_AUDIO_CAPTURE,
-            request_.video_type == content::MEDIA_DEVICE_VIDEO_CAPTURE,
-            &devices);
+        if (request_.audio_type == content::MEDIA_DEVICE_AUDIO_CAPTURE) {
+          device = MediaCaptureDevicesDispatcher::GetInstance()->
+              GetRequestedAudioDevice(request_.requested_audio_device_id);
+          // TODO(wjia): Confirm this is the intended behavior.
+          if (!device) {
+            device = MediaCaptureDevicesDispatcher::GetInstance()->
+                GetFirstAvailableAudioDevice();
+          }
+        } else if (request_.video_type == content::MEDIA_DEVICE_VIDEO_CAPTURE) {
+          // Pepper API opens only one device at a time.
+          device = MediaCaptureDevicesDispatcher::GetInstance()->
+              GetRequestedVideoDevice(request_.requested_video_device_id);
+          // TODO(wjia): Confirm this is the intended behavior.
+          if (!device) {
+            device = MediaCaptureDevicesDispatcher::GetInstance()->
+                GetFirstAvailableVideoDevice();
+          }
+        }
+        if (device)
+          devices.push_back(*device);
         break;
-      case content::MEDIA_DEVICE_ACCESS:
-      case content::MEDIA_GENERATE_STREAM:
-      case content::MEDIA_ENUMERATE_DEVICES:
+      } case content::MEDIA_GENERATE_STREAM: {
+        bool needs_audio_device = microphone_requested_;
+        bool needs_video_device = webcam_requested_;
+
+        // Get the exact audio or video device if an id is specified.
+        if (!request_.requested_audio_device_id.empty()) {
+          const content::MediaStreamDevice* audio_device =
+              MediaCaptureDevicesDispatcher::GetInstance()->
+                  GetRequestedAudioDevice(request_.requested_audio_device_id);
+          if (audio_device) {
+            devices.push_back(*audio_device);
+            needs_audio_device = false;
+          }
+        }
+        if (!request_.requested_video_device_id.empty()) {
+          const content::MediaStreamDevice* video_device =
+              MediaCaptureDevicesDispatcher::GetInstance()->
+                  GetRequestedVideoDevice(request_.requested_video_device_id);
+          if (video_device) {
+            devices.push_back(*video_device);
+            needs_video_device = false;
+          }
+        }
+
+        // If either or both audio and video devices were requested but not
+        // specified by id, get the default devices.
+        if (needs_audio_device || needs_video_device) {
+          MediaCaptureDevicesDispatcher::GetInstance()->
+              GetDefaultDevicesForProfile(profile_,
+                                          needs_audio_device,
+                                          needs_video_device,
+                                          &devices);
+        }
+        break;
+      } case content::MEDIA_DEVICE_ACCESS:
         // Get the default devices for the request.
         MediaCaptureDevicesDispatcher::GetInstance()->
             GetDefaultDevicesForProfile(profile_,
                                         microphone_requested_,
                                         webcam_requested_,
                                         &devices);
+        break;
+      case content::MEDIA_ENUMERATE_DEVICES:
+        // Do nothing.
+        NOTREACHED();
         break;
     }
 
@@ -310,14 +363,16 @@ bool MediaStreamDevicesController::IsRequestAllowedByDefault() const {
   return true;
 }
 
-bool MediaStreamDevicesController::IsRequestBlockedByDefault() const {
+int MediaStreamDevicesController::FilterBlockedByDefaultDevices() {
+  int requested_devices = microphone_requested_ + webcam_requested_;
   if (microphone_requested_ &&
       profile_->GetHostContentSettingsMap()->GetContentSetting(
           request_.security_origin,
           request_.security_origin,
           CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC,
-          NO_RESOURCE_IDENTIFIER) != CONTENT_SETTING_BLOCK) {
-    return false;
+          NO_RESOURCE_IDENTIFIER) == CONTENT_SETTING_BLOCK) {
+    requested_devices--;
+    microphone_requested_ = false;
   }
 
   if (webcam_requested_ &&
@@ -325,11 +380,12 @@ bool MediaStreamDevicesController::IsRequestBlockedByDefault() const {
           request_.security_origin,
           request_.security_origin,
           CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA,
-          NO_RESOURCE_IDENTIFIER) != CONTENT_SETTING_BLOCK) {
-    return false;
+          NO_RESOURCE_IDENTIFIER) == CONTENT_SETTING_BLOCK) {
+    requested_devices--;
+    webcam_requested_ = false;
   }
 
-  return true;
+  return requested_devices;
 }
 
 bool MediaStreamDevicesController::IsDefaultMediaAccessBlocked() const {

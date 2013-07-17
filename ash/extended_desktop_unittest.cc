@@ -4,6 +4,7 @@
 
 #include "ash/display/display_controller.h"
 #include "ash/display/display_manager.h"
+#include "ash/root_window_controller.h"
 #include "ash/screen_ash.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
@@ -42,6 +43,10 @@ void SetSecondaryDisplayLayout(DisplayLayout::Position position) {
   display_controller->SetLayoutForCurrentDisplays(layout);
 }
 
+internal::DisplayManager* GetDisplayManager() {
+  return Shell::GetInstance()->display_manager();
+}
+
 class ModalWidgetDelegate : public views::WidgetDelegateView {
  public:
   ModalWidgetDelegate() {}
@@ -58,10 +63,6 @@ class ModalWidgetDelegate : public views::WidgetDelegateView {
  private:
   DISALLOW_COPY_AND_ASSIGN(ModalWidgetDelegate);
 };
-
-internal::DisplayManager* GetDisplayManager() {
-  return Shell::GetInstance()->display_manager();
-}
 
 // An event handler which moves the target window to the secondary root window
 // at pre-handle phase of a mouse release event.
@@ -607,20 +608,17 @@ TEST_F(ExtendedDesktopTest, MoveWindowWithTransient) {
             w1_t1->GetWindowBoundsInScreen().ToString());
 }
 
-namespace internal {
 // Test if the Window::ConvertPointToTarget works across root windows.
 // TODO(oshima): Move multiple display suport and this test to aura.
 TEST_F(ExtendedDesktopTest, ConvertPoint) {
   if (!SupportsMultipleDisplays())
     return;
-
+  gfx::Screen* screen = Shell::GetInstance()->screen();
   UpdateDisplay("1000x600,600x400");
   Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
-  gfx::Display& display_1 =
-      GetDisplayManager()->FindDisplayForRootWindow(root_windows[0]);
+  gfx::Display display_1 = screen->GetDisplayNearestWindow(root_windows[0]);
   EXPECT_EQ("0,0", display_1.bounds().origin().ToString());
-  gfx::Display& display_2 =
-      GetDisplayManager()->FindDisplayForRootWindow(root_windows[1]);
+  gfx::Display display_2 = screen->GetDisplayNearestWindow(root_windows[1]);
   EXPECT_EQ("1000,0", display_2.bounds().origin().ToString());
 
   aura::Window* d1 =
@@ -649,7 +647,7 @@ TEST_F(ExtendedDesktopTest, ConvertPoint) {
   // Move the 2nd display to the bottom and test again.
   SetSecondaryDisplayLayout(DisplayLayout::BOTTOM);
 
-  display_2 = GetDisplayManager()->FindDisplayForRootWindow(root_windows[1]);
+  display_2 = screen->GetDisplayNearestWindow(root_windows[1]);
   EXPECT_EQ("0,600", display_2.bounds().origin().ToString());
 
   // Convert point in Root2's window to Root1's window Coord.
@@ -724,6 +722,25 @@ TEST_F(ExtendedDesktopTest, StayInSameRootWindow) {
   w1->GetNativeView()->ClearProperty(internal::kStayInSameRootWindowKey);
   w1->SetBounds(gfx::Rect(10, 10, 50, 50));
   EXPECT_EQ(root_windows[0], w1->GetNativeView()->GetRootWindow());
+
+  // a window in SettingsBubbleContainer and StatusContainer should
+  // not move to another root window regardles of the bounds specified.
+  aura::Window* settings_bubble_container =
+      Shell::GetPrimaryRootWindowController()->GetContainer(
+          internal::kShellWindowId_SettingBubbleContainer);
+  aura::Window* window = aura::test::CreateTestWindowWithId(
+      100, settings_bubble_container);
+  window->SetBoundsInScreen(gfx::Rect(150, 10, 50, 50),
+                            ScreenAsh::GetSecondaryDisplay());
+  EXPECT_EQ(root_windows[0], window->GetRootWindow());
+
+  aura::Window* status_container =
+      Shell::GetPrimaryRootWindowController()->GetContainer(
+          internal::kShellWindowId_StatusContainer);
+  window = aura::test::CreateTestWindowWithId(100, status_container);
+  window->SetBoundsInScreen(gfx::Rect(150, 10, 50, 50),
+                            ScreenAsh::GetSecondaryDisplay());
+  EXPECT_EQ(root_windows[0], window->GetRootWindow());
 }
 
 TEST_F(ExtendedDesktopTest, KeyEventsOnLockScreen) {
@@ -830,5 +847,4 @@ TEST_F(ExtendedDesktopTest, PassiveGrab) {
   ash::Shell::GetInstance()->RemovePreTargetHandler(&event_handler);
 }
 
-}  // namespace internal
 }  // namespace ash

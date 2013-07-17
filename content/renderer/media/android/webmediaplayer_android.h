@@ -19,6 +19,7 @@
 #include "content/renderer/media/android/media_info_loader.h"
 #include "content/renderer/media/android/media_source_delegate.h"
 #include "content/renderer/media/android/stream_texture_factory_android.h"
+#include "content/renderer/media/crypto/proxy_decryptor.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "media/base/android/media_player_android.h"
 #include "media/base/demuxer_stream.h"
@@ -28,7 +29,6 @@
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebMediaPlayer.h"
 #include "ui/gfx/rect_f.h"
-#include "webkit/renderer/media/crypto/proxy_decryptor.h"
 
 namespace media {
 class Demuxer;
@@ -43,19 +43,15 @@ namespace webkit {
 class WebLayerImpl;
 }
 
-namespace webkit_media {
+namespace content {
 class WebMediaPlayerDelegate;
+class RendererMediaPlayerManager;
+class WebMediaPlayerProxyAndroid;
 
 #if defined(GOOGLE_TV)
 class MediaStreamAudioRenderer;
 class MediaStreamClient;
 #endif
-}
-
-namespace content {
-
-class WebMediaPlayerManagerAndroid;
-class WebMediaPlayerProxyAndroid;
 
 // This class implements WebKit::WebMediaPlayer by keeping the android
 // media player in the browser process. It listens to all the status changes
@@ -77,8 +73,8 @@ class WebMediaPlayerAndroid
   WebMediaPlayerAndroid(
       WebKit::WebFrame* frame,
       WebKit::WebMediaPlayerClient* client,
-      base::WeakPtr<webkit_media::WebMediaPlayerDelegate> delegate,
-      WebMediaPlayerManagerAndroid* manager,
+      base::WeakPtr<WebMediaPlayerDelegate> delegate,
+      RendererMediaPlayerManager* manager,
       WebMediaPlayerProxyAndroid* proxy,
       StreamTextureFactory* factory,
       media::MediaLog* media_log);
@@ -183,7 +179,7 @@ class WebMediaPlayerAndroid
   // Called when the player is released.
   virtual void OnPlayerReleased();
 
-  // This function is called by the WebMediaPlayerManagerAndroid to pause the
+  // This function is called by the RendererMediaPlayerManager to pause the
   // video and release the media player and surface texture when we switch tabs.
   // However, the actual GlTexture is not released to keep the video screenshot.
   virtual void ReleaseMediaResources();
@@ -230,7 +226,7 @@ class WebMediaPlayerAndroid
                  int init_data_size);
 
 #if defined(GOOGLE_TV)
-  bool InjectMediaStream(webkit_media::MediaStreamClient* media_stream_client,
+  bool InjectMediaStream(MediaStreamClient* media_stream_client,
                          media::Demuxer* demuxer,
                          const base::Closure& destroy_demuxer_cb);
 #endif
@@ -289,7 +285,7 @@ class WebMediaPlayerAndroid
   // TODO(qinmin): Currently android mediaplayer takes care of the screen
   // lock. So this is only used for media source. Will apply this to regular
   // media tag once http://crbug.com/247892 is fixed.
-  base::WeakPtr<webkit_media::WebMediaPlayerDelegate> delegate_;
+  base::WeakPtr<WebMediaPlayerDelegate> delegate_;
 
   // Save the list of buffered time ranges.
   WebKit::WebTimeRanges buffered_;
@@ -327,7 +323,7 @@ class WebMediaPlayerAndroid
   mutable bool did_loading_progress_;
 
   // Manager for managing this object.
-  WebMediaPlayerManagerAndroid* manager_;
+  RendererMediaPlayerManager* manager_;
 
   // Player ID assigned by the |manager_|.
   int player_id_;
@@ -391,8 +387,8 @@ class WebMediaPlayerAndroid
   // Media Stream related fields.
   media::Demuxer* demuxer_;
   base::Closure destroy_demuxer_cb_;
-  scoped_refptr<webkit_media::MediaStreamAudioRenderer> audio_renderer_;
-  webkit_media::MediaStreamClient* media_stream_client_;
+  scoped_refptr<MediaStreamAudioRenderer> audio_renderer_;
+  MediaStreamClient* media_stream_client_;
 #endif
 
   scoped_ptr<MediaSourceDelegate,
@@ -423,7 +419,7 @@ class WebMediaPlayerAndroid
   std::string init_data_type_;
 
   // The decryptor that manages decryption keys and decrypts encrypted frames.
-  scoped_ptr<webkit_media::ProxyDecryptor> decryptor_;
+  scoped_ptr<ProxyDecryptor> decryptor_;
 
   DISALLOW_COPY_AND_ASSIGN(WebMediaPlayerAndroid);
 };

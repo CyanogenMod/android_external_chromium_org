@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "components/autofill/core/browser/autofill_metrics.h"
+
 #include <vector>
 
 #include "base/memory/ref_counted.h"
@@ -16,9 +18,9 @@
 #include "chrome/test/base/testing_profile.h"
 #include "components/autofill/content/browser/autocheckout_page_meta_data.h"
 #include "components/autofill/core/browser/autofill_common_test.h"
+#include "components/autofill/core/browser/autofill_external_delegate.h"
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/autofill_manager_delegate.h"
-#include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/test_autofill_driver.h"
 #include "components/autofill/core/common/form_data.h"
@@ -26,10 +28,10 @@
 #include "components/autofill/core/common/forms_seen_state.h"
 #include "components/webdata/common/web_data_results.h"
 #include "content/public/test/test_utils.h"
-#include "googleurl/src/gurl.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/rect.h"
+#include "url/gurl.h"
 
 using base::TimeDelta;
 using base::TimeTicks;
@@ -270,6 +272,7 @@ class AutofillMetricsTest : public ChromeRenderViewHostTestHarness {
   scoped_ptr<TestAutofillDriver> autofill_driver_;
   scoped_ptr<TestAutofillManager> autofill_manager_;
   scoped_ptr<TestPersonalDataManager> personal_data_;
+  scoped_ptr<AutofillExternalDelegate> external_delegate_;
 };
 
 AutofillMetricsTest::~AutofillMetricsTest() {
@@ -279,25 +282,29 @@ AutofillMetricsTest::~AutofillMetricsTest() {
 }
 
 void AutofillMetricsTest::SetUp() {
-  TestingProfile* profile = new TestingProfile();
+  ChromeRenderViewHostTestHarness::SetUp();
 
   // Ensure Mac OS X does not pop up a modal dialog for the Address Book.
-  autofill::test::DisableSystemServices(profile);
+  autofill::test::DisableSystemServices(profile());
 
-  profile->CreateRequestContext();
-  browser_context_.reset(profile);
-  PersonalDataManagerFactory::GetInstance()->SetTestingFactory(profile, NULL);
+  profile()->CreateRequestContext();
+  PersonalDataManagerFactory::GetInstance()->SetTestingFactory(profile(), NULL);
 
-  ChromeRenderViewHostTestHarness::SetUp();
   TabAutofillManagerDelegate::CreateForWebContents(web_contents());
 
   personal_data_.reset(new TestPersonalDataManager());
-  personal_data_->SetBrowserContext(profile);
+  personal_data_->SetBrowserContext(profile());
   autofill_driver_.reset(new TestAutofillDriver(web_contents()));
   autofill_manager_.reset(new TestAutofillManager(
       autofill_driver_.get(),
       TabAutofillManagerDelegate::FromWebContents(web_contents()),
       personal_data_.get()));
+
+  external_delegate_.reset(new AutofillExternalDelegate(
+      web_contents(),
+      autofill_manager_.get(),
+      autofill_driver_.get()));
+  autofill_manager_->SetExternalDelegate(external_delegate_.get());
 }
 
 void AutofillMetricsTest::TearDown() {

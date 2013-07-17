@@ -13,13 +13,13 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
-#include "chrome/browser/media_galleries/fileapi/media_file_system_mount_point_provider.h"
+#include "chrome/browser/media_galleries/fileapi/media_file_system_backend.h"
 #include "chrome/browser/media_galleries/fileapi/native_media_file_util.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
+#include "webkit/browser/fileapi/file_system_backend.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_mount_point_provider.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
 #include "webkit/browser/fileapi/file_system_task_runners.h"
 #include "webkit/browser/fileapi/file_system_url.h"
@@ -125,8 +125,8 @@ class NativeMediaFileUtilTest : public testing::Test {
     scoped_refptr<quota::SpecialStoragePolicy> storage_policy =
         new quota::MockSpecialStoragePolicy();
 
-    ScopedVector<fileapi::FileSystemMountPointProvider> additional_providers;
-    additional_providers.push_back(new MediaFileSystemMountPointProvider(
+    ScopedVector<fileapi::FileSystemBackend> additional_providers;
+    additional_providers.push_back(new MediaFileSystemBackend(
         data_dir_.path(), base::MessageLoopProxy::current().get()));
 
     file_system_context_ = new fileapi::FileSystemContext(
@@ -288,7 +288,7 @@ TEST_F(NativeMediaFileUtilTest, CopySourceFiltering) {
     for (size_t i = 0; i < arraysize(kFilteringTestCases); ++i) {
       // Always start with an empty destination directory.
       // Copying to a non-empty destination directory is an invalid operation.
-      ASSERT_TRUE(base::Delete(dest_path, true));
+      ASSERT_TRUE(base::DeleteFile(dest_path, true));
       ASSERT_TRUE(file_util::CreateDirectory(dest_path));
 
       FileSystemURL root_url = CreateURL(FPL(""));
@@ -318,7 +318,7 @@ TEST_F(NativeMediaFileUtilTest, CopyDestFiltering) {
     if (loop_count == 1) {
       // Reset the test directory between the two loops to remove old
       // directories and create new ones that should pre-exist.
-      ASSERT_TRUE(base::Delete(root_path(), true));
+      ASSERT_TRUE(base::DeleteFile(root_path(), true));
       ASSERT_TRUE(file_util::CreateDirectory(root_path()));
       PopulateDirectoryWithTestCases(root_path(),
                                      kFilteringTestCases,
@@ -387,7 +387,7 @@ TEST_F(NativeMediaFileUtilTest, MoveSourceFiltering) {
     for (size_t i = 0; i < arraysize(kFilteringTestCases); ++i) {
       // Always start with an empty destination directory.
       // Moving to a non-empty destination directory is an invalid operation.
-      ASSERT_TRUE(base::Delete(dest_path, true));
+      ASSERT_TRUE(base::DeleteFile(dest_path, true));
       ASSERT_TRUE(file_util::CreateDirectory(dest_path));
 
       FileSystemURL root_url = CreateURL(FPL(""));
@@ -417,7 +417,7 @@ TEST_F(NativeMediaFileUtilTest, MoveDestFiltering) {
     if (loop_count == 1) {
       // Reset the test directory between the two loops to remove old
       // directories and create new ones that should pre-exist.
-      ASSERT_TRUE(base::Delete(root_path(), true));
+      ASSERT_TRUE(base::DeleteFile(root_path(), true));
       ASSERT_TRUE(file_util::CreateDirectory(root_path()));
       PopulateDirectoryWithTestCases(root_path(),
                                      kFilteringTestCases,

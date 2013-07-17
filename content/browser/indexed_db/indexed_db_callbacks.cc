@@ -5,7 +5,6 @@
 #include "content/browser/indexed_db/indexed_db_callbacks.h"
 
 #include <algorithm>
-#include <vector>
 
 #include "content/browser/indexed_db/indexed_db_connection.h"
 #include "content/browser/indexed_db/indexed_db_cursor.h"
@@ -67,7 +66,7 @@ IndexedDBCallbacks::IndexedDBCallbacks(IndexedDBDispatcherHost* dispatcher_host,
 IndexedDBCallbacks::~IndexedDBCallbacks() {}
 
 void IndexedDBCallbacks::OnError(const IndexedDBDatabaseError& error) {
-  DCHECK(dispatcher_host_);
+  DCHECK(dispatcher_host_.get());
 
   dispatcher_host_->Send(new IndexedDBMsg_CallbacksError(
       ipc_thread_id_, ipc_callbacks_id_, error.code(), error.message()));
@@ -75,7 +74,7 @@ void IndexedDBCallbacks::OnError(const IndexedDBDatabaseError& error) {
 }
 
 void IndexedDBCallbacks::OnSuccess(const std::vector<string16>& value) {
-  DCHECK(dispatcher_host_);
+  DCHECK(dispatcher_host_.get());
 
   DCHECK_EQ(kNoCursor, ipc_cursor_id_);
   DCHECK_EQ(kNoTransaction, host_transaction_id_);
@@ -92,7 +91,7 @@ void IndexedDBCallbacks::OnSuccess(const std::vector<string16>& value) {
 }
 
 void IndexedDBCallbacks::OnBlocked(int64 existing_version) {
-  DCHECK(dispatcher_host_);
+  DCHECK(dispatcher_host_.get());
 
   DCHECK_EQ(kNoCursor, ipc_cursor_id_);
   // No transaction/db callbacks for DeleteDatabase.
@@ -109,7 +108,7 @@ void IndexedDBCallbacks::OnUpgradeNeeded(
     scoped_ptr<IndexedDBConnection> connection,
     const IndexedDBDatabaseMetadata& metadata,
     WebIDBCallbacks::DataLoss data_loss) {
-  DCHECK(dispatcher_host_);
+  DCHECK(dispatcher_host_.get());
 
   DCHECK_EQ(kNoCursor, ipc_cursor_id_);
   DCHECK_NE(kNoTransaction, host_transaction_id_);
@@ -133,7 +132,7 @@ void IndexedDBCallbacks::OnUpgradeNeeded(
 
 void IndexedDBCallbacks::OnSuccess(scoped_ptr<IndexedDBConnection> connection,
                                    const IndexedDBDatabaseMetadata& metadata) {
-  DCHECK(dispatcher_host_);
+  DCHECK(dispatcher_host_.get());
 
   DCHECK_EQ(kNoCursor, ipc_cursor_id_);
   DCHECK_NE(kNoTransaction, host_transaction_id_);
@@ -160,15 +159,15 @@ void IndexedDBCallbacks::OnSuccess(scoped_ptr<IndexedDBConnection> connection,
 void IndexedDBCallbacks::OnSuccess(scoped_refptr<IndexedDBCursor> cursor,
                                    const IndexedDBKey& key,
                                    const IndexedDBKey& primary_key,
-                                   std::vector<char>* value) {
-  DCHECK(dispatcher_host_);
+                                   std::string* value) {
+  DCHECK(dispatcher_host_.get());
 
   DCHECK_EQ(kNoCursor, ipc_cursor_id_);
   DCHECK_EQ(kNoTransaction, host_transaction_id_);
   DCHECK_EQ(kNoDatabase, ipc_database_id_);
   DCHECK_EQ(kNoDatabaseCallbacks, ipc_database_callbacks_id_);
 
-  int32 ipc_object_id = dispatcher_host_->Add(cursor);
+  int32 ipc_object_id = dispatcher_host_->Add(cursor.get());
   IndexedDBMsg_CallbacksSuccessIDBCursor_Params params;
   params.ipc_thread_id = ipc_thread_id_;
   params.ipc_callbacks_id = ipc_callbacks_id_;
@@ -186,8 +185,8 @@ void IndexedDBCallbacks::OnSuccess(scoped_refptr<IndexedDBCursor> cursor,
 
 void IndexedDBCallbacks::OnSuccess(const IndexedDBKey& key,
                                    const IndexedDBKey& primary_key,
-                                   std::vector<char>* value) {
-  DCHECK(dispatcher_host_);
+                                   std::string* value) {
+  DCHECK(dispatcher_host_.get());
 
   DCHECK_NE(kNoCursor, ipc_cursor_id_);
   DCHECK_EQ(kNoTransaction, host_transaction_id_);
@@ -218,11 +217,11 @@ void IndexedDBCallbacks::OnSuccess(const IndexedDBKey& key,
 void IndexedDBCallbacks::OnSuccessWithPrefetch(
     const std::vector<IndexedDBKey>& keys,
     const std::vector<IndexedDBKey>& primary_keys,
-    const std::vector<std::vector<char> >& values) {
+    const std::vector<std::string>& values) {
   DCHECK_EQ(keys.size(), primary_keys.size());
   DCHECK_EQ(keys.size(), values.size());
 
-  DCHECK(dispatcher_host_);
+  DCHECK(dispatcher_host_.get());
 
   DCHECK_NE(kNoCursor, ipc_cursor_id_);
   DCHECK_EQ(kNoTransaction, host_transaction_id_);
@@ -249,19 +248,20 @@ void IndexedDBCallbacks::OnSuccessWithPrefetch(
   dispatcher_host_ = NULL;
 }
 
-void IndexedDBCallbacks::OnSuccess(std::vector<char>* value,
+void IndexedDBCallbacks::OnSuccess(std::string* value,
                                    const IndexedDBKey& key,
                                    const IndexedDBKeyPath& key_path) {
-  DCHECK(dispatcher_host_);
+  DCHECK(dispatcher_host_.get());
 
   DCHECK_EQ(kNoCursor, ipc_cursor_id_);
   DCHECK_EQ(kNoTransaction, host_transaction_id_);
   DCHECK_EQ(kNoDatabase, ipc_database_id_);
   DCHECK_EQ(kNoDatabaseCallbacks, ipc_database_callbacks_id_);
 
-  std::vector<char> value_copy;
+  std::string value_copy;
   if (value && !value->empty())
     std::swap(value_copy, *value);
+
   dispatcher_host_->Send(new IndexedDBMsg_CallbacksSuccessValueWithKey(
       ipc_thread_id_,
       ipc_callbacks_id_,
@@ -272,17 +272,18 @@ void IndexedDBCallbacks::OnSuccess(std::vector<char>* value,
   dispatcher_host_ = NULL;
 }
 
-void IndexedDBCallbacks::OnSuccess(std::vector<char>* value) {
-  DCHECK(dispatcher_host_);
+void IndexedDBCallbacks::OnSuccess(std::string* value) {
+  DCHECK(dispatcher_host_.get());
 
   DCHECK(kNoCursor == ipc_cursor_id_ || value == NULL);
   DCHECK_EQ(kNoTransaction, host_transaction_id_);
   DCHECK_EQ(kNoDatabase, ipc_database_id_);
   DCHECK_EQ(kNoDatabaseCallbacks, ipc_database_callbacks_id_);
 
-  std::vector<char> value_copy;
+  std::string value_copy;
   if (value && !value->empty())
     std::swap(value_copy, *value);
+
   dispatcher_host_->Send(new IndexedDBMsg_CallbacksSuccessValue(
       ipc_thread_id_,
       ipc_callbacks_id_,
@@ -292,7 +293,7 @@ void IndexedDBCallbacks::OnSuccess(std::vector<char>* value) {
 }
 
 void IndexedDBCallbacks::OnSuccess(const IndexedDBKey& value) {
-  DCHECK(dispatcher_host_);
+  DCHECK(dispatcher_host_.get());
 
   DCHECK_EQ(kNoCursor, ipc_cursor_id_);
   DCHECK_EQ(kNoTransaction, host_transaction_id_);
@@ -305,7 +306,7 @@ void IndexedDBCallbacks::OnSuccess(const IndexedDBKey& value) {
 }
 
 void IndexedDBCallbacks::OnSuccess(int64 value) {
-  DCHECK(dispatcher_host_);
+  DCHECK(dispatcher_host_.get());
 
   DCHECK_EQ(kNoCursor, ipc_cursor_id_);
   DCHECK_EQ(kNoTransaction, host_transaction_id_);
@@ -318,7 +319,7 @@ void IndexedDBCallbacks::OnSuccess(int64 value) {
 }
 
 void IndexedDBCallbacks::OnSuccess() {
-  DCHECK(dispatcher_host_);
+  DCHECK(dispatcher_host_.get());
 
   DCHECK_EQ(kNoCursor, ipc_cursor_id_);
   DCHECK_EQ(kNoTransaction, host_transaction_id_);

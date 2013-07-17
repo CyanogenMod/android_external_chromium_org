@@ -19,12 +19,22 @@ bool TestAutofillDriver::RendererIsAvailable() {
   return true;
 }
 
+void TestAutofillDriver::SetRendererActionOnFormDataReception(
+    RendererFormDataAction action) {
+}
+
 void TestAutofillDriver::SendFormDataToRenderer(int query_id,
                                                 const FormData& form_data) {
 }
 
 void TestAutofillDriver::SendAutofillTypePredictionsToRenderer(
     const std::vector<FormStructure*>& forms) {
+}
+
+void TestAutofillDriver::RendererShouldClearFilledForm() {
+}
+
+void TestAutofillDriver::RendererShouldClearPreviewedForm() {
 }
 
 }  // namespace autofill

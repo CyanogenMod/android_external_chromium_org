@@ -57,11 +57,11 @@
 #include "content/renderer/pepper/pepper_proxy_channel_delegate_impl.h"
 #include "content/renderer/pepper/pepper_url_loader_host.h"
 #include "content/renderer/pepper/renderer_ppapi_host_impl.h"
+#include "content/renderer/pepper/url_response_info_util.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/render_widget_fullscreen_pepper.h"
 #include "content/renderer/webplugin_delegate_proxy.h"
-#include "googleurl/src/gurl.h"
 #include "ipc/ipc_channel_handle.h"
 #include "media/base/audio_hardware_config.h"
 #include "media/video/capture/video_capture_proxy.h"
@@ -93,6 +93,7 @@
 #include "third_party/WebKit/public/web/WebScreenInfo.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/gfx/size.h"
+#include "url/gurl.h"
 #include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
@@ -100,7 +101,6 @@
 #include "webkit/plugins/ppapi/ppb_tcp_server_socket_private_impl.h"
 #include "webkit/plugins/ppapi/ppb_tcp_socket_private_impl.h"
 #include "webkit/plugins/ppapi/resource_helper.h"
-#include "webkit/plugins/ppapi/url_response_info_util.h"
 #include "webkit/plugins/webplugininfo.h"
 
 using WebKit::WebView;
@@ -1038,7 +1038,8 @@ void PepperPluginDelegateImpl::MakeDirectory(
     const StatusCallback& callback) {
   FileSystemDispatcher* file_system_dispatcher =
       ChildThread::current()->file_system_dispatcher();
-  file_system_dispatcher->Create(path, false, true, recursive, callback);
+  file_system_dispatcher->CreateDirectory(
+      path, false /* exclusive */, recursive, callback);
 }
 
 void PepperPluginDelegateImpl::Query(
@@ -1348,7 +1349,7 @@ void PepperPluginDelegateImpl::HandleDocumentLoad(
       scoped_ptr<ppapi::host::ResourceHost>(loader_host));
   DCHECK(pending_host_id);
   ppapi::URLResponseInfoData data =
-      webkit::ppapi::DataFromWebURLResponse(pp_instance, response);
+      DataFromWebURLResponse(pp_instance, response);
 
   if (host_impl->in_process_router()) {
     // Running in-process, we can just create the resource and call the

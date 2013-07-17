@@ -45,13 +45,16 @@ class _RunState(object):
 
       # Set up WPR path on the new browser.
       self.browser.SetReplayArchivePath(archive_path,
-                                        self._append_to_existing_wpr)
+                                        self._append_to_existing_wpr,
+                                        page_set.make_javascript_deterministic)
       self._last_archive_path = page.archive_path
     else:
       # Set up WPR path if it changed.
-      if self._last_archive_path != page.archive_path:
-        self.browser.SetReplayArchivePath(page.archive_path,
-                                          self._append_to_existing_wpr)
+      if page.archive_path and self._last_archive_path != page.archive_path:
+        self.browser.SetReplayArchivePath(
+            page.archive_path,
+            self._append_to_existing_wpr,
+            page_set.make_javascript_deterministic)
         self._last_archive_path = page.archive_path
 
     if self.browser.supports_tab_control:
@@ -231,14 +234,12 @@ def Run(test, page_set, options):
             _RunPage(test, page, state.tab, results_for_current_run, options)
             _CheckThermalThrottling(state.browser.platform)
           except exceptions.TabCrashException:
-            stdout = ''
-            if not options.show_stdout:
-              stdout = state.browser.GetStandardOutput()
-              stdout = (('\nStandard Output:\n') +
-                        ('*' * 80) +
-                        '\n\t' + stdout.replace('\n', '\n\t') + '\n' +
-                        ('*' * 80))
-            logging.warning('Tab crashed: %s%s', page.url, stdout)
+            stack_trace = state.browser.GetStackTrace()
+            stack_trace = (('\nStack Trace:\n') +
+                      ('*' * 80) +
+                      '\n\t' + stack_trace.replace('\n', '\n\t') + '\n' +
+                      ('*' * 80))
+            logging.warning('Tab crashed: %s%s', page.url, stack_trace)
             state.StopBrowser()
 
           if options.trace_dir:
@@ -409,7 +410,7 @@ def _WaitForThermalThrottlingIfNeeded(platform):
     thermal_throttling_retry += 1
     time.sleep(thermal_throttling_retry * 2)
 
-  if platform.IsThermallyThrottled():
+  if thermal_throttling_retry and platform.IsThermallyThrottled():
     logging.error('Device is thermally throttled before running '
                   'performance tests, results will vary.')
 

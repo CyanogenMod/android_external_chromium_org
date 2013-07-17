@@ -15,18 +15,6 @@ namespace {
 
 const base::FilePath::CharType kJournal[] = FILE_PATH_LITERAL("-journal");
 
-void DatabaseErrorCallback(int error, sql::Statement* stmt) {
-  // Without a callback to ignore errors,
-  // DomStorageDatabaseTest.TestCanOpenFileThatIsNotADatabase fails with:
-  // ERROR:connection.cc(735)] sqlite error 522, errno 0: disk I/O error
-  // FATAL:connection.cc(750)] disk I/O error
-  // <backtrace>
-  // <crash>
-  //
-  // TODO(shess): If/when infrastructure lands which can allow tests
-  // to handle SQLite errors appropriately, remove this.
-}
-
 }  // anon namespace
 
 namespace dom_storage {
@@ -88,7 +76,7 @@ bool DomStorageDatabase::CommitChanges(bool clear_all_first,
     // If we're being asked to commit changes that will result in an
     // empty database, we return true if the database file doesn't exist.
     return clear_all_first && changes.empty() &&
-           !file_util::PathExists(file_path_);
+           !base::PathExists(file_path_);
   }
 
   bool old_known_to_be_empty = known_to_be_empty_;
@@ -150,7 +138,7 @@ bool DomStorageDatabase::LazyOpen(bool create_if_needed) {
   if (IsOpen())
     return true;
 
-  bool database_exists = file_util::PathExists(file_path_);
+  bool database_exists = base::PathExists(file_path_);
 
   if (!database_exists && !create_if_needed) {
     // If the file doesn't exist already and we haven't been asked to create
@@ -162,7 +150,6 @@ bool DomStorageDatabase::LazyOpen(bool create_if_needed) {
 
   db_.reset(new sql::Connection());
   db_->set_histogram_tag("DomStorageDatabase");
-  db_->set_error_callback(base::Bind(&DatabaseErrorCallback));
 
   if (file_path_.empty()) {
     // This code path should only be triggered by unit tests.
@@ -257,7 +244,7 @@ bool DomStorageDatabase::CreateTableV2() {
 
 bool DomStorageDatabase::DeleteFileAndRecreate() {
   DCHECK(!IsOpen());
-  DCHECK(file_util::PathExists(file_path_));
+  DCHECK(base::PathExists(file_path_));
 
   // We should only try and do this once.
   if (tried_to_recreate_)
@@ -266,7 +253,7 @@ bool DomStorageDatabase::DeleteFileAndRecreate() {
   tried_to_recreate_ = true;
 
   // If it's not a directory and we can delete the file, try and open it again.
-  if (!file_util::DirectoryExists(file_path_) &&
+  if (!base::DirectoryExists(file_path_) &&
       sql::Connection::Delete(file_path_)) {
     return LazyOpen(true);
   }

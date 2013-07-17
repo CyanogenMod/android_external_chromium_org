@@ -21,9 +21,9 @@
 #include "components/autofill/core/browser/autofill_manager_delegate.h"
 #include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/common/autocheckout_status.h"
-#include "googleurl/src/gurl.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "testing/gtest/include/gtest/gtest_prod.h"
+#include "url/gurl.h"
 
 namespace net {
 class URLFetcher;
@@ -210,7 +210,7 @@ class WalletClient
   // where the purchase occured, and |google_transaction_id| is the same as the
   // one provided by GetWalletItems. |latency_statistics| contain statistics
   // required to measure Autocheckout process.
-  void SendAutocheckoutStatus(
+  virtual void SendAutocheckoutStatus(
       autofill::AutocheckoutStatus status,
       const GURL& source_url,
       const std::vector<AutocheckoutStatistic>& latency_statistics,

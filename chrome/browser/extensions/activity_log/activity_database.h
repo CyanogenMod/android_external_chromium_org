@@ -9,6 +9,7 @@
 #include <vector>
 #include "base/basictypes.h"
 #include "base/files/file_path.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/synchronization/lock.h"
 #include "base/timer/timer.h"
@@ -27,28 +28,82 @@ class FilePath;
 
 namespace extensions {
 
-// Encapsulates the SQL connection for the activity log database.
-// This class holds the database connection and has methods for writing.
-// All of the methods except constructor need to be
-// called on the DB thread. For this reason, the ActivityLog calls Close from
-// its destructor instead of destructing its ActivityDatabase object.
+// Encapsulates the SQL connection for the activity log database.  This class
+// holds the database connection and has methods for writing.  All of the
+// methods except the constructor need to be called on the DB thread.
+//
+// Object ownership and lifetime is a bit complicated for ActivityLog,
+// ActivityLogPolicy, and ActivityDatabase:
+//
+//    ActivityLog ----> ActivityLogPolicy ----> ActivityDatabase
+//                         ^                               |
+//                         |                               |
+//                         \--(ActivityDatabase::Delegate)-/
+//
+// The ActivityLogPolicy object contains a pointer to the ActivityDatabase, and
+// the ActivityDatabase contains a pointer back to the ActivityLogPolicy object
+// (as an instance of ActivityDatabase::Delegate).
+//
+// Since some cleanup must happen on the database thread, deletion should occur
+// as follows:
+//   1. ActivityLog calls ActivityLogPolicy::Close()
+//   2. ActivityLogPolicy should call ActivityDatabase::Close() on the database
+//      thread.
+//   3. ActivityDatabase::Close() shuts down the database, then calls
+//      ActivityDatabase::Delegate::OnDatabaseClose().
+//   4. ActivityDatabase::Delegate::OnDatabaseClose() should delete the
+//      ActivityLogPolicy object.
+//   5. ActivityDatabase::Close() finishes running by deleting the
+//      ActivityDatabase object.
+//
+// (This assumes the common case that the ActivityLogPolicy uses an
+// ActivityDatabase and implements the ActivityDatabase::Delegate interface.
+// It is also possible for an ActivityLogPolicy to not use a database at all,
+// in which case ActivityLogPolicy::Close() should directly delete itself.)
 class ActivityDatabase {
  public:
-  // Need to call Init to actually use the ActivityDatabase.
-  ActivityDatabase();
+  // Interface defining calls that the ActivityDatabase can make into a
+  // ActivityLogPolicy instance to implement policy-specific behavior.  Methods
+  // are always invoked on the database thread.  Classes other than
+  // ActivityDatabase should not call these methods.
+  class Delegate {
+   protected:
+    friend class ActivityDatabase;
 
-  // Opens the DB and creates tables as necessary.
+    // A Delegate is never directly deleted; it should instead delete itself
+    // after any final cleanup when OnDatabaseClose() is invoked.
+    virtual ~Delegate() {}
+
+    // Initializes the database schema; this gives a policy a chance to create
+    // or update database tables as needed.  Should return true on success.
+    virtual bool OnDatabaseInit(sql::Connection* db) = 0;
+
+    // Called by ActivityDatabase just before the ActivityDatabase object is
+    // deleted.  The database will make no further callbacks after invoking
+    // this method, so it is an appropriate time for the policy to delete
+    // itself.
+    virtual void OnDatabaseClose() = 0;
+  };
+
+  // Used to simplify the return type of GetActions.
+  typedef std::vector<scoped_refptr<Action> > ActionVector;
+
+  // Need to call Init to actually use the ActivityDatabase.  The Delegate
+  // provides hooks for an ActivityLogPolicy to control the database schema and
+  // reads/writes.
+  explicit ActivityDatabase(Delegate* delegate);
+
+  // Opens the DB.  This invokes OnDatabaseInit in the delegate to create or
+  // update the database schema if needed.
   void Init(const base::FilePath& db_name);
 
   // The ActivityLog should call this to kill the ActivityDatabase.
   void Close();
 
-  void LogInitFailure();
-
-  // Record a DOMction in the database.
+  // Record a DOMAction in the database.
   void RecordDOMAction(scoped_refptr<DOMAction> action);
 
-  // Record a APIAction in the database.
+  // Record an APIAction in the database.
   void RecordAPIAction(scoped_refptr<APIAction> action);
 
   // Record a BlockedAction in the database.
@@ -57,26 +112,28 @@ class ActivityDatabase {
   // Record an Action in the database.
   void RecordAction(scoped_refptr<Action> action);
 
+  // Turns off batch I/O writing mode. This should only be used in unit tests,
+  // browser tests, or in our special --enable-extension-activity-log-testing
+  // policy state.
+  void SetBatchModeForTesting(bool batch_mode);
+
   // Gets all actions for a given extension for the specified day. 0 = today,
   // 1 = yesterday, etc. Only returns 1 day at a time. Actions are sorted from
   // newest to oldest.
-  scoped_ptr<std::vector<scoped_refptr<Action> > > GetActions(
-      const std::string& extension_id, const int days_ago);
-
-  // Handle errors in database writes.
-  void DatabaseErrorCallback(int error, sql::Statement* stmt);
+  scoped_ptr<ActionVector> GetActions(const std::string& extension_id,
+                                      const int days_ago);
 
   bool is_db_valid() const { return valid_db_; }
-
-  // For unit testing only.
-  void SetBatchModeForTesting(bool batch_mode);
-  void SetClockForTesting(base::Clock* clock);
-  void SetTimerForTesting(int milliseconds);
 
  private:
   // This should never be invoked by another class. Use Close() to order a
   // suicide.
   virtual ~ActivityDatabase();
+
+  // Used by the Init() method as a convenience for handling a failied
+  // database initialization attempt. Prints an error and puts us in the soft
+  // failure state.
+  void LogInitFailure();
 
   sql::InitStatus InitializeTable(const char* table_name,
                                   const char* table_structure);
@@ -84,7 +141,6 @@ class ActivityDatabase {
   // When we're in batched mode (which is on by default), we write to the db
   // every X minutes instead of on every API call. This prevents the annoyance
   // of writing to disk multiple times a second.
-  void StartTimer();
   void RecordBatchedActions();
 
   // If an error is unrecoverable or occurred while we were trying to close
@@ -97,8 +153,19 @@ class ActivityDatabase {
   // or changes to it.
   void SoftFailureClose();
 
+  // Handle errors in database writes. For a serious & permanent error, it
+  // invokes HardFailureClose(); for a less serious/permanent error, it invokes
+  // SoftFailureClose().
+  void DatabaseErrorCallback(int error, sql::Statement* stmt);
+
   // For unit testing only.
   void RecordBatchedActionsWhileTesting();
+  void SetClockForTesting(base::Clock* clock);
+  void SetTimerForTesting(int milliseconds);
+
+  // A reference a Delegate for policy-specific database behavior.  See the
+  // top-level comment for ActivityDatabase for comments on cleanup.
+  Delegate* delegate_;
 
   base::Clock* testing_clock_;
   sql::Connection db_;
@@ -109,6 +176,8 @@ class ActivityDatabase {
   bool already_closed_;
   bool did_init_;
 
+  FRIEND_TEST_ALL_PREFIXES(ActivityDatabaseTest, BatchModeOff);
+  FRIEND_TEST_ALL_PREFIXES(ActivityDatabaseTest, BatchModeOn);
   DISALLOW_COPY_AND_ASSIGN(ActivityDatabase);
 };
 

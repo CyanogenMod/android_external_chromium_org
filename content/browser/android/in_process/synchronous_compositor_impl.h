@@ -48,6 +48,7 @@ class SynchronousCompositorImpl
   virtual void SetClient(SynchronousCompositorClient* compositor_client)
       OVERRIDE;
   virtual bool InitializeHwDraw() OVERRIDE;
+  virtual void ReleaseHwDraw() OVERRIDE;
   virtual bool DemandDrawHw(
       gfx::Size view_size,
       const gfx::Transform& transform,
@@ -69,6 +70,8 @@ class SynchronousCompositorImpl
   virtual gfx::Vector2dF GetTotalScrollOffset() OVERRIDE;
 
   void SetInputHandler(cc::InputHandler* input_handler);
+  void DidOverscroll(gfx::Vector2dF accumulated_overscroll,
+                     gfx::Vector2dF current_fling_velocity);
 
  private:
   explicit SynchronousCompositorImpl(WebContents* contents);

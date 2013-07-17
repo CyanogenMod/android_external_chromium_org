@@ -9,6 +9,7 @@
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/strings/stringprintf.h"
 #include "content/browser/byte_stream.h"
 #include "content/browser/download/download_file_factory.h"
 #include "content/browser/download/download_file_impl.h"
@@ -28,10 +29,10 @@
 #include "content/test/content_browser_test_utils.h"
 #include "content/test/net/url_request_mock_http_job.h"
 #include "content/test/net/url_request_slow_download_job.h"
-#include "googleurl/src/gurl.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 using ::testing::_;
 using ::testing::AllOf;
@@ -664,7 +665,7 @@ class DownloadContentTest : public ContentBrowserTest {
               download->GetFullPath().BaseName().value());
     EXPECT_EQ(file_exists,
               (!download->GetFullPath().empty() &&
-               file_util::PathExists(download->GetFullPath())));
+               base::PathExists(download->GetFullPath())));
 
     if (file_exists) {
       std::string file_contents;
@@ -774,7 +775,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, MultiDownload) {
   ASSERT_TRUE(VerifyFile(file1, expected_contents, file_size1));
 
   base::FilePath file2(download2->GetTargetFilePath());
-  ASSERT_TRUE(file_util::ContentsEqual(
+  ASSERT_TRUE(base::ContentsEqual(
       file2, GetTestFilePath("download", "download-test.lib")));
 }
 
@@ -1210,7 +1211,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeWithDeletedFile) {
       base::FilePath(FILE_PATH_LITERAL("rangereset.crdownload")));
 
   // Delete the intermediate file.
-  base::Delete(download->GetFullPath(), false);
+  base::DeleteFile(download->GetFullPath(), false);
 
   DownloadUpdatedObserver completion_observer(
       download, base::Bind(DownloadCompleteFilter));
@@ -1412,14 +1413,14 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, CancelInterruptedDownload) {
 
   base::FilePath intermediate_path(download->GetFullPath());
   ASSERT_FALSE(intermediate_path.empty());
-  EXPECT_TRUE(file_util::PathExists(intermediate_path));
+  EXPECT_TRUE(base::PathExists(intermediate_path));
 
   download->Cancel(true /* user_cancel */);
   RunAllPendingInMessageLoop(BrowserThread::FILE);
   RunAllPendingInMessageLoop();
 
   // The intermediate file should now be gone.
-  EXPECT_FALSE(file_util::PathExists(intermediate_path));
+  EXPECT_FALSE(base::PathExists(intermediate_path));
   EXPECT_TRUE(download->GetFullPath().empty());
 }
 
@@ -1444,14 +1445,14 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, RemoveDownload) {
 
     base::FilePath intermediate_path(download->GetFullPath());
     ASSERT_FALSE(intermediate_path.empty());
-    EXPECT_TRUE(file_util::PathExists(intermediate_path));
+    EXPECT_TRUE(base::PathExists(intermediate_path));
 
     download->Remove();
     RunAllPendingInMessageLoop(BrowserThread::FILE);
     RunAllPendingInMessageLoop();
 
     // The intermediate file should now be gone.
-    EXPECT_FALSE(file_util::PathExists(intermediate_path));
+    EXPECT_FALSE(base::PathExists(intermediate_path));
   }
 
   // A completed download shouldn't delete the downloaded file when it is
@@ -1467,13 +1468,13 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, RemoveDownload) {
 
     // The target path should exist.
     base::FilePath target_path(download->GetTargetFilePath());
-    EXPECT_TRUE(file_util::PathExists(target_path));
+    EXPECT_TRUE(base::PathExists(target_path));
     download->Remove();
     RunAllPendingInMessageLoop(BrowserThread::FILE);
     RunAllPendingInMessageLoop();
 
     // The file should still exist.
-    EXPECT_TRUE(file_util::PathExists(target_path));
+    EXPECT_TRUE(base::PathExists(target_path));
   }
 }
 
@@ -1502,7 +1503,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, RemoveResumingDownload) {
 
   base::FilePath intermediate_path(download->GetFullPath());
   ASSERT_FALSE(intermediate_path.empty());
-  EXPECT_TRUE(file_util::PathExists(intermediate_path));
+  EXPECT_TRUE(base::PathExists(intermediate_path));
 
   // Resume and remove download. We expect only a single OnDownloadCreated()
   // call, and that's for the second download created below.
@@ -1513,7 +1514,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, RemoveResumingDownload) {
   // The intermediate file should now be gone.
   RunAllPendingInMessageLoop(BrowserThread::FILE);
   RunAllPendingInMessageLoop();
-  EXPECT_FALSE(file_util::PathExists(intermediate_path));
+  EXPECT_FALSE(base::PathExists(intermediate_path));
 
   // Start the second download and wait until it's done. The test server is
   // single threaded. The response to this download request should follow the
@@ -1549,7 +1550,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, CancelResumingDownload) {
 
   base::FilePath intermediate_path(download->GetFullPath());
   ASSERT_FALSE(intermediate_path.empty());
-  EXPECT_TRUE(file_util::PathExists(intermediate_path));
+  EXPECT_TRUE(base::PathExists(intermediate_path));
 
   // Resume and cancel download. We expect only a single OnDownloadCreated()
   // call, and that's for the second download created below.
@@ -1560,7 +1561,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, CancelResumingDownload) {
   // The intermediate file should now be gone.
   RunAllPendingInMessageLoop(BrowserThread::FILE);
   RunAllPendingInMessageLoop();
-  EXPECT_FALSE(file_util::PathExists(intermediate_path));
+  EXPECT_FALSE(base::PathExists(intermediate_path));
   EXPECT_TRUE(download->GetFullPath().empty());
 
   // Start the second download and wait until it's done. The test server is

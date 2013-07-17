@@ -63,11 +63,14 @@ class AppListServiceMac : public AppListServiceImpl,
   virtual void ShowAppList(Profile* requested_profile) OVERRIDE;
   virtual void DismissAppList() OVERRIDE;
   virtual bool IsAppListVisible() const OVERRIDE;
-  virtual void EnableAppList() OVERRIDE;
+  virtual void EnableAppList(Profile* initial_profile) OVERRIDE;
   virtual gfx::NativeWindow GetAppListWindow() OVERRIDE;
 
+  // AppListServiceImpl override:
+  virtual void OnSigninStatusChanged() OVERRIDE;
+
   // AppShimHandler overrides:
-  virtual bool OnShimLaunch(apps::AppShimHandler::Host* host,
+  virtual void OnShimLaunch(apps::AppShimHandler::Host* host,
                             apps::AppShimLaunchType launch_type) OVERRIDE;
   virtual void OnShimClose(apps::AppShimHandler::Host* host) OVERRIDE;
   virtual void OnShimFocus(apps::AppShimHandler::Host* host,
@@ -178,7 +181,7 @@ void CheckAppListShimOnFileThread(const base::FilePath& profile_path) {
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableAppListShim);
   base::FilePath install_path = web_app::GetAppInstallPath(
       GetAppListShortcutInfo(profile_path));
-  if (enable == file_util::PathExists(install_path))
+  if (enable == base::PathExists(install_path))
     return;
 
   if (enable) {
@@ -190,7 +193,7 @@ void CheckAppListShimOnFileThread(const base::FilePath& profile_path) {
 
   // Sanity check because deleting things recursively is scary.
   CHECK(install_path.MatchesExtension(".app"));
-  base::Delete(install_path, true /* recursive */);
+  base::DeleteFile(install_path, true /* recursive */);
 }
 
 void CreateShortcutsInDefaultLocation(
@@ -317,7 +320,7 @@ bool AppListServiceMac::IsAppListVisible() const {
   return [[window_controller_ window] isVisible];
 }
 
-void AppListServiceMac::EnableAppList() {
+void AppListServiceMac::EnableAppList(Profile* initial_profile) {
   // TODO(tapted): Implement enable logic here for OSX.
 }
 
@@ -325,11 +328,15 @@ NSWindow* AppListServiceMac::GetAppListWindow() {
   return [window_controller_ window];
 }
 
-bool AppListServiceMac::OnShimLaunch(apps::AppShimHandler::Host* host,
+void AppListServiceMac::OnSigninStatusChanged() {
+  [[window_controller_ appListViewController] onSigninStatusChanged];
+}
+
+void AppListServiceMac::OnShimLaunch(apps::AppShimHandler::Host* host,
                                      apps::AppShimLaunchType launch_type) {
   ShowForSavedProfile();
   observers_.AddObserver(host);
-  return true;
+  host->OnAppLaunchComplete(apps::APP_SHIM_LAUNCH_SUCCESS);
 }
 
 void AppListServiceMac::OnShimClose(apps::AppShimHandler::Host* host) {

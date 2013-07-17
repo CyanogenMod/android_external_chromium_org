@@ -13,12 +13,12 @@
 #include "base/time/time.h"
 #include "base/value_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/state_store.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_service.h"
 
 namespace extensions {
@@ -96,6 +96,8 @@ AlarmManager::AlarmManager(Profile* profile)
       clock_(new base::DefaultClock()),
       delegate_(new DefaultAlarmDelegate(profile)) {
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+                 content::Source<Profile>(profile_));
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
                  content::Source<Profile>(profile_));
 
   StateStore* storage = ExtensionSystem::Get(profile_)->state_store();
@@ -342,6 +344,12 @@ void AlarmManager::Observe(
             base::Bind(&AlarmManager::ReadFromStorage,
                        AsWeakPtr(), extension->id()));
       }
+      break;
+    }
+    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED: {
+      const Extension* extension =
+          content::Details<const Extension>(details).ptr();
+      RemoveAllAlarms(extension->id());
       break;
     }
     default:

@@ -7,6 +7,8 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/string_number_conversions.h"
 #include "content/renderer/media/android/webmediaplayer_proxy_android.h"
+#include "content/renderer/media/webmediaplayer_util.h"
+#include "content/renderer/media/webmediasourceclient_impl.h"
 #include "media/base/android/demuxer_stream_player_params.h"
 #include "media/base/bind_to_loop.h"
 #include "media/base/demuxer_stream.h"
@@ -16,15 +18,10 @@
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/web/WebMediaSource.h"
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
-#include "webkit/renderer/media/webmediaplayer_util.h"
-#include "webkit/renderer/media/webmediasourceclient_impl.h"
 
 using media::DemuxerStream;
 using media::MediaPlayerHostMsg_DemuxerReady_Params;
 using media::MediaPlayerHostMsg_ReadFromDemuxerAck_Params;
-using webkit_media::ConvertToWebTimeRanges;
-using webkit_media::PipelineErrorToNetworkState;
-using webkit_media::WebMediaSourceClientImpl;
 using WebKit::WebMediaPlayer;
 using WebKit::WebString;
 
@@ -112,9 +109,14 @@ void MediaSourceDelegate::Destroy() {
   audio_decrypting_demuxer_stream_.reset();
   video_decrypting_demuxer_stream_.reset();
 
+  weak_this_.InvalidateWeakPtrs();
+  DCHECK(!weak_this_.HasWeakPtrs());
+
   if (chunk_demuxer_) {
-    chunk_demuxer_->Stop(
-        BIND_TO_RENDER_LOOP(&MediaSourceDelegate::OnDemuxerStopDone));
+    // The callback OnDemuxerStopDone() owns |this| and will delete it when
+    // called. Hence using base::Unretained(this) is safe here.
+    chunk_demuxer_->Stop(base::Bind(&MediaSourceDelegate::OnDemuxerStopDone,
+                                    base::Unretained(this)));
   }
 }
 
@@ -135,8 +137,8 @@ void MediaSourceDelegate::InitializeMediaSource(
   chunk_demuxer_.reset(new media::ChunkDemuxer(
       BIND_TO_RENDER_LOOP(&MediaSourceDelegate::OnDemuxerOpened),
       BIND_TO_RENDER_LOOP_1(&MediaSourceDelegate::OnNeedKey, ""),
-      base::Bind(&MediaSourceDelegate::OnAddTextTrack,
-                 base::Unretained(this)),
+      // WeakPtrs can only bind to methods without return values.
+      base::Bind(&MediaSourceDelegate::OnAddTextTrack, base::Unretained(this)),
       base::Bind(&LogMediaSourceError, media_log_)));
   demuxer_ = chunk_demuxer_.get();
 
@@ -258,10 +260,7 @@ void MediaSourceDelegate::OnBufferReady(
     DemuxerStream::Status status,
     const scoped_refptr<media::DecoderBuffer>& buffer) {
   DVLOG(1) << "OnBufferReady() : " << player_id_;
-
-  // Drop any buffer returned during destruction.
-  if (!demuxer_)
-    return;
+  DCHECK(demuxer_);
 
   // No new OnReadFromDemuxer() will be called during seeking. So this callback
   // must be from previous OnReadFromDemuxer() call and should be ignored.
@@ -369,10 +368,7 @@ void MediaSourceDelegate::OnDemuxerError(media::PipelineStatus status) {
 
 void MediaSourceDelegate::OnDemuxerInitDone(media::PipelineStatus status) {
   DVLOG(1) << "OnDemuxerInitDone(" << status << ") : " << player_id_;
-  // It is possible that this function is called after Destroy(). As a result,
-  // we need to check whether the |demuxer_| is NULL before we proceed.
-  if (!demuxer_)
-    return;
+  DCHECK(demuxer_);
 
   if (status != media::PIPELINE_OK) {
     OnDemuxerError(status);
@@ -382,26 +378,30 @@ void MediaSourceDelegate::OnDemuxerInitDone(media::PipelineStatus status) {
   audio_stream_ = demuxer_->GetStream(DemuxerStream::AUDIO);
   video_stream_ = demuxer_->GetStream(DemuxerStream::VIDEO);
 
-  if (audio_stream_ && audio_stream_->audio_decoder_config().is_encrypted()) {
+  if (audio_stream_ && audio_stream_->audio_decoder_config().is_encrypted() &&
+      !set_decryptor_ready_cb_.is_null()) {
     InitAudioDecryptingDemuxerStream();
     // InitVideoDecryptingDemuxerStream() will be called in
     // OnAudioDecryptingDemuxerStreamInitDone().
     return;
   }
 
-  if (video_stream_ && video_stream_->video_decoder_config().is_encrypted()) {
+  if (video_stream_ && video_stream_->video_decoder_config().is_encrypted() &&
+      !set_decryptor_ready_cb_.is_null()) {
     InitVideoDecryptingDemuxerStream();
     return;
   }
 
   // Notify demuxer ready when both streams are not encrypted.
   is_demuxer_ready_ = true;
-  DCHECK(CanNotifyDemuxerReady());
-  NotifyDemuxerReady();
+  if (CanNotifyDemuxerReady())
+    NotifyDemuxerReady();
 }
 
 void MediaSourceDelegate::InitAudioDecryptingDemuxerStream() {
   DVLOG(1) << "InitAudioDecryptingDemuxerStream()";
+  DCHECK(!set_decryptor_ready_cb_.is_null());
+
   audio_decrypting_demuxer_stream_.reset(new media::DecryptingDemuxerStream(
       base::MessageLoopProxy::current(), set_decryptor_ready_cb_));
   audio_decrypting_demuxer_stream_->Initialize(
@@ -412,6 +412,8 @@ void MediaSourceDelegate::InitAudioDecryptingDemuxerStream() {
 
 void MediaSourceDelegate::InitVideoDecryptingDemuxerStream() {
   DVLOG(1) << "InitVideoDecryptingDemuxerStream()";
+  DCHECK(!set_decryptor_ready_cb_.is_null());
+
   video_decrypting_demuxer_stream_.reset(new media::DecryptingDemuxerStream(
       base::MessageLoopProxy::current(), set_decryptor_ready_cb_));
   video_decrypting_demuxer_stream_->Initialize(
@@ -423,11 +425,7 @@ void MediaSourceDelegate::InitVideoDecryptingDemuxerStream() {
 void MediaSourceDelegate::OnAudioDecryptingDemuxerStreamInitDone(
     media::PipelineStatus status) {
   DVLOG(1) << "OnAudioDecryptingDemuxerStreamInitDone() : " << status;
-
-  // It is possible that this function is called after Destroy(). As a result,
-  // we need to check whether the |demuxer_| is NULL before we proceed.
-  if (!demuxer_)
-    return;
+  DCHECK(demuxer_);
 
   if (status != media::PIPELINE_OK)
     audio_decrypting_demuxer_stream_.reset();
@@ -449,11 +447,7 @@ void MediaSourceDelegate::OnAudioDecryptingDemuxerStreamInitDone(
 void MediaSourceDelegate::OnVideoDecryptingDemuxerStreamInitDone(
     media::PipelineStatus status) {
   DVLOG(1) << "OnVideoDecryptingDemuxerStreamInitDone() : " << status;
-
-  // It is possible that this function is called after Destroy(). As a result,
-  // we need to check whether the |demuxer_| is NULL before we proceed.
-  if (!demuxer_)
-    return;
+  DCHECK(demuxer_);
 
   if (status != media::PIPELINE_OK)
     video_decrypting_demuxer_stream_.reset();

@@ -180,7 +180,7 @@ DatabaseCheckHelper::DatabaseCheckHelper(
       last_file_id_(-1), last_integer_(-1) {
   DCHECK(dir_db_);
   DCHECK(db_);
-  DCHECK(!path_.empty() && file_util::DirectoryExists(path_));
+  DCHECK(!path_.empty() && base::DirectoryExists(path_));
 }
 
 bool DatabaseCheckHelper::IsDatabaseEmpty() {
@@ -309,7 +309,7 @@ bool DatabaseCheckHelper::ScanDirectory() {
       std::set<base::FilePath>::iterator itr =
           files_in_db_.find(relative_file_path);
       if (itr == files_in_db_.end()) {
-        if (!base::Delete(absolute_file_path, false))
+        if (!base::DeleteFile(absolute_file_path, false))
           return false;
       } else {
         files_in_db_.erase(itr);
@@ -715,6 +715,7 @@ bool SandboxDirectoryDatabase::Init(RecoveryOption recovery_option) {
       FilePathToString(filesystem_data_directory_.Append(
           kDirectoryDatabaseName));
   leveldb::Options options;
+  options.max_open_files = 0;  // Use minimum.
   options.create_if_missing = true;
   leveldb::DB* db;
   leveldb::Status status = leveldb::DB::Open(options, path, &db);
@@ -748,7 +749,7 @@ bool SandboxDirectoryDatabase::Init(RecoveryOption recovery_option) {
       // fall through
     case DELETE_ON_CORRUPTION:
       LOG(WARNING) << "Clearing SandboxDirectoryDatabase.";
-      if (!base::Delete(filesystem_data_directory_, true))
+      if (!base::DeleteFile(filesystem_data_directory_, true))
         return false;
       if (!file_util::CreateDirectory(filesystem_data_directory_))
         return false;
@@ -761,7 +762,9 @@ bool SandboxDirectoryDatabase::Init(RecoveryOption recovery_option) {
 
 bool SandboxDirectoryDatabase::RepairDatabase(const std::string& db_path) {
   DCHECK(!db_.get());
-  if (!leveldb::RepairDB(db_path, leveldb::Options()).ok())
+  leveldb::Options options;
+  options.max_open_files = 0;  // Use minimum.
+  if (!leveldb::RepairDB(db_path, options).ok())
     return false;
   if (!Init(FAIL_ON_CORRUPTION))
     return false;

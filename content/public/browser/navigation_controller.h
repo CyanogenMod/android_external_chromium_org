@@ -15,7 +15,7 @@
 #include "content/public/browser/global_request_id.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/referrer.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace base {
 
@@ -376,9 +376,9 @@ class NavigationController {
   // Returns false after the initial navigation has committed.
   virtual bool IsInitialNavigation() const = 0;
 
-  // Broadcasts the NOTIFY_NAV_ENTRY_CHANGED notification for the given entry
-  // (which must be at the given index). This will keep things in sync like
-  // the saved session.
+  // Broadcasts the NOTIFICATION_NAV_ENTRY_CHANGED notification for the given
+  // entry (which must be at the given index). This will keep things in sync
+  // like the saved session.
   virtual void NotifyEntryChanged(const NavigationEntry* entry, int index) = 0;
 
   // Copies the navigation state from the given controller to this one. This

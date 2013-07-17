@@ -66,6 +66,12 @@ bool LoadPluginListInProcess() {
 #else
   // If on POSIX, we don't want to load the list of NPAPI plugins in-process as
   // that causes instability.
+
+  // Can't load the plugins on the utility thread when in single process mode
+  // since that requires GTK which can only be used on the main thread.
+  if (RenderProcessHost::run_renderer_in_process())
+    return true;
+
   return !webkit::npapi::NPAPIPluginsSupported();
 #endif
 }
@@ -185,8 +191,6 @@ void PluginServiceImpl::Init() {
     webview_plugin.mime_types.push_back(webview_plugin_mime_type);
     RegisterInternalPlugin(webview_plugin, true);
   }
-
-  GetContentClient()->AddNPAPIPlugins(plugin_list_);
 
   // Load any specified on the command line as well.
   base::FilePath path =

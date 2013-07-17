@@ -26,6 +26,7 @@ class MessageLoop;
 }
 
 namespace WebKit {
+class WebAudioDevice;
 class WebClipboard;
 class WebFrame;
 class WebHyphenator;
@@ -51,11 +52,6 @@ namespace ppapi {
 class PpapiInterfaceFactoryManager;
 }
 struct WebPluginInfo;
-}
-
-namespace webkit_media {
-class MediaLoadDelegate;
-class MediaStreamClient;
 }
 
 namespace content {
@@ -141,14 +137,15 @@ class CONTENT_EXPORT ContentRendererClient {
   OverrideCreateWebRTCPeerConnectionHandler(
       WebKit::WebRTCPeerConnectionHandlerClient* client);
 
-  // Allows the embedder to override creating a MediaStreamClient. If it returns
-  // NULL the content layer will create the media stream client.
-  virtual webkit_media::MediaStreamClient* OverrideCreateMediaStreamClient();
-
   // Allows the embedder to override creating a WebMIDIAccessor.  If it
   // returns NULL the content layer will create the MIDI accessor.
   virtual WebKit::WebMIDIAccessor* OverrideCreateMIDIAccessor(
       WebKit::WebMIDIAccessorClient* client);
+
+  // Allows the embedder to override creating a WebAudioDevice.  If it
+  // returns NULL the content layer will create the audio device.
+  virtual WebKit::WebAudioDevice* OverrideCreateAudioDevice(
+      double sample_rate);
 
   // Allows the embedder to override the WebKit::WebClipboard used. If it
   // returns NULL the content layer will handle clipboard interactions.

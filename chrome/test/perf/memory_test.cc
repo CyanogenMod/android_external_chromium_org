@@ -22,10 +22,10 @@
 #include "chrome/test/base/chrome_process_util.h"
 #include "chrome/test/perf/perf_test.h"
 #include "chrome/test/ui/ui_perf_test.h"
-#include "googleurl/src/gurl.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "net/base/net_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -39,7 +39,7 @@ class MemoryTest : public UIPerfTest {
   virtual ~MemoryTest() {
     // Cleanup our temporary directory.
     if (cleanup_temp_dir_on_exit_)
-      base::Delete(temp_dir_, true);
+      base::DeleteFile(temp_dir_, true);
   }
 
   // Called from SetUp() to determine the user data dir to copy.
@@ -238,7 +238,7 @@ class MemoryTest : public UIPerfTest {
       return false;
     }
 
-    if (!file_util::CopyDirectory(src_dir, temp_dir_, true)) {
+    if (!base::CopyDirectory(src_dir, temp_dir_, true)) {
       LOG(ERROR) << "Could not copy temp directory";
       return false;
     }

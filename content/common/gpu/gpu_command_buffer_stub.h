@@ -16,7 +16,6 @@
 #include "content/common/gpu/gpu_memory_allocation.h"
 #include "content/common/gpu/gpu_memory_manager.h"
 #include "content/common/gpu/gpu_memory_manager_client.h"
-#include "googleurl/src/gurl.h"
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/command_buffer/service/command_buffer_service.h"
 #include "gpu/command_buffer/service/context_group.h"
@@ -29,6 +28,7 @@
 #include "ui/gfx/size.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gpu_preference.h"
+#include "url/gurl.h"
 
 namespace gpu {
 struct Mailbox;
@@ -137,6 +137,8 @@ class GpuCommandBufferStub
 
   void SetLatencyInfoCallback(const LatencyInfoCallback& callback);
 
+  void MarkContextLost();
+
  private:
   GpuMemoryManager* GetMemoryManager();
   bool MakeCurrent();
@@ -196,6 +198,8 @@ class GpuCommandBufferStub
   bool HasMoreWork();
 
   void ScheduleDelayedWork(int64 delay);
+
+  bool CheckContextLost();
 
   // The lifetime of objects of this class is managed by a GpuChannel. The
   // GpuChannels destroy all the GpuCommandBufferStubs that they own when they

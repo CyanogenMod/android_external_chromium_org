@@ -5,7 +5,7 @@
 #include "content/browser/indexed_db/indexed_db_database.h"
 
 #include <math.h>
-#include <vector>
+#include <set>
 
 #include "base/auto_reset.h"
 #include "base/logging.h"
@@ -228,7 +228,7 @@ class PutOperation : public IndexedDBTransaction::Operation {
   PutOperation(scoped_refptr<IndexedDBBackingStore> backing_store,
                int64 database_id,
                const IndexedDBObjectStoreMetadata& object_store,
-               std::vector<char>* value,
+               std::string* value,
                scoped_ptr<IndexedDBKey> key,
                IndexedDBDatabase::PutMode put_mode,
                scoped_refptr<IndexedDBCallbacks> callbacks,
@@ -250,7 +250,7 @@ class PutOperation : public IndexedDBTransaction::Operation {
   const scoped_refptr<IndexedDBBackingStore> backing_store_;
   const int64 database_id_;
   const IndexedDBObjectStoreMetadata object_store_;
-  std::vector<char> value_;
+  std::string value_;
   scoped_ptr<IndexedDBKey> key_;
   const IndexedDBDatabase::PutMode put_mode_;
   const scoped_refptr<IndexedDBCallbacks> callbacks_;
@@ -467,6 +467,11 @@ scoped_refptr<IndexedDBDatabase> IndexedDBDatabase::Create(
 
 namespace {
 const base::string16::value_type kNoStringVersion[] = {0};
+
+template <typename T, typename U>
+bool Contains(const T& container, const U& item) {
+  return container.find(item) != container.end();
+}
 }
 
 IndexedDBDatabase::IndexedDBDatabase(const string16& name,
@@ -558,21 +563,81 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBDatabase::BackingStore() const {
   return backing_store_;
 }
 
+IndexedDBTransaction* IndexedDBDatabase::GetTransaction(
+    int64 transaction_id) const {
+  TransactionMap::const_iterator trans_iterator =
+      transactions_.find(transaction_id);
+  if (trans_iterator == transactions_.end())
+    return NULL;
+  return trans_iterator->second;
+}
+
+bool IndexedDBDatabase::ValidateObjectStoreId(int64 object_store_id) const {
+  if (!Contains(metadata_.object_stores, object_store_id)) {
+    DLOG(ERROR) << "Invalid object_store_id";
+    return false;
+  }
+  return true;
+}
+
+bool IndexedDBDatabase::ValidateObjectStoreIdAndIndexId(int64 object_store_id,
+                                                        int64 index_id) const {
+  if (!ValidateObjectStoreId(object_store_id))
+    return false;
+  const IndexedDBObjectStoreMetadata& object_store_metadata =
+      metadata_.object_stores.find(object_store_id)->second;
+  if (!Contains(object_store_metadata.indexes, index_id)) {
+    DLOG(ERROR) << "Invalid index_id";
+    return false;
+  }
+  return true;
+}
+
+bool IndexedDBDatabase::ValidateObjectStoreIdAndOptionalIndexId(
+    int64 object_store_id,
+    int64 index_id) const {
+  if (!ValidateObjectStoreId(object_store_id))
+    return false;
+  const IndexedDBObjectStoreMetadata& object_store_metadata =
+      metadata_.object_stores.find(object_store_id)->second;
+  if (index_id != IndexedDBIndexMetadata::kInvalidId &&
+      !Contains(object_store_metadata.indexes, index_id)) {
+    DLOG(ERROR) << "Invalid index_id";
+    return false;
+  }
+  return true;
+}
+
+bool IndexedDBDatabase::ValidateObjectStoreIdAndNewIndexId(
+    int64 object_store_id,
+    int64 index_id) const {
+  if (!ValidateObjectStoreId(object_store_id))
+    return false;
+  const IndexedDBObjectStoreMetadata& object_store_metadata =
+      metadata_.object_stores.find(object_store_id)->second;
+  if (Contains(object_store_metadata.indexes, index_id)) {
+    DLOG(ERROR) << "Invalid index_id";
+    return false;
+  }
+  return true;
+}
+
 void IndexedDBDatabase::CreateObjectStore(int64 transaction_id,
                                           int64 object_store_id,
                                           const string16& name,
                                           const IndexedDBKeyPath& key_path,
                                           bool auto_increment) {
   IDB_TRACE("IndexedDBDatabase::CreateObjectStore");
-  TransactionMap::const_iterator trans_iterator =
-      transactions_.find(transaction_id);
-  if (trans_iterator == transactions_.end())
+  IndexedDBTransaction* transaction = GetTransaction(transaction_id);
+  if (!transaction)
     return;
-  IndexedDBTransaction* transaction = trans_iterator->second;
   DCHECK_EQ(transaction->mode(), indexed_db::TRANSACTION_VERSION_CHANGE);
 
-  DCHECK(metadata_.object_stores.find(object_store_id) ==
-         metadata_.object_stores.end());
+  if (Contains(metadata_.object_stores, object_store_id)) {
+    DLOG(ERROR) << "Invalid object_store_id";
+    return;
+  }
+
   IndexedDBObjectStoreMetadata object_store_metadata(
       name,
       object_store_id,
@@ -607,15 +672,14 @@ void CreateObjectStoreOperation::Perform(IndexedDBTransaction* transaction) {
 void IndexedDBDatabase::DeleteObjectStore(int64 transaction_id,
                                           int64 object_store_id) {
   IDB_TRACE("IndexedDBDatabase::DeleteObjectStore");
-  TransactionMap::const_iterator trans_iterator =
-      transactions_.find(transaction_id);
-  if (trans_iterator == transactions_.end())
+  IndexedDBTransaction* transaction = GetTransaction(transaction_id);
+  if (!transaction)
     return;
-  IndexedDBTransaction* transaction = trans_iterator->second;
   DCHECK_EQ(transaction->mode(), indexed_db::TRANSACTION_VERSION_CHANGE);
 
-  DCHECK(metadata_.object_stores.find(object_store_id) !=
-         metadata_.object_stores.end());
+  if (!ValidateObjectStoreId(object_store_id))
+    return;
+
   const IndexedDBObjectStoreMetadata& object_store_metadata =
       metadata_.object_stores[object_store_id];
 
@@ -633,19 +697,13 @@ void IndexedDBDatabase::CreateIndex(int64 transaction_id,
                                     bool unique,
                                     bool multi_entry) {
   IDB_TRACE("IndexedDBDatabase::CreateIndex");
-  TransactionMap::const_iterator trans_iterator =
-      transactions_.find(transaction_id);
-  if (trans_iterator == transactions_.end())
+  IndexedDBTransaction* transaction = GetTransaction(transaction_id);
+  if (!transaction)
     return;
-  IndexedDBTransaction* transaction = trans_iterator->second;
   DCHECK_EQ(transaction->mode(), indexed_db::TRANSACTION_VERSION_CHANGE);
 
-  DCHECK(metadata_.object_stores.find(object_store_id) !=
-         metadata_.object_stores.end());
-  const IndexedDBObjectStoreMetadata object_store =
-      metadata_.object_stores[object_store_id];
-
-  DCHECK(object_store.indexes.find(index_id) == object_store.indexes.end());
+  if (!ValidateObjectStoreIdAndNewIndexId(object_store_id, index_id))
+    return;
   const IndexedDBIndexMetadata index_metadata(
       name, index_id, key_path, unique, multi_entry);
 
@@ -684,20 +742,15 @@ void IndexedDBDatabase::DeleteIndex(int64 transaction_id,
                                     int64 object_store_id,
                                     int64 index_id) {
   IDB_TRACE("IndexedDBDatabase::DeleteIndex");
-  TransactionMap::const_iterator trans_iterator =
-      transactions_.find(transaction_id);
-  if (trans_iterator == transactions_.end())
+  IndexedDBTransaction* transaction = GetTransaction(transaction_id);
+  if (!transaction)
     return;
-  IndexedDBTransaction* transaction = trans_iterator->second;
   DCHECK_EQ(transaction->mode(), indexed_db::TRANSACTION_VERSION_CHANGE);
 
-  DCHECK(metadata_.object_stores.find(object_store_id) !=
-         metadata_.object_stores.end());
-  IndexedDBObjectStoreMetadata object_store =
-      metadata_.object_stores[object_store_id];
-
-  DCHECK(object_store.indexes.find(index_id) != object_store.indexes.end());
-  const IndexedDBIndexMetadata& index_metadata = object_store.indexes[index_id];
+  if (!ValidateObjectStoreIdAndIndexId(object_store_id, index_id))
+    return;
+  const IndexedDBIndexMetadata& index_metadata =
+      metadata_.object_stores[object_store_id].indexes[index_id];
 
   transaction->ScheduleTask(
       new DeleteIndexOperation(backing_store_, object_store_id, index_metadata),
@@ -732,23 +785,26 @@ void IndexedDBDatabase::Commit(int64 transaction_id) {
   // an abort, and so have disposed of the transaction. on_abort has already
   // been dispatched to the frontend, so it will find out about that
   // asynchronously.
-  if (transactions_.find(transaction_id) != transactions_.end())
-    transactions_[transaction_id]->Commit();
+  IndexedDBTransaction* transaction = GetTransaction(transaction_id);
+  if (transaction)
+    transaction->Commit();
 }
 
 void IndexedDBDatabase::Abort(int64 transaction_id) {
   // If the transaction is unknown, then it has already been aborted by the
   // backend before this call so it is safe to ignore it.
-  if (transactions_.find(transaction_id) != transactions_.end())
-    transactions_[transaction_id]->Abort();
+  IndexedDBTransaction* transaction = GetTransaction(transaction_id);
+  if (transaction)
+    transaction->Abort();
 }
 
 void IndexedDBDatabase::Abort(int64 transaction_id,
                               const IndexedDBDatabaseError& error) {
   // If the transaction is unknown, then it has already been aborted by the
   // backend before this call so it is safe to ignore it.
-  if (transactions_.find(transaction_id) != transactions_.end())
-    transactions_[transaction_id]->Abort(error);
+  IndexedDBTransaction* transaction = GetTransaction(transaction_id);
+  if (transaction)
+    transaction->Abort(error);
 }
 
 void IndexedDBDatabase::Get(int64 transaction_id,
@@ -758,23 +814,22 @@ void IndexedDBDatabase::Get(int64 transaction_id,
                             bool key_only,
                             scoped_refptr<IndexedDBCallbacks> callbacks) {
   IDB_TRACE("IndexedDBDatabase::Get");
-  TransactionMap::const_iterator trans_iterator =
-      transactions_.find(transaction_id);
-  if (trans_iterator == transactions_.end())
+  IndexedDBTransaction* transaction = GetTransaction(transaction_id);
+  if (!transaction)
     return;
-  IndexedDBDatabaseMetadata::ObjectStoreMap::const_iterator store_iterator =
-      metadata_.object_stores.find(object_store_id);
-  if (store_iterator == metadata_.object_stores.end())
+
+  if (!ValidateObjectStoreIdAndOptionalIndexId(object_store_id, index_id))
     return;
-  IndexedDBTransaction* transaction = trans_iterator->second;
+  const IndexedDBObjectStoreMetadata& object_store_metadata =
+      metadata_.object_stores[object_store_id];
 
   transaction->ScheduleTask(new GetOperation(
       backing_store_,
       metadata_.id,
       object_store_id,
       index_id,
-      store_iterator->second.key_path,
-      store_iterator->second.auto_increment,
+      object_store_metadata.key_path,
+      object_store_metadata.auto_increment,
       key_range.Pass(),
       key_only ? indexed_db::CURSOR_KEY_ONLY : indexed_db::CURSOR_KEY_AND_VALUE,
       callbacks));
@@ -830,7 +885,7 @@ void GetOperation::Perform(IndexedDBTransaction* transaction) {
   bool ok;
   if (index_id_ == IndexedDBIndexMetadata::kInvalidId) {
     // Object Store Retrieval Operation
-    std::vector<char> value;
+    std::string value;
     ok = backing_store_->GetRecord(transaction->BackingStoreTransaction(),
                                    database_id_,
                                    object_store_id_,
@@ -882,7 +937,7 @@ void GetOperation::Perform(IndexedDBTransaction* transaction) {
   }
 
   // Index Referenced Value Retrieval Operation
-  std::vector<char> value;
+  std::string value;
   ok = backing_store_->GetRecord(transaction->BackingStoreTransaction(),
                                  database_id_,
                                  object_store_id_,
@@ -949,21 +1004,21 @@ static bool UpdateKeyGenerator(
 
 void IndexedDBDatabase::Put(int64 transaction_id,
                             int64 object_store_id,
-                            std::vector<char>* value,
+                            std::string* value,
                             scoped_ptr<IndexedDBKey> key,
                             PutMode put_mode,
                             scoped_refptr<IndexedDBCallbacks> callbacks,
                             const std::vector<int64>& index_ids,
                             const std::vector<IndexKeys>& index_keys) {
   IDB_TRACE("IndexedDBDatabase::Put");
-  TransactionMap::const_iterator trans_iterator =
-      transactions_.find(transaction_id);
-  if (trans_iterator == transactions_.end())
+  IndexedDBTransaction* transaction = GetTransaction(transaction_id);
+  if (!transaction)
     return;
-  IndexedDBTransaction* transaction = trans_iterator->second;
   DCHECK_NE(transaction->mode(), indexed_db::TRANSACTION_READ_ONLY);
 
-  const IndexedDBObjectStoreMetadata object_store_metadata =
+  if (!ValidateObjectStoreId(object_store_id))
+    return;
+  const IndexedDBObjectStoreMetadata& object_store_metadata =
       metadata_.object_stores[object_store_id];
 
   DCHECK(key);
@@ -1105,11 +1160,9 @@ void IndexedDBDatabase::SetIndexKeys(int64 transaction_id,
                                      const std::vector<int64>& index_ids,
                                      const std::vector<IndexKeys>& index_keys) {
   IDB_TRACE("IndexedDBDatabase::SetIndexKeys");
-  TransactionMap::const_iterator trans_iterator =
-      transactions_.find(transaction_id);
-  if (trans_iterator == transactions_.end())
+  IndexedDBTransaction* transaction = GetTransaction(transaction_id);
+  if (!transaction)
     return;
-  IndexedDBTransaction* transaction = trans_iterator->second;
   DCHECK_EQ(transaction->mode(), indexed_db::TRANSACTION_VERSION_CHANGE);
 
   scoped_refptr<IndexedDBBackingStore> store = BackingStore();
@@ -1181,12 +1234,10 @@ void IndexedDBDatabase::SetIndexesReady(int64 transaction_id,
                                         int64,
                                         const std::vector<int64>& index_ids) {
   IDB_TRACE("IndexedDBDatabase::SetIndexesReady");
-
-  TransactionMap::const_iterator trans_iterator =
-      transactions_.find(transaction_id);
-  if (trans_iterator == transactions_.end())
+  IndexedDBTransaction* transaction = GetTransaction(transaction_id);
+  if (!transaction)
     return;
-  IndexedDBTransaction* transaction = trans_iterator->second;
+  DCHECK_EQ(transaction->mode(), indexed_db::TRANSACTION_VERSION_CHANGE);
 
   transaction->ScheduleTask(IndexedDBDatabase::PREEMPTIVE_TASK,
                             new SetIndexesReadyOperation(index_ids.size()));
@@ -1208,11 +1259,12 @@ void IndexedDBDatabase::OpenCursor(
     TaskType task_type,
     scoped_refptr<IndexedDBCallbacks> callbacks) {
   IDB_TRACE("IndexedDBDatabase::OpenCursor");
-  TransactionMap::const_iterator trans_iterator =
-      transactions_.find(transaction_id);
-  if (trans_iterator == transactions_.end())
+  IndexedDBTransaction* transaction = GetTransaction(transaction_id);
+  if (!transaction)
     return;
-  IndexedDBTransaction* transaction = trans_iterator->second;
+
+  if (!ValidateObjectStoreIdAndOptionalIndexId(object_store_id, index_id))
+    return;
 
   transaction->ScheduleTask(new OpenCursorOperation(
       backing_store_,
@@ -1267,14 +1319,12 @@ void OpenCursorOperation::Perform(IndexedDBTransaction* transaction) {
   }
 
   if (!backing_store_cursor) {
-    callbacks_->OnSuccess(static_cast<std::vector<char>*>(NULL));
+    callbacks_->OnSuccess(static_cast<std::string*>(NULL));
     return;
   }
 
-  IndexedDBDatabase::TaskType task_type(
-      static_cast<IndexedDBDatabase::TaskType>(task_type_));
-  scoped_refptr<IndexedDBCursor> cursor = IndexedDBCursor::Create(
-      backing_store_cursor.Pass(), cursor_type_, task_type, transaction);
+  scoped_refptr<IndexedDBCursor> cursor = new IndexedDBCursor(
+      backing_store_cursor.Pass(), cursor_type_, task_type_, transaction);
   callbacks_->OnSuccess(
       cursor, cursor->key(), cursor->primary_key(), cursor->Value());
 }
@@ -1285,14 +1335,13 @@ void IndexedDBDatabase::Count(int64 transaction_id,
                               scoped_ptr<IndexedDBKeyRange> key_range,
                               scoped_refptr<IndexedDBCallbacks> callbacks) {
   IDB_TRACE("IndexedDBDatabase::Count");
-  TransactionMap::const_iterator trans_iterator =
-      transactions_.find(transaction_id);
-  if (trans_iterator == transactions_.end())
+  IndexedDBTransaction* transaction = GetTransaction(transaction_id);
+  if (!transaction)
     return;
-  IndexedDBTransaction* transaction = trans_iterator->second;
 
-  DCHECK(metadata_.object_stores.find(object_store_id) !=
-         metadata_.object_stores.end());
+  if (!ValidateObjectStoreIdAndOptionalIndexId(object_store_id, index_id))
+    return;
+
   transaction->ScheduleTask(new CountOperation(backing_store_,
                                                id(),
                                                object_store_id,
@@ -1329,7 +1378,7 @@ void CountOperation::Perform(IndexedDBTransaction* transaction) {
 
   do {
     ++count;
-  } while (backing_store_cursor->ContinueFunction());
+  } while (backing_store_cursor->Continue());
 
   callbacks_->OnSuccess(count);
 }
@@ -1340,11 +1389,13 @@ void IndexedDBDatabase::DeleteRange(
     scoped_ptr<IndexedDBKeyRange> key_range,
     scoped_refptr<IndexedDBCallbacks> callbacks) {
   IDB_TRACE("IndexedDBDatabase::DeleteRange");
-  TransactionMap::const_iterator trans_iterator =
-      transactions_.find(transaction_id);
-  if (trans_iterator == transactions_.end())
+  IndexedDBTransaction* transaction = GetTransaction(transaction_id);
+  if (!transaction)
     return;
-  IndexedDBTransaction* transaction = trans_iterator->second;
+  DCHECK_NE(transaction->mode(), indexed_db::TRANSACTION_READ_ONLY);
+
+  if (!ValidateObjectStoreId(object_store_id))
+    return;
 
   transaction->ScheduleTask(new DeleteRangeOperation(
       backing_store_, id(), object_store_id, key_range.Pass(), callbacks));
@@ -1371,7 +1422,7 @@ void DeleteRangeOperation::Perform(IndexedDBTransaction* transaction) {
                                    "Internal error deleting data in range"));
         return;
       }
-    } while (backing_store_cursor->ContinueFunction());
+    } while (backing_store_cursor->Continue());
   }
 
   callbacks_->OnSuccess();
@@ -1381,12 +1432,13 @@ void IndexedDBDatabase::Clear(int64 transaction_id,
                               int64 object_store_id,
                               scoped_refptr<IndexedDBCallbacks> callbacks) {
   IDB_TRACE("IndexedDBDatabase::Clear");
-  TransactionMap::const_iterator trans_iterator =
-      transactions_.find(transaction_id);
-  if (trans_iterator == transactions_.end())
+  IndexedDBTransaction* transaction = GetTransaction(transaction_id);
+  if (!transaction)
     return;
-  IndexedDBTransaction* transaction = trans_iterator->second;
   DCHECK_NE(transaction->mode(), indexed_db::TRANSACTION_READ_ONLY);
+
+  if (!ValidateObjectStoreId(object_store_id))
+    return;
 
   transaction->ScheduleTask(
       new ClearOperation(backing_store_, id(), object_store_id, callbacks));
@@ -1433,8 +1485,9 @@ void IndexedDBDatabase::VersionChangeOperation::Perform(
           database_->metadata_.int_version)) {
     IndexedDBDatabaseError error(
         WebKit::WebIDBDatabaseExceptionUnknownError,
-        ASCIIToUTF16("Internal error writing data to stable storage when "
-                     "updating version."));
+        ASCIIToUTF16(
+            "Internal error writing data to stable storage when "
+            "updating version."));
     callbacks_->OnError(error);
     transaction->Abort(error);
     return;
@@ -1561,13 +1614,12 @@ void IndexedDBDatabase::CreateTransaction(
 
   DCHECK(connections_.has(connection));
 
-  scoped_refptr<IndexedDBTransaction> transaction =
-      IndexedDBTransaction::Create(
-          transaction_id,
-          connection->callbacks(),
-          object_store_ids,
-          static_cast<indexed_db::TransactionMode>(mode),
-          this);
+  scoped_refptr<IndexedDBTransaction> transaction = new IndexedDBTransaction(
+      transaction_id,
+      connection->callbacks(),
+      std::set<int64>(object_store_ids.begin(), object_store_ids.end()),
+      static_cast<indexed_db::TransactionMode>(mode),
+      this);
   DCHECK(transactions_.find(transaction_id) == transactions_.end());
   transactions_[transaction_id] = transaction;
 }

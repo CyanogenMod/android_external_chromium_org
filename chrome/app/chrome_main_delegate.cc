@@ -15,7 +15,6 @@
 #include "build/build_config.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/defaults.h"
-#include "chrome/browser/diagnostics/diagnostics_main.h"
 #include "chrome/browser/policy/policy_path_parser.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_content_client.h"
@@ -61,6 +60,8 @@
 #if defined(OS_POSIX)
 #include <locale.h>
 #include <signal.h>
+#include "chrome/app/chrome_breakpad_client.h"
+#include "components/breakpad/breakpad_client.h"
 #endif
 
 #if !defined(DISABLE_NACL) && defined(OS_LINUX)
@@ -76,6 +77,10 @@
 
 #if defined(OS_ANDROID)
 #include "chrome/common/descriptors_android.h"
+#else
+// Diagnostics is only available on non-android platforms.
+#include "chrome/browser/diagnostics/diagnostics_controller.h"
+#include "chrome/browser/diagnostics/diagnostics_writer.h"
 #endif
 
 #if defined(USE_X11)
@@ -84,7 +89,7 @@
 #include "ui/base/x/x11_util.h"
 #endif
 
-#if defined(USE_LINUX_BREAKPAD)
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
 #include "chrome/app/breakpad_linux.h"
 #endif
 
@@ -96,6 +101,11 @@ base::LazyInstance<chrome::ChromeContentUtilityClient>
     g_chrome_content_utility_client = LAZY_INSTANCE_INITIALIZER;
 base::LazyInstance<chrome::ChromeContentPluginClient>
     g_chrome_content_plugin_client = LAZY_INSTANCE_INITIALIZER;
+
+#if defined(OS_POSIX)
+base::LazyInstance<chrome::ChromeBreakpadClient>::Leaky
+    g_chrome_breakpad_client = LAZY_INSTANCE_INITIALIZER;
+#endif
 
 extern int NaClMain(const content::MainFunctionParams&);
 extern int ServiceProcessMain(const content::MainFunctionParams&);
@@ -356,20 +366,50 @@ bool ChromeMainDelegate::BasicStartupComplete(int* exit_code) {
 #endif
 #endif  // OS_POSIX
 
-  // No support for ANDROID yet as DiagnosticsMain needs wchar support.
-#if !defined(OS_ANDROID)
-  // If we are in diagnostics mode this is the end of the line. After the
-  // diagnostics are run the process will invariably exit.
-  if (command_line.HasSwitch(switches::kDiagnostics)) {
-    *exit_code = DiagnosticsMain(command_line);
-    return true;
-  }
-#endif
-
 #if defined(OS_WIN)
   // Must do this before any other usage of command line!
   if (HasDeprecatedArguments(command_line.GetCommandLineString())) {
     *exit_code = 1;
+    return true;
+  }
+#endif
+
+  chrome::RegisterPathProvider();
+#if defined(OS_CHROMEOS)
+  chromeos::RegisterPathProvider();
+#endif
+#if !defined(DISABLE_NACL) && defined(OS_LINUX)
+  nacl::RegisterPathProvider();
+#endif
+
+// No support for ANDROID yet as DiagnosticsController needs wchar support.
+// TODO(gspencer): That's not true anymore, or at least there are no w-string
+// references anymore. Not sure if that means this can be enabled on Android or
+// not though: it still uses string16. As there is no easily accessible command
+// line on Android, I'm not sure this is a big deal, at least for purposes of
+// troubleshooting with a customer.
+#if !defined(OS_ANDROID)
+  // If we are in diagnostics mode this is the end of the line: after the
+  // diagnostics are run the process will invariably exit.
+  if (command_line.HasSwitch(switches::kDiagnostics)) {
+    diagnostics::DiagnosticsWriter::FormatType format =
+        diagnostics::DiagnosticsWriter::HUMAN;
+    if (command_line.HasSwitch(switches::kDiagnosticsFormat)) {
+      std::string format_str =
+          command_line.GetSwitchValueASCII(switches::kDiagnosticsFormat);
+      if (format_str == "machine") {
+        format = diagnostics::DiagnosticsWriter::MACHINE;
+      } else if (format_str == "log") {
+        format = diagnostics::DiagnosticsWriter::LOG;
+      } else {
+        DCHECK_EQ("human", format_str);
+      }
+    }
+
+    diagnostics::DiagnosticsWriter writer(format);
+    *exit_code = diagnostics::DiagnosticsController::GetInstance()->Run(
+        command_line, &writer);
+    diagnostics::DiagnosticsController::GetInstance()->ClearResults();
     return true;
   }
 #endif
@@ -472,12 +512,8 @@ void ChromeMainDelegate::PreSandboxStartup() {
   std::string process_type =
       command_line.GetSwitchValueASCII(switches::kProcessType);
 
-  chrome::RegisterPathProvider();
-#if defined(OS_CHROMEOS)
-  chromeos::RegisterPathProvider();
-#endif
-#if !defined(DISABLE_NACL) && defined(OS_LINUX)
-  nacl::RegisterPathProvider();
+#if defined(OS_POSIX)
+  breakpad::SetBreakpadClient(g_chrome_breakpad_client.Pointer());
 #endif
 
 #if defined(OS_MACOSX)
@@ -597,7 +633,7 @@ void ChromeMainDelegate::PreSandboxStartup() {
 #endif  // defined(OS_MACOSX)
   }
 
-#if defined(USE_LINUX_BREAKPAD)
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
   // Needs to be called after we have chrome::DIR_USER_DATA.  BrowserMain
   // sets this up for the browser process in a different manner. Zygotes
   // need to call InitCrashReporter() in RunZygote().
@@ -704,7 +740,7 @@ void ChromeMainDelegate::ZygoteForked() {
     SetUpProfilingShutdownHandler();
   }
 
-#if defined(USE_LINUX_BREAKPAD)
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
   // Needs to be called after we have chrome::DIR_USER_DATA.  BrowserMain sets
   // this up for the browser process in a different manner.
   InitCrashReporter();

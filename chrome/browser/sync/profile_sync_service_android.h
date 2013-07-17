@@ -14,8 +14,8 @@
 #include "base/time/time.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "chrome/browser/sync/sync_prefs.h"
+#include "google/cacheinvalidation/include/types.h"
 #include "google_apis/gaia/google_service_auth_error.h"
-#include "sync/internal_api/public/base/model_type.h"
 
 class Profile;
 class ProfileSyncService;
@@ -27,15 +27,6 @@ class ProfileSyncService;
 // This class should only be accessed from the UI thread.
 class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
  public:
-  // Callback from FetchOAuth2Token.
-  // Arguments:
-  // - the error, or NONE if the token fetch was successful.
-  // - the OAuth2 access token.
-  // - the expiry time of the token (may be null, indicating that the expiry
-  //   time is unknown.
-  typedef base::Callback<void(
-      const GoogleServiceAuthError&,const std::string&,const base::Time&)>
-          FetchOAuth2TokenCallback;
 
   ProfileSyncServiceAndroid(JNIEnv* env, jobject obj);
 
@@ -50,6 +41,10 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
                    jlong version,
                    jstring payload);
 
+  // Called from Java when we need to nudge native syncer but have lost state on
+  // which types have changed.
+  void NudgeSyncerForAllTypes(JNIEnv* env, jobject obj);
+
   void TokenAvailable(JNIEnv*, jobject, jstring username, jstring auth_token);
 
   // Called from Java when the user manually enables sync
@@ -58,12 +53,8 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
   // Called from Java when the user manually disables sync
   void DisableSync(JNIEnv* env, jobject obj);
 
-  // Called from Java when the user signs in to Chrome. Starts up sync, and
-  // if auth credentials are required, uses the passed |auth_token|. If
-  // |auth_token| is empty, a new |auth_token| is requested from the UI thread
-  // via a call to InvalidateAuthToken().
-  void SignInSync(JNIEnv* env, jobject obj, jstring username,
-                  jstring auth_token);
+  // Called from Java when the user signs in to Chrome. Starts up sync.
+  void SignInSync(JNIEnv* env, jobject obj);
 
   // Called from Java when the user signs out of Chrome
   void SignOutSync(JNIEnv* env, jobject obj);
@@ -199,25 +190,6 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
   // (GoogleServiceAuthError.State).
   jint GetAuthError(JNIEnv* env, jobject obj);
 
-  // Called by native to invalidate an OAuth2 token, e.g. after a 401 response
-  // from the server. This should be done before fetching a new token.
-  void InvalidateOAuth2Token(const std::string& scope,
-                             const std::string& invalid_auth_token);
-
-  // Called by native when an OAuth2 token is required. |invalid_auth_token|
-  // is an old auth token to be invalidated (may be empty). |callback| will be
-  // invoked asynchronously after a new token has been fetched.
-  void FetchOAuth2Token(const std::string& scope,
-                        const FetchOAuth2TokenCallback& callback);
-
-  // Called from Java when fetching of an OAuth2 token is finished. The
-  // |authToken| param is only valid when |result| is true.
-  void OAuth2TokenFetched(JNIEnv* env,
-                          jobject obj,
-                          int callback,
-                          jstring auth_token,
-                          jboolean result);
-
   // ProfileSyncServiceObserver:
   virtual void OnStateChanged() OVERRIDE;
 
@@ -227,10 +199,13 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
   static bool Register(JNIEnv* env);
 
  private:
+  typedef std::map<invalidation::ObjectId,
+                   int64,
+                   syncer::ObjectIdLessThan> ObjectIdVersionMap;
+
   virtual ~ProfileSyncServiceAndroid();
   // Remove observers to profile sync service.
   void RemoveObserver();
-  void InvalidateAuthToken();
   // Called from Java when we need to nudge native syncer. The |objectId|,
   // |version| and |payload| values should come from an invalidation.
   void SendNudgeNotification(const std::string& str_object_id,
@@ -249,7 +224,7 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
   // The invalidation API spec allows for the possibility of redundant
   // invalidations, so keep track of the max versions and drop
   // invalidations with old versions.
-  std::map<syncer::ModelType, int64> max_invalidation_versions_;
+  ObjectIdVersionMap max_invalidation_versions_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileSyncServiceAndroid);
 };

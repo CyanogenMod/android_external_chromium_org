@@ -597,7 +597,7 @@ Status ChromiumEnv::NewWritableFile(const std::string& fname,
 }
 
 bool ChromiumEnv::FileExists(const std::string& fname) {
-  return ::file_util::PathExists(CreateFilePath(fname));
+  return ::base::PathExists(CreateFilePath(fname));
 }
 
 Status ChromiumEnv::GetChildren(const std::string& dir,
@@ -619,7 +619,7 @@ Status ChromiumEnv::GetChildren(const std::string& dir,
 Status ChromiumEnv::DeleteFile(const std::string& fname) {
   Status result;
   // TODO(jorlow): Should we assert this is a file?
-  if (!::base::Delete(CreateFilePath(fname), false)) {
+  if (!::base::DeleteFile(CreateFilePath(fname), false)) {
     result = MakeIOError(fname, "Could not delete file.", kDeleteFile);
     RecordErrorAt(kDeleteFile);
   }
@@ -642,7 +642,7 @@ Status ChromiumEnv::CreateDir(const std::string& name) {
 Status ChromiumEnv::DeleteDir(const std::string& name) {
   Status result;
   // TODO(jorlow): Should we assert this is a directory?
-  if (!::base::Delete(CreateFilePath(name), false)) {
+  if (!::base::DeleteFile(CreateFilePath(name), false)) {
     result = MakeIOError(name, "Could not delete directory.", kDeleteDir);
     RecordErrorAt(kDeleteDir);
   }
@@ -665,7 +665,7 @@ Status ChromiumEnv::GetFileSize(const std::string& fname, uint64_t* size) {
 Status ChromiumEnv::RenameFile(const std::string& src, const std::string& dst) {
   Status result;
   base::FilePath src_file_path = CreateFilePath(src);
-  if (!::file_util::PathExists(src_file_path))
+  if (!::base::PathExists(src_file_path))
     return result;
   base::FilePath destination = CreateFilePath(dst);
 
@@ -709,7 +709,7 @@ Status ChromiumEnv::LockFile(const std::string& fname, FileLock** lock) {
     ::base::FilePath last_parent;
     int num_missing_ancestors = 0;
     do {
-      if (file_util::DirectoryExists(parent))
+      if (base::DirectoryExists(parent))
         break;
       ++num_missing_ancestors;
       last_parent = parent;

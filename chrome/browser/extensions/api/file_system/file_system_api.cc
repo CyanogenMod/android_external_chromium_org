@@ -212,7 +212,7 @@ bool GetFilePathOfFileEntry(const std::string& filesystem_name,
 bool DoCheckWritableFile(const base::FilePath& path,
                          const base::FilePath& extension_directory) {
   // Don't allow links.
-  if (file_util::PathExists(path) && file_util::IsLink(path))
+  if (base::PathExists(path) && file_util::IsLink(path))
     return false;
 
   if (extension_directory == path || extension_directory.IsParent(path))
@@ -658,7 +658,7 @@ void FileSystemChooseEntryFunction::SetInitialPathOnFileThread(
     const base::FilePath& suggested_name,
     const base::FilePath& previous_path) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
-  if (!previous_path.empty() && file_util::DirectoryExists(previous_path)) {
+  if (!previous_path.empty() && base::DirectoryExists(previous_path)) {
     initial_path_ = previous_path.Append(suggested_name);
   } else {
     base::FilePath documents_dir;

@@ -69,14 +69,11 @@ const CommandLinePrefStore::BooleanSwitchToPreferenceMapEntry
       { chromeos::switches::kDisableDrive, prefs::kDisableDrive, true },
       { chromeos::switches::kEnableTouchpadThreeFingerClick,
           prefs::kEnableTouchpadThreeFingerClick, true },
-      { chromeos::switches::kEnableTouchpadThreeFingerSwipe,
-          prefs::kEnableTouchpadThreeFingerSwipe, true },
 #endif
       { switches::kDisableCloudPolicyOnSignin,
           prefs::kDisableCloudPolicyOnSignin, true },
       { switches::kDisableAsyncDns, prefs::kBuiltInDnsClientEnabled, false },
       { switches::kEnableAsyncDns, prefs::kBuiltInDnsClientEnabled, true },
-      { switches::kEnableSyncFavicons, prefs::kSyncFaviconsEnabled, false },
 };
 
 const CommandLinePrefStore::IntegerSwitchToPreferenceMapEntry

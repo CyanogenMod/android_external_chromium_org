@@ -13,9 +13,9 @@
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string_util.h"
+#include "content/renderer/media/crypto/content_decryption_module_factory.h"
 #include "content/renderer/media/webcontentdecryptionmodulesession_impl.h"
 #include "media/base/media_keys.h"
-#include "webkit/renderer/media/crypto/content_decryption_module_factory.h"
 
 namespace content {
 
@@ -75,7 +75,7 @@ bool SessionIdAdapter::Initialize(const std::string& key_system,
 
   base::WeakPtr<SessionIdAdapter> weak_this = weak_ptr_factory_.GetWeakPtr();
   scoped_ptr<media::MediaKeys> created_media_keys =
-      webkit_media::ContentDecryptionModuleFactory::Create(
+      ContentDecryptionModuleFactory::Create(
           // TODO(ddorwin): Address lower in the stack: http://crbug.com/252065
           "webkit-" + key_system,
 #if defined(ENABLE_PEPPER_CDMS)
@@ -85,11 +85,12 @@ bool SessionIdAdapter::Initialize(const std::string& key_system,
           base::Closure(),
 #elif defined(OS_ANDROID)
           // TODO(xhwang): Support Android.
-          scoped_ptr<media::MediaKeys>(),
+          NULL,
+          0,
 #endif  // defined(ENABLE_PEPPER_CDMS)
-        base::Bind(&SessionIdAdapter::KeyAdded, weak_this),
-        base::Bind(&SessionIdAdapter::KeyError, weak_this),
-        base::Bind(&SessionIdAdapter::KeyMessage, weak_this));
+          base::Bind(&SessionIdAdapter::KeyAdded, weak_this),
+          base::Bind(&SessionIdAdapter::KeyError, weak_this),
+          base::Bind(&SessionIdAdapter::KeyMessage, weak_this));
   if (!created_media_keys)
     return false;
 

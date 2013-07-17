@@ -22,6 +22,7 @@
 #include "base/values.h"
 #include "chrome/browser/auto_launch_trial.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chrome_page_zoom.h"
 #include "chrome/browser/custom_home_pages_table_model.h"
 #include "chrome/browser/download/download_prefs.h"
@@ -55,7 +56,6 @@
 #include "chrome/browser/ui/options/options_util.h"
 #include "chrome/browser/ui/webui/favicon_source.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -659,17 +659,6 @@ void BrowserOptionsHandler::OnSigninAllowedPrefChange() {
   SendProfilesInfo();
 }
 
-void BrowserOptionsHandler::UpdateInstantCheckboxState() {
-  Profile* profile = Profile::FromWebUI(web_ui());
-
-  web_ui()->CallJavascriptFunction(
-      "BrowserOptions.updateInstantCheckboxState",
-      base::FundamentalValue(chrome::IsInstantCheckboxVisible()),
-      base::FundamentalValue(chrome::IsInstantCheckboxEnabled(profile)),
-      base::FundamentalValue(chrome::IsInstantCheckboxChecked(profile)),
-      StringValue(chrome::GetInstantCheckboxLabel(profile)));
-}
-
 void BrowserOptionsHandler::PageLoadStarted() {
   page_initialized_ = false;
 }
@@ -749,10 +738,6 @@ void BrowserOptionsHandler::InitializeHandler() {
       prefs::kSigninAllowed,
       base::Bind(&BrowserOptionsHandler::OnSigninAllowedPrefChange,
                  base::Unretained(this)));
-  profile_pref_registrar_.Add(
-      prefs::kSearchSuggestEnabled,
-      base::Bind(&BrowserOptionsHandler::UpdateInstantCheckboxState,
-                 base::Unretained(this)));
 
 #if !defined(OS_CHROMEOS)
   profile_pref_registrar_.Add(
@@ -765,7 +750,6 @@ void BrowserOptionsHandler::InitializeHandler() {
 void BrowserOptionsHandler::InitializePage() {
   page_initialized_ = true;
 
-  // Note that OnTemplateURLServiceChanged calls UpdateInstantCheckboxState.
   OnTemplateURLServiceChanged();
 
   ObserveThemeChanged();
@@ -959,10 +943,6 @@ void BrowserOptionsHandler::OnTemplateURLServiceChanged() {
       base::FundamentalValue(default_index),
       base::FundamentalValue(
           template_url_service_->is_default_search_managed()));
-
-  // Update the state of the Instant checkbox as the new search engine may not
-  // support Instant.
-  UpdateInstantCheckboxState();
 }
 
 void BrowserOptionsHandler::SetDefaultSearchEngine(const ListValue* args) {
@@ -1366,12 +1346,18 @@ void BrowserOptionsHandler::UpdateAccountPicture() {
 scoped_ptr<DictionaryValue> BrowserOptionsHandler::GetSyncStateDictionary() {
   scoped_ptr<DictionaryValue> sync_status(new DictionaryValue);
   Profile* profile = Profile::FromWebUI(web_ui());
+  if (ManagedUserService::ProfileIsManaged(profile)) {
+    sync_status->SetBoolean("supervisedUser", true);
+    sync_status->SetBoolean("signinAllowed", false);
+    return sync_status.Pass();
+  }
   if (profile->IsGuestSession()) {
     // Cannot display signin status when running in guest mode on chromeos
     // because there is no SigninManager.
     sync_status->SetBoolean("signinAllowed", false);
     return sync_status.Pass();
   }
+  sync_status->SetBoolean("supervisedUser", false);
 
   bool signout_prohibited = false;
 #if !defined(OS_CHROMEOS)

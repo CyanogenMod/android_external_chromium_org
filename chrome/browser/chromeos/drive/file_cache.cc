@@ -51,6 +51,11 @@ bool CheckIfMd5Matches(const std::string& md5,
   return false;
 }
 
+// Returns resource ID extracted from the path.
+std::string GetResourceIdFromPath(const base::FilePath& path) {
+  return util::UnescapeCacheFileName(path.BaseName().AsUTF8Unsafe());
+}
+
 // Scans cache subdirectory and insert found files to |cache_map|.
 void ScanCacheDirectory(const base::FilePath& directory_path,
                         CacheMap* cache_map) {
@@ -59,84 +64,28 @@ void ScanCacheDirectory(const base::FilePath& directory_path,
                                   base::FileEnumerator::FILES);
   for (base::FilePath current = enumerator.Next(); !current.empty();
        current = enumerator.Next()) {
-    // Extract resource_id and md5 from filename.
-    std::string resource_id;
-    std::string md5;
-    util::ParseCacheFilePath(current, &resource_id, &md5);
+    std::string resource_id = GetResourceIdFromPath(current);
+
+    // Calculate MD5.
+    std::string md5 = util::GetMd5Digest(current);
+    if (md5.empty())
+      continue;
 
     // Determine cache state.
     FileCacheEntry cache_entry;
     cache_entry.set_md5(md5);
     cache_entry.set_is_present(true);
 
-    // Add the dirty bit if |md5| indicates that the file is dirty.
-    if (md5 == util::kLocallyModifiedFileExtension)
-      cache_entry.set_is_dirty(true);
-
     // Create and insert new entry into cache map.
     cache_map->insert(std::make_pair(resource_id, cache_entry));
   }
 }
 
-// Moves the file.
-bool MoveFile(const base::FilePath& source_path,
-              const base::FilePath& dest_path) {
-  if (!base::Move(source_path, dest_path)) {
-    LOG(ERROR) << "Failed to move " << source_path.value()
-               << " to " << dest_path.value();
-    return false;
-  }
-  DVLOG(1) << "Moved " << source_path.value() << " to " << dest_path.value();
-  return true;
-}
-
-// Copies the file.
-bool CopyFile(const base::FilePath& source_path,
-              const base::FilePath& dest_path) {
-  if (!file_util::CopyFile(source_path, dest_path)) {
-    LOG(ERROR) << "Failed to copy " << source_path.value()
-               << " to " << dest_path.value();
-    return false;
-  }
-  DVLOG(1) << "Copied " << source_path.value() << " to " << dest_path.value();
-  return true;
-}
-
-// Deletes all files that match |path_to_delete_pattern| except for
-// |path_to_keep| on blocking pool.
-// If |path_to_keep| is empty, all files in |path_to_delete_pattern| are
-// deleted.
-void DeleteFilesSelectively(const base::FilePath& path_to_delete_pattern,
-                            const base::FilePath& path_to_keep) {
-  // Enumerate all files in directory of |path_to_delete_pattern| that match
-  // base name of |path_to_delete_pattern|.
-  // If a file is not |path_to_keep|, delete it.
-  bool success = true;
-  base::FileEnumerator enumerator(
-      path_to_delete_pattern.DirName(),
-      false,  // not recursive
-      base::FileEnumerator::FILES,
-      path_to_delete_pattern.BaseName().value());
-  for (base::FilePath current = enumerator.Next(); !current.empty();
-       current = enumerator.Next()) {
-    // If |path_to_keep| is not empty and same as current, don't delete it.
-    if (!path_to_keep.empty() && current == path_to_keep)
-      continue;
-
-    success = base::Delete(current, false);
-    if (!success)
-      DVLOG(1) << "Error deleting " << current.value();
-    else
-      DVLOG(1) << "Deleted " << current.value();
-  }
-}
-
 // Runs callback with pointers dereferenced.
 // Used to implement GetFile, MarkAsMounted.
-void RunGetFileFromCacheCallback(
-    const GetFileFromCacheCallback& callback,
-    base::FilePath* file_path,
-    FileError error) {
+void RunGetFileFromCacheCallback(const GetFileFromCacheCallback& callback,
+                                 base::FilePath* file_path,
+                                 FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
   DCHECK(file_path);
@@ -187,22 +136,10 @@ FileCache::~FileCache() {
   AssertOnSequencedWorkerPool();
 }
 
-base::FilePath FileCache::GetCacheFilePath(const std::string& resource_id,
-                                           const std::string& md5,
-                                           CachedFileOrigin file_origin) const {
-  // Runs on any thread.
-  // Filename is formatted as resource_id.md5, i.e. resource_id is the base
-  // name and md5 is the extension.
-  std::string base_name = util::EscapeCacheFileName(resource_id);
-  if (file_origin == CACHED_FILE_LOCALLY_MODIFIED) {
-    base_name += base::FilePath::kExtensionSeparator;
-    base_name += util::kLocallyModifiedFileExtension;
-  } else if (!md5.empty()) {
-    base_name += base::FilePath::kExtensionSeparator;
-    base_name += util::EscapeCacheFileName(md5);
-  }
+base::FilePath FileCache::GetCacheFilePath(
+    const std::string& resource_id) const {
   return cache_file_directory_.Append(
-      base::FilePath::FromUTF8Unsafe(base_name));
+      base::FilePath::FromUTF8Unsafe(util::EscapeCacheFileName(resource_id)));
 }
 
 void FileCache::AssertOnSequencedWorkerPool() {
@@ -262,21 +199,6 @@ scoped_ptr<FileCache::Iterator> FileCache::GetIterator() {
   return storage_->GetCacheEntryIterator();
 }
 
-void FileCache::FreeDiskSpaceIfNeededForOnUIThread(
-    int64 num_bytes,
-    const InitializeCacheCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_.get(),
-      FROM_HERE,
-      base::Bind(&FileCache::FreeDiskSpaceIfNeededFor,
-                 base::Unretained(this),
-                 num_bytes),
-      callback);
-}
-
 bool FileCache::FreeDiskSpaceIfNeededFor(int64 num_bytes) {
   AssertOnSequencedWorkerPool();
 
@@ -303,14 +225,12 @@ bool FileCache::FreeDiskSpaceIfNeededFor(int64 num_bytes) {
   base::FileEnumerator enumerator(cache_file_directory_,
                                   false,  // not recursive
                                   base::FileEnumerator::FILES);
-  std::string resource_id;
-  std::string md5;
   FileCacheEntry entry;
   for (base::FilePath current = enumerator.Next(); !current.empty();
        current = enumerator.Next()) {
-    util::ParseCacheFilePath(current, &resource_id, &md5);
-    if (!GetCacheEntry(resource_id, md5, &entry))
-      base::Delete(current, false /* recursive */);
+    std::string resource_id = GetResourceIdFromPath(current);
+    if (!storage_->GetCacheEntry(resource_id, &entry))
+      base::DeleteFile(current, false /* recursive */);
   }
 
   // Check the disk space again.
@@ -347,10 +267,7 @@ FileError FileCache::GetFile(const std::string& resource_id,
       !cache_entry.is_present())
     return FILE_ERROR_NOT_FOUND;
 
-  CachedFileOrigin file_origin = cache_entry.is_dirty() ?
-      CACHED_FILE_LOCALLY_MODIFIED : CACHED_FILE_FROM_SERVER;
-  *cache_file_path = GetCacheFilePath(resource_id, cache_entry.md5(),
-                                      file_origin);
+  *cache_file_path = GetCacheFilePath(resource_id);
   return FILE_ERROR_OK;
 }
 
@@ -399,8 +316,8 @@ FileError FileCache::Pin(const std::string& resource_id) {
   FileCacheEntry cache_entry;
   storage_->GetCacheEntry(resource_id, &cache_entry);
   cache_entry.set_is_pinned(true);
-  storage_->PutCacheEntry(resource_id, cache_entry);
-  return FILE_ERROR_OK;
+  return storage_->PutCacheEntry(resource_id, cache_entry) ?
+      FILE_ERROR_OK : FILE_ERROR_FAILED;
 }
 
 void FileCache::UnpinOnUIThread(const std::string& resource_id,
@@ -426,10 +343,12 @@ FileError FileCache::Unpin(const std::string& resource_id) {
   // Now that file operations have completed, update metadata.
   if (cache_entry.is_present()) {
     cache_entry.set_is_pinned(false);
-    storage_->PutCacheEntry(resource_id, cache_entry);
+    if (!storage_->PutCacheEntry(resource_id, cache_entry))
+      return FILE_ERROR_FAILED;
   } else {
     // Remove the existing entry if we are unpinning a non-present file.
-    storage_->RemoveCacheEntry(resource_id);
+    if  (!storage_->RemoveCacheEntry(resource_id))
+      return FILE_ERROR_FAILED;
   }
 
   // Now it's a chance to free up space if needed.
@@ -496,7 +415,7 @@ FileError FileCache::MarkDirty(const std::string& resource_id,
   // Marking a file dirty means its entry and actual file blob must exist in
   // cache.
   FileCacheEntry cache_entry;
-  if (!storage_->GetCacheEntry(resource_id, &cache_entry) ||
+  if (!GetCacheEntry(resource_id, md5, &cache_entry) ||
       !cache_entry.is_present()) {
     LOG(WARNING) << "Can't mark dirty a file that wasn't cached: res_id="
                  << resource_id
@@ -507,21 +426,10 @@ FileError FileCache::MarkDirty(const std::string& resource_id,
   if (cache_entry.is_dirty())
     return FILE_ERROR_OK;
 
-  // Get the current path of the file in cache.
-  base::FilePath source_path = GetCacheFilePath(resource_id, md5,
-                                                CACHED_FILE_FROM_SERVER);
-  // Determine destination path.
-  base::FilePath cache_file_path = GetCacheFilePath(
-      resource_id, md5, CACHED_FILE_LOCALLY_MODIFIED);
-
-  if (!MoveFile(source_path, cache_file_path))
-    return FILE_ERROR_FAILED;
-
   // Now that file operations have completed, update metadata.
-  cache_entry.set_md5(md5);
   cache_entry.set_is_dirty(true);
-  storage_->PutCacheEntry(resource_id, cache_entry);
-  return FILE_ERROR_OK;
+  return storage_->PutCacheEntry(resource_id, cache_entry) ?
+      FILE_ERROR_OK : FILE_ERROR_FAILED;
 }
 
 FileError FileCache::ClearDirty(const std::string& resource_id,
@@ -551,18 +459,11 @@ FileError FileCache::ClearDirty(const std::string& resource_id,
     return FILE_ERROR_INVALID_OPERATION;
   }
 
-  base::FilePath source_path = GetCacheFilePath(resource_id, md5,
-                                                CACHED_FILE_LOCALLY_MODIFIED);
-  base::FilePath dest_path = GetCacheFilePath(resource_id, md5,
-                                              CACHED_FILE_FROM_SERVER);
-  if (!MoveFile(source_path, dest_path))
-    return FILE_ERROR_FAILED;
-
   // Now that file operations have completed, update metadata.
   cache_entry.set_md5(md5);
   cache_entry.set_is_dirty(false);
-  storage_->PutCacheEntry(resource_id, cache_entry);
-  return FILE_ERROR_OK;
+  return storage_->PutCacheEntry(resource_id, cache_entry) ?
+      FILE_ERROR_OK : FILE_ERROR_FAILED;
 }
 
 void FileCache::RemoveOnUIThread(const std::string& resource_id,
@@ -580,33 +481,27 @@ void FileCache::RemoveOnUIThread(const std::string& resource_id,
 FileError FileCache::Remove(const std::string& resource_id) {
   AssertOnSequencedWorkerPool();
 
-  // MD5 is not passed into RemoveCacheEntry because we would delete all
-  // cache files corresponding to <resource_id> regardless of the md5.
-  // So, search for entry in cache without taking md5 into account.
   FileCacheEntry cache_entry;
 
   // If entry doesn't exist, nothing to do.
   if (!storage_->GetCacheEntry(resource_id, &cache_entry))
     return FILE_ERROR_OK;
 
-  // Cannot delete a dirty or mounted file.
-  if (cache_entry.is_dirty() || mounted_files_.count(resource_id))
+  // Cannot delete a mounted file.
+  if (mounted_files_.count(resource_id))
     return FILE_ERROR_IN_USE;
 
-  // Delete files that match "<resource_id>.*" unless modified locally.
-  base::FilePath path_to_delete = GetCacheFilePath(resource_id, util::kWildCard,
-                                                   CACHED_FILE_FROM_SERVER);
-  base::FilePath path_to_keep = GetCacheFilePath(resource_id, std::string(),
-                                                 CACHED_FILE_LOCALLY_MODIFIED);
-  DeleteFilesSelectively(path_to_delete, path_to_keep);
+  // Delete the file.
+  base::FilePath path = GetCacheFilePath(resource_id);
+  if (!base::DeleteFile(path, false /* recursive */))
+    return FILE_ERROR_FAILED;
 
   // Now that all file operations have completed, remove from metadata.
-  storage_->RemoveCacheEntry(resource_id);
-
-  return FILE_ERROR_OK;
+  return storage_->RemoveCacheEntry(resource_id) ?
+      FILE_ERROR_OK : FILE_ERROR_FAILED;
 }
 
-void FileCache::ClearAllOnUIThread(const InitializeCacheCallback& callback) {
+void FileCache::ClearAllOnUIThread(const ClearAllCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
@@ -619,6 +514,8 @@ void FileCache::ClearAllOnUIThread(const InitializeCacheCallback& callback) {
 
 bool FileCache::Initialize() {
   AssertOnSequencedWorkerPool();
+
+  RenameCacheFilesToNewFormat();
 
   if (!ImportOldDB(storage_->directory_path().Append(
           kOldCacheMetadataDBName)) &&
@@ -675,51 +572,33 @@ FileError FileCache::StoreInternal(const std::string& resource_id,
   if (cache_entry.is_dirty() || mounted_files_.count(resource_id))
     return FILE_ERROR_IN_USE;
 
-  base::FilePath dest_path = GetCacheFilePath(resource_id, md5,
-                                              CACHED_FILE_FROM_SERVER);
+  base::FilePath dest_path = GetCacheFilePath(resource_id);
   bool success = false;
   switch (file_operation_type) {
     case FILE_OPERATION_MOVE:
-      success = MoveFile(source_path, dest_path);
+      success = base::Move(source_path, dest_path);
       break;
     case FILE_OPERATION_COPY:
-      success = CopyFile(source_path, dest_path);
+      success = base::CopyFile(source_path, dest_path);
       break;
     default:
       NOTREACHED();
   }
 
-  // Determine search pattern for stale filenames corresponding to resource_id,
-  // either "<resource_id>*" or "<resource_id>.*".
-  base::FilePath stale_filenames_pattern;
-  if (md5.empty()) {
-    // No md5 means no extension, append '*' after base name, i.e.
-    // "<resource_id>*".
-    // Cannot call |dest_path|.ReplaceExtension when there's no md5 extension:
-    // if base name of |dest_path| (i.e. escaped resource_id) contains the
-    // extension separator '.', ReplaceExtension will remove it and everything
-    // after it.  The result will be nothing like the escaped resource_id.
-    stale_filenames_pattern =
-        base::FilePath(dest_path.value() + util::kWildCard);
-  } else {
-    // Replace md5 extension with '*' i.e. "<resource_id>.*".
-    // Note that ReplaceExtension automatically prefixes the extension with the
-    // extension separator '.'.
-    stale_filenames_pattern = dest_path.ReplaceExtension(util::kWildCard);
+  if (!success) {
+    LOG(ERROR) << "Failed to store: "
+               << "source_path = " << source_path.value() << ", "
+               << "dest_path = " << dest_path.value() << ", "
+               << "file_operation_type = " << file_operation_type;
+    return FILE_ERROR_FAILED;
   }
 
-  // Delete files that match |stale_filenames_pattern| except for |dest_path|.
-  DeleteFilesSelectively(stale_filenames_pattern, dest_path);
-
-  if (success) {
-    // Now that file operations have completed, update metadata.
-    cache_entry.set_md5(md5);
-    cache_entry.set_is_present(true);
-    cache_entry.set_is_dirty(false);
-    storage_->PutCacheEntry(resource_id, cache_entry);
-  }
-
-  return success ? FILE_ERROR_OK : FILE_ERROR_FAILED;
+  // Now that file operations have completed, update metadata.
+  cache_entry.set_md5(md5);
+  cache_entry.set_is_present(true);
+  cache_entry.set_is_dirty(false);
+  return storage_->PutCacheEntry(resource_id, cache_entry) ?
+      FILE_ERROR_OK : FILE_ERROR_FAILED;
 }
 
 FileError FileCache::MarkAsMounted(const std::string& resource_id,
@@ -736,14 +615,14 @@ FileError FileCache::MarkAsMounted(const std::string& resource_id,
     return FILE_ERROR_INVALID_OPERATION;
 
   // Ensure the file is readable to cros_disks. See crbug.com/236994.
-  base::FilePath path = GetCacheFilePath(
-      resource_id, cache_entry.md5(), CACHED_FILE_FROM_SERVER);
-  file_util::SetPosixFilePermissions(
-      path,
-      file_util::FILE_PERMISSION_READ_BY_USER |
-      file_util::FILE_PERMISSION_WRITE_BY_USER |
-      file_util::FILE_PERMISSION_READ_BY_GROUP |
-      file_util::FILE_PERMISSION_READ_BY_OTHERS);
+  base::FilePath path = GetCacheFilePath(resource_id);
+  if (!file_util::SetPosixFilePermissions(
+          path,
+          file_util::FILE_PERMISSION_READ_BY_USER |
+          file_util::FILE_PERMISSION_WRITE_BY_USER |
+          file_util::FILE_PERMISSION_READ_BY_GROUP |
+          file_util::FILE_PERMISSION_READ_BY_OTHERS))
+    return FILE_ERROR_FAILED;
 
   mounted_files_.insert(resource_id);
 
@@ -755,14 +634,11 @@ FileError FileCache::MarkAsUnmounted(const base::FilePath& file_path) {
   AssertOnSequencedWorkerPool();
   DCHECK(IsUnderFileCacheDirectory(file_path));
 
-  // Parse file path to obtain resource_id, md5 and extra_extension.
-  std::string resource_id;
-  std::string md5;
-  util::ParseCacheFilePath(file_path, &resource_id, &md5);
+  std::string resource_id = GetResourceIdFromPath(file_path);
 
   // Get cache entry associated with the resource_id and md5
   FileCacheEntry cache_entry;
-  if (!GetCacheEntry(resource_id, md5, &cache_entry))
+  if (!storage_->GetCacheEntry(resource_id, &cache_entry))
     return FILE_ERROR_NOT_FOUND;
 
   std::set<std::string>::iterator it = mounted_files_.find(resource_id);
@@ -779,8 +655,10 @@ bool FileCache::ClearAll() {
   // Remove entries on the metadata.
   scoped_ptr<ResourceMetadataStorage::CacheEntryIterator> it =
       storage_->GetCacheEntryIterator();
-  for (; !it->IsAtEnd(); it->Advance())
-    storage_->RemoveCacheEntry(it->GetID());
+  for (; !it->IsAtEnd(); it->Advance()) {
+    if (!storage_->RemoveCacheEntry(it->GetID()))
+      return false;
+  }
 
   if (it->HasError())
     return false;
@@ -791,7 +669,7 @@ bool FileCache::ClearAll() {
                                   base::FileEnumerator::FILES);
   for (base::FilePath file = enumerator.Next(); !file.empty();
        file = enumerator.Next())
-    base::Delete(file, false /* recursive */);
+    base::DeleteFile(file, false /* recursive */);
 
   return true;
 }
@@ -810,13 +688,13 @@ bool FileCache::HasEnoughSpaceFor(int64 num_bytes,
 }
 
 bool FileCache::ImportOldDB(const base::FilePath& old_db_path) {
-  if (!file_util::PathExists(old_db_path))  // Old DB is not there, do nothing.
+  if (!base::PathExists(old_db_path))  // Old DB is not there, do nothing.
     return false;
 
   // Copy all entries stored in the old DB.
   bool imported = false;
   {
-    FileCacheMetadata old_data(blocking_task_runner_);
+    FileCacheMetadata old_data(blocking_task_runner_.get());
     if (old_data.Initialize(old_db_path) ==
         FileCacheMetadata::INITIALIZE_OPENED) {
       scoped_ptr<FileCacheMetadata::Iterator> it = old_data.GetIterator();
@@ -832,8 +710,31 @@ bool FileCache::ImportOldDB(const base::FilePath& old_db_path) {
   }
 
   // Delete old DB.
-  base::Delete(old_db_path, true /* recursive */ );
+  base::DeleteFile(old_db_path, true /* recursive */ );
   return imported;
+}
+
+void FileCache::RenameCacheFilesToNewFormat() {
+  // First, remove all files with multiple extensions just in case.
+  {
+    base::FileEnumerator enumerator(cache_file_directory_,
+                                    false,  // not recursive
+                                    base::FileEnumerator::FILES,
+                                    "*.*.*");
+    for (base::FilePath current = enumerator.Next(); !current.empty();
+         current = enumerator.Next())
+      base::DeleteFile(current, false /* recursive */);
+  }
+
+  // Rename files.
+  {
+    base::FileEnumerator enumerator(cache_file_directory_,
+                                    false,  // not recursive
+                                    base::FileEnumerator::FILES);
+    for (base::FilePath current = enumerator.Next(); !current.empty();
+         current = enumerator.Next())
+      base::Move(current, current.RemoveExtension());
+  }
 }
 
 }  // namespace internal

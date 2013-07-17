@@ -15,7 +15,6 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
@@ -62,6 +61,7 @@ const char* kKnownSettings[] = {
   kReportDeviceActivityTimes,
   kReportDeviceBootMode,
   kReportDeviceLocation,
+  kReportDeviceNetworkInterfaces,
   kReportDeviceVersionInfo,
   kScreenSaverExtensionId,
   kScreenSaverTimeout,
@@ -378,6 +378,7 @@ void DeviceSettingsProvider::SetInPolicy() {
     //   kReportDeviceBootMode
     //   kReportDeviceLocation
     //   kReportDeviceVersionInfo
+    //   kReportDeviceNetworkInterfaces
     //   kScreenSaverExtensionId
     //   kScreenSaverTimeout
     //   kStartUpUrls
@@ -612,50 +613,50 @@ void DeviceSettingsProvider::DecodeNetworkPolicies(
 void DeviceSettingsProvider::DecodeAutoUpdatePolicies(
     const em::ChromeDeviceSettingsProto& policy,
     PrefValueMap* new_values_cache) const {
-  if (!policy.has_auto_update_settings())
-    return;
-  const em::AutoUpdateSettingsProto& au_settings_proto =
-      policy.auto_update_settings();
-  if (au_settings_proto.has_update_disabled()) {
-    new_values_cache->SetBoolean(kUpdateDisabled,
-                                 au_settings_proto.update_disabled());
+  if (policy.has_auto_update_settings()) {
+    const em::AutoUpdateSettingsProto& au_settings_proto =
+        policy.auto_update_settings();
+    if (au_settings_proto.has_update_disabled()) {
+      new_values_cache->SetBoolean(kUpdateDisabled,
+                                   au_settings_proto.update_disabled());
+    }
+    const RepeatedField<int>& allowed_connection_types =
+        au_settings_proto.allowed_connection_types();
+    base::ListValue* list = new base::ListValue();
+    for (RepeatedField<int>::const_iterator i(allowed_connection_types.begin());
+         i != allowed_connection_types.end(); ++i) {
+      list->Append(new base::FundamentalValue(*i));
+    }
+    new_values_cache->SetValue(kAllowedConnectionTypesForUpdate, list);
   }
-  const RepeatedField<int>& allowed_connection_types =
-      au_settings_proto.allowed_connection_types();
-  base::ListValue* list = new base::ListValue();
-  for (RepeatedField<int>::const_iterator i = allowed_connection_types.begin(),
-           e = allowed_connection_types.end(); i != e; ++i) {
-    list->Append(new base::FundamentalValue(*i));
-  }
-  new_values_cache->SetValue(kAllowedConnectionTypesForUpdate, list);
 }
 
 void DeviceSettingsProvider::DecodeReportingPolicies(
     const em::ChromeDeviceSettingsProto& policy,
     PrefValueMap* new_values_cache) const {
   if (policy.has_device_reporting()) {
-    if (policy.device_reporting().has_report_version_info()) {
+    const em::DeviceReportingProto& reporting_policy =
+        policy.device_reporting();
+    if (reporting_policy.has_report_version_info()) {
       new_values_cache->SetBoolean(
           kReportDeviceVersionInfo,
-          policy.device_reporting().report_version_info());
+          reporting_policy.report_version_info());
     }
-    if (policy.device_reporting().has_report_activity_times()) {
+    if (reporting_policy.has_report_activity_times()) {
       new_values_cache->SetBoolean(
           kReportDeviceActivityTimes,
-          policy.device_reporting().report_activity_times());
+          reporting_policy.report_activity_times());
     }
-    if (policy.device_reporting().has_report_boot_mode()) {
+    if (reporting_policy.has_report_boot_mode()) {
       new_values_cache->SetBoolean(
           kReportDeviceBootMode,
-          policy.device_reporting().report_boot_mode());
+          reporting_policy.report_boot_mode());
     }
-    // Device location reporting needs to pass privacy review before it can be
-    // enabled. crosbug.com/24681
-    // if (policy.device_reporting().has_report_location()) {
-    //   new_values_cache->SetBoolean(
-    //       kReportDeviceLocation,
-    //       policy.device_reporting().report_location());
-    // }
+    if (reporting_policy.has_report_network_interfaces()) {
+      new_values_cache->SetBoolean(
+          kReportDeviceNetworkInterfaces,
+          reporting_policy.report_network_interfaces());
+    }
   }
 }
 
@@ -777,9 +778,9 @@ void DeviceSettingsProvider::ApplyMetricsSetting(bool use_file,
 }
 
 void DeviceSettingsProvider::ApplyRoamingSetting(bool new_value) {
-  if (!CrosLibrary::Get())
+  if (!NetworkLibrary::Get())
     return;  // May not be initialized in tests.
-  NetworkLibrary* cros = CrosLibrary::Get()->GetNetworkLibrary();
+  NetworkLibrary* cros = NetworkLibrary::Get();
   const NetworkDevice* cellular = cros->FindCellularDevice();
   if (cellular) {
     bool device_value = cellular->data_roaming_allowed();

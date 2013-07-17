@@ -10,7 +10,9 @@
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "sql/statement.h"
+#include "sql/test/scoped_error_ignorer.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/sqlite/sqlite3.h"
 
 namespace dom_storage {
 
@@ -122,7 +124,7 @@ TEST(DomStorageDatabaseTest, CloseEmptyDatabaseDeletesFile) {
     EXPECT_EQ(file_name, db.file_path());
     ASSERT_TRUE(db.CommitChanges(false, storage));
   }
-  EXPECT_TRUE(file_util::PathExists(file_name));
+  EXPECT_TRUE(base::PathExists(file_name));
 
   {
     // Check that reading an existing db with data in it
@@ -133,14 +135,14 @@ TEST(DomStorageDatabaseTest, CloseEmptyDatabaseDeletesFile) {
     EXPECT_EQ(storage.size(), values.size());
   }
 
-  EXPECT_TRUE(file_util::PathExists(file_name));
+  EXPECT_TRUE(base::PathExists(file_name));
   storage.clear();
 
   {
     DomStorageDatabase db(file_name);
     ASSERT_TRUE(db.CommitChanges(true, storage));
   }
-  EXPECT_FALSE(file_util::PathExists(file_name));
+  EXPECT_FALSE(base::PathExists(file_name));
 
   // Now ensure that a series of updates and removals whose net effect
   // is an empty database also triggers deletion.
@@ -150,7 +152,7 @@ TEST(DomStorageDatabaseTest, CloseEmptyDatabaseDeletesFile) {
     ASSERT_TRUE(db.CommitChanges(false, storage));
   }
 
-  EXPECT_TRUE(file_util::PathExists(file_name));
+  EXPECT_TRUE(base::PathExists(file_name));
 
   {
     DomStorageDatabase db(file_name);
@@ -160,7 +162,7 @@ TEST(DomStorageDatabaseTest, CloseEmptyDatabaseDeletesFile) {
       it->second = base::NullableString16();
     ASSERT_TRUE(db.CommitChanges(false, storage));
   }
-  EXPECT_FALSE(file_util::PathExists(file_name));
+  EXPECT_FALSE(base::PathExists(file_name));
 }
 
 TEST(DomStorageDatabaseTest, TestLazyOpenIsLazy) {
@@ -313,7 +315,7 @@ TEST(DomStorageDatabaseTest, TestCanOpenAndReadWebCoreDatabase) {
   webcore_database =
       webcore_database.AppendASCII("webcore_test_database.localstorage");
 
-  ASSERT_TRUE(file_util::PathExists(webcore_database));
+  ASSERT_TRUE(base::PathExists(webcore_database));
 
   DomStorageDatabase db(webcore_database);
   ValuesMap values;
@@ -345,6 +347,9 @@ TEST(DomStorageDatabaseTest, TestCanOpenFileThatIsNotADatabase) {
   file_util::WriteFile(file_name, kData, strlen(kData));
 
   {
+    sql::ScopedErrorIgnorer ignore_errors;
+    ignore_errors.IgnoreError(SQLITE_IOERR_SHORT_READ);
+
     // Try and open the file. As it's not a database, we should end up deleting
     // it and creating a new, valid file, so everything should actually
     // succeed.
@@ -356,9 +361,14 @@ TEST(DomStorageDatabaseTest, TestCanOpenFileThatIsNotADatabase) {
     EXPECT_TRUE(db.IsOpen());
 
     CheckValuesMatch(&db, values);
+
+    ASSERT_TRUE(ignore_errors.CheckIgnoredErrors());
   }
 
   {
+    sql::ScopedErrorIgnorer ignore_errors;
+    ignore_errors.IgnoreError(SQLITE_CANTOPEN);
+
     // Try to open a directory, we should fail gracefully and not attempt
     // to delete it.
     DomStorageDatabase db(temp_dir.path());
@@ -374,7 +384,9 @@ TEST(DomStorageDatabaseTest, TestCanOpenFileThatIsNotADatabase) {
     EXPECT_EQ(0u, values.size());
     EXPECT_FALSE(db.IsOpen());
 
-    EXPECT_TRUE(file_util::PathExists(temp_dir.path()));
+    EXPECT_TRUE(base::PathExists(temp_dir.path()));
+
+    ASSERT_TRUE(ignore_errors.CheckIgnoredErrors());
   }
 }
 

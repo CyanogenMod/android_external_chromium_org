@@ -59,10 +59,6 @@ include_rules = [
   "+webkit/browser",
   "+webkit/common",
 
-  # TODO(ananta): remove me when
-  # bug https://code.google.com/p/chromium/issues/detail?id=237249 is fixed.
-  "!content/public/child/image_decoder_utils.h",
-
   # webkit/glue files are listed individually since they aren't conceptually
   # grouped like the other webkit/ files, and can therefore be tackled one at
   # a time.
@@ -70,6 +66,8 @@ include_rules = [
   # DO NOT ADD ANY MORE ITEMS TO THE ABOVE LIST!
 
   "-chrome/browser/ui/views",
+  "+chrome/browser/ui/views/chrome_browser_main_extra_parts_views.h",
+  "+chrome/browser/ui/views/ash/chrome_browser_main_extra_parts_ash.h",
 
   # Other libraries.
   "+chrome/third_party/mozilla_security_manager",
@@ -88,6 +86,7 @@ include_rules = [
   "+third_party/re2",
   "+third_party/sqlite",
   "+third_party/undoview",
+  "+third_party/zlib",
 
   # No inclusion of WebKit from the browser, other than strictly enum/POD,
   # header-only types, and some selected common code.
@@ -114,6 +113,5 @@ include_rules = [
   # These should be burned down. http://crbug.com/237267
   "!third_party/WebKit/public/web/WebKit.h",
   "!third_party/WebKit/public/web/WebSecurityOrigin.h",
-  "!third_party/WebKit/public/web/WebSecurityPolicy.h",
   "!third_party/WebKit/public/web/WebView.h",
 ]

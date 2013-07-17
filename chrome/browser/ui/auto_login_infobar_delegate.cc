@@ -11,13 +11,12 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/ubertoken_fetcher.h"
 #include "chrome/browser/ui/sync/sync_promo_ui.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -138,11 +137,6 @@ void AutoLoginRedirector::RedirectToMergeSession(const std::string& token) {
 }  // namespace
 
 
-// AutoLoginInfoBarDelegate::Params -------------------------------------------
-
-AutoLoginInfoBarDelegate::Params::Params() {}
-AutoLoginInfoBarDelegate::Params::~Params() {}
-
 
 // AutoLoginInfoBarDelegate ---------------------------------------------------
 
@@ -164,20 +158,19 @@ AutoLoginInfoBarDelegate::AutoLoginInfoBarDelegate(
     : ConfirmInfoBarDelegate(owner),
       params_(params),
       button_pressed_(false) {
-  RecordHistogramAction(HISTOGRAM_SHOWN);
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_GOOGLE_SIGNED_OUT,
+  RecordHistogramAction(SHOWN);
+  registrar_.Add(this, chrome::NOTIFICATION_GOOGLE_SIGNED_OUT,
                  content::Source<Profile>(Profile::FromBrowserContext(
                      web_contents()->GetBrowserContext())));
 }
 
 AutoLoginInfoBarDelegate::~AutoLoginInfoBarDelegate() {
   if (!button_pressed_)
-    RecordHistogramAction(HISTOGRAM_IGNORED);
+    RecordHistogramAction(IGNORED);
 }
 
 void AutoLoginInfoBarDelegate::InfoBarDismissed() {
-  RecordHistogramAction(HISTOGRAM_DISMISSED);
+  RecordHistogramAction(DISMISSED);
   button_pressed_ = true;
 }
 
@@ -209,17 +202,16 @@ bool AutoLoginInfoBarDelegate::Accept() {
   // AutoLoginRedirector deletes itself.
   new AutoLoginRedirector(&web_contents()->GetController(),
                           params_.header.args);
-  RecordHistogramAction(HISTOGRAM_ACCEPTED);
+  RecordHistogramAction(ACCEPTED);
   button_pressed_ = true;
   return true;
 }
 
 bool AutoLoginInfoBarDelegate::Cancel() {
-  Profile* profile = Profile::FromBrowserContext(
-      web_contents()->GetBrowserContext());
-  PrefService* pref_service = profile->GetPrefs();
+  PrefService* pref_service = Profile::FromBrowserContext(
+      web_contents()->GetBrowserContext())->GetPrefs();
   pref_service->SetBoolean(prefs::kAutologinEnabled, false);
-  RecordHistogramAction(HISTOGRAM_REJECTED);
+  RecordHistogramAction(REJECTED);
   button_pressed_ = true;
   return true;
 }
@@ -235,5 +227,6 @@ void AutoLoginInfoBarDelegate::Observe(int type,
 }
 
 void AutoLoginInfoBarDelegate::RecordHistogramAction(Actions action) {
-  UMA_HISTOGRAM_ENUMERATION("AutoLogin.Regular", action, HISTOGRAM_MAX);
+  UMA_HISTOGRAM_ENUMERATION("AutoLogin.Regular", action,
+                            HISTOGRAM_BOUNDING_VALUE);
 }

@@ -49,7 +49,7 @@ enum OpenEntryResult {
   OPEN_ENTRY_BAD_MAGIC_NUMBER = 3,
   OPEN_ENTRY_BAD_VERSION = 4,
   OPEN_ENTRY_CANT_READ_KEY = 5,
-  OPEN_ENTRY_KEY_MISMATCH = 6,
+  // OPEN_ENTRY_KEY_MISMATCH = 6, Deprecated.
   OPEN_ENTRY_KEY_HASH_MISMATCH = 7,
   OPEN_ENTRY_MAX = 8,
 };
@@ -185,7 +185,7 @@ bool SimpleSynchronousEntry::DeleteFilesForEntryHash(
   for (int i = 0; i < kSimpleEntryFileCount; ++i) {
     FilePath to_delete = path.AppendASCII(
         GetFilenameFromEntryHashAndIndex(entry_hash, i));
-    if (!base::Delete(to_delete, false)) {
+    if (!base::DeleteFile(to_delete, false)) {
       result = false;
       DLOG(ERROR) << "Could not delete " << to_delete.MaybeAsASCII();
     }

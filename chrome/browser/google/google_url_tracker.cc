@@ -8,13 +8,13 @@
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/google/google_url_tracker_factory.h"
 #include "chrome/browser/google/google_url_tracker_infobar_delegate.h"
 #include "chrome/browser/google/google_url_tracker_navigation_helper.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/navigation_controller.h"
@@ -303,12 +303,12 @@ void GoogleURLTracker::OnNavigationPending(
           infobar_service,
           new GoogleURLTrackerMapEntry(this, infobar_service,
                                        navigation_controller)));
-    } else if (i->second->has_infobar()) {
+    } else if (i->second->has_infobar_delegate()) {
       // This is a new search on a tab where we already have an infobar.
-      i->second->infobar()->set_pending_id(pending_id);
+      i->second->infobar_delegate()->set_pending_id(pending_id);
     }
   } else if (i != entry_map_.end()){
-    if (i->second->has_infobar()) {
+    if (i->second->has_infobar_delegate()) {
       // This is a non-search navigation on a tab with an infobar.  If there was
       // a previous pending search on this tab, this means it won't commit, so
       // undo anything we did in response to seeing that.  Note that if there
@@ -319,7 +319,7 @@ void GoogleURLTracker::OnNavigationPending(
       // owner to expire the infobar if need be.  If it doesn't commit, then
       // simply leaving the infobar as-is will have been the right thing.
       UnregisterForEntrySpecificNotifications(*i->second, false);
-      i->second->infobar()->set_pending_id(0);
+      i->second->infobar_delegate()->set_pending_id(0);
     } else {
       // Non-search navigation on a tab with an entry that has not yet created
       // an infobar.  This means the original search won't commit, so delete the
@@ -340,13 +340,13 @@ void GoogleURLTracker::OnNavigationCommitted(InfoBarService* infobar_service,
   DCHECK(search_url.is_valid());
 
   UnregisterForEntrySpecificNotifications(*map_entry, true);
-  if (map_entry->has_infobar()) {
-    map_entry->infobar()->Update(search_url);
+  if (map_entry->has_infobar_delegate()) {
+    map_entry->infobar_delegate()->Update(search_url);
   } else {
     GoogleURLTrackerInfoBarDelegate* infobar_delegate =
         infobar_creator_.Run(infobar_service, this, search_url);
     if (infobar_delegate)
-      map_entry->SetInfoBar(infobar_delegate);
+      map_entry->SetInfoBarDelegate(infobar_delegate);
     else
       map_entry->Close(false);
   }
@@ -389,12 +389,12 @@ void GoogleURLTracker::UnregisterForEntrySpecificNotifications(
         map_entry.navigation_controller(), false);
   } else {
     DCHECK(!must_be_listening_for_commit);
-    DCHECK(map_entry.has_infobar());
+    DCHECK(map_entry.has_infobar_delegate());
   }
   const bool registered_for_tab_destruction =
       nav_helper_->IsListeningForTabDestruction(
           map_entry.navigation_controller());
-  DCHECK_NE(registered_for_tab_destruction, map_entry.has_infobar());
+  DCHECK_NE(registered_for_tab_destruction, map_entry.has_infobar_delegate());
   if (registered_for_tab_destruction) {
     nav_helper_->SetListeningForTabDestruction(
         map_entry.navigation_controller(), false);

@@ -8,7 +8,7 @@
 #include "base/bind.h"
 #include "base/file_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
@@ -104,12 +104,12 @@ void UserStyleSheetLoader::LoadStyleSheet(
   // We keep the user style sheet in a subdir so we can watch for changes
   // to the file.
   base::FilePath style_sheet_dir = style_sheet_file.DirName();
-  if (!file_util::DirectoryExists(style_sheet_dir)) {
+  if (!base::DirectoryExists(style_sheet_dir)) {
     if (!file_util::CreateDirectory(style_sheet_dir))
       return;
   }
   // Create the file if it doesn't exist.
-  if (!file_util::PathExists(style_sheet_file))
+  if (!base::PathExists(style_sheet_file))
     file_util::WriteFile(style_sheet_file, "", 0);
 
   std::string css;

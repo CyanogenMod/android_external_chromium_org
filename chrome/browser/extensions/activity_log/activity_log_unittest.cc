@@ -38,37 +38,38 @@ const char kExtensionId[] = "abc";
 
 namespace extensions {
 
-class ActivityLogTest : public testing::Test {
+class ActivityLogTest : public ChromeRenderViewHostTestHarness {
  protected:
-  ActivityLogTest()
-      : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP),
-        saved_cmdline_(CommandLine::NO_PROGRAM) {
+  ActivityLogTest() : saved_cmdline_(CommandLine::NO_PROGRAM) {}
+
+  virtual void SetUp() OVERRIDE {
+    ChromeRenderViewHostTestHarness::SetUp();
 #if defined OS_CHROMEOS
     test_user_manager_.reset(new chromeos::ScopedTestUserManager());
 #endif
     CommandLine command_line(CommandLine::NO_PROGRAM);
     saved_cmdline_ = *CommandLine::ForCurrentProcess();
-    profile_.reset(new TestingProfile());
     CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kEnableExtensionActivityLogging);
     CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kEnableExtensionActivityLogTesting);
+    ActivityLog::RecomputeLoggingIsEnabled(true);  // Logging now enabled.
     extension_service_ = static_cast<TestExtensionSystem*>(
-        ExtensionSystem::Get(profile_.get()))->CreateExtensionService
+        ExtensionSystem::Get(profile()))->CreateExtensionService
             (&command_line, base::FilePath(), false);
-    ActivityLog::RecomputeLoggingIsEnabled(false);
+    ActivityLog::GetInstance(profile())->Init();
+    base::RunLoop().RunUntilIdle();
   }
 
-  virtual ~ActivityLogTest() {
+  virtual void TearDown() OVERRIDE {
 #if defined OS_CHROMEOS
     test_user_manager_.reset();
 #endif
     base::RunLoop().RunUntilIdle();
-    profile_.reset(NULL);
-    base::RunLoop().RunUntilIdle();
     // Restore the original command line and undo the affects of SetUp().
     *CommandLine::ForCurrentProcess() = saved_cmdline_;
-    ActivityLog::RecomputeLoggingIsEnabled(false);
+    ActivityLog::RecomputeLoggingIsEnabled(false);  // Logging now disabled.
+    ChromeRenderViewHostTestHarness::TearDown();
   }
 
   static void RetrieveActions_LogAndFetchActions(
@@ -109,53 +110,12 @@ class ActivityLogTest : public testing::Test {
     ASSERT_EQ(args, last->PrintForDebug());
   }
 
- protected:
-  scoped_ptr<TestingProfile> profile_;
-  ExtensionService* extension_service_;
-
-  content::TestBrowserThreadBundle thread_bundle_;
-
-  // Used to preserve a copy of the original command line.
-  // The test framework will do this itself as well. However, by then,
-  // it is too late to call ActivityLog::RecomputeLoggingIsEnabled() in
-  // TearDown().
-  CommandLine saved_cmdline_;
-
-#if defined OS_CHROMEOS
-  chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;
-  chromeos::ScopedTestCrosSettings test_cros_settings_;
-  scoped_ptr<chromeos::ScopedTestUserManager> test_user_manager_;
-#endif
-};
-
-class RenderViewActivityLogTest : public ChromeRenderViewHostTestHarness {
- protected:
-  RenderViewActivityLogTest() : saved_cmdline_(CommandLine::NO_PROGRAM) {}
-
-  virtual void SetUp() OVERRIDE {
-    ChromeRenderViewHostTestHarness::SetUp();
-#if defined OS_CHROMEOS
-    test_user_manager_.reset(new chromeos::ScopedTestUserManager());
-#endif
-    CommandLine command_line(CommandLine::NO_PROGRAM);
-    saved_cmdline_ = *CommandLine::ForCurrentProcess();
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kEnableExtensionActivityLogging);
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kEnableExtensionActivityLogTesting);
-    ActivityLog::RecomputeLoggingIsEnabled(false);
-    extension_service_ = static_cast<TestExtensionSystem*>(
-        ExtensionSystem::Get(profile()))->CreateExtensionService(
-            &command_line, base::FilePath(), false);
-  }
-
-  virtual void TearDown() OVERRIDE {
-#if defined OS_CHROMEOS
-    test_user_manager_.reset();
-#endif
-    ChromeRenderViewHostTestHarness::TearDown();
-    *CommandLine::ForCurrentProcess() = saved_cmdline_;
-    ActivityLog::RecomputeLoggingIsEnabled(false);
+  void SetPolicy(bool log_arguments) {
+    ActivityLog* activity_log = ActivityLog::GetInstance(profile());
+    if (log_arguments)
+      activity_log->SetDefaultPolicy(ActivityLogPolicy::POLICY_FULLSTREAM);
+    else
+      activity_log->SetDefaultPolicy(ActivityLogPolicy::POLICY_NOARGS);
   }
 
   static void Arguments_Prerender(
@@ -174,7 +134,6 @@ class RenderViewActivityLogTest : public ChromeRenderViewHostTestHarness {
   // TearDown().
   CommandLine saved_cmdline_;
 
- private:
 #if defined OS_CHROMEOS
   chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;
   chromeos::ScopedTestCrosSettings test_cros_settings_;
@@ -187,7 +146,7 @@ TEST_F(ActivityLogTest, Enabled) {
 }
 
 TEST_F(ActivityLogTest, Construct) {
-  ActivityLog* activity_log = ActivityLog::GetInstance(profile_.get());
+  ActivityLog* activity_log = ActivityLog::GetInstance(profile());
   scoped_ptr<base::ListValue> args(new base::ListValue());
   ASSERT_TRUE(activity_log->IsLogEnabled());
   activity_log->LogAPIAction(
@@ -195,7 +154,7 @@ TEST_F(ActivityLogTest, Construct) {
 }
 
 TEST_F(ActivityLogTest, LogAndFetchActions) {
-  ActivityLog* activity_log = ActivityLog::GetInstance(profile_.get());
+  ActivityLog* activity_log = ActivityLog::GetInstance(profile());
   scoped_ptr<base::ListValue> args(new base::ListValue());
   ASSERT_TRUE(activity_log->IsLogEnabled());
 
@@ -216,7 +175,7 @@ TEST_F(ActivityLogTest, LogAndFetchActions) {
 }
 
 TEST_F(ActivityLogTest, LogAndFetchPathActions) {
-  ActivityLog* activity_log = ActivityLog::GetInstance(profile_.get());
+  ActivityLog* activity_log = ActivityLog::GetInstance(profile());
   scoped_ptr<base::ListValue> args(new base::ListValue());
   ASSERT_TRUE(activity_log->IsLogEnabled());
 
@@ -234,10 +193,9 @@ TEST_F(ActivityLogTest, LogAndFetchPathActions) {
 }
 
 TEST_F(ActivityLogTest, LogWithoutArguments) {
-  ActivityLog* activity_log = ActivityLog::GetInstance(profile_.get());
-  activity_log->SetArgumentLoggingForTesting(false);
+  ActivityLog* activity_log = ActivityLog::GetInstance(profile());
   ASSERT_TRUE(activity_log->IsLogEnabled());
-  activity_log->SetDefaultPolicy(ActivityLogPolicy::POLICY_NOARGS);
+  SetPolicy(false);
   scoped_ptr<base::ListValue> args(new base::ListValue());
   args->Set(0, new base::StringValue("hello"));
   args->Set(1, new base::StringValue("world"));
@@ -245,11 +203,11 @@ TEST_F(ActivityLogTest, LogWithoutArguments) {
       kExtensionId, std::string("tabs.testMethod"), args.get(), std::string());
   activity_log->GetActions(
       kExtensionId, 0, base::Bind(ActivityLogTest::Arguments_Missing));
+  SetPolicy(true);
 }
 
 TEST_F(ActivityLogTest, LogWithArguments) {
-  ActivityLog* activity_log = ActivityLog::GetInstance(profile_.get());
-  activity_log->SetDefaultPolicy(ActivityLogPolicy::POLICY_FULLSTREAM);
+  ActivityLog* activity_log = ActivityLog::GetInstance(profile());
   ASSERT_TRUE(activity_log->IsLogEnabled());
 
   scoped_ptr<base::ListValue> args(new base::ListValue());
@@ -263,7 +221,7 @@ TEST_F(ActivityLogTest, LogWithArguments) {
       kExtensionId, 0, base::Bind(ActivityLogTest::Arguments_Present));
 }
 
-TEST_F(RenderViewActivityLogTest, LogPrerender) {
+TEST_F(ActivityLogTest, LogPrerender) {
   scoped_refptr<const Extension> extension =
       ExtensionBuilder()
           .SetManifest(DictionaryBuilder()
@@ -273,7 +231,6 @@ TEST_F(RenderViewActivityLogTest, LogPrerender) {
           .Build();
   extension_service_->AddExtension(extension.get());
   ActivityLog* activity_log = ActivityLog::GetInstance(profile());
-  activity_log->SetDefaultPolicy(ActivityLogPolicy::POLICY_FULLSTREAM);
   ASSERT_TRUE(activity_log->IsLogEnabled());
   GURL url("http://www.google.com");
 
@@ -301,8 +258,7 @@ TEST_F(RenderViewActivityLogTest, LogPrerender) {
       OnScriptsExecuted(contents, executing_scripts, 0, url);
 
   activity_log->GetActions(
-      extension->id(), 0, base::Bind(
-          RenderViewActivityLogTest::Arguments_Prerender));
+      extension->id(), 0, base::Bind(ActivityLogTest::Arguments_Prerender));
 
   prerender_manager->CancelAllPrerenders();
 }

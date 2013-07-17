@@ -104,15 +104,15 @@ class TestProcessStrategy : public ProcessStrategy {
             base::FilePath(base::FilePath::StringType(kMockCacheFile)));
 
         if (command_line.HasSwitch(switches::kRecordMode)) {
-          file_util::CopyFile(url_path, url_path_copy);
+          base::CopyFile(url_path, url_path_copy);
         } else {
-          if (!file_util::ContentsEqual(url_path, url_path_copy)) {
+          if (!base::ContentsEqual(url_path, url_path_copy)) {
             std::string contents1, contents2;
             file_util::ReadFileToString(url_path, &contents1);
             file_util::ReadFileToString(url_path_copy, &contents2);
             LOG(ERROR) << "FILE MISMATCH" << contents1 << " VS " << contents2;
           }
-          EXPECT_TRUE(file_util::ContentsEqual(url_path, url_path_copy));
+          EXPECT_TRUE(base::ContentsEqual(url_path, url_path_copy));
         }
       }
 
@@ -188,7 +188,7 @@ class RecordApiTest : public InProcessBrowserTest {
     InProcessBrowserTest::CleanUpOnMainThread();
     for (std::vector<base::FilePath>::const_iterator it = temp_files_.begin();
         it != temp_files_.end(); ++it) {
-      if (!base::Delete(*it, false))
+      if (!base::DeleteFile(*it, false))
         NOTREACHED();
     }
   }

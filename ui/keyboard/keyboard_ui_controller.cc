@@ -18,7 +18,7 @@ content::WebUIDataSource* CreateKeyboardUIDataSource() {
   content::WebUIDataSource* source =
       content::WebUIDataSource::Create(keyboard::kKeyboardWebUIHost);
 
-  source->SetDefaultResource(IDR_KEYBOARD_INDEX);
+  source->SetDefaultResource(IDR_KEYBOARD_WEBUI_INDEX);
 
   source->AddResourcePath("elements/kb-accent-container.html",
                           IDR_KEYBOARD_ELEMENTS_ACCENT_CONTAINER);
@@ -27,14 +27,17 @@ content::WebUIDataSource* CreateKeyboardUIDataSource() {
   source->AddResourcePath("elements/kb-accent-set.html",
                           IDR_KEYBOARD_ELEMENTS_ACCENT_SET);
   source->AddResourcePath("elements/kb-key.html", IDR_KEYBOARD_ELEMENTS_KEY);
+  source->AddResourcePath("elements/kb-key-base.html",
+                          IDR_KEYBOARD_ELEMENTS_KEY_BASE);
   source->AddResourcePath("elements/kb-keyboard.html",
                           IDR_KEYBOARD_ELEMENTS_KEYBOARD);
   source->AddResourcePath("elements/kb-keyset.html",
                           IDR_KEYBOARD_ELEMENTS_KEYSET);
   source->AddResourcePath("elements/kb-row.html", IDR_KEYBOARD_ELEMENTS_ROW);
-  source->AddResourcePath("images/mic.svg", IDR_KEYBOARD_IMAGES_MIC);
-  source->AddResourcePath("images/mic-green.svg",
-                          IDR_KEYBOARD_IMAGES_MIC_GREEN);
+  source->AddResourcePath("images/microphone.svg",
+                          IDR_KEYBOARD_IMAGES_MICROPHONE);
+  source->AddResourcePath("images/microphone-green.svg",
+                          IDR_KEYBOARD_IMAGES_MICROPHONE_GREEN);
   source->AddResourcePath("main.js", IDR_KEYBOARD_MAIN_JS);
   source->AddResourcePath("polymer.min.js", IDR_KEYBOARD_POLYMER);
   source->AddResourcePath("voice_input.js", IDR_KEYBOARD_VOICE_INPUT_JS);
@@ -42,7 +45,7 @@ content::WebUIDataSource* CreateKeyboardUIDataSource() {
   // These files are specific to the WebUI version
   source->AddResourcePath("api_adapter.js", IDR_KEYBOARD_WEBUI_API_ADAPTER_JS);
   source->AddResourcePath("constants.js", IDR_KEYBOARD_WEBUI_CONSTANTS_JS);
-  source->AddResourcePath("keysets.html", IDR_KEYBOARD_WEBUI_KEYSETS);
+  source->AddResourcePath("layouts/qwerty.html", IDR_KEYBOARD_WEBUI_QWERTY);
   source->AddResourcePath("main.css", IDR_KEYBOARD_WEBUI_MAIN_CSS);
 
   return source;

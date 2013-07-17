@@ -9,17 +9,18 @@
 #include "base/command_line.h"
 #include "base/json/json_reader.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "chrome/common/chrome_utility_messages.h"
 #include "chrome/common/extensions/chrome_manifest_handlers.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
 #include "chrome/common/extensions/manifest.h"
 #include "chrome/common/extensions/permissions/chrome_api_permissions.h"
-#include "chrome/common/extensions/unpacker.h"
 #include "chrome/common/extensions/update_manifest.h"
 #include "chrome/common/safe_browsing/zip_analyzer.h"
-#include "chrome/common/web_resource/web_resource_unpacker.h"
+#include "chrome/utility/extensions/unpacker.h"
 #include "chrome/utility/profile_import_handler.h"
+#include "chrome/utility/web_resource_unpacker.h"
 #include "content/public/child/image_decoder_utils.h"
 #include "content/public/utility/utility_thread.h"
 #include "printing/page_range.h"
@@ -42,7 +43,9 @@
 #endif  // defined(OS_WIN)
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
+#include "chrome/common/media_galleries/picasa_types.h"
 #include "chrome/utility/itunes_library_parser.h"
+#include "chrome/utility/media_galleries/picasa_album_table_reader.h"
 #endif  // defined(OS_WIN) || defined(OS_MACOSX)
 
 #if defined(ENABLE_PRINTING)
@@ -66,7 +69,7 @@ void ReleaseProcessIfNeeded() {
 
 ChromeContentUtilityClient::ChromeContentUtilityClient() {
 #if !defined(OS_ANDROID)
-  import_handler_.reset(new ProfileImportHandler());
+  handlers_.push_back(new ProfileImportHandler());
 #endif
 }
 
@@ -79,7 +82,7 @@ void ChromeContentUtilityClient::UtilityThreadStarted() {
   // only because we need this DLL only on Windows.
   base::FilePath pdf;
   if (PathService::Get(chrome::FILE_PDF_PLUGIN, &pdf) &&
-      file_util::PathExists(pdf)) {
+      base::PathExists(pdf)) {
     bool rv = !!LoadLibrary(pdf.value().c_str());
     DCHECK(rv) << "Couldn't load PDF plugin";
   }
@@ -125,15 +128,17 @@ bool ChromeContentUtilityClient::OnMessageReceived(
 #if defined(OS_WIN) || defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(ChromeUtilityMsg_ParseITunesLibraryXmlFile,
                         OnParseITunesLibraryXmlFile)
+    IPC_MESSAGE_HANDLER(ChromeUtilityMsg_ParsePicasaPMPDatabase,
+                        OnParsePicasaPMPDatabase)
 #endif  // defined(OS_WIN) || defined(OS_MACOSX)
 
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
-#if !defined(OS_ANDROID)
-  if (!handled)
-    handled = import_handler_->OnMessageReceived(message);
-#endif
+  for (Handlers::iterator it = handlers_.begin();
+       !handled && it != handlers_.end(); ++it) {
+    handled = (*it)->OnMessageReceived(message);
+  }
 
   return handled;
 }
@@ -471,7 +476,7 @@ void ChromeContentUtilityClient::OnGetPrinterCapsAndDefaults(
   if (print_backend->GetPrinterCapsAndDefaults(printer_name, &printer_info)) {
     Send(new ChromeUtilityHostMsg_GetPrinterCapsAndDefaults_Succeeded(
         printer_name, printer_info));
-  } else
+  } else  // NOLINT
 #endif
   {
     Send(new ChromeUtilityHostMsg_GetPrinterCapsAndDefaults_Failed(
@@ -514,6 +519,33 @@ void ChromeContentUtilityClient::OnParseITunesLibraryXmlFile(
   bool result = parser.Parse(
       itunes::ITunesLibraryParser::ReadITunesLibraryXmlFile(file));
   Send(new ChromeUtilityHostMsg_GotITunesLibrary(result, parser.library()));
+  ReleaseProcessIfNeeded();
+}
+
+void ChromeContentUtilityClient::OnParsePicasaPMPDatabase(
+    const picasa::AlbumTableFilesForTransit& album_table_files) {
+  picasa::AlbumTableFiles files;
+  files.indicator_file = IPC::PlatformFileForTransitToPlatformFile(
+      album_table_files.indicator_file);
+  files.category_file = IPC::PlatformFileForTransitToPlatformFile(
+      album_table_files.category_file);
+  files.date_file = IPC::PlatformFileForTransitToPlatformFile(
+      album_table_files.date_file);
+  files.filename_file = IPC::PlatformFileForTransitToPlatformFile(
+      album_table_files.filename_file);
+  files.name_file = IPC::PlatformFileForTransitToPlatformFile(
+      album_table_files.name_file);
+  files.token_file = IPC::PlatformFileForTransitToPlatformFile(
+      album_table_files.token_file);
+  files.uid_file = IPC::PlatformFileForTransitToPlatformFile(
+      album_table_files.uid_file);
+
+  picasa::PicasaAlbumTableReader reader(files);
+  bool parse_success = reader.Init();
+  Send(new ChromeUtilityHostMsg_ParsePicasaPMPDatabase_Finished(
+      parse_success,
+      reader.albums(),
+      reader.folders()));
   ReleaseProcessIfNeeded();
 }
 #endif  // defined(OS_WIN) || defined(OS_MACOSX)

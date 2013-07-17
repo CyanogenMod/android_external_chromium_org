@@ -14,6 +14,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chrome_to_mobile_service_factory.h"
 #include "chrome/browser/invalidation/invalidation_service.h"
 #include "chrome/browser/invalidation/invalidation_service_factory.h"
@@ -26,7 +27,6 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/cloud_print/cloud_print_constants.h"
 #include "chrome/common/cloud_print/cloud_print_helpers.h"
@@ -205,7 +205,7 @@ void ReadSnapshotFile(scoped_ptr<ChromeToMobileService::JobData> data,
 // Call this as a BlockingPoolSequencedTask [after posting SubmitSnapshotFile].
 void DeleteSnapshotFile(const base::FilePath& snapshot) {
   DCHECK(!content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  bool success = base::Delete(snapshot, false);
+  bool success = base::DeleteFile(snapshot, false);
   DCHECK(success);
 }
 
@@ -252,7 +252,7 @@ bool ChromeToMobileService::UpdateAndGetCommandState(Browser* browser) {
 }
 
 // static
-void ChromeToMobileService::RegisterUserPrefs(
+void ChromeToMobileService::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterListPref(prefs::kChromeToMobileDeviceList,
                              user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);

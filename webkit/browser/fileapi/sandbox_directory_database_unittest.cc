@@ -81,7 +81,7 @@ class SandboxDirectoryDatabaseTest : public testing::Test {
     ASSERT_TRUE(db_->AddFileInfo(info, &file_id));
 
     base::FilePath local_path = path().Append(data_path);
-    if (!file_util::DirectoryExists(local_path.DirName()))
+    if (!base::DirectoryExists(local_path.DirName()))
       ASSERT_TRUE(file_util::CreateDirectory(local_path.DirName()));
 
     bool created = false;
@@ -100,7 +100,7 @@ class SandboxDirectoryDatabaseTest : public testing::Test {
 
   void ClearDatabaseAndDirectory() {
     db_.reset();
-    ASSERT_TRUE(base::Delete(path(), true /* recursive */));
+    ASSERT_TRUE(base::DeleteFile(path(), true /* recursive */));
     ASSERT_TRUE(file_util::CreateDirectory(path()));
     db_.reset(new SandboxDirectoryDatabase(path()));
   }
@@ -535,7 +535,7 @@ TEST_F(SandboxDirectoryDatabaseTest,
   CreateFile(0, FPL("foo"), kBackingFileName, NULL);
 
   EXPECT_TRUE(db()->IsFileSystemConsistent());
-  ASSERT_TRUE(base::Delete(path().Append(kBackingFileName), false));
+  ASSERT_TRUE(base::DeleteFile(path().Append(kBackingFileName), false));
   CreateFile(0, FPL("bar"), kBackingFileName, NULL);
   EXPECT_FALSE(db()->IsFileSystemConsistent());
 }
@@ -545,7 +545,7 @@ TEST_F(SandboxDirectoryDatabaseTest, TestConsistencyCheck_FileLost) {
   CreateFile(0, FPL("foo"), kBackingFileName, NULL);
 
   EXPECT_TRUE(db()->IsFileSystemConsistent());
-  ASSERT_TRUE(base::Delete(path().Append(kBackingFileName), false));
+  ASSERT_TRUE(base::DeleteFile(path().Append(kBackingFileName), false));
   EXPECT_TRUE(db()->IsFileSystemConsistent());
 }
 

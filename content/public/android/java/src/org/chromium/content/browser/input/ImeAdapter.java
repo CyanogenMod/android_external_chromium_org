@@ -129,7 +129,7 @@ public class ImeAdapter {
     }
 
     @VisibleForTesting
-    protected void setInputMethodManagerWrapper(InputMethodManagerWrapper immw) {
+    public void setInputMethodManagerWrapper(InputMethodManagerWrapper immw) {
         mInputMethodManagerWrapper = immw;
     }
 
@@ -367,6 +367,10 @@ public class ImeAdapter {
         return true;
     }
 
+    void finishComposingText() {
+        nativeFinishComposingText(mNativeImeAdapterAndroid);
+    }
+
     boolean translateAndSendNativeEvents(KeyEvent event) {
         if (mNativeImeAdapterAndroid == 0) return false;
 
@@ -547,6 +551,8 @@ public class ImeAdapter {
             int newCursorPosition);
 
     private native void nativeCommitText(int nativeImeAdapterAndroid, String text);
+
+    private native void nativeFinishComposingText(int nativeImeAdapterAndroid);
 
     private native void nativeAttachImeAdapter(int nativeImeAdapterAndroid);
 

@@ -36,6 +36,7 @@ LOCAL_SRC_FILES := \
 	content/child/child_resource_message_filter.cc \
 	content/child/child_thread.cc \
 	content/child/database_util.cc \
+	content/child/db_message_filter.cc \
 	content/child/fileapi/file_system_dispatcher.cc \
 	content/child/fileapi/webfilesystem_callback_adapters.cc \
 	content/child/fileapi/webfilesystem_impl.cc \
@@ -102,6 +103,8 @@ MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
@@ -214,6 +217,8 @@ MY_DEFS_Release := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \

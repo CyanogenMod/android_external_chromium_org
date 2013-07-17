@@ -85,7 +85,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "2.2",
+  "version": "2.4",
   "entries": [
     {
       "id": 1,
@@ -385,6 +385,33 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "features": [
         "use_non_zero_size_for_client_side_stream_buffers"
       ]
+    },
+    {
+      "id": 25,
+      "cr_bugs": [152225],
+      "description":
+          "Intel OSX drivers prior to mountain lion crashes when using PBOs",
+      "os": {
+        "type": "macosx",
+        "version": {
+          "op": "<",
+          "number": "10.8"
+        }
+      },
+      "vendor_id": "0x8086",
+      "features": [
+        "disable_async_readpixels"
+      ]
+    },
+    {
+      "id": 26,
+      "description": "Disable use of Direct3D 11 on Windows",
+      "os": {
+        "type": "win"
+      },
+      "features": [
+        "disable_d3d11"
+      ]
     }
   ]
 }
@@ -392,4 +419,3 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 );  // LONG_STRING_CONST macro
 
 }  // namespace gpu
-

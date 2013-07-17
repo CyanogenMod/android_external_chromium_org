@@ -23,14 +23,13 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest.h"
 #include "chrome/common/extensions/permissions/api_permission.h"
-#include "chrome/common/extensions/permissions/permission_message.h"
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/install_warning.h"
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
-#include "googleurl/src/gurl.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/gfx/size.h"
+#include "url/gurl.h"
 
 class ExtensionAction;
 class SkBitmap;
@@ -318,6 +317,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   bool is_legacy_packaged_app() const;
   bool is_extension() const;
   bool can_be_incognito_enabled() const;
+  bool force_incognito_enabled() const;
 
   void AddWebExtentPattern(const URLPattern& pattern);
   const URLPatternSet& web_extent() const { return extent_; }

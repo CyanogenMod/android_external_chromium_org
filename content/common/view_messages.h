@@ -5,8 +5,8 @@
 // IPC messages for page rendering.
 // Multiply-included message file, hence no include guard.
 
+#include "base/memory/shared_memory.h"
 #include "base/process.h"
-#include "base/shared_memory.h"
 #include "base/strings/string16.h"
 #include "cc/output/begin_frame_args.h"
 #include "cc/output/compositor_frame.h"
@@ -25,6 +25,7 @@
 #include "content/public/common/file_chooser_params.h"
 #include "content/public/common/frame_navigate_params.h"
 #include "content/public/common/javascript_message_type.h"
+#include "content/public/common/menu_item.h"
 #include "content/public/common/page_state.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/referrer.h"
@@ -38,6 +39,8 @@
 #include "media/audio/audio_parameters.h"
 #include "media/base/channel_layout.h"
 #include "media/base/media_log_event.h"
+#include "third_party/WebKit/public/platform/WebFloatPoint.h"
+#include "third_party/WebKit/public/platform/WebFloatRect.h"
 #include "third_party/WebKit/public/web/WebCompositionUnderline.h"
 #include "third_party/WebKit/public/web/WebFindOptions.h"
 #include "third_party/WebKit/public/web/WebMediaPlayerAction.h"
@@ -45,9 +48,8 @@
 #include "third_party/WebKit/public/web/WebPopupType.h"
 #include "third_party/WebKit/public/web/WebScreenInfo.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
-#include "third_party/WebKit/public/platform/WebFloatPoint.h"
-#include "third_party/WebKit/public/platform/WebFloatRect.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/base/range/range.h"
 #include "ui/base/ui_base_types.h"
@@ -57,7 +59,6 @@
 #include "ui/gfx/vector2d.h"
 #include "ui/gfx/vector2d_f.h"
 #include "ui/shell_dialogs/selected_file_info.h"
-#include "webkit/common/webmenuitem.h"
 #include "webkit/plugins/npapi/webplugin.h"
 
 #if defined(OS_MACOSX)
@@ -76,11 +77,11 @@ IPC_ENUM_TRAITS(WebKit::WebMediaPlayerAction::Type)
 IPC_ENUM_TRAITS(WebKit::WebPluginAction::Type)
 IPC_ENUM_TRAITS(WebKit::WebPopupType)
 IPC_ENUM_TRAITS(WebKit::WebTextDirection)
-IPC_ENUM_TRAITS(WebMenuItem::Type)
 IPC_ENUM_TRAITS(WindowContainerType)
 IPC_ENUM_TRAITS(content::FaviconURL::IconType)
 IPC_ENUM_TRAITS(content::FileChooserParams::Mode)
 IPC_ENUM_TRAITS(content::JavaScriptMessageType)
+IPC_ENUM_TRAITS(content::MenuItem::Type)
 IPC_ENUM_TRAITS(content::NavigationGesture)
 IPC_ENUM_TRAITS(content::PageZoom)
 IPC_ENUM_TRAITS(content::RendererPreferencesHintingEnum)
@@ -90,6 +91,7 @@ IPC_ENUM_TRAITS(content::ThreeDAPIType)
 IPC_ENUM_TRAITS(media::ChannelLayout)
 IPC_ENUM_TRAITS(media::MediaLogEvent::Type)
 IPC_ENUM_TRAITS(ui::MenuSourceType)
+IPC_ENUM_TRAITS_MAX_VALUE(ui::TextInputMode, ui::TEXT_INPUT_MODE_MAX)
 IPC_ENUM_TRAITS(ui::TextInputType)
 
 #if defined(OS_MACOSX)
@@ -143,9 +145,9 @@ IPC_STRUCT_TRAITS_BEGIN(WebKit::WebScreenInfo)
   IPC_STRUCT_TRAITS_MEMBER(availableRect)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(WebMenuItem)
+IPC_STRUCT_TRAITS_BEGIN(content::MenuItem)
   IPC_STRUCT_TRAITS_MEMBER(label)
-  IPC_STRUCT_TRAITS_MEMBER(toolTip)
+  IPC_STRUCT_TRAITS_MEMBER(tool_tip)
   IPC_STRUCT_TRAITS_MEMBER(type)
   IPC_STRUCT_TRAITS_MEMBER(action)
   IPC_STRUCT_TRAITS_MEMBER(rtl)
@@ -307,6 +309,8 @@ IPC_STRUCT_TRAITS_BEGIN(content::BrowserRenderingStats)
   IPC_STRUCT_TRAITS_MEMBER(total_touch_ui_latency)
   IPC_STRUCT_TRAITS_MEMBER(touch_acked_count)
   IPC_STRUCT_TRAITS_MEMBER(total_touch_acked_latency)
+  IPC_STRUCT_TRAITS_MEMBER(scroll_update_count)
+  IPC_STRUCT_TRAITS_MEMBER(total_scroll_update_latency)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_BEGIN(ViewHostMsg_CreateWindow_Params)
@@ -453,6 +457,7 @@ IPC_STRUCT_BEGIN(ViewHostMsg_OpenURL_Params)
   IPC_STRUCT_MEMBER(WindowOpenDisposition, disposition)
   IPC_STRUCT_MEMBER(int64, frame_id)
   IPC_STRUCT_MEMBER(bool, is_cross_site_redirect)
+  IPC_STRUCT_MEMBER(bool, user_gesture)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewHostMsg_SelectionBounds_Params)
@@ -480,7 +485,7 @@ IPC_STRUCT_BEGIN(ViewHostMsg_ShowPopup_Params)
   IPC_STRUCT_MEMBER(int, selected_item)
 
   // The entire list of items in the popup menu.
-  IPC_STRUCT_MEMBER(std::vector<WebMenuItem>, popup_items)
+  IPC_STRUCT_MEMBER(std::vector<content::MenuItem>, popup_items)
 
   // Whether items should be right-aligned.
   IPC_STRUCT_MEMBER(bool, right_aligned)
@@ -1056,9 +1061,10 @@ IPC_MESSAGE_ROUTED4(
     int /* selection_end */)
 
 // This message confirms an ongoing composition.
-IPC_MESSAGE_ROUTED2(ViewMsg_ImeConfirmComposition,
+IPC_MESSAGE_ROUTED3(ViewMsg_ImeConfirmComposition,
                     string16 /* text */,
-                    ui::Range /* replacement_range */)
+                    ui::Range /* replacement_range */,
+                    bool /* keep_selection */)
 
 // Sets the text composition to be between the given start and end offsets
 // in the currently focused editable field.
@@ -1408,7 +1414,7 @@ IPC_MESSAGE_ROUTED0(ViewHostMsg_RenderViewReady)
 
 // Indicates the renderer process is gone.  This actually is sent by the
 // browser process to itself, but keeps the interface cleaner.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_RenderViewGone,
+IPC_MESSAGE_ROUTED2(ViewHostMsg_RenderProcessGone,
                     int, /* this really is base::TerminationStatus */
                     int /* exit_code */)
 
@@ -1956,18 +1962,14 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_TakeFocus,
 IPC_MESSAGE_ROUTED1(ViewHostMsg_OpenDateTimeDialog,
                     ViewHostMsg_DateTimeDialogValue_Params /* value */)
 
-IPC_MESSAGE_ROUTED2(ViewHostMsg_TextInputTypeChanged,
+IPC_MESSAGE_ROUTED3(ViewHostMsg_TextInputTypeChanged,
                     ui::TextInputType /* TextInputType of the focused node */,
-                    bool /* can_compose_inline in the focused node */)
+                    bool /* can_compose_inline in the focused node */,
+                    ui::TextInputMode /* TextInputMode of the focused node */)
 
 // Required for updating text input state.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_TextInputStateChanged,
                     ViewHostMsg_TextInputState_Params /* input state params */)
-
-// Message sent when the IME text composition range changes.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_ImeCompositionRangeChanged,
-                    ui::Range /* composition range */,
-                    std::vector<gfx::Rect> /* character bounds */)
 
 // Required for cancelling an ongoing input method composition.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_ImeCancelComposition)
@@ -2327,6 +2329,15 @@ IPC_SYNC_MESSAGE_CONTROL2_1(ViewHostMsg_AllocTransportDIB,
 // renderer is finished with them.
 IPC_MESSAGE_CONTROL1(ViewHostMsg_FreeTransportDIB,
                      TransportDIB::Id /* DIB id */)
+#endif
+
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+// On MACOSX, WIN and AURA IME can request composition character bounds
+// synchronously (see crbug.com/120597). This IPC message sends the character
+// bounds after every composition change to always have correct bound info.
+IPC_MESSAGE_ROUTED2(ViewHostMsg_ImeCompositionRangeChanged,
+                    ui::Range /* composition range */,
+                    std::vector<gfx::Rect> /* character bounds */)
 #endif
 
 // Adding a new message? Stick to the sort order above: first platform

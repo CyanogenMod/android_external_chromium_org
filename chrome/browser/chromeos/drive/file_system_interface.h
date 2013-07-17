@@ -108,6 +108,18 @@ typedef base::Callback<void(FileError error,
 typedef base::Callback<void(const FileSystemMetadata&)>
     GetFilesystemMetadataCallback;
 
+// The mode of opening a file.
+enum OpenMode {
+  // Open the file if exists. If not, failed.
+  OPEN_FILE,
+
+  // Create a new file if not exists, and then open it. If exists, failed.
+  CREATE_FILE,
+
+  // Open the file if exists. If not, create a new file and then open it.
+  OPEN_OR_CREATE_FILE,
+};
+
 // Priority of a job.  Higher values are lower priority.
 enum ContextType {
   USER_INITIATED,
@@ -153,14 +165,6 @@ class FileSystemInterface {
   // Checks for updates on the server.
   virtual void CheckForUpdates() = 0;
 
-  // Finds an entry (file or directory) by using |resource_id|. This call
-  // does not initiate content refreshing.
-  //
-  // |callback| must not be null.
-  virtual void GetResourceEntryById(
-      const std::string& resource_id,
-      const GetResourceEntryCallback& callback) = 0;
-
   // Initiates transfer of |remote_src_file_path| to |local_dest_file_path|.
   // |remote_src_file_path| is the virtual source path on the Drive file system.
   // |local_dest_file_path| is the destination path on the local file system.
@@ -192,6 +196,7 @@ class FileSystemInterface {
   //
   // |callback| must not be null.
   virtual void OpenFile(const base::FilePath& file_path,
+                        OpenMode open_mode,
                         const OpenFileCallback& callback) = 0;
 
   // Closes a file at the virtual path |file_path| on the Drive file system,
@@ -315,17 +320,6 @@ class FileSystemInterface {
   virtual void GetFileByPath(const base::FilePath& file_path,
                              const GetFileCallback& callback) = 0;
 
-  // Gets a file by the given |resource_id| from the Drive server. Used for
-  // fetching pinned-but-not-fetched files.
-  //
-  // |get_file_callback| must not be null.
-  // |get_content_callback| may be null.
-  virtual void GetFileByResourceId(
-      const std::string& resource_id,
-      const ClientContext& context,
-      const GetFileCallback& get_file_callback,
-      const google_apis::GetContentCallback& get_content_callback) = 0;
-
   // Gets a file by the given |file_path|.
   // Calls |initialized_callback| when either:
   //   1) The cached file (or JSON file for hosted file) is found, or
@@ -343,19 +337,6 @@ class FileSystemInterface {
       const google_apis::GetContentCallback& get_content_callback,
       const FileOperationCallback& completion_callback) = 0;
 
-  // Updates a file by the given |resource_id| on the Drive server by
-  // uploading an updated version. Used for uploading dirty files. The file
-  // should already be present in the cache.
-  //
-  // TODO(satorux): As of now, the function only handles files with the dirty
-  // bit committed. We should eliminate the restriction. crbug.com/134558.
-  //
-  // |callback| must not be null.
-  virtual void UpdateFileByResourceId(
-      const std::string& resource_id,
-      const ClientContext& context,
-      const FileOperationCallback& callback) = 0;
-
   // Finds an entry (a file or a directory) by |file_path|. This call will also
   // retrieve and refresh file system content from server and disk cache.
   //
@@ -371,25 +352,6 @@ class FileSystemInterface {
   virtual void ReadDirectoryByPath(
       const base::FilePath& file_path,
       const ReadDirectoryCallback& callback) = 0;
-
-  // Refreshes the directory pointed by |file_path| (i.e. fetches the latest
-  // metadata of files in the target directory).
-  //
-  // In particular, this function is used to get the latest thumbnail
-  // URLs. Thumbnail URLs change periodically even if contents of files are
-  // not changed, hence we should get the new thumbnail URLs manually if we
-  // detect that the existing thumbnail URLs are stale.
-  //
-  // Upon success, the metadata of files in the target directory is updated
-  // and the change is notified via Observer::OnDirectoryChanged().
-  // |callback| is called with an error code regardless of whether the
-  // refresh was success or not. Note that this function ignores changes in
-  // directories in the target directory. Changes in directories are handled
-  // via the change lists.
-  //
-  // |callback| must not be null.
-  virtual void RefreshDirectory(const base::FilePath& file_path,
-                                const FileOperationCallback& callback) = 0;
 
   // Does server side content search for |search_query|.
   // If |next_url| is set, this is the search result url that will be fetched.

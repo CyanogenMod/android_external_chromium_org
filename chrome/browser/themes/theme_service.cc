@@ -10,6 +10,7 @@
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
@@ -17,7 +18,6 @@
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/themes/theme_syncable_service.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
@@ -199,6 +199,11 @@ bool ThemeService::HasCustomImage(int id) const {
 
   if (theme_pack_.get())
     return theme_pack_->HasCustomImage(id);
+
+  if (IsManagedUser() &&
+      (id == IDR_THEME_FRAME || id == IDR_THEME_FRAME_INACTIVE ||
+       id == IDR_THEME_TAB_BACKGROUND || id == IDR_THEME_TAB_BACKGROUND_V))
+    return true;
 
   return false;
 }

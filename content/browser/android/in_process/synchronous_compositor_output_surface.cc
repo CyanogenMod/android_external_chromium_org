@@ -154,14 +154,18 @@ void AdjustTransformForClip(gfx::Transform* transform, gfx::Rect clip) {
 }
 } // namespace
 
-bool SynchronousCompositorOutputSurface::InitializeHwDraw() {
+bool SynchronousCompositorOutputSurface::InitializeHwDraw(
+    scoped_refptr<cc::ContextProvider> offscreen_context) {
   DCHECK(CalledOnValidThread());
   DCHECK(HasClient());
   DCHECK(!context3d_);
 
-  // TODO(boliu): Get a context provider in constructor and pass here.
   return InitializeAndSetContext3D(CreateWebGraphicsContext3D().Pass(),
-                                   scoped_refptr<cc::ContextProvider>());
+                                   offscreen_context);
+}
+
+void SynchronousCompositorOutputSurface::ReleaseHwDraw() {
+  cc::OutputSurface::ReleaseGL();
 }
 
 bool SynchronousCompositorOutputSurface::DemandDrawHw(
@@ -171,14 +175,6 @@ bool SynchronousCompositorOutputSurface::DemandDrawHw(
   DCHECK(CalledOnValidThread());
   DCHECK(HasClient());
   DCHECK(context3d());
-
-  // Force a GL state restore next time a GLContextVirtual is made current.
-  // TODO(boliu): Move this to the end of this function after we have fixed
-  // all cases of MakeCurrent calls outside of draws. Tracked in
-  // crbug.com/239856.
-  gfx::GLContext* current_context = gfx::GLContext::GetCurrent();
-  if (current_context)
-    current_context->ReleaseCurrent(NULL);
 
   gfx::Transform adjusted_transform = transform;
   AdjustTransformForClip(&adjusted_transform, clip);

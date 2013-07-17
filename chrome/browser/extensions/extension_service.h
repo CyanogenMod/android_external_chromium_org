@@ -35,6 +35,7 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/extensions/manifest.h"
+#include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "extensions/common/one_shot_event.h"
@@ -350,8 +351,9 @@ class ExtensionService
   virtual void DisableExtension(const std::string& extension_id,
       extensions::Extension::DisableReason disable_reason);
 
-  // Disable non-builtin and non-managed extensions.
-  void DisableUserExtensions();
+  // Disable non-builtin and non-managed extensions with ids not in
+  // |except_ids|.
+  void DisableUserExtensions(const std::vector<std::string>& except_ids);
 
   // Updates the |extension|'s granted permissions lists to include all
   // permissions in the |extension|'s manifest and re-enables the
@@ -682,6 +684,10 @@ class ExtensionService
   void AddUpdateObserver(extensions::UpdateObserver* observer);
   void RemoveUpdateObserver(extensions::UpdateObserver* observer);
 
+  // |flare| provides a StartSyncFlare to the SyncableService. See
+  // sync_start_util for more.
+  void SetSyncStartFlare(const syncer::SyncableService::StartSyncFlare& flare);
+
  private:
   // Contains Extension data that can change during the life of the process,
   // but does not persist across restarts.
@@ -868,9 +874,10 @@ class ExtensionService
   // Store the ids of reloading extensions.
   std::set<std::string> reloading_extensions_;
 
-  // Map of inspector cookies that are detached, waiting for an extension to be
-  // reloaded.
-  typedef std::map<std::string, std::string> OrphanedDevTools;
+  // Map of DevToolsAgentHost instances that are detached,
+  // waiting for an extension to be reloaded.
+  typedef std::map<std::string, scoped_refptr<content::DevToolsAgentHost> >
+      OrphanedDevTools;
   OrphanedDevTools orphaned_dev_tools_;
 
   content::NotificationRegistrar registrar_;
@@ -936,6 +943,11 @@ class ExtensionService
 #endif
 
   ObserverList<extensions::UpdateObserver, true> update_observers_;
+
+  // Run()ning tells sync to try and start soon, because syncable changes
+  // have started happening. It will cause sync to call us back
+  // asynchronously via MergeDataAndStartSyncing as soon as possible.
+  syncer::SyncableService::StartSyncFlare flare_;
 
   FRIEND_TEST_ALL_PREFIXES(ExtensionServiceTest,
                            InstallAppsWithUnlimtedStorage);

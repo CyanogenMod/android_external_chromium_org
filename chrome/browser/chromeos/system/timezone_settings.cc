@@ -201,14 +201,14 @@ void SetTimezoneIDFromString(const std::string& id) {
   base::FilePath timezone_file(kTimezoneFilesDir + id);
 
   // Make sure timezone_file exists.
-  if (!file_util::PathExists(timezone_file)) {
+  if (!base::PathExists(timezone_file)) {
     LOG(ERROR) << "SetTimezoneID: Cannot find timezone file "
                << timezone_file.value();
     return;
   }
 
   // Delete old symlink2 if it exists.
-  base::Delete(timezone_symlink2, false);
+  base::DeleteFile(timezone_symlink2, false);
 
   // Create new symlink2.
   if (symlink(timezone_file.value().c_str(),

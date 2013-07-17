@@ -8,13 +8,14 @@
 #include "base/command_line.h"
 #include "base/message_loop.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/download/download_shelf.h"
+#include "chrome/browser/fullscreen.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "content/public/browser/navigation_details.h"
@@ -571,7 +572,7 @@ void FullscreenController::EnterFullscreenModeInternal(
 
 #if defined(OS_MACOSX)
   if (option == BROWSER_WITH_CHROME) {
-    CHECK(base::mac::IsOSLionOrLater());
+    CHECK(chrome::mac::SupportsSystemFullscreen());
     window_->EnterFullscreenWithChrome();
   } else {
 #else

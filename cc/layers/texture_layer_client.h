@@ -13,10 +13,9 @@ class TextureMailbox;
 
 class TextureLayerClient {
  public:
-  // Called to prepare this layer's texture for compositing. The client may
-  // queue a texture upload or copy on the ResourceUpdateQueue.
+  // Called to prepare this layer's texture for compositing.
   // Returns the texture ID to be used for compositing.
-  virtual unsigned PrepareTexture(ResourceUpdateQueue* queue) = 0;
+  virtual unsigned PrepareTexture() = 0;
 
   // Returns the context that is providing the texture. Used for rate limiting
   // and detecting lost context.
@@ -25,7 +24,8 @@ class TextureLayerClient {
   // Returns true and provides a mailbox if a new frame is available.
   // Returns false if no new data is available
   // and the old mailbox is to be reused.
-  virtual bool PrepareTextureMailbox(TextureMailbox* mailbox) = 0;
+  virtual bool PrepareTextureMailbox(TextureMailbox* mailbox,
+                                     bool use_shared_memory) = 0;
 
  protected:
   virtual ~TextureLayerClient() {}

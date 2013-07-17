@@ -57,7 +57,7 @@ base::FilePath GetTileImagesDir() {
     return base::FilePath();
 
   tile_images_dir = tile_images_dir.Append(L"TileImages");
-  if (!file_util::DirectoryExists(tile_images_dir) &&
+  if (!base::DirectoryExists(tile_images_dir) &&
       !file_util::CreateDirectory(tile_images_dir))
     return base::FilePath();
 
@@ -124,7 +124,7 @@ bool GetPathToBackupLogo(const base::FilePath& logo_dir,
                          base::FilePath* logo_path) {
   const wchar_t kDefaultLogoFileName[] = L"SecondaryTile.png";
   *logo_path = logo_dir.Append(kDefaultLogoFileName);
-  if (file_util::PathExists(*logo_path))
+  if (base::PathExists(*logo_path))
     return true;
 
   base::FilePath default_logo_path;
@@ -132,7 +132,7 @@ bool GetPathToBackupLogo(const base::FilePath& logo_dir,
     return false;
 
   default_logo_path = default_logo_path.Append(kDefaultLogoFileName);
-  return file_util::CopyFile(default_logo_path, *logo_path);
+  return base::CopyFile(default_logo_path, *logo_path);
 }
 
 // UMA reporting callback for site-specific secondary tile creation.

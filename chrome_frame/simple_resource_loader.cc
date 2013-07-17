@@ -148,7 +148,7 @@ void SimpleResourceLoader::DetermineLocalesDirectory(
   // We may be residing in the "locales" directory's parent, or we might be
   // in a sibling directory. Move up one and look for Locales again in the
   // latter case.
-  if (!file_util::DirectoryExists(*locales_path)) {
+  if (!base::DirectoryExists(*locales_path)) {
     *locales_path = module_path.DirName();
     *locales_path = locales_path->Append(kLocalesDirName);
   }
@@ -205,8 +205,8 @@ bool SimpleResourceLoader::LoadLocalePack(
         locales_path.Append(*scan + pack_suffix);
     base::FilePath dll_path = locales_path.Append(*scan + dll_suffix);
 
-    if (file_util::PathExists(resource_pack_path) &&
-        file_util::PathExists(dll_path)) {
+    if (base::PathExists(resource_pack_path) &&
+        base::PathExists(dll_path)) {
       scoped_ptr<ui::DataPack> cur_data_pack(
           new ui::DataPack(ui::SCALE_FACTOR_100P));
       if (!cur_data_pack->LoadFromPath(resource_pack_path))
@@ -225,7 +225,7 @@ bool SimpleResourceLoader::LoadLocalePack(
       }
     }
   }
-  DCHECK(found_pack || file_util::DirectoryExists(locales_path))
+  DCHECK(found_pack || base::DirectoryExists(locales_path))
       << "Could not locate locales DLL directory.";
   return found_pack;
 }

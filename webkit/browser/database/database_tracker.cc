@@ -416,8 +416,8 @@ bool DatabaseTracker::DeleteOrigin(const std::string& origin_identifier,
     base::FilePath new_file = new_origin_dir.Append(database.BaseName());
     base::Move(database, new_file);
   }
-  base::Delete(origin_dir, true);
-  base::Delete(new_origin_dir, true); // might fail on windows.
+  base::DeleteFile(origin_dir, true);
+  base::DeleteFile(new_origin_dir, true); // might fail on windows.
 
   databases_table_->DeleteOriginIdentifier(origin_identifier);
 
@@ -451,7 +451,7 @@ bool DatabaseTracker::LazyInit() {
 
     // If there are left-over directories from failed deletion attempts, clean
     // them up.
-    if (file_util::DirectoryExists(db_dir_)) {
+    if (base::DirectoryExists(db_dir_)) {
       base::FileEnumerator directories(
           db_dir_,
           false,
@@ -459,7 +459,7 @@ bool DatabaseTracker::LazyInit() {
           kTemporaryDirectoryPattern);
       for (base::FilePath directory = directories.Next(); !directory.empty();
            directory = directories.Next()) {
-        base::Delete(directory, true);
+        base::DeleteFile(directory, true);
       }
     }
 
@@ -467,12 +467,12 @@ bool DatabaseTracker::LazyInit() {
     // have a meta table, delete the database directory.
     const base::FilePath kTrackerDatabaseFullPath =
         db_dir_.Append(base::FilePath(kTrackerDatabaseFileName));
-    if (file_util::DirectoryExists(db_dir_) &&
-        file_util::PathExists(kTrackerDatabaseFullPath) &&
+    if (base::DirectoryExists(db_dir_) &&
+        base::PathExists(kTrackerDatabaseFullPath) &&
         (!db_->Open(kTrackerDatabaseFullPath) ||
          !sql::MetaTable::DoesTableExist(db_.get()))) {
       db_->Close();
-      if (!base::Delete(db_dir_, true))
+      if (!base::DeleteFile(db_dir_, true))
         return false;
     }
 
@@ -797,8 +797,8 @@ void DatabaseTracker::DeleteIncognitoDBDirectory() {
 
   base::FilePath incognito_db_dir =
       profile_path_.Append(kIncognitoDatabaseDirectoryName);
-  if (file_util::DirectoryExists(incognito_db_dir))
-    base::Delete(incognito_db_dir, true);
+  if (base::DirectoryExists(incognito_db_dir))
+    base::DeleteFile(incognito_db_dir, true);
 }
 
 void DatabaseTracker::ClearSessionOnlyOrigins() {

@@ -5,6 +5,7 @@
 #include "ash/display/display_manager.h"
 
 #include "ash/display/display_controller.h"
+#include "ash/display/display_layout_store.h"
 #include "ash/screen_ash.h"
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
@@ -96,9 +97,7 @@ class DisplayManagerTest : public test::AshTestBase,
   }
 
   const gfx::Display GetMirroredDisplay() {
-    test::MirrorWindowTestApi test_api;
-    return Shell::GetInstance()->display_manager()->
-        FindDisplayForRootWindow(test_api.GetRootWindow());
+    return Shell::GetInstance()->display_manager()->mirrored_display();
   }
 
   // aura::DisplayObserver overrides:
@@ -599,10 +598,16 @@ TEST_F(DisplayManagerTest, MAYBE_TestNativeDisplaysChangedNoInternal) {
             ash::Shell::GetPrimaryRootWindow()->GetHostSize().ToString());
 }
 
-TEST_F(DisplayManagerTest, EnsurePointerInDisplays) {
-  if (!SupportsMultipleDisplays())
-    return;
+#if defined(OS_WIN)
+// Tests that rely on the actual host size/location does not work on windows.
+#define MAYBE_EnsurePointerInDisplays DISABLED_EnsurePointerInDisplays
+#define MAYBE_EnsurePointerInDisplays_2ndOnLeft DISABLED_EnsurePointerInDisplays_2ndOnLeft
+#else
+#define MAYBE_EnsurePointerInDisplays EnsurePointerInDisplays
+#define MAYBE_EnsurePointerInDisplays_2ndOnLeft EnsurePointerInDisplays_2ndOnLeft
+#endif
 
+TEST_F(DisplayManagerTest, MAYBE_EnsurePointerInDisplays) {
   UpdateDisplay("200x200,300x300");
   Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
 
@@ -614,19 +619,19 @@ TEST_F(DisplayManagerTest, EnsurePointerInDisplays) {
   generator.MoveMouseToInHost(350, 150);
   EXPECT_EQ("350,150", env->last_mouse_location().ToString());
 
-  // A mouse pointer will be inside 2nd display.
+  // A mouse pointer will stay in the 2nd display.
   UpdateDisplay("300x300,200x200");
-  EXPECT_EQ("350,150", env->last_mouse_location().ToString());
+  EXPECT_EQ("450,50", env->last_mouse_location().ToString());
 
   // A mouse pointer will be outside of displays and move to the
   // center of 2nd display.
   UpdateDisplay("300x300,100x100");
   EXPECT_EQ("350,50", env->last_mouse_location().ToString());
 
-  // 2nd display was disconnected, but the mouse pointer says in the
-  // 1st display.
+  // 2nd display was disconnected, and the cursor is
+  // now in the 1st display.
   UpdateDisplay("400x400");
-  EXPECT_EQ("350,50", env->last_mouse_location().ToString());
+  EXPECT_EQ("50,350", env->last_mouse_location().ToString());
 
   // 1st display's resolution has changed, and the mouse pointer is
   // now outside. Move the mouse pointer to the center of 1st display.
@@ -637,21 +642,18 @@ TEST_F(DisplayManagerTest, EnsurePointerInDisplays) {
   generator.MoveMouseToInHost(150, 290);
   EXPECT_EQ("150,290", env->last_mouse_location().ToString());
 
-  // The mouse pointer is outside and closest display is 1st one.
+  // The mouse pointer is now on 2nd display.
   UpdateDisplay("300x280,200x200");
-  EXPECT_EQ("150,140", env->last_mouse_location().ToString());
+  EXPECT_EQ("450,10", env->last_mouse_location().ToString());
 }
 
-TEST_F(DisplayManagerTest, EnsurePointerInDisplays_2ndOnLeft) {
-  if (!SupportsMultipleDisplays())
-    return;
-
+TEST_F(DisplayManagerTest, MAYBE_EnsurePointerInDisplays_2ndOnLeft) {
   // Set the 2nd display on the left.
-  DisplayController* display_controller =
-      Shell::GetInstance()->display_controller();
-  DisplayLayout layout = display_controller->default_display_layout();
+  DisplayLayoutStore* layout_store =
+      Shell::GetInstance()->display_manager()->layout_store();
+  DisplayLayout layout = layout_store->default_display_layout();
   layout.position = DisplayLayout::LEFT;
-  display_controller->SetDefaultDisplayLayout(layout);
+  layout_store->SetDefaultDisplayLayout(layout);
 
   UpdateDisplay("200x200,300x300");
   Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
@@ -662,12 +664,12 @@ TEST_F(DisplayManagerTest, EnsurePointerInDisplays_2ndOnLeft) {
   aura::Env* env = aura::Env::GetInstance();
 
   // Set the initial position.
-  root_windows[0]->MoveCursorTo(gfx::Point(-150, 150));
-  EXPECT_EQ("-150,150", env->last_mouse_location().ToString());
+  root_windows[0]->MoveCursorTo(gfx::Point(-150, 250));
+  EXPECT_EQ("-150,250", env->last_mouse_location().ToString());
 
-  // A mouse pointer will be in 2nd display.
-  UpdateDisplay("300x300,200x200");
-  EXPECT_EQ("-150,150", env->last_mouse_location().ToString());
+  // A mouse pointer will stay in 2nd display.
+  UpdateDisplay("300x300,200x300");
+  EXPECT_EQ("-50,150", env->last_mouse_location().ToString());
 
   // A mouse pointer will be outside of displays and move to the
   // center of 2nd display.
@@ -865,6 +867,11 @@ TEST_F(DisplayManagerTest, MAYBE_UpdateMouseCursorAfterRotateZoom) {
   UpdateDisplay("300x200/r,200x150/l");
   EXPECT_EQ("249,50", env->last_mouse_location().ToString());
 
+  // The native location is now outside, so move to the center
+  // of closest display.
+  UpdateDisplay("300x200/r,100x50/l");
+  EXPECT_EQ("225,50", env->last_mouse_location().ToString());
+
   // Make sure just zooming will not change native location.
   UpdateDisplay("600x400*2,400x300");
 
@@ -876,9 +883,14 @@ TEST_F(DisplayManagerTest, MAYBE_UpdateMouseCursorAfterRotateZoom) {
 
   // Test on 2nd display.
   UpdateDisplay("600x400,400x300*2");
-  generator2.MoveMouseToInHost(200, 100);
-  EXPECT_EQ("700,50", env->last_mouse_location().ToString());
+  generator2.MoveMouseToInHost(200, 250);
+  EXPECT_EQ("700,125", env->last_mouse_location().ToString());
   UpdateDisplay("600x400,400x300*2@1.5");
+  EXPECT_EQ("750,187", env->last_mouse_location().ToString());
+
+  // The native location is now outside, so move to the
+  // center of closest display.
+  UpdateDisplay("600x400,400x200*2@1.5");
   EXPECT_EQ("750,75", env->last_mouse_location().ToString());
 }
 

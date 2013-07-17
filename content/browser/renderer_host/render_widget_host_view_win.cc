@@ -629,7 +629,7 @@ bool RenderWidgetHostViewWin::HasFocus() const {
 
 bool RenderWidgetHostViewWin::IsSurfaceAvailableForCopy() const {
   return !!render_widget_host_->GetBackingStore(false) ||
-      !!accelerated_surface_.get();
+      (accelerated_surface_.get() && accelerated_surface_->IsReadyForCopy());
 }
 
 void RenderWidgetHostViewWin::Show() {
@@ -701,8 +701,10 @@ void RenderWidgetHostViewWin::SetIsLoading(bool is_loading) {
   UpdateCursorIfOverSelf();
 }
 
-void RenderWidgetHostViewWin::TextInputTypeChanged(ui::TextInputType type,
-                                                   bool can_compose_inline) {
+void RenderWidgetHostViewWin::TextInputTypeChanged(
+    ui::TextInputType type,
+    bool can_compose_inline,
+    ui::TextInputMode input_mode) {
   if (text_input_type_ != type ||
       can_compose_inline_ != can_compose_inline) {
     const bool text_input_type_changed = (text_input_type_ != type);
@@ -802,8 +804,8 @@ void RenderWidgetHostViewWin::DidUpdateBackingStore(
     Redraw();
 }
 
-void RenderWidgetHostViewWin::RenderViewGone(base::TerminationStatus status,
-                                             int error_code) {
+void RenderWidgetHostViewWin::RenderProcessGone(base::TerminationStatus status,
+                                                int error_code) {
   UpdateCursorIfOverSelf();
   Destroy();
 }
@@ -1049,7 +1051,9 @@ void RenderWidgetHostViewWin::InsertText(const string16& text) {
     return;
   }
   if (render_widget_host_)
-    render_widget_host_->ImeConfirmComposition(text);
+    render_widget_host_->ImeConfirmComposition(text,
+                                               ui::Range::InvalidRange(),
+                                               false);
 }
 
 void RenderWidgetHostViewWin::InsertChar(char16 ch, int flags) {
@@ -1689,7 +1693,8 @@ LRESULT RenderWidgetHostViewWin::OnImeComposition(
   // and send it to a renderer process.
   ui::CompositionText composition;
   if (ime_input_.GetResult(m_hWnd, lparam, &composition.text)) {
-    render_widget_host_->ImeConfirmComposition(composition.text);
+    render_widget_host_->ImeConfirmComposition(
+        composition.text, ui::Range::InvalidRange(), false);
     ime_input_.ResetComposition(m_hWnd);
     // Fall though and try reading the composition string.
     // Japanese IMEs send a message containing both GCS_RESULTSTR and

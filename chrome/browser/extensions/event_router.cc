@@ -13,6 +13,7 @@
 #include "base/values.h"
 #include "base/version.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/extensions/api/runtime/runtime_api.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
@@ -26,7 +27,6 @@
 #include "chrome/browser/extensions/process_map.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/api/extension_api.h"
@@ -167,7 +167,6 @@ void EventRouter::DispatchEvent(IPC::Sender* ipc_sender,
 EventRouter::EventRouter(Profile* profile, ExtensionPrefs* extension_prefs)
     : profile_(profile),
       listeners_(this),
-      activity_log_(ActivityLog::GetInstance(profile)),
       dispatch_chrome_updated_event_(false) {
   registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
                  content::NotificationService::AllSources());
@@ -243,7 +242,7 @@ void EventRouter::OnListenerAdded(const EventListener* listener) {
     scoped_ptr<ListValue> args(new ListValue());
     if (listener->filter)
       args->Append(listener->filter->DeepCopy());
-    activity_log_->LogAPIAction(
+    ActivityLog::GetInstance(profile)->LogAPIAction(
         extension, event_name + ".addListener", args.get(), std::string());
   }
 #endif
@@ -273,7 +272,7 @@ void EventRouter::OnListenerRemoved(const EventListener* listener) {
                                             ExtensionService::INCLUDE_ENABLED);
   if (extension) {
     scoped_ptr<ListValue> args(new ListValue());
-    activity_log_->LogAPIAction(
+    ActivityLog::GetInstance(profile)->LogAPIAction(
         extension, event_name + ".removeListener", args.get(), std::string());
   }
 #endif

@@ -43,6 +43,7 @@ LOCAL_SRC_FILES := \
 	content/public/common/geoposition.cc \
 	content/public/common/gpu_memory_stats.cc \
 	content/public/common/media_stream_request.cc \
+	content/public/common/menu_item.cc \
 	content/public/common/page_state.cc \
 	content/public/common/page_transition_types.cc \
 	content/public/common/password_form.cc \
@@ -73,11 +74,9 @@ LOCAL_SRC_FILES := \
 	content/common/content_param_traits.cc \
 	content/common/content_paths.cc \
 	content/common/cookie_data.cc \
-	content/common/db_message_filter.cc \
 	content/common/find_match_rect_android.cc \
 	content/common/font_list.cc \
 	content/common/font_list_android.cc \
-	content/common/gamepad_seqlock.cc \
 	content/common/gamepad_user_gesture.cc \
 	content/common/gpu/client/command_buffer_proxy_impl.cc \
 	content/common/gpu/client/context_provider_command_buffer.cc \
@@ -112,6 +111,7 @@ LOCAL_SRC_FILES := \
 	content/common/message_router.cc \
 	content/common/net/url_fetcher.cc \
 	content/common/net/url_request_user_data.cc \
+	content/common/one_writer_seqlock.cc \
 	content/common/page_state_serialization.cc \
 	content/common/page_zoom.cc \
 	content/common/pepper_renderer_instance_data.cc \
@@ -170,8 +170,9 @@ MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
-	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
@@ -290,8 +291,9 @@ MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
-	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \

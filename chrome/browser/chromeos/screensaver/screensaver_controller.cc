@@ -10,10 +10,10 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/logging.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -45,7 +45,7 @@ std::string FindScreensaverExtension(ExtensionService* service,
   for (ExtensionSet::const_iterator it = extensions->begin();
       it != extensions->end();
       ++it) {
-    const extensions::Extension* extension = *it;
+    const extensions::Extension* extension = it->get();
     if (extension &&
         extension->id() != exclude_id &&
         extension->HasAPIPermission(extensions::APIPermission::kScreensaver)) {
@@ -142,7 +142,7 @@ void ScreensaverController::IdleNotify(int64 threshold) {
     ash::Shell::GetInstance()->user_activity_detector()->AddObserver(this);
 }
 
-void ScreensaverController::OnUserActivity() {
+void ScreensaverController::OnUserActivity(const ui::Event* event) {
   // We don't want to handle further user notifications; we'll either login
   // the user and close out or or at least close the screensaver.
   if (ash::Shell::GetInstance()->user_activity_detector()->HasObserver(this))

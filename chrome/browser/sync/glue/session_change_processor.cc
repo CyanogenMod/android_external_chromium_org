@@ -8,13 +8,13 @@
 #include <vector>
 
 #include "base/logging.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_changed_details.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/glue/session_model_associator.h"
 #include "chrome/browser/sync/glue/synced_tab_delegate.h"
 #include "chrome/browser/sync/profile_sync_service.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
@@ -207,13 +207,10 @@ void SessionChangeProcessor::Observe(
         entry->GetVirtualURL().spec() == kNTPOpenTabSyncURL) {
       DVLOG(1) << "Triggering sync refresh for sessions datatype.";
       const syncer::ModelTypeSet types(syncer::SESSIONS);
-      const syncer::ModelTypeInvalidationMap& invalidation_map =
-          ModelTypeSetToInvalidationMap(types, std::string());
       content::NotificationService::current()->Notify(
           chrome::NOTIFICATION_SYNC_REFRESH_LOCAL,
           content::Source<Profile>(profile_),
-          content::Details<const syncer::ModelTypeInvalidationMap>(
-              &invalidation_map));
+          content::Details<const syncer::ModelTypeSet>(&types));
     }
   }
 

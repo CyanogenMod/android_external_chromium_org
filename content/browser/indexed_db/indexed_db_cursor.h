@@ -5,7 +5,7 @@
 #ifndef CONTENT_BROWSER_INDEXED_DB_INDEXED_DB_CURSOR_H_
 #define CONTENT_BROWSER_INDEXED_DB_INDEXED_DB_CURSOR_H_
 
-#include <vector>
+#include <string>
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
@@ -21,36 +21,21 @@ class IndexedDBTransaction;
 class CONTENT_EXPORT IndexedDBCursor
     : NON_EXPORTED_BASE(public base::RefCounted<IndexedDBCursor>) {
  public:
-  static scoped_refptr<IndexedDBCursor> Create(
-      scoped_ptr<IndexedDBBackingStore::Cursor> cursor,
-      indexed_db::CursorType cursor_type,
-      IndexedDBTransaction* transaction) {
-    return make_scoped_refptr(
-        new IndexedDBCursor(cursor.Pass(),
-                            cursor_type,
-                            IndexedDBDatabase::NORMAL_TASK,
-                            transaction));
-  }
-  static scoped_refptr<IndexedDBCursor> Create(
-      scoped_ptr<IndexedDBBackingStore::Cursor> cursor,
-      indexed_db::CursorType cursor_type,
-      IndexedDBDatabase::TaskType task_type,
-      IndexedDBTransaction* transaction) {
-    return make_scoped_refptr(new IndexedDBCursor(
-        cursor.Pass(), cursor_type, task_type, transaction));
-  }
+  IndexedDBCursor(scoped_ptr<IndexedDBBackingStore::Cursor> cursor,
+                  indexed_db::CursorType cursor_type,
+                  IndexedDBDatabase::TaskType task_type,
+                  IndexedDBTransaction* transaction);
 
-  // IndexedDBCursor
   void Advance(uint32 count, scoped_refptr<IndexedDBCallbacks> callbacks);
-  void ContinueFunction(scoped_ptr<IndexedDBKey> key,
-                        scoped_refptr<IndexedDBCallbacks> callbacks);
+  void Continue(scoped_ptr<IndexedDBKey> key,
+                scoped_refptr<IndexedDBCallbacks> callbacks);
   void PrefetchContinue(int number_to_fetch,
                         scoped_refptr<IndexedDBCallbacks> callbacks);
   void PrefetchReset(int used_prefetches, int unused_prefetches);
 
   const IndexedDBKey& key() const { return cursor_->key(); }
   const IndexedDBKey& primary_key() const { return cursor_->primary_key(); }
-  std::vector<char>* Value() const {
+  std::string* Value() const {
     return (cursor_type_ == indexed_db::CURSOR_KEY_ONLY) ? NULL
                                                          : cursor_->Value();
   }
@@ -59,10 +44,6 @@ class CONTENT_EXPORT IndexedDBCursor
  private:
   friend class base::RefCounted<IndexedDBCursor>;
 
-  IndexedDBCursor(scoped_ptr<IndexedDBBackingStore::Cursor> cursor,
-                  indexed_db::CursorType cursor_type,
-                  IndexedDBDatabase::TaskType task_type,
-                  IndexedDBTransaction* transaction);
   ~IndexedDBCursor();
 
   class CursorIterationOperation;

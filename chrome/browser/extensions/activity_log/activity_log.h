@@ -121,11 +121,13 @@ class ActivityLog : public BrowserContextKeyedService,
   // We keep track of whether the whitelisted extension is installed; if it is,
   // we want to recompute whether to have logging enabled.
   virtual void OnExtensionInstalled(
+      const extensions::Extension* extension) OVERRIDE {}
+  virtual void OnExtensionLoaded(
+      const extensions::Extension* extension) OVERRIDE;
+  virtual void OnExtensionUnloaded(
       const extensions::Extension* extension) OVERRIDE;
   virtual void OnExtensionUninstalled(
-      const extensions::Extension* extension) OVERRIDE;
-  virtual void OnExtensionDisabled(
-      const extensions::Extension* extension) OVERRIDE;
+      const extensions::Extension* extension) OVERRIDE {}
   // We also have to list the following from InstallObserver.
   virtual void OnBeginExtensionInstall(const std::string& extension_id,
                                        const std::string& extension_name,
@@ -140,28 +142,20 @@ class ActivityLog : public BrowserContextKeyedService,
       const std::string& extension_id) OVERRIDE {}
   virtual void OnShutdown() OVERRIDE {}
 
-  // For unit tests only.
-  // TODO(felt) In the future, when we'll have multiple policies, it might
-  // be needed to rename the argument.
-  void SetArgumentLoggingForTesting(bool log_arguments);
-  static void RecomputeLoggingIsEnabled(bool profile_enabled);
-
   // BrowserContextKeyedService
   virtual void Shutdown() OVERRIDE;
 
-  // At the moment, ActivityLog will use only one policy for summarization
-  // (POLICY_NOARGS by default).  This static member function can be used
-  // to change the default type, but has to be called before the first
-  // GetInstance call.
-  // TODO(dbabic,felt) ActivityLog should support multiple policies at the
-  // same time, so this will need to be changed later.
-  void SetDefaultPolicy(ActivityLogPolicy::PolicyType policy_type);
-
  private:
   friend class ActivityLogFactory;
+  friend class ActivityLogTest;
+  friend class RenderViewActivityLogTest;
 
   explicit ActivityLog(Profile* profile);
   virtual ~ActivityLog();
+
+  // Some setup needs to wait until after the ExtensionSystem/ExtensionService
+  // are done with their own setup.
+  void Init();
 
   // We log callbacks and API calls very similarly, so we handle them the same
   // way internally.
@@ -180,20 +174,32 @@ class ActivityLog : public BrowserContextKeyedService,
       int32 page_id,
       const GURL& on_url) OVERRIDE;
 
+  // For unit tests only. Does not call Init again!
+  // Sets whether logging should be enabled for the whole current profile.
+  static void RecomputeLoggingIsEnabled(bool profile_enabled);
+
+  // At the moment, ActivityLog will use only one policy for summarization.
+  // These methods are used to choose and set the most appropriate policy.
+  void ChooseDefaultPolicy();
+  void SetDefaultPolicy(ActivityLogPolicy::PolicyType policy_type);
+
   typedef ObserverListThreadSafe<Observer> ObserverList;
   scoped_refptr<ObserverList> observers_;
 
   // The policy object takes care of data summarization, compression, and
-  // logging
+  // logging.  The policy object is owned by the ActivityLog, but this cannot
+  // be a scoped_ptr since some cleanup work must happen on the database
+  // thread.  Calling policy_->Close() will free the object; see the comments
+  // on the ActivityDatabase class for full details.
   extensions::ActivityLogPolicy* policy_;
 
   // TODO(dbabic,felt) change this into a list of policy types later.
   ActivityLogPolicy::PolicyType policy_type_;
 
   Profile* profile_;
-  // TODO(felt) These two flags could use a comment.
-  bool enabled_;
-  bool first_time_checking_;
+  bool enabled_;  // Whether logging is currently enabled.
+  bool initialized_;  // Whether Init() has already been called.
+  bool policy_chosen_;  // Whether we've already set the default policy.
   // testing_mode_ controls whether to log API call arguments. By default, we
   // don't log most arguments to avoid saving too much data. In testing mode,
   // argument collection is enabled. We also whitelist some arguments for
@@ -205,6 +211,8 @@ class ActivityLog : public BrowserContextKeyedService,
   // ActivityDatabase to prevent things from exploding.
   bool has_threads_;
 
+  // Used to track whether the whitelisted extension is installed. If it's
+  // added or removed, enabled_ may change.
   InstallTracker* tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(ActivityLog);

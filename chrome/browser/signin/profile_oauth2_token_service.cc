@@ -8,18 +8,32 @@
 #include "base/message_loop.h"
 #include "base/stl_util.h"
 #include "base/time/time.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/signin_global_error.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/token_service.h"
 #include "chrome/browser/signin/token_service_factory.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/browser/ui/global_error/global_error_service.h"
+#include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "net/url_request/url_request_context_getter.h"
+
+namespace {
+
+std::string GetAccountId(Profile* profile) {
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetForProfileIfExists(profile);
+  return signin_manager ? signin_manager->GetAuthenticatedUsername() :
+      std::string();
+}
+
+}  // namespace
 
 ProfileOAuth2TokenService::ProfileOAuth2TokenService(
     net::URLRequestContextGetter* getter)
@@ -29,6 +43,9 @@ ProfileOAuth2TokenService::ProfileOAuth2TokenService(
 }
 
 ProfileOAuth2TokenService::~ProfileOAuth2TokenService() {
+  DCHECK(!signin_global_error_.get()) <<
+      "ProfileOAuth2TokenService::Initialize called but not "
+      "ProfileOAuth2TokenService::Shutdown";
 }
 
 void ProfileOAuth2TokenService::Initialize(Profile* profile) {
@@ -38,6 +55,11 @@ void ProfileOAuth2TokenService::Initialize(Profile* profile) {
   DCHECK(!profile_);
   profile_ = profile;
 
+  signin_global_error_.reset(new SigninGlobalError(profile));
+  GlobalErrorServiceFactory::GetForProfile(profile_)->AddGlobalError(
+      signin_global_error_.get());
+  signin_global_error_->AddProvider(this);
+
   content::Source<TokenService> token_service_source(
       TokenServiceFactory::GetForProfile(profile));
   registrar_.Add(this,
@@ -46,15 +68,19 @@ void ProfileOAuth2TokenService::Initialize(Profile* profile) {
   registrar_.Add(this,
                  chrome::NOTIFICATION_TOKEN_AVAILABLE,
                  token_service_source);
-  SigninManagerFactory::GetForProfile(profile_)->signin_global_error()->
-      AddProvider(this);
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_TOKEN_REQUEST_FAILED,
+                 token_service_source);
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_TOKEN_LOADING_FINISHED,
+                 token_service_source);
 }
 
 void ProfileOAuth2TokenService::Shutdown() {
-  if (profile_) {
-    SigninManagerFactory::GetForProfile(profile_)->signin_global_error()->
-        RemoveProvider(this);
-  }
+  signin_global_error_->RemoveProvider(this);
+  GlobalErrorServiceFactory::GetForProfile(profile_)->RemoveGlobalError(
+      signin_global_error_.get());
+  signin_global_error_.reset();
 }
 
 std::string ProfileOAuth2TokenService::GetRefreshToken() {
@@ -75,8 +101,7 @@ void ProfileOAuth2TokenService::UpdateAuthError(
 
   if (error.state() != last_auth_error_.state()) {
     last_auth_error_ = error;
-    SigninManagerFactory::GetForProfile(profile_)->signin_global_error()->
-        AuthStatusChanged();
+    signin_global_error_->AuthStatusChanged();
   }
 }
 
@@ -84,19 +109,44 @@ void ProfileOAuth2TokenService::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  DCHECK(type == chrome::NOTIFICATION_TOKENS_CLEARED ||
-         type == chrome::NOTIFICATION_TOKEN_AVAILABLE);
-  if (type == chrome::NOTIFICATION_TOKEN_AVAILABLE) {
-    TokenService::TokenAvailableDetails* tok_details =
-        content::Details<TokenService::TokenAvailableDetails>(details).ptr();
-    if (tok_details->service() != GaiaConstants::kGaiaOAuth2LoginRefreshToken)
-      return;
+  switch (type) {
+    case chrome::NOTIFICATION_TOKEN_AVAILABLE: {
+      TokenService::TokenAvailableDetails* tok_details =
+          content::Details<TokenService::TokenAvailableDetails>(details).ptr();
+      if (tok_details->service() ==
+          GaiaConstants::kGaiaOAuth2LoginRefreshToken) {
+        ClearCache();
+        UpdateAuthError(GoogleServiceAuthError::AuthErrorNone());
+        FireRefreshTokenAvailable(GetAccountId(profile_));
+      }
+      break;
+    }
+    case chrome::NOTIFICATION_TOKEN_REQUEST_FAILED: {
+      TokenService::TokenRequestFailedDetails* tok_details =
+          content::Details<TokenService::TokenRequestFailedDetails>(details)
+              .ptr();
+      if (tok_details->service() == GaiaConstants::kLSOService ||
+          tok_details->service() ==
+              GaiaConstants::kGaiaOAuth2LoginRefreshToken) {
+        ClearCache();
+        UpdateAuthError(tok_details->error());
+        FireRefreshTokenRevoked(GetAccountId(profile_), tok_details->error());
+      }
+      break;
+    }
+    case chrome::NOTIFICATION_TOKENS_CLEARED: {
+      ClearCache();
+      UpdateAuthError(GoogleServiceAuthError::AuthErrorNone());
+      FireRefreshTokensCleared();
+      break;
+    }
+    case chrome::NOTIFICATION_TOKEN_LOADING_FINISHED:
+      FireRefreshTokensLoaded();
+      break;
+    default:
+      NOTREACHED() << "Invalid notification type=" << type;
+      break;
   }
-  // The GaiaConstants::kGaiaOAuth2LoginRefreshToken token is used to create
-  // OAuth2 access tokens. If this token either changes or is cleared, any
-  // available tokens must be invalidated.
-  ClearCache();
-  UpdateAuthError(GoogleServiceAuthError::AuthErrorNone());
 }
 
 GoogleServiceAuthError ProfileOAuth2TokenService::GetAuthStatus() const {

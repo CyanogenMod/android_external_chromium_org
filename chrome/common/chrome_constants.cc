@@ -138,11 +138,11 @@ const base::FilePath::CharType kMetroDriverDll[] = FPL("metro_driver.dll");
 const wchar_t kStatusTrayWindowClass[] = L"Chrome_StatusTrayWindow";
 #endif  // defined(OS_WIN)
 
-const wchar_t kMessageWindowClass[] = L"Chrome_MessageWindow";
 const wchar_t kCrashReportLog[] = L"Reported Crashes.txt";
 const wchar_t kTestingInterfaceDLL[] = L"testing_interface.dll";
 const char    kInitialProfile[] = "Default";
 const char    kMultiProfileDirPrefix[] = "Profile ";
+const base::FilePath::CharType kGuestProfileDir[] = FPL("Guest Profile");
 const wchar_t kBrowserResourcesDll[] = L"chrome.dll";
 const base::FilePath::CharType kExtensionFileExtension[] = FPL(".crx");
 const base::FilePath::CharType kExtensionKeyFileExtension[] = FPL(".pem");

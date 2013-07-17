@@ -4,15 +4,18 @@
 
 #include "chrome/browser/extensions/component_loader.h"
 
+#include <map>
+#include <string>
+
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/metrics/field_trial.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_change_registrar.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
@@ -23,6 +26,8 @@
 #include "content/public/browser/notification_source.h"
 #include "extensions/common/id_util.h"
 #include "grit/browser_resources.h"
+#include "grit/generated_resources.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(USE_AURA)
@@ -44,12 +49,11 @@
 #include "chromeos/chromeos_switches.h"
 #include "content/public/browser/storage_partition.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/sandbox_mount_point_provider.h"
+#include "webkit/browser/fileapi/sandbox_file_system_backend.h"
 #endif
 
 #if defined(ENABLE_APP_LIST)
 #include "grit/chromium_strings.h"
-#include "ui/base/l10n/l10n_util.h"
 #endif
 
 namespace extensions {
@@ -57,6 +61,30 @@ namespace extensions {
 namespace {
 
 static bool enable_background_extensions_during_testing = false;
+
+std::string LookupWebstoreName() {
+  const char kWebStoreNameFieldTrialName[] = "WebStoreName";
+  const char kStoreControl[] = "StoreControl";
+  const char kWebStore[] = "WebStore";
+  const char kGetApps[] = "GetApps";
+  const char kAddApps[] = "AddApps";
+  const char kMoreApps[] = "MoreApps";
+
+  typedef std::map<std::string, int> NameMap;
+  CR_DEFINE_STATIC_LOCAL(NameMap, names, ());
+  if (names.empty()) {
+    names.insert(std::make_pair(kStoreControl, IDS_WEBSTORE_NAME_STORE));
+    names.insert(std::make_pair(kWebStore, IDS_WEBSTORE_NAME_WEBSTORE));
+    names.insert(std::make_pair(kGetApps, IDS_WEBSTORE_NAME_GET_APPS));
+    names.insert(std::make_pair(kAddApps, IDS_WEBSTORE_NAME_ADD_APPS));
+    names.insert(std::make_pair(kMoreApps, IDS_WEBSTORE_NAME_MORE_APPS));
+  }
+  std::string field_trial_name =
+      base::FieldTrialList::FindFullName(kWebStoreNameFieldTrialName);
+  NameMap::iterator it = names.find(field_trial_name);
+  int string_id = it == names.end() ? names[kStoreControl] : it->second;
+  return l10n_util::GetStringUTF8(string_id);
+}
 
 std::string GenerateId(const DictionaryValue* manifest,
                        const base::FilePath& path) {
@@ -269,11 +297,12 @@ void ComponentLoader::AddImageLoaderExtension() {
 #endif  // defined(IMAGE_LOADER_EXTENSION)
 }
 
-void ComponentLoader::AddChromeApp() {
-#if defined(ENABLE_APP_LIST)
+void ComponentLoader::AddWithName(int manifest_resource_id,
+                                  const base::FilePath& root_directory,
+                                  const std::string& name) {
   std::string manifest_contents =
       ResourceBundle::GetSharedInstance().GetRawDataResource(
-          IDR_CHROME_APP_MANIFEST).as_string();
+          manifest_resource_id).as_string();
 
   // The Value is kept for the lifetime of the ComponentLoader. This is
   // required in case LoadAll() is called again.
@@ -281,10 +310,16 @@ void ComponentLoader::AddChromeApp() {
 
   if (manifest) {
     // Update manifest to use a proper name.
-    manifest->SetString(extension_manifest_keys::kName,
-                        l10n_util::GetStringUTF8(IDS_SHORT_PRODUCT_NAME));
-    Add(manifest, base::FilePath(FILE_PATH_LITERAL("chrome_app")));
+    manifest->SetString(extension_manifest_keys::kName, name);
+    Add(manifest, root_directory);
   }
+}
+
+void ComponentLoader::AddChromeApp() {
+#if defined(ENABLE_APP_LIST)
+  AddWithName(IDR_CHROME_APP_MANIFEST,
+              base::FilePath(FILE_PATH_LITERAL("chrome_app")),
+              l10n_util::GetStringUTF8(IDS_SHORT_PRODUCT_NAME));
 #endif
 }
 
@@ -293,6 +328,12 @@ void ComponentLoader::AddKeyboardApp() {
   if (keyboard::IsKeyboardEnabled())
     Add(IDR_KEYBOARD_MANIFEST, base::FilePath(FILE_PATH_LITERAL("keyboard")));
 #endif
+}
+
+void ComponentLoader::AddWebStoreApp() {
+  AddWithName(IDR_WEBSTORE_MANIFEST,
+              base::FilePath(FILE_PATH_LITERAL("web_store")),
+              LookupWebstoreName());
 }
 
 // static
@@ -335,7 +376,7 @@ void ComponentLoader::AddDefaultComponentExtensions(
 #endif
 
   if (!skip_session_components) {
-    Add(IDR_WEBSTORE_MANIFEST, base::FilePath(FILE_PATH_LITERAL("web_store")));
+    AddWebStoreApp();
     AddChromeApp();
   }
 

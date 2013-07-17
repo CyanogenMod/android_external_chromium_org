@@ -31,6 +31,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/download/download_util.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -44,7 +45,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/extensions/extension_basic_info.h"
 #include "chrome/common/cancelable_task_tracker.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/extension_set.h"
@@ -78,7 +78,6 @@
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/system/syslogs_provider.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -323,7 +322,7 @@ void CloseDebugLogFile(PassPlatformFile pass_platform_file) {
 void CloseAndDeleteDebugLogFile(PassPlatformFile pass_platform_file,
                                 const base::FilePath& file_path) {
   CloseDebugLogFile(pass_platform_file);
-  base::Delete(file_path, false);
+  base::DeleteFile(file_path, false);
 }
 
 // Called upon completion of |WriteDebugLogToFile|. Closes file
@@ -1587,7 +1586,7 @@ void NetInternalsMessageHandler::OnImportONCFile(const ListValue* list) {
   }
 
   chromeos::NetworkLibrary* network_library =
-      chromeos::CrosLibrary::Get()->GetNetworkLibrary();
+      chromeos::NetworkLibrary::Get();
   network_library->LoadOncNetworks(network_configs, onc_source);
 
   // Now that we've added the networks, we need to rescan them so they'll be

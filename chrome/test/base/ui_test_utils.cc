@@ -19,6 +19,7 @@
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/test_timeouts.h"
 #include "base/time/time.h"
@@ -27,6 +28,7 @@
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -47,7 +49,6 @@
 #include "chrome/browser/ui/omnibox/location_bar.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/bookmark_load_observer.h"
@@ -109,14 +110,14 @@ base::FilePath GetSnapshotFileName(const base::FilePath& snapshot_directory) {
       the_time.hour, the_time.minute, the_time.second, kSnapshotExtension));
 
   base::FilePath snapshot_file = snapshot_directory.AppendASCII(filename);
-  if (file_util::PathExists(snapshot_file)) {
+  if (base::PathExists(snapshot_file)) {
     int index = 0;
     std::string suffix;
     base::FilePath trial_file;
     do {
       suffix = base::StringPrintf(" (%d)", ++index);
       trial_file = snapshot_file.InsertBeforeExtensionASCII(suffix);
-    } while (file_util::PathExists(trial_file));
+    } while (base::PathExists(trial_file));
     snapshot_file = trial_file;
   }
   return snapshot_file;

@@ -34,12 +34,13 @@ class CC_EXPORT TextureLayerImpl : public LayerImpl {
 
   virtual void DidLoseOutputSurface() OVERRIDE;
 
-  virtual void DidBecomeActive() OVERRIDE;
-
   unsigned texture_id() const { return texture_id_; }
   void set_texture_id(unsigned id) { texture_id_ = id; }
   void set_premultiplied_alpha(bool premultiplied_alpha) {
     premultiplied_alpha_ = premultiplied_alpha;
+  }
+  void set_blend_background_color(bool blend) {
+    blend_background_color_ = blend;
   }
   void set_flipped(bool flipped) { flipped_ = flipped; }
   void set_uv_top_left(gfx::PointF top_left) { uv_top_left_ = top_left; }
@@ -70,6 +71,7 @@ class CC_EXPORT TextureLayerImpl : public LayerImpl {
   unsigned texture_id_;
   ResourceProvider::ResourceId external_texture_resource_;
   bool premultiplied_alpha_;
+  bool blend_background_color_;
   bool flipped_;
   gfx::PointF uv_top_left_;
   gfx::PointF uv_bottom_right_;

@@ -18,9 +18,9 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_thread.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_util.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -411,7 +411,7 @@ void SaveFileManager::CancelSave(int save_id) {
       // We've won a race with the UI thread--we finished the file before
       // the UI thread cancelled it on us.  Unfortunately, in this situation
       // the cancel wins, so we need to delete the now detached file.
-      base::Delete(save_file->FullPath(), false);
+      base::DeleteFile(save_file->FullPath(), false);
     } else if (save_file->save_source() ==
                SaveFileCreateInfo::SAVE_FILE_FROM_NET) {
       // If the data comes from the net IO thread and hasn't completed
@@ -459,9 +459,9 @@ void SaveFileManager::SaveLocalFile(const GURL& original_file_url,
 
   // Copy the local file to the temporary file. It will be renamed to its
   // final name later.
-  bool success = file_util::CopyFile(file_path, save_file->FullPath());
+  bool success = base::CopyFile(file_path, save_file->FullPath());
   if (!success)
-    base::Delete(save_file->FullPath(), false);
+    base::DeleteFile(save_file->FullPath(), false);
   SaveFinished(save_id, original_file_url, render_process_id, success);
 }
 
@@ -470,7 +470,7 @@ void SaveFileManager::OnDeleteDirectoryOrFile(const base::FilePath& full_path,
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   DCHECK(!full_path.empty());
 
-  base::Delete(full_path, is_dir);
+  base::DeleteFile(full_path, is_dir);
 }
 
 void SaveFileManager::RenameAllFiles(
@@ -481,7 +481,7 @@ void SaveFileManager::RenameAllFiles(
     int save_package_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
-  if (!resource_dir.empty() && !file_util::PathExists(resource_dir))
+  if (!resource_dir.empty() && !base::PathExists(resource_dir))
     file_util::CreateDirectory(resource_dir);
 
   for (FinalNameList::const_iterator i = final_names.begin();
@@ -524,7 +524,7 @@ void SaveFileManager::RemoveSavedFileFromFileMap(
     if (it != save_file_map_.end()) {
       SaveFile* save_file = it->second;
       DCHECK(!save_file->InProgress());
-      base::Delete(save_file->FullPath(), false);
+      base::DeleteFile(save_file->FullPath(), false);
       delete save_file;
       save_file_map_.erase(it);
     }

@@ -207,6 +207,10 @@
       # Note: this setting is ignored if buildtype=="Official".
       'logging_like_official_build%': 0,
 
+      # Set to 1 to make a build that disables unshipped tracing events.
+      # Note: this setting is ignored if buildtype=="Official".
+      'tracing_like_official_build%': 0,
+
       # Disable file manager component extension by default.
       'file_manager_extension%': 0,
 
@@ -353,12 +357,6 @@
       # Enables autofill dialog and associated features; disabled by default.
       'enable_autofill_dialog%' : 0,
 
-      # Uses spring wallpaper resources on Spring.
-      'use_spring_wallpaper%': 0,
-
-      # Uses OEM-specific wallpaper resources on Chrome OS.
-      'use_oem_wallpaper%': 0,
-
       # Enables support for background apps.
       'enable_background%': 1,
 
@@ -420,9 +418,16 @@
       # Managed users are enabled by default.
       'enable_managed_users%': 1,
 
+      # Platform natively supports discardable memory.
+      'native_discardable_memory%': 0,
+
+      # Platform sends memory pressure signals natively.
+      'native_memory_pressure_signals%': 0,
+
       'spdy_proxy_auth_origin%' : '',
       'spdy_proxy_auth_property%' : '',
       'spdy_proxy_auth_value%' : '',
+      'enable_mdns%' : 0,
 
       'conditions': [
         # A flag for POSIX platforms
@@ -515,6 +520,8 @@
           'remoting%': 0,
           'arm_neon%': 0,
           'arm_neon_optional%': 1,
+          'native_discardable_memory%': 1,
+          'native_memory_pressure_signals%': 1,
         }],
 
         # Enable autofill dialog for Android and Views-enabled platforms for now.
@@ -539,7 +546,7 @@
           'enable_automation%': 0,
           'enable_extensions%': 0,
           'enable_google_now%': 0,
-          'enable_language_detection%': 0,
+          'enable_language_detection%': 1,
           'enable_printing%': 0,
           'enable_session_service%': 0,
           'enable_themes%': 0,
@@ -636,7 +643,6 @@
 
         ['OS=="linux" and target_arch=="arm" and chromeos==0', {
           # Set some defaults for arm/linux chrome builds
-          'linux_breakpad%': 0,
           'linux_use_tcmalloc%': 0,
           # sysroot needs to be an absolute path otherwise it generates
           # incorrect results when passed to pkg-config
@@ -686,6 +692,9 @@
         }, {
           'use_openmax_dl_fft%': 0,
         }],
+        ['OS=="win" or OS=="linux"', {
+            'enable_mdns%' : 1,
+        }]
       ],
 
       # Set this to 1 to enable use of concatenated impulse responses
@@ -768,6 +777,7 @@
     'fastbuild%': '<(fastbuild)',
     'dcheck_always_on%': '<(dcheck_always_on)',
     'logging_like_official_build%': '<(logging_like_official_build)',
+    'tracing_like_official_build%': '<(tracing_like_official_build)',
     'python_ver%': '<(python_ver)',
     'arm_version%': '<(arm_version)',
     'armv7%': '<(armv7)',
@@ -802,8 +812,6 @@
     'enable_session_service%': '<(enable_session_service)',
     'enable_themes%': '<(enable_themes)',
     'enable_autofill_dialog%': '<(enable_autofill_dialog)',
-    'use_spring_wallpaper%': '<(use_spring_wallpaper)',
-    'use_oem_wallpaper%': '<(use_oem_wallpaper)',
     'enable_background%': '<(enable_background)',
     'linux_use_gold_binary%': '<(linux_use_gold_binary)',
     'linux_use_gold_flags%': '<(linux_use_gold_flags)',
@@ -834,9 +842,12 @@
     'google_default_client_id%': '<(google_default_client_id)',
     'google_default_client_secret%': '<(google_default_client_secret)',
     'enable_managed_users%': '<(enable_managed_users)',
+    'native_discardable_memory%': '<(native_discardable_memory)',
+    'native_memory_pressure_signals%': '<(native_memory_pressure_signals)',
     'spdy_proxy_auth_origin%': '<(spdy_proxy_auth_origin)',
     'spdy_proxy_auth_property%': '<(spdy_proxy_auth_property)',
     'spdy_proxy_auth_value%': '<(spdy_proxy_auth_value)',
+    'enable_mdns%' : '<(enable_mdns)',
 
     # Use system mesa instead of bundled one.
     'use_system_mesa%': 0,
@@ -968,9 +979,6 @@
 
     # Enable strict glibc debug mode.
     'glibcxx_debug%': 0,
-    # Compile in Breakpad support by default so that it can be tested,
-    # even if it not enabled by default at runtime.
-    'linux_breakpad%': 1,
     # And if we want to dump symbols for Breakpad-enabled builds.
     'linux_dump_symbols%': 0,
     # And if we want to strip the binary after dumping symbols.
@@ -1087,7 +1095,6 @@
     'android_app_version_name%': 'Developer Build',
     'android_app_version_code%': 0,
 
-
     # Contains data about the attached devices for gyp_managed_install.
     'build_device_config_path': '<(PRODUCT_DIR)/build_devices.cfg',
 
@@ -1101,8 +1108,8 @@
     # rlz codes for searches but do not use the library.
     'enable_rlz%': 0,
 
-    # MDNS is disabled by default.
-    'enable_mdns%' : 0,
+    # Turns on compiler optimizations in V8 in Debug build.
+    'v8_optimized_debug': 1,
 
     'conditions': [
       # The version of GCC in use, set later in platforms that use GCC and have
@@ -1140,7 +1147,6 @@
             'disable_nacl%': 1,
             'nacl_untrusted_build%': 0,
             'linux_use_tcmalloc%': 0,
-            'linux_breakpad%': 0,
           }],
           ['OS=="linux" and target_arch=="mipsel"', {
             'sysroot%': '<(sysroot)',
@@ -1567,12 +1573,6 @@
       }],
       ['enable_themes==1', {
         'grit_defines': ['-D', 'enable_themes'],
-      }],
-      ['use_spring_wallpaper==1', {
-        'grit_defines': ['-D', 'use_spring_wallpaper'],
-      }],
-      ['use_oem_wallpaper==1', {
-        'grit_defines': ['-D', 'use_oem_wallpaper'],
       }],
       ['enable_app_list==1', {
         'grit_defines': ['-D', 'enable_app_list'],
@@ -2069,6 +2069,9 @@
       ['logging_like_official_build!=0', {
         'defines': ['LOGGING_IS_OFFICIAL_BUILD=1'],
       }],  # logging_like_official_build!=0
+      ['tracing_like_official_build!=0', {
+        'defines': ['TRACING_IS_OFFICIAL_BUILD=1'],
+      }],  # tracing_like_official_build!=0
       ['win_use_allocator_shim==0', {
         'conditions': [
           ['OS=="win"', {
@@ -3134,15 +3137,9 @@
 
               # Warns when a const char[] is converted to bool.
               '-Wstring-conversion',
-            ],
-            'cflags!': [
-              # Clang doesn't seem to know know this flag.
-              '-mfpmath=sse',
-            ],
-          }],
-          ['clang==1 and OS!="android"', {
-            # Turn on C++11.
-            'cflags': [
+
+              # C++11-related flags:
+
               # This warns on using ints as initializers for floats in
               # initializer lists (e.g. |int a = f(); CGSize s = { a, a };|),
               # which happens in several places in chrome code. Not sure if
@@ -3160,6 +3157,10 @@
               # http://crbug.com/255186
               '-Wno-deprecated-register',
             ],
+            'cflags!': [
+              # Clang doesn't seem to know know this flag.
+              '-mfpmath=sse',
+            ],
             'cflags_cc': [
               # See the comment in the Mac section for what it takes to move
               # this to -std=c++11.
@@ -3167,19 +3168,13 @@
             ],
           }],
           ['clang==1 and OS=="android"', {
-            # Android uses gcc4.4, and clang isn't compatible with gcc4.4's
-            # libstdc++ in C++11 mode. So no C++11 mode for Android yet.
-            # Doesn't work with asan for some reason either: crbug.com/233464
-            'cflags': [
-              # Especially needed for gtest macros using enum values from Mac
-              # system headers.
-              # TODO(pkasting): In C++11 this is legal, so this should be
-              # removed when we change to that.  (This is also why we don't
-              # bother fixing all these cases today.)
-              '-Wno-unnamed-type-template-args',
-              # This (rightfully) complains about 'override', which we use
-              # heavily.
-              '-Wno-c++11-extensions',
+            # Android uses stlport, whose include/new defines
+            # `void  operator delete[](void* ptr) throw();`, which
+            # clang's -Wimplicit-exception-spec-mismatch warns about for some
+            # reason -- http://llvm.org/PR16638. TODO(thakis): Include stlport
+            # via -isystem instead.
+            'cflags_cc': [
+              '-Wno-implicit-exception-spec-mismatch',
             ],
           }],
           ['clang==1 and clang_use_chrome_plugins==1', {
@@ -3331,14 +3326,18 @@
                 'cflags': [
                   '-finstrument-functions',
                   # Allow mmx intrinsics to inline, so that the
-                  # compiler can expand the intrinsics.
+                  #0 compiler can expand the intrinsics.
                   '-finstrument-functions-exclude-file-list=mmintrin.h',
                 ],
               }],
+              ['_toolset=="target" and OS=="android"', {
+                'cflags': [
+                  # Avoids errors with current NDK:
+                  # "third_party/android_tools/ndk/toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin/../lib/gcc/arm-linux-androideabi/4.6/include/arm_neon.h:3426:3: error: argument must be a constant"
+                  '-finstrument-functions-exclude-file-list=arm_neon.h',
+                ],
+              }],
             ],
-          }],
-          ['linux_breakpad==1', {
-            'defines': ['USE_LINUX_BREAKPAD'],
           }],
           ['linux_dump_symbols==1', {
             'cflags': [ '-g' ],
@@ -3415,6 +3414,12 @@
               # gets the right path.
               '-B<(PRODUCT_DIR)/../../third_party/gold',
             ],
+          }],
+          ['native_discardable_memory', {
+            'defines': ['DISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY'],
+          }],
+          ['native_memory_pressure_signals', {
+            'defines': ['SYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE'],
           }],
         ],
       },
@@ -3994,9 +3999,9 @@
           'MACOSX_DEPLOYMENT_TARGET': '<(mac_deployment_target)',
           # Keep pch files below xcodebuild/.
           'SHARED_PRECOMPS_DIR': '$(CONFIGURATION_BUILD_DIR)/SharedPrecompiledHeaders',
-          'OTHER_CFLAGS': [
-            '-fno-strict-aliasing',  # See http://crbug.com/32204
-          ],
+
+          # -fno-strict-aliasing, see http://crbug.com/32204
+          'GCC_STRICT_ALIASING': 'NO',
         },
         'target_conditions': [
           ['_type=="executable"', {

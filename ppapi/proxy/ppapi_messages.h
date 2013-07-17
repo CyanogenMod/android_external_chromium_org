@@ -1306,8 +1306,9 @@ IPC_SYNC_MESSAGE_CONTROL2_2(PpapiHostMsg_ResourceSyncCall,
 // the instance of the plugin for which to create the resource for. params
 // contains the sequence number for the message to track the response.
 // The nested message is a ResourceHost creation message.
-IPC_MESSAGE_CONTROL4(
+IPC_MESSAGE_CONTROL5(
     PpapiHostMsg_CreateResourceHostFromHost,
+    int /* routing_id */,
     int /* child_process_id */,
     ppapi::proxy::ResourceMessageCallParams /* params */,
     PP_Instance /* instance */,
@@ -1318,7 +1319,7 @@ IPC_MESSAGE_CONTROL4(
 // in the request and the ID of the pending ResourceHost which was created in
 // the browser. This ID is only useful for the plugin which can attach to the
 // ResourceHost in the browser.
-IPC_MESSAGE_CONTROL2(
+IPC_MESSAGE_ROUTED2(
     PpapiHostMsg_CreateResourceHostFromHostReply,
     int32_t /* sequence */,
     int /* pending_host_id */)
@@ -1812,6 +1813,28 @@ IPC_MESSAGE_CONTROL0(PpapiHostMsg_BrowserFontSingleton_GetFontFamilies)
 // by a null character.
 IPC_MESSAGE_CONTROL1(PpapiPluginMsg_BrowserFontSingleton_GetFontFamiliesReply,
                      std::string /* families */)
+
+// FileRef.
+// Requests that the browser reply with file system and path information about
+// the resource indicated in |params| which exists in the given
+// |child_process_id|. |routing_id| is sent so that the reply can be routed
+// properly in the renderer.
+// Only sent from the renderer to the browser.
+IPC_MESSAGE_CONTROL3(PpapiHostMsg_FileRef_GetInfoForRenderer,
+                     int /* routing_id */,
+                     int /* child_process_id */,
+                     ppapi::proxy::ResourceMessageCallParams /* params */)
+
+// Reply to PpapiHostMsg_FileRef_GetInfoForRenderer with a sequence number for
+// invoking the right callback, |fs_type| which indicates the file system, and
+// path information in either |file_system_url_spec| (for internal file systems)
+// or |external_path| (for external file systems).
+// Only sent from the browser to the renderer.
+IPC_MESSAGE_ROUTED4(PpapiHostMsg_FileRef_GetInfoForRendererReply,
+                    int32_t /* sequence */,
+                    PP_FileSystemType /* fs_type */,
+                    std::string /* file_system_url_spec */,
+                    base::FilePath /* external_path */)
 
 // Flash -----------------------------------------------------------------------
 

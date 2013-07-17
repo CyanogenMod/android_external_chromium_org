@@ -97,6 +97,16 @@ uint64 GetTaskTraceID(const PendingTask& task, MessageLoop* loop) {
          static_cast<uint64>(reinterpret_cast<intptr_t>(loop));
 }
 
+// Returns true if MessagePump::ScheduleWork() must be called one
+// time for every task that is added to the MessageLoop incoming queue.
+bool AlwaysNotifyPump(MessageLoop::Type type) {
+#if defined(OS_ANDROID)
+  return type == MessageLoop::TYPE_UI;
+#else
+  return false;
+#endif
+}
+
 }  // namespace
 
 //------------------------------------------------------------------------------
@@ -456,11 +466,17 @@ bool MessageLoop::ProcessNextDelayedNonNestableTask() {
 }
 
 void MessageLoop::RunTask(const PendingTask& pending_task) {
-  TRACE_EVENT_FLOW_END0("task", "MessageLoop::PostTask",
-      TRACE_ID_MANGLE(GetTaskTraceID(pending_task, this)));
+  tracked_objects::TrackedTime start_time =
+      tracked_objects::ThreadData::NowForStartOfRun(pending_task.birth_tally);
+
+  TRACE_EVENT_FLOW_END1("task", "MessageLoop::PostTask",
+      TRACE_ID_MANGLE(GetTaskTraceID(pending_task, this)),
+      "queue_duration",
+      (start_time - pending_task.EffectiveTimePosted()).InMilliseconds());
   TRACE_EVENT2("task", "MessageLoop::RunTask",
                "src_file", pending_task.posted_from.file_name(),
                "src_func", pending_task.posted_from.function_name());
+
   DCHECK(nestable_tasks_allowed_);
   // Execute the task and assume the worst: It is probably not reentrant.
   nestable_tasks_allowed_ = false;
@@ -475,9 +491,6 @@ void MessageLoop::RunTask(const PendingTask& pending_task) {
   debug::Alias(&program_counter);
 
   HistogramEvent(kTaskRunEvent);
-
-  tracked_objects::TrackedTime start_time =
-      tracked_objects::ThreadData::NowForStartOfRun(pending_task.birth_tally);
 
   FOR_EACH_OBSERVER(TaskObserver, task_observers_,
                     WillProcessTask(pending_task));
@@ -624,7 +637,9 @@ bool MessageLoop::AddToIncomingQueue(PendingTask* pending_task,
     bool was_empty = incoming_queue_.empty();
     incoming_queue_.push(*pending_task);
     pending_task->task.Reset();
-    if (!was_empty)
+    // The Android UI message loop needs to get notified each time
+    // a task is added to the incoming queue.
+    if (!was_empty && !AlwaysNotifyPump(type_))
       return true;  // Someone else should have started the sub-pump.
 
     pump = pump_;

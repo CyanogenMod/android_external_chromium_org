@@ -32,7 +32,6 @@
 #include "chromeos/dbus/session_manager_client.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
-#include "googleurl/src/gurl.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "media/base/media_switches.h"
 #include "ui/base/ui_base_switches.h"
@@ -40,6 +39,7 @@
 #include "ui/gfx/switches.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/views/corewm/corewm_switches.h"
+#include "url/gurl.h"
 #include "webkit/plugins/plugin_switches.h"
 
 using content::BrowserThread;
@@ -75,6 +75,7 @@ std::string DeriveCommandLine(const GURL& start_url,
       ::switches::kDisableAcceleratedPlugins,
       ::switches::kDisableAcceleratedVideoDecode,
       ::switches::kDisableBrowserPluginCompositing,
+      ::switches::kDisableDelegatedRenderer,
       ::switches::kDisableForceCompositingMode,
       ::switches::kDisableGpuShaderDiskCache,
       ::switches::kDisableGpuWatchdog,
@@ -86,10 +87,13 @@ std::string DeriveCommandLine(const GURL& start_url,
       ::switches::kDisableTouchDragDrop,
       ::switches::kDisableTouchEditing,
       ::switches::kDisableWebKitMediaSource,
+      ::switches::kDisableAcceleratedFixedRootBackground,
+      ::switches::kEnableAcceleratedFixedRootBackground,
       ::switches::kEnableAcceleratedOverflowScroll,
       ::switches::kEnableBeginFrameScheduling,
       ::switches::kEnableBrowserInputController,
       ::switches::kEnableCompositingForFixedPosition,
+      ::switches::kEnableDelegatedRenderer,
       ::switches::kEnableEncodedScreenCapture,
       ::switches::kEnableEncryptedMedia,
       ::switches::kEnableGestureTapHighlight,
@@ -135,8 +139,10 @@ std::string DeriveCommandLine(const GURL& start_url,
       ash::switches::kAshDefaultGuestWallpaperSmall,
       ash::switches::kAshDefaultWallpaperLarge,
       ash::switches::kAshDefaultWallpaperSmall,
+#if defined(OS_CHROMEOS)
+      ash::switches::kAshDisableAudioDeviceMenu,
       ash::switches::kAshDisableNewAudioHandler,
-      ash::switches::kAshEnableAudioDeviceMenu,
+#endif
       ash::switches::kAshHostWindowBounds,
       ash::switches::kAshTouchHud,
       ash::switches::kAuraLegacyPowerButton,

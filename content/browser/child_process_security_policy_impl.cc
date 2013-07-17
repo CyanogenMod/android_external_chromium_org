@@ -17,9 +17,9 @@
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
 #include "net/url_request/url_request.h"
+#include "url/gurl.h"
 #include "webkit/browser/fileapi/file_permission_policy.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/isolated_context.h"
@@ -48,6 +48,30 @@ const int kCreateFilePermissions =
 const int kEnumerateDirectoryPermissions =
     kReadFilePermissions |
     base::PLATFORM_FILE_ENUMERATE;
+
+const int kReadWriteFilePermissions =
+    base::PLATFORM_FILE_OPEN |
+    base::PLATFORM_FILE_CREATE |
+    base::PLATFORM_FILE_OPEN_ALWAYS |
+    base::PLATFORM_FILE_CREATE_ALWAYS |
+    base::PLATFORM_FILE_OPEN_TRUNCATED |
+    base::PLATFORM_FILE_READ |
+    base::PLATFORM_FILE_WRITE |
+    base::PLATFORM_FILE_EXCLUSIVE_READ |
+    base::PLATFORM_FILE_EXCLUSIVE_WRITE |
+    base::PLATFORM_FILE_ASYNC |
+    base::PLATFORM_FILE_WRITE_ATTRIBUTES;
+
+const int kCreateWriteFilePermissions =
+      base::PLATFORM_FILE_CREATE |
+      base::PLATFORM_FILE_CREATE_ALWAYS |
+      base::PLATFORM_FILE_OPEN |
+      base::PLATFORM_FILE_OPEN_ALWAYS |
+      base::PLATFORM_FILE_OPEN_TRUNCATED |
+      base::PLATFORM_FILE_WRITE |
+      base::PLATFORM_FILE_WRITE_ATTRIBUTES |
+      base::PLATFORM_FILE_ASYNC;
+      // need EXCLUSIVE_WRITE in this mix?
 
 }  // namespace
 
@@ -406,6 +430,16 @@ void ChildProcessSecurityPolicyImpl::GrantRequestSpecificFileURL(
 void ChildProcessSecurityPolicyImpl::GrantReadFile(int child_id,
                                                    const base::FilePath& file) {
   GrantPermissionsForFile(child_id, file, kReadFilePermissions);
+}
+
+void ChildProcessSecurityPolicyImpl::GrantCreateReadWriteFile(
+    int child_id, const base::FilePath& file) {
+  GrantPermissionsForFile(child_id, file, kReadWriteFilePermissions);
+}
+
+void ChildProcessSecurityPolicyImpl::GrantCreateWriteFile(
+    int child_id, const base::FilePath& file) {
+  GrantPermissionsForFile(child_id, file, kCreateWriteFilePermissions);
 }
 
 void ChildProcessSecurityPolicyImpl::GrantReadDirectory(

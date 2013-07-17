@@ -18,6 +18,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_icu_icui18n_gyp)/icui18n.stamp \
 	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
 	$(call intermediates-dir-for,GYP,third_party_npapi_npapi_gyp)/npapi.stamp \
+	$(call intermediates-dir-for,GYP,third_party_widevine_cdm_widevine_cdm_version_h_gyp)/widevine_cdm_version_h.stamp \
 	$(call intermediates-dir-for,GYP,v8_tools_gyp_v8_gyp)/v8.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_glue_gyp)/webkit_support_glue_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libphonenumber_libphonenumber_without_metadata_gyp)/third_party_libphonenumber_libphonenumber_without_metadata_gyp.a
@@ -44,6 +45,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/accessibility/accessibility_node_serializer.cc \
 	content/renderer/accessibility/renderer_accessibility.cc \
 	content/renderer/accessibility/renderer_accessibility_complete.cc \
+	content/renderer/accessibility/renderer_accessibility_focus_only.cc \
 	content/renderer/all_rendering_benchmarks.cc \
 	content/renderer/android/address_detector.cc \
 	content/renderer/android/content_detector.cc \
@@ -51,6 +53,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/android/phone_number_detector.cc \
 	content/renderer/android/synchronous_compositor_factory.cc \
 	content/renderer/device_orientation_dispatcher.cc \
+	content/renderer/device_orientation/device_motion_event_pump.cc \
 	content/renderer/devtools/devtools_agent.cc \
 	content/renderer/devtools/devtools_agent_filter.cc \
 	content/renderer/devtools/devtools_client.cc \
@@ -81,18 +84,27 @@ LOCAL_SRC_FILES := \
 	content/renderer/java/java_bridge_channel.cc \
 	content/renderer/java/java_bridge_dispatcher.cc \
 	content/renderer/load_progress_tracker.cc \
+	content/renderer/media/active_loader.cc \
 	content/renderer/media/android/audio_decoder_android.cc \
 	content/renderer/media/android/media_info_loader.cc \
 	content/renderer/media/android/media_source_delegate.cc \
 	content/renderer/media/android/proxy_media_keys.cc \
+	content/renderer/media/android/renderer_media_player_manager.cc \
 	content/renderer/media/android/stream_texture_factory_android.cc \
 	content/renderer/media/android/webmediaplayer_android.cc \
-	content/renderer/media/android/webmediaplayer_manager_android.cc \
 	content/renderer/media/android/webmediaplayer_proxy_android.cc \
+	content/renderer/media/audio_decoder.cc \
 	content/renderer/media/audio_device_factory.cc \
 	content/renderer/media/audio_input_message_filter.cc \
 	content/renderer/media/audio_message_filter.cc \
 	content/renderer/media/audio_renderer_mixer_manager.cc \
+	content/renderer/media/buffered_data_source.cc \
+	content/renderer/media/buffered_resource_loader.cc \
+	content/renderer/media/cache_util.cc \
+	content/renderer/media/crypto/content_decryption_module_factory.cc \
+	content/renderer/media/crypto/key_systems.cc \
+	content/renderer/media/crypto/key_systems_info.cc \
+	content/renderer/media/crypto/proxy_decryptor.cc \
 	content/renderer/media/midi_message_filter.cc \
 	content/renderer/media/pepper_platform_video_decoder_impl.cc \
 	content/renderer/media/render_media_log.cc \
@@ -100,12 +112,22 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/renderer_webaudiodevice_impl.cc \
 	content/renderer/media/renderer_webmidiaccessor_impl.cc \
 	content/renderer/media/rtc_video_renderer.cc \
+	content/renderer/media/texttrack_impl.cc \
 	content/renderer/media/video_capture_impl.cc \
 	content/renderer/media/video_capture_impl_manager.cc \
 	content/renderer/media/video_capture_message_filter.cc \
+	content/renderer/media/video_frame_provider.cc \
+	content/renderer/media/webaudiosourceprovider_impl.cc \
 	content/renderer/media/webcontentdecryptionmodule_impl.cc \
 	content/renderer/media/webcontentdecryptionmodulesession_impl.cc \
+	content/renderer/media/webinbandtexttrack_impl.cc \
+	content/renderer/media/webmediaplayer_ms.cc \
+	content/renderer/media/webmediaplayer_params.cc \
+	content/renderer/media/webmediaplayer_util.cc \
+	content/renderer/media/webmediasourceclient_impl.cc \
+	content/renderer/media/websourcebuffer_impl.cc \
 	content/renderer/memory_benchmarking_extension.cc \
+	content/renderer/menu_item_builder.cc \
 	content/renderer/mhtml_generator.cc \
 	content/renderer/mouse_lock_dispatcher.cc \
 	content/renderer/paint_aggregator.cc \
@@ -147,6 +169,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/rendering_benchmark.cc \
 	content/renderer/savable_resources.cc \
 	content/renderer/scoped_clipboard_writer_glue.cc \
+	content/renderer/shared_memory_seqlock_reader.cc \
 	content/renderer/skia_benchmarking_extension.cc \
 	content/renderer/speech_recognition_dispatcher.cc \
 	content/renderer/stats_collection_controller.cc \
@@ -198,6 +221,8 @@ MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
@@ -242,6 +267,7 @@ MY_DEFS_Debug := \
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH) \
+	$(gyp_shared_intermediate_dir) \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
@@ -336,6 +362,8 @@ MY_DEFS_Release := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
@@ -381,6 +409,7 @@ MY_DEFS_Release := \
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH) \
+	$(gyp_shared_intermediate_dir) \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \

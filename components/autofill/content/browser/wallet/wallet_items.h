@@ -16,7 +16,7 @@
 #include "base/strings/string16.h"
 #include "components/autofill/content/browser/wallet/required_action.h"
 #include "components/autofill/content/browser/wallet/wallet_address.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace base {
 class DictionaryValue;
@@ -118,7 +118,7 @@ class WalletItems {
     FRIEND_TEST_ALL_PREFIXES(WalletItemsTest, CreateMaskedInstrument);
     FRIEND_TEST_ALL_PREFIXES(WalletItemsTest, CreateWalletItems);
 
-    MaskedInstrument(const base::string16& descriptve_name,
+    MaskedInstrument(const base::string16& descriptive_name,
                      const Type& type,
                      const std::vector<base::string16>& supported_currencies,
                      const base::string16& last_four_digits,

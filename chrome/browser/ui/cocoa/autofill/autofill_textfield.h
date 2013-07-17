@@ -12,10 +12,16 @@
 
 // Text field used for text inputs inside Autofill.
 // Provide both dog ear and red outline when the contents are marked invalid.
-@interface AutofillTextField : NSTextField<AutofillInputField>
+@interface AutofillTextField : NSTextField<AutofillInputField,
+                                           NSTextFieldDelegate> {
+ @private
+   id<AutofillInputDelegate> delegate_;
+   base::scoped_nsobject<NSString> validityMessage_;
+}
+
 @end
 
-@interface AutofillTextFieldCell : NSTextFieldCell<AutofillInputField> {
+@interface AutofillTextFieldCell : NSTextFieldCell<AutofillInputCell> {
  @private
   BOOL invalid_;
   base::scoped_nsobject<NSImage> icon_;

@@ -23,6 +23,7 @@
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/net/chrome_cookie_notification_details.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
@@ -53,7 +54,6 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
@@ -110,14 +110,6 @@ const char* ProfileSyncService::kDevServerUrl =
     "https://clients4.google.com/chrome-sync/dev";
 
 static const int kSyncClearDataTimeoutInSeconds = 60;  // 1 minute.
-
-static const char* kOAuth2Scopes[] = {
-  GaiaConstants::kChromeSyncOAuth2Scope,
-};
-
-static const char* kManagedOAuth2Scopes[] = {
-  GaiaConstants::kChromeSyncManagedOAuth2Scope
-};
 
 static const char* kSyncUnrecoverableErrorHistogram =
     "Sync.UnrecoverableErrors";
@@ -196,8 +188,6 @@ ProfileSyncService::ProfileSyncService(ProfileSyncComponentsFactory* factory,
       channel == chrome::VersionInfo::CHANNEL_BETA) {
     sync_service_url_ = GURL(kSyncServerUrl);
   }
-  if (signin_)
-    signin_->signin_global_error()->AddProvider(this);
 }
 
 ProfileSyncService::~ProfileSyncService() {
@@ -235,6 +225,9 @@ bool ProfileSyncService::IsOAuthRefreshTokenAvailable() {
 }
 
 void ProfileSyncService::Initialize() {
+  if (profile_)
+    SigninGlobalError::GetForProfile(profile_)->AddProvider(this);
+
   InitSettings();
 
   // We clear this here (vs Shutdown) because we want to remember that an error
@@ -689,8 +682,8 @@ void ProfileSyncService::OnGetTokenFailure(
 }
 
 void ProfileSyncService::Shutdown() {
-  if (signin_)
-    signin_->signin_global_error()->RemoveProvider(this);
+  if (profile_)
+    SigninGlobalError::GetForProfile(profile_)->RemoveProvider(this);
 
   ShutdownImpl(false);
 }
@@ -1021,9 +1014,6 @@ void ProfileSyncService::OnExperimentsChanged(
     }
   }
 
-  if (experiments.favicon_sync)
-    profile_->GetPrefs()->SetBoolean(prefs::kSyncFaviconsEnabled, true);
-
   current_experiments_ = experiments;
 }
 
@@ -1034,8 +1024,9 @@ void ProfileSyncService::UpdateAuthErrorState(const AuthError& error) {
   // Fan the notification out to interested UI-thread components. Notify the
   // SigninGlobalError first so it reflects the latest auth state before we
   // notify observers.
-  if (signin())
-    signin()->signin_global_error()->AuthStatusChanged();
+  if (profile_)
+    SigninGlobalError::GetForProfile(profile_)->AuthStatusChanged();
+
   NotifyObservers();
 }
 
@@ -1813,18 +1804,17 @@ void ProfileSyncService::RequestAccessToken() {
   is_managed = ManagedUserService::ProfileIsManaged(profile_);
 #endif
   if (is_managed) {
-    for (size_t i = 0; i < arraysize(kManagedOAuth2Scopes); i++)
-      oauth2_scopes.insert(kManagedOAuth2Scopes[i]);
+    oauth2_scopes.insert(GaiaConstants::kChromeSyncManagedOAuth2Scope);
   } else {
-    for (size_t i = 0; i < arraysize(kOAuth2Scopes); i++)
-      oauth2_scopes.insert(kOAuth2Scopes[i]);
+    oauth2_scopes.insert(GaiaConstants::kChromeSyncOAuth2Scope);
   }
 
   OAuth2TokenService* token_service =
       ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
   // Invalidate previous token, otherwise token service will return the same
   // token again.
-  token_service->InvalidateToken(oauth2_scopes, access_token_);
+  if (!access_token_.empty())
+    token_service->InvalidateToken(oauth2_scopes, access_token_);
   access_token_.clear();
   access_token_request_ = token_service->StartRequest(oauth2_scopes, this);
 }

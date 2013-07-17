@@ -4,6 +4,10 @@ per-file autofill*=dhollowa@chromium.org
 per-file autofill*=isherman@chromium.org
 per-file autofill*=kaiwang@chromium.org
 
+per-file breakpad.gypi=jochen@chromium.org
+per-file breakpad.gypi=rsesek@chromium.org
+per-file breakpad.gypi=thestig@chromium.org
+
 per-file tracing*=jbauman@chromium.org
 per-file tracing*=nduca@chromium.org
 
@@ -17,3 +21,6 @@ per-file user_prefs.gypi=battre@chromium.org
 per-file user_prefs.gypi=bauerb@chromium.org
 per-file user_prefs.gypi=mnissler@chromium.org
 per-file user_prefs.gypi=pam@chromium.org
+
+per-file *.isolate=csharp@chromium.org
+per-file *.isolate=maruel@chromium.org

@@ -14,7 +14,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/diagnostics/sqlite_diagnostics.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
 
@@ -128,7 +127,7 @@ TextDatabase::DBIdent TextDatabase::FileNameToID(
 bool TextDatabase::Init() {
   // Make sure, if we're not allowed to create the file, that it exists.
   if (!allow_create_) {
-    if (!file_util::PathExists(file_name_))
+    if (!base::PathExists(file_name_))
       return false;
   }
 

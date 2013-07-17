@@ -13,6 +13,7 @@
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
@@ -38,11 +39,13 @@
 #include "chrome/browser/ui/views/browser_dialogs.h"
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
 #include "chrome/browser/ui/views/location_bar/action_box_button_view.h"
+#include "chrome/browser/ui/views/location_bar/autofill_credit_card_view.h"
 #include "chrome/browser/ui/views/location_bar/content_setting_image_view.h"
 #include "chrome/browser/ui/views/location_bar/ev_bubble_view.h"
 #include "chrome/browser/ui/views/location_bar/keyword_hint_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_layout.h"
 #include "chrome/browser/ui/views/location_bar/location_icon_view.h"
+#include "chrome/browser/ui/views/location_bar/mic_search_view.h"
 #include "chrome/browser/ui/views/location_bar/open_pdf_in_reader_view.h"
 #include "chrome/browser/ui/views/location_bar/page_action_image_view.h"
 #include "chrome/browser/ui/views/location_bar/page_action_with_badge_view.h"
@@ -54,7 +57,6 @@
 #include "chrome/browser/ui/views/omnibox/omnibox_view_views.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_views.h"
 #include "chrome/browser/ui/zoom/zoom_controller.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
@@ -179,7 +181,9 @@ LocationBarView::LocationBarView(Browser* browser,
       selected_keyword_view_(NULL),
       suggested_text_view_(NULL),
       keyword_hint_view_(NULL),
+      mic_search_view_(NULL),
       zoom_view_(NULL),
+      autofill_credit_card_view_(NULL),
       open_pdf_in_reader_view_(NULL),
       script_bubble_icon_view_(NULL),
       star_view_(NULL),
@@ -210,11 +214,16 @@ LocationBarView::LocationBarView(Browser* browser,
       base::Bind(&LocationBarView::Update,
                  base::Unretained(this),
                  static_cast<content::WebContents*>(NULL)));
+
+  if (browser_)
+    browser_->search_model()->AddObserver(this);
 }
 
 LocationBarView::~LocationBarView() {
   if (template_url_service_)
     template_url_service_->RemoveObserver(this);
+  if (browser_)
+    browser_->search_model()->RemoveObserver(this);
 }
 
 void LocationBarView::Init() {
@@ -302,6 +311,10 @@ void LocationBarView::Init() {
       background_color);
   AddChildView(keyword_hint_view_);
 
+  mic_search_view_ = new MicSearchView(this);
+  mic_search_view_->SetVisible(false);
+  AddChildView(mic_search_view_);
+
   for (int i = 0; i < CONTENT_SETTINGS_NUM_TYPES; ++i) {
     ContentSettingImageView* content_blocked_view =
         new ContentSettingImageView(static_cast<ContentSettingsType>(i), this,
@@ -311,6 +324,9 @@ void LocationBarView::Init() {
     content_blocked_view->SetVisible(false);
     AddChildView(content_blocked_view);
   }
+
+  autofill_credit_card_view_ = new AutofillCreditCardView(model_, delegate_);
+  AddChildView(autofill_credit_card_view_);
 
   zoom_view_ = new ZoomView(model_, delegate_);
   zoom_view_->set_id(VIEW_ID_ZOOM_BUTTON);
@@ -323,17 +339,12 @@ void LocationBarView::Init() {
   script_bubble_icon_view_->SetVisible(false);
   AddChildView(script_bubble_icon_view_);
 
-  // The star icon is hidden in popups.
-  if (browser_defaults::bookmarks_enabled && !is_popup_mode_) {
-    star_view_ = new StarView(command_updater_);
-    star_view_->SetVisible(true);
-    AddChildView(star_view_);
-  }
+  star_view_ = new StarView(command_updater_);
+  star_view_->SetVisible(false);
+  AddChildView(star_view_);
+
   if (extensions::FeatureSwitch::action_box()->IsEnabled() && !is_popup_mode_ &&
       browser_) {
-    if (star_view_)
-      star_view_->SetVisible(false);
-
     action_box_button_view_ = new ActionBoxButtonView(
         browser_,
         gfx::Point(GetHorizontalEdgeThickness(), vertical_edge_thickness()));
@@ -457,7 +468,11 @@ void LocationBarView::SetAnimationOffset(int offset) {
 }
 
 void LocationBarView::Update(const WebContents* tab_for_state_restoring) {
+  mic_search_view_->SetVisible(
+      !model_->GetInputInProgress() && browser_ &&
+      browser_->search_model()->voice_search_supported());
   RefreshContentSettingViews();
+  autofill_credit_card_view_->Update();
   ZoomBubbleView::CloseBubble();
   RefreshZoomView();
   RefreshPageActionViews();
@@ -465,8 +480,9 @@ void LocationBarView::Update(const WebContents* tab_for_state_restoring) {
   open_pdf_in_reader_view_->Update(
       model_->GetInputInProgress() ? NULL : GetWebContents());
 
-  bool star_enabled = star_view_ && !model_->GetInputInProgress() &&
-                      edit_bookmarks_enabled_.GetValue();
+  bool star_enabled =
+      browser_defaults::bookmarks_enabled && !is_popup_mode_ && star_view_ &&
+      !model_->GetInputInProgress() && edit_bookmarks_enabled_.GetValue();
 
   command_updater_->UpdateCommandEnabled(IDC_BOOKMARK_PAGE, star_enabled);
   command_updater_->UpdateCommandEnabled(IDC_BOOKMARK_PAGE_FROM_STAR,
@@ -522,6 +538,12 @@ void LocationBarView::UpdateOpenPDFInReaderPrompt() {
   SchedulePaint();
 }
 
+void LocationBarView::UpdateAutofillCreditCardView() {
+  autofill_credit_card_view_->Update();
+  Layout();
+  SchedulePaint();
+}
+
 void LocationBarView::OnFocus() {
   // Focus the view widget first which implements accessibility for
   // Chrome OS.  It is noop on Win. This should be removed once
@@ -566,14 +588,12 @@ views::View* LocationBarView::GetPageActionView(ExtensionAction *page_action) {
 }
 
 void LocationBarView::SetStarToggled(bool on) {
-  if (star_view_)
-    star_view_->SetToggled(on);
-
-  if (action_box_button_view_) {
-    if (star_view_ && (star_view_->visible() != on)) {
-      star_view_->SetVisible(on);
-      Layout();
-    }
+  if (!star_view_)
+    return;
+  star_view_->SetToggled(on);
+  if (action_box_button_view_ && (star_view_->visible() != on)) {
+    star_view_->SetVisible(on);
+    Layout();
   }
 }
 
@@ -629,7 +649,7 @@ void LocationBarView::SetImeInlineAutocompletion(const string16& text) {
   ime_inline_autocomplete_view_->SetVisible(!text.empty());
 }
 
-void LocationBarView::SetInstantSuggestion(const string16& text) {
+void LocationBarView::SetGrayTextAutocompletion(const string16& text) {
   if (suggested_text_view_->text() != text) {
     suggested_text_view_->SetText(text);
     suggested_text_view_->SetVisible(!text.empty());
@@ -638,7 +658,7 @@ void LocationBarView::SetInstantSuggestion(const string16& text) {
   }
 }
 
-string16 LocationBarView::GetInstantSuggestion() const {
+string16 LocationBarView::GetGrayTextAutocompletion() const {
   return HasValidSuggestText() ? suggested_text_view_->text() : string16();
 }
 
@@ -662,9 +682,6 @@ gfx::Size LocationBarView::GetPreferredSize() {
 void LocationBarView::Layout() {
   if (!location_entry_.get())
     return;
-
-  // TODO(jhawkins): Remove once crbug.com/101994 is fixed.
-  CHECK(location_icon_view_);
 
   selected_keyword_view_->SetVisible(false);
   location_icon_view_->SetVisible(false);
@@ -768,6 +785,15 @@ void LocationBarView::Layout() {
           bubble_location_y, bubble_height, false, 0, item_padding,
           item_padding, (*i)->GetBuiltInHorizontalPadding(), (*i));
     }
+  }
+  if (autofill_credit_card_view_->visible()) {
+    trailing_decorations.AddDecoration(vertical_edge_thickness(),
+                                       location_height, 0,
+                                       autofill_credit_card_view_);
+  }
+  if (mic_search_view_->visible()) {
+    trailing_decorations.AddDecoration(vertical_edge_thickness(),
+                                       location_height, 0, mic_search_view_);
   }
   // Because IMEs may eat the tab key, we don't show "press tab to search" while
   // IME composition is in progress.
@@ -994,6 +1020,10 @@ void LocationBarView::OnMouseCaptureLost() {
     omnibox_win->HandleExternalMsg(WM_CAPTURECHANGED, 0, CPoint());
 }
 #endif
+
+views::View* LocationBarView::autofill_credit_card_view() {
+  return autofill_credit_card_view_;
+}
 
 void LocationBarView::OnAutocompleteAccept(
     const GURL& url,
@@ -1307,6 +1337,12 @@ void LocationBarView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
     popup->UpdatePopupAppearance();
 }
 
+void LocationBarView::ButtonPressed(views::Button* sender,
+                                    const ui::Event& event) {
+  DCHECK_EQ(mic_search_view_, sender);
+  command_updater_->ExecuteCommand(IDC_TOGGLE_SPEECH_INPUT);
+}
+
 void LocationBarView::WriteDragDataForView(views::View* sender,
                                            const gfx::Point& press_pt,
                                            OSExchangeData* data) {
@@ -1354,11 +1390,6 @@ void LocationBarView::ShowFirstRunBubble() {
     return;
   }
   ShowFirstRunBubbleInternal();
-}
-
-void LocationBarView::SetInstantSuggestion(
-    const InstantSuggestion& suggestion) {
-  location_entry_->model()->SetInstantSuggestion(suggestion);
 }
 
 string16 LocationBarView::GetInputString() const {
@@ -1493,6 +1524,16 @@ void LocationBarView::Observe(int type,
 
     default:
       NOTREACHED() << "Unexpected notification.";
+  }
+}
+
+void LocationBarView::ModelChanged(const SearchModel::State& old_state,
+                                   const SearchModel::State& new_state) {
+  const bool visible =
+      !model_->GetInputInProgress() && new_state.voice_search_supported;
+  if (mic_search_view_->visible() != visible) {
+    mic_search_view_->SetVisible(visible);
+    Layout();
   }
 }
 

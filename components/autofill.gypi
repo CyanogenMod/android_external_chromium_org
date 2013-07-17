@@ -110,7 +110,7 @@
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber',
             '../ui/ui.gyp:ui',
             '../url/url.gyp:url_lib',
-            '../webkit/support/webkit_support.gyp:webkit_resources',
+            '../webkit/webkit_resources.gyp:webkit_resources',
 
             'component_strings.gyp:component_strings',
           ],
@@ -230,7 +230,12 @@
        {
          'target_name': 'autofill_content_test_util',
          'type': 'static_library',
+         'dependencies': [
+            '../testing/gmock.gyp:gmock',
+         ],
          'sources': [
+           'autofill/content/browser/wallet/mock_wallet_client.cc',
+           'autofill/content/browser/wallet/mock_wallet_client.h',
            'autofill/content/browser/wallet/wallet_test_util.cc',
            'autofill/content/browser/wallet/wallet_test_util.h',
          ],
@@ -265,7 +270,7 @@
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber',
             '../ui/ui.gyp:ui',
             '../url/url.gyp:url_lib',
-            '../webkit/support/webkit_support.gyp:webkit_resources',
+            '../webkit/webkit_resources.gyp:webkit_resources',
 
             'component_strings.gyp:component_strings',
           ],

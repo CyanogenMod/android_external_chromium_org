@@ -16,7 +16,7 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "extensions/common/extension_resource.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 class BackingStore;
 class GURL;
@@ -190,7 +190,7 @@ class TabsDetectLanguageFunction : public AsyncExtensionFunction,
 };
 class TabsCaptureVisibleTabFunction : public AsyncExtensionFunction {
  public:
-  static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
  protected:
   typedef api::tabs::CaptureVisibleTab::Params::Options::Format ImageFormat;

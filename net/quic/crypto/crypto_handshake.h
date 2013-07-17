@@ -12,6 +12,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_piece.h"
 #include "net/base/net_export.h"
+#include "net/cert/cert_verify_result.h"
+#include "net/cert/x509_certificate.h"
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/quic_protocol.h"
 
@@ -268,14 +270,21 @@ class NET_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
     // (Note: this does not check the chain or signature.)
     void SetProofValid();
 
+    // If the server config or the proof has changed then it needs to be
+    // revalidated. Helper function to keep server_config_valid_ and
+    // generation_counter_ in sync.
+    void SetProofInvalid();
+
     const std::string& server_config() const;
     const std::string& source_address_token() const;
     const std::vector<std::string>& certs() const;
     const std::string& signature() const;
     bool proof_valid() const;
     uint64 generation_counter() const;
+    const CertVerifyResult* cert_verify_result() const;
 
     void set_source_address_token(base::StringPiece token);
+    void SetCertVerifyResult(const CertVerifyResult& cert_verify_result);
 
    private:
     std::string server_config_id_;      // An opaque id from the server.
@@ -287,9 +296,15 @@ class NET_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
     bool server_config_valid_;          // True if |server_config_| is correctly
                                         // signed and |certs_| has been
                                         // validated.
-    uint64 generation_counter_;         // Generation counter associated with
-                                        // the |server_config_|, |certs_| and
-                                        // |server_config_sig_| combination.
+    // Generation counter associated with the |server_config_|, |certs_| and
+    // |server_config_sig_| combination. It is incremented whenever we set
+    // server_config_valid_ to false.
+    uint64 generation_counter_;
+
+    // The result of certificate verification.
+    // TODO(rtenneti): should we change CertVerifyResult to be
+    // RefCountedThreadSafe object to avoid copying.
+    CertVerifyResult cert_verify_result_;
 
     // scfg contains the cached, parsed value of |server_config|.
     mutable scoped_ptr<CryptoHandshakeMessage> scfg_;

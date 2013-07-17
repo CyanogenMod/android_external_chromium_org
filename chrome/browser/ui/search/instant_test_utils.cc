@@ -7,12 +7,12 @@
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/search/instant_ntp.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/interactive_test_utils.h"
@@ -139,14 +139,6 @@ bool InstantTestBase::CheckVisibilityIs(content::WebContents* contents,
       actual == expected;
 }
 
-bool InstantTestBase::HasUserInputInProgress() {
-  return omnibox()->model()->user_input_in_progress_;
-}
-
-bool InstantTestBase::HasTemporaryText() {
-  return omnibox()->model()->has_temporary_text_;
-}
-
 std::string InstantTestBase::GetOmniboxText() {
   return UTF16ToUTF8(omnibox()->GetText());
 }
@@ -168,8 +160,4 @@ string16 InstantTestBase::GetBlueText() {
   if (start > end)
     std::swap(start, end);
   return omnibox()->GetText().substr(start, end - start);
-}
-
-string16 InstantTestBase::GetGrayText() {
-  return omnibox()->GetInstantSuggestion();
 }

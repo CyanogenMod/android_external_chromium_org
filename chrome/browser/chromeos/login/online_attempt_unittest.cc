@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop.h"
-#include "chrome/browser/chromeos/cros/cros_library.h"
+#include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/login/auth_attempt_state.h"
 #include "chrome/browser/chromeos/login/mock_auth_attempt_state_resolver.h"
 #include "chrome/browser/chromeos/login/mock_url_fetchers.h"
@@ -18,9 +18,9 @@
 #include "content/public/test/test_browser_thread.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
 #include "google_apis/gaia/mock_url_fetcher_factory.h"
-#include "googleurl/src/gurl.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 using ::testing::AnyNumber;
 using ::testing::Invoke;
@@ -85,8 +85,8 @@ class OnlineAttemptTest : public testing::Test {
   scoped_ptr<MockAuthAttemptStateResolver> resolver_;
   scoped_ptr<OnlineAttempt> attempt_;
 
-  // Initializes / shuts down a stub CrosLibrary.
-  chromeos::ScopedStubCrosEnabler stub_cros_enabler_;
+  // Initializes / shuts down a stub NetworkLibrary.
+  ScopedStubNetworkLibraryEnabler stub_network_library_enabler_;
 };
 
 TEST_F(OnlineAttemptTest, LoginSuccess) {

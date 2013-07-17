@@ -692,7 +692,7 @@ bool ElevateAndRegisterChrome(BrowserDistribution* dist,
   base::FilePath exe_path =
       base::FilePath::FromWStringHack(chrome_exe).DirName()
           .Append(installer::kSetupExe);
-  if (!file_util::PathExists(exe_path)) {
+  if (!base::PathExists(exe_path)) {
     HKEY reg_root = InstallUtil::IsPerUserInstall(chrome_exe.c_str()) ?
         HKEY_CURRENT_USER : HKEY_LOCAL_MACHINE;
     RegKey key(reg_root, dist->GetUninstallRegPath().c_str(), KEY_READ);
@@ -702,7 +702,7 @@ bool ElevateAndRegisterChrome(BrowserDistribution* dist,
     exe_path = command_line.GetProgram();
   }
 
-  if (file_util::PathExists(exe_path)) {
+  if (base::PathExists(exe_path)) {
     CommandLine cmd(exe_path);
     cmd.AppendSwitchNative(installer::switches::kRegisterChromeBrowser,
                            chrome_exe);
@@ -1177,7 +1177,7 @@ bool GetAppShortcutsFolder(BrowserDistribution* dist,
 
   folder = folder.Append(
       ShellUtil::GetBrowserModelId(dist, level == ShellUtil::CURRENT_USER));
-  if (!file_util::DirectoryExists(folder)) {
+  if (!base::DirectoryExists(folder)) {
     VLOG(1) << "No start screen shortcuts.";
     return false;
   }
@@ -1200,7 +1200,7 @@ bool ShortcutOpUnpin(const base::FilePath& shortcut_path) {
 }
 
 bool ShortcutOpDelete(const base::FilePath& shortcut_path) {
-  bool ret = base::Delete(shortcut_path, false);
+  bool ret = base::DeleteFile(shortcut_path, false);
   LOG_IF(ERROR, !ret) << "Failed to remove " << shortcut_path.value();
   return ret;
 }
@@ -1269,7 +1269,7 @@ bool RemoveShortcutFolder(ShellUtil::ShortcutLocation location,
     LOG(WARNING) << "Cannot find path at location " << location;
     return false;
   }
-  if (!base::Delete(shortcut_folder, true)) {
+  if (!base::DeleteFile(shortcut_folder, true)) {
     LOG(ERROR) << "Cannot remove folder " << shortcut_folder.value();
     return false;
   }
@@ -1438,7 +1438,7 @@ bool ShellUtil::CreateOrUpdateShortcut(
     // Install the system-level shortcut if requested.
     chosen_path = &system_shortcut_path;
   } else if (operation != SHELL_SHORTCUT_CREATE_IF_NO_SYSTEM_LEVEL ||
-             !file_util::PathExists(system_shortcut_path)) {
+             !base::PathExists(system_shortcut_path)) {
     // Otherwise install the user-level shortcut, unless the system-level
     // variant of this shortcut is present on the machine and |operation| states
     // not to create a user-level shortcut in that case.

@@ -233,7 +233,7 @@ void ObliterateOneDirectory(const base::FilePath& current_dir,
 
     switch (action) {
       case kDelete:
-        base::Delete(to_delete, true);
+        base::DeleteFile(to_delete, true);
         break;
 
       case kEnqueue:
@@ -259,7 +259,7 @@ void BlockingObliteratePath(
   // Early exit required because MakeAbsoluteFilePath() will fail on POSIX
   // if |unnormalized_root| does not exist. This is safe because there is
   // nothing to do in this situation anwyays.
-  if (!file_util::PathExists(unnormalized_root)) {
+  if (!base::PathExists(unnormalized_root)) {
     return;
   }
 
@@ -277,7 +277,7 @@ void BlockingObliteratePath(
   for (std::vector<base::FilePath>::const_iterator it = paths_to_keep.begin();
        it != paths_to_keep.end();
        ++it) {
-    if (root.IsParent(*it) && file_util::PathExists(*it))
+    if (root.IsParent(*it) && base::PathExists(*it))
       valid_paths_to_keep.push_back(*it);
   }
 
@@ -285,7 +285,7 @@ void BlockingObliteratePath(
   // root and be done with it.  Otherwise, signal garbage collection and do
   // a best-effort delete of the on-disk structures.
   if (valid_paths_to_keep.empty()) {
-    base::Delete(root, true);
+    base::DeleteFile(root, true);
     return;
   }
   closure_runner->PostTask(FROM_HERE, on_gc_required);
@@ -343,7 +343,7 @@ void BlockingGarbageCollect(
 
   file_access_runner->PostTask(
       FROM_HERE,
-      base::Bind(base::IgnoreResult(&base::Delete), trash_directory, true));
+      base::Bind(base::IgnoreResult(&base::DeleteFile), trash_directory, true));
 }
 
 }  // namespace

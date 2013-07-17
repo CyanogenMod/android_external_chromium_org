@@ -90,6 +90,7 @@ void ContentSettingBlockedImageModel::UpdateFromWebContents(
     {CONTENT_SETTINGS_TYPE_POPUPS, IDR_BLOCKED_POPUPS},
     {CONTENT_SETTINGS_TYPE_MIXEDSCRIPT, IDR_BLOCKED_MIXED_CONTENT},
     {CONTENT_SETTINGS_TYPE_PPAPI_BROKER, IDR_BLOCKED_PPAPI_BROKER},
+    {CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS, IDR_BLOCKED_DOWNLOADS},
   };
   static const ContentSettingsTypeIdEntry kBlockedTooltipIDs[] = {
     {CONTENT_SETTINGS_TYPE_COOKIES, IDS_BLOCKED_COOKIES_TITLE},
@@ -100,9 +101,12 @@ void ContentSettingBlockedImageModel::UpdateFromWebContents(
     {CONTENT_SETTINGS_TYPE_MIXEDSCRIPT,
         IDS_BLOCKED_DISPLAYING_INSECURE_CONTENT},
     {CONTENT_SETTINGS_TYPE_PPAPI_BROKER, IDS_BLOCKED_PPAPI_BROKER_TITLE},
+    {CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS, IDS_BLOCKED_DOWNLOAD_TITLE},
   };
   static const ContentSettingsTypeIdEntry kBlockedExplanatoryTextIDs[] = {
     {CONTENT_SETTINGS_TYPE_POPUPS, IDS_BLOCKED_POPUPS_EXPLANATORY_TEXT},
+    {CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS,
+        IDS_BLOCKED_DOWNLOADS_EXPLANATION},
   };
 
   ContentSettingsType type = get_content_settings_type();
@@ -136,10 +140,12 @@ void ContentSettingBlockedImageModel::UpdateFromWebContents(
     static const ContentSettingsTypeIdEntry kAccessedIconIDs[] = {
       {CONTENT_SETTINGS_TYPE_COOKIES, IDR_ACCESSED_COOKIES},
       {CONTENT_SETTINGS_TYPE_PPAPI_BROKER, IDR_BLOCKED_PPAPI_BROKER},
+      {CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS, IDR_ALLOWED_DOWNLOADS},
     };
     static const ContentSettingsTypeIdEntry kAccessedTooltipIDs[] = {
       {CONTENT_SETTINGS_TYPE_COOKIES, IDS_ACCESSED_COOKIES_TITLE},
       {CONTENT_SETTINGS_TYPE_PPAPI_BROKER, IDS_ALLOWED_PPAPI_BROKER_TITLE},
+      {CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS, IDS_ALLOWED_DOWNLOAD_TITLE},
     };
     icon_id = GetIdForContentType(
         kAccessedIconIDs, arraysize(kAccessedIconIDs), type);
@@ -231,7 +237,7 @@ void ContentSettingMediaImageModel::UpdateFromWebContents(
       // icon is displayed in the omnibox.
       return;
     case TabSpecificContentSettings::MICROPHONE_ACCESSED:
-      set_icon(IDR_ALLOWED_MICROPHONE);
+      set_icon(IDR_ASK_MEDIA);
       set_tooltip(l10n_util::GetStringUTF8(IDS_MICROPHONE_ACCESSED));
       break;
     case TabSpecificContentSettings::CAMERA_ACCESSED:
@@ -243,7 +249,7 @@ void ContentSettingMediaImageModel::UpdateFromWebContents(
       set_tooltip(l10n_util::GetStringUTF8(IDS_MICROPHONE_CAMERA_ALLOWED));
       break;
     case TabSpecificContentSettings::MICROPHONE_BLOCKED:
-      set_icon(IDR_BLOCKED_MICROPHONE);
+      set_icon(IDR_BLOCKED_MEDIA);
       set_tooltip(l10n_util::GetStringUTF8(IDS_MICROPHONE_BLOCKED));
       break;
     case TabSpecificContentSettings::CAMERA_BLOCKED:

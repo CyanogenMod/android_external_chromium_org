@@ -168,10 +168,10 @@ IconTheme::IconTheme(const std::string& name)
       &MimeUtilConstants::GetInstance()->icon_dirs_;
   for (iter = icon_dirs->begin(); iter != icon_dirs->end(); ++iter) {
     theme_path = iter->first.Append(name);
-    if (!file_util::DirectoryExists(theme_path))
+    if (!DirectoryExists(theme_path))
       continue;
     FilePath theme_index = theme_path.Append("index.theme");
-    if (!index_theme_loaded_ && file_util::PathExists(theme_index)) {
+    if (!index_theme_loaded_ && PathExists(theme_index)) {
       if (!LoadIndexTheme(theme_index))
         return;
       index_theme_loaded_ = true;
@@ -248,7 +248,7 @@ FilePath IconTheme::GetIconPathUnderSubdir(const std::string& icon_name,
     for (size_t i = 0; i < icon_formats->size(); ++i) {
       icon_path = dir_iter->Append(subdir);
       icon_path = icon_path.Append(icon_name + (*icon_formats)[i]);
-      if (file_util::PathExists(icon_path))
+      if (PathExists(icon_path))
         return icon_path;
     }
   }
@@ -387,7 +387,7 @@ bool IconTheme::SetDirectories(const std::string& dirs) {
 
 bool CheckDirExistsAndGetMtime(const FilePath& dir,
                                base::Time* last_modified) {
-  if (!file_util::DirectoryExists(dir))
+  if (!DirectoryExists(dir))
     return false;
   base::PlatformFileInfo file_info;
   if (!file_util::GetFileInfo(dir, &file_info))
@@ -406,7 +406,7 @@ void TryAddIconDir(const FilePath& dir) {
 
 // For a xdg directory |dir|, add the appropriate icon sub-directories.
 void AddXDGDataDir(const FilePath& dir) {
-  if (!file_util::DirectoryExists(dir))
+  if (!DirectoryExists(dir))
     return;
   TryAddIconDir(dir.Append("icons"));
   TryAddIconDir(dir.Append("pixmaps"));
@@ -418,7 +418,7 @@ void InitIconDir() {
   if (!home.empty()) {
       FilePath legacy_data_dir(home);
       legacy_data_dir = legacy_data_dir.AppendASCII(".icons");
-      if (file_util::DirectoryExists(legacy_data_dir))
+      if (DirectoryExists(legacy_data_dir))
         TryAddIconDir(legacy_data_dir);
   }
   const char* env = getenv("XDG_DATA_HOME");
@@ -490,7 +490,7 @@ FilePath LookupFallbackIcon(const std::string& icon_name) {
   for (iter = icon_dirs->begin(); iter != icon_dirs->end(); ++iter) {
     for (size_t i = 0; i < icon_formats->size(); ++i) {
       FilePath icon = iter->first.Append(icon_name + (*icon_formats)[i]);
-      if (file_util::PathExists(icon))
+      if (PathExists(icon))
         return icon;
     }
   }
@@ -640,7 +640,7 @@ FilePath GetMimeIcon(const std::string& mime_type, size_t size) {
   for (size_t i = 0; i < icon_names.size(); i++) {
     if (icon_names[i][0] == '/') {
       icon_file = FilePath(icon_names[i]);
-      if (file_util::PathExists(icon_file))
+      if (PathExists(icon_file))
         return icon_file;
     } else {
       icon_file = LookupIconInDefaultTheme(icon_names[i], size);

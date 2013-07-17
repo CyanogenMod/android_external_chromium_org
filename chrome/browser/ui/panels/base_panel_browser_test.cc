@@ -10,6 +10,7 @@
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
@@ -22,7 +23,6 @@
 #include "chrome/browser/ui/panels/stacked_panel_collection.h"
 #include "chrome/browser/ui/panels/test_panel_active_state_observer.h"
 #include "chrome/browser/ui/panels/test_panel_mouse_watcher.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
@@ -36,6 +36,10 @@
 #if defined(OS_LINUX)
 #include "chrome/browser/ui/browser_window.h"
 #include "ui/base/x/x11_util.h"
+#endif
+
+#if defined(OS_LINUX) && !defined(USE_AURA)
+#include "ui/base/x/active_window_watcher_x.h"
 #endif
 
 #if defined(OS_MACOSX)
@@ -283,6 +287,14 @@ void BasePanelBrowserTest::WaitForPanelActiveState(
     Panel* panel, ActiveState expected_state) {
   DCHECK(expected_state == SHOW_AS_ACTIVE ||
          expected_state == SHOW_AS_INACTIVE);
+
+#if defined(OS_MACOSX)
+  scoped_ptr<NativePanelTesting> panel_testing(
+      CreateNativePanelTesting(panel));
+  ASSERT_TRUE(panel_testing->EnsureApplicationRunOnForeground()) <<
+      "Failed to bring application to foreground. Bail out.";
+#endif
+
   PanelActiveStateObserver signal(panel, expected_state == SHOW_AS_ACTIVE);
   signal.Wait();
 }
@@ -460,6 +472,19 @@ Panel* BasePanelBrowserTest::CreateInactivePanel(const std::string& name) {
   return panel;
 }
 
+Panel* BasePanelBrowserTest::CreateInactiveDockedPanel(
+    const std::string& name, const gfx::Rect& bounds) {
+  // Create an active panel first, instead of inactive panel. This is because
+  // certain window managers on Linux, like icewm, will always activate the
+  // new window.
+  Panel* panel = CreateDockedPanel(name, bounds);
+
+  DeactivatePanel(panel);
+  WaitForPanelActiveState(panel, SHOW_AS_INACTIVE);
+
+  return panel;
+}
+
 Panel* BasePanelBrowserTest::CreateInactiveDetachedPanel(
     const std::string& name, const gfx::Rect& bounds) {
   // Create an active panel first, instead of inactive panel. This is because
@@ -471,6 +496,23 @@ Panel* BasePanelBrowserTest::CreateInactiveDetachedPanel(
   WaitForPanelActiveState(panel, SHOW_AS_INACTIVE);
 
   return panel;
+}
+
+void BasePanelBrowserTest::ActivatePanel(Panel* panel) {
+  // For certain window managers on Linux, the window activation/deactivation
+  // signals might not be sent. To work around this, we explicitly deactivate
+  // all other panels first.
+#if defined(OS_LINUX)
+  std::vector<Panel*> panels = PanelManager::GetInstance()->panels();
+  for (std::vector<Panel*>::const_iterator iter = panels.begin();
+       iter != panels.end(); ++iter) {
+    Panel* current_panel = *iter;
+    if (panel != current_panel)
+      current_panel->Deactivate();
+  }
+#endif
+
+  panel->Activate();
 }
 
 void BasePanelBrowserTest::DeactivatePanel(Panel* panel) {
@@ -562,4 +604,12 @@ void BasePanelBrowserTest::MoveMouse(const gfx::Point& position) {
 std::string BasePanelBrowserTest::MakePanelName(int index) {
   std::string panel_name("Panel");
   return panel_name + base::IntToString(index);
+}
+
+bool BasePanelBrowserTest::WmSupportWindowActivation() {
+#if defined(OS_LINUX) && !defined(USE_AURA)
+  return ui::ActiveWindowWatcherX::WMSupportsActivation();
+#else
+  return true;
+#endif
 }

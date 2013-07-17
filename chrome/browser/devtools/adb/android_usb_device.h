@@ -15,6 +15,10 @@ namespace base {
 class MessageLoop;
 }
 
+namespace crypto {
+class RSAPrivateKey;
+}
+
 namespace net {
 class StreamSocket;
 }
@@ -56,14 +60,18 @@ class AdbMessage : public base::RefCounted<AdbMessage> {
   DISALLOW_COPY_AND_ASSIGN(AdbMessage);
 };
 
-typedef base::Callback<void(int, AdbMessage*)> AdbCallback;
+class AndroidUsbDevice;
+typedef std::vector<scoped_refptr<AndroidUsbDevice> > AndroidUsbDevices;
 
 class AndroidUsbDevice : public base::RefCountedThreadSafe<AndroidUsbDevice> {
  public:
-  static void Enumerate(
-      Profile* profile,
-      std::vector<scoped_refptr<AndroidUsbDevice> >* devices);
-  AndroidUsbDevice(scoped_refptr<UsbDevice> device,
+  static void Enumerate(Profile* profile,
+                        crypto::RSAPrivateKey* rsa_key,
+                        AndroidUsbDevices* devices);
+
+  AndroidUsbDevice(crypto::RSAPrivateKey* rsa_key,
+                   scoped_refptr<UsbDevice> device,
+                   const std::string& serial,
                    int inbound_address,
                    int outbound_address,
                    int zero_mask);
@@ -75,11 +83,13 @@ class AndroidUsbDevice : public base::RefCountedThreadSafe<AndroidUsbDevice> {
             uint32 arg1,
             const std::string& body);
 
+  std::string serial() { return serial_; }
+
+  bool terminated() { return terminated_; }
+
  private:
   friend class base::RefCountedThreadSafe<AndroidUsbDevice>;
   virtual ~AndroidUsbDevice();
-
-  void InterfaceClaimed(bool success);
 
   void Queue(scoped_refptr<AdbMessage> message);
   void ProcessOutgoing();
@@ -87,7 +97,7 @@ class AndroidUsbDevice : public base::RefCountedThreadSafe<AndroidUsbDevice> {
                            scoped_refptr<net::IOBuffer> buffer,
                            size_t result);
 
-  void ReadHeader();
+  void ReadHeader(bool initial);
   void ParseHeader(UsbTransferStatus status,
                    scoped_refptr<net::IOBuffer> buffer,
                    size_t result);
@@ -104,20 +114,29 @@ class AndroidUsbDevice : public base::RefCountedThreadSafe<AndroidUsbDevice> {
 
   void HandleIncoming(scoped_refptr<AdbMessage> message);
 
+  void TransferError(UsbTransferStatus status);
+
+  void Terminate();
+
   void SocketDeleted(uint32 socket_id);
 
   base::MessageLoop* message_loop_;
 
+  scoped_ptr<crypto::RSAPrivateKey> rsa_key_;
+
   // Device info
   scoped_refptr<UsbDevice> usb_device_;
+  std::string serial_;
   int inbound_address_;
   int outbound_address_;
   int zero_mask_;
 
   bool is_connected_;
+  bool signature_sent_;
 
   // Created sockets info
   uint32 last_socket_id_;
+  bool terminated_;
   typedef std::map<uint32, AndroidUsbSocket*> AndroidUsbSockets;
   AndroidUsbSockets sockets_;
 

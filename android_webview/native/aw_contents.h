@@ -140,7 +140,8 @@ class AwContents : public FindHelper::Listener,
                                       const bool precomposed) OVERRIDE;
 
   // AwRenderViewHostExtClient implementation.
-  virtual void OnPageScaleFactorChanged(float page_scale_factor) OVERRIDE;
+  virtual void OnWebLayoutPageScaleFactorChanged(
+      float page_scale_factor) OVERRIDE;
 
   // BrowserViewRenderer::Client implementation.
   virtual bool RequestDrawGL(jobject canvas) OVERRIDE;
@@ -148,6 +149,7 @@ class AwContents : public FindHelper::Listener,
   virtual void OnNewPicture() OVERRIDE;
   virtual gfx::Point GetLocationOnScreen() OVERRIDE;
   virtual void ScrollContainerViewTo(gfx::Vector2d new_value) OVERRIDE;
+  virtual void DidOverscroll(gfx::Vector2d overscroll_delta) OVERRIDE;
 
   void ClearCache(JNIEnv* env, jobject obj, jboolean include_disk_files);
   void SetPendingWebContentsForPopup(scoped_ptr<content::WebContents> pending);
@@ -155,6 +157,9 @@ class AwContents : public FindHelper::Listener,
 
   void ScrollTo(JNIEnv* env, jobject obj, jint xPix, jint yPix);
   void SetDipScale(JNIEnv* env, jobject obj, jfloat dipScale);
+  void SetDisplayedPageScaleFactor(JNIEnv* env,
+                                   jobject obj,
+                                   jfloat pageScaleFactor);
 
   void SetSaveFormData(bool enabled);
 

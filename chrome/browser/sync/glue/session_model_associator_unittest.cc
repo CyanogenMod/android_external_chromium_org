@@ -7,11 +7,11 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/sessions/session_types.h"
 #include "chrome/browser/sync/glue/session_model_associator.h"
 #include "chrome/browser/sync/glue/synced_tab_delegate.h"
 #include "chrome/browser/sync/profile_sync_service_mock.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/profile_mock.h"
 #include "components/sessions/serialized_navigation_entry_test_helper.h"
@@ -190,6 +190,8 @@ class SyncedTabDelegateMock : public SyncedTabDelegate {
                      const std::vector<const content::NavigationEntry*>*());
   MOCK_CONST_METHOD0(IsPinned, bool());
   MOCK_CONST_METHOD0(HasWebContents, bool());
+  MOCK_CONST_METHOD0(GetSyncId, int64());
+  MOCK_METHOD1(SetSyncId, void(int64));
 };
 
 class SyncRefreshListener : public content::NotificationObserver {

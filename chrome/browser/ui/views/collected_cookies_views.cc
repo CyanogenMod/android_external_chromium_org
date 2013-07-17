@@ -13,6 +13,7 @@
 #include "chrome/browser/browsing_data/browsing_data_local_storage_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_server_bound_cert_helper.h"
 #include "chrome/browser/browsing_data/cookies_tree_model.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/content_settings/local_shared_objects_container.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
@@ -21,7 +22,6 @@
 #include "chrome/browser/ui/collected_cookies_infobar_delegate.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
 #include "chrome/browser/ui/views/cookie_info_view.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
@@ -522,7 +522,7 @@ void CollectedCookiesViews::AddContentException(views::TreeView* tree_view,
   Profile* profile =
       Profile::FromBrowserContext(web_contents_->GetBrowserContext());
   host_node->CreateContentException(
-      CookieSettings::Factory::GetForProfile(profile), setting);
+      CookieSettings::Factory::GetForProfile(profile).get(), setting);
   infobar_->UpdateVisibility(true, setting, host_node->GetTitle());
   status_changed_ = true;
 }

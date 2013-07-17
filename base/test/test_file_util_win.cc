@@ -119,14 +119,14 @@ bool DieFileDie(const base::FilePath& file, bool recurse) {
   const base::TimeDelta kTimeout = base::TimeDelta::FromSeconds(10) /
                                    kIterations;
 
-  if (!file_util::PathExists(file))
+  if (!base::PathExists(file))
     return true;
 
   // Sometimes Delete fails, so try a few more times. Divide the timeout
   // into short chunks, so that if a try succeeds, we won't delay the test
   // for too long.
   for (int i = 0; i < kIterations; ++i) {
-    if (base::Delete(file, recurse))
+    if (base::DeleteFile(file, recurse))
       return true;
     base::PlatformThread::Sleep(kTimeout);
   }

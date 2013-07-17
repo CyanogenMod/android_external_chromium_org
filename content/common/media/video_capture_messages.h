@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/shared_memory.h"
+#include "base/memory/shared_memory.h"
 #include "content/common/content_export.h"
 #include "content/common/media/video_capture.h"
 #include "content/public/common/common_param_traits.h"
@@ -36,6 +36,12 @@ IPC_MESSAGE_CONTROL3(VideoCaptureMsg_BufferReady,
 
 // Tell the renderer process the width, height and frame rate the camera use.
 IPC_MESSAGE_CONTROL2(VideoCaptureMsg_DeviceInfo,
+                     int /* device_id */,
+                     media::VideoCaptureParams)
+
+// Tell the renderer process the newly changed width, height and frame rate
+// the video capture device will use.
+IPC_MESSAGE_CONTROL2(VideoCaptureMsg_DeviceInfoChanged,
                      int /* device_id */,
                      media::VideoCaptureParams)
 

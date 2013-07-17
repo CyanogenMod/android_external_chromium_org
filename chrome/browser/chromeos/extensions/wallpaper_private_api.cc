@@ -29,7 +29,6 @@
 #include "chrome/common/chrome_paths.h"
 #include "chromeos/login/login_state.h"
 #include "content/public/browser/browser_thread.h"
-#include "googleurl/src/gurl.h"
 #include "grit/app_locale_settings.h"
 #include "grit/generated_resources.h"
 #include "grit/platform_locale_settings.h"
@@ -39,6 +38,7 @@
 #include "ui/aura/window_observer.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/webui/web_ui_util.h"
+#include "url/gurl.h"
 
 using base::BinaryValue;
 using content::BrowserThread;
@@ -77,13 +77,13 @@ ash::WallpaperLayout GetLayoutEnum(const std::string& layout) {
 bool SaveData(int key, const std::string& file_name, const std::string& data) {
   base::FilePath data_dir;
   CHECK(PathService::Get(key, &data_dir));
-  if (!file_util::DirectoryExists(data_dir) &&
+  if (!base::DirectoryExists(data_dir) &&
       !file_util::CreateDirectory(data_dir)) {
     return false;
   }
   base::FilePath file_path = data_dir.Append(file_name);
 
-  return file_util::PathExists(file_path) ||
+  return base::PathExists(file_path) ||
          (file_util::WriteFile(file_path, data.c_str(),
                                data.size()) != -1);
 }
@@ -94,11 +94,11 @@ bool SaveData(int key, const std::string& file_name, const std::string& data) {
 // expected that we may try to access file which did not saved yet.
 bool GetData(const base::FilePath& path, std::string* data) {
   base::FilePath data_dir = path.DirName();
-  if (!file_util::DirectoryExists(data_dir) &&
+  if (!base::DirectoryExists(data_dir) &&
       !file_util::CreateDirectory(data_dir))
     return false;
 
-  return !file_util::PathExists(path) ||
+  return !base::PathExists(path) ||
          file_util::ReadFileToString(path, data);
 }
 
@@ -382,10 +382,10 @@ void WallpaperPrivateSetWallpaperIfExistsFunction::
   std::string data;
   base::FilePath path = file_path;
 
-  if (!file_util::PathExists(file_path))
+  if (!base::PathExists(file_path))
     path = fallback_path;
 
-  if (file_util::PathExists(path) &&
+  if (base::PathExists(path) &&
       file_util::ReadFileToString(path, &data)) {
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
         base::Bind(&WallpaperPrivateSetWallpaperIfExistsFunction::StartDecode,
@@ -492,7 +492,7 @@ void WallpaperPrivateSetWallpaperFunction::SaveToFile() {
     CHECK(PathService::Get(chrome::DIR_CHROMEOS_WALLPAPERS, &wallpaper_dir));
     base::FilePath file_path = wallpaper_dir.Append(
         file_name).InsertBeforeExtension(chromeos::kSmallWallpaperSuffix);
-    if (file_util::PathExists(file_path))
+    if (base::PathExists(file_path))
       return;
     // Generates and saves small resolution wallpaper. Uses CENTER_CROPPED to
     // maintain the aspect ratio after resize.
@@ -628,7 +628,7 @@ void WallpaperPrivateSetCustomWallpaperFunction::GenerateThumbnail(
   DCHECK(BrowserThread::GetBlockingPool()->IsRunningSequenceOnCurrentThread(
       sequence_token_));
   chromeos::UserImage wallpaper(*image.get());
-  if (!file_util::PathExists(thumbnail_path.DirName()))
+  if (!base::PathExists(thumbnail_path.DirName()))
     file_util::CreateDirectory(thumbnail_path.DirName());
 
   scoped_refptr<base::RefCountedBytes> data;
@@ -893,7 +893,7 @@ void WallpaperPrivateGetOfflineWallpaperListFunction::GetList(
   if (source == kOnlineSource) {
     base::FilePath wallpaper_dir;
     CHECK(PathService::Get(chrome::DIR_CHROMEOS_WALLPAPERS, &wallpaper_dir));
-    if (file_util::DirectoryExists(wallpaper_dir)) {
+    if (base::DirectoryExists(wallpaper_dir)) {
       base::FileEnumerator files(wallpaper_dir, false,
                                  base::FileEnumerator::FILES);
       for (base::FilePath current = files.Next(); !current.empty();

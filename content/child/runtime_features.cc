@@ -43,7 +43,7 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
     const CommandLine& command_line) {
   WebRuntimeFeatures::enableStableFeatures(true);
 
-  if (command_line.HasSwitch(switches::kEnableExperimentalWebKitFeatures))
+  if (command_line.HasSwitch(switches::kEnableExperimentalWebPlatformFeatures))
     WebRuntimeFeatures::enableExperimentalFeatures(true);
 
   SetRuntimeFeatureDefaultsForPlatform();
@@ -96,6 +96,12 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kDisableLegacyEncryptedMedia))
     WebRuntimeFeatures::enableLegacyEncryptedMedia(false);
 
+  if (command_line.HasSwitch(switches::kEnableWebAnimationsCSS))
+    WebRuntimeFeatures::enableWebAnimationsCSS();
+
+  if (command_line.HasSwitch(switches::kEnableWebAnimationsSVG))
+    WebRuntimeFeatures::enableWebAnimationsSVG();
+
   if (command_line.HasSwitch(switches::kEnableWebMIDI))
     WebRuntimeFeatures::enableWebMIDI(true);
 
@@ -110,9 +116,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (command_line.HasSwitch(switches::kDisableFileSystem))
     WebRuntimeFeatures::enableFileSystem(false);
-
-  if (command_line.HasSwitch(switches::kDisableJavaScriptI18NAPI))
-    WebRuntimeFeatures::enableJavaScriptI18NAPI(false);
 
   if (command_line.HasSwitch(switches::kEnableExperimentalCanvasFeatures))
     WebRuntimeFeatures::enableExperimentalCanvasFeatures(true);

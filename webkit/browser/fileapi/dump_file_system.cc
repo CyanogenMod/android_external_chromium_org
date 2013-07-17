@@ -40,7 +40,7 @@
 #include "base/strings/stringprintf.h"
 #include "webkit/browser/fileapi/obfuscated_file_util.h"
 #include "webkit/browser/fileapi/sandbox_directory_database.h"
-#include "webkit/browser/fileapi/sandbox_mount_point_provider.h"
+#include "webkit/browser/fileapi/sandbox_file_system_backend.h"
 #include "webkit/browser/fileapi/sandbox_origin_database.h"
 #include "webkit/common/fileapi/file_system_types.h"
 #include "webkit/common/fileapi/file_system_util.h"
@@ -73,7 +73,7 @@ static void DumpDirectoryTree(const std::string& origin_name,
   printf("=== ORIGIN %s %s ===\n",
          origin_name.c_str(), FilePathToString(origin_dir).c_str());
 
-  if (!file_util::DirectoryExists(origin_dir))
+  if (!base::DirectoryExists(origin_dir))
     return;
 
   SandboxDirectoryDatabase directory_db(origin_dir);
@@ -189,7 +189,7 @@ int main(int argc, char* argv[]) {
     ShowUsageAndExit(arg0);
 
   const base::FilePath file_system_dir = fileapi::StringToFilePath(argv[1]);
-  if (!file_util::DirectoryExists(file_system_dir)) {
+  if (!base::DirectoryExists(file_system_dir)) {
     ShowMessageAndExit(fileapi::FilePathToString(file_system_dir) +
                        " is not a filesystem directory");
   }

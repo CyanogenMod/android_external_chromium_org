@@ -31,6 +31,7 @@
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/login/chrome_restart_request.h"
@@ -59,7 +60,6 @@
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/logging_chrome.h"
@@ -72,10 +72,10 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/network_change_notifier.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "url/gurl.h"
 
 using content::BrowserThread;
 
@@ -365,13 +365,6 @@ void LoginUtilsImpl::InitProfilePreferences(Profile* user_profile) {
         UserManager::Get()->GetLoggedInUser()->display_email());
   }
 
-  // Make sure we flip every profile to not share proxies if the user hasn't
-  // specified so explicitly.
-  const PrefService::Preference* use_shared_proxies_pref =
-      user_profile->GetPrefs()->FindPreference(prefs::kUseSharedProxies);
-  if (use_shared_proxies_pref->IsDefaultValue())
-    user_profile->GetPrefs()->SetBoolean(prefs::kUseSharedProxies, false);
-
   RespectLocalePreference(user_profile);
 }
 
@@ -549,7 +542,7 @@ void LoginUtilsImpl::InitRlzDelayed(Profile* user_profile) {
   base::PostTaskAndReplyWithResult(
       base::WorkerPool::GetTaskRunner(false),
       FROM_HERE,
-      base::Bind(&file_util::PathExists, GetRlzDisabledFlagPath()),
+      base::Bind(&base::PathExists, GetRlzDisabledFlagPath()),
       base::Bind(&LoginUtilsImpl::InitRlz, AsWeakPtr(), user_profile));
 #endif
 }

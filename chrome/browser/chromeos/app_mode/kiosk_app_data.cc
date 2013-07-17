@@ -52,7 +52,7 @@ void SaveIconToLocalOnBlockingPool(
   DCHECK(BrowserThread::GetBlockingPool()->RunsTasksOnCurrentThread());
 
   base::FilePath dir = icon_path.DirName();
-  if (!file_util::PathExists(dir))
+  if (!base::PathExists(dir))
     CHECK(file_util::CreateDirectory(dir));
 
   CHECK_EQ(static_cast<int>(raw_icon->size()),
@@ -277,7 +277,7 @@ void KioskAppData::ClearCache() {
   if (!icon_path_.empty()) {
     BrowserThread::PostBlockingPoolTask(
         FROM_HERE,
-        base::Bind(base::IgnoreResult(&base::Delete), icon_path_, false));
+        base::Bind(base::IgnoreResult(&base::DeleteFile), icon_path_, false));
   }
 }
 

@@ -217,7 +217,7 @@ bool ResourceMetadataStorage::Initialize() {
 
   // Remove unused child map DB.
   const base::FilePath child_map_path = directory_path_.Append(kChildMapDBName);
-  base::Delete(child_map_path, true /* recursive */);
+  base::DeleteFile(child_map_path, true /* recursive */);
 
   resource_map_.reset();
 
@@ -227,10 +227,11 @@ bool ResourceMetadataStorage::Initialize() {
   // Try to open the existing DB.
   leveldb::DB* db = NULL;
   leveldb::Options options;
+  options.max_open_files = 0;  // Use minimum.
   options.create_if_missing = false;
 
   DBInitStatus open_existing_result = DB_INIT_NOT_FOUND;
-  if (file_util::PathExists(resource_map_path)) {
+  if (base::PathExists(resource_map_path)) {
     leveldb::Status status =
         leveldb::DB::Open(options, resource_map_path.AsUTF8Unsafe(), &db);
     open_existing_result = LevelDBStatusToDBInitStatus(status);
@@ -267,9 +268,10 @@ bool ResourceMetadataStorage::Initialize() {
 
     // Clean up the destination.
     const bool kRecursive = true;
-    base::Delete(resource_map_path, kRecursive);
+    base::DeleteFile(resource_map_path, kRecursive);
 
     // Create DB.
+    options.max_open_files = 0;  // Use minimum.
     options.create_if_missing = true;
 
     leveldb::Status status =

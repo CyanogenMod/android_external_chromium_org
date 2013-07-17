@@ -265,13 +265,23 @@ std::string NetworkStateHandler::FormattedHardwareAddressForType(
 
 void NetworkStateHandler::GetNetworkList(NetworkStateList* list) const {
   DCHECK(list);
-  NetworkStateList result;
   list->clear();
   for (ManagedStateList::const_iterator iter = network_list_.begin();
        iter != network_list_.end(); ++iter) {
     const NetworkState* network = (*iter)->AsNetworkState();
     DCHECK(network);
     list->push_back(network);
+  }
+}
+
+void NetworkStateHandler::GetDeviceList(DeviceStateList* list) const {
+  DCHECK(list);
+  list->clear();
+  for (ManagedStateList::const_iterator iter = device_list_.begin();
+       iter != device_list_.end(); ++iter) {
+    const DeviceState* device = (*iter)->AsDeviceState();
+    DCHECK(device);
+    list->push_back(device);
   }
 }
 
@@ -373,25 +383,35 @@ void NetworkStateHandler::UpdateManagedList(ManagedState::ManagedType type,
   ManagedStateList* managed_list = GetManagedList(type);
   NET_LOG_DEBUG(base::StringPrintf("UpdateManagedList:%d", type),
                 base::StringPrintf("%"PRIuS, entries.GetSize()));
-  // Create a map of existing entries.
+  // Create a map of existing entries. Assumes all entries in |managed_list|
+  // are unique.
   std::map<std::string, ManagedState*> managed_map;
   for (ManagedStateList::iterator iter = managed_list->begin();
        iter != managed_list->end(); ++iter) {
     ManagedState* managed = *iter;
+    DCHECK(!ContainsKey(managed_map, managed->path()));
     managed_map[managed->path()] = managed;
   }
-  // Clear the list (pointers are owned by managed_map).
+  // Clear the list (pointers are temporarily owned by managed_map).
   managed_list->clear();
   // Updates managed_list and request updates for new entries.
+  std::set<std::string> list_entries;
   for (base::ListValue::const_iterator iter = entries.begin();
        iter != entries.end(); ++iter) {
     std::string path;
     (*iter)->GetAsString(&path);
-    DCHECK(!path.empty());
+    if (path.empty()) {
+      LOG(ERROR) << "Empty path in list";
+      continue;
+    }
     std::map<std::string, ManagedState*>::iterator found =
         managed_map.find(path);
     ManagedState* managed;
     if (found == managed_map.end()) {
+      if (list_entries.count(path) != 0) {
+        LOG(ERROR) << "Duplicate entry in list: " << path;
+        continue;
+      }
       managed = ManagedState::Create(type, path);
       managed_list->push_back(managed);
     } else {
@@ -399,6 +419,7 @@ void NetworkStateHandler::UpdateManagedList(ManagedState::ManagedType type,
       managed_list->push_back(managed);
       managed_map.erase(found);
     }
+    list_entries.insert(path);
   }
   // Delete any remaning entries in managed_map.
   STLDeleteContainerPairSecondPointers(managed_map.begin(), managed_map.end());
@@ -486,7 +507,8 @@ void NetworkStateHandler::UpdateNetworkServiceProperty(
     network_event_log::LogLevel log_level = network_event_log::LOG_LEVEL_EVENT;
     if (key == flimflam::kErrorProperty || key == shill::kErrorDetailsProperty)
       log_level = network_event_log::LOG_LEVEL_ERROR;
-    else if (key == flimflam::kSignalStrengthProperty)
+    else if (key == flimflam::kSignalStrengthProperty ||
+             key == shill::kWifiFrequencyListProperty)
       log_level = network_event_log::LOG_LEVEL_DEBUG;
     NET_LOG_LEVEL(log_level, "NetworkPropertyUpdated", detail);
   }

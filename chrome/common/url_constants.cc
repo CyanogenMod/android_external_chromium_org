@@ -4,7 +4,7 @@
 
 #include "chrome/common/url_constants.h"
 
-#include "googleurl/src/url_util.h"
+#include "url/url_util.h"
 
 namespace chrome {
 
@@ -523,6 +523,7 @@ const int kNumberOfChromeDebugURLs =
     static_cast<int>(arraysize(kChromeDebugURLs));
 
 const char kExtensionResourceScheme[] = "chrome-extension-resource";
+const char kChromeNativeScheme[] = "chrome-native";
 
 const char kChromeSearchScheme[] = "chrome-search";
 const char kChromeSearchLocalNtpHost[] = "local-ntp";
@@ -530,9 +531,6 @@ const char kChromeSearchLocalNtpUrl[] =
     "chrome-search://local-ntp/local-ntp.html";
 const char kChromeSearchLocalGoogleNtpUrl[] =
     "chrome-search://local-ntp/local-ntp.html?isGoogle";
-
-const char kChromeSearchSuggestionHost[] = "suggestion";
-const char kChromeSearchSuggestionUrl[] = "chrome-search://suggestion/";
 
 const char kChromeSearchMostVisitedHost[] = "most-visited";
 const char kChromeSearchMostVisitedUrl[] = "chrome-search://most-visited/";

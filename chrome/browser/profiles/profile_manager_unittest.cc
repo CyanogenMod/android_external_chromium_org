@@ -14,6 +14,7 @@
 #include "build/build_config.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
@@ -25,7 +26,6 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -66,7 +66,7 @@ class ProfileManager : public ::ProfileManagerWithoutInit {
  protected:
   virtual Profile* CreateProfileHelper(
       const base::FilePath& file_path) OVERRIDE {
-    if (!file_util::PathExists(file_path)) {
+    if (!base::PathExists(file_path)) {
       if (!file_util::CreateDirectory(file_path))
         return NULL;
     }
@@ -300,6 +300,13 @@ TEST_F(ProfileManagerTest, CreateProfilesAsync) {
   CreateProfileAsync(profile_manager, profile_name2, &mock_observer);
 
   message_loop_.RunUntilIdle();
+}
+
+TEST_F(ProfileManagerTest, GetGuestProfilePath) {
+  base::FilePath guest_path = ProfileManager::GetGuestProfilePath();
+  base::FilePath expected_path = temp_dir_.path();
+  expected_path = expected_path.Append(chrome::kGuestProfileDir);
+  EXPECT_EQ(expected_path, guest_path);
 }
 
 TEST_F(ProfileManagerTest, AutoloadProfilesWithBackgroundApps) {

@@ -9,8 +9,8 @@
 
 #include "base/callback.h"
 #include "base/memory/weak_ptr.h"
-#include "media/base/demuxer_stream.h"
 #include "media/base/video_decoder.h"
+#include "media/base/video_decoder_config.h"
 
 struct AVCodecContext;
 struct AVFrame;
@@ -30,10 +30,10 @@ class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
   virtual ~FFmpegVideoDecoder();
 
   // VideoDecoder implementation.
-  virtual void Initialize(DemuxerStream* stream,
-                          const PipelineStatusCB& status_cb,
-                          const StatisticsCB& statistics_cb) OVERRIDE;
-  virtual void Read(const ReadCB& read_cb) OVERRIDE;
+  virtual void Initialize(const VideoDecoderConfig& config,
+                          const PipelineStatusCB& status_cb) OVERRIDE;
+  virtual void Decode(const scoped_refptr<DecoderBuffer>& buffer,
+                      const ReadCB& read_cb) OVERRIDE;
   virtual void Reset(const base::Closure& closure) OVERRIDE;
   virtual void Stop(const base::Closure& closure) OVERRIDE;
 
@@ -51,15 +51,10 @@ class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
     kError
   };
 
-  // Reads from the demuxer stream and corresponding read callback.
-  void ReadFromDemuxerStream();
-  void BufferReady(DemuxerStream::Status status,
-                   const scoped_refptr<DecoderBuffer>& buffer);
-
   // Handles decoding an unencrypted encoded buffer.
   void DecodeBuffer(const scoped_refptr<DecoderBuffer>& buffer);
-  bool Decode(const scoped_refptr<DecoderBuffer>& buffer,
-              scoped_refptr<VideoFrame>* video_frame);
+  bool FFmpegDecode(const scoped_refptr<DecoderBuffer>& buffer,
+                    scoped_refptr<VideoFrame>* video_frame);
 
   // Handles (re-)initializing the decoder with a (new) config.
   // Returns true if initialization was successful.
@@ -78,8 +73,6 @@ class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
 
   DecoderState state_;
 
-  StatisticsCB statistics_cb_;
-
   ReadCB read_cb_;
   base::Closure reset_cb_;
 
@@ -87,8 +80,7 @@ class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
   AVCodecContext* codec_context_;
   AVFrame* av_frame_;
 
-  // Pointer to the demuxer stream that will feed us compressed buffers.
-  DemuxerStream* demuxer_stream_;
+  VideoDecoderConfig config_;
 
   DISALLOW_COPY_AND_ASSIGN(FFmpegVideoDecoder);
 };

@@ -14,6 +14,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #import "chrome/browser/app_controller_mac.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
@@ -50,7 +51,6 @@
 #import "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/zoom/zoom_controller.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/feature_switch.h"
@@ -165,11 +165,6 @@ string16 LocationBarViewMac::GetInputString() const {
   return location_input_;
 }
 
-void LocationBarViewMac::SetInstantSuggestion(
-    const InstantSuggestion& suggestion) {
-  omnibox_view_->model()->SetInstantSuggestion(suggestion);
-}
-
 WindowOpenDisposition LocationBarViewMac::GetWindowOpenDisposition() const {
   return disposition_;
 }
@@ -225,6 +220,11 @@ void LocationBarViewMac::InvalidatePageActions() {
 
 void LocationBarViewMac::UpdateOpenPDFInReaderPrompt() {
   // Not implemented on Mac.
+}
+
+void LocationBarViewMac::UpdateAutofillCreditCardView() {
+  // TODO(dbeam): encourage groby@ to implement via prodding or chocolate.
+  NOTIMPLEMENTED();
 }
 
 void LocationBarViewMac::SaveStateToContents(WebContents* contents) {

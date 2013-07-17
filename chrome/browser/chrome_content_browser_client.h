@@ -36,7 +36,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   ChromeContentBrowserClient();
   virtual ~ChromeContentBrowserClient();
 
-  static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Notification that the application locale has changed. This allows us to
   // update our I/O thread cache of this value.
@@ -62,6 +62,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   virtual void GuestWebContentsCreated(
       content::WebContents* guest_web_contents,
       content::WebContents* opener_web_contents,
+      content::BrowserPluginGuestDelegate** guest_delegate,
       scoped_ptr<base::DictionaryValue> extra_params) OVERRIDE;
   virtual void GuestWebContentsAttached(
       content::WebContents* guest_web_contents,
@@ -108,6 +109,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       content::ResourceContext* resource_context,
       const GURL& current_url,
       const GURL& new_url) OVERRIDE;
+  virtual bool ShouldAssignSiteForURL(const GURL& url) OVERRIDE;
   virtual std::string GetCanonicalEncodingNameByAliasName(
       const std::string& alias_name) OVERRIDE;
   virtual void AppendExtraCommandLineSwitches(CommandLine* command_line,
@@ -240,12 +242,10 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       content::WebContents* web_contents) OVERRIDE;
   virtual void GetAdditionalAllowedSchemesForFileSystem(
       std::vector<std::string>* additional_schemes) OVERRIDE;
-  virtual void GetAdditionalFileSystemMountPointProviders(
+  virtual void GetAdditionalFileSystemBackends(
+      content::BrowserContext* browser_context,
       const base::FilePath& storage_partition_path,
-      quota::SpecialStoragePolicy* special_storage_policy,
-      fileapi::ExternalMountPoints* external_mount_points,
-      ScopedVector<fileapi::FileSystemMountPointProvider>*
-          additional_providers) OVERRIDE;
+      ScopedVector<fileapi::FileSystemBackend>* additional_backends) OVERRIDE;
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   virtual void GetAdditionalMappedFilesForChildProcess(

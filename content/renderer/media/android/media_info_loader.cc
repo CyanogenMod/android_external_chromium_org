@@ -18,7 +18,6 @@ using WebKit::WebURLLoader;
 using WebKit::WebURLLoaderOptions;
 using WebKit::WebURLRequest;
 using WebKit::WebURLResponse;
-using webkit_media::ActiveLoader;
 
 namespace content {
 
@@ -110,7 +109,7 @@ void MediaInfoLoader::didReceiveResponse(
                "Unknown")
            << " " << response.httpStatusCode();
   DCHECK(active_loader_.get());
-  if (response.httpStatusCode() == kHttpOK) {
+  if (response.httpStatusCode() == kHttpOK || url_.SchemeIsFile()) {
     DidBecomeReady(kOk);
     return;
   }

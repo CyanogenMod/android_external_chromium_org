@@ -45,12 +45,12 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/chromeos/audio/audio_handler.h"
 #include "chrome/browser/chromeos/bluetooth/bluetooth_pairing_dialog.h"
 #include "chrome/browser/chromeos/choose_mobile_network_dialog.h"
-#include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/job_list.h"
@@ -86,7 +86,6 @@
 #include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/upgrade_detector.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/time_format.h"
 #include "chrome/common/url_constants.h"
@@ -279,9 +278,6 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
     registrar_->Add(this,
                    chrome::NOTIFICATION_PROFILE_DESTROYED,
                    content::NotificationService::AllSources());
-    registrar_->Add(this,
-                   chrome::NOTIFICATION_LOGIN_USER_PROFILE_PREPARED,
-                   content::NotificationService::AllSources());
     registrar_->Add(
         this,
         chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SCREEN_MAGNIFIER,
@@ -303,7 +299,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
     DBusThreadManager::Get()->GetPowerManagerClient()->AddObserver(this);
     DBusThreadManager::Get()->GetSessionManagerClient()->AddObserver(this);
 
-    NetworkLibrary* crosnet = CrosLibrary::Get()->GetNetworkLibrary();
+    NetworkLibrary* crosnet = NetworkLibrary::Get();
     crosnet->AddNetworkManagerObserver(this);
     OnNetworkManagerChanged(crosnet);
 
@@ -373,7 +369,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
     DBusThreadManager::Get()->GetSessionManagerClient()->RemoveObserver(this);
     DBusThreadManager::Get()->GetPowerManagerClient()->RemoveObserver(this);
     DBusThreadManager::Get()->GetSystemClockClient()->RemoveObserver(this);
-    NetworkLibrary* crosnet = CrosLibrary::Get()->GetNetworkLibrary();
+    NetworkLibrary* crosnet = NetworkLibrary::Get();
     if (crosnet)
       crosnet->RemoveNetworkManagerObserver(this);
     input_method::InputMethodManager::Get()->RemoveObserver(this);
@@ -384,11 +380,8 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
     ash::Shell::GetInstance()->session_state_delegate()->
         RemoveSessionStateObserver(this);
 
-    // Stop observing gdata operations.
-    DriveIntegrationService* integration_service =
-        FindDriveIntegrationService();
-    if (integration_service)
-      integration_service->job_list()->RemoveObserver(this);
+    // Stop observing Drive operations.
+    UnobserveDriveUpdates();
 
     policy::DeviceCloudPolicyManagerChromeOS* policy_manager =
         g_browser_process->browser_policy_connector()->
@@ -465,7 +458,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
   virtual const std::string GetLocallyManagedUserManager() const OVERRIDE {
     if (GetUserLoginStatus() != ash::user::LOGGED_IN_LOCALLY_MANAGED)
       return std::string();
-    return UserManager::Get()->GetManagerUserIdForManagedUser(
+    return UserManager::Get()->GetManagerDisplayEmailForManagedUser(
         chromeos::UserManager::Get()->GetActiveUser()->email());
   }
 
@@ -836,7 +829,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
                                       std::string* topup_url,
                                       std::string* setup_url) OVERRIDE {
     bool result = false;
-    NetworkLibrary* crosnet = CrosLibrary::Get()->GetNetworkLibrary();
+    NetworkLibrary* crosnet = NetworkLibrary::Get();
     const NetworkDevice* cellular = crosnet->FindCellularDevice();
     if (!cellular)
       return false;
@@ -925,7 +918,14 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
   }
 
   void SetProfile(Profile* profile) {
+    // Stop observing the current |user_profile_| on Drive integration status.
+    UnobserveDriveUpdates();
+
     user_profile_ = profile;
+
+    // Restart observation, now for the newly set |profile|.
+    ObserveDriveUpdates();
+
     PrefService* prefs = profile->GetPrefs();
     user_pref_registrar_.reset(new PrefChangeRegistrar);
     user_pref_registrar_->Init(prefs);
@@ -965,11 +965,18 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
     return true;
   }
 
-  void ObserveGDataUpdates() {
+  void ObserveDriveUpdates() {
     DriveIntegrationService* integration_service =
         FindDriveIntegrationService();
     if (integration_service)
       integration_service->job_list()->AddObserver(this);
+  }
+
+  void UnobserveDriveUpdates() {
+    DriveIntegrationService* integration_service =
+        FindDriveIntegrationService();
+    if (integration_service)
+      integration_service->job_list()->RemoveObserver(this);
   }
 
   void UpdateClockType() {
@@ -1103,11 +1110,6 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
         }
         break;
       }
-      case chrome::NOTIFICATION_LOGIN_USER_PROFILE_PREPARED: {
-        // GData system service exists by the time if enabled.
-        ObserveGDataUpdates();
-        break;
-      }
       case chrome::NOTIFICATION_PROFILE_CREATED: {
         SetProfile(content::Source<Profile>(source).ptr());
         registrar_->Remove(this,
@@ -1182,8 +1184,8 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
   }
 
   DriveIntegrationService* FindDriveIntegrationService() {
-    Profile* profile = ProfileManager::GetDefaultProfile();
-    return DriveIntegrationServiceFactory::FindForProfile(profile);
+    return user_profile_ ?
+        DriveIntegrationServiceFactory::FindForProfile(user_profile_) : NULL;
   }
 
   // Overridden from system::TimezoneSettings::Observer.
@@ -1243,7 +1245,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
       size_t link_index) OVERRIDE {
     if (message_type == ash::NetworkObserver::ERROR_OUT_OF_CREDITS) {
       const CellularNetwork* cellular =
-          CrosLibrary::Get()->GetNetworkLibrary()->cellular_network();
+          NetworkLibrary::Get()->cellular_network();
       if (cellular)
         ConnectToNetwork(cellular->service_path());
       ash::Shell::GetInstance()->system_tray_notifier()->
@@ -1266,7 +1268,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
         deal_url_to_open = deal_topup_url;
       } else {
         const Network* cellular =
-            CrosLibrary::Get()->GetNetworkLibrary()->cellular_network();
+            NetworkLibrary::Get()->cellular_network();
         if (!cellular)
           return;
         ShowNetworkSettings(cellular->service_path());
@@ -1309,7 +1311,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
 
   void UpdateCellular() {
     const CellularNetworkVector& cellular_networks =
-        CrosLibrary::Get()->GetNetworkLibrary()->cellular_networks();
+        NetworkLibrary::Get()->cellular_networks();
     if (cellular_networks.empty())
       return;
     // We only care about the first cellular network (in practice there will

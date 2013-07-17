@@ -20,6 +20,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/app_icon_loader_impl.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -54,7 +55,6 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
@@ -625,14 +625,9 @@ void ChromeLauncherControllerPerApp::SetAppImage(
 }
 
 void ChromeLauncherControllerPerApp::OnAutoHideBehaviorChanged(
+    aura::RootWindow* root_window,
     ash::ShelfAutoHideBehavior new_behavior) {
-  ash::Shell::RootWindowList root_windows = ash::Shell::GetAllRootWindows();
-
-  for (ash::Shell::RootWindowList::const_iterator iter =
-           root_windows.begin();
-       iter != root_windows.end(); ++iter) {
-    SetShelfAutoHideBehaviorPrefs(new_behavior, *iter);
-  }
+  SetShelfAutoHideBehaviorPrefs(new_behavior, root_window);
 }
 
 void ChromeLauncherControllerPerApp::SetLauncherItemImage(

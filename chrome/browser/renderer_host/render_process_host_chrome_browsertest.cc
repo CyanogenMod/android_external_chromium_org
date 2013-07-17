@@ -4,12 +4,12 @@
 
 #include "base/command_line.h"
 #include "base/process_util.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -357,7 +357,7 @@ IN_PROC_BROWSER_TEST_F(ChromeRenderProcessHostTest,
 }
 
 // This class's goal is to close the browser window when a renderer process has
-// crashed. It does so by monitoring WebContents for RenderViewGone event and
+// crashed. It does so by monitoring WebContents for RenderProcessGone event and
 // closing the passed in TabStripModel. This is used in the following test case.
 class WindowDestroyer : public content::WebContentsObserver {
  public:
@@ -366,7 +366,7 @@ class WindowDestroyer : public content::WebContentsObserver {
         tab_strip_model_(model) {
   }
 
-  virtual void RenderViewGone(base::TerminationStatus status) OVERRIDE {
+  virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE {
     // Wait for the window to be destroyed, which will ensure all other
     // RenderViewHost objects are deleted before we return and proceed with
     // the next iteration of notifications.

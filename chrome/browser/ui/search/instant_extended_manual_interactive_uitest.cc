@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/strings/string_util.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/task_manager/task_manager.h"
 #include "chrome/browser/task_manager/task_manager_browsertest_util.h"
@@ -13,7 +14,6 @@
 #include "chrome/browser/ui/search/instant_ntp.h"
 #include "chrome/browser/ui/search/instant_test_utils.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/omnibox_focus_state.h"
 #include "chrome/common/search_types.h"
 #include "chrome/common/url_constants.h"
@@ -26,9 +26,9 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/network_change_notifier.h"
 #include "net/dns/mock_host_resolver.h"
+#include "url/gurl.h"
 
 // !!! IMPORTANT !!!
 // These tests are run against a mock GWS using the web-page-replay system.

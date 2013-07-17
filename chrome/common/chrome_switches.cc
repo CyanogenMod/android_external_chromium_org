@@ -259,6 +259,9 @@ const char kDeviceManagementUrl[]           = "device-management-url";
 // Triggers a plethora of diagnostic modes.
 const char kDiagnostics[]                   = "diagnostics";
 
+// Sets the output format for diagnostic modes enabled by diagnostics flag.
+const char kDiagnosticsFormat[]             = "diagnostics-format";
+
 // Replaces the audio IPC layer for <audio> and <video> with a mock audio
 // device, useful when using remote desktop or machines without sound cards.
 // This is temporary until we fix the underlying problem.
@@ -327,9 +330,6 @@ const char kDisableExtensionsHttpThrottling[] =
 // Disable mandatory enforcement of web_accessible_resources in extensions.
 const char kDisableExtensionsResourceWhitelist[] =
     "disable-extensions-resource-whitelist";
-
-// Disables automatically making app run in full screen in force app mode.
-const char kDisableFullscreenApp[]          = "disable-fullscreen-app";
 
 // Disable Instant extended API.
 const char kDisableInstantExtendedAPI[]     = "disable-instant-extended-api";
@@ -418,6 +418,9 @@ const char kDisableSyncExtensionSettings[]  = "disable-sync-extension-settings";
 // Disables syncing of extensions.
 const char kDisableSyncExtensions[]         = "disable-sync-extensions";
 
+// Disables syncing of favicons.
+const char kDisableSyncFavicons[]           = "disable-sync-favicons";
+
 // Disables syncing browser passwords.
 const char kDisableSyncPasswords[]          = "disable-sync-passwords";
 
@@ -505,6 +508,9 @@ const char kEnableAutologin[]               = "enable-autologin";
 // Enables the benchmarking extensions.
 const char kEnableBenchmarking[]            = "enable-benchmarking";
 
+// Enables (experimental) more strict popup blocking.
+const char kEnableBetterPopupBlocking[]     = "enable-better-popup-blocking";
+
 // This applies only when the process type is "service". Enables the Cloud
 // Print Proxy component within the service process.
 const char kEnableCloudPrintProxy[]         = "enable-cloud-print-proxy";
@@ -517,8 +523,8 @@ const char kEnableComponentCloudPolicy[]    = "enable-component-cloud-policy";
 // Chrome OS apps list.
 const char kEnableContacts[]                = "enable-contacts";
 
-// Enables desktop guest mode.
-const char kEnableDesktopGuestMode[]        = "enable-desktop-guest-mode";
+// Enables device discovery.
+const char kEnableDeviceDiscovery[]        = "enable-device-discovery";
 
 // If true devtools experimental settings are enabled.
 const char kEnableDevToolsExperiments[]     = "enable-devtools-experiments";
@@ -600,9 +606,6 @@ const char kEnableMetricsReportingForTesting[] =
 // (internally adds lEnableGpuPlugin to the command line).
 const char kEnableNaCl[]                    = "enable-nacl";
 
-// Enables debugging via RSP over a socket.
-const char kEnableNaClDebug[]               = "enable-nacl-debug";
-
 // Enables the network-related benchmarking extensions.
 const char kEnableNetBenchmarking[]         = "enable-net-benchmarking";
 
@@ -640,6 +643,10 @@ const char kEnableProfiling[]               = "enable-profiling";
 
 // Enables support for the QUIC protocol.  This is a temporary testing flag.
 const char kEnableQuic[]                    = "enable-quic";
+
+// Enables support for the HTTPS over QUIC protocol.  This is a temporary
+// testing flag.
+const char kEnableQuicHttps[]               = "enable-quic-https";
 
 // Enables the Quickoffoce/Chrome document editor rather than the viewer.
 const char kEnableQuickofficeEdit[]         = "enable-quickoffice-editing";
@@ -680,9 +687,6 @@ const char kEnableStackedTabStrip[]         = "enable-stacked-tab-strip";
 
 // Enables experimental suggestions pane in New Tab page.
 const char kEnableSuggestionsTabPage[]      = "enable-suggestions-ntp";
-
-// Enables synced favicons
-const char kEnableSyncFavicons[]            = "enable-sync-favicons";
 
 // Enables synced notifications.
 const char kEnableSyncSyncedNotifications[] =
@@ -991,31 +995,6 @@ const char kNoStartupWindow[]               = "no-startup-window";
 // Autoconfig (PAC) script.
 const char kNumPacThreads[]                 = "num-pac-threads";
 
-// Controls whether HistoryQuickProvider is allowed to reorder results
-// according to inlineability in order to more aggressively assign/keep
-// high relevance scores.
-const char kOmniboxHistoryQuickProviderReorderForInlining[] =
-    "omnibox-history-quick-provider-reorder-for-inlining";
-// The value the kOmniboxHistoryQuickProviderReorderForInlining switch may
-// have, as in "--omnibox-history-quick-provider-reorder-for-inlining=1".
-// 1 means allow reordering results.
-const char kOmniboxHistoryQuickProviderReorderForInliningEnabled[] = "1";
-// 0 means don't allow reordering results ( == current behavior as of 6/2012).
-const char kOmniboxHistoryQuickProviderReorderForInliningDisabled[] = "0";
-
-// Controls whether the omnibox's HistoryQuickProvider is allowed to
-// inline suggestions.
-const char kOmniboxInlineHistoryQuickProvider[] =
-    "omnibox-inline-history-quick-provider-allowed";
-// The values the kOmniboxInlineHistoryQuickProvider switch may have, as in
-// "--omnibox-inline-history-quick-provider-allowed=1"
-//   allowed: if HistoryQuickProvider thinks it appropriate, it can inline
-//   ( == current behavior as of 2/2012).
-const char kOmniboxInlineHistoryQuickProviderAllowed[] = "1";
-//   prohibited: never inline matches
-const char kOmniboxInlineHistoryQuickProviderProhibited[] = "0";
-//   auto: any other value => the code and field trial does what it wants.
-
 // When the option to block third-party cookies is enabled, only block
 // third-party cookies from being set.
 const char kOnlyBlockSettingThirdPartyCookies[] =
@@ -1173,9 +1152,8 @@ const char kRecordMode[]                    = "record-mode";
 // Uses custom front-end URL for the remote debugging.
 const char kRemoteDebuggingFrontend[]       = "remote-debugging-frontend";
 
-// Does not show an infobar when an extension attaches to a page using
-// chrome.debugger page. Required to attach to extension background pages.
-const char kSilentDebuggerExtensionAPI[]    = "silent-debugger-extension-api";
+// Enables remote debugging of Chrome for Android via raw USB.
+const char kRemoteDebuggingRawUSB[]       = "remote-debugging-raw-usb";
 
 // Enables print preview in the renderer. This flag is generated internally by
 // Chrome and does nothing when directly passed to the browser.
@@ -1256,6 +1234,10 @@ const char kShowLauncherAlignmentMenu[]     = "show-launcher-alignment-menu";
 
 // Marks a renderer as the signin process.
 const char kSigninProcess[]                 = "signin-process";
+
+// Does not show an infobar when an extension attaches to a page using
+// chrome.debugger page. Required to attach to extension background pages.
+const char kSilentDebuggerExtensionAPI[]    = "silent-debugger-extension-api";
 
 // Changes the DCHECKS to dump memory and continue instead of displaying error
 // dialog. This is valid only in Release mode when --enable-dcheck is
@@ -1339,9 +1321,6 @@ const char kSyncAllowInsecureXmppConnection[] =
 // Invalidates any login info passed into sync's XMPP connection.
 const char kSyncInvalidateXmppLogin[]       = "sync-invalidate-xmpp-login";
 
-// Enable support for keystore key based encryption.
-const char kSyncKeystoreEncryption[]        = "sync-keystore-encryption";
-
 // This flag causes sync to retry very quickly (see polling_constants.h) the
 // when it encounters an error, as the first step towards exponential backoff.
 const char kSyncShortInitialRetryOverride[] =
@@ -1352,9 +1331,6 @@ const char kSyncNotificationHostPort[]      = "sync-notification-host-port";
 
 // Overrides the default server used for profile sync.
 const char kSyncServiceURL[]                = "sync-url";
-
-// Enables syncing of favicons as part of tab sync.
-const char kSyncTabFavicons[]               = "sync-tab-favicons";
 
 // Makes the sync code to throw an unrecoverable error after initialization.
 // Useful for testing unrecoverable error scenarios.
@@ -1424,9 +1400,6 @@ const char kUseSpdy[]                       = "use-spdy";
 // This will only work if asynchronous spell checking is not disabled.
 const char kUseSpellingSuggestions[]        = "use-spelling-suggestions";
 
-// Sets the maximum SPDY sessions per domain.
-const char kMaxSpdySessionsPerDomain[]      = "max-spdy-sessions-per-domain";
-
 // Sets the maximum concurrent streams over a SPDY session.
 const char kMaxSpdyConcurrentStreams[]      = "max-spdy-concurrent-streams";
 
@@ -1480,6 +1453,9 @@ const char kEnableTranslate[]               = "enable-translate";
 
 // Uses the tablet specific UI components when available.
 const char kTabletUI[]                      = "tablet-ui";
+
+// Enables the new NTP.
+const char kEnableNewNTP[]                  = "enable-new-ntp";
 #endif
 
 #if defined(USE_ASH)
@@ -1506,6 +1482,11 @@ const char kPasswordStore[]                 = "password-store";
 #endif  // OS_POSIX
 
 #if defined(OS_MACOSX)
+// Forcibly disables Lion-style on newer OSes, to allow developers to test the
+// older, SnowLeopard-style fullscreen.
+const char kDisableSystemFullscreenForTesting[] =
+    "disable-system-fullscreen-for-testing";
+
 // Enables the app list OSX .app shim, for showing the app list. If the flag is
 // not present, Chrome will check if the shim exists at startup, and delete it
 // if it does.

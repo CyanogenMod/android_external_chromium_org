@@ -74,10 +74,10 @@ class PortMonitorTest : public testing::Test  {
     base::FilePath path;
     PathService::Get(base::DIR_LOCAL_APP_DATA, &path);
     base::FilePath main_path = path.Append(kChromeExePath);
-    ASSERT_TRUE(base::Delete(main_path, true));
+    ASSERT_TRUE(base::DeleteFile(main_path, true));
     PathService::Get(base::DIR_LOCAL_APP_DATA, &path);
     base::FilePath alternate_path = path.Append(kAlternateChromeExePath);
-    ASSERT_TRUE(base::Delete(alternate_path, true));
+    ASSERT_TRUE(base::DeleteFile(alternate_path, true));
   }
 
  protected:
@@ -99,7 +99,7 @@ TEST_F(PortMonitorTest, GetChromeExePathTest) {
   EXPECT_FALSE(chrome_path.empty());
   EXPECT_TRUE(
       chrome_path.value().rfind(kAlternateChromeExePath) != std::string::npos);
-  EXPECT_TRUE(file_util::PathExists(chrome_path));
+  EXPECT_TRUE(base::PathExists(chrome_path));
   DeleteChromeExeRegistry();
   chrome_path = cloud_print::GetChromeExePath();
   // No Chrome or regular chrome path.
@@ -113,7 +113,7 @@ TEST_F(PortMonitorTest, GetChromeProfilePathTest) {
   base::FilePath temp;
   PathService::Get(base::DIR_TEMP, &temp);
   EXPECT_EQ(data_path, temp);
-  EXPECT_TRUE(file_util::DirectoryExists(data_path));
+  EXPECT_TRUE(base::DirectoryExists(data_path));
   DeleteChromeExeRegistry();
   data_path = cloud_print::GetChromeProfilePath();
   EXPECT_TRUE(data_path.empty());

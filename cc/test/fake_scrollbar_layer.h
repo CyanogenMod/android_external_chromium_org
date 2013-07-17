@@ -8,6 +8,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "cc/layers/scrollbar_layer.h"
 
+namespace base { template<typename T> class AutoReset; }
+
 namespace cc {
 
 class FakeScrollbarLayer : public ScrollbarLayer {
@@ -28,8 +30,15 @@ class FakeScrollbarLayer : public ScrollbarLayer {
     return last_update_partial_upload_size_;
   }
 
-  virtual void Update(ResourceUpdateQueue* queue,
+  virtual bool Update(ResourceUpdateQueue* queue,
                       const OcclusionTracker* occlusion) OVERRIDE;
+
+  virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
+
+  scoped_ptr<base::AutoReset<bool> > IgnoreSetNeedsCommit();
+
+  size_t push_properties_count() const { return push_properties_count_; }
+  void reset_push_properties_count() { push_properties_count_ = 0; }
 
  private:
   FakeScrollbarLayer(bool paint_during_update,
@@ -38,6 +47,7 @@ class FakeScrollbarLayer : public ScrollbarLayer {
   virtual ~FakeScrollbarLayer();
 
   int update_count_;
+  size_t push_properties_count_;
   size_t last_update_full_upload_size_;
   size_t last_update_partial_upload_size_;
 };

@@ -11,7 +11,7 @@
 
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/manifest_handler.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace extensions {
 
@@ -32,7 +32,7 @@ struct InputComponentInfo {
   InputComponentType type;
   std::string id;
   std::string description;
-  std::string language;
+  std::set<std::string> languages;
   std::set<std::string> layouts;
   std::string shortcut_keycode;
   bool shortcut_alt;

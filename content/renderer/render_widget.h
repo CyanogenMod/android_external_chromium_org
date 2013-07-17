@@ -27,8 +27,10 @@
 #include "third_party/WebKit/public/web/WebPopupType.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "third_party/WebKit/public/web/WebTextInputInfo.h"
+#include "third_party/WebKit/public/web/WebWidget.h"
 #include "third_party/WebKit/public/web/WebWidgetClient.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/base/range/range.h"
 #include "ui/gfx/native_widget_types.h"
@@ -316,8 +318,9 @@ class CONTENT_EXPORT RenderWidget
       const std::vector<WebKit::WebCompositionUnderline>& underlines,
       int selection_start,
       int selection_end);
-  virtual void OnImeConfirmComposition(
-      const string16& text, const ui::Range& replacement_range);
+  virtual void OnImeConfirmComposition(const string16& text,
+                                       const ui::Range& replacement_range,
+                                       bool keep_selection);
   void OnPaintAtSize(const TransportDIB::Handle& dib_id,
                      int tag,
                      const gfx::Size& page_size,
@@ -420,17 +423,18 @@ class CONTENT_EXPORT RenderWidget
   // the new value will be sent to the browser process.
   virtual void UpdateSelectionBounds();
 
-  // Checks if the composition range or composition character bounds have been
-  // changed. If they are changed, the new value will be sent to the browser
-  // process.
-  virtual void UpdateCompositionInfo(bool should_update_range);
-
   // Override point to obtain that the current input method state and caret
   // position.
   virtual ui::TextInputType GetTextInputType();
   virtual void GetSelectionBounds(gfx::Rect* start, gfx::Rect* end);
   virtual ui::TextInputType WebKitToUiTextInputType(
       WebKit::WebTextInputType type);
+
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+  // Checks if the composition range or composition character bounds have been
+  // changed. If they are changed, the new value will be sent to the browser
+  // process.
+  void UpdateCompositionInfo(bool should_update_range);
 
   // Override point to obtain that the current composition character bounds.
   // In the case of surrogate pairs, the character is treated as two characters:
@@ -448,6 +452,7 @@ class CONTENT_EXPORT RenderWidget
   bool ShouldUpdateCompositionInfo(
       const ui::Range& range,
       const std::vector<gfx::Rect>& bounds);
+#endif
 
   // Override point to obtain that the current input method state about
   // composition text.
@@ -634,6 +639,9 @@ class CONTENT_EXPORT RenderWidget
 
   // Stores the current type of composition text rendering of |webwidget_|.
   bool can_compose_inline_;
+
+  // Stores the current text input mode of |webwidget_|.
+  ui::TextInputMode text_input_mode_;
 
   // Stores the current selection bounds.
   gfx::Rect selection_focus_rect_;

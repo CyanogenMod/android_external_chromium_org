@@ -11,6 +11,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/download/download_file_icon_extractor.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
@@ -25,7 +26,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -417,6 +417,7 @@ class DownloadExtensionTest : public ExtensionApiTest {
     url_chain.push_back(GURL());
     for (size_t i = 0; i < count; ++i) {
       DownloadItem* item = GetOnRecordManager()->CreateDownloadItem(
+          content::DownloadItem::kInvalidId + 1 + i,
           downloads_directory().Append(history_info[i].filename),
           downloads_directory().Append(history_info[i].filename),
           url_chain, GURL(),    // URL Chain, referrer
@@ -1130,8 +1131,8 @@ IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
   base::FilePath fake_path = all_downloads[1]->GetTargetFilePath();
 
   EXPECT_EQ(0, file_util::WriteFile(real_path, "", 0));
-  ASSERT_TRUE(file_util::PathExists(real_path));
-  ASSERT_FALSE(file_util::PathExists(fake_path));
+  ASSERT_TRUE(base::PathExists(real_path));
+  ASSERT_FALSE(base::PathExists(fake_path));
 
   for (DownloadManager::DownloadVector::iterator iter = all_downloads.begin();
        iter != all_downloads.end();
@@ -1188,7 +1189,7 @@ IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
   ASSERT_TRUE(result_list->GetDictionary(0, &item_value));
   int item_id = -1;
   ASSERT_TRUE(item_value->GetInteger("id", &item_id));
-  ASSERT_EQ(0, item_id);
+  ASSERT_EQ(all_downloads[0]->GetId(), static_cast<uint32>(item_id));
 }
 
 // Test the |id| parameter for search().
@@ -1198,7 +1199,8 @@ IN_PROC_BROWSER_TEST_F(DownloadExtensionTest, DownloadExtensionTest_SearchId) {
   ScopedItemVectorCanceller delete_items(&items);
 
   scoped_ptr<base::Value> result(RunFunctionAndReturnResult(
-      new DownloadsSearchFunction(), "[{\"id\": 0}]"));
+      new DownloadsSearchFunction(), base::StringPrintf(
+          "[{\"id\": %u}]", items[0]->GetId())));
   ASSERT_TRUE(result.get());
   base::ListValue* result_list = NULL;
   ASSERT_TRUE(result->GetAsList(&result_list));
@@ -1207,7 +1209,7 @@ IN_PROC_BROWSER_TEST_F(DownloadExtensionTest, DownloadExtensionTest_SearchId) {
   ASSERT_TRUE(result_list->GetDictionary(0, &item_value));
   int item_id = -1;
   ASSERT_TRUE(item_value->GetInteger("id", &item_id));
-  ASSERT_EQ(0, item_id);
+  ASSERT_EQ(items[0]->GetId(), static_cast<uint32>(item_id));
 }
 
 // Test specifying both the |id| and |filename| parameters for search().

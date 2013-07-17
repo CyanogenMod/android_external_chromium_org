@@ -11,6 +11,7 @@
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
+#include "content/test/test_media_stream_client.h"
 #include "third_party/WebKit/public/platform/WebGamepads.h"
 #include "third_party/WebKit/public/testing/WebFrameTestProxy.h"
 #include "third_party/WebKit/public/testing/WebTestProxy.h"
@@ -130,8 +131,10 @@ void DisableAutoResizeMode(RenderView* render_view, const WebSize& new_size) {
       ->DisableAutoResizeForTesting(new_size);
 }
 
-scoped_refptr<base::MessageLoopProxy> GetMediaThreadMessageLoopProxy() {
-  return RenderThreadImpl::current()->GetMediaThreadMessageLoopProxy();
+void UseMockMediaStreams(RenderView* render_view) {
+  RenderViewImpl* render_view_impl = static_cast<RenderViewImpl*>(render_view);
+  render_view_impl->SetMediaStreamClientForTesting(
+      new TestMediaStreamClient(render_view_impl));
 }
 
 }  // namespace content

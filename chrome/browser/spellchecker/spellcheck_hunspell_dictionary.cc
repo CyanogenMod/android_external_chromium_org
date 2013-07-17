@@ -80,7 +80,7 @@ scoped_ptr<DictionaryFile> OpenDictionaryFile(
   base::FilePath user_dir;
   PathService::Get(chrome::DIR_USER_DATA, &user_dir);
   base::FilePath fallback = user_dir.Append(file->path.BaseName());
-  if (!file_util::PathExists(file->path) && file_util::PathExists(fallback))
+  if (!base::PathExists(file->path) && base::PathExists(fallback))
     file->path = fallback;
 #endif
 
@@ -89,7 +89,7 @@ scoped_ptr<DictionaryFile> OpenDictionaryFile(
   bool bdict_is_valid;
   {
     base::MemoryMappedFile map;
-    bdict_is_valid = file_util::PathExists(file->path) &&
+    bdict_is_valid = base::PathExists(file->path) &&
         map.Initialize(file->path) &&
         hunspell::BDict::Verify(reinterpret_cast<const char*>(map.data()),
                                 map.length());
@@ -101,7 +101,7 @@ scoped_ptr<DictionaryFile> OpenDictionaryFile(
         NULL,
         NULL);
   } else {
-    base::Delete(file->path, false);
+    base::DeleteFile(file->path, false);
   }
 
   return file.Pass();
@@ -148,7 +148,7 @@ bool SaveDictionaryData(scoped_ptr<std::string> data,
 #endif
 
     if (!success) {
-      base::Delete(path, false);
+      base::DeleteFile(path, false);
       return false;
     }
   }

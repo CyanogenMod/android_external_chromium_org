@@ -72,7 +72,7 @@ base::FilePath InstallExtension(const base::FilePath& unpacked_source_dir,
   base::FilePath version_dir;
 
   // Create the extension directory if it doesn't exist already.
-  if (!file_util::PathExists(extension_dir)) {
+  if (!base::PathExists(extension_dir)) {
     if (!file_util::CreateDirectory(extension_dir))
       return base::FilePath();
   }
@@ -99,7 +99,7 @@ base::FilePath InstallExtension(const base::FilePath& unpacked_source_dir,
   for (int i = 0; i < kMaxAttempts; ++i) {
     base::FilePath candidate = extension_dir.AppendASCII(
         base::StringPrintf("%s_%u", version.c_str(), i));
-    if (!file_util::PathExists(candidate)) {
+    if (!base::PathExists(candidate)) {
       version_dir = candidate;
       break;
     }
@@ -125,7 +125,7 @@ void UninstallExtension(const base::FilePath& extensions_dir,
   // We don't care about the return value. If this fails (and it can, due to
   // plugins that aren't unloaded yet), it will get cleaned up by
   // ExtensionService::GarbageCollectExtensions.
-  base::Delete(extensions_dir.AppendASCII(id), true);  // recursive.
+  base::DeleteFile(extensions_dir.AppendASCII(id), true);  // recursive.
 }
 
 scoped_refptr<Extension> LoadExtension(const base::FilePath& extension_path,
@@ -170,7 +170,7 @@ base::DictionaryValue* LoadManifest(const base::FilePath& extension_path,
                                     std::string* error) {
   base::FilePath manifest_path =
       extension_path.Append(extensions::kManifestFilename);
-  if (!file_util::PathExists(manifest_path)) {
+  if (!base::PathExists(manifest_path)) {
     *error = l10n_util::GetStringUTF8(IDS_EXTENSION_MANIFEST_UNREADABLE);
     return NULL;
   }
@@ -229,7 +229,7 @@ std::vector<base::FilePath> FindPrivateKeyFiles(
 
 bool ValidateFilePath(const base::FilePath& path) {
   int64 size = 0;
-  if (!file_util::PathExists(path) ||
+  if (!base::PathExists(path) ||
       !file_util::GetFileSize(path, &size) ||
       size == 0) {
     return false;
@@ -329,7 +329,7 @@ void GarbageCollectExtensions(
     const base::FilePath& install_directory,
     const std::multimap<std::string, base::FilePath>& extension_paths) {
   // Nothing to clean up if it doesn't exist.
-  if (!file_util::DirectoryExists(install_directory))
+  if (!base::DirectoryExists(install_directory))
     return;
 
   DVLOG(1) << "Garbage collecting extensions...";
@@ -345,7 +345,7 @@ void GarbageCollectExtensions(
     // Clean up temporary files left if Chrome crashed or quit in the middle
     // of an extension install.
     if (basename.value() == kTempDirectoryName) {
-      base::Delete(extension_path, true);  // Recursive
+      base::DeleteFile(extension_path, true);  // Recursive
       continue;
     }
 
@@ -362,7 +362,7 @@ void GarbageCollectExtensions(
                        "directory: " << basename.value();
       DVLOG(1) << "Deleting invalid extension directory "
                << extension_path.value() << ".";
-      base::Delete(extension_path, true);  // Recursive.
+      base::DeleteFile(extension_path, true);  // Recursive.
       continue;
     }
 
@@ -375,7 +375,7 @@ void GarbageCollectExtensions(
     if (iter_pair.first == iter_pair.second) {
       DVLOG(1) << "Deleting unreferenced install for directory "
                << extension_path.LossyDisplayName() << ".";
-      base::Delete(extension_path, true);  // Recursive.
+      base::DeleteFile(extension_path, true);  // Recursive.
       continue;
     }
 
@@ -396,7 +396,7 @@ void GarbageCollectExtensions(
       if (!knownVersion) {
         DVLOG(1) << "Deleting old version for directory "
                  << version_dir.LossyDisplayName() << ".";
-        base::Delete(version_dir, true);  // Recursive.
+        base::DeleteFile(version_dir, true);  // Recursive.
       }
     }
   }
@@ -409,7 +409,7 @@ extensions::MessageBundle* LoadMessageBundle(
   error->clear();
   // Load locale information if available.
   base::FilePath locale_path = extension_path.Append(extensions::kLocaleFolder);
-  if (!file_util::PathExists(locale_path))
+  if (!base::PathExists(locale_path))
     return NULL;
 
   std::set<std::string> locales;
@@ -529,7 +529,7 @@ base::FilePath ExtensionResourceURLToFilePath(const GURL& url,
     return base::FilePath();
 
   base::FilePath path = root.AppendASCII(host).Append(relative_path);
-  if (!file_util::PathExists(path))
+  if (!base::PathExists(path))
     return base::FilePath();
   path = base::MakeAbsoluteFilePath(path);
   if (path.empty() || !root.IsParent(path))
@@ -548,12 +548,12 @@ base::FilePath GetInstallTempDir(const base::FilePath& extensions_dir) {
   // This guarantees it is on the same file system as the extension's eventual
   // install target.
   base::FilePath temp_path = extensions_dir.Append(kTempDirectoryName);
-  if (file_util::PathExists(temp_path)) {
-    if (!file_util::DirectoryExists(temp_path)) {
+  if (base::PathExists(temp_path)) {
+    if (!base::DirectoryExists(temp_path)) {
       DLOG(WARNING) << "Not a directory: " << temp_path.value();
       return base::FilePath();
     }
-    if (!file_util::PathIsWritable(temp_path)) {
+    if (!base::PathIsWritable(temp_path)) {
       DLOG(WARNING) << "Can't write to path: " << temp_path.value();
       return base::FilePath();
     }
@@ -570,7 +570,7 @@ base::FilePath GetInstallTempDir(const base::FilePath& extensions_dir) {
 }
 
 void DeleteFile(const base::FilePath& path, bool recursive) {
-  base::Delete(path, recursive);
+  base::DeleteFile(path, recursive);
 }
 
 }  // namespace extension_file_util

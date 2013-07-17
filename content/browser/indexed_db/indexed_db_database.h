@@ -7,6 +7,7 @@
 
 #include <list>
 #include <map>
+#include <string>
 #include <vector>
 
 #include "base/basictypes.h"
@@ -119,7 +120,7 @@ class CONTENT_EXPORT IndexedDBDatabase
            scoped_refptr<IndexedDBCallbacks> callbacks);
   void Put(int64 transaction_id,
            int64 object_store_id,
-           std::vector<char>* value,
+           std::string* value,
            scoped_ptr<IndexedDBKey> key,
            PutMode mode,
            scoped_refptr<IndexedDBCallbacks> callbacks,
@@ -186,6 +187,16 @@ class CONTENT_EXPORT IndexedDBDatabase
 
   bool IsDeleteDatabaseBlocked() const;
   void DeleteDatabaseFinal(scoped_refptr<IndexedDBCallbacks> callbacks);
+
+  IndexedDBTransaction* GetTransaction(int64 transaction_id) const;
+
+  bool ValidateObjectStoreId(int64 object_store_id) const;
+  bool ValidateObjectStoreIdAndIndexId(int64 object_store_id,
+                                       int64 index_id) const;
+  bool ValidateObjectStoreIdAndOptionalIndexId(int64 object_store_id,
+                                               int64 index_id) const;
+  bool ValidateObjectStoreIdAndNewIndexId(int64 object_store_id,
+                                          int64 index_id) const;
 
   class VersionChangeOperation;
 

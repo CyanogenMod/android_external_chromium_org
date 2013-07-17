@@ -83,7 +83,7 @@ class OffTheRecordProfileImpl : public Profile {
   virtual GURL GetHomePage() OVERRIDE;
 
   // content::BrowserContext implementation:
-  virtual base::FilePath GetPath() OVERRIDE;
+  virtual base::FilePath GetPath() const OVERRIDE;
   virtual scoped_refptr<base::SequencedTaskRunner> GetIOTaskRunner() OVERRIDE;
   virtual bool IsOffTheRecord() const OVERRIDE;
   virtual content::DownloadManagerDelegate*
@@ -98,11 +98,14 @@ class OffTheRecordProfileImpl : public Profile {
       GetMediaRequestContextForStoragePartition(
           const base::FilePath& partition_path,
           bool in_memory) OVERRIDE;
+  virtual void RequestMIDISysExPermission(
+      int render_process_id,
+      int render_view_id,
+      const GURL& requesting_frame,
+      const MIDISysExPermissionCallback& callback) OVERRIDE;
   virtual content::ResourceContext* GetResourceContext() OVERRIDE;
   virtual content::GeolocationPermissionContext*
       GetGeolocationPermissionContext() OVERRIDE;
-  virtual content::SpeechRecognitionPreferences*
-      GetSpeechRecognitionPreferences() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
 
  private:
@@ -114,6 +117,7 @@ class OffTheRecordProfileImpl : public Profile {
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
   void OnZoomLevelChanged(const content::HostZoomMap::ZoomLevelChange& change);
+  PrefProxyConfigTracker* CreateProxyConfigTracker();
 
   // The real underlying profile.
   Profile* profile_;

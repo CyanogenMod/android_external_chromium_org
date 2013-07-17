@@ -430,8 +430,7 @@ QuicErrorCode QuicCryptoClientConfig::CachedState::SetServerConfig(
 
   if (!matches_existing) {
     server_config_ = server_config.as_string();
-    server_config_valid_ = false;
-    ++generation_counter_;
+    SetProofInvalid();
     scfg_.reset(new_scfg_storage.release());
   }
   return QUIC_NO_ERROR;
@@ -440,8 +439,7 @@ QuicErrorCode QuicCryptoClientConfig::CachedState::SetServerConfig(
 void QuicCryptoClientConfig::CachedState::InvalidateServerConfig() {
   server_config_.clear();
   scfg_.reset();
-  server_config_valid_ = false;
-  ++generation_counter_;
+  SetProofInvalid();
 }
 
 void QuicCryptoClientConfig::CachedState::SetProof(const vector<string>& certs,
@@ -463,14 +461,18 @@ void QuicCryptoClientConfig::CachedState::SetProof(const vector<string>& certs,
   }
 
   // If the proof has changed then it needs to be revalidated.
-  server_config_valid_ = false;
-  ++generation_counter_;
+  SetProofInvalid();
   certs_ = certs;
   server_config_sig_ = signature.as_string();
 }
 
 void QuicCryptoClientConfig::CachedState::SetProofValid() {
   server_config_valid_ = true;
+}
+
+void QuicCryptoClientConfig::CachedState::SetProofInvalid() {
+  server_config_valid_ = false;
+  ++generation_counter_;
 }
 
 const string& QuicCryptoClientConfig::CachedState::server_config() const {
@@ -498,9 +500,19 @@ uint64 QuicCryptoClientConfig::CachedState::generation_counter() const {
   return generation_counter_;
 }
 
+const CertVerifyResult*
+QuicCryptoClientConfig::CachedState::cert_verify_result() const {
+  return &cert_verify_result_;
+}
+
 void QuicCryptoClientConfig::CachedState::set_source_address_token(
     StringPiece token) {
   source_address_token_ = token.as_string();
+}
+
+void QuicCryptoClientConfig::CachedState::SetCertVerifyResult(
+    const CertVerifyResult& cert_verify_result) {
+  cert_verify_result_.CopyFrom(cert_verify_result);
 }
 
 void QuicCryptoClientConfig::SetDefaults() {
@@ -551,7 +563,14 @@ void QuicCryptoClientConfig::FillInchoateClientHello(
   }
 
   if (proof_verifier_.get()) {
+    // TODO(rtenneti): Enable ECDSA proof verification on Windows. Disabled it
+    // because X509Certificate::GetPublicKeyInfo is not returning the correct
+    // type for ECDSA certificates.
+#if defined(OS_WIN)
+    out->SetTaglist(kPDMD, kX59R, 0);
+#else
     out->SetTaglist(kPDMD, kX509, 0);
+#endif
   }
 
   if (common_cert_sets) {

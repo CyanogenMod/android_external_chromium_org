@@ -14,20 +14,7 @@ var eventBindings = require('event_bindings');
 var WEB_VIEW_ATTRIBUTES = ['name', 'src', 'partition', 'autosize', 'minheight',
     'minwidth', 'maxheight', 'maxwidth'];
 
-
-// All exposed api methods for <webview>, these are forwarded to the browser
-// plugin.
-var WEB_VIEW_API_METHODS = [
-  'reload',
-  'stop',
-  'terminate'
-];
-
 var WEB_VIEW_EVENTS = {
-  'close': [],
-  'consolemessage': ['level', 'message', 'line', 'sourceId'],
-  'exit' : ['processId', 'reason'],
-  'loadabort' : ['url', 'isTopLevel', 'reason'],
   'responsive' : ['processId'],
   'sizechanged': ['oldHeight', 'oldWidth', 'newHeight', 'newWidth'],
   'unresponsive' : ['processId']
@@ -38,40 +25,52 @@ var createEvent = function(name) {
   return new eventBindings.Event(name, undefined, eventOpts);
 };
 
-var contentLoadEvent = createEvent('webview.onContentLoad');
-var loadCommitEvent = createEvent('webview.onLoadCommit');
-var loadRedirectEvent = createEvent('webview.onLoadRedirect');
-var loadStartEvent = createEvent('webview.onLoadStart');
-var loadStopEvent = createEvent('webview.onLoadStop');
-
 var WEB_VIEW_EXT_EVENTS = {
-  'contentload': {
-    evt: contentLoadEvent,
+  'close': {
+    evt: createEvent('webview.onClose'),
     fields: []
+  },
+  'consolemessage': {
+    evt: createEvent('webview.onConsoleMessage'),
+    fields: ['level', 'message', 'line', 'sourceId']
+  },
+  'contentload': {
+    evt: createEvent('webview.onContentLoad'),
+    fields: []
+  },
+  'exit': {
+     evt: createEvent('webview.onExit'),
+     fields: ['processId', 'reason']
+  },
+  'loadabort': {
+    evt: createEvent('webview.onLoadAbort'),
+    fields: ['url', 'isTopLevel', 'reason']
   },
   'loadcommit': {
     customHandler: function(webview, event) {
       webview.currentEntryIndex_ = event.currentEntryIndex;
       webview.entryCount_ = event.entryCount;
       webview.processId_ = event.processId;
+      if (event.isTopLevel) {
+        webview.browserPluginNode_.setAttribute('src', event.url);
+      }
     },
-    evt: loadCommitEvent,
+    evt: createEvent('webview.onLoadCommit'),
     fields: ['url', 'isTopLevel']
   },
   'loadredirect': {
-    evt: loadRedirectEvent,
+    evt: createEvent('webview.onLoadRedirect'),
     fields: ['isTopLevel', 'oldUrl', 'newUrl']
   },
   'loadstart': {
-    evt: loadStartEvent,
+    evt: createEvent('webview.onLoadStart'),
     fields: ['url', 'isTopLevel']
   },
   'loadstop': {
-    evt: loadStopEvent,
+    evt: createEvent('webview.onLoadStop'),
     fields: []
   }
 };
-
 
 // The <webview> tags we wish to watch for (watchForTag) does not belong to the
 // current scope's "document" reference. We need to wait until the document
@@ -80,16 +79,19 @@ var WEB_VIEW_EXT_EVENTS = {
 // We can't listen for the "readystatechange" event on the document (because
 // the object that it's dispatched on doesn't exist yet), but we can instead
 // do it at the window level in the capturing phase.
-window.addEventListener('readystatechange', function(e) {
-  if (document.readyState != 'loading') {
+//
+// The second window.readystatechange event (The first is fired right after
+// document's readyState changes to 'loading') is the earliest place to define
+// webview so that app has no chance to be earlier to fail its definition.
+var readyStateChangeListener = function(event) {
+  if (document.readyState == 'loading')
     return;
-  }
 
-  document.addEventListener('DOMContentLoaded', function(e) {
-    watchForTag('WEBVIEW', function(addedNode) { new WebView(addedNode); });
-  });
-}, true /* useCapture */);
-
+  watchForTag('WEBVIEW', function(addedNode) { new WebView(addedNode); });
+  window.removeEventListener(event.type, readyStateChangeListener, true);
+};
+window.addEventListener('readystatechange', readyStateChangeListener,
+                        true /* useCapture */);
 
 /** @type {number} */
 WebView.prototype.entryCount_;
@@ -203,17 +205,36 @@ WebView.prototype.setupWebviewNodeMethods_ = function() {
 
   webviewNode['go'] = function(relativeIndex) {
     var instanceId = browserPluginNode.getGuestInstanceId();
-    if (!instanceId)
+    if (!instanceId) {
       return;
+    }
     chrome.webview.go(instanceId, relativeIndex);
   };
 
-  $Array.forEach(WEB_VIEW_API_METHODS, function(apiMethod) {
-    webviewNode[apiMethod] = function(var_args) {
-      return $Function.apply(browserPluginNode[apiMethod],
-          browserPluginNode, arguments);
-    };
-  }, this);
+  webviewNode['reload'] = function() {
+    var instanceId = browserPluginNode.getGuestInstanceId();
+    if (!instanceId) {
+      return;
+    }
+    chrome.webview.reload(instanceId);
+  };
+
+  webviewNode['stop'] = function() {
+    var instanceId = browserPluginNode.getGuestInstanceId();
+    if (!instanceId) {
+      return;
+    }
+    chrome.webview.stop(instanceId);
+  };
+
+  webviewNode['terminate'] = function() {
+    var instanceId = browserPluginNode.getGuestInstanceId();
+    if (!instanceId) {
+      return;
+    }
+    chrome.webview.terminate(instanceId);
+  };
+
   this.setupExecuteCodeAPI_();
 };
 
@@ -243,8 +264,10 @@ WebView.prototype.setupWebviewNodeProperties_ = function() {
   // getter value.
   Object.defineProperty(this.webviewNode_, 'contentWindow', {
     get: function() {
+      // TODO(fsamuel): This is a workaround to enable
+      // contentWindow.postMessage until http://crbug.com/152006 is fixed.
       if (browserPluginNode.contentWindow)
-        return browserPluginNode.contentWindow;
+        return browserPluginNode.contentWindow.self;
       console.error(ERROR_MSG_CONTENTWINDOW_NOT_AVAILABLE);
     },
     // No setter.
@@ -336,7 +359,6 @@ WebView.prototype.handleBrowserPluginAttributeMutation_ = function(mutation) {
  */
 WebView.prototype.setupWebviewNodeEvents_ = function() {
   var self = this;
-  var webviewNode = this.webviewNode_;
   this.browserPluginNode_.addEventListener('-internal-attached', function(e) {
     var detail = e.detail ? JSON.parse(e.detail) : {};
     self.instanceId_ = detail.windowId;
@@ -408,8 +430,17 @@ WebView.prototype.setupNewWindowEvent_ = function() {
     'name'
   ];
 
+  var self = this;
   var node = this.webviewNode_;
   var browserPluginNode = this.browserPluginNode_;
+
+  var onTrackedObjectGone = function(requestId, e) {
+    var detail = e.detail ? JSON.parse(e.detail) : {};
+    if (detail.id != requestId)
+      return;
+    browserPluginNode['-internal-setPermission'](requestId, false);
+  }
+
   browserPluginNode.addEventListener('-internal-newwindow', function(e) {
     var evt = new Event('newwindow', { bubbles: true, cancelable: true });
     var detail = e.detail ? JSON.parse(e.detail) : {};
@@ -457,8 +488,11 @@ WebView.prototype.setupNewWindowEvent_ = function() {
     };
     evt.window = window;
     // Make browser plugin track lifetime of |window|.
-    browserPluginNode['-internal-persistObject'](
-        window, detail.permission, requestId);
+    var onTrackedObjectGoneWithRequestId =
+        $Function.bind(onTrackedObjectGone, self, requestId);
+    browserPluginNode.addEventListener('-internal-trackedobjectgone',
+        onTrackedObjectGoneWithRequestId);
+    browserPluginNode['-internal-trackObjectLifetime'](window, requestId);
 
     var defaultPrevented = !node.dispatchEvent(evt);
     if (!actionTaken && !defaultPrevented) {
@@ -524,9 +558,18 @@ WebView.prototype.setupPermissionEvent_ = function() {
   var ERROR_MSG_PERMISSION_ALREADY_DECIDED = '<webview>: ' +
       'Permission has already been decided for this "permissionrequest" event.';
 
+  var self = this;
   var node = this.webviewNode_;
   var browserPluginNode = this.browserPluginNode_;
   var internalevent = '-internal-permissionrequest';
+
+  var onTrackedObjectGone = function(requestId, e) {
+    var detail = e.detail ? JSON.parse(e.detail) : {};
+    if (detail.id != requestId)
+      return;
+    browserPluginNode['-internal-setPermission'](requestId, false);
+  }
+
   browserPluginNode.addEventListener(internalevent, function(e) {
     var evt = new Event('permissionrequest', {bubbles: true, cancelable: true});
     var detail = e.detail ? JSON.parse(e.detail) : {};
@@ -563,8 +606,11 @@ WebView.prototype.setupPermissionEvent_ = function() {
       evt.request = request;
 
       // Make browser plugin track lifetime of |request|.
-      browserPluginNode['-internal-persistObject'](
-          request, detail.permission, requestId);
+      var onTrackedObjectGoneWithRequestId =
+          $Function.bind(onTrackedObjectGone, self, requestId);
+      browserPluginNode.addEventListener('-internal-trackedobjectgone',
+          onTrackedObjectGoneWithRequestId);
+      browserPluginNode['-internal-trackObjectLifetime'](request, requestId);
 
       var defaultPrevented = !node.dispatchEvent(evt);
       if (!decisionMade && !defaultPrevented) {

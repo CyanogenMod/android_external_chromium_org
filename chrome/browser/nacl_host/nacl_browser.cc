@@ -14,9 +14,6 @@
 #include "base/strings/string_split.h"
 #include "base/win/windows_version.h"
 #include "build/build_config.h"
-#include "chrome/common/chrome_paths.h"
-#include "chrome/common/chrome_paths_internal.h"
-#include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/common/url_pattern.h"
 #include "url/gurl.h"
@@ -101,7 +98,7 @@ void WriteCache(const base::FilePath& filename, const Pickle* pickle) {
 
 void RemoveCache(const base::FilePath& filename,
                  const base::Closure& callback) {
-  base::Delete(filename, false);
+  base::DeleteFile(filename, false);
   content::BrowserThread::PostTask(content::BrowserThread::IO, FROM_HERE,
                                    callback);
 }
@@ -149,7 +146,7 @@ void OpenNaClExecutableImpl(const base::FilePath& file_path,
   }
 }
 
-}
+} // namespace nacl
 
 NaClBrowser::NaClBrowser()
     : weak_factory_(this),
@@ -166,6 +163,19 @@ NaClBrowser::NaClBrowser()
       validation_cache_state_(NaClResourceUninitialized),
       path_cache_(kFilePathCacheSize),
       ok_(true) {
+}
+
+void NaClBrowser::SetDelegate(NaClBrowserDelegate* delegate) {
+  NaClBrowser* nacl_browser = NaClBrowser::GetInstance();
+  nacl_browser->browser_delegate_.reset(delegate);
+}
+
+NaClBrowserDelegate* NaClBrowser::GetDelegate() {
+  DCHECK(GetInstance()->browser_delegate_.get() != NULL);
+  return GetInstance()->browser_delegate_.get();
+}
+
+void NaClBrowser::EarlyStartup() {
   InitIrtFilePath();
   InitValidationCacheFilePath();
 }
@@ -188,7 +198,7 @@ void NaClBrowser::InitIrtFilePath() {
     irt_filepath_ = base::FilePath(path_string);
   } else {
     base::FilePath plugin_dir;
-    if (!PathService::Get(chrome::DIR_INTERNAL_PLUGINS, &plugin_dir)) {
+    if (!browser_delegate_->GetPluginDirectory(&plugin_dir)) {
       DLOG(ERROR) << "Failed to locate the plugins directory, NaCl disabled.";
       MarkAsFailed();
       return;
@@ -340,13 +350,13 @@ void NaClBrowser::InitValidationCacheFilePath() {
   // profile.
   // Start by finding the user data directory.
   base::FilePath user_data_dir;
-  if (!PathService::Get(chrome::DIR_USER_DATA, &user_data_dir)) {
+  if (!browser_delegate_->GetUserDirectory(&user_data_dir)) {
     RunWithoutValidationCache();
     return;
   }
   // The cache directory may or may not be the user data directory.
   base::FilePath cache_file_path;
-  chrome::GetUserCacheDirectory(user_data_dir, &cache_file_path);
+  browser_delegate_->GetCacheDirectory(&cache_file_path);
   // Append the base file name to the cache directory.
 
   validation_cache_file_path_ =

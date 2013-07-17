@@ -86,8 +86,8 @@ LOCAL_SRC_FILES := \
 	webkit/browser/fileapi/file_system_usage_cache.cc \
 	webkit/browser/fileapi/file_writer_delegate.cc \
 	webkit/browser/fileapi/isolated_context.cc \
+	webkit/browser/fileapi/isolated_file_system_backend.cc \
 	webkit/browser/fileapi/isolated_file_util.cc \
-	webkit/browser/fileapi/isolated_mount_point_provider.cc \
 	webkit/browser/fileapi/local_file_stream_writer.cc \
 	webkit/browser/fileapi/local_file_system_operation.cc \
 	webkit/browser/fileapi/local_file_util.cc \
@@ -96,10 +96,11 @@ LOCAL_SRC_FILES := \
 	webkit/browser/fileapi/obfuscated_file_util.cc \
 	webkit/browser/fileapi/recursive_operation_delegate.cc \
 	webkit/browser/fileapi/remove_operation_delegate.cc \
+	webkit/browser/fileapi/sandbox_context.cc \
 	webkit/browser/fileapi/sandbox_directory_database.cc \
 	webkit/browser/fileapi/sandbox_file_stream_writer.cc \
+	webkit/browser/fileapi/sandbox_file_system_backend.cc \
 	webkit/browser/fileapi/sandbox_isolated_origin_database.cc \
-	webkit/browser/fileapi/sandbox_mount_point_provider.cc \
 	webkit/browser/fileapi/sandbox_origin_database.cc \
 	webkit/browser/fileapi/sandbox_origin_database_interface.cc \
 	webkit/browser/fileapi/sandbox_quota_observer.cc \
@@ -112,7 +113,7 @@ LOCAL_SRC_FILES := \
 	webkit/browser/fileapi/syncable/syncable_file_operation_runner.cc \
 	webkit/browser/fileapi/syncable/syncable_file_system_operation.cc \
 	webkit/browser/fileapi/syncable/syncable_file_system_util.cc \
-	webkit/browser/fileapi/test_mount_point_provider.cc \
+	webkit/browser/fileapi/test_file_system_backend.cc \
 	webkit/browser/fileapi/timed_task_helper.cc \
 	webkit/browser/fileapi/transient_file_util.cc \
 	webkit/browser/fileapi/upload_file_system_file_element_reader.cc \
@@ -164,6 +165,8 @@ MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
@@ -282,6 +285,8 @@ MY_DEFS_Release := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \

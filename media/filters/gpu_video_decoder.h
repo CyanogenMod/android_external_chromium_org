@@ -13,7 +13,6 @@
 
 #include "base/memory/weak_ptr.h"
 #include "media/base/pipeline_status.h"
-#include "media/base/demuxer_stream.h"
 #include "media/base/video_decoder.h"
 #include "media/video/video_decode_accelerator.h"
 
@@ -82,15 +81,15 @@ class MEDIA_EXPORT GpuVideoDecoder
                   const scoped_refptr<Factories>& factories);
 
   // VideoDecoder implementation.
-  virtual void Initialize(DemuxerStream* stream,
-                          const PipelineStatusCB& status_cb,
-                          const StatisticsCB& statistics_cb) OVERRIDE;
-  virtual void Read(const ReadCB& read_cb) OVERRIDE;
+  virtual void Initialize(const VideoDecoderConfig& config,
+                          const PipelineStatusCB& status_cb) OVERRIDE;
+  virtual void Decode(const scoped_refptr<DecoderBuffer>& buffer,
+                      const ReadCB& read_cb) OVERRIDE;
   virtual void Reset(const base::Closure& closure) OVERRIDE;
   virtual void Stop(const base::Closure& closure) OVERRIDE;
   virtual bool HasAlpha() const OVERRIDE;
   virtual bool NeedsBitstreamConversion() const OVERRIDE;
-  virtual bool HasOutputFrameAvailable() const OVERRIDE;
+  virtual bool CanReadWithoutStalling() const OVERRIDE;
 
   // VideoDecodeAccelerator::Client implementation.
   virtual void NotifyInitializeDone() OVERRIDE;
@@ -115,16 +114,8 @@ class MEDIA_EXPORT GpuVideoDecoder
     kError
   };
 
-  // If no demuxer read is in flight and no bitstream buffers are in the
-  // decoder, kick some off demuxing/decoding.
-  void EnsureDemuxOrDecode();
-
   // Return true if more decode work can be piled on to the VDA.
   bool CanMoreDecodeWorkBeDone();
-
-  // Callback to pass to demuxer_stream_->Read() for receiving encoded bits.
-  void RequestBufferDecode(DemuxerStream::Status status,
-                           const scoped_refptr<DecoderBuffer>& buffer);
 
   // Enqueue a frame for later delivery (or drop it on the floor if a
   // vda->Reset() is in progress) and trigger out-of-line delivery of the oldest
@@ -168,11 +159,6 @@ class MEDIA_EXPORT GpuVideoDecoder
 
   void DestroyTextures();
 
-  StatisticsCB statistics_cb_;
-
-  // Pointer to the demuxer stream that will feed us compressed buffers.
-  DemuxerStream* demuxer_stream_;
-
   bool needs_bitstream_conversion_;
 
   // Message loop on which to fire callbacks and trampoline calls to this class
@@ -204,6 +190,8 @@ class MEDIA_EXPORT GpuVideoDecoder
   base::Closure pending_reset_cb_;
 
   State state_;
+
+  VideoDecoderConfig config_;
 
   // Is a demuxer read in flight?
   bool demuxer_read_in_progress_;

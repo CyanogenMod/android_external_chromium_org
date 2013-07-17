@@ -274,13 +274,13 @@ bool PepperFlashComponentInstaller::Install(
     return false;
   if (current_version_.CompareTo(version) > 0)
     return false;
-  if (!file_util::PathExists(unpack_path.Append(
+  if (!base::PathExists(unpack_path.Append(
           chrome::kPepperFlashPluginFilename)))
     return false;
   // Passed the basic tests. Time to install it.
   base::FilePath path =
       GetPepperFlashBaseDirectory().AppendASCII(version.GetString());
-  if (file_util::PathExists(path))
+  if (base::PathExists(path))
     return false;
   if (!base::Move(unpack_path, path))
     return false;
@@ -358,7 +358,7 @@ void FinishPepperFlashUpdateRegistration(ComponentUpdateService* cus,
 void StartPepperFlashUpdateRegistration(ComponentUpdateService* cus) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   base::FilePath path = GetPepperFlashBaseDirectory();
-  if (!file_util::PathExists(path)) {
+  if (!base::PathExists(path)) {
     if (!file_util::CreateDirectory(path)) {
       NOTREACHED() << "Could not create Pepper Flash directory.";
       return;
@@ -369,7 +369,7 @@ void StartPepperFlashUpdateRegistration(ComponentUpdateService* cus) {
   std::vector<base::FilePath> older_dirs;
   if (GetPepperFlashDirectory(&path, &version, &older_dirs)) {
     path = path.Append(chrome::kPepperFlashPluginFilename);
-    if (file_util::PathExists(path)) {
+    if (base::PathExists(path)) {
       BrowserThread::PostTask(
           BrowserThread::UI, FROM_HERE,
           base::Bind(&RegisterPepperFlashWithChrome, path, version));
@@ -385,7 +385,7 @@ void StartPepperFlashUpdateRegistration(ComponentUpdateService* cus) {
   // Remove older versions of Pepper Flash.
   for (std::vector<base::FilePath>::iterator iter = older_dirs.begin();
        iter != older_dirs.end(); ++iter) {
-    base::Delete(*iter, true);
+    base::DeleteFile(*iter, true);
   }
 }
 #endif  // defined(GOOGLE_CHROME_BUILD) && !defined(OS_LINUX)

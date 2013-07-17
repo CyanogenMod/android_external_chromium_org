@@ -26,9 +26,9 @@
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/time/tick_clock.h"
 #include "base/values.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/mock_user_manager.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chromeos/chromeos_paths.h"
@@ -644,7 +644,7 @@ TEST_F(AutomaticRebootManagerBasicTest, UserActivityResetsIdleTimer) {
     FastForwardBy(base::TimeDelta::FromSeconds(50), false);
 
     // Simulate user activity.
-    automatic_reboot_manager_->OnUserActivity();
+    automatic_reboot_manager_->OnUserActivity(NULL);
   }
 
   // Fast forward the uptime by 60 seconds without simulating user activity.
@@ -1381,7 +1381,7 @@ TEST_P(AutomaticRebootManagerTest, PolicyAfterUpdateInGracePeriod) {
   FastForwardBy(base::TimeDelta::FromHours(6), false);
 
   // Simulate user activity.
-  automatic_reboot_manager_->OnUserActivity();
+  automatic_reboot_manager_->OnUserActivity(NULL);
 
   // Enable automatic reboot after an update has been applied. Verify that the
   // device does not reboot immediately.
@@ -1418,7 +1418,7 @@ TEST_P(AutomaticRebootManagerTest, PolicyAfterUpdateAfterGracePeriod) {
                 false);
 
   // Simulate user activity.
-  automatic_reboot_manager_->OnUserActivity();
+  automatic_reboot_manager_->OnUserActivity(NULL);
 
   // Enable automatic rebooting after an update has been applied. Verify that
   // unless a non-kiosk-app session is in progress, the the device immediately

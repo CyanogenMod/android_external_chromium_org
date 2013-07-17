@@ -110,12 +110,12 @@ void ChromeFrameTestWithWebServer::SetUpTestCase() {
   CFInstance_src_path = chrome_frame_source_path.AppendASCII("CFInstance.js");
   CFInstance_path_ = test_file_path_.AppendASCII("CFInstance.js");
 
-  ASSERT_TRUE(file_util::CopyFile(CFInstance_src_path, CFInstance_path_));
+  ASSERT_TRUE(base::CopyFile(CFInstance_src_path, CFInstance_path_));
 
   CFInstall_src_path = chrome_frame_source_path.AppendASCII("CFInstall.js");
   CFInstall_path_ = test_file_path_.AppendASCII("CFInstall.js");
 
-  ASSERT_TRUE(file_util::CopyFile(CFInstall_src_path, CFInstall_path_));
+  ASSERT_TRUE(base::CopyFile(CFInstall_src_path, CFInstall_path_));
 
   loop_ = new chrome_frame_test::TimedMsgLoop();
   loop_->set_snapshot_on_timeout(true);
@@ -136,8 +136,8 @@ void ChromeFrameTestWithWebServer::TearDownTestCase() {
   local_address_.clear();
   delete loop_;
   loop_ = NULL;
-  base::Delete(CFInstall_path_, false);
-  base::Delete(CFInstance_path_, false);
+  base::DeleteFile(CFInstall_path_, false);
+  base::DeleteFile(CFInstance_path_, false);
   if (temp_dir_.IsValid())
     EXPECT_TRUE(temp_dir_.Delete());
 }
@@ -399,10 +399,10 @@ void MockWebServer::SendResponseHelper(
 
   std::string headers, body;
   std::string content_type;
-  if (file_util::PathExists(file_path) &&
-      !file_util::DirectoryExists(file_path)) {
+  if (base::PathExists(file_path) &&
+      !base::DirectoryExists(file_path)) {
     base::FilePath mock_http_headers(file_path.value() + L".mock-http-headers");
-    if (file_util::PathExists(mock_http_headers)) {
+    if (base::PathExists(mock_http_headers)) {
       headers = GetMockHttpHeaders(mock_http_headers);
       content_type = http_utils::GetHttpHeaderFromHeaderList("Content-type",
                                                              headers);

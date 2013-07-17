@@ -29,8 +29,8 @@ using ::testing::Invoke;
 using content::RenderViewHost;
 using content::TestBrowserThread;
 using content::WebContentsObserver;
-using file_util::ContentsEqual;
-using file_util::PathExists;
+using base::ContentsEqual;
+using base::PathExists;
 
 namespace {
 const int kFrameID = 1;
@@ -65,7 +65,7 @@ class MockPageCycler : public PageCycler {
                                             int error_code,
                                             const string16& error_description,
                                             RenderViewHost* render_view_host));
-  MOCK_METHOD1(RenderViewGone, void(base::TerminationStatus status));
+  MOCK_METHOD1(RenderProcessGone, void(base::TerminationStatus status));
 
   void PageCyclerDidFailProvisionalLoad(
       int64 frame_id,
@@ -122,8 +122,8 @@ class PageCyclerTest : public BrowserWithTestWindowTest {
     errors_file_ = temp_path.AppendASCII("errors_file");
     stats_file_ = temp_path.AppendASCII("stats_file");
 
-    CHECK(!file_util::PathExists(errors_file_));
-    CHECK(!file_util::PathExists(stats_file_));
+    CHECK(!base::PathExists(errors_file_));
+    CHECK(!base::PathExists(stats_file_));
   }
 
   void FailProvisionalLoad(int error_code, string16& error_description) {

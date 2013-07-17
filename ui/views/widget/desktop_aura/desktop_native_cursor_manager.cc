@@ -23,6 +23,12 @@ DesktopNativeCursorManager::DesktopNativeCursorManager(
 DesktopNativeCursorManager::~DesktopNativeCursorManager() {
 }
 
+gfx::NativeCursor DesktopNativeCursorManager::GetInitializedCursor(int type) {
+  gfx::NativeCursor cursor(type);
+  cursor_loader_->SetPlatformCursor(&cursor);
+  return cursor;
+}
+
 void DesktopNativeCursorManager::SetDisplay(
     const gfx::Display& display,
     views::corewm::NativeCursorManagerDelegate* delegate) {
@@ -80,11 +86,6 @@ void DesktopNativeCursorManager::SetMouseEventsEnabled(
   SetVisibility(delegate->GetCurrentVisibility(), delegate);
 
   root_window_->OnMouseEventsEnableStateChanged(enabled);
-}
-
-void DesktopNativeCursorManager::SetCursorResourceModule(
-    const string16& module_name) {
-  cursor_loader_->SetCursorResourceModule(module_name);
 }
 
 }  // namespace views

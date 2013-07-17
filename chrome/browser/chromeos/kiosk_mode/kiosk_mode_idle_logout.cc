@@ -10,10 +10,10 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/ui/idle_logout_dialog_view.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
@@ -70,7 +70,7 @@ void KioskModeIdleLogout::Observe(
   }
 }
 
-void KioskModeIdleLogout::OnUserActivity() {
+void KioskModeIdleLogout::OnUserActivity(const ui::Event* event) {
   IdleLogoutDialogView::CloseDialog();
   ResetTimer();
 }

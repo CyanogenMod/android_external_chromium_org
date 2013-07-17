@@ -391,7 +391,7 @@ class HistoryBackendTest : public testing::Test {
       backend_->Closing();
     backend_ = NULL;
     mem_backend_.reset();
-    base::Delete(test_dir_, true);
+    base::DeleteFile(test_dir_, true);
     base::RunLoop().RunUntilIdle();
   }
 
@@ -1275,11 +1275,11 @@ TEST_F(HistoryBackendTest, MigrationVisitSource) {
   // Copy history database file to current directory so that it will be deleted
   // in Teardown.
   base::FilePath new_history_path(getTestDir());
-  base::Delete(new_history_path, true);
+  base::DeleteFile(new_history_path, true);
   file_util::CreateDirectory(new_history_path);
   base::FilePath new_history_file =
       new_history_path.Append(chrome::kHistoryFilename);
-  ASSERT_TRUE(file_util::CopyFile(old_history_path, new_history_file));
+  ASSERT_TRUE(base::CopyFile(old_history_path, new_history_file));
 
   backend_ = new HistoryBackend(new_history_path,
                                 0,
@@ -2514,14 +2514,14 @@ TEST_F(HistoryBackendTest, MigrationVisitDuration) {
   // Copy history database file to current directory so that it will be deleted
   // in Teardown.
   base::FilePath new_history_path(getTestDir());
-  base::Delete(new_history_path, true);
+  base::DeleteFile(new_history_path, true);
   file_util::CreateDirectory(new_history_path);
   base::FilePath new_history_file =
       new_history_path.Append(chrome::kHistoryFilename);
   base::FilePath new_archived_file =
       new_history_path.Append(chrome::kArchivedHistoryFilename);
-  ASSERT_TRUE(file_util::CopyFile(old_history, new_history_file));
-  ASSERT_TRUE(file_util::CopyFile(old_archived, new_archived_file));
+  ASSERT_TRUE(base::CopyFile(old_history, new_history_file));
+  ASSERT_TRUE(base::CopyFile(old_archived, new_archived_file));
 
   backend_ = new HistoryBackend(new_history_path,
                                 0,

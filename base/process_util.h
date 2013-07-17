@@ -37,6 +37,8 @@ typedef struct _malloc_zone_t malloc_zone_t;
 #include "base/files/file_path.h"
 #include "base/process.h"
 #include "base/process/memory.h"
+#include "base/process/kill.h"
+#include "base/process/process_handle.h"
 #include "base/process/process_iterator.h"
 #include "base/process/process_metrics.h"
 
@@ -48,81 +50,13 @@ class CommandLine;
 
 namespace base {
 
-// Return status values from GetTerminationStatus.  Don't use these as
-// exit code arguments to KillProcess*(), use platform/application
-// specific values instead.
-enum TerminationStatus {
-  TERMINATION_STATUS_NORMAL_TERMINATION,   // zero exit status
-  TERMINATION_STATUS_ABNORMAL_TERMINATION, // non-zero exit status
-  TERMINATION_STATUS_PROCESS_WAS_KILLED,   // e.g. SIGKILL or task manager kill
-  TERMINATION_STATUS_PROCESS_CRASHED,      // e.g. Segmentation fault
-  TERMINATION_STATUS_STILL_RUNNING,        // child hasn't exited yet
-  TERMINATION_STATUS_MAX_ENUM
-};
-
 #if defined(OS_WIN)
 // Output multi-process printf, cout, cerr, etc to the cmd.exe console that ran
 // chrome. This is not thread-safe: only call from main thread.
 BASE_EXPORT void RouteStdioToConsole();
 #endif
 
-// Returns the id of the current process.
-BASE_EXPORT ProcessId GetCurrentProcId();
-
-// Returns the ProcessHandle of the current process.
-BASE_EXPORT ProcessHandle GetCurrentProcessHandle();
-
-// Converts a PID to a process handle. This handle must be closed by
-// CloseProcessHandle when you are done with it. Returns true on success.
-BASE_EXPORT bool OpenProcessHandle(ProcessId pid, ProcessHandle* handle);
-
-// Converts a PID to a process handle. On Windows the handle is opened
-// with more access rights and must only be used by trusted code.
-// You have to close returned handle using CloseProcessHandle. Returns true
-// on success.
-// TODO(sanjeevr): Replace all calls to OpenPrivilegedProcessHandle with the
-// more specific OpenProcessHandleWithAccess method and delete this.
-BASE_EXPORT bool OpenPrivilegedProcessHandle(ProcessId pid,
-                                             ProcessHandle* handle);
-
-// Converts a PID to a process handle using the desired access flags. Use a
-// combination of the kProcessAccess* flags defined above for |access_flags|.
-BASE_EXPORT bool OpenProcessHandleWithAccess(ProcessId pid,
-                                             uint32 access_flags,
-                                             ProcessHandle* handle);
-
-// Closes the process handle opened by OpenProcessHandle.
-BASE_EXPORT void CloseProcessHandle(ProcessHandle process);
-
-// Returns the unique ID for the specified process. This is functionally the
-// same as Windows' GetProcessId(), but works on versions of Windows before
-// Win XP SP1 as well.
-BASE_EXPORT ProcessId GetProcId(ProcessHandle process);
-
-#if defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_BSD)
-// Returns the path to the executable of the given process.
-BASE_EXPORT FilePath GetProcessExecutablePath(ProcessHandle process);
-#endif
-
-#if defined(OS_LINUX) || defined(OS_ANDROID)
-// Get the number of threads of |process| as available in /proc/<pid>/stat.
-// This should be used with care as no synchronization with running threads is
-// done. This is mostly useful to guarantee being single-threaded.
-// Returns 0 on failure.
-BASE_EXPORT int GetNumberOfThreads(ProcessHandle process);
-
-// /proc/self/exe refers to the current executable.
-BASE_EXPORT extern const char kProcSelfExe[];
-#endif  // defined(OS_LINUX) || defined(OS_ANDROID)
-
 #if defined(OS_POSIX)
-// Returns the ID for the parent of the given process.
-BASE_EXPORT ProcessId GetParentProcessId(ProcessHandle process);
-
-// Returns the maximum number of file descriptors that can be open by a process
-// at once. If the number is unavailable, a conservative best guess is returned.
-size_t GetMaxFds();
-
 // Close all file descriptors, except those which are a destination in the
 // given multimap. Only call this function in a child process where you know
 // that there aren't any other threads.
@@ -262,19 +196,6 @@ BASE_EXPORT bool LaunchProcess(const CommandLine& cmdline,
                                ProcessHandle* process_handle);
 
 #if defined(OS_WIN)
-
-enum IntegrityLevel {
-  INTEGRITY_UNKNOWN,
-  LOW_INTEGRITY,
-  MEDIUM_INTEGRITY,
-  HIGH_INTEGRITY,
-};
-// Determine the integrity level of the specified process. Returns false
-// if the system does not support integrity levels (pre-Vista) or in the case
-// of an underlying system failure.
-BASE_EXPORT bool GetProcessIntegrityLevel(ProcessHandle process,
-                                          IntegrityLevel* level);
-
 // Windows-specific LaunchProcess that takes the command line as a
 // string.  Useful for situations where you need to control the
 // command line arguments directly, but prefer the CommandLine version
@@ -344,115 +265,6 @@ BASE_EXPORT bool GetAppOutputRestricted(const CommandLine& cl,
 BASE_EXPORT bool GetAppOutputWithExitCode(const CommandLine& cl,
                                           std::string* output, int* exit_code);
 #endif  // defined(OS_POSIX)
-
-// Attempts to kill all the processes on the current machine that were launched
-// from the given executable name, ending them with the given exit code.  If
-// filter is non-null, then only processes selected by the filter are killed.
-// Returns true if all processes were able to be killed off, false if at least
-// one couldn't be killed.
-BASE_EXPORT bool KillProcesses(const FilePath::StringType& executable_name,
-                               int exit_code, const ProcessFilter* filter);
-
-// Attempts to kill the process identified by the given process
-// entry structure, giving it the specified exit code. If |wait| is true, wait
-// for the process to be actually terminated before returning.
-// Returns true if this is successful, false otherwise.
-BASE_EXPORT bool KillProcess(ProcessHandle process, int exit_code, bool wait);
-
-#if defined(OS_POSIX)
-// Attempts to kill the process group identified by |process_group_id|. Returns
-// true on success.
-BASE_EXPORT bool KillProcessGroup(ProcessHandle process_group_id);
-#endif  // defined(OS_POSIX)
-
-#if defined(OS_WIN)
-BASE_EXPORT bool KillProcessById(ProcessId process_id, int exit_code,
-                                 bool wait);
-#endif  // defined(OS_WIN)
-
-// Get the termination status of the process by interpreting the
-// circumstances of the child process' death. |exit_code| is set to
-// the status returned by waitpid() on POSIX, and from
-// GetExitCodeProcess() on Windows.  |exit_code| may be NULL if the
-// caller is not interested in it.  Note that on Linux, this function
-// will only return a useful result the first time it is called after
-// the child exits (because it will reap the child and the information
-// will no longer be available).
-BASE_EXPORT TerminationStatus GetTerminationStatus(ProcessHandle handle,
-                                                   int* exit_code);
-
-#if defined(OS_POSIX)
-// Wait for the process to exit and get the termination status. See
-// GetTerminationStatus for more information. On POSIX systems, we can't call
-// WaitForExitCode and then GetTerminationStatus as the child will be reaped
-// when WaitForExitCode return and this information will be lost.
-BASE_EXPORT TerminationStatus WaitForTerminationStatus(ProcessHandle handle,
-                                                       int* exit_code);
-#endif  // defined(OS_POSIX)
-
-// Waits for process to exit. On POSIX systems, if the process hasn't been
-// signaled then puts the exit code in |exit_code|; otherwise it's considered
-// a failure. On Windows |exit_code| is always filled. Returns true on success,
-// and closes |handle| in any case.
-BASE_EXPORT bool WaitForExitCode(ProcessHandle handle, int* exit_code);
-
-// Waits for process to exit. If it did exit within |timeout_milliseconds|,
-// then puts the exit code in |exit_code|, and returns true.
-// In POSIX systems, if the process has been signaled then |exit_code| is set
-// to -1. Returns false on failure (the caller is then responsible for closing
-// |handle|).
-// The caller is always responsible for closing the |handle|.
-BASE_EXPORT bool WaitForExitCodeWithTimeout(ProcessHandle handle,
-                                            int* exit_code,
-                                            base::TimeDelta timeout);
-
-// Wait for all the processes based on the named executable to exit.  If filter
-// is non-null, then only processes selected by the filter are waited on.
-// Returns after all processes have exited or wait_milliseconds have expired.
-// Returns true if all the processes exited, false otherwise.
-BASE_EXPORT bool WaitForProcessesToExit(
-    const FilePath::StringType& executable_name,
-    base::TimeDelta wait,
-    const ProcessFilter* filter);
-
-// Wait for a single process to exit. Return true if it exited cleanly within
-// the given time limit. On Linux |handle| must be a child process, however
-// on Mac and Windows it can be any process.
-BASE_EXPORT bool WaitForSingleProcess(ProcessHandle handle,
-                                      base::TimeDelta wait);
-
-// Waits a certain amount of time (can be 0) for all the processes with a given
-// executable name to exit, then kills off any of them that are still around.
-// If filter is non-null, then only processes selected by the filter are waited
-// on.  Killed processes are ended with the given exit code.  Returns false if
-// any processes needed to be killed, true if they all exited cleanly within
-// the wait_milliseconds delay.
-BASE_EXPORT bool CleanupProcesses(const FilePath::StringType& executable_name,
-                                  base::TimeDelta wait,
-                                  int exit_code,
-                                  const ProcessFilter* filter);
-
-// This method ensures that the specified process eventually terminates, and
-// then it closes the given process handle.
-//
-// It assumes that the process has already been signalled to exit, and it
-// begins by waiting a small amount of time for it to exit.  If the process
-// does not appear to have exited, then this function starts to become
-// aggressive about ensuring that the process terminates.
-//
-// On Linux this method does not block the calling thread.
-// On OS X this method may block for up to 2 seconds.
-//
-// NOTE: The process handle must have been opened with the PROCESS_TERMINATE
-// and SYNCHRONIZE permissions.
-//
-BASE_EXPORT void EnsureProcessTerminated(ProcessHandle process_handle);
-
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
-// The nicer version of EnsureProcessTerminated() that is patient and will
-// wait for |process_handle| to finish and then reap it.
-BASE_EXPORT void EnsureProcessGetsReaped(ProcessHandle process_handle);
-#endif
 
 // If supported on the platform, and the user has sufficent rights, increase
 // the current process's scheduling priority to a high priority.

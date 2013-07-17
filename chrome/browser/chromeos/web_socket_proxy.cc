@@ -38,17 +38,15 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/sys_byteorder.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/web_socket_proxy_helper.h"
 #include "chrome/browser/internal_auth.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/common/url_constants.h"
 #include "extensions/common/constants.h"
-#include "googleurl/src/gurl.h"
-#include "googleurl/src/url_parse.h"
 #include "net/base/address_list.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/io_buffer.h"
@@ -62,6 +60,8 @@
 #include "net/ssl/ssl_config_service.h"
 #include "third_party/libevent/evdns.h"
 #include "third_party/libevent/event.h"
+#include "url/gurl.h"
+#include "url/url_parse.h"
 
 using content::BrowserThread;
 

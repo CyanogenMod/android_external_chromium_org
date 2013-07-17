@@ -1,6 +1,6 @@
 <!DOCTYPE HTML>
 <!--
-  -- Copyright (c) 2013 The Chromium Authors. All rights reserved.
+  -- Copyright 2013 The Chromium Authors. All rights reserved.
   -- Use of this source code is governed by a BSD-style license that can be
   -- found in the LICENSE file.
   -->
@@ -16,15 +16,20 @@
     <link rel="import" href="elements/kb-accent-container.html">
     <link rel="import" href="elements/kb-accent-set.html">
     <link rel="import" href="elements/kb-accent-key.html">
+    <link rel="import" href="elements/kb-key-base.html">
     <link rel="import" href="elements/kb-key.html">
     <link rel="import" href="elements/kb-keyboard.html">
     <link rel="import" href="elements/kb-keyset.html">
     <link rel="import" href="elements/kb-row.html">
-    <link id="keysets" rel="import" href="keysets.html">
+    <!-- TODO(kevers|biao): Switch to dynamic loading strategy once supported
+    in Polymer (http://www.crbug.com/260278).-->
+    <link id="dvorak" rel="import" href="layouts/dvorak.html">
+    <link id="qwerty" rel="import" href="layouts/qwerty.html">
     <!--TODO(stevet): Import 'Open Sans' font. -->
     <script src="main.js"></script>
   </head>
   <body>
-    <kb-keyboard id="keyboard" touch-action="none" keyset="lower"></kb-keyboard>
+    <kb-keyboard id="keyboard" touch-action="none" layout="qwerty">
+    </kb-keyboard>
   </body>
 </html>

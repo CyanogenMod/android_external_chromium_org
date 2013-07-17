@@ -20,8 +20,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -122,7 +122,7 @@ void SaveBitmap(ImageData* data,
 
   // Make sure the destination directory exists.
   base::FilePath dir = image_path.DirName();
-  if (!file_util::DirectoryExists(dir) && !file_util::CreateDirectory(dir)) {
+  if (!base::DirectoryExists(dir) && !file_util::CreateDirectory(dir)) {
     LOG(ERROR) << "Failed to create parent directory.";
     return;
   }
@@ -165,7 +165,7 @@ void ReadBitmap(const base::FilePath& image_path,
 
 void DeleteBitmap(const base::FilePath& image_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  base::Delete(image_path, false);
+  base::DeleteFile(image_path, false);
 }
 
 }  // namespace

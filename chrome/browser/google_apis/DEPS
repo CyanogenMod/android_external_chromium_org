@@ -2,9 +2,6 @@ include_rules = [
   "-chrome",
   "-content",
   "+chrome/browser/google_apis",
-
-  # BrowserThread should be gone: crbug.com/256112
-  "!content/public/browser/browser_thread.h",
 ]
 
 # Exceptions are temporarily needed. crbug.com/146989
@@ -12,15 +9,13 @@ specific_include_rules = {
   ".*requests.*unittest\.cc": [
     # This is necessary for AuthService. See below.
     "!chrome/test/base/testing_profile.h",
-    # TestBrowserThreadBundle should be gone: crbug.com/256109
-    "!content/public/test/test_browser_thread_bundle.h",
   ],
   # AuthService should be gone. crbug.com/162157
   "auth_service\.(h|cc)": [
+    "!chrome/browser/chrome_notification_types.h",
     "!chrome/browser/profiles/profile.h",
     "!chrome/browser/signin/token_service_factory.h",
     "!chrome/browser/signin/token_service.h",
-    "!chrome/common/chrome_notification_types.h",
     "!content/public/browser/notification_details.h",
     "!content/public/browser/notification_observer.h",
     "!content/public/browser/notification_registrar.h",

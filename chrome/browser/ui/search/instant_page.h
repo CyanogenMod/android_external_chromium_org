@@ -52,8 +52,8 @@ class InstantPage : public content::WebContentsObserver,
     virtual void InstantSupportDetermined(const content::WebContents* contents,
                                           bool supports_instant) = 0;
 
-    // Called when the underlying RenderView crashed.
-    virtual void InstantPageRenderViewGone(
+    // Called when the underlying RenderView's process crashed.
+    virtual void InstantPageRenderProcessGone(
         const content::WebContents* contents) = 0;
 
     // Called when the page is about to navigate to |url|.
@@ -185,6 +185,7 @@ class InstantPage : public content::WebContentsObserver,
                            content::PageTransition transition,
                            WindowOpenDisposition disposition,
                            bool is_search_type);
+  void OnCountMouseover(int page_id);
   void OnDeleteMostVisitedItem(int page_id, const GURL& url);
   void OnUndoMostVisitedDeletion(int page_id, const GURL& url);
   void OnUndoAllMostVisitedDeletions(int page_id);

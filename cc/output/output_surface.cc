@@ -19,6 +19,7 @@
 #include "cc/output/output_surface_client.h"
 #include "cc/scheduler/delay_based_time_source.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebGraphicsMemoryAllocation.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 #include "ui/gfx/rect.h"
@@ -280,6 +281,12 @@ void OutputSurface::SetExternalDrawConstraints(const gfx::Transform& transform,
 OutputSurface::~OutputSurface() {
   if (frame_rate_controller_)
     frame_rate_controller_->SetActive(false);
+
+  if (context3d_) {
+    context3d_->setSwapBuffersCompleteCallbackCHROMIUM(NULL);
+    context3d_->setContextLostCallback(NULL);
+    context3d_->setMemoryAllocationChangedCallbackCHROMIUM(NULL);
+  }
 }
 
 bool OutputSurface::ForcedDrawToSoftwareDevice() const {
@@ -317,12 +324,17 @@ bool OutputSurface::InitializeAndSetContext3D(
       success = true;
   }
 
-  if (!success) {
-    context3d_.reset();
-    callbacks_.reset();
-  }
+  if (!success)
+    ResetContext3D();
 
   return success;
+}
+
+void OutputSurface::ReleaseGL() {
+  DCHECK(client_);
+  DCHECK(context3d_);
+  client_->ReleaseGL();
+  ResetContext3D();
 }
 
 void OutputSurface::SetContext3D(
@@ -346,6 +358,11 @@ void OutputSurface::SetContext3D(
   context3d_->setSwapBuffersCompleteCallbackCHROMIUM(callbacks_.get());
   context3d_->setContextLostCallback(callbacks_.get());
   context3d_->setMemoryAllocationChangedCallbackCHROMIUM(callbacks_.get());
+}
+
+void OutputSurface::ResetContext3D() {
+  context3d_.reset();
+  callbacks_.reset();
 }
 
 void OutputSurface::EnsureBackbuffer() {

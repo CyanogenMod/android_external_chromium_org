@@ -81,7 +81,7 @@ class FileBrowserFunction : public AsyncExtensionFunction {
   int32 GetTabId() const;
 
   // Returns the local FilePath associated with |url|. If the file isn't of the
-  // type CrosMountPointProvider handles, returns an empty FilePath.
+  // type FileSystemBackend handles, returns an empty FilePath.
   //
   // Local paths will look like "/home/chronos/user/Downloads/foo/bar.txt" or
   // "/special/drive/foo/bar.txt".
@@ -560,14 +560,14 @@ class PinDriveFileFunction : public FileBrowserFunction {
   void OnPinStateSet(drive::FileError error);
 };
 
-// Get gdata files for the given list of file URLs. Initiate downloading of
-// gdata files if these are not cached. Return a list of local file names.
+// Get drive files for the given list of file URLs. Initiate downloading of
+// drive files if these are not cached. Return a list of local file names.
 // This function puts empty strings instead of local paths for files could
 // not be obtained. For instance, this can happen if the user specifies a new
-// file name to save a file on gdata. There may be other reasons to fail. The
+// file name to save a file on drive. There may be other reasons to fail. The
 // file manager should check if the local paths returned from getDriveFiles()
 // contain empty paths.
-// TODO(satorux): Should we propagate error types to the JavasScript layer?
+// TODO(satorux): Should we propagate error types to the JavaScript layer?
 class GetDriveFilesFunction : public FileBrowserFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("fileBrowserPrivate.getDriveFiles",
@@ -704,19 +704,6 @@ class ClearDriveCacheFunction : public AsyncExtensionFunction {
   virtual bool RunImpl() OVERRIDE;
 };
 
-// Implements the chrome.fileBrowserPrivate.reloadDrive method,
-// which is used to reload the file system metadata from the server.
-class ReloadDriveFunction: public AsyncExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION("fileBrowserPrivate.reloadDrive",
-                             FILEBROWSERPRIVATE_RELOADDRIVE)
-
- protected:
-  virtual ~ReloadDriveFunction() {}
-
-  virtual bool RunImpl() OVERRIDE;
-};
-
 // Implements the chrome.fileBrowserPrivate.getDriveConnectionState method.
 class GetDriveConnectionStateFunction : public SyncExtensionFunction {
  public:
@@ -726,19 +713,6 @@ class GetDriveConnectionStateFunction : public SyncExtensionFunction {
 
  protected:
   virtual ~GetDriveConnectionStateFunction() {}
-
-  virtual bool RunImpl() OVERRIDE;
-};
-
-// Implements the chrome.fileBrowserPrivate.requestDirectoryRefresh method.
-class RequestDirectoryRefreshFunction : public SyncExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION(
-      "fileBrowserPrivate.requestDirectoryRefresh",
-      FILEBROWSERPRIVATE_REQUESTDIRECTORYREFRESH);
-
- protected:
-  virtual ~RequestDirectoryRefreshFunction() {}
 
   virtual bool RunImpl() OVERRIDE;
 };
@@ -790,6 +764,25 @@ class ZoomFunction : public SyncExtensionFunction {
  protected:
   virtual ~ZoomFunction() {}
   virtual bool RunImpl() OVERRIDE;
+};
+
+// Implements the chrome.fileBrowserPrivate.requestAccessToken method.
+class RequestAccessTokenFunction : public AsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("fileBrowserPrivate.requestAccessToken",
+                             FILEBROWSERPRIVATE_REQUESTACCESSTOKEN)
+
+  RequestAccessTokenFunction();
+
+ protected:
+  virtual ~RequestAccessTokenFunction();
+
+  // AsyncExtensionFunction overrides.
+  virtual bool RunImpl() OVERRIDE;
+
+  // Received the cached auth token (if available) or the fetched one.
+  void OnAccessTokenFetched(google_apis::GDataErrorCode code,
+                            const std::string& access_token);
 };
 
 #endif  // CHROME_BROWSER_CHROMEOS_EXTENSIONS_FILE_MANAGER_FILE_BROWSER_PRIVATE_API_H_

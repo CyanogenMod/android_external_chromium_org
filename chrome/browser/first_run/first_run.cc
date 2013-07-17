@@ -18,14 +18,15 @@
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/first_run/first_run_internal.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/importer/external_process_importer_host.h"
-#include "chrome/browser/importer/importer_creator.h"
 #include "chrome/browser/importer/importer_list.h"
 #include "chrome/browser/importer/importer_progress_observer.h"
+#include "chrome/browser/importer/importer_uma.h"
 #include "chrome/browser/importer/profile_writer.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search_engines/template_url_service.h"
@@ -41,7 +42,6 @@
 #include "chrome/browser/ui/sync/sync_promo_ui.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -169,7 +169,7 @@ base::FilePath GetDefaultPrefFilePath(bool create_profile_dir,
   base::FilePath default_pref_dir =
       ProfileManager::GetDefaultProfileDir(user_data_dir);
   if (create_profile_dir) {
-    if (!file_util::PathExists(default_pref_dir)) {
+    if (!base::PathExists(default_pref_dir)) {
       if (!file_util::CreateDirectory(default_pref_dir))
         return base::FilePath();
     }
@@ -334,7 +334,7 @@ bool CopyPrefFile(const base::FilePath& user_data_dir,
 
   // The master prefs are regular prefs so we can just copy the file
   // to the default place and they just work.
-  return file_util::CopyFile(master_prefs_path, user_prefs);
+  return base::CopyFile(master_prefs_path, user_prefs);
 }
 
 void SetupMasterPrefsFromInstallPrefs(
@@ -470,7 +470,7 @@ bool IsChromeFirstRun() {
 
   base::FilePath first_run_sentinel;
   if (!internal::GetFirstRunSentinelFilePath(&first_run_sentinel) ||
-      file_util::PathExists(first_run_sentinel)) {
+      base::PathExists(first_run_sentinel)) {
     internal::first_run_ = internal::FIRST_RUN_FALSE;
     return false;
   }
@@ -491,7 +491,7 @@ std::string GetPingDelayPrefName() {
                             installer::master_preferences::kDistroPingDelay);
 }
 
-void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry) {
+void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterIntegerPref(
       GetPingDelayPrefName().c_str(),
       0,
@@ -502,7 +502,7 @@ bool RemoveSentinel() {
   base::FilePath first_run_sentinel;
   if (!internal::GetFirstRunSentinelFilePath(&first_run_sentinel))
     return false;
-  return base::Delete(first_run_sentinel, false);
+  return base::DeleteFile(first_run_sentinel, false);
 }
 
 bool SetShowFirstRunBubblePref(FirstRunBubbleOptions show_bubble_option) {
@@ -677,7 +677,7 @@ void AutoImport(
 
   base::FilePath local_state_path;
   PathService::Get(chrome::FILE_LOCAL_STATE, &local_state_path);
-  bool local_state_file_exists = file_util::PathExists(local_state_path);
+  bool local_state_file_exists = base::PathExists(local_state_path);
 
   scoped_refptr<ImporterList> importer_list(new ImporterList());
   importer_list->DetectSourceProfilesHack(

@@ -13,9 +13,9 @@
 #include "webkit/browser/fileapi/async_file_util.h"
 #include "webkit/browser/fileapi/copy_or_move_operation_delegate.h"
 #include "webkit/browser/fileapi/file_observers.h"
+#include "webkit/browser/fileapi/file_system_backend.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
-#include "webkit/browser/fileapi/file_system_mount_point_provider.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/file_system_task_runners.h"
 #include "webkit/browser/fileapi/file_system_url.h"
@@ -29,13 +29,8 @@
 #include "webkit/common/quota/quota_types.h"
 
 using webkit_blob::ScopedFile;
-using webkit_blob::ShareableFileReference;
 
 namespace fileapi {
-
-namespace {
-void NopCloseFileCallback() {}
-}
 
 LocalFileSystemOperation::LocalFileSystemOperation(
     const FileSystemURL& url,
@@ -529,12 +524,11 @@ void LocalFileSystemOperation::DidWrite(
 void LocalFileSystemOperation::DidOpenFile(
     const OpenFileCallback& callback,
     base::PlatformFileError rv,
-    base::PassPlatformFile file) {
+    base::PassPlatformFile file,
+    const base::Closure& on_close_callback) {
   if (rv == base::PLATFORM_FILE_OK)
     CHECK_NE(base::kNullProcessHandle, peer_handle_);
-  callback.Run(rv, file.ReleaseValue(),
-               base::Bind(&NopCloseFileCallback),
-               peer_handle_);
+  callback.Run(rv, file.ReleaseValue(), on_close_callback, peer_handle_);
 }
 
 bool LocalFileSystemOperation::SetPendingOperationType(OperationType type) {

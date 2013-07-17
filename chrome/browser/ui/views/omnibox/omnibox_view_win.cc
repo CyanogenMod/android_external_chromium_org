@@ -29,6 +29,7 @@
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/keyword_provider.h"
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/profiles/profile.h"
@@ -39,11 +40,9 @@
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_view_views.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/common/constants.h"
-#include "googleurl/src/url_util.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
 #include "skia/ext/skia_utils_win.h"
@@ -72,6 +71,7 @@
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/textfield/native_textfield_win.h"
 #include "ui/views/widget/widget.h"
+#include "url/url_util.h"
 #include "win8/util/win8_util.h"
 
 #pragma comment(lib, "oleacc.lib")  // Needed for accessibility support.
@@ -901,16 +901,9 @@ bool OmniboxViewWin::OnInlineAutocompleteTextMaybeChanged(
 void OmniboxViewWin::OnRevertTemporaryText() {
   SetSelectionRange(original_selection_);
   // We got here because the user hit the Escape key. We explicitly don't call
-  // TextChanged(), since calling it breaks Instant-Extended, and isn't needed
-  // otherwise (in regular non-Instant or Instant-but-not-Extended modes).
-  //
-  // Why it breaks Instant-Extended: Instant handles the Escape key separately
-  // (cf: OmniboxEditModel::RevertTemporaryText). Calling TextChanged() makes
-  // the page think the user additionally typed some text, causing it to update
-  // its suggestions dropdown with new suggestions, which is wrong.
-  //
-  // Why it isn't needed: OmniboxPopupModel::ResetToDefaultMatch() has already
-  // been called by now; it would've called TextChanged() if it was warranted.
+  // TextChanged(), since OmniboxPopupModel::ResetToDefaultMatch() has already
+  // been called by now, and it would've called TextChanged() if it was
+  // warranted.
 }
 
 void OmniboxViewWin::OnBeforePossibleChange() {
@@ -1028,16 +1021,16 @@ gfx::NativeView OmniboxViewWin::GetRelativeWindowForPopup() const {
   return GetRelativeWindowForNativeView(GetNativeView());
 }
 
-void OmniboxViewWin::SetInstantSuggestion(const string16& suggestion) {
-  location_bar_->SetInstantSuggestion(suggestion);
+void OmniboxViewWin::SetGrayTextAutocompletion(const string16& suggestion) {
+  location_bar_->SetGrayTextAutocompletion(suggestion);
 }
 
 int OmniboxViewWin::TextWidth() const {
   return WidthNeededToDisplay(GetText());
 }
 
-string16 OmniboxViewWin::GetInstantSuggestion() const {
-  return location_bar_->GetInstantSuggestion();
+string16 OmniboxViewWin::GetGrayTextAutocompletion() const {
+  return location_bar_->GetGrayTextAutocompletion();
 }
 
 bool OmniboxViewWin::IsImeComposing() const {

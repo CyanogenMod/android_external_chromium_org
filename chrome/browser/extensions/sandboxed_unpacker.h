@@ -14,6 +14,8 @@
 #include "chrome/common/extensions/manifest.h"
 #include "content/public/browser/utility_process_host_client.h"
 
+class SkBitmap;
+
 namespace base {
 class DictionaryValue;
 class SequencedTaskRunner;
@@ -35,10 +37,13 @@ class SandboxedUnpackerClient
   //
   // extension - The extension that was unpacked. The client is responsible
   // for deleting this memory.
+  //
+  // install_icon - The icon we will display in the installation UI, if any.
   virtual void OnUnpackSuccess(const base::FilePath& temp_dir,
                                const base::FilePath& extension_root,
                                const base::DictionaryValue* original_manifest,
-                               const Extension* extension) = 0;
+                               const Extension* extension,
+                               const SkBitmap& install_icon) = 0;
   virtual void OnUnpackFailure(const string16& error) = 0;
 
  protected:
@@ -74,7 +79,6 @@ class SandboxedUnpacker : public content::UtilityProcessHostClient {
   // |client| with the result. If |run_out_of_process| is provided, unpacking
   // is done in a sandboxed subprocess. Otherwise, it is done in-process.
   SandboxedUnpacker(const base::FilePath& crx_path,
-                    bool run_out_of_process,
                     Manifest::Location location,
                     int creation_flags,
                     const base::FilePath& extensions_dir,
@@ -134,6 +138,7 @@ class SandboxedUnpacker : public content::UtilityProcessHostClient {
     INVALID_PATH_FOR_BITMAP_IMAGE,
     ERROR_RE_ENCODING_THEME_IMAGE,
     ERROR_SAVING_THEME_IMAGE,
+    ABORTED_DUE_TO_SHUTDOWN,
 
     // SandboxedUnpacker::RewriteCatalogFiles()
     COULD_NOT_READ_CATALOG_DATA_FROM_DISK,
@@ -177,7 +182,8 @@ class SandboxedUnpacker : public content::UtilityProcessHostClient {
   void OnUnpackExtensionFailed(const string16& error_message);
 
   void ReportFailure(FailureReason reason, const string16& message);
-  void ReportSuccess(const base::DictionaryValue& original_manifest);
+  void ReportSuccess(const base::DictionaryValue& original_manifest,
+                     const SkBitmap& install_icon);
 
   // Overwrites original manifest with safe result from utility process.
   // Returns NULL on error. Caller owns the returned object.
@@ -186,7 +192,7 @@ class SandboxedUnpacker : public content::UtilityProcessHostClient {
 
   // Overwrites original files with safe results from utility process.
   // Reports error and returns false if it fails.
-  bool RewriteImageFiles();
+  bool RewriteImageFiles(SkBitmap* install_icon);
   bool RewriteCatalogFiles();
 
   // Cleans up temp directory artifacts.
@@ -194,9 +200,6 @@ class SandboxedUnpacker : public content::UtilityProcessHostClient {
 
   // The path to the CRX to unpack.
   base::FilePath crx_path_;
-
-  // True if unpacking should be done by the utility process.
-  bool run_out_of_process_;
 
   // Our client.
   scoped_refptr<SandboxedUnpackerClient> client_;

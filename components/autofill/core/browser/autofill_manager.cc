@@ -51,11 +51,11 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/url_constants.h"
-#include "googleurl/src/gurl.h"
 #include "grit/component_strings.h"
 #include "third_party/WebKit/public/web/WebAutofillClient.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/rect.h"
+#include "url/gurl.h"
 
 namespace autofill {
 
@@ -211,7 +211,7 @@ AutofillManager::AutofillManager(
 AutofillManager::~AutofillManager() {}
 
 // static
-void AutofillManager::RegisterUserPrefs(
+void AutofillManager::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterBooleanPref(
       prefs::kAutofillEnabled,
@@ -378,6 +378,7 @@ void AutofillManager::OnTextFieldDidChange(const FormData& form,
     return;
 
   if (!user_did_type_) {
+    autocheckout_manager_.set_should_show_bubble(false);
     user_did_type_ = true;
     metric_logger_->LogUserHappinessMetric(AutofillMetrics::USER_DID_TYPE);
   }
@@ -410,13 +411,11 @@ void AutofillManager::OnQueryFormFieldAutofill(int query_id,
   std::vector<base::string16> icons;
   std::vector<int> unique_ids;
 
-  if (external_delegate_) {
-    external_delegate_->OnQuery(query_id,
-                                form,
-                                field,
-                                bounding_box,
-                                display_warning);
-  }
+  external_delegate_->OnQuery(query_id,
+                              form,
+                              field,
+                              bounding_box,
+                              display_warning);
 
   RenderViewHost* host = NULL;
   FormStructure* form_structure = NULL;
@@ -616,6 +615,9 @@ void AutofillManager::OnDidShowAutofillSuggestions(bool is_new_popup) {
 }
 
 void AutofillManager::OnHideAutofillUi() {
+  if (!IsAutofillEnabled())
+   return;
+
   manager_delegate_->HideAutofillPopup();
   manager_delegate_->HideAutocheckoutBubble();
 }
@@ -668,8 +670,7 @@ void AutofillManager::SetTestDelegate(
 void AutofillManager::OnAddPasswordFormMapping(
       const FormFieldData& form,
       const PasswordFormFillData& fill_data) {
-  if (external_delegate_)
-    external_delegate_->AddPasswordFormMapping(form, fill_data);
+  external_delegate_->AddPasswordFormMapping(form, fill_data);
 }
 
 void AutofillManager::OnShowPasswordSuggestions(
@@ -677,12 +678,10 @@ void AutofillManager::OnShowPasswordSuggestions(
     const gfx::RectF& bounds,
     const std::vector<base::string16>& suggestions,
     const std::vector<base::string16>& realms) {
-  if (external_delegate_) {
-    external_delegate_->OnShowPasswordSuggestions(suggestions,
-                                                  realms,
-                                                  field,
-                                                  bounds);
-  }
+  external_delegate_->OnShowPasswordSuggestions(suggestions,
+                                                realms,
+                                                field,
+                                                bounds);
 }
 
 void AutofillManager::OnSetDataList(const std::vector<base::string16>& values,
@@ -694,12 +693,11 @@ void AutofillManager::OnSetDataList(const std::vector<base::string16>& values,
       unique_ids.size() != values.size()) {
     return;
   }
-  if (external_delegate_) {
-    external_delegate_->SetCurrentDataListValues(values,
-                                                 labels,
-                                                 icons,
-                                                 unique_ids);
-  }
+
+  external_delegate_->SetCurrentDataListValues(values,
+                                               labels,
+                                               icons,
+                                               unique_ids);
 }
 
 void AutofillManager::OnRequestAutocomplete(
@@ -775,8 +773,7 @@ void AutofillManager::OnLoadedServerPredictions(
 }
 
 void AutofillManager::OnDidEndTextFieldEditing() {
-  if (external_delegate_)
-    external_delegate_->DidEndTextFieldEditing();
+  external_delegate_->DidEndTextFieldEditing();
 }
 
 void AutofillManager::OnClickFailed(autofill::AutocheckoutStatus status) {
@@ -849,10 +846,7 @@ void AutofillManager::OnMaybeShowAutocheckoutBubble(
   if (!HasServerSpecifiedFieldTypes(*cached_form))
     return;
 
-  autocheckout_manager_.MaybeShowAutocheckoutBubble(
-      form.origin,
-      form.ssl_status,
-      bounding_box);
+  autocheckout_manager_.MaybeShowAutocheckoutBubble(form.origin, bounding_box);
 }
 
 void AutofillManager::UploadFormData(const FormStructure& submitted_form) {
@@ -887,9 +881,7 @@ void AutofillManager::Reset() {
   user_did_edit_autofilled_field_ = false;
   forms_loaded_timestamp_ = TimeTicks();
   initial_interaction_timestamp_ = TimeTicks();
-
-  if (external_delegate_)
-    external_delegate_->Reset();
+  external_delegate_->Reset();
 }
 
 AutofillManager::AutofillManager(AutofillDriver* driver,

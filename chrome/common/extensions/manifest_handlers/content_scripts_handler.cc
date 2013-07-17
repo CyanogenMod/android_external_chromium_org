@@ -19,9 +19,9 @@
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
-#include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "url/gurl.h"
 
 namespace extensions {
 
@@ -296,7 +296,7 @@ static bool IsScriptValid(const base::FilePath& path,
                           int message_id,
                           std::string* error) {
   std::string content;
-  if (!file_util::PathExists(path) ||
+  if (!base::PathExists(path) ||
       !file_util::ReadFileToString(path, &content)) {
     *error = l10n_util::GetStringFUTF8(
         message_id,
@@ -416,6 +416,9 @@ bool ContentScriptsHandler::Parse(Extension* extension, string16* error) {
   }
   extension->SetManifestData(keys::kContentScripts,
                              content_scripts_info.release());
+  PermissionsData::SetInitialScriptableHosts(
+      extension,
+      ContentScriptsInfo::GetScriptableHosts(extension));
   return true;
 }
 

@@ -47,24 +47,13 @@ int64 ComputeDirectorySize(const FilePath& root_path) {
 bool Move(const FilePath& from_path, const FilePath& to_path) {
   if (from_path.ReferencesParent() || to_path.ReferencesParent())
     return false;
-  return MoveUnsafe(from_path, to_path);
+  return internal::MoveUnsafe(from_path, to_path);
 }
-
-}  // namespace base
-
-// -----------------------------------------------------------------------------
-
-namespace file_util {
-
-using base::FileEnumerator;
-using base::FilePath;
-using base::kExtensionSeparator;
-using base::kMaxUniqueFiles;
 
 bool CopyFile(const FilePath& from_path, const FilePath& to_path) {
   if (from_path.ReferencesParent() || to_path.ReferencesParent())
     return false;
-  return CopyFileUnsafe(from_path, to_path);
+  return internal::CopyFileUnsafe(from_path, to_path);
 }
 
 bool ContentsEqual(const FilePath& filename1, const FilePath& filename2) {
@@ -140,6 +129,17 @@ bool TextContentsEqual(const FilePath& filename1, const FilePath& filename2) {
 
   return true;
 }
+
+}  // namespace base
+
+// -----------------------------------------------------------------------------
+
+namespace file_util {
+
+using base::FileEnumerator;
+using base::FilePath;
+using base::kExtensionSeparator;
+using base::kMaxUniqueFiles;
 
 bool ReadFileToString(const FilePath& path, std::string* contents) {
   if (path.ReferencesParent())

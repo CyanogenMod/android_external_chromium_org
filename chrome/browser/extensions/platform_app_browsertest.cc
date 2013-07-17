@@ -13,6 +13,7 @@
 #include "base/threading/platform_thread.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/automation/automation_util.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/api/permissions/permissions_api.h"
 #include "chrome/browser/extensions/component_loader.h"
@@ -31,7 +32,6 @@
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/extensions/native_app_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -43,7 +43,7 @@
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/test/test_utils.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 using apps::ShellWindow;
 using content::WebContents;
@@ -111,7 +111,7 @@ bool CopyTestDataAndSetCommandLineArg(
     const char* filename) {
   base::FilePath path = temp_dir.AppendASCII(
       filename).NormalizePathSeparators();
-  if (!(file_util::CopyFile(test_data_file, path)))
+  if (!(base::CopyFile(test_data_file, path)))
     return false;
 
   CommandLine* command_line = CommandLine::ForCurrentProcess();

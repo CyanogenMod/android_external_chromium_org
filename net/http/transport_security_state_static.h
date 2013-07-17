@@ -681,7 +681,7 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {11, true, "\006betnet\002fr", true, kNoPins, DOMAIN_NOT_PINNED },
   {13, true, "\010uprotect\002it", true, kNoPins, DOMAIN_NOT_PINNED },
   {14, false, "\010squareup\003com", true, kNoPins, DOMAIN_NOT_PINNED },
-  {12, false, "\006square\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {12, true, "\006square\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {9, true, "\004cert\002se", true, kNoPins, DOMAIN_NOT_PINNED },
   {11, true, "\006crypto\002is", true, kNoPins, DOMAIN_NOT_PINNED },
   {20, true, "\005simon\007butcher\004name", true, kNoPins, DOMAIN_NOT_PINNED },
@@ -800,6 +800,7 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {16, false, "\003www\006simple\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {15, false, "\002fj\006simple\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {16, false, "\003api\006simple\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {17, true, "\004bank\006simple\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {11, true, "\005bassh\003net", true, kNoPins, DOMAIN_NOT_PINNED },
   {10, true, "\004sah3\003net", true, kNoPins, DOMAIN_NOT_PINNED },
   {9, false, "\003grc\003com", true, kNoPins, DOMAIN_NOT_PINNED },
@@ -827,6 +828,7 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {13, true, "\010blueseed\002co", true, kNoPins, DOMAIN_NOT_PINNED },
   {26, true, "\005forum\016quantifiedself\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {11, true, "\006shodan\002io", true, kNoPins, DOMAIN_NOT_PINNED },
+  {18, true, "\015rapidresearch\002me", true, kNoPins, DOMAIN_NOT_PINNED },
 };
 static const size_t kNumPreloadedSTS = ARRAYSIZE_UNSAFE(kPreloadedSTS);
 

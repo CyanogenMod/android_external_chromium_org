@@ -14,8 +14,10 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/download/download_shelf.h"
 #include "chrome/browser/extensions/tab_helper.h"
+#include "chrome/browser/fullscreen.h"
 #include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/shell_integration.h"
@@ -47,7 +49,6 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/web_applications/web_app_ui.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/native_web_keyboard_event.h"
@@ -520,7 +521,8 @@ void BrowserWindowCocoa::ShowOneClickSigninBubble(
     [bubble_controller showWindow:nil];
   } else {
     // Deletes itself when the dialog closes.
-    new OneClickSigninDialogController(web_contents, start_sync_callback);
+    new OneClickSigninDialogController(
+        web_contents, start_sync_callback, email);
   }
 }
 #endif
@@ -561,10 +563,8 @@ void BrowserWindowCocoa::ShowWebsiteSettings(
     Profile* profile,
     content::WebContents* web_contents,
     const GURL& url,
-    const content::SSLStatus& ssl,
-    bool show_history) {
-  WebsiteSettingsUIBridge::Show(
-      window(), profile, web_contents, url, ssl);
+    const content::SSLStatus& ssl) {
+  WebsiteSettingsUIBridge::Show(window(), profile, web_contents, url, ssl);
 }
 
 void BrowserWindowCocoa::ShowAppMenu() {
@@ -625,7 +625,7 @@ void BrowserWindowCocoa::OpenTabpose() {
 }
 
 void BrowserWindowCocoa::EnterFullscreenWithChrome() {
-  CHECK(base::mac::IsOSLionOrLater());
+  CHECK(chrome::mac::SupportsSystemFullscreen());
   if ([controller_ inPresentationMode])
     [controller_ exitPresentationMode];
   else
@@ -653,7 +653,7 @@ gfx::Rect BrowserWindowCocoa::GetInstantBounds() {
 WindowOpenDisposition BrowserWindowCocoa::GetDispositionForPopupBounds(
     const gfx::Rect& bounds) {
   // In Lion fullscreen mode, convert popups into tabs.
-  if (base::mac::IsOSLionOrLater() && IsFullscreen())
+  if (chrome::mac::SupportsSystemFullscreen() && IsFullscreen())
     return NEW_FOREGROUND_TAB;
   return NEW_POPUP;
 }

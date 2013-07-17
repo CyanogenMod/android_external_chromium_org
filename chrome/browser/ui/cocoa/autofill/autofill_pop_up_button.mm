@@ -9,18 +9,24 @@
 #include "base/mac/scoped_nsobject.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
+@interface AutofillPopUpButton ()
+- (void)didSelectItem:(id)sender;
+@end
+
 @implementation AutofillPopUpButton
+
+@synthesize delegate = delegate_;
 
 + (Class)cellClass {
   return [AutofillPopUpCell class];
 }
 
-- (BOOL)invalid {
-  return [[self cell] invalid];
-}
-
-- (void)setInvalid:(BOOL)invalid {
-  [[self cell] setInvalid:invalid];
+- (id)initWithFrame:(NSRect)frame pullsDown:(BOOL)pullsDown{
+  if (self = [super initWithFrame:frame pullsDown:pullsDown]) {
+    [self setTarget:self];
+    [self setAction:@selector(didSelectItem:)];
+  }
+  return self;
 }
 
 - (NSString*)fieldValue {
@@ -29,6 +35,25 @@
 
 - (void)setFieldValue:(NSString*)fieldValue {
   [[self cell] setFieldValue:fieldValue];
+}
+
+- (NSString*)validityMessage {
+  return validityMessage_;
+}
+
+- (void)setValidityMessage:(NSString*)validityMessage {
+  validityMessage_.reset([validityMessage copy]);
+  [[self cell] setInvalid:[self invalid]];
+  [self setNeedsDisplay:YES];
+}
+
+- (BOOL)invalid {
+  return [validityMessage_ length] != 0;
+}
+
+- (void)didSelectItem:(id)sender {
+  if (delegate_)
+    [delegate_ didEndEditing:self];
 }
 
 @end

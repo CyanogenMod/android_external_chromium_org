@@ -32,9 +32,9 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/time/tick_clock.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/system/automatic_reboot_manager_observer.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_paths.h"
 #include "chromeos/chromeos_switches.h"
@@ -178,7 +178,7 @@ AutomaticRebootManager::AutomaticRebootManager(
         content::NotificationService::AllSources());
     login_screen_idle_timer_.reset(
         new base::OneShotTimer<AutomaticRebootManager>);
-    OnUserActivity();
+    OnUserActivity(NULL);
   }
 
   // In a regular browser, base::ThreadTaskRunnerHandle::Get() and
@@ -240,7 +240,7 @@ void AutomaticRebootManager::UpdateStatusChanged(
   Reschedule();
 }
 
-void AutomaticRebootManager::OnUserActivity() {
+void AutomaticRebootManager::OnUserActivity(const ui::Event* event) {
   if (!login_screen_idle_timer_)
     return;
 

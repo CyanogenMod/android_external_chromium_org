@@ -145,7 +145,7 @@ ManagedUserRegistrationServiceTest::ManagedUserRegistrationServiceTest()
       sync_data_id_(0),
       received_callback_(false),
       error_(GoogleServiceAuthError::NUM_STATES) {
-  ManagedUserRegistrationService::RegisterUserPrefs(prefs_.registry());
+  ManagedUserRegistrationService::RegisterProfilePrefs(prefs_.registry());
   scoped_ptr<ManagedUserRefreshTokenFetcher> token_fetcher(
       new MockManagedUserRefreshTokenFetcher);
   service_.reset(
@@ -180,7 +180,7 @@ SyncData ManagedUserRegistrationServiceTest::CreateRemoteData(
   specifics.mutable_managed_user()->set_id(id);
   specifics.mutable_managed_user()->set_name(name);
   specifics.mutable_managed_user()->set_acknowledged(true);
-  return SyncData::CreateRemoteData(++sync_data_id_, specifics);
+  return SyncData::CreateRemoteData(++sync_data_id_, specifics, base::Time());
 }
 
 SyncMergeResult ManagedUserRegistrationServiceTest::StartInitialSync() {
@@ -212,7 +212,9 @@ void ManagedUserRegistrationServiceTest::Acknowledge() {
     specifics.mutable_managed_user()->set_acknowledged(true);
     new_changes.push_back(
         SyncChange(FROM_HERE, SyncChange::ACTION_UPDATE,
-                   SyncData::CreateRemoteData(++sync_data_id_, specifics)));
+                   SyncData::CreateRemoteData(++sync_data_id_,
+                                              specifics,
+                                              base::Time())));
   }
   service()->ProcessSyncChanges(FROM_HERE, new_changes);
 

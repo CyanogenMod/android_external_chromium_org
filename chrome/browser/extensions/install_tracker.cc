@@ -5,8 +5,8 @@
 #include "chrome/browser/extensions/install_tracker.h"
 
 #include "base/bind.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_prefs.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
 
@@ -16,9 +16,13 @@ InstallTracker::InstallTracker(Profile* profile,
                                extensions::ExtensionPrefs* prefs) {
   ExtensionSorting* sorting = prefs->extension_sorting();
 
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_INSTALLED,
+      content::Source<Profile>(profile));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
       content::Source<Profile>(profile));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+      content::Source<Profile>(profile));
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
       content::Source<Profile>(profile));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LAUNCHER_REORDERED,
       content::Source<ExtensionSorting>(sorting));
@@ -76,24 +80,34 @@ void InstallTracker::Observe(int type,
                              const content::NotificationSource& source,
                              const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_LOADED: {
+    case chrome::NOTIFICATION_EXTENSION_INSTALLED: {
       const Extension* extension =
           content::Details<const Extension>(details).ptr();
       FOR_EACH_OBSERVER(InstallObserver, observers_,
                         OnExtensionInstalled(extension));
       break;
     }
+    case chrome::NOTIFICATION_EXTENSION_LOADED: {
+      const Extension* extension =
+          content::Details<const Extension>(details).ptr();
+      FOR_EACH_OBSERVER(InstallObserver, observers_,
+                        OnExtensionLoaded(extension));
+      break;
+    }
     case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
       const content::Details<extensions::UnloadedExtensionInfo>& unload_info(
           details);
       const Extension* extension = unload_info->extension;
-      if (unload_info->reason == extension_misc::UNLOAD_REASON_UNINSTALL) {
-        FOR_EACH_OBSERVER(InstallObserver, observers_,
-                          OnExtensionUninstalled(extension));
-      } else {
-        FOR_EACH_OBSERVER(InstallObserver, observers_,
-                          OnExtensionDisabled(extension));
-      }
+      FOR_EACH_OBSERVER(InstallObserver, observers_,
+                        OnExtensionUnloaded(extension));
+      break;
+    }
+    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED: {
+      const Extension* extension =
+          content::Details<const Extension>(details).ptr();
+
+      FOR_EACH_OBSERVER(InstallObserver, observers_,
+                        OnExtensionUninstalled(extension));
       break;
     }
     case chrome::NOTIFICATION_EXTENSION_LAUNCHER_REORDERED: {

@@ -14,6 +14,7 @@
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -25,7 +26,6 @@
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/browser/ui/host_desktop.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
@@ -84,8 +84,8 @@ class ExternalInstallDialogDelegate
   scoped_ptr<ExtensionInstallPrompt> install_ui_;
 
   Browser* browser_;
-  ExtensionService* service_;
-  const Extension* extension_;
+  base::WeakPtr<ExtensionService> service_weak_;
+  const std::string extension_id_;
 };
 
 // Only shows a menu item, no bubble. Clicking the menu item shows
@@ -194,7 +194,9 @@ ExternalInstallDialogDelegate::ExternalInstallDialogDelegate(
     ExtensionService* service,
     const Extension* extension,
     bool use_global_error)
-    : browser_(browser), service_(service), extension_(extension) {
+    : browser_(browser),
+      service_weak_(service->AsWeakPtr()),
+      extension_id_(extension->id()) {
   AddRef();  // Balanced in Proceed or Abort.
 
   install_ui_.reset(
@@ -203,21 +205,33 @@ ExternalInstallDialogDelegate::ExternalInstallDialogDelegate(
   const ExtensionInstallPrompt::ShowDialogCallback callback =
       use_global_error ?
       base::Bind(&CreateExternalInstallGlobalError,
-                 service->AsWeakPtr(), extension->id()) :
+                 service_weak_, extension_id_) :
       ExtensionInstallPrompt::GetDefaultShowDialogCallback();
-  install_ui_->ConfirmExternalInstall(this, extension_, callback);
+  install_ui_->ConfirmExternalInstall(this, extension, callback);
 }
 
 ExternalInstallDialogDelegate::~ExternalInstallDialogDelegate() {
 }
 
 void ExternalInstallDialogDelegate::InstallUIProceed() {
-  service_->GrantPermissionsAndEnableExtension(extension_);
+  if (!service_weak_.get())
+    return;
+  const Extension* extension =
+      service_weak_->GetInstalledExtension(extension_id_);
+  if (!extension)
+    return;
+  service_weak_->GrantPermissionsAndEnableExtension(extension);
   Release();
 }
 
 void ExternalInstallDialogDelegate::InstallUIAbort(bool user_initiated) {
-  service_->UninstallExtension(extension_->id(), false, NULL);
+  if (!service_weak_.get())
+    return;
+  const Extension* extension =
+      service_weak_->GetInstalledExtension(extension_id_);
+  if (!extension)
+    return;
+  service_weak_->UninstallExtension(extension_id_, false, NULL);
   Release();
 }
 

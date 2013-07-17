@@ -13,12 +13,12 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/sessions/session_backend.h"
 #include "chrome/browser/sessions/session_service.h"
 #include "chrome/browser/sessions/session_service_test_helper.h"
 #include "chrome/browser/sessions/session_types.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/testing_profile.h"
@@ -858,7 +858,7 @@ TEST_F(SessionServiceTest, CanOpenV1TabClosed) {
   // Forces closing the file.
   helper_.set_service(NULL);
 
-  ASSERT_TRUE(file_util::CopyFile(v1_file_path, dest_file_path));
+  ASSERT_TRUE(base::CopyFile(v1_file_path, dest_file_path));
 
   SessionService* session_service = new SessionService(path_);
   helper_.set_service(session_service);

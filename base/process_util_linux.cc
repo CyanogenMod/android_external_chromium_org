@@ -21,9 +21,7 @@
 
 namespace base {
 
-#if defined(USE_LINUX_BREAKPAD)
 size_t g_oom_size = 0U;
-#endif
 
 const char kProcSelfExe[] = "/proc/self/exe";
 

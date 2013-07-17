@@ -307,7 +307,11 @@ class ContentClientInitializer {
         content_client->renderer_ = delegate->CreateContentRendererClient();
       if (!content_client->renderer_)
         content_client->renderer_ = &g_empty_content_renderer_client.Get();
-    } else if (process_type == switches::kUtilityProcess) {
+    }
+
+    if (process_type == switches::kUtilityProcess ||
+        CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kSingleProcess)) {
       if (delegate)
         content_client->utility_ = delegate->CreateContentUtilityClient();
       // TODO(scottmg): http://crbug.com/237249 Should be in _child.
@@ -664,7 +668,6 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     // This must be done early enough since some helper functions like
     // IsTouchEnabled, needed to load resources, may call into the theme dll.
     EnableThemeSupportOnAllWindowStations();
-    ui::EnableHighDPISupport();
     SetupCRT(command_line);
 #endif
 

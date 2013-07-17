@@ -26,7 +26,7 @@ WebFileUtilitiesImpl::~WebFileUtilitiesImpl() {
 }
 
 bool WebFileUtilitiesImpl::fileExists(const WebString& path) {
-  return file_util::PathExists(base::FilePath::FromUTF16Unsafe(path));
+  return base::PathExists(base::FilePath::FromUTF16Unsafe(path));
 }
 
 bool WebFileUtilitiesImpl::deleteFile(const WebString& path) {
@@ -74,7 +74,7 @@ bool WebFileUtilitiesImpl::makeAllDirectories(const WebString& path) {
 }
 
 bool WebFileUtilitiesImpl::isDirectory(const WebString& path) {
-  return file_util::DirectoryExists(base::FilePath::FromUTF16Unsafe(path));
+  return base::DirectoryExists(base::FilePath::FromUTF16Unsafe(path));
 }
 
 WebKit::WebURL WebFileUtilitiesImpl::filePathToURL(const WebString& path) {

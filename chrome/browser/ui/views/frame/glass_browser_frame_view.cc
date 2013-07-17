@@ -9,6 +9,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/app/chrome_dll_resource.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/views/avatar_label.h"
@@ -16,7 +17,6 @@
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/tabs/tab.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
@@ -105,10 +105,6 @@ gfx::Rect GlassBrowserFrameView::GetBoundsForTabStrip(
   int tabstrip_x = browser_view()->ShouldShowAvatar() ?
       (avatar_bounds_.right() + kAvatarRightSpacing) :
       NonClientBorderThickness() + kTabStripIndent;
-  if (avatar_label()) {
-    tabstrip_x += avatar_label()->bounds().width() +
-                  views::kRelatedControlHorizontalSpacing;
-  }
   // In RTL languages, we have moved an avatar icon left by the size of window
   // controls to prevent it from being rendered over them. So, we use its x
   // position to move this tab strip left when maximized. Also, we can render
@@ -209,9 +205,7 @@ int GlassBrowserFrameView::NonClientHitTest(const gfx::Point& point) {
 
   // See if the point is within the avatar menu button or within the avatar
   // label.
-  if ((avatar_button() &&
-       avatar_button()->GetMirroredBounds().Contains(point)) ||
-      (avatar_label() && avatar_label()->GetMirroredBounds().Contains(point)))
+  if (avatar_button() && avatar_button()->GetMirroredBounds().Contains(point))
     return HTCLIENT;
 
   int frame_component = frame()->client_view()->NonClientHitTest(point);
@@ -428,17 +422,6 @@ void GlassBrowserFrameView::LayoutAvatar() {
       browser_view()->ShouldShowAvatar() ? (avatar_bottom - avatar_y) : 0);
   if (avatar_button())
     avatar_button()->SetBoundsRect(avatar_bounds_);
-
-  if (avatar_label()) {
-    gfx::Size size = avatar_label()->GetPreferredSize();
-    int label_height = std::min(avatar_bounds_.height(), size.height());
-    gfx::Rect label_bounds(
-        avatar_bounds_.right() + views::kRelatedControlHorizontalSpacing,
-        avatar_y + (avatar_bounds_.height() - label_height) / 2,
-        size.width(),
-        browser_view()->ShouldShowAvatar() ? size.height() : 0);
-    avatar_label()->SetBoundsRect(label_bounds);
-  }
 }
 
 void GlassBrowserFrameView::LayoutClientView() {

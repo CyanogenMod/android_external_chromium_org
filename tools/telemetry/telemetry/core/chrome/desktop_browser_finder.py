@@ -12,6 +12,7 @@ import sys
 from telemetry.core import browser
 from telemetry.core import possible_browser
 from telemetry.core import profile_types
+from telemetry.core.chrome import cros_interface
 from telemetry.core.chrome import desktop_browser_backend
 from telemetry.core.platform import linux_platform_backend
 from telemetry.core.platform import mac_platform_backend
@@ -94,6 +95,9 @@ def FindAllAvailableBrowsers(options):
   """Finds all the desktop browsers available on this machine."""
   browsers = []
 
+  if cros_interface.IsRunningOnCrosDevice():
+    return []
+
   has_display = True
   if (sys.platform.startswith('linux') and
       os.getenv('DISPLAY') == None):
@@ -109,9 +113,12 @@ def FindAllAvailableBrowsers(options):
   if sys.platform == 'darwin':
     chromium_app_name = 'Chromium.app/Contents/MacOS/Chromium'
     content_shell_app_name = 'Content Shell.app/Contents/MacOS/Content Shell'
+    mac_dir = 'mac'
+    if platform.architecture()[0] == '64bit':
+      mac_dir = 'mac_64'
     flash_path = os.path.join(
         chrome_root, 'third_party', 'adobe', 'flash', 'binaries', 'ppapi',
-        'mac', 'PepperFlashPlayer.plugin')
+        mac_dir, 'PepperFlashPlayer.plugin')
   elif sys.platform.startswith('linux'):
     chromium_app_name = 'chrome'
     content_shell_app_name = 'content_shell'
@@ -124,17 +131,14 @@ def FindAllAvailableBrowsers(options):
   elif sys.platform.startswith('win'):
     chromium_app_name = 'chrome.exe'
     content_shell_app_name = 'content_shell.exe'
+    win_dir = 'win'
+    if platform.architecture()[0] == '64bit':
+      win_dir = 'win_x64'
     flash_path = os.path.join(
         chrome_root, 'third_party', 'adobe', 'flash', 'binaries', 'ppapi',
-        'win', 'pepflashplayer.dll')
+        win_dir, 'pepflashplayer.dll')
   else:
     raise Exception('Platform not recognized')
-
-  if flash_path and not os.path.exists(flash_path):
-    logging.warning(('Could not find flash at %s. Running without flash.\n\n'
-                     'To fix this see http://go/read-src-internal') %
-                    flash_path)
-    flash_path = None
 
   # Add the explicit browser executable if given.
   if options.browser_executable:

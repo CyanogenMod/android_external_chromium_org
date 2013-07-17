@@ -107,7 +107,8 @@ class ValidateCrxHelper : public SandboxedUnpackerClient {
   virtual void OnUnpackSuccess(const base::FilePath& temp_dir,
                                const base::FilePath& extension_root,
                                const base::DictionaryValue* original_manifest,
-                               const Extension* extension) OVERRIDE {
+                               const Extension* extension,
+                               const SkBitmap& install_icon) OVERRIDE {
     finished_ = true;
     success_ = true;
     BrowserThread::PostTask(BrowserThread::UI,
@@ -139,7 +140,6 @@ class ValidateCrxHelper : public SandboxedUnpackerClient {
 
     scoped_refptr<SandboxedUnpacker> unpacker(
         new SandboxedUnpacker(crx_file_,
-                              true /* out of process */,
                               Manifest::INTERNAL,
                               0, /* no special creation flags */
                               temp_dir_,

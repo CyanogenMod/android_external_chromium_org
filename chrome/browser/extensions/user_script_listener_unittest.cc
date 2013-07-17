@@ -6,10 +6,10 @@
 #include "base/json/json_file_value_serializer.h"
 #include "base/message_loop.h"
 #include "base/threading/thread.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service_unittest.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/extensions/user_script_listener.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/test/base/testing_profile.h"
@@ -79,7 +79,7 @@ class SimpleTestJob : public net::URLRequestTestJob {
 // Yoinked from extension_manifest_unittest.cc.
 DictionaryValue* LoadManifestFile(const base::FilePath path,
                                   std::string* error) {
-  EXPECT_TRUE(file_util::PathExists(path));
+  EXPECT_TRUE(base::PathExists(path));
   JSONFileValueSerializer serializer(path);
   return static_cast<DictionaryValue*>(serializer.Deserialize(NULL, error));
 }

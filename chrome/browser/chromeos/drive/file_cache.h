@@ -47,11 +47,10 @@ typedef base::Callback<void(FileError error,
                             const base::FilePath& cache_file_path)>
     GetFileFromCacheCallback;
 
-// Callback for RequestInitialize.
+// Callback for ClearAllOnUIThread.
 // |success| indicates if the operation was successful.
 // TODO(satorux): Change this to FileError when it becomes necessary.
-typedef base::Callback<void(bool success)>
-    InitializeCacheCallback;
+typedef base::Callback<void(bool success)> ClearAllCallback;
 
 // Interface class used for getting the free disk space. Tests can inject an
 // implementation that reports fake free disk space.
@@ -123,15 +122,6 @@ class FileCache {
 
   // Returns an object to iterate over entries.
   scoped_ptr<Iterator> GetIterator();
-
-
-  // Runs FreeDiskSpaceIfNeededFor() on |blocking_task_runner_|, and calls
-  // |callback| with the result asynchronously.
-  // |callback| must not be null.
-  // Must be called on the UI thread.
-  void FreeDiskSpaceIfNeededForOnUIThread(
-      int64 num_bytes,
-      const InitializeCacheCallback& callback);
 
   // Frees up disk space to store a file with |num_bytes| size content, while
   // keeping kMinFreeSpace bytes on the disk, if needed.
@@ -236,7 +226,7 @@ class FileCache {
   // - re-create the |metadata_| instance.
   // |callback| must not be null.
   // Must be called on the UI thread.
-  void ClearAllOnUIThread(const InitializeCacheCallback& callback);
+  void ClearAllOnUIThread(const ClearAllCallback& callback);
 
   // Initializes the cache. Returns true on success.
   bool Initialize();
@@ -250,21 +240,12 @@ class FileCache {
   friend class FileCacheTest;
   friend class FileCacheTestOnUIThread;
 
-  // Enum defining origin of a cached file.
-  enum CachedFileOrigin {
-    CACHED_FILE_FROM_SERVER = 0,
-    CACHED_FILE_LOCALLY_MODIFIED,
-  };
-
   ~FileCache();
 
   // Returns absolute path of the file if it were cached or to be cached.
   //
   // Can be called on any thread.
-  base::FilePath GetCacheFilePath(const std::string& resource_id,
-                                  const std::string& md5,
-                                  CachedFileOrigin file_origin) const;
-
+  base::FilePath GetCacheFilePath(const std::string& resource_id) const;
 
   // Checks whether the current thread is on the right sequenced worker pool
   // with the right sequence ID. If not, DCHECK will fail.
@@ -298,6 +279,10 @@ class FileCache {
   // Imports old format DB from |old_db_path| and deletes it.
   // TODO(hashimoto): Remove this method and FileCacheMetadata at some point.
   bool ImportOldDB(const base::FilePath& old_db_path);
+
+  // Renames cache files from old "resource_id.md5" format to the new format.
+  // TODO(hashimoto): Remove this method at some point.
+  void RenameCacheFilesToNewFormat();
 
   const base::FilePath cache_file_directory_;
 

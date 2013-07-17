@@ -29,13 +29,12 @@
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/job_list.h"
 #include "chrome/browser/chromeos/drive/logging.h"
-#include "chrome/browser/chromeos/extensions/file_manager/file_browser_handler.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_browser_private_api_factory.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_handler_util.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_manager_event_router.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
 #include "chrome/browser/chromeos/extensions/file_manager/zip_file_creator.h"
-#include "chrome/browser/chromeos/fileapi/cros_mount_point_provider.h"
+#include "chrome/browser/chromeos/fileapi/file_system_backend.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/system/statistics_provider.h"
 #include "chrome/browser/extensions/api/file_handlers/app_file_handler_util.h"
@@ -50,6 +49,7 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/views/select_file_dialog_extension.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
+#include "chrome/common/extensions/api/file_browser_handlers/file_browser_handler.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
@@ -61,7 +61,6 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/page_zoom.h"
-#include "googleurl/src/gurl.h"
 #include "grit/app_locale_settings.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
@@ -69,6 +68,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/shell_dialogs/selected_file_info.h"
 #include "ui/webui/web_ui_util.h"
+#include "url/gurl.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
@@ -201,14 +201,6 @@ base::DictionaryValue* CreateValueFromMountPoint(Profile* profile,
   return mount_info;
 }
 
-// Gives the extension renderer |host| file |permissions| for the given |path|.
-void GrantFilePermissionsToHost(content::RenderViewHost* host,
-                                const base::FilePath& path,
-                                int permissions) {
-  ChildProcessSecurityPolicy::GetInstance()->GrantPermissionsForFile(
-      host->GetProcess()->GetID(), path, permissions);
-}
-
 void SetDriveMountPointPermissions(
     Profile* profile,
     const std::string& extension_id,
@@ -219,22 +211,21 @@ void SetDriveMountPointPermissions(
   }
 
   content::SiteInstance* site_instance = render_view_host->GetSiteInstance();
-  fileapi::ExternalFileSystemMountPointProvider* provider =
+  fileapi::ExternalFileSystemBackend* backend =
       BrowserContext::GetStoragePartition(profile, site_instance)->
-      GetFileSystemContext()->external_provider();
-  if (!provider)
+      GetFileSystemContext()->external_backend();
+  if (!backend)
     return;
 
   const base::FilePath mount_point = drive::util::GetDriveMountPointPath();
   // Grant R/W permissions to drive 'folder'. File API layer still
   // expects this to be satisfied.
-  GrantFilePermissionsToHost(render_view_host,
-                             mount_point,
-                             file_handler_util::GetReadWritePermissions());
+  ChildProcessSecurityPolicy::GetInstance()->GrantCreateReadWriteFile(
+      render_view_host->GetProcess()->GetID(), mount_point);
 
   base::FilePath mount_point_virtual;
-  if (provider->GetVirtualPath(mount_point, &mount_point_virtual))
-    provider->GrantFileAccessToExtension(extension_id, mount_point_virtual);
+  if (backend->GetVirtualPath(mount_point, &mount_point_virtual))
+    backend->GrantFileAccessToExtension(extension_id, mount_point_virtual);
 }
 
 // Finds an icon in the list of icons. If unable to find an icon of the exact
@@ -414,8 +405,6 @@ std::string MakeWebAppTaskId(const std::string& app_id) {
 
 FileBrowserPrivateAPI::FileBrowserPrivateAPI(Profile* profile)
     : event_router_(new FileManagerEventRouter(profile)) {
-  (new FileBrowserHandlerParser)->Register();
-
   ExtensionFunctionRegistry* registry =
       ExtensionFunctionRegistry::GetInstance();
   registry->RegisterFunction<LogoutUserFunction>();
@@ -446,13 +435,12 @@ FileBrowserPrivateAPI::FileBrowserPrivateAPI(Profile* profile)
   registry->RegisterFunction<SearchDriveFunction>();
   registry->RegisterFunction<SearchDriveMetadataFunction>();
   registry->RegisterFunction<ClearDriveCacheFunction>();
-  registry->RegisterFunction<ReloadDriveFunction>();
   registry->RegisterFunction<GetDriveConnectionStateFunction>();
-  registry->RegisterFunction<RequestDirectoryRefreshFunction>();
   registry->RegisterFunction<SetLastModifiedFunction>();
   registry->RegisterFunction<ZipSelectionFunction>();
   registry->RegisterFunction<ValidatePathNameLengthFunction>();
   registry->RegisterFunction<ZoomFunction>();
+  registry->RegisterFunction<RequestAccessTokenFunction>();
   event_router_->ObserveFileSystemEvents();
 }
 
@@ -540,21 +528,20 @@ bool RequestFileSystemFunction::SetupFileSystemAccessPermissions(
     return false;
   }
 
-  fileapi::ExternalFileSystemMountPointProvider* provider =
-      file_system_context->external_provider();
-  if (!provider)
+  fileapi::ExternalFileSystemBackend* backend =
+      file_system_context->external_backend();
+  if (!backend)
     return false;
 
   // Grant full access to File API from this component extension.
-  provider->GrantFullAccessToExtension(extension_->id());
+  backend->GrantFullAccessToExtension(extension_->id());
 
   // Grant R/W file permissions to the renderer hosting component
-  // extension for all paths exposed by our local file system provider.
-  std::vector<base::FilePath> root_dirs = provider->GetRootDirectories();
+  // extension for all paths exposed by our local file system backend.
+  std::vector<base::FilePath> root_dirs = backend->GetRootDirectories();
   for (size_t i = 0; i < root_dirs.size(); ++i) {
-    ChildProcessSecurityPolicy::GetInstance()->GrantPermissionsForFile(
-        child_id, root_dirs[i],
-        file_handler_util::GetReadWritePermissions());
+    ChildProcessSecurityPolicy::GetInstance()->GrantCreateReadWriteFile(
+        child_id, root_dirs[i]);
   }
   return true;
 }
@@ -815,7 +802,7 @@ bool GetFileTasksFileBrowserFunction::FindAppTasks(
   for (ExtensionSet::const_iterator iter = service->extensions()->begin();
        iter != service->extensions()->end();
        ++iter) {
-    const Extension* extension = *iter;
+    const Extension* extension = iter->get();
 
     // We don't support using hosted apps to open files.
     if (!extension->is_platform_app())
@@ -906,7 +893,7 @@ bool GetFileTasksFileBrowserFunction::RunImpl() {
     GURL file_url(file_url_str);
     fileapi::FileSystemURL file_system_url(
         file_system_context->CrackURL(file_url));
-    if (!chromeos::CrosMountPointProvider::CanHandleURL(file_system_url))
+    if (!chromeos::FileSystemBackend::CanHandleURL(file_system_url))
       continue;
 
     file_urls.push_back(file_url);
@@ -1045,7 +1032,7 @@ bool ExecuteTasksFileBrowserFunction::RunImpl() {
       return false;
     }
     FileSystemURL url = file_system_context->CrackURL(GURL(file_url_str));
-    if (!chromeos::CrosMountPointProvider::CanHandleURL(url)) {
+    if (!chromeos::FileSystemBackend::CanHandleURL(url)) {
       error_ = kInvalidFileUrl;
       return false;
     }
@@ -1163,7 +1150,7 @@ base::FilePath FileBrowserFunction::GetLocalPathFromURL(const GURL& url) {
   const fileapi::FileSystemURL filesystem_url(
       file_system_context->CrackURL(url));
   base::FilePath path;
-  if (!chromeos::CrosMountPointProvider::CanHandleURL(filesystem_url))
+  if (!chromeos::FileSystemBackend::CanHandleURL(filesystem_url))
     return base::FilePath();
   return filesystem_url.path();
 }
@@ -1431,15 +1418,16 @@ bool AddMountFunction::RunImpl() {
       break;
     }
     case chromeos::MOUNT_TYPE_GOOGLE_DRIVE: {
-      const bool success = true;
+      // Dispatch fake 'mounted' event because JS code depends on it.
+      // TODO(hashimoto): Remove this redanduncy.
+      FileBrowserPrivateAPI::Get(profile_)->event_router()->
+          OnFileSystemMounted();
+
       // Pass back the drive mount point path as source path.
       const std::string& drive_path =
           drive::util::GetDriveMountPointPathAsString();
       SetResult(new base::StringValue(drive_path));
-      FileBrowserPrivateAPI::Get(profile_)->event_router()->
-          MountDrive(base::Bind(&AddMountFunction::SendResponse,
-                                this,
-                                success));
+      SendResponse(true);
       break;
     }
     default: {
@@ -1997,6 +1985,10 @@ bool FileDialogStringsFunction::RunImpl() {
   SET_STRING("CUT_BUTTON_LABEL", IDS_FILE_BROWSER_CUT_BUTTON_LABEL);
   SET_STRING("ZIP_SELECTION_BUTTON_LABEL",
              IDS_FILE_BROWSER_ZIP_SELECTION_BUTTON_LABEL);
+  SET_STRING("PIN_FOLDER_BUTTON_LABEL",
+             IDS_FILE_BROWSER_PIN_FOLDER_BUTTON_LABEL);
+  SET_STRING("UNPIN_FOLDER_BUTTON_LABEL",
+             IDS_FILE_BROWSER_UNPIN_FOLDER_BUTTON_LABEL);
   SET_STRING("SHARE_BUTTON_LABEL",
              IDS_FILE_BROWSER_SHARE_BUTTON_LABEL);
 
@@ -2064,7 +2056,6 @@ bool FileDialogStringsFunction::RunImpl() {
              IDS_FILE_BROWSER_DRIVE_MOBILE_CONNECTION_OPTION);
   SET_STRING("DRIVE_CLEAR_LOCAL_CACHE",
              IDS_FILE_BROWSER_DRIVE_CLEAR_LOCAL_CACHE);
-  SET_STRING("DRIVE_RELOAD", IDS_FILE_BROWSER_DRIVE_RELOAD);
   SET_STRING("DRIVE_SPACE_AVAILABLE_LONG",
              IDS_FILE_BROWSER_DRIVE_SPACE_AVAILABLE_LONG);
   SET_STRING("DRIVE_BUY_MORE_SPACE", IDS_FILE_BROWSER_DRIVE_BUY_MORE_SPACE);
@@ -2249,16 +2240,6 @@ bool FileDialogStringsFunction::RunImpl() {
       file_manager_util::ShouldBeOpenedWithPlugin(profile(), ".swf"));
 
   webui::SetFontAndTextDirection(dict);
-
-  drive::DriveIntegrationService* integration_service =
-      drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
-  dict->SetBoolean("ENABLE_GDATA", integration_service != NULL);
-
-#if defined(USE_ASH)
-  dict->SetBoolean("ASH", true);
-#else
-  dict->SetBoolean("ASH", false);
-#endif
 
   std::string board;
   chromeos::system::StatisticsProvider* provider =
@@ -2612,7 +2593,7 @@ bool TransferFileFunction::RunImpl() {
       drive::util::IsUnderDriveMountPoint(destination_file);
 
   if (source_file_under_drive && !destination_file_under_drive) {
-    // Transfer a file from gdata to local file system.
+    // Transfer a file from drive to local file system.
     source_file = drive::util::ExtractDrivePath(source_file);
     integration_service->file_system()->TransferFileFromRemoteToLocal(
         source_file,
@@ -2884,19 +2865,6 @@ bool ClearDriveCacheFunction::RunImpl() {
   return true;
 }
 
-bool ReloadDriveFunction::RunImpl() {
-  // |integration_service| is NULL if Drive is disabled.
-  drive::DriveIntegrationService* integration_service =
-      drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
-  if (!integration_service)
-    return false;
-
-  integration_service->ReloadAndRemountFileSystem();
-
-  SendResponse(true);
-  return true;
-}
-
 bool GetDriveConnectionStateFunction::RunImpl() {
   scoped_ptr<DictionaryValue> value(new DictionaryValue());
   scoped_ptr<ListValue> reasons(new ListValue());
@@ -2932,34 +2900,6 @@ bool GetDriveConnectionStateFunction::RunImpl() {
   SetResult(value.release());
 
   drive::util::Log("%s succeeded.", name().c_str());
-  return true;
-}
-
-bool RequestDirectoryRefreshFunction::RunImpl() {
-  std::string file_url_as_string;
-  if (!args_->GetString(0, &file_url_as_string))
-    return false;
-
-  drive::DriveIntegrationService* integration_service =
-      drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
-  // |integration_service| is NULL if Drive is disabled.
-  if (!integration_service || !integration_service->file_system())
-    return false;
-
-  content::SiteInstance* site_instance = render_view_host()->GetSiteInstance();
-  scoped_refptr<fileapi::FileSystemContext> file_system_context =
-      BrowserContext::GetStoragePartition(profile(), site_instance)->
-          GetFileSystemContext();
-
-  base::FilePath directory_path =
-      drive::util::ExtractDrivePathFromFileSystemUrl(
-          file_system_context->CrackURL(GURL(file_url_as_string)));
-  if (directory_path.empty())
-    return false;
-
-  integration_service->file_system()->RefreshDirectory(
-      directory_path,
-      base::Bind(&drive::util::EmptyFileOperationCallback));
   return true;
 }
 
@@ -3056,7 +2996,7 @@ bool ValidatePathNameLengthFunction::RunImpl() {
           GetFileSystemContext();
   fileapi::FileSystemURL filesystem_url(
       file_system_context->CrackURL(GURL(parent_url)));
-  if (!chromeos::CrosMountPointProvider::CanHandleURL(filesystem_url))
+  if (!chromeos::FileSystemBackend::CanHandleURL(filesystem_url))
     return false;
 
   // No explicit limit on the length of Drive file names.
@@ -3100,4 +3040,39 @@ bool ZoomFunction::RunImpl() {
   }
   view_host->Zoom(zoom_type);
   return true;
+}
+
+RequestAccessTokenFunction::RequestAccessTokenFunction() {
+}
+
+RequestAccessTokenFunction::~RequestAccessTokenFunction() {
+}
+
+bool RequestAccessTokenFunction::RunImpl() {
+  drive::DriveIntegrationService* integration_service =
+      drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
+  bool refresh;
+  args_->GetBoolean(0, &refresh);
+
+  if (!integration_service) {
+    SetResult(new base::StringValue(""));
+    SendResponse(true);
+    return true;
+  }
+
+  // If refreshing is requested, then clear the token to refetch it.
+  if (refresh)
+    integration_service->drive_service()->ClearAccessToken();
+
+  // Retrieve the cached auth token (if available), otherwise the AuthService
+  // instance will try to refetch it.
+  integration_service->drive_service()->RequestAccessToken(
+      base::Bind(&RequestAccessTokenFunction::OnAccessTokenFetched, this));
+  return true;
+}
+
+void RequestAccessTokenFunction::OnAccessTokenFetched(
+    google_apis::GDataErrorCode code, const std::string& access_token) {
+  SetResult(new base::StringValue(access_token));
+  SendResponse(true);
 }

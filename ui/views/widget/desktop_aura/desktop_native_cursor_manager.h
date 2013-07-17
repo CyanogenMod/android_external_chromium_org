@@ -35,6 +35,9 @@ class VIEWS_EXPORT DesktopNativeCursorManager
       scoped_ptr<DesktopCursorLoaderUpdater> cursor_loader_updater);
   virtual ~DesktopNativeCursorManager();
 
+  // Builds a cursor and sets the internal platform representation.
+  gfx::NativeCursor GetInitializedCursor(int type);
+
  private:
   // Overridden from views::corewm::NativeCursorManager:
   virtual void SetDisplay(
@@ -52,7 +55,6 @@ class VIEWS_EXPORT DesktopNativeCursorManager
   virtual void SetMouseEventsEnabled(
       bool enabled,
       views::corewm::NativeCursorManagerDelegate* delegate) OVERRIDE;
-  virtual void SetCursorResourceModule(const string16& module_name) OVERRIDE;
 
   aura::RootWindow* root_window_;
   scoped_ptr<DesktopCursorLoaderUpdater> cursor_loader_updater_;

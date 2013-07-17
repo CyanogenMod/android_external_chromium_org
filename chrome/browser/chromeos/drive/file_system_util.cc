@@ -15,11 +15,13 @@
 #include "base/i18n/icu_string_conversions.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/logging.h"
+#include "base/md5.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/sequenced_worker_pool.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
@@ -27,6 +29,7 @@
 #include "chrome/browser/chromeos/drive/job_list.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/url_constants.h"
@@ -55,6 +58,12 @@ const base::FilePath::CharType kFileCacheVersionDir[] =
 
 const char kSlash[] = "/";
 const char kEscapedSlash[] = "\xE2\x88\x95";
+
+struct PlatformFileCloser {
+  void operator()(base::PlatformFile* file) const {
+    base::ClosePlatformFile(*file);
+  }
+};
 
 const base::FilePath& GetDriveMyDriveMountPointPath() {
   CR_DEFINE_STATIC_LOCAL(base::FilePath, drive_mydrive_mount_path,
@@ -113,7 +122,7 @@ void MoveAllFilesFromDirectory(const base::FilePath& directory_from,
   for (base::FilePath file_from = enumerator.Next(); !file_from.empty();
        file_from = enumerator.Next()) {
     const base::FilePath file_to = directory_to.Append(file_from.BaseName());
-    if (!file_util::PathExists(file_to))  // Do not overwrite existing files.
+    if (!base::PathExists(file_to))  // Do not overwrite existing files.
       base::Move(file_from, file_to);
   }
 }
@@ -136,6 +145,17 @@ const base::FilePath& GetDriveMountPointPath() {
   CR_DEFINE_STATIC_LOCAL(base::FilePath, drive_mount_path,
       (base::FilePath::FromUTF8Unsafe(kDriveMountPointPath)));
   return drive_mount_path;
+}
+
+FileSystemInterface* GetFileSystemByProfileId(void* profile_id) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  // |profile_id| needs to be checked with ProfileManager::IsValidProfile
+  // before using it.
+  Profile* profile = reinterpret_cast<Profile*>(profile_id);
+  if (!g_browser_process->profile_manager()->IsValidProfile(profile))
+    return NULL;
+  return GetFileSystem(profile);
 }
 
 bool IsSpecialResourceId(const std::string& resource_id) {
@@ -289,33 +309,13 @@ std::string NormalizeFileName(const std::string& input) {
   return output;
 }
 
-void ParseCacheFilePath(const base::FilePath& path,
-                        std::string* resource_id,
-                        std::string* md5) {
-  DCHECK(resource_id);
-  DCHECK(md5);
-
-  // Extract up to one extension from the right.
-  base::FilePath base_name = path.BaseName();
-  base::FilePath::StringType extension = base_name.Extension();
-  if (!extension.empty()) {
-    // base::FilePath::Extension returns ".", so strip it.
-    extension = UnescapeCacheFileName(extension.substr(1));
-    base_name = base_name.RemoveExtension();
-  }
-
-  // The base_name here is already stripped of extensions in the loop above.
-  *resource_id = UnescapeCacheFileName(base_name.value());
-  *md5 = extension;
-}
-
 void MigrateCacheFilesFromOldDirectories(
     const base::FilePath& cache_root_directory) {
   const base::FilePath persistent_directory =
       cache_root_directory.AppendASCII("persistent");
   const base::FilePath tmp_directory =
       cache_root_directory.AppendASCII("tmp");
-  if (!file_util::PathExists(persistent_directory))
+  if (!base::PathExists(persistent_directory))
     return;
 
   const base::FilePath cache_file_directory =
@@ -323,7 +323,7 @@ void MigrateCacheFilesFromOldDirectories(
 
   // Move all files inside "persistent" to "files".
   MoveAllFilesFromDirectory(persistent_directory, cache_file_directory);
-  base::Delete(persistent_directory,  true /* recursive */);
+  base::DeleteFile(persistent_directory,  true /* recursive */);
 
   // Move all files inside "tmp" to "files".
   MoveAllFilesFromDirectory(tmp_directory, cache_file_directory);
@@ -437,6 +437,42 @@ GURL ReadUrlFromGDocFile(const base::FilePath& file_path) {
 
 std::string ReadResourceIdFromGDocFile(const base::FilePath& file_path) {
   return ReadStringFromGDocFile(file_path, "resource_id");
+}
+
+std::string GetMd5Digest(const base::FilePath& file_path) {
+  const int kBufferSize = 512 * 1024;  // 512kB.
+
+  base::PlatformFile file = base::CreatePlatformFile(
+      file_path, base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ,
+      NULL, NULL);
+  if (file == base::kInvalidPlatformFileValue)
+    return std::string();
+  scoped_ptr<base::PlatformFile, PlatformFileCloser> file_closer(&file);
+
+  base::MD5Context context;
+  base::MD5Init(&context);
+
+  scoped_ptr<char[]> buffer(new char[kBufferSize]);
+  while (true) {
+    int result = base::ReadPlatformFileCurPosNoBestEffort(
+        file, buffer.get(), kBufferSize);
+
+    if (result < 0) {
+      // Found an error.
+      return std::string();
+    }
+
+    if (result == 0) {
+      // End of file.
+      break;
+    }
+
+    base::MD5Update(&context, base::StringPiece(buffer.get(), result));
+  }
+
+  base::MD5Digest digest;
+  base::MD5Final(&digest, &context);
+  return MD5DigestToBase16(digest);
 }
 
 }  // namespace util

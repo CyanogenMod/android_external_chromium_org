@@ -5,8 +5,8 @@
 #ifndef NET_SPDY_SPDY_SESSION_POOL_H_
 #define NET_SPDY_SPDY_SESSION_POOL_H_
 
-#include <list>
 #include <map>
+#include <set>
 #include <string>
 
 #include "base/basictypes.h"
@@ -44,7 +44,6 @@ class NET_EXPORT SpdySessionPool
   SpdySessionPool(HostResolver* host_resolver,
                   SSLConfigService* ssl_config_service,
                   HttpServerProperties* http_server_properties,
-                  size_t max_sessions_per_domain,
                   bool force_single_domain,
                   bool enable_ip_pooling,
                   bool enable_credential_frames,
@@ -58,54 +57,62 @@ class NET_EXPORT SpdySessionPool
                   const std::string& trusted_spdy_proxy);
   virtual ~SpdySessionPool();
 
-  // Either returns an existing SpdySession or creates a new SpdySession for
-  // use.
-  scoped_refptr<SpdySession> Get(
-      const SpdySessionKey& spdy_session_key,
-      const BoundNetLog& net_log);
+  // In the functions below, a session is "available" if this pool has
+  // a reference to it and there is some SpdySessionKey for which
+  // FindAvailableSession() will return it. A session is "unavailable"
+  // if this pool has a reference to it but it won't be returned by
+  // FindAvailableSession() for any SpdySessionKey; for example, this
+  // can happen when a session receives a GOAWAY frame and is still
+  // processing existing streams.
 
-  // Only returns a SpdySession if it already exists.
-  scoped_refptr<SpdySession> GetIfExists(
-      const SpdySessionKey& spdy_session_key,
-      const BoundNetLog& net_log);
-
-  // Builds a SpdySession from an existing SSL socket.  Users should try
-  // calling Get() first to use an existing SpdySession so we don't get
-  // multiple SpdySessions per domain.  Note that ownership of |connection| is
-  // transferred from the caller to the SpdySession.
-  // |certificate_error_code| is used to indicate the certificate error
-  // encountered when connecting the SSL socket.  OK means there was no error.
-  // For testing, setting is_secure to false allows Spdy to connect with a
-  // pre-existing TCP socket.
-  // Returns OK on success, and the |spdy_session| will be provided.
-  // Returns an error on failure, and |spdy_session| will be NULL.
-  net::Error GetSpdySessionFromSocket(
-      const SpdySessionKey& spdy_session_key,
-      ClientSocketHandle* connection,
+  // Create a new SPDY session from an existing socket.  There must
+  // not already be a session for the given key.
+  //
+  // |is_secure| can be false for testing or when SPDY is configured
+  // to work with non-secure sockets. If |is_secure| is true,
+  // |certificate_error_code| indicates that the certificate error
+  // encountered when connecting the SSL socket, with OK meaning there
+  // was no error.
+  //
+  // If successful, OK is returned and |available_session| will be
+  // non-NULL and available. Otherwise, an error is returned and
+  // |available_session| will be NULL.
+  net::Error CreateAvailableSessionFromSocket(
+      const SpdySessionKey& key,
+      scoped_ptr<ClientSocketHandle> connection,
       const BoundNetLog& net_log,
       int certificate_error_code,
-      scoped_refptr<SpdySession>* spdy_session,
+      scoped_refptr<SpdySession>* available_session,
       bool is_secure);
 
-  // TODO(willchan): Consider renaming to HasReusableSession, since perhaps we
-  // should be creating a new session. WARNING: Because of IP connection pooling
-  // using the HostCache, if HasSession() returns true at one point, it does not
-  // imply the SpdySessionPool will still have a matching session in the near
-  // future, since the HostCache's entry may have expired.
-  bool HasSession(const SpdySessionKey& spdy_session_key) const;
+  // Find an available session for the given key, or NULL if there isn't one.
+  scoped_refptr<SpdySession> FindAvailableSession(const SpdySessionKey& key,
+                                                  const BoundNetLog& net_log);
+
+  // Remove all mappings and aliases for the given session, which must
+  // still be available. Except for in tests, this must be called by
+  // the given session itself.
+  void MakeSessionUnavailable(
+      const scoped_refptr<SpdySession>& available_session);
+
+  // Removes an unavailable session from the pool.  Except for in
+  // tests, this must be called by the given session itself.
+  void RemoveUnavailableSession(
+      const scoped_refptr<SpdySession>& unavailable_session);
+
+  // Close only the currently existing SpdySessions with |error|.
+  // Let any new ones created while this method is running continue to
+  // live.
+  void CloseCurrentSessions(net::Error error);
+
+  // Close only the currently existing SpdySessions that are idle.
+  // Let any new ones created while this method is running continue to
+  // live.
+  void CloseCurrentIdleSessions();
 
   // Close all SpdySessions, including any new ones created in the process of
   // closing the current ones.
   void CloseAllSessions();
-  // Close only the currently existing SpdySessions with |error|.
-  // Let any new ones created continue to live.
-  void CloseCurrentSessions(net::Error error);
-  // Close only the idle SpdySessions.
-  void CloseIdleSessions();
-
-  // Removes a SpdySession from the SpdySessionPool. This should only be called
-  // by SpdySession, because otherwise session->state_ is not set to CLOSED.
-  void Remove(const scoped_refptr<SpdySession>& session);
 
   // Creates a Value summary of the state of the spdy session pool. The caller
   // responsible for deleting the returned value.
@@ -134,57 +141,54 @@ class NET_EXPORT SpdySessionPool
  private:
   friend class SpdySessionPoolPeer;  // For testing.
 
-  typedef std::list<scoped_refptr<SpdySession> > SpdySessionList;
-  typedef std::map<SpdySessionKey, SpdySessionList*> SpdySessionsMap;
-  typedef std::map<IPEndPoint, SpdySessionKey> SpdyAliasMap;
+  typedef std::set<scoped_refptr<SpdySession> > SessionSet;
+  typedef std::map<SpdySessionKey, scoped_refptr<SpdySession> >
+      AvailableSessionMap;
+  typedef std::map<IPEndPoint, SpdySessionKey> AliasMap;
 
+  // Returns true iff |session| is in |available_sessions_|.
+  bool IsSessionAvailable(const scoped_refptr<SpdySession>& session) const;
 
-  scoped_refptr<SpdySession> GetInternal(
-      const SpdySessionKey& spdy_session_key,
-      const BoundNetLog& net_log,
-      bool only_use_existing_sessions);
-  scoped_refptr<SpdySession> GetExistingSession(
-      SpdySessionList* list,
-      const BoundNetLog& net_log) const;
-  scoped_refptr<SpdySession> GetFromAlias(
-      const SpdySessionKey& spdy_session_key,
-      const BoundNetLog& net_log,
-      bool record_histograms) const;
+  // Returns a normalized version of the given key suitable for lookup
+  // into |available_sessions_|.
+  const SpdySessionKey& NormalizeListKey(const SpdySessionKey& key) const;
 
-  // Helper functions for manipulating the lists.
-  const SpdySessionKey& NormalizeListKey(
-      const SpdySessionKey& spdy_session_key) const;
-  SpdySessionList* AddSessionList(
-      const SpdySessionKey& spdy_session_key);
-  SpdySessionList* GetSessionList(
-      const SpdySessionKey& spdy_session_key) const;
-  void RemoveSessionList(const SpdySessionKey& spdy_session_key);
+  // Map the given key to the given session. There must not already be
+  // a mapping for |key|.
+  void MapKeyToAvailableSession(const SpdySessionKey& key,
+                                const scoped_refptr<SpdySession>& session);
 
-  // Does a DNS cache lookup for |spdy_session_key|, and returns
-  // the |addresses| found.
-  // Returns true if addresses found, false otherwise.
-  bool LookupAddresses(const SpdySessionKey& spdy_session_key,
-                       const BoundNetLog& net_log,
-                       AddressList* addresses) const;
+  // Returns an iterator into |available_sessions_| for the given key,
+  // which may be equal to |available_sessions_.end()|.
+  AvailableSessionMap::iterator LookupAvailableSessionByKey(
+      const SpdySessionKey& key);
 
-  // Add |address| as an IP-equivalent address for |spdy_session_key|.
-  void AddAlias(const IPEndPoint& address,
-                const SpdySessionKey& spdy_session_key);
+  // Remove the mapping of the given key, which must exist.
+  void UnmapKey(const SpdySessionKey& key);
 
-  // Remove all aliases for |spdy_session_key| from the aliases table.
-  void RemoveAliases(const SpdySessionKey& spdy_session_key);
+  // Remove all aliases for |key| from the aliases table.
+  void RemoveAliases(const SpdySessionKey& key);
 
-  // Removes |session| from the session list associated with |spdy_session_key|.
-  // Returns true if the session was removed, false otherwise.
-  bool RemoveFromSessionList(const scoped_refptr<SpdySession>& session,
-                             const SpdySessionKey& spdy_session_key);
+  // Close only the currently existing SpdySessions with |error|.  Let
+  // any new ones created while this method is running continue to
+  // live. If |idle_only| is true only idle sessions are closed.
+  void CloseCurrentSessionsHelper(
+      Error error,
+      const std::string& description,
+      bool idle_only);
 
   HttpServerProperties* const http_server_properties_;
 
-  // This is our weak session pool - one session per domain.
-  SpdySessionsMap sessions_;
+  // The set of all sessions. This is a superset of the sessions in
+  // |available_sessions_|.
+  SessionSet sessions_;
+
+  // This is a map of available sessions by key. A session may appear
+  // more than once in this map if it has aliases.
+  AvailableSessionMap available_sessions_;
+
   // A map of IPEndPoint aliases for sessions.
-  SpdyAliasMap aliases_;
+  AliasMap aliases_;
 
   static bool g_force_single_domain;
 
@@ -194,7 +198,6 @@ class NET_EXPORT SpdySessionPool
   // Defaults to true. May be controlled via SpdySessionPoolPeer for tests.
   bool verify_domain_authentication_;
   bool enable_sending_initial_settings_;
-  size_t max_sessions_per_domain_;
   bool force_single_domain_;
   bool enable_ip_pooling_;
   bool enable_credential_frames_;

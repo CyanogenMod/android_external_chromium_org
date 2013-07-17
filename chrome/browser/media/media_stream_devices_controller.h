@@ -33,7 +33,7 @@ class MediaStreamDevicesController {
   // and the code cleaner.  crbug.com/244389.
 
   // Registers the prefs backing the audio and video policies.
-  static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Public method to be called before creating the MediaStreamInfoBarDelegate.
   // This function will check the content settings exceptions and take the
@@ -63,9 +63,12 @@ class MediaStreamDevicesController {
   // access before, otherwise returns false.
   bool IsRequestAllowedByDefault() const;
 
-  // Returns true if the media access for the origin of the request has been
-  // blocked before. Otherwise returns false.
-  bool IsRequestBlockedByDefault() const;
+  // Check if any device of the request has been blocked for the origin of the
+  // request and clears |microphone_requested_| or |webcam_requested_| flags if
+  // they are not allowed anymore. Returns the number of devices that are
+  // allowed after this step. If the count reaches zero the request can be
+  // denied completely, else it still has to be partially fullfilled.
+  int FilterBlockedByDefaultDevices();
 
   // Returns true if the media section in content settings is set to
   // |CONTENT_SETTING_BLOCK|, otherwise returns false.

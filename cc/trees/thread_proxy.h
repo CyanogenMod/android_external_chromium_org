@@ -59,7 +59,6 @@ class ThreadProxy : public Proxy,
   virtual size_t MaxPartialTextureUpdates() const OVERRIDE;
   virtual void AcquireLayerTextures() OVERRIDE;
   virtual void ForceSerializeOnSwapBuffers() OVERRIDE;
-  virtual skia::RefPtr<SkPicture> CapturePicture() OVERRIDE;
   virtual scoped_ptr<base::Value> AsValue() const OVERRIDE;
   virtual bool CommitPendingForTesting() OVERRIDE;
   virtual std::string SchedulerStateAsStringForTesting() OVERRIDE;
@@ -105,6 +104,8 @@ class ThreadProxy : public Proxy,
   virtual void ScheduledActionAcquireLayerTexturesForMainThread() OVERRIDE;
   virtual void DidAnticipatedDrawTimeChange(base::TimeTicks time) OVERRIDE;
   virtual base::TimeDelta DrawDurationEstimate() OVERRIDE;
+  virtual base::TimeDelta BeginFrameToCommitDurationEstimate() OVERRIDE;
+  virtual base::TimeDelta CommitToActivateDurationEstimate() OVERRIDE;
 
   // ResourceUpdateControllerClient implementation
   virtual void ReadyToFinalizeTextureUpdates() OVERRIDE;
@@ -171,8 +172,6 @@ class ThreadProxy : public Proxy,
   void CommitPendingOnImplThreadForTesting(CommitPendingRequest* request);
   void SchedulerStateAsStringOnImplThreadForTesting(
       SchedulerStateRequest* request);
-  void CapturePictureOnImplThread(CompletionEvent* completion,
-                                  skia::RefPtr<SkPicture>* picture);
   void AsValueOnImplThread(CompletionEvent* completion,
                            base::DictionaryValue* state) const;
   void RenewTreePriorityOnImplThread();
@@ -249,6 +248,14 @@ class ThreadProxy : public Proxy,
   bool renew_tree_priority_on_impl_thread_pending_;
 
   RollingTimeDeltaHistory draw_duration_history_;
+  RollingTimeDeltaHistory begin_frame_to_commit_duration_history_;
+  RollingTimeDeltaHistory commit_to_activate_duration_history_;
+
+  // Used for computing samples added to
+  // begin_frame_to_commit_draw_duration_history_ and
+  // activation_duration_history_.
+  base::TimeTicks begin_frame_sent_to_main_thread_time_;
+  base::TimeTicks commit_complete_time_;
 
   DISALLOW_COPY_AND_ASSIGN(ThreadProxy);
 };

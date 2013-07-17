@@ -161,8 +161,6 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       APIPermissionInfo::kFlagCannotBeOptional },
     { APIPermission::kNetworkingPrivate, "networkingPrivate",
       APIPermissionInfo::kFlagCannotBeOptional },
-    { APIPermission::kManagedModePrivate, "managedModePrivate",
-      APIPermissionInfo::kFlagCannotBeOptional },
     { APIPermission::kMediaPlayerPrivate, "mediaPlayerPrivate",
       APIPermissionInfo::kFlagCannotBeOptional },
     { APIPermission::kMetricsPrivate, "metricsPrivate",
@@ -252,7 +250,7 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
     // a file chooser dialog and selected a file. Selecting the file is
     // considered consent to read it.
     { APIPermission::kFileSystem, "fileSystem" },
-    { APIPermission::kFileSystemRetainFiles, "fileSystem.retainFiles" },
+    { APIPermission::kFileSystemRetainEntries, "fileSystem.retainEntries" },
     { APIPermission::kFileSystemWrite, "fileSystem.write",
       APIPermissionInfo::kFlagNone,
       IDS_EXTENSION_PROMPT_WARNING_FILE_SYSTEM_WRITE,

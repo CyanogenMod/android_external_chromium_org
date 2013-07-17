@@ -521,7 +521,7 @@ void ChromeAppViewAsh::OnDisplayFileOpenDialog(
       new OpenFilePickerSession(this,
                                 title,
                                 filter,
-                                default_path.value(),
+                                default_path,
                                 allow_multiple_files);
   file_picker_->Run();
 }
@@ -776,9 +776,7 @@ HRESULT ChromeAppViewAsh::OnAcceleratorKeyDown(
   if (FAILED(hr))
     return hr;
 
-  // The AURA event handling code does not handle the system key down event for
-  // the Alt key if we pass in the flag EF_ALT_DOWN.
-  uint32 keyboard_flags = GetKeyboardEventFlags() & ~ui::EF_ALT_DOWN;
+  uint32 keyboard_flags = GetKeyboardEventFlags();
 
   switch (event_type) {
     case winui::Core::CoreAcceleratorKeyEventType_SystemCharacter:

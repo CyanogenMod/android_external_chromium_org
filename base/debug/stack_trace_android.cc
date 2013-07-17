@@ -4,55 +4,41 @@
 
 #include "base/debug/stack_trace.h"
 
-#include <signal.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <unwind.h>  // TODO(dmikurube): Remove.  See http://crbug.com/236855.
+#include <android/log.h>
+#include <unwind.h>
 
-#include "base/logging.h"
+#include "base/debug/proc_maps_linux.h"
+#include "base/strings/stringprintf.h"
+#include "base/threading/thread_restrictions.h"
 
-#ifdef __MIPSEL__
-// SIGSTKFLT is not defined for MIPS.
-#define SIGSTKFLT SIGSEGV
-#endif
-
-// TODO(dmikurube): Remove when Bionic's get_backtrace() gets popular.
-// See http://crbug.com/236855.
 namespace {
 
-/* depends how the system includes define this */
-#ifdef HAVE_UNWIND_CONTEXT_STRUCT
-typedef struct _Unwind_Context __unwind_context;
-#else
-typedef _Unwind_Context __unwind_context;
-#endif
+struct StackCrawlState {
+  StackCrawlState(uintptr_t* frames, size_t max_depth)
+      : frames(frames),
+        frame_count(0),
+        max_depth(max_depth),
+        have_skipped_self(false) {}
 
-struct stack_crawl_state_t {
   uintptr_t* frames;
   size_t frame_count;
   size_t max_depth;
   bool have_skipped_self;
-
-  stack_crawl_state_t(uintptr_t* frames, size_t max_depth)
-      : frames(frames),
-        frame_count(0),
-        max_depth(max_depth),
-        have_skipped_self(false) {
-  }
 };
 
-static _Unwind_Reason_Code tracer(__unwind_context* context, void* arg) {
-  stack_crawl_state_t* state = static_cast<stack_crawl_state_t*>(arg);
-
+// Clang's unwind.h doesn't provide _Unwind_GetIP on ARM, refer to
+// http://llvm.org/bugs/show_bug.cgi?id=16564 for details.
 #if defined(__clang__)
-  // Vanilla Clang's unwind.h doesn't have _Unwind_GetIP for ARM.
-  // See http://crbug.com/236855, too.
+uintptr_t _Unwind_GetIP(_Unwind_Context* context) {
   uintptr_t ip = 0;
   _Unwind_VRS_Get(context, _UVRSC_CORE, 15, _UVRSD_UINT32, &ip);
-  ip &= ~(uintptr_t)0x1;  // remove thumb mode bit
-#else
-  uintptr_t ip = _Unwind_GetIP(context);
+  return ip & ~static_cast<uintptr_t>(0x1);  // Remove thumb mode bit.
+}
 #endif
+
+_Unwind_Reason_Code TraceStackFrame(_Unwind_Context* context, void* arg) {
+  StackCrawlState* state = static_cast<StackCrawlState*>(arg);
+  uintptr_t ip = _Unwind_GetIP(context);
 
   // The first stack frame is this function itself.  Skip it.
   if (ip != 0 && !state->have_skipped_self) {
@@ -63,8 +49,7 @@ static _Unwind_Reason_Code tracer(__unwind_context* context, void* arg) {
   state->frames[state->frame_count++] = ip;
   if (state->frame_count >= state->max_depth)
     return _URC_END_OF_STACK;
-  else
-    return _URC_NO_REASON;
+  return _URC_NO_REASON;
 }
 
 }  // namespace
@@ -85,40 +70,62 @@ bool EnableInProcessStackDumping() {
 }
 
 StackTrace::StackTrace() {
-  // TODO(dmikurube): Replace it with Bionic's get_backtrace().
-  // See http://crbug.com/236855.
-  stack_crawl_state_t state(reinterpret_cast<uintptr_t*>(trace_), kMaxTraces);
-  _Unwind_Backtrace(tracer, &state);
+  StackCrawlState state(reinterpret_cast<uintptr_t*>(trace_), kMaxTraces);
+  _Unwind_Backtrace(&TraceStackFrame, &state);
   count_ = state.frame_count;
-  // TODO(dmikurube): Symbolize in Chrome.
 }
 
-// Sends fake SIGSTKFLT signals to let the Android linker and debuggerd dump
-// stack. See inlined comments and Android bionic/linker/debugger.c and
-// system/core/debuggerd/debuggerd.c for details.
 void StackTrace::PrintBacktrace() const {
-  // Get the current handler of SIGSTKFLT for later use.
-  sighandler_t sig_handler = signal(SIGSTKFLT, SIG_DFL);
-  signal(SIGSTKFLT, sig_handler);
-
-  // The Android linker will handle this signal and send a stack dumping request
-  // to debuggerd which will ptrace_attach this process. Before returning from
-  // the signal handler, the linker sets the signal handler to SIG_IGN.
-  kill(gettid(), SIGSTKFLT);
-
-  // Because debuggerd will wait for the process to be stopped by the actual
-  // signal in crashing scenarios, signal is sent again to met the expectation.
-  // Debuggerd will dump stack into the system log and /data/tombstones/ files.
-  // NOTE: If this process runs in the interactive shell, it will be put
-  // in the background. To resume it in the foreground, use 'fg' command.
-  kill(gettid(), SIGSTKFLT);
-
-  // Restore the signal handler so that this method can work the next time.
-  signal(SIGSTKFLT, sig_handler);
+  std::string backtrace = ToString();
+  __android_log_write(ANDROID_LOG_ERROR, "chromium", backtrace.c_str());
 }
 
+// NOTE: Native libraries in APKs are stripped before installing. Print out the
+// relocatable address and library names so host computers can use tools to
+// symbolize and demangle (e.g., addr2line, c++filt).
 void StackTrace::OutputToStream(std::ostream* os) const {
-  NOTIMPLEMENTED();
+  std::string proc_maps;
+  std::vector<MappedMemoryRegion> regions;
+  // Allow IO to read /proc/self/maps. Reading this file doesn't hit the disk
+  // since it lives in procfs, and this is currently used to print a stack trace
+  // on fatal log messages in debug builds only. If the restriction is enabled
+  // then it will recursively trigger fatal failures when this enters on the
+  // UI thread.
+  base::ThreadRestrictions::ScopedAllowIO allow_io;
+  if (!ReadProcMaps(&proc_maps)) {
+    __android_log_write(
+        ANDROID_LOG_ERROR, "chromium", "Failed to read /proc/self/maps");
+  } else if (!ParseProcMaps(proc_maps, &regions)) {
+    __android_log_write(
+        ANDROID_LOG_ERROR, "chromium", "Failed to parse /proc/self/maps");
+  }
+
+  for (size_t i = 0; i < count_; ++i) {
+    // Subtract one as return address of function may be in the next
+    // function when a function is annotated as noreturn.
+    uintptr_t address = reinterpret_cast<uintptr_t>(trace_[i]) - 1;
+
+    std::vector<MappedMemoryRegion>::iterator iter = regions.begin();
+    while (iter != regions.end()) {
+      if (address >= iter->start && address < iter->end &&
+          !iter->path.empty()) {
+        break;
+      }
+      ++iter;
+    }
+
+    *os << base::StringPrintf("#%02d 0x%08x ", i, address);
+
+    if (iter != regions.end()) {
+      uintptr_t rel_pc = address - iter->start + iter->offset;
+      const char* path = iter->path.c_str();
+      *os << base::StringPrintf("%s+0x%08x", path, rel_pc);
+    } else {
+      *os << "<unknown>";
+    }
+
+    *os << "\n";
+  }
 }
 
 }  // namespace debug

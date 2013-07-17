@@ -41,7 +41,8 @@ class PrefRegistrySyncable;
 class ManagedUserService : public BrowserContextKeyedService,
                            public extensions::ManagementPolicy::Provider,
                            public ProfileSyncServiceObserver,
-                           public content::NotificationObserver {
+                           public content::NotificationObserver,
+                           public chrome::BrowserListObserver {
  public:
   typedef std::vector<string16> CategoryList;
 
@@ -51,7 +52,6 @@ class ManagedUserService : public BrowserContextKeyedService,
     MANUAL_BLOCK
   };
 
-  explicit ManagedUserService(Profile* profile);
   virtual ~ManagedUserService();
 
   // ProfileKeyedService override:
@@ -63,7 +63,7 @@ class ManagedUserService : public BrowserContextKeyedService,
   // ManagedUserService (which could lead to cyclic dependencies).
   static bool ProfileIsManaged(Profile* profile);
 
-  static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Returns true if managed users are enabled by either Finch or the command
   // line flag.
@@ -156,8 +156,12 @@ class ManagedUserService : public BrowserContextKeyedService,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  // chrome::BrowserListObserver implementation:
+  virtual void OnBrowserSetLastActive(Browser* browser) OVERRIDE;
+
  private:
   friend class ManagedUserServiceExtensionTest;
+  friend class ManagedUserServiceFactory;
 
   // A bridge from ManagedMode (which lives on the UI thread) to the
   // ManagedModeURLFilters, one of which lives on the IO thread. This class
@@ -188,6 +192,10 @@ class ManagedUserService : public BrowserContextKeyedService,
 
     DISALLOW_COPY_AND_ASSIGN(URLFilterContext);
   };
+
+  // Use |ManagedUserServiceFactory::GetForProfile(..)| to get
+  // an instance of this service.
+  explicit ManagedUserService(Profile* profile);
 
   void OnCustodianProfileDownloaded(const string16& full_name);
 
@@ -222,6 +230,12 @@ class ManagedUserService : public BrowserContextKeyedService,
   // corresponding preference is changed.
   void UpdateManualURLs();
 
+  // Records some events (opening the managed user profile, switching from the
+  // managed user profile, and quitting the browser); each is stored
+  // using a key with a prefix (|key_prefix|) indicating the type of the event.
+  // Each entry is a dictionary which has the timestamp of the event.
+  void RecordProfileAndBrowserEventsHelper(const char* key_prefix);
+
   base::WeakPtrFactory<ManagedUserService> weak_ptr_factory_;
 
   // Owns us via the BrowserContextKeyedService mechanism.
@@ -232,9 +246,13 @@ class ManagedUserService : public BrowserContextKeyedService,
 
   // True iff we're waiting for the Sync service to be initialized.
   bool waiting_for_sync_initialization_;
+  bool is_profile_active_;
 
   // Sets a profile in elevated state for testing if set to true.
   bool elevated_for_testing_;
+
+  // True only when |Shutdown()| method has been called.
+  bool did_shutdown_;
 
   URLFilterContext url_filter_context_;
 };

@@ -5,6 +5,7 @@
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/cros/cros_in_process_browser_test.h"
 #include "chrome/browser/chromeos/login/mock_authenticator.h"
 #include "chrome/browser/chromeos/login/screen_locker.h"
@@ -14,7 +15,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "chromeos/chromeos_switches.h"
@@ -121,9 +121,6 @@ class ScreenLockerTest : public CrosInProcessBrowserTest {
     CrosInProcessBrowserTest::SetUpInProcessBrowserTestFixture();
     fake_session_manager_client_ =
         mock_dbus_thread_manager->fake_session_manager_client();
-    cros_mock_->InitStatusAreaMocks();
-    // Expectations for the status are on the screen lock window.
-    cros_mock_->SetStatusAreaMocksExpectations();
     zero_duration_mode_.reset(new ui::ScopedAnimationDurationScaleMode(
         ui::ScopedAnimationDurationScaleMode::ZERO_DURATION));
   }

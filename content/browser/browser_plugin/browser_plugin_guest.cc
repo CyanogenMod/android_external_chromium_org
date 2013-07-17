@@ -42,7 +42,6 @@
 #include "content/public/common/drop_data.h"
 #include "content/public/common/media_stream_request.h"
 #include "content/public/common/result_codes.h"
-#include "net/base/net_errors.h"
 #include "net/url_request/url_request.h"
 #include "third_party/WebKit/public/web/WebCursorInfo.h"
 #include "ui/base/keycodes/keyboard_codes.h"
@@ -301,19 +300,11 @@ bool BrowserPluginGuest::AddMessageToConsole(WebContents* source,
                                              const string16& message,
                                              int32 line_no,
                                              const string16& source_id) {
-  base::DictionaryValue message_info;
-  // Log levels are from base/logging.h: LogSeverity.
-  message_info.Set(browser_plugin::kLevel,
-                   base::Value::CreateIntegerValue(level));
-  message_info.Set(browser_plugin::kMessage,
-                   base::Value::CreateStringValue(message));
-  message_info.Set(browser_plugin::kLine,
-                   base::Value::CreateIntegerValue(line_no));
-  message_info.Set(browser_plugin::kSourceId,
-                   base::Value::CreateStringValue(source_id));
-  SendMessageToEmbedder(
-      new BrowserPluginMsg_AddMessageToConsole(instance_id_, message_info));
-  return false;
+  if (!delegate_)
+    return false;
+
+  delegate_->AddMessageToConsole(level, message, line_no, source_id);
+  return true;
 }
 
 void BrowserPluginGuest::DestroyUnattachedWindows() {
@@ -356,7 +347,6 @@ bool BrowserPluginGuest::OnMessageReceivedFromEmbedder(
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_LockMouse_ACK, OnLockMouseAck)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_NavigateGuest, OnNavigateGuest)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_PluginDestroyed, OnPluginDestroyed)
-    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_Reload, OnReload)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_ResizeGuest, OnResizeGuest)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_RespondPermission,
                         OnRespondPermission)
@@ -366,8 +356,6 @@ bool BrowserPluginGuest::OnMessageReceivedFromEmbedder(
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SetFocus, OnSetFocus)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SetName, OnSetName)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SetVisibility, OnSetVisibility)
-    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_Stop, OnStop)
-    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_TerminateGuest, OnTerminateGuest)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_UnlockMouse_ACK, OnUnlockMouseAck)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_UpdateGeometry, OnUpdateGeometry)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_UpdateRect_ACK, OnUpdateRectACK)
@@ -475,8 +463,10 @@ BrowserPluginGuest* BrowserPluginGuest::Create(
     guest = new BrowserPluginGuest(instance_id, web_contents, NULL, false);
   }
   web_contents->SetBrowserPluginGuest(guest);
+  BrowserPluginGuestDelegate* delegate = NULL;
   GetContentClient()->browser()->GuestWebContentsCreated(
-      web_contents, NULL, extra_params.Pass());
+      web_contents, NULL, &delegate, extra_params.Pass());
+  guest->SetDelegate(delegate);
   return guest;
 }
 
@@ -490,9 +480,11 @@ BrowserPluginGuest* BrowserPluginGuest::CreateWithOpener(
       new BrowserPluginGuest(
           instance_id, web_contents, opener, has_render_view);
   web_contents->SetBrowserPluginGuest(guest);
+  BrowserPluginGuestDelegate* delegate = NULL;
   GetContentClient()->browser()->GuestWebContentsCreated(
-      web_contents, opener->GetWebContents(),
+      web_contents, opener->GetWebContents(), &delegate,
       scoped_ptr<base::DictionaryValue>());
+  guest->SetDelegate(delegate);
   return guest;
 }
 
@@ -565,7 +557,10 @@ void BrowserPluginGuest::CanDownload(
 }
 
 void BrowserPluginGuest::CloseContents(WebContents* source) {
-  SendMessageToEmbedder(new BrowserPluginMsg_Close(instance_id_));
+  if (!delegate_)
+    return;
+
+  delegate_->Close();
 }
 
 bool BrowserPluginGuest::HandleContextMenu(const ContextMenuParams& params) {
@@ -582,6 +577,9 @@ void BrowserPluginGuest::HandleKeyboardEvent(
     return;
 
   if (UnlockMouseIfNecessary(event))
+    return;
+
+  if (delegate_ && delegate_->HandleKeyboardEvent(event))
     return;
 
   // Send the unhandled keyboard events back to the embedder to reprocess them.
@@ -750,24 +748,6 @@ bool BrowserPluginGuest::UnlockMouseIfNecessary(
   return true;
 }
 
-void BrowserPluginGuest::DidFailProvisionalLoad(
-    int64 frame_id,
-    bool is_main_frame,
-    const GURL& validated_url,
-    int error_code,
-    const string16& error_description,
-    RenderViewHost* render_view_host) {
-  // Translate the |error_code| into an error string.
-  std::string error_type;
-  RemoveChars(net::ErrorToString(error_code), "net::", &error_type);
-  // Inform the embedder of the loadAbort.
-  SendMessageToEmbedder(
-      new BrowserPluginMsg_LoadAbort(instance_id(),
-                                     validated_url,
-                                     is_main_frame,
-                                     error_type));
-}
-
 void BrowserPluginGuest::SendMessageToEmbedder(IPC::Message* msg) {
   if (!attached()) {
     // Some pages such as data URLs, javascript URLs, and about:blank
@@ -803,6 +783,11 @@ void BrowserPluginGuest::EndSystemDrag() {
   mouse_event.type = WebKit::WebInputEvent::MouseUp;
   mouse_event.button = WebKit::WebMouseEvent::ButtonLeft;
   guest_rvh->ForwardMouseEvent(mouse_event);
+}
+
+void BrowserPluginGuest::SetDelegate(BrowserPluginGuestDelegate* delegate) {
+  DCHECK(!delegate_);
+  delegate_.reset(delegate);
 }
 
 void BrowserPluginGuest::AskEmbedderForGeolocationPermission(
@@ -869,22 +854,12 @@ void BrowserPluginGuest::DidCommitProvisionalLoadForFrame(
     const GURL& url,
     PageTransition transition_type,
     RenderViewHost* render_view_host) {
-  // Inform its embedder of the updated URL.
-  BrowserPluginMsg_LoadCommit_Params params;
-  params.url = url;
-  params.is_top_level = is_main_frame;
-  SendMessageToEmbedder(
-      new BrowserPluginMsg_LoadCommit(instance_id(), params));
   RecordAction(UserMetricsAction("BrowserPlugin.Guest.DidNavigate"));
 }
 
 void BrowserPluginGuest::DidStopLoading(RenderViewHost* render_view_host) {
-  bool disable_dragdrop = true;
-#if defined(OS_LINUX) || defined(OS_MACOSX)
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableBrowserPluginDragDrop))
-    disable_dragdrop = false;
-#endif  // defined(OS_LINUX) || defined(OS_MACOSX)
+  bool disable_dragdrop = !CommandLine::ForCurrentProcess()->HasSwitch(
+                              switches::kEnableBrowserPluginDragDrop);
   if (disable_dragdrop) {
     // Initiating a drag from inside a guest is currently not supported without
     // the kEnableBrowserPluginDragDrop flag on a linux platform. So inject some
@@ -914,10 +889,9 @@ void BrowserPluginGuest::RenderViewReady() {
       set_hung_renderer_delay_ms(guest_hang_timeout_);
 }
 
-void BrowserPluginGuest::RenderViewGone(base::TerminationStatus status) {
-  int process_id = GetWebContents()->GetRenderProcessHost()->GetID();
-  SendMessageToEmbedder(
-      new BrowserPluginMsg_GuestGone(instance_id(), process_id, status));
+void BrowserPluginGuest::RenderProcessGone(base::TerminationStatus status) {
+
+  SendMessageToEmbedder(new BrowserPluginMsg_GuestGone(instance_id()));
   switch (status) {
     case base::TERMINATION_STATUS_PROCESS_WAS_KILLED:
       RecordAction(UserMetricsAction("BrowserPlugin.Guest.Killed"));
@@ -931,6 +905,8 @@ void BrowserPluginGuest::RenderViewGone(base::TerminationStatus status) {
     default:
       break;
   }
+  if (delegate_)
+    delegate_->GuestProcessGone(status);
 }
 
 // static
@@ -959,7 +935,6 @@ bool BrowserPluginGuest::ShouldForwardToBrowserPluginGuest(
     case BrowserPluginHostMsg_LockMouse_ACK::ID:
     case BrowserPluginHostMsg_NavigateGuest::ID:
     case BrowserPluginHostMsg_PluginDestroyed::ID:
-    case BrowserPluginHostMsg_Reload::ID:
     case BrowserPluginHostMsg_ResizeGuest::ID:
     case BrowserPluginHostMsg_RespondPermission::ID:
     case BrowserPluginHostMsg_SetAutoSize::ID:
@@ -967,8 +942,6 @@ bool BrowserPluginGuest::ShouldForwardToBrowserPluginGuest(
     case BrowserPluginHostMsg_SetFocus::ID:
     case BrowserPluginHostMsg_SetName::ID:
     case BrowserPluginHostMsg_SetVisibility::ID:
-    case BrowserPluginHostMsg_Stop::ID:
-    case BrowserPluginHostMsg_TerminateGuest::ID:
     case BrowserPluginHostMsg_UnlockMouse_ACK::ID:
     case BrowserPluginHostMsg_UpdateGeometry::ID:
     case BrowserPluginHostMsg_UpdateRect_ACK::ID:
@@ -1222,13 +1195,6 @@ void BrowserPluginGuest::OnPluginDestroyed(int instance_id) {
   Destroy();
 }
 
-void BrowserPluginGuest::OnReload(int instance_id) {
-  // TODO(fsamuel): Don't check for repost because we don't want to show
-  // Chromium's repost warning. We might want to implement a separate API
-  // for registering a callback if a repost is about to happen.
-  GetWebContents()->GetController().Reload(false);
-}
-
 void BrowserPluginGuest::OnResizeGuest(
     int instance_id,
     const BrowserPluginHostMsg_ResizeGuest_Params& params) {
@@ -1322,10 +1288,6 @@ void BrowserPluginGuest::OnSetVisibility(int instance_id, bool visible) {
     GetWebContents()->WasHidden();
 }
 
-void BrowserPluginGuest::OnStop(int instance_id) {
-  GetWebContents()->Stop();
-}
-
 void BrowserPluginGuest::OnRespondPermission(
     int instance_id,
     BrowserPluginPermissionType permission_type,
@@ -1360,14 +1322,6 @@ void BrowserPluginGuest::OnSwapBuffersACK(int instance_id,
         RenderWidgetHostImpl::From(GetWebContents()->GetRenderViewHost());
   render_widget_host->AcknowledgeSwapBuffersToRenderer();
 #endif  // defined(OS_MACOSX) || defined(OS_WIN)
-}
-
-void BrowserPluginGuest::OnTerminateGuest(int instance_id) {
-  RecordAction(UserMetricsAction("BrowserPlugin.Guest.Terminate"));
-  base::ProcessHandle process_handle =
-      GetWebContents()->GetRenderProcessHost()->GetHandle();
-  if (process_handle)
-    base::KillProcess(process_handle, RESULT_CODE_KILLED, false);
 }
 
 void BrowserPluginGuest::OnUnlockMouse() {

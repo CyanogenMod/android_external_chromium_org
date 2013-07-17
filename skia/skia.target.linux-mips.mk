@@ -103,10 +103,10 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkBBoxRecord.cpp \
 	third_party/skia/src/core/SkBBoxHierarchyRecord.cpp \
 	third_party/skia/src/core/SkBitmap.cpp \
+	third_party/skia/src/core/SkBitmapFilter.cpp \
 	third_party/skia/src/core/SkBitmapHeap.cpp \
 	third_party/skia/src/core/SkBitmapProcShader.cpp \
 	third_party/skia/src/core/SkBitmapProcState.cpp \
-	third_party/skia/src/core/SkBitmapProcBicubic.cpp \
 	third_party/skia/src/core/SkBitmapProcState_matrixProcs.cpp \
 	third_party/skia/src/core/SkBitmap_scroll.cpp \
 	third_party/skia/src/core/SkBlitMask_D32.cpp \
@@ -284,6 +284,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/effects/SkDisplacementMapEffect.cpp \
 	third_party/skia/src/effects/SkEmbossMask.cpp \
 	third_party/skia/src/effects/SkEmbossMaskFilter.cpp \
+	third_party/skia/src/effects/SkGpuBlurUtils.cpp \
 	third_party/skia/src/effects/SkKernel33MaskFilter.cpp \
 	third_party/skia/src/effects/SkLayerDrawLooper.cpp \
 	third_party/skia/src/effects/SkLayerRasterizer.cpp \
@@ -336,6 +337,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/GrMemory.cpp \
 	third_party/skia/src/gpu/GrMemoryPool.cpp \
 	third_party/skia/src/gpu/GrOvalRenderer.cpp \
+	third_party/skia/src/gpu/GrPaint.cpp \
 	third_party/skia/src/gpu/GrPath.cpp \
 	third_party/skia/src/gpu/GrPathRendererChain.cpp \
 	third_party/skia/src/gpu/GrPathRenderer.cpp \
@@ -438,6 +440,8 @@ MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
@@ -457,6 +461,7 @@ MY_DEFS_Debug := \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
 	'-DSK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK' \
 	'-DIGNORE_ROT_AA_RECT_OPT' \
+	'-DSK_IGNORE_IMAGE_PRESCALE' \
 	'-DSK_GAMMA_APPLY_TO_A8' \
 	'-DSK_GAMMA_EXPONENT=1.4' \
 	'-DSK_GAMMA_CONTRAST=0.0' \
@@ -559,6 +564,8 @@ MY_DEFS_Release := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
@@ -578,6 +585,7 @@ MY_DEFS_Release := \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
 	'-DSK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK' \
 	'-DIGNORE_ROT_AA_RECT_OPT' \
+	'-DSK_IGNORE_IMAGE_PRESCALE' \
 	'-DSK_GAMMA_APPLY_TO_A8' \
 	'-DSK_GAMMA_EXPONENT=1.4' \
 	'-DSK_GAMMA_CONTRAST=0.0' \

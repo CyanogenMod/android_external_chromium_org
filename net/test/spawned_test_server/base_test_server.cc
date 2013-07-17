@@ -13,7 +13,6 @@
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/values.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/address_list.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
@@ -22,6 +21,7 @@
 #include "net/base/test_completion_callback.h"
 #include "net/cert/test_root_certs.h"
 #include "net/dns/host_resolver.h"
+#include "url/gurl.h"
 
 namespace net {
 
@@ -340,7 +340,7 @@ bool BaseTestServer::GenerateArguments(base::DictionaryValue* arguments) const {
     if (!certificate_file.value().empty()) {
       certificate_path = certificate_path.Append(certificate_file);
       if (certificate_path.IsAbsolute() &&
-          !file_util::PathExists(certificate_path)) {
+          !base::PathExists(certificate_path)) {
         LOG(ERROR) << "Certificate path " << certificate_path.value()
                    << " doesn't exist. Can't launch https server.";
         return false;
@@ -356,7 +356,7 @@ bool BaseTestServer::GenerateArguments(base::DictionaryValue* arguments) const {
     std::vector<base::FilePath>::const_iterator it;
     for (it = ssl_options_.client_authorities.begin();
          it != ssl_options_.client_authorities.end(); ++it) {
-      if (it->IsAbsolute() && !file_util::PathExists(*it)) {
+      if (it->IsAbsolute() && !base::PathExists(*it)) {
         LOG(ERROR) << "Client authority path " << it->value()
                    << " doesn't exist. Can't launch https server.";
         return false;

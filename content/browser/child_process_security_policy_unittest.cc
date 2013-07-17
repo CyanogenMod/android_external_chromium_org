@@ -11,8 +11,8 @@
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/public/common/url_constants.h"
 #include "content/test/test_content_browser_client.h"
-#include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace content {
 namespace {
@@ -76,6 +76,13 @@ class ChildProcessSecurityPolicyTest : public testing::Test {
  protected:
   void RegisterTestScheme(const std::string& scheme) {
     test_browser_client_.AddScheme(scheme);
+  }
+
+  void GrantPermissionsForFile(ChildProcessSecurityPolicyImpl* p,
+                               int child_id,
+                               const base::FilePath& file,
+                               int permissions) {
+    p->GrantPermissionsForFile(child_id, file, permissions);
   }
 
  private:
@@ -356,7 +363,7 @@ TEST_F(ChildProcessSecurityPolicyTest, FilePermissions) {
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, granted_file,
                                         base::PLATFORM_FILE_OPEN));
 
-  p->GrantPermissionsForFile(kRendererID, granted_file,
+  GrantPermissionsForFile(p, kRendererID, granted_file,
                              base::PLATFORM_FILE_OPEN |
                              base::PLATFORM_FILE_OPEN_TRUNCATED |
                              base::PLATFORM_FILE_READ |
@@ -408,7 +415,7 @@ TEST_F(ChildProcessSecurityPolicyTest, FilePermissions) {
   p->Add(kRendererID);
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, granted_file,
                                         base::PLATFORM_FILE_OPEN));
-  p->GrantPermissionsForFile(kRendererID, parent_file,
+  GrantPermissionsForFile(p, kRendererID, parent_file,
                              base::PLATFORM_FILE_OPEN |
                              base::PLATFORM_FILE_READ);
   EXPECT_TRUE(p->HasPermissionsForFile(kRendererID, granted_file,
@@ -422,7 +429,7 @@ TEST_F(ChildProcessSecurityPolicyTest, FilePermissions) {
   p->Add(kRendererID);
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, granted_file,
                                         base::PLATFORM_FILE_OPEN));
-  p->GrantPermissionsForFile(kRendererID, parent_slash_file,
+  GrantPermissionsForFile(p, kRendererID, parent_slash_file,
                              base::PLATFORM_FILE_OPEN |
                              base::PLATFORM_FILE_READ);
   EXPECT_TRUE(p->HasPermissionsForFile(kRendererID, granted_file,
@@ -433,7 +440,7 @@ TEST_F(ChildProcessSecurityPolicyTest, FilePermissions) {
 
   // Grant permissions for the file (should overwrite the permissions granted
   // for the directory).
-  p->GrantPermissionsForFile(kRendererID, granted_file,
+  GrantPermissionsForFile(p, kRendererID, granted_file,
                              base::PLATFORM_FILE_TEMPORARY);
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, granted_file,
                                         base::PLATFORM_FILE_OPEN));
@@ -453,7 +460,7 @@ TEST_F(ChildProcessSecurityPolicyTest, FilePermissions) {
   // Grant file permissions for the file to main thread renderer process,
   // make sure its worker thread renderer process inherits those.
   p->Add(kRendererID);
-  p->GrantPermissionsForFile(kRendererID, granted_file,
+  GrantPermissionsForFile(p, kRendererID, granted_file,
                              base::PLATFORM_FILE_OPEN |
                              base::PLATFORM_FILE_READ);
   EXPECT_TRUE(p->HasPermissionsForFile(kRendererID, granted_file,
@@ -474,7 +481,7 @@ TEST_F(ChildProcessSecurityPolicyTest, FilePermissions) {
   p->Remove(kWorkerRendererID);
 
   p->Add(kRendererID);
-  p->GrantPermissionsForFile(kRendererID, relative_file,
+  GrantPermissionsForFile(p, kRendererID, relative_file,
                              base::PLATFORM_FILE_OPEN);
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, relative_file,
                                         base::PLATFORM_FILE_OPEN));

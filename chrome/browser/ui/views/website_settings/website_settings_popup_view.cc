@@ -18,7 +18,6 @@
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/cert_store.h"
 #include "content/public/browser/user_metrics.h"
-#include "googleurl/src/gurl.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -45,6 +44,7 @@
 #include "ui/views/layout/layout_manager.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -261,11 +261,12 @@ void WebsiteSettingsPopupView::ShowPopup(views::View* anchor_view,
                                          const GURL& url,
                                          const content::SSLStatus& ssl,
                                          Browser* browser) {
-  if (InternalChromePage(url))
+  if (InternalChromePage(url)) {
     new InternalPageInfoPopupView(anchor_view);
-  else
+  } else {
     new WebsiteSettingsPopupView(anchor_view, profile, web_contents, url, ssl,
                                  browser);
+  }
 }
 
 WebsiteSettingsPopupView::WebsiteSettingsPopupView(
@@ -336,16 +337,11 @@ WebsiteSettingsPopupView::WebsiteSettingsPopupView(
   views::BubbleDelegateView::CreateBubble(this)->Show();
   SizeToContents();
 
-  TabSpecificContentSettings* content_settings =
-      TabSpecificContentSettings::FromWebContents(web_contents);
-  InfoBarService* infobar_service =
-      InfoBarService::FromWebContents(web_contents);
-  presenter_.reset(new WebsiteSettings(this, profile,
-                                       content_settings,
-                                       infobar_service,
-                                       url,
-                                       ssl,
-                                       content::CertStore::GetInstance()));
+  presenter_.reset(new WebsiteSettings(
+      this, profile,
+      TabSpecificContentSettings::FromWebContents(web_contents),
+      InfoBarService::FromWebContents(web_contents), url, ssl,
+      content::CertStore::GetInstance()));
 }
 
 void WebsiteSettingsPopupView::OnPermissionChanged(

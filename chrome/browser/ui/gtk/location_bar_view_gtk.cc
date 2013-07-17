@@ -21,6 +21,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/accessibility/accessibility_events.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/defaults.h"
@@ -70,7 +71,6 @@
 #include "chrome/browser/ui/webui/extensions/extension_info_ui.h"
 #include "chrome/browser/ui/zoom/zoom_controller.h"
 #include "chrome/common/badge_util.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
@@ -314,6 +314,11 @@ void ContentSettingImageViewGtk::BubbleClosing(
     BubbleGtk* bubble,
     bool closed_by_escape) {
   content_setting_bubble_ = NULL;
+}
+
+gfx::Rect AllocationToRect(const GtkAllocation& allocation) {
+  return gfx::Rect(allocation.x, allocation.y,
+                   allocation.width, allocation.height);
 }
 
 }  // namespace
@@ -629,7 +634,9 @@ WebContents* LocationBarViewGtk::GetWebContents() const {
 }
 
 gfx::Rect LocationBarViewGtk::GetOmniboxBounds() const {
-  return gfx::Rect();
+  GtkAllocation hbox_allocation;
+  gtk_widget_get_allocation(hbox_.get(), &hbox_allocation);
+  return AllocationToRect(hbox_allocation);
 }
 
 void LocationBarViewGtk::SetPreviewEnabledPageAction(
@@ -853,11 +860,6 @@ void LocationBarViewGtk::ShowFirstRunBubble() {
                  weak_ptr_factory_.GetWeakPtr()));
 }
 
-void LocationBarViewGtk::SetInstantSuggestion(
-    const InstantSuggestion& suggestion) {
-  location_entry_->model()->SetInstantSuggestion(suggestion);
-}
-
 string16 LocationBarViewGtk::GetInputString() const {
   return location_input_;
 }
@@ -960,6 +962,10 @@ void LocationBarViewGtk::InvalidatePageActions() {
 
 void LocationBarViewGtk::UpdateOpenPDFInReaderPrompt() {
   // Not implemented on Gtk.
+}
+
+void LocationBarViewGtk::UpdateAutofillCreditCardView() {
+  NOTIMPLEMENTED();
 }
 
 void LocationBarViewGtk::SaveStateToContents(WebContents* contents) {
@@ -1398,7 +1404,7 @@ gboolean LocationBarViewGtk::OnIconReleased(GtkWidget* sender,
       return FALSE;
     }
     chrome::ShowWebsiteSettings(browser_, tab, nav_entry->GetURL(),
-                                nav_entry->GetSSL(), true);
+                                nav_entry->GetSSL());
     return TRUE;
   } else if (event->button == 2) {
     // When the user middle clicks on the location icon, try to open the
@@ -1459,6 +1465,10 @@ void LocationBarViewGtk::OnHboxSizeAllocate(GtkWidget* sender,
   if (hbox_width_ != allocation->width) {
     hbox_width_ = allocation->width;
     UpdateEVCertificateLabelSize();
+  }
+  if (browser_ && browser_->instant_controller()) {
+    browser_->instant_controller()->
+        SetOmniboxBounds(AllocationToRect(*allocation));
   }
 }
 

@@ -16,16 +16,20 @@ enum NextProto {
   kProtoHTTP11 = 1,
   kProtoMinimumVersion = kProtoHTTP11,
 
+  // TODO(akalin): Stop advertising SPDY/1 and remove this.
   kProtoSPDY1 = 2,
   kProtoSPDYMinimumVersion = kProtoSPDY1,
   kProtoSPDY2 = 3,
+  // TODO(akalin): Stop adverising SPDY/2.1, too.
   kProtoSPDY21 = 4,
   kProtoSPDY3 = 5,
   kProtoSPDY31 = 6,
   kProtoSPDY4a2 = 7,
   kProtoSPDYMaximumVersion = kProtoSPDY4a2,
 
-  kProtoMaximumVersion = kProtoSPDYMaximumVersion,
+  kProtoQUIC1SPDY3 = 8,
+
+  kProtoMaximumVersion = kProtoQUIC1SPDY3,
 };
 
 }  // namespace net

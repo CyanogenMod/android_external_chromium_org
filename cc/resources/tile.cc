@@ -10,6 +10,8 @@
 
 namespace cc {
 
+Tile::Id Tile::s_next_id_ = 0;
+
 Tile::Tile(TileManager* tile_manager,
            PicturePileImpl* picture_pile,
            gfx::Size tile_size,
@@ -26,7 +28,8 @@ Tile::Tile(TileManager* tile_manager,
     opaque_rect_(opaque_rect),
     layer_id_(layer_id),
     source_frame_number_(source_frame_number),
-    can_use_lcd_text_(can_use_lcd_text) {
+    can_use_lcd_text_(can_use_lcd_text),
+    id_(s_next_id_++) {
   set_picture_pile(picture_pile);
   tile_manager_->RegisterTile(this);
 }
@@ -47,6 +50,13 @@ scoped_ptr<base::Value> Tile::AsValue() const {
   res->Set("pending_priority", priority_[PENDING_TREE].AsValue().release());
   res->Set("managed_state", managed_state_.AsValue().release());
   return res.PassAs<base::Value>();
+}
+
+size_t Tile::GPUMemoryUsageInBytes() const {
+  size_t total_size = 0;
+  for (int mode = 0; mode < NUM_RASTER_MODES; ++mode)
+    total_size += managed_state_.tile_versions[mode].GPUMemoryUsageInBytes();
+  return total_size;
 }
 
 }  // namespace cc

@@ -4,13 +4,13 @@
 
 #include "chrome/browser/chromeos/cros/network_library.h"
 
+#include "base/chromeos/chromeos_version.h"
 #include "base/i18n/icu_encoding_detection.h"
 #include "base/i18n/icu_string_conversions.h"
 #include "base/i18n/time_formatting.h"
 #include "base/json/json_writer.h"  // for debug output only.
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversion_utils.h"
-#include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/native_network_constants.h"
 #include "chrome/browser/chromeos/cros/native_network_parser.h"
 #include "chrome/browser/chromeos/cros/network_library_impl_cros.h"
@@ -89,8 +89,9 @@ using content::BrowserThread;
 
 namespace chromeos {
 
-// Local constants.
 namespace {
+
+static NetworkLibrary* g_network_library = NULL;
 
 // Default value of the SIM unlock retries count. It is updated to the real
 // retries count once cellular device with SIM card is initialized.
@@ -106,8 +107,8 @@ void WipeString(std::string* str) {
   str->clear();
 }
 
-bool EnsureCrosLoaded() {
-  if (!CrosLibrary::Get()->libcros_loaded()) {
+bool EnsureRunningOnChromeOS() {
+  if (!base::chromeos::IsRunningOnChromeOS()) {
     return false;
   } else {
     CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI))
@@ -227,54 +228,14 @@ Network::Network(const std::string& service_path,
       notify_failure_(false),
       profile_type_(PROFILE_NONE),
       service_path_(service_path),
-      type_(type),
-      is_behind_portal_for_testing_(false) {
+      type_(type) {
 }
 
 Network::~Network() {
-  for (PropertyMap::const_iterator props = property_map_.begin();
-       props != property_map_.end(); ++props) {
-     delete props->second;
-  }
 }
 
 void Network::SetNetworkParser(NetworkParser* parser) {
   network_parser_.reset(parser);
-}
-
-void Network::UpdatePropertyMap(PropertyIndex index, const base::Value* value) {
-  if (!value) {
-    // Clear the property if |value| is NULL.
-    PropertyMap::iterator iter(property_map_.find(index));
-    if (iter != property_map_.end()) {
-      delete iter->second;
-      property_map_.erase(iter);
-    }
-    return;
-  }
-
-  // Add the property to property_map_.  Delete previous value if necessary.
-  Value*& entry = property_map_[index];
-  delete entry;
-  entry = value->DeepCopy();
-  if (VLOG_IS_ON(3)) {
-    std::string value_json;
-    base::JSONWriter::WriteWithOptions(value,
-                                       base::JSONWriter::OPTIONS_PRETTY_PRINT,
-                                       &value_json);
-    VLOG(3) << "Updated property map on network: "
-            << unique_id() << "[" << index << "] = " << value_json;
-  }
-}
-
-bool Network::GetProperty(PropertyIndex index,
-                          const base::Value** value) const {
-  PropertyMap::const_iterator i = property_map_.find(index);
-  if (i == property_map_.end())
-    return false;
-  if (value != NULL)
-    *value = i->second;
-  return true;
 }
 
 // static
@@ -373,7 +334,7 @@ void Network::CopyCredentialsFromRemembered(Network* remembered) {
 
 void Network::SetValueProperty(const char* prop, const base::Value& value) {
   DCHECK(prop);
-  if (!EnsureCrosLoaded())
+  if (!EnsureRunningOnChromeOS())
     return;
   CrosSetNetworkServiceProperty(service_path_, prop, value);
   // Ensure NetworkStateHandler properties are up-to-date.
@@ -385,7 +346,7 @@ void Network::SetValueProperty(const char* prop, const base::Value& value) {
 
 void Network::ClearProperty(const char* prop) {
   DCHECK(prop);
-  if (!EnsureCrosLoaded())
+  if (!EnsureRunningOnChromeOS())
     return;
   CrosClearNetworkServiceProperty(service_path_, prop);
   // Ensure NetworkStateHandler properties are up-to-date.
@@ -535,7 +496,7 @@ std::string Network::GetErrorString() const {
 
 void Network::InitIPAddress() {
   ip_address_.clear();
-  if (!EnsureCrosLoaded())
+  if (!EnsureRunningOnChromeOS())
     return;
   // If connected, get IPConfig.
   if (connected() && !device_path_.empty()) {
@@ -551,7 +512,7 @@ void Network::InitIPAddressCallback(
     const NetworkIPConfigVector& ip_configs,
     const std::string& hardware_address) {
   Network* network =
-      CrosLibrary::Get()->GetNetworkLibrary()->FindNetworkByPath(service_path);
+      NetworkLibrary::Get()->FindNetworkByPath(service_path);
   if (!network)
     return;
   for (size_t i = 0; i < ip_configs.size(); ++i) {
@@ -900,7 +861,7 @@ CellularNetwork::~CellularNetwork() {
 }
 
 bool CellularNetwork::StartActivation() {
-  if (!EnsureCrosLoaded())
+  if (!EnsureRunningOnChromeOS())
     return false;
   if (!CrosActivateCellularModem(service_path(), ""))
     return false;
@@ -912,7 +873,7 @@ bool CellularNetwork::StartActivation() {
 }
 
 void CellularNetwork::CompleteActivation() {
-  if (!EnsureCrosLoaded())
+  if (!EnsureRunningOnChromeOS())
     return;
   CrosCompleteCellularActivation(service_path());
 }
@@ -1119,14 +1080,6 @@ void WifiNetwork::EraseCredentials() {
   WipeString(&eap_identity_);
   WipeString(&eap_anonymous_identity_);
   WipeString(&eap_passphrase_);
-}
-
-void WifiNetwork::SetIdentity(const std::string& identity) {
-  SetStringProperty(flimflam::kIdentityProperty, identity, &identity_);
-}
-
-void WifiNetwork::SetHiddenSSID(bool hidden_ssid) {
-  SetBooleanProperty(flimflam::kWifiHiddenSsid, hidden_ssid, &hidden_ssid_);
 }
 
 void WifiNetwork::SetEAPMethod(EAPMethod method) {
@@ -1410,6 +1363,34 @@ NetworkLibrary* NetworkLibrary::GetImpl(bool stub) {
     impl = new NetworkLibraryImplCros();
   impl->Init();
   return impl;
+}
+
+// static
+void NetworkLibrary::Initialize(bool use_stub) {
+  CHECK(!g_network_library)
+      << "NetworkLibrary: Multiple calls to Initialize().";
+  g_network_library = NetworkLibrary::GetImpl(use_stub);
+  VLOG_IF(1, use_stub) << "NetworkLibrary Initialized with Stub Impl.";
+}
+
+// static
+void NetworkLibrary::Shutdown() {
+  VLOG(1) << "NetworkLibrary Shutting down...";
+  delete g_network_library;
+  g_network_library = NULL;
+  VLOG(1) << "  NetworkLibrary Shutdown completed.";
+}
+
+// static
+NetworkLibrary* NetworkLibrary::Get() {
+  return g_network_library;
+}
+
+// static
+void NetworkLibrary::SetForTesting(NetworkLibrary* library) {
+  if (g_network_library)
+    delete g_network_library;
+  g_network_library = library;
 }
 
 }  // namespace chromeos

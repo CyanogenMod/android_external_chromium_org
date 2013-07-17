@@ -78,10 +78,8 @@ views::TrayBubbleView::InitParams MessageCenterBubble::GetInitParams(
     views::TrayBubbleView::AnchorAlignment anchor_alignment) {
   views::TrayBubbleView::InitParams init_params =
       GetDefaultInitParams(anchor_alignment);
-  if (IsRichNotificationEnabled()) {
-    init_params.min_width += kMarginBetweenItems * 2;
-    init_params.max_width += kMarginBetweenItems * 2;
-  }
+  init_params.min_width += kMarginBetweenItems * 2;
+  init_params.max_width += kMarginBetweenItems * 2;
   init_params.max_height = max_height();
   init_params.can_activate = true;
   return init_params;
@@ -91,7 +89,12 @@ void MessageCenterBubble::InitializeContents(
     views::TrayBubbleView* new_bubble_view) {
   set_bubble_view(new_bubble_view);
   message_center_view_ = new MessageCenterView(
-      message_center(), tray(), max_height(), initially_settings_visible_);
+      message_center(),
+      tray(),
+      max_height(),
+      initially_settings_visible_,
+      false /* MessageCenterBubble should be used only on ChromeOS.
+               Buttons are always on bottom for ChromeOS. */);
   bubble_view()->AddChildView(new ContentsView(this, message_center_view_));
   // Resize the content of the bubble view to the given bubble size. This is
   // necessary in case of the bubble border forcing a bigger size then the

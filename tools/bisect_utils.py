@@ -24,6 +24,24 @@ GCLIENT_SPEC_DATA = [
                            "chrome/data/dom_perf/.git",
       "src/tools/perf/data": "https://chrome-internal.googlesource.com/"
                              "chrome/tools/perf/data/.git",
+      "src/third_party/adobe/flash/binaries/ppapi/linux":
+          "https://chrome-internal.googlesource.com/"
+          "chrome/deps/adobe/flash/binaries/ppapi/linux/.git",
+      "src/third_party/adobe/flash/binaries/ppapi/linux_x64":
+          "https://chrome-internal.googlesource.com/"
+          "chrome/deps/adobe/flash/binaries/ppapi/linux_x64/.git",
+      "src/third_party/adobe/flash/binaries/ppapi/mac":
+          "https://chrome-internal.googlesource.com/"
+          "chrome/deps/adobe/flash/binaries/ppapi/mac/.git",
+      "src/third_party/adobe/flash/binaries/ppapi/mac_64":
+          "https://chrome-internal.googlesource.com/"
+          "chrome/deps/adobe/flash/binaries/ppapi/mac_64/.git",
+      "src/third_party/adobe/flash/binaries/ppapi/win":
+          "https://chrome-internal.googlesource.com/"
+          "chrome/deps/adobe/flash/binaries/ppapi/win/.git",
+      "src/third_party/adobe/flash/binaries/ppapi/win_x64":
+          "https://chrome-internal.googlesource.com/"
+          "chrome/deps/adobe/flash/binaries/ppapi/win_x64/.git",
     },
     "safesync_url": "",
   },
@@ -41,6 +59,8 @@ REPO_PARAMS = [
 REPO_SYNC_COMMAND = 'git checkout -f $(git rev-list --max-count=1 '\
                     '--before=%d remotes/m/master)'
 
+ORIGINAL_ENV = {}
+
 def OutputAnnotationStepStart(name):
   """Outputs appropriate annotation to signal the start of a step to
   a trybot.
@@ -53,6 +73,7 @@ def OutputAnnotationStepStart(name):
   print '@@@STEP_CURSOR %s@@@' % name
   print '@@@STEP_STARTED@@@'
   print
+  sys.stdout.flush()
 
 
 def OutputAnnotationStepClosed():
@@ -61,6 +82,7 @@ def OutputAnnotationStepClosed():
   print
   print '@@@STEP_CLOSED@@@'
   print
+  sys.stdout.flush()
 
 
 def CreateAndChangeToSourceDirectory(working_directory):
@@ -283,6 +305,29 @@ def SetupCrosRepo():
   return passed
 
 
+def CopyAndSaveOriginalEnvironmentVars():
+  """Makes a copy of the current environment variables."""
+  # TODO: Waiting on crbug.com/255689, will remove this after.
+  vars_to_remove = []
+  for k, v in os.environ.iteritems():
+    if 'ANDROID' in k:
+      vars_to_remove.append(k)
+  vars_to_remove.append('CHROME_SRC')
+  vars_to_remove.append('CHROMIUM_GYP_FILE')
+  vars_to_remove.append('GOMA_DIR')
+  vars_to_remove.append('GYP_CROSSCOMPILE')
+  vars_to_remove.append('GYP_DEFINES')
+  vars_to_remove.append('GYP_GENERATORS')
+  vars_to_remove.append('GYP_GENERATOR_FLAGS')
+  vars_to_remove.append('OBJCOPY')
+  for k in vars_to_remove:
+    if os.environ.has_key(k):
+      del os.environ[k]
+
+  global ORIGINAL_ENV
+  ORIGINAL_ENV = os.environ.copy()
+
+
 def SetupAndroidBuildEnvironment(opts):
   """Sets up the android build environment.
 
@@ -293,6 +338,15 @@ def SetupAndroidBuildEnvironment(opts):
   Returns:
     True if successful.
   """
+
+  # Revert the environment variables back to default before setting them up
+  # with envsetup.sh.
+  env_vars = os.environ.copy()
+  for k, _ in env_vars.iteritems():
+    del os.environ[k]
+  for k, v in ORIGINAL_ENV.iteritems():
+    os.environ[k] = v
+
   path_to_file = os.path.join('build', 'android', 'envsetup.sh')
   proc = subprocess.Popen(['bash', '-c', 'source %s && env' % path_to_file],
                            stdout=subprocess.PIPE,
@@ -317,6 +371,7 @@ def SetupPlatformBuildEnvironment(opts):
     True if successful.
   """
   if opts.target_platform == 'android':
+    CopyAndSaveOriginalEnvironmentVars()
     return SetupAndroidBuildEnvironment(opts)
   elif opts.target_platform == 'cros':
     return SetupCrosRepo()

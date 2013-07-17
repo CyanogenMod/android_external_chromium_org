@@ -155,20 +155,6 @@ bool MapBufferToVideoFrame(
   return buf != NULL;
 }
 
-void SetSurfaceOrder(NSOpenGLContext* context,
-                     CompositingIOSurfaceMac::SurfaceOrder surface_order) {
-  GLint old_gl_surface_order = 0;
-  GLint new_gl_surface_order =
-      surface_order == CompositingIOSurfaceMac::SURFACE_ORDER_ABOVE_WINDOW ? 1
-                                                                           : -1;
-  [context getValues:&old_gl_surface_order forParameter:NSOpenGLCPSurfaceOrder];
-
-  if (old_gl_surface_order != new_gl_surface_order) {
-    [context setValues:&new_gl_surface_order
-          forParameter:NSOpenGLCPSurfaceOrder];
-  }
-}
-
 }  // namespace
 
 CVReturn DisplayLinkCallback(CVDisplayLinkRef display_link,
@@ -243,19 +229,6 @@ void CompositingIOSurfaceMac::CopyContext::PrepareForAsynchronousReadback() {
 
 
 // static
-CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create(int window_number) {
-  TRACE_EVENT0("browser", "CompositingIOSurfaceMac::Create");
-
-  scoped_refptr<CompositingIOSurfaceContext> context =
-      CompositingIOSurfaceContext::Get(window_number);
-  if (!context.get()) {
-    LOG(ERROR) << "Failed to create context for IOSurface";
-    return NULL;
-  }
-
-  return Create(context);
-}
-
 CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create(
     const scoped_refptr<CompositingIOSurfaceContext>& context) {
   IOSurfaceSupport* io_surface_support = IOSurfaceSupport::Initialize();
@@ -291,6 +264,7 @@ CompositingIOSurfaceMac::CompositingIOSurfaceMac(
       is_intel_(false),
       screen_(0),
       gl_error_(GL_NO_ERROR) {
+  CHECK(context_);
 }
 
 void CompositingIOSurfaceMac::SetupCVDisplayLink() {
@@ -329,33 +303,18 @@ void CompositingIOSurfaceMac::SetupCVDisplayLink() {
   StopDisplayLink();
 }
 
-void CompositingIOSurfaceMac::SwitchToContextOnNewWindow(NSView* view,
-                                                         int window_number) {
-  if (window_number == context_->window_number())
+void CompositingIOSurfaceMac::SetContext(
+    const scoped_refptr<CompositingIOSurfaceContext>& new_context) {
+  CHECK(new_context);
+
+  if (context_ == new_context)
     return;
 
-  // Asynchronous copies must complete in the same context they started in,
-  // defer updating the GL context to the new window until the copy finishes and
-  // all outstanding CopyContexts are destroyed.
-  if (!copy_requests_.empty())
-    return;
-  if (!copy_context_pool_.empty()) {
-    CGLSetCurrentContext(context_->cgl_context());
-    DestroyAllCopyContextsWithinContext();
-    CGLSetCurrentContext(0);
-  }
-
-  scoped_refptr<CompositingIOSurfaceContext> new_context =
-      CompositingIOSurfaceContext::Get(window_number);
-  if (!new_context.get())
-    return;
-
-  // Having two NSOpenGLContexts bound to an NSView concurrently will cause
-  // artifacts and crashes. If |context_| is bound to |view|, then unbind
-  // |context_| before |new_context| gets bound to |view|.
-  // http://crbug.com/230883
-  if ([context_->nsgl_context() view] == view)
-    [context_->nsgl_context() clearDrawable];
+  // Asynchronous copies must complete in the same context they started in.
+  FinishAllCopies();
+  CGLSetCurrentContext(context_->cgl_context());
+  DestroyAllCopyContextsWithinContext();
+  CGLSetCurrentContext(0);
 
   context_ = new_context;
 }
@@ -380,7 +339,7 @@ CompositingIOSurfaceMac::~CompositingIOSurfaceMac() {
   DestroyAllCopyContextsWithinContext();
   UnrefIOSurfaceWithContextCurrent();
   CGLSetCurrentContext(0);
-  context_ = nil;
+  context_ = NULL;
 }
 
 bool CompositingIOSurfaceMac::SetIOSurface(
@@ -411,36 +370,6 @@ int CompositingIOSurfaceMac::GetRendererID() {
                       &current_renderer_id) == kCGLNoError)
     return current_renderer_id & kCGLRendererIDMatchingMask;
   return -1;
-}
-
-bool CompositingIOSurfaceMac::DrawIOSurface(
-    RenderWidgetHostViewMac* render_widget_host_view) {
-  DCHECK(!render_widget_host_view->use_core_animation_);
-
-  NSView* view = render_widget_host_view->cocoa_view();
-  content::CompositingIOSurfaceMac::SurfaceOrder surface_order =
-     render_widget_host_view->allow_overlapping_views_
-     ? content::CompositingIOSurfaceMac::SURFACE_ORDER_BELOW_WINDOW
-     : content::CompositingIOSurfaceMac::SURFACE_ORDER_ABOVE_WINDOW;
-
-  SwitchToContextOnNewWindow(view, render_widget_host_view->window_number());
-  SetSurfaceOrder(context_->nsgl_context(), surface_order);
-
-  CGLError cgl_error = CGLSetCurrentContext(context_->cgl_context());
-  if (cgl_error != kCGLNoError) {
-    LOG(ERROR) << "CGLSetCurrentContext error in DrawIOSurface: " << cgl_error;
-    return false;
-  }
-
-  [context_->nsgl_context() setView:view];
-  bool result = DrawIOSurface(
-      gfx::Size(NSSizeToCGSize([view frame].size)),
-      render_widget_host_view->scale_factor(),
-      render_widget_host_view->frame_subscriber(),
-      false);
-  if (!result)
-    [context_->nsgl_context() clearDrawable];
-  return result;
 }
 
 bool CompositingIOSurfaceMac::DrawIOSurface(
@@ -646,7 +575,6 @@ base::Closure CompositingIOSurfaceMac::CopyToVideoFrameWithinContext(
                               region_in_frame.y() & ~1,
                               region_in_frame.width() & ~1,
                               region_in_frame.height() & ~1);
-  DCHECK(!region_in_frame.IsEmpty());
   DCHECK_LE(region_in_frame.right(), target->coded_size().width());
   DCHECK_LE(region_in_frame.bottom(), target->coded_size().height());
 
@@ -757,15 +685,6 @@ void CompositingIOSurfaceMac::UnrefIOSurfaceWithContextCurrent() {
   io_surface_handle_ = 0;
 }
 
-void CompositingIOSurfaceMac::GlobalFrameDidChange() {
-  [context_->nsgl_context() update];
-}
-
-void CompositingIOSurfaceMac::ClearDrawable() {
-  [context_->nsgl_context() clearDrawable];
-  UnrefIOSurface();
-}
-
 void CompositingIOSurfaceMac::DisplayLinkTick(CVDisplayLinkRef display_link,
                                               const CVTimeStamp* time) {
   TRACE_EVENT0("gpu", "CompositingIOSurfaceMac::DisplayLinkTick");
@@ -830,6 +749,10 @@ base::Closure CompositingIOSurfaceMac::CopyToSelectedOutputWithinContext(
       "output", bitmap_output ? "SkBitmap (ARGB)" : "VideoFrame (YV12)",
       "async_readback", async_copy);
 
+  const gfx::Rect src_rect = IntersectWithIOSurface(src_pixel_subrect);
+  if (src_rect.IsEmpty() || dst_pixel_rect.IsEmpty())
+    return base::Bind(done_callback, false);
+
   CopyContext* copy_context;
   if (copy_context_pool_.empty()) {
     // Limit the maximum number of simultaneous copies to two.  Rationale:
@@ -851,7 +774,6 @@ base::Closure CompositingIOSurfaceMac::CopyToSelectedOutputWithinContext(
     return base::Bind(done_callback, false);
 
   // Send transform commands to the GPU.
-  const gfx::Rect src_rect = IntersectWithIOSurface(src_pixel_subrect);
   copy_context->num_outputs = 0;
   if (bitmap_output) {
     if (copy_context->transformer->ResizeBilinear(

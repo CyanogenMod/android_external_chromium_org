@@ -10,6 +10,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/signin/fake_auth_status_provider.h"
 #include "chrome/browser/signin/fake_signin_manager.h"
 #include "chrome/browser/signin/signin_global_error.h"
@@ -26,7 +27,6 @@
 #include "chrome/browser/ui/cocoa/tabs/tab_strip_view.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
 #include "chrome/browser/ui/host_desktop.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/notification_service.h"
@@ -707,10 +707,10 @@ TEST_F(BrowserWindowControllerTest, TestSigninMenuItemAuthError) {
   SigninManager* signin = SigninManagerFactory::GetForProfile(profile());
   signin->SetAuthenticatedUsername(username);
   ProfileSyncService* sync =
-    ProfileSyncServiceFactory::GetForProfile(profile());
+      ProfileSyncServiceFactory::GetForProfile(profile());
   sync->SetSyncSetupCompleted();
   // Force an auth error.
-  FakeAuthStatusProvider provider(signin->signin_global_error());
+  FakeAuthStatusProvider provider(SigninGlobalError::GetForProfile(profile()));
   GoogleServiceAuthError error(
       GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
   provider.SetAuthError(error);

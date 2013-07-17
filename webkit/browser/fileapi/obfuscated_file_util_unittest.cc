@@ -16,8 +16,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/fileapi/async_file_test_helper.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
+#include "webkit/browser/fileapi/file_system_backend.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_mount_point_provider.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/file_system_task_runners.h"
 #include "webkit/browser/fileapi/file_system_usage_cache.h"
@@ -37,7 +37,7 @@ namespace fileapi {
 namespace {
 
 bool FileExists(const base::FilePath& path) {
-  return file_util::PathExists(path) && !file_util::DirectoryExists(path);
+  return base::PathExists(path) && !base::DirectoryExists(path);
 }
 
 int64 GetSize(const base::FilePath& path) {
@@ -720,7 +720,7 @@ TEST_F(ObfuscatedFileUtilTest, TestCreateAndDeleteFile) {
   base::FilePath local_path;
   EXPECT_EQ(base::PLATFORM_FILE_OK, ofu()->GetLocalFilePath(
       context.get(), url, &local_path));
-  EXPECT_TRUE(file_util::PathExists(local_path));
+  EXPECT_TRUE(base::PathExists(local_path));
 
   // Verify that deleting a file isn't stopped by zero quota, and that it frees
   // up quote from its path.
@@ -729,7 +729,7 @@ TEST_F(ObfuscatedFileUtilTest, TestCreateAndDeleteFile) {
   EXPECT_EQ(base::PLATFORM_FILE_OK,
             ofu()->DeleteFile(context.get(), url));
   EXPECT_EQ(1, change_observer()->get_and_reset_remove_file_count());
-  EXPECT_FALSE(file_util::PathExists(local_path));
+  EXPECT_FALSE(base::PathExists(local_path));
   EXPECT_EQ(ObfuscatedFileUtil::ComputeFilePathCost(url.path()),
       context->allowed_bytes_growth());
 
@@ -758,13 +758,13 @@ TEST_F(ObfuscatedFileUtilTest, TestCreateAndDeleteFile) {
   context.reset(NewContext(NULL));
   EXPECT_EQ(base::PLATFORM_FILE_OK, ofu()->GetLocalFilePath(
       context.get(), url, &local_path));
-  EXPECT_TRUE(file_util::PathExists(local_path));
+  EXPECT_TRUE(base::PathExists(local_path));
 
   context.reset(NewContext(NULL));
   EXPECT_EQ(base::PLATFORM_FILE_OK,
             ofu()->DeleteFile(context.get(), url));
   EXPECT_EQ(1, change_observer()->get_and_reset_remove_file_count());
-  EXPECT_FALSE(file_util::PathExists(local_path));
+  EXPECT_FALSE(base::PathExists(local_path));
 
   // Make sure we have no unexpected changes.
   EXPECT_TRUE(change_observer()->HasNoChange());
@@ -867,7 +867,7 @@ TEST_F(ObfuscatedFileUtilTest, TestQuotaOnTruncation) {
                 UnlimitedContext().get(),
                 url, &local_path));
   ASSERT_FALSE(local_path.empty());
-  ASSERT_TRUE(base::Delete(local_path, false));
+  ASSERT_TRUE(base::DeleteFile(local_path, false));
 
   EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_FOUND,
             ofu()->Truncate(
@@ -1670,7 +1670,7 @@ TEST_F(ObfuscatedFileUtilTest, TestIncompleteDirectoryReading) {
   base::FilePath local_path;
   EXPECT_EQ(base::PLATFORM_FILE_OK,
             ofu()->GetLocalFilePath(context.get(), kPath[0], &local_path));
-  EXPECT_TRUE(base::Delete(local_path, false));
+  EXPECT_TRUE(base::DeleteFile(local_path, false));
 
   entries.clear();
   EXPECT_EQ(base::PLATFORM_FILE_OK,

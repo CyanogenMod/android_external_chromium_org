@@ -45,19 +45,29 @@ struct IoCounters {
 //                 other process.
 //
 // On Linux:
-// priv:           Pages mapped only by this process
-// shared:         PSS or 0 if the kernel doesn't support this
+// priv:           Pages mapped only by this process.
+// shared:         PSS or 0 if the kernel doesn't support this.
 // shareable:      0
+
+// On ChromeOS:
+// priv:           Pages mapped only by this process.
+// shared:         PSS or 0 if the kernel doesn't support this.
+// shareable:      0
+// swapped         Pages swapped out to zram.
 //
 // On OS X: TODO(thakis): Revise.
 // priv:           Memory.
 // shared:         0
 // shareable:      0
+//
 struct WorkingSetKBytes {
   WorkingSetKBytes() : priv(0), shareable(0), shared(0) {}
   size_t priv;
   size_t shareable;
   size_t shared;
+#if defined(OS_CHROMEOS)
+  size_t swapped;
+#endif
 };
 
 // Committed (resident + paged) memory usage broken down by
@@ -236,6 +246,23 @@ struct BASE_EXPORT SystemMemoryInfoKB {
 // Exposed for memory debugging widget.
 BASE_EXPORT bool GetSystemMemoryInfo(SystemMemoryInfoKB* meminfo);
 #endif  // defined(OS_LINUX) || defined(OS_ANDROID)
+
+#if defined(OS_LINUX) || defined(OS_ANDROID)
+// Get the number of threads of |process| as available in /proc/<pid>/stat.
+// This should be used with care as no synchronization with running threads is
+// done. This is mostly useful to guarantee being single-threaded.
+// Returns 0 on failure.
+BASE_EXPORT int GetNumberOfThreads(ProcessHandle process);
+
+// /proc/self/exe refers to the current executable.
+BASE_EXPORT extern const char kProcSelfExe[];
+#endif  // defined(OS_LINUX) || defined(OS_ANDROID)
+
+#if defined(OS_POSIX)
+// Returns the maximum number of file descriptors that can be open by a process
+// at once. If the number is unavailable, a conservative best guess is returned.
+size_t GetMaxFds();
+#endif  // defined(OS_POSIX)
 
 }  // namespace base
 

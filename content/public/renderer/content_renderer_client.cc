@@ -54,14 +54,15 @@ ContentRendererClient::OverrideCreateWebRTCPeerConnectionHandler(
   return NULL;
 }
 
-webkit_media::MediaStreamClient*
-ContentRendererClient::OverrideCreateMediaStreamClient() {
-  return NULL;
-}
-
 WebKit::WebMIDIAccessor*
 ContentRendererClient::OverrideCreateMIDIAccessor(
     WebKit::WebMIDIAccessorClient* client) {
+  return NULL;
+}
+
+WebKit::WebAudioDevice*
+ContentRendererClient::OverrideCreateAudioDevice(
+    double sample_rate) {
   return NULL;
 }
 

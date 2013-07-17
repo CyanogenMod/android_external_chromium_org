@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/callback.h"
 #include "base/file_util.h"
 #include "base/mac/foundation_util.h"
 #include "base/mac/scoped_cftyperef.h"
@@ -13,13 +14,14 @@
 #include "base/platform_file.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/policy/external_data_fetcher.h"
 #include "chrome/browser/policy/policy_bundle.h"
 #include "chrome/browser/policy/policy_domain_descriptor.h"
 #include "chrome/browser/policy/policy_load_status.h"
 #include "chrome/browser/policy/policy_map.h"
-#include "chrome/browser/policy/policy_schema.h"
 #include "chrome/browser/policy/preferences_mac.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/policy/policy_schema.h"
 #include "policy/policy_constants.h"
 
 using base::mac::CFCast;
@@ -122,7 +124,7 @@ scoped_ptr<PolicyBundle> PolicyLoaderMac::Load() {
     // TODO(joaodasilva): figure the policy scope.
     base::Value* policy = CreateValueFromProperty(value);
     if (policy)
-      chrome_policy.Set(current->name, level, POLICY_SCOPE_USER, policy);
+      chrome_policy.Set(current->name, level, POLICY_SCOPE_USER, policy, NULL);
     else
       status.Add(POLICY_LOAD_STATUS_PARSE_ERROR);
   }
@@ -258,7 +260,8 @@ void PolicyLoaderMac::LoadPolicyForComponent(
                                  POLICY_LEVEL_RECOMMENDED;
     scoped_ptr<base::Value> policy_value(CreateValueFromProperty(value));
     if (policy_value)
-      policy->Set(it->first, level, POLICY_SCOPE_USER, policy_value.release());
+      policy->Set(it->first, level, POLICY_SCOPE_USER,
+                  policy_value.release(), NULL);
   }
 }
 

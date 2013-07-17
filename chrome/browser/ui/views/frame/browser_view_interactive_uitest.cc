@@ -29,7 +29,7 @@
 #include "ui/views/window/non_client_view.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "content/public/browser/notification_service.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
@@ -267,17 +267,6 @@ IN_PROC_BROWSER_TEST_F(BrowserViewImmersiveInstantExtendedTest,
   // Type in the omnibox, which should generate suggestions in the main page
   // contents.
   SetOmniboxText("claus");
-  // The autocomplete controller isn't done until all the providers are done.
-  // Though we don't care about the SearchProvider when we send autocomplete
-  // results to the page, we do need to cause it to be "done" to make this test
-  // work. Setting the suggestion calls SearchProvider::FinalizeInstantQuery(),
-  // thus causing it to be done.
-  omnibox()->model()->SetInstantSuggestion(
-      InstantSuggestion(ASCIIToUTF16("query"),
-                        INSTANT_COMPLETE_NOW,
-                        INSTANT_SUGGESTION_SEARCH,
-                        ASCIIToUTF16("query"),
-                        kNoMatchIndex));
   while (!omnibox()->model()->autocomplete_controller()->done()) {
     content::WindowedNotificationObserver autocomplete_observer(
         chrome::NOTIFICATION_AUTOCOMPLETE_CONTROLLER_RESULT_READY,

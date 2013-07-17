@@ -19,7 +19,6 @@ include $(LOCAL_PATH)/base/base_java_memory_pressure_level_list.target.darwin-x8
 include $(LOCAL_PATH)/base/base_jni_headers.target.darwin-x86.mk
 include $(LOCAL_PATH)/base/base_prefs.target.darwin-x86.mk
 include $(LOCAL_PATH)/base/base_static.target.darwin-x86.mk
-include $(LOCAL_PATH)/base/symbolize.target.darwin-x86.mk
 include $(LOCAL_PATH)/base/third_party/dynamic_annotations/dynamic_annotations.target.darwin-x86.mk
 include $(LOCAL_PATH)/cc/cc.target.darwin-x86.mk
 include $(LOCAL_PATH)/components/auto_login_parser.target.darwin-x86.mk
@@ -58,7 +57,6 @@ include $(LOCAL_PATH)/content/content_renderer.target.darwin-x86.mk
 include $(LOCAL_PATH)/content/content_resources.target.darwin-x86.mk
 include $(LOCAL_PATH)/content/content_utility.target.darwin-x86.mk
 include $(LOCAL_PATH)/content/content_worker.target.darwin-x86.mk
-include $(LOCAL_PATH)/content/generate_content_resources.target.darwin-x86.mk
 include $(LOCAL_PATH)/content/java_set_jni_headers.target.darwin-x86.mk
 include $(LOCAL_PATH)/content/page_transition_types_java.target.darwin-x86.mk
 include $(LOCAL_PATH)/content/result_codes_java.target.darwin-x86.mk
@@ -82,7 +80,6 @@ include $(LOCAL_PATH)/media/media.target.darwin-x86.mk
 include $(LOCAL_PATH)/media/media_android_jni_headers.target.darwin-x86.mk
 include $(LOCAL_PATH)/media/media_asm.target.darwin-x86.mk
 include $(LOCAL_PATH)/media/media_mmx.target.darwin-x86.mk
-include $(LOCAL_PATH)/media/media_player_jni_headers.target.darwin-x86.mk
 include $(LOCAL_PATH)/media/media_sse.target.darwin-x86.mk
 include $(LOCAL_PATH)/media/media_sse2.target.darwin-x86.mk
 include $(LOCAL_PATH)/media/player_android.target.darwin-x86.mk
@@ -113,7 +110,9 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/blink_common.tar
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/skia_webkit.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/webkit.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.darwin-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/supplemental_dependencies.target.darwin-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/deprecated_perl_bindings_sources.target.darwin-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/interface_dependencies.target.darwin-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/python_bindings_sources.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/config.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/debugger_script_source.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/generate_inspector_protocol_version.target.darwin-x86.mk
@@ -237,26 +236,25 @@ include $(LOCAL_PATH)/v8/tools/gyp/v8_base.ia32.host.darwin-x86.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_base.ia32.target.darwin-x86.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_nosnapshot.ia32.host.darwin-x86.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_snapshot.target.darwin-x86.mk
-include $(LOCAL_PATH)/webkit/base/webkit_base.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/common/gpu/webkit_gpu.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/user_agent.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/webkit_version.target.darwin-x86.mk
+include $(LOCAL_PATH)/webkit/common/webkit_common.target.darwin-x86.mk
+include $(LOCAL_PATH)/webkit/glue/glue_common.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/plugins/plugins_common.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_bindings.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_support.target.darwin-x86.mk
+include $(LOCAL_PATH)/webkit/renderer/webkit_renderer.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/support/glue.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/support/glue_child.target.darwin-x86.mk
-include $(LOCAL_PATH)/webkit/support/glue_common.target.darwin-x86.mk
-include $(LOCAL_PATH)/webkit/support/glue_renderer.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/support/overscroller_jni_headers.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/support/plugins.target.darwin-x86.mk
-include $(LOCAL_PATH)/webkit/support/webkit_common.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/support/webkit_media.target.darwin-x86.mk
-include $(LOCAL_PATH)/webkit/support/webkit_resources.target.darwin-x86.mk
-include $(LOCAL_PATH)/webkit/support/webkit_strings.target.darwin-x86.mk
+include $(LOCAL_PATH)/webkit/webkit_resources.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_browser.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_common.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_renderer.target.darwin-x86.mk
+include $(LOCAL_PATH)/webkit/webkit_strings.target.darwin-x86.mk
 
 # "gyp_all_modules" is a concatenation of the "gyp_all_modules" targets from
 # all the included sub-makefiles. This is just here to clarify.

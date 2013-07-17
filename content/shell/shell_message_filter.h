@@ -12,6 +12,10 @@
 #include "base/files/file_path.h"
 #include "content/public/browser/browser_message_filter.h"
 
+namespace net {
+class URLRequestContextGetter;
+}
+
 namespace quota {
 class QuotaManager;
 }
@@ -26,7 +30,8 @@ class ShellMessageFilter : public BrowserMessageFilter {
  public:
   ShellMessageFilter(int render_process_id,
                      webkit_database::DatabaseTracker* database_tracker,
-                     quota::QuotaManager* quota_manager);
+                     quota::QuotaManager* quota_manager,
+                     net::URLRequestContextGetter* request_context_getter);
 
  private:
   virtual ~ShellMessageFilter();
@@ -45,11 +50,13 @@ class ShellMessageFilter : public BrowserMessageFilter {
   void OnClearAllDatabases();
   void OnSetDatabaseQuota(int quota);
   void OnAcceptAllCookies(bool accept);
+  void OnDeleteAllCookies();
 
   int render_process_id_;
 
   webkit_database::DatabaseTracker* database_tracker_;
   quota::QuotaManager* quota_manager_;
+  net::URLRequestContextGetter* request_context_getter_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellMessageFilter);
 };

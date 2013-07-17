@@ -24,8 +24,8 @@
 #include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/native_file_util.h"
+#include "webkit/browser/fileapi/sandbox_file_system_backend.h"
 #include "webkit/browser/fileapi/sandbox_isolated_origin_database.h"
-#include "webkit/browser/fileapi/sandbox_mount_point_provider.h"
 #include "webkit/browser/fileapi/sandbox_origin_database.h"
 #include "webkit/browser/fileapi/syncable/syncable_file_system_util.h"
 #include "webkit/browser/fileapi/timed_task_helper.h"
@@ -244,7 +244,7 @@ class ObfuscatedOriginEnumerator
     }
     base::FilePath path =
         base_file_path_.Append(current_.path).Append(type_string);
-    return file_util::DirectoryExists(path);
+    return base::DirectoryExists(path);
   }
 
  private:
@@ -874,7 +874,7 @@ base::FilePath ObfuscatedFileUtil::GetDirectoryForOriginAndType(
   }
   base::FilePath path = origin_dir.Append(type_string);
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
-  if (!file_util::DirectoryExists(path) &&
+  if (!base::DirectoryExists(path) &&
       (!create || !file_util::CreateDirectory(path))) {
     error = create ?
           base::PLATFORM_FILE_ERROR_FAILED :
@@ -901,7 +901,7 @@ bool ObfuscatedFileUtil::DeleteDirectoryForOriginAndType(
     // implementation.
     // Information about failure would be useful for debugging.
     DestroyDirectoryDatabase(origin, type);
-    if (!base::Delete(origin_type_path, true /* recursive */))
+    if (!base::DeleteFile(origin_type_path, true /* recursive */))
       return false;
   }
 
@@ -922,7 +922,7 @@ bool ObfuscatedFileUtil::DeleteDirectoryForOriginAndType(
   DCHECK(type != kFileSystemTypeSyncableForInternalSync);
 
   for (size_t i = 0; i < other_types.size(); ++i) {
-    if (file_util::DirectoryExists(
+    if (base::DirectoryExists(
             origin_path.Append(GetDirectoryNameForType(other_types[i])))) {
       // Other type's directory exists; just return true here.
       return true;
@@ -935,7 +935,7 @@ bool ObfuscatedFileUtil::DeleteDirectoryForOriginAndType(
     origin_database_->RemovePathForOrigin(
         webkit_database::GetIdentifierFromOrigin(origin));
   }
-  if (!base::Delete(origin_path, true /* recursive */))
+  if (!base::DeleteFile(origin_path, true /* recursive */))
     return false;
 
   return true;
@@ -995,7 +995,7 @@ int64 ObfuscatedFileUtil::ComputeFilePathCost(const base::FilePath& path) {
 void ObfuscatedFileUtil::MaybePrepopulateDatabase() {
   base::FilePath isolated_origin_dir = file_system_directory_.Append(
       SandboxIsolatedOriginDatabase::kOriginDirectory);
-  if (!file_util::DirectoryExists(isolated_origin_dir))
+  if (!base::DirectoryExists(isolated_origin_dir))
     return;
 
   const FileSystemType kPrepopulateTypes[] = {
@@ -1009,7 +1009,7 @@ void ObfuscatedFileUtil::MaybePrepopulateDatabase() {
     base::FilePath::StringType type_string = GetDirectoryNameForType(type);
     DCHECK(!type_string.empty());
     base::FilePath path = isolated_origin_dir.Append(type_string);
-    if (!file_util::DirectoryExists(path))
+    if (!base::DirectoryExists(path))
       continue;
     scoped_ptr<SandboxDirectoryDatabase> db(new SandboxDirectoryDatabase(path));
     if (db->Init(SandboxDirectoryDatabase::FAIL_ON_CORRUPTION)) {
@@ -1103,8 +1103,8 @@ PlatformFileError ObfuscatedFileUtil::CreateFile(
         src_file_path, dest_local_path, true /* copy */);
     created = true;
   } else {
-    if (file_util::PathExists(dest_local_path)) {
-      if (!base::Delete(dest_local_path, true /* recursive */)) {
+    if (base::PathExists(dest_local_path)) {
+      if (!base::DeleteFile(dest_local_path, true /* recursive */)) {
         NOTREACHED();
         return base::PLATFORM_FILE_ERROR_FAILED;
       }
@@ -1129,7 +1129,7 @@ PlatformFileError ObfuscatedFileUtil::CreateFile(
     if (handle) {
       DCHECK_NE(base::kInvalidPlatformFileValue, *handle);
       base::ClosePlatformFile(*handle);
-      base::Delete(dest_local_path, false /* recursive */);
+      base::DeleteFile(dest_local_path, false /* recursive */);
     }
     return base::PLATFORM_FILE_ERROR_FAILED;
   }
@@ -1145,7 +1145,7 @@ PlatformFileError ObfuscatedFileUtil::CreateFile(
       DCHECK_NE(base::kInvalidPlatformFileValue, *handle);
       base::ClosePlatformFile(*handle);
     }
-    base::Delete(dest_local_path, false /* recursive */);
+    base::DeleteFile(dest_local_path, false /* recursive */);
     return base::PLATFORM_FILE_ERROR_FAILED;
   }
   TouchDirectory(db, dest_file_info->parent_id);
@@ -1238,9 +1238,9 @@ base::FilePath ObfuscatedFileUtil::GetDirectoryForOrigin(
   }
 
   base::FilePath path = file_system_directory_.Append(directory_name);
-  bool exists_in_fs = file_util::DirectoryExists(path);
+  bool exists_in_fs = base::DirectoryExists(path);
   if (!exists_in_db && exists_in_fs) {
-    if (!base::Delete(path, true)) {
+    if (!base::DeleteFile(path, true)) {
       if (error_code)
         *error_code = base::PLATFORM_FILE_ERROR_FAILED;
       return base::FilePath();
@@ -1298,7 +1298,7 @@ bool ObfuscatedFileUtil::InitOriginDatabase(bool create) {
   if (origin_database_)
     return true;
 
-  if (!create && !file_util::DirectoryExists(file_system_directory_))
+  if (!create && !base::DirectoryExists(file_system_directory_))
     return false;
   if (!file_util::CreateDirectory(file_system_directory_)) {
     LOG(WARNING) << "Failed to create FileSystem directory: " <<

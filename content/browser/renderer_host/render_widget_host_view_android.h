@@ -18,6 +18,7 @@
 #include "cc/layers/texture_layer_client.h"
 #include "cc/output/begin_frame_args.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
+#include "content/browser/renderer_host/image_transport_factory_android.h"
 #include "content/browser/renderer_host/ime_adapter_android.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "gpu/command_buffer/common/mailbox.h"
@@ -58,7 +59,8 @@ class RenderWidgetHostViewAndroid
     : public RenderWidgetHostViewBase,
       public BrowserAccessibilityDelegate,
       public cc::TextureLayerClient,
-      public cc::DelegatedRendererLayerClient {
+      public cc::DelegatedRendererLayerClient,
+      public ImageTransportFactoryAndroidObserver {
  public:
   RenderWidgetHostViewAndroid(RenderWidgetHostImpl* widget,
                               ContentViewCoreImpl* content_view_core);
@@ -95,18 +97,16 @@ class RenderWidgetHostViewAndroid
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
   virtual void TextInputTypeChanged(ui::TextInputType type,
-                                    bool can_compose_inline) OVERRIDE;
+                                    bool can_compose_inline,
+                                    ui::TextInputMode input_mode) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
-  virtual void ImeCompositionRangeChanged(
-      const ui::Range& range,
-      const std::vector<gfx::Rect>& character_bounds) OVERRIDE;
   virtual void DidUpdateBackingStore(
       const gfx::Rect& scroll_rect,
       const gfx::Vector2d& scroll_delta,
       const std::vector<gfx::Rect>& copy_rects,
       const ui::LatencyInfo& latency_info) OVERRIDE;
-  virtual void RenderViewGone(base::TerminationStatus status,
-                              int error_code) OVERRIDE;
+  virtual void RenderProcessGone(base::TerminationStatus status,
+                                 int error_code) OVERRIDE;
   virtual void Destroy() OVERRIDE;
   virtual void SetTooltipText(const string16& tooltip_text) OVERRIDE;
   virtual void SelectionChanged(const string16& text,
@@ -178,12 +178,16 @@ class RenderWidgetHostViewAndroid
   virtual void FatalAccessibilityTreeError() OVERRIDE;
 
   // cc::TextureLayerClient implementation.
-  virtual unsigned PrepareTexture(cc::ResourceUpdateQueue* queue) OVERRIDE;
+  virtual unsigned PrepareTexture() OVERRIDE;
   virtual WebKit::WebGraphicsContext3D* Context3d() OVERRIDE;
-  virtual bool PrepareTextureMailbox(cc::TextureMailbox* mailbox) OVERRIDE;
+  virtual bool PrepareTextureMailbox(cc::TextureMailbox* mailbox,
+                                     bool use_shared_memory) OVERRIDE;
 
   // cc::DelegatedRendererLayerClient implementation.
   virtual void DidCommitFrameData() OVERRIDE;
+
+  // ImageTransportFactoryAndroidObserver implementation.
+  virtual void OnLostResources() OVERRIDE;
 
   // Non-virtual methods
   void SetContentViewCore(ContentViewCoreImpl* content_view_core);

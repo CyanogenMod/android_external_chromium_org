@@ -5,7 +5,7 @@
 #ifndef CONTENT_BROWSER_RENDERER_HOST_MEDIA_VIDEO_CAPTURE_CONTROLLER_EVENT_HANDLER_H_
 #define CONTENT_BROWSER_RENDERER_HOST_MEDIA_VIDEO_CAPTURE_CONTROLLER_EVENT_HANDLER_H_
 
-#include "base/shared_memory.h"
+#include "base/memory/shared_memory.h"
 #include "base/time/time.h"
 #include "content/common/content_export.h"
 
@@ -44,6 +44,12 @@ class CONTENT_EXPORT VideoCaptureControllerEventHandler {
                            int width,
                            int height,
                            int frame_rate) = 0;
+
+  // The frame resolution the VideoCaptureDevice capture video in.
+  virtual void OnFrameInfoChanged(const VideoCaptureControllerID& id,
+                                  int width,
+                                  int height,
+                                  int frame_rate) {};
 
   // The capture session has ended and no more frames will be sent.
   virtual void OnEnded(const VideoCaptureControllerID& id) = 0;

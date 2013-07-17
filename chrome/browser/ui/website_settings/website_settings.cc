@@ -62,6 +62,7 @@ ContentSettingsType kPermissionType[] = {
   CONTENT_SETTINGS_TYPE_FULLSCREEN,
   CONTENT_SETTINGS_TYPE_MOUSELOCK,
   CONTENT_SETTINGS_TYPE_MEDIASTREAM,
+  CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS,
 };
 
 }  // namespace
@@ -229,7 +230,7 @@ void WebsiteSettings::OnSiteDataAccessed() {
 
 void WebsiteSettings::OnUIClosing() {
   if (show_info_bar_)
-    WebsiteSettingsInfobarDelegate::Create(infobar_service_);
+    WebsiteSettingsInfoBarDelegate::Create(infobar_service_);
 }
 
 void WebsiteSettings::Init(Profile* profile,

@@ -101,6 +101,9 @@
 #include "content/renderer/media/renderer_gpu_video_decoder_factories.h"
 #include "content/renderer/media/rtc_peer_connection_handler.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
+#include "content/renderer/media/webmediaplayer_impl.h"
+#include "content/renderer/media/webmediaplayer_ms.h"
+#include "content/renderer/media/webmediaplayer_params.h"
 #include "content/renderer/mhtml_generator.h"
 #include "content/renderer/notification_provider.h"
 #include "content/renderer/pepper/pepper_plugin_delegate_impl.h"
@@ -193,8 +196,6 @@
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/skia/include/core/SkBitmap.h"
-#include "third_party/skia/include/core/SkPicture.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
@@ -212,9 +213,6 @@
 #include "webkit/plugins/npapi/webplugin_delegate_impl.h"
 #include "webkit/plugins/npapi/webplugin_impl.h"
 #include "webkit/renderer/appcache/web_application_cache_host_impl.h"
-#include "webkit/renderer/media/webmediaplayer_impl.h"
-#include "webkit/renderer/media/webmediaplayer_ms.h"
-#include "webkit/renderer/media/webmediaplayer_params.h"
 #include "webkit/renderer/webpreferences_renderer.h"
 
 #if defined(OS_ANDROID)
@@ -226,10 +224,11 @@
 #include "content/renderer/android/content_detector.h"
 #include "content/renderer/android/email_detector.h"
 #include "content/renderer/android/phone_number_detector.h"
+#include "content/renderer/media/android/renderer_media_player_manager.h"
 #include "content/renderer/media/android/stream_texture_factory_android.h"
 #include "content/renderer/media/android/webmediaplayer_android.h"
-#include "content/renderer/media/android/webmediaplayer_manager_android.h"
 #include "content/renderer/media/android/webmediaplayer_proxy_android.h"
+#include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/web/WebHitTestResult.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebFloatRect.h"
@@ -619,6 +618,18 @@ static bool ShouldUseTransitionCompositing(float device_scale_factor) {
   return false;
 }
 
+static bool ShouldUseAcceleratedFixedRootBackground(float device_scale_factor) {
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+
+  if (command_line.HasSwitch(switches::kDisableAcceleratedFixedRootBackground))
+    return false;
+
+  if (command_line.HasSwitch(switches::kEnableAcceleratedFixedRootBackground))
+    return true;
+
+  return DeviceScaleEnsuresTextQuality(device_scale_factor);
+}
+
 static FaviconURL::IconType ToFaviconType(WebKit::WebIconURL::Type type) {
   switch (type) {
     case WebKit::WebIconURL::TypeFavicon:
@@ -793,7 +804,8 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       device_orientation_dispatcher_(NULL),
       media_stream_dispatcher_(NULL),
       browser_plugin_manager_(NULL),
-      media_stream_impl_(NULL),
+      media_stream_client_(NULL),
+      web_user_media_client_(NULL),
       devtools_agent_(NULL),
       accessibility_mode_(AccessibilityModeOff),
       renderer_accessibility_(NULL),
@@ -898,6 +910,8 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
       ShouldUseAcceleratedCompositingForOverflowScroll(device_scale_factor_));
   webview()->settings()->setAcceleratedCompositingForTransitionEnabled(
       ShouldUseTransitionCompositing(device_scale_factor_));
+  webview()->settings()->setAcceleratedCompositingForFixedRootBackgroundEnabled(
+      ShouldUseAcceleratedFixedRootBackground(device_scale_factor_));
 
   webkit_glue::ApplyWebPreferences(webkit_preferences_, webview());
   webview()->initializeMainFrame(main_render_frame_.get());
@@ -924,7 +938,7 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
 #endif  // defined(OS_MACOSX)
 
 #if defined(OS_ANDROID)
-  media_player_manager_.reset(new WebMediaPlayerManagerAndroid());
+  media_player_manager_.reset(new RendererMediaPlayerManager());
 #endif
 
   // The next group of objects all implement RenderViewObserver, so are deleted
@@ -967,6 +981,8 @@ RenderViewImpl::~RenderViewImpl() {
 
   if (decrement_shared_popup_at_destruction_)
     shared_popup_counter_->data--;
+
+  base::debug::TraceLog::GetInstance()->RemoveProcessLabel(routing_id_);
 
   // If file chooser is still waiting for answer, dispatch empty answer.
   while (!file_chooser_completions_.empty()) {
@@ -1319,6 +1335,11 @@ void RenderViewImpl::OnNavigate(const ViewMsg_Navigate_Params& params) {
     // params.state.  Setting is_reload to false will treat this like a back
     // navigation to accomplish that.
     is_reload = false;
+
+    // We refresh timezone when a view is swapped in since timezone
+    // can get out of sync when the system timezone is updated while
+    // the view is swapped out.
+    NotifyTimezoneChange(webview()->mainFrame());
 
     SetSwappedOut(false);
   }
@@ -1954,6 +1975,9 @@ void RenderViewImpl::UpdateTitle(WebFrame* frame,
   if (frame->parent())
     return;
 
+  base::debug::TraceLog::GetInstance()->UpdateProcessLabel(
+      routing_id_, UTF16ToUTF8(title));
+
   string16 shortened_title = title.substr(0, kMaxTitleChars);
   Send(new ViewHostMsg_UpdateTitle(routing_id_, page_id_, shortened_title,
                                    title_direction));
@@ -2012,6 +2036,14 @@ void RenderViewImpl::OpenURL(WebFrame* frame,
     params.is_cross_site_redirect = ds->isClientRedirect();
   } else {
     params.is_cross_site_redirect = false;
+  }
+  params.user_gesture = WebUserGestureIndicator::isProcessingUserGesture();
+
+  if (policy == WebKit::WebNavigationPolicyNewBackgroundTab ||
+      policy == WebKit::WebNavigationPolicyNewForegroundTab ||
+      policy == WebKit::WebNavigationPolicyNewWindow ||
+      policy == WebKit::WebNavigationPolicyNewPopup) {
+    WebUserGestureIndicator::consumeUserGesture();
   }
 
   Send(new ViewHostMsg_OpenURL(routing_id_, params));
@@ -2394,7 +2426,7 @@ bool RenderViewImpl::runFileChooser(
   for (size_t i = 0; i < params.acceptTypes.size(); ++i)
     ipc_params.accept_types.push_back(params.acceptTypes[i]);
 #if defined(OS_ANDROID)
-  ipc_params.capture = params.capture;
+  ipc_params.capture = params.useMediaCapture;
 #endif
 
   return ScheduleFileChooser(ipc_params, chooser_completion);
@@ -2851,25 +2883,20 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
       RenderViewObserver, observers_, WillCreateMediaPlayer(frame, client));
 
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-#if defined(ENABLE_WEBRTC) && !defined(GOOGLE_TV)
-  webkit_media::MediaStreamClient* media_stream_client =
-      GetContentClient()->renderer()->OverrideCreateMediaStreamClient();
-  if (!media_stream_client) {
-    EnsureMediaStreamImpl();
-    media_stream_client = media_stream_impl_;
-  }
-
-  if (media_stream_client->IsMediaStream(url)) {
+#if defined(ENABLE_WEBRTC)
+  EnsureMediaStreamClient();
+#if !defined(GOOGLE_TV)
+  if (media_stream_client_->IsMediaStream(url)) {
 #if defined(OS_ANDROID) && defined(ARCH_CPU_ARMEL)
     bool found_neon =
         (android_getCpuFeatures() & ANDROID_CPU_ARM_FEATURE_NEON) != 0;
     UMA_HISTOGRAM_BOOLEAN("Platform.WebRtcNEONFound", found_neon);
 #endif  // defined(OS_ANDROID) && defined(ARCH_CPU_ARMEL)
-    EnsureMediaStreamImpl();
-    return new webkit_media::WebMediaPlayerMS(
-        frame, client, AsWeakPtr(), media_stream_client, new RenderMediaLog());
+    return new WebMediaPlayerMS(
+        frame, client, AsWeakPtr(), media_stream_client_, new RenderMediaLog());
   }
-#endif
+#endif  // !defined(GOOGLE_TV)
+#endif  // defined(ENABLE_WEBRTC)
 
 #if defined(OS_ANDROID)
   GpuChannelHost* gpu_channel_host =
@@ -2902,14 +2929,13 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
               context_provider->Context3d(), gpu_channel_host, routing_id_),
           new RenderMediaLog()));
 #if defined(ENABLE_WEBRTC) && defined(GOOGLE_TV)
-  if (MediaStreamImpl::CheckMediaStream(url)) {
-    EnsureMediaStreamImpl();
+  if (media_stream_client_->IsMediaStream(url)) {
     RTCVideoDecoderFactoryTv* factory = RenderThreadImpl::current()
         ->GetMediaStreamDependencyFactory()->decoder_factory_tv();
-    // |media_stream_impl_| and |factory| outlives |web_media_player_android|.
+    // |media_stream_client| and |factory| outlives |web_media_player_android|.
     if (!factory->AcquireDemuxer() ||
         !web_media_player_android->InjectMediaStream(
-            media_stream_impl_,
+            media_stream_client_,
             factory,
             base::Bind(
                 base::IgnoreResult(&RTCVideoDecoderFactoryTv::ReleaseDemuxer),
@@ -2929,23 +2955,10 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
     DVLOG(1) << "Using AudioRendererMixerManager-provided sink: " << sink.get();
   }
 
-  scoped_refptr<media::GpuVideoDecoder::Factories> gpu_factories;
-  WebGraphicsContext3DCommandBufferImpl* context3d = NULL;
-  if (!cmd_line->HasSwitch(switches::kDisableAcceleratedVideoDecode))
-    context3d = RenderThreadImpl::current()->GetGpuVDAContext3D();
-  if (context3d) {
-    scoped_refptr<base::MessageLoopProxy> factories_loop =
-        RenderThreadImpl::current()->compositor_message_loop_proxy();
-    if (!factories_loop.get())
-      factories_loop = base::MessageLoopProxy::current();
-    GpuChannelHost* gpu_channel_host =
-        RenderThreadImpl::current()->EstablishGpuChannelSync(
-            CAUSE_FOR_GPU_LAUNCH_VIDEODECODEACCELERATOR_INITIALIZE);
-    gpu_factories = new RendererGpuVideoDecoderFactories(
-        gpu_channel_host, factories_loop, context3d);
-  }
+  scoped_refptr<media::GpuVideoDecoder::Factories> gpu_factories =
+      RenderThreadImpl::current()->GetGpuFactories();
 
-  webkit_media::WebMediaPlayerParams params(
+  WebMediaPlayerParams params(
       RenderThreadImpl::current()->GetMediaThreadMessageLoopProxy(),
       base::Bind(&ContentRendererClient::DeferMediaLoad,
                  base::Unretained(GetContentClient()->renderer()),
@@ -2953,8 +2966,7 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
       sink,
       gpu_factories,
       new RenderMediaLog());
-  return new webkit_media::WebMediaPlayerImpl(
-      frame, client, AsWeakPtr(), params);
+  return new WebMediaPlayerImpl(frame, client, AsWeakPtr(), params);
 }
 
 WebApplicationCacheHost* RenderViewImpl::createApplicationCacheHost(
@@ -3314,8 +3326,10 @@ void RenderViewImpl::willSubmitForm(WebFrame* frame,
   InternalDocumentStateData* internal_data =
       InternalDocumentStateData::FromDocumentState(document_state);
 
-  if (navigation_state->transition_type() == PAGE_TRANSITION_LINK)
+  if (PageTransitionCoreTypeIs(navigation_state->transition_type(),
+                               PAGE_TRANSITION_LINK)) {
     navigation_state->set_transition_type(PAGE_TRANSITION_FORM_SUBMIT);
+  }
 
   // Save these to be processed when the ensuing navigation is committed.
   WebSearchableFormData web_searchable_form_data(form);
@@ -3698,8 +3712,8 @@ void RenderViewImpl::didFailProvisionalLoad(WebFrame* frame,
   //
   bool replace =
       navigation_state->pending_page_id() != -1 ||
-      navigation_state->transition_type() ==
-          PAGE_TRANSITION_AUTO_SUBFRAME;
+      PageTransitionCoreTypeIs(navigation_state->transition_type(),
+                               PAGE_TRANSITION_AUTO_SUBFRAME);
 
   // If we failed on a browser initiated request, then make sure that our error
   // page load is regarded as the same browser initiated request.
@@ -3938,8 +3952,13 @@ void RenderViewImpl::didFailLoad(WebFrame* frame, const WebURLError& error) {
 void RenderViewImpl::didFinishLoad(WebFrame* frame) {
   WebDataSource* ds = frame->dataSource();
   DocumentState* document_state = DocumentState::FromDataSource(ds);
-  if (document_state->finish_load_time().is_null())
+  if (document_state->finish_load_time().is_null()) {
+    if (!frame->parent()) {
+      TRACE_EVENT_INSTANT0("WebCore", "LoadFinished",
+                           TRACE_EVENT_SCOPE_PROCESS);
+    }
     document_state->set_finish_load_time(Time::Now());
+  }
 
   FOR_EACH_OBSERVER(RenderViewObserver, observers_, DidFinishLoad(frame));
 
@@ -4254,7 +4273,7 @@ BrowserPluginManager* RenderViewImpl::GetBrowserPluginManager() {
   return browser_plugin_manager_.get();
 }
 
-void RenderViewImpl::EnsureMediaStreamImpl() {
+void RenderViewImpl::EnsureMediaStreamClient() {
   if (!RenderThreadImpl::current())  // Will be NULL during unit tests.
     return;
 
@@ -4267,11 +4286,13 @@ void RenderViewImpl::EnsureMediaStreamImpl() {
   if (!media_stream_dispatcher_)
     media_stream_dispatcher_ = new MediaStreamDispatcher(this);
 
-  if (!media_stream_impl_) {
-    media_stream_impl_ = new MediaStreamImpl(
+  if (!media_stream_client_) {
+    MediaStreamImpl* media_stream_impl = new MediaStreamImpl(
         this,
         media_stream_dispatcher_,
         RenderThreadImpl::current()->GetMediaStreamDependencyFactory());
+    media_stream_client_ = media_stream_impl;
+    web_user_media_client_ = media_stream_impl;
   }
 #endif
 }
@@ -6013,7 +6034,7 @@ void RenderViewImpl::OnWasHidden() {
   RenderWidget::OnWasHidden();
 
 #if defined(OS_ANDROID)
-  // Inform WebMediaPlayerManagerAndroid to release all media player resources.
+  // Inform RendererMediaPlayerManager to release all media player resources.
   // unless some audio is playing.
   // If something is in progress the resource will not be freed, it will
   // only be freed once the tab is destroyed or if the user navigates away
@@ -6135,12 +6156,14 @@ void RenderViewImpl::SimulateImeSetComposition(
 void RenderViewImpl::SimulateImeConfirmComposition(
     const string16& text,
     const ui::Range& replacement_range) {
-  OnImeConfirmComposition(text, replacement_range);
+  OnImeConfirmComposition(text, replacement_range, false);
 }
 
 void RenderViewImpl::PpapiPluginCancelComposition() {
   Send(new ViewHostMsg_ImeCancelComposition(routing_id()));;
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
   UpdateCompositionInfo(true);
+#endif
 }
 
 void RenderViewImpl::PpapiPluginSelectionChanged() {
@@ -6197,8 +6220,9 @@ void RenderViewImpl::OnImeSetComposition(
   }
 }
 
-void RenderViewImpl::OnImeConfirmComposition(
-      const string16& text, const ui::Range& replacement_range) {
+void RenderViewImpl::OnImeConfirmComposition(const string16& text,
+                                             const ui::Range& replacement_range,
+                                             bool keep_selection) {
   if (pepper_helper_->IsPluginFocused()) {
     // When a PPAPI plugin has focus, we bypass WebKit.
     pepper_helper_->OnImeConfirmComposition(text);
@@ -6227,7 +6251,9 @@ void RenderViewImpl::OnImeConfirmComposition(
           frame->selectRange(webrange);
       }
     }
-    RenderWidget::OnImeConfirmComposition(text, replacement_range);
+    RenderWidget::OnImeConfirmComposition(text,
+                                          replacement_range,
+                                          keep_selection);
   }
 }
 
@@ -6241,6 +6267,9 @@ void RenderViewImpl::SetDeviceScaleFactor(float device_scale_factor) {
       ShouldUseAcceleratedCompositingForOverflowScroll(device_scale_factor_));
     webview()->settings()->setAcceleratedCompositingForTransitionEnabled(
         ShouldUseTransitionCompositing(device_scale_factor_));
+    webview()->settings()->
+        setAcceleratedCompositingForFixedRootBackgroundEnabled(
+            ShouldUseAcceleratedFixedRootBackground(device_scale_factor_));
   }
   if (auto_resize_mode_)
     AutoResizeCompositor();
@@ -6268,6 +6297,7 @@ void RenderViewImpl::GetSelectionBounds(gfx::Rect* start, gfx::Rect* end) {
   RenderWidget::GetSelectionBounds(start, end);
 }
 
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
 void RenderViewImpl::GetCompositionCharacterBounds(
     std::vector<gfx::Rect>* bounds) {
   DCHECK(bounds);
@@ -6307,6 +6337,7 @@ void RenderViewImpl::GetCompositionRange(ui::Range* range) {
   }
   RenderWidget::GetCompositionRange(range);
 }
+#endif
 
 bool RenderViewImpl::CanComposeInline() {
   return pepper_helper_->IsPluginFocused() ?
@@ -6485,8 +6516,8 @@ WebKit::WebPageVisibilityState RenderViewImpl::visibilityState() const {
 }
 
 WebKit::WebUserMediaClient* RenderViewImpl::userMediaClient() {
-  EnsureMediaStreamImpl();
-  return media_stream_impl_;
+  EnsureMediaStreamClient();
+  return web_user_media_client_;
 }
 
 void RenderViewImpl::draggableRegionsChanged() {
@@ -6708,11 +6739,6 @@ bool RenderViewImpl::didTapMultipleTargets(
 
   return true;
 }
-
-skia::RefPtr<SkPicture> RenderViewImpl::CapturePicture() {
-  return compositor_ ? compositor_->CapturePicture() :
-      skia::RefPtr<SkPicture>();
-}
 #endif
 
 unsigned RenderViewImpl::GetLocalSessionHistoryLengthForTesting() const {
@@ -6753,6 +6779,13 @@ void RenderViewImpl::EnableAutoResizeForTesting(const gfx::Size& min_size,
 
 void RenderViewImpl::DisableAutoResizeForTesting(const gfx::Size& new_size) {
   OnDisableAutoResize(new_size);
+}
+
+void RenderViewImpl::SetMediaStreamClientForTesting(
+    MediaStreamClient* media_stream_client) {
+  DCHECK(!media_stream_client_);
+  DCHECK(!web_user_media_client_);
+  media_stream_client_ = media_stream_client;
 }
 
 void RenderViewImpl::OnReleaseDisambiguationPopupDIB(

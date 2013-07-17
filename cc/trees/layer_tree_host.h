@@ -29,9 +29,7 @@
 #include "cc/trees/layer_tree_settings.h"
 #include "cc/trees/occlusion_tracker.h"
 #include "cc/trees/proxy.h"
-#include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "third_party/skia/include/core/SkPicture.h"
 #include "ui/base/latency_info.h"
 #include "ui/gfx/rect.h"
 
@@ -80,6 +78,7 @@ struct CC_EXPORT RendererCapabilities {
   int max_texture_size;
   bool avoid_pow2_textures;
   bool using_map_image;
+  bool using_shared_memory_resources;
 };
 
 class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
@@ -128,7 +127,7 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   virtual void AcquireLayerTextures();
   // Returns false if we should abort this frame due to initialization failure.
   bool InitializeOutputSurfaceIfNeeded();
-  void UpdateLayers(ResourceUpdateQueue* queue,
+  bool UpdateLayers(ResourceUpdateQueue* queue,
                     size_t contents_memory_limit_bytes);
 
   LayerTreeHostClient* client() { return client_; }
@@ -219,8 +218,8 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   void SetImplTransform(const gfx::Transform& transform);
   void SetLatencyInfo(const ui::LatencyInfo& latency_info);
 
-  void StartRateLimiter(WebKit::WebGraphicsContext3D* context3d);
-  void StopRateLimiter(WebKit::WebGraphicsContext3D* context3d);
+  virtual void StartRateLimiter(WebKit::WebGraphicsContext3D* context3d);
+  virtual void StopRateLimiter(WebKit::WebGraphicsContext3D* context3d);
 
   // RateLimiterClient implementation.
   virtual void RateLimit() OVERRIDE;
@@ -246,14 +245,14 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
     return animation_registrar_.get();
   }
 
-  skia::RefPtr<SkPicture> CapturePicture();
-
   bool BlocksPendingCommit() const;
 
   // Obtains a thorough dump of the LayerTreeHost as a value.
   scoped_ptr<base::Value> AsValue() const;
 
   bool in_paint_layer_contents() const { return in_paint_layer_contents_; }
+
+  bool UsingSharedMemoryResources();
 
  protected:
   LayerTreeHost(LayerTreeHostClient* client, const LayerTreeSettings& settings);
@@ -263,11 +262,15 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
  private:
   bool InitializeProxy(scoped_ptr<Proxy> proxy);
 
-  bool PaintLayerContents(const LayerList& render_surface_layer_list,
-                          ResourceUpdateQueue* quue);
-  bool PaintMasksForRenderSurface(Layer* render_surface_layer,
-                                  ResourceUpdateQueue* queue);
-  void UpdateLayers(Layer* root_layer, ResourceUpdateQueue* queue);
+  void PaintLayerContents(const LayerList& render_surface_layer_list,
+                          ResourceUpdateQueue* queue,
+                          bool* did_paint_content,
+                          bool* need_more_updates);
+  void PaintMasksForRenderSurface(Layer* render_surface_layer,
+                                  ResourceUpdateQueue* queue,
+                                  bool* did_paint_content,
+                                  bool* need_more_updates);
+  bool UpdateLayers(Layer* root_layer, ResourceUpdateQueue* queue);
   void UpdateHudLayer();
   void TriggerPrepaint();
 

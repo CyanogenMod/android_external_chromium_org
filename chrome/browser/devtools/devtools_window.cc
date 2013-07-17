@@ -14,6 +14,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/debugger/debugger_api.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -35,7 +36,6 @@
 #include "chrome/browser/ui/prefs/prefs_tab_helper.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/devtools_ui.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/pref_names.h"
@@ -181,7 +181,7 @@ std::string DevToolsWindow::GetDevToolsWindowPlacementPrefKey() {
 }
 
 // static
-void DevToolsWindow::RegisterUserPrefs(
+void DevToolsWindow::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterBooleanPref(
       prefs::kDevToolsOpenDocked,
@@ -196,6 +196,10 @@ void DevToolsWindow::RegisterUserPrefs(
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterDictionaryPref(
       prefs::kDevToolsFileSystemPaths,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kDevToolsAdbKey,
+      std::string(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 
   registry->RegisterDictionaryPref(
@@ -635,7 +639,7 @@ WebContents* DevToolsWindow::OpenURLFromTab(WebContents* source,
   nav_params.source_contents = source;
   nav_params.tabstrip_add_types = TabStripModel::ADD_NONE;
   nav_params.window_action = chrome::NavigateParams::SHOW_WINDOW;
-  nav_params.user_gesture = true;
+  nav_params.user_gesture = params.user_gesture;
   chrome::Navigate(&nav_params);
   return nav_params.target_contents;
 }

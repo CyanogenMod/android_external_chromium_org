@@ -21,6 +21,7 @@
 #include "net/disk_cache/mem_entry_impl.h"
 #include "net/disk_cache/simple/simple_entry_format.h"
 #include "net/disk_cache/simple/simple_entry_impl.h"
+#include "net/disk_cache/simple/simple_test_util.h"
 #include "net/disk_cache/simple/simple_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -1538,7 +1539,7 @@ TEST_F(DiskCacheEntryTest, MissingData) {
 
   disk_cache::Addr address(0x80000001);
   base::FilePath name = cache_impl_->GetFileName(address);
-  EXPECT_TRUE(base::Delete(name, false));
+  EXPECT_TRUE(base::DeleteFile(name, false));
 
   // Attempt to read the data.
   ASSERT_EQ(net::OK, OpenEntry(key, &entry));
@@ -2929,24 +2930,17 @@ TEST_F(DiskCacheEntryTest, SimpleCacheOptimisticCreateFailsOnOpen) {
   SetSimpleCacheMode();
   InitCache();
 
-  // Create a corrupt entry file.
-  const char key[] = "the key";
-  base::FilePath entry_file_path = cache_path_.AppendASCII(
-      disk_cache::simple_util::GetFilenameFromKeyAndIndex(key, 0));
-  int flags = base::PLATFORM_FILE_CREATE | base::PLATFORM_FILE_WRITE;
-  base::PlatformFile entry_file =
-      base::CreatePlatformFile(entry_file_path, flags, NULL, NULL);
-  ASSERT_NE(base::kInvalidPlatformFileValue, entry_file);
-  ASSERT_EQ(1, base::WritePlatformFile(entry_file, 0, key, 1));
-  EXPECT_TRUE(base::ClosePlatformFile(entry_file));
-
+  // Create a corrupt file in place of a future entry. Optimistic create should
+  // initially succeed, but realize later that creation failed.
+  const std::string key = "the key";
   net::TestCompletionCallback cb;
   disk_cache::Entry* entry = NULL;
   disk_cache::Entry* entry2 = NULL;
 
-  // Create optimistically and issue an Open without waiting.
+  EXPECT_TRUE(disk_cache::simple_util::CreateCorruptFileForTests(
+      key, cache_path_));
   EXPECT_EQ(net::OK, cache_->CreateEntry(key, &entry, cb.callback()));
-  ASSERT_TRUE(NULL != entry);
+  ASSERT_TRUE(entry);
   ASSERT_NE(net::OK, OpenEntry(key, &entry2));
 
   // Check that we are not leaking.
@@ -3117,6 +3111,7 @@ TEST_F(DiskCacheEntryTest, SimpleCacheInFlightRead) {
 
 TEST_F(DiskCacheEntryTest, SimpleCacheOpenCreateRaceWithNoIndex) {
   SetSimpleCacheMode();
+  DisableSimpleCacheWaitForIndex();
   DisableIntegrityCheck();
   InitCache();
 

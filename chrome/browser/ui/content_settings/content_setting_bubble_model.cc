@@ -6,6 +6,7 @@
 
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
@@ -21,7 +22,6 @@
 #include "chrome/browser/ui/collected_cookies_infobar_delegate.h"
 #include "chrome/browser/ui/content_settings/content_setting_bubble_model_delegate.h"
 #include "chrome/browser/ui/content_settings/content_setting_changed_infobar_delegate.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
@@ -84,11 +84,11 @@ ContentSettingTitleAndLinkModel::ContentSettingTitleAndLinkModel(
     ContentSettingsType content_type)
     : ContentSettingBubbleModel(web_contents, profile, content_type),
         delegate_(delegate) {
-   // Notifications do not have a bubble.
-   DCHECK_NE(content_type, CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
-   SetBlockedResources();
-   SetTitle();
-   SetManageLink();
+  // Notifications do not have a bubble.
+  DCHECK_NE(content_type, CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
+  SetBlockedResources();
+  SetTitle();
+  SetManageLink();
 }
 
 void ContentSettingTitleAndLinkModel::SetBlockedResources() {
@@ -113,6 +113,7 @@ void ContentSettingTitleAndLinkModel::SetTitle() {
         IDS_BLOCKED_DISPLAYING_INSECURE_CONTENT},
     {CONTENT_SETTINGS_TYPE_PPAPI_BROKER,
         IDS_BLOCKED_PPAPI_BROKER_TITLE},
+    {CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS, IDS_BLOCKED_DOWNLOAD_TITLE},
   };
   // Fields as for kBlockedTitleIDs, above.
   static const ContentSettingsTypeIdEntry
@@ -122,6 +123,7 @@ void ContentSettingTitleAndLinkModel::SetTitle() {
   static const ContentSettingsTypeIdEntry kAccessedTitleIDs[] = {
     {CONTENT_SETTINGS_TYPE_COOKIES, IDS_ACCESSED_COOKIES_TITLE},
     {CONTENT_SETTINGS_TYPE_PPAPI_BROKER, IDS_ALLOWED_PPAPI_BROKER_TITLE},
+    {CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS, IDS_ALLOWED_DOWNLOAD_TITLE},
   };
   const ContentSettingsTypeIdEntry *title_ids = kBlockedTitleIDs;
   size_t num_title_ids = arraysize(kBlockedTitleIDs);
@@ -154,6 +156,7 @@ void ContentSettingTitleAndLinkModel::SetManageLink() {
     {CONTENT_SETTINGS_TYPE_PROTOCOL_HANDLERS, IDS_HANDLERS_BUBBLE_MANAGE_LINK},
     {CONTENT_SETTINGS_TYPE_MEDIASTREAM, IDS_MEDIASTREAM_BUBBLE_MANAGE_LINK},
     {CONTENT_SETTINGS_TYPE_PPAPI_BROKER, IDS_PPAPI_BROKER_BUBBLE_MANAGE_LINK},
+    {CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS, IDS_BLOCKED_DOWNLOADS_LINK},
   };
   set_manage_link(l10n_util::GetStringUTF8(
       GetIdForContentType(kLinkIDs, arraysize(kLinkIDs), content_type())));
@@ -288,6 +291,7 @@ void ContentSettingSingleRadioGroup::SetRadioGroup() {
     {CONTENT_SETTINGS_TYPE_PLUGINS, IDS_BLOCKED_PLUGINS_UNBLOCK_ALL},
     {CONTENT_SETTINGS_TYPE_POPUPS, IDS_BLOCKED_POPUPS_UNBLOCK},
     {CONTENT_SETTINGS_TYPE_PPAPI_BROKER, IDS_BLOCKED_PPAPI_BROKER_UNBLOCK},
+    {CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS, IDS_BLOCKED_DOWNLOAD_UNBLOCK},
   };
   // Fields as for kBlockedAllowIDs, above.
   static const ContentSettingsTypeIdEntry kResourceSpecificBlockedAllowIDs[] = {
@@ -297,6 +301,7 @@ void ContentSettingSingleRadioGroup::SetRadioGroup() {
     // TODO(bauerb): The string shouldn't be "unblock" (they weren't blocked).
     {CONTENT_SETTINGS_TYPE_COOKIES, IDS_BLOCKED_COOKIES_UNBLOCK},
     {CONTENT_SETTINGS_TYPE_PPAPI_BROKER, IDS_ALLOWED_PPAPI_BROKER_NO_ACTION},
+    {CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS, IDS_ALLOWED_DOWNLOAD_NO_ACTION},
   };
 
   std::string radio_allow_label;
@@ -327,11 +332,13 @@ void ContentSettingSingleRadioGroup::SetRadioGroup() {
     {CONTENT_SETTINGS_TYPE_PLUGINS, IDS_BLOCKED_PLUGINS_NO_ACTION},
     {CONTENT_SETTINGS_TYPE_POPUPS, IDS_BLOCKED_POPUPS_NO_ACTION},
     {CONTENT_SETTINGS_TYPE_PPAPI_BROKER, IDS_BLOCKED_PPAPI_BROKER_NO_ACTION},
+    {CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS, IDS_BLOCKED_DOWNLOAD_NO_ACTION},
   };
   static const ContentSettingsTypeIdEntry kAllowedBlockIDs[] = {
     // TODO(bauerb): The string should say "block".
     {CONTENT_SETTINGS_TYPE_COOKIES, IDS_BLOCKED_COOKIES_NO_ACTION},
     {CONTENT_SETTINGS_TYPE_PPAPI_BROKER, IDS_ALLOWED_PPAPI_BROKER_BLOCK},
+    {CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS, IDS_ALLOWED_DOWNLOAD_BLOCK},
   };
 
   std::string radio_block_label;

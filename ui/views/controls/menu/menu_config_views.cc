@@ -15,10 +15,10 @@
 namespace views {
 
 namespace {
-#if defined(OS_WIN)
-static const int kMenuCornerRadiusForAura = 0;
-#else
+#if defined(OS_CHROMEOS)
 static const int kMenuCornerRadiusForAura = 2;
+#else
+static const int kMenuCornerRadiusForAura = 0;
 #endif
 }  // namespace
 
@@ -44,7 +44,7 @@ void MenuConfig::InitAura(const ui::NativeTheme* theme) {
   separator_upper_height = 8;
   font = rb.GetFont(ResourceBundle::BaseFont);
   label_to_arrow_padding = 20;
-  label_to_accelerator_padding = 20;
+  label_to_minor_text_padding = 20;
   always_use_icon_to_label_padding = true;
   align_arrow_and_shortcut = true;
   offset_context_menus = true;

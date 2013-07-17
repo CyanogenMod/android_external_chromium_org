@@ -54,6 +54,7 @@ LOCAL_SRC_FILES := \
 	android_webview/browser/net/input_stream_reader.cc \
 	android_webview/browser/renderer_host/aw_render_view_host_ext.cc \
 	android_webview/browser/renderer_host/aw_resource_dispatcher_host_delegate.cc \
+	android_webview/browser/scoped_app_gl_state_restore.cc \
 	android_webview/common/android_webview_message_generator.cc \
 	android_webview/common/aw_content_client.cc \
 	android_webview/common/aw_hit_test_data.cc \
@@ -104,6 +105,8 @@ MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
@@ -210,6 +213,8 @@ MY_DEFS_Release := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \

@@ -6,6 +6,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/net/url_request_mock_util.h"
@@ -25,7 +26,6 @@
 #include "chrome/browser/ui/panels/panel_manager.h"
 #include "chrome/browser/ui/panels/test_panel_active_state_observer.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/pref_names.h"
@@ -947,13 +947,12 @@ IN_PROC_BROWSER_TEST_F(PanelBrowserTest, ChangeAutoHideTaskBarThickness) {
   panel->Close();
 }
 
-// http://crbug.com/143247
-#if !defined(OS_WIN)
-#define MAYBE_ActivatePanelOrTabbedWindow DISABLED_ActivatePanelOrTabbedWindow
-#else
-#define MAYBE_ActivatePanelOrTabbedWindow ActivatePanelOrTabbedWindow
-#endif
-IN_PROC_BROWSER_TEST_F(PanelBrowserTest, MAYBE_ActivatePanelOrTabbedWindow) {
+IN_PROC_BROWSER_TEST_F(PanelBrowserTest, ActivatePanelOrTabbedWindow) {
+  if (!WmSupportWindowActivation()) {
+    LOG(WARNING) << "Skipping test due to WM problems.";
+    return;
+  }
+
   Panel* panel1 = CreatePanel("Panel1");
   Panel* panel2 = CreatePanel("Panel2");
 
@@ -983,12 +982,17 @@ IN_PROC_BROWSER_TEST_F(PanelBrowserTest, MAYBE_ActivatePanelOrTabbedWindow) {
 }
 
 // TODO(jianli): To be enabled for other platforms.
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_LINUX)
 #define MAYBE_ActivateDeactivateBasic ActivateDeactivateBasic
 #else
 #define MAYBE_ActivateDeactivateBasic DISABLED_ActivateDeactivateBasic
 #endif
 IN_PROC_BROWSER_TEST_F(PanelBrowserTest, MAYBE_ActivateDeactivateBasic) {
+  if (!WmSupportWindowActivation()) {
+    LOG(WARNING) << "Skipping test due to WM problems.";
+    return;
+  }
+
   // Create an active panel.
   Panel* panel = CreatePanel("PanelTest");
   scoped_ptr<NativePanelTesting> native_panel_testing(
@@ -1000,19 +1004,23 @@ IN_PROC_BROWSER_TEST_F(PanelBrowserTest, MAYBE_ActivateDeactivateBasic) {
   // Deactivate the panel.
   panel->Deactivate();
   WaitForPanelActiveState(panel, SHOW_AS_INACTIVE);
+
+  // On GTK there is no way to deactivate a window. So the Deactivate() call
+  // above does not actually deactivate the window, but simply lowers it.
+#if !defined(OS_LINUX)
   EXPECT_TRUE(native_panel_testing->VerifyActiveState(false));
+#endif
 
   // This test does not reactivate the panel because the panel might not be
   // reactivated programmatically once it is deactivated.
 }
 
-// http://crbug.com/143247
-#if !defined(OS_WIN)
-#define MAYBE_ActivateDeactivateMultiple DISABLED_ActivateDeactivateMultiple
-#else
-#define MAYBE_ActivateDeactivateMultiple ActivateDeactivateMultiple
-#endif
-IN_PROC_BROWSER_TEST_F(PanelBrowserTest, MAYBE_ActivateDeactivateMultiple) {
+IN_PROC_BROWSER_TEST_F(PanelBrowserTest, ActivateDeactivateMultiple) {
+  if (!WmSupportWindowActivation()) {
+    LOG(WARNING) << "Skipping test due to WM problems.";
+    return;
+  }
+
   BrowserWindow* tabbed_window = browser()->window();
 
   // Create 4 panels in the following screen layout:
@@ -1307,19 +1315,8 @@ IN_PROC_BROWSER_TEST_F(PanelBrowserTest, FocusLostOnMinimize) {
   panel->Close();
 }
 
-// http://crbug.com/143247
-#if !defined(OS_WIN)
-#define MAYBE_CreateInactiveSwitchToActive DISABLED_CreateInactiveSwitchToActive
-#else
-#define MAYBE_CreateInactiveSwitchToActive CreateInactiveSwitchToActive
-#endif
-IN_PROC_BROWSER_TEST_F(PanelBrowserTest, MAYBE_CreateInactiveSwitchToActive) {
-  // Compiz will not activate initially inactive window.
-  if (SkipTestIfCompizWM())
-    return;
-
-  CreatePanelParams params("Initially Inactive", gfx::Rect(), SHOW_AS_INACTIVE);
-  Panel* panel = CreatePanelWithParams(params);
+IN_PROC_BROWSER_TEST_F(PanelBrowserTest, CreateInactiveSwitchToActive) {
+  Panel* panel = CreateInactivePanel("1");
 
   panel->Activate();
   WaitForPanelActiveState(panel, SHOW_AS_ACTIVE);

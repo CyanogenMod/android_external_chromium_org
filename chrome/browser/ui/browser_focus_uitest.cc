@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "build/build_config.h"
-
 #include "base/bind.h"
 #include "base/file_util.h"
 #include "base/format_macros.h"
@@ -12,6 +10,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
@@ -23,7 +22,6 @@
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/view_ids.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -38,12 +36,6 @@
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/test/browser_test_utils.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
-
-#if defined(TOOLKIT_VIEWS)
-#include "chrome/browser/ui/views/frame/browser_view.h"
-#include "ui/views/focus/focus_manager.h"
-#include "ui/views/view.h"
-#endif
 
 #if defined(OS_WIN)
 #include <windows.h>
@@ -259,48 +251,6 @@ IN_PROC_BROWSER_TEST_F(BrowserFocusTest, DISABLED_BrowsersRememberFocus) {
   ui_test_utils::HideNativeWindow(window);
   ASSERT_TRUE(ui_test_utils::ShowAndFocusNativeWindow(window));
   ASSERT_TRUE(IsViewFocused(VIEW_ID_OMNIBOX));
-
-  // The rest of this test does not make sense on Linux because the behavior
-  // of Activate() is not well defined and can vary by window manager.
-#if defined(OS_WIN)
-  // Open a new browser window.
-  Browser* browser2 =
-      new Browser(Browser::CreateParams(browser()->profile(),
-                                        browser()->host_desktop_type()));
-  ASSERT_TRUE(browser2);
-  chrome::AddBlankTabAt(browser2, -1, true);
-  browser2->window()->Show();
-  ui_test_utils::NavigateToURL(browser2, url);
-
-  gfx::NativeWindow window2 = browser2->window()->GetNativeWindow();
-  BrowserView* browser_view2 =
-      BrowserView::GetBrowserViewForBrowser(browser2);
-  ASSERT_TRUE(browser_view2);
-  const views::Widget* widget2 =
-      views::Widget::GetWidgetForNativeWindow(window2);
-  ASSERT_TRUE(widget2);
-  const views::FocusManager* focus_manager2 = widget2->GetFocusManager();
-  ASSERT_TRUE(focus_manager2);
-  EXPECT_EQ(browser_view2->GetTabContentsContainerView(),
-            focus_manager2->GetFocusedView());
-
-  // Switch to the 1st browser window, focus should still be on the location
-  // bar and the second browser should have nothing focused.
-  browser()->window()->Activate();
-  ASSERT_TRUE(IsViewFocused(VIEW_ID_OMNIBOX));
-  EXPECT_EQ(NULL, focus_manager2->GetFocusedView());
-
-  // Switch back to the second browser, focus should still be on the page.
-  browser2->window()->Activate();
-  views::Widget* widget = views::Widget::GetWidgetForNativeWindow(window);
-  ASSERT_TRUE(widget);
-  EXPECT_EQ(NULL, widget->GetFocusManager()->GetFocusedView());
-  EXPECT_EQ(browser_view2->GetTabContentsContainerView(),
-            focus_manager2->GetFocusedView());
-
-  // Close the 2nd browser to avoid a DCHECK().
-  browser_view2->Close();
-#endif
 }
 
 // Tabs remember focus.

@@ -30,6 +30,8 @@ scoped_refptr<Layer> Layer::Create() {
 
 Layer::Layer()
     : needs_display_(false),
+      needs_push_properties_(false),
+      num_dependents_need_push_properties_(false),
       stacking_order_changed_(false),
       layer_id_(s_next_layer_id++),
       ignore_set_needs_commit_(false),
@@ -68,6 +70,9 @@ Layer::~Layer() {
   // Our parent should be holding a reference to us so there should be no
   // way for us to be destroyed while we still have a parent.
   DCHECK(!parent());
+  // Similarly we shouldn't have a layer tree host since it also keeps a
+  // reference to us.
+  DCHECK(!layer_tree_host());
 
   layer_animation_controller_->RemoveValueObserver(this);
 
@@ -88,6 +93,10 @@ void Layer::SetLayerTreeHost(LayerTreeHost* host) {
     return;
 
   layer_tree_host_ = host;
+
+  // When changing hosts, the layer needs to commit its properties to the impl
+  // side for the new host.
+  SetNeedsPushProperties();
 
   for (size_t i = 0; i < children_.size(); ++i)
     children_[i]->SetLayerTreeHost(host);
@@ -113,15 +122,22 @@ void Layer::SetLayerTreeHost(LayerTreeHost* host) {
 }
 
 void Layer::SetNeedsCommit() {
+  if (!layer_tree_host_)
+    return;
+
+  SetNeedsPushProperties();
+
   if (ignore_set_needs_commit_)
     return;
-  if (layer_tree_host_)
-    layer_tree_host_->SetNeedsCommit();
+
+  layer_tree_host_->SetNeedsCommit();
 }
 
 void Layer::SetNeedsFullTreeSync() {
-  if (layer_tree_host_)
-    layer_tree_host_->SetNeedsFullTreeSync();
+  if (!layer_tree_host_)
+    return;
+
+  layer_tree_host_->SetNeedsFullTreeSync();
 }
 
 bool Layer::IsPropertyChangeAllowed() const {
@@ -132,6 +148,31 @@ bool Layer::IsPropertyChangeAllowed() const {
     return true;
 
   return !layer_tree_host_->in_paint_layer_contents();
+}
+
+void Layer::SetNeedsPushProperties() {
+  if (needs_push_properties_)
+    return;
+  if (!parent_should_know_need_push_properties() && parent_)
+    parent_->AddDependentNeedsPushProperties();
+  needs_push_properties_ = true;
+}
+
+void Layer::AddDependentNeedsPushProperties() {
+  DCHECK_GE(num_dependents_need_push_properties_, 0);
+
+  if (!parent_should_know_need_push_properties() && parent_)
+    parent_->AddDependentNeedsPushProperties();
+
+  num_dependents_need_push_properties_++;
+}
+
+void Layer::RemoveDependentNeedsPushProperties() {
+  num_dependents_need_push_properties_--;
+  DCHECK_GE(num_dependents_need_push_properties_, 0);
+
+  if (!parent_should_know_need_push_properties() && parent_)
+      parent_->RemoveDependentNeedsPushProperties();
 }
 
 gfx::Rect Layer::LayerRectToContentRect(const gfx::RectF& layer_rect) const {
@@ -167,6 +208,14 @@ bool Layer::BlocksPendingCommitRecursive() const {
 
 void Layer::SetParent(Layer* layer) {
   DCHECK(!layer || !layer->HasAncestor(this));
+
+  if (parent_should_know_need_push_properties()) {
+    if (parent_)
+      parent_->RemoveDependentNeedsPushProperties();
+    if (layer)
+      layer->AddDependentNeedsPushProperties();
+  }
+
   parent_ = layer;
   SetLayerTreeHost(parent_ ? parent_->layer_tree_host() : NULL);
 
@@ -274,14 +323,8 @@ void Layer::SetBounds(gfx::Size size) {
   if (bounds() == size)
     return;
 
-  bool first_resize = bounds().IsEmpty() && !size.IsEmpty();
-
   bounds_ = size;
-
-  if (first_resize)
-    SetNeedsDisplay();
-  else
-    SetNeedsCommit();
+  SetNeedsCommit();
 }
 
 Layer* Layer::RootLayer() {
@@ -770,6 +813,11 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   // Reset any state that should be cleared for the next update.
   stacking_order_changed_ = false;
   update_rect_ = gfx::RectF();
+
+  // Animating layers require further push properties to clean up the animation.
+  // crbug.com/259088
+  needs_push_properties_ = layer_animation_controller_->has_any_animation();
+  num_dependents_need_push_properties_ = 0;
 }
 
 scoped_ptr<LayerImpl> Layer::CreateLayerImpl(LayerTreeImpl* tree_impl) {
@@ -784,6 +832,11 @@ void Layer::SavePaintProperties() {
   // TODO(reveman): Save all layer properties that we depend on not
   // changing until PushProperties() has been called. crbug.com/231016
   paint_properties_.bounds = bounds_;
+}
+
+bool Layer::Update(ResourceUpdateQueue* queue,
+                   const OcclusionTracker* occlusion) {
+  return false;
 }
 
 bool Layer::NeedMoreUpdates() {

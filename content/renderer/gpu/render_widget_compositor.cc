@@ -270,7 +270,10 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   settings.max_partial_texture_updates = 0;
   settings.use_linear_fade_scrollbar_animator = true;
   settings.solid_color_scrollbars = true;
-  settings.solid_color_scrollbar_color = SkColorSetARGB(128, 128, 128, 128);
+  settings.solid_color_scrollbar_color =
+      cmd->HasSwitch(switches::kHideScrollbars)
+          ? SK_ColorTRANSPARENT
+          : SkColorSetARGB(128, 128, 128, 128);
   settings.solid_color_scrollbar_thickness_dip = 3;
   settings.highp_threshold_min = 2048;
 #endif
@@ -326,10 +329,6 @@ void RenderWidgetCompositor::SetRasterizeOnlyVisibleContent() {
 
 void RenderWidgetCompositor::GetRenderingStats(cc::RenderingStats* stats) {
   layer_tree_host_->CollectRenderingStats(stats);
-}
-
-skia::RefPtr<SkPicture> RenderWidgetCompositor::CapturePicture() {
-  return layer_tree_host_->CapturePicture();
 }
 
 void RenderWidgetCompositor::UpdateTopControlsState(
@@ -496,6 +495,14 @@ void RenderWidgetCompositor::setShowDebugBorders(bool show) {
 void RenderWidgetCompositor::setContinuousPaintingEnabled(bool enabled) {
   cc::LayerTreeDebugState debug_state = layer_tree_host_->debug_state();
   debug_state.continuous_painting = enabled;
+  layer_tree_host_->SetDebugState(debug_state);
+}
+
+void RenderWidgetCompositor::setShowScrollBottleneckRects(bool show) {
+  cc::LayerTreeDebugState debug_state = layer_tree_host_->debug_state();
+  debug_state.show_touch_event_handler_rects = show;
+  debug_state.show_wheel_event_handler_rects = show;
+  debug_state.show_non_fast_scrollable_rects = show;
   layer_tree_host_->SetDebugState(debug_state);
 }
 

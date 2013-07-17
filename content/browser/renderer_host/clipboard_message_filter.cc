@@ -9,12 +9,12 @@
 #include "base/stl_util.h"
 #include "content/common/clipboard_messages.h"
 #include "content/public/browser/browser_context.h"
-#include "googleurl/src/gurl.h"
 #include "ipc/ipc_message_macros.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/zlib/zlib.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/size.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -95,7 +95,7 @@ void ClipboardMessageFilter::OnWriteObjectsSync(
   DCHECK(base::SharedMemory::IsHandleValid(bitmap_handle))
       << "Bad bitmap handle";
   // Splice the shared memory handle into the clipboard data.
-  ui::Clipboard::ReplaceSharedMemHandle(&objects, bitmap_handle, peer_handle());
+  ui::Clipboard::ReplaceSharedMemHandle(&objects, bitmap_handle, PeerHandle());
 #if defined(OS_WIN)
   // We cannot write directly from the IO thread, and cannot service the IPC
   // on the UI thread. We'll copy the relevant data and get a handle to any
@@ -214,7 +214,7 @@ void ClipboardMessageFilter::OnReadImageReply(
       base::SharedMemory buffer;
       if (buffer.CreateAndMapAnonymous(png_data.size())) {
         memcpy(buffer.memory(), vector_as_array(&png_data), png_data.size());
-        if (buffer.GiveToProcess(peer_handle(), &image_handle)) {
+        if (buffer.GiveToProcess(PeerHandle(), &image_handle)) {
           image_size = png_data.size();
         }
       }

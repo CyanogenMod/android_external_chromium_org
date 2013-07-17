@@ -67,7 +67,7 @@ class ChromePrefServiceUserFilePrefsTest : public testing::Test {
 
     ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &data_dir_));
     data_dir_ = data_dir_.AppendASCII("pref_service");
-    ASSERT_TRUE(file_util::PathExists(data_dir_));
+    ASSERT_TRUE(base::PathExists(data_dir_));
   }
 
   void ClearListValue(PrefService* prefs, const char* key) {
@@ -93,7 +93,7 @@ class ChromePrefServiceUserFilePrefsTest : public testing::Test {
 TEST_F(ChromePrefServiceUserFilePrefsTest, PreserveEmptyValue) {
   base::FilePath pref_file = temp_dir_.path().AppendASCII("write.json");
 
-  ASSERT_TRUE(file_util::CopyFile(
+  ASSERT_TRUE(base::CopyFile(
       data_dir_.AppendASCII("read.need_empty_value.json"),
       pref_file));
 
@@ -137,8 +137,8 @@ TEST_F(ChromePrefServiceUserFilePrefsTest, PreserveEmptyValue) {
   // Compare to expected output.
   base::FilePath golden_output_file =
       data_dir_.AppendASCII("write.golden.need_empty_value.json");
-  ASSERT_TRUE(file_util::PathExists(golden_output_file));
-  EXPECT_TRUE(file_util::TextContentsEqual(golden_output_file, pref_file));
+  ASSERT_TRUE(base::PathExists(golden_output_file));
+  EXPECT_TRUE(base::TextContentsEqual(golden_output_file, pref_file));
 }
 
 class ChromePrefServiceWebKitPrefs : public ChromeRenderViewHostTestHarness {

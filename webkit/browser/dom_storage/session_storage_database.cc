@@ -279,7 +279,7 @@ bool SessionStorageDatabase::LazyOpen(bool create_if_needed) {
     return true;
 
   if (!create_if_needed &&
-      (!file_util::PathExists(file_path_) ||
+      (!base::PathExists(file_path_) ||
        file_util::IsDirectoryEmpty(file_path_))) {
     // If the directory doesn't exist already and we haven't been asked to
     // create a file on disk, then we don't bother opening the database. This
@@ -296,7 +296,7 @@ bool SessionStorageDatabase::LazyOpen(bool create_if_needed) {
     DCHECK(db == NULL);
 
     // Clear the directory and try again.
-    base::Delete(file_path_, true);
+    base::DeleteFile(file_path_, true);
     s = TryToOpen(&db);
     if (!s.ok()) {
       LOG(WARNING) << "Failed to open leveldb in " << file_path_.value()
@@ -325,6 +325,7 @@ leveldb::Status SessionStorageDatabase::TryToOpen(leveldb::DB** db) {
   // The directory exists but a valid leveldb database might not exist inside it
   // (e.g., a subset of the needed files might be missing). Handle this
   // situation gracefully by creating the database now.
+  options.max_open_files = 0;  // Use minimum.
   options.create_if_missing = true;
 #if defined(OS_WIN)
   return leveldb::DB::Open(options, WideToUTF8(file_path_.value()), db);

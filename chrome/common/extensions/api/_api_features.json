@@ -236,6 +236,11 @@
   "extension.sendRequest": {
     "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
   },
+  "feedbackPrivate": {
+    "platform": "chromeos",
+    "dependencies": ["permission:feedbackPrivate"],
+    "contexts": ["blessed_extension"]
+  },
   "fileBrowserHandler": {
     "platform": "chromeos",
     "dependencies": ["permission:fileBrowserHandler"],
@@ -293,10 +298,6 @@
   },
   "location": {
     "dependencies": ["permission:location"],
-    "contexts": ["blessed_extension"]
-  },
-  "managedModePrivate": {
-    "dependencies": ["permission:managedModePrivate"],
     "contexts": ["blessed_extension"]
   },
   "management": {
@@ -507,6 +508,11 @@
     "channel": "stable",
     "extension_types": ["extension", "packaged_app", "platform_app"],
     "contexts": ["blessed_extension"]
+  },
+  "types.private": {
+    "channel": "dev",
+    "extension_types": ["extension"],
+    "location": "component"
   },
   "usb": {
     "dependencies": ["permission:usb"],

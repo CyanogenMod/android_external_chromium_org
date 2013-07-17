@@ -166,8 +166,10 @@ def CalculateTruncatedMean(data_set, truncate_percent):
 
 
 def CalculateStandardDeviation(v):
-  mean = CalculateTruncatedMean(v, 0.0)
+  if len(v) == 1:
+    return 0.0
 
+  mean = CalculateTruncatedMean(v, 0.0)
   variances = [float(x) - mean for x in v]
   variances = [x * x for x in variances]
   variance = reduce(lambda x, y: float(x) + float(y), variances) / (len(v) - 1)
@@ -253,8 +255,7 @@ def RunProcessAndRetrieveOutput(command):
   shell = IsWindows()
   proc = subprocess.Popen(command,
                           shell=shell,
-                          stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE)
+                          stdout=subprocess.PIPE)
 
   (output, _) = proc.communicate()
 
@@ -293,7 +294,12 @@ def CheckRunGit(command):
 
 
 def BuildWithMake(threads, targets):
-  cmd = ['make', 'BUILDTYPE=Release', '-j%d' % threads] + targets
+  cmd = ['make', 'BUILDTYPE=Release']
+
+  if threads:
+    cmd.append('-j%d' % threads)
+
+  cmd += targets
 
   return_code = RunProcess(cmd)
 
@@ -301,8 +307,12 @@ def BuildWithMake(threads, targets):
 
 
 def BuildWithNinja(threads, targets):
-  cmd = ['ninja', '-C', os.path.join('out', 'Release'),
-      '-j%d' % threads] + targets
+  cmd = ['ninja', '-C', os.path.join('out', 'Release')]
+
+  if threads:
+    cmd.append('-j%d' % threads)
+
+  cmd += targets
 
   return_code = RunProcess(cmd)
 
@@ -345,7 +355,7 @@ class DesktopBuilder(Builder):
     """
     targets = ['chrome', 'performance_ui_tests']
 
-    threads = 16
+    threads = None
     if opts.use_goma:
       threads = 64
 
@@ -376,9 +386,10 @@ class AndroidBuilder(Builder):
         True if successful.
     """
     path_to_tool = os.path.join('build', 'android', 'adb_install_apk.py')
-    cmd = [path_to_tool, '--apk', 'ContentShell.apk', '--apk_package',
-        'org.chromium.content_shell_apk', '--release']
+    cmd = [path_to_tool, '--apk', 'ChromiumTestShell.apk', '--apk_package',
+           'org.chromium.chrome.testshell', '--release']
     return_code = RunProcess(cmd)
+
     return not return_code
 
   def Build(self, depot, opts):
@@ -392,15 +403,14 @@ class AndroidBuilder(Builder):
     Returns:
         True if build was successful.
     """
-    targets = ['content_shell_apk', 'forwarder2', 'md5sum']
-    threads = 16
+    targets = ['chromium_testshell', 'forwarder2', 'md5sum']
+    threads = None
     if opts.use_goma:
       threads = 64
 
     build_success = False
     if opts.build_preference == 'ninja':
-      build_success = BuildWithNinja(threads, targets,
-          opts.output_buildbot_annotations)
+      build_success = BuildWithNinja(threads, targets)
     else:
       assert False, 'No build system defined.'
 
@@ -525,7 +535,7 @@ class SourceControl(object):
       The return code of the call.
     """
     return bisect_utils.RunGClient(['sync', '--revision',
-        revision, '--verbose'])
+        revision, '--verbose', '--nohooks'])
 
   def SyncToRevisionWithRepo(self, timestamp):
     """Uses repo to sync all the underlying git depots to the specified
@@ -935,9 +945,39 @@ class BisectPerformanceMetrics(object):
 
     return not bisect_utils.RunGClient(['runhooks'])
 
-  def ParseMetricValuesFromOutput(self, metric, text):
-    """Parses output from performance_ui_tests and retrieves the results for
-    a given metric.
+  def TryParseHistogramValuesFromOutput(self, metric, text):
+    """Attempts to parse a metric in the format HISTOGRAM <graph: <trace>.
+
+    Args:
+      metric: The metric as a list of [<trace>, <value>] strings.
+      text: The text to parse the metric values from.
+
+    Returns:
+      A list of floating point numbers found.
+    """
+    metric_formatted = 'HISTOGRAM %s: %s= ' % (metric[0], metric[1])
+
+    text_lines = text.split('\n')
+    values_list = []
+
+    for current_line in text_lines:
+      if metric_formatted in current_line:
+        current_line = current_line[len(metric_formatted):]
+
+        try:
+          histogram_values = eval(current_line)
+
+          for b in histogram_values['buckets']:
+            average_for_bucket = float(b['high'] + b['low']) * 0.5
+            # Extends the list with N-elements with the average for that bucket.
+            values_list.extend([average_for_bucket] * b['count'])
+        except:
+          pass
+
+    return values_list
+
+  def TryParseResultValuesFromOutput(self, metric, text):
+    """Attempts to parse a metric in the format RESULT <graph: <trace>.
 
     Args:
       metric: The metric as a list of [<trace>, <value>] strings.
@@ -984,6 +1024,24 @@ class BisectPerformanceMetrics(object):
 
     return values_list
 
+  def ParseMetricValuesFromOutput(self, metric, text):
+    """Parses output from performance_ui_tests and retrieves the results for
+    a given metric.
+
+    Args:
+      metric: The metric as a list of [<trace>, <value>] strings.
+      text: The text to parse the metric values from.
+
+    Returns:
+      A list of floating point numbers found.
+    """
+    metric_values = self.TryParseResultValuesFromOutput(metric, text)
+
+    if not metric_values:
+      metric_values = self.TryParseHistogramValuesFromOutput(metric, text)
+
+    return metric_values
+
   def RunPerformanceTestAndParseResults(self, command_to_run, metric):
     """Runs a performance test on the current revision by executing the
     'command_to_run' and parses the results.
@@ -1020,7 +1078,20 @@ class BisectPerformanceMetrics(object):
     metric_values = []
     for i in xrange(self.opts.repeat_test_count):
       # Can ignore the return code since if the tests fail, it won't return 0.
-      (output, return_code) = RunProcessAndRetrieveOutput(args)
+      try:
+        (output, return_code) = RunProcessAndRetrieveOutput(args)
+      except OSError, e:
+        if e.errno == errno.ENOENT:
+          err_text  = ("Something went wrong running the performance test. "
+              "Please review the command line:\n\n")
+          if 'src/' in ' '.join(args):
+            err_text += ("Check that you haven't accidentally specified a path "
+                "with src/ in the command.\n\n")
+          err_text += ' '.join(args)
+          err_text += '\n'
+
+          return (err_text, -1)
+        raise
 
       if self.opts.output_buildbot_annotations:
         print output
@@ -1185,10 +1256,17 @@ class BisectPerformanceMetrics(object):
     Returns:
       True if successful.
     """
-    if depot == 'chromium':
-      return self.RunGClientHooks()
-    elif depot == 'cros':
+    if self.opts.target_platform == 'android':
+      cwd = os.getcwd()
+      os.chdir(os.path.join(self.src_cwd, '..'))
+      if not bisect_utils.SetupAndroidBuildEnvironment(self.opts):
+        return False
+      os.chdir(cwd)
+
+    if depot == 'cros':
       return self.CreateCrosChroot()
+    else:
+      return self.RunGClientHooks()
     return True
 
   def ShouldSkipRevision(self, depot, revision):
@@ -1509,6 +1587,33 @@ class BisectPerformanceMetrics(object):
                 'matching change to .DEPS.git')
     return (bad_revision, good_revision)
 
+  def CheckIfRevisionsInProperOrder(self,
+                                    target_depot,
+                                    good_revision,
+                                    bad_revision):
+    """Checks that |good_revision| is an earlier revision than |bad_revision|.
+
+    Args:
+        good_revision: Number/tag of the known good revision.
+        bad_revision: Number/tag of the known bad revision.
+
+    Returns:
+        True if the revisions are in the proper order (good earlier than bad).
+    """
+    if self.source_control.IsGit() and target_depot != 'cros':
+      cmd = ['log', '--format=%ct', '-1', good_revision]
+      output = CheckRunGit(cmd)
+      good_commit_time = int(output)
+
+      cmd = ['log', '--format=%ct', '-1', bad_revision]
+      output = CheckRunGit(cmd)
+      bad_commit_time = int(output)
+
+      return good_commit_time <= bad_commit_time
+    else:
+      # Cros/svn use integers
+      return int(good_revision) <= int(bad_revision)
+
   def Run(self, command_to_run, bad_revision_in, good_revision_in, metric):
     """Given known good and bad revisions, run a binary search on all
     intermediate revisions to determine the CL where the performance regression
@@ -1579,6 +1684,13 @@ class BisectPerformanceMetrics(object):
 
     if good_revision is None:
       results['error'] = 'Could\'t resolve [%s] to SHA1.' % (good_revision_in,)
+      return results
+
+    # Check that they didn't accidentally swap good and bad revisions.
+    if not self.CheckIfRevisionsInProperOrder(
+        target_depot, good_revision, bad_revision):
+      results['error'] = 'bad_revision < good_revision, did you swap these '\
+          'by mistake?'
       return results
 
     (bad_revision, good_revision) = self.NudgeRevisionsIfDEPSChange(
@@ -1831,14 +1943,17 @@ class BisectPerformanceMetrics(object):
     # Find range where it possibly broke.
     first_working_revision = None
     last_broken_revision = None
+    last_broken_revision_index = -1
 
-    for k, v in revision_data_sorted:
+    for i in xrange(len(revision_data_sorted)):
+      k, v = revision_data_sorted[i]
       if v['passed'] == 1:
         if not first_working_revision:
           first_working_revision = k
 
       if not v['passed']:
         last_broken_revision = k
+        last_broken_revision_index = i
 
     if last_broken_revision != None and first_working_revision != None:
       print 'Results: Regression may have occurred in range:'
@@ -1897,15 +2012,28 @@ class BisectPerformanceMetrics(object):
           print 'Subject : %s' % info['subject']
         print
       else:
-        info = self.source_control.QueryRevisionInfo(last_broken_revision)
+        multiple_commits = 0
+        for i in xrange(last_broken_revision_index, len(revision_data_sorted)):
+          k, v = revision_data_sorted[i]
+          if k == first_working_revision:
+            break
 
-        print
-        print 'Commit  : %s' % last_broken_revision
-        print 'Author  : %s' % info['author']
-        print 'Email   : %s' % info['email']
-        print 'Date    : %s' % info['date']
-        print 'Subject : %s' % info['subject']
-        print
+          self.ChangeToDepotWorkingDirectory(v['depot'])
+
+          info = self.source_control.QueryRevisionInfo(k)
+
+          print
+          print 'Commit  : %s' % k
+          print 'Author  : %s' % info['author']
+          print 'Email   : %s' % info['email']
+          print 'Date    : %s' % info['date']
+          print 'Subject : %s' % info['subject']
+
+          multiple_commits += 1
+        if multiple_commits > 1:
+          self.warnings.append('Due to build errors, regression range could'
+            ' not be narrowed down to a single commit.')
+      print
       os.chdir(cwd)
 
       # Give a warning if the values were very close together

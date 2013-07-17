@@ -7,12 +7,15 @@
 #include "base/base64.h"
 #include "base/command_line.h"
 #include "base/prefs/testing_pref_service.h"
+#include "base/sha1.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/metrics/proto/study.pb.h"
 #include "chrome/browser/metrics/variations/variations_service.h"
 #include "chrome/browser/web_resource/resource_request_allowed_notifier_test_util.h"
 #include "chrome/common/chrome_version_info.h"
+#include "chrome/common/metrics/variations/variations_util.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "content/public/test/test_browser_thread.h"
@@ -127,8 +130,12 @@ std::string SerializeSeed(const TrialsSeed& seed) {
 }
 
 // Serializes |seed| to base64-encoded protobuf binary format.
-std::string SerializeSeedBase64(const TrialsSeed& seed) {
+std::string SerializeSeedBase64(const TrialsSeed& seed, std::string* hash) {
   std::string serialized_seed = SerializeSeed(seed);
+  if (hash != NULL) {
+    std::string sha1 = base::SHA1HashString(serialized_seed);
+    *hash = base::HexEncode(sha1.data(), sha1.size());
+  }
   std::string base64_serialized_seed;
   EXPECT_TRUE(base::Base64Encode(serialized_seed, &base64_serialized_seed));
   return base64_serialized_seed;
@@ -150,7 +157,7 @@ const base::Time kReferenceTime = base::Time::FromDoubleT(1368428400);
 
 }  // namespace
 
-class VariationsServiceTest : public testing::Test {
+class VariationsServiceTest : public ::testing::Test {
  protected:
   VariationsServiceTest() {}
 
@@ -522,7 +529,8 @@ TEST_F(VariationsServiceTest, VariationsURLHasOSNameParam) {
 TEST_F(VariationsServiceTest, LoadSeed) {
   // Store good seed data to test if loading from prefs works.
   const TrialsSeed seed = CreateTestSeed();
-  const std::string base64_seed = SerializeSeedBase64(seed);
+  std::string seed_hash;
+  const std::string base64_seed = SerializeSeedBase64(seed, &seed_hash);
 
   TestingPrefServiceSimple prefs;
   VariationsService::RegisterPrefs(prefs.registry());
@@ -531,7 +539,8 @@ TEST_F(VariationsServiceTest, LoadSeed) {
   TestVariationsService variations_service(new TestRequestAllowedNotifier,
                                            &prefs);
   TrialsSeed loaded_seed;
-  EXPECT_TRUE(variations_service.LoadTrialsSeedFromPref(&prefs, &loaded_seed));
+  // Check that loading a seed without a hash pref set works correctly.
+  EXPECT_TRUE(variations_service.LoadTrialsSeedFromPref(&loaded_seed));
 
   // Check that the loaded data is the same as the original.
   EXPECT_EQ(SerializeSeed(seed), SerializeSeed(loaded_seed));
@@ -539,16 +548,41 @@ TEST_F(VariationsServiceTest, LoadSeed) {
   EXPECT_FALSE(prefs.FindPreference(prefs::kVariationsSeed)->IsDefaultValue());
   EXPECT_EQ(base64_seed, prefs.GetString(prefs::kVariationsSeed));
 
+  // Check that loading a seed with the correct hash works.
+  prefs.SetString(prefs::kVariationsSeedHash, seed_hash);
+  loaded_seed.Clear();
+  EXPECT_TRUE(variations_service.LoadTrialsSeedFromPref(&loaded_seed));
+  EXPECT_EQ(SerializeSeed(seed), SerializeSeed(loaded_seed));
+
+  // Check that false is returned and the pref is cleared when hash differs.
+  TrialsSeed different_seed = seed;
+  different_seed.mutable_study(0)->set_name("octopus");
+  std::string different_hash;
+  prefs.SetString(prefs::kVariationsSeed,
+                  SerializeSeedBase64(different_seed, &different_hash));
+  ASSERT_NE(different_hash, prefs.GetString(prefs::kVariationsSeedHash));
+  EXPECT_FALSE(prefs.FindPreference(prefs::kVariationsSeed)->IsDefaultValue());
+  EXPECT_FALSE(variations_service.LoadTrialsSeedFromPref(&loaded_seed));
+  EXPECT_TRUE(prefs.FindPreference(prefs::kVariationsSeed)->IsDefaultValue());
+  EXPECT_TRUE(
+      prefs.FindPreference(prefs::kVariationsSeedDate)->IsDefaultValue());
+  EXPECT_TRUE(
+      prefs.FindPreference(prefs::kVariationsSeedHash)->IsDefaultValue());
+
   // Check that loading a bad seed returns false and clears the pref.
   prefs.ClearPref(prefs::kVariationsSeed);
   prefs.SetString(prefs::kVariationsSeed, "this should fail");
   EXPECT_FALSE(prefs.FindPreference(prefs::kVariationsSeed)->IsDefaultValue());
-  EXPECT_FALSE(variations_service.LoadTrialsSeedFromPref(&prefs, &loaded_seed));
+  EXPECT_FALSE(variations_service.LoadTrialsSeedFromPref(&loaded_seed));
   EXPECT_TRUE(prefs.FindPreference(prefs::kVariationsSeed)->IsDefaultValue());
+  EXPECT_TRUE(
+      prefs.FindPreference(prefs::kVariationsSeedDate)->IsDefaultValue());
+  EXPECT_TRUE(
+      prefs.FindPreference(prefs::kVariationsSeedHash)->IsDefaultValue());
 
   // Check that having no seed in prefs results in a return value of false.
   prefs.ClearPref(prefs::kVariationsSeed);
-  EXPECT_FALSE(variations_service.LoadTrialsSeedFromPref(&prefs, &loaded_seed));
+  EXPECT_FALSE(variations_service.LoadTrialsSeedFromPref(&loaded_seed));
 }
 
 TEST_F(VariationsServiceTest, StoreSeed) {
@@ -562,7 +596,7 @@ TEST_F(VariationsServiceTest, StoreSeed) {
   TestVariationsService variations_service(new TestRequestAllowedNotifier,
                                            &prefs);
 
-  EXPECT_TRUE(variations_service.StoreSeedData(serialized_seed, now, &prefs));
+  EXPECT_TRUE(variations_service.StoreSeedData(serialized_seed, now));
   // Make sure the pref was actually set.
   EXPECT_FALSE(prefs.FindPreference(prefs::kVariationsSeed)->IsDefaultValue());
 
@@ -575,7 +609,7 @@ TEST_F(VariationsServiceTest, StoreSeed) {
 
   // Check if trying to store a bad seed leaves the pref unchanged.
   prefs.ClearPref(prefs::kVariationsSeed);
-  EXPECT_FALSE(variations_service.StoreSeedData("should fail", now, &prefs));
+  EXPECT_FALSE(variations_service.StoreSeedData("should fail", now));
   EXPECT_TRUE(prefs.FindPreference(prefs::kVariationsSeed)->IsDefaultValue());
 }
 
@@ -711,7 +745,8 @@ TEST_F(VariationsServiceTest, SeedStoredWhenOKStatus) {
   EXPECT_TRUE(prefs.FindPreference(prefs::kVariationsSeed)->IsDefaultValue());
   variations_service.OnURLFetchComplete(fetcher);
   EXPECT_FALSE(prefs.FindPreference(prefs::kVariationsSeed)->IsDefaultValue());
-  EXPECT_EQ(SerializeSeedBase64(seed), prefs.GetString(prefs::kVariationsSeed));
+  const std::string expected_base64 = SerializeSeedBase64(seed, NULL);
+  EXPECT_EQ(expected_base64, prefs.GetString(prefs::kVariationsSeed));
 }
 
 TEST_F(VariationsServiceTest, SeedNotStoredWhenNonOKStatus) {
@@ -747,13 +782,11 @@ TEST_F(VariationsServiceTest, SeedNotStoredWhenNonOKStatus) {
 TEST_F(VariationsServiceTest, ForceGroupWithFlag1) {
   CommandLine::ForCurrentProcess()->AppendSwitch(kForcingFlag1);
 
-  base::FieldTrialList field_trial_list_(NULL);
-
-  TestVariationsService variations_service(new TestRequestAllowedNotifier,
-                                           NULL);
+  base::FieldTrialList field_trial_list(NULL);
+  TestVariationsService service(new TestRequestAllowedNotifier, NULL);
 
   Study study = CreateStudyWithFlagGroups(100, 0, 0);
-  variations_service.CreateTrialFromStudy(study, kReferenceTime);
+  service.CreateTrialFromStudy(study, kReferenceTime);
 
   EXPECT_EQ(kFlagGroup1Name,
             base::FieldTrialList::FindFullName(kFlagStudyName));
@@ -763,13 +796,11 @@ TEST_F(VariationsServiceTest, ForceGroupWithFlag1) {
 TEST_F(VariationsServiceTest, ForceGroupWithFlag2) {
   CommandLine::ForCurrentProcess()->AppendSwitch(kForcingFlag2);
 
-  base::FieldTrialList field_trial_list_(NULL);
-
-  TestVariationsService variations_service(new TestRequestAllowedNotifier,
-                                           NULL);
+  base::FieldTrialList field_trial_list(NULL);
+  TestVariationsService service(new TestRequestAllowedNotifier, NULL);
 
   Study study = CreateStudyWithFlagGroups(100, 0, 0);
-  variations_service.CreateTrialFromStudy(study, kReferenceTime);
+  service.CreateTrialFromStudy(study, kReferenceTime);
 
   EXPECT_EQ(kFlagGroup2Name,
             base::FieldTrialList::FindFullName(kFlagStudyName));
@@ -780,31 +811,56 @@ TEST_F(VariationsServiceTest, ForceFirstGroupWithFlag) {
   CommandLine::ForCurrentProcess()->AppendSwitch(kForcingFlag1);
   CommandLine::ForCurrentProcess()->AppendSwitch(kForcingFlag2);
 
-  base::FieldTrialList field_trial_list_(NULL);
-
-  TestVariationsService variations_service(new TestRequestAllowedNotifier,
-                                           NULL);
+  base::FieldTrialList field_trial_list(NULL);
+  TestVariationsService service(new TestRequestAllowedNotifier, NULL);
 
   Study study = CreateStudyWithFlagGroups(100, 0, 0);
-  variations_service.CreateTrialFromStudy(study, kReferenceTime);
+  service.CreateTrialFromStudy(study, kReferenceTime);
 
   EXPECT_EQ(kFlagGroup1Name,
             base::FieldTrialList::FindFullName(kFlagStudyName));
 }
 
 TEST_F(VariationsServiceTest, DontChooseGroupWithFlag) {
-  base::FieldTrialList field_trial_list_(NULL);
-
-  TestVariationsService variations_service(new TestRequestAllowedNotifier,
-                                           NULL);
+  base::FieldTrialList field_trial_list(NULL);
+  TestVariationsService service(new TestRequestAllowedNotifier, NULL);
 
   // The two flag groups are given high probability, which would normaly make
   // them very likely to be choosen. They won't be chosen since flag groups are
   // never chosen when their flag isn't preasent.
   Study study = CreateStudyWithFlagGroups(1, 999, 999);
-  variations_service.CreateTrialFromStudy(study, kReferenceTime);
+  service.CreateTrialFromStudy(study, kReferenceTime);
   EXPECT_EQ(kNonFlagGroupName,
             base::FieldTrialList::FindFullName(kFlagStudyName));
+}
+
+TEST_F(VariationsServiceTest, VariationParams) {
+  base::FieldTrialList field_trial_list(NULL);
+  TestVariationsService service(new TestRequestAllowedNotifier, NULL);
+
+  Study study;
+  study.set_name("Study1");
+  study.set_default_experiment_name("B");
+
+  Study_Experiment* experiment1 = study.add_experiment();
+  experiment1->set_name("A");
+  experiment1->set_probability_weight(1);
+  Study_Experiment_Param* param = experiment1->add_param();
+  param->set_name("x");
+  param->set_value("y");
+
+  Study_Experiment* experiment2 = study.add_experiment();
+  experiment2->set_name("B");
+  experiment2->set_probability_weight(0);
+
+  service.CreateTrialFromStudy(study, kReferenceTime);
+  EXPECT_EQ("y", GetVariationParamValue("Study1", "x"));
+
+  study.set_name("Study2");
+  experiment1->set_probability_weight(0);
+  experiment2->set_probability_weight(1);
+  service.CreateTrialFromStudy(study, kReferenceTime);
+  EXPECT_EQ(std::string(), GetVariationParamValue("Study2", "x"));
 }
 
 }  // namespace chrome_variations

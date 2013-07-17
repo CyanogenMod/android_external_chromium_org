@@ -18,6 +18,7 @@
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/native_window_notification_source.h"
@@ -82,7 +83,6 @@
 #include "chrome/browser/ui/views/update_recommended_message_box.h"
 #include "chrome/browser/ui/views/website_settings/website_settings_popup_view.h"
 #include "chrome/browser/ui/window_sizer/window_sizer.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -288,6 +288,10 @@ class BrowserViewLayoutDelegateImpl : public BrowserViewLayoutDelegate {
 
   virtual bool IsBookmarkBarVisible() const OVERRIDE {
     return browser_view_->IsBookmarkBarVisible();
+  }
+
+  virtual FullscreenExitBubbleViews* GetFullscreenExitBubble() const OVERRIDE {
+    return browser_view_->fullscreen_exit_bubble();
   }
 
  private:
@@ -1050,6 +1054,8 @@ void BrowserView::DestroyBrowser() {
   // the window now so that we are deleted immediately and aren't left holding
   // references to deleted objects.
   GetWidget()->RemoveObserver(this);
+  GetLocationBar()->GetLocationEntry()->model()->popup_model()->RemoveObserver(
+      this);
   frame_->CloseNow();
 }
 
@@ -1109,15 +1115,6 @@ void BrowserView::ShowUpdateChromeDialog() {
 }
 
 void BrowserView::ShowBookmarkBubble(const GURL& url, bool already_bookmarked) {
-  // Reveal the top-of-window views immediately (if they are not already
-  // revealed) because it looks weird to show the bookmark bubble while the
-  // top-of-window views are still animating. If the bookmark bubble gains
-  // focus, |immersive_mode_controller_| will keep the top-of-window views
-  // revealed.
-  scoped_ptr<ImmersiveRevealedLock> focus_reveal_lock(
-      immersive_mode_controller_->GetRevealedLock(
-          ImmersiveModeController::ANIMATE_REVEAL_NO));
-
   chrome::ShowBookmarkBubbleView(GetToolbarView()->GetBookmarkBubbleAnchor(),
                                  bookmark_bar_view_.get(), browser_->profile(),
                                  url, !already_bookmarked);
@@ -1206,8 +1203,7 @@ void BrowserView::WebContentsFocused(WebContents* contents) {
 void BrowserView::ShowWebsiteSettings(Profile* profile,
                                       content::WebContents* web_contents,
                                       const GURL& url,
-                                      const content::SSLStatus& ssl,
-                                      bool show_history) {
+                                      const content::SSLStatus& ssl) {
   WebsiteSettingsPopupView::ShowPopup(
       GetLocationBarView()->location_icon_view(), profile,
       web_contents, url, ssl, browser_.get());
@@ -1885,6 +1881,12 @@ bool BrowserView::AcceleratorPressed(const ui::Accelerator& accelerator) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// BrowserView, OmniboxPopupModelObserver overrides:
+void BrowserView::OnOmniboxPopupShownOrHidden() {
+  infobar_container_->SetMaxTopArrowHeight(GetMaxTopInfoBarArrowHeight());
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // BrowserView, ImmersiveModeController::Delegate overrides:
 
 BookmarkBarView* BrowserView::GetBookmarkBar() {
@@ -1971,8 +1973,7 @@ void BrowserView::InitViews() {
 
   LoadAccelerators();
 
-  infobar_container_ = new InfoBarContainerView(this,
-                                                browser()->search_model());
+  infobar_container_ = new InfoBarContainerView(this);
   AddChildView(infobar_container_);
 
   contents_web_view_ = new views::WebView(browser_->profile());
@@ -2059,6 +2060,9 @@ void BrowserView::InitViews() {
     load_complete_listener_.reset(new LoadCompleteListener(this));
   }
 #endif
+
+  GetLocationBar()->GetLocationEntry()->model()->popup_model()->AddObserver(
+      this);
 
   // We're now initialized and ready to process Layout requests.
   ignore_layout_ = false;
@@ -2728,8 +2732,10 @@ void BrowserView::MakeOverlayContentsActiveContents() {
 
 int BrowserView::GetMaxTopInfoBarArrowHeight() {
   int top_arrow_height = 0;
-  // Only show the arrows when not in fullscreen and when there's no overlay.
-  if (!IsFullscreen() && !overlay_container_->visible()) {
+  // Only show the arrows when not in fullscreen and when there's no overlay
+  // and no omnibox popup.
+  if (!IsFullscreen() && !overlay_container_->visible() &&
+      !GetLocationBar()->GetLocationEntry()->model()->popup_model()->IsOpen()) {
     const LocationIconView* location_icon_view =
         toolbar_->location_bar()->location_icon_view();
     // The +1 in the next line creates a 1-px gap between icon and arrow tip.

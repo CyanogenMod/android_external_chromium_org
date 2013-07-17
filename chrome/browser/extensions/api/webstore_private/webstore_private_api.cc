@@ -15,6 +15,7 @@
 #include "base/values.h"
 #include "chrome/browser/about_flags.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/extension_prefs.h"
@@ -28,7 +29,6 @@
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
@@ -175,16 +175,6 @@ base::DictionaryValue* CreateLoginResult(Profile* profile) {
 }
 
 WebstoreInstaller::Delegate* test_webstore_installer_delegate = NULL;
-
-void EnableAppLauncher(base::Callback<void(bool)> callback) {
-#if defined(OS_WIN)
-  LOG(INFO) << "Enabling App Launcher via internal enable";
-  AppListService::Get()->EnableAppList();
-  callback.Run(true);
-#else
-  callback.Run(true);
-#endif
-}
 
 // We allow the web store to set a string containing login information when a
 // purchase is made, so that when a user logs into sync with a different
@@ -503,6 +493,9 @@ void BeginInstallWithManifestFunction::InstallUIProceed() {
           profile(), id_, parsed_manifest_.Pass()));
   approval->use_app_installed_bubble = use_app_installed_bubble_;
   approval->enable_launcher = enable_launcher_;
+  // If we are enabling the launcher, we should not show the app list in order
+  // to train the user to open it themselves at least once.
+  approval->skip_post_install_ui = enable_launcher_;
   approval->installing_icon = gfx::ImageSkia::CreateFrom1xBitmap(icon_);
   g_pending_approvals.Get().PushApproval(approval.Pass());
 
@@ -566,24 +559,13 @@ bool CompleteInstallFunction::RunImpl() {
   // Balanced in OnExtensionInstallSuccess() or OnExtensionInstallFailure().
   AddRef();
 
-  if (approval_->enable_launcher) {
-    EnableAppLauncher(
-        base::Bind(&CompleteInstallFunction::AfterMaybeInstallAppLauncher,
-                   this));
-  } else {
-    AfterMaybeInstallAppLauncher(true);
-  }
+  if (approval_->enable_launcher)
+    AppListService::Get()->EnableAppList(profile());
 
-  return true;
-}
-
-void CompleteInstallFunction::AfterMaybeInstallAppLauncher(bool ok) {
-  if (!ok)
-    LOG(ERROR) << "Error installing app launcher";
-  std::string id = approval_->extension_id;
   if (apps::IsAppLauncherEnabled()) {
-    // Show the app list so it receives install progress notifications.
-    if (approval_->manifest->is_app())
+    // Show the app list to show download is progressing. Don't show the app
+    // list on first app install so users can be trained to open it themselves.
+    if (approval_->manifest->is_app() && !approval_->enable_launcher)
       AppListService::Get()->ShowAppList(profile());
   }
 
@@ -594,6 +576,8 @@ void CompleteInstallFunction::AfterMaybeInstallAppLauncher(bool ok) {
       &(dispatcher()->delegate()->GetAssociatedWebContents()->GetController()),
       id, approval_.Pass(), WebstoreInstaller::FLAG_NONE);
   installer->Start();
+
+  return true;
 }
 
 void CompleteInstallFunction::OnExtensionInstallSuccess(
@@ -632,15 +616,9 @@ EnableAppLauncherFunction::EnableAppLauncherFunction() {}
 EnableAppLauncherFunction::~EnableAppLauncherFunction() {}
 
 bool EnableAppLauncherFunction::RunImpl() {
-  EnableAppLauncher(
-      base::Bind(&EnableAppLauncherFunction::AfterEnableAppLauncher, this));
+  AppListService::Get()->EnableAppList(profile());
+  SendResponse(true);
   return true;
-}
-
-void EnableAppLauncherFunction::AfterEnableAppLauncher(bool ok) {
-  if (!ok)
-    LOG(ERROR) << "Error installing app launcher";
-  SendResponse(ok);
 }
 
 bool GetBrowserLoginFunction::RunImpl() {

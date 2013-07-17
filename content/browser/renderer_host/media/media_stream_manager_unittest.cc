@@ -75,7 +75,9 @@ class MediaStreamManagerTest : public ::testing::Test {
     media_stream_manager_->UseFakeDevice();
   }
 
-  virtual ~MediaStreamManagerTest() {}
+  virtual ~MediaStreamManagerTest() {
+    media_stream_manager_->WillDestroyCurrentMessageLoop();
+  }
 
   MOCK_METHOD1(Response, void(int index));
   void ResponseCallback(int index,
@@ -89,6 +91,7 @@ class MediaStreamManagerTest : public ::testing::Test {
   std::string MakeMediaAccessRequest(int index) {
     const int render_process_id = 1;
     const int render_view_id = 1;
+    const int page_request_id = 1;
     StreamOptions components(MEDIA_DEVICE_AUDIO_CAPTURE,
                              MEDIA_DEVICE_VIDEO_CAPTURE);
     const GURL security_origin;
@@ -97,6 +100,7 @@ class MediaStreamManagerTest : public ::testing::Test {
                    base::Unretained(this), index);
     return media_stream_manager_->MakeMediaAccessRequest(render_process_id,
                                                          render_view_id,
+                                                         page_request_id,
                                                          components,
                                                          security_origin,
                                                          callback);
@@ -133,6 +137,7 @@ TEST_F(MediaStreamManagerTest, MakeMultipleRequests) {
   // Second request.
   int render_process_id = 2;
   int render_view_id = 2;
+  int page_request_id = 2;
   StreamOptions components(MEDIA_DEVICE_AUDIO_CAPTURE,
                            MEDIA_DEVICE_VIDEO_CAPTURE);
   GURL security_origin;
@@ -142,6 +147,7 @@ TEST_F(MediaStreamManagerTest, MakeMultipleRequests) {
   std::string label2 = media_stream_manager_->MakeMediaAccessRequest(
       render_process_id,
       render_view_id,
+      page_request_id,
       components,
       security_origin,
       callback);

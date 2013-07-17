@@ -28,6 +28,7 @@
 #include "base/values.h"
 #include "content/child/appcache_dispatcher.h"
 #include "content/child/child_histogram_message_filter.h"
+#include "content/child/db_message_filter.h"
 #include "content/child/indexed_db/indexed_db_dispatcher.h"
 #include "content/child/indexed_db/indexed_db_message_filter.h"
 #include "content/child/npobject_util.h"
@@ -37,8 +38,8 @@
 #include "content/child/thread_safe_sender.h"
 #include "content/child/web_database_observer_impl.h"
 #include "content/common/child_process_messages.h"
+#include "content/common/content_constants_internal.h"
 #include "content/common/database_messages.h"
-#include "content/common/db_message_filter.h"
 #include "content/common/dom_storage_messages.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
@@ -68,6 +69,7 @@
 #include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/midi_message_filter.h"
 #include "content/renderer/media/peer_connection_tracker.h"
+#include "content/renderer/media/renderer_gpu_video_decoder_factories.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
 #include "content/renderer/media/video_capture_message_filter.h"
 #include "content/renderer/memory_benchmarking_extension.h"
@@ -86,6 +88,7 @@
 #include "media/base/media.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/web/WebColorName.h"
 #include "third_party/WebKit/public/web/WebDatabase.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -98,13 +101,13 @@
 #include "third_party/WebKit/public/web/WebSecurityPolicy.h"
 #include "third_party/WebKit/public/web/WebSharedWorkerRepository.h"
 #include "third_party/WebKit/public/web/WebView.h"
-#include "third_party/WebKit/public/platform/WebString.h"
 #include "ui/base/layout.h"
 #include "ui/base/ui_base_switches.h"
 #include "v8/include/v8.h"
-#include "webkit/glue/webkit_glue.h"
 #include "webkit/child/worker_task_runner.h"
+#include "webkit/glue/webkit_glue.h"
 #include "webkit/renderer/appcache/appcache_frontend_impl.h"
+#include "webkit/renderer/compositor_bindings/web_external_bitmap_impl.h"
 
 #if defined(OS_WIN)
 #include <windows.h>
@@ -216,6 +219,10 @@ void AddHistogramSample(void* hist, int sample) {
   histogram->Add(sample);
 }
 
+scoped_ptr<base::SharedMemory> AllocateSharedMemoryFunction(size_t size) {
+  return RenderThreadImpl::Get()->HostAllocateSharedMemoryBuffer(size);
+}
+
 }  // namespace
 
 class RenderThreadImpl::GpuVDAContextLostCallback
@@ -316,6 +323,10 @@ RenderThreadImpl::RenderThreadImpl(const std::string& channel_name)
 void RenderThreadImpl::Init() {
   TRACE_EVENT_BEGIN_ETW("RenderThreadImpl::Init", 0, "");
 
+  base::debug::TraceLog::GetInstance()->SetThreadSortIndex(
+      base::PlatformThread::CurrentId(),
+      kTraceEventRendererMainThreadSortIndex);
+
   v8::V8::SetCounterFunction(base::StatsTable::FindLocation);
   v8::V8::SetCreateHistogramFunction(CreateHistogram);
   v8::V8::SetAddHistogramSampleFunction(AddHistogramSample);
@@ -405,6 +416,9 @@ void RenderThreadImpl::Init() {
   PathService::Get(DIR_MEDIA_LIBS, &media_path);
   if (!media_path.empty())
     media::InitializeMediaLibrary(media_path);
+
+  memory_pressure_listener_.reset(new base::MemoryPressureListener(
+      base::Bind(&RenderThreadImpl::OnMemoryPressure, base::Unretained(this))));
 
   TRACE_EVENT_END_ETW("RenderThreadImpl::Init", 0, "");
 }
@@ -723,6 +737,8 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
 
   if (GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden())
     ScheduleIdleHandler(kLongIdleHandlerDelayMs);
+
+  webkit::SetSharedMemoryAllocationFunction(AllocateSharedMemoryFunction);
 }
 
 void RenderThreadImpl::RegisterSchemes() {
@@ -731,19 +747,6 @@ void RenderThreadImpl::RegisterSchemes() {
   WebString swappedout_scheme(ASCIIToUTF16(chrome::kSwappedOutScheme));
   WebSecurityPolicy::registerURLSchemeAsDisplayIsolated(swappedout_scheme);
   WebSecurityPolicy::registerURLSchemeAsEmptyDocument(swappedout_scheme);
-
-  // chrome-native: is a scheme used for placeholder navigations that allow
-  // UIs to be drawn with platform native widgets instead of HTML.  These pages
-  // should not be accessible, and should also be treated as empty documents
-  // that can commit synchronously.  No code should be runnable in these pages,
-  // so it should not need to access anything nor should it allow javascript
-  // URLs since it should never be visible to the user.
-  WebString native_scheme(ASCIIToUTF16(chrome::kChromeNativeScheme));
-  WebSecurityPolicy::registerURLSchemeAsDisplayIsolated(native_scheme);
-  WebSecurityPolicy::registerURLSchemeAsEmptyDocument(native_scheme);
-  WebSecurityPolicy::registerURLSchemeAsNoAccess(native_scheme);
-  WebSecurityPolicy::registerURLSchemeAsNotAllowingJavascriptURLs(
-      native_scheme);
 }
 
 void RenderThreadImpl::RecordUserMetrics(const std::string& action) {
@@ -881,6 +884,29 @@ bool RenderThreadImpl::ResolveProxy(const GURL& url, std::string* proxy_list) {
 
 void RenderThreadImpl::PostponeIdleNotification() {
   idle_notifications_to_skip_ = 2;
+}
+
+scoped_refptr<media::GpuVideoDecoder::Factories>
+RenderThreadImpl::GetGpuFactories() {
+  DCHECK(IsMainThread());
+
+  const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
+  scoped_refptr<media::GpuVideoDecoder::Factories> gpu_factories;
+  WebGraphicsContext3DCommandBufferImpl* context3d = NULL;
+  if (!cmd_line->HasSwitch(switches::kDisableAcceleratedVideoDecode))
+    context3d = GetGpuVDAContext3D();
+  if (context3d) {
+    scoped_refptr<base::MessageLoopProxy> factories_loop =
+        compositor_message_loop_proxy();
+    if (!factories_loop.get())
+      factories_loop = base::MessageLoopProxy::current();
+    GpuChannelHost* gpu_channel_host = GetGpuChannel();
+    if (gpu_channel_host) {
+      gpu_factories = new RendererGpuVideoDecoderFactories(
+          gpu_channel_host, factories_loop, context3d);
+    }
+  }
+  return gpu_factories;
 }
 
 /* static */
@@ -1181,8 +1207,10 @@ WebKit::WebMediaStreamCenter* RenderThreadImpl::CreateMediaStreamCenter(
     media_stream_center_ = GetContentClient()->renderer()
         ->OverrideCreateWebMediaStreamCenter(client);
     if (!media_stream_center_) {
-      media_stream_center_ = new MediaStreamCenter(
-          client, GetMediaStreamDependencyFactory());
+      scoped_ptr<MediaStreamCenter> media_stream_center(
+          new MediaStreamCenter(client, GetMediaStreamDependencyFactory()));
+      AddObserver(media_stream_center.get());
+      media_stream_center_ = media_stream_center.release();
     }
   }
 #endif
@@ -1235,6 +1263,21 @@ void RenderThreadImpl::OnTempCrashWithData(const GURL& data) {
 
 void RenderThreadImpl::OnSetWebKitSharedTimersSuspended(bool suspend) {
   ToggleWebKitSharedTimer(suspend);
+}
+
+void RenderThreadImpl::OnMemoryPressure(
+    base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level) {
+  base::allocator::ReleaseFreeMemory();
+
+  if (memory_pressure_level ==
+      base::MemoryPressureListener::MEMORY_PRESSURE_CRITICAL) {
+    // Trigger full v8 garbage collection on critical memory notification.
+    v8::V8::LowMemoryNotification();
+  } else {
+    // Otherwise trigger a couple of v8 GCs using IdleNotification.
+    if (!v8::V8::IdleNotification())
+      v8::V8::IdleNotification();
+  }
 }
 
 scoped_refptr<base::MessageLoopProxy>

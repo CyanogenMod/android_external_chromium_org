@@ -13,9 +13,9 @@
 #include "base/prefs/pref_service.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -79,7 +79,7 @@ void RecommendationRestorer::Observe(
   }
 }
 
-void RecommendationRestorer::OnUserActivity() {
+void RecommendationRestorer::OnUserActivity(const ui::Event* event) {
   if (restore_timer_.IsRunning())
     restore_timer_.Reset();
 }

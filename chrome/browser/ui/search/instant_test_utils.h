@@ -17,8 +17,8 @@
 #include "chrome/browser/ui/omnibox/location_bar.h"
 #include "chrome/browser/ui/search/instant_controller.h"
 #include "chrome/common/search_types.h"
-#include "googleurl/src/gurl.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
+#include "url/gurl.h"
 
 class BrowserInstantController;
 class InstantController;
@@ -88,8 +88,6 @@ class InstantTestBase {
   bool ExecuteScript(const std::string& script) WARN_UNUSED_RESULT;
   bool CheckVisibilityIs(content::WebContents* contents,
                          bool expected) WARN_UNUSED_RESULT;
-  bool HasUserInputInProgress();
-  bool HasTemporaryText();
 
   std::string GetOmniboxText();
 
@@ -102,9 +100,6 @@ class InstantTestBase {
 
   // Returns the omnibox's inline autocompletion (shown in blue highlight).
   string16 GetBlueText();
-
-  // Returns the omnibox's suggest text (shown as gray text).
-  string16 GetGrayText();
 
  private:
   GURL instant_url_;

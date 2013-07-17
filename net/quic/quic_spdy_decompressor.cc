@@ -55,8 +55,8 @@ class SpdyFramerVisitor : public SpdyFramerVisitorInterface {
                         SpdyGoAwayStatus status) OVERRIDE {}
   virtual void OnWindowUpdate(SpdyStreamId stream_id,
                               uint32 delta_window_size) OVERRIDE {}
-  virtual void OnSynStreamCompressed(size_t uncompressed_size,
-                                     size_t compressed_size)  OVERRIDE {}
+  virtual void OnPushPromise(SpdyStreamId stream_id,
+                             SpdyStreamId promised_stream_id) OVERRIDE {}
   void set_visitor(QuicSpdyDecompressor::Visitor* visitor) {
     DCHECK(visitor);
     visitor_ = visitor;

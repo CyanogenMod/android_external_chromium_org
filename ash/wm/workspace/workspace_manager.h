@@ -111,7 +111,6 @@ class ASH_EXPORT WorkspaceManager : public ash::ShellObserver {
     SWITCH_WINDOW_MADE_ACTIVE,
     SWITCH_WINDOW_REMOVED,
     SWITCH_VISIBILITY_CHANGED,
-    SWITCH_BACKGROUND_ONLY_WITHIN_DESKTOP,
     SWITCH_MINIMIZED,
     SWITCH_MAXIMIZED_OR_RESTORED,
     // Switch a normal window in a fullscreen workspace to get fullscreen.
@@ -141,8 +140,7 @@ class ASH_EXPORT WorkspaceManager : public ash::ShellObserver {
 
   // Sets the active workspace.
   void SetActiveWorkspace(Workspace* workspace,
-                          SwitchReason reason,
-                          base::TimeDelta duration);
+                          SwitchReason reason);
 
   // Returns the bounds of the work area.
   gfx::Rect GetWorkAreaBounds() const;
@@ -189,12 +187,6 @@ class ASH_EXPORT WorkspaceManager : public ash::ShellObserver {
   // indicates the window to stack the DesktopBackgroundFadeController's window
   // above.
   void FadeDesktop(aura::Window* window, base::TimeDelta duration);
-
-  // Shows or hides the desktop Window |window|.
-  void ShowOrHideDesktopBackground(aura::Window* window,
-                                   SwitchReason reason,
-                                   base::TimeDelta duration,
-                                   bool show) const;
 
   // Shows/hides |workspace| animating as necessary.
   void ShowWorkspace(Workspace* workspace,

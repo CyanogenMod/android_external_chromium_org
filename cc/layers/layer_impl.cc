@@ -108,9 +108,13 @@ void LayerImpl::PassCopyRequests(ScopedPtrVector<CopyOutputRequest>* requests) {
   if (requests->empty())
     return;
 
+  DCHECK(copy_requests_.empty());
+
   copy_requests_.insert_and_take(copy_requests_.end(), *requests);
   requests->clear();
 
+  if (layer_tree_impl()->IsActiveTree())
+    layer_tree_impl()->AddLayerWithCopyOutputRequest(this);
   NoteLayerPropertyChangedForSubtree();
 }
 
@@ -119,10 +123,11 @@ void LayerImpl::TakeCopyRequestsAndTransformToTarget(
   if (copy_requests_.empty())
     return;
 
+  size_t first_inserted_request = requests->size();
   requests->insert_and_take(requests->end(), copy_requests_);
   copy_requests_.clear();
 
-  for (size_t i = 0; i < requests->size(); ++i) {
+  for (size_t i = first_inserted_request; i < requests->size(); ++i) {
     CopyOutputRequest* request = requests->at(i);
     if (!request->has_area())
       continue;
@@ -134,6 +139,9 @@ void LayerImpl::TakeCopyRequestsAndTransformToTarget(
         MathUtil::MapClippedRect(draw_properties_.target_space_transform,
                                  request_in_content_space));
   }
+
+  if (layer_tree_impl()->IsActiveTree())
+    layer_tree_impl()->RemoveLayerWithCopyOutputRequest(this);
 }
 
 void LayerImpl::CreateRenderSurface() {
@@ -414,11 +422,10 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
 }
 
 base::DictionaryValue* LayerImpl::LayerTreeAsJson() const {
-  base::ListValue* list;
   base::DictionaryValue* result = new base::DictionaryValue;
   result->SetString("LayerType", LayerTypeAsString());
 
-  list = new base::ListValue;
+  base::ListValue* list = new base::ListValue;
   list->AppendInteger(bounds().width());
   list->AppendInteger(bounds().height());
   result->Set("Bounds", list);
@@ -438,6 +445,7 @@ base::DictionaryValue* LayerImpl::LayerTreeAsJson() const {
 
   result->SetBoolean("DrawsContent", draws_content_);
   result->SetDouble("Opacity", opacity());
+  result->SetBoolean("ContentsOpaque", contents_opaque_);
 
   if (scrollable_)
     result->SetBoolean("Scrollable", scrollable_);

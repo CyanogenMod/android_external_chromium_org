@@ -9,10 +9,10 @@
 #include "base/platform_file.h"
 #include "base/prefs/pref_service.h"
 #include "base/version.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/chrome_version_service.h"
 #include "chrome/browser/profiles/profile_impl.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -163,7 +163,7 @@ IN_PROC_BROWSER_TEST_F(ProfileBrowserTest, DISABLED_ProfileReadmeCreated) {
   content::RunAllPendingInMessageLoop(content::BrowserThread::FILE);
 
   // Verify that README exists.
-  EXPECT_TRUE(file_util::PathExists(
+  EXPECT_TRUE(base::PathExists(
       temp_dir.path().Append(chrome::kReadmeFilename)));
 }
 

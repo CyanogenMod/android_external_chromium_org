@@ -72,7 +72,6 @@ bool RunServerAcceptLoop(const std::string& welcome_message,
     }
     server_delegate->OnClientConnected(client_socket.Pass());
   }
-  server_delegate->OnServerExited();
   return !failed;
 }
 
@@ -141,7 +140,7 @@ scoped_ptr<Socket> ConnectToUnixDomainSocket(
     char buf[kBufferSize];
     DCHECK(expected_welcome_message.length() + 1 <= sizeof(buf));
     memset(buf, 0, sizeof(buf));
-    if (socket->Read(buf, sizeof(buf)) < 0) {
+    if (socket->Read(buf, expected_welcome_message.length() + 1) < 0) {
       perror("read");
       continue;
     }
@@ -210,8 +209,8 @@ bool Daemon::SpawnIfNeeded() {
         }
         server_delegate_->Init();
         command_socket.AddEventFd(get_exit_fd_callback_());
-        exit(!RunServerAcceptLoop(identifier_, &command_socket,
-                                  server_delegate_));
+        return RunServerAcceptLoop(
+            identifier_, &command_socket, server_delegate_);
       }
       default:
         break;

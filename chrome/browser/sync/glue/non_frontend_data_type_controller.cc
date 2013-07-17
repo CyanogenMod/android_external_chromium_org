@@ -161,8 +161,8 @@ void NonFrontendDataTypeController::Stop() {
   DCHECK_NE(state_, NOT_RUNNING);
 
   // TODO(sync): Blocking the UI thread at shutdown is bad. The new API avoids
-  // this. Once all non-frontend datatypes use the new API, we can get rid of this
-  // locking (see implementation in AutofillProfileDataTypeController).
+  // this. Once all non-frontend datatypes use the new API, we can get rid of
+  // this locking (see implementation in AutofillProfileDataTypeController).
   // http://crbug.com/19757
   base::ThreadRestrictions::ScopedAllowWait allow_wait;
 

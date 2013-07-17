@@ -17,6 +17,7 @@
 #include "chrome/browser/infobars/infobar_container.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/omnibox/omnibox_popup_model_observer.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/browser/ui/views/frame/browser_frame.h"
 #include "chrome/browser/ui/views/frame/immersive_mode_controller.h"
@@ -100,7 +101,8 @@ class BrowserView : public BrowserWindow,
                     public InfoBarContainer::Delegate,
                     public views::SingleSplitViewListener,
                     public gfx::SysColorChangeListener,
-                    public LoadCompleteListener::Delegate {
+                    public LoadCompleteListener::Delegate,
+                    public OmniboxPopupModelObserver {
  public:
   // The browser view's class name.
   static const char kViewClassName[];
@@ -182,6 +184,11 @@ class BrowserView : public BrowserWindow,
 
   // Accessor for the InfobarContainer.
   InfoBarContainerView* infobar_container() { return infobar_container_; }
+
+  // Accessor for the FullscreenExitBubbleViews.
+  FullscreenExitBubbleViews* fullscreen_exit_bubble() {
+    return fullscreen_bubble_.get();
+  }
 
   // Returns true if various window components are visible.
   bool IsTabStripVisible() const;
@@ -350,8 +357,7 @@ class BrowserView : public BrowserWindow,
   virtual void ShowWebsiteSettings(Profile* profile,
                                    content::WebContents* web_contents,
                                    const GURL& url,
-                                   const content::SSLStatus& ssl,
-                                   bool show_history) OVERRIDE;
+                                   const content::SSLStatus& ssl) OVERRIDE;
   virtual void ShowAppMenu() OVERRIDE;
   virtual bool PreHandleKeyboardEvent(
       const content::NativeWebKeyboardEvent& event,
@@ -460,6 +466,9 @@ class BrowserView : public BrowserWindow,
 
   // Overridden from ui::AcceleratorTarget:
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
+
+  // OmniboxPopupModelObserver overrides
+  virtual void OnOmniboxPopupShownOrHidden() OVERRIDE;
 
   // Testing interface:
   views::SingleSplitView* GetContentsSplitForTest() { return contents_split_; }
@@ -607,7 +616,7 @@ class BrowserView : public BrowserWindow,
   // |contents_container_|.
   void MakeOverlayContentsActiveContents();
 
-  // Return the max top arrow height for infobar.
+  // Returns the max top arrow height for infobar.
   int GetMaxTopInfoBarArrowHeight();
 
   // Last focused view that issued a tab traversal.

@@ -71,11 +71,12 @@ bool SandboxOriginDatabase::Init(InitOption init_option,
     return true;
 
   base::FilePath db_path = GetDatabasePath();
-  if (init_option == FAIL_IF_NONEXISTENT && !file_util::PathExists(db_path))
+  if (init_option == FAIL_IF_NONEXISTENT && !base::PathExists(db_path))
     return false;
 
   std::string path = FilePathToString(db_path);
   leveldb::Options options;
+  options.max_open_files = 0;  // Use minimum.
   options.create_if_missing = true;
   leveldb::DB* db;
   leveldb::Status status = leveldb::DB::Open(options, path, &db);
@@ -108,7 +109,7 @@ bool SandboxOriginDatabase::Init(InitOption init_option,
                                 DB_REPAIR_FAILED, DB_REPAIR_MAX);
       // fall through
     case DELETE_ON_CORRUPTION:
-      if (!base::Delete(file_system_directory_, true))
+      if (!base::DeleteFile(file_system_directory_, true))
         return false;
       if (!file_util::CreateDirectory(file_system_directory_))
         return false;
@@ -120,7 +121,9 @@ bool SandboxOriginDatabase::Init(InitOption init_option,
 
 bool SandboxOriginDatabase::RepairDatabase(const std::string& db_path) {
   DCHECK(!db_.get());
-  if (!leveldb::RepairDB(db_path, leveldb::Options()).ok() ||
+  leveldb::Options options;
+  options.max_open_files = 0;  // Use minimum.
+  if (!leveldb::RepairDB(db_path, options).ok() ||
       !Init(FAIL_IF_NONEXISTENT, FAIL_ON_CORRUPTION)) {
     LOG(WARNING) << "Failed to repair SandboxOriginDatabase.";
     return false;
@@ -167,7 +170,7 @@ bool SandboxOriginDatabase::RepairDatabase(const std::string& db_path) {
   for (std::set<base::FilePath>::iterator dir_itr = directories.begin();
        dir_itr != directories.end();
        ++dir_itr) {
-    if (!base::Delete(file_system_directory_.Append(*dir_itr),
+    if (!base::DeleteFile(file_system_directory_.Append(*dir_itr),
                            true /* recursive */)) {
       DropDatabase();
       return false;
@@ -301,7 +304,7 @@ base::FilePath SandboxOriginDatabase::GetDatabasePath() const {
 
 void SandboxOriginDatabase::RemoveDatabase() {
   DropDatabase();
-  base::Delete(GetDatabasePath(), true /* recursive */);
+  base::DeleteFile(GetDatabasePath(), true /* recursive */);
 }
 
 bool SandboxOriginDatabase::GetLastPathNumber(int* number) {

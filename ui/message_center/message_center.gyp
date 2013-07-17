@@ -72,12 +72,8 @@
         'views/message_center_bubble.h',
         'views/message_center_view.cc',
         'views/message_center_view.h',
-        'views/message_popup_bubble.cc',
-        'views/message_popup_bubble.h',
         'views/message_popup_collection.cc',
         'views/message_popup_collection.h',
-        'views/message_simple_view.cc',
-        'views/message_simple_view.h',
         'views/message_view.cc',
         'views/message_view.h',
         'views/notifier_settings_view.cc',
@@ -97,6 +93,16 @@
         }, {
           'sources/': [
             ['exclude', 'views/'],
+          ],
+        }],
+        ['use_ash==0', {
+          'sources!': [
+            'views/message_bubble_base.cc',
+            'views/message_bubble_base.h',
+            'views/message_center_bubble.cc',
+            'views/message_center_bubble.h',
+            'views/message_popup_bubble.cc',
+            'views/message_popup_bubble.h',
           ],
         }],
         ['OS=="mac"', {

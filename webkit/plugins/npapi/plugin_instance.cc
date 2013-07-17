@@ -243,7 +243,7 @@ void PluginInstance::NPP_Destroy() {
 
   for (unsigned int file_index = 0; file_index < files_created_.size();
        file_index++) {
-    base::Delete(files_created_[file_index], false);
+    base::DeleteFile(files_created_[file_index], false);
   }
 
   // Ensure that no timer callbacks are invoked after NPP_Destroy.
@@ -418,7 +418,7 @@ void PluginInstance::DidReceiveManualData(const char* buffer, int length) {
 void PluginInstance::DidFinishManualLoading() {
   DCHECK(load_manually_);
   if (plugin_data_stream_.get() != NULL) {
-    plugin_data_stream_->DidFinishLoading();
+    plugin_data_stream_->DidFinishLoading(plugin_data_stream_->ResourceId());
     plugin_data_stream_->Close(NPRES_DONE);
     plugin_data_stream_ = NULL;
   }
@@ -427,7 +427,7 @@ void PluginInstance::DidFinishManualLoading() {
 void PluginInstance::DidManualLoadFail() {
   DCHECK(load_manually_);
   if (plugin_data_stream_.get() != NULL) {
-    plugin_data_stream_->DidFail();
+    plugin_data_stream_->DidFail(plugin_data_stream_->ResourceId());
     plugin_data_stream_ = NULL;
   }
 }

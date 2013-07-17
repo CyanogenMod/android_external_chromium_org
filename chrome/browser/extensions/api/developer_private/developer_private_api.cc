@@ -16,6 +16,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/api/developer_private/developer_private_api_factory.h"
 #include "chrome/browser/extensions/api/developer_private/entry_picker.h"
@@ -31,10 +32,9 @@
 #include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sync_file_system/drive_file_sync_service.h"
+#include "chrome/browser/sync_file_system/drive_backend/drive_file_sync_service.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/developer_private.h"
 #include "chrome/common/extensions/background_info.h"
@@ -920,7 +920,7 @@ bool DeveloperPrivateExportSyncfsFolderToLocalfsFunction::RunImpl() {
 
 void DeveloperPrivateExportSyncfsFolderToLocalfsFunction::
     ClearPrexistingDirectoryContent(const base::FilePath& project_path) {
-  if (!base::Delete(project_path, true/*recursive*/)) {
+  if (!base::DeleteFile(project_path, true/*recursive*/)) {
     SetError("Error in copying files from sync filesystem.");
     content::BrowserThread::PostTask(content::BrowserThread::UI, FROM_HERE,
         base::Bind(&DeveloperPrivateExportSyncfsFolderToLocalfsFunction::
@@ -1040,7 +1040,7 @@ void DeveloperPrivateExportSyncfsFolderToLocalfsFunction::CopyFile(
   }
 
   if (success_)
-    file_util::CopyFile(src_path, target_path);
+    base::CopyFile(src_path, target_path);
 
   CHECK(pendingCopyOperationsCount_ > 0);
   pendingCopyOperationsCount_--;

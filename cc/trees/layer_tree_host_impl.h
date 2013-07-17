@@ -25,9 +25,7 @@
 #include "cc/output/renderer.h"
 #include "cc/quads/render_pass.h"
 #include "cc/resources/tile_manager.h"
-#include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "third_party/skia/include/core/SkPicture.h"
 #include "ui/gfx/rect.h"
 
 namespace cc {
@@ -199,6 +197,7 @@ class CC_EXPORT LayerTreeHostImpl
   // OutputSurfaceClient implementation.
   virtual bool DeferredInitialize(
       scoped_refptr<ContextProvider> offscreen_context_provider) OVERRIDE;
+  virtual void ReleaseGL() OVERRIDE;
   virtual void SetNeedsRedrawRect(gfx::Rect rect) OVERRIDE;
   virtual void BeginFrame(const BeginFrameArgs& args) OVERRIDE;
   virtual void SetExternalDrawConstraints(const gfx::Transform& transform,
@@ -310,7 +309,7 @@ class CC_EXPORT LayerTreeHostImpl
     return animation_registrar_.get();
   }
 
-  void SetDebugState(const LayerTreeDebugState& debug_state);
+  void SetDebugState(const LayerTreeDebugState& new_debug_state);
   const LayerTreeDebugState& debug_state() const { return debug_state_; }
 
   class CC_EXPORT CullRenderPassesWithCachedTextures {
@@ -349,8 +348,6 @@ class CC_EXPORT LayerTreeHostImpl
 
   template <typename RenderPassCuller>
       static void RemoveRenderPasses(RenderPassCuller culler, FrameData* frame);
-
-  skia::RefPtr<SkPicture> CapturePicture();
 
   gfx::Vector2dF accumulated_root_overscroll() const {
     return accumulated_root_overscroll_;
@@ -399,7 +396,10 @@ class CC_EXPORT LayerTreeHostImpl
 
  private:
   void CreateAndSetRenderer(OutputSurface* output_surface,
-                            ResourceProvider* resource_provider);
+                            ResourceProvider* resource_provider,
+                            bool skip_gl_renderer);
+  void CreateAndSetTileManager(ResourceProvider* resource_provider,
+                               bool using_map_image);
   void ReleaseTreeResources();
   void EnforceZeroBudget(bool zero_budget);
 
@@ -431,8 +431,6 @@ class CC_EXPORT LayerTreeHostImpl
 
   void AnimateScrollbarsRecursive(LayerImpl* layer,
                                   base::TimeTicks time);
-
-  static LayerImpl* GetNonCompositedContentLayerRecursive(LayerImpl* layer);
 
   void UpdateCurrentFrameTime(base::TimeTicks* ticks, base::Time* now) const;
 
@@ -532,6 +530,8 @@ class CC_EXPORT LayerTreeHostImpl
   scoped_ptr<AnimationRegistrar> animation_registrar_;
 
   RenderingStatsInstrumentation* rendering_stats_instrumentation_;
+
+  bool need_check_for_completed_tile_uploads_before_draw_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerTreeHostImpl);
 };

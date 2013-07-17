@@ -16,6 +16,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/history/history_service.h"
@@ -24,7 +25,6 @@
 #include "chrome/browser/history/visit_filter.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/cancelable_task_tracker.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/api/experimental_history.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
@@ -489,8 +489,8 @@ bool HistoryDeleteAllFunction::RunAsyncImpl() {
                                            Profile::EXPLICIT_ACCESS);
   hs->ExpireHistoryBetween(
       restrict_urls,
-      base::Time::UnixEpoch(),     // From the beginning of the epoch.
-      base::Time::Now(),           // To the current time.
+      base::Time(),      // Unbounded beginning...
+      base::Time(),      // ...and the end.
       base::Bind(&HistoryDeleteAllFunction::DeleteComplete,
                  base::Unretained(this)),
       &task_tracker_);

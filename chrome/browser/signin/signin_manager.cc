@@ -14,6 +14,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile_io_data.h"
 #include "chrome/browser/signin/about_signin_internals.h"
 #include "chrome/browser/signin/about_signin_internals_factory.h"
@@ -26,7 +27,6 @@
 #include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
@@ -606,10 +606,29 @@ void SigninManager::OnGetUserInfoSuccess(const UserInfoMap& data) {
   }
 }
 
-
 void SigninManager::CompletePendingSignin() {
   DCHECK(!possibly_invalid_username_.empty());
-  SetAuthenticatedUsername(possibly_invalid_username_);
+  OnSignedIn(possibly_invalid_username_);
+
+  TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
+  token_service->UpdateCredentials(last_result_);
+  DCHECK(token_service->AreCredentialsValid());
+  token_service->StartFetchingTokens();
+
+  // If we have oauth2 tokens, tell token service about them so it does not
+  // need to fetch them again.
+  if (!temp_oauth_login_tokens_.refresh_token.empty()) {
+    token_service->UpdateCredentialsWithOAuth2(temp_oauth_login_tokens_);
+    temp_oauth_login_tokens_ = ClientOAuthResult();
+  }
+}
+
+void SigninManager::OnExternalSigninCompleted(const std::string& username) {
+  OnSignedIn(username);
+}
+
+void SigninManager::OnSignedIn(const std::string& username) {
+  SetAuthenticatedUsername(username);
   possibly_invalid_username_.clear();
   profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
                                   GetAuthenticatedUsername());
@@ -623,18 +642,6 @@ void SigninManager::CompletePendingSignin() {
 
   password_.clear();  // Don't need it anymore.
   DisableOneClickSignIn(profile_);  // Don't ever offer again.
-
-  TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
-  token_service->UpdateCredentials(last_result_);
-  DCHECK(token_service->AreCredentialsValid());
-  token_service->StartFetchingTokens();
-
-  // If we have oauth2 tokens, tell token service about them so it does not
-  // need to fetch them again.
-  if (!temp_oauth_login_tokens_.refresh_token.empty()) {
-    token_service->UpdateCredentialsWithOAuth2(temp_oauth_login_tokens_);
-    temp_oauth_login_tokens_ = ClientOAuthResult();
-  }
 }
 
 void SigninManager::OnGetUserInfoFailure(const GoogleServiceAuthError& error) {

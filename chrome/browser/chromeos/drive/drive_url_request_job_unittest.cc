@@ -20,11 +20,11 @@
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread_bundle.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/test_completion_callback.h"
 #include "net/http/http_byte_range.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace drive {
 namespace {
@@ -122,7 +122,7 @@ class DriveURLRequestJobTest : public testing::Test {
         base::Bind(&DriveURLRequestJobTest::GetFileSystem,
                    base::Unretained(this)),
         blocking_pool->GetSequencedTaskRunner(
-            blocking_pool->GetSequenceToken())));
+            blocking_pool->GetSequenceToken()).get()));
     url_request_context_.reset(new net::URLRequestContext());
     url_request_context_->set_job_factory(test_url_request_job_factory_.get());
     url_request_context_->set_network_delegate(test_network_delegate_.get());
@@ -143,7 +143,7 @@ class DriveURLRequestJobTest : public testing::Test {
     scoped_ptr<DriveFileStreamReader> reader(new DriveFileStreamReader(
         base::Bind(&DriveURLRequestJobTest::GetFileSystem,
                    base::Unretained(this)),
-        worker_thread->message_loop_proxy()));
+        worker_thread->message_loop_proxy().get()));
     int error = net::ERR_FAILED;
     scoped_ptr<ResourceEntry> entry;
     {

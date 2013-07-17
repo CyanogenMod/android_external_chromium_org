@@ -192,8 +192,6 @@ void MediaGalleriesGetMediaFileSystemsFunction::ReturnGalleries(
     if (has_read_permission) {
       content::ChildProcessSecurityPolicy* policy =
           ChildProcessSecurityPolicy::GetInstance();
-      if (!policy->CanReadFile(child_id, filesystems[i].path))
-        policy->GrantReadFile(child_id, filesystems[i].path);
       policy->GrantReadFileSystem(child_id, filesystems[i].fsid);
     }
   }
@@ -206,13 +204,6 @@ void MediaGalleriesGetMediaFileSystemsFunction::ShowDialog() {
   WebContents* contents = WebContents::FromRenderViewHost(render_view_host());
   WebContentsModalDialogManager* web_contents_modal_dialog_manager =
       WebContentsModalDialogManager::FromWebContents(contents);
-  // If there's no user gesture associated with the API call, do not show
-  // the dialog.
-  if (!user_gesture()) {
-    GetAndReturnGalleries();
-    return;
-  }
-
   if (!web_contents_modal_dialog_manager) {
     // If there is no WebContentsModalDialogManager, then this contents is
     // probably the background page for an app. Try to find a shell window to

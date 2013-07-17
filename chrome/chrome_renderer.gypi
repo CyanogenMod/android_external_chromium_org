@@ -27,12 +27,12 @@
         '../third_party/WebKit/public/blink.gyp:blink',
         '../third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
         '../ui/surface/surface.gyp:surface',
+        '../webkit/glue/webkit_glue_common.gyp:glue_common',
+        '../webkit/renderer/webkit_renderer.gyp:webkit_renderer',
         '../webkit/support/webkit_support.gyp:glue',
-        '../webkit/support/webkit_support.gyp:glue_common',
-        '../webkit/support/webkit_support.gyp:glue_renderer',
         '../webkit/support/webkit_support.gyp:plugins',
         '../webkit/support/webkit_support.gyp:webkit_media',
-        '../webkit/support/webkit_support.gyp:webkit_resources',
+        '../webkit/webkit_resources.gyp:webkit_resources',
       ],
       'include_dirs': [
         '..',
@@ -180,6 +180,7 @@
         'renderer/resources/extensions/app_window_custom_bindings.js',
         'renderer/resources/extensions/binding.js',
         'renderer/resources/extensions/browser_action_custom_bindings.js',
+        'renderer/resources/extensions/chrome_direct_setting.js',
         'renderer/resources/extensions/chrome_setting.js',
         'renderer/resources/extensions/content_setting.js',
         'renderer/resources/extensions/content_watcher.js',
@@ -254,6 +255,8 @@
         'renderer/pepper/pepper_pdf_host.h',
         'renderer/pepper/pepper_shared_memory_message_filter.cc',
         'renderer/pepper/pepper_shared_memory_message_filter.h',
+        'renderer/pepper/pnacl_translation_resource_host.cc',
+        'renderer/pepper/pnacl_translation_resource_host.h',
         'renderer/pepper/ppb_nacl_private_impl.cc',
         'renderer/pepper/ppb_nacl_private_impl.h',
         'renderer/pepper/ppb_pdf_impl.cc',
@@ -270,8 +273,8 @@
         'renderer/prerender/prerender_extra_data.h',
         'renderer/prerender/prerender_helper.cc',
         'renderer/prerender/prerender_helper.h',
-        'renderer/prerender/prerender_webmediaplayer.cc',
-        'renderer/prerender/prerender_webmediaplayer.h',
+        'renderer/prerender/prerender_media_load_deferrer.cc',
+        'renderer/prerender/prerender_media_load_deferrer.h',
         'renderer/prerender/prerenderer_client.cc',
         'renderer/prerender/prerenderer_client.h',
         'renderer/printing/print_web_view_helper.cc',
@@ -326,8 +329,6 @@
         'renderer/tts_dispatcher.h',
         'renderer/translate/translate_helper.cc',
         'renderer/translate/translate_helper.h',
-        'renderer/translate/translate_helper_metrics.cc',
-        'renderer/translate/translate_helper_metrics.h',
         'renderer/validation_message_agent.cc',
         'renderer/validation_message_agent.h',
         'renderer/web_apps.cc',
@@ -379,14 +380,6 @@
             '../third_party/mach_override/mach_override.gyp:mach_override',
           ],
         }],
-        ['enable_language_detection==1', {
-          'dependencies': [
-            '../third_party/cld/cld.gyp:cld',
-          ],
-          'include_dirs': [
-            '../third_party/cld',
-          ],
-        }],
         ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
@@ -400,8 +393,8 @@
         }],
         ['OS=="android"', {
           'sources!': [
-            'renderer/prerender/prerender_webmediaplayer.cc',
-            'renderer/prerender/prerender_webmediaplayer.h',
+            'renderer/prerender/prerender_media_load_deferrer.cc',
+            'renderer/prerender/prerender_media_load_deferrer.h',
             'renderer/printing/print_web_view_helper.cc',
           ],
           'defines': [

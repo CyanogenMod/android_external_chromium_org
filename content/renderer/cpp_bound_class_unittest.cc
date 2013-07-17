@@ -20,6 +20,8 @@ using webkit_glue::CppVariant;
 
 namespace content {
 
+namespace {
+
 class CppBindingExampleSubObject : public CppBindingExample {
  public:
   CppBindingExampleSubObject() {
@@ -67,6 +69,8 @@ class TestObserver : public RenderViewObserver {
   CppBindingExampleWithOptionalFallback example_bound_class_;
 };
 
+}  // namespace anonymous
+
 class CppBoundClassTest : public RenderViewTest {
  public:
   CppBoundClassTest() {}
@@ -82,6 +86,11 @@ class CppBoundClassTest : public RenderViewTest {
 
     GetMainFrame()->loadRequest(url_request);
     ProcessPendingMessages();
+  }
+
+  virtual void TearDown() OVERRIDE {
+    observer_.reset();
+    RenderViewTest::TearDown();
   }
 
   // Executes the specified JavaScript and checks that the resulting document

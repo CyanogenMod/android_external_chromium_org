@@ -12,9 +12,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/file_task_executor.h"
-#include "chrome/browser/chromeos/extensions/file_manager/file_browser_handler.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
-#include "chrome/browser/chromeos/fileapi/cros_mount_point_provider.h"
+#include "chrome/browser/chromeos/fileapi/file_system_backend.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -27,6 +26,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/host_desktop.h"
+#include "chrome/common/extensions/api/file_browser_handlers/file_browser_handler.h"
 #include "chrome/common/extensions/background_info.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
@@ -62,23 +62,6 @@ const char kDriveTaskExtensionPrefix[] = "drive-app:";
 const size_t kDriveTaskExtensionPrefixLength =
     arraysize(kDriveTaskExtensionPrefix) - 1;
 
-const int kReadWriteFilePermissions = base::PLATFORM_FILE_OPEN |
-                                      base::PLATFORM_FILE_CREATE |
-                                      base::PLATFORM_FILE_OPEN_ALWAYS |
-                                      base::PLATFORM_FILE_CREATE_ALWAYS |
-                                      base::PLATFORM_FILE_OPEN_TRUNCATED |
-                                      base::PLATFORM_FILE_READ |
-                                      base::PLATFORM_FILE_WRITE |
-                                      base::PLATFORM_FILE_EXCLUSIVE_READ |
-                                      base::PLATFORM_FILE_EXCLUSIVE_WRITE |
-                                      base::PLATFORM_FILE_ASYNC |
-                                      base::PLATFORM_FILE_WRITE_ATTRIBUTES;
-
-const int kReadOnlyFilePermissions = base::PLATFORM_FILE_OPEN |
-                                     base::PLATFORM_FILE_READ |
-                                     base::PLATFORM_FILE_EXCLUSIVE_READ |
-                                     base::PLATFORM_FILE_ASYNC;
-
 // Returns process id of the process the extension is running in.
 int ExtractProcessFromExtensionId(Profile* profile,
                                   const std::string& extension_id) {
@@ -109,22 +92,6 @@ const FileBrowserHandler* FindFileBrowserHandler(const Extension* extension,
   return NULL;
 }
 
-unsigned int GetAccessPermissionsForFileBrowserHandler(
-    const Extension* extension,
-    const std::string& action_id) {
-  const FileBrowserHandler* action =
-      FindFileBrowserHandler(extension, action_id);
-  if (!action)
-    return 0;
-  unsigned int result = 0;
-  if (action->CanRead())
-    result |= kReadOnlyFilePermissions;
-  if (action->CanWrite())
-    result |= kReadWriteFilePermissions;
-  // TODO(tbarzic): We don't handle Create yet.
-  return result;
-}
-
 std::string EscapedUtf8ToLower(const std::string& str) {
   string16 utf16 = UTF8ToUTF16(
       net::UnescapeURLComponent(str, net::UnescapeRule::NORMAL));
@@ -148,7 +115,7 @@ bool GetFileBrowserHandlers(Profile* profile,
   for (ExtensionSet::const_iterator iter = service->extensions()->begin();
        iter != service->extensions()->end();
        ++iter) {
-    const Extension* extension = *iter;
+    const Extension* extension = iter->get();
     if (profile->IsOffTheRecord() &&
         !service->IsIncognitoEnabled(extension->id()))
       continue;
@@ -187,10 +154,10 @@ bool FileBrowserHasAccessPermissionForFiles(
     const GURL& source_url,
     const std::string& file_browser_id,
     const std::vector<FileSystemURL>& files) {
-  fileapi::ExternalFileSystemMountPointProvider* external_provider =
+  fileapi::ExternalFileSystemBackend* backend =
       GetFileSystemContextForExtension(profile, file_browser_id)->
-      external_provider();
-  if (!external_provider)
+      external_backend();
+  if (!backend)
     return false;
 
   for (size_t i = 0; i < files.size(); ++i) {
@@ -198,8 +165,8 @@ bool FileBrowserHasAccessPermissionForFiles(
     if (source_url.GetOrigin() != files[i].origin())
       return false;
 
-    if (!chromeos::CrosMountPointProvider::CanHandleURL(files[i]) ||
-        !external_provider->IsAccessAllowed(files[i])) {
+    if (!chromeos::FileSystemBackend::CanHandleURL(files[i]) ||
+        !backend->IsAccessAllowed(files[i])) {
       return false;
     }
   }
@@ -274,14 +241,6 @@ std::string GetDefaultTaskIdFromPrefs(Profile* profile,
     suffix_task_prefs->GetStringWithoutPathExpansion(lower_suffix, &task_id);
   VLOG_IF(1, !task_id.empty()) << "Found suffix default handler: " << task_id;
   return task_id;
-}
-
-int GetReadWritePermissions() {
-  return kReadWriteFilePermissions;
-}
-
-int GetReadOnlyPermissions() {
-  return kReadOnlyFilePermissions;
 }
 
 std::string MakeTaskID(const std::string& extension_id,
@@ -629,8 +588,8 @@ ExtensionTaskExecutor::SetupFileAccessPermissions(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   DCHECK(handler_extension.get());
 
-  fileapi::ExternalFileSystemMountPointProvider* external_provider_handler =
-      file_system_context_handler->external_provider();
+  fileapi::ExternalFileSystemBackend* backend =
+      file_system_context_handler->external_backend();
 
   FileDefinitionList file_list;
   for (size_t i = 0; i < file_urls.size(); ++i) {
@@ -648,7 +607,7 @@ ExtensionTaskExecutor::SetupFileAccessPermissions(
     // If the file is under drive mount point, there is no actual file to be
     // found on the url.path().
     if (!is_drive_file) {
-      if (!file_util::PathExists(local_path) ||
+      if (!base::PathExists(local_path) ||
           file_util::IsLink(local_path) ||
           !file_util::GetFileInfo(local_path, &file_info)) {
         continue;
@@ -658,7 +617,7 @@ ExtensionTaskExecutor::SetupFileAccessPermissions(
     // Grant access to this particular file to target extension. This will
     // ensure that the target extension can access only this FS entry and
     // prevent from traversing FS hierarchy upward.
-    external_provider_handler->GrantFileAccessToExtension(
+    backend->GrantFileAccessToExtension(
         handler_extension->id(), virtual_path);
 
     // Output values.
@@ -746,7 +705,7 @@ void ExtensionTaskExecutor::ExecuteFileActionsOnUIThread(
 
   int handler_pid = ExtractProcessFromExtensionId(profile_, extension_->id());
   if (handler_pid <= 0 &&
-      !extensions::BackgroundInfo::HasLazyBackgroundPage(extension_)) {
+      !extensions::BackgroundInfo::HasLazyBackgroundPage(extension_.get())) {
     ExecuteDoneOnUIThread(false);
     return;
   }
@@ -759,7 +718,7 @@ void ExtensionTaskExecutor::ExecuteFileActionsOnUIThread(
     extensions::LazyBackgroundTaskQueue* queue =
         extensions::ExtensionSystem::Get(profile_)->
         lazy_background_task_queue();
-    if (!queue->ShouldEnqueueTask(profile_, extension_)) {
+    if (!queue->ShouldEnqueueTask(profile_, extension_.get())) {
       ExecuteDoneOnUIThread(false);
       return;
     }
@@ -795,7 +754,8 @@ void ExtensionTaskExecutor::SetupPermissionsAndDispatchEvent(
     return;
   }
 
-  SetupHandlerHostFileAccessPermissions(file_list, extension_, handler_pid);
+  SetupHandlerHostFileAccessPermissions(
+      file_list, extension_.get(), handler_pid);
 
   scoped_ptr<ListValue> event_args(new ListValue());
   event_args->Append(new base::StringValue(action_id_));
@@ -832,13 +792,21 @@ void ExtensionTaskExecutor::SetupHandlerHostFileAccessPermissions(
     const FileDefinitionList& file_list,
     const Extension* extension,
     int handler_pid) {
+  const FileBrowserHandler* action = FindFileBrowserHandler(extension_,
+                                                            action_id_);
   for (FileDefinitionList::const_iterator iter = file_list.begin();
        iter != file_list.end();
        ++iter) {
-    content::ChildProcessSecurityPolicy::GetInstance()->GrantPermissionsForFile(
-        handler_pid,
-        iter->absolute_path,
-        GetAccessPermissionsForFileBrowserHandler(extension_, action_id_));
+    if (!action)
+      continue;
+    if (action->CanRead()) {
+      content::ChildProcessSecurityPolicy::GetInstance()->GrantReadFile(
+          handler_pid, iter->absolute_path);
+    }
+    if (action->CanWrite()) {
+      content::ChildProcessSecurityPolicy::GetInstance()->
+          GrantCreateReadWriteFile(handler_pid, iter->absolute_path);
+    }
   }
 }
 

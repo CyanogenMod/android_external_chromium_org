@@ -297,6 +297,7 @@ void SavePackage::InternalInit() {
 
 bool SavePackage::Init(
     const SavePackageDownloadCreatedCallback& download_created_callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   // Set proper running state.
   if (wait_state_ != INITIALIZE)
     return false;
@@ -313,13 +314,24 @@ bool SavePackage::Init(
   scoped_ptr<DownloadRequestHandleInterface> request_handle(
       new SavePackageRequestHandle(AsWeakPtr()));
   // The download manager keeps ownership but adds us as an observer.
-  download_ = download_manager_->CreateSavePackageDownloadItem(
+  download_manager_->CreateSavePackageDownloadItem(
       saved_main_file_path_,
       page_url_,
       ((save_type_ == SAVE_PAGE_TYPE_AS_MHTML) ?
        "multipart/related" : "text/html"),
       request_handle.Pass(),
-      this);
+      base::Bind(&SavePackage::InitWithDownloadItem, AsWeakPtr(),
+                 download_created_callback));
+  return true;
+}
+
+void SavePackage::InitWithDownloadItem(
+    const SavePackageDownloadCreatedCallback& download_created_callback,
+    DownloadItemImpl* item) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(item);
+  download_ = item;
+  download_->AddObserver(this);
   // Confirm above didn't delete the tab out from under us.
   if (!download_created_callback.is_null())
     download_created_callback.Run(download_);
@@ -349,8 +361,6 @@ bool SavePackage::Init(
 
     DoSavingProcess();
   }
-
-  return true;
 }
 
 void SavePackage::OnMHTMLGenerated(const base::FilePath& path, int64 size) {
@@ -1336,9 +1346,9 @@ void SavePackage::CreateDirectoryOnFileThread(
   base::FilePath save_dir;
   // If the default html/websites save folder doesn't exist...
   // We skip the directory check for gdata directories on ChromeOS.
-  if (!skip_dir_check && !file_util::DirectoryExists(website_save_dir)) {
+  if (!skip_dir_check && !base::DirectoryExists(website_save_dir)) {
     // If the default download dir doesn't exist, create it.
-    if (!file_util::DirectoryExists(download_save_dir)) {
+    if (!base::DirectoryExists(download_save_dir)) {
       bool res = file_util::CreateDirectory(download_save_dir);
       DCHECK(res);
     }

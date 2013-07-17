@@ -24,6 +24,7 @@
 #include "net/disk_cache/mem_backend_impl.h"
 #include "net/disk_cache/simple/simple_backend_impl.h"
 #include "net/disk_cache/simple/simple_entry_format.h"
+#include "net/disk_cache/simple/simple_test_util.h"
 #include "net/disk_cache/simple/simple_util.h"
 #include "net/disk_cache/tracing_cache_backend.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -84,6 +85,12 @@ class DiskCacheBackendTest : public DiskCacheTestWithCache {
   void BackendDisable3();
   void BackendDisable4();
   void TracingBackendBasics();
+
+  bool CreateSetOfRandomEntries(std::set<std::string>* key_pool);
+  bool EnumerateAndMatchKeys(int max_to_open,
+                             void** iter,
+                             std::set<std::string>* keys_to_match,
+                             size_t* count);
 };
 
 void DiskCacheBackendTest::BackendBasics() {
@@ -270,7 +277,7 @@ TEST_F(DiskCacheTest, CreateBackend) {
 TEST_F(DiskCacheBackendTest, CreateBackend_MissingFile) {
   ASSERT_TRUE(CopyTestCache("bad_entry"));
   base::FilePath filename = cache_path_.AppendASCII("data_1");
-  base::Delete(filename, false);
+  base::DeleteFile(filename, false);
   base::Thread cache_thread("CacheThread");
   ASSERT_TRUE(cache_thread.StartWithOptions(
       base::Thread::Options(base::MessageLoop::TYPE_IO, 0)));
@@ -1024,8 +1031,6 @@ TEST_F(DiskCacheBackendTest, NewEvictionTrimInvalidEntry2) {
 void DiskCacheBackendTest::BackendEnumerations() {
   InitCache();
   Time initial = Time::Now();
-  int seed = static_cast<int>(initial.ToInternalValue());
-  srand(seed);
 
   const int kNumEntries = 100;
   for (int i = 0; i < kNumEntries; i++) {
@@ -2759,11 +2764,7 @@ TEST_F(DiskCacheBackendTest, FileSharing) {
   InitCache();
 
   disk_cache::Addr address(0x80000001);
-
-  RunTaskForTest(base::Bind(
-      base::IgnoreResult(&disk_cache::BackendImpl::CreateExternalFile),
-      base::Unretained(cache_impl_),
-      &address));
+  ASSERT_TRUE(cache_impl_->CreateExternalFile(&address));
   base::FilePath name = cache_impl_->GetFileName(address);
 
   scoped_refptr<disk_cache::File> file(new disk_cache::File(false));
@@ -2782,7 +2783,7 @@ TEST_F(DiskCacheBackendTest, FileSharing) {
   EXPECT_TRUE(file2.IsValid());
 #endif
 
-  EXPECT_TRUE(base::Delete(name, false));
+  EXPECT_TRUE(base::DeleteFile(name, false));
 
   // We should be able to use the file.
   const int kSize = 200;
@@ -2954,7 +2955,7 @@ TEST_F(DiskCacheBackendTest, SimpleCacheOpenMissingFile) {
   // Delete one of the files in the entry.
   base::FilePath to_delete_file = cache_path_.AppendASCII(
       disk_cache::simple_util::GetFilenameFromKeyAndIndex(key, 0));
-  EXPECT_TRUE(file_util::PathExists(to_delete_file));
+  EXPECT_TRUE(base::PathExists(to_delete_file));
   EXPECT_TRUE(disk_cache::DeleteCacheFile(to_delete_file));
 
   // Failing to open the entry should delete the rest of these files.
@@ -2965,7 +2966,7 @@ TEST_F(DiskCacheBackendTest, SimpleCacheOpenMissingFile) {
     base::FilePath
         should_be_gone_file(cache_path_.AppendASCII(
             disk_cache::simple_util::GetFilenameFromKeyAndIndex(key, i)));
-    EXPECT_FALSE(file_util::PathExists(should_be_gone_file));
+    EXPECT_FALSE(base::PathExists(should_be_gone_file));
   }
 }
 
@@ -3067,6 +3068,153 @@ TEST_F(DiskCacheBackendTest, BlockfileCacheOverSimpleCache) {
 TEST_F(DiskCacheBackendTest, SimpleCacheFixEnumerators) {
   SetSimpleCacheMode();
   BackendFixEnumerators();
+}
+
+// Creates entries based on random keys. Stores these keys in |key_pool|.
+bool DiskCacheBackendTest::CreateSetOfRandomEntries(
+    std::set<std::string>* key_pool) {
+  const int kNumEntries = 10;
+
+  for (int i = 0; i < kNumEntries; ++i) {
+    std::string key = GenerateKey(true);
+    disk_cache::Entry* entry;
+    if (CreateEntry(key, &entry) != net::OK)
+      return false;
+    key_pool->insert(key);
+    entry->Close();
+  }
+  return key_pool->size() == implicit_cast<size_t>(cache_->GetEntryCount());
+}
+
+// Performs iteration over the backend and checks that the keys of entries
+// opened are in |keys_to_match|, then erases them. Up to |max_to_open| entries
+// will be opened, if it is positive. Otherwise, iteration will continue until
+// OpenNextEntry stops returning net::OK.
+bool DiskCacheBackendTest::EnumerateAndMatchKeys(
+    int max_to_open,
+    void** iter,
+    std::set<std::string>* keys_to_match,
+    size_t* count) {
+  disk_cache::Entry* entry;
+
+  while (OpenNextEntry(iter, &entry) == net::OK) {
+    if (!entry)
+      return false;
+    EXPECT_EQ(1U, keys_to_match->erase(entry->GetKey()));
+    entry->Close();
+    ++(*count);
+    if (max_to_open >= 0 && implicit_cast<int>(*count) >= max_to_open)
+      break;
+  };
+
+  return true;
+}
+
+// Tests basic functionality of the SimpleBackend implementation of the
+// enumeration API.
+TEST_F(DiskCacheBackendTest, SimpleCacheEnumerationBasics) {
+  SetSimpleCacheMode();
+  InitCache();
+  std::set<std::string> key_pool;
+  ASSERT_TRUE(CreateSetOfRandomEntries(&key_pool));
+
+  // Check that enumeration returns all entries.
+  std::set<std::string> keys_to_match(key_pool);
+  void* iter = NULL;
+  size_t count = 0;
+  ASSERT_TRUE(EnumerateAndMatchKeys(-1, &iter, &keys_to_match, &count));
+  cache_->EndEnumeration(&iter);
+  EXPECT_EQ(key_pool.size(), count);
+  EXPECT_TRUE(keys_to_match.empty());
+
+  // Check that opening entries does not affect enumeration.
+  keys_to_match = key_pool;
+  iter = NULL;
+  count = 0;
+  disk_cache::Entry* entry_opened_before;
+  ASSERT_EQ(net::OK, OpenEntry(*(key_pool.begin()), &entry_opened_before));
+  ASSERT_TRUE(EnumerateAndMatchKeys(key_pool.size()/2,
+                                    &iter,
+                                    &keys_to_match,
+                                    &count));
+
+  disk_cache::Entry* entry_opened_middle;
+  ASSERT_EQ(net::OK,
+            OpenEntry(*(keys_to_match.begin()), &entry_opened_middle));
+  ASSERT_TRUE(EnumerateAndMatchKeys(-1, &iter, &keys_to_match, &count));
+  cache_->EndEnumeration(&iter);
+  entry_opened_before->Close();
+  entry_opened_middle->Close();
+
+  EXPECT_EQ(key_pool.size(), count);
+  EXPECT_TRUE(keys_to_match.empty());
+}
+
+// Tests that the enumerations are not affected by dooming an entry in the
+// middle.
+TEST_F(DiskCacheBackendTest, SimpleCacheEnumerationWhileDoomed) {
+  SetSimpleCacheMode();
+  InitCache();
+  std::set<std::string> key_pool;
+  ASSERT_TRUE(CreateSetOfRandomEntries(&key_pool));
+
+  // Check that enumeration returns all entries but the doomed one.
+  std::set<std::string> keys_to_match(key_pool);
+  void* iter = NULL;
+  size_t count = 0;
+  ASSERT_TRUE(EnumerateAndMatchKeys(key_pool.size()/2,
+                                    &iter,
+                                    &keys_to_match,
+                                    &count));
+
+  std::string key_to_delete = *(keys_to_match.begin());
+  DoomEntry(key_to_delete);
+  keys_to_match.erase(key_to_delete);
+  key_pool.erase(key_to_delete);
+  ASSERT_TRUE(EnumerateAndMatchKeys(-1, &iter, &keys_to_match, &count));
+  cache_->EndEnumeration(&iter);
+
+  EXPECT_EQ(key_pool.size(), count);
+  EXPECT_TRUE(keys_to_match.empty());
+}
+
+// Tests that enumerations are not affected by corrupt files.
+TEST_F(DiskCacheBackendTest, SimpleCacheEnumerationCorruption) {
+  SetSimpleCacheMode();
+  InitCache();
+  std::set<std::string> key_pool;
+  ASSERT_TRUE(CreateSetOfRandomEntries(&key_pool));
+
+  // Create a corrupt entry. The write/read sequence ensures that the entry will
+  // have been created before corrupting the platform files, in the case of
+  // optimistic operations.
+  const std::string key = "the key";
+  disk_cache::Entry* corrupted_entry;
+
+  ASSERT_EQ(net::OK, CreateEntry(key, &corrupted_entry));
+  ASSERT_TRUE(corrupted_entry);
+  const int kSize = 50;
+  scoped_refptr<net::IOBuffer> buffer(new net::IOBuffer(kSize));
+  CacheTestFillBuffer(buffer->data(), kSize, false);
+  ASSERT_EQ(kSize,
+            WriteData(corrupted_entry, 0, 0, buffer.get(), kSize, false));
+  ASSERT_EQ(kSize, ReadData(corrupted_entry, 0, 0, buffer.get(), kSize));
+  corrupted_entry->Close();
+
+  EXPECT_TRUE(disk_cache::simple_util::CreateCorruptFileForTests(
+      key, cache_path_));
+  EXPECT_EQ(key_pool.size() + 1,
+            implicit_cast<size_t>(cache_->GetEntryCount()));
+
+  // Check that enumeration returns all entries but the corrupt one.
+  std::set<std::string> keys_to_match(key_pool);
+  void* iter = NULL;
+  size_t count = 0;
+  ASSERT_TRUE(EnumerateAndMatchKeys(-1, &iter, &keys_to_match, &count));
+  cache_->EndEnumeration(&iter);
+
+  EXPECT_EQ(key_pool.size(), count);
+  EXPECT_TRUE(keys_to_match.empty());
 }
 
 #endif  // !defined(OS_WIN)

@@ -17,8 +17,8 @@
 #include "base/message_loop.h"
 #include "base/threading/thread.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/web_socket_proxy.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/url_constants.h"
@@ -26,8 +26,8 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/common/url_constants.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/network_change_notifier.h"
+#include "url/gurl.h"
 
 namespace {
 

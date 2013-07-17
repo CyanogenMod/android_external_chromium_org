@@ -125,7 +125,7 @@ void DeleteLeakedFiles(const base::FilePath& dir) {
   for (base::FilePath file_path = enumerator.Next(); !file_path.empty();
        file_path = enumerator.Next()) {
     if (enumerator.GetInfo().GetLastModifiedTime() < delete_before)
-      base::Delete(file_path, false);
+      base::DeleteFile(file_path, false);
   }
 }
 
@@ -288,7 +288,7 @@ base::FilePath ReadPathFromRegistry(HKEY root, const wchar_t* path_name) {
   base::win::RegKey gcp_key(HKEY_CURRENT_USER, kCloudPrintRegKey, KEY_READ);
   string16 data;
   if (SUCCEEDED(gcp_key.ReadValue(path_name, &data)) &&
-      file_util::PathExists(base::FilePath(data))) {
+      base::PathExists(base::FilePath(data))) {
     return base::FilePath(data);
   }
   return base::FilePath();
@@ -310,7 +310,7 @@ base::FilePath GetChromeExePath() {
 
 base::FilePath GetChromeProfilePath() {
   base::FilePath path = ReadPathFromAnyRegistry(kChromeProfilePathRegValue);
-  if (!path.empty() && file_util::DirectoryExists(path))
+  if (!path.empty() && base::DirectoryExists(path))
     return path;
   return base::FilePath();
 }
@@ -503,7 +503,7 @@ BOOL WINAPI Monitor2EndDocPort(HANDLE port_handle) {
       }
     }
     if (delete_file)
-      base::Delete(port_data->file_path, false);
+      base::DeleteFile(port_data->file_path, false);
   }
   if (port_data->printer_handle != NULL) {
     // Tell the spooler that the job is complete.

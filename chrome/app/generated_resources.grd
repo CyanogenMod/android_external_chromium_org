@@ -3192,6 +3192,43 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
       </message>
 
       <!-- Content blocking strings -->
+      <message name="IDS_AUTOMATIC_DOWNLOADS_TAB_LABEL" desc="Header for multiple automatic downloads page on Content Settings dialog">
+        Automatic Downloads
+      </message>
+      <message name="IDS_AUTOMATIC_DOWNLOADS_ALLOW_RADIO" desc="A radio button in Content Settings dialog to allow all sites to download multiple files automatically.">
+        Allow all sites to download multiple files automatically
+      </message>
+      <message name="IDS_AUTOMATIC_DOWNLOADS_ASK_RADIO" desc="A radio button in Content Settings dialog to configure multiple automatic downloads per-site.">
+        Ask me when a site tries to download files automatically after the first file (recommended)
+      </message>
+      <message name="IDS_AUTOMATIC_DOWNLOADS_BLOCK_RADIO" desc="A radio button in Content Settings dialog to deny all sites to download multiple files automatically.">
+        Do not allow any site to download multiple files automatically
+      </message>
+      <message name="IDS_BLOCKED_DOWNLOAD_NO_ACTION" desc="Radio button to keep blocking automatic downloads">
+        Continue blocking automatic downloads of multiple files
+      </message>
+      <message name="IDS_BLOCKED_DOWNLOAD_UNBLOCK" desc="Radio button to unblock automatic downloads">
+        Always allow <ph name="HOST">$1<ex>example.com</ex></ph> to download multiple files
+      </message>
+      <message name="IDS_BLOCKED_DOWNLOADS_LINK" desc="Link to downloads section of content blocking management dialog, displayed in bubble when a page tries to download files automatically.">
+        Manage download settings...
+      </message>
+      <message name="IDS_BLOCKED_DOWNLOAD_TITLE" desc="Title for the page action when an automatic download was blocked">
+        This site attempted to download multiple files automatically.
+      </message>
+      <message name="IDS_BLOCKED_DOWNLOADS_EXPLANATION" desc="Explanatory animated text that appears (and then disappears) in the address line when a download is blocked">
+        Download blocked
+      </message>
+      <message name="IDS_ALLOWED_DOWNLOAD_TITLE" desc="Title for the page action when automatic downloads were allowed">
+        This site downloaded multiple files automatically.
+      </message>
+      <message name="IDS_ALLOWED_DOWNLOAD_NO_ACTION" desc="Radio button to keep allowing automatic downloads">
+        Continue allowing automatic downloads of multiple files
+      </message>
+      <message name="IDS_ALLOWED_DOWNLOAD_BLOCK" desc="Radio button to block automatic downloads">
+        Always block multiple automatic downloads on <ph name="HOST">$1<ex>example.com</ex></ph>
+      </message>
+
       <message name="IDS_BLOCKED_COOKIES_TITLE" desc="Tooltip and bubble info header text when a page is not allowed to write cookies or other site data.">
         This page was prevented from setting cookies.
       </message>
@@ -5054,6 +5091,9 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_PROMPT_RETAINED_FILES" desc="A line of explanatory text that precedes the list of files the app has permanent access to. This is shown when an app has persistent access to files.">
         It has permanent access to:
       </message>
+      <message name="IDS_EXTENSION_PROMPT_RETAINED_FILES_WITH_COUNT" desc="A line of explanatory text that precedes the list of files the app has permanent access to, showing how the number of files. This is shown when an app has persistent access to files.">
+        It has permanent access to <ph name="NUMBER_OF_FILES">$1<ex>5</ex></ph> files.
+      </message>
 
       <if expr="is_android">
         <message name="IDS_EXTENSION_PROMPT_WARNING_FULL_ACCESS" desc="Mobile: Permission string for full access to the device and all websites.">
@@ -5079,6 +5119,15 @@ Make sure you do not expose any sensitive information.
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_4_OR_MORE_HOSTS" desc="Permission string for access to data on four or more websites.">
         Access your data on <ph name="WEBSITE_1">$1<ex>www.google.com</ex></ph>, <ph name="WEBSITE_2">$2<ex>www.yahoo.com</ex></ph>, and <ph name="NUMBER_OF_OTHER_WEBSITES">$3<ex>3</ex></ph> other websites
+      </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_HOSTS" desc="Permission string for access to data on four or more websites.">
+        Access your data on <ph name="NUMBER_OF_OTHER_WEBSITES">$1<ex>5</ex></ph> website(s)
+      </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_HOST_LIST" desc="Permission string (heading) for a list of websites.">
+        Access your data on the following websites:
+      </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_HOST_LIST_ENTRY" desc="Single entry in a list of websites.">
+        - <ph name="WEBSITE_1">$1<ex>www.google.com</ex></ph>
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_FAVICON" desc="Permission string for access to favicons.">
         Access the icons of the websites you visit.
@@ -6283,6 +6332,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_SAVE_PAGE_AS_MHTML_DESCRIPTION" desc="Description of the 'Save Page as MHTML' lab.">
         Disables saving pages as HTML-only or HTML Complete; enables saving pages only as MHTML: a single text file containing HTML and all sub-resources.
       </message>
+      <message name="IDS_FLAGS_ENABLE_DEVICE_DISCOVERY_NAME" desc="Title of the enable 'device discovery' flag.">
+        Device Discovery
+      </message>
+      <message name="IDS_FLAGS_ENABLE_DEVICE_DISCOVERY_DESCRIPTION" desc="Description for 'device discovery' flag.">
+        Enables experimental device discovery on local network.
+      </message>
       <message name="IDS_FLAGS_TOUCH_OPTIMIZED_UI_NAME" desc="Title of the touch-optimized UI flag." >
         Touch Optimized UI
       </message>
@@ -6537,6 +6592,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_LOCAL_FIRST_LOAD_NTP_DESCRIPTION" desc="Description for the flag to enable the Instant extended API.">
         Whether or not the first New Tab Page load of a new window will automatically fall back to the local page when Instant Extended is enabled.
       </message>
+      <message name="IDS_FLAGS_ENABLE_NEW_NTP" desc="Title for the flag to enable the new NTP.">
+        Enable the new NTP.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_NEW_NTP_DESCRIPTION" desc="Description for the flag to enable the new NTP.">
+        Whether or not the new style New Tab Page is enabled.
+      </message>
       <message name="IDS_FLAGS_ENABLE_GESTURE_TAP_HIGHLIGHTING_NAME" desc="Title for the flag to turn on gesture tap highlighting">
         Gesture Tap Highlighting
       </message>
@@ -6689,6 +6750,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_WEBGL_DESCRIPTION" desc="Description for the flag to enable WebGL.">
         Enabling this option allows web applications to access the WebGL API.
       </message>
+      <message name="IDS_FLAGS_ENABLE_D3D11_NAME" desc="Name of the 'Enable D3D11' lab.">
+        Enable D3D11
+      </message>
+      <message name="IDS_FLAGS_ENABLE_D3D11_DESCRIPTION" desc="Description for the flag to enable D3D11.">
+        Enabling this option allows the use of Direct3D 11 on configurations that support it.
+      </message>
       <message name="IDS_FLAGS_ENABLE_WEBGL_DRAFT_EXTENSIONS_NAME" desc="Name of the 'Enable WebGL Draft Extensions' flag.">
         Enable WebGL Draft Extensions
       </message>
@@ -6712,6 +6779,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ENABLE_SCTP_DATA_CHANNELS_DESCRIPTION" desc="Description of about:flags option to turn on SCTP data channels support">
         When enabled, DataChannels created by WebRTC will use the SCTP wire protocol.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_DEVICE_ENUMERATION_NAME" desc="Name of about:flags option to turn on WebRTC device enumeration support.">
+        Enable WebRTC device enumeration.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_DEVICE_ENUMERATION_DESCRIPTION" desc="Description of chrome:flags option to turn on WebRTC device enumeration support">
+        When enabled, MediaStreamTrack can list the available video and audio input devices, and getUserMedia can open these input devices by referencing an opaque id.
       </message>
       <message name="IDS_FLAGS_DISABLE_WEBAUDIO_NAME" desc="Name of the 'Disable WebAudio' lab.">
         Disable WebAudio
@@ -6740,6 +6813,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_COMPOSITING_FOR_TRANSITION_DESCRIPTION" desc="Description for the flag to make RenderLayers with transitions become composited layers.">
         Enabling this option will make RenderLayers with a transition on opacity, transform, or filter have their own composited layer.
       </message>
+      <message name="IDS_FLAGS_ACCELERATED_FIXED_ROOT_BACKGROUND_NAME" desc="Name of the 'Accelerated fixed root background' lab.">
+        Compositing for fixed root backgrounds.
+      </message>
+      <message name="IDS_FLAGS_ACCELERATED_FIXED_ROOT_BACKGROUND_DESCRIPTION" desc="Description for the flag to all fixed root backgrounds to be put in separate, composited layers.">
+        If this option is enabled, and if the body is styled with background-attachment:fixed, the background will have its own compositied layer.
+      </message>
       <message name="IDS_FLAGS_ENABLE_DEFERRED_IMAGE_DECODING_NAME" desc="Name of the 'Enable deferred image decoding' lab.">
         Enable deferred image decoding.
       </message>
@@ -6751,6 +6830,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ENABLE_QUIC_DESCRIPTION" desc="Description for the flag to enable QUIC.">
         Enable experimental QUIC protocol support.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_QUIC_HTTPS_NAME" desc="Title for the flag to enable HTTPS over QUIC.">
+        HTTPS over experimental QUIC protocol.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_QUIC_HTTPS_DESCRIPTION" desc="Description for the flag to enable HTTPS over QUIC.">
+        Enables QUIC over an Authenticated Encrypted channel (can replace HTTPS transactions). Without this flag, only HTTP requests are supported over QUIC. This only has an effect if QUIC protocol is enabled.
       </message>
       <message name="IDS_FLAGS_ENABLE_SPDY4A2_NAME" desc="Title for the flag to enable SPDY/4 alpha 2">
         Enable SPDY/4 alpha 2
@@ -6968,11 +7053,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_DISABLE_SOFTWARE_RASTERIZER_DESCRIPTION" desc="Description for the flag to disable using a software renderer.">
         Don't fall back to a 3D software rasterizer when the GPU cannot be used.
       </message>
-      <message name="IDS_FLAGS_EXPERIMENTAL_WEBKIT_FEATURES_NAME" desc="Name for the flag to enable experimental WebKit features.">
-        Enable experimental WebKit features.
+      <message name="IDS_FLAGS_EXPERIMENTAL_WEB_PLATFORM_FEATURES_NAME" desc="Name for the flag to enable experimental Web Platform features.">
+        Enable experimental Web Platform features.
       </message>
-      <message name="IDS_FLAGS_EXPERIMENTAL_WEBKIT_FEATURES_DESCRIPTION" desc="Description for the flag to enable experimental WebKit features.">
-        Enable experimental WebKit features that are in development.
+      <message name="IDS_FLAGS_EXPERIMENTAL_WEB_PLATFORM_FEATURES_DESCRIPTION" desc="Description for the flag to enable experimental Web Platform features.">
+        Enable experimental Web Platform features that are in development.
       </message>
       <message name="IDS_FLAGS_CSS_SHADERS_NAME" desc="Name for the flag to enable CSS Shaders.">
         Enable CSS Shaders.
@@ -6997,6 +7082,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ENABLE_DEVTOOLS_EXPERIMENTS_DESCRIPTION" desc="Description for the flag to enable experiments in Developer Tools.">
         Enable Developer Tools experiments. Use Settings panel in Developer Tools to toggle individual experiments.
+      </message>
+      <message name="IDS_FLAGS_REMOTE_DEBUGGING_RAW_USB_NAME" desc="Name for the flag to enable remote debugging of Chrome for Android over raw USB interface.">
+        Enable Remote Debugging over USB.
+      </message>
+      <message name="IDS_FLAGS_REMOTE_DEBUGGING_RAW_USB_DESCRIPTION" desc="Description for the flag to enable remote debugging of Chrome for Android over raw USB interface.">
+        Enable Remote Debugging of Chrome for Android over raw USB interface (no need to install / run Android Debug Bridge).
       </message>
       <message name="IDS_FLAGS_SILENT_DEBUGGER_EXTENSION_API_NAME" desc="Name for the flag to enable silent debugging via chrome.debugger extension API.">
         Enable Silent Debugging.
@@ -7087,12 +7178,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
         <message name="IDS_FLAGS_ALLOW_TOUCHPAD_THREE_FINGER_CLICK_DESCRIPTION" desc="Description for the flag to enable touchpad three finger click as middle button.">
           Enables touchpad three-finger-click as middle button.
         </message>
-        <message name="IDS_FLAGS_ALLOW_TOUCHPAD_THREE_FINGER_SWIPE_NAME" desc="Name for the flag to enable touchpad three finger swipe.">
-          Enable touchpad three-finger swipe.
-        </message>
-        <message name="IDS_FLAGS_ALLOW_TOUCHPAD_THREE_FINGER_SWIPE_DESCRIPTION" desc="Description for the flag to enable touchpad three finger swipe.">
-          Enables touchpad three-finger swipe.
-        </message>
         <message name="IDS_FLAGS_DISABLE_BOOT_ANIMATION" desc="Name for the flag to disable wallpaper boot animation (except for OOBE).">
           Disable boot animation.
         </message>
@@ -7113,18 +7198,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
         </message>
         <message name="IDS_FLAGS_ASH_NEW_LOCK_ANIMATIONS_DESCRIPTION" desc="Description for the flag to switch lock animations.">
           Disables new lock animations.
-        </message>
-        <message name="IDS_FLAGS_DISABLE_KIOSK_APPS_NAME" desc="Name for the flag to disable kiosk applications.">
-          Disable kiosk applications.
-        </message>
-        <message name="IDS_FLAGS_DISABLE_KIOSK_APPS_DESCRIPTION" desc="Description for the flag to disable kiosk applications.">
-          Disable kiosk applications on the device.
-        </message>
-        <message name="IDS_FLAGS_DISABLE_FULLSCREEN_APP_NAME" desc="Name for the flag to disable auto run kiosk applications in full screen.">
-          Disable auto run kiosk applications in full screen..
-        </message>
-        <message name="IDS_FLAGS_DISABLE_FULLSCREEN_APP_DESCRIPTION" desc="Description for the flag to disable auto run kiosk applications in full screen.">
-          Disables making kiosk applications run in full screen automatically..
         </message>
       </if>
       <message name="IDS_FLAGS_FULL_HISTORY_SYNC_NAME" desc="Name of the flag to disable full history sync.">
@@ -7212,6 +7285,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_IMPL_SIDE_PAINTING_DESCRIPTION" desc="Description of about:flags option for impl-side painting.">
         If enabled, painting is done on a separate thread instead of the main thread.
+      </message>
+      <message name="IDS_FLAGS_DELEGATED_RENDERER_NAME" desc="Name of about:flags option for delegated renderer.">
+        Delegated Renderer (AKA Übercompositor).
+      </message>
+      <message name="IDS_FLAGS_DELEGATED_RENDERER_DESCRIPTION" desc="Description of about:flags option for delegated renderer.">
+        If enabled, the renderer delegates compositing to the browser, merging both compositing passes.
       </message>
       <message name="IDS_FLAGS_TRACK_ACTIVE_VISIT_TIME_NAME" desc="Name of about:flags option for tracking active time on a page.">
         Track time spent on each each page
@@ -7341,6 +7420,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_DISABLE_APP_LIST_DESCRIPTION" desc="Description of the flag to disable the app list on startup.">
         Disable the app launcher on startup. While this flag is set the launcher will be disabled every time Chrome starts. This is used for testing the app launcher install flow.
       </message>
+      <message name="IDS_FLAGS_ENABLE_DEVICE_MOTION_NAME" desc="Name of the flag to enable device motion DOM events.">
+        Enable device motion.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_DEVICE_MOTION_DESCRIPTION" desc="Description for the flag to enable device motion.">
+        Enables device motion DOM events in JavaScript.
+      </message>
 
       <!-- Crashes -->
       <message name="IDS_CRASHES_TITLE" desc="Title for the chrome://crashes page.">
@@ -7415,26 +7500,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_SEARCH_PREF_EXPLANATION" desc="Description of the search engine preference">
         Set which search engine is used when searching from the
         <ph name="BEGIN_LINK">&lt;a target="_blank" href="$1"&gt;</ph>omnibox<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
-      </message>
-
-      <!-- Instant checkbox strings -->
-      <message name="IDS_INSTANT_CHECKBOX_ENABLED" desc="Description of a preference that enables or disables Instant previews of search results.">
-        Display Instant results.
-      </message>
-      <message name="IDS_INSTANT_CHECKBOX_NO_EXTENDED_API" desc="Description of a preference that's disabled because the Instant Extended API is disabled.">
-        Display Instant results (Instant Extended is disabled).
-      </message>
-      <message name="IDS_INSTANT_CHECKBOX_NO_DEFAULT_SEARCH_PROVIDER" desc="Description of a preference that's disabled because there's no default search engine.">
-        Display Instant results (no default search engine).
-      </message>
-      <message name="IDS_INSTANT_CHECKBOX_UNKNOWN_DEFAULT_SEARCH_PROVIDER" desc="Description of a preference that's disabled because an unnamed default search provider does not support Instant.">
-        Display Instant results (the default search engine does not support Instant).
-      </message>
-      <message name="IDS_INSTANT_CHECKBOX_NON_INSTANT_DEFAULT_SEARCH_PROVIDER" desc="Description of a preference that's disabled because the named default search provider does not support Instant.">
-        Display Instant results (<ph name="SEARCH_ENGINE_NAME">$1<ex>Yahoo!</ex></ph> does not support Instant).
-      </message>
-      <message name="IDS_INSTANT_CHECKBOX_PREDICTION_DISABLED" desc="Description of a preference that's disabled because search query prediction is disabled.">
-        Display Instant results (a prediction service must be enabled).
       </message>
 
       <!-- Conflicts page -->
@@ -7924,6 +7989,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_TOOLTIP_ACTION_BOX_BUTTON" desc="The tooltip for action box button">
         Actions
       </message>
+      <message name="IDS_TOOLTIP_MIC_SEARCH" desc="The tooltip for search-by-voice button">
+        Voice search
+      </message>
       <message name="IDS_TOOLTIP_ZOOM" desc="The tooltip for zoom icon">
         Zoom: <ph name="VALUE">$1<ex>100</ex></ph>%
       </message>
@@ -7978,9 +8046,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_ACCNAME_LOCATION" desc="The accessible name for the editable-text portion of the omnibox.">
         Address and search bar
-      </message>
-      <message name="IDS_ACCNAME_STAR" desc="The accessible name for the bookmark button.">
-        Bookmark
       </message>
       <message name="IDS_ACCNAME_ZOOM" desc="The accessible name for the zoom button.">
         Zoom
@@ -9646,6 +9711,11 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         <ph name="PRODUCT_NAME">&lt;span jscontent="productName"&gt;&lt;/span&gt;<ex>Google Chrome</ex></ph>
         won't use insecure connections in order to protect your privacy.
       </message>
+      <message name="IDS_ERRORPAGES_SUMMARY_DNS_PROBE_RUNNING" desc="Summary in the error page when DNS resolution failed and we are running a probe to figure out why.">
+        Unable to look up
+        <ph name="HOST_NAME">&lt;strong jscontent="hostName"&gt;&lt;/strong&gt;<ex>www.whatever.com</ex></ph>.
+        Trying to diagnose the problem...
+      </message>
 
       <message name="IDS_ERRORPAGES_ERROR_CODE" desc="At the bottom of error pages, a non-internationalized string or numeric code is displayed for debugging purposes">
         Error code: <ph name="ERROR_NAME">$1<ex>ERR_FILE_NOT_FOUND</ex></ph>
@@ -9716,6 +9786,9 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       <message name="IDS_ERRORPAGES_DETAILS_RESPONSE_HEADERS_MULTIPLE_LOCATION" desc="The error message displayed when we received multiple 'Location' header fields in an http response.">
         Multiple distinct Location headers received.  This is disallowed to protect
         against HTTP response splitting attacks.
+      </message>
+      <message name="IDS_ERRORPAGES_DETAILS_DNS_PROBE_RUNNING" desc="The error message displayed when we are waiting to see whether we will run a DNS probe.">
+        Waiting for DNS probe.
       </message>
       <message name="IDS_ERRORPAGES_DETAILS_UNKNOWN" desc="The default error message displayed if we don't have a more specific error message.">
         Unknown error.
@@ -10464,6 +10537,9 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_ABOUT_NETWORK_NETWORKS" desc="The section title for all networks in the chrome://network page.">
         Networks:
       </message>
+      <message name="IDS_ABOUT_NETWORK_FAVORITES" desc="The section title for favorite networks in the chrome://network page.">
+        Favorites:
+      </message>
       <message name="IDS_ABOUT_NETWORK_ETHERNET" desc="The section title for ethernet networks in the chrome://network page.">
         Ethernet Networks:
       </message>
@@ -10761,13 +10837,13 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
 
       <!-- Autofill dialog: title bar -->
       <message name="IDS_AUTOFILL_DIALOG_TITLE" desc="Title for autofill dialog which asks user to input address + payment info.">
-        Submit Payment Details
+        Pay
       </message>
       <message name="IDS_AUTOFILL_DIALOG_PAY_WITHOUT_WALLET" desc="This text is shown in a payment method chooser when a user is forced to pay without Google Wallet because the service is unavailable.">
-        Pay without Google Wallet
+        Chrome Autofill
       </message>
       <message name="IDS_AUTOFILL_DIALOG_SIGN_IN" desc="This link text is shown when the user is not signed into a GAIA account.">
-        Sign in to use Google Wallet
+        Sign in to pay with Google Wallet
       </message>
       <message name="IDS_AUTOFILL_DIALOG_GOOGLE_WALLET" desc="The menu item that allows a user to select Google Wallet as their payment backend.">
         Google Wallet
@@ -10778,10 +10854,10 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         The following details are saved in your Google Wallet.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_SIGN_IN_AND_SAVE_DETAILS" desc="Text promoting signing in to Google Wallet so a user can save details in Wallet.">
-        Sign in and save these details in your Google Wallet.
+        Sign in to use Google Wallet for faster checkout.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_SAVE_DETAILS_IN_WALLET" desc="Text that shows on the top of the autofill dialog promoting saving info in Google Wallet.">
-        Save these details in your Google Wallet.
+        Save and protect my details with Google Wallet.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_COMPLETE_WITHOUT_WALLET" desc="An error notification shown to users when Google Wallet is found to be unavailable.">
         Oops, <ph name="WALLET_ERROR">$1<ex>Google Wallet is unavailable at this time.</ex></ph> You can complete this transaction without Google Wallet.
@@ -10793,16 +10869,36 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         The following details will be shared with <ph name="SITE">$1<ex>www.shopping.com</ex></ph>
       </message>
       <message name="IDS_AUTOFILL_DIALOG_AUTOCHECKOUT_ERROR" desc="Text explaining there has been an Autocheckout error and the user must finish checking out themselves.">
-        Oops. Auto-Checkout cannot complete this form. You'll have to the finish this transaction from here.
+        Oops! We couldn't complete your entire checkout form. We finished as much as we could, but you'll have to take over from here.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_AUTOCHECKOUT_SUCCESS" desc="Text explaining Autocheckout succeeded but the user must confirm the transaction.">
-        You're almost done. After you close this window, confirm this transaction on the merchant's site and look forward to receiving your new purchase.
+        We're done! Click continue to check your details on the confirmation page. Don't forget to submit your purchase!
       </message>
       <message name="IDS_AUTOFILL_DIALOG_VERIFY_CVV" desc="Text explaining a user must enter their CVV to continuing submitting for security purposes (while using Google Wallet).">
         For your security, please verify your card details.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_NOT_PROD_WARNING" desc="Text warning the user that they're not using the Online Wallet production server, so their purchases probably wont succeed.">
         Warning: You are not connected to production Wallet servers. Issued cards are probably invalid.
+      </message>
+      <message name="IDS_AUTOFILL_DIALOG_FAILED_TO_SAVE_WALLET_DATA" desc="Text advising the user that there was an unrecoverable validation error on the wallet server.">
+        Could not save data to Wallet.
+      </message>
+      <message name="IDS_AUTOFILL_DIALOG_CHOOSE_DIFFERENT_WALLET_INSTRUMENT" desc="Text asking the user to choose a different payment method or address when using wallet.">
+        We need more information to complete your purchase.
+      </message>
+
+      <!--- Autofill dialog: Wallet interstitials -->
+      <message name="IDS_AUTOFILL_DIALOG_CARD_GENERATION_IN_PROGRESS" desc="Text the user sees while waiting for the wallet servers to respond with a generated card number.">
+        Generating Google Wallet Virtual Online card...
+      </message>
+      <message name="IDS_AUTOFILL_DIALOG_CARD_GENERATION_DONE" desc="Text the user sees after the wallet servers respond with a generated card number.">
+        Your card has been protected by Google Wallet.
+      </message>
+      <message name="IDS_AUTOFILL_DIALOG_CARD_GENERATION_EXPLANATION" desc="More detailed text the user sees after the wallet servers respond with a generated card number.">
+        Wallet never shares your credit information with merchants. Shop with confidence knowing that you credit card number is protected online.
+      </message>
+      <message name="IDS_AUTOFILL_DIALOG_CARD_GENERATION_OK_BUTTON" desc="Text for the button users have to press to proceed past the wallet card generation text.">
+        OK, got it
       </message>
 
       <!--- Autofill dialog: Wallet error messages -->
@@ -10857,16 +10953,16 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         Error filling billing details
       </message>
       <message name="IDS_AUTOFILL_STEP_PROXY_CARD_UNSTARTED" desc="Text describing the task of generating a proxy card in an Autocheckout flow.">
-        Google Google Wallet Virtual OneTime Card
+        Google Wallet Virtual Online Card
       </message>
       <message name="IDS_AUTOFILL_STEP_PROXY_CARD_STARTED" desc="Text describing that the task of generating a proxy card in an Autocheckout flow is in progress.">
-        Generating Google Wallet Virtual OneTime Card
+        Generating Google Wallet Virtual Online Card
       </message>
       <message name="IDS_AUTOFILL_STEP_PROXY_CARD_COMPLETE" desc="Text describing that the task of generating a proxy card in an Autocheckout flow is complete.">
-        Google Wallet Virtual OneTime Card generated
+        Google Wallet Virtual Online Card generated
       </message>
       <message name="IDS_AUTOFILL_STEP_PROXY_CARD_FAILED" desc="Text describing that the task of generating a proxy card in an Autocheckout flow has failed.">
-        Error generating Google Wallet Virtual OneTime Card
+        Error generating Google Wallet Virtual Online Card
       </message>
 
       <!-- Autofill dialog: detail section -->
@@ -10877,19 +10973,16 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         Email address
       </message>
       <message name="IDS_AUTOFILL_DIALOG_SECTION_CC" desc="Label for the credit card section of the autofill dialog.">
-        Credit card
+        Card information
       </message>
-      <message name="IDS_AUTOFILL_DIALOG_SECTION_BILLING" desc="Label for the billing address section of the imperative autofill dialog.">
-        Billing address
-      </message>
-      <message name="IDS_AUTOFILL_DIALOG_SECTION_CC_BILLING" desc="Label for the billing details (credit card + address) section of the autofill dialog.">
+      <message name="IDS_AUTOFILL_DIALOG_SECTION_BILLING" desc="Label for the billing details (credit card + address) section of the autofill dialog.">
         Billing details
       </message>
       <message name="IDS_AUTOFILL_DIALOG_SECTION_SHIPPING" desc="Label for the shipping details section of the autofill dialog.">
-        Shipping details
+        Shipping address
       </message>
       <message name="IDS_AUTOFILL_DIALOG_USING_BILLING_FOR_SHIPPING" desc="Text that is shown when the billing info will also be used for shipping.">
-        Same as billing
+        Same as billing address
       </message>
       <message name="IDS_AUTOFILL_DIALOG_CONTINUE_BUTTON" desc="Button text for confirmation of successful completion of an Autocheckout flow.">
         Continue
@@ -10975,6 +11068,9 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_AUTOFILL_DIALOG_VALIDATION_INVALID_ZIP_CODE" desc="Message displayed to user when ZIP code (postal code) validation fails.">
         Not a valid ZIP code
       </message>
+      <message name="IDS_AUTOFILL_DIALOG_VALIDATION_INVALID_REGION" desc="Message displayed to user when the region (US state) validation fails.">
+        Not a valid state
+      </message>
       <message name="IDS_AUTOFILL_DIALOG_VALIDATION_INVALID_PHONE_NUMBER" desc="Message displayed to user when phone number validation fails.">
         Not a valid phone number
       </message>
@@ -10994,6 +11090,17 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       </message>
       <message name="IDS_AUTOCHECKOUT_BUBBLE_CANCEL" desc="Label for the button a user clicks to cancel an Autocheckout flow.">
         No, Thanks
+      </message>
+
+      <!-- Autofill dialog post-submit bubble -->
+      <message name="IDS_AUTOFILL_CREDIT_CARD_BUBBLE_GENERATED_TITLE" desc="Title of a bubble shown directly after a new card has been generated via Online Wallet using the Autofill dialog.">
+        Google Wallet is protecting your card
+      </message>
+      <message name="IDS_AUTOFILL_CREDIT_CARD_BUBBLE_GENERATED_TEXT" desc="Text in the bubble explaining that a temporary card has been generated for the user's security by Google Wallet.">
+        Don't worry, this purchase will still be charged to your |$1|. Your card has been protected with the Google Wallet Virtual Online Card (|$2|), this number will appear on your receipt.
+      </message>
+      <message name="IDS_AUTOFILL_CREDIT_CARD_BUBBLE_MANAGE_CARDS" desc="The text of a link at the bottom of the autofill dialog bubble that sends users to a Google Wallet billing/card management page.">
+        Manage Saved Cards
       </message>
 
       <message name="IDS_APPEARANCE_GROUP_NAME" desc="The title of the appearance group">
@@ -11254,9 +11361,6 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       </message>
 
       <!-- One click sign in bubble and dialog -->
-      <message name="IDS_ONE_CLICK_SIGNIN_DIALOG_MESSAGE" desc="The message of the one click sign in dialog.">
-        Now you can access your bookmarks, history, and other settings on all of your signed-in devices.
-      </message>
       <message name="IDS_ONE_CLICK_BUBBLE_UNDO" desc="The text for the undo button in the one click signin bubble.">
         Undo
       </message>
@@ -11872,6 +11976,9 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       </message>
       <message name="IDS_PROFILES_PROFILE_USERS_BUTTON" desc="Button in the avatar menu bubble view for switching users.">
         Users
+      </message>
+      <message name="IDS_PROFILES_GUEST_PROFILE_NAME" desc="Name of the guest profile.">
+	Guest
       </message>
       <message name="IDS_PROFILES_PROFILE_GUEST_BUTTON" desc="Button in the avatar menu bubble view for guest browsing.">
         Guest browsing
@@ -12508,16 +12615,16 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_FILE_BROWSER_DRIVE_DIRECTORY_LABEL" desc="/drive directory label.">
         Google Drive
       </message>
-      <message name="IDS_FILE_BROWSER_DRIVE_MY_DRIVE_LABEL" desc="A label for the 'My Drive' collection of Google Drive.">
+      <message name="IDS_FILE_BROWSER_DRIVE_MY_DRIVE_LABEL" desc="Label for the Google Drive 'My Drive' collection. This should match translation message 4067434660812487349 of Drive Web interface." meaning="Label for 'My Drive' collection in ChromeOS Files.app.">
         My Drive
       </message>
-      <message name="IDS_FILE_BROWSER_DRIVE_SHARED_WITH_ME_COLLECTION_LABEL" desc="A label for the 'shared with me' collection of Google Drive.">
+      <message name="IDS_FILE_BROWSER_DRIVE_SHARED_WITH_ME_COLLECTION_LABEL" desc="Label for the Google Drive 'Shared with me' collection. This should match translation message 8629632661309528847 of Drive Web interface." meaning="Label for files 'Shared with me' in ChromeOS Files.app.">
         Shared with me
       </message>
-      <message name="IDS_FILE_BROWSER_DRIVE_RECENT_COLLECTION_LABEL" desc="A label for the 'Recent' collection of Google Drive.">
+      <message name="IDS_FILE_BROWSER_DRIVE_RECENT_COLLECTION_LABEL" desc="Label for the Google Drive 'Recent' collection. This should match translation message 327779651963668892 of Drive Web interface." meaning="Label for 'Recent'ly used files in ChromeOS Files.app.">
         Recent
       </message>
-      <message name="IDS_FILE_BROWSER_DRIVE_OFFLINE_COLLECTION_LABEL" desc="A label for the 'Offline' collection of Google Drive.">
+      <message name="IDS_FILE_BROWSER_DRIVE_OFFLINE_COLLECTION_LABEL" desc="Label for the Google Drive 'Offline' collection. This should match translation message 7092967268927957493 of Drive Web interface." meaning="Label for 'Offline' available files in ChromeOS Files.app.">
         Offline
       </message>
       <message name="IDS_FILE_BROWSER_DOWNLOADS_DIRECTORY_LABEL" desc="Downloads local directory label.">
@@ -12932,6 +13039,12 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_FILE_BROWSER_ZIP_SELECTION_BUTTON_LABEL" desc="Menu item label, showing dialog to create zip file for selected files.">
         Zip selection
       </message>
+      <message name="IDS_FILE_BROWSER_PIN_FOLDER_BUTTON_LABEL" desc="Menu item label, pinning the selected folder to the left nav.">
+        Pin folder
+      </message>
+      <message name="IDS_FILE_BROWSER_UNPIN_FOLDER_BUTTON_LABEL" desc="Menu item label, unpinning the selected folder from the left nav.">
+        Unpin
+      </message>
       <message name="IDS_FILE_BROWSER_SHARE_BUTTON_LABEL" desc="Menu item label, showing dialog to share the selected file.">
         Share
       </message>
@@ -13116,9 +13229,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
       <message name="IDS_FILE_BROWSER_DRIVE_CLEAR_LOCAL_CACHE" desc="In the Google Drive settings menu, menu item to clear the local cache of Google Drive">
         Clean local cache
-      </message>
-      <message name="IDS_FILE_BROWSER_DRIVE_RELOAD" desc="In the Google Drive settings menu, menu item to reload the metadata of the file system from the server">
-        Reload
       </message>
       <message name="IDS_FILE_BROWSER_DRIVE_MENU_HELP" desc="In the Google Drive settings menu, name of the Help item.">
         Help
@@ -13553,21 +13663,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
         Sync Error: Please contact administrator to enable sync.
       </message>
 
-      <message name="IDS_SYNC_PASSPHRASE_ENCRYPTION_MESSAGE" desc="Message explaining that passwords are encrypted.">
-        For added security, <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> will encrypt your data.
-      </message>
-      <message name="IDS_SYNC_PASSPHRASE_OPT_GOOGLE" desc="Radio button label for using Google password.">
-        Use my Google Account password
-      </message>
-      <message name="IDS_SYNC_PASSPHRASE_OPT_EXPLICIT" desc="Radio button label for using explicit passphrase.">
-        Choose my own passphrase
-      </message>
-      <message name="IDS_SYNC_PASSPHRASE_MSG_GOOGLE" desc="Message when Google password is selected.">
-        You have chosen to encrypt data using your Google password; you can always change your mind later by changing your sync settings.
-      </message>
-      <message name="IDS_SYNC_PASSPHRASE_MSG_EXPLICIT" desc="Message when explicit passphrase is selected.">
-        Only someone with your passphrase can read your encrypted data. The passphrase is not sent to or stored by Google. If you forget your passphrase, you will need to reset sync.
-      </message>
       <message name="IDS_SYNC_PASSPHRASE_MSG_EXPLICIT_PREFIX" desc="Message when explicit passphrase is selected.">
         Only someone with your passphrase can read your encrypted data. The passphrase is not sent to or stored by Google. If you forget your passphrase, you will need to
       </message>
@@ -13738,18 +13833,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
 
       <!-- Encryption tab of the configure sync dialog -->
-      <message name="IDS_SYNC_ENCRYPTION_DATA_TYPES_TITLE" desc="Title of the section containing the data types to encrypt.">
-        Encrypted data types
-      </message>
-      <message name="IDS_SYNC_ENCRYPT_SENSITIVE_DATA" desc="Text of the radio that when selected causes sync to encrypt sensitive data.">
-        Encrypt passwords
-      </message>
-      <message name="IDS_SYNC_ENCRYPT_ALL_DATA" desc="Text of the radio that when selected causes sync to encrypt all data.">
-        Encrypt all synced data
-      </message>
-      <message name="IDS_SYNC_PASSPHRASE_SECTION_TITLE" desc="Title of the section containing sync passphrase preferences.">
-        Encryption passphrase
-      </message>
       <message name="IDS_SYNC_ENCRYPTION_INSTRUCTIONS" desc="Instructions for the encryption settings tab.">
         <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> requires you to encrypt your data using either your Google password or your own passphrase.
       </message>
@@ -13781,9 +13864,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
 
       <!-- Passphrase dialog strings -->
-      <message name="IDS_SYNC_ENTER_PASSPHRASE_TITLE" desc="Title for the dialog where the user enters the passphrase.">
-        Enter your sync passphrase
-      </message>
       <message name="IDS_SYNC_ENTER_PASSPHRASE_BODY" desc="Instructions for the dialog where the user enters the passphrase.">
         Your data is encrypted with your sync passphrase. Please enter it below.
       </message>
@@ -15584,6 +15664,9 @@ Do you accept?
     <message name="IDS_RESET_PROFILE_SETTINGS_DESCRIPTION" desc="A label describing the purpose of the 'reset profile settings' feature">
       Things got out of control? Revert your Chrome profile to a clean, post install state.
     </message>
+    <message name="IDS_RESET_PROFILE_SETTINGS_EXPLANATION" desc="A label describing the consequences of the 'reset profile settings' feature">
+      Your browser settings will be restored to their original defaults. This will reset your homepage, new tab page, and search engine, disable your extensions and clear your cookies, content settings and site data.
+    </message>    
     <message name="IDS_RESET_PROFILE_SETTINGS_BUTTON" desc="The text on the button in chrome://settings that allows resetting some settings in a profile">
       Reset profile settings...
     </message>
@@ -15624,6 +15707,23 @@ Do you accept?
     </message>
     <message name="IDS_IDENTITY_INTERNALS_REVOKE" desc="Label on a revoke token button.">
       Revoke
+    </message>
+
+    <!-- WebStore name experiment names -->
+    <message name="IDS_WEBSTORE_NAME_STORE" desc="Name for the WebStore app in the app launcher.">
+      Store
+    </message>
+    <message name="IDS_WEBSTORE_NAME_WEBSTORE" desc="Name for the WebStore app in the app launcher.">
+      WebStore
+    </message>
+    <message name="IDS_WEBSTORE_NAME_GET_APPS" desc="Name for the WebStore app in the app launcher.">
+      Get Apps
+    </message>
+    <message name="IDS_WEBSTORE_NAME_ADD_APPS" desc="Name for the WebStore app in the app launcher.">
+      Add Apps
+    </message>
+    <message name="IDS_WEBSTORE_NAME_MORE_APPS" desc="Name for the WebStore app in the app launcher.">
+      More Apps
     </message>
 
     </messages>

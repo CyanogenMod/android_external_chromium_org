@@ -39,16 +39,7 @@ BrowserInstantController::BrowserInstantController(Browser* browser)
     : browser_(browser),
       instant_(this, chrome::IsInstantExtendedAPIEnabled()),
       instant_unload_handler_(browser) {
-
-  // TODO(sreeram): Perhaps this can be removed, if field trial info is
-  // available before we need to register the pref.
-  chrome::SetInstantExtendedPrefDefault(profile());
-
   profile_pref_registrar_.Init(profile()->GetPrefs());
-  profile_pref_registrar_.Add(
-      prefs::kSearchInstantEnabled,
-      base::Bind(&BrowserInstantController::ResetInstant,
-                 base::Unretained(this)));
   profile_pref_registrar_.Add(
       prefs::kSearchSuggestEnabled,
       base::Bind(&BrowserInstantController::ResetInstant,
@@ -197,16 +188,13 @@ void BrowserInstantController::SetOmniboxBounds(const gfx::Rect& bounds) {
   instant_.SetOmniboxBounds(bounds);
 }
 
-void BrowserInstantController::UpdateLocationBar() {
-  browser_->window()->UpdateToolbar(GetActiveWebContents(), false);
-}
-
 void BrowserInstantController::ToggleVoiceSearch() {
   instant_.ToggleVoiceSearch();
 }
 
 void BrowserInstantController::ResetInstant(const std::string& pref_name) {
-  instant_.ReloadStaleNTP();
+  if (chrome::ShouldPreloadInstantNTP(profile()))
+    instant_.ReloadStaleNTP();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

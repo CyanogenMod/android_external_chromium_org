@@ -21,42 +21,51 @@ cr.define('extensions', function() {
 
   // Implements the DragWrapper handler interface.
   var dragWrapperHandler = {
-    // @inheritdoc
+    /** @override */
     shouldAcceptDrag: function(e) {
       // We can't access filenames during the 'dragenter' event, so we have to
       // wait until 'drop' to decide whether to do something with the file or
       // not.
       // See: http://www.w3.org/TR/2011/WD-html5-20110113/dnd.html#concept-dnd-p
-      return e.dataTransfer.types.indexOf('Files') > -1;
+      return (e.dataTransfer.types &&
+              e.dataTransfer.types.indexOf('Files') > -1);
     },
-    // @inheritdoc
+    /** @override */
     doDragEnter: function() {
       chrome.send('startDrag');
       ExtensionSettings.showOverlay(null);
       ExtensionSettings.showOverlay($('dropTargetOverlay'));
     },
-    // @inheritdoc
+    /** @override */
     doDragLeave: function() {
       ExtensionSettings.showOverlay(null);
       chrome.send('stopDrag');
     },
-    // @inheritdoc
+    /** @override */
     doDragOver: function(e) {
       e.preventDefault();
     },
-    // @inheritdoc
+    /** @override */
     doDrop: function(e) {
       ExtensionSettings.showOverlay(null);
+      if (e.dataTransfer.files.length != 1)
+        return;
 
+      var toSend = null;
+      // Files lack a check if they're a directory, but we can find out through
+      // its item entry.
+      var fileIndex = e.dataTransfer.types.indexOf('Files');
+      if (e.dataTransfer.items[fileIndex].webkitGetAsEntry().isDirectory)
+        toSend = 'installDroppedDirectory';
       // Only process files that look like extensions. Other files should
       // navigate the browser normally.
-      if (!e.dataTransfer.files.length ||
-          !/\.(crx|user\.js)$/.test(e.dataTransfer.files[0].name)) {
-        return;
-      }
+      else if (/\.(crx|user\.js)$/i.test(e.dataTransfer.files[0].name))
+        toSend = 'installDroppedFile';
 
-      chrome.send('installDroppedFile');
-      e.preventDefault();
+      if (toSend) {
+        e.preventDefault();
+        chrome.send(toSend);
+      }
     }
   };
 

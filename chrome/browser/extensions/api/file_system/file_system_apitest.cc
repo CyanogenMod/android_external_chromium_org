@@ -6,10 +6,10 @@
 #include "base/file_util.h"
 #include "base/path_service.h"
 #include "build/build_config.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/file_system/file_system_api.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/platform_app_browsertest_util.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_service.h"
@@ -92,7 +92,7 @@ class FileSystemApiTest : public PlatformAppBrowserTest {
     base::FilePath destination = temp_dir_.path().AppendASCII(destination_name);
     if (copy_gold) {
       base::FilePath source = test_root_folder_.AppendASCII("gold.txt");
-      EXPECT_TRUE(file_util::CopyFile(source, destination));
+      EXPECT_TRUE(base::CopyFile(source, destination));
     }
     return destination;
   }
@@ -153,7 +153,7 @@ IN_PROC_BROWSER_TEST_F(FileSystemApiTest,
 
   base::FilePath test_file = test_path.AppendASCII("gold.txt");
   base::FilePath source = test_root_folder_.AppendASCII("gold.txt");
-  EXPECT_TRUE(file_util::CopyFile(source, test_file));
+  EXPECT_TRUE(base::CopyFile(source, test_file));
 
   FileSystemChooseEntryFunction::SkipPickerAndAlwaysSelectPathForTest(
       &test_file);

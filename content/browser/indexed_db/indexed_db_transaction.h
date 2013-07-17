@@ -8,12 +8,10 @@
 #include <queue>
 #include <set>
 #include <stack>
-#include <vector>
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/timer/timer.h"
 #include "content/browser/indexed_db/indexed_db_backing_store.h"
 #include "content/browser/indexed_db/indexed_db_database.h"
 #include "content/browser/indexed_db/indexed_db_database_error.h"
@@ -25,12 +23,11 @@ class IndexedDBDatabaseCallbacks;
 
 class IndexedDBTransaction : public base::RefCounted<IndexedDBTransaction> {
  public:
-  static scoped_refptr<IndexedDBTransaction> Create(
-      int64 transaction_id,
-      scoped_refptr<IndexedDBDatabaseCallbacks> callbacks,
-      const std::vector<int64>& scope,
-      indexed_db::TransactionMode,
-      IndexedDBDatabase* db);
+  IndexedDBTransaction(int64 id,
+                       scoped_refptr<IndexedDBDatabaseCallbacks> callbacks,
+                       const std::set<int64>& object_store_ids,
+                       indexed_db::TransactionMode,
+                       IndexedDBDatabase* db);
 
   virtual void Abort();
   void Commit();
@@ -78,12 +75,6 @@ class IndexedDBTransaction : public base::RefCounted<IndexedDBTransaction> {
   friend class base::RefCounted<IndexedDBTransaction>;
 
  private:
-  IndexedDBTransaction(int64 id,
-                       scoped_refptr<IndexedDBDatabaseCallbacks> callbacks,
-                       const std::set<int64>& object_store_ids,
-                       indexed_db::TransactionMode,
-                       IndexedDBDatabase* db);
-
   enum State {
     UNUSED,         // Created, but no tasks yet.
     START_PENDING,  // Enqueued tasks, but backing store transaction not yet
@@ -97,7 +88,7 @@ class IndexedDBTransaction : public base::RefCounted<IndexedDBTransaction> {
   bool IsTaskQueueEmpty() const;
   bool HasPendingTasks() const;
 
-  void TaskTimerFired();
+  void ProcessTaskQueue();
   void CloseOpenCursors();
 
   const int64 id_;
@@ -141,7 +132,7 @@ class IndexedDBTransaction : public base::RefCounted<IndexedDBTransaction> {
 
   IndexedDBBackingStore::Transaction transaction_;
 
-  base::OneShotTimer<IndexedDBTransaction> task_timer_;
+  bool should_process_queue_;
   int pending_preemptive_events_;
 
   std::set<IndexedDBCursor*> open_cursors_;

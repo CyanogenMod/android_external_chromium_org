@@ -24,8 +24,10 @@
 #include "components/autofill/core/common/web_element_descriptor.h"
 #include "content/public/common/password_form.h"
 #include "content/public/common/ssl_status.h"
+#include "content/public/common/url_constants.h"
 #include "content/public/renderer/render_view.h"
 #include "grit/component_strings.h"
+#include "net/cert/cert_status_flags.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
@@ -167,7 +169,6 @@ bool AutofillAgent::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(AutofillAgent, message)
     IPC_MESSAGE_HANDLER(AutofillMsg_GetAllForms, OnGetAllForms)
-    IPC_MESSAGE_HANDLER(AutofillMsg_SuggestionsReturned, OnSuggestionsReturned)
     IPC_MESSAGE_HANDLER(AutofillMsg_FormDataFilled, OnFormDataFilled)
     IPC_MESSAGE_HANDLER(AutofillMsg_FieldTypePredictionsAvailable,
                         OnFieldTypePredictionsAvailable)
@@ -312,9 +313,6 @@ void AutofillAgent::MaybeShowAutocheckoutBubble() {
   if (!FindFormAndFieldForInputElement(element_, &form, &field, REQUIRE_NONE))
     return;
 
-  form.ssl_status = render_view()->GetSSLStatusOfFrame(
-      element_.document().frame());
-
   Send(new AutofillHostMsg_MaybeShowAutocheckoutBubble(
       routing_id(),
       form,
@@ -327,8 +325,13 @@ void AutofillAgent::DidChangeScrollOffset(WebKit::WebFrame*) {
 
 void AutofillAgent::didRequestAutocomplete(WebKit::WebFrame* frame,
                                            const WebFormElement& form) {
+  GURL url(frame->document().url());
+  content::SSLStatus ssl_status = render_view()->GetSSLStatusOfFrame(frame);
   FormData form_data;
   if (!in_flight_request_form_.isNull() ||
+      (url.SchemeIs(chrome::kHttpsScheme) &&
+       (net::IsCertStatusError(ssl_status.cert_status) ||
+        net::IsCertStatusMinorError(ssl_status.cert_status))) ||
       !WebFormElementToFormData(form,
                                 WebFormControlElement(),
                                 REQUIRE_AUTOCOMPLETE,
@@ -345,13 +348,7 @@ void AutofillAgent::didRequestAutocomplete(WebKit::WebFrame* frame,
   HideAutofillUi();
 
   in_flight_request_form_ = form;
-  // Add SSL Status in the formdata to let browser process alert user
-  // appropriately using browser UI.
-  form_data.ssl_status = render_view()->GetSSLStatusOfFrame(frame);
-  Send(new AutofillHostMsg_RequestAutocomplete(
-      routing_id(),
-      form_data,
-      frame->document().url()));
+  Send(new AutofillHostMsg_RequestAutocomplete(routing_id(), form_data, url));
 }
 
 void AutofillAgent::setIgnoreTextChanges(bool ignore) {
@@ -500,83 +497,6 @@ void AutofillAgent::textFieldDidReceiveKeyDown(const WebInputElement& element,
   if (event.windowsKeyCode == ui::VKEY_DOWN ||
       event.windowsKeyCode == ui::VKEY_UP)
     ShowSuggestions(element, true, true, true);
-}
-
-void AutofillAgent::OnSuggestionsReturned(
-    int query_id,
-    const std::vector<base::string16>& values,
-    const std::vector<base::string16>& labels,
-    const std::vector<base::string16>& icons,
-    const std::vector<int>& unique_ids) {
-  if (query_id != autofill_query_id_)
-    return;
-
-  if (element_.isNull() || !element_.isFocusable())
-    return;
-
-  std::vector<base::string16> v(values);
-  std::vector<base::string16> l(labels);
-  std::vector<base::string16> i(icons);
-  std::vector<int> ids(unique_ids);
-
-  if (!element_.autoComplete() && !v.empty()) {
-    // If autofill is disabled and we had suggestions, show a warning instead.
-    v.assign(1, l10n_util::GetStringUTF16(IDS_AUTOFILL_WARNING_FORM_DISABLED));
-    l.assign(1, base::string16());
-    i.assign(1, base::string16());
-    ids.assign(1, WebAutofillClient::MenuItemIDWarningMessage);
-  } else if (ids.size() > 1 &&
-             ids[0] == WebAutofillClient::MenuItemIDWarningMessage) {
-    // If we received an autofill warning plus some autocomplete suggestions,
-    // remove the autofill warning.
-    v.erase(v.begin());
-    l.erase(l.begin());
-    i.erase(i.begin());
-    ids.erase(ids.begin());
-  }
-
-  // If we were about to show a warning and we shouldn't, don't.
-  if (!display_warning_if_disabled_ && !v.empty() &&
-      ids[0] == WebAutofillClient::MenuItemIDWarningMessage) {
-    v.clear();
-    l.clear();
-    i.clear();
-    ids.clear();
-  }
-
-  // Only include "Autofill Options" special menu item if we have Autofill
-  // items, identified by |unique_ids| having at least one valid value.
-  bool has_autofill_item = false;
-  for (size_t i = 0; i < ids.size(); ++i) {
-    if (ids[i] > 0) {
-      has_autofill_item = true;
-      break;
-    }
-  }
-
-  if (has_autofill_item) {
-    v.push_back(base::string16());
-    l.push_back(base::string16());
-    i.push_back(base::string16());
-    ids.push_back(WebAutofillClient::MenuItemIDSeparator);
-
-    if (FormWithElementIsAutofilled(element_)) {
-      // The form has been auto-filled, so give the user the chance to clear the
-      // form.  Append the 'Clear form' menu item.
-      v.push_back(l10n_util::GetStringUTF16(IDS_AUTOFILL_CLEAR_FORM_MENU_ITEM));
-      l.push_back(base::string16());
-      i.push_back(base::string16());
-      ids.push_back(WebAutofillClient::MenuItemIDClearForm);
-    }
-
-    // Append the 'Chrome Autofill options' menu item;
-    v.push_back(l10n_util::GetStringUTF16(IDS_AUTOFILL_OPTIONS_POPUP));
-    l.push_back(base::string16());
-    i.push_back(base::string16());
-    ids.push_back(WebAutofillClient::MenuItemIDAutofillOptions);
-  }
-
-  CombineDataListEntriesAndShow(element_, v, l, i, ids, has_autofill_item);
 }
 
 void AutofillAgent::CombineDataListEntriesAndShow(
@@ -844,24 +764,15 @@ void AutofillAgent::ShowSuggestions(const WebInputElement& element,
   if (password_autofill_agent_->ShowSuggestions(element))
     return;
 
-  // If autocomplete is disabled at the form level, then we might want to show a
-  // warning in place of suggestions.  However, if autocomplete is disabled
-  // specifically for this field, we never want to show a warning.  Otherwise,
-  // we might interfere with custom popups (e.g. search suggestions) used by the
-  // website.  Note that we cannot use the WebKit method element.autoComplete()
+  // If autocomplete is disabled at the field level, ensure that the native
+  // UI won't try to show a warning, since that may conflict with a custom
+  // popup. Note that we cannot use the WebKit method element.autoComplete()
   // as it does not allow us to distinguish the case where autocomplete is
   // disabled for *both* the element and for the form.
-  // Also, if the field has no name, then we won't have values.
   const base::string16 autocomplete_attribute =
       element.getAttribute("autocomplete");
-  if (LowerCaseEqualsASCII(autocomplete_attribute, "off") ||
-      element.nameForAutofill().isEmpty()) {
-    CombineDataListEntriesAndShow(element, std::vector<base::string16>(),
-                                  std::vector<base::string16>(),
-                                  std::vector<base::string16>(),
-                                  std::vector<int>(), false);
-    return;
-  }
+  if (LowerCaseEqualsASCII(autocomplete_attribute, "off"))
+    display_warning_if_disabled = false;
 
   QueryAutofillSuggestions(element, display_warning_if_disabled);
 }
@@ -880,9 +791,6 @@ void AutofillAgent::QueryAutofillSuggestions(const WebInputElement& element,
   // warning.  Otherwise, we want to ignore fields that disable autocomplete, so
   // that the suggestions list does not include suggestions for these form
   // fields -- see comment 1 on http://crbug.com/69914
-  // Rather than testing the form's autocomplete enabled state, we test the
-  // element's state.  The DCHECK below ensures that this is equivalent.
-  DCHECK(element.autoComplete() || !element.form().autoComplete());
   const RequirementsMask requirements =
       element.autoComplete() ? REQUIRE_AUTOCOMPLETE : REQUIRE_NONE;
 
@@ -919,10 +827,6 @@ void AutofillAgent::QueryAutofillSuggestions(const WebInputElement& element,
                                        data_list_icons,
                                        data_list_unique_ids));
 
-  // Add SSL Status in the formdata to let browser process alert user
-  // appropriately using browser UI.
-  form.ssl_status = render_view()->GetSSLStatusOfFrame(
-      element.document().frame());
   Send(new AutofillHostMsg_QueryFormFieldAutofill(routing_id(),
                                                   autofill_query_id_,
                                                   form,

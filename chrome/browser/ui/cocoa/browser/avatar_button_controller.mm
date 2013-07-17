@@ -7,6 +7,7 @@
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/profiles/profile.h"
@@ -21,7 +22,6 @@
 #include "chrome/browser/ui/browser_window.h"
 #import "chrome/browser/ui/cocoa/browser/avatar_menu_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -270,7 +270,7 @@ const CGFloat kMenuYOffsetAdjust = 1.0;
   base::scoped_nsobject<NSShadow> shadow([[NSShadow alloc] init]);
   [shadow.get() setShadowColor:[NSColor colorWithCalibratedWhite:0.0
                                                            alpha:0.75]];
-  [shadow.get() setShadowOffset:NSMakeSize(0, 0)];
+  [shadow.get() setShadowOffset:NSZeroSize];
   [shadow.get() setShadowBlurRadius:3.0];
   [shadow.get() set];
 

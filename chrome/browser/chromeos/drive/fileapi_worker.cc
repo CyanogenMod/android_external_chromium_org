@@ -18,18 +18,39 @@
 using content::BrowserThread;
 
 namespace drive {
-namespace internal {
+namespace fileapi_internal {
 namespace {
 
+// The summary of opening mode is:
+// - PLATFORM_FILE_OPEN: Open the existing file. Fail if not exists.
+// - PLATFORM_FILE_CREATE: Create the file if not exists. Fail if exists.
+// - PLATFORM_FILE_OPEN_ALWAYS: Open the existing file. Create a new file
+//     if not exists.
+// - PLATFORM_FILE_CREATE_ALWAYS: Create a new file if not exists. If exists
+//     open it with truncate.
+// - PLATFORM_FILE_OPEN_TRUNCATE: Open the existing file with truncate.
+//     Fail if not exists.
+OpenMode GetOpenMode(int file_flag) {
+  if (file_flag & (base::PLATFORM_FILE_OPEN |
+                   base::PLATFORM_FILE_OPEN_TRUNCATED))
+    return OPEN_FILE;
+
+  if (file_flag & base::PLATFORM_FILE_CREATE)
+    return CREATE_FILE;
+
+  DCHECK(file_flag & (base::PLATFORM_FILE_OPEN_ALWAYS |
+                      base::PLATFORM_FILE_CREATE_ALWAYS));
+  return OPEN_OR_CREATE_FILE;
+}
+
 // Runs |callback| with the PlatformFileError converted from |error|.
-void RunStatusCallbackByFileError(
-    const FileApiWorker::StatusCallback& callback,
-    FileError error) {
+void RunStatusCallbackByFileError(const StatusCallback& callback,
+                                  FileError error) {
   callback.Run(FileErrorToPlatformError(error));
 }
 
 // Runs |callback| with arguments converted from |error| and |entry|.
-void RunGetFileInfoCallback(const FileApiWorker::GetFileInfoCallback& callback,
+void RunGetFileInfoCallback(const GetFileInfoCallback& callback,
                             FileError error,
                             scoped_ptr<ResourceEntry> entry) {
   if (error != FILE_ERROR_OK) {
@@ -45,7 +66,7 @@ void RunGetFileInfoCallback(const FileApiWorker::GetFileInfoCallback& callback,
 
 // Runs |callback| with arguments converted from |error| and |resource_entries|.
 void RunReadDirectoryCallback(
-    const FileApiWorker::ReadDirectoryCallback& callback,
+    const ReadDirectoryCallback& callback,
     FileError error,
     scoped_ptr<ResourceEntryVector> resource_entries) {
   if (error != FILE_ERROR_OK) {
@@ -76,11 +97,10 @@ void RunReadDirectoryCallback(
 }
 
 // Runs |callback| with arguments based on |error|, |local_path| and |entry|.
-void RunCreateSnapshotFileCallback(
-    const FileApiWorker::CreateSnapshotFileCallback& callback,
-    FileError error,
-    const base::FilePath& local_path,
-    scoped_ptr<ResourceEntry> entry) {
+void RunCreateSnapshotFileCallback(const CreateSnapshotFileCallback& callback,
+                                   FileError error,
+                                   const base::FilePath& local_path,
+                                   scoped_ptr<ResourceEntry> entry) {
   if (error != FILE_ERROR_OK) {
     callback.Run(
         FileErrorToPlatformError(error),
@@ -113,25 +133,38 @@ void RunCreateSnapshotFileCallback(
 }
 
 // Runs |callback| with |error| and |platform_file|.
-void RunOpenFileCallback(
-    const FileApiWorker::OpenFileCallback& callback,
-    base::PlatformFileError* error,
-    base::PlatformFile platform_file) {
+void RunOpenFileCallback(const OpenFileCallback& callback,
+                         base::PlatformFileError* error,
+                         base::PlatformFile platform_file) {
   callback.Run(*error, platform_file);
 }
 
-// Part of FileApiWorker::OpenFile(). Called after FileSystem::OpenFile().
-void OpenFileAfterFileSystemOpenFile(
-    int file_flags,
-    const FileApiWorker::OpenFileCallback& callback,
-    FileError error,
-    const base::FilePath& local_path) {
+// Part of OpenFile(). Called after FileSystem::OpenFile().
+void OpenFileAfterFileSystemOpenFile(int file_flags,
+                                     const OpenFileCallback& callback,
+                                     FileError error,
+                                     const base::FilePath& local_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   if (error != FILE_ERROR_OK) {
     callback.Run(FileErrorToPlatformError(error),
                  base::kInvalidPlatformFileValue);
     return;
+  }
+
+  // Here, the file should be at |local_path|, but there may be timing issue.
+  // Because the file is managed by Drive file system, so, in order to avoid
+  // unexpected file creation, CREATE, OPEN_ALWAYS and CREATE_ALWAYS are
+  // translated into OPEN or OPEN_TRUNCATED, here. Keep OPEN and OPEN_TRUNCATED
+  // as is.
+  if (file_flags & (base::PLATFORM_FILE_CREATE |
+                    base::PLATFORM_FILE_OPEN_ALWAYS)) {
+    file_flags &= ~(base::PLATFORM_FILE_CREATE |
+                    base::PLATFORM_FILE_OPEN_ALWAYS);
+    file_flags |= base::PLATFORM_FILE_OPEN;
+  } else if (file_flags & base::PLATFORM_FILE_CREATE_ALWAYS) {
+    file_flags &= ~base::PLATFORM_FILE_CREATE_ALWAYS;
+    file_flags |= base::PLATFORM_FILE_OPEN_TRUNCATED;
   }
 
   // Cache file prepared for modification is available. Open it locally.
@@ -145,18 +178,6 @@ void OpenFileAfterFileSystemOpenFile(
   DCHECK(posted);
 }
 
-// Part of FileApiWorker::OpenFile(). Called after FileSystem::GetFileByPath().
-void OpenFileAfterGetFileByPath(int file_flags,
-                                const FileApiWorker::OpenFileCallback& callback,
-                                FileError error,
-                                const base::FilePath& local_path,
-                                scoped_ptr<ResourceEntry> entry) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  // Just redirect to OpenFileAfterFileSystemOpenFile() with ignoring |entry|.
-  OpenFileAfterFileSystemOpenFile(file_flags, callback, error, local_path);
-}
-
 // Emits debug log when FileSystem::CloseFile() is complete.
 void EmitDebugLogForCloseFile(const base::FilePath& local_path,
                               FileError file_error) {
@@ -165,182 +186,162 @@ void EmitDebugLogForCloseFile(const base::FilePath& local_path,
 
 }  // namespace
 
-FileApiWorker::FileApiWorker(FileSystemInterface* file_system)
-    : file_system_(file_system),
-      weak_ptr_factory_(this) {
+void RunFileSystemCallback(
+    const FileSystemGetter& file_system_getter,
+    const base::Callback<void(FileSystemInterface*)>& callback,
+    const base::Closure& on_error_callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(file_system);
+  FileSystemInterface* file_system = file_system_getter.Run();
+
+  if (!file_system) {
+    if (!on_error_callback.is_null())
+      on_error_callback.Run();
+    return;
+  }
+
+  callback.Run(file_system);
 }
 
-FileApiWorker::~FileApiWorker() {
-}
-
-void FileApiWorker::GetFileInfo(const base::FilePath& file_path,
-                                const GetFileInfoCallback& callback) {
+void GetFileInfo(const base::FilePath& file_path,
+                 const GetFileInfoCallback& callback,
+                 FileSystemInterface* file_system) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  file_system_->GetResourceEntryByPath(
+  file_system->GetResourceEntryByPath(
       file_path,
       base::Bind(&RunGetFileInfoCallback, callback));
 }
 
-void FileApiWorker::Copy(const base::FilePath& src_file_path,
-                         const base::FilePath& dest_file_path,
-                         const StatusCallback& callback) {
+void Copy(const base::FilePath& src_file_path,
+          const base::FilePath& dest_file_path,
+          const StatusCallback& callback,
+          FileSystemInterface* file_system) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  file_system_->Copy(src_file_path, dest_file_path,
-                     base::Bind(&RunStatusCallbackByFileError, callback));
+  file_system->Copy(src_file_path, dest_file_path,
+                    base::Bind(&RunStatusCallbackByFileError, callback));
 }
 
-void FileApiWorker::Move(const base::FilePath& src_file_path,
-                         const base::FilePath& dest_file_path,
-                         const StatusCallback& callback) {
+void Move(const base::FilePath& src_file_path,
+          const base::FilePath& dest_file_path,
+          const StatusCallback& callback,
+          FileSystemInterface* file_system) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  file_system_->Move(src_file_path, dest_file_path,
-                     base::Bind(&RunStatusCallbackByFileError, callback));
+  file_system->Move(src_file_path, dest_file_path,
+                    base::Bind(&RunStatusCallbackByFileError, callback));
 }
 
-void FileApiWorker::ReadDirectory(const base::FilePath& file_path,
-                                  const ReadDirectoryCallback& callback) {
+void CopyInForeignFile(const base::FilePath& src_foreign_file_path,
+                       const base::FilePath& dest_file_path,
+                       const StatusCallback& callback,
+                       FileSystemInterface* file_system) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  file_system_->ReadDirectoryByPath(
+  file_system->TransferFileFromLocalToRemote(
+      src_foreign_file_path, dest_file_path,
+      base::Bind(&RunStatusCallbackByFileError, callback));
+}
+
+void ReadDirectory(const base::FilePath& file_path,
+                   const ReadDirectoryCallback& callback,
+                   FileSystemInterface* file_system) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  file_system->ReadDirectoryByPath(
       file_path,
       base::Bind(&RunReadDirectoryCallback, callback));
 }
 
-void FileApiWorker::Remove(const base::FilePath& file_path,
-                           bool is_recursive,
-                           const StatusCallback& callback) {
+void Remove(const base::FilePath& file_path,
+            bool is_recursive,
+            const StatusCallback& callback,
+            FileSystemInterface* file_system) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  file_system_->Remove(file_path, is_recursive,
-                       base::Bind(&RunStatusCallbackByFileError, callback));
+  file_system->Remove(file_path, is_recursive,
+                      base::Bind(&RunStatusCallbackByFileError, callback));
 }
 
-void FileApiWorker::CreateDirectory(const base::FilePath& file_path,
-                                    bool is_exclusive,
-                                    bool is_recursive,
-                                    const StatusCallback& callback) {
+void CreateDirectory(const base::FilePath& file_path,
+                     bool is_exclusive,
+                     bool is_recursive,
+                     const StatusCallback& callback,
+                     FileSystemInterface* file_system) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  file_system_->CreateDirectory(
+  file_system->CreateDirectory(
       file_path, is_exclusive, is_recursive,
       base::Bind(&RunStatusCallbackByFileError, callback));
 }
 
-void FileApiWorker::CreateFile(const base::FilePath& file_path,
-                               bool is_exclusive,
-                               const StatusCallback& callback) {
+void CreateFile(const base::FilePath& file_path,
+                bool is_exclusive,
+                const StatusCallback& callback,
+                FileSystemInterface* file_system) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  file_system_->CreateFile(file_path, is_exclusive,
-                           base::Bind(&RunStatusCallbackByFileError, callback));
+  file_system->CreateFile(file_path, is_exclusive,
+                          base::Bind(&RunStatusCallbackByFileError, callback));
 }
 
-void FileApiWorker::Truncate(const base::FilePath& file_path,
-                             int64 length,
-                             const StatusCallback& callback) {
+void Truncate(const base::FilePath& file_path,
+              int64 length,
+              const StatusCallback& callback,
+              FileSystemInterface* file_system) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  file_system_->TruncateFile(
+  file_system->TruncateFile(
       file_path, length,
       base::Bind(&RunStatusCallbackByFileError, callback));
 }
 
-void FileApiWorker::CreateSnapshotFile(
-    const base::FilePath& file_path,
-    const CreateSnapshotFileCallback& callback) {
+void CreateSnapshotFile(const base::FilePath& file_path,
+                        const CreateSnapshotFileCallback& callback,
+                        FileSystemInterface* file_system) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  file_system_->GetFileByPath(
+  file_system->GetFileByPath(
       file_path,
       base::Bind(&RunCreateSnapshotFileCallback, callback));
 }
 
-void FileApiWorker::OpenFile(const base::FilePath& file_path,
-                             int file_flags,
-                             const OpenFileCallback& callback) {
+void OpenFile(const base::FilePath& file_path,
+              int file_flags,
+              const OpenFileCallback& callback,
+              FileSystemInterface* file_system) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  // TODO(zelidrag): Wire all other file open operations.
-  if (file_flags & base::PLATFORM_FILE_DELETE_ON_CLOSE) {
-    NOTIMPLEMENTED() << "File create/write operations not yet supported "
-                     << file_path.value();
-    callback.Run(base::PLATFORM_FILE_ERROR_FAILED,
-                 base::kInvalidPlatformFileValue);
+  // Returns an error if any unsupported flag is found.
+  if (file_flags & ~(base::PLATFORM_FILE_OPEN |
+                     base::PLATFORM_FILE_CREATE |
+                     base::PLATFORM_FILE_OPEN_ALWAYS |
+                     base::PLATFORM_FILE_CREATE_ALWAYS |
+                     base::PLATFORM_FILE_OPEN_TRUNCATED |
+                     base::PLATFORM_FILE_READ |
+                     base::PLATFORM_FILE_WRITE |
+                     base::PLATFORM_FILE_WRITE_ATTRIBUTES |
+                     base::PLATFORM_FILE_APPEND)) {
+    base::MessageLoopProxy::current()->PostTask(
+        FROM_HERE,
+        base::Bind(callback,
+                   base::PLATFORM_FILE_ERROR_FAILED,
+                   base::kInvalidPlatformFileValue));
     return;
   }
 
-  // TODO(hidehiko): The opening logic should be moved to FileSystem.
-  //   crbug.com/256583.
-  if (file_flags & (base::PLATFORM_FILE_OPEN |
-                    base::PLATFORM_FILE_OPEN_ALWAYS |
-                    base::PLATFORM_FILE_OPEN_TRUNCATED)) {
-    if (file_flags & (base::PLATFORM_FILE_OPEN_TRUNCATED |
-                      base::PLATFORM_FILE_OPEN_ALWAYS |
-                      base::PLATFORM_FILE_WRITE |
-                      base::PLATFORM_FILE_EXCLUSIVE_WRITE)) {
-      // Open existing file for writing.
-      file_system_->OpenFile(
-          file_path,
-          base::Bind(&OpenFileAfterFileSystemOpenFile, file_flags, callback));
-    } else {
-      // Read-only file open.
-      file_system_->GetFileByPath(
-          file_path,
-          base::Bind(&OpenFileAfterGetFileByPath, file_flags, callback));
-    }
-  } else if (file_flags & (base::PLATFORM_FILE_CREATE |
-                           base::PLATFORM_FILE_CREATE_ALWAYS)) {
-    // Create a new file.
-    file_system_->CreateFile(
-        file_path,
-        file_flags & base::PLATFORM_FILE_EXCLUSIVE_WRITE,
-        base::Bind(&FileApiWorker::OpenFileAfterCreateFile,
-                   weak_ptr_factory_.GetWeakPtr(),
-                   file_path, file_flags, callback));
-  } else {
-    NOTREACHED() << "Unhandled file flags combination " << file_flags;
-    callback.Run(base::PLATFORM_FILE_ERROR_FAILED,
-                 base::kInvalidPlatformFileValue);
-    return;
-  }
-}
-
-void FileApiWorker::CloseFile(const base::FilePath& file_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  file_system_->CloseFile(file_path,
-                          base::Bind(&EmitDebugLogForCloseFile, file_path));
-}
-
-void FileApiWorker::TouchFile(const base::FilePath& file_path,
-                              const base::Time& last_access_time,
-                              const base::Time& last_modified_time,
-                              const StatusCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  file_system_->TouchFile(file_path, last_access_time, last_modified_time,
-                          base::Bind(&RunStatusCallbackByFileError, callback));
-
-}
-
-void FileApiWorker::OpenFileAfterCreateFile(const base::FilePath& file_path,
-                                            int file_flags,
-                                            const OpenFileCallback& callback,
-                                            FileError error) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (error != FILE_ERROR_OK &&
-      (error != FILE_ERROR_EXISTS ||
-       (file_flags & base::PLATFORM_FILE_CREATE))) {
-    callback.Run(FileErrorToPlatformError(error),
-                 base::kInvalidPlatformFileValue);
-    return;
-  }
-
-  // If we are trying to always create an existing file, then
-  // if it really exists open it as truncated.
-  file_flags &=
-      ~(base::PLATFORM_FILE_CREATE | base::PLATFORM_FILE_CREATE_ALWAYS);
-  file_flags |= base::PLATFORM_FILE_OPEN_TRUNCATED;
-
-  // Open created (or existing) file for writing.
-  file_system_->OpenFile(
-      file_path,
+  file_system->OpenFile(
+      file_path, GetOpenMode(file_flags),
       base::Bind(&OpenFileAfterFileSystemOpenFile, file_flags, callback));
 }
 
-}  // namespace internal
+void CloseFile(const base::FilePath& file_path,
+               FileSystemInterface* file_system) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  file_system->CloseFile(file_path,
+                         base::Bind(&EmitDebugLogForCloseFile, file_path));
+}
+
+void TouchFile(const base::FilePath& file_path,
+               const base::Time& last_access_time,
+               const base::Time& last_modified_time,
+               const StatusCallback& callback,
+               FileSystemInterface* file_system) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  file_system->TouchFile(file_path, last_access_time, last_modified_time,
+                         base::Bind(&RunStatusCallbackByFileError, callback));
+
+}
+
+}  // namespace fileapi_internal
 }  // namespace drive

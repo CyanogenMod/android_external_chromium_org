@@ -11,11 +11,8 @@
 #include "cc/input/top_controls_state.h"
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_settings.h"
-#include "skia/ext/refptr.h"
 #include "third_party/WebKit/public/platform/WebLayerTreeView.h"
 #include "ui/gfx/rect.h"
-
-class SkPicture;
 
 namespace ui {
 struct LatencyInfo;
@@ -45,7 +42,6 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
   void SetNeedsDisplayOnAllLayers();
   void SetRasterizeOnlyVisibleContent();
   void GetRenderingStats(cc::RenderingStats* stats);
-  skia::RefPtr<SkPicture> CapturePicture();
   void UpdateTopControlsState(cc::TopControlsState constraints,
                               cc::TopControlsState current,
                               bool animate);
@@ -89,6 +85,7 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
   virtual void setShowPaintRects(bool show);
   virtual void setShowDebugBorders(bool show);
   virtual void setContinuousPaintingEnabled(bool enabled);
+  virtual void setShowScrollBottleneckRects(bool show);
 
   // cc::LayerTreeHostClient implementation.
   virtual void WillBeginFrame() OVERRIDE;

@@ -11,6 +11,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/avatar_menu_model_observer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
@@ -23,7 +24,6 @@
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
@@ -192,6 +192,18 @@ base::FilePath AvatarMenuModel::GetProfilePath(size_t index) {
   return profile_info_->GetPathOfProfileAtIndex(item.model_index);
 }
 
+// static
+void AvatarMenuModel::SwitchToGuestProfileWindow(Browser* browser) {
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  profile_manager->CreateProfileAsync(ProfileManager::GetGuestProfilePath(),
+                                      base::Bind(&OnProfileCreated,
+                                                 false,
+                                                 browser->host_desktop_type()),
+                                      string16(),
+                                      string16(),
+                                      false);
+}
+
 size_t AvatarMenuModel::GetNumberOfItems() {
   return items_.size();
 }
@@ -272,9 +284,12 @@ bool AvatarMenuModel::ShouldShowAvatarMenu() {
     DCHECK(ProfileManager::IsMultipleProfilesEnabled());
     return true;
   }
-  return ProfileManager::IsMultipleProfilesEnabled() &&
-      g_browser_process->profile_manager() &&
-      g_browser_process->profile_manager()->GetNumberOfProfiles() > 1;
+  if (ProfileManager::IsMultipleProfilesEnabled()) {
+    return ProfileManager::IsNewProfileManagementEnabled() ||
+           (g_browser_process->profile_manager() &&
+            g_browser_process->profile_manager()->GetNumberOfProfiles() > 1);
+  }
+  return false;
 }
 
 void AvatarMenuModel::RebuildMenu() {

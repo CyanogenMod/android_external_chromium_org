@@ -112,7 +112,7 @@ class OverscrollWindowDelegate : public ImageWindowDelegate {
     }
 
     gfx::Image image;
-    if (entry && entry->screenshot()) {
+    if (entry && entry->screenshot().get()) {
       std::vector<gfx::ImagePNGRep> image_reps;
       image_reps.push_back(gfx::ImagePNGRep(entry->screenshot(),
             ui::GetScaleFactorForNativeView(web_contents_window())));
@@ -479,7 +479,7 @@ class OverscrollNavigationOverlay :
         controller.GetEntryAtOffset(offset));
 
     gfx::Image image;
-    if (entry && entry->screenshot()) {
+    if (entry && entry->screenshot().get()) {
       std::vector<gfx::ImagePNGRep> image_reps;
       image_reps.push_back(gfx::ImagePNGRep(entry->screenshot(),
             ui::GetScaleFactorForNativeView(window_.get())));
@@ -1229,7 +1229,7 @@ void WebContentsViewAura::ShowPopupMenu(const gfx::Rect& bounds,
                                         int item_height,
                                         double item_font_size,
                                         int selected_item,
-                                        const std::vector<WebMenuItem>& items,
+                                        const std::vector<MenuItem>& items,
                                         bool right_aligned,
                                         bool allow_multiple_selection) {
   // External popup menus are only used on Mac and Android.
@@ -1504,10 +1504,11 @@ void WebContentsViewAura::OnMouseEvent(ui::MouseEvent* event) {
       web_contents_->GetDelegate()->ActivateContents(web_contents_);
       break;
     case ui::ET_MOUSE_MOVED:
+    case ui::ET_MOUSE_EXITED:
       web_contents_->GetDelegate()->ContentsMouseEvent(
           web_contents_,
           gfx::Screen::GetScreenFor(GetNativeView())->GetCursorScreenPoint(),
-          true);
+          event->type() == ui::ET_MOUSE_MOVED);
       break;
     default:
       break;

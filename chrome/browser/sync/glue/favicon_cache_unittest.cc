@@ -6,10 +6,12 @@
 
 #include "base/message_loop.h"
 #include "base/strings/stringprintf.h"
+#include "chrome/browser/chrome_notification_types.h"
+#include "base/time/time.h"
 #include "chrome/browser/history/history_notifications.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_service.h"
 #include "sync/api/sync_error_factory_mock.h"
+#include "sync/api/time.h"
 #include "sync/protocol/favicon_image_specifics.pb.h"
 #include "sync/protocol/favicon_tracking_specifics.pb.h"
 #include "sync/protocol/sync.pb.h"
@@ -624,12 +626,14 @@ TEST_F(SyncFaviconCacheTest, SyncExistingRemote) {
                        image_specifics.mutable_favicon_image());
     initial_image_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           image_specifics));
+                                           image_specifics,
+                                           base::Time()));
     FillTrackingSpecifics(BuildFaviconData(i),
                           tracking_specifics.mutable_favicon_tracking());
     initial_tracking_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           tracking_specifics));
+                                           tracking_specifics,
+                                           base::Time()));
   }
 
   syncer::SyncMergeResult merge_result =
@@ -697,12 +701,14 @@ TEST_F(SyncFaviconCacheTest, SyncMergesImages) {
 
     initial_image_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           image_specifics));
+                                           image_specifics,
+                                           base::Time()));
     FillTrackingSpecifics(test_data,
                           tracking_specifics.mutable_favicon_tracking());
     initial_tracking_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           tracking_specifics));
+                                           tracking_specifics,
+                                           base::Time()));
   }
 
   syncer::SyncMergeResult merge_result =
@@ -776,12 +782,14 @@ TEST_F(SyncFaviconCacheTest, SyncMergesTracking) {
 
     initial_image_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           image_specifics));
+                                           image_specifics,
+                                           base::Time()));
     FillTrackingSpecifics(test_data,
                           tracking_specifics.mutable_favicon_tracking());
     initial_tracking_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           tracking_specifics));
+                                           tracking_specifics,
+                                           base::Time()));
   }
 
   syncer::SyncMergeResult merge_result =
@@ -835,19 +843,23 @@ TEST_F(SyncFaviconCacheTest, ReceiveStaleImages) {
                        image_specifics.mutable_favicon_image());
     initial_image_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           image_specifics));
+                                           image_specifics,
+                                           base::Time()));
     expected_change_types.push_back(syncer::SyncChange::ACTION_UPDATE);
     image_specifics.mutable_favicon_image()->clear_favicon_web();
     stale_changes.push_back(
         syncer::SyncChange(
              FROM_HERE,
              syncer::SyncChange::ACTION_UPDATE,
-             syncer::SyncData::CreateRemoteData(1, image_specifics)));
+             syncer::SyncData::CreateRemoteData(1,
+                                                image_specifics,
+                                                base::Time())));
     FillTrackingSpecifics(BuildFaviconData(i),
                           tracking_specifics.mutable_favicon_tracking());
     initial_tracking_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           tracking_specifics));
+                                           tracking_specifics,
+                                           base::Time()));
   }
 
   SetUpInitialSync(initial_image_data, initial_tracking_data);
@@ -879,17 +891,21 @@ TEST_F(SyncFaviconCacheTest, ReceiveNewImages) {
         syncer::SyncChange(
              FROM_HERE,
              syncer::SyncChange::ACTION_UPDATE,
-             syncer::SyncData::CreateRemoteData(1, image_specifics)));
+             syncer::SyncData::CreateRemoteData(1,
+                                                image_specifics,
+                                                base::Time())));
     image_specifics.mutable_favicon_image()->mutable_favicon_web()->
         mutable_favicon()->append("old");
     initial_image_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           image_specifics));
+                                           image_specifics,
+                                           base::Time()));
     FillTrackingSpecifics(BuildFaviconData(i),
                           tracking_specifics.mutable_favicon_tracking());
     initial_tracking_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           tracking_specifics));
+                                           tracking_specifics,
+                                           base::Time()));
   }
 
   SetUpInitialSync(initial_image_data, initial_tracking_data);
@@ -915,15 +931,19 @@ TEST_F(SyncFaviconCacheTest, ReceiveSameImages) {
         syncer::SyncChange(
              FROM_HERE,
              syncer::SyncChange::ACTION_UPDATE,
-             syncer::SyncData::CreateRemoteData(1, image_specifics)));
+             syncer::SyncData::CreateRemoteData(1,
+                                                image_specifics,
+                                                base::Time())));
     initial_image_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           image_specifics));
+                                           image_specifics,
+                                           base::Time()));
     FillTrackingSpecifics(BuildFaviconData(i),
                           tracking_specifics.mutable_favicon_tracking());
     initial_tracking_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           tracking_specifics));
+                                           tracking_specifics,
+                                           base::Time()));
   }
 
   SetUpInitialSync(initial_image_data, initial_tracking_data);
@@ -948,19 +968,23 @@ TEST_F(SyncFaviconCacheTest, ReceiveStaleTracking) {
                        image_specifics.mutable_favicon_image());
     initial_image_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           image_specifics));
+                                           image_specifics,
+                                           base::Time()));
     expected_change_types.push_back(syncer::SyncChange::ACTION_UPDATE);
     FillTrackingSpecifics(BuildFaviconData(i),
                           tracking_specifics.mutable_favicon_tracking());
     initial_tracking_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           tracking_specifics));
+                                           tracking_specifics,
+                                           base::Time()));
     tracking_specifics.mutable_favicon_tracking()->set_last_visit_time_ms(-1);
     stale_changes.push_back(
         syncer::SyncChange(
              FROM_HERE,
              syncer::SyncChange::ACTION_UPDATE,
-             syncer::SyncData::CreateRemoteData(1, tracking_specifics)));
+             syncer::SyncData::CreateRemoteData(1,
+                                                tracking_specifics,
+                                                base::Time())));
   }
 
   SetUpInitialSync(initial_image_data, initial_tracking_data);
@@ -990,18 +1014,22 @@ TEST_F(SyncFaviconCacheTest, ReceiveNewTracking) {
                        image_specifics.mutable_favicon_image());
     initial_image_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           image_specifics));
+                                           image_specifics,
+                                           base::Time()));
     FillTrackingSpecifics(BuildFaviconData(i),
                           tracking_specifics.mutable_favicon_tracking());
     new_changes.push_back(
         syncer::SyncChange(
              FROM_HERE,
              syncer::SyncChange::ACTION_UPDATE,
-             syncer::SyncData::CreateRemoteData(1, tracking_specifics)));
+             syncer::SyncData::CreateRemoteData(1,
+                                                tracking_specifics,
+                                                base::Time())));
     tracking_specifics.mutable_favicon_tracking()->set_last_visit_time_ms(i-1);
     initial_tracking_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           tracking_specifics));
+                                           tracking_specifics,
+                                           base::Time()));
   }
 
   SetUpInitialSync(initial_image_data, initial_tracking_data);
@@ -1025,17 +1053,21 @@ TEST_F(SyncFaviconCacheTest, ReceiveSameTracking) {
                        image_specifics.mutable_favicon_image());
     initial_image_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           image_specifics));
+                                           image_specifics,
+                                           base::Time()));
     FillTrackingSpecifics(BuildFaviconData(i),
                           tracking_specifics.mutable_favicon_tracking());
     initial_tracking_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           tracking_specifics));
+                                           tracking_specifics,
+                                           base::Time()));
     same_changes.push_back(
         syncer::SyncChange(
              FROM_HERE,
              syncer::SyncChange::ACTION_UPDATE,
-             syncer::SyncData::CreateRemoteData(1, tracking_specifics)));
+             syncer::SyncData::CreateRemoteData(1,
+                                                tracking_specifics,
+                                                base::Time())));
   }
 
   SetUpInitialSync(initial_image_data, initial_tracking_data);
@@ -1056,22 +1088,28 @@ TEST_F(SyncFaviconCacheTest, DeleteFavicons) {
                        image_specifics.mutable_favicon_image());
     initial_image_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           image_specifics));
+                                           image_specifics,
+                                           base::Time()));
     FillTrackingSpecifics(BuildFaviconData(i),
                           tracking_specifics.mutable_favicon_tracking());
     initial_tracking_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           tracking_specifics));
+                                           tracking_specifics,
+                                           base::Time()));
     tracking_deletions.push_back(
         syncer::SyncChange(
              FROM_HERE,
              syncer::SyncChange::ACTION_DELETE,
-             syncer::SyncData::CreateRemoteData(1, tracking_specifics)));
+             syncer::SyncData::CreateRemoteData(1,
+                                                tracking_specifics,
+                                                base::Time())));
     image_deletions.push_back(
         syncer::SyncChange(
              FROM_HERE,
              syncer::SyncChange::ACTION_DELETE,
-             syncer::SyncData::CreateRemoteData(1, image_specifics)));
+             syncer::SyncData::CreateRemoteData(1,
+                                                image_specifics,
+                                                base::Time())));
   }
 
   SetUpInitialSync(initial_image_data, initial_tracking_data);
@@ -1103,12 +1141,14 @@ TEST_F(SyncFaviconCacheTest, ExpireOnMergeData) {
                        image_specifics.mutable_favicon_image());
     initial_image_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           image_specifics));
+                                           image_specifics,
+                                           base::Time()));
     FillTrackingSpecifics(BuildFaviconData(i),
                           tracking_specifics.mutable_favicon_tracking());
     initial_tracking_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           tracking_specifics));
+                                           tracking_specifics,
+                                           base::Time()));
     expected_icons.push_back(i);
 
     TestFaviconData favicon = BuildFaviconData(i+kMaxSyncFavicons);
@@ -1164,13 +1204,14 @@ TEST_F(SyncFaviconCacheTest, NoExpireOnProcessSyncChanges) {
                        image_specifics.mutable_favicon_image());
     initial_image_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           image_specifics));
+                                           image_specifics,
+                                           base::Time()));
     FillTrackingSpecifics(BuildFaviconData(i),
                           tracking_specifics.mutable_favicon_tracking());
     initial_tracking_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           tracking_specifics));
-
+                                           tracking_specifics,
+                                           base::Time()));
     // Set up new tracking specifics for the icons received at change time.
     expected_icons.push_back(i + kMaxSyncFavicons);
     FillImageSpecifics(BuildFaviconData(i + kMaxSyncFavicons),
@@ -1179,14 +1220,18 @@ TEST_F(SyncFaviconCacheTest, NoExpireOnProcessSyncChanges) {
         syncer::SyncChange(
              FROM_HERE,
              syncer::SyncChange::ACTION_ADD,
-             syncer::SyncData::CreateRemoteData(1, image_specifics)));
+             syncer::SyncData::CreateRemoteData(1,
+                                                image_specifics,
+                                                base::Time())));
     FillTrackingSpecifics(BuildFaviconData(i + kMaxSyncFavicons),
                           tracking_specifics.mutable_favicon_tracking());
     tracking_changes.push_back(
         syncer::SyncChange(
              FROM_HERE,
              syncer::SyncChange::ACTION_ADD,
-             syncer::SyncData::CreateRemoteData(1, tracking_specifics)));
+             syncer::SyncData::CreateRemoteData(1,
+                                                tracking_specifics,
+                                                base::Time())));
   }
 
   SetUpInitialSync(initial_image_data, initial_tracking_data);
@@ -1339,12 +1384,14 @@ TEST_F(SyncFaviconCacheTest, HistoryFullClear) {
                        image_specifics.mutable_favicon_image());
     initial_image_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           image_specifics));
+                                           image_specifics,
+                                           base::Time()));
     FillTrackingSpecifics(BuildFaviconData(i),
                           tracking_specifics.mutable_favicon_tracking());
     initial_tracking_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           tracking_specifics));
+                                           tracking_specifics,
+                                           base::Time()));
   }
 
   SetUpInitialSync(initial_image_data, initial_tracking_data);
@@ -1395,12 +1442,14 @@ TEST_F(SyncFaviconCacheTest, HistorySubsetClear) {
                        image_specifics.mutable_favicon_image());
     initial_image_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           image_specifics));
+                                           image_specifics,
+                                           base::Time()));
     FillTrackingSpecifics(BuildFaviconData(i),
                           tracking_specifics.mutable_favicon_tracking());
     initial_tracking_data.push_back(
         syncer::SyncData::CreateRemoteData(1,
-                                           tracking_specifics));
+                                           tracking_specifics,
+                                           base::Time()));
   }
 
   SetUpInitialSync(initial_image_data, initial_tracking_data);
@@ -1516,7 +1565,7 @@ TEST_F(SyncFaviconCacheTest, UpdatedOrphans) {
           syncer::SyncChange(FROM_HERE,
                              syncer::SyncChange::ACTION_ADD,
                              syncer::SyncData::CreateRemoteData(
-                                 1, image_specifics)));
+                                 1, image_specifics, base::Time())));
     } else {
       sync_pb::EntitySpecifics tracking_specifics;
       FillTrackingSpecifics(BuildFaviconData(i),
@@ -1525,7 +1574,7 @@ TEST_F(SyncFaviconCacheTest, UpdatedOrphans) {
           syncer::SyncChange(FROM_HERE,
                              syncer::SyncChange::ACTION_ADD,
                              syncer::SyncData::CreateRemoteData(
-                                 1, tracking_specifics)));
+                                 1, tracking_specifics, base::Time())));
     }
   }
 
@@ -1572,6 +1621,87 @@ TEST_F(SyncFaviconCacheTest, UpdatedOrphans) {
     }
   }
 
+  EXPECT_EQ(0U, GetTaskCount());
+  EXPECT_EQ((unsigned long)kFaviconBatchSize, GetFaviconCount());
+}
+
+// Verify that orphaned favicon images don't result in creating invalid
+// favicon tracking data.
+TEST_F(SyncFaviconCacheTest, PartialAssociationInfo) {
+  syncer::SyncDataList initial_image_data, initial_tracking_data;
+  for (int i = 0; i < kFaviconBatchSize; ++i) {
+    sync_pb::EntitySpecifics image_specifics;
+    FillImageSpecifics(BuildFaviconData(i),
+                       image_specifics.mutable_favicon_image());
+    initial_image_data.push_back(
+        syncer::SyncData::CreateRemoteData(1,
+                                           image_specifics,
+                                           base::Time()));
+    image_specifics.mutable_favicon_image()->clear_favicon_web();
+  }
+
+  SetUpInitialSync(initial_image_data, initial_tracking_data);
+  syncer::SyncChangeList change_list = processor()->GetAndResetChangeList();
+  EXPECT_TRUE(change_list.empty());
+  EXPECT_EQ((unsigned long)kFaviconBatchSize, GetFaviconCount());
+}
+
+// Tests that we don't choke if a favicon visit node with a null visit time is
+// present (see crbug.com/258196) and an update is made.
+TEST_F(SyncFaviconCacheTest, NullFaviconVisitTime) {
+  EXPECT_EQ(0U, GetFaviconCount());
+
+  syncer::SyncDataList initial_image_data, initial_tracking_data;
+  std::vector<int> expected_icons;
+  for (int i = 0; i < kFaviconBatchSize; ++i) {
+    expected_icons.push_back(i);
+    sync_pb::EntitySpecifics image_specifics, tracking_specifics;
+    FillImageSpecifics(BuildFaviconData(i),
+                       image_specifics.mutable_favicon_image());
+    initial_image_data.push_back(
+        syncer::SyncData::CreateRemoteData(1,
+                                           image_specifics,
+                                           base::Time()));
+    FillTrackingSpecifics(BuildFaviconData(i),
+                          tracking_specifics.mutable_favicon_tracking());
+    tracking_specifics.mutable_favicon_tracking()->set_last_visit_time_ms(
+        syncer::TimeToProtoTime(base::Time()));
+    initial_tracking_data.push_back(
+        syncer::SyncData::CreateRemoteData(1,
+                                           tracking_specifics,
+                                           base::Time()));
+  }
+
+  cache()->MergeDataAndStartSyncing(syncer::FAVICON_IMAGES,
+                                    initial_image_data,
+                                    CreateAndPassProcessor(),
+                                    CreateAndPassSyncErrorFactory());
+  ASSERT_EQ(0U, processor()->GetAndResetChangeList().size());
+  cache()->MergeDataAndStartSyncing(syncer::FAVICON_TRACKING,
+                                    initial_tracking_data,
+                                    CreateAndPassProcessor(),
+                                    CreateAndPassSyncErrorFactory());
+  ASSERT_EQ((unsigned long)kFaviconBatchSize,
+            processor()->GetAndResetChangeList().size());
+  EXPECT_EQ((unsigned long)kFaviconBatchSize, GetFaviconCount());
+
+  // Visit the favicons again.
+  EXPECT_EQ(0U, GetTaskCount());
+  for (int i = 0; i < kFaviconBatchSize; ++i) {
+    TestFaviconData test_data = BuildFaviconData(i);
+    cache()->OnFaviconVisited(test_data.page_url, test_data.icon_url);
+
+    syncer::SyncChangeList changes = processor()->GetAndResetChangeList();
+    ASSERT_EQ(1U, changes.size());
+    // Just verify the favicon url for the tracking specifics and that the
+    // timestamp is non-null.
+    EXPECT_EQ(syncer::SyncChange::ACTION_UPDATE, changes[0].change_type());
+    EXPECT_EQ(test_data.icon_url.spec(),
+              changes[0].sync_data().GetSpecifics().favicon_tracking().
+                  favicon_url());
+    EXPECT_NE(changes[0].sync_data().GetSpecifics().favicon_tracking().
+                  last_visit_time_ms(), 0);
+  }
   EXPECT_EQ(0U, GetTaskCount());
   EXPECT_EQ((unsigned long)kFaviconBatchSize, GetFaviconCount());
 }

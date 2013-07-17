@@ -124,6 +124,17 @@ class AutofillDriverImplTest : public ChromeRenderViewHostTestHarness {
     return true;
   }
 
+  // Searches for a message matching |messageID| in the queue of sent IPC
+  // messages. If none is present, returns false. Otherwise, clears the queue
+  // of sent messages and returns true.
+  bool HasMessageMatchingID(uint32 messageID) {
+    const IPC::Message* message =
+        process()->sink().GetFirstMessageMatching(messageID);
+    if (!message)
+      return false;
+    process()->sink().ClearMessages();
+    return true;
+  }
 
   scoped_ptr<TestAutofillManagerDelegate> test_manager_delegate_;
   scoped_ptr<TestAutofillDriverImpl> driver_;
@@ -186,6 +197,28 @@ TEST_F(AutofillDriverImplTest, TypePredictionsSentToRendererWhenEnabled) {
   std::vector<FormDataPredictions> output_type_predictions;
   EXPECT_TRUE(GetFieldTypePredictionsAvailable(&output_type_predictions));
   EXPECT_EQ(expected_type_predictions, output_type_predictions);
+}
+
+TEST_F(AutofillDriverImplTest, PreviewActionSentToRenderer) {
+  driver_->SetRendererActionOnFormDataReception(
+      AutofillDriver::FORM_DATA_ACTION_PREVIEW);
+  EXPECT_TRUE(HasMessageMatchingID(AutofillMsg_SetAutofillActionPreview::ID));
+}
+
+TEST_F(AutofillDriverImplTest, FillActionSentToRenderer) {
+  driver_->SetRendererActionOnFormDataReception(
+      AutofillDriver::FORM_DATA_ACTION_FILL);
+  EXPECT_TRUE(HasMessageMatchingID(AutofillMsg_SetAutofillActionFill::ID));
+}
+
+TEST_F(AutofillDriverImplTest, ClearFilledFormSentToRenderer) {
+  driver_->RendererShouldClearFilledForm();
+  EXPECT_TRUE(HasMessageMatchingID(AutofillMsg_ClearForm::ID));
+}
+
+TEST_F(AutofillDriverImplTest, ClearPreviewedFormSentToRenderer) {
+  driver_->RendererShouldClearPreviewedForm();
+  EXPECT_TRUE(HasMessageMatchingID(AutofillMsg_ClearPreviewedForm::ID));
 }
 
 }  // namespace autofill

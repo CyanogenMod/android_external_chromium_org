@@ -10,6 +10,7 @@
 #include "cc/base/scoped_ptr_vector.h"
 #include "cc/output/direct_renderer.h"
 #include "cc/output/gl_renderer_draw_cache.h"
+#include "cc/output/program_binding.h"
 #include "cc/output/renderer.h"
 #include "cc/quads/checkerboard_draw_quad.h"
 #include "cc/quads/debug_border_draw_quad.h"
@@ -22,9 +23,7 @@
 
 class SkBitmap;
 
-namespace WebKit {
-class WebGraphicsContext3D;
-}
+namespace WebKit { class WebGraphicsContext3D; }
 
 namespace cc {
 
@@ -260,6 +259,12 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
                          FragmentShaderRGBATexPremultiplyAlpha>
       NonPremultipliedTextureProgram;
   typedef ProgramBinding<VertexShaderPosTexTransform,
+                         FragmentShaderTexBackgroundVaryingAlpha>
+      TextureBackgroundProgram;
+  typedef ProgramBinding<VertexShaderPosTexTransform,
+                         FragmentShaderTexBackgroundVaryingAlpha>
+      NonPremultipliedTextureBackgroundProgram;
+  typedef ProgramBinding<VertexShaderPosTexTransform,
                          FragmentShaderRGBATexRectVaryingAlpha>
       TextureIOSurfaceProgram;
 
@@ -334,6 +339,10 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
       TexCoordPrecision precision);
   const NonPremultipliedTextureProgram* GetNonPremultipliedTextureProgram(
       TexCoordPrecision precision);
+  const TextureBackgroundProgram* GetTextureBackgroundProgram(
+      TexCoordPrecision precision);
+  const NonPremultipliedTextureBackgroundProgram*
+      GetNonPremultipliedTextureBackgroundProgram(TexCoordPrecision precision);
   const TextureIOSurfaceProgram* GetTextureIOSurfaceProgram(
       TexCoordPrecision precision);
 
@@ -365,11 +374,17 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
 
   scoped_ptr<TextureProgram> texture_program_;
   scoped_ptr<NonPremultipliedTextureProgram> nonpremultiplied_texture_program_;
+  scoped_ptr<TextureBackgroundProgram> texture_background_program_;
+  scoped_ptr<NonPremultipliedTextureBackgroundProgram>
+      nonpremultiplied_texture_background_program_;
   scoped_ptr<TextureIOSurfaceProgram> texture_io_surface_program_;
 
   scoped_ptr<TextureProgram> texture_program_highp_;
   scoped_ptr<NonPremultipliedTextureProgram>
       nonpremultiplied_texture_program_highp_;
+  scoped_ptr<TextureBackgroundProgram> texture_background_program_highp_;
+  scoped_ptr<NonPremultipliedTextureBackgroundProgram>
+      nonpremultiplied_texture_background_program_highp_;
   scoped_ptr<TextureIOSurfaceProgram> texture_io_surface_program_highp_;
 
   scoped_ptr<RenderPassProgram> render_pass_program_;

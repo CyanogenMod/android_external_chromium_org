@@ -19,6 +19,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_service.h"
@@ -33,7 +34,6 @@
 #include "chrome/browser/search_engines/template_url_service_observer.h"
 #include "chrome/browser/search_engines/util.h"
 #include "chrome/browser/webdata/web_data_service.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/env_vars.h"
 #include "chrome/common/pref_names.h"
@@ -281,7 +281,7 @@ TemplateURLService::TemplateURLService(Profile* profile)
       models_associated_(false),
       processing_syncer_changes_(false),
       pending_synced_default_search_(false),
-      dsp_change_origin_(DSP_CHANGE_NOT_SYNC) {
+      dsp_change_origin_(DSP_CHANGE_OTHER) {
   DCHECK(profile_);
   Init(NULL, 0);
 }
@@ -301,7 +301,7 @@ TemplateURLService::TemplateURLService(const Initializer* initializers,
       models_associated_(false),
       processing_syncer_changes_(false),
       pending_synced_default_search_(false),
-      dsp_change_origin_(DSP_CHANGE_NOT_SYNC) {
+      dsp_change_origin_(DSP_CHANGE_OTHER) {
   Init(initializers, count);
 }
 
@@ -377,9 +377,12 @@ GURL TemplateURLService::GenerateSearchURLUsingTermsData(
   if (!search_ref.SupportsReplacementUsingTermsData(search_terms_data))
     return GURL(t_url->url());
 
+  // TODO(jnd): Adds additional parameters to get post data when the search URL
+  // has post parameters.
   return GURL(search_ref.ReplaceSearchTermsUsingTermsData(
       TemplateURLRef::SearchTermsArgs(ASCIIToUTF16(kReplacementTerm)),
-      search_terms_data));
+      search_terms_data,
+      NULL));
 }
 
 bool TemplateURLService::CanReplaceKeyword(
@@ -718,6 +721,8 @@ void TemplateURLService::ResetNonExtensionURLs() {
   STLDeleteContainerPointers(extensions, entries_to_process.end());
   entries_to_process.erase(extensions, entries_to_process.end());
   // Setup search engines and a default one.
+  base::AutoReset<DefaultSearchChangeOrigin> change_origin(
+      &dsp_change_origin_, DSP_CHANGE_PROFILE_RESET);
   AddTemplateURLsAndSetupDefaultEngine(&entries_to_process,
                                        default_search_provider);
 
@@ -1998,9 +2003,10 @@ void TemplateURLService::UpdateDefaultSearch() {
       base::AutoReset<DefaultSearchChangeOrigin> change_origin(
           &dsp_change_origin_, DSP_CHANGE_SYNC_NOT_MANAGED);
       pending_synced_default_search_ = false;
+      SetDefaultSearchProviderNoNotify(synced_default);
+    } else {
+      SetDefaultSearchProviderNoNotify(FindNewDefaultSearchProvider());
     }
-    SetDefaultSearchProviderNoNotify(synced_default ? synced_default :
-        FindNewDefaultSearchProvider());
   }
   NotifyObservers();
 }

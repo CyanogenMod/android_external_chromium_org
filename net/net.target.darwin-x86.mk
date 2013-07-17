@@ -151,6 +151,7 @@ LOCAL_SRC_FILES := \
 	net/disk_cache/simple/simple_entry_impl.cc \
 	net/disk_cache/simple/simple_index.cc \
 	net/disk_cache/simple/simple_index_file.cc \
+	net/disk_cache/simple/simple_net_log_parameters.cc \
 	net/disk_cache/simple/simple_synchronous_entry.cc \
 	net/disk_cache/simple/simple_util.cc \
 	net/disk_cache/flash/flash_entry_impl.cc \
@@ -296,6 +297,7 @@ LOCAL_SRC_FILES := \
 	net/quic/crypto/null_decrypter.cc \
 	net/quic/crypto/null_encrypter.cc \
 	net/quic/crypto/p256_key_exchange_openssl.cc \
+	net/quic/crypto/proof_source_chromium.cc \
 	net/quic/crypto/proof_verifier_chromium.cc \
 	net/quic/crypto/quic_decrypter.cc \
 	net/quic/crypto/quic_encrypter.cc \
@@ -479,8 +481,9 @@ MY_CFLAGS_Debug := \
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
-	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
@@ -573,8 +576,9 @@ MY_CFLAGS_Release := \
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
-	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \

@@ -6,11 +6,11 @@
 #define CONTENT_BROWSER_WEB_CONTENTS_FRAME_TREE_NODE_H_
 
 #include <string>
-#include <vector>
 
 #include "base/basictypes.h"
+#include "base/memory/scoped_vector.h"
 #include "content/common/content_export.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -60,7 +60,7 @@ class CONTENT_EXPORT FrameTreeNode {
   std::string frame_name_;
 
   // The immediate children of this specific frame.
-  std::vector<FrameTreeNode*> children_;
+  ScopedVector<FrameTreeNode> children_;
 
   // Track the current frame's last committed URL, so we can estimate the
   // process impact of out-of-process iframes.

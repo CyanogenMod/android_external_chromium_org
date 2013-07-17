@@ -11,6 +11,7 @@
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/bubble/bubble_frame_view.h"
 #include "ui/views/controls/button/label_button.h"
+#include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_observer.h"
 #include "ui/views/window/dialog_client_view.h"
@@ -29,7 +30,8 @@ DialogDelegate::~DialogDelegate() {
 
 // static
 bool DialogDelegate::UseNewStyle() {
-  return switches::IsNewDialogStyleEnabled();
+  return switches::IsNewDialogStyleEnabled() &&
+         Textfield::IsViewsTextfieldEnabled();
 }
 
 // static
@@ -117,14 +119,6 @@ base::string16 DialogDelegate::GetDialogButtonLabel(
 }
 
 bool DialogDelegate::IsDialogButtonEnabled(ui::DialogButton button) const {
-  return true;
-}
-
-bool DialogDelegate::OnDialogButtonActivated(ui::DialogButton button) {
-  if (button == ui::DIALOG_BUTTON_OK)
-    return Accept();
-  if (button == ui::DIALOG_BUTTON_CANCEL)
-    return Cancel();
   return true;
 }
 

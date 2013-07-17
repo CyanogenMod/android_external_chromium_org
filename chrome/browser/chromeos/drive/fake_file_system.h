@@ -51,9 +51,6 @@ class FakeFileSystem : public FileSystemInterface {
   virtual void AddObserver(FileSystemObserver* observer) OVERRIDE;
   virtual void RemoveObserver(FileSystemObserver* observer) OVERRIDE;
   virtual void CheckForUpdates() OVERRIDE;
-  virtual void GetResourceEntryById(
-      const std::string& resource_id,
-      const GetResourceEntryCallback& callback) OVERRIDE;
   virtual void TransferFileFromRemoteToLocal(
       const base::FilePath& remote_src_file_path,
       const base::FilePath& local_dest_file_path,
@@ -63,6 +60,7 @@ class FakeFileSystem : public FileSystemInterface {
       const base::FilePath& remote_dest_file_path,
       const FileOperationCallback& callback) OVERRIDE;
   virtual void OpenFile(const base::FilePath& file_path,
+                        OpenMode open_mode,
                         const OpenFileCallback& callback) OVERRIDE;
   virtual void CloseFile(const base::FilePath& file_path,
                          const FileOperationCallback& callback) OVERRIDE;
@@ -95,29 +93,17 @@ class FakeFileSystem : public FileSystemInterface {
                      const FileOperationCallback& callback) OVERRIDE;
   virtual void GetFileByPath(const base::FilePath& file_path,
                              const GetFileCallback& callback) OVERRIDE;
-  virtual void GetFileByResourceId(
-      const std::string& resource_id,
-      const ClientContext& context,
-      const GetFileCallback& get_file_callback,
-      const google_apis::GetContentCallback& get_content_callback) OVERRIDE;
   virtual void GetFileContentByPath(
       const base::FilePath& file_path,
       const GetFileContentInitializedCallback& initialized_callback,
       const google_apis::GetContentCallback& get_content_callback,
       const FileOperationCallback& completion_callback) OVERRIDE;
-  virtual void UpdateFileByResourceId(
-      const std::string& resource_id,
-      const ClientContext& context,
-      const FileOperationCallback& callback) OVERRIDE;
   virtual void GetResourceEntryByPath(
       const base::FilePath& file_path,
       const GetResourceEntryCallback& callback) OVERRIDE;
   virtual void ReadDirectoryByPath(
       const base::FilePath& file_path,
       const ReadDirectoryCallback& callback) OVERRIDE;
-  virtual void RefreshDirectory(
-      const base::FilePath& file_path,
-      const FileOperationCallback& callback) OVERRIDE;
   virtual void Search(const std::string& search_query,
                       const GURL& next_url,
                       const SearchCallback& callback) OVERRIDE;

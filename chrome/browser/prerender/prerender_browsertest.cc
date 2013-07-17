@@ -15,6 +15,7 @@
 #include "base/values.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/extensions/api/web_navigation/web_navigation_api.h"
 #include "chrome/browser/extensions/extension_apitest.h"
@@ -36,7 +37,6 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -271,7 +271,7 @@ class TestPrerenderContents : public PrerenderContents {
     }
   }
 
-  virtual void RenderViewGone(base::TerminationStatus status) OVERRIDE {
+  virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE {
     // On quit, it's possible to end up here when render processes are closed
     // before the PrerenderManager is destroyed.  As a result, it's possible to
     // get either FINAL_STATUS_APP_TERMINATING or FINAL_STATUS_RENDERER_CRASHED
@@ -285,7 +285,7 @@ class TestPrerenderContents : public PrerenderContents {
       expected_final_status_ = FINAL_STATUS_RENDERER_CRASHED;
     }
 
-    PrerenderContents::RenderViewGone(status);
+    PrerenderContents::RenderProcessGone(status);
   }
 
   virtual bool AddAliasURL(const GURL& url) OVERRIDE {

@@ -89,7 +89,7 @@ ManagedUserRegistrationService::~ManagedUserRegistrationService() {
 }
 
 // static
-void ManagedUserRegistrationService::RegisterUserPrefs(
+void ManagedUserRegistrationService::RegisterProfilePrefs(
     PrefRegistrySyncable* registry) {
   registry->RegisterDictionaryPref(prefs::kManagedUsers,
                                    PrefRegistrySyncable::UNSYNCABLE_PREF);
@@ -139,7 +139,7 @@ void ManagedUserRegistrationService::Register(
     DCHECK(!error.IsSet()) << error.ToString();
   }
 
-  browser_sync::DeviceInfo::CreateLocalDeviceInfo(
+  browser_sync::DeviceInfo::GetClientName(
       base::Bind(&ManagedUserRegistrationService::FetchToken,
                  weak_ptr_factory_.GetWeakPtr(), info.name));
 }
@@ -340,9 +340,9 @@ void ManagedUserRegistrationService::OnManagedUserAcknowledged(
 
 void ManagedUserRegistrationService::FetchToken(
     const string16& name,
-    const browser_sync::DeviceInfo& device_info) {
+    const std::string& client_name) {
   token_fetcher_->Start(
-      pending_managed_user_id_, name, device_info.client_name(),
+      pending_managed_user_id_, name, client_name,
       base::Bind(&ManagedUserRegistrationService::OnReceivedToken,
                  weak_ptr_factory_.GetWeakPtr()));
 }

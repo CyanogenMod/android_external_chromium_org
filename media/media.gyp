@@ -233,7 +233,6 @@
         'base/buffers.h',
         'base/byte_queue.cc',
         'base/byte_queue.h',
-        'base/callback_holder.h',
         'base/channel_mixer.cc',
         'base/channel_mixer.h',
         'base/clock.cc',
@@ -337,10 +336,6 @@
         'filters/decrypting_demuxer_stream.h',
         'filters/decrypting_video_decoder.cc',
         'filters/decrypting_video_decoder.h',
-        'filters/fake_demuxer_stream.cc',
-        'filters/fake_demuxer_stream.h',
-        'filters/fake_video_decoder.cc',
-        'filters/fake_video_decoder.h',
         'filters/ffmpeg_audio_decoder.cc',
         'filters/ffmpeg_audio_decoder.h',
         'filters/ffmpeg_demuxer.cc',
@@ -923,6 +918,7 @@
         'base/audio_timestamp_helper_unittest.cc',
         'base/bind_to_loop_unittest.cc',
         'base/bit_reader_unittest.cc',
+        'base/callback_holder.h',
         'base/callback_holder_unittest.cc',
         'base/channel_mixer_unittest.cc',
         'base/clock_unittest.cc',
@@ -957,7 +953,11 @@
         'filters/decrypting_audio_decoder_unittest.cc',
         'filters/decrypting_demuxer_stream_unittest.cc',
         'filters/decrypting_video_decoder_unittest.cc',
+        'filters/fake_demuxer_stream.cc',
+        'filters/fake_demuxer_stream.h',
         'filters/fake_demuxer_stream_unittest.cc',
+        'filters/fake_video_decoder.cc',
+        'filters/fake_video_decoder.h',
         'filters/fake_video_decoder_unittest.cc',
         'filters/ffmpeg_audio_decoder_unittest.cc',
         'filters/ffmpeg_demuxer_unittest.cc',
@@ -1118,6 +1118,10 @@
         'base/mock_filters.h',
         'base/test_helpers.cc',
         'base/test_helpers.h',
+        'filters/mock_gpu_video_decoder_factories.cc',
+        'filters/mock_gpu_video_decoder_factories.h',
+        'video/mock_video_decode_accelerator.cc',
+        'video/mock_video_decode_accelerator.h',
       ],
     },
   ],
@@ -1379,8 +1383,8 @@
             }],
             ['OS=="win"', {
               'dependencies': [
-                '<(angle_path)/src/build_angle.gyp:libEGL',
-                '<(angle_path)/src/build_angle.gyp:libGLESv2',
+                '../third_party/angle_dx11/src/build_angle.gyp:libEGL',
+                '../third_party/angle_dx11/src/build_angle.gyp:libGLESv2',
               ],
               'sources': [
                 'tools/shader_bench/window_win.cc',
@@ -1411,12 +1415,21 @@
           ],
           'link_settings': {
             'libraries': [
-              '-ldl',
               '-lX11',
               '-lXrender',
               '-lXext',
             ],
           },
+          'conditions': [
+            # Linux/Solaris need libdl for dlopen() and friends.
+            ['OS=="linux" or OS=="solaris"', {
+              'link_settings': {
+                'libraries': [
+                  '-ldl',
+                ],
+              },
+            }],
+          ],
           'sources': [
             'tools/player_x11/data_source_logger.cc',
             'tools/player_x11/data_source_logger.h',
@@ -1451,20 +1464,8 @@
     ['OS=="android"', {
       'targets': [
         {
-          'target_name': 'media_player_jni_headers',
-          'type': 'none',
-          'variables': {
-            'jni_gen_package': 'media',
-            'input_java_class': 'android/media/MediaPlayer.class',
-          },
-          'includes': ['../build/jar_file_jni_generator.gypi'],
-        },
-        {
           'target_name': 'media_android_jni_headers',
           'type': 'none',
-          'dependencies': [
-            'media_player_jni_headers',
-          ],
           'sources': [
             'base/android/java/src/org/chromium/media/AudioManagerAndroid.java',
             'base/android/java/src/org/chromium/media/MediaCodecBridge.java',

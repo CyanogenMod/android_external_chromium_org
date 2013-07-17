@@ -79,6 +79,12 @@ const char* kAtomsToCache[] = {
   "_NET_WM_STATE_HIDDEN",
   "_NET_WM_STATE_MAXIMIZED_HORZ",
   "_NET_WM_STATE_MAXIMIZED_VERT",
+  "_NET_WM_STATE_SKIP_TASKBAR",
+  "_NET_WM_WINDOW_OPACITY",
+  "_NET_WM_WINDOW_TYPE",
+  "_NET_WM_WINDOW_TYPE_MENU",
+  "_NET_WM_WINDOW_TYPE_NORMAL",
+  "_NET_WM_WINDOW_TYPE_TOOLTIP",
   "XdndActionAsk",
   "XdndActionCopy"
   "XdndActionLink",
@@ -149,9 +155,19 @@ void DesktopRootWindowHostX11::InitX11Window(
   memset(&swa, 0, sizeof(swa));
   swa.background_pixmap = None;
 
-  if (params.type == Widget::InitParams::TYPE_MENU) {
-    swa.override_redirect = True;
-    attribute_mask |= CWOverrideRedirect;
+  ::Atom window_type;
+  switch (params.type) {
+    case Widget::InitParams::TYPE_MENU:
+      swa.override_redirect = True;
+      attribute_mask |= CWOverrideRedirect;
+      window_type = atom_cache_.GetAtom("_NET_WM_WINDOW_TYPE_MENU");
+      break;
+    case Widget::InitParams::TYPE_TOOLTIP:
+      window_type = atom_cache_.GetAtom("_NET_WM_WINDOW_TYPE_TOOLTIP");
+      break;
+    default:
+      window_type = atom_cache_.GetAtom("_NET_WM_WINDOW_TYPE_NORMAL");
+      break;
   }
 
   xwindow_ = XCreateWindow(
@@ -202,6 +218,31 @@ void DesktopRootWindowHostX11::InitX11Window(
                   32,
                   PropModeReplace,
                   reinterpret_cast<unsigned char*>(&pid), 1);
+
+  XChangeProperty(xdisplay_,
+                  xwindow_,
+                  atom_cache_.GetAtom("_NET_WM_WINDOW_TYPE"),
+                  XA_ATOM,
+                  32,
+                  PropModeReplace,
+                  reinterpret_cast<unsigned char*>(&window_type), 1);
+
+  // Remove popup windows from taskbar.
+  if (params.type == Widget::InitParams::TYPE_POPUP ||
+      params.type == Widget::InitParams::TYPE_BUBBLE) {
+    Atom atom = atom_cache_.GetAtom("_NET_WM_STATE_SKIP_TASKBAR");
+
+    // Setting _NET_WM_STATE by sending a message to the root_window (with
+    // SetWMSpecState) has no effect here since the window has not yet been
+    // mapped. So we manually change the state.
+    XChangeProperty (xdisplay_,
+                     xwindow_,
+                     atom_cache_.GetAtom("_NET_WM_STATE"),
+                     XA_ATOM,
+                     32,
+                     PropModeAppend,
+                     reinterpret_cast<unsigned char*>(&atom), 1);
+  }
 }
 
 // static
@@ -270,13 +311,15 @@ aura::RootWindow* DesktopRootWindowHostX11::InitRootWindow(
   aura::client::SetDispatcherClient(root_window_,
                                     dispatcher_client_.get());
 
+  views::DesktopNativeCursorManager* desktop_native_cursor_manager =
+      new views::DesktopNativeCursorManager(
+          root_window_,
+          scoped_ptr<DesktopCursorLoaderUpdater>(
+              new DesktopCursorLoaderUpdaterAuraX11));
   cursor_client_.reset(
       new views::corewm::CursorManager(
           scoped_ptr<corewm::NativeCursorManager>(
-              new views::DesktopNativeCursorManager(
-                  root_window_,
-                  scoped_ptr<DesktopCursorLoaderUpdater>(
-                      new DesktopCursorLoaderUpdaterAuraX11)))));
+              desktop_native_cursor_manager)));
   aura::client::SetCursorClient(root_window_,
                                 cursor_client_.get());
 
@@ -287,7 +330,7 @@ aura::RootWindow* DesktopRootWindowHostX11::InitRootWindow(
   desktop_native_widget_aura_->InstallInputMethodEventFilter(root_window_);
 
   drag_drop_client_.reset(new DesktopDragDropClientAuraX11(
-      this, root_window_, xdisplay_, xwindow_));
+      this, root_window_, desktop_native_cursor_manager, xdisplay_, xwindow_));
   aura::client::SetDragDropClient(root_window_, drag_drop_client_.get());
 
   // TODO(erg): Unify this code once the other consumer goes away.
@@ -415,10 +458,8 @@ void DesktopRootWindowHostX11::ShowWindowWithState(
 
 void DesktopRootWindowHostX11::ShowMaximizedWithBounds(
     const gfx::Rect& restored_bounds) {
-  // TODO(erg):
-  NOTIMPLEMENTED();
-
-  // TODO(erg): We shouldn't completely fall down here.
+  restored_bounds_ = restored_bounds;
+  Maximize();
   Show();
 }
 
@@ -484,9 +525,14 @@ gfx::Rect DesktopRootWindowHostX11::GetClientAreaBoundsInScreen() const {
 }
 
 gfx::Rect DesktopRootWindowHostX11::GetRestoredBounds() const {
-  // TODO(erg):
-  NOTIMPLEMENTED();
-  return gfx::Rect();
+  // We can't reliably track the restored bounds of a window, but we can get
+  // the 90% case down. When *chrome* is the process that requests maximizing
+  // or restoring bounds, we can record the current bounds before we request
+  // maximization, and clear it when we detect a state change.
+  if (!restored_bounds_.IsEmpty())
+    return restored_bounds_;
+
+  return GetWindowBoundsInScreen();
 }
 
 gfx::Rect DesktopRootWindowHostX11::GetWorkAreaBoundsInScreen() const {
@@ -532,6 +578,11 @@ bool DesktopRootWindowHostX11::IsActive() const {
 }
 
 void DesktopRootWindowHostX11::Maximize() {
+  // When we're the process requesting the maximizing, we can accurately keep
+  // track of our restored bounds instead of relying on the heuristics that are
+  // in the PropertyNotify and ConfigureNotify handlers.
+  restored_bounds_ = bounds_;
+
   SetWMSpecState(true,
                  atom_cache_.GetAtom("_NET_WM_STATE_MAXIMIZED_VERT"),
                  atom_cache_.GetAtom("_NET_WM_STATE_MAXIMIZED_HORZ"));
@@ -649,8 +700,20 @@ bool DesktopRootWindowHostX11::IsFullscreen() const {
 }
 
 void DesktopRootWindowHostX11::SetOpacity(unsigned char opacity) {
-  // TODO(erg):
-  NOTIMPLEMENTED();
+  // X server opacity is in terms of 32 bit unsigned int space, and counts from
+  // the opposite direction.
+  unsigned int cardinality = opacity * 0x1010101;
+
+  if (cardinality == 0xffffffff) {
+    XDeleteProperty(xdisplay_, xwindow_,
+                    atom_cache_.GetAtom("_NET_WM_WINDOW_OPACITY"));
+  } else {
+    XChangeProperty(xdisplay_, xwindow_,
+                    atom_cache_.GetAtom("_NET_WM_WINDOW_OPACITY"),
+                    XA_CARDINAL, 32,
+                    PropModeReplace,
+                    reinterpret_cast<unsigned char*>(&cardinality), 1);
+  }
 }
 
 void DesktopRootWindowHostX11::SetWindowIcons(
@@ -987,6 +1050,7 @@ bool DesktopRootWindowHostX11::Dispatch(const base::NativeEvent& event) {
                        xev->xconfigure.width, xev->xconfigure.height);
       bool size_changed = bounds_.size() != bounds.size();
       bool origin_changed = bounds_.origin() != bounds.origin();
+      previous_bounds_ = bounds_;
       bounds_ = bounds;
       if (size_changed)
         root_window_host_delegate_->OnHostResized(bounds.size());
@@ -1170,6 +1234,19 @@ bool DesktopRootWindowHostX11::Dispatch(const base::NativeEvent& event) {
         window_properties_.clear();
         std::copy(atom_list.begin(), atom_list.end(),
                   inserter(window_properties_, window_properties_.begin()));
+
+        if (!restored_bounds_.IsEmpty() && !IsMaximized()) {
+          // If we have restored bounds, but WM_STATE no longer claims to be
+          // maximized, we should clear our restored bounds.
+          restored_bounds_ = gfx::Rect();
+        } else if (IsMaximized() && restored_bounds_.IsEmpty()) {
+          // The request that we become maximized originated from a different
+          // process. |bounds_| already contains our maximized bounds. Do a
+          // best effort attempt to get restored bounds by setting it to our
+          // previously set bounds (and if we get this wrong, we aren't any
+          // worse off since we'd otherwise be returning our maximized bounds).
+          restored_bounds_ = previous_bounds_;
+        }
 
         // Now that we have different window properties, we may need to
         // relayout the window. (The windows code doesn't need this because

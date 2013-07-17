@@ -157,7 +157,7 @@ void AwBrowserContext::CreateUserPrefServiceIfNecessary() {
                              pref_service_builder.Create(pref_registry));
 }
 
-base::FilePath AwBrowserContext::GetPath() {
+base::FilePath AwBrowserContext::GetPath() const {
   return context_storage_path_;
 }
 
@@ -178,6 +178,15 @@ AwBrowserContext::GetRequestContextForRenderProcess(
 
 net::URLRequestContextGetter* AwBrowserContext::GetMediaRequestContext() {
   return GetRequestContext();
+}
+
+void AwBrowserContext::RequestMIDISysExPermission(
+      int render_process_id,
+      int render_view_id,
+      const GURL& requesting_frame,
+      const MIDISysExPermissionCallback& callback) {
+  // TODO(toyoshim): Android is not supported yet.
+  callback.Run(false);
 }
 
 net::URLRequestContextGetter*
@@ -214,12 +223,6 @@ AwBrowserContext::GetGeolocationPermissionContext() {
         native_factory_->CreateGeolocationPermission(this);
   }
   return geolocation_permission_context_.get();
-}
-
-content::SpeechRecognitionPreferences*
-AwBrowserContext::GetSpeechRecognitionPreferences() {
-  // By default allows profanities in speech recognition if return NULL.
-  return NULL;
 }
 
 quota::SpecialStoragePolicy* AwBrowserContext::GetSpecialStoragePolicy() {

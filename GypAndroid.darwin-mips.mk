@@ -19,7 +19,6 @@ include $(LOCAL_PATH)/base/base_java_memory_pressure_level_list.target.darwin-mi
 include $(LOCAL_PATH)/base/base_jni_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/base/base_prefs.target.darwin-mips.mk
 include $(LOCAL_PATH)/base/base_static.target.darwin-mips.mk
-include $(LOCAL_PATH)/base/symbolize.target.darwin-mips.mk
 include $(LOCAL_PATH)/base/third_party/dynamic_annotations/dynamic_annotations.target.darwin-mips.mk
 include $(LOCAL_PATH)/cc/cc.target.darwin-mips.mk
 include $(LOCAL_PATH)/components/auto_login_parser.target.darwin-mips.mk
@@ -58,7 +57,6 @@ include $(LOCAL_PATH)/content/content_renderer.target.darwin-mips.mk
 include $(LOCAL_PATH)/content/content_resources.target.darwin-mips.mk
 include $(LOCAL_PATH)/content/content_utility.target.darwin-mips.mk
 include $(LOCAL_PATH)/content/content_worker.target.darwin-mips.mk
-include $(LOCAL_PATH)/content/generate_content_resources.target.darwin-mips.mk
 include $(LOCAL_PATH)/content/java_set_jni_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/content/page_transition_types_java.target.darwin-mips.mk
 include $(LOCAL_PATH)/content/result_codes_java.target.darwin-mips.mk
@@ -80,7 +78,6 @@ include $(LOCAL_PATH)/ipc/ipc.target.darwin-mips.mk
 include $(LOCAL_PATH)/jingle/jingle_glue.target.darwin-mips.mk
 include $(LOCAL_PATH)/media/media.target.darwin-mips.mk
 include $(LOCAL_PATH)/media/media_android_jni_headers.target.darwin-mips.mk
-include $(LOCAL_PATH)/media/media_player_jni_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/media/player_android.target.darwin-mips.mk
 include $(LOCAL_PATH)/media/shared_memory_support.target.darwin-mips.mk
 include $(LOCAL_PATH)/media/video_capture_android_jni_headers.target.darwin-mips.mk
@@ -106,7 +103,9 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/blink_common.tar
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/skia_webkit.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/webkit.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.darwin-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/supplemental_dependencies.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/deprecated_perl_bindings_sources.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/interface_dependencies.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/python_bindings_sources.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/config.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/debugger_script_source.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/generate_inspector_protocol_version.target.darwin-mips.mk
@@ -220,26 +219,25 @@ include $(LOCAL_PATH)/v8/tools/gyp/v8_base.mipsel.host.darwin-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_base.mipsel.target.darwin-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_nosnapshot.mipsel.host.darwin-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_snapshot.target.darwin-mips.mk
-include $(LOCAL_PATH)/webkit/base/webkit_base.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/common/gpu/webkit_gpu.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/user_agent.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/webkit_version.target.darwin-mips.mk
+include $(LOCAL_PATH)/webkit/common/webkit_common.target.darwin-mips.mk
+include $(LOCAL_PATH)/webkit/glue/glue_common.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/plugins/plugins_common.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_bindings.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_support.target.darwin-mips.mk
+include $(LOCAL_PATH)/webkit/renderer/webkit_renderer.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/support/glue.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/support/glue_child.target.darwin-mips.mk
-include $(LOCAL_PATH)/webkit/support/glue_common.target.darwin-mips.mk
-include $(LOCAL_PATH)/webkit/support/glue_renderer.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/support/overscroller_jni_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/support/plugins.target.darwin-mips.mk
-include $(LOCAL_PATH)/webkit/support/webkit_common.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/support/webkit_media.target.darwin-mips.mk
-include $(LOCAL_PATH)/webkit/support/webkit_resources.target.darwin-mips.mk
-include $(LOCAL_PATH)/webkit/support/webkit_strings.target.darwin-mips.mk
+include $(LOCAL_PATH)/webkit/webkit_resources.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_browser.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_common.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_renderer.target.darwin-mips.mk
+include $(LOCAL_PATH)/webkit/webkit_strings.target.darwin-mips.mk
 
 # "gyp_all_modules" is a concatenation of the "gyp_all_modules" targets from
 # all the included sub-makefiles. This is just here to clarify.

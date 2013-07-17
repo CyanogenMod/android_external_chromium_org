@@ -22,11 +22,13 @@ const char kMethodTerminate[] = "terminate";
 
 // Internal method bindings.
 const char kMethodInternalAttachWindowTo[] = "-internal-attachWindowTo";
-const char kMethodInternalPersistObject[] = "-internal-persistObject";
+const char kMethodInternalTrackObjectLifetime[] =
+    "-internal-trackObjectLifetime";
 const char kMethodInternalSetPermission[] = "-internal-setPermission";
 
 // Internal events.
 const char kEventInternalAttached[] = "attached";
+const char kEventInternalTrackedObjectGone[] = "trackedobjectgone";
 
 // Attributes.
 const char kAttributeApi[] = "api";
@@ -41,11 +43,6 @@ const char kAttributePartition[] = "partition";
 const char kAttributeSrc[] = "src";
 
 // Events.
-const char kEventClose[] = "close";
-const char kEventConsoleMessage[] = "consolemessage";
-const char kEventExit[] = "exit";
-const char kEventLoadAbort[] = "loadabort";
-const char kEventLoadStart[] = "loadstart";
 const char kEventNewWindow[] = "newwindow";
 const char kEventRequestPermission[] = "permissionrequest";
 const char kEventResponsive[] = "responsive";
@@ -53,13 +50,11 @@ const char kEventSizeChanged[] = "sizechanged";
 const char kEventUnresponsive[] = "unresponsive";
 
 // Parameters/properties on events.
+const char kId[] = "id";
 const char kInitialHeight[] = "initialHeight";
 const char kInitialWidth[] = "initialWidth";
 const char kIsTopLevel[] = "isTopLevel";
 const char kLastUnlockedBySelf[] = "lastUnlockedBySelf";
-const char kLevel[] = "level";
-const char kLine[] = "line";
-const char kMessage[] = "message";
 const char kName[] = "name";
 const char kNewHeight[] = "newHeight";
 const char kNewWidth[] = "newWidth";
@@ -73,10 +68,8 @@ const char kPermissionTypeNewWindow[] = "newwindow";
 const char kPermissionTypePointerLock[] = "pointerLock";
 const char kPersistPrefix[] = "persist:";
 const char kProcessId[] = "processId";
-const char kReason[] = "reason";
 const char kRequestId[] = "requestId";
 const char kRequestMethod[] = "requestMethod";
-const char kSourceId[] = "sourceId";
 const char kTargetURL[] = "targetUrl";
 const char kURL[] = "url";
 const char kWindowID[] = "windowId";

@@ -7,6 +7,7 @@
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/stringprintf.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/content_settings_provider.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/platform_util.h"
@@ -21,7 +22,6 @@
 #include "chrome/browser/ui/search/instant_ntp.h"
 #include "chrome/browser/ui/search/instant_tab.h"
 #include "chrome/browser/ui/search/search_tab_helper.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_settings_types.h"
 #include "chrome/common/pref_names.h"
@@ -285,6 +285,10 @@ void InstantController::ActiveTabChanged() {
 }
 
 void InstantController::TabDeactivated(content::WebContents* contents) {
+  // If user is deactivating an NTP tab, log the number of mouseovers for this
+  // NTP session.
+  if (chrome::IsInstantNTP(contents))
+    InstantNTP::EmitMouseoverCount(contents);
 }
 
 void InstantController::ThemeInfoChanged(
@@ -400,11 +404,6 @@ void InstantController::InstantPageRenderViewCreated(
 
 void InstantController::InstantSupportChanged(
     InstantSupportState instant_support) {
-  // Instant support determined. Update location bar contents to reflect the
-  // page Instant support state.
-  if (instant_support != INSTANT_SUPPORT_UNKNOWN)
-    browser_->UpdateLocationBar();
-
   // Handle INSTANT_SUPPORT_YES here because InstantPage is not hooked up to the
   // active tab. Search model changed listener in InstantPage will handle other
   // cases.
@@ -445,7 +444,7 @@ void InstantController::InstantSupportDetermined(
   }
 }
 
-void InstantController::InstantPageRenderViewGone(
+void InstantController::InstantPageRenderProcessGone(
     const content::WebContents* contents) {
   if (IsContentsFrom(ntp(), contents)) {
     DeletePageSoon(ntp_.Pass());
@@ -490,8 +489,7 @@ void InstantController::FocusOmnibox(const content::WebContents* contents,
       browser_->FocusOmnibox(false);
       break;
     case OMNIBOX_FOCUS_NONE:
-      if (omnibox_focus_state_ != OMNIBOX_FOCUS_INVISIBLE)
-        contents->GetView()->Focus();
+      contents->GetView()->Focus();
       break;
   }
 }

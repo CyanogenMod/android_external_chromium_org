@@ -25,15 +25,16 @@ class MockAutofillDialogController : public AutofillDialogController {
   virtual string16 LegalDocumentsText() OVERRIDE;
   virtual DialogSignedInState SignedInState() const OVERRIDE;
   virtual bool ShouldShowSpinner() const OVERRIDE;
-  virtual bool ShouldOfferToSaveInChrome() const OVERRIDE;
+  MOCK_CONST_METHOD0(ShouldOfferToSaveInChrome, bool());
   MOCK_METHOD0(MenuModelForAccountChooser, ui::MenuModel*());
   virtual gfx::Image AccountChooserImage() OVERRIDE;
   virtual bool ShouldShowProgressBar() const OVERRIDE;
   virtual int GetDialogButtons() const OVERRIDE;
   virtual bool ShouldShowDetailArea() const OVERRIDE;
   virtual bool IsDialogButtonEnabled(ui::DialogButton button) const OVERRIDE;
+  virtual DialogOverlayState GetDialogOverlay() const OVERRIDE;
   virtual const std::vector<ui::Range>& LegalDocumentLinks() OVERRIDE;
-  virtual bool SectionIsActive(DialogSection section) const OVERRIDE;
+  MOCK_CONST_METHOD1(SectionIsActive, bool(DialogSection));
   MOCK_CONST_METHOD1(RequestedFieldsForSection,
                      const DetailInputs&(DialogSection));
   MOCK_METHOD1(ComboboxModelForAutofillType,
@@ -50,10 +51,9 @@ class MockAutofillDialogController : public AutofillDialogController {
       DialogSection section,
       AutofillFieldType type,
       const string16& value) OVERRIDE;
-  virtual ValidityData InputsAreValid(
-      DialogSection section,
-      const DetailOutputMap& inputs,
-      ValidationType validation_type) OVERRIDE;
+  MOCK_METHOD3(InputsAreValid, ValidityData(DialogSection,
+                                            const DetailOutputMap&,
+                                            ValidationType));
   virtual void UserEditedOrActivatedInput(DialogSection section,
                                           const DetailInput* input,
                                           gfx::NativeView parent_view,
@@ -79,6 +79,7 @@ class MockAutofillDialogController : public AutofillDialogController {
                                                 bool checked) OVERRIDE;
 
   virtual void LegalDocumentLinkClicked(const ui::Range& range) OVERRIDE;
+  virtual void OverlayButtonPressed() OVERRIDE;
   virtual void OnCancel() OVERRIDE;
   virtual void OnAccept() OVERRIDE;
 
@@ -86,6 +87,7 @@ class MockAutofillDialogController : public AutofillDialogController {
   virtual content::WebContents* web_contents() OVERRIDE;
  private:
   DetailInputs default_inputs_;
+  DetailInputs cc_default_inputs_;  // Default inputs for SECTION_CC.
   std::vector<ui::Range> range_;
 };
 

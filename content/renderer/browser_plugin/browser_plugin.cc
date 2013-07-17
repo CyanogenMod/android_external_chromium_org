@@ -55,24 +55,6 @@ namespace content {
 
 namespace {
 
-static std::string TerminationStatusToString(base::TerminationStatus status) {
-  switch (status) {
-    case base::TERMINATION_STATUS_NORMAL_TERMINATION:
-      return "normal";
-    case base::TERMINATION_STATUS_ABNORMAL_TERMINATION:
-    case base::TERMINATION_STATUS_STILL_RUNNING:
-      return "abnormal";
-    case base::TERMINATION_STATUS_PROCESS_WAS_KILLED:
-      return "killed";
-    case base::TERMINATION_STATUS_PROCESS_CRASHED:
-      return "crashed";
-    case base::TERMINATION_STATUS_MAX_ENUM:
-      break;
-  }
-  NOTREACHED() << "Unknown Termination Status.";
-  return "unknown";
-}
-
 static std::string GetInternalEventName(const char* event_name) {
   return base::StringPrintf("-internal-%s", event_name);
 }
@@ -155,12 +137,9 @@ BrowserPlugin* BrowserPlugin::FromContainer(
 bool BrowserPlugin::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(BrowserPlugin, message)
-    IPC_MESSAGE_HANDLER(BrowserPluginMsg_AddMessageToConsole,
-                        OnAddMessageToConsole)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_AdvanceFocus, OnAdvanceFocus)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_Attach_ACK, OnAttachACK)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_BuffersSwapped, OnBuffersSwapped)
-    IPC_MESSAGE_HANDLER(BrowserPluginMsg_Close, OnClose)
     IPC_MESSAGE_HANDLER_GENERIC(BrowserPluginMsg_CompositorFrameSwapped,
                                 OnCompositorFrameSwapped(message))
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_GuestContentWindowReady,
@@ -168,8 +147,6 @@ bool BrowserPlugin::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_GuestGone, OnGuestGone)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_GuestResponsive, OnGuestResponsive)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_GuestUnresponsive, OnGuestUnresponsive)
-    IPC_MESSAGE_HANDLER(BrowserPluginMsg_LoadAbort, OnLoadAbort)
-    IPC_MESSAGE_HANDLER(BrowserPluginMsg_LoadCommit, OnLoadCommit)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_RequestPermission, OnRequestPermission)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_SetCursor, OnSetCursor)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_ShouldAcceptTouchEvents,
@@ -448,17 +425,6 @@ void BrowserPlugin::DidCommitCompositorFrame() {
     compositing_helper_->DidCommitCompositorFrame();
 }
 
-void BrowserPlugin::OnAddMessageToConsole(
-    int guest_instance_id, const base::DictionaryValue& message_info) {
-  std::map<std::string, base::Value*> props;
-  // Fill in the info provided by the browser.
-  for (base::DictionaryValue::Iterator iter(message_info); !iter.IsAtEnd();
-           iter.Advance()) {
-    props[iter.key()] = iter.value().DeepCopy();
-  }
-  TriggerEvent(browser_plugin::kEventConsoleMessage, &props);
-}
-
 void BrowserPlugin::OnAdvanceFocus(int guest_instance_id, bool reverse) {
   DCHECK(render_view_.get());
   render_view_->GetWebView()->advanceFocus(reverse);
@@ -491,10 +457,6 @@ void BrowserPlugin::OnBuffersSwapped(
                                         GetDeviceScaleFactor());
 }
 
-void BrowserPlugin::OnClose(int guest_instance_id) {
-  TriggerEvent(browser_plugin::kEventClose, NULL);
-}
-
 void BrowserPlugin::OnCompositorFrameSwapped(const IPC::Message& message) {
   BrowserPluginMsg_CompositorFrameSwapped::Param param;
   if (!BrowserPluginMsg_CompositorFrameSwapped::Read(&message, &param))
@@ -514,37 +476,17 @@ void BrowserPlugin::OnGuestContentWindowReady(int guest_instance_id,
   content_window_routing_id_ = content_window_routing_id;
 }
 
-void BrowserPlugin::OnGuestGone(int guest_instance_id,
-                                int process_id,
-                                int status) {
-  // Set the BrowserPlugin in a crashed state before firing event listeners so
-  // that operations on the BrowserPlugin within listeners are aware that
-  // BrowserPlugin is in a crashed state.
+void BrowserPlugin::OnGuestGone(int guest_instance_id) {
   guest_crashed_ = true;
 
-  // We fire the event listeners before painting the sad graphic to give the
-  // developer an opportunity to display an alternative overlay image on crash.
-  std::string termination_status = TerminationStatusToString(
-      static_cast<base::TerminationStatus>(status));
-  std::map<std::string, base::Value*> props;
-  props[browser_plugin::kProcessId] = new base::FundamentalValue(process_id);
-  props[browser_plugin::kReason] = new base::StringValue(termination_status);
-
-  // Event listeners may remove the BrowserPlugin from the document. If that
-  // happens, the BrowserPlugin will be scheduled for later deletion (see
-  // BrowserPlugin::destroy()). That will clear the container_ reference,
-  // but leave other member variables valid below.
-  TriggerEvent(browser_plugin::kEventExit, &props);
-
-  // We won't paint the contents of the current backing store again so we might
-  // as well toss it out and save memory.
-  backing_store_.reset();
-  // If the BrowserPlugin is scheduled to be deleted, then container_ will be
-  // NULL so we shouldn't attempt to access it.
-  if (container_)
-    container_->invalidate();
-  // Turn off compositing so we can display the sad graphic.
-  EnableCompositing(false);
+  // Queue up showing the sad graphic to give content embedders an opportunity
+  // to fire their listeners and potentially overlay the webview with custom
+  // behavior. If the BrowserPlugin is destroyed in the meantime, then the
+  // task will not be executed.
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&BrowserPlugin::ShowSadGraphic,
+                 weak_ptr_factory_.GetWeakPtr()));
 }
 
 void BrowserPlugin::OnGuestResponsive(int guest_instance_id, int process_id) {
@@ -557,27 +499,6 @@ void BrowserPlugin::OnGuestUnresponsive(int guest_instance_id, int process_id) {
   std::map<std::string, base::Value*> props;
   props[browser_plugin::kProcessId] = new base::FundamentalValue(process_id);
   TriggerEvent(browser_plugin::kEventUnresponsive, &props);
-}
-
-void BrowserPlugin::OnLoadAbort(int guest_instance_id,
-                                const GURL& url,
-                                bool is_top_level,
-                                const std::string& type) {
-  std::map<std::string, base::Value*> props;
-  props[browser_plugin::kURL] = new base::StringValue(url.spec());
-  props[browser_plugin::kIsTopLevel] = new base::FundamentalValue(is_top_level);
-  props[browser_plugin::kReason] = new base::StringValue(type);
-  TriggerEvent(browser_plugin::kEventLoadAbort, &props);
-}
-
-void BrowserPlugin::OnLoadCommit(
-    int guest_instance_id,
-    const BrowserPluginMsg_LoadCommit_Params& params) {
-  // If the guest has just committed a new navigation then it is no longer
-  // crashed.
-  guest_crashed_ = false;
-  if (params.is_top_level)
-    UpdateDOMAttribute(browser_plugin::kAttributeSrc, params.url.spec());
 }
 
 void BrowserPlugin::OnRequestPermission(
@@ -641,6 +562,9 @@ void BrowserPlugin::AddPermissionRequestToMap(int request_id,
 void BrowserPlugin::OnUpdateRect(
     int guest_instance_id,
     const BrowserPluginMsg_UpdateRect_Params& params) {
+  // If the guest has updated pixels then it is no longer crashed.
+  guest_crashed_ = false;
+
   bool use_new_damage_buffer = !backing_store_;
   BrowserPluginHostMsg_AutoSize_Params auto_size_params;
   BrowserPluginHostMsg_ResizeGuest_Params resize_guest_params;
@@ -888,6 +812,18 @@ bool BrowserPlugin::CanRemovePartitionAttribute(std::string* error_message) {
   return !HasGuestInstanceID();
 }
 
+void BrowserPlugin::ShowSadGraphic() {
+  // We won't paint the contents of the current backing store again so we might
+  // as well toss it out and save memory.
+  backing_store_.reset();
+  // If the BrowserPlugin is scheduled to be deleted, then container_ will be
+  // NULL so we shouldn't attempt to access it.
+  if (container_)
+    container_->invalidate();
+  // Turn off compositing so we can display the sad graphic.
+  EnableCompositing(false);
+}
+
 void BrowserPlugin::ParseAttributes() {
   // TODO(mthiesse): Handle errors here?
   std::string error;
@@ -957,89 +893,60 @@ void BrowserPlugin::TriggerEvent(const std::string& event_name,
   container()->element().dispatchEvent(event);
 }
 
-void BrowserPlugin::OnRequestObjectGarbageCollected(int request_id) {
+void BrowserPlugin::OnTrackedObjectGarbageCollected(int id) {
   // Remove from alive objects.
-  std::map<int, AliveV8PermissionRequestItem*>::iterator iter =
-      alive_v8_permission_request_objects_.find(request_id);
-  if (iter != alive_v8_permission_request_objects_.end())
-    alive_v8_permission_request_objects_.erase(iter);
+  std::map<int, TrackedV8ObjectID*>::iterator iter =
+      tracked_v8_objects_.find(id);
+  if (iter != tracked_v8_objects_.end())
+    tracked_v8_objects_.erase(iter);
 
-  // If a decision has not been made for this request yet, deny it.
-  RespondPermissionIfRequestIsPending(request_id, false /*allow*/);
+  std::map<std::string, base::Value*> props;
+  props[browser_plugin::kId] = new base::FundamentalValue(id);
+  TriggerEvent(browser_plugin::kEventInternalTrackedObjectGone, &props);
 }
 
-void BrowserPlugin::PersistRequestObject(
-    const NPVariant* request, const std::string& type, int id) {
-  CHECK(alive_v8_permission_request_objects_.find(id) ==
-        alive_v8_permission_request_objects_.end());
-  if (pending_permission_requests_.find(id) ==
-      pending_permission_requests_.end()) {
+void BrowserPlugin::TrackObjectLifetime(const NPVariant* request, int id) {
+  // An object of a given ID can only be tracked once.
+  if (tracked_v8_objects_.find(id) != tracked_v8_objects_.end())
     return;
-  }
 
   v8::Isolate* isolate = v8::Isolate::GetCurrent();
   v8::Persistent<v8::Value> weak_request(
       isolate, WebKit::WebBindings::toV8Value(request));
 
-  AliveV8PermissionRequestItem* new_item =
+  TrackedV8ObjectID* new_item =
       new std::pair<int, base::WeakPtr<BrowserPlugin> >(
           id, weak_ptr_factory_.GetWeakPtr());
 
-  std::pair<std::map<int, AliveV8PermissionRequestItem*>::iterator, bool>
-      result = alive_v8_permission_request_objects_.insert(
+  std::pair<std::map<int, TrackedV8ObjectID*>::iterator, bool>
+      result = tracked_v8_objects_.insert(
           std::make_pair(id, new_item));
   CHECK(result.second);  // Inserted in the map.
-  AliveV8PermissionRequestItem* request_item = result.first->second;
+  TrackedV8ObjectID* request_item = result.first->second;
   weak_request.MakeWeak(static_cast<void*>(request_item),
-                        WeakCallbackForPersistObject);
+                        WeakCallbackForTrackedObject);
 }
 
 // static
-void BrowserPlugin::WeakCallbackForPersistObject(
+void BrowserPlugin::WeakCallbackForTrackedObject(
     v8::Isolate* isolate, v8::Persistent<v8::Value>* object, void* param) {
 
-  AliveV8PermissionRequestItem* item_ptr =
-      static_cast<AliveV8PermissionRequestItem*>(param);
-  int request_id = item_ptr->first;
+  TrackedV8ObjectID* item_ptr = static_cast<TrackedV8ObjectID*>(param);
+  int object_id = item_ptr->first;
   base::WeakPtr<BrowserPlugin> plugin = item_ptr->second;
   delete item_ptr;
 
   object->Dispose();
-
   if (plugin.get()) {
-    // Asynchronously remove item from |alive_v8_permission_request_objects_|.
+    // Asynchronously remove item from |tracked_v8_objects_|.
     // Note that we are using weak pointer for the following PostTask, so we
     // don't need to worry about BrowserPlugin going away.
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
-        base::Bind(&BrowserPlugin::OnRequestObjectGarbageCollected,
+        base::Bind(&BrowserPlugin::OnTrackedObjectGarbageCollected,
                    plugin,
-                   request_id));
+                   object_id));
   }
-}
-
-void BrowserPlugin::TerminateGuest() {
-  if (!HasGuestInstanceID() || guest_crashed_)
-    return;
-  browser_plugin_manager()->Send(
-      new BrowserPluginHostMsg_TerminateGuest(render_view_routing_id_,
-                                              guest_instance_id_));
-}
-
-void BrowserPlugin::Stop() {
-  if (!HasGuestInstanceID())
-    return;
-  browser_plugin_manager()->Send(
-      new BrowserPluginHostMsg_Stop(render_view_routing_id_,
-                                    guest_instance_id_));
-}
-
-void BrowserPlugin::Reload() {
-  if (!HasGuestInstanceID())
-    return;
-  browser_plugin_manager()->Send(
-      new BrowserPluginHostMsg_Reload(render_view_routing_id_,
-                                      guest_instance_id_));
 }
 
 void BrowserPlugin::UpdateGuestFocusState() {
@@ -1255,18 +1162,14 @@ gfx::Point BrowserPlugin::ToLocalCoordinates(const gfx::Point& point) const {
 bool BrowserPlugin::ShouldForwardToBrowserPlugin(
     const IPC::Message& message) {
   switch (message.type()) {
-    case BrowserPluginMsg_AddMessageToConsole::ID:
     case BrowserPluginMsg_AdvanceFocus::ID:
     case BrowserPluginMsg_Attach_ACK::ID:
     case BrowserPluginMsg_BuffersSwapped::ID:
-    case BrowserPluginMsg_Close::ID:
     case BrowserPluginMsg_CompositorFrameSwapped::ID:
     case BrowserPluginMsg_GuestContentWindowReady::ID:
     case BrowserPluginMsg_GuestGone::ID:
     case BrowserPluginMsg_GuestResponsive::ID:
     case BrowserPluginMsg_GuestUnresponsive::ID:
-    case BrowserPluginMsg_LoadAbort::ID:
-    case BrowserPluginMsg_LoadCommit::ID:
     case BrowserPluginMsg_RequestPermission::ID:
     case BrowserPluginMsg_SetCursor::ID:
     case BrowserPluginMsg_ShouldAcceptTouchEvents::ID:

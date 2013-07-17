@@ -12,6 +12,8 @@ import android.test.InstrumentationTestCase;
 import android.test.suitebuilder.annotation.SmallTest;
 import android.util.Log;
 import android.view.MotionEvent;
+import android.view.MotionEvent.PointerCoords;
+import android.view.MotionEvent.PointerProperties;
 import android.view.ViewConfiguration;
 
 import org.chromium.base.test.util.Feature;
@@ -681,12 +683,13 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
     }
 
     /**
-     * Verify that a recent show pressed state gesture is canceled when double tap occurs.
+     * Verify that double tap is correctly handled including the recent show pressed state gesture
+     * cancellation.
      * @throws Exception
      */
     @SmallTest
     @Feature({"Gestures"})
-    public void testShowPressCancelOnDoubleTap() throws Exception {
+    public void testDoubleTap() throws Exception {
         final long downTime = SystemClock.uptimeMillis();
         final long eventTime = SystemClock.uptimeMillis();
 
@@ -700,16 +703,14 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
                 getInstrumentation().getTargetContext(), mGestureHandler);
 
         MotionEvent event = motionEvent(MotionEvent.ACTION_DOWN, downTime, downTime);
-
         assertTrue(mGestureHandler.onTouchEvent(event));
         assertFalse("Should not have a pending LONG_PRESS", mLongPressDetector.hasPendingMessage());
 
         mGestureHandler.sendShowPressedStateGestureForTesting();
-
-        assertEquals("A show pressed state event should have been sent",
+        assertEquals("GESTURE_SHOW_PRESSED_STATE should have been sent",
                 ContentViewGestureHandler.GESTURE_SHOW_PRESSED_STATE,
-                        mockDelegate.mMostRecentGestureEvent.mType);
-        assertEquals("Only showPressedState should have been sent",
+                mockDelegate.mMostRecentGestureEvent.mType);
+        assertEquals("Only GESTURE_SHOW_PRESSED_STATE should have been sent",
                 1, mockDelegate.mGestureTypeList.size());
 
         event = MotionEvent.obtain(
@@ -719,23 +720,156 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
         assertEquals("A GESTURE_SINGLE_TAP_UNCONFIRMED event should have been sent",
                 ContentViewGestureHandler.GESTURE_SINGLE_TAP_UNCONFIRMED,
                 mockDelegate.mMostRecentGestureEvent.mType);
-        assertEquals("showPressedState, unconfirmed single tap event" +
-                "should have been sent",
+        assertEquals("Only GESTURE_SHOW_PRESSED_STATE and " +
+                "GESTURE_SINGLE_TAP_UNCONFIRMED should have been sent",
                 2, mockDelegate.mGestureTypeList.size());
 
         event = MotionEvent.obtain(
                 eventTime + 10, eventTime + 10, MotionEvent.ACTION_DOWN,
                 FAKE_COORD_X, FAKE_COORD_Y, 0);
         assertTrue(mGestureHandler.onTouchEvent(event));
+        assertEquals("A GESTURE_SINGLE_TAP_UNCONFIRMED event should have been sent ",
+                ContentViewGestureHandler.GESTURE_SHOW_PRESS_CANCEL,
+                mockDelegate.mMostRecentGestureEvent.mType);
+        assertEquals("Only GESTURE_SHOW_PRESSED_STATE, " +
+                "GESTURE_SINGLE_TAP_UNCONFIRMED, and " +
+                "GESTURE_SHOW_PRESS_CANCEL should have been sent",
+                3, mockDelegate.mGestureTypeList.size());
+
+        // Moving a very small amount of distance should not trigger the double tap drag zoom mode.
+        event = MotionEvent.obtain(
+                eventTime + 10, eventTime + 10, MotionEvent.ACTION_MOVE,
+                FAKE_COORD_X, FAKE_COORD_Y + 1, 0);
+        assertTrue(mGestureHandler.onTouchEvent(event));
+        assertEquals("Only GESTURE_SHOW_PRESSED_STATE, " +
+                "GESTURE_SINGLE_TAP_UNCONFIRMED, and " +
+                "GESTURE_SHOW_PRESS_CANCEL should have been sent",
+                3, mockDelegate.mGestureTypeList.size());
+
+        event = MotionEvent.obtain(
+                eventTime + 10, eventTime + 15, MotionEvent.ACTION_UP,
+                FAKE_COORD_X, FAKE_COORD_Y + 1, 0);
+        assertTrue(mGestureHandler.onTouchEvent(event));
         assertEquals("A double tap should have occurred",
                 ContentViewGestureHandler.GESTURE_DOUBLE_TAP,
-                        mockDelegate.mMostRecentGestureEvent.mType);
-        assertTrue("A show press cancel event should have been sent",
-                mockDelegate.mGestureTypeList.contains(
-                        ContentViewGestureHandler.GESTURE_SHOW_PRESS_CANCEL));
-        assertEquals("Only showPressedState, unconfirmed single tap, " +
-                "showPressCancel and doubleTap should have been sent",
+                mockDelegate.mMostRecentGestureEvent.mType);
+        assertEquals("Only GESTURE_SHOW_PRESSED_STATE, " +
+                "GESTURE_SINGLE_TAP_UNCONFIRMED, " +
+                "GESTURE_SHOW_PRESS_CANCEL, and " +
+                "GESTURE_DOUBLE_TAP should have been sent",
                 4, mockDelegate.mGestureTypeList.size());
+    }
+
+    /**
+     * Verify that double tap drag zoom feature is correctly executed.
+     * @throws Exception
+     */
+    @SmallTest
+    @Feature({"Gestures"})
+    public void testDoubleTapDragZoom() throws Exception {
+        final long downTime1 = SystemClock.uptimeMillis();
+        final long downTime2 = downTime1 + 100;
+
+        GestureRecordingMotionEventDelegate mockDelegate =
+                new GestureRecordingMotionEventDelegate();
+        mGestureHandler = new ContentViewGestureHandler(
+                getInstrumentation().getTargetContext(), mockDelegate,
+                new MockZoomManager(getInstrumentation().getTargetContext(), null),
+                ContentViewCore.INPUT_EVENTS_DELIVERED_AT_VSYNC);
+        mLongPressDetector = new LongPressDetector(
+                getInstrumentation().getTargetContext(), mGestureHandler);
+
+        MotionEvent event = motionEvent(MotionEvent.ACTION_DOWN, downTime1, downTime1);
+        assertTrue(mGestureHandler.onTouchEvent(event));
+        assertFalse("Should not have a pending LONG_PRESS", mLongPressDetector.hasPendingMessage());
+
+        mGestureHandler.sendShowPressedStateGestureForTesting();
+        assertEquals("GESTURE_SHOW_PRESSED_STATE should have been sent",
+                ContentViewGestureHandler.GESTURE_SHOW_PRESSED_STATE,
+                        mockDelegate.mMostRecentGestureEvent.mType);
+        assertEquals("Only GESTURE_SHOW_PRESSED_STATE should have been sent",
+                1, mockDelegate.mGestureTypeList.size());
+
+        event = MotionEvent.obtain(
+                downTime1, downTime1 + 5, MotionEvent.ACTION_UP,
+                FAKE_COORD_X, FAKE_COORD_Y, 0);
+        mGestureHandler.onTouchEvent(event);
+        assertEquals("A GESTURE_SINGLE_TAP_UNCONFIRMED event should have been sent",
+                ContentViewGestureHandler.GESTURE_SINGLE_TAP_UNCONFIRMED,
+                mockDelegate.mMostRecentGestureEvent.mType);
+        assertEquals("Only GESTURE_SHOW_PRESSED_STATE and " +
+                "GESTURE_TAB_UNCONFIRMED " +
+                "should have been sent",
+                2, mockDelegate.mGestureTypeList.size());
+
+        event = MotionEvent.obtain(
+                downTime2, downTime2, MotionEvent.ACTION_DOWN,
+                FAKE_COORD_X, FAKE_COORD_Y, 0);
+        assertTrue(mGestureHandler.onTouchEvent(event));
+        assertEquals("GESTURE_SHOW_PRESS_CANCEL should have been sent",
+                ContentViewGestureHandler.GESTURE_SHOW_PRESS_CANCEL,
+                mockDelegate.mMostRecentGestureEvent.mType);
+        assertEquals("Only GESTURE_SHOW_PRESSED_STATE, " +
+                "GESTURE_TAB_UNCONFIRMED, and " +
+                "GESTURE_SHOW_PRESS_CANCEL should have been sent",
+                3, mockDelegate.mGestureTypeList.size());
+
+        event = MotionEvent.obtain(
+                downTime2, downTime2 + 5, MotionEvent.ACTION_MOVE,
+                FAKE_COORD_X, FAKE_COORD_Y + 100, 0);
+        assertTrue(mGestureHandler.onTouchEvent(event));
+        assertTrue("GESTURE_SCROLL_START should have been sent",
+                mockDelegate.mGestureTypeList.contains(
+                        ContentViewGestureHandler.GESTURE_SCROLL_START));
+        assertEquals("GESTURE_PINCH_BEGIN should have been sent",
+                ContentViewGestureHandler.GESTURE_PINCH_BEGIN,
+                mockDelegate.mMostRecentGestureEvent.mType);
+        assertEquals("Only GESTURE_SHOW_PRESSED_STATE, " +
+                "GESTURE_TAB_UNCONFIRMED," +
+                "GESTURE_SHOW_PRESS_CANCEL, " +
+                "GESTURE_SCROLL_START, and " +
+                "GESTURE_PINCH_BEGIN should have been sent",
+                5, mockDelegate.mGestureTypeList.size());
+
+        event = MotionEvent.obtain(
+                downTime2, downTime2 + 10, MotionEvent.ACTION_MOVE,
+                FAKE_COORD_X, FAKE_COORD_Y + 200, 0);
+        assertTrue(mGestureHandler.onTouchEvent(event));
+        assertTrue("GESTURE_SCROLL_BY should have been sent",
+                mockDelegate.mGestureTypeList.contains(
+                        ContentViewGestureHandler.GESTURE_SCROLL_BY));
+        assertEquals("GESTURE_PINCH_BY should have been sent",
+                ContentViewGestureHandler.GESTURE_PINCH_BY,
+                mockDelegate.mMostRecentGestureEvent.mType);
+        assertEquals("Only GESTURE_SHOW_PRESSED_STATE, " +
+                "GESTURE_TAB_UNCONFIRMED," +
+                "GESTURE_SHOW_PRESS_CANCEL, " +
+                "GESTURE_SCROLL_START," +
+                "GESTURE_PINCH_BEGIN, " +
+                "GESTURE_SCROLL_BY, and " +
+                "GESTURE_PINCH_BY should have been sent",
+                7, mockDelegate.mGestureTypeList.size());
+
+        event = MotionEvent.obtain(
+                downTime2, downTime2 + 15, MotionEvent.ACTION_UP,
+                FAKE_COORD_X, FAKE_COORD_Y + 200, 0);
+        assertTrue(mGestureHandler.onTouchEvent(event));
+        assertTrue("GESTURE_PINCH_END should have been sent",
+                mockDelegate.mGestureTypeList.contains(
+                        ContentViewGestureHandler.GESTURE_PINCH_END));
+        assertEquals("GESTURE_SCROLL_END should have been sent",
+                ContentViewGestureHandler.GESTURE_SCROLL_END,
+                mockDelegate.mMostRecentGestureEvent.mType);
+        assertEquals("Only GESTURE_SHOW_PRESSED_STATE, " +
+                "GESTURE_TAB_UNCONFIRMED," +
+                "GESTURE_SHOW_PRESS_CANCEL, " +
+                "GESTURE_SCROLL_START," +
+                "GESTURE_PINCH_BEGIN, " +
+                "GESTURE_SCROLL_BY," +
+                "GESTURE_PINCH_BY, " +
+                "GESTURE_PINCH_END, and " +
+                "GESTURE_SCROLL_END should have been sent",
+                9, mockDelegate.mGestureTypeList.size());
     }
 
     /**
@@ -860,15 +994,26 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
         assertEquals(1, gestureHandler.getNumberOfPendingMotionEventsForTesting());
         assertTrue(gestureHandler.isEventCancelledForTesting(
                 gestureHandler.peekFirstInPendingMotionEventsForTesting()));
+        MotionEvent canceledEvent = gestureHandler.peekFirstInPendingMotionEventsForTesting();
 
         event = motionEvent(MotionEvent.ACTION_POINTER_DOWN, downTime + 15, downTime + 15);
         assertTrue(gestureHandler.onTouchEvent(event));
         assertEquals(2, gestureHandler.getNumberOfPendingMotionEventsForTesting());
 
-        // Acking the touchcancel will drain all the events.
+        // Acking the touchcancel will drain all the events, and clear the event previously marked
+        // for cancellation.
         gestureHandler.confirmTouchEvent(
                 ContentViewGestureHandler.INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
         assertEquals(0, gestureHandler.getNumberOfPendingMotionEventsForTesting());
+        assertFalse(gestureHandler.isEventCancelledForTesting(canceledEvent));
+
+        // Note: This check relies on an implementation detail of MotionEvent, namely, that the last
+        //       event recycled is the the first returned by MotionEvent.obtain(). Should
+        //       MotioEvent's implementation change, this assumption will need to be rebased.
+        MotionEvent recycledCanceledEvent =
+                motionEvent(MotionEvent.ACTION_DOWN, downTime + 20 , downTime + 20);
+        assertSame("The canceled event should have been recycled.",
+                canceledEvent, recycledCanceledEvent);
     }
 
     /**
@@ -974,11 +1119,17 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
             public boolean sendTouchEvent(long timeMs, int action, TouchPoint[] pts) {
                 if (action == TouchPoint.TOUCH_EVENT_TYPE_CANCEL) {
                     // Ensure the event to be cancelled is already in the pending queue.
-                    assertTrue(mGestureHandler.isEventCancelledForTesting(
-                            mGestureHandler.peekFirstInPendingMotionEventsForTesting()));
+                    MotionEvent canceledEvent =
+                            mGestureHandler.peekFirstInPendingMotionEventsForTesting();
+                    assertTrue(mGestureHandler.isEventCancelledForTesting(canceledEvent));
 
                     mGestureHandler.confirmTouchEvent(
                             ContentViewGestureHandler.INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS);
+
+                    // Ensure that the canceled event has been removed from the event queue and is
+                    // no longer scheduled for cancellation.
+                    assertEquals(0, mGestureHandler.getNumberOfPendingMotionEventsForTesting());
+                    assertFalse(mGestureHandler.isEventCancelledForTesting(canceledEvent));
                 }
                 return super.sendTouchEvent(timeMs, action, pts);
             }
@@ -1226,4 +1377,79 @@ public class ContentViewGestureHandlerTest extends InstrumentationTestCase {
         assertTrue("Should not have confirmed a single tap yet",
                 mMockListener.mLastSingleTap == null);
     }
+
+    /**
+     * Verify that touch move events are properly coalesced.
+     * @throws Exception
+     */
+    @SmallTest
+    @Feature({"Gestures"})
+    public void testTouchMoveCoalescing() throws Exception {
+        final long downTime = SystemClock.uptimeMillis();
+        final long eventTime = SystemClock.uptimeMillis();
+
+        mGestureHandler.hasTouchEventHandlers(true);
+
+        MotionEvent event = MotionEvent.obtain(
+                downTime, eventTime + 5, MotionEvent.ACTION_MOVE,
+                FAKE_COORD_X * 5, FAKE_COORD_Y * 5, 0);
+        assertTrue(mGestureHandler.onTouchEvent(event));
+        assertFalse("Should not have a pending LONG_PRESS", mLongPressDetector.hasPendingMessage());
+        assertEquals("Initial move events should offered to javascript and added to the queue",
+                1, mGestureHandler.getNumberOfPendingMotionEventsForTesting());
+        assertEquals(TouchPoint.TOUCH_EVENT_TYPE_MOVE, mMockMotionEventDelegate.mLastTouchAction);
+
+        event = MotionEvent.obtain(
+                downTime, eventTime + 10, MotionEvent.ACTION_MOVE,
+                FAKE_COORD_X * 10, FAKE_COORD_Y * 10, 0);
+        assertTrue(mGestureHandler.onTouchEvent(event));
+        assertEquals("Move events already sent to javascript should not be coalesced",
+                2, mGestureHandler.getNumberOfPendingMotionEventsForTesting());
+
+        event = MotionEvent.obtain(
+                downTime, eventTime + 15, MotionEvent.ACTION_MOVE,
+                FAKE_COORD_X * 15, FAKE_COORD_Y * 15, 0);
+        assertTrue(mGestureHandler.onTouchEvent(event));
+        assertEquals("Similar pending move events should be coalesced",
+                2, mGestureHandler.getNumberOfPendingMotionEventsForTesting());
+
+        PointerProperties pp1 = new PointerProperties();
+        pp1.id = 0;
+        pp1.toolType = MotionEvent.TOOL_TYPE_FINGER;
+        PointerProperties pp2 = new PointerProperties();
+        pp2.id = 1;
+        pp2.toolType = MotionEvent.TOOL_TYPE_FINGER;
+        PointerProperties[] properties = new PointerProperties[] { pp1, pp2 };
+
+        PointerCoords pc1 = new PointerCoords();
+        pc1.x = FAKE_COORD_X * 10;
+        pc1.y = FAKE_COORD_Y * 10;
+        pc1.pressure = 1;
+        pc1.size = 1;
+        PointerCoords pc2 = new PointerCoords();
+        pc2.x = FAKE_COORD_X * 15;
+        pc2.y = FAKE_COORD_Y * 15;
+        pc2.pressure = 1;
+        pc2.size = 1;
+        PointerCoords[] coords = new PointerCoords[] { pc1, pc2 };
+
+        event = MotionEvent.obtain(
+                downTime, eventTime + 20, MotionEvent.ACTION_MOVE,
+                2, properties, coords, 0, 0, 1.0f, 1.0f, 0, 0, 0, 0);
+        assertTrue(mGestureHandler.onTouchEvent(event));
+        assertEquals("Move events with different pointer counts should not be coalesced",
+                3, mGestureHandler.getNumberOfPendingMotionEventsForTesting());
+
+        event = MotionEvent.obtain(
+                downTime, eventTime + 25, MotionEvent.ACTION_MOVE,
+                2, properties, coords, 0, 0, 1.0f, 1.0f, 0, 0, 0, 0);
+        assertTrue(mGestureHandler.onTouchEvent(event));
+        assertEquals("Move events with similar pointer counts should be coalesced",
+                3, mGestureHandler.getNumberOfPendingMotionEventsForTesting());
+
+        event = motionEvent(MotionEvent.ACTION_DOWN, downTime, downTime);
+        assertTrue(mGestureHandler.onTouchEvent(event));
+        assertEquals("Move events should not be coalesced with other events",
+                4, mGestureHandler.getNumberOfPendingMotionEventsForTesting());
+   }
 }

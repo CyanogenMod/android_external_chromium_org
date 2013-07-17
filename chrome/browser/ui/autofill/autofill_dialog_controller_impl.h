@@ -34,9 +34,9 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/common/ssl_status.h"
-#include "googleurl/src/gurl.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/ui_base_types.h"
+#include "url/gurl.h"
 
 class Profile;
 
@@ -85,7 +85,7 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
       const base::Callback<void(const FormStructure*,
                                 const std::string&)>& callback);
 
-  static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
   void Show();
   void Hide();
@@ -128,6 +128,7 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   virtual bool ShouldShowProgressBar() const OVERRIDE;
   virtual int GetDialogButtons() const OVERRIDE;
   virtual bool IsDialogButtonEnabled(ui::DialogButton button) const OVERRIDE;
+  virtual DialogOverlayState GetDialogOverlay() const OVERRIDE;
   virtual const std::vector<ui::Range>& LegalDocumentLinks() OVERRIDE;
   virtual bool SectionIsActive(DialogSection section) const OVERRIDE;
   virtual const DetailInputs& RequestedFieldsForSection(DialogSection section)
@@ -171,6 +172,7 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   virtual void NotificationCheckboxStateChanged(DialogNotification::Type type,
                                                 bool checked) OVERRIDE;
   virtual void LegalDocumentLinkClicked(const ui::Range& range) OVERRIDE;
+  virtual void OverlayButtonPressed() OVERRIDE;
   virtual void OnCancel() OVERRIDE;
   virtual void OnAccept() OVERRIDE;
   virtual Profile* profile() OVERRIDE;
@@ -199,6 +201,7 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   virtual const AutofillMetrics& GetMetricLogger() const OVERRIDE;
   virtual DialogType GetDialogType() const OVERRIDE;
   virtual std::string GetRiskData() const OVERRIDE;
+  virtual std::string GetWalletCookieValue() const OVERRIDE;
   virtual void OnDidAcceptLegalDocuments() OVERRIDE;
   virtual void OnDidAuthenticateInstrument(bool success) OVERRIDE;
   virtual void OnDidGetFullWallet(
@@ -240,12 +243,11 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   virtual void OnPassiveSigninSuccess(const std::string& username) OVERRIDE;
   virtual void OnPassiveSigninFailure(
       const GoogleServiceAuthError& error) OVERRIDE;
-  virtual void OnAutomaticSigninSuccess(const std::string& username) OVERRIDE;
-  virtual void OnAutomaticSigninFailure(
-      const GoogleServiceAuthError& error) OVERRIDE;
   virtual void OnUserNameFetchSuccess(const std::string& username) OVERRIDE;
   virtual void OnUserNameFetchFailure(
       const GoogleServiceAuthError& error) OVERRIDE;
+  virtual void OnDidFetchWalletCookieValue(
+      const std::string& cookie_value) OVERRIDE;
 
   DialogType dialog_type() const { return dialog_type_; }
 
@@ -321,7 +323,7 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   void HideSignIn();
 
   // Handles the SignedInState() on Wallet or sign-in state update.
-  // Triggers the user name fetch and the passive/automatic sign-in.
+  // Triggers the user name fetch and passive sign-in.
   void SignedInStateUpdated();
 
   // Refreshes the model on Wallet or sign-in state update.
@@ -561,6 +563,10 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // interacting with this dialog.
   AutofillMetrics::DialogInitialUserStateMetric GetInitialUserState() const;
 
+  // Shows an educational bubble if a new credit card was saved or the first few
+  // times an Online Wallet fronting card was generated.
+  void MaybeShowCreditCardBubble();
+
   // The |profile| for |contents_|.
   Profile* const profile_;
 
@@ -587,9 +593,6 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
 
   // The URL of the invoking site.
   GURL source_url_;
-
-  // The SSL info from the invoking site.
-  content::SSLStatus ssl_status_;
 
   // The callback via which we return the collected data and, if Online Wallet
   // was used, the Google transaction id.
@@ -692,7 +695,6 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // recoverable.
   bool wallet_server_validation_recoverable_;
 
-
   typedef std::map<AutofillFieldType,
       std::pair<base::string16, base::string16> > TypeErrorInputMap;
   typedef std::map<DialogSection, TypeErrorInputMap> WalletValidationErrors;
@@ -708,6 +710,15 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // State of steps in the current Autocheckout flow, or empty if not an
   // Autocheckout use case.
   std::vector<DialogAutocheckoutStep> steps_;
+
+  // The Google Wallet cookie value, set as an authorization header on requests
+  // to Wallet.
+  std::string wallet_cookie_value_;
+
+  // Populated if the user chose to save a newly inputted credit card. Used to
+  // show a bubble as the dialog closes to confirm a user's new card info was
+  // saved. Never populated while incognito (as nothing's actually saved).
+  scoped_ptr<CreditCard> newly_saved_card_;
 
   DISALLOW_COPY_AND_ASSIGN(AutofillDialogControllerImpl);
 };

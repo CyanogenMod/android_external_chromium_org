@@ -38,7 +38,11 @@ TabAutofillManagerDelegate::TabAutofillManagerDelegate(
 }
 
 TabAutofillManagerDelegate::~TabAutofillManagerDelegate() {
-  HideAutofillPopup();
+  // NOTE: It is too late to clean up the autofill popup; that cleanup process
+  // requires that the WebContents instance still be valid and it is not at
+  // this point (in particular, the WebContentsImpl destructor has already
+  // finished running and we are now in the base class destructor).
+  DCHECK(!popup_controller_);
 }
 
 PersonalDataManager* TabAutofillManagerDelegate::GetPersonalDataManager() {
@@ -94,9 +98,9 @@ void TabAutofillManagerDelegate::ConfirmSaveCreditCard(
 void TabAutofillManagerDelegate::ShowAutocheckoutBubble(
     const gfx::RectF& bounding_box,
     bool is_google_user,
-    const base::Callback<void(bool)>& callback) {
+    const base::Callback<void(AutocheckoutBubbleState)>& callback) {
 #if !defined(TOOLKIT_VIEWS)
-  callback.Run(false);
+  callback.Run(AUTOCHECKOUT_BUBBLE_CANCELED);
   NOTIMPLEMENTED();
 #else
   HideAutocheckoutBubble();
@@ -203,6 +207,11 @@ void TabAutofillManagerDelegate::DidNavigateMainFrame(
   }
 
   HideAutocheckoutBubble();
+}
+
+void TabAutofillManagerDelegate::WebContentsDestroyed(
+    content::WebContents* web_contents) {
+  HideAutofillPopup();
 }
 
 }  // namespace autofill

@@ -79,11 +79,11 @@ bool NativeFileEnumerator::IsDirectory() {
 PlatformFileError NativeFileUtil::CreateOrOpen(
     const base::FilePath& path, int file_flags,
     PlatformFile* file_handle, bool* created) {
-  if (!file_util::DirectoryExists(path.DirName())) {
+  if (!base::DirectoryExists(path.DirName())) {
     // If its parent does not exist, should return NOT_FOUND error.
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
   }
-  if (file_util::DirectoryExists(path))
+  if (base::DirectoryExists(path))
     return base::PLATFORM_FILE_ERROR_NOT_A_FILE;
   PlatformFileError error_code = base::PLATFORM_FILE_OK;
   *file_handle = base::CreatePlatformFile(path, file_flags,
@@ -100,7 +100,7 @@ PlatformFileError NativeFileUtil::Close(PlatformFile file_handle) {
 PlatformFileError NativeFileUtil::EnsureFileExists(
     const base::FilePath& path,
     bool* created) {
-  if (!file_util::DirectoryExists(path.DirName()))
+  if (!base::DirectoryExists(path.DirName()))
     // If its parent does not exist, should return NOT_FOUND error.
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
   PlatformFileError error_code = base::PLATFORM_FILE_OK;
@@ -126,15 +126,15 @@ PlatformFileError NativeFileUtil::CreateDirectory(
     bool exclusive,
     bool recursive) {
   // If parent dir of file doesn't exist.
-  if (!recursive && !file_util::PathExists(path.DirName()))
+  if (!recursive && !base::PathExists(path.DirName()))
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
 
-  bool path_exists = file_util::PathExists(path);
+  bool path_exists = base::PathExists(path);
   if (exclusive && path_exists)
     return base::PLATFORM_FILE_ERROR_EXISTS;
 
   // If file exists at the path.
-  if (path_exists && !file_util::DirectoryExists(path))
+  if (path_exists && !base::DirectoryExists(path))
     return base::PLATFORM_FILE_ERROR_EXISTS;
 
   if (!file_util::CreateDirectory(path))
@@ -149,7 +149,7 @@ PlatformFileError NativeFileUtil::CreateDirectory(
 PlatformFileError NativeFileUtil::GetFileInfo(
     const base::FilePath& path,
     base::PlatformFileInfo* file_info) {
-  if (!file_util::PathExists(path))
+  if (!base::PathExists(path))
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
   if (!file_util::GetFileInfo(path, file_info))
     return base::PLATFORM_FILE_ERROR_FAILED;
@@ -195,11 +195,11 @@ PlatformFileError NativeFileUtil::Truncate(
 }
 
 bool NativeFileUtil::PathExists(const base::FilePath& path) {
-  return file_util::PathExists(path);
+  return base::PathExists(path);
 }
 
 bool NativeFileUtil::DirectoryExists(const base::FilePath& path) {
-  return file_util::DirectoryExists(path);
+  return base::DirectoryExists(path);
 }
 
 PlatformFileError NativeFileUtil::CopyOrMoveFile(
@@ -228,7 +228,7 @@ PlatformFileError NativeFileUtil::CopyOrMoveFile(
   }
 
   if (copy) {
-    if (file_util::CopyFile(src_path, dest_path))
+    if (base::CopyFile(src_path, dest_path))
       return base::PLATFORM_FILE_OK;
   } else {
     if (base::Move(src_path, dest_path))
@@ -238,23 +238,23 @@ PlatformFileError NativeFileUtil::CopyOrMoveFile(
 }
 
 PlatformFileError NativeFileUtil::DeleteFile(const base::FilePath& path) {
-  if (!file_util::PathExists(path))
+  if (!base::PathExists(path))
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
-  if (file_util::DirectoryExists(path))
+  if (base::DirectoryExists(path))
     return base::PLATFORM_FILE_ERROR_NOT_A_FILE;
-  if (!base::Delete(path, false))
+  if (!base::DeleteFile(path, false))
     return base::PLATFORM_FILE_ERROR_FAILED;
   return base::PLATFORM_FILE_OK;
 }
 
 PlatformFileError NativeFileUtil::DeleteDirectory(const base::FilePath& path) {
-  if (!file_util::PathExists(path))
+  if (!base::PathExists(path))
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
-  if (!file_util::DirectoryExists(path))
+  if (!base::DirectoryExists(path))
     return base::PLATFORM_FILE_ERROR_NOT_A_DIRECTORY;
   if (!file_util::IsDirectoryEmpty(path))
     return base::PLATFORM_FILE_ERROR_NOT_EMPTY;
-  if (!base::Delete(path, false))
+  if (!base::DeleteFile(path, false))
     return base::PLATFORM_FILE_ERROR_FAILED;
   return base::PLATFORM_FILE_OK;
 }

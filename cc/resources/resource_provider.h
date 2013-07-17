@@ -18,7 +18,6 @@
 #include "cc/base/cc_export.h"
 #include "cc/output/context_provider.h"
 #include "cc/output/output_surface.h"
-#include "cc/output/texture_copier.h"
 #include "cc/resources/texture_mailbox.h"
 #include "cc/resources/transferable_resource.h"
 #include "third_party/khronos/GLES2/gl2.h"
@@ -26,9 +25,7 @@
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/gfx/size.h"
 
-namespace WebKit {
-class WebGraphicsContext3D;
-}
+namespace WebKit { class WebGraphicsContext3D; }
 
 namespace gfx {
 class Rect;
@@ -51,6 +48,7 @@ class CC_EXPORT ResourceProvider {
     TextureUsageFramebuffer,
   };
   enum ResourceType {
+    InvalidType = 0,
     GLTexture = 1,
     Bitmap,
   };
@@ -60,12 +58,12 @@ class CC_EXPORT ResourceProvider {
 
   virtual ~ResourceProvider();
 
-  bool Reinitialize(int highp_threshold_min);
+  void InitializeSoftware();
+  bool InitializeGL();
 
   void DidLoseOutputSurface() { lost_output_surface_ = true; }
 
   WebKit::WebGraphicsContext3D* GraphicsContext3D();
-  TextureCopier* texture_copier() const { return texture_copier_.get(); }
   int max_texture_size() const { return max_texture_size_; }
   GLenum best_texture_format() const { return best_texture_format_; }
   unsigned num_resources() const { return resources_.size(); }
@@ -76,9 +74,6 @@ class CC_EXPORT ResourceProvider {
 
   // Producer interface.
 
-  void set_default_resource_type(ResourceType type) {
-    default_resource_type_ = type;
-  }
   ResourceType default_resource_type() const { return default_resource_type_; }
   ResourceType GetResourceType(ResourceId id);
 
@@ -390,8 +385,10 @@ class CC_EXPORT ResourceProvider {
            resource->read_lock_fence->HasPassed();
   }
 
-  explicit ResourceProvider(OutputSurface* output_surface);
-  bool Initialize(int highp_threshold_min);
+  explicit ResourceProvider(OutputSurface* output_surface,
+                            int highp_threshold_min);
+
+  void CleanUpGLIfNeeded();
 
   const Resource* LockForRead(ResourceId id);
   void UnlockForRead(ResourceId id);
@@ -413,6 +410,7 @@ class CC_EXPORT ResourceProvider {
 
   OutputSurface* output_surface_;
   bool lost_output_surface_;
+  int highp_threshold_min_;
   ResourceId next_id_;
   ResourceMap resources_;
   int next_child_;
@@ -423,7 +421,6 @@ class CC_EXPORT ResourceProvider {
   bool use_texture_usage_hint_;
   bool use_shallow_flush_;
   scoped_ptr<TextureUploader> texture_uploader_;
-  scoped_ptr<AcceleratedTextureCopier> texture_copier_;
   int max_texture_size_;
   GLenum best_texture_format_;
 

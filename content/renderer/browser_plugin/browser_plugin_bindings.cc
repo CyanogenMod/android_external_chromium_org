@@ -292,58 +292,23 @@ class BrowserPluginBindingGetGuestInstanceID :
 
 // Note: This is a method that is used internally by the <webview> shim only.
 // This should not be exposed to developers.
-class BrowserPluginBindingPersistRequestObject
+class BrowserPluginBindingTrackObjectLifetime
     : public BrowserPluginMethodBinding {
  public:
-  BrowserPluginBindingPersistRequestObject()
-      : BrowserPluginMethodBinding(browser_plugin::kMethodInternalPersistObject,
-                                   3) {
+  BrowserPluginBindingTrackObjectLifetime()
+      : BrowserPluginMethodBinding(
+          browser_plugin::kMethodInternalTrackObjectLifetime, 2) {
   }
 
   virtual bool Invoke(BrowserPluginBindings* bindings,
                       const NPVariant* args,
                       NPVariant* result) OVERRIDE {
-    bindings->instance()->PersistRequestObject(
-        args, StringFromNPVariant(args[1]), IntFromNPVariant(args[2]));
+    bindings->instance()->TrackObjectLifetime(args, IntFromNPVariant(args[1]));
     return true;
   }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(BrowserPluginBindingPersistRequestObject);
-};
-
-class BrowserPluginBindingReload : public BrowserPluginMethodBinding {
- public:
-  BrowserPluginBindingReload()
-      : BrowserPluginMethodBinding(browser_plugin::kMethodReload, 0) {
-  }
-
-  virtual bool Invoke(BrowserPluginBindings* bindings,
-                      const NPVariant* args,
-                      NPVariant* result) OVERRIDE {
-    bindings->instance()->Reload();
-    return true;
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(BrowserPluginBindingReload);
-};
-
-class BrowserPluginBindingStop : public BrowserPluginMethodBinding {
- public:
-  BrowserPluginBindingStop()
-      : BrowserPluginMethodBinding(browser_plugin::kMethodStop, 0) {
-  }
-
-  virtual bool Invoke(BrowserPluginBindings* bindings,
-                      const NPVariant* args,
-                      NPVariant* result) OVERRIDE {
-    bindings->instance()->Stop();
-    return true;
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(BrowserPluginBindingStop);
+  DISALLOW_COPY_AND_ASSIGN(BrowserPluginBindingTrackObjectLifetime);
 };
 
 // Note: This is a method that is used internally by the <webview> shim only.
@@ -366,23 +331,6 @@ class BrowserPluginBindingSetPermission : public BrowserPluginMethodBinding {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(BrowserPluginBindingSetPermission);
-};
-
-class BrowserPluginBindingTerminate : public BrowserPluginMethodBinding {
- public:
-  BrowserPluginBindingTerminate()
-      : BrowserPluginMethodBinding(browser_plugin::kMethodTerminate, 0) {
-  }
-
-  virtual bool Invoke(BrowserPluginBindings* bindings,
-                      const NPVariant* args,
-                      NPVariant* result) OVERRIDE {
-    bindings->instance()->TerminateGuest();
-    return true;
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(BrowserPluginBindingTerminate);
 };
 
 // BrowserPluginPropertyBinding ------------------------------------------------
@@ -744,11 +692,8 @@ BrowserPluginBindings::BrowserPluginBindings(BrowserPlugin* instance)
   method_bindings_.push_back(new BrowserPluginBindingAttachWindowTo);
   method_bindings_.push_back(new BrowserPluginBindingGetInstanceID);
   method_bindings_.push_back(new BrowserPluginBindingGetGuestInstanceID);
-  method_bindings_.push_back(new BrowserPluginBindingPersistRequestObject);
-  method_bindings_.push_back(new BrowserPluginBindingReload);
   method_bindings_.push_back(new BrowserPluginBindingSetPermission);
-  method_bindings_.push_back(new BrowserPluginBindingStop);
-  method_bindings_.push_back(new BrowserPluginBindingTerminate);
+  method_bindings_.push_back(new BrowserPluginBindingTrackObjectLifetime);
 
   property_bindings_.push_back(new BrowserPluginPropertyBindingAutoSize);
   property_bindings_.push_back(new BrowserPluginPropertyBindingContentWindow);

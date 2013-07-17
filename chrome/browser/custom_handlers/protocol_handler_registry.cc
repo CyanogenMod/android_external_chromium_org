@@ -10,10 +10,10 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/prefs/pref_service.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/custom_handlers/register_protocol_handler_infobar_delegate.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
 #include "chrome/browser/profiles/profile_io_data.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
 #include "chrome/common/pref_names.h"
@@ -707,7 +707,7 @@ void ProtocolHandlerRegistry::Shutdown() {
 }
 
 // static
-void ProtocolHandlerRegistry::RegisterUserPrefs(
+void ProtocolHandlerRegistry::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterListPref(prefs::kRegisteredProtocolHandlers,
                              user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);

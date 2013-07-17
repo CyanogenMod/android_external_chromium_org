@@ -54,7 +54,7 @@ def DispatchPythonTests(options):
     options: command line options.
 
   Returns:
-    A list of test results.
+    A tuple of (base_test_result.TestRunResults object, exit code)
 
   Raises:
     Exception: If there are no attached devices.
@@ -77,7 +77,7 @@ def DispatchPythonTests(options):
 
   if not available_tests:
     logging.warning('No Python tests to run with current args.')
-    return base_test_result.TestRunResults()
+    return (base_test_result.TestRunResults(), 0)
 
   test_names = [t.qualified_name for t in available_tests]
   logging.debug('Final list of tests to run: ' + str(test_names))
@@ -105,7 +105,10 @@ def DispatchPythonTests(options):
   sharder = PythonTestSharder(attached_devices, available_tests, options)
   test_results = sharder.RunShardedTests()
 
-  return test_results
+  if not test_results.DidRunPass():
+    return (test_results, 1)
+
+  return (test_results, 0)
 
 
 def _GetTestModules(python_test_root, is_official_build):

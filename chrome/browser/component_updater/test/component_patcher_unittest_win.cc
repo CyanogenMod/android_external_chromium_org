@@ -21,10 +21,10 @@
 
 // Verify that a 'courgette' delta update operation works correctly.
 TEST_F(ComponentPatcherOperationTest, CheckCourgetteOperation) {
-  EXPECT_TRUE(file_util::CopyFile(
+  EXPECT_TRUE(base::CopyFile(
       test_file("binary_input.bin"),
       installed_dir_.path().Append(FILE_PATH_LITERAL("binary_input.bin"))));
-  EXPECT_TRUE(file_util::CopyFile(
+  EXPECT_TRUE(base::CopyFile(
       test_file("binary_courgette_patch.bin"),
       input_dir_.path().Append(
           FILE_PATH_LITERAL("binary_courgette_patch.bin"))));
@@ -46,17 +46,17 @@ TEST_F(ComponentPatcherOperationTest, CheckCourgetteOperation) {
                                      &error);
   EXPECT_EQ(ComponentUnpacker::kNone, result);
   EXPECT_EQ(0, error);
-  EXPECT_TRUE(file_util::ContentsEqual(
+  EXPECT_TRUE(base::ContentsEqual(
       unpack_dir_.path().Append(FILE_PATH_LITERAL("output.bin")),
       test_file("binary_output.bin")));
 }
 
 // Verify that a 'bsdiff' delta update operation works correctly.
 TEST_F(ComponentPatcherOperationTest, CheckBsdiffOperation) {
-  EXPECT_TRUE(file_util::CopyFile(
+  EXPECT_TRUE(base::CopyFile(
       test_file("binary_input.bin"),
       installed_dir_.path().Append(FILE_PATH_LITERAL("binary_input.bin"))));
-  EXPECT_TRUE(file_util::CopyFile(
+  EXPECT_TRUE(base::CopyFile(
       test_file("binary_bsdiff_patch.bin"),
       input_dir_.path().Append(FILE_PATH_LITERAL("binary_bsdiff_patch.bin"))));
 
@@ -77,7 +77,7 @@ TEST_F(ComponentPatcherOperationTest, CheckBsdiffOperation) {
                                      &error);
   EXPECT_EQ(ComponentUnpacker::kNone, result);
   EXPECT_EQ(0, error);
-  EXPECT_TRUE(file_util::ContentsEqual(
+  EXPECT_TRUE(base::ContentsEqual(
       unpack_dir_.path().Append(FILE_PATH_LITERAL("output.bin")),
       test_file("binary_output.bin")));
 }

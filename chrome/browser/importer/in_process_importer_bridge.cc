@@ -43,6 +43,22 @@ history::URLRows ConvertImporterURLRowsToHistoryURLRows(
   return converted;
 }
 
+history::VisitSource ConvertImporterVisitSourceToHistoryVisitSource(
+    importer::VisitSource visit_source) {
+  switch (visit_source) {
+    case importer::VISIT_SOURCE_BROWSED:
+      return history::SOURCE_BROWSED;
+    case importer::VISIT_SOURCE_FIREFOX_IMPORTED:
+      return history::SOURCE_FIREFOX_IMPORTED;
+    case importer::VISIT_SOURCE_IE_IMPORTED:
+      return history::SOURCE_IE_IMPORTED;
+    case importer::VISIT_SOURCE_SAFARI_IMPORTED:
+      return history::SOURCE_SAFARI_IMPORTED;
+  }
+  NOTREACHED();
+  return history::SOURCE_SYNCED;
+}
+
 }  // namespace
 
 using content::BrowserThread;
@@ -165,10 +181,16 @@ void InProcessImporterBridge::AddHomePage(const GURL& home_page) {
 
 #if defined(OS_WIN)
 void InProcessImporterBridge::AddIE7PasswordInfo(
-    const IE7PasswordInfo& password_info) {
+    const importer::ImporterIE7PasswordInfo& password_info) {
+  IE7PasswordInfo ie7_password_info;
+  ie7_password_info.url_hash = password_info.url_hash;
+  ie7_password_info.encrypted_data = password_info.encrypted_data;
+  ie7_password_info.date_created = password_info.date_created;
+
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::Bind(&ProfileWriter::AddIE7PasswordInfo, writer_, password_info));
+      base::Bind(&ProfileWriter::AddIE7PasswordInfo, writer_,
+                 ie7_password_info));
 }
 #endif  // OS_WIN
 
@@ -181,13 +203,17 @@ void InProcessImporterBridge::SetFavicons(
 
 void InProcessImporterBridge::SetHistoryItems(
     const std::vector<ImporterURLRow>& rows,
-    history::VisitSource visit_source) {
-  history::URLRows converted = ConvertImporterURLRowsToHistoryURLRows(rows);
-  BrowserThread::PostTask(
-      BrowserThread::UI,
-      FROM_HERE,
-      base::Bind(
-          &ProfileWriter::AddHistoryPage, writer_, converted, visit_source));
+    importer::VisitSource visit_source) {
+  history::URLRows converted_rows =
+      ConvertImporterURLRowsToHistoryURLRows(rows);
+  history::VisitSource converted_visit_source =
+      ConvertImporterVisitSourceToHistoryVisitSource(visit_source);
+  BrowserThread::PostTask(BrowserThread::UI,
+                          FROM_HERE,
+                          base::Bind(&ProfileWriter::AddHistoryPage,
+                                     writer_,
+                                     converted_rows,
+                                     converted_visit_source));
 }
 
 void InProcessImporterBridge::SetKeywords(

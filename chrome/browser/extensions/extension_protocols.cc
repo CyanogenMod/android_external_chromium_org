@@ -38,7 +38,6 @@
 #include "content/public/browser/resource_request_info.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_resource.h"
-#include "googleurl/src/url_util.h"
 #include "grit/component_extension_resources_map.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
@@ -48,6 +47,7 @@
 #include "net/url_request/url_request_file_job.h"
 #include "net/url_request/url_request_simple_job.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "url/url_util.h"
 
 using content::ResourceRequestInfo;
 using extensions::Extension;
@@ -101,7 +101,7 @@ void ReadMimeTypeFromFile(const base::FilePath& filename,
 
 void GetLastModifiedTime(const base::FilePath& filename,
                          base::Time* last_modified_time) {
-  if (file_util::PathExists(filename)) {
+  if (base::PathExists(filename)) {
     base::PlatformFileInfo info;
     if (file_util::GetFileInfo(filename, &info))
       *last_modified_time = info.last_modified;

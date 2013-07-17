@@ -26,6 +26,7 @@
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/auto_launch_trial.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
 #include "chrome/browser/defaults.h"
@@ -71,7 +72,6 @@
 #include "chrome/browser/ui/webui/ntp/app_launcher_handler.h"
 #include "chrome/browser/ui/webui/sync_promo/sync_promo_trial.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
@@ -873,15 +873,13 @@ void StartupBrowserCreatorImpl::AddInfoBarsIfNecessary(
   if (is_process_startup == chrome::startup::IS_PROCESS_STARTUP) {
     chrome::ShowBadFlagsPrompt(browser);
     if (!command_line_.HasSwitch(switches::kTestType)) {
-      GoogleApiKeysInfoBarDelegate::Create(
-          InfoBarService::FromWebContents(
-              browser->tab_strip_model()->GetActiveWebContents()));
+      GoogleApiKeysInfoBarDelegate::Create(InfoBarService::FromWebContents(
+          browser->tab_strip_model()->GetActiveWebContents()));
 
       // TODO(phajdan.jr): Always enable after migrating bots:
       // http://crbug.com/170262 .
-      chrome::ObsoleteOSInfoBarDelegate::Create(
-          InfoBarService::FromWebContents(
-              browser->tab_strip_model()->GetActiveWebContents()));
+      ObsoleteOSInfoBarDelegate::Create(InfoBarService::FromWebContents(
+          browser->tab_strip_model()->GetActiveWebContents()));
     }
 
     if (browser_defaults::kOSSupportsOtherBrowsers &&

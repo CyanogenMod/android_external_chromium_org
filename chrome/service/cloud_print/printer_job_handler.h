@@ -18,9 +18,9 @@
 #include "chrome/service/cloud_print/cloud_print_url_fetcher.h"
 #include "chrome/service/cloud_print/job_status_updater.h"
 #include "chrome/service/cloud_print/printer_job_queue_handler.h"
-#include "googleurl/src/gurl.h"
 #include "net/url_request/url_request_status.h"
 #include "printing/backend/print_backend.h"
+#include "url/gurl.h"
 
 class URLFetcher;
 // A class that handles cloud print jobs for a particular printer. This class
@@ -194,7 +194,7 @@ class PrinterJobHandler : public base::RefCountedThreadSafe<PrinterJobHandler>,
       const GURL& url,
       const std::string& data);
 
-  CloudPrintURLFetcher::ResponseAction HandleSuccessStatusUpdateResponse(
+  CloudPrintURLFetcher::ResponseAction HandleInProgressStatusUpdateResponse(
       const net::URLFetcher* source,
       const GURL& url,
       base::DictionaryValue* json_data,

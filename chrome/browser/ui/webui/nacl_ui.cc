@@ -162,7 +162,7 @@ void NaClDomHandlerProxy::ValidatePnaclPath() {
   // However, do not trust that the path returned by the PathService exists.
   // Check for existence here.
   ValidatePnaclPathCallback(
-    got_path && !pnacl_path.empty() && file_util::PathExists(pnacl_path));
+    got_path && !pnacl_path.empty() && base::PathExists(pnacl_path));
 }
 
 void NaClDomHandlerProxy::ValidatePnaclPathCallback(bool is_valid) {
@@ -228,6 +228,10 @@ void ListFlagStatus(ListValue* list, const std::string& flag_label,
 
 void NaClDomHandler::HandleRequestNaClInfo(const ListValue* args) {
   page_has_requested_data_ = true;
+  // Force re-validation of pnacl's path in the next call to
+  // MaybeRespondToPage(), in case PNaCl went from not-installed
+  // to installed since the request.
+  pnacl_path_validated_ = false;
   MaybeRespondToPage();
 }
 

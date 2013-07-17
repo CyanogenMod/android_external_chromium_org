@@ -14,6 +14,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/download/download_crx_util.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/download/download_util.h"
@@ -23,7 +24,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
@@ -41,8 +41,8 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/escape.h"
+#include "url/gurl.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/drive/file_system_util.h"
@@ -88,7 +88,7 @@ void GetDownloadFilePath(
 
   // Ensure the download directory exists. TODO(asargent) - make this use
   // common code from the downloads system.
-  if (!file_util::DirectoryExists(directory)) {
+  if (!base::DirectoryExists(directory)) {
     if (!file_util::CreateDirectory(directory)) {
       BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                               base::Bind(callback, base::FilePath()));
@@ -161,7 +161,8 @@ WebstoreInstaller::Approval::Approval()
     : profile(NULL),
       use_app_installed_bubble(false),
       skip_post_install_ui(false),
-      skip_install_dialog(false) {
+      skip_install_dialog(false),
+      enable_launcher(false) {
 }
 
 scoped_ptr<WebstoreInstaller::Approval>

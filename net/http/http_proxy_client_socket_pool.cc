@@ -9,7 +9,6 @@
 #include "base/compiler_specific.h"
 #include "base/time/time.h"
 #include "base/values.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_network_session.h"
@@ -25,6 +24,7 @@
 #include "net/spdy/spdy_session_pool.h"
 #include "net/spdy/spdy_stream.h"
 #include "net/ssl/ssl_cert_request_info.h"
+#include "url/gurl.h"
 
 namespace net {
 
@@ -204,7 +204,7 @@ int HttpProxyConnectJob::DoSSLConnect() {
     SpdySessionKey key(params_->destination().host_port_pair(),
                        ProxyServer::Direct(),
                        kPrivacyModeDisabled);
-    if (params_->spdy_session_pool()->HasSession(key)) {
+    if (params_->spdy_session_pool()->FindAvailableSession(key, net_log())) {
       using_spdy_ = true;
       next_state_ = STATE_SPDY_PROXY_CREATE_STREAM;
       return OK;
@@ -302,19 +302,19 @@ int HttpProxyConnectJob::DoSpdyProxyCreateStream() {
                      ProxyServer::Direct(),
                      kPrivacyModeDisabled);
   SpdySessionPool* spdy_pool = params_->spdy_session_pool();
-  scoped_refptr<SpdySession> spdy_session;
+  scoped_refptr<SpdySession> spdy_session =
+      spdy_pool->FindAvailableSession(key, net_log());
   // It's possible that a session to the proxy has recently been created
-  if (spdy_pool->HasSession(key)) {
+  if (spdy_session) {
     if (transport_socket_handle_.get()) {
       if (transport_socket_handle_->socket())
         transport_socket_handle_->socket()->Disconnect();
       transport_socket_handle_->Reset();
     }
-    spdy_session = spdy_pool->Get(key, net_log());
   } else {
     // Create a session direct to the proxy itself
-    int rv = spdy_pool->GetSpdySessionFromSocket(
-        key, transport_socket_handle_.release(),
+    int rv = spdy_pool->CreateAvailableSessionFromSocket(
+        key, transport_socket_handle_.Pass(),
         net_log(), OK, &spdy_session, /*using_ssl_*/ true);
     if (rv < 0)
       return rv;

@@ -37,7 +37,8 @@
 #define USR_ID 1002
 #define GRP_ID 1003
 
-KernelProxy::KernelProxy() : dev_(0), ppapi_(NULL) {}
+KernelProxy::KernelProxy() : dev_(0), ppapi_(NULL) {
+}
 
 KernelProxy::~KernelProxy() {
   // Clean up the MountFactories.
@@ -52,7 +53,6 @@ KernelProxy::~KernelProxy() {
 
 void KernelProxy::Init(PepperInterface* ppapi) {
   ppapi_ = ppapi;
-  cwd_ = "/";
   dev_ = 1;
 
   factories_["memfs"] = new TypedMountFactory<MountMem>;
@@ -74,18 +74,42 @@ void KernelProxy::Init(PepperInterface* ppapi) {
   open("/dev/stderr", O_WRONLY);
 }
 
-int KernelProxy::open(const char* path, int oflags) {
+int KernelProxy::open_resource(const char* path) {
+  ScopedMount mnt;
   Path rel;
 
-  ScopedMount mnt;
-  Error error = AcquireMountAndPath(path, &mnt, &rel);
+  Error error = AcquireMountAndRelPath(path, &mnt, &rel);
   if (error) {
     errno = error;
     return -1;
   }
 
   ScopedMountNode node;
-  error = mnt->Open(rel, oflags, &node);
+  error = mnt->OpenResource(rel, &node);
+  if (error) {
+    // OpenResource failed, try Open().
+    error = mnt->Open(rel, O_RDONLY, &node);
+    if (error) {
+      errno = error;
+      return -1;
+    }
+  }
+
+  ScopedKernelHandle handle(new KernelHandle(mnt, node));
+  error = handle->Init(O_RDONLY);
+  if (error) {
+    errno = error;
+    return -1;
+  }
+
+  return AllocateFD(handle);
+}
+
+int KernelProxy::open(const char* path, int oflags) {
+  ScopedMount mnt;
+  ScopedMountNode node;
+
+  Error error = AcquireMountAndNode(path, oflags, &mnt, &node);
   if (error) {
     errno = error;
     return -1;
@@ -141,19 +165,30 @@ int KernelProxy::dup2(int oldfd, int newfd) {
   return newfd;
 }
 
+int KernelProxy::chdir(const char* path) {
+  Error error = SetCWD(path);
+  if (error) {
+    errno = error;
+    return -1;
+  }
+  return 0;
+}
+
 char* KernelProxy::getcwd(char* buf, size_t size) {
-  AutoLock lock(&process_lock_);
+  std::string cwd = GetCWD();
+
   if (size <= 0) {
     errno = EINVAL;
     return NULL;
   }
+
   // If size is 0, allocate as much as we need.
   if (size == 0) {
-    size = cwd_.size() + 1;
+    size = cwd.size() + 1;
   }
 
   // Verify the buffer is large enough
-  if (size <= cwd_.size()) {
+  if (size <= cwd.size()) {
     errno = ERANGE;
     return NULL;
   }
@@ -163,7 +198,7 @@ char* KernelProxy::getcwd(char* buf, size_t size) {
     buf = static_cast<char*>(malloc(size));
   }
 
-  strcpy(buf, cwd_.c_str());
+  strcpy(buf, cwd.c_str());
   return buf;
 }
 
@@ -204,7 +239,8 @@ int KernelProxy::utime(const char* filename, const struct utimbuf* times) {
 int KernelProxy::mkdir(const char* path, mode_t mode) {
   ScopedMount mnt;
   Path rel;
-  Error error = AcquireMountAndPath(path, &mnt, &rel);
+
+  Error error = AcquireMountAndRelPath(path, &mnt, &rel);
   if (error) {
     errno = error;
     return -1;
@@ -222,7 +258,8 @@ int KernelProxy::mkdir(const char* path, mode_t mode) {
 int KernelProxy::rmdir(const char* path) {
   ScopedMount mnt;
   Path rel;
-  Error error = AcquireMountAndPath(path, &mnt, &rel);
+
+  Error error = AcquireMountAndRelPath(path, &mnt, &rel);
   if (error) {
     errno = error;
     return -1;
@@ -247,41 +284,13 @@ int KernelProxy::stat(const char* path, struct stat* buf) {
   return result;
 }
 
-int KernelProxy::chdir(const char* path) {
-  struct stat statbuf;
-  if (stat(path, &statbuf) == -1)
-    return -1;
-
-  bool is_dir = (statbuf.st_mode & S_IFDIR) != 0;
-  if (!is_dir) {
-    errno = ENOTDIR;
-    return -1;
-  }
-
-  AutoLock lock(&process_lock_);
-  cwd_ = GetAbsPathLocked(path).Join();
-  return 0;
-}
 
 int KernelProxy::mount(const char* source,
                        const char* target,
                        const char* filesystemtype,
                        unsigned long mountflags,
                        const void* data) {
-  // See if it's already mounted
-  std::string abs_targ;
-
-  // Scope this lock to prevent holding both process and kernel locks
-  {
-    AutoLock lock(&process_lock_);
-    abs_targ = GetAbsPathLocked(target).Join();
-  }
-
-  AutoLock lock(&kernel_lock_);
-  if (mounts_.find(abs_targ) != mounts_.end()) {
-    errno = EBUSY;
-    return -1;
-  }
+  std::string abs_path = GetAbsParts(target).Join();
 
   // Find a factory of that type
   MountFactoryMap_t::iterator factory = factories_.find(filesystemtype);
@@ -290,9 +299,10 @@ int KernelProxy::mount(const char* source,
     return -1;
   }
 
+  // Create a map of settings
   StringMap_t smap;
   smap["SOURCE"] = source;
-  smap["TARGET"] = abs_targ;
+  smap["TARGET"] = abs_path;
 
   if (data) {
     char* str = strdup(static_cast<const char*>(data));
@@ -311,8 +321,14 @@ int KernelProxy::mount(const char* source,
     free(str);
   }
 
-  Error error =
-      factory->second->CreateMount(dev_++, smap, ppapi_, &mounts_[abs_targ]);
+  ScopedMount mnt;
+  Error error = factory->second->CreateMount(dev_++, smap, ppapi_, &mnt);
+  if (error) {
+    errno = error;
+    return -1;
+  }
+
+  error = AttachMountAtPath(mnt, abs_path);
   if (error) {
     errno = error;
     return -1;
@@ -322,28 +338,11 @@ int KernelProxy::mount(const char* source,
 }
 
 int KernelProxy::umount(const char* path) {
-  Path abs_path;
-
-  // Scope this lock to prevent holding both process and kernel locks
-  {
-    AutoLock lock(&process_lock_);
-    abs_path = GetAbsPathLocked(path);
-  }
-
-  AutoLock lock(&kernel_lock_);
-  MountMap_t::iterator it = mounts_.find(abs_path.Join());
-
-  if (mounts_.end() == it) {
-    errno = EINVAL;
+  Error error = DetachMountAtPath(path);
+  if (error) {
+    errno = error;
     return -1;
   }
-
-  if (it->second->RefCount() != 1) {
-    errno = EBUSY;
-    return -1;
-  }
-
-  mounts_.erase(it);
   return 0;
 }
 
@@ -355,16 +354,12 @@ ssize_t KernelProxy::read(int fd, void* buf, size_t nbytes) {
     return -1;
   }
 
-  AutoLock lock(&handle->lock_);
   int cnt = 0;
-  error = handle->node_->Read(handle->offs_, buf, nbytes, &cnt);
+  error = handle->Read(buf, nbytes, &cnt);
   if (error) {
     errno = error;
     return -1;
   }
-
-  if (cnt > 0)
-    handle->offs_ += cnt;
 
   return cnt;
 }
@@ -377,16 +372,12 @@ ssize_t KernelProxy::write(int fd, const void* buf, size_t nbytes) {
     return -1;
   }
 
-  AutoLock lock(&handle->lock_);
   int cnt = 0;
-  error = handle->node_->Write(handle->offs_, buf, nbytes, &cnt);
+  error = handle->Write(buf, nbytes, &cnt);
   if (error) {
     errno = error;
     return -1;
   }
-
-  if (cnt > 0)
-    handle->offs_ += cnt;
 
   return cnt;
 }
@@ -399,7 +390,7 @@ int KernelProxy::fstat(int fd, struct stat* buf) {
     return -1;
   }
 
-  error = handle->node_->GetStat(buf);
+  error = handle->node()->GetStat(buf);
   if (error) {
     errno = error;
     return -1;
@@ -416,15 +407,10 @@ int KernelProxy::getdents(int fd, void* buf, unsigned int count) {
     return -1;
   }
 
-  AutoLock lock(&handle->lock_);
   int cnt = 0;
-  error = handle->node_
-      ->GetDents(handle->offs_, static_cast<dirent*>(buf), count, &cnt);
+  error = handle->GetDents(static_cast<dirent*>(buf), count, &cnt);
   if (error)
     errno = error;
-
-  if (cnt > 0)
-    handle->offs_ += cnt;
 
   return cnt;
 }
@@ -437,7 +423,7 @@ int KernelProxy::ftruncate(int fd, off_t length) {
     return -1;
   }
 
-  error = handle->node_->FTruncate(length);
+  error = handle->node()->FTruncate(length);
   if (error) {
     errno = error;
     return -1;
@@ -454,7 +440,7 @@ int KernelProxy::fsync(int fd) {
     return -1;
   }
 
-  error = handle->node_->FSync();
+  error = handle->node()->FSync();
   if (error) {
     errno = error;
     return -1;
@@ -471,7 +457,7 @@ int KernelProxy::isatty(int fd) {
     return -1;
   }
 
-  error = handle->node_->IsaTTY();
+  error = handle->node()->IsaTTY();
   if (error) {
     errno = error;
     return -1;
@@ -488,7 +474,7 @@ int KernelProxy::ioctl(int d, int request, char* argp) {
     return -1;
   }
 
-  error = handle->node_->Ioctl(request, argp);
+  error = handle->node()->Ioctl(request, argp);
   if (error) {
     errno = error;
     return -1;
@@ -505,7 +491,6 @@ off_t KernelProxy::lseek(int fd, off_t offset, int whence) {
     return -1;
   }
 
-  AutoLock lock(&handle->lock_);
   off_t new_offset;
   error = handle->Seek(offset, whence, &new_offset);
   if (error) {
@@ -519,7 +504,8 @@ off_t KernelProxy::lseek(int fd, off_t offset, int whence) {
 int KernelProxy::unlink(const char* path) {
   ScopedMount mnt;
   Path rel;
-  Error error = AcquireMountAndPath(path, &mnt, &rel);
+
+  Error error = AcquireMountAndRelPath(path, &mnt, &rel);
   if (error) {
     errno = error;
     return -1;
@@ -537,7 +523,8 @@ int KernelProxy::unlink(const char* path) {
 int KernelProxy::remove(const char* path) {
   ScopedMount mnt;
   Path rel;
-  Error error = AcquireMountAndPath(path, &mnt, &rel);
+
+  Error error = AcquireMountAndRelPath(path, &mnt, &rel);
   if (error) {
     errno = error;
     return -1;
@@ -565,10 +552,10 @@ int KernelProxy::fchmod(int fd, int mode) {
 }
 
 int KernelProxy::access(const char* path, int amode) {
+  ScopedMount mnt;
   Path rel;
 
-  ScopedMount mnt;
-  Error error = AcquireMountAndPath(path, &mnt, &rel);
+  Error error = AcquireMountAndRelPath(path, &mnt, &rel);
   if (error) {
     errno = error;
     return -1;
@@ -611,8 +598,7 @@ void* KernelProxy::mmap(void* addr,
   }
 
   void* new_addr;
-  AutoLock lock(&handle->lock_);
-  error = handle->node_->MMap(addr, length, prot, flags, offset, &new_addr);
+  error = handle->node()->MMap(addr, length, prot, flags, offset, &new_addr);
   if (error) {
     errno = error;
     return MAP_FAILED;
@@ -654,35 +640,5 @@ int KernelProxy::munmap(void* addr, size_t length) {
   // anonymous maps, so the unmap_list should always be empty when called from
   // free().
   return 0;
-}
-
-int KernelProxy::open_resource(const char* path) {
-  ScopedMount mnt;
-  Path rel;
-  Error error = AcquireMountAndPath(path, &mnt, &rel);
-  if (error) {
-    errno = error;
-    return -1;
-  }
-
-  ScopedMountNode node;
-  error = mnt->OpenResource(rel, &node);
-  if (error) {
-    // OpenResource failed, try Open().
-    error = mnt->Open(rel, O_RDONLY, &node);
-    if (error) {
-      errno = error;
-      return -1;
-    }
-  }
-
-  ScopedKernelHandle handle(new KernelHandle(mnt, node));
-  error = handle->Init(O_RDONLY);
-  if (error) {
-    errno = error;
-    return -1;
-  }
-
-  return AllocateFD(handle);
 }
 

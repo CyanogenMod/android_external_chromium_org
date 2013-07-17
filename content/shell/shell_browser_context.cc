@@ -100,11 +100,11 @@ void ShellBrowserContext::InitWhileIOAllowed() {
   NOTIMPLEMENTED();
 #endif
 
-  if (!file_util::PathExists(path_))
+  if (!base::PathExists(path_))
     file_util::CreateDirectory(path_);
 }
 
-base::FilePath ShellBrowserContext::GetPath() {
+base::FilePath ShellBrowserContext::GetPath() const {
   return path_;
 }
 
@@ -170,6 +170,16 @@ net::URLRequestContextGetter*
   return GetRequestContext();
 }
 
+void ShellBrowserContext::RequestMIDISysExPermission(
+      int render_process_id,
+      int render_view_id,
+      const GURL& requesting_frame,
+      const MIDISysExPermissionCallback& callback) {
+  // Always reject requests for testing.
+  // TODO(toyoshim): Make it programmable to improve test coverage.
+  callback.Run(false);
+}
+
 net::URLRequestContextGetter*
     ShellBrowserContext::CreateRequestContextForStoragePartition(
         const base::FilePath& partition_path,
@@ -184,11 +194,6 @@ ResourceContext* ShellBrowserContext::GetResourceContext()  {
 
 GeolocationPermissionContext*
     ShellBrowserContext::GetGeolocationPermissionContext()  {
-  return NULL;
-}
-
-SpeechRecognitionPreferences*
-    ShellBrowserContext::GetSpeechRecognitionPreferences() {
   return NULL;
 }
 

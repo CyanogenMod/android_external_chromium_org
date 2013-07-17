@@ -14,7 +14,6 @@
 #include "chrome/browser/infobars/infobar_service.h"
 #import "chrome/browser/ui/browser_dialogs.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
-#import "chrome/browser/ui/cocoa/hyperlink_button_cell.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
@@ -29,6 +28,7 @@
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
 #import "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
+#import "ui/base/cocoa/controls/hyperlink_button_cell.h"
 #import "ui/base/cocoa/flipped_view.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -513,19 +513,14 @@ NSColor* IdentityVerifiedTextColor() {
 // Handler for the link button to show certificate information.
 - (void)showCertificateInfo:(id)sender {
   DCHECK(certificateId_);
-  ShowCertificateViewerByID(webContents_,
-                            [self parentWindow],
-                            certificateId_);
+  ShowCertificateViewerByID(webContents_, [self parentWindow], certificateId_);
 }
 
 // Handler for the link to show help information about the connection tab.
 - (void)showHelpPage:(id)sender {
   webContents_->OpenURL(content::OpenURLParams(
-      GURL(chrome::kPageInfoHelpCenterURL),
-      content::Referrer(),
-      NEW_FOREGROUND_TAB,
-      content::PAGE_TRANSITION_LINK,
-      false));
+      GURL(chrome::kPageInfoHelpCenterURL), content::Referrer(),
+      NEW_FOREGROUND_TAB, content::PAGE_TRANSITION_LINK, false));
 }
 
 // Create the contents of the Connection tab and add it to the given tab view.

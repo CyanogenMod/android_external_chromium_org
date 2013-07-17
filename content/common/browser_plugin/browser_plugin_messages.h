@@ -7,8 +7,8 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/memory/shared_memory.h"
 #include "base/process.h"
-#include "base/shared_memory.h"
 #include "base/values.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
@@ -86,13 +86,6 @@ IPC_STRUCT_BEGIN(BrowserPluginMsg_BuffersSwapped_Params)
   IPC_STRUCT_MEMBER(std::string, mailbox_name)
   IPC_STRUCT_MEMBER(int, route_id)
   IPC_STRUCT_MEMBER(int, host_id)
-IPC_STRUCT_END()
-
-IPC_STRUCT_BEGIN(BrowserPluginMsg_LoadCommit_Params)
-  // The current URL of the guest.
-  IPC_STRUCT_MEMBER(GURL, url)
-  // Indicates whether the navigation was on the top-level frame.
-  IPC_STRUCT_MEMBER(bool, is_top_level)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(BrowserPluginMsg_UpdateRect_Params)
@@ -176,23 +169,10 @@ IPC_MESSAGE_ROUTED3(BrowserPluginHostMsg_Attach,
                     BrowserPluginHostMsg_Attach_Params /* params */,
                     base::DictionaryValue /* extra_params */)
 
-// Tells the browser process to terminate the guest associated with the
-// browser plugin associated with the provided |instance_id|.
-IPC_MESSAGE_ROUTED1(BrowserPluginHostMsg_TerminateGuest,
-                    int /* instance_id */)
-
 // Tells the guest to focus or defocus itself.
 IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_SetFocus,
                     int /* instance_id */,
                     bool /* enable */)
-
-// Tell the guest to stop loading.
-IPC_MESSAGE_ROUTED1(BrowserPluginHostMsg_Stop,
-                    int /* instance_id */)
-
-// Tell the guest to reload.
-IPC_MESSAGE_ROUTED1(BrowserPluginHostMsg_Reload,
-                    int /* instance_id */)
 
 // Sends an input event to the guest.
 IPC_MESSAGE_ROUTED3(BrowserPluginHostMsg_HandleInputEvent,
@@ -310,10 +290,6 @@ IPC_MESSAGE_ROUTED2(BrowserPluginMsg_AllocateInstanceID_ACK,
                     int /* request_id */,
                     int /* instance_id */)
 
-IPC_MESSAGE_CONTROL2(BrowserPluginMsg_AddMessageToConsole,
-                     int /* instance_id */,
-                     base::DictionaryValue /* message_info */)
-
 // This message is sent in response to a completed attachment of a guest
 // to a BrowserPlugin. This message carries information about the guest
 // that is used to update the attributes of the browser plugin.
@@ -321,39 +297,16 @@ IPC_MESSAGE_CONTROL2(BrowserPluginMsg_Attach_ACK,
                      int /* instance_id */,
                      BrowserPluginMsg_Attach_ACK_Params /* params */)
 
-// When the guest's window requests to close, the embedder is informed through
-// the BrowserPluginMsg_Close message.
-IPC_MESSAGE_CONTROL1(BrowserPluginMsg_Close,
-                     int /* instance_id */)
-
 // Once the swapped out guest RenderView has been created in the embedder render
 // process, the browser process informs the embedder of its routing ID.
 IPC_MESSAGE_CONTROL2(BrowserPluginMsg_GuestContentWindowReady,
                      int /* instance_id */,
                      int /* source_routing_id */)
 
-// If the guest fails to commit a page load then it will inform the
-// embedder through the BrowserPluginMsg_LoadAbort. A description
-// of the error will be stored in |type|.  The list of known error
-// types can be found in net/base/net_error_list.h.
-IPC_MESSAGE_CONTROL4(BrowserPluginMsg_LoadAbort,
-                     int /* instance_id */,
-                     GURL /* url */,
-                     bool /* is_top_level */,
-                     std::string /* type */)
-
-// When the guest commits a navigation, the browser process informs
-// the embedder through the BrowserPluginMsg_LoadCommit message.
-IPC_MESSAGE_CONTROL2(BrowserPluginMsg_LoadCommit,
-                     int /* instance_id */,
-                     BrowserPluginMsg_LoadCommit_Params)
-
 // When the guest crashes, the browser process informs the embedder through this
 // message.
-IPC_MESSAGE_CONTROL3(BrowserPluginMsg_GuestGone,
-                     int /* instance_id */,
-                     int /* process_id */,
-                     int /* This is really base::TerminationStatus */)
+IPC_MESSAGE_CONTROL1(BrowserPluginMsg_GuestGone,
+                     int /* instance_id */)
 
 // When the guest is unresponsive, the browser process informs the embedder
 // through this message.

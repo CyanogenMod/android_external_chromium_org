@@ -14,6 +14,7 @@ VALID_TOOLCHAINS = ['newlib', 'glibc', 'pnacl', 'win', 'linux', 'mac']
 # 'KEY' : ( <TYPE>, [Accepted Values], <Required?>)
 DSC_FORMAT = {
     'DISABLE': (bool, [True, False], False),
+    'SEL_LDR': (bool, [True, False], False),
     'DISABLE_PACKAGE': (bool, [True, False], False),
     'TOOLS' : (list, VALID_TOOLCHAINS, True),
     'CONFIGS' : (list, ['Debug', 'Release'], False),
@@ -32,7 +33,7 @@ DSC_FORMAT = {
         'DEFINES': (list, '', False),
         'LDFLAGS': (list, '', False),
         'INCLUDES': (list, '', False),
-        'LIBS' : (list, '', False),
+        'LIBS' : (dict, VALID_TOOLCHAINS, False),
         'DEPS' : (list, '', False)
     }, True),
     'HEADERS': (list, {
@@ -44,7 +45,7 @@ DSC_FORMAT = {
     'PRE': (str, '', False),
     'DEST': (str, ['examples/getting_started', 'examples/api',
                    'examples/demo', 'examples/tutorial',
-                   'src', 'testlibs', 'tests'], True),
+                   'src', 'tests'], True),
     'NAME': (str, '', False),
     'DATA': (list, '', False),
     'TITLE': (str, '', False),
@@ -74,14 +75,22 @@ def ValidateFormat(src, dsc_format):
     exp_type, exp_value, required = dsc_format[key]
     value = src[key]
 
+    # Verify the value is non-empty if required
+    if required and not value:
+      raise ValidationError('Expected non-empty value for %s.' % key)
+
+    # If the expected type is a dict, but the provided type is a list
+    # then the list applies to all keys of the dictionary, so we reset
+    # the expected type and value.
+    if exp_type is dict:
+      if type(value) is list:
+        exp_type = list
+        exp_value = ''
+
     # Verify the key is of the expected type
     if exp_type != type(value):
       raise ValidationError('Key %s expects %s not %s.' % (
           key, exp_type.__name__.upper(), type(value).__name__.upper()))
-
-    # Verify the value is non-empty if required
-    if required and not value:
-      raise ValidationError('Expected non-empty value for %s.' % key)
 
     # If it's a bool, the expected values are always True or False.
     if exp_type is bool:
@@ -116,6 +125,15 @@ def ValidateFormat(src, dsc_format):
             raise ValidationError('Value %s not expected in %s.' %
                                   (val, key))
         continue
+
+    # if we are expecting a dict, verify the keys are allowed
+    if exp_type is dict:
+      print "Expecting dict\n"
+      for sub in value:
+        if sub not in exp_value:
+          raise ValidationError('Sub key %s not expected in %s.' %
+                                (sub, key))
+      continue
 
     # If we got this far, it's an unexpected type
     raise ValidationError('Unexpected type %s for key %s.' %

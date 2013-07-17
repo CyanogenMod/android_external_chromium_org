@@ -29,7 +29,8 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/opts/SkBitmapProcState_opts_SSE2.cpp \
 	third_party/skia/src/opts/SkBlitRect_opts_SSE2.cpp \
 	third_party/skia/src/opts/SkBlitRow_opts_SSE2.cpp \
-	third_party/skia/src/opts/SkUtils_opts_SSE2.cpp
+	third_party/skia/src/opts/SkUtils_opts_SSE2.cpp \
+	third_party/skia/src/opts/SkBitmapFilter_opts_SSE2.cpp
 
 
 # Flags passed to both C and C++ files.
@@ -73,8 +74,9 @@ MY_CFLAGS_Debug := \
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
-	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
@@ -166,8 +168,9 @@ MY_CFLAGS_Release := \
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
-	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \

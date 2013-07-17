@@ -5,11 +5,11 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/autofill/content/browser/autofill_driver_impl.h"
@@ -167,8 +167,10 @@ class WindowedPersonalDataManagerObserver
 class TestAutofillExternalDelegate : public AutofillExternalDelegate {
  public:
   TestAutofillExternalDelegate(content::WebContents* web_contents,
-                               AutofillManager* autofill_manager)
-      : AutofillExternalDelegate(web_contents, autofill_manager),
+                               AutofillManager* autofill_manager,
+                               AutofillDriver* autofill_driver)
+      : AutofillExternalDelegate(web_contents, autofill_manager,
+                                 autofill_driver),
         keyboard_listener_(NULL) {
   }
   virtual ~TestAutofillExternalDelegate() {}
@@ -211,7 +213,8 @@ class AutofillInteractiveTest : public InProcessBrowserTest {
         AutofillDriverImpl::FromWebContents(web_contents);
     AutofillManager* autofill_manager = autofill_driver->autofill_manager();
     scoped_ptr<AutofillExternalDelegate> external_delegate(
-        new TestAutofillExternalDelegate(web_contents, autofill_manager));
+        new TestAutofillExternalDelegate(web_contents, autofill_manager,
+                                         autofill_driver));
     autofill_driver->SetAutofillExternalDelegate(external_delegate.Pass());
     autofill_manager->SetTestDelegate(&test_delegate_);
   }

@@ -11,7 +11,7 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/extensions/install_observer.h"
 #include "chrome/browser/ui/app_list/search/chrome_search_result.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 class AppListControllerDelegate;
 class Profile;
@@ -60,9 +60,11 @@ class WebstoreResult : public ChromeSearchResult,
   virtual void OnInstallFailure(const std::string& extension_id) OVERRIDE;
   virtual void OnExtensionInstalled(
       const extensions::Extension* extension) OVERRIDE;
-  virtual void OnExtensionUninstalled(
+  virtual void OnExtensionLoaded(
       const extensions::Extension* extension) OVERRIDE;
-  virtual void OnExtensionDisabled(
+  virtual void OnExtensionUnloaded(
+      const extensions::Extension* extension) OVERRIDE;
+  virtual void OnExtensionUninstalled(
       const extensions::Extension* extension) OVERRIDE;
   virtual void OnAppsReordered() OVERRIDE;
   virtual void OnAppInstalledToAppList(

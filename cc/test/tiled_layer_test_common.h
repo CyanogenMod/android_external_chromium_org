@@ -8,7 +8,6 @@
 #include "cc/base/region.h"
 #include "cc/layers/tiled_layer.h"
 #include "cc/layers/tiled_layer_impl.h"
-#include "cc/output/texture_copier.h"
 #include "cc/resources/layer_updater.h"
 #include "cc/resources/prioritized_resource.h"
 #include "cc/resources/resource_provider.h"
@@ -119,6 +118,8 @@ class FakeTiledLayer : public TiledLayer {
 
   // Simulate CalcDrawProperties.
   void UpdateContentsScale(float ideal_contents_scale);
+
+  void ResetNumDependentsNeedPushProperties();
 
  protected:
   virtual LayerUpdater* Updater() const OVERRIDE;

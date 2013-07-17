@@ -6,15 +6,16 @@
 
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/prefs/testing_pref_service.h"
 #include "base/run_loop.h"
 #include "chrome/browser/chromeos/drive/change_list_loader_observer.h"
 #include "chrome/browser/chromeos/drive/file_cache.h"
+#include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
 #include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/google_apis/test_util.h"
-#include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -69,7 +70,8 @@ class ChangeListLoaderTest : public testing::Test {
  protected:
   virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    profile_.reset(new TestingProfile);
+    pref_service_.reset(new TestingPrefServiceSimple);
+    test_util::RegisterDrivePrefs(pref_service_->registry());
 
     drive_service_.reset(new FakeDriveService);
     ASSERT_TRUE(drive_service_->LoadResourceListForWapi(
@@ -77,29 +79,32 @@ class ChangeListLoaderTest : public testing::Test {
     ASSERT_TRUE(drive_service_->LoadAccountMetadataForWapi(
         "gdata/account_metadata.json"));
 
-    scheduler_.reset(new JobScheduler(profile_.get(), drive_service_.get(),
-                                      base::MessageLoopProxy::current()));
+    scheduler_.reset(new JobScheduler(pref_service_.get(),
+                                      drive_service_.get(),
+                                      base::MessageLoopProxy::current().get()));
     metadata_storage_.reset(new ResourceMetadataStorage(
-        temp_dir_.path(), base::MessageLoopProxy::current()));
+        temp_dir_.path(), base::MessageLoopProxy::current().get()));
     ASSERT_TRUE(metadata_storage_->Initialize());
 
-    metadata_.reset(new ResourceMetadata(metadata_storage_.get(),
-                                         base::MessageLoopProxy::current()));
+    metadata_.reset(new ResourceMetadata(
+        metadata_storage_.get(), base::MessageLoopProxy::current().get()));
     ASSERT_EQ(FILE_ERROR_OK, metadata_->Initialize());
 
     cache_.reset(new FileCache(metadata_storage_.get(),
                                temp_dir_.path(),
-                               base::MessageLoopProxy::current(),
+                               base::MessageLoopProxy::current().get(),
                                NULL /* free_disk_space_getter */));
     ASSERT_TRUE(cache_->Initialize());
 
-    change_list_loader_.reset(new ChangeListLoader(
-        base::MessageLoopProxy::current(), metadata_.get(), scheduler_.get()));
+    change_list_loader_.reset(
+        new ChangeListLoader(base::MessageLoopProxy::current().get(),
+                             metadata_.get(),
+                             scheduler_.get()));
   }
 
   content::TestBrowserThreadBundle thread_bundle_;
   base::ScopedTempDir temp_dir_;
-  scoped_ptr<TestingProfile> profile_;
+  scoped_ptr<TestingPrefServiceSimple> pref_service_;
   scoped_ptr<FakeDriveService> drive_service_;
   scoped_ptr<JobScheduler> scheduler_;
   scoped_ptr<ResourceMetadataStorage,
@@ -145,6 +150,84 @@ TEST_F(ChangeListLoaderTest, LoadIfNeeded) {
   EXPECT_EQ(previous_changestamp, metadata_->GetLargestChangestamp());
   EXPECT_EQ(previous_resource_list_load_count,
             drive_service_->resource_list_load_count());
+}
+
+TEST_F(ChangeListLoaderTest, CheckForUpdates) {
+  // CheckForUpdates() results in no-op before load.
+  FileError check_for_updates_error = FILE_ERROR_FAILED;
+  change_list_loader_->CheckForUpdates(
+      google_apis::test_util::CreateCopyResultCallback(
+          &check_for_updates_error));
+  EXPECT_FALSE(change_list_loader_->IsRefreshing());
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(FILE_ERROR_FAILED,
+            check_for_updates_error);  // Callback was not run.
+  EXPECT_EQ(0, metadata_->GetLargestChangestamp());
+  EXPECT_EQ(0, drive_service_->resource_list_load_count());
+
+  // Start initial load.
+  FileError load_error = FILE_ERROR_FAILED;
+  change_list_loader_->LoadIfNeeded(
+      DirectoryFetchInfo(),
+      google_apis::test_util::CreateCopyResultCallback(&load_error));
+  EXPECT_TRUE(change_list_loader_->IsRefreshing());
+
+  // CheckForUpdates() while loading.
+  change_list_loader_->CheckForUpdates(
+      google_apis::test_util::CreateCopyResultCallback(
+          &check_for_updates_error));
+
+  base::RunLoop().RunUntilIdle();
+  EXPECT_FALSE(change_list_loader_->IsRefreshing());
+  EXPECT_EQ(FILE_ERROR_OK, load_error);
+  EXPECT_EQ(FILE_ERROR_OK, check_for_updates_error);
+  EXPECT_LT(0, metadata_->GetLargestChangestamp());
+  EXPECT_EQ(1, drive_service_->resource_list_load_count());
+
+  int64 previous_changestamp = metadata_->GetLargestChangestamp();
+  // CheckForUpdates() results in no update.
+  change_list_loader_->CheckForUpdates(
+      google_apis::test_util::CreateCopyResultCallback(
+          &check_for_updates_error));
+  EXPECT_TRUE(change_list_loader_->IsRefreshing());
+  base::RunLoop().RunUntilIdle();
+  EXPECT_FALSE(change_list_loader_->IsRefreshing());
+  EXPECT_EQ(previous_changestamp, metadata_->GetLargestChangestamp());
+
+  // Add a file to the service.
+  google_apis::GDataErrorCode gdata_error = google_apis::GDATA_FILE_ERROR;
+  scoped_ptr<google_apis::ResourceEntry> gdata_entry;
+  drive_service_->AddNewFile(
+      "text/plain",
+      "content text",
+      drive_service_->GetRootResourceId(),
+      "New File",
+      false,  // shared_with_me
+      google_apis::test_util::CreateCopyResultCallback(&gdata_error,
+                                                       &gdata_entry));
+  base::RunLoop().RunUntilIdle();
+  ASSERT_EQ(google_apis::HTTP_CREATED, gdata_error);
+  ASSERT_TRUE(gdata_entry);
+
+  // CheckForUpdates() results in update.
+  TestChangeListLoaderObserver observer(change_list_loader_.get());
+  change_list_loader_->CheckForUpdates(
+      google_apis::test_util::CreateCopyResultCallback(
+          &check_for_updates_error));
+  EXPECT_TRUE(change_list_loader_->IsRefreshing());
+  base::RunLoop().RunUntilIdle();
+  EXPECT_FALSE(change_list_loader_->IsRefreshing());
+  EXPECT_LT(previous_changestamp, metadata_->GetLargestChangestamp());
+  EXPECT_EQ(1, observer.load_from_server_complete_count());
+  EXPECT_EQ(1U, observer.changed_directories().count(
+      util::GetDriveMyDriveRootPath()));
+
+  // The new file is found in the local metadata.
+  base::FilePath new_file_path =
+      util::GetDriveMyDriveRootPath().AppendASCII(gdata_entry->title());
+  ResourceEntry entry;
+  EXPECT_EQ(FILE_ERROR_OK,
+            metadata_->GetResourceEntryByPath(new_file_path, &entry));
 }
 
 }  // namespace internal

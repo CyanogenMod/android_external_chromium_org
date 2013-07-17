@@ -10,9 +10,9 @@
 #include "base/file_version_info.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/memory/shared_memory.h"
 #include "base/path_service.h"
 #include "base/scoped_native_library.h"
-#include "base/shared_memory.h"
 #include "base/strings/string_util.h"
 #include "base/version.h"
 #include "base/win/scoped_comptr.h"
@@ -39,7 +39,7 @@ class DllRedirectorLoadingTest : public testing::Test {
   static void SetUpTestCase() {
     // First ensure that we can find the built Chrome Frame DLL.
     base::FilePath build_chrome_frame_dll = GetChromeFrameBuildPath();
-    ASSERT_TRUE(file_util::PathExists(build_chrome_frame_dll));
+    ASSERT_TRUE(base::PathExists(build_chrome_frame_dll));
 
     // Then grab its version.
     scoped_ptr<FileVersionInfo> original_version_info(
@@ -61,9 +61,9 @@ class DllRedirectorLoadingTest : public testing::Test {
     // folder.
     original_chrome_frame_dll_ =
         original_version_dir.Append(build_chrome_frame_dll.BaseName());
-    ASSERT_TRUE(file_util::CopyFile(build_chrome_frame_dll,
-                                    original_chrome_frame_dll_));
-    ASSERT_TRUE(file_util::PathExists(original_chrome_frame_dll_));
+    ASSERT_TRUE(base::CopyFile(build_chrome_frame_dll,
+                               original_chrome_frame_dll_));
+    ASSERT_TRUE(base::PathExists(original_chrome_frame_dll_));
 
     // Temporary location for the new Chrome Frame DLL.
     base::FilePath temporary_new_chrome_frame_dll(
@@ -95,7 +95,7 @@ class DllRedirectorLoadingTest : public testing::Test {
         new_version_dir.Append(build_chrome_frame_dll.BaseName());
     ASSERT_TRUE(base::Move(temporary_new_chrome_frame_dll,
                            new_chrome_frame_dll_));
-    ASSERT_TRUE(file_util::PathExists(new_chrome_frame_dll_));
+    ASSERT_TRUE(base::PathExists(new_chrome_frame_dll_));
   }
 
   static void TearDownTestCase() {

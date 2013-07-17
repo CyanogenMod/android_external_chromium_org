@@ -160,7 +160,7 @@ FilePath MakeAbsoluteFilePath(const FilePath& input) {
 // which works both with and without the recursive flag.  I'm not sure we need
 // that functionality. If not, remove from file_util_win.cc, otherwise add it
 // here.
-bool Delete(const FilePath& path, bool recursive) {
+bool DeleteFile(const FilePath& path, bool recursive) {
   ThreadRestrictions::AssertIOAllowed();
   const char* path_str = path.value().c_str();
   stat_wrapper_t file_info;
@@ -197,31 +197,6 @@ bool Delete(const FilePath& path, bool recursive) {
   return success;
 }
 
-bool MoveUnsafe(const FilePath& from_path, const FilePath& to_path) {
-  ThreadRestrictions::AssertIOAllowed();
-  // Windows compatibility: if to_path exists, from_path and to_path
-  // must be the same type, either both files, or both directories.
-  stat_wrapper_t to_file_info;
-  if (CallStat(to_path.value().c_str(), &to_file_info) == 0) {
-    stat_wrapper_t from_file_info;
-    if (CallStat(from_path.value().c_str(), &from_file_info) == 0) {
-      if (S_ISDIR(to_file_info.st_mode) != S_ISDIR(from_file_info.st_mode))
-        return false;
-    } else {
-      return false;
-    }
-  }
-
-  if (rename(from_path.value().c_str(), to_path.value().c_str()) == 0)
-    return true;
-
-  if (!file_util::CopyDirectory(from_path, to_path, true))
-    return false;
-
-  Delete(from_path, true);
-  return true;
-}
-
 bool ReplaceFile(const FilePath& from_path,
                  const FilePath& to_path,
                  PlatformFileError* error) {
@@ -233,25 +208,10 @@ bool ReplaceFile(const FilePath& from_path,
   return false;
 }
 
-}  // namespace base
-
-// -----------------------------------------------------------------------------
-
-namespace file_util {
-
-using base::stat_wrapper_t;
-using base::CallStat;
-using base::CallLstat;
-using base::FileEnumerator;
-using base::FilePath;
-using base::MakeAbsoluteFilePath;
-using base::RealPath;
-using base::VerifySpecificPathControlledByUser;
-
 bool CopyDirectory(const FilePath& from_path,
                    const FilePath& to_path,
                    bool recursive) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   // Some old callers of CopyDirectory want it to support wildcards.
   // After some discussion, we decided to fix those callers.
   // Break loudly here if anyone tries to do this.
@@ -260,8 +220,8 @@ bool CopyDirectory(const FilePath& from_path,
   DCHECK(from_path.value().find('*') == std::string::npos);
 
   char top_dir[PATH_MAX];
-  if (base::strlcpy(top_dir, from_path.value().c_str(),
-                    arraysize(top_dir)) >= arraysize(top_dir)) {
+  if (strlcpy(top_dir, from_path.value().c_str(),
+              arraysize(top_dir)) >= arraysize(top_dir)) {
     return false;
   }
 
@@ -350,22 +310,38 @@ bool CopyDirectory(const FilePath& from_path,
 }
 
 bool PathExists(const FilePath& path) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   return access(path.value().c_str(), F_OK) == 0;
 }
 
 bool PathIsWritable(const FilePath& path) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   return access(path.value().c_str(), W_OK) == 0;
 }
 
 bool DirectoryExists(const FilePath& path) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   stat_wrapper_t file_info;
   if (CallStat(path.value().c_str(), &file_info) == 0)
     return S_ISDIR(file_info.st_mode);
   return false;
 }
+
+}  // namespace base
+
+// -----------------------------------------------------------------------------
+
+namespace file_util {
+
+using base::stat_wrapper_t;
+using base::CallStat;
+using base::CallLstat;
+using base::DirectoryExists;
+using base::FileEnumerator;
+using base::FilePath;
+using base::MakeAbsoluteFilePath;
+using base::RealPath;
+using base::VerifySpecificPathControlledByUser;
 
 bool ReadFromFD(int fd, char* buffer, size_t bytes) {
   size_t total_read = 0;
@@ -759,7 +735,7 @@ bool DetermineDevShmExecutable() {
   int fd = CreateAndOpenFdForTemporaryFile(FilePath("/dev/shm"), &path);
   if (fd >= 0) {
     ScopedFD shm_fd_closer(&fd);
-    Delete(path, false);
+    DeleteFile(path, false);
     long sysconf_result = sysconf(_SC_PAGESIZE);
     CHECK_GE(sysconf_result, 0);
     size_t pagesize = static_cast<size_t>(sysconf_result);
@@ -820,53 +796,6 @@ FilePath GetHomeDir() {
 
   // Last resort.
   return FilePath("/tmp");
-}
-
-bool CopyFileUnsafe(const FilePath& from_path, const FilePath& to_path) {
-  base::ThreadRestrictions::AssertIOAllowed();
-  int infile = HANDLE_EINTR(open(from_path.value().c_str(), O_RDONLY));
-  if (infile < 0)
-    return false;
-
-  int outfile = HANDLE_EINTR(creat(to_path.value().c_str(), 0666));
-  if (outfile < 0) {
-    ignore_result(HANDLE_EINTR(close(infile)));
-    return false;
-  }
-
-  const size_t kBufferSize = 32768;
-  std::vector<char> buffer(kBufferSize);
-  bool result = true;
-
-  while (result) {
-    ssize_t bytes_read = HANDLE_EINTR(read(infile, &buffer[0], buffer.size()));
-    if (bytes_read < 0) {
-      result = false;
-      break;
-    }
-    if (bytes_read == 0)
-      break;
-    // Allow for partial writes
-    ssize_t bytes_written_per_read = 0;
-    do {
-      ssize_t bytes_written_partial = HANDLE_EINTR(write(
-          outfile,
-          &buffer[bytes_written_per_read],
-          bytes_read - bytes_written_per_read));
-      if (bytes_written_partial < 0) {
-        result = false;
-        break;
-      }
-      bytes_written_per_read += bytes_written_partial;
-    } while (bytes_written_per_read < bytes_read);
-  }
-
-  if (HANDLE_EINTR(close(infile)) < 0)
-    result = false;
-  if (HANDLE_EINTR(close(outfile)) < 0)
-    result = false;
-
-  return result;
 }
 #endif  // !defined(OS_MACOSX)
 
@@ -946,3 +875,84 @@ int GetMaximumPathComponentLength(const FilePath& path) {
 }
 
 }  // namespace file_util
+
+namespace base {
+namespace internal {
+
+bool MoveUnsafe(const FilePath& from_path, const FilePath& to_path) {
+  ThreadRestrictions::AssertIOAllowed();
+  // Windows compatibility: if to_path exists, from_path and to_path
+  // must be the same type, either both files, or both directories.
+  stat_wrapper_t to_file_info;
+  if (CallStat(to_path.value().c_str(), &to_file_info) == 0) {
+    stat_wrapper_t from_file_info;
+    if (CallStat(from_path.value().c_str(), &from_file_info) == 0) {
+      if (S_ISDIR(to_file_info.st_mode) != S_ISDIR(from_file_info.st_mode))
+        return false;
+    } else {
+      return false;
+    }
+  }
+
+  if (rename(from_path.value().c_str(), to_path.value().c_str()) == 0)
+    return true;
+
+  if (!CopyDirectory(from_path, to_path, true))
+    return false;
+
+  DeleteFile(from_path, true);
+  return true;
+}
+
+#if !defined(OS_MACOSX)
+// Mac has its own implementation, this is for all other Posix systems.
+bool CopyFileUnsafe(const FilePath& from_path, const FilePath& to_path) {
+  ThreadRestrictions::AssertIOAllowed();
+  int infile = HANDLE_EINTR(open(from_path.value().c_str(), O_RDONLY));
+  if (infile < 0)
+    return false;
+
+  int outfile = HANDLE_EINTR(creat(to_path.value().c_str(), 0666));
+  if (outfile < 0) {
+    ignore_result(HANDLE_EINTR(close(infile)));
+    return false;
+  }
+
+  const size_t kBufferSize = 32768;
+  std::vector<char> buffer(kBufferSize);
+  bool result = true;
+
+  while (result) {
+    ssize_t bytes_read = HANDLE_EINTR(read(infile, &buffer[0], buffer.size()));
+    if (bytes_read < 0) {
+      result = false;
+      break;
+    }
+    if (bytes_read == 0)
+      break;
+    // Allow for partial writes
+    ssize_t bytes_written_per_read = 0;
+    do {
+      ssize_t bytes_written_partial = HANDLE_EINTR(write(
+          outfile,
+          &buffer[bytes_written_per_read],
+          bytes_read - bytes_written_per_read));
+      if (bytes_written_partial < 0) {
+        result = false;
+        break;
+      }
+      bytes_written_per_read += bytes_written_partial;
+    } while (bytes_written_per_read < bytes_read);
+  }
+
+  if (HANDLE_EINTR(close(infile)) < 0)
+    result = false;
+  if (HANDLE_EINTR(close(outfile)) < 0)
+    result = false;
+
+  return result;
+}
+#endif  // !defined(OS_MACOSX)
+
+}  // namespace internal
+}  // namespace base

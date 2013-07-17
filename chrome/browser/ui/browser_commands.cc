@@ -14,6 +14,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chrome_page_zoom.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -53,7 +54,6 @@
 #include "chrome/browser/ui/webui/ntp/app_launcher_handler.h"
 #include "chrome/browser/upgrade_detector.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
@@ -704,13 +704,10 @@ void ShowFindBar(Browser* browser) {
 void ShowWebsiteSettings(Browser* browser,
                          content::WebContents* web_contents,
                          const GURL& url,
-                         const SSLStatus& ssl,
-                         bool show_history) {
-  Profile* profile = Profile::FromBrowserContext(
-      web_contents->GetBrowserContext());
-
+                         const SSLStatus& ssl) {
   browser->window()->ShowWebsiteSettings(
-      profile, web_contents, url, ssl, show_history);
+      Profile::FromBrowserContext(web_contents->GetBrowserContext()),
+      web_contents, url, ssl);
 }
 
 void ShowChromeToMobileBubble(Browser* browser) {

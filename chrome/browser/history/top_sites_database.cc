@@ -6,7 +6,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
-#include "chrome/browser/diagnostics/sqlite_diagnostics.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/history/top_sites_database.h"
@@ -26,7 +25,7 @@ TopSitesDatabase::~TopSitesDatabase() {
 }
 
 bool TopSitesDatabase::Init(const base::FilePath& db_name) {
-  bool file_existed = file_util::PathExists(db_name);
+  bool file_existed = base::PathExists(db_name);
 
   if (!file_existed)
     may_need_history_migration_ = true;

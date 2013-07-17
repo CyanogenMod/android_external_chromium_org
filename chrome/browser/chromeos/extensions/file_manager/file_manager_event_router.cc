@@ -12,11 +12,13 @@
 #include "base/stl_util.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/values.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_manager_notifications.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
+#include "chrome/browser/chromeos/extensions/file_manager/mounted_disk_monitor.h"
 #include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/screen_locker.h"
 #include "chrome/browser/chromeos/net/connectivity_state_helper.h"
@@ -25,21 +27,14 @@
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/google_apis/task_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
-#include "chromeos/dbus/cros_disks_client.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/power_manager_client.h"
-#include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/login/login_state.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_source.h"
 #include "webkit/common/fileapi/file_system_types.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
-using chromeos::DBusThreadManager;
 using chromeos::disks::DiskMountManager;
 using content::BrowserThread;
 using drive::DriveIntegrationService;
@@ -49,19 +44,6 @@ namespace {
 
 const char kPathChanged[] = "changed";
 const char kPathWatchError[] = "error";
-
-DictionaryValue* DiskToDictionaryValue(
-    const DiskMountManager::Disk* disk) {
-  DictionaryValue* result = new DictionaryValue();
-  result->SetString("mountPath", disk->mount_path());
-  result->SetString("devicePath", disk->device_path());
-  result->SetString("label", disk->device_label());
-  result->SetString("deviceType",
-                    DiskMountManager::DeviceTypeToString(disk->device_type()));
-  result->SetInteger("totalSizeKB", disk->total_size_in_bytes() / 1024);
-  result->SetBoolean("readOnly", disk->is_read_only());
-  return result;
-}
 
 // Used as a callback for FileSystem::MarkCacheFileAsUnmounted().
 void OnMarkAsUnmounted(drive::FileError error) {
@@ -113,91 +95,12 @@ const char* MountErrorToString(chromeos::MountError error) {
   return "";
 }
 
-// Observes PowerManager and updates its state when the system suspends and
-// resumes. After the system resumes it will stay in "is_resuming" state for 5
-// seconds. This is to give DiskManager time to process device removed/added
-// events (events for the devices that were present before suspend should not
-// trigger any new notifications or file manager windows).
-// The delegate will go into the same state after screen is unlocked. Cros-disks
-// will not send events while the screen is locked. The events will be postponed
-// until the screen is unlocked. These have to be handled too.
-class SuspendStateDelegateImpl
-    : public chromeos::PowerManagerClient::Observer,
-      public chromeos::SessionManagerClient::Observer,
-      public FileManagerEventRouter::SuspendStateDelegate {
- public:
-  SuspendStateDelegateImpl()
-      : is_resuming_(false),
-        weak_factory_(this) {
-    DBusThreadManager::Get()->GetPowerManagerClient()->AddObserver(this);
-    DBusThreadManager::Get()->GetSessionManagerClient()->AddObserver(this);
-  }
-
-  virtual ~SuspendStateDelegateImpl() {
-    DBusThreadManager::Get()->GetPowerManagerClient()->RemoveObserver(this);
-    DBusThreadManager::Get()->GetSessionManagerClient()->RemoveObserver(this);
-  }
-
-  // chromeos::PowerManagerClient::Observer implementation.
-  virtual void SuspendImminent() OVERRIDE {
-    is_resuming_ = false;
-    weak_factory_.InvalidateWeakPtrs();
-  }
-
-  // chromeos::PowerManagerClient::Observer implementation.
-  virtual void SystemResumed(const base::TimeDelta& sleep_duration) OVERRIDE {
-    is_resuming_ = true;
-    // Undo any previous resets.
-    weak_factory_.InvalidateWeakPtrs();
-    base::MessageLoopProxy::current()->PostDelayedTask(
-        FROM_HERE,
-        base::Bind(&SuspendStateDelegateImpl::Reset,
-                   weak_factory_.GetWeakPtr()),
-        base::TimeDelta::FromSeconds(5));
-  }
-
-  // chromeos::SessionManagerClient::Observer implementation.
-  virtual void ScreenIsUnlocked() OVERRIDE {
-    is_resuming_ = true;
-    // Undo any previous resets.
-    weak_factory_.InvalidateWeakPtrs();
-    base::MessageLoopProxy::current()->PostDelayedTask(
-        FROM_HERE,
-        base::Bind(&SuspendStateDelegateImpl::Reset,
-                   weak_factory_.GetWeakPtr()),
-        base::TimeDelta::FromSeconds(5));
-  }
-
-  // FileManagerEventRouter::SuspendStateDelegate implementation.
-  virtual bool SystemIsResuming() const OVERRIDE {
-    return is_resuming_;
-  }
-
-  // FileManagerEventRouter::SuspendStateDelegate implementation.
-  virtual bool DiskWasPresentBeforeSuspend(
-      const DiskMountManager::Disk& disk) const OVERRIDE {
-    // TODO(tbarzic): Implement this. Blocked on http://crbug.com/153338.
-    return false;
-  }
-
- private:
-  void Reset() {
-    is_resuming_ = false;
-  }
-
-  bool is_resuming_;
-
-  base::WeakPtrFactory<SuspendStateDelegateImpl> weak_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(SuspendStateDelegateImpl);
-};
-
 void DirectoryExistsOnBlockingPool(const base::FilePath& directory_path,
                                    const base::Closure& success_callback,
                                    const base::Closure& failure_callback) {
   DCHECK(BrowserThread::GetBlockingPool()->RunsTasksOnCurrentThread());
 
-  if (file_util::DirectoryExists(directory_path))
+  if (base::DirectoryExists(directory_path))
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, success_callback);
   else
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, failure_callback);
@@ -364,7 +267,8 @@ void FileManagerEventRouter::ObserveFileSystemEvents() {
     chromeos::ConnectivityStateHelper::Get()->
         AddNetworkManagerObserver(this);
   }
-  suspend_state_delegate_.reset(new SuspendStateDelegateImpl());
+
+  mounted_disk_monitor_.reset(new MountedDiskMonitor());
 
   pref_change_registrar_->Init(profile_->GetPrefs());
 
@@ -435,33 +339,10 @@ void FileManagerEventRouter::RemoveFileWatch(
     return;
   // Remove the renderer process for this watch.
   iter->second->RemoveExtension(extension_id);
-  if (iter->second->GetRefCount() == 0) {
+  if (iter->second->ref_count() == 0) {
     delete iter->second;
     file_watchers_.erase(iter);
   }
-}
-
-void FileManagerEventRouter::MountDrive(
-    const base::Closure& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  // Pass back the gdata mount point path as source path.
-  const std::string& gdata_path = drive::util::GetDriveMountPointPathAsString();
-  DiskMountManager::MountPointInfo mount_info(
-      gdata_path,
-      gdata_path,
-      chromeos::MOUNT_TYPE_GOOGLE_DRIVE,
-      chromeos::disks::MOUNT_CONDITION_NONE);
-
-  // Raise mount event.
-  // We can pass chromeos::MOUNT_ERROR_NONE even when authentication is failed
-  // or network is unreachable. These two errors will be handled later.
-  OnMountEvent(DiskMountManager::MOUNTING,
-               chromeos::MOUNT_ERROR_NONE,
-               mount_info);
-
-  if (!callback.is_null())
-    callback.Run();
 }
 
 void FileManagerEventRouter::OnDiskEvent(
@@ -512,9 +393,7 @@ void FileManagerEventRouter::OnMountEvent(
     DiskMountManager* disk_mount_manager = DiskMountManager::GetInstance();
     const DiskMountManager::Disk* disk =
         disk_mount_manager->FindDiskBySourcePath(mount_info.source_path);
-    // TODO(tbarzic): DiskWasPresentBeforeSuspend is not yet functional. It
-    // always returns false.
-    if (!disk || suspend_state_delegate_->DiskWasPresentBeforeSuspend(*disk))
+    if (!disk || mounted_disk_monitor_->DiskIsRemounting(*disk))
       return;
 
     notifications_->ManageNotificationsOnMountCompleted(
@@ -529,7 +408,7 @@ void FileManagerEventRouter::OnMountEvent(
           *disk,
           base::FilePath::FromUTF8Unsafe(mount_info.mount_path));
   } else if (mount_info.mount_type == chromeos::MOUNT_TYPE_ARCHIVE) {
-    // Clear the "mounted" state for archive files in gdata cache
+    // Clear the "mounted" state for archive files in drive cache
     // when mounting failed or unmounting succeeded.
     if ((event == DiskMountManager::MOUNTING) !=
         (error_code == chromeos::MOUNT_ERROR_NONE)) {
@@ -694,17 +573,28 @@ void FileManagerEventRouter::OnDirectoryChanged(
 void FileManagerEventRouter::OnFileSystemMounted() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  MountDrive(base::Bind(&base::DoNothing));  // Callback does nothing.
+  const std::string& drive_path = drive::util::GetDriveMountPointPathAsString();
+  DiskMountManager::MountPointInfo mount_info(
+      drive_path,
+      drive_path,
+      chromeos::MOUNT_TYPE_GOOGLE_DRIVE,
+      chromeos::disks::MOUNT_CONDITION_NONE);
+
+  // Raise mount event.
+  // We can pass chromeos::MOUNT_ERROR_NONE even when authentication is failed
+  // or network is unreachable. These two errors will be handled later.
+  OnMountEvent(DiskMountManager::MOUNTING, chromeos::MOUNT_ERROR_NONE,
+               mount_info);
 }
 
 void FileManagerEventRouter::OnFileSystemBeingUnmounted() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // Raise a mount event to notify the File Manager.
-  const std::string& gdata_path = drive::util::GetDriveMountPointPathAsString();
+  const std::string& drive_path = drive::util::GetDriveMountPointPathAsString();
   DiskMountManager::MountPointInfo mount_info(
-      gdata_path,
-      gdata_path,
+      drive_path,
+      drive_path,
       chromeos::MOUNT_TYPE_GOOGLE_DRIVE,
       chromeos::disks::MOUNT_CONDITION_NONE);
   OnMountEvent(DiskMountManager::UNMOUNTING, chromeos::MOUNT_ERROR_NONE,
@@ -730,21 +620,21 @@ void FileManagerEventRouter::HandleFileWatchNotification(
   if (iter == file_watchers_.end()) {
     return;
   }
-  DispatchDirectoryChangeEvent(iter->second->GetVirtualPath(), got_error,
-                               iter->second->GetExtensions());
+  DispatchDirectoryChangeEvent(iter->second->virtual_path(), got_error,
+                               iter->second->extensions());
 }
 
 void FileManagerEventRouter::DispatchDirectoryChangeEvent(
     const base::FilePath& virtual_path,
     bool got_error,
-    const FileManagerEventRouter::ExtensionUsageRegistry& extensions) {
+    const FileWatcherExtensions::ExtensionUsageRegistry& extensions) {
   if (!profile_) {
     NOTREACHED();
     return;
   }
 
-  for (ExtensionUsageRegistry::const_iterator iter = extensions.begin();
-       iter != extensions.end(); ++iter) {
+  for (FileWatcherExtensions::ExtensionUsageRegistry::const_iterator iter =
+           extensions.begin(); iter != extensions.end(); ++iter) {
     GURL target_origin_url(extensions::Extension::GetBaseURLFromExtensionId(
         iter->first));
     GURL base_url = fileapi::GetFileSystemRootURI(target_origin_url,
@@ -967,121 +857,5 @@ void FileManagerEventRouter::OnFormatCompleted(
                                      device_path);
     notifications_->ShowNotification(FileManagerNotifications::FORMAT_FAIL,
                                      device_path);
-  }
-}
-
-FileManagerEventRouter::FileWatcherExtensions::FileWatcherExtensions(
-    const base::FilePath& virtual_path,
-    const std::string& extension_id,
-    bool is_remote_file_system)
-    : file_watcher_(NULL),
-      virtual_path_(virtual_path),
-      ref_count_(0),
-      is_remote_file_system_(is_remote_file_system),
-      weak_ptr_factory_(this) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  AddExtension(extension_id);
-}
-
-FileManagerEventRouter::FileWatcherExtensions::~FileWatcherExtensions() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  BrowserThread::DeleteSoon(BrowserThread::FILE, FROM_HERE, file_watcher_);
-}
-
-void FileManagerEventRouter::FileWatcherExtensions::AddExtension(
-    const std::string& extension_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  ExtensionUsageRegistry::iterator it = extensions_.find(extension_id);
-  if (it != extensions_.end()) {
-    it->second++;
-  } else {
-    extensions_.insert(ExtensionUsageRegistry::value_type(extension_id, 1));
-  }
-
-  ref_count_++;
-}
-
-void FileManagerEventRouter::FileWatcherExtensions::RemoveExtension(
-    const std::string& extension_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  ExtensionUsageRegistry::iterator it = extensions_.find(extension_id);
-
-  if (it != extensions_.end()) {
-    // If entry found - decrease it's count and remove if necessary
-    if (0 == it->second--) {
-      extensions_.erase(it);
-    }
-
-    ref_count_--;
-  } else {
-    // Might be reference counting problem - e.g. if some component of
-    // extension subscribes/unsubscribes correctly, but other component
-    // only unsubscribes, developer of first one might receive this message
-    LOG(FATAL) << " Extension [" << extension_id
-        << "] tries to unsubscribe from folder [" << local_path_.value()
-        << "] it isn't subscribed";
-  }
-}
-
-const FileManagerEventRouter::ExtensionUsageRegistry&
-FileManagerEventRouter::FileWatcherExtensions::GetExtensions() const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return extensions_;
-}
-
-unsigned int
-FileManagerEventRouter::FileWatcherExtensions::GetRefCount() const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return ref_count_;
-}
-
-const base::FilePath&
-FileManagerEventRouter::FileWatcherExtensions::GetVirtualPath() const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return virtual_path_;
-}
-
-void FileManagerEventRouter::FileWatcherExtensions::Watch(
-    const base::FilePath& local_path,
-    const base::FilePathWatcher::Callback& file_watcher_callback,
-    const BoolCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-  DCHECK(!file_watcher_);
-
-  local_path_ = local_path;  // For error message in RemoveExtension().
-
-  if (is_remote_file_system_) {
-    base::MessageLoopProxy::current()->PostTask(FROM_HERE,
-                                                base::Bind(callback, true));
-    return;
-  }
-
-  BrowserThread::PostTaskAndReplyWithResult(
-      BrowserThread::FILE,
-      FROM_HERE,
-      base::Bind(&CreateAndStartFilePathWatcher,
-                 local_path,
-                 google_apis::CreateRelayCallback(file_watcher_callback)),
-      base::Bind(
-          &FileManagerEventRouter::FileWatcherExtensions::OnWatcherStarted,
-          weak_ptr_factory_.GetWeakPtr(),
-          callback));
-}
-
-void FileManagerEventRouter::FileWatcherExtensions::OnWatcherStarted(
-    const BoolCallback& callback,
-    base::FilePathWatcher* file_watcher) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  if (file_watcher) {
-    file_watcher_ = file_watcher;
-    callback.Run(true);
-  } else {
-    callback.Run(false);
   }
 }

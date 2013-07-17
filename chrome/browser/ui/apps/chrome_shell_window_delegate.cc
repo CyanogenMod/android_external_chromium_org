@@ -9,6 +9,8 @@
 #include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/platform_util.h"
+#include "chrome/browser/printing/print_preview_message_handler.h"
+#include "chrome/browser/printing/print_view_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -29,19 +31,11 @@ namespace {
 
 bool disable_external_open_for_testing_ = false;
 
-class ShellWindowLinkDelegate : public content::WebContentsDelegate {
- public:
-  ShellWindowLinkDelegate();
-
- private:
-  virtual content::WebContents* OpenURLFromTab(
-      content::WebContents* source,
-      const content::OpenURLParams& params) OVERRIDE;
-
-  DISALLOW_COPY_AND_ASSIGN(ShellWindowLinkDelegate);
-};
+}  // namespace
 
 ShellWindowLinkDelegate::ShellWindowLinkDelegate() {}
+
+ShellWindowLinkDelegate::~ShellWindowLinkDelegate() {}
 
 // TODO(rockot): Add a test that exercises this code. See
 // http://crbug.com/254260.
@@ -52,8 +46,6 @@ content::WebContents* ShellWindowLinkDelegate::OpenURLFromTab(
   delete source;
   return NULL;
 }
-
-}  // namespace
 
 ChromeShellWindowDelegate::ChromeShellWindowDelegate() {}
 
@@ -66,6 +58,11 @@ void ChromeShellWindowDelegate::DisableExternalOpenForTesting() {
 void ChromeShellWindowDelegate::InitWebContents(
     content::WebContents* web_contents) {
   FaviconTabHelper::CreateForWebContents(web_contents);
+
+#if defined(ENABLE_PRINTING)
+  printing::PrintPreviewMessageHandler::CreateForWebContents(web_contents);
+  printing::PrintViewManager::CreateForWebContents(web_contents);
+#endif
 }
 
 content::WebContents* ChromeShellWindowDelegate::OpenURLFromTab(
@@ -92,7 +89,9 @@ void ChromeShellWindowDelegate::AddNewContents(
     bool user_gesture,
     bool* was_blocked) {
   if (!disable_external_open_for_testing_) {
-    new_contents->SetDelegate(new ShellWindowLinkDelegate());
+    if (!shell_window_link_delegate_.get())
+      shell_window_link_delegate_.reset(new ShellWindowLinkDelegate());
+    new_contents->SetDelegate(shell_window_link_delegate_.get());
     return;
   }
   Browser* browser =

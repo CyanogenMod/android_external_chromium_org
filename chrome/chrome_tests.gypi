@@ -195,7 +195,7 @@
         # Runtime dependencies
         '../ppapi/ppapi_internal.gyp:ppapi_tests',
         '../ui/web_dialogs/web_dialogs.gyp:web_dialogs_test_support',
-        '../webkit/support/webkit_support.gyp:webkit_resources',
+        '../webkit/webkit_resources.gyp:webkit_resources',
       ],
       'include_dirs': [
         '..',
@@ -264,6 +264,7 @@
         'browser/ui/views/constrained_window_views_browsertest.cc',
         'browser/ui/views/find_bar_controller_interactive_uitest.cc',
         'browser/ui/views/find_bar_host_interactive_uitest.cc',
+        'browser/ui/views/frame/browser_view_focus_uitest.cc',
         'browser/ui/views/frame/browser_view_interactive_uitest.cc',
         'browser/ui/views/keyboard_access_browsertest.cc',
         'browser/ui/views/location_bar/star_view_browsertest.cc',
@@ -388,8 +389,6 @@
           'sources': [
             'browser/chromeos/cros/cros_in_process_browser_test.cc',
             'browser/chromeos/cros/cros_in_process_browser_test.h',
-            'browser/chromeos/cros/cros_mock.cc',
-            'browser/chromeos/cros/cros_mock.h',
             'browser/chromeos/input_method/textinput_browsertest.cc',
             'browser/chromeos/input_method/textinput_surroundingtext_browsertest.cc',
             'browser/chromeos/input_method/textinput_test_helper.cc',
@@ -1187,8 +1186,6 @@
         'browser/chromeos/app_mode/kiosk_app_update_service_browsertest.cc',
         'browser/chromeos/cros/cros_in_process_browser_test.cc',
         'browser/chromeos/cros/cros_in_process_browser_test.h',
-        'browser/chromeos/cros/cros_mock.cc',
-        'browser/chromeos/cros/cros_mock.h',
         'browser/chromeos/drive/drive_integration_service_browsertest.cc',
         'browser/chromeos/drive/test_util.cc',
         'browser/chromeos/drive/test_util.h',
@@ -1342,6 +1339,8 @@
         'browser/extensions/api/system_info_display/system_info_display_apitest.cc',
         'browser/extensions/api/system_info_memory/system_info_memory_apitest.cc',
         'browser/extensions/api/system_info_storage/system_info_storage_apitest.cc',
+        'browser/extensions/api/system_private/system_private_apitest.cc',
+        'browser/extensions/api/system_info_storage/system_info_storage_eject_apitest.cc',
         'browser/extensions/api/tab_capture/tab_capture_apitest.cc',
         'browser/extensions/api/tabs/tabs_test.cc',
         'browser/extensions/api/terminal/terminal_private_apitest.cc',
@@ -1417,7 +1416,8 @@
         'browser/extensions/startup_helper_browsertest.cc',
         'browser/extensions/stubs_apitest.cc',
         'browser/extensions/subscribe_page_action_browsertest.cc',
-        'browser/extensions/api/system_private/system_private_apitest.cc',
+        'browser/extensions/test_extension_dir.cc',
+        'browser/extensions/test_extension_dir.h',
         'browser/extensions/window_controls_browsertest.cc',
         'browser/extensions/web_contents_browsertest.cc',
         'browser/extensions/web_view_browsertest.cc',
@@ -1454,13 +1454,17 @@
         'browser/media_galleries/media_galleries_dialog_controller_mock.h',
         'browser/metrics/metrics_service_browsertest.cc',
         'browser/net/cookie_policy_browsertest.cc',
+        'browser/net/dns_probe_browsertest.cc',
         'browser/net/ftp_browsertest.cc',
         'browser/net/load_timing_browsertest.cc',
         'browser/net/predictor_browsertest.cc',
         'browser/net/proxy_browsertest.cc',
         'browser/net/websocket_browsertest.cc',
         'browser/notifications/message_center_notifications_browsertest.cc',
+        'browser/notifications/sync_notifier/chrome_notifier_delegate_browsertest.cc',
         'browser/notifications/sync_notifier/notification_bitmap_fetcher_browsertest.cc',
+        'browser/notifications/sync_notifier/sync_notifier_test_utils.cc',
+        'browser/notifications/sync_notifier/sync_notifier_test_utils.h',
         'browser/page_cycler/page_cycler_browsertest.cc',
         'browser/password_manager/password_manager_browsertest.cc',
         'browser/performance_monitor/performance_monitor_browsertest.cc',
@@ -1474,7 +1478,6 @@
         'browser/policy/policy_prefs_browsertest.cc',
         'browser/policy/test_utils.cc',
         'browser/policy/test_utils.h',
-        'browser/popup_blocker_browsertest.cc',
         'browser/prefs/pref_service_browsertest.cc',
         'browser/prerender/prefetch_browsertest.cc',
         'browser/prerender/prerender_browsertest.cc',
@@ -1539,6 +1542,7 @@
         'browser/ui/ash/volume_controller_browsertest_chromeos.cc',
         'browser/ui/autofill/autofill_dialog_controller_browsertest.cc',
         'browser/ui/autofill/autofill_popup_controller_browsertest.cc',
+        'browser/ui/blocked_content/popup_blocker_browsertest.cc',
         'browser/ui/bookmarks/bookmark_browsertest.cc',
         'browser/ui/browser_browsertest.cc',
         'browser/ui/browser_close_browsertest.cc',
@@ -1985,7 +1989,8 @@
           # chrome_resources.gyp:{packed_extra_resources,packed_resources},
           # and can build this target standalone much faster.
           'dependencies': [
-            'chrome'
+            'chrome',
+            '../components/components.gyp:breakpad_stubs',
           ],
           'sources': [
             'browser/renderer_host/chrome_render_widget_host_view_mac_delegate_browsertest.cc',
@@ -2211,7 +2216,8 @@
           # chrome_resources.gyp:{packed_extra_resources,packed_resources},
           # and can build this target standalone much faster.
           'dependencies': [
-            'chrome'
+            'chrome',
+            '../components/components.gyp:breakpad_stubs',
           ],
         }],
         ['os_posix == 1 and OS != "mac" and OS != "android"', {
@@ -2228,9 +2234,8 @@
     {
       # To run the tests from page_load_test.cc on Linux, we need to:
       #
-      #   a) Build with Breakpad (GYP_DEFINES="linux_chromium_breakpad=1")
-      #   b) Run with CHROME_HEADLESS=1 to generate crash dumps.
-      #   c) Strip the binary if it's a debug build. (binary may be over 2GB)
+      #   a) Run with CHROME_HEADLESS=1 to generate crash dumps.
+      #   b) Strip the binary if it's a debug build. (binary may be over 2GB)
       'target_name': 'reliability_tests',
       'type': 'executable',
       'dependencies': [
@@ -2710,18 +2715,6 @@
       ],
       'sources': [
         'test/gpu/gpu_feature_browsertest.cc',
-      ],
-    },
-    {
-      # Executable that contains a subset of the gpu tests which are run with a
-      # software rasterizer.
-      'target_name': 'soft_gpu_tests',
-      'type': 'executable',
-      'includes': [
-        'test/gpu/test_support_gpu.gypi'
-      ],
-      'sources': [
-        'test/gpu/gpu_pixel_browsertest.cc',
       ],
     },
   ],
@@ -3385,9 +3378,9 @@
           'type': 'executable',
           'dependencies': [
             '../net/net.gyp:net',
-            'browser',
             '../base/base.gyp:base',
             '../base/base.gyp:test_support_base',
+            'utility',
           ],
           'sources': [
             'tools/service_discovery_sniffer/service_discovery_sniffer.h',

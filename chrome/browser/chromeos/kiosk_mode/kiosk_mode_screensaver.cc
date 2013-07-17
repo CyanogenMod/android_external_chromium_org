@@ -12,6 +12,7 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/login_display_host_impl.h"
@@ -21,7 +22,6 @@
 #include "chrome/browser/extensions/sandboxed_unpacker.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
@@ -51,7 +51,8 @@ class ScreensaverUnpackerClient
   virtual void OnUnpackSuccess(const base::FilePath& temp_dir,
                                const base::FilePath& extension_root,
                                const base::DictionaryValue* original_manifest,
-                               const Extension* extension) OVERRIDE;
+                               const Extension* extension,
+                               const SkBitmap& install_icon) OVERRIDE;
   virtual void OnUnpackFailure(const string16& error) OVERRIDE;
 
  protected:
@@ -74,7 +75,8 @@ void ScreensaverUnpackerClient::OnUnpackSuccess(
     const base::FilePath& temp_dir,
     const base::FilePath& extension_root,
     const base::DictionaryValue* original_manifest,
-    const Extension* extension) {
+    const Extension* extension,
+    const SkBitmap& install_icon) {
   content::BrowserThread::PostTask(
       content::BrowserThread::FILE,
       FROM_HERE,
@@ -186,12 +188,11 @@ void KioskModeScreensaver::ScreensaverPathCallback(
   scoped_refptr<SandboxedUnpacker> screensaver_unpacker(
       new SandboxedUnpacker(
           screensaver_crx,
-          true,
           extensions::Manifest::COMPONENT,
           Extension::NO_FLAGS,
           extensions_dir,
           content::BrowserThread::GetMessageLoopProxyForThread(
-              content::BrowserThread::FILE),
+              content::BrowserThread::FILE).get(),
           new ScreensaverUnpackerClient(
               screensaver_crx,
               base::Bind(
@@ -231,7 +232,7 @@ void KioskModeScreensaver::SetupScreensaver(
   }
 }
 
-void KioskModeScreensaver::OnUserActivity() {
+void KioskModeScreensaver::OnUserActivity(const ui::Event* event) {
   // We don't want to handle further user notifications; we'll either login
   // the user and close out or or at least close the screensaver.
   ash::Shell::GetInstance()->user_activity_detector()->RemoveObserver(this);

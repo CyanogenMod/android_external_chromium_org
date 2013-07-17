@@ -15,6 +15,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
 #include "base/values.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/history/page_usage_data.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/profiles/profile.h"
@@ -23,7 +24,6 @@
 #include "chrome/browser/ui/webui/ntp/suggestions_combiner.h"
 #include "chrome/browser/ui/webui/ntp/suggestions_source_top_sites.h"
 #include "chrome/browser/ui/webui/ntp/thumbnail_source.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/url_constants.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/navigation_controller.h"
@@ -34,7 +34,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/page_transition_types.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 using content::UserMetricsAction;
 
@@ -192,7 +192,7 @@ std::string SuggestionsHandler::GetDictionaryKeyForURL(const std::string& url) {
 }
 
 // static
-void SuggestionsHandler::RegisterUserPrefs(
+void SuggestionsHandler::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   // TODO(georgey) add user preferences (such as own blacklist) as needed.
 }

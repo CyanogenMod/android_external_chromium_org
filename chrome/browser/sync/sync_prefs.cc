@@ -11,9 +11,9 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile_io_data.h"
 #include "chrome/browser/sync/profile_sync_service.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/user_prefs/pref_registry_syncable.h"
@@ -45,8 +45,8 @@ SyncPrefs::~SyncPrefs() {
 }
 
 // static
-void SyncPrefs::RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry) {
-  // TODO(joi): Remove |prefs| parameter.
+void SyncPrefs::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterBooleanPref(
       prefs::kSyncHasSetupCompleted,
       false,
@@ -109,12 +109,6 @@ void SyncPrefs::RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterStringPref(
       prefs::kSyncSessionsGUID,
       std::string(),
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-
-  // Keeps track whether server experiments have been switched on for that user.
-  registry->RegisterBooleanPref(
-      prefs::kSyncFaviconsEnabled,
-      false,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 
   // We will start prompting people about new data types after the launch of

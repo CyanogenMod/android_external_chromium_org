@@ -9,6 +9,7 @@
 #include "base/compiler_specific.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "ppapi/c/pp_instance.h"
+#include "ppapi/c/pp_resource.h"
 
 namespace ppapi {
 namespace proxy {
@@ -34,10 +35,16 @@ class PepperRendererConnection : public BrowserMessageFilter {
   virtual ~PepperRendererConnection();
 
   void OnMsgCreateResourceHostFromHost(
+      int routing_id,
       int child_process_id,
       const ppapi::proxy::ResourceMessageCallParams& params,
       PP_Instance instance,
       const IPC::Message& nested_msg);
+
+  void OnMsgFileRefGetInfoForRenderer(
+      int routing_id,
+      int child_process_id,
+      const ppapi::proxy::ResourceMessageCallParams& params);
 
   DISALLOW_COPY_AND_ASSIGN(PepperRendererConnection);
 };

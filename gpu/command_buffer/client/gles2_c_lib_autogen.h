@@ -521,6 +521,12 @@ void GLES2RenderbufferStorageMultisampleEXT(
   gles2::GetGLContext()->RenderbufferStorageMultisampleEXT(
       target, samples, internalformat, width, height);
 }
+void GLES2FramebufferTexture2DMultisampleEXT(
+    GLenum target, GLenum attachment, GLenum textarget, GLuint texture,
+    GLint level, GLsizei samples) {
+  gles2::GetGLContext()->FramebufferTexture2DMultisampleEXT(
+      target, attachment, textarget, texture, level, samples);
+}
 void GLES2TexStorage2DEXT(
     GLenum target, GLsizei levels, GLenum internalFormat, GLsizei width,
     GLsizei height) {
@@ -755,7 +761,7 @@ void GLES2DrawBuffersEXT(GLsizei count, const GLenum* bufs) {
 
 namespace gles2 {
 
-NameToFunc g_gles2_function_table[] = {
+extern const NameToFunc g_gles2_function_table[] = {
   { "glActiveTexture", reinterpret_cast<GLES2FunctionPointer>(
       glActiveTexture), },
   { "glAttachShader", reinterpret_cast<GLES2FunctionPointer>(
@@ -986,6 +992,7 @@ NameToFunc g_gles2_function_table[] = {
   { "glBlitFramebufferEXT", reinterpret_cast<GLES2FunctionPointer>(
       glBlitFramebufferEXT), },
   { "glRenderbufferStorageMultisampleEXT", reinterpret_cast<GLES2FunctionPointer>(glRenderbufferStorageMultisampleEXT), },  // NOLINT
+  { "glFramebufferTexture2DMultisampleEXT", reinterpret_cast<GLES2FunctionPointer>(glFramebufferTexture2DMultisampleEXT), },  // NOLINT
   { "glTexStorage2DEXT", reinterpret_cast<GLES2FunctionPointer>(
       glTexStorage2DEXT), },
   { "glGenQueriesEXT", reinterpret_cast<GLES2FunctionPointer>(

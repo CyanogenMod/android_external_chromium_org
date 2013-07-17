@@ -67,6 +67,7 @@ ContextGroup::ContextGroup(
   id_namespaces_[id_namespaces::kTextures].reset(new IdAllocator);
   id_namespaces_[id_namespaces::kQueries].reset(new IdAllocator);
   id_namespaces_[id_namespaces::kVertexArrays].reset(new IdAllocator);
+  id_namespaces_[id_namespaces::kImages].reset(new IdAllocator);
 }
 
 static void GetIntegerv(GLenum pname, uint32* var) {
@@ -101,8 +102,14 @@ bool ContextGroup::Initialize(
     return false;
   }
   GLint max_samples = 0;
-  if (feature_info_->feature_flags().chromium_framebuffer_multisample) {
-    glGetIntegerv(GL_MAX_SAMPLES, &max_samples);
+  if (feature_info_->feature_flags().chromium_framebuffer_multisample ||
+      feature_info_->feature_flags().multisampled_render_to_texture) {
+    if (feature_info_->feature_flags(
+            ).use_img_for_multisampled_render_to_texture) {
+      glGetIntegerv(GL_MAX_SAMPLES_IMG, &max_samples);
+    } else {
+      glGetIntegerv(GL_MAX_SAMPLES, &max_samples);
+    }
   }
 
   if (feature_info_->feature_flags().ext_draw_buffers) {

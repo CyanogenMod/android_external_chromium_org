@@ -47,10 +47,14 @@ class AutofillDriverImpl : public AutofillDriver,
   // AutofillDriver:
   virtual content::WebContents* GetWebContents() OVERRIDE;
   virtual bool RendererIsAvailable() OVERRIDE;
+  virtual void SetRendererActionOnFormDataReception(
+      RendererFormDataAction action) OVERRIDE;
   virtual void SendFormDataToRenderer(int query_id,
                                       const FormData& data) OVERRIDE;
   virtual void SendAutofillTypePredictionsToRenderer(
       const std::vector<FormStructure*>& forms) OVERRIDE;
+  virtual void RendererShouldClearFilledForm() OVERRIDE;
+  virtual void RendererShouldClearPreviewedForm() OVERRIDE;
 
   AutofillExternalDelegate* autofill_external_delegate() {
     return autofill_external_delegate_.get();

@@ -112,7 +112,6 @@ LOCAL_SRC_FILES := \
 	cc/output/software_frame_data.cc \
 	cc/output/software_output_device.cc \
 	cc/output/software_renderer.cc \
-	cc/output/texture_copier.cc \
 	cc/quads/checkerboard_draw_quad.cc \
 	cc/quads/content_draw_quad_base.cc \
 	cc/quads/debug_border_draw_quad.cc \
@@ -148,6 +147,7 @@ LOCAL_SRC_FILES := \
 	cc/resources/prioritized_resource.cc \
 	cc/resources/prioritized_resource_manager.cc \
 	cc/resources/priority_calculator.cc \
+	cc/resources/raster_mode.cc \
 	cc/resources/raster_worker_pool.cc \
 	cc/resources/resource.cc \
 	cc/resources/resource_pool.cc \
@@ -227,8 +227,9 @@ MY_CFLAGS_Debug := \
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
-	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
@@ -342,8 +343,9 @@ MY_CFLAGS_Release := \
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
-	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \

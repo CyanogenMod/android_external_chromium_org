@@ -8,7 +8,8 @@
 
 #include "base/bind.h"
 #include "base/file_util.h"
-#include "base/prefs/pref_service.h"
+#include "base/files/scoped_temp_dir.h"
+#include "base/prefs/testing_pref_service.h"
 #include "base/run_loop.h"
 #include "base/stl_util.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
@@ -17,7 +18,6 @@
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/google_apis/test_util.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -88,7 +88,8 @@ class JobListLogger : public JobListObserver {
 class JobSchedulerTest : public testing::Test {
  public:
   JobSchedulerTest()
-      : profile_(new TestingProfile) {
+      : pref_service_(new TestingPrefServiceSimple) {
+    test_util::RegisterDrivePrefs(pref_service_->registry());
   }
 
   virtual void SetUp() OVERRIDE {
@@ -103,9 +104,9 @@ class JobSchedulerTest : public testing::Test {
     fake_drive_service_->LoadAppListForDriveApi(
         "drive/applist.json");
 
-    scheduler_.reset(new JobScheduler(profile_.get(),
+    scheduler_.reset(new JobScheduler(pref_service_.get(),
                                       fake_drive_service_.get(),
-                                      base::MessageLoopProxy::current()));
+                                      base::MessageLoopProxy::current().get()));
     scheduler_->SetDisableThrottling(true);
   }
 
@@ -141,7 +142,7 @@ class JobSchedulerTest : public testing::Test {
   }
 
   content::TestBrowserThreadBundle thread_bundle_;
-  scoped_ptr<TestingProfile> profile_;
+  scoped_ptr<TestingPrefServiceSimple> pref_service_;
   scoped_ptr<test_util::FakeNetworkChangeNotifier>
       fake_network_change_notifier_;
   scoped_ptr<FakeDriveService> fake_drive_service_;
@@ -325,7 +326,7 @@ TEST_F(JobSchedulerTest, CopyResource) {
   scheduler_->CopyResource(
       "file:2_file_resource_id",  // resource ID
       "folder:1_folder_resource_id",  // parent resource ID
-      "New Document",  // new name
+      "New Document",  // new title
       google_apis::test_util::CreateCopyResultCallback(&error, &entry));
   base::RunLoop().RunUntilIdle();
 
@@ -341,7 +342,7 @@ TEST_F(JobSchedulerTest, CopyHostedDocument) {
 
   scheduler_->CopyHostedDocument(
       "document:5_document_resource_id",  // resource ID
-      "New Document",  // new name
+      "New Document",  // new title
       google_apis::test_util::CreateCopyResultCallback(&error, &entry));
   base::RunLoop().RunUntilIdle();
 
@@ -356,7 +357,7 @@ TEST_F(JobSchedulerTest, RenameResource) {
 
   scheduler_->RenameResource(
       "file:2_file_resource_id",
-      "New Name",
+      "New Title",
       google_apis::test_util::CreateCopyResultCallback(&error));
   base::RunLoop().RunUntilIdle();
 
@@ -506,7 +507,7 @@ TEST_F(JobSchedulerTest, DownloadFileCellularDisabled) {
   ConnectToCellular();
 
   // Disable fetching over cellular network.
-  profile_->GetPrefs()->SetBoolean(prefs::kDisableDriveOverCellular, true);
+  pref_service_->SetBoolean(prefs::kDisableDriveOverCellular, true);
 
   // Try to get a file in the background
   base::ScopedTempDir temp_dir;
@@ -558,7 +559,7 @@ TEST_F(JobSchedulerTest, DownloadFileWimaxDisabled) {
   ConnectToWimax();
 
   // Disable fetching over cellular network.
-  profile_->GetPrefs()->SetBoolean(prefs::kDisableDriveOverCellular, true);
+  pref_service_->SetBoolean(prefs::kDisableDriveOverCellular, true);
 
   // Try to get a file in the background
   base::ScopedTempDir temp_dir;
@@ -610,7 +611,7 @@ TEST_F(JobSchedulerTest, DownloadFileCellularEnabled) {
   ConnectToCellular();
 
   // Enable fetching over cellular network.
-  profile_->GetPrefs()->SetBoolean(prefs::kDisableDriveOverCellular, false);
+  pref_service_->SetBoolean(prefs::kDisableDriveOverCellular, false);
 
   // Try to get a file in the background
   base::ScopedTempDir temp_dir;
@@ -654,7 +655,7 @@ TEST_F(JobSchedulerTest, DownloadFileWimaxEnabled) {
   ConnectToWimax();
 
   // Enable fetching over cellular network.
-  profile_->GetPrefs()->SetBoolean(prefs::kDisableDriveOverCellular, false);
+  pref_service_->SetBoolean(prefs::kDisableDriveOverCellular, false);
 
   // Try to get a file in the background
   base::ScopedTempDir temp_dir;
@@ -700,7 +701,7 @@ TEST_F(JobSchedulerTest, JobInfo) {
 
   // Disable background upload/download.
   ConnectToWimax();
-  profile_->GetPrefs()->SetBoolean(prefs::kDisableDriveOverCellular, true);
+  pref_service_->SetBoolean(prefs::kDisableDriveOverCellular, true);
 
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
@@ -725,7 +726,7 @@ TEST_F(JobSchedulerTest, JobInfo) {
   expected_types.insert(TYPE_RENAME_RESOURCE);
   scheduler_->RenameResource(
       "file:2_file_resource_id",
-      "New Name",
+      "New Title",
       google_apis::test_util::CreateCopyResultCallback(&error));
   expected_types.insert(TYPE_DOWNLOAD_FILE);
   scheduler_->DownloadFile(

@@ -11,9 +11,9 @@
 #include "chrome/browser/ui/android/window_android_helper.h"
 #include "content/public/browser/android/content_view_core.h"
 #include "content/public/browser/web_contents.h"
-#include "googleurl/src/gurl.h"
 #include "jni/TestShellTab_jni.h"
 #include "ui/android/window_android.h"
+#include "url/gurl.h"
 
 using base::android::ConvertJavaStringToUTF8;
 using base::android::ConvertUTF8ToJavaString;
@@ -130,3 +130,10 @@ static jint Init(JNIEnv* env,
       reinterpret_cast<WindowAndroid*>(window_android_ptr));
   return reinterpret_cast<jint>(tab);
 }
+
+int64 TestShellTab::GetSyncId() const {
+  NOTIMPLEMENTED();
+  return 0;
+}
+
+void TestShellTab::SetSyncId(int64 sync_id) { NOTIMPLEMENTED(); }

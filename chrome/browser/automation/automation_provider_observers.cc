@@ -28,6 +28,7 @@
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_host.h"
@@ -67,7 +68,6 @@
 #include "chrome/browser/ui/webui/ntp/recently_closed_tabs_handler.h"
 #include "chrome/common/automation_constants.h"
 #include "chrome/common/automation_messages.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/content_settings_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/manifest.h"
@@ -1240,9 +1240,8 @@ void InfoBarCountObserver::Observe(
 }
 
 void InfoBarCountObserver::CheckCount() {
-  InfoBarService* infobar_service =
-      InfoBarService::FromWebContents(web_contents_);
-  if (infobar_service->infobar_count() != target_count_)
+  if (InfoBarService::FromWebContents(web_contents_)->infobar_count() !=
+      target_count_)
     return;
 
   if (automation_.get()) {

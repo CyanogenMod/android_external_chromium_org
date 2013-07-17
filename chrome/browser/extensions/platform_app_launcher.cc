@@ -146,8 +146,8 @@ class PlatformAppPathLauncher
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
     // If the file doesn't exist, or is a directory, launch with no launch data.
-    if (!file_util::PathExists(file_path_) ||
-        file_util::DirectoryExists(file_path_)) {
+    if (!base::PathExists(file_path_) ||
+        base::DirectoryExists(file_path_)) {
       LOG(WARNING) << "No file exists with path " << file_path_.value();
       BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, base::Bind(
               &PlatformAppPathLauncher::LaunchWithNoLaunchData, this));

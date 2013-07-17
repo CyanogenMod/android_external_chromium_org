@@ -164,6 +164,7 @@ void ShillPropertyHandler::SetTechnologyEnabled(
         technology,
         base::Bind(&base::DoNothing),
         base::Bind(&network_handler::ShillErrorCallbackFunction,
+                   "SetTechnologyEnabled Failed",
                    technology, error_callback));
   }
 }
@@ -176,6 +177,7 @@ void ShillPropertyHandler::SetCheckPortalList(
       value,
       base::Bind(&base::DoNothing),
       base::Bind(&network_handler::ShillErrorCallbackFunction,
+                 "SetCheckPortalList Failed",
                  "", network_handler::ErrorCallback()));
 }
 
@@ -184,6 +186,7 @@ void ShillPropertyHandler::RequestScan() const {
       "",
       base::Bind(&base::DoNothing),
       base::Bind(&network_handler::ShillErrorCallbackFunction,
+                 "RequestScan Failed",
                  "", network_handler::ErrorCallback()));
 }
 
@@ -192,6 +195,7 @@ void ShillPropertyHandler::ConnectToBestServices() const {
   shill_manager_->ConnectToBestServices(
       base::Bind(&base::DoNothing),
       base::Bind(&network_handler::ShillErrorCallbackFunction,
+                 "ConnectToBestServices Failed",
                  "", network_handler::ErrorCallback()));
 }
 
@@ -457,11 +461,13 @@ void ShillPropertyHandler::UpdateUninitializedTechnologies(
 void ShillPropertyHandler::EnableTechnologyFailed(
     const std::string& technology,
     const network_handler::ErrorCallback& error_callback,
-    const std::string& error_name,
-    const std::string& error_message) {
+    const std::string& dbus_error_name,
+    const std::string& dbus_error_message) {
   enabling_technologies_.erase(technology);
   network_handler::ShillErrorCallbackFunction(
-      technology, error_callback, error_name, error_message);
+      "EnableTechnology Failed",
+      technology, error_callback,
+      dbus_error_name, dbus_error_message);
 }
 
 void ShillPropertyHandler::GetPropertiesCallback(
@@ -548,27 +554,28 @@ void ShillPropertyHandler::GetIPConfigCallback(
                                      service_path.c_str(), call_status));
     return;
   }
-  const base::Value* ip_address;
-  if (!properties.GetWithoutPathExpansion(flimflam::kAddressProperty,
-                                          &ip_address)) {
-    LOG(ERROR) << "Failed to get IP Address property for: " << service_path;
-    return;
-  }
-  listener_->UpdateNetworkServiceProperty(
-      service_path,
-      NetworkState::IPConfigProperty(flimflam::kAddressProperty),
-      *ip_address);
+  UpdateIPConfigProperty(service_path, properties,
+                         flimflam::kAddressProperty);
+  UpdateIPConfigProperty(service_path, properties,
+                         flimflam::kNameServersProperty);
+  UpdateIPConfigProperty(service_path, properties,
+                         flimflam::kPrefixlenProperty);
+  UpdateIPConfigProperty(service_path, properties,
+                         flimflam::kGatewayProperty);
+}
 
-  const base::Value* dns_servers = NULL;
-  if (!properties.GetWithoutPathExpansion(
-          flimflam::kNameServersProperty, &dns_servers)) {
-    LOG(ERROR) << "Failed to get Name servers property for: " << service_path;
+void ShillPropertyHandler::UpdateIPConfigProperty(
+    const std::string& service_path,
+    const base::DictionaryValue& properties,
+    const char* property) {
+  const base::Value* value;
+  if (!properties.GetWithoutPathExpansion(property, &value)) {
+    LOG(ERROR) << "Failed to get IPConfig property: " << property
+               << ", for: " << service_path;
     return;
   }
   listener_->UpdateNetworkServiceProperty(
-      service_path,
-      NetworkState::IPConfigProperty(flimflam::kNameServersProperty),
-      *dns_servers);
+      service_path, NetworkState::IPConfigProperty(property), *value);
 }
 
 void ShillPropertyHandler::NetworkDevicePropertyChangedCallback(

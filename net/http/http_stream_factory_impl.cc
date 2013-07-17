@@ -8,7 +8,6 @@
 
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/net_log.h"
 #include "net/base/net_util.h"
 #include "net/http/http_network_session.h"
@@ -19,6 +18,7 @@
 #include "net/http/http_stream_factory_impl_job.h"
 #include "net/http/http_stream_factory_impl_request.h"
 #include "net/spdy/spdy_http_stream.h"
+#include "url/gurl.h"
 
 namespace net {
 
@@ -238,8 +238,10 @@ PortAlternateProtocolPair HttpStreamFactoryImpl::GetAlternateProtocolRequestFor(
   } else {
     DCHECK_EQ(QUIC, alternate.protocol);
     if (!session_->params().enable_quic ||
-        !original_url.SchemeIs("http"))
-      return kNoAlternateProtocol;
+        !(original_url.SchemeIs("http") ||
+          session_->params().enable_quic_https)) {
+        return kNoAlternateProtocol;
+    }
     // TODO(rch):  Figure out how to make QUIC iteract with PAC
     // scripts.  By not re-writing the URL, we will query the PAC script
     // for the proxy to use to reach the original URL via TCP.  But

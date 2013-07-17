@@ -68,11 +68,7 @@ class SelectFilePolicy;
 
 namespace fileapi {
 class ExternalMountPoints;
-class FileSystemMountPointProvider;
-}
-
-namespace quota {
-class SpecialStoragePolicy;
+class FileSystemBackend;
 }
 
 namespace content {
@@ -81,6 +77,7 @@ class AccessTokenStore;
 class BrowserChildProcessHost;
 class BrowserContext;
 class BrowserMainParts;
+class BrowserPluginGuestDelegate;
 class BrowserPpapiHost;
 class BrowserURLHandler;
 class LocationProvider;
@@ -143,10 +140,13 @@ class CONTENT_EXPORT ContentBrowserClient {
   // If the guest was created via navigation, then |extra_params| will be
   // non-NULL. |extra_params| are parameters passed to the BrowserPlugin object
   // element by the content embedder. These parameters may include the API to
-  // enable for the given guest.
+  // enable for the given guest. |guest_delegate| is a return parameter of
+  // the delegate in the content embedder that will service the guest in the
+  // content layer. The content layer takes ownership of the |guest_delegate|.
   virtual void GuestWebContentsCreated(
       WebContents* guest_web_contents,
       WebContents* opener_web_contents,
+      BrowserPluginGuestDelegate** guest_delegate,
       scoped_ptr<base::DictionaryValue> extra_params) {}
 
   // Notifies that a guest WebContents has been attached to a BrowserPlugin.
@@ -257,6 +257,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual bool ShouldSwapProcessesForRedirect(ResourceContext* resource_context,
                                               const GURL& current_url,
                                               const GURL& new_url);
+
+  // Returns true if the passed in URL should be assigned as the site of the
+  // current SiteInstance, if it does not yet have a site.
+  virtual bool ShouldAssignSiteForURL(const GURL& url);
 
   // See CharacterEncoding's comment.
   virtual std::string GetCanonicalEncodingNameByAliasName(
@@ -553,19 +557,14 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual void GetAdditionalAllowedSchemesForFileSystem(
       std::vector<std::string>* additional_schemes) {}
 
-  // Returns additional MountPointProviders for FileSystem API.
-  // |special_storage_policy| and |external_mount_points| are needed in the
-  // additional MountPointProviders. |special_storage_policy| is used to grant
-  // permissions. |external_mount_points| has mount points to create objects
-  // returned by additional MountPointProviders. (Note: although it is named
-  // "provider", it acts creating objects based on mount points provided by
-  // |external_mount_points|).
-  virtual void GetAdditionalFileSystemMountPointProviders(
+  // Returns additional file system backends for FileSystem API.
+  // |browser_context| is needed in the additional FileSystemBackends.
+  // It has mount points to create objects returned by additional
+  // FileSystemBackends, and SpecialStoragePolicy for permission granting.
+  virtual void GetAdditionalFileSystemBackends(
+      BrowserContext* browser_context,
       const base::FilePath& storage_partition_path,
-      quota::SpecialStoragePolicy* special_storage_policy,
-      fileapi::ExternalMountPoints* external_mount_points,
-      ScopedVector<fileapi::FileSystemMountPointProvider>*
-          additional_providers) {}
+      ScopedVector<fileapi::FileSystemBackend>* additional_backends) {}
 
   // Allows an embedder to return its own LocationProvider implementation.
   // Return NULL to use the default one for the platform to be created.

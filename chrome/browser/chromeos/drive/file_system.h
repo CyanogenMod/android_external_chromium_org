@@ -17,7 +17,7 @@
 #include "chrome/browser/google_apis/gdata_errorcode.h"
 
 class PrefChangeRegistrar;
-class Profile;
+class PrefService;
 
 namespace base {
 struct PlatformFileInfo;
@@ -43,11 +43,13 @@ class SyncClient;
 }  // namespace internal
 
 namespace file_system {
+class CloseFileOperation;
 class CopyOperation;
 class CreateDirectoryOperation;
 class CreateFileOperation;
 class DownloadOperation;
 class MoveOperation;
+class OpenFileOperation;
 class OperationObserver;
 class RemoveOperation;
 class SearchOperation;
@@ -61,7 +63,7 @@ class FileSystem : public FileSystemInterface,
                    public internal::ChangeListLoaderObserver,
                    public file_system::OperationObserver {
  public:
-  FileSystem(Profile* profile,
+  FileSystem(PrefService* pref_service,
              internal::FileCache* cache,
              DriveServiceInterface* drive_service,
              JobScheduler* scheduler,
@@ -75,9 +77,6 @@ class FileSystem : public FileSystemInterface,
   virtual void AddObserver(FileSystemObserver* observer) OVERRIDE;
   virtual void RemoveObserver(FileSystemObserver* observer) OVERRIDE;
   virtual void CheckForUpdates() OVERRIDE;
-  virtual void GetResourceEntryById(
-      const std::string& resource_id,
-      const GetResourceEntryCallback& callback) OVERRIDE;
   virtual void Search(const std::string& search_query,
                       const GURL& next_url,
                       const SearchCallback& callback) OVERRIDE;
@@ -94,6 +93,7 @@ class FileSystem : public FileSystemInterface,
       const base::FilePath& remote_dest_file_path,
       const FileOperationCallback& callback) OVERRIDE;
   virtual void OpenFile(const base::FilePath& file_path,
+                        OpenMode open_mode,
                         const OpenFileCallback& callback) OVERRIDE;
   virtual void CloseFile(const base::FilePath& file_path,
                          const FileOperationCallback& callback) OVERRIDE;
@@ -126,29 +126,17 @@ class FileSystem : public FileSystemInterface,
                      const FileOperationCallback& callback) OVERRIDE;
   virtual void GetFileByPath(const base::FilePath& file_path,
                              const GetFileCallback& callback) OVERRIDE;
-  virtual void GetFileByResourceId(
-      const std::string& resource_id,
-      const ClientContext& context,
-      const GetFileCallback& get_file_callback,
-      const google_apis::GetContentCallback& get_content_callback) OVERRIDE;
   virtual void GetFileContentByPath(
       const base::FilePath& file_path,
       const GetFileContentInitializedCallback& initialized_callback,
       const google_apis::GetContentCallback& get_content_callback,
       const FileOperationCallback& completion_callback) OVERRIDE;
-  virtual void UpdateFileByResourceId(
-      const std::string& resource_id,
-      const ClientContext& context,
-      const FileOperationCallback& callback) OVERRIDE;
   virtual void GetResourceEntryByPath(
       const base::FilePath& file_path,
       const GetResourceEntryCallback& callback) OVERRIDE;
   virtual void ReadDirectoryByPath(
       const base::FilePath& directory_path,
       const ReadDirectoryCallback& callback) OVERRIDE;
-  virtual void RefreshDirectory(
-      const base::FilePath& directory_path,
-      const FileOperationCallback& callback) OVERRIDE;
   virtual void GetAvailableSpace(
       const GetAvailableSpaceCallback& callback) OVERRIDE;
   virtual void GetMetadata(
@@ -220,40 +208,6 @@ class FileSystem : public FileSystemInterface,
                    const std::string& resource_id,
                    FileError error);
 
-  // Part of OpenFile(). Called after the file downloading is completed.
-  void OpenFileAfterFileDownloaded(
-      const base::FilePath& file_path,
-      const OpenFileCallback& callback,
-      FileError error,
-      const base::FilePath& local_file_path,
-      scoped_ptr<ResourceEntry> entry);
-
-  // Part of OpenFile(). Called after the cache file is marked dirty.
-  void OpenFileAfterMarkDirty(
-      const std::string& resource_id,
-      const std::string& md5,
-      const OpenFileCallback& callback,
-      FileError error);
-
-  // Invoked at the last step of OpenFile. It removes |file_path| from the
-  // current set of opened files if |result| is an error, and then invokes the
-  // |callback| function.
-  void OnOpenFileFinished(const base::FilePath& file_path,
-                          const OpenFileCallback& callback,
-                          FileError result,
-                          const base::FilePath& cache_file_path);
-
-  // Invoked during the process of CloseFile. What is done here is as follows:
-  // 1) Gets resource_id and md5 of the entry at |file_path|.
-  // 2) Commits the modification to the cache system.
-  // 3) Removes the |file_path| from the remembered set of opened files.
-  // 4) Invokes the user-supplied |callback|.
-  // |callback| must not be null.
-  void CloseFileAfterGetResourceEntry(const base::FilePath& file_path,
-                                      const FileOperationCallback& callback,
-                                      FileError error,
-                                      scoped_ptr<ResourceEntry> entry);
-
   // Callback for handling about resource fetch.
   void OnGetAboutResource(
       const GetAvailableSpaceCallback& callback,
@@ -312,22 +266,6 @@ class FileSystem : public FileSystemInterface,
       FileError error,
       scoped_ptr<ResourceEntryVector> entries);
 
-  // Part of GetResourceEntryById(). Called after
-  // ResourceMetadata::GetResourceEntryById() is complete.
-  // |callback| must not be null.
-  void GetResourceEntryByIdAfterGetEntry(
-      const GetResourceEntryCallback& callback,
-      FileError error,
-      scoped_ptr<ResourceEntry> entry);
-
-  // Part of RefreshDirectory(). Called after
-  // GetResourceEntryByPath() is complete.
-  void RefreshDirectoryAfterGetResourceEntry(
-      const base::FilePath& directory_path,
-      const FileOperationCallback& callback,
-      FileError error,
-      scoped_ptr<ResourceEntry> entry);
-
   // Part of GetEntryByResourceId and GetEntryByPath. Checks whether there is a
   // local dirty cache for the entry, and if there is, replace the
   // PlatformFileInfo part of the |entry| with the locally modified info.
@@ -357,8 +295,8 @@ class FileSystem : public FileSystemInterface,
       FileError error,
       scoped_ptr<ResourceEntry> entry);
 
-  // The profile hosts the FileSystem via DriveIntegrationService.
-  Profile* profile_;
+  // Used to get Drive related preferences.
+  PrefService* pref_service_;
 
   // Sub components owned by DriveIntegrationService.
   internal::FileCache* cache_;
@@ -375,8 +313,9 @@ class FileSystem : public FileSystemInterface,
   // True if hosted documents should be hidden.
   bool hide_hosted_docs_;
 
-  // The set of paths opened by OpenFile but not yet closed by CloseFile.
-  std::set<base::FilePath> open_files_;
+  // Map from opened file paths to the number how many the file is opened.
+  // The value should be incremented by OpenFile, and decremented by CloseFile.
+  std::map<base::FilePath, int> open_files_;
 
   scoped_ptr<PrefChangeRegistrar> pref_registrar_;
 
@@ -392,10 +331,12 @@ class FileSystem : public FileSystemInterface,
   base::FilePath temporary_file_directory_;
 
   // Implementation of each file system operation.
+  scoped_ptr<file_system::CloseFileOperation> close_file_operation_;
   scoped_ptr<file_system::CopyOperation> copy_operation_;
   scoped_ptr<file_system::CreateDirectoryOperation> create_directory_operation_;
   scoped_ptr<file_system::CreateFileOperation> create_file_operation_;
   scoped_ptr<file_system::MoveOperation> move_operation_;
+  scoped_ptr<file_system::OpenFileOperation> open_file_operation_;
   scoped_ptr<file_system::RemoveOperation> remove_operation_;
   scoped_ptr<file_system::TouchOperation> touch_operation_;
   scoped_ptr<file_system::TruncateOperation> truncate_operation_;

@@ -85,11 +85,6 @@
                 '../ui/compositor/compositor.gyp:compositor',
               ],
             }],
-            ['use_ash==1', {
-              'sources': [
-                '<(SHARED_INTERMEDIATE_DIR)/ash/ash_resources/ash_wallpaper_resources.rc',
-              ],
-            }],
             ['OS=="win" and target_arch=="ia32"', {
               # Add a dependency to custom import library for user32 delay
               # imports only in x86 builds.
@@ -111,7 +106,7 @@
                 '../net/net.gyp:net_resources',
                 '../third_party/cld/cld.gyp:cld',
                 '../ui/views/views.gyp:views',
-                '../webkit/support/webkit_support.gyp:webkit_resources',
+                '../webkit/webkit_resources.gyp:webkit_resources',
               ],
               'sources': [
                 'app/chrome_command_ids.h',
@@ -256,7 +251,6 @@
                 'app/chrome_main.cc',
                 'app/chrome_main_delegate.cc',
                 'app/chrome_main_delegate.h',
-                'app/chrome_main_app_mode_mac.mm',
                 'app/chrome_main_mac.mm',
                 'app/chrome_main_mac.h',
               ],
@@ -283,14 +277,20 @@
                 ['mac_breakpad_compiled_in==1', {
                   'dependencies': [
                     '../breakpad/breakpad.gyp:breakpad',
+                    '../components/components.gyp:breakpad_component',
                     'app/policy/cloud_policy_codegen.gyp:policy',
                   ],
                   'sources': [
                     'app/breakpad_mac.mm',
                     'app/breakpad_mac.h',
+                    'app/chrome_breakpad_client.cc',
+                    'app/chrome_breakpad_client.h',
                   ],
                 }, {  # else: mac_breakpad_compiled_in!=1
                   # No Breakpad, put in the stubs.
+                  'dependencies': [
+                    '../components/components.gyp:breakpad_stubs',
+                  ],
                   'sources': [
                     'app/breakpad_mac_stubs.mm',
                     'app/breakpad_mac.h',

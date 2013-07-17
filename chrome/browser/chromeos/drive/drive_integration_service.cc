@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/file_util.h"
 #include "base/prefs/pref_service.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/drive/debug_info_collector.h"
@@ -157,20 +158,22 @@ DriveIntegrationService::DriveIntegrationService(
   } else if (util::IsDriveV2ApiEnabled()) {
     drive_service_.reset(new DriveAPIService(
         g_browser_process->system_request_context(),
-        blocking_task_runner_,
+        blocking_task_runner_.get(),
         GURL(google_apis::DriveApiUrlGenerator::kBaseUrlForProduction),
         GURL(google_apis::DriveApiUrlGenerator::kBaseDownloadUrlForProduction),
         GetDriveUserAgent()));
   } else {
     drive_service_.reset(new GDataWapiService(
         g_browser_process->system_request_context(),
-        blocking_task_runner_,
+        blocking_task_runner_.get(),
         GURL(google_apis::GDataWapiUrlGenerator::kBaseUrlForProduction),
         GURL(google_apis::GDataWapiUrlGenerator::kBaseDownloadUrlForProduction),
         GetDriveUserAgent()));
   }
   scheduler_.reset(new JobScheduler(
-      profile_, drive_service_.get(), blocking_task_runner_.get()));
+      profile_->GetPrefs(),
+      drive_service_.get(),
+      blocking_task_runner_.get()));
   metadata_storage_.reset(new internal::ResourceMetadataStorage(
       cache_root_directory_.Append(util::kMetadataDirectory),
       blocking_task_runner_.get()));
@@ -186,7 +189,7 @@ DriveIntegrationService::DriveIntegrationService(
 
   file_system_.reset(
       test_file_system ? test_file_system : new FileSystem(
-          profile_,
+          profile_->GetPrefs(),
           cache_.get(),
           drive_service_.get(),
           scheduler_.get(),
@@ -210,7 +213,7 @@ void DriveIntegrationService::Initialize() {
   file_system_->Initialize();
 
   base::PostTaskAndReplyWithResult(
-      blocking_task_runner_,
+      blocking_task_runner_.get(),
       FROM_HERE,
       base::Bind(&InitializeMetadata,
                  cache_root_directory_,
@@ -273,6 +276,11 @@ void DriveIntegrationService::ClearCacheAndRemountFileSystem(
   DCHECK(!callback.is_null());
 
   RemoveDriveMountPoint();
+  // Reloading the file system will clear the resource metadata.
+  file_system_->Reload();
+  // Reload the Drive app registry too.
+  drive_app_registry_->Update();
+
   cache_->ClearAllOnUIThread(base::Bind(
       &DriveIntegrationService::AddBackDriveMountPoint,
       weak_ptr_factory_.GetWeakPtr(),
@@ -295,18 +303,6 @@ void DriveIntegrationService::AddBackDriveMountPoint(
   AddDriveMountPoint();
 
   callback.Run(true);
-}
-
-void DriveIntegrationService::ReloadAndRemountFileSystem() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  RemoveDriveMountPoint();
-  file_system_->Reload();
-  drive_app_registry_->Update();
-
-  // Reload() is asynchronous. But we can add back the mount point right away
-  // because every operation waits until loading is complete.
-  AddDriveMountPoint();
 }
 
 void DriveIntegrationService::AddDriveMountPoint() {

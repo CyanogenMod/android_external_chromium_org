@@ -5,11 +5,11 @@
 #include "chrome/browser/file_select_helper.h"
 
 #include <string>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/file_util.h"
 #include "base/files/file_enumerator.h"
-#include "base/platform_file.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -46,27 +46,8 @@ const int kFileSelectEnumerationId = -1;
 
 void NotifyRenderViewHost(RenderViewHost* render_view_host,
                           const std::vector<ui::SelectedFileInfo>& files,
-                          ui::SelectFileDialog::Type dialog_type) {
-  const int kReadFilePermissions =
-      base::PLATFORM_FILE_OPEN |
-      base::PLATFORM_FILE_READ |
-      base::PLATFORM_FILE_EXCLUSIVE_READ |
-      base::PLATFORM_FILE_ASYNC;
-
-  const int kWriteFilePermissions =
-      base::PLATFORM_FILE_CREATE |
-      base::PLATFORM_FILE_CREATE_ALWAYS |
-      base::PLATFORM_FILE_OPEN |
-      base::PLATFORM_FILE_OPEN_ALWAYS |
-      base::PLATFORM_FILE_OPEN_TRUNCATED |
-      base::PLATFORM_FILE_WRITE |
-      base::PLATFORM_FILE_WRITE_ATTRIBUTES |
-      base::PLATFORM_FILE_ASYNC;
-
-  int permissions = kReadFilePermissions;
-  if (dialog_type == ui::SelectFileDialog::SELECT_SAVEAS_FILE)
-    permissions = kWriteFilePermissions;
-  render_view_host->FilesSelectedInChooser(files, permissions);
+                          FileChooserParams::Mode dialog_mode) {
+  render_view_host->FilesSelectedInChooser(files, dialog_mode);
 }
 
 // Converts a list of FilePaths to a list of ui::SelectedFileInfo.
@@ -97,7 +78,8 @@ FileSelectHelper::FileSelectHelper(Profile* profile)
       web_contents_(NULL),
       select_file_dialog_(),
       select_file_types_(),
-      dialog_type_(ui::SelectFileDialog::SELECT_OPEN_FILE) {
+      dialog_type_(ui::SelectFileDialog::SELECT_OPEN_FILE),
+      dialog_mode_(FileChooserParams::Open) {
 }
 
 FileSelectHelper::~FileSelectHelper() {
@@ -148,7 +130,7 @@ void FileSelectHelper::FileSelectedWithExtraInfo(
 
   std::vector<ui::SelectedFileInfo> files;
   files.push_back(file);
-  NotifyRenderViewHost(render_view_host_, files, dialog_type_);
+  NotifyRenderViewHost(render_view_host_, files, dialog_mode_);
 
   // No members should be accessed from here on.
   RunFileChooserEnd();
@@ -171,7 +153,7 @@ void FileSelectHelper::MultiFilesSelectedWithExtraInfo(
   if (!render_view_host_)
     return;
 
-  NotifyRenderViewHost(render_view_host_, files, dialog_type_);
+  NotifyRenderViewHost(render_view_host_, files, dialog_mode_);
 
   // No members should be accessed from here on.
   RunFileChooserEnd();
@@ -185,7 +167,7 @@ void FileSelectHelper::FileSelectionCanceled(void* params) {
   // empty vector.
   NotifyRenderViewHost(
       render_view_host_, std::vector<ui::SelectedFileInfo>(),
-      dialog_type_);
+      dialog_mode_);
 
   // No members should be accessed from here on.
   RunFileChooserEnd();
@@ -241,7 +223,7 @@ void FileSelectHelper::OnListDone(int id, int error) {
       FilePathListToSelectedFileInfoList(entry->results_);
 
   if (id == kFileSelectEnumerationId)
-    NotifyRenderViewHost(entry->rvh_, selected_files, dialog_type_);
+    NotifyRenderViewHost(entry->rvh_, selected_files, dialog_mode_);
   else
     entry->rvh_->DirectoryEnumerationFinished(id, entry->results_);
 
@@ -387,6 +369,7 @@ void FileSelectHelper::RunFileChooserOnUIThread(
   select_file_dialog_ = ui::SelectFileDialog::Create(
       this, new ChromeSelectFilePolicy(web_contents_));
 
+  dialog_mode_ = params.mode;
   switch (params.mode) {
     case FileChooserParams::Open:
       dialog_type_ = ui::SelectFileDialog::SELECT_OPEN_FILE;
@@ -415,8 +398,8 @@ void FileSelectHelper::RunFileChooserOnUIThread(
 
 #if defined(OS_ANDROID)
   // Android needs the original MIME types and an additional capture value.
-  std::vector<string16> accept_types(params.accept_types);
-  accept_types.push_back(params.capture);
+  std::pair<std::vector<string16>, bool> accept_types =
+      std::make_pair(params.accept_types, params.capture);
 #endif
 
   select_file_dialog_->SelectFile(

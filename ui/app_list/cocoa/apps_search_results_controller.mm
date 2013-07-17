@@ -5,6 +5,7 @@
 #import "ui/app_list/cocoa/apps_search_results_controller.h"
 
 #include "base/mac/foundation_util.h"
+#include "base/mac/mac_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "ui/app_list/app_list_constants.h"
@@ -37,6 +38,7 @@ const NSBackgroundStyle kBackgroundHovered = NSBackgroundStyleRaised;
 - (app_list::AppListModel::SearchResults*)searchResults;
 - (void)activateSelection;
 - (BOOL)moveSelectionByDelta:(NSInteger)delta;
+- (NSMenu*)contextMenuForRow:(NSInteger)rowIndex;
 
 @end
 
@@ -64,8 +66,12 @@ const NSBackgroundStyle kBackgroundHovered = NSBackgroundStyleRaised;
 @end
 
 // Simple extension to NSTableView that passes mouseDown events to the
-// delegate so that drag events can be detected.
+// delegate so that drag events can be detected, and forwards requests for
+// context menus.
 @interface AppsSearchResultsTableView : NSTableView
+
+- (AppsSearchResultsController*)controller;
+
 @end
 
 @implementation AppsSearchResultsController
@@ -122,7 +128,7 @@ const NSBackgroundStyle kBackgroundHovered = NSBackgroundStyleRaised;
   [tableView_ setRowHeight:kPreferredRowHeight];
   [tableView_ setGridStyleMask:NSTableViewSolidHorizontalGridLineMask];
   [tableView_ setGridColor:
-      gfx::SkColorToCalibratedNSColor(app_list::kResultBorderColor)];
+      gfx::SkColorToSRGBNSColor(app_list::kResultBorderColor)];
   [tableView_ setBackgroundColor:[NSColor clearColor]];
   [tableView_ setAction:@selector(tableViewClicked:)];
   [tableView_ setDelegate:self];
@@ -222,6 +228,16 @@ const NSBackgroundStyle kBackgroundHovered = NSBackgroundStyleRaised;
   return YES;
 }
 
+- (NSMenu*)contextMenuForRow:(NSInteger)rowIndex {
+  DCHECK(bridge_);
+  if (rowIndex < 0)
+    return nil;
+
+  [tableView_ selectRowIndexes:[NSIndexSet indexSetWithIndex:rowIndex]
+          byExtendingSelection:NO];
+  return bridge_->MenuForItem(rowIndex);
+}
+
 - (NSInteger)numberOfRowsInTableView:(NSTableView*)aTableView {
   return bridge_ ? [self searchResults]->item_count() : 0;
 }
@@ -292,8 +308,10 @@ const NSBackgroundStyle kBackgroundHovered = NSBackgroundStyleRaised;
   if ((self = [super init])) {
     attributedStringValue_.reset(
         [[self createResultsAttributedStringWithModel:result] retain]);
-    if (!result->icon().isNull())
-      resultIcon_.reset([gfx::NSImageFromImageSkia(result->icon()) retain]);
+    if (!result->icon().isNull()) {
+      resultIcon_.reset([gfx::NSImageFromImageSkiaWithColorSpace(
+          result->icon(), base::mac::GetSRGBColorSpace()) retain]);
+    }
   }
   return self;
 }
@@ -306,7 +324,7 @@ const NSBackgroundStyle kBackgroundHovered = NSBackgroundStyleRaised;
   [paragraphStyle setLineBreakMode:NSLineBreakByTruncatingTail];
   NSDictionary* defaultAttributes = @{
       NSForegroundColorAttributeName:
-          gfx::SkColorToCalibratedNSColor(app_list::kResultDefaultTextColor),
+          gfx::SkColorToSRGBNSColor(app_list::kResultDefaultTextColor),
       NSParagraphStyleAttributeName: paragraphStyle
   };
 
@@ -333,13 +351,13 @@ const NSBackgroundStyle kBackgroundHovered = NSBackgroundStyleRaised;
 
     if (it->styles & app_list::SearchResult::Tag::DIM) {
       NSColor* dimmedColor =
-          gfx::SkColorToCalibratedNSColor(app_list::kResultDimmedTextColor);
+          gfx::SkColorToSRGBNSColor(app_list::kResultDimmedTextColor);
       [text addAttribute:NSForegroundColorAttributeName
                    value:dimmedColor
                    range:it->range.ToNSRange()];
     } else if (it->styles & app_list::SearchResult::Tag::URL) {
       NSColor* urlColor =
-          gfx::SkColorToCalibratedNSColor(app_list::kResultURLTextColor);
+          gfx::SkColorToSRGBNSColor(app_list::kResultURLTextColor);
       [text addAttribute:NSForegroundColorAttributeName
                    value:urlColor
                    range:it->range.ToNSRange()];
@@ -374,10 +392,20 @@ const NSBackgroundStyle kBackgroundHovered = NSBackgroundStyleRaised;
 
 @implementation AppsSearchResultsTableView
 
+- (AppsSearchResultsController*)controller {
+  return base::mac::ObjCCastStrict<AppsSearchResultsController>(
+      [self delegate]);
+}
+
 - (void)mouseDown:(NSEvent*)theEvent {
-  [base::mac::ObjCCastStrict<AppsSearchResultsController>([self delegate])
-      mouseDown:theEvent];
+  [[self controller] mouseDown:theEvent];
   [super mouseDown:theEvent];
+}
+
+- (NSMenu*)menuForEvent:(NSEvent*)theEvent {
+  NSPoint pointInView = [self convertPoint:[theEvent locationInWindow]
+                                  fromView:nil];
+  return [[self controller] contextMenuForRow:[self rowAtPoint:pointInView]];
 }
 
 @end
@@ -388,9 +416,9 @@ const NSBackgroundStyle kBackgroundHovered = NSBackgroundStyleRaised;
                inView:(NSView*)controlView {
   if ([self backgroundStyle] != kBackgroundNormal) {
     if ([self backgroundStyle] == kBackgroundSelected)
-      [gfx::SkColorToCalibratedNSColor(app_list::kSelectedColor) set];
+      [gfx::SkColorToSRGBNSColor(app_list::kSelectedColor) set];
     else
-      [gfx::SkColorToCalibratedNSColor(app_list::kHighlightedColor) set];
+      [gfx::SkColorToSRGBNSColor(app_list::kHighlightedColor) set];
 
     // Extend up by one pixel to draw over cell border.
     NSRect backgroundRect = cellFrame;

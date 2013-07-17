@@ -111,12 +111,12 @@ HRESULT RegisterPortMonitor(bool install, const base::FilePath& install_path) {
   if (install) {
     base::FilePath source_path =
         install_path.Append(GetPortMonitorDllName());
-    if (!file_util::CopyFile(source_path, target_path)) {
+    if (!base::CopyFile(source_path, target_path)) {
       LOG(ERROR) << "Unable copy port monitor dll from " <<
           source_path.value() << " to " << target_path.value();
       return GetLastHResult();
     }
-  } else if (!file_util::PathExists(target_path)) {
+  } else if (!base::PathExists(target_path)) {
     // Already removed.  Just "succeed" silently.
     return S_OK;
   }
@@ -156,9 +156,9 @@ HRESULT RegisterPortMonitor(bool install, const base::FilePath& install_path) {
       return HRESULT_FROM_WIN32(exit_code);
     }
   } else {
-    if (!base::Delete(target_path, false)) {
+    if (!base::DeleteFile(target_path, false)) {
       SpoolerServiceCommand("stop");
-      bool deleted = base::Delete(target_path, false);
+      bool deleted = base::DeleteFile(target_path, false);
       SpoolerServiceCommand("start");
 
       if(!deleted) {
@@ -237,11 +237,11 @@ void ReadyDriverDependencies(const base::FilePath& destination) {
     driver_cache_path = driver_cache_path.Append(L"Driver Cache\\i386");
     for (size_t i = 0; i < arraysize(kDependencyList); ++i) {
       base::FilePath dst_path = destination.Append(kDependencyList[i]);
-      if (!file_util::PathExists(dst_path)) {
+      if (!base::PathExists(dst_path)) {
         base::FilePath src_path = driver_cache_path.Append(kDependencyList[i]);
-        if (!file_util::PathExists(src_path))
+        if (!base::PathExists(src_path))
           src_path = GetSystemPath(kDependencyList[i]);
-        file_util::CopyFile(src_path, dst_path);
+        base::CopyFile(src_path, dst_path);
       }
     }
   }
@@ -257,7 +257,7 @@ HRESULT InstallDriver(const base::FilePath& install_path) {
   // Add all files. AddPrinterDriverEx will removes unnecessary.
   for (size_t i = 0; i < arraysize(kDependencyList); ++i) {
     base::FilePath file_path = temp_path.path().Append(kDependencyList[i]);
-    if (file_util::PathExists(file_path))
+    if (base::PathExists(file_path))
       dependent_array.push_back(file_path.value());
     else
       LOG(WARNING) << "File is missing: " << file_path.BaseName().value();
@@ -269,7 +269,7 @@ HRESULT InstallDriver(const base::FilePath& install_path) {
   base::FilePath ui_path = temp_path.path().Append(kUiDriverName);
   base::FilePath ui_help_path = temp_path.path().Append(kHelpName);
 
-  if (!file_util::PathExists(xps_path)) {
+  if (!base::PathExists(xps_path)) {
     SetGoogleUpdateError(kGoogleUpdateProductId,
                          LoadLocalString(IDS_ERROR_NO_XPS));
     return HRESULT_FROM_WIN32(ERROR_BAD_DRIVER);
@@ -391,7 +391,7 @@ bool IsOSSupported() {
 HRESULT RegisterVirtualDriver(const base::FilePath& install_path) {
   HRESULT result = S_OK;
 
-  DCHECK(file_util::DirectoryExists(install_path));
+  DCHECK(base::DirectoryExists(install_path));
   if (!IsOSSupported()) {
     LOG(ERROR) << "Requires XP SP3 or later.";
     return HRESULT_FROM_WIN32(ERROR_OLD_WIN_VERSION);
@@ -477,10 +477,10 @@ HRESULT DoRegister(const base::FilePath& install_path) {
 HRESULT DoDelete(const base::FilePath& install_path) {
   if (install_path.value().empty())
     return E_INVALIDARG;
-  if (!file_util::DirectoryExists(install_path))
+  if (!base::DirectoryExists(install_path))
     return S_FALSE;
   Sleep(5000);  // Give parent some time to exit.
-  return base::Delete(install_path, true) ? S_OK : E_FAIL;
+  return base::DeleteFile(install_path, true) ? S_OK : E_FAIL;
 }
 
 HRESULT DoInstall(const base::FilePath& install_path) {
@@ -492,8 +492,8 @@ HRESULT DoInstall(const base::FilePath& install_path) {
   base::FilePath old_install_path = GetInstallLocation(kUninstallId);
   if (!old_install_path.value().empty() &&
       install_path != old_install_path) {
-    if (file_util::DirectoryExists(old_install_path))
-      base::Delete(old_install_path, true);
+    if (base::DirectoryExists(old_install_path))
+      base::DeleteFile(old_install_path, true);
   }
   CreateUninstallKey(kUninstallId, LoadLocalString(IDS_DRIVER_NAME),
                      kUninstallSwitch);
@@ -509,7 +509,7 @@ HRESULT ExecuteCommands() {
 
   base::FilePath exe_path;
   if (FAILED(PathService::Get(base::DIR_EXE, &exe_path)) ||
-      !file_util::DirectoryExists(exe_path)) {
+      !base::DirectoryExists(exe_path)) {
     return HRESULT_FROM_WIN32(ERROR_PATH_NOT_FOUND);
   }
 

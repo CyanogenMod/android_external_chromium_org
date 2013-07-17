@@ -15,10 +15,10 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/mock_render_process_host.h"
-#include "googleurl/src/gurl.h"
 #include "ipc/ipc_test_sink.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -32,7 +32,7 @@ class FakePageDelegate : public InstantPage::Delegate {
   MOCK_METHOD2(InstantSupportDetermined,
                void(const content::WebContents* contents,
                     bool supports_instant));
-  MOCK_METHOD1(InstantPageRenderViewGone,
+  MOCK_METHOD1(InstantPageRenderProcessGone,
                void(const content::WebContents* contents));
   MOCK_METHOD2(InstantPageAboutToNavigateMainFrame,
                void(const content::WebContents* contents,

@@ -8,11 +8,12 @@
 
 #include "base/prefs/pref_service.h"
 #include "build/build_config.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/first_run/first_run.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/sync_prefs.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_service.h"
@@ -57,7 +58,7 @@ Profile::Delegate::~Delegate() {
 const char Profile::kProfileKey[] = "__PROFILE__";
 
 // static
-void Profile::RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry) {
+void Profile::RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterBooleanPref(
       prefs::kSearchSuggestEnabled,
       true,
@@ -110,6 +111,10 @@ void Profile::RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterStringPref(
       prefs::kDefaultApps,
       "install",
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kSpeechRecognitionFilterProfanities,
+      true,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 #if defined(OS_CHROMEOS)
   // TODO(dilmah): For OS_CHROMEOS we maintain kApplicationLocale in both
@@ -164,7 +169,7 @@ bool Profile::IsGuestSession() const {
       chromeos::switches::kGuestSession);
   return is_guest_session;
 #else
-  return false;
+  return GetPath() == ProfileManager::GetGuestProfilePath();
 #endif
 }
 

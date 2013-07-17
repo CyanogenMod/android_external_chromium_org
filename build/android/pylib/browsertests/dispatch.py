@@ -6,12 +6,14 @@
 
 import logging
 import os
+import shutil
 import sys
 
 from pylib import android_commands
 from pylib import cmd_helper
 from pylib import constants
 from pylib import ports
+from pylib.base import base_test_result
 from pylib.base import shard
 from pylib.gtest import dispatch as gtest_dispatch
 from pylib.gtest import test_runner
@@ -23,7 +25,15 @@ from common import unittest_util
 
 
 def Dispatch(options):
-  """Dispatches all content_browsertests."""
+  """Dispatches all content_browsertests.
+
+  Args:
+    options: optparse.Options object containing command-line options
+  Returns:
+    A tuple of (base_test_result.TestRunResults object, exit code).
+  Raises:
+    Exception: Failed to reset the test server port.
+  """
 
   attached_devices = []
   if options.test_device:
@@ -33,7 +43,7 @@ def Dispatch(options):
 
   if not attached_devices:
     logging.critical('A device must be attached and online.')
-    return 1
+    return (base_test_result.TestRunResults(), constants.ERROR_EXIT_CODE)
 
   # Reset the test port allocation. It's important to do it before starting
   # to dispatch any tests.
@@ -45,6 +55,9 @@ def Dispatch(options):
   options.test_suite = os.path.join(test_suite_dir,
                                     'apks',
                                     constants.BROWSERTEST_SUITE_NAME + '.apk')
+
+  gtest_dispatch._GenerateDepsDirUsingIsolate(
+      constants.BROWSERTEST_SUITE_NAME, options.build_type)
 
   # Constructs a new TestRunner with the current options.
   def RunnerFactory(device, shard_index):
@@ -75,20 +88,21 @@ def Dispatch(options):
   # TODO(nileshagrawal): remove this abnormally long setup timeout once fewer
   # files are pushed to the devices for content_browsertests: crbug.com/138275
   setup_timeout = 20 * 60  # 20 minutes
-  test_results = shard.ShardAndRunTests(RunnerFactory, attached_devices,
-                                        all_tests, options.build_type,
-                                        setup_timeout=setup_timeout,
-                                        test_timeout=None,
-                                        num_retries=options.num_retries)
+  test_results, exit_code = shard.ShardAndRunTests(
+      RunnerFactory, attached_devices, all_tests, options.build_type,
+      setup_timeout=setup_timeout, test_timeout=None,
+      num_retries=options.num_retries)
   report_results.LogFull(
       results=test_results,
       test_type='Unit test',
       test_package=constants.BROWSERTEST_SUITE_NAME,
       build_type=options.build_type,
       flakiness_server=options.flakiness_dashboard_server)
-  report_results.PrintAnnotation(test_results)
 
-  return len(test_results.GetNotPass())
+  if os.path.isdir(constants.ISOLATE_DEPS_DIR):
+    shutil.rmtree(constants.ISOLATE_DEPS_DIR)
+
+  return (test_results, exit_code)
 
 
 def _FilterTests(all_enabled_tests):

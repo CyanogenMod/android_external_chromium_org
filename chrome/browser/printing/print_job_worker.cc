@@ -11,8 +11,8 @@
 #include "base/message_loop.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/printing/print_job.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
@@ -40,12 +40,13 @@ void NotificationCallback(PrintJobWorkerOwner* print_job,
                           JobEventDetails::Type detail_type,
                           PrintedDocument* document,
                           PrintedPage* page) {
-  JobEventDetails* details = new JobEventDetails(detail_type, document, page);
+  scoped_refptr<JobEventDetails> details(new JobEventDetails(detail_type,
+                                                             document, page));
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_PRINT_JOB_EVENT,
       // We know that is is a PrintJob object in this circumstance.
       content::Source<PrintJob>(static_cast<PrintJob*>(print_job)),
-      content::Details<JobEventDetails>(details));
+      content::Details<JobEventDetails>(details.get()));
 }
 
 PrintJobWorker::PrintJobWorker(PrintJobWorkerOwner* owner)

@@ -173,7 +173,7 @@ int32_t PepperFlashFileMessageFilter::OnDeleteFileOrDir(
         base::PLATFORM_FILE_ERROR_ACCESS_DENIED);
   }
 
-  bool result = base::Delete(full_path, recursive);
+  bool result = base::DeleteFile(full_path, recursive);
   return ppapi::PlatformFileErrorToPepperError(result ?
       base::PLATFORM_FILE_OK : base::PLATFORM_FILE_ERROR_ACCESS_DENIED);
 }
@@ -245,7 +245,7 @@ int32_t PepperFlashFileMessageFilter::OnCreateTemporaryFile(
   base::FilePath validated_dir_path = ValidateAndConvertPepperFilePath(
       dir_path, kReadPermissions | kWritePermissions);
   if (validated_dir_path.empty() ||
-      (!file_util::DirectoryExists(validated_dir_path) &&
+      (!base::DirectoryExists(validated_dir_path) &&
        !file_util::CreateDirectory(validated_dir_path))) {
     return ppapi::PlatformFileErrorToPepperError(
         base::PLATFORM_FILE_ERROR_ACCESS_DENIED);

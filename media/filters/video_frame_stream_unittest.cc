@@ -36,7 +36,10 @@ class VideoFrameStreamTest : public testing::TestWithParam<bool> {
         decoder_(new FakeVideoDecoder(kDecodingDelay)),
         is_initialized_(false),
         num_decoded_frames_(0),
-        pending_decoder_read_(false) {
+        pending_read_(false),
+        pending_reset_(false),
+        pending_stop_(false),
+        total_bytes_decoded_(0) {
     ScopedVector<VideoDecoder> decoders;
     decoders.push_back(decoder_);
 
@@ -58,16 +61,25 @@ class VideoFrameStreamTest : public testing::TestWithParam<bool> {
   }
 
   ~VideoFrameStreamTest() {
+    DCHECK(!pending_read_);
+    DCHECK(!pending_reset_);
+    DCHECK(!pending_stop_);
+
+    // Check that the pipeline statistics callback was fired correctly.
+    if (decoder_)
+      EXPECT_EQ(decoder_->total_bytes_decoded(), total_bytes_decoded_);
+
     if (is_initialized_)
       Stop();
     EXPECT_FALSE(is_initialized_);
   }
 
-  MOCK_METHOD1(OnStatistics, void(const PipelineStatistics&));
   MOCK_METHOD1(SetDecryptorReadyCallback, void(const media::DecryptorReadyCB&));
   MOCK_METHOD2(OnInitialized, void(bool, bool));
-  MOCK_METHOD0(OnReset, void());
-  MOCK_METHOD0(OnStopped, void());
+
+  void OnStatistics(const PipelineStatistics& statistics) {
+     total_bytes_decoded_ += statistics.video_bytes_decoded;
+  }
 
   // Fake Decrypt() function used by DecryptingDemuxerStream. It does nothing
   // but removes the DecryptConfig to make the buffer unencrypted.
@@ -82,25 +94,39 @@ class VideoFrameStreamTest : public testing::TestWithParam<bool> {
     decrypt_cb.Run(Decryptor::kSuccess, decrypted);
   }
 
-  // Callback for VideoFrameStream::ReadFrame().
+  // Callback for VideoFrameStream::Read().
   void FrameReady(VideoDecoder::Status status,
                   const scoped_refptr<VideoFrame>& frame) {
-    DCHECK(pending_decoder_read_);
+    DCHECK(pending_read_);
     ASSERT_EQ(VideoDecoder::kOk, status);
     frame_read_ = frame;
     if (frame.get() && !frame->IsEndOfStream())
       num_decoded_frames_++;
-    pending_decoder_read_ = false;
+    pending_read_ = false;
+  }
+
+  void OnReset() {
+    DCHECK(!pending_read_);
+    DCHECK(pending_reset_);
+    pending_reset_ = false;
+  }
+
+  void OnStopped() {
+    DCHECK(!pending_read_);
+    DCHECK(!pending_reset_);
+    DCHECK(pending_stop_);
+    pending_stop_ = false;
+    is_initialized_ = false;
   }
 
   void ReadUntilPending() {
     do {
       frame_read_ = NULL;
-      pending_decoder_read_ = true;
-      video_frame_stream_->ReadFrame(base::Bind(
+      pending_read_ = true;
+      video_frame_stream_->Read(base::Bind(
           &VideoFrameStreamTest::FrameReady, base::Unretained(this)));
       message_loop_.RunUntilIdle();
-    } while (!pending_decoder_read_);
+    } while (!pending_read_);
   }
 
   enum PendingState {
@@ -150,6 +176,7 @@ class VideoFrameStreamTest : public testing::TestWithParam<bool> {
 
       case DECODER_RESET:
         decoder_->HoldNextReset();
+        pending_reset_ = true;
         video_frame_stream_->Reset(base::Bind(&VideoFrameStreamTest::OnReset,
                                               base::Unretained(this)));
         message_loop_.RunUntilIdle();
@@ -157,6 +184,7 @@ class VideoFrameStreamTest : public testing::TestWithParam<bool> {
 
       case DECODER_STOP:
         decoder_->HoldNextStop();
+        pending_stop_ = true;
         video_frame_stream_->Stop(base::Bind(&VideoFrameStreamTest::OnStopped,
                                              base::Unretained(this)));
         message_loop_.RunUntilIdle();
@@ -187,17 +215,17 @@ class VideoFrameStreamTest : public testing::TestWithParam<bool> {
         break;
 
       case DECODER_READ:
+        DCHECK(pending_read_);
         decoder_->SatisfyRead();
         break;
 
       case DECODER_RESET:
-        EXPECT_CALL(*this, OnReset());
+        DCHECK(pending_reset_);
         decoder_->SatisfyReset();
         break;
 
       case DECODER_STOP:
-        EXPECT_CALL(*this, OnStopped())
-            .WillOnce(Assign(&is_initialized_, false));
+        DCHECK(pending_stop_);
         decoder_->SatisfyStop();
         break;
 
@@ -216,7 +244,7 @@ class VideoFrameStreamTest : public testing::TestWithParam<bool> {
     SatisfyPendingCallback(DECODER_INIT);
   }
 
-  void ReadFrame() {
+  void Read() {
     EnterPendingState(DECODER_READ);
     SatisfyPendingCallback(DECODER_READ);
   }
@@ -242,7 +270,10 @@ class VideoFrameStreamTest : public testing::TestWithParam<bool> {
 
   bool is_initialized_;
   int num_decoded_frames_;
-  bool pending_decoder_read_;
+  bool pending_read_;
+  bool pending_reset_;
+  bool pending_stop_;
+  int total_bytes_decoded_;
   scoped_refptr<VideoFrame> frame_read_;
 
  private:
@@ -258,13 +289,13 @@ TEST_P(VideoFrameStreamTest, Initialization) {
 
 TEST_P(VideoFrameStreamTest, ReadOneFrame) {
   Initialize();
-  ReadFrame();
+  Read();
 }
 
 TEST_P(VideoFrameStreamTest, ReadAllFrames) {
   Initialize();
   do {
-    ReadFrame();
+    Read();
   } while (frame_read_.get() && !frame_read_->IsEndOfStream());
 
   const int total_num_frames = kNumConfigs * kNumBuffersInOneConfig;
@@ -274,43 +305,54 @@ TEST_P(VideoFrameStreamTest, ReadAllFrames) {
 TEST_P(VideoFrameStreamTest, Read_AfterReset) {
   Initialize();
   Reset();
-  ReadFrame();
+  Read();
   Reset();
-  ReadFrame();
+  Read();
 }
+
+// No Reset() before initialization is successfully completed.
 
 TEST_P(VideoFrameStreamTest, Reset_AfterInitialization) {
   Initialize();
   Reset();
-  ReadFrame();
+  Read();
 }
 
 TEST_P(VideoFrameStreamTest, Reset_DuringReinitialization) {
   Initialize();
   EnterPendingState(DECODER_REINIT);
   // VideoDecoder::Reset() is not called when we reset during reinitialization.
-  EXPECT_CALL(*this, OnReset());
+  pending_reset_ = true;
   video_frame_stream_->Reset(
       base::Bind(&VideoFrameStreamTest::OnReset, base::Unretained(this)));
   SatisfyPendingCallback(DECODER_REINIT);
+  Read();
 }
 
-TEST_P(VideoFrameStreamTest, Reset_DuringNormalDemuxerRead) {
+TEST_P(VideoFrameStreamTest, Reset_AfterReinitialization) {
+  Initialize();
+  EnterPendingState(DECODER_REINIT);
+  SatisfyPendingCallback(DECODER_REINIT);
+  Reset();
+  Read();
+}
+
+TEST_P(VideoFrameStreamTest, Reset_DuringDemuxerRead_Normal) {
   Initialize();
   EnterPendingState(DEMUXER_READ_NORMAL);
   EnterPendingState(DECODER_RESET);
   SatisfyPendingCallback(DEMUXER_READ_NORMAL);
   SatisfyPendingCallback(DECODER_RESET);
-  ReadFrame();
+  Read();
 }
 
-TEST_P(VideoFrameStreamTest, Reset_DuringConfigChangeDemuxerRead) {
+TEST_P(VideoFrameStreamTest, Reset_DuringDemuxerRead_ConfigChange) {
   Initialize();
   EnterPendingState(DEMUXER_READ_CONFIG_CHANGE);
   EnterPendingState(DECODER_RESET);
   SatisfyPendingCallback(DEMUXER_READ_CONFIG_CHANGE);
   SatisfyPendingCallback(DECODER_RESET);
-  ReadFrame();
+  Read();
 }
 
 TEST_P(VideoFrameStreamTest, Reset_DuringNormalDecoderRead) {
@@ -319,26 +361,26 @@ TEST_P(VideoFrameStreamTest, Reset_DuringNormalDecoderRead) {
   EnterPendingState(DECODER_RESET);
   SatisfyPendingCallback(DECODER_READ);
   SatisfyPendingCallback(DECODER_RESET);
-  ReadFrame();
+  Read();
 }
 
 TEST_P(VideoFrameStreamTest, Reset_AfterNormalRead) {
   Initialize();
-  ReadFrame();
+  Read();
   Reset();
-  ReadFrame();
+  Read();
 }
 
-TEST_P(VideoFrameStreamTest, Reset_AfterConfigChangeRead) {
+TEST_P(VideoFrameStreamTest, Reset_AfterDemuxerRead_ConfigChange) {
   Initialize();
   EnterPendingState(DEMUXER_READ_CONFIG_CHANGE);
   SatisfyPendingCallback(DEMUXER_READ_CONFIG_CHANGE);
   Reset();
-  ReadFrame();
+  Read();
 }
 
 TEST_P(VideoFrameStreamTest, Stop_BeforeInitialization) {
-  EXPECT_CALL(*this, OnStopped());
+  pending_stop_ = true;
   video_frame_stream_->Stop(
       base::Bind(&VideoFrameStreamTest::OnStopped, base::Unretained(this)));
   message_loop_.RunUntilIdle();
@@ -364,7 +406,14 @@ TEST_P(VideoFrameStreamTest, Stop_DuringReinitialization) {
   SatisfyPendingCallback(DECODER_STOP);
 }
 
-TEST_P(VideoFrameStreamTest, Stop_DuringNormalDemuxerRead) {
+TEST_P(VideoFrameStreamTest, Stop_AfterReinitialization) {
+  Initialize();
+  EnterPendingState(DECODER_REINIT);
+  SatisfyPendingCallback(DECODER_REINIT);
+  Stop();
+}
+
+TEST_P(VideoFrameStreamTest, Stop_DuringDemuxerRead_Normal) {
   Initialize();
   EnterPendingState(DEMUXER_READ_NORMAL);
   EnterPendingState(DECODER_STOP);
@@ -372,7 +421,7 @@ TEST_P(VideoFrameStreamTest, Stop_DuringNormalDemuxerRead) {
   SatisfyPendingCallback(DECODER_STOP);
 }
 
-TEST_P(VideoFrameStreamTest, Stop_DuringConfigChangeDemuxerRead) {
+TEST_P(VideoFrameStreamTest, Stop_DuringDemuxerRead_ConfigChange) {
   Initialize();
   EnterPendingState(DEMUXER_READ_CONFIG_CHANGE);
   EnterPendingState(DECODER_STOP);
@@ -390,7 +439,7 @@ TEST_P(VideoFrameStreamTest, Stop_DuringNormalDecoderRead) {
 
 TEST_P(VideoFrameStreamTest, Stop_AfterNormalRead) {
   Initialize();
-  ReadFrame();
+  Read();
   Stop();
 }
 
@@ -415,7 +464,7 @@ TEST_P(VideoFrameStreamTest, Stop_AfterReset) {
   Stop();
 }
 
-TEST_P(VideoFrameStreamTest, Stop_DuringReadFrame_DuringReset) {
+TEST_P(VideoFrameStreamTest, Stop_DuringRead_DuringReset) {
   Initialize();
   EnterPendingState(DECODER_READ);
   EnterPendingState(DECODER_RESET);
@@ -425,7 +474,7 @@ TEST_P(VideoFrameStreamTest, Stop_DuringReadFrame_DuringReset) {
   SatisfyPendingCallback(DECODER_STOP);
 }
 
-TEST_P(VideoFrameStreamTest, Stop_AfterReadFrame_DuringReset) {
+TEST_P(VideoFrameStreamTest, Stop_AfterRead_DuringReset) {
   Initialize();
   EnterPendingState(DECODER_READ);
   EnterPendingState(DECODER_RESET);
@@ -435,9 +484,9 @@ TEST_P(VideoFrameStreamTest, Stop_AfterReadFrame_DuringReset) {
   SatisfyPendingCallback(DECODER_STOP);
 }
 
-TEST_P(VideoFrameStreamTest, Stop_AfterReadFrame_AfterReset) {
+TEST_P(VideoFrameStreamTest, Stop_AfterRead_AfterReset) {
   Initialize();
-  ReadFrame();
+  Read();
   Reset();
   Stop();
 }

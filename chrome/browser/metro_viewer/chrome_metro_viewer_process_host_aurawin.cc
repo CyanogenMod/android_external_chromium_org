@@ -4,10 +4,12 @@
 
 #include "chrome/browser/metro_viewer/chrome_metro_viewer_process_host_aurawin.h"
 
+#include "ash/shell.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part_aurawin.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search_engines/util.h"
 #include "chrome/browser/ui/ash/ash_init.h"
@@ -17,7 +19,6 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/page_navigator.h"
@@ -90,6 +91,8 @@ void ChromeMetroViewerProcessHost::OnSetTargetSurface(
       AcceleratedPresenter::GetForWindow(NULL);
   any_window->SetNewTargetWindow(hwnd);
   aura::RemoteRootWindowHostWin::Instance()->Connected(this);
+  ash::Shell::GetInstance()->CreateLauncher();
+  ash::Shell::GetInstance()->ShowLauncher();
   // Tell the rest of Chrome that Ash is running.
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_ASH_SESSION_STARTED,

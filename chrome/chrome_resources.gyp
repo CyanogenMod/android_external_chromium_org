@@ -350,14 +350,13 @@
             '<(DEPTH)/ash/ash_strings.gyp:ash_strings',
             '<(DEPTH)/content/content_resources.gyp:content_resources',
             '<(DEPTH)/device/bluetooth/bluetooth_strings.gyp:device_bluetooth_strings',
-            '<(DEPTH)/webkit/support/webkit_support.gyp:webkit_resources',
-            '<(DEPTH)/webkit/support/webkit_support.gyp:webkit_strings',
+            '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
+            '<(DEPTH)/webkit/webkit_resources.gyp:webkit_strings',
           ],
         }],
         ['use_ash==1', {
           'dependencies': [
              '<(DEPTH)/ash/ash.gyp:ash_resources',
-             '<(DEPTH)/ash/ash.gyp:ash_wallpaper_resources',
           ],
         }],
         ['OS != "mac" and OS != "ios"', {

@@ -60,7 +60,6 @@
 #include "ash/shell_delegate.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
-#include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
@@ -145,7 +144,7 @@ void ReadDirectoryCallback(size_t max_saved,
     saved_screenshots->push_back(
         std::string(ScreenshotSource::kScreenshotUrlRoot) +
         std::string(ScreenshotSource::kScreenshotSaved) +
-        entry.resource_id());
+        entry.base_name());
   }
   callback.Run();
 }

@@ -96,13 +96,13 @@ void LoadDictionaryFileReliably(WordList& custom_words,
     return;
   // Checksum is not valid. See if there's a backup.
   base::FilePath backup = path.AddExtension(BACKUP_EXTENSION);
-  if (!file_util::PathExists(backup))
+  if (!base::PathExists(backup))
     return;
   // Load the backup and verify its checksum.
   if (LoadFile(backup, custom_words) != VALID_CHECKSUM)
     return;
   // Backup checksum is valid. Restore the backup.
-  file_util::CopyFile(backup, path);
+  base::CopyFile(backup, path);
 }
 
 // Backs up the original dictionary, saves |custom_words| and its checksum into
@@ -119,7 +119,7 @@ void SaveDictionaryFileReliably(
   }
   std::string checksum = base::MD5String(content.str());
   content << CHECKSUM_PREFIX << checksum;
-  file_util::CopyFile(path, path.AddExtension(BACKUP_EXTENSION));
+  base::CopyFile(path, path.AddExtension(BACKUP_EXTENSION));
   base::ImportantFileWriter::WriteFileAtomically(path, content.str());
 }
 

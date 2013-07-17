@@ -77,10 +77,10 @@ class PreferenceServiceTest : public InProcessBrowserTest {
       tmp_pref_file_ = user_data_directory.Append(chrome::kLocalStateFilename);
     }
 
-    CHECK(file_util::PathExists(reference_pref_file));
+    CHECK(base::PathExists(reference_pref_file));
     // Copy only the Preferences file if |new_profile_|, or Local State if not,
     // and the rest will be automatically created.
-    CHECK(file_util::CopyFile(reference_pref_file, tmp_pref_file_));
+    CHECK(base::CopyFile(reference_pref_file, tmp_pref_file_));
 
 #if defined(OS_WIN)
     // Make the copy writable.  On POSIX we assume the umask allows files

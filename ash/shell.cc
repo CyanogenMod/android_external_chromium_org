@@ -16,7 +16,6 @@
 #include "ash/display/display_controller.h"
 #include "ash/display/display_manager.h"
 #include "ash/display/event_transformation_handler.h"
-#include "ash/display/mirror_window_controller.h"
 #include "ash/display/mouse_cursor_event_filter.h"
 #include "ash/display/screen_position_controller.h"
 #include "ash/drag_drop/drag_drop_controller.h"
@@ -110,7 +109,7 @@
 #if defined(USE_X11)
 #include "ash/ash_constants.h"
 #include "ash/display/display_change_observer_x11.h"
-#include "ash/display/display_error_dialog.h"
+#include "ash/display/display_error_observer.h"
 #include "ash/display/output_configurator_animation.h"
 #include "base/chromeos/chromeos_version.h"
 #include "base/message_loop/message_pump_aurax11.h"
@@ -214,7 +213,6 @@ Shell::Shell(ShellDelegate* delegate)
       is_touch_hud_projection_enabled_(false) {
   DCHECK(delegate_.get());
   display_manager_.reset(new internal::DisplayManager);
-  mirror_window_controller_.reset(new internal::MirrorWindowController);
 
   ANNOTATE_LEAKING_OBJECT_PTR(screen_);  // see crbug.com/156466
   gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_ALTERNATE, screen_);
@@ -252,8 +250,8 @@ Shell::~Shell() {
     aura::client::GetFocusClient(active_root_window_)->FocusWindow(NULL);
 
   // Please keep in same order as in Init() because it's easy to miss one.
-  RemovePreTargetHandler(user_activity_detector_.get());
   RemovePreTargetHandler(event_rewriter_filter_.get());
+  RemovePreTargetHandler(user_activity_detector_.get());
   RemovePreTargetHandler(overlay_filter_.get());
   RemovePreTargetHandler(input_method_filter_.get());
   RemovePreTargetHandler(window_modality_controller_.get());
@@ -306,8 +304,6 @@ Shell::~Shell() {
 
   power_button_controller_.reset();
   lock_state_controller_.reset();
-
-  mirror_window_controller_.reset();
 
   // This also deletes all RootWindows. Note that we invoke Shutdown() on
   // DisplayController before resetting |display_controller_|, since destruction
@@ -438,6 +434,7 @@ void Shell::Init() {
   CommandLine* command_line = CommandLine::ForCurrentProcess();
 
   delegate_->PreInit();
+  bool display_initialized = false;
 #if defined(OS_CHROMEOS) && defined(USE_X11)
   output_configurator_animation_.reset(
       new internal::OutputConfiguratorAnimation());
@@ -454,8 +451,11 @@ void Shell::Init() {
       output_configurator_->set_mirroring_controller(display_manager_.get());
     output_configurator_->Start();
     display_change_observer_->OnDisplayModeChanged();
+    display_initialized = true;
   }
 #endif
+  if (!display_initialized)
+    display_manager_->InitFromCommandLine();
 
   // Install the custom factory first so that views::FocusManagers for Tray,
   // Launcher, and WallPaper could be created by the factory.
@@ -502,11 +502,13 @@ void Shell::Init() {
 #endif
 
   // The order in which event filters are added is significant.
-  user_activity_detector_.reset(new UserActivityDetector);
-  AddPreTargetHandler(user_activity_detector_.get());
-
   event_rewriter_filter_.reset(new internal::EventRewriterEventFilter);
   AddPreTargetHandler(event_rewriter_filter_.get());
+
+  // UserActivityDetector passes events to observers, so let them get
+  // rewritten first.
+  user_activity_detector_.reset(new UserActivityDetector);
+  AddPreTargetHandler(user_activity_detector_.get());
 
   overlay_filter_.reset(new internal::OverlayEventFilter);
   AddPreTargetHandler(overlay_filter_.get());
@@ -707,18 +709,16 @@ void Shell::RotateFocus(Direction direction) {
 
 void Shell::SetDisplayWorkAreaInsets(Window* contains,
                                      const gfx::Insets& insets) {
-  if (!display_manager_->UpdateWorkAreaOfDisplayNearestWindow(contains, insets))
+  if (!display_controller_->UpdateWorkAreaOfDisplayNearestWindow(
+          contains, insets)) {
     return;
+  }
   FOR_EACH_OBSERVER(ShellObserver, observers_,
                     OnDisplayWorkAreaInsetsChanged());
 }
 
 void Shell::OnLoginStateChanged(user::LoginStatus status) {
   FOR_EACH_OBSERVER(ShellObserver, observers_, OnLoginStateChanged(status));
-  RootWindowControllerList controllers = GetAllRootWindowControllers();
-  for (RootWindowControllerList::iterator iter = controllers.begin();
-       iter != controllers.end(); ++iter)
-    (*iter)->OnLoginStateChanged(status);
 }
 
 void Shell::UpdateAfterLoginStatusChange(user::LoginStatus status) {
@@ -854,16 +854,9 @@ void Shell::SetTouchHudProjectionEnabled(bool enabled) {
   if (is_touch_hud_projection_enabled_ == enabled)
     return;
 
-  RootWindowList roots = GetInstance()->GetAllRootWindows();
-  for (RootWindowList::iterator iter = roots.begin(); iter != roots.end();
-      ++iter) {
-    internal::RootWindowController* controller = GetRootWindowController(*iter);
-    if (enabled)
-      controller->EnableTouchHudProjection();
-    else
-      controller->DisableTouchHudProjection();
-  }
   is_touch_hud_projection_enabled_ = enabled;
+  FOR_EACH_OBSERVER(ShellObserver, observers_,
+                    OnTouchHudProjectionToggled(enabled));
 }
 
 void Shell::InitRootWindowForSecondaryDisplay(aura::RootWindow* root) {

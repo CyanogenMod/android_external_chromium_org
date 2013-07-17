@@ -371,7 +371,7 @@ class ProxyConfigServiceLinuxTest : public PlatformTest {
 
   virtual void TearDown() OVERRIDE {
     // Delete the temporary KDE home directory.
-    base::Delete(user_home_, true);
+    base::DeleteFile(user_home_, true);
     PlatformTest::TearDown();
   }
 
@@ -1530,7 +1530,7 @@ TEST_F(ProxyConfigServiceLinuxTest, KDEHomePicker) {
 
   // If .kde4 exists it will mess up the first test. It should not, as
   // we created the directory for $HOME in the test setup.
-  CHECK(!file_util::DirectoryExists(kde4_home_));
+  CHECK(!base::DirectoryExists(kde4_home_));
 
   { SCOPED_TRACE("KDE4, no .kde4 directory, verify fallback");
     MockEnvironment* env = new MockEnvironment;
@@ -1550,7 +1550,7 @@ TEST_F(ProxyConfigServiceLinuxTest, KDEHomePicker) {
   // Note that its timestamp will be at least as new as the .kde one.
   file_util::CreateDirectory(kde4_config_);
   file_util::WriteFile(kioslaverc4_, slaverc4.c_str(), slaverc4.length());
-  CHECK(file_util::PathExists(kioslaverc4_));
+  CHECK(base::PathExists(kioslaverc4_));
 
   { SCOPED_TRACE("KDE4, .kde4 directory present, use it");
     MockEnvironment* env = new MockEnvironment;

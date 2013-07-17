@@ -320,6 +320,11 @@ MediaSourcePlayer::~MediaSourcePlayer() {
 }
 
 void MediaSourcePlayer::SetVideoSurface(gfx::ScopedJavaSurface surface) {
+  // Ignore non-empty surface that is unprotected if |is_video_encrypted_| is
+  // true.
+  if (is_video_encrypted_ && !surface.IsEmpty() && !surface.is_protected())
+    return;
+
   surface_ =  surface.Pass();
   pending_event_ |= SURFACE_CHANGE_EVENT_PENDING;
   if (pending_event_ & SEEK_EVENT_PENDING) {
@@ -344,6 +349,9 @@ bool MediaSourcePlayer::Seekable() {
 
 void MediaSourcePlayer::Start() {
   playing_ = true;
+
+  if (is_video_encrypted_)
+    manager()->OnProtectedSurfaceRequested(player_id());
 
   StartInternal();
 }
@@ -442,20 +450,28 @@ void MediaSourcePlayer::StartInternal() {
 void MediaSourcePlayer::DemuxerReady(
     const MediaPlayerHostMsg_DemuxerReady_Params& params) {
   duration_ = base::TimeDelta::FromMilliseconds(params.duration_ms);
-  width_ = params.video_size.width();
-  height_ = params.video_size.height();
+  clock_.SetDuration(duration_);
+
+  audio_codec_ = params.audio_codec;
   num_channels_ = params.audio_channels;
   sampling_rate_ = params.audio_sampling_rate;
-  audio_codec_ = params.audio_codec;
-  video_codec_ = params.video_codec;
-  audio_extra_data_ = params.audio_extra_data;
   is_audio_encrypted_ = params.is_audio_encrypted;
+  audio_extra_data_ = params.audio_extra_data;
+  if (HasAudio()) {
+    DCHECK_GT(num_channels_, 0);
+    audio_timestamp_helper_.reset(new AudioTimestampHelper(sampling_rate_));
+    audio_timestamp_helper_->SetBaseTimestamp(GetCurrentTime());
+  } else {
+    audio_timestamp_helper_.reset();
+  }
+
+  video_codec_ = params.video_codec;
+  width_ = params.video_size.width();
+  height_ = params.video_size.height();
   is_video_encrypted_ = params.is_video_encrypted;
-  clock_.SetDuration(duration_);
-  audio_timestamp_helper_.reset(new AudioTimestampHelper(
-      kBytesPerAudioOutputSample * num_channels_, sampling_rate_));
-  audio_timestamp_helper_->SetBaseTimestamp(GetCurrentTime());
+
   OnMediaMetadataChanged(duration_, width_, height_, true);
+
   if (pending_event_ & CONFIG_CHANGE_EVENT_PENDING) {
     if (reconfig_audio_decoder_)
       ConfigureAudioDecoderJob();
@@ -513,17 +529,14 @@ void MediaSourcePlayer::DurationChanged(const base::TimeDelta& duration) {
 }
 
 void MediaSourcePlayer::SetDrmBridge(MediaDrmBridge* drm_bridge) {
-  if (!is_audio_encrypted_ && !is_video_encrypted_)
-    return;
-
   // Currently we don't support DRM change during the middle of playback, even
   // if the player is paused.
   // TODO(qinmin): support DRM change after playback has started.
   // http://crbug.com/253792.
-  DCHECK(!audio_decoder_job_ || !audio_decoder_job_->is_decoding());
-  DCHECK(!video_decoder_job_ || !video_decoder_job_->is_decoding());
-  DCHECK_EQ(0u, audio_access_unit_index_);
-  DCHECK_EQ(0u, video_access_unit_index_);
+  if (GetCurrentTime() > base::TimeDelta()) {
+    LOG(INFO) << "Setting DRM bridge after play back has started. "
+              << "This is not well supported!";
+  }
 
   drm_bridge_ = drm_bridge;
 
@@ -543,7 +556,8 @@ void MediaSourcePlayer::OnSeekRequestAck(unsigned seek_request_id) {
 void MediaSourcePlayer::UpdateTimestamps(
     const base::TimeDelta& presentation_timestamp, size_t audio_output_bytes) {
   if (audio_output_bytes > 0) {
-    audio_timestamp_helper_->AddBytes(audio_output_bytes);
+    audio_timestamp_helper_->AddFrames(
+        audio_output_bytes / (kBytesPerAudioOutputSample * num_channels_));
     clock_.SetMaxTime(audio_timestamp_helper_->GetTimestamp());
   } else {
     clock_.SetMaxTime(presentation_timestamp);
@@ -773,7 +787,7 @@ void MediaSourcePlayer::ConfigureAudioDecoderJob() {
 }
 
 void MediaSourcePlayer::ConfigureVideoDecoderJob() {
-  if (!HasVideo() || surface_.IsSurfaceEmpty()) {
+  if (!HasVideo() || surface_.IsEmpty()) {
     video_decoder_job_.reset();
     return;
   }

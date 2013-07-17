@@ -10,11 +10,11 @@
 #include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
 #include "base/value_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/permissions/api_permission.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
 #include "content/public/browser/notification_service.h"
@@ -262,7 +262,7 @@ const SavedFileEntry* SavedFilesService::GetFileEntry(
 void SavedFilesService::ClearQueueIfNoRetainPermission(
     const Extension* extension) {
   if (!extension->GetActivePermissions()->HasAPIPermission(
-          APIPermission::kFileSystemRetainFiles)) {
+          APIPermission::kFileSystemRetainEntries)) {
     ClearQueue(extension);
   }
 }

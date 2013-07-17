@@ -39,6 +39,16 @@ class WebViewGuest : public GuestView,
   virtual WebViewGuest* AsWebView() OVERRIDE;
   virtual AdViewGuest* AsAdView() OVERRIDE;
 
+  // GuestDelegate implementation.
+  virtual void AddMessageToConsole(int32 level,
+                                   const string16& message,
+                                   int32 line_no,
+                                   const string16& source_id) OVERRIDE;
+  virtual void Close() OVERRIDE;
+  virtual void GuestProcessGone(base::TerminationStatus status) OVERRIDE;
+  virtual bool HandleKeyboardEvent(
+      const content::NativeWebKeyboardEvent& event) OVERRIDE;
+
   // NotificationObserver implementation.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
@@ -47,6 +57,15 @@ class WebViewGuest : public GuestView,
   // If possible, navigate the guest to |relative_index| entries away from the
   // current navigation entry.
   void Go(int relative_index);
+
+  // Reload the guest.
+  void Reload();
+
+  // Stop loading the guest.
+  void Stop();
+
+  // Kill the guest process.
+  void Terminate();
 
   extensions::ScriptExecutor* script_executor() {
     return script_executor_.get();
@@ -61,6 +80,13 @@ class WebViewGuest : public GuestView,
       bool is_main_frame,
       const GURL& url,
       content::PageTransition transition_type,
+      content::RenderViewHost* render_view_host) OVERRIDE;
+  virtual void DidFailProvisionalLoad(
+      int64 frame_id,
+      bool is_main_frame,
+      const GURL& validated_url,
+      int error_code,
+      const string16& error_description,
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidStartProvisionalLoadForFrame(
       int64 frame_id,

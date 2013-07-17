@@ -9,11 +9,11 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/token_service.h"
 #include "chrome/browser/signin/token_service_factory.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/user_prefs/pref_registry_syncable.h"
@@ -39,7 +39,7 @@ OAuth2LoginManager::OAuth2LoginManager(OAuthLoginManager::Delegate* delegate)
 OAuth2LoginManager::~OAuth2LoginManager() {
 }
 
-void OAuth2LoginManager::RegisterUserPrefs(
+void OAuth2LoginManager::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterStringPref(
       kOAuth1Token, "", user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);

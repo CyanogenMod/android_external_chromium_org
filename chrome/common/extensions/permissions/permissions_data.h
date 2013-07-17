@@ -64,6 +64,10 @@ class PermissionsData {
       const Extension* extension);
   static APIPermissionSet* GetInitialAPIPermissions(Extension* extension);
 
+  // Set the scriptable hosts for the given |extension| during initialization.
+  static void SetInitialScriptableHosts(Extension* extension,
+                                        const URLPatternSet& scriptable_hosts);
+
   // Return the active (runtime) permissions for the given |extension|.
   static scoped_refptr<const PermissionSet> GetActivePermissions(
       const Extension* extension);
@@ -134,6 +138,12 @@ class PermissionsData {
   // should display at install time. The messages are returned as strings
   // for convenience.
   static std::vector<string16> GetPermissionMessageStrings(
+      const Extension* extension);
+
+  // Returns the full list of permission details for messages that the given
+  // |extension| should display at install time. The messages are returned as
+  // strings for convenience.
+  static std::vector<string16> GetPermissionMessageDetailsStrings(
       const Extension* extension);
 
   // Returns true if the given |extension| can execute script on a page. If a

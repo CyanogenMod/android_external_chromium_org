@@ -12,7 +12,6 @@
 #include "content/public/renderer/render_view.h"
 #include "content/public/test/layouttest_support.h"
 #include "content/shell/common/shell_switches.h"
-#include "content/shell/renderer/shell_media_stream_client.h"
 #include "content/shell/renderer/shell_render_process_observer.h"
 #include "content/shell/renderer/shell_render_view_observer.h"
 #include "content/shell/renderer/webkit_test_runner.h"
@@ -26,6 +25,7 @@
 #include "webkit/mocks/mock_webhyphenator.h"
 #include "webkit/support/mock_webclipboard_impl.h"
 
+using WebKit::WebAudioDevice;
 using WebKit::WebClipboard;
 using WebKit::WebFrame;
 using WebKit::WebHyphenator;
@@ -146,19 +146,20 @@ ShellContentRendererClient::OverrideCreateWebRTCPeerConnectionHandler(
 #endif
 }
 
-webkit_media::MediaStreamClient*
-ShellContentRendererClient::OverrideCreateMediaStreamClient() {
-  if (!shell_media_stream_client_)
-    shell_media_stream_client_.reset(new ShellMediaStreamClient());
-  return shell_media_stream_client_.get();
-}
-
 WebMIDIAccessor*
 ShellContentRendererClient::OverrideCreateMIDIAccessor(
     WebMIDIAccessorClient* client) {
   WebTestInterfaces* interfaces =
       ShellRenderProcessObserver::GetInstance()->test_interfaces();
   return interfaces->createMIDIAccessor(client);
+}
+
+WebAudioDevice*
+ShellContentRendererClient::OverrideCreateAudioDevice(
+    double sample_rate) {
+  WebTestInterfaces* interfaces =
+      ShellRenderProcessObserver::GetInstance()->test_interfaces();
+  return interfaces->createAudioDevice(sample_rate);
 }
 
 WebClipboard* ShellContentRendererClient::OverrideWebClipboard() {

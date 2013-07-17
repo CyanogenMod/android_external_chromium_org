@@ -16,6 +16,7 @@
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/time/time.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/extensions/file_manager/drive_test_util.h"
@@ -27,7 +28,6 @@
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/google_apis/test_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "chromeos/chromeos_switches.h"
@@ -118,7 +118,7 @@ class LocalTestVolume {
         base::FilePath source_path =
             google_apis::test_util::GetTestFilePath("chromeos/file_manager").
             AppendASCII(entry.source_file_name);
-        ASSERT_TRUE(file_util::CopyFile(source_path, target_path))
+        ASSERT_TRUE(base::CopyFile(source_path, target_path))
             << "Copy from " << source_path.value()
             << " to " << target_path.value() << " failed.";
         break;

@@ -67,10 +67,15 @@ void PictureLayerTilingSet::SyncTilings(
       continue;
     if (PictureLayerTiling* this_tiling = TilingAtScale(contents_scale)) {
       this_tiling->set_resolution(other.tilings_[i]->resolution());
-      this_tiling->UpdateTilesToCurrentPile();
+
+      // These two calls must come before updating the pile, because they may
+      // destroy tiles that the new pile cannot raster.
       this_tiling->SetLayerBounds(new_layer_bounds);
       this_tiling->Invalidate(layer_invalidation);
+
+      this_tiling->UpdateTilesToCurrentPile();
       this_tiling->CreateMissingTilesInLiveTilesRect();
+
       DCHECK(this_tiling->tile_size() ==
              client_->CalculateTileSize(this_tiling->ContentRect().size()));
       continue;
@@ -235,7 +240,7 @@ PictureLayerTilingSet::CoverageIterator::operator++() {
   // Loop until we find a valid place to stop.
   while (true) {
     while (tiling_iter_ &&
-           (!*tiling_iter_ || !tiling_iter_->IsReadyToDraw(NULL))) {
+           (!*tiling_iter_ || !tiling_iter_->IsReadyToDraw())) {
       missing_region_.Union(tiling_iter_.geometry_rect());
       ++tiling_iter_;
     }

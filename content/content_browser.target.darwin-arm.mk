@@ -18,8 +18,8 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,ui_ui_resources_gyp)/ui_resources.stamp \
 	$(call intermediates-dir-for,GYP,content_browser_devtools_devtools_resources_gyp)/devtools_resources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
-	$(call intermediates-dir-for,GYP,webkit_support_webkit_resources_gyp)/webkit_resources.stamp \
-	$(call intermediates-dir-for,GYP,webkit_support_webkit_strings_gyp)/webkit_strings.stamp \
+	$(call intermediates-dir-for,GYP,webkit_webkit_resources_gyp)/webkit_resources.stamp \
+	$(call intermediates-dir-for,GYP,webkit_webkit_strings_gyp)/webkit_strings.stamp \
 	$(call intermediates-dir-for,GYP,sandbox_sandbox_gyp)/sandbox.stamp \
 	$(call intermediates-dir-for,GYP,content_content_jni_headers_gyp)/content_jni_headers.stamp
 
@@ -47,6 +47,7 @@ LOCAL_SRC_FILES := \
 	content/public/browser/browser_child_process_observer.cc \
 	content/public/browser/browser_main_parts.cc \
 	content/public/browser/browser_message_filter.cc \
+	content/public/browser/browser_plugin_guest_delegate.cc \
 	content/public/browser/content_browser_client.cc \
 	content/public/browser/download_manager_delegate.cc \
 	content/public/browser/download_save_info.cc \
@@ -79,6 +80,7 @@ LOCAL_SRC_FILES := \
 	content/browser/accessibility/browser_accessibility_state_impl.cc \
 	content/browser/android/android_browser_process.cc \
 	content/browser/android/browser_jni_registrar.cc \
+	content/browser/android/browser_media_player_manager.cc \
 	content/browser/android/child_process_launcher_android.cc \
 	content/browser/android/content_settings.cc \
 	content/browser/android/content_startup_flags.cc \
@@ -95,7 +97,6 @@ LOCAL_SRC_FILES := \
 	content/browser/android/in_process/synchronous_input_event_filter.cc \
 	content/browser/android/interstitial_page_delegate_android.cc \
 	content/browser/android/load_url_params.cc \
-	content/browser/android/media_player_manager_impl.cc \
 	content/browser/android/media_resource_getter_impl.cc \
 	content/browser/android/overscroll_glow.cc \
 	content/browser/android/surface_texture_peer_browser_impl.cc \
@@ -143,6 +144,10 @@ LOCAL_SRC_FILES := \
 	content/browser/devtools/worker_devtools_manager.cc \
 	content/browser/devtools/worker_devtools_message_filter.cc \
 	content/browser/device_orientation/data_fetcher_impl_android.cc \
+	content/browser/device_orientation/data_fetcher_orientation_android.cc \
+	content/browser/device_orientation/data_fetcher_shared_memory_android.cc \
+	content/browser/device_orientation/device_motion_provider.cc \
+	content/browser/device_orientation/device_motion_service.cc \
 	content/browser/device_orientation/message_filter.cc \
 	content/browser/device_orientation/motion.cc \
 	content/browser/device_orientation/motion_message_filter.cc \
@@ -277,6 +282,7 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/clipboard_message_filter.cc \
 	content/browser/renderer_host/compositor_impl_android.cc \
 	content/browser/renderer_host/database_message_filter.cc \
+	content/browser/renderer_host/device_motion_browser_message_filter.cc \
 	content/browser/renderer_host/dip_util.cc \
 	content/browser/renderer_host/file_utilities_message_filter.cc \
 	content/browser/renderer_host/gamepad_browser_message_filter.cc \
@@ -296,6 +302,7 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/media/audio_mirroring_manager.cc \
 	content/browser/renderer_host/media/audio_renderer_host.cc \
 	content/browser/renderer_host/media/audio_sync_reader.cc \
+	content/browser/renderer_host/media/device_request_message_filter.cc \
 	content/browser/renderer_host/media/media_stream_dispatcher_host.cc \
 	content/browser/renderer_host/media/media_stream_manager.cc \
 	content/browser/renderer_host/media/media_stream_ui_proxy.cc \
@@ -430,8 +437,9 @@ MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
-	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
@@ -559,8 +567,9 @@ MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
-	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \

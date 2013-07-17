@@ -20,6 +20,7 @@
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_about_handler.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
 #include "chrome/browser/character_encoding.h"
@@ -79,7 +80,6 @@
 #include "chrome/browser/ssl/ssl_blocking_page.h"
 #include "chrome/browser/ssl/ssl_tab_helper.h"
 #include "chrome/browser/tab_contents/tab_util.h"
-#include "chrome/browser/toolkit_extra_parts.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/browser/ui/sync/sync_promo_ui.h"
 #include "chrome/browser/ui/tab_contents/chrome_web_contents_view_delegate.h"
@@ -90,7 +90,6 @@
 #include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/chrome_process_type.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/background_info.h"
 #include "chrome/common/extensions/extension.h"
@@ -106,6 +105,7 @@
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
 #include "chromeos/chromeos_constants.h"
+#include "components/nacl/common/nacl_process_type.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_child_process_host.h"
 #include "content/public/browser/browser_main_parts.h"
@@ -148,7 +148,8 @@
 #include "chrome/browser/spellchecker/spellcheck_message_filter_mac.h"
 #elif defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/chrome_browser_main_chromeos.h"
-#include "chrome/browser/chromeos/fileapi/cros_mount_point_provider.h"
+#include "chrome/browser/chromeos/drive/file_system_backend_delegate.h"
+#include "chrome/browser/chromeos/fileapi/file_system_backend.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/system/statistics_provider.h"
@@ -186,15 +187,39 @@
 #endif
 
 #if !defined(OS_ANDROID)
-#include "chrome/browser/media_galleries/fileapi/media_file_system_mount_point_provider.h"
+#include "chrome/browser/media_galleries/fileapi/media_file_system_backend.h"
 #endif
 
 #if defined(ENABLE_WEBRTC)
 #include "chrome/browser/media/webrtc_logging_handler_host.h"
 #endif
 
+#if defined(ENABLE_INPUT_SPEECH)
+#include "chrome/browser/speech/chrome_speech_recognition_manager_delegate_bubble_ui.h"
+#endif
+
 #if defined(FILE_MANAGER_EXTENSION)
 #include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
+#endif
+
+#if defined(TOOLKIT_GTK)
+#include "chrome/browser/ui/gtk/chrome_browser_main_extra_parts_gtk.h"
+#endif
+
+#if defined(TOOLKIT_VIEWS)
+#include "chrome/browser/ui/views/chrome_browser_main_extra_parts_views.h"
+#endif
+
+#if defined(USE_ASH)
+#include "chrome/browser/ui/views/ash/chrome_browser_main_extra_parts_ash.h"
+#endif
+
+#if defined(USE_AURA)
+#include "chrome/browser/ui/aura/chrome_browser_main_extra_parts_aura.h"
+#endif
+
+#if defined(USE_X11)
+#include "chrome/browser/chrome_browser_main_extra_parts_x11.h"
 #endif
 
 using base::FileDescriptor;
@@ -507,7 +532,7 @@ ChromeContentBrowserClient::~ChromeContentBrowserClient() {
 }
 
 // static
-void ChromeContentBrowserClient::RegisterUserPrefs(
+void ChromeContentBrowserClient::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterBooleanPref(
       prefs::kDisable3DAPIs,
@@ -568,19 +593,23 @@ content::BrowserMainParts* ChromeContentBrowserClient::CreateBrowserMainParts(
   // Construct additional browser parts. Stages are called in the order in
   // which they are added.
 #if defined(TOOLKIT_GTK)
-  chrome::AddGtkToolkitExtraParts(main_parts);
+  main_parts->AddParts(new ChromeBrowserMainExtraPartsGtk());
 #endif
 
 #if defined(TOOLKIT_VIEWS)
-  chrome::AddViewsToolkitExtraParts(main_parts);
+  main_parts->AddParts(new ChromeBrowserMainExtraPartsViews());
 #endif
 
 #if defined(USE_ASH)
-  chrome::AddAshToolkitExtraParts(main_parts);
+  main_parts->AddParts(new ChromeBrowserMainExtraPartsAsh());
 #endif
 
 #if defined(USE_AURA)
-  chrome::AddAuraToolkitExtraParts(main_parts);
+  main_parts->AddParts(new ChromeBrowserMainExtraPartsAura());
+#endif
+
+#if defined(USE_X11)
+  main_parts->AddParts(new ChromeBrowserMainExtraPartsX11());
 #endif
 
   chrome::AddMetricsExtraParts(main_parts);
@@ -701,6 +730,7 @@ static bool IsExtensionActivityLogEnabledForProfile(Profile* profile) {
 void ChromeContentBrowserClient::GuestWebContentsCreated(
     WebContents* guest_web_contents,
     WebContents* opener_web_contents,
+    content::BrowserPluginGuestDelegate** guest_delegate,
     scoped_ptr<base::DictionaryValue> extra_params) {
   if (opener_web_contents) {
     GuestView* guest = GuestView::FromWebContents(opener_web_contents);
@@ -711,11 +741,11 @@ void ChromeContentBrowserClient::GuestWebContentsCreated(
 
     switch (guest->GetViewType()) {
       case GuestView::WEBVIEW: {
-        new WebViewGuest(guest_web_contents);
+        *guest_delegate = new WebViewGuest(guest_web_contents);
         break;
       }
       case GuestView::ADVIEW: {
-        new AdViewGuest(guest_web_contents);
+        *guest_delegate = new AdViewGuest(guest_web_contents);
         break;
       }
       default:
@@ -733,9 +763,9 @@ void ChromeContentBrowserClient::GuestWebContentsCreated(
   extra_params->GetString(guestview::kAttributeApi, &api_type);
 
   if (api_type == "adview") {
-    new AdViewGuest(guest_web_contents);
+    *guest_delegate  = new AdViewGuest(guest_web_contents);
   } else if (api_type == "webview") {
-    new WebViewGuest(guest_web_contents);
+    *guest_delegate = new WebViewGuest(guest_web_contents);
   } else {
     NOTREACHED();
   }
@@ -1252,6 +1282,10 @@ bool ChromeContentBrowserClient::ShouldSwapProcessesForRedirect(
       ExtensionURLInfo(current_url), ExtensionURLInfo(new_url), false);
 }
 
+bool ChromeContentBrowserClient::ShouldAssignSiteForURL(const GURL& url) {
+  return !url.SchemeIs(chrome::kChromeNativeScheme);
+}
+
 std::string ChromeContentBrowserClient::GetCanonicalEncodingNameByAliasName(
     const std::string& alias_name) {
   return CharacterEncoding::GetCanonicalEncodingNameByAliasName(alias_name);
@@ -1259,16 +1293,17 @@ std::string ChromeContentBrowserClient::GetCanonicalEncodingNameByAliasName(
 
 void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
     CommandLine* command_line, int child_process_id) {
-#if defined(USE_LINUX_BREAKPAD)
-  if (IsCrashReporterEnabled()) {
-    command_line->AppendSwitchASCII(switches::kEnableCrashReporter,
-        child_process_logging::GetClientId() + "," + base::GetLinuxDistro());
-  }
-#elif defined(OS_MACOSX)
+#if defined(OS_MACOSX)
   if (IsCrashReporterEnabled()) {
     command_line->AppendSwitchASCII(switches::kEnableCrashReporter,
                                     child_process_logging::GetClientId());
   }
+#elif defined(OS_POSIX)
+  if (IsCrashReporterEnabled()) {
+    command_line->AppendSwitchASCII(switches::kEnableCrashReporter,
+        child_process_logging::GetClientId() + "," + base::GetLinuxDistro());
+  }
+
 #endif  // OS_MACOSX
 
   if (logging::DialogsAreSuppressed())
@@ -1400,6 +1435,7 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
     static const char* const kSwitchNames[] = {
       switches::kAllowHTTPBackgroundPage,
       switches::kEnableExperimentalExtensionApis,
+      switches::kExtensionsOnChromeURLs,
       switches::kWhitelistedExtensionID,
     };
 
@@ -1794,6 +1830,11 @@ WebKit::WebNotificationPresenter::Permission
         int render_process_id) {
 #if defined(ENABLE_NOTIFICATIONS)
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  // Sometimes a notification may be invoked during the shutdown.
+  // See http://crbug.com/256638
+  if (browser_shutdown::IsTryingToQuit())
+    return WebKit::WebNotificationPresenter::PermissionNotAllowed;
+
   ProfileIOData* io_data = ProfileIOData::FromResourceContext(context);
 
   DesktopNotificationService* notification_service =
@@ -1931,12 +1972,12 @@ void ChromeContentBrowserClient::ResourceDispatcherHostCreated() {
 // TODO(tommi): Rename from Get to Create.
 content::SpeechRecognitionManagerDelegate*
     ChromeContentBrowserClient::GetSpeechRecognitionManagerDelegate() {
-#if !defined(OS_ANDROID)
-  return new speech::ChromeSpeechRecognitionManagerDelegate();
+#if defined(ENABLE_INPUT_SPEECH)
+  return new speech::ChromeSpeechRecognitionManagerDelegateBubbleUI();
 #else
-  // TODO(janx): Implement speech::AndroidSpeechRecognitionManagerDelegate
-  // (see crbug.com/222352).
-  return NULL;
+  // Platforms who don't implement x-webkit-speech (a.k.a INPUT_SPEECH) just
+  // need the base delegate without the bubble UI.
+  return new speech::ChromeSpeechRecognitionManagerDelegate();
 #endif
 }
 
@@ -2295,28 +2336,30 @@ void ChromeContentBrowserClient::GetAdditionalAllowedSchemesForFileSystem(
   additional_allowed_schemes->push_back(extensions::kExtensionScheme);
 }
 
-void ChromeContentBrowserClient::GetAdditionalFileSystemMountPointProviders(
+void ChromeContentBrowserClient::GetAdditionalFileSystemBackends(
+    content::BrowserContext* browser_context,
     const base::FilePath& storage_partition_path,
-    quota::SpecialStoragePolicy* special_storage_policy,
-    fileapi::ExternalMountPoints* external_mount_points,
-    ScopedVector<fileapi::FileSystemMountPointProvider>* additional_providers) {
+    ScopedVector<fileapi::FileSystemBackend>* additional_backends) {
 #if !defined(OS_ANDROID)
   base::SequencedWorkerPool* pool = content::BrowserThread::GetBlockingPool();
-  additional_providers->push_back(new MediaFileSystemMountPointProvider(
+  additional_backends->push_back(new MediaFileSystemBackend(
       storage_partition_path,
       pool->GetSequencedTaskRunner(pool->GetNamedSequenceToken(
-          MediaFileSystemMountPointProvider::kMediaTaskRunnerName)).get()));
+          MediaFileSystemBackend::kMediaTaskRunnerName)).get()));
 #endif
 #if defined(OS_CHROMEOS)
+  fileapi::ExternalMountPoints* external_mount_points =
+      content::BrowserContext::GetMountPoints(browser_context);
   DCHECK(external_mount_points);
-  chromeos::CrosMountPointProvider* cros_mount_provider =
-      new chromeos::CrosMountPointProvider(
-          special_storage_policy,
+  chromeos::FileSystemBackend* backend =
+      new chromeos::FileSystemBackend(
+          new drive::FileSystemBackendDelegate(browser_context),
+          browser_context->GetSpecialStoragePolicy(),
           external_mount_points,
           fileapi::ExternalMountPoints::GetSystemInstance());
-  cros_mount_provider->AddSystemMountPoints();
-  DCHECK(cros_mount_provider->CanHandleType(fileapi::kFileSystemTypeExternal));
-  additional_providers->push_back(cros_mount_provider);
+  backend->AddSystemMountPoints();
+  DCHECK(backend->CanHandleType(fileapi::kFileSystemTypeExternal));
+  additional_backends->push_back(backend);
 #endif
 }
 
@@ -2360,7 +2403,6 @@ void ChromeContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
   mappings->push_back(FileDescriptorInfo(kAndroidUIResourcesPakDescriptor,
                                          FileDescriptor(f, true)));
 
-#if defined(USE_LINUX_BREAKPAD)
   if (IsCrashReporterEnabled()) {
     f = CrashDumpManager::GetInstance()->CreateMinidumpFile(child_process_id);
     if (f == base::kInvalidPlatformFileValue) {
@@ -2371,7 +2413,6 @@ void ChromeContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
                                              FileDescriptor(f, true)));
     }
   }
-#endif  // defined(USE_LINUX_BREAKPAD)
 
 #else
   int crash_signal_fd = GetCrashSignalFD(command_line);

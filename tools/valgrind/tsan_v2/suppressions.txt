@@ -22,7 +22,7 @@ race:pcache1AllocPage
 race:tracked_objects::ThreadData::ShutdownSingleThreadedCleanup
 
 # http://crbug.com/115540
-race:content::BrowserThread::GetCurrentThreadIdentifier
+race:*GetCurrentThreadIdentifier
 
 # http://crbug.com/120808
 race:base/threading/watchdog.cc
@@ -47,6 +47,7 @@ race:_M_is_leaked
 
 # http://crbug.com/189177
 race:thread_manager
+race:v8::Locker::Initialize
 
 # http://crbug.com/223352
 race:uprv_malloc_46
@@ -81,3 +82,13 @@ race:webrtc::EventPosix::StartTimer
 
 # http://crbug.com/246974
 race:content::GpuWatchdogThread::CheckArmed
+
+# http://crbug.com/248101
+race:sqlite3Config
+race:mem0
+
+# http://crbug.com/257396
+race:base::debug::TraceEventTestFixture_TraceSamplingScope_Test::TestBody
+
+# http://crbug.com/257543
+race:*GetObjectFromEntryAddress

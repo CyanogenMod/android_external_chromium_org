@@ -4,21 +4,20 @@
 
 #include "chrome/browser/google_apis/gdata_wapi_requests.h"
 
+#include "base/location.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/task_runner_util.h"
-#include "base/threading/sequenced_worker_pool.h"
 #include "base/values.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/google_apis/gdata_wapi_url_generator.h"
+#include "chrome/browser/google_apis/request_sender.h"
 #include "chrome/browser/google_apis/request_util.h"
 #include "chrome/browser/google_apis/time_util.h"
-#include "content/public/browser/browser_thread.h"
 #include "net/base/escape.h"
 #include "net/base/url_util.h"
 #include "third_party/libxml/chromium/libxml_utils.h"
 
-using content::BrowserThread;
 using net::URLFetcher;
 
 namespace google_apis {
@@ -57,9 +56,11 @@ void DidParseResourceListOnBlockingPool(
 
 // Parses the JSON value to ResourceList on the blocking pool and runs
 // |callback| on the UI thread once parsing is done.
-void ParseResourceListAndRun(const GetResourceListCallback& callback,
-                             GDataErrorCode error,
-                             scoped_ptr<base::Value> value) {
+void ParseResourceListAndRun(
+    scoped_refptr<base::TaskRunner> blocking_task_runner,
+    const GetResourceListCallback& callback,
+    GDataErrorCode error,
+    scoped_ptr<base::Value> value) {
   DCHECK(!callback.is_null());
 
   if (!value) {
@@ -68,7 +69,7 @@ void ParseResourceListAndRun(const GetResourceListCallback& callback,
   }
 
   base::PostTaskAndReplyWithResult(
-      BrowserThread::GetBlockingPool(),
+      blocking_task_runner,
       FROM_HERE,
       base::Bind(&ParseResourceListOnBlockingPool, base::Passed(&value)),
       base::Bind(&DidParseResourceListOnBlockingPool, callback, error));
@@ -162,8 +163,11 @@ GetResourceListRequest::GetResourceListRequest(
     const std::string& search_string,
     const std::string& directory_resource_id,
     const GetResourceListCallback& callback)
-    : GetDataRequest(sender,
-                     base::Bind(&ParseResourceListAndRun, callback)),
+    : GetDataRequest(
+          sender,
+          base::Bind(&ParseResourceListAndRun,
+                     make_scoped_refptr(sender->blocking_task_runner()),
+                     callback)),
       url_generator_(url_generator),
       override_url_(override_url),
       start_changestamp_(start_changestamp),
@@ -189,8 +193,11 @@ SearchByTitleRequest::SearchByTitleRequest(
     const std::string& title,
     const std::string& directory_resource_id,
     const GetResourceListCallback& callback)
-    : GetDataRequest(sender,
-                     base::Bind(&ParseResourceListAndRun, callback)),
+    : GetDataRequest(
+          sender,
+          base::Bind(&ParseResourceListAndRun,
+                     make_scoped_refptr(sender->blocking_task_runner()),
+                     callback)),
       url_generator_(url_generator),
       title_(title),
       directory_resource_id_(directory_resource_id) {
@@ -282,11 +289,11 @@ CreateDirectoryRequest::CreateDirectoryRequest(
     const GDataWapiUrlGenerator& url_generator,
     const GetDataCallback& callback,
     const std::string& parent_resource_id,
-    const std::string& directory_name)
+    const std::string& directory_title)
     : GetDataRequest(sender, callback),
       url_generator_(url_generator),
       parent_resource_id_(parent_resource_id),
-      directory_name_(directory_name) {
+      directory_title_(directory_title) {
   DCHECK(!callback.is_null());
 }
 
@@ -316,7 +323,7 @@ bool CreateDirectoryRequest::GetContentData(std::string* upload_content_type,
                           "http://schemas.google.com/docs/2007#folder");
   xml_writer.EndElement();  // Ends "category" element.
 
-  xml_writer.WriteElement("title", directory_name_);
+  xml_writer.WriteElement("title", directory_title_);
 
   xml_writer.EndElement();  // Ends "entry" element.
   xml_writer.StopWriting();
@@ -333,11 +340,11 @@ CopyHostedDocumentRequest::CopyHostedDocumentRequest(
     const GDataWapiUrlGenerator& url_generator,
     const GetDataCallback& callback,
     const std::string& resource_id,
-    const std::string& new_name)
+    const std::string& new_title)
     : GetDataRequest(sender, callback),
       url_generator_(url_generator),
       resource_id_(resource_id),
-      new_name_(new_name) {
+      new_title_(new_title) {
   DCHECK(!callback.is_null());
 }
 
@@ -361,7 +368,7 @@ bool CopyHostedDocumentRequest::GetContentData(
   xml_writer.AddAttribute("xmlns", "http://www.w3.org/2005/Atom");
 
   xml_writer.WriteElement("id", resource_id_);
-  xml_writer.WriteElement("title", new_name_);
+  xml_writer.WriteElement("title", new_title_);
 
   xml_writer.EndElement();  // Ends "entry" element.
   xml_writer.StopWriting();
@@ -378,11 +385,11 @@ RenameResourceRequest::RenameResourceRequest(
     const GDataWapiUrlGenerator& url_generator,
     const EntryActionCallback& callback,
     const std::string& resource_id,
-    const std::string& new_name)
+    const std::string& new_title)
     : EntryActionRequest(sender, callback),
       url_generator_(url_generator),
       resource_id_(resource_id),
-      new_name_(new_name) {
+      new_title_(new_title) {
   DCHECK(!callback.is_null());
 }
 
@@ -411,7 +418,7 @@ bool RenameResourceRequest::GetContentData(std::string* upload_content_type,
   xml_writer.StartElement("entry");
   xml_writer.AddAttribute("xmlns", "http://www.w3.org/2005/Atom");
 
-  xml_writer.WriteElement("title", new_name_);
+  xml_writer.WriteElement("title", new_title_);
 
   xml_writer.EndElement();  // Ends "entry" element.
   xml_writer.StopWriting();

@@ -41,7 +41,6 @@
         '../url/url.gyp:url_lib',
         'ash_strings.gyp:ash_strings',
         'ash_resources',
-        'ash_wallpaper_resources',
       ],
       'defines': [
         'ASH_IMPLEMENTATION',
@@ -88,12 +87,14 @@
         'display/display_change_observer_x11.h',
         'display/display_controller.cc',
         'display/display_controller.h',
-        'display/display_error_dialog.cc',
-        'display/display_error_dialog.h',
+        'display/display_error_observer.cc',
+        'display/display_error_observer.h',
         'display/display_info.h',
         'display/display_info.cc',
         'display/display_layout.h',
         'display/display_layout.cc',
+        'display/display_layout_store.h',
+        'display/display_layout_store.cc',
         'display/display_manager.cc',
         'display/display_manager.h',
         'display/display_pref_util.h',
@@ -557,8 +558,8 @@
         }, { # else: chromeos!=1
           'sources/': [
             ['exclude', '/chromeos/'],
-            ['exclude', 'display/display_error_dialog.cc'],
-            ['exclude', 'display/display_error_dialog.h'],
+            ['exclude', 'display/display_error_observer.cc'],
+            ['exclude', 'display/display_error_observer.h'],
             ['exclude', 'display/output_configurator_animation.cc'],
             ['exclude', 'display/output_configurator_animation.h'],
           ],
@@ -667,7 +668,7 @@
         'desktop_background/wallpaper_resizer_unittest.cc',
         'dip_unittest.cc',
         'display/display_controller_unittest.cc',
-        'display/display_error_dialog_unittest.cc',
+        'display/display_error_observer_unittest.cc',
         'display/display_info_unittest.cc',
         'display/display_manager_unittest.cc',
         'display/mirror_window_controller_unittest.cc',
@@ -757,7 +758,6 @@
         'wm/workspace/workspace_layout_manager_unittest.cc',
         'wm/workspace/workspace_manager_unittest.cc',
         'wm/workspace/workspace_window_resizer_unittest.cc',
-        '<(SHARED_INTERMEDIATE_DIR)/ash/ash_resources/ash_wallpaper_resources.rc',
       ],
       'conditions': [
         ['OS=="win"', {
@@ -795,9 +795,14 @@
           # are not referenced in code, but are referenced in nibs.
           'xcode_settings': {'OTHER_LDFLAGS': ['-Wl,-ObjC']},
         }],
+        ['use_x11==1', {
+          'sources': [
+            'display/display_change_observer_x11_unittest.cc'
+          ],
+        }],
         ['chromeos!=1', {
           'sources/': [
-            ['exclude', 'display/display_error_dialog_unittest.cc'],
+            ['exclude', 'display/display_error_observer_unittest.cc'],
           ],
         }, {  # chromeos==1
           'dependencies': [
@@ -867,7 +872,6 @@
         'shell/window_watcher.h',
         '../content/app/startup_helper_win.cc',
         '../ui/views/test/test_views_delegate.cc',
-        '<(SHARED_INTERMEDIATE_DIR)/ash/ash_resources/ash_wallpaper_resources.rc',
       ],
       'conditions': [
         ['OS=="win"', {

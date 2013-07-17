@@ -14,14 +14,16 @@
 #include "base/values.h"
 #include "components/autofill/content/browser/wallet/wallet_service_url.h"
 #include "components/autofill/content/browser/wallet/wallet_signin_helper_delegate.h"
-#include "google_apis/gaia/gaia_auth_fetcher.h"
-#include "google_apis/gaia/gaia_auth_util.h"
-#include "google_apis/gaia/gaia_constants.h"
-#include "google_apis/gaia/gaia_urls.h"
+#include "content/public/browser/browser_thread.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "net/base/escape.h"
+#include "net/cookies/canonical_cookie.h"
+#include "net/cookies/cookie_monster.h"
+#include "net/cookies/cookie_options.h"
+#include "net/cookies/cookie_store.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_context.h"
+#include "net/url_request/url_request_context_getter.h"
 
 namespace autofill {
 namespace wallet {
@@ -32,6 +34,69 @@ namespace {
 const char kGetAccountInfoUrlFormat[] =
     "https://clients1.google.com/tbproxy/getaccountinfo?key=%d&rv=2";
 
+const char kWalletCookieName[] = "gdtoken";
+
+// Callback for retrieving Google Wallet cookies. |callback| is passed the
+// retrieved cookies and posted back to the UI thread. |cookies| is any Google
+// Wallet cookies.
+void GetGoogleCookiesCallback(
+    const base::Callback<void(const std::string&)>& callback,
+    const net::CookieList& cookies) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+
+  std::string wallet_cookie;
+  for (size_t i = 0; i < cookies.size(); ++i) {
+    if (LowerCaseEqualsASCII(cookies[i].Name(), kWalletCookieName)) {
+      wallet_cookie = cookies[i].Value();
+      break;
+    }
+  }
+  content::BrowserThread::PostTask(content::BrowserThread::UI,
+                                   FROM_HERE,
+                                   base::Bind(callback, wallet_cookie));
+}
+
+// Gets Google Wallet cookies. Must be called on the IO thread.
+// |request_context_getter| is a getter for the current request context.
+// |callback| is called when retrieving cookies is completed.
+void GetGoogleCookies(
+    scoped_refptr<net::URLRequestContextGetter> request_context_getter,
+    const base::Callback<void(const std::string&)>& callback) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+
+  net::URLRequestContext* url_request_context =
+      request_context_getter->GetURLRequestContext();
+  if (!url_request_context) {
+    content::BrowserThread::PostTask(content::BrowserThread::UI,
+                                     FROM_HERE,
+                                     base::Bind(callback, std::string()));
+    return;
+  }
+
+  net::CookieStore* cookie_store = url_request_context->cookie_store();
+  if (!cookie_store) {
+    content::BrowserThread::PostTask(content::BrowserThread::UI,
+                                     FROM_HERE,
+                                     base::Bind(callback, std::string()));
+    return;
+  }
+
+  net::CookieMonster* cookie_monster = cookie_store->GetCookieMonster();
+  if (!cookie_monster) {
+    content::BrowserThread::PostTask(content::BrowserThread::UI,
+                                     FROM_HERE,
+                                     base::Bind(callback, std::string()));
+    return;
+  }
+
+  net::CookieOptions cookie_options;
+  cookie_options.set_include_httponly();
+  cookie_monster->GetAllCookiesForURLWithOptionsAsync(
+      wallet::GetPassiveAuthUrl().GetWithEmptyPath(),
+      cookie_options,
+      base::Bind(&GetGoogleCookiesCallback, callback));
+}
+
 }  // namespace
 
 WalletSigninHelper::WalletSigninHelper(
@@ -39,7 +104,8 @@ WalletSigninHelper::WalletSigninHelper(
     net::URLRequestContextGetter* getter)
     : delegate_(delegate),
       getter_(getter),
-      state_(IDLE) {
+      state_(IDLE),
+      weak_ptr_factory_(this) {
   DCHECK(delegate_);
 }
 
@@ -49,11 +115,8 @@ WalletSigninHelper::~WalletSigninHelper() {
 void WalletSigninHelper::StartPassiveSignin() {
   DCHECK_EQ(IDLE, state_);
   DCHECK(!url_fetcher_);
-  DCHECK(!gaia_fetcher_);
 
   state_ = PASSIVE_EXECUTING_SIGNIN;
-  sid_.clear();
-  lsid_.clear();
   username_.clear();
   const GURL& url = wallet::GetPassiveAuthUrl();
   url_fetcher_.reset(net::URLFetcher::Create(
@@ -62,33 +125,28 @@ void WalletSigninHelper::StartPassiveSignin() {
   url_fetcher_->Start();
 }
 
-void WalletSigninHelper::StartAutomaticSignin(
-    const std::string& sid, const std::string& lsid) {
-  DCHECK(!sid.empty());
-  DCHECK(!lsid.empty());
-  DCHECK_EQ(state_, IDLE);
-  DCHECK(!url_fetcher_);
-  DCHECK(!gaia_fetcher_);
-
-  state_ = AUTOMATIC_FETCHING_USERINFO;
-  sid_ = sid;
-  lsid_ = lsid;
-  username_.clear();
-  gaia_fetcher_.reset(new GaiaAuthFetcher(
-      this, GaiaConstants::kChromeSource, getter_));
-  gaia_fetcher_->StartGetUserInfo(lsid_);
-}
-
 void WalletSigninHelper::StartUserNameFetch() {
   DCHECK_EQ(state_, IDLE);
   DCHECK(!url_fetcher_);
-  DCHECK(!gaia_fetcher_);
 
   state_ = USERNAME_FETCHING_USERINFO;
-  sid_.clear();
-  lsid_.clear();
   username_.clear();
   StartFetchingUserNameFromSession();
+}
+
+void WalletSigninHelper::StartWalletCookieValueFetch() {
+  scoped_refptr<net::URLRequestContextGetter> request_context(getter_);
+  if (!request_context.get()) {
+    ReturnWalletCookieValue(std::string());
+    return;
+  }
+
+  base::Callback<void(const std::string&)> callback = base::Bind(
+      &WalletSigninHelper::ReturnWalletCookieValue,
+      weak_ptr_factory_.GetWeakPtr());
+
+  base::Closure task = base::Bind(&GetGoogleCookies, request_context, callback);
+  content::BrowserThread::PostTask(content::BrowserThread::IO, FROM_HERE, task);
 }
 
 std::string WalletSigninHelper::GetGetAccountInfoUrlForTesting() const {
@@ -99,7 +157,6 @@ void WalletSigninHelper::OnServiceError(const GoogleServiceAuthError& error) {
   const State state_with_error = state_;
   state_ = IDLE;
   url_fetcher_.reset();
-  gaia_fetcher_.reset();
 
   switch(state_with_error) {
     case IDLE:
@@ -109,12 +166,6 @@ void WalletSigninHelper::OnServiceError(const GoogleServiceAuthError& error) {
     case PASSIVE_EXECUTING_SIGNIN:  /*FALLTHROUGH*/
     case PASSIVE_FETCHING_USERINFO:
       delegate_->OnPassiveSigninFailure(error);
-      break;
-
-    case AUTOMATIC_FETCHING_USERINFO:  /*FALLTHROUGH*/
-    case AUTOMATIC_ISSUING_AUTH_TOKEN:  /*FALLTHROUGH*/
-    case AUTOMATIC_EXECUTING_SIGNIN:
-      delegate_->OnAutomaticSigninFailure(error);
       break;
 
     case USERNAME_FETCHING_USERINFO:
@@ -127,76 +178,9 @@ void WalletSigninHelper::OnOtherError() {
   OnServiceError(GoogleServiceAuthError::AuthErrorNone());
 }
 
-void WalletSigninHelper::OnGetUserInfoSuccess(
-    const UserInfoMap& data) {
-  DCHECK_EQ(AUTOMATIC_FETCHING_USERINFO, state_);
-
-  UserInfoMap::const_iterator email_iter =
-      data.find(GaiaConstants::kClientOAuthEmailKey);
-  if (email_iter != data.end()) {
-    username_ = email_iter->second;
-    DCHECK(!url_fetcher_);
-    state_ = AUTOMATIC_ISSUING_AUTH_TOKEN;
-    gaia_fetcher_.reset(new GaiaAuthFetcher(
-        this, GaiaConstants::kChromeSource, getter_));
-    gaia_fetcher_->StartIssueAuthToken(
-        sid_, lsid_, GaiaConstants::kGaiaService);
-  } else {
-    LOG(ERROR) << "GetUserInfoFailure: email field not found";
-    OnOtherError();
-  }
-}
-
-void WalletSigninHelper::OnGetUserInfoFailure(
-    const GoogleServiceAuthError& error) {
-  LOG(ERROR) << "GetUserInfoFailure: " << error.ToString();
-  DCHECK_EQ(AUTOMATIC_FETCHING_USERINFO, state_);
-  OnServiceError(error);
-}
-
-void WalletSigninHelper::OnIssueAuthTokenSuccess(
-    const std::string& service,
-    const std::string& auth_token) {
-  DCHECK_EQ(AUTOMATIC_ISSUING_AUTH_TOKEN, state_);
-
-  state_ = AUTOMATIC_EXECUTING_SIGNIN;
-  std::string encoded_auth_token = net::EscapeUrlEncodedData(auth_token, true);
-  std::string encoded_continue_url =
-      net::EscapeUrlEncodedData(wallet::GetPassiveAuthUrl().spec(), true);
-  std::string encoded_source = net::EscapeUrlEncodedData(
-      GaiaConstants::kChromeSource, true);
-  std::string body = base::StringPrintf(
-      "auth=%s&"
-      "continue=%s&"
-      "source=%s",
-      encoded_auth_token.c_str(),
-      encoded_continue_url.c_str(),
-      encoded_source.c_str());
-
-  gaia_fetcher_.reset();
-  DCHECK(!url_fetcher_);
-  url_fetcher_.reset(net::URLFetcher::Create(
-      0,
-      GURL(GaiaUrls::GetInstance()->token_auth_url()),
-      net::URLFetcher::POST,
-      this));
-  url_fetcher_->SetUploadData("application/x-www-form-urlencoded", body);
-  url_fetcher_->SetRequestContext(getter_);
-  url_fetcher_->Start();  // This will result in OnURLFetchComplete callback.
-}
-
-void WalletSigninHelper::OnIssueAuthTokenFailure(
-    const std::string& service,
-    const GoogleServiceAuthError& error) {
-  LOG(ERROR) << "IssueAuthTokenFailure: " << error.ToString();
-  DCHECK_EQ(AUTOMATIC_ISSUING_AUTH_TOKEN, state_);
-  OnServiceError(error);
-}
-
 void WalletSigninHelper::OnURLFetchComplete(
     const net::URLFetcher* fetcher) {
   DCHECK_EQ(url_fetcher_.get(), fetcher);
-  DCHECK(!gaia_fetcher_);
   if (!fetcher->GetStatus().is_success() ||
       fetcher->GetResponseCode() < 200 ||
       fetcher->GetResponseCode() >= 300) {
@@ -222,21 +206,12 @@ void WalletSigninHelper::OnURLFetchComplete(
       }
       break;
 
-    case AUTOMATIC_EXECUTING_SIGNIN:
-      if (ParseSignInResponse()) {
-        url_fetcher_.reset();
-        state_ = IDLE;
-        delegate_->OnAutomaticSigninSuccess(username_);
-      }
-      break;
-
     default:
       NOTREACHED() << "unexpected state_=" << state_;
   }
 }
 
 void WalletSigninHelper::StartFetchingUserNameFromSession() {
-  DCHECK(!gaia_fetcher_);
   const int random_number = static_cast<int>(base::RandUint64() % INT_MAX);
   url_fetcher_.reset(
       net::URLFetcher::Create(
@@ -319,6 +294,13 @@ bool WalletSigninHelper::ParseGetAccountInfoResponse(
   }
 
   return !email->empty();
+}
+
+void WalletSigninHelper::ReturnWalletCookieValue(
+    const std::string& cookie_value) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+
+  delegate_->OnDidFetchWalletCookieValue(cookie_value);
 }
 
 }  // namespace wallet

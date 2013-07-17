@@ -13,11 +13,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/content_settings_rule.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/content_settings_pattern.h"
@@ -72,7 +72,7 @@ namespace content_settings {
 //
 
 // static
-void PrefProvider::RegisterUserPrefs(
+void PrefProvider::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterIntegerPref(
       prefs::kContentSettingsVersion,
@@ -398,7 +398,8 @@ void PrefProvider::ReadContentSettingsFromPref(bool overwrite) {
         ParsePatternString(pattern_str);
     if (!pattern_pair.first.IsValid() ||
         !pattern_pair.second.IsValid()) {
-      LOG(DFATAL) << "Invalid pattern strings: " << pattern_str;
+      // TODO: Change this to DFATAL when crbug.com/132659 is fixed.
+      LOG(ERROR) << "Invalid pattern strings: " << pattern_str;
       continue;
     }
 

@@ -20,6 +20,7 @@
 #include "base/values.h"
 #include "base/version.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
 #include "chrome/browser/extensions/crx_installer.h"
@@ -46,7 +47,6 @@
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/webui/extensions/extension_basic_info.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/background_info.h"
 #include "chrome/common/extensions/extension.h"
@@ -126,7 +126,7 @@ ExtensionSettingsHandler::ExtensionSettingsHandler(ExtensionService* service,
 }
 
 // static
-void ExtensionSettingsHandler::RegisterUserPrefs(
+void ExtensionSettingsHandler::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterBooleanPref(
       prefs::kExtensionsUIDeveloperMode,
@@ -160,8 +160,9 @@ DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
       extension_service_->terminated_extensions()->Contains(extension->id()));
   extension_data->SetBoolean("enabledIncognito",
       extension_service_->IsIncognitoEnabled(extension->id()));
-  extension_data->SetBoolean("incognitoCanBeEnabled",
-                             extension->can_be_incognito_enabled());
+  extension_data->SetBoolean("incognitoCanBeToggled",
+                             extension->can_be_incognito_enabled() &&
+                             !extension->force_incognito_enabled());
   extension_data->SetBoolean("wantsFileAccess", extension->wants_file_access());
   extension_data->SetBoolean("allowFileAccess",
                              extension_service_->AllowFileAccess(extension));

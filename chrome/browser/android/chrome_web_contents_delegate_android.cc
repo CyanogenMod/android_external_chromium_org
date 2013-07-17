@@ -7,15 +7,15 @@
 #include "base/android/jni_android.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/google/google_url_tracker.h"
-#include "chrome/browser/media/media_stream_infobar_delegate.h"
+#include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_modal_dialogs/javascript_dialog_manager.h"
 #include "chrome/browser/ui/find_bar/find_match_rects_details.h"
 #include "chrome/browser/ui/find_bar/find_notification_details.h"
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -248,7 +248,8 @@ void ChromeWebContentsDelegateAndroid::RequestMediaAccessPermission(
     content::WebContents* web_contents,
     const content::MediaStreamRequest& request,
     const content::MediaResponseCallback& callback) {
-  MediaStreamInfoBarDelegate::Create(web_contents, request, callback);
+  MediaCaptureDevicesDispatcher::GetInstance()->ProcessMediaAccessRequest(
+      web_contents, request, callback, NULL);
 }
 
 bool ChromeWebContentsDelegateAndroid::RequestPpapiBrokerPermission(

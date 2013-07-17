@@ -8,6 +8,7 @@
 
 #include "base/auto_reset.h"
 #include "base/prefs/pref_service.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_sorting.h"
@@ -16,7 +17,6 @@
 #include "chrome/browser/extensions/install_tracker_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/extension_app_item.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
@@ -110,7 +110,7 @@ void AppsModelBuilder::OnInstallFailure(const std::string& extension_id) {
   model_->DeleteAt(i);
 }
 
-void AppsModelBuilder::OnExtensionInstalled(const Extension* extension) {
+void AppsModelBuilder::OnExtensionLoaded(const Extension* extension) {
   if (!extension->ShouldDisplayInAppLauncher())
     return;
 
@@ -129,18 +129,18 @@ void AppsModelBuilder::OnExtensionInstalled(const Extension* extension) {
   UpdateHighlight();
 }
 
+void AppsModelBuilder::OnExtensionUnloaded(const Extension* extension) {
+  int index = FindApp(extension->id());
+  if (index < 0)
+    return;
+  GetAppAt(index)->UpdateIcon();
+}
+
 void AppsModelBuilder::OnExtensionUninstalled(const Extension* extension) {
   int index = FindApp(extension->id());
   if (index < 0)
     return;
   model_->DeleteAt(index);
-}
-
-void AppsModelBuilder::OnExtensionDisabled(const Extension* extension) {
-  int index = FindApp(extension->id());
-  if (index < 0)
-    return;
-  GetAppAt(index)->UpdateIcon();
 }
 
 void AppsModelBuilder::OnAppsReordered() {
@@ -194,14 +194,24 @@ void AppsModelBuilder::PopulateApps() {
 }
 
 void AppsModelBuilder::ResortApps() {
+  // Scan app items in |model_| and put the apps that do not have valid ordinals
+  // into |invalid_ordinal_apps|. This is needed to handle uninstalling a
+  // terminated app case, where there is no unload notification and uninstall
+  // notification comes in after the app's ordinals are cleared.
+  // See http://crbug.com/256749.
   Apps apps;
-  for (size_t i = 0; i < model_->item_count(); ++i)
-    apps.push_back(GetAppAt(i));
-
-  if (apps.empty())
-    return;
+  Apps invalid_ordinal_apps;
+  for (size_t i = 0; i < model_->item_count(); ++i) {
+    ExtensionAppItem* app = GetAppAt(i);
+    if (app->GetPageOrdinal().IsValid() && app->GetAppLaunchOrdinal().IsValid())
+      apps.push_back(app);
+    else
+      invalid_ordinal_apps.push_back(app);
+  }
 
   std::sort(apps.begin(), apps.end(), &AppPrecedes);
+  apps.insert(
+      apps.end(), invalid_ordinal_apps.begin(), invalid_ordinal_apps.end());
 
   base::AutoReset<bool> auto_reset(&ignore_changes_, true);
 

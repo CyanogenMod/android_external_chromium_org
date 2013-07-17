@@ -192,6 +192,9 @@ RenderViewHostImpl::RenderViewHostImpl(
   for (size_t i = 0; i < g_created_callbacks.Get().size(); i++)
     g_created_callbacks.Get().at(i).Run(this);
 
+  if (!swapped_out)
+    instance_->increment_active_view_count();
+
 #if defined(OS_ANDROID)
   media_player_manager_ = media::MediaPlayerManager::Create(this);
 #endif
@@ -208,6 +211,11 @@ RenderViewHostImpl::~RenderViewHostImpl() {
   // Be sure to clean up any leftover state from cross-site requests.
   CrossSiteRequestManager::GetInstance()->SetHasPendingCrossSiteRequest(
       GetProcess()->GetID(), GetRoutingID(), false);
+
+  // If this was swapped out, it already decremented the active view
+  // count of the SiteInstance it belongs to.
+  if (!is_swapped_out_)
+    instance_->decrement_active_view_count();
 }
 
 RenderViewHostDelegate* RenderViewHostImpl::GetDelegate() const {
@@ -475,8 +483,8 @@ void RenderViewHostImpl::WasSwappedOut() {
     base::ProcessHandle process_handle = GetProcess()->GetHandle();
     int views = 0;
 
-    // Count the number of widget hosts for the process, which is equivalent to
-    // views using the process as of this writing.
+    // Count the number of active widget hosts for the process, which
+    // is equivalent to views using the process as of this writing.
     RenderWidgetHost::List widgets = RenderWidgetHost::GetRenderWidgetHosts();
     for (size_t i = 0; i < widgets.size(); ++i) {
       if (widgets[i]->GetProcess()->GetID() == GetProcess()->GetID())
@@ -834,12 +842,17 @@ void RenderViewHostImpl::SetInitialFocus(bool reverse) {
 
 void RenderViewHostImpl::FilesSelectedInChooser(
     const std::vector<ui::SelectedFileInfo>& files,
-    int permissions) {
+    FileChooserParams::Mode permissions) {
   // Grant the security access requested to the given files.
   for (size_t i = 0; i < files.size(); ++i) {
     const ui::SelectedFileInfo& file = files[i];
-    ChildProcessSecurityPolicyImpl::GetInstance()->GrantPermissionsForFile(
-        GetProcess()->GetID(), file.local_path, permissions);
+    if (permissions == FileChooserParams::Save) {
+      ChildProcessSecurityPolicyImpl::GetInstance()->GrantCreateWriteFile(
+          GetProcess()->GetID(), file.local_path);
+    } else {
+      ChildProcessSecurityPolicyImpl::GetInstance()->GrantReadFile(
+          GetProcess()->GetID(), file.local_path);
+    }
   }
   Send(new ViewMsg_RunFileChooserResponse(GetRoutingID(), files));
 }
@@ -918,7 +931,7 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
                         OnShowFullscreenWidget)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_RunModal, OnRunModal)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RenderViewReady, OnRenderViewReady)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_RenderViewGone, OnRenderViewGone)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_RenderProcessGone, OnRenderProcessGone)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidStartProvisionalLoadForFrame,
                         OnDidStartProvisionalLoadForFrame)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidRedirectProvisionalLoad,
@@ -1110,7 +1123,7 @@ void RenderViewHostImpl::OnRenderViewReady() {
   delegate_->RenderViewReady(this);
 }
 
-void RenderViewHostImpl::OnRenderViewGone(int status, int exit_code) {
+void RenderViewHostImpl::OnRenderProcessGone(int status, int exit_code) {
   // Keep the termination status so we can get at it later when we
   // need to know why it died.
   render_view_termination_status_ =
@@ -1360,7 +1373,7 @@ void RenderViewHostImpl::OnOpenURL(
 
   delegate_->RequestOpenURL(
       this, validated_url, params.referrer, params.disposition, params.frame_id,
-      params.is_cross_site_redirect);
+      params.is_cross_site_redirect, params.user_gesture);
 }
 
 void RenderViewHostImpl::OnDidContentsPreferredSizeChange(
@@ -2047,6 +2060,13 @@ void RenderViewHostImpl::OnShowPopup(
 #endif
 
 void RenderViewHostImpl::SetSwappedOut(bool is_swapped_out) {
+  // We update the number of RenderViews in a SiteInstance when the
+  // swapped out status of this RenderView gets flipped.
+  if (is_swapped_out_ && !is_swapped_out)
+    instance_->increment_active_view_count();
+  else if (!is_swapped_out_ && is_swapped_out)
+    instance_->decrement_active_view_count();
+
   is_swapped_out_ = is_swapped_out;
 
   // Whenever we change swap out state, we should not be waiting for

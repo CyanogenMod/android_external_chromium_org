@@ -12,14 +12,15 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/proxy_cros_settings_parser.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chromeos/ui_account_tweaks.h"
 #include "chrome/browser/ui/webui/options/chromeos/accounts_options_handler.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -108,13 +109,15 @@ void CoreChromeOSOptionsHandler::InitializeHandler() {
 
   CoreOptionsHandler::InitializeHandler();
 
-  PrefService* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
+  Profile* profile = Profile::FromWebUI(web_ui());
+  PrefService* prefs = profile->GetPrefs();
   proxy_prefs_.Init(prefs);
   proxy_prefs_.Add(prefs::kProxy,
                    base::Bind(&CoreChromeOSOptionsHandler::OnPreferenceChanged,
                               base::Unretained(this),
                               prefs));
-  proxy_config_service_.SetPrefs(prefs);
+  proxy_config_service_.SetPrefs(ProfileHelper::IsSigninProfile(profile),
+                                 prefs);
 }
 
 base::Value* CoreChromeOSOptionsHandler::FetchPref(

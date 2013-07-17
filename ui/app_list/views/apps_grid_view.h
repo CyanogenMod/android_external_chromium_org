@@ -202,6 +202,10 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   void CalculateDropTarget(const gfx::Point& drag_point,
                            bool use_page_button_hovering);
 
+  // Prepares |drag_and_drop_host_| for dragging. |grid_location| contains
+  // the drag point in this grid view's coordinates.
+  void StartDragAndDropHostDrag(const gfx::Point& grid_location);
+
   // Dispatch the drag and drop update event to the dnd host (if needed).
   void DispatchDragEventToDragAndDropHost(const gfx::Point& point);
 
@@ -214,6 +218,9 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
 
   // Updates |model_| to move item represented by |item_view| to |target| slot.
   void MoveItemInModel(views::View* item_view, const Index& target);
+
+  // Cancels any context menus showing for app items on the current page.
+  void CancelContextMenusOnCurrentPage();
 
   // Overridden from views::ButtonListener:
   virtual void ButtonPressed(views::Button* sender,
@@ -228,6 +235,7 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   // Overridden from PaginationModelObserver:
   virtual void TotalPagesChanged() OVERRIDE;
   virtual void SelectedPageChanged(int old_selected, int new_selected) OVERRIDE;
+  virtual void TransitionStarted() OVERRIDE;
   virtual void TransitionChanged() OVERRIDE;
 
   // Overridden from AppListModelObserver:

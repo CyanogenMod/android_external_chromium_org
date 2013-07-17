@@ -101,6 +101,20 @@ public class AwContents {
         void onScrollChanged(int lPix, int tPix, int oldlPix, int oldtPix);
 
         /**
+         * @see View#overScrollBy(int, int, int, int, int, int, int, int, boolean);
+         */
+        void overScrollBy(int deltaX, int deltaY,
+                int scrollX, int scrollY,
+                int scrollRangeX, int scrollRangeY,
+                int maxOverScrollX, int maxOverScrollY,
+                boolean isTouchEvent);
+
+        /**
+         * @see View#scrollTo(int, int)
+         */
+        void super_scrollTo(int scrollX, int scrollY);
+
+        /**
          * @see View#setMeasuredDimension(int, int)
          */
         void setMeasuredDimension(int measuredWidth, int measuredHeight);
@@ -135,6 +149,7 @@ public class AwContents {
 
     private boolean mIsPaused;
     private boolean mIsVisible;  // Equivalent to windowVisible && viewVisible && !mIsPaused.
+    private boolean mIsAttachedToWindow;
     private Bitmap mFavicon;
     private boolean mHasRequestedVisitedHistoryFromClient;
     // TODO(boliu): This should be in a global context, not per webview.
@@ -245,8 +260,24 @@ public class AwContents {
         @Override
         public boolean shouldIgnoreNavigation(NavigationParams navigationParams) {
             final String url = navigationParams.url;
+            final int transitionType = navigationParams.pageTransitionType;
+            final boolean isLoadUrl =
+                    (transitionType & PageTransitionTypes.PAGE_TRANSITION_FROM_API) != 0;
+            final boolean isBackForward =
+                    (transitionType & PageTransitionTypes.PAGE_TRANSITION_FORWARD_BACK) != 0;
+            final boolean isReload =
+                    (transitionType & PageTransitionTypes.PAGE_TRANSITION_CORE_MASK) ==
+                    PageTransitionTypes.PAGE_TRANSITION_RELOAD;
+            final boolean isRedirect = navigationParams.isRedirect;
+
             boolean ignoreNavigation = false;
-            if (mLastLoadUrlAddress != null && mLastLoadUrlAddress.equals(url)) {
+
+            // Any navigation from loadUrl, goBack/Forward, or reload, are considered application
+            // initiated and hence will not yield a shouldOverrideUrlLoading() callback.
+            // TODO(joth): Using PageTransitionTypes should be sufficient to determine all app
+            // initiated navigations, and so mLastLoadUrlAddress should be removed.
+            if ((isLoadUrl && !isRedirect) || isBackForward || isReload ||
+                    mLastLoadUrlAddress != null && mLastLoadUrlAddress.equals(url)) {
                 // Support the case where the user clicks on a link that takes them back to the
                 // same page.
                 mLastLoadUrlAddress = null;
@@ -293,11 +324,32 @@ public class AwContents {
     }
 
     //--------------------------------------------------------------------------------------------
+    // NOTE: This content size change notification comes from the compositor and reflects the size
+    // of the content on screen (but not neccessarily in the renderer main thread).
+    private class AwContentUpdateFrameInfoListener
+                implements ContentViewCore.UpdateFrameInfoListener {
+        @Override
+        public void onFrameInfoUpdated(float widthCss, float heightCss, float pageScaleFactor) {
+            int widthPix = (int) Math.floor(widthCss * mDIPScale * pageScaleFactor);
+            int heightPix = (int) Math.floor(heightCss * mDIPScale * pageScaleFactor);
+            mScrollOffsetManager.setContentSize(widthPix, heightPix);
+
+            nativeSetDisplayedPageScaleFactor(mNativeAwContents, pageScaleFactor);
+        }
+    }
+
+    //--------------------------------------------------------------------------------------------
     private class AwScrollOffsetManagerDelegate implements AwScrollOffsetManager.Delegate {
         @Override
-        public boolean scrollContainerViewTo(int x, int y) {
-            mContainerView.scrollTo(x, y);
-            return (x == mContainerView.getScrollX() && y == mContainerView.getScrollY());
+        public void overScrollContainerViewBy(int deltaX, int deltaY, int scrollX, int scrollY,
+                int scrollRangeX, int scrollRangeY) {
+            mInternalAccessAdapter.overScrollBy(deltaX, deltaY, scrollX, scrollY,
+                    scrollRangeX, scrollRangeY, 0, 0, true);
+        }
+
+        @Override
+        public void scrollContainerViewTo(int x, int y) {
+            mInternalAccessAdapter.super_scrollTo(x, y);
         }
 
         @Override
@@ -458,6 +510,7 @@ public class AwContents {
         nativeSetJavaPeers(mNativeAwContents, this, mWebContentsDelegate, mContentsClientBridge,
                 mIoThreadClient, mInterceptNavigationDelegate);
         mContentsClient.installWebContentsObserver(mContentViewCore);
+        mContentViewCore.setUpdateFrameInfoListener(new AwContentUpdateFrameInfoListener());
         mSettings.setWebContents(nativeWebContents);
         nativeSetDipScale(mNativeAwContents, (float) mDIPScale);
    }
@@ -484,14 +537,29 @@ public class AwContents {
     // Recap: supplyContentsForPopup() is called on the parent window's content, this method is
     // called on the popup window's content.
     private void receivePopupContents(int popupNativeAwContents) {
+        // Save existing view state.
+        final boolean wasAttached = mIsAttachedToWindow;
+        final boolean wasVisible = getContainerViewVisible();
+        final boolean wasPaused = mIsPaused;
+        final boolean wasFocused = mWindowFocused;
+
+        // Properly clean up existing mContentViewCore and mNativeAwContents.
+        if (wasFocused) onWindowFocusChanged(false);
+        if (wasVisible) setVisibilityInternal(false);
+        // TODO(boliu): This may destroy GL resources outside of functor.
+        if (wasAttached) onDetachedFromWindow();
+        if (!wasPaused) onPause();
+
         setNewAwContents(popupNativeAwContents);
 
-        // Finally refresh view size and visibility, to poke new values into ContentViewCore.
+        // Finally refresh all view state for mContentViewCore and mNativeAwContents.
+        if (!wasPaused) onResume();
+        if (wasAttached) onAttachedToWindow();
         mLastGlobalVisibleWidth = 0;
         mLastGlobalVisibleHeight = 0;
         onSizeChanged(mContainerView.getWidth(), mContainerView.getHeight(), 0, 0);
-        updateVisibilityStateForced();
-        onWindowFocusChanged(mWindowFocused);
+        if (wasVisible) setVisibilityInternal(true);
+        if (wasFocused) onWindowFocusChanged(true);
     }
 
     public void destroy() {
@@ -572,6 +640,8 @@ public class AwContents {
     public void onDraw(Canvas canvas) {
         if (mNativeAwContents == 0) return;
 
+        mScrollOffsetManager.syncScrollOffsetFromOnDraw();
+
         canvas.getClipBounds(mClipBoundsTemporary);
         if (!nativeOnDraw(mNativeAwContents, canvas, canvas.isHardwareAccelerated(),
                     mContainerView.getScrollX(), mContainerView.getScrollY(),
@@ -597,9 +667,19 @@ public class AwContents {
 
     /**
      * Called by the embedder when the scroll offset of the containing view has changed.
+     * @see View#onScrollChanged(int,int)
      */
     public void onContainerViewScrollChanged(int l, int t, int oldl, int oldt) {
         mScrollOffsetManager.onContainerViewScrollChanged(l, t);
+    }
+
+    /**
+     * Called by the embedder when the containing view is to be scrolled or overscrolled.
+     * @see View#onOverScrolled(int,int,int,int)
+     */
+    public void onContainerViewOverScrolled(int scrollX, int scrollY, boolean clampedX,
+            boolean clampedY) {
+        mScrollOffsetManager.onContainerViewOverScrolled(scrollX, scrollY, clampedX, clampedY);
     }
 
     public Picture capturePicture() {
@@ -681,6 +761,8 @@ public class AwContents {
             params.getTransitionType() == PageTransitionTypes.PAGE_TRANSITION_LINK) {
             params.setTransitionType(PageTransitionTypes.PAGE_TRANSITION_RELOAD);
         }
+        params.setTransitionType(
+                params.getTransitionType() | PageTransitionTypes.PAGE_TRANSITION_FROM_API);
 
         // For WebView, always use the user agent override, which is set
         // every time the user agent in AwSettings is modified.
@@ -740,38 +822,38 @@ public class AwContents {
     }
 
     /**
-     * @see ContentViewCore#computeHorizontalScrollRange()
+     * @see View#computeHorizontalScrollRange()
      */
     public int computeHorizontalScrollRange() {
-        return mContentViewCore.computeHorizontalScrollRange();
+        return mScrollOffsetManager.computeHorizontalScrollRange();
     }
 
     /**
-     * @see ContentViewCore#computeHorizontalScrollOffset()
+     * @see View#computeHorizontalScrollOffset()
      */
     public int computeHorizontalScrollOffset() {
-        return mContentViewCore.computeHorizontalScrollOffset();
+        return mScrollOffsetManager.computeHorizontalScrollOffset();
     }
 
     /**
-     * @see ContentViewCore#computeVerticalScrollRange()
+     * @see View#computeVerticalScrollRange()
      */
     public int computeVerticalScrollRange() {
-        return mContentViewCore.computeVerticalScrollRange();
+        return mScrollOffsetManager.computeVerticalScrollRange();
     }
 
     /**
-     * @see ContentViewCore#computeVerticalScrollOffset()
+     * @see View#computeVerticalScrollOffset()
      */
     public int computeVerticalScrollOffset() {
-        return mContentViewCore.computeVerticalScrollOffset();
+        return mScrollOffsetManager.computeVerticalScrollOffset();
     }
 
     /**
-     * @see ContentViewCore#computeVerticalScrollExtent()
+     * @see View#computeVerticalScrollExtent()
      */
     public int computeVerticalScrollExtent() {
-        return mContentViewCore.computeVerticalScrollExtent();
+        return mScrollOffsetManager.computeVerticalScrollExtent();
     }
 
     /**
@@ -858,6 +940,7 @@ public class AwContents {
     public void onPause() {
         mIsPaused = true;
         updateVisibilityState();
+        mContentViewCore.onActivityPause();
     }
 
     /**
@@ -866,6 +949,9 @@ public class AwContents {
     public void onResume() {
         mIsPaused = false;
         updateVisibilityState();
+        // Not calling mContentViewCore.onActivityResume because it is the same
+        // as onShow, but we do not want to call onShow yet, since AwContents
+        // visibility depends on other things. TODO(boliu): Clean this up.
     }
 
     /**
@@ -1095,6 +1181,23 @@ public class AwContents {
         mContentViewCore.invokeZoomPicker();
     }
 
+    /**
+     * @see ContentViewCore.evaluateJavaScript(String, ContentViewCOre.JavaScriptCallback)
+     */
+    public void evaluateJavaScript(String script, final ValueCallback<String> callback) {
+        ContentViewCore.JavaScriptCallback jsCallback = null;
+        if (callback != null) {
+            jsCallback = new ContentViewCore.JavaScriptCallback() {
+                @Override
+                public void handleJavaScriptResult(String jsonResult) {
+                    callback.onReceiveValue(jsonResult);
+                }
+            };
+        }
+
+        mContentViewCore.evaluateJavaScript(script, jsCallback);
+    }
+
     //--------------------------------------------------------------------------------------------
     //  View and ViewGroup method implementations
     //--------------------------------------------------------------------------------------------
@@ -1141,8 +1244,11 @@ public class AwContents {
 
     /**
      * @see android.view.View#onAttachedToWindow()
+     *
+     * Note that this is also called from receivePopupContents.
      */
     public void onAttachedToWindow() {
+        mIsAttachedToWindow = true;
         if (mScrollChangeListener == null) {
             mScrollChangeListener = new ScrollChangeListener();
         }
@@ -1162,6 +1268,7 @@ public class AwContents {
      * @see android.view.View#onDetachedFromWindow()
      */
     public void onDetachedFromWindow() {
+        mIsAttachedToWindow = false;
         if (mNativeAwContents != 0) {
             nativeOnDetachedFromWindow(mNativeAwContents);
         }
@@ -1196,6 +1303,7 @@ public class AwContents {
      */
     public void onSizeChanged(int w, int h, int ow, int oh) {
         if (mNativeAwContents == 0) return;
+        mScrollOffsetManager.setContainerViewSize(w, h);
         updatePhysicalBackingSizeIfNeeded();
         mContentViewCore.onSizeChanged(w, h, ow, oh);
         nativeOnSizeChanged(mNativeAwContents, w, h, ow, oh);
@@ -1216,21 +1324,23 @@ public class AwContents {
     }
 
     private void updateVisibilityState() {
-        doUpdateVisibilityState(false);
+        boolean visible = getContainerViewVisible();
+        if (mIsVisible == visible) return;
+
+        setVisibilityInternal(visible);
     }
 
-    private void updateVisibilityStateForced() {
-        doUpdateVisibilityState(true);
-    }
-
-    private void doUpdateVisibilityState(boolean forced) {
-        if (mNativeAwContents == 0) return;
+    private boolean getContainerViewVisible() {
         boolean windowVisible = mContainerView.getWindowVisibility() == View.VISIBLE;
         boolean viewVisible = mContainerView.getVisibility() == View.VISIBLE;
 
-        boolean visible = windowVisible && viewVisible && !mIsPaused;
-        if (mIsVisible == visible && !forced) return;
+        return windowVisible && viewVisible && !mIsPaused;
+    }
 
+    private void setVisibilityInternal(boolean visible) {
+        // Note that this skips mIsVisible check and unconditionally sets
+        // visibility. In general, callers should use updateVisibilityState
+        // instead.
         mIsVisible = visible;
         if (mIsVisible) {
             mContentViewCore.onShow();
@@ -1469,9 +1579,9 @@ public class AwContents {
     }
 
     @CalledByNative
-    private void onPageScaleFactorChanged(float pageScaleFactor) {
+    private void onWebLayoutPageScaleFactorChanged(float webLayoutPageScaleFactor) {
         // This change notification comes from the renderer thread, not from the cc/ impl thread.
-        mLayoutSizer.onPageScaleChanged(pageScaleFactor);
+        mLayoutSizer.onPageScaleChanged(webLayoutPageScaleFactor);
     }
 
     @CalledByNative
@@ -1483,6 +1593,11 @@ public class AwContents {
     private void setAwAutofillManagerDelegate(AwAutofillManagerDelegate delegate) {
         mAwAutofillManagerDelegate = delegate;
         delegate.init(mContentViewCore, mDIPScale);
+    }
+
+    @CalledByNative
+    private void didOverscroll(int deltaX, int deltaY) {
+        mScrollOffsetManager.overscrollBy(deltaX, deltaY);
     }
 
     // -------------------------------------------------------------------------------------------
@@ -1577,6 +1692,8 @@ public class AwContents {
     private native void nativeOnAttachedToWindow(int nativeAwContents, int w, int h);
     private native void nativeOnDetachedFromWindow(int nativeAwContents);
     private native void nativeSetDipScale(int nativeAwContents, float dipScale);
+    private native void nativeSetDisplayedPageScaleFactor(int nativeAwContents,
+            float pageScaleFactor);
 
     // Returns null if save state fails.
     private native byte[] nativeGetOpaqueState(int nativeAwContents);

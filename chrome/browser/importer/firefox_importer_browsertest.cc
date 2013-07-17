@@ -12,7 +12,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/importer/external_process_importer_host.h"
-#include "chrome/browser/importer/firefox_importer_unittest_utils.h"
 #include "chrome/browser/importer/importer_progress_observer.h"
 #include "chrome/browser/importer/importer_unittest_utils.h"
 #include "chrome/browser/search_engines/template_url.h"
@@ -219,7 +218,7 @@ class FirefoxProfileImporterBrowserTest : public InProcessBrowserTest {
     // Creates a new profile in a new subdirectory in the temp directory.
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     base::FilePath test_path = temp_dir_.path().AppendASCII("ImporterTest");
-    base::Delete(test_path, true);
+    base::DeleteFile(test_path, true);
     file_util::CreateDirectory(test_path);
     profile_path_ = test_path.AppendASCII("profile");
     app_path_ = test_path.AppendASCII("app");
@@ -237,10 +236,10 @@ class FirefoxProfileImporterBrowserTest : public InProcessBrowserTest {
     base::FilePath data_path;
     ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &data_path));
     data_path = data_path.AppendASCII(profile_dir);
-    ASSERT_TRUE(file_util::CopyDirectory(data_path, profile_path_, true));
+    ASSERT_TRUE(base::CopyDirectory(data_path, profile_path_, true));
     ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &data_path));
     data_path = data_path.AppendASCII("firefox3_nss");
-    ASSERT_TRUE(file_util::CopyDirectory(data_path, profile_path_, false));
+    ASSERT_TRUE(base::CopyDirectory(data_path, profile_path_, false));
 
     base::FilePath search_engine_path = app_path_;
     search_engine_path = search_engine_path.AppendASCII("searchplugins");
@@ -248,13 +247,12 @@ class FirefoxProfileImporterBrowserTest : public InProcessBrowserTest {
     if (import_search_plugins) {
       ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &data_path));
       data_path = data_path.AppendASCII("firefox3_searchplugins");
-      if (!file_util::PathExists(data_path)) {
+      if (!base::PathExists(data_path)) {
         // TODO(maruel):  Create search test data that we can open source!
         LOG(ERROR) << L"Missing internal test data";
         return;
       }
-      ASSERT_TRUE(file_util::CopyDirectory(data_path,
-                                           search_engine_path, false));
+      ASSERT_TRUE(base::CopyDirectory(data_path, search_engine_path, false));
     }
 
     importer::SourceProfile source_profile;

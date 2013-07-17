@@ -293,7 +293,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   FileManager.MetadataFileWatcher.prototype.onFileInWatchedDirectoryChanged =
       function() {
     FileWatcher.prototype.onFileInWatchedDirectoryChanged.apply(this);
-    this.metadataCache_.resumeRefresh(this.getWatchedDirectoryEntry().toURL());
   };
 
   FileManager.prototype.initPreferences_ = function(callback) {
@@ -663,9 +662,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     CommandUtil.registerCommand(doc, 'drive-clear-local-cache',
         Commands.driveClearCacheCommand, this);
 
-    CommandUtil.registerCommand(doc, 'drive-reload',
-        Commands.driveReloadCommand, this);
-
     CommandUtil.registerCommand(doc, 'drive-go-to-drive',
         Commands.driveGoToDriveCommand, this);
 
@@ -682,6 +678,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         Commands.zipSelectionCommand, this, this.directoryModel_);
 
     CommandUtil.registerCommand(doc, 'share', Commands.shareCommand, this);
+    CommandUtil.registerCommand(doc, 'pin', Commands.pinCommand, this);
+    CommandUtil.registerCommand(doc, 'unpin',
+        Commands.unpinCommand, this, this.volumeList_);
 
     CommandUtil.registerCommand(doc, 'search', Commands.searchCommand, this,
         this.dialogDom_.querySelector('#search-box'));
@@ -731,7 +730,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     CommandUtil.forceDefaultHandler(node, 'paste');
     CommandUtil.forceDefaultHandler(node, 'delete');
     node.addEventListener('keydown', function(e) {
-      if (util.getKeyModifiers(event) + event.keyCode == '191') {
+      if (util.getKeyModifiers(e) + e.keyCode == '191') {
         // If this key event is propagated, this is handled search command,
         // which calls 'preventDefault' mehtod.
         e.stopPropagation();
@@ -1087,6 +1086,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.driveBuyMoreStorageCommand_ =
         this.dialogDom_.querySelector('#drive-buy-more-space');
 
+    this.newFolderCommand_ =
+        this.dialogDom_.querySelector('command#newfolder');
+
     this.defaultActionMenuItem_.addEventListener('activate',
         this.dispatchSelectionAction_.bind(this));
 
@@ -1146,6 +1148,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         showSpecialSearchRoots);
 
     this.directoryModel_.start();
+
+    this.pinnedFolderModel_ = new cr.ui.ArrayDataModel([]);
 
     this.selectionHandler_ = new FileSelectionHandler(this);
     this.selectionHandler_.addEventListener('show-preview-panel',
@@ -1239,7 +1243,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     }.bind(this));
 
     this.volumeList_ = this.dialogDom_.querySelector('#volume-list');
-    VolumeList.decorate(this.volumeList_, this.directoryModel_);
+    VolumeList.decorate(this.volumeList_,
+                        this.directoryModel_,
+                        this.pinnedFolderModel_);
   };
 
   /**
@@ -2206,6 +2212,48 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   };
 
   /**
+   * Pin the selected folder.
+   */
+  FileManager.prototype.pinSelection = function() {
+    var entries = this.getSelection().entries;
+    var entry = entries[0];
+    // Duplicate entry.
+    if (this.isFolderPinned(entry.fullPath))
+      return;
+
+    this.pinnedFolderModel_.splice(0, 0, entry.fullPath);
+    this.pinnedFolderModel_.sort('name', 'asc');
+  };
+
+  /**
+   * Checkes if the folder is pinned or not.
+   * @param {string} path Path of the folder to be checked.
+   */
+  FileManager.prototype.isFolderPinned = function(path) {
+    for (var i = 0; i < this.pinnedFolderModel_.length; i++) {
+      var pinnedPath = this.pinnedFolderModel_.item(i);
+      if (pinnedPath == path) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  /**
+   * Unpins the pinned folder.
+   * @param {string} path Path of the pinned folder to be unpinnned.
+   */
+  FileManager.prototype.unpinFolder = function(path) {
+    for (var i = 0; i < this.pinnedFolderModel_.length; i++) {
+      var pinnedPath = this.pinnedFolderModel_.item(i);
+      if (pinnedPath == path) {
+        this.pinnedFolderModel_.splice(i, 1);
+        return;
+      }
+    }
+  };
+
+  /**
    * Blinks the selection. Used to give feedback when copying or cutting the
    * selection.
    */
@@ -2412,6 +2460,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
             PathUtil.getRootPath(event.newDirEntry.fullPath)) {
       this.closeOnUnmount_ = false;
     }
+
+    this.newFolderCommand_.canExecuteChange();
 
     this.updateUnformattedDriveStatus_();
     this.updateTitle_();
@@ -2640,6 +2690,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       this.grid_.endBatchUpdates();
     }
 
+    this.newFolderCommand_.canExecuteChange();
+
     this.table_.list.startBatchUpdates();
     this.grid_.startBatchUpdates();
     this.scanInProgress_ = true;
@@ -2671,6 +2723,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       console.error('Scan-completed event recieved. But scan is not started.');
       return;
     }
+
+    this.newFolderCommand_.canExecuteChange();
 
     this.hideSpinnerLater_();
     this.refreshCurrentDirectoryMetadata_();
@@ -2735,6 +2789,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       console.error('Scan-cancelled event recieved. But scan is not started.');
       return;
     }
+
+    this.newFolderCommand_.canExecuteChange();
 
     this.hideSpinnerLater_();
     if (this.scanCompletedTimer_) {
@@ -3837,6 +3893,5 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   FileManager.prototype.setCtrlKeyPressed_ = function(flag) {
     this.ctrlKeyPressed_ = flag;
     this.document_.querySelector('#drive-clear-local-cache').canExecuteChange();
-    this.document_.querySelector('#drive-reload').canExecuteChange();
   };
 })();

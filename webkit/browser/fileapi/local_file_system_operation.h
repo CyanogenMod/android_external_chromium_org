@@ -29,7 +29,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT LocalFileSystemOperation
     : public NON_EXPORTED_BASE(FileSystemOperation),
       public base::SupportsWeakPtr<LocalFileSystemOperation> {
  public:
-  // NOTE: This constructor should not be called outside MountPointProviders;
+  // NOTE: This constructor should not be called outside FileSystemBackends;
   // instead please consider using
   // file_system_context->CreateFileSystemOperation() to instantiate
   // an appropriate FileSystemOperation.
@@ -231,7 +231,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT LocalFileSystemOperation
                 FileWriterDelegate::WriteProgressStatus write_status);
   void DidOpenFile(const OpenFileCallback& callback,
                    base::PlatformFileError rv,
-                   base::PassPlatformFile file);
+                   base::PassPlatformFile file,
+                   const base::Closure& on_close_callback);
 
   // Used only for internal assertions.
   // Returns false if there's another inflight pending operation.

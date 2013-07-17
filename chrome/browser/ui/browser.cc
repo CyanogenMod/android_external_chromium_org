@@ -37,6 +37,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/character_encoding.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chrome_page_zoom.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
@@ -137,7 +138,6 @@
 #include "chrome/browser/upgrade_detector.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
 #include "chrome/common/extensions/background_info.h"
@@ -443,7 +443,6 @@ Browser::Browser(const CreateParams& params)
   }
 
   fullscreen_controller_.reset(new FullscreenController(this));
-  search_model_->AddObserver(this);
 }
 
 Browser::~Browser() {
@@ -451,7 +450,6 @@ Browser::~Browser() {
   if (!browser_shutdown::ShuttingDownWithoutClosingBrowsers())
     DCHECK(tab_strip_model_->empty());
 
-  search_model_->RemoveObserver(this);
   tab_strip_model_->RemoveObserver(this);
 
   // Destroy the BrowserCommandController before removing the browser, so that
@@ -847,7 +845,6 @@ void Browser::JSOutOfMemoryHelper(WebContents* web_contents) {
       InfoBarService::FromWebContents(web_contents);
   if (!infobar_service)
     return;
-
   SimpleAlertInfoBarDelegate::Create(
       infobar_service, InfoBarDelegate::kNoIconID,
       l10n_util::GetStringUTF16(IDS_JS_OUT_OF_MEMORY_PROMPT), true);
@@ -1273,7 +1270,31 @@ WebContents* Browser::OpenURLFromTab(WebContents* source,
   nav_params.source_contents = source;
   nav_params.tabstrip_add_types = TabStripModel::ADD_NONE;
   nav_params.window_action = chrome::NavigateParams::SHOW_WINDOW;
-  nav_params.user_gesture = true;
+  nav_params.user_gesture = params.user_gesture;
+
+  BlockedContentTabHelper* blocked_content_helper = NULL;
+  if (source)
+    blocked_content_helper = BlockedContentTabHelper::FromWebContents(source);
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableBetterPopupBlocking) &&
+      blocked_content_helper) {
+
+    if (blocked_content_helper->all_contents_blocked()) {
+      // TODO(jochen): store information about the blocked pop-up in the
+      // helper.
+      return NULL;
+    }
+
+    if ((params.disposition == NEW_POPUP ||
+         params.disposition == NEW_FOREGROUND_TAB ||
+         params.disposition == NEW_BACKGROUND_TAB) &&
+        !params.user_gesture && !CommandLine::ForCurrentProcess()->HasSwitch(
+                                    switches::kDisablePopupBlocking)) {
+      return NULL;
+    }
+  }
+
   chrome::Navigate(&nav_params);
 
   return nav_params.target_contents;
@@ -1466,11 +1487,35 @@ bool Browser::ShouldCreateWebContents(
     int route_id,
     WindowContainerType window_container_type,
     const string16& frame_name,
-    const GURL& target_url) {
+    const GURL& target_url,
+    WindowOpenDisposition disposition,
+    bool user_gesture) {
   if (window_container_type == WINDOW_CONTAINER_TYPE_BACKGROUND) {
     // If a BackgroundContents is created, suppress the normal WebContents.
     return !MaybeCreateBackgroundContents(
         route_id, web_contents, frame_name, target_url);
+  }
+
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableBetterPopupBlocking)) {
+    return true;
+  }
+
+  BlockedContentTabHelper* blocked_content_helper =
+      BlockedContentTabHelper::FromWebContents(web_contents);
+  if (!blocked_content_helper)
+    return true;
+
+  if (blocked_content_helper->all_contents_blocked()) {
+    // TODO(jochen): store information about the blocked pop-up in the helper.
+    return false;
+  }
+
+  if ((disposition == NEW_POPUP || disposition == NEW_FOREGROUND_TAB ||
+       disposition == NEW_BACKGROUND_TAB) && !user_gesture &&
+      !CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisablePopupBlocking)) {
+    return false;
   }
 
   return true;
@@ -1812,12 +1857,6 @@ void Browser::Observe(int type,
   }
 }
 
-void Browser::ModelChanged(const SearchModel::State& old_state,
-                           const SearchModel::State& new_state) {
-  if (SearchModel::ShouldChangeTopBarsVisibility(old_state, new_state))
-    UpdateBookmarkBarState(BOOKMARK_BAR_STATE_CHANGE_TAB_STATE);
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // Browser, Command and state updating (private):
 
@@ -2125,27 +2164,6 @@ void Browser::UpdateBookmarkBarState(BookmarkBarStateChangeReason reason) {
     else
       state = BookmarkBar::HIDDEN;
   }
-
-  // Bookmark bar may need to be hidden for |SEARCH_SUGGESTIONS| and
-  // |SEARCH_RESULTS| modes as per SearchBox API or Instant overlay or if it's
-  // detached when origin is not |NTP|.
-  // TODO(sail): remove conditional MACOSX flag when bookmark bar is actually
-  // hidden on mac; for now, mac keeps the bookmark bar shown but changes its
-  // z-order to stack it below contents.
-#if !defined(OS_MACOSX)
-  if (search_model_->mode().is_search() &&
-      ((state == BookmarkBar::DETACHED &&
-        !search_model_->mode().is_origin_ntp()) ||
-      !search_model_->top_bars_visible())) {
-    state = BookmarkBar::HIDDEN;
-  }
-#else
-  // TODO(sail): remove this when the above block is enabled for mac.
-  if (state == BookmarkBar::DETACHED && search_model_->mode().is_search() &&
-      !search_model_->mode().is_origin_ntp()) {
-    state = BookmarkBar::HIDDEN;
-  }
-#endif  // !defined(OS_MACOSX)
 
   if (state == bookmark_bar_state_)
     return;

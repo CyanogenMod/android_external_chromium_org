@@ -257,6 +257,7 @@
         'SK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK',
 
         'IGNORE_ROT_AA_RECT_OPT',
+        'SK_IGNORE_IMAGE_PRESCALE',
       ],
       'sources!': [
         '../third_party/skia/include/core/SkTypes.h',
@@ -685,6 +686,7 @@
             '../third_party/skia/src/opts/SkBlitRect_opts_SSE2.cpp',
             '../third_party/skia/src/opts/SkBlitRow_opts_SSE2.cpp',
             '../third_party/skia/src/opts/SkUtils_opts_SSE2.cpp',
+            '../third_party/skia/src/opts/SkBitmapFilter_opts_SSE2.cpp',
             'ext/convolver_SSE2.cc',
           ],
           'conditions': [

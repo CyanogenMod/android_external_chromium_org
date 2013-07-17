@@ -27,6 +27,7 @@
 #include "base/time/time.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/download/download_item_model.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/infobars/infobar_service.h"
@@ -79,7 +80,6 @@
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/user_prefs/pref_registry_syncable.h"
@@ -1028,10 +1028,9 @@ void BrowserWindowGtk::ShowWebsiteSettings(
     Profile* profile,
     content::WebContents* web_contents,
     const GURL& url,
-    const content::SSLStatus& ssl,
-    bool show_history) {
-  WebsiteSettingsPopupGtk::Show(GetNativeWindow(), profile,
-                                web_contents, url, ssl);
+    const content::SSLStatus& ssl) {
+  WebsiteSettingsPopupGtk::Show(GetNativeWindow(), profile, web_contents, url,
+                                ssl);
 }
 
 void BrowserWindowGtk::ShowAppMenu() {
@@ -1221,9 +1220,8 @@ void BrowserWindowGtk::ActiveTabChanged(WebContents* old_contents,
   // Update various elements that are interested in knowing the current
   // WebContents.
   UpdateDevToolsForContents(new_contents);
-  InfoBarService* new_infobar_service =
-      InfoBarService::FromWebContents(new_contents);
-  infobar_container_->ChangeInfoBarService(new_infobar_service);
+  infobar_container_->ChangeInfoBarService(
+      InfoBarService::FromWebContents(new_contents));
   contents_container_->SetTab(new_contents);
 
   // TODO(estade): after we manage browser activation, add a check to make sure
@@ -1517,7 +1515,7 @@ GtkWidget* BrowserWindowGtk::titlebar_widget() const {
 }
 
 // static
-void BrowserWindowGtk::RegisterUserPrefs(
+void BrowserWindowGtk::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   bool custom_frame_default = false;
   // Avoid checking the window manager if we're not connected to an X server (as
@@ -1664,9 +1662,7 @@ void BrowserWindowGtk::InitWidgets() {
     gtk_widget_show(toolbar_border_);
 
   infobar_container_.reset(
-      new InfoBarContainerGtk(this,
-                              browser_->search_model(),
-                              browser_->profile()));
+      new InfoBarContainerGtk(this, browser_->profile()));
   gtk_box_pack_start(GTK_BOX(render_area_vbox_),
                      infobar_container_->widget(),
                      FALSE, FALSE, 0);

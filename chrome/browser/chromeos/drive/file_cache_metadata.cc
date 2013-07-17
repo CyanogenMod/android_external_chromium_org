@@ -95,11 +95,12 @@ FileCacheMetadata::InitializeResult FileCacheMetadata::Initialize(
     const base::FilePath& db_path) {
   AssertOnSequencedWorkerPool();
 
-  bool created = !file_util::PathExists(db_path);
+  bool created = !base::PathExists(db_path);
 
   leveldb::DB* level_db = NULL;
   leveldb::Options options;
   options.create_if_missing = true;
+  options.max_open_files = 0;  // Use minimum.
   leveldb::Status db_status = leveldb::DB::Open(options, db_path.AsUTF8Unsafe(),
                                                 &level_db);
 
@@ -110,7 +111,7 @@ FileCacheMetadata::InitializeResult FileCacheMetadata::Initialize(
     LOG(WARNING) << "Cache db failed to open: " << db_status.ToString();
     uma_status = db_status.IsCorruption() ?
         DB_OPEN_FAILURE_CORRUPTION : DB_OPEN_FAILURE_OTHER;
-    const bool deleted = base::Delete(db_path, true);
+    const bool deleted = base::DeleteFile(db_path, true);
     DCHECK(deleted);
     db_status = leveldb::DB::Open(options, db_path.value(), &level_db);
     if (!db_status.ok()) {

@@ -6,11 +6,12 @@
 
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "base/values.h"
 #include "chrome/browser/google_apis/request_sender.h"
 #include "chrome/browser/google_apis/test_util.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace google_apis {
@@ -45,23 +46,23 @@ class BaseRequestsTest : public testing::Test {
     profile_.reset(new TestingProfile);
     sender_.reset(new RequestSender(profile_.get(),
                                     NULL /* url_request_context_getter */,
+                                    message_loop_.message_loop_proxy(),
                                     std::vector<std::string>() /* scopes */,
                                     std::string() /* custom user agent */));
     sender_->Initialize();
   }
 
-  content::TestBrowserThreadBundle thread_bundle_;
+  base::MessageLoop message_loop_;
   scoped_ptr<TestingProfile> profile_;
   scoped_ptr<RequestSender> sender_;
 };
 
 TEST_F(BaseRequestsTest, ParseValidJson) {
   scoped_ptr<base::Value> json;
-  ParseJson(kValidJsonString,
+  ParseJson(message_loop_.message_loop_proxy(),
+            kValidJsonString,
             base::Bind(test_util::CreateCopyResultCallback(&json)));
-  // Should wait for a blocking pool task, as the JSON parsing is done in the
-  // blocking pool.
-  test_util::RunBlockingPoolTask();
+  base::RunLoop().RunUntilIdle();
 
   DictionaryValue* root_dict = NULL;
   ASSERT_TRUE(json);
@@ -75,11 +76,10 @@ TEST_F(BaseRequestsTest, ParseValidJson) {
 TEST_F(BaseRequestsTest, ParseInvalidJson) {
   // Initialize with a valid pointer to verify that null is indeed assigned.
   scoped_ptr<base::Value> json(base::Value::CreateNullValue());
-  ParseJson(kInvalidJsonString,
+  ParseJson(message_loop_.message_loop_proxy(),
+            kInvalidJsonString,
             base::Bind(test_util::CreateCopyResultCallback(&json)));
-  // Should wait for a blocking pool task, as the JSON parsing is done in the
-  // blocking pool.
-  test_util::RunBlockingPoolTask();
+  base::RunLoop().RunUntilIdle();
 
   EXPECT_FALSE(json);
 }
@@ -93,9 +93,7 @@ TEST_F(BaseRequestsTest, GetDataRequestParseValidResponse) {
           base::Bind(test_util::CreateCopyResultCallback(&error, &value)));
 
   get_data_request->ParseResponse(HTTP_SUCCESS, kValidJsonString);
-  // Should wait for a blocking pool task, as the JSON parsing is done in the
-  // blocking pool.
-  test_util::RunBlockingPoolTask();
+  base::RunLoop().RunUntilIdle();
 
   EXPECT_EQ(HTTP_SUCCESS, error);
   EXPECT_TRUE(value);
@@ -110,9 +108,7 @@ TEST_F(BaseRequestsTest, GetDataRequestParseInvalidResponse) {
           base::Bind(test_util::CreateCopyResultCallback(&error, &value)));
 
   get_data_request->ParseResponse(HTTP_SUCCESS, kInvalidJsonString);
-  // Should wait for a blocking pool task, as the JSON parsing is done in the
-  // blocking pool.
-  test_util::RunBlockingPoolTask();
+  base::RunLoop().RunUntilIdle();
 
   EXPECT_EQ(GDATA_PARSE_ERROR, error);
   EXPECT_FALSE(value);

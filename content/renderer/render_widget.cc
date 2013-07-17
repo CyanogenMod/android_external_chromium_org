@@ -9,6 +9,7 @@
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/singleton.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
@@ -139,7 +140,51 @@ const char* GetEventName(WebInputEvent::Type type) {
 #undef CASE_TYPE
   return "";
 }
+
+typedef std::map<std::string, ui::TextInputMode> TextInputModeMap;
+
+class TextInputModeMapSingleton {
+ public:
+  static TextInputModeMapSingleton* GetInstance() {
+    return Singleton<TextInputModeMapSingleton>::get();
+  }
+  TextInputModeMapSingleton()
+      : map() {
+    map["verbatim"] = ui::TEXT_INPUT_MODE_VERBATIM;
+    map["latin"] = ui::TEXT_INPUT_MODE_LATIN;
+    map["latin-name"] = ui::TEXT_INPUT_MODE_LATIN_NAME;
+    map["latin-prose"] = ui::TEXT_INPUT_MODE_LATIN_PROSE;
+    map["full-width-latin"] = ui::TEXT_INPUT_MODE_FULL_WIDTH_LATIN;
+    map["kana"] = ui::TEXT_INPUT_MODE_KANA;
+    map["katakana"] = ui::TEXT_INPUT_MODE_KATAKANA;
+    map["numeric"] = ui::TEXT_INPUT_MODE_NUMERIC;
+    map["tel"] = ui::TEXT_INPUT_MODE_TEL;
+    map["email"] = ui::TEXT_INPUT_MODE_EMAIL;
+    map["url"] = ui::TEXT_INPUT_MODE_URL;
+  }
+  TextInputModeMap& Map() {
+    return map;
+  }
+ private:
+  TextInputModeMap map;
+
+  friend struct DefaultSingletonTraits<TextInputModeMapSingleton>;
+
+  DISALLOW_COPY_AND_ASSIGN(TextInputModeMapSingleton);
+};
+
+ui::TextInputMode ConvertInputMode(
+    const WebKit::WebString& input_mode) {
+  static TextInputModeMapSingleton* singleton =
+      TextInputModeMapSingleton::GetInstance();
+  TextInputModeMap::iterator it = singleton->Map().find(input_mode.utf8());
+  if (it == singleton->Map().end())
+    return ui::TEXT_INPUT_MODE_DEFAULT;
+  return it->second;
 }
+
+}  // namespace
+
 namespace content {
 
 RenderWidget::RenderWidget(WebKit::WebPopupType popup_type,
@@ -171,6 +216,7 @@ RenderWidget::RenderWidget(WebKit::WebPopupType popup_type,
       input_method_is_active_(false),
       text_input_type_(ui::TEXT_INPUT_TYPE_NONE),
       can_compose_inline_(true),
+      text_input_mode_(ui::TEXT_INPUT_MODE_DEFAULT),
       popup_type_(popup_type),
       pending_window_rect_count_(0),
       suppress_next_char_events_(false),
@@ -624,7 +670,8 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface() {
   if (!context)
     return scoped_ptr<cc::OutputSurface>();
 
-  if (command_line.HasSwitch(switches::kEnableDelegatedRenderer)) {
+  if (command_line.HasSwitch(switches::kEnableDelegatedRenderer) &&
+      !command_line.HasSwitch(switches::kDisableDelegatedRenderer)) {
     DCHECK(is_threaded_compositing_enabled_);
     return scoped_ptr<cc::OutputSurface>(
         new DelegatedCompositorOutputSurface(routing_id(), context, NULL));
@@ -1099,6 +1146,7 @@ void RenderWidget::DoDeferredUpdateAndSendInputAck() {
 
 void RenderWidget::DoDeferredUpdate() {
   TRACE_EVENT0("renderer", "RenderWidget::DoDeferredUpdate");
+  TRACE_EVENT_SCOPED_SAMPLING_STATE("Chrome", "Paint");
 
   if (!webwidget_)
     return;
@@ -1746,24 +1794,6 @@ void RenderWidget::OnSetInputMethodActive(bool is_active) {
   input_method_is_active_ = is_active;
 }
 
-void RenderWidget::UpdateCompositionInfo(bool should_update_range) {
-  ui::Range range = ui::Range();
-  if (should_update_range) {
-    GetCompositionRange(&range);
-  } else {
-    range = composition_range_;
-  }
-  std::vector<gfx::Rect> character_bounds;
-  GetCompositionCharacterBounds(&character_bounds);
-
-  if (!ShouldUpdateCompositionInfo(range, character_bounds))
-    return;
-  composition_character_bounds_ = character_bounds;
-  composition_range_ = range;
-  Send(new ViewHostMsg_ImeCompositionRangeChanged(
-      routing_id(), composition_range_, composition_character_bounds_));
-}
-
 void RenderWidget::OnImeSetComposition(
     const string16& text,
     const std::vector<WebCompositionUnderline>& underlines,
@@ -1779,18 +1809,28 @@ void RenderWidget::OnImeSetComposition(
     // sure we are in a consistent state.
     Send(new ViewHostMsg_ImeCancelComposition(routing_id()));
   }
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
   UpdateCompositionInfo(true);
+#endif
 }
 
-void RenderWidget::OnImeConfirmComposition(
-    const string16& text, const ui::Range& replacement_range) {
+void RenderWidget::OnImeConfirmComposition(const string16& text,
+                                           const ui::Range& replacement_range,
+                                           bool keep_selection) {
   if (!webwidget_)
     return;
   ImeEventGuard guard(this);
   handling_input_event_ = true;
-  webwidget_->confirmComposition(text);
+  if (text.length())
+    webwidget_->confirmComposition(text);
+  else if (keep_selection)
+    webwidget_->confirmComposition(WebWidget::KeepSelection);
+  else
+    webwidget_->confirmComposition(WebWidget::DoNotKeepSelection);
   handling_input_event_ = false;
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
   UpdateCompositionInfo(true);
+#endif
 }
 
 // This message causes the renderer to render an image of the
@@ -2084,19 +2124,28 @@ void RenderWidget::UpdateTextInputType() {
   if (!input_method_is_active_)
     return;
 
-  ui::TextInputType new_type = GetTextInputType();
+  WebKit::WebTextInputInfo new_info;
+  if (webwidget_)
+    new_info = webwidget_->textInputInfo();
+
+  ui::TextInputType new_type = WebKitToUiTextInputType(new_info.type);
   if (IsDateTimeInput(new_type))
     return;  // Not considered as a text input field in WebKit/Chromium.
 
   bool new_can_compose_inline = CanComposeInline();
 
+  const ui::TextInputMode new_mode = ConvertInputMode(new_info.inputMode);
+
   if (text_input_type_ != new_type
-      || can_compose_inline_ != new_can_compose_inline) {
+      || can_compose_inline_ != new_can_compose_inline
+      || text_input_mode_ != new_mode) {
     Send(new ViewHostMsg_TextInputTypeChanged(routing_id(),
                                               new_type,
-                                              new_can_compose_inline));
+                                              new_can_compose_inline,
+                                              new_mode));
     text_input_type_ = new_type;
     can_compose_inline_ = new_can_compose_inline;
+    text_input_mode_ = new_mode;
   }
 }
 
@@ -2164,22 +2213,9 @@ void RenderWidget::UpdateSelectionBounds() {
     params.is_anchor_first = webwidget_->isSelectionAnchorFirst();
     Send(new ViewHostMsg_SelectionBoundsChanged(routing_id_, params));
   }
-
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
   UpdateCompositionInfo(false);
-}
-
-bool RenderWidget::ShouldUpdateCompositionInfo(
-    const ui::Range& range,
-    const std::vector<gfx::Rect>& bounds) {
-  if (composition_range_ != range)
-    return true;
-  if (bounds.size() != composition_character_bounds_.size())
-    return true;
-  for (size_t i = 0; i < bounds.size(); ++i) {
-    if (bounds[i] != composition_character_bounds_[i])
-      return true;
-  }
-  return false;
+#endif
 }
 
 // Check WebKit::WebTextInputType and ui::TextInputType is kept in sync.
@@ -2232,6 +2268,25 @@ ui::TextInputType RenderWidget::GetTextInputType() {
   return ui::TEXT_INPUT_TYPE_NONE;
 }
 
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+void RenderWidget::UpdateCompositionInfo(bool should_update_range) {
+  ui::Range range = ui::Range();
+  if (should_update_range) {
+    GetCompositionRange(&range);
+  } else {
+    range = composition_range_;
+  }
+  std::vector<gfx::Rect> character_bounds;
+  GetCompositionCharacterBounds(&character_bounds);
+
+  if (!ShouldUpdateCompositionInfo(range, character_bounds))
+    return;
+  composition_character_bounds_ = character_bounds;
+  composition_range_ = range;
+  Send(new ViewHostMsg_ImeCompositionRangeChanged(
+      routing_id(), composition_range_, composition_character_bounds_));
+}
+
 void RenderWidget::GetCompositionCharacterBounds(
     std::vector<gfx::Rect>* bounds) {
   DCHECK(bounds);
@@ -2251,6 +2306,21 @@ void RenderWidget::GetCompositionRange(ui::Range* range) {
   }
 }
 
+bool RenderWidget::ShouldUpdateCompositionInfo(
+    const ui::Range& range,
+    const std::vector<gfx::Rect>& bounds) {
+  if (composition_range_ != range)
+    return true;
+  if (bounds.size() != composition_character_bounds_.size())
+    return true;
+  for (size_t i = 0; i < bounds.size(); ++i) {
+    if (bounds[i] != composition_character_bounds_[i])
+      return true;
+  }
+  return false;
+}
+#endif
+
 bool RenderWidget::CanComposeInline() {
   return true;
 }
@@ -2267,6 +2337,7 @@ void RenderWidget::resetInputMethod() {
   if (!input_method_is_active_)
     return;
 
+  ImeEventGuard guard(this);
   // If the last text input type is not None, then we should finish any
   // ongoing composition regardless of the new text input type.
   if (text_input_type_ != ui::TEXT_INPUT_TYPE_NONE) {
@@ -2276,7 +2347,9 @@ void RenderWidget::resetInputMethod() {
       Send(new ViewHostMsg_ImeCancelComposition(routing_id()));
   }
 
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
   UpdateCompositionInfo(true);
+#endif
 }
 
 void RenderWidget::didHandleGestureEvent(

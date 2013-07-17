@@ -55,10 +55,10 @@ bool CopyDirectoryContentsNoCache(const base::FilePath& source,
   for (base::FilePath cur = en.Next(); !cur.empty(); cur = en.Next()) {
     base::FileEnumerator::FileInfo info = en.GetInfo();
     if (info.IsDirectory()) {
-      if (!file_util::CopyDirectory(cur, dest, true))
+      if (!base::CopyDirectory(cur, dest, true))
         return false;
     } else {
-      if (!file_util::CopyFile(cur, dest.Append(cur.BaseName())))
+      if (!base::CopyFile(cur, dest.Append(cur.BaseName())))
         return false;
     }
   }
@@ -82,7 +82,7 @@ void UpdateHistoryDates(const base::FilePath& user_data_dir) {
   base::FilePath history =
       user_data_dir.AppendASCII("Default").AppendASCII("History");
   // Not all test profiles have a history file.
-  if (!file_util::PathExists(history))
+  if (!base::PathExists(history))
     return;
 
   ASSERT_TRUE(db.Open(history));
@@ -559,7 +559,7 @@ bool NamedProxyLauncher::InitializeConnection(const LaunchState& state,
 #if defined(OS_POSIX)
     // Because we are waiting on the existence of the testing file below,
     // make sure there isn't one already there before browser launch.
-    if (!base::Delete(base::FilePath(channel_id_), false)) {
+    if (!base::DeleteFile(base::FilePath(channel_id_), false)) {
       LOG(ERROR) << "Failed to delete " << channel_id_;
       return false;
     }

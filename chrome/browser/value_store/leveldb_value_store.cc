@@ -94,7 +94,7 @@ LeveldbValueStore::~LeveldbValueStore() {
   if (db_ && IsEmpty()) {
     // Close |db_| now to release any lock on the directory.
     db_.reset();
-    if (!base::Delete(db_path_, true)) {
+    if (!base::DeleteFile(db_path_, true)) {
       LOG(WARNING) << "Failed to delete LeveldbValueStore database " <<
           db_path_.value();
     }
@@ -343,6 +343,7 @@ std::string LeveldbValueStore::EnsureDbIsOpen() {
 #endif
 
   leveldb::Options options;
+  options.max_open_files = 0;  // Use minimum.
   options.create_if_missing = true;
   leveldb::DB* db;
   leveldb::Status status = leveldb::DB::Open(options, os_path, &db);

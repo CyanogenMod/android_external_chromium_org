@@ -177,6 +177,8 @@ class V8ContextNativeHandler : public ObjectBackedNativeHandler {
              v8::Boolean::New(availability.is_available()));
     ret->Set(v8::String::New("message"),
              v8::String::New(availability.message().c_str()));
+    ret->Set(v8::String::New("result"),
+             v8::Integer::New(availability.result()));
     args.GetReturnValue().Set(ret);
   }
 
@@ -390,7 +392,8 @@ Dispatcher::Dispatcher()
       webrequest_adblock_(false),
       webrequest_adblock_plus_(false),
       webrequest_other_(false),
-      source_map_(&ResourceBundle::GetSharedInstance()) {
+      source_map_(&ResourceBundle::GetSharedInstance()),
+      v8_schema_registry_(new V8SchemaRegistry) {
   const CommandLine& command_line = *(CommandLine::ForCurrentProcess());
   is_extension_process_ =
       command_line.HasSwitch(switches::kExtensionProcess) ||
@@ -479,6 +482,10 @@ void Dispatcher::IdleNotification() {
         base::TimeDelta::FromMilliseconds(forced_delay_ms),
         RenderThread::Get(), &RenderThread::IdleHandler);
   }
+}
+
+void Dispatcher::OnRenderProcessShutdown() {
+  v8_schema_registry_.reset();
 }
 
 void Dispatcher::OnSetFunctionNames(
@@ -603,33 +610,6 @@ bool Dispatcher::IsExtensionActive(
   if (is_active)
     CHECK(extensions_.Contains(extension_id));
   return is_active;
-}
-
-bool Dispatcher::AllowScriptExtension(
-    WebFrame* frame,
-    const std::string& v8_extension_name,
-    int extension_group) {
-  return AllowScriptExtension(frame, v8_extension_name, extension_group, 0);
-}
-
-namespace {
-
-// This is what the extension_group variable will be when DidCreateScriptContext
-// is called. We know because it's the same as what AllowScriptExtension gets
-// passed, and the two functions are called sequentially from WebKit.
-//
-// TODO(koz): Plumb extension_group through to AllowScriptExtension() from
-// WebKit.
-static int g_hack_extension_group = 0;
-
-}  // namespace
-
-bool Dispatcher::AllowScriptExtension(WebFrame* frame,
-                                      const std::string& v8_extension_name,
-                                      int extension_group,
-                                      int world_id) {
-  g_hack_extension_group = extension_group;
-  return true;
 }
 
 v8::Handle<v8::Object> Dispatcher::GetOrCreateObject(
@@ -975,6 +955,8 @@ void Dispatcher::PopulateSourceMap() {
   source_map_.RegisterSource("ChromeSetting", IDR_CHROME_SETTING_JS);
   source_map_.RegisterSource("StorageArea", IDR_STORAGE_AREA_JS);
   source_map_.RegisterSource("ContentSetting", IDR_CONTENT_SETTING_JS);
+  source_map_.RegisterSource("ChromeDirectSetting",
+                             IDR_CHROME_DIRECT_SETTING_JS);
 
   // Platform app sources that are not API-specific..
   source_map_.RegisterSource("tagWatcher", IDR_TAG_WATCHER_JS);
@@ -1016,10 +998,6 @@ void Dispatcher::DidCreateScriptContext(
 #if !defined(ENABLE_EXTENSIONS)
   return;
 #endif
-
-  // TODO(koz): If the caller didn't pass extension_group, use the last value.
-  if (extension_group == -1)
-    extension_group = g_hack_extension_group;
 
   std::string extension_id = GetExtensionID(frame, world_id);
 
@@ -1070,7 +1048,7 @@ void Dispatcher::DidCreateScriptContext(
   module_system->RegisterNativeHandler("logging",
       scoped_ptr<NativeHandler>(new LoggingNativeHandler(context)));
   module_system->RegisterNativeHandler("schema_registry",
-      v8_schema_registry_.AsNativeHandler());
+      v8_schema_registry_->AsNativeHandler());
   module_system->RegisterNativeHandler("v8_context",
       scoped_ptr<NativeHandler>(new V8ContextNativeHandler(context, this)));
   module_system->RegisterNativeHandler("test_features",
@@ -1401,6 +1379,7 @@ Feature::Context Dispatcher::ClassifyJavaScriptContext(
     const std::string& extension_id,
     int extension_group,
     const ExtensionURLInfo& url_info) {
+  DCHECK_GE(extension_group, 0);
   if (extension_group == EXTENSION_GROUP_CONTENT_SCRIPTS) {
     return extensions_.Contains(extension_id) ?
         Feature::CONTENT_SCRIPT_CONTEXT : Feature::UNSPECIFIED_CONTEXT;
@@ -1467,6 +1446,9 @@ bool Dispatcher::CheckContextAccessToExtensionAPI(
 
   Feature::Availability availability = context->GetAvailability(function_name);
   if (!availability.is_available()) {
+    APIActivityLogger::LogBlockedCall(context->extension()->id(),
+                                      function_name,
+                                      availability.result());
     v8::ThrowException(v8::Exception::Error(
         v8::String::New(availability.message().c_str())));
   }

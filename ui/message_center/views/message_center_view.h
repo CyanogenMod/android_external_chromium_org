@@ -11,6 +11,7 @@
 #include "ui/message_center/message_center_export.h"
 #include "ui/message_center/message_center_observer.h"
 #include "ui/message_center/notification_list.h"
+#include "ui/views/controls/button/button.h"
 
 namespace ui {
 class MultiAnimation;
@@ -24,45 +25,13 @@ namespace message_center {
 
 class MessageCenter;
 class MessageCenterBubble;
+class NotificationCenterButton;
+class MessageCenterButtonBar;
 class MessageCenterTray;
 class MessageCenterView;
 class MessageView;
 class MessageListView;
 class NotifierSettingsView;
-
-// MessageCenterButtonBar //////////////////////////////////////////////////////
-
-// If you know how to better hide this implementation class please do so, and
-// otherwise please refrain from using it :-).
-class MessageCenterButtonBar : public views::View {
- public:
-  MessageCenterButtonBar(MessageCenterView* message_center_view,
-                         MessageCenter* message_center);
-  virtual ~MessageCenterButtonBar();
-
-  virtual void SetAllButtonsEnabled(bool enabled);
-
-  void SetCloseAllVisible(bool visible);
-
- protected:
-  MessageCenterView* message_center_view() const {
-    return message_center_view_;
-  }
-  MessageCenter* message_center() const { return message_center_; }
-  MessageCenterTray* tray() const { return tray_; }
-  views::Button* close_all_button() const { return close_all_button_; }
-  void set_close_all_button(views::Button* button) {
-    close_all_button_ = button;
-  }
-
- private:
-  MessageCenterView* message_center_view_;  // Weak reference.
-  MessageCenter* message_center_;  // Weak reference.
-  MessageCenterTray* tray_;  // Weak reference.
-  views::Button* close_all_button_;
-
-  DISALLOW_COPY_AND_ASSIGN(MessageCenterButtonBar);
-};
 
 // MessageCenterView ///////////////////////////////////////////////////////////
 
@@ -73,7 +42,8 @@ class MESSAGE_CENTER_EXPORT MessageCenterView : public views::View,
   MessageCenterView(MessageCenter* message_center,
                     MessageCenterTray* tray,
                     int max_height,
-                    bool initially_settings_visible);
+                    bool initially_settings_visible,
+                    bool buttons_on_top);
   virtual ~MessageCenterView();
 
   void SetNotifications(const NotificationList::Notifications& notifications);
@@ -120,6 +90,7 @@ class MESSAGE_CENTER_EXPORT MessageCenterView : public views::View,
   NotifierSettingsView* settings_view_;
   MessageCenterButtonBar* button_bar_;
   views::View* no_notifications_message_view_;
+  bool buttons_on_top_;
 
   // Data for transition animation between settings view and message list.
   bool settings_visible_;

@@ -12,6 +12,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/test/test_timeouts.h"
 #include "build/build_config.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar.h"
@@ -19,7 +20,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/test_launcher_utils.h"
@@ -152,7 +152,7 @@ GURL PPAPITestBase::GetTestFileUrl(const std::string& test_case) {
   test_path = test_path.Append(FILE_PATH_LITERAL("test_case.html"));
 
   // Sanity check the file name.
-  EXPECT_TRUE(file_util::PathExists(test_path));
+  EXPECT_TRUE(base::PathExists(test_path));
 
   GURL test_url = net::FilePathToFileURL(test_path);
 
@@ -294,7 +294,7 @@ void PPAPITest::SetUpCommandLine(CommandLine* command_line) {
   EXPECT_TRUE(PathService::Get(base::DIR_MODULE, &plugin_dir));
 
   base::FilePath plugin_lib = plugin_dir.Append(library_name);
-  EXPECT_TRUE(file_util::PathExists(plugin_lib));
+  EXPECT_TRUE(base::PathExists(plugin_lib));
   base::FilePath::StringType pepper_plugin = plugin_lib.value();
   pepper_plugin.append(FILE_PATH_LITERAL(";application/x-ppapi-tests"));
   command_line->AppendSwitchNative(switches::kRegisterPepperPlugins,
@@ -325,7 +325,7 @@ void PPAPINaClTest::SetUpCommandLine(CommandLine* command_line) {
 
   base::FilePath plugin_lib;
   EXPECT_TRUE(PathService::Get(chrome::FILE_NACL_PLUGIN, &plugin_lib));
-  EXPECT_TRUE(file_util::PathExists(plugin_lib));
+  EXPECT_TRUE(base::PathExists(plugin_lib));
 
   // Enable running NaCl outside of the store.
   command_line->AppendSwitch(switches::kEnableNaCl);
@@ -362,7 +362,7 @@ void PPAPINaClTestDisallowedSockets::SetUpCommandLine(
 
   base::FilePath plugin_lib;
   EXPECT_TRUE(PathService::Get(chrome::FILE_NACL_PLUGIN, &plugin_lib));
-  EXPECT_TRUE(file_util::PathExists(plugin_lib));
+  EXPECT_TRUE(base::PathExists(plugin_lib));
 
   // Enable running NaCl outside of the store.
   command_line->AppendSwitch(switches::kEnableNaCl);

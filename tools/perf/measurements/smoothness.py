@@ -10,9 +10,9 @@ class DidNotScrollException(page_measurement.MeasurementFailure):
     super(DidNotScrollException, self).__init__('Page did not scroll')
 
 class MissingDisplayFrameRate(page_measurement.MeasurementFailure):
-  def __init__(self):
+  def __init__(self, name):
     super(MissingDisplayFrameRate, self).__init__(
-        'Missing display frame rate metrics')
+        'Missing display frame rate metrics: ' + name)
 
 def DivideIfPossibleOrZero(numerator, denominator):
   if denominator == 0:
@@ -159,6 +159,9 @@ def CalcLatencyResults(rendering_stats_deltas, results):
               'totalTouchAckedLatency',
               'average_touch_acked_latency',
               results)
+  CalcLatency(rendering_stats_deltas, 'scrollUpdateCount',
+              'totalScrollUpdateLatency',
+              'average_scroll_update_latency', results)
 
 class Smoothness(page_measurement.PageMeasurement):
   def __init__(self):
@@ -226,6 +229,6 @@ class Smoothness(page_measurement.PageMeasurement):
 
     if tab.browser.platform.IsRawDisplayFrameRateSupported():
       for r in tab.browser.platform.GetRawDisplayFrameRateMeasurements():
-        if not r.value:
-          raise MissingDisplayFrameRate()
+        if r.value is None:
+          raise MissingDisplayFrameRate(r.name)
         results.Add(r.name, r.unit, r.value)

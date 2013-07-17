@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "base/memory/memory_pressure_listener.h"
 #include "base/observer_list.h"
 #include "base/strings/string16.h"
 #include "base/timer/timer.h"
@@ -19,6 +20,7 @@
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/public/renderer/render_thread.h"
 #include "ipc/ipc_channel_proxy.h"
+#include "media/filters/gpu_video_decoder.h"
 #include "ui/gfx/native_widget_types.h"
 
 class GrContext;
@@ -252,6 +254,10 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // not sent for at least one notification delay.
   void PostponeIdleNotification();
 
+  // Gets gpu factories. Returns NULL if VDA is disabled or a graphics context
+  // cannot be obtained.
+  scoped_refptr<media::GpuVideoDecoder::Factories> GetGpuFactories();
+
   // Returns a graphics context shared among all
   // RendererGpuVideoDecoderFactories, or NULL on error.  Context remains owned
   // by this class and must be null-tested before each use to detect context
@@ -362,6 +368,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   void OnGetAccessibilityTree();
   void OnTempCrashWithData(const GURL& data);
   void OnSetWebKitSharedTimersSuspended(bool suspend);
+  void OnMemoryPressure(
+      base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level);
 
   void IdleHandlerInForegroundTab();
 
@@ -466,6 +474,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   scoped_ptr<media::AudioHardwareConfig> audio_hardware_config_;
 
   HistogramCustomizer histogram_customizer_;
+
+  scoped_ptr<base::MemoryPressureListener> memory_pressure_listener_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderThreadImpl);
 };

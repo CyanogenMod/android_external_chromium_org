@@ -7,18 +7,20 @@
 #include <iostream>
 #include <sstream>
 
+#include "base/callback.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
 #include "base/values.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
+#include "chrome/browser/policy/external_data_fetcher.h"
 #include "chrome/browser/policy/policy_map.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -28,9 +30,9 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
-#include "googleurl/src/gurl.h"
 #include "policy/policy_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 #if defined(OS_CHROMEOS)
 #include "base/strings/stringprintf.h"
@@ -198,8 +200,10 @@ void PreferencesBrowserTest::SetUserPolicies(
     const std::vector<base::Value*>& values,
     policy::PolicyLevel level) {
   policy::PolicyMap map;
-  for (size_t i = 0; i < names.size(); ++i)
-    map.Set(names[i], level, policy::POLICY_SCOPE_USER, values[i]->DeepCopy());
+  for (size_t i = 0; i < names.size(); ++i) {
+    map.Set(names[i], level, policy::POLICY_SCOPE_USER,
+            values[i]->DeepCopy(), NULL);
+  }
   policy_provider_.UpdateChromePolicy(map);
 }
 

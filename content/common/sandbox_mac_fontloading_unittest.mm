@@ -8,7 +8,7 @@
 #include "base/logging.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/shared_memory.h"
+#include "base/memory/shared_memory.h"
 #include "content/common/mac/font_descriptor.h"
 #include "content/common/mac/font_loader.h"
 #include "content/common/sandbox_mac_unittest_helper.h"
@@ -122,7 +122,7 @@ TEST_F(MacSandboxTest, FontLoadingTest) {
   ASSERT_TRUE(RunTestInSandbox(SANDBOX_TYPE_RENDERER,
                   "FontLoadingTestCase", temp_file_path.value().c_str()));
   temp_file_closer.reset();
-  ASSERT_TRUE(base::Delete(temp_file_path, false));
+  ASSERT_TRUE(base::DeleteFile(temp_file_path, false));
 }
 
 }  // namespace content

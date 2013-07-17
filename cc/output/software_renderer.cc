@@ -76,6 +76,7 @@ SoftwareRenderer::SoftwareRenderer(RendererClient* client,
   capabilities_.using_partial_swap = true;
 
   capabilities_.using_map_image = Settings().use_map_image;
+  capabilities_.using_shared_memory_resources = true;
 }
 
 SoftwareRenderer::~SoftwareRenderer() {}
@@ -197,6 +198,8 @@ bool SoftwareRenderer::IsSoftwareResource(
       return false;
     case ResourceProvider::Bitmap:
       return true;
+    case ResourceProvider::InvalidType:
+      break;
   }
 
   LOG(FATAL) << "Invalid resource type.";
@@ -352,11 +355,31 @@ void SoftwareRenderer::DrawTextureQuad(const DrawingFrame* frame,
                                       bitmap->width(),
                                       bitmap->height());
   SkRect sk_uv_rect = gfx::RectFToSkRect(uv_rect);
+  SkRect quad_rect = gfx::RectFToSkRect(QuadVertexRect());
+
   if (quad->flipped)
     current_canvas_->scale(1, -1);
-  current_canvas_->drawBitmapRectToRect(*bitmap, &sk_uv_rect,
-                                        gfx::RectFToSkRect(QuadVertexRect()),
+
+  bool blend_background = quad->background_color != SK_ColorTRANSPARENT &&
+                          !bitmap->isOpaque();
+  bool needs_layer = blend_background && (current_paint_.getAlpha() != 0xFF);
+  if (needs_layer) {
+    current_canvas_->saveLayerAlpha(&quad_rect, current_paint_.getAlpha());
+    current_paint_.setAlpha(0xFF);
+  }
+  if (blend_background) {
+    SkPaint background_paint;
+    background_paint.setColor(quad->background_color);
+    current_canvas_->drawRect(quad_rect, background_paint);
+  }
+
+  current_canvas_->drawBitmapRectToRect(*bitmap,
+                                        &sk_uv_rect,
+                                        quad_rect,
                                         &current_paint_);
+
+  if (needs_layer)
+    current_canvas_->restore();
 }
 
 void SoftwareRenderer::DrawTileQuad(const DrawingFrame* frame,

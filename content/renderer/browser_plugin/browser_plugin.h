@@ -26,7 +26,6 @@ struct BrowserPluginHostMsg_AutoSize_Params;
 struct BrowserPluginHostMsg_ResizeGuest_Params;
 struct BrowserPluginMsg_Attach_ACK_Params;
 struct BrowserPluginMsg_BuffersSwapped_Params;
-struct BrowserPluginMsg_LoadCommit_Params;
 struct BrowserPluginMsg_UpdateRect_Params;
 
 namespace content {
@@ -118,21 +117,12 @@ class CONTENT_EXPORT BrowserPlugin :
   // renderer.
   void UpdateDeviceScaleFactor(float device_scale_factor);
 
-  // Tells the BrowserPlugin to terminate the guest process.
-  void TerminateGuest();
-
-  // A request from JavaScript has been made to stop the loading of the page.
-  void Stop();
-  // A request from JavaScript has been made to reload the page.
-  void Reload();
   // A request to enable hardware compositing.
   void EnableCompositing(bool enable);
-  // A request from content client to track lifetime of a JavaScript object
-  // related to a permission request object.
-  // This is used to clean up hanging permission request objects.
-  void PersistRequestObject(const NPVariant* request,
-                            const std::string& type,
-                            int id);
+  // A request from content client to track lifetime of a JavaScript object.
+  // This is used to track permission request objects, and new window API
+  // window objects.
+  void TrackObjectLifetime(const NPVariant* request, int id);
 
   // Returns true if |point| lies within the bounds of the plugin rectangle.
   // Not OK to use this function for making security-sensitive decision since it
@@ -250,6 +240,8 @@ class CONTENT_EXPORT BrowserPlugin :
   // Virtual to allow for mocking in tests.
   virtual float GetDeviceScaleFactor() const;
 
+  void ShowSadGraphic();
+
   // Parses the attributes of the browser plugin from the element's attributes
   // and sets them appropriately.
   void ParseAttributes();
@@ -314,37 +306,28 @@ class CONTENT_EXPORT BrowserPlugin :
   // BrowserPlugin that the guest's permission request has been allowed or
   // denied by the embedder.
   void RespondPermissionIfRequestIsPending(int request_id, bool allow);
-  // Cleans up pending permission request once the associated event.request
-  // object goes out of scope in JavaScript.
-  void OnRequestObjectGarbageCollected(int request_id);
+
+  // Called when the tracked object of |id| ID becomes unreachable in
+  // JavaScript.
+  void OnTrackedObjectGarbageCollected(int id);
   // V8 garbage collection callback for |object|.
-  static void WeakCallbackForPersistObject(v8::Isolate* isolate,
+  static void WeakCallbackForTrackedObject(v8::Isolate* isolate,
                                            v8::Persistent<v8::Value>* object,
                                            void* param);
 
   // IPC message handlers.
   // Please keep in alphabetical order.
-  void OnAddMessageToConsole(
-      int instance_id,
-      const base::DictionaryValue& message_info);
   void OnAdvanceFocus(int instance_id, bool reverse);
   void OnAttachACK(int instance_id,
                    const BrowserPluginMsg_Attach_ACK_Params& ack_params);
   void OnBuffersSwapped(int instance_id,
                         const BrowserPluginMsg_BuffersSwapped_Params& params);
-  void OnClose(int instance_id);
   void OnCompositorFrameSwapped(const IPC::Message& message);
   void OnGuestContentWindowReady(int instance_id,
                                  int content_window_routing_id);
-  void OnGuestGone(int instance_id, int process_id, int status);
+  void OnGuestGone(int instance_id);
   void OnGuestResponsive(int instance_id, int process_id);
   void OnGuestUnresponsive(int instance_id, int process_id);
-  void OnLoadAbort(int instance_id,
-                   const GURL& url,
-                   bool is_top_level,
-                   const std::string& type);
-  void OnLoadCommit(int instance_id,
-                    const BrowserPluginMsg_LoadCommit_Params& params);
   // Requests permission from the embedder.
   void OnRequestPermission(int instance_id,
                            BrowserPluginPermissionType permission_type,
@@ -402,10 +385,8 @@ class CONTENT_EXPORT BrowserPlugin :
   typedef std::map<int, BrowserPluginPermissionType> PendingPermissionRequests;
   PendingPermissionRequests pending_permission_requests_;
 
-  typedef std::pair<int, base::WeakPtr<BrowserPlugin> >
-      AliveV8PermissionRequestItem;
-  std::map<int, AliveV8PermissionRequestItem*>
-      alive_v8_permission_request_objects_;
+  typedef std::pair<int, base::WeakPtr<BrowserPlugin> > TrackedV8ObjectID;
+  std::map<int, TrackedV8ObjectID*> tracked_v8_objects_;
 
   // BrowserPlugin outlives RenderViewImpl in Chrome Apps and so we need to
   // store the BrowserPlugin's BrowserPluginManager in a member variable to

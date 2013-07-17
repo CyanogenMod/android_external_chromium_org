@@ -816,6 +816,12 @@ class GLHelperTest : public testing::Test {
                          GL_UNSIGNED_BYTE,
                          input_pixels.getPixels());
 
+    gpu::Mailbox mailbox;
+    context_->genMailboxCHROMIUM(mailbox.name);
+    EXPECT_FALSE(mailbox.IsZero());
+    context_->produceTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name);
+    uint32 sync_point = context_->insertSyncPoint();
+
     std::string message = base::StringPrintf("input size: %dx%d "
                                              "output size: %dx%d "
                                              "margin: %dx%d "
@@ -851,7 +857,8 @@ class GLHelperTest : public testing::Test {
 
     base::RunLoop run_loop;
     yuv_reader->ReadbackYUV(
-        src_texture,
+        mailbox,
+        sync_point,
         output_frame.get(),
         base::Bind(&callcallback, run_loop.QuitClosure()));
     run_loop.Run();
@@ -1106,6 +1113,7 @@ class GLHelperTest : public testing::Test {
   std::deque<GLHelperScaling::ScaleOp> x_ops_, y_ops_;
 };
 
+// Reenable once http://crbug.com/162291 is fixed.
 TEST_F(GLHelperTest, YUVReadbackTest) {
   int sizes[] = { 2, 4, 14 };
   for (int use_mrt = 0; use_mrt <= 1 ; use_mrt++) {

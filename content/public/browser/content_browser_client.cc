@@ -5,8 +5,8 @@
 #include "content/public/browser/content_browser_client.h"
 
 #include "base/files/file_path.h"
-#include "googleurl/src/gurl.h"
 #include "ui/gfx/image/image_skia.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -89,6 +89,10 @@ bool ContentBrowserClient::ShouldSwapProcessesForRedirect(
     ResourceContext* resource_context, const GURL& current_url,
     const GURL& new_url) {
   return false;
+}
+
+bool ContentBrowserClient::ShouldAssignSiteForURL(const GURL& url) {
+  return true;
 }
 
 std::string ContentBrowserClient::GetCanonicalEncodingNameByAliasName(

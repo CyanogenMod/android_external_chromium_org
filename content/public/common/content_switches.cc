@@ -155,9 +155,6 @@ const char kDisableJava[]                   = "disable-java";
 // Don't execute JavaScript (browser JS like the new tab page still runs).
 const char kDisableJavaScript[]             = "disable-javascript";
 
-// Disable JavaScript I18N API.
-const char kDisableJavaScriptI18NAPI[]      = "disable-javascript-i18n-api";
-
 // Disable LocalStorage.
 const char kDisableLocalStorage[]           = "disable-local-storage";
 
@@ -227,10 +224,23 @@ const char kEnableWebRtcAecRecordings[]     = "enable-webrtc-aec-recordings";
 
 // Enable WebRTC DataChannels SCTP wire protocol support.
 const char kEnableSCTPDataChannels[]        = "enable-sctp-data-channels";
+
+// Enable WebRTC device enumeration.
+const char kEnableDeviceEnumeration[]        = "enable-device-enumeration";
+
 #endif
 
 // Enable WebRTC to open TCP server sockets.
 const char kEnableWebRtcTcpServerSocket[]   = "enable-webrtc-tcp-server-socket";
+
+// Enables HW decode acceleration for WebRTC.
+const char kEnableWebRtcHWDecoding[]        = "enable-webrtc-hw-decoding";
+
+// Enable CSS Transitions / Animations on the Web Animations model.
+const char kEnableWebAnimationsCSS[]        = "enable-web-animations-css";
+
+// Enable SVG Animations on the Web Animations model.
+const char kEnableWebAnimationsSVG[]        = "enable-web-animations-svg";
 
 // Enables Web MIDI API.
 const char kEnableWebMIDI[]                 = "enable-web-midi";
@@ -313,6 +323,9 @@ const char kDisableCompositingForTransition[] =
 // Enables CSS3 custom filters
 const char kEnableCssShaders[]              = "enable-css-shaders";
 
+// Disables delegated renderer.
+const char kDisableDelegatedRenderer[]      = "disable-delegated-renderer";
+
 // Enables delegated renderer.
 const char kEnableDelegatedRenderer[]       = "enable-delegated-renderer";
 
@@ -327,9 +340,9 @@ const char kEnableDownloadResumption[]      = "enable-download-resumption";
 const char kEnableEncodedScreenCapture[]    = "enable-encoded-screen-capture";
 #endif
 
-// Enables WebKit features that are in development.
-const char kEnableExperimentalWebKitFeatures[] =
-    "enable-experimental-webkit-features";
+// Enables Web Platform features that are in development.
+const char kEnableExperimentalWebPlatformFeatures[] =
+    "enable-experimental-web-platform-features";
 
 // Enables the CSS multicol implementation that uses the regions implementation.
 const char kEnableRegionBasedColumns[] =
@@ -359,6 +372,9 @@ const char kEnableGpuBenchmarking[]         = "enable-gpu-benchmarking";
 
 // Enables TRACE for GL calls in the renderer.
 const char kEnableGpuClientTracing[]        = "enable-gpu-client-tracing";
+
+// Enables support for inband text tracks in media content.
+const char kEnableInbandTextTracks[] = "enable-inband-text-tracks";
 
 // Enables the memory benchmarking extension
 const char kEnableMemoryBenchmarking[]      = "enable-memory-benchmarking";
@@ -526,6 +542,12 @@ const char kGpuStartupDialog[]              = "gpu-startup-dialog";
 // Passes gpu vendor_id from browser process to GPU process.
 const char kGpuVendorID[]                   = "gpu-vendor-id";
 
+#if defined(OS_ANDROID)
+// Don't display any scrollbars. This is useful for Android WebView where
+// the system manages the scrollbars instead.
+const char kHideScrollbars[]                = "hide-scrollbars";
+#endif
+
 // These mappings only apply to the host resolver.
 const char kHostResolverRules[]             = "host-resolver-rules";
 
@@ -664,7 +686,7 @@ const char kEnableAcceleratedOverflowScroll[] =
     "enable-accelerated-overflow-scroll";
 
 // Disables accelerated compositing for overflow scroll.
-extern const char kDisableAcceleratedOverflowScroll[] =
+const char kDisableAcceleratedOverflowScroll[] =
     "disable-accelerated-overflow-scroll";
 
 // Enables accelerated compositing for scrollable frames for accelerated
@@ -869,5 +891,12 @@ const char kEnableOverscrollNotifications[] = "enable-overscroll-notifications";
 
 // Enables WebGL extensions not yet approved by the community.
 const char kEnableWebGLDraftExtensions[] = "enable-webgl-draft-extensions";
+
+// Enables/disables accelerated compositing for backgrounds of root layers with
+// background-attachment: fixed. Requires kForceCompositingMode.
+const char kDisableAcceleratedFixedRootBackground[] =
+    "disable-accelerated-fixed-root-background";
+const char kEnableAcceleratedFixedRootBackground[] =
+    "enable-accelerated-fixed-root-background";
 
 }  // namespace switches

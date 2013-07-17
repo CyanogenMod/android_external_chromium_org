@@ -16,6 +16,7 @@
 #include "ipc/ipc_listener.h"
 #include "third_party/WebKit/public/web/WebPopupType.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
+#include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/base/range/range.h"
 #include "ui/surface/transport_dib.h"
@@ -101,15 +102,18 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
 
   // Updates the type of the input method attached to the view.
   virtual void TextInputTypeChanged(ui::TextInputType type,
-                                    bool can_compose_inline) = 0;
+                                    bool can_compose_inline,
+                                    ui::TextInputMode mode) = 0;
 
   // Cancel the ongoing composition of the input method attached to the view.
   virtual void ImeCancelComposition() = 0;
 
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
   // Updates the range of the marked text in an IME composition.
   virtual void ImeCompositionRangeChanged(
       const ui::Range& range,
       const std::vector<gfx::Rect>& character_bounds) = 0;
+#endif
 
   // Informs the view that a portion of the widget's backing store was scrolled
   // and/or painted.  The view should ensure this gets copied to the screen.
@@ -136,8 +140,8 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
       const ui::LatencyInfo& latency_info) = 0;
 
   // Notifies the View that the renderer has ceased to exist.
-  virtual void RenderViewGone(base::TerminationStatus status,
-                              int error_code) = 0;
+  virtual void RenderProcessGone(base::TerminationStatus status,
+                                 int error_code) = 0;
 
   // Tells the View to destroy itself.
   virtual void Destroy() = 0;
@@ -294,6 +298,13 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
       GetBrowserAccessibilityManager() const = 0;
   virtual void OnAccessibilityNotifications(
       const std::vector<AccessibilityHostMsg_NotificationParams>& params) = 0;
+
+  // Return a value that is incremented each time the renderer swaps a new frame
+  // to the view.
+  virtual uint32 RendererFrameNumber() = 0;
+  // Called each time the RenderWidgetHost receives a new frame for display from
+  // the renderer.
+  virtual void DidReceiveRendererFrame() = 0;
 
 #if defined(OS_MACOSX)
   // Called just before GetBackingStore blocks for an updated frame.

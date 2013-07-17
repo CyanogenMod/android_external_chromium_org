@@ -23,7 +23,7 @@ namespace android_webview {
 class AwRenderViewHostExtClient {
  public:
   // Called when the RenderView page scale changes.
-  virtual void OnPageScaleFactorChanged(float page_scale_factor) = 0;
+  virtual void OnWebLayoutPageScaleFactorChanged(float page_scale_factor) = 0;
 
  protected:
   virtual ~AwRenderViewHostExtClient() {}
@@ -73,7 +73,7 @@ class AwRenderViewHostExt : public content::WebContentsObserver,
 
  private:
   // content::WebContentsObserver implementation.
-  virtual void RenderViewGone(base::TerminationStatus status) OVERRIDE;
+  virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
   virtual void DidNavigateAnyFrame(
       const content::LoadCommittedDetails& details,
       const content::FrameNavigateParams& params) OVERRIDE;

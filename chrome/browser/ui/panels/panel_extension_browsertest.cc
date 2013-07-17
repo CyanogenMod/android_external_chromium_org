@@ -6,6 +6,7 @@
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/profiles/profile.h"
@@ -16,7 +17,6 @@
 #include "chrome/browser/ui/panels/panel_constants.h"
 #include "chrome/browser/ui/panels/panel_manager.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
@@ -102,17 +102,8 @@ IN_PROC_BROWSER_TEST_F(PanelExtensionBrowserTest, PanelAppIcon) {
 }
 #endif
 
-// Tests that icon loading might not be completed when the panel is closed.
-// (crbug.com/151484)
-//
-// TODO(linux_aura) http://crbug.com/163931
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
-#define MAYBE_ClosePanelBeforeIconLoadingCompleted DISABLED_ClosePanelBeforeIconLoadingCompleted
-#else
-#define MAYBE_ClosePanelBeforeIconLoadingCompleted ClosePanelBeforeIconLoadingCompleted
-#endif
 IN_PROC_BROWSER_TEST_F(PanelExtensionBrowserTest,
-                       MAYBE_ClosePanelBeforeIconLoadingCompleted) {
+                       ClosePanelBeforeIconLoadingCompleted) {
   const Extension* extension =
       LoadExtension(test_data_dir_.AppendASCII("test_extension"));
   Panel* panel = CreatePanelFromExtension(extension);

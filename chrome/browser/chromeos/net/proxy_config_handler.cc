@@ -9,29 +9,17 @@
 #include "base/logging.h"
 #include "base/values.h"
 #include "chrome/browser/prefs/proxy_config_dictionary.h"
+#include "chrome/common/pref_names.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_service_client.h"
 #include "chromeos/network/network_handler_callbacks.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "dbus/object_path.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 namespace chromeos {
-
-namespace {
-
-void LogError(const std::string& network,
-              const std::string& error_name,
-              const std::string& error_message) {
-  network_handler::ShillErrorCallbackFunction(
-      network,
-      network_handler::ErrorCallback(),
-      "Could not clear or set ProxyConfig",
-      error_message);
-}
-
-}  // namespace
 
 namespace proxy_config {
 
@@ -56,7 +44,9 @@ void SetProxyConfigForNetwork(const ProxyConfigDictionary& proxy_config,
         dbus::ObjectPath(network.path()),
         flimflam::kProxyConfigProperty,
         base::Bind(&base::DoNothing),
-        base::Bind(&LogError, network.path()));
+        base::Bind(&network_handler::ShillErrorCallbackFunction,
+                   "SetProxyConfig.ClearProperty Failed",
+                   network.path(), network_handler::ErrorCallback()));
   } else {
     std::string proxy_config_str;
     base::JSONWriter::Write(&proxy_config.GetDictionary(), &proxy_config_str);
@@ -65,13 +55,23 @@ void SetProxyConfigForNetwork(const ProxyConfigDictionary& proxy_config,
         flimflam::kProxyConfigProperty,
         base::StringValue(proxy_config_str),
         base::Bind(&base::DoNothing),
-        base::Bind(&LogError, network.path()));
+        base::Bind(&network_handler::ShillErrorCallbackFunction,
+                   "SetProxyConfig.SetProperty Failed",
+                   network.path(), network_handler::ErrorCallback()));
   }
 
   if (NetworkHandler::IsInitialized()) {
     NetworkHandler::Get()->network_state_handler()->
         RequestUpdateForNetwork(network.path());
   }
+}
+
+void RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(
+      prefs::kUseSharedProxies,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 }  // namespace proxy_config

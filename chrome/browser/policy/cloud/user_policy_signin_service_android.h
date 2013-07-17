@@ -10,6 +10,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/policy/cloud/user_policy_signin_service_base.h"
 
 class Profile;
@@ -26,11 +27,11 @@ class UserPolicySigninService : public UserPolicySigninServiceBase {
   virtual ~UserPolicySigninService();
 
   // Registers a CloudPolicyClient for fetching policy for |username|.
-  // |services_token| is an OAuth2 token for the userinfo and DM services.
+  // This requests an OAuth2 token for the services involved, and contacts
+  // the policy service if the account has management enabled.
   // |callback| is invoked once the CloudPolicyClient is ready to fetch policy,
   // or once it is determined that |username| is not a managed account.
   void RegisterPolicyClient(const std::string& username,
-                            const std::string& services_token,
                             const PolicyRegistrationCallback& callback);
 
  private:
@@ -43,7 +44,16 @@ class UserPolicySigninService : public UserPolicySigninServiceBase {
   // CloudPolicyService::Observer implementation:
   virtual void OnInitializationCompleted(CloudPolicyService* service) OVERRIDE;
 
+  // Registers for cloud policy for an already signed-in user.
+  void RegisterCloudPolicyService();
+
+  // Cancels a pending cloud policy registration attempt.
+  void CancelPendingRegistration();
+
+  void OnRegistrationDone();
+
   scoped_ptr<CloudPolicyClientRegistrationHelper> registration_helper_;
+  base::WeakPtrFactory<UserPolicySigninService> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(UserPolicySigninService);
 };

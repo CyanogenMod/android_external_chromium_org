@@ -3,129 +3,80 @@
 # found in the LICENSE file.
 
 import time
-import json
-import StringIO
 
 from perf_tools import smoothness_metrics
 from telemetry.page import page_measurement
 
-#TODO(ernstm,etc): remove this when crbug.com/173327
-#(timeline model in telemetry) is done.
 class StatsCollector(object):
-  def __init__(self, events):
+  def __init__(self, timeline):
     """
-    Utility class for collecting rendering stats from traces.
+    Utility class for collecting rendering stats from timeline model.
 
-    events -- An iterable object containing trace events
+    timeline -- The timeline model
     """
-    if not hasattr(events, '__iter__'):
-      raise Exception, 'events must be iteraable.'
-    self.events = events
-    self.pids = None
-    self.tids = None
-    self.index = 0
+    self.timeline = timeline
     self.total_best_rasterize_time = 0
     self.total_best_record_time = 0
     self.total_pixels_rasterized = 0
     self.total_pixels_recorded = 0
 
-  def __len__(self):
-    return len(self.events)
+  def FindTriggerTime(self):
+    measure_next_frame_event = self.timeline.GetAllEventsOfName(
+        "measureNextFrame")
+    if len(measure_next_frame_event) == 0:
+      raise LookupError, 'no measureNextFrame event found'
+    return measure_next_frame_event[0].start
 
-  def __getitem__(self, i):
-    return self.events[i]
+  def FindFrameNumber(self, trigger_time):
+    start_event = None
+    for event in self.timeline.GetAllEventsOfName(
+        "LayerTreeHost::UpdateLayers"):
+      if event.start > trigger_time:
+        if start_event == None:
+          start_event = event
+        elif event.start < start_event.start:
+          start_event = event
+    if start_event is None:
+      raise LookupError, \
+          'no LayterTreeHost::UpdateLayers after measureNextFrame found'
+    return start_event.args["commit_number"]
 
-  def __setitem__(self, i, v):
-    self.events[i] = v
-
-  def __repr__(self):
-    return "[%s]" % ",\n ".join([repr(e) for e in self.events])
-
-  def seekToNextEvent(self):
-    event = self.events[self.index]
-    self.index += 1
-    return event
-
-  def gatherRasterStats(self):
-    best_rasterize_time = float('inf')
-    pixels_rasterized = 0
-    while self.index < len(self.events):
-      event = self.seekToNextEvent()
-      if event["name"] == "RasterWorkerPoolTaskImpl::RunRasterOnThread":
-        break
-      elif event["name"] == "Picture::Raster":
-        if event["ph"] == "B":
-          rasterize_time_start = event["ts"]
-        else:
-          rasterize_duration = event["ts"] - rasterize_time_start
-          best_rasterize_time = min(best_rasterize_time, rasterize_duration)
-          pixels_rasterized += event["args"]["num_pixels_rasterized"]
-    if best_rasterize_time == float('inf'):
-      best_rasterize_time = 0
-    return best_rasterize_time, pixels_rasterized
-
-  def gatherRecordStats(self):
-    best_record_time = float('inf')
-    pixels_recorded = 0
-    while self.index < len(self.events):
-      event = self.seekToNextEvent()
-      if event["name"] == "PicturePile::Update recording loop":
-        break
-      elif event["name"] == "Picture::Record":
-        if event["ph"] == "B":
-          record_time_start = event["ts"]
-          width = event["args"]["width"]
-          height = event["args"]["height"]
-          pixels_recorded += width*height
-        else:
-          record_duration = event["ts"] - record_time_start
-          best_record_time = min(best_record_time, record_duration)
-    if best_record_time == float('inf'):
-      best_record_time = 0
-    return best_record_time, pixels_recorded
-
-  def seekToMeasureNextFrameEvent(self):
-    while self.index < len(self.events):
-      event = self.seekToNextEvent()
-      if event["name"] == "measureNextFrame":
-        break
-
-  def seekToStartEvent(self):
-    while self.index < len(self.events):
-      event = self.seekToNextEvent()
-      if event["name"] == "LayerTreeHost::UpdateLayers":
-        frame_number = event["args"]["commit_number"]
-        return frame_number
-
-  def seekToStopEvent(self):
-    while self.index < len(self.events):
-      event = self.seekToNextEvent()
-      if event["name"] == "PendingTree" and event["ph"] == "F":
-        break
-
-  def gatherRenderingStats(self):
-    self.seekToMeasureNextFrameEvent()
-    frame_number = self.seekToStartEvent()
-    start_event_index = self.index
-    self.seekToStopEvent()
-    stop_event_index = self.index
-    self.index = start_event_index
-
-    while self.index < stop_event_index and self.index < len(self.events):
-      event = self.seekToNextEvent()
-      if event["name"] == "RasterWorkerPoolTaskImpl::RunRasterOnThread" \
-           and event["ph"] == "B":
-        source_frame_number = event["args"]["metadata"]["source_frame_number"]
-        if source_frame_number == frame_number:
-          best_rasterize_time, pixels_rasterized = self.gatherRasterStats()
+  def GatherRasterizeStats(self, frame_number):
+    for event in self.timeline.GetAllEventsOfName(
+        "RasterWorkerPoolTaskImpl::RunRasterOnThread"):
+      if event.args["data"]["source_frame_number"] == frame_number:
+        for raster_loop_event in event.GetAllSubSlicesOfName("RasterLoop"):
+          best_rasterize_time = float("inf")
+          for raster_event in raster_loop_event.GetAllSubSlicesOfName(
+              "Picture::Raster"):
+            if "num_pixels_rasterized" in raster_event.args:
+              best_rasterize_time = min(best_rasterize_time,
+                                        raster_event.duration)
+              self.total_pixels_rasterized += \
+                  raster_event.args["num_pixels_rasterized"]
+          if best_rasterize_time == float('inf'):
+            best_rasterize_time = 0
           self.total_best_rasterize_time += best_rasterize_time
-          self.total_pixels_rasterized += pixels_rasterized
-      elif event["name"] == "PicturePile::Update recording loop" \
-           and event ["ph"] == "B":
-        if self.index < stop_event_index:
-          best_record_time, pixels_recorded = self.gatherRecordStats()
+
+  def GatherRecordStats(self, frame_number):
+    for event in self.timeline.GetAllEventsOfName("PictureLayer::Update"):
+      if event.args["commit_number"] == frame_number:
+        for record_loop_event in event.GetAllSubSlicesOfName("RecordLoop"):
+          best_record_time = float('inf')
+          for record_event in record_loop_event.GetAllSubSlicesOfName(
+              "Picture::Record"):
+            best_record_time = min(best_record_time, record_event.duration)
+            self.total_pixels_recorded += (record_event.args["width"] *
+                                           record_event.args["height"])
+          if best_record_time == float('inf'):
+            best_record_time = 0
           self.total_best_record_time += best_record_time
-          self.total_pixels_recorded += pixels_recorded
+
+  def GatherRenderingStats(self):
+    trigger_time = self.FindTriggerTime()
+    frame_number = self.FindFrameNumber(trigger_time)
+    self.GatherRasterizeStats(frame_number)
+    self.GatherRecordStats(frame_number)
 
 def DivideIfPossibleOrZero(numerator, denominator):
   if denominator == 0:
@@ -141,13 +92,27 @@ class RasterizeAndPaintMeasurement(page_measurement.PageMeasurement):
     parser.add_option('--report-all-results', dest='report_all_results',
                       action='store_true',
                       help='Reports all data collected')
+    parser.add_option('--raster-record-repeat', dest='raster_record_repeat',
+                      default=20,
+                      help='Repetitions in raster and record loops.' +
+                      'Higher values reduce variance, but can cause' +
+                      'instability (timeouts, event buffer overflows, etc.).')
+    parser.add_option('--start-wait-time', dest='start_wait_time',
+                      default=2,
+                      help='Wait time before the benchmark is started ' +
+                      '(must be long enought to load all content)')
+    parser.add_option('--stop-wait-time', dest='stop_wait_time',
+                      default=5,
+                      help='Wait time before measurement is taken ' +
+                      '(must be long enough to render one frame)')
 
   def CustomizeBrowserOptions(self, options):
     options.extra_browser_args.append('--enable-gpu-benchmarking')
-    # Run each raster task 100 times. This allows us to report the time for the
+    # Run each raster task N times. This allows us to report the time for the
     # best run, effectively excluding cache effects and time when the thread is
     # de-scheduled.
-    options.extra_browser_args.append('--slow-down-raster-scale-factor=100')
+    options.extra_browser_args.append(
+        '--slow-down-raster-scale-factor=' + str(options.raster_record_repeat))
     # Enable impl-side-painting. Current version of benchmark only works for
     # this mode.
     options.extra_browser_args.append('--enable-impl-side-painting')
@@ -157,15 +122,26 @@ class RasterizeAndPaintMeasurement(page_measurement.PageMeasurement):
   def MeasurePage(self, page, tab, results):
     self._metrics = smoothness_metrics.SmoothnessMetrics(tab)
 
-    # Rasterize only what's visible
+    # Rasterize only what's visible.
     tab.ExecuteJavaScript(
         'chrome.gpuBenchmarking.setRasterizeOnlyVisibleContent();')
 
-    # Wait until the page has loaded and come to a somewhat steady state
-    # Empirical wait time for workstation. May need to adjust for other devices
-    time.sleep(5)
+    # Wait until the page has loaded and come to a somewhat steady state.
+    # Needs to be adjusted for every device (~2 seconds for workstation).
+    time.sleep(float(self.options.start_wait_time))
 
-    tab.browser.StartTracing('webkit,cc')
+    # Render one frame before we start gathering a trace. On some pages, the
+    # first frame requested has more variance in the number of pixels
+    # rasterized.
+    tab.ExecuteJavaScript("""
+        window.__rafFired = false;
+        window.webkitRequestAnimationFrame(function() {
+          chrome.gpuBenchmarking.setNeedsDisplayOnAllLayers();
+          window.__rafFired  = true;
+        });
+    """)
+
+    tab.browser.StartTracing('webkit,benchmark', 60)
     self._metrics.Start()
 
     tab.ExecuteJavaScript("""
@@ -176,30 +152,27 @@ class RasterizeAndPaintMeasurement(page_measurement.PageMeasurement):
           window.__rafFired  = true;
         });
     """)
-    # Wait until the frame was drawn
-    # Empirical wait time for workstation. May need to adjust for other devices
+    # Wait until the frame was drawn.
+    # Needs to be adjusted for every device and for different
+    # raster_record_repeat counts.
     # TODO(ernstm): replace by call-back.
-    time.sleep(5)
+    time.sleep(float(self.options.stop_wait_time))
     tab.ExecuteJavaScript('console.timeEnd("measureNextFrame")')
 
     tab.browser.StopTracing()
     self._metrics.Stop()
 
-    stream = StringIO.StringIO()
-    tab.browser.GetTraceResultAndReset().Serialize(stream)
-    events = json.loads(stream.getvalue())
-    if 'traceEvents' in events:
-      events = events['traceEvents']
-    collector = StatsCollector(events)
-    collector.gatherRenderingStats()
+    timeline = tab.browser.GetTraceResultAndReset().AsTimelineModel()
+    collector = StatsCollector(timeline)
+    collector.GatherRenderingStats()
 
     rendering_stats = self._metrics.end_values
 
     results.Add('best_rasterize_time', 'seconds',
-                collector.total_best_rasterize_time / 1000000.0,
+                collector.total_best_rasterize_time / 1.e3,
                 data_type='unimportant')
     results.Add('best_record_time', 'seconds',
-                collector.total_best_record_time / 1000000.0,
+                collector.total_best_record_time / 1.e3,
                 data_type='unimportant')
     results.Add('total_pixels_rasterized', 'pixels',
                 collector.total_pixels_rasterized,

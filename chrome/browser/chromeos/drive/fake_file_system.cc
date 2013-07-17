@@ -54,18 +54,6 @@ void FakeFileSystem::CheckForUpdates() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
-void FakeFileSystem::GetResourceEntryById(
-    const std::string& resource_id,
-    const GetResourceEntryCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  drive_service_->GetResourceEntry(
-      resource_id,
-      base::Bind(
-          &FakeFileSystem::GetResourceEntryByIdAfterGetResourceEntry,
-          weak_ptr_factory_.GetWeakPtr(), callback));
-}
-
 void FakeFileSystem::TransferFileFromRemoteToLocal(
     const base::FilePath& remote_src_file_path,
     const base::FilePath& local_dest_file_path,
@@ -81,6 +69,7 @@ void FakeFileSystem::TransferFileFromLocalToRemote(
 }
 
 void FakeFileSystem::OpenFile(const base::FilePath& file_path,
+                              OpenMode open_mode,
                               const OpenFileCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
@@ -150,14 +139,6 @@ void FakeFileSystem::GetFileByPath(const base::FilePath& file_path,
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
-void FakeFileSystem::GetFileByResourceId(
-    const std::string& resource_id,
-    const ClientContext& context,
-    const GetFileCallback& get_file_callback,
-    const google_apis::GetContentCallback& get_content_callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-}
-
 void FakeFileSystem::GetFileContentByPath(
     const base::FilePath& file_path,
     const GetFileContentInitializedCallback& initialized_callback,
@@ -171,13 +152,6 @@ void FakeFileSystem::GetFileContentByPath(
                  weak_ptr_factory_.GetWeakPtr(),
                  initialized_callback, get_content_callback,
                  completion_callback));
-}
-
-void FakeFileSystem::UpdateFileByResourceId(
-    const std::string& resource_id,
-    const ClientContext& context,
-    const FileOperationCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
 void FakeFileSystem::GetResourceEntryByPath(
@@ -207,12 +181,6 @@ void FakeFileSystem::GetResourceEntryByPath(
 void FakeFileSystem::ReadDirectoryByPath(
     const base::FilePath& file_path,
     const ReadDirectoryCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-}
-
-void FakeFileSystem::RefreshDirectory(
-    const base::FilePath& file_path,
-    const FileOperationCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
@@ -260,22 +228,6 @@ void FakeFileSystem::GetCacheEntryByResourceId(
 }
 
 void FakeFileSystem::Reload() {
-}
-
-// Implementation of GetResourceEntryById.
-void FakeFileSystem::GetResourceEntryByIdAfterGetResourceEntry(
-    const GetResourceEntryCallback& callback,
-    google_apis::GDataErrorCode error_in,
-    scoped_ptr<google_apis::ResourceEntry> resource_entry) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  FileError error = util::GDataToFileError(error_in);
-  scoped_ptr<ResourceEntry> entry;
-  if (error == FILE_ERROR_OK) {
-    DCHECK(resource_entry);
-    entry.reset(new ResourceEntry(ConvertToResourceEntry(*resource_entry)));
-  }
-  callback.Run(error, entry.Pass());
 }
 
 // Implementation of GetFileContentByPath.
@@ -330,7 +282,7 @@ void FakeFileSystem::GetFileContentByPathAfterGetWapiResourceEntry(
 
   base::FilePath cache_path =
       cache_dir_.path().AppendASCII(entry->resource_id());
-  if (file_util::PathExists(cache_path)) {
+  if (base::PathExists(cache_path)) {
     // Cache file is found.
     initialized_callback.Run(FILE_ERROR_OK, entry.Pass(), cache_path,
                              base::Closure());

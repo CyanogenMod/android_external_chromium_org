@@ -17,6 +17,7 @@
 #include "cc/animation/animation_registrar.h"
 #include "cc/animation/layer_animation_controller.h"
 #include "cc/base/math_util.h"
+#include "cc/debug/benchmark_instrumentation.h"
 #include "cc/debug/overdraw_metrics.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
 #include "cc/input/top_controls_manager.h"
@@ -52,7 +53,8 @@ RendererCapabilities::RendererCapabilities()
       using_offscreen_context3d(false),
       max_texture_size(0),
       avoid_pow2_textures(false),
-      using_map_image(false) {}
+      using_map_image(false),
+      using_shared_memory_resources(false) {}
 
 RendererCapabilities::~RendererCapabilities() {}
 
@@ -288,6 +290,8 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
     sync_tree = host_impl->active_tree();
   }
 
+  sync_tree->set_source_frame_number(commit_number());
+
   if (needs_full_tree_sync_)
     sync_tree->SetRootLayer(TreeSynchronizer::SynchronizeTrees(
         root_layer(), sync_tree->DetachLayerTree(), sync_tree));
@@ -307,7 +311,6 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
     sync_tree->set_hud_layer(NULL);
   }
 
-  sync_tree->set_source_frame_number(commit_number());
   sync_tree->set_background_color(background_color_);
   sync_tree->set_has_transparent_background(has_transparent_background_);
 
@@ -555,7 +558,7 @@ void LayerTreeHost::SetDebugState(const LayerTreeDebugState& debug_state) {
   rendering_stats_instrumentation_->set_record_rendering_stats(
       debug_state_.RecordRenderingStats());
 
-  SetNeedsRedraw();
+  SetNeedsCommit();
 }
 
 void LayerTreeHost::SetViewportSize(gfx::Size device_viewport_size) {
@@ -636,22 +639,22 @@ bool LayerTreeHost::InitializeOutputSurfaceIfNeeded() {
   return !output_surface_lost_;
 }
 
-void LayerTreeHost::UpdateLayers(ResourceUpdateQueue* queue,
+bool LayerTreeHost::UpdateLayers(ResourceUpdateQueue* queue,
                                  size_t memory_allocation_limit_bytes) {
   DCHECK(!output_surface_lost_);
 
   if (!root_layer())
-    return;
+    return false;
 
   if (device_viewport_size().IsEmpty())
-    return;
+    return false;
 
   if (contents_texture_manager_ && memory_allocation_limit_bytes) {
     contents_texture_manager_->SetMaxMemoryLimitBytes(
         memory_allocation_limit_bytes);
   }
 
-  UpdateLayers(root_layer(), queue);
+  return UpdateLayers(root_layer(), queue);
 }
 
 static Layer* FindFirstScrollableLayer(Layer* layer) {
@@ -682,10 +685,16 @@ void LayerTreeHost::CalculateLCDTextMetricsCallback(Layer* layer) {
   }
 }
 
-void LayerTreeHost::UpdateLayers(Layer* root_layer,
+bool LayerTreeHost::UsingSharedMemoryResources() {
+  return GetRendererCapabilities().using_shared_memory_resources;
+}
+
+bool LayerTreeHost::UpdateLayers(Layer* root_layer,
                                  ResourceUpdateQueue* queue) {
-  TRACE_EVENT1("cc", "LayerTreeHost::UpdateLayers",
-               "commit_number", commit_number());
+  TRACE_EVENT1(benchmark_instrumentation::kCategory,
+               benchmark_instrumentation::kLayerTreeHostUpdateLayers,
+               benchmark_instrumentation::kCommitNumber,
+               commit_number());
 
   LayerList update_list;
   {
@@ -733,7 +742,10 @@ void LayerTreeHost::UpdateLayers(Layer* root_layer,
   // Reset partial texture update requests.
   partial_texture_update_requests_ = 0;
 
-  bool need_more_updates = PaintLayerContents(update_list, queue);
+  bool did_paint_content = false;
+  bool need_more_updates = false;
+  PaintLayerContents(
+      update_list, queue, &did_paint_content, &need_more_updates);
   if (trigger_idle_updates_ && need_more_updates) {
     TRACE_EVENT0("cc", "LayerTreeHost::UpdateLayers::posting prepaint task");
     prepaint_callback_.Reset(base::Bind(&LayerTreeHost::TriggerPrepaint,
@@ -746,6 +758,8 @@ void LayerTreeHost::UpdateLayers(Layer* root_layer,
 
   for (size_t i = 0; i < update_list.size(); ++i)
     update_list[i]->ClearRenderSurface();
+
+  return did_paint_content;
 }
 
 void LayerTreeHost::TriggerPrepaint() {
@@ -854,32 +868,35 @@ size_t LayerTreeHost::CalculateMemoryForRenderSurfaces(
   return readback_bytes + max_background_texture_bytes + contents_texture_bytes;
 }
 
-bool LayerTreeHost::PaintMasksForRenderSurface(Layer* render_surface_layer,
-                                               ResourceUpdateQueue* queue) {
+void LayerTreeHost::PaintMasksForRenderSurface(Layer* render_surface_layer,
+                                               ResourceUpdateQueue* queue,
+                                               bool* did_paint_content,
+                                               bool* need_more_updates) {
   // Note: Masks and replicas only exist for layers that own render surfaces. If
   // we reach this point in code, we already know that at least something will
   // be drawn into this render surface, so the mask and replica should be
   // painted.
 
-  bool need_more_updates = false;
   Layer* mask_layer = render_surface_layer->mask_layer();
   if (mask_layer) {
-    mask_layer->Update(queue, NULL);
-    need_more_updates |= mask_layer->NeedMoreUpdates();
+    *did_paint_content |= mask_layer->Update(queue, NULL);
+    *need_more_updates |= mask_layer->NeedMoreUpdates();
   }
 
   Layer* replica_mask_layer =
       render_surface_layer->replica_layer() ?
       render_surface_layer->replica_layer()->mask_layer() : NULL;
   if (replica_mask_layer) {
-    replica_mask_layer->Update(queue, NULL);
-    need_more_updates |= replica_mask_layer->NeedMoreUpdates();
+    *did_paint_content |= replica_mask_layer->Update(queue, NULL);
+    *need_more_updates |= replica_mask_layer->NeedMoreUpdates();
   }
-  return need_more_updates;
 }
 
-bool LayerTreeHost::PaintLayerContents(
-    const LayerList& render_surface_layer_list, ResourceUpdateQueue* queue) {
+void LayerTreeHost::PaintLayerContents(
+    const LayerList& render_surface_layer_list,
+    ResourceUpdateQueue* queue,
+    bool* did_paint_content,
+    bool* need_more_updates) {
   // Use FrontToBack to allow for testing occlusion and performing culling
   // during the tree walk.
   typedef LayerIterator<Layer,
@@ -887,7 +904,6 @@ bool LayerTreeHost::PaintLayerContents(
                         RenderSurface,
                         LayerIteratorActions::FrontToBack> LayerIteratorType;
 
-  bool need_more_updates = false;
   bool record_metrics_for_frame =
       settings_.show_overdraw_in_tracing &&
       base::debug::TraceLog::GetInstance() &&
@@ -913,11 +929,12 @@ bool LayerTreeHost::PaintLayerContents(
     if (it.represents_target_render_surface()) {
       DCHECK(it->render_surface()->draw_opacity() ||
              it->render_surface()->draw_opacity_is_animating());
-      need_more_updates |= PaintMasksForRenderSurface(*it, queue);
+      PaintMasksForRenderSurface(
+          *it, queue, did_paint_content, need_more_updates);
     } else if (it.represents_itself()) {
       DCHECK(!it->paint_properties().bounds.IsEmpty());
-      it->Update(queue, &occlusion_tracker);
-      need_more_updates |= it->NeedMoreUpdates();
+      *did_paint_content |= it->Update(queue, &occlusion_tracker);
+      *need_more_updates |= it->NeedMoreUpdates();
     }
 
     occlusion_tracker.LeaveLayer(it);
@@ -926,8 +943,6 @@ bool LayerTreeHost::PaintLayerContents(
   in_paint_layer_contents_ = false;
 
   occlusion_tracker.overdraw_metrics()->RecordMetrics(this);
-
-  return need_more_updates;
 }
 
 void LayerTreeHost::ApplyScrollAndScale(const ScrollAndScaleSet& info) {
@@ -1048,10 +1063,6 @@ void LayerTreeHost::AnimateLayers(base::TimeTicks time) {
     bool start_ready_animations = true;
     (*iter).second->UpdateState(start_ready_animations, NULL);
   }
-}
-
-skia::RefPtr<SkPicture> LayerTreeHost::CapturePicture() {
-  return proxy_->CapturePicture();
 }
 
 }  // namespace cc

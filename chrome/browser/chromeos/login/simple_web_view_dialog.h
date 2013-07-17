@@ -15,9 +15,9 @@
 #include "components/web_modal/web_contents_modal_dialog_host.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/web_contents_delegate.h"
-#include "googleurl/src/gurl.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "url/gurl.h"
 
 class CommandUpdater;
 class Profile;
@@ -89,8 +89,7 @@ class SimpleWebViewDialog : public views::ButtonListener,
   GetContentSettingBubbleModelDelegate() OVERRIDE;
   virtual void ShowWebsiteSettings(content::WebContents* web_contents,
                                    const GURL& url,
-                                   const content::SSLStatus& ssl,
-                                   bool show_history) OVERRIDE;
+                                   const content::SSLStatus& ssl) OVERRIDE;
   virtual void OnInputInProgress(bool in_progress) OVERRIDE;
 
   // Implements ToolbarModelDelegate:
@@ -139,6 +138,6 @@ class SimpleWebViewDialog : public views::ButtonListener,
   DISALLOW_COPY_AND_ASSIGN(SimpleWebViewDialog);
 };
 
-}  // chromeos
+}  // namespace chromeos
 
 #endif  // CHROME_BROWSER_CHROMEOS_LOGIN_SIMPLE_WEB_VIEW_DIALOG_H_

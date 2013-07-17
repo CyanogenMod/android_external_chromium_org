@@ -39,10 +39,6 @@ class TargetPolicy;
 }
 
 namespace webkit {
-namespace npapi {
-class PluginList;
-}
-
 namespace ppapi {
 class HostGlobals;
 }
@@ -72,6 +68,8 @@ CONTENT_EXPORT ContentBrowserClient* SetBrowserClientForTesting(
     ContentBrowserClient* b);
 CONTENT_EXPORT ContentRendererClient* SetRendererClientForTesting(
     ContentRendererClient* r);
+CONTENT_EXPORT ContentUtilityClient* SetUtilityClientForTesting(
+    ContentUtilityClient* u);
 
 // Returns the user agent string being used by the browser. SetContentClient()
 // must be called prior to calling this, and this routine must be used
@@ -107,10 +105,6 @@ class CONTENT_EXPORT ContentClient {
   // Gives the embedder a chance to register its own pepper plugins.
   virtual void AddPepperPlugins(
       std::vector<content::PepperPluginInfo>* plugins) {}
-
-  // Gives the embedder a chance to register its own internal NPAPI plugins.
-  virtual void AddNPAPIPlugins(
-      webkit::npapi::PluginList* plugin_list) {}
 
   // Gives the embedder a chance to register its own standard and saveable
   // url schemes early on in the startup sequence.

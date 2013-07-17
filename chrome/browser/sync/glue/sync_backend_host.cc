@@ -21,6 +21,7 @@
 #include "build/build_config.h"
 #include "chrome/browser/invalidation/invalidation_service.h"
 #include "chrome/browser/invalidation/invalidation_service_factory.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/net/network_time_tracker.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/token_service.h"
@@ -31,8 +32,6 @@
 #include "chrome/browser/sync/glue/sync_backend_registrar.h"
 #include "chrome/browser/sync/glue/synced_device_tracker.h"
 #include "chrome/browser/sync/sync_prefs.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "content/public/browser/browser_thread.h"
@@ -314,7 +313,8 @@ SyncBackendHost::SyncBackendHost(
       frontend_(NULL),
       cached_passphrase_type_(syncer::IMPLICIT_PASSPHRASE),
       invalidator_(
-          invalidation::InvalidationServiceFactory::GetForProfile(profile)) {
+          invalidation::InvalidationServiceFactory::GetForProfile(profile)),
+      invalidation_handler_registered_(false) {
 }
 
 SyncBackendHost::SyncBackendHost(Profile* profile)
@@ -325,7 +325,8 @@ SyncBackendHost::SyncBackendHost(Profile* profile)
       name_("Unknown"),
       initialization_state_(NOT_ATTEMPTED),
       frontend_(NULL),
-      cached_passphrase_type_(syncer::IMPLICIT_PASSPHRASE) {
+      cached_passphrase_type_(syncer::IMPLICIT_PASSPHRASE),
+      invalidation_handler_registered_(false) {
 }
 
 SyncBackendHost::~SyncBackendHost() {
@@ -382,8 +383,6 @@ void SyncBackendHost::Initialize(
     factory_switches.backoff_override =
         InternalComponentsFactoryImpl::BACKOFF_SHORT_INITIAL_RETRY_OVERRIDE;
   }
-
-  invalidator_->RegisterInvalidationHandler(this);
 
   initialization_state_ = CREATING_SYNC_MANAGER;
   InitCore(DoInitializeOptions(
@@ -560,10 +559,16 @@ void SyncBackendHost::Shutdown(bool sync_disabled) {
   // called first.
   DCHECK(!frontend_);
 
-  if (sync_disabled)
-    invalidator_->UpdateRegisteredInvalidationIds(this, syncer::ObjectIdSet());
-  invalidator_->UnregisterInvalidationHandler(this);
-  invalidator_ = NULL;
+  if (invalidation_handler_registered_) {
+    if (sync_disabled) {
+      invalidator_->UpdateRegisteredInvalidationIds(
+          this,
+          syncer::ObjectIdSet());
+    }
+    invalidator_->UnregisterInvalidationHandler(this);
+    invalidator_ = NULL;
+  }
+  invalidation_handler_registered_ = false;
 
   // TODO(tim): DCHECK(registrar_->StoppedOnUIThread()) would be nice.
   if (sync_thread_.IsRunning()) {
@@ -839,6 +844,9 @@ void SyncBackendHost::HandleSyncManagerInitializationOnFrontendLoop(
   js_backend_ = js_backend;
   debug_info_listener_ = debug_info_listener;
 
+  invalidator_->RegisterInvalidationHandler(this);
+  invalidation_handler_registered_ = true;
+
   // Inform the registrar of those types that have been fully downloaded and
   // applied.
   registrar_->SetInitialTypes(restored_types);
@@ -872,12 +880,8 @@ void SyncBackendHost::Observe(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK_EQ(type, chrome::NOTIFICATION_SYNC_REFRESH_LOCAL);
 
-  content::Details<const syncer::ModelTypeInvalidationMap>
-      state_details(details);
-  const syncer::ModelTypeInvalidationMap& invalidation_map =
-      *(state_details.ptr());
-  const syncer::ModelTypeSet types =
-      ModelTypeInvalidationMapToSet(invalidation_map);
+  content::Details<const syncer::ModelTypeSet> state_details(details);
+  const syncer::ModelTypeSet& types = *(state_details.ptr());
   sync_thread_.message_loop()->PostTask(FROM_HERE,
       base::Bind(&SyncBackendHost::Core::DoRefreshTypes, core_.get(), types));
 }
@@ -1390,8 +1394,8 @@ void SyncBackendHost::Core::DoRetryConfiguration(
 
 void SyncBackendHost::Core::DeleteSyncDataFolder() {
   DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
-  if (file_util::DirectoryExists(sync_data_folder_path_)) {
-    if (!base::Delete(sync_data_folder_path_, true))
+  if (base::DirectoryExists(sync_data_folder_path_)) {
+    if (!base::DeleteFile(sync_data_folder_path_, true))
       SLOG(DFATAL) << "Could not delete the Sync Data folder.";
   }
 }

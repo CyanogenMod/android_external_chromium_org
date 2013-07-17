@@ -26,12 +26,13 @@
 
 #include "base/compiler_specific.h"
 #include "base/id_map.h"
+#include "base/memory/shared_memory.h"
 #include "base/memory/weak_ptr.h"
-#include "base/shared_memory.h"
 #include "base/values.h"
 #include "content/common/browser_plugin/browser_plugin_message_enums.h"
 #include "content/common/edit_command.h"
 #include "content/port/common/input_event_ack_state.h"
+#include "content/public/browser/browser_plugin_guest_delegate.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/render_view_host_observer.h"
@@ -147,13 +148,6 @@ class CONTENT_EXPORT BrowserPluginGuest
                        const NotificationDetails& details) OVERRIDE;
 
   // WebContentsObserver implementation.
-  virtual void DidFailProvisionalLoad(
-      int64 frame_id,
-      bool is_main_frame,
-      const GURL& validated_url,
-      int error_code,
-      const string16& error_description,
-      RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidCommitProvisionalLoadForFrame(
       int64 frame_id,
       bool is_main_frame,
@@ -163,7 +157,7 @@ class CONTENT_EXPORT BrowserPluginGuest
   virtual void DidStopLoading(RenderViewHost* render_view_host) OVERRIDE;
 
   virtual void RenderViewReady() OVERRIDE;
-  virtual void RenderViewGone(base::TerminationStatus status) OVERRIDE;
+  virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // WebContentsDelegate implementation.
@@ -261,6 +255,9 @@ class CONTENT_EXPORT BrowserPluginGuest
   // Called when the drag started by this guest ends at an OS-level.
   void EndSystemDrag();
 
+  // |this| takes ownership of |delegate|.
+  void SetDelegate(BrowserPluginGuestDelegate* delegate);
+
  private:
   class EmbedderRenderViewHostObserver;
   friend class TestBrowserPluginGuest;
@@ -333,8 +330,6 @@ class CONTENT_EXPORT BrowserPluginGuest
   void OnLockMouseAck(int instance_id, bool succeeded);
   void OnNavigateGuest(int instance_id, const std::string& src);
   void OnPluginDestroyed(int instance_id);
-  // Reload the guest. Overriden in tests.
-  virtual void OnReload(int instance_id);
   // Grab the new damage buffer from the embedder, and resize the guest's
   // web contents.
   void OnResizeGuest(int instance_id,
@@ -368,16 +363,12 @@ class CONTENT_EXPORT BrowserPluginGuest
   // collection. See RenderThreadImpl::IdleHandler (executed when hidden) and
   // RenderThreadImpl::IdleHandlerInForegroundTab (executed when visible).
   void OnSetVisibility(int instance_id, bool visible);
-  // Stop loading the guest. Overriden in tests.
-  virtual void OnStop(int instance_id);
   // Message from embedder acknowledging last HW buffer.
   void OnSwapBuffersACK(int instance_id,
                         int route_id,
                         int gpu_host_id,
                         const std::string& mailbox_name,
                         uint32 sync_point);
-
-  void OnTerminateGuest(int instance_id);
   void OnUnlockMouse();
   void OnUnlockMouseAck(int instance_id);
   void OnUpdateGeometry(int instance_id, const gfx::Rect& view_rect);
@@ -489,6 +480,8 @@ class CONTENT_EXPORT BrowserPluginGuest
   // This is a queue of messages that are destined to be sent to the embedder
   // once the guest is attached to a particular embedder.
   std::queue<IPC::Message*> pending_messages_;
+
+  scoped_ptr<BrowserPluginGuestDelegate> delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserPluginGuest);
 };

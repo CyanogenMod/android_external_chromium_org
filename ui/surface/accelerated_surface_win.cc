@@ -578,6 +578,8 @@ bool AcceleratedPresenter::DoCopyToYUV(
   // the requested src subset. Clip to the actual back buffer.
   gfx::Rect src_subrect = requested_src_subrect;
   src_subrect.Intersect(gfx::Rect(back_buffer_size));
+  if (src_subrect.IsEmpty())
+    return false;
 
   base::win::ScopedComPtr<IDirect3DSurface9> resized;
   base::win::ScopedComPtr<IDirect3DTexture9> resized_as_texture;
@@ -678,6 +680,12 @@ void AcceleratedPresenter::SetNewTargetWindow(gfx::PluginWindowHandle window) {
 #endif
 
 AcceleratedPresenter::~AcceleratedPresenter() {
+}
+
+bool AcceleratedPresenter::IsSwapChainInitialized() const {
+  base::AutoLock locked(*present_thread_->lock());
+
+  return !!swap_chain_;
 }
 
 void AcceleratedPresenter::DoPresentAndAcknowledge(
@@ -1072,6 +1080,11 @@ AcceleratedSurface::~AcceleratedSurface() {
 void AcceleratedSurface::Present(HDC dc) {
   presenter_->Present(dc);
 }
+
+bool AcceleratedSurface::IsReadyForCopy() const {
+  return !!presenter_ && presenter_->IsSwapChainInitialized();
+}
+
 
 void AcceleratedSurface::AsyncCopyTo(
     const gfx::Rect& src_subrect,

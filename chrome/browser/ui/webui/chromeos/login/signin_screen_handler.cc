@@ -6,6 +6,7 @@
 
 #include "base/callback.h"
 #include "base/command_line.h"
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
@@ -17,6 +18,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part_chromeos.h"
 #include "chrome/browser/browser_shutdown.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/login/hwid_checker.h"
@@ -35,7 +37,6 @@
 #include "chrome/browser/ui/webui/chromeos/login/native_window_delegate.h"
 #include "chrome/browser/ui/webui/chromeos/login/network_state_informer.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -445,6 +446,7 @@ void SigninScreenHandler::DeclareLocalizedValues(
 }
 
 void SigninScreenHandler::Show(bool oobe_ui) {
+  TRACE_EVENT_ASYNC_BEGIN0("ui", "ShowLoginWebUI", this);
   CHECK(delegate_);
   oobe_ui_ = oobe_ui;
   if (!page_is_ready()) {
@@ -1434,6 +1436,7 @@ void SigninScreenHandler::HandleOpenProxySettings() {
 }
 
 void SigninScreenHandler::HandleLoginVisible(const std::string& source) {
+  TRACE_EVENT_ASYNC_END0("ui", "ShowLoginWebUI", this);
   LOG(INFO) << "Login WebUI >> LoginVisible, source: " << source << ", "
             << "webui_visible_: " << webui_visible_;
   if (!webui_visible_) {

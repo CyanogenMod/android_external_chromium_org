@@ -22,10 +22,10 @@
 #include "chrome/common/extensions/features/simple_feature.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/common/extensions/permissions/permissions_data.h"
-#include "googleurl/src/gurl.h"
 #include "grit/common_resources.h"
 #include "grit/extensions_api_resources.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "url/gurl.h"
 
 namespace extensions {
 
@@ -253,7 +253,6 @@ void ExtensionAPI::InitDefaultConfiguration() {
       IDR_EXTENSION_API_JSON_FILEBROWSERHANDLER);
   RegisterSchemaResource("fileBrowserPrivate",
       IDR_EXTENSION_API_JSON_FILEBROWSERPRIVATE);
-  RegisterSchemaResource("input.ime", IDR_EXTENSION_API_JSON_INPUT_IME);
   RegisterSchemaResource("inputMethodPrivate",
       IDR_EXTENSION_API_JSON_INPUTMETHODPRIVATE);
   RegisterSchemaResource("pageAction", IDR_EXTENSION_API_JSON_PAGEACTION);
@@ -266,6 +265,7 @@ void ExtensionAPI::InitDefaultConfiguration() {
   RegisterSchemaResource("ttsEngine", IDR_EXTENSION_API_JSON_TTSENGINE);
   RegisterSchemaResource("tts", IDR_EXTENSION_API_JSON_TTS);
   RegisterSchemaResource("types", IDR_EXTENSION_API_JSON_TYPES);
+  RegisterSchemaResource("types.private", IDR_EXTENSION_API_JSON_TYPES_PRIVATE);
   RegisterSchemaResource("webRequestInternal",
       IDR_EXTENSION_API_JSON_WEBREQUESTINTERNAL);
   RegisterSchemaResource("webstore", IDR_EXTENSION_API_JSON_WEBSTORE);

@@ -7,7 +7,7 @@
 
 #include "base/memory/weak_ptr.h"
 #include "base/values.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
 class PrefRegistrySimple;
@@ -25,7 +25,7 @@ class NewTabPageHandler : public content::WebUIMessageHandler,
   NewTabPageHandler();
 
   // Register NTP per-profile preferences.
-  static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Registers values (strings etc.) for the page.
   static void GetLocalizedValues(Profile* profile, DictionaryValue* values);

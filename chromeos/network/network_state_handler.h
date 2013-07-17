@@ -61,6 +61,7 @@ class CHROMEOS_EXPORT NetworkStateHandler
  public:
   typedef std::vector<ManagedState*> ManagedStateList;
   typedef std::vector<const NetworkState*> NetworkStateList;
+  typedef std::vector<const DeviceState*> DeviceStateList;
   typedef std::vector<const FavoriteState*> FavoriteStateList;
 
   enum TechnologyState {
@@ -87,6 +88,9 @@ class CHROMEOS_EXPORT NetworkStateHandler
   // Returns the state for technology |type|. kMatchTypeMobile (only) is
   // also supported.
   TechnologyState GetTechnologyState(const std::string& type) const;
+  bool IsTechnologyAvailable(const std::string& type) const {
+    return GetTechnologyState(type) != TECHNOLOGY_UNAVAILABLE;
+  }
   bool IsTechnologyEnabled(const std::string& type) const {
     return GetTechnologyState(type) == TECHNOLOGY_ENABLED;
   }
@@ -145,6 +149,12 @@ class CHROMEOS_EXPORT NetworkStateHandler
   // the scope of the calling function (i.e. they may later become invalid, but
   // only on the UI thread).
   void GetNetworkList(NetworkStateList* list) const;
+
+  // Sets |list| to contain the list of devices.  The returned list contains
+  // a copy of DeviceState pointers which should not be stored or used beyond
+  // the scope of the calling function (i.e. they may later become invalid, but
+  // only on the UI thread).
+  void GetDeviceList(DeviceStateList* list) const;
 
   // Sets |list| to contain the list of favorite (aka "preferred") networks.
   // See GetNetworkList() for usage, and notes for |favorite_list_|.

@@ -27,6 +27,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/download/download_danger_prompt.h"
 #include "chrome/browser/download/download_file_icon_extractor.h"
 #include "chrome/browser/download/download_query.h"
@@ -45,7 +46,6 @@
 #include "chrome/browser/renderer_host/chrome_render_message_filter.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/cancelable_task_tracker.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/api/downloads.h"
 #include "chrome/common/extensions/permissions/permissions_data.h"
 #include "content/public/browser/download_interrupt_reasons.h"
@@ -70,7 +70,6 @@ namespace events = extensions::event_names;
 
 using content::BrowserContext;
 using content::BrowserThread;
-using content::DownloadId;
 using content::DownloadItem;
 using content::DownloadManager;
 
@@ -927,7 +926,7 @@ bool DownloadsSearchFunction::RunImpl() {
   for (DownloadManager::DownloadVector::const_iterator it = results.begin();
        it != results.end(); ++it) {
     DownloadItem* download_item = *it;
-    int32 download_id = download_item->GetId();
+    uint32 download_id = download_item->GetId();
     bool off_record = ((incognito_manager != NULL) &&
                        (incognito_manager->GetDownload(download_id) != NULL));
     scoped_ptr<base::DictionaryValue> json_item(DownloadItemToJSON(

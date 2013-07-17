@@ -11,14 +11,14 @@
 #include "base/basictypes.h"
 #include "base/time/time.h"
 #include "content/public/renderer/render_view_observer.h"
-#include "googleurl/src/gurl.h"
 #include "media/base/android/demuxer_stream_player_params.h"
 #include "media/base/android/media_player_android.h"
 #include "media/base/media_keys.h"
+#include "url/gurl.h"
 
 namespace content {
 class WebMediaPlayerAndroid;
-class WebMediaPlayerManagerAndroid;
+class RendererMediaPlayerManager;
 
 // This class manages IPC communication between WebMediaPlayerAndroid and the
 // MediaPlayerManagerAndroid in the browser process.
@@ -29,7 +29,7 @@ class WebMediaPlayerProxyAndroid : public RenderViewObserver {
   // WebMediaPlayerAndroid using player IDs.
   WebMediaPlayerProxyAndroid(
       RenderView* render_view,
-      WebMediaPlayerManagerAndroid* manager);
+      RendererMediaPlayerManager* manager);
   virtual ~WebMediaPlayerProxyAndroid();
 
   // RenderViewObserver overrides.
@@ -126,7 +126,7 @@ class WebMediaPlayerProxyAndroid : public RenderViewObserver {
                     const std::vector<uint8>& message,
                     const std::string& destination_url);
 
-  WebMediaPlayerManagerAndroid* manager_;
+  RendererMediaPlayerManager* manager_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(WebMediaPlayerProxyAndroid);
 };

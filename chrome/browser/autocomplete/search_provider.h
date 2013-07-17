@@ -104,8 +104,8 @@ class SearchProvider : public AutocompleteProvider,
  private:
   // TODO(hfung): Remove ZeroSuggestProvider as a friend class after
   // refactoring common code to a new base class.
-  friend class ZeroSuggestProvider;
   friend class SearchProviderTest;
+  friend class ZeroSuggestProvider;
   FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, NavigationInline);
   FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, NavigationInlineDomainClassify);
   FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, NavigationInlineSchemeSubstring);
@@ -526,6 +526,13 @@ class SearchProvider : public AutocompleteProvider,
 
   // Start margin of the omnibox. Used to construct search URLs.
   int omnibox_start_margin_;
+
+  // If true, search history query suggestions will score low enough that
+  // they will not be inlined.
+  bool prevent_search_history_inlining_;
+
+  // If true, no search history query suggestions will be offered.
+  bool disable_search_history_;
 
   DISALLOW_COPY_AND_ASSIGN(SearchProvider);
 };

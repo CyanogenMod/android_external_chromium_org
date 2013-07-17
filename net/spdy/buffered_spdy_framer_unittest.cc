@@ -92,11 +92,6 @@ class TestBufferedSpdyVisitor : public BufferedSpdyFramerVisitorInterface {
                         SpdyGoAwayStatus status) OVERRIDE {
   }
 
-  virtual void OnSynStreamCompressed(
-      size_t uncompressed_size,
-      size_t compressed_size) OVERRIDE {
-  }
-
   bool OnCredentialFrameData(const char*, size_t) {
     LOG(FATAL) << "Unexpected OnCredentialFrameData call.";
     return false;
@@ -110,8 +105,9 @@ class TestBufferedSpdyVisitor : public BufferedSpdyFramerVisitorInterface {
   void OnGoAway(const SpdyFrame& frame) {}
   void OnPing(const SpdyFrame& frame) {}
   virtual void OnWindowUpdate(SpdyStreamId stream_id,
-                              uint32 delta_window_size) OVERRIDE {
-  }
+                              uint32 delta_window_size) OVERRIDE {}
+  virtual void OnPushPromise(SpdyStreamId stream_id,
+                             SpdyStreamId promised_stream_id) OVERRIDE {}
   void OnCredential(const SpdyFrame& frame) {}
 
   // Convenience function which runs a framer simulation with particular input.

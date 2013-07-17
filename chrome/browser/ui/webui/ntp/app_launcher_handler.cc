@@ -6,6 +6,7 @@
 
 #include <vector>
 
+#include "apps/app_launcher.h"
 #include "apps/metrics_names.h"
 #include "apps/pref_names.h"
 #include "base/auto_reset.h"
@@ -18,6 +19,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -37,7 +39,6 @@
 #include "chrome/browser/ui/webui/extensions/extension_basic_info.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
@@ -49,13 +50,13 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/favicon_url.h"
-#include "googleurl/src/gurl.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/webui/web_ui_util.h"
+#include "url/gurl.h"
 
 using chrome::AppLaunchParams;
 using chrome::OpenApplication;
@@ -74,6 +75,13 @@ bool ShouldDisplayInNewTabPage(const Extension* app, PrefService* prefs) {
   return app->ShouldDisplayInNewTabPage() && !blocked_by_policy;
 }
 
+void RecordAppLauncherPromoHistogram(
+      apps::AppLauncherPromoHistogramValues value) {
+  DCHECK_LT(value, apps::APP_LAUNCHER_PROMO_MAX);
+  UMA_HISTOGRAM_ENUMERATION(
+      "Apps.AppLauncherPromo", value, apps::APP_LAUNCHER_PROMO_MAX);
+}
+
 }  // namespace
 
 const net::UnescapeRule::Type kUnescapeRules =
@@ -88,6 +96,10 @@ AppLauncherHandler::AppLauncherHandler(ExtensionService* extension_service)
       ignore_changes_(false),
       attempted_bookmark_app_install_(false),
       has_loaded_apps_(false) {
+  if (apps::IsAppLauncherEnabled())
+    RecordAppLauncherPromoHistogram(apps::APP_LAUNCHER_PROMO_ALREADY_INSTALLED);
+  else if (apps::ShouldShowAppLauncherPromo())
+    RecordAppLauncherPromoHistogram(apps::APP_LAUNCHER_PROMO_SHOWN);
 }
 
 AppLauncherHandler::~AppLauncherHandler() {}
@@ -753,7 +765,7 @@ void AppLauncherHandler::OnLocalStatePreferenceChanged() {
 }
 
 // static
-void AppLauncherHandler::RegisterUserPrefs(
+void AppLauncherHandler::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterListPref(prefs::kNtpAppPageNames,
                              user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
@@ -797,14 +809,6 @@ void AppLauncherHandler::RecordAppListMainLaunch(const Extension* extension) {
   else if (extension->id() == extension_misc::kChromeAppId)
     bucket = extension_misc::APP_LAUNCH_APP_LIST_MAIN_CHROME;
   AppLauncherHandler::RecordAppLaunchType(bucket, extension->GetType());
-}
-
-// static
-void AppLauncherHandler::RecordAppLauncherPromoHistogram(
-      apps::AppLauncherPromoHistogramValues value) {
-  DCHECK_LT(value, apps::APP_LAUNCHER_PROMO_MAX);
-  UMA_HISTOGRAM_ENUMERATION(
-      "Apps.AppLauncherPromo", value, apps::APP_LAUNCHER_PROMO_MAX);
 }
 
 // static

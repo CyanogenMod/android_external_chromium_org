@@ -14,6 +14,7 @@
 #include "base/observer_list_threadsafe.h"
 #include "base/strings/string16.h"
 #include "base/synchronization/lock.h"
+#include "base/threading/thread_checker.h"
 #include "chrome/browser/storage_monitor/storage_info.h"
 
 class ChromeBrowserMainPartsLinux;
@@ -22,6 +23,7 @@ class MediaGalleriesPlatformAppBrowserTest;
 class MediaGalleriesPrivateApiTest;
 class MediaGalleriesPrivateEjectApiTest;
 class SystemInfoStorageApiTest;
+class SystemInfoStorageEjectApiTest;
 
 namespace device {
 class MediaTransferProtocolManager;
@@ -130,6 +132,7 @@ class StorageMonitor {
   friend class ::MediaGalleriesPrivateEjectApiTest;
   friend class MediaFileSystemRegistryTest;
   friend class ::SystemInfoStorageApiTest;
+  friend class ::SystemInfoStorageEjectApiTest;
 
   StorageMonitor();
   virtual ~StorageMonitor();

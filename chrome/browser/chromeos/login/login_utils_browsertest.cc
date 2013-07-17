@@ -16,7 +16,8 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/thread.h"
-#include "chrome/browser/chromeos/cros/cros_library.h"
+#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #include "chrome/browser/chromeos/input_method/mock_input_method_manager.h"
 #include "chrome/browser/chromeos/login/authenticator.h"
@@ -38,7 +39,6 @@
 #include "chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/rlz/rlz.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -509,7 +509,7 @@ class LoginUtilsTest : public testing::Test,
   }
 
  protected:
-  ScopedStubCrosEnabler stub_cros_enabler_;
+  ScopedStubNetworkLibraryEnabler stub_network_library_enabler_;
 
   base::Closure fake_io_thread_work_;
   base::WaitableEvent fake_io_thread_completion_;
@@ -736,4 +736,4 @@ INSTANTIATE_TEST_CASE_P(
 
 }  // namespace
 
-}
+}  // namespace chromeos

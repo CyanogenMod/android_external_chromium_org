@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
@@ -20,6 +21,7 @@
 #include "base/test/test_file_util.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/download/download_crx_util.h"
@@ -52,7 +54,6 @@
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/pref_names.h"
@@ -68,6 +69,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/context_menu_params.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/test/browser_test_utils.h"
@@ -183,6 +185,64 @@ class PercentWaiter : public content::DownloadItem::Observer {
   int prev_percent_;
 
   DISALLOW_COPY_AND_ASSIGN(PercentWaiter);
+};
+
+// DownloadTestObserver subclass that observes one download until it transitions
+// from a non-resumable state to a resumable state a specified number of
+// times. Note that this observer can only observe a single download.
+class DownloadTestObserverResumable : public content::DownloadTestObserver {
+ public:
+  // Construct a new observer. |transition_count| is the number of times the
+  // download should transition from a non-resumable state to a resumable state.
+  DownloadTestObserverResumable(DownloadManager* download_manager,
+                                size_t transition_count)
+      : DownloadTestObserver(download_manager, 1,
+                             ON_DANGEROUS_DOWNLOAD_FAIL),
+        was_previously_resumable_(false),
+        transitions_left_(transition_count) {
+    Init();
+  }
+  virtual ~DownloadTestObserverResumable() {}
+
+ private:
+  virtual bool IsDownloadInFinalState(DownloadItem* download) OVERRIDE {
+    bool is_resumable_now = download->CanResume();
+    if (!was_previously_resumable_ && is_resumable_now)
+      --transitions_left_;
+    was_previously_resumable_ = is_resumable_now;
+    return transitions_left_ == 0;
+  }
+
+  bool was_previously_resumable_;
+  size_t transitions_left_;
+
+  DISALLOW_COPY_AND_ASSIGN(DownloadTestObserverResumable);
+};
+
+// DownloadTestObserver subclass that observes a download until it transitions
+// from IN_PROGRESS to another state, but only after StartObserving() is called.
+class DownloadTestObserverNotInProgress : public content::DownloadTestObserver {
+ public:
+  DownloadTestObserverNotInProgress(DownloadManager* download_manager,
+                                    size_t count)
+      : DownloadTestObserver(download_manager, count,
+                             ON_DANGEROUS_DOWNLOAD_FAIL),
+        started_observing_(false) {
+    Init();
+  }
+  virtual ~DownloadTestObserverNotInProgress() {}
+
+  void StartObserving() {
+    started_observing_ = true;
+  }
+
+ private:
+  virtual bool IsDownloadInFinalState(DownloadItem* download) OVERRIDE {
+    return started_observing_ &&
+        download->GetState() != DownloadItem::IN_PROGRESS;
+  }
+
+  bool started_observing_;
 };
 
 // IDs and paths of CRX files used in tests.
@@ -600,13 +660,13 @@ class DownloadTest : public InProcessBrowserTest {
   bool CheckDownloadFullPaths(Browser* browser,
                               const base::FilePath& downloaded_file,
                               const base::FilePath& origin_file) {
-    bool origin_file_exists = file_util::PathExists(origin_file);
+    bool origin_file_exists = base::PathExists(origin_file);
     EXPECT_TRUE(origin_file_exists) << origin_file.value();
     if (!origin_file_exists)
       return false;
 
     // Confirm the downloaded data file exists.
-    bool downloaded_file_exists = file_util::PathExists(downloaded_file);
+    bool downloaded_file_exists = base::PathExists(downloaded_file);
     EXPECT_TRUE(downloaded_file_exists) << downloaded_file.value();
     if (!downloaded_file_exists)
       return false;
@@ -723,7 +783,7 @@ class DownloadTest : public InProcessBrowserTest {
         downloads_directory_.path().Append(basefilename);
     EXPECT_TRUE(browser->window()->IsDownloadShelfVisible());
 
-    bool downloaded_path_exists = file_util::PathExists(download_path);
+    bool downloaded_path_exists = base::PathExists(download_path);
     EXPECT_TRUE(downloaded_path_exists);
     if (!downloaded_path_exists)
       return false;
@@ -736,7 +796,7 @@ class DownloadTest : public InProcessBrowserTest {
 
     // Delete the file we just downloaded.
     EXPECT_TRUE(file_util::DieFileDie(download_path, true));
-    EXPECT_FALSE(file_util::PathExists(download_path));
+    EXPECT_FALSE(base::PathExists(download_path));
 
     return true;
   }
@@ -846,15 +906,16 @@ class DownloadTest : public InProcessBrowserTest {
       // won't be.
       creation_observer->WaitForDownloadItemCreation();
 
-      int32 invalid_id = content::DownloadId::Invalid().local();
       EXPECT_EQ(download_info.show_download_item,
                 creation_observer->succeeded());
       if (download_info.show_download_item) {
         EXPECT_EQ(net::OK, creation_observer->error());
-        EXPECT_NE(invalid_id, creation_observer->download_id());
+        EXPECT_NE(content::DownloadItem::kInvalidId,
+                  creation_observer->download_id());
       } else {
         EXPECT_NE(net::OK, creation_observer->error());
-        EXPECT_EQ(invalid_id, creation_observer->download_id());
+        EXPECT_EQ(content::DownloadItem::kInvalidId,
+                  creation_observer->download_id());
       }
     } else {
       // Navigate to URL normally, wait until done.
@@ -898,8 +959,8 @@ class DownloadTest : public InProcessBrowserTest {
         // Clean up the file, in case it ended up in the My Documents folder.
         base::FilePath destination_folder = GetDownloadDirectory(browser());
         base::FilePath my_downloaded_file = item->GetTargetFilePath();
-        EXPECT_TRUE(file_util::PathExists(my_downloaded_file));
-        EXPECT_TRUE(base::Delete(my_downloaded_file, false));
+        EXPECT_TRUE(base::PathExists(my_downloaded_file));
+        EXPECT_TRUE(base::DeleteFile(my_downloaded_file, false));
 
         EXPECT_EQ(download_info.should_redirect_to_documents ?
                       std::string::npos :
@@ -1005,6 +1066,49 @@ class DownloadTest : public InProcessBrowserTest {
             browser()->tab_strip_model()->GetActiveWebContents()));
   }
 
+  // This method:
+  // * Starts a mock download by navigating browser() to a URLRequestMockHTTPJob
+  //   mock URL.
+  // * Injects |error| on the first write using |error_injector|.
+  // * Waits for the download to be interrupted.
+  // * Clears the errors on |error_injector|.
+  // * Returns the resulting interrupted download.
+  DownloadItem* StartMockDownloadAndInjectError(
+      content::TestFileErrorInjector* error_injector,
+      content::DownloadInterruptReason error) {
+    base::FilePath file_path(FILE_PATH_LITERAL("download-test1.lib"));
+    GURL url = URLRequestMockHTTPJob::GetMockUrl(file_path);
+
+    content::TestFileErrorInjector::FileErrorInfo error_info;
+    error_info.url = url.spec();
+    error_info.code = content::TestFileErrorInjector::FILE_OPERATION_WRITE;
+    error_info.operation_instance = 0;
+    error_info.error = error;
+    error_injector->ClearErrors();
+    error_injector->AddError(error_info);
+    error_injector->InjectErrors();
+
+    scoped_ptr<content::DownloadTestObserver> observer(
+        new DownloadTestObserverResumable(
+            DownloadManagerForBrowser(browser()), 1));
+    ui_test_utils::NavigateToURL(browser(), url);
+    observer->WaitForFinished();
+
+    content::DownloadManager::DownloadVector downloads;
+    DownloadManagerForBrowser(browser())->GetAllDownloads(&downloads);
+    EXPECT_EQ(1u, downloads.size());
+
+    if (downloads.size() != 1)
+      return NULL;
+
+    error_injector->ClearErrors();
+    error_injector->InjectErrors();
+    DownloadItem* download = downloads[0];
+    EXPECT_EQ(DownloadItem::INTERRUPTED, download->GetState());
+    EXPECT_EQ(error, download->GetLastReason());
+    return download;
+  }
+
  private:
   static void EnsureNoPendingDownloadJobsOnIO(bool* result) {
     if (URLRequestSlowDownloadJob::NumberOutstandingRequests())
@@ -1106,7 +1210,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, NoDownload) {
   ui_test_utils::NavigateToURL(browser(), url);
 
   // Check that we did not download the web page.
-  EXPECT_FALSE(file_util::PathExists(file_path));
+  EXPECT_FALSE(base::PathExists(file_path));
 
   // Check state.
   EXPECT_EQ(1, browser()->tab_strip_model()->count());
@@ -1192,7 +1296,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadResourceThrottleCancels) {
   // Check that we did not download the file.
   base::FilePath file(FILE_PATH_LITERAL("download-test1.lib"));
   base::FilePath file_path(DestinationFile(browser(), file));
-  EXPECT_FALSE(file_util::PathExists(file_path));
+  EXPECT_FALSE(base::PathExists(file_path));
 
   // Check state.
   EXPECT_EQ(1, browser()->tab_strip_model()->count());
@@ -1361,7 +1465,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_IncognitoRegular) {
   // later.
   base::FilePath origin(OriginFile(base::FilePath(FILE_PATH_LITERAL(
       "downloads/a_zip_file.zip"))));
-  ASSERT_TRUE(file_util::PathExists(origin));
+  ASSERT_TRUE(base::PathExists(origin));
   int64 origin_file_size = 0;
   EXPECT_TRUE(file_util::GetFileSize(origin, &origin_file_size));
   std::string original_contents;
@@ -1382,7 +1486,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_IncognitoRegular) {
   ASSERT_EQ(1UL, download_items.size());
   ASSERT_EQ(base::FilePath(FILE_PATH_LITERAL("a_zip_file.zip")),
             download_items[0]->GetTargetFilePath().BaseName());
-  ASSERT_TRUE(file_util::PathExists(download_items[0]->GetTargetFilePath()));
+  ASSERT_TRUE(base::PathExists(download_items[0]->GetTargetFilePath()));
   EXPECT_TRUE(VerifyFile(download_items[0]->GetTargetFilePath(),
                          original_contents, origin_file_size));
 
@@ -1414,7 +1518,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_IncognitoRegular) {
   ASSERT_EQ(1UL, download_items.size());
   ASSERT_EQ(base::FilePath(FILE_PATH_LITERAL("a_zip_file (1).zip")),
             download_items[0]->GetTargetFilePath().BaseName());
-  ASSERT_TRUE(file_util::PathExists(download_items[0]->GetTargetFilePath()));
+  ASSERT_TRUE(base::PathExists(download_items[0]->GetTargetFilePath()));
   EXPECT_TRUE(VerifyFile(download_items[0]->GetTargetFilePath(),
                          original_contents, origin_file_size));
 }
@@ -1813,6 +1917,11 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, PRE_DownloadTest_History) {
   HistoryObserver observer(browser()->profile());
   DownloadAndWait(browser(), download_url);
   observer.WaitForStored();
+  HistoryServiceFactory::GetForProfile(
+      browser()->profile(), Profile::IMPLICIT_ACCESS)->FlushForTest(
+      base::Bind(&base::MessageLoop::Quit,
+                  base::Unretained(base::MessageLoop::current()->current())));
+  content::RunMessageLoop();
 }
 
 #if defined(OS_CHROMEOS)
@@ -1907,7 +2016,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, AnchorDownloadTag) {
   // Confirm the downloaded data exists.
   base::FilePath downloaded_file = GetDownloadDirectory(browser());
   downloaded_file = downloaded_file.Append(FILE_PATH_LITERAL("a_red_dot.png"));
-  EXPECT_TRUE(file_util::PathExists(downloaded_file));
+  EXPECT_TRUE(base::PathExists(downloaded_file));
 }
 
 // Test to make sure auto-open works.
@@ -2716,7 +2825,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_Renaming) {
   content::DownloadManager* manager = DownloadManagerForBrowser(browser());
   base::FilePath origin_file(OriginFile(base::FilePath(FILE_PATH_LITERAL(
       "downloads/a_zip_file.zip"))));
-  ASSERT_TRUE(file_util::PathExists(origin_file));
+  ASSERT_TRUE(base::PathExists(origin_file));
   std::string origin_contents;
   ASSERT_TRUE(file_util::ReadFileToString(origin_file, &origin_contents));
 
@@ -2725,7 +2834,8 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_Renaming) {
   for (int index = 0; index < 5; ++index) {
     DownloadAndWait(browser(), url);
     EXPECT_TRUE(browser()->window()->IsDownloadShelfVisible());
-    content::DownloadItem* item = manager->GetDownload(index);
+    content::DownloadItem* item = manager->GetDownload(
+        content::DownloadItem::kInvalidId + 1 + index);
     ASSERT_TRUE(item);
     ASSERT_EQ(DownloadItem::COMPLETE, item->GetState());
     base::FilePath target_path(item->GetTargetFilePath());
@@ -2733,7 +2843,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_Renaming) {
         (index == 0 ? std::string(".zip") :
                       base::StringPrintf(" (%d).zip", index)),
               target_path.BaseName().AsUTF8Unsafe());
-    ASSERT_TRUE(file_util::PathExists(target_path));
+    ASSERT_TRUE(base::PathExists(target_path));
     ASSERT_TRUE(VerifyFile(target_path, origin_contents,
                            origin_contents.size()));
   }
@@ -2918,7 +3028,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, MAYBE_DownloadTest_PercentComplete) {
   EXPECT_TRUE(browser()->window()->IsDownloadShelfVisible());
 
   // Check that the file downloaded correctly.
-  ASSERT_TRUE(file_util::PathExists(download_items[0]->GetTargetFilePath()));
+  ASSERT_TRUE(base::PathExists(download_items[0]->GetTargetFilePath()));
   int64 downloaded_size = 0;
   ASSERT_TRUE(file_util::GetFileSize(
       download_items[0]->GetTargetFilePath(), &downloaded_size));
@@ -2970,4 +3080,157 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadPrefs_SaveFilePath) {
   on_prefs->SetSaveFilePath(dir.AppendASCII("on"));
   EXPECT_EQ(dir.AppendASCII("on").value(), on_prefs->SaveFilePath().value());
   EXPECT_EQ(dir.AppendASCII("off").value(), off_prefs->SaveFilePath().value());
+}
+
+// A download that is interrupted due to a file error should be able to be
+// resumed.
+IN_PROC_BROWSER_TEST_F(DownloadTest, Resumption_NoPrompt) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableDownloadResumption);
+  scoped_refptr<content::TestFileErrorInjector> error_injector(
+      content::TestFileErrorInjector::Create(
+          DownloadManagerForBrowser(browser())));
+  scoped_ptr<content::DownloadTestObserver> completion_observer(
+      CreateWaiter(browser(), 1));
+  EnableFileChooser(true);
+
+  DownloadItem* download = StartMockDownloadAndInjectError(
+      error_injector,
+      content::DOWNLOAD_INTERRUPT_REASON_FILE_FAILED);
+  ASSERT_TRUE(download);
+
+  download->Resume();
+  completion_observer->WaitForFinished();
+
+  EXPECT_EQ(
+      1u, completion_observer->NumDownloadsSeenInState(DownloadItem::COMPLETE));
+  EXPECT_FALSE(DidShowFileChooser());
+}
+
+// A download that's interrupted due to a reason that indicates that the target
+// path is invalid or unusable should cause a prompt to be displayed on
+// resumption.
+IN_PROC_BROWSER_TEST_F(DownloadTest, Resumption_WithPrompt) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableDownloadResumption);
+  scoped_refptr<content::TestFileErrorInjector> error_injector(
+      content::TestFileErrorInjector::Create(
+          DownloadManagerForBrowser(browser())));
+  scoped_ptr<content::DownloadTestObserver> completion_observer(
+      CreateWaiter(browser(), 1));
+  EnableFileChooser(true);
+
+  DownloadItem* download = StartMockDownloadAndInjectError(
+      error_injector,
+      content::DOWNLOAD_INTERRUPT_REASON_FILE_NO_SPACE);
+  ASSERT_TRUE(download);
+
+  download->Resume();
+  completion_observer->WaitForFinished();
+
+  EXPECT_EQ(
+      1u, completion_observer->NumDownloadsSeenInState(DownloadItem::COMPLETE));
+  EXPECT_TRUE(DidShowFileChooser());
+}
+
+// The user shouldn't be prompted on a resumed download unless a prompt is
+// necessary due to the interrupt reason.
+IN_PROC_BROWSER_TEST_F(DownloadTest, Resumption_WithPromptAlways) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableDownloadResumption);
+  browser()->profile()->GetPrefs()->SetBoolean(
+      prefs::kPromptForDownload, true);
+  scoped_refptr<content::TestFileErrorInjector> error_injector(
+      content::TestFileErrorInjector::Create(
+          DownloadManagerForBrowser(browser())));
+  scoped_ptr<content::DownloadTestObserver> completion_observer(
+      CreateWaiter(browser(), 1));
+  EnableFileChooser(true);
+
+  DownloadItem* download = StartMockDownloadAndInjectError(
+      error_injector,
+      content::DOWNLOAD_INTERRUPT_REASON_FILE_FAILED);
+  ASSERT_TRUE(download);
+
+  // Prompts the user initially because of the kPromptForDownload preference.
+  EXPECT_TRUE(DidShowFileChooser());
+
+  download->Resume();
+  completion_observer->WaitForFinished();
+
+  EXPECT_EQ(
+      1u, completion_observer->NumDownloadsSeenInState(DownloadItem::COMPLETE));
+  // Shouldn't prompt for resumption.
+  EXPECT_FALSE(DidShowFileChooser());
+}
+
+// A download that is interrupted due to a transient error should be resumed
+// automatically.
+IN_PROC_BROWSER_TEST_F(DownloadTest, Resumption_Automatic) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableDownloadResumption);
+  scoped_refptr<content::TestFileErrorInjector> error_injector(
+      content::TestFileErrorInjector::Create(
+          DownloadManagerForBrowser(browser())));
+
+  DownloadItem* download = StartMockDownloadAndInjectError(
+      error_injector,
+      content::DOWNLOAD_INTERRUPT_REASON_FILE_TRANSIENT_ERROR);
+  ASSERT_TRUE(download);
+
+  // The number of times this the download is resumed automatically is defined
+  // in DownloadItemImpl::kMaxAutoResumeAttempts. The number of DownloadFiles
+  // created should be that number + 1 (for the original download request). We
+  // only care that it is greater than 1.
+  EXPECT_GT(1u, error_injector->TotalFileCount());
+}
+
+// An interrupting download should be resumable multiple times.
+IN_PROC_BROWSER_TEST_F(DownloadTest, Resumption_MultipleAttempts) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableDownloadResumption);
+  scoped_refptr<content::TestFileErrorInjector> error_injector(
+      content::TestFileErrorInjector::Create(
+          DownloadManagerForBrowser(browser())));
+  scoped_ptr<DownloadTestObserverNotInProgress> completion_observer(
+      new DownloadTestObserverNotInProgress(
+          DownloadManagerForBrowser(browser()), 1));
+  // Wait for two transitions to a resumable state
+  scoped_ptr<content::DownloadTestObserver> resumable_observer(
+      new DownloadTestObserverResumable(
+          DownloadManagerForBrowser(browser()), 2));
+
+  EnableFileChooser(true);
+  DownloadItem* download = StartMockDownloadAndInjectError(
+      error_injector,
+      content::DOWNLOAD_INTERRUPT_REASON_FILE_FAILED);
+  ASSERT_TRUE(download);
+
+  content::TestFileErrorInjector::FileErrorInfo error_info;
+  error_info.url = download->GetOriginalUrl().spec();
+  error_info.code = content::TestFileErrorInjector::FILE_OPERATION_WRITE;
+  error_info.operation_instance = 0;
+  error_info.error = content::DOWNLOAD_INTERRUPT_REASON_FILE_FAILED;
+  error_injector->AddError(error_info);
+  error_injector->InjectErrors();
+
+  // Resuming should cause the download to be interrupted again due to the
+  // errors we are injecting.
+  download->Resume();
+  resumable_observer->WaitForFinished();
+  ASSERT_EQ(DownloadItem::INTERRUPTED, download->GetState());
+  ASSERT_EQ(content::DOWNLOAD_INTERRUPT_REASON_FILE_FAILED,
+            download->GetLastReason());
+
+  error_injector->ClearErrors();
+  error_injector->InjectErrors();
+
+  // No errors this time. The download should complete successfully.
+  EXPECT_FALSE(completion_observer->IsFinished());
+  completion_observer->StartObserving();
+  download->Resume();
+  completion_observer->WaitForFinished();
+  EXPECT_EQ(DownloadItem::COMPLETE, download->GetState());
+
+  EXPECT_FALSE(DidShowFileChooser());
 }

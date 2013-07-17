@@ -8,6 +8,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/certificate_viewer.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
@@ -22,12 +23,10 @@
 #include "chrome/browser/ui/gtk/website_settings/permission_selector.h"
 #include "chrome/browser/ui/website_settings/website_settings.h"
 #include "chrome/browser/ui/website_settings/website_settings_utils.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/cert_store.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
-#include "googleurl/src/gurl.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
@@ -38,6 +37,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/cairo_cached_surface.h"
 #include "ui/gfx/image/image.h"
+#include "url/gurl.h"
 
 using content::OpenURLParams;
 
@@ -246,15 +246,10 @@ WebsiteSettingsPopupGtk::WebsiteSettingsPopupGtk(
     return;
   }
 
-  TabSpecificContentSettings* content_settings =
-      TabSpecificContentSettings::FromWebContents(web_contents);
-  InfoBarService* infobar_service =
-      InfoBarService::FromWebContents(web_contents);
-  presenter_.reset(new WebsiteSettings(this, profile,
-                                       content_settings,
-                                       infobar_service,
-                                       url, ssl,
-                                       content::CertStore::GetInstance()));
+  presenter_.reset(new WebsiteSettings(
+      this, profile, TabSpecificContentSettings::FromWebContents(web_contents),
+      InfoBarService::FromWebContents(web_contents), url, ssl,
+      content::CertStore::GetInstance()));
 }
 
 WebsiteSettingsPopupGtk::~WebsiteSettingsPopupGtk() {

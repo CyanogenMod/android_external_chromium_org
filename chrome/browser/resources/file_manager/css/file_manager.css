@@ -177,7 +177,7 @@ body {
   min-width: 100px;
   overflow: hidden;
   position: relative;
-  width: 200px;
+  width: 150px;
 }
 
 .dialog-sidebar-header {
@@ -1375,10 +1375,6 @@ input.rename {
 #tasks-menu menuitem:not(.change-default) {
   background-position: left 10px center;
   padding-left: 32px;
-}
-
-menu[showShortcuts] > menuitem[selected]:not([disabled])::after {
-  color: white;
 }
 
 #preview-lines {

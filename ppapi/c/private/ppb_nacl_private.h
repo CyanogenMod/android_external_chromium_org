@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From private/ppb_nacl_private.idl modified Tue Jun 25 15:57:09 2013. */
+/* From private/ppb_nacl_private.idl modified Mon Jul 15 09:19:33 2013. */
 
 #ifndef PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
 #define PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
@@ -101,9 +101,6 @@ struct PPB_NaCl_Private_1_0 {
    * code to be processed by the graphics stack.
    */
   PP_Bool (*Are3DInterfacesDisabled)(void);
-  /* Enables the creation of sel_ldr processes off of the main thread.
-   */
-  void (*EnableBackgroundSelLdrLaunch)(void);
   /* This is Windows-specific.  This is a replacement for DuplicateHandle() for
    * use inside the Windows sandbox.  Note that we provide this via dependency
    * injection only to avoid the linkage problems that occur because the NaCl
@@ -128,7 +125,8 @@ struct PPB_NaCl_Private_1_0 {
   PP_FileHandle (*CreateTemporaryFile)(PP_Instance instance);
   /* Create a temporary file, which will be deleted by the time the last
    * handle is closed (or earlier on POSIX systems), to use for the nexe
-   * with the cache key given by |cache_key|. If the nexe is already present
+   * with the cache information given by |pexe_url|, |abi_version|, |opt_level|,
+   * |last_modified|, and |etag|. If the nexe is already present
    * in the cache, |is_hit| is set to PP_TRUE and the contents of the nexe
    * will be copied into the temporary file. Otherwise |is_hit| is set to
    * PP_FALSE and the temporary file will be writeable.
@@ -139,7 +137,11 @@ struct PPB_NaCl_Private_1_0 {
    * translation finishes.
    */
   int32_t (*GetNexeFd)(PP_Instance instance,
-                       const char* cache_key,
+                       const char* pexe_url,
+                       uint32_t abi_version,
+                       uint32_t opt_level,
+                       const char* last_modified,
+                       const char* etag,
                        PP_Bool* is_hit,
                        PP_FileHandle* nexe_handle,
                        struct PP_CompletionCallback callback);

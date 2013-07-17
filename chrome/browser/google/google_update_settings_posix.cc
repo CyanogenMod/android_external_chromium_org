@@ -37,13 +37,13 @@ bool GoogleUpdateSettings::GetCollectStatsConsent() {
 bool GoogleUpdateSettings::SetCollectStatsConsent(bool consented) {
   base::FilePath consent_dir;
   PathService::Get(chrome::DIR_USER_DATA, &consent_dir);
-  if (!file_util::DirectoryExists(consent_dir))
+  if (!base::DirectoryExists(consent_dir))
     return false;
 
   base::FilePath consent_file = consent_dir.AppendASCII(kConsentToSendStats);
   if (consented) {
-    if ((!file_util::PathExists(consent_file)) ||
-        (file_util::PathExists(consent_file) &&
+    if ((!base::PathExists(consent_file)) ||
+        (base::PathExists(consent_file) &&
          !google_update::posix_guid().empty())) {
       const char* c_str = google_update::posix_guid().c_str();
       int size = google_update::posix_guid().size();
@@ -51,7 +51,7 @@ bool GoogleUpdateSettings::SetCollectStatsConsent(bool consented) {
     }
   } else {
     google_update::posix_guid().clear();
-    return base::Delete(consent_file, false);
+    return base::DeleteFile(consent_file, false);
   }
   return true;
 }
@@ -60,7 +60,7 @@ bool GoogleUpdateSettings::SetMetricsId(const std::wstring& client_id) {
   // Make sure that user has consented to send crashes.
   base::FilePath consent_dir;
   PathService::Get(chrome::DIR_USER_DATA, &consent_dir);
-  if (!file_util::DirectoryExists(consent_dir) ||
+  if (!base::DirectoryExists(consent_dir) ||
       !GoogleUpdateSettings::GetCollectStatsConsent())
     return false;
 

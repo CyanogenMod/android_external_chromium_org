@@ -12,7 +12,6 @@
 #include "base/synchronization/waitable_event.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
-#include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/autofill/core/browser/autocomplete_history_manager.h"
 #include "components/autofill/core/browser/autofill_external_delegate.h"
@@ -208,8 +207,10 @@ namespace {
 class MockAutofillExternalDelegate : public AutofillExternalDelegate {
  public:
   MockAutofillExternalDelegate(content::WebContents* web_contents,
-                               AutofillManager* autofill_manager)
-      : AutofillExternalDelegate(web_contents, autofill_manager) {}
+                               AutofillManager* autofill_manager,
+                               AutofillDriver* autofill_driver)
+      : AutofillExternalDelegate(web_contents, autofill_manager,
+                                 autofill_driver) {}
   virtual ~MockAutofillExternalDelegate() {}
 
   MOCK_METHOD5(OnSuggestionsReturned,
@@ -249,7 +250,8 @@ TEST_F(AutocompleteHistoryManagerTest, ExternalDelegate) {
       AutofillManager::ENABLE_AUTOFILL_DOWNLOAD_MANAGER));
 
   MockAutofillExternalDelegate external_delegate(web_contents(),
-                                                 autofill_manager.get());
+                                                 autofill_manager.get(),
+                                                 autofill_driver_.get());
   autocomplete_history_manager.SetExternalDelegate(&external_delegate);
 
   // Should trigger a call to OnSuggestionsReturned, verified by the mock.

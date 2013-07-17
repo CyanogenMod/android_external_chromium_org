@@ -23,6 +23,9 @@
 
 namespace ash {
 
+// static
+const char PanelFrameView::kViewClassName[] = "ash/wm/panels/PanelFrameView";
+
 PanelFrameView::PanelFrameView(views::Widget* frame, FrameType frame_type)
     : frame_(frame),
       close_button_(NULL),
@@ -34,6 +37,10 @@ PanelFrameView::PanelFrameView(views::Widget* frame, FrameType frame_type)
 }
 
 PanelFrameView::~PanelFrameView() {
+}
+
+const char* PanelFrameView::GetClassName() const {
+  return kViewClassName;
 }
 
 void PanelFrameView::InitFramePainter() {
@@ -88,7 +95,7 @@ void PanelFrameView::UpdateWindowIcon() {
 void PanelFrameView::UpdateWindowTitle() {
   if (!frame_painter_)
     return;
-  frame_painter_->SchedulePaintForTitle(this, title_font_);
+  frame_painter_->SchedulePaintForTitle(title_font_);
 }
 
 void PanelFrameView::GetWindowMask(const gfx::Size&, gfx::Path*) {

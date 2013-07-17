@@ -33,7 +33,7 @@ using base::MessageLoopProxy;
 using base::SequencedWorkerPool;
 using base::SingleThreadTaskRunner;
 using base::Time;
-using file_util::DirectoryExists;
+using base::DirectoryExists;
 using file_util::CreateDirectory;
 
 namespace {
@@ -94,7 +94,7 @@ void DeleteBackendImpl(disk_cache::Backend** backend,
 // 2. The Simple Backend has pickled file format for the index making it hacky
 //    to have the magic in the right place.
 bool FileStructureConsistent(const base::FilePath& path) {
-  if (!file_util::PathExists(path) && !file_util::CreateDirectory(path)) {
+  if (!base::PathExists(path) && !file_util::CreateDirectory(path)) {
     LOG(ERROR) << "Failed to create directory: " << path.LossyDisplayName();
     return false;
   }
@@ -176,7 +176,8 @@ SimpleBackendImpl::SimpleBackendImpl(const FilePath& path,
                                      net::NetLog* net_log)
     : path_(path),
       cache_thread_(cache_thread),
-      orig_max_size_(max_bytes) {
+      orig_max_size_(max_bytes),
+      net_log_(net_log) {
 }
 
 SimpleBackendImpl::~SimpleBackendImpl() {
@@ -221,7 +222,6 @@ int SimpleBackendImpl::GetMaxFileSize() const {
 }
 
 void SimpleBackendImpl::OnDeactivated(const SimpleEntryImpl* entry) {
-  DCHECK_LT(0U, active_entries_.count(entry->entry_hash()));
   active_entries_.erase(entry->entry_hash());
 }
 
@@ -392,7 +392,8 @@ scoped_refptr<SimpleEntryImpl> SimpleBackendImpl::CreateOrFindActiveEntry(
   if (insert_result.second)
     DCHECK(!it->second.get());
   if (!it->second.get()) {
-    SimpleEntryImpl* entry = new SimpleEntryImpl(this, path_, entry_hash);
+    SimpleEntryImpl* entry =
+        new SimpleEntryImpl(this, path_, entry_hash, net_log_);
     entry->set_key(key);
     it->second = entry->AsWeakPtr();
   }
@@ -415,8 +416,8 @@ int SimpleBackendImpl::OpenEntryFromHash(uint64 hash,
   if (has_active != active_entries_.end())
     return OpenEntry(has_active->second->key(), entry, callback);
 
-  scoped_refptr<SimpleEntryImpl> simple_entry = new SimpleEntryImpl(this, path_,
-                                                                    hash);
+  scoped_refptr<SimpleEntryImpl> simple_entry =
+      new SimpleEntryImpl(this, path_, hash, net_log_);
   CompletionCallback backend_callback =
       base::Bind(&SimpleBackendImpl::OnEntryOpenedFromHash,
                  AsWeakPtr(),
@@ -452,8 +453,6 @@ void SimpleBackendImpl::GetNextEntryInIterator(
       int error_code_open = OpenEntryFromHash(entry_hash,
                                               next_entry,
                                               continue_iteration);
-      // TODO(clamy): Write a unit test that checks that getting ERR_FAILED here
-      // will not stop the enumeration.
       if (error_code_open == net::ERR_IO_PENDING)
         return;
       if (error_code_open != net::ERR_FAILED) {
@@ -503,8 +502,9 @@ void SimpleBackendImpl::OnEntryOpenedFromKey(
     int error_code) {
   int final_code = error_code;
   if (final_code == net::OK) {
-    if (key.compare(simple_entry->key()) != 0) {
-      // TODO(clamy): Add an histogram to record key mismatches.
+    bool key_matches = key.compare(simple_entry->key()) == 0;
+    if (!key_matches) {
+      // TODO(clamy): Add a unit test to check this code path.
       DLOG(WARNING) << "Key mismatch on open.";
       simple_entry->Doom();
       simple_entry->Close();
@@ -512,6 +512,7 @@ void SimpleBackendImpl::OnEntryOpenedFromKey(
     } else {
       DCHECK_EQ(simple_entry->entry_hash(), simple_util::GetEntryHashKey(key));
     }
+    UMA_HISTOGRAM_BOOLEAN("SimpleCache.KeyMatchedOnOpen", key_matches);
   }
   CallCompletionCallback(callback, final_code);
 }

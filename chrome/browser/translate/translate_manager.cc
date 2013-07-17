@@ -6,16 +6,14 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_split.h"
-#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
-#include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/language_state.h"
@@ -36,7 +34,6 @@
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
@@ -52,10 +49,8 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "net/base/load_flags.h"
 #include "net/base/url_util.h"
 #include "net/http/http_status_code.h"
-#include "ui/base/l10n/l10n_util.h"
 
 #ifdef FILE_MANAGER_EXTENSION
 #include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
@@ -418,7 +413,6 @@ void TranslateManager::InitiateTranslation(WebContents* web_contents,
       TranslateTabHelper::FromWebContents(web_contents);
   if (!translate_tab_helper)
     return;
-
   std::string auto_translate_to =
       translate_tab_helper->language_state().AutoTranslateTo();
   if (!auto_translate_to.empty()) {
@@ -439,8 +433,10 @@ void TranslateManager::InitiateTranslation(WebContents* web_contents,
       language_code, target_lang);
 }
 
-void TranslateManager::InitiateTranslationPosted(
-    int process_id, int render_id, const std::string& page_lang, int attempt) {
+void TranslateManager::InitiateTranslationPosted(int process_id,
+                                                 int render_id,
+                                                 const std::string& page_lang,
+                                                 int attempt) {
   // The tab might have been closed.
   WebContents* web_contents =
       tab_util::GetWebContentsByID(process_id, render_id);
@@ -605,9 +601,8 @@ void TranslateManager::PageTranslated(WebContents* web_contents,
     details->error_type = TranslateErrors::UNSUPPORTED_LANGUAGE;
   }
 
-  Profile* profile =
-      Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  PrefService* prefs = profile->GetPrefs();
+  PrefService* prefs = Profile::FromBrowserContext(
+      web_contents->GetBrowserContext())->GetPrefs();
   TranslateInfoBarDelegate::Create(
       InfoBarService::FromWebContents(web_contents), true,
       (details->error_type == TranslateErrors::NONE) ?

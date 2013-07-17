@@ -78,8 +78,8 @@ IN_PROC_BROWSER_TEST_F(SpellcheckServiceBrowserTest, DeleteCorruptedBDICT) {
   content::RunAllPendingInMessageLoop(content::BrowserThread::UI);
   EXPECT_EQ(SpellcheckService::BDICT_CORRUPTED,
             SpellcheckService::GetStatusEvent());
-  if (file_util::PathExists(bdict_path)) {
+  if (base::PathExists(bdict_path)) {
     ADD_FAILURE();
-    EXPECT_TRUE(base::Delete(bdict_path, true));
+    EXPECT_TRUE(base::DeleteFile(bdict_path, true));
   }
 }

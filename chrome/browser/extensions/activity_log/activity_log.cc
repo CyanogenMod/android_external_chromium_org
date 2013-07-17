@@ -26,8 +26,8 @@
 #include "chrome/common/extensions/extension.h"
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 #include "content/public/browser/web_contents.h"
-#include "googleurl/src/gurl.h"
 #include "third_party/re2/re2/re2.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -130,8 +130,19 @@ ActivityLogFactory::~ActivityLogFactory() {
 // ActivityLog
 
 void ActivityLog::SetDefaultPolicy(ActivityLogPolicy::PolicyType policy_type) {
-  if (policy_type != policy_type_ && IsLogEnabled()) {
-    delete policy_;
+  // Can't use IsLogEnabled() here because this is called from inside Init.
+  if (policy_type != policy_type_ && enabled_) {
+    // Deleting the old policy takes place asynchronously, on the database
+    // thread.  Initializing a new policy below similarly happens
+    // asynchronously.  Since the two operations are both queued for the
+    // database, the queue ordering should ensure that the deletion completes
+    // before database initialization occurs.
+    //
+    // However, changing policies at runtime is still not recommended, and
+    // likely only should be done for unit tests.
+    if (policy_)
+      policy_->Close();
+
     switch (policy_type) {
       case ActivityLogPolicy::POLICY_FULLSTREAM:
         policy_ = new FullStreamUIPolicy(profile_);
@@ -140,8 +151,7 @@ void ActivityLog::SetDefaultPolicy(ActivityLogPolicy::PolicyType policy_type) {
         policy_ = new StreamWithoutArgsUIPolicy(profile_);
         break;
       default:
-        if (testing_mode_)
-          LOG(INFO) << "Calling SetDefaultPolicy with invalid policy type?";
+        NOTREACHED();
     }
     policy_type_ = policy_type;
   }
@@ -152,11 +162,16 @@ ActivityLog::ActivityLog(Profile* profile)
     : policy_(NULL),
       policy_type_(ActivityLogPolicy::POLICY_INVALID),
       profile_(profile),
-      first_time_checking_(true),
+      enabled_(false),
+      initialized_(false),
+      policy_chosen_(false),
       testing_mode_(false),
       has_threads_(true),
       tracker_(NULL) {
-  enabled_ = IsLogEnabledOnAnyProfile();
+  // This controls whether logging statements are printed, which policy is set,
+  // etc.
+  testing_mode_ = CommandLine::ForCurrentProcess()->HasSwitch(
+    switches::kEnableExtensionActivityLogTesting);
 
   // Check that the right threads exist. If not, we shouldn't try to do things
   // that require them.
@@ -165,61 +180,64 @@ ActivityLog::ActivityLog(Profile* profile)
       !BrowserThread::IsMessageLoopValid(BrowserThread::IO)) {
     LOG(ERROR) << "Missing threads, disabling Activity Logging!";
     has_threads_ = false;
+  } else {
+    enabled_ = IsLogEnabledOnAnyProfile();
+    ExtensionSystem::Get(profile_)->ready().Post(
+      FROM_HERE, base::Bind(&ActivityLog::Init, base::Unretained(this)));
   }
 
   observers_ = new ObserverListThreadSafe<Observer>;
 }
 
-void ActivityLog::Shutdown() {
-  if (!first_time_checking_ && tracker_) tracker_->RemoveObserver(this);
-}
-
-ActivityLog::~ActivityLog() {
-  delete policy_;
-}
-
-// We can't register for the InstallTrackerFactory events or talk to the
-// extension service in the constructor, so we do that here the first time
-// this is called (as identified by first_time_checking_).
-bool ActivityLog::IsLogEnabled() {
-  if (!first_time_checking_) return enabled_;
-  if (!has_threads_) return false;
-  tracker_ = InstallTrackerFactory::GetForProfile(profile_);
-  tracker_->AddObserver(this);
+void ActivityLog::Init() {
+  DCHECK(has_threads_);
+  DCHECK(!initialized_);
   const Extension* whitelisted_extension = ExtensionSystem::Get(profile_)->
       extension_service()->GetExtensionById(kActivityLogExtensionId, false);
   if (whitelisted_extension) {
     enabled_ = true;
     LogIsEnabled::GetInstance()->SetProfileEnabled(true);
   }
-  first_time_checking_ = false;
+  tracker_ = InstallTrackerFactory::GetForProfile(profile_);
+  tracker_->AddObserver(this);
+  ChooseDefaultPolicy();
+  initialized_ = true;
+}
+
+void ActivityLog::ChooseDefaultPolicy() {
+  if (policy_chosen_ || !enabled_) return;
+  if (testing_mode_)
+    SetDefaultPolicy(ActivityLogPolicy::POLICY_FULLSTREAM);
+  else
+    SetDefaultPolicy(ActivityLogPolicy::POLICY_NOARGS);
+}
+
+void ActivityLog::Shutdown() {
+  if (tracker_) tracker_->RemoveObserver(this);
+}
+
+ActivityLog::~ActivityLog() {
+  if (policy_)
+    policy_->Close();
+}
+
+bool ActivityLog::IsLogEnabled() {
+  if (!has_threads_ || !initialized_) return false;
   return enabled_;
 }
 
-void ActivityLog::OnExtensionInstalled(const Extension* extension) {
+void ActivityLog::OnExtensionLoaded(const Extension* extension) {
   if (extension->id() != kActivityLogExtensionId) return;
   enabled_ = true;
   LogIsEnabled::GetInstance()->SetProfileEnabled(true);
+  ChooseDefaultPolicy();
 }
 
-void ActivityLog::OnExtensionUninstalled(const Extension* extension) {
+void ActivityLog::OnExtensionUnloaded(const Extension* extension) {
   if (extension->id() != kActivityLogExtensionId) return;
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableExtensionActivityLogging))
     enabled_ = false;
-}
-
-// Counter-intuitively, OnExtensionInstalled is also called when an extension
-// is reenabled.
-void ActivityLog::OnExtensionDisabled(const Extension* extension) {
-  if (extension->id() != kActivityLogExtensionId) return;
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableExtensionActivityLogging))
-    enabled_ = false;
-}
-
-void ActivityLog::SetArgumentLoggingForTesting(bool log_arguments) {
-  testing_mode_ = log_arguments;
 }
 
 // static

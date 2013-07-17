@@ -73,7 +73,6 @@ class NET_EXPORT HttpNetworkSession
     bool http_pipelining_enabled;
     uint16 testing_fixed_http_port;
     uint16 testing_fixed_https_port;
-    size_t max_spdy_sessions_per_domain;
     bool force_spdy_single_domain;
     bool enable_spdy_ip_pooling;
     bool enable_spdy_credential_frames;
@@ -86,6 +85,7 @@ class NET_EXPORT HttpNetworkSession
     SpdySessionPool::TimeFunc time_func;
     std::string trusted_spdy_proxy;
     bool enable_quic;
+    bool enable_quic_https;
     HostPortPair origin_to_force_quic_on;
     QuicClock* quic_clock;  // Will be owned by QuicStreamFactory.
     QuicRandom* quic_random;

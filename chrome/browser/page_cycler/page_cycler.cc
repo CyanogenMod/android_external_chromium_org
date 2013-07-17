@@ -13,11 +13,11 @@
 #include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/test/base/chrome_process_util.h"
 #include "chrome/test/perf/perf_test.h"
 #include "content/public/browser/browser_thread.h"
@@ -92,7 +92,7 @@ void PageCycler::ReadURLsOnBackgroundThread() {
   std::string file_contents;
   std::vector<std::string> url_strings;
 
-  CHECK(file_util::PathExists(urls_file_)) << urls_file_.value();
+  CHECK(base::PathExists(urls_file_)) << urls_file_.value();
   file_util::ReadFileToString(urls_file_, &file_contents);
   base::SplitStringAlongWhitespace(file_contents, &url_strings);
 
@@ -209,7 +209,7 @@ void PageCycler::WriteResultsOnBackgroundThread(const std::string& output) {
 
   if (!output.empty()) {
     CHECK(!stats_file_.empty());
-    if (file_util::PathExists(stats_file_)) {
+    if (base::PathExists(stats_file_)) {
       VLOG(1) << "PageCycler: Previous stats file found; appending.";
       file_util::AppendToFile(stats_file_, output.c_str(), output.size());
     } else {
@@ -220,9 +220,9 @@ void PageCycler::WriteResultsOnBackgroundThread(const std::string& output) {
     if (!error_.empty()) {
       file_util::WriteFile(errors_file_, UTF16ToUTF8(error_).c_str(),
                            error_.size());
-    } else if (file_util::PathExists(errors_file_)) {
+    } else if (base::PathExists(errors_file_)) {
       // If there is an old error file, delete it to avoid confusion.
-      base::Delete(errors_file_, false);
+      base::DeleteFile(errors_file_, false);
     }
   }
   if (aborted_) {

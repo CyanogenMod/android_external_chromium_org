@@ -61,63 +61,7 @@ const int kAnimateClearingNextNotificationDelayMS = 40;
 static const int kDefaultFrameRateHz = 60;
 static const int kDefaultAnimationDurationMs = 120;
 
-// PoorMessageCenterButtonBar //////////////////////////////////////////////////
-
-// The view for the buttons at the bottom of the message center window used
-// when kEnableRichNotifications is false (hence the "poor" in the name :-).
-class PoorMessageCenterButtonBar : public MessageCenterButtonBar,
-                                   public views::ButtonListener {
- public:
-  PoorMessageCenterButtonBar(MessageCenterView* message_center_view,
-                             MessageCenter* message_center);
-
-  // Overridden from views::ButtonListener:
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(PoorMessageCenterButtonBar);
-};
-
-PoorMessageCenterButtonBar::PoorMessageCenterButtonBar(
-    MessageCenterView* message_center_view, MessageCenter* message_center)
-    : MessageCenterButtonBar(message_center_view, message_center) {
-  set_background(views::Background::CreateBackgroundPainter(
-      true,
-      views::Painter::CreateVerticalGradient(kBackgroundLightColor,
-                                             kBackgroundDarkColor)));
-  set_border(views::Border::CreateSolidSidedBorder(
-      2, 0, 0, 0, kBorderDarkColor));
-
-  views::GridLayout* layout = new views::GridLayout(this);
-  SetLayoutManager(layout);
-  views::ColumnSet* columns = layout->AddColumnSet(0);
-  columns->AddPaddingColumn(100, 0);
-  columns->AddColumn(views::GridLayout::TRAILING, views::GridLayout::CENTER,
-                     0, /* resize percent */
-                     views::GridLayout::USE_PREF, 0, 0);
-  columns->AddPaddingColumn(0, 4);
-
-  ui::ResourceBundle& resource_bundle = ui::ResourceBundle::GetSharedInstance();
-  views::LabelButton* close_all_button = new views::LabelButton(
-      this, resource_bundle.GetLocalizedString(IDS_MESSAGE_CENTER_CLEAR_ALL));
-  close_all_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-  close_all_button->set_request_focus_on_press(false);
-  close_all_button->SetTextColor(views::Button::STATE_NORMAL, kFooterTextColor);
-  close_all_button->SetTextColor(views::Button::STATE_HOVERED,
-                                 kButtonTextHoverColor);
-
-  layout->AddPaddingRow(0, 4);
-  layout->StartRow(0, 0);
-  layout->AddView(close_all_button);
-  set_close_all_button(close_all_button);
-}
-
-void PoorMessageCenterButtonBar::ButtonPressed(views::Button* sender,
-                                               const ui::Event& event) {
-  if (sender == close_all_button())
-    message_center_view()->ClearAllNotifications();
-}
+}  // namespace
 
 // NotificationCenterButton ////////////////////////////////////////////////////
 
@@ -167,36 +111,52 @@ void NotificationCenterButton::OnPaintFocusBorder(gfx::Canvas* canvas) {
   }
 }
 
-// RichMessageCenterButtonBar //////////////////////////////////////////////////
+// MessageCenterButtonBar //////////////////////////////////////////////////
 
-// TODO(mukai): Merge this into MessageCenterButtonBar and get rid of
-// PoorMessageCenterButtonBar when the kEnableRichNotifications flag disappears.
-class RichMessageCenterButtonBar : public MessageCenterButtonBar,
-                                   public views::ButtonListener {
+class MessageCenterButtonBar : public views::View,
+                               public views::ButtonListener {
  public:
-  RichMessageCenterButtonBar(MessageCenterView* message_center_view,
-                             MessageCenter* message_center);
+  MessageCenterButtonBar(MessageCenterView* message_center_view,
+                         MessageCenter* message_center);
+  virtual ~MessageCenterButtonBar();
+
+  virtual void SetAllButtonsEnabled(bool enabled);
+  void SetCloseAllVisible(bool visible);
 
  private:
-  // Overridden from MessageCenterButtonBar:
-  virtual void SetAllButtonsEnabled(bool enabled) OVERRIDE;
-
   // Overridden from views::View:
   virtual void ChildVisibilityChanged(views::View* child) OVERRIDE;
 
   // Overridden from views::ButtonListener:
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
+  virtual void ButtonPressed(views::Button* sender, const ui::Event& event)
+      OVERRIDE;
 
+  MessageCenterView* message_center_view() const {
+    return message_center_view_;
+  }
+  MessageCenter* message_center() const { return message_center_; }
+  MessageCenterTray* tray() const { return tray_; }
+  views::Button* close_all_button() const { return close_all_button_; }
+  void set_close_all_button(views::Button* button) {
+    close_all_button_ = button;
+  }
+
+  MessageCenterView* message_center_view_;  // Weak reference.
+  MessageCenter* message_center_;  // Weak reference.
+  MessageCenterTray* tray_;  // Weak reference.
+  views::Button* close_all_button_;
   NotificationCenterButton* settings_button_;
   NotificationCenterButton* quiet_mode_button_;
 
-  DISALLOW_COPY_AND_ASSIGN(RichMessageCenterButtonBar);
+  DISALLOW_COPY_AND_ASSIGN(MessageCenterButtonBar);
 };
 
-RichMessageCenterButtonBar::RichMessageCenterButtonBar(
-    MessageCenterView* message_center_view, MessageCenter* message_center)
-  : MessageCenterButtonBar(message_center_view, message_center) {
+MessageCenterButtonBar::MessageCenterButtonBar(
+    MessageCenterView* message_center_view,
+    MessageCenter* message_center)
+    : message_center_view_(message_center_view),
+      message_center_(message_center),
+      close_all_button_(NULL) {
   if (get_use_acceleration_when_possible())
     SetPaintToLayer(true);
   set_background(views::Background::CreateSolidBackground(
@@ -214,20 +174,23 @@ RichMessageCenterButtonBar::RichMessageCenterButtonBar(
       new views::BoxLayout(views::BoxLayout::kHorizontal, 0, 0, 0));
   quiet_mode_button_ = new NotificationCenterButton(
       this,
-      IDR_NOTIFICATION_PAUSE,
-      IDR_NOTIFICATION_PAUSE_HOVER,
-      IDR_NOTIFICATION_PAUSE_PRESSED,
+      IDR_NOTIFICATION_DO_NOT_DISTURB,
+      IDR_NOTIFICATION_DO_NOT_DISTURB_HOVER,
+      IDR_NOTIFICATION_DO_NOT_DISTURB_PRESSED,
       IDS_MESSAGE_CENTER_QUIET_MODE_BUTTON_TOOLTIP);
   ui::ResourceBundle& resource_bundle = ui::ResourceBundle::GetSharedInstance();
   quiet_mode_button_->SetToggledImage(
       views::Button::STATE_NORMAL,
-      resource_bundle.GetImageSkiaNamed(IDR_NOTIFICATION_PAUSE_PRESSED));
+      resource_bundle.GetImageSkiaNamed(
+          IDR_NOTIFICATION_DO_NOT_DISTURB_PRESSED));
   quiet_mode_button_->SetToggledImage(
       views::Button::STATE_HOVERED,
-      resource_bundle.GetImageSkiaNamed(IDR_NOTIFICATION_PAUSE_PRESSED));
+      resource_bundle.GetImageSkiaNamed(
+          IDR_NOTIFICATION_DO_NOT_DISTURB_PRESSED));
   quiet_mode_button_->SetToggledImage(
       views::Button::STATE_PRESSED,
-      resource_bundle.GetImageSkiaNamed(IDR_NOTIFICATION_PAUSE_PRESSED));
+      resource_bundle.GetImageSkiaNamed(
+          IDR_NOTIFICATION_DO_NOT_DISTURB_PRESSED));
   quiet_mode_button_->SetToggled(message_center->IsQuietMode());
   button_container->AddChildView(quiet_mode_button_);
 
@@ -265,21 +228,28 @@ RichMessageCenterButtonBar::RichMessageCenterButtonBar(
   layout->AddView(button_container);
 }
 
-// Overridden from MessageCenterButtonBar:
-void RichMessageCenterButtonBar::SetAllButtonsEnabled(bool enabled) {
-  MessageCenterButtonBar::SetAllButtonsEnabled(enabled);
+MessageCenterButtonBar::~MessageCenterButtonBar() {}
+
+void MessageCenterButtonBar::SetAllButtonsEnabled(bool enabled) {
+  if (close_all_button_)
+    close_all_button_->SetEnabled(enabled);
   settings_button_->SetEnabled(enabled);
   quiet_mode_button_->SetEnabled(enabled);
 }
 
+void MessageCenterButtonBar::SetCloseAllVisible(bool visible) {
+  if (close_all_button_)
+    close_all_button_->SetVisible(visible);
+}
+
 // Overridden from views::View:
-void RichMessageCenterButtonBar::ChildVisibilityChanged(views::View* child) {
+void MessageCenterButtonBar::ChildVisibilityChanged(views::View* child) {
   InvalidateLayout();
 }
 
 // Overridden from views::ButtonListener:
-void RichMessageCenterButtonBar::ButtonPressed(views::Button* sender,
-                                               const ui::Event& event) {
+void MessageCenterButtonBar::ButtonPressed(views::Button* sender,
+                                           const ui::Event& event) {
   if (sender == close_all_button()) {
     message_center_view()->ClearAllNotifications();
   } else if (sender == settings_button_) {
@@ -322,11 +292,9 @@ BoundedScrollView::BoundedScrollView(int min_height, int max_height)
   set_notify_enter_exit_on_child(true);
   // Cancels the default dashed focus border.
   set_focus_border(NULL);
-  if (IsRichNotificationEnabled()) {
-    set_background(views::Background::CreateSolidBackground(
-        kMessageCenterBackgroundColor));
-    SetVerticalScrollBar(new views::OverlayScrollBar(false));
-  }
+  set_background(
+      views::Background::CreateSolidBackground(kMessageCenterBackgroundColor));
+  SetVerticalScrollBar(new views::OverlayScrollBar(false));
 }
 
 gfx::Size BoundedScrollView::GetPreferredSize() {
@@ -403,67 +371,20 @@ void NoNotificationMessageView::Layout() {
   label_->SetBounds(0, margin, width(), text_height);
 }
 
-}  // namespace
-
-// MessageListView /////////////////////////////////////////////////////////////
-
-// Displays a list of messages.
-class MessageListView : public views::View {
- public:
-  explicit MessageListView(MessageCenterView* message_center_view);
-
-  // The interface for repositioning.
-  virtual void AddNotificationAt(views::View* view, int i);
-  virtual void RemoveNotificationAt(int i);
-  virtual void UpdateNotificationAt(views::View* view, int i);
-  virtual void SetRepositionTarget(const gfx::Rect& target_rect) {}
-  virtual void ResetRepositionSession() {}
-  virtual void ClearAllNotifications(const gfx::Rect& visible_scroll_rect);
-
- protected:
-  MessageCenterView* message_center_view() const {
-    return message_center_view_;
-  }
-
- private:
-  MessageCenterView* message_center_view_;  // Weak reference.
-
-  DISALLOW_COPY_AND_ASSIGN(MessageListView);
-};
-
-MessageListView::MessageListView(MessageCenterView* message_center_view)
-    : message_center_view_(message_center_view) {
-  views::BoxLayout* layout =
-      new views::BoxLayout(views::BoxLayout::kVertical, 0, 0, 1);
-  layout->set_spread_blank_space(true);
-  SetLayoutManager(layout);
-}
-
-void MessageListView::AddNotificationAt(views::View* view, int i) {
-  AddChildViewAt(view, i);
-}
-
-void MessageListView::RemoveNotificationAt(int i) {
-  delete child_at(i);
-}
-
-void MessageListView::UpdateNotificationAt(views::View* view, int i) {
-  delete child_at(i);
-  AddChildViewAt(view, i);
-}
-
-void MessageListView::ClearAllNotifications(
-    const gfx::Rect& visible_scroll_rect) {
-  message_center_view_->OnAllNotificationsCleared();
-}
-
 // Displays a list of messages for rich notifications. It also supports
 // repositioning.
-class RichMessageListView : public MessageListView,
-                            public views::BoundsAnimatorObserver {
+class MessageListView : public views::View,
+                        public views::BoundsAnimatorObserver {
  public:
-  explicit RichMessageListView(MessageCenterView* message_center_view);
-  virtual ~RichMessageListView();
+  explicit MessageListView(MessageCenterView* message_center_view);
+  virtual ~MessageListView();
+
+  void AddNotificationAt(views::View* view, int i);
+  void RemoveNotificationAt(int i);
+  void UpdateNotificationAt(views::View* view, int i);
+  void SetRepositionTarget(const gfx::Rect& target_rect);
+  void ResetRepositionSession();
+  void ClearAllNotifications(const gfx::Rect& visible_scroll_rect);
 
  protected:
   // Overridden from views::View.
@@ -473,15 +394,6 @@ class RichMessageListView : public MessageListView,
   virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
   virtual void ReorderChildLayers(ui::Layer* parent_layer) OVERRIDE;
 
-  // Overridden from MessageListView.
-  virtual void AddNotificationAt(views::View* view, int i) OVERRIDE;
-  virtual void RemoveNotificationAt(int i) OVERRIDE;
-  virtual void UpdateNotificationAt(views::View* view, int i) OVERRIDE;
-  virtual void SetRepositionTarget(const gfx::Rect& target_rect) OVERRIDE;
-  virtual void ResetRepositionSession() OVERRIDE;
-  virtual void ClearAllNotifications(
-      const gfx::Rect& visible_scroll_rect) OVERRIDE;
-
   // Overridden from views::BoundsAnimatorObserver.
   virtual void OnBoundsAnimatorProgressed(
       views::BoundsAnimator* animator) OVERRIDE;
@@ -489,6 +401,10 @@ class RichMessageListView : public MessageListView,
 
  private:
   // Returns the actual index for child of |index|.
+  // MessageListView allows to slide down upper notifications, which means
+  // that the upper ones should come above the lower ones. To achieve this,
+  // inversed order is adopted. The top most notification is the last child,
+  // and the bottom most notification is the first child.
   int GetActualIndex(int index);
   bool IsValidChild(views::View* child);
   void DoUpdateIfPossible();
@@ -498,12 +414,14 @@ class RichMessageListView : public MessageListView,
 
   // Animate clearing one notification.
   void AnimateClearingOneNotification();
+  MessageCenterView* message_center_view() const {
+    return message_center_view_;
+  }
 
+  MessageCenterView* message_center_view_;  // Weak reference.
   // The top position of the reposition target rectangle.
   int reposition_top_;
-
   int fixed_height_;
-
   bool has_deferred_task_;
   bool clear_all_started_;
   std::set<views::View*> adding_views_;
@@ -511,18 +429,23 @@ class RichMessageListView : public MessageListView,
   std::set<views::View*> deleted_when_done_;
   std::list<views::View*> clearing_all_views_;
   scoped_ptr<views::BoundsAnimator> animator_;
-  base::WeakPtrFactory<RichMessageListView> weak_ptr_factory_;
+  base::WeakPtrFactory<MessageListView> weak_ptr_factory_;
 
-  DISALLOW_COPY_AND_ASSIGN(RichMessageListView);
+  DISALLOW_COPY_AND_ASSIGN(MessageListView);
 };
 
-RichMessageListView::RichMessageListView(MessageCenterView* message_center_view)
-    : MessageListView(message_center_view),
+MessageListView::MessageListView(MessageCenterView* message_center_view)
+    : message_center_view_(message_center_view),
       reposition_top_(-1),
       fixed_height_(0),
       has_deferred_task_(false),
       clear_all_started_(false),
       weak_ptr_factory_(this) {
+  views::BoxLayout* layout =
+      new views::BoxLayout(views::BoxLayout::kVertical, 0, 0, 1);
+  layout->set_spread_blank_space(true);
+  SetLayoutManager(layout);
+
   // Set the margin to 0 for the layout. BoxLayout assumes the same margin
   // for top and bottom, but the bottom margin here should be smaller
   // because of the shadow of message view. Use an empty border instead
@@ -537,12 +460,12 @@ RichMessageListView::RichMessageListView(MessageCenterView* message_center_view)
       kMarginBetweenItems - shadow_insets.right() /* right */ ));
 }
 
-RichMessageListView::~RichMessageListView() {
+MessageListView::~MessageListView() {
   if (animator_.get())
     animator_->RemoveObserver(this);
 }
 
-void RichMessageListView::Layout() {
+void MessageListView::Layout() {
   if (animator_.get())
     return;
 
@@ -561,7 +484,7 @@ void RichMessageListView::Layout() {
   }
 }
 
-void RichMessageListView::AddNotificationAt(views::View* view, int i) {
+void MessageListView::AddNotificationAt(views::View* view, int i) {
   AddChildViewAt(view, GetActualIndex(i));
   if (GetContentsBounds().IsEmpty())
     return;
@@ -570,7 +493,7 @@ void RichMessageListView::AddNotificationAt(views::View* view, int i) {
   DoUpdateIfPossible();
 }
 
-void RichMessageListView::RemoveNotificationAt(int i) {
+void MessageListView::RemoveNotificationAt(int i) {
   views::View* child = child_at(GetActualIndex(i));
   if (GetContentsBounds().IsEmpty()) {
     delete child;
@@ -586,7 +509,7 @@ void RichMessageListView::RemoveNotificationAt(int i) {
   }
 }
 
-void RichMessageListView::UpdateNotificationAt(views::View* view, int i) {
+void MessageListView::UpdateNotificationAt(views::View* view, int i) {
   int actual_index = GetActualIndex(i);
   views::View* child = child_at(actual_index);
   if (animator_.get())
@@ -603,7 +526,7 @@ void RichMessageListView::UpdateNotificationAt(views::View* view, int i) {
   DoUpdateIfPossible();
 }
 
-gfx::Size RichMessageListView::GetPreferredSize() {
+gfx::Size MessageListView::GetPreferredSize() {
   int width = 0;
   for (int i = 0; i < child_count(); i++) {
     views::View* child = child_at(i);
@@ -615,7 +538,7 @@ gfx::Size RichMessageListView::GetPreferredSize() {
                    GetHeightForWidth(width + GetInsets().width()));
 }
 
-int RichMessageListView::GetHeightForWidth(int width) {
+int MessageListView::GetHeightForWidth(int width) {
   if (fixed_height_ > 0)
     return fixed_height_;
 
@@ -633,7 +556,7 @@ int RichMessageListView::GetHeightForWidth(int width) {
   return height + GetInsets().height();
 }
 
-void RichMessageListView::PaintChildren(gfx::Canvas* canvas) {
+void MessageListView::PaintChildren(gfx::Canvas* canvas) {
   // Paint in the inversed order. Otherwise upper notification may be
   // hidden by the lower one.
   for (int i = child_count() - 1; i >= 0; --i) {
@@ -642,7 +565,7 @@ void RichMessageListView::PaintChildren(gfx::Canvas* canvas) {
   }
 }
 
-void RichMessageListView::ReorderChildLayers(ui::Layer* parent_layer) {
+void MessageListView::ReorderChildLayers(ui::Layer* parent_layer) {
   // Reorder children to stack the last child layer at the top. Otherwise
   // upper notification may be hidden by the lower one.
   for (int i = 0; i < child_count(); ++i) {
@@ -651,12 +574,12 @@ void RichMessageListView::ReorderChildLayers(ui::Layer* parent_layer) {
   }
 }
 
-void RichMessageListView::SetRepositionTarget(const gfx::Rect& target) {
+void MessageListView::SetRepositionTarget(const gfx::Rect& target) {
   reposition_top_ = target.y();
   fixed_height_ = GetHeightForWidth(width());
 }
 
-void RichMessageListView::ResetRepositionSession() {
+void MessageListView::ResetRepositionSession() {
   // Don't call DoUpdateIfPossible(), but let Layout() do the task without
   // animation. Reset will cause the change of the bubble size itself, and
   // animation from the old location will look weird.
@@ -674,7 +597,7 @@ void RichMessageListView::ResetRepositionSession() {
   fixed_height_ = 0;
 }
 
-void RichMessageListView::ClearAllNotifications(
+void MessageListView::ClearAllNotifications(
     const gfx::Rect& visible_scroll_rect) {
   for (int i = 0; i < child_count(); ++i) {
     views::View* child = child_at(i);
@@ -687,7 +610,7 @@ void RichMessageListView::ClearAllNotifications(
   DoUpdateIfPossible();
 }
 
-void RichMessageListView::OnBoundsAnimatorProgressed(
+void MessageListView::OnBoundsAnimatorProgressed(
     views::BoundsAnimator* animator) {
   DCHECK_EQ(animator_.get(), animator);
   for (std::set<views::View*>::iterator iter = deleted_when_done_.begin();
@@ -698,8 +621,7 @@ void RichMessageListView::OnBoundsAnimatorProgressed(
   }
 }
 
-void RichMessageListView::OnBoundsAnimatorDone(
-    views::BoundsAnimator* animator) {
+void MessageListView::OnBoundsAnimatorDone(views::BoundsAnimator* animator) {
   STLDeleteContainerPointers(
       deleted_when_done_.begin(), deleted_when_done_.end());
   deleted_when_done_.clear();
@@ -718,19 +640,19 @@ void RichMessageListView::OnBoundsAnimatorDone(
     GetWidget()->SynthesizeMouseMoveEvent();
 }
 
-int RichMessageListView::GetActualIndex(int index) {
+int MessageListView::GetActualIndex(int index) {
   for (int i = 0; i < child_count() && i <= index; ++i)
     index += IsValidChild(child_at(i)) ? 0 : 1;
   return std::min(index, child_count());
 }
 
-bool RichMessageListView::IsValidChild(views::View* child) {
+bool MessageListView::IsValidChild(views::View* child) {
   return child->visible() &&
-      deleting_views_.find(child) == deleting_views_.end() &&
-      deleted_when_done_.find(child) == deleted_when_done_.end();
+         deleting_views_.find(child) == deleting_views_.end() &&
+         deleted_when_done_.find(child) == deleted_when_done_.end();
 }
 
-void RichMessageListView::DoUpdateIfPossible() {
+void MessageListView::DoUpdateIfPossible() {
   gfx::Rect child_area = GetContentsBounds();
   if (child_area.IsEmpty())
     return;
@@ -774,9 +696,7 @@ void RichMessageListView::DoUpdateIfPossible() {
   deleting_views_.clear();
 }
 
-void RichMessageListView::AnimateChild(views::View* child,
-                                       int top,
-                                       int height) {
+void MessageListView::AnimateChild(views::View* child, int top, int height) {
   gfx::Rect child_area = GetContentsBounds();
   if (adding_views_.find(child) != adding_views_.end()) {
     child->SetBounds(child_area.right(), top, child_area.width(), height);
@@ -796,7 +716,7 @@ void RichMessageListView::AnimateChild(views::View* child,
   }
 }
 
-void RichMessageListView::AnimateClearingOneNotification() {
+void MessageListView::AnimateClearingOneNotification() {
   DCHECK(!clearing_all_views_.empty());
 
   clear_all_started_ = true;
@@ -813,33 +733,11 @@ void RichMessageListView::AnimateClearingOneNotification() {
   if (!clearing_all_views_.empty()) {
     base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
-        base::Bind(&RichMessageListView::AnimateClearingOneNotification,
-                    weak_ptr_factory_.GetWeakPtr()),
+        base::Bind(&MessageListView::AnimateClearingOneNotification,
+                   weak_ptr_factory_.GetWeakPtr()),
         base::TimeDelta::FromMilliseconds(
             kAnimateClearingNextNotificationDelayMS));
   }
-}
-
-// MessageCenterButtonBar //////////////////////////////////////////////////////
-
-MessageCenterButtonBar::MessageCenterButtonBar(
-    MessageCenterView* message_center_view, MessageCenter* message_center)
-    : message_center_view_(message_center_view),
-      message_center_(message_center),
-      close_all_button_(NULL) {
-}
-
-MessageCenterButtonBar::~MessageCenterButtonBar() {
-}
-
-void MessageCenterButtonBar::SetAllButtonsEnabled(bool enabled) {
-  if (close_all_button_)
-    close_all_button_->SetEnabled(enabled);
-}
-
-void MessageCenterButtonBar::SetCloseAllVisible(bool visible) {
-  if (close_all_button_)
-    close_all_button_->SetVisible(visible);
 }
 
 // MessageCenterView ///////////////////////////////////////////////////////////
@@ -847,19 +745,18 @@ void MessageCenterButtonBar::SetCloseAllVisible(bool visible) {
 MessageCenterView::MessageCenterView(MessageCenter* message_center,
                                      MessageCenterTray* tray,
                                      int max_height,
-                                     bool initially_settings_visible)
+                                     bool initially_settings_visible,
+                                     bool buttons_on_top)
     : message_center_(message_center),
       tray_(tray),
+      buttons_on_top_(buttons_on_top),
       settings_visible_(initially_settings_visible) {
   message_center_->AddObserver(this);
   set_notify_enter_exit_on_child(true);
   set_background(views::Background::CreateSolidBackground(
       kMessageCenterBackgroundColor));
 
-  if (IsRichNotificationEnabled())
-    button_bar_ = new RichMessageCenterButtonBar(this, message_center);
-  else
-    button_bar_ = new PoorMessageCenterButtonBar(this, message_center);
+  button_bar_ = new MessageCenterButtonBar(this, message_center);
 
   const int button_height = button_bar_->GetPreferredSize().height();
   scroller_ = new BoundedScrollView(kMinScrollViewHeight,
@@ -871,8 +768,7 @@ MessageCenterView::MessageCenterView(MessageCenter* message_center,
     scroller_->layer()->SetMasksToBounds(true);
   }
 
-  message_list_view_ = IsRichNotificationEnabled() ?
-      new RichMessageListView(this) : new MessageListView(this);
+  message_list_view_ = new MessageListView(this);
   no_notifications_message_view_ = new NoNotificationMessageView();
   // Set the default visibility to false, otherwise the notification has slide
   // in animation when the center is shown.
@@ -973,19 +869,25 @@ size_t MessageCenterView::NumMessageViewsForTest() const {
 }
 
 void MessageCenterView::Layout() {
-  int between_child = IsRichNotificationEnabled() ? 0 : 1;
   int button_height = button_bar_->GetHeightForWidth(width());
   // Skip unnecessary re-layout of contents during the resize animation.
   if (settings_transition_animation_ &&
       settings_transition_animation_->is_animating() &&
       settings_transition_animation_->current_part_index() == 0) {
-    button_bar_->SetBounds(0, height() - button_height, width(), button_height);
+    if (!buttons_on_top_)
+      button_bar_->SetBounds(
+          0, height() - button_height, width(), button_height);
     return;
   }
 
-  scroller_->SetBounds(0, 0, width(), height() - button_height - between_child);
-  settings_view_->SetBounds(
-      0, 0, width(), height() - button_height - between_child);
+  scroller_->SetBounds(0,
+                       buttons_on_top_ ? button_height : 0,
+                       width(),
+                       height() - button_height);
+  settings_view_->SetBounds(0,
+                            buttons_on_top_ ? button_height : 0,
+                            width(),
+                            height() - button_height);
 
   bool is_scrollable = false;
   if (scroller_->visible())
@@ -1002,7 +904,10 @@ void MessageCenterView::Layout() {
     button_bar_->SchedulePaint();
   }
 
-  button_bar_->SetBounds(0, height() - button_height, width(), button_height);
+  button_bar_->SetBounds(0,
+                         buttons_on_top_ ? 0 : height() - button_height,
+                         width(),
+                         button_height);
   if (GetWidget())
     GetWidget()->GetRootView()->SchedulePaint();
 }

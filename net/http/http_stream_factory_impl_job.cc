@@ -422,9 +422,9 @@ int HttpStreamFactoryImpl::Job::OnHostResolution(
   // It is OK to dereference spdy_session_pool, because the
   // ClientSocketPoolManager will be destroyed in the same callback that
   // destroys the SpdySessionPool.
-  bool has_session =
-      spdy_session_pool->GetIfExists(spdy_session_key, net_log).get() != NULL;
-  return has_session ? ERR_SPDY_SESSION_ALREADY_EXISTS : OK;
+  return
+      spdy_session_pool->FindAvailableSession(spdy_session_key, net_log) ?
+      ERR_SPDY_SESSION_ALREADY_EXISTS : OK;
 }
 
 void HttpStreamFactoryImpl::Job::OnIOComplete(int result) {
@@ -705,9 +705,9 @@ bool HttpStreamFactoryImpl::Job::ShouldForceSpdyWithoutSSL() const {
 }
 
 bool HttpStreamFactoryImpl::Job::ShouldForceQuic() const {
-  return session_->params().enable_quic && request_info_.url.SchemeIs("http") &&
-      session_->params().origin_to_force_quic_on.Equals(origin_) &&
-      proxy_info_.is_direct();
+  return session_->params().enable_quic &&
+    session_->params().origin_to_force_quic_on.Equals(origin_) &&
+    proxy_info_.is_direct();
 }
 
 int HttpStreamFactoryImpl::Job::DoWaitForJob() {
@@ -746,6 +746,7 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
     next_state_ = STATE_INIT_CONNECTION_COMPLETE;
     const ProxyServer& proxy_server = proxy_info_.proxy_server();
     int rv = quic_request_.Request(HostPortProxyPair(origin_, proxy_server),
+                                   using_ssl_, session_->cert_verifier(),
                                    net_log_, io_callback_);
     if (rv != OK) {
       // OK, there's no available QUIC session. Let |waiting_job_| resume
@@ -762,8 +763,9 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
   // straight to using that.
   SpdySessionKey spdy_session_key = GetSpdySessionKey();
   scoped_refptr<SpdySession> spdy_session =
-      session_->spdy_session_pool()->GetIfExists(spdy_session_key, net_log_);
-  if (spdy_session.get() && CanUseExistingSpdySession()) {
+      session_->spdy_session_pool()->FindAvailableSession(
+          spdy_session_key, net_log_);
+  if (spdy_session && CanUseExistingSpdySession()) {
     // If we're preconnecting, but we already have a SpdySession, we don't
     // actually need to preconnect any sockets, so we're done.
     if (IsPreconnecting())
@@ -876,8 +878,9 @@ int HttpStreamFactoryImpl::Job::DoInitConnectionComplete(int result) {
     // probably an IP pooled connection.
     SpdySessionKey spdy_session_key = GetSpdySessionKey();
     existing_spdy_session_ =
-        session_->spdy_session_pool()->GetIfExists(spdy_session_key, net_log_);
-    if (existing_spdy_session_.get()) {
+        session_->spdy_session_pool()->FindAvailableSession(
+            spdy_session_key, net_log_);
+    if (existing_spdy_session_) {
       using_spdy_ = true;
       next_state_ = STATE_CREATE_STREAM;
     } else {
@@ -911,26 +914,33 @@ int HttpStreamFactoryImpl::Job::DoInitConnectionComplete(int result) {
                                     connection_->is_ssl_error());
 
   if (ssl_started && (result == OK || IsCertificateError(result))) {
-    SSLClientSocket* ssl_socket =
-      static_cast<SSLClientSocket*>(connection_->socket());
-    if (ssl_socket->WasNpnNegotiated()) {
+    if (using_quic_ && result == OK) {
       was_npn_negotiated_ = true;
-      std::string proto;
-      std::string server_protos;
-      SSLClientSocket::NextProtoStatus status =
-          ssl_socket->GetNextProto(&proto, &server_protos);
       NextProto protocol_negotiated =
-          SSLClientSocket::NextProtoFromString(proto);
+          SSLClientSocket::NextProtoFromString("quic/1+spdy/3");
       protocol_negotiated_ = protocol_negotiated;
-      net_log_.AddEvent(
-          NetLog::TYPE_HTTP_STREAM_REQUEST_PROTO,
-          base::Bind(&NetLogHttpStreamProtoCallback,
-                     status, &proto, &server_protos));
-      if (ssl_socket->was_spdy_negotiated())
+    } else {
+      SSLClientSocket* ssl_socket =
+          static_cast<SSLClientSocket*>(connection_->socket());
+      if (ssl_socket->WasNpnNegotiated()) {
+        was_npn_negotiated_ = true;
+        std::string proto;
+        std::string server_protos;
+        SSLClientSocket::NextProtoStatus status =
+            ssl_socket->GetNextProto(&proto, &server_protos);
+        NextProto protocol_negotiated =
+            SSLClientSocket::NextProtoFromString(proto);
+        protocol_negotiated_ = protocol_negotiated;
+        net_log_.AddEvent(
+            NetLog::TYPE_HTTP_STREAM_REQUEST_PROTO,
+            base::Bind(&NetLogHttpStreamProtoCallback,
+                       status, &proto, &server_protos));
+        if (ssl_socket->was_spdy_negotiated())
+          SwitchToSpdyMode();
+      }
+      if (ShouldForceSpdySSL())
         SwitchToSpdyMode();
     }
-    if (ShouldForceSpdySSL())
-      SwitchToSpdyMode();
   } else if (proxy_info_.is_https() && connection_->socket() &&
         result == OK) {
     ProxyClientSocket* proxy_socket =
@@ -1096,10 +1106,11 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
     spdy_session.swap(existing_spdy_session_);
   } else {
     SpdySessionPool* spdy_pool = session_->spdy_session_pool();
-    spdy_session = spdy_pool->GetIfExists(spdy_session_key, net_log_);
-    if (!spdy_session.get()) {
-      int error = spdy_pool->GetSpdySessionFromSocket(spdy_session_key,
-                                                      connection_.release(),
+    spdy_session = spdy_pool->FindAvailableSession(spdy_session_key, net_log_);
+    if (!spdy_session) {
+      int error =
+          spdy_pool->CreateAvailableSessionFromSocket(spdy_session_key,
+                                                      connection_.Pass(),
                                                       net_log_,
                                                       spdy_certificate_error_,
                                                       &new_spdy_session_,

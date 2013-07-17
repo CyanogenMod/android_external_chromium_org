@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/auto_reset.h"
 #include "base/synchronization/lock.h"
 #include "cc/animation/timing_function.h"
 #include "cc/debug/frame_rate_counter.h"
@@ -921,10 +922,11 @@ class ContentLayerWithUpdateTracking : public ContentLayer {
   int PaintContentsCount() { return paint_contents_count_; }
   void ResetPaintContentsCount() { paint_contents_count_ = 0; }
 
-  virtual void Update(ResourceUpdateQueue* queue,
+  virtual bool Update(ResourceUpdateQueue* queue,
                       const OcclusionTracker* occlusion) OVERRIDE {
-    ContentLayer::Update(queue, occlusion);
+    bool updated = ContentLayer::Update(queue, occlusion);
     paint_contents_count_++;
+    return updated;
   }
 
  private:
@@ -1484,40 +1486,38 @@ SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestCompositeAndReadbackCleanup);
 
 class LayerTreeHostTestSurfaceNotAllocatedForLayersOutsideMemoryLimit
     : public LayerTreeHostTest {
- public:
-  LayerTreeHostTestSurfaceNotAllocatedForLayersOutsideMemoryLimit()
-      : root_layer_(FakeContentLayer::Create(&client_)),
-        surface_layer1_(
-            FakeContentLayer::Create(&client_)),
-        replica_layer1_(
-            FakeContentLayer::Create(&client_)),
-        surface_layer2_(
-            FakeContentLayer::Create(&client_)),
-        replica_layer2_(
-            FakeContentLayer::Create(&client_)) {}
-
+ protected:
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
     settings->cache_render_pass_contents = true;
   }
 
-  virtual void BeginTest() OVERRIDE {
-    layer_tree_host()->SetViewportSize(gfx::Size(100, 100));
-
+  virtual void SetupTree() OVERRIDE {
+    root_layer_ = FakeContentLayer::Create(&client_);
     root_layer_->SetBounds(gfx::Size(100, 100));
+
+    surface_layer1_ = FakeContentLayer::Create(&client_);
     surface_layer1_->SetBounds(gfx::Size(100, 100));
     surface_layer1_->SetForceRenderSurface(true);
     surface_layer1_->SetOpacity(0.5f);
+    root_layer_->AddChild(surface_layer1_);
+
+    surface_layer2_ = FakeContentLayer::Create(&client_);
     surface_layer2_->SetBounds(gfx::Size(100, 100));
     surface_layer2_->SetForceRenderSurface(true);
     surface_layer2_->SetOpacity(0.5f);
+    surface_layer1_->AddChild(surface_layer2_);
 
+    replica_layer1_ = FakeContentLayer::Create(&client_);
     surface_layer1_->SetReplicaLayer(replica_layer1_.get());
+
+    replica_layer2_ = FakeContentLayer::Create(&client_);
     surface_layer2_->SetReplicaLayer(replica_layer2_.get());
 
-    root_layer_->AddChild(surface_layer1_);
-    surface_layer1_->AddChild(surface_layer2_);
     layer_tree_host()->SetRootLayer(root_layer_);
+    LayerTreeHostTest::SetupTree();
+  }
 
+  virtual void BeginTest() OVERRIDE {
     PostSetNeedsCommitToMainThread();
   }
 
@@ -1554,17 +1554,16 @@ class LayerTreeHostTestSurfaceNotAllocatedForLayersOutsideMemoryLimit
   }
 
   virtual void DidCommitAndDrawFrame() OVERRIDE {
-    if (!TestEnded())
+    if (layer_tree_host()->commit_number() < 2)
       root_layer_->SetNeedsDisplay();
   }
 
   virtual void AfterTest() OVERRIDE {
-    EXPECT_EQ(3u, root_layer_->update_count());
-    EXPECT_EQ(3u, surface_layer1_->update_count());
-    EXPECT_EQ(3u, surface_layer2_->update_count());
+    EXPECT_LE(2u, root_layer_->update_count());
+    EXPECT_LE(2u, surface_layer1_->update_count());
+    EXPECT_LE(2u, surface_layer2_->update_count());
   }
 
- private:
   FakeContentLayerClient client_;
   scoped_refptr<FakeContentLayer> root_layer_;
   scoped_refptr<FakeContentLayer> surface_layer1_;
@@ -1573,7 +1572,7 @@ class LayerTreeHostTestSurfaceNotAllocatedForLayersOutsideMemoryLimit
   scoped_refptr<FakeContentLayer> replica_layer2_;
 };
 
-  // Surfaces don't exist with a delegated renderer.
+// Surfaces don't exist with a delegated renderer.
 SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
     LayerTreeHostTestSurfaceNotAllocatedForLayersOutsideMemoryLimit);
 
@@ -1583,7 +1582,7 @@ class EvictionTestLayer : public Layer {
     return make_scoped_refptr(new EvictionTestLayer());
   }
 
-  virtual void Update(ResourceUpdateQueue*,
+  virtual bool Update(ResourceUpdateQueue*,
                       const OcclusionTracker*) OVERRIDE;
   virtual bool DrawsContent() const OVERRIDE { return true; }
 
@@ -1643,16 +1642,17 @@ void EvictionTestLayer::SetTexturePriorities(const PriorityCalculator&) {
   texture_->set_request_priority(PriorityCalculator::UIPriority(true));
 }
 
-void EvictionTestLayer::Update(ResourceUpdateQueue* queue,
+bool EvictionTestLayer::Update(ResourceUpdateQueue* queue,
                                const OcclusionTracker*) {
   CreateTextureIfNeeded();
   if (!texture_)
-    return;
+    return false;
 
   gfx::Rect full_rect(0, 0, 10, 10);
   ResourceUpdate upload = ResourceUpdate::Create(
       texture_.get(), &bitmap_, full_rect, full_rect, gfx::Vector2d());
   queue->AppendFullUpload(upload);
+  return true;
 }
 
 scoped_ptr<LayerImpl> EvictionTestLayer::CreateLayerImpl(
@@ -2045,75 +2045,6 @@ TEST(LayerTreeHostTest,
   EXPECT_TRUE(host->InitializeOutputSurfaceIfNeeded());
   EXPECT_EQ(0u, host->settings().max_partial_texture_updates);
 }
-
-class LayerTreeHostTestCapturePicture : public LayerTreeHostTest {
- public:
-  LayerTreeHostTestCapturePicture()
-      : bounds_(gfx::Size(100, 100)),
-        layer_(PictureLayer::Create(&content_client_)) {}
-
-  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
-    settings->impl_side_painting = true;
-  }
-
-  class FillRectContentLayerClient : public ContentLayerClient {
-   public:
-    virtual void PaintContents(SkCanvas* canvas,
-                               gfx::Rect clip,
-                               gfx::RectF* opaque) OVERRIDE {
-      SkPaint paint;
-      paint.setColor(SK_ColorGREEN);
-
-      SkRect rect = SkRect::MakeWH(canvas->getDeviceSize().width(),
-                                   canvas->getDeviceSize().height());
-      *opaque = gfx::RectF(rect.width(), rect.height());
-      canvas->drawRect(rect, paint);
-    }
-    virtual void DidChangeLayerCanUseLCDText() OVERRIDE {}
-  };
-
-  virtual void BeginTest() OVERRIDE {
-    layer_->SetIsDrawable(true);
-    layer_->SetBounds(bounds_);
-    // Outside viewport so tiles don't have to be initialized for commit.
-    layer_->SetPosition(gfx::Point(100, 100));
-    layer_tree_host()->SetViewportSize(bounds_);
-    layer_tree_host()->SetRootLayer(layer_);
-
-    PostSetNeedsCommitToMainThread();
-  }
-
-  virtual void DidCommitAndDrawFrame() OVERRIDE {
-    picture_ = layer_tree_host()->CapturePicture();
-    EndTest();
-  }
-
-  virtual void AfterTest() OVERRIDE {
-    EXPECT_EQ(bounds_, gfx::Size(picture_->width(), picture_->height()));
-
-    SkBitmap bitmap;
-    bitmap.setConfig(
-        SkBitmap::kARGB_8888_Config, bounds_.width(), bounds_.height());
-    bitmap.allocPixels();
-    bitmap.eraseARGB(0, 0, 0, 0);
-    SkCanvas canvas(bitmap);
-
-    picture_->draw(&canvas);
-
-    bitmap.lockPixels();
-    SkColor* pixels = reinterpret_cast<SkColor*>(bitmap.getPixels());
-    EXPECT_EQ(SK_ColorGREEN, pixels[0]);
-    bitmap.unlockPixels();
-  }
-
- private:
-  gfx::Size bounds_;
-  FillRectContentLayerClient content_client_;
-  scoped_refptr<PictureLayer> layer_;
-  skia::RefPtr<SkPicture> picture_;
-};
-
-MULTI_THREAD_TEST_F(LayerTreeHostTestCapturePicture);
 
 class LayerTreeHostTestShutdownWithOnlySomeResourcesEvicted
     : public LayerTreeHostTest {
@@ -2788,6 +2719,236 @@ class LayerTreeHostTestAsyncReadbackLayerDestroyed : public LayerTreeHostTest {
 
 SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestAsyncReadbackLayerDestroyed);
 
+class LayerTreeHostTestAsyncReadbackInHiddenSubtree : public LayerTreeHostTest {
+ protected:
+  virtual void SetupTree() OVERRIDE {
+    root_ = FakeContentLayer::Create(&client_);
+    root_->SetBounds(gfx::Size(20, 20));
+
+    grand_parent_layer_ = FakeContentLayer::Create(&client_);
+    grand_parent_layer_->SetBounds(gfx::Size(15, 15));
+    root_->AddChild(grand_parent_layer_);
+
+    // parent_layer_ owns a render surface.
+    parent_layer_ = FakeContentLayer::Create(&client_);
+    parent_layer_->SetBounds(gfx::Size(15, 15));
+    parent_layer_->SetForceRenderSurface(true);
+    grand_parent_layer_->AddChild(parent_layer_);
+
+    copy_layer_ = FakeContentLayer::Create(&client_);
+    copy_layer_->SetBounds(gfx::Size(10, 10));
+    parent_layer_->AddChild(copy_layer_);
+
+    layer_tree_host()->SetRootLayer(root_);
+    LayerTreeHostTest::SetupTree();
+  }
+
+  void AddCopyRequest(Layer* layer) {
+    layer->RequestCopyOfOutput(
+        CopyOutputRequest::CreateBitmapRequest(base::Bind(
+            &LayerTreeHostTestAsyncReadbackInHiddenSubtree::CopyOutputCallback,
+            base::Unretained(this))));
+  }
+
+  virtual void BeginTest() OVERRIDE {
+    callback_count_ = 0;
+    PostSetNeedsCommitToMainThread();
+
+    AddCopyRequest(copy_layer_.get());
+  }
+
+  void CopyOutputCallback(scoped_ptr<CopyOutputResult> result) {
+    EXPECT_TRUE(layer_tree_host()->proxy()->IsMainThread());
+    EXPECT_EQ(copy_layer_->bounds().ToString(), result->size().ToString());
+    ++callback_count_;
+
+    switch (callback_count_) {
+      case 1:
+        // Hide the copy request layer.
+        grand_parent_layer_->SetHideLayerAndSubtree(false);
+        parent_layer_->SetHideLayerAndSubtree(false);
+        copy_layer_->SetHideLayerAndSubtree(true);
+        AddCopyRequest(copy_layer_.get());
+        break;
+      case 2:
+        // Hide the copy request layer's parent only.
+        grand_parent_layer_->SetHideLayerAndSubtree(false);
+        parent_layer_->SetHideLayerAndSubtree(true);
+        copy_layer_->SetHideLayerAndSubtree(false);
+        AddCopyRequest(copy_layer_.get());
+        break;
+      case 3:
+        // Hide the copy request layer's grand parent only.
+        grand_parent_layer_->SetHideLayerAndSubtree(true);
+        parent_layer_->SetHideLayerAndSubtree(false);
+        copy_layer_->SetHideLayerAndSubtree(false);
+        AddCopyRequest(copy_layer_.get());
+        break;
+      case 4:
+        // Hide the copy request layer's parent and grandparent.
+        grand_parent_layer_->SetHideLayerAndSubtree(true);
+        parent_layer_->SetHideLayerAndSubtree(true);
+        copy_layer_->SetHideLayerAndSubtree(false);
+        AddCopyRequest(copy_layer_.get());
+        break;
+      case 5:
+        // Hide the copy request layer as well as its parent and grandparent.
+        grand_parent_layer_->SetHideLayerAndSubtree(true);
+        parent_layer_->SetHideLayerAndSubtree(true);
+        copy_layer_->SetHideLayerAndSubtree(true);
+        AddCopyRequest(copy_layer_.get());
+        break;
+      case 6:
+        EndTest();
+        break;
+    }
+  }
+
+  virtual void AfterTest() OVERRIDE {}
+
+  int callback_count_;
+  FakeContentLayerClient client_;
+  scoped_refptr<FakeContentLayer> root_;
+  scoped_refptr<FakeContentLayer> grand_parent_layer_;
+  scoped_refptr<FakeContentLayer> parent_layer_;
+  scoped_refptr<FakeContentLayer> copy_layer_;
+};
+
+// No output to copy for delegated renderers.
+SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
+    LayerTreeHostTestAsyncReadbackInHiddenSubtree);
+
+class LayerTreeHostTestHiddenSurfaceNotAllocatedForSubtreeCopyRequest
+    : public LayerTreeHostTest {
+ protected:
+  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
+    settings->cache_render_pass_contents = true;
+  }
+
+  virtual void SetupTree() OVERRIDE {
+    root_ = FakeContentLayer::Create(&client_);
+    root_->SetBounds(gfx::Size(20, 20));
+
+    grand_parent_layer_ = FakeContentLayer::Create(&client_);
+    grand_parent_layer_->SetBounds(gfx::Size(15, 15));
+    grand_parent_layer_->SetHideLayerAndSubtree(true);
+    root_->AddChild(grand_parent_layer_);
+
+    // parent_layer_ owns a render surface.
+    parent_layer_ = FakeContentLayer::Create(&client_);
+    parent_layer_->SetBounds(gfx::Size(15, 15));
+    parent_layer_->SetForceRenderSurface(true);
+    grand_parent_layer_->AddChild(parent_layer_);
+
+    copy_layer_ = FakeContentLayer::Create(&client_);
+    copy_layer_->SetBounds(gfx::Size(10, 10));
+    parent_layer_->AddChild(copy_layer_);
+
+    layer_tree_host()->SetRootLayer(root_);
+    LayerTreeHostTest::SetupTree();
+  }
+
+  virtual void BeginTest() OVERRIDE {
+    did_draw_ = false;
+    PostSetNeedsCommitToMainThread();
+
+    copy_layer_->RequestCopyOfOutput(
+        CopyOutputRequest::CreateBitmapRequest(base::Bind(
+            &LayerTreeHostTestHiddenSurfaceNotAllocatedForSubtreeCopyRequest::
+                CopyOutputCallback,
+            base::Unretained(this))));
+  }
+
+  void CopyOutputCallback(scoped_ptr<CopyOutputResult> result) {
+    EXPECT_TRUE(layer_tree_host()->proxy()->IsMainThread());
+    EXPECT_EQ(copy_layer_->bounds().ToString(), result->size().ToString());
+    EndTest();
+  }
+
+  virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+    Renderer* renderer = host_impl->renderer();
+
+    LayerImpl* root = host_impl->active_tree()->root_layer();
+    LayerImpl* grand_parent = root->children()[0];
+    LayerImpl* parent = grand_parent->children()[0];
+    LayerImpl* copy_layer = parent->children()[0];
+
+    // |parent| owns a surface, but it was hidden and not part of the copy
+    // request so it should not allocate any resource.
+    EXPECT_FALSE(renderer->HaveCachedResourcesForRenderPassId(
+        parent->render_surface()->RenderPassId()));
+
+    // |copy_layer| should have been rendered to a texture since it was needed
+    // for a copy request.
+    EXPECT_TRUE(renderer->HaveCachedResourcesForRenderPassId(
+        copy_layer->render_surface()->RenderPassId()));
+
+    did_draw_ = true;
+  }
+
+  virtual void AfterTest() OVERRIDE { EXPECT_TRUE(did_draw_); }
+
+  FakeContentLayerClient client_;
+  bool did_draw_;
+  scoped_refptr<FakeContentLayer> root_;
+  scoped_refptr<FakeContentLayer> grand_parent_layer_;
+  scoped_refptr<FakeContentLayer> parent_layer_;
+  scoped_refptr<FakeContentLayer> copy_layer_;
+};
+
+// No output to copy for delegated renderers.
+SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
+      LayerTreeHostTestHiddenSurfaceNotAllocatedForSubtreeCopyRequest);
+
+class LayerTreeHostTestAsyncReadbackClippedOut : public LayerTreeHostTest {
+ protected:
+  virtual void SetupTree() OVERRIDE {
+    root_ = FakeContentLayer::Create(&client_);
+    root_->SetBounds(gfx::Size(20, 20));
+
+    parent_layer_ = FakeContentLayer::Create(&client_);
+    parent_layer_->SetBounds(gfx::Size(15, 15));
+    parent_layer_->SetMasksToBounds(true);
+    root_->AddChild(parent_layer_);
+
+    copy_layer_ = FakeContentLayer::Create(&client_);
+    copy_layer_->SetPosition(gfx::Point(15, 15));
+    copy_layer_->SetBounds(gfx::Size(10, 10));
+    parent_layer_->AddChild(copy_layer_);
+
+    layer_tree_host()->SetRootLayer(root_);
+    LayerTreeHostTest::SetupTree();
+  }
+
+  virtual void BeginTest() OVERRIDE {
+    PostSetNeedsCommitToMainThread();
+
+    copy_layer_->RequestCopyOfOutput(
+        CopyOutputRequest::CreateBitmapRequest(base::Bind(
+            &LayerTreeHostTestAsyncReadbackClippedOut::CopyOutputCallback,
+            base::Unretained(this))));
+  }
+
+  void CopyOutputCallback(scoped_ptr<CopyOutputResult> result) {
+    // We should still get a callback with no output if the copy requested layer
+    // was completely clipped away.
+    EXPECT_TRUE(layer_tree_host()->proxy()->IsMainThread());
+    EXPECT_EQ(gfx::Size().ToString(), result->size().ToString());
+    EndTest();
+  }
+
+  virtual void AfterTest() OVERRIDE {}
+
+  FakeContentLayerClient client_;
+  scoped_refptr<FakeContentLayer> root_;
+  scoped_refptr<FakeContentLayer> parent_layer_;
+  scoped_refptr<FakeContentLayer> copy_layer_;
+};
+
+// No output to copy for delegated renderers.
+SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
+    LayerTreeHostTestAsyncReadbackClippedOut);
+
 class LayerTreeHostTestNumFramesPending : public LayerTreeHostTest {
  public:
   virtual void BeginTest() OVERRIDE {
@@ -2874,8 +3035,8 @@ class LayerTreeHostTestDeferredInitialize : public LayerTreeHostTest {
   }
 
   virtual void BeginTest() OVERRIDE {
-    initialized_gl_ = false;
-    num_draws_ = 0;
+    did_initialize_gl_ = false;
+    did_release_gl_ = false;
     PostSetNeedsCommitToMainThread();
   }
 
@@ -2893,47 +3054,770 @@ class LayerTreeHostTestDeferredInitialize : public LayerTreeHostTest {
     ASSERT_TRUE(host_impl->RootLayer());
     FakePictureLayerImpl* layer_impl =
         static_cast<FakePictureLayerImpl*>(host_impl->RootLayer());
-    if (!initialized_gl_) {
+    if (!did_initialize_gl_) {
       EXPECT_EQ(1u, layer_impl->append_quads_count());
-      ImplThreadTaskRunner()->PostTask(FROM_HERE, base::Bind(
-          &LayerTreeHostTestDeferredInitialize::DeferredInitializeAndRedraw,
-          base::Unretained(this),
-          base::Unretained(host_impl)));
-    } else {
-      if (!num_draws_) {
-        EXPECT_EQ(2u, layer_impl->append_quads_count());
-        EndTest();
-      }
-      num_draws_++;
+      ImplThreadTaskRunner()->PostTask(
+          FROM_HERE,
+          base::Bind(
+              &LayerTreeHostTestDeferredInitialize::DeferredInitializeAndRedraw,
+              base::Unretained(this),
+              base::Unretained(host_impl)));
+    } else if (did_initialize_gl_ && !did_release_gl_) {
+      EXPECT_EQ(2u, layer_impl->append_quads_count());
+      ImplThreadTaskRunner()->PostTask(
+          FROM_HERE,
+          base::Bind(
+              &LayerTreeHostTestDeferredInitialize::ReleaseGLAndRedraw,
+              base::Unretained(this),
+              base::Unretained(host_impl)));
+    } else if (did_initialize_gl_ && did_release_gl_) {
+      EXPECT_EQ(3u, layer_impl->append_quads_count());
+      EndTest();
     }
   }
 
   void DeferredInitializeAndRedraw(LayerTreeHostImpl* host_impl) {
+    EXPECT_FALSE(did_initialize_gl_);
+    // SetAndInitializeContext3D calls SetNeedsCommit.
     EXPECT_TRUE(static_cast<FakeOutputSurface*>(host_impl->output_surface())
                     ->SetAndInitializeContext3D(
                           scoped_ptr<WebKit::WebGraphicsContext3D>(
                               TestWebGraphicsContext3D::Create())));
-    initialized_gl_ = true;
+    did_initialize_gl_ = true;
+  }
 
-    // Force redraw again.
-    host_impl->SetNeedsRedrawRect(gfx::Rect(1, 1));
-
-    // If we didn't swap this begin frame, we need to request another one.
-    host_impl->SetNeedsBeginFrame(true);
+  void ReleaseGLAndRedraw(LayerTreeHostImpl* host_impl) {
+    EXPECT_TRUE(did_initialize_gl_);
+    EXPECT_FALSE(did_release_gl_);
+    // ReleaseGL calls SetNeedsCommit.
+    static_cast<FakeOutputSurface*>(host_impl->output_surface())->ReleaseGL();
+    did_release_gl_ = true;
   }
 
   virtual void AfterTest() OVERRIDE {
-    EXPECT_TRUE(initialized_gl_);
+    EXPECT_TRUE(did_initialize_gl_);
+    EXPECT_TRUE(did_release_gl_);
   }
 
  private:
   FakeContentLayerClient client_;
   scoped_refptr<FakePictureLayer> layer_;
-  bool initialized_gl_;
-  int num_draws_;
+  bool did_initialize_gl_;
+  bool did_release_gl_;
 };
 
 MULTI_THREAD_TEST_F(LayerTreeHostTestDeferredInitialize);
+
+class PushPropertiesCountingLayer : public Layer {
+ public:
+  static scoped_refptr<PushPropertiesCountingLayer> Create() {
+    return new PushPropertiesCountingLayer();
+  }
+
+  virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE {
+    Layer::PushPropertiesTo(layer);
+    push_properties_count_++;
+    if (persist_needs_push_properties_)
+      needs_push_properties_ = true;
+  }
+
+  size_t push_properties_count() const { return push_properties_count_; }
+  void reset_push_properties_count() { push_properties_count_ = 0; }
+
+  void set_persist_needs_push_properties(bool persist) {
+    persist_needs_push_properties_ = persist;
+  }
+
+ private:
+  PushPropertiesCountingLayer()
+      : push_properties_count_(0),
+        persist_needs_push_properties_(false) {
+    SetAnchorPoint(gfx::PointF());
+    SetBounds(gfx::Size(1, 1));
+    SetIsDrawable(true);
+  }
+  virtual ~PushPropertiesCountingLayer() {}
+
+  size_t push_properties_count_;
+  bool persist_needs_push_properties_;
+};
+
+class LayerTreeHostTestLayersPushProperties : public LayerTreeHostTest {
+ protected:
+  virtual void BeginTest() OVERRIDE {
+    num_commits_ = 0;
+    expected_push_properties_root_ = 0;
+    expected_push_properties_child_ = 0;
+    expected_push_properties_grandchild_ = 0;
+    expected_push_properties_child2_ = 0;
+    expected_push_properties_other_root_ = 0;
+    expected_push_properties_leaf_layer_ = 0;
+    PostSetNeedsCommitToMainThread();
+  }
+
+  virtual void SetupTree() OVERRIDE {
+    root_ = PushPropertiesCountingLayer::Create();
+    child_ = PushPropertiesCountingLayer::Create();
+    child2_ = PushPropertiesCountingLayer::Create();
+    grandchild_ = PushPropertiesCountingLayer::Create();
+
+    if (layer_tree_host()->settings().impl_side_painting)
+      leaf_picture_layer_ = FakePictureLayer::Create(&client_);
+    else
+      leaf_content_layer_ = FakeContentLayer::Create(&client_);
+
+    root_->AddChild(child_);
+    root_->AddChild(child2_);
+    child_->AddChild(grandchild_);
+    if (leaf_picture_layer_)
+      child2_->AddChild(leaf_picture_layer_);
+    if (leaf_content_layer_)
+      child2_->AddChild(leaf_content_layer_);
+
+    other_root_ = PushPropertiesCountingLayer::Create();
+
+    // Don't set the root layer here.
+    LayerTreeHostTest::SetupTree();
+  }
+
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
+    ++num_commits_;
+
+    EXPECT_EQ(expected_push_properties_root_, root_->push_properties_count());
+    EXPECT_EQ(expected_push_properties_child_, child_->push_properties_count());
+    EXPECT_EQ(expected_push_properties_grandchild_,
+              grandchild_->push_properties_count());
+    EXPECT_EQ(expected_push_properties_child2_,
+              child2_->push_properties_count());
+    EXPECT_EQ(expected_push_properties_other_root_,
+              other_root_->push_properties_count());
+    if (leaf_content_layer_) {
+      EXPECT_EQ(expected_push_properties_leaf_layer_,
+                leaf_content_layer_->push_properties_count());
+    }
+    if (leaf_picture_layer_) {
+      EXPECT_EQ(expected_push_properties_leaf_layer_,
+                leaf_picture_layer_->push_properties_count());
+    }
+
+    // The content/picture layer always needs to be pushed.
+    if (root_->layer_tree_host()) {
+      EXPECT_TRUE(root_->descendant_needs_push_properties());
+      EXPECT_FALSE(root_->needs_push_properties());
+    }
+    if (child2_->layer_tree_host()) {
+      EXPECT_TRUE(child2_->descendant_needs_push_properties());
+      EXPECT_FALSE(child2_->needs_push_properties());
+    }
+    if (leaf_content_layer_.get() && leaf_content_layer_->layer_tree_host()) {
+      EXPECT_FALSE(leaf_content_layer_->descendant_needs_push_properties());
+      EXPECT_TRUE(leaf_content_layer_->needs_push_properties());
+    }
+    if (leaf_picture_layer_.get() && leaf_picture_layer_->layer_tree_host()) {
+      EXPECT_FALSE(leaf_picture_layer_->descendant_needs_push_properties());
+      EXPECT_TRUE(leaf_picture_layer_->needs_push_properties());
+    }
+
+    // child_ and grandchild_ don't persist their need to push properties.
+    if (child_->layer_tree_host()) {
+      EXPECT_FALSE(child_->descendant_needs_push_properties());
+      EXPECT_FALSE(child_->needs_push_properties());
+    }
+    if (grandchild_->layer_tree_host()) {
+      EXPECT_FALSE(grandchild_->descendant_needs_push_properties());
+      EXPECT_FALSE(grandchild_->needs_push_properties());
+    }
+
+    if (other_root_->layer_tree_host()) {
+      EXPECT_FALSE(other_root_->descendant_needs_push_properties());
+      EXPECT_FALSE(other_root_->needs_push_properties());
+    }
+
+    switch (num_commits_) {
+      case 1:
+        layer_tree_host()->SetRootLayer(root_);
+        // Layers added to the tree get committed.
+        ++expected_push_properties_root_;
+        ++expected_push_properties_child_;
+        ++expected_push_properties_grandchild_;
+        ++expected_push_properties_child2_;
+        break;
+      case 2:
+        layer_tree_host()->SetNeedsCommit();
+        // No layers need commit.
+        break;
+      case 3:
+        layer_tree_host()->SetRootLayer(other_root_);
+        // Layers added to the tree get committed.
+        ++expected_push_properties_other_root_;
+        break;
+      case 4:
+        layer_tree_host()->SetRootLayer(root_);
+        // Layers added to the tree get committed.
+        ++expected_push_properties_root_;
+        ++expected_push_properties_child_;
+        ++expected_push_properties_grandchild_;
+        ++expected_push_properties_child2_;
+        break;
+      case 5:
+        layer_tree_host()->SetNeedsCommit();
+        // No layers need commit.
+        break;
+      case 6:
+        child_->RemoveFromParent();
+        // No layers need commit.
+        break;
+      case 7:
+        root_->AddChild(child_);
+        // Layers added to the tree get committed.
+        ++expected_push_properties_child_;
+        ++expected_push_properties_grandchild_;
+        break;
+      case 8:
+        grandchild_->RemoveFromParent();
+        // No layers need commit.
+        break;
+      case 9:
+        child_->AddChild(grandchild_);
+        // Layers added to the tree get committed.
+        ++expected_push_properties_grandchild_;
+        break;
+      case 10:
+        layer_tree_host()->SetViewportSize(gfx::Size(20, 20));
+        // No layers need commit.
+        break;
+      case 11:
+        layer_tree_host()->SetPageScaleFactorAndLimits(1.f, 0.8f, 1.1f);
+        // No layers need commit.
+        break;
+      case 12:
+        child_->SetPosition(gfx::Point(1, 1));
+        // The modified layer needs commit
+        ++expected_push_properties_child_;
+        break;
+      case 13:
+        child2_->SetPosition(gfx::Point(1, 1));
+        // The modified layer needs commit
+        ++expected_push_properties_child2_;
+        break;
+      case 14:
+        child_->RemoveFromParent();
+        root_->AddChild(child_);
+        // Layers added to the tree get committed.
+        ++expected_push_properties_child_;
+        ++expected_push_properties_grandchild_;
+        break;
+      case 15:
+        grandchild_->SetPosition(gfx::Point(1, 1));
+        // The modified layer needs commit
+        ++expected_push_properties_grandchild_;
+        break;
+      case 16:
+        child_->SetNeedsDisplay();
+        // The modified layer needs commit
+        ++expected_push_properties_child_;
+        break;
+      case 17:
+        EndTest();
+        break;
+    }
+
+    // Content/Picture layers require PushProperties every commit that they are
+    // in the tree.
+    if ((leaf_content_layer_.get() && leaf_content_layer_->layer_tree_host()) ||
+        (leaf_picture_layer_.get() && leaf_picture_layer_->layer_tree_host()))
+      ++expected_push_properties_leaf_layer_;
+  }
+
+  virtual void AfterTest() OVERRIDE {}
+
+  int num_commits_;
+  FakeContentLayerClient client_;
+  scoped_refptr<PushPropertiesCountingLayer> root_;
+  scoped_refptr<PushPropertiesCountingLayer> child_;
+  scoped_refptr<PushPropertiesCountingLayer> child2_;
+  scoped_refptr<PushPropertiesCountingLayer> grandchild_;
+  scoped_refptr<PushPropertiesCountingLayer> other_root_;
+  scoped_refptr<FakeContentLayer> leaf_content_layer_;
+  scoped_refptr<FakePictureLayer> leaf_picture_layer_;
+  size_t expected_push_properties_root_;
+  size_t expected_push_properties_child_;
+  size_t expected_push_properties_child2_;
+  size_t expected_push_properties_grandchild_;
+  size_t expected_push_properties_other_root_;
+  size_t expected_push_properties_leaf_layer_;
+};
+
+MULTI_THREAD_TEST_F(LayerTreeHostTestLayersPushProperties);
+
+class LayerTreeHostTestPropertyChangesDuringUpdateArePushed
+    : public LayerTreeHostTest {
+ protected:
+  virtual void BeginTest() OVERRIDE {
+    PostSetNeedsCommitToMainThread();
+  }
+
+  virtual void SetupTree() OVERRIDE {
+    root_ = Layer::Create();
+    root_->SetBounds(gfx::Size(1, 1));
+
+    bool paint_scrollbar = true;
+    bool has_thumb = false;
+    scrollbar_layer_ =
+        FakeScrollbarLayer::Create(paint_scrollbar, has_thumb, root_->id());
+
+    root_->AddChild(scrollbar_layer_);
+
+    layer_tree_host()->SetRootLayer(root_);
+    LayerTreeHostTest::SetupTree();
+  }
+
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
+    switch (layer_tree_host()->commit_number()) {
+      case 0:
+        break;
+      case 1: {
+        // During update, the ignore_set_needs_commit_ bit is set to true to
+        // avoid causing a second commit to be scheduled. If a property change
+        // is made during this, however, it needs to be pushed in the upcoming
+        // commit.
+        scoped_ptr<base::AutoReset<bool> > ignore =
+            scrollbar_layer_->IgnoreSetNeedsCommit();
+
+        scrollbar_layer_->SetBounds(gfx::Size(30, 30));
+
+        EXPECT_TRUE(scrollbar_layer_->needs_push_properties());
+        EXPECT_TRUE(root_->descendant_needs_push_properties());
+        layer_tree_host()->SetNeedsCommit();
+
+        scrollbar_layer_->reset_push_properties_count();
+        EXPECT_EQ(0u, scrollbar_layer_->push_properties_count());
+        break;
+      }
+      case 2:
+        EXPECT_EQ(1u, scrollbar_layer_->push_properties_count());
+        EndTest();
+        break;
+    }
+  }
+
+  virtual void AfterTest() OVERRIDE {}
+
+  scoped_refptr<Layer> root_;
+  scoped_refptr<FakeScrollbarLayer> scrollbar_layer_;
+};
+
+MULTI_THREAD_TEST_F(LayerTreeHostTestPropertyChangesDuringUpdateArePushed);
+
+class LayerTreeHostTestCasePushPropertiesThreeGrandChildren
+    : public LayerTreeHostTest {
+ protected:
+  virtual void BeginTest() OVERRIDE {
+    expected_push_properties_root_ = 0;
+    expected_push_properties_child_ = 0;
+    expected_push_properties_grandchild1_ = 0;
+    expected_push_properties_grandchild2_ = 0;
+    expected_push_properties_grandchild3_ = 0;
+    PostSetNeedsCommitToMainThread();
+  }
+
+  virtual void SetupTree() OVERRIDE {
+    root_ = PushPropertiesCountingLayer::Create();
+    child_ = PushPropertiesCountingLayer::Create();
+    grandchild1_ = PushPropertiesCountingLayer::Create();
+    grandchild2_ = PushPropertiesCountingLayer::Create();
+    grandchild3_ = PushPropertiesCountingLayer::Create();
+
+    root_->AddChild(child_);
+    child_->AddChild(grandchild1_);
+    child_->AddChild(grandchild2_);
+    child_->AddChild(grandchild3_);
+
+    // Don't set the root layer here.
+    LayerTreeHostTest::SetupTree();
+  }
+
+  virtual void AfterTest() OVERRIDE {}
+
+  FakeContentLayerClient client_;
+  scoped_refptr<PushPropertiesCountingLayer> root_;
+  scoped_refptr<PushPropertiesCountingLayer> child_;
+  scoped_refptr<PushPropertiesCountingLayer> grandchild1_;
+  scoped_refptr<PushPropertiesCountingLayer> grandchild2_;
+  scoped_refptr<PushPropertiesCountingLayer> grandchild3_;
+  size_t expected_push_properties_root_;
+  size_t expected_push_properties_child_;
+  size_t expected_push_properties_grandchild1_;
+  size_t expected_push_properties_grandchild2_;
+  size_t expected_push_properties_grandchild3_;
+};
+
+class LayerTreeHostTestPushPropertiesAddingToTreeRequiresPush
+    : public LayerTreeHostTestCasePushPropertiesThreeGrandChildren {
+ protected:
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
+    int last_source_frame_number = layer_tree_host()->commit_number() - 1;
+    switch (last_source_frame_number) {
+      case 0:
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_FALSE(root_->descendant_needs_push_properties());
+        EXPECT_FALSE(child_->needs_push_properties());
+        EXPECT_FALSE(child_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild1_->needs_push_properties());
+        EXPECT_FALSE(grandchild1_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild2_->needs_push_properties());
+        EXPECT_FALSE(grandchild2_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild3_->needs_push_properties());
+        EXPECT_FALSE(grandchild3_->descendant_needs_push_properties());
+
+        layer_tree_host()->SetRootLayer(root_);
+
+        EXPECT_TRUE(root_->needs_push_properties());
+        EXPECT_TRUE(root_->descendant_needs_push_properties());
+        EXPECT_TRUE(child_->needs_push_properties());
+        EXPECT_TRUE(child_->descendant_needs_push_properties());
+        EXPECT_TRUE(grandchild1_->needs_push_properties());
+        EXPECT_FALSE(grandchild1_->descendant_needs_push_properties());
+        EXPECT_TRUE(grandchild2_->needs_push_properties());
+        EXPECT_FALSE(grandchild2_->descendant_needs_push_properties());
+        EXPECT_TRUE(grandchild3_->needs_push_properties());
+        EXPECT_FALSE(grandchild3_->descendant_needs_push_properties());
+        break;
+      case 1:
+        EndTest();
+        break;
+    }
+  }
+};
+
+MULTI_THREAD_TEST_F(LayerTreeHostTestPushPropertiesAddingToTreeRequiresPush);
+
+class LayerTreeHostTestPushPropertiesRemovingChildStopsRecursion
+    : public LayerTreeHostTestCasePushPropertiesThreeGrandChildren {
+ protected:
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
+    int last_source_frame_number = layer_tree_host()->commit_number() - 1;
+    switch (last_source_frame_number) {
+      case 0:
+        layer_tree_host()->SetRootLayer(root_);
+        break;
+      case 1:
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_FALSE(root_->descendant_needs_push_properties());
+        EXPECT_FALSE(child_->needs_push_properties());
+        EXPECT_FALSE(child_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild1_->needs_push_properties());
+        EXPECT_FALSE(grandchild1_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild2_->needs_push_properties());
+        EXPECT_FALSE(grandchild2_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild3_->needs_push_properties());
+        EXPECT_FALSE(grandchild3_->descendant_needs_push_properties());
+
+        grandchild1_->RemoveFromParent();
+        grandchild1_->SetPosition(gfx::Point(1, 1));
+
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_FALSE(root_->descendant_needs_push_properties());
+        EXPECT_FALSE(child_->needs_push_properties());
+        EXPECT_FALSE(child_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild2_->needs_push_properties());
+        EXPECT_FALSE(grandchild2_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild3_->needs_push_properties());
+        EXPECT_FALSE(grandchild3_->descendant_needs_push_properties());
+
+        child_->AddChild(grandchild1_);
+
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_TRUE(root_->descendant_needs_push_properties());
+        EXPECT_FALSE(child_->needs_push_properties());
+        EXPECT_TRUE(child_->descendant_needs_push_properties());
+        EXPECT_TRUE(grandchild1_->needs_push_properties());
+        EXPECT_FALSE(grandchild1_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild2_->needs_push_properties());
+        EXPECT_FALSE(grandchild2_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild3_->needs_push_properties());
+        EXPECT_FALSE(grandchild3_->descendant_needs_push_properties());
+
+        grandchild2_->SetPosition(gfx::Point(1, 1));
+
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_TRUE(root_->descendant_needs_push_properties());
+        EXPECT_FALSE(child_->needs_push_properties());
+        EXPECT_TRUE(child_->descendant_needs_push_properties());
+        EXPECT_TRUE(grandchild1_->needs_push_properties());
+        EXPECT_FALSE(grandchild1_->descendant_needs_push_properties());
+        EXPECT_TRUE(grandchild2_->needs_push_properties());
+        EXPECT_FALSE(grandchild2_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild3_->needs_push_properties());
+        EXPECT_FALSE(grandchild3_->descendant_needs_push_properties());
+
+        // grandchild2_ will still need a push properties.
+        grandchild1_->RemoveFromParent();
+
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_TRUE(root_->descendant_needs_push_properties());
+        EXPECT_FALSE(child_->needs_push_properties());
+        EXPECT_TRUE(child_->descendant_needs_push_properties());
+
+        // grandchild3_ does not need a push properties, so recursing should
+        // no longer be needed.
+        grandchild2_->RemoveFromParent();
+
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_FALSE(root_->descendant_needs_push_properties());
+        EXPECT_FALSE(child_->needs_push_properties());
+        EXPECT_FALSE(child_->descendant_needs_push_properties());
+        EndTest();
+        break;
+    }
+  }
+};
+
+MULTI_THREAD_TEST_F(LayerTreeHostTestPushPropertiesRemovingChildStopsRecursion);
+
+class LayerTreeHostTestPushPropertiesRemovingChildStopsRecursionWithPersistence
+    : public LayerTreeHostTestCasePushPropertiesThreeGrandChildren {
+ protected:
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
+    int last_source_frame_number = layer_tree_host()->commit_number() - 1;
+    switch (last_source_frame_number) {
+      case 0:
+        layer_tree_host()->SetRootLayer(root_);
+        grandchild1_->set_persist_needs_push_properties(true);
+        grandchild2_->set_persist_needs_push_properties(true);
+        break;
+      case 1:
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_TRUE(root_->descendant_needs_push_properties());
+        EXPECT_FALSE(child_->needs_push_properties());
+        EXPECT_TRUE(child_->descendant_needs_push_properties());
+        EXPECT_TRUE(grandchild1_->needs_push_properties());
+        EXPECT_FALSE(grandchild1_->descendant_needs_push_properties());
+        EXPECT_TRUE(grandchild2_->needs_push_properties());
+        EXPECT_FALSE(grandchild2_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild3_->needs_push_properties());
+        EXPECT_FALSE(grandchild3_->descendant_needs_push_properties());
+
+        // grandchild2_ will still need a push properties.
+        grandchild1_->RemoveFromParent();
+
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_TRUE(root_->descendant_needs_push_properties());
+        EXPECT_FALSE(child_->needs_push_properties());
+        EXPECT_TRUE(child_->descendant_needs_push_properties());
+
+        // grandchild3_ does not need a push properties, so recursing should
+        // no longer be needed.
+        grandchild2_->RemoveFromParent();
+
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_FALSE(root_->descendant_needs_push_properties());
+        EXPECT_FALSE(child_->needs_push_properties());
+        EXPECT_FALSE(child_->descendant_needs_push_properties());
+        EndTest();
+        break;
+    }
+  }
+};
+
+MULTI_THREAD_TEST_F(
+    LayerTreeHostTestPushPropertiesRemovingChildStopsRecursionWithPersistence);
+
+class LayerTreeHostTestPushPropertiesSetPropertiesWhileOutsideTree
+    : public LayerTreeHostTestCasePushPropertiesThreeGrandChildren {
+ protected:
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
+    int last_source_frame_number = layer_tree_host()->commit_number() - 1;
+    switch (last_source_frame_number) {
+      case 0:
+        layer_tree_host()->SetRootLayer(root_);
+        break;
+      case 1:
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_FALSE(root_->descendant_needs_push_properties());
+        EXPECT_FALSE(child_->needs_push_properties());
+        EXPECT_FALSE(child_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild1_->needs_push_properties());
+        EXPECT_FALSE(grandchild1_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild2_->needs_push_properties());
+        EXPECT_FALSE(grandchild2_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild3_->needs_push_properties());
+        EXPECT_FALSE(grandchild3_->descendant_needs_push_properties());
+
+        // Change grandchildren while their parent is not in the tree.
+        child_->RemoveFromParent();
+        grandchild1_->SetPosition(gfx::Point(1, 1));
+        grandchild2_->SetPosition(gfx::Point(1, 1));
+        root_->AddChild(child_);
+
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_TRUE(root_->descendant_needs_push_properties());
+        EXPECT_TRUE(child_->needs_push_properties());
+        EXPECT_TRUE(child_->descendant_needs_push_properties());
+        EXPECT_TRUE(grandchild1_->needs_push_properties());
+        EXPECT_FALSE(grandchild1_->descendant_needs_push_properties());
+        EXPECT_TRUE(grandchild2_->needs_push_properties());
+        EXPECT_FALSE(grandchild2_->descendant_needs_push_properties());
+        EXPECT_TRUE(grandchild3_->needs_push_properties());
+        EXPECT_FALSE(grandchild3_->descendant_needs_push_properties());
+
+        grandchild1_->RemoveFromParent();
+
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_TRUE(root_->descendant_needs_push_properties());
+        EXPECT_TRUE(child_->needs_push_properties());
+        EXPECT_TRUE(child_->descendant_needs_push_properties());
+
+        grandchild2_->RemoveFromParent();
+
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_TRUE(root_->descendant_needs_push_properties());
+        EXPECT_TRUE(child_->needs_push_properties());
+        EXPECT_TRUE(child_->descendant_needs_push_properties());
+
+        grandchild3_->RemoveFromParent();
+
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_TRUE(root_->descendant_needs_push_properties());
+        EXPECT_TRUE(child_->needs_push_properties());
+        EXPECT_FALSE(child_->descendant_needs_push_properties());
+
+        EndTest();
+        break;
+    }
+  }
+};
+
+MULTI_THREAD_TEST_F(
+    LayerTreeHostTestPushPropertiesSetPropertiesWhileOutsideTree);
+
+class LayerTreeHostTestPushPropertiesSetPropertyInParentThenChild
+    : public LayerTreeHostTestCasePushPropertiesThreeGrandChildren {
+ protected:
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
+    int last_source_frame_number = layer_tree_host()->commit_number() - 1;
+    switch (last_source_frame_number) {
+      case 0:
+        layer_tree_host()->SetRootLayer(root_);
+        break;
+      case 1:
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_FALSE(root_->descendant_needs_push_properties());
+        EXPECT_FALSE(child_->needs_push_properties());
+        EXPECT_FALSE(child_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild1_->needs_push_properties());
+        EXPECT_FALSE(grandchild1_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild2_->needs_push_properties());
+        EXPECT_FALSE(grandchild2_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild3_->needs_push_properties());
+        EXPECT_FALSE(grandchild3_->descendant_needs_push_properties());
+
+        child_->SetPosition(gfx::Point(1, 1));
+        grandchild1_->SetPosition(gfx::Point(1, 1));
+        grandchild2_->SetPosition(gfx::Point(1, 1));
+
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_TRUE(root_->descendant_needs_push_properties());
+        EXPECT_TRUE(child_->needs_push_properties());
+        EXPECT_TRUE(child_->descendant_needs_push_properties());
+        EXPECT_TRUE(grandchild1_->needs_push_properties());
+        EXPECT_FALSE(grandchild1_->descendant_needs_push_properties());
+        EXPECT_TRUE(grandchild2_->needs_push_properties());
+        EXPECT_FALSE(grandchild2_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild3_->needs_push_properties());
+        EXPECT_FALSE(grandchild3_->descendant_needs_push_properties());
+
+        grandchild1_->RemoveFromParent();
+
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_TRUE(root_->descendant_needs_push_properties());
+        EXPECT_TRUE(child_->needs_push_properties());
+        EXPECT_TRUE(child_->descendant_needs_push_properties());
+
+        grandchild2_->RemoveFromParent();
+
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_TRUE(root_->descendant_needs_push_properties());
+        EXPECT_TRUE(child_->needs_push_properties());
+        EXPECT_FALSE(child_->descendant_needs_push_properties());
+
+        child_->RemoveFromParent();
+
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_FALSE(root_->descendant_needs_push_properties());
+
+        EndTest();
+        break;
+    }
+  }
+};
+
+MULTI_THREAD_TEST_F(
+    LayerTreeHostTestPushPropertiesSetPropertyInParentThenChild);
+
+class LayerTreeHostTestPushPropertiesSetPropertyInChildThenParent
+    : public LayerTreeHostTestCasePushPropertiesThreeGrandChildren {
+ protected:
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
+    int last_source_frame_number = layer_tree_host()->commit_number() - 1;
+    switch (last_source_frame_number) {
+      case 0:
+        layer_tree_host()->SetRootLayer(root_);
+        break;
+      case 1:
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_FALSE(root_->descendant_needs_push_properties());
+        EXPECT_FALSE(child_->needs_push_properties());
+        EXPECT_FALSE(child_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild1_->needs_push_properties());
+        EXPECT_FALSE(grandchild1_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild2_->needs_push_properties());
+        EXPECT_FALSE(grandchild2_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild3_->needs_push_properties());
+        EXPECT_FALSE(grandchild3_->descendant_needs_push_properties());
+
+        grandchild1_->SetPosition(gfx::Point(1, 1));
+        grandchild2_->SetPosition(gfx::Point(1, 1));
+        child_->SetPosition(gfx::Point(1, 1));
+
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_TRUE(root_->descendant_needs_push_properties());
+        EXPECT_TRUE(child_->needs_push_properties());
+        EXPECT_TRUE(child_->descendant_needs_push_properties());
+        EXPECT_TRUE(grandchild1_->needs_push_properties());
+        EXPECT_FALSE(grandchild1_->descendant_needs_push_properties());
+        EXPECT_TRUE(grandchild2_->needs_push_properties());
+        EXPECT_FALSE(grandchild2_->descendant_needs_push_properties());
+        EXPECT_FALSE(grandchild3_->needs_push_properties());
+        EXPECT_FALSE(grandchild3_->descendant_needs_push_properties());
+
+        grandchild1_->RemoveFromParent();
+
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_TRUE(root_->descendant_needs_push_properties());
+        EXPECT_TRUE(child_->needs_push_properties());
+        EXPECT_TRUE(child_->descendant_needs_push_properties());
+
+        grandchild2_->RemoveFromParent();
+
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_TRUE(root_->descendant_needs_push_properties());
+        EXPECT_TRUE(child_->needs_push_properties());
+        EXPECT_FALSE(child_->descendant_needs_push_properties());
+
+        child_->RemoveFromParent();
+
+        EXPECT_FALSE(root_->needs_push_properties());
+        EXPECT_FALSE(root_->descendant_needs_push_properties());
+
+        EndTest();
+        break;
+    }
+  }
+};
+
+MULTI_THREAD_TEST_F(
+    LayerTreeHostTestPushPropertiesSetPropertyInChildThenParent);
 
 }  // namespace
 }  // namespace cc

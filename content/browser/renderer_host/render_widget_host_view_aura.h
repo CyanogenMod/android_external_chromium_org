@@ -40,6 +40,7 @@ class WindowTracker;
 }
 
 namespace cc {
+class CopyOutputResult;
 class DelegatedFrameData;
 }
 
@@ -173,7 +174,8 @@ class RenderWidgetHostViewAura
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
   virtual void TextInputTypeChanged(ui::TextInputType type,
-                                    bool can_compose_inline) OVERRIDE;
+                                    bool can_compose_inline,
+                                    ui::TextInputMode input_mode) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
   virtual void ImeCompositionRangeChanged(
       const ui::Range& range,
@@ -183,8 +185,8 @@ class RenderWidgetHostViewAura
       const gfx::Vector2d& scroll_delta,
       const std::vector<gfx::Rect>& copy_rects,
       const ui::LatencyInfo& latency_info) OVERRIDE;
-  virtual void RenderViewGone(base::TerminationStatus status,
-                              int error_code) OVERRIDE;
+  virtual void RenderProcessGone(base::TerminationStatus status,
+                                 int error_code) OVERRIDE;
   virtual void Destroy() OVERRIDE;
   virtual void SetTooltipText(const string16& tooltip_text) OVERRIDE;
   virtual void SelectionChanged(const string16& text,
@@ -433,12 +435,25 @@ class RenderWidgetHostViewAura
   // after it was released as the frontbuffer.
   void SetSurfaceNotInUseByCompositor(scoped_refptr<ui::Texture>);
 
-  // Called after async thumbnailer task completes.  Used to call
-  // AdjustSurfaceProtection.
-  static void CopyFromCompositingSurfaceFinished(
-      const SkBitmap& bitmap,
+  // Called after async thumbnailer task completes.  Scales and crops the result
+  // of the copy.
+  static void CopyFromCompositingSurfaceHasResult(
+      const gfx::Size& dst_size_in_pixel,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
-      bool result);
+      scoped_ptr<cc::CopyOutputResult> result);
+  static void PrepareTextureCopyOutputResult(
+      const gfx::Size& dst_size_in_pixel,
+      const base::Callback<void(bool, const SkBitmap&)>& callback,
+      scoped_ptr<cc::CopyOutputResult> result);
+  static void PrepareBitmapCopyOutputResult(
+      const gfx::Size& dst_size_in_pixel,
+      const base::Callback<void(bool, const SkBitmap&)>& callback,
+      scoped_ptr<cc::CopyOutputResult> result);
+  static void CopyFromCompositingSurfaceHasResultForVideo(
+      base::WeakPtr<RenderWidgetHostViewAura> rwhva,
+      scoped_refptr<media::VideoFrame> video_frame,
+      const base::Callback<void(bool)>& callback,
+      scoped_ptr<cc::CopyOutputResult> result);
 
   ui::Compositor* GetCompositor();
 

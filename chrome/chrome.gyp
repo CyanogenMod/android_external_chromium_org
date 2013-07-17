@@ -221,6 +221,8 @@
             '..',
           ],
           'sources': [
+            'browser/devtools/adb/android_rsa.cc',
+            'browser/devtools/adb/android_rsa.h',
             'browser/devtools/adb/android_usb_device.cc',
             'browser/devtools/adb/android_usb_device.h',
             'browser/devtools/adb/android_usb_socket.cc',
@@ -290,17 +292,52 @@
             '../content/content.gyp:content_utility',
             '../skia/skia.gyp:skia',
             '../third_party/libxml/libxml.gyp:libxml',
+            'common',
+            '<(DEPTH)/chrome/chrome_resources.gyp:chrome_resources',
           ],
           'sources': [
             'utility/chrome_content_utility_client.cc',
             'utility/chrome_content_utility_client.h',
+            'utility/extensions/unpacker.cc',
+            'utility/extensions/unpacker.h',
+            'utility/importer/bookmark_html_reader.cc',
+            'utility/importer/bookmark_html_reader.h',
+            'utility/importer/bookmarks_file_importer.cc',
+            'utility/importer/bookmarks_file_importer.h',
+            'utility/importer/external_process_importer_bridge.cc',
+            'utility/importer/external_process_importer_bridge.h',
+            'utility/importer/favicon_reencode.cc',
+            'utility/importer/favicon_reencode.h',
+            'utility/importer/firefox3_importer.cc',
+            'utility/importer/firefox3_importer.h',
+            'utility/importer/firefox_importer_unittest_messages_internal.h',
+            'utility/importer/firefox_importer_unittest_utils.h',
+            'utility/importer/firefox_importer_unittest_utils_mac.cc',
+            'utility/importer/ie_importer_win.cc',
+            'utility/importer/ie_importer_win.h',
+            'utility/importer/importer.cc',
+            'utility/importer/importer.h',
+            'utility/importer/importer_creator.cc',
+            'utility/importer/importer_creator.h',
+            'utility/importer/nss_decryptor.cc',
+            'utility/importer/nss_decryptor.h',
+            'utility/importer/nss_decryptor_mac.h',
+            'utility/importer/nss_decryptor_mac.mm',
+            'utility/importer/nss_decryptor_win.cc',
+            'utility/importer/nss_decryptor_win.h',
+            'utility/importer/safari_importer.h',
+            'utility/importer/safari_importer.mm',
             'utility/itunes_pref_parser_win.cc',
             'utility/itunes_pref_parser_win.h',
             'utility/profile_import_handler.cc',
             'utility/profile_import_handler.h',
+            'utility/utility_message_handler.h',
+            'utility/web_resource_unpacker.cc',
+            'utility/web_resource_unpacker.h',
           ],
           'include_dirs': [
             '..',
+            '<(grit_out_dir)',
           ],
           'conditions': [
             ['toolkit_uses_gtk == 1', {
@@ -320,10 +357,33 @@
                 'utility/media_galleries/pmp_column_reader.h',
               ],
             }],
-            ['OS=="android"', {
+            ['use_openssl==1', {
               'sources!': [
-                'utility/profile_import_handler.cc',
+                'utility/importer/nss_decryptor.cc',
+              ]
+            }],
+            ['OS!="win" and OS!="mac" and use_openssl==0', {
+              'dependencies': [
+                '../crypto/crypto.gyp:crypto',
               ],
+              'sources': [
+                'utility/importer/nss_decryptor_system_nss.cc',
+                'utility/importer/nss_decryptor_system_nss.h',
+              ],
+            }],
+            ['OS=="android"', {
+              'sources/': [
+                ['exclude', '^utility/importer/'],
+                ['exclude', '^utility/profile_import_handler\.cc'],
+              ],
+            }],
+            ['enable_mdns == 1', {
+              'sources': [
+                'utility/local_discovery/local_domain_resolver.cc',
+                'utility/local_discovery/local_domain_resolver.h',
+                'utility/local_discovery/service_discovery_client_impl.cc',
+                'utility/local_discovery/service_discovery_client_impl.h',
+              ]
             }],
           ],
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.

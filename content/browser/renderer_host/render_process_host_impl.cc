@@ -66,12 +66,14 @@
 #include "content/browser/profiler_message_filter.h"
 #include "content/browser/renderer_host/clipboard_message_filter.h"
 #include "content/browser/renderer_host/database_message_filter.h"
+#include "content/browser/renderer_host/device_motion_browser_message_filter.h"
 #include "content/browser/renderer_host/file_utilities_message_filter.h"
 #include "content/browser/renderer_host/gamepad_browser_message_filter.h"
 #include "content/browser/renderer_host/gpu_message_filter.h"
 #include "content/browser/renderer_host/media/audio_input_renderer_host.h"
 #include "content/browser/renderer_host/media/audio_mirroring_manager.h"
 #include "content/browser/renderer_host/media/audio_renderer_host.h"
+#include "content/browser/renderer_host/media/device_request_message_filter.h"
 #include "content/browser/renderer_host/media/media_stream_dispatcher_host.h"
 #include "content/browser/renderer_host/media/midi_host.h"
 #include "content/browser/renderer_host/media/peer_connection_tracker_host.h"
@@ -85,6 +87,7 @@
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_helper.h"
+#include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/socket_stream_dispatcher_host.h"
 #include "content/browser/renderer_host/text_input_client_message_filter.h"
 #include "content/browser/resolve_proxy_msg_helper.h"
@@ -126,7 +129,7 @@
 #include "ppapi/shared_impl/ppapi_switches.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gl/gl_switches.h"
-#include "webkit/browser/fileapi/sandbox_mount_point_provider.h"
+#include "webkit/browser/fileapi/sandbox_file_system_backend.h"
 #include "webkit/glue/resource_type.h"
 #include "webkit/plugins/plugin_switches.h"
 
@@ -642,6 +645,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   channel_->AddFilter(peer_connection_tracker_host_.get());
   channel_->AddFilter(new MediaStreamDispatcherHost(
       GetID(), media_stream_manager));
+  channel_->AddFilter(new DeviceRequestMessageFilter(media_stream_manager));
 #endif
 #if defined(ENABLE_PLUGINS)
   // TODO(raymes): PepperMessageFilter should be removed from here.
@@ -650,12 +654,10 @@ void RenderProcessHostImpl::CreateMessageFilters() {
 #endif
 #if defined(ENABLE_INPUT_SPEECH)
   channel_->AddFilter(new InputTagSpeechDispatcherHost(
-      IsGuest(), GetID(), storage_partition_impl_->GetURLRequestContext(),
-      browser_context->GetSpeechRecognitionPreferences()));
+      IsGuest(), GetID(), storage_partition_impl_->GetURLRequestContext()));
 #endif
   channel_->AddFilter(new SpeechRecognitionDispatcherHost(
-      GetID(), storage_partition_impl_->GetURLRequestContext(),
-      browser_context->GetSpeechRecognitionPreferences()));
+      GetID(), storage_partition_impl_->GetURLRequestContext()));
   channel_->AddFilter(new FileAPIMessageFilter(
       GetID(),
       storage_partition_impl_->GetURLRequestContext(),
@@ -706,6 +708,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       storage_partition_impl_->GetQuotaManager(),
       GetContentClient()->browser()->CreateQuotaPermissionContext()));
   channel_->AddFilter(new GamepadBrowserMessageFilter());
+  channel_->AddFilter(new DeviceMotionBrowserMessageFilter());
   channel_->AddFilter(new ProfilerMessageFilter(PROCESS_TYPE_RENDERER));
   channel_->AddFilter(new HistogramMessageFilter());
   channel_->AddFilter(new HyphenatorMessageFilter(this));
@@ -862,6 +865,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableAudio,
     switches::kDisableBreakpad,
     switches::kDisableDatabases,
+    switches::kDisableDelegatedRenderer,
     switches::kDisableDesktopNotifications,
     switches::kDisableDeviceOrientation,
     switches::kDisableFileSystem,
@@ -870,7 +874,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableGpuVsync,
     switches::kDisableGpu,
     switches::kDisableHistogramCustomizer,
-    switches::kDisableJavaScriptI18NAPI,
     switches::kDisableLocalStorage,
     switches::kDisableLogging,
     switches::kDisableNewDialogStyle,
@@ -886,8 +889,11 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
 #endif
     switches::kDisableWebAudio,
 #if defined(ENABLE_WEBRTC)
+    switches::kEnableDeviceEnumeration,
     switches::kEnableSCTPDataChannels,
 #endif
+    switches::kEnableWebAnimationsCSS,
+    switches::kEnableWebAnimationsSVG,
     switches::kEnableWebMIDI,
     switches::kEnableExperimentalCanvasFeatures,
     switches::kEnableExperimentalWebSocket,
@@ -901,7 +907,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableEncryptedMedia,
     switches::kDisableLegacyEncryptedMedia,
     switches::kOverrideEncryptedMediaCanPlayType,
-    switches::kEnableExperimentalWebKitFeatures,
+    switches::kEnableExperimentalWebPlatformFeatures,
     switches::kEnableFixedLayout,
     switches::kEnableDeferredImageDecoding,
     switches::kEnableGPUServiceLogging,
@@ -917,6 +923,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
 #if defined(ENABLE_WEBRTC)
     switches::kEnableWebRtcAecRecordings,
     switches::kEnableWebRtcTcpServerSocket,
+    switches::kEnableWebRtcHWDecoding,
 #endif
 #if defined(ANDROID) && !defined(GOOGLE_TV)
     switches::kEnableWebKitMediaSource,
@@ -948,6 +955,8 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableAcceleratedOverflowScroll,
     switches::kEnableCompositingForTransition,
     switches::kDisableCompositingForTransition,
+    switches::kEnableAcceleratedFixedRootBackground,
+    switches::kDisableAcceleratedFixedRootBackground,
     switches::kDisableThreadedCompositing,
     switches::kDisableTouchAdjustment,
     switches::kDefaultTileWidth,
@@ -964,6 +973,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableEac3Playback,
     switches::kForceDeviceScaleFactor,
     switches::kFullMemoryCrashReport,
+#if defined(OS_ANDROID)
+    switches::kHideScrollbars,
+#endif
 #if !defined (GOOGLE_CHROME_BUILD)
     // These are unsupported and not fully tested modes, so don't enable them
     // for official Google Chrome builds.
@@ -1005,6 +1017,8 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kVModule,
     switches::kWebCoreLogChannels,
     switches::kEnableWebGLDraftExtensions,
+    switches::kTraceToConsole,
+    switches::kEnableDeviceMotion,
     // Please keep these in alphabetical order. Compositor switches here should
     // also be added to chrome/browser/chromeos/login/chrome_restart_request.cc.
     cc::switches::kBackgroundColorInsteadOfCheckerboard,
@@ -1616,9 +1630,9 @@ void RenderProcessHostImpl::ProcessDied(bool already_dead) {
   IDMap<IPC::Listener>::iterator iter(&listeners_);
   while (!iter.IsAtEnd()) {
     iter.GetCurrentValue()->OnMessageReceived(
-        ViewHostMsg_RenderViewGone(iter.GetCurrentKey(),
-                                   static_cast<int>(status),
-                                   exit_code));
+        ViewHostMsg_RenderProcessGone(iter.GetCurrentKey(),
+                                      static_cast<int>(status),
+                                      exit_code));
     iter.Advance();
   }
 
@@ -1633,18 +1647,7 @@ int RenderProcessHostImpl::GetActiveViewCount() {
   RenderWidgetHost::List widgets = RenderWidgetHost::GetRenderWidgetHosts();
   for (size_t i = 0; i < widgets.size(); ++i) {
     // Count only RenderWidgetHosts in this process.
-    if (widgets[i]->GetProcess()->GetID() != GetID())
-      continue;
-
-    // All RenderWidgetHosts are swapped in.
-    if (!widgets[i]->IsRenderView()) {
-      num_active_views++;
-      continue;
-    }
-
-    // Don't count swapped out views.
-    RenderViewHost* rvh = RenderViewHost::From(widgets[i]);
-    if (!static_cast<RenderViewHostImpl*>(rvh)->is_swapped_out())
+    if (widgets[i]->GetProcess()->GetID() == GetID())
       num_active_views++;
   }
   return num_active_views;
@@ -1776,7 +1779,9 @@ void RenderProcessHostImpl::OnCompositorSurfaceBuffersSwappedNoHost(
 }
 
 void RenderProcessHostImpl::OnGpuSwitching() {
-  RenderWidgetHost::List widgets = RenderWidgetHost::GetRenderWidgetHosts();
+  // We are updating all widgets including swapped out ones.
+  RenderWidgetHost::List widgets =
+      RenderWidgetHostImpl::GetAllRenderWidgetHosts();
   for (size_t i = 0; i < widgets.size(); ++i) {
     if (!widgets[i]->IsRenderView())
       continue;

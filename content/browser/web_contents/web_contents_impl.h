@@ -369,14 +369,16 @@ class CONTENT_EXPORT WebContentsImpl
                               const Referrer& referrer,
                               WindowOpenDisposition disposition,
                               int64 source_frame_id,
-                              bool is_cross_site_redirect) OVERRIDE;
+                              bool is_cross_site_redirect,
+                              bool user_gesture) OVERRIDE;
   virtual void RequestTransferURL(
       const GURL& url,
       const Referrer& referrer,
       WindowOpenDisposition disposition,
       int64 source_frame_id,
       const GlobalRequestID& transferred_global_request_id,
-      bool is_cross_site_redirect) OVERRIDE;
+      bool is_cross_site_redirect,
+      bool user_gesture) OVERRIDE;
   virtual void RouteCloseEvent(RenderViewHost* rvh) OVERRIDE;
   virtual void RouteMessageEvent(
       RenderViewHost* rvh,
@@ -470,7 +472,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void BeforeUnloadFiredFromRenderManager(
       bool proceed, const base::TimeTicks& proceed_time,
       bool* proceed_to_fire_unload) OVERRIDE;
-  virtual void RenderViewGoneFromRenderManager(
+  virtual void RenderProcessGoneFromRenderManager(
       RenderViewHost* render_view_host) OVERRIDE;
   virtual void UpdateRenderViewSizeForRenderManager() OVERRIDE;
   virtual void NotifySwappedFromRenderManager(

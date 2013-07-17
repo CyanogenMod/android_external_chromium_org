@@ -682,14 +682,14 @@ void CreateDialogForFileImpl(content::BrowserContext* browser_context,
                  browser_context, modal_parent, data, print_job_title,
                  print_ticket, file_type));
   if (delete_on_close)
-    base::Delete(path_to_file, false);
+    base::DeleteFile(path_to_file, false);
 }
 
 }  // namespace internal_cloud_print_helpers
 
 namespace print_dialog_cloud {
 
-void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry) {
+void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterIntegerPref(
       prefs::kCloudPrintDialogWidth,
       kDefaultWidth,

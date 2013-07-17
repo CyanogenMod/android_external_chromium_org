@@ -29,6 +29,7 @@ namespace autofill {
                                                     NSTextViewDelegate> {
  @private
   base::scoped_nsobject<GTMWidthBasedTweaker> buttonContainer_;
+  base::scoped_nsobject<NSButton> saveInChromeCheckbox_;
   base::scoped_nsobject<AutofillDetailsContainer> detailsContainer_;
   base::scoped_nsobject<HyperlinkTextView> legalDocumentsView_;
   base::scoped_nsobject<AutofillNotificationContainer> notificationContainer_;
@@ -58,11 +59,25 @@ namespace autofill {
 // Called when the controller-maintained suggestions model has changed.
 - (void)modelChanged;
 
+// Get status of "Save in Chrome" checkbox.
+- (BOOL)saveDetailsLocally;
+
 // Called when the legal documents text might need to be refreshed.
 - (void)updateLegalDocuments;
 
 // Called when there are changes to the notification area.
 - (void)updateNotificationArea;
+
+// Validates form input data.
+- (BOOL)validate;
+
+@end
+
+
+// AutofillMainContainer helper functions, for testing purposes only.
+@interface AutofillMainContainer (Testing)
+
+@property(readonly, nonatomic) NSButton* saveInChromeCheckboxForTesting;
 
 @end
 

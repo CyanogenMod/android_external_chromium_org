@@ -31,11 +31,11 @@
 #include "base/strings/string_util.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/timer/timer.h"
-#include "googleurl/src/url_canon.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_util.h"
 #include "net/proxy/proxy_config.h"
 #include "net/proxy/proxy_server.h"
+#include "url/url_canon.h"
 
 #if defined(USE_GIO)
 #include "library_loaders/libgio.h"
@@ -826,7 +826,7 @@ bool SettingGetterImplGSettings::LoadAndCheckVersion(
     Tokenize(path, ":", &paths);
     for (size_t i = 0; i < paths.size(); ++i) {
       base::FilePath file(paths[i]);
-      if (file_util::PathExists(file.Append("gnome-network-properties"))) {
+      if (base::PathExists(file.Append("gnome-network-properties"))) {
         VLOG(1) << "Found gnome-network-properties. Will fall back to gconf.";
         return false;
       }
@@ -883,7 +883,7 @@ class SettingGetterImplKDE : public ProxyConfigServiceLinux::SettingGetter,
         base::FilePath kde4_path = base::FilePath(home).Append(".kde4");
         base::FilePath kde4_config = KDEHomeToConfigPath(kde4_path);
         bool use_kde4 = false;
-        if (file_util::DirectoryExists(kde4_path)) {
+        if (base::DirectoryExists(kde4_path)) {
           base::PlatformFileInfo kde3_info;
           base::PlatformFileInfo kde4_info;
           if (file_util::GetFileInfo(kde4_config, &kde4_info)) {

@@ -11,11 +11,11 @@
 #include "base/prefs/testing_pref_service.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/signin/chrome_signin_manager_delegate.h"
 #include "chrome/browser/signin/token_service.h"
 #include "chrome/browser/signin/token_service_unittest.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/testing_browser_process.h"
@@ -657,4 +657,19 @@ TEST_F(SigninManagerTest, ProhibitedAfterStartup) {
   g_browser_process->local_state()->SetString(
       prefs::kGoogleServicesUsernamePattern, ".*@google.com");
   EXPECT_EQ("", manager_->GetAuthenticatedUsername());
+}
+
+TEST_F(SigninManagerTest, ExternalSignIn) {
+  manager_->Initialize(profile_.get(), g_browser_process->local_state());
+  EXPECT_EQ("",
+            profile_->GetPrefs()->GetString(prefs::kGoogleServicesUsername));
+  EXPECT_EQ("", manager_->GetAuthenticatedUsername());
+  EXPECT_EQ(0u, google_login_success_.size());
+
+  manager_->OnExternalSigninCompleted("external@example.com");
+  EXPECT_EQ(1u, google_login_success_.size());
+  EXPECT_EQ(0u, google_login_failure_.size());
+  EXPECT_EQ("external@example.com",
+            profile_->GetPrefs()->GetString(prefs::kGoogleServicesUsername));
+  EXPECT_EQ("external@example.com", manager_->GetAuthenticatedUsername());
 }

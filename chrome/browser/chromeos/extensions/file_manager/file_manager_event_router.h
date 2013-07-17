@@ -13,11 +13,13 @@
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system_observer.h"
 #include "chrome/browser/chromeos/drive/job_list.h"
+#include "chrome/browser/chromeos/extensions/file_manager/file_watcher_extensions.h"
 #include "chrome/browser/chromeos/net/connectivity_state_helper_observer.h"
 #include "chrome/browser/drive/drive_service_interface.h"
 #include "chromeos/disks/disk_mount_manager.h"
 
 class FileManagerNotifications;
+class MountedDiskMonitor;
 class PrefChangeRegistrar;
 class Profile;
 
@@ -31,22 +33,6 @@ class FileManagerEventRouter
       public drive::JobListObserver,
       public drive::DriveServiceObserver {
  public:
-  // Interface that should keep track of the system state in regards to system
-  // suspend and resume events.
-  // When the |IsResuming()| returns true, it should be able to check if a
-  // removable device was present before the was system suspended.
-  class SuspendStateDelegate {
-   public:
-    virtual ~SuspendStateDelegate() {}
-
-    // Returns true if the system has recently woken up.
-    virtual bool SystemIsResuming() const = 0;
-    // If system is resuming, returns true if the disk was present before the
-    // system suspend. Should return false if the system is not resuming.
-    virtual bool DiskWasPresentBeforeSuspend(
-        const chromeos::disks::DiskMountManager::Disk& disk) const = 0;
-  };
-
   explicit FileManagerEventRouter(Profile* profile);
   virtual ~FileManagerEventRouter();
 
@@ -70,10 +56,6 @@ class FileManagerEventRouter
   // Removes a file watch at |local_path| for an extension with |extension_id|.
   void RemoveFileWatch(const base::FilePath& local_path,
                        const std::string& extension_id);
-
-  // Mounts Drive on File browser. |callback| will be called after raising a
-  // mount request event to file manager on JS-side.
-  void MountDrive(const base::Closure& callback);
 
   // CrosDisksClient::Observer overrides.
   virtual void OnDiskEvent(
@@ -114,54 +96,6 @@ class FileManagerEventRouter
   virtual void OnFileSystemBeingUnmounted() OVERRIDE;
 
  private:
-  typedef std::map<std::string, int> ExtensionUsageRegistry;
-
-  // This class is used to remember what extensions are watching |virtual_path|.
-  class FileWatcherExtensions {
-   public:
-    FileWatcherExtensions(const base::FilePath& virtual_path,
-        const std::string& extension_id,
-        bool is_remote_file_system);
-
-    ~FileWatcherExtensions();
-
-    void AddExtension(const std::string& extension_id);
-
-    void RemoveExtension(const std::string& extension_id);
-
-    const ExtensionUsageRegistry& GetExtensions() const;
-
-    unsigned int GetRefCount() const;
-
-    const base::FilePath& GetVirtualPath() const;
-
-    // Starts a file watch at |local_path|. |file_watcher_callback| will be
-    // called when changes are notified.
-    //
-    // |callback| will be called with true, if the file watch is started
-    // successfully, or false if failed. |callback| must not be null.
-    void Watch(const base::FilePath& local_path,
-               const base::FilePathWatcher::Callback& file_watcher_callback,
-               const BoolCallback& callback);
-
-   private:
-    // Called when a FilePathWatcher is created and started.
-    // |file_path_watcher| is NULL, if the watcher wasn't started successfully.
-    void OnWatcherStarted(const BoolCallback& callback,
-                          base::FilePathWatcher* file_path_watcher);
-
-    base::FilePathWatcher* file_watcher_;
-    base::FilePath local_path_;
-    base::FilePath virtual_path_;
-    ExtensionUsageRegistry extensions_;
-    unsigned int ref_count_;
-    bool is_remote_file_system_;
-
-    // Note: This should remain the last member so it'll be destroyed and
-    // invalidate the weak pointers before any other members are destroyed.
-    base::WeakPtrFactory<FileWatcherExtensions> weak_ptr_factory_;
-  };
-
   typedef std::map<base::FilePath, FileWatcherExtensions*> WatcherMap;
 
   // USB mount event handlers.
@@ -186,8 +120,10 @@ class FileManagerEventRouter
                                    bool got_error);
 
   // Sends directory change event.
-  void DispatchDirectoryChangeEvent(const base::FilePath& path, bool error,
-                                    const ExtensionUsageRegistry& extensions);
+  void DispatchDirectoryChangeEvent(
+      const base::FilePath& path,
+      bool error,
+      const FileWatcherExtensions::ExtensionUsageRegistry& extensions);
 
   void DispatchMountEvent(
       chromeos::disks::DiskMountManager::MountEvent event,
@@ -221,7 +157,7 @@ class FileManagerEventRouter
   WatcherMap file_watchers_;
   scoped_ptr<FileManagerNotifications> notifications_;
   scoped_ptr<PrefChangeRegistrar> pref_change_registrar_;
-  scoped_ptr<SuspendStateDelegate> suspend_state_delegate_;
+  scoped_ptr<MountedDiskMonitor> mounted_disk_monitor_;
   Profile* profile_;
 
   // Note: This should remain the last member so it'll be destroyed and

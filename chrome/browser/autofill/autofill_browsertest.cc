@@ -15,6 +15,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
@@ -23,7 +24,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -51,11 +51,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 
-using content::RenderViewHost;
-using content::RenderViewHostTester;
-using content::WebContents;
-
-using testing::Invoke;
 
 namespace autofill {
 
@@ -138,7 +133,7 @@ class WindowedPersonalDataManagerObserver
   }
 
   virtual ~WindowedPersonalDataManagerObserver() {
-    if (infobar_service_ && infobar_service_->infobar_count() > 0)
+    if (infobar_service_ && (infobar_service_->infobar_count() > 0))
       infobar_service_->RemoveInfoBar(infobar_service_->infobar_at(0));
   }
 
@@ -168,14 +163,13 @@ class WindowedPersonalDataManagerObserver
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE {
-    // Accept in the infobar.
+    EXPECT_EQ(chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_ADDED, type);
     infobar_service_ = InfoBarService::FromWebContents(
         browser_->tab_strip_model()->GetActiveWebContents());
-    InfoBarDelegate* infobar = infobar_service_->infobar_at(0);
-
-    ConfirmInfoBarDelegate* confirm_infobar =
-        infobar->AsConfirmInfoBarDelegate();
-    confirm_infobar->Accept();
+    ConfirmInfoBarDelegate* infobar_delegate =
+        infobar_service_->infobar_at(0)->AsConfirmInfoBarDelegate();
+    ASSERT_TRUE(infobar_delegate);
+    infobar_delegate->Accept();
   }
 
  private:
@@ -189,8 +183,10 @@ class WindowedPersonalDataManagerObserver
 class TestAutofillExternalDelegate : public AutofillExternalDelegate {
  public:
   TestAutofillExternalDelegate(content::WebContents* web_contents,
-                               AutofillManager* autofill_manager)
-      : AutofillExternalDelegate(web_contents, autofill_manager),
+                               AutofillManager* autofill_manager,
+                               AutofillDriver* autofill_driver)
+      : AutofillExternalDelegate(web_contents, autofill_manager,
+                                 autofill_driver),
         keyboard_listener_(NULL) {
   }
   virtual ~TestAutofillExternalDelegate() {}
@@ -233,7 +229,8 @@ class AutofillTest : public InProcessBrowserTest {
         AutofillDriverImpl::FromWebContents(web_contents);
     AutofillManager* autofill_manager = autofill_driver->autofill_manager();
     scoped_ptr<AutofillExternalDelegate> external_delegate(
-        new TestAutofillExternalDelegate(web_contents, autofill_manager));
+        new TestAutofillExternalDelegate(web_contents, autofill_manager,
+                                         autofill_driver));
     autofill_driver->SetAutofillExternalDelegate(external_delegate.Pass());
     autofill_manager->SetTestDelegate(&test_delegate_);
   }
@@ -384,7 +381,7 @@ class AutofillTest : public InProcessBrowserTest {
     EXPECT_EQ(expected_value, value);
   }
 
-  RenderViewHost* render_view_host() {
+  content::RenderViewHost* render_view_host() {
     return browser()->tab_strip_model()->GetActiveWebContents()->
         GetRenderViewHost();
   }
@@ -899,9 +896,10 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, MAYBE_AutofillAfterReload) {
 
   // Reload the page.
   LOG(WARNING) << "Reloading the page.";
-  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
-  tab->GetController().Reload(false);
-  content::WaitForLoadStop(tab);
+  content::WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  web_contents->GetController().Reload(false);
+  content::WaitForLoadStop(web_contents);
 
   // Invoke Autofill.
   LOG(WARNING) << "Trying to fill the form.";
@@ -948,19 +946,18 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, DISABLED_AutofillAfterTranslate) {
   // Get translation bar.
   LanguageDetectionDetails details;
   details.adopted_language = "ja";
-  RenderViewHostTester::TestOnMessageReceived(
+  content::RenderViewHostTester::TestOnMessageReceived(
       render_view_host(),
       ChromeViewHostMsg_TranslateLanguageDetermined(0, details, true));
-  TranslateInfoBarDelegate* infobar = InfoBarService::FromWebContents(
+  TranslateInfoBarDelegate* delegate = InfoBarService::FromWebContents(
       browser()->tab_strip_model()->GetActiveWebContents())->infobar_at(0)->
           AsTranslateInfoBarDelegate();
-
-  ASSERT_TRUE(infobar != NULL);
+  ASSERT_TRUE(delegate);
   EXPECT_EQ(TranslateInfoBarDelegate::BEFORE_TRANSLATE,
-            infobar->infobar_type());
+            delegate->infobar_type());
 
   // Simulate translation button press.
-  infobar->Translate();
+  delegate->Translate();
 
   // Simulate the translate script being retrieved.
   // Pass fake google.translate lib as the translate script.

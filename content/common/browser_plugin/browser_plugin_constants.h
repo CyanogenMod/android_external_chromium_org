@@ -23,11 +23,12 @@ extern const char kMethodTerminate[];
 
 // Internal method bindings.
 extern const char kMethodInternalAttachWindowTo[];
-extern const char kMethodInternalPersistObject[];
+extern const char kMethodInternalTrackObjectLifetime[];
 extern const char kMethodInternalSetPermission[];
 
 // Internal events
 extern const char kEventInternalAttached[];
+extern const char kEventInternalTrackedObjectGone[];
 
 // Attributes.
 extern const char kAttributeApi[];
@@ -42,11 +43,6 @@ extern const char kAttributePartition[];
 extern const char kAttributeSrc[];
 
 // Events.
-extern const char kEventClose[];
-extern const char kEventConsoleMessage[];
-extern const char kEventExit[];
-extern const char kEventLoadAbort[];
-extern const char kEventLoadStart[];
 extern const char kEventNewWindow[];
 extern const char kEventRequestPermission[];
 extern const char kEventResponsive[];
@@ -54,13 +50,11 @@ extern const char kEventSizeChanged[];
 extern const char kEventUnresponsive[];
 
 // Parameters/properties on events.
+extern const char kId[];
 extern const char kInitialHeight[];
 extern const char kInitialWidth[];
 extern const char kIsTopLevel[];
 extern const char kLastUnlockedBySelf[];
-extern const char kLevel[];
-extern const char kLine[];
-extern const char kMessage[];
 extern const char kName[];
 extern const char kNewHeight[];
 extern const char kNewWidth[];
@@ -74,10 +68,8 @@ extern const char kPermissionTypeNewWindow[];
 extern const char kPermissionTypePointerLock[];
 extern const char kPersistPrefix[];
 extern const char kProcessId[];
-extern const char kReason[];
 extern const char kRequestId[];
 extern const char kRequestMethod[];
-extern const char kSourceId[];
 extern const char kTargetURL[];
 extern const char kURL[];
 extern const char kUserGesture[];

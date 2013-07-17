@@ -51,8 +51,8 @@
         '../ui/ui.gyp:ui',
         '../url/url.gyp:url_lib',
         '../v8/tools/gyp/v8.gyp:v8',
-        '../webkit/support/webkit_support.gyp:webkit_resources',
         '../webkit/support/webkit_support.gyp:webkit_support',
+        '../webkit/webkit_resources.gyp:webkit_resources',
       ],
       'include_dirs': [
         '..',
@@ -66,6 +66,8 @@
         'shell/app/paths_mac.mm',
         'shell/app/shell_main_delegate.cc',
         'shell/app/shell_main_delegate.h',
+        'shell/app/shell_main_delegate_mac.h',
+        'shell/app/shell_main_delegate_mac.mm',
         'shell/app/webkit_test_platform_support.h',
         'shell/app/webkit_test_platform_support_android.cc',
         'shell/app/webkit_test_platform_support_linux.cc',
@@ -89,14 +91,10 @@
         'shell/notify_done_forwarder.h',
         'shell/renderer/shell_content_renderer_client.cc',
         'shell/renderer/shell_content_renderer_client.h',
-        'shell/renderer/shell_media_stream_client.cc',
-        'shell/renderer/shell_media_stream_client.h',
         'shell/renderer/shell_render_process_observer.cc',
         'shell/renderer/shell_render_process_observer.h',
         'shell/renderer/shell_render_view_observer.cc',
         'shell/renderer/shell_render_view_observer.h',
-        'shell/renderer/shell_video_frame_provider.cc',
-        'shell/renderer/shell_video_frame_provider.h',
         'shell/renderer/webkit_test_runner.cc',
         'shell/renderer/webkit_test_runner.h',
         'shell/shell.cc',
@@ -137,8 +135,8 @@
         'shell/shell_login_dialog.h',
         'shell/shell_message_filter.cc',
         'shell/shell_message_filter.h',
-	'shell/shell_net_log.cc',
-	'shell/shell_net_log.h',
+        'shell/shell_net_log.cc',
+        'shell/shell_net_log.h',
         'shell/shell_network_delegate.cc',
         'shell/shell_network_delegate.h',
         'shell/shell_plugin_service_filter.cc',
@@ -174,7 +172,7 @@
             '<(SHARED_INTERMEDIATE_DIR)/webkit',
           ],
           'dependencies': [
-            '<(DEPTH)/webkit/support/webkit_support.gyp:webkit_strings',
+            '<(DEPTH)/webkit/webkit_resources.gyp:webkit_strings',
           ],
           'configurations': {
             'Debug_Base': {
@@ -294,8 +292,8 @@
         '<(DEPTH)/net/net.gyp:net_resources',
         '<(DEPTH)/ui/base/strings/ui_strings.gyp:ui_strings',
         '<(DEPTH)/ui/ui.gyp:ui_resources',
-        '<(DEPTH)/webkit/support/webkit_support.gyp:webkit_resources',
-        '<(DEPTH)/webkit/support/webkit_support.gyp:webkit_strings',
+        '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
+        '<(DEPTH)/webkit/webkit_resources.gyp:webkit_strings',
       ],
       'conditions': [
         ['OS!="android" and OS!="ios"', {
@@ -516,7 +514,7 @@
             '..',
           ],
           'sources': [
-            'shell/app/shell_content_main.mm',
+            'shell/app/shell_content_main.cc',
             'shell/app/shell_content_main.h',
           ],
           'copies': [

@@ -161,10 +161,6 @@ class GpuPixelBrowserTest : public ContentBrowserTest {
                     int64 ref_img_update_revision,
                     const ReferencePixel* ref_pixels,
                     size_t ref_pixel_count) {
-    // http://crbug.com/255146
-    if (gpu::GPUTestBotConfig::CurrentConfigMatches("LINUX NVIDIA"))
-      return;
-
     if (ref_img_option_ == kReferenceImageLocal) {
       ref_img_revision_no_older_than_ = ref_img_update_revision;
       ObtainLocalRefImageRevision();
@@ -259,7 +255,7 @@ class GpuPixelBrowserTest : public ContentBrowserTest {
           LOG(ERROR) << "Can't save revision file to: "
                      << rev_path.value();
           rt = false;
-          base::Delete(img_path, false);
+          base::DeleteFile(img_path, false);
         } else {
           LOG(INFO) << "Saved revision file to: "
                     << rev_path.value();
@@ -429,7 +425,7 @@ class GpuPixelBrowserTest : public ContentBrowserTest {
     }
     ref_img_revision_ = max_revision;
     for (size_t i = 0; i < outdated_revs.size(); ++i)
-      base::Delete(outdated_revs[i], false);
+      base::DeleteFile(outdated_revs[i], false);
   }
 
   DISALLOW_COPY_AND_ASSIGN(GpuPixelBrowserTest);

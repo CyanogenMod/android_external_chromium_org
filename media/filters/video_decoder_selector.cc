@@ -32,7 +32,6 @@ VideoDecoderSelector::~VideoDecoderSelector() {}
 
 void VideoDecoderSelector::SelectVideoDecoder(
     DemuxerStream* stream,
-    const StatisticsCB& statistics_cb,
     const SelectDecoderCB& select_decoder_cb) {
   DVLOG(2) << "SelectVideoDecoder()";
   DCHECK(message_loop_->BelongsToCurrentThread());
@@ -50,7 +49,6 @@ void VideoDecoderSelector::SelectVideoDecoder(
   }
 
   input_stream_ = stream;
-  statistics_cb_ = statistics_cb;
 
   if (!config.is_encrypted()) {
     InitializeDecoder(decoders_.begin());
@@ -68,11 +66,10 @@ void VideoDecoderSelector::SelectVideoDecoder(
       message_loop_, set_decryptor_ready_cb_));
 
   video_decoder_->Initialize(
-      input_stream_,
+      input_stream_->video_decoder_config(),
       BindToCurrentLoop(base::Bind(
           &VideoDecoderSelector::DecryptingVideoDecoderInitDone,
-          weak_ptr_factory_.GetWeakPtr())),
-      statistics_cb_);
+          weak_ptr_factory_.GetWeakPtr())));
 }
 
 void VideoDecoderSelector::DecryptingVideoDecoderInitDone(
@@ -122,12 +119,10 @@ void VideoDecoderSelector::InitializeDecoder(
   }
 
   (*iter)->Initialize(
-      input_stream_,
-      BindToCurrentLoop(base::Bind(
-          &VideoDecoderSelector::DecoderInitDone,
-          weak_ptr_factory_.GetWeakPtr(),
-          iter)),
-      statistics_cb_);
+      input_stream_->video_decoder_config(),
+      BindToCurrentLoop(base::Bind(&VideoDecoderSelector::DecoderInitDone,
+                                   weak_ptr_factory_.GetWeakPtr(),
+                                   iter)));
 }
 
 void VideoDecoderSelector::DecoderInitDone(

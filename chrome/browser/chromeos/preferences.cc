@@ -5,7 +5,7 @@
 #include "chrome/browser/chromeos/preferences.h"
 
 #include "ash/magnifier/magnifier_constants.h"
-#include "ash/shell_delegate.h"
+#include "ash/shell.h"
 #include "base/chromeos/chromeos_version.h"
 #include "base/command_line.h"
 #include "base/i18n/time_formatting.h"
@@ -16,6 +16,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
@@ -26,7 +27,6 @@
 #include "chrome/browser/download/download_util.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
@@ -35,27 +35,43 @@
 #include "chromeos/ime/input_method_manager.h"
 #include "chromeos/ime/xkeyboard.h"
 #include "components/user_prefs/pref_registry_syncable.h"
-#include "googleurl/src/gurl.h"
 #include "third_party/icu/public/i18n/unicode/timezone.h"
 #include "ui/base/events/event_constants.h"
 #include "ui/base/events/event_utils.h"
+#include "url/gurl.h"
 
 namespace chromeos {
 
 static const char kFallbackInputMethodLocale[] = "en-US";
 
+// TODO(achuith): Remove deprecated pref in M31. crbug.com/223480.
+static const char kEnableTouchpadThreeFingerSwipe[] =
+    "settings.touchpad.enable_three_finger_swipe";
+
 Preferences::Preferences()
     : prefs_(NULL),
       input_method_manager_(input_method::InputMethodManager::Get()) {
+  // Do not observe shell, if there is no shell instance; e.g., in some unit
+  // tests.
+  if (ash::Shell::HasInstance())
+    ash::Shell::GetInstance()->AddShellObserver(this);
 }
 
 Preferences::Preferences(input_method::InputMethodManager* input_method_manager)
     : prefs_(NULL),
       input_method_manager_(input_method_manager) {
+  // Do not observe shell, if there is no shell instance; e.g., in some unit
+  // tests.
+  if (ash::Shell::HasInstance())
+    ash::Shell::GetInstance()->AddShellObserver(this);
 }
 
 Preferences::~Preferences() {
   prefs_->RemoveObserver(this);
+  // If shell instance is destoryed before this preferences instance, there is
+  // no need to remove this shell observer.
+  if (ash::Shell::HasInstance())
+    ash::Shell::GetInstance()->RemoveShellObserver(this);
 }
 
 // static
@@ -66,7 +82,7 @@ void Preferences::RegisterPrefs(PrefRegistrySimple* registry) {
 }
 
 // static
-void Preferences::RegisterUserPrefs(
+void Preferences::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   std::string hardware_keyboard_id;
   // TODO(yusukes): Remove the runtime hack.
@@ -91,10 +107,6 @@ void Preferences::RegisterUserPrefs(
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterBooleanPref(
       prefs::kEnableTouchpadThreeFingerClick,
-      false,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterBooleanPref(
-      prefs::kEnableTouchpadThreeFingerSwipe,
       false,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(
@@ -406,6 +418,17 @@ void Preferences::RegisterUserPrefs(
       prefs::kTermsOfServiceURL,
       "",
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+
+  // TODO(achuith): Remove deprecated pref in M31. crbug.com/223480.
+  registry->RegisterBooleanPref(
+      kEnableTouchpadThreeFingerSwipe,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+
+  registry->RegisterBooleanPref(
+      prefs::kTouchHudProjectionEnabled,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 void Preferences::InitUserPrefs(PrefServiceSyncable* prefs) {
@@ -417,8 +440,6 @@ void Preferences::InitUserPrefs(PrefServiceSyncable* prefs) {
   tap_to_click_enabled_.Init(prefs::kTapToClickEnabled, prefs, callback);
   tap_dragging_enabled_.Init(prefs::kTapDraggingEnabled, prefs, callback);
   three_finger_click_enabled_.Init(prefs::kEnableTouchpadThreeFingerClick,
-      prefs, callback);
-  three_finger_swipe_enabled_.Init(prefs::kEnableTouchpadThreeFingerSwipe,
       prefs, callback);
   natural_scroll_.Init(prefs::kNaturalScroll, prefs, callback);
   a11y_spoken_feedback_enabled_.Init(prefs::kSpokenFeedbackEnabled,
@@ -445,6 +466,8 @@ void Preferences::InitUserPrefs(PrefServiceSyncable* prefs) {
                                    prefs, callback);
   save_file_default_directory_.Init(prefs::kSaveFileDefaultDirectory,
                                     prefs, callback);
+  touch_hud_projection_enabled_.Init(prefs::kTouchHudProjectionEnabled,
+                                     prefs, callback);
   primary_mouse_button_right_.Init(prefs::kPrimaryMouseButtonRight,
                                    prefs, callback);
   preferred_languages_.Init(prefs::kLanguagePreferredLanguages,
@@ -539,6 +562,9 @@ void Preferences::InitUserPrefs(PrefServiceSyncable* prefs) {
       prefs::kPowerPresentationScreenDimDelayFactor, prefs, callback);
   power_user_activity_screen_dim_delay_factor_.Init(
       prefs::kPowerUserActivityScreenDimDelayFactor, prefs, callback);
+
+  // TODO(achuith): Remove deprecated pref in M31. crbug.com/223480.
+  prefs->ClearPref(kEnableTouchpadThreeFingerSwipe);
 }
 
 void Preferences::Init(PrefServiceSyncable* prefs) {
@@ -601,14 +627,6 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
       UMA_HISTOGRAM_BOOLEAN("Touchpad.ThreeFingerClick.Changed", enabled);
     else
       UMA_HISTOGRAM_BOOLEAN("Touchpad.ThreeFingerClick.Started", enabled);
-  }
-  if (!pref_name || *pref_name == prefs::kEnableTouchpadThreeFingerSwipe) {
-    const bool enabled = three_finger_swipe_enabled_.GetValue();
-    system::touchpad_settings::SetThreeFingerSwipe(enabled);
-    if (pref_name)
-      UMA_HISTOGRAM_BOOLEAN("Touchpad.ThreeFingerSwipe.Changed", enabled);
-    else
-      UMA_HISTOGRAM_BOOLEAN("Touchpad.ThreeFingerSwipe.Started", enabled);
   }
   if (!pref_name || *pref_name == prefs::kNaturalScroll) {
     // Force natural scroll default if we've sync'd and if the cmd line arg is
@@ -702,6 +720,10 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
       prefs_->SetFilePath(prefs::kSaveFileDefaultDirectory,
                           drive::util::ConvertToMyDriveNamespace(pref_path));
     }
+  }
+  if (!pref_name || *pref_name == prefs::kTouchHudProjectionEnabled) {
+    const bool enabled = touch_hud_projection_enabled_.GetValue();
+    ash::Shell::GetInstance()->SetTouchHudProjectionEnabled(enabled);
   }
 
   if (!pref_name || *pref_name == prefs::kLanguagePreferredLanguages) {
@@ -1026,6 +1048,13 @@ void Preferences::UpdateAutoRepeatRate() {
   DCHECK(rate.initial_delay_in_ms > 0);
   DCHECK(rate.repeat_interval_in_ms > 0);
   input_method::XKeyboard::SetAutoRepeatRate(rate);
+}
+
+void Preferences::OnTouchHudProjectionToggled(bool enabled) {
+  if (touch_hud_projection_enabled_.GetValue() == enabled)
+    return;
+
+  touch_hud_projection_enabled_.SetValue(enabled);
 }
 
 }  // namespace chromeos

@@ -65,12 +65,12 @@ class FakeDriveServiceTest : public testing::Test {
   // Adds a new directory at |parent_resource_id| with the given name.
   // Returns true on success.
   bool AddNewDirectory(const std::string& parent_resource_id,
-                       const std::string& directory_name) {
+                       const std::string& directory_title) {
     GDataErrorCode error = GDATA_OTHER_ERROR;
     scoped_ptr<ResourceEntry> resource_entry;
     fake_service_.AddNewDirectory(
         parent_resource_id,
-        directory_name,
+        directory_title,
         test_util::CreateCopyResultCallback(&error, &resource_entry));
     base::RunLoop().RunUntilIdle();
     return error == HTTP_CREATED;
@@ -369,6 +369,8 @@ TEST_F(FakeDriveServiceTest, GetChangeList_NoNewEntries) {
 
   EXPECT_EQ(HTTP_SUCCESS, error);
   ASSERT_TRUE(resource_list);
+  EXPECT_EQ(fake_service_.largest_changestamp(),
+            resource_list->largest_changestamp());
   // This should be empty as the latest changestamp was passed to
   // GetResourceList(), hence there should be no new entries.
   EXPECT_EQ(0U, resource_list->entries().size());
@@ -398,6 +400,8 @@ TEST_F(FakeDriveServiceTest, GetChangeList_WithNewEntry) {
 
   EXPECT_EQ(HTTP_SUCCESS, error);
   ASSERT_TRUE(resource_list);
+  EXPECT_EQ(fake_service_.largest_changestamp(),
+            resource_list->largest_changestamp());
   // The result should only contain the newly created directory.
   ASSERT_EQ(1U, resource_list->entries().size());
   EXPECT_EQ("new directory", resource_list->entries()[0]->title());
@@ -449,6 +453,8 @@ TEST_F(FakeDriveServiceTest, GetChangeList_DeletedEntry) {
 
   EXPECT_EQ(HTTP_SUCCESS, error);
   ASSERT_TRUE(resource_list);
+  EXPECT_EQ(fake_service_.largest_changestamp(),
+            resource_list->largest_changestamp());
   // The result should only contain the newly created directory.
   ASSERT_EQ(1U, resource_list->entries().size());
   const ResourceEntry& entry = *resource_list->entries()[0];
@@ -949,7 +955,7 @@ TEST_F(FakeDriveServiceTest, CopyResource) {
   fake_service_.CopyResource(
       kResourceId,
       kParentResourceId,
-      "new name",
+      "new title",
       test_util::CreateCopyResultCallback(&error, &resource_entry));
   base::RunLoop().RunUntilIdle();
 
@@ -957,7 +963,7 @@ TEST_F(FakeDriveServiceTest, CopyResource) {
   ASSERT_TRUE(resource_entry);
   // The copied entry should have the new resource ID and the title.
   EXPECT_EQ(kResourceId + "_copied", resource_entry->resource_id());
-  EXPECT_EQ("new name", resource_entry->title());
+  EXPECT_EQ("new title", resource_entry->title());
   EXPECT_TRUE(HasParent(kResourceId, kParentResourceId));
   // Should be incremented as a new hosted document was created.
   EXPECT_EQ(old_largest_change_id + 1, fake_service_.largest_changestamp());
@@ -974,7 +980,7 @@ TEST_F(FakeDriveServiceTest, CopyResource_NonExisting) {
   fake_service_.CopyResource(
       kResourceId,
       "folder:1_folder_resource_id",
-      "new name",
+      "new title",
       test_util::CreateCopyResultCallback(&error, &resource_entry));
   base::RunLoop().RunUntilIdle();
 
@@ -995,7 +1001,7 @@ TEST_F(FakeDriveServiceTest, CopyResource_EmptyParentResourceId) {
   fake_service_.CopyResource(
       kResourceId,
       std::string(),
-      "new name",
+      "new title",
       test_util::CreateCopyResultCallback(&error, &resource_entry));
   base::RunLoop().RunUntilIdle();
 
@@ -1003,7 +1009,7 @@ TEST_F(FakeDriveServiceTest, CopyResource_EmptyParentResourceId) {
   ASSERT_TRUE(resource_entry);
   // The copied entry should have the new resource ID and the title.
   EXPECT_EQ(kResourceId + "_copied", resource_entry->resource_id());
-  EXPECT_EQ("new name", resource_entry->title());
+  EXPECT_EQ("new title", resource_entry->title());
   EXPECT_TRUE(HasParent(kResourceId, fake_service_.GetRootResourceId()));
   // Should be incremented as a new hosted document was created.
   EXPECT_EQ(old_largest_change_id + 1, fake_service_.largest_changestamp());
@@ -1021,7 +1027,7 @@ TEST_F(FakeDriveServiceTest, CopyResource_Offline) {
   fake_service_.CopyResource(
       kResourceId,
       "folder:1_folder_resource_id",
-      "new name",
+      "new title",
       test_util::CreateCopyResultCallback(&error, &resource_entry));
   base::RunLoop().RunUntilIdle();
 
@@ -1042,7 +1048,7 @@ TEST_F(FakeDriveServiceTest, CopyHostedDocument_Existing) {
   scoped_ptr<ResourceEntry> resource_entry;
   fake_service_.CopyHostedDocument(
       kResourceId,
-      "new name",
+      "new title",
       test_util::CreateCopyResultCallback(&error, &resource_entry));
   base::RunLoop().RunUntilIdle();
 
@@ -1050,7 +1056,7 @@ TEST_F(FakeDriveServiceTest, CopyHostedDocument_Existing) {
   ASSERT_TRUE(resource_entry);
   // The copied entry should have the new resource ID and the title.
   EXPECT_EQ(kResourceId + "_copied", resource_entry->resource_id());
-  EXPECT_EQ("new name", resource_entry->title());
+  EXPECT_EQ("new title", resource_entry->title());
   // Should be incremented as a new hosted document was created.
   EXPECT_EQ(old_largest_change_id + 1, fake_service_.largest_changestamp());
   EXPECT_EQ(old_largest_change_id + 1, GetLargestChangeByAboutResource());
@@ -1065,7 +1071,7 @@ TEST_F(FakeDriveServiceTest, CopyHostedDocument_NonExisting) {
   scoped_ptr<ResourceEntry> resource_entry;
   fake_service_.CopyHostedDocument(
       kResourceId,
-      "new name",
+      "new title",
       test_util::CreateCopyResultCallback(&error, &resource_entry));
   base::RunLoop().RunUntilIdle();
 
@@ -1082,7 +1088,7 @@ TEST_F(FakeDriveServiceTest, CopyHostedDocument_Offline) {
   scoped_ptr<ResourceEntry> resource_entry;
   fake_service_.CopyHostedDocument(
       kResourceId,
-      "new name",
+      "new title",
       test_util::CreateCopyResultCallback(&error, &resource_entry));
   base::RunLoop().RunUntilIdle();
 
@@ -1102,7 +1108,7 @@ TEST_F(FakeDriveServiceTest, RenameResource_ExistingFile) {
 
   GDataErrorCode error = GDATA_OTHER_ERROR;
   fake_service_.RenameResource(kResourceId,
-                               "new name",
+                               "new title",
                                test_util::CreateCopyResultCallback(&error));
   base::RunLoop().RunUntilIdle();
 
@@ -1110,7 +1116,7 @@ TEST_F(FakeDriveServiceTest, RenameResource_ExistingFile) {
 
   scoped_ptr<ResourceEntry> resource_entry = FindEntry(kResourceId);
   ASSERT_TRUE(resource_entry);
-  EXPECT_EQ("new name", resource_entry->title());
+  EXPECT_EQ("new title", resource_entry->title());
   // Should be incremented as a file was renamed.
   EXPECT_EQ(old_largest_change_id + 1, fake_service_.largest_changestamp());
   EXPECT_EQ(old_largest_change_id + 1, GetLargestChangeByAboutResource());
@@ -1124,7 +1130,7 @@ TEST_F(FakeDriveServiceTest, RenameResource_NonexistingFile) {
 
   GDataErrorCode error = GDATA_OTHER_ERROR;
   fake_service_.RenameResource(kResourceId,
-                               "new name",
+                               "new title",
                                test_util::CreateCopyResultCallback(&error));
   base::RunLoop().RunUntilIdle();
 
@@ -1140,7 +1146,7 @@ TEST_F(FakeDriveServiceTest, RenameResource_Offline) {
 
   GDataErrorCode error = GDATA_OTHER_ERROR;
   fake_service_.RenameResource(kResourceId,
-                               "new name",
+                               "new title",
                                test_util::CreateCopyResultCallback(&error));
   base::RunLoop().RunUntilIdle();
 

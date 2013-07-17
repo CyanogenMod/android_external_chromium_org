@@ -17,7 +17,7 @@
 #include "chrome/browser/drive/drive_uploader.h"
 #include "net/base/network_change_notifier.h"
 
-class Profile;
+class PrefService;
 
 namespace base {
 class SeqencedTaskRunner;
@@ -51,7 +51,7 @@ class JobScheduler
     : public net::NetworkChangeNotifier::ConnectionTypeObserver,
       public JobListInterface {
  public:
-  JobScheduler(Profile* profile,
+  JobScheduler(PrefService* pref_service,
                DriveServiceInterface* drive_service,
                base::SequencedTaskRunner* blocking_task_runner);
   virtual ~JobScheduler();
@@ -111,18 +111,18 @@ class JobScheduler
   void CopyResource(
       const std::string& resource_id,
       const std::string& parent_resource_id,
-      const std::string& new_name,
+      const std::string& new_title,
       const google_apis::GetResourceEntryCallback& callback);
 
   // Adds a CopyHostedDocument operation to the queue.
   void CopyHostedDocument(
       const std::string& resource_id,
-      const std::string& new_name,
+      const std::string& new_title,
       const google_apis::GetResourceEntryCallback& callback);
 
   // Adds a RenameResource operation to the queue.
   void RenameResource(const std::string& resource_id,
-                      const std::string& new_name,
+                      const std::string& new_title,
                       const google_apis::EntryActionCallback& callback);
 
   // Adds a TouchResource operation to the queue.
@@ -144,7 +144,7 @@ class JobScheduler
 
   // Adds a AddNewDirectory operation to the queue.
   void AddNewDirectory(const std::string& parent_resource_id,
-                       const std::string& directory_name,
+                       const std::string& directory_title,
                        const google_apis::GetResourceEntryCallback& callback);
 
   // Adds a DownloadFile operation to the queue.
@@ -347,7 +347,7 @@ class JobScheduler
   DriveServiceInterface* drive_service_;
   scoped_ptr<DriveUploaderInterface> uploader_;
 
-  Profile* profile_;
+  PrefService* pref_service_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.

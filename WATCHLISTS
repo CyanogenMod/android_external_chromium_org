@@ -36,9 +36,14 @@
     'app_list': {
       'filepath': 'chrome/browser/ui/app_list'\
                   '|chrome/browser/ui/ash/app_list'\
-                  '|chrome/browser/ui/cocoa/app_list'\
                   '|chrome/browser/ui/views/app_list'\
                   '|ui/app_list/'
+    },
+    'app_shortcuts': {
+      'filepath': 'apps/app_shim/'\
+                  '|chrome/browser/web_applications/'\
+                  '|chrome/browser/ui/web_applications/'\
+                  '|chrome/common/mac/'
     },
     'appcache': {
       'filepath': 'appcache/',
@@ -83,6 +88,9 @@
     },
     'bookmarks': {
       'filepath': 'chrome/browser/bookmarks/' \
+                  '|chrome/browser/extensions/api/bookmark_manager_private/' \
+                  '|chrome/browser/extensions/api/bookmarks/' \
+                  '|chrome/browser/resources/bookmark_manager/' \
                   '|chrome/browser/ui/bookmarks/' \
                   '|chrome/browser/ui/cocoa/bookmarks/' \
                   '|chrome/browser/ui/gtk/bookmarks/' \
@@ -275,6 +283,7 @@
       'filepath': 'instant|searchbox|'\
                   'chrome/browser/search/|'\
                   'chrome/browser/ui/search/|'\
+                  'chrome/browser/resources/local_ntp/|'\
                   'chrome/common/search_types.*',
     },
     'ipc': {
@@ -488,6 +497,11 @@
     'tools_emacs': {
       'filepath': 'tools/emacs/',
     },
+    'tracing': {
+      'filepath': 'base/debug/trace_event.*'\
+                  '|content/browser/tracing/'\
+                  '|components/tracing/'
+    },
     'ui_compositor': {
       'filepath': 'ui/compositor/layer\.|'\
                   'ui/compositor/layer_unittest|'\
@@ -556,6 +570,7 @@
                       'frankf+watch@chromium.org'],
     'android_webview': ['android-webview-reviews@chromium.org'],
     'app_list': ['tfarina@chromium.org', 'chrome-apps-syd-reviews@chromium.org'],
+    'app_shortcuts': ['chrome-apps-syd-reviews@chromium.org'],
     'appcache': ['michaeln@chromium.org'],
     'apps': ['tfarina@chromium.org', 'chromium-apps-reviews@chromium.org'],
     'aura': ['ben+watch@chromium.org', 'sadrul@chromium.org'],
@@ -711,6 +726,7 @@
                            'nona+watch@chromium.org'],
     'tools_emacs': ['fischman+watch@chromium.org',
                     'dhollowa+watch@chromium.org'],
+    'tracing': ['dsinclair+watch@chromium.org'],
     'ui_compositor': ['cc-bugs@chromium.org'],
     'ui_resources': ['oshima+watch@chromium.org'],
     'valgrind': ['bruening+watch@chromium.org',

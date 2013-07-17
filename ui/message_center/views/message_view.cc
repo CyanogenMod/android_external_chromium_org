@@ -12,8 +12,6 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/shadow_value.h"
-#include "ui/gfx/skia_util.h"
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/message_center_style.h"
 #include "ui/message_center/message_center_tray.h"
@@ -22,6 +20,7 @@
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/scroll_view.h"
+#include "ui/views/shadow_border.h"
 #include "ui/views/widget/widget.h"
 
 namespace {
@@ -33,8 +32,6 @@ const int kExpandIconRightPadding = 11;
 
 const int kShadowOffset = 1;
 const int kShadowBlur = 4;
-
-const SkColor kTransparentColor = SkColorSetARGB(0, 0, 0, 0);
 
 // Menu constants
 const int kTogglePermissionCommand = 0;
@@ -165,40 +162,6 @@ gfx::Point ControlButton::ComputePaddedImagePaintPosition(
   return bounds.origin() + offset;
 }
 
-// A border to provide the shadow for each card.
-// Current shadow should look like css box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3)
-class ShadowBorder : public views::Border {
- public:
-  ShadowBorder() : views::Border() {}
-  virtual ~ShadowBorder() {}
-
- protected:
-  // Overridden from views::Border:
-  virtual void Paint(const views::View& view, gfx::Canvas* canvas) OVERRIDE;
-  virtual gfx::Insets GetInsets() const OVERRIDE;
-
-  DISALLOW_COPY_AND_ASSIGN(ShadowBorder);
-};
-
-void ShadowBorder::Paint(const views::View& view, gfx::Canvas* canvas) {
-  SkPaint paint;
-  std::vector<gfx::ShadowValue> shadows;
-  shadows.push_back(gfx::ShadowValue(gfx::Point(), kShadowBlur,
-      message_center::kShadowColor));
-  skia::RefPtr<SkDrawLooper> looper = gfx::CreateShadowDrawLooper(shadows);
-  paint.setLooper(looper.get());
-  paint.setColor(kTransparentColor);
-  paint.setStrokeJoin(SkPaint::kRound_Join);
-  gfx::Rect bounds(view.size());
-  bounds.Inset(gfx::Insets(kShadowBlur / 2, kShadowBlur / 2,
-                           kShadowBlur / 2, kShadowBlur / 2));
-  canvas->DrawRect(bounds, paint);
-}
-
-gfx::Insets ShadowBorder::GetInsets() const {
-  return message_center::MessageView::GetShadowInsets();
-}
-
 // A dropdown menu for notifications.
 class MenuModel : public ui::SimpleMenuModel,
                   public ui::SimpleMenuModel::Delegate {
@@ -247,10 +210,8 @@ MenuModel::MenuModel(message_center::MessageCenter* message_center,
                                        display_source));
   }
   // Add settings menu item.
-  if (message_center::IsRichNotificationEnabled() || !display_source.empty()) {
-    AddItem(kShowSettingsCommand,
-            l10n_util::GetStringUTF16(IDS_MESSAGE_CENTER_SETTINGS));
-  }
+  AddItem(kShowSettingsCommand,
+          l10n_util::GetStringUTF16(IDS_MESSAGE_CENTER_SETTINGS));
 }
 
 MenuModel::~MenuModel() {
@@ -283,7 +244,7 @@ void MenuModel::ExecuteCommand(int command_id, int event_flags) {
       break;
     case kShowSettingsCommand:
       // |tray_| may be NULL in tests.
-      if (message_center::IsRichNotificationEnabled() && tray_)
+      if (tray_)
         tray_->ShowNotifierSettingsBubble();
       else
         message_center_->ShowNotificationSettings(notification_id_);
@@ -403,7 +364,10 @@ gfx::Insets MessageView::GetShadowInsets() {
 }
 
 void MessageView::CreateShadowBorder() {
-  set_border(new ShadowBorder());
+  set_border(new views::ShadowBorder(kShadowBlur,
+                                     message_center::kShadowColor,
+                                     kShadowOffset,  // Vertical offset.
+                                     0));            // Horizontal offset.
 }
 
 bool MessageView::IsCloseButtonFocused() {

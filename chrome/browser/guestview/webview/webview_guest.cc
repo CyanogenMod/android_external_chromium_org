@@ -10,16 +10,38 @@
 #include "chrome/browser/guestview/guestview_constants.h"
 #include "chrome/browser/guestview/webview/webview_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/resource_request_details.h"
+#include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/result_codes.h"
+#include "net/base/net_errors.h"
 
 using content::WebContents;
 
 namespace {
+
+static std::string TerminationStatusToString(base::TerminationStatus status) {
+  switch (status) {
+    case base::TERMINATION_STATUS_NORMAL_TERMINATION:
+      return "normal";
+    case base::TERMINATION_STATUS_ABNORMAL_TERMINATION:
+    case base::TERMINATION_STATUS_STILL_RUNNING:
+      return "abnormal";
+    case base::TERMINATION_STATUS_PROCESS_WAS_KILLED:
+      return "killed";
+    case base::TERMINATION_STATUS_PROCESS_CRASHED:
+      return "crashed";
+    case base::TERMINATION_STATUS_MAX_ENUM:
+      break;
+  }
+  NOTREACHED() << "Unknown Termination Status.";
+  return "unknown";
+}
 
 void RemoveWebViewEventListenersOnIOThread(
     void* profile,
@@ -78,6 +100,66 @@ AdViewGuest* WebViewGuest::AsAdView() {
   return NULL;
 }
 
+void WebViewGuest::AddMessageToConsole(int32 level,
+                                       const string16& message,
+                                       int32 line_no,
+                                       const string16& source_id) {
+  scoped_ptr<DictionaryValue> args(new DictionaryValue());
+  // Log levels are from base/logging.h: LogSeverity.
+  args->SetInteger(webview::kLevel, level);
+  args->SetString(webview::kMessage, message);
+  args->SetInteger(webview::kLine, line_no);
+  args->SetString(webview::kSourceId, source_id);
+  DispatchEvent(
+      new GuestView::Event(webview::kEventConsoleMessage, args.Pass()));
+}
+
+void WebViewGuest::Close() {
+  scoped_ptr<DictionaryValue> args(new DictionaryValue());
+  DispatchEvent(new GuestView::Event(webview::kEventClose, args.Pass()));
+}
+
+void WebViewGuest::GuestProcessGone(base::TerminationStatus status) {
+  scoped_ptr<DictionaryValue> args(new DictionaryValue());
+  args->SetInteger(webview::kProcessId,
+                   web_contents()->GetRenderProcessHost()->GetID());
+  args->SetString(webview::kReason, TerminationStatusToString(status));
+  DispatchEvent(
+      new GuestView::Event(webview::kEventExit, args.Pass()));
+}
+
+bool WebViewGuest::HandleKeyboardEvent(
+    const content::NativeWebKeyboardEvent& event) {
+  if (event.type != WebKit::WebInputEvent::RawKeyDown)
+    return false;
+
+#if defined(OS_MACOSX)
+  if (event.modifiers != WebKit::WebInputEvent::MetaKey)
+    return false;
+
+  if (event.windowsKeyCode == ui::VKEY_OEM_4) {
+    Go(-1);
+    return true;
+  }
+
+  if (event.windowsKeyCode == ui::VKEY_OEM_6) {
+    Go(1);
+    return true;
+  }
+#else
+  if (event.windowsKeyCode == ui::VKEY_BROWSER_BACK) {
+    Go(-1);
+    return true;
+  }
+
+  if (event.windowsKeyCode == ui::VKEY_BROWSER_FORWARD) {
+    Go(1);
+    return true;
+  }
+#endif
+  return false;
+}
+
 void WebViewGuest::Observe(int type,
                            const content::NotificationSource& source,
                            const content::NotificationDetails& details) {
@@ -111,6 +193,25 @@ void WebViewGuest::Go(int relative_index) {
   guest_web_contents()->GetController().GoToOffset(relative_index);
 }
 
+void WebViewGuest::Reload() {
+  // TODO(fsamuel): Don't check for repost because we don't want to show
+  // Chromium's repost warning. We might want to implement a separate API
+  // for registering a callback if a repost is about to happen.
+  guest_web_contents()->GetController().Reload(false);
+}
+
+void WebViewGuest::Stop() {
+  guest_web_contents()->Stop();
+}
+
+void WebViewGuest::Terminate() {
+  content::RecordAction(content::UserMetricsAction("WebView.Guest.Terminate"));
+  base::ProcessHandle process_handle =
+      guest_web_contents()->GetRenderProcessHost()->GetHandle();
+  if (process_handle)
+    base::KillProcess(process_handle, content::RESULT_CODE_KILLED, false);
+}
+
 WebViewGuest::~WebViewGuest() {
 }
 
@@ -130,6 +231,24 @@ void WebViewGuest::DidCommitProvisionalLoadForFrame(
   args->SetInteger(webview::kInternalProcessId,
       web_contents()->GetRenderProcessHost()->GetID());
   DispatchEvent(new GuestView::Event(webview::kEventLoadCommit, args.Pass()));
+}
+
+void WebViewGuest::DidFailProvisionalLoad(
+    int64 frame_id,
+    bool is_main_frame,
+    const GURL& validated_url,
+    int error_code,
+    const string16& error_description,
+    content::RenderViewHost* render_view_host) {
+  // Translate the |error_code| into an error string.
+  std::string error_type;
+  RemoveChars(net::ErrorToString(error_code), "net::", &error_type);
+
+  scoped_ptr<DictionaryValue> args(new DictionaryValue());
+  args->SetBoolean(guestview::kIsTopLevel, is_main_frame);
+  args->SetString(guestview::kUrl, validated_url.spec());
+  args->SetString(guestview::kReason, error_type);
+  DispatchEvent(new GuestView::Event(webview::kEventLoadAbort, args.Pass()));
 }
 
 void WebViewGuest::DidStartProvisionalLoadForFrame(
@@ -161,7 +280,6 @@ void WebViewGuest::WebContentsDestroyed(WebContents* web_contents) {
           browser_context(), extension_id(),
           embedder_render_process_id(),
           view_instance_id()));
-  delete this;
 }
 
 void WebViewGuest::LoadHandlerCalled() {

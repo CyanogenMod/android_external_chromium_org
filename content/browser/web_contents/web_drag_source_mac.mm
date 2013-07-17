@@ -311,7 +311,7 @@ NSString* GetDropLocation(NSPasteboard* pboard) {
       contents_->GetRenderViewHost());
   if (rvh) {
     // Convert |screenPoint| to view coordinates and flip it.
-    NSPoint localPoint = NSMakePoint(0, 0);
+    NSPoint localPoint = NSZeroPoint;
     if ([contentsView_ window])
       localPoint = [self convertScreenPoint:screenPoint];
     NSRect viewFrame = [contentsView_ frame];
@@ -341,7 +341,7 @@ NSString* GetDropLocation(NSPasteboard* pboard) {
       contents_->GetRenderViewHost());
   if (rvh) {
     // Convert |screenPoint| to view coordinates and flip it.
-    NSPoint localPoint = NSMakePoint(0, 0);
+    NSPoint localPoint = NSZeroPoint;
     if ([contentsView_ window])
       localPoint = [self convertScreenPoint:screenPoint];
     NSRect viewFrame = [contentsView_ frame];
@@ -369,7 +369,7 @@ NSString* GetDropLocation(NSPasteboard* pboard) {
   base::FilePath filePath(SysNSStringToUTF8(path));
   filePath = filePath.Append(downloadFileName_);
 
-  // CreateFileStreamForDrop() will call file_util::PathExists(),
+  // CreateFileStreamForDrop() will call base::PathExists(),
   // which is blocking.  Since this operation is already blocking the
   // UI thread on OSX, it should be reasonable to let it happen.
   base::ThreadRestrictions::ScopedAllowIO allowIO;

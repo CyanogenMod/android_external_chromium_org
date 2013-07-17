@@ -4,21 +4,14 @@
 
 #include "chrome/browser/nacl_host/nacl_host_message_filter.h"
 
-#include "base/bind.h"
-#include "base/command_line.h"
-#include "base/file_util.h"
-#include "base/metrics/histogram.h"
 #include "chrome/browser/extensions/extension_info_map.h"
-#include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/nacl_host/nacl_browser.h"
 #include "chrome/browser/nacl_host/nacl_file_host.h"
-#include "chrome/browser/nacl_host/nacl_infobar.h"
 #include "chrome/browser/nacl_host/nacl_process_host.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/nacl_host_messages.h"
 #include "extensions/common/constants.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "url/gurl.h"
 
 static base::FilePath GetManifestPath(
     ExtensionInfoMap* extension_info_map, const std::string& manifest) {
@@ -61,6 +54,10 @@ bool NaClHostMessageFilter::OnMessageReceived(const IPC::Message& message,
                                     OnGetReadonlyPnaclFd)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(NaClHostMsg_NaClCreateTemporaryFile,
                                     OnNaClCreateTemporaryFile)
+    IPC_MESSAGE_HANDLER(NaClHostMsg_NexeTempFileRequest,
+                        OnGetNexeFd)
+    IPC_MESSAGE_HANDLER(NaClHostMsg_ReportTranslationFinished,
+                        OnTranslationFinished)
     IPC_MESSAGE_HANDLER(NaClHostMsg_NaClErrorStatus, OnNaClErrorStatus)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(NaClHostMsg_OpenNaClExecutable,
                                     OnOpenNaClExecutable)
@@ -88,9 +85,8 @@ void NaClHostMessageFilter::OnLaunchNaCl(
       launch_params.enable_exception_handling,
       off_the_record_,
       profile_directory_);
-  base::FilePath manifest_url = GetManifestPath(
-        extension_info_map_,
-        launch_params.manifest_url);
+  base::FilePath manifest_url =
+      GetManifestPath(extension_info_map_.get(), launch_params.manifest_url);
   host->Launch(this, reply_msg, manifest_url);
 }
 
@@ -101,16 +97,59 @@ void NaClHostMessageFilter::OnGetReadonlyPnaclFd(
   nacl_file_host::GetReadonlyPnaclFd(this, filename, reply_msg);
 }
 
+// Return the temporary file via a reply to the
+// NaClHostMsg_NaClCreateTemporaryFile sync message.
+void NaClHostMessageFilter::SyncReturnTemporaryFile(
+    IPC::Message* reply_msg,
+    IPC::PlatformFileForTransit fd) {
+  if (fd == IPC::InvalidPlatformFileForTransit()) {
+    reply_msg->set_reply_error();
+  } else {
+    NaClHostMsg_NaClCreateTemporaryFile::WriteReplyParams(
+        reply_msg, fd);
+  }
+  Send(reply_msg);
+}
+
 void NaClHostMessageFilter::OnNaClCreateTemporaryFile(
     IPC::Message* reply_msg) {
-  nacl_file_host::CreateTemporaryFile(this, reply_msg);
+  nacl_file_host::CreateTemporaryFile(
+      this,
+      base::Bind(&NaClHostMessageFilter::SyncReturnTemporaryFile,
+                 this,
+                 reply_msg));
+}
+
+// For now, GetNexeFd cache requests always set is_hit to false and returns
+// a new temporary file via a NaClViewMsg_NexeTempFileReply message.
+// A future CL will implement the cache lookup logic.
+// See also https://code.google.com/p/nativeclient/issues/detail?id=3372
+void NaClHostMessageFilter::AsyncReturnTemporaryFile(
+    int render_view_id,
+    IPC::PlatformFileForTransit fd) {
+  Send(new NaClViewMsg_NexeTempFileReply(render_view_id, false, fd));
+}
+
+void NaClHostMessageFilter::OnGetNexeFd(
+    int render_view_id,
+    const nacl::PnaclCacheInfo& cache_info) {
+  nacl_file_host::CreateTemporaryFile(
+      this,
+      base::Bind(&NaClHostMessageFilter::AsyncReturnTemporaryFile,
+                 this,
+                 render_view_id));
+}
+
+// For now, ignore translation finished messages. A future CL will implement
+// the logic of reading the nexe from the temp file and storing it in the cache.
+// See also https://code.google.com/p/nativeclient/issues/detail?id=3372
+void NaClHostMessageFilter::OnTranslationFinished(int render_view_id) {
 }
 
 void NaClHostMessageFilter::OnNaClErrorStatus(int render_view_id,
                                               int error_id) {
-  // Currently there is only one kind of error status, for which
-  // we want to show the user an infobar.
-  ShowNaClInfobar(render_process_id_, render_view_id, error_id);
+  NaClBrowser::GetDelegate()->ShowNaClInfobar(render_process_id_,
+                                              render_view_id, error_id);
 }
 
 void NaClHostMessageFilter::OnOpenNaClExecutable(int render_view_id,

@@ -6,15 +6,14 @@
 
 #include <android/bitmap.h>
 
+#include "android_webview/browser/scoped_app_gl_state_restore.h"
 #include "android_webview/public/browser/draw_gl.h"
 #include "android_webview/public/browser/draw_sw.h"
 #include "base/android/jni_android.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
-#include "content/public/browser/android/content_view_core.h"
 #include "content/public/browser/android/synchronous_compositor.h"
-#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -22,172 +21,19 @@
 #include "third_party/skia/include/core/SkDevice.h"
 #include "third_party/skia/include/core/SkGraphics.h"
 #include "third_party/skia/include/core/SkPicture.h"
-#include "ui/gfx/size_conversions.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/transform.h"
 #include "ui/gfx/vector2d_conversions.h"
 #include "ui/gfx/vector2d_f.h"
-#include "ui/gl/gl_bindings.h"
-
-// TODO(leandrogracia): Borrowed from gl2ext.h. Cannot be included due to
-// conflicts with  gl_bindings.h and the EGL library methods
-// (eglGetCurrentContext).
-#ifndef GL_TEXTURE_EXTERNAL_OES
-#define GL_TEXTURE_EXTERNAL_OES 0x8D65
-#endif
-
-#ifndef GL_TEXTURE_BINDING_EXTERNAL_OES
-#define GL_TEXTURE_BINDING_EXTERNAL_OES 0x8D67
-#endif
 
 using base::android::AttachCurrentThread;
 using base::android::JavaRef;
 using base::android::ScopedJavaLocalRef;
-using content::ContentViewCore;
 
 namespace android_webview {
 
 namespace {
 
-class GLStateRestore {
- public:
-  GLStateRestore() {
-#if !defined(NDEBUG)
-    {
-      GLint vertex_array_buffer_binding;
-      glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &vertex_array_buffer_binding);
-      DCHECK_EQ(0, vertex_array_buffer_binding);
-
-      GLint index_array_buffer_binding;
-      glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING,
-                    &index_array_buffer_binding);
-      DCHECK_EQ(0, index_array_buffer_binding);
-    }
-#endif  // !defined(NDEBUG)
-    glGetIntegerv(GL_TEXTURE_BINDING_EXTERNAL_OES,
-                  &texture_external_oes_binding_);
-    glGetIntegerv(GL_PACK_ALIGNMENT, &pack_alignment_);
-    glGetIntegerv(GL_UNPACK_ALIGNMENT, &unpack_alignment_);
-
-    for (size_t i = 0; i < ARRAYSIZE_UNSAFE(vertex_attrib_); ++i) {
-      glGetVertexAttribiv(
-          i, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &vertex_attrib_[i].enabled);
-      glGetVertexAttribiv(
-          i, GL_VERTEX_ATTRIB_ARRAY_SIZE, &vertex_attrib_[i].size);
-      glGetVertexAttribiv(
-          i, GL_VERTEX_ATTRIB_ARRAY_TYPE, &vertex_attrib_[i].type);
-      glGetVertexAttribiv(
-          i, GL_VERTEX_ATTRIB_ARRAY_NORMALIZED, &vertex_attrib_[i].normalized);
-      glGetVertexAttribiv(
-          i, GL_VERTEX_ATTRIB_ARRAY_STRIDE, &vertex_attrib_[i].stride);
-      glGetVertexAttribPointerv(
-          i, GL_VERTEX_ATTRIB_ARRAY_POINTER, &vertex_attrib_[i].pointer);
-    }
-
-    glGetBooleanv(GL_DEPTH_TEST, &depth_test_);
-    glGetBooleanv(GL_CULL_FACE, &cull_face_);
-    glGetBooleanv(GL_COLOR_WRITEMASK, color_mask_);
-    glGetBooleanv(GL_BLEND, &blend_enabled_);
-    glGetIntegerv(GL_BLEND_SRC_RGB, &blend_src_rgb_);
-    glGetIntegerv(GL_BLEND_SRC_ALPHA, &blend_src_alpha_);
-    glGetIntegerv(GL_BLEND_DST_RGB, &blend_dest_rgb_);
-    glGetIntegerv(GL_BLEND_DST_ALPHA, &blend_dest_alpha_);
-    glGetIntegerv(GL_ACTIVE_TEXTURE, &active_texture_);
-    glGetIntegerv(GL_VIEWPORT, viewport_);
-    glGetBooleanv(GL_SCISSOR_TEST, &scissor_test_);
-    glGetIntegerv(GL_SCISSOR_BOX, scissor_box_);
-    glGetIntegerv(GL_CURRENT_PROGRAM, &current_program_);
-  }
-
-  ~GLStateRestore() {
-    glBindTexture(GL_TEXTURE_EXTERNAL_OES, texture_external_oes_binding_);
-    glPixelStorei(GL_PACK_ALIGNMENT, pack_alignment_);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, unpack_alignment_);
-
-    for (size_t i = 0; i < ARRAYSIZE_UNSAFE(vertex_attrib_); ++i) {
-      glVertexAttribPointer(i,
-                            vertex_attrib_[i].size,
-                            vertex_attrib_[i].type,
-                            vertex_attrib_[i].normalized,
-                            vertex_attrib_[i].stride,
-                            vertex_attrib_[i].pointer);
-
-      if (vertex_attrib_[i].enabled) {
-        glEnableVertexAttribArray(i);
-      } else {
-        glDisableVertexAttribArray(i);
-      }
-    }
-
-    if (depth_test_) {
-      glEnable(GL_DEPTH_TEST);
-    } else {
-      glDisable(GL_DEPTH_TEST);
-    }
-
-    if (cull_face_) {
-      glEnable(GL_CULL_FACE);
-    } else {
-      glDisable(GL_CULL_FACE);
-    }
-
-    glColorMask(color_mask_[0], color_mask_[1], color_mask_[2], color_mask_[3]);
-
-    if (blend_enabled_) {
-      glEnable(GL_BLEND);
-    } else {
-      glDisable(GL_BLEND);
-    }
-
-    glBlendFuncSeparate(
-        blend_src_rgb_, blend_dest_rgb_, blend_src_alpha_, blend_dest_alpha_);
-    glActiveTexture(active_texture_);
-
-    glViewport(viewport_[0], viewport_[1], viewport_[2], viewport_[3]);
-
-    if (scissor_test_) {
-      glEnable(GL_SCISSOR_TEST);
-    } else {
-      glDisable(GL_SCISSOR_TEST);
-    }
-
-    glScissor(
-        scissor_box_[0], scissor_box_[1], scissor_box_[2], scissor_box_[3]);
-
-    glUseProgram(current_program_);
-
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-  }
-
- private:
-  GLint texture_external_oes_binding_;
-  GLint pack_alignment_;
-  GLint unpack_alignment_;
-
-  struct {
-    GLint enabled;
-    GLint size;
-    GLint type;
-    GLint normalized;
-    GLint stride;
-    GLvoid* pointer;
-  } vertex_attrib_[3];
-
-  GLboolean depth_test_;
-  GLboolean cull_face_;
-  GLboolean color_mask_[4];
-  GLboolean blend_enabled_;
-  GLint blend_src_rgb_;
-  GLint blend_src_alpha_;
-  GLint blend_dest_rgb_;
-  GLint blend_dest_alpha_;
-  GLint active_texture_;
-  GLint viewport_[4];
-  GLboolean scissor_test_;
-  GLint scissor_box_[4];
-  GLint current_program_;
-};
 
 const void* kUserDataKey = &kUserDataKey;
 
@@ -310,10 +156,9 @@ InProcessViewRenderer::InProcessViewRenderer(
       compositor_(NULL),
       visible_(false),
       dip_scale_(0.0),
+      page_scale_factor_(1.0),
       continuous_invalidate_(false),
       block_invalidates_(false),
-      do_ensure_continuous_invalidation_task_pending_(false),
-      weak_factory_(this),
       width_(0),
       height_(0),
       attached_to_window_(false),
@@ -352,10 +197,11 @@ bool InProcessViewRenderer::OnDraw(jobject java_canvas,
                                    const gfx::Rect& clip) {
   fallback_tick_.Cancel();
   scroll_at_start_of_frame_  = scroll;
-  if (is_hardware_canvas && attached_to_window_ && compositor_ &&
-      HardwareEnabled() && client_->RequestDrawGL(java_canvas)) {
-    // All set: we'll get a call on DrawGL when the time comes.
-    return true;
+  if (is_hardware_canvas && attached_to_window_ && HardwareEnabled()) {
+    // We should be performing a hardware draw here. If we don't have the
+    // comositor yet or if RequestDrawGL fails, it means we failed this draw and
+    // thus return false here to clear to background color for this draw.
+    return compositor_ && client_->RequestDrawGL(java_canvas);
   }
   // Perform a software draw
   block_invalidates_ = true;
@@ -366,9 +212,6 @@ bool InProcessViewRenderer::OnDraw(jobject java_canvas,
 }
 
 void InProcessViewRenderer::DrawGL(AwDrawGLInfo* draw_info) {
-  if (!HardwareEnabled())
-    return;
-
   TRACE_EVENT0("android_webview", "InProcessViewRenderer::DrawGL");
   DCHECK(visible_);
 
@@ -381,7 +224,7 @@ void InProcessViewRenderer::DrawGL(AwDrawGLInfo* draw_info) {
     return;
   }
 
-  GLStateRestore state_restore;
+  ScopedAppGLStateRestore state_restore;
 
   if (attached_to_window_ && compositor_ && !hardware_initialized_) {
     TRACE_EVENT0("android_webview", "InitializeHwDraw");
@@ -403,8 +246,6 @@ void InProcessViewRenderer::DrawGL(AwDrawGLInfo* draw_info) {
   }
   last_egl_context_ = current_context;
 
-  // TODO(boliu): Make sure this is not called before compositor is initialized
-  // and GL is ready. Then make this a DCHECK.
   if (!compositor_) {
     TRACE_EVENT_INSTANT0(
         "android_webview", "EarlyOut_NoCompositor", TRACE_EVENT_SCOPE_THREAD);
@@ -438,6 +279,12 @@ bool InProcessViewRenderer::DrawSWInternal(jobject java_canvas,
     TRACE_EVENT_INSTANT0(
         "android_webview", "EarlyOut_EmptyClip", TRACE_EVENT_SCOPE_THREAD);
     return true;
+  }
+
+  if (!compositor_) {
+    TRACE_EVENT_INSTANT0(
+        "android_webview", "EarlyOut_NoCompositor", TRACE_EVENT_SCOPE_THREAD);
+    return false;
   }
 
   JNIEnv* env = AttachCurrentThread();
@@ -510,8 +357,11 @@ bool InProcessViewRenderer::DrawSWInternal(jobject java_canvas,
 
 base::android::ScopedJavaLocalRef<jobject>
 InProcessViewRenderer::CapturePicture() {
-  if (!GetAwDrawSWFunctionTable())
+  if (!compositor_ || !GetAwDrawSWFunctionTable()) {
+    TRACE_EVENT_INSTANT0(
+        "android_webview", "EarlyOut_CapturePicture", TRACE_EVENT_SCOPE_THREAD);
     return ScopedJavaLocalRef<jobject>();
+  }
 
   gfx::Size record_size(width_, height_);
 
@@ -590,14 +440,20 @@ void InProcessViewRenderer::OnAttachedToWindow(int width, int height) {
   attached_to_window_ = true;
   width_ = width;
   height_ = height;
-  if (compositor_ && !hardware_initialized_)
-    client_->RequestDrawGL(NULL);
 }
 
 void InProcessViewRenderer::OnDetachedFromWindow() {
   TRACE_EVENT0("android_webview",
                "InProcessViewRenderer::OnDetachedFromWindow");
-  // TODO(joth): Release GL resources. crbug.com/231986.
+
+  if (hardware_initialized_) {
+    DCHECK(compositor_);
+
+    ScopedAppGLStateRestore state_restore;
+    compositor_->ReleaseHwDraw();
+    hardware_initialized_ = false;
+  }
+
   attached_to_window_ = false;
 }
 
@@ -621,9 +477,6 @@ void InProcessViewRenderer::DidInitializeCompositor(
   compositor_ = compositor;
   hardware_initialized_ = false;
   hardware_failed_ = false;
-
-  if (attached_to_window_)
-    client_->RequestDrawGL(NULL);
 }
 
 void InProcessViewRenderer::DidDestroyCompositor(
@@ -631,6 +484,12 @@ void InProcessViewRenderer::DidDestroyCompositor(
   TRACE_EVENT0("android_webview",
                "InProcessViewRenderer::DidDestroyCompositor");
   DCHECK(compositor_ == compositor);
+
+  // This can fail if Apps call destroy while the webview is still attached
+  // to the view tree. This is an illegal operation that will lead to leaks.
+  // Log for now. Consider a proper fix if this becomes a problem.
+  LOG_IF(ERROR, hardware_initialized_)
+      << "Destroy called before OnDetachedFromWindow. May Leak GL resources";
   compositor_ = NULL;
 }
 
@@ -652,6 +511,11 @@ void InProcessViewRenderer::SetDipScale(float dip_scale) {
   CHECK(dip_scale_ > 0);
 }
 
+void InProcessViewRenderer::SetPageScaleFactor(float page_scale_factor) {
+  page_scale_factor_ = page_scale_factor;
+  CHECK(page_scale_factor_ > 0);
+}
+
 void InProcessViewRenderer::ScrollTo(gfx::Vector2d new_value) {
   DCHECK(dip_scale_ > 0);
   // In general we don't guarantee that the scroll offset transforms are
@@ -661,7 +525,7 @@ void InProcessViewRenderer::ScrollTo(gfx::Vector2d new_value) {
   // The reason we explicitly do rounding here is that it seems to yeld the
   // most stabile transformation.
   gfx::Vector2dF new_value_css = gfx::ToRoundedVector2d(
-      gfx::ScaleVector2d(new_value, 1.0f / dip_scale_));
+      gfx::ScaleVector2d(new_value, 1.0f / (dip_scale_ * page_scale_factor_)));
 
   DCHECK(scroll_offset_css_ != new_value_css);
 
@@ -673,6 +537,8 @@ void InProcessViewRenderer::ScrollTo(gfx::Vector2d new_value) {
 
 void InProcessViewRenderer::SetTotalRootLayerScrollOffset(
     gfx::Vector2dF new_value_css) {
+  previous_accumulated_overscroll_ = gfx::Vector2dF();
+
   // TOOD(mkosiba): Add a DCHECK to say that this does _not_ get called during
   // DrawGl when http://crbug.com/249972 is fixed.
   if (scroll_offset_css_ == new_value_css)
@@ -681,9 +547,10 @@ void InProcessViewRenderer::SetTotalRootLayerScrollOffset(
   scroll_offset_css_ = new_value_css;
 
   DCHECK(dip_scale_ > 0);
+  DCHECK(page_scale_factor_ > 0);
 
-  gfx::Vector2d scroll_offset =
-      gfx::ToRoundedVector2d(gfx::ScaleVector2d(new_value_css, dip_scale_));
+  gfx::Vector2d scroll_offset = gfx::ToRoundedVector2d(
+      gfx::ScaleVector2d(new_value_css, dip_scale_ * page_scale_factor_));
 
   client_->ScrollContainerViewTo(scroll_offset);
 }
@@ -692,23 +559,22 @@ gfx::Vector2dF InProcessViewRenderer::GetTotalRootLayerScrollOffset() {
   return scroll_offset_css_;
 }
 
-void InProcessViewRenderer::EnsureContinuousInvalidation(
-    AwDrawGLInfo* draw_info) {
-  if (continuous_invalidate_ && !block_invalidates_ &&
-      !do_ensure_continuous_invalidation_task_pending_) {
-    do_ensure_continuous_invalidation_task_pending_ = true;
-
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&InProcessViewRenderer::DoEnsureContinuousInvalidation,
-                   weak_factory_.GetWeakPtr(),
-                   static_cast<AwDrawGLInfo*>(NULL)));
-  }
+void InProcessViewRenderer::DidOverscroll(
+    gfx::Vector2dF accumulated_overscroll,
+    gfx::Vector2dF current_fling_velocity) {
+  // TODO(mkosiba): Enable this once flinging is handled entirely Java-side.
+  // DCHECK(current_fling_velocity.IsZero());
+  const float physical_pixel_scale = dip_scale_ * page_scale_factor_;
+  gfx::Vector2d overscroll_delta = gfx::ToRoundedVector2d(gfx::ScaleVector2d(
+      accumulated_overscroll - previous_accumulated_overscroll_,
+      physical_pixel_scale));
+  previous_accumulated_overscroll_ +=
+      gfx::ScaleVector2d(overscroll_delta, 1.0f / physical_pixel_scale);
+  client_->DidOverscroll(overscroll_delta);
 }
 
-void InProcessViewRenderer::DoEnsureContinuousInvalidation(
+void InProcessViewRenderer::EnsureContinuousInvalidation(
     AwDrawGLInfo* draw_info) {
-  do_ensure_continuous_invalidation_task_pending_ = false;
   if (continuous_invalidate_ && !block_invalidates_) {
     if (draw_info) {
       draw_info->dirty_left = draw_info->clip_left;
@@ -738,7 +604,7 @@ void InProcessViewRenderer::FallbackTickFired() {
                "InProcessViewRenderer::FallbackTickFired",
                "continuous_invalidate_",
                continuous_invalidate_);
-  if (continuous_invalidate_) {
+  if (continuous_invalidate_ && compositor_) {
     SkDevice device(SkBitmap::kARGB_8888_Config, 1, 1);
     SkCanvas canvas(&device);
     block_invalidates_ = true;
@@ -749,7 +615,8 @@ void InProcessViewRenderer::FallbackTickFired() {
 }
 
 bool InProcessViewRenderer::CompositeSW(SkCanvas* canvas) {
-  return compositor_ && compositor_->DemandDrawSw(canvas);
+  DCHECK(compositor_);
+  return compositor_->DemandDrawSw(canvas);
 }
 
 }  // namespace android_webview

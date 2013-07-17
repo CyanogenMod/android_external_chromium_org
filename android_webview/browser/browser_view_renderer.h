@@ -43,6 +43,9 @@ class BrowserViewRenderer {
     // Try to set the view's scroll offset to |new_value|.
     virtual void ScrollContainerViewTo(gfx::Vector2d new_value) = 0;
 
+    // Handle overscroll.
+    virtual void DidOverscroll(gfx::Vector2d overscroll_delta) = 0;
+
    protected:
     virtual ~Client() {}
   };
@@ -108,6 +111,7 @@ class BrowserViewRenderer {
 
   // Sets the scale for logical<->physical pixel conversions.
   virtual void SetDipScale(float dip_scale) = 0;
+  virtual void SetPageScaleFactor(float page_scale_factor) = 0;
 
   // Set the root layer scroll offset to |new_value|.
   virtual void ScrollTo(gfx::Vector2d new_value) = 0;

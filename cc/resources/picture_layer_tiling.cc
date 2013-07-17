@@ -49,8 +49,6 @@ PictureLayerTiling::PictureLayerTiling(float contents_scale,
 }
 
 PictureLayerTiling::~PictureLayerTiling() {
-  for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it)
-    client_->DestroyTile(it->second.get());
 }
 
 void PictureLayerTiling::SetClient(PictureLayerTilingClient* client) {
@@ -337,8 +335,6 @@ gfx::Size PictureLayerTiling::CoverageIterator::texture_size() const {
 
 void PictureLayerTiling::Reset() {
   live_tiles_rect_ = gfx::Rect();
-  for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it)
-    client_->DestroyTile(it->second.get());
   tiles_.clear();
 }
 
@@ -508,10 +504,8 @@ void PictureLayerTiling::SetLiveTilesRect(
     TileMap::iterator found = tiles_.find(key);
     // If the tile was outside of the recorded region, it won't exist even
     // though it was in the live rect.
-    if (found == tiles_.end())
-      continue;
-    client_->DestroyTile(found->second.get());
-    tiles_.erase(found);
+    if (found != tiles_.end())
+      tiles_.erase(found);
   }
 
   const PictureLayerTiling* twin_tiling = client_->GetTwinTiling(this);
@@ -563,10 +557,7 @@ size_t PictureLayerTiling::GPUMemoryUsageInBytes() const {
   size_t amount = 0;
   for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it) {
     const Tile* tile = it->second.get();
-    for (int mode = 0; mode < NUM_RASTER_MODES; ++mode) {
-      amount += tile->tile_version(
-          static_cast<RasterMode>(mode)).GPUMemoryUsageInBytes();
-    }
+    amount += tile->GPUMemoryUsageInBytes();
   }
   return amount;
 }

@@ -46,6 +46,7 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   virtual void OnVisibilityChanged(bool visible) OVERRIDE;
   virtual void OnSizeChanged(int width, int height) OVERRIDE;
   virtual void ScrollTo(gfx::Vector2d new_value) OVERRIDE;
+  virtual void SetPageScaleFactor(float page_scale_factor) OVERRIDE;
   virtual void OnAttachedToWindow(int width, int height) OVERRIDE;
   virtual void OnDetachedFromWindow() OVERRIDE;
   virtual void SetDipScale(float dip_scale) OVERRIDE;
@@ -62,12 +63,13 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   virtual void SetTotalRootLayerScrollOffset(
       gfx::Vector2dF new_value_css) OVERRIDE;
   virtual gfx::Vector2dF GetTotalRootLayerScrollOffset() OVERRIDE;
+  virtual void DidOverscroll(gfx::Vector2dF accumulated_overscroll,
+                             gfx::Vector2dF current_fling_velocity) OVERRIDE;
 
   void WebContentsGone();
 
  private:
   void EnsureContinuousInvalidation(AwDrawGLInfo* draw_info);
-  void DoEnsureContinuousInvalidation(AwDrawGLInfo* draw_info);
   bool DrawSWInternal(jobject java_canvas,
                       const gfx::Rect& clip_bounds);
   bool CompositeSW(SkCanvas* canvas);
@@ -83,6 +85,7 @@ class InProcessViewRenderer : public BrowserViewRenderer,
 
   bool visible_;
   float dip_scale_;
+  float page_scale_factor_;
 
   // When true, we should continuously invalidate and keep drawing, for example
   // to drive animation.
@@ -93,10 +96,6 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   bool block_invalidates_;
   // Holds a callback to FallbackTickFired while it is pending.
   base::CancelableClosure fallback_tick_;
-
-  // TODO(boliu): Remove these when we are no longer starving native tasks.
-  bool do_ensure_continuous_invalidation_task_pending_;
-  base::WeakPtrFactory<InProcessViewRenderer> weak_factory_;
 
   int width_;
   int height_;
@@ -114,6 +113,10 @@ class InProcessViewRenderer : public BrowserViewRenderer,
 
   // Current scroll offset in CSS pixels.
   gfx::Vector2dF scroll_offset_css_;
+
+  // Used to convert accumulated-based overscroll updates into delta-based
+  // updates.
+  gfx::Vector2dF previous_accumulated_overscroll_;
 
   DISALLOW_COPY_AND_ASSIGN(InProcessViewRenderer);
 };

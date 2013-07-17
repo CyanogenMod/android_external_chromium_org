@@ -55,8 +55,6 @@ void ShillDeviceClientStub::RemovePropertyChangedObserver(
 void ShillDeviceClientStub::GetProperties(
     const dbus::ObjectPath& device_path,
     const DictionaryValueCallback& callback){
-  if (callback.is_null())
-    return;
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&ShillDeviceClientStub::PassStubDeviceProperties,
@@ -75,24 +73,21 @@ void ShillDeviceClientStub::SetProperty(const dbus::ObjectPath& device_path,
                                         const base::Closure& callback,
                                         const ErrorCallback& error_callback){
   base::DictionaryValue* device_properties = NULL;
-  if (!stub_devices_.GetDictionary(device_path.value(), &device_properties)) {
+  if (!stub_devices_.GetDictionaryWithoutPathExpansion(device_path.value(),
+                                                       &device_properties)) {
     std::string error_name("org.chromium.flimflam.Error.Failure");
     std::string error_message("Failed");
-    if (!error_callback.is_null()) {
-      base::MessageLoop::current()->PostTask(FROM_HERE,
-                                       base::Bind(error_callback,
-                                                  error_name,
-                                                  error_message));
-    }
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+                                           base::Bind(error_callback,
+                                                      error_name,
+                                                      error_message));
     return;
   }
-  device_properties->Set(name, value.DeepCopy());
+  device_properties->SetWithoutPathExpansion(name, value.DeepCopy());
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&ShillDeviceClientStub::NotifyObserversPropertyChanged,
                  weak_ptr_factory_.GetWeakPtr(), device_path, name));
-  if (callback.is_null())
-    return;
   base::MessageLoop::current()->PostTask(FROM_HERE, callback);
 }
 
@@ -101,11 +96,12 @@ void ShillDeviceClientStub::ClearProperty(
     const std::string& name,
     const VoidDBusMethodCallback& callback){
   base::DictionaryValue* device_properties = NULL;
-  if (!stub_devices_.GetDictionary(device_path.value(), &device_properties)) {
+  if (!stub_devices_.GetDictionaryWithoutPathExpansion(device_path.value(),
+                                                       &device_properties)) {
     PostVoidCallback(callback, DBUS_METHOD_CALL_FAILURE);
     return;
   }
-  device_properties->Remove(name, NULL);
+  device_properties->RemoveWithoutPathExpansion(name, NULL);
   PostVoidCallback(callback, DBUS_METHOD_CALL_SUCCESS);
 }
 
@@ -113,12 +109,10 @@ void ShillDeviceClientStub::AddIPConfig(
     const dbus::ObjectPath& device_path,
     const std::string& method,
     const ObjectPathDBusMethodCallback& callback){
-  if (callback.is_null())
-    return;
   base::MessageLoop::current()->PostTask(FROM_HERE,
-                                   base::Bind(callback,
-                                              DBUS_METHOD_CALL_SUCCESS,
-                                              dbus::ObjectPath()));
+                                         base::Bind(callback,
+                                                    DBUS_METHOD_CALL_SUCCESS,
+                                                    dbus::ObjectPath()));
 }
 
 void ShillDeviceClientStub::RequirePin(const dbus::ObjectPath& device_path,
@@ -126,8 +120,6 @@ void ShillDeviceClientStub::RequirePin(const dbus::ObjectPath& device_path,
                                        bool require,
                                        const base::Closure& callback,
                                        const ErrorCallback& error_callback){
-  if (callback.is_null())
-    return;
   base::MessageLoop::current()->PostTask(FROM_HERE, callback);
 }
 
@@ -135,8 +127,6 @@ void ShillDeviceClientStub::EnterPin(const dbus::ObjectPath& device_path,
                                      const std::string& pin,
                                      const base::Closure& callback,
                                      const ErrorCallback& error_callback){
-  if (callback.is_null())
-    return;
   base::MessageLoop::current()->PostTask(FROM_HERE, callback);
 }
 
@@ -145,8 +135,6 @@ void ShillDeviceClientStub::UnblockPin(const dbus::ObjectPath& device_path,
                                        const std::string& pin,
                                        const base::Closure& callback,
                                        const ErrorCallback& error_callback){
-  if (callback.is_null())
-    return;
   base::MessageLoop::current()->PostTask(FROM_HERE, callback);
 }
 
@@ -155,8 +143,6 @@ void ShillDeviceClientStub::ChangePin(const dbus::ObjectPath& device_path,
                                       const std::string& new_pin,
                                       const base::Closure& callback,
                                       const ErrorCallback& error_callback){
-  if (callback.is_null())
-    return;
   base::MessageLoop::current()->PostTask(FROM_HERE, callback);
 }
 
@@ -164,8 +150,6 @@ void ShillDeviceClientStub::Register(const dbus::ObjectPath& device_path,
                                      const std::string& network_id,
                                      const base::Closure& callback,
                                      const ErrorCallback& error_callback){
-  if (callback.is_null())
-    return;
   base::MessageLoop::current()->PostTask(FROM_HERE, callback);
 }
 
@@ -173,16 +157,12 @@ void ShillDeviceClientStub::SetCarrier(const dbus::ObjectPath& device_path,
                                        const std::string& carrier,
                                        const base::Closure& callback,
                                        const ErrorCallback& error_callback){
-  if (callback.is_null())
-    return;
   base::MessageLoop::current()->PostTask(FROM_HERE, callback);
 }
 
 void ShillDeviceClientStub::Reset(const dbus::ObjectPath& device_path,
                                   const base::Closure& callback,
                                   const ErrorCallback& error_callback){
-  if (callback.is_null())
-    return;
   base::MessageLoop::current()->PostTask(FROM_HERE, callback);
 }
 
@@ -278,8 +258,6 @@ void ShillDeviceClientStub::PassStubDeviceProperties(
 void ShillDeviceClientStub::PostVoidCallback(
     const VoidDBusMethodCallback& callback,
     DBusMethodCallStatus status) {
-  if (callback.is_null())
-    return;
   base::MessageLoop::current()->PostTask(FROM_HERE,
                                    base::Bind(callback, status));
 }
@@ -310,7 +288,7 @@ base::DictionaryValue* ShillDeviceClientStub::GetDeviceProperties(
   if (!stub_devices_.GetDictionaryWithoutPathExpansion(
       device_path, &properties)) {
     properties = new base::DictionaryValue;
-    stub_devices_.Set(device_path, properties);
+    stub_devices_.SetWithoutPathExpansion(device_path, properties);
   }
   return properties;
 }

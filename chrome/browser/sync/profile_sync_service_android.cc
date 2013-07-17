@@ -15,6 +15,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/oauth2_token_service.h"
 #include "chrome/browser/signin/signin_manager.h"
@@ -26,7 +27,6 @@
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/sync_prefs.h"
 #include "chrome/browser/sync/sync_ui_util.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
@@ -82,20 +82,6 @@ ProfileSyncServiceAndroid::ProfileSyncServiceAndroid(JNIEnv* env, jobject obj)
 
 void ProfileSyncServiceAndroid::Init() {
   sync_service_->AddObserver(this);
-
-  std::string signed_in_username =
-      SigninManagerFactory::GetForProfile(profile_)->GetAuthenticatedUsername();
-  if (!signed_in_username.empty()) {
-    // If the user is logged in, see if he has a valid token - if not, fetch
-    // a new one.
-    TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
-    if (!token_service->HasTokenForService(GaiaConstants::kSyncService) ||
-        (sync_service_->GetAuthError().state() ==
-         GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS)) {
-      DVLOG(2) << "Trying to update token for user " << signed_in_username;
-      InvalidateAuthToken();
-    }
-  }
 }
 
 void ProfileSyncServiceAndroid::RemoveObserver() {
@@ -116,51 +102,33 @@ void ProfileSyncServiceAndroid::SendNudgeNotification(
 
   // TODO(nileshagrawal): Merge this with ChromeInvalidationClient::Invalidate.
   // Construct the ModelTypeStateMap and send it over with the notification.
-  syncer::ModelType model_type;
-  if (!syncer::NotificationTypeToRealModelType(str_object_id, &model_type)) {
-    DVLOG(1) << "Could not get invalidation model type; "
-            << "Sending notification with empty state map.";
-    syncer::ModelTypeInvalidationMap model_types_with_states;
-    content::NotificationService::current()->Notify(
-          chrome::NOTIFICATION_SYNC_REFRESH_REMOTE,
-          content::Source<Profile>(profile_),
-          content::Details<const syncer::ModelTypeInvalidationMap>(
-              &model_types_with_states));
-    return;
-  }
-
+  invalidation::ObjectId object_id(
+      ipc::invalidation::ObjectSource::CHROME_SYNC,
+      str_object_id);
   if (version != ipc::invalidation::Constants::UNKNOWN) {
-    std::map<syncer::ModelType, int64>::const_iterator it =
-        max_invalidation_versions_.find(model_type);
+    ObjectIdVersionMap::iterator it =
+        max_invalidation_versions_.find(object_id);
     if ((it != max_invalidation_versions_.end()) &&
         (version <= it->second)) {
       DVLOG(1) << "Dropping redundant invalidation with version " << version;
       return;
     }
-    max_invalidation_versions_[model_type] = version;
+    max_invalidation_versions_[object_id] = version;
   }
 
-  syncer::ModelTypeSet types;
-  types.Put(model_type);
-  syncer::ModelTypeInvalidationMap model_types_with_states =
-      syncer::ModelTypeSetToInvalidationMap(types, state);
+  syncer::ObjectIdSet object_ids;
+  object_ids.insert(object_id);
+  syncer::ObjectIdInvalidationMap object_ids_with_states =
+      syncer::ObjectIdSetToInvalidationMap(object_ids, state);
 
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_SYNC_REFRESH_REMOTE,
       content::Source<Profile>(profile_),
-      content::Details<const syncer::ModelTypeInvalidationMap>(
-          &model_types_with_states));
+      content::Details<const syncer::ObjectIdInvalidationMap>(
+          &object_ids_with_states));
 }
 
-
 void ProfileSyncServiceAndroid::OnStateChanged() {
-  // Check for auth errors.
-  const GoogleServiceAuthError& auth_error = sync_service_->GetAuthError();
-  if (auth_error.state() == GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS) {
-      DVLOG(2) << "Updating auth token.";
-      InvalidateAuthToken();
-  }
-
   // Notify the java world that our sync state has changed.
   JNIEnv* env = AttachCurrentThread();
   Java_ProfileSyncService_syncStateChanged(
@@ -172,55 +140,6 @@ void ProfileSyncServiceAndroid::TokenAvailable(
   std::string token = ConvertJavaStringToUTF8(env, auth_token);
   TokenServiceFactory::GetForProfile(profile_)->OnIssueAuthTokenSuccess(
       GaiaConstants::kSyncService, token);
-}
-
-void ProfileSyncServiceAndroid::InvalidateOAuth2Token(
-    const std::string& scope, const std::string& invalid_token) {
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jstring> j_scope =
-      ConvertUTF8ToJavaString(env, scope);
-  ScopedJavaLocalRef<jstring> j_invalid_token =
-      ConvertUTF8ToJavaString(env, invalid_token);
-  Java_ProfileSyncService_invalidateOAuth2AuthToken(
-      env, weak_java_profile_sync_service_.get(env).obj(),
-      j_scope.obj(),
-      j_invalid_token.obj());
-}
-
-void ProfileSyncServiceAndroid::FetchOAuth2Token(
-    const std::string& scope, const FetchOAuth2TokenCallback& callback) {
-  const std::string& sync_username =
-      SigninManagerFactory::GetForProfile(profile_)->GetAuthenticatedUsername();
-
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jstring> j_sync_username =
-      ConvertUTF8ToJavaString(env, sync_username);
-  ScopedJavaLocalRef<jstring> j_scope =
-      ConvertUTF8ToJavaString(env, scope);
-
-  // Allocate a copy of the callback on the heap, because the callback
-  // needs to be passed through JNI as an int.
-  // It will be passed back to OAuth2TokenFetched(), where it will be freed.
-  scoped_ptr<FetchOAuth2TokenCallback> heap_callback(
-      new FetchOAuth2TokenCallback(callback));
-
-  // Call into Java to get a new token.
-  Java_ProfileSyncService_getOAuth2AuthToken(
-      env, weak_java_profile_sync_service_.get(env).obj(),
-      j_sync_username.obj(),
-      j_scope.obj(),
-      reinterpret_cast<int>(heap_callback.release()));
-}
-
-void ProfileSyncServiceAndroid::OAuth2TokenFetched(
-    JNIEnv* env, jobject, int callback, jstring auth_token, jboolean result) {
-  std::string token = ConvertJavaStringToUTF8(env, auth_token);
-  scoped_ptr<FetchOAuth2TokenCallback> heap_callback(
-      reinterpret_cast<FetchOAuth2TokenCallback*>(callback));
-  GoogleServiceAuthError err(result ?
-                             GoogleServiceAuthError::NONE :
-                             GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
-  heap_callback->Run(err, token, base::Time());
 }
 
 void ProfileSyncServiceAndroid::EnableSync(JNIEnv* env, jobject) {
@@ -243,8 +162,7 @@ void ProfileSyncServiceAndroid::DisableSync(JNIEnv* env, jobject) {
   }
 }
 
-void ProfileSyncServiceAndroid::SignInSync(
-    JNIEnv* env, jobject, jstring username, jstring auth_token) {
+void ProfileSyncServiceAndroid::SignInSync(JNIEnv* env, jobject) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   // Just return if sync already has everything it needs to start up (sync
   // should start up automatically as long as it has credentials). This can
@@ -256,41 +174,6 @@ void ProfileSyncServiceAndroid::SignInSync(
     return;
   }
 
-  if (!sync_service_->IsSyncEnabledAndLoggedIn() ||
-      !sync_service_->IsOAuthRefreshTokenAvailable()) {
-    // Set the currently-signed-in username, fetch an auth token if necessary,
-    // and enable sync.
-    std::string name = ConvertJavaStringToUTF8(env, username);
-    // TODO(tim) It should be enough to only call
-    // SigninManager::SetAuthenticatedUsername here. See
-    // http://crbug.com/107160.
-    profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername, name);
-    SigninManagerFactory::GetForProfile(profile_)->
-        SetAuthenticatedUsername(name);
-    std::string token = ConvertJavaStringToUTF8(env, auth_token);
-    if (token.empty()) {
-      // No credentials passed in - request an auth token.
-      // If fetching the auth token is successful, this will cause
-      // ProfileSyncService to start sync when it receives
-      // NOTIFICATION_TOKEN_AVAILABLE.
-      DVLOG(2) << "Fetching auth token for " << name;
-      InvalidateAuthToken();
-    } else {
-      // OnIssueAuthTokenSuccess will send out a notification to the sync
-      // service that will cause the sync backend to initialize.
-      TokenService* token_service =
-          TokenServiceFactory::GetForProfile(profile_);
-      token_service->OnIssueAuthTokenSuccess(GaiaConstants::kSyncService,
-                                             token);
-    }
-
-    GoogleServiceSigninSuccessDetails details(name, std::string());
-    content::NotificationService::current()->Notify(
-        chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
-        content::Source<Profile>(profile_),
-        content::Details<const GoogleServiceSigninSuccessDetails>(&details));
-  }
-
   // Enable sync (if we don't have credentials yet, this will enable sync but
   // will not start it up - sync will start once credentials arrive).
   sync_service_->UnsuppressAndStart();
@@ -300,9 +183,6 @@ void ProfileSyncServiceAndroid::SignOutSync(JNIEnv* env, jobject) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(profile_);
   sync_service_->DisableForUser();
-
-  // Clear the tokens.
-  SigninManagerFactory::GetForProfile(profile_)->SignOut();
 
   // Need to clear suppress start flag manually
   sync_prefs_->SetStartSuppressed(false);
@@ -592,29 +472,6 @@ ScopedJavaLocalRef<jstring> ProfileSyncServiceAndroid::GetAboutInfoForTest(
   return ConvertUTF8ToJavaString(env, about_info_json);
 }
 
-void ProfileSyncServiceAndroid::InvalidateAuthToken() {
-  // Get the token from token-db. If there's no token yet, this must be the
-  // the first time the user is signing in so we don't need to invalidate
-  // anything.
-  TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
-  std::string invalid_token;
-  if (token_service->HasTokenForService(GaiaConstants::kSyncService)) {
-    invalid_token = token_service->GetTokenForService(
-        GaiaConstants::kSyncService);
-  }
-  const std::string& sync_username =
-      SigninManagerFactory::GetForProfile(profile_)->GetAuthenticatedUsername();
-  // Call into java to invalidate the current token and get a new one.
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jstring> j_sync_username =
-      ConvertUTF8ToJavaString(env, sync_username);
-  ScopedJavaLocalRef<jstring> j_invalid_token =
-      ConvertUTF8ToJavaString(env, invalid_token);
-  Java_ProfileSyncService_getNewAuthToken(
-      env, weak_java_profile_sync_service_.get(env).obj(),
-      j_sync_username.obj(), j_invalid_token.obj());
-}
-
 void ProfileSyncServiceAndroid::NudgeSyncer(JNIEnv* env,
                                             jobject obj,
                                             jstring objectId,
@@ -623,6 +480,17 @@ void ProfileSyncServiceAndroid::NudgeSyncer(JNIEnv* env,
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   SendNudgeNotification(ConvertJavaStringToUTF8(env, objectId), version,
                         ConvertJavaStringToUTF8(env, state));
+}
+
+void ProfileSyncServiceAndroid::NudgeSyncerForAllTypes(JNIEnv* env,
+                                                       jobject obj) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  syncer::ObjectIdInvalidationMap object_ids_with_states;
+  content::NotificationService::current()->Notify(
+        chrome::NOTIFICATION_SYNC_REFRESH_REMOTE,
+        content::Source<Profile>(profile_),
+        content::Details<const syncer::ObjectIdInvalidationMap>(
+            &object_ids_with_states));
 }
 
 // static

@@ -210,6 +210,23 @@ import java.util.Map;
         void updateZoomControls();
     }
 
+    /**
+     * An interface that allows the embedder to be notified of changes to the parameters of the
+     * currently displayed contents.
+     * These notifications are consistent with respect to the UI thread (the size is the size of
+     * the contents currently displayed on screen).
+     */
+    public interface UpdateFrameInfoListener {
+        /**
+         * Called each time any of the parameters are changed.
+         *
+         * @param widthCss The content width in logical (CSS) pixels.
+         * @param heightCss The content height in logical (CSS) pixels.
+         * @param pageScaleFactor The page scale.
+         */
+        void onFrameInfoUpdated(float widthCss, float heightCss, float pageScaleFactor);
+    }
+
     private VSyncManager.Provider mVSyncProvider;
     private VSyncManager.Listener mVSyncListener;
     private int mVSyncSubscriberCount;
@@ -315,6 +332,7 @@ import java.util.Map;
 
     private ContentViewGestureHandler mContentViewGestureHandler;
     private PinchGestureStateListener mPinchGestureStateListener;
+    private UpdateFrameInfoListener mUpdateFrameInfoListener;
     private ZoomManager mZoomManager;
     private ZoomControlsDelegate mZoomControlsDelegate;
 
@@ -1201,6 +1219,7 @@ import java.util.Map;
     @Override
     public boolean sendGesture(int type, long timeMs, int x, int y, boolean lastInputEventForVSync,
                                Bundle b) {
+        if (offerGestureToEmbedder(type)) return false;
         if (mNativeContentViewCore == 0) return false;
         updateTextHandlesForGesture(type);
         updatePinchGestureStateListener(type);
@@ -1394,14 +1413,12 @@ import java.util.Map;
         mAttachedToWindow = true;
         if (mNativeContentViewCore != 0) {
             int pid = nativeGetCurrentRenderProcessId(mNativeContentViewCore);
-            if (pid > 0) {
-                ChildProcessLauncher.bindAsHighPriority(pid);
-                // Normally the initial binding is removed in onRenderProcessSwap(), but it is
-                // possible to construct WebContents and spawn the renderer before passing it to
-                // ContentViewCore. In this case there will be no onRendererSwap() call and the
-                // initial binding will be removed here.
-                ChildProcessLauncher.removeInitialBinding(pid);
-            }
+            ChildProcessLauncher.bindAsHighPriority(pid);
+            // Normally the initial binding is removed in onRenderProcessSwap(), but it is
+            // possible to construct WebContents and spawn the renderer before passing it to
+            // ContentViewCore. In this case there will be no onRendererSwap() call and the
+            // initial binding will be removed here.
+            ChildProcessLauncher.removeInitialBinding(pid);
         }
         setAccessibilityState(mAccessibilityManager.isEnabled());
     }
@@ -1414,9 +1431,7 @@ import java.util.Map;
         mAttachedToWindow = false;
         if (mNativeContentViewCore != 0) {
             int pid = nativeGetCurrentRenderProcessId(mNativeContentViewCore);
-            if (pid > 0) {
-                ChildProcessLauncher.unbindAsHighPriority(pid);
-            }
+            ChildProcessLauncher.unbindAsHighPriority(pid);
         }
         setInjectedAccessibility(false);
         hidePopupDialog();
@@ -2144,6 +2159,10 @@ import java.util.Map;
         if (mNativeContentViewCore != 0) nativeShowImeIfNeeded(mNativeContentViewCore);
     }
 
+    public void setUpdateFrameInfoListener(UpdateFrameInfoListener updateFrameInfoListener) {
+        mUpdateFrameInfoListener = updateFrameInfoListener;
+    }
+
     @SuppressWarnings("unused")
     @CalledByNative
     private void updateFrameInfo(
@@ -2198,6 +2217,11 @@ import java.util.Map;
                 viewportWidth, viewportHeight,
                 pageScaleFactor, minPageScaleFactor, maxPageScaleFactor,
                 contentOffsetYPix);
+
+        if ((contentSizeChanged || pageScaleChanged) && mUpdateFrameInfoListener != null) {
+            mUpdateFrameInfoListener.onFrameInfoUpdated(
+                    contentWidth, contentHeight, pageScaleFactor);
+        }
 
         if (needTemporarilyHideHandles) temporarilyHideTextHandles();
         if (needUpdateZoomControls) mZoomControlsDelegate.updateZoomControls();
@@ -2361,19 +2385,13 @@ import java.util.Map;
     @CalledByNative
     private void onRenderProcessSwap(int oldPid, int newPid) {
         if (mAttachedToWindow && oldPid != newPid) {
-            if (oldPid > 0) {
-                ChildProcessLauncher.unbindAsHighPriority(oldPid);
-            }
-            if (newPid > 0) {
-                ChildProcessLauncher.bindAsHighPriority(newPid);
-            }
+            ChildProcessLauncher.unbindAsHighPriority(oldPid);
+            ChildProcessLauncher.bindAsHighPriority(newPid);
         }
 
         // We want to remove the initial binding even if the ContentView is not attached, so that
         // renderers for ContentViews loading in background do not retain the high priority.
-        if (newPid > 0) {
-            ChildProcessLauncher.removeInitialBinding(newPid);
-        }
+        ChildProcessLauncher.removeInitialBinding(newPid);
     }
 
     @SuppressWarnings("unused")
@@ -2935,6 +2953,21 @@ import java.util.Map;
                 topLeft.getYPix(),
                 bottomRight.getXPix() - topLeft.getXPix(),
                 bottomRight.getYPix() - topLeft.getYPix());
+    }
+
+    /**
+     * Offer a subset of gesture events to the embedding View,
+     * primarily for WebView compatibility.
+     *
+     * @param type The type of the event.
+     *
+     * @return true if the embedder handled the event.
+     */
+    private boolean offerGestureToEmbedder(int type) {
+        if (type == ContentViewGestureHandler.GESTURE_LONG_PRESS) {
+            return mContainerView.performLongClick();
+        }
+        return false;
     }
 
     private native int nativeInit(boolean hardwareAccelerated, int webContentsPtr,

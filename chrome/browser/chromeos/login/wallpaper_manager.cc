@@ -8,6 +8,7 @@
 
 #include "ash/shell.h"
 #include "base/command_line.h"
+#include "base/debug/trace_event.h"
 #include "base/file_util.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
@@ -23,13 +24,13 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -392,8 +393,8 @@ void WallpaperManager::ResizeAndSaveWallpaper(const UserImage& wallpaper,
                                               int preferred_height) {
   if (layout == ash::WALLPAPER_LAYOUT_CENTER) {
     // TODO(bshe): Generates cropped custom wallpaper for CENTER layout.
-    if (file_util::PathExists(path))
-      base::Delete(path, false);
+    if (base::PathExists(path))
+      base::DeleteFile(path, false);
     return;
   }
   scoped_refptr<base::RefCountedBytes> data;
@@ -670,12 +671,12 @@ void WallpaperManager::ClearObsoleteWallpaperPrefs() {
 
 void WallpaperManager::DeleteAllExcept(const base::FilePath& path) {
   base::FilePath dir = path.DirName();
-  if (file_util::DirectoryExists(dir)) {
+  if (base::DirectoryExists(dir)) {
     base::FileEnumerator files(dir, false, base::FileEnumerator::FILES);
     for (base::FilePath current = files.Next(); !current.empty();
          current = files.Next()) {
       if (current != path)
-        base::Delete(current, false);
+        base::DeleteFile(current, false);
     }
   }
 }
@@ -687,8 +688,8 @@ void WallpaperManager::DeleteWallpaperInList(
     base::FilePath path = *it;
     // Some users may still have legacy wallpapers with png extension. We need
     // to delete these wallpapers too.
-    if (!base::Delete(path, true) &&
-        !base::Delete(path.AddExtension(".png"), false)) {
+    if (!base::DeleteFile(path, true) &&
+        !base::DeleteFile(path.AddExtension(".png"), false)) {
       LOG(ERROR) << "Failed to remove user wallpaper at " << path.value();
     }
   }
@@ -730,16 +731,16 @@ void WallpaperManager::EnsureCustomWallpaperDirectories(
     const std::string& email) {
   base::FilePath dir;
   dir = GetCustomWallpaperDir(kSmallWallpaperSubDir, email);
-  if (!file_util::PathExists(dir))
+  if (!base::PathExists(dir))
     file_util::CreateDirectory(dir);
   dir = GetCustomWallpaperDir(kLargeWallpaperSubDir, email);
-  if (!file_util::PathExists(dir))
+  if (!base::PathExists(dir))
     file_util::CreateDirectory(dir);
   dir = GetCustomWallpaperDir(kOriginalWallpaperSubDir, email);
-  if (!file_util::PathExists(dir))
+  if (!base::PathExists(dir))
     file_util::CreateDirectory(dir);
   dir = GetCustomWallpaperDir(kThumbnailWallpaperSubDir, email);
-  if (!file_util::PathExists(dir))
+  if (!base::PathExists(dir))
     file_util::CreateDirectory(dir);
 }
 
@@ -845,25 +846,25 @@ void WallpaperManager::MoveCustomWallpapersOnWorker(const UserList& users) {
     EnsureCustomWallpaperDirectories(email);
     from_path = GetWallpaperPathForUser(email, true);
     // Old wallpaper with extension name may still exist.
-    if (!file_util::PathExists(from_path))
+    if (!base::PathExists(from_path))
       from_path = from_path.AddExtension(".png");
-    if (file_util::PathExists(from_path)) {
+    if (base::PathExists(from_path)) {
       // Appends DUMMY to the file name of moved custom wallpaper. This way we
       // do not need to update WallpaperInfo for user.
       to_path = GetCustomWallpaperPath(kSmallWallpaperSubDir, email, "DUMMY");
       base::Move(from_path, to_path);
     }
     from_path = GetWallpaperPathForUser(email, false);
-    if (!file_util::PathExists(from_path))
+    if (!base::PathExists(from_path))
       from_path = from_path.AddExtension(".png");
-    if (file_util::PathExists(from_path)) {
+    if (base::PathExists(from_path)) {
       to_path = GetCustomWallpaperPath(kLargeWallpaperSubDir, email, "DUMMY");
       base::Move(from_path, to_path);
     }
     from_path = GetOriginalWallpaperPathForUser(email);
-    if (!file_util::PathExists(from_path))
+    if (!base::PathExists(from_path))
       from_path = from_path.AddExtension(".png");
-    if (file_util::PathExists(from_path)) {
+    if (base::PathExists(from_path)) {
       to_path = GetCustomWallpaperPath(kOriginalWallpaperSubDir, email,
                                        "DUMMY");
       base::Move(from_path, to_path);
@@ -921,8 +922,8 @@ void WallpaperManager::GetCustomWallpaperInternalOld(
       IsRunningSequenceOnCurrentThread(sequence_token_));
   std::string file_name = wallpaper_path.BaseName().value();
 
-  if (!file_util::PathExists(wallpaper_path)) {
-    if (file_util::PathExists(wallpaper_path.AddExtension(".png"))) {
+  if (!base::PathExists(wallpaper_path)) {
+    if (base::PathExists(wallpaper_path.AddExtension(".png"))) {
       // Old wallpaper may have a png extension.
       file_name += ".png";
     } else {
@@ -934,7 +935,7 @@ void WallpaperManager::GetCustomWallpaperInternalOld(
   }
 
   base::FilePath valid_path = wallpaper_path.DirName().Append(file_name);
-  if (!file_util::PathExists(valid_path))
+  if (!base::PathExists(valid_path))
     valid_path = valid_path.AddExtension(".png");
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
@@ -955,7 +956,7 @@ void WallpaperManager::GetCustomWallpaperInternal(
       IsRunningSequenceOnCurrentThread(sequence_token_));
 
   base::FilePath valid_path = wallpaper_path;
-  if (!file_util::PathExists(wallpaper_path)) {
+  if (!base::PathExists(wallpaper_path)) {
     // Falls back on original file if the correct resoltuion file does not
     // exist. This may happen when the original custom wallpaper is small or
     // browser shutdown before resized wallpaper saved.
@@ -963,7 +964,7 @@ void WallpaperManager::GetCustomWallpaperInternal(
                                         info.file);
   }
 
-  if (!file_util::PathExists(valid_path)) {
+  if (!base::PathExists(valid_path)) {
     BrowserThread::PostTask(
         BrowserThread::UI,
         FROM_HERE,
@@ -989,6 +990,7 @@ void WallpaperManager::OnWallpaperDecoded(const std::string& email,
                                           bool update_wallpaper,
                                           const UserImage& wallpaper) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  TRACE_EVENT_ASYNC_END0("ui", "LoadAndDecodeWallpaper", this);
 
   // If decoded wallpaper is empty, we are probably failed to decode the file.
   // Use default wallpaper in this case.
@@ -1082,6 +1084,7 @@ void WallpaperManager::StartLoad(const std::string& email,
                                  bool update_wallpaper,
                                  const base::FilePath& wallpaper_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  TRACE_EVENT_ASYNC_BEGIN0("ui", "LoadAndDecodeWallpaper", this);
 
   // All wallpaper related operation should run on the same thread. So we pass
   // |sequence_token_| here.

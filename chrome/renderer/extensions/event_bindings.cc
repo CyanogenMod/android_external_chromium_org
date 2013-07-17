@@ -6,8 +6,8 @@
 
 #include <vector>
 
-#include "base/bind.h"
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
@@ -25,16 +25,17 @@
 #include "chrome/renderer/extensions/extension_helper.h"
 #include "chrome/renderer/extensions/user_script_slave.h"
 #include "content/public/renderer/render_thread.h"
+#include "content/public/renderer/render_view.h"
 #include "content/public/renderer/v8_value_converter.h"
 #include "extensions/common/event_filter.h"
 #include "extensions/common/view_type.h"
-#include "googleurl/src/gurl.h"
 #include "grit/renderer_resources.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebView.h"
+#include "url/gurl.h"
 #include "v8/include/v8.h"
 
 using WebKit::WebFrame;
@@ -280,12 +281,13 @@ class ExtensionImpl : public ChromeV8Extension {
   void MatchAgainstEventFilter(
       const v8::FunctionCallbackInfo<v8::Value>& args) {
     typedef std::set<EventFilter::MatcherID> MatcherIDs;
-
     EventFilter& event_filter = g_event_filter.Get();
     std::string event_name = *v8::String::AsciiValue(args[0]->ToString());
     EventFilteringInfo info = ParseFromObject(args[1]->ToObject());
+    // Only match events routed to this context's RenderView or ones that don't
+    // have a routingId in their filter.
     MatcherIDs matched_event_filters = event_filter.MatchEvent(
-        event_name, info);
+        event_name, info, context()->GetRenderView()->GetRoutingID());
     v8::Handle<v8::Array> array(v8::Array::New(matched_event_filters.size()));
     int i = 0;
     for (MatcherIDs::iterator it = matched_event_filters.begin();
@@ -320,10 +322,11 @@ class ExtensionImpl : public ChromeV8Extension {
             helper->view_type() == VIEW_TYPE_EXTENSION_BACKGROUND_PAGE);
   }
 
-  static scoped_ptr<EventMatcher> ParseEventMatcher(
+  scoped_ptr<EventMatcher> ParseEventMatcher(
       base::DictionaryValue* filter_dict) {
     return scoped_ptr<EventMatcher>(new EventMatcher(
-        scoped_ptr<base::DictionaryValue>(filter_dict->DeepCopy())));
+        scoped_ptr<base::DictionaryValue>(filter_dict->DeepCopy()),
+            context()->GetRenderView()->GetRoutingID()));
   }
 };
 

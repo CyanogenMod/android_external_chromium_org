@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <string>
 
+#include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
@@ -15,9 +16,11 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/download/download_util.h"
 #include "chrome/browser/extensions/external_policy_loader.h"
 #include "chrome/browser/policy/configuration_policy_pref_store.h"
+#include "chrome/browser/policy/external_data_fetcher.h"
 #include "chrome/browser/policy/policy_error_map.h"
 #include "chrome/browser/policy/policy_map.h"
 #include "chrome/browser/prefs/proxy_config_dictionary.h"
@@ -25,7 +28,6 @@
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
@@ -169,7 +171,10 @@ void ConfigurationPolicyHandler::PrepareForDisplaying(
     const PolicyMap::Entry& entry = it->second;
     if (entry.value->GetAsDictionary(&dict)) {
       base::StringValue* value = DictionaryToJSONString(dict);
-      policies->Set(it->first, entry.level, entry.scope, value);
+      policies->Set(it->first, entry.level, entry.scope,
+                    value, entry.external_data_fetcher ?
+                        new ExternalDataFetcher(*entry.external_data_fetcher) :
+                        NULL);
     } else if (entry.value->GetAsList(&list)) {
       for (size_t i = 0; i < list->GetSize(); ++i) {
         if (list->GetDictionary(i, &dict)) {

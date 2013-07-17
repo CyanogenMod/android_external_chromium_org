@@ -41,6 +41,7 @@
 
 #if defined(OS_MACOSX)
 #include "content/shell/app/paths_mac.h"
+#include "content/shell/app/shell_main_delegate_mac.h"
 #endif  // OS_MACOSX
 
 #if defined(OS_WIN)
@@ -99,6 +100,7 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
   // WebKitTestPlatformInitialize() are called.
   OverrideFrameworkBundlePath();
   OverrideChildProcessPath();
+  EnsureCorrectResolutionSettings();
 #endif  // OS_MACOSX
 
   InitLogging();
@@ -123,13 +125,15 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
 #endif
     command_line.AppendSwitch(switches::kSkipGpuDataLoading);
     command_line.AppendSwitch(switches::kDisableGpuVsync);
-    command_line.AppendSwitch(switches::kEnableExperimentalWebKitFeatures);
+    command_line.AppendSwitch(switches::kEnableExperimentalWebPlatformFeatures);
     command_line.AppendSwitch(switches::kEnableCssShaders);
     command_line.AppendSwitchASCII(switches::kTouchEvents,
                                    switches::kTouchEventsEnabled);
     command_line.AppendSwitch(switches::kEnableGestureTapHighlight);
     command_line.AppendSwitchASCII(switches::kForceDeviceScaleFactor, "1.0");
 #if defined(OS_ANDROID)
+    command_line.AppendSwitch(
+        switches::kDisableGestureRequirementForMediaPlayback);
     // Capturing pixel results does not yet work when implementation-side
     // painting is enabled. See http://crbug.com/250777
     command_line.AppendSwitch(cc::switches::kDisableImplSidePainting);
@@ -139,6 +143,8 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
       command_line.AppendSwitch(cc::switches::kDisableThreadedAnimation);
     if (command_line.HasSwitch(switches::kEnableSoftwareCompositing))
       command_line.AppendSwitch(switches::kEnableSoftwareCompositingGLAdapter);
+
+    command_line.AppendSwitch(switches::kEnableInbandTextTracks);
 
     net::CookieMonster::EnableFileScheme();
 

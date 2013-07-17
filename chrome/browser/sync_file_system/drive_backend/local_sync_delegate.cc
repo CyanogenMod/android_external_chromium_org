@@ -8,8 +8,7 @@
 #include "base/callback.h"
 #include "chrome/browser/sync_file_system/conflict_resolution_resolver.h"
 #include "chrome/browser/sync_file_system/drive_backend/api_util.h"
-#include "chrome/browser/sync_file_system/drive_file_sync_service.h"
-#include "chrome/browser/sync_file_system/drive_metadata_store.h"
+#include "chrome/browser/sync_file_system/drive_backend/drive_metadata_store.h"
 #include "chrome/browser/sync_file_system/logger.h"
 #include "webkit/browser/fileapi/syncable/syncable_file_system_util.h"
 
@@ -431,14 +430,6 @@ void LocalSyncDelegate::SetMetadataToBeFetched(
   metadata_store()->UpdateEntry(url_, drive_metadata_, callback);
 }
 
-void LocalSyncDelegate::SetMetadataConflict(
-    const SyncStatusCallback& callback) {
-  has_drive_metadata_ = true;
-  drive_metadata_.set_conflicted(true);
-  drive_metadata_.set_to_be_fetched(false);
-  metadata_store()->UpdateEntry(url_, drive_metadata_, callback);
-}
-
 void LocalSyncDelegate::DeleteMetadata(const SyncStatusCallback& callback) {
   metadata_store()->DeleteEntry(url_, callback);
 }
@@ -522,23 +513,16 @@ void LocalSyncDelegate::HandleManualResolutionCase(
     return;
   }
 
-  SetMetadataConflict(base::Bind(&LocalSyncDelegate::NotifyConflict,
-                                 weak_factory_.GetWeakPtr(), callback));
+  has_drive_metadata_ = true;
+  sync_service_->MarkConflict(
+      url_, &drive_metadata_,
+      base::Bind(&LocalSyncDelegate::DidMarkConflict,
+                 weak_factory_.GetWeakPtr(), callback));
 }
 
-void LocalSyncDelegate::NotifyConflict(const SyncStatusCallback& callback,
-                                       SyncStatusCode status) {
-  if (status != SYNC_STATUS_OK) {
-    callback.Run(status);
-    return;
-  }
-
-  sync_service_->NotifyObserversFileStatusChanged(
-      url_,
-      SYNC_FILE_STATUS_CONFLICTING,
-      SYNC_ACTION_NONE,
-      SYNC_DIRECTION_NONE);
-
+void LocalSyncDelegate::DidMarkConflict(
+    const SyncStatusCallback& callback,
+    SyncStatusCode status) {
   DidApplyLocalChange(callback, google_apis::HTTP_CONFLICT, status);
 }
 

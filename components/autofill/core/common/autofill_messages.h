@@ -18,12 +18,11 @@
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/common_param_traits_macros.h"
 #include "content/public/common/password_form.h"
-#include "content/public/common/ssl_status.h"
-#include "googleurl/src/gurl.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_message_utils.h"
 #include "third_party/WebKit/public/web/WebFormElement.h"
 #include "ui/gfx/rect.h"
+#include "url/gurl.h"
 
 #define IPC_MESSAGE_START AutofillMsgStart
 
@@ -106,15 +105,6 @@ IPC_ENUM_TRAITS(WebKit::WebFormElement::AutocompleteResult)
 
 // Request to parse all the forms without field count limit.
 IPC_MESSAGE_ROUTED0(AutofillMsg_GetAllForms)
-
-// Reply to the AutofillHostMsg_QueryFormFieldAutofill message with the
-// Autofill suggestions.
-IPC_MESSAGE_ROUTED5(AutofillMsg_SuggestionsReturned,
-                    int /* id of the request message */,
-                    std::vector<base::string16> /* names */,
-                    std::vector<base::string16> /* labels */,
-                    std::vector<base::string16> /* icons */,
-                    std::vector<int> /* unique_ids */)
 
 // Reply to the AutofillHostMsg_FillAutofillFormData message with the
 // Autofill form data.

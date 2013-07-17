@@ -19,7 +19,6 @@ include $(LOCAL_PATH)/base/base_java_memory_pressure_level_list.target.linux-mip
 include $(LOCAL_PATH)/base/base_jni_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/base/base_prefs.target.linux-mips.mk
 include $(LOCAL_PATH)/base/base_static.target.linux-mips.mk
-include $(LOCAL_PATH)/base/symbolize.target.linux-mips.mk
 include $(LOCAL_PATH)/base/third_party/dynamic_annotations/dynamic_annotations.target.linux-mips.mk
 include $(LOCAL_PATH)/cc/cc.target.linux-mips.mk
 include $(LOCAL_PATH)/components/auto_login_parser.target.linux-mips.mk
@@ -58,7 +57,6 @@ include $(LOCAL_PATH)/content/content_renderer.target.linux-mips.mk
 include $(LOCAL_PATH)/content/content_resources.target.linux-mips.mk
 include $(LOCAL_PATH)/content/content_utility.target.linux-mips.mk
 include $(LOCAL_PATH)/content/content_worker.target.linux-mips.mk
-include $(LOCAL_PATH)/content/generate_content_resources.target.linux-mips.mk
 include $(LOCAL_PATH)/content/java_set_jni_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/content/page_transition_types_java.target.linux-mips.mk
 include $(LOCAL_PATH)/content/result_codes_java.target.linux-mips.mk
@@ -80,7 +78,6 @@ include $(LOCAL_PATH)/ipc/ipc.target.linux-mips.mk
 include $(LOCAL_PATH)/jingle/jingle_glue.target.linux-mips.mk
 include $(LOCAL_PATH)/media/media.target.linux-mips.mk
 include $(LOCAL_PATH)/media/media_android_jni_headers.target.linux-mips.mk
-include $(LOCAL_PATH)/media/media_player_jni_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/media/player_android.target.linux-mips.mk
 include $(LOCAL_PATH)/media/shared_memory_support.target.linux-mips.mk
 include $(LOCAL_PATH)/media/video_capture_android_jni_headers.target.linux-mips.mk
@@ -106,7 +103,9 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/blink_common.tar
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/skia_webkit.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/webkit.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.linux-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/supplemental_dependencies.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/deprecated_perl_bindings_sources.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/interface_dependencies.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/python_bindings_sources.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/config.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/debugger_script_source.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/generate_inspector_protocol_version.target.linux-mips.mk
@@ -220,26 +219,25 @@ include $(LOCAL_PATH)/v8/tools/gyp/v8_base.mipsel.host.linux-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_base.mipsel.target.linux-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_nosnapshot.mipsel.host.linux-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_snapshot.target.linux-mips.mk
-include $(LOCAL_PATH)/webkit/base/webkit_base.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/common/gpu/webkit_gpu.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/user_agent.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/webkit_version.target.linux-mips.mk
+include $(LOCAL_PATH)/webkit/common/webkit_common.target.linux-mips.mk
+include $(LOCAL_PATH)/webkit/glue/glue_common.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/plugins/plugins_common.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_bindings.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_support.target.linux-mips.mk
+include $(LOCAL_PATH)/webkit/renderer/webkit_renderer.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/support/glue.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/support/glue_child.target.linux-mips.mk
-include $(LOCAL_PATH)/webkit/support/glue_common.target.linux-mips.mk
-include $(LOCAL_PATH)/webkit/support/glue_renderer.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/support/overscroller_jni_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/support/plugins.target.linux-mips.mk
-include $(LOCAL_PATH)/webkit/support/webkit_common.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/support/webkit_media.target.linux-mips.mk
-include $(LOCAL_PATH)/webkit/support/webkit_resources.target.linux-mips.mk
-include $(LOCAL_PATH)/webkit/support/webkit_strings.target.linux-mips.mk
+include $(LOCAL_PATH)/webkit/webkit_resources.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_browser.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_common.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_renderer.target.linux-mips.mk
+include $(LOCAL_PATH)/webkit/webkit_strings.target.linux-mips.mk
 
 # "gyp_all_modules" is a concatenation of the "gyp_all_modules" targets from
 # all the included sub-makefiles. This is just here to clarify.

@@ -76,7 +76,6 @@ LOCAL_SRC_FILES := \
 	webkit/plugins/ppapi/quota_file_io.cc \
 	webkit/plugins/ppapi/resource_creation_impl.cc \
 	webkit/plugins/ppapi/resource_helper.cc \
-	webkit/plugins/ppapi/url_response_info_util.cc \
 	webkit/plugins/ppapi/url_request_info_util.cc \
 	webkit/plugins/ppapi/usb_key_code_conversion.cc \
 	webkit/plugins/ppapi/v8_var_converter.cc \
@@ -125,6 +124,8 @@ MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
@@ -251,6 +252,8 @@ MY_DEFS_Release := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \

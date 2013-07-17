@@ -12,14 +12,15 @@
 #include "base/rand_util.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/nacl_host_messages.h"
+#include "chrome/common/nacl_types.h"
 #include "chrome/renderer/chrome_render_process_observer.h"
+#include "chrome/renderer/pepper/pnacl_translation_resource_host.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/sandbox_init.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
-#include "ipc/ipc_sync_message_filter.h"
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/private/pp_file_handle.h"
 #include "ppapi/native_client/src/trusted/plugin/nacl_entry_points.h"
@@ -37,11 +38,20 @@
 
 namespace {
 
-// This allows us to send requests from background threads.
-// E.g., to do LaunchSelLdr for helper nexes (which is done synchronously),
-// in a background thread, to avoid jank.
-base::LazyInstance<scoped_refptr<IPC::SyncMessageFilter> >
-    g_background_thread_sender = LAZY_INSTANCE_INITIALIZER;
+base::LazyInstance<scoped_refptr<PnaclTranslationResourceHost> >
+    g_pnacl_resource_host = LAZY_INSTANCE_INITIALIZER;
+
+static bool InitializePnaclResourceHost() {
+  if (!g_pnacl_resource_host.Get()) {
+    content::RenderThread* render_thread = content::RenderThread::Get();
+    if (!render_thread)
+      return false;
+    g_pnacl_resource_host.Get() = new PnaclTranslationResourceHost(
+        render_thread->GetIOMessageLoopProxy());
+    render_thread->AddFilter(g_pnacl_resource_host.Get());
+  }
+  return true;
+}
 
 struct InstanceInfo {
   InstanceInfo() : plugin_pid(base::kNullProcessId), plugin_child_id(0) {}
@@ -78,9 +88,7 @@ PP_NaClResult LaunchSelLdr(PP_Instance instance,
                            void* imc_handle) {
   nacl::FileDescriptor result_socket;
   IPC::Sender* sender = content::RenderThread::Get();
-  if (sender == NULL)
-    sender = g_background_thread_sender.Pointer()->get();
-
+  DCHECK(sender);
   int routing_id = 0;
   // If the nexe uses ppapi APIs, we need a routing ID.
   // To get the routing ID, we must be on the main thread.
@@ -189,11 +197,6 @@ PP_Bool Are3DInterfacesDisabled() {
                          switches::kDisable3DAPIs));
 }
 
-void EnableBackgroundSelLdrLaunch() {
-  g_background_thread_sender.Get() =
-      content::RenderThread::Get()->GetSyncMessageFilter();
-}
-
 int32_t BrokerDuplicateHandle(PP_FileHandle source_handle,
                               uint32_t process_id,
                               PP_FileHandle* target_handle,
@@ -211,9 +214,7 @@ int32_t BrokerDuplicateHandle(PP_FileHandle source_handle,
 PP_FileHandle GetReadonlyPnaclFD(const char* filename) {
   IPC::PlatformFileForTransit out_fd = IPC::InvalidPlatformFileForTransit();
   IPC::Sender* sender = content::RenderThread::Get();
-  if (sender == NULL)
-    sender = g_background_thread_sender.Pointer()->get();
-
+  DCHECK(sender);
   if (!sender->Send(new NaClHostMsg_GetReadonlyPnaclFD(
           std::string(filename),
           &out_fd))) {
@@ -232,9 +233,7 @@ PP_FileHandle GetReadonlyPnaclFD(const char* filename) {
 PP_FileHandle CreateTemporaryFile(PP_Instance instance) {
   IPC::PlatformFileForTransit transit_fd = IPC::InvalidPlatformFileForTransit();
   IPC::Sender* sender = content::RenderThread::Get();
-  if (sender == NULL)
-    sender = g_background_thread_sender.Pointer()->get();
-
+  DCHECK(sender);
   if (!sender->Send(new NaClHostMsg_NaClCreateTemporaryFile(
           &transit_fd))) {
     return base::kInvalidPlatformFileValue;
@@ -250,27 +249,53 @@ PP_FileHandle CreateTemporaryFile(PP_Instance instance) {
 }
 
 int32_t GetNexeFd(PP_Instance instance,
-                  const char* cache_key,
+                  const char* pexe_url,
+                  uint32_t abi_version,
+                  uint32_t opt_level,
+                  const char* last_modified,
+                  const char* etag,
                   PP_Bool* is_hit,
                   PP_FileHandle* handle,
                   struct PP_CompletionCallback callback) {
-  // Check the instance. Once the call into the browser is hooked up, will need
-  // to do it again before calling the callback in case the plugin goes away.
   ppapi::thunk::EnterInstance enter(instance, callback);
   if (enter.failed())
     return enter.retval();
-  // stubbed out implementation for testing.
-  *is_hit = PP_FALSE;
-  *handle = CreateTemporaryFile(instance);
-  enter.callback()->PostRun(PP_OK);
-  enter.SetResult(PP_OK_COMPLETIONPENDING);
-  return enter.retval();
+  if (!pexe_url || !last_modified || !etag || !is_hit || !handle)
+    return enter.SetResult(PP_ERROR_BADARGUMENT);
+  if (!InitializePnaclResourceHost())
+    return enter.SetResult(PP_ERROR_FAILED);
+
+  IPC::Sender* sender = content::RenderThread::Get();
+  DCHECK(sender);
+  base::Time last_modified_time;
+  // If FromString fails, it doesn't touch last_modified_time and we just send
+  // the default-constructed null value.
+  base::Time::FromString(last_modified, &last_modified_time);
+
+  nacl::PnaclCacheInfo cache_info;
+  cache_info.pexe_url = GURL(pexe_url);
+  cache_info.abi_version = abi_version;
+  cache_info.opt_level = opt_level;
+  cache_info.last_modified = last_modified_time;
+  cache_info.etag = std::string(etag);
+
+  g_pnacl_resource_host.Get()->RequestNexeFd(
+      GetRoutingID(instance),
+      cache_info,
+      is_hit,
+      handle,
+      enter.callback());
+
+  return enter.SetResult(PP_OK_COMPLETIONPENDING);
 }
 
 void ReportTranslationFinished(PP_Instance instance) {
-  // Do nothing for now. Once the IPC plumbing is in place, this function will
-  // send the routing id to the browser process, which will cache the contents
-  // of the temp file it sent.
+  // If the resource host isn't initialized, don't try to do that here.
+  // Just return because something is already very wrong.
+  if (g_pnacl_resource_host.Get() == NULL)
+    return;
+  g_pnacl_resource_host.Get()->ReportTranslationFinished(
+      GetRoutingID(instance));
 }
 
 PP_Bool IsOffTheRecord() {
@@ -303,9 +328,7 @@ PP_FileHandle OpenNaClExecutable(PP_Instance instance,
                                  uint64_t* nonce_hi) {
   IPC::PlatformFileForTransit out_fd = IPC::InvalidPlatformFileForTransit();
   IPC::Sender* sender = content::RenderThread::Get();
-  if (sender == NULL)
-    sender = g_background_thread_sender.Pointer()->get();
-
+  DCHECK(sender);
   *nonce_lo = 0;
   *nonce_hi = 0;
   base::FilePath file_path;
@@ -332,7 +355,6 @@ const PPB_NaCl_Private nacl_interface = {
   &StartPpapiProxy,
   &UrandomFD,
   &Are3DInterfacesDisabled,
-  &EnableBackgroundSelLdrLaunch,
   &BrokerDuplicateHandle,
   &GetReadonlyPnaclFD,
   &CreateTemporaryFile,

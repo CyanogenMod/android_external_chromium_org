@@ -40,20 +40,17 @@ using content::MediaStreamDevices;
 
 namespace {
 
-const content::MediaStreamDevice* FindDefaultDeviceWithId(
+// Finds a device in |devices| that has |device_id|, or NULL if not found.
+const content::MediaStreamDevice* FindDeviceWithId(
     const content::MediaStreamDevices& devices,
     const std::string& device_id) {
-  if (devices.empty())
-    return NULL;
-
   content::MediaStreamDevices::const_iterator iter = devices.begin();
   for (; iter != devices.end(); ++iter) {
     if (iter->id == device_id) {
       return &(*iter);
     }
   }
-
-  return &(*devices.begin());
+  return NULL;
 };
 
 // This is a short-term solution to allow testing of the the Screen Capture API
@@ -103,6 +100,11 @@ MediaCaptureDevicesDispatcher::MediaCaptureDevicesDispatcher()
       is_device_enumeration_disabled_(false),
       media_stream_capture_indicator_(new MediaStreamCaptureIndicator()),
       audio_stream_indicator_(new AudioStreamIndicator()) {
+  // MediaCaptureDevicesDispatcher is a singleton. It should be created on
+  // UI thread. Otherwise, it will not receive
+  // content::NOTIFICATION_WEB_CONTENTS_DESTROYED, and that will result in
+  // possible use after free.
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   notifications_registrar_.Add(
       this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
       content::NotificationService::AllSources());
@@ -110,7 +112,7 @@ MediaCaptureDevicesDispatcher::MediaCaptureDevicesDispatcher()
 
 MediaCaptureDevicesDispatcher::~MediaCaptureDevicesDispatcher() {}
 
-void MediaCaptureDevicesDispatcher::RegisterUserPrefs(
+void MediaCaptureDevicesDispatcher::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterStringPref(
       prefs::kDefaultAudioCaptureDevice,
@@ -237,7 +239,6 @@ void MediaCaptureDevicesDispatcher::ProcessMediaAccessRequestFromExtension(
   content::MediaStreamDevices devices;
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  PrefService* prefs = profile->GetPrefs();
 
 #if defined(OS_ANDROID)
   // Tab capture is not supported on Android.
@@ -259,9 +260,7 @@ void MediaCaptureDevicesDispatcher::ProcessMediaAccessRequestFromExtension(
   } else if (request.audio_type == content::MEDIA_DEVICE_AUDIO_CAPTURE &&
              extension->HasAPIPermission(
                  extensions::APIPermission::kAudioCapture)) {
-    std::string default_device =
-        prefs->GetString(prefs::kDefaultAudioCaptureDevice);
-    GetRequestedDevice(default_device, true, false, &devices);
+    GetDefaultDevicesForProfile(profile, true, false, &devices);
   }
 
   if (request.video_type == content::MEDIA_TAB_VIDEO_CAPTURE &&
@@ -272,9 +271,7 @@ void MediaCaptureDevicesDispatcher::ProcessMediaAccessRequestFromExtension(
         content::MEDIA_TAB_VIDEO_CAPTURE, std::string(), std::string()));
   } else if (request.video_type == content::MEDIA_DEVICE_VIDEO_CAPTURE &&
        extension->HasAPIPermission(extensions::APIPermission::kVideoCapture)) {
-    std::string default_device = prefs->GetString(
-        prefs::kDefaultVideoCaptureDevice);
-    GetRequestedDevice(default_device, false, true, &devices);
+    GetDefaultDevicesForProfile(profile, false, true, &devices);
   }
 
   scoped_ptr<content::MediaStreamUI> ui;
@@ -292,7 +289,7 @@ void MediaCaptureDevicesDispatcher::ProcessRegularMediaAccessRequest(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   RequestsQueue& queue = pending_requests_[web_contents];
-  queue.push(PendingAccessRequest(request, callback));
+  queue.push_back(PendingAccessRequest(request, callback));
 
   // If this is the only request then show the infobar.
   if (queue.size() == 1)
@@ -333,8 +330,11 @@ void MediaCaptureDevicesDispatcher::OnAccessRequestResponse(
   }
 
   RequestsQueue& queue(it->second);
+  if (queue.empty())
+    return;
+
   content::MediaResponseCallback callback = queue.front().callback;
-  queue.pop();
+  queue.pop_front();
 
   if (!queue.empty()) {
     // Post a task to process next queued request. It has to be done
@@ -361,37 +361,61 @@ void MediaCaptureDevicesDispatcher::GetDefaultDevicesForProfile(
   std::string default_device;
   if (audio) {
     default_device = prefs->GetString(prefs::kDefaultAudioCaptureDevice);
-    GetRequestedDevice(default_device, true, false, devices);
+    const content::MediaStreamDevice* device =
+        GetRequestedAudioDevice(default_device);
+    if (!device)
+      device = GetFirstAvailableAudioDevice();
+    if (device)
+      devices->push_back(*device);
   }
 
   if (video) {
     default_device = prefs->GetString(prefs::kDefaultVideoCaptureDevice);
-    GetRequestedDevice(default_device, false, true, devices);
+    const content::MediaStreamDevice* device =
+        GetRequestedVideoDevice(default_device);
+    if (!device)
+      device = GetFirstAvailableVideoDevice();
+    if (device)
+      devices->push_back(*device);
   }
 }
 
-void MediaCaptureDevicesDispatcher::GetRequestedDevice(
-    const std::string& requested_device_id,
-    bool audio,
-    bool video,
-    content::MediaStreamDevices* devices) {
+const content::MediaStreamDevice*
+MediaCaptureDevicesDispatcher::GetRequestedAudioDevice(
+    const std::string& requested_audio_device_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(audio || video);
+  const content::MediaStreamDevices& audio_devices = GetAudioCaptureDevices();
+  const content::MediaStreamDevice* const device =
+      FindDeviceWithId(audio_devices, requested_audio_device_id);
+  return device;
+}
 
-  if (audio) {
-    const content::MediaStreamDevices& audio_devices = GetAudioCaptureDevices();
-    const content::MediaStreamDevice* const device =
-        FindDefaultDeviceWithId(audio_devices, requested_device_id);
-    if (device)
-      devices->push_back(*device);
-  }
-  if (video) {
-    const content::MediaStreamDevices& video_devices = GetVideoCaptureDevices();
-    const content::MediaStreamDevice* const device =
-        FindDefaultDeviceWithId(video_devices, requested_device_id);
-    if (device)
-      devices->push_back(*device);
-  }
+const content::MediaStreamDevice*
+MediaCaptureDevicesDispatcher::GetFirstAvailableAudioDevice() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  const content::MediaStreamDevices& audio_devices = GetAudioCaptureDevices();
+  if (audio_devices.empty())
+    return NULL;
+  return &(*audio_devices.begin());
+}
+
+const content::MediaStreamDevice*
+MediaCaptureDevicesDispatcher::GetRequestedVideoDevice(
+    const std::string& requested_video_device_id) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  const content::MediaStreamDevices& video_devices = GetVideoCaptureDevices();
+  const content::MediaStreamDevice* const device =
+      FindDeviceWithId(video_devices, requested_video_device_id);
+  return device;
+}
+
+const content::MediaStreamDevice*
+MediaCaptureDevicesDispatcher::GetFirstAvailableVideoDevice() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  const content::MediaStreamDevices& video_devices = GetVideoCaptureDevices();
+  if (video_devices.empty())
+    return NULL;
+  return &(*video_devices.begin());
 }
 
 void MediaCaptureDevicesDispatcher::DisableDeviceEnumerationForTesting() {
@@ -429,6 +453,7 @@ void MediaCaptureDevicesDispatcher::OnVideoCaptureDevicesChanged(
 void MediaCaptureDevicesDispatcher::OnMediaRequestStateChanged(
     int render_process_id,
     int render_view_id,
+    int page_request_id,
     const content::MediaStreamDevice& device,
     content::MediaRequestState state) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -436,8 +461,8 @@ void MediaCaptureDevicesDispatcher::OnMediaRequestStateChanged(
       BrowserThread::UI, FROM_HERE,
       base::Bind(
           &MediaCaptureDevicesDispatcher::UpdateMediaRequestStateOnUIThread,
-          base::Unretained(this), render_process_id, render_view_id, device,
-          state));
+          base::Unretained(this), render_process_id, render_view_id,
+          page_request_id, device, state));
 
 }
 
@@ -471,8 +496,30 @@ void MediaCaptureDevicesDispatcher::UpdateVideoDevicesOnUIThread(
 void MediaCaptureDevicesDispatcher::UpdateMediaRequestStateOnUIThread(
     int render_process_id,
     int render_view_id,
+    int page_request_id,
     const content::MediaStreamDevice& device,
     content::MediaRequestState state) {
+  // Cancel the request.
+  if (state == content::MEDIA_REQUEST_STATE_CLOSING) {
+    bool found = false;
+    for (RequestsQueues::iterator rqs_it = pending_requests_.begin();
+         rqs_it != pending_requests_.end(); ++rqs_it) {
+      RequestsQueue& queue = rqs_it->second;
+      for (RequestsQueue::iterator it = queue.begin();
+           it != queue.end(); ++it) {
+        if (it->request.render_process_id == render_process_id &&
+            it->request.render_view_id == render_view_id &&
+            it->request.page_request_id == page_request_id) {
+          queue.erase(it);
+          found = true;
+          break;
+        }
+      }
+      if (found)
+        break;
+    }
+  }
+
   FOR_EACH_OBSERVER(Observer, observers_,
                     OnRequestUpdate(render_process_id,
                                     render_view_id,

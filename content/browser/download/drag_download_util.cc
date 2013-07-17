@@ -15,9 +15,9 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
 #include "content/public/browser/browser_thread.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/file_stream.h"
 #include "net/base/net_errors.h"
+#include "url/gurl.h"
 
 using net::FileStream;
 
@@ -82,7 +82,7 @@ FileStream* CreateFileStreamForDrop(base::FilePath* file_path,
 
     // Explicitly (and redundantly check) for file -- despite the fact that our
     // open won't overwrite -- just to avoid log spew.
-    if (!file_util::PathExists(new_file_path) &&
+    if (!base::PathExists(new_file_path) &&
         file_stream->OpenSync(new_file_path, base::PLATFORM_FILE_CREATE |
                               base::PLATFORM_FILE_WRITE) == net::OK) {
       *file_path = new_file_path;

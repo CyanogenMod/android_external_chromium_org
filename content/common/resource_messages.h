@@ -7,8 +7,8 @@
 // NOTE: All messages must send an |int request_id| as their first parameter.
 
 // Multiply-included message file, hence no include guard.
+#include "base/memory/shared_memory.h"
 #include "base/process.h"
-#include "base/shared_memory.h"
 #include "content/common/content_param_traits_macros.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/resource_response.h"
@@ -39,8 +39,8 @@ struct ParamTraits<scoped_refptr<net::HttpResponseHeaders> > {
 };
 
 template <>
-struct CONTENT_EXPORT ParamTraits<webkit_base::DataElement> {
-  typedef webkit_base::DataElement param_type;
+struct CONTENT_EXPORT ParamTraits<webkit_common::DataElement> {
+  typedef webkit_common::DataElement param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);

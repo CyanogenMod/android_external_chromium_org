@@ -537,13 +537,13 @@ WebPreferences WebContentsImpl::GetWebkitPrefs(RenderViewHost* rvh,
   prefs.fullscreen_enabled =
       !command_line.HasSwitch(switches::kDisableFullScreen);
   prefs.css_sticky_position_enabled =
-      command_line.HasSwitch(switches::kEnableExperimentalWebKitFeatures);
+      command_line.HasSwitch(switches::kEnableExperimentalWebPlatformFeatures);
   prefs.css_shaders_enabled =
       command_line.HasSwitch(switches::kEnableCssShaders);
   prefs.css_grid_layout_enabled =
-      command_line.HasSwitch(switches::kEnableExperimentalWebKitFeatures);
+      command_line.HasSwitch(switches::kEnableExperimentalWebPlatformFeatures);
   prefs.lazy_layout_enabled =
-      command_line.HasSwitch(switches::kEnableExperimentalWebKitFeatures);
+      command_line.HasSwitch(switches::kEnableExperimentalWebPlatformFeatures);
   prefs.region_based_columns_enabled =
       command_line.HasSwitch(switches::kEnableRegionBasedColumns);
   prefs.threaded_html_parser =
@@ -1222,13 +1222,11 @@ void WebContentsImpl::Init(const WebContents::CreateParams& params) {
         GetContentClient()->browser()->GetWebContentsViewDelegate(this);
 
     if (browser_plugin_guest_) {
-      // |render_view_host_delegate_view_| is a WebContentsView* and its
-      // lifetime is managed by its associated WebContentsImpl.
-      WebContentsViewPort* platform_view = CreateWebContentsView(
-          this, delegate, &render_view_host_delegate_view_);
+      scoped_ptr<WebContentsViewPort> platform_view(CreateWebContentsView(
+          this, delegate, &render_view_host_delegate_view_));
 
       WebContentsViewGuest* rv = new WebContentsViewGuest(
-          this, browser_plugin_guest_.get(), platform_view,
+          this, browser_plugin_guest_.get(), platform_view.Pass(),
           render_view_host_delegate_view_);
       render_view_host_delegate_view_ = rv;
       view_.reset(rv);
@@ -1440,7 +1438,7 @@ void WebContentsImpl::CreateNewWindow(
     SessionStorageNamespace* session_storage_namespace) {
   if (delegate_ && !delegate_->ShouldCreateWebContents(
           this, route_id, params.window_container_type, params.frame_name,
-          params.target_url)) {
+          params.target_url, params.disposition, params.user_gesture)) {
     GetRenderViewHost()->GetProcess()->ResumeRequestsForView(route_id);
     GetRenderViewHost()->GetProcess()->ResumeRequestsForView(
         main_frame_route_id);
@@ -1537,6 +1535,7 @@ void WebContentsImpl::CreateNewWindow(
                                 CURRENT_TAB,
                                 PAGE_TRANSITION_LINK,
                                 true /* is_renderer_initiated */);
+      open_params.user_gesture = params.user_gesture;
       new_contents->OpenURL(open_params);
     }
   }
@@ -2677,11 +2676,14 @@ void WebContentsImpl::DidNavigateAnyFramePostCommit(
 }
 
 bool WebContentsImpl::ShouldAssignSiteForURL(const GURL& url) {
-  // Neither about:blank nor the chrome-native: scheme should "use up" a new
-  // SiteInstance.  In both cases, the SiteInstance can still be used for a
-  // normal web site.
-  return !url.SchemeIs(chrome::kChromeNativeScheme) &&
-      url != GURL(kAboutBlankURL);
+  // about:blank should not "use up" a new SiteInstance.  The SiteInstance can
+  // still be used for a normal web site.
+  if (url == GURL(kAboutBlankURL))
+    return false;
+
+  // The embedder will then have the opportunity to determine if the URL
+  // should "use up" the SiteInstance.
+  return GetContentClient()->browser()->ShouldAssignSiteForURL(url);
 }
 
 void WebContentsImpl::UpdateMaxPageIDIfNecessary(RenderViewHost* rvh) {
@@ -2883,7 +2885,7 @@ void WebContentsImpl::RenderViewTerminated(RenderViewHost* rvh,
 
   FOR_EACH_OBSERVER(WebContentsObserver,
                     observers_,
-                    RenderViewGone(GetCrashedStatus()));
+                    RenderProcessGone(GetCrashedStatus()));
 }
 
 void WebContentsImpl::RenderViewDeleted(RenderViewHost* rvh) {
@@ -3180,7 +3182,8 @@ void WebContentsImpl::RequestOpenURL(RenderViewHost* rvh,
                                      const Referrer& referrer,
                                      WindowOpenDisposition disposition,
                                      int64 source_frame_id,
-                                     bool is_cross_site_redirect) {
+                                     bool is_cross_site_redirect,
+                                     bool user_gesture) {
   // If this came from a swapped out RenderViewHost, we only allow the request
   // if we are still in the same BrowsingInstance.
   if (static_cast<RenderViewHostImpl*>(rvh)->is_swapped_out() &&
@@ -3191,7 +3194,7 @@ void WebContentsImpl::RequestOpenURL(RenderViewHost* rvh,
   // Delegate to RequestTransferURL because this is just the generic
   // case where |old_request_id| is empty.
   RequestTransferURL(url, referrer, disposition, source_frame_id,
-                     GlobalRequestID(), is_cross_site_redirect);
+                     GlobalRequestID(), is_cross_site_redirect, user_gesture);
 }
 
 void WebContentsImpl::RequestTransferURL(
@@ -3200,7 +3203,8 @@ void WebContentsImpl::RequestTransferURL(
     WindowOpenDisposition disposition,
     int64 source_frame_id,
     const GlobalRequestID& old_request_id,
-    bool is_cross_site_redirect) {
+    bool is_cross_site_redirect,
+    bool user_gesture) {
   WebContents* new_contents = NULL;
   PageTransition transition_type = PAGE_TRANSITION_LINK;
   if (render_manager_.web_ui()) {
@@ -3223,6 +3227,7 @@ void WebContentsImpl::RequestTransferURL(
         PAGE_TRANSITION_LINK, true /* is_renderer_initiated */);
     params.transferred_global_request_id = old_request_id;
     params.is_cross_site_redirect = is_cross_site_redirect;
+    params.user_gesture = user_gesture;
     new_contents = OpenURL(params);
   }
   if (new_contents) {
@@ -3484,7 +3489,7 @@ void WebContentsImpl::BeforeUnloadFiredFromRenderManager(
   // Note: |this| might be deleted at this point.
 }
 
-void WebContentsImpl::RenderViewGoneFromRenderManager(
+void WebContentsImpl::RenderProcessGoneFromRenderManager(
     RenderViewHost* render_view_host) {
   DCHECK(crashed_status_ != base::TERMINATION_STATUS_STILL_RUNNING);
   RenderViewTerminated(render_view_host, crashed_status_, crashed_error_code_);

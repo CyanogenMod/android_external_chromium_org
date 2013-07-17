@@ -224,7 +224,7 @@ void CreateAppListShortcuts(
     base::FilePath shortcut_file =
         shortcut_paths[i].Append(app_list_shortcut_name).
             AddExtension(installer::kLnkExt);
-    if (!file_util::PathExists(shortcut_file.DirName()) &&
+    if (!base::PathExists(shortcut_file.DirName()) &&
         !file_util::CreateDirectory(shortcut_file.DirName())) {
       NOTREACHED();
       return;
@@ -310,7 +310,7 @@ class AppListController : public AppListServiceImpl {
   virtual void ShowAppList(Profile* requested_profile) OVERRIDE;
   virtual void DismissAppList() OVERRIDE;
   virtual bool IsAppListVisible() const OVERRIDE;
-  virtual void EnableAppList() OVERRIDE;
+  virtual void EnableAppList(Profile* initial_profile) OVERRIDE;
   virtual gfx::NativeWindow GetAppListWindow() OVERRIDE;
   virtual AppListControllerDelegate* CreateControllerDelegate() OVERRIDE;
 
@@ -883,7 +883,7 @@ void AppListController::Init(Profile* initial_profile) {
       chrome_launcher_support::UninstallLegacyAppLauncher(
           chrome_launcher_support::USER_LEVEL_INSTALLATION);
     }
-    EnableAppList();
+    EnableAppList(initial_profile);
   }
 #endif
 
@@ -895,7 +895,7 @@ void AppListController::Init(Profile* initial_profile) {
   MigrateAppLauncherEnabledPref();
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableAppList))
-    EnableAppList();
+    EnableAppList(initial_profile);
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableAppList))
     DisableAppList();
@@ -905,7 +905,8 @@ bool AppListController::IsAppListVisible() const {
   return current_view_ && current_view_->GetWidget()->IsVisible();
 }
 
-void AppListController::EnableAppList() {
+void AppListController::EnableAppList(Profile* initial_profile) {
+  SaveProfilePathToLocalState(initial_profile->GetPath());
   // Check if the app launcher shortcuts have ever been created before.
   // Shortcuts should only be created once. If the user unpins the taskbar
   // shortcut, they can restore it by pinning the start menu or desktop

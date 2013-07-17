@@ -28,8 +28,6 @@ class TestLocationBar : public LocationBar {
 
   // Overridden from LocationBar:
   virtual void ShowFirstRunBubble() OVERRIDE {}
-  virtual void SetInstantSuggestion(
-      const InstantSuggestion& suggestion) OVERRIDE {}
   virtual string16 GetInputString() const OVERRIDE;
   virtual WindowOpenDisposition GetWindowOpenDisposition() const OVERRIDE;
   virtual content::PageTransition GetPageTransition() const OVERRIDE;
@@ -40,6 +38,7 @@ class TestLocationBar : public LocationBar {
   virtual void UpdatePageActions() OVERRIDE {}
   virtual void InvalidatePageActions() OVERRIDE {}
   virtual void UpdateOpenPDFInReaderPrompt() OVERRIDE {}
+  virtual void UpdateAutofillCreditCardView() OVERRIDE {}
   virtual void SaveStateToContents(content::WebContents* contents) OVERRIDE {}
   virtual void Revert() OVERRIDE {}
   virtual const OmniboxView* GetLocationEntry() const OVERRIDE;

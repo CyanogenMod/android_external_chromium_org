@@ -5,10 +5,10 @@
 #include "chrome/browser/tab_contents/background_contents.h"
 
 #include "chrome/browser/background/background_contents_service.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_preferences_util.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/notification_service.h"
@@ -110,7 +110,7 @@ void BackgroundContents::AddNewContents(WebContents* source,
       new_contents, disposition, initial_pos, user_gesture, was_blocked);
 }
 
-void BackgroundContents::RenderViewGone(base::TerminationStatus status) {
+void BackgroundContents::RenderProcessGone(base::TerminationStatus status) {
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_BACKGROUND_CONTENTS_TERMINATED,
       content::Source<Profile>(profile_),

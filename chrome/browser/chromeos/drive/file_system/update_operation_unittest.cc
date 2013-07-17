@@ -42,7 +42,7 @@ TEST_F(UpdateOperationTest, UpdateFileByResourceId_PersistentFile) {
   cache()->PinOnUIThread(
       kResourceId,
       google_apis::test_util::CreateCopyResultCallback(&error));
-  google_apis::test_util::RunBlockingPoolTask();
+  test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);
 
   // First store a file to cache.
@@ -51,7 +51,7 @@ TEST_F(UpdateOperationTest, UpdateFileByResourceId_PersistentFile) {
       kResourceId, kMd5, kTestFile,
       internal::FileCache::FILE_OPERATION_COPY,
       google_apis::test_util::CreateCopyResultCallback(&error));
-  google_apis::test_util::RunBlockingPoolTask();
+  test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);
 
   // Add the dirty bit.
@@ -59,7 +59,7 @@ TEST_F(UpdateOperationTest, UpdateFileByResourceId_PersistentFile) {
   cache()->MarkDirtyOnUIThread(
       kResourceId, kMd5,
       google_apis::test_util::CreateCopyResultCallback(&error));
-  google_apis::test_util::RunBlockingPoolTask();
+  test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);
 
   int64 original_changestamp = fake_service()->largest_changestamp();
@@ -71,7 +71,7 @@ TEST_F(UpdateOperationTest, UpdateFileByResourceId_PersistentFile) {
       kResourceId,
       ClientContext(USER_INITIATED),
       google_apis::test_util::CreateCopyResultCallback(&error));
-  google_apis::test_util::RunBlockingPoolTask();
+  test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);
 
   // Check that the server has received an update.
@@ -84,10 +84,21 @@ TEST_F(UpdateOperationTest, UpdateFileByResourceId_PersistentFile) {
       kResourceId,
       google_apis::test_util::CreateCopyResultCallback(&gdata_error,
                                                        &server_entry));
-  google_apis::test_util::RunBlockingPoolTask();
+  test_util::RunBlockingPoolTask();
   EXPECT_EQ(google_apis::HTTP_SUCCESS, gdata_error);
   EXPECT_EQ(static_cast<int64>(kTestFileContent.size()),
             server_entry->file_size());
+
+  // Make sure that the cache is no longer dirty.
+  bool success = false;
+  FileCacheEntry cache_entry;
+  cache()->GetCacheEntryOnUIThread(
+      server_entry->resource_id(),
+      server_entry->file_md5(),
+      google_apis::test_util::CreateCopyResultCallback(&success, &cache_entry));
+  test_util::RunBlockingPoolTask();
+  ASSERT_TRUE(success);
+  EXPECT_FALSE(cache_entry.is_dirty());
 }
 
 TEST_F(UpdateOperationTest, UpdateFileByResourceId_NonexistentFile) {
@@ -96,8 +107,105 @@ TEST_F(UpdateOperationTest, UpdateFileByResourceId_NonexistentFile) {
       "file:nonexistent_resource_id",
       ClientContext(USER_INITIATED),
       google_apis::test_util::CreateCopyResultCallback(&error));
-  google_apis::test_util::RunBlockingPoolTask();
+  test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_NOT_FOUND, error);
+}
+
+TEST_F(UpdateOperationTest, UpdateFileByResourceId_Md5) {
+  const base::FilePath kFilePath(FILE_PATH_LITERAL("drive/root/File 1.txt"));
+  const std::string kResourceId("file:2_file_resource_id");
+  const std::string kMd5("3b4382ebefec6e743578c76bbd0575ce");
+
+  const base::FilePath kTestFile = temp_dir().Append(FILE_PATH_LITERAL("foo"));
+  const std::string kTestFileContent = "I'm being uploaded! Yay!";
+  google_apis::test_util::WriteStringToFile(kTestFile, kTestFileContent);
+
+  // First store a file to cache.
+  FileError error = FILE_ERROR_FAILED;
+  cache()->StoreOnUIThread(
+      kResourceId, kMd5, kTestFile,
+      internal::FileCache::FILE_OPERATION_COPY,
+      google_apis::test_util::CreateCopyResultCallback(&error));
+  test_util::RunBlockingPoolTask();
+  EXPECT_EQ(FILE_ERROR_OK, error);
+
+  // Add the dirty bit.
+  error = FILE_ERROR_FAILED;
+  cache()->MarkDirtyOnUIThread(
+      kResourceId, kMd5,
+      google_apis::test_util::CreateCopyResultCallback(&error));
+  test_util::RunBlockingPoolTask();
+  EXPECT_EQ(FILE_ERROR_OK, error);
+
+  int64 original_changestamp = fake_service()->largest_changestamp();
+
+  // The callback will be called upon completion of
+  // UpdateFileByResourceId().
+  error = FILE_ERROR_FAILED;
+  operation_->UpdateFileByResourceId(
+      kResourceId,
+      ClientContext(USER_INITIATED),
+      google_apis::test_util::CreateCopyResultCallback(&error));
+  test_util::RunBlockingPoolTask();
+  EXPECT_EQ(FILE_ERROR_OK, error);
+
+  // Check that the server has received an update.
+  EXPECT_LT(original_changestamp, fake_service()->largest_changestamp());
+
+  // Check that the file size is updated to that of the updated content.
+  google_apis::GDataErrorCode gdata_error = google_apis::GDATA_OTHER_ERROR;
+  scoped_ptr<google_apis::ResourceEntry> server_entry;
+  fake_service()->GetResourceEntry(
+      kResourceId,
+      google_apis::test_util::CreateCopyResultCallback(&gdata_error,
+                                                       &server_entry));
+  test_util::RunBlockingPoolTask();
+  EXPECT_EQ(google_apis::HTTP_SUCCESS, gdata_error);
+  EXPECT_EQ(static_cast<int64>(kTestFileContent.size()),
+            server_entry->file_size());
+
+  // Make sure that the cache is no longer dirty.
+  bool success = false;
+  FileCacheEntry cache_entry;
+  cache()->GetCacheEntryOnUIThread(
+      server_entry->resource_id(),
+      server_entry->file_md5(),
+      google_apis::test_util::CreateCopyResultCallback(&success, &cache_entry));
+  test_util::RunBlockingPoolTask();
+  ASSERT_TRUE(success);
+  EXPECT_FALSE(cache_entry.is_dirty());
+
+  // Again mark the cache file dirty.
+  error = FILE_ERROR_FAILED;
+  cache()->MarkDirtyOnUIThread(
+      kResourceId, server_entry->file_md5(),
+      google_apis::test_util::CreateCopyResultCallback(&error));
+  test_util::RunBlockingPoolTask();
+  EXPECT_EQ(FILE_ERROR_OK, error);
+
+  // And call UpdateFileByResourceId again.
+  // In this case, although the file is marked as dirty, but the content
+  // hasn't been changed. Thus, the actual uploading should be skipped.
+  original_changestamp = fake_service()->largest_changestamp();
+  error = FILE_ERROR_FAILED;
+  operation_->UpdateFileByResourceId(
+      kResourceId,
+      ClientContext(USER_INITIATED),
+      google_apis::test_util::CreateCopyResultCallback(&error));
+  test_util::RunBlockingPoolTask();
+  EXPECT_EQ(FILE_ERROR_OK, error);
+
+  EXPECT_EQ(original_changestamp, fake_service()->largest_changestamp());
+
+  // Make sure that the cache is no longer dirty.
+  success = false;
+  cache()->GetCacheEntryOnUIThread(
+      server_entry->resource_id(),
+      server_entry->file_md5(),
+      google_apis::test_util::CreateCopyResultCallback(&success, &cache_entry));
+  test_util::RunBlockingPoolTask();
+  ASSERT_TRUE(success);
+  EXPECT_FALSE(cache_entry.is_dirty());
 }
 
 }  // namespace file_system

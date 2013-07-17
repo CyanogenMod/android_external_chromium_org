@@ -28,12 +28,12 @@ namespace file_system {
 namespace {
 
 // Copies a file from |src_file_path| to |dest_file_path| on the local
-// file system using file_util::CopyFile.
+// file system using base::CopyFile.
 // Returns FILE_ERROR_OK on success or FILE_ERROR_FAILED otherwise.
 FileError CopyLocalFileOnBlockingPool(
     const base::FilePath& src_file_path,
     const base::FilePath& dest_file_path) {
-  return file_util::CopyFile(src_file_path, dest_file_path) ?
+  return base::CopyFile(src_file_path, dest_file_path) ?
       FILE_ERROR_OK : FILE_ERROR_FAILED;
 }
 
@@ -328,17 +328,17 @@ void CopyOperation::CopyAfterGetResourceEntryPair(
 
   // If Drive API v2 is enabled, we can copy resources on server side.
   if (util::IsDriveV2ApiEnabled()) {
-    base::FilePath new_name = dest_file_path.BaseName();
+    base::FilePath new_title = dest_file_path.BaseName();
     if (src_file_proto->file_specific_info().is_hosted_document()) {
       // Drop the document extension, which should not be in the title.
       // TODO(yoshiki): Remove this code with crbug.com/223304.
-      new_name = new_name.RemoveExtension();
+      new_title = new_title.RemoveExtension();
     }
 
     scheduler_->CopyResource(
         src_file_proto->resource_id(),
         dest_parent_proto->resource_id(),
-        new_name.value(),
+        new_title.value(),
         base::Bind(&CopyOperation::OnCopyResourceCompleted,
                    weak_ptr_factory_.GetWeakPtr(), callback));
     return;

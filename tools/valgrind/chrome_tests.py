@@ -7,6 +7,7 @@
 
 import glob
 import logging
+import multiprocessing
 import optparse
 import os
 import stat
@@ -28,7 +29,7 @@ class BuildDirAmbiguous(Exception): pass
 
 class ChromeTests:
   SLOW_TOOLS = ["memcheck", "tsan", "tsan_rv", "drmemory"]
-  LAYOUT_TESTS_DEFAULT_CHUNK_SIZE = 1500
+  LAYOUT_TESTS_DEFAULT_CHUNK_SIZE = 500
 
   def __init__(self, options, args, test):
     if ':' in test:
@@ -292,9 +293,6 @@ class ChromeTests:
   def TestGURL(self):
     return self.SimpleTest("chrome", "googleurl_unittests")
 
-  def TestURL(self):
-    return self.SimpleTest("chrome", "url_unittests")
-
   def TestIpc(self):
     return self.SimpleTest("ipc", "ipc_tests",
                            valgrind_test_args=["--trace_children"])
@@ -346,6 +344,9 @@ class ChromeTests:
 
   def TestUIUnit(self):
     return self.SimpleTest("chrome", "ui_unittests")
+
+  def TestURL(self):
+    return self.SimpleTest("chrome", "url_unittests")
 
   def TestViews(self):
     return self.SimpleTest("views", "views_unittests")
@@ -428,9 +429,14 @@ class ChromeTests:
       os.makedirs(out_dir)
     script = os.path.join(self._source_dir, "webkit", "tools", "layout_tests",
                           "run_webkit_tests.py")
+    # http://crbug.com/260627: After the switch to content_shell from DRT, each
+    # test now brings up 3 processes.  Under Valgrind, they become memory bound
+    # and can eventually OOM if we don't reduce the total count.
+    jobs = int(multiprocessing.cpu_count() * 0.5)
     script_cmd = ["python", script, "-v",
                   "--run-singly",  # run a separate DumpRenderTree for each test
                   "--fully-parallel",
+                  "--child-processes=%d" % jobs,
                   "--time-out-ms=200000",
                   "--no-retry-failures",  # retrying takes too much time
                   # http://crbug.com/176908: Don't launch a browser when done.
@@ -532,10 +538,10 @@ class ChromeTests:
     "ffmpeg": TestFFmpeg,        "ffmpeg_unittests": TestFFmpeg,
     "ffmpeg_regression_tests": TestFFmpegRegressions,
     "googleurl": TestGURL,       "googleurl_unittests": TestGURL,
-    "url": TestURL,              "url_unittests": TestURL,
     "gpu": TestGPU,              "gpu_unittests": TestGPU,
     "ipc": TestIpc,              "ipc_tests": TestIpc,
     "interactive_ui": TestInteractiveUI,
+    "jingle": TestJingle,        "jingle_unittests": TestJingle,
     "layout": TestLayout,        "layout_tests": TestLayout,
     "webkit": TestLayout,
     "media": TestMedia,          "media_unittests": TestMedia,
@@ -543,7 +549,6 @@ class ChromeTests:
     "message_center_unittests" : TestMessageCenter,
     "net": TestNet,              "net_unittests": TestNet,
     "net_perf": TestNetPerf,     "net_perftests": TestNetPerf,
-    "jingle": TestJingle,        "jingle_unittests": TestJingle,
     "ppapi": TestPPAPI,          "ppapi_unittests": TestPPAPI,
     "printing": TestPrinting,    "printing_unittests": TestPrinting,
     "reliability": TestReliability, "reliability_tests": TestReliability,
@@ -556,6 +561,7 @@ class ChromeTests:
     "sync_integration": TestSyncIntegration,
     "ui_unit": TestUIUnit,       "ui_unittests": TestUIUnit,
     "unit": TestUnit,            "unit_tests": TestUnit,
+    "url": TestURL,              "url_unittests": TestURL,
     "views": TestViews,          "views_unittests": TestViews,
   }
 

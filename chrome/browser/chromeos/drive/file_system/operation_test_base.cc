@@ -4,6 +4,7 @@
 
 #include "chrome/browser/chromeos/drive/file_system/operation_test_base.h"
 
+#include "base/prefs/testing_pref_service.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/chromeos/drive/change_list_loader.h"
 #include "chrome/browser/chromeos/drive/fake_free_disk_space_getter.h"
@@ -14,7 +15,6 @@
 #include "chrome/browser/chromeos/drive/test_util.h"
 #include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/google_apis/test_util.h"
-#include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace drive {
@@ -48,7 +48,9 @@ void OperationTestBase::SetUp() {
   blocking_task_runner_ =
       pool->GetSequencedTaskRunner(pool->GetSequenceToken());
 
-  profile_.reset(new TestingProfile);
+  pref_service_.reset(new TestingPrefServiceSimple);
+  test_util::RegisterDrivePrefs(pref_service_->registry());
+
   ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
   fake_drive_service_.reset(new FakeDriveService);
@@ -57,19 +59,21 @@ void OperationTestBase::SetUp() {
   fake_drive_service_->LoadAccountMetadataForWapi(
       "gdata/account_metadata.json");
 
-  scheduler_.reset(new JobScheduler(profile_.get(), fake_drive_service_.get(),
-                                    blocking_task_runner_));
+  scheduler_.reset(new JobScheduler(
+      pref_service_.get(),
+      fake_drive_service_.get(),
+      blocking_task_runner_.get()));
 
   metadata_storage_.reset(new internal::ResourceMetadataStorage(
-      temp_dir_.path(), blocking_task_runner_));
+      temp_dir_.path(), blocking_task_runner_.get()));
   bool success = false;
   base::PostTaskAndReplyWithResult(
-      blocking_task_runner_,
+      blocking_task_runner_.get(),
       FROM_HERE,
       base::Bind(&internal::ResourceMetadataStorage::Initialize,
                  base::Unretained(metadata_storage_.get())),
       google_apis::test_util::CreateCopyResultCallback(&success));
-  google_apis::test_util::RunBlockingPoolTask();
+  test_util::RunBlockingPoolTask();
   ASSERT_TRUE(success);
 
   metadata_.reset(new internal::ResourceMetadata(metadata_storage_.get(),
@@ -77,12 +81,12 @@ void OperationTestBase::SetUp() {
 
   FileError error = FILE_ERROR_FAILED;
   base::PostTaskAndReplyWithResult(
-      blocking_task_runner_,
+      blocking_task_runner_.get(),
       FROM_HERE,
       base::Bind(&internal::ResourceMetadata::Initialize,
                  base::Unretained(metadata_.get())),
       google_apis::test_util::CreateCopyResultCallback(&error));
-  google_apis::test_util::RunBlockingPoolTask();
+  test_util::RunBlockingPoolTask();
   ASSERT_EQ(FILE_ERROR_OK, error);
 
   fake_free_disk_space_getter_.reset(new FakeFreeDiskSpaceGetter);
@@ -92,12 +96,12 @@ void OperationTestBase::SetUp() {
                                        fake_free_disk_space_getter_.get()));
   success = false;
   base::PostTaskAndReplyWithResult(
-      blocking_task_runner_,
+      blocking_task_runner_.get(),
       FROM_HERE,
       base::Bind(&internal::FileCache::Initialize,
                  base::Unretained(cache_.get())),
       google_apis::test_util::CreateCopyResultCallback(&success));
-  google_apis::test_util::RunBlockingPoolTask();
+  test_util::RunBlockingPoolTask();
   ASSERT_TRUE(success);
 
   // Makes sure the FakeDriveService's content is loaded to the metadata_.
@@ -107,7 +111,7 @@ void OperationTestBase::SetUp() {
   change_list_loader.LoadIfNeeded(
       DirectoryFetchInfo(),
       google_apis::test_util::CreateCopyResultCallback(&error));
-  google_apis::test_util::RunBlockingPoolTask();
+  test_util::RunBlockingPoolTask();
   ASSERT_EQ(FILE_ERROR_OK, error);
 }
 
@@ -120,7 +124,7 @@ FileError OperationTestBase::GetLocalResourceEntry(const base::FilePath& path,
       base::Bind(&internal::ResourceMetadata::GetResourceEntryByPath,
                  base::Unretained(metadata()), path, entry),
       base::Bind(google_apis::test_util::CreateCopyResultCallback(&error)));
-  google_apis::test_util::RunBlockingPoolTask();
+  test_util::RunBlockingPoolTask();
   return error;
 }
 

@@ -30,6 +30,7 @@
 #include "cc/layers/render_surface_impl.h"
 #include "cc/layers/scrollbar_layer_impl.h"
 #include "cc/output/compositor_frame_metadata.h"
+#include "cc/output/copy_output_request.h"
 #include "cc/output/delegating_renderer.h"
 #include "cc/output/gl_renderer.h"
 #include "cc/output/software_renderer.h"
@@ -194,7 +195,8 @@ LayerTreeHostImpl::LayerTreeHostImpl(
       device_scale_factor_(1.f),
       overdraw_bottom_height_(0.f),
       animation_registrar_(AnimationRegistrar::Create()),
-      rendering_stats_instrumentation_(rendering_stats_instrumentation) {
+      rendering_stats_instrumentation_(rendering_stats_instrumentation),
+      need_check_for_completed_tile_uploads_before_draw_(false) {
   DCHECK(proxy_->IsImplThread());
   DidVisibilityChange(this, visible_);
 
@@ -563,6 +565,9 @@ bool LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
     TRACE_EVENT0("cc",
                  "LayerTreeHostImpl::CalculateRenderPasses::EmptyDamageRect");
     frame->has_no_damage = true;
+    // A copy request should cause damage, so we should not have any copy
+    // requests in this case.
+    DCHECK_EQ(0u, active_tree_->LayersWithCopyOutputRequest().size());
     return true;
   }
 
@@ -577,7 +582,14 @@ bool LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
        --surface_index) {
     LayerImpl* render_surface_layer =
         (*frame->render_surface_layer_list)[surface_index];
-    render_surface_layer->render_surface()->AppendRenderPasses(frame);
+    RenderSurfaceImpl* render_surface = render_surface_layer->render_surface();
+
+    bool should_draw_into_render_pass =
+        render_surface_layer->parent() == NULL ||
+        render_surface->contributes_to_drawn_surface() ||
+        render_surface_layer->HasCopyRequest();
+    if (should_draw_into_render_pass)
+      render_surface_layer->render_surface()->AppendRenderPasses(frame);
   }
 
   bool record_metrics_for_frame =
@@ -633,7 +645,7 @@ bool LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
     bool prevent_occlusion = it.target_render_surface_layer()->HasCopyRequest();
     occlusion_tracker.EnterLayer(it, prevent_occlusion);
 
-    AppendQuadsData append_quads_data(target_render_pass->id);
+    AppendQuadsData append_quads_data(target_render_pass_id);
 
     if (it.represents_target_render_surface()) {
       if (it->HasCopyRequest()) {
@@ -641,7 +653,8 @@ bool LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
         it->TakeCopyRequestsAndTransformToTarget(
             &target_render_pass->copy_requests);
       }
-    } else if (it.represents_contributing_render_surface()) {
+    } else if (it.represents_contributing_render_surface() &&
+               it->render_surface()->contributes_to_drawn_surface()) {
       RenderPass::Id contributing_render_pass_id =
           it->render_surface()->RenderPassId();
       RenderPass* contributing_render_pass =
@@ -750,6 +763,16 @@ bool LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
     renderer_->DecideRenderPassAllocationsForFrame(frame->render_passes);
   RemoveRenderPasses(CullRenderPassesWithCachedTextures(renderer_.get()),
                      frame);
+
+  // Any copy requests left in the tree are not going to get serviced, and
+  // should be aborted.
+  ScopedPtrVector<CopyOutputRequest> requests_to_abort;
+  while (!active_tree_->LayersWithCopyOutputRequest().empty()) {
+    LayerImpl* layer = active_tree_->LayersWithCopyOutputRequest().back();
+    layer->TakeCopyRequestsAndTransformToTarget(&requests_to_abort);
+  }
+  for (size_t i = 0; i < requests_to_abort.size(); ++i)
+    requests_to_abort[i]->SendEmptyResult();
 
   // If we're making a frame to draw, it better have at least one render pass.
   DCHECK(!frame->render_passes.empty());
@@ -921,7 +944,15 @@ void LayerTreeHostImpl::RemoveRenderPasses(RenderPassCuller culler,
 
 bool LayerTreeHostImpl::PrepareToDraw(FrameData* frame,
                                       gfx::Rect device_viewport_damage_rect) {
-  TRACE_EVENT0("cc", "LayerTreeHostImpl::PrepareToDraw");
+  TRACE_EVENT1("cc",
+               "LayerTreeHostImpl::PrepareToDraw",
+               "SourceFrameNumber",
+               active_tree_->source_frame_number());
+
+  if (need_check_for_completed_tile_uploads_before_draw_) {
+    DCHECK(tile_manager_);
+    tile_manager_->CheckForCompletedTileUploads();
+  }
 
   active_tree_->UpdateDrawProperties();
 
@@ -1010,8 +1041,10 @@ void LayerTreeHostImpl::DidInitializeVisibleTile() {
 }
 
 void LayerTreeHostImpl::NotifyReadyToActivate() {
-  if (pending_tree_)
+  if (pending_tree_) {
+    need_check_for_completed_tile_uploads_before_draw_ = true;
     ActivatePendingTree();
+  }
 }
 
 bool LayerTreeHostImpl::ShouldClearRootRenderPass() const {
@@ -1258,13 +1291,6 @@ gfx::SizeF LayerTreeHostImpl::VisibleViewportSize() const {
   gfx::SizeF dip_size =
       gfx::ScaleSize(device_viewport_size(), 1.f / device_scale_factor());
 
-  // The clip layer should be used if non-overlay scrollbars may exist since
-  // it adjusts for them.
-  LayerImpl* clip_layer = active_tree_->RootClipLayer();
-  if (!Settings().solid_color_scrollbars && clip_layer &&
-      clip_layer->masks_to_bounds())
-    dip_size = clip_layer->bounds();
-
   float top_offset =
       top_controls_manager_ ? top_controls_manager_->content_top_offset() : 0.f;
   return gfx::SizeF(dip_size.width(),
@@ -1342,6 +1368,8 @@ void LayerTreeHostImpl::CheckForCompletedTileUploads() {
       "spurious redraws.";
   if (tile_manager_)
     tile_manager_->CheckForCompletedTileUploads();
+
+  need_check_for_completed_tile_uploads_before_draw_ = false;
 }
 
 void LayerTreeHostImpl::ActivatePendingTreeIfNeeded() {
@@ -1357,6 +1385,9 @@ void LayerTreeHostImpl::ActivatePendingTreeIfNeeded() {
     ActivatePendingTree();
     return;
   }
+
+  // Manage tiles in case state affecting tile priority has changed.
+  ManageTiles();
 
   TRACE_EVENT_ASYNC_STEP1(
     "cc",
@@ -1449,12 +1480,13 @@ void LayerTreeHostImpl::ReleaseTreeResources() {
 
 void LayerTreeHostImpl::CreateAndSetRenderer(
     OutputSurface* output_surface,
-    ResourceProvider* resource_provider) {
+    ResourceProvider* resource_provider,
+    bool skip_gl_renderer) {
   DCHECK(!renderer_);
   if (output_surface->capabilities().delegated_rendering) {
     renderer_ =
         DelegatingRenderer::Create(this, output_surface, resource_provider);
-  } else if (output_surface->context3d()) {
+  } else if (output_surface->context3d() && !skip_gl_renderer) {
     renderer_ = GLRenderer::Create(this,
                                    output_surface,
                                    resource_provider,
@@ -1469,6 +1501,20 @@ void LayerTreeHostImpl::CreateAndSetRenderer(
     renderer_->SetVisible(visible_);
     SetFullRootLayerDamage();
   }
+}
+
+void LayerTreeHostImpl::CreateAndSetTileManager(
+    ResourceProvider* resource_provider,
+    bool using_map_image) {
+  DCHECK(settings_.impl_side_painting);
+  DCHECK(resource_provider);
+  tile_manager_ = TileManager::Create(this,
+                                      resource_provider,
+                                      settings_.num_raster_threads,
+                                      rendering_stats_instrumentation_,
+                                      using_map_image);
+  UpdateTileManagerMemoryPolicy(ActualManagedMemoryPolicy());
+  need_check_for_completed_tile_uploads_before_draw_ = false;
 }
 
 void LayerTreeHostImpl::EnforceZeroBudget(bool zero_budget) {
@@ -1513,19 +1559,16 @@ bool LayerTreeHostImpl::InitializeRenderer(
   if (output_surface->capabilities().deferred_gl_initialization)
     EnforceZeroBudget(true);
 
-  CreateAndSetRenderer(output_surface.get(), resource_provider.get());
+  bool skip_gl_renderer = false;
+  CreateAndSetRenderer(
+      output_surface.get(), resource_provider.get(), skip_gl_renderer);
 
   if (!renderer_)
     return false;
 
   if (settings_.impl_side_painting) {
-    bool using_map_image = GetRendererCapabilities().using_map_image;
-    tile_manager_ = TileManager::Create(this,
-                                        resource_provider.get(),
-                                        settings_.num_raster_threads,
-                                        rendering_stats_instrumentation_,
-                                        using_map_image);
-    UpdateTileManagerMemoryPolicy(ActualManagedMemoryPolicy());
+    CreateAndSetTileManager(resource_provider.get(),
+                            GetRendererCapabilities().using_map_image);
   }
 
   // Setup BeginFrameEmulation if it's not supported natively
@@ -1570,8 +1613,10 @@ bool LayerTreeHostImpl::DeferredInitialize(
 
   ReleaseTreeResources();
   renderer_.reset();
-  resource_provider_->Reinitialize(settings_.highp_threshold_min);
-  CreateAndSetRenderer(output_surface_.get(), resource_provider_.get());
+  resource_provider_->InitializeGL();
+  bool skip_gl_renderer = false;
+  CreateAndSetRenderer(
+      output_surface_.get(), resource_provider_.get(), skip_gl_renderer);
 
   bool success = !!renderer_.get();
   client_->DidTryInitializeRendererOnImplThread(success,
@@ -1581,6 +1626,33 @@ bool LayerTreeHostImpl::DeferredInitialize(
     client_->SetNeedsCommitOnImplThread();
   }
   return success;
+}
+
+void LayerTreeHostImpl::ReleaseGL() {
+  DCHECK(output_surface_->capabilities().deferred_gl_initialization);
+  DCHECK(settings_.impl_side_painting);
+  DCHECK(settings_.solid_color_scrollbars);
+  DCHECK(output_surface_->context3d());
+
+  ReleaseTreeResources();
+  renderer_.reset();
+  tile_manager_.reset();
+  resource_provider_->InitializeSoftware();
+
+  bool skip_gl_renderer = true;
+  CreateAndSetRenderer(
+      output_surface_.get(), resource_provider_.get(), skip_gl_renderer);
+  DCHECK(renderer_);
+
+  EnforceZeroBudget(true);
+  CreateAndSetTileManager(resource_provider_.get(),
+                          GetRendererCapabilities().using_map_image);
+  DCHECK(tile_manager_);
+
+  bool success = true;
+  client_->DidTryInitializeRendererOnImplThread(
+      success, scoped_refptr<ContextProvider>());
+  client_->SetNeedsCommitOnImplThread();
 }
 
 void LayerTreeHostImpl::SetViewportSize(gfx::Size device_viewport_size) {
@@ -2307,37 +2379,15 @@ scoped_ptr<base::Value> LayerTreeHostImpl::ActivationStateAsValue() const {
   return state.PassAs<base::Value>();
 }
 
-// static
-LayerImpl* LayerTreeHostImpl::GetNonCompositedContentLayerRecursive(
-    LayerImpl* layer) {
-  if (!layer)
-    return NULL;
-
-  if (layer->DrawsContent())
-    return layer;
-
-  for (LayerImplList::const_iterator it = layer->children().begin();
-       it != layer->children().end(); ++it) {
-    LayerImpl* nccr = GetNonCompositedContentLayerRecursive(*it);
-    if (nccr)
-      return nccr;
-  }
-
-  return NULL;
-}
-
-skia::RefPtr<SkPicture> LayerTreeHostImpl::CapturePicture() {
-  LayerTreeImpl* tree =
-      pending_tree_ ? pending_tree_.get() : active_tree_.get();
-  LayerImpl* layer = GetNonCompositedContentLayerRecursive(tree->root_layer());
-  return layer ? layer->GetPicture() : skia::RefPtr<SkPicture>();
-}
-
-void LayerTreeHostImpl::SetDebugState(const LayerTreeDebugState& debug_state) {
-  if (debug_state_.continuous_painting != debug_state.continuous_painting)
+void LayerTreeHostImpl::SetDebugState(
+    const LayerTreeDebugState& new_debug_state) {
+  if (LayerTreeDebugState::Equal(debug_state_, new_debug_state))
+    return;
+  if (debug_state_.continuous_painting != new_debug_state.continuous_painting)
     paint_time_counter_->ClearHistory();
 
-  debug_state_ = debug_state;
+  debug_state_ = new_debug_state;
+  SetFullRootLayerDamage();
 }
 
 }  // namespace cc

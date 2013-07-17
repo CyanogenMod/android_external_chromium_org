@@ -41,6 +41,7 @@
 #include "chrome/browser/bookmarks/bookmark_storage.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/download/download_prefs.h"
@@ -109,7 +110,6 @@
 #include "chrome/common/automation_id.h"
 #include "chrome/common/automation_messages.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/background_info.h"
@@ -2108,6 +2108,7 @@ void TestingAutomationProvider::PerformActionOnInfobar(
     reply.SendError("Invalid or missing args");
     return;
   }
+  size_t infobar_index = static_cast<size_t>(infobar_index_int);
 
   WebContents* web_contents =
       browser->tab_strip_model()->GetWebContentsAt(tab_index);
@@ -2115,37 +2116,32 @@ void TestingAutomationProvider::PerformActionOnInfobar(
     reply.SendError(base::StringPrintf("No such tab at index %d", tab_index));
     return;
   }
+
   InfoBarService* infobar_service =
       InfoBarService::FromWebContents(web_contents);
-
-  InfoBarDelegate* infobar = NULL;
-  size_t infobar_index = static_cast<size_t>(infobar_index_int);
   if (infobar_index >= infobar_service->infobar_count()) {
     reply.SendError(base::StringPrintf("No such infobar at index %" PRIuS,
                                        infobar_index));
     return;
   }
-  infobar = infobar_service->infobar_at(infobar_index);
+  InfoBarDelegate* infobar = infobar_service->infobar_at(infobar_index);
 
-  if ("dismiss" == action) {
+  if (action == "dismiss") {
     infobar->InfoBarDismissed();
     infobar_service->RemoveInfoBar(infobar);
     reply.SendSuccess(NULL);
     return;
   }
-  if ("accept" == action || "cancel" == action) {
-    ConfirmInfoBarDelegate* confirm_infobar;
-    if (!(confirm_infobar = infobar->AsConfirmInfoBarDelegate())) {
+  if ((action == "accept") || (action == "cancel")) {
+    ConfirmInfoBarDelegate* delegate = infobar->AsConfirmInfoBarDelegate();
+    if (!delegate) {
       reply.SendError("Not a confirm infobar");
       return;
     }
-    if ("accept" == action) {
-      if (confirm_infobar->Accept())
-        infobar_service->RemoveInfoBar(infobar);
-    } else if ("cancel" == action) {
-      if (confirm_infobar->Cancel())
-        infobar_service->RemoveInfoBar(infobar);
-    }
+    bool remove_infobar = (action == "accept") ?
+        delegate->Accept() : delegate->Cancel();
+    if (remove_infobar)
+      infobar_service->RemoveInfoBar(infobar);
     reply.SendSuccess(NULL);
     return;
   }

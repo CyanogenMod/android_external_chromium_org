@@ -5,6 +5,7 @@
 #include "ash/display/display_controller.h"
 
 #include "ash/display/display_info.h"
+#include "ash/display/display_layout_store.h"
 #include "ash/display/display_manager.h"
 #include "ash/launcher/launcher.h"
 #include "ash/screen_ash.h"
@@ -77,11 +78,10 @@ gfx::Display GetSecondaryDisplay() {
 
 void SetSecondaryDisplayLayoutAndOffset(DisplayLayout::Position position,
                                         int offset) {
-  DisplayController* display_controller =
-      Shell::GetInstance()->display_controller();
   DisplayLayout layout(position, offset);
   ASSERT_GT(Shell::GetScreen()->GetNumDisplays(), 1);
-  display_controller->SetLayoutForCurrentDisplays(layout);
+  Shell::GetInstance()->display_controller()->
+      SetLayoutForCurrentDisplays(layout);
 }
 
 void SetSecondaryDisplayLayout(DisplayLayout::Position position) {
@@ -89,7 +89,7 @@ void SetSecondaryDisplayLayout(DisplayLayout::Position position) {
 }
 
 void SetDefaultDisplayLayout(DisplayLayout::Position position) {
-  Shell::GetInstance()->display_controller()->
+  Shell::GetInstance()->display_manager()->layout_store()->
       SetDefaultDisplayLayout(DisplayLayout(position, 0));
 }
 
@@ -368,7 +368,7 @@ TEST_F(DisplayControllerTest, MirroredLayout) {
   EXPECT_EQ(
       2U, Shell::GetInstance()->display_manager()->num_connected_displays());
 
-  UpdateDisplay("500x500,1+0-500x500");
+  UpdateDisplay("1+0-500x500,1+0-500x500");
   EXPECT_TRUE(display_controller->GetCurrentDisplayLayout().mirrored);
   EXPECT_EQ(1, Shell::GetScreen()->GetNumDisplays());
   EXPECT_EQ(

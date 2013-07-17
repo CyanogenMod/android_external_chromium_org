@@ -136,11 +136,10 @@ void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
 }
 
 LayerImpl* LayerTreeImpl::RootScrollLayer() const {
-  DCHECK(IsActiveTree());
   return root_scroll_layer_;
 }
 
-LayerImpl* LayerTreeImpl::RootClipLayer() const {
+LayerImpl* LayerTreeImpl::RootContainerLayer() const {
   return root_scroll_layer_ ? root_scroll_layer_->parent() : NULL;
 }
 
@@ -209,11 +208,21 @@ gfx::SizeF LayerTreeImpl::ScrollableViewportSize() const {
 }
 
 void LayerTreeImpl::UpdateMaxScrollOffset() {
-  if (!root_scroll_layer_ || !root_scroll_layer_->children().size())
+  LayerImpl* root_scroll = RootScrollLayer();
+  if (!root_scroll || !root_scroll->children().size())
     return;
 
   gfx::Vector2dF max_scroll = gfx::Rect(ScrollableSize()).bottom_right() -
       gfx::RectF(ScrollableViewportSize()).bottom_right();
+
+  // The scrollable viewport size is based on device viewport instead of Blink's
+  // container layer, so we need to adjust for non-overlay scrollbars.
+  ScrollbarLayerImpl* horiz = root_scroll->horizontal_scrollbar_layer();
+  ScrollbarLayerImpl* vertical = root_scroll->vertical_scrollbar_layer();
+  if (horiz && !horiz->is_overlay_scrollbar())
+    max_scroll.set_y(max_scroll.y() + horiz->thumb_thickness());
+  if (vertical && !vertical->is_overlay_scrollbar())
+    max_scroll.set_x(max_scroll.x() + vertical->thumb_thickness());
 
   // The viewport may be larger than the contents in some cases, such as
   // having a vertical scrollbar but no horizontal overflow.
@@ -233,9 +242,9 @@ void LayerTreeImpl::UpdateSolidColorScrollbars() {
       gfx::PointAtOffsetFromOrigin(root_scroll->TotalScrollOffset()),
       ScrollableViewportSize());
   float vertical_adjust = 0.0f;
-  if (RootClipLayer())
+  if (RootContainerLayer())
     vertical_adjust = layer_tree_host_impl_->VisibleViewportSize().height() -
-                      RootClipLayer()->bounds().height();
+                      RootContainerLayer()->bounds().height();
   if (ScrollbarLayerImpl* horiz = root_scroll->horizontal_scrollbar_layer()) {
     horiz->set_vertical_adjust(vertical_adjust);
     horiz->set_visible_to_total_length_ratio(
@@ -249,20 +258,13 @@ void LayerTreeImpl::UpdateSolidColorScrollbars() {
 }
 
 void LayerTreeImpl::UpdateDrawProperties() {
-  if (IsActiveTree() && RootScrollLayer() && RootClipLayer())
+  if (IsActiveTree() && RootScrollLayer() && RootContainerLayer())
     UpdateRootScrollLayerSizeDelta();
 
   if (settings().solid_color_scrollbars &&
       IsActiveTree() &&
       RootScrollLayer()) {
     UpdateSolidColorScrollbars();
-
-    // The top controls manager is incompatible with the WebKit-created cliprect
-    // because it can bring into view a larger amount of content when it
-    // hides. It's safe to deactivate the clip rect if no non-overlay scrollbars
-    // are present.
-    if (RootClipLayer() && layer_tree_host_impl_->top_controls_manager())
-      RootClipLayer()->SetMasksToBounds(false);
   }
 
   needs_update_draw_properties_ = false;
@@ -276,10 +278,12 @@ void LayerTreeImpl::UpdateDrawProperties() {
     return;
 
   {
-    TRACE_EVENT1("cc",
+    TRACE_EVENT2("cc",
                  "LayerTreeImpl::UpdateDrawProperties",
                  "IsActive",
-                 IsActiveTree());
+                 IsActiveTree(),
+                 "SourceFrameNumber",
+                 source_frame_number_);
     LayerTreeHostCommon::CalculateDrawProperties(
         root_layer(),
         layer_tree_host_impl_->DeviceViewport().size(),
@@ -523,16 +527,16 @@ void LayerTreeImpl::SetRootLayerScrollOffsetDelegate(
 
 void LayerTreeImpl::UpdateRootScrollLayerSizeDelta() {
   LayerImpl* root_scroll = RootScrollLayer();
-  LayerImpl* root_clip = RootClipLayer();
+  LayerImpl* root_container = RootContainerLayer();
   DCHECK(root_scroll);
-  DCHECK(root_clip);
+  DCHECK(root_container);
   DCHECK(IsActiveTree());
 
   gfx::Vector2dF scrollable_viewport_size =
       gfx::RectF(ScrollableViewportSize()).bottom_right() - gfx::PointF();
 
   gfx::Vector2dF original_viewport_size =
-      gfx::RectF(root_clip->bounds()).bottom_right() -
+      gfx::RectF(root_container->bounds()).bottom_right() -
       gfx::PointF();
   original_viewport_size.Scale(1 / page_scale_factor());
 
@@ -554,6 +558,40 @@ void LayerTreeImpl::ClearLatencyInfo() {
 
 void LayerTreeImpl::WillModifyTilePriorities() {
   layer_tree_host_impl_->SetNeedsManageTiles();
+}
+
+void LayerTreeImpl::AddLayerWithCopyOutputRequest(LayerImpl* layer) {
+  // Only the active tree needs to know about layers with copy requests, as
+  // they are aborted if not serviced during draw.
+  DCHECK(IsActiveTree());
+
+  DCHECK(std::find(layers_with_copy_output_request_.begin(),
+                   layers_with_copy_output_request_.end(),
+                   layer) == layers_with_copy_output_request_.end());
+  layers_with_copy_output_request_.push_back(layer);
+}
+
+void LayerTreeImpl::RemoveLayerWithCopyOutputRequest(LayerImpl* layer) {
+  // Only the active tree needs to know about layers with copy requests, as
+  // they are aborted if not serviced during draw.
+  DCHECK(IsActiveTree());
+
+  std::vector<LayerImpl*>::iterator it = std::find(
+      layers_with_copy_output_request_.begin(),
+      layers_with_copy_output_request_.end(),
+      layer);
+  DCHECK(it != layers_with_copy_output_request_.end());
+  if (it != layers_with_copy_output_request_.end())
+    layers_with_copy_output_request_.erase(it);
+}
+
+const std::vector<LayerImpl*> LayerTreeImpl::LayersWithCopyOutputRequest()
+    const {
+  // Only the active tree needs to know about layers with copy requests, as
+  // they are aborted if not serviced during draw.
+  DCHECK(IsActiveTree());
+
+  return layers_with_copy_output_request_;
 }
 
 }  // namespace cc

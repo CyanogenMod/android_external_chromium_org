@@ -11,13 +11,13 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/favicon/favicon_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
@@ -27,7 +27,6 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
-#include "googleurl/src/gurl.h"
 #include "grit/theme_resources.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -35,6 +34,7 @@
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_family.h"
 #include "ui/gfx/image/image_skia.h"
+#include "url/gurl.h"
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 #include "base/environment.h"
@@ -260,7 +260,7 @@ void UpdateShortcutWorker::CheckExistingShortcuts() {
 
     base::FilePath shortcut_file = path.Append(file_name_).
         ReplaceExtension(FILE_PATH_LITERAL(".lnk"));
-    if (file_util::PathExists(shortcut_file)) {
+    if (base::PathExists(shortcut_file)) {
       shortcut_files_.push_back(shortcut_file);
     }
   }
@@ -280,7 +280,7 @@ void UpdateShortcutWorker::UpdateShortcutsOnFileThread() {
 
   // Ensure web_app_path exists. web_app_path could be missing for a legacy
   // shortcut created by Gears.
-  if (!file_util::PathExists(web_app_path) &&
+  if (!base::PathExists(web_app_path) &&
       !file_util::CreateDirectory(web_app_path)) {
     NOTREACHED();
     return;

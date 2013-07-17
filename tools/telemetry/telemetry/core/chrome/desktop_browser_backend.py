@@ -31,8 +31,12 @@ class DesktopBrowserBackend(browser_backend.BrowserBackend):
     if not self._executable:
       raise Exception('Cannot create browser, no executable found!')
 
-    assert not flash_path or os.path.exists(flash_path)
     self._flash_path = flash_path
+    if self._flash_path and not os.path.exists(self._flash_path):
+      logging.warning(('Could not find flash at %s. Running without flash.\n\n'
+                       'To fix this see http://go/read-src-internal') %
+                      self._flash_path)
+      self._flash_path = None
 
     if len(options.extensions_to_load) > 0 and is_content_shell:
       raise browser_backend.ExtensionsNotSupportedException(
@@ -123,6 +127,12 @@ class DesktopBrowserBackend(browser_backend.BrowserBackend):
         return f.read()
     except IOError:
       return ''
+
+  def GetStackTrace(self):
+    # crbug.com/223572, symbolize stack trace for desktop browsers.
+    logging.warning('Stack traces not supported on desktop browsers, '
+                    'returning stdout')
+    return self.GetStandardOutput()
 
   def __del__(self):
     self.Close()

@@ -424,6 +424,10 @@ extern const int kNumberOfChromeDebugURLs;
 // Canonical schemes you can use as input to GURL.SchemeIs().
 extern const char kExtensionResourceScheme[];
 
+// The chrome-native: scheme is used show pages rendered with platform specific
+// widgets instead of using HTML.
+extern const char kChromeNativeScheme[];
+
 // The chrome-search: scheme is served by the same backend as chrome:.  However,
 // only specific URLDataSources are enabled to serve requests via the
 // chrome-search: scheme.  See |InstantIOContext::ShouldServiceRequest| and its
@@ -446,10 +450,6 @@ extern const char kChromeSearchScheme[];
 extern const char kChromeSearchLocalNtpHost[];
 extern const char kChromeSearchLocalNtpUrl[];
 extern const char kChromeSearchLocalGoogleNtpUrl[];
-
-// Host for search suggestions iframes.
-extern const char kChromeSearchSuggestionHost[];
-extern const char kChromeSearchSuggestionUrl[];
 
 // Host and URL for most visited iframes used on the Instant Extended NTP.
 extern const char kChromeSearchMostVisitedHost[];

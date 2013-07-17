@@ -11,12 +11,12 @@
 #include "base/message_loop.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/test/test_timeouts.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/invalidation/invalidator_storage.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/sync/glue/device_info.h"
 #include "chrome/browser/sync/glue/synced_device_tracker.h"
 #include "chrome/browser/sync/sync_prefs.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_service.h"
@@ -234,14 +234,10 @@ class SyncBackendHostTest : public testing::Test {
   void IssueRefreshRequest(syncer::ModelTypeSet types) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-    syncer::ModelTypeInvalidationMap invalidation_map(
-        ModelTypeSetToInvalidationMap(types, std::string()));
-
     content::NotificationService::current()->Notify(
         chrome::NOTIFICATION_SYNC_REFRESH_LOCAL,
         content::Source<Profile>(profile_.get()),
-        content::Details<syncer::ModelTypeInvalidationMap>(
-            &invalidation_map));
+        content::Details<syncer::ModelTypeSet>(&types));
   }
 
  protected:

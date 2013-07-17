@@ -164,6 +164,12 @@ void SetUsesScreenCoordinates(aura::Window* container) {
   container->SetProperty(internal::kUsesScreenCoordinatesKey, true);
 }
 
+// Mark the container window so that a widget added to this container will
+// say in the same root window regardless of the bounds specified.
+void DescendantShouldStayInSameRootWindow(aura::Window* container) {
+  container->SetProperty(internal::kStayInSameRootWindowKey, true);
+}
+
 }  // namespace
 
 namespace internal {
@@ -203,18 +209,6 @@ RootWindowController* RootWindowController::ForActiveRootWindow() {
   return GetRootWindowController(Shell::GetActiveRootWindow());
 }
 
-void RootWindowController::EnableTouchHudProjection() {
-  if (touch_hud_projection_)
-    return;
-  set_touch_hud_projection(new TouchHudProjection(root_window_.get()));
-}
-
-void RootWindowController::DisableTouchHudProjection() {
-  if (!touch_hud_projection_)
-    return;
-  touch_hud_projection_->Remove();
-}
-
 void RootWindowController::SetWallpaperController(
     DesktopBackgroundWidgetController* controller) {
   wallpaper_controller_.reset(controller);
@@ -228,6 +222,8 @@ void RootWindowController::SetAnimatingWallpaperController(
 }
 
 void RootWindowController::Shutdown() {
+  Shell::GetInstance()->RemoveShellObserver(this);
+
   if (animating_wallpaper_controller_.get())
     animating_wallpaper_controller_->StopAnimating();
   wallpaper_controller_.reset();
@@ -292,6 +288,8 @@ void RootWindowController::Init(bool first_run_after_boot) {
       GetSystemModalLayoutManager(NULL)->has_modal_background()) {
     GetSystemModalLayoutManager(NULL)->CreateModalBackground();
   }
+
+  Shell::GetInstance()->AddShellObserver(this);
 }
 
 void RootWindowController::ShowLauncher() {
@@ -306,10 +304,6 @@ void RootWindowController::OnLauncherCreated() {
     panel_layout_manager_->SetLauncher(shelf_->launcher());
   if (docked_layout_manager_)
     docked_layout_manager_->SetLauncher(shelf_->launcher());
-}
-
-void RootWindowController::OnLoginStateChanged(user::LoginStatus status) {
-  shelf_->shelf_layout_manager()->UpdateVisibilityState();
 }
 
 void RootWindowController::UpdateAfterLoginStatusChange(
@@ -364,7 +358,7 @@ void RootWindowController::CloseChildWindows() {
   shelf_->ShutdownStatusAreaWidget();
 
   if (shelf_->shelf_layout_manager())
-    shelf_->shelf_layout_manager()->set_workspace_controller(NULL);
+    shelf_->shelf_layout_manager()->PrepareForShutdown();
 
   // Close background widget first as it depends on tooltip.
   wallpaper_controller_.reset();
@@ -611,11 +605,12 @@ void RootWindowController::CreateContainersInRootWindow(
       non_lock_screen_containers);
   SetUsesScreenCoordinates(panel_container);
 
-  aura::Window* launcher_container =
+  aura::Window* shelf_container =
       CreateContainer(kShellWindowId_ShelfContainer,
-                      "LauncherContainer",
+                      "ShelfContainer",
                       non_lock_screen_containers);
-  SetUsesScreenCoordinates(launcher_container);
+  SetUsesScreenCoordinates(shelf_container);
+  DescendantShouldStayInSameRootWindow(shelf_container);
 
   aura::Window* app_list_container =
       CreateContainer(kShellWindowId_AppListContainer,
@@ -667,6 +662,7 @@ void RootWindowController::CreateContainersInRootWindow(
                       "StatusContainer",
                       lock_screen_related_containers);
   SetUsesScreenCoordinates(status_container);
+  DescendantShouldStayInSameRootWindow(status_container);
 
   aura::Window* settings_bubble_container = CreateContainer(
       kShellWindowId_SettingBubbleContainer,
@@ -675,6 +671,7 @@ void RootWindowController::CreateContainersInRootWindow(
   views::corewm::SetChildWindowVisibilityChangesAnimated(
       settings_bubble_container);
   SetUsesScreenCoordinates(settings_bubble_container);
+  DescendantShouldStayInSameRootWindow(settings_bubble_container);
 
   aura::Window* menu_container = CreateContainer(
       kShellWindowId_MenuContainer,
@@ -698,6 +695,29 @@ void RootWindowController::CreateContainersInRootWindow(
 
   CreateContainer(kShellWindowId_PowerButtonAnimationContainer,
                   "PowerButtonAnimationContainer", root_window) ;
+}
+
+void RootWindowController::EnableTouchHudProjection() {
+  if (touch_hud_projection_)
+    return;
+  set_touch_hud_projection(new TouchHudProjection(root_window_.get()));
+}
+
+void RootWindowController::DisableTouchHudProjection() {
+  if (!touch_hud_projection_)
+    return;
+  touch_hud_projection_->Remove();
+}
+
+void RootWindowController::OnLoginStateChanged(user::LoginStatus status) {
+  shelf_->shelf_layout_manager()->UpdateVisibilityState();
+}
+
+void RootWindowController::OnTouchHudProjectionToggled(bool enabled) {
+  if (enabled)
+    EnableTouchHudProjection();
+  else
+    DisableTouchHudProjection();
 }
 
 }  // namespace internal

@@ -50,7 +50,6 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/boot_times_loader.h"
-#include "chrome/browser/chromeos/cros/cros_library.h"
 #endif
 
 using base::Time;
@@ -267,7 +266,7 @@ void ReadLastShutdownFile(ShutdownType type,
   int64 shutdown_ms = 0;
   if (file_util::ReadFileToString(shutdown_ms_file, &shutdown_ms_str))
     base::StringToInt64(shutdown_ms_str, &shutdown_ms);
-  base::Delete(shutdown_ms_file, false);
+  base::DeleteFile(shutdown_ms_file, false);
 
   if (type == NOT_VALID || shutdown_ms == 0 || num_procs == 0)
     return;

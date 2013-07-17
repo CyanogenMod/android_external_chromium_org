@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "cc/base/region.h"
+#include "cc/debug/benchmark_instrumentation.h"
 #include "cc/resources/picture_pile_impl.h"
 
 namespace {
@@ -21,7 +22,7 @@ const float kResetThreshold = 0.7f;
 // picture that intersects the visible layer rect expanded by this distance
 // will be recorded.
 const int kPixelDistanceToRecord = 8000;
-}
+}  // namespace
 
 namespace cc {
 
@@ -31,7 +32,7 @@ PicturePile::PicturePile() {
 PicturePile::~PicturePile() {
 }
 
-void PicturePile::Update(
+bool PicturePile::Update(
     ContentLayerClient* painter,
     SkColor background_color,
     bool contents_opaque,
@@ -47,6 +48,7 @@ void PicturePile::Update(
       -kPixelDistanceToRecord,
       -kPixelDistanceToRecord,
       -kPixelDistanceToRecord);
+  bool modified_pile = false;
   for (Region::Iterator i(invalidation); i.has_rect(); i.next()) {
     gfx::Rect invalidation = i.rect();
     // Split this inflated invalidation across tile boundaries and apply it
@@ -59,6 +61,7 @@ void PicturePile::Update(
         // This invalidation touches a tile outside the interest rect, so
         // just remove the entire picture list.
         picture_list_map_.erase(iter.index());
+        modified_pile = true;
         continue;
       }
 
@@ -80,6 +83,7 @@ void PicturePile::Update(
         DCHECK_GE(tile_invalidation.height(), buffer_pixels() * 2 + 1);
 
         InvalidateRect(pic_list, tile_invalidation);
+        modified_pile = true;
       }
     }
   }
@@ -107,7 +111,9 @@ void PicturePile::Update(
     for (PictureList::iterator pic = pic_list.begin();
          pic != pic_list.end(); ++pic) {
       if (!(*pic)->HasRecording()) {
-        TRACE_EVENT0("cc", "PicturePile::Update recording loop");
+        modified_pile = true;
+        TRACE_EVENT0(benchmark_instrumentation::kCategory,
+                     benchmark_instrumentation::kRecordLoop);
         for (int i = 0; i < repeat_count; i++)
           (*pic)->Record(painter, tile_grid_info_, stats_instrumentation);
         (*pic)->GatherPixelRefs(tile_grid_info_, stats_instrumentation);
@@ -117,6 +123,8 @@ void PicturePile::Update(
   }
 
   UpdateRecordedRegion();
+
+  return modified_pile;
 }
 
 class FullyContainedPredicate {

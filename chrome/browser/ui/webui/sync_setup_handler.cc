@@ -204,10 +204,6 @@ bool GetConfiguration(const std::string& json, SyncConfigInfo* config) {
   return true;
 }
 
-bool IsKeystoreEncryptionEnabled() {
-  return true;
-}
-
 }  // namespace
 
 SyncSetupHandler::SyncSetupHandler(ProfileManager* profile_manager)
@@ -247,9 +243,6 @@ void SyncSetupHandler::GetStaticLocalizedValues(
       GetStringFUTF16(IDS_SYNC_ENCRYPTION_INSTRUCTIONS, product_name));
   localized_strings->SetString(
       "encryptionHelpURL", chrome::kSyncEncryptionHelpURL);
-  localized_strings->SetString(
-      "passphraseEncryptionMessage",
-      GetStringFUTF16(IDS_SYNC_PASSPHRASE_ENCRYPTION_MESSAGE, product_name));
   localized_strings->SetString(
       "encryptionSectionMessage",
       GetStringFUTF16(IDS_SYNC_ENCRYPTION_SECTION_MESSAGE, product_name));
@@ -297,21 +290,13 @@ void SyncSetupHandler::GetStaticLocalizedValues(
     { "openTabs", IDS_SYNC_DATATYPE_TABS },
     { "syncZeroDataTypesError", IDS_SYNC_ZERO_DATA_TYPES_ERROR },
     { "serviceUnavailableError", IDS_SYNC_SETUP_ABORTED_BY_PENDING_CLEAR },
-    { "googleOption", IDS_SYNC_PASSPHRASE_OPT_GOOGLE },
-    { "explicitOption", IDS_SYNC_PASSPHRASE_OPT_EXPLICIT },
-    { "sectionGoogleMessage", IDS_SYNC_PASSPHRASE_MSG_GOOGLE },
-    { "sectionExplicitMessage", IDS_SYNC_PASSPHRASE_MSG_EXPLICIT },
-    { "passphraseLabel", IDS_SYNC_PASSPHRASE_LABEL },
     { "confirmLabel", IDS_SYNC_CONFIRM_PASSPHRASE_LABEL },
     { "emptyErrorMessage", IDS_SYNC_EMPTY_PASSPHRASE_ERROR },
     { "mismatchErrorMessage", IDS_SYNC_PASSPHRASE_MISMATCH_ERROR },
-    { "passphraseWarning", IDS_SYNC_PASSPHRASE_WARNING },
     { "customizeLinkLabel", IDS_SYNC_CUSTOMIZE_LINK_LABEL },
     { "confirmSyncPreferences", IDS_SYNC_CONFIRM_SYNC_PREFERENCES },
     { "syncEverything", IDS_SYNC_SYNC_EVERYTHING },
     { "useDefaultSettings", IDS_SYNC_USE_DEFAULT_SETTINGS },
-    { "passphraseSectionTitle", IDS_SYNC_PASSPHRASE_SECTION_TITLE },
-    { "enterPassphraseTitle", IDS_SYNC_ENTER_PASSPHRASE_TITLE },
     { "enterPassphraseBody", IDS_SYNC_ENTER_PASSPHRASE_BODY },
     { "enterGooglePassphraseBody", IDS_SYNC_ENTER_GOOGLE_PASSPHRASE_BODY },
     { "passphraseLabel", IDS_SYNC_PASSPHRASE_LABEL },
@@ -322,9 +307,6 @@ void SyncSetupHandler::GetStaticLocalizedValues(
     { "sectionExplicitMessagePrefix", IDS_SYNC_PASSPHRASE_MSG_EXPLICIT_PREFIX },
     { "sectionExplicitMessagePostfix",
         IDS_SYNC_PASSPHRASE_MSG_EXPLICIT_POSTFIX },
-    { "encryptedDataTypesTitle", IDS_SYNC_ENCRYPTION_DATA_TYPES_TITLE },
-    { "encryptSensitiveOption", IDS_SYNC_ENCRYPT_SENSITIVE_DATA },
-    { "encryptAllOption", IDS_SYNC_ENCRYPT_ALL_DATA },
     // TODO(rogerta): browser/resource/sync_promo/sync_promo.html and related
     // file may not be needed any more.  If not, then the following promo
     // strings can also be removed.
@@ -421,59 +403,50 @@ void SyncSetupHandler::DisplayConfigureSync(bool show_advanced,
   // IsPassphraseRequiredForDecryption(), because we want to show the passphrase
   // UI even if no encrypted data types are enabled.
   args.SetBoolean("showPassphrase", service->IsPassphraseRequired());
-  // Keystore encryption is behind a flag. Only show the new encryption settings
-  // if keystore encryption is enabled.
-  args.SetBoolean("keystoreEncryptionEnabled", IsKeystoreEncryptionEnabled());
 
-  // Set the proper encryption settings messages if keystore encryption is
-  // enabled.
-  if (IsKeystoreEncryptionEnabled()) {
-    // To distinguish between FROZEN_IMPLICIT_PASSPHRASE and CUSTOM_PASSPHRASE
-    // we only set usePassphrase for CUSTOM_PASSPHRASE.
-    args.SetBoolean("usePassphrase",
-                    service->GetPassphraseType() == syncer::CUSTOM_PASSPHRASE);
-    base::Time passphrase_time = service->GetExplicitPassphraseTime();
-    syncer::PassphraseType passphrase_type = service->GetPassphraseType();
-    if (!passphrase_time.is_null()) {
-      string16 passphrase_time_str = base::TimeFormatShortDate(passphrase_time);
-      args.SetString(
-          "enterPassphraseBody",
-          GetStringFUTF16(IDS_SYNC_ENTER_PASSPHRASE_BODY_WITH_DATE,
-                          passphrase_time_str));
-      args.SetString(
-          "enterGooglePassphraseBody",
-          GetStringFUTF16(IDS_SYNC_ENTER_GOOGLE_PASSPHRASE_BODY_WITH_DATE,
-                          passphrase_time_str));
-      switch (passphrase_type) {
-        case syncer::FROZEN_IMPLICIT_PASSPHRASE:
-          args.SetString(
-              "fullEncryptionBody",
-              GetStringFUTF16(IDS_SYNC_FULL_ENCRYPTION_BODY_GOOGLE_WITH_DATE,
-                              passphrase_time_str));
-          break;
-        case syncer::CUSTOM_PASSPHRASE:
-          args.SetString(
-              "fullEncryptionBody",
-              GetStringFUTF16(IDS_SYNC_FULL_ENCRYPTION_BODY_CUSTOM_WITH_DATE,
-                              passphrase_time_str));
-          break;
-        default:
-          args.SetString(
-              "fullEncryptionBody",
-              GetStringUTF16(IDS_SYNC_FULL_ENCRYPTION_BODY_CUSTOM));
-          break;
-      }
-    } else if (passphrase_type == syncer::CUSTOM_PASSPHRASE) {
-      args.SetString(
-          "fullEncryptionBody",
-          GetStringUTF16(IDS_SYNC_FULL_ENCRYPTION_BODY_CUSTOM));
-    } else {
-      args.SetString(
-          "fullEncryptionBody",
-          GetStringUTF16(IDS_SYNC_FULL_ENCRYPTION_DATA));
+  // To distinguish between FROZEN_IMPLICIT_PASSPHRASE and CUSTOM_PASSPHRASE
+  // we only set usePassphrase for CUSTOM_PASSPHRASE.
+  args.SetBoolean("usePassphrase",
+                  service->GetPassphraseType() == syncer::CUSTOM_PASSPHRASE);
+  base::Time passphrase_time = service->GetExplicitPassphraseTime();
+  syncer::PassphraseType passphrase_type = service->GetPassphraseType();
+  if (!passphrase_time.is_null()) {
+    string16 passphrase_time_str = base::TimeFormatShortDate(passphrase_time);
+    args.SetString(
+        "enterPassphraseBody",
+        GetStringFUTF16(IDS_SYNC_ENTER_PASSPHRASE_BODY_WITH_DATE,
+                        passphrase_time_str));
+    args.SetString(
+        "enterGooglePassphraseBody",
+        GetStringFUTF16(IDS_SYNC_ENTER_GOOGLE_PASSPHRASE_BODY_WITH_DATE,
+                        passphrase_time_str));
+    switch (passphrase_type) {
+      case syncer::FROZEN_IMPLICIT_PASSPHRASE:
+        args.SetString(
+            "fullEncryptionBody",
+            GetStringFUTF16(IDS_SYNC_FULL_ENCRYPTION_BODY_GOOGLE_WITH_DATE,
+                            passphrase_time_str));
+        break;
+      case syncer::CUSTOM_PASSPHRASE:
+        args.SetString(
+            "fullEncryptionBody",
+            GetStringFUTF16(IDS_SYNC_FULL_ENCRYPTION_BODY_CUSTOM_WITH_DATE,
+                            passphrase_time_str));
+        break;
+      default:
+        args.SetString(
+            "fullEncryptionBody",
+            GetStringUTF16(IDS_SYNC_FULL_ENCRYPTION_BODY_CUSTOM));
+        break;
     }
+  } else if (passphrase_type == syncer::CUSTOM_PASSPHRASE) {
+    args.SetString(
+        "fullEncryptionBody",
+        GetStringUTF16(IDS_SYNC_FULL_ENCRYPTION_BODY_CUSTOM));
   } else {
-    args.SetBoolean("usePassphrase", service->IsUsingSecondaryPassphrase());
+    args.SetString(
+        "fullEncryptionBody",
+        GetStringUTF16(IDS_SYNC_FULL_ENCRYPTION_DATA));
   }
 
   StringValue page("configure");
@@ -525,10 +498,6 @@ void SyncSetupHandler::RegisterMessages() {
       base::Bind(&SyncSetupHandler::HandleConfigure,
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
-      "SyncSetupShowErrorUI",
-      base::Bind(&SyncSetupHandler::HandleShowErrorUI,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
       "SyncSetupShowSetupUI",
       base::Bind(&SyncSetupHandler::HandleShowSetupUI,
                  base::Unretained(this)));
@@ -551,7 +520,7 @@ void SyncSetupHandler::RegisterMessages() {
 }
 
 #if !defined(OS_CHROMEOS)
-void SyncSetupHandler::DisplayGaiaLogin(bool fatal_error) {
+void SyncSetupHandler::DisplayGaiaLogin() {
   DCHECK(!sync_startup_tracker_);
   // Advanced options are no longer being configured if the login screen is
   // visible. If the user exits the signin wizard after this without
@@ -838,18 +807,10 @@ void SyncSetupHandler::HandleConfigure(const ListValue* args) {
     ProfileMetrics::LogProfileSyncInfo(ProfileMetrics::SYNC_CHOOSE);
 }
 
-void SyncSetupHandler::HandleShowErrorUI(const ListValue* args) {
-  DCHECK(!configuring_sync_);
-
+void SyncSetupHandler::HandleShowSetupUI(const ListValue* args) {
   ProfileSyncService* service = GetSyncService();
   DCHECK(service);
 
-  // Bring up the existing wizard, or just display it on this page.
-  if (!FocusExistingWizardIfPresent())
-    OpenSyncSetup();
-}
-
-void SyncSetupHandler::HandleShowSetupUI(const ListValue* args) {
   SigninManagerBase* signin =
       SigninManagerFactory::GetForProfile(GetProfile());
   if (signin->GetAuthenticatedUsername().empty()) {
@@ -862,7 +823,10 @@ void SyncSetupHandler::HandleShowSetupUI(const ListValue* args) {
     CloseOverlay();
     return;
   }
-  OpenSyncSetup();
+
+  // Bring up the existing wizard, or just display it on this page.
+  if (!FocusExistingWizardIfPresent())
+    OpenSyncSetup();
 }
 
 #if defined(OS_CHROMEOS)
@@ -986,11 +950,22 @@ void SyncSetupHandler::OpenSyncSetup() {
 #if !defined(OS_CHROMEOS)
   SigninManagerBase* signin =
       SigninManagerFactory::GetForProfile(GetProfile());
-  if (signin->GetAuthenticatedUsername().empty() ||
-      signin->signin_global_error()->HasMenuItem()) {
-    // User is not logged in, or login has been specially requested - need to
-    // display login UI (cases 1-3).
-    DisplayGaiaLogin(false);
+
+  if (signin->GetAuthenticatedUsername().empty()) {
+    // User is not logged in (cases 1-2). Display login UI.
+    DisplayGaiaLogin();
+    return;
+  }
+
+  if (SigninGlobalError::GetForProfile(GetProfile())->HasMenuItem()) {
+    // Login has been specially requested because previously working credentials
+    // have expired (case 3). Load the sync setup page with a spinner dialog,
+    // and then display the gaia auth page. The user may abandon re-auth by
+    // clicking cancel on the spinner dialog or closing the gaia login tab.
+    StringValue page("spinner");
+    web_ui()->CallJavascriptFunction("SyncSetupOverlay.showSyncSetupPage",
+                                     page);
+    DisplayGaiaLogin();
     return;
   }
 #endif

@@ -28,6 +28,7 @@
 #include "base/version.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/api/app_runtime/app_runtime_api.h"
 #include "chrome/browser/extensions/api/declarative/rules_registry_service.h"
@@ -71,7 +72,6 @@
 #include "chrome/browser/ui/webui/ntp/thumbnail_source.h"
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/child_process_logging.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/background_info.h"
@@ -103,19 +103,19 @@
 #include "content/public/browser/url_data_source.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
-#include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_error_factory.h"
 #include "ui/webui/web_ui_util.h"
+#include "url/gurl.h"
 #include "webkit/browser/database/database_tracker.h"
 #include "webkit/browser/database/database_util.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/extensions/install_limiter.h"
+#include "webkit/browser/fileapi/file_system_backend.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_mount_point_provider.h"
 #endif
 
 using content::BrowserContext;
@@ -464,6 +464,11 @@ ExtensionService::~ExtensionService() {
   }
 }
 
+void ExtensionService::SetSyncStartFlare(
+    const syncer::SyncableService::StartSyncFlare& flare) {
+  flare_ = flare;
+}
+
 void ExtensionService::InitEventRouters() {
   if (event_routers_initialized_)
     return;
@@ -692,10 +697,10 @@ void ExtensionService::ReloadExtension(const std::string extension_id) {
         manager->GetBackgroundHostForExtension(extension_id);
     if (host && DevToolsAgentHost::HasFor(host->render_view_host())) {
       // Look for an open inspector for the background page.
-      std::string devtools_cookie = DevToolsAgentHost::DisconnectRenderViewHost(
-          host->render_view_host());
-      if (devtools_cookie != std::string())
-        orphaned_dev_tools_[extension_id] = devtools_cookie;
+      scoped_refptr<DevToolsAgentHost> agent_host =
+          DevToolsAgentHost::GetOrCreateFor(host->render_view_host());
+      agent_host->DisconnectRenderViewHost();
+      orphaned_dev_tools_[extension_id] = agent_host;
     }
 
     path = current_extension->path();
@@ -764,12 +769,21 @@ bool ExtensionService::UninstallExtension(
 
   // Extract the data we need for sync now, but don't actually sync until we've
   // completed the uninstallation.
+  // TODO(tim): If we get here and IsSyncing is false, this will cause
+  // "back from the dead" style bugs, because sync will add-back the extension
+  // that was uninstalled here when MergeDataAndStartSyncing is called.
+  // See crbug.com/256795.
   syncer::SyncChange sync_change;
-  if (app_sync_bundle_.HandlesApp(*extension.get())) {
-    sync_change = app_sync_bundle_.CreateSyncChangeToDelete(extension.get());
-  } else if (extension_sync_bundle_.HandlesExtension(*extension.get())) {
-    sync_change =
-        extension_sync_bundle_.CreateSyncChangeToDelete(extension.get());
+  if (extensions::sync_helper::IsSyncableApp(extension.get())) {
+    if (app_sync_bundle_.IsSyncing())
+      sync_change = app_sync_bundle_.CreateSyncChangeToDelete(extension.get());
+    else if (is_ready() && !flare_.is_null())
+      flare_.Run(syncer::APPS);  // Tell sync to start ASAP.
+  } else if (extensions::sync_helper::IsSyncableExtension(extension.get())) {
+    if (extension_sync_bundle_.IsSyncing())
+      sync_change = extension_sync_bundle_.CreateSyncChangeToDelete(extension);
+    else if (is_ready() && !flare_.is_null())
+      flare_.Run(syncer::EXTENSIONS);  // Tell sync to start ASAP.
   }
 
   if (IsUnacknowledgedExternalExtension(extension.get())) {
@@ -957,7 +971,8 @@ void ExtensionService::DisableExtension(
   SyncExtensionChangeIfNeeded(*extension);
 }
 
-void ExtensionService::DisableUserExtensions() {
+void ExtensionService::DisableUserExtensions(
+    const std::vector<std::string>& except_ids) {
   extensions::ManagementPolicy* management_policy =
       system_->management_policy();
   extensions::ExtensionList to_disable;
@@ -975,8 +990,9 @@ void ExtensionService::DisableUserExtensions() {
 
   for (extensions::ExtensionList::const_iterator extension = to_disable.begin();
       extension != to_disable.end(); ++extension) {
-    DisableExtension((*extension)->id(),
-                     extensions::Extension::DISABLE_USER_ACTION);
+    const std::string& id = (*extension)->id();
+    if (except_ids.end() == std::find(except_ids.begin(), except_ids.end(), id))
+      DisableExtension(id, extensions::Extension::DISABLE_USER_ACTION);
   }
 }
 
@@ -1135,8 +1151,8 @@ void ExtensionService::NotifyExtensionUnloaded(
   fileapi::FileSystemContext* filesystem_context =
       BrowserContext::GetStoragePartitionForSite(profile_, site)->
           GetFileSystemContext();
-  if (filesystem_context && filesystem_context->external_provider()) {
-    filesystem_context->external_provider()->
+  if (filesystem_context && filesystem_context->external_backend()) {
+    filesystem_context->external_backend()->
         RevokeAccessForExtension(extension->id());
   }
 #endif
@@ -1511,6 +1527,8 @@ bool ExtensionService::IsIncognitoEnabled(
   // If this is an existing component extension we always allow it to
   // work in incognito mode.
   if (extension && extension->location() == Manifest::COMPONENT)
+    return true;
+  if (extension && extension->force_incognito_enabled())
     return true;
 
   // Check the prefs.
@@ -1943,10 +1961,16 @@ void ExtensionService::GarbageCollectExtensions() {
 }
 
 void ExtensionService::SyncExtensionChangeIfNeeded(const Extension& extension) {
-  if (app_sync_bundle_.HandlesApp(extension)) {
-    app_sync_bundle_.SyncChangeIfNeeded(extension);
-  } else if (extension_sync_bundle_.HandlesExtension(extension)) {
-    extension_sync_bundle_.SyncChangeIfNeeded(extension);
+  if (extensions::sync_helper::IsSyncableApp(&extension)) {
+    if (app_sync_bundle_.IsSyncing())
+      app_sync_bundle_.SyncChangeIfNeeded(extension);
+    else if (is_ready() && !flare_.is_null())
+      flare_.Run(syncer::APPS);
+  } else if (extensions::sync_helper::IsSyncableExtension(&extension)) {
+    if (extension_sync_bundle_.IsSyncing())
+      extension_sync_bundle_.SyncChangeIfNeeded(extension);
+    else if (is_ready() && !flare_.is_null())
+      flare_.Run(syncer::EXTENSIONS);
   }
 }
 
@@ -2153,7 +2177,7 @@ void ExtensionService::CheckPermissionsIncrease(const Extension* extension,
     // upgraded and recognized additional privileges, or an extension upgrades
     // to a version that requires additional privileges.
     is_privilege_increase = granted_permissions->HasLessPrivilegesThan(
-        extension->GetActivePermissions().get());
+        extension->GetActivePermissions().get(), extension->GetType());
   }
 
   if (is_extension_upgrade) {
@@ -2673,8 +2697,7 @@ void ExtensionService::DidCreateRenderViewForBackgroundPage(
   if (iter == orphaned_dev_tools_.end())
     return;
 
-  DevToolsAgentHost::ConnectRenderViewHost(iter->second,
-                                           host->render_view_host());
+  iter->second->ConnectRenderViewHost(host->render_view_host());
   orphaned_dev_tools_.erase(iter);
 }
 

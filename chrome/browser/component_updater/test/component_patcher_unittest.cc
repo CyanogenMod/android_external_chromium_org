@@ -64,7 +64,7 @@ ComponentUnpacker::Error MockComponentPatcher::Patch(
 
 // Verify that a 'create' delta update operation works correctly.
 TEST_F(ComponentPatcherOperationTest, CheckCreateOperation) {
-  EXPECT_TRUE(file_util::CopyFile(
+  EXPECT_TRUE(base::CopyFile(
       test_file("binary_output.bin"),
       input_dir_.path().Append(FILE_PATH_LITERAL("binary_output.bin"))));
 
@@ -85,14 +85,14 @@ TEST_F(ComponentPatcherOperationTest, CheckCreateOperation) {
 
   EXPECT_EQ(ComponentUnpacker::kNone, result);
   EXPECT_EQ(0, error);
-  EXPECT_TRUE(file_util::ContentsEqual(
+  EXPECT_TRUE(base::ContentsEqual(
       unpack_dir_.path().Append(FILE_PATH_LITERAL("output.bin")),
       test_file("binary_output.bin")));
 }
 
 // Verify that a 'copy' delta update operation works correctly.
 TEST_F(ComponentPatcherOperationTest, CheckCopyOperation) {
-  EXPECT_TRUE(file_util::CopyFile(
+  EXPECT_TRUE(base::CopyFile(
       test_file("binary_output.bin"),
       installed_dir_.path().Append(FILE_PATH_LITERAL("binary_output.bin"))));
 
@@ -112,7 +112,7 @@ TEST_F(ComponentPatcherOperationTest, CheckCopyOperation) {
                                      &error);
   EXPECT_EQ(ComponentUnpacker::kNone, result);
   EXPECT_EQ(0, error);
-  EXPECT_TRUE(file_util::ContentsEqual(
+  EXPECT_TRUE(base::ContentsEqual(
       unpack_dir_.path().Append(FILE_PATH_LITERAL("output.bin")),
       test_file("binary_output.bin")));
 }

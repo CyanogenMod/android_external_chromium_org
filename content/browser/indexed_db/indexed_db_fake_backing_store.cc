@@ -4,8 +4,6 @@
 
 #include "content/browser/indexed_db/indexed_db_fake_backing_store.h"
 
-#include <vector>
-
 #include "base/memory/scoped_ptr.h"
 
 namespace content {
@@ -41,7 +39,7 @@ bool IndexedDBFakeBackingStore::UpdateIDBDatabaseIntVersion(Transaction*,
   return false;
 }
 bool IndexedDBFakeBackingStore::DeleteDatabase(const string16& name) {
-  return false;
+  return true;
 }
 
 bool IndexedDBFakeBackingStore::CreateObjectStore(Transaction*,

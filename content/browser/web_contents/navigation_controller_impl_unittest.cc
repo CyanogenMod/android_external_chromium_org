@@ -1045,6 +1045,13 @@ TEST_F(NavigationControllerTest, LoadURL_WithBindings) {
   EXPECT_EQ(0, NavigationEntryImpl::FromNavigationEntry(
       controller.GetLastCommittedEntry())->bindings());
 
+  // Manually increase the number of active views in the SiteInstance
+  // that orig_rvh belongs to, to prevent it from being destroyed when
+  // it gets swapped out, so that we can reuse orig_rvh when the
+  // controller goes back.
+  static_cast<SiteInstanceImpl*>(orig_rvh->GetSiteInstance())->
+      increment_active_view_count();
+
   // Navigate to a second URL, simulate the beforeunload ack for the cross-site
   // transition, and set bindings on the pending RenderViewHost to simulate a
   // privileged url.
@@ -3767,8 +3774,8 @@ class NavigationControllerHistoryTest : public NavigationControllerTest {
     // Do normal cleanup before deleting the profile directory below.
     NavigationControllerTest::TearDown();
 
-    ASSERT_TRUE(base::Delete(test_dir_, true));
-    ASSERT_FALSE(file_util::PathExists(test_dir_));
+    ASSERT_TRUE(base::DeleteFile(test_dir_, true));
+    ASSERT_FALSE(base::PathExists(test_dir_));
   }
 
   // Deletes the current profile manager and creates a new one. Indirectly this

@@ -26,16 +26,14 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/ssl_status.h"
-#include "googleurl/src/gurl.h"
 #include "net/cookies/cookie_options.h"
 #include "net/cookies/cookie_store.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ui/gfx/rect.h"
+#include "url/gurl.h"
 
 using content::RenderViewHost;
-using content::SSLStatus;
 using content::WebContents;
 
 namespace autofill {
@@ -155,7 +153,7 @@ const char kTransactionIdNotSet[] = "transaction id not set";
 AutocheckoutManager::AutocheckoutManager(AutofillManager* autofill_manager)
     : autofill_manager_(autofill_manager),
       metric_logger_(new AutofillMetrics),
-      autocheckout_offered_(false),
+      should_show_bubble_(true),
       is_autocheckout_bubble_showing_(false),
       in_autocheckout_flow_(false),
       google_transaction_id_(kTransactionIdNotSet),
@@ -204,7 +202,11 @@ void AutocheckoutManager::FillForms() {
 }
 
 void AutocheckoutManager::OnClickFailed(AutocheckoutStatus status) {
-  DCHECK(in_autocheckout_flow_);
+  // |in_autocheckout_flow_| get reset in |OnLoadedPageMetaData| for the last
+  // page, so when click failed on the last page, the value is already 'false'.
+  // This check stops crashing, a better solution should be sending an IPC
+  // message to browser when the renderer completes a step.
+  DCHECK(page_meta_data_->IsEndOfAutofillableFlow() || in_autocheckout_flow_);
   DCHECK_NE(MISSING_FIELDMAPPING, status);
 
   SendAutocheckoutStatus(status);
@@ -285,7 +287,7 @@ void AutocheckoutManager::OnLoadedPageMetaData(
 }
 
 void AutocheckoutManager::OnFormsSeen() {
-  autocheckout_offered_ = false;
+  should_show_bubble_ = true;
 }
 
 bool AutocheckoutManager::ShouldIgnoreAjax() {
@@ -294,9 +296,8 @@ bool AutocheckoutManager::ShouldIgnoreAjax() {
 
 void AutocheckoutManager::MaybeShowAutocheckoutBubble(
     const GURL& frame_url,
-    const content::SSLStatus& ssl_status,
     const gfx::RectF& bounding_box) {
-  if (autocheckout_offered_ ||
+  if (!should_show_bubble_ ||
       is_autocheckout_bubble_showing_ ||
       !IsStartOfAutofillableFlow())
     return;
@@ -305,7 +306,6 @@ void AutocheckoutManager::MaybeShowAutocheckoutBubble(
       &AutocheckoutManager::ShowAutocheckoutBubble,
       weak_ptr_factory_.GetWeakPtr(),
       frame_url,
-      ssl_status,
       bounding_box);
 
   content::WebContents* web_contents = autofill_manager_->GetWebContents();
@@ -396,20 +396,23 @@ void AutocheckoutManager::set_metric_logger(
 
 void AutocheckoutManager::MaybeShowAutocheckoutDialog(
     const GURL& frame_url,
-    const SSLStatus& ssl_status,
-    bool show_dialog) {
+    AutocheckoutBubbleState state) {
   is_autocheckout_bubble_showing_ = false;
-  if (!show_dialog)
-    return;
 
-  FormData form = BuildAutocheckoutFormData();
-  form.ssl_status = ssl_status;
+  // User has taken action on the bubble, don't offer bubble again.
+  if (state != AUTOCHECKOUT_BUBBLE_IGNORED)
+    should_show_bubble_ = false;
+
+  if (state != AUTOCHECKOUT_BUBBLE_ACCEPTED)
+    return;
 
   base::Callback<void(const FormStructure*, const std::string&)> callback =
       base::Bind(&AutocheckoutManager::ReturnAutocheckoutData,
                  weak_ptr_factory_.GetWeakPtr());
-  autofill_manager_->ShowRequestAutocompleteDialog(
-      form, frame_url, DIALOG_TYPE_AUTOCHECKOUT, callback);
+  autofill_manager_->ShowRequestAutocompleteDialog(BuildAutocheckoutFormData(),
+                                                   frame_url,
+                                                   DIALOG_TYPE_AUTOCHECKOUT,
+                                                   callback);
 
   for (std::map<int, std::vector<AutocheckoutStepType> >::const_iterator
           it = page_meta_data_->page_types.begin();
@@ -422,22 +425,19 @@ void AutocheckoutManager::MaybeShowAutocheckoutDialog(
 
 void AutocheckoutManager::ShowAutocheckoutBubble(
     const GURL& frame_url,
-    const content::SSLStatus& ssl_status,
     const gfx::RectF& bounding_box,
     const std::string& cookies) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  base::Callback<void(bool)> callback = base::Bind(
+  base::Callback<void(AutocheckoutBubbleState)> callback = base::Bind(
       &AutocheckoutManager::MaybeShowAutocheckoutDialog,
       weak_ptr_factory_.GetWeakPtr(),
-      frame_url,
-      ssl_status);
+      frame_url);
   autofill_manager_->delegate()->ShowAutocheckoutBubble(
       bounding_box,
       cookies.find("LSID") != std::string::npos,
       callback);
   is_autocheckout_bubble_showing_ = true;
-  autocheckout_offered_ = true;
 }
 
 bool AutocheckoutManager::IsStartOfAutofillableFlow() const {

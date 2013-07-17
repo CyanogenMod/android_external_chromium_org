@@ -11,7 +11,7 @@
 #include "components/autofill/content/browser/wallet/wallet_client_delegate.h"
 #include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/common/autocheckout_status.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace content {
 class BrowserContext;
@@ -54,6 +54,7 @@ class AutocheckoutRequestManager : public base::SupportsUserData::Data,
   virtual const AutofillMetrics& GetMetricLogger() const OVERRIDE;
   virtual DialogType GetDialogType() const OVERRIDE;
   virtual std::string GetRiskData() const OVERRIDE;
+  virtual std::string GetWalletCookieValue() const OVERRIDE;
   virtual void OnDidAcceptLegalDocuments() OVERRIDE;
   virtual void OnDidAuthenticateInstrument(bool success) OVERRIDE;
   virtual void OnDidGetFullWallet(

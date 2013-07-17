@@ -11,10 +11,11 @@ import shutil
 import sys
 
 import bb_utils
+import bb_annotations
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+import provision_devices
 from pylib import android_commands
-from pylib import buildbot_report
 from pylib import constants
 from pylib.gtest import gtest_config
 
@@ -94,13 +95,13 @@ def RebootDevices():
         print '%s failed to startup.' % device
 
     if any(results):
-      buildbot_report.PrintWarning()
+      bb_annotations.PrintWarning()
     else:
       print 'Reboots complete.'
 
 
 def RunTestSuites(options, suites):
-  """Manages an invocation of run_tests.py.
+  """Manages an invocation of test_runner.py for gtests.
 
   Args:
     options: options object.
@@ -112,14 +113,14 @@ def RunTestSuites(options, suites):
   if options.asan:
     args.append('--tool=asan')
   for suite in suites:
-    buildbot_report.PrintNamedStep(suite.name)
-    cmd = ['build/android/run_tests.py', '-s', suite.name] + args
+    bb_annotations.PrintNamedStep(suite.name)
+    cmd = ['build/android/test_runner.py', 'gtest', '-s', suite.name] + args
     if suite.is_suite_exe:
       cmd.append('--exe')
     RunCmd(cmd)
 
 def RunBrowserTestSuite(options):
-  """Manages an invocation of run_browser_tests.py.
+  """Manages an invocation of test_runner.py for content_browsertests.
 
   Args:
     options: options object.
@@ -129,12 +130,12 @@ def RunBrowserTestSuite(options):
     args.append('--release')
   if options.asan:
     args.append('--tool=asan')
-  buildbot_report.PrintNamedStep(constants.BROWSERTEST_SUITE_NAME)
-  RunCmd(['build/android/run_browser_tests.py'] + args)
+  bb_annotations.PrintNamedStep(constants.BROWSERTEST_SUITE_NAME)
+  RunCmd(['build/android/test_runner.py', 'content_browsertests'] + args)
 
 def RunChromeDriverTests(_):
   """Run all the steps for running chromedriver tests."""
-  buildbot_report.PrintNamedStep('chromedriver_annotation')
+  bb_annotations.PrintNamedStep('chromedriver_annotation')
   RunCmd(['chrome/test/chromedriver/run_buildbot_steps.py',
           '--android-package=%s' % constants.CHROMIUM_TEST_SHELL_PACKAGE])
 
@@ -147,7 +148,7 @@ def InstallApk(options, test, print_step=False):
     print_step: Print a buildbot step
   """
   if print_step:
-    buildbot_report.PrintNamedStep('install_%s' % test.name.lower())
+    bb_annotations.PrintNamedStep('install_%s' % test.name.lower())
   args = ['--apk', test.apk, '--apk_package', test.apk_package]
   if options.target == 'Release':
     args.append('--release')
@@ -156,13 +157,13 @@ def InstallApk(options, test, print_step=False):
 
 
 def RunInstrumentationSuite(options, test):
-  """Manages an invocation of run_instrumentaiton_tests.py.
+  """Manages an invocation of test_runner.py for instrumentation tests.
 
   Args:
     options: options object
     test: An I_TEST namedtuple
   """
-  buildbot_report.PrintNamedStep('%s_instrumentation_tests' % test.name.lower())
+  bb_annotations.PrintNamedStep('%s_instrumentation_tests' % test.name.lower())
 
   InstallApk(options, test)
   args = ['--test-apk', test.test_apk, '--test_data', test.test_data,
@@ -183,12 +184,12 @@ def RunInstrumentationSuite(options, test):
   if test.extra_flags:
     args.extend(test.extra_flags)
 
-  RunCmd(['build/android/run_instrumentation_tests.py'] + args)
+  RunCmd(['build/android/test_runner.py', 'instrumentation'] + args)
 
 
 def RunWebkitLint(target):
   """Lint WebKit's TestExpectation files."""
-  buildbot_report.PrintNamedStep('webkit_lint')
+  bb_annotations.PrintNamedStep('webkit_lint')
   RunCmd(['webkit/tools/layout_tests/run_webkit_tests.py',
           '--lint-test-files',
           '--chromium',
@@ -197,7 +198,7 @@ def RunWebkitLint(target):
 
 def RunWebkitLayoutTests(options):
   """Run layout tests on an actual device."""
-  buildbot_report.PrintNamedStep('webkit_tests')
+  bb_annotations.PrintNamedStep('webkit_tests')
   cmd_args = [
         '--no-show-results',
         '--no-new-test-results',
@@ -212,7 +213,7 @@ def RunWebkitLayoutTests(options):
         '--build-number', str(options.build_properties.get('buildnumber', '')),
         '--master-name', options.build_properties.get('mastername', ''),
         '--build-name', options.build_properties.get('buildername', ''),
-        '--platform=chromium-android']
+        '--platform=android']
 
   for flag in 'test_results_server', 'driver_name', 'additional_drt_flag':
     if flag in options.factory_properties:
@@ -248,15 +249,19 @@ def ProvisionDevices(options):
   RunCmd(['adb', 'start-server'])
   RunCmd(['sleep', '1'])
 
-  buildbot_report.PrintNamedStep('provision_devices')
+  bb_annotations.PrintNamedStep('provision_devices')
   if options.reboot:
     RebootDevices()
-  RunCmd(['build/android/provision_devices.py', '-t', options.target])
+  provision_cmd = ['build/android/provision_devices.py', '-t', options.target]
+  if options.auto_reconnect:
+    provision_cmd.append('--auto-reconnect')
+  RunCmd(provision_cmd)
 
 
 def DeviceStatusCheck(_):
-  buildbot_report.PrintNamedStep('device_status_check')
-  RunCmd(['build/android/device_status_check.py'], halt_on_failure=True)
+  bb_annotations.PrintNamedStep('device_status_check')
+  RunCmd(['build/android/buildbot/bb_device_status_check.py'],
+         halt_on_failure=True)
 
 
 def GetDeviceSetupStepCmds():
@@ -292,7 +297,7 @@ def GetTestStepCmds():
 
 def LogcatDump(options):
   # Print logcat, kill logcat monitor
-  buildbot_report.PrintNamedStep('logcat_dump')
+  bb_annotations.PrintNamedStep('logcat_dump')
   logcat_file = os.path.join(CHROME_SRC, 'out', options.target, 'full_log')
   with open(logcat_file, 'w') as f:
     RunCmd([
@@ -302,7 +307,7 @@ def LogcatDump(options):
 
 
 def GenerateTestReport(options):
-  buildbot_report.PrintNamedStep('test_report')
+  bb_annotations.PrintNamedStep('test_report')
   for report in glob.glob(
       os.path.join(CHROME_SRC, 'out', options.target, 'test_logs', '*.log')):
     RunCmd(['cat', report])
@@ -379,6 +384,7 @@ def main(argv):
   setattr(options, 'target', options.factory_properties.get('target', 'Debug'))
 
   MainTestWrapper(options)
+  provision_devices.KillHostHeartbeat()
 
 
 if __name__ == '__main__':

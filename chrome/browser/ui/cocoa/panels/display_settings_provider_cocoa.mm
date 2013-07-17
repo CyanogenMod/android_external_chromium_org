@@ -6,12 +6,13 @@
 #include "base/mac/mac_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
+#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/fullscreen.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/cocoa/last_active_browser_cocoa.h"
 #include "chrome/browser/ui/panels/display_settings_provider.h"
 #import "chrome/browser/app_controller_mac.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
@@ -93,13 +94,13 @@ bool DisplaySettingsProviderCocoa::NeedsPeriodicFullScreenCheck() const {
   // So we don't need to do anything when any other application enters
   // fullscreen mode. We still need to handle the case when chrome enters
   // fullscreen mode and our topmost windows will not get hided by the system.
-  return !base::mac::IsOSLionOrLater();
+  return !chrome::mac::SupportsSystemFullscreen();
 }
 
 bool DisplaySettingsProviderCocoa::IsFullScreen() {
   // For Lion and later, we only need to check if chrome enters fullscreen mode
   // (see detailed reason above in NeedsPeriodicFullScreenCheck).
-  if (!base::mac::IsOSLionOrLater())
+  if (!chrome::mac::SupportsSystemFullscreen())
     return DisplaySettingsProvider::IsFullScreen();
 
   Browser* browser = chrome::GetLastActiveBrowser();

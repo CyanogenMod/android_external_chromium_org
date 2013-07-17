@@ -8,8 +8,13 @@
 #include "base/threading/thread_restrictions.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/shell/common/shell_messages.h"
+#include "content/shell/shell_browser_context.h"
+#include "content/shell/shell_content_browser_client.h"
 #include "content/shell/shell_network_delegate.h"
 #include "net/base/net_errors.h"
+#include "net/cookies/cookie_monster.h"
+#include "net/url_request/url_request_context.h"
+#include "net/url_request/url_request_context_getter.h"
 #include "webkit/browser/database/database_tracker.h"
 #include "webkit/browser/fileapi/isolated_context.h"
 #include "webkit/browser/quota/quota_manager.h"
@@ -19,10 +24,12 @@ namespace content {
 ShellMessageFilter::ShellMessageFilter(
     int render_process_id,
     webkit_database::DatabaseTracker* database_tracker,
-    quota::QuotaManager* quota_manager)
+    quota::QuotaManager* quota_manager,
+    net::URLRequestContextGetter* request_context_getter)
     : render_process_id_(render_process_id),
       database_tracker_(database_tracker),
-      quota_manager_(quota_manager) {
+      quota_manager_(quota_manager),
+      request_context_getter_(request_context_getter) {
 }
 
 ShellMessageFilter::~ShellMessageFilter() {
@@ -44,6 +51,7 @@ bool ShellMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(ShellViewHostMsg_ClearAllDatabases, OnClearAllDatabases)
     IPC_MESSAGE_HANDLER(ShellViewHostMsg_SetDatabaseQuota, OnSetDatabaseQuota)
     IPC_MESSAGE_HANDLER(ShellViewHostMsg_AcceptAllCookies, OnAcceptAllCookies)
+    IPC_MESSAGE_HANDLER(ShellViewHostMsg_DeleteAllCookies, OnDeleteAllCookies)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -86,6 +94,12 @@ void ShellMessageFilter::OnSetDatabaseQuota(int quota) {
 
 void ShellMessageFilter::OnAcceptAllCookies(bool accept) {
   ShellNetworkDelegate::SetAcceptAllCookies(accept);
+}
+
+void ShellMessageFilter::OnDeleteAllCookies() {
+  request_context_getter_->GetURLRequestContext()->cookie_store()
+      ->GetCookieMonster()
+      ->DeleteAllAsync(net::CookieMonster::DeleteCallback());
 }
 
 }  // namespace content

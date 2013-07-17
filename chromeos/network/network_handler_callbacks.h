@@ -10,6 +10,7 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "chromeos/chromeos_export.h"
+#include "chromeos/dbus/dbus_method_call_status.h"
 
 namespace base {
 class DictionaryValue;
@@ -31,19 +32,41 @@ typedef base::Callback<
 typedef base::Callback<
   void(const std::string& service_path)> StringResultCallback;
 
-// Create a DictionaryValue for passing to ErrorCallback
+// Create a DictionaryValue for passing to ErrorCallback.
 CHROMEOS_EXPORT base::DictionaryValue* CreateErrorData(
-    const std::string& service_path,
+    const std::string& path,
     const std::string& error_name,
-    const std::string& error_message);
+    const std::string& error_detail);
 
-// Callback for Shill errors. |path| may be blank if not relevant.
+CHROMEOS_EXPORT base::DictionaryValue* CreateDBusErrorData(
+    const std::string& path,
+    const std::string& error_name,
+    const std::string& error_detail,
+    const std::string& dbus_error_name,
+    const std::string& dbus_error_message);
+
+// Callback for Shill errors.
+// |error_name| is the error name passed to |error_callback|.
+// |path| is the associated object path or blank if not relevant.
+// |dbus_error_name| and |dbus_error_message| are provided by the DBus handler.
 // Logs an error and calls |error_callback| if not null.
 CHROMEOS_EXPORT void ShillErrorCallbackFunction(
+    const std::string& error_name,
     const std::string& path,
     const ErrorCallback& error_callback,
-    const std::string& error_name,
-    const std::string& error_message);
+    const std::string& dbus_error_name,
+    const std::string& dbus_error_message);
+
+// Callback for property getters used by NetworkConfigurationHandler
+// (for Network Services) and by NetworkDeviceHandler. Used to translate
+// the DBus Dictionary callback into one that calls the error callback
+// if |call_status| != DBUS_METHOD_CALL_SUCCESS.
+CHROMEOS_EXPORT void GetPropertiesCallback(
+    const network_handler::DictionaryResultCallback& callback,
+    const network_handler::ErrorCallback& error_callback,
+    const std::string& path,
+    DBusMethodCallStatus call_status,
+    const base::DictionaryValue& value);
 
 }  // namespace network_handler
 }  // namespace chromeos

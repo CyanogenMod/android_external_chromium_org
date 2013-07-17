@@ -23,8 +23,8 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_ui_message_handler.h"
-#include "googleurl/src/gurl.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
+#include "url/gurl.h"
 
 class ExtensionService;
 
@@ -77,7 +77,7 @@ class ExtensionSettingsHandler
   ExtensionSettingsHandler();
   virtual ~ExtensionSettingsHandler();
 
-  static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Extension Detail JSON Struct for page. |pages| is injected for unit
   // testing.

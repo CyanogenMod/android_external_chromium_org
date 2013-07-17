@@ -6,7 +6,7 @@
 #define CHROME_UTILITY_CHROME_CONTENT_UTILITY_CLIENT_H_
 
 #include "base/compiler_specific.h"
-#include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/platform_file.h"
 #include "content/public/utility/content_utility_client.h"
 #include "ipc/ipc_platform_file.h"
@@ -21,18 +21,22 @@ namespace gfx {
 class Rect;
 }
 
+namespace picasa {
+struct AlbumTableFilesForTransit;
+}
+
 namespace printing {
 struct PageRange;
 }
 
 namespace chrome {
 
-class ProfileImportHandler;
+class UtilityMessageHandler;
 
 class ChromeContentUtilityClient : public content::ContentUtilityClient {
  public:
   ChromeContentUtilityClient();
-  ~ChromeContentUtilityClient();
+  virtual ~ChromeContentUtilityClient();
 
   virtual void UtilityThreadStarted() OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
@@ -85,11 +89,15 @@ class ChromeContentUtilityClient : public content::ContentUtilityClient {
 #endif  // defined(OS_WIN)
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
+  void OnParsePicasaPMPDatabase(
+      const picasa::AlbumTableFilesForTransit& album_table_files);
+
   void OnParseITunesLibraryXmlFile(
       IPC::PlatformFileForTransit itunes_library_file);
 #endif  // defined(OS_WIN) || defined(OS_MACOSX)
 
-  scoped_ptr<ProfileImportHandler> import_handler_;
+  typedef ScopedVector<UtilityMessageHandler> Handlers;
+  Handlers handlers_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeContentUtilityClient);
 };

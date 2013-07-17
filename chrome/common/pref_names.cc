@@ -488,8 +488,12 @@ const char kUrlBlacklist[] = "policy.url_blacklist";
 // Allows access to the listed host patterns, as exceptions to the blacklist.
 const char kUrlWhitelist[] = "policy.url_whitelist";
 
-// Boolean pref indicating whether Instant search result previews are enabled.
-const char kSearchInstantEnabled[] = "instant_extended.instant_enabled";
+#if defined(OS_ANDROID)
+// Last time that a check for cloud policy management was done. This time is
+// recorded on Android so that retries aren't attempted on every startup.
+// Instead the cloud policy registration is retried at least 1 or 3 days later.
+const char kLastPolicyCheckTime[] = "policy.last_policy_check_time";
+#endif
 
 // Prefix URL for the experimental Instant ZeroSuggest provider.
 const char kInstantUIZeroSuggestUrlPrefix[] =
@@ -555,10 +559,6 @@ const char kTapDraggingEnabled[] = "settings.touchpad.enable_tap_dragging";
 // A boolean pref set to true if touchpad three-finger-click is enabled.
 const char kEnableTouchpadThreeFingerClick[] =
     "settings.touchpad.enable_three_finger_click";
-
-// A boolean pref set to true if touchpad three-finger swipe is enabled.
-const char kEnableTouchpadThreeFingerSwipe[] =
-    "settings.touchpad.enable_three_finger_swipe";
 
 // A boolean pref set to true if touchpad natural scrolling is enabled.
 const char kNaturalScroll[] = "settings.touchpad.natural_scroll";
@@ -793,7 +793,8 @@ const char kShow3gPromoNotification[] =
 // A string pref that contains version where "What's new" promo was shown.
 const char kChromeOSReleaseNotesVersion[] = "settings.release_notes.version";
 
-// A boolean pref that uses shared proxies.
+// A boolean pref that controls whether proxy settings from shared network
+// settings (accordingly from device policy) are applied or ignored.
 const char kUseSharedProxies[] = "settings.use_shared_proxies";
 
 // Power state of the current displays from the last run.
@@ -886,6 +887,9 @@ const char kAttestationEnabled[] = "attestation.enabled";
 // The list of extensions allowed to use the platformKeysPrivate API for
 // remote attestation.
 const char kAttestationExtensionWhitelist[] = "attestation.extension_whitelist";
+
+// A boolean pref indicating whether the projection touch HUD is enabled or not.
+const char kTouchHudProjectionEnabled[] = "touch_hud.projection_enabled";
 #endif  // defined(OS_CHROMEOS)
 
 // The disabled messages in IPC logging.
@@ -1103,8 +1107,9 @@ const char kDefaultZoomLevel[] = "profile.default_zoom_level";
 // be displayed at the default zoom level.
 const char kPerHostZoomLevels[] = "profile.per_host_zoom_levels";
 
-// The number of times the dialog has been shown (all time).
-const char kAutofillDialogShowCount[] = "autofill.show_count";
+// A dictionary that tracks the default data model to use for each section of
+// the dialog.
+const char kAutofillDialogAutofillDefault[] = "autofill.data_model_default";
 
 // Whether a user has ever paid with Wallet via the autofill dialog.
 const char kAutofillDialogHasPaidWithWallet[] = "autofill.has_paid_with_wallet";
@@ -1114,9 +1119,12 @@ const char kAutofillDialogHasPaidWithWallet[] = "autofill.has_paid_with_wallet";
 // (but not cancel). If this isn't set, the dialog assumes it's the first run.
 const char kAutofillDialogPayWithoutWallet[] = "autofill.pay_without_wallet";
 
-// A dictionary that tracks the default data model to use for each section of
-// the dialog.
-const char kAutofillDialogAutofillDefault[] = "autofill.data_model_default";
+// The number of times the dialog has been shown (all time).
+const char kAutofillDialogShowCount[] = "autofill.show_count";
+
+// The number of times the generated credit card bubble has been shown.
+const char kAutofillGeneratedCardBubbleTimesShown[] =
+    "autofill.generated_card_bubble_times_shown";
 
 // Modifying bookmarks is completely disabled when this is set to false.
 const char kEditBookmarksEnabled[] = "bookmarks.editing_enabled";
@@ -1340,13 +1348,8 @@ const char kVariationsSeed[] = "variations_seed";
 // 64-bit integer serialization of the base::Time from the last seed received.
 const char kVariationsSeedDate[] = "variations_seed_date";
 
-// Where profile specific metrics are placed.
-const char kProfileMetrics[] = "user_experience_metrics.profiles";
-
-// The metrics for a profile are stored as dictionary values under the
-// path kProfileMetrics. The individual metrics are placed under the path
-// kProfileMetrics.kProfilePrefix<hashed-profile-id>.
-const char kProfilePrefix[] = "profile-";
+// SHA-1 hash of the serialized variations seed data.
+const char kVariationsSeedHash[] = "variations_seed_hash";
 
 // True if the previous run of the program exited cleanly.
 const char kStabilityExitedCleanly[] =
@@ -1455,8 +1458,8 @@ const char kStabilityPluginLoadingErrors[] = "loading_errors";
 
 // The keys below are strictly increasing counters over the lifetime of
 // a chrome installation. They are (optionally) sent up to the uninstall
-// survey in the event of uninstallation. The installation date is also by some
-// opt-in services (currently Wallet, and soon UMA).
+// survey in the event of uninstallation. The installation date is used by some
+// opt-in services such as Wallet and UMA.
 const char kInstallDate[] = "uninstall_metrics.installation_date2";
 const char kUninstallMetricsPageLoadCount[] =
     "uninstall_metrics.page_load_count";
@@ -1730,6 +1733,9 @@ const char kNtpWebStorePromoUserGroup[] = "ntp.webstorepromo.usergroup";
 // Customized app page names that appear on the New Tab Page.
 const char kNtpAppPageNames[] = "ntp.app_page_names";
 
+// A private RSA key for ADB handshake.
+const char kDevToolsAdbKey[] = "devtools.adb_key";
+
 const char kDevToolsDisabled[] = "devtools.disabled";
 
 // A string specifying the dock location (either 'bottom' or 'right').
@@ -1847,9 +1853,6 @@ const char kSyncKeystoreEncryptionBootstrapToken[] =
 // Boolean tracking whether the user chose to specify a secondary encryption
 // passphrase.
 const char kSyncUsingSecondaryPassphrase[] = "sync.using_secondary_passphrase";
-
-// Preferences that follow the status of sync server triggered experiments.
-const char kSyncFaviconsEnabled[] ="sync.favicons_syncing_enabled";
 
 // String the identifies the last user that logged into sync and other
 // google services. As opposed to kGoogleServicesUsername, this value is not

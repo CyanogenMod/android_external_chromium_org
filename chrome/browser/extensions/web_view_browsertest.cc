@@ -30,9 +30,17 @@ using prerender::PrerenderLinkManager;
 using prerender::PrerenderLinkManagerFactory;
 
 namespace {
+  const char kEmptyResponsePath[] = "/close-socket";
   const char kRedirectResponsePath[] = "/server-redirect";
   const char kRedirectResponseFullPath[] =
       "/extensions/platform_apps/web_view/shim/guest_redirect.html";
+
+  class EmptyHttpResponse : public net::test_server::HttpResponse {
+  public:
+    virtual std::string ToResponseString() const OVERRIDE {
+      return std::string();
+    }
+  };
 }  // namespace
 
 // This class intercepts media access request from the embedder. The request
@@ -376,6 +384,18 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
     return http_response.PassAs<net::test_server::HttpResponse>();
   }
 
+  // Handles |request| by serving an empty response.
+  static scoped_ptr<net::test_server::HttpResponse> EmptyResponseHandler(
+      const std::string& path,
+      const net::test_server::HttpRequest& request) {
+    if (StartsWithASCII(path, request.relative_url, true)) {
+      return scoped_ptr<net::test_server::HttpResponse>(
+          new EmptyHttpResponse);
+    }
+
+    return scoped_ptr<net::test_server::HttpResponse>();
+  }
+
   void TestHelper(const std::string& test_name,
                   const std::string& test_passed_msg,
                   const std::string& test_failed_msg,
@@ -389,6 +409,9 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
         base::Bind(&WebViewTest::RedirectResponseHandler,
                    kRedirectResponsePath,
                    embedded_test_server()->GetURL(kRedirectResponseFullPath)));
+
+    embedded_test_server()->RegisterRequestHandler(
+        base::Bind(&WebViewTest::EmptyResponseHandler, kEmptyResponsePath));
 
     content::WebContents* embedder_web_contents =
         GetFirstShellWindowWebContents();
@@ -594,11 +617,90 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestLoadStartLoadRedirect) {
              "web_view/shim");
 }
 
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestLoadAbortEmptyResponse) {
+  TestHelper("testLoadAbortEmptyResponse",
+             "DoneShimTest.PASSED",
+             "DoneShimTest.FAILED",
+             "web_view/shim");
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestLoadAbortIllegalChromeURL) {
+  TestHelper("testLoadAbortIllegalChromeURL",
+             "DoneShimTest.PASSED",
+             "DoneShimTest.FAILED",
+             "web_view/shim");
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestLoadAbortIllegalFileURL) {
+  TestHelper("testLoadAbortIllegalFileURL",
+             "DoneShimTest.PASSED",
+             "DoneShimTest.FAILED",
+             "web_view/shim");
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestReload) {
+  TestHelper("testReload",
+             "DoneShimTest.PASSED",
+             "DoneShimTest.FAILED",
+             "web_view/shim");
+}
+
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestGetProcessId) {
   TestHelper("testGetProcessId",
              "DoneShimTest.PASSED",
              "DoneShimTest.FAILED",
              "web_view/shim");
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestRemoveWebviewOnExit) {
+  ASSERT_TRUE(StartEmbeddedTestServer());  // For serving guest pages.
+
+  // Launch the app and wait until it's ready to load a test.
+  ExtensionTestMessageListener launched_listener("Launched", false);
+  LoadAndLaunchPlatformApp("web_view/shim");
+  ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+
+  content::WebContents* embedder_web_contents =
+      GetFirstShellWindowWebContents();
+  ASSERT_TRUE(embedder_web_contents);
+
+  GURL::Replacements replace_host;
+  std::string host_str("localhost");  // Must stay in scope with replace_host.
+  replace_host.SetHostStr(host_str);
+
+  std::string guest_path(
+      "/extensions/platform_apps/web_view/shim/empty_guest.html");
+  GURL guest_url = embedded_test_server()->GetURL(guest_path);
+  guest_url = guest_url.ReplaceComponents(replace_host);
+
+  ui_test_utils::UrlLoadObserver guest_observer(
+      guest_url, content::NotificationService::AllSources());
+
+  // Run the test and wait until the guest WebContents is available and has
+  // finished loading.
+  ExtensionTestMessageListener guest_loaded_listener("guest-loaded", false);
+  EXPECT_TRUE(content::ExecuteScript(
+                  embedder_web_contents,
+                  "runTest('testRemoveWebviewOnExit')"));
+  guest_observer.Wait();
+
+  content::Source<content::NavigationController> source =
+      guest_observer.source();
+  EXPECT_TRUE(source->GetWebContents()->GetRenderProcessHost()->IsGuest());
+
+  ASSERT_TRUE(guest_loaded_listener.WaitUntilSatisfied());
+
+  content::WindowedNotificationObserver observer(
+      content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
+      content::Source<content::WebContents>(source->GetWebContents()));
+
+  // Tell the embedder to kill the guest.
+  EXPECT_TRUE(content::ExecuteScript(
+                  embedder_web_contents,
+                  "removeWebviewOnExitDoCrash();"));
+
+  // Wait until the guest WebContents is destroyed.
+  observer.Wait();
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, ShimSrcAttribute) {
@@ -1202,11 +1304,11 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, GeolocationAPICancelGeolocation) {
         "platform_apps/web_view/geolocation/cancel_request")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(WebViewTest, Navigation) {
-  TestHelper("testNavigation",
-             "DoneNavigationTest.PASSED",
-             "DoneNavigationTest.FAILED",
-             "web_view/navigation");
+IN_PROC_BROWSER_TEST_F(WebViewTest, GeolocationRequestGone) {
+  ASSERT_TRUE(StartEmbeddedTestServer());  // For serving guest pages.
+  ASSERT_TRUE(RunPlatformAppTest(
+        "platform_apps/web_view/geolocation/geolocation_request_gone"))
+            << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, ConsoleMessage) {
@@ -1273,5 +1375,10 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, WhitelistedContentScript) {
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, SetPropertyOnDocumentReady) {
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/document_ready"))
+                  << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, SetPropertyOnDocumentInteractive) {
+  ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/document_interactive"))
                   << message_;
 }

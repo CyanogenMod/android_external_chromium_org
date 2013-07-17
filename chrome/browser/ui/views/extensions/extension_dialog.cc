@@ -4,24 +4,24 @@
 
 #include "chrome/browser/ui/views/extensions/extension_dialog.h"
 
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
 #include "chrome/browser/ui/views/extensions/extension_dialog_observer.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
-#include "googleurl/src/gurl.h"
 #include "ui/base/base_window.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/background.h"
 #include "ui/views/widget/widget.h"
+#include "url/gurl.h"
 
 using content::WebContents;
 

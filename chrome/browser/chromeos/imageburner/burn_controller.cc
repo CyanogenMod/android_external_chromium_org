@@ -7,11 +7,10 @@
 #include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/imageburner/burn_manager.h"
 #include "chromeos/network/network_state_handler.h"
-#include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
+#include "url/gurl.h"
 
 namespace chromeos {
 namespace imageburner {

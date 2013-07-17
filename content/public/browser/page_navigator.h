@@ -15,8 +15,8 @@
 #include "content/public/browser/global_request_id.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/referrer.h"
-#include "googleurl/src/gurl.h"
 #include "ui/base/window_open_disposition.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -67,6 +67,10 @@ struct CONTENT_EXPORT OpenURLParams {
   // Indicates whether this navigation involves a cross-process redirect,
   // in which case it should replace the current navigation entry.
   bool is_cross_site_redirect;
+
+  // Indicates whether this navigation was triggered while processing a user
+  // gesture if the navigation was initiated by the renderer.
+  bool user_gesture;
 
  private:
   OpenURLParams();

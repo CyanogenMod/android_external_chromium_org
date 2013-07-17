@@ -15,9 +15,9 @@
 #include "base/values.h"
 #include "cc/layers/layer.h"
 #include "cc/output/begin_frame_args.h"
+#include "content/browser/android/browser_media_player_manager.h"
 #include "content/browser/android/interstitial_page_delegate_android.h"
 #include "content/browser/android/load_url_params.h"
-#include "content/browser/android/media_player_manager_impl.h"
 #include "content/browser/android/touch_point.h"
 #include "content/browser/renderer_host/compositor_impl_android.h"
 #include "content/browser/renderer_host/java/java_bound_object.h"
@@ -42,6 +42,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/menu_item.h"
 #include "content/public/common/page_transition_types.h"
 #include "jni/ContentViewCore_jni.h"
 #include "third_party/WebKit/public/web/WebBindings.h"
@@ -54,7 +55,6 @@
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/size_f.h"
 #include "webkit/common/user_agent/user_agent_util.h"
-#include "webkit/common/webmenuitem.h"
 
 using base::android::AttachCurrentThread;
 using base::android::ConvertJavaStringToUTF16;
@@ -430,7 +430,7 @@ void ContentViewCoreImpl::OnBackgroundColorChanged(SkColor color) {
 }
 
 void ContentViewCoreImpl::ShowSelectPopupMenu(
-    const std::vector<WebMenuItem>& items, int selected_item, bool multiple) {
+    const std::vector<MenuItem>& items, int selected_item, bool multiple) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> j_obj = java_ref_.get(env);
   if (j_obj.is_null())
@@ -448,11 +448,12 @@ void ContentViewCoreImpl::ShowSelectPopupMenu(
         native_selected_array[selected_count++] = i;
     }
 
-    selected_array.Reset(env, env->NewIntArray(selected_count));
+    selected_array = ScopedJavaLocalRef<jintArray>(
+        env, env->NewIntArray(selected_count));
     env->SetIntArrayRegion(selected_array.obj(), 0, selected_count,
                            native_selected_array.get());
   } else {
-    selected_array.Reset(env, env->NewIntArray(1));
+    selected_array = ScopedJavaLocalRef<jintArray>(env, env->NewIntArray(1));
     jint value = selected_item;
     env->SetIntArrayRegion(selected_array.obj(), 0, 1, &value);
   }
@@ -464,7 +465,7 @@ void ContentViewCoreImpl::ShowSelectPopupMenu(
   for (size_t i = 0; i < items.size(); ++i) {
     labels.push_back(items[i].label);
     jint enabled =
-        (items[i].type == WebMenuItem::GROUP ? POPUP_ITEM_TYPE_GROUP :
+        (items[i].type == MenuItem::GROUP ? POPUP_ITEM_TYPE_GROUP :
             (items[i].enabled ? POPUP_ITEM_TYPE_ENABLED :
                 POPUP_ITEM_TYPE_DISABLED));
     env->SetIntArrayRegion(enabled_array.obj(), i, 1, &enabled);
@@ -1328,11 +1329,12 @@ void ContentViewCoreImpl::AttachExternalVideoSurface(JNIEnv* env,
 #if defined(GOOGLE_TV)
   RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(
       web_contents_->GetRenderViewHost());
-  MediaPlayerManagerImpl* media_player_manager_impl =
-      rvhi ? static_cast<MediaPlayerManagerImpl*>(rvhi->media_player_manager())
+  BrowserMediaPlayerManager* browser_media_player_manager =
+      rvhi ? static_cast<BrowserMediaPlayerManager*>(
+                 rvhi->media_player_manager())
            : NULL;
-  if (media_player_manager_impl) {
-    media_player_manager_impl->AttachExternalVideoSurface(
+  if (browser_media_player_manager) {
+    browser_media_player_manager->AttachExternalVideoSurface(
         static_cast<int>(player_id), jsurface);
   }
 #endif
@@ -1344,11 +1346,12 @@ void ContentViewCoreImpl::DetachExternalVideoSurface(JNIEnv* env,
 #if defined(GOOGLE_TV)
   RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(
       web_contents_->GetRenderViewHost());
-  MediaPlayerManagerImpl* media_player_manager_impl =
-      rvhi ? static_cast<MediaPlayerManagerImpl*>(rvhi->media_player_manager())
+  BrowserMediaPlayerManager* browser_media_player_manager =
+      rvhi ? static_cast<BrowserMediaPlayerManager*>(
+                 rvhi->media_player_manager())
            : NULL;
-  if (media_player_manager_impl) {
-    media_player_manager_impl->DetachExternalVideoSurface(
+  if (browser_media_player_manager) {
+    browser_media_player_manager->DetachExternalVideoSurface(
         static_cast<int>(player_id));
   }
 #endif

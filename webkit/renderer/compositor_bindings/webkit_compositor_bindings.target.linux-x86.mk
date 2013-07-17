@@ -32,13 +32,13 @@ LOCAL_SRC_FILES := \
 	webkit/renderer/compositor_bindings/web_animation_impl.cc \
 	webkit/renderer/compositor_bindings/web_compositing_reasons.cc \
 	webkit/renderer/compositor_bindings/web_content_layer_impl.cc \
+	webkit/renderer/compositor_bindings/web_external_bitmap_impl.cc \
 	webkit/renderer/compositor_bindings/web_external_texture_layer_impl.cc \
 	webkit/renderer/compositor_bindings/web_filter_operations_impl.cc \
 	webkit/renderer/compositor_bindings/web_float_animation_curve_impl.cc \
 	webkit/renderer/compositor_bindings/web_image_layer_impl.cc \
 	webkit/renderer/compositor_bindings/web_layer_impl.cc \
 	webkit/renderer/compositor_bindings/web_layer_impl_fixed_bounds.cc \
-	webkit/renderer/compositor_bindings/web_to_ccscrollbar_theme_painter_adapter.cc \
 	webkit/renderer/compositor_bindings/web_to_cc_animation_delegate_adapter.cc \
 	webkit/renderer/compositor_bindings/web_scrollbar_layer_impl.cc \
 	webkit/renderer/compositor_bindings/web_solid_color_layer_impl.cc \
@@ -84,8 +84,9 @@ MY_CFLAGS_Debug := \
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
-	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
@@ -200,8 +201,9 @@ MY_CFLAGS_Release := \
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
-	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \

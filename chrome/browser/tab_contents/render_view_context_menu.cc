@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,6 +24,7 @@
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/download/download_service.h"
@@ -44,7 +45,6 @@
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "chrome/browser/speech/chrome_speech_recognition_preferences.h"
 #include "chrome/browser/spellchecker/spellcheck_host_metrics.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
 #include "chrome/browser/tab_contents/retargeting_details.h"
@@ -59,7 +59,6 @@
 #include "chrome/browser/ui/search_engines/search_engine_tab_helper.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/net/url_util.h"
@@ -80,6 +79,7 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_restriction.h"
+#include "content/public/common/menu_item.h"
 #include "content/public/common/ssl_status.h"
 #include "content/public/common/url_utils.h"
 #include "extensions/browser/view_type_utils.h"
@@ -92,7 +92,6 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/text/text_elider.h"
 #include "ui/gfx/favicon_size.h"
-#include "webkit/common/webmenuitem.h"
 
 using WebKit::WebContextMenuData;
 using WebKit::WebMediaPlayerAction;
@@ -259,14 +258,14 @@ WindowOpenDisposition ForceNewTabDispositionFromEventFlags(
   return disposition == CURRENT_TAB ? NEW_FOREGROUND_TAB : disposition;
 }
 
-bool IsCustomItemEnabled(const std::vector<WebMenuItem>& items, int id) {
+bool IsCustomItemEnabled(const std::vector<content::MenuItem>& items, int id) {
   DCHECK(id >= IDC_CONTENT_CONTEXT_CUSTOM_FIRST &&
          id <= IDC_CONTENT_CONTEXT_CUSTOM_LAST);
   for (size_t i = 0; i < items.size(); ++i) {
     int action_id = IDC_CONTENT_CONTEXT_CUSTOM_FIRST + items[i].action;
     if (action_id == id)
       return items[i].enabled;
-    if (items[i].type == WebMenuItem::SUBMENU) {
+    if (items[i].type == content::MenuItem::SUBMENU) {
       if (IsCustomItemEnabled(items[i].submenu, id))
         return true;
     }
@@ -274,14 +273,14 @@ bool IsCustomItemEnabled(const std::vector<WebMenuItem>& items, int id) {
   return false;
 }
 
-bool IsCustomItemChecked(const std::vector<WebMenuItem>& items, int id) {
+bool IsCustomItemChecked(const std::vector<content::MenuItem>& items, int id) {
   DCHECK(id >= IDC_CONTENT_CONTEXT_CUSTOM_FIRST &&
          id <= IDC_CONTENT_CONTEXT_CUSTOM_LAST);
   for (size_t i = 0; i < items.size(); ++i) {
     int action_id = IDC_CONTENT_CONTEXT_CUSTOM_FIRST + items[i].action;
     if (action_id == id)
       return items[i].checked;
-    if (items[i].type == WebMenuItem::SUBMENU) {
+    if (items[i].type == content::MenuItem::SUBMENU) {
       if (IsCustomItemChecked(items[i].submenu, id))
         return true;
     }
@@ -292,7 +291,7 @@ bool IsCustomItemChecked(const std::vector<WebMenuItem>& items, int id) {
 const size_t kMaxCustomMenuDepth = 5;
 const size_t kMaxCustomMenuTotalItems = 1000;
 
-void AddCustomItemsToMenu(const std::vector<WebMenuItem>& items,
+void AddCustomItemsToMenu(const std::vector<content::MenuItem>& items,
                           size_t depth,
                           size_t* total_items,
                           ui::SimpleMenuModel::Delegate* delegate,
@@ -313,24 +312,24 @@ void AddCustomItemsToMenu(const std::vector<WebMenuItem>& items,
     }
     (*total_items)++;
     switch (items[i].type) {
-      case WebMenuItem::OPTION:
+      case content::MenuItem::OPTION:
         menu_model->AddItem(
             items[i].action + IDC_CONTENT_CONTEXT_CUSTOM_FIRST,
             items[i].label);
         break;
-      case WebMenuItem::CHECKABLE_OPTION:
+      case content::MenuItem::CHECKABLE_OPTION:
         menu_model->AddCheckItem(
             items[i].action + IDC_CONTENT_CONTEXT_CUSTOM_FIRST,
             items[i].label);
         break;
-      case WebMenuItem::GROUP:
+      case content::MenuItem::GROUP:
         // TODO(viettrungluu): I don't know what this is supposed to do.
         NOTREACHED();
         break;
-      case WebMenuItem::SEPARATOR:
+      case content::MenuItem::SEPARATOR:
         menu_model->AddSeparator(ui::NORMAL_SEPARATOR);
         break;
-      case WebMenuItem::SUBMENU: {
+      case content::MenuItem::SUBMENU: {
         ui::SimpleMenuModel* submenu = new ui::SimpleMenuModel(delegate);
         AddCustomItemsToMenu(items[i].submenu, depth + 1, total_items, delegate,
                              submenu);
@@ -1450,8 +1449,8 @@ bool RenderViewContextMenu::IsCommandIdChecked(int id) const {
 #if defined(ENABLE_INPUT_SPEECH)
   // Check box for menu item 'Block offensive words'.
   if (id == IDC_CONTENT_CONTEXT_SPEECH_INPUT_FILTER_PROFANITIES) {
-    return ChromeSpeechRecognitionPreferences::GetForProfile(profile_)->
-        FilterProfanities();
+    return profile_->GetPrefs()->GetBoolean(
+        prefs::kSpeechRecognitionFilterProfanities);
   }
 #endif
 
@@ -1753,8 +1752,7 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
       Browser* browser =
           chrome::FindBrowserWithWebContents(source_web_contents_);
       chrome::ShowWebsiteSettings(browser, source_web_contents_,
-                                  nav_entry->GetURL(), nav_entry->GetSSL(),
-                                  true);
+                                  nav_entry->GetURL(), nav_entry->GetSSL());
       break;
     }
 
@@ -1795,8 +1793,7 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
       Browser* browser = chrome::FindBrowserWithWebContents(
           source_web_contents_);
       chrome::ShowWebsiteSettings(browser, source_web_contents_,
-                                  params_.frame_url, params_.security_info,
-                                  false);
+                                  params_.frame_url, params_.security_info);
       break;
     }
 
@@ -1891,8 +1888,10 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
 
 #if defined(ENABLE_INPUT_SPEECH)
     case IDC_CONTENT_CONTEXT_SPEECH_INPUT_FILTER_PROFANITIES: {
-      ChromeSpeechRecognitionPreferences::GetForProfile(profile_)->
-          ToggleFilterProfanities();
+      profile_->GetPrefs()->SetBoolean(
+          prefs::kSpeechRecognitionFilterProfanities,
+          !profile_->GetPrefs()->GetBoolean(
+              prefs::kSpeechRecognitionFilterProfanities));
       break;
     }
 #endif

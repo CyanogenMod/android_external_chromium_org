@@ -196,6 +196,13 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Ash.GestureTarget" enum="GestureActionType">
+  <summary>
+    The gesture-events recognized and dispatched by the browser gesture
+    recognizer for various UI components.
+  </summary>
+</histogram>
+
 <histogram name="AsyncDNS.ConfigChange" enum="BooleanSuccess">
   <summary>
     Whether DnsConfigService::OnConfigChange actually corresponded to a change
@@ -2367,6 +2374,12 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Extensions.AllocatePortIdPairOverflow">
+  <summary>
+    Records when the allocation of IDs for chrome.runtime.Port overflows.
+  </summary>
+</histogram>
+
 <histogram name="Extensions.APIUse_RelativeURL" enum="UrlResolutionResult">
   <summary>
     Captures the results of URL resolution when relative urls are used in the
@@ -3296,7 +3309,7 @@ other types of suffix sets.
   </summary>
 </histogram>
 
-<histogram name="HistoryPage.OtherSessionsMenu" enum="NtpOtherSessionsType">
+<histogram name="HistoryPage.OtherDevicesMenu" enum="NtpOtherSessionsType">
   <summary>
     Histogram for usage of the section in the history page that allows the user
     to access tabs from other devices.
@@ -3505,7 +3518,44 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="InstantExtended.PercentageMatchQuerytoQuery" units="%">
+  <summary>
+    Records the number of matching characters at the start of the user's text as
+    a percentage of average length between the old and new text when the user
+    navigates from a search query to another search query.
+  </summary>
+</histogram>
+
+<histogram name="InstantExtended.PercentageMatchQuerytoURL" units="%">
+  <summary>
+    Records the number of matching characters at the start of the user's text as
+    a percentage of average length between the old and new text when the user
+    navigates from a search query to a url. Example: Accidental search for
+    google.con, then navigation to google.com.
+  </summary>
+</histogram>
+
+<histogram name="InstantExtended.PercentageMatchURLtoQuery" units="%">
+  <summary>
+    Records the number of matching characters at the start of the user's text as
+    a percentage of average length between the old and new text when the user
+    navigates from a url to a search query.
+  </summary>
+</histogram>
+
+<histogram name="InstantExtended.PercentageMatchURLtoURL" units="%">
+  <summary>
+    Records the number of matching characters at the start of the user's text as
+    a percentage of average length between the old and new text when the user
+    navigates from a url to another url.
+  </summary>
+</histogram>
+
 <histogram name="InstantExtended.PrefValue" enum="BooleanEnabled">
+  <obsolete>
+    Deprecated 2013-06. This preference has not been exposed or used for months,
+    and we do not plan to use it in the future.
+  </obsolete>
   <summary>
     Records, on startup, the value of the &quot;Allow your search engine to
     provide Instant result&quot; preference setting for the first profile
@@ -4205,8 +4255,282 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Memory.BackingStore">
+  <summary>TBD.</summary>
+</histogram>
+
+<histogram name="Memory.Browser" units="KB">
+  <summary>
+    The private working set used by the browser process.  Recorded once per UMA
+    ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.CachedFontAndDC">
+  <summary>TBD.</summary>
+</histogram>
+
+<histogram name="Memory.Chrome" units="KB">
+  <summary>
+    The private working set used by each chrome:// renderer process.  Each
+    process provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.ChromeProcessCount">
+  <summary>
+    The count of active chrome:// processes.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Extension" units="KB">
+  <summary>
+    The private working set used by each extension process.  Each process
+    provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.GlyphPagesPerLoad">
+  <summary>
+    The number of glyph pages present in the renderer when it commits a load.
+    Since this is per-sub-process, you can get the average number of glyph pages
+    in the system by multiplying this number with the average number of
+    renderers. Note that this typically won't count the glyph pages added as a
+    result of the load that just committed, since layout will happen after the
+    commit. There are 512 bytes per glyph page, but this number also very
+    closely approximates the number of glyph width map pages in the same
+    renderer. The only difference is that if you have font fallback, it will
+    make a new glyph page and no width page, but in most common cases there is
+    no fallback). Width pages are 1K each (256 floats), so you could think of
+    this value as being the number of &quot;1.5K units related to glyphs per
+    renderer per page load&quot;.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Gpu" units="KB">
+  <summary>
+    The private working set used by the GPU process.  Recorded once per UMA
+    ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Graphics" units="MB">
+  <summary>
+    System-wide graphics driver memory consumption.  Recorded on Chrome OS for
+    platforms where it is exposed by the kernel (for example, Intel i915 and
+    Exynos Mali).  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.NativeClient" units="KB">
+  <summary>
+    The private working set used by each Native Client loader process.  Each
+    process provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.NativeClientBroker" units="KB">
+  <summary>
+    The private working set used by each Native Client broker process.  Each
+    process provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.OtherProcessCount">
+  <summary>
+    The count of other various utility processes (nacl, gpu, sandbox, zygote,
+    utility).  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.PepperPlugin" units="KB">
+  <summary>
+    The private working set used by each Pepper plugin process.  Each plugin
+    process provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.PepperPluginBroker" units="KB">
+  <summary>
+    The private working set used by each Pepper plugin broker process.  Each
+    process provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.PepperPluginBrokerProcessCount">
+  <summary>
+    The count of Pepper plugin broker processes, recorded once per metrics
+    services (UMA) update.  See MetricsReportingScheduler for details.
+  </summary>
+</histogram>
+
+<histogram name="Memory.PepperPluginProcessCount">
+  <summary>
+    The count of active Pepper plugin processes.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Plugin" units="KB">
+  <summary>
+    The private working set used by each plugin process.  Each plugin process
+    provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.PluginProcessCount">
+  <summary>
+    The count of active plugin processes.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.ProcessCount">
+  <summary>
+    The count of all active processes.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
 <histogram name="Memory.ProcessLimit">
   <summary>The current process limit.  Recorded once per UMA ping.</summary>
+</histogram>
+
+<histogram name="Memory.Renderer" units="KB">
+  <summary>
+    The private working set used by each renderer process.  Each renderer
+    process provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.RendererProcessCount">
+  <summary>
+    The count of active renderer processes.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.SandboxHelper" units="KB">
+  <summary>
+    The private working set used by each sandbox helper process.  Each sandbox
+    helper process provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Swap.Browser" units="KB">
+  <summary>
+    On ChromeOS only.  The swap used by the browser process.  Recorded once per
+    UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Swap.Chrome" units="KB">
+  <summary>
+    On ChromeOS only.  The swap used by each chrome:// renderer process.  Each
+    process provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Swap.Extension" units="KB">
+  <summary>
+    On ChromeOS only.  The swap used by each extension process.  Each process
+    provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Swap.Gpu" units="KB">
+  <summary>
+    On ChromeOS only.  The swap used by the GPU process.  Recorded once per UMA
+    ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Swap.NativeClient" units="KB">
+  <summary>
+    On ChromeOS only.  The swap used by each Native Client loader process.  Each
+    process provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Swap.NativeClientBroker" units="KB">
+  <summary>
+    On ChromeOS only.  The swap used by each Native Client broker process.  Each
+    process provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Swap.PepperPlugin" units="KB">
+  <summary>
+    On ChromeOS only.  The swap used by each Pepper plugin process.  Each plugin
+    process provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Swap.PepperPluginBroker" units="KB">
+  <summary>
+    On ChromeOS only.  The swap used by each Pepper plugin broker process.  Each
+    process provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Swap.Plugin" units="KB">
+  <summary>
+    On ChromeOS only.  The swap used by each plugin process.  Each plugin
+    process provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Swap.Renderer" units="KB">
+  <summary>
+    On ChromeOS only.  The swap used by each renderer process.  Each renderer
+    process provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Swap.SandboxHelper" units="KB">
+  <summary>
+    On ChromeOS only.  The swap used by each sandbox helper process.  Each
+    sandbox helper process provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Swap.Total" units="MB">
+  <summary>
+    On ChromeOS only.  The sum of all processes' swap.  Recorded once per UMA
+    ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Swap.Utility" units="KB">
+  <summary>
+    On ChromeOS only.  The swap used by each utility process.  Each utility
+    process provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Swap.Worker" units="KB">
+  <summary>
+    On ChromeOS only. The swap used by each worker process.  Each worker process
+    provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Total" units="MB">
+  <summary>The sum of all processes.  Recorded once per UMA ping.</summary>
+</histogram>
+
+<histogram name="Memory.Utility" units="KB">
+  <summary>
+    The private working set used by each utility process.  Each utility process
+    provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Worker" units="KB">
+  <summary>
+    The private working set used by each worker process.  Each worker process
+    provides one sample.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.WorkerProcessCount">
+  <summary>TBD.</summary>
 </histogram>
 
 <histogram name="MemoryAndroid.DeviceMemoryClass">
@@ -6033,6 +6357,14 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Net.SpdySessions_DataReductionProxy"
+    enum="BooleanDataReductionProxy">
+  <summary>
+    The count of SPDY sessions using the data reduction proxy and the count of
+    other SPDY sessions.
+  </summary>
+</histogram>
+
 <histogram name="Net.SpdySessionSocketNotConnectedGetLocalAddress"
     enum="BooleanSuccess">
   <summary>
@@ -6147,6 +6479,14 @@ other types of suffix sets.
 
 <histogram name="Net.SSL_Connection_Latency" units="milliseconds">
   <summary>Time from when the Connect() starts until it completes.</summary>
+</histogram>
+
+<histogram name="Net.SSL_Connection_Latency_DataReductionProxy"
+    units="milliseconds">
+  <summary>
+    Time from when the Connect() starts until it completes when using the data
+    reduction proxy. This includes certificate retrieval and verification.
+  </summary>
 </histogram>
 
 <histogram name="Net.SSL_Connection_Latency_Google" units="milliseconds">
@@ -6966,6 +7306,13 @@ other types of suffix sets.
   <summary/>
 </histogram>
 
+<histogram name="NetConnectivity4">
+  <summary>
+    In this experiment, a few packets were sent from Google to clients via UDP
+    on port 443 or 80 to perform net connectivity test.
+  </summary>
+</histogram>
+
 <histogram name="Network.3G.Gobi.Activation" units="milliseconds">
   <summary>The time the Gobi modem takes to complete activation.</summary>
 </histogram>
@@ -7066,6 +7413,15 @@ other types of suffix sets.
 
 <histogram name="Network.ServiceErrors" enum="NetworkServiceError">
   <summary>Chrome OS connection manager service errors seen.</summary>
+</histogram>
+
+<histogram name="Network.Shill.Cellular.3GPPRegistrationDelayedDrop"
+    enum="NetworkCellular3GPPRegistrationDelayedDrop">
+  <summary>
+    Chrome OS network diagnostic metric sampling the number of cellular network
+    flakes. A network flake occurs when the signal strength goes below detection
+    level for a short duration.
+  </summary>
 </histogram>
 
 <histogram name="Network.Shill.Cellular.AutoConnectTotalTime"
@@ -7908,6 +8264,15 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="NewTabPage.NumberOfMouseOvers">
+  <summary>
+    The total number of times the user hovered the mouse over Most Visited tile
+    or title elements before changing focus away from the NTP, be it by
+    navigating to a URL, switching tabs, changing the active window or closing
+    the tab/shutting down Chrome.
+  </summary>
+</histogram>
+
 <histogram name="NewTabPage.OtherSessionsMenu" enum="NtpOtherSessionsType">
   <summary>
     Histogram for usage of the menu on the NTP that allows the user to access
@@ -8029,6 +8394,13 @@ other types of suffix sets.
   <summary>
     The number of times users enter keyword hint mode &quot;Search ___
     for:&quot; and how.
+  </summary>
+</histogram>
+
+<histogram name="Omnibox.FocusToEditTime" units="ms">
+  <summary>
+    The length of time between when a user focused on the omnibox and first
+    modifies the omnibox.
   </summary>
 </histogram>
 
@@ -11656,6 +12028,12 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="SimpleCache.KeyMatchedOnOpen" enum="BooleanMatched">
+  <summary>
+    For each call to OpenEntry, whether the key on disk matched the request key.
+  </summary>
+</histogram>
+
 <histogram name="SimpleCache.OpenEntryIndexState"
     enum="SimpleCacheOpenEntryIndexState">
   <summary>
@@ -11840,6 +12218,18 @@ other types of suffix sets.
   <summary>Error codes returned by sqlite for the quota db.</summary>
 </histogram>
 
+<histogram name="Sqlite.RazeDatabase" enum="SqliteErrorCode">
+  <summary>Errors attempting to Raze() database.</summary>
+</histogram>
+
+<histogram name="Sqlite.RazeDatabase2" enum="SqliteErrorCode">
+  <summary>Errors on second attempt to Raze() database.</summary>
+</histogram>
+
+<histogram name="Sqlite.RazeDatabaseTruncate" enum="SqliteErrorCode">
+  <summary>Errors truncating database for Raze().</summary>
+</histogram>
+
 <histogram name="Sqlite.SizeKB" units="Kb">
   <summary>Size in kilobytes of pre-existing database at startup.</summary>
 </histogram>
@@ -11858,6 +12248,178 @@ other types of suffix sets.
 
 <histogram name="Sqlite.Web.Error" enum="SqliteErrorCode">
   <summary>Error codes returned by sqlite the web db.</summary>
+</histogram>
+
+<histogram name="Startup.BrowserMessageLoopStartTime">
+  <summary>
+    Time from browser startup to the start of the main thread's message loop.
+  </summary>
+</histogram>
+
+<histogram name="Startup.BrowserMessageLoopStartTimeFromMainEntry"
+    units="milliseconds">
+  <summary>
+    Time from main entry to the start of the main thread's message loop. This
+    stat is only recorded after 7 minutes of OS uptime to try to mitigate the
+    variance resulting from Chrome being autostarted.
+  </summary>
+</histogram>
+
+<histogram name="Startup.BrowserMessageLoopStartTimeFromMainEntry.FirstRun"
+    units="milliseconds">
+  <summary>
+    Time from main entry to the start of the main thread's message loop on first
+    run. This stat is only recorded after 7 minutes of OS uptime to try to
+    mitigate the variance resulting from Chrome being autostarted.
+  </summary>
+</histogram>
+
+<histogram name="Startup.BrowserOpenTabs">
+  <summary>
+    Time taken to open the initial tab or to restore tabs from previous session.
+  </summary>
+</histogram>
+
+<histogram name="Startup.BrowserWindowDisplay" units="milliseconds">
+  <summary>
+    Time from browser startup to the time the browser window initially becomes
+    visible.
+  </summary>
+</histogram>
+
+<histogram name="Startup.ChromeCast.TimeToDisplayVideo" units="milliseconds">
+  <summary>
+    The elapsed time from the ChromeCast application launch to the first video
+    frame displayed.
+  </summary>
+</histogram>
+
+<histogram name="Startup.Fling.TimeToDisplayVideo" units="milliseconds">
+  <summary>
+    The elapsed time from the Fling application launch to the first video frame
+    displayed.
+  </summary>
+</histogram>
+
+<histogram name="Startup.IsResume">
+  <obsolete>
+    Deprecated 12/2011. Merged into MobileSessionStartType.
+  </obsolete>
+  <summary>Whether a startup is a resume (vs a cold start).</summary>
+</histogram>
+
+<histogram name="Startup.MobileSessionStartAction"
+    enum="MobileSessionStartAction">
+  <summary>
+    The action requested on the application startup when called from another app
+    or the OS.
+  </summary>
+</histogram>
+
+<histogram name="Startup.MobileSessionStartFromApps"
+    enum="MobileSessionCallerApp">
+  <summary>The calling application (if any).</summary>
+</histogram>
+
+<histogram name="Startup.ShowAppListColdStart" units="milliseconds">
+  <summary>
+    Time for a newly created browser process to reach the code that starts
+    showing the app launcher, when started with the --show-app-list flag and
+    with no currently running Chrome processes.
+  </summary>
+</histogram>
+
+<histogram name="Startup.ShowAppListWarmStart" units="milliseconds">
+  <summary>
+    Time for a running browser process to reach the code that starts showing the
+    app launcher. Measured from the time a second Chrome process started, which
+    sent its --show-app-list command line argument to the already-running
+    process and will soon exit.
+  </summary>
+</histogram>
+
+<histogram name="Startup.SlowStartupBookmarksLoad" units="milliseconds">
+  <summary>
+    Time it takes to load bookmarks from disk. This measurement is only sent for
+    startups that take &gt;10 seconds after an uptime of 7 minutes.
+  </summary>
+</histogram>
+
+<histogram name="Startup.SlowStartupExtensionServiceInitAfterImport"
+    units="milliseconds">
+  <summary>
+    Time it takes to finish initialization of the extension service including
+    loading built-in extensions. This measurement is only sent for startups that
+    take &gt;10 seconds after an uptime of 7 minutes.
+  </summary>
+</histogram>
+
+<histogram name="Startup.SlowStartupFinalProfileInit" units="milliseconds">
+  <summary>
+    Time the final stages of profile initialization taking including
+    initialization of profile keyed services. This measurement is only sent for
+    startups that take &gt;10 seconds after an uptime of 7 minutes.
+  </summary>
+</histogram>
+
+<histogram name="Startup.SlowStartupNSSInit" units="milliseconds">
+  <summary>
+    Time it takes to load the NSS libraries and initialize it. This measurement
+    is only sent for startups that take &gt;10 seconds after an uptime of 7
+    minutes.
+  </summary>
+</histogram>
+
+<histogram name="Startup.SlowStartupPreferenceLoading" units="milliseconds">
+  <summary>
+    Time it takes to load preferences from disk. This measurement is only sent
+    for startups that take &gt;10 seconds after an uptime of 7 minutes.
+  </summary>
+</histogram>
+
+<histogram name="Startup.SlowStartupProfileIODataInit" units="milliseconds">
+  <summary>
+    Time it takes to initialize the ProfileIOData object - this includes
+    initialization of the cookie store. This measurement is only sent for
+    startups that take &gt;10 seconds after an uptime of 7 minutes.
+  </summary>
+</histogram>
+
+<histogram name="Startup.SlowStartupSafeBrowsingGetDatabase"
+    units="milliseconds">
+  <summary>
+    Time it takes to load the safe browsing database from disk. This measurement
+    is only sent for startups that take &gt;10 seconds after an uptime of 7
+    minutes.
+  </summary>
+</histogram>
+
+<histogram name="Startup.SlowStartupSafeBrowsingServiceInitialize"
+    units="milliseconds">
+  <summary>
+    Time it takes to initialize the safe browsing service. This measurement is
+    only sent for startups that take &gt;10 seconds after an uptime of 7
+    minutes.
+  </summary>
+</histogram>
+
+<histogram name="Startup.SlowStartupSessionServiceCreateTabsAndWindows"
+    units="milliseconds">
+  <summary>
+    Time it takes for session restore to finish initiating creation of restored
+    tabs and windows. This measurement is only sent for startups that take
+    &gt;10 seconds after an uptime of 7 minutes.
+  </summary>
+</histogram>
+
+<histogram name="Startup.WarmStartTimeFromRemoteProcessStart"
+    units="milliseconds">
+  <summary>
+    Time for a running browser process to start processing the command line
+    passed in by a second Chrome process, which just sent its command line
+    arguments to the already-running process and will soon exit. Measured from
+    the time the second Chrome process started.
+  </summary>
 </histogram>
 
 <histogram name="Sync.AuthInvalidationRejectedTokenAgeLong" units="days">
@@ -11893,6 +12455,16 @@ other types of suffix sets.
   <summary>
     Whether OAuth2 refresh token was available at the time when
     ProfileSyncService was starting backend.
+  </summary>
+</histogram>
+
+<histogram name="Tab.AgeUponRestoreFromColdStart" units="minutes">
+  <summary>
+    Age (time since the last display in previous sessions) of a tab being
+    restored due to the first tab switch after the browser cold start, recorded
+    upon such restore. When the browser is started from cold, this metric is not
+    recorded for the foreground, automatically restored tab, so that the metric
+    tracks only the restores triggered by direct user decision to switch tabs.
   </summary>
 </histogram>
 
@@ -11963,6 +12535,13 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Tabs.ForegroundTabAgeAtStartup" units="minutes">
+  <summary>
+    Age (time since the last display in previous sessions) of the foreground tab
+    being restored on the browser cold start.
+  </summary>
+</histogram>
+
 <histogram name="Touchpad.Device" enum="TouchpadDeviceState">
   <summary>Tracks touchpad device state.</summary>
 </histogram>
@@ -12027,13 +12606,15 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Touchpad.ThreeFingerSwipe.Changed" enum="BooleanEnabled">
-  <summary>
-    Tracks touchpad ThreeFingerSwipe setting changes by the user.
-  </summary>
+  <obsolete>
+    Deprecated as of 7/2013.
+  </obsolete>
 </histogram>
 
 <histogram name="Touchpad.ThreeFingerSwipe.Started" enum="BooleanEnabled">
-  <summary>Tracks touchpad ThreeFingerSwipe setting on startup.</summary>
+  <obsolete>
+    Deprecated as of 7/2013.
+  </obsolete>
 </histogram>
 
 <histogram name="Translate.AlwaysTranslateLang">
@@ -12245,6 +12826,53 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="UMA.CollectExternalEventsTime" units="milliseconds">
+  <summary>
+    The time to run the external metrics collection task (Chrome OS).
+  </summary>
+</histogram>
+
+<histogram name="UMA.Discarded Log Events">
+  <summary>
+    The number of events discarded at log transmission time because the event
+    count was already too large.
+  </summary>
+</histogram>
+
+<histogram name="UMA.FieldTrialsEnabledBenchmarking" enum="BooleanUsage">
+  <summary>
+    Log whether the --enable-benchmarking flag was set, which causes field
+    trials to only use the default group.
+  </summary>
+</histogram>
+
+<histogram name="UMA.GeneratedLowEntropySource" enum="BooleanSuccess">
+  <summary>
+    For each attempt to generate the low entropy source, log whether or not the
+    load required generating a new low entropy source.
+  </summary>
+</histogram>
+
+<histogram name="UMA.Large Accumulated Log Not Persisted" units="bytes">
+  <summary>
+    Number of bytes in an excessively large log that was discarded at shutdown
+    instead of being saved to disk to retry during next chrome run.
+  </summary>
+</histogram>
+
+<histogram name="UMA.Large Rejected Log was Discarded" units="bytes">
+  <summary>
+    Number of bytes in a log was was rejected by server, and then discarded.
+  </summary>
+</histogram>
+
+<histogram name="UMA.LogLoadComplete called">
+  <summary>
+    Simple counter of the number of times LogLoadComplete was called (bug
+    demonstration, as we're called more often than once per page load :-/ )
+  </summary>
+</histogram>
+
 <histogram name="UMA.LowEntropySourceValue">
   <summary>
     Distribution of the low entropy source value used for field trial
@@ -12256,6 +12884,82 @@ other types of suffix sets.
   <summary>
     A count of successes and various failure modes related to collecting and
     processing performance data obtained through &quot;perf&quot; on ChromeOS.
+  </summary>
+</histogram>
+
+<histogram name="UMA.ProtoCompressionRatio" units="%">
+  <summary>
+    Compression ratio of the serialized protobuf that will be uploaded to the
+    UMA server. This serialized protobuf is compressed using gzip.
+  </summary>
+</histogram>
+
+<histogram name="UMA.ProtoGzipped" enum="Boolean">
+  <summary>Was the UMA protobuf uploaded earlier compressed or not.</summary>
+</histogram>
+
+<histogram name="UMA.ProtoGzippedKBSaved" units="KB">
+  <summary>
+    Kilobytes saved from gzipping the protobufs before uploading them.
+  </summary>
+</histogram>
+
+<histogram name="UMA.Unacceptable_Log_Discarded">
+  <obsolete>
+    Deprecated as of May, 2012 (i.e. Chrome 21+).  Replaced by the
+    UMA.UploadResponseStatus.XML and UMA.UploadResponseStatus.Protobuf
+    histograms.
+  </obsolete>
+  <summary>The server returned a 400 code, and we discarded a log.</summary>
+  <details>
+    This tends to indicate that a syntax error is present in a log, such as
+    would appear when a bogus XML tag is included, or the XML is not balanced
+    and well structured.
+  </details>
+</histogram>
+
+<histogram name="UMA.UploadCreation" enum="BooleanSuccess">
+  <summary>
+    For each attempted UMA upload, log whether the upload was successfully
+    constructed.  An upload might fail to be constructed, for example, if we try
+    to upload before the system is fully initialized; or if serialization of the
+    data fails.
+  </summary>
+</histogram>
+
+<histogram name="UMA.UploadResponseStatus.Protobuf"
+    enum="UmaUploadResponseStatus">
+  <summary>
+    For each upload to the protocol buffer (v2) UMA server, log whether the
+    upload was successful, or whether there was an error.
+  </summary>
+</histogram>
+
+<histogram name="UMA.UploadResponseStatus.XML" enum="UmaUploadResponseStatus">
+  <summary>
+    For each upload to the XML (v1) UMA server, log whether the upload was
+    successful, or whether there was an error.
+  </summary>
+</histogram>
+
+<histogram name="UMA.UsedResetVariationsFlag" enum="BooleanUsage">
+  <summary>
+    Log whether the --reset-variation-state flag was set before the low entropy
+    source was requested.
+  </summary>
+</histogram>
+
+<histogram name="UMA.XMLNodeDumpTime" units="milliseconds">
+  <summary>
+    The time spent in converting the XML tree into a character buffer when
+    closing a metrics log (Chrome OS).
+  </summary>
+</histogram>
+
+<histogram name="UMA.XMLWriterDestructionTime" units="milliseconds">
+  <summary>
+    The time spent in freeing the XML writer and tree when closing a metrics log
+    (Chrome OS).
   </summary>
 </histogram>
 
@@ -12319,7 +13023,7 @@ other types of suffix sets.
   </summary>
 </histogram>
 
-<histogram name="Variations.SeedEmpty" enum="BooleanEmpty">
+<histogram name="Variations.SeedEmpty" enum="VariationsSeedEmpty">
   <summary>
     Records whether the variations seed in local state is empty (does not exist)
     on startup.
@@ -12594,6 +13298,40 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="WebCore.IndexedDB.LevelDBOpenErrors.PFE"
+    enum="PlatformFileError">
+  <summary>
+    PlatformFileErrors encountered by a single LevelDBEnv method when opening an
+    IndexedDB instance.
+  </summary>
+</histogram>
+
+<histogram name="WebCore.IndexedDB.LevelDBReadErrors" enum="LevelDBErrorTypes">
+  <summary>
+    Error classes returned by LevelDB when it failed to read a database.
+  </summary>
+</histogram>
+
+<histogram name="WebCore.IndexedDB.LevelDBReadErrors.Corruption"
+    enum="LevelDBCorruptionTypes">
+  Types of corruption that LevelDB encounters when reading a database.
+</histogram>
+
+<histogram name="WebCore.IndexedDB.LevelDBReadErrors.EnvMethod"
+    enum="LevelDBIOErrorMethods">
+  <summary>
+    LevelDBEnv methods that generated IO errors when reading a database.
+  </summary>
+</histogram>
+
+<histogram name="WebCore.IndexedDB.LevelDBReadErrors.Errno"
+    enum="OSAgnosticErrno">
+  <summary>
+    Errno errors encountered by a single LevelDBEnv method when reading an
+    IndexedDB instance.
+  </summary>
+</histogram>
+
+<histogram name="WebCore.IndexedDB.LevelDBReadErrors.PFE"
     enum="PlatformFileError">
   <summary>
     PlatformFileErrors encountered by a single LevelDBEnv method when opening an
@@ -13164,6 +13902,7 @@ other types of suffix sets.
   <int value="4" label="Canceled, no edits"/>
   <int value="5" label="Canceled, no invalid fields"/>
   <int value="6" label="Canceled, 1+ invalid fields"/>
+  <int value="7" label="Canceled during sign-in"/>
 </enum>
 
 <enum name="AutofillDialogInitialUserState" type="int">
@@ -13355,6 +14094,11 @@ other types of suffix sets.
   <int value="8" label="Unknown or unhandler error"/>
 </enum>
 
+<enum name="Boolean" type="int">
+  <int value="0" label="False"/>
+  <int value="1" label="True"/>
+</enum>
+
 <enum name="BooleanAttempted" type="int">
   <int value="0" label="Not Attempted"/>
   <int value="1" label="Attempted"/>
@@ -13375,6 +14119,11 @@ other types of suffix sets.
   <int value="1" label="Missing Credentials"/>
 </enum>
 
+<enum name="BooleanDataReductionProxy" type="int">
+  <int value="0" label="Not Data Reduction Proxy"/>
+  <int value="1" label="Data Reduction Proxy"/>
+</enum>
+
 <enum name="BooleanDelete" type="int">
   <int value="0" label="Ignored"/>
   <int value="1" label="Deleted"/>
@@ -13383,11 +14132,6 @@ other types of suffix sets.
 <enum name="BooleanDuplicate" type="int">
   <int value="0" label="Not Duplicate"/>
   <int value="1" label="Duplicate"/>
-</enum>
-
-<enum name="BooleanEmpty" type="int">
-  <int value="0" label="Not Empty"/>
-  <int value="1" label="Empty"/>
 </enum>
 
 <enum name="BooleanEnabled" type="int">
@@ -14524,7 +15268,7 @@ other types of suffix sets.
   <int value="16" label="BOOKMARKS_UPDATE"/>
   <int value="17" label="FILEBROWSERPRIVATE_GETDRIVEFILES"/>
   <int value="18" label="TERMINALPRIVATE_ONTERMINALRESIZE"/>
-  <int value="19" label="FILEBROWSERPRIVATE_REQUESTDIRECTORYREFRESH"/>
+  <int value="19" label="DELETED_FILEBROWSERPRIVATE_REQUESTDIRECTORYREFRESH"/>
   <int value="20" label="BLUETOOTH_GETADAPTERSTATE"/>
   <int value="21" label="FILEBROWSERPRIVATE_CANCELFILETRANSFERS"/>
   <int value="22" label="FILEBROWSERPRIVATE_PINDRIVEFILE"/>
@@ -14697,7 +15441,7 @@ other types of suffix sets.
   <int value="189" label="FILESYSTEM_GETDISPLAYPATH"/>
   <int value="190" label="FILEBROWSERPRIVATE_FORMATDEVICE"/>
   <int value="191" label="BOOKMARKS_GET"/>
-  <int value="192" label="MANAGEDMODEPRIVATE_GET"/>
+  <int value="192" label="DELETED_MANAGEDMODEPRIVATE_GET"/>
   <int value="193" label="ALARMS_CLEAR"/>
   <int value="194" label="SYNCFILESYSTEM_GETFILESYNCSTATUS"/>
   <int value="195" label="SOCKET_GETINFO"/>
@@ -14711,7 +15455,7 @@ other types of suffix sets.
   <int value="203" label="DEVELOPERPRIVATE_RELOAD"/>
   <int value="204" label="FILEBROWSERPRIVATE_GETMOUNTPOINTS"/>
   <int value="205" label="APP_RUNTIME_POSTINTENTRESPONSE"/>
-  <int value="206" label="MANAGEDMODEPRIVATE_SETPOLICY"/>
+  <int value="206" label="DELETED_MANAGEDMODEPRIVATE_SETPOLICY"/>
   <int value="207" label="WEBSTOREPRIVATE_BEGININSTALLWITHMANIFEST3"/>
   <int value="208" label="WALLPAPERPRIVATE_SETWALLPAPER"/>
   <int value="209" label="USB_CONTROLTRANSFER"/>
@@ -14738,7 +15482,7 @@ other types of suffix sets.
   <int value="230" label="METRICSPRIVATE_RECORDPERCENTAGE"/>
   <int value="231" label="TYPES_CHROMESETTING_GET"/>
   <int value="232" label="WINDOWS_GETLASTFOCUSED"/>
-  <int value="233" label="MANAGEDMODEPRIVATE_GETPOLICY"/>
+  <int value="233" label="DELETED_MANAGEDMODEPRIVATE_GETPOLICY"/>
   <int value="234" label="STORAGE_CLEAR"/>
   <int value="235" label="STORAGE_GETBYTESINUSE"/>
   <int value="236" label="TABS_QUERY"/>
@@ -14818,7 +15562,7 @@ other types of suffix sets.
   <int value="310" label="BLUETOOTH_GETSERVICES"/>
   <int value="311" label="TABS_UPDATE"/>
   <int value="312" label="BROWSINGDATA_REMOVEFORMDATA"/>
-  <int value="313" label="FILEBROWSERPRIVATE_RELOADDRIVE"/>
+  <int value="313" label="DELETED_FILEBROWSERPRIVATE_RELOADDRIVE"/>
   <int value="314" label="ALARMS_GET"/>
   <int value="315" label="BROWSINGDATA_REMOVEINDEXEDDB"/>
   <int value="316" label="FILEBROWSERPRIVATE_ADDFILEWATCH"/>
@@ -14845,7 +15589,7 @@ other types of suffix sets.
   <int value="337" label="SERIAL_READ"/>
   <int value="338" label="APP_CURRENTWINDOWINTERNAL_MAXIMIZE"/>
   <int value="339" label="EXPERIMENTAL_DISCOVERY_CLEARALLSUGGESTIONS"/>
-  <int value="340" label="MANAGEDMODEPRIVATE_ENTER"/>
+  <int value="340" label="DELETED_MANAGEDMODEPRIVATE_ENTER"/>
   <int value="341" label="FILEBROWSERPRIVATE_TRANSFERFILE"/>
   <int value="342" label="BROWSERACTION_SETPOPUP"/>
   <int value="343" label="TABS_GETSELECTED"/>
@@ -14930,7 +15674,7 @@ other types of suffix sets.
   <int value="422" label="DEVELOPERPRIVATE_RESTART"/>
   <int value="423" label="DEVELOPERPRIVATE_ALLOWINCOGNITO"/>
   <int value="424" label="INPUT_IME_DELETESURROUNDINGTEXT"/>
-  <int value="425" label="FILEBROWSERPRIVATE_OPENNEWWINDOW"/>
+  <int value="425" label="DELETED_FILEBROWSERPRIVATE_OPENNEWWINDOW"/>
   <int value="426" label="CLOUDPRINTPRIVATE_GETCLIENTID"/>
   <int value="427" label="ECHOPRIVATE_GETUSERCONSENT"/>
   <int value="428" label="SYNCFILESYSTEM_SETCONFLICTRESOLUTIONPOLICY"/>
@@ -15004,6 +15748,14 @@ other types of suffix sets.
   <int value="495" label="METRICSPRIVATE_GETFIELDTRIAL"/>
   <int value="496" label="FILEBROWSERPRIVATE_ZOOM"/>
   <int value="497" label="WEBVIEW_GO"/>
+  <int value="498" label="WEBSTOREPRIVATE_ISININCOGNITOMODEFUNCTION"/>
+  <int value="499" label="FILEBROWSERPRIVATE_REQUESTACCESSTOKEN"/>
+  <int value="500" label="WEBVIEW_STOP"/>
+  <int value="501" label="WEBVIEW_RELOAD"/>
+  <int value="502" label="WEBVIEW_TERMINATE"/>
+  <int value="503" label="TYPES_PRIVATE_CHROMEDIRECTSETTING_GET"/>
+  <int value="504" label="TYPES_PRIVATE_CHROMEDIRECTSETTING_SET"/>
+  <int value="505" label="TYPES_PRIVATE_CHROMEDIRECTSETTING_CLEAR"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">
@@ -15681,6 +16433,30 @@ other types of suffix sets.
   <int value="16385" label="FOLDER"/>
   <int value="32769" label="FILE"/>
   <int value="32770" label="PDF"/>
+</enum>
+
+<enum name="GestureActionType" type="int">
+  <int value="0" label="Unknown"/>
+  <int value="1" label="Omnibox pinch"/>
+  <int value="2" label="Omnibox scroll"/>
+  <int value="3" label="Tabstrip pinch"/>
+  <int value="4" label="Tabstrip scroll"/>
+  <int value="5" label="Bezel scroll"/>
+  <int value="6" label="Desktop scroll"/>
+  <int value="7" label="Desktop pinch"/>
+  <int value="8" label="Webpage pinch"/>
+  <int value="9" label="Webpage scroll"/>
+  <int value="10" label="Webpage tap"/>
+  <int value="11" label="Tabstrip tap"/>
+  <int value="12" label="Bezel down"/>
+  <int value="13" label="Tab switched tap"/>
+  <int value="14" label="Active tab tap"/>
+  <int value="15" label="Tab close button tap"/>
+  <int value="16" label="New tab button tap"/>
+  <int value="17" label="Top edge of window tap"/>
+  <int value="18" label="Window size button tap"/>
+  <int value="19" label="Area surrounding tabstrip tap"/>
+  <int value="20" label="Window resized double tap"/>
 </enum>
 
 <enum name="GetPerfDataOutcome" type="int">
@@ -17118,6 +17894,29 @@ other types of suffix sets.
   <int value="3" label="kInvalidPlayerState"/>
 </enum>
 
+<enum name="MobileSessionCallerApp" type="int">
+  <int value="0" label="Google Search"/>
+  <int value="1" label="GMail"/>
+  <int value="2" label="Google+"/>
+  <int value="3" label="Google Drive"/>
+  <int value="4" label="Google Earth"/>
+  <int value="5" label="Other Google Apps"/>
+  <int value="6" label="Others"/>
+  <int value="7" label="Mobile Safari"/>
+  <int value="8" label="Other Apple Apps"/>
+  <int value="9" label="YouTube"/>
+  <int value="10" label="Google Maps"/>
+</enum>
+
+<enum name="MobileSessionStartAction" type="int">
+  <int value="0" label="Open http"/>
+  <int value="1" label="Open https"/>
+  <int value="2" label="Open file"/>
+  <int value="3" label="x-callback-url open"/>
+  <int value="4" label="x-callback-url other"/>
+  <int value="5" label="Others"/>
+</enum>
+
 <enum name="MouseEventFollowedByClick" type="int">
   <int value="0" label="Missed event before click"/>
   <int value="1" label="Caught event before click"/>
@@ -17394,6 +18193,18 @@ other types of suffix sets.
   <int value="15" label="EAP-TLS"/>
   <int value="16" label="EAP-TNC"/>
   <int value="17" label="EAP-TTLS"/>
+</enum>
+
+<enum name="NetworkCellular3GPPRegistrationDelayedDrop" type="int">
+  <int value="0" label="Delayed drop posted">
+    A signal loss in the cellular service was detected and a delayed connection
+    drop request was posted. This request causes the cellular connection to be
+    dropped if it is not cancelled within the delay provided.
+  </int>
+  <int value="1" label="Delayed drop canceled">
+    Signal strength returned to normal soon after a delayed drop request was
+    made, causing the request to be canceled. This indicates a flaky network.
+  </int>
 </enum>
 
 <enum name="NetworkCellularOutOfCreditsReason" type="int">
@@ -18542,7 +19353,7 @@ other types of suffix sets.
   <int value="3" label="Bad Magic Number"/>
   <int value="4" label="Bad Version"/>
   <int value="5" label="Can't Read Key"/>
-  <int value="6" label="Key Mismatch"/>
+  <int value="6" label="Key Mismatch (obsolete)"/>
   <int value="7" label="Hash Mismatch"/>
 </enum>
 
@@ -19292,6 +20103,13 @@ other types of suffix sets.
   <int value="2" label="unexpected other schemes"/>
 </enum>
 
+<enum name="UmaUploadResponseStatus" type="int">
+  <int value="0" label="Unknown failure"/>
+  <int value="1" label="Success"/>
+  <int value="2" label="Bad request"/>
+  <int value="3" label="No response"/>
+</enum>
+
 <enum name="UncacheableReason" type="int">
   <int value="0" label="kNoData"/>
   <int value="1" label="kPre11PartialResponse"/>
@@ -19387,6 +20205,12 @@ other types of suffix sets.
   <int value="0" label="Resource requests allowed"/>
   <int value="1" label="Resource requests not allowed"/>
   <int value="2" label="Notified that requests became allowed"/>
+</enum>
+
+<enum name="VariationsSeedEmpty" type="int">
+  <int value="0" label="Seed Not Empty"/>
+  <int value="1" label="Seed Empty"/>
+  <int value="2" label="Seed Corrupt"/>
 </enum>
 
 <enum name="VAVDAH264DecoderFailure" type="int">
@@ -19924,6 +20748,7 @@ other types of suffix sets.
   <group name="WritableFileSyncParent"
       label="ChromiumWritableFile::SyncParent"/>
   <affected-histogram name="WebCore.IndexedDB.LevelDBOpenErrors.Errno"/>
+  <affected-histogram name="WebCore.IndexedDB.LevelDBReadErrors.Errno"/>
   <affected-histogram name="WebCore.IndexedDB.LevelDBWriteErrors.Errno"/>
 </fieldtrial>
 
@@ -19938,6 +20763,7 @@ other types of suffix sets.
   <group name="RenameFile" label="ChromiumEnv::RenameFile"/>
   <group name="UnlockFile" label="ChromiumEnv::UnlockFile"/>
   <affected-histogram name="WebCore.IndexedDB.LevelDBOpenErrors.PFE"/>
+  <affected-histogram name="WebCore.IndexedDB.LevelDBReadErrors.PFE"/>
   <affected-histogram name="WebCore.IndexedDB.LevelDBWriteErrors.PFE"/>
 </fieldtrial>
 
@@ -20655,6 +21481,342 @@ other types of suffix sets.
   <affected-histogram name="NetConnectivity3.StartPacket.Send6.SeriesAcked"/>
 </fieldtrial>
 
+<fieldtrial name="NetConnectivity4a" separator=".">
+  <group name="NATBind.Sent2"
+      label="Two packets were sent spreading over a random period, to test if
+             the NAT dropped the binding. This histogram recorded the
+             duration (in seconds) of the interval between the sendings of
+             the two packets. Results are only shown in this histogram if at
+             least ten packets were received in the StartPacket test, both
+             packets were received in NATBindRef test, and the first packet
+             of this test arrived at the client."/>
+  <group name="NATBindRef.Sent2"
+      label="Two packets were sent as rapidly as possible right after the
+             NATBind test. This histogram recorded the duration (in seconds)
+             of the interval between the sendings of the two packets in the
+             preceding NetConnectivity4.NATBind test. Results are only shown
+             in this histogram if at least ten packets were received in the
+             StartPacket test."/>
+  <group name="NonPacedPacket"
+      label="21 Packets were sent as rapidly as possible. Results are only
+             shown in this histogram if at least two packets were received in
+             the StartPacket Test."/>
+  <group name="PacedPacket"
+      label="21 Packets were sent at equal intervals, which were selected to
+             match the bandwidth discovered during the StartPacket test.
+             Results are only shown in this histogram if at least two packets
+             were received in the StartPacket Test."/>
+  <group name="StartPacket"
+      label="21 Packets were sent as rapidly as possible, just after the
+             client successfully sent a UMA upload. Each packet was numbered
+             when it was sent by Google."/>
+  <affected-histogram name="NetConnectivity4"/>
+</fieldtrial>
+
+<fieldtrial name="NetConnectivity4NATBindPacketReceives" separator=".">
+  <group name="Failure"
+      label="Only when the second packet never arrived (we wait for 30 extra
+             seconds) did we record the duration in this histogram."/>
+  <group name="Success"
+      label="Only when the second packet arrived did we record the duration
+             in this histogram."/>
+  <affected-histogram name="NetConnectivity4.NATBind.Sent2"/>
+</fieldtrial>
+
+<fieldtrial name="NetConnectivity4NATBindRefPacketReceives" separator=".">
+  <group name="Failure"
+      label="Only when both packets did not arrive (we wait for 30 extra
+             seconds) did we record the duration in this histogram."/>
+  <group name="Success"
+      label="Only when both packets arrived did we record the duration in
+             this histogram."/>
+  <affected-histogram name="NetConnectivity4.NATBindRef.Sent2"/>
+</fieldtrial>
+
+<fieldtrial name="NetConnectivity4PacketFirst6" separator=".">
+  <group name="First6.SeriesRecv"
+      label="This histogram records a bit vector of the first 6 packets sent,
+             where the least significant bit is a 1 if the first packet was
+             received, etc. For example, if all packets other than packet 2
+             and 4 are received, then we'd have a sample (in binary) of
+             110101B, or 53."/>
+  <group name="Sent21"
+      label="This histogram shows the number of packets received from the
+             first"/>
+  <affected-histogram name="NetConnectivity4.NonPacedPacket"/>
+  <affected-histogram name="NetConnectivity4.PacedPacket"/>
+  <affected-histogram name="NetConnectivity4.StartPacket"/>
+</fieldtrial>
+
+<fieldtrial name="NetConnectivity4PacketReceives" separator=".">
+  <group name="NumRecvFromFirst01Packets" label="1 packet."/>
+  <group name="NumRecvFromFirst02Packets" label="2 packets."/>
+  <group name="NumRecvFromFirst03Packets" label="3 packets."/>
+  <group name="NumRecvFromFirst04Packets" label="4 packets."/>
+  <group name="NumRecvFromFirst05Packets" label="5 packets."/>
+  <group name="NumRecvFromFirst06Packets" label="6 packets."/>
+  <group name="NumRecvFromFirst07Packets" label="7 packets."/>
+  <group name="NumRecvFromFirst08Packets" label="8 packets."/>
+  <group name="NumRecvFromFirst09Packets" label="9 packets."/>
+  <group name="NumRecvFromFirst10Packets" label="10 packets."/>
+  <group name="NumRecvFromFirst11Packets" label="11 packets."/>
+  <group name="NumRecvFromFirst12Packets" label="12 packets."/>
+  <group name="NumRecvFromFirst13Packets" label="13 packets."/>
+  <group name="NumRecvFromFirst14Packets" label="14 packets."/>
+  <group name="NumRecvFromFirst15Packets" label="15 packets."/>
+  <group name="NumRecvFromFirst16Packets" label="16 packets."/>
+  <group name="NumRecvFromFirst17Packets" label="17 packets."/>
+  <group name="NumRecvFromFirst18Packets" label="18 packets."/>
+  <group name="NumRecvFromFirst19Packets" label="19 packets."/>
+  <group name="NumRecvFromFirst20Packets" label="20 packets."/>
+  <group name="NumRecvFromFirst21Packets" label="21 packets."/>
+  <affected-histogram name="NetConnectivity4.NonPacedPacket.Sent21"/>
+  <affected-histogram name="NetConnectivity4.PacedPacket.Sent21"/>
+  <affected-histogram name="NetConnectivity4.StartPacket.Sent21"/>
+</fieldtrial>
+
+<fieldtrial name="NetConnectivity4PacketRTT" separator=".">
+  <group name="Sent21.GotAPacket"
+      label="The histogram shows if we ever got at least one packet in our
+             series of 21."/>
+  <group name="Sent21.PacketDelay"
+      label="The histogram shows the average inter-arrival time between every
+             two consecutive packets we receive in our series of 21
+             multiplied by 20 (so this is essentially the time duration
+             between the first and the last received packets)."/>
+  <group name="Sent21.PacketsRecv"
+      label="The histogram shows how many packets we receive in our series of
+             21."/>
+  <group name="Sent21.RecvNthPacket"
+      label="Each packet was numbered when it was sent by Google. This
+             histogram records, for each packet number, how often we received
+             that packet."/>
+  <group name="Sent21.Success.RTT" label="The histogram shows the RTT for the"/>
+  <affected-histogram name="NetConnectivity4.NonPacedPacket"/>
+  <affected-histogram name="NetConnectivity4.PacedPacket"/>
+  <affected-histogram name="NetConnectivity4.StartPacket"/>
+</fieldtrial>
+
+<fieldtrial name="NetConnectivity4PacketRTTSeries" separator=".">
+  <group name="Packet01" label="1st packet."/>
+  <group name="Packet02" label="2nd packet."/>
+  <group name="Packet03" label="3rd packet."/>
+  <group name="Packet10" label="10th packet."/>
+  <group name="Packet20" label="20th packet."/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.Success.RTT"/>
+  <affected-histogram name="NetConnectivity4.PacedPacket.Sent21.Success.RTT"/>
+  <affected-histogram name="NetConnectivity4.StartPacket.Sent21.Success.RTT"/>
+</fieldtrial>
+
+<fieldtrial name="NetConnectivity4PacketsAll" separator=".">
+  <group name="443.100B" label="100 bytes of data is sent on port 443."/>
+  <group name="443.1200B" label="1200 bytes of data is sent on port 443."/>
+  <group name="443.500B" label="500 bytes of data is sent on port 443."/>
+  <group name="80.100B" label="100 bytes of data is sent on port 80."/>
+  <group name="80.1200B" label="1200 bytes of data is sent on port 80."/>
+  <group name="80.500B" label="500 bytes of data is sent on port 80."/>
+  <affected-histogram name="NetConnectivity4.NATBind.Sent2.Failure"/>
+  <affected-histogram name="NetConnectivity4.NATBind.Sent2.Success"/>
+  <affected-histogram name="NetConnectivity4.NATBindRef.Sent2.Failure"/>
+  <affected-histogram name="NetConnectivity4.NATBindRef.Sent2.Success"/>
+  <affected-histogram name="NetConnectivity4.NonPacedPacket.Sent21.GotAPacket"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst01Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst02Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst03Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst04Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst05Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst06Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst07Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst08Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst09Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst10Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst11Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst12Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst13Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst14Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst15Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst16Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst17Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst18Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst19Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst20Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst21Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.PacketDelay"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.PacketsRecv"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.RecvNthPacket"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.Success.RTT.Packet01"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.Success.RTT.Packet02"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.Success.RTT.Packet03"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.Success.RTT.Packet10"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.Success.RTT.Packet20"/>
+  <affected-histogram name="NetConnectivity4.PacedPacket.Sent21.GotAPacket"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.NumRecvFromFirst01Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.NumRecvFromFirst02Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.NumRecvFromFirst03Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.NumRecvFromFirst04Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.NumRecvFromFirst05Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.NumRecvFromFirst06Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.NumRecvFromFirst07Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.NumRecvFromFirst08Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.NumRecvFromFirst09Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.NumRecvFromFirst10Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.NumRecvFromFirst11Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.NumRecvFromFirst12Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.NumRecvFromFirst13Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.NumRecvFromFirst14Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.NumRecvFromFirst15Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.NumRecvFromFirst16Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.NumRecvFromFirst17Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.NumRecvFromFirst18Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.NumRecvFromFirst19Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.NumRecvFromFirst20Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.NumRecvFromFirst21Packets"/>
+  <affected-histogram name="NetConnectivity4.PacedPacket.Sent21.PacketDelay"/>
+  <affected-histogram name="NetConnectivity4.PacedPacket.Sent21.PacketsRecv"/>
+  <affected-histogram name="NetConnectivity4.PacedPacket.Sent21.RecvNthPacket"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.Success.RTT.Packet01"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.Success.RTT.Packet02"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.Success.RTT.Packet03"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.Success.RTT.Packet10"/>
+  <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.Success.RTT.Packet20"/>
+  <affected-histogram name="NetConnectivity4.StartPacket.Sent21.GotAPacket"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.NumRecvFromFirst01Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.NumRecvFromFirst02Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.NumRecvFromFirst03Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.NumRecvFromFirst04Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.NumRecvFromFirst05Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.NumRecvFromFirst06Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.NumRecvFromFirst07Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.NumRecvFromFirst08Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.NumRecvFromFirst09Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.NumRecvFromFirst10Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.NumRecvFromFirst11Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.NumRecvFromFirst12Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.NumRecvFromFirst13Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.NumRecvFromFirst14Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.NumRecvFromFirst15Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.NumRecvFromFirst16Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.NumRecvFromFirst17Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.NumRecvFromFirst18Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.NumRecvFromFirst19Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.NumRecvFromFirst20Packets"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.NumRecvFromFirst21Packets"/>
+  <affected-histogram name="NetConnectivity4.StartPacket.Sent21.PacketDelay"/>
+  <affected-histogram name="NetConnectivity4.StartPacket.Sent21.PacketsRecv"/>
+  <affected-histogram name="NetConnectivity4.StartPacket.Sent21.RecvNthPacket"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.Success.RTT.Packet01"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.Success.RTT.Packet02"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.Success.RTT.Packet03"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.Success.RTT.Packet10"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.Success.RTT.Packet20"/>
+</fieldtrial>
+
+<fieldtrial name="NetConnectivity4SeriesRecv" separator=".">
+  <group name="443.100B" label="100 bytes of data is sent on port 443."/>
+  <group name="443.100B.NoProxy"
+      label="100 bytes of data is sent on port 443 with no proxy."/>
+  <group name="443.1200B" label="1200 bytes of data is sent on port 443."/>
+  <group name="443.1200B.NoProxy"
+      label="1200 bytes of data is sent on port 443 with no proxy."/>
+  <group name="443.500B" label="500 bytes of data is sent on port 443."/>
+  <group name="443.500B.NoProxy"
+      label="500 bytes of data is sent on port 443 with no proxy."/>
+  <group name="80.100B" label="100 bytes of data is sent on port 80."/>
+  <group name="80.100B.NoProxy"
+      label="100 bytes of data is sent on port 80 with no proxy."/>
+  <group name="80.1200B" label="1200 bytes of data is sent on port 80."/>
+  <group name="80.1200B.NoProxy"
+      label="1200 bytes of data is sent on port 80 with no proxy."/>
+  <group name="80.500B" label="500 bytes of data is sent on port 80."/>
+  <group name="80.500B.NoProxy"
+      label="500 bytes of data is sent on port 80 with no proxy."/>
+  <affected-histogram name="NetConnectivity4.NonPacedPacket.First6.SeriesRecv"/>
+  <affected-histogram name="NetConnectivity4.PacedPacket.First6.SeriesRecv"/>
+  <affected-histogram name="NetConnectivity4.StartPacket.First6.SeriesRecv"/>
+</fieldtrial>
+
 <fieldtrial name="NetProxyResolverExecutionTime">
   <group name="UrlOver2K" label="URL length was over 2K"/>
   <group name="UrlOver4K" label="URL length was over 4K"/>
@@ -21061,6 +22223,12 @@ other types of suffix sets.
   <affected-histogram name="Omnibox.QueryTime"/>
 </fieldtrial>
 
+<fieldtrial name="RemoteProcessWarmStartFast" separator="">
+  <group name="" label="Normal start."/>
+  <group name="Fast" label="Fast start by skipping normal chrome.dll startup."/>
+  <affected-histogram name="Startup.WarmStartTimeFromRemoteProcessStart"/>
+</fieldtrial>
+
 <fieldtrial name="SBInterstitial">
   <group name="V1" label="original interstitial"/>
   <group name="V2" label="version 2 (new interstitial)"/>
@@ -21071,6 +22239,12 @@ other types of suffix sets.
   <affected-histogram name="SB2.MalwareInterstitialTimePrivacyPolicy"/>
   <affected-histogram name="SB2.MalwareInterstitialTimeProceed"/>
   <affected-histogram name="SB2.MalwareInterstitialTimeTakeMeBack"/>
+</fieldtrial>
+
+<fieldtrial name="ShowAppListWarmStartFast" separator="">
+  <group name="" label="Normal start."/>
+  <group name="Fast" label="Fast start by skipping normal chrome.dll startup."/>
+  <affected-histogram name="Startup.ShowAppListWarmStart"/>
 </fieldtrial>
 
 <fieldtrial name="SideloadWipeout">
@@ -21168,6 +22342,57 @@ other types of suffix sets.
   <group name="Full_Handshake" label="Full"/>
   <affected-histogram name="Net.SSL_Connection_Latency"/>
   <affected-histogram name="Net.SSL_Connection_Latency_Google"/>
+</fieldtrial>
+
+<fieldtrial name="SyzygyStartupTime">
+  <group name="PreReadEnabled"/>
+  <group name="PreReadDisabled"/>
+  <group name="XP_PreReadEnabled"/>
+  <group name="XP_PreReadDisabled"/>
+  <group name="PreRead_0"/>
+  <group name="PreRead_5"/>
+  <group name="PreRead_10"/>
+  <group name="PreRead_15"/>
+  <group name="PreRead_20"/>
+  <group name="PreRead_25"/>
+  <group name="PreRead_30"/>
+  <group name="PreRead_35"/>
+  <group name="PreRead_40"/>
+  <group name="PreRead_45"/>
+  <group name="PreRead_50"/>
+  <group name="PreRead_55"/>
+  <group name="PreRead_60"/>
+  <group name="PreRead_65"/>
+  <group name="PreRead_70"/>
+  <group name="PreRead_75"/>
+  <group name="PreRead_80"/>
+  <group name="PreRead_85"/>
+  <group name="PreRead_90"/>
+  <group name="PreRead_95"/>
+  <group name="PreRead_100"/>
+  <group name="XP_PreRead_0"/>
+  <group name="XP_PreRead_5"/>
+  <group name="XP_PreRead_10"/>
+  <group name="XP_PreRead_15"/>
+  <group name="XP_PreRead_20"/>
+  <group name="XP_PreRead_25"/>
+  <group name="XP_PreRead_30"/>
+  <group name="XP_PreRead_35"/>
+  <group name="XP_PreRead_40"/>
+  <group name="XP_PreRead_45"/>
+  <group name="XP_PreRead_50"/>
+  <group name="XP_PreRead_55"/>
+  <group name="XP_PreRead_60"/>
+  <group name="XP_PreRead_65"/>
+  <group name="XP_PreRead_70"/>
+  <group name="XP_PreRead_75"/>
+  <group name="XP_PreRead_80"/>
+  <group name="XP_PreRead_85"/>
+  <group name="XP_PreRead_90"/>
+  <group name="XP_PreRead_95"/>
+  <group name="XP_PreRead_100"/>
+  <affected-histogram name="Startup.BrowserMessageLoopStartTime"/>
+  <affected-histogram name="Startup.BrowserOpenTabs"/>
 </fieldtrial>
 
 <fieldtrial name="WebStoreLinkExperiment">

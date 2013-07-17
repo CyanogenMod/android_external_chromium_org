@@ -2763,11 +2763,6 @@ static PP_Bool Pnacl_M13_PPB_NaCl_Private_Are3DInterfacesDisabled(void) {
   return iface->Are3DInterfacesDisabled();
 }
 
-static void Pnacl_M13_PPB_NaCl_Private_EnableBackgroundSelLdrLaunch(void) {
-  const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
-  iface->EnableBackgroundSelLdrLaunch();
-}
-
 static int32_t Pnacl_M13_PPB_NaCl_Private_BrokerDuplicateHandle(PP_FileHandle source_handle, uint32_t process_id, PP_FileHandle* target_handle, uint32_t desired_access, uint32_t options) {
   const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
   return iface->BrokerDuplicateHandle(source_handle, process_id, target_handle, desired_access, options);
@@ -2783,9 +2778,9 @@ static PP_FileHandle Pnacl_M13_PPB_NaCl_Private_CreateTemporaryFile(PP_Instance 
   return iface->CreateTemporaryFile(instance);
 }
 
-static int32_t Pnacl_M13_PPB_NaCl_Private_GetNexeFd(PP_Instance instance, const char* cache_key, PP_Bool* is_hit, PP_FileHandle* nexe_handle, struct PP_CompletionCallback* callback) {
+static int32_t Pnacl_M13_PPB_NaCl_Private_GetNexeFd(PP_Instance instance, const char* pexe_url, uint32_t abi_version, uint32_t opt_level, const char* last_modified, const char* etag, PP_Bool* is_hit, PP_FileHandle* nexe_handle, struct PP_CompletionCallback* callback) {
   const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
-  return iface->GetNexeFd(instance, cache_key, is_hit, nexe_handle, *callback);
+  return iface->GetNexeFd(instance, pexe_url, abi_version, opt_level, last_modified, etag, is_hit, nexe_handle, *callback);
 }
 
 static void Pnacl_M13_PPB_NaCl_Private_ReportTranslationFinished(PP_Instance instance) {
@@ -4576,11 +4571,10 @@ struct PPB_NaCl_Private_1_0 Pnacl_Wrappers_PPB_NaCl_Private_1_0 = {
     .StartPpapiProxy = (PP_NaClResult (*)(PP_Instance instance))&Pnacl_M13_PPB_NaCl_Private_StartPpapiProxy,
     .UrandomFD = (int32_t (*)(void))&Pnacl_M13_PPB_NaCl_Private_UrandomFD,
     .Are3DInterfacesDisabled = (PP_Bool (*)(void))&Pnacl_M13_PPB_NaCl_Private_Are3DInterfacesDisabled,
-    .EnableBackgroundSelLdrLaunch = (void (*)(void))&Pnacl_M13_PPB_NaCl_Private_EnableBackgroundSelLdrLaunch,
     .BrokerDuplicateHandle = (int32_t (*)(PP_FileHandle source_handle, uint32_t process_id, PP_FileHandle* target_handle, uint32_t desired_access, uint32_t options))&Pnacl_M13_PPB_NaCl_Private_BrokerDuplicateHandle,
     .GetReadonlyPnaclFd = (PP_FileHandle (*)(const char* filename))&Pnacl_M13_PPB_NaCl_Private_GetReadonlyPnaclFd,
     .CreateTemporaryFile = (PP_FileHandle (*)(PP_Instance instance))&Pnacl_M13_PPB_NaCl_Private_CreateTemporaryFile,
-    .GetNexeFd = (int32_t (*)(PP_Instance instance, const char* cache_key, PP_Bool* is_hit, PP_FileHandle* nexe_handle, struct PP_CompletionCallback callback))&Pnacl_M13_PPB_NaCl_Private_GetNexeFd,
+    .GetNexeFd = (int32_t (*)(PP_Instance instance, const char* pexe_url, uint32_t abi_version, uint32_t opt_level, const char* last_modified, const char* etag, PP_Bool* is_hit, PP_FileHandle* nexe_handle, struct PP_CompletionCallback callback))&Pnacl_M13_PPB_NaCl_Private_GetNexeFd,
     .ReportTranslationFinished = (void (*)(PP_Instance instance))&Pnacl_M13_PPB_NaCl_Private_ReportTranslationFinished,
     .IsOffTheRecord = (PP_Bool (*)(void))&Pnacl_M13_PPB_NaCl_Private_IsOffTheRecord,
     .IsPnaclEnabled = (PP_Bool (*)(void))&Pnacl_M13_PPB_NaCl_Private_IsPnaclEnabled,

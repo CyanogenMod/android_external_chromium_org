@@ -346,6 +346,7 @@ cr.define('options', function() {
       $('manage-profile-overlay-create').hidden = true;
       $('manage-profile-overlay-manage').hidden = false;
       $('manage-profile-overlay-delete').hidden = true;
+      $('manage-profile-name').disabled = profileInfo.isManaged;
       this.hideErrorBubble_('manage');
     },
 
@@ -537,7 +538,7 @@ cr.define('options', function() {
       if (profileInfo.isManaged) {
         profileInfo.custodianEmail = this.signedInEmail_;
         ManagedUserCreateConfirmOverlay.setProfileInfo(profileInfo);
-        OptionsPage.navigateToPage('managedUserCreateConfirm');
+        OptionsPage.showPageByName('managedUserCreateConfirm', false);
       }
     },
 

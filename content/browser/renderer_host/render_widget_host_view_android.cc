@@ -18,6 +18,7 @@
 #include "cc/layers/texture_layer.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
+#include "cc/trees/layer_tree_host.h"
 #include "content/browser/accessibility/browser_accessibility_manager_android.h"
 #include "content/browser/android/content_view_core_impl.h"
 #include "content/browser/android/in_process/synchronous_compositor_impl.h"
@@ -116,9 +117,11 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
 
   host_->SetView(this);
   SetContentViewCore(content_view_core);
+  ImageTransportFactoryAndroid::AddObserver(this);
 }
 
 RenderWidgetHostViewAndroid::~RenderWidgetHostViewAndroid() {
+  ImageTransportFactoryAndroid::RemoveObserver(this);
   SetContentViewCore(NULL);
   DCHECK(ack_callbacks_.empty());
   if (texture_id_in_layer_) {
@@ -380,7 +383,8 @@ void RenderWidgetHostViewAndroid::SetIsLoading(bool is_loading) {
 
 void RenderWidgetHostViewAndroid::TextInputTypeChanged(
     ui::TextInputType type,
-    bool can_compose_inline) {
+    bool can_compose_inline,
+    ui::TextInputMode input_mode) {
   // Unused on Android, which uses OnTextInputChanged instead.
 }
 
@@ -446,11 +450,6 @@ void RenderWidgetHostViewAndroid::ImeCancelComposition() {
   ime_adapter_android_.CancelComposition();
 }
 
-void RenderWidgetHostViewAndroid::ImeCompositionRangeChanged(
-    const ui::Range& range,
-    const std::vector<gfx::Rect>& character_bounds) {
-}
-
 void RenderWidgetHostViewAndroid::DidUpdateBackingStore(
     const gfx::Rect& scroll_rect,
     const gfx::Vector2d& scroll_delta,
@@ -459,7 +458,7 @@ void RenderWidgetHostViewAndroid::DidUpdateBackingStore(
   NOTIMPLEMENTED();
 }
 
-void RenderWidgetHostViewAndroid::RenderViewGone(
+void RenderWidgetHostViewAndroid::RenderProcessGone(
     base::TerminationStatus status, int error_code) {
   Destroy();
 }
@@ -638,6 +637,9 @@ void RenderWidgetHostViewAndroid::OnSwapCompositorFrame(
   texture_size_in_layer_ = frame->gl_frame_data->size;
   ComputeContentsSize(frame->metadata);
 
+  if (layer_->layer_tree_host())
+    layer_->layer_tree_host()->SetLatencyInfo(frame->metadata.latency_info);
+
   BuffersSwapped(frame->gl_frame_data->mailbox, callback);
 }
 
@@ -799,7 +801,7 @@ void RenderWidgetHostViewAndroid::AcceleratedSurfaceSuspend() {
 void RenderWidgetHostViewAndroid::AcceleratedSurfaceRelease() {
   // This tells us we should free the frontbuffer.
   if (texture_id_in_layer_) {
-    texture_layer_->SetTextureId(0);
+    texture_layer_->ClearTexture();
     texture_layer_->SetIsDrawable(false);
     ImageTransportFactoryAndroid::GetInstance()->DeleteTexture(
         texture_id_in_layer_);
@@ -1076,8 +1078,7 @@ void RenderWidgetHostViewAndroid::HasTouchEventHandlers(
     content_view_core_->HasTouchEventHandlers(need_touch_events);
 }
 
-unsigned RenderWidgetHostViewAndroid::PrepareTexture(
-    cc::ResourceUpdateQueue* queue) {
+unsigned RenderWidgetHostViewAndroid::PrepareTexture() {
   RunAckCallbacks();
   return texture_id_in_layer_;
 }
@@ -1091,8 +1092,17 @@ WebKit::WebGraphicsContext3D* RenderWidgetHostViewAndroid::Context3d() {
 }
 
 bool RenderWidgetHostViewAndroid::PrepareTextureMailbox(
-    cc::TextureMailbox* mailbox) {
+    cc::TextureMailbox* mailbox,
+    bool use_shared_memory) {
   return false;
+}
+
+void RenderWidgetHostViewAndroid::OnLostResources() {
+  if (texture_layer_)
+    texture_layer_->SetIsDrawable(false);
+  texture_id_in_layer_ = 0;
+  current_mailbox_ = gpu::Mailbox();
+  RunAckCallbacks();
 }
 
 // static

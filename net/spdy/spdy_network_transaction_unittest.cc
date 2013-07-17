@@ -71,6 +71,8 @@ HttpResponseInfo::ConnectionInfo NextProtoToConnectionInfo(
       return HttpResponseInfo::CONNECTION_INFO_SPDY3;
     case kProtoSPDY4a2:
       return HttpResponseInfo::CONNECTION_INFO_SPDY4;
+    case kProtoQUIC1SPDY3:
+      return HttpResponseInfo::CONNECTION_INFO_QUIC1_SPDY3;
 
     case kProtoUnknown:
     case kProtoHTTP11:
@@ -562,10 +564,9 @@ class SpdyNetworkTransactionTest
                        kPrivacyModeDisabled);
     BoundNetLog log;
     const scoped_refptr<HttpNetworkSession>& session = helper.session();
-    SpdySessionPool* pool(session->spdy_session_pool());
-    EXPECT_TRUE(pool->HasSession(key));
-    scoped_refptr<SpdySession> spdy_session(pool->Get(key, log));
-    ASSERT_TRUE(spdy_session.get() != NULL);
+    scoped_refptr<SpdySession> spdy_session =
+        session->spdy_session_pool()->FindAvailableSession(key, log);
+    ASSERT_TRUE(spdy_session != NULL);
     EXPECT_EQ(0u, spdy_session->num_active_streams());
     EXPECT_EQ(0u, spdy_session->num_unclaimed_pushed_streams());
   }
@@ -2015,19 +2016,21 @@ TEST_P(SpdyNetworkTransactionTest, PostWithEarlySynReply) {
 
   scoped_ptr<SpdyFrame> stream_reply(
       spdy_util_.ConstructSpdyPostSynReply(NULL, 0));
-  scoped_ptr<SpdyFrame> stream_body(spdy_util_.ConstructSpdyBodyFrame(1, true));
   MockRead reads[] = {
     CreateMockRead(*stream_reply, 1),
-    MockRead(ASYNC, 0, 3)  // EOF
+    MockRead(ASYNC, 0, 4)  // EOF
   };
 
   scoped_ptr<SpdyFrame> req(
       spdy_util_.ConstructSpdyPost(
           kRequestUrl, 1, kUploadDataSize, LOWEST, NULL, 0));
   scoped_ptr<SpdyFrame> body(spdy_util_.ConstructSpdyBodyFrame(1, true));
+  scoped_ptr<SpdyFrame> rst(
+      spdy_util_.ConstructSpdyRstStream(1, RST_STREAM_PROTOCOL_ERROR));
   MockWrite writes[] = {
     CreateMockWrite(*req, 0),
     CreateMockWrite(*body, 2),
+    CreateMockWrite(*rst, 3)
   };
 
   DeterministicSocketData data(reads, arraysize(reads),
@@ -2044,7 +2047,7 @@ TEST_P(SpdyNetworkTransactionTest, PostWithEarlySynReply) {
       &CreatePostRequest(), callback.callback(), BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
 
-  data.RunFor(2);
+  data.RunFor(4);
   rv = callback.WaitForResult();
   EXPECT_EQ(ERR_SPDY_PROTOCOL_ERROR, rv);
   data.RunFor(1);
@@ -3530,7 +3533,11 @@ TEST_P(SpdyNetworkTransactionTest, CorruptFrameSessionError) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
     scoped_ptr<SpdyFrame> req(
         spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, true));
-    MockWrite writes[] = { CreateMockWrite(*req), MockWrite(ASYNC, 0, 0)  // EOF
+    scoped_ptr<SpdyFrame> rst(
+        spdy_util_.ConstructSpdyRstStream(1, RST_STREAM_PROTOCOL_ERROR));
+    MockWrite writes[] = {
+      CreateMockWrite(*req),
+      CreateMockWrite(*rst),
     };
 
     scoped_ptr<SpdyFrame> body(spdy_util_.ConstructSpdyBodyFrame(1, true));
@@ -4603,12 +4610,12 @@ TEST_P(SpdyNetworkTransactionTest, DirectConnectProxyReconnect) {
   HostPortPair host_port_pair("www.google.com", helper.port());
   SpdySessionKey session_pool_key_direct(
       host_port_pair, ProxyServer::Direct(), kPrivacyModeDisabled);
-  EXPECT_TRUE(spdy_session_pool->HasSession(session_pool_key_direct));
+  EXPECT_TRUE(HasSpdySession(spdy_session_pool, session_pool_key_direct));
   SpdySessionKey session_pool_key_proxy(
       host_port_pair,
       ProxyServer::FromURI("www.foo.com", ProxyServer::SCHEME_HTTP),
       kPrivacyModeDisabled);
-  EXPECT_FALSE(spdy_session_pool->HasSession(session_pool_key_proxy));
+  EXPECT_FALSE(HasSpdySession(spdy_session_pool, session_pool_key_proxy));
 
   // Set up data for the proxy connection.
   const char kConnect443[] = {"CONNECT www.google.com:443 HTTP/1.1\r\n"

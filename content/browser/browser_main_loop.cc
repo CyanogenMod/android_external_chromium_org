@@ -19,6 +19,7 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/timer/hi_res_timer_manager.h"
 #include "content/browser/browser_thread_impl.h"
+#include "content/browser/device_orientation/device_motion_service.h"
 #include "content/browser/download/save_file_manager.h"
 #include "content/browser/gamepad/gamepad_service.h"
 #include "content/browser/gpu/browser_gpu_channel_host_factory.h"
@@ -111,6 +112,7 @@ namespace {
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 void SetupSandbox(const CommandLine& parsed_command_line) {
+  TRACE_EVENT0("startup", "SetupSandbox");
   // TODO(evanm): move this into SandboxWrapper; I'm just trying to move this
   // code en masse out of chrome_main for now.
   const char* sandbox_binary = NULL;
@@ -317,7 +319,7 @@ void BrowserMainLoop::Init() {
 // BrowserMainLoop stages ==================================================
 
 void BrowserMainLoop::EarlyInitialization() {
-  TRACE_EVENT0("startup", "BrowserMainLoop::EarlyInitialization")
+  TRACE_EVENT0("startup", "BrowserMainLoop::EarlyInitialization");
 #if defined(USE_X11)
   if (parsed_command_line_.HasSwitch(switches::kSingleProcess) ||
       parsed_command_line_.HasSwitch(switches::kInProcessGPU)) {
@@ -774,6 +776,7 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
   // Must happen after the I/O thread is shutdown since this class lives on the
   // I/O thread and isn't threadsafe.
   GamepadService::GetInstance()->Terminate();
+  DeviceMotionService::GetInstance()->Shutdown();
 
   URLDataManager::DeleteDataSources();
 #endif  // !defined(OS_IOS)

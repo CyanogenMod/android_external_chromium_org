@@ -22,6 +22,7 @@
 #include "base/supports_user_data.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/infobars/infobar_service.h"
@@ -48,7 +49,6 @@
 #include "chrome/browser/ui/sync/signin_histogram.h"
 #include "chrome/browser/ui/tab_modal_confirm_dialog.h"
 #include "chrome/browser/ui/tab_modal_confirm_dialog_delegate.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/net/url_util.h"
@@ -56,6 +56,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
@@ -65,7 +66,6 @@
 #include "content/public/common/password_form.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "google_apis/gaia/gaia_urls.h"
-#include "googleurl/src/gurl.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -75,6 +75,7 @@
 #include "net/url_request/url_request.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "url/gurl.h"
 
 
 namespace {
@@ -84,16 +85,15 @@ namespace {
 // Arguments used with StartSync function.  base::Bind() cannot support too
 // many args for performance reasons, so they are packaged up into a struct.
 struct StartSyncArgs {
-  StartSyncArgs(
-      Profile* profile,
-      Browser* browser,
-      OneClickSigninHelper::AutoAccept auto_accept,
-      const std::string& session_index,
-      const std::string& email,
-      const std::string& password,
-      bool force_same_tab_navigation,
-      bool untrusted_confirmation_required,
-      SyncPromoUI::Source source);
+  StartSyncArgs(Profile* profile,
+                Browser* browser,
+                OneClickSigninHelper::AutoAccept auto_accept,
+                const std::string& session_index,
+                const std::string& email,
+                const std::string& password,
+                bool force_same_tab_navigation,
+                bool untrusted_confirmation_required,
+                SyncPromoUI::Source source);
 
   Profile* profile;
   Browser* browser;
@@ -106,16 +106,15 @@ struct StartSyncArgs {
   SyncPromoUI::Source source;
 };
 
-StartSyncArgs::StartSyncArgs(
-    Profile* profile,
-    Browser* browser,
-    OneClickSigninHelper::AutoAccept auto_accept,
-    const std::string& session_index,
-    const std::string& email,
-    const std::string& password,
-    bool force_same_tab_navigation,
-    bool untrusted_confirmation_required,
-    SyncPromoUI::Source source)
+StartSyncArgs::StartSyncArgs(Profile* profile,
+                             Browser* browser,
+                             OneClickSigninHelper::AutoAccept auto_accept,
+                             const std::string& session_index,
+                             const std::string& email,
+                             const std::string& password,
+                             bool force_same_tab_navigation,
+                             bool untrusted_confirmation_required,
+                             SyncPromoUI::Source source)
     : profile(profile),
       browser(browser),
       auto_accept(auto_accept),
@@ -142,8 +141,7 @@ StartSyncArgs::StartSyncArgs(
 // sign-in, for this profile.
 void AddEmailToOneClickRejectedList(Profile* profile,
                                     const std::string& email) {
-  PrefService* pref_service = profile->GetPrefs();
-  ListPrefUpdate updater(pref_service,
+  ListPrefUpdate updater(profile->GetPrefs(),
                          prefs::kReverseAutologinRejectedEmailList);
   updater->AppendIfNotPresent(new base::StringValue(email));
 }
@@ -384,6 +382,7 @@ class ConfirmEmailDialogDelegate : public TabModalConfirmDialogDelegate {
                              const std::string& last_email,
                              const std::string& email,
                              Callback callback);
+  virtual ~ConfirmEmailDialogDelegate();
 
   // TabModalConfirmDialogDelegate:
   virtual string16 GetTitle() OVERRIDE;
@@ -422,6 +421,9 @@ ConfirmEmailDialogDelegate::ConfirmEmailDialogDelegate(
     callback_(callback) {
 }
 
+ConfirmEmailDialogDelegate::~ConfirmEmailDialogDelegate() {
+}
+
 string16 ConfirmEmailDialogDelegate::GetTitle() {
   return l10n_util::GetStringUTF16(
       IDS_ONE_CLICK_SIGNIN_CONFIRM_EMAIL_DIALOG_TITLE);
@@ -430,8 +432,7 @@ string16 ConfirmEmailDialogDelegate::GetTitle() {
 string16 ConfirmEmailDialogDelegate::GetMessage() {
   return l10n_util::GetStringFUTF16(
       IDS_ONE_CLICK_SIGNIN_CONFIRM_EMAIL_DIALOG_MESSAGE,
-      UTF8ToUTF16(last_email_),
-      UTF8ToUTF16(email_));
+      UTF8ToUTF16(last_email_), UTF8ToUTF16(email_));
 }
 
 string16 ConfirmEmailDialogDelegate::GetAcceptButtonTitle() {
@@ -464,10 +465,12 @@ void ConfirmEmailDialogDelegate::OnCanceled() {
 class CurrentHistoryCleaner : public content::WebContentsObserver {
  public:
   explicit CurrentHistoryCleaner(content::WebContents* contents);
+  virtual ~CurrentHistoryCleaner();
 
+  // content::WebContentsObserver:
   virtual void WebContentsDestroyed(content::WebContents* contents) OVERRIDE;
-  virtual void DidStopLoading(content::RenderViewHost* render_view_host)
-      OVERRIDE;
+  virtual void DidStopLoading(
+      content::RenderViewHost* render_view_host) OVERRIDE;
 
  private:
   scoped_ptr<content::WebContents> contents_;
@@ -478,23 +481,26 @@ class CurrentHistoryCleaner : public content::WebContentsObserver {
 
 CurrentHistoryCleaner::CurrentHistoryCleaner(content::WebContents* contents)
     : WebContentsObserver(contents) {
-  content::NavigationController& nc = web_contents()->GetController();
-  history_index_to_remove_ = nc.GetLastCommittedEntryIndex();
+  history_index_to_remove_ =
+      web_contents()->GetController().GetLastCommittedEntryIndex();
+}
+
+CurrentHistoryCleaner::~CurrentHistoryCleaner() {
 }
 
 void CurrentHistoryCleaner::DidStopLoading(
     content::RenderViewHost* render_view_host) {
-  content::NavigationController& nc = web_contents()->GetController();
+  content::NavigationController* nc = &web_contents()->GetController();
   // Have to wait until something else gets added to history before removal.
-  if (history_index_to_remove_ < nc.GetLastCommittedEntryIndex()) {
-    nc.RemoveEntryAtIndex(history_index_to_remove_);
-    delete this;  /* success */
+  if (history_index_to_remove_ < nc->GetLastCommittedEntryIndex()) {
+    nc->RemoveEntryAtIndex(history_index_to_remove_);
+    delete this;  // Success.
   }
 }
 
 void CurrentHistoryCleaner::WebContentsDestroyed(
     content::WebContents* contents) {
-  delete this;  /* failure */
+  delete this;  // Failure.
 }
 
 }  // namespace
@@ -502,10 +508,10 @@ void CurrentHistoryCleaner::WebContentsDestroyed(
 
 // OneClickSigninHelper -------------------------------------------------------
 
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(OneClickSigninHelper);
+
 // static
 const int OneClickSigninHelper::kMaxNavigationsSince = 10;
-
-DEFINE_WEB_CONTENTS_USER_DATA_KEY(OneClickSigninHelper);
 
 OneClickSigninHelper::OneClickSigninHelper(content::WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
@@ -876,9 +882,11 @@ void OneClickSigninHelper::ShowInfoBarUIThread(
 }
 
 // static
-void OneClickSigninHelper::RemoveCurrentHistoryItem(
+void OneClickSigninHelper::RemoveSigninRedirectURLHistoryItem(
     content::WebContents* web_contents) {
-  new CurrentHistoryCleaner(web_contents);  // will self-destruct when finished
+  // Only actually remove the item if it's the blank.html continue url.
+  if (SyncPromoUI::IsContinueUrlForWebBasedSigninFlow(web_contents->GetURL()))
+    new CurrentHistoryCleaner(web_contents);  // will self-destruct when done
 }
 
 void OneClickSigninHelper::ShowSigninErrorBubble(Browser* browser,
@@ -1023,7 +1031,7 @@ void OneClickSigninHelper::DidStopLoading(
   // TODO(rogerta): Could we move this code back up to ShowInfoBarUIThread()?
   if (!error_message_.empty() && auto_accept_ == AUTO_ACCEPT_EXPLICIT) {
     VLOG(1) << "OneClickSigninHelper::DidStopLoading: error=" << error_message_;
-    RemoveCurrentHistoryItem(contents);
+    RemoveSigninRedirectURLHistoryItem(contents);
     // After we redirect to NTP, our browser pointer gets corrupted because the
     // WebContents have changed, so grab the browser pointer
     // before the navigation.
@@ -1057,7 +1065,7 @@ void OneClickSigninHelper::DidStopLoading(
         continue_url_.ReplaceComponents(replacements));
 
   if (continue_url_match)
-    RemoveCurrentHistoryItem(contents);
+    RemoveSigninRedirectURLHistoryItem(contents);
 
   // If there is no valid email yet, there is nothing to do.  As of M26, the
   // password is allowed to be empty, since its no longer required to setup

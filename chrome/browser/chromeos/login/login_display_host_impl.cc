@@ -22,7 +22,7 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
-#include "chrome/browser/chromeos/cros/cros_library.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
@@ -48,7 +48,6 @@
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_constants.h"
 #include "chromeos/chromeos_switches.h"
@@ -61,8 +60,6 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
-#include "googleurl/src/gurl.h"
-#include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/base/events/event_utils.h"
@@ -76,6 +73,7 @@
 #include "ui/gfx/transform.h"
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/widget/widget.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -217,9 +215,6 @@ LoginDisplayHostImpl::LoginDisplayHostImpl(const gfx::Rect& background_bounds)
 
   initialize_webui_hidden_ =
       kHiddenWebUIInitializationDefault && !zero_delay_enabled;
-
-  // Prevents white flashing on OOBE (http://crbug.com/131569).
-  aura::Env::GetInstance()->set_render_white_bg(false);
 
   // Check if WebUI init type is overriden.
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshWebUIInit)) {
@@ -603,7 +598,7 @@ void LoginDisplayHostImpl::Observe(
 ////////////////////////////////////////////////////////////////////////////////
 // LoginDisplayHostImpl, WebContentsObserver implementation:
 
-void LoginDisplayHostImpl::RenderViewGone(base::TerminationStatus status) {
+void LoginDisplayHostImpl::RenderProcessGone(base::TerminationStatus status) {
   // Do not try to restore on shutdown
   if (browser_shutdown::GetShutdownType() != browser_shutdown::NOT_VALID)
     return;

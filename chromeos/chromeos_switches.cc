@@ -24,9 +24,6 @@ const char kChromeOSReleaseBoard[] = "chromeos-release-board";
 // Forces the stub implementation of dbus clients.
 const char kDbusStub[] = "dbus-stub";
 
-// Disables Kiosk app mode for ChromeOS.
-const char kDisableAppMode[]                = "disable-app-mode";
-
 // Disables wallpaper boot animation (except of OOBE case).
 const char kDisableBootAnimation[]          = "disable-boot-animation";
 
@@ -98,10 +95,6 @@ const char kEnableStubInteractive[] = "enable-stub-interactive";
 // Enables touchpad three-finger-click as middle button.
 const char kEnableTouchpadThreeFingerClick[]
     = "enable-touchpad-three-finger-click";
-
-// Enables touchpad three-finger swipe.
-const char kEnableTouchpadThreeFingerSwipe[]
-    = "enable-touchpad-three-finger-swipe";
 
 // Enable Kiosk mode for ChromeOS. Note this switch refers to retail mode rather
 // than the kiosk app mode.

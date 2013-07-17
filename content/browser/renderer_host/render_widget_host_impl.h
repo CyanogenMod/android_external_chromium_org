@@ -31,6 +31,7 @@
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/common/page_zoom.h"
 #include "ipc/ipc_listener.h"
+#include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/base/latency_info.h"
 #include "ui/gfx/native_widget_types.h"
@@ -96,6 +97,18 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 
   // Similar to RenderWidgetHost::FromID, but returning the Impl object.
   static RenderWidgetHostImpl* FromID(int32 process_id, int32 routing_id);
+
+  // Returns all RenderWidgetHosts including swapped out ones for
+  // internal use. The public interface
+  // RendgerWidgetHost::GetRenderWidgetHosts only returns active ones.
+  // Keep in mind that there may be dependencies between these
+  // widgets.  If a caller indirectly causes one of the widgets to be
+  // deleted while iterating over the list, the deleted widget will
+  // stay in the list and possibly causes a use-after-free.  Take care
+  // to avoid deleting widgets as you iterate (e.g., see
+  // http://crbug.com/259859).  TODO(nasko): Improve this interface to
+  // better prevent UaFs.
+  static std::vector<RenderWidgetHost*> GetAllRenderWidgetHosts();
 
   // Use RenderWidgetHostImpl::From(rwh) to downcast a
   // RenderWidgetHost to a RenderWidgetHostImpl.  Internally, this
@@ -319,13 +332,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   //   (on Windows);
   // * when it receives a "commit" signal of GtkIMContext (on Linux);
   // * when insertText of NSTextInput is called (on Mac).
-  void ImeConfirmComposition(const string16& text);
   void ImeConfirmComposition(const string16& text,
-                             const ui::Range& replacement_range);
-
-  // Finishes an ongoing composition with the composition text set by last
-  // SetComposition() call.
-  void ImeConfirmComposition();
+                             const ui::Range& replacement_range,
+                             bool keep_selection);
 
   // Cancels an ongoing composition.
   void ImeCancelComposition();
@@ -500,6 +509,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 
   void ComputeTouchLatency(const ui::LatencyInfo& latency_info);
   void FrameSwapped(const ui::LatencyInfo& latency_info);
+  void DidReceiveRendererFrame();
 
   // Returns the ID that uniquely describes this component to the latency
   // subsystem.
@@ -531,8 +541,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
       const WebKit::WebMouseWheelEvent& wheel_event,
       const ui::LatencyInfo& latency_info);
 
-  // Create a LatencyInfo struct for a new input event that was just received.
-  ui::LatencyInfo NewInputLatencyInfo();
+  // Create a LatencyInfo struct with INPUT_EVENT_LATENCY_RWH_COMPONENT
+  // component if it is not already in |original|. And if |original| is
+  // not NULL, it is also merged into the resulting LatencyInfo.
+  ui::LatencyInfo CreateRWHLatencyInfoIfNotExist(
+      const ui::LatencyInfo* original);
 
   // Called when we receive a notification indicating that the renderer
   // process has gone. This will reset our state so that our state will be
@@ -626,15 +639,17 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 
   // IPC message handlers
   void OnRenderViewReady();
-  void OnRenderViewGone(int status, int error_code);
+  void OnRenderProcessGone(int status, int error_code);
   void OnClose();
   void OnUpdateScreenRectsAck();
   void OnRequestMove(const gfx::Rect& pos);
   void OnSetTooltipText(const string16& tooltip_text,
                         WebKit::WebTextDirection text_direction_hint);
   void OnPaintAtSizeAck(int tag, const gfx::Size& size);
+#if defined(OS_MACOSX)
   void OnCompositorSurfaceBuffersSwapped(
       const ViewHostMsg_CompositorSurfaceBuffersSwapped_Params& params);
+#endif
   bool OnSwapCompositorFrame(const IPC::Message& message);
   void OnOverscrolled(gfx::Vector2dF accumulated_overscroll,
                       gfx::Vector2dF current_fling_velocity);
@@ -650,10 +665,14 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   virtual void OnBlur();
   void OnHasTouchEventHandlers(bool has_handlers);
   void OnSetCursor(const WebCursor& cursor);
-  void OnTextInputTypeChanged(ui::TextInputType type, bool can_compose_inline);
+  void OnTextInputTypeChanged(ui::TextInputType type,
+                              bool can_compose_inline,
+                              ui::TextInputMode input_mode);
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
   void OnImeCompositionRangeChanged(
       const ui::Range& range,
       const std::vector<gfx::Rect>& character_bounds);
+#endif
   void OnImeCancelComposition();
   void OnDidActivateAcceleratedCompositing(bool activated);
   void OnLockMouse(bool user_gesture,
@@ -783,7 +802,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // hand is updated when the resize message is sent. This is very similar to
   // |resize_ack_pending_|, but the latter is not set if the new size has width
   // or height zero, which is why we need this too.
-  gfx::Size in_flight_size_;
+  gfx::Size last_requested_size_;
 
   // The next auto resize to send.
   gfx::Size new_auto_size_;

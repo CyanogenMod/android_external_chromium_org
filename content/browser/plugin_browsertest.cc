@@ -113,7 +113,7 @@ class PluginTest : public ContentBrowserTest {
 
   void TestPlugin(const char* filename) {
     base::FilePath path = GetTestFilePath("plugin", filename);
-    if (!file_util::PathExists(path)) {
+    if (!base::PathExists(path)) {
       const testing::TestInfo* const test_info =
           testing::UnitTest::GetInstance()->current_test_info();
       LOG(INFO) << "PluginTest." << test_info->name() <<
@@ -338,6 +338,10 @@ IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(ScheduleTimer)) {
 
 IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(PluginThreadAsyncCall)) {
   LoadAndWait(GetURL("plugin_thread_async_call.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(PluginTest, PluginSingleRangeRequest) {
+  LoadAndWait(GetURL("plugin_single_range_request.html"));
 }
 
 // Test checking the privacy mode is on.

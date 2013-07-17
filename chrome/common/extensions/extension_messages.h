@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "base/shared_memory.h"
+#include "base/memory/shared_memory.h"
 #include "base/values.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/permissions/bluetooth_permission_data.h"
@@ -23,8 +23,8 @@
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
 #include "extensions/common/view_type.h"
-#include "googleurl/src/gurl.h"
 #include "ipc/ipc_message_macros.h"
+#include "url/gurl.h"
 
 #define IPC_MESSAGE_START ExtensionMsgStart
 

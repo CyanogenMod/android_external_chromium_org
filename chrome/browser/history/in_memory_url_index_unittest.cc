@@ -15,6 +15,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/browser/history/history_notifications.h"
@@ -23,7 +24,6 @@
 #include "chrome/browser/history/in_memory_url_index.h"
 #include "chrome/browser/history/in_memory_url_index_types.h"
 #include "chrome/browser/history/url_index_private_data.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/history_index_restore_observer.h"
 #include "chrome/test/base/testing_profile.h"
@@ -203,7 +203,7 @@ void InMemoryURLIndexTest::SetUp() {
   history_proto_path = history_proto_path.Append(
       FILE_PATH_LITERAL("History"));
   history_proto_path = history_proto_path.Append(TestDBName());
-  EXPECT_TRUE(file_util::PathExists(history_proto_path));
+  EXPECT_TRUE(base::PathExists(history_proto_path));
 
   std::ifstream proto_file(history_proto_path.value().c_str());
   static const size_t kCommandBufferMaxSize = 2048;

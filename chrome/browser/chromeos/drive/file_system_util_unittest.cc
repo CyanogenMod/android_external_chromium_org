@@ -7,14 +7,15 @@
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/md5.h"
 #include "base/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/google_apis/test_util.h"
 #include "chrome/test/base/testing_profile.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
+#include "webkit/browser/fileapi/file_system_backend.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_mount_point_provider.h"
 #include "webkit/browser/fileapi/file_system_task_runners.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/isolated_context.h"
@@ -102,7 +103,7 @@ TEST(FileSystemUtilTest, ExtractDrivePathFromFileSystemUrl) {
           mount_points.get(),
           NULL,  // special_storage_policy
           NULL,  // quota_manager_proxy,
-          ScopedVector<fileapi::FileSystemMountPointProvider>(),
+          ScopedVector<fileapi::FileSystemBackend>(),
           temp_dir_.path(),  // partition_path
           fileapi::CreateAllowFileAccessOptions()));
 
@@ -181,25 +182,6 @@ TEST(FileSystemUtilTest, GetCacheRootPath) {
             util::GetCacheRootPath(&profile));
 }
 
-TEST(FileSystemUtilTest, ParseCacheFilePath) {
-  std::string resource_id, md5;
-
-  ParseCacheFilePath(
-      base::FilePath::FromUTF8Unsafe(
-          "/home/user/GCache/v1/files/pdf:a1b2.0123456789abcdef"),
-      &resource_id,
-      &md5);
-  EXPECT_EQ(resource_id, "pdf:a1b2");
-  EXPECT_EQ(md5, "0123456789abcdef");
-
-  ParseCacheFilePath(
-      base::FilePath::FromUTF8Unsafe("/home/user/GCache/v1/files/pdf:a1b2"),
-      &resource_id,
-      &md5);
-  EXPECT_EQ(resource_id, "pdf:a1b2");
-  EXPECT_EQ(md5, "");
-}
-
 TEST(FileSystemUtilTest, MigrateCacheFilesFromOldDirectories) {
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
@@ -224,9 +206,9 @@ TEST(FileSystemUtilTest, MigrateCacheFilesFromOldDirectories) {
   // Migrate.
   MigrateCacheFilesFromOldDirectories(temp_dir.path());
 
-  EXPECT_FALSE(file_util::PathExists(persistent_directory));
-  EXPECT_TRUE(file_util::PathExists(files_directory.AppendASCII("foo.abc")));
-  EXPECT_TRUE(file_util::PathExists(files_directory.AppendASCII("bar.123")));
+  EXPECT_FALSE(base::PathExists(persistent_directory));
+  EXPECT_TRUE(base::PathExists(files_directory.AppendASCII("foo.abc")));
+  EXPECT_TRUE(base::PathExists(files_directory.AppendASCII("bar.123")));
 }
 
 TEST(FileSystemUtilTest, NeedsNamespaceMigration) {
@@ -337,11 +319,21 @@ TEST(FileSystemUtilTest, GDocFile) {
   // Non GDoc file.
   file = temp_dir.path().AppendASCII("test.txt");
   std::string data = "Hello world!";
-  EXPECT_EQ(static_cast<int>(data.size()),
-            file_util::WriteFile(file, data.data(), data.size()));
+  EXPECT_TRUE(google_apis::test_util::WriteStringToFile(file, data));
   EXPECT_FALSE(HasGDocFileExtension(file));
   EXPECT_TRUE(ReadUrlFromGDocFile(file).is_empty());
   EXPECT_TRUE(ReadResourceIdFromGDocFile(file).empty());
+}
+
+TEST(FileSystemUtilTest, GetMd5Digest) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+
+  base::FilePath path = temp_dir.path().AppendASCII("test.txt");
+  const char kTestData[] = "abcdefghijklmnopqrstuvwxyz0123456789";
+  ASSERT_TRUE(google_apis::test_util::WriteStringToFile(path, kTestData));
+
+  EXPECT_EQ(base::MD5String(kTestData), GetMd5Digest(path));
 }
 
 }  // namespace util

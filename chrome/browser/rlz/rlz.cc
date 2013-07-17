@@ -18,13 +18,13 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
@@ -278,10 +278,6 @@ bool RLZTracker::Init(bool first_run,
     // the user performs a first search.
     registrar_.Add(this, chrome::NOTIFICATION_OMNIBOX_OPENED_URL,
                    content::NotificationService::AllSources());
-    // If instant is enabled we'll start searching as soon as the user starts
-    // typing in the omnibox (which triggers INSTANT_CONTROLLER_UPDATED).
-    registrar_.Add(this, chrome::NOTIFICATION_INSTANT_CONTROLLER_UPDATED,
-                   content::NotificationService::AllSources());
 
     // Register for notifications from navigations, to see if the user has used
     // the home page.
@@ -386,11 +382,8 @@ void RLZTracker::Observe(int type,
                          const content::NotificationDetails& details) {
   switch (type) {
     case chrome::NOTIFICATION_OMNIBOX_OPENED_URL:
-    case chrome::NOTIFICATION_INSTANT_CONTROLLER_UPDATED:
       RecordFirstSearch(CHROME_OMNIBOX);
       registrar_.Remove(this, chrome::NOTIFICATION_OMNIBOX_OPENED_URL,
-                        content::NotificationService::AllSources());
-      registrar_.Remove(this, chrome::NOTIFICATION_INSTANT_CONTROLLER_UPDATED,
                         content::NotificationService::AllSources());
       break;
     case content::NOTIFICATION_NAV_ENTRY_PENDING: {

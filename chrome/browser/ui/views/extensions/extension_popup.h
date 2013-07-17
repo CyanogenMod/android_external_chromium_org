@@ -10,9 +10,9 @@
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/ui/views/extensions/extension_view_views.h"
 #include "content/public/browser/notification_observer.h"
-#include "googleurl/src/gurl.h"
 #include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/focus/widget_focus_manager.h"
+#include "url/gurl.h"
 
 class Browser;
 namespace views {
@@ -73,8 +73,7 @@ class ExtensionPopup : public views::BubbleDelegateView,
   static const int kMaxHeight;
 
  private:
-  ExtensionPopup(Browser* browser,
-                 extensions::ExtensionHost* host,
+  ExtensionPopup(extensions::ExtensionHost* host,
                  views::View* anchor_view,
                  views::BubbleBorder::Arrow arrow,
                  ShowAction show_action);
@@ -83,9 +82,6 @@ class ExtensionPopup : public views::BubbleDelegateView,
   void ShowBubble();
 
   void OnDevToolsStateChanged(content::DevToolsAgentHost*, bool attached);
-
-  // The browser to which the popup is anchored. Not owned.
-  Browser* browser_;
 
   // The contained host for the view.
   scoped_ptr<extensions::ExtensionHost> extension_host_;

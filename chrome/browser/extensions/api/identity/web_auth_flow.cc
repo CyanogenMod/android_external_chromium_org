@@ -27,8 +27,8 @@
 #include "content/public/browser/resource_request_details.h"
 #include "content/public/browser/web_contents.h"
 #include "crypto/random.h"
-#include "googleurl/src/gurl.h"
 #include "grit/browser_resources.h"
+#include "url/gurl.h"
 
 using apps::ShellWindow;
 using content::RenderViewHost;
@@ -207,7 +207,7 @@ void WebAuthFlow::Observe(int type,
   }
 }
 
-void WebAuthFlow::RenderViewGone(base::TerminationStatus status) {
+void WebAuthFlow::RenderProcessGone(base::TerminationStatus status) {
   if (delegate_)
     delegate_->OnAuthFlowFailure(WebAuthFlow::WINDOW_CLOSED);
 }

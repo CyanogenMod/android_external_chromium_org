@@ -59,6 +59,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/preferences.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/proxy_config_service_impl.h"
 #endif
 
@@ -189,7 +190,7 @@ std::string OffTheRecordProfileImpl::GetProfileName() {
   return std::string();
 }
 
-base::FilePath OffTheRecordProfileImpl::GetPath() {
+base::FilePath OffTheRecordProfileImpl::GetPath() const {
   return profile_->GetPath();
 }
 
@@ -279,6 +280,15 @@ OffTheRecordProfileImpl::GetMediaRequestContextForStoragePartition(
       .get();
 }
 
+void OffTheRecordProfileImpl::RequestMIDISysExPermission(
+      int render_process_id,
+      int render_view_id,
+      const GURL& requesting_frame,
+      const MIDISysExPermissionCallback& callback) {
+  // TODO(toyoshim): Implement.
+  callback.Run(false);
+}
+
 net::URLRequestContextGetter*
     OffTheRecordProfileImpl::GetRequestContextForExtensions() {
   return io_data_.GetExtensionsRequestContextGetter().get();
@@ -319,11 +329,6 @@ HostContentSettingsMap* OffTheRecordProfileImpl::GetHostContentSettingsMap() {
 content::GeolocationPermissionContext*
     OffTheRecordProfileImpl::GetGeolocationPermissionContext() {
   return ChromeGeolocationPermissionContextFactory::GetForProfile(this);
-}
-
-content::SpeechRecognitionPreferences*
-    OffTheRecordProfileImpl::GetSpeechRecognitionPreferences() {
-  return profile_->GetSpeechRecognitionPreferences();
 }
 
 quota::SpecialStoragePolicy*
@@ -393,10 +398,8 @@ void OffTheRecordProfileImpl::OnLogin() {
 #endif  // defined(OS_CHROMEOS)
 
 PrefProxyConfigTracker* OffTheRecordProfileImpl::GetProxyConfigTracker() {
-  if (!pref_proxy_config_tracker_) {
-    pref_proxy_config_tracker_.reset(
-        ProxyServiceFactory::CreatePrefProxyConfigTracker(GetPrefs()));
-  }
+  if (!pref_proxy_config_tracker_)
+    pref_proxy_config_tracker_.reset(CreateProxyConfigTracker());
   return pref_proxy_config_tracker_.get();
 }
 
@@ -470,3 +473,15 @@ void OffTheRecordProfileImpl::OnZoomLevelChanged(
        return;
   }
 }
+
+PrefProxyConfigTracker* OffTheRecordProfileImpl::CreateProxyConfigTracker() {
+#if defined(OS_CHROMEOS)
+  if (chromeos::ProfileHelper::IsSigninProfile(this)) {
+    return ProxyServiceFactory::CreatePrefProxyConfigTrackerOfLocalState(
+        g_browser_process->local_state());
+  }
+#endif  // defined(OS_CHROMEOS)
+  return ProxyServiceFactory::CreatePrefProxyConfigTrackerOfProfile(
+      GetPrefs(), g_browser_process->local_state());
+}
+

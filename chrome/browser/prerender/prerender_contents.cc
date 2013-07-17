@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/history/history_tab_helper.h"
 #include "chrome/browser/history/history_types.h"
@@ -21,7 +22,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tab_contents.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/prerender_messages.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_child_process_host.h"
@@ -94,7 +94,9 @@ class PrerenderContents::WebContentsDelegateImpl
       int route_id,
       WindowContainerType window_container_type,
       const string16& frame_name,
-      const GURL& target_url) OVERRIDE {
+      const GURL& target_url,
+      WindowOpenDisposition disposition,
+      bool user_gesture) OVERRIDE {
     // Since we don't want to permit child windows that would have a
     // window.opener property, terminate prerendering.
     prerender_contents_->Destroy(FINAL_STATUS_CREATE_NEW_WINDOW);
@@ -559,7 +561,7 @@ bool PrerenderContents::Matches(
                        std::bind2nd(std::equal_to<GURL>(), url)) != 0;
 }
 
-void PrerenderContents::RenderViewGone(base::TerminationStatus status) {
+void PrerenderContents::RenderProcessGone(base::TerminationStatus status) {
   Destroy(FINAL_STATUS_RENDERER_CRASHED);
 }
 

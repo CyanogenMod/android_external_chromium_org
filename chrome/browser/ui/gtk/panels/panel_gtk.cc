@@ -14,6 +14,7 @@
 #include "base/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog_queue.h"
 #include "chrome/browser/ui/gtk/custom_button.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
@@ -25,7 +26,6 @@
 #include "chrome/browser/ui/panels/panel_manager.h"
 #include "chrome/browser/ui/panels/stacked_panel_collection.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
@@ -1091,6 +1091,7 @@ class GtkNativePanelTesting : public NativePanelTesting {
   virtual bool IsButtonVisible(
       panel::TitlebarButtonType button_type) const OVERRIDE;
   virtual panel::CornerStyle GetWindowCornerStyle() const OVERRIDE;
+  virtual bool EnsureApplicationRunOnForeground() OVERRIDE;
 
   PanelGtk* panel_gtk_;
 };
@@ -1165,8 +1166,7 @@ bool GtkNativePanelTesting::VerifyDrawingAttention() const {
 }
 
 bool GtkNativePanelTesting::VerifyActiveState(bool is_active) {
-  // TODO(jianli): to be implemented. http://crbug.com/102737
-  return false;
+  return gtk_window_is_active(panel_gtk_->GetNativePanelWindow()) == is_active;
 }
 
 bool GtkNativePanelTesting::VerifyAppIcon() const {
@@ -1212,4 +1212,9 @@ bool GtkNativePanelTesting::IsButtonVisible(
 
 panel::CornerStyle GtkNativePanelTesting::GetWindowCornerStyle() const {
   return panel_gtk_->corner_style_;
+}
+
+bool GtkNativePanelTesting::EnsureApplicationRunOnForeground() {
+  // Not needed on GTK.
+  return true;
 }

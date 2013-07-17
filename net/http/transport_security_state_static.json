@@ -471,7 +471,7 @@
     { "name": "betnet.fr", "include_subdomains": true, "mode": "force-https" },
     { "name": "uprotect.it", "include_subdomains": true, "mode": "force-https" },
     { "name": "squareup.com", "mode": "force-https" },
-    { "name": "square.com", "mode": "force-https" },
+    { "name": "square.com", "include_subdomains": true, "mode": "force-https" },
     { "name": "cert.se", "include_subdomains": true, "mode": "force-https" },
     { "name": "crypto.is", "include_subdomains": true, "mode": "force-https" },
     { "name": "simon.butcher.name", "include_subdomains": true, "mode": "force-https" },
@@ -590,6 +590,7 @@
     { "name": "www.simple.com", "mode": "force-https" },
     { "name": "fj.simple.com", "mode": "force-https" },
     { "name": "api.simple.com", "mode": "force-https" },
+    { "name": "bank.simple.com", "include_subdomains": true, "mode": "force-https" },
     { "name": "bassh.net", "include_subdomains": true, "mode": "force-https" },
     { "name": "sah3.net", "include_subdomains": true, "mode": "force-https" },
     { "name": "grc.com", "mode": "force-https" },
@@ -617,6 +618,7 @@
     { "name": "blueseed.co", "include_subdomains": true, "mode": "force-https" },
     { "name": "forum.quantifiedself.com", "include_subdomains": true, "mode": "force-https" },
     { "name": "shodan.io", "include_subdomains": true, "mode": "force-https" },
+    { "name": "rapidresearch.me", "include_subdomains": true, "mode": "force-https" },
 
     // Entries that are only valid if the client supports SNI.
     { "name": "gmail.com", "mode": "force-https", "pins": "google", "snionly": true },

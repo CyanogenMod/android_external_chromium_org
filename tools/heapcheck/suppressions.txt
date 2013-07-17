@@ -239,6 +239,15 @@
    fun:base::internal::PostTaskAndReplyImpl::PostTaskAndReply
    fun:base::WorkerPool::PostTaskAndReply
 }
+# This one pops out too often on different leaks and the stacks are very often
+# uninformative, e.g. don't include anything related to the bug.
+# TODO(earthdok): revisit what we want to do with _Rep when we have LSan.
+{
+   basic_string::_Rep::_S_create
+   Heapcheck:Leak
+   fun:std::basic_string::_Rep::_S_create
+   fun:std::basic_string::basic_string
+}
 
 #-----------------------------------------------------------------------
 # 3. Suppressions for real chromium bugs that are not yet fixed.
@@ -464,6 +473,14 @@
   fun:gfx::GetDefaultWebKitFontRenderParams
   ...
   fun:*TestBody
+}
+{
+   bug_145701
+   Heapcheck:Leak
+   fun:ShareGroup
+   fun:GLES2Implementation
+   fun:gpu::gles2::GLES2ImplementationTest::Initialize
+   fun:gpu::gles2::GLES2Implementation*::SetUp
 }
 {
    bug_145703
@@ -869,22 +886,10 @@
    bug_251034_b
    Heapcheck:Leak
    ...
-   fun:gfx::OSMESAApiBase::OSMesaMakeCurrentFn
-   fun:gfx::GLContextOSMesa::MakeCurrent
    fun:Initialize
    fun:gpu::GLInProcessContext::CreateContext
    fun:webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl::MaybeInitializeGL
    fun:webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl::makeContextCurrent
-   fun:ui::DefaultContextFactory::CreateContextCommon
-   fun:ui::DefaultContextFactory::CreateOutputSurface
-   fun:ui::Compositor::CreateOutputSurface
-   fun:cc::LayerTreeHost::CreateOutputSurface
-   fun:cc::LayerTreeHost::InitializeProxy
-   fun:cc::LayerTreeHost::Initialize
-   fun:cc::LayerTreeHost::Create
-   fun:Compositor
-   fun:ui::TestCompositorHostX11::Show
-   fun:SetUp
 }
 {
    bug_251034_c
@@ -931,58 +936,83 @@
    fun:ash::test::DisplayControllerTest_XWidowNameForRootWindow_Test::TestBody
 }
 {
-   bug_255729a
+   bug_258113
    Heapcheck:Leak
-   fun:v8::internal::Malloced::New
-   fun:v8::internal::Zone::NewSegment
-   fun:v8::internal::Zone::NewExpand
-   fun:v8::internal::Zone::New
-   fun:v8::internal::ZoneAllocationPolicy::New
-   fun:v8::internal::List::NewData
-   fun:v8::internal::List::Resize
-   fun:v8::internal::List::ResizeAddInternal
-   fun:v8::internal::List::ResizeAdd
-   fun:v8::internal::List::Add
-   fun:v8::internal::ZoneList::Add
-   fun:v8::internal::HGraph::GetNextValueID
-   fun:v8::internal::HValue::SetBlock
-   fun:v8::internal::HInstruction::InsertAfter
+   fun:ppapi::proxy::PPP_Class_Proxy::CreateProxiedObject
+   fun:ppapi::proxy::PPB_Var_Deprecated_Proxy::OnMsgCreateObjectDeprecated
+   fun:void DispatchToMethod
+   fun:IPC::SyncMessageSchema::DispatchWithSendParams
+   fun:PpapiHostMsg_PPBVar_CreateObjectDeprecated::Dispatch
+   fun:ppapi::proxy::PPB_Var_Deprecated_Proxy::OnMessageReceived
+   fun:ppapi::proxy::Dispatcher::OnMessageReceived
+   fun:ppapi::proxy::HostDispatcher::OnMessageReceived
+   fun:IPC::ChannelProxy::Context::OnDispatchMessage
+   fun:IPC::SyncChannel::ReceivedSyncMsgQueue::DispatchMessages
+   fun:IPC::SyncChannel::SyncContext::DispatchMessages
+   fun:IPC::SyncChannel::WaitForReply
+   fun:IPC::SyncChannel::SendWithTimeout
+   fun:IPC::SyncChannel::Send
+   fun:ppapi::proxy::ProxyChannel::Send
+   fun:ppapi::proxy::HostDispatcher::Send
+   fun:DidCreate
+   fun:ppapi::proxy::PPP_Instance_Private_ProxyTest_PPPInstancePrivate_Test::TestBody
 }
 {
-   bug_255729b
+   bug_258132
    Heapcheck:Leak
-   fun:v8::internal::Malloced::New
-   fun:v8::internal::Zone::NewSegment
-   fun:v8::internal::Zone::NewExpand
-   fun:v8::internal::Zone::New
-   fun:v8::internal::ZoneObject::operator new
-   fun:v8::internal::HOptimizedGraphBuilder::SetUpScope
-   fun:v8::internal::HOptimizedGraphBuilder::BuildGraph
-   fun:v8::internal::HGraphBuilder::CreateGraph
-   fun:v8::internal::OptimizingCompiler::CreateGraph
-   fun:v8::internal::Compiler::RecompileParallel
-   fun:__RT_impl_Runtime_ParallelRecompile
-   fun:v8::internal::Runtime_ParallelRecompile
+   ...
+   fun:ppapi::proxy::PluginProxyMultiThreadTest::RunTest
+   fun:ppapi::ThreadAwareCallbackMultiThreadTest_RunOnTargetThread_Test::TestBody
 }
 {
-   bug_255729c
+   bug_259350a
    Heapcheck:Leak
-   fun:v8::internal::Malloced::New
-   fun:v8::internal::Zone::NewSegment
-   fun:v8::internal::Zone::NewExpand
-   fun:v8::internal::Zone::New
-   fun:v8::internal::ZoneObject::operator new
-   fun:v8::internal::Parser::ParseLazy
-   fun:v8::internal::Parser::ParseLazy
-   fun:v8::internal::Parser::Parse
-   fun:v8::internal::Parser::Parse
-   fun:v8::internal::Compiler::RecompileParallel
-   fun:__RT_impl_Runtime_ParallelRecompile
-   fun:v8::internal::Runtime_ParallelRecompile
+   ...
+   fun:SingleLoginAttemptTest_*_Test
 }
 {
-   bug_257069
+   bug_259350b
    Heapcheck:Leak
-   fun:base::Value::CreateIntegerValue
-   fun:TestBody
+   ...
+   fun:notifier::SingleLoginAttempt::OnError
+}
+{
+   bug_259350c
+   Heapcheck:Leak
+   ...
+   fun:buzz::XmppClient::Process
+   fun:talk_base::Task::Step
+   fun:talk_base::TaskRunner::InternalRunTasks
+   fun:talk_base::TaskRunner::RunTasks
+   fun:jingle_glue::TaskPump::CheckAndRunTasks
+}
+{
+   bug_259350d
+   Heapcheck:Leak
+   ...
+   fun:jingle_glue::ProxyResolvingClientSocket::ProcessProxyResolveDone
+}
+{
+   bug_259357a
+   Heapcheck:Leak
+   ...
+   fun:*Proto::*
+   ...
+   fun:gpu::gles2::MemoryProgramCache*
+   fun:gpu::gles2::MemoryProgramCacheTest_*
+}
+{
+   bug_259357b
+   Heapcheck:Leak
+   ...
+   fun:std::set::insert
+   fun:gpu::IdAllocator::*
+}
+{
+   bug_259357c
+   Heapcheck:Leak
+   ...
+   fun:gpu::MappedMemoryManager::Alloc
+   ...
+   fun:gpu::*_Test::TestBody
 }

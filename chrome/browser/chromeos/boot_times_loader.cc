@@ -23,11 +23,11 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/authentication_notification_details.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
@@ -198,7 +198,7 @@ static void SendBootTimesToUMA(const BootTimesLoader::BootTimes& boot_times) {
   static const base::FilePath::CharType kBootTimesSent[] =
       FPL("/tmp/boot-times-sent");
   base::FilePath sent(kBootTimesSent);
-  if (file_util::PathExists(sent))
+  if (base::PathExists(sent))
     return;
 
   UMA_HISTOGRAM_TIMES("BootTime.Total",
@@ -228,7 +228,7 @@ static void SendBootTimesToUMA(const BootTimesLoader::BootTimes& boot_times) {
                                                    boot_times.system,
                                                    boot_times.chrome);
   file_util::WriteFile(sent, boot_times_text.data(), boot_times_text.size());
-  DCHECK(file_util::PathExists(sent));
+  DCHECK(base::PathExists(sent));
 }
 
 void BootTimesLoader::Backend::GetBootTimesAndRunCallback(
@@ -250,7 +250,7 @@ void BootTimesLoader::Backend::GetBootTimesAndRunCallback(
   // Wait until firmware-boot-time file exists by reposting.
   base::FilePath log_dir(kLogPath);
   base::FilePath log_file = log_dir.Append(kFirmwareBootTime);
-  if (!file_util::PathExists(log_file)) {
+  if (!base::PathExists(log_file)) {
     BrowserThread::PostDelayedTask(
         BrowserThread::FILE,
         FROM_HERE,

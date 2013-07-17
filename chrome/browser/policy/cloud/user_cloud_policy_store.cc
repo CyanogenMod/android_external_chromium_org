@@ -51,7 +51,7 @@ const base::FilePath::CharType kPolicyCacheFile[] =
 policy::PolicyLoadResult LoadPolicyFromDisk(const base::FilePath& path) {
   policy::PolicyLoadResult result;
   // If the backing file does not exist, just return.
-  if (!file_util::PathExists(path)) {
+  if (!base::PathExists(path)) {
     result.status = policy::LOAD_RESULT_NO_POLICY_FILE;
     return result;
   }
@@ -122,7 +122,7 @@ void UserCloudPolicyStore::LoadImmediately() {
 void UserCloudPolicyStore::Clear() {
   content::BrowserThread::PostTask(
       content::BrowserThread::FILE, FROM_HERE,
-      base::Bind(base::IgnoreResult(&base::Delete),
+      base::Bind(base::IgnoreResult(&base::DeleteFile),
                  backing_file_path_,
                  false));
   policy_.reset();

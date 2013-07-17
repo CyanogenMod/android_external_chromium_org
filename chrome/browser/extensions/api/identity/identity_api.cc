@@ -16,24 +16,22 @@
 #include "base/values.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/signin_manager.h"
-#include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/signin/token_service.h"
-#include "chrome/browser/signin/token_service_factory.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/browser/signin/profile_oauth2_token_service.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_global_error.h"
 #include "chrome/common/extensions/api/identity.h"
 #include "chrome/common/extensions/api/identity/oauth2_manifest_handler.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/gaia_urls.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/login/user_manager.h"
@@ -123,8 +121,6 @@ bool IdentityGetAuthTokenFunction::RunImpl() {
     // Display a login prompt.
     StartSigninFlow();
   } else {
-    TokenService* token_service = TokenServiceFactory::GetForProfile(profile());
-    refresh_token_ = token_service->GetOAuth2LoginRefreshToken();
     StartMintTokenFlow(IdentityMintRequestQueue::MINT_TYPE_NONINTERACTIVE);
   }
 
@@ -228,7 +224,8 @@ void IdentityGetAuthTokenFunction::StartMintToken(
                 chromeos::DeviceOAuth2TokenServiceFactory::Get()->StartRequest(
                     scope_set, this);
           } else {
-            StartGaiaRequest(OAuth2MintTokenFlow::MODE_MINT_TOKEN_FORCE);
+            gaia_mint_token_mode_ = OAuth2MintTokenFlow::MODE_MINT_TOKEN_FORCE;
+            StartLoginAccessTokenRequest();
           }
           return;
         }
@@ -238,9 +235,10 @@ void IdentityGetAuthTokenFunction::StartMintToken(
           // oauth2_info.auto_approve is protected by a whitelist in
           // _manifest_features.json hence only selected extensions take
           // advantage of forcefully minting the token.
-          StartGaiaRequest(OAuth2MintTokenFlow::MODE_MINT_TOKEN_FORCE);
+          gaia_mint_token_mode_ = OAuth2MintTokenFlow::MODE_MINT_TOKEN_FORCE;
         else
-          StartGaiaRequest(OAuth2MintTokenFlow::MODE_MINT_TOKEN_NO_FORCE);
+          gaia_mint_token_mode_ = OAuth2MintTokenFlow::MODE_MINT_TOKEN_NO_FORCE;
+        StartLoginAccessTokenRequest();
         break;
 
       case IdentityTokenCacheValue::CACHE_STATUS_TOKEN:
@@ -319,8 +317,7 @@ void IdentityGetAuthTokenFunction::OnIssueAdviceSuccess(
   StartMintTokenFlow(IdentityMintRequestQueue::MINT_TYPE_INTERACTIVE);
 }
 
-void IdentityGetAuthTokenFunction::SigninSuccess(const std::string& token) {
-  refresh_token_ = token;
+void IdentityGetAuthTokenFunction::SigninSuccess() {
   StartMintTokenFlow(IdentityMintRequestQueue::MINT_TYPE_NONINTERACTIVE);
 }
 
@@ -387,31 +384,47 @@ void IdentityGetAuthTokenFunction::OnGetTokenSuccess(
     const OAuth2TokenService::Request* request,
     const std::string& access_token,
     const base::Time& expiration_time) {
-  DCHECK_EQ(device_token_request_.get(), request);
-  device_token_request_.reset();
+  if (login_token_request_.get() == request) {
+    login_token_request_.reset();
+    StartGaiaRequest(access_token);
+  } else {
+    DCHECK_EQ(device_token_request_.get(), request);
+    device_token_request_.reset();
 
-  const OAuth2Info& oauth2_info = OAuth2Info::GetOAuth2Info(GetExtension());
-  IdentityTokenCacheValue token(access_token,
-                                expiration_time - base::Time::Now());
-  IdentityAPI::GetFactoryInstance()->GetForProfile(profile())->SetCachedToken(
-      GetExtension()->id(), oauth2_info.scopes, token);
+    const OAuth2Info& oauth2_info = OAuth2Info::GetOAuth2Info(GetExtension());
+    IdentityTokenCacheValue token(access_token,
+                                  expiration_time - base::Time::Now());
+    IdentityAPI::GetFactoryInstance()->GetForProfile(profile())->SetCachedToken(
+        GetExtension()->id(), oauth2_info.scopes, token);
 
-  CompleteMintTokenFlow();
-  CompleteFunctionWithResult(access_token);
+    CompleteMintTokenFlow();
+    CompleteFunctionWithResult(access_token);
+  }
 }
 
 void IdentityGetAuthTokenFunction::OnGetTokenFailure(
     const OAuth2TokenService::Request* request,
     const GoogleServiceAuthError& error) {
-  DCHECK_EQ(device_token_request_.get(), request);
-  device_token_request_.reset();
+  if (login_token_request_.get() == request) {
+    login_token_request_.reset();
+  } else {
+    DCHECK_EQ(device_token_request_.get(), request);
+    device_token_request_.reset();
+  }
 
   OnGaiaFlowFailure(GaiaWebAuthFlow::SERVICE_AUTH_ERROR, error, std::string());
 }
 
+void IdentityGetAuthTokenFunction::StartLoginAccessTokenRequest() {
+  login_token_request_ =
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile())->
+          StartRequest(OAuth2TokenService::ScopeSet(), this);
+}
+
 void IdentityGetAuthTokenFunction::StartGaiaRequest(
-    OAuth2MintTokenFlow::Mode mode) {
-  mint_token_flow_.reset(CreateMintTokenFlow(mode));
+    const std::string& login_access_token) {
+  DCHECK(!login_access_token.empty());
+  mint_token_flow_.reset(CreateMintTokenFlow(login_access_token));
   mint_token_flow_->Start();
 }
 
@@ -432,7 +445,7 @@ void IdentityGetAuthTokenFunction::ShowOAuthApprovalDialog(
 }
 
 OAuth2MintTokenFlow* IdentityGetAuthTokenFunction::CreateMintTokenFlow(
-    OAuth2MintTokenFlow::Mode mode) {
+    const std::string& login_access_token) {
   const OAuth2Info& oauth2_info = OAuth2Info::GetOAuth2Info(GetExtension());
 
   OAuth2MintTokenFlow* mint_token_flow =
@@ -440,11 +453,11 @@ OAuth2MintTokenFlow* IdentityGetAuthTokenFunction::CreateMintTokenFlow(
           profile()->GetRequestContext(),
           this,
           OAuth2MintTokenFlow::Parameters(
-              refresh_token_,
+              login_access_token,
               GetExtension()->id(),
               oauth2_client_id_,
               oauth2_info.scopes,
-              mode));
+              gaia_mint_token_mode_));
 #if defined(OS_CHROMEOS)
   if (chrome::IsRunningInForcedAppMode()) {
     std::string chrome_client_id;
@@ -460,8 +473,8 @@ OAuth2MintTokenFlow* IdentityGetAuthTokenFunction::CreateMintTokenFlow(
 }
 
 bool IdentityGetAuthTokenFunction::HasLoginToken() const {
-  TokenService* token_service = TokenServiceFactory::GetForProfile(profile());
-  return token_service->HasOAuthLoginToken();
+  return ProfileOAuth2TokenServiceFactory::GetForProfile(profile())->
+      RefreshTokenIsAvailable();
 }
 
 std::string IdentityGetAuthTokenFunction::MapOAuth2ErrorToDescription(
@@ -639,21 +652,18 @@ const base::Time& IdentityTokenCacheValue::expiration_time() const {
 
 IdentityAPI::IdentityAPI(Profile* profile)
     : profile_(profile),
-      signin_manager_(NULL),
-      error_(GoogleServiceAuthError::NONE) {
+      error_(GoogleServiceAuthError::NONE),
+      initialized_(false) {
 }
 
 IdentityAPI::~IdentityAPI() {
 }
 
 void IdentityAPI::Initialize() {
-  signin_manager_ = SigninManagerFactory::GetForProfile(profile_);
-  signin_manager_->signin_global_error()->AddProvider(this);
+  SigninGlobalError::GetForProfile(profile_)->AddProvider(this);
+  ProfileOAuth2TokenServiceFactory::GetForProfile(profile_)->AddObserver(this);
 
-  TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_TOKEN_AVAILABLE,
-                 content::Source<TokenService>(token_service));
+  initialized_ = true;
 }
 
 IdentityMintRequestQueue* IdentityAPI::mint_queue() {
@@ -702,16 +712,19 @@ const IdentityAPI::CachedTokens& IdentityAPI::GetAllCachedTokens() {
 }
 
 void IdentityAPI::ReportAuthError(const GoogleServiceAuthError& error) {
-  if (!signin_manager_)
-    Initialize();
-
   error_ = error;
-  signin_manager_->signin_global_error()->AuthStatusChanged();
+  SigninGlobalError::GetForProfile(profile_)->AuthStatusChanged();
 }
 
 void IdentityAPI::Shutdown() {
-  if (signin_manager_)
-    signin_manager_->signin_global_error()->RemoveProvider(this);
+  if (!initialized_)
+    return;
+
+  SigninGlobalError::GetForProfile(profile_)->RemoveProvider(this);
+  ProfileOAuth2TokenServiceFactory::GetForProfile(profile_)->
+      RemoveObserver(this);
+
+  initialized_ = false;
 }
 
 static base::LazyInstance<ProfileKeyedAPIFactory<IdentityAPI> >
@@ -726,24 +739,16 @@ GoogleServiceAuthError IdentityAPI::GetAuthStatus() const {
   return error_;
 }
 
-void IdentityAPI::Observe(int type,
-                          const content::NotificationSource& source,
-                          const content::NotificationDetails& details) {
-  CHECK(type == chrome::NOTIFICATION_TOKEN_AVAILABLE);
-  TokenService::TokenAvailableDetails* token_details =
-      content::Details<TokenService::TokenAvailableDetails>(details).ptr();
-  if (token_details->service() ==
-      GaiaConstants::kGaiaOAuth2LoginRefreshToken) {
-    error_ = GoogleServiceAuthError::AuthErrorNone();
-    signin_manager_->signin_global_error()->AuthStatusChanged();
-  }
+void IdentityAPI::OnRefreshTokenAvailable(const std::string& account_id) {
+  error_ = GoogleServiceAuthError::AuthErrorNone();
 }
 
 template <>
 void ProfileKeyedAPIFactory<IdentityAPI>::DeclareFactoryDependencies() {
   DependsOn(ExtensionSystemFactory::GetInstance());
-  DependsOn(TokenServiceFactory::GetInstance());
-  DependsOn(SigninManagerFactory::GetInstance());
+  // Need dependency on ProfileOAuth2TokenServiceFactory because it owns
+  // the SigninGlobalError instance.
+  DependsOn(ProfileOAuth2TokenServiceFactory::GetInstance());
 }
 
 IdentityAPI::TokenCacheKey::TokenCacheKey(const std::string& extension_id,

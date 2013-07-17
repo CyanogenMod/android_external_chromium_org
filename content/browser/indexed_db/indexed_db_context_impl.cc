@@ -4,8 +4,6 @@
 
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
 
-#include <vector>
-
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
@@ -83,7 +81,7 @@ void ClearSessionOnlyOrigins(
       continue;
     if (special_storage_policy->IsStorageProtected(*iter))
       continue;
-    base::Delete(*file_path_iter, true);
+    base::DeleteFile(*file_path_iter, true);
   }
 }
 
@@ -100,8 +98,7 @@ IndexedDBContextImpl::IndexedDBContextImpl(
       task_runner_(task_runner) {
   if (!data_path.empty())
     data_path_ = data_path.Append(kIndexedDBDirectory);
-  if (quota_manager_proxy &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess)) {
+  if (quota_manager_proxy) {
     quota_manager_proxy->RegisterClient(new IndexedDBQuotaClient(this));
   }
 }
@@ -112,7 +109,7 @@ IndexedDBFactory* IndexedDBContextImpl::GetIDBFactory() {
     // Prime our cache of origins with existing databases so we can
     // detect when dbs are newly created.
     GetOriginSet();
-    idb_factory_ = IndexedDBFactory::Create();
+    idb_factory_ = new IndexedDBFactory();
   }
   return idb_factory_;
 }
@@ -175,7 +172,7 @@ void IndexedDBContextImpl::DeleteForOrigin(const GURL& origin_url) {
   base::FilePath idb_directory = GetFilePath(origin_url);
   EnsureDiskUsageCacheInitialized(origin_url);
   const bool recursive = true;
-  bool deleted = base::Delete(idb_directory, recursive);
+  bool deleted = base::DeleteFile(idb_directory, recursive);
 
   QueryDiskAndUpdateQuotaUsage(origin_url);
   if (deleted) {

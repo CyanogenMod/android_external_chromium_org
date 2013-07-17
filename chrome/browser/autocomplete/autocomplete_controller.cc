@@ -24,11 +24,11 @@
 #include "chrome/browser/autocomplete/search_provider.h"
 #include "chrome/browser/autocomplete/shortcuts_provider.h"
 #include "chrome/browser/autocomplete/zero_suggest_provider.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
@@ -635,21 +635,9 @@ void AutocompleteController::StartStopTimer() {
   // come after the user has had to time to read the whole dropdown
   // and doesn't expect it to change.
   const int kStopTimeMS = 1500;
-
-  // Only use the timer if Instant/InstantExtended is disabled.
-  // InstantExtended has its own logic for when to stop updating the
-  // dropdown.  Furthermore, both Instant and InstantExtended expect
-  // all results they inject (regardless of how long they took) to make
-  // it to the edit model / dropdown display code.
-#if defined(HTML_INSTANT_EXTENDED_POPUP)
-  if (!chrome::IsInstantExtendedAPIEnabled() &&
-      !chrome::IsInstantEnabled(profile_))
-#endif
-  {
-    stop_timer_.Start(FROM_HERE,
-                      base::TimeDelta::FromMilliseconds(kStopTimeMS),
-                      base::Bind(&AutocompleteController::Stop,
-                                 base::Unretained(this),
-                                 false));
-  }
+  stop_timer_.Start(FROM_HERE,
+                    base::TimeDelta::FromMilliseconds(kStopTimeMS),
+                    base::Bind(&AutocompleteController::Stop,
+                               base::Unretained(this),
+                               false));
 }

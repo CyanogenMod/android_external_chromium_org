@@ -285,6 +285,11 @@ void SystemTray::UpdateAfterLoginStatusChange(user::LoginStatus login_status) {
     (*it)->UpdateAfterLoginStatusChange(login_status);
   }
 
+  // Items default to SHELF_ALIGNMENT_BOTTOM. Update them if the initial
+  // position of the shelf differs.
+  if (shelf_alignment() != SHELF_ALIGNMENT_BOTTOM)
+    UpdateAfterShelfAlignmentChange(shelf_alignment());
+
   SetVisible(true);
   PreferredSizeChanged();
 }
@@ -313,6 +318,10 @@ bool SystemTray::HasSystemBubble() const {
 
 bool SystemTray::HasNotificationBubble() const {
   return notification_bubble_.get() != NULL;
+}
+
+bool SystemTray::IsPressed() {
+  return HasSystemBubble();
 }
 
 internal::SystemTrayBubble* SystemTray::GetSystemBubble() {
@@ -399,6 +408,12 @@ void SystemTray::ShowItems(const std::vector<SystemTrayItem*>& items,
                            bool can_activate,
                            BubbleCreationType creation_type,
                            int arrow_offset) {
+  // No system tray bubbles in kiosk mode.
+  if (Shell::GetInstance()->system_tray_delegate()->GetUserLoginStatus() ==
+      ash::user::LOGGED_IN_KIOSK_APP) {
+    return;
+  }
+
   // Destroy any existing bubble and create a new one.
   SystemTrayBubble::BubbleType bubble_type = detailed ?
       SystemTrayBubble::BUBBLE_TYPE_DETAILED :

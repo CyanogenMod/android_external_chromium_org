@@ -9,25 +9,16 @@
 #include "chrome/browser/extensions/activity_log/activity_log_policy.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/extension.h"
-#include "googleurl/src/gurl.h"
-
-using base::TimeDelta;
+#include "url/gurl.h"
 
 namespace extensions {
 
 ActivityLogPolicy::ActivityLogPolicy(Profile* profile) {
   CHECK(profile && "Null ptr dereference");
   profile_base_path_ = profile->GetPath();
-  timer_.Start(FROM_HERE, TimeDelta::FromMinutes(2), this,
-               &ActivityLogPolicy::SaveState);
 }
 
 ActivityLogPolicy::~ActivityLogPolicy() {
-  timer_.Stop();
-}
-
-void ActivityLogPolicy::SetSaveStateOnRequestOnly() {
-  timer_.Stop();
 }
 
 std::string ActivityLogPolicy::GetKey(KeyType) const {

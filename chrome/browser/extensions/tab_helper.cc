@@ -4,6 +4,7 @@
 
 #include "chrome/browser/extensions/tab_helper.h"
 
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/extensions/api/declarative/rules_registry_service.h"
 #include "chrome/browser/extensions/api/declarative_content/content_rules_registry.h"
@@ -25,7 +26,6 @@
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/web_applications/web_app_ui.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
@@ -408,13 +408,8 @@ void TabHelper::OnInlineInstallComplete(int install_id,
                                         int return_route_id,
                                         bool success,
                                         const std::string& error) {
-  if (success) {
-    Send(new ExtensionMsg_InlineWebstoreInstallResponse(
-        return_route_id, install_id, true, std::string()));
-  } else {
-    Send(new ExtensionMsg_InlineWebstoreInstallResponse(
-        return_route_id, install_id, false, error));
-  }
+  Send(new ExtensionMsg_InlineWebstoreInstallResponse(
+      return_route_id, install_id, success, success ? std::string() : error));
 }
 
 WebContents* TabHelper::GetAssociatedWebContents() const {

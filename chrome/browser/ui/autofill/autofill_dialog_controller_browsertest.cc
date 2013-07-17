@@ -9,6 +9,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_controller_impl.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_view.h"
 #include "chrome/browser/ui/autofill/data_model_wrapper.h"
@@ -18,6 +19,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/autofill/content/browser/wallet/mock_wallet_client.h"
 #include "components/autofill/content/browser/wallet/wallet_test_util.h"
 #include "components/autofill/core/browser/autofill_common_test.h"
 #include "components/autofill/core/browser/autofill_metrics.h"
@@ -31,6 +33,7 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 
@@ -78,6 +81,9 @@ class MockAutofillMetrics : public AutofillMetrics {
     return autocheckout_status_;
   }
 
+  MOCK_CONST_METHOD2(LogDialogDismissalState,
+                     void(DialogType dialog_type, DialogDismissalState state));
+
  private:
   DialogType dialog_type_;
   AutofillMetrics::DialogDismissalAction dialog_dismissal_action_;
@@ -99,6 +105,9 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
                                      dialog_type,
                                      base::Bind(&MockCallback)),
         metric_logger_(metric_logger),
+        mock_wallet_client_(
+            Profile::FromBrowserContext(contents->GetBrowserContext())->
+                GetRequestContext(), this),
         message_loop_runner_(runner),
         use_validation_(false) {}
 
@@ -151,7 +160,6 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
     return &test_manager_;
   }
 
-  using AutofillDialogControllerImpl::DisableWallet;
   using AutofillDialogControllerImpl::IsEditingExistingData;
   using AutofillDialogControllerImpl::IsManuallyEditingSection;
 
@@ -164,6 +172,10 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
     return &test_manager_;
   }
 
+  virtual wallet::WalletClient* GetWalletClient() OVERRIDE {
+    return &mock_wallet_client_;
+  }
+
  private:
   // To specify our own metric logger.
   virtual const AutofillMetrics& GetMetricLogger() const OVERRIDE {
@@ -172,6 +184,7 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
 
   const AutofillMetrics& metric_logger_;
   TestPersonalDataManager test_manager_;
+  testing::NiceMock<wallet::MockWalletClient> mock_wallet_client_;
   scoped_refptr<content::MessageLoopRunner> message_loop_runner_;
   bool use_validation_;
 
@@ -304,9 +317,7 @@ class AutofillDialogControllerTest : public InProcessBrowserTest {
   DISALLOW_COPY_AND_ASSIGN(AutofillDialogControllerTest);
 };
 
-// TODO(isherman): Enable these tests on other platforms once the UI is
-// implemented on those platforms.
-#if defined(TOOLKIT_VIEWS)
+#if defined(TOOLKIT_VIEWS) || defined(OS_MACOSX)
 // Submit the form data.
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, Submit) {
   InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
@@ -335,6 +346,25 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, Cancel) {
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, Hide) {
   InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
   controller()->Hide();
+
+  RunMessageLoop();
+
+  EXPECT_EQ(AutofillMetrics::DIALOG_CANCELED,
+            metric_logger().dialog_dismissal_action());
+  EXPECT_EQ(DIALOG_TYPE_REQUEST_AUTOCOMPLETE, metric_logger().dialog_type());
+}
+
+// Ensure that the expected metric is logged when the dialog is closed during
+// signin.
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, CloseDuringSignin) {
+  InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
+  controller()->SignInLinkClicked();
+
+  EXPECT_CALL(metric_logger(),
+              LogDialogDismissalState(
+                  DIALOG_TYPE_REQUEST_AUTOCOMPLETE,
+                  AutofillMetrics::DIALOG_CANCELED_DURING_SIGNIN));
+  controller()->GetTestableView()->CancelForTesting();
 
   RunMessageLoop();
 
@@ -407,9 +437,16 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, AutocheckoutCancelled) {
   EXPECT_EQ(DIALOG_TYPE_AUTOCHECKOUT, metric_logger().dialog_type());
 }
 
-IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, FillInputFromAutofill) {
+#if defined(OS_MACOSX)
+// TODO(groby): Implement the necessary functionality and enable this test:
+// http://crbug.com/256864
+#define MAYBE_FillInputFromAutofill DISABLED_FillInputFromAutofill
+#else
+#define MAYBE_FillInputFromAutofill FillInputFromAutofill
+#endif
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
+                       MAYBE_FillInputFromAutofill) {
   InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
-  controller()->DisableWallet(wallet::WalletClient::UNKNOWN_ERROR);
 
   AutofillProfile full_profile(test::GetFullProfile());
   controller()->GetTestingManager()->AddTestingProfile(&full_profile);
@@ -459,8 +496,7 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, FillInputFromAutofill) {
 
 // Test that Autocheckout steps are shown after submitting the
 // dialog for controller with type DIALOG_TYPE_AUTOCHECKOUT.
-IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
-                       AutocheckoutShowsSteps) {
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, AutocheckoutShowsSteps) {
   InitializeControllerOfType(DIALOG_TYPE_AUTOCHECKOUT);
   controller()->AddAutocheckoutStep(AUTOCHECKOUT_STEP_PROXY_CARD);
 
@@ -474,10 +510,19 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
   EXPECT_TRUE(controller()->ShouldShowProgressBar());
 }
 
+#if defined(OS_MACOSX)
+// TODO(groby): Implement the necessary functionality and enable this test:
+// http://crbug.com/256864
+#define MAYBE_RequestAutocompleteDoesntShowSteps \
+    DISABLED_RequestAutocompleteDoesntShowSteps
+#else
+#define MAYBE_RequestAutocompleteDoesntShowSteps \
+    RequestAutocompleteDoesntShowSteps
+#endif
 // Test that Autocheckout steps are not showing after submitting the
 // dialog for controller with type DIALOG_TYPE_REQUEST_AUTOCOMPLETE.
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
-                       RequestAutocompleteDoesntShowSteps) {
+                       MAYBE_RequestAutocompleteDoesntShowSteps) {
   InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
   controller()->AddAutocheckoutStep(AUTOCHECKOUT_STEP_PROXY_CARD);
 
@@ -491,11 +536,18 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
   EXPECT_FALSE(controller()->ShouldShowProgressBar());
 }
 
+#if defined(OS_MACOSX)
+// TODO(groby): Implement the necessary functionality and enable this test:
+// http://crbug.com/256864
+#define MAYBE_FillComboboxFromAutofill DISABLED_FillComboboxFromAutofill
+#else
+#define MAYBE_FillComboboxFromAutofill FillComboboxFromAutofill
+#endif
 // Tests that changing the value of a CC expiration date combobox works as
 // expected when Autofill is used to fill text inputs.
-IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, FillComboboxFromAutofill) {
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
+                       MAYBE_FillComboboxFromAutofill) {
   InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
-  controller()->DisableWallet(wallet::WalletClient::UNKNOWN_ERROR);
 
   CreditCard card1;
   test::SetCreditCardInfo(&card1, "JJ Smith", "4111111111111111", "12", "2018");
@@ -619,7 +671,6 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, WalletCreditCardDisabled) {
 // Ensure that expired cards trigger invalid suggestions.
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, ExpiredCard) {
   InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
-  controller()->DisableWallet(wallet::WalletClient::UNKNOWN_ERROR);
 
   CreditCard verified_card(test::GetCreditCard());
   verified_card.set_origin("Chrome settings");
@@ -673,7 +724,14 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, LongNotifications) {
             controller()->GetTestableView()->GetSize().width());
 }
 
-IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, AutocompleteEvent) {
+#if defined(OS_MACOSX)
+// TODO(groby): Implement the necessary functionality and enable this test:
+// http://crbug.com/256864
+#define MAYBE_AutocompleteEvent DISABLED_AutocompleteEvent
+#else
+#define MAYBE_AutocompleteEvent AutocompleteEvent
+#endif
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, MAYBE_AutocompleteEvent) {
   AutofillDialogControllerImpl* controller =
       SetUpHtmlAndInvoke("<input autocomplete='cc-name'>");
 
@@ -687,8 +745,17 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, AutocompleteEvent) {
   ExpectDomMessage("success");
 }
 
+#if defined(OS_MACOSX)
+// TODO(groby): Implement the necessary functionality and enable this test:
+// http://crbug.com/256864
+#define MAYBE_AutocompleteErrorEventReasonInvalid \
+    DISABLED_AutocompleteErrorEventReasonInvalid
+#else
+#define MAYBE_AutocompleteErrorEventReasonInvalid \
+    AutocompleteErrorEventReasonInvalid
+#endif
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
-                       AutocompleteErrorEventReasonInvalid) {
+                       MAYBE_AutocompleteErrorEventReasonInvalid) {
   AutofillDialogControllerImpl* controller =
       SetUpHtmlAndInvoke("<input autocomplete='cc-name' pattern='.*zebra.*'>");
 
@@ -706,8 +773,17 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
   ExpectDomMessage("error: invalid");
 }
 
+#if defined(OS_MACOSX)
+// TODO(groby): Implement the necessary functionality and enable this test:
+// http://crbug.com/256864
+#define MAYBE_AutocompleteErrorEventReasonCancel \
+    DISABLED_AutocompleteErrorEventReasonCancel
+#else
+#define MAYBE_AutocompleteErrorEventReasonCancel \
+    AutocompleteErrorEventReasonCancel
+#endif
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
-                       AutocompleteErrorEventReasonCancel) {
+                       MAYBE_AutocompleteErrorEventReasonCancel) {
   SetUpHtmlAndInvoke("<input autocomplete='cc-name'>")->GetTestableView()->
       CancelForTesting();
   ExpectDomMessage("error: cancel");
@@ -715,7 +791,6 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
 
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, NoCvcSegfault) {
   InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
-  controller()->DisableWallet(wallet::WalletClient::UNKNOWN_ERROR);
   controller()->set_use_validation(true);
 
   CreditCard credit_card(test::GetVerifiedCreditCard());
@@ -726,7 +801,14 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, NoCvcSegfault) {
       controller()->GetTestableView()->SubmitForTesting());
 }
 
-IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, PreservedSections) {
+#if defined(OS_MACOSX)
+// TODO(groby): Implement the necessary functionality and enable this test:
+// http://crbug.com/256864
+#define MAYBE_PreservedSections  DISABLED_PreservedSections
+#else
+#define MAYBE_PreservedSections PreservedSections
+#endif
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, MAYBE_PreservedSections) {
   InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
   controller()->set_use_validation(true);
 
@@ -763,11 +845,11 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, PreservedSections) {
   EXPECT_TRUE(controller()->IsManuallyEditingSection(SECTION_CC_BILLING));
 
   // Create some valid inputted billing data.
-  const DetailInput& cc_name =
-      controller()->RequestedFieldsForSection(SECTION_CC_BILLING)[4];
-  ASSERT_EQ(CREDIT_CARD_NAME, cc_name.type);
+  const DetailInput& cc_number =
+      controller()->RequestedFieldsForSection(SECTION_CC_BILLING)[0];
+  EXPECT_EQ(CREDIT_CARD_NUMBER, cc_number.type);
   TestableAutofillDialogView* view = controller()->GetTestableView();
-  view->SetTextContentsOfInput(cc_name, ASCIIToUTF16("credit card name"));
+  view->SetTextContentsOfInput(cc_number, ASCIIToUTF16("4111111111111111"));
 
   // Select "Add new shipping info..." from suggestions menu.
   ui::MenuModel* shipping_model =
@@ -796,15 +878,15 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, PreservedSections) {
   EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_BILLING));
   EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_SHIPPING));
 
-  const DetailInput& new_cc_name =
-      controller()->RequestedFieldsForSection(SECTION_CC).back();
-  ASSERT_EQ(cc_name.type, new_cc_name.type);
-  EXPECT_EQ(ASCIIToUTF16("credit card name"),
-            view->GetTextContentsOfInput(new_cc_name));
+  const DetailInput& new_cc_number =
+      controller()->RequestedFieldsForSection(SECTION_CC).front();
+  EXPECT_EQ(cc_number.type, new_cc_number.type);
+  EXPECT_EQ(ASCIIToUTF16("4111111111111111"),
+            view->GetTextContentsOfInput(new_cc_number));
 
   EXPECT_NE(ASCIIToUTF16("shipping name"),
             view->GetTextContentsOfInput(shipping_zip));
 }
-#endif  // defined(TOOLKIT_VIEWS)
+#endif  // defined(TOOLKIT_VIEWS) || defined(OS_MACOSX)
 
 }  // namespace autofill

@@ -34,6 +34,7 @@
 #include "content/public/common/stop_find_action.h"
 #include "content/public/common/top_controls_state.h"
 #include "content/public/renderer/render_view.h"
+#include "content/renderer/media/webmediaplayer_delegate.h"
 #include "content/renderer/mouse_lock_dispatcher.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_view_pepper_helper.h"
@@ -59,7 +60,6 @@
 #include "ui/surface/transport_dib.h"
 #include "webkit/common/webpreferences.h"
 #include "webkit/plugins/npapi/webplugin_page_delegate.h"
-#include "webkit/renderer/media/webmediaplayer_delegate.h"
 
 #if defined(OS_ANDROID)
 #include "content/renderer/android/content_detector.h"
@@ -146,8 +146,8 @@ class ImageResourceFetcher;
 class InputTagSpeechDispatcher;
 class JavaBridgeDispatcher;
 class LoadProgressTracker;
+class MediaStreamClient;
 class MediaStreamDispatcher;
-class MediaStreamImpl;
 class MouseLockDispatcher;
 class NavigationState;
 class NotificationProvider;
@@ -168,7 +168,7 @@ struct FileChooserParams;
 struct RenderViewImplParams;
 
 #if defined(OS_ANDROID)
-class WebMediaPlayerManagerAndroid;
+class RendererMediaPlayerManager;
 class WebMediaPlayerProxyAndroid;
 #endif
 
@@ -197,7 +197,7 @@ class CONTENT_EXPORT RenderViewImpl
       NON_EXPORTED_BASE(public WebKit::WebPageSerializerClient),
       public RenderView,
       NON_EXPORTED_BASE(public webkit::npapi::WebPluginPageDelegate),
-      NON_EXPORTED_BASE(public webkit_media::WebMediaPlayerDelegate),
+      NON_EXPORTED_BASE(public WebMediaPlayerDelegate),
       public base::SupportsWeakPtr<RenderViewImpl> {
  public:
   // Creates a new RenderView. If this is a blocked popup or as a new tab,
@@ -254,7 +254,7 @@ class CONTENT_EXPORT RenderViewImpl
   }
 
 #if defined(OS_ANDROID)
-  WebMediaPlayerManagerAndroid* media_player_manager() {
+  RendererMediaPlayerManager* media_player_manager() {
     return media_player_manager_.get();
   }
 #endif
@@ -387,6 +387,10 @@ class CONTENT_EXPORT RenderViewImpl
   void EnableAutoResizeForTesting(const gfx::Size& min_size,
                                   const gfx::Size& max_size);
   void DisableAutoResizeForTesting(const gfx::Size& new_size);
+
+  // Overrides the MediaStreamClient used when creating MediaStream players.
+  // Must be called before any players are created.
+  void SetMediaStreamClientForTesting(MediaStreamClient* media_stream_client);
 
   // IPC::Listener implementation ----------------------------------------------
 
@@ -738,7 +742,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void ClearEditCommands() OVERRIDE;
   virtual SSLStatus GetSSLStatusOfFrame(WebKit::WebFrame* frame) const OVERRIDE;
 #if defined(OS_ANDROID)
-  virtual skia::RefPtr<SkPicture> CapturePicture() OVERRIDE;
   virtual void UpdateTopControlsState(TopControlsState constraints,
                                       TopControlsState current,
                                       bool animate) OVERRIDE;
@@ -759,7 +762,7 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void DidStopLoadingForPlugin() OVERRIDE;
   virtual WebKit::WebCookieJar* GetCookieJar() OVERRIDE;
 
-  // webkit_media::WebMediaPlayerDelegate implementation -----------------------
+  // WebMediaPlayerDelegate implementation -----------------------
 
   virtual void DidPlay(WebKit::WebMediaPlayer* player) OVERRIDE;
   virtual void DidPause(WebKit::WebMediaPlayer* player) OVERRIDE;
@@ -808,14 +811,17 @@ class CONTENT_EXPORT RenderViewImpl
       const std::vector<WebKit::WebCompositionUnderline>& underlines,
       int selection_start,
       int selection_end) OVERRIDE;
-  virtual void OnImeConfirmComposition(
-      const string16& text, const ui::Range& replacement_range) OVERRIDE;
+  virtual void OnImeConfirmComposition(const string16& text,
+                                       const ui::Range& replacement_range,
+                                       bool keep_selection) OVERRIDE;
   virtual void SetDeviceScaleFactor(float device_scale_factor) OVERRIDE;
   virtual ui::TextInputType GetTextInputType() OVERRIDE;
   virtual void GetSelectionBounds(gfx::Rect* start, gfx::Rect* end) OVERRIDE;
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
   virtual void GetCompositionCharacterBounds(
       std::vector<gfx::Rect>* character_bounds) OVERRIDE;
   virtual void GetCompositionRange(ui::Range* range) OVERRIDE;
+#endif
   virtual bool CanComposeInline() OVERRIDE;
   virtual void DidCommitCompositorFrame() OVERRIDE;
   virtual void InstrumentWillBeginFrame() OVERRIDE;
@@ -861,8 +867,6 @@ class CONTENT_EXPORT RenderViewImpl
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnNavStateChanged);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnSetTextDirection);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnUpdateWebPreferences);
-  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
-                           ChromeNativeSchemeCommitsSynchronously);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, SendSwapOutACK);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, ReloadWhileSwappedOut);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
@@ -1097,7 +1101,8 @@ class CONTENT_EXPORT RenderViewImpl
   // Check whether the preferred size has changed.
   void CheckPreferredSize();
 
-  void EnsureMediaStreamImpl();
+  // Initializes |media_stream_client_| if needed.
+  void EnsureMediaStreamClient();
 
   // This callback is triggered when DownloadFavicon completes, either
   // succesfully or with a failure. See DownloadFavicon for more
@@ -1418,8 +1423,9 @@ class CONTENT_EXPORT RenderViewImpl
   // BrowserPluginManager attached to this view; lazily initialized.
   scoped_refptr<BrowserPluginManager> browser_plugin_manager_;
 
-  // MediaStreamImpl attached to this view; lazily initialized.
-  MediaStreamImpl* media_stream_impl_;
+  // MediaStreamClient attached to this view; lazily initialized.
+  MediaStreamClient* media_stream_client_;
+  WebKit::WebUserMediaClient* web_user_media_client_;
 
   DevToolsAgent* devtools_agent_;
 
@@ -1457,7 +1463,7 @@ class CONTENT_EXPORT RenderViewImpl
   WebMediaPlayerProxyAndroid* media_player_proxy_;
 
   // The media player manager for managing all the media players on this view.
-  scoped_ptr<WebMediaPlayerManagerAndroid> media_player_manager_;
+  scoped_ptr<RendererMediaPlayerManager> media_player_manager_;
 
   // A date/time picker object for date and time related input elements.
   scoped_ptr<RendererDateTimePicker> date_time_picker_client_;

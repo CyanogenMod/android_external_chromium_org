@@ -20,7 +20,7 @@ namespace chromeos {
 // call NetworkStateHandler::GetNetworkState(path) to retrieve the state for
 // the network.
 class CHROMEOS_EXPORT NetworkState : public ManagedState {
-public:
+ public:
   typedef std::vector<int> FrequencyList;
 
   explicit NetworkState(const std::string& path);
@@ -43,8 +43,6 @@ public:
 
   // Accessors
   const std::string& security() const { return security_; }
-  const std::string& ip_address() const { return ip_address_; }
-  const std::vector<std::string>& dns_servers() const { return dns_servers_; }
   const std::string& device_path() const { return device_path_; }
   const std::string& guid() const { return guid_; }
   const std::string& connection_state() const { return connection_state_; }
@@ -56,6 +54,11 @@ public:
   int priority() const { return priority_; }
   const base::DictionaryValue& proxy_config() const { return proxy_config_; }
   onc::ONCSource onc_source() const { return onc_source_; }
+  // IPConfig Properties
+  const std::string& ip_address() const { return ip_address_; }
+  const std::string& gateway() const { return gateway_; }
+  const std::vector<std::string>& dns_servers() const { return dns_servers_; }
+  const int prefix_length() const { return prefix_length_; }
   // Wireless property accessors
   int signal_strength() const { return signal_strength_; }
   bool connectable() const { return connectable_; }
@@ -78,6 +81,15 @@ public:
   bool IsConnectedState() const;
   bool IsConnectingState() const;
 
+  bool IsManaged() const;
+  bool IsShared() const;
+
+  // Returns a comma separated string of name servers.
+  std::string GetDnsServersAsString() const;
+
+  // Converts the prefix length to a netmaks string.
+  std::string GetNetmask() const;
+
   // Returns true if |error_| contains an authentication error.
   bool HasAuthenticationError() const;
 
@@ -89,20 +101,16 @@ public:
   // key.
   static std::string IPConfigProperty(const char* key);
 
+  // Sets |out| to the ONCSource specified by the UIData property |value|.
+  // Returns true if the source was successfully parsed.
+  static bool GetOncSource(const base::Value& value, onc::ONCSource* out);
+
  private:
   friend class NetworkStateHandler;
   friend class NetworkChangeNotifierChromeosUpdateTest;
 
   // Updates the name from hex_ssid_ if provided, and validates name_.
   void UpdateName();
-
-  // Called by NetworkStateHandler when the ip config changes.
-  void set_ip_address(const std::string& ip_address) {
-    ip_address_ = ip_address;
-  }
-  void set_dns_servers(const std::vector<std::string>& dns_servers) {
-    dns_servers_ = dns_servers;
-  }
 
   // TODO(gauravsh): Audit the list of properties that we are caching. We should
   // only be doing this for commonly accessed properties. crbug.com/252553
@@ -117,15 +125,17 @@ public:
   bool auto_connect_;
   bool favorite_;
   int priority_;
-  // TODO(pneubeck): Remove ProxyConfig and ONCSource once
-  // NetworkConfigurationHandler provides proxy configuration. crbug/241775
+  // TODO(pneubeck): Remove ProxyConfig once NetworkConfigurationHandler
+  // provides proxy configuration. crbug/241775
   base::DictionaryValue proxy_config_;
   onc::ONCSource onc_source_;
   // IPConfig properties.
   // Note: These do not correspond to actual Shill.Service properties
   // but are derived from the service's corresponding IPConfig object.
   std::string ip_address_;
+  std::string gateway_;
   std::vector<std::string> dns_servers_;
+  int prefix_length_;
   // Wireless properties
   int signal_strength_;
   bool connectable_;

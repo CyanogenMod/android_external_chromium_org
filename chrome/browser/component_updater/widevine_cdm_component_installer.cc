@@ -221,25 +221,25 @@ bool WidevineCdmComponentInstaller::Install(
   if (current_version_.CompareTo(version) > 0)
     return false;
 
-  if (!file_util::PathExists(unpack_path.AppendASCII(kWidevineCdmFileName)))
+  if (!base::PathExists(unpack_path.AppendASCII(kWidevineCdmFileName)))
     return false;
 
   base::FilePath adapter_source_path;
   PathService::Get(chrome::FILE_WIDEVINE_CDM_ADAPTER, &adapter_source_path);
-  if (!file_util::PathExists(adapter_source_path))
+  if (!base::PathExists(adapter_source_path))
     return false;
 
   // Passed the basic tests. Time to install it.
   base::FilePath install_path =
       GetWidevineCdmBaseDirectory().AppendASCII(version.GetString());
-  if (file_util::PathExists(install_path))
+  if (base::PathExists(install_path))
     return false;
   if (!base::Move(unpack_path, install_path))
     return false;
 
   base::FilePath adapter_install_path =
       install_path.AppendASCII(kWidevineCdmAdapterFileName);
-  if (!file_util::CopyFile(adapter_source_path, adapter_install_path))
+  if (!base::CopyFile(adapter_source_path, adapter_install_path))
     return false;
 
   // Installation is done. Now register the Widevine CDM with chrome.
@@ -281,7 +281,7 @@ void FinishWidevineCdmUpdateRegistration(ComponentUpdateService* cus,
 void StartWidevineCdmUpdateRegistration(ComponentUpdateService* cus) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   base::FilePath base_dir = GetWidevineCdmBaseDirectory();
-  if (!file_util::PathExists(base_dir) &&
+  if (!base::PathExists(base_dir) &&
       !file_util::CreateDirectory(base_dir)) {
     NOTREACHED() << "Could not create Widevine CDM directory.";
     return;
@@ -296,13 +296,13 @@ void StartWidevineCdmUpdateRegistration(ComponentUpdateService* cus) {
         latest_dir.AppendASCII(kWidevineCdmAdapterFileName);
     base::FilePath cdm_path = latest_dir.AppendASCII(kWidevineCdmFileName);
 
-    if (file_util::PathExists(adapter_path) &&
-        file_util::PathExists(cdm_path)) {
+    if (base::PathExists(adapter_path) &&
+        base::PathExists(cdm_path)) {
       BrowserThread::PostTask(
           BrowserThread::UI, FROM_HERE,
           base::Bind(&RegisterWidevineCdmWithChrome, adapter_path, version));
     } else {
-      base::Delete(latest_dir, true);
+      base::DeleteFile(latest_dir, true);
       version = base::Version(kNullVersion);
     }
   }
@@ -314,7 +314,7 @@ void StartWidevineCdmUpdateRegistration(ComponentUpdateService* cus) {
   // Remove older versions of Widevine CDM.
   for (std::vector<base::FilePath>::iterator iter = older_dirs.begin();
        iter != older_dirs.end(); ++iter) {
-    base::Delete(*iter, true);
+    base::DeleteFile(*iter, true);
   }
 }
 

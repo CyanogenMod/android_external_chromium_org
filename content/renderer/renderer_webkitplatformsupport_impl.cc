@@ -27,9 +27,12 @@
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/content_renderer_client.h"
+#include "content/renderer/device_orientation/device_motion_event_pump.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/gamepad_shared_memory_reader.h"
 #include "content/renderer/hyphenator/hyphenator.h"
+#include "content/renderer/media/audio_decoder.h"
+#include "content/renderer/media/crypto/key_systems.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/renderer_webaudiodevice_impl.h"
 #include "content/renderer/media/renderer_webmidiaccessor_impl.h"
@@ -38,7 +41,6 @@
 #include "content/renderer/renderer_clipboard_client.h"
 #include "content/renderer/webclipboard_impl.h"
 #include "content/renderer/websharedworkerrepository_impl.h"
-#include "googleurl/src/gurl.h"
 #include "gpu/config/gpu_info.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "media/audio/audio_output_device.h"
@@ -46,8 +48,6 @@
 #include "media/filters/stream_parser_factory.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
-#include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "third_party/WebKit/public/platform/WebBlobRegistry.h"
 #include "third_party/WebKit/public/platform/WebFileInfo.h"
 #include "third_party/WebKit/public/platform/WebGamepads.h"
@@ -56,12 +56,13 @@
 #include "third_party/WebKit/public/platform/WebMediaStreamCenterClient.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
+#include "url/gurl.h"
 #include "webkit/common/gpu/webgraphicscontext3d_provider_impl.h"
 #include "webkit/glue/simple_webmimeregistry_impl.h"
 #include "webkit/glue/webfileutilities_impl.h"
 #include "webkit/glue/webkit_glue.h"
-#include "webkit/renderer/media/audio_decoder.h"
-#include "webkit/renderer/media/crypto/key_systems.h"
 
 #if defined(OS_WIN)
 #include "content/common/child_process_messages.h"
@@ -422,14 +423,14 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::supportsMediaMIMEType(
     // Check whether the key system is supported with the mime_type and codecs.
 
     // Not supporting the key system is a flat-out no.
-    if (!webkit_media::IsSupportedKeySystem(key_system))
+    if (!IsSupportedKeySystem(key_system))
       return IsNotSupported;
 
     std::vector<std::string> strict_codecs;
     bool strip_suffix = !net::IsStrictMediaMimeType(mime_type_ascii);
     net::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, strip_suffix);
 
-    if (!webkit_media::IsSupportedKeySystemWithMediaMimeType(
+    if (!IsSupportedKeySystemWithMediaMimeType(
             mime_type_ascii, strict_codecs, ToASCIIOrEmpty(key_system)))
       return IsNotSupported;
 
@@ -780,6 +781,12 @@ RendererWebKitPlatformSupportImpl::createAudioDevice(
     double sample_rate,
     WebAudioDevice::RenderCallback* callback,
     const WebKit::WebString& input_device_id) {
+  // Use a mock for testing.
+  WebKit::WebAudioDevice* mock_device =
+      GetContentClient()->renderer()->OverrideCreateAudioDevice(sample_rate);
+  if (mock_device)
+    return mock_device;
+
   // The |channels| does not exactly identify the channel layout of the
   // device. The switch statement below assigns a best guess to the channel
   // layout based on number of channels.
@@ -846,10 +853,8 @@ bool RendererWebKitPlatformSupportImpl::loadAudioResource(
 bool RendererWebKitPlatformSupportImpl::loadAudioResource(
     WebKit::WebAudioBus* destination_bus, const char* audio_file_data,
     size_t data_size, double sample_rate) {
-  return webkit_media::DecodeAudioFileData(destination_bus,
-                                           audio_file_data,
-                                           data_size,
-                                           sample_rate);
+  return DecodeAudioFileData(
+      destination_bus, audio_file_data, data_size, sample_rate);
 }
 #endif  // defined(OS_ANDROID)
 
@@ -1054,6 +1059,17 @@ WebKit::WebString RendererWebKitPlatformSupportImpl::convertIDNToUnicode(
     const WebKit::WebString& host,
     const WebKit::WebString& languages) {
   return net::IDNToUnicode(host.utf8(), languages.utf8());
+}
+
+//------------------------------------------------------------------------------
+
+void RendererWebKitPlatformSupportImpl::setDeviceMotionListener(
+    WebKit::WebDeviceMotionListener* listener) {
+  if (!device_motion_event_pump_) {
+    device_motion_event_pump_.reset(new DeviceMotionEventPump);
+    device_motion_event_pump_->Attach(RenderThreadImpl::current());
+  }
+  device_motion_event_pump_->SetListener(listener);
 }
 
 }  // namespace content

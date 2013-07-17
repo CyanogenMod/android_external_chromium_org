@@ -23,9 +23,9 @@
 
 namespace net {
 
-class ProofVerifier;
 class QuicCryptoStream;
 class ReliableQuicStream;
+class SSLInfo;
 class VisitorShim;
 
 namespace test {
@@ -105,14 +105,6 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   // Servers will simply call it once with HANDSHAKE_CONFIRMED.
   virtual void OnCryptoHandshakeEvent(CryptoHandshakeEvent event);
 
-  virtual ProofVerifier* proof_verifier() const;
-
-  // SetProofVerifier takes ownership of a |ProofVerifier| that clients are
-  // free to use in order to verify certificate chains from servers. If a
-  // ProofVerifier is set then the client will request a certificate chain from
-  // the server.
-  virtual void SetProofVerifier(ProofVerifier* verifier);
-
   // Returns mutable config for this session. Returned config is owned
   // by QuicSession.
   QuicConfig* config();
@@ -153,6 +145,9 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
 
   QuicSpdyDecompressor* decompressor() { return &decompressor_; }
   QuicSpdyCompressor* compressor() { return &compressor_; }
+
+  // Gets the SSL connection information.
+  virtual bool GetSSLInfo(SSLInfo* ssl_info);
 
   QuicErrorCode error() const { return error_; }
 
@@ -223,7 +218,6 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   QuicSpdyCompressor compressor_;
 
   QuicConfig config_;
-  scoped_ptr<ProofVerifier> proof_verifier_;
 
   // Returns the maximum number of streams this connection can open.
   size_t max_open_streams_;

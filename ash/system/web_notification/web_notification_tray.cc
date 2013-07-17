@@ -4,6 +4,7 @@
 
 #include "ash/system/web_notification/web_notification_tray.h"
 
+#include "ash/ash_switches.h"
 #include "ash/root_window_controller.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shell.h"
@@ -17,25 +18,23 @@
 #include "base/auto_reset.h"
 #include "base/i18n/number_formatting.h"
 #include "base/strings/utf_string_conversions.h"
-#include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "grit/ui_strings.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/screen.h"
 #include "ui/message_center/message_center_tray_delegate.h"
 #include "ui/message_center/message_center_util.h"
 #include "ui/message_center/views/message_bubble_base.h"
 #include "ui/message_center/views/message_center_bubble.h"
-#include "ui/message_center/views/message_popup_bubble.h"
 #include "ui/message_center/views/message_popup_collection.h"
 #include "ui/views/bubble/tray_bubble_view.h"
 #include "ui/views/controls/button/custom_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/menu/menu_runner.h"
+#include "ui/views/layout/fill_layout.h"
 
 #if defined(OS_CHROMEOS)
 
@@ -56,6 +55,11 @@ namespace internal {
 namespace {
 
 const int kWebNotificationIconSize = 31;
+// Height of the art assets used in alternate shelf layout,
+// see ash/ash_switches.h:UseAlternateShelfLayout.
+const int kWebNotificationAlternateSize = 38;
+const SkColor kWebNotificationColorNoUnread = SkColorSetA(SK_ColorWHITE, 128);
+const SkColor kWebNotificationColorWithUnread = SK_ColorWHITE;
 
 }
 
@@ -80,6 +84,8 @@ class WebNotificationBubbleWrapper {
     }
     views::TrayBubbleView* bubble_view = views::TrayBubbleView::Create(
         tray->GetBubbleWindowContainer(), anchor, tray, &init_params);
+    if (ash::switches::UseAlternateShelfLayout())
+      bubble_view->SetArrowPaintType(views::BubbleBorder::PAINT_NONE);
     bubble_wrapper_.reset(new TrayBubbleWrapper(tray, bubble_view));
     bubble->InitializeContents(bubble_view);
   }
@@ -102,17 +108,10 @@ class WebNotificationButton : public views::CustomButton {
       : views::CustomButton(listener),
         is_bubble_visible_(false),
         unread_count_(0) {
-    ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-
-    icon_ = new views::ImageView();
-    icon_->SetImage(rb.GetImageSkiaNamed(
-        IDR_AURA_UBER_TRAY_NOTIFY_BUTTON_ICON));
-    AddChildView(icon_);
-
+    SetLayoutManager(new views::FillLayout);
     unread_label_ = new views::Label();
     SetupLabelForTray(unread_label_);
     AddChildView(unread_label_);
-    unread_label_->SetVisible(false);
   }
 
   void SetBubbleVisible(bool visible) {
@@ -127,6 +126,8 @@ class WebNotificationButton : public views::CustomButton {
     // base::FormatNumber doesn't convert to arabic numeric characters.
     // TODO(mukai): use ICU to support conversion for such locales.
     unread_count_ = unread_count;
+    // TODO(mukai): move NINE_PLUS message to ui_strings, it doesn't need to be
+    // in ash_strings.
     unread_label_->SetText((unread_count > 9) ?
         l10n_util::GetStringUTF16(IDS_ASH_NOTIFICATION_UNREAD_COUNT_NINE_PLUS) :
         base::FormatNumber(unread_count));
@@ -135,33 +136,24 @@ class WebNotificationButton : public views::CustomButton {
 
  protected:
   // Overridden from views::ImageButton:
-  virtual void Layout() OVERRIDE {
-    views::CustomButton::Layout();
-    icon_->SetBoundsRect(bounds());
-    unread_label_->SetBoundsRect(bounds());
-  }
-
   virtual gfx::Size GetPreferredSize() OVERRIDE {
+    if (ash::switches::UseAlternateShelfLayout())
+      return gfx::Size(kWebNotificationAlternateSize,
+                       kWebNotificationAlternateSize);
     return gfx::Size(kWebNotificationIconSize, kWebNotificationIconSize);
   }
 
  private:
   void UpdateIconVisibility() {
-    if (!is_bubble_visible_ && unread_count_ > 0) {
-      icon_->SetVisible(false);
-      unread_label_->SetVisible(true);
-    } else {
-      icon_->SetVisible(true);
-      unread_label_->SetVisible(false);
-    }
-    InvalidateLayout();
+    unread_label_->SetEnabledColor(
+        (!is_bubble_visible_ && unread_count_ > 0) ?
+        kWebNotificationColorWithUnread : kWebNotificationColorNoUnread);
     SchedulePaint();
   }
 
   bool is_bubble_visible_;
   int unread_count_;
 
-  views::ImageView* icon_;
   views::Label* unread_label_;
 
   DISALLOW_COPY_AND_ASSIGN(WebNotificationButton);
@@ -192,7 +184,6 @@ WebNotificationTray::WebNotificationTray(
 WebNotificationTray::~WebNotificationTray() {
   // Release any child views that might have back pointers before ~View().
   message_center_bubble_.reset();
-  popup_bubble_.reset();
   popup_collection_.reset();
 }
 
@@ -272,31 +263,18 @@ bool WebNotificationTray::ShowPopups() {
       !status_area_widget()->ShouldShowWebNotifications()) {
     return false;
   }
-  if (message_center::IsRichNotificationEnabled()) {
-    // No bubble wrappers here, since |popup_collection_| is not a bubble but a
-    // collection of widgets.
-    popup_collection_.reset(new message_center::MessagePopupCollection(
-        ash::Shell::GetContainer(
-            GetWidget()->GetNativeView()->GetRootWindow(),
-            internal::kShellWindowId_StatusContainer),
-        message_center(),
-        message_center_tray_.get()));
-  } else {
-    message_center::MessagePopupBubble* popup_bubble =
-        new message_center::MessagePopupBubble(message_center());
-    popup_bubble_.reset(new internal::WebNotificationBubbleWrapper(
-        this, popup_bubble));
-  }
+
+  popup_collection_.reset(new message_center::MessagePopupCollection(
+      ash::Shell::GetContainer(
+          GetWidget()->GetNativeView()->GetRootWindow(),
+          internal::kShellWindowId_StatusContainer),
+      message_center(),
+      message_center_tray_.get()));
+
   return true;
 }
 
-void WebNotificationTray::UpdatePopups() {
-  if (popup_bubble())
-    popup_bubble()->bubble()->ScheduleUpdate();
-};
-
 void WebNotificationTray::HidePopups() {
-  popup_bubble_.reset();
   popup_collection_.reset();
 }
 
@@ -365,10 +343,7 @@ bool WebNotificationTray::IsMessageCenterBubbleVisible() const {
 }
 
 bool WebNotificationTray::IsMouseInNotificationBubble() const {
-  if (!popup_bubble())
-    return false;
-  return popup_bubble()->bubble_view()->GetBoundsInScreen().Contains(
-      Shell::GetScreen()->GetCursorScreenPoint());
+  return false;
 }
 
 void WebNotificationTray::ShowMessageCenterBubble() {
@@ -387,12 +362,6 @@ void WebNotificationTray::SetShelfAlignment(ShelfAlignment alignment) {
 }
 
 void WebNotificationTray::AnchorUpdated() {
-  if (popup_bubble()) {
-    popup_bubble()->bubble_view()->UpdateBubble();
-    // Ensure that the notification buble is above the launcher/status area.
-    popup_bubble()->bubble_view()->GetWidget()->StackAtTop();
-    UpdateBubbleViewArrow(popup_bubble()->bubble_view());
-  }
   if (message_center_bubble()) {
     message_center_bubble()->bubble_view()->UpdateBubble();
     UpdateBubbleViewArrow(message_center_bubble()->bubble_view());
@@ -409,8 +378,7 @@ void WebNotificationTray::HideBubbleWithView(
   if (message_center_bubble() &&
       bubble_view == message_center_bubble()->bubble_view()) {
     message_center_tray_->HideMessageCenterBubble();
-  } else if ((popup_bubble() && bubble_view == popup_bubble()->bubble_view()) ||
-             popup_collection_.get()) {
+  } else if (popup_collection_.get()) {
     message_center_tray_->HidePopupBubble();
   }
 }
@@ -431,19 +399,11 @@ bool WebNotificationTray::PerformAction(const ui::Event& event) {
 void WebNotificationTray::BubbleViewDestroyed() {
   if (message_center_bubble())
     message_center_bubble()->bubble()->BubbleViewDestroyed();
-  if (popup_bubble())
-    popup_bubble()->bubble()->BubbleViewDestroyed();
 }
 
-void WebNotificationTray::OnMouseEnteredView() {
-  if (popup_bubble())
-    popup_bubble()->bubble()->OnMouseEnteredView();
-}
+void WebNotificationTray::OnMouseEnteredView() {}
 
-void WebNotificationTray::OnMouseExitedView() {
-  if (popup_bubble())
-    popup_bubble()->bubble()->OnMouseExitedView();
-}
+void WebNotificationTray::OnMouseExitedView() {}
 
 base::string16 WebNotificationTray::GetAccessibleNameForBubble() {
   return GetAccessibleNameForTray();
@@ -467,6 +427,10 @@ bool WebNotificationTray::ShowNotifierSettings() {
     return true;
   }
   return ShowMessageCenterInternal(true /* show_settings */);
+}
+
+bool WebNotificationTray::IsPressed() {
+  return IsMessageCenterBubbleVisible();
 }
 
 void WebNotificationTray::ButtonPressed(views::Button* sender,
@@ -529,14 +493,6 @@ WebNotificationTray::GetMessageCenterBubbleForTest() {
     return NULL;
   return static_cast<message_center::MessageCenterBubble*>(
       message_center_bubble()->bubble());
-}
-
-message_center::MessagePopupBubble*
-WebNotificationTray::GetPopupBubbleForTest() {
-  if (!popup_bubble())
-    return NULL;
-  return static_cast<message_center::MessagePopupBubble*>(
-      popup_bubble()->bubble());
 }
 
 }  // namespace ash

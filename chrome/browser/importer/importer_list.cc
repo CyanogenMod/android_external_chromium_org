@@ -5,10 +5,10 @@
 #include "chrome/browser/importer/importer_list.h"
 
 #include "base/bind.h"
-#include "chrome/browser/importer/firefox_importer_utils.h"
-#include "chrome/browser/importer/importer_bridge.h"
 #include "chrome/browser/importer/importer_list_observer.h"
 #include "chrome/browser/shell_integration.h"
+#include "chrome/common/importer/firefox_importer_utils.h"
+#include "chrome/common/importer/importer_bridge.h"
 #include "chrome/common/importer/importer_data_types.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -17,7 +17,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 
 #include "base/mac/foundation_util.h"
-#include "chrome/browser/importer/safari_importer.h"
+#include "chrome/common/importer/safari_importer_utils.h"
 #endif
 
 using content::BrowserThread;
@@ -41,7 +41,7 @@ void DetectIEProfiles(std::vector<importer::SourceProfile*>* profiles) {
 #if defined(OS_MACOSX)
 void DetectSafariProfiles(std::vector<importer::SourceProfile*>* profiles) {
   uint16 items = importer::NONE;
-  if (!SafariImporter::CanImport(base::mac::GetUserLibraryPath(), &items))
+  if (!SafariImporterCanImport(base::mac::GetUserLibraryPath(), &items))
     return;
 
   importer::SourceProfile* safari = new importer::SourceProfile;

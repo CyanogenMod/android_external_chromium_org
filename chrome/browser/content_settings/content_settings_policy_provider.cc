@@ -10,9 +10,9 @@
 #include "base/json/json_reader.h"
 #include "base/prefs/pref_service.h"
 #include "base/values.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/content_settings_rule.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/pref_names.h"
 #include "components/user_prefs/pref_registry_syncable.h"
@@ -42,6 +42,7 @@ const char* kPrefToManageType[] = {
   NULL,  // No policy for default value of media stream camera
   NULL,  // No policy for default value of protocol handlers
   NULL,  // No policy for default value of PPAPI broker
+  NULL,  // No policy for default value of multiple automatic downloads
 #if defined(OS_WIN)
   NULL,  // No policy for default value of "switch to desktop"
 #endif
@@ -117,7 +118,7 @@ const PrefsForManagedContentSettingsMapEntry
 namespace content_settings {
 
 // static
-void PolicyProvider::RegisterUserPrefs(
+void PolicyProvider::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterListPref(prefs::kManagedAutoSelectCertificateForUrls,
                              user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);

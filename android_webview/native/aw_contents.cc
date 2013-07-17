@@ -26,7 +26,7 @@
 #include "base/atomicops.h"
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/pickle.h"
 #include "base/strings/string16.h"
 #include "base/supports_user_data.h"
@@ -701,20 +701,36 @@ void AwContents::ScrollContainerViewTo(gfx::Vector2d new_value) {
 }
 
 
+void AwContents::DidOverscroll(gfx::Vector2d overscroll_delta) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return;
+  Java_AwContents_didOverscroll(
+      env, obj.obj(), overscroll_delta.x(), overscroll_delta.y());
+}
+
 void AwContents::SetDipScale(JNIEnv* env, jobject obj, jfloat dipScale) {
   browser_view_renderer_->SetDipScale(dipScale);
+}
+
+void AwContents::SetDisplayedPageScaleFactor(JNIEnv* env,
+                                             jobject obj,
+                                             jfloat pageScaleFactor) {
+  browser_view_renderer_->SetPageScaleFactor(pageScaleFactor);
 }
 
 void AwContents::ScrollTo(JNIEnv* env, jobject obj, jint xPix, jint yPix) {
   browser_view_renderer_->ScrollTo(gfx::Vector2d(xPix, yPix));
 }
 
-void AwContents::OnPageScaleFactorChanged(float page_scale_factor) {
+void AwContents::OnWebLayoutPageScaleFactorChanged(float page_scale_factor) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
     return;
-  Java_AwContents_onPageScaleFactorChanged(env, obj.obj(), page_scale_factor);
+  Java_AwContents_onWebLayoutPageScaleFactorChanged(env, obj.obj(),
+                                                         page_scale_factor);
 }
 
 ScopedJavaLocalRef<jobject> AwContents::CapturePicture(JNIEnv* env,

@@ -83,7 +83,6 @@
 #include "chrome/browser/signin/about_signin_internals_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/token_service_factory.h"
-#include "chrome/browser/speech/chrome_speech_recognition_preferences.h"
 #include "chrome/browser/speech/extension_api/tts_extension_api.h"
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
@@ -93,7 +92,6 @@
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/browser/ui/tabs/pinned_tab_service_factory.h"
 #include "chrome/browser/ui/webui/ntp/ntp_resource_cache_factory.h"
-#include "chrome/browser/undo/undo_service_factory.h"
 #include "chrome/browser/user_style_sheet_watcher_factory.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 
@@ -168,16 +166,12 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   BackgroundContentsServiceFactory::GetInstance();
 #endif
   BookmarkModelFactory::GetInstance();
-  UndoServiceFactory::GetInstance();
 #if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
   captive_portal::CaptivePortalServiceFactory::GetInstance();
 #endif
   ChromeGeolocationPermissionContextFactory::GetInstance();
 #if defined(OS_CHROMEOS)
   chromeos::NetworkingPrivateEventRouterFactory::GetInstance();
-#endif
-#if defined(ENABLE_INPUT_SPEECH)
-  ChromeSpeechRecognitionPreferences::InitializeFactory();
 #endif
 #if defined(ENABLE_PRINTING)
   CloudPrintProxyServiceFactory::GetInstance();

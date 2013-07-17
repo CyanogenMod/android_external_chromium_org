@@ -34,7 +34,15 @@ class CC_EXPORT TextureLayer : public Layer {
   static scoped_refptr<TextureLayer> CreateForMailbox(
       TextureLayerClient* client);
 
+  // Resets the client, which also resets the texture. This may synchronize with
+  // the impl thread if it is currently drawing a texture or a mailbox from the
+  // client. After this call it is safe to destroy the texture / mailbox.
   void ClearClient();
+
+  // Resets the texture. This may synchronize with the impl thread if it is
+  // currently drawing a texture or a mailbox from the client. After this call
+  // it is safe to destroy the texture / mailbox.
+  void ClearTexture();
 
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
       OVERRIDE;
@@ -57,25 +65,24 @@ class CC_EXPORT TextureLayer : public Layer {
   // Defaults to true.
   void SetPremultipliedAlpha(bool premultiplied_alpha);
 
+  // Sets whether the texture should be blended with the background color
+  // at draw time. Defaults to false.
+  void SetBlendBackgroundColor(bool blend);
+
   // Sets whether this context should rate limit on damage to prevent too many
   // frames from being queued up before the compositor gets a chance to run.
   // Requires a non-nil client.  Defaults to false.
   void SetRateLimitContext(bool rate_limit);
 
-  // Code path for plugins which supply their own texture ID.
-  void SetTextureId(unsigned texture_id);
-
   // Code path for plugins which supply their own mailbox.
   bool uses_mailbox() const { return uses_mailbox_; }
   void SetTextureMailbox(const TextureMailbox& mailbox);
-
-  void WillModifyTexture();
 
   virtual void SetNeedsDisplayRect(const gfx::RectF& dirty_rect) OVERRIDE;
 
   virtual void SetLayerTreeHost(LayerTreeHost* layer_tree_host) OVERRIDE;
   virtual bool DrawsContent() const OVERRIDE;
-  virtual void Update(ResourceUpdateQueue* queue,
+  virtual bool Update(ResourceUpdateQueue* queue,
                       const OcclusionTracker* occlusion) OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
   virtual bool BlocksPendingCommit() const OVERRIDE;
@@ -131,6 +138,10 @@ class CC_EXPORT TextureLayer : public Layer {
     DISALLOW_COPY_AND_ASSIGN(MailboxHolder);
   };
 
+  // Returns true if we draw content coming from the client, which implies we
+  // may need to synchronize with the impl thread when the client goes away.
+  bool DrawsClientData() const;
+
   TextureLayerClient* client_;
   bool uses_mailbox_;
 
@@ -140,9 +151,9 @@ class CC_EXPORT TextureLayer : public Layer {
   // [bottom left, top left, top right, bottom right]
   float vertex_opacity_[4];
   bool premultiplied_alpha_;
+  bool blend_background_color_;
   bool rate_limit_context_;
-  bool context_lost_;
-  bool content_committed_;
+  bool impl_may_draw_client_data_;
 
   unsigned texture_id_;
   scoped_ptr<MailboxHolder::MainThreadReference> holder_ref_;

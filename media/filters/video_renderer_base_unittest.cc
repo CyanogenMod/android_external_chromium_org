@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <utility>
+
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/callback_helpers.h"
@@ -24,6 +26,7 @@ using ::testing::_;
 using ::testing::AnyNumber;
 using ::testing::InSequence;
 using ::testing::Invoke;
+using ::testing::NiceMock;
 using ::testing::NotNull;
 using ::testing::Return;
 using ::testing::StrictMock;
@@ -52,6 +55,9 @@ class VideoRendererBaseTest : public ::testing::Test {
     demuxer_stream_.set_video_decoder_config(TestVideoConfig::Normal());
 
     // We expect these to be called but we don't care how/when.
+    EXPECT_CALL(demuxer_stream_, Read(_))
+        .WillRepeatedly(RunCallback<0>(DemuxerStream::kOk,
+                                       DecoderBuffer::CreateEOSBuffer()));
     EXPECT_CALL(*decoder_, Stop(_))
         .WillRepeatedly(Invoke(this, &VideoRendererBaseTest::StopRequested));
     EXPECT_CALL(statistics_cb_object_, OnStatistics(_))
@@ -78,8 +84,8 @@ class VideoRendererBaseTest : public ::testing::Test {
   void InitializeWithDuration(int duration_ms) {
     duration_ = base::TimeDelta::FromMilliseconds(duration_ms);
 
-    // Monitor reads from the decoder.
-    EXPECT_CALL(*decoder_, Read(_))
+    // Monitor decodes from the decoder.
+    EXPECT_CALL(*decoder_, Decode(_, _))
         .WillRepeatedly(Invoke(this, &VideoRendererBaseTest::FrameRequested));
 
     EXPECT_CALL(*decoder_, Reset(_))
@@ -87,7 +93,7 @@ class VideoRendererBaseTest : public ::testing::Test {
 
     InSequence s;
 
-    EXPECT_CALL(*decoder_, Initialize(_, _, _))
+    EXPECT_CALL(*decoder_, Initialize(_, _))
         .WillOnce(RunCallback<1>(PIPELINE_OK));
 
     // Set playback rate before anything else happens.
@@ -289,7 +295,7 @@ class VideoRendererBaseTest : public ::testing::Test {
   // Fixture members.
   scoped_ptr<VideoRendererBase> renderer_;
   MockVideoDecoder* decoder_;  // Owned by |renderer_|.
-  MockDemuxerStream demuxer_stream_;
+  NiceMock<MockDemuxerStream> demuxer_stream_;
   MockStatisticsCB statistics_cb_object_;
 
  private:
@@ -307,7 +313,8 @@ class VideoRendererBaseTest : public ::testing::Test {
     current_frame_ = frame;
   }
 
-  void FrameRequested(const VideoDecoder::ReadCB& read_cb) {
+  void FrameRequested(const scoped_refptr<DecoderBuffer>& buffer,
+                      const VideoDecoder::ReadCB& read_cb) {
     DCHECK_EQ(&message_loop_, base::MessageLoop::current());
     CHECK(read_cb_.is_null());
     read_cb_ = read_cb;
@@ -389,7 +396,7 @@ static void ExpectNotCalled(PipelineStatus) {
 }
 
 TEST_F(VideoRendererBaseTest, StopWhileInitializing) {
-  EXPECT_CALL(*decoder_, Initialize(_, _, _))
+  EXPECT_CALL(*decoder_, Initialize(_, _))
       .WillOnce(RunCallback<1>(PIPELINE_OK));
   CallInitialize(base::Bind(&ExpectNotCalled));
   Stop();
@@ -504,6 +511,22 @@ TEST_F(VideoRendererBaseTest, Preroll_RightAfter) {
 
   Preroll(kFrameDurationInMs * 6 + 1, PIPELINE_OK);
   EXPECT_EQ(kFrameDurationInMs * 6, GetCurrentTimestampInMs());
+  Shutdown();
+}
+
+TEST_F(VideoRendererBaseTest, PlayAfterPreroll) {
+  Initialize();
+  Pause();
+  Flush();
+  QueuePrerollFrames(kFrameDurationInMs * 4);
+
+  Preroll(kFrameDurationInMs * 4, PIPELINE_OK);
+  EXPECT_EQ(kFrameDurationInMs * 4, GetCurrentTimestampInMs());
+
+  Play();
+  // Advance time past prerolled time to trigger a Read().
+  AdvanceTimeInMs(5 * kFrameDurationInMs);
+  WaitForPendingRead();
   Shutdown();
 }
 
@@ -641,7 +664,7 @@ TEST_F(VideoRendererBaseTest, AbortPendingRead_Preroll) {
 TEST_F(VideoRendererBaseTest, VideoDecoder_InitFailure) {
   InSequence s;
 
-  EXPECT_CALL(*decoder_, Initialize(_, _, _))
+  EXPECT_CALL(*decoder_, Initialize(_, _))
       .WillOnce(RunCallback<1>(DECODER_ERROR_NOT_SUPPORTED));
   InitializeRenderer(DECODER_ERROR_NOT_SUPPORTED);
 

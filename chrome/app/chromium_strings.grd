@@ -662,8 +662,8 @@ Chromium is unable to recover your settings.
 
       <!-- "Create application shortcuts" dialog -->
       <if expr="is_posix and not is_macosx">
-        <message name="IDS_CREATE_SHORTCUTS_ERROR_LABEL" desc="Contents of the main label in the error dialog box when creating an application shortcut failed.">
-          Chromium cannot create an application shortcut because it cannot determine the current desktop environment.
+        <message name="IDS_CREATE_SHORTCUTS_ERROR_LABEL" desc="Contents of the main label in the error dialog box when creating an application shortcut failed for unknown reasons.">
+          Chromium could not create an application shortcut.
         </message>
       </if>
 
@@ -851,10 +851,6 @@ For Chromium, processes used to display diagnostics information (such as this "a
         <message name="IDS_ONE_CLICK_SIGNIN_DIALOG_MESSAGE_NEW" desc="The message of the one click sign in dialog.">
           You're signing in to Chromium using your <ph name="USER_EMAIL_ADDRESS">$1<ex>foo@gmail.com</ex></ph> account. You will be able to access your bookmarks, history, and other settings on all of your signed in devices.
         </message>
-        <!-- Delete DIALOG_TITLE/MESSAGE when we switch to the _NEW versions -->
-        <message name="IDS_ONE_CLICK_SIGNIN_DIALOG_TITLE" desc="The title of the modal dialog window that opens when the user chooses to use one click sign in.">
-          You're signed in to Chromium!
-        </message>
         <message name="IDS_ONE_CLICK_SIGNIN_BUBBLE_MESSAGE" desc="The body of the sync promo NTP bubble.">
           You're now signed in to Chromium! Your bookmarks, history, and other settings will be synced to your Google Account.
         </message>
@@ -899,6 +895,9 @@ Signing in anyway will merge Chromium information like bookmarks, history, and o
 
       <message name="IDS_AUTOFILL_DIALOG_SAVE_LOCALLY_CHECKBOX" desc="Checkbox that controls whether info the user types into the autofill dialog is saved by chrome.">
         Save details in Chromium
+      </message>
+      <message name="IDS_AUTOFILL_DIALOG_SAVE_LOCALLY_TOOLTIP" desc="Tooltip which explains function of checkbox that controls whether info the user types into the autofill dialog is saved by chrome.">
+        Chromium will securely store your information so you don't need to type it in again, but you will still need to verify your card's security code for future payments.
       </message>
 
       <!-- Network Error Pages -->

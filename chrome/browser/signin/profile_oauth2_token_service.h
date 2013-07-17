@@ -21,6 +21,7 @@ class URLRequestContextGetter;
 class GoogleServiceAuthError;
 class Profile;
 class TokenService;
+class SigninGlobalError;
 
 // ProfileOAuth2TokenService is a BrowserContextKeyedService that retrieves
 // OAuth2 access tokens for a given set of scopes using the OAuth2 login
@@ -59,11 +60,22 @@ class ProfileOAuth2TokenService : public OAuth2TokenService,
   bool ShouldCacheForRefreshToken(TokenService *token_service,
                                   const std::string& refresh_token);
 
+  SigninGlobalError* signin_global_error() {
+    return signin_global_error_.get();
+  }
+
+  const SigninGlobalError* signin_global_error() const {
+    return signin_global_error_.get();
+  }
+
+  Profile* profile() const { return profile_; }
+
  protected:
   friend class ProfileOAuth2TokenServiceFactory;
   explicit ProfileOAuth2TokenService(net::URLRequestContextGetter* getter);
   virtual ~ProfileOAuth2TokenService();
 
+  // OAuth2TokenService overrides.
   virtual std::string GetRefreshToken() OVERRIDE;
 
   // Updates the internal cache of the result from the most-recently-completed
@@ -88,6 +100,12 @@ class ProfileOAuth2TokenService : public OAuth2TokenService,
 
   // The profile with which this instance was initialized, or NULL.
   Profile* profile_;
+
+  // Used to show auth errors in the wrench menu. The SigninGlobalError is
+  // different than most GlobalErrors in that its lifetime is controlled by
+  // ProfileOAuth2TokenService (so we can expose a reference for use in the
+  // wrench menu).
+  scoped_ptr<SigninGlobalError> signin_global_error_;
 
   // The auth status from the most-recently-completed request.
   GoogleServiceAuthError last_auth_error_;

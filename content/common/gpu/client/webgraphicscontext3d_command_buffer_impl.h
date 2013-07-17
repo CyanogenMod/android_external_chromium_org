@@ -14,11 +14,11 @@
 #include "content/common/content_export.h"
 #include "content/common/gpu/client/command_buffer_proxy_impl.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
-#include "googleurl/src/gurl.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/public/platform/WebString.h"
-#include "ui/gl/gpu_preference.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/gl/gpu_preference.h"
+#include "url/gurl.h"
 
 namespace gpu {
 
@@ -106,9 +106,13 @@ class WebGraphicsContext3DCommandBufferImpl
   // Gets the context ID (relative to the channel).
   int GetContextID();
 
-  CommandBufferProxyImpl* GetCommandBufferProxy() { return command_buffer_; }
+  CommandBufferProxyImpl* GetCommandBufferProxy() {
+    return command_buffer_.get();
+  }
 
-  gpu::gles2::GLES2Implementation* GetImplementation() { return real_gl_; }
+  gpu::gles2::GLES2Implementation* GetImplementation() {
+    return real_gl_.get();
+  }
 
   // Return true if GPU process reported context lost or there was a
   // problem communicating with the GPU process.
@@ -145,10 +149,6 @@ class WebGraphicsContext3DCommandBufferImpl
   virtual void reshape(int width, int height);
   virtual void reshapeWithScaleFactor(
       int width, int height, float scale_factor);
-
-  virtual bool readBackFramebuffer(unsigned char* pixels, size_t buffer_size);
-  virtual bool readBackFramebuffer(unsigned char* pixels, size_t buffer_size,
-                                   WebGLId framebuffer, int width, int height);
 
   virtual void prepareTexture();
   virtual void postSubBufferCHROMIUM(int x, int y, int width, int height);
@@ -737,26 +737,18 @@ class WebGraphicsContext3DCommandBufferImpl
   gfx::GpuPreference gpu_preference_;
   int cached_width_, cached_height_;
 
-  // For tracking which FBO is bound.
-  WebGLId bound_fbo_;
-
   // Errors raised by synthesizeGLError().
   std::vector<WGC3Denum> synthetic_errors_;
 
   base::WeakPtrFactory<WebGraphicsContext3DCommandBufferImpl> weak_ptr_factory_;
 
-  std::vector<uint8> scanline_;
-  void FlipVertically(uint8* framebuffer,
-                      unsigned int width,
-                      unsigned int height);
-
   bool initialized_;
-  CommandBufferProxyImpl* command_buffer_;
-  gpu::gles2::GLES2CmdHelper* gles2_helper_;
-  gpu::TransferBuffer* transfer_buffer_;
+  scoped_ptr<CommandBufferProxyImpl> command_buffer_;
+  scoped_ptr<gpu::gles2::GLES2CmdHelper> gles2_helper_;
+  scoped_ptr<gpu::TransferBuffer> transfer_buffer_;
   gpu::gles2::GLES2Interface* gl_;
-  gpu::gles2::GLES2Implementation* real_gl_;
-  gpu::gles2::GLES2Interface* trace_gl_;
+  scoped_ptr<gpu::gles2::GLES2Implementation> real_gl_;
+  scoped_ptr<gpu::gles2::GLES2Interface> trace_gl_;
   Error last_error_;
   int frame_number_;
   bool bind_generates_resources_;

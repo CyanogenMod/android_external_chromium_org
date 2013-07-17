@@ -18,7 +18,6 @@
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
-#include "chrome/browser/chromeos/extensions/file_manager/file_browser_handler.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_handler_util.h"
 #include "chrome/browser/chromeos/media/media_player.h"
 #include "chrome/browser/extensions/api/file_handlers/app_file_handler_util.h"
@@ -41,6 +40,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/api/file_browser_handlers/file_browser_handler.h"
 #include "chrome/common/url_constants.h"
 #include "chromeos/chromeos_switches.h"
 #include "content/public/browser/browser_thread.h"
@@ -55,8 +55,8 @@
 #include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/screen.h"
+#include "webkit/browser/fileapi/file_system_backend.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_mount_point_provider.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/common/fileapi/file_system_util.h"
@@ -131,8 +131,8 @@ bool IsPepperPluginEnabled(Profile* profile,
   if (!pepper_info)
     return false;
 
-  PluginPrefs* plugin_prefs = PluginPrefs::GetForProfile(profile);
-  if (!plugin_prefs)
+  scoped_refptr<PluginPrefs> plugin_prefs = PluginPrefs::GetForProfile(profile);
+  if (!plugin_prefs.get())
     return false;
 
   return plugin_prefs->IsPluginEnabled(pepper_info->ToWebPluginInfo());
@@ -256,12 +256,12 @@ bool GrantFileSystemAccessToFileBrowser(Profile* profile) {
   // site for which file access permissions should be granted.
   GURL site = extensions::ExtensionSystem::Get(profile)->extension_service()->
       GetSiteForExtensionId(kFileBrowserDomain);
-  fileapi::ExternalFileSystemMountPointProvider* external_provider =
+  fileapi::ExternalFileSystemBackend* backend =
       BrowserContext::GetStoragePartitionForSite(profile, site)->
-          GetFileSystemContext()->external_provider();
-  if (!external_provider)
+          GetFileSystemContext()->external_backend();
+  if (!backend)
     return false;
-  external_provider->GrantFullAccessToExtension(GetFileBrowserUrl().host());
+  backend->GrantFullAccessToExtension(GetFileBrowserUrl().host());
   return true;
 }
 
@@ -348,7 +348,7 @@ bool ExecuteDefaultAppHandler(Profile* profile,
   for (ExtensionSet::const_iterator iter = service->extensions()->begin();
        iter != service->extensions()->end();
        ++iter) {
-    const Extension* extension = *iter;
+    const Extension* extension = iter->get();
 
     // We don't support using hosted apps to open files.
     if (!extension->is_platform_app())
@@ -570,14 +570,14 @@ bool ConvertFileToRelativeFileSystemPath(
   // extension's site is the one in whose file system context the virtual path
   // should be found.
   GURL site = service->GetSiteForExtensionId(extension_id);
-  fileapi::ExternalFileSystemMountPointProvider* provider =
+  fileapi::ExternalFileSystemBackend* backend =
       BrowserContext::GetStoragePartitionForSite(profile, site)->
-          GetFileSystemContext()->external_provider();
-  if (!provider)
+          GetFileSystemContext()->external_backend();
+  if (!backend)
     return false;
 
-  // Find if this file path is managed by the external provider.
-  if (!provider->GetVirtualPath(full_file_path, virtual_path))
+  // Find if this file path is managed by the external backend.
+  if (!backend->GetVirtualPath(full_file_path, virtual_path))
     return false;
 
   return true;

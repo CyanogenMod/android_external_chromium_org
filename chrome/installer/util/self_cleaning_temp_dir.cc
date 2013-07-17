@@ -21,7 +21,7 @@ void SelfCleaningTempDir::GetTopDirToCreate(
     base::FilePath* base_dir) {
   DCHECK(base_dir);
 
-  if (file_util::PathExists(temp_parent_dir)) {
+  if (base::PathExists(temp_parent_dir)) {
     // Empty base_dir means that we didn't create any extra directories.
     base_dir->clear();
   } else {
@@ -29,8 +29,8 @@ void SelfCleaningTempDir::GetTopDirToCreate(
     do {
       *base_dir = parent_dir;
       parent_dir = parent_dir.DirName();
-    } while (parent_dir != *base_dir && !file_util::PathExists(parent_dir));
-    LOG_IF(WARNING, !file_util::DirectoryExists(parent_dir))
+    } while (parent_dir != *base_dir && !base::PathExists(parent_dir));
+    LOG_IF(WARNING, !base::DirectoryExists(parent_dir))
         << "A non-directory is at the base of the path leading to a desired "
            "temp directory location: " << parent_dir.value();
   }
@@ -78,7 +78,7 @@ bool SelfCleaningTempDir::Delete() {
 
   // First try to recursively delete the leaf directory managed by our
   // base::ScopedTempDir.
-  if (!base::Delete(path(), true)) {
+  if (!base::DeleteFile(path(), true)) {
     // That failed, so schedule the temp dir and its contents for deletion after
     // reboot.
     LOG(WARNING) << "Failed to delete temporary directory " << path().value()

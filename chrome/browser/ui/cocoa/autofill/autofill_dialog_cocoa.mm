@@ -56,8 +56,12 @@ void AutofillDialogCocoa::Show() {
       new ConstrainedWindowMac(this, controller_->web_contents(), sheet));
 }
 
-// Closes the sheet and ends the modal loop. Triggers cleanup sequence.
 void AutofillDialogCocoa::Hide() {
+  [sheet_controller_ hide];
+}
+
+// Closes the sheet and ends the modal loop. Triggers cleanup sequence.
+void AutofillDialogCocoa::PerformClose() {
   constrained_window_->CloseWebContentsModalDialog();
 }
 
@@ -99,7 +103,7 @@ string16 AutofillDialogCocoa::GetCvc() {
 }
 
 bool AutofillDialogCocoa::SaveDetailsLocally() {
-  return false;
+  return [sheet_controller_ saveDetailsLocally];
 }
 
 const content::NavigationController* AutofillDialogCocoa::ShowSignIn() {
@@ -118,6 +122,51 @@ void AutofillDialogCocoa::ModelChanged() {
 
 void AutofillDialogCocoa::OnSignInResize(const gfx::Size& pref_size) {
   // TODO(groby): Implement Mac support for this.
+}
+
+TestableAutofillDialogView* AutofillDialogCocoa::GetTestableView() {
+  return this;
+}
+
+void AutofillDialogCocoa::SubmitForTesting() {
+  [sheet_controller_ accept:nil];
+}
+
+void AutofillDialogCocoa::CancelForTesting() {
+  [sheet_controller_ cancel:nil];
+}
+
+string16 AutofillDialogCocoa::GetTextContentsOfInput(const DetailInput& input) {
+  for (size_t i = SECTION_MIN; i <= SECTION_MAX; ++i) {
+    DialogSection section = static_cast<DialogSection>(i);
+    DetailOutputMap contents;
+    [sheet_controller_ getInputs:&contents forSection:section];
+    DetailOutputMap::const_iterator it = contents.find(&input);
+    if (it != contents.end())
+      return it->second;
+  }
+
+  NOTREACHED();
+  return string16();
+}
+
+void AutofillDialogCocoa::SetTextContentsOfInput(const DetailInput& input,
+                                                 const string16& contents) {
+  // TODO(groby): Implement Mac support for this: http://crbug.com/256864
+}
+
+void AutofillDialogCocoa::SetTextContentsOfSuggestionInput(
+    DialogSection section,
+    const base::string16& text) {
+  // TODO(groby): Implement Mac support for this: http://crbug.com/256864
+}
+
+void AutofillDialogCocoa::ActivateInput(const DetailInput& input) {
+  // TODO(groby): Implement Mac support for this: http://crbug.com/256864
+}
+
+gfx::Size AutofillDialogCocoa::GetSize() const {
+  return gfx::Size(NSSizeToCGSize([[sheet_controller_ window] frame].size));
 }
 
 void AutofillDialogCocoa::OnConstrainedWindowClosed(
@@ -180,7 +229,7 @@ void AutofillDialogCocoa::OnConstrainedWindowClosed(
     [mainContainer_ setAnchorView:[[accountChooser_ subviews] objectAtIndex:1]];
 
     NSRect contentRect = clientRect;
-    contentRect.origin = NSMakePoint(0, 0);
+    contentRect.origin = NSZeroPoint;
     contentRect.size.width += 2 * chrome_style::kHorizontalPadding;
     contentRect.size.height += NSHeight(headerRect) +
                                chrome_style::kClientBottomPadding +
@@ -236,23 +285,27 @@ void AutofillDialogCocoa::OnConstrainedWindowClosed(
 }
 
 - (IBAction)accept:(id)sender {
-  // TODO(groby): Validation goes here.
-  autofillDialog_->controller()->OnAccept();
+  if ([mainContainer_ validate])
+    autofillDialog_->controller()->OnAccept();
 }
 
 - (IBAction)cancel:(id)sender {
-  // TODO(groby): Validation goes here.
   autofillDialog_->controller()->OnCancel();
-  autofillDialog_->Hide();
+  autofillDialog_->PerformClose();
+}
+
+- (void)hide {
+  autofillDialog_->controller()->OnCancel();
+  autofillDialog_->PerformClose();
+}
+
+- (void)updateNotificationArea {
+  [mainContainer_ updateNotificationArea];
 }
 
 - (void)updateAccountChooser {
   [accountChooser_ update];
   [mainContainer_ updateLegalDocuments];
-}
-
-- (void)updateNotificationArea {
-  [mainContainer_ updateNotificationArea];
 }
 
 - (void)updateSection:(autofill::DialogSection)section {
@@ -271,6 +324,10 @@ void AutofillDialogCocoa::OnConstrainedWindowClosed(
 - (void)getInputs:(autofill::DetailOutputMap*)output
        forSection:(autofill::DialogSection)section {
   [[mainContainer_ sectionForId:section] getInputs:output];
+}
+
+- (BOOL)saveDetailsLocally {
+  return [mainContainer_ saveDetailsLocally];
 }
 
 - (void)hideSignIn {

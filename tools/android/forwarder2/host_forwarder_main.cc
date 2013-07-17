@@ -4,14 +4,19 @@
 
 #include <errno.h>
 #include <signal.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <cstdio>
-#include <cstring>
+#include <iostream>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "base/at_exit.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/containers/hash_tables.h"
@@ -20,6 +25,7 @@
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/pickle.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/safe_strerror_posix.h"
 #include "base/strings/string_number_conversions.h"
@@ -27,6 +33,8 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/task_runner.h"
+#include "base/threading/thread.h"
 #include "tools/android/forwarder2/common.h"
 #include "tools/android/forwarder2/daemon.h"
 #include "tools/android/forwarder2/host_controller.h"
@@ -72,45 +80,172 @@ void KillHandler(int signal_number) {
     exit(1);
 }
 
-// Format of |command|:
-//   <ADB port>:<Device port>[:<Forward to port>:<Forward to address>].
-bool ParseForwardCommand(const std::string& command,
-                         int* adb_port,
-                         int* device_port,
-                         std::string* forward_to_host,
-                         int* forward_to_port) {
-  std::vector<std::string> command_pieces;
-  base::SplitString(command, ':', &command_pieces);
+class HostControllersManager {
+ public:
+  HostControllersManager() : has_failed_(false) {}
 
-  if (command_pieces.size() < 2 ||
-      !base::StringToInt(command_pieces[0], adb_port) ||
-      !base::StringToInt(command_pieces[1], device_port))
-    return false;
-
-  if (command_pieces.size() > 2) {
-    if (!base::StringToInt(command_pieces[2], forward_to_port))
-      return false;
-    if (command_pieces.size() > 3)
-      *forward_to_host = command_pieces[3];
-  } else {
-    *forward_to_port = *device_port;
+  void HandleRequest(const std::string& device_serial,
+                     int device_port,
+                     int host_port,
+                     scoped_ptr<Socket> client_socket) {
+    // Lazy initialize so that the CLI process doesn't get this thread created.
+    InitOnce();
+    thread_->message_loop_proxy()->PostTask(
+        FROM_HERE,
+        base::Bind(
+            &HostControllersManager::HandleRequestOnInternalThread,
+            base::Unretained(this), device_serial, device_port, host_port,
+            base::Passed(&client_socket)));
   }
-  return true;
-}
 
-bool IsForwardCommandValid(const std::string& command) {
-  int adb_port, device_port, forward_to_port;
-  std::string forward_to_host;
-  std::vector<std::string> command_pieces;
-  return ParseForwardCommand(
-      command, &adb_port, &device_port, &forward_to_host, &forward_to_port);
-}
+  bool has_failed() const { return has_failed_; }
+
+ private:
+  typedef base::hash_map<
+      std::string, linked_ptr<HostController> > HostControllerMap;
+
+  static std::string MakeHostControllerMapKey(int adb_port, int device_port) {
+    return base::StringPrintf("%d:%d", adb_port, device_port);
+  }
+
+  void InitOnce() {
+    if (thread_.get())
+      return;
+    at_exit_manager_.reset(new base::AtExitManager());
+    thread_.reset(new base::Thread("HostControllersManagerThread"));
+    thread_->Start();
+  }
+
+  // Invoked when a HostController instance reports an error (e.g. due to a
+  // device connectivity issue).
+  void DeleteHostController(HostController* host_controller) {
+    if (!thread_->message_loop_proxy()->RunsTasksOnCurrentThread()) {
+      // This can be invoked from the host controller internal thread.
+      thread_->message_loop_proxy()->PostTask(
+          FROM_HERE,
+          base::Bind(
+              &HostControllersManager::DeleteHostControllerOnInternalThread,
+              base::Unretained(this), host_controller));
+      return;
+    }
+    DeleteHostControllerOnInternalThread(host_controller);
+  }
+
+  void DeleteHostControllerOnInternalThread(HostController* host_controller) {
+    // Note that this will delete |host_controller| which is owned by the map.
+    controllers_.erase(
+        MakeHostControllerMapKey(host_controller->adb_port(),
+                                 host_controller->device_port()));
+  }
+
+  void HandleRequestOnInternalThread(const std::string& device_serial,
+                                     int device_port,
+                                     int host_port,
+                                     scoped_ptr<Socket> client_socket) {
+    const int adb_port = GetAdbPortForDevice(device_serial);
+    if (adb_port < 0) {
+      SendMessage(
+          "ERROR: could not get adb port for device. You might need to add "
+          "'adb' to your PATH or provide the device serial id.",
+          client_socket.get());
+      return;
+    }
+    if (device_port < 0) {
+      // Remove the previously created host controller.
+      const std::string controller_key = MakeHostControllerMapKey(
+          adb_port, -device_port);
+      const HostControllerMap::size_type removed_elements = controllers_.erase(
+          controller_key);
+      SendMessage(
+          !removed_elements ? "ERROR: could not unmap port" : "OK",
+          client_socket.get());
+      return;
+    }
+    if (host_port < 0) {
+      SendMessage("ERROR: missing host port", client_socket.get());
+      return;
+    }
+    const bool use_dynamic_port_allocation = device_port == 0;
+    if (!use_dynamic_port_allocation) {
+      const std::string controller_key = MakeHostControllerMapKey(
+          adb_port, device_port);
+      if (controllers_.find(controller_key) != controllers_.end()) {
+        LOG(INFO) << "Already forwarding device port " << device_port
+                  << " to host port " << host_port;
+        SendMessage(base::StringPrintf("%d:%d", device_port, host_port),
+                    client_socket.get());
+        return;
+      }
+    }
+    // Create a new host controller.
+    scoped_ptr<HostController> host_controller(
+        new HostController(
+            device_port, "127.0.0.1", host_port, adb_port, GetExitNotifierFD(),
+            base::Bind(&HostControllersManager::DeleteHostController,
+                       base::Unretained(this))));
+    if (!host_controller->Connect()) {
+      has_failed_ = true;
+      SendMessage("ERROR: Connection to device failed.", client_socket.get());
+      return;
+    }
+    // Get the current allocated port.
+    device_port = host_controller->device_port();
+    LOG(INFO) << "Forwarding device port " << device_port << " to host port "
+              << host_port;
+    const std::string msg = base::StringPrintf("%d:%d", device_port, host_port);
+    if (!SendMessage(msg, client_socket.get()))
+      return;
+    host_controller->Start();
+    controllers_.insert(
+        std::make_pair(MakeHostControllerMapKey(adb_port, device_port),
+                       linked_ptr<HostController>(host_controller.release())));
+  }
+
+  int GetAdbPortForDevice(const std::string& device_serial) {
+    base::hash_map<std::string, int>::const_iterator it =
+        device_serial_to_adb_port_map_.find(device_serial);
+    if (it != device_serial_to_adb_port_map_.end())
+      return it->second;
+    Socket bind_socket;
+    CHECK(bind_socket.BindTcp("127.0.0.1", 0));
+    const int port = bind_socket.GetPort();
+    bind_socket.Close();
+    const std::string serial_part = device_serial.empty() ?
+        std::string() : std::string("-s ") + device_serial;
+    const std::string command = base::StringPrintf(
+        "adb %s forward tcp:%d localabstract:chrome_device_forwarder",
+        device_serial.empty() ? "" : serial_part.c_str(),
+        port);
+    LOG(INFO) << command;
+    const int ret = system(command.c_str());
+    if (ret < 0 || !WIFEXITED(ret) || WEXITSTATUS(ret) != 0)
+      return -1;
+    device_serial_to_adb_port_map_[device_serial] = port;
+    return port;
+  }
+
+  bool SendMessage(const std::string& msg, Socket* client_socket) {
+    bool result = client_socket->WriteString(msg);
+    DCHECK(result);
+    if (!result)
+      has_failed_ = true;
+    return result;
+  }
+
+  base::hash_map<std::string, int> device_serial_to_adb_port_map_;
+  HostControllerMap controllers_;
+  bool has_failed_;
+  scoped_ptr<base::AtExitManager> at_exit_manager_;  // Needed by base::Thread.
+  scoped_ptr<base::Thread> thread_;
+};
 
 class ServerDelegate : public Daemon::ServerDelegate {
  public:
   ServerDelegate() : has_failed_(false) {}
 
-  bool has_failed() const { return has_failed_; }
+  bool has_failed() const {
+    return has_failed_ || controllers_manager_.has_failed();
+  }
 
   // Daemon::ServerDelegate:
   virtual void Init() OVERRIDE {
@@ -131,94 +266,33 @@ class ServerDelegate : public Daemon::ServerDelegate {
       has_failed_ = true;
       return;
     }
-    const std::string command(buf, bytes_read);
-    int adb_port = 0;
-    int device_port = 0;
-    std::string forward_to_host;
-    int forward_to_port = 0;
-    const bool succeeded = ParseForwardCommand(
-        command, &adb_port, &device_port, &forward_to_host, &forward_to_port);
-    if (!succeeded) {
-      has_failed_ = true;
-      const std::string msg = base::StringPrintf(
-          "ERROR: Could not parse forward command '%s'", command.c_str());
-      SendMessage(msg, client_socket.get());
+    const Pickle command_pickle(buf, bytes_read);
+    PickleIterator pickle_it(command_pickle);
+    std::string device_serial;
+    CHECK(pickle_it.ReadString(&device_serial));
+    int device_port;
+    if (!pickle_it.ReadInt(&device_port)) {
+      client_socket->WriteString("ERROR: missing device port");
       return;
     }
-    if (device_port < 0) {
-      // Remove the previously created host controller.
-      const std::string controller_key = MakeHostControllerMapKey(
-          adb_port, -device_port);
-      const HostControllerMap::size_type removed_elements = controllers_.erase(
-          controller_key);
-      SendMessage(
-          !removed_elements ? "ERROR: could not unmap port" : "OK",
-          client_socket.get());
-      return;
-    }
-    // Create a new host controller.
-    scoped_ptr<HostController> host_controller(
-        new HostController(device_port, forward_to_host, forward_to_port,
-                           adb_port, GetExitNotifierFD()));
-    if (!host_controller->Connect()) {
-      has_failed_ = true;
-      SendMessage("ERROR: Connection to device failed.", client_socket.get());
-      return;
-    }
-    // Get the current allocated port.
-    device_port = host_controller->device_port();
-    LOG(INFO) << "Forwarding device port " << device_port << " to host "
-              << forward_to_host << ":" << forward_to_port;
-    const std::string msg = base::StringPrintf(
-        "%d:%d", device_port, forward_to_port);
-    if (!SendMessage(msg, client_socket.get()))
-      return;
-    host_controller->Start();
-    const std::string controller_key = MakeHostControllerMapKey(
-        adb_port, device_port);
-    controllers_.insert(
-        std::make_pair(controller_key,
-                       linked_ptr<HostController>(host_controller.release())));
-  }
-
-  virtual void OnServerExited() OVERRIDE {
-    for (HostControllerMap::iterator it = controllers_.begin();
-         it != controllers_.end(); ++it) {
-      linked_ptr<HostController> host_controller = it->second;
-      host_controller->Join();
-    }
-    if (controllers_.size() == 0) {
-      LOG(ERROR) << "No forwarder servers could be started. Exiting.";
-      has_failed_ = true;
-    }
+    int host_port;
+    if (!pickle_it.ReadInt(&host_port))
+      host_port = -1;
+    controllers_manager_.HandleRequest(
+        device_serial, device_port, host_port, client_socket.Pass());
   }
 
  private:
-  typedef base::hash_map<
-      std::string, linked_ptr<HostController> > HostControllerMap;
-
-  static std::string MakeHostControllerMapKey(int adb_port, int device_port) {
-    return base::StringPrintf("%d:%d", adb_port, device_port);
-  }
-
-  bool SendMessage(const std::string& msg, Socket* client_socket) {
-    bool result = client_socket->WriteString(msg);
-    DCHECK(result);
-    if (!result)
-      has_failed_ = true;
-    return result;
-  }
-
-  HostControllerMap controllers_;
   bool has_failed_;
+  HostControllersManager controllers_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(ServerDelegate);
 };
 
 class ClientDelegate : public Daemon::ClientDelegate {
  public:
-  ClientDelegate(const std::string& forward_command)
-      : forward_command_(forward_command),
+  ClientDelegate(const Pickle& command_pickle)
+      : command_pickle_(command_pickle),
         has_failed_(false) {
   }
 
@@ -227,7 +301,9 @@ class ClientDelegate : public Daemon::ClientDelegate {
   // Daemon::ClientDelegate:
   virtual void OnDaemonReady(Socket* daemon_socket) OVERRIDE {
     // Send the forward command to the daemon.
-    CHECK(daemon_socket->WriteString(forward_command_));
+    CHECK_EQ(command_pickle_.size(),
+             daemon_socket->WriteNumBytes(command_pickle_.data(),
+                                          command_pickle_.size()));
     char buf[kBufSize];
     const int bytes_read = daemon_socket->Read(
         buf, sizeof(buf) - 1 /* leave space for null terminator */);
@@ -244,49 +320,69 @@ class ClientDelegate : public Daemon::ClientDelegate {
   }
 
  private:
-  const std::string forward_command_;
+  const Pickle command_pickle_;
   bool has_failed_;
 };
 
-void PrintUsage(const char* program_name) {
-  LOG(ERROR) << program_name
-             << " adb_port:from_port:to_port:to_host\n"
-                "<adb port> is the TCP port Adb is configured to forward to.\n"
-                "Note that <from_port> can be unmapped by making it negative.";
+void ExitWithUsage() {
+  std::cerr << "Usage: host_forwarder [options]\n\n"
+               "Options:\n"
+               "  --serial-id=[0-9A-Z]{16}]\n"
+               "  --map DEVICE_PORT HOST_PORT\n"
+               "  --unmap DEVICE_PORT\n"
+               "  --kill-server\n";
+  exit(1);
+}
+
+int PortToInt(const std::string& s) {
+  int value;
+  // Note that 0 is a valid port (used for dynamic port allocation).
+  if (!base::StringToInt(s, &value) || value < 0 ||
+      value > std::numeric_limits<uint16>::max()) {
+    LOG(ERROR) << "Could not convert string " << s << " to port";
+    ExitWithUsage();
+  }
+  return value;
 }
 
 int RunHostForwarder(int argc, char** argv) {
-  if (!CommandLine::Init(argc, argv)) {
-    LOG(ERROR) << "Could not initialize command line";
-    return 1;
-  }
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  const char* command = NULL;
-  int adb_port = 0;
-  if (argc != 2) {
-    PrintUsage(argv[0]);
-    return 1;
-  }
-  if (!strcmp(argv[1], kKillServerCommand)) {
-    command = kKillServerCommand;
+  CommandLine::Init(argc, argv);
+  const CommandLine& cmd_line = *CommandLine::ForCurrentProcess();
+  bool kill_server = false;
+
+  Pickle pickle;
+  pickle.WriteString(
+      cmd_line.HasSwitch("serial-id") ?
+          cmd_line.GetSwitchValueASCII("serial-id") : std::string());
+
+  const std::vector<std::string> args = cmd_line.GetArgs();
+  if (cmd_line.HasSwitch("kill-server")) {
+    kill_server = true;
+  } else if (cmd_line.HasSwitch("unmap")) {
+    if (args.size() != 1)
+      ExitWithUsage();
+    // Note the minus sign below.
+    pickle.WriteInt(-PortToInt(args[0]));
+  } else if (cmd_line.HasSwitch("map")) {
+    if (args.size() != 2)
+      ExitWithUsage();
+    pickle.WriteInt(PortToInt(args[0]));
+    pickle.WriteInt(PortToInt(args[1]));
   } else {
-    command = kForwardCommand;
-    if (!IsForwardCommandValid(argv[1])) {
-      PrintUsage(argv[0]);
-      return 1;
-    }
+    ExitWithUsage();
   }
 
-  ClientDelegate client_delegate(argv[1]);
+  if (kill_server && args.size() > 0)
+    ExitWithUsage();
+
+  ClientDelegate client_delegate(pickle);
   ServerDelegate daemon_delegate;
   Daemon daemon(
       kLogFilePath, kDaemonIdentifier, &client_delegate, &daemon_delegate,
       &GetExitNotifierFD);
 
-  if (command == kKillServerCommand)
+  if (kill_server)
     return !daemon.Kill();
-
-  DCHECK(command == kForwardCommand);
   if (!daemon.SpawnIfNeeded())
     return 1;
 

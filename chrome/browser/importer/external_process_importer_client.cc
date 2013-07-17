@@ -8,8 +8,8 @@
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/importer/external_process_importer_host.h"
-#include "chrome/browser/importer/firefox_importer_utils.h"
 #include "chrome/browser/importer/in_process_importer_bridge.h"
+#include "chrome/common/importer/firefox_importer_utils.h"
 #include "chrome/common/importer/imported_bookmark_entry.h"
 #include "chrome/common/importer/profile_import_process_messages.h"
 #include "content/public/browser/browser_thread.h"
@@ -102,6 +102,10 @@ bool ExternalProcessImporterClient::OnMessageReceived(
                         OnKeywordsImportReady)
     IPC_MESSAGE_HANDLER(ProfileImportProcessHostMsg_NotifyFirefoxSearchEngData,
                         OnFirefoxSearchEngineDataReceived)
+#if defined(OS_WIN)
+    IPC_MESSAGE_HANDLER(ProfileImportProcessHostMsg_NotifyIE7PasswordInfo,
+                        OnIE7PasswordReceived)
+#endif
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -164,7 +168,7 @@ void ExternalProcessImporterClient::OnHistoryImportGroup(
                        history_rows_group.end());
   if (history_rows_.size() == total_history_rows_count_)
     bridge_->SetHistoryItems(history_rows_,
-                             static_cast<history::VisitSource>(visit_source));
+                             static_cast<importer::VisitSource>(visit_source));
 }
 
 void ExternalProcessImporterClient::OnHomePageImportReady(
@@ -241,6 +245,15 @@ void ExternalProcessImporterClient::OnFirefoxSearchEngineDataReceived(
     return;
   bridge_->SetFirefoxSearchEnginesXMLData(search_engine_data);
 }
+
+#if defined(OS_WIN)
+void ExternalProcessImporterClient::OnIE7PasswordReceived(
+    const importer::ImporterIE7PasswordInfo& importer_password_info) {
+  if (cancelled_)
+    return;
+  bridge_->AddIE7PasswordInfo(importer_password_info);
+}
+#endif
 
 ExternalProcessImporterClient::~ExternalProcessImporterClient() {}
 

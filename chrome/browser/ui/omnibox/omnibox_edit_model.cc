@@ -23,6 +23,7 @@
 #include "chrome/browser/autocomplete/keyword_provider.h"
 #include "chrome/browser/autocomplete/search_provider.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
 #include "chrome/browser/google/google_url_tracker.h"
@@ -49,7 +50,6 @@
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/search/instant_controller.h"
 #include "chrome/browser/ui/search/search_tab_helper.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -59,8 +59,8 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/user_metrics.h"
 #include "extensions/common/constants.h"
-#include "googleurl/src/url_util.h"
 #include "ui/gfx/image/image.h"
+#include "url/url_util.h"
 
 using content::UserMetricsAction;
 using predictors::AutocompleteActionPredictor;
@@ -93,6 +93,45 @@ enum UserTextClearedType {
 // in the EnteredKeywordModeMethod enum which is defined in the .h file.
 const char kEnteredKeywordModeHistogram[] = "Omnibox.EnteredKeywordMode";
 
+// Histogram name which counts the number of milliseconds a user takes
+// between focusing and editing the omnibox.
+const char kFocusToEditTimeHistogram[] = "Omnibox.FocusToEditTime";
+
+void RecordPercentageMatchHistogram(const string16& old_text,
+                                    const string16& new_text,
+                                    bool search_term_replacement_active,
+                                    content::PageTransition transition) {
+  size_t avg_length = (old_text.length() + new_text.length()) / 2;
+
+  int percent = 0;
+  if (!old_text.empty() && !new_text.empty()) {
+    size_t shorter_length = std::min(old_text.length(), new_text.length());
+    string16::const_iterator end(old_text.begin() + shorter_length);
+    string16::const_iterator mismatch(
+        std::mismatch(old_text.begin(), end, new_text.begin()).first);
+    size_t matching_characters = mismatch - old_text.begin();
+    percent = static_cast<float>(matching_characters) / avg_length * 100;
+  }
+
+  if (search_term_replacement_active) {
+    if (transition == content::PAGE_TRANSITION_TYPED) {
+      UMA_HISTOGRAM_PERCENTAGE(
+          "InstantExtended.PercentageMatchQuerytoURL", percent);
+    } else {
+      UMA_HISTOGRAM_PERCENTAGE(
+          "InstantExtended.PercentageMatchQuerytoQuery", percent);
+    }
+  } else {
+    if (transition == content::PAGE_TRANSITION_TYPED) {
+      UMA_HISTOGRAM_PERCENTAGE(
+          "InstantExtended.PercentageMatchURLtoURL", percent);
+    } else {
+      UMA_HISTOGRAM_PERCENTAGE(
+          "InstantExtended.PercentageMatchURLtoQuery", percent);
+    }
+  }
+}
+
 }  // namespace
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -100,13 +139,13 @@ const char kEnteredKeywordModeHistogram[] = "Omnibox.EnteredKeywordMode";
 
 OmniboxEditModel::State::State(bool user_input_in_progress,
                                const string16& user_text,
-                               const string16& instant_suggestion,
+                               const string16& gray_text,
                                const string16& keyword,
                                bool is_keyword_hint,
                                OmniboxFocusState focus_state)
     : user_input_in_progress(user_input_in_progress),
       user_text(user_text),
-      instant_suggestion(instant_suggestion),
+      gray_text(gray_text),
       keyword(keyword),
       is_keyword_hint(is_keyword_hint),
       focus_state(focus_state) {
@@ -160,7 +199,7 @@ const OmniboxEditModel::State OmniboxEditModel::GetStateForTabSwitch() {
 
   return State(user_input_in_progress_,
                user_text_,
-               view_->GetInstantSuggestion(),
+               view_->GetGrayTextAutocompletion(),
                keyword_,
                is_keyword_hint_,
                focus_state_);
@@ -176,7 +215,7 @@ void OmniboxEditModel::RestoreState(const State& state) {
     is_keyword_hint_ = state.is_keyword_hint;
     view_->SetUserText(state.user_text,
         DisplayTextFromUserText(state.user_text), false);
-    view_->SetInstantSuggestion(state.instant_suggestion);
+    view_->SetGrayTextAutocompletion(state.gray_text);
   }
 }
 
@@ -200,19 +239,19 @@ bool OmniboxEditModel::UpdatePermanentText(const string16& new_permanent_text) {
   // common case where the edit doesn't have focus is when the user has started
   // an edit and then abandoned it and clicked a link on the page.)
   //
-  // If the page is auto-committing an instant suggestion, however, we generally
-  // don't want to make any change to the edit.  While auto-commits modify the
-  // underlying permanent URL, they're intended to have no effect on the user's
-  // editing process -- before and after the auto-commit, the omnibox should
-  // show the same user text and the same instant suggestion, even if the
-  // auto-commit happens while the edit doesn't have focus.
-  string16 instant_suggestion = view_->GetInstantSuggestion();
+  // If the page is auto-committing gray text, however, we generally don't want
+  // to make any change to the edit.  While auto-commits modify the underlying
+  // permanent URL, they're intended to have no effect on the user's editing
+  // process -- before and after the auto-commit, the omnibox should show the
+  // same user text and the same instant suggestion, even if the auto-commit
+  // happens while the edit doesn't have focus.
+  string16 gray_text = view_->GetGrayTextAutocompletion();
   const bool visibly_changed_permanent_text =
       (permanent_text_ != new_permanent_text) &&
       (!has_focus() ||
        (!user_input_in_progress_ && !popup_model()->IsOpen())) &&
-      (instant_suggestion.empty() ||
-       new_permanent_text != user_text_ + instant_suggestion);
+      (gray_text.empty() ||
+       new_permanent_text != user_text_ + gray_text);
 
   permanent_text_ = new_permanent_text;
   return visibly_changed_permanent_text;
@@ -230,16 +269,11 @@ void OmniboxEditModel::SetUserText(const string16& text) {
   has_temporary_text_ = false;
 }
 
-void OmniboxEditModel::SetInstantSuggestion(
-    const InstantSuggestion& suggestion) {
-}
-
 bool OmniboxEditModel::CommitSuggestedText() {
-  const string16 suggestion = view_->GetInstantSuggestion();
+  const string16 suggestion = view_->GetGrayTextAutocompletion();
   if (suggestion.empty())
     return false;
 
-  // Assume that the gray text we are committing is a search suggestion.
   const string16 final_text = view_->GetText() + suggestion;
   view_->OnBeforePossibleChange();
   view_->SetWindowTextAndCaretPos(final_text, final_text.length(), false,
@@ -277,7 +311,7 @@ void OmniboxEditModel::OnChanged() {
                             AutocompleteActionPredictor::LAST_PREDICT_ACTION);
 
   // Hide any suggestions we might be showing.
-  view_->SetInstantSuggestion(string16());
+  view_->SetGrayTextAutocompletion(string16());
 
   switch (recommended_action) {
     case AutocompleteActionPredictor::ACTION_PRERENDER:
@@ -380,6 +414,16 @@ void OmniboxEditModel::AdjustTextForCopy(int sel_min,
 }
 
 void OmniboxEditModel::SetInputInProgress(bool in_progress) {
+  if (in_progress && !last_omnibox_focus_without_user_input_.is_null()) {
+    base::TimeTicks now = base::TimeTicks::Now();
+    DCHECK(last_omnibox_focus_without_user_input_ <= now);
+    UMA_HISTOGRAM_TIMES(kFocusToEditTimeHistogram,
+                        now - last_omnibox_focus_without_user_input_);
+    // We only want to count the time from focus to the first user input, so
+    // reset |last_omnibox_focus_without_user_input_| to null.
+    last_omnibox_focus_without_user_input_ = base::TimeTicks();
+  }
+
   if (user_input_in_progress_ == in_progress)
     return;
 
@@ -671,6 +715,11 @@ void OmniboxEditModel::OpenMatch(const AutocompleteMatch& match,
     const GURL destination_url = autocomplete_controller()->
         GetDestinationURL(match, query_formulation_time);
 
+    RecordPercentageMatchHistogram(
+        permanent_text_, match.contents,
+        view_->toolbar_model()->WouldReplaceSearchURLWithSearchTerms(),
+        match.transition);
+
     // Track whether the destination URL sends us to a search results page
     // using the default search provider.
     TemplateURL* default_provider =
@@ -750,6 +799,8 @@ void OmniboxEditModel::ClearKeyword(const string16& visible_text) {
 }
 
 void OmniboxEditModel::OnSetFocus(bool control_down) {
+  last_omnibox_focus_without_user_input_ = base::TimeTicks::Now();
+
   // If the omnibox lost focus while the caret was hidden and then regained
   // focus, OnSetFocus() is called and should restore visibility. Note that
   // focus can be regained without an accompanying call to
@@ -1199,11 +1250,8 @@ bool OmniboxEditModel::CreatedKeywordSearchByInsertingSpaceInMiddle(
   // Then check if the text before the inserted space matches a keyword.
   string16 keyword;
   TrimWhitespace(new_text.substr(0, space_position), TRIM_LEADING, &keyword);
-  // TODO(sreeram): Once the Instant extended API supports keywords properly,
-  // keyword_provider() should never be NULL. Remove that clause.
-  return !keyword.empty() && autocomplete_controller()->keyword_provider() &&
-      !autocomplete_controller()->keyword_provider()->
-          GetKeywordForText(keyword).empty();
+  return !keyword.empty() && !autocomplete_controller()->keyword_provider()->
+      GetKeywordForText(keyword).empty();
 }
 
 //  static

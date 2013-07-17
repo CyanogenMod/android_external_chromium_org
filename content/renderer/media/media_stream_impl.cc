@@ -10,6 +10,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/renderer/media/media_stream_audio_renderer.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/media_stream_dispatcher.h"
 #include "content/renderer/media/media_stream_extra_data.h"
@@ -26,18 +27,22 @@
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebMediaStreamRegistry.h"
-#include "webkit/renderer/media/media_stream_audio_renderer.h"
 
 namespace content {
 namespace {
 
-std::string GetMandatoryStreamConstraint(
-    const WebKit::WebMediaConstraints& constraints, const std::string& key) {
+std::string GetStreamConstraint(
+    const WebKit::WebMediaConstraints& constraints, const std::string& key,
+    bool is_mandatory) {
   if (constraints.isNull())
     return std::string();
 
   WebKit::WebString value;
-  constraints.getMandatoryConstraintValue(UTF8ToUTF16(key), value);
+  if (is_mandatory) {
+    constraints.getMandatoryConstraintValue(UTF8ToUTF16(key), value);
+  } else {
+    constraints.getOptionalConstraintValue(UTF8ToUTF16(key), value);
+  }
   return UTF16ToUTF8(value);
 }
 
@@ -45,24 +50,24 @@ void UpdateRequestOptions(
     const WebKit::WebUserMediaRequest& user_media_request,
     StreamOptions* options) {
   if (options->audio_type != content::MEDIA_NO_SERVICE) {
-    std::string audio_stream_source = GetMandatoryStreamConstraint(
-        user_media_request.audioConstraints(), kMediaStreamSource);
+    std::string audio_stream_source = GetStreamConstraint(
+        user_media_request.audioConstraints(), kMediaStreamSource, true);
     if (audio_stream_source == kMediaStreamSourceTab) {
       options->audio_type = content::MEDIA_TAB_AUDIO_CAPTURE;
-      options->audio_device_id = GetMandatoryStreamConstraint(
+      options->audio_device_id = GetStreamConstraint(
           user_media_request.audioConstraints(),
-          kMediaStreamSourceId);
+          kMediaStreamSourceId, true);
     }
   }
 
   if (options->video_type != content::MEDIA_NO_SERVICE) {
-    std::string video_stream_source = GetMandatoryStreamConstraint(
-        user_media_request.videoConstraints(), kMediaStreamSource);
+    std::string video_stream_source = GetStreamConstraint(
+        user_media_request.videoConstraints(), kMediaStreamSource, true);
     if (video_stream_source == kMediaStreamSourceTab) {
       options->video_type = content::MEDIA_TAB_VIDEO_CAPTURE;
-      options->video_device_id = GetMandatoryStreamConstraint(
+      options->video_device_id = GetStreamConstraint(
           user_media_request.videoConstraints(),
-          kMediaStreamSourceId);
+          kMediaStreamSourceId, true);
     } else if (video_stream_source == kMediaStreamSourceScreen) {
       options->video_type = content::MEDIA_SCREEN_VIDEO_CAPTURE;
     }
@@ -154,10 +159,18 @@ void MediaStreamImpl::requestUserMedia(
     options.audio_type = MEDIA_DEVICE_AUDIO_CAPTURE;
     options.video_type = MEDIA_DEVICE_VIDEO_CAPTURE;
   } else {
-    if (user_media_request.audio())
+    if (user_media_request.audio()) {
       options.audio_type = MEDIA_DEVICE_AUDIO_CAPTURE;
-    if (user_media_request.video())
+      options.audio_device_id = GetStreamConstraint(
+          user_media_request.audioConstraints(),
+          kMediaStreamSourceInfoId, false);
+    }
+    if (user_media_request.video()) {
       options.video_type = MEDIA_DEVICE_VIDEO_CAPTURE;
+      options.video_device_id = GetStreamConstraint(
+          user_media_request.videoConstraints(),
+          kMediaStreamSourceInfoId, false);
+    }
 
     security_origin = GURL(user_media_request.securityOrigin().toString());
     // Get the WebFrame that requested a MediaStream.
@@ -213,11 +226,11 @@ bool MediaStreamImpl::IsMediaStream(const GURL& url) {
       (!stream->GetVideoTracks().empty() || !stream->GetAudioTracks().empty()));
 }
 
-scoped_refptr<webkit_media::VideoFrameProvider>
+scoped_refptr<VideoFrameProvider>
 MediaStreamImpl::GetVideoFrameProvider(
     const GURL& url,
     const base::Closure& error_cb,
-    const webkit_media::VideoFrameProvider::RepaintCB& repaint_cb) {
+    const VideoFrameProvider::RepaintCB& repaint_cb) {
   DCHECK(CalledOnValidThread());
   WebKit::WebMediaStream descriptor(GetMediaStream(url));
 
@@ -234,7 +247,7 @@ MediaStreamImpl::GetVideoFrameProvider(
   return NULL;
 }
 
-scoped_refptr<webkit_media::MediaStreamAudioRenderer>
+scoped_refptr<MediaStreamAudioRenderer>
 MediaStreamImpl::GetAudioRenderer(const GURL& url) {
   DCHECK(CalledOnValidThread());
   WebKit::WebMediaStream descriptor(GetMediaStream(url));
@@ -493,7 +506,7 @@ void MediaStreamImpl::FrameWillClose(WebKit::WebFrame* frame) {
             UTF16ToUTF8((*request_it)->descriptor.label()));
       } else {
         media_stream_dispatcher_->CancelGenerateStream(
-            (*request_it)->request_id);
+            (*request_it)->request_id, AsWeakPtr());
       }
       request_it = user_media_requests_.erase(request_it);
     } else {
@@ -502,11 +515,11 @@ void MediaStreamImpl::FrameWillClose(WebKit::WebFrame* frame) {
   }
 }
 
-scoped_refptr<webkit_media::VideoFrameProvider>
+scoped_refptr<VideoFrameProvider>
 MediaStreamImpl::CreateVideoFrameProvider(
     webrtc::MediaStreamInterface* stream,
     const base::Closure& error_cb,
-    const webkit_media::VideoFrameProvider::RepaintCB& repaint_cb) {
+    const VideoFrameProvider::RepaintCB& repaint_cb) {
   if (stream->GetVideoTracks().empty())
     return NULL;
 

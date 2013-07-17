@@ -14,7 +14,6 @@ import time
 from pylib import android_commands
 from pylib import cmd_helper
 from pylib import constants
-from pylib import forwarder
 from pylib import json_perf_parser
 from pylib import perf_tests_helper
 from pylib import valgrind_tools
@@ -67,14 +66,16 @@ class TestRunner(base_test_runner.BaseTestRunner):
       -  wait_for_debugger: blocks until the debugger is connected.
       -  disable_assertions: Whether to disable java assertions on the device.
       -  push_deps: If True, push all dependencies to the device.
+      -  cleanup_test_files: Whether or not to cleanup test files on device.
       device: Attached android device.
       shard_index: Shard index.
       test_pkg: A TestPackage object.
       ports_to_forward: A list of port numbers for which to set up forwarders.
                         Can be optionally requested by a test case.
     """
-    super(TestRunner, self).__init__(device, options.tool, options.build_type,
-                                     options.push_deps)
+    super(TestRunner, self).__init__(
+        device, options.tool, options.build_type, options.push_deps,
+        options.cleanup_test_files)
     self._lighttp_port = constants.LIGHTTPD_RANDOM_PORT_FIRST + shard_index
 
     self.build_type = options.build_type
@@ -86,7 +87,6 @@ class TestRunner(base_test_runner.BaseTestRunner):
     self.test_pkg = test_pkg
     self.ports_to_forward = ports_to_forward
     self.install_apk = options.install_apk
-    self.forwarder = None
 
   #override
   def InstallTestPackage(self):
@@ -106,8 +106,10 @@ class TestRunner(base_test_runner.BaseTestRunner):
     if test_data:
       # Make sure SD card is ready.
       self.adb.WaitForSdCardReady(20)
-      for data in test_data:
-        self.CopyTestData([data], self.adb.GetExternalStorage())
+      for p in test_data:
+        self.adb.PushIfNeeded(
+            os.path.join(constants.DIR_SOURCE_ROOT, p),
+            os.path.join(self.adb.GetExternalStorage(), p))
 
     # TODO(frankf): Specify test data in this file as opposed to passing
     # as command-line.
@@ -151,18 +153,11 @@ class TestRunner(base_test_runner.BaseTestRunner):
     http_server_ports = self.LaunchTestHttpServer(
         os.path.join(constants.DIR_SOURCE_ROOT), self._lighttp_port)
     if self.ports_to_forward:
-      port_pairs = [(port, port) for port in self.ports_to_forward]
-      # We need to remember which ports the HTTP server is using, since the
-      # forwarder will stomp on them otherwise.
-      port_pairs.append(http_server_ports)
-      self.forwarder = forwarder.Forwarder(self.adb, self.build_type)
-      self.forwarder.Run(port_pairs, self.tool)
+      self.StartForwarder([(port, port) for port in self.ports_to_forward])
     self.flags.AddFlags(['--enable-test-intents'])
 
   def TearDown(self):
     """Cleans up the test harness and saves outstanding data from test run."""
-    if self.forwarder:
-      self.forwarder.Close()
     super(TestRunner, self).TearDown()
 
   def TestSetup(self, test):

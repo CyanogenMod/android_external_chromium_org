@@ -44,7 +44,7 @@ void ValidatePathOnFileThread(
     const base::Callback<void(bool)>& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                          base::Bind(callback, file_util::PathExists(path)));
+                          base::Bind(callback, base::PathExists(path)));
 }
 
 typedef std::vector<StorageInfo> StorageInfoList;
@@ -79,7 +79,7 @@ void FilterAttachedDevicesOnFileThread(MediaStorageUtil::DeviceIdSet* devices) {
     if (type == StorageInfo::FIXED_MASS_STORAGE ||
         type == StorageInfo::ITUNES ||
         type == StorageInfo::PICASA) {
-      if (!file_util::PathExists(base::FilePath::FromUTF8Unsafe(unique_id)))
+      if (!base::PathExists(base::FilePath::FromUTF8Unsafe(unique_id)))
         missing_devices.insert(*it);
       continue;
     }
@@ -103,11 +103,11 @@ bool MediaStorageUtil::HasDcim(const base::FilePath& mount_point) {
   DCHECK(!content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
   base::FilePath::StringType dcim_dir(kDCIMDirectoryName);
-  if (!file_util::DirectoryExists(mount_point.Append(dcim_dir))) {
+  if (!base::DirectoryExists(mount_point.Append(dcim_dir))) {
     // Check for lowercase 'dcim' as well.
     base::FilePath dcim_path_lower(
         mount_point.Append(StringToLowerASCII(dcim_dir)));
-    if (!file_util::DirectoryExists(dcim_path_lower))
+    if (!base::DirectoryExists(dcim_path_lower))
       return false;
   }
   return true;
