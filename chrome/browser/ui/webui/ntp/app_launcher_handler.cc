@@ -27,7 +27,6 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
-#include "chrome/browser/favicon/favicon_types.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -43,6 +42,7 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
+#include "chrome/common/favicon/favicon_types.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/common/web_application_info.h"
@@ -301,7 +301,11 @@ void AppLauncherHandler::Observe(int type,
       if (id) {
         const Extension* extension =
             extension_service_->GetInstalledExtension(*id);
-        DCHECK(extension) << "Could not find extension with id " << *id;
+        if (!extension) {
+          // Extension could still be downloading or installing.
+          return;
+        }
+
         DictionaryValue app_info;
         CreateAppInfo(extension,
                       extension_service_,

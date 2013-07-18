@@ -214,9 +214,6 @@ class BrowserWindow : public ui::BaseWindow {
   // TODO(yosin): Make ShowBookmarkPrompt pure virtual.
   virtual void ShowBookmarkPrompt() {}
 
-  // Shows the Chrome To Mobile bubble.
-  virtual void ShowChromeToMobileBubble() = 0;
-
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   enum OneClickSigninBubbleType {
     ONE_CLICK_SIGNIN_BUBBLE_TYPE_BUBBLE,
@@ -313,11 +310,6 @@ class BrowserWindow : public ui::BaseWindow {
   virtual bool IsFullscreenWithChrome() = 0;
   virtual bool IsFullscreenWithoutChrome() = 0;
 #endif
-
-  // Returns the desired bounds for Instant in screen coordinates. Note that if
-  // Instant isn't currently visible this returns the bounds Instant would be
-  // placed at.
-  virtual gfx::Rect GetInstantBounds() = 0;
 
   // Return the correct disposition for a popup window based on |bounds|.
   virtual WindowOpenDisposition GetDispositionForPopupBounds(

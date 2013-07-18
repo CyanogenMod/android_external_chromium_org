@@ -144,10 +144,10 @@ LOCAL_SRC_FILES := \
 	base/power_monitor/power_monitor.cc \
 	base/power_monitor/power_monitor_android.cc \
 	base/process_posix.cc \
-	base/process_util_posix.cc \
 	base/process/internal_linux.cc \
 	base/process/kill.cc \
 	base/process/kill_posix.cc \
+	base/process/launch_posix.cc \
 	base/process/memory_linux.cc \
 	base/process/process_handle_linux.cc \
 	base/process/process_handle_posix.cc \

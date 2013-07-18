@@ -359,8 +359,6 @@ extern const char kPluginsPluginsList[];
 extern const char kPluginsDisabledPlugins[];
 extern const char kPluginsDisabledPluginsExceptions[];
 extern const char kPluginsEnabledPlugins[];
-extern const char kPluginsEnabledInternalPDF[];
-extern const char kPluginsEnabledNaCl[];
 extern const char kPluginsMigratedToPepperFlash[];
 extern const char kPluginsRemovedOldComponentPepperFlashSettings[];
 extern const char kPluginsShowDetails[];
@@ -572,8 +570,6 @@ extern const char kWasRestarted[];
 extern const char kRestartSwitchMode[];
 #endif
 
-extern const char kNumKeywords[];
-
 extern const char kDisableVideoAndChat[];
 
 extern const char kDisableExtensions[];
@@ -720,10 +716,6 @@ extern const char kCloudPrintXmppPingTimeout[];
 extern const char kCloudPrintPrinters[];
 extern const char kCloudPrintSubmitEnabled[];
 extern const char kCloudPrintUserSettings[];
-
-#if !defined(OS_ANDROID)
-extern const char kChromeToMobileDeviceList[];
-#endif
 
 extern const char kProxy[];
 extern const char kMaxConnectionsPerProxy[];
@@ -910,8 +902,6 @@ extern const char kOverscrollMinimumThresholdStart[];
 extern const char kOverscrollHorizontalResistThreshold[];
 extern const char kOverscrollVerticalResistThreshold[];
 #endif
-
-extern const char kInManagedMode[];
 
 extern const char kNetworkProfileWarningsLeft[];
 extern const char kNetworkProfileLastWarningTime[];

@@ -5,7 +5,7 @@
 #include "content/browser/android/in_process/synchronous_compositor_impl.h"
 
 #include "base/lazy_instance.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/synchronization/lock.h"
 #include "cc/input/input_handler.h"
 #include "cc/input/layer_scroll_offset_delegate.h"
@@ -214,11 +214,10 @@ void SynchronousCompositorImpl::SetInputHandler(
 }
 
 void SynchronousCompositorImpl::DidOverscroll(
-    gfx::Vector2dF accumulated_overscroll,
-    gfx::Vector2dF current_fling_velocity) {
+    const cc::DidOverscrollParams& params) {
   if (compositor_client_) {
-    compositor_client_->DidOverscroll(accumulated_overscroll,
-                                      current_fling_velocity);
+    compositor_client_->DidOverscroll(params.latest_overscroll_delta,
+                                      params.current_fling_velocity);
   }
 }
 

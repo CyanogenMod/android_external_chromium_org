@@ -28,6 +28,7 @@ extern const char kChromeUIConflictsURL[];
 extern const char kChromeUIConstrainedHTMLTestURL[];
 extern const char kChromeUICrashesURL[];
 extern const char kChromeUICreditsURL[];
+extern const char kChromeUIDevicesURL[];
 extern const char kChromeUIDevToolsURL[];
 extern const char kChromeUIDownloadsURL[];
 extern const char kChromeUIEditSearchEngineDialogURL[];
@@ -143,6 +144,7 @@ extern const char kChromeUICrashesHost[];
 extern const char kChromeUICrashHost[];
 extern const char kChromeUICreditsHost[];
 extern const char kChromeUIDefaultHost[];
+extern const char kChromeUIDevicesHost[];
 extern const char kChromeUIDevToolsHost[];
 extern const char kChromeUIDevToolsBundledPath[];
 extern const char kChromeUIDevToolsRemotePath[];
@@ -401,9 +403,6 @@ extern const char kSyncEncryptionHelpURL[];
 // The URL for the "Learn more" link when there is a sync error.
 extern const char kSyncErrorsHelpURL[];
 
-// The URL for the "Learn more" link in the Chrome To Mobile bubble.
-extern const char kChromeToMobileLearnMoreURL[];
-
 // The URL for the help article explaining sideload wipeout in more details.
 extern const char kSideloadWipeoutHelpURL[];
 
@@ -449,7 +448,6 @@ extern const char kChromeSearchScheme[];
 // Pages under chrome-search.
 extern const char kChromeSearchLocalNtpHost[];
 extern const char kChromeSearchLocalNtpUrl[];
-extern const char kChromeSearchLocalGoogleNtpUrl[];
 
 // Host and URL for most visited iframes used on the Instant Extended NTP.
 extern const char kChromeSearchMostVisitedHost[];

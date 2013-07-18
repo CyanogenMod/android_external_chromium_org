@@ -6,7 +6,7 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -243,11 +243,9 @@ fileapi::FileSystemOperation* FileSystemBackend::CreateFileSystemOperation(
     return NULL;
   }
 
-  if (url.type() == fileapi::kFileSystemTypeDrive)
-    return drive_delegate_->CreateFileSystemOperation(url, context, error_code);
-
   DCHECK(url.type() == fileapi::kFileSystemTypeNativeLocal ||
-         url.type() == fileapi::kFileSystemTypeRestrictedNativeLocal);
+         url.type() == fileapi::kFileSystemTypeRestrictedNativeLocal ||
+         url.type() == fileapi::kFileSystemTypeDrive);
   scoped_ptr<fileapi::FileSystemOperationContext> operation_context(
       new fileapi::FileSystemOperationContext(context));
   operation_context->set_root_path(GetFileSystemRootPath(url));

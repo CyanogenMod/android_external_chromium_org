@@ -10,7 +10,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -36,6 +36,11 @@
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
 #include "ipc/ipc_sync_message.h"
 #include "skia/ext/platform_canvas.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebPoint.h"
+#include "third_party/WebKit/public/platform/WebRect.h"
+#include "third_party/WebKit/public/platform/WebSize.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/web/WebCursorInfo.h"
 #include "third_party/WebKit/public/web/WebHelperPlugin.h"
 #include "third_party/WebKit/public/web/WebPagePopup.h"
@@ -43,11 +48,6 @@
 #include "third_party/WebKit/public/web/WebPopupMenuInfo.h"
 #include "third_party/WebKit/public/web/WebRange.h"
 #include "third_party/WebKit/public/web/WebScreenInfo.h"
-#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
-#include "third_party/WebKit/public/platform/WebPoint.h"
-#include "third_party/WebKit/public/platform/WebRect.h"
-#include "third_party/WebKit/public/platform/WebSize.h"
-#include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/point.h"
@@ -2124,16 +2124,15 @@ void RenderWidget::UpdateTextInputType() {
   if (!input_method_is_active_)
     return;
 
-  WebKit::WebTextInputInfo new_info;
-  if (webwidget_)
-    new_info = webwidget_->textInputInfo();
-
-  ui::TextInputType new_type = WebKitToUiTextInputType(new_info.type);
+  ui::TextInputType new_type = GetTextInputType();
   if (IsDateTimeInput(new_type))
     return;  // Not considered as a text input field in WebKit/Chromium.
 
   bool new_can_compose_inline = CanComposeInline();
 
+  WebKit::WebTextInputInfo new_info;
+  if (webwidget_)
+    new_info = webwidget_->textInputInfo();
   const ui::TextInputMode new_mode = ConvertInputMode(new_info.inputMode);
 
   if (text_input_type_ != new_type

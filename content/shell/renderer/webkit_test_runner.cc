@@ -13,7 +13,7 @@
 #include "base/files/file_path.h"
 #include "base/md5.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
@@ -64,6 +64,7 @@ using WebKit::Platform;
 using WebKit::WebArrayBufferView;
 using WebKit::WebContextMenuData;
 using WebKit::WebDevToolsAgent;
+using WebKit::WebDeviceMotionData;
 using WebKit::WebDeviceOrientation;
 using WebKit::WebElement;
 using WebKit::WebFrame;
@@ -209,6 +210,10 @@ void WebKitTestRunner::setEditCommand(const std::string& name,
 
 void WebKitTestRunner::setGamepadData(const WebGamepads& gamepads) {
   SetMockGamepads(gamepads);
+}
+
+void WebKitTestRunner::setDeviceMotionData(const WebDeviceMotionData& data) {
+  SetMockDeviceMotionData(data);
 }
 
 void WebKitTestRunner::printMessage(const std::string& message) {

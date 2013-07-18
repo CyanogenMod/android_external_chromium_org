@@ -177,6 +177,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/text_input_client_observer.cc \
 	content/renderer/v8_value_converter_impl.cc \
 	content/renderer/webclipboard_impl.cc \
+	content/renderer/webcrypto_impl.cc \
 	content/renderer/web_ui_extension.cc \
 	content/renderer/web_ui_extension_data.cc \
 	content/renderer/webplugin_delegate_proxy.cc \

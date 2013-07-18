@@ -29,6 +29,7 @@ const char kChromeUIConflictsURL[] = "chrome://conflicts/";
 const char kChromeUIConstrainedHTMLTestURL[] = "chrome://constrained-test/";
 const char kChromeUICrashesURL[] = "chrome://crashes/";
 const char kChromeUICreditsURL[] = "chrome://credits/";
+const char kChromeUIDevicesURL[] = "chrome://devices/";
 const char kChromeUIDevToolsURL[] =
     "chrome-devtools://devtools/bundled/devtools.html";
 const char kChromeUIDownloadsURL[] = "chrome://downloads/";
@@ -151,6 +152,7 @@ const char kChromeUICrashesHost[] = "crashes";
 const char kChromeUICrashHost[] = "crash";
 const char kChromeUICreditsHost[] = "credits";
 const char kChromeUIDefaultHost[] = "version";
+const char kChromeUIDevicesHost[] = "devices";
 const char kChromeUIDevToolsHost[] = "devtools";
 const char kChromeUIDevToolsBundledPath[] = "bundled";
 const char kChromeUIDevToolsRemotePath[] = "remote";
@@ -488,9 +490,6 @@ const char kSyncEncryptionHelpURL[] =
 const char kSyncErrorsHelpURL[] =
     "https://support.google.com/chrome/?p=settings_sync_error";
 
-const char kChromeToMobileLearnMoreURL[] =
-    "https://support.google.com/chrome/?p=ib_chrome_to_mobile";
-
 const char kSideloadWipeoutHelpURL[] =
     "https://support.google.com/chrome/?p=ui_remove_non_cws_extensions";
 
@@ -529,8 +528,6 @@ const char kChromeSearchScheme[] = "chrome-search";
 const char kChromeSearchLocalNtpHost[] = "local-ntp";
 const char kChromeSearchLocalNtpUrl[] =
     "chrome-search://local-ntp/local-ntp.html";
-const char kChromeSearchLocalGoogleNtpUrl[] =
-    "chrome-search://local-ntp/local-ntp.html?isGoogle";
 
 const char kChromeSearchMostVisitedHost[] = "most-visited";
 const char kChromeSearchMostVisitedUrl[] = "chrome-search://most-visited/";

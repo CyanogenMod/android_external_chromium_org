@@ -98,7 +98,6 @@ class TestBrowserWindow : public BrowserWindow {
   virtual void ShowUpdateChromeDialog() OVERRIDE {}
   virtual void ShowBookmarkBubble(const GURL& url,
                                   bool already_bookmarked) OVERRIDE {}
-  virtual void ShowChromeToMobileBubble() OVERRIDE {}
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   virtual void ShowOneClickSigninBubble(
       OneClickSigninBubbleType type,
@@ -126,7 +125,6 @@ class TestBrowserWindow : public BrowserWindow {
   virtual bool IsFullscreenWithoutChrome() OVERRIDE;
 #endif
 
-  virtual gfx::Rect GetInstantBounds() OVERRIDE;
   virtual WindowOpenDisposition GetDispositionForPopupBounds(
       const gfx::Rect& bounds) OVERRIDE;
   virtual FindBar* CreateFindBar() OVERRIDE;

@@ -16,7 +16,7 @@
 #include "base/mac/scoped_cftyperef.h"
 #import "base/mac/scoped_nsobject.h"
 #include "base/mac/sdk_forward_declarations.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -2414,11 +2414,18 @@ void RenderWidgetHostViewMac::FrameSwapped() {
 
   NSNotificationCenter* notificationCenter =
       [NSNotificationCenter defaultCenter];
+
+  // Backing property notifications crash on 10.6 when building with the 10.7
+  // SDK, see http://crbug.com/260595.
+  BOOL supportsBackingPropertiesNotification = base::mac::IsOSLionOrLater();
+
   if (oldWindow) {
-    [notificationCenter
-        removeObserver:self
-                  name:NSWindowDidChangeBackingPropertiesNotification
-                object:oldWindow];
+    if (supportsBackingPropertiesNotification) {
+      [notificationCenter
+          removeObserver:self
+                    name:NSWindowDidChangeBackingPropertiesNotification
+                  object:oldWindow];
+    }
     [notificationCenter
         removeObserver:self
                   name:NSWindowDidMoveNotification
@@ -2429,11 +2436,13 @@ void RenderWidgetHostViewMac::FrameSwapped() {
                 object:oldWindow];
   }
   if (newWindow) {
-    [notificationCenter
-        addObserver:self
-           selector:@selector(windowDidChangeBackingProperties:)
-               name:NSWindowDidChangeBackingPropertiesNotification
-             object:newWindow];
+    if (supportsBackingPropertiesNotification) {
+      [notificationCenter
+          addObserver:self
+             selector:@selector(windowDidChangeBackingProperties:)
+                 name:NSWindowDidChangeBackingPropertiesNotification
+               object:newWindow];
+    }
     [notificationCenter
         addObserver:self
            selector:@selector(windowChangedGlobalFrame:)

@@ -38,6 +38,8 @@
 #include "chrome/browser/profiles/profile_info_util.h"
 #include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/profiles/profile_shortcut_manager.h"
+#include "chrome/browser/profiles/profile_window.h"
+#include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
@@ -83,7 +85,6 @@
 #include "ui/webui/web_ui_util.h"
 
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_mode.h"
 #include "chrome/browser/managed_mode/managed_user_registration_service.h"
 #include "chrome/browser/managed_mode/managed_user_registration_service_factory.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
@@ -132,7 +133,7 @@ bool ShouldShowMultiProfilesUserList(chrome::HostDesktopType desktop_type) {
 #else
   if (desktop_type != chrome::HOST_DESKTOP_TYPE_NATIVE)
     return false;
-  return ProfileManager::IsMultipleProfilesEnabled();
+  return profiles::IsMultipleProfilesEnabled();
 #endif
 }
 
@@ -161,7 +162,7 @@ void OpenNewWindowForProfile(
   if (status != Profile::CREATE_STATUS_INITIALIZED)
     return;
 
-  ProfileManager::FindOrCreateNewWindowForProfile(
+  profiles::FindOrCreateNewWindowForProfile(
     profile,
     chrome::startup::IS_PROCESS_STARTUP,
     chrome::startup::IS_FIRST_RUN,
@@ -1091,7 +1092,7 @@ void BrowserOptionsHandler::CreateProfile(const ListValue* args) {
     return;
 #endif
 
-  if (!ProfileManager::IsMultipleProfilesEnabled())
+  if (!profiles::IsMultipleProfilesEnabled())
     return;
 
   DCHECK(profile_path_being_created_.empty());
@@ -1245,7 +1246,7 @@ void BrowserOptionsHandler::DeleteProfileAtPath(base::FilePath file_path) {
     return;
 #endif
 
-  if (!ProfileManager::IsMultipleProfilesEnabled())
+  if (!profiles::IsMultipleProfilesEnabled())
     return;
 
   ProfileMetrics::LogProfileDeleteUser(ProfileMetrics::PROFILE_DELETED);

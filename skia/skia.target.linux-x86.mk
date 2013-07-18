@@ -81,6 +81,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/ports/SkOSFile_posix.cpp \
 	third_party/skia/src/ports/SkOSFile_stdio.cpp \
 	third_party/skia/src/ports/SkThread_pthread.cpp \
+	third_party/skia/src/ports/SkTLS_pthread.cpp \
 	third_party/skia/src/ports/SkTime_Unix.cpp \
 	third_party/skia/src/sfnt/SkOTUtils.cpp \
 	third_party/skia/src/utils/debugger/SkDebugCanvas.cpp \
@@ -144,6 +145,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkEdge.cpp \
 	third_party/skia/src/core/SkError.cpp \
 	third_party/skia/src/core/SkFilterProc.cpp \
+	third_party/skia/src/core/SkFilterShader.cpp \
 	third_party/skia/src/core/SkFlattenable.cpp \
 	third_party/skia/src/core/SkFlattenableBuffers.cpp \
 	third_party/skia/src/core/SkFloat.cpp \

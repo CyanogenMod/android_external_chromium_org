@@ -7,7 +7,6 @@
 #include "base/basictypes.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "third_party/WebKit/public/web/WebKit.h"
 #include "third_party/WebKit/public/web/WebSettings.h"
 #include "third_party/icu/public/common/unicode/uchar.h"
 
@@ -84,7 +83,6 @@ WebPreferences::WebPreferences()
       visual_word_movement_enabled(false),
       css_sticky_position_enabled(false),
       css_shaders_enabled(false),
-      css_grid_layout_enabled(false),
       lazy_layout_enabled(false),
       region_based_columns_enabled(false),
       touch_enabled(false),

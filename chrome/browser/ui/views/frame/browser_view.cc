@@ -1124,10 +1124,6 @@ void BrowserView::ShowBookmarkPrompt() {
   GetLocationBarView()->ShowBookmarkPrompt();
 }
 
-void BrowserView::ShowChromeToMobileBubble() {
-  GetLocationBarView()->ShowChromeToMobileBubble();
-}
-
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
 void BrowserView::ShowOneClickSigninBubble(
     OneClickSigninBubbleType type,
@@ -1339,10 +1335,6 @@ void BrowserView::Paste() {
                  WM_PASTE,
 #endif
                  IDS_APP_PASTE);
-}
-
-gfx::Rect BrowserView::GetInstantBounds() {
-  return overlay_container_->GetOverlayBounds();
 }
 
 WindowOpenDisposition BrowserView::GetDispositionForPopupBounds(

@@ -58,7 +58,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_impl.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
-#include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/renderer_host/pepper/device_id_fetcher.h"
 #include "chrome/browser/renderer_host/web_cache_manager.h"
 #include "chrome/browser/search/search.h"
@@ -101,7 +101,6 @@
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_mode.h"
 #include "chrome/browser/managed_mode/managed_user_registration_service.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
 #endif
@@ -138,6 +137,7 @@
 #include "chrome/browser/chromeos/policy/auto_enrollment_client.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_status_collector.h"
+#include "chrome/browser/chromeos/power/power_prefs.h"
 #include "chrome/browser/chromeos/preferences.h"
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service.h"
 #include "chrome/browser/chromeos/settings/device_settings_cache.h"
@@ -150,10 +150,6 @@
 
 #if defined(USE_ASH)
 #include "chrome/browser/ui/ash/chrome_launcher_prefs.h"
-#endif
-
-#if !defined(OS_ANDROID)
-#include "chrome/browser/chrome_to_mobile_service.h"
 #endif
 
 #if defined(OS_ANDROID)
@@ -179,6 +175,9 @@ enum MigratedPreferences {
 // registered. We keep it here for now to clear out those old prefs in
 // MigrateUserPrefs.
 const char kBackupPref[] = "backup";
+
+// Chrome To Mobile has been removed; this pref will be cleared from user data.
+const char kChromeToMobilePref[] = "chrome_to_mobile.device_list";
 
 }  // namespace
 
@@ -207,7 +206,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
   metrics::CachingPermutedEntropyProvider::RegisterPrefs(registry);
   PrefProxyConfigTrackerImpl::RegisterPrefs(registry);
   ProfileInfoCache::RegisterPrefs(registry);
-  ProfileManager::RegisterPrefs(registry);
+  profiles::RegisterPrefs(registry);
   PromoResourceService::RegisterPrefs(registry);
   RegisterPrefsForRecoveryComponent(registry);
   SigninManagerFactory::RegisterPrefs(registry);
@@ -215,10 +214,6 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
   UpgradeDetector::RegisterPrefs(registry);
   WebCacheManager::RegisterPrefs(registry);
   chrome_variations::VariationsService::RegisterPrefs(registry);
-
-#if defined(ENABLE_MANAGED_USERS)
-  ManagedMode::RegisterPrefs(registry);
-#endif
 
 #if defined(ENABLE_PLUGINS)
   PluginFinder::RegisterPrefs(registry);
@@ -350,7 +345,6 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
 
 #if !defined(OS_ANDROID)
   extensions::TabsCaptureVisibleTabFunction::RegisterProfilePrefs(registry);
-  ChromeToMobileService::RegisterProfilePrefs(registry);
   DeviceIDFetcher::RegisterProfilePrefs(registry);
   DevToolsWindow::RegisterProfilePrefs(registry);
   extensions::CommandService::RegisterProfilePrefs(registry);
@@ -392,15 +386,24 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
       kBackupPref,
       new DictionaryValue(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(
+      kChromeToMobilePref,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 void RegisterUserProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   RegisterProfilePrefs(registry);
+
+#if defined(OS_CHROMEOS)
+  chromeos::PowerPrefs::RegisterUserProfilePrefs(registry);
+#endif
 }
 
 #if defined(OS_CHROMEOS)
 void RegisterLoginProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   RegisterProfilePrefs(registry);
+
+  chromeos::PowerPrefs::RegisterLoginProfilePrefs(registry);
 }
 #endif
 
@@ -409,6 +412,9 @@ void MigrateUserPrefs(Profile* profile) {
 
   // Cleanup prefs from now-removed protector feature.
   prefs->ClearPref(kBackupPref);
+
+  // Cleanup prefs from now-removed Chrome To Mobile feature.
+  prefs->ClearPref(kChromeToMobilePref);
 
   PrefsTabHelper::MigrateUserPrefs(prefs);
   PromoResourceService::MigrateUserPrefs(prefs);

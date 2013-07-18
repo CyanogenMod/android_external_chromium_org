@@ -9,7 +9,7 @@
 #include "base/debug/crash_logging.h"
 #include "base/logging.h"
 #include "base/mac/mac_util.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
@@ -499,10 +499,6 @@ void BrowserWindowCocoa::ShowBookmarkBubble(const GURL& url,
                       alreadyBookmarked:(already_bookmarked ? YES : NO)];
 }
 
-void BrowserWindowCocoa::ShowChromeToMobileBubble() {
-  [controller_ showChromeToMobileBubble];
-}
-
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
 void BrowserWindowCocoa::ShowOneClickSigninBubble(
     OneClickSigninBubbleType type,
@@ -638,16 +634,6 @@ bool BrowserWindowCocoa::IsFullscreenWithChrome() {
 
 bool BrowserWindowCocoa::IsFullscreenWithoutChrome() {
   return IsFullscreen() && [controller_ inPresentationMode];
-}
-
-gfx::Rect BrowserWindowCocoa::GetInstantBounds() {
-  // Flip coordinates based on the primary screen.
-  NSScreen* screen = [[NSScreen screens] objectAtIndex:0];
-  NSRect monitorFrame = [screen frame];
-  NSRect frame = [controller_ instantFrame];
-  gfx::Rect bounds(NSRectToCGRect(frame));
-  bounds.set_y(NSHeight(monitorFrame) - bounds.y() - bounds.height());
-  return bounds;
 }
 
 WindowOpenDisposition BrowserWindowCocoa::GetDispositionForPopupBounds(

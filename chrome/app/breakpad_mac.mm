@@ -26,9 +26,7 @@
 #include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/crash_keys.h"
-#include "chrome/common/dump_without_crashing.h"
 #include "chrome/common/env_vars.h"
-#include "chrome/common/logging_chrome.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "components/breakpad/breakpad_client.h"
 #include "components/nacl/common/nacl_switches.h"
@@ -269,7 +267,8 @@ void InitCrashReporter() {
   }
 
   logging::SetLogMessageHandler(&FatalMessageHandler);
-  logging::SetDumpWithoutCrashingFunction(&DumpHelper::DumpWithoutCrashing);
+  breakpad::GetBreakpadClient()->SetDumpWithoutCrashingFunction(
+      &DumpHelper::DumpWithoutCrashing);
 
   // abort() sends SIGABRT, which breakpad does not intercept.
   // Register a signal handler to crash in a way breakpad will

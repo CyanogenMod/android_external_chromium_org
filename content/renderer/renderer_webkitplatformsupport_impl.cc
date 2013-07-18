@@ -40,6 +40,7 @@
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_clipboard_client.h"
 #include "content/renderer/webclipboard_impl.h"
+#include "content/renderer/webcrypto_impl.h"
 #include "content/renderer/websharedworkerrepository_impl.h"
 #include "gpu/config/gpu_info.h"
 #include "ipc/ipc_sync_message_filter.h"
@@ -49,6 +50,7 @@
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
 #include "third_party/WebKit/public/platform/WebBlobRegistry.h"
+#include "third_party/WebKit/public/platform/WebDeviceMotionListener.h"
 #include "third_party/WebKit/public/platform/WebFileInfo.h"
 #include "third_party/WebKit/public/platform/WebGamepads.h"
 #include "third_party/WebKit/public/platform/WebHyphenator.h"
@@ -117,6 +119,8 @@ namespace content {
 static bool g_sandbox_enabled = true;
 base::LazyInstance<WebGamepads>::Leaky g_test_gamepads =
     LAZY_INSTANCE_INITIALIZER;
+base::LazyInstance<WebKit::WebDeviceMotionData>::Leaky
+    g_test_device_motion_data = LAZY_INSTANCE_INITIALIZER;
 
 //------------------------------------------------------------------------------
 
@@ -1065,11 +1069,34 @@ WebKit::WebString RendererWebKitPlatformSupportImpl::convertIDNToUnicode(
 
 void RendererWebKitPlatformSupportImpl::setDeviceMotionListener(
     WebKit::WebDeviceMotionListener* listener) {
-  if (!device_motion_event_pump_) {
-    device_motion_event_pump_.reset(new DeviceMotionEventPump);
-    device_motion_event_pump_->Attach(RenderThreadImpl::current());
+  if (g_test_device_motion_data == 0) {
+    if (!device_motion_event_pump_) {
+      device_motion_event_pump_.reset(new DeviceMotionEventPump);
+      device_motion_event_pump_->Attach(RenderThreadImpl::current());
+    }
+    device_motion_event_pump_->SetListener(listener);
+  } else {
+    base::MessageLoopProxy::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&WebKit::WebDeviceMotionListener::didChangeDeviceMotion,
+                   base::Unretained(listener),
+                   g_test_device_motion_data.Get()));
   }
-  device_motion_event_pump_->SetListener(listener);
+}
+
+// static
+void RendererWebKitPlatformSupportImpl::SetMockDeviceMotionDataForTesting(
+    const WebKit::WebDeviceMotionData& data) {
+  g_test_device_motion_data.Get() = data;
+}
+
+//------------------------------------------------------------------------------
+
+WebKit::WebCrypto* RendererWebKitPlatformSupportImpl::crypto() {
+  if (!web_crypto_)
+    web_crypto_.reset(new WebCryptoImpl());
+  return web_crypto_.get();
+
 }
 
 }  // namespace content

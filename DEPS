@@ -8,19 +8,19 @@ vars = {
   "sourceforge_url": "http://%(repo)s.svn.sourceforge.net/svnroot/%(repo)s",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "154328",
+  "webkit_revision": "154375",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "swig_revision": "69281",
-  "nacl_revision": "11754",
+  "nacl_revision": "11782",
   # After changing nacl_revision, run 'glient sync' and check native_client/DEPS
   # to update other nacl_*_revision's.
   "nacl_tools_revision": "11437",  # native_client/DEPS: tools_rev
   "gtm_revision": "616",
 
-  "libjingle_revision": "354",
+  "libjingle_revision": "374",
   "libphonenumber_revision": "584",
-  "libvpx_revision": "210966",
+  "libvpx_revision": "211873",
   "lss_revision": "20",
 
   # These two FFmpeg variables must be updated together.  One is used for SVN
@@ -29,11 +29,11 @@ vars = {
   "ffmpeg_hash": "245a8c0cdfdd5ab3da9045089661017e9ddd8d0e",
 
   "sfntly_revision": "134",
-  "skia_revision": "10093",
+  "skia_revision": "10117",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
-  "v8_revision": "15675",
+  "v8_revision": "15699",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.

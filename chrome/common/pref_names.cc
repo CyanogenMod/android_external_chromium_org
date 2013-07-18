@@ -990,14 +990,6 @@ const char kPluginsDisabledPluginsExceptions[] =
 // List pref containing names of plugins that are enabled by policy.
 const char kPluginsEnabledPlugins[] = "plugins.plugins_enabled";
 
-// When first shipped, the pdf plugin will be disabled by default.  When we
-// enable it by default, we'll want to do so only once.
-const char kPluginsEnabledInternalPDF[] = "plugins.enabled_internal_pdf3";
-
-// When first shipped, the nacl plugin will be disabled by default.  When we
-// enable it by default, we'll want to do so only once.
-const char kPluginsEnabledNaCl[] = "plugins.enabled_nacl";
-
 // When bundled NPAPI Flash is removed, if at that point it is enabled while
 // Pepper Flash is disabled, we would like to turn on Pepper Flash. And we will
 // want to do so only once.
@@ -1615,9 +1607,6 @@ const char kWasRestarted[] = "was.restarted";
 const char kRestartSwitchMode[] = "restart.switch_mode";
 #endif
 
-// Number of keywords.
-const char kNumKeywords[] = "user_experience_metrics.num_keywords";
-
 // Placeholder preference for disabling voice / video chat if it is ever added.
 // Currently, this does not change any behavior.
 const char kDisableVideoAndChat[] = "disable_video_chat";
@@ -1948,11 +1937,6 @@ const char kCloudPrintSigninDialogWidth[] =
     "cloud_print.signin_dialog_size.width";
 const char kCloudPrintSigninDialogHeight[] =
     "cloud_print.signin_dialog_size.height";
-
-#if !defined(OS_ANDROID)
-// The Chrome To Mobile service mobile device list pref.
-const char kChromeToMobileDeviceList[] = "chrome_to_mobile.device_list";
-#endif
 
 // The list of BackgroundContents that should be loaded when the browser
 // launches.
@@ -2458,9 +2442,6 @@ const char kOverscrollHorizontalResistThreshold[] =
 const char kOverscrollVerticalResistThreshold[] =
     "overscroll.vertical_resist_threshold";
 #endif
-
-// Indicates whether the browser is in managed mode.
-const char kInManagedMode[] = "managed_mode";
 
 // Counts how many more times the 'profile on a network share' warning should be
 // shown to the user before the next silence period.

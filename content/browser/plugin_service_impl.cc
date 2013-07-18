@@ -8,7 +8,7 @@
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
@@ -791,10 +791,6 @@ void PluginServiceImpl::RegisterInternalPlugin(
 void PluginServiceImpl::GetInternalPlugins(
     std::vector<webkit::WebPluginInfo>* plugins) {
   plugin_list_->GetInternalPlugins(plugins);
-}
-
-webkit::npapi::PluginList* PluginServiceImpl::GetPluginList() {
-  return plugin_list_;
 }
 
 }  // namespace content

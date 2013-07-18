@@ -172,11 +172,6 @@ BrowserCommandController::BrowserCommandController(
         base::Bind(
             &BrowserCommandController::UpdateCommandsForFileSelectionDialogs,
             base::Unretained(this)));
-    local_pref_registrar_.Add(
-        prefs::kInManagedMode,
-        base::Bind(
-            &BrowserCommandController::UpdateCommandsForMultipleProfiles,
-            base::Unretained(this)));
   }
 
   profile_pref_registrar_.Init(profile()->GetPrefs());
@@ -501,9 +496,6 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
       break;
     case IDC_PRINT_TO_DESTINATION:
       PrintToDestination(browser_);
-      break;
-    case IDC_CHROME_TO_MOBILE_PAGE:
-      ShowChromeToMobileBubble(browser_);
       break;
     case IDC_ENCODING_AUTO_DETECT:
       browser_->ToggleEncodingAutoDetect();

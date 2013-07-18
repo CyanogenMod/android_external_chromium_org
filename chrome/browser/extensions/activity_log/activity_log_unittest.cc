@@ -4,7 +4,7 @@
 
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/synchronization/waitable_event.h"
 #include "chrome/browser/extensions/activity_log/activity_log.h"
@@ -242,7 +242,7 @@ TEST_F(ActivityLogTest, LogPrerender) {
   scoped_ptr<prerender::PrerenderHandle> prerender_handle(
       prerender_manager->AddPrerenderFromLocalPredictor(
           url,
-          web_contents()->GetController().GetDefaultSessionStorageNamespace(),
+          web_contents()->GetController().GetSessionStorageNamespace(),
           kSize));
 
   const std::vector<content::WebContents*> contentses =
@@ -264,4 +264,3 @@ TEST_F(ActivityLogTest, LogPrerender) {
 }
 
 }  // namespace extensions
-

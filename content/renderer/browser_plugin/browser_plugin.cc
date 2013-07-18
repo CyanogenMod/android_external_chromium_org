@@ -6,7 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/json/json_string_value_serializer.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -24,6 +24,7 @@
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/v8_value_converter_impl.h"
 #include "skia/ext/platform_canvas.h"
+#include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/web/WebBindings.h"
 #include "third_party/WebKit/public/web/WebDOMCustomEvent.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -34,7 +35,6 @@
 #include "third_party/WebKit/public/web/WebPluginParams.h"
 #include "third_party/WebKit/public/web/WebScriptSource.h"
 #include "third_party/WebKit/public/web/WebView.h"
-#include "third_party/WebKit/public/platform/WebRect.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "webkit/plugins/sad_plugin.h"
 #include "webkit/renderer/cursor_utils.h"
@@ -206,10 +206,6 @@ std::string BrowserPlugin::GetNameAttribute() const {
 
 std::string BrowserPlugin::GetSrcAttribute() const {
   return GetDOMAttributeValue(browser_plugin::kAttributeSrc);
-}
-
-std::string BrowserPlugin::GetApiAttribute() const {
-  return GetDOMAttributeValue(browser_plugin::kAttributeApi);
 }
 
 bool BrowserPlugin::GetAutoSizeAttribute() const {
@@ -386,7 +382,7 @@ bool BrowserPlugin::UsesPendingDamageBuffer(
   return damage_buffer_sequence_id_ == params.damage_buffer_sequence_id;
 }
 
-void BrowserPlugin::Attach(int guest_instance_id) {
+void BrowserPlugin::OnInstanceIDAllocated(int guest_instance_id) {
   CHECK(guest_instance_id != browser_plugin::kInstanceIDNone);
   before_first_navigation_ = false;
   guest_instance_id_ = guest_instance_id;
@@ -395,8 +391,10 @@ void BrowserPlugin::Attach(int guest_instance_id) {
   std::map<std::string, base::Value*> props;
   props[browser_plugin::kWindowID] =
       new base::FundamentalValue(guest_instance_id);
-  TriggerEvent(browser_plugin::kEventInternalAttached, &props);
+  TriggerEvent(browser_plugin::kEventInternalInstanceIDAllocated, &props);
+}
 
+void BrowserPlugin::Attach(scoped_ptr<base::DictionaryValue> extra_params) {
   BrowserPluginHostMsg_Attach_Params attach_params;
   attach_params.browser_plugin_instance_id = instance_id_;
   attach_params.focused = ShouldGuestBeFocused();
@@ -408,16 +406,10 @@ void BrowserPlugin::Attach(int guest_instance_id) {
   GetDamageBufferWithSizeParams(&attach_params.auto_size_params,
                                 &attach_params.resize_guest_params);
 
-  // TODO(fsamuel): These params should be populated by a new internal attach
-  // API in the near future. This will permit shims that use BrowserPlugin to
-  // propagate shim-specific data on attachment that will be handled by the
-  // content embedder.
-  base::DictionaryValue extra_params;
-  extra_params.SetString(browser_plugin::kAttributeApi, GetApiAttribute());
   browser_plugin_manager()->Send(
       new BrowserPluginHostMsg_Attach(render_view_routing_id_,
                                       guest_instance_id_, attach_params,
-                                      extra_params));
+                                      *extra_params));
 }
 
 void BrowserPlugin::DidCommitCompositorFrame() {
@@ -762,7 +754,7 @@ bool BrowserPlugin::AttachWindowTo(const WebKit::WebNode& node, int window_id) {
   if (browser_plugin->HasNavigated())
     return false;
 
-  browser_plugin->Attach(window_id);
+  browser_plugin->OnInstanceIDAllocated(window_id);
   return true;
 }
 
@@ -977,8 +969,7 @@ void BrowserPlugin::RespondPermission(
   else
     browser_plugin_manager()->Send(
         new BrowserPluginHostMsg_RespondPermission(
-            render_view_routing_id_, guest_instance_id_, permission_type,
-            request_id, allow));
+            render_view_routing_id_, guest_instance_id_, request_id, allow));
 }
 
 void BrowserPlugin::RespondPermissionPointerLock(bool allow) {

@@ -4,7 +4,7 @@
 
 #include "content/renderer/browser_plugin/mock_browser_plugin_manager.h"
 
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/renderer/browser_plugin/mock_browser_plugin.h"
 #include "ipc/ipc_message.h"
@@ -43,7 +43,9 @@ void MockBrowserPluginManager::AllocateInstanceID(
 void MockBrowserPluginManager::AllocateInstanceIDACK(
     BrowserPlugin* browser_plugin,
     int guest_instance_id) {
-  browser_plugin->Attach(guest_instance_id);
+  browser_plugin->OnInstanceIDAllocated(guest_instance_id);
+  scoped_ptr<base::DictionaryValue> extra_params(new base::DictionaryValue());
+  browser_plugin->Attach(extra_params.Pass());
 }
 
 bool MockBrowserPluginManager::Send(IPC::Message* msg) {

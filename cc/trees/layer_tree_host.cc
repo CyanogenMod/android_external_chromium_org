@@ -10,7 +10,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -709,7 +709,7 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
         gfx::Transform(),
         device_scale_factor_,
         page_scale_factor_,
-        root_scroll,
+        root_scroll ? root_scroll->parent() : NULL,
         GetRendererCapabilities().max_texture_size,
         settings_.can_use_lcd_text,
         settings_.layer_transforms_should_scale_layer_contents,

@@ -433,6 +433,7 @@ LOCAL_SRC_FILES := \
 	net/url_request/url_request_throttler_header_adapter.cc \
 	net/url_request/url_request_throttler_manager.cc \
 	net/url_request/view_cache_helper.cc \
+	net/websockets/websocket_channel.cc \
 	net/websockets/websocket_errors.cc \
 	net/websockets/websocket_frame.cc \
 	net/websockets/websocket_frame_parser.cc \

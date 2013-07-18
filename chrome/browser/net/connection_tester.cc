@@ -9,7 +9,7 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/thread_restrictions.h"
@@ -159,12 +159,7 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
         resolver->SetDefaultAddressFamily(net::ADDRESS_FAMILY_IPV4);
         break;
       case ConnectionTester::HOST_RESOLVER_EXPERIMENT_IPV6_PROBE: {
-        // Note that we don't use impl->ProbeIPv6Support() since that finishes
-        // asynchronously and may not take effect in time for the test.
-        // So instead we will probe synchronously (might take 100-200 ms).
-        net::AddressFamily family = net::TestIPv6Support().ipv6_supported ?
-            net::ADDRESS_FAMILY_UNSPECIFIED : net::ADDRESS_FAMILY_IPV4;
-        resolver->SetDefaultAddressFamily(family);
+        // The system HostResolver will probe by default.
         break;
       }
       default:

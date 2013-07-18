@@ -18,7 +18,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/nix/xdg_util.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
@@ -978,10 +978,6 @@ void BrowserWindowGtk::ShowBookmarkBubble(const GURL& url,
   toolbar_->GetLocationBarView()->ShowStarBubble(url, !already_bookmarked);
 }
 
-void BrowserWindowGtk::ShowChromeToMobileBubble() {
-  toolbar_->GetLocationBarView()->ShowChromeToMobileBubble();
-}
-
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
 void BrowserWindowGtk::ShowOneClickSigninBubble(
     OneClickSigninBubbleType type,
@@ -1141,10 +1137,6 @@ void BrowserWindowGtk::Copy() {
 void BrowserWindowGtk::Paste() {
   gtk_window_util::DoPaste(
       window_, browser_->tab_strip_model()->GetActiveWebContents());
-}
-
-gfx::Rect BrowserWindowGtk::GetInstantBounds() {
-  return ui::GetWidgetScreenBounds(contents_container_->widget());
 }
 
 WindowOpenDisposition BrowserWindowGtk::GetDispositionForPopupBounds(
