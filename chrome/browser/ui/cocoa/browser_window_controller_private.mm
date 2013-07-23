@@ -234,7 +234,7 @@ willPositionSheet:(NSWindow*)sheet
 
   // If in presentation mode, reset |maxY| to top of screen, so that the
   // floating bar slides over the things which appear to be in the content area.
-  if (inPresentationMode)
+  if (inPresentationMode || !fullscreenUrl_.is_empty())
     maxY = NSMaxY(contentBounds);
 
   // Also place the info bar container immediate below the toolbar, except in
@@ -613,11 +613,9 @@ willPositionSheet:(NSWindow*)sheet
   [self layoutSubviews];
 }
 
+// TODO(rohitrao): This method is misnamed now, since there is a flag that
+// enables 10.6-style fullscreen on newer OSes.
 - (void)enterFullscreenForSnowLeopard {
-  // TODO(rohitrao): This method is misnamed now, since there is a flag that
-  // enables 10.6-style fullscreen on newer OSes.
-  DCHECK(!chrome::mac::SupportsSystemFullscreen());
-
   // Fade to black.
   const CGDisplayReservationInterval kFadeDurationSeconds = 0.6;
   Boolean didFadeOut = NO;
@@ -638,8 +636,16 @@ willPositionSheet:(NSWindow*)sheet
   [self moveViewsForFullscreenForSnowLeopard:YES
                                regularWindow:[self window]
                             fullscreenWindow:fullscreenWindow_.get()];
-  [self adjustUIForPresentationMode:YES];
-  [self setPresentationModeInternal:YES forceDropdown:NO];
+
+  // When simplified fullscreen is enabled, do not enter presentation mode.
+  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kEnableSimplifiedFullscreen)) {
+    // TODO(rohitrao): Add code to manage the menubar here.
+  } else {
+    [self adjustUIForPresentationMode:YES];
+    [self setPresentationModeInternal:YES forceDropdown:NO];
+  }
+
   [self layoutSubviews];
 
   [self windowDidEnterFullScreen:nil];
@@ -666,6 +672,13 @@ willPositionSheet:(NSWindow*)sheet
     didFadeOut = YES;
     CGDisplayFade(token, kFadeDurationSeconds / 2, kCGDisplayBlendNormal,
         kCGDisplayBlendSolidColor, 0.0, 0.0, 0.0, /*synchronous=*/true);
+  }
+
+  // When simplified fullscreen is enabled, the menubar status is managed
+  // directly by BWC.
+  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kEnableSimplifiedFullscreen)) {
+    // TODO(rohitrao): Add code to manage the menubar here.
   }
 
   [self windowWillExitFullScreen:nil];

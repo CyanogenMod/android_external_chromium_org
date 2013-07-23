@@ -21,6 +21,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "components/nacl/common/nacl_switches.h"
 #include "content/public/browser/user_metrics.h"
+#include "extensions/common/switches.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/google_chrome_strings.h"
@@ -439,13 +440,6 @@ const Experiment kExperiments[] = {
 #endif
   },
   {
-    "enable-d3d11",
-    IDS_FLAGS_ENABLE_D3D11_NAME,
-    IDS_FLAGS_ENABLE_D3D11_DESCRIPTION,
-    kOsWin,
-    SINGLE_VALUE_TYPE(switches::kEnableD3D11)
-  },
-  {
     "disable-webrtc",
     IDS_FLAGS_DISABLE_WEBRTC_NAME,
     IDS_FLAGS_DISABLE_WEBRTC_DESCRIPTION,
@@ -552,7 +546,7 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_EXTENSIONS_ON_CHROME_URLS_NAME,
     IDS_FLAGS_EXTENSIONS_ON_CHROME_URLS_DESCRIPTION,
     kOsAll,
-    SINGLE_VALUE_TYPE(switches::kExtensionsOnChromeURLs)
+    SINGLE_VALUE_TYPE(extensions::switches::kExtensionsOnChromeURLs)
   },
   {
     "enable-fast-unload",
@@ -581,14 +575,6 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_APP_WINDOW_CONTROLS_DESCRIPTION,
     kOsDesktop,
     SINGLE_VALUE_TYPE(switches::kEnableAppWindowControls)
-  },
-  {
-    "action-box",
-    IDS_FLAGS_ACTION_BOX_NAME,
-    IDS_FLAGS_ACTION_BOX_DESCRIPTION,
-    kOsDesktop,
-    ENABLE_DISABLE_VALUE_TYPE_AND_VALUE(switches::kActionBox, "1",
-                                        switches::kActionBox, "0")
   },
   {
     "script-badges",
@@ -997,6 +983,13 @@ const Experiment kExperiments[] = {
     kOsCrOS,
     SINGLE_VALUE_TYPE(chromeos::switches::kNoDiscardTabs)
   },
+  {
+    "ash-enable-docked-windows",
+    IDS_FLAGS_DOCKED_WINDOWS_NAME,
+    IDS_FLAGS_DOCKED_WINDOWS_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(ash::switches::kAshEnableDockedWindows)
+  },
 #endif
   {
     "enable-download-resumption",
@@ -1116,6 +1109,13 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(chromeos::switches::kFileManagerEnableSharing)
   },
   {
+    "file-manager-enable-folder-shortcuts",
+    IDS_FLAGS_FILE_MANAGER_ENABLE_FOLDER_SHORTCUTS,
+    IDS_FLAGS_FILE_MANAGER_ENABLE_FOLDER_SHORTCUTS_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(chromeos::switches::kFileManagerEnableFolderShortcuts)
+  },
+  {
     "disable-quickoffice-component-app",
     IDS_FLAGS_DISABLE_QUICKOFFICE_COMPONENT_APP_NAME,
     IDS_FLAGS_DISABLE_QUICKOFFICE_COMPONENT_APP_DESCRIPTION,
@@ -1227,7 +1227,7 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ASH_AUDIO_DEVICE_MENU_NAME,
     IDS_FLAGS_ASH_AUDIO_DEVICE_MENU_DESCRIPTION,
     kOsCrOS,
-    SINGLE_VALUE_TYPE(ash::switches::kAshEnableAudioDeviceMenu)
+    ENABLE_DISABLE_VALUE_TYPE("", ash::switches::kAshDisableAudioDeviceMenu)
   },
   {
     "enable-carrier-switching",
@@ -1259,12 +1259,13 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kEnablePasswordGeneration)
   },
   {
-    "enable-password-autofill-public-suffix-domain-matching",
-    IDS_FLAGS_ENABLE_PASSWORD_AUTOFILL_PUBLIC_SUFFIX_DOMAIN_MATCHING_NAME,
-    IDS_FLAGS_ENABLE_PASSWORD_AUTOFILL_PUBLIC_SUFFIX_DOMAIN_MATCHING_DESCRIPTION,
+    "password-autofill-public-suffix-domain-matching",
+    IDS_FLAGS_PASSWORD_AUTOFILL_PUBLIC_SUFFIX_DOMAIN_MATCHING_NAME,
+    IDS_FLAGS_PASSWORD_AUTOFILL_PUBLIC_SUFFIX_DOMAIN_MATCHING_DESCRIPTION,
     kOsAndroid,
-    SINGLE_VALUE_TYPE(
-        switches::kEnablePasswordAutofillPublicSuffixDomainMatching)
+    ENABLE_DISABLE_VALUE_TYPE(
+        switches::kEnablePasswordAutofillPublicSuffixDomainMatching,
+        switches::kDisablePasswordAutofillPublicSuffixDomainMatching)
   },
   {
     "enable-deferred-image-decoding",

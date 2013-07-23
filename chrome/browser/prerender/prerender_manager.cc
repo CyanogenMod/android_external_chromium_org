@@ -39,6 +39,7 @@
 #include "chrome/browser/prerender/prerender_tracker.h"
 #include "chrome/browser/prerender/prerender_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper_delegate.h"
 #include "chrome/common/chrome_switches.h"
@@ -111,7 +112,8 @@ bool NeedMatchCompleteDummyForFinalStatus(FinalStatus final_status) {
       final_status != FINAL_STATUS_CACHE_OR_HISTORY_CLEARED &&
       final_status != FINAL_STATUS_CANCELLED &&
       final_status != FINAL_STATUS_DEVTOOLS_ATTACHED &&
-      final_status != FINAL_STATUS_CROSS_SITE_NAVIGATION_PENDING;
+      final_status != FINAL_STATUS_CROSS_SITE_NAVIGATION_PENDING &&
+      final_status != FINAL_STATUS_PAGE_BEING_CAPTURED;
 }
 
 void CheckIfCookiesExistForDomainResultOnUIThread(
@@ -275,9 +277,13 @@ PrerenderManager::PrerenderManager(Profile* profile,
   notification_registrar_.Add(
       this, chrome::NOTIFICATION_COOKIE_CHANGED,
       content::NotificationService::AllBrowserContextsAndSources());
+
+  MediaCaptureDevicesDispatcher::GetInstance()->AddObserver(this);
 }
 
 PrerenderManager::~PrerenderManager() {
+  MediaCaptureDevicesDispatcher::GetInstance()->RemoveObserver(this);
+
   // The earlier call to BrowserContextKeyedService::Shutdown() should have
   // emptied these vectors already.
   DCHECK(active_prerenders_.empty());
@@ -323,8 +329,10 @@ PrerenderHandle* PrerenderManager::AddPrerenderFromLinkRelPrerender(
       return NULL;
     if (source_web_contents->GetURL().host() == url.host())
       origin = ORIGIN_LINK_REL_PRERENDER_SAMEDOMAIN;
+    // TODO(ajwong): This does not correctly handle storage for isolated apps.
     session_storage_namespace =
-        source_web_contents->GetController().GetSessionStorageNamespace();
+        source_web_contents->GetController()
+            .GetDefaultSessionStorageNamespace();
   }
 
   // If the prerender request comes from a recently cancelled prerender that
@@ -406,8 +414,10 @@ bool PrerenderManager::MaybeUsePrerenderedPage(WebContents* web_contents,
 
   DeleteOldEntries();
   to_delete_prerenders_.clear();
+  // TODO(ajwong): This doesn't handle isolated apps correctly.
   PrerenderData* prerender_data = FindPrerenderData(
-      url, web_contents->GetController().GetSessionStorageNamespace());
+          url,
+          web_contents->GetController().GetDefaultSessionStorageNamespace());
   if (!prerender_data)
     return false;
   DCHECK(prerender_data->contents());
@@ -431,6 +441,12 @@ bool PrerenderManager::MaybeUsePrerenderedPage(WebContents* web_contents,
   // Do not use the prerendered version if there is an opener object.
   if (web_contents->HasOpener()) {
     prerender_data->contents()->Destroy(FINAL_STATUS_WINDOW_OPENER);
+    return false;
+  }
+
+  // Do not swap in the prerender if the current WebContents is being captured.
+  if (web_contents->GetCapturerCount() > 0) {
+    prerender_data->contents()->Destroy(FINAL_STATUS_PAGE_BEING_CAPTURED);
     return false;
   }
 
@@ -1430,6 +1446,21 @@ void PrerenderManager::Observe(int type,
   }
   DCHECK(type == chrome::NOTIFICATION_COOKIE_CHANGED);
   CookieChanged(content::Details<ChromeCookieDetails>(details).ptr());
+}
+
+void PrerenderManager::OnCreatingAudioStream(int render_process_id,
+                                             int render_view_id) {
+  WebContents* tab = tab_util::GetWebContentsByID(
+      render_process_id, render_view_id);
+  if (!tab)
+    return;
+
+  if (!IsWebContentsPrerendering(tab, NULL))
+    return;
+
+  prerender_tracker()->TryCancel(
+      render_process_id, render_view_id,
+      prerender::FINAL_STATUS_CREATING_AUDIO_STREAM);
 }
 
 void PrerenderManager::RecordLikelyLoginOnURL(const GURL& url) {

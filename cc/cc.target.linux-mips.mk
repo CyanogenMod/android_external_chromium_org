@@ -39,6 +39,7 @@ LOCAL_SRC_FILES := \
 	cc/animation/timing_function.cc \
 	cc/animation/transform_operation.cc \
 	cc/animation/transform_operations.cc \
+	cc/base/invalidation_region.cc \
 	cc/base/math_util.cc \
 	cc/base/region.cc \
 	cc/base/switches.cc \
@@ -68,6 +69,7 @@ LOCAL_SRC_FILES := \
 	cc/layers/layer.cc \
 	cc/layers/layer_impl.cc \
 	cc/layers/layer_iterator.cc \
+	cc/layers/layer_lists.cc \
 	cc/layers/layer_position_constraint.cc \
 	cc/layers/nine_patch_layer.cc \
 	cc/layers/nine_patch_layer_impl.cc \

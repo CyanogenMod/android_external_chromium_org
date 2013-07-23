@@ -1,7 +1,6 @@
 /* Copyright 2013 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+ * found in the LICENSE file. */
 
 #ifndef LIBRARIES_SDK_UTIL_ATOMICOPS_H_
 #define LIBRARIES_SDK_UTIL_ATOMICOPS_H_
@@ -9,6 +8,9 @@
 #ifndef WIN32
 
 #include <stdint.h>
+
+namespace sdk_util {
+
 typedef int32_t Atomic32;
 
 #ifndef __llvm__
@@ -39,7 +41,9 @@ inline Atomic32 AtomicXorFetch(volatile Atomic32* ptr, Atomic32 value) {
   return __sync_xor_and_fetch(ptr, value);
 }
 
-#else
+}  // namespace sdk_util
+
+#else  // ifndef WIN32
 
 #include <windows.h>
 
@@ -48,6 +52,8 @@ inline Atomic32 AtomicXorFetch(volatile Atomic32* ptr, Atomic32 value) {
 #undef max
 #undef PostMessage
 #undef interface
+
+namespace sdk_util {
 
 typedef long Atomic32;
 
@@ -96,7 +102,8 @@ inline Atomic32 AtomicXorFetch(volatile Atomic32* ptr, Atomic32 value) {
   return newval;
 }
 
-#endif
+}  // namespace sdk_util
 
+#endif  // ifndef WIN32
 
 #endif  /* LIBRARIES_SDK_UTIL_ATOMICOPS_H_ */

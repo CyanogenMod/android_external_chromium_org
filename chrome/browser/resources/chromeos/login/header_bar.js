@@ -44,7 +44,6 @@ cr.define('login', function() {
           this.handleSignoutClick_);
       $('cancel-multiple-sign-in-button').addEventListener('click',
           this.handleCancelMultipleSignInClick_);
-
       if (document.documentElement.getAttribute('screen') == 'login')
         login.AppsMenuButton.decorate($('show-apps-button'));
     },

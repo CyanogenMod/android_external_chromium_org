@@ -9,7 +9,7 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
@@ -209,7 +209,7 @@ class HttpResponseBodyDrainerTest : public testing::Test {
   HttpResponseBodyDrainerTest()
       : proxy_service_(ProxyService::CreateDirect()),
         ssl_config_service_(new SSLConfigServiceDefaults),
-        http_server_properties_(new HttpServerPropertiesImpl),
+        http_server_properties_(new HttpServerPropertiesImpl()),
         session_(CreateNetworkSession()),
         mock_stream_(new MockHttpStream(&result_waiter_)),
         drainer_(new HttpResponseBodyDrainer(mock_stream_)) {}
@@ -220,7 +220,7 @@ class HttpResponseBodyDrainerTest : public testing::Test {
     HttpNetworkSession::Params params;
     params.proxy_service = proxy_service_.get();
     params.ssl_config_service = ssl_config_service_.get();
-    params.http_server_properties = http_server_properties_.get();
+    params.http_server_properties = http_server_properties_->GetWeakPtr();
     return new HttpNetworkSession(params);
   }
 

@@ -1,7 +1,6 @@
 /* Copyright (c) 2013 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+ * found in the LICENSE file. */
 
 /* XRay symbol table */
 
@@ -16,6 +15,7 @@
 #endif
 
 #include "xray/xray_priv.h"
+#define PNACL_STRING_OFFSET (0x10000000)
 
 #if defined(XRAY)
 
@@ -145,6 +145,19 @@ struct XRaySymbol* XRaySymbolTableLookup(struct XRaySymbolTable* symtab,
                                          uint32_t addr) {
   void *x = XRayHashTableLookup(symtab->hash_table, addr);
   struct XRaySymbol* r = (struct XRaySymbol*)x;
+
+#if defined(__pnacl__)
+  if (r == NULL) {
+    /* Addresses are trimed to 24 bits for internal storage, so we need to
+     * add this offset back in order to get the real address.
+     */
+    addr |= PNACL_STRING_OFFSET;
+    const char* name = (const char*)addr;
+    struct XRaySymbol* symbol = XRaySymbolCreate(symtab->symbol_pool, name);
+    r = XRaySymbolTableAdd(symtab, symbol, addr);
+  }
+#endif
+
 #if defined(__GLIBC__)
   if (r == NULL) {
     Dl_info info;

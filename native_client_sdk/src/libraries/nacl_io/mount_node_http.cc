@@ -1,7 +1,6 @@
-/* Copyright (c) 2013 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #include "nacl_io/mount_node_http.h"
 
@@ -18,6 +17,8 @@
 #if defined(WIN32)
 #define snprintf _snprintf
 #endif
+
+namespace nacl_io {
 
 namespace {
 
@@ -375,8 +376,8 @@ Error MountNodeHttp::DownloadToCache() {
 
   // We don't know how big the file is. Read in chunks.
   cached_data_.resize(MAX_READ_BUFFER_SIZE);
-  size_t total_bytes_read = 0;
-  size_t bytes_to_read = MAX_READ_BUFFER_SIZE;
+  int total_bytes_read = 0;
+  int bytes_to_read = MAX_READ_BUFFER_SIZE;
   while (true) {
     char* buf = cached_data_.data() + total_bytes_read;
     int bytes_read;
@@ -398,14 +399,14 @@ Error MountNodeHttp::DownloadToCache() {
 
 Error MountNodeHttp::ReadPartialFromCache(size_t offs,
                                           void* buf,
-                                          size_t count,
+                                          int count,
                                           int* out_bytes) {
   *out_bytes = 0;
 
   if (offs > cached_data_.size())
     return EINVAL;
 
-  count = std::min(count, cached_data_.size() - offs);
+  count = std::min(count, static_cast<int>(cached_data_.size() - offs));
   memcpy(buf, &cached_data_.data()[offs], count);
 
   *out_bytes = count;
@@ -507,7 +508,7 @@ Error MountNodeHttp::DownloadPartial(size_t offs,
 
 Error MountNodeHttp::DownloadToBuffer(PP_Resource loader,
                                       void* buf,
-                                      size_t count,
+                                      int count,
                                       int* out_bytes) {
   *out_bytes = 0;
 
@@ -515,9 +516,9 @@ Error MountNodeHttp::DownloadToBuffer(PP_Resource loader,
   URLLoaderInterface* loader_interface = ppapi->GetURLLoaderInterface();
 
   char* out_buffer = static_cast<char*>(buf);
-  size_t bytes_to_read = count;
+  int bytes_to_read = count;
   while (bytes_to_read > 0) {
-    int32_t bytes_read = loader_interface->ReadResponseBody(
+    int bytes_read = loader_interface->ReadResponseBody(
         loader, out_buffer, bytes_to_read, PP_BlockUntilComplete());
 
     if (bytes_read == 0) {
@@ -538,4 +539,6 @@ Error MountNodeHttp::DownloadToBuffer(PP_Resource loader,
   *out_bytes = count;
   return 0;
 }
+
+}  // namespace nacl_io
 

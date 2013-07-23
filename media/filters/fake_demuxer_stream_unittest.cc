@@ -5,7 +5,7 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/demuxer_stream.h"
 #include "media/filters/fake_demuxer_stream.h"
@@ -62,7 +62,7 @@ class FakeDemuxerStreamTest : public testing::Test {
         EXPECT_FALSE(read_pending_);
         EXPECT_EQ(DemuxerStream::kOk, status_);
         ASSERT_TRUE(buffer_.get());
-        EXPECT_FALSE(buffer_->IsEndOfStream());
+        EXPECT_FALSE(buffer_->end_of_stream());
         break;
 
       case ABORTED:
@@ -81,7 +81,7 @@ class FakeDemuxerStreamTest : public testing::Test {
         EXPECT_FALSE(read_pending_);
         EXPECT_EQ(DemuxerStream::kOk, status_);
         ASSERT_TRUE(buffer_.get());
-        EXPECT_TRUE(buffer_->IsEndOfStream());
+        EXPECT_TRUE(buffer_->end_of_stream());
         break;
 
       case PENDING:

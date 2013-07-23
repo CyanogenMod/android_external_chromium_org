@@ -44,6 +44,8 @@ IPC_STRUCT_BEGIN(BrowserPluginHostMsg_AutoSize_Params)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(BrowserPluginHostMsg_ResizeGuest_Params)
+  // Indicates whether the parameters have been populated or not.
+  IPC_STRUCT_MEMBER(bool, size_changed)
   // The sequence number used to uniquely identify the damage buffer for the
   // current container size.
   IPC_STRUCT_MEMBER(uint32, damage_buffer_sequence_id)
@@ -209,9 +211,10 @@ IPC_MESSAGE_ROUTED5(BrowserPluginHostMsg_BuffersSwappedACK,
                     uint32 /* sync_point */)
 
 // Acknowledge that we presented an ubercomp frame.
-IPC_MESSAGE_ROUTED4(BrowserPluginHostMsg_CompositorFrameACK,
+IPC_MESSAGE_ROUTED5(BrowserPluginHostMsg_CompositorFrameACK,
                     int /* instance_id */,
                     int /* route_id */,
+                    uint32 /* output_surface_id */,
                     int /* renderer_host_id */,
                     cc::CompositorFrameAck /* ack */)
 
@@ -363,10 +366,11 @@ IPC_MESSAGE_CONTROL2(BrowserPluginMsg_BuffersSwapped,
                      int /* instance_id */,
                      BrowserPluginMsg_BuffersSwapped_Params)
 
-IPC_MESSAGE_CONTROL4(BrowserPluginMsg_CompositorFrameSwapped,
+IPC_MESSAGE_CONTROL5(BrowserPluginMsg_CompositorFrameSwapped,
                      int /* instance_id */,
                      cc::CompositorFrame /* frame */,
                      int /* route_id */,
+                     uint32 /* output_surface_id */,
                      int /* renderer_host_id */)
 
 // When the guest requests permission, the browser process forwards this
@@ -378,5 +382,7 @@ IPC_MESSAGE_CONTROL4(BrowserPluginMsg_RequestPermission,
                      base::DictionaryValue /* request_info */)
 
 // Forwards a PointerLock Unlock request to the BrowserPlugin.
-IPC_MESSAGE_CONTROL1(BrowserPluginMsg_UnlockMouse, int /* instance_id */)
+IPC_MESSAGE_CONTROL2(BrowserPluginMsg_SetMouseLock,
+                     int /* instance_id */,
+                     bool /* enable */)
 

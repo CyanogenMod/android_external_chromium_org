@@ -6,7 +6,7 @@
 
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/base/default_theme_provider.h"
 #include "ui/base/events/event.h"
@@ -711,15 +711,17 @@ const FocusManager* Widget::GetFocusManager() const {
 }
 
 InputMethod* Widget::GetInputMethod() {
+  return const_cast<InputMethod*>(
+      const_cast<const Widget*>(this)->GetInputMethod());
+}
+
+const InputMethod* Widget::GetInputMethod() const {
   if (is_top_level()) {
-    if (!input_method_.get()) {
-      input_method_.reset(native_widget_->CreateInputMethod());
-      if (input_method_.get())
-        input_method_->Init(this);
-    }
+    if (!input_method_.get())
+      input_method_ = const_cast<Widget*>(this)->CreateInputMethod().Pass();
     return input_method_.get();
   } else {
-    Widget* toplevel = GetTopLevelWidget();
+    const Widget* toplevel = GetTopLevelWidget();
     // If GetTopLevelWidget() returns itself which is not toplevel,
     // the widget is detached from toplevel widget.
     // TODO(oshima): Fix GetTopLevelWidget() to return NULL
@@ -1378,6 +1380,13 @@ bool Widget::GetSavedWindowPlacement(gfx::Rect* bounds,
     return true;
   }
   return false;
+}
+
+scoped_ptr<InputMethod> Widget::CreateInputMethod() {
+  scoped_ptr<InputMethod> input_method(native_widget_->CreateInputMethod());
+  if (input_method.get())
+    input_method->Init(this);
+  return input_method.Pass();
 }
 
 void Widget::ReplaceInputMethod(InputMethod* input_method) {

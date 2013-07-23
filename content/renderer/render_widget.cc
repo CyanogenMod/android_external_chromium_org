@@ -18,6 +18,7 @@
 #include "cc/base/switches.h"
 #include "cc/output/output_surface.h"
 #include "cc/trees/layer_tree_host.h"
+#include "content/child/npapi/webplugin.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/input_messages.h"
 #include "content/common/swapped_out_messages.h"
@@ -57,7 +58,6 @@
 #include "ui/gl/gl_switches.h"
 #include "ui/surface/transport_dib.h"
 #include "webkit/glue/webkit_glue.h"
-#include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 #include "webkit/renderer/compositor_bindings/web_rendering_stats_impl.h"
 #include "webkit/renderer/cursor_utils.h"
@@ -226,6 +226,7 @@ RenderWidget::RenderWidget(WebKit::WebPopupType popup_type,
       screen_info_(screen_info),
       device_scale_factor_(screen_info_.deviceScaleFactor),
       is_threaded_compositing_enabled_(false),
+      next_output_surface_id_(0),
       weak_ptr_factory_(this) {
   if (!swapped_out)
     RenderProcess::current()->AddRefProcess();
@@ -641,9 +642,11 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface() {
   }
 #endif
 
+  uint32 output_surface_id = next_output_surface_id_++;
+
   if (command_line.HasSwitch(switches::kEnableSoftwareCompositingGLAdapter)) {
       return scoped_ptr<cc::OutputSurface>(
-          new CompositorOutputSurface(routing_id(), NULL,
+          new CompositorOutputSurface(routing_id(), output_surface_id, NULL,
               new CompositorSoftwareOutputDevice(), true));
   }
 
@@ -674,15 +677,18 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface() {
       !command_line.HasSwitch(switches::kDisableDelegatedRenderer)) {
     DCHECK(is_threaded_compositing_enabled_);
     return scoped_ptr<cc::OutputSurface>(
-        new DelegatedCompositorOutputSurface(routing_id(), context, NULL));
+        new DelegatedCompositorOutputSurface(routing_id(), output_surface_id,
+                                             context, NULL));
   }
   if (command_line.HasSwitch(cc::switches::kCompositeToMailbox)) {
     DCHECK(is_threaded_compositing_enabled_);
     return scoped_ptr<cc::OutputSurface>(
-        new MailboxOutputSurface(routing_id(), context, NULL));
+        new MailboxOutputSurface(routing_id(), output_surface_id,
+                                 context, NULL));
   }
   return scoped_ptr<cc::OutputSurface>(
-      new CompositorOutputSurface(routing_id(), context, NULL, false));
+      new CompositorOutputSurface(routing_id(), output_surface_id,
+                                  context, NULL, false));
 }
 
 void RenderWidget::OnViewContextSwapBuffersAborted() {
@@ -1392,8 +1398,6 @@ void RenderWidget::Composite(base::TimeTicks frame_begin_time) {
 // WebWidgetClient
 
 void RenderWidget::didInvalidateRect(const WebRect& rect) {
-  TRACE_EVENT2("renderer", "RenderWidget::didInvalidateRect",
-               "width", rect.width, "height", rect.height);
   // The invalidated rect might be outside the bounds of the view.
   gfx::Rect view_rect(size_);
   gfx::Rect damaged_rect = gfx::IntersectRects(view_rect, rect);
@@ -1544,7 +1548,8 @@ void RenderWidget::didDeactivateCompositor() {
 }
 
 void RenderWidget::initializeLayerTreeView() {
-  compositor_ = RenderWidgetCompositor::Create(this);
+  compositor_ = RenderWidgetCompositor::Create(
+      this, is_threaded_compositing_enabled_);
   if (!compositor_)
     return;
 
@@ -1627,7 +1632,6 @@ void RenderWidget::didCompleteSwapBuffers() {
 }
 
 void RenderWidget::scheduleComposite() {
-  TRACE_EVENT0("gpu", "RenderWidget::scheduleComposite");
   if (RenderThreadImpl::current()->compositor_message_loop_proxy().get() &&
       compositor_) {
     compositor_->setNeedsRedraw();
@@ -2364,8 +2368,7 @@ void RenderWidget::didHandleGestureEvent(
 #endif
 }
 
-void RenderWidget::SchedulePluginMove(
-    const webkit::npapi::WebPluginGeometry& move) {
+void RenderWidget::SchedulePluginMove(const WebPluginGeometry& move) {
   size_t i = 0;
   for (; i < plugin_window_moves_.size(); ++i) {
     if (plugin_window_moves_[i].window == move.window) {

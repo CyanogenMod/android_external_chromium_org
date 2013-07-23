@@ -12,7 +12,7 @@
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "third_party/skia/include/core/SkRect.h"
@@ -1029,6 +1029,11 @@ ui::TextInputClient* View::GetTextInputClient() {
 
 InputMethod* View::GetInputMethod() {
   Widget* widget = GetWidget();
+  return widget ? widget->GetInputMethod() : NULL;
+}
+
+const InputMethod* View::GetInputMethod() const {
+  const Widget* widget = GetWidget();
   return widget ? widget->GetInputMethod() : NULL;
 }
 

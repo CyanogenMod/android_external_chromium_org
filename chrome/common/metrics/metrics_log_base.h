@@ -33,12 +33,9 @@ class MetricsLogBase {
                  const std::string& version_string);
   virtual ~MetricsLogBase();
 
-  // Computes the MD5 hash of the given string.
-  // Fills |base64_encoded_hash| with the hash, encoded in base64.
-  // Fills |numeric_hash| with the first 8 bytes of the hash.
-  static void CreateHashes(const std::string& string,
-                           std::string* base64_encoded_hash,
-                           uint64* numeric_hash);
+  // Computes the MD5 hash of the given string, and returns the first 8 bytes of
+  // the hash.
+  static uint64 Hash(const std::string& value);
 
   // Get the GMT buildtime for the current binary, expressed in seconds since
   // Januray 1, 1970 GMT.
@@ -69,7 +66,8 @@ class MetricsLogBase {
   int num_events() { return num_events_; }
 
   void set_hardware_class(const std::string& hardware_class) {
-    hardware_class_ = hardware_class;
+    uma_proto_.mutable_system_profile()->mutable_hardware()->set_hardware_class(
+        hardware_class);
   }
 
  protected:
@@ -84,8 +82,6 @@ class MetricsLogBase {
   int num_events_;  // the number of events recorded in this log
 
  private:
-  std::string hardware_class_;
-
   // locked_ is true when record has been packed up for sending, and should
   // no longer be written to.  It is only used for sanity checking and is
   // not a real lock.

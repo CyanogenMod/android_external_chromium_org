@@ -31,16 +31,13 @@ namespace gfx {
 class Size;
 }
 
-namespace webkit {
-struct WebPluginInfo;
-}
-
 namespace content {
 
 class ContextMenuClient;
 class RenderViewVisitor;
 struct ContextMenuParams;
 struct SSLStatus;
+struct WebPluginInfo;
 
 class CONTENT_EXPORT RenderView : public IPC::Sender {
  public:
@@ -92,7 +89,7 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
   // plugin was found.
   virtual WebKit::WebPlugin* CreatePlugin(
       WebKit::WebFrame* frame,
-      const webkit::WebPluginInfo& info,
+      const WebPluginInfo& info,
       const WebKit::WebPluginParams& params) = 0;
 
   // Evaluates a string of JavaScript in a particular frame.
@@ -148,6 +145,11 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
       WebKit::WebFrame* frame,
       const WebKit::WebURLRequest& request,
       WebKit::WebNavigationPolicy policy) = 0;
+
+  // Used by plugins that load data in this RenderView to update the loading
+  // notifications.
+  virtual void DidStartLoading() = 0;
+  virtual void DidStopLoading() = 0;
 
   // Notifies the renderer that a paint is to be generated for the size
   // passed in.

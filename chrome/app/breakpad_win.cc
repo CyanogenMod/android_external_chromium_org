@@ -17,7 +17,6 @@
 #include "base/command_line.h"
 #include "base/debug/crash_logging.h"
 #include "base/environment.h"
-#include "base/file_version_info.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_split.h"
@@ -33,13 +32,11 @@
 #include "chrome/app/hard_error_handler_win.h"
 #include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_result_codes.h"
-#include "chrome/common/chrome_switches.h"
-#include "chrome/common/crash_keys.h"
-#include "chrome/common/env_vars.h"
 #include "chrome/installer/util/google_chrome_sxs_distribution.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "chrome/installer/util/install_util.h"
 #include "components/breakpad/breakpad_client.h"
+#include "content/public/common/content_switches.h"
 #include "policy/policy_constants.h"
 #include "sandbox/win/src/nt_internals.h"
 #include "sandbox/win/src/sidestep/preamble_patcher.h"
@@ -362,31 +359,10 @@ std::wstring GetProfileType() {
 google_breakpad::CustomClientInfo* GetCustomInfo(const std::wstring& exe_path,
                                                  const std::wstring& type,
                                                  const std::wstring& channel) {
-  scoped_ptr<FileVersionInfo>
-      version_info(FileVersionInfo::CreateFileVersionInfo(
-          base::FilePath(exe_path)));
-
-  std::wstring version, product;
-  std::wstring special_build;
-  if (version_info.get()) {
-    // Get the information from the file.
-    version = version_info->product_version();
-    if (!version_info->is_official_build())
-      version.append(L"-devel");
-
-    const CommandLine& command = *CommandLine::ForCurrentProcess();
-    if (command.HasSwitch(switches::kChromeFrame)) {
-      product = L"ChromeFrame";
-    } else {
-      product = version_info->product_short_name();
-    }
-
-    special_build = version_info->special_build();
-  } else {
-    // No version info found. Make up the values.
-     product = L"Chrome";
-     version = L"0.0.0.0-devel";
-  }
+  base::string16 version, product;
+  base::string16 special_build;
+  breakpad::GetBreakpadClient()->GetProductNameAndVersion(
+      base::FilePath(exe_path), &product, &version, &special_build);
 
   // We only expect this method to be called once per process.
   DCHECK(!g_custom_entries);
@@ -394,9 +370,9 @@ google_breakpad::CustomClientInfo* GetCustomInfo(const std::wstring& exe_path,
 
   // Common g_custom_entries.
   g_custom_entries->push_back(
-      google_breakpad::CustomInfoEntry(L"ver", version.c_str()));
+      google_breakpad::CustomInfoEntry(L"ver", UTF16ToWide(version).c_str()));
   g_custom_entries->push_back(
-      google_breakpad::CustomInfoEntry(L"prod", product.c_str()));
+      google_breakpad::CustomInfoEntry(L"prod", UTF16ToWide(product).c_str()));
   g_custom_entries->push_back(
       google_breakpad::CustomInfoEntry(L"plat", L"Win32"));
   g_custom_entries->push_back(
@@ -412,8 +388,8 @@ google_breakpad::CustomClientInfo* GetCustomInfo(const std::wstring& exe_path,
         google_breakpad::CustomInfoEntry(L"deferred-upload", L"true"));
 
   if (!special_build.empty())
-    g_custom_entries->push_back(
-        google_breakpad::CustomInfoEntry(L"special", special_build.c_str()));
+    g_custom_entries->push_back(google_breakpad::CustomInfoEntry(
+        L"special", UTF16ToWide(special_build).c_str()));
 
   g_num_of_extensions_offset = g_custom_entries->size();
   g_custom_entries->push_back(
@@ -512,10 +488,10 @@ google_breakpad::CustomClientInfo* GetCustomInfo(const std::wstring& exe_path,
   bool controlled_by_policy =
       MetricsReportingControlledByPolicy(&crash_reporting_enabled);
   const CommandLine& command = *CommandLine::ForCurrentProcess();
-  bool use_crash_service = !controlled_by_policy &&
-      ((command.HasSwitch(switches::kNoErrorDialogs) ||
-      GetEnvironmentVariable(
-          ASCIIToWide(env_vars::kHeadless).c_str(), NULL, 0)));
+  bool use_crash_service =
+      !controlled_by_policy &&
+      (command.HasSwitch(switches::kNoErrorDialogs) ||
+       breakpad::GetBreakpadClient()->IsRunningUnattended());
   if (use_crash_service)
     SetBreakpadDumpPath();
 
@@ -536,7 +512,7 @@ google_breakpad::CustomClientInfo* GetCustomInfo(const std::wstring& exe_path,
 
   // Create space for dynamic ad-hoc keys. The names and values are set using
   // the API defined in base/debug/crash_logging.h.
-  g_dynamic_entries_count = crash_keys::RegisterChromeCrashKeys();
+  g_dynamic_entries_count = breakpad::GetBreakpadClient()->RegisterCrashKeys();
   g_dynamic_keys_offset = g_custom_entries->size();
   for (size_t i = 0; i < g_dynamic_entries_count; ++i) {
     // The names will be mutated as they are set. Un-numbered since these are
@@ -578,13 +554,9 @@ bool DumpDoneCallback(const wchar_t*, const wchar_t*, void*,
   if (HardErrorHandler(ex_info))
     return true;
 
-  // We set CHROME_CRASHED env var. If the CHROME_RESTART is present.
-  // This signals the child process to show the 'chrome has crashed' dialog.
-  scoped_ptr<base::Environment> env(base::Environment::Create());
-  if (!env->HasVar(env_vars::kRestartInfo)) {
+  if (!breakpad::GetBreakpadClient()->AboutToRestart())
     return true;
-  }
-  env->SetVar(env_vars::kShowRestart, "1");
+
   // Now we just start chrome browser with the same command line.
   STARTUPINFOW si = {sizeof(si)};
   PROCESS_INFORMATION pi;
@@ -824,11 +796,6 @@ bool WrapMessageBoxWithSEH(const wchar_t* text, const wchar_t* caption,
 // spawned and basically just shows the 'chrome has crashed' dialog if
 // the CHROME_CRASHED environment variable is present.
 bool ShowRestartDialogIfCrashed(bool* exit_now) {
-  if (!::GetEnvironmentVariableW(ASCIIToWide(env_vars::kShowRestart).c_str(),
-                                 NULL, 0)) {
-    return false;
-  }
-
   // If we are being launched in metro mode don't try to show the dialog.
   if (base::win::IsMetroProcess())
     return false;
@@ -837,36 +804,27 @@ bool ShowRestartDialogIfCrashed(bool* exit_now) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   std::string process_type =
       command_line.GetSwitchValueASCII(switches::kProcessType);
-  if (!process_type.empty()) {
+  if (!process_type.empty())
+    return false;
+
+  base::string16 message;
+  base::string16 title;
+  bool is_rtl_locale;
+  if (!breakpad::GetBreakpadClient()->ShouldShowRestartDialog(
+          &title, &message, &is_rtl_locale)) {
     return false;
   }
-
-  DWORD len = ::GetEnvironmentVariableW(
-      ASCIIToWide(env_vars::kRestartInfo).c_str(), NULL, 0);
-  if (!len)
-    return true;
-
-  wchar_t* restart_data = new wchar_t[len + 1];
-  ::GetEnvironmentVariableW(ASCIIToWide(env_vars::kRestartInfo).c_str(),
-                            restart_data, len);
-  restart_data[len] = 0;
-  // The CHROME_RESTART var contains the dialog strings separated by '|'.
-  // See ChromeBrowserMainPartsWin::PrepareRestartOnCrashEnviroment()
-  // for details.
-  std::vector<std::wstring> dlg_strings;
-  base::SplitString(restart_data, L'|', &dlg_strings);
-  delete[] restart_data;
-  if (dlg_strings.size() < 3)
-    return true;
 
   // If the UI layout is right-to-left, we need to pass the appropriate MB_XXX
   // flags so that an RTL message box is displayed.
   UINT flags = MB_OKCANCEL | MB_ICONWARNING;
-  if (dlg_strings[2] == ASCIIToWide(env_vars::kRtlLocale))
+  if (is_rtl_locale)
     flags |= MB_RIGHT | MB_RTLREADING;
 
-  return WrapMessageBoxWithSEH(dlg_strings[1].c_str(), dlg_strings[0].c_str(),
-                               flags, exit_now);
+  return WrapMessageBoxWithSEH(base::UTF16ToWide(message).c_str(),
+                               base::UTF16ToWide(title).c_str(),
+                               flags,
+                               exit_now);
 }
 
 // Crashes the process after generating a dump for the provided exception. Note
@@ -982,10 +940,10 @@ static void InitPipeNameEnvVar(bool is_per_user_install) {
       MetricsReportingControlledByPolicy(&crash_reporting_enabled);
 
   const CommandLine& command = *CommandLine::ForCurrentProcess();
-  bool use_crash_service = !controlled_by_policy &&
-      ((command.HasSwitch(switches::kNoErrorDialogs) ||
-      GetEnvironmentVariable(
-          ASCIIToWide(env_vars::kHeadless).c_str(), NULL, 0)));
+  bool use_crash_service =
+      !controlled_by_policy &&
+      (command.HasSwitch(switches::kNoErrorDialogs) ||
+       breakpad::GetBreakpadClient()->IsRunningUnattended());
 
   std::wstring pipe_name;
   if (use_crash_service) {
@@ -1133,8 +1091,8 @@ void InitCrashReporter() {
 
 #ifndef _WIN64
     std::string headless;
-    if (process_type != L"browser" && !GetEnvironmentVariable(
-            ASCIIToWide(env_vars::kHeadless).c_str(), NULL, 0)) {
+    if (process_type != L"browser" &&
+        !breakpad::GetBreakpadClient()->IsRunningUnattended()) {
       // Initialize the hook TerminateProcess to catch unexpected exits.
       InitTerminateProcessHooks();
     }

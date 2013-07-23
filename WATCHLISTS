@@ -375,6 +375,11 @@
       'filepath': 'chrome/browser/resources/options/|'\
           'chrome/browser/ui/webui/options/',
     },
+    'ozone': {
+      'filepath': 'ui/base/ozone/|'\
+        'ui/gl/gl_.*egl.*|'\
+        'ui/gl/gl_.*ozone.*'
+    },
     'panels': {
       'filepath': 'chrome/browser/ui/panels'\
                   '|chrome/browser/ui/cocoa/panels'\
@@ -620,7 +625,8 @@
     'deep_memory_profiler': ['dmikurube+memory@chromium.org'],
     'devtools': ['pfeldman@chromium.org', 'yurys@chromium.org',
                  'vsevik@chromium.org', 'aandrey+blink@chromium.org',
-                 'paulirish+reviews@chromium.org'],
+                 'paulirish+reviews@chromium.org',
+                 'devtools-reviews@chromium.org'],
     'disk_cache': ['gavinp+disk@chromium.org'],
     'dns': ['mmenke@chromium.org'],
     'download_database': ['benjhayden+dwatch@chromium.org'],
@@ -672,6 +678,7 @@
             'pedrosimonetti+watch@chromium.org'],
     'omnibox': ['suzhe@chromium.org'],
     'options': ['dbeam+watch-options@chromium.org'],
+    'ozone': ['rjkroege@chromium.org'],
     'panels': ['dimich@chromium.org', 'jennb@chromium.org',
                'dcheng@chromium.org', 'jianli@chromium.org'],
     'pepper_api': ['piman+watch@chromium.org',

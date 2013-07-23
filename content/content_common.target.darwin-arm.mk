@@ -15,7 +15,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp)/content_resources.stamp \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_minimal_gyp)/blink_minimal.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_glue_gyp)/webkit_support_glue_gyp.a \
 	$(call intermediates-dir-for,GYP,content_content_jni_headers_gyp)/content_jni_headers.stamp \
@@ -54,6 +54,7 @@ LOCAL_SRC_FILES := \
 	content/public/common/ssl_status.cc \
 	content/public/common/url_constants.cc \
 	content/public/common/url_utils.cc \
+	content/public/common/webplugininfo.cc \
 	content/common/accessibility_node_data.cc \
 	content/common/android/address_parser.cc \
 	content/common/android/address_parser_internal.cc \
@@ -115,6 +116,8 @@ LOCAL_SRC_FILES := \
 	content/common/page_state_serialization.cc \
 	content/common/page_zoom.cc \
 	content/common/pepper_renderer_instance_data.cc \
+	content/common/plugin_list.cc \
+	content/common/plugin_list_posix.cc \
 	content/common/process_type.cc \
 	content/common/resource_messages.cc \
 	content/common/sandbox_util.cc \
@@ -124,6 +127,7 @@ LOCAL_SRC_FILES := \
 	content/common/ssl_status_serialization.cc \
 	content/common/swapped_out_messages.cc \
 	content/common/url_schemes.cc \
+	content/common/webplugin_geometry.cc \
 	content/public/common/common_param_traits.cc \
 	content/public/common/content_client.cc \
 	content/public/common/window_container_type.cc \
@@ -226,10 +230,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
 	$(gyp_shared_intermediate_dir)/content \
-	$(LOCAL_PATH)/third_party/WebKit \
-	$(LOCAL_PATH)/third_party/npapi \
-	$(LOCAL_PATH)/third_party/npapi/bindings \
-	$(LOCAL_PATH)/v8/include \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/frameworks/wilhelm/include \
@@ -346,10 +346,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
 	$(gyp_shared_intermediate_dir)/content \
-	$(LOCAL_PATH)/third_party/WebKit \
-	$(LOCAL_PATH)/third_party/npapi \
-	$(LOCAL_PATH)/third_party/npapi/bindings \
-	$(LOCAL_PATH)/v8/include \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/frameworks/wilhelm/include \

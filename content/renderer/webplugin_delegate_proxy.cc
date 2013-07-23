@@ -25,9 +25,10 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/version.h"
 #include "content/child/child_process.h"
-#include "content/child/npobject_proxy.h"
-#include "content/child/npobject_stub.h"
-#include "content/child/npobject_util.h"
+#include "content/child/npapi/npobject_proxy.h"
+#include "content/child/npapi/npobject_stub.h"
+#include "content/child/npapi/npobject_util.h"
+#include "content/child/npapi/webplugin.h"
 #include "content/child/plugin_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/renderer/content_renderer_client.h"
@@ -50,7 +51,6 @@
 #include "ui/gfx/skia_util.h"
 #include "webkit/common/cursors/webcursor.h"
 #include "webkit/glue/webkit_glue.h"
-#include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/plugin_constants.h"
 #include "webkit/plugins/sad_plugin.h"
 
@@ -99,7 +99,7 @@ ScopedLogLevel::~ScopedLogLevel() {
 
 // Proxy for WebPluginResourceClient.  The object owns itself after creation,
 // deleting itself after its callback has been called.
-class ResourceClientProxy : public webkit::npapi::WebPluginResourceClient {
+class ResourceClientProxy : public WebPluginResourceClient {
  public:
   ResourceClientProxy(PluginChannelHost* channel, int instance_id)
     : channel_(channel), instance_id_(instance_id), resource_id_(0),
@@ -255,9 +255,9 @@ void WebPluginDelegateProxy::PluginDestroyed() {
   if (channel_host_.get()) {
     Send(new PluginMsg_DestroyInstance(instance_id_));
 
-    // Must remove the route after sending the destroy message, since
-    // RemoveRoute can lead to all the outstanding NPObjects being told the
-    // channel went away if this was the last instance.
+    // Must remove the route after sending the destroy message, rather than
+    // before, since RemoveRoute can lead to all the outstanding NPObjects
+    // being told the channel went away if this was the last instance.
     channel_host_->RemoveRoute(instance_id_);
 
     // Remove the mapping between our instance-Id and NPP identifiers, used by
@@ -274,17 +274,6 @@ void WebPluginDelegateProxy::PluginDestroyed() {
     channel_host_ = NULL;
   }
 
-  if (window_script_object_.get()) {
-    // Release the window script object, if the plugin didn't already.
-    // If we don't do this then it will linger until the last plugin instance is
-    // destroyed.  In the meantime, though, the frame that it refers to may have
-    // been destroyed by WebKit, at which point WebKit will forcibly deallocate
-    // the window script object.  The window script object stub is unique to the
-    // plugin instance, so this won't affect other instances.
-    // TODO(wez): Remove this hack.
-    window_script_object_->DeleteSoon();
-  }
-
   plugin_ = NULL;
 
   base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
@@ -294,7 +283,7 @@ bool WebPluginDelegateProxy::Initialize(
     const GURL& url,
     const std::vector<std::string>& arg_names,
     const std::vector<std::string>& arg_values,
-    webkit::npapi::WebPlugin* plugin,
+    WebPlugin* plugin,
     bool load_manually) {
   // TODO(shess): Attempt to work around http://crbug.com/97285 and
   // http://crbug.com/141055 by retrying the connection.  Reports seem
@@ -982,8 +971,7 @@ void WebPluginDelegateProxy::OnGetWindowScriptNPObject(
 
   // The stub will delete itself when the proxy tells it that it's released, or
   // otherwise when the channel is closed.
-  window_script_object_ = (new NPObjectStub(
-      npobject, channel_host_.get(), route_id, 0, page_url_))->AsWeakPtr();
+  new NPObjectStub(npobject, channel_host_.get(), route_id, 0, page_url_);
   *success = true;
 }
 
@@ -1113,8 +1101,7 @@ void WebPluginDelegateProxy::OnHandleURLRequest(
       params.popups_allowed, params.notify_redirects);
 }
 
-webkit::npapi::WebPluginResourceClient*
-WebPluginDelegateProxy::CreateResourceClient(
+WebPluginResourceClient* WebPluginDelegateProxy::CreateResourceClient(
     unsigned long resource_id, const GURL& url, int notify_id) {
   if (!channel_host_.get())
     return NULL;
@@ -1125,8 +1112,7 @@ WebPluginDelegateProxy::CreateResourceClient(
   return proxy;
 }
 
-webkit::npapi::WebPluginResourceClient*
-WebPluginDelegateProxy::CreateSeekableResourceClient(
+WebPluginResourceClient* WebPluginDelegateProxy::CreateSeekableResourceClient(
     unsigned long resource_id, int range_request_id) {
   if (!channel_host_.get())
     return NULL;
@@ -1200,7 +1186,7 @@ bool WebPluginDelegateProxy::UseSynchronousGeometryUpdates() {
 
   // The move networks plugin needs to be informed of geometry updates
   // synchronously.
-  std::vector<webkit::WebPluginMimeType>::iterator index;
+  std::vector<WebPluginMimeType>::iterator index;
   for (index = info_.mime_types.begin(); index != info_.mime_types.end();
        index++) {
     if (index->mime_type == "application/x-vnd.moveplayer.qm" ||

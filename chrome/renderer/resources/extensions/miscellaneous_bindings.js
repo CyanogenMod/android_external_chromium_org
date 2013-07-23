@@ -38,8 +38,14 @@
   function Port(portId, opt_name) {
     this.portId_ = portId;
     this.name = opt_name;
-    this.onDisconnect = new Event();
-    this.onMessage = new Event();
+
+    var portSchema = {name: 'port', $ref: 'runtime.Port'};
+    var options = {unmanaged: true};
+    this.onDisconnect = new Event(null, [portSchema], options);
+    this.onMessage = new Event(
+        null,
+        [{name: 'message', type: 'any', optional: true}, portSchema],
+        options);
   }
 
   // Sends a message asynchronously to the context on the other end of this
@@ -48,7 +54,19 @@
     // JSON.stringify doesn't support a root object which is undefined.
     if (msg === undefined)
       msg = null;
-    miscNatives.PostMessage(this.portId_, $JSON.stringify(msg));
+    msg = $JSON.stringify(msg);
+    if (msg === undefined) {
+      // JSON.stringify can fail with unserializable objects. Log an error and
+      // drop the message.
+      //
+      // TODO(kalman/mpcomplete): it would be better to do the same validation
+      // here that we do for runtime.sendMessage (and variants), i.e. throw an
+      // schema validation Error, but just maintain the old behaviour until
+      // there's a good reason not to (http://crbug.com/263077).
+      console.error('Illegal argument to Port.postMessage');
+      return;
+    }
+    miscNatives.PostMessage(this.portId_, msg);
   };
 
   // Disconnects the port from the other end.
@@ -329,7 +347,7 @@
     // request (second argument) is required.
     var request = args[lastArg--];
 
-    // targetId (first argument, extensionId in the manfiest) is optional.
+    // targetId (first argument, extensionId in the manifest) is optional.
     var targetId = null;
     if (lastArg >= 0)
       targetId = args[lastArg--];

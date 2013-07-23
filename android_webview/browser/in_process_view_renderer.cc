@@ -13,6 +13,7 @@
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/strings/stringprintf.h"
 #include "content/public/browser/android/synchronous_compositor.h"
 #include "content/public/browser/web_contents.h"
 #include "skia/ext/refptr.h"
@@ -157,6 +158,7 @@ InProcessViewRenderer::InProcessViewRenderer(
       visible_(false),
       dip_scale_(0.0),
       page_scale_factor_(1.0),
+      on_new_picture_enable_(false),
       continuous_invalidate_(false),
       block_invalidates_(false),
       width_(0),
@@ -239,6 +241,10 @@ void InProcessViewRenderer::DrawGL(AwDrawGLInfo* draw_info) {
   if (draw_info->mode == AwDrawGLInfo::kModeProcess)
     return;
 
+  // DrawGL may be called without OnDraw, so cancel |fallback_tick_| here as
+  // well just to be safe.
+  fallback_tick_.Cancel();
+
   if (last_egl_context_ != current_context) {
     // TODO(boliu): Handle context lost
     TRACE_EVENT_INSTANT0(
@@ -251,7 +257,6 @@ void InProcessViewRenderer::DrawGL(AwDrawGLInfo* draw_info) {
         "android_webview", "EarlyOut_NoCompositor", TRACE_EVENT_SCOPE_THREAD);
     return;
   }
-
 
   gfx::Transform transform;
   transform.matrix().setColMajorf(draw_info->transform);
@@ -407,6 +412,7 @@ InProcessViewRenderer::CapturePicture() {
 }
 
 void InProcessViewRenderer::EnableOnNewPicture(bool enabled) {
+  on_new_picture_enable_ = enabled;
 }
 
 void InProcessViewRenderer::OnVisibilityChanged(bool visible) {
@@ -536,6 +542,11 @@ void InProcessViewRenderer::ScrollTo(gfx::Vector2d new_value) {
     compositor_->DidChangeRootLayerScrollOffset();
 }
 
+void InProcessViewRenderer::DidUpdateContent() {
+  if (on_new_picture_enable_)
+    client_->OnNewPicture();
+}
+
 void InProcessViewRenderer::SetTotalRootLayerScrollOffset(
     gfx::Vector2dF new_value_css) {
   // TOOD(mkosiba): Add a DCHECK to say that this does _not_ get called during
@@ -605,6 +616,10 @@ void InProcessViewRenderer::FallbackTickFired() {
                "InProcessViewRenderer::FallbackTickFired",
                "continuous_invalidate_",
                continuous_invalidate_);
+
+  // This should only be called if OnDraw or DrawGL did not come in time, which
+  // means block_invalidates_ must still be true.
+  DCHECK(block_invalidates_);
   if (continuous_invalidate_ && compositor_) {
     SkDevice device(SkBitmap::kARGB_8888_Config, 1, 1);
     SkCanvas canvas(&device);
@@ -618,6 +633,42 @@ void InProcessViewRenderer::FallbackTickFired() {
 bool InProcessViewRenderer::CompositeSW(SkCanvas* canvas) {
   DCHECK(compositor_);
   return compositor_->DemandDrawSw(canvas);
+}
+
+std::string InProcessViewRenderer::ToString(AwDrawGLInfo* draw_info) const {
+  std::string str;
+  base::StringAppendF(&str, "visible: %d ", visible_);
+  base::StringAppendF(&str, "dip_scale: %f ", dip_scale_);
+  base::StringAppendF(&str, "page_scale_factor: %f ", page_scale_factor_);
+  base::StringAppendF(
+      &str, "continuous_invalidate: %d ", continuous_invalidate_);
+  base::StringAppendF(&str, "block_invalidates: %d ", block_invalidates_);
+  base::StringAppendF(&str, "view width height: [%d %d] ", width_, height_);
+  base::StringAppendF(&str, "attached_to_window: %d ", attached_to_window_);
+  base::StringAppendF(&str, "hardware_initialized: %d ", hardware_initialized_);
+  base::StringAppendF(&str, "hardware_failed: %d ", hardware_failed_);
+  base::StringAppendF(&str,
+                      "scroll_at_start_of_frame: %s ",
+                      scroll_at_start_of_frame_.ToString().c_str());
+  base::StringAppendF(
+      &str, "scroll_offset_css: %s ", scroll_offset_css_.ToString().c_str());
+  base::StringAppendF(&str,
+                      "overscroll_rounding_error_: %s ",
+                      overscroll_rounding_error_.ToString().c_str());
+  if (draw_info) {
+    base::StringAppendF(&str,
+                        "clip left top right bottom: [%d %d %d %d] ",
+                        draw_info->clip_left,
+                        draw_info->clip_top,
+                        draw_info->clip_right,
+                        draw_info->clip_bottom);
+    base::StringAppendF(&str,
+                        "surface width height: [%d %d] ",
+                        draw_info->width,
+                        draw_info->height);
+    base::StringAppendF(&str, "is_layer: %d ", draw_info->is_layer);
+  }
+  return str;
 }
 
 }  // namespace android_webview

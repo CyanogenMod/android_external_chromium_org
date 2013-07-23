@@ -54,6 +54,7 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/common/switches.h"
 #include "grit/generated_resources.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/url_request/url_request_context.h"
@@ -62,6 +63,10 @@
 #include "net/url_request/url_request_job.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
+
+#if defined(OS_WIN) && defined(USE_ASH)
+#include "base/win/windows_version.h"
+#endif
 
 using content::BrowserThread;
 using content::DevToolsAgentHost;
@@ -126,6 +131,7 @@ bool ShouldRenderPrerenderedPageCorrectly(FinalStatus status) {
     case FINAL_STATUS_RENDERER_CRASHED:
     case FINAL_STATUS_CANCELLED:
     case FINAL_STATUS_DEVTOOLS_ATTACHED:
+    case FINAL_STATUS_PAGE_BEING_CAPTURED:
       return true;
     default:
       return false;
@@ -639,7 +645,7 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
         current_browser()->tab_strip_model()->GetActiveWebContents();
     if (!web_contents)
       return NULL;
-    return web_contents->GetController().GetSessionStorageNamespace();
+    return web_contents->GetController().GetDefaultSessionStorageNamespace();
   }
 
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
@@ -1157,10 +1163,6 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
     ui_test_utils::NavigateToURLWithDisposition(
         current_browser(), dest_url, disposition,
         ui_test_utils::BROWSER_TEST_NONE);
-
-    // Make sure the PrerenderContents found earlier was used or removed,
-    // unless we expect the swap in to fail.
-    EXPECT_EQ(expect_swap_to_succeed, !GetPrerenderContents());
 
     if (call_javascript_ && web_contents && expect_swap_to_succeed) {
       if (page_load_observer.get())
@@ -2697,6 +2699,12 @@ class PrerenderBrowserTestWithNaCl : public PrerenderBrowserTest {
 // Check that NaCl plugins work when enabled, with prerendering.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTestWithNaCl,
                        PrerenderNaClPluginEnabled) {
+#if defined(OS_WIN) && defined(USE_ASH)
+  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
+  if (base::win::GetVersion() >= base::win::VERSION_WIN8)
+    return;
+#endif
+
   PrerenderTestURL("files/prerender/prerender_plugin_nacl_enabled.html",
                    FINAL_STATUS_USED,
                    1);
@@ -2764,7 +2772,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTestWithExtensions,
   extensions::FrameNavigationState::set_allow_extension_scheme(true);
 
   CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kAllowLegacyExtensionManifests);
+      extensions::switches::kAllowLegacyExtensionManifests);
 
   // Wait for the extension to set itself up and return control to us.
   ASSERT_TRUE(
@@ -2897,6 +2905,25 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderHTML5MediaSourceVideo) {
                    FINAL_STATUS_USED,
                    1);
   NavigateToDestUrlAndWaitForPassTitle();
+}
+
+// Checks that a prerender that creates an audio stream (via a WebAudioDevice)
+// is cancelled.
+// http://crbug.com/261489
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, DISABLED_PrerenderWebAudioDevice) {
+  PrerenderTestURL("files/prerender/prerender_web_audio_device.html",
+                   FINAL_STATUS_CREATING_AUDIO_STREAM, 1);
+}
+
+// Checks that prerenders do not swap in to WebContents being captured.
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderCapturedWebContents) {
+  PrerenderTestURL("files/prerender/prerender_page.html",
+                   FINAL_STATUS_PAGE_BEING_CAPTURED, 1);
+  WebContents* web_contents =
+      current_browser()->tab_strip_model()->GetActiveWebContents();
+  web_contents->IncrementCapturerCount();
+  NavigateToDestURLWithDisposition(CURRENT_TAB, false);
+  web_contents->DecrementCapturerCount();
 }
 
 }  // namespace prerender

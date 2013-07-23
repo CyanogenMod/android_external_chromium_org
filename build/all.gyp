@@ -211,7 +211,7 @@
         '../net/net.gyp:net_unittests',
         '../sql/sql.gyp:sql_unittests',
         '../ui/ui.gyp:ui_unittests',
-        '../url/url.gyp:googleurl_unittests',
+        '../url/url.gyp:url_unittests',
       ],
       'conditions': [
         ['OS!="ios"', {
@@ -515,7 +515,7 @@
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../ui/ui.gyp:ui_unittests',
-            '../url/url.gyp:googleurl_unittests',
+            '../url/url.gyp:url_unittests',
             '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
           ],
         },
@@ -546,7 +546,7 @@
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../ui/ui.gyp:ui_unittests',
-            '../url/url.gyp:googleurl_unittests',
+            '../url/url.gyp:url_unittests',
             '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
           ],
         },
@@ -565,7 +565,7 @@
             '../remoting/remoting.gyp:remoting_unittests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
-            '../url/url.gyp:googleurl_unittests',
+            '../url/url.gyp:url_unittests',
           ],
         },
         {
@@ -598,7 +598,7 @@
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../ui/ui.gyp:ui_unittests',
-            '../url/url.gyp:googleurl_unittests',
+            '../url/url.gyp:url_unittests',
           ],
         },
       ],  # targets
@@ -643,7 +643,7 @@
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../ui/ui.gyp:ui_unittests',
             '../ui/views/views.gyp:views_unittests',
-            '../url/url.gyp:googleurl_unittests',
+            '../url/url.gyp:url_unittests',
             '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
             '../third_party/WebKit/Tools/DumpRenderTree/DumpRenderTree.gyp/DumpRenderTree.gyp:copy_TestNetscapePlugIn',
           ],
@@ -700,7 +700,7 @@
             '../sql/sql.gyp:sql_unittests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
-            '../url/url.gyp:googleurl_unittests',
+            '../url/url.gyp:url_unittests',
           ],
         },
         {
@@ -724,7 +724,7 @@
             '../sql/sql.gyp:sql_unittests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
-            '../url/url.gyp:googleurl_unittests',
+            '../url/url.gyp:url_unittests',
           ],
         },
         {
@@ -742,14 +742,9 @@
               'target_name': 'chrome_official_builder',
               'type': 'none',
               'dependencies': [
-                '../chrome/chrome.gyp:chromedriver',
                 '../chrome/chrome.gyp:crash_service',
-                '../chrome/chrome.gyp:interactive_ui_tests',
                 '../chrome/chrome.gyp:policy_templates',
-                '../chrome/chrome.gyp:reliability_tests',
-                '../chrome/chrome.gyp:automated_ui_tests',
                 '../chrome/installer/mini_installer.gyp:mini_installer',
-                '../chrome_frame/chrome_frame.gyp:npchrome_frame',
                 '../courgette/courgette.gyp:courgette',
                 '../cloud_print/cloud_print.gyp:cloud_print',
                 '../remoting/remoting.gyp:remoting_webapp',
@@ -771,7 +766,13 @@
                 ['target_arch=="ia32"', {
                   'dependencies': [
                     '../chrome/chrome.gyp:crash_service_win64',
+                    '../chrome_frame/chrome_frame.gyp:npchrome_frame',
                     '../courgette/courgette.gyp:courgette64',
+                    # Omitting tests from Win64 to speed up cycle times.
+                    '../chrome/chrome.gyp:automated_ui_tests',
+                    '../chrome/chrome.gyp:chromedriver',
+                    '../chrome/chrome.gyp:interactive_ui_tests',
+                    '../chrome/chrome.gyp:reliability_tests',
                   ],
                 }],
                 ['component != "shared_library" and wix_exists == "True" and \
@@ -781,9 +782,6 @@
                   ],
                 }], # component != "shared_library"
                 ['target_arch=="x64"', {
-                  'dependencies!': [
-                    '../chrome_frame/chrome_frame.gyp:npchrome_frame',
-                  ],
                   'defines': [
                     'OMIT_CHROME_FRAME',
                   ],

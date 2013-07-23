@@ -1,7 +1,7 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 #ifndef LIBRARIES_NACL_IO_MOUNT_HTML5FS_H_
 #define LIBRARIES_NACL_IO_MOUNT_HTML5FS_H_
 
@@ -11,6 +11,8 @@
 #include "nacl_io/pepper_interface.h"
 #include "nacl_io/typed_mount_factory.h"
 #include "sdk_util/simple_lock.h"
+
+namespace nacl_io {
 
 class MountNode;
 
@@ -42,9 +44,11 @@ class MountHtml5Fs : public Mount {
   Error filesystem_open_error_;      // protected by lock_.
 
   pthread_cond_t filesystem_open_cond_;
-  SimpleLock filesysem_open_lock_;
+  sdk_util::SimpleLock filesysem_open_lock_;
 
   friend class TypedMountFactory<MountHtml5Fs>;
 };
+
+}  // namespace nacl_io
 
 #endif  // LIBRARIES_NACL_IO_MOUNT_HTML5FS_H_

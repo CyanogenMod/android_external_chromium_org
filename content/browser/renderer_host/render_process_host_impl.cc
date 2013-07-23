@@ -130,8 +130,12 @@
 #include "ui/base/ui_base_switches.h"
 #include "ui/gl/gl_switches.h"
 #include "webkit/browser/fileapi/sandbox_file_system_backend.h"
-#include "webkit/glue/resource_type.h"
+#include "webkit/common/resource_type.h"
 #include "webkit/plugins/plugin_switches.h"
+
+#if defined(OS_ANDROID)
+#include "content/browser/android/vibration_message_filter.h"
+#endif
 
 #if defined(OS_WIN)
 #include "base/win/scoped_com_initializer.h"
@@ -164,6 +168,8 @@ void RemoveShaderInfo(int32 id) {
 }
 
 }  // namespace
+
+#if !defined(CHROME_MULTIPLE_DLL)
 
 // This class creates the IO thread for the renderer when running in
 // single-process mode.  It's not used in multi-process mode.
@@ -207,6 +213,8 @@ class RendererMainThread : public base::Thread {
 
   DISALLOW_COPY_AND_ASSIGN(RendererMainThread);
 };
+
+#endif
 
 namespace {
 
@@ -501,8 +509,8 @@ bool RenderProcessHostImpl::Init() {
 
   CreateMessageFilters();
 
-  // Single-process mode not supported in split-dll mode.
-#if !defined(CHROME_SPLIT_DLL)
+  // Single-process mode not supported in multiple-dll mode currently.
+#if !defined(CHROME_MULTIPLE_DLL)
   if (run_renderer_in_process()) {
     // Crank up a thread and run the initialization there.  With the way that
     // messages flow between the browser and renderer, this thread is required
@@ -525,7 +533,7 @@ bool RenderProcessHostImpl::Init() {
 
     OnProcessLaunched();  // Fake a callback that the process is ready.
   } else
-#endif  // !CHROME_SPLIT_DLL
+#endif  // !CHROME_MULTIPLE_DLL
   {
     // Build command line for renderer.  We call AppendRendererCommandLine()
     // first so the process type argument will appear first.
@@ -716,6 +724,9 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableMemoryBenchmarking))
     channel_->AddFilter(new MemoryBenchmarkMessageFilter());
+#endif
+#if defined(OS_ANDROID)
+  channel_->AddFilter(new VibrationMessageFilter());
 #endif
 }
 
@@ -1023,6 +1034,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     // also be added to chrome/browser/chromeos/login/chrome_restart_request.cc.
     cc::switches::kBackgroundColorInsteadOfCheckerboard,
     cc::switches::kCompositeToMailbox,
+    cc::switches::kDisableCompositedAntialiasing,
     cc::switches::kDisableImplSidePainting,
     cc::switches::kDisableThreadedAnimation,
     cc::switches::kEnableImplSidePainting,

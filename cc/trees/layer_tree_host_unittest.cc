@@ -3035,6 +3035,7 @@ class LayerTreeHostTestDeferredInitialize : public LayerTreeHostTest {
   virtual void BeginTest() OVERRIDE {
     did_initialize_gl_ = false;
     did_release_gl_ = false;
+    last_source_frame_number_drawn_ = -1;  // Never drawn.
     PostSetNeedsCommitToMainThread();
   }
 
@@ -3052,8 +3053,19 @@ class LayerTreeHostTestDeferredInitialize : public LayerTreeHostTest {
     ASSERT_TRUE(host_impl->RootLayer());
     FakePictureLayerImpl* layer_impl =
         static_cast<FakePictureLayerImpl*>(host_impl->RootLayer());
+
+    // The same frame can be draw multiple times if new visible tiles are
+    // rasterized. But we want to make sure we only post DeferredInitialize
+    // and ReleaseGL once, so early out if the same frame is drawn again.
+    if (last_source_frame_number_drawn_ ==
+        host_impl->active_tree()->source_frame_number())
+      return;
+
+    last_source_frame_number_drawn_ =
+        host_impl->active_tree()->source_frame_number();
+
     if (!did_initialize_gl_) {
-      EXPECT_EQ(1u, layer_impl->append_quads_count());
+      EXPECT_LE(1u, layer_impl->append_quads_count());
       ImplThreadTaskRunner()->PostTask(
           FROM_HERE,
           base::Bind(
@@ -3061,7 +3073,7 @@ class LayerTreeHostTestDeferredInitialize : public LayerTreeHostTest {
               base::Unretained(this),
               base::Unretained(host_impl)));
     } else if (did_initialize_gl_ && !did_release_gl_) {
-      EXPECT_EQ(2u, layer_impl->append_quads_count());
+      EXPECT_LE(2u, layer_impl->append_quads_count());
       ImplThreadTaskRunner()->PostTask(
           FROM_HERE,
           base::Bind(
@@ -3069,7 +3081,7 @@ class LayerTreeHostTestDeferredInitialize : public LayerTreeHostTest {
               base::Unretained(this),
               base::Unretained(host_impl)));
     } else if (did_initialize_gl_ && did_release_gl_) {
-      EXPECT_EQ(3u, layer_impl->append_quads_count());
+      EXPECT_LE(3u, layer_impl->append_quads_count());
       EndTest();
     }
   }
@@ -3102,6 +3114,7 @@ class LayerTreeHostTestDeferredInitialize : public LayerTreeHostTest {
   scoped_refptr<FakePictureLayer> layer_;
   bool did_initialize_gl_;
   bool did_release_gl_;
+  int last_source_frame_number_drawn_;
 };
 
 MULTI_THREAD_TEST_F(LayerTreeHostTestDeferredInitialize);
@@ -3816,6 +3829,75 @@ class LayerTreeHostTestPushPropertiesSetPropertyInChildThenParent
 
 MULTI_THREAD_TEST_F(
     LayerTreeHostTestPushPropertiesSetPropertyInChildThenParent);
+
+// This test verifies that the tree activation callback is invoked correctly.
+class LayerTreeHostTestTreeActivationCallback : public LayerTreeHostTest {
+ public:
+  LayerTreeHostTestTreeActivationCallback()
+      : num_commits_(0), callback_count_(0) {}
+
+  virtual void BeginTest() OVERRIDE {
+    EXPECT_TRUE(HasImplThread());
+    PostSetNeedsCommitToMainThread();
+  }
+
+  virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
+                                     LayerTreeHostImpl::FrameData* frame_data,
+                                     bool result) OVERRIDE {
+    ++num_commits_;
+    switch (num_commits_) {
+      case 1:
+        EXPECT_EQ(0, callback_count_);
+        callback_count_ = 0;
+        SetCallback(true);
+        PostSetNeedsCommitToMainThread();
+        break;
+      case 2:
+        EXPECT_EQ(1, callback_count_);
+        callback_count_ = 0;
+        SetCallback(false);
+        PostSetNeedsCommitToMainThread();
+        break;
+      case 3:
+        EXPECT_EQ(0, callback_count_);
+        callback_count_ = 0;
+        EndTest();
+        break;
+      default:
+        ADD_FAILURE() << num_commits_;
+        EndTest();
+        break;
+    }
+    return LayerTreeHostTest::PrepareToDrawOnThread(host_impl, frame_data,
+                                                    result);
+  }
+
+  virtual void AfterTest() OVERRIDE {
+    EXPECT_EQ(3, num_commits_);
+  }
+
+  void SetCallback(bool enable) {
+    output_surface()->SetTreeActivationCallback(enable ?
+        base::Bind(&LayerTreeHostTestTreeActivationCallback::ActivationCallback,
+                   base::Unretained(this)) :
+        base::Closure());
+  }
+
+  void ActivationCallback() {
+    ++callback_count_;
+  }
+
+  int num_commits_;
+  int callback_count_;
+};
+
+TEST_F(LayerTreeHostTestTreeActivationCallback, DirectRenderer) {
+  RunTest(true, false, true);
+}
+
+TEST_F(LayerTreeHostTestTreeActivationCallback, DelegatingRenderer) {
+  RunTest(true, true, true);
+}
 
 }  // namespace
 }  // namespace cc

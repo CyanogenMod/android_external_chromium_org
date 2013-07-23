@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "native_client/src/trusted/plugin/pnacl_translate_thread.h"
+#include "ppapi/native_client/src/trusted/plugin/pnacl_translate_thread.h"
 
 #include "native_client/src/trusted/desc/nacl_desc_wrapper.h"
-#include "native_client/src/trusted/plugin/plugin.h"
-#include "native_client/src/trusted/plugin/plugin_error.h"
-#include "native_client/src/trusted/plugin/pnacl_resources.h"
-#include "native_client/src/trusted/plugin/srpc_params.h"
-#include "native_client/src/trusted/plugin/temporary_file.h"
-#include "native_client/src/trusted/plugin/utility.h"
+#include "ppapi/native_client/src/trusted/plugin/plugin.h"
+#include "ppapi/native_client/src/trusted/plugin/plugin_error.h"
+#include "ppapi/native_client/src/trusted/plugin/pnacl_resources.h"
+#include "ppapi/native_client/src/trusted/plugin/srpc_params.h"
+#include "ppapi/native_client/src/trusted/plugin/temporary_file.h"
+#include "ppapi/native_client/src/trusted/plugin/utility.h"
 
 namespace plugin {
 
@@ -153,22 +153,14 @@ void PnaclTranslateThread::DoTranslate() {
 
   int64_t compile_start_time = NaClGetTimeOfDayMicroseconds();
   bool init_success;
-  if (pnacl_options_->HasDefaultOpts()) {
-    PLUGIN_PRINTF(("PnaclCoordinator: StreamInit with default options\n"));
-    init_success = llc_subprocess_->InvokeSrpcMethod("StreamInit",
-                                                     "h",
-                                                     &params,
-                                                     llc_out_file->desc());
-  } else {
-    std::vector<char> options = pnacl_options_->GetOptCommandline();
-    init_success = llc_subprocess_->InvokeSrpcMethod(
-        "StreamInitWithOverrides",
-        "hC",
-        &params,
-        llc_out_file->desc(),
-        &options[0],
-        options.size());
-  }
+  std::vector<char> options = pnacl_options_->GetOptCommandline();
+  init_success = llc_subprocess_->InvokeSrpcMethod(
+      "StreamInitWithOverrides",
+      "hC",
+      &params,
+      llc_out_file->desc(),
+      &options[0],
+      options.size());
 
   if (!init_success) {
     if (llc_subprocess_->srpc_client()->GetLastError() ==

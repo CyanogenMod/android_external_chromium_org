@@ -27,10 +27,7 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
-	webkit/common/webpreferences.cc \
-	webkit/glue/multipart_response_delegate.cc \
-	webkit/glue/weburlrequest_extradata_impl.cc \
-	webkit/glue/weburlresponse_extradata_impl.cc
+	webkit/common/webpreferences.cc
 
 
 # Flags passed to both C and C++ files.

@@ -48,9 +48,9 @@ const char kDefaultURL[] = "http://www.google.com";
 const char kUploadData[] = "hello!";
 const int kUploadDataSize = arraysize(kUploadData)-1;
 
-// SpdyNextProtos returns a vector of NPN protocol strings for negotiating
+// SpdyNextProtos returns a vector of next protocols for negotiating
 // SPDY.
-std::vector<std::string> SpdyNextProtos();
+std::vector<NextProto> SpdyNextProtos();
 
 // Chop a frame into an array of MockWrites.
 // |data| is the frame to chop.
@@ -114,7 +114,7 @@ bool GetSpdyPriority(SpdyMajorVersion version,
 // on failure.
 base::WeakPtr<SpdyStream> CreateStreamSynchronously(
     SpdyStreamType type,
-    const scoped_refptr<SpdySession>& session,
+    const base::WeakPtr<SpdySession>& session,
     const GURL& url,
     RequestPriority priority,
     const BoundNetLog& net_log);
@@ -240,22 +240,39 @@ bool HasSpdySession(SpdySessionPool* pool, const SpdySessionKey& key);
 // Creates a SPDY session for the given key and puts it in the SPDY
 // session pool in |http_session|. A SPDY session for |key| must not
 // already exist.
-scoped_refptr<SpdySession> CreateInsecureSpdySession(
+base::WeakPtr<SpdySession> CreateInsecureSpdySession(
     const scoped_refptr<HttpNetworkSession>& http_session,
     const SpdySessionKey& key,
     const BoundNetLog& net_log);
 
+// Tries to create a SPDY session for the given key but expects the
+// attempt to fail with the given error. A SPDY session for |key| must
+// not already exist.
+void TryCreateInsecureSpdySessionExpectingFailure(
+    const scoped_refptr<HttpNetworkSession>& http_session,
+    const SpdySessionKey& key,
+    Error expected_error,
+    const BoundNetLog& net_log);
+
 // Like CreateInsecureSpdySession(), but uses TLS.
-scoped_refptr<SpdySession> CreateSecureSpdySession(
+base::WeakPtr<SpdySession> CreateSecureSpdySession(
     const scoped_refptr<HttpNetworkSession>& http_session,
     const SpdySessionKey& key,
     const BoundNetLog& net_log);
 
 // Creates an insecure SPDY session for the given key and puts it in
-// |pool|. The returned session will neither receiver nor send any
+// |pool|. The returned session will neither receive nor send any
 // data. A SPDY session for |key| must not already exist.
-scoped_refptr<SpdySession> CreateFakeSpdySession(SpdySessionPool* pool,
+base::WeakPtr<SpdySession> CreateFakeSpdySession(SpdySessionPool* pool,
                                                  const SpdySessionKey& key);
+
+// Tries to create an insecure SPDY session for the given key but
+// expects the attempt to fail with the given error. The session will
+// neither receive nor send any data. A SPDY session for |key| must
+// not already exist.
+void TryCreateFakeSpdySessionExpectingFailure(SpdySessionPool* pool,
+                                              const SpdySessionKey& key,
+                                              Error expected_error);
 
 class SpdySessionPoolPeer {
  public:
@@ -277,8 +294,6 @@ NextProto NextProtoFromSpdyVersion(SpdyMajorVersion spdy_version);
 // TODO(akalin): Merge this with NPNToSpdyVersion() in
 // spdy_session.cc.
 SpdyMajorVersion SpdyVersionFromNextProto(NextProto next_proto);
-
-AlternateProtocol AlternateProtocolFromNextProto(NextProto next_proto);
 
 class SpdyTestUtil {
  public:

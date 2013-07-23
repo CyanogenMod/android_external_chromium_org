@@ -9,7 +9,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/glue/webkitplatformsupport_impl.h"
+#include "webkit/child/webkitplatformsupport_impl.h"
 
 namespace {
 
@@ -27,11 +27,6 @@ class TestWebKitPlatformSupport
 
   virtual base::StringPiece GetDataResource(int, ui::ScaleFactor) OVERRIDE {
     return base::StringPiece();
-  }
-
-  virtual void GetPlugins(bool,
-                          std::vector<webkit::WebPluginInfo,
-                          std::allocator<webkit::WebPluginInfo> >*) OVERRIDE {
   }
 
   virtual webkit_glue::ResourceLoaderBridge* CreateResourceLoader(

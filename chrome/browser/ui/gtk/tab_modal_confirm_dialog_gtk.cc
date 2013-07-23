@@ -31,7 +31,8 @@ TabModalConfirmDialog* TabModalConfirmDialog::Create(
 TabModalConfirmDialogGtk::TabModalConfirmDialogGtk(
     TabModalConfirmDialogDelegate* delegate,
     content::WebContents* web_contents)
-    : delegate_(delegate),
+    : web_contents_(web_contents),
+      delegate_(delegate),
       window_(NULL) {
   dialog_ = gtk_vbox_new(FALSE, ui::kContentAreaSpacing);
   GtkWidget* label = gtk_label_new(
@@ -100,7 +101,7 @@ TabModalConfirmDialogGtk::TabModalConfirmDialogGtk(
   g_signal_connect(dialog_, "destroy", G_CALLBACK(OnDestroyThunk), this);
 
   window_ = CreateWebContentsModalDialogGtk(dialog_, cancel_);
-  delegate_->set_close_delegate(this);
+  delegate_->set_operations_delegate(this);
 
   WebContentsModalDialogManager* web_contents_modal_dialog_manager =
       WebContentsModalDialogManager::FromWebContents(web_contents);
@@ -108,6 +109,10 @@ TabModalConfirmDialogGtk::TabModalConfirmDialogGtk(
 }
 
 TabModalConfirmDialogGtk::~TabModalConfirmDialogGtk() {
+  // Provide a disposition in case the dialog was closed without accepting or
+  // cancelling.
+  delegate_->Cancel();
+
   gtk_widget_destroy(dialog_);
 }
 
@@ -121,6 +126,13 @@ void TabModalConfirmDialogGtk::CancelTabModalDialog() {
 
 void TabModalConfirmDialogGtk::CloseDialog() {
   gtk_widget_destroy(window_);
+}
+
+void TabModalConfirmDialogGtk::SetPreventCloseOnLoadStart(bool prevent) {
+  WebContentsModalDialogManager* web_contents_modal_dialog_manager =
+      WebContentsModalDialogManager::FromWebContents(web_contents_);
+  web_contents_modal_dialog_manager->SetPreventCloseOnLoadStart(window_,
+                                                                prevent);
 }
 
 void TabModalConfirmDialogGtk::OnAccept(GtkWidget* widget) {

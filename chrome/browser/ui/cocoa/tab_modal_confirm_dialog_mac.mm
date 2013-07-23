@@ -88,7 +88,7 @@ TabModalConfirmDialogMac::TabModalConfirmDialogMac(
       [[CustomConstrainedWindowSheet alloc]
           initWithCustomWindow:[alert_ window]]);
   window_.reset(new ConstrainedWindowMac(this, web_contents, sheet));
-  delegate_->set_close_delegate(this);
+  delegate_->set_operations_delegate(this);
 }
 
 TabModalConfirmDialogMac::~TabModalConfirmDialogMac() {
@@ -106,7 +106,14 @@ void TabModalConfirmDialogMac::CloseDialog() {
   window_->CloseWebContentsModalDialog();
 }
 
+void TabModalConfirmDialogMac::SetPreventCloseOnLoadStart(bool prevent) {
+  window_->SetPreventCloseOnLoadStart(prevent);
+}
+
 void TabModalConfirmDialogMac::OnConstrainedWindowClosed(
     ConstrainedWindowMac* window) {
+  // Provide a disposition in case the dialog was closed without accepting or
+  // cancelling.
+  delegate_->Cancel();
   delete this;
 }

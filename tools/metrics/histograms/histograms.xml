@@ -196,10 +196,73 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Ash.ActiveTouchPoints">
+  <summary>
+    Number of active touch-points when a new touch-point is added.
+  </summary>
+</histogram>
+
+<histogram name="Ash.GestureCreated" enum="UIEventType">
+  <summary>
+    The gesture-events recognized and dispatched by the browser gesture
+    recognizer.
+  </summary>
+</histogram>
+
 <histogram name="Ash.GestureTarget" enum="GestureActionType">
   <summary>
     The gesture-events recognized and dispatched by the browser gesture
     recognizer for various UI components.
+  </summary>
+</histogram>
+
+<histogram name="Ash.TouchDuration" units="milliseconds">
+  <summary>The duration of a touch-sequence.</summary>
+</histogram>
+
+<histogram name="Ash.TouchMoveInterval" units="milliseconds">
+  <summary>The interval between touch-move events.</summary>
+</histogram>
+
+<histogram name="Ash.TouchMoveSteps" units="pixels">
+  <summary>The distance between touch-move events.</summary>
+</histogram>
+
+<histogram name="Ash.TouchPositionX" units="pixels">
+  <summary>The position of the touch-events along the X axis.</summary>
+</histogram>
+
+<histogram name="Ash.TouchPositionY" units="pixels">
+  <summary>The position of the touch-events along the Y axis.</summary>
+</histogram>
+
+<histogram name="Ash.TouchRadius" units="pixels">
+  <summary>The radius of a touch event.</summary>
+</histogram>
+
+<histogram name="Ash.TouchStartAfterEnd" units="milliseconds">
+  <summary>
+    The interval between the end of a touch-sequence and the start of the next
+    touch-sequence.
+  </summary>
+</histogram>
+
+<histogram name="Ash.TouchStartBurst">
+  <summary>
+    The number of rapid touch-starts that happened within a short interval.
+    Logged once for each such burst group.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.AttemptCountFail">
+  <summary>
+    Count of DnsAttempts before DnsTransaction completes with failure.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.AttemptCountSuccess">
+  <summary>
+    Count of DnsAttempts before DnsTransaction completes successfully.
   </summary>
 </histogram>
 
@@ -2348,6 +2411,497 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Event.CoalescedCount.Mouse">
+  <summary>Number of Mouse events coalesced.</summary>
+</histogram>
+
+<histogram name="Event.CoalescedCount.Touch">
+  <summary>Number of Touch events coalesced.</summary>
+</histogram>
+
+<histogram name="Event.CoalescedLatency.Mouse" units="milliseconds">
+  <summary>
+    Time between the first and last events in a coalesced mouse events group.
+  </summary>
+</histogram>
+
+<histogram name="Event.CoalescedLatency.Touch" units="milliseconds">
+  <summary>
+    Time between the first and last events in a coalesced touch events group.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser" units="microseconds">
+  <summary>
+    Time between initiation of all input events and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_DROP_TARGET_EVENT"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_GESTURE_BEGIN" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_GESTURE_DOUBLE_TAP"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_GESTURE_END" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_GESTURE_LONG_PRESS"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_GESTURE_LONG_TAP"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_GESTURE_MULTIFINGER_SWIPE"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_GESTURE_PINCH_BEGIN"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_GESTURE_PINCH_END"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_GESTURE_PINCH_UPDATE"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_GESTURE_SCROLL_BEGIN"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_GESTURE_SCROLL_END"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_GESTURE_SCROLL_UPDATE"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_GESTURE_TAP" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_GESTURE_TAP_CANCEL"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_GESTURE_TAP_DOWN"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_GESTURE_TWO_FINGER_TAP"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_KEY_PRESSED" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_KEY_RELEASED" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_MOUSE_CAPTURE_CHANGED"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_MOUSE_DRAGGED" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_MOUSE_ENTERED" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_MOUSE_EXITED" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_MOUSE_MOVED" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_MOUSE_RELEASED" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_MOUSEWHEEL" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_SCROLL" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_SCROLL_FLING_CANCEL"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_SCROLL_FLING_START"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_TOUCH_CANCELLED" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_TOUCH_MOVED" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_TOUCH_PRESSED" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_TOUCH_RELEASED" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_TOUCH_STATIONARY"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_TRANSLATED_KEY_PRESS"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_TRANSLATED_KEY_RELEASE"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.ET_UNKNOWN" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.TouchAcked" units="microseconds">
+  <summary>
+    Time between touch events sent from RWH to renderer and acked by renderer.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Browser.TouchUI" units="microseconds">
+  <summary>
+    Time between touch events received by Chrome and sent from RWH to renderer.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer" units="microseconds">
+  <summary>
+    Time between initiation of all input events and renderer processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.Char" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.ContextMenu" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.GestureDoubleTap" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.GestureFlingCancel"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.GestureFlingStart" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.GestureLongPress" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.GestureLongTap" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.GesturePinchBegin" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.GesturePinchEnd" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.GesturePinchUpdate"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.GestureScrollBegin"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.GestureScrollEnd" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.GestureScrollUpdate"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.GestureTap" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.GestureTapCancel" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.GestureTapDown" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.GestureTwoFingerTap"
+    units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.KeyDown" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.KeyUp" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.MouseDown" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.MouseEnter" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.MouseLeave" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.MouseMove" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.MouseUp" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.MouseWheel" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.RawKeyDown" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.TouchCancel" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.TouchEnd" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.TouchMove" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.TouchStart" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.Renderer.Undefined" units="microseconds">
+  <summary>
+    Time between initiation of input event and browser processing.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.RendererImpl.GestureScroll" units="microseconds">
+  <summary>
+    Time between initial creation of touch event and the resulting ScrollGesture
+    reaches Impl thread.
+  </summary>
+</histogram>
+
+<histogram name="Event.Latency.TouchToScrollUpdateSwap" units="microseconds">
+  <summary>
+    Time between initial creation of touch event and the resulting frame from
+    ScrollUpdate is swapped.
+  </summary>
+</histogram>
+
 <histogram name="ExtensionBlacklist.BlacklistInstalled"
     enum="ExtensionLocation">
   <summary>
@@ -4415,99 +4969,148 @@ other types of suffix sets.
 
 <histogram name="Memory.Swap.Browser" units="KB">
   <summary>
-    On ChromeOS only.  The swap used by the browser process.  Recorded once per
-    UMA ping.
+    The swap used by the browser process.  Recorded once per UMA ping if the
+    system has swapped.
   </summary>
 </histogram>
 
 <histogram name="Memory.Swap.Chrome" units="KB">
   <summary>
-    On ChromeOS only.  The swap used by each chrome:// renderer process.  Each
-    process provides one sample.  Recorded once per UMA ping.
+    The swap used by each chrome:// renderer process.  Each process provides one
+    sample.  Recorded once per UMA ping if the system has swapped.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Swap.CompressedDataSize" units="MB">
+  <summary>
+    The amount of memory that swap was compressed into. Recorded once per UMA
+    ping if the system has swapped.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Swap.CompressionRatio">
+  <summary>
+    The ratio of swapped data original size to compressed size. Recorded once
+    per UMA ping if the system has swapped.
   </summary>
 </histogram>
 
 <histogram name="Memory.Swap.Extension" units="KB">
   <summary>
-    On ChromeOS only.  The swap used by each extension process.  Each process
-    provides one sample.  Recorded once per UMA ping.
+    The swap used by each extension process.  Each process provides one sample.
+    Recorded once per UMA ping if the system has swapped.
   </summary>
 </histogram>
 
 <histogram name="Memory.Swap.Gpu" units="KB">
   <summary>
-    On ChromeOS only.  The swap used by the GPU process.  Recorded once per UMA
-    ping.
+    The swap used by the GPU process.  Recorded once per UMA ping if the system
+    has swapped.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Swap.HaveSwapped" units="BooleanSuccess">
+  <summary>
+    Indicates that the system has swapped memory out at least once since boot.
+    Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Swap.MemUsedTotal" units="MB">
+  <summary>
+    The amount of memory that is used by swap, including bookkeeping.  Recorded
+    once per UMA ping if the system has swapped.
   </summary>
 </histogram>
 
 <histogram name="Memory.Swap.NativeClient" units="KB">
   <summary>
-    On ChromeOS only.  The swap used by each Native Client loader process.  Each
-    process provides one sample.  Recorded once per UMA ping.
+    The swap used by each Native Client loader process.  Each process provides
+    one sample.  Recorded once per UMA ping if the system has swapped.
   </summary>
 </histogram>
 
 <histogram name="Memory.Swap.NativeClientBroker" units="KB">
   <summary>
-    On ChromeOS only.  The swap used by each Native Client broker process.  Each
-    process provides one sample.  Recorded once per UMA ping.
+    The swap used by each Native Client broker process.  Each process provides
+    one sample.  Recorded once per UMA ping if the system has swapped.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Swap.NumReads">
+  <summary>
+    The number of reads from swap.  Recorded once per UMA ping  if the system
+    has swapped.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Swap.NumWrites">
+  <summary>
+    The number of writes to swap.  Recorded once per UMA ping if the system has
+    swapped.
+  </summary>
+</histogram>
+
+<histogram name="Memory.Swap.OriginalDataSize" units="MB">
+  <summary>
+    The amount of memory that was swapped out.  Recorded once per UMA ping if
+    the system has swapped.
   </summary>
 </histogram>
 
 <histogram name="Memory.Swap.PepperPlugin" units="KB">
   <summary>
-    On ChromeOS only.  The swap used by each Pepper plugin process.  Each plugin
-    process provides one sample.  Recorded once per UMA ping.
+    The swap used by each Pepper plugin process.  Each plugin process provides
+    one sample.  Recorded once per UMA ping if the system has swapped.
   </summary>
 </histogram>
 
 <histogram name="Memory.Swap.PepperPluginBroker" units="KB">
   <summary>
-    On ChromeOS only.  The swap used by each Pepper plugin broker process.  Each
-    process provides one sample.  Recorded once per UMA ping.
+    The swap used by each Pepper plugin broker process.  Each process provides
+    one sample.  Recorded once per UMA ping if the system has swapped.
   </summary>
 </histogram>
 
 <histogram name="Memory.Swap.Plugin" units="KB">
   <summary>
-    On ChromeOS only.  The swap used by each plugin process.  Each plugin
-    process provides one sample.  Recorded once per UMA ping.
+    The swap used by each plugin process.  Each plugin process provides one
+    sample.  Recorded once per UMA ping if the system has swapped.
   </summary>
 </histogram>
 
 <histogram name="Memory.Swap.Renderer" units="KB">
   <summary>
-    On ChromeOS only.  The swap used by each renderer process.  Each renderer
-    process provides one sample.  Recorded once per UMA ping.
+    The swap used by each renderer process.  Each renderer process provides one
+    sample.  Recorded once per UMA ping if the system has swapped.
   </summary>
 </histogram>
 
 <histogram name="Memory.Swap.SandboxHelper" units="KB">
   <summary>
-    On ChromeOS only.  The swap used by each sandbox helper process.  Each
-    sandbox helper process provides one sample.  Recorded once per UMA ping.
+    The swap used by each sandbox helper process.  Each sandbox helper process
+    provides one sample.  Recorded once per UMA ping if the system has swapped.
   </summary>
 </histogram>
 
 <histogram name="Memory.Swap.Total" units="MB">
   <summary>
-    On ChromeOS only.  The sum of all processes' swap.  Recorded once per UMA
-    ping.
+    The sum of all processes' swap.  Recorded once per UMA ping if the system
+    has swapped.
   </summary>
 </histogram>
 
 <histogram name="Memory.Swap.Utility" units="KB">
   <summary>
-    On ChromeOS only.  The swap used by each utility process.  Each utility
-    process provides one sample.  Recorded once per UMA ping.
+    The swap used by each utility process.  Each utility process provides one
+    sample.  Recorded once per UMA ping if the system has swapped.
   </summary>
 </histogram>
 
 <histogram name="Memory.Swap.Worker" units="KB">
   <summary>
-    On ChromeOS only. The swap used by each worker process.  Each worker process
-    provides one sample.  Recorded once per UMA ping.
+    The swap used by each worker process.  Each worker process provides one
+    sample.  Recorded once per UMA ping if the system has swapped.
   </summary>
 </histogram>
 
@@ -4739,6 +5342,17 @@ other types of suffix sets.
     A validated certificate chain may be subject to additional
     &quot;pinning&quot; requirements on a per-domain basis. This records the
     fraction of successful matches between a certificate chain and a pin list.
+  </summary>
+</histogram>
+
+<histogram name="Net.CertVerifier_Job_Latency" units="milliseconds">
+  <summary>
+    The actual amount of time spent verifying a certificate using the underlying
+    cryptographic APIs. Because parallel verifications for the same certificate
+    may be coalesced, histograms such as Net.SSLCertVerificationTime may be
+    skewed, due to later verifications taking less overall time. This records
+    the overall time spent verifying a single request, regardless of how many
+    parallel requests are being served by the verification.
   </summary>
 </histogram>
 
@@ -7782,6 +8396,13 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Network.Shill.Wifi.ApMode" enum="WiFiApMode">
+  <summary>
+    Chrome OS network usage metric.  The AP mode setting for each successful
+    WiFi connection.
+  </summary>
+</histogram>
+
 <histogram name="Network.Shill.Wifi.Channel" enum="NetworkChannelType">
   <summary>
     Chrome OS network usage metric.  The channel used for each successful WiFi
@@ -8200,6 +8821,15 @@ other types of suffix sets.
     Chrome OS network performance metric sampling the time to determine that an
     802.11 wireless network is in a captive portal after configuring Layer 3
     state.
+  </summary>
+</histogram>
+
+<histogram name="NewTabPage.ActionAndroid" enum="NewTabPageActionAndroid">
+  <summary>
+    Actions taken by users from the new tab page on Android. These actions may
+    navigate away from the NTP (e.g. searching in the omnibox or opening a
+    bookmark), but can also happen without navigating away from the NTP (e.g.
+    opening a bookmark in a new tab).
   </summary>
 </histogram>
 
@@ -9438,6 +10068,108 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="PLT.NT_Connect" units="milliseconds">
+  <summary>
+    Time from connectStart to connectEnd based on Navigation Timing.
+  </summary>
+</histogram>
+
+<histogram name="PLT.NT_DelayBeforeConnect" units="milliseconds">
+  <summary>
+    Time from domanLookupEnd to connectStart based on Navigation Timing.
+  </summary>
+</histogram>
+
+<histogram name="PLT.NT_DelayBeforeDomainLookup" units="milliseconds">
+  <summary>
+    Time from fetchStart to domainLookupStart based on Navigation Timing.
+  </summary>
+</histogram>
+
+<histogram name="PLT.NT_DelayBeforeDomLoading" units="milliseconds">
+  <summary>
+    Time from responseStart to domLoading based on Navigation Timing.
+  </summary>
+</histogram>
+
+<histogram name="PLT.NT_DelayBeforeFetch" units="milliseconds">
+  <summary>
+    Time from navigationStart to fetchStart based on Navigation Timing when no
+    redirect.
+  </summary>
+</histogram>
+
+<histogram name="PLT.NT_DelayBeforeFetchRedirect" units="milliseconds">
+  <summary>
+    Time from navigationStart to fetchStart excluding time spent on redirects
+    based on Navigation Timing. Only page loads with redirects are considered.
+  </summary>
+</histogram>
+
+<histogram name="PLT.NT_DelayBeforeLoadEvent" units="milliseconds">
+  <summary>
+    Time from domContentLoadedEventEnd to loadEventStart based on Navigation
+    Timing.
+  </summary>
+</histogram>
+
+<histogram name="PLT.NT_DelayBeforeRequest" units="milliseconds">
+  <summary>
+    Time from connectEnd to requestStart based on Navigation Timing.
+  </summary>
+</histogram>
+
+<histogram name="PLT.NT_DomainLookup" units="milliseconds">
+  <summary>
+    Time from domainLookupStart to domainLookupEnd based on Navigation Timing.
+  </summary>
+</histogram>
+
+<histogram name="PLT.NT_DomContentLoaded" units="milliseconds">
+  <summary>
+    Time from domContentLoadedEventStart to domContentLoadedEventEnd based on
+    Navigation Timing.
+  </summary>
+</histogram>
+
+<histogram name="PLT.NT_DomInteractive" units="milliseconds">
+  <summary>
+    Time from domInteractive to domContentLoadEventStart based on Navigation
+    Timing.
+  </summary>
+</histogram>
+
+<histogram name="PLT.NT_DomLoading" units="milliseconds">
+  <summary>
+    Time from domLoading to domInteractive based on Navigation Timing.
+  </summary>
+</histogram>
+
+<histogram name="PLT.NT_LoadEvent" units="milliseconds">
+  <summary>
+    Time from loadEventStart to loadEventEnd based on Navigation Timing.
+  </summary>
+</histogram>
+
+<histogram name="PLT.NT_Redirect" units="milliseconds">
+  <summary>
+    Time from redirectStart to redirectEnd based on Navigation Timing when
+    redirects exist.
+  </summary>
+</histogram>
+
+<histogram name="PLT.NT_Request" units="milliseconds">
+  <summary>
+    Time from requestStart to responseStart based on Navigation Timing.
+  </summary>
+</histogram>
+
+<histogram name="PLT.NT_Response" units="milliseconds">
+  <summary>
+    Time from responseStart to responseEnd based on Navigation Timing.
+  </summary>
+</histogram>
+
 <histogram name="PLT.PerceivedLoadTime" units="milliseconds">
   <obsolete>
     Deprecated as of 5/02/2011, replaced by Prerender.RendererPLT.
@@ -10384,6 +11116,43 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Quickoffice.docPageCount">
+  <summary>
+    Records the page count when a compound binary format document is opened.
+  </summary>
+</histogram>
+
+<histogram name="Quickoffice.docParagraphCount">
+  <summary>
+    Records the paragraph count when a compound binary format document is
+    opened.
+  </summary>
+</histogram>
+
+<histogram name="Quickoffice.docSectionCount">
+  <summary>
+    Records the section count when a compound binary format document is opened.
+  </summary>
+</histogram>
+
+<histogram name="Quickoffice.docxPageCount">
+  <summary>
+    Records the page count when an OOXML format document is opened.
+  </summary>
+</histogram>
+
+<histogram name="Quickoffice.docxParagraphCount">
+  <summary>
+    Records the paragraph count when an OOXML format document is opened.
+  </summary>
+</histogram>
+
+<histogram name="Quickoffice.docxSectionCount">
+  <summary>
+    Records the section count when an OOXML format document is opened.
+  </summary>
+</histogram>
+
 <histogram name="Quickoffice.ErrorTypes" enum="QuickofficeErrorTypes">
   <summary>
     Records the various different error types encountered when opening and
@@ -10399,6 +11168,60 @@ other types of suffix sets.
     Records the various different file types supported by Quickoffice (like MS
     Word, Excel, Powerpoint files) when they opened in the browser to measure
     which file formats are most popular.
+  </summary>
+</histogram>
+
+<histogram name="Quickoffice.pptMasterCount">
+  <summary>
+    Records the number of slide masters when a compound binary format
+    presentation is opened.
+  </summary>
+</histogram>
+
+<histogram name="Quickoffice.pptSlideCount">
+  <summary>
+    Records the slide count when a compound binary format presentation is
+    opened.
+  </summary>
+</histogram>
+
+<histogram name="Quickoffice.pptxMasterCount">
+  <summary>
+    Records the number of slide masters when an OOXML format presentation is
+    opened.
+  </summary>
+</histogram>
+
+<histogram name="Quickoffice.pptxSlideCount">
+  <summary>
+    Records the slide count when an OOXML format presentation is opened.
+  </summary>
+</histogram>
+
+<histogram name="Quickoffice.xlsNonEmptyCellCount">
+  <summary>
+    Records the number of non-empty cells in the default worksheet when a
+    compound binary format spreadsheet is opened.
+  </summary>
+</histogram>
+
+<histogram name="Quickoffice.xlsSheetCount">
+  <summary>
+    Records the number of worksheets when a compound binary format spreadsheet
+    is opened.
+  </summary>
+</histogram>
+
+<histogram name="Quickoffice.xlsxNonEmptyCellCount">
+  <summary>
+    Records the number of non-empty cells when an OOXML format spreadsheet is
+    opened.
+  </summary>
+</histogram>
+
+<histogram name="Quickoffice.xlsxSheetCount">
+  <summary>
+    Records the number of worksheets when an OOXML format spreadsheet is opened.
   </summary>
 </histogram>
 
@@ -12852,6 +13675,10 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="TryScroll.SlowScroll" enum="ScrollThread">
+  <summary>Whether the scroll is executed on main thread.</summary>
+</histogram>
+
 <histogram name="UMA.CollectExternalEventsTime" units="milliseconds">
   <summary>
     The time to run the external metrics collection task (Chrome OS).
@@ -13140,6 +13967,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Wallet.ApiCallDuration.SaveAddress" units="ms">
+  <obsolete>
+    Deprecated as of 7/2013, replaced by Wallet.ApiCallDuration.SaveToWallet.
+  </obsolete>
   <summary>
     Measures the time taken by Google Online Wallet server's save address API
     call.
@@ -13147,6 +13977,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Wallet.ApiCallDuration.SaveInstrument" units="ms">
+  <obsolete>
+    Deprecated as of 7/2013, replaced by Wallet.ApiCallDuration.SaveToWallet.
+  </obsolete>
   <summary>
     Measures the time taken by Google Online Wallet server's save instrument API
     call.
@@ -13154,9 +13987,19 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Wallet.ApiCallDuration.SaveInstrumentAndAddress" units="ms">
+  <obsolete>
+    Deprecated as of 7/2013, replaced by Wallet.ApiCallDuration.SaveToWallet.
+  </obsolete>
   <summary>
     Measures the time taken by Google Online Wallet server's save instument and
     address API call.
+  </summary>
+</histogram>
+
+<histogram name="Wallet.ApiCallDuration.SaveToWallet" units="ms">
+  <summary>
+    Measures the time taken by Google Online Wallet server's save to wallet API
+    call.
   </summary>
 </histogram>
 
@@ -13174,6 +14017,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Wallet.ApiCallDuration.UpdateAddress" units="ms">
+  <obsolete>
+    Deprecated as of 7/2013, replaced by Wallet.ApiCallDuration.SaveToWallet.
+  </obsolete>
   <summary>
     Measures the time taken by Google Online Wallet server's update address API
     call.
@@ -13181,6 +14027,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Wallet.ApiCallDuration.UpdateInstrument" units="ms">
+  <obsolete>
+    Deprecated as of 7/2013, replaced by Wallet.ApiCallDuration.SaveToWallet.
+  </obsolete>
   <summary>
     Measures the time taken by Google Online Wallet server's update instument
     API call.
@@ -15783,6 +16632,8 @@ other types of suffix sets.
   <int value="504" label="TYPES_PRIVATE_CHROMEDIRECTSETTING_SET"/>
   <int value="505" label="TYPES_PRIVATE_CHROMEDIRECTSETTING_CLEAR"/>
   <int value="506" label="SYSTEM_CPU_GETINFO"/>
+  <int value="507" label="SYSTEM_DISPLAY_GETINFO"/>
+  <int value="508" label="SYSTEM_DISPLAY_SETDISPLAYPROPERTIES"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">
@@ -16630,6 +17481,7 @@ other types of suffix sets.
   <int value="20" label="CreateIDBDatabaseMetaData"/>
   <int value="21" label="DeleteDatabase"/>
   <int value="22" label="TransactionCommit"/>
+  <int value="23" label="GetDatabaseNames"/>
 </enum>
 
 <enum name="IDBLevelDBBackingStoreOpenResult" type="int">
@@ -18388,6 +19240,16 @@ other types of suffix sets.
   <int value="14" label="HTTP_GET_FAILED"/>
 </enum>
 
+<enum name="NewTabPageActionAndroid" type="int">
+  <int value="0" label="Searched using the omnibox"/>
+  <int value="1" label="Navigated to Google search homepage using the omnibox"/>
+  <int value="2" label="Navigated to any other page using the omnibox"/>
+  <int value="3" label="Opened a most visited page"/>
+  <int value="4" label="Opened a recently closed tab"/>
+  <int value="5" label="Opened a bookmark"/>
+  <int value="6" label="Opened a foreign session (from other devices section)"/>
+</enum>
+
 <enum name="NewTabPageMobilePromo" type="int">
   <summary>
     These values are defined inside the PromoImpressionBuckets enum in
@@ -19400,6 +20262,11 @@ other types of suffix sets.
   <int value="7" label="UPLOAD_COMPLETE_RESPONSE_ERROR"/>
 </enum>
 
+<enum name="ScrollThread" type="int">
+  <int value="0" label="Scroll on impl-thread"/>
+  <int value="1" label="Scroll on main-thread"/>
+</enum>
+
 <enum name="ShillTerminationActionResult" type="int">
   <summary>
     The termination action result types come from TerminationActionResult in
@@ -20225,6 +21092,39 @@ other types of suffix sets.
   <int value="2" label="unexpected other schemes"/>
 </enum>
 
+<enum name="UIEventType" type="int">
+  <int value="0" label="Unknown"/>
+  <int value="1" label="Touch released"/>
+  <int value="2" label="Touch pressed"/>
+  <int value="3" label="Touch moved"/>
+  <int value="4" label="Touch stationary"/>
+  <int value="5" label="Touch cancelled"/>
+  <int value="6" label="Gesture scroll begin"/>
+  <int value="7" label="Gesture scroll end"/>
+  <int value="8" label="Gesture scroll update"/>
+  <int value="9" label="Gesture tap"/>
+  <int value="10" label="Gesture tap down"/>
+  <int value="11" label="Gesture finger down"/>
+  <int value="12" label="Gesture finger up"/>
+  <int value="13" label="Gesture double tap"/>
+  <int value="14" label="Gesture two-finger tap"/>
+  <int value="15" label="Gesture pinch begin"/>
+  <int value="16" label="Gesture pinch end"/>
+  <int value="17" label="Gesture pinch update (2 fingers)"/>
+  <int value="18" label="Long press"/>
+  <int value="19" label="Multi-finger swipe (2 fingers)"/>
+  <int value="20" label="Scroll"/>
+  <int value="21" label="Scroll fling start"/>
+  <int value="22" label="Scroll fling cancel"/>
+  <int value="23" label="Multi-finger swipe (3 fingers)"/>
+  <int value="24" label="Multi-finger swipe (4+ fingers)"/>
+  <int value="25" label="Gesture scroll update (2 fingers)"/>
+  <int value="26" label="Gesture scroll update (3 fingers)"/>
+  <int value="27" label="Gesture scroll update (4+ fingers)"/>
+  <int value="28" label="Gesture pinch update (3 fingers)"/>
+  <int value="29" label="Gesture pinch update (4+ fingers)"/>
+</enum>
+
 <enum name="UmaUploadResponseStatus" type="int">
   <int value="0" label="Unknown failure"/>
   <int value="1" label="Success"/>
@@ -20492,6 +21392,12 @@ other types of suffix sets.
   <int value="1" label="TakeOverContext"/>
 </enum>
 
+<enum name="WiFiApMode" type="int">
+  <int value="0" label="Unknown"/>
+  <int value="1" label="Managed"/>
+  <int value="2" label="AdHoc"/>
+</enum>
+
 <enum name="WiFiReasonCode" type="int">
   <int value="0" label="kReasonReserved0"/>
   <int value="1" label="kReasonCodeUnspecified"/>
@@ -20706,6 +21612,27 @@ other types of suffix sets.
   <affected-histogram name="PLT.BeginToFinish_LinkLoadReload"/>
   <affected-histogram name="PLT.BeginToFinish_NormalLoad"/>
   <affected-histogram name="PLT.LoadType"/>
+</fieldtrial>
+
+<fieldtrial name="DataReductionProxy">
+  <group name="DataReductionProxy"
+      label="Only page loads through the data reduction proxy are considered."/>
+  <affected-histogram name="PLT.NT_Connect"/>
+  <affected-histogram name="PLT.NT_DelayBeforeConnect"/>
+  <affected-histogram name="PLT.NT_DelayBeforeDomainLookup"/>
+  <affected-histogram name="PLT.NT_DelayBeforeDomLoading"/>
+  <affected-histogram name="PLT.NT_DelayBeforeFetch"/>
+  <affected-histogram name="PLT.NT_DelayBeforeFetchRedirect"/>
+  <affected-histogram name="PLT.NT_DelayBeforeLoadEvent"/>
+  <affected-histogram name="PLT.NT_DelayBeforeRequest"/>
+  <affected-histogram name="PLT.NT_DomainLookup"/>
+  <affected-histogram name="PLT.NT_DomContentLoaded"/>
+  <affected-histogram name="PLT.NT_DomInteractive"/>
+  <affected-histogram name="PLT.NT_DomLoading"/>
+  <affected-histogram name="PLT.NT_LoadEvent"/>
+  <affected-histogram name="PLT.NT_Redirect"/>
+  <affected-histogram name="PLT.NT_Request"/>
+  <affected-histogram name="PLT.NT_Response"/>
 </fieldtrial>
 
 <fieldtrial name="DefaultAppsExperiment">

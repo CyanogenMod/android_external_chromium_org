@@ -16,7 +16,7 @@
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model_observer.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_view.h"
-#include "third_party/icu/public/common/unicode/ubidi.h"
+#include "third_party/icu/source/common/unicode/ubidi.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/rect.h"
 
@@ -111,13 +111,7 @@ void OmniboxPopupModel::SetSelectedLine(size_t line,
   match.GetKeywordUIState(edit_model_->profile(), &keyword, &is_keyword_hint);
 
   if (reset_to_default) {
-    string16 inline_autocomplete_text;
-    if ((match.inline_autocomplete_offset != string16::npos) &&
-        (match.inline_autocomplete_offset < match.fill_into_edit.length())) {
-      inline_autocomplete_text =
-          match.fill_into_edit.substr(match.inline_autocomplete_offset);
-    }
-    edit_model_->OnPopupDataChanged(inline_autocomplete_text, NULL,
+    edit_model_->OnPopupDataChanged(match.inline_autocompletion, NULL,
                                     keyword, is_keyword_hint);
   } else {
     edit_model_->OnPopupDataChanged(match.fill_into_edit, &current_destination,

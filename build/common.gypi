@@ -938,9 +938,9 @@
     # to get incremental linking to be faster in debug builds.
     'incremental_chrome_dll%': '0',
 
-    # Experimental setting to break chrome.dll in to multiple parts (currently
-    # two, split primarily along browser/render lines).
-    'chrome_split_dll%': '0',
+    # Experimental setting to break chrome.dll into multiple pieces based on
+    # process type.
+    'chrome_multiple_dll%': '0',
 
     # The default settings for third party code for treating
     # warnings-as-errors. Ideally, this would not be required, however there
@@ -1868,11 +1868,8 @@
           '<(DEPTH)/base/allocator/allocator.gyp:type_profiler',
         ],
       }],
-      ['chrome_split_dll', {
-        'variables': {
-          'chrome_split_dll': '<!(python <(DEPTH)/tools/win/split_link/check_installed.py)',
-        },
-        'defines': ['CHROME_SPLIT_DLL'],
+      ['chrome_multiple_dll', {
+        'defines': ['CHROME_MULTIPLE_DLL'],
       }],
       ['OS=="linux" and clang==1 and host_arch=="ia32"', {
         # TODO(dmikurube): Remove -Wno-sentinel when Clang/LLVM is fixed.
@@ -3381,12 +3378,18 @@
             ],
           }],
           ['linux_use_gold_flags==1', {
-            'ldflags': [
-              # Experimentation found that using four linking threads
-              # saved ~20% of link time.
-              # https://groups.google.com/a/chromium.org/group/chromium-dev/browse_thread/thread/281527606915bb36
-              '-Wl,--threads',
-              '-Wl,--thread-count=4',
+            'target_conditions': [
+              ['_toolset=="target"', {
+                'ldflags': [
+                  # Experimentation found that using four linking threads
+                  # saved ~20% of link time.
+                  # https://groups.google.com/a/chromium.org/group/chromium-dev/browse_thread/thread/281527606915bb36
+                  # Only apply this to the target linker, since the host
+                  # linker might not be gold, but isn't used much anyway.
+                  '-Wl,--threads',
+                  '-Wl,--thread-count=4',
+                ],
+              }],
             ],
             'conditions': [
               ['release_valgrind_build==0', {
@@ -3556,7 +3559,6 @@
               '<!(<(android_toolchain)/*-gcc -print-libgcc-file-name)',
               '-lc',
               '-ldl',
-              '-lstdc++',
               '-lm',
             ],
             'conditions': [
@@ -3763,10 +3765,6 @@
               '-Wl,--gc-sections',
               '-Wl,-O1',
               '-Wl,--as-needed',
-            ],
-            'sources/': [
-              ['exclude', '_android(_unittest)?\\.cc$'],
-              ['exclude', '(^|/)android/']
             ],
           }],
           # Settings for building host targets on mac.
@@ -4162,6 +4160,11 @@
               'SDKROOT': 'macosx<(mac_sdk)',  # -isysroot
               'MACOSX_DEPLOYMENT_TARGET': '<(mac_deployment_target)',
             },
+            'conditions': [
+              ['"<(GENERATOR)"!="xcode"', {
+                'xcode_settings': { 'ARCHS': [ 'x86_64' ] },
+              }],
+            ],
           }],
           ['_toolset=="target"', {
             'xcode_settings': {
@@ -4170,6 +4173,13 @@
               # instead set it here for target only.
               'IPHONEOS_DEPLOYMENT_TARGET': '<(ios_deployment_target)',
             },
+            'conditions': [
+              ['target_arch=="armv7" and "<(GENERATOR)"!="xcode"', {
+                'xcode_settings': { 'ARCHS': [ 'armv7' ]},
+              }, {
+                'xcode_settings': { 'ARCHS': [ 'i386' ] },
+              }],
+            ],
           }],
           ['_type=="executable"', {
             'configurations': {
@@ -4612,10 +4622,10 @@
           ['ios_sdk_path==""', {
             'conditions': [
               # TODO(justincohen): Ninja only supports simulator for now.
-              ['"<(GENERATOR)"=="ninja"', {
-                'SDKROOT': 'iphonesimulator<(ios_sdk)',  # -isysroot
-              }, {
+              ['"<(GENERATOR)"=="xcode" or ("<(GENERATOR)"=="ninja" and target_arch=="armv7")', {
                 'SDKROOT': 'iphoneos<(ios_sdk)',  # -isysroot
+              }, {
+                'SDKROOT': 'iphonesimulator<(ios_sdk)',  # -isysroot
               }],
             ],
           }, {

@@ -18,7 +18,6 @@
     ],
     'chromium_child_dependencies': [
       'common',
-      '../content/content.gyp:content_app',
       '../sync/sync.gyp:sync',
     ],
     'allocator_target': '../base/allocator/allocator.gyp:allocator',
@@ -30,9 +29,8 @@
     'conditions': [
       ['OS!="ios"', {
         'chromium_browser_dependencies': [
-          'debugger',
-          '../content/content.gyp:content_ppapi_plugin',
           '../printing/printing.gyp:printing',
+          '../ppapi/ppapi_internal.gyp:ppapi_host',
         ],
         'chromium_child_dependencies': [
           'debugger',
@@ -42,7 +40,6 @@
           '../content/content.gyp:content_gpu',
           '../content/content.gyp:content_ppapi_plugin',
           '../content/content.gyp:content_worker',
-          '../printing/printing.gyp:printing',
           '../third_party/WebKit/Source/devtools/devtools.gyp:devtools_frontend_resources',
         ],
       }],
@@ -294,6 +291,7 @@
             '../third_party/libxml/libxml.gyp:libxml',
             'common',
             '<(DEPTH)/chrome/chrome_resources.gyp:chrome_resources',
+            '<(DEPTH)/chrome/chrome_resources.gyp:chrome_strings',
           ],
           'sources': [
             'utility/chrome_content_utility_client.cc',
@@ -308,8 +306,8 @@
             'utility/importer/external_process_importer_bridge.h',
             'utility/importer/favicon_reencode.cc',
             'utility/importer/favicon_reencode.h',
-            'utility/importer/firefox3_importer.cc',
-            'utility/importer/firefox3_importer.h',
+            'utility/importer/firefox_importer.cc',
+            'utility/importer/firefox_importer.h',
             'utility/importer/firefox_importer_unittest_messages_internal.h',
             'utility/importer/firefox_importer_unittest_utils.h',
             'utility/importer/firefox_importer_unittest_utils_mac.cc',
@@ -383,6 +381,8 @@
                 'utility/local_discovery/local_domain_resolver.h',
                 'utility/local_discovery/service_discovery_client_impl.cc',
                 'utility/local_discovery/service_discovery_client_impl.h',
+                'utility/local_discovery/service_discovery_message_handler.cc',
+                'utility/local_discovery/service_discovery_message_handler.h',
               ]
             }],
           ],

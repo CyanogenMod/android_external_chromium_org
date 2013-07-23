@@ -528,6 +528,7 @@ class DnsTransactionImpl : public DnsTransaction,
       callback_(callback),
       net_log_(net_log),
       qnames_initial_size_(0),
+      attempts_count_(0),
       had_tcp_attempt_(false),
       first_server_index_(0) {
     DCHECK(session_.get());
@@ -553,32 +554,25 @@ class DnsTransactionImpl : public DnsTransaction,
     return qtype_;
   }
 
-  virtual int Start() OVERRIDE {
+  virtual void Start() OVERRIDE {
     DCHECK(!callback_.is_null());
     DCHECK(attempts_.empty());
     net_log_.BeginEvent(NetLog::TYPE_DNS_TRANSACTION,
                         base::Bind(&NetLogStartCallback, &hostname_, qtype_));
-    int rv = PrepareSearch();
-    if (rv == OK) {
+    AttemptResult result(PrepareSearch(), NULL);
+    if (result.rv == OK) {
       qnames_initial_size_ = qnames_.size();
       if (qtype_ == dns_protocol::kTypeA)
         UMA_HISTOGRAM_COUNTS("AsyncDNS.SuffixSearchStart", qnames_.size());
-      AttemptResult result = ProcessAttemptResult(StartQuery());
-      if (result.rv == OK) {
-        // DnsTransaction must never succeed synchronously.
-        base::MessageLoop::current()->PostTask(
-            FROM_HERE,
-            base::Bind(&DnsTransactionImpl::DoCallback, AsWeakPtr(), result));
-        return ERR_IO_PENDING;
-      }
-      rv = result.rv;
+      result = ProcessAttemptResult(StartQuery());
     }
-    if (rv != ERR_IO_PENDING) {
-      callback_.Reset();
-      net_log_.EndEventWithNetErrorCode(NetLog::TYPE_DNS_TRANSACTION, rv);
+
+    // Must always return result asynchronously, to avoid reentrancy.
+    if (result.rv != ERR_IO_PENDING) {
+      base::MessageLoop::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&DnsTransactionImpl::DoCallback, AsWeakPtr(), result));
     }
-    DCHECK_NE(OK, rv);
-    return rv;
   }
 
  private:
@@ -648,6 +642,10 @@ class DnsTransactionImpl : public DnsTransaction,
 
     timer_.Stop();
     RecordLostPacketsIfAny();
+    if (result.rv == OK)
+      UMA_HISTOGRAM_COUNTS("AsyncDNS.AttemptCountSuccess", attempts_count_);
+    else
+      UMA_HISTOGRAM_COUNTS("AsyncDNS.AttemptCountFail", attempts_count_);
 
     if (response && qtype_ == dns_protocol::kTypeA) {
       UMA_HISTOGRAM_COUNTS("AsyncDNS.SuffixSearchRemain", qnames_.size());
@@ -691,6 +689,7 @@ class DnsTransactionImpl : public DnsTransaction,
         new DnsUDPAttempt(server_index, lease.Pass(), query.Pass());
 
     attempts_.push_back(attempt);
+    ++attempts_count_;
 
     if (!got_socket)
       return AttemptResult(ERR_CONNECTION_REFUSED, NULL);
@@ -735,6 +734,7 @@ class DnsTransactionImpl : public DnsTransaction,
                                                query.Pass());
 
     attempts_.push_back(attempt);
+    ++attempts_count_;
     had_tcp_attempt_ = true;
 
     net_log_.AddEvent(
@@ -895,8 +895,9 @@ class DnsTransactionImpl : public DnsTransaction,
   void OnTimeout() {
     if (callback_.is_null())
       return;
+    DCHECK(!attempts_.empty());
     AttemptResult result = ProcessAttemptResult(
-        AttemptResult(ERR_DNS_TIMED_OUT, NULL));
+        AttemptResult(ERR_DNS_TIMED_OUT, attempts_.back()));
     if (result.rv != ERR_IO_PENDING)
       DoCallback(result);
   }
@@ -915,6 +916,8 @@ class DnsTransactionImpl : public DnsTransaction,
 
   // List of attempts for the current name.
   ScopedVector<DnsAttempt> attempts_;
+  // Count of attempts, not reset when |attempts_| vector is cleared.
+  int  attempts_count_;
   bool had_tcp_attempt_;
 
   // Index of the first server to try on each search query.

@@ -5,53 +5,30 @@
 #include "content/common/indexed_db/indexed_db_key_path.h"
 
 #include "base/logging.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebVector.h"
 
 namespace content {
 
-using WebKit::WebIDBKeyPath;
-using WebKit::WebString;
-using WebKit::WebVector;
+using WebKit::WebIDBKeyPathTypeArray;
+using WebKit::WebIDBKeyPathTypeNull;
+using WebKit::WebIDBKeyPathTypeString;
 
-namespace {
-static std::vector<string16> CopyArray(const WebVector<WebString>& array) {
-  std::vector<string16> copy(array.size());
-  for (size_t i = 0; i < array.size(); ++i)
-    copy[i] = array[i];
-  return copy;
-}
-}  // namespace
-
-IndexedDBKeyPath::IndexedDBKeyPath() : type_(WebIDBKeyPath::NullType) {}
+IndexedDBKeyPath::IndexedDBKeyPath() : type_(WebIDBKeyPathTypeNull) {}
 
 IndexedDBKeyPath::IndexedDBKeyPath(const string16& string)
-    : type_(WebIDBKeyPath::StringType), string_(string) {}
+    : type_(WebIDBKeyPathTypeString), string_(string) {}
 
 IndexedDBKeyPath::IndexedDBKeyPath(const std::vector<string16>& array)
-    : type_(WebIDBKeyPath::ArrayType), array_(array) {}
-
-IndexedDBKeyPath::IndexedDBKeyPath(const WebIDBKeyPath& other)
-    : type_(other.type()),
-      string_(type_ == WebIDBKeyPath::StringType
-              ? static_cast<string16>(other.string()) : string16()),
-      array_(type_ == WebIDBKeyPath::ArrayType
-             ? CopyArray(other.array()) : std::vector<string16>()) {}
+    : type_(WebIDBKeyPathTypeArray), array_(array) {}
 
 IndexedDBKeyPath::~IndexedDBKeyPath() {}
 
-bool IndexedDBKeyPath::IsValid() const {
-  WebIDBKeyPath key_path = *this;
-  return key_path.isValid();
-}
-
 const std::vector<string16>& IndexedDBKeyPath::array() const {
-  DCHECK(type_ == WebKit::WebIDBKeyPath::ArrayType);
+  DCHECK(type_ == WebKit::WebIDBKeyPathTypeArray);
   return array_;
 }
 
 const string16& IndexedDBKeyPath::string() const {
-  DCHECK(type_ == WebKit::WebIDBKeyPath::StringType);
+  DCHECK(type_ == WebKit::WebIDBKeyPathTypeString);
   return string_;
 }
 
@@ -60,28 +37,15 @@ bool IndexedDBKeyPath::operator==(const IndexedDBKeyPath& other) const {
     return false;
 
   switch (type_) {
-    case WebIDBKeyPath::NullType:
+    case WebIDBKeyPathTypeNull:
       return true;
-    case WebIDBKeyPath::StringType:
+    case WebIDBKeyPathTypeString:
       return string_ == other.string_;
-    case WebIDBKeyPath::ArrayType:
+    case WebIDBKeyPathTypeArray:
       return array_ == other.array_;
   }
   NOTREACHED();
   return false;
-}
-
-IndexedDBKeyPath::operator WebIDBKeyPath() const {
-  switch (type_) {
-    case WebIDBKeyPath::ArrayType:
-      return WebIDBKeyPath::create(array_);
-    case WebIDBKeyPath::StringType:
-      return WebIDBKeyPath::create(WebString(string_));
-    case WebIDBKeyPath::NullType:
-      return WebIDBKeyPath::createNull();
-  }
-  NOTREACHED();
-  return WebIDBKeyPath::createNull();
 }
 
 }  // namespace content

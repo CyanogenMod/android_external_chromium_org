@@ -1,7 +1,6 @@
-/* Copyright (c) 2013 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #include <string>
 #include <vector>
@@ -10,6 +9,8 @@
 #include "nacl_io/kernel_intercept.h"
 #include "nacl_io/kernel_wrap.h"
 #include "kernel_proxy_mock.h"
+
+using namespace nacl_io;
 
 using ::testing::_;
 using ::testing::Return;
@@ -273,7 +274,7 @@ TEST_F(KernelWrapTest, unlink) {
 }
 
 TEST_F(KernelWrapTest, utime) {
-  const struct utimbuf* times;
+  const struct utimbuf* times = NULL;
   EXPECT_CALL(mock, utime(StrEq("utime"), times));
   utime("utime", times);
 }

@@ -14,6 +14,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/blocked_content/blocked_content_tab_helper.h"
+#include "chrome/browser/ui/blocked_content/popup_blocker_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -210,10 +211,22 @@ IN_PROC_BROWSER_TEST_F(PopupBlockerBrowserTest,
   EXPECT_EQ(ASCIIToUTF16(search_string), model->CurrentMatch(NULL).contents);
 }
 
-IN_PROC_BROWSER_TEST_F(PopupBlockerBrowserTest, BlockWebContentsCreation) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableBetterPopupBlocking);
+class BetterPopupBlockerBrowserTest : public PopupBlockerBrowserTest {
+ public:
+  BetterPopupBlockerBrowserTest() {}
+  virtual ~BetterPopupBlockerBrowserTest() {}
 
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    PopupBlockerBrowserTest::SetUpCommandLine(command_line);
+    command_line->AppendSwitch(switches::kEnableBetterPopupBlocking);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(BetterPopupBlockerBrowserTest);
+};
+
+IN_PROC_BROWSER_TEST_F(BetterPopupBlockerBrowserTest,
+                       BlockWebContentsCreation) {
   CountRenderViewHosts counter;
 
   ui_test_utils::NavigateToURL(browser(), GetTestURL());
@@ -230,11 +243,8 @@ IN_PROC_BROWSER_TEST_F(PopupBlockerBrowserTest, BlockWebContentsCreation) {
   EXPECT_EQ(0, counter.GetRenderViewHostCreatedCount());
 }
 
-IN_PROC_BROWSER_TEST_F(PopupBlockerBrowserTest,
+IN_PROC_BROWSER_TEST_F(BetterPopupBlockerBrowserTest,
                        PopupBlockedFakeClickOnAnchorNoTarget) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableBetterPopupBlocking);
-
   GURL url(ui_test_utils::GetTestUrl(
       base::FilePath(kTestDir),
       base::FilePath(FILE_PATH_LITERAL("popup-fake-click-on-anchor2.html"))));
@@ -253,6 +263,21 @@ IN_PROC_BROWSER_TEST_F(PopupBlockerBrowserTest,
 
   // And no new RVH created.
   EXPECT_EQ(0, counter.GetRenderViewHostCreatedCount());
+
+  content::WindowedNotificationObserver observer(
+      chrome::NOTIFICATION_TAB_ADDED,
+      content::NotificationService::AllSources());
+
+  // Launch the blocked popup.
+  PopupBlockerTabHelper* popup_blocker_helper =
+      PopupBlockerTabHelper::FromWebContents(web_contents);
+  EXPECT_EQ(1u, popup_blocker_helper->GetBlockedPopupsCount());
+  IDMap<chrome::NavigateParams, IDMapOwnPointer>::const_iterator iter(
+      &popup_blocker_helper->GetBlockedPopupRequests());
+  ASSERT_FALSE(iter.IsAtEnd());
+  popup_blocker_helper->ShowBlockedPopup(iter.GetCurrentKey());
+
+  observer.Wait();
 }
 
 }  // namespace

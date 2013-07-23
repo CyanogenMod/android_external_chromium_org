@@ -20,7 +20,7 @@
 #include "base/json/json_string_value_serializer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/stl_util.h"
 #include "base/strings/string16.h"
@@ -47,6 +47,9 @@
 #include "chrome/browser/extensions/external_pref_loader.h"
 #include "chrome/browser/extensions/external_provider_impl.h"
 #include "chrome/browser/extensions/external_provider_interface.h"
+#include "chrome/browser/extensions/install_observer.h"
+#include "chrome/browser/extensions/install_tracker.h"
+#include "chrome/browser/extensions/install_tracker_factory.h"
 #include "chrome/browser/extensions/installed_loader.h"
 #include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/extensions/pack_extension_job.h"
@@ -110,7 +113,6 @@
 #include "webkit/browser/database/database_tracker.h"
 #include "webkit/browser/quota/quota_manager.h"
 #include "webkit/common/database/database_identifier.h"
-#include "webkit/plugins/npapi/mock_plugin_list.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/extensions/install_limiter.h"
@@ -441,7 +443,6 @@ ExtensionServiceTestBase::ExtensionServiceTestBase()
       expected_extensions_count_(0),
       ui_thread_(BrowserThread::UI, &loop_),
       db_thread_(BrowserThread::DB, &loop_),
-      webkit_thread_(BrowserThread::WEBKIT_DEPRECATED, &loop_),
       file_thread_(BrowserThread::FILE, &loop_),
       file_user_blocking_thread_(BrowserThread::FILE_USER_BLOCKING, &loop_),
       io_thread_(BrowserThread::IO, &loop_) {
@@ -468,12 +469,18 @@ void ExtensionServiceTestBase::InitializeExtensionService(
   TestingProfile::Builder profile_builder;
   // Create a PrefService that only contains user defined preference values.
   PrefServiceMockBuilder builder;
-  builder.WithUserFilePrefs(params.pref_file, loop_.message_loop_proxy().get());
-  scoped_refptr<user_prefs::PrefRegistrySyncable> registry(
-      new user_prefs::PrefRegistrySyncable);
-  scoped_ptr<PrefServiceSyncable> prefs(builder.CreateSyncable(registry.get()));
-  chrome::RegisterUserProfilePrefs(registry.get());
-  profile_builder.SetPrefService(prefs.Pass());
+  // If pref_file is empty, TestingProfile automatically creates
+  // TestingPrefServiceSyncable instance.
+  if (!params.pref_file.empty()) {
+    builder.WithUserFilePrefs(params.pref_file,
+                              loop_.message_loop_proxy().get());
+    scoped_refptr<user_prefs::PrefRegistrySyncable> registry(
+        new user_prefs::PrefRegistrySyncable);
+    scoped_ptr<PrefServiceSyncable> prefs(
+        builder.CreateSyncable(registry.get()));
+    chrome::RegisterUserProfilePrefs(registry.get());
+    profile_builder.SetPrefService(prefs.Pass());
+  }
   profile_builder.SetPath(params.profile_path);
   profile_ = profile_builder.Build();
 
@@ -1606,6 +1613,80 @@ TEST_F(ExtensionServiceTest, InstallExtension) {
 
   // TODO(erikkay): add more tests for many of the failure cases.
   // TODO(erikkay): add tests for upgrade cases.
+}
+
+struct MockInstallObserver : public extensions::InstallObserver {
+  MockInstallObserver() {
+  }
+
+  virtual ~MockInstallObserver() {
+  }
+
+  virtual void OnBeginExtensionInstall(
+      const std::string& extension_id,
+      const std::string& extension_name,
+      const gfx::ImageSkia& installing_icon,
+      bool is_app,
+      bool is_platform_app) OVERRIDE {
+  }
+
+  virtual void OnDownloadProgress(const std::string& extension_id,
+                                  int percent_downloaded) OVERRIDE {
+  }
+
+  virtual void OnExtensionInstalled(const Extension* extension) OVERRIDE {
+    last_extension_installed = extension->id();
+  }
+
+  virtual void OnInstallFailure(const std::string& extension_id) OVERRIDE {
+  }
+
+  virtual void OnExtensionLoaded(const Extension* extension) OVERRIDE {
+  }
+
+  virtual void OnExtensionUnloaded(const Extension* extension) OVERRIDE {
+  }
+
+  virtual void OnExtensionUninstalled(const Extension* extension) OVERRIDE {
+    last_extension_uninstalled = extension->id();
+  }
+
+  virtual void OnAppsReordered() OVERRIDE {
+  }
+
+  virtual void OnAppInstalledToAppList(
+      const std::string& extension_id) OVERRIDE {
+  }
+
+  virtual void OnShutdown() OVERRIDE {
+  }
+
+  std::string last_extension_installed;
+  std::string last_extension_uninstalled;
+};
+
+// Test that correct notifications are sent to InstallTracker observers on
+// extension install and uninstall.
+TEST_F(ExtensionServiceTest, InstallObserverNotified) {
+  InitializeEmptyExtensionService();
+
+  extensions::InstallTracker* tracker(
+      extensions::InstallTrackerFactory::GetForProfile(profile_.get()));
+  MockInstallObserver observer;
+  tracker->AddObserver(&observer);
+
+  // A simple extension that should install without error.
+  ASSERT_TRUE(observer.last_extension_installed.empty());
+  base::FilePath path = data_dir_.AppendASCII("good.crx");
+  InstallCRX(path, INSTALL_NEW);
+  ASSERT_EQ(good_crx, observer.last_extension_installed);
+
+  // Uninstall the extension.
+  ASSERT_TRUE(observer.last_extension_uninstalled.empty());
+  UninstallExtension(good_crx, false);
+  ASSERT_EQ(good_crx, observer.last_extension_uninstalled);
+
+  tracker->RemoveObserver(&observer);
 }
 
 // Tests that flags passed to OnExternalExtensionFileFound() make it to the
@@ -2911,6 +2992,7 @@ TEST_F(ExtensionServiceTest, LoadExtensionsWithPlugins) {
   EXPECT_EQ(0u, service_->disabled_extensions()->size());
 
   // But the extension with no plugin should since there's no prompt.
+  ExtensionErrorReporter::GetInstance()->ClearErrors();
   extensions::UnpackedInstaller::Create(service_)->Load(
       extension_no_plugin_path);
   loop_.RunUntilIdle();
@@ -2925,6 +3007,7 @@ TEST_F(ExtensionServiceTest, LoadExtensionsWithPlugins) {
       switches::kAppsGalleryInstallAutoConfirmForTests,
       "accept");
 
+  ExtensionErrorReporter::GetInstance()->ClearErrors();
   extensions::UnpackedInstaller::Create(service_)->Load(
       extension_with_plugin_path);
   loop_.RunUntilIdle();
@@ -4844,6 +4927,10 @@ class ExtensionsReadyRecorder : public content::NotificationObserver {
 TEST(ExtensionServiceTestSimple, Enabledness) {
   // Make sure the PluginService singleton is destroyed at the end of the test.
   base::ShadowingAtExitManager at_exit_manager;
+#if defined(ENABLE_PLUGINS)
+  content::PluginService::GetInstance()->Init();
+  content::PluginService::GetInstance()->DisablePluginsDiscoveryForTesting();
+#endif
 
   ExtensionErrorReporter::Init(false);  // no noisy errors
   ExtensionsReadyRecorder recorder;
@@ -4860,11 +4947,6 @@ TEST(ExtensionServiceTestSimple, Enabledness) {
   scoped_ptr<CommandLine> command_line;
   base::FilePath install_dir = profile->GetPath()
       .AppendASCII(extensions::kInstallDirectoryName);
-
-#if defined(ENABLE_PLUGINS)
-  webkit::npapi::MockPluginList plugin_list;
-  PluginService::GetInstance()->SetPluginListForTesting(&plugin_list);
-#endif
 
   // By default, we are enabled.
   command_line.reset(new CommandLine(CommandLine::NO_PROGRAM));
@@ -4931,13 +5013,6 @@ TEST(ExtensionServiceTestSimple, Enabledness) {
   service = NULL;
   // Execute any pending deletion tasks.
   loop.RunUntilIdle();
-
-#if defined(ENABLE_PLUGINS)
-  // Ensure that even if the PluginService is re-used for a later test, it
-  // won't still hold a reference to the stack position of our MockPluginList.
-  // See crbug.com/159754.
-  PluginService::GetInstance()->SetPluginListForTesting(NULL);
-#endif
 }
 
 // Test loading extensions that require limited and unlimited storage quotas.

@@ -21,6 +21,7 @@
 #include "content/child/child_process.h"
 #include "content/child/child_thread.h"
 #include "content/child/fileapi/file_system_dispatcher.h"
+#include "content/child/npapi/webplugin.h"
 #include "content/child/quota_dispatcher.h"
 #include "content/common/child_process_messages.h"
 #include "content/common/fileapi/file_system_messages.h"
@@ -33,7 +34,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/context_menu_params.h"
 #include "content/public/common/media_stream_request.h"
-#include "content/public/common/referrer.h"
+#include "content/public/common/webplugininfo.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/renderer_restrict_dispatch_group.h"
 #include "content/renderer/gamepad_shared_memory_reader.h"
@@ -94,14 +95,12 @@
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/gfx/size.h"
 #include "url/gurl.h"
-#include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 #include "webkit/plugins/ppapi/ppapi_webplugin_impl.h"
 #include "webkit/plugins/ppapi/ppb_tcp_server_socket_private_impl.h"
 #include "webkit/plugins/ppapi/ppb_tcp_socket_private_impl.h"
 #include "webkit/plugins/ppapi/resource_helper.h"
-#include "webkit/plugins/webplugininfo.h"
 
 using WebKit::WebView;
 using WebKit::WebFrame;
@@ -306,7 +305,7 @@ void DidFailOpenFileSystemURL(
 
 void CreateHostForInProcessModule(RenderViewImpl* render_view,
                                   webkit::ppapi::PluginModule* module,
-                                  const webkit::WebPluginInfo& webplugin_info) {
+                                  const WebPluginInfo& webplugin_info) {
   // First time an in-process plugin was used, make a host for it.
   const PepperPluginInfo* info =
       PepperPluginRegistry::GetInstance()->GetInfoForPlugin(webplugin_info);
@@ -347,7 +346,7 @@ PepperPluginDelegateImpl::~PepperPluginDelegateImpl() {
 }
 
 WebKit::WebPlugin* PepperPluginDelegateImpl::CreatePepperWebPlugin(
-    const webkit::WebPluginInfo& webplugin_info,
+    const WebPluginInfo& webplugin_info,
     const WebKit::WebPluginParams& params) {
   bool pepper_plugin_was_registered = false;
   scoped_refptr<webkit::ppapi::PluginModule> pepper_module(
@@ -357,7 +356,7 @@ WebKit::WebPlugin* PepperPluginDelegateImpl::CreatePepperWebPlugin(
     if (!pepper_module.get())
       return NULL;
     return new webkit::ppapi::WebPluginImpl(
-        pepper_module.get(), params, AsWeakPtr());
+        pepper_module.get(), params, AsWeakPtr(), render_view_->AsWeakPtr());
   }
 
   return NULL;
@@ -365,7 +364,7 @@ WebKit::WebPlugin* PepperPluginDelegateImpl::CreatePepperWebPlugin(
 
 scoped_refptr<webkit::ppapi::PluginModule>
 PepperPluginDelegateImpl::CreatePepperPluginModule(
-    const webkit::WebPluginInfo& webplugin_info,
+    const WebPluginInfo& webplugin_info,
     bool* pepper_plugin_was_registered) {
   *pepper_plugin_was_registered = true;
 
@@ -1305,27 +1304,6 @@ void PepperPluginDelegateImpl::ZoomLimitsChanged(double minimum_factor,
   render_view_->webview()->zoomLimitsChanged(minimum_level, maximum_level);
 }
 
-void PepperPluginDelegateImpl::DidStartLoading() {
-  render_view_->DidStartLoadingForPlugin();
-}
-
-void PepperPluginDelegateImpl::DidStopLoading() {
-  render_view_->DidStopLoadingForPlugin();
-}
-
-void PepperPluginDelegateImpl::SetContentRestriction(int restrictions) {
-  render_view_->Send(new ViewHostMsg_UpdateContentRestrictions(
-      render_view_->routing_id(), restrictions));
-}
-
-void PepperPluginDelegateImpl::SaveURLAs(const GURL& url) {
-  WebFrame* frame = render_view_->webview()->mainFrame();
-  Referrer referrer(frame->document().url(),
-                             frame->document().referrerPolicy());
-  render_view_->Send(new ViewHostMsg_SaveURLAs(
-      render_view_->routing_id(), url, referrer));
-}
-
 void PepperPluginDelegateImpl::HandleDocumentLoad(
     webkit::ppapi::PluginInstance* instance,
     const WebKit::WebURLResponse& response) {
@@ -1451,7 +1429,7 @@ int PepperPluginDelegateImpl::EnumerateDevices(
 
 #if defined(ENABLE_WEBRTC)
   render_view_->media_stream_dispatcher()->EnumerateDevices(
-      request_id, device_enumeration_event_handler_.get()->AsWeakPtr(),
+      request_id, device_enumeration_event_handler_->AsWeakPtr(),
       PepperDeviceEnumerationEventHandler::FromPepperDeviceType(type),
       GURL());
 #else
@@ -1478,7 +1456,7 @@ void PepperPluginDelegateImpl::StopEnumerateDevices(int request_id) {
       base::Bind(&MediaStreamDispatcher::StopEnumerateDevices,
                  render_view_->media_stream_dispatcher()->AsWeakPtr(),
                  request_id,
-                 device_enumeration_event_handler_.get()->AsWeakPtr()));
+                 device_enumeration_event_handler_->AsWeakPtr()));
 #endif
 }
 
@@ -1619,7 +1597,7 @@ int PepperPluginDelegateImpl::OpenDevice(PP_DeviceType_Dev type,
 #if defined(ENABLE_WEBRTC)
   render_view_->media_stream_dispatcher()->OpenDevice(
       request_id,
-      device_enumeration_event_handler_.get()->AsWeakPtr(),
+      device_enumeration_event_handler_->AsWeakPtr(),
       device_id,
       PepperDeviceEnumerationEventHandler::FromPepperDeviceType(type),
       document_url.GetOrigin());
@@ -1632,6 +1610,15 @@ int PepperPluginDelegateImpl::OpenDevice(PP_DeviceType_Dev type,
 #endif
 
   return request_id;
+}
+
+void PepperPluginDelegateImpl::CancelOpenDevice(int request_id) {
+  device_enumeration_event_handler_->UnregisterOpenDeviceCallback(request_id);
+
+#if defined(ENABLE_WEBRTC)
+  render_view_->media_stream_dispatcher()->CancelOpenDevice(
+      request_id, device_enumeration_event_handler_->AsWeakPtr());
+#endif
 }
 
 void PepperPluginDelegateImpl::CloseDevice(const std::string& label) {

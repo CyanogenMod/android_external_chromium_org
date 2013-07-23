@@ -50,7 +50,6 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
-#include "content/public/browser/power_save_blocker.h"
 #include "content/public/browser/render_view_host_observer.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/bindings_policy.h"
@@ -154,7 +153,8 @@ RenderViewHostImpl::RenderViewHostImpl(
     RenderWidgetHostDelegate* widget_delegate,
     int routing_id,
     int main_frame_routing_id,
-    bool swapped_out)
+    bool swapped_out,
+    SessionStorageNamespace* session_storage)
     : RenderWidgetHostImpl(widget_delegate, instance->GetProcess(), routing_id),
       delegate_(delegate),
       instance_(static_cast<SiteInstanceImpl*>(instance)),
@@ -173,7 +173,10 @@ RenderViewHostImpl::RenderViewHostImpl(
       unload_ack_is_for_cross_site_transition_(false),
       are_javascript_messages_suppressed_(false),
       sudden_termination_allowed_(false),
+      session_storage_namespace_(
+          static_cast<SessionStorageNamespaceImpl*>(session_storage)),
       render_view_termination_status_(base::TERMINATION_STATUS_STILL_RUNNING) {
+  DCHECK(session_storage_namespace_.get());
   DCHECK(instance_.get());
   CHECK(delegate_);  // http://crbug.com/82827
 
@@ -200,9 +203,7 @@ RenderViewHostImpl::~RenderViewHostImpl() {
   FOR_EACH_OBSERVER(
       RenderViewHostObserver, observers_, RenderViewHostDestruction());
 
-  ClearPowerSaveBlockers();
-
-  GetDelegate()->RenderViewDeleted(this);
+    GetDelegate()->RenderViewDeleted(this);
 
   // Be sure to clean up any leftover state from cross-site requests.
   CrossSiteRequestManager::GetInstance()->SetHasPendingCrossSiteRequest(
@@ -256,8 +257,7 @@ bool RenderViewHostImpl::CreateRenderView(
   params.view_id = GetRoutingID();
   params.main_frame_routing_id = main_render_frame_host_->routing_id();
   params.surface_id = surface_id();
-  params.session_storage_namespace_id =
-      delegate_->GetSessionStorageNamespace()->id();
+  params.session_storage_namespace_id = session_storage_namespace_->id();
   params.frame_name = frame_name;
   // Ensure the RenderView sets its opener correctly.
   params.opener_route_id = opener_route_id;
@@ -987,7 +987,6 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
                         OnSelectionBoundsChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ScriptEvalResponse, OnScriptEvalResponse)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidZoomURL, OnDidZoomURL)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_MediaNotification, OnMediaNotification)
     IPC_MESSAGE_HANDLER(ViewHostMsg_GetWindowSnapshot, OnGetWindowSnapshot)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_RequestPermission,
                         OnRequestDesktopNotificationPermission)
@@ -1127,7 +1126,6 @@ void RenderViewHostImpl::OnRenderProcessGone(int status, int exit_code) {
       static_cast<base::TerminationStatus>(status);
 
   // Reset state.
-  ClearPowerSaveBlockers();
   main_frame_id_ = -1;
 
   // Our base class RenderWidgetHost needs to reset some stuff.
@@ -1370,7 +1368,7 @@ void RenderViewHostImpl::OnOpenURL(
 
   delegate_->RequestOpenURL(
       this, validated_url, params.referrer, params.disposition, params.frame_id,
-      params.is_cross_site_redirect, params.user_gesture);
+      params.should_replace_current_entry, params.user_gesture);
 }
 
 void RenderViewHostImpl::OnDidContentsPreferredSizeChange(
@@ -1946,33 +1944,6 @@ void RenderViewHostImpl::OnDidZoomURL(double zoom_level,
   }
 }
 
-void RenderViewHostImpl::OnMediaNotification(int64 player_cookie,
-                                             bool has_video,
-                                             bool has_audio,
-                                             bool is_playing) {
-  // Chrome OS does its own detection of audio and video.
-#if !defined(OS_CHROMEOS)
-  if (is_playing) {
-    scoped_ptr<PowerSaveBlocker> blocker;
-    if (has_video) {
-      blocker = PowerSaveBlocker::Create(
-          PowerSaveBlocker::kPowerSaveBlockPreventDisplaySleep,
-          "Playing video");
-    } else if (has_audio) {
-      blocker = PowerSaveBlocker::Create(
-          PowerSaveBlocker::kPowerSaveBlockPreventAppSuspension,
-          "Playing audio");
-    }
-
-    if (blocker)
-      power_save_blockers_[player_cookie] = blocker.release();
-  } else {
-    delete power_save_blockers_[player_cookie];
-    power_save_blockers_.erase(player_cookie);
-  }
-#endif
-}
-
 void RenderViewHostImpl::OnRequestDesktopNotificationPermission(
     const GURL& source_origin, int callback_context) {
   GetContentClient()->browser()->RequestDesktopNotificationPermission(
@@ -2072,10 +2043,6 @@ void RenderViewHostImpl::SetSwappedOut(bool is_swapped_out) {
   is_waiting_for_beforeunload_ack_ = false;
   is_waiting_for_unload_ack_ = false;
   has_timed_out_on_unload_ = false;
-}
-
-void RenderViewHostImpl::ClearPowerSaveBlockers() {
-  STLDeleteValues(&power_save_blockers_);
 }
 
 bool RenderViewHostImpl::CanAccessFilesOfPageState(

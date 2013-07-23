@@ -34,6 +34,7 @@
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
+#include "content/common/webplugin_geometry.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/common/content_switches.h"
 #include "skia/ext/platform_canvas.h"
@@ -48,7 +49,6 @@
 #include "ui/gfx/gtk_native_view_id_manager.h"
 #include "ui/gfx/gtk_preserve_window.h"
 #include "webkit/common/cursors/webcursor_gtk_data.h"
-#include "webkit/plugins/npapi/webplugin.h"
 
 using WebKit::WebInputEventFactory;
 using WebKit::WebMouseWheelEvent;
@@ -753,7 +753,7 @@ gfx::NativeViewAccessible RenderWidgetHostViewGtk::GetNativeViewAccessible() {
 
 void RenderWidgetHostViewGtk::MovePluginWindows(
     const gfx::Vector2d& scroll_offset,
-    const std::vector<webkit::npapi::WebPluginGeometry>& moves) {
+    const std::vector<WebPluginGeometry>& moves) {
   for (size_t i = 0; i < moves.size(); ++i) {
     plugin_container_manager_.MovePluginContainer(moves[i]);
   }
@@ -1544,28 +1544,28 @@ void RenderWidgetHostViewGtk::FatalAccessibilityTreeError() {
 
 void RenderWidgetHostViewGtk::OnAccessibilityNotifications(
     const std::vector<AccessibilityHostMsg_NotificationParams>& params) {
-  if (!browser_accessibility_manager_) {
+  if (!GetBrowserAccessibilityManager()) {
     GtkWidget* parent = gtk_widget_get_parent(view_.get());
-    browser_accessibility_manager_.reset(
+    SetBrowserAccessibilityManager(
         new BrowserAccessibilityManagerGtk(
             parent,
             BrowserAccessibilityManagerGtk::GetEmptyDocument(),
             this));
   }
-  browser_accessibility_manager_->OnAccessibilityNotifications(params);
+  GetBrowserAccessibilityManager()->OnAccessibilityNotifications(params);
 }
 
 AtkObject* RenderWidgetHostViewGtk::GetAccessible() {
-  if (!browser_accessibility_manager_) {
+  if (!GetBrowserAccessibilityManager()) {
     GtkWidget* parent = gtk_widget_get_parent(view_.get());
-    browser_accessibility_manager_.reset(
+    SetBrowserAccessibilityManager(
         new BrowserAccessibilityManagerGtk(
             parent,
             BrowserAccessibilityManagerGtk::GetEmptyDocument(),
             this));
   }
   BrowserAccessibilityGtk* root =
-      browser_accessibility_manager_->GetRoot()->ToBrowserAccessibilityGtk();
+      GetBrowserAccessibilityManager()->GetRoot()->ToBrowserAccessibilityGtk();
 
   atk_object_set_role(root->GetAtkObject(), ATK_ROLE_HTML_CONTAINER);
   return root->GetAtkObject();

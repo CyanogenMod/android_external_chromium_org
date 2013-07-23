@@ -196,7 +196,7 @@ LayerTreeHostImpl::LayerTreeHostImpl(
       overdraw_bottom_height_(0.f),
       animation_registrar_(AnimationRegistrar::Create()),
       rendering_stats_instrumentation_(rendering_stats_instrumentation),
-      need_check_for_completed_tile_uploads_before_draw_(false) {
+      need_to_update_visible_tiles_before_draw_(false) {
   DCHECK(proxy_->IsImplThread());
   DidVisibilityChange(this, visible_);
 
@@ -949,9 +949,10 @@ bool LayerTreeHostImpl::PrepareToDraw(FrameData* frame,
                "SourceFrameNumber",
                active_tree_->source_frame_number());
 
-  if (need_check_for_completed_tile_uploads_before_draw_) {
+  if (need_to_update_visible_tiles_before_draw_) {
     DCHECK(tile_manager_);
-    tile_manager_->CheckForCompletedTileUploads();
+    if (tile_manager_->UpdateVisibleTiles())
+      DidInitializeVisibleTile();
   }
 
   active_tree_->UpdateDrawProperties();
@@ -1042,7 +1043,7 @@ void LayerTreeHostImpl::DidInitializeVisibleTile() {
 
 void LayerTreeHostImpl::NotifyReadyToActivate() {
   if (pending_tree_) {
-    need_check_for_completed_tile_uploads_before_draw_ = true;
+    need_to_update_visible_tiles_before_draw_ = true;
     ActivatePendingTree();
   }
 }
@@ -1062,6 +1063,13 @@ void LayerTreeHostImpl::SetMemoryPolicy(
   }
   renderer_->SetDiscardBackBufferWhenNotVisible(
       discard_backbuffer_when_not_visible);
+}
+
+void LayerTreeHostImpl::SetTreeActivationCallback(
+    const base::Closure& callback) {
+  DCHECK(proxy_->IsImplThread());
+  DCHECK(settings_.impl_side_painting || callback.is_null());
+  tree_activiation_callback_ = callback;
 }
 
 void LayerTreeHostImpl::SetManagedMemoryPolicy(
@@ -1362,14 +1370,14 @@ void LayerTreeHostImpl::CreatePendingTree() {
                           "PendingTree", pending_tree_.get(), "waiting");
 }
 
-void LayerTreeHostImpl::CheckForCompletedTileUploads() {
+void LayerTreeHostImpl::UpdateVisibleTiles() {
   DCHECK(!client_->IsInsideDraw()) <<
-      "Checking for completed uploads within a draw may trigger "
+      "Updating visible tiles within a draw may trigger "
       "spurious redraws.";
-  if (tile_manager_)
-    tile_manager_->CheckForCompletedTileUploads();
+  if (tile_manager_ && tile_manager_->UpdateVisibleTiles())
+    DidInitializeVisibleTile();
 
-  need_check_for_completed_tile_uploads_before_draw_ = false;
+  need_to_update_visible_tiles_before_draw_ = false;
 }
 
 void LayerTreeHostImpl::ActivatePendingTreeIfNeeded() {
@@ -1440,6 +1448,8 @@ void LayerTreeHostImpl::ActivatePendingTree() {
   }
 
   client_->DidActivatePendingTree();
+  if (!tree_activiation_callback_.is_null())
+    tree_activiation_callback_.Run();
 }
 
 void LayerTreeHostImpl::SetVisible(bool visible) {
@@ -1514,7 +1524,7 @@ void LayerTreeHostImpl::CreateAndSetTileManager(
                                       rendering_stats_instrumentation_,
                                       using_map_image);
   UpdateTileManagerMemoryPolicy(ActualManagedMemoryPolicy());
-  need_check_for_completed_tile_uploads_before_draw_ = false;
+  need_to_update_visible_tiles_before_draw_ = false;
 }
 
 void LayerTreeHostImpl::EnforceZeroBudget(bool zero_budget) {
@@ -1888,7 +1898,8 @@ bool LayerTreeHostImpl::ScrollBy(gfx::Point viewport_point,
 
   gfx::Vector2dF pending_delta = scroll_delta;
   gfx::Vector2dF unused_root_delta;
-  bool did_scroll = false;
+  bool did_scroll_x = false;
+  bool did_scroll_y = false;
   bool consume_by_top_controls = top_controls_manager_ &&
       (CurrentlyScrollingLayer() == RootScrollLayer() || scroll_delta.y() < 0);
 
@@ -1925,8 +1936,12 @@ bool LayerTreeHostImpl::ScrollBy(gfx::Point viewport_point,
     }
 
     // If the layer wasn't able to move, try the next one in the hierarchy.
-    float move_threshold_squared = 0.1f * 0.1f;
-    if (applied_delta.LengthSquared() < move_threshold_squared) {
+    float move_threshold = 0.1f;
+    bool did_move_layer_x = std::abs(applied_delta.x()) > move_threshold;
+    bool did_move_layer_y = std::abs(applied_delta.y()) > move_threshold;
+    did_scroll_x |= did_move_layer_x;
+    did_scroll_y |= did_move_layer_y;
+    if (!did_move_layer_x && !did_move_layer_y) {
       if (should_bubble_scrolls_ || !did_lock_scrolling_layer_)
         continue;
       else
@@ -1936,7 +1951,6 @@ bool LayerTreeHostImpl::ScrollBy(gfx::Point viewport_point,
     if (layer_impl == RootScrollLayer())
       unused_root_delta.Subtract(applied_delta);
 
-    did_scroll = true;
     did_lock_scrolling_layer_ = true;
     if (!should_bubble_scrolls_) {
       active_tree_->SetCurrentlyScrollingLayer(layer_impl);
@@ -1962,14 +1976,18 @@ bool LayerTreeHostImpl::ScrollBy(gfx::Point viewport_point,
       break;
   }
 
+  bool did_scroll = did_scroll_x || did_scroll_y;
   if (did_scroll) {
     client_->SetNeedsCommitOnImplThread();
     client_->SetNeedsRedrawOnImplThread();
     client_->RenewTreePriority();
-
-    // Scrolling of any layer will reset root overscroll accumulation.
-    accumulated_root_overscroll_ = gfx::Vector2dF();
   }
+
+  // Scrolling along an axis resets accumulated root overscroll for that axis.
+  if (did_scroll_x)
+    accumulated_root_overscroll_.set_x(0);
+  if (did_scroll_y)
+    accumulated_root_overscroll_.set_y(0);
 
   accumulated_root_overscroll_ += unused_root_delta;
   bool did_overscroll = !gfx::ToRoundedVector2d(unused_root_delta).IsZero();

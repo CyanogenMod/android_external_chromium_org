@@ -65,6 +65,7 @@ const char kChromeUIPluginsURL[] = "chrome://plugins/";
 const char kChromeUIPolicyURL[] = "chrome://policy/";
 const char kChromeUIProfileSigninConfirmationURL[] =
     "chrome://profile-signin-confirmation/";
+const char kChromeUIUserChooserURL[] = "chrome://user-chooser/";
 const char kChromeUIPrintURL[] = "chrome://print/";
 const char kChromeUIRestartURL[] = "chrome://restart/";
 const char kChromeUISessionFaviconURL[] = "chrome://session-favicon/";
@@ -194,6 +195,7 @@ const char kChromeUIPluginsHost[] = "plugins";
 const char kChromeUIPolicyHost[] = "policy";
 const char kChromeUIProfileSigninConfirmationHost[] =
     "profile-signin-confirmation";
+const char kChromeUIUserChooserHost[] = "user-chooser";
 const char kChromeUIPredictorsHost[] = "predictors";
 const char kChromeUIPrintHost[] = "print";
 const char kChromeUIProfilerHost[] = "profiler";
@@ -528,6 +530,7 @@ const char kChromeSearchScheme[] = "chrome-search";
 const char kChromeSearchLocalNtpHost[] = "local-ntp";
 const char kChromeSearchLocalNtpUrl[] =
     "chrome-search://local-ntp/local-ntp.html";
+const char kChromeSearchOnlineNtpHost[] = "online-ntp";
 
 const char kChromeSearchMostVisitedHost[] = "most-visited";
 const char kChromeSearchMostVisitedUrl[] = "chrome-search://most-visited/";

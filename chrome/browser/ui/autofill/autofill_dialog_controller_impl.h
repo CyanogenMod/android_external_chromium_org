@@ -33,6 +33,7 @@
 #include "components/autofill/core/browser/personal_data_manager_observer.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/ssl_status.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/ui_base_types.h"
@@ -69,6 +70,7 @@ class WalletSigninHelper;
 class AutofillDialogControllerImpl : public AutofillDialogController,
                                      public AutofillPopupDelegate,
                                      public content::NotificationObserver,
+                                     public content::WebContentsObserver,
                                      public SuggestionsMenuModelDelegate,
                                      public wallet::WalletClientDelegate,
                                      public wallet::WalletSigninHelperDelegate,
@@ -89,9 +91,6 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
 
   void Show();
   void Hide();
-
-  // Whether Autocheckout is currently running.
-  bool AutocheckoutIsRunning() const;
 
   // Adds a step in the flow to the Autocheckout UI.
   void AddAutocheckoutStep(AutocheckoutStepType step_type);
@@ -173,8 +172,8 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
                                                 bool checked) OVERRIDE;
   virtual void LegalDocumentLinkClicked(const ui::Range& range) OVERRIDE;
   virtual void OverlayButtonPressed() OVERRIDE;
-  virtual void OnCancel() OVERRIDE;
-  virtual void OnAccept() OVERRIDE;
+  virtual bool OnCancel() OVERRIDE;
+  virtual bool OnAccept() OVERRIDE;
   virtual Profile* profile() OVERRIDE;
   virtual content::WebContents* web_contents() OVERRIDE;
 
@@ -193,6 +192,11 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  // content::WebContentsObserver implementation.
+  virtual void DidNavigateMainFrame(
+      const content::LoadCommittedDetails& details,
+      const content::FrameNavigateParams& params) OVERRIDE;
+
   // SuggestionsMenuModelDelegate implementation.
   virtual void SuggestionItemSelected(SuggestionsMenuModel* model,
                                       size_t index) OVERRIDE;
@@ -208,25 +212,9 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
       scoped_ptr<wallet::FullWallet> full_wallet) OVERRIDE;
   virtual void OnDidGetWalletItems(
       scoped_ptr<wallet::WalletItems> wallet_items) OVERRIDE;
-  virtual void OnDidSaveAddress(
-      const std::string& address_id,
-      const std::vector<wallet::RequiredAction>& required_actions,
-      const std::vector<wallet::FormFieldError>& form_field_errors) OVERRIDE;
-  virtual void OnDidSaveInstrument(
-      const std::string& instrument_id,
-      const std::vector<wallet::RequiredAction>& required_actions,
-      const std::vector<wallet::FormFieldError>& form_field_errors) OVERRIDE;
-  virtual void OnDidSaveInstrumentAndAddress(
+  virtual void OnDidSaveToWallet(
       const std::string& instrument_id,
       const std::string& address_id,
-      const std::vector<wallet::RequiredAction>& required_actions,
-      const std::vector<wallet::FormFieldError>& form_field_errors) OVERRIDE;
-  virtual void OnDidUpdateAddress(
-      const std::string& address_id,
-      const std::vector<wallet::RequiredAction>& required_actions,
-      const std::vector<wallet::FormFieldError>& form_field_errors) OVERRIDE;
-  virtual void OnDidUpdateInstrument(
-      const std::string& instrument_id,
       const std::vector<wallet::RequiredAction>& required_actions,
       const std::vector<wallet::FormFieldError>& form_field_errors) OVERRIDE;
   virtual void OnWalletError(
@@ -305,6 +293,8 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // Whether the information input in this dialog will be securely transmitted
   // to the requesting site.
   virtual bool TransmissionWillBeSecure() const;
+
+  AutocheckoutState autocheckout_state() const { return autocheckout_state_; }
 
  private:
   // Whether or not the current request wants credit info back.
@@ -492,21 +482,12 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // Creates an instrument based on |views_|' contents.
   scoped_ptr<wallet::Instrument> CreateTransientInstrument();
 
-  // Creates an update request based on |instrument|. May return NULL.
-  scoped_ptr<wallet::WalletClient::UpdateInstrumentRequest>
-      CreateUpdateInstrumentRequest(const wallet::Instrument* instrument,
-                                    const std::string& instrument_id);
-
   // Creates an address based on the contents of |view_|.
   scoped_ptr<wallet::Address> CreateTransientAddress();
 
   // Gets a full wallet from Online Wallet so the user can purchase something.
   // This information is decoded to reveal a fronting (proxy) card.
   void GetFullWallet();
-
-  // Calls |GetFullWallet()| if the required members (|risk_data_|,
-  // |active_instrument_id_|, and |active_address_id_|) are populated.
-  void GetFullWalletIfReady();
 
   // Updates the state of the controller and |view_| based on any required
   // actions returned by Save or Update calls to Wallet.
@@ -558,6 +539,9 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
 
   // Sets the state of the autocheckout flow.
   void SetAutocheckoutState(AutocheckoutState autocheckout_state);
+
+  // Obscures the web contents.
+  void DeemphasizeRenderView();
 
   // Returns the metric corresponding to the user's initial state when
   // interacting with this dialog.
@@ -706,6 +690,9 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
 
   // Whether the latency to display to the UI was logged to UMA yet.
   bool was_ui_latency_logged_;
+
+  // Whether or not the render view has been deemphasized.
+  bool deemphasized_render_view_;
 
   // State of steps in the current Autocheckout flow, or empty if not an
   // Autocheckout use case.

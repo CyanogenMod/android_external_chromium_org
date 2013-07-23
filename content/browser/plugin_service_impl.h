@@ -76,7 +76,7 @@ class CONTENT_EXPORT PluginServiceImpl
       const GURL& url,
       const std::string& mime_type,
       bool allow_wildcard,
-      std::vector<webkit::WebPluginInfo>* info,
+      std::vector<WebPluginInfo>* info,
       std::vector<std::string>* actual_mime_types) OVERRIDE;
   virtual bool GetPluginInfo(int render_process_id,
                              int render_view_id,
@@ -86,10 +86,10 @@ class CONTENT_EXPORT PluginServiceImpl
                              const std::string& mime_type,
                              bool allow_wildcard,
                              bool* is_stale,
-                             webkit::WebPluginInfo* info,
+                             WebPluginInfo* info,
                              std::string* actual_mime_type) OVERRIDE;
   virtual bool GetPluginInfoByPath(const base::FilePath& plugin_path,
-                                   webkit::WebPluginInfo* info) OVERRIDE;
+                                   WebPluginInfo* info) OVERRIDE;
   virtual string16 GetPluginDisplayNameByPath(
       const base::FilePath& path) OVERRIDE;
   virtual void GetPlugins(const GetPluginsCallback& callback) OVERRIDE;
@@ -101,17 +101,24 @@ class CONTENT_EXPORT PluginServiceImpl
   virtual bool IsPluginUnstable(const base::FilePath& plugin_path) OVERRIDE;
   virtual void RefreshPlugins() OVERRIDE;
   virtual void AddExtraPluginPath(const base::FilePath& path) OVERRIDE;
-  virtual void AddExtraPluginDir(const base::FilePath& path) OVERRIDE;
   virtual void RemoveExtraPluginPath(const base::FilePath& path) OVERRIDE;
-  virtual void UnregisterInternalPlugin(const base::FilePath& path) OVERRIDE;
+  virtual void AddExtraPluginDir(const base::FilePath& path) OVERRIDE;
   virtual void RegisterInternalPlugin(
-      const webkit::WebPluginInfo& info, bool add_at_beginning) OVERRIDE;
+      const WebPluginInfo& info, bool add_at_beginning) OVERRIDE;
+  virtual void UnregisterInternalPlugin(const base::FilePath& path) OVERRIDE;
   virtual void GetInternalPlugins(
-      std::vector<webkit::WebPluginInfo>* plugins) OVERRIDE;
-  virtual void SetPluginListForTesting(
-      webkit::npapi::PluginList* plugin_list) OVERRIDE;
+      std::vector<WebPluginInfo>* plugins) OVERRIDE;
+  virtual bool NPAPIPluginsSupported() OVERRIDE;
+  virtual void DisablePluginsDiscoveryForTesting() OVERRIDE;
 #if defined(OS_MACOSX)
   virtual void AppActivated() OVERRIDE;
+#elif defined(OS_WIN)
+  virtual bool GetPluginInfoFromWindow(HWND window,
+                                       base::string16* plugin_name,
+                                       base::string16* plugin_version) OVERRIDE;
+
+  // Returns true iff the given HWND is a plugin.
+  bool IsPluginWindow(HWND window);
 #endif
 
   // Returns the plugin process host corresponding to the plugin process that
@@ -184,7 +191,7 @@ class CONTENT_EXPORT PluginServiceImpl
       const GURL& url,
       const std::string& mime_type,
       PluginProcessHost::Client* client,
-      const std::vector<webkit::WebPluginInfo>&);
+      const std::vector<WebPluginInfo>&);
   // Helper so we can do the plugin lookup on the FILE thread.
   void GetAllowedPluginForOpenChannelToPlugin(
       int render_process_id,
@@ -206,9 +213,6 @@ class CONTENT_EXPORT PluginServiceImpl
   static void RegisterFilePathWatcher(base::FilePathWatcher* watcher,
                                       const base::FilePath& path);
 #endif
-
-  // The plugin list instance.
-  webkit::npapi::PluginList* plugin_list_;
 
 #if defined(OS_WIN)
   // Registry keys for getting notifications when new plugins are installed.

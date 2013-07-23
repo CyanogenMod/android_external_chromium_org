@@ -29,6 +29,7 @@ class SyncPromoUI {
     SOURCE_WEBSTORE_INSTALL,
     SOURCE_APP_LAUNCHER,
     SOURCE_APPS_PAGE_LINK,
+    SOURCE_BOOKMARK_BUBBLE,
     SOURCE_UNKNOWN, // This must be last.
   };
 
@@ -71,6 +72,9 @@ class SyncPromoUI {
   // Gets the source from the query portion of the sync promo URL.
   // The source identifies from where the sync promo was opened.
   static Source GetSourceForSyncPromoURL(const GURL& url);
+
+  // Returns true if the auto_close parameter in the given URL is set to true.
+  static bool IsAutoCloseEnabledInURL(const GURL& url);
 
   // Returns true if the given URL is the standard continue URL used with the
   // sync promo when the web-based flow is enabled.  The query parameters

@@ -65,7 +65,6 @@
 #include "content/public/browser/download_save_info.h"
 #include "content/public/browser/download_url_parameters.h"
 #include "content/public/browser/notification_source.h"
-#include "content/public/browser/plugin_service.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/web_contents.h"
@@ -83,7 +82,10 @@
 #include "net/test/spawned_test_server/spawned_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "webkit/plugins/npapi/mock_plugin_list.h"
+
+#if defined(OS_WIN) && defined(USE_ASH)
+#include "base/win/windows_version.h"
+#endif
 
 using content::BrowserContext;
 using content::BrowserThread;
@@ -471,6 +473,10 @@ class DownloadTest : public InProcessBrowserTest {
     // reference to the ChromeDownloadManagerDelegate which should be destroyed
     // on the UI thread.
     file_activity_observer_.reset();
+  }
+
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    command_line->AppendSwitch(switches::kDisablePluginsDiscovery);
   }
 
   // Returning false indicates a failure of the setup, and should be asserted
@@ -1850,12 +1856,6 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadHistoryDangerCheck) {
   base::FilePath file(FILE_PATH_LITERAL("downloads/dangerous/dangerous.swf"));
   GURL download_url(URLRequestMockHTTPJob::GetMockUrl(file));
 
-  // Null out plugins so that flash plugin won't interfere with testing.
-#if defined(ENABLE_PLUGINS)
-  webkit::npapi::MockPluginList plugin_list;
-  content::PluginService::GetInstance()->SetPluginListForTesting(&plugin_list);
-#endif
-
   // Download the url and wait until the object has been stored.
   scoped_ptr<content::DownloadTestObserver> download_observer(
       new content::DownloadTestObserverTerminal(
@@ -2776,6 +2776,12 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, HiddenDownload) {
 
 // Verify the multiple downloads infobar.
 IN_PROC_BROWSER_TEST_F(DownloadTest, TestMultipleDownloadsInfobar) {
+#if defined(OS_WIN) && defined(USE_ASH)
+  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
+  if (base::win::GetVersion() >= base::win::VERSION_WIN8)
+    return;
+#endif
+
   ASSERT_TRUE(test_server()->Start());
 
   // Create a downloads observer.

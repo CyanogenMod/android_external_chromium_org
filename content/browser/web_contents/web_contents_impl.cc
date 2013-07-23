@@ -32,6 +32,7 @@
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/host_zoom_map_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
+#include "content/browser/power_save_blocker_impl.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
@@ -71,7 +72,6 @@
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/content_constants.h"
-#include "content/public/common/content_restriction.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "net/base/mime_util.h"
@@ -271,11 +271,18 @@ WebContents* WebContents::Create(const WebContents::CreateParams& params) {
 
 WebContents* WebContents::CreateWithSessionStorage(
     const WebContents::CreateParams& params,
-    SessionStorageNamespace* session_storage_namespace) {
+    const SessionStorageNamespaceMap& session_storage_namespace_map) {
   WebContentsImpl* new_contents = new WebContentsImpl(
       params.browser_context, NULL);
-  new_contents->GetController()
-      .SetSessionStorageNamespace(session_storage_namespace);
+
+  for (SessionStorageNamespaceMap::const_iterator it =
+           session_storage_namespace_map.begin();
+       it != session_storage_namespace_map.end();
+       ++it) {
+    new_contents->GetController()
+        .SetSessionStorageNamespace(it->first, it->second.get());
+  }
+
   new_contents->Init(params);
   return new_contents;
 }
@@ -348,7 +355,6 @@ WebContentsImpl::WebContentsImpl(
       minimum_zoom_percent_(static_cast<int>(kMinimumZoomFactor * 100)),
       maximum_zoom_percent_(static_cast<int>(kMaximumZoomFactor * 100)),
       temporary_zoom_settings_(false),
-      content_restrictions_(0),
       color_chooser_identifier_(0),
       message_source_(NULL),
       fullscreen_widget_routing_id_(MSG_ROUTING_NONE) {
@@ -358,6 +364,8 @@ WebContentsImpl::WebContentsImpl(
 
 WebContentsImpl::~WebContentsImpl() {
   is_being_destroyed_ = true;
+
+  ClearAllPowerSaveBlockers();
 
   for (std::set<RenderWidgetHostImpl*>::iterator iter =
            created_widgets_.begin(); iter != created_widgets_.end(); ++iter) {
@@ -682,11 +690,8 @@ bool WebContentsImpl::OnMessageReceived(RenderViewHost* render_view_host,
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidFinishLoad, OnDidFinishLoad)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidFailLoadWithError,
                         OnDidFailLoadWithError)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateContentRestrictions,
-                        OnUpdateContentRestrictions)
     IPC_MESSAGE_HANDLER(ViewHostMsg_GoToEntryAtOffset, OnGoToEntryAtOffset)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateZoomLimits, OnUpdateZoomLimits)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_SaveURLAs, OnSaveURL)
     IPC_MESSAGE_HANDLER(ViewHostMsg_EnumerateDirectory, OnEnumerateDirectory)
     IPC_MESSAGE_HANDLER(ViewHostMsg_JSOutOfMemory, OnJSOutOfMemory)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RegisterProtocolHandler,
@@ -718,6 +723,7 @@ bool WebContentsImpl::OnMessageReceived(RenderViewHost* render_view_host,
 #endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_FrameAttached, OnFrameAttached)
     IPC_MESSAGE_HANDLER(ViewHostMsg_FrameDetached, OnFrameDetached)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_MediaNotification, OnMediaNotification)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP_EX()
   message_source_ = NULL;
@@ -755,7 +761,7 @@ const GURL& WebContentsImpl::GetURL() const {
   return entry ? entry->GetVirtualURL() : GURL::EmptyGURL();
 }
 
-const GURL& WebContentsImpl::GetActiveURL() const {
+const GURL& WebContentsImpl::GetVisibleURL() const {
   // We may not have a navigation entry yet.
   NavigationEntry* entry = controller_.GetVisibleEntry();
   return entry ? entry->GetVirtualURL() : GURL::EmptyGURL();
@@ -1064,6 +1070,10 @@ void WebContentsImpl::DecrementCapturerCount() {
     DVLOG(1) << "Executing delayed WasHidden().";
     WasHidden();
   }
+}
+
+int WebContentsImpl::GetCapturerCount() const {
+  return capturer_count_;
 }
 
 bool WebContentsImpl::IsCrashed() const {
@@ -1456,6 +1466,10 @@ void WebContentsImpl::CreateNewWindow(
   // We must assign the SessionStorageNamespace before calling Init().
   //
   // http://crbug.com/142685
+  const std::string& partition_id =
+      GetContentClient()->browser()->
+          GetStoragePartitionIdForSite(GetBrowserContext(),
+                                       site_instance->GetSiteURL());
   StoragePartition* partition = BrowserContext::GetStoragePartition(
       GetBrowserContext(), site_instance.get());
   DOMStorageContextImpl* dom_storage_context =
@@ -1464,6 +1478,7 @@ void WebContentsImpl::CreateNewWindow(
       static_cast<SessionStorageNamespaceImpl*>(session_storage_namespace);
   CHECK(session_storage_namespace_impl->IsFromContext(dom_storage_context));
   new_contents->GetController().SetSessionStorageNamespace(
+      partition_id,
       session_storage_namespace);
   CreateParams create_params(GetBrowserContext(), site_instance.get());
   create_params.routing_id = route_id;
@@ -1683,10 +1698,6 @@ void WebContentsImpl::RequestMediaAccessPermission(
     callback.Run(MediaStreamDevices(), scoped_ptr<MediaStreamUI>());
 }
 
-SessionStorageNamespace* WebContentsImpl::GetSessionStorageNamespace() {
-  return controller_.GetSessionStorageNamespace();
-}
-
 void WebContentsImpl::DidSendScreenRects(RenderWidgetHostImpl* rwh) {
   if (browser_plugin_embedder_)
     browser_plugin_embedder_->DidSendScreenRects();
@@ -1867,7 +1878,7 @@ void WebContentsImpl::OnSavePage() {
   // If we can not save the page, try to download it.
   if (!IsSavable()) {
     RecordDownloadSource(INITIATED_BY_SAVE_PACKAGE_ON_NON_HTML);
-    SaveURL(GetURL(), Referrer(), true);
+    SaveFrame(GetURL(), Referrer());
     return;
   }
 
@@ -1891,6 +1902,33 @@ bool WebContentsImpl::SavePage(const base::FilePath& main_file,
 
   save_package_ = new SavePackage(this, save_type, main_file, dir_path);
   return save_package_->Init(SavePackageDownloadCreatedCallback());
+}
+
+void WebContentsImpl::SaveFrame(const GURL& url,
+                                const Referrer& referrer) {
+  if (!GetURL().is_valid())
+    return;
+  bool is_main_frame = (url == GetURL());
+
+  DownloadManager* dlm =
+      BrowserContext::GetDownloadManager(GetBrowserContext());
+  if (!dlm)
+    return;
+  int64 post_id = -1;
+  if (is_main_frame) {
+    const NavigationEntry* entry = controller_.GetActiveEntry();
+    if (entry)
+      post_id = entry->GetPostID();
+  }
+  scoped_ptr<DownloadUrlParameters> params(
+      DownloadUrlParameters::FromWebContents(this, url));
+  params->set_referrer(referrer);
+  params->set_post_id(post_id);
+  params->set_prefer_cache(true);
+  if (post_id >= 0)
+    params->set_method("POST");
+  params->set_prompt(true);
+  dlm->DownloadUrl(params.Pass());
 }
 
 void WebContentsImpl::GenerateMHTML(
@@ -2037,10 +2075,6 @@ int WebContentsImpl::GetMaximumZoomPercent() const {
 
 gfx::Size WebContentsImpl::GetPreferredSize() const {
   return preferred_size_;
-}
-
-int WebContentsImpl::GetContentRestrictions() const {
-  return content_restrictions_;
 }
 
 bool WebContentsImpl::GotResponseToLockMouseRequest(bool allowed) {
@@ -2299,12 +2333,6 @@ void WebContentsImpl::OnDidFailLoadWithError(
                                 message_source_));
 }
 
-void WebContentsImpl::OnUpdateContentRestrictions(int restrictions) {
-  content_restrictions_ = restrictions;
-  if (delegate_)
-    delegate_->ContentRestrictionsChanged(this);
-}
-
 void WebContentsImpl::OnGoToEntryAtOffset(int offset) {
   if (!delegate_ || delegate_->OnGoToEntryOffset(offset)) {
     NavigationEntryImpl* entry = NavigationEntryImpl::FromNavigationEntry(
@@ -2336,19 +2364,6 @@ void WebContentsImpl::OnUpdateZoomLimits(int minimum_percent,
   minimum_zoom_percent_ = minimum_percent;
   maximum_zoom_percent_ = maximum_percent;
   temporary_zoom_settings_ = !remember;
-}
-
-void WebContentsImpl::OnSaveURL(const GURL& url,
-                                const Referrer& referrer) {
-  RecordDownloadSource(INITIATED_BY_PEPPER_SAVE);
-  // Check if the URL to save matches the URL of the main frame. Since this
-  // message originates from Pepper plugins, it may not be the case if the
-  // plugin is an embedded element.
-  GURL main_frame_url = GetURL();
-  if (!main_frame_url.is_valid())
-    return;
-  bool is_main_frame = (url == main_frame_url);
-  SaveURL(url, referrer, is_main_frame);
 }
 
 void WebContentsImpl::OnEnumerateDirectory(int request_id,
@@ -2578,6 +2593,38 @@ void WebContentsImpl::OnFrameDetached(int64 parent_frame_id, int64 frame_id) {
 
   parent->RemoveChild(frame_id);
 }
+
+void WebContentsImpl::OnMediaNotification(int64 player_cookie,
+                                          bool has_video,
+                                          bool has_audio,
+                                          bool is_playing) {
+  // Chrome OS does its own detection of audio and video.
+#if !defined(OS_CHROMEOS)
+  if (is_playing) {
+    scoped_ptr<PowerSaveBlocker> blocker;
+    if (has_video) {
+      blocker = PowerSaveBlocker::Create(
+          PowerSaveBlocker::kPowerSaveBlockPreventDisplaySleep,
+          "Playing video");
+#if defined(OS_ANDROID)
+      static_cast<PowerSaveBlockerImpl*>(blocker.get())->
+          InitDisplaySleepBlocker(GetView()->GetTopLevelNativeWindow());
+#endif
+    } else if (has_audio) {
+      blocker = PowerSaveBlocker::Create(
+          PowerSaveBlocker::kPowerSaveBlockPreventAppSuspension,
+          "Playing audio");
+    }
+
+    if (blocker)
+      power_save_blockers_[message_source_][player_cookie] = blocker.release();
+  } else {
+    delete power_save_blockers_[message_source_][player_cookie];
+    power_save_blockers_[message_source_].erase(player_cookie);
+  }
+#endif  // !defined(OS_CHROMEOS)
+}
+
 
 void WebContentsImpl::DidChangeVisibleSSLState() {
   FOR_EACH_OBSERVER(WebContentsObserver, observers_,
@@ -2868,6 +2915,7 @@ void WebContentsImpl::RenderViewTerminated(RenderViewHost* rvh,
     return;
   }
 
+  ClearPowerSaveBlockers(rvh);
   SetIsLoading(false, NULL);
   NotifyDisconnected();
   SetIsCrashed(status, error_code);
@@ -2879,6 +2927,7 @@ void WebContentsImpl::RenderViewTerminated(RenderViewHost* rvh,
 }
 
 void WebContentsImpl::RenderViewDeleted(RenderViewHost* rvh) {
+  ClearPowerSaveBlockers(rvh);
   render_manager_.RenderViewDeleted(rvh);
   FOR_EACH_OBSERVER(WebContentsObserver, observers_, RenderViewDeleted(rvh));
 }
@@ -3084,9 +3133,6 @@ void WebContentsImpl::RequestMove(const gfx::Rect& new_bounds) {
 void WebContentsImpl::DidStartLoading(RenderViewHost* render_view_host) {
   SetIsLoading(true, NULL);
 
-  if (delegate_ && content_restrictions_)
-    OnUpdateContentRestrictions(0);
-
   // Notify observers about navigation.
   FOR_EACH_OBSERVER(WebContentsObserver, observers_,
                     DidStartLoading(render_view_host));
@@ -3172,7 +3218,7 @@ void WebContentsImpl::RequestOpenURL(RenderViewHost* rvh,
                                      const Referrer& referrer,
                                      WindowOpenDisposition disposition,
                                      int64 source_frame_id,
-                                     bool is_cross_site_redirect,
+                                     bool should_replace_current_entry,
                                      bool user_gesture) {
   // If this came from a swapped out RenderViewHost, we only allow the request
   // if we are still in the same BrowsingInstance.
@@ -3184,7 +3230,8 @@ void WebContentsImpl::RequestOpenURL(RenderViewHost* rvh,
   // Delegate to RequestTransferURL because this is just the generic
   // case where |old_request_id| is empty.
   RequestTransferURL(url, referrer, disposition, source_frame_id,
-                     GlobalRequestID(), is_cross_site_redirect, user_gesture);
+                     GlobalRequestID(),
+                     should_replace_current_entry, user_gesture);
 }
 
 void WebContentsImpl::RequestTransferURL(
@@ -3193,7 +3240,7 @@ void WebContentsImpl::RequestTransferURL(
     WindowOpenDisposition disposition,
     int64 source_frame_id,
     const GlobalRequestID& old_request_id,
-    bool is_cross_site_redirect,
+    bool should_replace_current_entry,
     bool user_gesture) {
   WebContents* new_contents = NULL;
   PageTransition transition_type = PAGE_TRANSITION_LINK;
@@ -3216,7 +3263,7 @@ void WebContentsImpl::RequestTransferURL(
     OpenURLParams params(url, referrer, source_frame_id, disposition,
         PAGE_TRANSITION_LINK, true /* is_renderer_initiated */);
     params.transferred_global_request_id = old_request_id;
-    params.is_cross_site_redirect = is_cross_site_redirect;
+    params.should_replace_current_entry = should_replace_current_entry;
     params.user_gesture = user_gesture;
     new_contents = OpenURL(params);
   }
@@ -3630,30 +3677,6 @@ void WebContentsImpl::SetEncoding(const std::string& encoding) {
       GetCanonicalEncodingNameByAliasName(encoding);
 }
 
-void WebContentsImpl::SaveURL(const GURL& url,
-                              const Referrer& referrer,
-                              bool is_main_frame) {
-  DownloadManager* dlm =
-      BrowserContext::GetDownloadManager(GetBrowserContext());
-  if (!dlm)
-    return;
-  int64 post_id = -1;
-  if (is_main_frame) {
-    const NavigationEntry* entry = controller_.GetActiveEntry();
-    if (entry)
-      post_id = entry->GetPostID();
-  }
-  scoped_ptr<DownloadUrlParameters> params(
-      DownloadUrlParameters::FromWebContents(this, url));
-  params->set_referrer(referrer);
-  params->set_post_id(post_id);
-  params->set_prefer_cache(true);
-  if (post_id >= 0)
-    params->set_method("POST");
-  params->set_prompt(true);
-  dlm->DownloadUrl(params.Pass());
-}
-
 void WebContentsImpl::CreateViewAndSetSizeForRVH(RenderViewHost* rvh) {
   RenderWidgetHostView* rwh_view = view_->CreateViewForWidget(rvh);
   // Can be NULL during tests.
@@ -3683,6 +3706,19 @@ BrowserPluginGuestManager*
   return static_cast<BrowserPluginGuestManager*>(
       GetBrowserContext()->GetUserData(
           browser_plugin::kBrowserPluginGuestManagerKeyName));
+}
+
+void WebContentsImpl::ClearPowerSaveBlockers(
+    RenderViewHost* render_view_host) {
+  STLDeleteValues(&power_save_blockers_[render_view_host]);
+  power_save_blockers_.erase(render_view_host);
+}
+
+void WebContentsImpl::ClearAllPowerSaveBlockers() {
+  for (PowerSaveBlockerMap::iterator i(power_save_blockers_.begin());
+       i != power_save_blockers_.end(); ++i)
+    STLDeleteValues(&power_save_blockers_[i->first]);
+  power_save_blockers_.clear();
 }
 
 }  // namespace content

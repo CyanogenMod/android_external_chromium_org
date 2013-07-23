@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "ui/aura/root_window_host.h"
 #include "ui/base/ozone/event_factory_ozone.h"
 #include "ui/gfx/rect.h"
@@ -54,10 +54,12 @@ class RootWindowHostOzone : public RootWindowHost,
   virtual void PrepareForShutdown() OVERRIDE;
 
   RootWindowHostDelegate* delegate_;
+  gfx::AcceleratedWidget widget_;
   gfx::Rect bounds_;
 
-  // EventFactoryEvdev reads from /dev/input/* file descriptors and creates
-  // ui::Events from them.
+  // EventFactoryOzone creates converters that obtain input events from the
+  // underlying input system and dispatch them as |ui::Event| instances into
+  // Aura.
   scoped_ptr<ui::EventFactoryOzone> factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RootWindowHostOzone);

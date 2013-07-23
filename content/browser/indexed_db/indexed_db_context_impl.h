@@ -22,6 +22,7 @@
 class GURL;
 
 namespace base {
+class ListValue;
 class FilePath;
 class SequencedTaskRunner;
 }
@@ -61,8 +62,8 @@ class CONTENT_EXPORT IndexedDBContextImpl
   virtual void DeleteForOrigin(const GURL& origin_url) OVERRIDE;
   virtual base::FilePath GetFilePathForTesting(
       const std::string& origin_id) const OVERRIDE;
-  virtual void SetTaskRunnerForTesting(
-      base::SequencedTaskRunner* task_runner) OVERRIDE;
+  virtual void SetTaskRunnerForTesting(base::SequencedTaskRunner* task_runner)
+      OVERRIDE;
 
   // Methods called by IndexedDBDispatcherHost for quota support.
   void ConnectionOpened(const GURL& origin_url, IndexedDBConnection* db);
@@ -73,6 +74,7 @@ class CONTENT_EXPORT IndexedDBContextImpl
 
   quota::QuotaManagerProxy* quota_manager_proxy();
 
+  base::ListValue* GetAllOriginsDetails();
   void ForceClose(const GURL& origin_url);
   base::FilePath GetFilePath(const GURL& origin_url);
   base::FilePath data_path() const { return data_path_; }
@@ -80,6 +82,7 @@ class CONTENT_EXPORT IndexedDBContextImpl
     std::set<GURL>* set = GetOriginSet();
     return set->find(origin_url) != set->end();
   }
+  size_t GetConnectionCount(const GURL& origin_url);
 
   // For unit tests allow to override the |data_path_|.
   void set_data_path_for_testing(const base::FilePath& data_path) {
@@ -121,7 +124,7 @@ class CONTENT_EXPORT IndexedDBContextImpl
   // Only for testing.
   void ResetCaches();
 
-  scoped_refptr<IndexedDBFactory> idb_factory_;
+  scoped_refptr<IndexedDBFactory> factory_;
   base::FilePath data_path_;
   // If true, nothing (not even session-only data) should be deleted on exit.
   bool force_keep_session_state_;

@@ -15,7 +15,8 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp)/content_resources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_gyp)/skia_skia_gyp.a \
-	$(call intermediates-dir-for,GYP,third_party_npapi_npapi_gyp)/npapi.stamp
+	$(call intermediates-dir-for,GYP,third_party_npapi_npapi_gyp)/npapi.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_glue_child_gyp)/webkit_support_glue_child_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -43,15 +44,25 @@ LOCAL_SRC_FILES := \
 	content/child/fileapi/webfilewriter_impl.cc \
 	content/child/image_decoder.cc \
 	content/child/indexed_db/indexed_db_dispatcher.cc \
+	content/child/indexed_db/indexed_db_key_builders.cc \
 	content/child/indexed_db/indexed_db_message_filter.cc \
 	content/child/indexed_db/proxy_webidbcursor_impl.cc \
 	content/child/indexed_db/proxy_webidbdatabase_impl.cc \
 	content/child/indexed_db/proxy_webidbfactory_impl.cc \
-	content/child/np_channel_base.cc \
-	content/child/npobject_proxy.cc \
-	content/child/npruntime_util.cc \
-	content/child/npobject_stub.cc \
-	content/child/npobject_util.cc \
+	content/child/npapi/np_channel_base.cc \
+	content/child/npapi/npobject_proxy.cc \
+	content/child/npapi/npobject_stub.cc \
+	content/child/npapi/npobject_util.cc \
+	content/child/npapi/npruntime_util.cc \
+	content/child/npapi/plugin_host.cc \
+	content/child/npapi/plugin_instance.cc \
+	content/child/npapi/plugin_lib.cc \
+	content/child/npapi/plugin_stream.cc \
+	content/child/npapi/plugin_stream_posix.cc \
+	content/child/npapi/plugin_stream_url.cc \
+	content/child/npapi/plugin_string_stream.cc \
+	content/child/npapi/webplugin_delegate_impl.cc \
+	content/child/npapi/webplugin_delegate_impl_android.cc \
 	content/child/plugin_message_generator.cc \
 	content/child/plugin_param_traits.cc \
 	content/child/quota_dispatcher.cc \
@@ -60,8 +71,8 @@ LOCAL_SRC_FILES := \
 	content/child/runtime_features.cc \
 	content/child/socket_stream_dispatcher.cc \
 	content/child/thread_safe_sender.cc \
-	content/child/webblobregistry_impl.cc \
 	content/child/web_database_observer_impl.cc \
+	content/child/webblobregistry_impl.cc \
 	content/child/webkitplatformsupport_impl.cc \
 	content/child/webmessageportchannel_impl.cc
 
@@ -339,7 +350,8 @@ LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 LOCAL_STATIC_LIBRARIES := \
 	cpufeatures \
 	ui_ui_gyp \
-	skia_skia_gyp
+	skia_skia_gyp \
+	webkit_support_glue_child_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

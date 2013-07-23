@@ -8,7 +8,7 @@
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -856,8 +856,8 @@ SiteInstance* IncognitoExtensionProcessManager::GetSiteInstanceForURL(
     const GURL& url) {
   ExtensionService* service = GetProfile()->GetExtensionService();
   if (service) {
-    const Extension* extension = service->extensions()->GetExtensionOrAppByURL(
-        ExtensionURLInfo(url));
+    const Extension* extension =
+        service->extensions()->GetExtensionOrAppByURL(url);
     if (extension &&
         !extensions::IncognitoInfo::IsSplitMode(extension)) {
       return original_manager_->GetSiteInstanceForURL(url);

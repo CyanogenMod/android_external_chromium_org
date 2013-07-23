@@ -259,7 +259,6 @@
         'SK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK',
 
         'IGNORE_ROT_AA_RECT_OPT',
-        'SK_IGNORE_IMAGE_PRESCALE',
       ],
       'sources!': [
         '../third_party/skia/include/core/SkTypes.h',
@@ -515,9 +514,6 @@
           ],
         }],
         [ 'OS == "win"', {
-          'defines': [
-            'SK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS'
-          ],
           'sources!': [
             '../third_party/skia/src/ports/SkOSFile_posix.cpp',
             '../third_party/skia/src/ports/SkThread_pthread.cpp',

@@ -33,6 +33,7 @@
 #include "ui/gfx/skia_util.h"
 #include "ui/views/background.h"
 #include "ui/views/border.h"
+#include "ui/views/controls/button/blue_button.h"
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/button/label_button.h"
@@ -108,6 +109,11 @@ const int kOverlayTextPadding = 20;
 
 // Spacing between lines of text in the overlay view.
 const int kOverlayTextInterlineSpacing = 10;
+
+// A dimmer text color used in various parts of the dialog. TODO(estade): should
+// this be part of NativeTheme? Currently the value is duplicated in several
+// places.
+const SkColor kGreyTextColor = SkColorSetRGB(102, 102, 102);
 
 const char kDecoratedTextfieldClassName[] = "autofill/DecoratedTextfield";
 const char kNotificationAreaClassName[] = "autofill/NotificationArea";
@@ -541,7 +547,7 @@ void AutofillDialogViews::AccountChooser::LinkClicked(views::Link* source,
 AutofillDialogViews::OverlayView::OverlayView(views::ButtonListener* listener)
     : image_view_(new views::ImageView()),
       message_stack_(new views::View()),
-      button_(new views::LabelButton(listener, string16())) {
+      button_(new views::BlueButton(listener, string16())) {
   set_border(views::Border::CreateEmptyBorder(12, 12, 12, 12));
   set_background(views::Background::CreateSolidBackground(GetNativeTheme()->
       GetSystemColor(ui::NativeTheme::kColorId_DialogBackground)));
@@ -556,7 +562,6 @@ AutofillDialogViews::OverlayView::OverlayView(views::ButtonListener* listener)
       kOverlayTextPadding, kOverlayTextPadding, 0, kOverlayTextPadding));
 
   AddChildView(button_);
-  button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
   button_->set_focusable(true);
 }
 
@@ -640,9 +645,7 @@ void AutofillDialogViews::OverlayView::Layout() {
     button_->SizeToPreferredSize();
     y -= button_->height();
     button_->SetPosition(gfx::Point(
-        bounds.width() - button_->width() -
-            views::kButtonHEdgeMarginNew,
-        y));
+        bounds.CenterPoint().x() - button_->width() / 2, y));
     y -= views::kButtonVEdgeMarginNew;
   }
 
@@ -1107,6 +1110,8 @@ void AutofillDialogViews::Show() {
       web_contents_modal_dialog_manager->delegate()->
           GetWebContentsModalDialogHost());
   web_contents_modal_dialog_manager->ShowDialog(window_->GetNativeView());
+  web_contents_modal_dialog_manager->SetPreventCloseOnLoadStart(
+      window_->GetNativeView(), true);
   focus_manager_ = window_->GetFocusManager();
   focus_manager_->AddFocusChangeListener(this);
 
@@ -1465,6 +1470,10 @@ string16 AutofillDialogViews::GetDialogButtonLabel(ui::DialogButton button)
       controller_->ConfirmButtonText() : controller_->CancelButtonText();
 }
 
+bool AutofillDialogViews::ShouldDefaultButtonBeBlue() const {
+  return true;
+}
+
 bool AutofillDialogViews::IsDialogButtonEnabled(ui::DialogButton button) const {
   return controller_->IsDialogButtonEnabled(button);
 }
@@ -1490,7 +1499,9 @@ views::View* AutofillDialogViews::CreateFootnoteView() {
       views::Background::CreateSolidBackground(kShadingColor));
 
   legal_document_view_ = new views::StyledLabel(string16(), this);
-  legal_document_view_->SetDisplayedOnBackgroundColor(kShadingColor);
+  views::StyledLabel::RangeStyleInfo default_style;
+  default_style.color = kGreyTextColor;
+  legal_document_view_->SetDefaultStyle(default_style);
 
   footnote_view_->AddChildView(legal_document_view_);
   footnote_view_->SetVisible(false);
@@ -1503,17 +1514,15 @@ views::View* AutofillDialogViews::CreateOverlayView() {
 }
 
 bool AutofillDialogViews::Cancel() {
-  controller_->OnCancel();
-  return true;
+  return controller_->OnCancel();
 }
 
 bool AutofillDialogViews::Accept() {
   if (ValidateForm())
-    controller_->OnAccept();
-  else if (!validity_map_.empty())
-    validity_map_.begin()->first->RequestFocus();
+    return controller_->OnAccept();
 
-  // |controller_| decides when to hide the dialog.
+  if (!validity_map_.empty())
+    validity_map_.begin()->first->RequestFocus();
   return false;
 }
 
@@ -1961,8 +1970,10 @@ void AutofillDialogViews::ShowErrorBubbleForViewIfNecessary(views::View* view) {
 
   std::map<views::View*, string16>::iterator error_message =
       validity_map_.find(view);
-  if (error_message != validity_map_.end())
+  if (error_message != validity_map_.end()) {
+    view->ScrollRectToVisible(view->GetLocalBounds());
     error_bubble_.reset(new ErrorBubble(view, error_message->second));
+  }
 }
 
 void AutofillDialogViews::MarkInputsInvalid(DialogSection section,

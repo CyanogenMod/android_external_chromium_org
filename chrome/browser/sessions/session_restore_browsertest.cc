@@ -50,6 +50,10 @@ using sessions::SerializedNavigationEntryTestHelper;
 #include "base/mac/scoped_nsautorelease_pool.h"
 #endif
 
+#if defined(OS_WIN) && defined(USE_ASH)
+#include "base/win/windows_version.h"
+#endif
+
 class SessionRestoreTest : public InProcessBrowserTest {
  public:
   SessionRestoreTest() : active_browser_list_(NULL) {}
@@ -851,6 +855,12 @@ IN_PROC_BROWSER_TEST_F(SessionRestoreTest, NormalAndPopup) {
 // If this test flakes, use http://crbug.com/29110
 IN_PROC_BROWSER_TEST_F(SessionRestoreTest,
                        RestoreAfterClosingTabbedBrowserWithAppAndLaunching) {
+#if defined(OS_WIN) && defined(USE_ASH)
+  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
+  if (base::win::GetVersion() >= base::win::VERSION_WIN8)
+    return;
+#endif
+
   ui_test_utils::NavigateToURL(browser(), url1_);
 
   // Launch an app.
@@ -1073,18 +1083,18 @@ IN_PROC_BROWSER_TEST_F(SessionRestoreTest, SessionStorage) {
   ui_test_utils::NavigateToURL(browser(), url1_);
   content::NavigationController* controller =
       &browser()->tab_strip_model()->GetActiveWebContents()->GetController();
-  ASSERT_TRUE(controller->GetSessionStorageNamespace());
+  ASSERT_TRUE(controller->GetDefaultSessionStorageNamespace());
   std::string session_storage_persistent_id =
-      controller->GetSessionStorageNamespace()->persistent_id();
+      controller->GetDefaultSessionStorageNamespace()->persistent_id();
   Browser* new_browser = QuitBrowserAndRestore(browser(), 1);
   ASSERT_EQ(1u, active_browser_list_->size());
   ASSERT_EQ(url1_,
             new_browser->tab_strip_model()->GetActiveWebContents()->GetURL());
   content::NavigationController* new_controller =
       &new_browser->tab_strip_model()->GetActiveWebContents()->GetController();
-  ASSERT_TRUE(new_controller->GetSessionStorageNamespace());
+  ASSERT_TRUE(new_controller->GetDefaultSessionStorageNamespace());
   std::string restored_session_storage_persistent_id =
-      new_controller->GetSessionStorageNamespace()->persistent_id();
+      new_controller->GetDefaultSessionStorageNamespace()->persistent_id();
   EXPECT_EQ(session_storage_persistent_id,
             restored_session_storage_persistent_id);
 }
@@ -1095,12 +1105,15 @@ IN_PROC_BROWSER_TEST_F(SessionRestoreTest, SessionStorageAfterTabReplace) {
   {
     content::NavigationController* controller =
         &browser()->tab_strip_model()->GetActiveWebContents()->GetController();
-    ASSERT_TRUE(controller->GetSessionStorageNamespace());
+    ASSERT_TRUE(controller->GetDefaultSessionStorageNamespace());
 
+    content::SessionStorageNamespaceMap session_storage_namespace_map;
+    session_storage_namespace_map[std::string()] =
+        controller->GetDefaultSessionStorageNamespace();
     scoped_ptr<content::WebContents> web_contents(
         content::WebContents::CreateWithSessionStorage(
             content::WebContents::CreateParams(browser()->profile()),
-            controller->GetSessionStorageNamespace()));
+            session_storage_namespace_map));
 
     TabStripModel* tab_strip_model = browser()->tab_strip_model();
     scoped_ptr<content::WebContents> old_web_contents(
@@ -1115,7 +1128,7 @@ IN_PROC_BROWSER_TEST_F(SessionRestoreTest, SessionStorageAfterTabReplace) {
   content::NavigationController* controller =
       &browser()->tab_strip_model()->GetActiveWebContents()->GetController();
   EXPECT_TRUE(
-      controller->GetSessionStorageNamespace()->should_persist());
+      controller->GetDefaultSessionStorageNamespace()->should_persist());
 
   // Quit and restore. Check that no extra tabs were created.
   Browser* new_browser = QuitBrowserAndRestore(browser(), 1);

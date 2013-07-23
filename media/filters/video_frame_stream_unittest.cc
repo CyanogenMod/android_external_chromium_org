@@ -4,7 +4,7 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "media/base/gmock_callback_support.h"
 #include "media/base/mock_filters.h"
 #include "media/base/test_helpers.h"
@@ -88,9 +88,9 @@ class VideoFrameStreamTest : public testing::TestWithParam<bool> {
                const Decryptor::DecryptCB& decrypt_cb) {
     DCHECK_EQ(stream_type, Decryptor::kVideo);
     scoped_refptr<DecoderBuffer> decrypted = DecoderBuffer::CopyFrom(
-        encrypted->GetData(), encrypted->GetDataSize());
-    decrypted->SetTimestamp(encrypted->GetTimestamp());
-    decrypted->SetDuration(encrypted->GetDuration());
+        encrypted->data(), encrypted->data_size());
+    decrypted->set_timestamp(encrypted->timestamp());
+    decrypted->set_duration(encrypted->duration());
     decrypt_cb.Run(Decryptor::kSuccess, decrypted);
   }
 

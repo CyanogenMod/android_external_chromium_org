@@ -21,7 +21,6 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/pepper_plugin_info.h"
 #include "ppapi/proxy/ppapi_messages.h"
-#include "webkit/plugins/npapi/plugin_utils.h"
 #include "webkit/plugins/plugin_constants.h"
 
 namespace content {
@@ -42,16 +41,16 @@ PluginDataRemover* PluginDataRemover::Create(BrowserContext* browser_context) {
 
 // static
 void PluginDataRemover::GetSupportedPlugins(
-    std::vector<webkit::WebPluginInfo>* supported_plugins) {
+    std::vector<WebPluginInfo>* supported_plugins) {
   bool allow_wildcard = false;
-  std::vector<webkit::WebPluginInfo> plugins;
+  std::vector<WebPluginInfo> plugins;
   PluginService::GetInstance()->GetPluginInfoArray(
       GURL(), kFlashPluginSwfMimeType, allow_wildcard, &plugins, NULL);
   Version min_version(kMinFlashVersion);
-  for (std::vector<webkit::WebPluginInfo>::iterator it = plugins.begin();
+  for (std::vector<WebPluginInfo>::iterator it = plugins.begin();
        it != plugins.end(); ++it) {
     Version version;
-    webkit::npapi::CreateVersionFromString(it->version, &version);
+    WebPluginInfo::CreateVersionFromString(it->version, &version);
     if (version.IsValid() && min_version.CompareTo(version) == -1)
       supported_plugins->push_back(*it);
   }
@@ -89,7 +88,7 @@ class PluginDataRemoverImpl::Context
     PluginServiceImpl* plugin_service = PluginServiceImpl::GetInstance();
 
     // Get the plugin file path.
-    std::vector<webkit::WebPluginInfo> plugins;
+    std::vector<WebPluginInfo> plugins;
     plugin_service->GetPluginInfoArray(
         GURL(), mime_type, false, &plugins, NULL);
     base::FilePath plugin_path;
@@ -136,7 +135,7 @@ class PluginDataRemoverImpl::Context
     return resource_context_;
   }
 
-  virtual void SetPluginInfo(const webkit::WebPluginInfo& info) OVERRIDE {}
+  virtual void SetPluginInfo(const WebPluginInfo& info) OVERRIDE {}
 
   virtual void OnFoundPluginProcessHost(PluginProcessHost* host) OVERRIDE {}
 

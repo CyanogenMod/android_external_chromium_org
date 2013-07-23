@@ -26,13 +26,13 @@
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/common/extensions/permissions/permissions_info.h"
-#include "chrome/common/extensions/user_script.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_service.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/common/url_pattern.h"
+#include "extensions/common/user_script.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -538,7 +538,9 @@ PermissionSet* ExtensionPrefs::ReadPrefAsPermissionSet(
   const ListValue* api_values = NULL;
   std::string api_pref = JoinPrefs(pref_key, kPrefAPIs);
   if (ReadPrefAsList(extension_id, api_pref, &api_values)) {
-    APIPermissionSet::ParseFromJSON(api_values, &apis, NULL, NULL);
+    APIPermissionSet::ParseFromJSON(api_values,
+                                    APIPermissionSet::kAllowInternalPermissions,
+                                    &apis, NULL, NULL);
   }
 
   // Retrieve the explicit host permissions.

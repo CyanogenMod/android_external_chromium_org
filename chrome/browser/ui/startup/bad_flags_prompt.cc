@@ -11,6 +11,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
+#include "extensions/common/switches.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -32,7 +33,7 @@ void ShowBadFlagsPrompt(Browser* browser) {
     // Browser plugin is dangerous on regular pages because it breaks the Same
     // Origin Policy.
     switches::kEnableBrowserPluginForAllViewTypes,
-    switches::kExtensionsOnChromeURLs,
+    extensions::switches::kExtensionsOnChromeURLs,
     // This parameter should be used only for server side developments.
     switches::kTranslateScriptURL,
     NULL
@@ -44,9 +45,8 @@ void ShowBadFlagsPrompt(Browser* browser) {
           InfoBarService::FromWebContents(web_contents),
           InfoBarDelegate::kNoIconID,
           l10n_util::GetStringFUTF16(IDS_BAD_FLAGS_WARNING_MESSAGE,
-                                      UTF8ToUTF16(std::string("--") + *flag)),
+                                     UTF8ToUTF16(std::string("--") + *flag)),
           false);
-
       return;
     }
   }

@@ -12,7 +12,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "media/base/media.h"
 #include "media/filters/ffmpeg_demuxer.h"
@@ -144,8 +144,8 @@ void StreamReader::OnReadDone(
     const scoped_refptr<media::DecoderBuffer>& buffer) {
   CHECK_EQ(status, media::DemuxerStream::kOk);
   CHECK(buffer.get());
-  *end_of_stream = buffer->IsEndOfStream();
-  *timestamp = *end_of_stream ? media::kNoTimestamp() : buffer->GetTimestamp();
+  *end_of_stream = buffer->end_of_stream();
+  *timestamp = *end_of_stream ? media::kNoTimestamp() : buffer->timestamp();
   message_loop->PostTask(FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
 }
 

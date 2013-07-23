@@ -1,7 +1,6 @@
-/* Copyright (c) 2013 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef LIBRARIES_NACL_IO_MOUNT_NODE_HTTP_H_
 #define LIBRARIES_NACL_IO_MOUNT_NODE_HTTP_H_
@@ -13,6 +12,8 @@
 #include "nacl_io/error.h"
 #include "nacl_io/mount_node.h"
 #include "nacl_io/pepper_interface.h"
+
+namespace nacl_io {
 
 typedef std::map<std::string, std::string> StringMap_t;
 
@@ -49,12 +50,12 @@ class MountNodeHttp : public MountNode {
   Error DownloadToCache();
   Error ReadPartialFromCache(size_t offs,
                              void* buf,
-                             size_t count,
+                             int count,
                              int* out_bytes);
   Error DownloadPartial(size_t offs, void* buf, size_t count, int* out_bytes);
   Error DownloadToBuffer(PP_Resource loader,
                          void* buf,
-                         size_t count,
+                         int count,
                          int* out_bytes);
 
   std::string url_;
@@ -66,5 +67,7 @@ class MountNodeHttp : public MountNode {
 
   friend class MountHttp;
 };
+
+}  // namespace nacl_io
 
 #endif  // LIBRARIES_NACL_IO_MOUNT_NODE_HTTP_H_

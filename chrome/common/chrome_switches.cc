@@ -21,9 +21,6 @@ namespace switches {
 // all work out.
 // -----------------------------------------------------------------------------
 
-// Enables or disables the "action box" UI in the toolbar.
-const char kActionBox[]                     = "action-box";
-
 // Allows third-party content included on a page to prompt for a HTTP basic
 // auth username/password pair.
 const char kAllowCrossOriginAuthPrompt[]    = "allow-cross-origin-auth-prompt";
@@ -37,11 +34,6 @@ const char kAllowHTTPBackgroundPage[]       = "allow-http-background-page";
 
 // Allow non-secure origins to use the screen capture API.
 const char kAllowHttpScreenCapture[] = "allow-http-screen-capture";
-
-// Allows the browser to load extensions that lack a modern manifest when that
-// would otherwise be forbidden.
-const char kAllowLegacyExtensionManifests[] =
-    "allow-legacy-extension-manifests";
 
 // Specifies comma-separated list of extension ids or hosts to grant
 // access to CRX file system APIs.
@@ -61,11 +53,6 @@ const char kAllowOutdatedPlugins[]          = "allow-outdated-plugins";
 // By default, an https page cannot run JavaScript, CSS or plug-ins from http
 // URLs. This provides an override to get the old insecure behavior.
 const char kAllowRunningInsecureContent[]   = "allow-running-insecure-content";
-
-// Allows injecting extensions and user scripts on the extensions gallery
-// site. Normally prevented for security reasons, but can be useful for
-// automation testing of the gallery.
-const char kAllowScriptingGallery[]         = "allow-scripting-gallery";
 
 // Prevents Chrome from requiring authorization to run certain widely installed
 // but less commonly used plug-ins.
@@ -262,9 +249,10 @@ const char kDiagnostics[]                   = "diagnostics";
 // Sets the output format for diagnostic modes enabled by diagnostics flag.
 const char kDiagnosticsFormat[]             = "diagnostics-format";
 
-// Replaces the audio IPC layer for <audio> and <video> with a mock audio
-// device, useful when using remote desktop or machines without sound cards.
-// This is temporary until we fix the underlying problem.
+// If set, the app list will be disabled at startup. Note this doesn't prevent
+// the app list from running, it just makes Chrome think the app list hasn't
+// been enabled (as in kEnableAppList) yet.
+const char kDisableAppList[]                = "disable-app-list";
 
 // Disables the experimental asynchronous DNS client.
 const char kDisableAsyncDns[]               = "disable-async-dns";
@@ -359,6 +347,11 @@ const char kDisableMinimizeOnSecondLauncherItemClick[] =
 
 // Disables the menu on the NTP for accessing sessions from other devices.
 const char kDisableNTPOtherSessionsMenu[]   = "disable-ntp-other-sessions-menu";
+
+// Disable using a public suffix based domain matching for autofill of
+// passwords.
+const char kDisablePasswordAutofillPublicSuffixDomainMatching[] =
+    "disable-password-autofill-public-suffix-domain-matching";
 
 // Disable pop-up blocking.
 const char kDisablePopupBlocking[]          = "disable-popup-blocking";
@@ -481,6 +474,9 @@ const char kDnsPrefetchDisable[]            = "dns-prefetch-disable";
 // Enables the <adview> tag in packaged apps.
 const char kEnableAdview[]                  = "enable-adview";
 
+// If set, the app list will be enabled as if enabled from CWS.
+const char kEnableAppList[]                 = "enable-app-list";
+
 // Enables specifying a "src" attribute on <adview> elements
 // (for testing purposes, to skip the whitelist).
 const char kEnableAdviewSrcAttribute[]      = "enable-adview-src-attribute";
@@ -510,6 +506,9 @@ const char kEnableBenchmarking[]            = "enable-benchmarking";
 
 // Enables (experimental) more strict popup blocking.
 const char kEnableBetterPopupBlocking[]     = "enable-better-popup-blocking";
+
+// Enables a sync promo that is displayed in the bookmark bubble.
+const char kEnableBookmarkSyncPromo[]       = "enable-bookmark-sync-promo";
 
 // This applies only when the process type is "service". Enables the Cloud
 // Print Proxy component within the service process.
@@ -548,11 +547,6 @@ const char kEnableExtensionActivityLogTesting[] =
 
 // Enables or disables showing extensions in the action box.
 const char kExtensionsInActionBox[]         = "extensions-in-action-box";
-
-// Enables or disables running extensions on chrome:// URLs.
-// Extensions still need to explicitly request access to chrome:// URLs in the
-// manifest.
-const char kExtensionsOnChromeURLs[]        = "extensions-on-chrome-urls";
 
 // Enable the fast unload controller, which speeds up tab/window close by
 // running a tab's onunload js handler independently of the GUI -
@@ -645,7 +639,7 @@ const char kEnableProfiling[]               = "enable-profiling";
 const char kEnableQuic[]                    = "enable-quic";
 
 // Enables support for the HTTPS over QUIC protocol.  This is a temporary
-// testing flag.
+// testing flag.  This only has an effect if QUIC protocol is enabled.
 const char kEnableQuicHttps[]               = "enable-quic-https";
 
 // Enables the Quickoffoce/Chrome document editor rather than the viewer.
@@ -659,6 +653,9 @@ const char kEnableResetProfileSettings[]    = "enable-reset-profile-settings";
 // preferences.
 const char kEnableResourceContentSettings[] =
     "enable-resource-content-settings";
+
+// Enables save password prompt bubble.
+const char kEnableSavePasswordBubble[]      = "enable-save-password-bubble";
 
 // Controls the support for SDCH filtering (dictionary based expansion of
 // content). By default SDCH filtering is enabled. To disable SDCH filtering,
@@ -1216,10 +1213,6 @@ const char kSetToken[]                      = "set-token";
 // If true the app list will be shown.
 const char kShowAppList[]                   = "show-app-list";
 
-// Makes component extensions appear in chrome://settings/extensions.
-const char kShowComponentExtensionOptions[] =
-    "show-component-extension-options";
-
 // See kHideIcons.
 const char kShowIcons[]                     = "show-icons";
 
@@ -1342,6 +1335,10 @@ const char kSyncEnableDeferredStartup[]     = "sync-enable-deferred-startup";
 // ClientLogin token.
 const char kSyncDisableOAuth2Token[]         = "sync-disable-oauth2-token";
 
+// Enables feature to avoid unnecessary GetUpdate requests.
+const char kSyncEnableGetUpdateAvoidance[]   =
+    "sync-enable-get-update-avoidance";
+
 // Enables directory support for sync filesystem
 const char kSyncfsEnableDirectoryOperation[] =
     "enable-syncfs-directory-operation";
@@ -1442,14 +1439,19 @@ const char kEnableSpdyProxyAuth[]           = "enable-spdy-proxy-auth";
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
 #if defined(OS_ANDROID)
+// Enables the new NTP.
+const char kEnableNewNTP[]                  = "enable-new-ntp";
+
 // Pops the translate infobar if possible.
 const char kEnableTranslate[]               = "enable-translate";
 
+// Registers for cloud policy using the BROWSER client type instead of the
+// ANDROID_BROWSER type. This enables skipping the server whitelist.
+// TODO(joaodasilva): remove this. http://crbug.com/248527
+const char kFakeCloudPolicyType[]           = "fake-cloud-policy-type";
+
 // Uses the tablet specific UI components when available.
 const char kTabletUI[]                      = "tablet-ui";
-
-// Enables the new NTP.
-const char kEnableNewNTP[]                  = "enable-new-ntp";
 #endif
 
 #if defined(USE_ASH)
@@ -1458,12 +1460,6 @@ const char kOpenAsh[]                       = "open-ash";
 #endif
 
 #if defined(OS_POSIX)
-// A flag, generated internally by Chrome for renderer and other helper process
-// command lines on Linux and Mac. It tells the helper process to enable crash
-// dumping and reporting, because helpers cannot access the profile or other
-// files needed to make this decision.
-const char kEnableCrashReporter[]           = "enable-crash-reporter";
-
 // Used for turning on Breakpad crash reporting in a debug environment where
 // crash reporting is typically compiled but disabled.
 const char kEnableCrashReporterForTesting[] =
@@ -1509,14 +1505,6 @@ const char kUseMockKeychain[]               = "use-mock-keychain";
 #endif
 
 #if defined(OS_WIN)
-// If set, the app list will be disabled at startup. Note this doesn't prevent
-// the app list from running, it just makes Chrome think the app list hasn't
-// been enabled (as in kEnableAppList) yet.
-const char kDisableAppList[]                = "disable-app-list";
-
-// If set, the app list will be enabled as if enabled from CWS.
-const char kEnableAppList[]                 = "enable-app-list";
-
 // For the DelegateExecute verb handler to launch Chrome in metro mode on
 // Windows 8 and higher.  Used when relaunching metro Chrome.
 const char kForceImmersive[]                = "force-immersive";

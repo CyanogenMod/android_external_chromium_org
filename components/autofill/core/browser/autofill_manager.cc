@@ -614,9 +614,9 @@ void AutofillManager::OnDidShowAutofillSuggestions(bool is_new_popup) {
   }
 }
 
-void AutofillManager::OnHideAutofillUi() {
+void AutofillManager::OnHideAutofillUI() {
   if (!IsAutofillEnabled())
-   return;
+    return;
 
   manager_delegate_->HideAutofillPopup();
   manager_delegate_->HideAutocheckoutBubble();
@@ -685,19 +685,11 @@ void AutofillManager::OnShowPasswordSuggestions(
 }
 
 void AutofillManager::OnSetDataList(const std::vector<base::string16>& values,
-                                    const std::vector<base::string16>& labels,
-                                    const std::vector<base::string16>& icons,
-                                    const std::vector<int>& unique_ids) {
-  if (labels.size() != values.size() ||
-      icons.size() != values.size() ||
-      unique_ids.size() != values.size()) {
+                                    const std::vector<base::string16>& labels) {
+  if (values.size() != labels.size())
     return;
-  }
 
-  external_delegate_->SetCurrentDataListValues(values,
-                                               labels,
-                                               icons,
-                                               unique_ids);
+  external_delegate_->SetCurrentDataListValues(values, labels);
 }
 
 void AutofillManager::OnRequestAutocomplete(
@@ -776,8 +768,9 @@ void AutofillManager::OnDidEndTextFieldEditing() {
   external_delegate_->DidEndTextFieldEditing();
 }
 
-void AutofillManager::OnClickFailed(autofill::AutocheckoutStatus status) {
-  autocheckout_manager_.OnClickFailed(status);
+void AutofillManager::OnAutocheckoutPageCompleted(
+    autofill::AutocheckoutStatus status) {
+  autocheckout_manager_.OnAutocheckoutPageCompleted(status);
 }
 
 std::string AutofillManager::GetAutocheckoutURLPrefix() const {

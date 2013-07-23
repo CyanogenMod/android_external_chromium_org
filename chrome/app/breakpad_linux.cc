@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <string>
 
+#include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/debug/crash_logging.h"
 #include "base/files/file_path.h"
@@ -39,12 +40,9 @@
 #include "chrome/app/breakpad_linux_impl.h"
 #include "chrome/browser/crash_upload_list.h"
 #include "chrome/common/child_process_logging.h"
-#include "chrome/common/chrome_switches.h"
-#include "chrome/common/chrome_version_info_posix.h"
-#include "chrome/common/crash_keys.h"
-#include "chrome/common/env_vars.h"
 #include "components/breakpad/breakpad_client.h"
 #include "content/public/common/content_descriptors.h"
+#include "content/public/common/content_switches.h"
 
 #if defined(OS_ANDROID)
 #include <android/log.h>
@@ -948,11 +946,13 @@ void ExecUploadProcessOrTerminate(const BreakpadInfo& info,
   char pid_buf[kUint64StringSize];
   uint64_t pid_str_length = my_uint64_len(info.pid);
   my_uint64tos(pid_buf, info.pid, pid_str_length);
+  pid_buf[pid_str_length] = '\0';
 
   char uid_buf[kUint64StringSize];
   uid_t uid = geteuid();
   uint64_t uid_str_length = my_uint64_len(uid);
   my_uint64tos(uid_buf, uid, uid_str_length);
+  uid_buf[uid_str_length] = '\0';
   const char* args[] = {
     kCrashReporterBinary,
     "--chrome",
@@ -1016,6 +1016,7 @@ const char* GetCrashingProcessName(const BreakpadInfo& info,
     "/proc/";
   uint64_t pid_value_len = my_uint64_len(info.pid);
   my_uint64tos(linkpath + sizeof("/proc/") - 1, info.pid, pid_value_len);
+  linkpath[sizeof("/proc/") - 1 + pid_value_len] = '\0';
   my_strlcat(linkpath, "/exe", sizeof(linkpath));
 
   const int kMaxSize = 4096;
@@ -1240,24 +1241,16 @@ void HandleCrashDump(const BreakpadInfo& info) {
   MimeWriter writer(temp_file_fd, mime_boundary);
 #endif
   {
-#if defined(OS_ANDROID)
-    static const char chrome_product_msg[] = "Chrome_Android";
-#elif defined(OS_CHROMEOS)
-    static const char chrome_product_msg[] = "Chrome_ChromeOS";
-#else  // OS_LINUX
-#if !defined(ADDRESS_SANITIZER)
-    static const char chrome_product_msg[] = "Chrome_Linux";
-#else
-    static const char chrome_product_msg[] = "Chrome_Linux_ASan";
-#endif
-#endif
+    std::string product_name;
+    std::string version;
 
-    static const char version_msg[] = PRODUCT_VERSION;
+    breakpad::GetBreakpadClient()->GetProductNameAndVersion(&product_name,
+                                                            &version);
 
     writer.AddBoundary();
-    writer.AddPairString("prod", chrome_product_msg);
+    writer.AddPairString("prod", product_name.c_str());
     writer.AddBoundary();
-    writer.AddPairString("ver", version_msg);
+    writer.AddPairString("ver", version.c_str());
     writer.AddBoundary();
     writer.AddPairString("guid", info.guid);
     writer.AddBoundary();
@@ -1665,7 +1658,7 @@ void InitCrashReporter() {
   const std::string process_type =
       parsed_command_line.GetSwitchValueASCII(switches::kProcessType);
   if (process_type.empty()) {
-    EnableCrashDumping(getenv(env_vars::kHeadless) != NULL);
+    EnableCrashDumping(breakpad::GetBreakpadClient()->IsRunningUnattended());
   } else if (process_type == switches::kRendererProcess ||
              process_type == switches::kPluginProcess ||
              process_type == switches::kPpapiPluginProcess ||
@@ -1698,7 +1691,7 @@ void InitCrashReporter() {
 #endif
 
   g_crash_keys = new CrashKeyStorage;
-  crash_keys::RegisterChromeCrashKeys();
+  breakpad::GetBreakpadClient()->RegisterCrashKeys();
   base::debug::SetCrashKeyReportingFunctions(
       &SetCrashKeyValue, &ClearCrashKey);
 }

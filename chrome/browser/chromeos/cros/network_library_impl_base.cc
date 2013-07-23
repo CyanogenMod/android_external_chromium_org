@@ -938,7 +938,7 @@ namespace {
 class UserStringSubstitution : public onc::StringSubstitution {
  public:
   UserStringSubstitution() {}
-  virtual bool GetSubstitute(std::string placeholder,
+  virtual bool GetSubstitute(const std::string& placeholder,
                              std::string* substitute) const OVERRIDE {
     if (!UserManager::Get()->IsUserLoggedIn())
       return false;
@@ -1038,20 +1038,6 @@ void NetworkLibraryImplBase::LoadOncNetworks(
     scoped_ptr<base::DictionaryValue> shill_dict =
         onc::TranslateONCObjectToShill(&onc::kNetworkConfigurationSignature,
                                        *normalized_network);
-
-    // Set the ProxyConfig.
-    const base::DictionaryValue* proxy_settings;
-    if (normalized_network->GetDictionaryWithoutPathExpansion(
-            onc::network_config::kProxySettings,
-            &proxy_settings)) {
-      scoped_ptr<base::DictionaryValue> proxy_config =
-          onc::ConvertOncProxySettingsToProxyConfig(*proxy_settings);
-      std::string proxy_json;
-      base::JSONWriter::Write(proxy_config.get(), &proxy_json);
-      shill_dict->SetStringWithoutPathExpansion(
-          flimflam::kProxyConfigProperty,
-          proxy_json);
-    }
 
     // Set the UIData.
     scoped_ptr<NetworkUIData> ui_data =

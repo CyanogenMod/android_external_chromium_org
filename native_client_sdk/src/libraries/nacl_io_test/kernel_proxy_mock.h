@@ -1,7 +1,6 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef LIBRARIES_NACL_IO_TEST_KERNEL_PROXY_MOCK_H_
 #define LIBRARIES_NACL_IO_TEST_KERNEL_PROXY_MOCK_H_
@@ -12,7 +11,7 @@
 
 #include "nacl_io/kernel_proxy.h"
 
-class KernelProxyMock : public KernelProxy {
+class KernelProxyMock : public nacl_io::KernelProxy {
  public:
   KernelProxyMock();
   virtual ~KernelProxyMock();

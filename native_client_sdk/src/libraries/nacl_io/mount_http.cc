@@ -1,7 +1,6 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #include "nacl_io/mount_http.h"
 
@@ -22,6 +21,8 @@
 #include "nacl_io/mount_node_http.h"
 #include "nacl_io/osinttypes.h"
 #include "nacl_io/osunistd.h"
+
+namespace nacl_io {
 
 namespace {
 
@@ -399,3 +400,5 @@ std::string MountHttp::MakeUrl(const Path& path) {
   return url_root_ +
          (path.IsAbsolute() ? path.Range(1, path.Size()) : path.Join());
 }
+
+}  // namespace nacl_io

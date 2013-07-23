@@ -166,6 +166,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkMath.cpp \
 	third_party/skia/src/core/SkMatrix.cpp \
 	third_party/skia/src/core/SkMetaData.cpp \
+	third_party/skia/src/core/SkMipMap.cpp \
 	third_party/skia/src/core/SkOrderedReadBuffer.cpp \
 	third_party/skia/src/core/SkOrderedWriteBuffer.cpp \
 	third_party/skia/src/core/SkPackBits.cpp \
@@ -464,7 +465,6 @@ MY_DEFS_Debug := \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
 	'-DSK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK' \
 	'-DIGNORE_ROT_AA_RECT_OPT' \
-	'-DSK_IGNORE_IMAGE_PRESCALE' \
 	'-DSK_GAMMA_APPLY_TO_A8' \
 	'-DSK_GAMMA_EXPONENT=1.4' \
 	'-DSK_GAMMA_CONTRAST=0.0' \
@@ -589,7 +589,6 @@ MY_DEFS_Release := \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
 	'-DSK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK' \
 	'-DIGNORE_ROT_AA_RECT_OPT' \
-	'-DSK_IGNORE_IMAGE_PRESCALE' \
 	'-DSK_GAMMA_APPLY_TO_A8' \
 	'-DSK_GAMMA_EXPONENT=1.4' \
 	'-DSK_GAMMA_CONTRAST=0.0' \

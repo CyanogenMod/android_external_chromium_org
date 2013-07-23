@@ -87,6 +87,8 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
       unsigned key_size_index,
       const WebKit::WebString& challenge,
       const WebKit::WebURL& url);
+  virtual void getPluginList(bool refresh,
+                             WebKit::WebPluginListBuilder* builder);
   virtual void screenColorProfile(WebKit::WebVector<char>* to_profile);
   virtual WebKit::WebIDBFactory* idbFactory();
   virtual WebKit::WebFileSystem* fileSystem();
@@ -123,8 +125,6 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   virtual WebKit::WebBlobRegistry* blobRegistry();
   virtual void sampleGamepads(WebKit::WebGamepads&);
   virtual WebKit::WebString userAgent(const WebKit::WebURL& url);
-  virtual void GetPlugins(bool refresh,
-                          std::vector<webkit::WebPluginInfo>* plugins) OVERRIDE;
   virtual WebKit::WebRTCPeerConnectionHandler* createRTCPeerConnectionHandler(
       WebKit::WebRTCPeerConnectionHandlerClient* client);
   virtual WebKit::WebMediaStreamCenter* createMediaStreamCenter(
@@ -141,6 +141,15 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   virtual void setDeviceMotionListener(
       WebKit::WebDeviceMotionListener* listener) OVERRIDE;
   virtual WebKit::WebCrypto* crypto() OVERRIDE;
+  virtual void queryStorageUsageAndQuota(
+      const WebKit::WebURL& storage_partition,
+      WebKit::WebStorageQuotaType,
+      WebKit::WebStorageQuotaCallbacks*) OVERRIDE;
+
+#if defined(OS_ANDROID)
+  virtual void vibrate(unsigned int milliseconds);
+  virtual void cancelVibration();
+#endif  // defined(OS_ANDROID)
 
   // Disables the WebSandboxSupport implementation for testing.
   // Tests that do not set up a full sandbox environment should call

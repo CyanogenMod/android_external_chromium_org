@@ -5,7 +5,10 @@
 #ifndef COMPONENTS_BREAKPAD_BREAKPAD_CLIENT_H_
 #define COMPONENTS_BREAKPAD_BREAKPAD_CLIENT_H_
 
-#include "base/basictypes.h"
+#include <string>
+
+#include "base/strings/string16.h"
+#include "build/build_config.h"
 
 namespace base {
 class FilePath;
@@ -32,6 +35,32 @@ class BreakpadClient {
   // Returns true if an alternative location to store the minidump files was
   // specified. Returns true if |crash_dir| was set.
   virtual bool GetAlternativeCrashDumpLocation(base::FilePath* crash_dir);
+
+  // Returns a textual description of the product type and version to include
+  // in the crash report.
+  virtual void GetProductNameAndVersion(const base::FilePath& exe_path,
+                                        base::string16* product_name,
+                                        base::string16* version,
+                                        base::string16* special_build);
+
+  // Returns true if a restart dialog should be displayed. In that case,
+  // |message| and |title| are set to a message to display in a dialog box with
+  // the given title before restarting, and |is_rtl_locale| indicates whether
+  // to display the text as RTL.
+  virtual bool ShouldShowRestartDialog(base::string16* title,
+                                       base::string16* message,
+                                       bool* is_rtl_locale);
+
+  // Returns true if it is ok to restart the application. Invoked right before
+  // restarting after a crash.
+  virtual bool AboutToRestart();
+#endif
+
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_IOS)
+  // Returns a textual description of the product type and version to include
+  // in the crash report.
+  virtual void GetProductNameAndVersion(std::string* product_name,
+                                        std::string* version);
 #endif
 
   // The location where minidump files should be written. Returns true if
@@ -43,6 +72,13 @@ class BreakpadClient {
   // without crashing.
   virtual void SetDumpWithoutCrashingFunction(void (*function)());
 #endif
+
+  // Register all of the potential crash keys that can be sent to the crash
+  // reporting server. Returns the size of the union of all keys.
+  virtual size_t RegisterCrashKeys();
+
+  // Returns true if running in unattended mode (for automated testing).
+  virtual bool IsRunningUnattended();
 };
 
 }  // namespace breakpad

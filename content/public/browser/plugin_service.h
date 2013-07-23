@@ -18,13 +18,6 @@ namespace base {
 class FilePath;
 }
 
-namespace webkit {
-struct WebPluginInfo;
-namespace npapi {
-class PluginList;
-}
-}
-
 namespace content {
 
 class BrowserContext;
@@ -32,6 +25,7 @@ class PluginProcessHost;
 class PluginServiceFilter;
 class ResourceContext;
 struct PepperPluginInfo;
+struct WebPluginInfo;
 
 // This must be created on the main thread but it's only called on the IO/file
 // thread. This is an asynchronous wrapper around the PluginList interface for
@@ -39,7 +33,7 @@ struct PepperPluginInfo;
 // doing expensive disk operations on the IO/UI threads.
 class PluginService {
  public:
-  typedef base::Callback<void(const std::vector<webkit::WebPluginInfo>&)>
+  typedef base::Callback<void(const std::vector<WebPluginInfo>&)>
       GetPluginsCallback;
 
   // Returns the PluginService singleton.
@@ -69,7 +63,7 @@ class PluginService {
       const GURL& url,
       const std::string& mime_type,
       bool allow_wildcard,
-      std::vector<webkit::WebPluginInfo>* info,
+      std::vector<WebPluginInfo>* info,
       std::vector<std::string>* actual_mime_types) = 0;
 
   // Gets plugin info for an individual plugin and filters the plugins using
@@ -83,14 +77,14 @@ class PluginService {
                              const std::string& mime_type,
                              bool allow_wildcard,
                              bool* is_stale,
-                             webkit::WebPluginInfo* info,
+                             WebPluginInfo* info,
                              std::string* actual_mime_type) = 0;
 
   // Get plugin info by plugin path (including disabled plugins). Returns true
   // if the plugin is found and WebPluginInfo has been filled in |info|. This
   // will use cached data in the plugin list.
   virtual bool GetPluginInfoByPath(const base::FilePath& plugin_path,
-                                   webkit::WebPluginInfo* info) = 0;
+                                   WebPluginInfo* info) = 0;
 
   // Returns the display name for the plugin identified by the given path. If
   // the path doesn't identify a plugin, or the plugin has no display name,
@@ -118,28 +112,52 @@ class PluginService {
   // crashed more than a set number of times in a set time period.
   virtual bool IsPluginUnstable(const base::FilePath& plugin_path) = 0;
 
-  // The following functions are wrappers around webkit::npapi::PluginList.
-  // These must be used instead of those in order to ensure that we have a
-  // single global list in the component build and so that we don't
-  // accidentally load plugins in the wrong process or thread. Refer to
-  // PluginList for further documentation of these functions.
+  // Cause the plugin list to refresh next time they are accessed, regardless
+  // of whether they are already loaded.
   virtual void RefreshPlugins() = 0;
-  virtual void AddExtraPluginPath(const base::FilePath& path) = 0;
-  virtual void AddExtraPluginDir(const base::FilePath& path) = 0;
-  virtual void RemoveExtraPluginPath(const base::FilePath& path) = 0;
-  virtual void UnregisterInternalPlugin(const base::FilePath& path) = 0;
-  virtual void RegisterInternalPlugin(const webkit::WebPluginInfo& info,
-                                      bool add_at_beginning) = 0;
-  virtual void GetInternalPlugins(
-      std::vector<webkit::WebPluginInfo>* plugins) = 0;
 
-  virtual void SetPluginListForTesting(
-      webkit::npapi::PluginList* plugin_list) = 0;
+  // Add/Remove an extra plugin to load when we actually do the loading.  Must
+  // be called before the plugins have been loaded.
+  virtual void AddExtraPluginPath(const base::FilePath& path) = 0;
+  virtual void RemoveExtraPluginPath(const base::FilePath& path) = 0;
+
+  // Same as above, but specifies a directory in which to search for plugins.
+  virtual void AddExtraPluginDir(const base::FilePath& path) = 0;
+
+  // Register an internal plugin with the specified plugin information.
+  // An internal plugin must be registered before it can
+  // be loaded using PluginList::LoadPlugin().
+  // If |add_at_beginning| is true the plugin will be added earlier in
+  // the list so that it can override the MIME types of older registrations.
+  virtual void RegisterInternalPlugin(const WebPluginInfo& info,
+                                      bool add_at_beginning) = 0;
+
+  // Removes a specified internal plugin from the list. The search will match
+  // on the path from the version info previously registered.
+  virtual void UnregisterInternalPlugin(const base::FilePath& path) = 0;
+
+  // Gets a list of all the registered internal plugins.
+  virtual void GetInternalPlugins(std::vector<WebPluginInfo>* plugins) = 0;
+
+  // Returns true iff NPAPI plugins are supported on the current platform.
+  // This can be called from any thread.
+  virtual bool NPAPIPluginsSupported() = 0;
+
+  // This is equivalent to specifying kDisablePluginsDiscovery, but is useful
+  // for unittests.
+  virtual void DisablePluginsDiscoveryForTesting() = 0;
 
 #if defined(OS_MACOSX)
   // Called when the application is made active so that modal plugin windows can
   // be made forward too.
   virtual void AppActivated() = 0;
+#elif defined(OS_WIN)
+  // Returns the name and version of a plugin HWND. If the HWND isn't a valid
+  // plugin, returns false.
+  // This can be called from any thread.
+  virtual bool GetPluginInfoFromWindow(HWND window,
+                                       base::string16* plugin_name,
+                                       base::string16* plugin_version) = 0;
 #endif
 };
 

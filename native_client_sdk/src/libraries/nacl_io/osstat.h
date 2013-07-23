@@ -1,7 +1,7 @@
 /* Copyright (c) 2012 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+ * found in the LICENSE file. */
+
 #ifndef LIBRARIES_NACL_IO_OSSTAT_H_
 #define LIBRARIES_NACL_IO_OSSTAT_H_
 
@@ -13,10 +13,11 @@
 #define S_IFIFO _S_IFIFO
 #define S_IFREG _S_IFREG
 #define S_IFMT _S_IFMT
+#define S_IFSOCK _S_IFIFO
 
 #define S_IREAD _S_IREAD
 #define S_IWRITE _S_IWRITE
 #define S_IEXEC _S_IEXEC
 #endif
 
-#endif  // LIBRARIES_NACL_IO_OSSTAT_H_
+#endif  /* LIBRARIES_NACL_IO_OSSTAT_H_ */

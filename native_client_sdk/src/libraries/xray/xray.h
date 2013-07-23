@@ -1,7 +1,6 @@
 /* Copyright (c) 2013 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+ * found in the LICENSE file. */
 
 /* XRay -- a simple profiler for Native Client */
 
@@ -10,6 +9,10 @@
 #define LIBRARIES_XRAY_XRAY_H_
 
 #include <stdint.h>
+
+#ifndef XRAY_DISABLE_BROWSER_INTEGRATION
+#include "ppapi/c/ppb.h"
+#endif
 
 #if defined(__arm__)
 #undef XRAY
@@ -53,6 +56,15 @@ XRAY_NO_INSTRUMENT void XRayReport(struct XRayTraceCapture* capture,
                                    FILE* f,
                                    float percent_cutoff,
                                    int ticks_cutoff);
+
+#ifndef XRAY_DISABLE_BROWSER_INTEGRATION
+XRAY_NO_INSTRUMENT void XRayBrowserTraceReport(
+    struct XRayTraceCapture* capture);
+XRAY_NO_INSTRUMENT void XRayRegisterBrowserInterface(
+    PPB_GetInterface get_browser_interface);
+#endif  /* XRAY_DISABLE_BROWSER_INTEGRATION */
+
+
 #if defined(XRAY_ANNOTATE)
 #define XRayAnnotate(...) __XRayAnnotate(__VA_ARGS__)
 #define XRayAnnotateFiltered(...) __XRayAnnotateFiltered(__VA_ARGS__)
@@ -86,6 +98,14 @@ inline void XRayReport(struct XRayTraceCapture* capture,
                        FILE* f,
                        float percent_cutoff,
                        int ticks_cutoff);
+
+#ifndef XRAY_DISABLE_BROWSER_INTEGRATION
+inline void XRayBrowserTraceReport(struct XRayTraceCapture* capture) {}
+inline void XRayRegisterBrowserInterface(
+    PPB_GetInterface get_browser_interface) {}
+#endif  /* XRAY_DISABLE_BROWSER_INTEGRATION */
+
+
 #endif  /* defined(XRAY) */
 
 #ifdef __cplusplus

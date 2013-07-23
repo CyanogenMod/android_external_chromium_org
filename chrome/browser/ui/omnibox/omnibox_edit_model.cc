@@ -347,7 +347,7 @@ void OmniboxEditModel::GetDataForURLExport(GURL* url,
 }
 
 bool OmniboxEditModel::CurrentTextIsURL() const {
-  if (view_->toolbar_model()->WouldReplaceSearchURLWithSearchTerms())
+  if (view_->toolbar_model()->WouldReplaceSearchURLWithSearchTerms(false))
     return false;
 
   // If current text is not composed of replaced search terms and
@@ -375,7 +375,7 @@ void OmniboxEditModel::AdjustTextForCopy(int sel_min,
   // Do not adjust if selection did not start at the beginning of the field, or
   // if the URL was replaced by search terms.
   if ((sel_min != 0) ||
-      view_->toolbar_model()->WouldReplaceSearchURLWithSearchTerms())
+      view_->toolbar_model()->WouldReplaceSearchURLWithSearchTerms(false))
     return;
 
   if (!user_input_in_progress_ && is_all_selected) {
@@ -625,10 +625,9 @@ void OmniboxEditModel::OpenMatch(const AutocompleteMatch& match,
         autocomplete_controller()->input().type(),
         popup_model()->selected_line(),
         -1,  // don't yet know tab ID; set later if appropriate
-        delegate_->CurrentPageExists() ? ClassifyPage(delegate_->GetURL()) :
-            metrics::OmniboxEventProto_PageClassification_OTHER,
+        ClassifyPage(),
         elapsed_time_since_user_first_modified_omnibox,
-        string16::npos,  // completed_length; possibly set later
+        match.inline_autocompletion.length(),
         elapsed_time_since_last_change_to_default_match,
         result());
 
@@ -646,12 +645,6 @@ void OmniboxEditModel::OpenMatch(const AutocompleteMatch& match,
 
     if (index != OmniboxPopupModel::kNoMatch)
       log.selected_index = index;
-    if (match.inline_autocomplete_offset != string16::npos) {
-      DCHECK_GE(match.fill_into_edit.length(),
-                match.inline_autocomplete_offset);
-      log.completed_length =
-          match.fill_into_edit.length() - match.inline_autocomplete_offset;
-    }
 
     if ((disposition == CURRENT_TAB) && delegate_->CurrentPageExists()) {
       // If we know the destination is being opened in the current tab,
@@ -702,6 +695,9 @@ void OmniboxEditModel::OpenMatch(const AutocompleteMatch& match,
         TemplateURLPrepopulateData::kMaxPrepopulatedEngineID);
   }
 
+  // Get the current text before we call RevertAll() which will clear it.
+  string16 current_text = GetViewText();
+
   if (disposition != NEW_BACKGROUND_TAB) {
     base::AutoReset<bool> tmp(&in_revert_, true);
     view_->RevertAll();  // Revert the box to its unedited state
@@ -716,8 +712,8 @@ void OmniboxEditModel::OpenMatch(const AutocompleteMatch& match,
         GetDestinationURL(match, query_formulation_time);
 
     RecordPercentageMatchHistogram(
-        permanent_text_, match.contents,
-        view_->toolbar_model()->WouldReplaceSearchURLWithSearchTerms(),
+        permanent_text_, current_text,
+        view_->toolbar_model()->WouldReplaceSearchURLWithSearchTerms(false),
         match.transition);
 
     // Track whether the destination URL sends us to a search results page
@@ -726,8 +722,8 @@ void OmniboxEditModel::OpenMatch(const AutocompleteMatch& match,
         TemplateURLServiceFactory::GetForProfile(profile_)->
             GetDefaultSearchProvider();
     if (default_provider && default_provider->IsSearchURL(destination_url))
-      content::RecordAction(UserMetricsAction(
-          "OmniboxDestinationURLMatchesDefaultSearchProvider"));
+      content::RecordAction(
+          UserMetricsAction("OmniboxDestinationURLIsSearchOnDSP"));
 
     // This calls RevertAll again.
     base::AutoReset<bool> tmp(&in_revert_, true);
@@ -1100,6 +1096,8 @@ bool OmniboxEditModel::OnAfterPossibleChange(const string16& old_text,
            MaybeAcceptKeywordBySpace(user_text_));
 }
 
+// TODO(beaudoin): Merge OnPopupDataChanged with this method once the popup
+// handling has completely migrated to omnibox_controller.
 void OmniboxEditModel::OnCurrentMatchChanged() {
   has_temporary_text_ = false;
 
@@ -1110,17 +1108,12 @@ void OmniboxEditModel::OnCurrentMatchChanged() {
   string16 keyword;
   bool is_keyword_hint;
   match.GetKeywordUIState(profile_, &keyword, &is_keyword_hint);
-  string16 inline_autocomplete_text;
-  if (match.inline_autocomplete_offset < match.fill_into_edit.length()) {
-    // We have blue text, go through OnPopupDataChanged.
-    // TODO(beaudoin): Merge OnPopupDataChanged with this method once the
-    // popup handling has completely migrated to omnibox_controller.
-    inline_autocomplete_text =
-        match.fill_into_edit.substr(match.inline_autocomplete_offset);
-  }
   popup_model()->OnResultChanged();
-  OnPopupDataChanged(inline_autocomplete_text, NULL, keyword,
-                     is_keyword_hint);
+  // OnPopupDataChanged() resets OmniboxController's |current_match_| early
+  // on.  Therefore, copy match.inline_autocompletion to a temp to preserve
+  // its value across the entire call.
+  const string16 inline_autocompletion(match.inline_autocompletion);
+  OnPopupDataChanged(inline_autocompletion, NULL, keyword, is_keyword_hint);
 }
 
 string16 OmniboxEditModel::GetViewText() const {
@@ -1163,7 +1156,7 @@ void OmniboxEditModel::GetInfoForCurrentText(AutocompleteMatch* match,
   DCHECK(match != NULL);
 
   if (!user_input_in_progress_ &&
-      view_->toolbar_model()->WouldReplaceSearchURLWithSearchTerms()) {
+      view_->toolbar_model()->WouldReplaceSearchURLWithSearchTerms(false)) {
     // Any time the user hits enter on the unchanged omnibox, we should reload.
     // When we're not extracting search terms, AcceptInput() will take care of
     // this (see code referring to PAGE_TRANSITION_RELOAD there), but when we're
@@ -1266,17 +1259,26 @@ bool OmniboxEditModel::IsSpaceCharForAcceptingKeyword(wchar_t c) {
 }
 
 metrics::OmniboxEventProto::PageClassification
-    OmniboxEditModel::ClassifyPage(const GURL& gurl) const {
+    OmniboxEditModel::ClassifyPage() const {
+  if (!delegate_->CurrentPageExists())
+    return metrics::OmniboxEventProto::OTHER;
+  if (delegate_->IsInstantNTP())
+    return metrics::OmniboxEventProto::INSTANT_NEW_TAB_PAGE;
+  const GURL& gurl = delegate_->GetURL();
   if (!gurl.is_valid())
-    return metrics::OmniboxEventProto_PageClassification_INVALID_SPEC;
+    return metrics::OmniboxEventProto::INVALID_SPEC;
   const std::string& url = gurl.spec();
   if (url == chrome::kChromeUINewTabURL)
-    return metrics::OmniboxEventProto_PageClassification_NEW_TAB_PAGE;
+    return metrics::OmniboxEventProto::NEW_TAB_PAGE;
   if (url == content::kAboutBlankURL)
-    return metrics::OmniboxEventProto_PageClassification_BLANK;
+    return metrics::OmniboxEventProto::BLANK;
   if (url == profile()->GetPrefs()->GetString(prefs::kHomePage))
-    return metrics::OmniboxEventProto_PageClassification_HOMEPAGE;
-  return metrics::OmniboxEventProto_PageClassification_OTHER;
+    return metrics::OmniboxEventProto::HOMEPAGE;
+  if (view_->toolbar_model()->WouldReplaceSearchURLWithSearchTerms(true)) {
+    return metrics::
+        OmniboxEventProto::SEARCH_RESULT_PAGE_DOING_SEARCH_TERM_REPLACEMENT;
+  }
+  return metrics::OmniboxEventProto::OTHER;
 }
 
 void OmniboxEditModel::ClassifyStringForPasteAndGo(

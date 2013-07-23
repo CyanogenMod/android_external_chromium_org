@@ -4,7 +4,7 @@
 
 #include "ui/aura/test/aura_test_helper.h"
 
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/default_capture_client.h"
@@ -25,6 +25,10 @@
 #include "ui/base/x/x11_util.h"
 #endif
 
+#if defined(USE_OZONE)
+#include "ui/base/ozone/surface_factory_ozone.h"
+#endif
+
 namespace aura {
 namespace test {
 
@@ -39,6 +43,10 @@ AuraTestHelper::AuraTestHelper(base::MessageLoopForUI* message_loop)
       ui::ScopedAnimationDurationScaleMode::ZERO_DURATION));
 #if defined(USE_X11)
   test::SetUseOverrideRedirectWindowByDefault(true);
+#endif
+#if defined(USE_OZONE)
+  surface_factory_.reset(ui::SurfaceFactoryOzone::CreateTestHelper());
+  ui::SurfaceFactoryOzone::SetInstance(surface_factory_.get());
 #endif
 }
 

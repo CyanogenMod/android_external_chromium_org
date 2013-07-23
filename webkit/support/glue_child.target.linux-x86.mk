@@ -14,7 +14,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_gyp)/skia_skia_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_glue_gyp)/webkit_support_glue_gyp.a \
+	$(call intermediates-dir-for,GYP,v8_tools_gyp_v8_gyp)/v8.stamp \
 	$(call intermediates-dir-for,GYP,webkit_support_overscroller_jni_headers_gyp)/overscroller_jni_headers.stamp
 
 GYP_GENERATED_OUTPUTS :=
@@ -30,12 +30,21 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 LOCAL_SRC_FILES := \
 	webkit/child/fling_animator_impl_android.cc \
 	webkit/child/fling_curve_configuration.cc \
+	webkit/child/ftp_directory_listing_response_delegate.cc \
+	webkit/child/multipart_response_delegate.cc \
+	webkit/child/resource_loader_bridge.cc \
 	webkit/child/touch_fling_gesture_curve.cc \
 	webkit/child/web_discardable_memory_impl.cc \
 	webkit/child/webfallbackthemeengine_impl.cc \
+	webkit/child/webkit_child_helpers.cc \
 	webkit/child/webkitplatformsupport_child_impl.cc \
+	webkit/child/webkitplatformsupport_impl.cc \
+	webkit/child/websocketstreamhandle_impl.cc \
 	webkit/child/webthemeengine_impl_android.cc \
 	webkit/child/webthread_impl.cc \
+	webkit/child/weburlloader_impl.cc \
+	webkit/child/weburlrequest_extradata_impl.cc \
+	webkit/child/weburlresponse_extradata_impl.cc \
 	webkit/child/worker_task_runner.cc
 
 
@@ -325,8 +334,7 @@ LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
 LOCAL_STATIC_LIBRARIES := \
 	skia_skia_gyp \
-	ui_ui_gyp \
-	webkit_support_glue_gyp
+	ui_ui_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

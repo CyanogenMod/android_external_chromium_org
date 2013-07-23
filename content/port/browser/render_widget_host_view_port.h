@@ -34,12 +34,6 @@ namespace media {
 class VideoFrame;
 }
 
-namespace webkit {
-namespace npapi {
-struct WebPluginGeometry;
-}
-}
-
 namespace WebKit {
 struct WebScreenInfo;
 }
@@ -48,6 +42,7 @@ namespace content {
 class BackingStore;
 class RenderWidgetHostViewFrameSubscriber;
 class SmoothScrollGesture;
+struct WebPluginGeometry;
 struct NativeWebKeyboardEvent;
 
 // This is the larger RenderWidgetHostView interface exposed only
@@ -89,7 +84,7 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   // |scroll_offset| is the scroll offset of the render view.
   virtual void MovePluginWindows(
       const gfx::Vector2d& scroll_offset,
-      const std::vector<webkit::npapi::WebPluginGeometry>& moves) = 0;
+      const std::vector<WebPluginGeometry>& moves) = 0;
 
   // Take focus from the associated View component.
   virtual void Blur() = 0;
@@ -242,7 +237,9 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   // returned only if the accelerated surface size matches.
   virtual bool HasAcceleratedSurface(const gfx::Size& desired_size) = 0;
 
-  virtual void OnSwapCompositorFrame(scoped_ptr<cc::CompositorFrame> frame) = 0;
+  virtual void OnSwapCompositorFrame(
+      uint32 output_surface_id,
+      scoped_ptr<cc::CompositorFrame> frame) = 0;
 
   virtual void GetScreenInfo(WebKit::WebScreenInfo* results) = 0;
 

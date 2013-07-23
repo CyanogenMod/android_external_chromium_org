@@ -301,20 +301,20 @@ class AppListController : public AppListServiceImpl {
   void AppListClosing();
   void AppListActivationChanged(bool active);
   void ShowAppListDuringModeSwitch(Profile* requested_profile);
-  void DisableAppList();
 
   app_list::AppListView* GetView() { return current_view_; }
 
   // AppListService overrides:
+  virtual void HandleFirstRun() OVERRIDE;
   virtual void Init(Profile* initial_profile) OVERRIDE;
-  virtual void ShowAppList(Profile* requested_profile) OVERRIDE;
+  virtual void ShowForProfile(Profile* requested_profile) OVERRIDE;
   virtual void DismissAppList() OVERRIDE;
   virtual bool IsAppListVisible() const OVERRIDE;
-  virtual void EnableAppList(Profile* initial_profile) OVERRIDE;
   virtual gfx::NativeWindow GetAppListWindow() OVERRIDE;
   virtual AppListControllerDelegate* CreateControllerDelegate() OVERRIDE;
 
   // AppListServiceImpl overrides:
+  virtual void CreateShortcut() OVERRIDE;
   virtual void OnSigninStatusChanged() OVERRIDE;
 
  private:
@@ -387,6 +387,8 @@ class AppListController : public AppListServiceImpl {
   // when this happens it is kept visible if the taskbar is seen briefly without
   // the right mouse button down, but not if this happens twice in a row.
   bool preserving_focus_for_taskbar_menu_;
+
+  bool enable_app_list_on_next_init_;
 
   base::WeakPtrFactory<AppListController> weak_factory_;
 
@@ -480,6 +482,7 @@ AppListController::AppListController()
       can_close_app_list_(true),
       regain_first_lost_focus_(false),
       preserving_focus_for_taskbar_menu_(false),
+      enable_app_list_on_next_init_(false),
       weak_factory_(this) {}
 
 AppListController::~AppListController() {
@@ -500,7 +503,7 @@ void AppListController::OnSigninStatusChanged() {
     current_view_->OnSigninStatusChanged();
 }
 
-void AppListController::ShowAppList(Profile* requested_profile) {
+void AppListController::ShowForProfile(Profile* requested_profile) {
   DCHECK(requested_profile);
   ScopedKeepAlive show_app_list_keepalive;
 
@@ -527,7 +530,7 @@ void AppListController::ShowAppList(Profile* requested_profile) {
     return;
   }
 
-  SaveProfilePathToLocalState(requested_profile->GetPath());
+  SetProfilePath(requested_profile->GetPath());
 
   DismissAppList();
   PopulateViewFromProfile(requested_profile);
@@ -545,7 +548,7 @@ void AppListController::ShowAppList(Profile* requested_profile) {
 void AppListController::ShowAppListDuringModeSwitch(
     Profile* requested_profile) {
   regain_first_lost_focus_ = true;
-  ShowAppList(requested_profile);
+  ShowForProfile(requested_profile);
 }
 
 void AppListController::PopulateViewFromProfile(Profile* requested_profile) {
@@ -851,11 +854,27 @@ void AppListController::OnLoadProfileForWarmup(Profile* initial_profile) {
   current_view_->Prerender();
 }
 
+void AppListController::HandleFirstRun() {
+  PrefService* local_state = g_browser_process->local_state();
+  // If the app list is already enabled during first run, then the user had
+  // opted in to the app launcher before uninstalling, so we re-enable to
+  // restore shortcuts to the app list.
+  // Note we can't directly create the shortcuts here because the IO thread
+  // hasn't been created yet.
+  enable_app_list_on_next_init_ = local_state->GetBoolean(
+      apps::prefs::kAppLauncherHasBeenEnabled);
+}
+
 void AppListController::Init(Profile* initial_profile) {
   // In non-Ash metro mode, we can not show the app list for this process, so do
   // not bother performing Init tasks.
   if (win8::IsSingleWindowMetroMode())
     return;
+
+  if (enable_app_list_on_next_init_) {
+    enable_app_list_on_next_init_ = false;
+    EnableAppList(initial_profile);
+  }
 
   PrefService* prefs = g_browser_process->local_state();
   if (prefs->HasPrefPath(prefs::kRestartWithAppList) &&
@@ -893,26 +912,18 @@ void AppListController::Init(Profile* initial_profile) {
   ScheduleWarmup();
 
   MigrateAppLauncherEnabledPref();
-
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableAppList))
-    EnableAppList(initial_profile);
-
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableAppList))
-    DisableAppList();
+  HandleCommandLineFlags(initial_profile);
 }
 
 bool AppListController::IsAppListVisible() const {
   return current_view_ && current_view_->GetWidget()->IsVisible();
 }
 
-void AppListController::EnableAppList(Profile* initial_profile) {
-  SaveProfilePathToLocalState(initial_profile->GetPath());
+void AppListController::CreateShortcut() {
   // Check if the app launcher shortcuts have ever been created before.
   // Shortcuts should only be created once. If the user unpins the taskbar
   // shortcut, they can restore it by pinning the start menu or desktop
   // shortcut.
-  PrefService* local_state = g_browser_process->local_state();
-  local_state->SetBoolean(apps::prefs::kAppLauncherHasBeenEnabled, true);
   ShellIntegration::ShortcutLocations shortcut_locations;
   shortcut_locations.on_desktop = true;
   shortcut_locations.in_quick_launch_bar = true;
@@ -927,11 +938,6 @@ void AppListController::EnableAppList(Profile* initial_profile) {
       FROM_HERE,
       base::Bind(&CreateAppListShortcuts,
                   user_data_dir, GetAppModelId(), shortcut_locations));
-}
-
-void AppListController::DisableAppList() {
-  PrefService* local_state = g_browser_process->local_state();
-  local_state->SetBoolean(apps::prefs::kAppLauncherHasBeenEnabled, false);
 }
 
 void AppListController::ScheduleWarmup() {

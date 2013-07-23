@@ -66,6 +66,7 @@ class TrayDisplayTest : public ash::test::AshTestBase {
 
  protected:
   SystemTray* tray() { return tray_; }
+  TrayDisplay* tray_display() { return tray_display_; }
 
   void CloseNotification();
   bool IsDisplayVisibleInTray();
@@ -240,14 +241,15 @@ TEST_F(TrayDisplayTest, ExternalDisplayResized) {
   // Extended
   UpdateDisplay("400x400,200x200@1.5");
   const gfx::Display& secondary_display = ScreenAsh::GetSecondaryDisplay();
-  base::string16 secondary_annotation = UTF8ToUTF16(
-      " (" + secondary_display.size().ToString() + ")");
 
   tray()->ShowDefaultView(BUBBLE_USE_EXISTING);
   EXPECT_TRUE(IsDisplayVisibleInTray());
   base::string16 expected = l10n_util::GetStringFUTF16(
       IDS_ASH_STATUS_TRAY_DISPLAY_EXTENDED,
-      GetSecondDisplayName() + secondary_annotation);
+      l10n_util::GetStringFUTF16(
+          IDS_ASH_STATUS_TRAY_DISPLAY_ANNOTATED_NAME,
+          GetSecondDisplayName(),
+          UTF8ToUTF16(secondary_display.size().ToString())));
   EXPECT_EQ(expected, GetTrayDisplayText());
   EXPECT_EQ(GetTooltipText(expected, GetFirstDisplayName(), "400x400",
                            GetSecondDisplayName(), "300x300"),
@@ -256,8 +258,9 @@ TEST_F(TrayDisplayTest, ExternalDisplayResized) {
   // Mirroring: in mirroring, it's not possible to lookup the DisplayInfo.
   display_manager->SetSoftwareMirroring(true);
   UpdateDisplay("400x400,200x200@1.5");
-  base::string16 mirror_name =
-      GetMirroredDisplayName() + UTF8ToUTF16(" (300x300)");
+  base::string16 mirror_name = l10n_util::GetStringFUTF16(
+      IDS_ASH_STATUS_TRAY_DISPLAY_ANNOTATED_NAME,
+      GetMirroredDisplayName(), UTF8ToUTF16("300x300"));
   tray()->ShowDefaultView(BUBBLE_USE_EXISTING);
   EXPECT_TRUE(IsDisplayVisibleInTray());
   expected = l10n_util::GetStringFUTF16(
@@ -278,12 +281,13 @@ TEST_F(TrayDisplayTest, OverscanDisplay) {
 
   // /o creates the default overscan, and if overscan is set, the annotation
   // should be the size.
-  base::string16 size_annotation = UTF8ToUTF16(" (286x286)");
   base::string16 overscan = l10n_util::GetStringUTF16(
       IDS_ASH_STATUS_TRAY_DISPLAY_ANNOTATION_OVERSCAN);
   base::string16 headline = l10n_util::GetStringFUTF16(
       IDS_ASH_STATUS_TRAY_DISPLAY_EXTENDED,
-      GetSecondDisplayName() + size_annotation);
+      l10n_util::GetStringFUTF16(
+          IDS_ASH_STATUS_TRAY_DISPLAY_ANNOTATED_NAME,
+          GetSecondDisplayName(), UTF8ToUTF16("286x286")));
   std::string second_data = l10n_util::GetStringFUTF8(
       IDS_ASH_STATUS_TRAY_DISPLAY_ANNOTATION,
       UTF8ToUTF16("286x286"), overscan);
@@ -294,11 +298,11 @@ TEST_F(TrayDisplayTest, OverscanDisplay) {
   // reset the overscan.
   display_manager->SetOverscanInsets(
       ScreenAsh::GetSecondaryDisplay().id(), gfx::Insets());
-  base::string16 overscan_annotation =
-      UTF8ToUTF16(" (") + overscan + UTF8ToUTF16(")");
   headline = l10n_util::GetStringFUTF16(
       IDS_ASH_STATUS_TRAY_DISPLAY_EXTENDED,
-      GetSecondDisplayName() + overscan_annotation);
+      l10n_util::GetStringFUTF16(
+          IDS_ASH_STATUS_TRAY_DISPLAY_ANNOTATED_NAME,
+          GetSecondDisplayName(), overscan));
   second_data = l10n_util::GetStringFUTF8(
       IDS_ASH_STATUS_TRAY_DISPLAY_ANNOTATION,
       UTF8ToUTF16("300x300"), overscan);
@@ -391,6 +395,33 @@ TEST_F(TrayDisplayTest, DisplayNotifications) {
       l10n_util::GetStringFUTF16(
           IDS_ASH_STATUS_TRAY_DISPLAY_ROTATED, GetSecondDisplayName()),
       GetDisplayNotificationText());
+}
+
+TEST_F(TrayDisplayTest, DisplayConfigurationChangedTwice) {
+  test::TestSystemTrayDelegate* tray_delegate =
+      static_cast<test::TestSystemTrayDelegate*>(
+          Shell::GetInstance()->system_tray_delegate());
+  tray_delegate->set_should_show_display_notification(true);
+
+  UpdateDisplay("400x400,200x200");
+  EXPECT_EQ(
+      l10n_util::GetStringUTF16(
+          IDS_ASH_STATUS_TRAY_DISPLAY_EXTENDED_NO_INTERNAL),
+      GetDisplayNotificationText());
+
+  // OnDisplayConfigurationChanged() may be called more than once for a single
+  // update display in case of primary is swapped or recovered from dock mode.
+  // Should not remove the notification in such case.
+  tray_display()->OnDisplayConfigurationChanged();
+  EXPECT_EQ(
+      l10n_util::GetStringUTF16(
+          IDS_ASH_STATUS_TRAY_DISPLAY_EXTENDED_NO_INTERNAL),
+      GetDisplayNotificationText());
+
+  // Back to the single display. It SHOULD remove the notification since the
+  // information is stale.
+  UpdateDisplay("400x400");
+  EXPECT_TRUE(GetDisplayNotificationText().empty());
 }
 
 }  // namespace internal

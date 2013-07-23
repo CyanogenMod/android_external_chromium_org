@@ -102,6 +102,7 @@ LOCAL_SRC_FILES := \
 	content/browser/android/surface_texture_peer_browser_impl.cc \
 	content/browser/android/touch_point.cc \
 	content/browser/android/tracing_intent_handler.cc \
+	content/browser/android/vibration_message_filter.cc \
 	content/browser/android/web_contents_observer_android.cc \
 	content/browser/appcache/appcache_dispatcher_host.cc \
 	content/browser/appcache/appcache_frontend_proxy.cc \
@@ -213,7 +214,6 @@ LOCAL_SRC_FILES := \
 	content/browser/host_zoom_map_impl.cc \
 	content/browser/hyphenator/hyphenator_message_filter.cc \
 	content/browser/in_process_webkit/browser_webkitplatformsupport_impl.cc \
-	content/browser/in_process_webkit/webkit_thread.cc \
 	content/browser/indexed_db/indexed_db_backing_store.cc \
 	content/browser/indexed_db/indexed_db_callbacks.cc \
 	content/browser/indexed_db/indexed_db_connection.cc \
@@ -290,6 +290,7 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/gpu_message_filter.cc \
 	content/browser/renderer_host/image_transport_factory_android.cc \
 	content/browser/renderer_host/ime_adapter_android.cc \
+	content/browser/renderer_host/input/immediate_input_router.cc \
 	content/browser/renderer_host/java/java_bound_object.cc \
 	content/browser/renderer_host/java/java_bridge_channel_host.cc \
 	content/browser/renderer_host/java/java_bridge_dispatcher_host.cc \

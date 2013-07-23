@@ -59,7 +59,6 @@
 #include "ui/base/ui_base_types.h"
 #include "ui/surface/transport_dib.h"
 #include "webkit/common/webpreferences.h"
-#include "webkit/plugins/npapi/webplugin_page_delegate.h"
 
 #if defined(OS_ANDROID)
 #include "content/renderer/android/content_detector.h"
@@ -196,7 +195,6 @@ class CONTENT_EXPORT RenderViewImpl
       NON_EXPORTED_BASE(public WebKit::WebFrameClient),
       NON_EXPORTED_BASE(public WebKit::WebPageSerializerClient),
       public RenderView,
-      NON_EXPORTED_BASE(public webkit::npapi::WebPluginPageDelegate),
       NON_EXPORTED_BASE(public WebMediaPlayerDelegate),
       public base::SupportsWeakPtr<RenderViewImpl> {
  public:
@@ -253,6 +251,8 @@ class CONTENT_EXPORT RenderViewImpl
     return mouse_lock_dispatcher_;
   }
 
+  RendererWebCookieJarImpl* cookie_jar() { return &cookie_jar_; }
+
 #if defined(OS_ANDROID)
   RendererMediaPlayerManager* media_player_manager() {
     return media_player_manager_.get();
@@ -289,7 +289,6 @@ class CONTENT_EXPORT RenderViewImpl
       bool replace);
 
   // Plugin-related functions --------------------------------------------------
-  // (See also WebPluginPageDelegate implementation.)
 
   // Notification that the given plugin has crashed.
   void PluginCrashed(const base::FilePath& plugin_path,
@@ -348,7 +347,7 @@ class CONTENT_EXPORT RenderViewImpl
   bool GetPluginInfo(const GURL& url,
                      const GURL& page_url,
                      const std::string& mime_type,
-                     webkit::WebPluginInfo* plugin_info,
+                     WebPluginInfo* plugin_info,
                      std::string* actual_mime_type);
 
   void TransferActiveWheelFlingAnimation(
@@ -596,9 +595,6 @@ class CONTENT_EXPORT RenderViewImpl
       WebKit::WebFrame* frame);
   virtual void didFailProvisionalLoad(WebKit::WebFrame* frame,
                                       const WebKit::WebURLError& error);
-  virtual void didReceiveDocumentData(WebKit::WebFrame* frame,
-                                      const char* data, size_t length,
-                                      bool& prevent_default);
   virtual void didCommitProvisionalLoad(WebKit::WebFrame* frame,
                                         bool is_new_navigation);
   virtual void didClearWindowObject(WebKit::WebFrame* frame);
@@ -716,7 +712,7 @@ class CONTENT_EXPORT RenderViewImpl
   virtual bool IsEditableNode(const WebKit::WebNode& node) const OVERRIDE;
   virtual WebKit::WebPlugin* CreatePlugin(
       WebKit::WebFrame* frame,
-      const webkit::WebPluginInfo& info,
+      const WebPluginInfo& info,
       const WebKit::WebPluginParams& params) OVERRIDE;
   virtual void EvaluateScript(const string16& frame_xpath,
                               const string16& jscript,
@@ -736,6 +732,8 @@ class CONTENT_EXPORT RenderViewImpl
       WebKit::WebFrame* frame,
       const WebKit::WebURLRequest& request,
       WebKit::WebNavigationPolicy policy) OVERRIDE;
+  virtual void DidStartLoading() OVERRIDE;
+  virtual void DidStopLoading() OVERRIDE;
   virtual void Repaint(const gfx::Size& size) OVERRIDE;
   virtual void SetEditCommandForNextKeyEvent(const std::string& name,
                                              const std::string& value) OVERRIDE;
@@ -746,21 +744,6 @@ class CONTENT_EXPORT RenderViewImpl
                                       TopControlsState current,
                                       bool animate) OVERRIDE;
 #endif
-
-  // webkit_glue::WebPluginPageDelegate implementation -------------------------
-
-  virtual webkit::npapi::WebPluginDelegate* CreatePluginDelegate(
-      const base::FilePath& file_path,
-      const std::string& mime_type) OVERRIDE;
-  virtual WebKit::WebPlugin* CreatePluginReplacement(
-      const base::FilePath& file_path) OVERRIDE;
-  virtual void CreatedPluginWindow(gfx::PluginWindowHandle handle) OVERRIDE;
-  virtual void WillDestroyPluginWindow(gfx::PluginWindowHandle handle) OVERRIDE;
-  virtual void DidMovePlugin(
-      const webkit::npapi::WebPluginGeometry& move) OVERRIDE;
-  virtual void DidStartLoadingForPlugin() OVERRIDE;
-  virtual void DidStopLoadingForPlugin() OVERRIDE;
-  virtual WebKit::WebCookieJar* GetCookieJar() OVERRIDE;
 
   // WebMediaPlayerDelegate implementation -----------------------
 

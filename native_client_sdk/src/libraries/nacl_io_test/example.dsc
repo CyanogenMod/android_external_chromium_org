@@ -1,5 +1,5 @@
 {
-  'TOOLS': ['newlib', 'glibc', 'pnacl', 'win'],
+  'TOOLS': ['newlib', 'glibc', 'pnacl'],
   'SEL_LDR': True,
 
   # Need to add ../../examples for common.js
@@ -9,6 +9,7 @@
       'NAME' : 'nacl_io_test',
       'TYPE' : 'main',
       'SOURCES' : [
+        'event_test.cc',
         'kernel_object_test.cc',
         'kernel_proxy_mock.cc',
         'kernel_proxy_mock.h',
@@ -33,6 +34,8 @@
       # referenced before ppapi.
       'LIBS': ['gmock', 'ppapi_cpp', 'ppapi', 'gtest', 'pthread'],
       'INCLUDES': ['$(NACL_SDK_ROOT)/include/gtest/internal'],
+      'CXXFLAGS': ['-Wno-sign-compare', '-Wno-unused-private-field'],
+      'CFLAGS_GCC': ['-Wno-unused-local-typedefs'],
     }
   ],
   'DATA': [

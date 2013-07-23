@@ -13,6 +13,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../third_party/sqlite/sqlite.gyp:sqlite',
+        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
       ],
       'export_dependent_settings': [
         '../base/base.gyp:base',
@@ -26,6 +27,8 @@
         'init_status.h',
         'meta_table.cc',
         'meta_table.h',
+        'recovery.cc',
+        'recovery.h',
         'statement.cc',
         'statement.h',
         'transaction.cc',
@@ -81,6 +84,7 @@
       'sources': [
         'run_all_unittests.cc',
         'connection_unittest.cc',
+        'recovery_unittest.cc',
         'sqlite_features_unittest.cc',
         'statement_unittest.cc',
         'transaction_unittest.cc',

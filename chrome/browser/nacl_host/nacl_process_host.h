@@ -11,7 +11,7 @@
 #include "base/files/file_util_proxy.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/process.h"
 #include "chrome/common/nacl_types.h"
 #include "content/public/browser/browser_child_process_host_delegate.h"
@@ -122,6 +122,14 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
   // Sends the reply message to the renderer who is waiting for the plugin
   // to load. Returns true on success.
   bool ReplyToRenderer(const IPC::ChannelHandle& channel_handle);
+
+  // Sends the reply with error message to the renderer.
+  void SendErrorToRenderer(const std::string& error_message);
+
+  // Sends the reply message to the renderer. Either result or
+  // error message must be empty.
+  void SendMessageToRenderer(const nacl::NaClLaunchResult& result,
+                             const std::string& error_message);
 
   // Sends the message to the NaCl process to load the plugin. Returns true
   // on success.

@@ -39,11 +39,11 @@ LOCAL_SRC_FILES := \
 	webkit/renderer/compositor_bindings/web_image_layer_impl.cc \
 	webkit/renderer/compositor_bindings/web_layer_impl.cc \
 	webkit/renderer/compositor_bindings/web_layer_impl_fixed_bounds.cc \
-	webkit/renderer/compositor_bindings/web_to_cc_animation_delegate_adapter.cc \
 	webkit/renderer/compositor_bindings/web_scrollbar_layer_impl.cc \
 	webkit/renderer/compositor_bindings/web_solid_color_layer_impl.cc \
-	webkit/renderer/compositor_bindings/web_transform_operations_impl.cc \
-	webkit/renderer/compositor_bindings/web_transform_animation_curve_impl.cc
+	webkit/renderer/compositor_bindings/web_to_cc_animation_delegate_adapter.cc \
+	webkit/renderer/compositor_bindings/web_transform_animation_curve_impl.cc \
+	webkit/renderer/compositor_bindings/web_transform_operations_impl.cc
 
 
 # Flags passed to both C and C++ files.

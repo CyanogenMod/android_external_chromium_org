@@ -1,7 +1,7 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 #include "nacl_io/mount_node_dir.h"
 
 #include <errno.h>
@@ -11,6 +11,8 @@
 #include "nacl_io/osstat.h"
 #include "sdk_util/auto_lock.h"
 #include "sdk_util/macros.h"
+
+namespace nacl_io {
 
 MountNodeDir::MountNodeDir(Mount* mount) : MountNode(mount), cache_(NULL) {
   stat_.st_mode |= S_IFDIR;
@@ -31,7 +33,7 @@ Error MountNodeDir::Read(size_t offs, void* buf, size_t count, int* out_bytes) {
 Error MountNodeDir::FTruncate(off_t size) { return EISDIR; }
 
 Error MountNodeDir::Write(size_t offs,
-                          void* buf,
+                          const void* buf,
                           size_t count,
                           int* out_bytes) {
   *out_bytes = 0;
@@ -142,4 +144,6 @@ void MountNodeDir::BuildCache() {
     }
   }
 }
+
+}  // namespace nacl_io
 

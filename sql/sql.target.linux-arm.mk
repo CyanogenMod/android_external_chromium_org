@@ -26,6 +26,7 @@ LOCAL_SRC_FILES := \
 	sql/connection.cc \
 	sql/error_delegate_util.cc \
 	sql/meta_table.cc \
+	sql/recovery.cc \
 	sql/statement.cc \
 	sql/transaction.cc
 

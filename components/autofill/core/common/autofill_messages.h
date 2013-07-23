@@ -266,12 +266,11 @@ IPC_MESSAGE_ROUTED0(AutofillHostMsg_ShowAutofillDialog)
 IPC_MESSAGE_ROUTED0(AutofillHostMsg_DidEndTextFieldEditing)
 
 // Instructs the browser to hide the Autofill UI.
-IPC_MESSAGE_ROUTED0(AutofillHostMsg_HideAutofillUi)
+IPC_MESSAGE_ROUTED0(AutofillHostMsg_HideAutofillUI)
 
-// Sent when the renderer attempts to click an element in an Autocheckout flow
-// and either the element could not be found or the click did not have the
-// desired effect.
-IPC_MESSAGE_ROUTED1(AutofillHostMsg_ClickFailed,
+// Sent when the renderer filled an Autocheckout page and clicked the proceed
+// button or if there was an error.
+IPC_MESSAGE_ROUTED1(AutofillHostMsg_AutocheckoutPageCompleted,
                     autofill::AutocheckoutStatus /* status */)
 
 // Instructs the browser to show the password generation bubble at the
@@ -296,8 +295,6 @@ IPC_MESSAGE_ROUTED4(AutofillHostMsg_ShowPasswordSuggestions,
                     std::vector<base::string16> /* realms */)
 
 // Inform browser of data list values for the curent field.
-IPC_MESSAGE_ROUTED4(AutofillHostMsg_SetDataList,
+IPC_MESSAGE_ROUTED2(AutofillHostMsg_SetDataList,
                     std::vector<base::string16> /* values */,
-                    std::vector<base::string16> /* labels */,
-                    std::vector<base::string16> /* icons */,
-                    std::vector<int> /* unique ids */)
+                    std::vector<base::string16> /* labels */)

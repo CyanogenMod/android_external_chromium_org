@@ -1,7 +1,7 @@
-/* Copyright (c) 2012 The hromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 #include "nacl_io/mount_mem.h"
 
 #include <errno.h>
@@ -18,6 +18,8 @@
 #include "nacl_io/path.h"
 #include "sdk_util/auto_lock.h"
 #include "sdk_util/ref_object.h"
+
+namespace nacl_io {
 
 MountMem::MountMem() : root_(NULL) {}
 
@@ -220,4 +222,6 @@ Error MountMem::RemoveInternal(const Path& path, int remove_type) {
 
   return parent->RemoveChild(path.Basename());
 }
+
+}  // namespace nacl_io
 

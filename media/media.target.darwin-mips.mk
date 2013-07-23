@@ -46,7 +46,7 @@ LOCAL_SRC_FILES := \
 	media/audio/audio_output_ipc.cc \
 	media/audio/audio_output_proxy.cc \
 	media/audio/audio_output_resampler.cc \
-	media/audio/audio_silence_detector.cc \
+	media/audio/audio_power_monitor.cc \
 	media/audio/audio_util.cc \
 	media/audio/cross_process_notification.cc \
 	media/audio/cross_process_notification_posix.cc \

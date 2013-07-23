@@ -1006,7 +1006,7 @@ def GetPreferredTrySlaves(project, change):
     return []
 
   if all(re.search('\.(m|mm)$|(^|[/_])mac[/_.]', f) for f in files):
-    return ['mac_rel', 'mac_asan', 'mac:compile']
+    return ['mac_rel', 'mac:compile']
   if all(re.search('(^|[/_])win[/_.]', f) for f in files):
     return ['win_rel', 'win7_aura', 'win:compile']
   if all(re.search('(^|[/_])android[/_.]', f) for f in files):
@@ -1026,12 +1026,12 @@ def GetPreferredTrySlaves(project, change):
       'linux_chromeos',
       'linux_clang:compile',
       'linux_rel',
-      'mac_asan',
       'mac_rel',
       'mac:compile',
       'win7_aura',
       'win_rel',
       'win:compile',
+      'win_x64_rel:compile',
   ]
 
   # Match things like path/aura/file.cc and path/file_aura.cc.

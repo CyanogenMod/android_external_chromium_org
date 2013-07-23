@@ -39,7 +39,6 @@ LOCAL_SRC_FILES := \
 	components/autofill/content/browser/autocheckout_statistic.cc \
 	components/autofill/content/browser/autofill_driver_impl.cc \
 	components/autofill/content/browser/risk/fingerprint.cc \
-	components/autofill/content/browser/wallet/encryption_escrow_client.cc \
 	components/autofill/content/browser/wallet/form_field_error.cc \
 	components/autofill/content/browser/wallet/full_wallet.cc \
 	components/autofill/content/browser/wallet/instrument.cc \

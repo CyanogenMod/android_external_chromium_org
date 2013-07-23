@@ -61,6 +61,7 @@ extern const char kChromeUIPerformanceMonitorURL[];
 extern const char kChromeUIPluginsURL[];
 extern const char kChromeUIPolicyURL[];
 extern const char kChromeUIProfileSigninConfirmationURL[];
+extern const char kChromeUIUserChooserURL[];
 extern const char kChromeUIPrintURL[];
 extern const char kChromeUIRestartURL[];
 extern const char kChromeUISessionFaviconURL[];
@@ -185,6 +186,7 @@ extern const char kChromeUIPerformanceMonitorHost[];
 extern const char kChromeUIPluginsHost[];
 extern const char kChromeUIPolicyHost[];
 extern const char kChromeUIProfileSigninConfirmationHost[];
+extern const char kChromeUIUserChooserHost[];
 extern const char kChromeUIPredictorsHost[];
 extern const char kChromeUIPrintHost[];
 extern const char kChromeUIProfilerHost[];
@@ -448,6 +450,7 @@ extern const char kChromeSearchScheme[];
 // Pages under chrome-search.
 extern const char kChromeSearchLocalNtpHost[];
 extern const char kChromeSearchLocalNtpUrl[];
+extern const char kChromeSearchOnlineNtpHost[];
 
 // Host and URL for most visited iframes used on the Instant Extended NTP.
 extern const char kChromeSearchMostVisitedHost[];

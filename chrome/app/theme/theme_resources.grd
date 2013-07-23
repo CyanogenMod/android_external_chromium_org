@@ -28,15 +28,13 @@
            BECAUSE YOUR RESOURCES ARE FUNCTIONALLY RELATED OR FALL UNDER THE
            SAME CONDITIONALS. -->
       <structure type="chrome_scaled_image" name="IDR_ACCESSED_COOKIES" file="accessed_cookies.png" />
-      <structure type="chrome_scaled_image" name="IDR_ACTION_BOX_BUTTON_HOVER" file="common/action_box_button_hover.png" />
-      <structure type="chrome_scaled_image" name="IDR_ACTION_BOX_BUTTON_NORMAL" file="common/action_box_button_normal.png" />
-      <structure type="chrome_scaled_image" name="IDR_ACTION_BOX_BUTTON_PRESSED" file="common/action_box_button_pressed.png" />
       <structure type="chrome_scaled_image" name="IDR_ALLOWED_DOWNLOADS" file="common/allowed_downloads.png" />
       <structure type="chrome_scaled_image" name="IDR_ALLOWED_FULLSCREEN" file="common/allowed_fullscreen.png" />
       <structure type="chrome_scaled_image" name="IDR_ALLOWED_IMAGES" file="common/allowed_images.png" />
       <structure type="chrome_scaled_image" name="IDR_ALLOWED_JAVASCRIPT" file="common/allowed_script.png" />
       <structure type="chrome_scaled_image" name="IDR_ALLOWED_LOCATION" file="common/allowed_location.png" />
       <structure type="chrome_scaled_image" name="IDR_ALLOWED_MICROPHONE" file="common/allowed_mic_only.png" />
+      <structure type="chrome_scaled_image" name="IDR_ALLOWED_MIDI_SYSEX" file="common/allowed_midi.png" />
       <structure type="chrome_scaled_image" name="IDR_ALLOWED_MOUSE_CURSOR" file="common/allowed_mouse_cursor.png" />
       <structure type="chrome_scaled_image" name="IDR_ALLOWED_NOTIFICATION" file="common/allowed_notifications.png" />
       <structure type="chrome_scaled_image" name="IDR_ALLOWED_PLUGINS" file="common/allowed_plugins.png" />
@@ -101,6 +99,7 @@
       <structure type="chrome_scaled_image" name="IDR_BLOCKED_LOCATION" file="common/blocked_location.png" />
       <structure type="chrome_scaled_image" name="IDR_BLOCKED_MEDIA" file="common/blocked_media.png" />
       <structure type="chrome_scaled_image" name="IDR_BLOCKED_MICROPHONE" file="common/blocked_mic_only.png" />
+      <structure type="chrome_scaled_image" name="IDR_BLOCKED_MIDI_SYSEX" file="common/blocked_midi.png" />
       <structure type="chrome_scaled_image" name="IDR_BLOCKED_MOUSE_CURSOR" file="common/blocked_mouse_cursor.png" />
       <structure type="chrome_scaled_image" name="IDR_BLOCKED_MIXED_CONTENT" file="common/blocked_mixed_content.png" />
       <structure type="chrome_scaled_image" name="IDR_BLOCKED_NOTIFICATION" file="common/blocked_notifications.png" />
@@ -348,10 +347,16 @@
         <structure type="chrome_scaled_image" name="IDR_HOME_H" file="common/browser_home_hover.png" />
         <structure type="chrome_scaled_image" name="IDR_HOME_P" file="common/browser_home_pressed.png" />
       </if>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="not is_android and not pp_ifdef('ios')">
         <structure type="chrome_scaled_image" name="IDR_ICON_ADD_USER24" file="icon_add_user24.png" />
         <structure type="chrome_scaled_image" name="IDR_ICON_ADD_USER_WHITE" file="icon_add_user_white.png" />
         <structure type="chrome_scaled_image" name="IDR_ICON_GUEST_WHITE" file="icon_guest_white.png" />
+      </if>
+      <if expr="not is_android and not pp_ifdef('ios') and not pp_ifdef('chromeos')">
+        <!-- TODO(noms): Remove this once local profile avatars are migrated -->
+        <structure type="chrome_scaled_image" name="IDR_USER_MANAGER_DEFAULT_AVATAR" file="avatar_user_color.png" />
+      </if>
+      <if expr="pp_ifdef('chromeos')">
         <structure type="chrome_scaled_image" name="IDR_ICON_POWER24" file="icon_power24.png" />
         <structure type="chrome_scaled_image" name="IDR_ICON_POWER_WHITE" file="icon_power_white.png" />
       </if>
@@ -397,6 +402,7 @@
       <structure type="chrome_scaled_image" name="IDR_INFOBAR_DESKTOP_NOTIFICATIONS" file="infobar_desktop_notifications.png" />
       <structure type="chrome_scaled_image" name="IDR_INFOBAR_INCOMPLETE" file="infobar_incomplete.png" />
       <structure type="chrome_scaled_image" name="IDR_INFOBAR_MEDIA_STREAM_CAMERA" file="common/infobar_camera.png" />
+      <structure type="chrome_scaled_image" name="IDR_INFOBAR_MIDI_SYSEX" file="common/infobar_midi.png" />
       <structure type="chrome_scaled_image" name="IDR_INFOBAR_MEDIA_STREAM_MIC" file="common/infobar_microphone.png" />
       <structure type="chrome_scaled_image" name="IDR_INFOBAR_MULTIPLE_DOWNLOADS" file="infobar_multiple_downloads.png" />
       <structure type="chrome_scaled_image" name="IDR_INFOBAR_PLUGIN_CRASHED" file="infobar_plugin_crashed.png" />

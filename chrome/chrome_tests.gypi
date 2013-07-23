@@ -234,7 +234,7 @@
         'browser/ui/fullscreen/fullscreen_controller_interactive_browsertest.cc',
         'browser/ui/fullscreen/fullscreen_controller_state_interactive_browsertest.cc',
         'browser/ui/gtk/bookmarks/bookmark_bar_gtk_interactive_uitest.cc',
-        'browser/ui/omnibox/action_box_browsertest.cc',
+        'browser/ui/gtk/bookmarks/bookmark_bubble_gtk_browsertest.cc',
         'browser/ui/omnibox/omnibox_view_browsertest.cc',
         'browser/ui/panels/base_panel_browser_test.cc',
         'browser/ui/panels/base_panel_browser_test.h',
@@ -860,6 +860,7 @@
             'test/chromedriver/embed_js_in_cpp.py',
             'test/chromedriver/js/add_cookie.js',
             'test/chromedriver/js/call_function.js',
+            'test/chromedriver/js/dispatch_context_menu_event.js',
             'test/chromedriver/js/execute_async_script.js',
             'test/chromedriver/js/focus.js',
             'test/chromedriver/js/get_element_region.js',
@@ -875,6 +876,7 @@
                       '<(SHARED_INTERMEDIATE_DIR)/chrome/test/chromedriver/chrome',
                       'test/chromedriver/js/add_cookie.js',
                       'test/chromedriver/js/call_function.js',
+                      'test/chromedriver/js/dispatch_context_menu_event.js',
                       'test/chromedriver/js/execute_async_script.js',
                       'test/chromedriver/js/focus.js',
                       'test/chromedriver/js/get_element_region.js',
@@ -988,6 +990,8 @@
       'dependencies': [
         'chromedriver2_lib',
         '../base/base.gyp:base',
+        '../net/net.gyp:http_server',
+        '../net/net.gyp:net',
       ],
       'include_dirs': [
         '..',
@@ -1027,6 +1031,8 @@
         'chromedriver2_server_lib',
         '../base/base.gyp:base',
         '../base/base.gyp:run_all_unittests',
+        '../net/net.gyp:http_server',
+        '../net/net.gyp:net',
         '../testing/gtest.gyp:gtest',
         '../ui/ui.gyp:ui',
       ],
@@ -1123,7 +1129,7 @@
         '../base/base.gyp:base_i18n',
         '../base/base.gyp:test_support_base',
         '../components/components.gyp:autofill_content_risk_proto',
-        '../components/components.gyp:autofill_content_test_util',
+        '../components/components.gyp:autofill_content_test_support',
         '../device/bluetooth/bluetooth.gyp:device_bluetooth_mocks',
         '../net/net.gyp:net',
         '../net/net.gyp:net_test_support',
@@ -1141,7 +1147,6 @@
         '../ui/web_dialogs/web_dialogs.gyp:web_dialogs_test_support',
         '../ui/ui.gyp:webui_test_support',
         '../v8/tools/gyp/v8.gyp:v8',
-        '../webkit/plugins/webkit_plugins.gyp:test_mock_plugin_list',
         # Runtime dependencies
         '../ppapi/ppapi_internal.gyp:ppapi_tests',
         '../third_party/mesa/mesa.gyp:osmesa',
@@ -1336,7 +1341,7 @@
         'browser/extensions/api/sync_file_system/sync_file_system_apitest.cc',
         'browser/extensions/api/system_indicator/system_indicator_apitest.cc',
         'browser/extensions/api/system_cpu/system_cpu_apitest.cc',
-        'browser/extensions/api/system_info_display/system_info_display_apitest.cc',
+        'browser/extensions/api/system_display/system_display_apitest.cc',
         'browser/extensions/api/system_info_memory/system_info_memory_apitest.cc',
         'browser/extensions/api/system_info_storage/system_info_storage_apitest.cc',
         'browser/extensions/api/system_private/system_private_apitest.cc',
@@ -2015,6 +2020,11 @@
             'browser/printing/cloud_print/test/cloud_print_policy_browsertest.cc',
           ],
         }],
+        ['OS=="mac" or OS=="win"', {
+          'sources': [
+            'browser/media_galleries/fileapi/itunes_data_provider_browsertest.cc',
+          ],
+        }],
         ['os_posix == 0 or chromeos == 1', {
           'sources!': [
             'common/time_format_browsertest.cc',
@@ -2047,8 +2057,8 @@
           # npapi test plugin doesn't build on android or ios
           'dependencies': [
             # build time dependency.
+            '../content/content.gyp:copy_npapi_test_plugin',
             '../v8/tools/gyp/v8.gyp:v8_shell#host',
-            '../webkit/plugins/webkit_plugins.gyp:copy_npapi_test_plugin',
           ],
         }],
         ['enable_app_list==0', {
@@ -3139,7 +3149,7 @@
                 '../jingle/jingle.gyp:jingle_unittests',
                 '../net/net.gyp:net_perftests',
                 '../third_party/WebKit/public/all.gyp:all_blink',
-                '../url/url.gyp:googleurl_unittests',
+                '../url/url.gyp:url_unittests',
                 'browser_tests',
                 'chromedriver_unittests',
                 'gpu_tests',

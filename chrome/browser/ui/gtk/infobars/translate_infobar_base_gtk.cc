@@ -52,7 +52,7 @@ TranslateInfoBarBase::TranslateInfoBarBase(InfoBarService* owner,
       background_color_animation_->Hide();
     }
   } else {
-    background_error_percent_ = delegate->IsError() ? 1 : 0;
+    background_error_percent_ = delegate->is_error() ? 1 : 0;
   }
 }
 
@@ -127,7 +127,7 @@ void TranslateInfoBarBase::InitWidgets() {
     return;
 
   // The options button sits outside the translate_box so that it can be end
-  // packed in hbox_.
+  // packed in hbox().
   GtkWidget* options_menu_button = CreateMenuButton(
       l10n_util::GetStringUTF8(IDS_TRANSLATE_INFOBAR_OPTIONS));
   signals()->Connect(options_menu_button, "clicked",

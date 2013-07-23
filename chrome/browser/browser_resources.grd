@@ -161,12 +161,6 @@
       <include name="IDR_LOCAL_NTP_JS" file="resources\local_ntp\local_ntp.js" flattenhtml="true" type="BINDATA" />
       <include name="IDR_LOCAL_NTP_IMAGES_2X_LOGO_PNG" file="resources\local_ntp\images\2x\ntp_google_logo.png" type="BINDATA" />
       <include name="IDR_LOCAL_NTP_IMAGES_2X_WHITE_LOGO_PNG" file="resources\local_ntp\images\2x\ntp_white_google_logo.png" type="BINDATA" />
-      <include name="IDR_LOCAL_OMNIBOX_POPUP_IMAGES_HISTORY_ICON_PNG" file="resources\local_omnibox_popup\images\history_icon.png" type="BINDATA" />
-      <include name="IDR_LOCAL_OMNIBOX_POPUP_IMAGES_2X_HISTORY_ICON_PNG" file="resources\local_omnibox_popup\images\2x\history_icon.png" type="BINDATA" />
-      <include name="IDR_LOCAL_OMNIBOX_POPUP_IMAGES_PAGE_ICON_PNG" file="resources\local_omnibox_popup\images\page_icon.png" type="BINDATA" />
-      <include name="IDR_LOCAL_OMNIBOX_POPUP_IMAGES_2X_PAGE_ICON_PNG" file="resources\local_omnibox_popup\images\2x\page_icon.png" type="BINDATA" />
-      <include name="IDR_LOCAL_OMNIBOX_POPUP_IMAGES_SEARCH_ICON_PNG" file="resources\local_omnibox_popup\images\search_icon.png" type="BINDATA" />
-      <include name="IDR_LOCAL_OMNIBOX_POPUP_IMAGES_2X_SEARCH_ICON_PNG" file="resources\local_omnibox_popup\images\2x\search_icon.png" type="BINDATA" />
       <include name="IDR_MOST_VISITED_IFRAME_CSS" file="resources\local_ntp\most_visited_iframe.css" type="BINDATA" />
       <include name="IDR_MOST_VISITED_TITLE_HTML" file="resources\local_ntp\most_visited_title.html" type="BINDATA" />
       <include name="IDR_MOST_VISITED_TITLE_CSS" file="resources\local_ntp\most_visited_title.css" type="BINDATA" />
@@ -288,6 +282,8 @@
         <include name="IDR_CRYPTOHOME_JS" file="resources\chromeos\cryptohome.js" type="BINDATA" />
         <!-- manifest file of ChromeVox accessibility extension -->
         <include name="IDR_CHROMEVOX_MANIFEST" file="resources\chromeos\access_chromevox\manifest.json" type="BINDATA" />
+        <!-- manifest file of Connectivity Diagnostics app -->
+        <include name="IDR_CONNECTIVITY_DIAGNOSTICS_MANIFEST" file="resources\chromeos\connectivity_diagnostics\manifest.json" type="BINDATA" />
         <!-- manifest file of built-in speech synthesis extension -->
         <include name="IDR_SPEECH_SYNTHESIS_MANIFEST" file="resources\chromeos\speech_synthesis\manifest.json" type="BINDATA" />
         <include name="IDR_DIAGNOSTICS_MAIN_CSS" file="resources\chromeos\diagnostics\main.css" type="BINDATA" />
@@ -358,11 +354,14 @@
         <include name="IDR_SET_AS_DEFAULT_BROWSER_JS" file="resources\set_as_default_browser.js" flattenhtml="true" type="BINDATA" />
         <include name="IDR_SET_AS_DEFAULT_BROWSER_HTML" file="resources\set_as_default_browser.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       </if>
+      <if expr="not is_android and not pp_ifdef('ios') and not pp_ifdef('chromeos')">
+        <include name="IDR_USER_CHOOSER_JS" file="resources\user_chooser\user_chooser.js" flattenhtml="true" type="BINDATA" />
+        <include name="IDR_USER_CHOOSER_HTML" file="resources\user_chooser\user_chooser.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
+      </if>
       <include name="IDR_MANAGED_MODE_BLOCK_INTERSTITIAL_HTML" file="resources\managed_mode_block_interstitial.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_PROFILE_SIGNIN_CONFIRMATION_HTML" file="resources\profile_signin_confirmation.html" type="BINDATA" />
       <include name="IDR_PROFILE_SIGNIN_CONFIRMATION_JS" file="resources\profile_signin_confirmation.js" type="BINDATA" />
       <include name="IDR_PROFILE_SIGNIN_CONFIRMATION_CSS" file="resources\profile_signin_confirmation.css" type="BINDATA" />
-
       <include name="IDR_RECENTLY_CLOSED_WINDOW" file="resources\ntp4\images\closed_window.png" type="BINDATA" />
       <if expr="not is_android">
         <include name="IDR_IDENTITY_INTERNALS_HTML" file="resources\identity_internals.html" type="BINDATA" />

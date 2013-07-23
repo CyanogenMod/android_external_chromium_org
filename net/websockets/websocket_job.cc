@@ -148,7 +148,6 @@ void WebSocketJob::RestartWithAuth(const AuthCredentials& credentials) {
 void WebSocketJob::DetachDelegate() {
   state_ = CLOSED;
   WebSocketThrottle::GetInstance()->RemoveFromQueue(this);
-  WebSocketThrottle::GetInstance()->WakeupSocketIfNecessary();
 
   scoped_refptr<WebSocketJob> protect(this);
   weak_ptr_factory_.InvalidateWeakPtrs();
@@ -169,8 +168,12 @@ int WebSocketJob::OnStartOpenConnection(
     SocketStream* socket, const CompletionCallback& callback) {
   DCHECK(callback_.is_null());
   state_ = CONNECTING;
+
   addresses_ = socket->address_list();
-  WebSocketThrottle::GetInstance()->PutInQueue(this);
+  if (!WebSocketThrottle::GetInstance()->PutInQueue(this)) {
+    return ERR_WS_THROTTLE_QUEUE_TOO_LARGE;
+  }
+
   if (delegate_) {
     int result = delegate_->OnStartOpenConnection(socket, callback);
     DCHECK_EQ(OK, result);
@@ -246,7 +249,6 @@ void WebSocketJob::OnReceivedData(
 void WebSocketJob::OnClose(SocketStream* socket) {
   state_ = CLOSED;
   WebSocketThrottle::GetInstance()->RemoveFromQueue(this);
-  WebSocketThrottle::GetInstance()->WakeupSocketIfNecessary();
 
   scoped_refptr<WebSocketJob> protect(this);
   weak_ptr_factory_.InvalidateWeakPtrs();
@@ -497,7 +499,6 @@ void WebSocketJob::NotifyHeadersComplete() {
         socket_.get(), &received_data.front(), received_data.size());
 
   WebSocketThrottle::GetInstance()->RemoveFromQueue(this);
-  WebSocketThrottle::GetInstance()->WakeupSocketIfNecessary();
 }
 
 void WebSocketJob::SaveNextCookie() {
@@ -596,7 +597,7 @@ int WebSocketJob::TrySpdyStream() {
                            socket_->proxy_server(), privacy_mode);
   // Forbid wss downgrade to SPDY without SSL.
   // TODO(toyoshim): Does it realize the same policy with HTTP?
-  scoped_refptr<SpdySession> spdy_session =
+  base::WeakPtr<SpdySession> spdy_session =
       spdy_pool->FindAvailableSession(key, *socket_->net_log());
   if (!spdy_session)
     return OK;
@@ -611,8 +612,7 @@ int WebSocketJob::TrySpdyStream() {
 
   // Create SpdyWebSocketStream.
   spdy_protocol_version_ = spdy_session->GetProtocolVersion();
-  spdy_websocket_stream_.reset(
-      new SpdyWebSocketStream(spdy_session.get(), this));
+  spdy_websocket_stream_.reset(new SpdyWebSocketStream(spdy_session, this));
 
   int result = spdy_websocket_stream_->InitializeStream(
       socket_->url(), MEDIUM, *socket_->net_log());

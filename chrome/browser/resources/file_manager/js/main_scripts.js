@@ -90,7 +90,10 @@
 //<include src="file_tasks.js"/>
 //<include src="file_transfer_controller.js"/>
 //<include src="file_type.js"/>
+//<include src="folder_shortcuts_data_model.js"/>
 //<include src="scrollbar.js"/>
+//<include src="share_client.js"/>
+//<include src="share_dialog.js"/>
 //<include src="tree.css.js"/>
 //<include src="volume_list.js"/>
 //<include src="volume_manager.js"/>

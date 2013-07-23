@@ -32,7 +32,8 @@ LOCAL_SRC_FILES := \
 	webkit/common/data_element.cc \
 	webkit/common/resource_devtools_info.cc \
 	webkit/common/resource_request_body.cc \
-	webkit/common/resource_response_info.cc
+	webkit/common/resource_response_info.cc \
+	webkit/common/resource_type.cc
 
 
 # Flags passed to both C and C++ files.

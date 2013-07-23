@@ -1,7 +1,6 @@
-/* Copyright (c) 2013 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef LIBRARIES_NACL_IO_TEST_MOUNT_NODE_MOCK_H_
 #define LIBRARIES_NACL_IO_TEST_MOUNT_NODE_MOCK_H_
@@ -10,9 +9,12 @@
 
 #include "nacl_io/mount.h"
 
-class MountNodeMock : public MountNode {
+class MountNodeMock : public nacl_io::MountNode {
  public:
-  explicit MountNodeMock(Mount*);
+  typedef nacl_io::Error Error;
+  typedef nacl_io::ScopedMountNode ScopedMountNode;
+
+  explicit MountNodeMock(nacl_io::Mount*);
   virtual ~MountNodeMock();
 
   MOCK_METHOD1(Init, Error(int));
@@ -41,4 +43,3 @@ class MountNodeMock : public MountNode {
 };
 
 #endif  // LIBRARIES_NACL_IO_TEST_MOUNT_NODE_MOCK_H_
-

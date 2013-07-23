@@ -238,8 +238,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
   /**
    * Changed metadata observers for the new directory.
-   * @override
-   * @param {?DirectoryEntry} entry New watched directory entry.
+   *
+   * @param {DirectoryEntry} entry New watched directory entry.
    * @override
    */
   FileManager.MetadataFileWatcher.prototype.changeWatchedEntry = function(
@@ -328,6 +328,15 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       chrome.commandLinePrivate.hasSwitch(
           'file-manager-show-checkboxes', function(flag) {
         this.showCheckboxes_ = flag;
+        done();
+      }.bind(this));
+    }.bind(this));
+
+    // TODO(yoshiki): Remove this after launching folder shortcuts feature.
+    group.add(function(done) {
+      chrome.commandLinePrivate.hasSwitch(
+          'file-manager-enable-folder-shortcuts', function(flag) {
+        this.isFolderShortcutsEnabled_ = flag;
         done();
       }.bind(this));
     }.bind(this));
@@ -888,9 +897,11 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     var d = cr.ui.dialogs;
     d.BaseDialog.OK_LABEL = str('OK_LABEL');
     d.BaseDialog.CANCEL_LABEL = str('CANCEL_LABEL');
+    this.error = new ErrorDialog(this.dialogDom_);
     this.alert = new d.AlertDialog(this.dialogDom_);
     this.confirm = new d.ConfirmDialog(this.dialogDom_);
     this.prompt = new d.PromptDialog(this.dialogDom_);
+    this.shareDialog_ = new ShareDialog(this.dialogDom_, this.metadataCache_);
     this.defaultTaskPicker =
         new cr.filebrowser.DefaultActionDialog(this.dialogDom_);
   };
@@ -1149,7 +1160,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
     this.directoryModel_.start();
 
-    this.pinnedFolderModel_ = new cr.ui.ArrayDataModel([]);
+    this.folderShortcutsModel_ = new FolderShortcutsDataModel();
 
     this.selectionHandler_ = new FileSelectionHandler(this);
     this.selectionHandler_.addEventListener('show-preview-panel',
@@ -1245,7 +1256,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.volumeList_ = this.dialogDom_.querySelector('#volume-list');
     VolumeList.decorate(this.volumeList_,
                         this.directoryModel_,
-                        this.pinnedFolderModel_);
+                        this.folderShortcutsModel_);
   };
 
   /**
@@ -1865,7 +1876,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   /**
    * @param {string} type Type of metadata changed.
    * @param {Array.<string>} urls Array of urls.
-   * @param {Object<string, Object>} props Map from entry URLs to metadata
+   * @param {Object.<string, Object>} props Map from entry URLs to metadata
    *     props.
    * @private
    */
@@ -2066,7 +2077,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   };
 
   FileManager.prototype.isDriveEnabled = function() {
-    // TODO(kinaba): remove the "!shouldReturnLocalPath &&" condition once
+    // TODO(kinaba): Remove the "!shouldReturnLocalPath &&" condition once
     // crbug.com/140425 is done.
     return !this.params_.shouldReturnLocalPath &&
         (!('driveEnabled' in this.preferences_) ||
@@ -2163,7 +2174,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
   /**
    * Return full path of the current directory or null.
-   * @return {string=} The full path of the current directory.
+   * @return {?string} The full path of the current directory.
    */
   FileManager.prototype.getCurrentDirectory = function() {
     return this.directoryModel_ &&
@@ -2205,10 +2216,28 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   };
 
   /**
-   * Shows the share dialog for the selected file.
+   * Shows the share dialog for the selected file or directory.
    */
   FileManager.prototype.shareSelection = function() {
-    // TODO(mtomasz): Implement it. crbug.com/141396
+    var entries = this.getSelection().entries;
+    if (entries.length != 1) {
+      console.warn('Unable to share multiple items at once.');
+      return;
+    }
+    this.shareDialog_.show(entries[0], function() {
+      this.error.show(str('SHARE_ERROR'));
+    }.bind(this));
+  };
+
+  /**
+   * Folder shared feature is under development and hidden behind flag. This
+   * method returns if the feature is explicitly enabled by the flag or not.
+   * TODO(yoshiki): Remove this after launching folder feature feature.
+   *
+   * @return {boolena} True if the flag is enabled.
+   */
+  FileManager.prototype.isFolderShortcutsEnabled = function() {
+    return this.isFolderShortcutsEnabled_;
   };
 
   /**
@@ -2221,8 +2250,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     if (this.isFolderPinned(entry.fullPath))
       return;
 
-    this.pinnedFolderModel_.splice(0, 0, entry.fullPath);
-    this.pinnedFolderModel_.sort('name', 'asc');
+    this.folderShortcutsModel_.add(entry.fullPath);
   };
 
   /**
@@ -2230,13 +2258,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @param {string} path Path of the folder to be checked.
    */
   FileManager.prototype.isFolderPinned = function(path) {
-    for (var i = 0; i < this.pinnedFolderModel_.length; i++) {
-      var pinnedPath = this.pinnedFolderModel_.item(i);
-      if (pinnedPath == path) {
-        return true;
-      }
-    }
-    return false;
+    return this.folderShortcutsModel_.exists(path);
   };
 
   /**
@@ -2244,13 +2266,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @param {string} path Path of the pinned folder to be unpinnned.
    */
   FileManager.prototype.unpinFolder = function(path) {
-    for (var i = 0; i < this.pinnedFolderModel_.length; i++) {
-      var pinnedPath = this.pinnedFolderModel_.item(i);
-      if (pinnedPath == path) {
-        this.pinnedFolderModel_.splice(i, 1);
-        return;
-      }
-    }
+    this.folderShortcutsModel_.remove(path);
   };
 
   /**
@@ -3892,6 +3908,10 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    */
   FileManager.prototype.setCtrlKeyPressed_ = function(flag) {
     this.ctrlKeyPressed_ = flag;
-    this.document_.querySelector('#drive-clear-local-cache').canExecuteChange();
+    // Before the DOM is constructed, the key event can be handled.
+    var cacheClearCommand =
+        this.document_.querySelector('#drive-clear-local-cache');
+    if (cacheClearCommand)
+      cacheClearCommand.canExecuteChange();
   };
 })();

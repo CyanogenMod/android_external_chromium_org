@@ -167,6 +167,7 @@
           'dependencies': [
             'content_child',
             'content_ppapi_plugin',
+            'content_renderer',
             'content_utility',
             'content_worker',
             '../ppapi/ppapi_internal.gyp:ppapi_host',
@@ -307,7 +308,6 @@
         'browser/gpu/shader_disk_cache_unittest.cc',
         'browser/host_zoom_map_impl_unittest.cc',
         'browser/hyphenator/hyphenator_message_filter_unittest.cc',
-        'browser/in_process_webkit/webkit_thread_unittest.cc',
         'browser/indexed_db/indexed_db_backing_store_unittest.cc',
         'browser/indexed_db/indexed_db_cleanup_on_io_error_unittest.cc',
         'browser/indexed_db/indexed_db_database_unittest.cc',
@@ -387,6 +387,7 @@
         'browser/webui/web_ui_message_handler_unittest.cc',
         'child/indexed_db/indexed_db_dispatcher_unittest.cc',
         'child/indexed_db/proxy_webidbcursor_impl_unittest.cc',
+        'child/npapi/plugin_lib_unittest.cc',
         'child/resource_dispatcher_unittest.cc',
         'common/android/address_parser_unittest.cc',
         'common/cc_messages_unittest.cc',
@@ -398,11 +399,13 @@
         'common/mac/font_descriptor_unittest.mm',
         'common/page_state_serialization_unittest.cc',
         'common/page_zoom_unittest.cc',
+        'common/plugin_list_unittest.cc',
         'common/sandbox_mac_diraccess_unittest.mm',
         'common/sandbox_mac_fontloading_unittest.mm',
         'common/sandbox_mac_system_access_unittest.mm',
         'common/sandbox_mac_unittest_helper.h',
         'common/sandbox_mac_unittest_helper.mm',
+        'common/webplugininfo_unittest.cc',
         'renderer/active_notification_tracker_unittest.cc',
         'renderer/android/email_detector_unittest.cc',
         'renderer/android/phone_number_detector_unittest.cc',
@@ -432,6 +435,7 @@
         'renderer/render_thread_impl_unittest.cc',
         'renderer/render_view_impl_unittest.cc',
         'renderer/v8_value_converter_impl_unittest.cc',
+        'renderer/webplugin_impl_unittest.cc',
         'test/image_decoder_test.cc',
         'test/image_decoder_test.h',
         '../webkit/browser/appcache/appcache_database_unittest.cc',
@@ -514,6 +518,7 @@
         '../webkit/browser/fileapi/transient_file_util_unittest.cc',
         '../webkit/browser/fileapi/upload_file_system_file_element_reader_unittest.cc',
         'test/run_all_unittests.cc',
+        '../webkit/child/multipart_response_delegate_unittest.cc',
         '../webkit/child/touch_fling_gesture_curve_unittest.cc',
         '../webkit/child/worker_task_runner_unittest.cc',
         '../webkit/common/blob/shareable_file_reference_unittest.cc',
@@ -522,15 +527,10 @@
         '../webkit/common/database/database_identifier_unittest.cc',
         '../webkit/common/dom_storage/dom_storage_map_unittest.cc',
         '../webkit/common/fileapi/file_system_util_unittest.cc',
-        '../webkit/glue/multipart_response_delegate_unittest.cc',
         '../webkit/glue/webkit_glue_unittest.cc',
         '../webkit/mocks/mock_weburlloader.cc',
         '../webkit/mocks/mock_weburlloader.h',
         '../webkit/common/user_agent/user_agent_unittest.cc',
-        '../webkit/plugins/npapi/plugin_lib_unittest.cc',
-        '../webkit/plugins/npapi/plugin_list_unittest.cc',
-        '../webkit/plugins/npapi/plugin_utils_unittest.cc',
-        '../webkit/plugins/npapi/webplugin_impl_unittest.cc',
         '../webkit/plugins/ppapi/host_var_tracker_unittest.cc',
         '../webkit/plugins/ppapi/mock_platform_image_2d.cc',
         '../webkit/plugins/ppapi/mock_platform_image_2d.h',
@@ -590,7 +590,6 @@
             '../webkit/common/webkit_common.gyp:webkit_common',
             '../webkit/glue/webkit_glue_common.gyp:glue_common',
             '../webkit/plugins/webkit_plugins.gyp:plugins_common',
-            '../webkit/plugins/webkit_plugins.gyp:test_mock_plugin_list',
             '../webkit/renderer/webkit_renderer.gyp:webkit_renderer',
             '../webkit/storage_browser.gyp:webkit_storage_browser',
             '../webkit/storage_common.gyp:webkit_storage_common',
@@ -598,6 +597,7 @@
             '../webkit/support/webkit_support.gyp:glue',
             '../webkit/support/webkit_support.gyp:glue_child',
             '../webkit/support/webkit_support.gyp:plugins',
+            '../webkit/plugins/webkit_plugins.gyp:plugins_common',
             '../webkit/support/webkit_support.gyp:webkit_media',
           ],
         }],
@@ -613,6 +613,7 @@
         ['enable_webrtc==1', {
           'sources': [
             'browser/media/webrtc_internals_unittest.cc',
+            'browser/renderer_host/media/webrtc_identity_service_host_unittest.cc',
             'browser/renderer_host/p2p/socket_host_test_utils.h',
             'browser/renderer_host/p2p/socket_host_tcp_unittest.cc',
             'browser/renderer_host/p2p/socket_host_tcp_server_unittest.cc',
@@ -625,6 +626,7 @@
             'renderer/media/video_destination_handler_unittest.cc',
             'renderer/media/video_source_handler_unittest.cc',
             'renderer/media/webrtc_audio_device_unittest.cc',
+            'renderer/media/webrtc_identity_service_unittest.cc',
             'renderer/media/webrtc_local_audio_track_unittest.cc',
           ],
           'dependencies': [
@@ -771,6 +773,7 @@
             '../webkit/renderer/webkit_renderer.gyp:webkit_renderer',
             '../webkit/support/webkit_support.gyp:glue',
             '../webkit/support/webkit_support.gyp:glue_child',
+            '../webkit/plugins/webkit_plugins.gyp:plugins_common',
           ],
           'include_dirs': [
             '..',
@@ -959,7 +962,7 @@
               # npapi test plugin doesn't build on android or ios
               'dependencies': [
                 # Runtime dependencies
-                '../webkit/plugins/webkit_plugins.gyp:copy_npapi_test_plugin',
+                'copy_npapi_test_plugin',
               ],
             }],
             ['enable_webrtc==1', {
@@ -1248,6 +1251,150 @@
             'is_test_apk': 1,
           },
           'includes': [ '../build/java_apk.gypi' ],
+        },
+      ],
+    }],
+    ['OS!="android" and OS!="ios"', {
+      # npapi test plugin doesn't build on android or ios
+      'targets': [
+        {
+          'target_name': 'npapi_test_plugin',
+          'type': 'loadable_module',
+          'variables': {
+            'chromium_code': 1,
+          },
+          'mac_bundle': 1,
+          'dependencies': [
+            '<(DEPTH)/base/base.gyp:base',
+            '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
+            '<(DEPTH)/third_party/npapi/npapi.gyp:npapi',
+          ],
+          'sources': [
+            'test/plugin/npapi_constants.cc',
+            'test/plugin/npapi_constants.h',
+            'test/plugin/npapi_test.cc',
+            'test/plugin/npapi_test.def',
+            'test/plugin/npapi_test.rc',
+            'test/plugin/plugin_arguments_test.cc',
+            'test/plugin/plugin_arguments_test.h',
+            'test/plugin/plugin_client.cc',
+            'test/plugin/plugin_client.h',
+            'test/plugin/plugin_create_instance_in_paint.cc',
+            'test/plugin/plugin_create_instance_in_paint.h',
+            'test/plugin/plugin_delete_plugin_in_deallocate_test.cc',
+            'test/plugin/plugin_delete_plugin_in_deallocate_test.h',
+            'test/plugin/plugin_delete_plugin_in_stream_test.cc',
+            'test/plugin/plugin_delete_plugin_in_stream_test.h',
+            'test/plugin/plugin_execute_stream_javascript.cc',
+            'test/plugin/plugin_execute_stream_javascript.h',
+            'test/plugin/plugin_get_javascript_url_test.cc',
+            'test/plugin/plugin_get_javascript_url_test.h',
+            'test/plugin/plugin_get_javascript_url2_test.cc',
+            'test/plugin/plugin_get_javascript_url2_test.h',
+            'test/plugin/plugin_geturl_test.cc',
+            'test/plugin/plugin_geturl_test.h',
+            'test/plugin/plugin_javascript_open_popup.cc',
+            'test/plugin/plugin_javascript_open_popup.h',
+            'test/plugin/plugin_new_fails_test.cc',
+            'test/plugin/plugin_new_fails_test.h',
+            'test/plugin/plugin_npobject_identity_test.cc',
+            'test/plugin/plugin_npobject_identity_test.h',
+            'test/plugin/plugin_npobject_lifetime_test.cc',
+            'test/plugin/plugin_npobject_lifetime_test.h',
+            'test/plugin/plugin_npobject_proxy_test.cc',
+            'test/plugin/plugin_npobject_proxy_test.h',
+            'test/plugin/plugin_request_read_test.h',
+            'test/plugin/plugin_request_read_test.cc',
+            'test/plugin/plugin_schedule_timer_test.cc',
+            'test/plugin/plugin_schedule_timer_test.h',
+            'test/plugin/plugin_setup_test.cc',
+            'test/plugin/plugin_setup_test.h',
+            'test/plugin/plugin_test.cc',
+            'test/plugin/plugin_test.h',
+            'test/plugin/plugin_test_factory.h',
+            'test/plugin/plugin_thread_async_call_test.cc',
+            'test/plugin/plugin_thread_async_call_test.h',
+            'test/plugin/plugin_windowed_test.cc',
+            'test/plugin/plugin_windowed_test.h',
+            'test/plugin/plugin_private_test.cc',
+            'test/plugin/plugin_private_test.h',
+            'test/plugin/plugin_test_factory.cc',
+            'test/plugin/plugin_window_size_test.cc',
+            'test/plugin/plugin_window_size_test.h',
+            'test/plugin/plugin_windowless_test.cc',
+            'test/plugin/plugin_windowless_test.h',
+            'test/plugin/resource.h',
+          ],
+          'include_dirs': [
+            '../..',
+          ],
+          'xcode_settings': {
+            'INFOPLIST_FILE': '<(DEPTH)/content/test/plugin/Info.plist',
+          },
+          'conditions': [
+            ['OS!="win"', {
+              'sources!': [
+                # TODO(port):  Port these.
+                # plugin_npobject_lifetime_test.cc has win32-isms
+                #   (HWND, CALLBACK).
+                'test/plugin/plugin_npobject_lifetime_test.cc',
+                 # The window APIs are necessarily platform-specific.
+                'test/plugin/plugin_window_size_test.cc',
+                'test/plugin/plugin_windowed_test.cc',
+                 # Seems windows specific.
+                'test/plugin/plugin_create_instance_in_paint.cc',
+                'test/plugin/plugin_create_instance_in_paint.h',
+                 # windows-specific resources
+                'test/plugin/npapi_test.def',
+                'test/plugin/npapi_test.rc',
+              ],
+            }],
+            ['OS=="mac"', {
+              'product_extension': 'plugin',
+              'link_settings': {
+                'libraries': [
+                  '$(SDKROOT)/System/Library/Frameworks/Carbon.framework',
+                ],
+              },
+            }],
+            ['os_posix == 1 and OS != "mac" and (target_arch == "x64" or target_arch == "arm")', {
+              # Shared libraries need -fPIC on x86-64
+              'cflags': ['-fPIC']
+            }],
+          ],
+        },
+        {
+          'target_name': 'copy_npapi_test_plugin',
+          'type': 'none',
+          'dependencies': [
+            'npapi_test_plugin',
+          ],
+          'conditions': [
+            ['OS=="win"', {
+              'copies': [
+                {
+                  'destination': '<(PRODUCT_DIR)/plugins',
+                  'files': ['<(PRODUCT_DIR)/npapi_test_plugin.dll'],
+                },
+              ],
+            }],
+            ['OS=="mac"', {
+              'copies': [
+                {
+                  'destination': '<(PRODUCT_DIR)/plugins/',
+                  'files': ['<(PRODUCT_DIR)/npapi_test_plugin.plugin'],
+                },
+              ]
+            }],
+            ['os_posix == 1 and OS != "mac"', {
+              'copies': [
+                {
+                  'destination': '<(PRODUCT_DIR)/plugins',
+                  'files': ['<(PRODUCT_DIR)/libnpapi_test_plugin.so'],
+                },
+              ],
+            }],
+          ],
         },
       ],
     }],

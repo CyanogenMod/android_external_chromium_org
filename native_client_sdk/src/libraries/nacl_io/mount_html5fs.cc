@@ -1,7 +1,6 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #include "nacl_io/mount_html5fs.h"
 
@@ -14,6 +13,8 @@
 #include <algorithm>
 #include "nacl_io/mount_node_html5fs.h"
 #include "sdk_util/auto_lock.h"
+
+namespace nacl_io {
 
 namespace {
 
@@ -184,4 +185,6 @@ void MountHtml5Fs::FilesystemOpenCallback(int32_t result) {
   filesystem_open_error_ = PPErrorToErrno(result);
   pthread_cond_signal(&filesystem_open_cond_);
 }
+
+}  // namespace nacl_io
 

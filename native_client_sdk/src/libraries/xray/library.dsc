@@ -1,5 +1,5 @@
 {
-  'TOOLS': ['newlib', 'glibc'],
+  'TOOLS': ['newlib', 'glibc', 'pnacl'],
   'SEARCH': [
     '.'
   ],
@@ -12,11 +12,12 @@
         'hashtable.c',
         'parsesymbols.c',
         'report.c',
+        'browser.c',
         'stringpool.c',
         'symtable.c',
         'xray.c'
       ],
-      'CCFLAGS': [
+      'CFLAGS': [
         '-DXRAY -DXRAY_ANNOTATE -O2'
       ]
     }

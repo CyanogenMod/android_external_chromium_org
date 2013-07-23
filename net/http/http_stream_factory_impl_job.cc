@@ -4,6 +4,7 @@
 
 #include "net/http/http_stream_factory_impl_job.h"
 
+#include <algorithm>
 #include <string>
 
 #include "base/bind.h"
@@ -141,7 +142,7 @@ int HttpStreamFactoryImpl::Job::Preconnect(int num_streams) {
   HostPortPair origin_server =
       HostPortPair(request_info_.url.HostNoBrackets(),
                    request_info_.url.EffectiveIntPort());
-  HttpServerProperties* http_server_properties =
+  base::WeakPtr<HttpServerProperties> http_server_properties =
       session_->http_server_properties();
   if (http_server_properties &&
       http_server_properties->SupportsSpdy(origin_server)) {
@@ -330,9 +331,10 @@ void HttpStreamFactoryImpl::Job::OnNewSpdySessionReadyCallback() {
   DCHECK(!stream_.get());
   DCHECK(!IsPreconnecting());
   DCHECK(using_spdy());
-  DCHECK(new_spdy_session_.get());
-  scoped_refptr<SpdySession> spdy_session = new_spdy_session_;
-  new_spdy_session_ = NULL;
+  if (!new_spdy_session_)
+    return;
+  base::WeakPtr<SpdySession> spdy_session = new_spdy_session_;
+  new_spdy_session_.reset();
   if (IsOrphaned()) {
     stream_factory_->OnNewSpdySessionReady(
         spdy_session, spdy_session_direct_, server_ssl_config_, proxy_info_,
@@ -762,7 +764,7 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
   // Check first if we have a spdy session for this group.  If so, then go
   // straight to using that.
   SpdySessionKey spdy_session_key = GetSpdySessionKey();
-  scoped_refptr<SpdySession> spdy_session =
+  base::WeakPtr<SpdySession> spdy_session =
       session_->spdy_session_pool()->FindAvailableSession(
           spdy_session_key, net_log_);
   if (spdy_session && CanUseExistingSpdySession()) {
@@ -1097,13 +1099,13 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
     direct = false;
   }
 
-  scoped_refptr<SpdySession> spdy_session;
+  base::WeakPtr<SpdySession> spdy_session;
   if (existing_spdy_session_.get()) {
     // We picked up an existing session, so we don't need our socket.
     if (connection_->socket())
       connection_->socket()->Disconnect();
     connection_->Reset();
-    spdy_session.swap(existing_spdy_session_);
+    std::swap(spdy_session, existing_spdy_session_);
   } else {
     SpdySessionPool* spdy_pool = session_->spdy_session_pool();
     spdy_session = spdy_pool->FindAvailableSession(spdy_session_key, net_log_);
@@ -1118,7 +1120,7 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
       if (error != OK)
         return error;
       const HostPortPair& host_port_pair = spdy_session_key.host_port_pair();
-      HttpServerProperties* http_server_properties =
+      base::WeakPtr<HttpServerProperties> http_server_properties =
           session_->http_server_properties();
       if (http_server_properties)
         http_server_properties->SetSupportsSpdy(host_port_pair, true);
@@ -1127,7 +1129,7 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
     }
   }
 
-  if (spdy_session->IsClosed())
+  if (!spdy_session)
     return ERR_CONNECTION_CLOSED;
 
   // TODO(willchan): Delete this code, because eventually, the
@@ -1140,10 +1142,10 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
     bool use_relative_url = direct || request_info_.url.SchemeIs("wss");
     websocket_stream_.reset(
         request_->websocket_stream_factory()->CreateSpdyStream(
-            spdy_session.get(), use_relative_url));
+            spdy_session, use_relative_url));
   } else {
     bool use_relative_url = direct || request_info_.url.SchemeIs("https");
-    stream_.reset(new SpdyHttpStream(spdy_session.get(), use_relative_url));
+    stream_.reset(new SpdyHttpStream(spdy_session, use_relative_url));
   }
   return OK;
 }

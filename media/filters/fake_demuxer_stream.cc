@@ -8,7 +8,7 @@
 #include "base/callback_helpers.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "media/base/bind_to_loop.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/test_helpers.h"
@@ -142,6 +142,8 @@ void FakeDemuxerStream::DoRead() {
       video_decoder_config_, current_timestamp_, duration_);
 
   // TODO(xhwang): Output out-of-order buffers if needed.
+  buffer->set_timestamp(current_timestamp_);
+  buffer->set_duration(duration_);
   current_timestamp_ += duration_;
 
   num_buffers_left_in_current_config_--;

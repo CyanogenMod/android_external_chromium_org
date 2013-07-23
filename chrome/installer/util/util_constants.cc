@@ -94,7 +94,10 @@ const char kForceConfigureUserSettings[] = "force-configure-user-settings";
 // confirmation from user.
 const char kForceUninstall[] = "force-uninstall";
 
-// Specify the file path of Chrome archive for install.
+// Specify the path to the compressed Chrome archive for install. If not
+// specified, chrome.packed.7z or chrome.7z in the same directory as setup.exe
+// is used (the packed file is preferred; see kUncompressedArchive to force use
+// of an uncompressed archive).
 const char kInstallArchive[] = "install-archive";
 
 // Specify the file path of Chrome master preference file.
@@ -174,6 +177,10 @@ const char kUninstall[] = "uninstall";
 // path given by --new-setup-exe.
 const char kUpdateSetupExe[] = "update-setup-exe";
 
+// Use the given uncompressed chrome.7z archive as the source of files to
+// install.
+const char kUncompressedArchive[] = "uncompressed-archive";
+
 // Enable verbose logging (info level).
 const char kVerboseLogging[] = "verbose-logging";
 
@@ -219,6 +226,7 @@ const char kOutputFile[] = "output-file";
 const wchar_t kActiveSetupExe[] = L"chrmstp.exe";
 const wchar_t kChromeAppHostExe[] = L"app_host.exe";
 const wchar_t kChromeDll[] = L"chrome.dll";
+const wchar_t kChromeChildDll[] = L"chrome_child.dll";
 const wchar_t kChromeExe[] = L"chrome.exe";
 const wchar_t kChromeFrameDll[] = L"npchrome_frame.dll";
 const wchar_t kChromeFrameHelperExe[] = L"chrome_frame_helper.exe";

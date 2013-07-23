@@ -21,6 +21,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_widevine_cdm_widevine_cdm_version_h_gyp)/widevine_cdm_version_h.stamp \
 	$(call intermediates-dir-for,GYP,v8_tools_gyp_v8_gyp)/v8.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_glue_gyp)/webkit_support_glue_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_glue_child_gyp)/webkit_support_glue_child_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libphonenumber_libphonenumber_without_metadata_gyp)/third_party_libphonenumber_libphonenumber_without_metadata_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
@@ -181,6 +182,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/web_ui_extension.cc \
 	content/renderer/web_ui_extension_data.cc \
 	content/renderer/webplugin_delegate_proxy.cc \
+	content/renderer/webplugin_impl.cc \
 	content/renderer/websharedworker_proxy.cc \
 	content/renderer/websharedworkerrepository_impl.cc
 
@@ -513,6 +515,7 @@ LOCAL_STATIC_LIBRARIES := \
 	cpufeatures \
 	skia_skia_gyp \
 	webkit_support_glue_gyp \
+	webkit_support_glue_child_gyp \
 	third_party_libphonenumber_libphonenumber_without_metadata_gyp
 
 # Enable grouping to fix circular references

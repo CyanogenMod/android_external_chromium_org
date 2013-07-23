@@ -1,7 +1,7 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 #include <errno.h>
 #include "nacl_io/kernel_intercept.h"
 #include "nacl_io/kernel_proxy.h"
@@ -10,6 +10,7 @@
 #include "nacl_io/pepper_interface.h"
 #include "nacl_io/real_pepper_interface.h"
 
+using namespace nacl_io;
 
 static KernelProxy* s_kp;
 

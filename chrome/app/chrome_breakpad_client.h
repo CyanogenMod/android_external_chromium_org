@@ -20,6 +20,19 @@ class ChromeBreakpadClient : public breakpad::BreakpadClient {
 #if defined(OS_WIN)
   virtual bool GetAlternativeCrashDumpLocation(base::FilePath* crash_dir)
       OVERRIDE;
+  virtual void GetProductNameAndVersion(const base::FilePath& exe_path,
+                                        base::string16* product_name,
+                                        base::string16* version,
+                                        base::string16* special_build) OVERRIDE;
+  virtual bool ShouldShowRestartDialog(base::string16* title,
+                                       base::string16* message,
+                                       bool* is_rtl_locale) OVERRIDE;
+  virtual bool AboutToRestart() OVERRIDE;
+#endif
+
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_IOS)
+  virtual void GetProductNameAndVersion(std::string* product_name,
+                                        std::string* version) OVERRIDE;
 #endif
 
   virtual bool GetCrashDumpLocation(base::FilePath* crash_dir) OVERRIDE;
@@ -27,6 +40,10 @@ class ChromeBreakpadClient : public breakpad::BreakpadClient {
 #if defined(OS_POSIX)
   virtual void SetDumpWithoutCrashingFunction(void (*function)()) OVERRIDE;
 #endif
+
+  virtual size_t RegisterCrashKeys() OVERRIDE;
+
+  virtual bool IsRunningUnattended() OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ChromeBreakpadClient);

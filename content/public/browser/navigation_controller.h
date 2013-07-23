@@ -30,6 +30,11 @@ class NavigationEntry;
 class SessionStorageNamespace;
 class WebContents;
 
+// Used to store the mapping of a StoragePartition id to
+// SessionStorageNamespace.
+typedef std::map<std::string, scoped_refptr<SessionStorageNamespace> >
+    SessionStorageNamespaceMap;
+
 // A NavigationController maintains the back-forward list for a WebContents and
 // manages all navigation within that list.
 //
@@ -146,9 +151,9 @@ class NavigationController {
     // True if this URL should be able to access local resources.
     bool can_load_local_resources;
 
-    // Indicates whether this navigation involves a cross-process redirect,
-    // in which case it should replace the current navigation entry.
-    bool is_cross_site_redirect;
+    // Indicates whether this navigation should replace the current
+    // navigation entry.
+    bool should_replace_current_entry;
 
     // Used to specify which frame to navigate. If empty, the main frame is
     // navigated. This is currently only used in tests.
@@ -340,7 +345,14 @@ class NavigationController {
   // Session storage depends on dom_storage that depends on WebKit::WebString,
   // which cannot be used on iOS.
 #if !defined(OS_IOS)
-  virtual SessionStorageNamespace* GetSessionStorageNamespace() = 0;
+  // Returns all the SessionStorageNamespace objects that this
+  // NavigationController knows about.
+  virtual const SessionStorageNamespaceMap&
+      GetSessionStorageNamespaceMap() const = 0;
+
+  // TODO(ajwong): Remove this once prerendering, instant, and session restore
+  // are migrated.
+  virtual SessionStorageNamespace* GetDefaultSessionStorageNamespace() = 0;
 #endif
 
   // Sets the max restored page ID this NavigationController has seen, if it

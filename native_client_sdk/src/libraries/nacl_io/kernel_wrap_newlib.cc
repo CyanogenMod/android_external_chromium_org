@@ -1,7 +1,6 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #include <sys/types.h>  // Include something that will define __GLIBC__.
 
@@ -15,6 +14,7 @@
 #include <irt.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include "nacl_io/kernel_intercept.h"
 
 EXTERN_C_BEGIN
@@ -262,6 +262,11 @@ int _real_write(int fd, const void *buf, size_t count, size_t *nwrote) {
   return REAL(write)(fd, buf, count, nwrote);
 }
 
+uint64_t usec_since_epoch() {
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return tv.tv_usec + (tv.tv_sec * 1000000);
+}
 
 void kernel_wrap_init() {
   static bool wrapped = false;

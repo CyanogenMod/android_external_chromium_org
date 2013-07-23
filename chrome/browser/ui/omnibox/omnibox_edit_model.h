@@ -299,8 +299,6 @@ class OmniboxEditModel {
   // Access the current view text.
   string16 GetViewText() const;
 
-  string16 user_text() const { return user_text_; }
-
   // TODO(beaudoin): We need this to allow OmniboxController access the
   // InstantController via OmniboxEditController, because the only valid pointer
   // to InstantController is kept in Browser. We should try to get rid of this,
@@ -389,8 +387,7 @@ class OmniboxEditModel {
   // page or a normal web page.  Used for logging omnibox events for
   // UMA opted-in users.  Examines the user's profile to determine if the
   // current page is the user's home page.
-  metrics::OmniboxEventProto::PageClassification ClassifyPage(
-      const GURL& gurl) const;
+  metrics::OmniboxEventProto::PageClassification ClassifyPage() const;
 
   // Sets |match| and |alternate_nav_url| based on classifying |text|.
   // |alternate_nav_url| may be NULL.

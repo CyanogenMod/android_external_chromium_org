@@ -95,6 +95,7 @@
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/process_type.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/common/webplugininfo.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/download_test_observer.h"
 #include "content/public/test/mock_notification_observer.h"
@@ -116,9 +117,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "url/gurl.h"
-#include "webkit/plugins/npapi/plugin_utils.h"
 #include "webkit/plugins/plugin_constants.h"
-#include "webkit/plugins/webplugininfo.h"
 
 #if defined(OS_CHROMEOS)
 #include "ash/accelerators/accelerator_controller.h"
@@ -130,6 +129,10 @@
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/chromeos/audio/audio_handler.h"
 #include "chromeos/audio/audio_pref_handler.h"
+#endif
+
+#if defined(OS_WIN) && defined(USE_ASH)
+#include "base/win/windows_version.h"
 #endif
 
 using content::BrowserThread;
@@ -335,8 +338,8 @@ bool IsJavascriptEnabled(content::WebContents* contents) {
   return result == 123;
 }
 
-void CopyPluginListAndQuit(std::vector<webkit::WebPluginInfo>* out,
-                           const std::vector<webkit::WebPluginInfo>& in) {
+void CopyPluginListAndQuit(std::vector<content::WebPluginInfo>* out,
+                           const std::vector<content::WebPluginInfo>& in) {
   *out = in;
   base::MessageLoop::current()->QuitWhenIdle();
 }
@@ -347,15 +350,15 @@ void CopyValueAndQuit(T* out, T in) {
   base::MessageLoop::current()->QuitWhenIdle();
 }
 
-void GetPluginList(std::vector<webkit::WebPluginInfo>* plugins) {
+void GetPluginList(std::vector<content::WebPluginInfo>* plugins) {
   content::PluginService* service = content::PluginService::GetInstance();
   service->GetPlugins(base::Bind(CopyPluginListAndQuit, plugins));
   content::RunMessageLoop();
 }
 
-const webkit::WebPluginInfo* GetFlashPlugin(
-    const std::vector<webkit::WebPluginInfo>& plugins) {
-  const webkit::WebPluginInfo* flash = NULL;
+const content::WebPluginInfo* GetFlashPlugin(
+    const std::vector<content::WebPluginInfo>& plugins) {
+  const content::WebPluginInfo* flash = NULL;
   for (size_t i = 0; i < plugins.size(); ++i) {
     if (plugins[i].name == ASCIIToUTF16(kFlashPluginName)) {
       flash = &plugins[i];
@@ -373,7 +376,7 @@ const webkit::WebPluginInfo* GetFlashPlugin(
 }
 
 bool SetPluginEnabled(PluginPrefs* plugin_prefs,
-                      const webkit::WebPluginInfo* plugin,
+                      const content::WebPluginInfo* plugin,
                       bool enabled) {
   bool ok = false;
   plugin_prefs->EnablePlugin(enabled, plugin->path,
@@ -657,6 +660,12 @@ IN_PROC_BROWSER_TEST_F(LocalePolicyTest, ApplicationLocaleValue) {
 #endif
 
 IN_PROC_BROWSER_TEST_F(PolicyTest, BookmarkBarEnabled) {
+#if defined(OS_WIN) && defined(USE_ASH)
+  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
+  if (base::win::GetVersion() >= base::win::VERSION_WIN8)
+    return;
+#endif
+
   // Verifies that the bookmarks bar can be forced to always or never show up.
 
   // Test starts in about:blank.
@@ -927,7 +936,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
   ui_test_utils::SendToOmniboxAndSubmit(location_bar,
       "https://www.google.com/?espv=1#q=foobar");
   EXPECT_TRUE(
-      browser()->toolbar_model()->WouldReplaceSearchURLWithSearchTerms());
+      browser()->toolbar_model()->WouldReplaceSearchURLWithSearchTerms(false));
   EXPECT_EQ(ASCIIToUTF16("foobar"),
             location_bar->GetLocationEntry()->GetText());
 
@@ -937,7 +946,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
   ui_test_utils::SendToOmniboxAndSubmit(location_bar,
       "https://www.google.com/?q=foobar");
   EXPECT_FALSE(
-      browser()->toolbar_model()->WouldReplaceSearchURLWithSearchTerms());
+      browser()->toolbar_model()->WouldReplaceSearchURLWithSearchTerms(false));
   EXPECT_EQ(ASCIIToUTF16("https://www.google.com/?q=foobar"),
             location_bar->GetLocationEntry()->GetText());
 
@@ -947,7 +956,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
   ui_test_utils::SendToOmniboxAndSubmit(location_bar,
       "https://www.google.com/search?espv=1#q=banana");
   EXPECT_TRUE(
-      browser()->toolbar_model()->WouldReplaceSearchURLWithSearchTerms());
+      browser()->toolbar_model()->WouldReplaceSearchURLWithSearchTerms(false));
   EXPECT_EQ(ASCIIToUTF16("banana"),
             location_bar->GetLocationEntry()->GetText());
 
@@ -957,7 +966,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
   ui_test_utils::SendToOmniboxAndSubmit(location_bar,
       "https://www.google.com/search?q=tractor+parts&espv=1");
   EXPECT_TRUE(
-      browser()->toolbar_model()->WouldReplaceSearchURLWithSearchTerms());
+      browser()->toolbar_model()->WouldReplaceSearchURLWithSearchTerms(false));
   EXPECT_EQ(ASCIIToUTF16("tractor parts"),
             location_bar->GetLocationEntry()->GetText());
 
@@ -966,7 +975,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
   ui_test_utils::SendToOmniboxAndSubmit(location_bar,
       "https://www.google.com/search?q=tractor+parts&espv=1#q=foobar");
   EXPECT_TRUE(
-      browser()->toolbar_model()->WouldReplaceSearchURLWithSearchTerms());
+      browser()->toolbar_model()->WouldReplaceSearchURLWithSearchTerms(false));
   EXPECT_EQ(ASCIIToUTF16("foobar"),
             location_bar->GetLocationEntry()->GetText());
 }
@@ -1021,9 +1030,9 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DisabledPlugins) {
 
   // Verify that the Flash plugin exists and that it can be enabled and disabled
   // by the user.
-  std::vector<webkit::WebPluginInfo> plugins;
+  std::vector<content::WebPluginInfo> plugins;
   GetPluginList(&plugins);
-  const webkit::WebPluginInfo* flash = GetFlashPlugin(plugins);
+  const content::WebPluginInfo* flash = GetFlashPlugin(plugins);
   if (!flash)
     return;
   PluginPrefs* plugin_prefs =
@@ -1052,9 +1061,9 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DisabledPluginsExceptions) {
 
   // Verify that the Flash plugin exists and that it can be enabled and disabled
   // by the user.
-  std::vector<webkit::WebPluginInfo> plugins;
+  std::vector<content::WebPluginInfo> plugins;
   GetPluginList(&plugins);
-  const webkit::WebPluginInfo* flash = GetFlashPlugin(plugins);
+  const content::WebPluginInfo* flash = GetFlashPlugin(plugins);
   if (!flash)
     return;
   PluginPrefs* plugin_prefs =
@@ -1091,9 +1100,9 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DisabledPluginsExceptions) {
 
 IN_PROC_BROWSER_TEST_F(PolicyTest, EnabledPlugins) {
   // Verifies that a plugin can be force-installed with a policy.
-  std::vector<webkit::WebPluginInfo> plugins;
+  std::vector<content::WebPluginInfo> plugins;
   GetPluginList(&plugins);
-  const webkit::WebPluginInfo* flash = GetFlashPlugin(plugins);
+  const content::WebPluginInfo* flash = GetFlashPlugin(plugins);
   if (!flash)
     return;
   PluginPrefs* plugin_prefs =
@@ -1190,6 +1199,12 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DeveloperToolsDisabled) {
 }
 
 IN_PROC_BROWSER_TEST_F(PolicyTest, WebStoreIconHidden) {
+#if defined(OS_WIN) && defined(USE_ASH)
+  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
+  if (base::win::GetVersion() >= base::win::VERSION_WIN8)
+    return;
+#endif
+
   // Verifies that the web store icons can be hidden from the new tab page.
 
   // Open new tab page and look for the web store icons.
@@ -1473,6 +1488,12 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallSources) {
 }
 
 IN_PROC_BROWSER_TEST_F(PolicyTest, HomepageLocation) {
+#if defined(OS_WIN) && defined(USE_ASH)
+  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
+  if (base::win::GetVersion() >= base::win::VERSION_WIN8)
+    return;
+#endif
+
   // Verifies that the homepage can be configured with policies.
   // Set a default, and check that the home button navigates there.
   browser()->profile()->GetPrefs()->SetString(
@@ -1636,16 +1657,16 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DISABLED_TranslateEnabled) {
 
   // Verify that the translate infobar showed up.
   ASSERT_EQ(1u, infobar_service->infobar_count());
-  InfoBarDelegate* infobar_delegate = infobar_service->infobar_at(0);
-  TranslateInfoBarDelegate* delegate =
-      infobar_delegate->AsTranslateInfoBarDelegate();
-  ASSERT_TRUE(delegate);
+  InfoBarDelegate* infobar = infobar_service->infobar_at(0);
+  TranslateInfoBarDelegate* translate_infobar_delegate =
+      infobar->AsTranslateInfoBarDelegate();
+  ASSERT_TRUE(translate_infobar_delegate);
   EXPECT_EQ(TranslateInfoBarDelegate::BEFORE_TRANSLATE,
-            delegate->infobar_type());
-  EXPECT_EQ("fr", delegate->original_language_code());
+            translate_infobar_delegate->infobar_type());
+  EXPECT_EQ("fr", translate_infobar_delegate->original_language_code());
 
   // Now force disable translate.
-  infobar_service->RemoveInfoBar(infobar_delegate);
+  infobar_service->RemoveInfoBar(infobar);
   EXPECT_EQ(0u, infobar_service->infobar_count());
   policies.Set(key::kTranslateEnabled, POLICY_LEVEL_MANDATORY,
                POLICY_SCOPE_USER, base::Value::CreateBooleanValue(false), NULL);

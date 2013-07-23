@@ -6,7 +6,7 @@
 
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread_bundle.h"
@@ -16,7 +16,7 @@
 using content::BrowserThread;
 using base::FilePath;
 
-namespace pnacl_cache {
+namespace pnacl {
 
 class PnaclTranslationCacheTest : public testing::Test {
  protected:
@@ -155,4 +155,4 @@ TEST_F(PnaclTranslationCacheTest, GetMiss) {
   EXPECT_EQ(net::ERR_FAILED, load_cb.GetResult(net::ERR_IO_PENDING));
 }
 
-}  // namespace pnacl_cache
+}  // namespace pnacl

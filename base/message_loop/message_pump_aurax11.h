@@ -17,8 +17,8 @@
 
 // It would be nice to include the X11 headers here so that we use Window
 // instead of its typedef of unsigned long, but we can't because everything in
-// chrome includes us through base/message_loop.h, and X11's crappy #define
-// heavy headers muck up half of chrome.
+// chrome includes us through base/message_loop/message_loop.h, and X11's crappy
+// #define heavy headers muck up half of chrome.
 
 typedef struct _GPollFD GPollFD;
 typedef struct _GSource GSource;
@@ -35,6 +35,7 @@ class BASE_EXPORT MessagePumpAuraX11 : public MessagePumpGlib,
                                        public MessagePumpDispatcher {
  public:
   MessagePumpAuraX11();
+  virtual ~MessagePumpAuraX11();
 
   // Returns default X Display.
   static Display* GetDefaultXDisplay();
@@ -71,9 +72,6 @@ class BASE_EXPORT MessagePumpAuraX11 : public MessagePumpGlib,
   // asynchronous (and we receive an XEvent when mapped), while there are also
   // functions which require a mapped window.
   void BlockUntilWindowMapped(unsigned long xid);
-
- protected:
-  virtual ~MessagePumpAuraX11();
 
  private:
   typedef std::map<unsigned long, MessagePumpDispatcher*> DispatchersMap;

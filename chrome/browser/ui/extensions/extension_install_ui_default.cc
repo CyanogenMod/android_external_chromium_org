@@ -82,7 +82,7 @@ void ShowExtensionInstalledBubble(const extensions::Extension* extension,
 // Helper class to put up an infobar when installation fails.
 class ErrorInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  // Creates an error delegate and adds it to |infobar_service|.
+  // Creates an error infobar delegate and adds it to |infobar_service|.
   static void Create(InfoBarService* infobar_service,
                      const extensions::CrxInstallerError& error);
 
@@ -155,7 +155,7 @@ ExtensionInstallUI* ExtensionInstallUI::Create(Profile* profile) {
 void ExtensionInstallUI::OpenAppInstalledUI(Profile* profile,
                                             const std::string& app_id) {
 #if defined(OS_CHROMEOS)
-  AppListService::Get()->ShowAppList(profile);
+  AppListService::Get()->ShowForProfile(profile);
 
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_APP_INSTALLED_TO_APPLIST,
@@ -255,7 +255,7 @@ void ExtensionInstallUIDefault::OnInstallSuccess(const Extension* extension,
 #endif
 
     if (apps::IsAppLauncherEnabled()) {
-      AppListService::Get()->ShowAppList(current_profile);
+      AppListService::Get()->ShowForProfile(current_profile);
 
       content::NotificationService::current()->Notify(
           chrome::NOTIFICATION_APP_INSTALLED_TO_APPLIST,
@@ -284,7 +284,7 @@ void ExtensionInstallUIDefault::OnInstallFailure(
 
   Browser* browser = chrome::FindLastActiveWithProfile(profile_,
       chrome::GetActiveDesktop());
-  if (!browser)  // unit tests
+  if (!browser)  // Can be NULL in unittests.
     return;
   WebContents* web_contents =
       browser->tab_strip_model()->GetActiveWebContents();

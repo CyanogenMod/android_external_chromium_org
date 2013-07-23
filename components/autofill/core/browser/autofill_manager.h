@@ -151,7 +151,7 @@ class AutofillManager : public AutofillDownloadManager::Observer {
                                 const gfx::RectF& bounding_box,
                                 bool display_warning);
   void OnDidEndTextFieldEditing();
-  void OnHideAutofillUi();
+  void OnHideAutofillUI();
   void OnAddPasswordFormMapping(
       const FormFieldData& form,
       const PasswordFormFillData& fill_data);
@@ -161,17 +161,14 @@ class AutofillManager : public AutofillDownloadManager::Observer {
       const std::vector<base::string16>& suggestions,
       const std::vector<base::string16>& realms);
   void OnSetDataList(const std::vector<base::string16>& values,
-                     const std::vector<base::string16>& labels,
-                     const std::vector<base::string16>& icons,
-                     const std::vector<int>& unique_ids);
+                     const std::vector<base::string16>& labels);
 
   // Requests an interactive autocomplete UI be shown.
   void OnRequestAutocomplete(const FormData& form,
                              const GURL& frame_url);
 
-  // Called to signal clicking an element failed in some way during an
-  // Autocheckout flow.
-  void OnClickFailed(autofill::AutocheckoutStatus status);
+  // Called to signal a page is completed in renderer in the Autocheckout flow.
+  void OnAutocheckoutPageCompleted(autofill::AutocheckoutStatus status);
 
   // Shows the Autocheckout bubble if conditions are right. See comments for
   // AutocheckoutManager::MaybeShowAutocheckoutBubble. Input element requesting
@@ -182,6 +179,10 @@ class AutofillManager : public AutofillDownloadManager::Observer {
 
   // Resets cache.
   virtual void Reset();
+
+  autofill::AutocheckoutManager* autocheckout_manager() {
+    return &autocheckout_manager_;
+  }
 
  protected:
   // Test code should prefer to use this constructor.
@@ -224,11 +225,6 @@ class AutofillManager : public AutofillDownloadManager::Observer {
   // Exposed for testing.
   AutofillExternalDelegate* external_delegate() {
     return external_delegate_;
-  }
-
-  // Exposed for testing.
-  autofill::AutocheckoutManager* autocheckout_manager() {
-    return &autocheckout_manager_;
   }
 
   // Tell the renderer the current interactive autocomplete finished.

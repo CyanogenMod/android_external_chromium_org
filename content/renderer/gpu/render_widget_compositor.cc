@@ -79,9 +79,10 @@ bool GetSwitchValueAsFloat(
 
 // static
 scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
-      RenderWidget* widget) {
+    RenderWidget* widget,
+    bool threaded) {
   scoped_ptr<RenderWidgetCompositor> compositor(
-      new RenderWidgetCompositor(widget));
+      new RenderWidgetCompositor(widget, threaded));
 
   CommandLine* cmd = CommandLine::ForCurrentProcess();
 
@@ -184,6 +185,8 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       cmd->HasSwitch(cc::switches::kTraceOverdraw);
   settings.use_pinch_virtual_viewport =
       cmd->HasSwitch(cc::switches::kEnablePinchVirtualViewport);
+  settings.allow_antialiasing &=
+      !cmd->HasSwitch(cc::switches::kDisableCompositedAntialiasing);
 
   // These flags should be mirrored by UI versions in ui/compositor/.
   settings.initial_debug_state.show_debug_borders =
@@ -284,9 +287,11 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   return compositor.Pass();
 }
 
-RenderWidgetCompositor::RenderWidgetCompositor(RenderWidget* widget)
-  : suppress_schedule_composite_(false),
-    widget_(widget) {
+RenderWidgetCompositor::RenderWidgetCompositor(RenderWidget* widget,
+                                               bool threaded)
+    : threaded_(threaded),
+      suppress_schedule_composite_(false),
+      widget_(widget) {
 }
 
 RenderWidgetCompositor::~RenderWidgetCompositor() {}

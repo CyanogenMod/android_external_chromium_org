@@ -29,7 +29,6 @@
 #endif
 
 namespace ash {
-namespace test {
 namespace {
 
 const char kDesktopBackgroundView[] = "DesktopBackgroundView";
@@ -204,7 +203,9 @@ void GetPrimaryAndSeconary(aura::RootWindow** primary,
 std::string GetXWindowName(aura::RootWindow* window) {
   char* name = NULL;
   XFetchName(ui::GetXDisplay(), window->GetAcceleratedWidget(), &name);
-  return std::string(name);
+  std::string ret(name);
+  XFree(name);
+  return ret;
 }
 #endif
 
@@ -226,10 +227,9 @@ TEST_F(DisplayControllerTest, SecondaryDisplayLayout) {
   TestObserver observer;
   UpdateDisplay("500x500,400x400");
   EXPECT_EQ(1, observer.CountAndReset());  // resize and add
-  gfx::Display* secondary_display =
-      Shell::GetInstance()->display_manager()->GetDisplayAt(1);
   gfx::Insets insets(5, 5, 5, 5);
-  secondary_display->UpdateWorkAreaFromInsets(insets);
+  Shell::GetInstance()->display_manager()->UpdateWorkAreaOfDisplay(
+      ScreenAsh::GetSecondaryDisplay().id(), insets);
 
   // Default layout is RIGHT.
   EXPECT_EQ("0,0 500x500", GetPrimaryDisplay().bounds().ToString());
@@ -303,9 +303,9 @@ TEST_F(DisplayControllerTest, BoundsUpdated) {
 
   internal::DisplayManager* display_manager =
       Shell::GetInstance()->display_manager();
-  gfx::Display* secondary_display = display_manager->GetDisplayAt(1);
   gfx::Insets insets(5, 5, 5, 5);
-  secondary_display->UpdateWorkAreaFromInsets(insets);
+  display_manager->UpdateWorkAreaOfDisplay(
+      ScreenAsh::GetSecondaryDisplay().id(), insets);
 
   EXPECT_EQ("0,0 200x200", GetPrimaryDisplay().bounds().ToString());
   EXPECT_EQ("0,200 300x300", GetSecondaryDisplay().bounds().ToString());
@@ -996,5 +996,4 @@ TEST_F(DisplayControllerTest, XWidowNameForRootWindow) {
 }
 #endif
 
-}  // namespace test
 }  // namespace ash

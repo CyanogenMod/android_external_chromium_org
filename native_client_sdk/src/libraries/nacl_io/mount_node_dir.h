@@ -1,7 +1,7 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 #ifndef LIBRARIES_NACL_IO_MOUNT_NODE_DIR_H_
 #define LIBRARIES_NACL_IO_MOUNT_NODE_DIR_H_
 
@@ -10,7 +10,7 @@
 
 #include "nacl_io/mount_node.h"
 
-struct dirent;
+namespace nacl_io {
 
 class MountDev;
 class MountHtml5Fs;
@@ -18,7 +18,7 @@ class MountHttp;
 class MountMem;
 class MountNodeDir;
 
-typedef ScopedRef<MountNodeDir> ScopedMountNodeDir;
+typedef sdk_util::ScopedRef<MountNodeDir> ScopedMountNodeDir;
 
 class MountNodeDir : public MountNode {
  protected:
@@ -34,7 +34,8 @@ class MountNodeDir : public MountNode {
                          size_t count,
                          int* out_bytes);
   virtual Error Read(size_t offs, void *buf, size_t count, int* out_bytes);
-  virtual Error Write(size_t offs, void *buf, size_t count, int* out_bytes);
+  virtual Error Write(size_t offs, const void *buf,
+                      size_t count, int* out_bytes);
 
   // Adds a finds or adds a directory entry as an INO, updating the refcount
   virtual Error AddChild(const std::string& name, const ScopedMountNode& node);
@@ -56,5 +57,7 @@ private:
   friend class MountHttp;
   friend class MountHtml5Fs;
 };
+
+}  // namespace nacl_io
 
 #endif  // LIBRARIES_NACL_IO_MOUNT_NODE_DIR_H_

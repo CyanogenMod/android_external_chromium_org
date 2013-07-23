@@ -33,19 +33,6 @@ static const size_t kMaxDecompressedSize = 1024;
 class MockVisitor : public SpdyFramerVisitorInterface {
  public:
   MOCK_METHOD1(OnError, void(SpdyFramer* framer));
-  MOCK_METHOD6(OnSynStream, void(SpdyStreamId stream_id,
-                                 SpdyStreamId associated_stream_id,
-                                 SpdyPriority priority,
-                                 uint8 slot,
-                                 bool fin,
-                                 bool unidirectional));
-  MOCK_METHOD2(OnSynReply, void(SpdyStreamId stream_id, bool fin));
-  MOCK_METHOD2(OnHeaders, void(SpdyStreamId stream_id, bool fin));
-  MOCK_METHOD3(OnControlFrameHeaderData, bool(SpdyStreamId stream_id,
-                                              const char* header_data,
-                                              size_t len));
-  MOCK_METHOD2(OnCredentialFrameData, bool(const char* credential_data,
-                                           size_t len));
   MOCK_METHOD3(OnDataFrameHeader, void(SpdyStreamId stream_id,
                                        size_t length,
                                        bool fin));
@@ -53,15 +40,28 @@ class MockVisitor : public SpdyFramerVisitorInterface {
                                        const char* data,
                                        size_t len,
                                        bool fin));
+  MOCK_METHOD3(OnControlFrameHeaderData, bool(SpdyStreamId stream_id,
+                                              const char* header_data,
+                                              size_t len));
+  MOCK_METHOD6(OnSynStream, void(SpdyStreamId stream_id,
+                                 SpdyStreamId associated_stream_id,
+                                 SpdyPriority priority,
+                                 uint8 slot,
+                                 bool fin,
+                                 bool unidirectional));
+  MOCK_METHOD2(OnSynReply, void(SpdyStreamId stream_id, bool fin));
+  MOCK_METHOD2(OnRstStream, void(SpdyStreamId stream_id,
+                                 SpdyRstStreamStatus status));
   MOCK_METHOD1(OnSettings, void(bool clear_persisted));
   MOCK_METHOD3(OnSetting, void(SpdySettingsIds id, uint8 flags, uint32 value));
   MOCK_METHOD1(OnPing, void(uint32 unique_id));
-  MOCK_METHOD2(OnRstStream, void(SpdyStreamId stream_id,
-                                 SpdyRstStreamStatus status));
   MOCK_METHOD2(OnGoAway, void(SpdyStreamId last_accepted_stream_id,
                               SpdyGoAwayStatus status));
+  MOCK_METHOD2(OnHeaders, void(SpdyStreamId stream_id, bool fin));
   MOCK_METHOD2(OnWindowUpdate, void(SpdyStreamId stream_id,
                                     uint32 delta_window_size));
+  MOCK_METHOD2(OnCredentialFrameData, bool(const char* credential_data,
+                                           size_t len));
   MOCK_METHOD1(OnBlocked, void(SpdyStreamId stream_id));
   MOCK_METHOD2(OnPushPromise, void(SpdyStreamId stream_id,
                                    SpdyStreamId promised_stream_id));
@@ -122,6 +122,35 @@ class SpdyFramerTestUtil {
       buffer_.reset(new char[kMaxDecompressedSize]);
     }
 
+    virtual void OnError(SpdyFramer* framer) OVERRIDE { LOG(FATAL); }
+    virtual void OnDataFrameHeader(SpdyStreamId stream_id,
+                                   size_t length,
+                                   bool fin) OVERRIDE {
+      LOG(FATAL) << "Unexpected data frame header";
+    }
+    virtual void OnStreamFrameData(SpdyStreamId stream_id,
+                                   const char* data,
+                                   size_t len,
+                                   bool fin) OVERRIDE {
+      LOG(FATAL);
+    }
+
+    virtual bool OnControlFrameHeaderData(SpdyStreamId stream_id,
+                                          const char* header_data,
+                                          size_t len) OVERRIDE {
+      CHECK(buffer_.get() != NULL);
+      CHECK_GE(kMaxDecompressedSize, size_ + len);
+      CHECK(!finished_);
+      if (len != 0) {
+        memcpy(buffer_.get() + size_, header_data, len);
+        size_ += len;
+      } else {
+        // Done.
+        finished_ = true;
+      }
+      return true;
+    }
+
     virtual void OnSynStream(SpdyStreamId stream_id,
                              SpdyStreamId associated_stream_id,
                              SpdyPriority priority,
@@ -169,6 +198,23 @@ class SpdyFramerTestUtil {
       size_ += framer.GetSynStreamMinimumSize();
     }
 
+    virtual void OnRstStream(SpdyStreamId stream_id,
+                             SpdyRstStreamStatus status) OVERRIDE {
+      LOG(FATAL);
+    }
+    virtual void OnSetting(SpdySettingsIds id,
+                           uint8 flags,
+                           uint32 value) OVERRIDE {
+      LOG(FATAL);
+    }
+    virtual void OnPing(uint32 unique_id) OVERRIDE {
+      LOG(FATAL);
+    }
+    virtual void OnGoAway(SpdyStreamId last_accepted_stream_id,
+                          SpdyGoAwayStatus status) OVERRIDE {
+      LOG(FATAL);
+    }
+
     virtual void OnHeaders(SpdyStreamId stream_id, bool fin) OVERRIDE {
       SpdyFramer framer(version_);
       framer.set_enable_compression(false);
@@ -187,6 +233,15 @@ class SpdyFramerTestUtil {
       size_ += framer.GetHeadersMinimumSize();
     }
 
+    virtual void OnWindowUpdate(SpdyStreamId stream_id, int delta_window_size) {
+      LOG(FATAL);
+    }
+    virtual bool OnCredentialFrameData(const char* /*credential_data*/,
+                                       size_t /*len*/) OVERRIDE {
+      LOG(FATAL) << "Unexpected CREDENTIAL Frame";
+      return false;
+    }
+
     virtual void OnPushPromise(SpdyStreamId stream_id,
                                SpdyStreamId promised_stream_id) OVERRIDE {
       SpdyFramer framer(version_);
@@ -200,64 +255,14 @@ class SpdyFramerTestUtil {
       size_ += framer.GetPushPromiseMinimumSize();
     }
 
-    virtual bool OnControlFrameHeaderData(SpdyStreamId stream_id,
-                                          const char* header_data,
-                                          size_t len) OVERRIDE {
-      CHECK(buffer_.get() != NULL);
-      CHECK_GE(kMaxDecompressedSize, size_ + len);
-      CHECK(!finished_);
-      if (len != 0) {
-        memcpy(buffer_.get() + size_, header_data, len);
-        size_ += len;
-      } else {
-        // Done.
-        finished_ = true;
-      }
-      return true;
-    }
-
-    virtual bool OnCredentialFrameData(const char* /*credential_data*/,
-                                       size_t /*len*/) OVERRIDE {
-      LOG(FATAL) << "Unexpected CREDENTIAL Frame";
-      return false;
-    }
-
-    virtual void OnError(SpdyFramer* framer) OVERRIDE { LOG(FATAL); }
-    virtual void OnDataFrameHeader(SpdyStreamId stream_id,
-                                   size_t length,
-                                   bool fin) OVERRIDE {
-      LOG(FATAL) << "Unexpected data frame header";
-    }
-    virtual void OnStreamFrameData(SpdyStreamId stream_id,
-                                   const char* data,
-                                   size_t len,
-                                   bool fin) OVERRIDE {
-      LOG(FATAL);
-    }
-    virtual void OnSetting(SpdySettingsIds id,
-                           uint8 flags,
-                           uint32 value) OVERRIDE {
-      LOG(FATAL);
-    }
-    virtual void OnPing(uint32 unique_id) OVERRIDE {
-      LOG(FATAL);
-    }
-    virtual void OnRstStream(SpdyStreamId stream_id,
-                             SpdyRstStreamStatus status) OVERRIDE {
-      LOG(FATAL);
-    }
-    virtual void OnGoAway(SpdyStreamId last_accepted_stream_id,
-                          SpdyGoAwayStatus status) OVERRIDE {
-      LOG(FATAL);
-    }
-    virtual void OnWindowUpdate(SpdyStreamId stream_id,
-                                uint32 delta_window_size) OVERRIDE {
-      LOG(FATAL);
-    }
-
     char* ReleaseBuffer() {
       CHECK(finished_);
       return buffer_.release();
+    }
+
+    virtual void OnWindowUpdate(SpdyStreamId stream_id,
+                                uint32 delta_window_size) OVERRIDE {
+      LOG(FATAL);
     }
 
     size_t size() const {
@@ -348,68 +353,6 @@ class TestSpdyVisitor : public SpdyFramerVisitorInterface,
     std::cerr << "\", " << len << ")\n";
   }
 
-  virtual void OnSynStream(SpdyStreamId stream_id,
-                           SpdyStreamId associated_stream_id,
-                           SpdyPriority priority,
-                           uint8 credential_slot,
-                           bool fin,
-                           bool unidirectional) OVERRIDE {
-    syn_frame_count_++;
-    InitHeaderStreaming(SYN_STREAM, stream_id);
-    if (fin) {
-      fin_flag_count_++;
-    }
-  }
-
-  virtual void OnSynReply(SpdyStreamId stream_id, bool fin) OVERRIDE {
-    syn_reply_frame_count_++;
-    InitHeaderStreaming(SYN_REPLY, stream_id);
-    if (fin) {
-      fin_flag_count_++;
-    }
-  }
-
-  virtual void OnHeaders(SpdyStreamId stream_id, bool fin) OVERRIDE {
-    headers_frame_count_++;
-    InitHeaderStreaming(HEADERS, stream_id);
-    if (fin) {
-      fin_flag_count_++;
-    }
-  }
-
-  virtual void OnSetting(SpdySettingsIds id,
-                         uint8 flags,
-                         uint32 value) OVERRIDE {
-    setting_count_++;
-  }
-
-  virtual void OnPing(uint32 unique_id) OVERRIDE {
-    DLOG(FATAL);
-  }
-
-  virtual void OnRstStream(SpdyStreamId stream_id,
-                           SpdyRstStreamStatus status) OVERRIDE {
-    fin_frame_count_++;
-  }
-
-  virtual void OnGoAway(SpdyStreamId last_accepted_stream_id,
-                        SpdyGoAwayStatus status) OVERRIDE {
-    goaway_count_++;
-  }
-
-  virtual void OnWindowUpdate(SpdyStreamId stream_id,
-                              uint32 delta_window_size) OVERRIDE {
-    last_window_update_stream_ = stream_id;
-    last_window_update_delta_ = delta_window_size;
-  }
-
-  virtual void OnPushPromise(SpdyStreamId stream_id,
-                             SpdyStreamId promised_stream_id) OVERRIDE {
-    InitHeaderStreaming(PUSH_PROMISE, stream_id);
-    last_push_promise_stream_ = stream_id;
-    last_push_promise_promised_stream_ = promised_stream_id;
-  }
-
   virtual bool OnControlFrameHeaderData(SpdyStreamId stream_id,
                                         const char* header_data,
                                         size_t len) OVERRIDE {
@@ -434,12 +377,68 @@ class TestSpdyVisitor : public SpdyFramerVisitorInterface,
     return true;
   }
 
+  virtual void OnSynStream(SpdyStreamId stream_id,
+                           SpdyStreamId associated_stream_id,
+                           SpdyPriority priority,
+                           uint8 credential_slot,
+                           bool fin,
+                           bool unidirectional) OVERRIDE {
+    syn_frame_count_++;
+    InitHeaderStreaming(SYN_STREAM, stream_id);
+    if (fin) {
+      fin_flag_count_++;
+    }
+  }
+
+  virtual void OnSynReply(SpdyStreamId stream_id, bool fin) OVERRIDE {
+    syn_reply_frame_count_++;
+    InitHeaderStreaming(SYN_REPLY, stream_id);
+    if (fin) {
+      fin_flag_count_++;
+    }
+  }
+
+  virtual void OnRstStream(SpdyStreamId stream_id,
+                           SpdyRstStreamStatus status) OVERRIDE {
+    fin_frame_count_++;
+  }
+
+  virtual void OnSetting(SpdySettingsIds id,
+                         uint8 flags,
+                         uint32 value) OVERRIDE {
+    setting_count_++;
+  }
+
+  virtual void OnPing(uint32 unique_id) OVERRIDE {
+    DLOG(FATAL);
+  }
+
+  virtual void OnGoAway(SpdyStreamId last_accepted_stream_id,
+                        SpdyGoAwayStatus status) OVERRIDE {
+    goaway_count_++;
+  }
+
+  virtual void OnHeaders(SpdyStreamId stream_id, bool fin) OVERRIDE {
+    headers_frame_count_++;
+    InitHeaderStreaming(HEADERS, stream_id);
+    if (fin) {
+      fin_flag_count_++;
+    }
+  }
+
+  virtual void OnWindowUpdate(SpdyStreamId stream_id,
+                              uint32 delta_window_size) OVERRIDE {
+    last_window_update_stream_ = stream_id;
+    last_window_update_delta_ = delta_window_size;
+  }
+
   virtual bool OnCredentialFrameData(const char* credential_data,
                                      size_t len) OVERRIDE {
     if (len == 0) {
       if (!framer_.ParseCredentialData(credential_buffer_.get(),
                                        credential_buffer_length_,
                                        &credential_)) {
+        LOG(INFO) << "Error parsing credential data.";
         ++error_count_;
       }
       return true;
@@ -453,6 +452,13 @@ class TestSpdyVisitor : public SpdyFramerVisitorInterface,
            credential_data, len);
     credential_buffer_length_ += len;
     return true;
+  }
+
+  virtual void OnPushPromise(SpdyStreamId stream_id,
+                             SpdyStreamId promised_stream_id) OVERRIDE {
+    InitHeaderStreaming(PUSH_PROMISE, stream_id);
+    last_push_promise_stream_ = stream_id;
+    last_push_promise_promised_stream_ = promised_stream_id;
   }
 
   virtual void OnSendCompressedFrame(SpdyStreamId stream_id,
@@ -749,6 +755,130 @@ TEST_P(SpdyFramerTest, OutOfOrderHeaders) {
   EXPECT_TRUE(framer.ParseHeaderBlockInBuffer(serialized_headers.data(),
                                               serialized_headers.size(),
                                               &new_headers));
+}
+
+// Test that if we receive a SYN_STREAM with stream ID zero, we signal an error
+// (but don't crash).
+TEST_P(SpdyFramerTest, SynStreamWithStreamIdZero) {
+  testing::StrictMock<net::test::MockVisitor> visitor;
+  SpdyFramer framer(spdy_version_);
+  framer.set_visitor(&visitor);
+
+  SpdyHeaderBlock headers;
+  headers["alpha"] = "beta";
+  scoped_ptr<SpdySerializedFrame> frame(
+      framer.CreateSynStream(0,  // stream id
+                             0,  // associated stream id
+                             1,  // priority
+                             0,  // credential slot
+                             CONTROL_FLAG_NONE,
+                             true,  // compress
+                             &headers));
+  ASSERT_TRUE(frame.get() != NULL);
+
+  // We shouldn't have to read the whole frame before we signal an error.
+  EXPECT_CALL(visitor, OnError(testing::Eq(&framer)));
+  EXPECT_GT(frame->size(), framer.ProcessInput(frame->data(), frame->size()));
+  EXPECT_TRUE(framer.HasError());
+  EXPECT_EQ(SpdyFramer::SPDY_INVALID_CONTROL_FRAME, framer.error_code());
+}
+
+// Test that if we receive a SYN_REPLY with stream ID zero, we signal an error
+// (but don't crash).
+TEST_P(SpdyFramerTest, SynReplyWithStreamIdZero) {
+  testing::StrictMock<net::test::MockVisitor> visitor;
+  SpdyFramer framer(spdy_version_);
+  framer.set_visitor(&visitor);
+
+  SpdyHeaderBlock headers;
+  headers["alpha"] = "beta";
+  scoped_ptr<SpdySerializedFrame> frame(
+      framer.CreateSynReply(0,  // stream id
+                            CONTROL_FLAG_NONE,
+                            true,  // compress
+                            &headers));
+  ASSERT_TRUE(frame.get() != NULL);
+
+  // We shouldn't have to read the whole frame before we signal an error.
+  EXPECT_CALL(visitor, OnError(testing::Eq(&framer)));
+  EXPECT_GT(frame->size(), framer.ProcessInput(frame->data(), frame->size()));
+  EXPECT_TRUE(framer.HasError());
+  EXPECT_EQ(SpdyFramer::SPDY_INVALID_CONTROL_FRAME, framer.error_code());
+}
+
+// Test that if we receive a HEADERS with stream ID zero, we signal an error
+// (but don't crash).
+TEST_P(SpdyFramerTest, HeadersWithStreamIdZero) {
+  testing::StrictMock<net::test::MockVisitor> visitor;
+  SpdyFramer framer(spdy_version_);
+  framer.set_visitor(&visitor);
+
+  SpdyHeaderBlock headers;
+  headers["alpha"] = "beta";
+  scoped_ptr<SpdySerializedFrame> frame(
+      framer.CreateHeaders(0,  // stream id
+                           CONTROL_FLAG_NONE,
+                           true,  // compress
+                           &headers));
+  ASSERT_TRUE(frame.get() != NULL);
+
+  // We shouldn't have to read the whole frame before we signal an error.
+  EXPECT_CALL(visitor, OnError(testing::Eq(&framer)));
+  EXPECT_GT(frame->size(), framer.ProcessInput(frame->data(), frame->size()));
+  EXPECT_TRUE(framer.HasError());
+  EXPECT_EQ(SpdyFramer::SPDY_INVALID_CONTROL_FRAME, framer.error_code());
+}
+
+// Test that if we receive a PUSH_PROMISE with stream ID zero, we signal an
+// error (but don't crash).
+TEST_P(SpdyFramerTest, PushPromiseWithStreamIdZero) {
+  if (spdy_version_ < SPDY4) {
+    return;
+  }
+
+  testing::StrictMock<net::test::MockVisitor> visitor;
+  SpdyFramer framer(spdy_version_);
+  framer.set_visitor(&visitor);
+
+  SpdyHeaderBlock headers;
+  headers["alpha"] = "beta";
+  scoped_ptr<SpdySerializedFrame> frame(
+      framer.CreatePushPromise(0,  // stream id
+                               4,  // promised stream id
+                               &headers));
+  ASSERT_TRUE(frame.get() != NULL);
+
+  // We shouldn't have to read the whole frame before we signal an error.
+  EXPECT_CALL(visitor, OnError(testing::Eq(&framer)));
+  EXPECT_GT(frame->size(), framer.ProcessInput(frame->data(), frame->size()));
+  EXPECT_TRUE(framer.HasError());
+  EXPECT_EQ(SpdyFramer::SPDY_INVALID_CONTROL_FRAME, framer.error_code());
+}
+
+// Test that if we receive a PUSH_PROMISE with promised stream ID zero, we
+// signal an error (but don't crash).
+TEST_P(SpdyFramerTest, PushPromiseWithPromisedStreamIdZero) {
+  if (spdy_version_ < SPDY4) {
+    return;
+  }
+
+  testing::StrictMock<net::test::MockVisitor> visitor;
+  SpdyFramer framer(spdy_version_);
+  framer.set_visitor(&visitor);
+
+  SpdyHeaderBlock headers;
+  headers["alpha"] = "beta";
+  scoped_ptr<SpdySerializedFrame> frame(
+      framer.CreatePushPromise(3,  // stream id
+                               0,  // promised stream id
+                               &headers));
+  ASSERT_TRUE(frame.get() != NULL);
+
+  // We shouldn't have to read the whole frame before we signal an error.
+  EXPECT_CALL(visitor, OnError(testing::Eq(&framer)));
+  EXPECT_GT(frame->size(), framer.ProcessInput(frame->data(), frame->size()));
+  EXPECT_TRUE(framer.HasError());
+  EXPECT_EQ(SpdyFramer::SPDY_INVALID_CONTROL_FRAME, framer.error_code());
 }
 
 TEST_P(SpdyFramerTest, CreateCredential) {
@@ -3621,6 +3751,39 @@ TEST_P(SpdyFramerTest, ReadCredentialFrameWithCorruptCertificate) {
   visitor.SimulateInFramer(
       data, control_frame->size());
   EXPECT_EQ(1, visitor.error_count_);
+}
+
+// Regression test for parsing issue found in b/8278897.
+TEST_P(SpdyFramerTest, ReadCredentialFrameFollowedByAnotherFrame) {
+  SpdyCredential credential;
+  credential.slot = 3;
+  credential.proof = "proof";
+  credential.certs.push_back("a cert");
+  credential.certs.push_back("another cert");
+  credential.certs.push_back("final cert");
+  SpdyFramer framer(spdy_version_);
+  scoped_ptr<SpdyFrame> credential_frame(
+      framer.CreateCredentialFrame(credential));
+  EXPECT_TRUE(credential_frame.get() != NULL);
+  TestSpdyVisitor visitor(spdy_version_);
+  visitor.use_compression_ = false;
+  string multiple_frame_data(credential_frame->data(),
+                             credential_frame->size());
+  scoped_ptr<SpdyFrame> goaway_frame(framer.CreateGoAway(0, GOAWAY_OK));
+  multiple_frame_data.append(string(goaway_frame->data(),
+                                    goaway_frame->size()));
+  visitor.SimulateInFramer(
+      reinterpret_cast<unsigned const char*>(multiple_frame_data.data()),
+      multiple_frame_data.length());
+  EXPECT_EQ(0, visitor.error_count_);
+  EXPECT_EQ(credential_frame->size() - framer.GetControlFrameHeaderSize(),
+            visitor.credential_buffer_length_);
+  EXPECT_EQ(credential.slot, visitor.credential_.slot);
+  EXPECT_EQ(credential.proof, visitor.credential_.proof);
+  EXPECT_EQ(credential.certs.size(), visitor.credential_.certs.size());
+  for (size_t i = 0; i < credential.certs.size(); i++) {
+    EXPECT_EQ(credential.certs[i], visitor.credential_.certs[i]);
+  }
 }
 
 TEST_P(SpdyFramerTest, ReadCompressedPushPromise) {

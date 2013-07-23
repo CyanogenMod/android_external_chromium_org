@@ -8,13 +8,18 @@
 import build_server
 build_server.main()
 
-import logging
+from itertools import groupby
+from operator import itemgetter
 import optparse
 import os
+import posixpath
 import sys
 import time
 import unittest
 
+from branch_utility import BranchUtility
+from link_error_detector import LinkErrorDetector
+from local_file_system import LocalFileSystem
 from local_renderer import LocalRenderer
 from fake_fetchers import ConfigureFakeFetchers
 from handler import Handler
@@ -40,6 +45,24 @@ def _GetPublicFiles():
         public_files['/'.join((relative_posix_path, filename))] = f.read()
   return public_files
 
+def _PrintBrokenLinks(broken_links):
+  '''Prints out broken links in a more readable format.
+  '''
+  col_width = max(len(link[0]) for link in broken_links)
+  getter = itemgetter(1)
+
+  def pretty_print(prefix, message):
+    print("%s%s -> %s" % (prefix, (col_width - len(prefix)) * ' ', message))
+
+  for target, links in groupby(sorted(broken_links, key=getter), getter):
+    links = [l[0] for l in links]
+    if len(links) > 50:
+      out = "%s and %d others" % (links[0], len(links) - 1)
+      pretty_print(out, target)
+    else:
+      for link in links:
+        pretty_print(link, target)
+
 class IntegrationTest(unittest.TestCase):
   def setUp(self):
     ConfigureFakeFetchers()
@@ -61,6 +84,33 @@ class IntegrationTest(unittest.TestCase):
     finally:
       print('Took %s seconds' % (time.time() - start_time))
 
+    print("Checking for broken links...")
+    start_time = time.time()
+    link_error_detector = LinkErrorDetector(
+        LocalFileSystem(os.path.join(sys.path[0], os.pardir, os.pardir)),
+        lambda path: Handler(Request.ForTest(path)).Get(),
+        'templates/public',
+        ('extensions/index.html', 'apps/about_apps.html'))
+
+    broken_links, broken_anchors = link_error_detector.GetBrokenLinks()
+    if broken_links or broken_anchors:
+      # TODO(jshumway): Test should fail when broken links are detected.
+      print('Warning: Found %d broken links:' % (
+        len(broken_links + broken_anchors)))
+      _PrintBrokenLinks(broken_links + broken_anchors)
+
+    print('Took %s seconds.' % (time.time() - start_time))
+
+    print('Searching for orphaned pages...')
+    start_time = time.time()
+    orphaned_pages = link_error_detector.GetOrphanedPages()
+    if orphaned_pages:
+      # TODO(jshumway): Test should fail when orphaned pages are detected.
+      print('Warning: Found %d orphaned pages:' % len(orphaned_pages))
+      for page in orphaned_pages:
+        print(page)
+    print('Took %s seconds.' % (time.time() - start_time))
+
     public_files = _GetPublicFiles()
 
     print('Rendering %s public files...' % len(public_files.keys()))
@@ -76,7 +126,23 @@ class IntegrationTest(unittest.TestCase):
           # that render large files. At least it'll catch zero-length responses.
           self.assertTrue(len(response.content) >= len(content),
               'Content was "%s" when rendering %s' % (response.content, path))
+
         check_result(Handler(Request.ForTest(path)).Get())
+
+        # Make sure that leaving out the .html will temporarily redirect to the
+        # path with the .html.
+        if path != '/404.html':
+          redirect_result = Handler(
+              Request.ForTest(posixpath.splitext(path)[0])).Get()
+          self.assertEqual((path, False), redirect_result.GetRedirect())
+
+        # Make sure including a channel will permanently redirect to the same
+        # path without a channel.
+        for channel in BranchUtility.GetAllChannelNames():
+          redirect_result = Handler(
+              Request.ForTest('%s/%s' % (channel, path))).Get()
+          self.assertEqual((path, True), redirect_result.GetRedirect())
+
         # Samples are internationalized, test some locales.
         if path.endswith('/samples.html'):
           for lang in ['en-US', 'es', 'ar']:
@@ -102,6 +168,9 @@ class IntegrationTest(unittest.TestCase):
         self.assertTrue(response.content != '')
       finally:
         print('Took %s seconds' % (time.time() - start_time))
+
+    # TODO(jshumway): Check page for broken links (currently prohibited by the
+    # time it takes to render the pages).
 
   @DisableLogging('warning')
   def testFileNotFound(self):

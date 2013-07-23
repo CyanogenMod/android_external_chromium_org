@@ -47,6 +47,10 @@
 #include "net/socket/tcp_listen_socket.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 
+#if defined(OS_WIN) && defined(USE_ASH)
+#include "base/win/windows_version.h"
+#endif
+
 using content::BrowserThread;
 using content::DevToolsManager;
 using content::DevToolsAgentHost;
@@ -474,12 +478,6 @@ IN_PROC_BROWSER_TEST_F(DevToolsExtensionTest,
   RunTest("testContentScriptIsPresent", kPageWithContentScript);
 }
 
-// Tests that renderer process native memory is feasible.
-IN_PROC_BROWSER_TEST_F(DevToolsSanityTest,
-                       DISABLED_TestRendererProcessNativeMemorySize) {
-  RunTest("testRendererProcessNativeMemorySize", std::string());
-}
-
 // Tests that scripts are not duplicated after Scripts Panel switch.
 IN_PROC_BROWSER_TEST_F(DevToolsSanityTest,
                        TestNoScriptDuplicatesOnPanelSwitch) {
@@ -597,6 +595,12 @@ IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestPageWithNoJavaScript) {
 #endif
 // Flakily fails with 25s timeout: http://crbug.com/89845
 IN_PROC_BROWSER_TEST_F(WorkerDevToolsSanityTest, MAYBE_InspectSharedWorker) {
+#if defined(OS_WIN) && defined(USE_ASH)
+  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
+  if (base::win::GetVersion() >= base::win::VERSION_WIN8)
+    return;
+#endif
+
   RunTest("testSharedWorker", kSharedWorkerTestPage);
 }
 
@@ -658,6 +662,12 @@ class RemoteDebuggingTest: public ExtensionApiTest {
 };
 
 IN_PROC_BROWSER_TEST_F(RemoteDebuggingTest, RemoteDebugger) {
+#if defined(OS_WIN) && defined(USE_ASH)
+  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
+  if (base::win::GetVersion() >= base::win::VERSION_WIN8)
+    return;
+#endif
+
   ASSERT_TRUE(RunExtensionTest("target_list")) << message_;
 }
 

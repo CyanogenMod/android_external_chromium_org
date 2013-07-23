@@ -25,6 +25,7 @@
 #include "chrome/browser/ui/webui/crashes_ui.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/url_constants.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/browser/gpu_data_manager_observer.h"
 #include "content/public/browser/plugin_service.h"
@@ -33,6 +34,7 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
+#include "content/public/common/webplugininfo.h"
 #include "gpu/config/gpu_info.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
@@ -41,7 +43,6 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "webkit/plugins/plugin_constants.h"
-#include "webkit/plugins/webplugininfo.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -99,7 +100,7 @@ class FlashDOMHandler : public WebUIMessageHandler,
   void HandleRequestFlashInfo(const ListValue* args);
 
   // Callback for the Flash plugin information.
-  void OnGotPlugins(const std::vector<webkit::WebPluginInfo>& plugins);
+  void OnGotPlugins(const std::vector<content::WebPluginInfo>& plugins);
 
  private:
   // Called when we think we might have enough information to return data back
@@ -142,7 +143,8 @@ FlashDOMHandler::FlashDOMHandler()
       has_plugin_info_(false) {
   // Request Crash data asynchronously.
   upload_list_ = CrashUploadList::Create(this);
-  upload_list_->LoadUploadListAsynchronously();
+  upload_list_->LoadUploadListAsynchronously(
+      content::BrowserThread::GetBlockingPool());
 
   // Watch for changes in GPUInfo.
   GpuDataManager::GetInstance()->AddObserver(this);
@@ -203,7 +205,7 @@ void FlashDOMHandler::OnGpuInfoUpdate() {
 }
 
 void FlashDOMHandler::OnGotPlugins(
-    const std::vector<webkit::WebPluginInfo>& plugins) {
+    const std::vector<content::WebPluginInfo>& plugins) {
   has_plugin_info_ = true;
   MaybeRespondToPage();
 }
@@ -266,7 +268,7 @@ void FlashDOMHandler::MaybeRespondToPage() {
   AddPair(list, l10n_util::GetStringUTF16(IDS_ABOUT_VERSION_OS), os_label);
 
   // Obtain the version of the Flash plugins.
-  std::vector<webkit::WebPluginInfo> info_array;
+  std::vector<content::WebPluginInfo> info_array;
   PluginService::GetInstance()->GetPluginInfoArray(
       GURL(), kFlashPluginSwfMimeType, false, &info_array, NULL);
   if (info_array.empty()) {

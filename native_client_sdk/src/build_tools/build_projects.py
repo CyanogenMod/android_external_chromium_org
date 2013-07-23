@@ -23,7 +23,7 @@ import getos
 import http_download
 
 
-MAKE = 'nacl_sdk/make_3_81/make.exe'
+MAKE = 'nacl_sdk/make_3.99.90-26-gf80222c/make.exe'
 LIB_DICT = {
   'linux': [],
   'mac': [],
@@ -263,7 +263,7 @@ def main(args):
     print 'Filter by name: ' + str(options.project)
 
   try:
-    project_tree = parse_dsc.LoadProjectTree(SDK_SRC_DIR, filters=filters)
+    project_tree = parse_dsc.LoadProjectTree(SDK_SRC_DIR, include=filters)
   except parse_dsc.ValidationError as e:
     buildbot_common.ErrorExit(str(e))
   parse_dsc.PrintProjectTree(project_tree)

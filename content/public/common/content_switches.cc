@@ -412,6 +412,10 @@ const char kUseFakeUIForMediaStream[]     = "use-fake-ui-for-media-stream";
 // assumed to be sRGB.
 const char kEnableMonitorProfile[]          = "enable-monitor-profile";
 
+// Enables the new chrome://media-internals page.
+// http://crbug.com/260005
+const char kEnableNewMediaInternals[]       = "enable-new-media-internals";
+
 // Enables compositor-accelerated touch-screen pinch gestures.
 const char kEnablePinch[]                   = "enable-pinch";
 const char kDisablePinch[]                  = "disable-pinch";
@@ -790,6 +794,9 @@ const char kUtilityProcess[]                = "utility";
 // The utility process is sandboxed, with access to one directory. This flag
 // specifies the directory that can be accessed.
 const char kUtilityProcessAllowedDir[]      = "utility-allowed-dir";
+
+// Allows MDns to access network in sandboxed process.
+const char kUtilityProcessEnableMDns[]      = "utility-enable-mdns";
 
 // Will add kWaitForDebugger to every child processes. If a value is passed, it
 // will be used as a filter to determine if the child process should have the

@@ -311,8 +311,9 @@ class WebContents;
 // Gets the window style.
 - (ThemedWindowStyle)themedWindowStyle;
 
-// Gets the pattern phase for the window.
-- (NSPoint)themePatternPhase;
+// Returns the pattern phase for |alignment|. If the window does not have a tab
+// strip, the phase for THEME_PATTERN_ALIGN_WITH_FRAME is always returned.
+- (NSPoint)themePatternPhaseForAlignment:(ThemePatternAlignment)alignment;
 
 // Return the point to which a bubble window's arrow should point, in window
 // coordinates.
@@ -408,6 +409,12 @@ class WebContents;
 - (void)enterPresentationModeForURL:(const GURL&)url
                          bubbleType:(FullscreenExitBubbleType)bubbleType;
 - (void)exitPresentationMode;
+
+// For simplified fullscreen: Enters fullscreen for a tab at a URL. The |url|
+// is guaranteed to be non-empty; see -enterFullscreen for the user-initiated
+// fullscreen mode. Called on Snow Leopard and Lion+.
+- (void)enterFullscreenForURL:(const GURL&)url
+                   bubbleType:(FullscreenExitBubbleType)bubbleType;
 
 // Returns presentation mode state.  This method is safe to call on all OS
 // versions.

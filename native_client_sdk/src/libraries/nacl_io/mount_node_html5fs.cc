@@ -1,7 +1,6 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #include "nacl_io/mount_node_html5fs.h"
 
@@ -18,6 +17,8 @@
 #include "nacl_io/osdirent.h"
 #include "nacl_io/pepper_interface.h"
 #include "sdk_util/auto_lock.h"
+
+namespace nacl_io {
 
 namespace {
 
@@ -304,4 +305,6 @@ void MountNodeHtml5Fs::Destroy() {
   fileref_resource_ = 0;
   MountNode::Destroy();
 }
+
+}  // namespace nacl_io
 

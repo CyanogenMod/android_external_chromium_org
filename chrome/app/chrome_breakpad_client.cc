@@ -4,11 +4,26 @@
 
 #include "chrome/app/chrome_breakpad_client.h"
 
+#include "base/command_line.h"
 #include "base/environment.h"
 #include "base/files/file_path.h"
+#include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
+#include "base/strings/string_split.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/chrome_switches.h"
+#include "chrome/common/crash_keys.h"
+#include "chrome/common/env_vars.h"
+
+#if defined(OS_WIN)
+#include "base/file_version_info.h"
+#endif
+
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_IOS)
+#include "chrome/common/chrome_version_info_posix.h"
+#endif
 
 #if defined(OS_POSIX)
 #include "chrome/common/dump_without_crashing.h"
@@ -34,6 +49,96 @@ bool ChromeBreakpadClient::GetAlternativeCrashDumpLocation(
 
   return false;
 }
+
+void ChromeBreakpadClient::GetProductNameAndVersion(
+    const base::FilePath& exe_path,
+    base::string16* product_name,
+    base::string16* version,
+    base::string16* special_build) {
+  DCHECK(product_name);
+  DCHECK(version);
+  DCHECK(special_build);
+
+  scoped_ptr<FileVersionInfo> version_info(
+      FileVersionInfo::CreateFileVersionInfo(exe_path));
+
+  if (version_info.get()) {
+    // Get the information from the file.
+    *version = version_info->product_version();
+    if (!version_info->is_official_build())
+      version->append(base::ASCIIToUTF16("-devel"));
+
+    const CommandLine& command = *CommandLine::ForCurrentProcess();
+    if (command.HasSwitch(switches::kChromeFrame)) {
+      *product_name = base::ASCIIToUTF16("ChromeFrame");
+    } else {
+      *product_name = version_info->product_short_name();
+    }
+
+    *special_build = version_info->special_build();
+  } else {
+    // No version info found. Make up the values.
+    *product_name = base::ASCIIToUTF16("Chrome");
+    *version = base::ASCIIToUTF16("0.0.0.0-devel");
+  }
+}
+
+bool ChromeBreakpadClient::ShouldShowRestartDialog(base::string16* title,
+                                                   base::string16* message,
+                                                   bool* is_rtl_locale) {
+  scoped_ptr<base::Environment> env(base::Environment::Create());
+  if (!env->HasVar(env_vars::kShowRestart) ||
+      !env->HasVar(env_vars::kRestartInfo)) {
+    return false;
+  }
+
+  std::string restart_info;
+  env->GetVar(env_vars::kRestartInfo, &restart_info);
+
+  // The CHROME_RESTART var contains the dialog strings separated by '|'.
+  // See ChromeBrowserMainPartsWin::PrepareRestartOnCrashEnviroment()
+  // for details.
+  std::vector<std::string> dlg_strings;
+  base::SplitString(restart_info, '|', &dlg_strings);
+
+  if (dlg_strings.size() < 3)
+    return false;
+
+  *title = base::ASCIIToUTF16(dlg_strings[0]);
+  *message = base::ASCIIToUTF16(dlg_strings[0]);
+  *is_rtl_locale = dlg_strings[2] == env_vars::kRtlLocale;
+  return true;
+}
+
+bool ChromeBreakpadClient::AboutToRestart() {
+  scoped_ptr<base::Environment> env(base::Environment::Create());
+  if (!env->HasVar(env_vars::kRestartInfo))
+    return false;
+
+  env->SetVar(env_vars::kShowRestart, "1");
+  return true;
+}
+#endif
+
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_IOS)
+void ChromeBreakpadClient::GetProductNameAndVersion(std::string* product_name,
+                                                    std::string* version) {
+  DCHECK(product_name);
+  DCHECK(version);
+#if defined(OS_ANDROID)
+  *product_name = "Chrome_Android";
+#elif defined(OS_CHROMEOS)
+  *product_name = "Chrome_ChromeOS";
+#else  // OS_LINUX
+#if !defined(ADDRESS_SANITIZER)
+  *product_name = "Chrome_Linux";
+#else
+  *product_name = "Chrome_Linux_ASan";
+#endif
+#endif
+
+  *version = PRODUCT_VERSION;
+}
 #endif
 
 bool ChromeBreakpadClient::GetCrashDumpLocation(base::FilePath* crash_dir) {
@@ -55,5 +160,14 @@ void ChromeBreakpadClient::SetDumpWithoutCrashingFunction(void (*function)()) {
   logging::SetDumpWithoutCrashingFunction(function);
 }
 #endif
+
+size_t ChromeBreakpadClient::RegisterCrashKeys() {
+  return crash_keys::RegisterChromeCrashKeys();
+}
+
+bool ChromeBreakpadClient::IsRunningUnattended() {
+  scoped_ptr<base::Environment> env(base::Environment::Create());
+  return env->HasVar(env_vars::kHeadless);
+}
 
 }  // namespace chrome

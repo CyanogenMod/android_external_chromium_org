@@ -15,7 +15,7 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "build/build_config.h"
 #include "ui/gl/egl_util.h"
 #include "ui/gl/gl_context.h"
@@ -108,8 +108,7 @@ bool GLSurfaceEGL::InitializeOneOff() {
   g_native_display = base::MessagePumpForUI::GetDefaultXDisplay();
 #elif defined(OS_WIN)
   g_native_display = EGL_DEFAULT_DISPLAY;
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableD3D11) ||
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableD3D11)) {
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableD3D11)) {
     g_native_display = EGL_D3D11_ELSE_D3D9_DISPLAY_ANGLE;
   }
 #else

@@ -5,6 +5,7 @@
 #include <ApplicationServices/ApplicationServices.h>
 #import <Cocoa/Cocoa.h>
 
+#include "apps/app_launcher.h"
 #include "apps/app_shim/app_shim_handler_mac.h"
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -14,8 +15,10 @@
 #include "base/memory/singleton.h"
 #include "base/message_loop/message_loop.h"
 #include "base/observer_list.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/browser/ui/app_list/app_list_service_impl.h"
@@ -60,13 +63,13 @@ class AppListServiceMac : public AppListServiceImpl,
 
   // AppListService overrides:
   virtual void Init(Profile* initial_profile) OVERRIDE;
-  virtual void ShowAppList(Profile* requested_profile) OVERRIDE;
+  virtual void ShowForProfile(Profile* requested_profile) OVERRIDE;
   virtual void DismissAppList() OVERRIDE;
   virtual bool IsAppListVisible() const OVERRIDE;
-  virtual void EnableAppList(Profile* initial_profile) OVERRIDE;
   virtual gfx::NativeWindow GetAppListWindow() OVERRIDE;
 
-  // AppListServiceImpl override:
+  // AppListServiceImpl overrides:
+  virtual void CreateShortcut() OVERRIDE;
   virtual void OnSigninStatusChanged() OVERRIDE;
 
   // AppShimHandler overrides:
@@ -85,6 +88,7 @@ class AppListServiceMac : public AppListServiceImpl,
   AppListServiceMac() {}
 
   base::scoped_nsobject<AppListWindowController> window_controller_;
+  base::scoped_nsobject<NSRunningApplication> previously_active_application_;
 
   // App shim hosts observing when the app list is dismissed. In normal user
   // usage there should only be one. However, it can't be guaranteed, so use
@@ -174,7 +178,7 @@ void CreateAppListShim(const base::FilePath& profile_path) {
 }
 
 // Check that there is an app list shim. If enabling and there is not, make one.
-// If disabling with --enable-app-list-shim=0, and there is one, delete it.
+// If the flag is not present, and there is a shim, delete it.
 void CheckAppListShimOnFileThread(const base::FilePath& profile_path) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
   const bool enable =
@@ -201,6 +205,21 @@ void CreateShortcutsInDefaultLocation(
   web_app::CreateShortcuts(shortcut_info,
                            ShellIntegration::ShortcutLocations(),
                            web_app::ALLOW_DUPLICATE_SHORTCUTS);
+}
+
+NSRunningApplication* ActiveApplicationNotChrome() {
+  NSArray* applications = [[NSWorkspace sharedWorkspace] runningApplications];
+  for (NSRunningApplication* application in applications) {
+    if (![application isActive])
+      continue;
+
+    if ([application isEqual:[NSRunningApplication currentApplication]])
+      return nil;  // Chrome is active.
+
+    return application;
+  }
+
+  return nil;
 }
 
 AppListControllerDelegateCocoa::AppListControllerDelegateCocoa() {}
@@ -270,10 +289,12 @@ void AppListServiceMac::Init(Profile* initial_profile) {
   // browser window open and a new window is opened, and during process startup
   // to handle the silent launch case (e.g. for app shims). In the startup case,
   // a profile has not yet been determined so |initial_profile| will be NULL.
-  if (initial_profile) {
-    static bool checked_shim = false;
-    if (!checked_shim) {
-      checked_shim = true;
+  static bool init_called_with_profile = false;
+  if (initial_profile && !init_called_with_profile) {
+    init_called_with_profile = true;
+    HandleCommandLineFlags(initial_profile);
+    if (!apps::IsAppLauncherEnabled()) {
+      // Not yet enabled via the Web Store. Check for the chrome://flag.
       content::BrowserThread::PostTask(
           content::BrowserThread::FILE, FROM_HERE,
           base::Bind(&CheckAppListShimOnFileThread,
@@ -290,7 +311,7 @@ void AppListServiceMac::Init(Profile* initial_profile) {
                                         AppListServiceMac::GetInstance());
 }
 
-void AppListServiceMac::ShowAppList(Profile* requested_profile) {
+void AppListServiceMac::ShowForProfile(Profile* requested_profile) {
   InvalidatePendingProfileLoads();
 
   if (IsAppListVisible() && (requested_profile == profile())) {
@@ -298,7 +319,7 @@ void AppListServiceMac::ShowAppList(Profile* requested_profile) {
     return;
   }
 
-  SaveProfilePathToLocalState(requested_profile->GetPath());
+  SetProfilePath(requested_profile->GetPath());
 
   DismissAppList();
   CreateAppList(requested_profile);
@@ -307,6 +328,22 @@ void AppListServiceMac::ShowAppList(Profile* requested_profile) {
 
 void AppListServiceMac::DismissAppList() {
   if (!IsAppListVisible())
+    return;
+
+  // If the app list is currently the main window, it will activate the next
+  // Chrome window when dismissed. But if a different application was active
+  // when the app list was shown, activate that instead.
+  base::scoped_nsobject<NSRunningApplication> prior_app;
+  if ([[window_controller_ window] isMainWindow])
+    prior_app.swap(previously_active_application_);
+  else
+    previously_active_application_.reset();
+
+  // If activation is successful, the app list will lose main status and try to
+  // close itself again. It can't be closed in this runloop iteration without
+  // OSX deciding to raise the next Chrome window, and _then_ activating the
+  // application on top. This also occurs if no activation option is given.
+  if ([prior_app activateWithOptions:NSApplicationActivateIgnoringOtherApps])
     return;
 
   [[window_controller_ window] close];
@@ -320,8 +357,9 @@ bool AppListServiceMac::IsAppListVisible() const {
   return [[window_controller_ window] isVisible];
 }
 
-void AppListServiceMac::EnableAppList(Profile* initial_profile) {
-  // TODO(tapted): Implement enable logic here for OSX.
+void AppListServiceMac::CreateShortcut() {
+  CreateAppListShim(GetProfilePath(
+      g_browser_process->profile_manager()->user_data_dir()));
 }
 
 NSWindow* AppListServiceMac::GetAppListWindow() {
@@ -334,7 +372,7 @@ void AppListServiceMac::OnSigninStatusChanged() {
 
 void AppListServiceMac::OnShimLaunch(apps::AppShimHandler::Host* host,
                                      apps::AppShimLaunchType launch_type) {
-  ShowForSavedProfile();
+  Show();
   observers_.AddObserver(host);
   host->OnAppLaunchComplete(apps::APP_SHIM_LAUNCH_SUCCESS);
 }
@@ -457,6 +495,11 @@ void AppListServiceMac::ShowWindowNearDock() {
   NSWindow* window = GetAppListWindow();
   DCHECK(window);
   [window setFrameOrigin:GetAppListWindowOrigin(window)];
+
+  // Before activating, see if an application other than Chrome is currently the
+  // active application, so that it can be reactivated when dismissing.
+  previously_active_application_.reset([ActiveApplicationNotChrome() retain]);
+
   [window makeKeyAndOrderFront:nil];
   [NSApp activateIgnoringOtherApps:YES];
 }

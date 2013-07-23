@@ -419,7 +419,7 @@ Commands.togglePinnedCommand = {
   execute: function(event, fileManager) {
     var pin = !event.command.checked;
     event.command.checked = pin;
-    var entries = this.getTargetEntries_();
+    var entries = Commands.togglePinnedCommand.getTargetEntries_();
     var currentEntry;
     var error = false;
     var steps = {
@@ -468,7 +468,7 @@ Commands.togglePinnedCommand = {
   },
 
   canExecute: function(event, fileManager) {
-    var entries = this.getTargetEntries_();
+    var entries = Commands.togglePinnedCommand.getTargetEntries_();
     var checked = true;
     for (var i = 0; i < entries.length; i++) {
       checked = checked && entries[i].pinned;
@@ -537,7 +537,8 @@ Commands.shareCommand = {
     var selection = fileManager.getSelection();
     event.canExecute = fileManager.isOnDrive() &&
         !fileManager.isDriveOffline() &&
-        selection && selection.totalCount == 1;
+        selection && selection.totalCount == 1 &&
+        selection.directoryCount == 0;
     event.command.setHidden(!fileManager.isOnDrive());
   }
 };
@@ -558,6 +559,12 @@ Commands.pinCommand = {
    * @param {FileManager} fileManager The file manager instance.
    */
   canExecute: function(event, fileManager) {
+    // TODO(yoshiki): remove this after launching folder shortcuts feature.
+    if (!fileManager.isFolderShortcutsEnabled()) {
+      event.command.setHidden(true);
+      return;
+    }
+
     var selection = fileManager.getSelection();
     var selectionEntries = selection.entries;
     var onlyOneFolderSelected =
@@ -589,6 +596,12 @@ Commands.unpinCommand = {
    * @param {DirectoryTree} directoryTree Target directory tree.
    */
   canExecute: function(event, fileManager, directoryTree) {
+    // TODO(yoshiki): remove this after launching folder shortcut feature.
+    if (!fileManager.isFolderShortcutsEnabled()) {
+      event.command.setHidden(true);
+      return;
+    }
+
     var path = CommandUtil.getCommandRoot(event, directoryTree);
     var isPinned = path && !PathUtil.isRootPath(path);
     event.canExecute = isPinned;

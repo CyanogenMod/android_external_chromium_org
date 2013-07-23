@@ -25,7 +25,8 @@ ConstrainedWindowMac::ConstrainedWindowMac(
     : delegate_(delegate),
       web_contents_(web_contents),
       sheet_([sheet retain]),
-      shown_(false) {
+      shown_(false),
+      closing_(false) {
   DCHECK(web_contents);
   DCHECK(sheet_.get());
   WebContentsModalDialogManager* web_contents_modal_dialog_manager =
@@ -54,6 +55,10 @@ void ConstrainedWindowMac::ShowWebContentsModalDialog() {
 }
 
 void ConstrainedWindowMac::CloseWebContentsModalDialog() {
+  if (closing_)
+    return;
+
+  closing_ = true;
   [[ConstrainedWindowSheetController controllerForSheet:sheet_]
       closeSheet:sheet_];
   WebContentsModalDialogManager* web_contents_modal_dialog_manager =
@@ -76,6 +81,14 @@ NativeWebContentsModalDialog ConstrainedWindowMac::GetNativeDialog() {
   // ConstrainedWindowSheet pointer, in conjunction with the corresponding
   // changes to NativeWebContentsModalDialogManagerCocoa.
   return this;
+}
+
+void ConstrainedWindowMac::SetPreventCloseOnLoadStart(bool prevent) {
+  WebContentsModalDialogManager* web_contents_modal_dialog_manager =
+      WebContentsModalDialogManager::FromWebContents(web_contents_);
+  web_contents_modal_dialog_manager->SetPreventCloseOnLoadStart(
+      GetNativeDialog(),
+      prevent);
 }
 
 NSWindow* ConstrainedWindowMac::GetParentWindow() const {

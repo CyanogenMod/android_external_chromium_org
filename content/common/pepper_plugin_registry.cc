@@ -64,9 +64,9 @@ void ComputePluginsFromCommandLine(std::vector<PepperPluginInfo>* plugins) {
     if (name_parts.size() > 3)
       plugin.version = name_parts[3];
     for (size_t j = 1; j < parts.size(); ++j) {
-      webkit::WebPluginMimeType mime_type(parts[j],
-                                          std::string(),
-                                          plugin.description);
+      WebPluginMimeType mime_type(parts[j],
+                                  std::string(),
+                                  plugin.description);
       plugin.mime_types.push_back(mime_type);
     }
 
@@ -83,34 +83,16 @@ void ComputePluginsFromCommandLine(std::vector<PepperPluginInfo>* plugins) {
 
 }  // namespace
 
-webkit::WebPluginInfo PepperPluginInfo::ToWebPluginInfo() const {
-  webkit::WebPluginInfo info;
-
-  info.type = is_out_of_process ?
-      (is_sandboxed ?
-        webkit::WebPluginInfo::PLUGIN_TYPE_PEPPER_OUT_OF_PROCESS :
-        webkit::WebPluginInfo::PLUGIN_TYPE_PEPPER_UNSANDBOXED) :
-      webkit::WebPluginInfo::PLUGIN_TYPE_PEPPER_IN_PROCESS;
-
-  info.name = name.empty() ?
-      path.BaseName().LossyDisplayName() : UTF8ToUTF16(name);
-  info.path = path;
-  info.version = ASCIIToUTF16(version);
-  info.desc = ASCIIToUTF16(description);
-  info.mime_types = mime_types;
-  info.pepper_permissions = permissions;
-
-  return info;
-}
-
-bool MakePepperPluginInfo(const webkit::WebPluginInfo& webplugin_info,
+bool MakePepperPluginInfo(const WebPluginInfo& webplugin_info,
                           PepperPluginInfo* pepper_info) {
-  if (!webkit::IsPepperPlugin(webplugin_info))
+  if (!webplugin_info.is_pepper_plugin())
     return false;
 
-  pepper_info->is_out_of_process = webkit::IsOutOfProcessPlugin(webplugin_info);
+  pepper_info->is_out_of_process =
+      webplugin_info.type == WebPluginInfo::PLUGIN_TYPE_PEPPER_OUT_OF_PROCESS ||
+      webplugin_info.type == WebPluginInfo::PLUGIN_TYPE_PEPPER_UNSANDBOXED;
   pepper_info->is_sandboxed = webplugin_info.type !=
-      webkit::WebPluginInfo::PLUGIN_TYPE_PEPPER_UNSANDBOXED;
+      WebPluginInfo::PLUGIN_TYPE_PEPPER_UNSANDBOXED;
 
   pepper_info->path = base::FilePath(webplugin_info.path);
   pepper_info->name = UTF16ToASCII(webplugin_info.name);
@@ -156,7 +138,7 @@ void PepperPluginRegistry::PreloadModules() {
 }
 
 const PepperPluginInfo* PepperPluginRegistry::GetInfoForPlugin(
-    const webkit::WebPluginInfo& info) {
+    const WebPluginInfo& info) {
   for (size_t i = 0; i < plugin_list_.size(); ++i) {
     if (info.path == plugin_list_[i].path)
       return &plugin_list_[i];

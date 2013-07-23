@@ -24,6 +24,17 @@
 namespace content {
 
 namespace {
+// Normally this is done by the NavigationController, but we'll fake it out
+// here for testing.
+SessionStorageNamespaceImpl* CreateSessionStorageNamespace(
+    SiteInstance* instance) {
+  RenderProcessHost* process_host = instance->GetProcess();
+  DOMStorageContext* dom_storage_context =
+      BrowserContext::GetStoragePartition(process_host->GetBrowserContext(),
+                                          instance)->GetDOMStorageContext();
+  return new SessionStorageNamespaceImpl(
+      static_cast<DOMStorageContextImpl*>(dom_storage_context));
+}
 
 const int64 kFrameId = 13UL;
 
@@ -199,6 +210,7 @@ gfx::NativeView TestRenderWidgetHostView::BuildInputMethodsGtkMenu() {
 #endif  // defined(TOOLKIT_GTK)
 
 void TestRenderWidgetHostView::OnSwapCompositorFrame(
+    uint32 output_surface_id,
     scoped_ptr<cc::CompositorFrame> frame) {
   did_swap_compositor_frame_ = true;
 }
@@ -246,7 +258,8 @@ TestRenderViewHost::TestRenderViewHost(
                          widget_delegate,
                          routing_id,
                          main_frame_routing_id,
-                         swapped_out),
+                         swapped_out,
+                         CreateSessionStorageNamespace(instance)),
       render_view_created_(false),
       delete_counter_(NULL),
       simulate_fetch_via_proxy_(false),

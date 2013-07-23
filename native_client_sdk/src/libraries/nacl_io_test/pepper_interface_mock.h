@@ -1,7 +1,7 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 #ifndef LIBRARIES_NACL_IO_TEST_PEPPER_INTERFACE_MOCK_H_
 #define LIBRARIES_NACL_IO_TEST_PEPPER_INTERFACE_MOCK_H_
 
@@ -11,7 +11,7 @@
 // Mock interface class definitions.
 #include "nacl_io/pepper/undef_macros.h"
 #define BEGIN_INTERFACE(BaseClass, PPInterface, InterfaceString) \
-    class BaseClass##Mock : public BaseClass { \
+    class BaseClass##Mock : public nacl_io::BaseClass { \
      public: \
       BaseClass##Mock(); \
       virtual ~BaseClass##Mock();
@@ -31,7 +31,7 @@
 #include "nacl_io/pepper/all_interfaces.h"
 
 
-class PepperInterfaceMock : public PepperInterface {
+class PepperInterfaceMock : public nacl_io::PepperInterface {
  public:
   explicit PepperInterfaceMock(PP_Instance instance);
   ~PepperInterfaceMock();

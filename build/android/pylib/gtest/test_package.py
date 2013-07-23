@@ -15,18 +15,24 @@ class TestPackage(object):
   Args:
     adb: ADB interface the tests are using.
     device: Device to run the tests.
-    test_suite: A specific test suite to run, empty to run all.
+    suite_path_full: Absolute path to a specific test suite to run,
+        empty to run all.
+        Ex: '/foo/bar/base_unittests-debug.apk', for which
+          self.suite_path_full = '/foo/bar/base_unittests-debug.apk'
+          self.suite_path = '/foo/bar/base_unittests-debug'
+          self.suite_basename = 'base_unittests'
+          self.suite_dirname = '/foo/bar'
     tool: Name of the Valgrind tool.
   """
 
-  def __init__(self, adb, device, test_suite, tool):
+  def __init__(self, adb, device, suite_path_full, tool):
     self.adb = adb
     self.device = device
-    self.test_suite_full = test_suite
-    self.test_suite = os.path.splitext(test_suite)[0]
-    self.test_suite_basename = self._GetTestSuiteBaseName()
-    self.test_suite_dirname = os.path.dirname(
-        self.test_suite.split(self.test_suite_basename)[0])
+    self.suite_path_full = suite_path_full
+    self.suite_path = os.path.splitext(suite_path_full)[0]
+    self.suite_basename = self._GetTestSuiteBaseName()
+    self.suite_dirname = os.path.dirname(
+        self.suite_path.split(self.suite_basename)[0])
     self.tool = tool
 
   def ClearApplicationState(self):
@@ -61,14 +67,11 @@ class TestPackage(object):
     """Install the test package to the device."""
     raise NotImplementedError('Method must be overriden.')
 
-  def GetDisabledPrefixes(self):
-    return ['DISABLED_', 'FLAKY_', 'FAILS_']
-
-  def _ParseGTestListTests(self, all_tests):
-    """Parses and filters the raw test lists.
+  def _ParseGTestListTests(self, raw_list):
+    """Parses a raw test list as provided by --gtest_list_tests.
 
     Args:
-      all_tests: The raw test listing with the following format:
+      raw_list: The raw test listing with the following format:
 
       IPCChannelTest.
         SendMessageInChannelConnected
@@ -77,14 +80,14 @@ class TestPackage(object):
         DISABLED_SendWithTimeoutMixedOKAndTimeout
 
     Returns:
-      A list of non-disabled tests. For the above raw listing:
+      A list of all tests. For the above raw listing:
 
-      [IPCChannelTest.SendMessageInChannelConnected, IPCSyncChannelTest.Simple]
+      [IPCChannelTest.SendMessageInChannelConnected, IPCSyncChannelTest.Simple,
+       IPCSyncChannelTest.DISABLED_SendWithTimeoutMixedOKAndTimeout]
     """
     ret = []
     current = ''
-    disabled_prefixes = self.GetDisabledPrefixes()
-    for test in all_tests:
+    for test in raw_list:
       if not test:
         continue
       if test[0] != ' ' and not test.endswith('.'):
@@ -96,6 +99,5 @@ class TestPackage(object):
       if 'YOU HAVE' in test:
         break
       test_name = test[2:]
-      if not any([test_name.startswith(x) for x in disabled_prefixes]):
-        ret += [current + test_name]
+      ret += [current + test_name]
     return ret

@@ -81,6 +81,7 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
   virtual gfx::NativeView BuildInputMethodsGtkMenu() OVERRIDE;
 #endif  // defined(TOOLKIT_GTK)
   virtual void OnSwapCompositorFrame(
+      uint32 output_surface_id,
       scoped_ptr<cc::CompositorFrame> frame) OVERRIDE;
 
   // RenderWidgetHostViewPort implementation.
@@ -92,7 +93,7 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
   virtual void WasHidden() OVERRIDE {}
   virtual void MovePluginWindows(
       const gfx::Vector2d& scroll_offset,
-      const std::vector<webkit::npapi::WebPluginGeometry>& moves) OVERRIDE {}
+      const std::vector<WebPluginGeometry>& moves) OVERRIDE {}
   virtual void Focus() OVERRIDE {}
   virtual void Blur() OVERRIDE {}
   virtual void SetIsLoading(bool is_loading) OVERRIDE {}

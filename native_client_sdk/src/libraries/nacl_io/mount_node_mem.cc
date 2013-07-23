@@ -1,7 +1,7 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 #include "nacl_io/mount_node_mem.h"
 
 #include <errno.h>
@@ -9,6 +9,8 @@
 
 #include "nacl_io/osstat.h"
 #include "sdk_util/auto_lock.h"
+
+namespace nacl_io {
 
 #define BLOCK_SIZE (1 << 16)
 #define BLOCK_MASK (BLOCK_SIZE - 1)
@@ -92,4 +94,6 @@ Error MountNodeMem::FTruncate(off_t new_size) {
   stat_.st_size = static_cast<off_t>(new_size);
   return EIO;
 }
+
+}  // namespace nacl_io
 

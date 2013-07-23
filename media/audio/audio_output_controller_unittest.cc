@@ -8,7 +8,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/synchronization/waitable_event.h"
 #include "media/audio/audio_output_controller.h"
 #include "media/audio/audio_parameters.h"
@@ -40,7 +40,7 @@ class MockAudioOutputControllerEventHandler
 
   MOCK_METHOD0(OnCreated, void());
   MOCK_METHOD0(OnPlaying, void());
-  MOCK_METHOD1(OnAudible, void(bool is_audible));
+  MOCK_METHOD2(OnPowerMeasured, void(float power_dbfs, bool clipped));
   MOCK_METHOD0(OnPaused, void());
   MOCK_METHOD0(OnError, void());
   MOCK_METHOD2(OnDeviceChange, void(int new_buffer_size, int new_sample_rate));
@@ -131,10 +131,10 @@ class AudioOutputControllerTest : public testing::Test {
 
   void Play() {
     // Expect the event handler to receive one OnPlaying() call and one or more
-    // OnAudible() calls.
+    // OnPowerMeasured() calls.
     EXPECT_CALL(mock_event_handler_, OnPlaying())
         .WillOnce(SignalEvent(&play_event_));
-    EXPECT_CALL(mock_event_handler_, OnAudible(_))
+    EXPECT_CALL(mock_event_handler_, OnPowerMeasured(_, false))
         .Times(AtLeast(1));
 
     // During playback, the mock pretends to provide audio data rendered and

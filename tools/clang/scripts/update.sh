@@ -8,7 +8,7 @@
 # Do NOT CHANGE this if you don't know what you're doing -- see
 # https://code.google.com/p/chromium/wiki/UpdatingClang
 # Reverting problematic clang rolls is safe, though.
-CLANG_REVISION=184830
+CLANG_REVISION=186332
 
 THIS_DIR="$(dirname "${0}")"
 LLVM_DIR="${THIS_DIR}/../../../third_party/llvm"
@@ -270,8 +270,8 @@ if [[ -n "${bootstrap}" ]]; then
         --disable-pthreads \
         --without-llvmgcc \
         --without-llvmgxx
-    MACOSX_DEPLOYMENT_TARGET=10.5 make -j"${NUM_JOBS}"
   fi
+  MACOSX_DEPLOYMENT_TARGET=10.5 make -j"${NUM_JOBS}"
   if [[ -n "${run_tests}" ]]; then
     make check-all
   fi

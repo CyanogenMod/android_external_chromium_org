@@ -25,11 +25,12 @@ extern const char kManagedModeManualHosts[];
 extern const char kManagedModeManualURLs[];
 extern const char kManagedUserCustodianEmail[];
 extern const char kManagedUserCustodianName[];
+extern const char kProfileIconVersion[];
+extern const char kRestoreOnStartup[];
+extern const char kRestoreOnStartupMigrated[];
 extern const char kSessionExitedCleanly[];
 extern const char kSessionExitType[];
-extern const char kRestoreOnStartup[];
 extern const char kURLsToRestoreOnStartup[];
-extern const char kRestoreOnStartupMigrated[];
 
 // For OS_CHROMEOS we maintain kApplicationLocale property in both local state
 // and user's profile.  Global property determines locale of login screen,
@@ -319,6 +320,7 @@ extern const char kUsedPolicyCertificatesOnce[];
 extern const char kAttestationEnabled[];
 extern const char kAttestationExtensionWhitelist[];
 extern const char kTouchHudProjectionEnabled[];
+extern const char kOpenNetworkConfiguration[];
 #endif  // defined(OS_CHROMEOS)
 extern const char kIpcDisabledMessages[];
 extern const char kShowHomeButton[];
@@ -471,6 +473,8 @@ extern const char kVariationsRestrictParameter[];
 extern const char kVariationsSeed[];
 extern const char kVariationsSeedDate[];
 extern const char kVariationsSeedHash[];
+
+extern const char kDeviceOpenNetworkConfiguration[];
 
 extern const char kProfileLastUsed[];
 extern const char kProfilesLastActive[];

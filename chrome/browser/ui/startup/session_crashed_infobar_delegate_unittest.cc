@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/ui/startup/session_crashed_infobar_delegate.h"
+
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/testing_pref_service.h"
 #include "base/run_loop.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/sessions/session_service_factory.h"
-#include "chrome/browser/ui/startup/session_crashed_prompt.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -60,9 +61,9 @@ TEST_F(SessionCrashedInfoBarDelegateUnitTest, DetachingTabWithCrashedInfoBar) {
   InfoBarService* infobar_service =
       InfoBarService::FromWebContents(web_contents);
   EXPECT_EQ(1U, infobar_service->infobar_count());
-  scoped_ptr<SessionCrashedInfoBarDelegate> info_bar(
-      reinterpret_cast<SessionCrashedInfoBarDelegate*>(
-          InfoBarService::FromWebContents(web_contents)->infobar_at(0)));
+  scoped_ptr<ConfirmInfoBarDelegate> infobar(InfoBarService::FromWebContents(
+      web_contents)->infobar_at(0)->AsConfirmInfoBarDelegate());
+  ASSERT_TRUE(infobar);
 
   // Open another browser.
   scoped_ptr<Browser> opened_browser(
@@ -83,7 +84,7 @@ TEST_F(SessionCrashedInfoBarDelegateUnitTest, DetachingTabWithCrashedInfoBar) {
   EXPECT_EQ(1U, infobar_service->infobar_count());
 
   // This used to crash.
-  info_bar->Accept();
+  infobar->Accept();
 
   // Ramp down the test.
   tab_strip->CloseWebContentsAt(0, TabStripModel::CLOSE_NONE);

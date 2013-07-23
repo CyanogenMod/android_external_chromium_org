@@ -41,6 +41,8 @@ class ConstrainedWindowMac {
   void PulseWebContentsModalDialog();
   web_modal::NativeWebContentsModalDialog GetNativeDialog();
 
+  void SetPreventCloseOnLoadStart(bool prevent);
+
  private:
   // Gets the parent window of the dialog.
   NSWindow* GetParentWindow() const;
@@ -54,6 +56,9 @@ class ConstrainedWindowMac {
 
   // This is true if the constrained window has been shown.
   bool shown_;
+
+  // This is true while the constrained window is closing.
+  bool closing_;
 };
 
 #endif  // CHROME_BROWSER_UI_COCOA_CONSTRAINED_WINDOW_CONSTRAINED_WINDOW_MAC_

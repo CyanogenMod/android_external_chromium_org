@@ -17,7 +17,8 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
 	$(call intermediates-dir-for,GYP,ui_ui_resources_gyp)/ui_resources.stamp \
-	$(call intermediates-dir-for,GYP,v8_tools_gyp_v8_gyp)/v8.stamp
+	$(call intermediates-dir-for,GYP,v8_tools_gyp_v8_gyp)/v8.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_glue_child_gyp)/webkit_support_glue_child_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -30,17 +31,6 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
-	webkit/plugins/npapi/plugin_host.cc \
-	webkit/plugins/npapi/plugin_instance.cc \
-	webkit/plugins/npapi/plugin_lib.cc \
-	webkit/plugins/npapi/plugin_stream.cc \
-	webkit/plugins/npapi/plugin_stream_posix.cc \
-	webkit/plugins/npapi/plugin_stream_url.cc \
-	webkit/plugins/npapi/plugin_string_stream.cc \
-	webkit/plugins/npapi/webplugin.cc \
-	webkit/plugins/npapi/webplugin_delegate_impl.cc \
-	webkit/plugins/npapi/webplugin_delegate_impl_android.cc \
-	webkit/plugins/npapi/webplugin_impl.cc \
 	webkit/plugins/ppapi/audio_helper.cc \
 	webkit/plugins/ppapi/content_decryptor_delegate.cc \
 	webkit/plugins/ppapi/event_conversion.cc \
@@ -385,7 +375,8 @@ LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 LOCAL_STATIC_LIBRARIES := \
 	skia_skia_gyp \
 	ui_gl_gl_gyp \
-	ui_ui_gyp
+	ui_ui_gyp \
+	webkit_support_glue_child_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

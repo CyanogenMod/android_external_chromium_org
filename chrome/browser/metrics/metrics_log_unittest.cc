@@ -5,7 +5,7 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/port.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/testing_pref_service.h"
@@ -25,11 +25,11 @@
 #include "chrome/installer/util/google_update_settings.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/process_type.h"
+#include "content/public/common/webplugininfo.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/size.h"
 #include "url/gurl.h"
-#include "webkit/plugins/webplugininfo.h"
 
 #if defined(OS_CHROMEOS)
 #include "chromeos/dbus/mock_dbus_thread_manager_without_gmock.h"
@@ -128,7 +128,7 @@ class MetricsLogTest : public testing::Test {
   void TestRecordEnvironment(bool proto_only) {
     TestMetricsLog log(kClientId, kSessionId);
 
-    std::vector<webkit::WebPluginInfo> plugins;
+    std::vector<content::WebPluginInfo> plugins;
     GoogleUpdateMetrics google_update_metrics;
     if (proto_only)
       log.RecordEnvironmentProto(plugins, google_update_metrics);
@@ -159,6 +159,10 @@ class MetricsLogTest : public testing::Test {
     EXPECT_EQ(kScreenHeight, hardware.primary_screen_height());
     EXPECT_EQ(kScreenScaleFactor, hardware.primary_screen_scale_factor());
     EXPECT_EQ(kScreenCount, hardware.screen_count());
+
+    EXPECT_TRUE(hardware.has_cpu());
+    EXPECT_TRUE(hardware.cpu().has_vendor_name());
+    EXPECT_TRUE(hardware.cpu().has_signature());
 
     // TODO(isherman): Verify other data written into the protobuf as a result
     // of this call.

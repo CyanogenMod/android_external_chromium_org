@@ -55,11 +55,12 @@ public class ContentVideoView
     private static final int MEDIA_ERROR = 100;
     private static final int MEDIA_INFO = 200;
 
-    /** The video is streamed and its container is not valid for progressive
-     * playback i.e the video's index (e.g moov atom) is not at the start of the
-     * file.
+    /**
+     * Keep these error codes in sync with the code we defined in
+     * MediaPlayerListener.java.
      */
     public static final int MEDIA_ERROR_NOT_VALID_FOR_PROGRESSIVE_PLAYBACK = 2;
+    public static final int MEDIA_ERROR_INVALID_CODE = 3;
 
     // all possible internal states
     private static final int STATE_ERROR              = -1;
@@ -258,6 +259,11 @@ public class ContentVideoView
     public void onMediaPlayerError(int errorType) {
         Log.d(TAG, "OnMediaPlayerError: " + errorType);
         if (mCurrentState == STATE_ERROR || mCurrentState == STATE_PLAYBACK_COMPLETED) {
+            return;
+        }
+
+        // Ignore some invalid error codes.
+        if (errorType == MEDIA_ERROR_INVALID_CODE) {
             return;
         }
 
@@ -600,14 +606,6 @@ public class ContentVideoView
         if (mNativeContentVideoView != 0) {
             nativeExitFullscreen(mNativeContentVideoView, relaseMediaPlayer);
             mNativeContentVideoView = 0;
-        }
-    }
-
-    @CalledByNative
-    public static void keepScreenOnContentVideoView(boolean screenOn) {
-        ContentVideoView content_video_view = getContentVideoView();
-        if ( content_video_view != null) {
-            content_video_view.mClient.keepScreenOn(screenOn);
         }
     }
 

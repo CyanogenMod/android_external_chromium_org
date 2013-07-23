@@ -59,6 +59,7 @@ void InsertSyncPointAndAckForGpu(
 
 void InsertSyncPointAndAckForCompositor(
     int renderer_host_id,
+    uint32 output_surface_id,
     int route_id,
     const gpu::Mailbox& return_mailbox,
     const gfx::Size return_size) {
@@ -71,7 +72,7 @@ void InsertSyncPointAndAckForCompositor(
         ImageTransportFactoryAndroid::GetInstance()->InsertSyncPoint();
   }
   RenderWidgetHostImpl::SendSwapCompositorFrameAck(
-      route_id, renderer_host_id, ack);
+      route_id, output_surface_id, renderer_host_id, ack);
 }
 
 }  // anonymous namespace
@@ -290,7 +291,7 @@ RenderWidgetHostViewAndroid::GetNativeViewAccessible() {
 
 void RenderWidgetHostViewAndroid::MovePluginWindows(
     const gfx::Vector2d& scroll_offset,
-    const std::vector<webkit::npapi::WebPluginGeometry>& moves) {
+    const std::vector<WebPluginGeometry>& moves) {
   // We don't have plugin windows on Android. Do nothing. Note: this is called
   // from RenderWidgetHost::OnUpdateRect which is itself invoked while
   // processing the corresponding message from Renderer.
@@ -561,15 +562,18 @@ SmoothScrollGesture* RenderWidgetHostViewAndroid::CreateSmoothScrollGesture(
 void RenderWidgetHostViewAndroid::OnAcceleratedCompositingStateChange() {
 }
 
-void RenderWidgetHostViewAndroid::SendDelegatedFrameAck() {
+void RenderWidgetHostViewAndroid::SendDelegatedFrameAck(
+    uint32 output_surface_id) {
   cc::CompositorFrameAck ack;
   delegated_renderer_layer_->TakeUnusedResourcesForChildCompositor(
       &ack.resources);
   RenderWidgetHostImpl::SendSwapCompositorFrameAck(
-      host_->GetRoutingID(), host_->GetProcess()->GetID(), ack);
+      host_->GetRoutingID(), output_surface_id,
+      host_->GetProcess()->GetID(), ack);
 }
 
 void RenderWidgetHostViewAndroid::SwapDelegatedFrame(
+    uint32 output_surface_id,
     scoped_ptr<cc::DelegatedFrameData> frame_data) {
   bool has_frame = frame_data.get() && !frame_data->render_pass_list.empty();
 
@@ -583,7 +587,8 @@ void RenderWidgetHostViewAndroid::SwapDelegatedFrame(
 
   base::Closure ack_callback =
       base::Bind(&RenderWidgetHostViewAndroid::SendDelegatedFrameAck,
-                 weak_ptr_factory_.GetWeakPtr());
+                 weak_ptr_factory_.GetWeakPtr(),
+                 output_surface_id);
 
   if (host_->is_hidden())
     ack_callback.Run();
@@ -607,6 +612,7 @@ void RenderWidgetHostViewAndroid::ComputeContentsSize(
 }
 
 void RenderWidgetHostViewAndroid::OnSwapCompositorFrame(
+    uint32 output_surface_id,
     scoped_ptr<cc::CompositorFrame> frame) {
   // Always let ContentViewCore know about the new frame first, so it can decide
   // to schedule a Draw immediately when it sees the texture layer invalidation.
@@ -619,7 +625,7 @@ void RenderWidgetHostViewAndroid::OnSwapCompositorFrame(
     }
     ComputeContentsSize(frame->metadata);
 
-    SwapDelegatedFrame(frame->delegated_frame_data.Pass());
+    SwapDelegatedFrame(output_surface_id, frame->delegated_frame_data.Pass());
     return;
   }
 
@@ -628,6 +634,7 @@ void RenderWidgetHostViewAndroid::OnSwapCompositorFrame(
 
   base::Closure callback = base::Bind(&InsertSyncPointAndAckForCompositor,
                                       host_->GetProcess()->GetID(),
+                                      output_surface_id,
                                       host_->GetRoutingID(),
                                       current_mailbox_,
                                       texture_size_in_layer_);
@@ -801,7 +808,7 @@ void RenderWidgetHostViewAndroid::AcceleratedSurfaceSuspend() {
 void RenderWidgetHostViewAndroid::AcceleratedSurfaceRelease() {
   // This tells us we should free the frontbuffer.
   if (texture_id_in_layer_) {
-    texture_layer_->ClearTexture();
+    texture_layer_->SetTextureId(0);
     texture_layer_->SetIsDrawable(false);
     ImageTransportFactoryAndroid::GetInstance()->DeleteTexture(
         texture_id_in_layer_);

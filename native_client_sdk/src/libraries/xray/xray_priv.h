@@ -1,8 +1,6 @@
 /* Copyright (c) 2013 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
-
+ * found in the LICENSE file. */
 
 /* XRay -- a simple profiler for Native Client */
 
@@ -181,6 +179,23 @@ XRAY_NO_INSTRUMENT void XRayDisableCapture(struct XRayTraceCapture* capture);
 XRAY_NO_INSTRUMENT void XRayEnableCapture(struct XRayTraceCapture* capture);
 XRAY_NO_INSTRUMENT void XRayLoadMapfile(
     struct XRayTraceCapture* capture, const char* mapfilename);
+
+struct XRayTimestampPair {
+  uint64_t xray;   /* internal xray timestamp */
+  int64_t pepper;  /* corresponding timestamp from PPAPI interface */
+};
+
+#ifndef XRAY_DISABLE_BROWSER_INTEGRATION
+XRAY_NO_INSTRUMENT void XRayGetTSC(uint64_t* tsc);
+XRAY_NO_INSTRUMENT int32_t XRayGetSavedThreadID(
+    struct XRayTraceCapture* capture);
+XRAY_NO_INSTRUMENT struct XRayTimestampPair XRayFrameGetStartTimestampPair(
+    struct XRayTraceCapture* capture, int frame);
+XRAY_NO_INSTRUMENT struct XRayTimestampPair XRayFrameGetEndTimestampPair(
+    struct XRayTraceCapture* capture, int frame);
+XRAY_NO_INSTRUMENT struct XRayTimestampPair XRayGenerateTimestampsNow(void);
+#endif
+
 
 #endif  /* defined(XRAY) */
 

@@ -1,11 +1,12 @@
 {
-  'TOOLS': ['newlib', 'glibc', 'pnacl', 'win'],
+  'TOOLS': ['newlib', 'glibc', 'pnacl'],
   'TARGETS': [
     {
       'NAME' : 'pi_generator',
       'TYPE' : 'main',
       'SOURCES' : ['pi_generator.cc'],
-      'LIBS': ['ppapi_simple', 'nacl_io', 'ppapi_cpp', 'ppapi', 'pthread']
+      'DEPS': ['ppapi_simple', 'nacl_io', 'ppapi_cpp'],
+      'LIBS': ['ppapi', 'pthread']
     }
   ],
   'DATA': [

@@ -8,6 +8,7 @@
 
 #include "base/files/file_path.h"
 #include "base/file_util.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
@@ -15,6 +16,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/synchronization/lock.h"
 #include "sql/statement.h"
 #include "third_party/sqlite/sqlite3.h"
 
@@ -92,6 +94,35 @@ int BackupDatabase(sqlite3* src, sqlite3* dst, const char* db_name) {
     DCHECK_EQ(pages, 1);
 
   return rc;
+}
+
+// Be very strict on attachment point.  SQLite can handle a much wider
+// character set with appropriate quoting, but Chromium code should
+// just use clean names to start with.
+bool ValidAttachmentPoint(const char* attachment_point) {
+  for (size_t i = 0; attachment_point[i]; ++i) {
+    if (!((attachment_point[i] >= '0' && attachment_point[i] <= '9') ||
+          (attachment_point[i] >= 'a' && attachment_point[i] <= 'z') ||
+          (attachment_point[i] >= 'A' && attachment_point[i] <= 'Z') ||
+          attachment_point[i] == '_')) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// SQLite automatically calls sqlite3_initialize() lazily, but
+// sqlite3_initialize() uses double-checked locking and thus can have
+// data races.
+//
+// TODO(shess): Another alternative would be to have
+// sqlite3_initialize() called as part of process bring-up.  If this
+// is changed, remove the dynamic_annotations dependency in sql.gyp.
+base::LazyInstance<base::Lock>::Leaky
+    g_sqlite_init_lock = LAZY_INSTANCE_INITIALIZER;
+void InitializeSqlite() {
+  base::AutoLock lock(g_sqlite_init_lock.Get());
+  sqlite3_initialize();
 }
 
 }  // namespace
@@ -206,6 +237,10 @@ bool Connection::OpenInMemory() {
   return OpenInternal(":memory:", NO_RETRY);
 }
 
+bool Connection::OpenTemporary() {
+  return OpenInternal("", NO_RETRY);
+}
+
 void Connection::CloseInternal(bool forced) {
   // TODO(shess): Calling "PRAGMA journal_mode = DELETE" at this point
   // will delete the -journal file.  For ChromiumOS or other more
@@ -277,6 +312,35 @@ void Connection::Preload() {
   // Do not call it when using system sqlite.
   sqlite3_preload(db_);
 #endif
+}
+
+void Connection::TrimMemory(bool aggressively) {
+  if (!db_)
+    return;
+
+  // TODO(shess): investigate using sqlite3_db_release_memory() when possible.
+  int original_cache_size;
+  {
+    Statement sql_get_original(GetUniqueStatement("PRAGMA cache_size"));
+    if (!sql_get_original.Step()) {
+      DLOG(WARNING) << "Could not get cache size " << GetErrorMessage();
+      return;
+    }
+    original_cache_size = sql_get_original.ColumnInt(0);
+  }
+  int shrink_cache_size = aggressively ? 1 : (original_cache_size / 2);
+
+  // Force sqlite to try to reduce page cache usage.
+  const std::string sql_shrink =
+      base::StringPrintf("PRAGMA cache_size=%d", shrink_cache_size);
+  if (!Execute(sql_shrink.c_str()))
+    DLOG(WARNING) << "Could not shrink cache size: " << GetErrorMessage();
+
+  // Restore cache size.
+  const std::string sql_restore =
+      base::StringPrintf("PRAGMA cache_size=%d", original_cache_size);
+  if (!Execute(sql_restore.c_str()))
+    DLOG(WARNING) << "Could not restore cache size: " << GetErrorMessage();
 }
 
 // Create an in-memory database with the existing database's page
@@ -413,9 +477,7 @@ bool Connection::RazeAndClose() {
   }
 
   // Raze() cannot run in a transaction.
-  while (transaction_nesting_) {
-    RollbackTransaction();
-  }
+  RollbackAllTransactions();
 
   bool result = Raze();
 
@@ -427,6 +489,21 @@ bool Connection::RazeAndClose() {
   poisoned_ = true;
 
   return result;
+}
+
+void Connection::Poison() {
+  if (!db_) {
+    DLOG_IF(FATAL, !poisoned_) << "Cannot poison null db";
+    return;
+  }
+
+  RollbackAllTransactions();
+  CloseInternal(true);
+
+  // Mark the database so that future API calls fail appropriately,
+  // but don't DCHECK (because after calling this function they are
+  // expected to fail).
+  poisoned_ = true;
 }
 
 // TODO(shess): To the extent possible, figure out the optimal
@@ -512,6 +589,35 @@ bool Connection::CommitTransaction() {
 
   Statement commit(GetCachedStatement(SQL_FROM_HERE, "COMMIT"));
   return commit.Run();
+}
+
+void Connection::RollbackAllTransactions() {
+  if (transaction_nesting_ > 0) {
+    transaction_nesting_ = 0;
+    DoRollback();
+  }
+}
+
+bool Connection::AttachDatabase(const base::FilePath& other_db_path,
+                                const char* attachment_point) {
+  DCHECK(ValidAttachmentPoint(attachment_point));
+
+  Statement s(GetUniqueStatement("ATTACH DATABASE ? AS ?"));
+#if OS_WIN
+  s.BindString16(0, other_db_path.value());
+#else
+  s.BindString(0, other_db_path.value());
+#endif
+  s.BindString(1, attachment_point);
+  return s.Run();
+}
+
+bool Connection::DetachDatabase(const char* attachment_point) {
+  DCHECK(ValidAttachmentPoint(attachment_point));
+
+  Statement s(GetUniqueStatement("DETACH DATABASE ?"));
+  s.BindString(0, attachment_point);
+  return s.Run();
 }
 
 int Connection::ExecuteAndReturnErrorCode(const char* sql) {
@@ -708,6 +814,9 @@ bool Connection::OpenInternal(const std::string& file_name,
     DLOG(FATAL) << "sql::Connection is already open.";
     return false;
   }
+
+  // Make sure sqlite3_initialize() is called before anything else.
+  InitializeSqlite();
 
   // If |poisoned_| is set, it means an error handler called
   // RazeAndClose().  Until regular Close() is called, the caller

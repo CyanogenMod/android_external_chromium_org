@@ -1,7 +1,6 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #include <fcntl.h>
 #include <gmock/gmock.h>
@@ -18,6 +17,8 @@
 #include "nacl_io/osdirent.h"
 #include "nacl_io/osunistd.h"
 #include "pepper_interface_mock.h"
+
+using namespace nacl_io;
 
 using ::testing::_;
 using ::testing::DoAll;
@@ -293,7 +294,6 @@ void MountHttpNodeTest::SetResponseExpectFail(int status_code,
   ON_CALL(*response_, GetProperty(response_resource_, _))
       .WillByDefault(Return(PP_MakeUndefined()));
 
-  PP_Var var_headers = MakeString(348);
   EXPECT_CALL(*response_,
               GetProperty(response_resource_,
                           PP_URLRESPONSEPROPERTY_STATUSCODE))

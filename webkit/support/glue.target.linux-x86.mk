@@ -34,15 +34,9 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
-	webkit/glue/ftp_directory_listing_response_delegate.cc \
-	webkit/glue/resource_loader_bridge.cc \
-	webkit/glue/resource_type.cc \
 	webkit/glue/simple_webmimeregistry_impl.cc \
 	webkit/glue/webfileutilities_impl.cc \
-	webkit/glue/webkit_glue.cc \
-	webkit/glue/webkitplatformsupport_impl.cc \
-	webkit/glue/websocketstreamhandle_impl.cc \
-	webkit/glue/weburlloader_impl.cc
+	webkit/glue/webkit_glue.cc
 
 
 # Flags passed to both C and C++ files.

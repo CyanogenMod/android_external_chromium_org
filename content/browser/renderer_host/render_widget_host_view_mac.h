@@ -242,7 +242,7 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   virtual void WasHidden() OVERRIDE;
   virtual void MovePluginWindows(
       const gfx::Vector2d& scroll_offset,
-      const std::vector<webkit::npapi::WebPluginGeometry>& moves) OVERRIDE;
+      const std::vector<WebPluginGeometry>& moves) OVERRIDE;
   virtual void Focus() OVERRIDE;
   virtual void Blur() OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
@@ -461,7 +461,8 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   // invoke it from the message loop.
   void ShutdownHost();
 
-  bool CreateCompositedIOSurfaceAndLayer();
+  bool CreateCompositedIOSurface();
+  bool CreateCompositedIOSurfaceLayer();
   void DestroyCompositedIOSurfaceAndLayer();
 
   // Unbind the GL context (if any) that is bound to |cocoa_view_|.
@@ -469,6 +470,7 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
 
   // Called when a GPU SwapBuffers is received.
   void GotAcceleratedFrame();
+
   // Called when a software DIB is received.
   void GotSoftwareFrame();
 

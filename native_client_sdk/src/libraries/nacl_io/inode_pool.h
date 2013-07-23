@@ -1,7 +1,6 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef LIBRARIES_NACL_IO_INODE_POOL_H_
 #define LIBRARIES_NACL_IO_INODE_POOL_H_
@@ -13,10 +12,11 @@
 #include "pthread.h"
 #include "sdk_util/auto_lock.h"
 
+namespace nacl_io {
 
 class INodePool {
  public:
-  INodePool() : max_nodes_(0), num_nodes_(0) {}
+  INodePool() : num_nodes_(0), max_nodes_(0) {}
 
   ino_t Acquire() {
     AUTO_LOCK(lock_);
@@ -52,7 +52,9 @@ class INodePool {
   size_t num_nodes_;
   size_t max_nodes_;
   std::vector<ino_t> inos_;
-  SimpleLock lock_;
+  sdk_util::SimpleLock lock_;
 };
+
+}  // namespace nacl_io
 
 #endif  // LIBRARIES_NACL_IO_INODE_POOL_H_

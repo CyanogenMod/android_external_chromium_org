@@ -7,16 +7,18 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
+#include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "base/platform_file.h"
-#include "base/shared_memory.h"
+#include "base/safe_numerics.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/child/database_util.h"
 #include "content/child/fileapi/webfilesystem_impl.h"
 #include "content/child/indexed_db/proxy_webidbfactory_impl.h"
-#include "content/child/npobject_util.h"
+#include "content/child/npapi/npobject_util.h"
+#include "content/child/quota_dispatcher.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/child/webblobregistry_impl.h"
 #include "content/child/webmessageportchannel_impl.h"
@@ -26,6 +28,7 @@
 #include "content/common/mime_registry_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/webplugininfo.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/device_orientation/device_motion_event_pump.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
@@ -56,12 +59,14 @@
 #include "third_party/WebKit/public/platform/WebHyphenator.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamCenter.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamCenterClient.h"
+#include "third_party/WebKit/public/platform/WebPluginListBuilder.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "url/gurl.h"
 #include "webkit/common/gpu/webgraphicscontext3d_provider_impl.h"
+#include "webkit/common/quota/quota_types.h"
 #include "webkit/glue/simple_webmimeregistry_impl.h"
 #include "webkit/glue/webfileutilities_impl.h"
 #include "webkit/glue/webkit_glue.h"
@@ -164,12 +169,19 @@ class RendererWebKitPlatformSupportImpl::Hyphenator
   Hyphenator();
   virtual ~Hyphenator();
 
-  virtual bool canHyphenate(const WebKit::WebString& locale) OVERRIDE;
+  virtual bool canHyphenate(const WebKit::WebString& locale);
+  virtual size_t computeLastHyphenLocation(
+      const WebKit::WebString& word,
+      size_t before_index,
+      const WebKit::WebString& locale);
+
+  // DEPRECATED
   virtual size_t computeLastHyphenLocation(
       const char16* characters,
       size_t length,
       size_t before_index,
-      const WebKit::WebString& locale) OVERRIDE;
+      const WebKit::WebString& locale);
+
  private:
   scoped_ptr<content::Hyphenator> hyphenator_;
 
@@ -583,6 +595,7 @@ bool RendererWebKitPlatformSupportImpl::Hyphenator::canHyphenate(
   return hyphenator_->CanHyphenate(locale);
 }
 
+// DEPRECATED
 size_t RendererWebKitPlatformSupportImpl::Hyphenator::computeLastHyphenLocation(
     const char16* characters,
     size_t length,
@@ -593,6 +606,16 @@ size_t RendererWebKitPlatformSupportImpl::Hyphenator::computeLastHyphenLocation(
   DCHECK(hyphenator_.get());
   return hyphenator_->ComputeLastHyphenLocation(string16(characters, length),
                                                 before_index);
+}
+
+size_t RendererWebKitPlatformSupportImpl::Hyphenator::computeLastHyphenLocation(
+    const WebKit::WebString& word,
+    size_t before_index,
+    const WebKit::WebString& locale) {
+  // Crash if WebKit calls this function when canHyphenate returns false.
+  DCHECK(locale.isEmpty() || locale.equals("en-US"));
+  DCHECK(hyphenator_.get());
+  return hyphenator_->ComputeLastHyphenLocation(word, before_index);
 }
 
 //------------------------------------------------------------------------------
@@ -883,6 +906,37 @@ RendererWebKitPlatformSupportImpl::createMIDIAccessor(
   return new RendererWebMIDIAccessorImpl(client);
 }
 
+void RendererWebKitPlatformSupportImpl::getPluginList(
+    bool refresh,
+    WebKit::WebPluginListBuilder* builder) {
+#if defined(ENABLE_PLUGINS)
+  std::vector<WebPluginInfo> plugins;
+  if (!plugin_refresh_allowed_)
+    refresh = false;
+  RenderThread::Get()->Send(
+      new ViewHostMsg_GetPlugins(refresh, &plugins));
+  for (size_t i = 0; i < plugins.size(); ++i) {
+    const WebPluginInfo& plugin = plugins[i];
+
+    builder->addPlugin(
+        plugin.name, plugin.desc,
+        plugin.path.BaseName().AsUTF16Unsafe());
+
+    for (size_t j = 0; j < plugin.mime_types.size(); ++j) {
+      const WebPluginMimeType& mime_type = plugin.mime_types[j];
+
+      builder->addMediaTypeToLastPlugin(
+          WebString::fromUTF8(mime_type.mime_type), mime_type.description);
+
+      for (size_t k = 0; k < mime_type.file_extensions.size(); ++k) {
+        builder->addFileExtensionToLastMediaType(
+            WebString::fromUTF8(mime_type.file_extensions[k]));
+      }
+    }
+  }
+#endif
+}
+
 //------------------------------------------------------------------------------
 
 WebKit::WebString
@@ -934,16 +988,6 @@ void RendererWebKitPlatformSupportImpl::sampleGamepads(WebGamepads& gamepads) {
 WebKit::WebString RendererWebKitPlatformSupportImpl::userAgent(
     const WebKit::WebURL& url) {
   return WebKitPlatformSupportImpl::userAgent(url);
-}
-
-void RendererWebKitPlatformSupportImpl::GetPlugins(
-    bool refresh, std::vector<webkit::WebPluginInfo>* plugins) {
-#if defined(ENABLE_PLUGINS)
-  if (!plugin_refresh_allowed_)
-    refresh = false;
-  RenderThread::Get()->Send(
-      new ViewHostMsg_GetPlugins(refresh, plugins));
-#endif
 }
 
 //------------------------------------------------------------------------------
@@ -1097,6 +1141,31 @@ WebKit::WebCrypto* RendererWebKitPlatformSupportImpl::crypto() {
     web_crypto_.reset(new WebCryptoImpl());
   return web_crypto_.get();
 
+}
+
+//------------------------------------------------------------------------------
+
+#if defined(OS_ANDROID)
+void RendererWebKitPlatformSupportImpl::vibrate(unsigned int milliseconds) {
+  RenderThread::Get()->Send(
+      new ViewHostMsg_Vibrate(base::checked_numeric_cast<int64>(milliseconds)));
+}
+
+void RendererWebKitPlatformSupportImpl::cancelVibration() {
+  RenderThread::Get()->Send(new ViewHostMsg_CancelVibration());
+}
+#endif  // defined(OS_ANDROID)
+
+//------------------------------------------------------------------------------
+
+void RendererWebKitPlatformSupportImpl::queryStorageUsageAndQuota(
+    const WebKit::WebURL& storage_partition,
+    WebKit::WebStorageQuotaType type,
+    WebKit::WebStorageQuotaCallbacks* callbacks) {
+  ChildThread::current()->quota_dispatcher()->QueryStorageUsageAndQuota(
+      storage_partition,
+      static_cast<quota::StorageType>(type),
+      QuotaDispatcher::CreateWebStorageQuotaCallbacksWrapper(callbacks));
 }
 
 }  // namespace content

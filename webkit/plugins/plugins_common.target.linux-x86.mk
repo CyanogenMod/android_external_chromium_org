@@ -25,12 +25,8 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
-	webkit/plugins/webplugininfo.cc \
 	webkit/plugins/plugin_constants.cc \
 	webkit/plugins/plugin_switches.cc \
-	webkit/plugins/npapi/plugin_list.cc \
-	webkit/plugins/npapi/plugin_list_posix.cc \
-	webkit/plugins/npapi/plugin_utils.cc \
 	webkit/common/plugins/ppapi/ppapi_utils.cc
 
 

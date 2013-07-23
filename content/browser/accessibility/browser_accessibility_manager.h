@@ -61,6 +61,10 @@ class CONTENT_EXPORT BrowserAccessibilityManager {
 
   virtual ~BrowserAccessibilityManager();
 
+  void Initialize(const AccessibilityNodeData src);
+
+  static AccessibilityNodeData GetEmptyDocument();
+
   // Type is enum AccessibilityNotification.
   // We pass it as int so that we don't include the message declaration
   // header here.
@@ -155,6 +159,10 @@ class CONTENT_EXPORT BrowserAccessibilityManager {
       const AccessibilityNodeData& node7 = AccessibilityNodeData());
 
  protected:
+  BrowserAccessibilityManager(
+      BrowserAccessibilityDelegate* delegate,
+      BrowserAccessibilityFactory* factory);
+
   BrowserAccessibilityManager(
       const AccessibilityNodeData& src,
       BrowserAccessibilityDelegate* delegate,

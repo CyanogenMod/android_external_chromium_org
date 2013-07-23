@@ -4,7 +4,6 @@
 
 #include "content/browser/renderer_host/render_widget_host_view_win.h"
 
-#include <dwmapi.h>
 #include <InputScope.h>
 #include <wtsapi32.h>
 #pragma comment(lib, "wtsapi32.lib")
@@ -40,7 +39,9 @@
 #include "content/browser/renderer_host/ui_events_helper.h"
 #include "content/common/accessibility_messages.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/common/plugin_constants_win.h"
 #include "content/common/view_messages.h"
+#include "content/common/webplugin_geometry.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/content_browser_client.h"
@@ -73,9 +74,6 @@
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/screen.h"
 #include "webkit/common/cursors/webcursor.h"
-#include "webkit/plugins/npapi/plugin_constants_win.h"
-#include "webkit/plugins/npapi/webplugin.h"
-#include "webkit/plugins/npapi/webplugin_delegate_impl.h"
 #include "win8/util/win8_util.h"
 
 using base::TimeDelta;
@@ -332,22 +330,6 @@ void GetScreenInfoForWindow(gfx::NativeViewId id,
   *results = screen_info;
 }
 
-void SetDwmPresentParameters(HWND window) {
-  if (base::win::GetVersion() >= base::win::VERSION_VISTA) {
-    BOOL is_composited;
-    HRESULT result = DwmIsCompositionEnabled(&is_composited);
-    if (SUCCEEDED(result) && is_composited) {
-      DWM_PRESENT_PARAMETERS present_parameters = {0};
-      present_parameters.cbSize = sizeof(present_parameters);
-      present_parameters.cBuffer = 2;
-
-      result = DwmSetPresentParameters(window, &present_parameters);
-      if (FAILED(result))
-        DLOG(ERROR) << "Unable to set present parameters: 0x%08X", result;
-    }
-  }
-}
-
 }  // namespace
 
 const wchar_t kRenderWidgetHostHWNDClass[] = L"Chrome_RenderWidgetHostHWND";
@@ -575,7 +557,7 @@ void RenderWidgetHostViewWin::CreateBrowserAccessibilityManagerIfNeeded() {
 
 void RenderWidgetHostViewWin::MovePluginWindows(
     const gfx::Vector2d& scroll_offset,
-    const std::vector<webkit::npapi::WebPluginGeometry>& plugin_window_moves) {
+    const std::vector<WebPluginGeometry>& plugin_window_moves) {
   MovePluginWindowsHelper(m_hWnd, plugin_window_moves);
 }
 
@@ -1244,7 +1226,6 @@ LRESULT RenderWidgetHostViewWin::OnCreate(CREATESTRUCT* create_struct) {
   props_.push_back(ui::SetWindowSupportsRerouteMouseWheel(m_hWnd));
 
   WTSRegisterSessionNotification(m_hWnd, NOTIFY_FOR_THIS_SESSION);
-  SetDwmPresentParameters(m_hWnd);
 
   UpdateDesiredTouchMode();
   UpdateIMEState();
@@ -2338,8 +2319,7 @@ LRESULT RenderWidgetHostViewWin::OnMouseActivate(UINT message,
     ::ScreenToClient(m_hWnd, &cursor_pos);
     HWND child_window = ::RealChildWindowFromPoint(m_hWnd, cursor_pos);
     if (::IsWindow(child_window) && child_window != m_hWnd) {
-      if (ui::GetClassName(child_window) ==
-              webkit::npapi::kWrapperNativeWindowClassName)
+      if (ui::GetClassName(child_window) == kWrapperNativeWindowClassName)
         child_window = ::GetWindow(child_window, GW_CHILD);
 
       ::SetFocus(child_window);
@@ -2582,19 +2562,16 @@ gfx::GLSurfaceHandle RenderWidgetHostViewWin::GetCompositingSurface() {
       static_cast<int>(currentRect.bottom - currentRect.top));
 
   compositor_host_window_ = CreateWindowEx(
-    WS_EX_LEFT | WS_EX_LTRREADING | WS_EX_RIGHTSCROLLBAR,
-    MAKEINTATOM(atom), 0,
-    WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_DISABLED,
-    0, 0, width, height, m_hWnd, 0, instance, 0);
+      WS_EX_LEFT | WS_EX_LTRREADING | WS_EX_RIGHTSCROLLBAR,
+      MAKEINTATOM(atom), 0,
+      WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_DISABLED,
+      0, 0, width, height, m_hWnd, 0, instance, 0);
   ui::CheckWindowCreated(compositor_host_window_);
 
   ui::SetWindowUserData(compositor_host_window_, this);
 
-  SetDwmPresentParameters(compositor_host_window_);
-
   gfx::GLSurfaceHandle surface_handle(compositor_host_window_,
                                       gfx::NATIVE_TRANSPORT);
-
   return surface_handle;
 }
 

@@ -33,6 +33,7 @@
 #include "content/child/child_thread.h"
 #include "content/child/fileapi/file_system_dispatcher.h"
 #include "content/child/fileapi/webfilesystem_callback_adapters.h"
+#include "content/child/npapi/webplugin_delegate_impl.h"
 #include "content/child/quota_dispatcher.h"
 #include "content/child/request_extra_data.h"
 #include "content/child/webmessageportchannel_impl.h"
@@ -107,7 +108,6 @@
 #include "content/renderer/mhtml_generator.h"
 #include "content/renderer/notification_provider.h"
 #include "content/renderer/pepper/pepper_plugin_delegate_impl.h"
-#include "content/renderer/plugin_channel_host.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_process.h"
 #include "content/renderer/render_thread_impl.h"
@@ -126,6 +126,7 @@
 #include "content/renderer/web_ui_extension.h"
 #include "content/renderer/web_ui_extension_data.h"
 #include "content/renderer/webplugin_delegate_proxy.h"
+#include "content/renderer/webplugin_impl.h"
 #include "content/renderer/websharedworker_proxy.h"
 #include "media/audio/audio_output_device.h"
 #include "media/base/audio_renderer_mixer_input.h"
@@ -138,6 +139,22 @@
 #include "net/base/net_errors.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/http/http_util.h"
+#include "third_party/WebKit/public/platform/WebCString.h"
+#include "third_party/WebKit/public/platform/WebDragData.h"
+#include "third_party/WebKit/public/platform/WebFileSystemType.h"
+#include "third_party/WebKit/public/platform/WebHTTPBody.h"
+#include "third_party/WebKit/public/platform/WebImage.h"
+#include "third_party/WebKit/public/platform/WebMessagePortChannel.h"
+#include "third_party/WebKit/public/platform/WebPoint.h"
+#include "third_party/WebKit/public/platform/WebRect.h"
+#include "third_party/WebKit/public/platform/WebSize.h"
+#include "third_party/WebKit/public/platform/WebSocketStreamHandle.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/platform/WebURLError.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/public/platform/WebURLResponse.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebAccessibilityObject.h"
 #include "third_party/WebKit/public/web/WebColorName.h"
 #include "third_party/WebKit/public/web/WebDOMEvent.h"
@@ -180,22 +197,6 @@
 #include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/WebKit/public/web/WebWindowFeatures.h"
 #include "third_party/WebKit/public/web/default/WebRenderTheme.h"
-#include "third_party/WebKit/public/platform/WebCString.h"
-#include "third_party/WebKit/public/platform/WebDragData.h"
-#include "third_party/WebKit/public/platform/WebFileSystemType.h"
-#include "third_party/WebKit/public/platform/WebHTTPBody.h"
-#include "third_party/WebKit/public/platform/WebImage.h"
-#include "third_party/WebKit/public/platform/WebMessagePortChannel.h"
-#include "third_party/WebKit/public/platform/WebPoint.h"
-#include "third_party/WebKit/public/platform/WebRect.h"
-#include "third_party/WebKit/public/platform/WebSize.h"
-#include "third_party/WebKit/public/platform/WebSocketStreamHandle.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebURL.h"
-#include "third_party/WebKit/public/platform/WebURLError.h"
-#include "third_party/WebKit/public/platform/WebURLRequest.h"
-#include "third_party/WebKit/public/platform/WebURLResponse.h"
-#include "third_party/WebKit/public/platform/WebVector.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
@@ -204,14 +205,9 @@
 #include "ui/gfx/size_conversions.h"
 #include "ui/shell_dialogs/selected_file_info.h"
 #include "v8/include/v8.h"
+#include "webkit/child/weburlresponse_extradata_impl.h"
 #include "webkit/common/dom_storage/dom_storage_types.h"
 #include "webkit/glue/webkit_glue.h"
-#include "webkit/glue/weburlresponse_extradata_impl.h"
-#include "webkit/plugins/npapi/plugin_list.h"
-#include "webkit/plugins/npapi/plugin_utils.h"
-#include "webkit/plugins/npapi/webplugin_delegate.h"
-#include "webkit/plugins/npapi/webplugin_delegate_impl.h"
-#include "webkit/plugins/npapi/webplugin_impl.h"
 #include "webkit/renderer/appcache/web_application_cache_host_impl.h"
 #include "webkit/renderer/webpreferences_renderer.h"
 
@@ -229,9 +225,9 @@
 #include "content/renderer/media/android/webmediaplayer_android.h"
 #include "content/renderer/media/android/webmediaplayer_proxy_android.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/public/web/WebHitTestResult.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebFloatRect.h"
+#include "third_party/WebKit/public/web/WebHitTestResult.h"
 #include "ui/gfx/rect_f.h"
 
 #if defined(GOOGLE_TV)
@@ -298,7 +294,6 @@ using WebKit::WebPeerConnection00Handler;
 using WebKit::WebPeerConnection00HandlerClient;
 using WebKit::WebPeerConnectionHandler;
 using WebKit::WebPeerConnectionHandlerClient;
-using WebKit::WebPlugin;
 using WebKit::WebPluginAction;
 using WebKit::WebPluginContainer;
 using WebKit::WebPluginDocument;
@@ -1139,7 +1134,7 @@ void RenderViewImpl::UnregisterPluginDelegate(
 bool RenderViewImpl::GetPluginInfo(const GURL& url,
                                    const GURL& page_url,
                                    const std::string& mime_type,
-                                   webkit::WebPluginInfo* plugin_info,
+                                   WebPluginInfo* plugin_info,
                                    std::string* actual_mime_type) {
   bool found = false;
   Send(new ViewHostMsg_GetPluginInfo(
@@ -2033,9 +2028,9 @@ void RenderViewImpl::OpenURL(WebFrame* frame,
   params.frame_id = frame->identifier();
   WebDataSource* ds = frame->provisionalDataSource();
   if (ds) {
-    params.is_cross_site_redirect = ds->isClientRedirect();
+    params.should_replace_current_entry = ds->replacesCurrentHistoryItem();
   } else {
-    params.is_cross_site_redirect = false;
+    params.should_replace_current_entry = false;
   }
   params.user_gesture = WebUserGestureIndicator::isProcessingUserGesture();
 
@@ -2822,9 +2817,9 @@ void RenderViewImpl::didHandleGestureEvent(
 
 // WebKit::WebFrameClient -----------------------------------------------------
 
-WebPlugin* RenderViewImpl::createPlugin(WebFrame* frame,
-                                        const WebPluginParams& params) {
-  WebPlugin* plugin = NULL;
+WebKit::WebPlugin* RenderViewImpl::createPlugin(WebFrame* frame,
+                                                const WebPluginParams& params) {
+  WebKit::WebPlugin* plugin = NULL;
   if (GetContentClient()->renderer()->OverrideCreatePlugin(
           this, frame, params, &plugin)) {
     return plugin;
@@ -2835,7 +2830,7 @@ WebPlugin* RenderViewImpl::createPlugin(WebFrame* frame,
     return GetBrowserPluginManager()->CreateBrowserPlugin(this, frame, params);
   }
 
-  webkit::WebPluginInfo info;
+  WebPluginInfo info;
   std::string mime_type;
   bool found = GetPluginInfo(params.url, frame->top()->document().url(),
                              params.mimeType.utf8(), &info, &mime_type);
@@ -3739,14 +3734,6 @@ void RenderViewImpl::didFailProvisionalLoad(WebFrame* frame,
   LoadNavigationErrorPage(frame, failed_request, error, std::string(), replace);
 }
 
-void RenderViewImpl::didReceiveDocumentData(
-    WebFrame* frame, const char* data, size_t data_len,
-    bool& prevent_default) {
-  InternalDocumentStateData* internal_data =
-      InternalDocumentStateData::FromDataSource(frame->dataSource());
-  internal_data->set_use_error_page(false);
-}
-
 void RenderViewImpl::didCommitProvisionalLoad(WebFrame* frame,
                                               bool is_new_navigation) {
   DocumentState* document_state =
@@ -3762,6 +3749,7 @@ void RenderViewImpl::didCommitProvisionalLoad(WebFrame* frame,
     webview()->resetScrollAndScaleState();
     internal_data->set_must_reset_scroll_and_scale_state(false);
   }
+  internal_data->set_use_error_page(false);
 
   if (is_new_navigation) {
     // When we perform a new navigation, we need to update the last committed
@@ -4693,7 +4681,7 @@ bool RenderViewImpl::IsEditableNode(const WebNode& node) const {
 
 WebKit::WebPlugin* RenderViewImpl::CreatePlugin(
     WebKit::WebFrame* frame,
-    const webkit::WebPluginInfo& info,
+    const WebPluginInfo& info,
     const WebKit::WebPluginParams& params) {
   WebKit::WebPlugin* pepper_webplugin =
       pepper_helper_->CreatePepperWebPlugin(info, params);
@@ -4701,11 +4689,7 @@ WebKit::WebPlugin* RenderViewImpl::CreatePlugin(
   if (pepper_webplugin)
     return pepper_webplugin;
 
-  if (!webkit::npapi::NPAPIPluginsSupported())
-    return NULL;
-
-  return new webkit::npapi::WebPluginImpl(
-      frame, params, info.path, AsWeakPtr());
+  return new WebPluginImpl(frame, params, info.path, AsWeakPtr());
 }
 
 void RenderViewImpl::EvaluateScript(const string16& frame_xpath,
@@ -4782,66 +4766,12 @@ void RenderViewImpl::LoadURLExternally(
   loadURLExternally(frame, request, policy);
 }
 
-// webkit_glue::WebPluginPageDelegate ------------------------------------------
-
-webkit::npapi::WebPluginDelegate* RenderViewImpl::CreatePluginDelegate(
-    const base::FilePath& file_path,
-    const std::string& mime_type) {
-  if (!PluginChannelHost::IsListening()) {
-    LOG(ERROR) << "PluginChannelHost isn't listening";
-    return NULL;
-  }
-
-  bool in_process_plugin = RenderProcess::current()->UseInProcessPlugins();
-  if (in_process_plugin) {
-#if defined(OS_WIN) && !defined(USE_AURA)
-    return webkit::npapi::WebPluginDelegateImpl::Create(file_path, mime_type);
-#else
-    // In-proc plugins aren't supported on non-Windows.
-    NOTIMPLEMENTED();
-    return NULL;
-#endif
-  }
-
-  return new WebPluginDelegateProxy(mime_type, AsWeakPtr());
-}
-
-WebKit::WebPlugin* RenderViewImpl::CreatePluginReplacement(
-    const base::FilePath& file_path) {
-  return GetContentClient()->renderer()->CreatePluginReplacement(
-      this, file_path);
-}
-
-void RenderViewImpl::CreatedPluginWindow(gfx::PluginWindowHandle window) {
-#if defined(USE_X11)
-  Send(new ViewHostMsg_CreatePluginContainer(routing_id(), window));
-#endif
-}
-
-void RenderViewImpl::WillDestroyPluginWindow(gfx::PluginWindowHandle window) {
-#if defined(USE_X11)
-  Send(new ViewHostMsg_DestroyPluginContainer(routing_id(), window));
-#endif
-  CleanupWindowInPluginMoves(window);
-}
-
-void RenderViewImpl::DidMovePlugin(
-    const webkit::npapi::WebPluginGeometry& move) {
-  SchedulePluginMove(move);
-}
-
-void RenderViewImpl::DidStartLoadingForPlugin() {
-  // TODO(darin): Make is_loading_ be a counter!
+void RenderViewImpl::DidStartLoading() {
   didStartLoading();
 }
 
-void RenderViewImpl::DidStopLoadingForPlugin() {
-  // TODO(darin): Make is_loading_ be a counter!
+void RenderViewImpl::DidStopLoading() {
   didStopLoading();
-}
-
-WebCookieJar* RenderViewImpl::GetCookieJar() {
-  return &cookie_jar_;
 }
 
 void RenderViewImpl::DidPlay(WebKit::WebMediaPlayer* player) {

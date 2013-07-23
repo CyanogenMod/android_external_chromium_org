@@ -65,23 +65,6 @@ MD5SUM_DEVICE_FOLDER = constants.TEST_EXECUTABLE_DIR + '/md5sum/'
 MD5SUM_DEVICE_PATH = MD5SUM_DEVICE_FOLDER + 'md5sum_bin'
 MD5SUM_LD_LIBRARY_PATH = 'LD_LIBRARY_PATH=%s' % MD5SUM_DEVICE_FOLDER
 
-def GetEmulators():
-  """Returns a list of emulators.  Does not filter by status (e.g. offline).
-
-  Both devices starting with 'emulator' will be returned in below output:
-
-    * daemon not running. starting it now on port 5037 *
-    * daemon started successfully *
-    List of devices attached
-    027c10494100b4d7        device
-    emulator-5554   offline
-    emulator-5558   device
-  """
-  re_device = re.compile('^emulator-[0-9]+', re.MULTILINE)
-  devices = re_device.findall(cmd_helper.GetCmdOutput([constants.ADB_PATH,
-                                                       'devices']))
-  return devices
-
 
 def GetAVDs():
   """Returns a list of AVDs."""
@@ -90,11 +73,11 @@ def GetAVDs():
   return avds
 
 
-def GetAttachedDevices():
-  """Returns a list of attached, online android devices.
+def GetAttachedDevices(hardware=True, emulator=True, offline=False):
+  """Returns a list of attached, android devices and emulators.
 
   If a preferred device has been set with ANDROID_SERIAL, it will be first in
-  the returned list.
+  the returned list. The arguments specify what devices to include in the list.
 
   Example output:
 
@@ -103,25 +86,44 @@ def GetAttachedDevices():
     List of devices attached
     027c10494100b4d7        device
     emulator-5554   offline
+
+  Args:
+    hardware: Include attached actual devices that are online.
+    emulator: Include emulators (i.e. AVD's) currently on host.
+    offline: Include devices and emulators that are offline.
+
+  Returns: List of devices.
   """
+  adb_devices_output = cmd_helper.GetCmdOutput([constants.ADB_PATH, 'devices'])
+
   re_device = re.compile('^([a-zA-Z0-9_:.-]+)\tdevice$', re.MULTILINE)
-  devices = re_device.findall(cmd_helper.GetCmdOutput([constants.ADB_PATH,
-                                                       'devices']))
+  online_devices = re_device.findall(adb_devices_output)
+
+  re_device = re.compile('^(emulator-[0-9]+)\tdevice', re.MULTILINE)
+  emulator_devices = re_device.findall(adb_devices_output)
+
+  re_device = re.compile('^([a-zA-Z0-9_:.-]+)\toffline$', re.MULTILINE)
+  offline_devices = re_device.findall(adb_devices_output)
+
+  devices = []
+  # First determine list of online devices (e.g. hardware and/or emulator).
+  if hardware and emulator:
+    devices = online_devices
+  elif hardware:
+    devices = [device for device in online_devices
+               if device not in emulator_devices]
+  elif emulator:
+    devices = emulator_devices
+
+  # Now add offline devices if offline is true
+  if offline:
+    devices = devices + offline_devices
+
   preferred_device = os.environ.get('ANDROID_SERIAL')
   if preferred_device in devices:
     devices.remove(preferred_device)
     devices.insert(0, preferred_device)
   return devices
-
-
-def GetAttachedOfflineDevices():
-  """Returns a list of attached, offline android devices.
-
-  Returns: List of devices with status 'offline'.
-  """
-  re_device = re.compile('^([a-zA-Z0-9_:.-]+)\toffline$', re.MULTILINE)
-  return re_device.findall(cmd_helper.GetCmdOutput([constants.ADB_PATH,
-                                                    'devices']))
 
 
 def IsDeviceAttached(device):
@@ -183,8 +185,17 @@ def _GetFilesFromRecursiveLsOutput(path, ls_output, re_file, utc_offset=None):
 
 
 def _ComputeFileListHash(md5sum_output):
-  """Returns a list of MD5 strings from the provided md5sum output."""
-  return [line.split('  ')[0] for line in md5sum_output]
+  """Returns a list of tuples from the provided md5sum output.
+
+  Args:
+    md5sum_output: output directly from md5sum binary.
+
+  Returns:
+    List of namedtuples (hash, path).
+  """
+  HashAndPath = collections.namedtuple('HashAndPath', ['hash', 'path'])
+  split_lines = [line.split('  ') for line in md5sum_output]
+  return [HashAndPath._make(s) for s in split_lines if len(s) == 2]
 
 
 def _HasAdbPushSucceeded(command_output):
@@ -742,17 +753,30 @@ class AndroidCommands(object):
 
     cmd = (MD5SUM_LD_LIBRARY_PATH + ' ' + self._util_wrapper + ' ' +
            MD5SUM_DEVICE_PATH + ' ' + device_path)
-    hashes_on_device = _ComputeFileListHash(
+    device_hash_tuples = _ComputeFileListHash(
         self.RunShellCommand(cmd, timeout_time=2 * 60))
     assert os.path.exists(local_path), 'Local path not found %s' % local_path
     md5sum_output = cmd_helper.GetCmdOutput(
         ['%s/md5sum_bin_host' % self._md5sum_build_dir, local_path])
-    hashes_on_host = _ComputeFileListHash(md5sum_output.splitlines())
+    host_hash_tuples = _ComputeFileListHash(md5sum_output.splitlines())
 
-    if ignore_paths:
-      hashes_on_device = [h.split()[0] for h in hashes_on_device]
-      hashes_on_host = [h.split()[0] for h in hashes_on_host]
+    # Ignore extra files on the device.
+    if len(device_hash_tuples) > len(host_hash_tuples):
+      host_files = [os.path.relpath(os.path.normpath(p.path),
+                    os.path.normpath(local_path)) for p in host_hash_tuples]
 
+      def _host_has(fname):
+        return any(path in fname for path in host_files)
+
+      hashes_on_device = [h.hash for h in device_hash_tuples if
+                         _host_has(h.path)]
+    else:
+      hashes_on_device = [h.hash for h in device_hash_tuples]
+
+    # Compare md5sums between host and device files.
+    hashes_on_host = [h.hash for h in host_hash_tuples]
+    hashes_on_device.sort()
+    hashes_on_host.sort()
     return hashes_on_device == hashes_on_host
 
   def PushIfNeeded(self, local_path, device_path):
@@ -781,8 +805,21 @@ class AndroidCommands(object):
     # 60 seconds which isn't sufficient for a lot of users of this method.
     push_command = 'push %s %s' % (local_path, device_path)
     self._LogShell(push_command)
-    output = self._adb.SendCommand(push_command, timeout_time=30 * 60)
-    assert _HasAdbPushSucceeded(output)
+
+    # Retry push with increasing backoff if the device is busy.
+    retry = 0
+    while True:
+      output = self._adb.SendCommand(push_command, timeout_time=30 * 60)
+      if _HasAdbPushSucceeded(output):
+        return
+      if 'resource busy' in output and retry < 3:
+        retry += 1
+        wait_time = 5 * retry
+        logging.error('Push failed, retrying in %d seconds: %s' %
+                      (wait_time, output))
+        time.sleep(wait_time)
+      else:
+        raise Exception('Push failed: %s' % output)
 
   def GetPushSizeInfo(self):
     """Get total size of pushes to the device done via PushIfNeeded()

@@ -31,6 +31,28 @@ bool BreakpadClient::GetAlternativeCrashDumpLocation(
     base::FilePath* crash_dir) {
   return false;
 }
+
+void BreakpadClient::GetProductNameAndVersion(const base::FilePath& exe_path,
+                                              base::string16* product_name,
+                                              base::string16* version,
+                                              base::string16* special_build) {
+}
+
+bool BreakpadClient::ShouldShowRestartDialog(base::string16* title,
+                                             base::string16* message,
+                                             bool* is_rtl_locale) {
+  return false;
+}
+
+bool BreakpadClient::AboutToRestart() {
+  return true;
+}
+#endif
+
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_IOS)
+void BreakpadClient::GetProductNameAndVersion(std::string* product_name,
+                                              std::string* version) {
+}
 #endif
 
 bool BreakpadClient::GetCrashDumpLocation(base::FilePath* crash_dir) {
@@ -41,5 +63,13 @@ bool BreakpadClient::GetCrashDumpLocation(base::FilePath* crash_dir) {
 void BreakpadClient::SetDumpWithoutCrashingFunction(void (*function)()) {
 }
 #endif
+
+size_t BreakpadClient::RegisterCrashKeys() {
+  return 0;
+}
+
+bool BreakpadClient::IsRunningUnattended() {
+  return false;
+}
 
 }  // namespace breakpad

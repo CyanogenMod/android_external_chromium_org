@@ -139,6 +139,7 @@
 #include "content/public/common/drop_data.h"
 #include "content/public/common/geoposition.h"
 #include "content/public/common/ssl_status.h"
+#include "content/public/common/webplugininfo.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
@@ -147,7 +148,6 @@
 #include "ui/base/events/event_constants.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/ui_base_types.h"
-#include "webkit/plugins/webplugininfo.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "chrome/browser/policy/policy_service.h"
@@ -2125,24 +2125,25 @@ void TestingAutomationProvider::PerformActionOnInfobar(
                                        infobar_index));
     return;
   }
-  InfoBarDelegate* infobar = infobar_service->infobar_at(infobar_index);
+  InfoBarDelegate* infobar_delegate =
+      infobar_service->infobar_at(infobar_index);
 
   if (action == "dismiss") {
-    infobar->InfoBarDismissed();
-    infobar_service->RemoveInfoBar(infobar);
+    infobar_delegate->InfoBarDismissed();
+    infobar_service->RemoveInfoBar(infobar_delegate);
     reply.SendSuccess(NULL);
     return;
   }
   if ((action == "accept") || (action == "cancel")) {
-    ConfirmInfoBarDelegate* delegate = infobar->AsConfirmInfoBarDelegate();
-    if (!delegate) {
+    ConfirmInfoBarDelegate* confirm_infobar_delegate =
+        infobar_delegate->AsConfirmInfoBarDelegate();
+    if (!confirm_infobar_delegate) {
       reply.SendError("Not a confirm infobar");
       return;
     }
-    bool remove_infobar = (action == "accept") ?
-        delegate->Accept() : delegate->Cancel();
-    if (remove_infobar)
-      infobar_service->RemoveInfoBar(infobar);
+    if ((action == "accept") ?
+        confirm_infobar_delegate->Accept() : confirm_infobar_delegate->Cancel())
+      infobar_service->RemoveInfoBar(infobar_delegate);
     reply.SendSuccess(NULL);
     return;
   }
@@ -3057,11 +3058,11 @@ void TestingAutomationProvider::GetPluginsInfoCallback(
     Browser* browser,
     DictionaryValue* args,
     IPC::Message* reply_message,
-    const std::vector<webkit::WebPluginInfo>& plugins) {
+    const std::vector<content::WebPluginInfo>& plugins) {
   PluginPrefs* plugin_prefs =
       PluginPrefs::GetForProfile(browser->profile()).get();
   ListValue* items = new ListValue;
-  for (std::vector<webkit::WebPluginInfo>::const_iterator it =
+  for (std::vector<content::WebPluginInfo>::const_iterator it =
            plugins.begin();
        it != plugins.end();
        ++it) {
@@ -3073,7 +3074,7 @@ void TestingAutomationProvider::GetPluginsInfoCallback(
     item->SetBoolean("enabled", plugin_prefs->IsPluginEnabled(*it));
     // Add info about mime types.
     ListValue* mime_types = new ListValue();
-    for (std::vector<webkit::WebPluginMimeType>::const_iterator type_it =
+    for (std::vector<content::WebPluginMimeType>::const_iterator type_it =
              it->mime_types.begin();
          type_it != it->mime_types.end();
          ++type_it) {

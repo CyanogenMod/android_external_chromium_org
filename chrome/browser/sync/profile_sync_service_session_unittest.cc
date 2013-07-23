@@ -798,7 +798,7 @@ TEST_F(ProfileSyncServiceSessionTest, TabNodePoolNonEmpty) {
     model_associator_->tab_pool_.AddTabNode(i + 1, session_id, i);
   }
 
-  model_associator_->tab_pool_.FreeUnusedTabNodes(std::set<int64>());
+  model_associator_->tab_pool_.FreeUnassociatedTabNodes();
   std::vector<int64> node_ids;
   ASSERT_EQ(num_starting_nodes, model_associator_->tab_pool_.Capacity());
   ASSERT_FALSE(model_associator_->tab_pool_.Empty());
@@ -1292,7 +1292,7 @@ TEST_F(ProfileSyncServiceSessionTest, CheckPrerenderedWebContentsSwap) {
   // Create new WebContents, with the required tab helpers.
   WebContents* new_web_contents = WebContents::CreateWithSessionStorage(
       WebContents::CreateParams(profile()),
-      old_web_contents->GetController().GetSessionStorageNamespace());
+      old_web_contents->GetController().GetSessionStorageNamespaceMap());
   SessionTabHelper::CreateForWebContents(new_web_contents);
   TabContentsSyncedTabDelegate::CreateForWebContents(new_web_contents);
   new_web_contents->GetController()
@@ -1326,6 +1326,48 @@ TEST_F(ProfileSyncServiceSessionTest, CheckPrerenderedWebContentsSwap) {
   NavigateAndCommitActiveTab(GURL("http://bar5"));
   EXPECT_TRUE(model_associator_->AssociateWindows(true, &error));
   ASSERT_FALSE(error.IsSet());
+}
+
+TEST_F(ProfileSyncServiceSessionTest, TabPoolFreeNodeLimits) {
+  CreateRootHelper create_root(this);
+  ASSERT_TRUE(StartSyncService(create_root.callback(), false));
+  ASSERT_TRUE(create_root.success());
+
+  // Allocate TabNodePool::kFreeNodesHighWatermark + 1 nodes and verify that
+  // freeing the last node reduces the free node pool size to
+  // kFreeNodesLowWatermark.
+
+  SessionID session_id;
+  std::vector<int64> used_sync_ids;
+  for (size_t i = 1; i <= TabNodePool::kFreeNodesHighWatermark + 1; ++i) {
+    session_id.set_id(i);
+    int64 sync_id = model_associator_->tab_pool_.GetFreeTabNode();
+    model_associator_->tab_pool_.AssociateTabNode(sync_id, i);
+    used_sync_ids.push_back(sync_id);
+  }
+
+  // Free all except one node.
+  int64 last_sync_id = used_sync_ids.back();
+  used_sync_ids.pop_back();
+
+  for (size_t i = 0; i < used_sync_ids.size(); ++i) {
+    model_associator_->tab_pool_.FreeTabNode(used_sync_ids[i]);
+  }
+
+  // Except one node all nodes should be in FreeNode pool.
+  EXPECT_FALSE(model_associator_->tab_pool_.Full());
+  EXPECT_FALSE(model_associator_->tab_pool_.Empty());
+  // Total capacity = 1 Associated Node + kFreeNodesHighWatermark free node.
+  EXPECT_EQ(TabNodePool::kFreeNodesHighWatermark + 1,
+            model_associator_->tab_pool_.Capacity());
+
+  // Freeing the last sync node should drop the free nodes to
+  // kFreeNodesLowWatermark.
+  model_associator_->tab_pool_.FreeTabNode(last_sync_id);
+  EXPECT_FALSE(model_associator_->tab_pool_.Empty());
+  EXPECT_TRUE(model_associator_->tab_pool_.Full());
+  EXPECT_EQ(TabNodePool::kFreeNodesLowWatermark,
+            model_associator_->tab_pool_.Capacity());
 }
 
 }  // namespace browser_sync

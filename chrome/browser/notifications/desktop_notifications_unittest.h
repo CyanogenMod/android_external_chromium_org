@@ -8,7 +8,7 @@
 #include <deque>
 #include <string>
 
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/prefs/testing_pref_service.h"
 #include "chrome/browser/notifications/balloon_collection_impl.h"
 #include "chrome/browser/notifications/balloon_notification_ui_manager.h"
@@ -113,11 +113,6 @@ class DesktopNotificationsTest : public testing::Test {
 
   // Real DesktopNotificationService
   scoped_ptr<DesktopNotificationService> service_;
-
-#if defined(USE_ASH)
-  content::RenderViewTest::RendererWebKitPlatformSupportImplNoSandbox
-      webkit_platform_support_;
-#endif
 
   // Contains the cumulative output of the unit test.
   static std::string log_output_;

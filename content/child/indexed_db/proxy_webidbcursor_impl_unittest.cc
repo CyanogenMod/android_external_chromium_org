@@ -5,6 +5,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 #include "content/child/indexed_db/indexed_db_dispatcher.h"
+#include "content/child/indexed_db/indexed_db_key_builders.h"
 #include "content/child/indexed_db/proxy_webidbcursor_impl.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/common/indexed_db/indexed_db_key.h"
@@ -17,6 +18,7 @@ using WebKit::WebData;
 using WebKit::WebIDBCallbacks;
 using WebKit::WebIDBDatabase;
 using WebKit::WebIDBKey;
+using WebKit::WebIDBKeyTypeNumber;
 
 namespace content {
 
@@ -72,7 +74,7 @@ class MockContinueCallbacks : public WebIDBCallbacks {
                          const WebData& value) {
 
     if (key_)
-      *key_ = IndexedDBKey(key);
+      *key_ = IndexedDBKeyBuilder::Build(key);
   }
 
  private:
@@ -133,7 +135,7 @@ TEST(RendererWebIDBCursorImplTest, PrefetchTest) {
       std::vector<IndexedDBKey> primary_keys(prefetch_count);
       std::vector<WebData> values(prefetch_count);
       for (int i = 0; i < prefetch_count; ++i) {
-        keys.push_back(IndexedDBKey(expected_key + i, WebIDBKey::NumberType));
+        keys.push_back(IndexedDBKey(expected_key + i, WebIDBKeyTypeNumber));
       }
       cursor.SetPrefetchData(keys, primary_keys, values);
 
@@ -148,7 +150,7 @@ TEST(RendererWebIDBCursorImplTest, PrefetchTest) {
         EXPECT_EQ(continue_calls, dispatcher.continue_calls());
         EXPECT_EQ(repetitions + 1, dispatcher.prefetch_calls());
 
-        EXPECT_EQ(WebIDBKey::NumberType, key.type());
+        EXPECT_EQ(WebIDBKeyTypeNumber, key.type());
         EXPECT_EQ(expected_key++, key.number());
       }
     }

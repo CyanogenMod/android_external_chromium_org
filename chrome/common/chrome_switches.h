@@ -24,18 +24,15 @@ namespace switches {
 
 // All switches in alphabetical order. The switches should be documented
 // alongside the definition of their values in the .cc file.
-extern const char kActionBox[];
 extern const char kAllowCrossOriginAuthPrompt[];
 extern const char kAllowFileAccess[];
 extern const char kAllowHTTPBackgroundPage[];
 extern const char kAllowHttpScreenCapture[];
-extern const char kAllowLegacyExtensionManifests[];
 extern const char kAllowNaClCrxFsAPI[];
 extern const char kAllowNaClFileHandleAPI[];
 extern const char kAllowNaClSocketAPI[];
 extern const char kAllowOutdatedPlugins[];
 extern const char kAllowRunningInsecureContent[];
-extern const char kAllowScriptingGallery[];
 extern const char kAlwaysAuthorizePlugins[];
 extern const char kAppId[];
 extern const char kApp[];
@@ -83,6 +80,7 @@ extern const char kDebugPrint[];
 extern const char kDeviceManagementUrl[];
 extern const char kDiagnostics[];
 extern const char kDiagnosticsFormat[];
+extern const char kDisableAppList[];
 extern const char kDisableAsyncDns[];
 extern const char kDisableAuthNegotiateCnameLookup[];
 extern const char kDisableBackgroundMode[];
@@ -107,6 +105,7 @@ extern const char kDisableIPPooling[];
 extern const char kDisableLocalFirstLoadNTP[];
 extern const char kDisableMinimizeOnSecondLauncherItemClick[];
 extern const char kDisableNTPOtherSessionsMenu[];
+extern const char kDisablePasswordAutofillPublicSuffixDomainMatching[];
 extern const char kDisablePopupBlocking[];
 extern const char kDisablePreconnect[];
 extern const char kDisablePrerenderLocalPredictor[];
@@ -144,12 +143,14 @@ extern const char kDisableSyncTabs[];
 extern const char kEasyOffStoreExtensionInstall[];
 extern const char kEnableAdview[];
 extern const char kEnableAdviewSrcAttribute[];
+extern const char kEnableAppList[];
 extern const char kEnableAppWindowControls[];
 extern const char kEnableAsyncDns[];
 extern const char kEnableAuthNegotiatePort[];
 extern const char kEnableAutologin[];
 extern const char kEnableBenchmarking[];
 extern const char kEnableBetterPopupBlocking[];
+extern const char kEnableBookmarkSyncPromo[];
 extern const char kEnableCloudPrintProxy[];
 extern const char kEnableComponentCloudPolicy[];
 extern const char kEnableContacts[];
@@ -186,6 +187,7 @@ extern const char kEnableQuicHttps[];
 extern const char kEnableQuickofficeEdit[];
 extern const char kEnableResetProfileSettings[];
 extern const char kEnableResourceContentSettings[];
+extern const char kEnableSavePasswordBubble[];
 extern const char kEnableSdch[];
 extern const char kDisableSpdy31[];
 extern const char kEnableSpdy4a2[];
@@ -203,7 +205,6 @@ extern const char kEnableUserAlternateProtocolPorts[];
 extern const char kEnableWatchdog[];
 extern const char kEnableWebSocketOverSpdy[];
 extern const char kExtensionsInActionBox[];
-extern const char kExtensionsOnChromeURLs[];
 extern const char kEventPageIdleTime[];
 extern const char kEventPageSuspendingTime[];
 extern const char kExplicitlyAllowedPorts[];
@@ -325,7 +326,6 @@ extern const char kSilentDebuggerExtensionAPI[];
 extern const char kSilentLaunch[];
 extern const char kSetToken[];
 extern const char kShowAppList[];
-extern const char kShowComponentExtensionOptions[];
 extern const char kShowIcons[];
 extern const char kShowLauncherAlignmentMenu[];
 extern const char kSigninProcess[];
@@ -355,6 +355,7 @@ extern const char kSyncThrowUnrecoverableError[];
 extern const char kSyncTrySsltcpFirstForXmpp[];
 extern const char kSyncEnableDeferredStartup[];
 extern const char kSyncDisableOAuth2Token[];
+extern const char kSyncEnableGetUpdateAvoidance[];
 extern const char kSyncfsEnableDirectoryOperation[];
 extern const char kTabBrowserDragging[];
 extern const char kTabCapture[];
@@ -391,9 +392,10 @@ extern const char kEnableSpdyProxyAuth[];
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
 #if defined(OS_ANDROID)
-extern const char kEnableTranslate[];
-extern const char kTabletUI[];
 extern const char kEnableNewNTP[];
+extern const char kEnableTranslate[];
+extern const char kFakeCloudPolicyType[];
+extern const char kTabletUI[];
 #endif
 
 #if defined(USE_ASH)
@@ -402,7 +404,6 @@ extern const char kOpenAsh[];
 #endif
 
 #if defined(OS_POSIX)
-extern const char kEnableCrashReporter[];
 extern const char kEnableCrashReporterForTesting[];
 #if !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
 extern const char kPasswordStore[];
@@ -421,8 +422,6 @@ extern const char kUseMockKeychain[];
 #endif
 
 #if defined(OS_WIN)
-extern const char kDisableAppList[];
-extern const char kEnableAppList[];
 extern const char kForceImmersive[];
 extern const char kForceDesktop[];
 extern const char kOverlappedRead[];

@@ -162,6 +162,7 @@ Visit.prototype.getResultDOM = function(propertyBag) {
     // Clicking anywhere in the entryBox will check/uncheck the checkbox.
     entryBox.setAttribute('for', checkbox.id);
     entryBox.addEventListener('mousedown', entryBoxMousedown);
+    entryBox.addEventListener('click', entryBoxClick);
   }
 
   // Keep track of the drop down that triggered the menu, so we know
@@ -489,16 +490,16 @@ HistoryModel.prototype.requestPage = function(page) {
  * @param {Array} results A list of results.
  */
 HistoryModel.prototype.addResults = function(info, results) {
+  // If no requests are in flight then this was an old request so we drop the
+  // results. Double check the search term as well.
+  if (!this.inFlight_ || info.term != this.searchText_)
+    return;
+
   $('loading-spinner').hidden = true;
   this.inFlight_ = false;
   this.isQueryFinished_ = info.finished;
   this.queryStartTime = info.queryStartTime;
   this.queryEndTime = info.queryEndTime;
-
-  // If the results are not for the current search term then there is nothing
-  // more to do.
-  if (info.term != this.searchText_)
-    return;
 
   var lastVisit = this.visits_.slice(-1)[0];
   var lastDay = lastVisit ? lastVisit.dateRelativeDay : null;
@@ -1693,11 +1694,20 @@ function removeItems() {
  * @param {Event} e The click event.
  */
 function checkboxClicked(e) {
-  var checkbox = e.currentTarget;
+  handleCheckboxStateChange(e.currentTarget, e.shiftKey);
+}
+
+/**
+ * Post-process of checkbox state change. This handles range selection and
+ * updates internal state.
+ * @param {!HTMLInputElement} checkbox Clicked checkbox.
+ * @param {boolean} shiftKey true if shift key is pressed.
+ */
+function handleCheckboxStateChange(checkbox, shiftKey) {
   updateParentCheckbox(checkbox);
   var id = Number(checkbox.id.slice('checkbox-'.length));
   // Handle multi-select if shift was pressed.
-  if (event.shiftKey && (selectionAnchor != -1)) {
+  if (shiftKey && (selectionAnchor != -1)) {
     var checked = checkbox.checked;
     // Set all checkboxes from the anchor up to the clicked checkbox to the
     // state of the clicked one.
@@ -1753,9 +1763,23 @@ function updateParentCheckbox(checkbox) {
 
 function entryBoxMousedown(event) {
   // Prevent text selection when shift-clicking to select multiple entries.
-  if (event.shiftKey) {
+  if (event.shiftKey)
     event.preventDefault();
-  }
+}
+
+/**
+ * Handle click event for entryBox labels.
+ * @param {!MouseEvent} event A click event.
+ */
+function entryBoxClick(event) {
+  var tagName = event.target.tagName;
+  if (tagName == 'BUTTON' || tagName == 'INPUT' || tagName == 'A')
+    return;
+  var checkbox = event.currentTarget.control;
+  checkbox.checked = !checkbox.checked;
+  handleCheckboxStateChange(checkbox, event.shiftKey);
+  // We don't want to focus on the checkbox.
+  event.preventDefault();
 }
 
 // This is pulled out so we can wait for it in tests.
@@ -1763,12 +1787,20 @@ function removeNodeWithoutTransition(node) {
   node.parentNode.removeChild(node);
 }
 
-function removeNode(node) {
+/**
+ * Triggers a fade-out animation, and then removes |node| from the DOM.
+ * @param {Node} node The node to be removed.
+ * @param {Function?} onRemove A function to be called after the node
+ *     has been removed from the DOM.
+ */
+function removeNode(node, onRemove) {
   node.classList.add('fade-out'); // Trigger CSS fade out animation.
 
   // Delete the node when the animation is complete.
   node.addEventListener('webkitTransitionEnd', function() {
     removeNodeWithoutTransition(node);
+    if (onRemove)
+      onRemove();
   });
 }
 
@@ -1781,17 +1813,17 @@ function removeEntryFromView(entry) {
   var nextEntry = entry.nextSibling;
   var previousEntry = entry.previousSibling;
 
-  removeNode(entry);
+  removeNode(entry, function() {
+    historyView.updateSelectionEditButtons();
+  });
 
   // if there is no previous entry, and the next entry is a gap, remove it
-  if (!previousEntry && nextEntry && nextEntry.className == 'gap') {
+  if (!previousEntry && nextEntry && nextEntry.className == 'gap')
     removeNode(nextEntry);
-  }
 
   // if there is no next entry, and the previous entry is a gap, remove it
-  if (!nextEntry && previousEntry && previousEntry.className == 'gap') {
+  if (!nextEntry && previousEntry && previousEntry.className == 'gap')
     removeNode(previousEntry);
-  }
 
   // if both the next and previous entries are gaps, remove one
   if (nextEntry && nextEntry.className == 'gap' &&

@@ -1,7 +1,7 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 #include "nacl_io/mount.h"
 
 #include <errno.h>
@@ -19,6 +19,8 @@
 #if defined(WIN32)
 #include <windows.h>
 #endif
+
+namespace nacl_io {
 
 Mount::Mount() : dev_(0) {}
 
@@ -59,4 +61,6 @@ void Mount::OnNodeDestroyed(MountNode* node) {
   if (node->stat_.st_ino)
     inode_pool_.Release(node->stat_.st_ino);
 }
+
+}  // namespace nacl_io
 

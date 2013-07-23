@@ -29,10 +29,10 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_view.h"
+#include "content/public/common/webplugininfo.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "webkit/plugins/webplugininfo.h"
 
 #if defined(ENABLE_PLUGIN_INSTALLATION)
 #if defined(OS_WIN)
@@ -83,8 +83,7 @@ ConfirmInstallDialogDelegate::ConfirmInstallDialogDelegate(
     content::WebContents* web_contents,
     PluginInstaller* installer,
     scoped_ptr<PluginMetadata> plugin_metadata)
-    : TabModalConfirmDialogDelegate(web_contents),
-      WeakPluginInstallerObserver(installer),
+    : WeakPluginInstallerObserver(installer),
       web_contents_(web_contents),
       plugin_metadata_(plugin_metadata.Pass()) {
 }
@@ -404,7 +403,7 @@ void PluginObserver::OnNPAPINotSupported(const std::string& identifier) {
 
   scoped_ptr<PluginMetadata> plugin;
   bool ret = PluginFinder::GetInstance()->FindPluginWithIdentifier(
-          identifier, NULL, &plugin);
+      identifier, NULL, &plugin);
   DCHECK(ret);
 
   PluginMetroModeInfoBarDelegate::Create(

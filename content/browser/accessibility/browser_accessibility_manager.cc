@@ -30,6 +30,16 @@ BrowserAccessibilityManager* BrowserAccessibilityManager::Create(
 #endif
 
 BrowserAccessibilityManager::BrowserAccessibilityManager(
+    BrowserAccessibilityDelegate* delegate,
+    BrowserAccessibilityFactory* factory)
+    : delegate_(delegate),
+      factory_(factory),
+      root_(NULL),
+      focus_(NULL),
+      osk_state_(OSK_ALLOWED) {
+}
+
+BrowserAccessibilityManager::BrowserAccessibilityManager(
     const AccessibilityNodeData& src,
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory)
@@ -38,6 +48,15 @@ BrowserAccessibilityManager::BrowserAccessibilityManager(
       root_(NULL),
       focus_(NULL),
       osk_state_(OSK_ALLOWED) {
+  Initialize(src);
+}
+
+BrowserAccessibilityManager::~BrowserAccessibilityManager() {
+  if (root_)
+    root_->Destroy();
+}
+
+void BrowserAccessibilityManager::Initialize(const AccessibilityNodeData src) {
   std::vector<AccessibilityNodeData> nodes;
   nodes.push_back(src);
   if (!UpdateNodes(nodes))
@@ -46,9 +65,12 @@ BrowserAccessibilityManager::BrowserAccessibilityManager(
     SetFocus(root_, false);
 }
 
-BrowserAccessibilityManager::~BrowserAccessibilityManager() {
-  if (root_)
-    root_->Destroy();
+// static
+AccessibilityNodeData BrowserAccessibilityManager::GetEmptyDocument() {
+  AccessibilityNodeData empty_document;
+  empty_document.id = 0;
+  empty_document.role = AccessibilityNodeData::ROLE_ROOT_WEB_AREA;
+  return empty_document;
 }
 
 BrowserAccessibility* BrowserAccessibilityManager::GetRoot() {

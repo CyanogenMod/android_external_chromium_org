@@ -1,7 +1,6 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef LIBRARIES_SDK_UTIL_AUTO_LOCK_H_
 #define LIBRARIES_SDK_UTIL_AUTO_LOCK_H_
@@ -10,11 +9,12 @@
 #include "sdk_util/macros.h"
 #include "sdk_util/simple_lock.h"
 
+namespace sdk_util {
 
 // This macro is provided to allow us to quickly instrument locking for
 // debugging purposes.
 #define AUTO_LOCK(lock)                         \
-  AutoLock Lock##__LINE__(lock);
+  ::sdk_util::AutoLock Lock##__LINE__(lock);
 
 class AutoLock {
  public:
@@ -38,5 +38,6 @@ class AutoLock {
   DISALLOW_COPY_AND_ASSIGN(AutoLock);
 };
 
-#endif  // LIBRARIES_SDK_UTIL_AUTO_LOCK_H_
+}  // namespace sdk_util
 
+#endif  // LIBRARIES_SDK_UTIL_AUTO_LOCK_H_

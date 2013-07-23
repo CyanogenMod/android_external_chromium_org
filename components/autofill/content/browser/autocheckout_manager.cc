@@ -156,6 +156,7 @@ AutocheckoutManager::AutocheckoutManager(AutofillManager* autofill_manager)
       should_show_bubble_(true),
       is_autocheckout_bubble_showing_(false),
       in_autocheckout_flow_(false),
+      should_preserve_dialog_(false),
       google_transaction_id_(kTransactionIdNotSet),
       weak_ptr_factory_(this) {}
 
@@ -201,27 +202,43 @@ void AutocheckoutManager::FillForms() {
   RecordTimeTaken(page_meta_data_->current_page_number);
 }
 
-void AutocheckoutManager::OnClickFailed(AutocheckoutStatus status) {
-  // |in_autocheckout_flow_| get reset in |OnLoadedPageMetaData| for the last
-  // page, so when click failed on the last page, the value is already 'false'.
-  // This check stops crashing, a better solution should be sending an IPC
-  // message to browser when the renderer completes a step.
-  DCHECK(page_meta_data_->IsEndOfAutofillableFlow() || in_autocheckout_flow_);
+void AutocheckoutManager::OnAutocheckoutPageCompleted(
+    AutocheckoutStatus status) {
+  if (!in_autocheckout_flow_)
+    return;
+
+  DVLOG(2) << "OnAutocheckoutPageCompleted, page_no: "
+           << page_meta_data_->current_page_number
+           << " status: "
+           << status;
+
   DCHECK_NE(MISSING_FIELDMAPPING, status);
 
-  SendAutocheckoutStatus(status);
-  SetStepProgressForPage(page_meta_data_->current_page_number,
-                         AUTOCHECKOUT_STEP_FAILED);
+  SetStepProgressForPage(
+      page_meta_data_->current_page_number,
+      (status == SUCCESS) ? AUTOCHECKOUT_STEP_COMPLETED :
+          AUTOCHECKOUT_STEP_FAILED);
 
-  autofill_manager_->delegate()->OnAutocheckoutError();
-  in_autocheckout_flow_ = false;
+  if (page_meta_data_->IsEndOfAutofillableFlow() || status != SUCCESS)
+    EndAutocheckout(status);
 }
 
 void AutocheckoutManager::OnLoadedPageMetaData(
     scoped_ptr<AutocheckoutPageMetaData> page_meta_data) {
-  scoped_ptr<AutocheckoutPageMetaData> old_meta_data =
-      page_meta_data_.Pass();
+  scoped_ptr<AutocheckoutPageMetaData> old_meta_data = page_meta_data_.Pass();
   page_meta_data_ = page_meta_data.Pass();
+
+  // If there is no click element in the last page, then it's the real last page
+  // of the flow, and the dialog will be closed when the page navigates.
+  // Otherwise, the dialog should be preserved for the page loaded by the click
+  // element on the last page of the flow.
+  // Note, |should_preserve_dialog_| has to be computed at this point because
+  // |in_autocheckout_flow_| may change after |OnLoadedPageMetaData| is called.
+  should_preserve_dialog_ = in_autocheckout_flow_ ||
+      (old_meta_data.get() &&
+       old_meta_data->IsEndOfAutofillableFlow() &&
+       old_meta_data->proceed_element_descriptor.retrieval_method !=
+           WebElementDescriptor::NONE);
 
   // Don't log that the bubble could be displayed if the user entered an
   // Autocheckout flow and sees the first page of the flow again due to an
@@ -239,51 +256,33 @@ void AutocheckoutManager::OnLoadedPageMetaData(
   AutocheckoutStatus status = SUCCESS;
 
   // Missing Autofill server results.
-  if (!page_meta_data_) {
-    in_autocheckout_flow_ = false;
+  if (!page_meta_data_.get()) {
     status = MISSING_FIELDMAPPING;
-  } else if (page_meta_data_->IsStartOfAutofillableFlow()) {
+  } else if (IsStartOfAutofillableFlow()) {
     // Not possible unless Autocheckout failed to proceed.
-    in_autocheckout_flow_ = false;
     status = CANNOT_PROCEED;
   } else if (!page_meta_data_->IsInAutofillableFlow()) {
     // Missing Autocheckout meta data in the Autofill server results.
-    in_autocheckout_flow_ = false;
     status = MISSING_FIELDMAPPING;
   } else if (page_meta_data_->current_page_number <=
                  old_meta_data->current_page_number) {
     // Not possible unless Autocheckout failed to proceed.
-    in_autocheckout_flow_ = false;
     status = CANNOT_PROCEED;
   }
 
   // Encountered an error during the Autocheckout flow, probably to
   // do with a problem on the previous page.
-  if (!in_autocheckout_flow_) {
-    if (old_meta_data) {
-      SetStepProgressForPage(old_meta_data->current_page_number,
-                             AUTOCHECKOUT_STEP_FAILED);
-    }
-    SendAutocheckoutStatus(status);
-    autofill_manager_->delegate()->OnAutocheckoutError();
+  if (status != SUCCESS) {
+    SetStepProgressForPage(old_meta_data->current_page_number,
+                           AUTOCHECKOUT_STEP_FAILED);
+    EndAutocheckout(status);
     return;
   }
 
-  SetStepProgressForPage(old_meta_data->current_page_number,
-                         AUTOCHECKOUT_STEP_COMPLETED);
   SetStepProgressForPage(page_meta_data_->current_page_number,
                          AUTOCHECKOUT_STEP_STARTED);
 
   FillForms();
-  // If the current page is the last page in the flow, set in-progress
-  // steps to 'completed', and send status.
-  if (page_meta_data_->IsEndOfAutofillableFlow()) {
-    SetStepProgressForPage(page_meta_data_->current_page_number,
-                           AUTOCHECKOUT_STEP_COMPLETED);
-    SendAutocheckoutStatus(status);
-    autofill_manager_->delegate()->OnAutocheckoutSuccess();
-    in_autocheckout_flow_ = false;
-  }
 }
 
 void AutocheckoutManager::OnFormsSeen() {
@@ -334,6 +333,9 @@ void AutocheckoutManager::ReturnAutocheckoutData(
     const FormStructure* result,
     const std::string& google_transaction_id) {
   if (!result) {
+    // When user cancels the dialog, |result| is NULL.
+    // TODO(): add AutocheckoutStatus.USER_CANCELLED, and call
+    //         EndAutocheckout(USER_CANCELLED) instead.
     in_autocheckout_flow_ = false;
     return;
   }
@@ -342,6 +344,7 @@ void AutocheckoutManager::ReturnAutocheckoutData(
   last_step_completion_timestamp_ = base::TimeTicks().Now();
   google_transaction_id_ = google_transaction_id;
   in_autocheckout_flow_ = true;
+  should_preserve_dialog_ = true;
   metric_logger_->LogAutocheckoutBuyFlowMetric(
       AutofillMetrics::AUTOCHECKOUT_BUY_FLOW_STARTED);
 
@@ -377,16 +380,6 @@ void AutocheckoutManager::ReturnAutocheckoutData(
                          AUTOCHECKOUT_STEP_STARTED);
 
   FillForms();
-
-  // If the current page is the last page in the flow, set in-progress
-  // steps to 'completed', and send status.
-  if (page_meta_data_->IsEndOfAutofillableFlow()) {
-    SetStepProgressForPage(page_meta_data_->current_page_number,
-                           AUTOCHECKOUT_STEP_COMPLETED);
-    SendAutocheckoutStatus(SUCCESS);
-    autofill_manager_->delegate()->OnAutocheckoutSuccess();
-    in_autocheckout_flow_ = false;
-  }
 }
 
 void AutocheckoutManager::set_metric_logger(
@@ -546,6 +539,22 @@ void AutocheckoutManager::RecordTimeTaken(int page_number) {
 
   // Reset timestamp.
   last_step_completion_timestamp_ = base::TimeTicks().Now();
+}
+
+void AutocheckoutManager::EndAutocheckout(AutocheckoutStatus status) {
+  DCHECK(in_autocheckout_flow_);
+
+  DVLOG(2) << "EndAutocheckout at step: "
+           << page_meta_data_->current_page_number
+           << " with status: "
+           << status;
+
+  SendAutocheckoutStatus(status);
+  if (status == SUCCESS)
+    autofill_manager_->delegate()->OnAutocheckoutSuccess();
+  else
+    autofill_manager_->delegate()->OnAutocheckoutError();
+  in_autocheckout_flow_ = false;
 }
 
 }  // namespace autofill

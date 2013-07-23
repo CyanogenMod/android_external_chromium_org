@@ -1,10 +1,12 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 #include "nacl_io/mount_passthrough.h"
 #include <errno.h>
 #include "nacl_io/kernel_wrap_real.h"
+
+namespace nacl_io {
 
 class MountNodePassthrough : public MountNode {
  public:
@@ -64,7 +66,10 @@ class MountNodePassthrough : public MountNode {
     return ENOSYS;
   }
 
-  virtual Error GetDents(size_t offs, struct dirent* pdir, size_t count) {
+  virtual Error GetDents(size_t offs,
+                         struct dirent* pdir,
+                         size_t count,
+                         int* out_bytes) {
     size_t nread;
     int err = _real_getdents(real_fd_, pdir, count, &nread);
     if (err)
@@ -155,4 +160,6 @@ Error MountPassthrough::Remove(const Path& path) {
   // Not implemented by NaCl.
   return ENOSYS;
 }
+
+}  // namespace nacl_io
 

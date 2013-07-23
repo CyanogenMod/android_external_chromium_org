@@ -11,8 +11,10 @@
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search/instant_service.h"
 #include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search_engines/template_url_service.h"
@@ -371,10 +373,6 @@ bool ShouldPreferRemoteNTPOnStartup() {
   return false;
 }
 
-bool ShouldPreloadInstantNTP(Profile* profile) {
-  return !GetInstantURL(profile, kDisableStartMargin).is_empty();
-}
-
 bool ShouldShowInstantNTP() {
   FieldTrialFlags flags;
   if (GetFieldTrialInfo(
@@ -415,6 +413,20 @@ GURL GetPrivilegedURLForInstant(const GURL& url, Profile* profile) {
   std::string search_scheme(chrome::kChromeSearchScheme);
   replacements.SetScheme(search_scheme.data(),
                          url_parse::Component(0, search_scheme.length()));
+
+  // If the URL corresponds to an online NTP, replace the host with
+  // "online-ntp".
+  std::string online_ntp_host(chrome::kChromeSearchOnlineNtpHost);
+  TemplateURL* template_url = GetDefaultSearchProviderTemplateURL(profile);
+  if (template_url) {
+    const GURL instant_url = TemplateURLRefToGURL(
+        template_url->instant_url_ref(), kDisableStartMargin, false);
+    if (instant_url.is_valid() && MatchesOriginAndPath(url, instant_url)) {
+      replacements.SetHost(online_ntp_host.c_str(),
+                           url_parse::Component(0, online_ntp_host.length()));
+    }
+  }
+
   privileged_url = privileged_url.ReplaceComponents(replacements);
   return privileged_url;
 }
@@ -446,11 +458,16 @@ int GetInstantLoaderStalenessTimeoutSec() {
 }
 
 bool IsPreloadedInstantExtendedNTP(const content::WebContents* contents) {
-  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
-    if (it->instant_controller() &&
-        it->instant_controller()->instant()->GetNTPContents() == contents) {
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  if (!profile_manager)
+    return false;  // The profile manager can be NULL while testing.
+
+  const std::vector<Profile*>& profiles = profile_manager->GetLoadedProfiles();
+  for (size_t i = 0; i < profiles.size(); ++i) {
+    const InstantService* instant_service =
+        InstantServiceFactory::GetForProfile(profiles[i]);
+    if (instant_service && instant_service->GetNTPContents() == contents)
       return true;
-    }
   }
   return false;
 }

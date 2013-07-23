@@ -13,10 +13,13 @@
 #include "chrome/common/render_messages.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/plugin_service_filter.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/plugins/npapi/mock_plugin_list.h"
+
+// Linux Aura doesn't support NPAPI.
+#if !(defined(OS_LINUX) && defined(USE_AURA))
 
 using content::PluginService;
 
@@ -32,7 +35,7 @@ class FakePluginServiceFilter : public content::PluginServiceFilter {
                                  const void* context,
                                  const GURL& url,
                                  const GURL& policy_url,
-                                 webkit::WebPluginInfo* plugin) OVERRIDE;
+                                 content::WebPluginInfo* plugin) OVERRIDE;
 
   virtual bool CanLoadPlugin(int render_process_id,
                              const base::FilePath& path) OVERRIDE;
@@ -50,7 +53,7 @@ bool FakePluginServiceFilter::IsPluginAvailable(int render_process_id,
                                                 const void* context,
                                                 const GURL& url,
                                                 const GURL& policy_url,
-                                                webkit::WebPluginInfo* plugin) {
+                                                content::WebPluginInfo* plugin) {
   std::map<base::FilePath, bool>::iterator it =
       plugin_state_.find(plugin->path);
   if (it == plugin_state_.end()) {
@@ -76,31 +79,38 @@ class PluginInfoMessageFilterTest : public ::testing::Test {
   }
 
   virtual void SetUp() OVERRIDE {
-    webkit::WebPluginInfo foo_plugin(ASCIIToUTF16("Foo Plug-in"),
-                                     foo_plugin_path_,
-                                     ASCIIToUTF16("1"),
-                                     ASCIIToUTF16("The Foo plug-in."));
-    webkit::WebPluginMimeType mimeType;
-    mimeType.mime_type = "foo/bar";
-    foo_plugin.mime_types.push_back(mimeType);
-    plugin_list_.AddPluginToLoad(foo_plugin);
+    content::WebPluginInfo foo_plugin(ASCIIToUTF16("Foo Plug-in"),
+                                      foo_plugin_path_,
+                                      ASCIIToUTF16("1"),
+                                      ASCIIToUTF16("The Foo plug-in."));
+    content::WebPluginMimeType mime_type;
+    mime_type.mime_type = "foo/bar";
+    foo_plugin.mime_types.push_back(mime_type);
+    PluginService::GetInstance()->Init();
+    PluginService::GetInstance()->RegisterInternalPlugin(foo_plugin, false);
 
-    webkit::WebPluginInfo bar_plugin(ASCIIToUTF16("Bar Plug-in"),
-                                     bar_plugin_path_,
-                                     ASCIIToUTF16("1"),
-                                     ASCIIToUTF16("The Bar plug-in."));
-    mimeType.mime_type = "foo/bar";
-    bar_plugin.mime_types.push_back(mimeType);
-    plugin_list_.AddPluginToLoad(bar_plugin);
+    content::WebPluginInfo bar_plugin(ASCIIToUTF16("Bar Plug-in"),
+                                      bar_plugin_path_,
+                                      ASCIIToUTF16("1"),
+                                      ASCIIToUTF16("The Bar plug-in."));
+    mime_type.mime_type = "foo/bar";
+    bar_plugin.mime_types.push_back(mime_type);
+    PluginService::GetInstance()->RegisterInternalPlugin(bar_plugin, false);
 
-    PluginService::GetInstance()->SetPluginListForTesting(&plugin_list_);
     PluginService::GetInstance()->SetFilter(&filter_);
 
+#if !defined(OS_WIN)
+    // Can't go out of process in unit tests.
+    content::RenderProcessHost::SetRunRendererInProcess(true);
+#endif
     PluginService::GetInstance()->GetPlugins(
         base::Bind(&PluginInfoMessageFilterTest::PluginsLoaded,
                    base::Unretained(this)));
     base::RunLoop run_loop;
     run_loop.Run();
+#if !defined(OS_WIN)
+    content::RenderProcessHost::SetRunRendererInProcess(false);
+#endif
   }
 
  protected:
@@ -110,7 +120,7 @@ class PluginInfoMessageFilterTest : public ::testing::Test {
   PluginInfoMessageFilter::Context context_;
 
  private:
-  void PluginsLoaded(const std::vector<webkit::WebPluginInfo>& plugins) {
+  void PluginsLoaded(const std::vector<content::WebPluginInfo>& plugins) {
     base::MessageLoop::current()->Quit();
   }
 
@@ -119,7 +129,6 @@ class PluginInfoMessageFilterTest : public ::testing::Test {
   // a MockPluginList.
   content::TestBrowserThread file_thread_;
   base::ShadowingAtExitManager at_exit_manager_;  // Destroys the PluginService.
-  webkit::npapi::MockPluginList plugin_list_;
 };
 
 TEST_F(PluginInfoMessageFilterTest, FindEnabledPlugin) {
@@ -127,7 +136,7 @@ TEST_F(PluginInfoMessageFilterTest, FindEnabledPlugin) {
   filter_.set_plugin_enabled(bar_plugin_path_, true);
   {
     ChromeViewHostMsg_GetPluginInfo_Status status;
-    webkit::WebPluginInfo plugin;
+    content::WebPluginInfo plugin;
     std::string actual_mime_type;
     EXPECT_TRUE(context_.FindEnabledPlugin(
         0, GURL(), GURL(), "foo/bar", &status, &plugin, &actual_mime_type,
@@ -139,7 +148,7 @@ TEST_F(PluginInfoMessageFilterTest, FindEnabledPlugin) {
   filter_.set_plugin_enabled(foo_plugin_path_, false);
   {
     ChromeViewHostMsg_GetPluginInfo_Status status;
-    webkit::WebPluginInfo plugin;
+    content::WebPluginInfo plugin;
     std::string actual_mime_type;
     EXPECT_TRUE(context_.FindEnabledPlugin(
         0, GURL(), GURL(), "foo/bar", &status, &plugin, &actual_mime_type,
@@ -151,7 +160,7 @@ TEST_F(PluginInfoMessageFilterTest, FindEnabledPlugin) {
   filter_.set_plugin_enabled(bar_plugin_path_, false);
   {
     ChromeViewHostMsg_GetPluginInfo_Status status;
-    webkit::WebPluginInfo plugin;
+    content::WebPluginInfo plugin;
     std::string actual_mime_type;
     std::string identifier;
     string16 plugin_name;
@@ -163,7 +172,7 @@ TEST_F(PluginInfoMessageFilterTest, FindEnabledPlugin) {
   }
   {
     ChromeViewHostMsg_GetPluginInfo_Status status;
-    webkit::WebPluginInfo plugin;
+    content::WebPluginInfo plugin;
     std::string actual_mime_type;
     EXPECT_FALSE(context_.FindEnabledPlugin(
         0, GURL(), GURL(), "baz/blurp", &status, &plugin, &actual_mime_type,
@@ -172,3 +181,5 @@ TEST_F(PluginInfoMessageFilterTest, FindEnabledPlugin) {
     EXPECT_EQ(FILE_PATH_LITERAL(""), plugin.path.value());
   }
 }
+
+#endif

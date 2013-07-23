@@ -10,7 +10,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/common/extensions/feature_switch.h"
 #include "content/public/test/test_browser_thread.h"
@@ -82,7 +82,6 @@ class ExtensionServiceTestBase : public testing::Test {
   size_t expected_extensions_count_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread db_thread_;
-  content::TestBrowserThread webkit_thread_;
   content::TestBrowserThread file_thread_;
   content::TestBrowserThread file_user_blocking_thread_;
   content::TestBrowserThread io_thread_;

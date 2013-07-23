@@ -10,6 +10,7 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
+#include "base/cpu.h"
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/perftimer.h"
@@ -43,13 +44,13 @@
 #include "components/nacl/common/nacl_process_type.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/common/content_client.h"
+#include "content/public/common/webplugininfo.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_adapter_factory.h"
 #include "device/bluetooth/bluetooth_device.h"
 #include "gpu/config/gpu_info.h"
 #include "ui/gfx/screen.h"
 #include "url/gurl.h"
-#include "webkit/plugins/webplugininfo.h"
 
 #if defined(OS_ANDROID)
 #include "base/android/build_info.h"
@@ -192,7 +193,7 @@ PluginPrefs* GetPluginPrefs() {
 }
 
 // Fills |plugin| with the info contained in |plugin_info| and |plugin_prefs|.
-void SetPluginInfo(const webkit::WebPluginInfo& plugin_info,
+void SetPluginInfo(const content::WebPluginInfo& plugin_info,
                    const PluginPrefs* plugin_prefs,
                    SystemProfileProto::Plugin* plugin) {
   plugin->set_name(UTF16ToUTF8(plugin_info.name));
@@ -219,27 +220,17 @@ void WriteProfilerData(const ProcessDataSnapshot& profiler_data,
   for (std::vector<tracked_objects::TaskSnapshot>::const_iterator it =
            profiler_data.tasks.begin();
        it != profiler_data.tasks.end(); ++it) {
-    std::string ignored;
-    uint64 birth_thread_name_hash;
-    uint64 exec_thread_name_hash;
-    uint64 source_file_name_hash;
-    uint64 source_function_name_hash;
-    MetricsLogBase::CreateHashes(it->birth.thread_name,
-                                 &ignored, &birth_thread_name_hash);
-    MetricsLogBase::CreateHashes(it->death_thread_name,
-                                 &ignored, &exec_thread_name_hash);
-    MetricsLogBase::CreateHashes(it->birth.location.file_name,
-                                 &ignored, &source_file_name_hash);
-    MetricsLogBase::CreateHashes(it->birth.location.function_name,
-                                 &ignored, &source_function_name_hash);
-
     const tracked_objects::DeathDataSnapshot& death_data = it->death_data;
     ProfilerEventProto::TrackedObject* tracked_object =
         performance_profile->add_tracked_object();
-    tracked_object->set_birth_thread_name_hash(birth_thread_name_hash);
-    tracked_object->set_exec_thread_name_hash(exec_thread_name_hash);
-    tracked_object->set_source_file_name_hash(source_file_name_hash);
-    tracked_object->set_source_function_name_hash(source_function_name_hash);
+    tracked_object->set_birth_thread_name_hash(
+        MetricsLogBase::Hash(it->birth.thread_name));
+    tracked_object->set_exec_thread_name_hash(
+        MetricsLogBase::Hash(it->death_thread_name));
+    tracked_object->set_source_file_name_hash(
+        MetricsLogBase::Hash(it->birth.location.file_name));
+    tracked_object->set_source_function_name_hash(
+        MetricsLogBase::Hash(it->birth.location.function_name));
     tracked_object->set_source_line_number(it->birth.location.line_number);
     tracked_object->set_exec_count(death_data.count);
     tracked_object->set_exec_time_total(death_data.run_duration_sum);
@@ -414,7 +405,7 @@ const std::string& MetricsLog::version_extension() {
 }
 
 void MetricsLog::RecordIncrementalStabilityElements(
-    const std::vector<webkit::WebPluginInfo>& plugin_list) {
+    const std::vector<content::WebPluginInfo>& plugin_list) {
   DCHECK(!locked());
 
   PrefService* pref = GetPrefService();
@@ -449,7 +440,7 @@ void MetricsLog::GetFieldTrialIds(
 }
 
 void MetricsLog::WriteStabilityElement(
-    const std::vector<webkit::WebPluginInfo>& plugin_list,
+    const std::vector<content::WebPluginInfo>& plugin_list,
     PrefService* pref) {
   DCHECK(!locked());
 
@@ -492,7 +483,7 @@ void MetricsLog::WriteStabilityElement(
 }
 
 void MetricsLog::WritePluginStabilityElements(
-    const std::vector<webkit::WebPluginInfo>& plugin_list,
+    const std::vector<content::WebPluginInfo>& plugin_list,
     PrefService* pref) {
   // Now log plugin stability info.
   const ListValue* plugin_stats_list = pref->GetList(
@@ -518,11 +509,11 @@ void MetricsLog::WritePluginStabilityElements(
     // fine.
     // TODO(isherman): Verify that this does not show up as a hotspot in
     // profiler runs.
-    const webkit::WebPluginInfo* plugin_info = NULL;
+    const content::WebPluginInfo* plugin_info = NULL;
     std::string plugin_name;
     plugin_dict->GetString(prefs::kStabilityPluginName, &plugin_name);
     const string16 plugin_name_utf16 = UTF8ToUTF16(plugin_name);
-    for (std::vector<webkit::WebPluginInfo>::const_iterator iter =
+    for (std::vector<content::WebPluginInfo>::const_iterator iter =
              plugin_list.begin();
          iter != plugin_list.end(); ++iter) {
       if (iter->name == plugin_name_utf16) {
@@ -646,13 +637,13 @@ void MetricsLog::WriteRealtimeStabilityAttributes(PrefService* pref) {
 }
 
 void MetricsLog::WritePluginList(
-    const std::vector<webkit::WebPluginInfo>& plugin_list) {
+    const std::vector<content::WebPluginInfo>& plugin_list) {
   DCHECK(!locked());
 
 #if defined(ENABLE_PLUGINS)
   PluginPrefs* plugin_prefs = GetPluginPrefs();
   SystemProfileProto* system_profile = uma_proto()->mutable_system_profile();
-  for (std::vector<webkit::WebPluginInfo>::const_iterator iter =
+  for (std::vector<content::WebPluginInfo>::const_iterator iter =
            plugin_list.begin();
        iter != plugin_list.end(); ++iter) {
     SystemProfileProto::Plugin* plugin = system_profile->add_plugin();
@@ -662,7 +653,7 @@ void MetricsLog::WritePluginList(
 }
 
 void MetricsLog::RecordEnvironment(
-         const std::vector<webkit::WebPluginInfo>& plugin_list,
+         const std::vector<content::WebPluginInfo>& plugin_list,
          const GoogleUpdateMetrics& google_update_metrics) {
   DCHECK(!locked());
 
@@ -673,7 +664,7 @@ void MetricsLog::RecordEnvironment(
 }
 
 void MetricsLog::RecordEnvironmentProto(
-    const std::vector<webkit::WebPluginInfo>& plugin_list,
+    const std::vector<content::WebPluginInfo>& plugin_list,
     const GoogleUpdateMetrics& google_update_metrics) {
   SystemProfileProto* system_profile = uma_proto()->mutable_system_profile();
 
@@ -731,6 +722,11 @@ void MetricsLog::RecordEnvironmentProto(
   os->set_fingerprint(
       base::android::BuildInfo::GetInstance()->android_build_fp());
 #endif
+
+  base::CPU cpu_info;
+  SystemProfileProto::Hardware::CPU* cpu = hardware->mutable_cpu();
+  cpu->set_vendor_name(cpu_info.vendor_name());
+  cpu->set_signature(cpu_info.signature());
 
   const gpu::GPUInfo& gpu_info =
       GpuDataManager::GetInstance()->GetGPUInfo();

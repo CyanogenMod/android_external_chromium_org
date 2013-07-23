@@ -17,11 +17,11 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/referrer.h"
+#include "content/public/common/webplugininfo.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "webkit/plugins/webplugininfo.h"
 
 #if defined(GOOGLE_TV)
 #include "base/android/context_types.h"
@@ -48,11 +48,12 @@ void PepperBrokerInfoBarDelegate::Create(
 #if defined(OS_CHROMEOS)
   // On ChromeOS, we're ok with granting broker access to the Netflix and
   // Widevine plugins, since they can only come installed with the OS.
-  const char kNetflixPluginFileName[] = "libnetflixplugin2.so";
   const char kWidevinePluginFileName[] = "libwidevinecdmadapter.so";
+  const char kNetflixDomain[] = "netflix.com";
+
   base::FilePath plugin_file_name = plugin_path.BaseName();
-  if (plugin_file_name.value() == FILE_PATH_LITERAL(kNetflixPluginFileName) ||
-      plugin_file_name.value() == FILE_PATH_LITERAL(kWidevinePluginFileName)) {
+  if (plugin_file_name.value() == FILE_PATH_LITERAL(kWidevinePluginFileName) &&
+      url.DomainIs(kNetflixDomain)) {
     tab_content_settings->SetPepperBrokerAllowed(true);
     callback.Run(true);
     return;
@@ -139,7 +140,7 @@ int PepperBrokerInfoBarDelegate::GetIconID() const {
 string16 PepperBrokerInfoBarDelegate::GetMessageText() const {
   content::PluginService* plugin_service =
       content::PluginService::GetInstance();
-  webkit::WebPluginInfo plugin;
+  content::WebPluginInfo plugin;
   bool success = plugin_service->GetPluginInfoByPath(plugin_path_, &plugin);
   DCHECK(success);
   scoped_ptr<PluginMetadata> plugin_metadata(

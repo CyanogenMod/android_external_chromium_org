@@ -4,6 +4,8 @@
 
 #include "chrome/browser/ui/app_list/app_list_service_impl.h"
 
+#include "apps/pref_names.h"
+#include "base/command_line.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/time/time.h"
@@ -11,6 +13,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
@@ -66,6 +69,11 @@ void RecordDailyEventFrequency(
   }
 }
 
+void SetAppListEnabledPreference(bool enabled) {
+  PrefService* local_state = g_browser_process->local_state();
+  local_state->SetBoolean(apps::prefs::kAppLauncherHasBeenEnabled, enabled);
+}
+
 }  // namespace
 
 // static
@@ -107,6 +115,8 @@ AppListServiceImpl::AppListServiceImpl()
 
 AppListServiceImpl::~AppListServiceImpl() {}
 
+void AppListServiceImpl::HandleFirstRun() {}
+
 void AppListServiceImpl::Init(Profile* initial_profile) {}
 
 base::FilePath AppListServiceImpl::GetProfilePath(
@@ -121,20 +131,28 @@ base::FilePath AppListServiceImpl::GetProfilePath(
   // If the user has no profile preference for the app launcher, default to the
   // last browser profile used.
   if (app_list_profile.empty() &&
-      local_state->HasPrefPath(prefs::kProfileLastUsed))
+      local_state->HasPrefPath(prefs::kProfileLastUsed)) {
     app_list_profile = local_state->GetString(prefs::kProfileLastUsed);
+  }
 
-  std::string profile_path = app_list_profile.empty() ?
-      chrome::kInitialProfile :
-      app_list_profile;
+  // If there is no last used profile recorded, use the initial profile.
+  if (app_list_profile.empty())
+    app_list_profile = chrome::kInitialProfile;
 
-  return user_data_dir.AppendASCII(profile_path);
+  return user_data_dir.AppendASCII(app_list_profile);
+}
+
+void AppListServiceImpl::SetProfilePath(const base::FilePath& profile_path) {
+  g_browser_process->local_state()->SetString(
+      prefs::kAppListProfile,
+      profile_path.BaseName().MaybeAsASCII());
 }
 
 AppListControllerDelegate* AppListServiceImpl::CreateControllerDelegate() {
   return NULL;
 }
 
+void AppListServiceImpl::CreateShortcut() {}
 void AppListServiceImpl::OnSigninStatusChanged() {}
 
 // We need to watch for profile removal to keep kAppListProfile updated.
@@ -158,16 +176,17 @@ void AppListServiceImpl::Observe(
   OnSigninStatusChanged();
 }
 
-void AppListServiceImpl::SetAppListProfile(
-    const base::FilePath& profile_file_path) {
+void AppListServiceImpl::Show() {
   profile_loader_.LoadProfileInvalidatingOtherLoads(
-      profile_file_path, base::Bind(&AppListServiceImpl::ShowAppList,
-                                    weak_factory_.GetWeakPtr()));
+      GetProfilePath(g_browser_process->profile_manager()->user_data_dir()),
+      base::Bind(&AppListServiceImpl::ShowForProfile,
+                 weak_factory_.GetWeakPtr()));
 }
 
-void AppListServiceImpl::ShowForSavedProfile() {
-  SetAppListProfile(GetProfilePath(
-      g_browser_process->profile_manager()->user_data_dir()));
+void AppListServiceImpl::EnableAppList(Profile* initial_profile) {
+  SetAppListEnabledPreference(true);
+  SetProfilePath(initial_profile->GetPath());
+  CreateShortcut();
 }
 
 Profile* AppListServiceImpl::GetCurrentAppListProfile() {
@@ -192,9 +211,10 @@ void AppListServiceImpl::InvalidatePendingProfileLoads() {
   profile_loader_.InvalidatePendingProfileLoads();
 }
 
-void AppListServiceImpl::SaveProfilePathToLocalState(
-    const base::FilePath& profile_file_path) {
-  g_browser_process->local_state()->SetString(
-      prefs::kAppListProfile,
-      profile_file_path.BaseName().MaybeAsASCII());
+void AppListServiceImpl::HandleCommandLineFlags(Profile* initial_profile) {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableAppList))
+    EnableAppList(initial_profile);
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableAppList))
+    SetAppListEnabledPreference(false);
 }

@@ -9,8 +9,8 @@
 #include "base/i18n/break_iterator.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
-#include "third_party/icu/public/common/unicode/rbbi.h"
-#include "third_party/icu/public/common/unicode/utf16.h"
+#include "third_party/icu/source/common/unicode/rbbi.h"
+#include "third_party/icu/source/common/unicode/utf16.h"
 #include "third_party/skia/include/core/SkTypeface.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/base/text/text_elider.h"
@@ -357,9 +357,7 @@ void RenderText::SetFont(const Font& font) {
 }
 
 void RenderText::SetFontSize(int size) {
-  font_list_ = font_list_.DeriveFontListWithSize(size);
-  cached_bounds_and_offset_valid_ = false;
-  ResetLayout();
+  SetFontList(font_list_.DeriveFontListWithSize(size));
 }
 
 void RenderText::SetCursorEnabled(bool cursor_enabled) {

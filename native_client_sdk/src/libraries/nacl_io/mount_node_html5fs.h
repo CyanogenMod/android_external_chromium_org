@@ -1,12 +1,14 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 #ifndef LIBRARIES_NACL_IO_MOUNT_HTML5FS_NODE_H_
 #define LIBRARIES_NACL_IO_MOUNT_HTML5FS_NODE_H_
 
 #include <ppapi/c/pp_resource.h>
 #include "nacl_io/mount_node.h"
+
+namespace nacl_io {
 
 class MountHtml5Fs;
 
@@ -48,5 +50,7 @@ class MountNodeHtml5Fs : public MountNode {
 
   friend class MountHtml5Fs;
 };
+
+}  // namespace nacl_io
 
 #endif  // LIBRARIES_NACL_IO_MOUNT_HTML5FS_NODE_H_

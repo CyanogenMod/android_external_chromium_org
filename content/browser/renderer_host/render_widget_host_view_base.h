@@ -76,6 +76,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
       scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) OVERRIDE;
   virtual void EndFrameSubscription() OVERRIDE;
   virtual void OnSwapCompositorFrame(
+      uint32 output_surface_id,
       scoped_ptr<cc::CompositorFrame> frame) OVERRIDE {}
   virtual void OnOverscrolled(gfx::Vector2dF accumulated_overscroll,
                               gfx::Vector2dF current_fling_velocity) OVERRIDE;
@@ -101,7 +102,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // Shared implementation of MovePluginWindows for use by win and aura/wina.
   static void MovePluginWindowsHelper(
       HWND parent,
-      const std::vector<webkit::npapi::WebPluginGeometry>& moves);
+      const std::vector<WebPluginGeometry>& moves);
 
   static void PaintPluginWindowsHelper(
       HWND parent,

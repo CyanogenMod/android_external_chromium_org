@@ -268,6 +268,7 @@ class CONTENT_EXPORT BrowserPluginGuest
   class MediaRequest;
   class NewWindowRequest;
   class PermissionRequest;
+  class PointerLockRequest;
 
   BrowserPluginGuest(int instance_id,
                      WebContentsImpl* web_contents,
@@ -298,6 +299,7 @@ class CONTENT_EXPORT BrowserPluginGuest
 
   void OnCompositorFrameACK(int instance_id,
                             int route_id,
+                            uint32 output_surface_id,
                             int renderer_host_id,
                             const cc::CompositorFrameAck& ack);
 

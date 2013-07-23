@@ -21,7 +21,7 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/glue/resource_type.h"
+#include "webkit/common/resource_type.h"
 
 namespace content {
 
@@ -126,7 +126,7 @@ class ResourceSchedulerTest : public testing::Test {
         ui_thread_(BrowserThread::UI, &message_loop_),
         io_thread_(BrowserThread::IO, &message_loop_) {
     scheduler_.OnClientCreated(kChildId, kRouteId);
-    context_.set_http_server_properties(&http_server_properties_);
+    context_.set_http_server_properties(http_server_properties_.GetWeakPtr());
   }
 
   virtual ~ResourceSchedulerTest() {

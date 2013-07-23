@@ -1,7 +1,6 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #include <errno.h>
 #include <fcntl.h>
@@ -17,6 +16,8 @@
 #include "nacl_io/path.h"
 
 #include "gtest/gtest.h"
+
+using namespace nacl_io;
 
 namespace {
 
@@ -171,7 +172,7 @@ TEST_F(KernelObjectTest, FreeAndReassignFD) {
   EXPECT_EQ(2, node->RefCount());
   EXPECT_EQ(1, raw_handle->RefCount());
 
-  int fd1 = proxy->AllocateFD(handle);
+  proxy->AllocateFD(handle);
   EXPECT_EQ(2, mnt->RefCount());
   EXPECT_EQ(2, node->RefCount());
   EXPECT_EQ(2, raw_handle->RefCount());

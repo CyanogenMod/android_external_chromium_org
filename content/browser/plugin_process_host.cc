@@ -50,9 +50,8 @@
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
+#include "content/common/plugin_constants_win.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
-#include "webkit/plugins/npapi/plugin_constants_win.h"
-#include "webkit/plugins/npapi/webplugin_delegate_impl.h"
 #endif
 
 namespace content {
@@ -146,7 +145,7 @@ bool PluginProcessHost::Send(IPC::Message* message) {
   return process_->Send(message);
 }
 
-bool PluginProcessHost::Init(const webkit::WebPluginInfo& info) {
+bool PluginProcessHost::Init(const WebPluginInfo& info) {
   info_ = info;
   process_->SetName(info_.name);
 

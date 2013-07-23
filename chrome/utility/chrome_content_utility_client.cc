@@ -53,6 +53,10 @@
 #include "printing/backend/print_backend.h"
 #endif
 
+#if defined(ENABLE_MDNS)
+#include "chrome/utility/local_discovery/service_discovery_message_handler.h"
+#endif  // ENABLE_MDNS
+
 namespace chrome {
 
 namespace {
@@ -70,7 +74,11 @@ void ReleaseProcessIfNeeded() {
 ChromeContentUtilityClient::ChromeContentUtilityClient() {
 #if !defined(OS_ANDROID)
   handlers_.push_back(new ProfileImportHandler());
-#endif
+#endif  // OS_ANDROID
+
+#if defined(ENABLE_MDNS)
+  handlers_.push_back(new local_discovery::ServiceDiscoveryMessageHandler());
+#endif  // ENABLE_MDNS
 }
 
 ChromeContentUtilityClient::~ChromeContentUtilityClient() {
@@ -141,6 +149,12 @@ bool ChromeContentUtilityClient::OnMessageReceived(
   }
 
   return handled;
+}
+
+void ChromeContentUtilityClient::PreSandboxStartup() {
+#if defined(ENABLE_MDNS)
+  local_discovery::ServiceDiscoveryMessageHandler::PreSandboxStartup();
+#endif  // ENABLE_MDNS
 }
 
 void ChromeContentUtilityClient::OnUnpackExtension(

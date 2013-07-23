@@ -5,8 +5,9 @@
 #ifndef ANDROID_WEBVIEW_BROWSER_IN_PROCESS_IN_PROCESS_VIEW_RENDERER_H_
 #define ANDROID_WEBVIEW_BROWSER_IN_PROCESS_IN_PROCESS_VIEW_RENDERER_H_
 
-#include "android_webview/browser/browser_view_renderer.h"
+#include <string>
 
+#include "android_webview/browser/browser_view_renderer.h"
 #include "base/cancelable_callback.h"
 #include "base/memory/weak_ptr.h"
 #include "content/public/browser/android/synchronous_compositor_client.h"
@@ -62,6 +63,7 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   virtual void SetContinuousInvalidate(bool invalidate) OVERRIDE;
   virtual void SetTotalRootLayerScrollOffset(
       gfx::Vector2dF new_value_css) OVERRIDE;
+  virtual void DidUpdateContent() OVERRIDE;
   virtual gfx::Vector2dF GetTotalRootLayerScrollOffset() OVERRIDE;
   virtual void DidOverscroll(gfx::Vector2dF latest_overscroll_delta,
                              gfx::Vector2dF current_fling_velocity) OVERRIDE;
@@ -78,6 +80,10 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   // then we keep ticking the SynchronousCompositor so it can make progress.
   void FallbackTickFired();
 
+  // For debug tracing or logging. Return the string representation of this
+  // view renderer's state and the |draw_info| if provided.
+  std::string ToString(AwDrawGLInfo* draw_info) const;
+
   BrowserViewRenderer::Client* client_;
   BrowserViewRenderer::JavaHelper* java_helper_;
   content::WebContents* web_contents_;
@@ -86,6 +92,7 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   bool visible_;
   float dip_scale_;
   float page_scale_factor_;
+  bool on_new_picture_enable_;
 
   // When true, we should continuously invalidate and keep drawing, for example
   // to drive animation.

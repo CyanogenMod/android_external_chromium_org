@@ -91,8 +91,8 @@ class WebContents : public PageNavigator,
   // Creates a new WebContents.
   CONTENT_EXPORT static WebContents* Create(const CreateParams& params);
 
-  // Similar to Create() above but should be used when you need to set the
-  // the SessionStorageNamespace of the WebContents. This can happen if
+  // Similar to Create() above but should be used when you need to prepopulate
+  // the SessionStorageNamespaceMap of the WebContents. This can happen if
   // you duplicate a WebContents, try to reconstitute it from a saved state,
   // or when you create a new WebContents based on another one (eg., when
   // servicing a window.open() call).
@@ -103,7 +103,7 @@ class WebContents : public PageNavigator,
   // can happen if you share the object.
   CONTENT_EXPORT static WebContents* CreateWithSessionStorage(
       const CreateParams& params,
-      SessionStorageNamespace* session_storage_namespace);
+      const SessionStorageNamespaceMap& session_storage_namespace_map);
 
   // Adds/removes a callback called on creation of each new WebContents.
   typedef base::Callback<void(WebContents*)> CreatedCallback;
@@ -134,7 +134,7 @@ class WebContents : public PageNavigator,
   virtual content::BrowserContext* GetBrowserContext() const = 0;
 
   // Gets the URL that is currently being displayed, if there is one.
-  // This method is deprecated. DO NOT USE! Pick either |GetActiveURL| or
+  // This method is deprecated. DO NOT USE! Pick either |GetVisibleURL| or
   // |GetLastCommittedURL| as appropriate.
   virtual const GURL& GetURL() const = 0;
 
@@ -143,7 +143,7 @@ class WebContents : public PageNavigator,
   // not guaranteed to match the current page in this WebContents. A typical
   // example of this is interstitials, which show the URL of the new/loading
   // page (active) but the security context is of the old page (last committed).
-  virtual const GURL& GetActiveURL() const = 0;
+  virtual const GURL& GetVisibleURL() const = 0;
 
   // Gets the last committed URL. It represents the current page that is
   // displayed in  this WebContents. It represents the current security
@@ -263,6 +263,7 @@ class WebContents : public PageNavigator,
   // of decrement calls.
   virtual void IncrementCapturerCount() = 0;
   virtual void DecrementCapturerCount() = 0;
+  virtual int GetCapturerCount() const = 0;
 
   // Indicates whether this tab should be considered crashed. The setter will
   // also notify the delegate when the flag is changed.
@@ -330,6 +331,10 @@ class WebContents : public PageNavigator,
   virtual bool SavePage(const base::FilePath& main_file,
                         const base::FilePath& dir_path,
                         SavePageType save_type) = 0;
+
+  // Saves the given frame's URL to the local filesystem..
+  virtual void SaveFrame(const GURL& url,
+                         const Referrer& referrer) = 0;
 
   // Generate an MHTML representation of the current page in the given file.
   virtual void GenerateMHTML(
@@ -400,9 +405,6 @@ class WebContents : public PageNavigator,
 
   // Gets the preferred size of the contents.
   virtual gfx::Size GetPreferredSize() const = 0;
-
-  // Get the content restrictions (see content::ContentRestriction).
-  virtual int GetContentRestrictions() const = 0;
 
   // Called when the reponse to a pending mouse lock request has arrived.
   // Returns true if |allowed| is true and the mouse has been successfully

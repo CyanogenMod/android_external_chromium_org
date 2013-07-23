@@ -6,7 +6,7 @@
 
 #include <list>
 
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -29,7 +29,7 @@ class MessagePopupCollectionTest : public views::ViewsTestBase {
     // This size fits test machines resolution and also can keep a few toasts
     // w/o ill effects of hitting the screen overflow. This allows us to assume
     // and verify normal layout of the toast stack.
-    collection_->SetWorkAreaForTest(gfx::Rect(0, 0, 600, 400));
+    collection_->SetWorkArea(gfx::Rect(0, 0, 600, 400));
     id_ = 0;
   }
 

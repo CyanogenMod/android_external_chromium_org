@@ -1,7 +1,6 @@
-/* Copyright 2013 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright 2013 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef LIBRARIES_SDK_UTIL_SCOPED_REF_H_
 #define LIBRARIES_SDK_UTIL_SCOPED_REF_H_
@@ -10,6 +9,8 @@
 
 #include "sdk_util/macros.h"
 #include "sdk_util/ref_object.h"
+
+namespace sdk_util {
 
 class ScopedRefBase {
  protected:
@@ -79,5 +80,7 @@ class ScopedRef : public ScopedRefBase {
     return (ptr_ != NULL) ? &ScopedRef::bool_as_func_impl : 0;
   }
 };
+
+}  // namespace sdk_util
 
 #endif  // LIBRARIES_SDK_UTIL_SCOPED_REF_H_

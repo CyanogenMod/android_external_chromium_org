@@ -8,6 +8,7 @@
 #include "chrome/browser/nacl_host/nacl_browser.h"
 #include "chrome/browser/nacl_host/nacl_file_host.h"
 #include "chrome/browser/nacl_host/nacl_process_host.h"
+#include "chrome/browser/nacl_host/pnacl_host.h"
 #include "chrome/common/nacl_host_messages.h"
 #include "extensions/common/constants.h"
 #include "net/url_request/url_request_context.h"
@@ -17,7 +18,7 @@ static base::FilePath GetManifestPath(
     ExtensionInfoMap* extension_info_map, const std::string& manifest) {
   GURL manifest_url(manifest);
   const extensions::Extension* extension = extension_info_map->extensions()
-      .GetExtensionOrAppByURL(ExtensionURLInfo(manifest_url));
+      .GetExtensionOrAppByURL(manifest_url);
   if (extension != NULL &&
       manifest_url.SchemeIs(extensions::kExtensionScheme)) {
     std::string path = manifest_url.path();
@@ -42,6 +43,11 @@ NaClHostMessageFilter::NaClHostMessageFilter(
 }
 
 NaClHostMessageFilter::~NaClHostMessageFilter() {
+}
+
+void NaClHostMessageFilter::OnChannelClosing() {
+  PnaclHost::GetInstance()->RendererClosing(render_process_id_);
+  BrowserMessageFilter::OnChannelClosing();
 }
 
 bool NaClHostMessageFilter::OnMessageReceived(const IPC::Message& message,
@@ -95,6 +101,10 @@ void NaClHostMessageFilter::OnGetReadonlyPnaclFd(
   // This posts a task to another thread, but the renderer will
   // block until the reply is sent.
   nacl_file_host::GetReadonlyPnaclFd(this, filename, reply_msg);
+
+  // This is the first message we receive from the renderer once it knows we
+  // want to use PNaCl, so start the translation cache initialization here.
+  PnaclHost::GetInstance()->Init();
 }
 
 // Return the temporary file via a reply to the
@@ -113,8 +123,8 @@ void NaClHostMessageFilter::SyncReturnTemporaryFile(
 
 void NaClHostMessageFilter::OnNaClCreateTemporaryFile(
     IPC::Message* reply_msg) {
-  nacl_file_host::CreateTemporaryFile(
-      this,
+  PnaclHost::GetInstance()->CreateTemporaryFile(
+      PeerHandle(),
       base::Bind(&NaClHostMessageFilter::SyncReturnTemporaryFile,
                  this,
                  reply_msg));
@@ -122,28 +132,40 @@ void NaClHostMessageFilter::OnNaClCreateTemporaryFile(
 
 // For now, GetNexeFd cache requests always set is_hit to false and returns
 // a new temporary file via a NaClViewMsg_NexeTempFileReply message.
-// A future CL will implement the cache lookup logic.
+// A future CL will implement the cache lookup logic (and use the currently-
+// unused parameters)
 // See also https://code.google.com/p/nativeclient/issues/detail?id=3372
 void NaClHostMessageFilter::AsyncReturnTemporaryFile(
-    int render_view_id,
-    IPC::PlatformFileForTransit fd) {
-  Send(new NaClViewMsg_NexeTempFileReply(render_view_id, false, fd));
+    int pp_instance,
+    IPC::PlatformFileForTransit fd,
+    bool is_hit) {
+  Send(new NaClViewMsg_NexeTempFileReply(pp_instance, is_hit, fd));
 }
 
 void NaClHostMessageFilter::OnGetNexeFd(
     int render_view_id,
+    int pp_instance,
     const nacl::PnaclCacheInfo& cache_info) {
-  nacl_file_host::CreateTemporaryFile(
-      this,
+  if (!cache_info.pexe_url.is_valid()) {
+    LOG(ERROR) << "Bad URL received from GetNexeFd: " <<
+        cache_info.pexe_url.possibly_invalid_spec();
+    BadMessageReceived();
+    return;
+  }
+  PnaclHost::GetInstance()->GetNexeFd(
+      render_process_id_,
+      PeerHandle(),
+      render_view_id,
+      pp_instance,
+      cache_info,
       base::Bind(&NaClHostMessageFilter::AsyncReturnTemporaryFile,
                  this,
-                 render_view_id));
+                 pp_instance));
 }
 
-// For now, ignore translation finished messages. A future CL will implement
-// the logic of reading the nexe from the temp file and storing it in the cache.
-// See also https://code.google.com/p/nativeclient/issues/detail?id=3372
-void NaClHostMessageFilter::OnTranslationFinished(int render_view_id) {
+void NaClHostMessageFilter::OnTranslationFinished(int instance) {
+  PnaclHost::GetInstance()->TranslationFinished(
+      render_process_id_, instance);
 }
 
 void NaClHostMessageFilter::OnNaClErrorStatus(int render_view_id,

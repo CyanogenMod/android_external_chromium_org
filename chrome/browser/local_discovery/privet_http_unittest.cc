@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "chrome/browser/local_discovery/privet_http_impl.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
@@ -72,6 +72,8 @@ const char kSampleRegisterErrorTransient[] =
 
 const char kSampleRegisterErrorPermanent[] =
     "{ \"error\": \"user_cancel\" }";
+
+const char kSampleInfoResponseBadJson[] = "{";
 
 class MockTestURLFetcherFactoryDelegate
     : public net::TestURLFetcher::DelegateForTests {
@@ -400,7 +402,7 @@ TEST_F(PrivetRegisterTest, TransientFailure) {
 }
 
 TEST_F(PrivetRegisterTest, PermanentFailure) {
-    register_operation_->Start();
+  register_operation_->Start();
 
   EXPECT_TRUE(SuccessfulResponseToURL(
       GURL("http://10.0.0.8:6006/privet/info"),
@@ -421,6 +423,21 @@ TEST_F(PrivetRegisterTest, PermanentFailure) {
       GURL("http://10.0.0.8:6006/privet/register?"
            "action=getClaimToken&user=example@google.com"),
       kSampleRegisterErrorPermanent));
+}
+
+TEST_F(PrivetRegisterTest, InfoFailure) {
+  register_operation_->Start();
+
+  EXPECT_CALL(register_delegate_,
+              OnPrivetRegisterErrorInternal(
+                  "info",
+                  PrivetRegisterOperation::FAILURE_NETWORK,
+                  -1));
+
+
+  EXPECT_TRUE(SuccessfulResponseToURL(
+      GURL("http://10.0.0.8:6006/privet/info"),
+      kSampleInfoResponseBadJson));
 }
 
 }  // namespace

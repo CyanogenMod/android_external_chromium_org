@@ -11,11 +11,12 @@
 #include "native_client/src/include/nacl_macros.h"
 #include "native_client/src/include/nacl_string.h"
 #include "native_client/src/trusted/desc/nacl_desc_wrapper.h"
-#include "native_client/src/trusted/plugin/nexe_arch.h"
-#include "native_client/src/trusted/plugin/plugin_error.h"
 
 #include "ppapi/c/private/pp_file_handle.h"
 #include "ppapi/cpp/completion_callback.h"
+
+#include "ppapi/native_client/src/trusted/plugin/nexe_arch.h"
+#include "ppapi/native_client/src/trusted/plugin/plugin_error.h"
 
 namespace plugin {
 
@@ -55,9 +56,7 @@ class PnaclResources {
                  const Manifest* manifest)
       : plugin_(plugin),
         coordinator_(coordinator),
-        manifest_(manifest),
-        llc_tool_name(kDefaultLlcName),
-        ld_tool_name(kDefaultLdName) {
+        manifest_(manifest) {
   }
   virtual ~PnaclResources();
 
@@ -97,13 +96,6 @@ class PnaclResources {
   // The descriptor wrappers for the downloaded URLs.  Only valid
   // once all_loaded_callback_ has been invoked.
   std::map<nacl::string, nacl::DescWrapper*> resource_wrappers_;
-
-  // The names of the llc and ld nexes are read from the resource info file.
-  // These are default values if the resource file does not contain the names.
-  // TODO(eliben): this should be eventually removed, once all nacl deps
-  // propagate - the names should always exist in the resource info JSON file.
-  static const char kDefaultLlcName[];
-  static const char kDefaultLdName[];
 
   // Tool names for llc and ld; read from the resource info file.
   nacl::string llc_tool_name;

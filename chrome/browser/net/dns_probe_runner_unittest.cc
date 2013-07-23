@@ -15,6 +15,8 @@
 using base::MessageLoopForIO;
 using base::RunLoop;
 using content::TestBrowserThreadBundle;
+using net::DnsClient;
+using net::DnsConfig;
 using net::MockDnsClientRule;
 
 namespace chrome_browser_net {
@@ -77,17 +79,31 @@ TEST_F(DnsProbeRunnerTest, Probe_TIMEOUT) {
   RunTest(MockDnsClientRule::TIMEOUT, DnsProbeRunner::UNREACHABLE);
 }
 
-TEST_F(DnsProbeRunnerTest, Probe_FAIL_ASYNC) {
-  RunTest(MockDnsClientRule::FAIL_ASYNC, DnsProbeRunner::INCORRECT);
-}
-
-TEST_F(DnsProbeRunnerTest, Probe_FAIL_SYNC) {
-  RunTest(MockDnsClientRule::FAIL_SYNC, DnsProbeRunner::INCORRECT);
+TEST_F(DnsProbeRunnerTest, Probe_FAIL) {
+  RunTest(MockDnsClientRule::FAIL, DnsProbeRunner::INCORRECT);
 }
 
 TEST_F(DnsProbeRunnerTest, TwoProbes) {
   RunTest(MockDnsClientRule::OK, DnsProbeRunner::CORRECT);
   RunTest(MockDnsClientRule::EMPTY, DnsProbeRunner::INCORRECT);
+}
+
+TEST_F(DnsProbeRunnerTest, InvalidDnsConfig) {
+  scoped_ptr<DnsClient> dns_client(DnsClient::CreateClient(NULL));
+  DnsConfig empty_config;
+  dns_client->SetConfig(empty_config);
+  ASSERT_EQ(NULL, dns_client->GetTransactionFactory());
+  runner_.SetClient(dns_client.Pass());
+
+  TestDnsProbeRunnerCallback callback;
+
+  runner_.RunProbe(callback.callback());
+  EXPECT_TRUE(runner_.IsRunning());
+
+  RunLoop().RunUntilIdle();
+  EXPECT_FALSE(runner_.IsRunning());
+  EXPECT_TRUE(callback.called());
+  EXPECT_EQ(DnsProbeRunner::UNKNOWN, runner_.result());
 }
 
 }  // namespace

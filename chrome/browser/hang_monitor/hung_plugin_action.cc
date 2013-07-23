@@ -10,11 +10,11 @@
 #include "base/version.h"
 #include "chrome/browser/ui/simple_message_box.h"
 #include "chrome/common/logging_chrome.h"
+#include "content/public/browser/plugin_service.h"
+#include "content/public/common/webplugininfo.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/win/hwnd_util.h"
-#include "webkit/plugins/npapi/plugin_utils.h"
-#include "webkit/plugins/npapi/webplugin_delegate_impl.h"
 
 namespace {
 
@@ -41,7 +41,7 @@ enum GTalkPluginLogVersion {
 GTalkPluginLogVersion GetGTalkPluginVersion(const string16& version) {
   int gtalk_plugin_version = GTALK_PLUGIN_VERSION_MIN;
   Version plugin_version;
-  webkit::npapi::CreateVersionFromString(version, &plugin_version);
+  content::WebPluginInfo::CreateVersionFromString(version, &plugin_version);
   if (plugin_version.IsValid() && plugin_version.components().size() >= 2) {
     gtalk_plugin_version = 10 * plugin_version.components()[0] +
         plugin_version.components()[1] - kGTalkPluginLogMinVersion;
@@ -175,10 +175,8 @@ bool HungPluginAction::GetPluginNameAndVersion(HWND plugin_window,
       // we have gone too far.
       return false;
     }
-    if (webkit::npapi::WebPluginDelegateImpl::GetPluginNameFromWindow(
-            window_to_check, plugin_name)) {
-      webkit::npapi::WebPluginDelegateImpl::GetPluginVersionFromWindow(
-          window_to_check, plugin_version);
+    if (content::PluginService::GetInstance()->GetPluginInfoFromWindow(
+            window_to_check, plugin_name, plugin_version)) {
       return true;
     }
     window_to_check = GetParent(window_to_check);

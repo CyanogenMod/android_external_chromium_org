@@ -49,6 +49,14 @@ class BaseTestResult(object):
   def __hash__(self):
     return hash(self._name)
 
+  def SetName(self, name):
+    """Set the test name.
+
+    Because we're putting this into a set, this should only be used if moving
+    this test result into another set.
+    """
+    self._name = name
+
   def GetName(self):
     """Get the test name."""
     return self._name

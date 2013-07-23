@@ -7,6 +7,9 @@
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
 #include "chrome/browser/renderer_host/web_cache_manager.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_command_controller.h"
+#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
@@ -21,7 +24,8 @@ DEFINE_WEB_CONTENTS_USER_DATA_KEY(CoreTabHelper);
 
 CoreTabHelper::CoreTabHelper(WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
-      delegate_(NULL) {
+      delegate_(NULL),
+      content_restrictions_(0) {
 }
 
 CoreTabHelper::~CoreTabHelper() {
@@ -38,6 +42,9 @@ string16 CoreTabHelper::GetStatusText() const {
   }
 
   switch (web_contents()->GetLoadState().state) {
+    case net::LOAD_STATE_WAITING_FOR_STALLED_SOCKET_POOL:
+    case net::LOAD_STATE_WAITING_FOR_AVAILABLE_SOCKET:
+      return l10n_util::GetStringUTF16(IDS_LOAD_STATE_WAITING_FOR_SOCKET_SLOT);
     case net::LOAD_STATE_WAITING_FOR_DELEGATE:
       if (!web_contents()->GetLoadState().param.empty()) {
         return l10n_util::GetStringFUTF16(IDS_LOAD_STATE_WAITING_FOR_DELEGATE,
@@ -107,8 +114,23 @@ void CoreTabHelper::OnUnloadDetachedStarted() {
     unload_detached_start_time_ = base::TimeTicks::Now();
 }
 
+void CoreTabHelper::UpdateContentRestrictions(int content_restrictions) {
+  content_restrictions_ = content_restrictions;
+#if !defined(OS_ANDROID)
+  Browser* browser = chrome::FindBrowserWithWebContents(web_contents());
+  if (!browser)
+    return;
+
+  browser->command_controller()->ContentRestrictionsChanged();
+#endif
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // WebContentsObserver overrides
+
+void CoreTabHelper::DidStartLoading(content::RenderViewHost* render_view_host) {
+  UpdateContentRestrictions(0);
+}
 
 void CoreTabHelper::WasShown() {
   WebCacheManager::GetInstance()->ObserveActivity(

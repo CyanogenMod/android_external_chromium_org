@@ -55,7 +55,7 @@ const extensions::Extension* GetExtension(WebContents* web_contents) {
     return NULL;
 
   return extension_service->extensions()->GetExtensionOrAppByURL(
-      ExtensionURLInfo(web_contents->GetURL()));
+      web_contents->GetURL());
 }
 
 // Gets the security originator of the tab. It returns a string with no '/'
@@ -379,7 +379,8 @@ void MediaStreamCaptureIndicator::MaybeCreateStatusTrayIcon() {
   if (!status_tray)
     return;
 
-  status_icon_ = status_tray->CreateStatusIcon();
+  status_icon_ =
+      status_tray->CreateStatusIcon(StatusTray::MEDIA_STREAM_CAPTURE_ICON);
 
   EnsureStatusTrayIconResources();
 }

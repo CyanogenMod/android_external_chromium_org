@@ -196,10 +196,14 @@ bool IsUnderCaptivePortal(NetworkStateInformer::State state,
 }
 
 bool IsProxyError(NetworkStateInformer::State state,
-                  ErrorScreenActor::ErrorReason reason) {
+                  ErrorScreenActor::ErrorReason reason,
+                  net::Error frame_error) {
   return state == NetworkStateInformer::PROXY_AUTH_REQUIRED ||
       reason == ErrorScreenActor::ERROR_REASON_PROXY_AUTH_CANCELLED ||
-      reason == ErrorScreenActor::ERROR_REASON_PROXY_CONNECTION_FAILED;
+      reason == ErrorScreenActor::ERROR_REASON_PROXY_CONNECTION_FAILED ||
+      (reason == ErrorScreenActor::ERROR_REASON_FRAME_ERROR &&
+       (frame_error == net::ERR_PROXY_CONNECTION_FAILED ||
+        frame_error == net::ERR_TUNNEL_CONNECTION_FAILED));
 }
 
 bool IsSigninScreen(const OobeUI::Screen screen) {
@@ -337,8 +341,7 @@ SigninScreenHandler::SigninScreenHandler(
       is_first_update_state_call_(true),
       offline_login_active_(false),
       last_network_state_(NetworkStateInformer::UNKNOWN),
-      has_pending_auth_ui_(false),
-      ignore_next_user_abort_frame_error_(false) {
+      has_pending_auth_ui_(false) {
   DCHECK(network_state_informer_.get());
   DCHECK(error_screen_actor_);
   network_state_informer_->AddObserver(this);
@@ -446,7 +449,6 @@ void SigninScreenHandler::DeclareLocalizedValues(
 }
 
 void SigninScreenHandler::Show(bool oobe_ui) {
-  TRACE_EVENT_ASYNC_BEGIN0("ui", "ShowLoginWebUI", this);
   CHECK(delegate_);
   oobe_ui_ = oobe_ui;
   if (!page_is_ready()) {
@@ -628,7 +630,8 @@ void SigninScreenHandler::UpdateStateInternal(
     ReloadGaiaScreen();
   }
 
-  if (reason == ErrorScreenActor::ERROR_REASON_FRAME_ERROR) {
+  if (reason == ErrorScreenActor::ERROR_REASON_FRAME_ERROR &&
+      !IsProxyError(state, reason, frame_error_)) {
     LOG(WARNING) << "Retry page load due to reason: "
                  << ErrorReasonString(reason);
     ReloadGaiaScreen();
@@ -649,7 +652,7 @@ void SigninScreenHandler::SetupAndShowOfflineMessage(
       network_state_informer_->last_network_service_path();
   const std::string network_id = GetNetworkUniqueId(service_path);
   const bool is_under_captive_portal = IsUnderCaptivePortal(state, reason);
-  const bool is_proxy_error = IsProxyError(state, reason);
+  const bool is_proxy_error = IsProxyError(state, reason, frame_error_);
   const bool is_gaia_loading_timeout =
       (reason == ErrorScreenActor::ERROR_REASON_LOADING_TIMEOUT);
 
@@ -728,7 +731,6 @@ void SigninScreenHandler::ReloadGaiaScreen() {
   }
   LOG(WARNING) << "Reload auth extension frame.";
   frame_state_ = FRAME_STATE_LOADING;
-  ignore_next_user_abort_frame_error_ = true;
   CallJS("login.GaiaSigninScreen.doReload");
 }
 
@@ -1014,11 +1016,19 @@ void SigninScreenHandler::UpdateAuthParams(DictionaryValue* params) {
   // Allow locally managed user creation only if:
   // 1. Enterprise managed device > is allowed by policy.
   // 2. Consumer device > owner exists.
+  // 3. New users are allowed by owner.
+
+  CrosSettings* cros_settings = CrosSettings::Get();
+  bool allow_new_user = false;
+  cros_settings->GetBoolean(kAccountsPrefAllowNewUser, &allow_new_user);
+
   bool managed_users_allowed =
       UserManager::Get()->AreLocallyManagedUsersAllowed();
   bool managed_users_can_create = false;
-  if (managed_users_allowed)
-    managed_users_can_create = delegate_->GetUsers().size() > 0;
+  if (managed_users_allowed) {
+    managed_users_can_create =
+        (delegate_->GetUsers().size() > 0) && allow_new_user;
+  }
   params->SetBoolean("managedUsersEnabled", managed_users_allowed);
   params->SetBoolean("managedUsersCanCreate", managed_users_can_create);
 }
@@ -1069,7 +1079,6 @@ void SigninScreenHandler::LoadAuthExtension(
   params.SetString("gaiaUrl", gaia_url.spec());
 
   frame_state_ = FRAME_STATE_LOADING;
-  ignore_next_user_abort_frame_error_ = true;
   CallJS("login.GaiaSigninScreen.loadAuthExtension", params);
 }
 
@@ -1436,9 +1445,8 @@ void SigninScreenHandler::HandleOpenProxySettings() {
 }
 
 void SigninScreenHandler::HandleLoginVisible(const std::string& source) {
-  TRACE_EVENT_ASYNC_END0("ui", "ShowLoginWebUI", this);
-  LOG(INFO) << "Login WebUI >> LoginVisible, source: " << source << ", "
-            << "webui_visible_: " << webui_visible_;
+  LOG(WARNING) << "Login WebUI >> loginVisible, src: " << source << ", "
+               << "webui_visible_: " << webui_visible_;
   if (!webui_visible_) {
     // There might be multiple messages from OOBE UI so send notifications after
     // the first one only.
@@ -1446,6 +1454,8 @@ void SigninScreenHandler::HandleLoginVisible(const std::string& source) {
         chrome::NOTIFICATION_LOGIN_WEBUI_VISIBLE,
         content::NotificationService::AllSources(),
         content::NotificationService::NoDetails());
+    TRACE_EVENT_ASYNC_END0(
+        "ui", "ShowLoginWebUI", LoginDisplayHostImpl::kShowLoginWebUIid);
   }
   webui_visible_ = true;
   if (preferences_changed_delayed_)
@@ -1503,25 +1513,19 @@ void SigninScreenHandler::HandleUnlockOnLoginSuccess() {
 }
 
 void SigninScreenHandler::HandleFrameLoadingCompleted(int status) {
-  frame_error_ = static_cast<net::Error>(-status);
-  if (frame_error_ == net::OK) {
+  const net::Error frame_error = static_cast<net::Error>(-status);
+  if (frame_error == net::ERR_ABORTED) {
+    LOG(WARNING) << "Ignore gaia frame error: " << frame_error;
+    return;
+  }
+  frame_error_ = frame_error;
+  if (frame_error == net::OK) {
     LOG(INFO) << "Gaia frame is loaded";
     frame_state_ = FRAME_STATE_LOADED;
   } else {
-    // Ignore net::ERR_ABORTED frame error once.
-    if (ignore_next_user_abort_frame_error_ &&
-        frame_error_ == net::ERR_ABORTED) {
-      LOG(WARNING) << "Ignore gaia frame error: "  << frame_error_;
-      ignore_next_user_abort_frame_error_ = false;
-      return;
-    }
-
     LOG(WARNING) << "Gaia frame error: "  << frame_error_;
     frame_state_ = FRAME_STATE_ERROR;
   }
-
-  // Frame load okay and other frame error clears the flag.
-  ignore_next_user_abort_frame_error_ = false;
 
   if (network_state_informer_->state() != NetworkStateInformer::ONLINE)
     return;

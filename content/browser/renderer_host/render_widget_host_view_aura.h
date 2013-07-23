@@ -168,7 +168,7 @@ class RenderWidgetHostViewAura
   virtual void WasHidden() OVERRIDE;
   virtual void MovePluginWindows(
       const gfx::Vector2d& scroll_offset,
-      const std::vector<webkit::npapi::WebPluginGeometry>& moves) OVERRIDE;
+      const std::vector<WebPluginGeometry>& moves) OVERRIDE;
   virtual void Focus() OVERRIDE;
   virtual void Blur() OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
@@ -241,6 +241,7 @@ class RenderWidgetHostViewAura
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;
   virtual void OnSwapCompositorFrame(
+      uint32 output_surface_id,
       scoped_ptr<cc::CompositorFrame> frame) OVERRIDE;
 #if defined(OS_WIN)
   virtual void SetParentNativeViewAccessible(
@@ -492,16 +493,19 @@ class RenderWidgetHostViewAura
       const scoped_refptr<ui::Texture>& texture_to_return);
 
   void SwapDelegatedFrame(
+      uint32 output_surface_id,
       scoped_ptr<cc::DelegatedFrameData> frame_data,
       float frame_device_scale_factor,
       const ui::LatencyInfo& latency_info);
-  void SendDelegatedFrameAck();
+  void SendDelegatedFrameAck(uint32 output_surface_id);
 
   void SwapSoftwareFrame(
+      uint32 output_surface_id,
       scoped_ptr<cc::SoftwareFrameData> frame_data,
       float frame_device_scale_factor,
       const ui::LatencyInfo& latency_info);
-  void SendSoftwareFrameAck(unsigned software_frame_id);
+  void SendSoftwareFrameAck(uint32 output_surface_id,
+                            unsigned software_frame_id);
 
   BrowserAccessibilityManager* GetOrCreateBrowserAccessibilityManager();
 
@@ -668,7 +672,7 @@ class RenderWidgetHostViewAura
   std::vector<gfx::Rect> transient_rects_;
   std::vector<gfx::Rect> constrained_rects_;
 
-  typedef std::map<HWND, webkit::npapi::WebPluginGeometry> PluginWindowMoves;
+  typedef std::map<HWND, WebPluginGeometry> PluginWindowMoves;
   // Contains information about each windowed plugin's clip and cutout rects (
   // from the renderer). This is needed because when the transient windoiws
   // over this view changes, we need this information in order to create a new

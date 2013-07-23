@@ -45,6 +45,10 @@
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "url/gurl.h"
 
+#if defined(OS_WIN) && defined(USE_ASH)
+#include "base/win/windows_version.h"
+#endif
+
 using apps::ShellWindow;
 using content::WebContents;
 using web_modal::WebContentsModalDialogManager;
@@ -792,6 +796,11 @@ void PlatformAppDevToolsBrowserTest::RunTestWithDevTools(
 #define MAYBE_ReOpenedWithID ReOpenedWithID
 #endif
 IN_PROC_BROWSER_TEST_F(PlatformAppDevToolsBrowserTest, MAYBE_ReOpenedWithID) {
+#if defined(OS_WIN) && defined(USE_ASH)
+  // Disable this test in Metro+Ash for now (http://crbug.com/179830).
+  if (base::win::GetVersion() >= base::win::VERSION_WIN8)
+    return;
+#endif
   RunTestWithDevTools("minimal_id", RELAUNCH | HAS_ID);
 }
 
@@ -950,19 +959,12 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
   extensions::ExtensionSystem::Get(browser()->profile())->event_router()->
       SetRegisteredEvents(extension->id(), std::set<std::string>());
 
-  const base::StringValue old_version("1");
-  std::string pref_path("extensions.settings.");
-  pref_path += extension->id();
-  pref_path += ".manifest.version";
-  // TODO(joi): Do registrations up front.
-  user_prefs::PrefRegistrySyncable* registry =
-      static_cast<user_prefs::PrefRegistrySyncable*>(
-          extension_prefs->pref_service()->DeprecatedGetPrefRegistry());
-  registry->RegisterStringPref(
-      pref_path.c_str(),
-      std::string(),
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  extension_prefs->pref_service()->Set(pref_path.c_str(), old_version);
+  DictionaryPrefUpdate update(extension_prefs->pref_service(),
+                              ExtensionPrefs::kExtensionsPref);
+  DictionaryValue* dict = update.Get();
+  std::string key(extension->id());
+  key += ".manifest.version";
+  dict->SetString(key, "1");
 }
 
 // Component App Test 3 of 3: simulate a component extension upgrade that

@@ -1,7 +1,6 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #include <sys/types.h>  // Include something that will define __GLIBC__.
 
@@ -19,6 +18,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include "nacl_io/kernel_intercept.h"
 
 
@@ -138,7 +138,7 @@ int WRAP(chdir) (const char* pathname) {
   return (ki_chdir(pathname)) ? errno : 0;
 }
 
-int chown(const char* path, uid_t owner, gid_t group) {
+int chown(const char* path, uid_t owner, gid_t group) NOTHROW {
   return ki_chown(path, owner, group);
 }
 
@@ -155,7 +155,7 @@ int WRAP(dup2)(int fd, int newfd) NOTHROW {
   return (ki_dup2(fd, newfd) < 0) ? errno : 0;
 }
 
-int fchown(int fd, uid_t owner, gid_t group) {
+int fchown(int fd, uid_t owner, gid_t group) NOTHROW {
   return ki_fchown(fd, owner, group);
 }
 
@@ -231,7 +231,7 @@ int isatty(int fd) NOTHROW {
   return ki_isatty(fd);
 }
 
-int lchown(const char* path, uid_t owner, gid_t group) {
+int lchown(const char* path, uid_t owner, gid_t group) NOTHROW {
   return ki_lchown(path, owner, group);
 }
 
@@ -264,7 +264,7 @@ int mount(const char* source, const char* target, const char* filesystemtype,
 int WRAP(munmap)(void* addr, size_t length) {
   // Always let the real munmap run on the address range. It is not an error if
   // there are no mapped pages in that range.
-  int result = ki_munmap(addr, length);
+  ki_munmap(addr, length);
   return REAL(munmap)(addr, length);
 }
 
@@ -424,6 +424,11 @@ int _real_write(int fd, const void *buf, size_t count, size_t *nwrote) {
   return REAL(write)(fd, buf, count, nwrote);
 }
 
+uint64_t usec_since_epoch() {
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return tv.tv_usec + (tv.tv_sec * 1000000);
+}
 
 void kernel_wrap_init() {
   static bool wrapped = false;

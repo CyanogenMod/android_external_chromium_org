@@ -125,6 +125,7 @@
 #include "content/public/common/content_descriptors.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/switches.h"
 #include "grit/generated_resources.h"
 #include "grit/ui_resources.h"
 #include "net/base/escape.h"
@@ -687,8 +688,8 @@ void ChromeContentBrowserClient::GetStoragePartitionConfigForSite(
       ExtensionService* extension_service =
           extensions::ExtensionSystem::Get(profile)->extension_service();
       if (extension_service) {
-        extension = extension_service->extensions()->
-            GetExtensionOrAppByURL(ExtensionURLInfo(site));
+        extension =
+            extension_service->extensions()->GetExtensionOrAppByURL(site);
         if (extension &&
             extensions::AppIsolationInfo::HasIsolatedStorage(extension)) {
           is_isolated = true;
@@ -785,8 +786,8 @@ void ChromeContentBrowserClient::GuestWebContentsAttached(
     return;
   }
   const GURL& url = embedder_web_contents->GetSiteInstance()->GetSiteURL();
-  const Extension* extension = service->extensions()->
-      GetExtensionOrAppByURL(ExtensionURLInfo(url));
+  const Extension* extension =
+      service->extensions()->GetExtensionOrAppByURL(url);
   if (!extension) {
     NOTREACHED();
     return;
@@ -909,7 +910,7 @@ GURL ChromeContentBrowserClient::GetEffectiveURL(
     return url;
 
   const Extension* extension = extension_service->extensions()->
-      GetHostedAppByURL(ExtensionURLInfo(url));
+      GetHostedAppByURL(url);
   if (!extension)
     return url;
 
@@ -950,8 +951,8 @@ bool ChromeContentBrowserClient::ShouldUseProcessPerSite(
   if (!extension_service)
     return false;
 
-  const Extension* extension = extension_service->extensions()->
-      GetExtensionOrAppByURL(ExtensionURLInfo(effective_url));
+  const Extension* extension =
+      extension_service->extensions()->GetExtensionOrAppByURL(effective_url);
   if (!extension)
     return false;
 
@@ -1016,7 +1017,7 @@ bool ChromeContentBrowserClient::CanCommitURL(
   if (!service)
     return true;
   const Extension* new_extension =
-      service->extensions()->GetExtensionOrAppByURL(ExtensionURLInfo(url));
+      service->extensions()->GetExtensionOrAppByURL(url);
   if (new_extension &&
       new_extension->is_hosted_app() &&
       new_extension->id() == extension_misc::kWebStoreAppId &&
@@ -1100,7 +1101,7 @@ bool ChromeContentBrowserClient::ShouldTryToUseExistingProcessHost(
 
   // We have to have a valid extension with background page to proceed.
   const Extension* extension =
-      service->extensions()->GetExtensionOrAppByURL(ExtensionURLInfo(url));
+      service->extensions()->GetExtensionOrAppByURL(url);
   if (!extension)
     return false;
   if (!extensions::BackgroundInfo::HasBackgroundPage(extension))
@@ -1175,9 +1176,8 @@ void ChromeContentBrowserClient::SiteInstanceGotProcess(
   if (!service)
     return;
 
-  const Extension* extension =
-      service->extensions()->GetExtensionOrAppByURL(ExtensionURLInfo(
-          site_instance->GetSiteURL()));
+  const Extension* extension = service->extensions()->GetExtensionOrAppByURL(
+      site_instance->GetSiteURL());
   if (!extension)
     return;
 
@@ -1205,9 +1205,8 @@ void ChromeContentBrowserClient::SiteInstanceDeleting(
   if (!service)
     return;
 
-  const Extension* extension =
-      service->extensions()->GetExtensionOrAppByURL(
-          ExtensionURLInfo(site_instance->GetSiteURL()));
+  const Extension* extension = service->extensions()->GetExtensionOrAppByURL(
+      site_instance->GetSiteURL());
   if (!extension)
     return;
 
@@ -1257,7 +1256,7 @@ bool ChromeContentBrowserClient::ShouldSwapProcessesForNavigation(
   // We must swap if the URL is for an extension and we are not using an
   // extension process.
   const Extension* new_extension =
-      service->extensions()->GetExtensionOrAppByURL(ExtensionURLInfo(new_url));
+      service->extensions()->GetExtensionOrAppByURL(new_url);
   // Ignore all hosted apps except the Chrome Web Store, since they do not
   // require their own BrowsingInstance (e.g., postMessage is ok).
   if (new_extension &&
@@ -1279,7 +1278,7 @@ bool ChromeContentBrowserClient::ShouldSwapProcessesForRedirect(
   ProfileIOData* io_data = ProfileIOData::FromResourceContext(resource_context);
   return extensions::CrossesExtensionProcessBoundary(
       io_data->GetExtensionInfoMap()->extensions(),
-      ExtensionURLInfo(current_url), ExtensionURLInfo(new_url), false);
+      current_url, new_url, false);
 }
 
 bool ChromeContentBrowserClient::ShouldAssignSiteForURL(const GURL& url) {
@@ -1387,12 +1386,13 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       autofill::switches::kDisableInteractiveAutocomplete,
       autofill::switches::kEnableExperimentalFormFilling,
       autofill::switches::kEnableInteractiveAutocomplete,
+      extensions::switches::kAllowLegacyExtensionManifests,
+      extensions::switches::kAllowScriptingGallery,
+      extensions::switches::kExtensionsOnChromeURLs,
       switches::kAllowHTTPBackgroundPage,
-      switches::kAllowLegacyExtensionManifests,
       // TODO(victorhsieh): remove the following flag once we move PPAPI FileIO
       // to browser.
       switches::kAllowNaClFileHandleAPI,
-      switches::kAllowScriptingGallery,
       switches::kAppsCheckoutURL,
       switches::kAppsGalleryURL,
       switches::kCloudPrintServiceURL,
@@ -1411,7 +1411,6 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kEnablePasswordGeneration,
       switches::kEnablePnacl,
       switches::kEnableWatchdog,
-      switches::kExtensionsOnChromeURLs,
       switches::kMemoryProfiling,
       switches::kMessageLoopHistogrammer,
       switches::kNoJsRandomness,
@@ -1433,9 +1432,9 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
                                    arraysize(kSwitchNames));
   } else if (process_type == switches::kUtilityProcess) {
     static const char* const kSwitchNames[] = {
+      extensions::switches::kExtensionsOnChromeURLs,
       switches::kAllowHTTPBackgroundPage,
       switches::kEnableExperimentalExtensionApis,
-      switches::kExtensionsOnChromeURLs,
       switches::kWhitelistedExtensionID,
     };
 
@@ -1939,8 +1938,8 @@ bool ChromeContentBrowserClient::CanCreateWindow(
     // because the permission check above would have caused an early return
     // already. We must use the full URL to find hosted apps, though, and not
     // just the origin.
-    const Extension* extension = map->extensions().GetExtensionOrAppByURL(
-        ExtensionURLInfo(opener_url));
+    const Extension* extension =
+        map->extensions().GetExtensionOrAppByURL(opener_url);
     if (extension && !extensions::BackgroundInfo::AllowJSAccess(extension))
       *no_javascript_access = true;
   }
@@ -2265,8 +2264,8 @@ bool ChromeContentBrowserClient::SupportsBrowserPlugin(
   if (!service)
     return false;
 
-  const Extension* extension = service->extensions()->
-      GetExtensionOrAppByURL(ExtensionURLInfo(site_url));
+  const Extension* extension =
+      service->extensions()->GetExtensionOrAppByURL(site_url);
   if (!extension)
     return false;
 

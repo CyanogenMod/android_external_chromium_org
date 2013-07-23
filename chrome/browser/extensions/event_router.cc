@@ -8,7 +8,7 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
 #include "base/values.h"
 #include "base/version.h"
@@ -490,6 +490,18 @@ void EventRouter::DispatchEventToExtension(const std::string& extension_id,
                                            scoped_ptr<Event> event) {
   DCHECK(!extension_id.empty());
   DispatchEventImpl(extension_id, linked_ptr<Event>(event.release()));
+}
+
+void EventRouter::DispatchEventWithLazyListener(const std::string& extension_id,
+                                                scoped_ptr<Event> event) {
+  DCHECK(!extension_id.empty());
+  std::string event_name = event->event_name;
+  bool has_listener = ExtensionHasEventListener(extension_id, event_name);
+  if (!has_listener)
+    AddLazyEventListener(event_name, extension_id);
+  DispatchEventToExtension(extension_id, event.Pass());
+  if (!has_listener)
+    RemoveLazyEventListener(event_name, extension_id);
 }
 
 void EventRouter::DispatchEventImpl(const std::string& restrict_to_extension_id,

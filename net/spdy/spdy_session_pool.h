@@ -8,10 +8,12 @@
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
@@ -41,20 +43,21 @@ class NET_EXPORT SpdySessionPool
  public:
   typedef base::TimeTicks (*TimeFunc)(void);
 
-  SpdySessionPool(HostResolver* host_resolver,
-                  SSLConfigService* ssl_config_service,
-                  HttpServerProperties* http_server_properties,
-                  bool force_single_domain,
-                  bool enable_ip_pooling,
-                  bool enable_credential_frames,
-                  bool enable_compression,
-                  bool enable_ping_based_connection_checking,
-                  NextProto default_protocol,
-                  size_t stream_initial_recv_window_size,
-                  size_t initial_max_concurrent_streams,
-                  size_t max_concurrent_streams_limit,
-                  SpdySessionPool::TimeFunc time_func,
-                  const std::string& trusted_spdy_proxy);
+  SpdySessionPool(
+      HostResolver* host_resolver,
+      SSLConfigService* ssl_config_service,
+      const base::WeakPtr<HttpServerProperties>& http_server_properties,
+      bool force_single_domain,
+      bool enable_ip_pooling,
+      bool enable_credential_frames,
+      bool enable_compression,
+      bool enable_ping_based_connection_checking,
+      NextProto default_protocol,
+      size_t stream_initial_recv_window_size,
+      size_t initial_max_concurrent_streams,
+      size_t max_concurrent_streams_limit,
+      SpdySessionPool::TimeFunc time_func,
+      const std::string& trusted_spdy_proxy);
   virtual ~SpdySessionPool();
 
   // In the functions below, a session is "available" if this pool has
@@ -82,23 +85,23 @@ class NET_EXPORT SpdySessionPool
       scoped_ptr<ClientSocketHandle> connection,
       const BoundNetLog& net_log,
       int certificate_error_code,
-      scoped_refptr<SpdySession>* available_session,
+      base::WeakPtr<SpdySession>* available_session,
       bool is_secure);
 
   // Find an available session for the given key, or NULL if there isn't one.
-  scoped_refptr<SpdySession> FindAvailableSession(const SpdySessionKey& key,
+  base::WeakPtr<SpdySession> FindAvailableSession(const SpdySessionKey& key,
                                                   const BoundNetLog& net_log);
 
   // Remove all mappings and aliases for the given session, which must
   // still be available. Except for in tests, this must be called by
   // the given session itself.
   void MakeSessionUnavailable(
-      const scoped_refptr<SpdySession>& available_session);
+      const base::WeakPtr<SpdySession>& available_session);
 
   // Removes an unavailable session from the pool.  Except for in
   // tests, this must be called by the given session itself.
   void RemoveUnavailableSession(
-      const scoped_refptr<SpdySession>& unavailable_session);
+      const base::WeakPtr<SpdySession>& unavailable_session);
 
   // Close only the currently existing SpdySessions with |error|.
   // Let any new ones created while this method is running continue to
@@ -118,7 +121,7 @@ class NET_EXPORT SpdySessionPool
   // responsible for deleting the returned value.
   base::Value* SpdySessionPoolInfoToValue() const;
 
-  HttpServerProperties* http_server_properties() {
+  base::WeakPtr<HttpServerProperties> http_server_properties() {
     return http_server_properties_;
   }
 
@@ -141,13 +144,14 @@ class NET_EXPORT SpdySessionPool
  private:
   friend class SpdySessionPoolPeer;  // For testing.
 
-  typedef std::set<scoped_refptr<SpdySession> > SessionSet;
-  typedef std::map<SpdySessionKey, scoped_refptr<SpdySession> >
+  typedef std::set<SpdySession*> SessionSet;
+  typedef std::vector<base::WeakPtr<SpdySession> > WeakSessionList;
+  typedef std::map<SpdySessionKey, base::WeakPtr<SpdySession> >
       AvailableSessionMap;
   typedef std::map<IPEndPoint, SpdySessionKey> AliasMap;
 
   // Returns true iff |session| is in |available_sessions_|.
-  bool IsSessionAvailable(const scoped_refptr<SpdySession>& session) const;
+  bool IsSessionAvailable(const base::WeakPtr<SpdySession>& session) const;
 
   // Returns a normalized version of the given key suitable for lookup
   // into |available_sessions_|.
@@ -156,7 +160,7 @@ class NET_EXPORT SpdySessionPool
   // Map the given key to the given session. There must not already be
   // a mapping for |key|.
   void MapKeyToAvailableSession(const SpdySessionKey& key,
-                                const scoped_refptr<SpdySession>& session);
+                                const base::WeakPtr<SpdySession>& session);
 
   // Returns an iterator into |available_sessions_| for the given key,
   // which may be equal to |available_sessions_.end()|.
@@ -169,6 +173,10 @@ class NET_EXPORT SpdySessionPool
   // Remove all aliases for |key| from the aliases table.
   void RemoveAliases(const SpdySessionKey& key);
 
+  // Get a copy of the current sessions as a list of WeakPtrs. Used by
+  // CloseCurrentSessionsHelper() below.
+  WeakSessionList GetCurrentSessions() const;
+
   // Close only the currently existing SpdySessions with |error|.  Let
   // any new ones created while this method is running continue to
   // live. If |idle_only| is true only idle sessions are closed.
@@ -177,10 +185,12 @@ class NET_EXPORT SpdySessionPool
       const std::string& description,
       bool idle_only);
 
-  HttpServerProperties* const http_server_properties_;
+  const base::WeakPtr<HttpServerProperties> http_server_properties_;
 
   // The set of all sessions. This is a superset of the sessions in
   // |available_sessions_|.
+  //
+  // |sessions_| owns all its SpdySession objects.
   SessionSet sessions_;
 
   // This is a map of available sessions by key. A session may appear

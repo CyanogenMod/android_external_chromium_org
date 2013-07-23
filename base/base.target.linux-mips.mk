@@ -115,6 +115,7 @@ LOCAL_SRC_FILES := \
 	base/memory/shared_memory_posix.cc \
 	base/memory/singleton.cc \
 	base/memory/weak_ptr.cc \
+	base/message_loop/incoming_task_queue.cc \
 	base/message_loop/message_loop.cc \
 	base/message_loop/message_loop_proxy.cc \
 	base/message_loop/message_loop_proxy_impl.cc \
@@ -142,7 +143,6 @@ LOCAL_SRC_FILES := \
 	base/posix/unix_domain_socket_linux.cc \
 	base/power_monitor/power_monitor.cc \
 	base/power_monitor/power_monitor_android.cc \
-	base/process_posix.cc \
 	base/process/internal_linux.cc \
 	base/process/kill.cc \
 	base/process/kill_posix.cc \
@@ -154,6 +154,7 @@ LOCAL_SRC_FILES := \
 	base/process/process_iterator_linux.cc \
 	base/process/process_metrics_linux.cc \
 	base/process/process_metrics_posix.cc \
+	base/process/process_posix.cc \
 	base/profiler/scoped_profile.cc \
 	base/profiler/alternate_timer.cc \
 	base/profiler/tracked_time.cc \
@@ -218,6 +219,7 @@ LOCAL_SRC_FILES := \
 	base/timer/timer.cc \
 	base/tracked_objects.cc \
 	base/tracking_info.cc \
+	base/upload_list.cc \
 	base/values.cc \
 	base/value_conversions.cc \
 	base/version.cc \

@@ -25,7 +25,7 @@
 #include "third_party/WebKit/public/platform/WebIDBDatabaseException.h"
 
 using base::Int64ToString16;
-using WebKit::WebIDBKey;
+using WebKit::WebIDBKeyTypeNumber;
 
 namespace content {
 
@@ -457,7 +457,7 @@ scoped_refptr<IndexedDBDatabase> IndexedDBDatabase::Create(
     const string16& name,
     IndexedDBBackingStore* database,
     IndexedDBFactory* factory,
-    const string16& unique_identifier) {
+    const Identifier& unique_identifier) {
   scoped_refptr<IndexedDBDatabase> backend =
       new IndexedDBDatabase(name, database, factory, unique_identifier);
   if (!backend->OpenInternal())
@@ -474,10 +474,11 @@ bool Contains(const T& container, const U& item) {
 }
 }
 
-IndexedDBDatabase::IndexedDBDatabase(const string16& name,
-                                     IndexedDBBackingStore* backing_store,
-                                     IndexedDBFactory* factory,
-                                     const string16& unique_identifier)
+IndexedDBDatabase::IndexedDBDatabase(
+    const string16& name,
+    IndexedDBBackingStore* backing_store,
+    IndexedDBFactory* factory,
+    const Identifier& unique_identifier)
     : backing_store_(backing_store),
       metadata_(name,
                 kInvalidId,
@@ -982,7 +983,7 @@ static scoped_ptr<IndexedDBKey> GenerateKey(
     return make_scoped_ptr(new IndexedDBKey());
 
   return make_scoped_ptr(
-      new IndexedDBKey(current_number, WebIDBKey::NumberType));
+      new IndexedDBKey(current_number, WebIDBKeyTypeNumber));
 }
 
 static bool UpdateKeyGenerator(
@@ -993,7 +994,7 @@ static bool UpdateKeyGenerator(
     const IndexedDBKey* key,
     bool check_current) {
   DCHECK(key);
-  DCHECK_EQ(WebIDBKey::NumberType, key->type());
+  DCHECK_EQ(WebIDBKeyTypeNumber, key->type());
   return backing_store->MaybeUpdateKeyGeneratorCurrentNumber(
       transaction->BackingStoreTransaction(),
       database_id,
@@ -1136,7 +1137,7 @@ void PutOperation::Perform(IndexedDBTransaction* transaction) {
 
   if (object_store_.auto_increment &&
       put_mode_ != IndexedDBDatabase::CURSOR_UPDATE &&
-      key->type() == WebIDBKey::NumberType) {
+      key->type() == WebIDBKeyTypeNumber) {
     bool ok = UpdateKeyGenerator(backing_store_,
                                  transaction,
                                  database_id_,
@@ -1556,6 +1557,22 @@ size_t IndexedDBDatabase::ConnectionCount() const {
   // This does not include pending open calls, as those should not block version
   // changes and deletes.
   return connections_.size();
+}
+
+size_t IndexedDBDatabase::PendingOpenCount() const {
+  return pending_open_calls_.size();
+}
+
+size_t IndexedDBDatabase::PendingUpgradeCount() const {
+  return pending_run_version_change_transaction_call_ ? 1 : 0;
+}
+
+size_t IndexedDBDatabase::RunningUpgradeCount() const {
+  return pending_second_half_open_ ? 1 : 0;
+}
+
+size_t IndexedDBDatabase::PendingDeleteCount() const {
+  return pending_delete_calls_.size();
 }
 
 void IndexedDBDatabase::ProcessPendingCalls() {

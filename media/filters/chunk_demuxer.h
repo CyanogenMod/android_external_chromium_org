@@ -124,8 +124,12 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   // middle of parsing a media segment.
   bool SetTimestampOffset(const std::string& id, base::TimeDelta offset);
 
-  // Signals an EndOfStream request.
-  void EndOfStream(PipelineStatus status);
+  // Called to signal changes in the "end of stream"
+  // state. UnmarkEndOfStream() must not be called if a matching
+  // MarkEndOfStream() has not come before it.
+  void MarkEndOfStream(PipelineStatus status);
+  void UnmarkEndOfStream();
+
   void Shutdown();
 
   void SetMemoryLimitsForTesting(int memory_limit);
@@ -194,6 +198,18 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
 
   // Returns the ranges representing the buffered data in the demuxer.
   Ranges<base::TimeDelta> GetBufferedRanges() const;
+
+  // Start returning data on all DemuxerStreams.
+  void StartReturningData();
+
+  // Aborts pending reads on all DemuxerStreams.
+  void AbortPendingReads();
+
+  // Completes any pending reads if it is possible to do so.
+  void CompletePendingReadsIfPossible();
+
+  // Seeks all SourceBufferStreams to |seek_time|.
+  void SeekAllSources(base::TimeDelta seek_time);
 
   mutable base::Lock lock_;
   State state_;

@@ -7,7 +7,7 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "media/base/audio_buffer.h"
 #include "media/base/buffers.h"
 #include "media/base/decoder_buffer.h"
@@ -36,7 +36,7 @@ static const uint8 kFakeIv[DecryptConfig::kDecryptionKeySize] = { 0 };
 static scoped_refptr<DecoderBuffer> CreateFakeEncryptedBuffer() {
   const int buffer_size = 16;  // Need a non-empty buffer;
   scoped_refptr<DecoderBuffer> buffer(new DecoderBuffer(buffer_size));
-  buffer->SetDecryptConfig(scoped_ptr<DecryptConfig>(new DecryptConfig(
+  buffer->set_decrypt_config(scoped_ptr<DecryptConfig>(new DecryptConfig(
       std::string(reinterpret_cast<const char*>(kFakeKeyId),
                   arraysize(kFakeKeyId)),
       std::string(reinterpret_cast<const char*>(kFakeIv), arraysize(kFakeIv)),

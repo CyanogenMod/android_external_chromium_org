@@ -48,12 +48,18 @@ class AvailabilityFinderTest(unittest.TestCase):
         self._avail_finder.GetApiAvailability('jsonAPI1').version)
     self.assertEqual('trunk',
         self._avail_finder.GetApiAvailability('jsonAPI2').channel)
-    self.assertEqual(None,
+    self.assertEqual('trunk',
         self._avail_finder.GetApiAvailability('jsonAPI2').version)
     self.assertEqual('dev',
         self._avail_finder.GetApiAvailability('jsonAPI3').channel)
-    self.assertEqual(None,
+    self.assertEqual(28,
         self._avail_finder.GetApiAvailability('jsonAPI3').version)
+
+    # Testing whitelisted API
+    self.assertEquals('beta',
+        self._avail_finder.GetApiAvailability('declarativeWebRequest').channel)
+    self.assertEquals(27,
+        self._avail_finder.GetApiAvailability('declarativeWebRequest').version)
 
     # Testing APIs found only by checking file system existence.
     self.assertEquals('stable',

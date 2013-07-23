@@ -18,6 +18,7 @@
 #include "content/common/navigation_gesture.h"
 #include "content/common/pepper_renderer_instance_data.h"
 #include "content/common/view_message_enums.h"
+#include "content/common/webplugin_geometry.h"
 #include "content/port/common/input_event_ack_state.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/context_menu_params.h"
@@ -59,7 +60,6 @@
 #include "ui/gfx/vector2d.h"
 #include "ui/gfx/vector2d_f.h"
 #include "ui/shell_dialogs/selected_file_info.h"
-#include "webkit/plugins/npapi/webplugin.h"
 
 #if defined(OS_MACOSX)
 #include "content/common/mac/font_descriptor.h"
@@ -280,7 +280,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::CookieData)
   IPC_STRUCT_TRAITS_MEMBER(session)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(webkit::npapi::WebPluginGeometry)
+IPC_STRUCT_TRAITS_BEGIN(content::WebPluginGeometry)
   IPC_STRUCT_TRAITS_MEMBER(window)
   IPC_STRUCT_TRAITS_MEMBER(window_rect)
   IPC_STRUCT_TRAITS_MEMBER(clip_rect)
@@ -456,7 +456,7 @@ IPC_STRUCT_BEGIN(ViewHostMsg_OpenURL_Params)
   IPC_STRUCT_MEMBER(content::Referrer, referrer)
   IPC_STRUCT_MEMBER(WindowOpenDisposition, disposition)
   IPC_STRUCT_MEMBER(int64, frame_id)
-  IPC_STRUCT_MEMBER(bool, is_cross_site_redirect)
+  IPC_STRUCT_MEMBER(bool, should_replace_current_entry)
   IPC_STRUCT_MEMBER(bool, user_gesture)
 IPC_STRUCT_END()
 
@@ -555,7 +555,7 @@ IPC_STRUCT_BEGIN(ViewHostMsg_UpdateRect_Params)
   IPC_STRUCT_MEMBER(gfx::Size, view_size)
 
   // New window locations for plugin child windows.
-  IPC_STRUCT_MEMBER(std::vector<webkit::npapi::WebPluginGeometry>,
+  IPC_STRUCT_MEMBER(std::vector<content::WebPluginGeometry>,
                     plugin_window_moves)
 
   // The following describes the various bits that may be set in flags:
@@ -1323,7 +1323,8 @@ IPC_MESSAGE_ROUTED1(ViewMsg_SelectPopupMenuItem,
 #endif
 
 // Sent by the browser as a reply to ViewHostMsg_SwapCompositorFrame.
-IPC_MESSAGE_ROUTED1(ViewMsg_SwapCompositorFrameAck,
+IPC_MESSAGE_ROUTED2(ViewMsg_SwapCompositorFrameAck,
+                    uint32 /* output_surface_id */,
                     cc::CompositorFrameAck /* ack */)
 
 // Sent by the browser to ask the renderer for a snapshot of the current view.
@@ -1678,7 +1679,7 @@ IPC_SYNC_MESSAGE_CONTROL2_1(ViewHostMsg_CookiesEnabled,
 // Used to get the list of plugins
 IPC_SYNC_MESSAGE_CONTROL1_1(ViewHostMsg_GetPlugins,
     bool /* refresh*/,
-    std::vector<webkit::WebPluginInfo> /* plugins */)
+    std::vector<content::WebPluginInfo> /* plugins */)
 
 // Return information about a plugin for the given URL and MIME
 // type. If there is no matching plugin, |found| is false.
@@ -1690,7 +1691,7 @@ IPC_SYNC_MESSAGE_CONTROL4_3(ViewHostMsg_GetPluginInfo,
                             GURL /* page_url */,
                             std::string /* mime_type */,
                             bool /* found */,
-                            webkit::WebPluginInfo /* plugin info */,
+                            content::WebPluginInfo /* plugin info */,
                             std::string /* actual_mime_type */)
 
 // A renderer sends this to the browser process when it wants to
@@ -1703,7 +1704,7 @@ IPC_SYNC_MESSAGE_CONTROL4_2(ViewHostMsg_OpenChannelToPlugin,
                             GURL /* page_url */,
                             std::string /* mime_type */,
                             IPC::ChannelHandle /* channel_handle */,
-                            webkit::WebPluginInfo /* info */)
+                            content::WebPluginInfo /* info */)
 
 #if defined(OS_WIN)
 IPC_MESSAGE_ROUTED1(ViewHostMsg_WindowlessPluginDummyWindowCreated,
@@ -2054,7 +2055,8 @@ IPC_MESSAGE_ROUTED1(
     ViewHostMsg_CompositorSurfaceBuffersSwapped,
     ViewHostMsg_CompositorSurfaceBuffersSwapped_Params /* params */)
 
-IPC_MESSAGE_ROUTED1(ViewHostMsg_SwapCompositorFrame,
+IPC_MESSAGE_ROUTED2(ViewHostMsg_SwapCompositorFrame,
+                    uint32 /* output_surface_id */,
                     cc::CompositorFrame /* frame */)
 
 // Sent by the compositor when input scroll events are dropped due to bounds
@@ -2096,15 +2098,6 @@ IPC_MESSAGE_CONTROL3(ViewHostMsg_DidGenerateCacheableMetadata,
                      GURL /* url */,
                      double /* expected_response_time */,
                      std::vector<char> /* data */)
-
-// Updates the content restrictions, i.e. to disable print/copy.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_UpdateContentRestrictions,
-                    int /* restrictions */)
-
-// Brings up SaveAs... dialog to save specified URL.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_SaveURLAs,
-                    GURL /* url */,
-                    content::Referrer /* referrer */)
 
 // Displays a JavaScript out-of-memory message in the infobar.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_JSOutOfMemory)
@@ -2284,6 +2277,15 @@ IPC_MESSAGE_CONTROL3(ViewHostMsg_RunWebAudioMediaCodec,
 // to be be delivered until the notification is disabled.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_SetNeedsBeginFrame,
                     bool /* enabled */)
+
+// Sent by the renderer to the browser to start a vibration with the given
+// duration.
+IPC_MESSAGE_CONTROL1(ViewHostMsg_Vibrate,
+                     int64 /* milliseconds */)
+
+// Sent by the renderer to the browser to cancel the currently running
+// vibration, if there is one.
+IPC_MESSAGE_CONTROL0(ViewHostMsg_CancelVibration)
 
 #elif defined(OS_MACOSX)
 // Request that the browser load a font into shared memory for us.

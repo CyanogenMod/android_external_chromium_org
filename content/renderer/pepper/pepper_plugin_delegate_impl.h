@@ -41,7 +41,6 @@ class PpapiPermissions;
 }
 
 namespace webkit {
-struct WebPluginInfo;
 namespace ppapi {
 class PluginInstance;
 class PluginModule;
@@ -59,6 +58,7 @@ class GamepadSharedMemoryReader;
 class PepperBrokerImpl;
 class PepperDeviceEnumerationEventHandler;
 class RenderViewImpl;
+struct WebPluginInfo;
 
 class PepperPluginDelegateImpl
     : public webkit::ppapi::PluginDelegate,
@@ -103,6 +103,10 @@ class PepperPluginDelegateImpl
                  const std::string& device_id,
                  const GURL& document_url,
                  const OpenDeviceCallback& callback);
+  // Cancels an request to open device, using the request ID returned by
+  // OpenDevice(). It is guaranteed that the callback passed into OpenDevice()
+  // won't be called afterwards.
+  void CancelOpenDevice(int request_id);
   void CloseDevice(const std::string& label);
   // Gets audio/video session ID given a label.
   int GetSessionID(PP_DeviceType_Dev type, const std::string& label);
@@ -110,7 +114,7 @@ class PepperPluginDelegateImpl
  private:
   // RenderViewPepperHelper implementation.
   virtual WebKit::WebPlugin* CreatePepperWebPlugin(
-    const webkit::WebPluginInfo& webplugin_info,
+    const WebPluginInfo& webplugin_info,
     const WebKit::WebPluginParams& params) OVERRIDE;
   virtual void ViewWillInitiatePaint() OVERRIDE;
   virtual void ViewInitiatedPaint() OVERRIDE;
@@ -311,10 +315,6 @@ class PepperPluginDelegateImpl
   virtual std::string GetDefaultEncoding() OVERRIDE;
   virtual void ZoomLimitsChanged(double minimum_factor, double maximum_factor)
       OVERRIDE;
-  virtual void DidStartLoading() OVERRIDE;
-  virtual void DidStopLoading() OVERRIDE;
-  virtual void SetContentRestriction(int restrictions) OVERRIDE;
-  virtual void SaveURLAs(const GURL& url) OVERRIDE;
   virtual base::SharedMemory* CreateAnonymousSharedMemory(size_t size)
       OVERRIDE;
   virtual ::ppapi::Preferences GetPreferences() OVERRIDE;
@@ -381,9 +381,8 @@ class PepperPluginDelegateImpl
   // |*pepper_plugin_was_registered| will be set to true and the caller should
   // not fall back on any other plugin types.
   scoped_refptr<webkit::ppapi::PluginModule>
-  CreatePepperPluginModule(
-      const webkit::WebPluginInfo& webplugin_info,
-      bool* pepper_plugin_was_registered);
+  CreatePepperPluginModule(const WebPluginInfo& webplugin_info,
+                           bool* pepper_plugin_was_registered);
 
   // Asynchronously attempts to create a PPAPI broker for the given plugin.
   scoped_refptr<PepperBrokerImpl> CreateBroker(

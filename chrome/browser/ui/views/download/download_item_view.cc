@@ -30,7 +30,7 @@
 #include "content/public/browser/download_danger_type.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "third_party/icu/public/common/unicode/uchar.h"
+#include "third_party/icu/source/common/unicode/uchar.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/events/event.h"
@@ -907,7 +907,8 @@ void DownloadItemView::ShowContextMenuImpl(const gfx::Point& p,
 
   // If |is_mouse_gesture| is false, |p| is ignored. The menu is shown aligned
   // to drop down arrow button.
-  if (!source_type == ui::MENU_SOURCE_MOUSE) {
+  if (source_type != ui::MENU_SOURCE_MOUSE &&
+      source_type != ui::MENU_SOURCE_TOUCH) {
     drop_down_pressed_ = true;
     SetState(NORMAL, PUSHED);
     point.SetPoint(drop_down_x_left_, box_y_);

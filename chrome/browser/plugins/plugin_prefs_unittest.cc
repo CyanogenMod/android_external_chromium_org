@@ -13,10 +13,11 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "content/public/browser/plugin_service.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/common/webplugininfo.h"
 #include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/plugins/npapi/mock_plugin_list.h"
-#include "webkit/plugins/webplugininfo.h"
 
 using content::BrowserThread;
 using content::PluginService;
@@ -44,6 +45,11 @@ base::FilePath GetBundledPepperFlashPath() {
   base::FilePath path;
   EXPECT_TRUE(PathService::Get(chrome::FILE_PEPPER_FLASH_PLUGIN, &path));
   return path;
+}
+
+void GotPlugins(const base::Closure& quit_closure,
+                const std::vector<content::WebPluginInfo>& plugins) {
+  quit_closure.Run();
 }
 
 }  // namespace
@@ -177,35 +183,52 @@ TEST_F(PluginPrefsTest, EnabledAndDisabledByPolicy) {
             plugin_prefs_->PolicyStatusForPlugin(k42));
 }
 
+// Linux Aura doesn't support NPAPI.
+#if !(defined(OS_LINUX) && defined(USE_AURA))
+
 TEST_F(PluginPrefsTest, UnifiedPepperFlashState) {
   base::ShadowingAtExitManager at_exit_manager_;  // Destroys the PluginService.
 
   base::MessageLoop message_loop;
   content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
-  webkit::npapi::MockPluginList plugin_list;
-  PluginService::GetInstance()->SetPluginListForTesting(&plugin_list);
   PluginService::GetInstance()->Init();
+  PluginService::GetInstance()->DisablePluginsDiscoveryForTesting();
 
   string16 component_updated_plugin_name(
       ASCIIToUTF16("Component-updated Pepper Flash"));
-  webkit::WebPluginInfo component_updated_plugin_1(
+  content::WebPluginInfo component_updated_plugin_1(
       component_updated_plugin_name,
       GetComponentUpdatedPepperFlashPath(FILE_PATH_LITERAL("11.3.31.227")),
       ASCIIToUTF16("11.3.31.227"),
       ASCIIToUTF16(""));
-  webkit::WebPluginInfo component_updated_plugin_2(
+  content::WebPluginInfo component_updated_plugin_2(
       component_updated_plugin_name,
       GetComponentUpdatedPepperFlashPath(FILE_PATH_LITERAL("11.3.31.228")),
       ASCIIToUTF16("11.3.31.228"),
       ASCIIToUTF16(""));
-  webkit::WebPluginInfo bundled_plugin(ASCIIToUTF16("Pepper Flash"),
-                                       GetBundledPepperFlashPath(),
-                                       ASCIIToUTF16("11.3.31.229"),
-                                       ASCIIToUTF16(""));
+  content::WebPluginInfo bundled_plugin(ASCIIToUTF16("Pepper Flash"),
+                                        GetBundledPepperFlashPath(),
+                                        ASCIIToUTF16("11.3.31.229"),
+                                        ASCIIToUTF16(""));
 
-  plugin_list.AddPluginToLoad(component_updated_plugin_1);
-  plugin_list.AddPluginToLoad(component_updated_plugin_2);
-  plugin_list.AddPluginToLoad(bundled_plugin);
+  PluginService::GetInstance()->RegisterInternalPlugin(
+      component_updated_plugin_1, false);
+  PluginService::GetInstance()->RegisterInternalPlugin(
+      component_updated_plugin_2, false);
+  PluginService::GetInstance()->RegisterInternalPlugin(bundled_plugin, false);
+
+#if !defined(OS_WIN)
+    // Can't go out of process in unit tests.
+    content::RenderProcessHost::SetRunRendererInProcess(true);
+#endif
+  scoped_refptr<content::MessageLoopRunner> runner =
+      new content::MessageLoopRunner;
+  PluginService::GetInstance()->GetPlugins(
+      base::Bind(&GotPlugins, runner->QuitClosure()));
+  runner->Run();
+#if !defined(OS_WIN)
+    content::RenderProcessHost::SetRunRendererInProcess(false);
+#endif
 
   // Set the state of any of the three plugins will affect the others.
   EnablePluginSynchronously(true, component_updated_plugin_1.path, true);
@@ -249,6 +272,6 @@ TEST_F(PluginPrefsTest, UnifiedPepperFlashState) {
   EXPECT_FALSE(plugin_prefs_->IsPluginEnabled(component_updated_plugin_1));
   EXPECT_FALSE(plugin_prefs_->IsPluginEnabled(component_updated_plugin_2));
   EXPECT_TRUE(plugin_prefs_->IsPluginEnabled(bundled_plugin));
-
-  PluginService::GetInstance()->SetPluginListForTesting(NULL);
 }
+
+#endif

@@ -8,11 +8,11 @@ vars = {
   "sourceforge_url": "http://%(repo)s.svn.sourceforge.net/svnroot/%(repo)s",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "154375",
+  "webkit_revision": "154672",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "swig_revision": "69281",
-  "nacl_revision": "11782",
+  "nacl_revision": "11819",
   # After changing nacl_revision, run 'glient sync' and check native_client/DEPS
   # to update other nacl_*_revision's.
   "nacl_tools_revision": "11437",  # native_client/DEPS: tools_rev
@@ -20,7 +20,7 @@ vars = {
 
   "libjingle_revision": "374",
   "libphonenumber_revision": "584",
-  "libvpx_revision": "211873",
+  "libvpx_revision": "212364",
   "lss_revision": "20",
 
   # These two FFmpeg variables must be updated together.  One is used for SVN
@@ -29,11 +29,11 @@ vars = {
   "ffmpeg_hash": "245a8c0cdfdd5ab3da9045089661017e9ddd8d0e",
 
   "sfntly_revision": "134",
-  "skia_revision": "10117",
+  "skia_revision": "10169",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
-  "v8_revision": "15699",
+  "v8_revision": "15795",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
@@ -43,7 +43,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling swarm_client
   # and whatever else without interference from each other.
-  "swarm_revision": "211397",
+  "swarm_revision": "212588",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling openssl
   # and whatever else without interference from each other.
@@ -77,7 +77,7 @@ deps = {
     Var("webkit_trunk") + "@" + Var("webkit_revision"),
 
   "src/third_party/icu":
-    "/trunk/deps/third_party/icu46@210659",
+    "/trunk/deps/third_party/icu46@212871",
 
   "src/third_party/libexif/sources":
     "/trunk/deps/third_party/libexif/sources@146817",
@@ -105,7 +105,7 @@ deps = {
     (Var("googlecode_url") % "grit-i18n") + "/trunk@129",
 
   "src/tools/gyp":
-    (Var("googlecode_url") % "gyp") + "/trunk@1678",
+    (Var("googlecode_url") % "gyp") + "/trunk@1682",
 
   "src/tools/swarm_client":
     "/trunk/tools/swarm_client@" + Var("swarm_revision"),
@@ -183,7 +183,7 @@ deps = {
     "/trunk/KERN/usrsctp/usrsctplib@8463",
 
   "src/third_party/libsrtp":
-    "/trunk/deps/third_party/libsrtp@189528",
+    "/trunk/deps/third_party/libsrtp@212698",
 
   "src/third_party/speex":
     "/trunk/deps/third_party/speex@198168",
@@ -512,7 +512,8 @@ include_rules = [
   "+library_loaders",
 
   "+testing",
-  "+third_party/icu/public",
+  "+third_party/icu/source/common/unicode",
+  "+third_party/icu/source/i18n/unicode",
   "+url",
   # TODO(tfarina): Temporary, until we finish the migration to url. Remove this!
   "!googleurl",

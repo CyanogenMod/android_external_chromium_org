@@ -15,11 +15,11 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/discardable_memory.h"
+#include "base/memory/shared_memory.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/stats_table.h"
 #include "base/path_service.h"
-#include "base/shared_memory.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"  // Temporary
 #include "base/strings/utf_string_conversions.h"
@@ -31,7 +31,7 @@
 #include "content/child/db_message_filter.h"
 #include "content/child/indexed_db/indexed_db_dispatcher.h"
 #include "content/child/indexed_db/indexed_db_message_filter.h"
-#include "content/child/npobject_util.h"
+#include "content/child/npapi/npobject_util.h"
 #include "content/child/plugin_messages.h"
 #include "content/child/resource_dispatcher.h"
 #include "content/child/runtime_features.h"
@@ -72,6 +72,7 @@
 #include "content/renderer/media/renderer_gpu_video_decoder_factories.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
 #include "content/renderer/media/video_capture_message_filter.h"
+#include "content/renderer/media/webrtc_identity_service.h"
 #include "content/renderer/memory_benchmarking_extension.h"
 #include "content/renderer/p2p/socket_dispatcher.h"
 #include "content/renderer/plugin_channel_host.h"
@@ -116,7 +117,7 @@
 #else
 // TODO(port)
 #include "base/memory/scoped_handle.h"
-#include "content/child/np_channel_base.h"
+#include "content/child/npapi/np_channel_base.h"
 #endif
 
 #if defined(OS_POSIX)
@@ -376,6 +377,8 @@ void RenderThreadImpl::Init() {
   p2p_socket_dispatcher_ =
       new P2PSocketDispatcher(GetIOMessageLoopProxy().get());
   AddFilter(p2p_socket_dispatcher_.get());
+
+  webrtc_identity_service_.reset(new WebRTCIdentityService());
 #endif  // defined(ENABLE_WEBRTC)
   vc_manager_ = new VideoCaptureImplManager();
   AddFilter(vc_manager_->video_capture_message_filter());

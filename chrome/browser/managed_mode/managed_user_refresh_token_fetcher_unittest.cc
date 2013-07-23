@@ -4,7 +4,7 @@
 
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/managed_mode/managed_user_refresh_token_fetcher.h"
@@ -81,6 +81,9 @@ class MockOAuth2TokenService : public OAuth2TokenService {
      const OAuth2TokenService::ScopeSet& scopes,
       OAuth2TokenService::Consumer* consumer) OVERRIDE;
   virtual std::string GetRefreshToken() OVERRIDE;
+  virtual net::URLRequestContextGetter* GetRequestContext() OVERRIDE {
+    return NULL;
+  }
 
   Request* request_;
 
@@ -110,9 +113,7 @@ void MockOAuth2TokenService::Request::Fail(
   consumer_->OnGetTokenFailure(this, GoogleServiceAuthError(error));
 }
 
-MockOAuth2TokenService::MockOAuth2TokenService()
-    : OAuth2TokenService(NULL),
-      request_(NULL) {}
+MockOAuth2TokenService::MockOAuth2TokenService() : request_(NULL) {}
 
 MockOAuth2TokenService::~MockOAuth2TokenService() {
   EXPECT_FALSE(request_);

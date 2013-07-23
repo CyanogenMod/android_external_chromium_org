@@ -1,7 +1,7 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 #include "nacl_io/kernel_handle.h"
 
 #include <errno.h>
@@ -14,6 +14,8 @@
 
 #include "sdk_util/auto_lock.h"
 
+namespace nacl_io {
+
 // It is only legal to construct a handle while the kernel lock is held.
 KernelHandle::KernelHandle()
     : mount_(NULL), node_(NULL), offs_(0) {}
@@ -21,9 +23,14 @@ KernelHandle::KernelHandle()
 KernelHandle::KernelHandle(const ScopedMount& mnt, const ScopedMountNode& node)
     : mount_(mnt), node_(node), offs_(0) {}
 
+KernelHandle::~KernelHandle() {
+  // Force release order for cases where mount_ is not ref'd by mounting.
+  node_.reset(NULL);
+  mount_.reset(NULL);
+}
+
 Error KernelHandle::Init(int open_mode) {
   if (open_mode & O_APPEND) {
-    size_t node_size;
     Error error = node_->GetSize(&offs_);
     if (error)
       return error;
@@ -98,5 +105,4 @@ Error KernelHandle::GetDents(struct dirent* pdir, size_t nbytes, int* cnt) {
   return error;
 }
 
-const ScopedRef<MountNode>& KernelHandle::node() { return node_; }
-const ScopedRef<Mount>& KernelHandle::mount() { return mount_; }
+}  // namespace nacl_io

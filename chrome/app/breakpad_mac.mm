@@ -24,10 +24,8 @@
 #include "base/threading/thread_restrictions.h"
 #import "breakpad/src/client/mac/Framework/Breakpad.h"
 #include "chrome/common/child_process_logging.h"
-#include "chrome/common/chrome_switches.h"
-#include "chrome/common/crash_keys.h"
-#include "chrome/common/env_vars.h"
 #include "chrome/installer/util/google_update_settings.h"
+#include "content/public/common/content_switches.h"
 #include "components/breakpad/breakpad_client.h"
 #include "components/nacl/common/nacl_switches.h"
 #include "native_client/src/trusted/service_runtime/osx/crash_filter.h"
@@ -194,7 +192,7 @@ void InitCrashReporter() {
       // preference or through an environment variable, but the kDisableBreakpad
       // switch overrides both.
       enable_breakpad = GoogleUpdateSettings::GetCollectStatsConsent() ||
-          getenv(env_vars::kHeadless) != NULL;
+          breakpad::GetBreakpadClient()->IsRunningUnattended();
       enable_breakpad &= !command_line->HasSwitch(switches::kDisableBreakpad);
     }
   } else {
@@ -251,7 +249,7 @@ void InitCrashReporter() {
   // Initialize the scoped crash key system.
   base::debug::SetCrashKeyReportingFunctions(&SetCrashKeyValueImpl,
                                              &ClearCrashKeyValueImpl);
-  crash_keys::RegisterChromeCrashKeys();
+  breakpad::GetBreakpadClient()->RegisterCrashKeys();
 
   // Set Breakpad metadata values.  These values are added to Info.plist during
   // the branded Google Chrome.app build.

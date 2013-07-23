@@ -556,11 +556,11 @@
         'prefs/pref_service_unittest.cc',
         'prefs/pref_value_map_unittest.cc',
         'prefs/pref_value_store_unittest.cc',
-        'process_util_unittest.cc',
-        'process_util_unittest_ios.cc',
         'process/memory_unittest.cc',
         'process/memory_unittest_mac.h',
         'process/memory_unittest_mac.mm',
+        'process/process_util_unittest.cc',
+        'process/process_util_unittest_ios.cc',
         'profiler/tracked_time_unittest.cc',
         'rand_util_unittest.cc',
         'safe_numerics_unittest.cc',
@@ -570,6 +570,7 @@
         'scoped_observer.h',
         'security_unittest.cc',
         'sequence_checker_unittest.cc',
+        'sequence_checker_impl_unittest.cc',
         'sha1_unittest.cc',
         'stl_util_unittest.cc',
         'strings/nullable_string16_unittest.cc',
@@ -618,6 +619,7 @@
         'tools_sanity_unittest.cc',
         'tracked_objects_unittest.cc',
         'tuple_unittest.cc',
+        'upload_list_unittest.cc',
         'values_unittest.cc',
         'version_unittest.cc',
         'vlog_unittest.cc',
@@ -683,9 +685,9 @@
         ['OS == "ios" and _toolset != "host"', {
           'sources/': [
             # Only test the iOS-meaningful portion of process_utils.
-            ['exclude', '^process_util_unittest\\.cc$'],
             ['exclude', '^process/memory_unittest'],
-            ['include', '^process_util_unittest_ios\\.cc$'],
+            ['exclude', '^process/process_util_unittest\\.cc$'],
+            ['include', '^process/process_util_unittest_ios\\.cc$'],
             # Requires spawning processes.
             ['exclude', '^metrics/stats_table_unittest\\.cc$'],
             # iOS does not use message_pump_libevent.

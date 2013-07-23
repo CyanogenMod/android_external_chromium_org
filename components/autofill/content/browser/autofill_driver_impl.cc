@@ -178,8 +178,8 @@ bool AutofillDriverImpl::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_FORWARD(AutofillHostMsg_DidEndTextFieldEditing,
                         autofill_manager_.get(),
                         AutofillManager::OnDidEndTextFieldEditing)
-    IPC_MESSAGE_FORWARD(AutofillHostMsg_HideAutofillUi, autofill_manager_.get(),
-                        AutofillManager::OnHideAutofillUi)
+    IPC_MESSAGE_FORWARD(AutofillHostMsg_HideAutofillUI, autofill_manager_.get(),
+                        AutofillManager::OnHideAutofillUI)
     IPC_MESSAGE_FORWARD(AutofillHostMsg_AddPasswordFormMapping,
                         autofill_manager_.get(),
                         AutofillManager::OnAddPasswordFormMapping)
@@ -191,8 +191,9 @@ bool AutofillDriverImpl::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_FORWARD(AutofillHostMsg_RequestAutocomplete,
                         autofill_manager_.get(),
                         AutofillManager::OnRequestAutocomplete)
-    IPC_MESSAGE_FORWARD(AutofillHostMsg_ClickFailed, autofill_manager_.get(),
-                        AutofillManager::OnClickFailed)
+    IPC_MESSAGE_FORWARD(AutofillHostMsg_AutocheckoutPageCompleted,
+                        autofill_manager_.get(),
+                        AutofillManager::OnAutocheckoutPageCompleted)
     IPC_MESSAGE_FORWARD(AutofillHostMsg_MaybeShowAutocheckoutBubble,
                         autofill_manager_.get(),
                         AutofillManager::OnMaybeShowAutocheckoutBubble)

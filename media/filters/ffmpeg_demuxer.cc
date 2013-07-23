@@ -13,7 +13,7 @@
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
@@ -137,20 +137,20 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
         encryption_key_id_.size()));
     if (!config)
       LOG(ERROR) << "Creation of DecryptConfig failed.";
-    buffer->SetDecryptConfig(config.Pass());
+    buffer->set_decrypt_config(config.Pass());
   }
 
-  buffer->SetTimestamp(ConvertStreamTimestamp(
+  buffer->set_timestamp(ConvertStreamTimestamp(
       stream_->time_base, packet->pts));
-  buffer->SetDuration(ConvertStreamTimestamp(
+  buffer->set_duration(ConvertStreamTimestamp(
       stream_->time_base, packet->duration));
-  if (buffer->GetTimestamp() != kNoTimestamp() &&
+  if (buffer->timestamp() != kNoTimestamp() &&
       last_packet_timestamp_ != kNoTimestamp() &&
-      last_packet_timestamp_ < buffer->GetTimestamp()) {
-    buffered_ranges_.Add(last_packet_timestamp_, buffer->GetTimestamp());
+      last_packet_timestamp_ < buffer->timestamp()) {
+    buffered_ranges_.Add(last_packet_timestamp_, buffer->timestamp());
     demuxer_->NotifyBufferingChanged();
   }
-  last_packet_timestamp_ = buffer->GetTimestamp();
+  last_packet_timestamp_ = buffer->timestamp();
 
   buffer_queue_.Push(buffer);
   SatisfyPendingRead();

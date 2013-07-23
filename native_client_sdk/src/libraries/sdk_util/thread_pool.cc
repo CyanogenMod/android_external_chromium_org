@@ -11,6 +11,8 @@
 
 #include "sdk_util/auto_lock.h"
 
+namespace sdk_util {
+
 // Initializes mutex, semaphores and a pool of threads.  If 0 is passed for
 // num_threads, all work will be performed on the dispatch thread.
 ThreadPool::ThreadPool(int num_threads)
@@ -60,7 +62,7 @@ void ThreadPool::Setup(int counter, WorkFunction work, void *data) {
 // Return decremented task counter.  This function
 // can be called from multiple threads at any given time.
 int ThreadPool::DecCounter() {
-  return AtomicAddFetch(&counter_, 1);
+  return AtomicAddFetch(&counter_, -1);
 }
 
 // Set exit flag, post and join all the threads in the pool.  This function is
@@ -133,4 +135,6 @@ void ThreadPool::Dispatch(int num_tasks, WorkFunction work, void* data) {
   else
     DispatchHere(num_tasks, work, data);
 }
+
+}  // namespace sdk_util
 

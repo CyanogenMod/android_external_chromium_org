@@ -15,6 +15,7 @@
 #include "base/timer/timer.h"
 #include "components/autofill/content/renderer/form_cache.h"
 #include "components/autofill/content/renderer/page_click_listener.h"
+#include "components/autofill/core/common/autocheckout_status.h"
 #include "components/autofill/core/common/forms_seen_state.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "third_party/WebKit/public/web/WebAutofillClient.h"
@@ -80,19 +81,7 @@ class AutofillAgent : public content::RenderViewObserver,
   virtual void InputElementLostFocus() OVERRIDE;
 
   // WebKit::WebAutofillClient:
-  virtual void didAcceptAutofillSuggestion(const WebKit::WebNode& node,
-                                           const WebKit::WebString& value,
-                                           const WebKit::WebString& label,
-                                           int item_id,
-                                           unsigned index) OVERRIDE;
-  virtual void didSelectAutofillSuggestion(const WebKit::WebNode& node,
-                                           const WebKit::WebString& value,
-                                           const WebKit::WebString& label,
-                                           int item_id) OVERRIDE;
   virtual void didClearAutofillSelection(const WebKit::WebNode& node) OVERRIDE;
-  virtual void removeAutocompleteSuggestion(
-      const WebKit::WebString& name,
-      const WebKit::WebString& value) OVERRIDE;
   virtual void textFieldDidEndEditing(
       const WebKit::WebInputElement& element) OVERRIDE;
   virtual void textFieldDidChange(
@@ -142,6 +131,9 @@ class AutofillAgent : public content::RenderViewObserver,
 
   // Called when |topmost_frame_| is supported for Autocheckout.
   void OnAutocheckoutSupported();
+
+  // Called when an Autocheckout page is completed by the renderer.
+  void CompleteAutocheckoutPage(autofill::AutocheckoutStatus status);
 
   // Called when clicking an Autocheckout proceed element fails to do anything.
   void ClickFailed();
@@ -201,11 +193,8 @@ class AutofillAgent : public content::RenderViewObserver,
   // Set |node| to display the given |value|.
   void SetNodeText(const base::string16& value, WebKit::WebInputElement* node);
 
-  // Hides any currently showing Autofill UI in the renderer or browser.
-  void HideAutofillUi();
-
-  // Hides any currently showing Autofill UI in the browser only.
-  void HideHostAutofillUi();
+  // Hides any currently showing Autofill UI.
+  void HideAutofillUI();
 
   void MaybeSendDynamicFormsSeen();
 

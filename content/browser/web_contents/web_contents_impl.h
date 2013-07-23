@@ -31,7 +31,7 @@
 #include "ui/gfx/rect_f.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/vector2d.h"
-#include "webkit/glue/resource_type.h"
+#include "webkit/common/resource_type.h"
 
 struct BrowserPluginHostMsg_ResizeGuest_Params;
 struct ViewHostMsg_DateTimeDialogValue_Params;
@@ -47,6 +47,7 @@ class DownloadItem;
 class InterstitialPageImpl;
 class JavaBridgeDispatcherHostManager;
 class JavaScriptDialogManager;
+class PowerSaveBlocker;
 class RenderViewHost;
 class RenderViewHostDelegateView;
 class RenderViewHostImpl;
@@ -242,6 +243,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual bool DisplayedInsecureContent() const OVERRIDE;
   virtual void IncrementCapturerCount() OVERRIDE;
   virtual void DecrementCapturerCount() OVERRIDE;
+  virtual int GetCapturerCount() const OVERRIDE;
   virtual bool IsCrashed() const OVERRIDE;
   virtual void SetIsCrashed(base::TerminationStatus status,
                             int error_code) OVERRIDE;
@@ -262,6 +264,8 @@ class CONTENT_EXPORT WebContentsImpl
   virtual bool SavePage(const base::FilePath& main_file,
                         const base::FilePath& dir_path,
                         SavePageType save_type) OVERRIDE;
+  virtual void SaveFrame(const GURL& url,
+                         const Referrer& referrer) OVERRIDE;
   virtual void GenerateMHTML(
       const base::FilePath& file,
       const base::Callback<void(const base::FilePath&, int64)>& callback)
@@ -287,7 +291,6 @@ class CONTENT_EXPORT WebContentsImpl
   virtual int GetMinimumZoomPercent() const OVERRIDE;
   virtual int GetMaximumZoomPercent() const OVERRIDE;
   virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual int GetContentRestrictions() const OVERRIDE;
   virtual bool GotResponseToLockMouseRequest(bool allowed) OVERRIDE;
   virtual bool HasOpener() const OVERRIDE;
   virtual void DidChooseColorInColorChooser(SkColor color) OVERRIDE;
@@ -312,7 +315,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual bool OnMessageReceived(RenderViewHost* render_view_host,
                                  const IPC::Message& message) OVERRIDE;
   virtual const GURL& GetURL() const OVERRIDE;
-  virtual const GURL& GetActiveURL() const OVERRIDE;
+  virtual const GURL& GetVisibleURL() const OVERRIDE;
   virtual const GURL& GetLastCommittedURL() const OVERRIDE;
   virtual WebContents* GetAsWebContents() OVERRIDE;
   virtual gfx::Rect GetRootWindowResizerRect() const OVERRIDE;
@@ -369,7 +372,7 @@ class CONTENT_EXPORT WebContentsImpl
                               const Referrer& referrer,
                               WindowOpenDisposition disposition,
                               int64 source_frame_id,
-                              bool is_cross_site_redirect,
+                              bool should_replace_current_entry,
                               bool user_gesture) OVERRIDE;
   virtual void RequestTransferURL(
       const GURL& url,
@@ -377,7 +380,7 @@ class CONTENT_EXPORT WebContentsImpl
       WindowOpenDisposition disposition,
       int64 source_frame_id,
       const GlobalRequestID& transferred_global_request_id,
-      bool is_cross_site_redirect,
+      bool should_replace_current_entry,
       bool user_gesture) OVERRIDE;
   virtual void RouteCloseEvent(RenderViewHost* rvh) OVERRIDE;
   virtual void RouteMessageEvent(
@@ -448,7 +451,6 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void RequestMediaAccessPermission(
       const MediaStreamRequest& request,
       const MediaResponseCallback& callback) OVERRIDE;
-  virtual SessionStorageNamespace* GetSessionStorageNamespace() OVERRIDE;
 
   // RenderWidgetHostDelegate --------------------------------------------------
 
@@ -570,12 +572,10 @@ class CONTENT_EXPORT WebContentsImpl
                               bool is_main_frame,
                               int error_code,
                               const string16& error_description);
-  void OnUpdateContentRestrictions(int restrictions);
   void OnGoToEntryAtOffset(int offset);
   void OnUpdateZoomLimits(int minimum_percent,
                           int maximum_percent,
                           bool remember);
-  void OnSaveURL(const GURL& url, const Referrer& referrer);
   void OnEnumerateDirectory(int request_id, const base::FilePath& path);
   void OnJSOutOfMemory();
 
@@ -624,6 +624,11 @@ class CONTENT_EXPORT WebContentsImpl
                        int64 frame_id,
                        const std::string& frame_name);
   void OnFrameDetached(int64 parent_frame_id, int64 frame_id);
+
+  void OnMediaNotification(int64 player_cookie,
+                           bool has_video,
+                           bool has_audio,
+                           bool is_playing);
 
   // Changes the IsLoading state and notifies delegate as needed
   // |details| is used to provide details on the load that just finished
@@ -730,17 +735,18 @@ class CONTENT_EXPORT WebContentsImpl
 
   void SetEncoding(const std::string& encoding);
 
-  // Save a URL to the local filesystem.
-  void SaveURL(const GURL& url,
-               const Referrer& referrer,
-               bool is_main_frame);
-
   RenderViewHostImpl* GetRenderViewHostImpl();
 
   FrameTreeNode* FindFrameTreeNodeByID(int64 frame_id);
 
   // Removes browser plugin embedder if there is one.
   void RemoveBrowserPluginEmbedder();
+
+  // Clear |render_view_host|'s PowerSaveBlockers.
+  void ClearPowerSaveBlockers(RenderViewHost* render_view_host);
+
+  // Clear all PowerSaveBlockers, leave power_save_blocker_ empty.
+  void ClearAllPowerSaveBlockers();
 
   // Data for core operation ---------------------------------------------------
 
@@ -786,6 +792,13 @@ class CONTENT_EXPORT WebContentsImpl
 #endif
 
   // Helper classes ------------------------------------------------------------
+
+  // Maps the RenderViewHost to its media_player_cookie and PowerSaveBlocker
+  // pairs. Key is the RenderViewHost, value is the map which maps player_cookie
+  // on to PowerSaveBlocker.
+  typedef std::map<RenderViewHost*, std::map<int64, PowerSaveBlocker*> >
+      PowerSaveBlockerMap;
+  PowerSaveBlockerMap power_save_blockers_;
 
   // Manages creation and swapping of render views.
   RenderViewHostManager render_manager_;
@@ -895,10 +908,6 @@ class CONTENT_EXPORT WebContentsImpl
 
   // The intrinsic size of the page.
   gfx::Size preferred_size_;
-
-  // Content restrictions, used to disable print/copy etc based on content's
-  // (full-page plugins for now only) permissions.
-  int content_restrictions_;
 
 #if defined(OS_ANDROID)
   // Date time chooser opened by this tab.

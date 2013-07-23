@@ -1,7 +1,7 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 #ifndef LIBRARIES_NACL_IO_KERNEL_OBJECT_H_
 #define LIBRARIES_NACL_IO_KERNEL_OBJECT_H_
 
@@ -19,6 +19,7 @@
 
 #include "sdk_util/simple_lock.h"
 
+namespace nacl_io {
 
 // KernelObject provides basic functionality for threadsafe access to kernel
 // objects such as the CWD, mount points, file descriptors and file handles.
@@ -81,15 +82,17 @@ private:
   MountMap_t mounts_;
 
   // Lock to protect free_fds_ and handle_map_.
-  SimpleLock handle_lock_;
+  sdk_util::SimpleLock handle_lock_;
 
   // Lock to protect handle_map_.
-  SimpleLock mount_lock_;
+  sdk_util::SimpleLock mount_lock_;
 
   // Lock to protect cwd_.
-  SimpleLock cwd_lock_;
+  sdk_util::SimpleLock cwd_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(KernelObject);
 };
+
+}  // namespace nacl_io
 
 #endif  // LIBRARIES_NACL_IO_KERNEL_OBJECT_H_

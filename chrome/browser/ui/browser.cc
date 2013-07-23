@@ -89,6 +89,7 @@
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/app_modal_dialogs/javascript_dialog_manager.h"
 #include "chrome/browser/ui/blocked_content/blocked_content_tab_helper.h"
+#include "chrome/browser/ui/blocked_content/popup_blocker_tab_helper.h"
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
 #include "chrome/browser/ui/browser_command_controller.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -165,10 +166,10 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
-#include "content/public/common/content_restriction.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/renderer_preferences.h"
+#include "content/public/common/webplugininfo.h"
 #include "extensions/common/constants.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -182,7 +183,6 @@
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/point.h"
 #include "ui/shell_dialogs/selected_file_info.h"
-#include "webkit/plugins/webplugininfo.h"
 
 #if defined(OS_WIN)
 #include "base/win/metro.h"
@@ -678,9 +678,6 @@ Browser::DownloadClosePreventionType Browser::OkToCloseWithInProgressDownloads(
   DCHECK(num_downloads_blocking);
   *num_downloads_blocking = 0;
 
-  if (IsAttemptingToCloseBrowser())
-    return DOWNLOAD_CLOSE_OK;
-
   // If we're not running a full browser process with a profile manager
   // (testing), it's ok to close the browser.
   if (!g_browser_process->profile_manager())
@@ -719,7 +716,8 @@ Browser::DownloadClosePreventionType Browser::OkToCloseWithInProgressDownloads(
   // those downloads would be cancelled by our window (-> profile) close.
   DownloadService* download_service =
       DownloadServiceFactory::GetForProfile(profile());
-  if (profile_window_count == 0 && download_service->DownloadCount() > 0 &&
+  if ((profile_window_count == 0) &&
+      (download_service->DownloadCount() > 0) &&
       profile()->IsOffTheRecord()) {
     *num_downloads_blocking = download_service->DownloadCount();
     return DOWNLOAD_CLOSE_LAST_WINDOW_IN_INCOGNITO_PROFILE;
@@ -1272,26 +1270,21 @@ WebContents* Browser::OpenURLFromTab(WebContents* source,
   nav_params.window_action = chrome::NavigateParams::SHOW_WINDOW;
   nav_params.user_gesture = params.user_gesture;
 
-  BlockedContentTabHelper* blocked_content_helper = NULL;
+  PopupBlockerTabHelper* popup_blocker_helper = NULL;
   if (source)
-    blocked_content_helper = BlockedContentTabHelper::FromWebContents(source);
+    popup_blocker_helper = PopupBlockerTabHelper::FromWebContents(source);
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableBetterPopupBlocking) &&
-      blocked_content_helper) {
-
-    if (blocked_content_helper->all_contents_blocked()) {
-      // TODO(jochen): store information about the blocked pop-up in the
-      // helper.
-      return NULL;
-    }
+      popup_blocker_helper) {
 
     if ((params.disposition == NEW_POPUP ||
          params.disposition == NEW_FOREGROUND_TAB ||
          params.disposition == NEW_BACKGROUND_TAB) &&
         !params.user_gesture && !CommandLine::ForCurrentProcess()->HasSwitch(
                                     switches::kDisablePopupBlocking)) {
-      return NULL;
+      if (popup_blocker_helper->MaybeBlockPopup(nav_params))
+        return NULL;
     }
   }
 
@@ -1501,21 +1494,25 @@ bool Browser::ShouldCreateWebContents(
     return true;
   }
 
-  BlockedContentTabHelper* blocked_content_helper =
-      BlockedContentTabHelper::FromWebContents(web_contents);
-  if (!blocked_content_helper)
+  PopupBlockerTabHelper* popup_blocker_helper =
+      PopupBlockerTabHelper::FromWebContents(web_contents);
+  if (!popup_blocker_helper)
     return true;
-
-  if (blocked_content_helper->all_contents_blocked()) {
-    // TODO(jochen): store information about the blocked pop-up in the helper.
-    return false;
-  }
 
   if ((disposition == NEW_POPUP || disposition == NEW_FOREGROUND_TAB ||
        disposition == NEW_BACKGROUND_TAB) && !user_gesture &&
       !CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisablePopupBlocking)) {
-    return false;
+    chrome::NavigateParams nav_params(
+        this, target_url, content::PAGE_TRANSITION_LINK);
+    // TODO(jochen): route missing information to here:
+    //   referrer, extra_headers, override_encoding
+    nav_params.source_contents = web_contents;
+    nav_params.tabstrip_add_types = TabStripModel::ADD_NONE;
+    nav_params.window_action = chrome::NavigateParams::SHOW_WINDOW;
+    nav_params.user_gesture = user_gesture;
+
+    return !popup_blocker_helper->MaybeBlockPopup(nav_params);
   }
 
   return true;
@@ -1543,10 +1540,6 @@ void Browser::WebContentsCreated(WebContents* source_contents,
       chrome::NOTIFICATION_RETARGETING,
       content::Source<Profile>(profile_),
       content::Details<RetargetingDetails>(&details));
-}
-
-void Browser::ContentRestrictionsChanged(WebContents* source) {
-  command_controller_->ContentRestrictionsChanged();
 }
 
 void Browser::RendererUnresponsive(WebContents* source) {
@@ -2211,8 +2204,7 @@ bool Browser::MaybeCreateBackgroundContents(int route_id,
   // permission as that is checked in RenderMessageFilter when the CreateWindow
   // message is processed.
   const Extension* extension =
-      extensions_service->extensions()->GetHostedAppByURL(
-          ExtensionURLInfo(opener_url));
+      extensions_service->extensions()->GetHostedAppByURL(opener_url);
   if (!extension)
     return false;
 

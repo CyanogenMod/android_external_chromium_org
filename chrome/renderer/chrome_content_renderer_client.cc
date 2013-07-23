@@ -110,6 +110,7 @@ using autofill::AutofillAgent;
 using autofill::PasswordAutofillAgent;
 using autofill::PasswordGenerationManager;
 using content::RenderThread;
+using content::WebPluginInfo;
 using extensions::Extension;
 using WebKit::WebCache;
 using WebKit::WebConsoleMessage;
@@ -117,8 +118,6 @@ using WebKit::WebDataSource;
 using WebKit::WebDocument;
 using WebKit::WebFrame;
 using WebKit::WebPlugin;
-using webkit::WebPluginInfo;
-using webkit::WebPluginMimeType;
 using WebKit::WebPluginParams;
 using WebKit::WebSecurityOrigin;
 using WebKit::WebSecurityPolicy;
@@ -556,7 +555,7 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
     // In Aura for Windows we need to check if we can load NPAPI plugins.
     // For example, if the render view is in the Ash desktop, we should not.
     if (status_value == ChromeViewHostMsg_GetPluginInfo_Status::kAllowed &&
-        plugin.type == webkit::WebPluginInfo::PLUGIN_TYPE_NPAPI) {
+        plugin.type == content::WebPluginInfo::PLUGIN_TYPE_NPAPI) {
         if (observer->AreNPAPIPluginsBlocked())
           status_value =
               ChromeViewHostMsg_GetPluginInfo_Status::kNPAPINotSupported;
@@ -617,7 +616,7 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
             }
             const Extension* extension =
                 g_current_client->extension_dispatcher_->extensions()->
-                    GetExtensionOrAppByURL(ExtensionURLInfo(manifest_url));
+                    GetExtensionOrAppByURL(manifest_url);
             if (!IsNaClAllowed(manifest_url,
                                app_url,
                                is_nacl_unrestricted,
@@ -742,13 +741,13 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
 //  static
 GURL ChromeContentRendererClient::GetNaClContentHandlerURL(
     const std::string& actual_mime_type,
-    const WebPluginInfo& plugin) {
+    const content::WebPluginInfo& plugin) {
   // Look for the manifest URL among the MIME type's additonal parameters.
   const char* kNaClPluginManifestAttribute = "nacl";
   string16 nacl_attr = ASCIIToUTF16(kNaClPluginManifestAttribute);
   for (size_t i = 0; i < plugin.mime_types.size(); ++i) {
     if (plugin.mime_types[i].mime_type == actual_mime_type) {
-      const WebPluginMimeType& content_type = plugin.mime_types[i];
+      const content::WebPluginMimeType& content_type = plugin.mime_types[i];
       for (size_t i = 0; i < content_type.additional_param_names.size(); ++i) {
         if (content_type.additional_param_names[i] == nacl_attr)
           return GURL(content_type.additional_param_values[i]);
@@ -860,7 +859,7 @@ void ChromeContentRendererClient::GetNavigationErrorStrings(
   if (failed_url.is_valid() &&
       !failed_url.SchemeIs(extensions::kExtensionScheme)) {
     extension = extension_dispatcher_->extensions()->GetExtensionOrAppByURL(
-        ExtensionURLInfo(failed_url));
+        failed_url);
   }
 
   bool is_post = EqualsASCII(failed_request.httpMethod(), "POST");
@@ -961,7 +960,7 @@ bool ChromeContentRendererClient::ShouldFork(WebFrame* frame,
 
   // Determine if the new URL is an extension (excluding bookmark apps).
   const Extension* new_url_extension = extensions::GetNonBookmarkAppExtension(
-      *extensions, ExtensionURLInfo(url));
+      *extensions, url);
   bool is_extension_url = !!new_url_extension;
 
   // If the navigation would cross an app extent boundary, we also need
@@ -978,8 +977,7 @@ bool ChromeContentRendererClient::ShouldFork(WebFrame* frame,
     *send_referrer = true;
 
     const Extension* extension =
-        extension_dispatcher_->extensions()->GetExtensionOrAppByURL(
-            ExtensionURLInfo(url));
+        extension_dispatcher_->extensions()->GetExtensionOrAppByURL(url);
     if (extension && extension->is_app()) {
       UMA_HISTOGRAM_ENUMERATION(
           extension->is_platform_app() ?
@@ -1140,11 +1138,10 @@ bool ChromeContentRendererClient::CrossesExtensionExtents(
     // in an extension process, we want to keep it in process to allow the
     // opener to script it.
     WebDocument opener_document = frame->opener()->document();
-    GURL opener_url = opener_document.url();
-    WebSecurityOrigin opener_origin = opener_document.securityOrigin();
-    bool opener_is_extension_url = !!extensions.GetExtensionOrAppByURL(
-        ExtensionURLInfo(opener_origin, opener_url));
     WebSecurityOrigin opener = frame->opener()->document().securityOrigin();
+    bool opener_is_extension_url =
+        !opener.isUnique() && extensions.GetExtensionOrAppByURL(
+            opener_document.url()) != NULL;
     if (!is_extension_url &&
         !opener_is_extension_url &&
         extension_dispatcher_->is_extension_process() &&
@@ -1163,8 +1160,7 @@ bool ChromeContentRendererClient::CrossesExtensionExtents(
   bool should_consider_workaround = !!frame->opener();
 
   return extensions::CrossesExtensionProcessBoundary(
-      extensions, ExtensionURLInfo(old_url), ExtensionURLInfo(new_url),
-      should_consider_workaround);
+      extensions, old_url, new_url, should_consider_workaround);
 }
 
 void ChromeContentRendererClient::SetSpellcheck(SpellCheck* spellcheck) {

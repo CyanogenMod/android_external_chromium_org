@@ -187,6 +187,11 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
       chrome.send('loginUIStateChanged', ['gaia-signin', true]);
       $('login-header-bar').signinUIState = SIGNIN_UI_STATE.GAIA_SIGNIN;
 
+      // Ensure that GAIA signin (or loading UI) is actually visible.
+      window.webkitRequestAnimationFrame(function() {
+        chrome.send('loginVisible', ['gaia-loading']);
+      });
+
       // Announce the name of the screen, if accessibility is on.
       $('gaia-signin-aria-label').setAttribute(
           'aria-label', loadTimeData.getString('signinScreenTitle'));
@@ -431,7 +436,6 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
      * @param {number} error Error code.
      */
     onFrameError: function(error) {
-      console.error('Gaia frame error = ' + error);
       this.error_ = error;
       chrome.send('frameLoadingCompleted', [this.error_]);
     },

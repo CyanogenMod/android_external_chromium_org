@@ -1,7 +1,6 @@
-/* Copyright (c) 2013 The Chromium Authors. All rights reserved.
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #include <errno.h>
 #include <fcntl.h>
@@ -16,6 +15,8 @@
 #include "nacl_io/mount_mem.h"
 #include "nacl_io/osdirent.h"
 #include "nacl_io/osunistd.h"
+
+using namespace nacl_io;
 
 namespace {
 

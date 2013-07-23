@@ -49,9 +49,10 @@ class AutocheckoutManager {
   // gathered from the requestAutocomplete dialog.
   void FillForms();
 
-  // Called when clicking a proceed element in an Autocheckout flow fails.
-  // |status| is the reason for the failure.
-  void OnClickFailed(AutocheckoutStatus status);
+  // Called to signal that the renderer has completed processing a page in the
+  // Autocheckout flow. |status| is the reason for the failure, or |SUCCESS| if
+  // there were no errors.
+  void OnAutocheckoutPageCompleted(AutocheckoutStatus status);
 
   // Sets |page_meta_data_| with the meta data for the current page.
   void OnLoadedPageMetaData(
@@ -70,6 +71,9 @@ class AutocheckoutManager {
   // focus.
   virtual void MaybeShowAutocheckoutBubble(const GURL& frame_url,
                                            const gfx::RectF& bounding_box);
+
+  // Determine whether we should keep the dialog visible.
+  bool should_preserve_dialog() const { return should_preserve_dialog_; }
 
   void set_should_show_bubble(bool should_show_bubble) {
     should_show_bubble_ = should_show_bubble;
@@ -128,6 +132,10 @@ class AutocheckoutManager {
   // towards |page_number|.
   void RecordTimeTaken(int page_number);
 
+  // Terminate the Autocheckout flow and send Autocheckout status to Wallet
+  // server.
+  void EndAutocheckout(AutocheckoutStatus status);
+
   AutofillManager* autofill_manager_;  // WEAK; owns us
 
   // Credit card verification code.
@@ -142,7 +150,7 @@ class AutocheckoutManager {
   // Billing address built using data supplied by requestAutocomplete dialog.
   scoped_ptr<AutofillProfile> billing_address_;
 
-  // Autocheckout specific page meta data.
+  // Autocheckout specific page meta data of current page.
   scoped_ptr<AutocheckoutPageMetaData> page_meta_data_;
 
   scoped_ptr<AutofillMetrics> metric_logger_;
@@ -155,6 +163,10 @@ class AutocheckoutManager {
 
   // Whether or not the user is in an Autocheckout flow.
   bool in_autocheckout_flow_;
+
+  // Whether or not the currently visible dialog, if there is one, should be
+  // preserved.
+  bool should_preserve_dialog_;
 
   // AutocheckoutStepTypes for the various pages of the flow.
   std::map<int, std::vector<AutocheckoutStepType> > page_types_;
