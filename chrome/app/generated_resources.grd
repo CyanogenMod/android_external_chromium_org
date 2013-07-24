@@ -2890,6 +2890,10 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
          desc="Message shown to the user to validate the download when the download content is classified as uncommon by safebrowsing.">
         <ph name="FILE_NAME">$1<ex>bla.exe</ex></ph> is not commonly downloaded and could be dangerous.
       </message>
+      <message name="IDS_PROMPT_POTENTIALLY_UNWANTED_DOWNLOAD"
+         desc="Message shown on the download shelf when the download is known to modify the browser or system settings.">
+        <ph name="FILE_NAME">$1<ex>bla.exe</ex></ph> might modify your browser or system settings.
+      </message>
       <message name="IDS_CONFIRM_KEEP_DANGEROUS_DOWNLOAD_TITLE"
                desc="Title for the confirmation dialog asking whether the user really meant to keep a dangerous download">
         Confirm Download
@@ -3519,10 +3523,10 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
 
       <!-- Administrator-provided certificate notifications -->
       <message name="IDS_CERT_POLICY_PROVIDED_CERT_HEADER" desc="Text that is displayed in the header of the Website Settings popup when using an administrator-provided certificate">
-	Using an administrator-provided certificate
+        Using an administrator-provided certificate
       </message>
       <message name="IDS_CERT_POLICY_PROVIDED_CERT_MESSAGE" desc="Text that is displayed in the Website Settings popup when using an administrator-provided certificate">
-	You have accessed content using an administrator-provided certificate. Data you provide to <ph name="DOMAIN">$1<ex>www.google.com</ex></ph> can be intercepted by your administrator.
+        You have accessed content using an administrator-provided certificate. Data you provide to <ph name="DOMAIN">$1<ex>www.google.com</ex></ph> can be intercepted by your administrator.
       </message>
 
       <!-- Win certificate selector dialog strings.  -->
@@ -4165,7 +4169,7 @@ Public Exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS">$3<ex>24</ex></ph> bits):
         Untrusted
       </message>
       <message name="IDS_CERT_MANAGER_POLICY_INSTALLED" desc="The text of the popup bubble shown when the user clicks the controlled setting indicator next to a certificate entry.">
-	This certificate has been installed by your system administrator.
+        This certificate has been installed by your system administrator.
       </message>
       <message name="IDS_CERT_MANAGER_PKCS12_IMPORT_ERROR_TITLE" desc="The title in the error dialog for PKCS #12 file import errors.">
         PKCS #12 Import Error
@@ -6954,10 +6958,10 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Enable the new network configuration handlers which handle Shill connection requests without using NetworkLibrary.
       </message>
       <message name="IDS_FLAGS_CHROMEOS_USE_NEW_NETWORK_CONNECTION_HANDLER_NAME" desc="Title for the flag to enable using the new network connection handler.">
-	Enables new network connection handler
+        Enables new network connection handler
       </message>
       <message name="IDS_FLAGS_CHROMEOS_USE_NEW_NETWORK_CONNECTION_HANDLER_DESCRIPTION" desc="Description for the flag to enable using the new network connection handler.">
-	Enable the new network connection handler.
+        Enable the new network connection handler.
       </message>
       <message name="IDS_FLAGS_ASH_ENABLE_NEW_AUDIO_HANDLER_NAME" desc="Title for the flag to enable using the new audio handler.">
         Enables new audio handler
@@ -7196,6 +7200,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
         <message name="IDS_FLAGS_ASH_NEW_LOCK_ANIMATIONS_DESCRIPTION" desc="Description for the flag to switch lock animations.">
           Disables new lock animations.
         </message>
+        <message name="IDS_FLAGS_ENABLE_STICKY_KEYS_NAME" desc="Name for the flag to enable sticky keys.">
+          Enable sticky keys.
+        </message>
+        <message name="IDS_FLAGS_ENABLE_STICKY_KEYS_DESCRIPTION" desc="Description for the flag to enable sticky keys.">
+          StickyKeys allows the user to press and release a modifier key, such as Shift, Ctrl, or Alt, and have it remain active until any other key is pressed.
+        </message>
       </if>
       <message name="IDS_FLAGS_FULL_HISTORY_SYNC_NAME" desc="Name of the flag to disable full history sync.">
         Disable full history sync
@@ -7329,13 +7339,13 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Specifies quality setting for images captured if scaling down.
       </message>
       <message name="IDS_FLAGS_TAB_CAPTURE_SCALE_QUALITY_FAST" desc="">
-	fast
+        fast
       </message>
       <message name="IDS_FLAGS_TAB_CAPTURE_SCALE_QUALITY_GOOD" desc="">
-	good
+        good
       </message>
       <message name="IDS_FLAGS_TAB_CAPTURE_SCALE_QUALITY_BEST" desc="">
-	best
+        best
       </message>
       <message name="IDS_FLAGS_DEFAULT_TILE_WIDTH_NAME" desc="Name of about:flags option for default tile width.">
         Default tile width
@@ -11324,13 +11334,13 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
 
       <!-- Enterprise sign-in profile linking -->
       <message name="IDS_ENTERPRISE_SIGNIN_PROFILE_LINK_LEARN_MORE" desc="The link to get more information about profile linking after signing into an enterprise account">
-	Learn more
+        Learn more
       </message>
       <message name="IDS_ENTERPRISE_SIGNIN_CREATE_NEW_PROFILE" desc="Text of the button to create a new profile after enterprise account signin">
-	Create a new user
+        Create a new user
       </message>
       <message name="IDS_ENTERPRISE_SIGNIN_CANCEL" desc="Text of the button to cancel signin">
-	Cancel
+        Cancel
       </message>
 
       <!-- Enterprise sign-in profile linking -->
@@ -11923,7 +11933,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         Users
       </message>
       <message name="IDS_PROFILES_GUEST_PROFILE_NAME" desc="Name of the guest profile.">
-	Guest
+        Guest
       </message>
       <message name="IDS_PROFILES_PROFILE_GUEST_BUTTON" desc="Button in the avatar menu bubble view for guest browsing.">
         Guest browsing
@@ -12553,6 +12563,12 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
       <message name="IDS_FLAGS_FILE_MANAGER_ENABLE_FOLDER_SHORTCUTS_DESCRIPTION" desc="Description of the about:flag option of folder shortcuts feature in Files app.">
         Enables the folder shortcuts feature in Files.app, which allows you to create shortcuts to folders in the left panel.
+      </message>
+      <message name="IDS_FLAGS_FILE_MANAGER_ENABLE_WEBSTORE_INTEGRATION" desc="Name of the about:flag option to enable the webstore integration feature in Files app.">
+        Enable the integration of Webstore and Files.app.
+      </message>
+      <message name="IDS_FLAGS_FILE_MANAGER_ENABLE_WEBSTORE_INTEGRATION_DESCRIPTION" desc="Description of the about:flag option to enable the webstore integration feature in Files app.">
+        Enables the webstore integration feature in Files.app.
       </message>
       <message name="IDS_FILE_BROWSER_ROOT_DIRECTORY_LABEL" desc="Root directory label.">
         Files
@@ -15724,6 +15740,11 @@ Do you accept?
     </message>
     <message name="IDS_WEBSTORE_NAME_MORE_APPS" desc="Name for the WebStore app in the app launcher.">
       More Apps
+    </message>
+
+    <!-- Synced Notification display strings -->
+    <message name="IDS_FIRST_SYNCED_NOTIFICATION_SERVICE_NAME" desc="The name of the first service source for synced notifications.">
+      Google+
     </message>
 
     </messages>

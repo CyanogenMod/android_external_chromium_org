@@ -43,24 +43,28 @@ remoting.HostDispatcher = function(createPluginCallback) {
   /** @type {Array.<function()>} */
   this.pendingRequests_ = [];
 
-  /** @param {boolean} success */
-  var onNativeMessagingInit = function(success) {
-    if (success) {
-      console.log('Native Messaging supported.');
-      that.state_ = remoting.HostDispatcher.State.NATIVE_MESSAGING;
-    } else {
-      console.log('Native Messaging unsupported, falling back to NPAPI.');
-      that.npapiHost_ = createPluginCallback();
-      that.state_ = remoting.HostDispatcher.State.NPAPI;
-    }
-    // Send pending requests.
+  function sendPendingRequests() {
     for (var i = 0; i < that.pendingRequests_.length; i++) {
       that.pendingRequests_[i]();
     }
     that.pendingRequests_ = null;
-  };
+  }
 
-  this.nativeMessagingHost_.initialize(onNativeMessagingInit);
+  function onNativeMessagingInit() {
+    console.log('Native Messaging supported.');
+    that.state_ = remoting.HostDispatcher.State.NATIVE_MESSAGING;
+    sendPendingRequests();
+  }
+
+  function onNativeMessagingFailed(error) {
+    console.log('Native Messaging unsupported, falling back to NPAPI.');
+    that.npapiHost_ = createPluginCallback();
+    that.state_ = remoting.HostDispatcher.State.NPAPI;
+    sendPendingRequests();
+  }
+
+  this.nativeMessagingHost_.initialize(onNativeMessagingInit,
+                                       onNativeMessagingFailed);
 };
 
 /** @enum {number} */
@@ -71,22 +75,22 @@ remoting.HostDispatcher.State = {
 };
 
 /**
- * @param {function(string):void} callback
+ * @param {function(string):void} onDone
  * @param {function(remoting.Error):void} onError
  * @return {void}
  */
-remoting.HostDispatcher.prototype.getHostName = function(callback, onError) {
+remoting.HostDispatcher.prototype.getHostName = function(onDone, onError) {
   switch (this.state_) {
     case remoting.HostDispatcher.State.UNKNOWN:
       this.pendingRequests_.push(
-          this.getHostName.bind(this, callback, onError));
+          this.getHostName.bind(this, onDone, onError));
       break;
     case remoting.HostDispatcher.State.NATIVE_MESSAGING:
-      this.nativeMessagingHost_.getHostName(callback, onError);
+      this.nativeMessagingHost_.getHostName(onDone, onError);
       break;
     case remoting.HostDispatcher.State.NPAPI:
       try {
-        this.npapiHost_.getHostName(callback);
+        this.npapiHost_.getHostName(onDone);
       } catch (err) {
         onError(remoting.Error.MISSING_PLUGIN);
       }
@@ -97,23 +101,23 @@ remoting.HostDispatcher.prototype.getHostName = function(callback, onError) {
 /**
  * @param {string} hostId
  * @param {string} pin
- * @param {function(string):void} callback
+ * @param {function(string):void} onDone
  * @param {function(remoting.Error):void} onError
  * @return {void}
  */
-remoting.HostDispatcher.prototype.getPinHash = function(hostId, pin, callback,
-                                                        onError) {
+remoting.HostDispatcher.prototype.getPinHash =
+    function(hostId, pin, onDone, onError) {
   switch (this.state_) {
     case remoting.HostDispatcher.State.UNKNOWN:
       this.pendingRequests_.push(
-          this.getPinHash.bind(this, hostId, pin, callback, onError));
+          this.getPinHash.bind(this, hostId, pin, onDone, onError));
       break;
     case remoting.HostDispatcher.State.NATIVE_MESSAGING:
-      this.nativeMessagingHost_.getPinHash(hostId, pin, callback, onError);
+      this.nativeMessagingHost_.getPinHash(hostId, pin, onDone, onError);
       break;
     case remoting.HostDispatcher.State.NPAPI:
       try {
-        this.npapiHost_.getPinHash(hostId, pin, callback);
+        this.npapiHost_.getPinHash(hostId, pin, onDone);
       } catch (err) {
         onError(remoting.Error.MISSING_PLUGIN);
       }
@@ -122,23 +126,22 @@ remoting.HostDispatcher.prototype.getPinHash = function(hostId, pin, callback,
 };
 
 /**
- * @param {function(string, string):void} callback
+ * @param {function(string, string):void} onDone
  * @param {function(remoting.Error):void} onError
  * @return {void}
  */
-remoting.HostDispatcher.prototype.generateKeyPair = function(callback,
-                                                             onError) {
+remoting.HostDispatcher.prototype.generateKeyPair = function(onDone, onError) {
   switch (this.state_) {
     case remoting.HostDispatcher.State.UNKNOWN:
       this.pendingRequests_.push(
-          this.generateKeyPair.bind(this, callback, onError));
+          this.generateKeyPair.bind(this, onDone, onError));
       break;
     case remoting.HostDispatcher.State.NATIVE_MESSAGING:
-      this.nativeMessagingHost_.generateKeyPair(callback, onError);
+      this.nativeMessagingHost_.generateKeyPair(onDone, onError);
       break;
     case remoting.HostDispatcher.State.NPAPI:
       try {
-        this.npapiHost_.generateKeyPair(callback);
+        this.npapiHost_.generateKeyPair(onDone);
       } catch (err) {
         onError(remoting.Error.MISSING_PLUGIN);
       }
@@ -148,24 +151,23 @@ remoting.HostDispatcher.prototype.generateKeyPair = function(callback,
 
 /**
  * @param {Object} config
- * @param {function(remoting.HostController.AsyncResult):void} callback
+ * @param {function(remoting.HostController.AsyncResult):void} onDone
  * @param {function(remoting.Error):void} onError
  * @return {void}
  */
-remoting.HostDispatcher.prototype.updateDaemonConfig = function(config,
-                                                                callback,
-                                                                onError) {
+remoting.HostDispatcher.prototype.updateDaemonConfig =
+    function(config, onDone, onError) {
   switch (this.state_) {
     case remoting.HostDispatcher.State.UNKNOWN:
       this.pendingRequests_.push(
-          this.updateDaemonConfig.bind(this, config, callback, onError));
+          this.updateDaemonConfig.bind(this, config, onDone, onError));
       break;
     case remoting.HostDispatcher.State.NATIVE_MESSAGING:
-      this.nativeMessagingHost_.updateDaemonConfig(config, callback, onError);
+      this.nativeMessagingHost_.updateDaemonConfig(config, onDone, onError);
       break;
     case remoting.HostDispatcher.State.NPAPI:
       try {
-        this.npapiHost_.updateDaemonConfig(JSON.stringify(config), callback);
+        this.npapiHost_.updateDaemonConfig(JSON.stringify(config), onDone);
       } catch (err) {
         onError(remoting.Error.MISSING_PLUGIN);
       }
@@ -174,15 +176,14 @@ remoting.HostDispatcher.prototype.updateDaemonConfig = function(config,
 };
 
 /**
- * @param {function(Object):void} callback
+ * @param {function(Object):void} onDone
  * @param {function(remoting.Error):void} onError
  * @return {void}
  */
-remoting.HostDispatcher.prototype.getDaemonConfig = function(callback,
-                                                             onError) {
+remoting.HostDispatcher.prototype.getDaemonConfig = function(onDone, onError) {
   /**
    * Converts the config string from the NPAPI plugin to an Object, to pass to
-   * |callback|.
+   * |onDone|.
    * @param {string} configStr
    * @return {void}
    */
@@ -191,17 +192,17 @@ remoting.HostDispatcher.prototype.getDaemonConfig = function(callback,
     if (typeof(config) != 'object') {
       onError(remoting.Error.UNEXPECTED);
     } else {
-      callback(/** @type {Object} */ (config));
+      onDone(/** @type {Object} */ (config));
     }
   }
 
   switch (this.state_) {
     case remoting.HostDispatcher.State.UNKNOWN:
       this.pendingRequests_.push(
-          this.getDaemonConfig.bind(this, callback, onError));
+          this.getDaemonConfig.bind(this, onDone, onError));
       break;
     case remoting.HostDispatcher.State.NATIVE_MESSAGING:
-      this.nativeMessagingHost_.getDaemonConfig(callback, onError);
+      this.nativeMessagingHost_.getDaemonConfig(onDone, onError);
       break;
     case remoting.HostDispatcher.State.NPAPI:
       try {
@@ -214,23 +215,22 @@ remoting.HostDispatcher.prototype.getDaemonConfig = function(callback,
 };
 
 /**
- * @param {function(string):void} callback
+ * @param {function(string):void} onDone
  * @param {function(remoting.Error):void} onError
  * @return {void}
  */
-remoting.HostDispatcher.prototype.getDaemonVersion = function(callback,
-                                                              onError) {
+remoting.HostDispatcher.prototype.getDaemonVersion = function(onDone, onError) {
   switch (this.state_) {
     case remoting.HostDispatcher.State.UNKNOWN:
       this.pendingRequests_.push(
-          this.getDaemonVersion.bind(this, callback, onError));
+          this.getDaemonVersion.bind(this, onDone, onError));
       break;
     case remoting.HostDispatcher.State.NATIVE_MESSAGING:
-      callback(this.nativeMessagingHost_.getDaemonVersion());
+      onDone(this.nativeMessagingHost_.getDaemonVersion());
       break;
     case remoting.HostDispatcher.State.NPAPI:
       try {
-        this.npapiHost_.getDaemonVersion(callback);
+        this.npapiHost_.getDaemonVersion(onDone);
       } catch (err) {
         onError(remoting.Error.MISSING_PLUGIN);
       }
@@ -239,23 +239,23 @@ remoting.HostDispatcher.prototype.getDaemonVersion = function(callback,
 };
 
 /**
- * @param {function(boolean, boolean, boolean):void} callback
+ * @param {function(boolean, boolean, boolean):void} onDone
  * @param {function(remoting.Error):void} onError
  * @return {void}
  */
-remoting.HostDispatcher.prototype.getUsageStatsConsent = function(callback,
-                                                                  onError) {
+remoting.HostDispatcher.prototype.getUsageStatsConsent =
+    function(onDone, onError) {
   switch (this.state_) {
     case remoting.HostDispatcher.State.UNKNOWN:
       this.pendingRequests_.push(
-          this.getUsageStatsConsent.bind(this, callback, onError));
+          this.getUsageStatsConsent.bind(this, onDone, onError));
       break;
     case remoting.HostDispatcher.State.NATIVE_MESSAGING:
-      this.nativeMessagingHost_.getUsageStatsConsent(callback, onError);
+      this.nativeMessagingHost_.getUsageStatsConsent(onDone, onError);
       break;
     case remoting.HostDispatcher.State.NPAPI:
       try {
-        this.npapiHost_.getUsageStatsConsent(callback);
+        this.npapiHost_.getUsageStatsConsent(onDone);
       } catch (err) {
         onError(remoting.Error.MISSING_PLUGIN);
       }
@@ -266,23 +266,23 @@ remoting.HostDispatcher.prototype.getUsageStatsConsent = function(callback,
 /**
  * @param {Object} config
  * @param {boolean} consent
- * @param {function(remoting.HostController.AsyncResult):void} callback
+ * @param {function(remoting.HostController.AsyncResult):void} onDone
  * @param {function(remoting.Error):void} onError
  * @return {void}
  */
-remoting.HostDispatcher.prototype.startDaemon = function(config, consent,
-                                                         callback, onError) {
+remoting.HostDispatcher.prototype.startDaemon =
+    function(config, consent, onDone, onError) {
   switch (this.state_) {
     case remoting.HostDispatcher.State.UNKNOWN:
       this.pendingRequests_.push(
-          this.startDaemon.bind(this, config, consent, callback, onError));
+          this.startDaemon.bind(this, config, consent, onDone, onError));
       break;
     case remoting.HostDispatcher.State.NATIVE_MESSAGING:
-      this.nativeMessagingHost_.startDaemon(config, consent, callback, onError);
+      this.nativeMessagingHost_.startDaemon(config, consent, onDone, onError);
       break;
     case remoting.HostDispatcher.State.NPAPI:
       try {
-        this.npapiHost_.startDaemon(JSON.stringify(config), consent, callback);
+        this.npapiHost_.startDaemon(JSON.stringify(config), consent, onDone);
       } catch (err) {
         onError(remoting.Error.MISSING_PLUGIN);
       }
@@ -291,21 +291,21 @@ remoting.HostDispatcher.prototype.startDaemon = function(config, consent,
 };
 
 /**
- * @param {function(remoting.HostController.AsyncResult):void} callback
+ * @param {function(remoting.HostController.AsyncResult):void} onDone
  * @param {function(remoting.Error):void} onError
  * @return {void}
  */
-remoting.HostDispatcher.prototype.stopDaemon = function(callback, onError) {
+remoting.HostDispatcher.prototype.stopDaemon = function(onDone, onError) {
   switch (this.state_) {
     case remoting.HostDispatcher.State.UNKNOWN:
-      this.pendingRequests_.push(this.stopDaemon.bind(this, callback, onError));
+      this.pendingRequests_.push(this.stopDaemon.bind(this, onDone, onError));
       break;
     case remoting.HostDispatcher.State.NATIVE_MESSAGING:
-      this.nativeMessagingHost_.stopDaemon(callback, onError);
+      this.nativeMessagingHost_.stopDaemon(onDone, onError);
       break;
     case remoting.HostDispatcher.State.NPAPI:
       try {
-        this.npapiHost_.stopDaemon(callback);
+        this.npapiHost_.stopDaemon(onDone);
       } catch (err) {
         onError(remoting.Error.MISSING_PLUGIN);
       }
@@ -314,18 +314,18 @@ remoting.HostDispatcher.prototype.stopDaemon = function(callback, onError) {
 };
 
 /**
- * @param {function(remoting.HostController.State):void} callback
+ * @param {function(remoting.HostController.State):void} onDone
  * @param {function(remoting.Error):void} onError
  * @return {void}
  */
-remoting.HostDispatcher.prototype.getDaemonState = function(callback, onError) {
+remoting.HostDispatcher.prototype.getDaemonState = function(onDone, onError) {
   switch (this.state_) {
     case remoting.HostDispatcher.State.UNKNOWN:
       this.pendingRequests_.push(
-          this.getDaemonState.bind(this, callback, onError));
+          this.getDaemonState.bind(this, onDone, onError));
       break;
     case remoting.HostDispatcher.State.NATIVE_MESSAGING:
-      this.nativeMessagingHost_.getDaemonState(callback, onError);
+      this.nativeMessagingHost_.getDaemonState(onDone, onError);
       break;
     case remoting.HostDispatcher.State.NPAPI:
       // Call the callback directly, since NPAPI exposes the state directly as
@@ -334,22 +334,21 @@ remoting.HostDispatcher.prototype.getDaemonState = function(callback, onError) {
       if (state === undefined) {
         onError(remoting.Error.MISSING_PLUGIN);
       } else {
-        callback(state);
+        onDone(state);
       }
       break;
   }
 };
 
 /**
- * @param {function(Array.<remoting.PairedClient>):void} callback
+ * @param {function(Array.<remoting.PairedClient>):void} onDone
  * @param {function(remoting.Error):void} onError
  * @return {void}
  */
-remoting.HostDispatcher.prototype.getPairedClients = function(callback,
-                                                              onError) {
+remoting.HostDispatcher.prototype.getPairedClients = function(onDone, onError) {
   /**
    * Converts the JSON string from the NPAPI plugin to Array.<PairedClient>, to
-   * pass to |callback|.
+   * pass to |onDone|.
    * @param {string} pairedClientsJson
    * @return {void}
    */
@@ -357,7 +356,7 @@ remoting.HostDispatcher.prototype.getPairedClients = function(callback,
     var pairedClients = remoting.PairedClient.convertToPairedClientArray(
         jsonParseSafe(pairedClientsJson));
     if (pairedClients != null) {
-      callback(pairedClients);
+      onDone(pairedClients);
     } else {
       onError(remoting.Error.UNEXPECTED);
     }
@@ -366,10 +365,10 @@ remoting.HostDispatcher.prototype.getPairedClients = function(callback,
   switch (this.state_) {
     case remoting.HostDispatcher.State.UNKNOWN:
       this.pendingRequests_.push(
-          this.getPairedClients.bind(this, callback, onError));
+          this.getPairedClients.bind(this, onDone, onError));
       break;
     case remoting.HostDispatcher.State.NATIVE_MESSAGING:
-      this.nativeMessagingHost_.getPairedClients(callback, onError);
+      this.nativeMessagingHost_.getPairedClients(onDone, onError);
       break;
     case remoting.HostDispatcher.State.NPAPI:
       try {
@@ -382,23 +381,43 @@ remoting.HostDispatcher.prototype.getPairedClients = function(callback,
 };
 
 /**
- * @param {function(boolean):void} onDone
+ * The pairing API returns a boolean to indicate success or failure, but
+ * the JS API is defined in terms of onDone and onError callbacks. This
+ * function converts one to the other.
+ *
+ * @param {function():void} onDone Success callback.
+ * @param {function(remoting.Error):void} onError Error callback.
+ * @param {boolean} success True if the operation succeeded; false otherwise.
+ * @private
+ */
+remoting.HostDispatcher.runCallback_ = function(onDone, onError, success) {
+  if (success) {
+    onDone();
+  } else {
+    onError(remoting.Error.UNEXPECTED);
+  }
+};
+
+/**
+ * @param {function():void} onDone
  * @param {function(remoting.Error):void} onError
  * @return {void}
  */
 remoting.HostDispatcher.prototype.clearPairedClients =
     function(onDone, onError) {
+  var callback =
+      remoting.HostDispatcher.runCallback_.bind(null, onDone, onError);
   switch (this.state_) {
     case remoting.HostDispatcher.State.UNKNOWN:
       this.pendingRequests_.push(
         this.clearPairedClients.bind(this, onDone, onError));
       break;
     case remoting.HostDispatcher.State.NATIVE_MESSAGING:
-      this.nativeMessagingHost_.clearPairedClients(onDone, onError);
+      this.nativeMessagingHost_.clearPairedClients(callback, onError);
       break;
     case remoting.HostDispatcher.State.NPAPI:
       try {
-        this.npapiHost_.clearPairedClients(onDone);
+        this.npapiHost_.clearPairedClients(callback);
       } catch (err) {
         onError(remoting.Error.MISSING_PLUGIN);
       }
@@ -408,23 +427,25 @@ remoting.HostDispatcher.prototype.clearPairedClients =
 
 /**
  * @param {string} client
- * @param {function(boolean):void} onDone
+ * @param {function():void} onDone
  * @param {function(remoting.Error):void} onError
  * @return {void}
  */
 remoting.HostDispatcher.prototype.deletePairedClient =
     function(client, onDone, onError) {
+  var callback =
+      remoting.HostDispatcher.runCallback_.bind(null, onDone, onError);
   switch (this.state_) {
     case remoting.HostDispatcher.State.UNKNOWN:
       this.pendingRequests_.push(
         this.deletePairedClient.bind(this, client, onDone, onError));
       break;
     case remoting.HostDispatcher.State.NATIVE_MESSAGING:
-      this.nativeMessagingHost_.deletePairedClient(client, onDone, onError);
+      this.nativeMessagingHost_.deletePairedClient(client, callback, onError);
       break;
     case remoting.HostDispatcher.State.NPAPI:
       try {
-        this.npapiHost_.deletePairedClient(client, onDone);
+        this.npapiHost_.deletePairedClient(client, callback);
       } catch (err) {
         onError(remoting.Error.MISSING_PLUGIN);
       }

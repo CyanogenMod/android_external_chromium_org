@@ -40,11 +40,7 @@ class ChildProcessSecurityPolicy {
   // Returns true iff |scheme| has been registered as a web-safe scheme.
   virtual bool IsWebSafeScheme(const std::string& scheme) = 0;
 
-  // Before servicing a child process's request to upload a file to the web, the
-  // browser should call this method to determine whether the process has the
-  // capability to upload the requested file.
-  virtual bool CanReadFile(int child_id, const base::FilePath& file) = 0;
-
+  // This permission grants only read access to a file.
   // Whenever the user picks a file from a <input type="file"> element, the
   // browser should call this function to grant the child process the capability
   // to upload the file to the web. Grants FILE_PERMISSION_READ_ONLY.
@@ -58,6 +54,17 @@ class ChildProcessSecurityPolicy {
   // This permission grants creation and write access to a file.
   virtual void GrantCreateWriteFile(int child_id,
                                     const base::FilePath& file) = 0;
+
+  // These methods verify whether or not the child process has been granted
+  // permissions perform these functions on |file|.
+
+  // Before servicing a child process's request to upload a file to the web, the
+  // browser should call this method to determine whether the process has the
+  // capability to upload the requested file.
+  virtual bool CanReadFile(int child_id, const base::FilePath& file) = 0;
+  virtual bool CanWriteFile(int child_id, const base::FilePath& file) = 0;
+  virtual bool CanCreateFile(int child_id, const base::FilePath& file) = 0;
+  virtual bool CanCreateWriteFile(int child_id, const base::FilePath& file) = 0;
 
   // Grants read access permission to the given isolated file system
   // identified by |filesystem_id|. An isolated file system can be
@@ -99,19 +106,27 @@ class ChildProcessSecurityPolicy {
       int child_id,
       const std::string& filesystem_id) = 0;
 
+  // Grants permission to copy-into filesystem |filesystem_id|. 'copy-into'
+  // is used to allow copying files into the destination filesystem without
+  // granting more general create and write permissions.
+  virtual void GrantCopyIntoFileSystem(int child_id,
+                                       const std::string& filesystem_id) = 0;
+
   // Grants the child process the capability to access URLs of the provided
   // scheme.
   virtual void GrantScheme(int child_id, const std::string& scheme) = 0;
 
-  // Returns true iff read access has been granted to the file system with
-  // |filesystem_id|.
+  // Returns true if read access has been granted to |filesystem_id|.
   virtual bool CanReadFileSystem(int child_id,
                                  const std::string& filesystem_id) = 0;
 
-  // Returns true iff read and write access has been granted to the filesystem
-  // with |filesystem_id|.
+  // Returns true if read and write access has been granted to |filesystem_id|.
   virtual bool CanReadWriteFileSystem(int child_id,
                                       const std::string& filesystem_id) = 0;
+
+  // Returns true if copy-into access has been granted to |filesystem_id|.
+  virtual bool CanCopyIntoFileSystem(int child_id,
+                                     const std::string& filesystem_id) = 0;
 };
 
 };  // namespace content

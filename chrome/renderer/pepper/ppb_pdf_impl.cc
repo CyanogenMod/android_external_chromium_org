@@ -13,7 +13,6 @@
 #include "chrome/common/render_messages.h"
 #include "chrome/renderer/printing/print_web_view_helper.h"
 #include "content/public/common/child_process_sandbox_support_linux.h"
-#include "content/public/common/content_client.h"
 #include "content/public/common/referrer.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
@@ -21,10 +20,10 @@
 #include "grit/webkit_strings.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/private/ppb_pdf.h"
+#include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/resource.h"
 #include "ppapi/shared_impl/resource_tracker.h"
 #include "ppapi/shared_impl/var.h"
-#include "skia/ext/platform_canvas.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
@@ -35,14 +34,9 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/image/image_skia.h"
-#include "ui/gfx/image/image_skia_rep.h"
-#include "webkit/plugins/ppapi/host_globals.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
-#include "webkit/plugins/ppapi/ppb_image_data_impl.h"
 
 using ppapi::PpapiGlobals;
-using webkit::ppapi::HostGlobals;
 using webkit::ppapi::PluginInstance;
 using WebKit::WebElement;
 using WebKit::WebView;
@@ -139,7 +133,7 @@ static const ResourceImageInfo kResourceImageMap[] = {
 #if defined(ENABLE_PRINTING)
 
 WebKit::WebElement GetWebElement(PP_Instance instance_id) {
-  PluginInstance* instance = HostGlobals::Get()->GetInstance(instance_id);
+  PluginInstance* instance = PluginInstance::Get(instance_id);
   if (!instance)
     return WebKit::WebElement();
   return instance->container()->element();
@@ -172,8 +166,7 @@ bool IsPrintingEnabled(PP_Instance instance_id) {
 
 PP_Var GetLocalizedString(PP_Instance instance_id,
                           PP_ResourceString string_id) {
-  PluginInstance* instance =
-      content::GetHostGlobals()->GetInstance(instance_id);
+  PluginInstance* instance = PluginInstance::Get(instance_id);
   if (!instance)
     return PP_MakeUndefined();
 
@@ -199,7 +192,7 @@ PP_Resource GetFontFileWithFallback(
     PP_PrivateFontCharset charset) {
 #if defined(OS_LINUX) || defined(OS_OPENBSD)
   // Validate the instance before using it below.
-  if (!content::GetHostGlobals()->GetInstance(instance_id))
+  if (!PluginInstance::Get(instance_id))
     return 0;
 
   scoped_refptr<ppapi::StringVar> face_name(ppapi::StringVar::FromPPVar(
@@ -293,24 +286,21 @@ void SearchString(PP_Instance instance,
 }
 
 void DidStartLoading(PP_Instance instance_id) {
-  PluginInstance* instance =
-      content::GetHostGlobals()->GetInstance(instance_id);
+  PluginInstance* instance = PluginInstance::Get(instance_id);
   if (!instance)
     return;
   instance->render_view()->DidStartLoading();
 }
 
 void DidStopLoading(PP_Instance instance_id) {
-  PluginInstance* instance =
-      content::GetHostGlobals()->GetInstance(instance_id);
+  PluginInstance* instance = PluginInstance::Get(instance_id);
   if (!instance)
     return;
   instance->render_view()->DidStopLoading();
 }
 
 void SetContentRestriction(PP_Instance instance_id, int restrictions) {
-  PluginInstance* instance =
-      content::GetHostGlobals()->GetInstance(instance_id);
+  PluginInstance* instance = PluginInstance::Get(instance_id);
   if (!instance)
     return;
   instance->render_view()->Send(
@@ -330,8 +320,7 @@ void UserMetricsRecordAction(PP_Instance /*instance*/, PP_Var action) {
 }
 
 void HasUnsupportedFeature(PP_Instance instance_id) {
-  PluginInstance* instance =
-      content::GetHostGlobals()->GetInstance(instance_id);
+  PluginInstance* instance = PluginInstance::Get(instance_id);
   if (!instance)
     return;
 
@@ -346,8 +335,7 @@ void HasUnsupportedFeature(PP_Instance instance_id) {
 }
 
 void SaveAs(PP_Instance instance_id) {
-  PluginInstance* instance =
-      content::GetHostGlobals()->GetInstance(instance_id);
+  PluginInstance* instance = PluginInstance::Get(instance_id);
   if (!instance)
     return;
   GURL url = instance->plugin_url();
@@ -383,7 +371,10 @@ PP_Resource GetResourceImageForScale(PP_Instance instance_id,
   if (res_id == 0)
     return 0;
 
-  ui::ScaleFactor scale_factor = ui::GetScaleFactorFromScale(scale);
+  // Validate the instance.
+  PluginInstance* instance = PluginInstance::Get(instance_id);
+  if (!instance)
+    return 0;
 
   gfx::ImageSkia* res_image_skia =
       ResourceBundle::GetSharedInstance().GetImageSkiaNamed(res_id);
@@ -391,38 +382,7 @@ PP_Resource GetResourceImageForScale(PP_Instance instance_id,
   if (!res_image_skia)
     return 0;
 
-  // Validate the instance.
-  if (!content::GetHostGlobals()->GetInstance(instance_id))
-    return 0;
-
-  gfx::ImageSkiaRep image_skia_rep = res_image_skia->GetRepresentation(
-      scale_factor);
-
-  if (image_skia_rep.is_null() || image_skia_rep.scale_factor() != scale_factor)
-    return 0;
-
-  scoped_refptr<webkit::ppapi::PPB_ImageData_Impl> image_data(
-      new webkit::ppapi::PPB_ImageData_Impl(
-          instance_id,
-          webkit::ppapi::PPB_ImageData_Impl::PLATFORM));
-  if (!image_data->Init(
-          webkit::ppapi::PPB_ImageData_Impl::GetNativeImageDataFormat(),
-          image_skia_rep.pixel_width(),
-          image_skia_rep.pixel_height(),
-          false)) {
-    return 0;
-  }
-
-  webkit::ppapi::ImageDataAutoMapper mapper(image_data.get());
-  if (!mapper.is_valid())
-    return 0;
-
-  skia::PlatformCanvas* canvas = image_data->GetPlatformCanvas();
-  // Note: Do not skBitmap::copyTo the canvas bitmap directly because it will
-  // ignore the allocated pixels in shared memory and re-allocate a new buffer.
-  canvas->writePixels(image_skia_rep.sk_bitmap(), 0, 0);
-
-  return image_data->GetReference();
+  return instance->CreateImage(res_image_skia, scale);
 }
 
 PP_Resource GetResourceImage(PP_Instance instance_id,

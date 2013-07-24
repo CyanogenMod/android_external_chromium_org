@@ -103,6 +103,9 @@ include $(LOCAL_PATH)/sandbox/sandbox_services_headers.target.darwin-x86.mk
 include $(LOCAL_PATH)/sandbox/seccomp_bpf.target.darwin-x86.mk
 include $(LOCAL_PATH)/sdch/sdch.target.darwin-x86.mk
 include $(LOCAL_PATH)/skia/skia.target.darwin-x86.mk
+include $(LOCAL_PATH)/skia/skia_chrome.target.darwin-x86.mk
+include $(LOCAL_PATH)/skia/skia_chrome_opts.target.darwin-x86.mk
+include $(LOCAL_PATH)/skia/skia_library.target.darwin-x86.mk
 include $(LOCAL_PATH)/skia/skia_opts.target.darwin-x86.mk
 include $(LOCAL_PATH)/sql/sql.target.darwin-x86.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.darwin-x86.mk
@@ -240,7 +243,6 @@ include $(LOCAL_PATH)/webkit/common/gpu/webkit_gpu.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/user_agent.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/webkit_version.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/common/webkit_common.target.darwin-x86.mk
-include $(LOCAL_PATH)/webkit/glue/glue_common.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/plugins/plugins_common.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_bindings.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_support.target.darwin-x86.mk
@@ -249,7 +251,6 @@ include $(LOCAL_PATH)/webkit/support/glue.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/support/glue_child.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/support/overscroller_jni_headers.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/support/plugins.target.darwin-x86.mk
-include $(LOCAL_PATH)/webkit/support/webkit_media.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/webkit_resources.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_browser.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_common.target.darwin-x86.mk

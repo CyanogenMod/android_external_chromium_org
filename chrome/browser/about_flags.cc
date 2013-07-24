@@ -1116,6 +1116,13 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(chromeos::switches::kFileManagerEnableFolderShortcuts)
   },
   {
+    "file-manager-enable-webstore-integration",
+    IDS_FLAGS_FILE_MANAGER_ENABLE_WEBSTORE_INTEGRATION,
+    IDS_FLAGS_FILE_MANAGER_ENABLE_WEBSTORE_INTEGRATION_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(chromeos::switches::kFileManagerEnableWebstoreIntegration)
+  },
+  {
     "disable-quickoffice-component-app",
     IDS_FLAGS_DISABLE_QUICKOFFICE_COMPONENT_APP_NAME,
     IDS_FLAGS_DISABLE_QUICKOFFICE_COMPONENT_APP_DESCRIPTION,
@@ -1577,6 +1584,13 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_QUICKOFFICE_DESKTOP_EDIT_DESCRIPTION,
     kOsCrOS,
     SINGLE_VALUE_TYPE(switches::kEnableQuickofficeEdit),
+  },
+  {
+    "enable-sticky-keys",
+    IDS_FLAGS_ENABLE_STICKY_KEYS_NAME,
+    IDS_FLAGS_ENABLE_STICKY_KEYS_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(switches::kEnableStickyKeys),
   },
 #endif
   {

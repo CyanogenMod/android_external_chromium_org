@@ -28,7 +28,7 @@ typedef struct _GtkToolItem GtkToolItem;
 #elif defined(USE_AURA)
 #if defined(OS_CHROMEOS)
 namespace content {
-class MinimalAsh;
+class MinimalShell;
 }
 #endif
 namespace views {
@@ -145,6 +145,7 @@ class Shell : public WebContentsDelegate,
   virtual void RendererUnresponsive(WebContents* source) OVERRIDE;
   virtual void ActivateContents(WebContents* contents) OVERRIDE;
   virtual void DeactivateContents(WebContents* contents) OVERRIDE;
+  virtual void WorkerCrashed(WebContents* source) OVERRIDE;
 
  private:
   enum UIControl {
@@ -256,7 +257,7 @@ class Shell : public WebContentsDelegate,
   base::android::ScopedJavaGlobalRef<jobject> java_object_;
 #elif defined(USE_AURA)
 #if defined(OS_CHROMEOS)
-  static content::MinimalAsh* minimal_ash_;
+  static content::MinimalShell* minimal_shell_;
 #endif
   static views::ViewsDelegate* views_delegate_;
 

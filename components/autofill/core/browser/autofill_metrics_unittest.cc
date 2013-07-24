@@ -287,7 +287,6 @@ void AutofillMetricsTest::SetUp() {
   // Ensure Mac OS X does not pop up a modal dialog for the Address Book.
   autofill::test::DisableSystemServices(profile());
 
-  profile()->CreateRequestContext();
   PersonalDataManagerFactory::GetInstance()->SetTestingFactory(profile(), NULL);
 
   TabAutofillManagerDelegate::CreateForWebContents(web_contents());
@@ -315,7 +314,6 @@ void AutofillMetricsTest::TearDown() {
   autofill_manager_.reset();
   autofill_driver_.reset();
   personal_data_.reset();
-  profile()->ResetRequestContext();
   ChromeRenderViewHostTestHarness::TearDown();
 }
 
@@ -810,7 +808,7 @@ TEST_F(AutofillMetricsTest, DeveloperEngagement) {
   field.autocomplete_attribute = "email";
   forms.back().fields.push_back(field);
   test::CreateTestFormField("", "", "", "text", &field);
-  field.autocomplete_attribute = "street-address";
+  field.autocomplete_attribute = "address-line1";
   forms.back().fields.push_back(field);
 
   // Expect both the "form parsed" metric and the author-specified field type

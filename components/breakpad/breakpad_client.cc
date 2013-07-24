@@ -4,6 +4,7 @@
 
 #include "components/breakpad/breakpad_client.h"
 
+#include "base/files/file_path.h"
 #include "base/logging.h"
 
 namespace breakpad {
@@ -35,7 +36,8 @@ bool BreakpadClient::GetAlternativeCrashDumpLocation(
 void BreakpadClient::GetProductNameAndVersion(const base::FilePath& exe_path,
                                               base::string16* product_name,
                                               base::string16* version,
-                                              base::string16* special_build) {
+                                              base::string16* special_build,
+                                              base::string16* channel_name) {
 }
 
 bool BreakpadClient::ShouldShowRestartDialog(base::string16* title,
@@ -47,11 +49,31 @@ bool BreakpadClient::ShouldShowRestartDialog(base::string16* title,
 bool BreakpadClient::AboutToRestart() {
   return true;
 }
+
+base::string16 BreakpadClient::GetCrashGUID() {
+  return base::string16();
+}
+
+bool BreakpadClient::GetDeferredUploadsSupported(bool is_per_usr_install) {
+  return false;
+}
+
+bool BreakpadClient::GetIsPerUserInstall(const base::FilePath& exe_path) {
+  return false;
+}
+
+bool BreakpadClient::GetShouldDumpLargerDumps(bool is_per_user_install) {
+  return false;
+}
 #endif
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_IOS)
 void BreakpadClient::GetProductNameAndVersion(std::string* product_name,
                                               std::string* version) {
+}
+
+base::FilePath BreakpadClient::GetReporterLogFilename() {
+  return base::FilePath();
 }
 #endif
 
@@ -71,5 +93,11 @@ size_t BreakpadClient::RegisterCrashKeys() {
 bool BreakpadClient::IsRunningUnattended() {
   return false;
 }
+
+#if defined(OS_WIN) || defined(OS_MACOSX)
+bool BreakpadClient::GetCollectStatsConsent() {
+  return false;
+}
+#endif
 
 }  // namespace breakpad

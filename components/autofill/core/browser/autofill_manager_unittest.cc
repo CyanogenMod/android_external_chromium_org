@@ -770,12 +770,6 @@ class AutofillManagerTest : public ChromeRenderViewHostTestHarness {
     personal_data_.SetBrowserContext(NULL);
   }
 
-  virtual content::BrowserContext* CreateBrowserContext() OVERRIDE {
-    TestingProfile* profile = new TestingProfile();
-    profile->CreateRequestContext();
-    return profile;
-  }
-
   void GetAutofillSuggestions(int query_id,
                               const FormData& form,
                               const FormFieldData& field) {
@@ -2082,7 +2076,7 @@ TEST_F(AutofillManagerTest, FillFormWithAuthorSpecifiedSections) {
   form.fields.push_back(field);
 
   test::CreateTestFormField("", "address", "", "text", &field);
-  field.autocomplete_attribute = "section-billing street-address";
+  field.autocomplete_attribute = "section-billing address-line1";
   form.fields.push_back(field);
 
   test::CreateTestFormField("", "city", "", "text", &field);

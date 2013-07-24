@@ -201,6 +201,7 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   void FinishedReadback(
       const AsyncGetFramebufferPixelsCleanupCallback& cleanup_callback,
       unsigned source_buffer,
+      unsigned query,
       uint8_t* dest_pixels,
       gfx::Size size);
   void PassOnSkBitmap(scoped_ptr<SkBitmap> bitmap,
@@ -262,7 +263,7 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
                          FragmentShaderTexBackgroundVaryingAlpha>
       TextureBackgroundProgram;
   typedef ProgramBinding<VertexShaderPosTexTransform,
-                         FragmentShaderTexBackgroundVaryingAlpha>
+                         FragmentShaderTexBackgroundPremultiplyAlpha>
       NonPremultipliedTextureBackgroundProgram;
   typedef ProgramBinding<VertexShaderPosTexTransform,
                          FragmentShaderRGBATexRectVaryingAlpha>

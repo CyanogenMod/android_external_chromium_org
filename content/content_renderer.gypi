@@ -19,7 +19,6 @@
     '../v8/tools/gyp/v8.gyp:v8',
     '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
     '../webkit/common/webkit_common.gyp:webkit_common',
-    '../webkit/glue/webkit_glue_common.gyp:glue_common',
     '../webkit/plugins/webkit_plugins.gyp:plugins_common',
     '../webkit/renderer/compositor_bindings/compositor_bindings.gyp:webkit_compositor_bindings',
     '../webkit/renderer/compositor_bindings/compositor_bindings.gyp:webkit_compositor_support',
@@ -29,7 +28,6 @@
     '../webkit/support/webkit_support.gyp:glue',
     '../webkit/support/webkit_support.gyp:glue_child',
     '../webkit/support/webkit_support.gyp:plugins',
-    '../webkit/support/webkit_support.gyp:webkit_media',
   ],
   'include_dirs': [
     '..',
@@ -189,6 +187,8 @@
     'renderer/media/crypto/key_systems.h',
     'renderer/media/crypto/key_systems_info.cc',
     'renderer/media/crypto/key_systems_info.h',
+    'renderer/media/crypto/ppapi_decryptor.cc',
+    'renderer/media/crypto/ppapi_decryptor.h',
     'renderer/media/crypto/proxy_decryptor.cc',
     'renderer/media/crypto/proxy_decryptor.h',
     'renderer/media/media_stream_audio_renderer.cc',
@@ -593,6 +593,12 @@
       'sources!': [
         'renderer/render_widget_fullscreen_pepper.cc',
         'renderer/render_widget_fullscreen_pepper.h',
+      ],
+    }],
+    ['enable_pepper_cdms != 1', {
+      'sources!': [
+        'renderer/media/crypto/ppapi_decryptor.cc',
+        'renderer/media/crypto/ppapi_decryptor.h',
       ],
     }],
   ],

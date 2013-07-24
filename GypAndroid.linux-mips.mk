@@ -96,6 +96,9 @@ include $(LOCAL_PATH)/sandbox/sandbox.target.linux-mips.mk
 include $(LOCAL_PATH)/sandbox/sandbox_services.target.linux-mips.mk
 include $(LOCAL_PATH)/sdch/sdch.target.linux-mips.mk
 include $(LOCAL_PATH)/skia/skia.target.linux-mips.mk
+include $(LOCAL_PATH)/skia/skia_chrome.target.linux-mips.mk
+include $(LOCAL_PATH)/skia/skia_chrome_opts.target.linux-mips.mk
+include $(LOCAL_PATH)/skia/skia_library.target.linux-mips.mk
 include $(LOCAL_PATH)/skia/skia_opts.target.linux-mips.mk
 include $(LOCAL_PATH)/sql/sql.target.linux-mips.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.linux-mips.mk
@@ -223,7 +226,6 @@ include $(LOCAL_PATH)/webkit/common/gpu/webkit_gpu.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/user_agent.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/webkit_version.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/common/webkit_common.target.linux-mips.mk
-include $(LOCAL_PATH)/webkit/glue/glue_common.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/plugins/plugins_common.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_bindings.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_support.target.linux-mips.mk
@@ -232,7 +234,6 @@ include $(LOCAL_PATH)/webkit/support/glue.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/support/glue_child.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/support/overscroller_jni_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/support/plugins.target.linux-mips.mk
-include $(LOCAL_PATH)/webkit/support/webkit_media.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_resources.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_browser.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_common.target.linux-mips.mk

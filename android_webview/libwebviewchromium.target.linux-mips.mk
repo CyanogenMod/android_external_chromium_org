@@ -33,12 +33,15 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,media_media_gyp)/media_media_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,crypto_crypto_gyp)/crypto_crypto_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_openssl_openssl_gyp)/third_party_openssl_openssl_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_gyp)/skia_skia_gyp.a \
+	$(call intermediates-dir-for,GYP,skia_skia_gyp)/skia.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp)/skia_skia_library_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_opts_gyp)/skia_skia_opts_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_zlib_zlib_gyp)/third_party_zlib_zlib_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_WebKit_chromium_skia_webkit_gyp)/skia_webkit.stamp \
 	$(call intermediates-dir-for,GYP,third_party_expat_expat_gyp)/expat.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_freetype_ft2_gyp)/third_party_freetype_ft2_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_chrome_gyp)/skia_skia_chrome_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_chrome_opts_gyp)/skia_skia_chrome_opts_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_opus_opus_gyp)/third_party_opus_opus_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,base_base_i18n_gyp)/base_base_i18n_gyp.a \
@@ -96,6 +99,8 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_webkit_storage_browser_gyp)/webkit_webkit_storage_browser_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,sql_sql_gyp)/sql_sql_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_sqlite_sqlite_gyp)/third_party_sqlite_sqlite_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_leveldatabase_leveldatabase_gyp)/third_party_leveldatabase_leveldatabase_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_webkit_storage_common_gyp)/webkit_webkit_storage_common_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_WebKit_chromium_webkit_gyp)/third_party_WebKit_Source_WebKit_chromium_webkit_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_webcore_gyp)/webcore.stamp \
@@ -145,11 +150,8 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_core_webcore_svg_gyp)/third_party_WebKit_Source_core_webcore_svg_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_core_webcore_derived_gyp)/third_party_WebKit_Source_core_webcore_derived_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_modules_modules_gyp)/third_party_WebKit_Source_modules_modules_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_leveldatabase_leveldatabase_gyp)/third_party_leveldatabase_leveldatabase_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_webkit_storage_common_gyp)/webkit_webkit_storage_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_glue_gyp)/webkit_support_glue_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,printing_printing_gyp)/printing_printing_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_glue_glue_common_gyp)/webkit_glue_glue_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_plugins_plugins_common_gyp)/webkit_plugins_plugins_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_renderer_compositor_bindings_webkit_compositor_support_gyp)/webkit_renderer_compositor_bindings_webkit_compositor_support_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_renderer_compositor_bindings_webkit_compositor_bindings_gyp)/webkit_renderer_compositor_bindings_webkit_compositor_bindings_gyp.a \
@@ -162,7 +164,6 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_glue_child_gyp)/webkit_support_glue_child_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_native_theme_native_theme_gyp)/ui_native_theme_native_theme_gyp.a \
 	$(call intermediates-dir-for,GYP,webkit_support_overscroller_jni_headers_gyp)/overscroller_jni_headers.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_webkit_media_gyp)/webkit_support_webkit_media_gyp.a \
 	$(call intermediates-dir-for,GYP,content_content_jni_headers_gyp)/content_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,content_java_set_jni_headers_gyp)/java_set_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,content_common_aidl_gyp)/common_aidl.stamp \
@@ -178,8 +179,8 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_zlib_minizip_gyp)/third_party_zlib_minizip_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_snapshot_snapshot_gyp)/ui_snapshot_snapshot_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_gpu_gyp)/content_content_gpu_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_utility_gyp)/content_content_utility_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_child_gyp)/content_content_child_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_utility_gyp)/content_content_utility_gyp.a \
 	$(call intermediates-dir-for,GYP,content_browser_devtools_devtools_resources_gyp)/devtools_resources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_generate_devtools_grd_gyp)/generate_devtools_grd.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_devtools_html_gyp)/devtools_html.stamp \
@@ -286,10 +287,10 @@ MY_DEFS_Debug := \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
-	'-DENABLE_LANGUAGE_DETECTION=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -369,10 +370,10 @@ MY_DEFS_Release := \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
-	'-DENABLE_LANGUAGE_DETECTION=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -473,10 +474,12 @@ LOCAL_STATIC_LIBRARIES := \
 	media_media_gyp \
 	crypto_crypto_gyp \
 	third_party_openssl_openssl_gyp \
-	skia_skia_gyp \
+	skia_skia_library_gyp \
 	skia_skia_opts_gyp \
 	third_party_zlib_zlib_gyp \
 	third_party_freetype_ft2_gyp \
+	skia_skia_chrome_gyp \
+	skia_skia_chrome_opts_gyp \
 	third_party_opus_opus_gyp \
 	ui_ui_gyp \
 	base_base_i18n_gyp \
@@ -511,6 +514,8 @@ LOCAL_STATIC_LIBRARIES := \
 	webkit_webkit_storage_browser_gyp \
 	sql_sql_gyp \
 	third_party_sqlite_sqlite_gyp \
+	third_party_leveldatabase_leveldatabase_gyp \
+	webkit_webkit_storage_common_gyp \
 	third_party_WebKit_Source_WebKit_chromium_webkit_gyp \
 	third_party_WebKit_Source_core_webcore_dom_gyp \
 	third_party_WebKit_Source_weborigin_weborigin_gyp \
@@ -537,11 +542,8 @@ LOCAL_STATIC_LIBRARIES := \
 	third_party_WebKit_Source_core_webcore_svg_gyp \
 	third_party_WebKit_Source_core_webcore_derived_gyp \
 	third_party_WebKit_Source_modules_modules_gyp \
-	third_party_leveldatabase_leveldatabase_gyp \
-	webkit_webkit_storage_common_gyp \
 	webkit_support_glue_gyp \
 	printing_printing_gyp \
-	webkit_glue_glue_common_gyp \
 	webkit_plugins_plugins_common_gyp \
 	webkit_renderer_compositor_bindings_webkit_compositor_support_gyp \
 	webkit_renderer_compositor_bindings_webkit_compositor_bindings_gyp \
@@ -551,7 +553,6 @@ LOCAL_STATIC_LIBRARIES := \
 	ui_surface_surface_gyp \
 	webkit_support_glue_child_gyp \
 	ui_native_theme_native_theme_gyp \
-	webkit_support_webkit_media_gyp \
 	components_encryptor_gyp \
 	components_user_prefs_gyp \
 	base_base_prefs_gyp \
@@ -562,8 +563,8 @@ LOCAL_STATIC_LIBRARIES := \
 	third_party_zlib_minizip_gyp \
 	ui_snapshot_snapshot_gyp \
 	content_content_gpu_gyp \
-	content_content_utility_gyp \
 	content_content_child_gyp \
+	content_content_utility_gyp \
 	net_http_server_gyp \
 	sandbox_sandbox_services_gyp \
 	components_webdata_common_gyp \

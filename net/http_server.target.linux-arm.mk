@@ -26,6 +26,7 @@ LOCAL_SRC_FILES := \
 	net/server/http_connection.cc \
 	net/server/http_server.cc \
 	net/server/http_server_request_info.cc \
+	net/server/http_server_response_info.cc \
 	net/server/web_socket.cc
 
 
@@ -72,10 +73,10 @@ MY_DEFS_Debug := \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
-	'-DENABLE_LANGUAGE_DETECTION=1' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -155,10 +156,10 @@ MY_DEFS_Release := \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
-	'-DENABLE_LANGUAGE_DETECTION=1' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \

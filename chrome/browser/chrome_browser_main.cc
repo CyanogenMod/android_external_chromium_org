@@ -62,6 +62,7 @@
 #include "chrome/browser/gpu/chrome_gpu_util.h"
 #include "chrome/browser/gpu/gl_string_manager.h"
 #include "chrome/browser/jankometer.h"
+#include "chrome/browser/language_usage_metrics.h"
 #include "chrome/browser/metrics/field_trial_synchronizer.h"
 #include "chrome/browser/metrics/metrics_log.h"
 #include "chrome/browser/metrics/metrics_service.h"
@@ -184,10 +185,6 @@
 
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "chrome/browser/mac/keystone_glue.h"
-#endif
-
-#if defined(ENABLE_LANGUAGE_DETECTION)
-#include "chrome/browser/language_usage_metrics.h"
 #endif
 
 #if defined(ENABLE_RLZ)
@@ -1474,12 +1471,10 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
   browser_process_->metrics_service()->RecordBreakpadHasDebugger(
       base::debug::BeingDebugged());
 
-#if defined(ENABLE_LANGUAGE_DETECTION)
   LanguageUsageMetrics::RecordAcceptLanguages(
       profile_->GetPrefs()->GetString(prefs::kAcceptLanguages));
   LanguageUsageMetrics::RecordApplicationLanguage(
       browser_process_->GetApplicationLocale());
-#endif
 
   // The extension service may be available at this point. If the command line
   // specifies --uninstall-extension, attempt the uninstall extension startup
@@ -1692,11 +1687,10 @@ void ChromeBrowserMainParts::PostMainMessageLoopRun() {
   for (size_t i = 0; i < chrome_extra_parts_.size(); ++i)
     chrome_extra_parts_[i]->PostMainMessageLoopRun();
 
-  // Some tests don't set parameters.ui_task, so they started translate
-  // language fetch that was never completed so we need to cleanup here
+  // TranslateManager's URL fetchers should be destructed in the main thread
   // otherwise it will be done by the destructor in a wrong thread.
-  if (parameters().ui_task == NULL && translate_manager_ != NULL)
-    translate_manager_->CleanupPendingUlrFetcher();
+  if (translate_manager_ != NULL)
+    translate_manager_->CleanupPendingUrlFetcher();
 
   if (notify_result_ == ProcessSingleton::PROCESS_NONE)
     process_singleton_->Cleanup();

@@ -23,16 +23,22 @@ class ChromeBreakpadClient : public breakpad::BreakpadClient {
   virtual void GetProductNameAndVersion(const base::FilePath& exe_path,
                                         base::string16* product_name,
                                         base::string16* version,
-                                        base::string16* special_build) OVERRIDE;
+                                        base::string16* special_build,
+                                        base::string16* channel_name) OVERRIDE;
   virtual bool ShouldShowRestartDialog(base::string16* title,
                                        base::string16* message,
                                        bool* is_rtl_locale) OVERRIDE;
   virtual bool AboutToRestart() OVERRIDE;
+  virtual base::string16 GetCrashGUID() OVERRIDE;
+  virtual bool GetDeferredUploadsSupported(bool is_per_user_install) OVERRIDE;
+  virtual bool GetIsPerUserInstall(const base::FilePath& exe_path) OVERRIDE;
+  virtual bool GetShouldDumpLargerDumps(bool is_per_user_install) OVERRIDE;
 #endif
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_IOS)
   virtual void GetProductNameAndVersion(std::string* product_name,
                                         std::string* version) OVERRIDE;
+  virtual base::FilePath GetReporterLogFilename() OVERRIDE;
 #endif
 
   virtual bool GetCrashDumpLocation(base::FilePath* crash_dir) OVERRIDE;
@@ -44,6 +50,10 @@ class ChromeBreakpadClient : public breakpad::BreakpadClient {
   virtual size_t RegisterCrashKeys() OVERRIDE;
 
   virtual bool IsRunningUnattended() OVERRIDE;
+
+#if defined(OS_WIN) || defined(OS_MACOSX)
+  virtual bool GetCollectStatsConsent() OVERRIDE;
+#endif
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ChromeBreakpadClient);

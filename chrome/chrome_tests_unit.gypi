@@ -179,6 +179,7 @@
         'browser/ui/find_bar/find_bar_host_unittest_util.h',
         'browser/ui/fullscreen/fullscreen_controller_state_test.cc',
         'browser/ui/fullscreen/fullscreen_controller_state_test.h',
+        'browser/ui/fullscreen/fullscreen_controller_state_tests.h',
         'browser/ui/fullscreen/fullscreen_controller_test.cc',
         'browser/ui/fullscreen/fullscreen_controller_test.h',
         'browser/ui/gtk/find_bar_host_unittest_util_gtk.cc',
@@ -248,6 +249,8 @@
         'test/base/testing_browser_process.h',
         'test/base/testing_browser_process_platform_part.h',
         'test/base/testing_browser_process_platform_part.cc',
+        'test/base/testing_io_thread_state.cc',
+        'test/base/testing_io_thread_state.h',
         'test/base/testing_pref_service_syncable.cc',
         'test/base/testing_pref_service_syncable.h',
         'test/base/testing_profile.cc',
@@ -597,7 +600,6 @@
         'browser/chromeos/drive/file_cache_metadata_unittest.cc',
         'browser/chromeos/drive/file_cache_unittest.cc',
         'browser/chromeos/drive/file_change_unittest.cc',
-        'browser/chromeos/drive/file_system/close_file_operation_unittest.cc',
         'browser/chromeos/drive/file_system/copy_operation_unittest.cc',
         'browser/chromeos/drive/file_system/create_directory_operation_unittest.cc',
         'browser/chromeos/drive/file_system/create_file_operation_unittest.cc',
@@ -717,6 +719,7 @@
         'browser/content_settings/host_content_settings_map_unittest.cc',
         'browser/content_settings/mock_settings_observer.cc',
         'browser/content_settings/mock_settings_observer.h',
+        'browser/content_settings/permission_queue_controller_unittest.cc',
         'browser/content_settings/tab_specific_content_settings_unittest.cc',
         'browser/custom_handlers/protocol_handler_registry_unittest.cc',
         'browser/diagnostics/diagnostics_model_unittest.cc',
@@ -859,7 +862,6 @@
         'browser/file_select_helper_unittest.cc',
         'browser/first_run/first_run_unittest.cc',
         'browser/geolocation/chrome_geolocation_permission_context_unittest.cc',
-        'browser/geolocation/geolocation_infobar_queue_controller_unittest.cc',
         'browser/global_keyboard_shortcuts_mac_unittest.mm',
         'browser/google/google_search_counter_unittest.cc',
         'browser/google/google_update_settings_unittest.cc',
@@ -912,7 +914,6 @@
         'browser/history/visit_filter_unittest.cc',
         'browser/history/visit_tracker_unittest.cc',
         'browser/importer/firefox_profile_lock_unittest.cc',
-        'browser/importer/firefox_proxy_settings_unittest.cc',
         'browser/importer/profile_writer_unittest.cc',
         'browser/internal_auth_unittest.cc',
         'browser/invalidation/invalidation_service_android_unittest.cc',
@@ -921,6 +922,7 @@
         'browser/invalidation/invalidator_storage_unittest.cc',
         'browser/invalidation/ticl_invalidation_service_unittest.cc',
         'browser/language_usage_metrics_unittest.cc',
+        'browser/local_discovery/privet_confirm_api_flow_unittest.cc',
         'browser/local_discovery/privet_http_unittest.cc',
         'browser/local_discovery/privet_url_fetcher_unittest.cc',
         'browser/mac/keystone_glue_unittest.mm',
@@ -958,6 +960,7 @@
         'browser/net/dns_probe_runner_unittest.cc',
         'browser/net/dns_probe_service_unittest.cc',
         'browser/net/evicted_domain_cookie_counter_unittest.cc',
+        'browser/net/firefox_proxy_settings_unittest.cc',
         'browser/net/gaia/gaia_oauth_fetcher_unittest.cc',
         'browser/net/http_pipelining_compatibility_client_unittest.cc',
         'browser/net/http_server_properties_manager_unittest.cc',
@@ -1597,8 +1600,10 @@
         'browser/ui/window_sizer/window_sizer_common_unittest.cc',
         'browser/ui/window_sizer/window_sizer_unittest.cc',
         'browser/ui/zoom/zoom_controller_unittest.cc',
+        'browser/upload_list_unittest.cc',
         'browser/chrome_content_browser_client_unittest.cc',
         'browser/undo/undo_manager_test.cc',
+        'browser/usb/usb_service_unittest.cc',
         'browser/user_style_sheet_watcher_unittest.cc',
         'browser/value_store/leveldb_value_store_unittest.cc',
         'browser/value_store/testing_value_store_unittest.cc',
@@ -2436,9 +2441,12 @@
 
             # Android uses a different invaliator.
             'browser/invalidation/ticl_invalidation_service_unittest.cc',
-            
+
             # The importer code is not used on Android.
             'common/importer/firefox_importer_utils_unittest.cc',
+
+            # USB service is not supported on Android.
+            'browser/usb/usb_service_unittest.cc',
           ],
           'sources/': [
             ['exclude', '^browser/captive_portal/'],
@@ -2446,6 +2454,7 @@
             ['exclude', '^browser/first_run/'],
             ['exclude', '^browser/lifetime/'],
             ['exclude', '^browser/media_galleries/'],
+            ['exclude', '^browser/net/firefox_*'],
             ['exclude', '^browser/profile_resetter/'],
             ['exclude', '^browser/speech/'],
             ['exclude', '^browser/sync/glue/app_'],
@@ -2486,11 +2495,6 @@
           ],
           'sources/': [
             ['exclude', '^browser/themes/'],
-          ],
-        }],
-        ['enable_language_detection==0', {
-          'sources!': [
-            'browser/language_usage_metrics_unittest.cc',
           ],
         }],
         ['toolkit_views==1', {

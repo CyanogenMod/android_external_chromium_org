@@ -35,7 +35,6 @@
 #include "ppapi/c/ppp_messaging.h"
 #include "ppapi/c/ppp_mouse_lock.h"
 #include "ppapi/c/private/ppb_content_decryptor_private.h"
-#include "ppapi/c/private/ppb_nacl_private.h"
 #include "ppapi/c/private/ppp_instance_private.h"
 #include "ppapi/shared_impl/ppb_instance_shared.h"
 #include "ppapi/shared_impl/ppb_view_shared.h"
@@ -63,6 +62,10 @@ struct _NPP;
 class SkBitmap;
 class TransportDIB;
 
+namespace IPC {
+struct ChannelHandle;
+}
+
 namespace WebKit {
 class WebInputEvent;
 class WebLayer;
@@ -84,10 +87,16 @@ namespace content {
 class RenderView;
 }
 
+namespace gfx {
+class ImageSkia;
+}
+
 namespace ppapi {
+class PpapiPermissions;
+class Resource;
+class VarTracker;
 struct InputEventData;
 struct PPP_Instance_Combined;
-class Resource;
 struct URLRequestInfoData;
 }
 
@@ -492,9 +501,9 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   // Reset this instance as proxied. Assigns the instance a new module, resets
   // cached interfaces to point to the out-of-process proxy and re-sends
   // DidCreate, DidChangeView, and HandleDocumentLoad (if necessary).
-  // This should be used only when switching a trusted NaCl in-process instance
-  // to an untrusted NaCl out-of-process instance.
-  PP_NaClResult ResetAsProxied(scoped_refptr<PluginModule> module);
+  // This should be used only when switching an in-process instance to an
+  // external out-of-process instance.
+  PP_ExternalPluginResult ResetAsProxied(scoped_refptr<PluginModule> module);
 
   // Checks whether this is a valid instance of the given module. After calling
   // ResetAsProxied above, a NaCl plugin instance's module changes, so external
@@ -510,6 +519,29 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   // Returns the v8::Isolate that was current when this Instance was created.
   // This is not inlined so as to avoid an unnecessary header include of v8.h.
   v8::Isolate* GetIsolate() const;
+
+  static PluginInstance* Get(PP_Instance instance_id);
+
+  ::ppapi::VarTracker* GetVarTracker();
+
+  // Returns a reference to a file with the given path.
+  // The returned object will have a refcount of 0 (just like "new").
+  PP_Resource CreateExternalFileReference(
+      const base::FilePath& external_file_path);
+
+  // Creates a PPB_ImageData given a Skia image.
+  PP_Resource CreateImage(gfx::ImageSkia* source_image, float scale);
+
+  // Returns the location of this module.
+  base::FilePath GetModulePath();
+
+  // Switches this instance with one that uses the out of process IPC proxy.
+  PP_ExternalPluginResult SwitchToOutOfProcessProxy(
+      const base::FilePath& file_path,
+      ::ppapi::PpapiPermissions permissions,
+      const IPC::ChannelHandle& channel_handle,
+      base::ProcessId plugin_pid,
+      int plugin_child_id);
 
  private:
   friend class PpapiUnittest;

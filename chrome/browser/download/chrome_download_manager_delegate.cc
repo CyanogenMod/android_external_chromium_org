@@ -34,12 +34,12 @@
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/common/constants.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/drive/download_handler.h"
@@ -231,7 +231,7 @@ bool ChromeDownloadManagerDelegate::ShouldOpenFileBasedOnExtension(
   // TODO(asanka): This determination is done based on |path|, while
   // ShouldOpenDownload() detects extension downloads based on the
   // characteristics of the download. Reconcile this. http://crbug.com/167702
-  if (extensions::Extension::IsExtension(path))
+  if (path.MatchesExtension(extensions::kExtensionFileExtension))
     return false;
   return download_prefs_->IsAutoOpenEnabledBasedOnExtension(path);
 }
@@ -525,23 +525,28 @@ void ChromeDownloadManagerDelegate::CheckClientDownloadDone(
   if (item->GetDangerType() == content::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS ||
       item->GetDangerType() ==
       content::DOWNLOAD_DANGER_TYPE_MAYBE_DANGEROUS_CONTENT) {
+    content::DownloadDangerType danger_type =
+        content::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS;
     switch (result) {
       case DownloadProtectionService::SAFE:
         // Do nothing.
         break;
       case DownloadProtectionService::DANGEROUS:
-        item->OnContentCheckCompleted(
-            content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT);
+        danger_type = content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT;
         break;
       case DownloadProtectionService::UNCOMMON:
-        item->OnContentCheckCompleted(
-            content::DOWNLOAD_DANGER_TYPE_UNCOMMON_CONTENT);
+        danger_type = content::DOWNLOAD_DANGER_TYPE_UNCOMMON_CONTENT;
         break;
       case DownloadProtectionService::DANGEROUS_HOST:
-        item->OnContentCheckCompleted(
-            content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST);
+        danger_type = content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST;
+        break;
+      case DownloadProtectionService::POTENTIALLY_UNWANTED:
+        danger_type = content::DOWNLOAD_DANGER_TYPE_POTENTIALLY_UNWANTED;
         break;
     }
+
+    if (danger_type != content::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS)
+      item->OnContentCheckCompleted(danger_type);
   }
 
   SafeBrowsingState* state = static_cast<SafeBrowsingState*>(

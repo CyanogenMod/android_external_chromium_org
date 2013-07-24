@@ -130,7 +130,6 @@
         '<(DEPTH)/net/net.gyp:net',
         '<(DEPTH)/printing/printing.gyp:printing',
         '<(DEPTH)/skia/skia.gyp:skia',
-        '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink',
         '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
         '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
         '<(DEPTH)/third_party/npapi/npapi.gyp:npapi',
@@ -141,7 +140,6 @@
         '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
         '<(DEPTH)/webkit/common/user_agent/webkit_user_agent.gyp:user_agent',
         '<(DEPTH)/webkit/common/webkit_common.gyp:webkit_common',
-        '<(DEPTH)/webkit/glue/webkit_glue_common.gyp:glue_common',
         '<(DEPTH)/webkit/plugins/webkit_plugins.gyp:plugins_common',
         '<(DEPTH)/webkit/renderer/compositor_bindings/compositor_bindings.gyp:webkit_compositor_support',
         '<(DEPTH)/webkit/storage_browser.gyp:webkit_storage_browser',
@@ -149,7 +147,6 @@
         '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
         '<(DEPTH)/webkit/webkit_resources.gyp:webkit_strings',
         'plugins',
-        'webkit_media',
       ],
       'include_dirs': [
         '<(INTERMEDIATE_DIR)',
@@ -201,9 +198,9 @@
             }],
           ],
         }],
-        ['OS=="linux" and component=="shared_library" and linux_use_tcmalloc==1', {
+        ['chrome_multiple_dll!=1', {
           'dependencies': [
-            '<(DEPTH)/base/allocator/allocator.gyp:allocator',
+            '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink',
           ],
         }],
       ],

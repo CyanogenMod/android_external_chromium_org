@@ -17,13 +17,9 @@ GYP_GENERATED_OUTPUTS :=
 # Make sure our deps and generated files are built first.
 LOCAL_ADDITIONAL_DEPENDENCIES := $(GYP_TARGET_DEPENDENCIES) $(GYP_GENERATED_OUTPUTS)
 
-$(gyp_intermediate_dir)/convolver_mips_dspr2.cpp: $(LOCAL_PATH)/skia/ext/convolver_mips_dspr2.cc
-	mkdir -p $(@D); cp $< $@
-LOCAL_GENERATED_SOURCES := \
-	$(gyp_intermediate_dir)/convolver_mips_dspr2.cpp
+LOCAL_GENERATED_SOURCES :=
 
-GYP_COPIED_SOURCE_ORIGIN_DIRS := \
-	$(LOCAL_PATH)/skia/ext
+GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
 	third_party/skia/src/opts/SkBitmapProcState_opts_none.cpp \
@@ -78,11 +74,10 @@ MY_DEFS_Debug := \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
-	'-DENABLE_LANGUAGE_DETECTION=1' \
-	'-DSK_BUILD_FOR_ANDROID' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \
@@ -95,16 +90,11 @@ MY_DEFS_Debug := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
-	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/include/config \
 	$(LOCAL_PATH)/third_party/skia/include/core \
-	$(LOCAL_PATH)/third_party/skia/include/effects \
-	$(LOCAL_PATH)/third_party/skia/include/images \
-	$(LOCAL_PATH)/third_party/skia/include/lazy \
-	$(LOCAL_PATH)/third_party/skia/include/pathops \
-	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/third_party/skia/src/core \
+	$(LOCAL_PATH)/third_party/skia/src/opts \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -170,11 +160,10 @@ MY_DEFS_Release := \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
+	'-DENABLE_CONFIGURATION_POLICY' \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
-	'-DENABLE_LANGUAGE_DETECTION=1' \
-	'-DSK_BUILD_FOR_ANDROID' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \
@@ -187,16 +176,11 @@ MY_DEFS_Release := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
-	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/include/config \
 	$(LOCAL_PATH)/third_party/skia/include/core \
-	$(LOCAL_PATH)/third_party/skia/include/effects \
-	$(LOCAL_PATH)/third_party/skia/include/images \
-	$(LOCAL_PATH)/third_party/skia/include/lazy \
-	$(LOCAL_PATH)/third_party/skia/include/pathops \
-	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/third_party/skia/src/core \
+	$(LOCAL_PATH)/third_party/skia/src/opts \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

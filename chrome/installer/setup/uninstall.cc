@@ -13,7 +13,7 @@
 #include "base/file_util.h"
 #include "base/files/file_enumerator.h"
 #include "base/path_service.h"
-#include "base/process_util.h"
+#include "base/process/kill.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -45,6 +45,7 @@
 #include "chrome/installer/util/shell_util.h"
 #include "chrome/installer/util/util_constants.h"
 #include "content/public/common/result_codes.h"
+#include "extensions/common/constants.h"
 #include "rlz/lib/rlz_lib.h"
 
 // Build-time generated include file.
@@ -908,7 +909,7 @@ const wchar_t kChromeExtProgId[] = L"ChromiumExt";
     // Delete Software\Classes\.crx,
     string16 ext_association(ShellUtil::kRegClasses);
     ext_association.append(L"\\");
-    ext_association.append(chrome::kExtensionFileExtension);
+    ext_association.append(extensions::kExtensionFileExtension);
     InstallUtil::DeleteRegistryKey(roots[i], ext_association);
   }
 }

@@ -5631,11 +5631,18 @@
    obj:/lib/libpthread-2.11.1.so
 }
 {
-   bug_155530
+   bug_155530a
    Memcheck:Leak
    fun:_Znw*
    ...
    fun:_ZN77GeolocationInfoBarQueueControllerTests_OneObservationPerInfoBarCancelled_Test8TestBodyEv
+}
+{
+   bug_155530b
+   Memcheck:Leak
+   fun:_Znw*
+   ...
+   fun:_ZN69PermissionQueueControllerTests_OneObservationPerInfoBarCancelled_Test8TestBodyEv
 }
 {
    bug_156705
@@ -7379,4 +7386,19 @@
    fun:_ZN15webkit_database15DatabaseTracker23GetAllOriginIdentifiersEPSt6vectorISsSaISsEE
    fun:_ZN15webkit_database12_GLOBAL__N_120GetOriginsOnDBThreadEPNS_15DatabaseTrackerEPSt3setI4GURLSt4lessIS4_ESaIS4_EE
 }
-
+{
+   quic_socket_utils_write_packet_msg_name
+   Memcheck:Param
+   socketcall.sendmsg(msg.msg_name)
+   obj:/lib/x86_64-linux-gnu/libpthread-2.15.so
+   fun:_ZN3net5tools15QuicSocketUtils11WritePacketEiPKcmRKSt6vectorIhSaIhEERKNS_10IPEndPointEPi
+   ...
+}
+{
+   quic_socket_utils_write_packet_msg_control
+   Memcheck:Param
+   socketcall.sendmsg(msg.msg_control)
+   obj:/lib/x86_64-linux-gnu/libpthread-2.15.so
+   fun:_ZN3net5tools15QuicSocketUtils11WritePacketEiPKcmRKSt6vectorIhSaIhEERKNS_10IPEndPointEPi
+   ...
+}

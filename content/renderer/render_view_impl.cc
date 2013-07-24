@@ -99,7 +99,6 @@
 #include "content/renderer/media/media_stream_dispatcher.h"
 #include "content/renderer/media/media_stream_impl.h"
 #include "content/renderer/media/render_media_log.h"
-#include "content/renderer/media/renderer_gpu_video_decoder_factories.h"
 #include "content/renderer/media/rtc_peer_connection_handler.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
 #include "content/renderer/media/webmediaplayer_impl.h"
@@ -133,7 +132,7 @@
 #include "media/base/filter_collection.h"
 #include "media/base/media_switches.h"
 #include "media/filters/audio_renderer_impl.h"
-#include "media/filters/gpu_video_decoder.h"
+#include "media/filters/gpu_video_decoder_factories.h"
 #include "net/base/data_url.h"
 #include "net/base/escape.h"
 #include "net/base/net_errors.h"
@@ -422,6 +421,13 @@ static WebReferrerPolicy GetReferrerPolicyFromRequest(
       frame->document().referrerPolicy();
 }
 
+static Referrer GetReferrerFromRequest(
+    WebFrame* frame,
+    const WebURLRequest& request) {
+  return Referrer(GURL(request.httpHeaderField(WebString::fromUTF8("Referer"))),
+                  GetReferrerPolicyFromRequest(frame, request));
+}
+
 static WebURLResponseExtraDataImpl* GetExtraDataFromResponse(
     const WebURLResponse& response) {
   return static_cast<WebURLResponseExtraDataImpl*>(
@@ -497,7 +503,8 @@ static bool IsTopLevelNavigation(WebFrame* frame) {
 // Returns false unless this is a top-level navigation that crosses origins.
 static bool IsNonLocalTopLevelNavigation(const GURL& url,
                                          WebFrame* frame,
-                                         WebNavigationType type) {
+                                         WebNavigationType type,
+                                         bool is_form_post) {
   if (!IsTopLevelNavigation(frame))
     return false;
 
@@ -510,19 +517,15 @@ static bool IsNonLocalTopLevelNavigation(const GURL& url,
   if (!url.SchemeIs(chrome::kHttpScheme) && !url.SchemeIs(chrome::kHttpsScheme))
     return false;
 
-  // Not interested in reloads/form submits/resubmits/back forward navigations.
   if (type != WebKit::WebNavigationTypeReload &&
-      type != WebKit::WebNavigationTypeFormSubmitted &&
-      type != WebKit::WebNavigationTypeFormResubmitted &&
-      type != WebKit::WebNavigationTypeBackForward) {
+      type != WebKit::WebNavigationTypeBackForward && !is_form_post) {
     // The opener relationship between the new window and the parent allows the
     // new window to script the parent and vice versa. This is not allowed if
     // the origins of the two domains are different. This can be treated as a
     // top level navigation and routed back to the host.
     WebKit::WebFrame* opener = frame->opener();
-    if (!opener) {
+    if (!opener)
       return true;
-    }
 
     if (url.GetOrigin() != GURL(opener->document().url()).GetOrigin())
       return true;
@@ -939,8 +942,10 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
   // The next group of objects all implement RenderViewObserver, so are deleted
   // along with the RenderView automatically.
   devtools_agent_ = new DevToolsAgent(this);
+  if (RenderWidgetCompositor* rwc = compositor()) {
+    webview()->devToolsAgent()->setLayerTreeId(rwc->GetLayerTreeId());
+  }
   mouse_lock_dispatcher_ = new RenderViewMouseLockDispatcher(this);
-
   new ImageLoadingHelper(this);
 
   // Create renderer_accessibility_ if needed.
@@ -1907,9 +1912,7 @@ void RenderViewImpl::UpdateURL(WebFrame* frame) {
     } else {
       // Bug 654101: the referrer will be empty on https->http transitions. It
       // would be nice if we could get the real referrer from somewhere.
-      params.referrer = Referrer(GURL(
-          original_request.httpHeaderField(WebString::fromUTF8("Referer"))),
-          GetReferrerPolicyFromRequest(frame, original_request));
+      params.referrer = GetReferrerFromRequest(frame, original_request);
     }
 
     string16 method = request.httpMethod();
@@ -2137,8 +2140,11 @@ WebView* RenderViewImpl::createView(
   params.opener_security_origin = security_url;
   params.opener_suppressed = creator->willSuppressOpenerInNewFrame();
   params.disposition = NavigationPolicyToDisposition(policy);
-  if (!request.isNull())
+  if (!request.isNull()) {
     params.target_url = request.url();
+    params.referrer = GetReferrerFromRequest(creator, request);
+  }
+  params.features = features;
 
   int32 routing_id = MSG_ROUTING_NONE;
   int32 main_frame_routing_id = MSG_ROUTING_NONE;
@@ -2815,6 +2821,14 @@ void RenderViewImpl::didHandleGestureEvent(
                     DidHandleGestureEvent(event));
 }
 
+void RenderViewImpl::initializeLayerTreeView() {
+  RenderWidget::initializeLayerTreeView();
+  RenderWidgetCompositor* rwc = compositor();
+  if (!rwc || !webview() || !webview()->devToolsAgent())
+    return;
+  webview()->devToolsAgent()->setLayerTreeId(rwc->GetLayerTreeId());
+}
+
 // WebKit::WebFrameClient -----------------------------------------------------
 
 WebKit::WebPlugin* RenderViewImpl::createPlugin(WebFrame* frame,
@@ -2950,7 +2964,7 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
     DVLOG(1) << "Using AudioRendererMixerManager-provided sink: " << sink.get();
   }
 
-  scoped_refptr<media::GpuVideoDecoder::Factories> gpu_factories =
+  scoped_refptr<media::GpuVideoDecoderFactories> gpu_factories =
       RenderThreadImpl::current()->GetGpuFactories();
 
   WebMediaPlayerParams params(
@@ -3049,16 +3063,24 @@ void RenderViewImpl::ClearEditCommands() {
 }
 
 SSLStatus RenderViewImpl::GetSSLStatusOfFrame(WebKit::WebFrame* frame) const {
-  return SSLStatus();
+  std::string security_info;
+  if (frame && frame->dataSource())
+    security_info = frame->dataSource()->response().securityInfo();
+
+  SSLStatus ssl_status;
+  DeserializeSecurityInfo(security_info,
+                          &ssl_status.cert_id,
+                          &ssl_status.cert_status,
+                          &ssl_status.security_bits,
+                          &ssl_status.connection_status);
+  return ssl_status;
 }
 
 void RenderViewImpl::loadURLExternally(
     WebFrame* frame, const WebURLRequest& request,
     WebNavigationPolicy policy,
     const WebString& suggested_name) {
-  Referrer referrer(
-      GURL(request.httpHeaderField(WebString::fromUTF8("Referer"))),
-      GetReferrerPolicyFromRequest(frame, request));
+  Referrer referrer(GetReferrerFromRequest(frame, request));
   if (policy == WebKit::WebNavigationPolicyDownload) {
     Send(new ViewHostMsg_DownloadUrl(routing_id_, request.url(), referrer,
                                      suggested_name));
@@ -3078,9 +3100,7 @@ WebNavigationPolicy RenderViewImpl::decidePolicyForNavigation(
     return WebKit::WebNavigationPolicyIgnore;
   }
 
-  Referrer referrer(
-      GURL(request.httpHeaderField(WebString::fromUTF8("Referer"))),
-      GetReferrerPolicyFromRequest(frame, request));
+  Referrer referrer(GetReferrerFromRequest(frame, request));
 
   if (is_swapped_out_) {
     if (request.url() != GURL(kSwappedOutURL)) {
@@ -3143,9 +3163,12 @@ WebNavigationPolicy RenderViewImpl::decidePolicyForNavigation(
 
   // If the browser is interested, then give it a chance to look at the request.
   if (is_content_initiated) {
+    bool is_form_post = ((type == WebKit::WebNavigationTypeFormSubmitted) ||
+                         (type == WebKit::WebNavigationTypeFormResubmitted)) &&
+                        EqualsASCII(request.httpMethod(), "POST");
     bool browser_handles_request =
         renderer_preferences_.browser_handles_non_local_top_level_requests &&
-        IsNonLocalTopLevelNavigation(url, frame, type);
+        IsNonLocalTopLevelNavigation(url, frame, type, is_form_post);
     if (!browser_handles_request) {
       browser_handles_request =
           renderer_preferences_.browser_handles_all_top_level_requests &&

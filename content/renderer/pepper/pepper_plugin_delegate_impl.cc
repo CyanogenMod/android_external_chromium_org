@@ -429,24 +429,6 @@ PepperPluginDelegateImpl::CreatePepperPluginModule(
   return module;
 }
 
-RendererPpapiHost* PepperPluginDelegateImpl::CreateExternalPluginModule(
-    scoped_refptr<webkit::ppapi::PluginModule> module,
-    const base::FilePath& path,
-    ppapi::PpapiPermissions permissions,
-    const IPC::ChannelHandle& channel_handle,
-    base::ProcessId peer_pid,
-    int plugin_child_id) {
-  // We don't call PepperPluginRegistry::AddLiveModule, as this module is
-  // managed externally.
-  return CreateOutOfProcessModule(module.get(),
-                                  path,
-                                  permissions,
-                                  channel_handle,
-                                  peer_pid,
-                                  plugin_child_id,
-                                  true);  // is_external = true
-}
-
 scoped_refptr<PepperBrokerImpl> PepperPluginDelegateImpl::CreateBroker(
     webkit::ppapi::PluginModule* plugin_module) {
   DCHECK(plugin_module);
@@ -1334,7 +1316,7 @@ void PepperPluginDelegateImpl::HandleDocumentLoad(
     // PPP_Instance function directly.
     scoped_refptr<ppapi::proxy::URLLoaderResource> loader_resource(
         new ppapi::proxy::URLLoaderResource(
-            host_impl->in_process_router()->GetPluginConnection(),
+            host_impl->in_process_router()->GetPluginConnection(pp_instance),
             pp_instance, pending_host_id, data));
 
     PP_Resource loader_pp_resource = loader_resource->GetReference();
@@ -1360,6 +1342,24 @@ void PepperPluginDelegateImpl::HandleDocumentLoad(
     dispatcher->Send(new PpapiMsg_PPPInstance_HandleDocumentLoad(
         ppapi::API_ID_PPP_INSTANCE, pp_instance, pending_host_id, data));
   }
+}
+
+RendererPpapiHost* PepperPluginDelegateImpl::CreateExternalPluginModule(
+    scoped_refptr<webkit::ppapi::PluginModule> module,
+    const base::FilePath& path,
+    ppapi::PpapiPermissions permissions,
+    const IPC::ChannelHandle& channel_handle,
+    base::ProcessId peer_pid,
+    int plugin_child_id) {
+  // We don't call PepperPluginRegistry::AddLiveModule, as this module is
+  // managed externally.
+  return CreateOutOfProcessModule(module.get(),
+                                  path,
+                                  permissions,
+                                  channel_handle,
+                                  peer_pid,
+                                  plugin_child_id,
+                                  true);  // is_external = true
 }
 
 base::SharedMemory* PepperPluginDelegateImpl::CreateAnonymousSharedMemory(

@@ -31,6 +31,7 @@
 #include "ppapi/c/ppp_messaging.h"
 #include "ppapi/c/ppp_mouse_lock.h"
 #include "ppapi/c/private/ppp_instance_private.h"
+#include "ppapi/shared_impl/ppapi_permissions.h"
 #include "ppapi/shared_impl/ppapi_preferences.h"
 #include "ppapi/shared_impl/ppb_gamepad_shared.h"
 #include "ppapi/shared_impl/ppb_input_event_shared.h"
@@ -47,6 +48,7 @@
 #include "printing/metafile.h"
 #include "printing/metafile_skia_wrapper.h"
 #include "printing/units.h"
+#include "skia/ext/platform_canvas.h"
 #include "skia/ext/platform_device.h"
 #include "third_party/WebKit/public/platform/WebGamepads.h"
 #include "third_party/WebKit/public/platform/WebString.h"
@@ -70,6 +72,8 @@
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkRect.h"
 #include "ui/base/range/range.h"
+#include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/image/image_skia_rep.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 #include "v8/include/v8.h"
@@ -85,6 +89,7 @@
 #include "webkit/plugins/ppapi/plugin_module.h"
 #include "webkit/plugins/ppapi/plugin_object.h"
 #include "webkit/plugins/ppapi/ppb_buffer_impl.h"
+#include "webkit/plugins/ppapi/ppb_file_ref_impl.h"
 #include "webkit/plugins/ppapi/ppb_graphics_3d_impl.h"
 #include "webkit/plugins/ppapi/ppb_image_data_impl.h"
 #include "webkit/plugins/ppapi/ppp_pdf.h"
@@ -2454,7 +2459,7 @@ PP_Var PluginInstance::GetPluginInstanceURL(
                                                         components);
 }
 
-PP_NaClResult PluginInstance::ResetAsProxied(
+PP_ExternalPluginResult PluginInstance::ResetAsProxied(
     scoped_refptr<PluginModule> module) {
   // Save the original module and switch over to the new one now that this
   // plugin is using the IPC-based proxy.
@@ -2477,7 +2482,7 @@ PP_NaClResult PluginInstance::ResetAsProxied(
     // While this could be a failure to implement the interface in the NaCl
     // module, it is more likely that the NaCl process has crashed. Either
     // way, report that module initialization failed.
-    return PP_NACL_ERROR_MODULE;
+    return PP_EXTERNAL_PLUGIN_ERROR_MODULE;
   }
 
   instance_interface_.reset(ppp_instance_combined);
@@ -2500,7 +2505,7 @@ PP_NaClResult PluginInstance::ResetAsProxied(
   scoped_ptr<const char*[]> argv_array(StringVectorToArgArray(argv_));
   if (!instance_interface_->DidCreate(pp_instance(), argn_.size(),
                                       argn_array.get(), argv_array.get()))
-    return PP_NACL_ERROR_INSTANCE;
+    return PP_EXTERNAL_PLUGIN_ERROR_INSTANCE;
   message_channel_->StopQueueingJavaScriptMessages();
 
   // Clear sent_initial_did_change_view_ and cancel any pending DidChangeView
@@ -2522,7 +2527,7 @@ PP_NaClResult PluginInstance::ResetAsProxied(
     nacl_document_loader_.reset(NULL);
   }
 
-  return PP_NACL_OK;
+  return PP_EXTERNAL_PLUGIN_OK;
 }
 
 bool PluginInstance::IsValidInstanceOf(PluginModule* module) {
@@ -2537,6 +2542,89 @@ NPP PluginInstance::instanceNPP() {
 
 v8::Isolate* PluginInstance::GetIsolate() const {
   return isolate_;
+}
+
+PluginInstance* PluginInstance::Get(PP_Instance instance_id) {
+  return HostGlobals::Get()->GetInstance(instance_id);
+}
+
+::ppapi::VarTracker* PluginInstance::GetVarTracker() {
+  return HostGlobals::Get()->GetVarTracker();
+}
+
+PP_Resource PluginInstance::CreateExternalFileReference(
+    const base::FilePath& external_file_path) {
+  webkit::ppapi::PPB_FileRef_Impl* ref =
+      webkit::ppapi::PPB_FileRef_Impl::CreateExternal(
+          pp_instance(), external_file_path, "");
+  return ref->GetReference();
+}
+
+PP_Resource PluginInstance::CreateImage(gfx::ImageSkia* source_image,
+                                        float scale) {
+  ui::ScaleFactor scale_factor = ui::GetScaleFactorFromScale(scale);
+  gfx::ImageSkiaRep image_skia_rep = source_image->GetRepresentation(
+      scale_factor);
+
+  if (image_skia_rep.is_null() || image_skia_rep.scale_factor() != scale_factor)
+    return 0;
+
+  scoped_refptr<webkit::ppapi::PPB_ImageData_Impl> image_data(
+      new webkit::ppapi::PPB_ImageData_Impl(
+          pp_instance(),
+          webkit::ppapi::PPB_ImageData_Impl::PLATFORM));
+  if (!image_data->Init(
+          webkit::ppapi::PPB_ImageData_Impl::GetNativeImageDataFormat(),
+          image_skia_rep.pixel_width(),
+          image_skia_rep.pixel_height(),
+          false)) {
+    return 0;
+  }
+
+  webkit::ppapi::ImageDataAutoMapper mapper(image_data.get());
+  if (!mapper.is_valid())
+    return 0;
+
+  skia::PlatformCanvas* canvas = image_data->GetPlatformCanvas();
+  // Note: Do not SkBitmap::copyTo the canvas bitmap directly because it will
+  // ignore the allocated pixels in shared memory and re-allocate a new buffer.
+  canvas->writePixels(image_skia_rep.sk_bitmap(), 0, 0);
+
+  return image_data->GetReference();
+}
+
+base::FilePath PluginInstance::GetModulePath() {
+  return module_->path();
+}
+
+PP_ExternalPluginResult PluginInstance::SwitchToOutOfProcessProxy(
+    const base::FilePath& file_path,
+    ::ppapi::PpapiPermissions permissions,
+    const IPC::ChannelHandle& channel_handle,
+    base::ProcessId plugin_pid,
+    int plugin_child_id) {
+  // Create a new module for each instance of the external plugin that is using
+  // the IPC based out-of-process proxy. We can't use the existing module,
+  // because it is configured for the in-process plugin, and we must keep it
+  // that way to allow the page to create other instances.
+  scoped_refptr<webkit::ppapi::PluginModule> external_plugin_module(
+      module_->CreateModuleForExternalPluginInstance());
+
+  content::RendererPpapiHost* renderer_ppapi_host =
+      delegate_->CreateExternalPluginModule(
+          external_plugin_module,
+          file_path,
+          permissions,
+          channel_handle,
+          plugin_pid,
+          plugin_child_id);
+  if (!renderer_ppapi_host) {
+    DLOG(ERROR) << "CreateExternalPluginModule() failed";
+    return PP_EXTERNAL_PLUGIN_ERROR_MODULE;
+  }
+
+  // Finally, switch the instance to the proxy.
+  return external_plugin_module->InitAsProxiedExternalPlugin(this);
 }
 
 void PluginInstance::DoSetCursor(WebCursorInfo* cursor) {

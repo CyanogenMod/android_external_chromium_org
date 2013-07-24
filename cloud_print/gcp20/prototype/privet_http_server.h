@@ -10,6 +10,7 @@
 
 #include "base/basictypes.h"
 #include "base/values.h"
+#include "net/http/http_status_code.h"
 #include "net/server/http_server.h"
 #include "net/server/http_server_request_info.h"
 
@@ -22,7 +23,6 @@ class PrivetHttpServer: public net::HttpServer::Delegate {
   enum RegistrationErrorStatus {
     REG_ERROR_OK,
     REG_ERROR_NO_RESULT,  // default value, never set.
-    REG_ERROR_REGISTERED,
 
     REG_ERROR_DEVICE_BUSY,
     REG_ERROR_PENDING_USER_ACTION,
@@ -38,8 +38,21 @@ class PrivetHttpServer: public net::HttpServer::Delegate {
     ~DeviceInfo();
 
     std::string version;
+    std::string name;
+    std::string description;
+    std::string url;
+    std::string id;
+    std::string device_state;
+    std::string connection_state;
     std::string manufacturer;
+    std::string model;
+    std::string serial_number;
+    std::string firmware;
+    int uptime;
+    std::string x_privet_token;
+
     std::vector<std::string> api;
+    std::vector<std::string> type;
   };
 
   class Delegate {
@@ -70,8 +83,14 @@ class PrivetHttpServer: public net::HttpServer::Delegate {
     // Invoked for receiving server error details.
     virtual void GetRegistrationServerError(std::string* description) = 0;
 
-    // Invoked if /privet/info is called.
+    // Invoked when /privet/info is called.
     virtual void CreateInfo(DeviceInfo* info) = 0;
+
+    // Invoked for checking should /privet/register be exposed.
+    virtual bool IsRegistered() const = 0;
+
+    // Invoked when XPrivetToken has to be checked.
+    virtual bool CheckXPrivetTokenHeader(const std::string& token) const = 0;
   };
 
   // Constructor doesn't start server.
@@ -98,9 +117,19 @@ class PrivetHttpServer: public net::HttpServer::Delegate {
                                   const std::string& data) OVERRIDE;
   virtual void OnClose(int connection_id) OVERRIDE;
 
+  // Sends error as response. Invoked when request method is invalid.
+  void ReportInvalidMethod(int connection_id);
+
+  // Returns |true| if |request| should be done with correct |method|.
+  // Otherwise sends |Invalid method| error.
+  // Also checks support of |request| by this server.
+  bool ValidateRequestMethod(int connection_id, const std::string& request,
+                             const std::string& method);
+
   // Processes http request after all preparations (XPrivetHeader check,
   // data handling etc.)
   net::HttpStatusCode ProcessHttpRequest(const GURL& url,
+                                         const std::string& data,
                                          std::string* response);
 
   // Pivet API methods. Return reference to NULL if output should be empty.

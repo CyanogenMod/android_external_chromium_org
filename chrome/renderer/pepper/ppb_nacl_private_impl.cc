@@ -11,10 +11,10 @@
 #include "base/logging.h"
 #include "base/rand_util.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/nacl_host_messages.h"
-#include "chrome/common/nacl_types.h"
 #include "chrome/renderer/chrome_render_process_observer.h"
 #include "chrome/renderer/pepper/pnacl_translation_resource_host.h"
+#include "components/nacl/common/nacl_host_messages.h"
+#include "components/nacl/common/nacl_types.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/sandbox_init.h"
@@ -24,6 +24,7 @@
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/private/pp_file_handle.h"
 #include "ppapi/native_client/src/trusted/plugin/nacl_entry_points.h"
+#include "ppapi/shared_impl/ppapi_permissions.h"
 #include "ppapi/shared_impl/ppapi_preferences.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/thunk/enter.h"
@@ -32,8 +33,6 @@
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "third_party/WebKit/public/web/WebView.h"
-#include "webkit/plugins/ppapi/host_globals.h"
-#include "webkit/plugins/ppapi/plugin_module.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 
 namespace {
@@ -78,7 +77,7 @@ static int GetRoutingID(PP_Instance instance) {
 }
 
 // Launch NaCl's sel_ldr process.
-PP_NaClResult LaunchSelLdr(PP_Instance instance,
+PP_ExternalPluginResult LaunchSelLdr(PP_Instance instance,
                            const char* alleged_url,
                            PP_Bool uses_irt,
                            PP_Bool uses_ppapi,
@@ -99,7 +98,7 @@ PP_NaClResult LaunchSelLdr(PP_Instance instance,
   if (uses_ppapi) {
     routing_id = GetRoutingID(instance);
     if (!routing_id)
-      return PP_NACL_FAILED;
+      return PP_EXTERNAL_PLUGIN_FAILED;
   }
 
   InstanceInfo instance_info;
@@ -125,11 +124,11 @@ PP_NaClResult LaunchSelLdr(PP_Instance instance,
                                  PP_ToBool(enable_exception_handling)),
           &launch_result,
           &error_message_string))) {
-    return PP_NACL_FAILED;
+    return PP_EXTERNAL_PLUGIN_FAILED;
   }
   if (!error_message_string.empty()) {
     *error_message = ppapi::StringVar::StringToPPVar(error_message_string);
-    return PP_NACL_FAILED;
+    return PP_EXTERNAL_PLUGIN_FAILED;
   }
   result_socket = launch_result.imc_channel_handle;
   instance_info.channel_handle = launch_result.ipc_channel_handle;
@@ -147,50 +146,32 @@ PP_NaClResult LaunchSelLdr(PP_Instance instance,
   *(static_cast<NaClHandle*>(imc_handle)) =
       nacl::ToNativeHandle(result_socket);
 
-  return PP_NACL_OK;
+  return PP_EXTERNAL_PLUGIN_OK;
 }
 
-PP_NaClResult StartPpapiProxy(PP_Instance instance) {
+PP_ExternalPluginResult StartPpapiProxy(PP_Instance instance) {
   InstanceInfoMap& map = g_instance_info.Get();
   InstanceInfoMap::iterator it = map.find(instance);
   if (it == map.end()) {
     DLOG(ERROR) << "Could not find instance ID";
-    return PP_NACL_FAILED;
+    return PP_EXTERNAL_PLUGIN_FAILED;
   }
   InstanceInfo instance_info = it->second;
   map.erase(it);
 
   webkit::ppapi::PluginInstance* plugin_instance =
-      content::GetHostGlobals()->GetInstance(instance);
+      webkit::ppapi::PluginInstance::Get(instance);
   if (!plugin_instance) {
     DLOG(ERROR) << "GetInstance() failed";
-    return PP_NACL_ERROR_MODULE;
+    return PP_EXTERNAL_PLUGIN_ERROR_MODULE;
   }
 
-  // Create a new module for each instance of the NaCl plugin that is using
-  // the IPC based out-of-process proxy. We can't use the existing module,
-  // because it is configured for the in-process NaCl plugin, and we must
-  // keep it that way to allow the page to create other instances.
-  webkit::ppapi::PluginModule* plugin_module = plugin_instance->module();
-  scoped_refptr<webkit::ppapi::PluginModule> nacl_plugin_module(
-      plugin_module->CreateModuleForNaClInstance());
-
-  content::RendererPpapiHost* renderer_ppapi_host =
-      content::RendererPpapiHost::CreateExternalPluginModule(
-          nacl_plugin_module,
-          plugin_instance,
-          base::FilePath().AppendASCII(instance_info.url.spec()),
-          instance_info.permissions,
-          instance_info.channel_handle,
-          instance_info.plugin_pid,
-          instance_info.plugin_child_id);
-  if (!renderer_ppapi_host) {
-    DLOG(ERROR) << "CreateExternalPluginModule() failed";
-    return PP_NACL_ERROR_MODULE;
-  }
-
-  // Finally, switch the instance to the proxy.
-  return nacl_plugin_module->InitAsProxiedNaCl(plugin_instance);
+  return plugin_instance->SwitchToOutOfProcessProxy(
+      base::FilePath().AppendASCII(instance_info.url.spec()),
+      instance_info.permissions,
+      instance_info.channel_handle,
+      instance_info.plugin_pid,
+      instance_info.plugin_child_id);
 }
 
 int UrandomFD(void) {
@@ -316,7 +297,7 @@ PP_Bool IsPnaclEnabled() {
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnablePnacl));
 }
 
-PP_NaClResult ReportNaClError(PP_Instance instance,
+PP_ExternalPluginResult ReportNaClError(PP_Instance instance,
                               PP_NaClError error_id) {
   IPC::Sender* sender = content::RenderThread::Get();
 
@@ -326,9 +307,9 @@ PP_NaClResult ReportNaClError(PP_Instance instance,
               // or is it safe to include the appropriate headers in
               // render_messages.h?
               GetRoutingID(instance), static_cast<int>(error_id)))) {
-    return PP_NACL_FAILED;
+    return PP_EXTERNAL_PLUGIN_FAILED;
   }
-  return PP_NACL_OK;
+  return PP_EXTERNAL_PLUGIN_OK;
 }
 
 PP_FileHandle OpenNaClExecutable(PP_Instance instance,

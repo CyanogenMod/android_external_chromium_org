@@ -113,6 +113,15 @@ scoped_ptr<ServiceResolver> ServiceDiscoveryHostClient::CreateServiceResolver(
       new ServiceResolverProxy(this, service_name, callback));
 }
 
+scoped_ptr<LocalDomainResolver>
+ServiceDiscoveryHostClient::CreateLocalDomainResolver(
+    const std::string& domain,
+    net::AddressFamily address_family,
+    const LocalDomainResolver::IPAddressCallback& callback) {
+  NOTIMPLEMENTED();  // TODO(noamsml): Multiprocess domain resolver
+  return scoped_ptr<LocalDomainResolver>();
+}
+
 uint64 ServiceDiscoveryHostClient::RegisterWatcherCallback(
     const ServiceWatcher::UpdatedCallback& callback) {
   DCHECK(CalledOnValidThread());
@@ -179,8 +188,13 @@ void ServiceDiscoveryHostClient::Send(IPC::Message* msg) {
   BrowserThread::PostTask(
       BrowserThread::IO,
       FROM_HERE,
-      base::Bind(base::IgnoreResult(&content::UtilityProcessHost::Send),
-                 utility_host_, msg));
+      base::Bind(&ServiceDiscoveryHostClient::SendOnIOThread, this, msg));
+}
+
+void ServiceDiscoveryHostClient::SendOnIOThread(IPC::Message* msg) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  if (utility_host_)
+    utility_host_->Send(msg);
 }
 
 bool ServiceDiscoveryHostClient::OnMessageReceived(

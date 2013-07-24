@@ -4,6 +4,7 @@
 
 #include "cloud_print/gcp20/prototype/privet_http_server.h"
 
+#include "base/command_line.h"
 #include "base/json/json_writer.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
@@ -39,9 +40,24 @@ scoped_ptr<base::DictionaryValue> CreateErrorWithTimeout(
   return error.Pass();
 }
 
+// Returns |true| if |request| should be GET method.
+bool IsGetMethod(const std::string& request) {
+  return request == "/privet/info"/* ||
+         request == "/privet/accesstoken" ||
+         request == "/privet/capabilities" ||
+         request == "/privet/printer/jobstate"*/;
+}
+
+// Returns |true| if |request| should be POST method.
+bool IsPostMethod(const std::string& request) {
+  return request == "/privet/register"/* ||
+         request == "/privet/printer/createjob" ||
+         request == "/privet/printer/submitdoc"*/;
+}
+
 }  // namespace
 
-PrivetHttpServer::DeviceInfo::DeviceInfo() {
+PrivetHttpServer::DeviceInfo::DeviceInfo() : uptime(0) {
 }
 
 PrivetHttpServer::DeviceInfo::~DeviceInfo() {
@@ -85,11 +101,35 @@ void PrivetHttpServer::OnHttpRequest(int connection_id,
   VLOG(1) << "Processing HTTP request: " << info.path;
   GURL url("http://host" + info.path);
 
-  // TODO(maksymb): Add checking for X-PrivetToken.
-  std::string response;
-  net::HttpStatusCode status_code = ProcessHttpRequest(url, &response);
+  if (!ValidateRequestMethod(connection_id, url.path(), info.method))
+    return;
 
-  server_->Send(connection_id, status_code, response, "text/plain");
+  if (!CommandLine::ForCurrentProcess()->HasSwitch("disable-x-token")) {
+    net::HttpServerRequestInfo::HeadersMap::const_iterator iter =
+        info.headers.find("X-Privet-Token");
+    if (iter == info.headers.end()) {
+      server_->Send(connection_id, net::HTTP_BAD_REQUEST,
+                    "Missing X-Privet-Token header.\n"
+                    "TODO: Message should be in header, not in the body!",
+                    "text/plain");
+      return;
+    }
+
+    if (url.path() != "/privet/info" &&
+        !delegate_->CheckXPrivetTokenHeader(iter->second)) {
+      server_->Send(connection_id, net::HTTP_BAD_REQUEST,
+                    "{\"error\":\"invalid_x_privet_token\"}",
+                    "application/json");
+      return;
+    }
+  }
+
+  std::string response;
+  net::HttpStatusCode status_code =
+      ProcessHttpRequest(url, info.data, &response);
+  // TODO(maksymb): Add checking for right |info.method| in query.
+
+  server_->Send(connection_id, status_code, response, "application/json");
 }
 
 void PrivetHttpServer::OnWebSocketRequest(
@@ -103,8 +143,36 @@ void PrivetHttpServer::OnWebSocketMessage(int connection_id,
 void PrivetHttpServer::OnClose(int connection_id) {
 }
 
+void PrivetHttpServer::ReportInvalidMethod(int connection_id) {
+  server_->Send(connection_id, net::HTTP_BAD_REQUEST, "Invalid method",
+                "text/plain");
+}
+
+bool PrivetHttpServer::ValidateRequestMethod(int connection_id,
+                                             const std::string& request,
+                                             const std::string& method) {
+  DCHECK(!IsGetMethod(request) || !IsPostMethod(request));
+
+  if (!IsGetMethod(request) && !IsPostMethod(request)) {
+    server_->Send404(connection_id);
+    return false;
+  }
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch("disable-method-check"))
+    return true;
+
+  if ((IsGetMethod(request) && method != "GET") ||
+      (IsPostMethod(request) && method != "POST")) {
+    ReportInvalidMethod(connection_id);
+    return false;
+  }
+
+  return true;
+}
+
 net::HttpStatusCode PrivetHttpServer::ProcessHttpRequest(
     const GURL& url,
+    const std::string& data,
     std::string* response) {
   net::HttpStatusCode status_code = net::HTTP_OK;
   scoped_ptr<base::DictionaryValue> json_response;
@@ -114,8 +182,7 @@ net::HttpStatusCode PrivetHttpServer::ProcessHttpRequest(
   } else if (url.path() == "/privet/register") {
     json_response = ProcessRegister(url, &status_code);
   } else {
-    response->clear();
-    return net::HTTP_NOT_FOUND;
+    NOTREACHED();
   }
 
   if (!json_response) {
@@ -139,12 +206,28 @@ scoped_ptr<base::DictionaryValue> PrivetHttpServer::ProcessInfo(
 
   scoped_ptr<base::DictionaryValue> response(new base::DictionaryValue);
   response->SetString("version", info.version);
+  response->SetString("name", info.name);
+  response->SetString("description", info.description);
+  response->SetString("url", info.url);
+  response->SetString("id", info.id);
+  response->SetString("device_state", info.device_state);
+  response->SetString("connection_state", info.connection_state);
   response->SetString("manufacturer", info.manufacturer);
+  response->SetString("model", info.model);
+  response->SetString("serial_number", info.serial_number);
+  response->SetString("firmware", info.firmware);
+  response->SetInteger("uptime", info.uptime);
+  response->SetString("x-privet-token", info.x_privet_token);
 
   base::ListValue api;
   for (size_t i = 0; i < info.api.size(); ++i)
     api.AppendString(info.api[i]);
   response->Set("api", api.DeepCopy());
+
+  base::ListValue type;
+  for (size_t i = 0; i < info.type.size(); ++i)
+    type.AppendString(info.type[i]);
+  response->Set("type", type.DeepCopy());
 
   *status_code = net::HTTP_OK;
   return response.Pass();
@@ -153,7 +236,10 @@ scoped_ptr<base::DictionaryValue> PrivetHttpServer::ProcessInfo(
 scoped_ptr<base::DictionaryValue> PrivetHttpServer::ProcessRegister(
     const GURL& url,
     net::HttpStatusCode* status_code) {
-  // TODO(maksymb): Add saving state to drive.
+  if (delegate_->IsRegistered()) {
+    *status_code = net::HTTP_NOT_FOUND;
+    return scoped_ptr<base::DictionaryValue>();
+  }
 
   std::string action;
   if (!net::GetValueForKeyInQuery(url, "action", &action)) {
@@ -211,10 +297,6 @@ void PrivetHttpServer::ProcessRegistrationStatus(
       break;
     case REG_ERROR_NO_RESULT:
       *status_code = net::HTTP_BAD_REQUEST;
-      current_response->reset();
-      break;
-    case REG_ERROR_REGISTERED:
-      *status_code = net::HTTP_NOT_FOUND;
       current_response->reset();
       break;
 

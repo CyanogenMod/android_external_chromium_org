@@ -96,6 +96,9 @@ include $(LOCAL_PATH)/sandbox/sandbox.target.darwin-mips.mk
 include $(LOCAL_PATH)/sandbox/sandbox_services.target.darwin-mips.mk
 include $(LOCAL_PATH)/sdch/sdch.target.darwin-mips.mk
 include $(LOCAL_PATH)/skia/skia.target.darwin-mips.mk
+include $(LOCAL_PATH)/skia/skia_chrome.target.darwin-mips.mk
+include $(LOCAL_PATH)/skia/skia_chrome_opts.target.darwin-mips.mk
+include $(LOCAL_PATH)/skia/skia_library.target.darwin-mips.mk
 include $(LOCAL_PATH)/skia/skia_opts.target.darwin-mips.mk
 include $(LOCAL_PATH)/sql/sql.target.darwin-mips.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.darwin-mips.mk
@@ -223,7 +226,6 @@ include $(LOCAL_PATH)/webkit/common/gpu/webkit_gpu.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/user_agent.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/webkit_version.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/common/webkit_common.target.darwin-mips.mk
-include $(LOCAL_PATH)/webkit/glue/glue_common.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/plugins/plugins_common.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_bindings.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_support.target.darwin-mips.mk
@@ -232,7 +234,6 @@ include $(LOCAL_PATH)/webkit/support/glue.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/support/glue_child.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/support/overscroller_jni_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/support/plugins.target.darwin-mips.mk
-include $(LOCAL_PATH)/webkit/support/webkit_media.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_resources.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_browser.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_common.target.darwin-mips.mk

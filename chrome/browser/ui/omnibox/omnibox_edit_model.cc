@@ -116,18 +116,18 @@ void RecordPercentageMatchHistogram(const string16& old_text,
   if (search_term_replacement_active) {
     if (transition == content::PAGE_TRANSITION_TYPED) {
       UMA_HISTOGRAM_PERCENTAGE(
-          "InstantExtended.PercentageMatchQuerytoURL", percent);
+          "InstantExtended.PercentageMatchV2_QuerytoURL", percent);
     } else {
       UMA_HISTOGRAM_PERCENTAGE(
-          "InstantExtended.PercentageMatchQuerytoQuery", percent);
+          "InstantExtended.PercentageMatchV2_QuerytoQuery", percent);
     }
   } else {
     if (transition == content::PAGE_TRANSITION_TYPED) {
       UMA_HISTOGRAM_PERCENTAGE(
-          "InstantExtended.PercentageMatchURLtoURL", percent);
+          "InstantExtended.PercentageMatchV2_URLtoURL", percent);
     } else {
       UMA_HISTOGRAM_PERCENTAGE(
-          "InstantExtended.PercentageMatchURLtoQuery", percent);
+          "InstantExtended.PercentageMatchV2_URLtoQuery", percent);
     }
   }
 }
@@ -435,8 +435,7 @@ void OmniboxEditModel::SetInputInProgress(bool in_progress) {
   }
   controller_->OnInputInProgress(in_progress);
 
-  delegate_->NotifySearchTabHelper(user_input_in_progress_, !in_revert_,
-                                   popup_model()->IsOpen(), user_text_.empty());
+  delegate_->NotifySearchTabHelper(user_input_in_progress_, !in_revert_);
 }
 
 void OmniboxEditModel::Revert() {
@@ -765,8 +764,7 @@ bool OmniboxEditModel::AcceptKeyword(EnteredKeywordModeMethod entered_method) {
 void OmniboxEditModel::AcceptTemporaryTextAsUserText() {
   InternalSetUserText(UserTextFromDisplayText(view_->GetText()));
   has_temporary_text_ = false;
-  delegate_->NotifySearchTabHelper(user_input_in_progress_, !in_revert_,
-                                   popup_model()->IsOpen(), user_text_.empty());
+  delegate_->NotifySearchTabHelper(user_input_in_progress_, !in_revert_);
 }
 
 void OmniboxEditModel::ClearKeyword(const string16& visible_text) {
@@ -814,8 +812,7 @@ void OmniboxEditModel::OnSetFocus(bool control_down) {
                                                 permanent_text_);
   }
 
-  delegate_->NotifySearchTabHelper(user_input_in_progress_, !in_revert_,
-                                   popup_model()->IsOpen(), user_text_.empty());
+  delegate_->NotifySearchTabHelper(user_input_in_progress_, !in_revert_);
 }
 
 void OmniboxEditModel::SetCaretVisibility(bool visible) {
@@ -836,8 +833,7 @@ void OmniboxEditModel::OnWillKillFocus(gfx::NativeView view_gaining_focus) {
 
   // TODO(jered): Rip this out along with StartZeroSuggest.
   autocomplete_controller()->StopZeroSuggest();
-  delegate_->NotifySearchTabHelper(user_input_in_progress_, !in_revert_,
-                                   popup_model()->IsOpen(), user_text_.empty());
+  delegate_->NotifySearchTabHelper(user_input_in_progress_, !in_revert_);
 }
 
 void OmniboxEditModel::OnKillFocus() {

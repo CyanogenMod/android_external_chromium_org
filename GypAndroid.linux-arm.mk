@@ -98,6 +98,9 @@ include $(LOCAL_PATH)/sandbox/sandbox_services_headers.target.linux-arm.mk
 include $(LOCAL_PATH)/sandbox/seccomp_bpf.target.linux-arm.mk
 include $(LOCAL_PATH)/sdch/sdch.target.linux-arm.mk
 include $(LOCAL_PATH)/skia/skia.target.linux-arm.mk
+include $(LOCAL_PATH)/skia/skia_chrome.target.linux-arm.mk
+include $(LOCAL_PATH)/skia/skia_chrome_opts.target.linux-arm.mk
+include $(LOCAL_PATH)/skia/skia_library.target.linux-arm.mk
 include $(LOCAL_PATH)/skia/skia_opts.target.linux-arm.mk
 include $(LOCAL_PATH)/skia/skia_opts_neon.target.linux-arm.mk
 include $(LOCAL_PATH)/sql/sql.target.linux-arm.mk
@@ -227,7 +230,6 @@ include $(LOCAL_PATH)/webkit/common/gpu/webkit_gpu.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/user_agent.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/webkit_version.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/common/webkit_common.target.linux-arm.mk
-include $(LOCAL_PATH)/webkit/glue/glue_common.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/plugins/plugins_common.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_bindings.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_support.target.linux-arm.mk
@@ -236,7 +238,6 @@ include $(LOCAL_PATH)/webkit/support/glue.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/support/glue_child.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/support/overscroller_jni_headers.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/support/plugins.target.linux-arm.mk
-include $(LOCAL_PATH)/webkit/support/webkit_media.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/webkit_resources.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_browser.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_common.target.linux-arm.mk

@@ -13,7 +13,6 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/metrics/histogram.h"
-#include "base/process_util.h"
 #include "base/sha1.h"
 #include "base/threading/thread.h"
 #include "content/browser/browser_child_process_host_impl.h"
@@ -279,6 +278,8 @@ class GpuSandboxedProcessLauncherDelegate
 
 }  // anonymous namespace
 
+// Single process not supported in multiple dll mode currently.
+#if !defined(CHROME_MULTIPLE_DLL)
 // This class creates a GPU thread (instead of a GPU process), when running
 // with --in-process-gpu or --single-process.
 class GpuMainThread : public base::Thread {
@@ -312,6 +313,7 @@ class GpuMainThread : public base::Thread {
 
   DISALLOW_COPY_AND_ASSIGN(GpuMainThread);
 };
+#endif  // !CHROME_MULTIPLE_DLL
 
 // static
 bool GpuProcessHost::ValidateHost(GpuProcessHost* host) {
@@ -596,6 +598,8 @@ bool GpuProcessHost::Init() {
   if (channel_id.empty())
     return false;
 
+  // Single process not supported in multiple dll mode currently.
+#if !defined(CHROME_MULTIPLE_DLL)
   if (in_process_) {
     CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kDisableGpuWatchdog);
@@ -604,7 +608,9 @@ bool GpuProcessHost::Init() {
     in_process_gpu_thread_->Start();
 
     OnProcessLaunched();  // Fake a callback that the process is ready.
-  } else if (!LaunchGpuProcess(channel_id)) {
+  } else
+#endif  // !CHROME_MULTIPLE_DLL
+      if (!LaunchGpuProcess(channel_id)) {
     return false;
   }
 

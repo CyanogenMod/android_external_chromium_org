@@ -4073,6 +4073,10 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="InstantExtended.PercentageMatchQuerytoQuery" units="%">
+  <obsolete>
+    Deprecated 2013-07. Please see
+    InstantExtended.PercentageMatchV2_QuerytoQuery instead.
+  </obsolete>
   <summary>
     Records the number of matching characters at the start of the user's text as
     a percentage of average length between the old and new text when the user
@@ -4081,6 +4085,10 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="InstantExtended.PercentageMatchQuerytoURL" units="%">
+  <obsolete>
+    Deprecated 2013-07. Please see InstantExtended.PercentageMatchV2_QuerytoURL
+    instead.
+  </obsolete>
   <summary>
     Records the number of matching characters at the start of the user's text as
     a percentage of average length between the old and new text when the user
@@ -4090,6 +4098,10 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="InstantExtended.PercentageMatchURLtoQuery" units="%">
+  <obsolete>
+    Deprecated 2013-07. Please see InstantExtended.PercentageMatchV2_URLtoQuery
+    instead.
+  </obsolete>
   <summary>
     Records the number of matching characters at the start of the user's text as
     a percentage of average length between the old and new text when the user
@@ -4098,6 +4110,43 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="InstantExtended.PercentageMatchURLtoURL" units="%">
+  <obsolete>
+    Deprecated 2013-07. Please see InstantExtended.PercentageMatchV2_URLtoURL
+    instead.
+  </obsolete>
+  <summary>
+    Records the number of matching characters at the start of the user's text as
+    a percentage of average length between the old and new text when the user
+    navigates from a url to another url.
+  </summary>
+</histogram>
+
+<histogram name="InstantExtended.PercentageMatchV2_QuerytoQuery" units="%">
+  <summary>
+    Records the number of matching characters at the start of the user's text as
+    a percentage of average length between the old and new text when the user
+    navigates from a search query to another search query.
+  </summary>
+</histogram>
+
+<histogram name="InstantExtended.PercentageMatchV2_QuerytoURL" units="%">
+  <summary>
+    Records the number of matching characters at the start of the user's text as
+    a percentage of average length between the old and new text when the user
+    navigates from a search query to a url. Example: Accidental search for
+    google.con, then navigation to google.com.
+  </summary>
+</histogram>
+
+<histogram name="InstantExtended.PercentageMatchV2_URLtoQuery" units="%">
+  <summary>
+    Records the number of matching characters at the start of the user's text as
+    a percentage of average length between the old and new text when the user
+    navigates from a url to a search query.
+  </summary>
+</histogram>
+
+<histogram name="InstantExtended.PercentageMatchV2_URLtoURL" units="%">
   <summary>
     Records the number of matching characters at the start of the user's text as
     a percentage of average length between the old and new text when the user
@@ -13030,6 +13079,10 @@ other types of suffix sets.
   <summary>Error codes returned by sqlite for the appcache db.</summary>
 </histogram>
 
+<histogram name="Sqlite.CloseFailure" enum="SqliteErrorCode">
+  <summary>Error which prevented database close.</summary>
+</histogram>
+
 <histogram name="Sqlite.Cookie.Error" enum="SqliteErrorCode">
   <summary>Error codes returned by sqlite the cookie db.</summary>
 </histogram>
@@ -13061,6 +13114,14 @@ other types of suffix sets.
 
 <histogram name="Sqlite.History.Error" enum="SqliteErrorCode">
   <summary>Error codes returned by sqlite for the history db.</summary>
+</histogram>
+
+<histogram name="Sqlite.OpenFailure" enum="SqliteErrorCode">
+  <summary>Error which prevented database open.</summary>
+</histogram>
+
+<histogram name="Sqlite.OpenProbeFailure" enum="SqliteErrorCode">
+  <summary>Error from first read of the database.</summary>
 </histogram>
 
 <histogram name="Sqlite.Quota.Error" enum="SqliteErrorCode">
@@ -15468,6 +15529,7 @@ other types of suffix sets.
   <int value="5" label="UNCOMMON_CONTENT"/>
   <int value="6" label="USER_VALIDATED"/>
   <int value="7" label="DANGEROUS_HOST"/>
+  <int value="8" label="POTENTIALLY_UNWANTED"/>
 </enum>
 
 <enum name="DownloadSavePackageEvent" type="int">
@@ -16634,6 +16696,7 @@ other types of suffix sets.
   <int value="506" label="SYSTEM_CPU_GETINFO"/>
   <int value="507" label="SYSTEM_DISPLAY_GETINFO"/>
   <int value="508" label="SYSTEM_DISPLAY_SETDISPLAYPROPERTIES"/>
+  <int value="509" label="SYSTEM_MEMORY_GETINFO"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">

@@ -129,7 +129,7 @@ WallpaperManager::WallpaperManager()
                  chrome::NOTIFICATION_LOGIN_USER_CHANGED,
                  content::NotificationService::AllSources());
   registrar_.Add(this,
-                 chrome::NOTIFICATION_LOGIN_WEBUI_VISIBLE,
+                 chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE,
                  content::NotificationService::AllSources());
   registrar_.Add(this,
                  chrome::NOTIFICATION_WALLPAPER_ANIMATION_FINISHED,
@@ -267,6 +267,14 @@ void WallpaperManager::InitializeWallpaper() {
     return;
   }
 
+  if (CommandLine::ForCurrentProcess()->
+          HasSwitch(chromeos::switches::kGuestSession)) {
+    // Guest wallpaper should be initialized when guest login.
+    // Note: This maybe called before login. So IsLoggedInAsGuest can not be
+    // used here to determine if current user is guest.
+    return;
+  }
+
   if (!user_manager->IsUserLoggedIn()) {
     if (!StartupUtils::IsDeviceRegistered())
       SetDefaultWallpaper();
@@ -286,7 +294,7 @@ void WallpaperManager::Observe(int type,
       ClearWallpaperCache();
       break;
     }
-    case chrome::NOTIFICATION_LOGIN_WEBUI_VISIBLE: {
+    case chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE: {
       if (!CommandLine::ForCurrentProcess()->
           HasSwitch(switches::kDisableBootAnimation)) {
         BrowserThread::PostDelayedTask(

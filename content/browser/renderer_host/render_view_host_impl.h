@@ -13,7 +13,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
-#include "base/process_util.h"
+#include "base/process/kill.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/site_instance_impl.h"
@@ -123,8 +123,7 @@ class CONTENT_EXPORT RenderViewHostImpl
       RenderWidgetHostDelegate* widget_delegate,
       int routing_id,
       int main_frame_routing_id,
-      bool swapped_out,
-      SessionStorageNamespace* session_storage_namespace);
+      bool swapped_out);
   virtual ~RenderViewHostImpl();
 
   // RenderViewHost implementation.
@@ -687,9 +686,6 @@ class CONTENT_EXPORT RenderViewHostImpl
 
   // True if the render view can be shut down suddenly.
   bool sudden_termination_allowed_;
-
-  // The session storage namespace to be used by the associated render view.
-  scoped_refptr<SessionStorageNamespaceImpl> session_storage_namespace_;
 
   // The termination status of the last render view that terminated.
   base::TerminationStatus render_view_termination_status_;

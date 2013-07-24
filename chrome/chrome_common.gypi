@@ -24,6 +24,7 @@
         # TODO(gregoryd): chrome_resources and chrome_strings could be
         #  shared with the 64-bit target, but it does not work due to a gyp
         # issue.
+        '../third_party/cld/cld.gyp:cld',
         'common_net',
         'common_version',
         'installer_util',
@@ -53,8 +54,6 @@
       'sources': [
         '../apps/app_shim/app_shim_launch.h',
         '../apps/app_shim/app_shim_messages.h',
-        '../extensions/common/constants.cc',
-        '../extensions/common/constants.h',
         '../extensions/common/crx_file.cc',
         '../extensions/common/crx_file.h',
         '../extensions/common/draggable_region.cc',
@@ -405,11 +404,6 @@
         'common/multi_process_lock_linux.cc',
         'common/multi_process_lock_mac.cc',
         'common/multi_process_lock_win.cc',
-        'common/nacl_host_messages.h',
-        'common/nacl_messages.cc',
-        'common/nacl_messages.h',
-        'common/nacl_types.cc',
-        'common/nacl_types.h',
         'common/omaha_query_params/omaha_query_params.cc',
         'common/omaha_query_params/omaha_query_params.h',
         'common/omnibox_focus_state.h',
@@ -420,8 +414,6 @@
         'common/pepper_flash.h',
         'common/pepper_permission_util.cc',
         'common/pepper_permission_util.h',
-        'common/pnacl_types.cc',
-        'common/pnacl_types.h',
         'common/policy/policy_schema.cc',
         'common/policy/policy_schema.h',
         'common/pref_names_util.cc',
@@ -480,8 +472,11 @@
         'common/web_application_info.h',
         'common/worker_thread_ticker.cc',
         'common/worker_thread_ticker.h',
+        '../components/nacl/common/nacl_host_messages.h',
         '../components/nacl/common/nacl_process_type.h',
         '../components/nacl/common/nacl_sandbox_type_mac.h',
+        '../components/nacl/common/pnacl_types.cc',
+        '../components/nacl/common/pnacl_types.h',
       ],
       'conditions': [
         ['enable_extensions==1', {
@@ -538,7 +533,6 @@
             '<(DEPTH)/third_party/adobe/flash/flash_player.gyp:flapper_version_h',
             '<(DEPTH)/third_party/re2/re2.gyp:re2',
             '<(DEPTH)/third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
-            '<(DEPTH)/webkit/support/webkit_support.gyp:glue',
           ],
         }, {  # OS == ios
           'sources/': [
@@ -571,6 +565,11 @@
           ],
           'include_dirs': [
             '<(DEPTH)/breakpad/src',
+          ],
+        }],
+        ['OS!="ios" and chrome_multiple_dll!=1', {
+          'dependencies': [
+            '<(DEPTH)/webkit/support/webkit_support.gyp:glue',
           ],
         }],
         ['OS=="android"', {
@@ -651,11 +650,6 @@
           'sources!': [
             'common/media/webrtc_logging_messages.h',
           ]
-        }],
-        ['enable_language_detection==1', {
-          'dependencies': [
-            '../third_party/cld/cld.gyp:cld',
-          ],
         }],
       ],
       'target_conditions': [
