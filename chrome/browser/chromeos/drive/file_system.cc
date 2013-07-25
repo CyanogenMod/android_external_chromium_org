@@ -671,6 +671,72 @@ void FileSystem::OnGetAboutResource(
                about_resource->quota_bytes_used());
 }
 
+void FileSystem::GetShareUrl(
+    const base::FilePath& file_path,
+    const GURL& embed_origin,
+    const GetShareUrlCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  // Resolve the resource id.
+  resource_metadata_->GetResourceEntryByPathOnUIThread(
+      file_path,
+      base::Bind(&FileSystem::GetShareUrlAfterGetResourceEntry,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 file_path,
+                 embed_origin,
+                 callback));
+}
+
+void FileSystem::GetShareUrlAfterGetResourceEntry(
+    const base::FilePath& file_path,
+    const GURL& embed_origin,
+    const GetShareUrlCallback& callback,
+    FileError error,
+    scoped_ptr<ResourceEntry> entry) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  if (error != FILE_ERROR_OK) {
+    callback.Run(error, GURL());
+    return;
+  }
+  if (util::IsSpecialResourceId(entry->resource_id())) {
+    // Do not load special directories. Just return.
+    callback.Run(FILE_ERROR_FAILED, GURL());
+    return;
+  }
+
+  scheduler_->GetShareUrl(
+      entry->resource_id(),
+      embed_origin,
+      ClientContext(USER_INITIATED),
+      base::Bind(&FileSystem::OnGetResourceEntryForGetShareUrl,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 callback));
+}
+
+void FileSystem::OnGetResourceEntryForGetShareUrl(
+    const GetShareUrlCallback& callback,
+    google_apis::GDataErrorCode status,
+    const GURL& share_url) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  FileError error = util::GDataToFileError(status);
+  if (error != FILE_ERROR_OK) {
+    callback.Run(error, GURL());
+    return;
+  }
+
+  if (share_url.is_empty()) {
+    callback.Run(FILE_ERROR_FAILED, GURL());
+    return;
+  }
+
+  callback.Run(FILE_ERROR_OK, share_url);
+}
+
 void FileSystem::Search(const std::string& search_query,
                         const GURL& next_url,
                         const SearchCallback& callback) {

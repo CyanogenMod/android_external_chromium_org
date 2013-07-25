@@ -5,7 +5,7 @@
 #include "base/environment.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
-#include "base/process_util.h"
+#include "base/process/launch.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/test_timeouts.h"
@@ -194,7 +194,7 @@ class WebrtcVideoQualityBrowserTest : public InProcessBrowserTest {
     infobar_added.Wait();
     content::Details<InfoBarAddedDetails> details(infobar_added.details());
     MediaStreamInfoBarDelegate* media_infobar =
-        details.ptr()->AsMediaStreamInfoBarDelegate();
+        details->AsMediaStreamInfoBarDelegate();
     media_infobar->Accept();
 
     // Wait for WebRTC to call the success callback.

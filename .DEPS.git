@@ -11,7 +11,7 @@ vars = {
     'git_url':
          'https://chromium.googlesource.com',
     'webkit_rev':
-         '@e976d5810ac68f54fccc88dccc2e8b95f8754737'
+         '@9494eb3ac7df18c763bb17667bc39bdd7b853751'
 }
 
 deps = {
@@ -98,11 +98,11 @@ deps = {
     'src/third_party/sfntly/cpp/src':
         Var('git_url') + '/external/sfntly/cpp/src.git@cfb2f1743f0169ad8d01035458617bce97107539',
     'src/third_party/skia/gyp':
-        Var('git_url') + '/external/skia/gyp.git@6488041938586522ce313bc5000a2a4516e45052',
+        Var('git_url') + '/external/skia/gyp.git@f52cb2de30a9008d67ac3456e1cf9136fe661b76',
     'src/third_party/skia/include':
-        Var('git_url') + '/external/skia/include.git@9de8c6d9afed64d2b1129952f353ee49e3155e1c',
+        Var('git_url') + '/external/skia/include.git@3a7536753d16cde4a270978c9c1a20c287823661',
     'src/third_party/skia/src':
-        Var('git_url') + '/external/skia/src.git@6b8cd0006c55d1cf1a13dbb049018c16e6696ef6',
+        Var('git_url') + '/external/skia/src.git@9a38b14fa51cf074f3f6100baa8a2acd27ba822c',
     'src/third_party/smhasher/src':
         Var('git_url') + '/external/smhasher.git@6f63a4882e6b2cf87e8eec1a3ef8644e0d963283',
     'src/third_party/snappy/src':
@@ -284,7 +284,7 @@ deps_os = {
         'src/chrome/tools/test/reference_build/chrome_linux':
             Var('git_url') + '/chromium/reference_builds/chrome_linux.git@216cf5b1b3e97e285e0ee361f54e8f7a30c6af00',
         'src/third_party/chromite':
-            Var('git_url') + '/chromiumos/chromite.git@785fedc51fc430445d8f397440012ea3b489bac9',
+            Var('git_url') + '/chromiumos/chromite.git@93281fa6a9fa1af48aae02d0a9c142a4450af51e',
         'src/third_party/cros_dbus_cplusplus/source':
             Var('git_url') + '/chromiumos/third_party/dbus-cplusplus.git@5e8f6d9db5c2abfb91d91f751184f25bb5cd0900',
         'src/third_party/cros_system_api':

@@ -51,7 +51,7 @@ TEST_F(LayerTreeHostFiltersPixelTest, BackgroundFilterBlur) {
                base::FilePath(FILE_PATH_LITERAL("background_filter_blur.png")));
 }
 
-TEST_F(LayerTreeHostFiltersPixelTest, BackgroundFilterBlurOutsets) {
+TEST_F(LayerTreeHostFiltersPixelTest, DISABLED_BackgroundFilterBlurOutsets) {
   scoped_refptr<SolidColorLayer> background = CreateSolidColorLayer(
       gfx::Rect(200, 200), SK_ColorWHITE);
 

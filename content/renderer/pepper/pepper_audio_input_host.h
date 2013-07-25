@@ -13,22 +13,22 @@
 #include "base/memory/shared_memory.h"
 #include "base/sync_socket.h"
 #include "content/renderer/pepper/pepper_device_enumeration_host_helper.h"
+#include "content/renderer/pepper/plugin_delegate.h"
 #include "ipc/ipc_platform_file.h"
 #include "ppapi/c/ppb_audio_config.h"
 #include "ppapi/host/host_message_context.h"
 #include "ppapi/host/resource_host.h"
-#include "webkit/plugins/ppapi/plugin_delegate.h"
 
 namespace content {
 
-class RendererPpapiHost;
+class RendererPpapiHostImpl;
 
 class PepperAudioInputHost
     : public ppapi::host::ResourceHost,
       public webkit::ppapi::PluginDelegate::PlatformAudioInputClient,
       public PepperDeviceEnumerationHostHelper::Delegate {
  public:
-  PepperAudioInputHost(RendererPpapiHost* host,
+  PepperAudioInputHost(RendererPpapiHostImpl* host,
                        PP_Instance instance,
                        PP_Resource resource);
   virtual ~PepperAudioInputHost();
@@ -69,7 +69,7 @@ class PepperAudioInputHost
   void Close();
 
   // Non-owning pointer.
-  RendererPpapiHost* renderer_ppapi_host_;
+  RendererPpapiHostImpl* renderer_ppapi_host_;
 
   scoped_ptr<ppapi::host::ReplyMessageContext> open_context_;
 

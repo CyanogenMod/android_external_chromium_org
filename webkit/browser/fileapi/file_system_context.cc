@@ -138,6 +138,14 @@ FileSystemContext::FileSystemContext(
     RegisterBackend(*iter);
   }
 
+  sandbox_backend_->Initialize(this);
+  isolated_backend_->Initialize(this);
+  for (ScopedVector<FileSystemBackend>::const_iterator iter =
+          additional_backends_.begin();
+       iter != additional_backends_.end(); ++iter) {
+    (*iter)->Initialize(this);
+  }
+
   // Additional mount points must be added before regular system-wide
   // mount points.
   if (external_mount_points)
@@ -269,8 +277,8 @@ void FileSystemContext::OpenFileSystem(
     return;
   }
 
-  backend->InitializeFileSystem(origin_url, type, mode, this,
-                                base::Bind(&DidOpenFileSystem, callback));
+  backend->OpenFileSystem(origin_url, type, mode,
+                          base::Bind(&DidOpenFileSystem, callback));
 }
 
 void FileSystemContext::DeleteFileSystem(
@@ -324,6 +332,11 @@ scoped_ptr<FileStreamWriter> FileSystemContext::CreateFileStreamWriter(
   if (!backend)
     return scoped_ptr<FileStreamWriter>();
   return backend->CreateFileStreamWriter(url, offset, this);
+}
+
+scoped_ptr<FileSystemOperationRunner>
+FileSystemContext::CreateFileSystemOperationRunner() {
+  return make_scoped_ptr(new FileSystemOperationRunner(this));
 }
 
 void FileSystemContext::SetLocalFileChangeTracker(

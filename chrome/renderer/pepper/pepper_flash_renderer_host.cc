@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "chrome/renderer/pepper/ppb_pdf_impl.h"
+#include "content/public/renderer/ppapi_plugin_instance.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
 #include "ipc/ipc_message_macros.h"
@@ -28,7 +29,6 @@
 #include "third_party/skia/include/core/SkTypeface.h"
 #include "ui/gfx/rect.h"
 #include "url/gurl.h"
-#include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 
 using ppapi::thunk::EnterResourceNoLock;
 using ppapi::thunk::PPB_ImageData_API;
@@ -92,7 +92,7 @@ int32_t PepperFlashRendererHost::OnSetInstanceAlwaysOnTop(
   webkit::ppapi::PluginInstance* plugin_instance =
       host_->GetPluginInstance(pp_instance());
   if (plugin_instance)
-    plugin_instance->set_always_on_top(on_top);
+    plugin_instance->SetAlwaysOnTop(on_top);
   // Since no reply is sent for this message, it doesn't make sense to return an
   // error.
   return PP_OK;

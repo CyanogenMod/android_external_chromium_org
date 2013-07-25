@@ -69,6 +69,7 @@ static const char kPageTargetType[]  = "page";
 static const char kWorkerTargetType[]  = "worker";
 static const char kAdbTargetType[]  = "adb_page";
 
+static const char kInitUICommand[]  = "init-ui";
 static const char kInspectCommand[]  = "inspect";
 static const char kTerminateCommand[]  = "terminate";
 
@@ -159,66 +160,17 @@ DictionaryValue* BuildTargetDescriptor(RenderViewHost* rvh, bool is_tab) {
                                rvh->GetRoutingID());
 }
 
-// Appends the inspectable workers to the list of RenderViews, and sends the
-// response back to the webui system.
-void SendDescriptors(
-    ListValue* rvh_list,
-    const content::WebUIDataSource::GotDataCallback& callback) {
-  std::vector<WorkerService::WorkerInfo> worker_info =
-      WorkerService::GetInstance()->GetWorkers();
-  for (size_t i = 0; i < worker_info.size(); ++i) {
-    rvh_list->Append(BuildTargetDescriptor(
-        kWorkerTargetType,
-        false,
-        worker_info[i].url,
-        UTF16ToUTF8(worker_info[i].name),
-        GURL(),
-        worker_info[i].process_id,
-        worker_info[i].route_id,
-        worker_info[i].handle));
-  }
-
-  std::string json_string;
-  base::JSONWriter::Write(rvh_list, &json_string);
-  callback.Run(base::RefCountedString::TakeString(&json_string));
-}
-
-bool HandleDataRequestCallback(
-    const std::string& path,
-    const content::WebUIDataSource::GotDataCallback& callback) {
-  std::set<RenderViewHost*> tab_rvhs;
-  for (TabContentsIterator it; !it.done(); it.Next())
-    tab_rvhs.insert(it->GetRenderViewHost());
-
-  scoped_ptr<ListValue> rvh_list(new ListValue());
-
-  std::vector<RenderViewHost*> rvh_vector =
-      DevToolsAgentHost::GetValidRenderViewHosts();
-
-  for (std::vector<RenderViewHost*>::iterator it(rvh_vector.begin());
-       it != rvh_vector.end(); it++) {
-    bool is_tab = tab_rvhs.find(*it) != tab_rvhs.end();
-    rvh_list->Append(BuildTargetDescriptor(*it, is_tab));
-  }
-
-  BrowserThread::PostTask(
-      BrowserThread::IO,
-      FROM_HERE,
-      base::Bind(&SendDescriptors, base::Owned(rvh_list.release()), callback));
-  return true;
-}
-
 class InspectMessageHandler : public WebUIMessageHandler {
  public:
-  explicit InspectMessageHandler(DevToolsAdbBridge* adb_bridge)
-      : adb_bridge_(adb_bridge) {}
+  explicit InspectMessageHandler(InspectUI* inspect_ui)
+      : inspect_ui_(inspect_ui) {}
   virtual ~InspectMessageHandler() {}
 
  private:
   // WebUIMessageHandler implementation.
   virtual void RegisterMessages() OVERRIDE;
 
-  // Callback for "openDevTools" message.
+  void HandleInitUICommand(const ListValue* args);
   void HandleInspectCommand(const ListValue* args);
   void HandleTerminateCommand(const ListValue* args);
 
@@ -226,12 +178,15 @@ class InspectMessageHandler : public WebUIMessageHandler {
                             int* process_id,
                             int* route_id);
 
-  DevToolsAdbBridge* adb_bridge_;
+  InspectUI* inspect_ui_;
 
   DISALLOW_COPY_AND_ASSIGN(InspectMessageHandler);
 };
 
 void InspectMessageHandler::RegisterMessages() {
+  web_ui()->RegisterMessageCallback(kInitUICommand,
+      base::Bind(&InspectMessageHandler::HandleInitUICommand,
+                 base::Unretained(this)));
   web_ui()->RegisterMessageCallback(kInspectCommand,
       base::Bind(&InspectMessageHandler::HandleInspectCommand,
                  base::Unretained(this)));
@@ -240,7 +195,15 @@ void InspectMessageHandler::RegisterMessages() {
                  base::Unretained(this)));
 }
 
+void InspectMessageHandler::HandleInitUICommand(const ListValue*) {
+  inspect_ui_->InitUI();
+}
+
 void InspectMessageHandler::HandleInspectCommand(const ListValue* args) {
+  Profile* profile = Profile::FromWebUI(web_ui());
+  if (!profile)
+    return;
+
   int process_id;
   int route_id;
   if (!GetProcessAndRouteId(args, &process_id, &route_id) || process_id == 0
@@ -256,7 +219,9 @@ void InspectMessageHandler::HandleInspectCommand(const ListValue* args) {
         data->GetString(kAdbSocketField, &socket) &&
         data->GetString(kAdbDebugUrlField, &debug_url) &&
         data->GetString(kAdbFrontendUrlField, &frontend_url)) {
-      adb_bridge_->Attach(serial, socket, debug_url, frontend_url);
+      scoped_refptr<DevToolsAdbBridge> adb_bridge =
+          DevToolsAdbBridge::Factory::GetForProfile(profile);
+      adb_bridge->Attach(serial, socket, debug_url, frontend_url);
     }
     return;
   }
@@ -267,9 +232,6 @@ void InspectMessageHandler::HandleInspectCommand(const ListValue* args) {
     return;
   }
 
-  Profile* profile = Profile::FromWebUI(web_ui());
-  if (!profile)
-    return;
   scoped_refptr<DevToolsAgentHost> agent_host(
       DevToolsAgentHost::GetForWorker(process_id, route_id));
   if (!agent_host.get())
@@ -332,6 +294,13 @@ class InspectUI::WorkerCreationDestructionListener
                    this));
   }
 
+  void InitUI() {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&WorkerCreationDestructionListener::CollectWorkersData,
+                   this));
+  }
+
  private:
   friend class base::RefCountedThreadSafe<WorkerCreationDestructionListener>;
   virtual ~WorkerCreationDestructionListener() {}
@@ -341,22 +310,34 @@ class InspectUI::WorkerCreationDestructionListener
       const string16& name,
       int process_id,
       int route_id) OVERRIDE {
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        base::Bind(&WorkerCreationDestructionListener::NotifyItemsChanged,
-                   this));
+    CollectWorkersData();
   }
 
   virtual void WorkerDestroyed(int process_id, int route_id) OVERRIDE {
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        base::Bind(&WorkerCreationDestructionListener::NotifyItemsChanged,
-                   this));
+    CollectWorkersData();
   }
 
-  void NotifyItemsChanged() {
-    if (discovery_ui_)
-      discovery_ui_->RefreshUI();
+  void CollectWorkersData() {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    scoped_ptr<ListValue> target_list(new ListValue());
+    std::vector<WorkerService::WorkerInfo> worker_info =
+        WorkerService::GetInstance()->GetWorkers();
+    for (size_t i = 0; i < worker_info.size(); ++i) {
+      target_list->Append(BuildTargetDescriptor(
+          kWorkerTargetType,
+          false,
+          worker_info[i].url,
+          UTF16ToUTF8(worker_info[i].name),
+          GURL(),
+          worker_info[i].process_id,
+          worker_info[i].route_id,
+          worker_info[i].handle));
+    }
+
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&WorkerCreationDestructionListener::PopulateWorkersList,
+                   this, base::Owned(target_list.release())));
   }
 
   void RegisterObserver() {
@@ -367,19 +348,68 @@ class InspectUI::WorkerCreationDestructionListener
     WorkerService::GetInstance()->RemoveObserver(this);
   }
 
+  void PopulateWorkersList(ListValue* target_list) {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    if (discovery_ui_) {
+      discovery_ui_->web_ui()->CallJavascriptFunction(
+          "populateWorkersList", *target_list);
+    }
+  }
+
   InspectUI* discovery_ui_;
 };
 
 InspectUI::InspectUI(content::WebUI* web_ui)
-    : WebUIController(web_ui),
-      observer_(new WorkerCreationDestructionListener()),
-      weak_factory_(this) {
-  observer_->Init(this);
+    : WebUIController(web_ui) {
+  web_ui->AddMessageHandler(new InspectMessageHandler(this));
   Profile* profile = Profile::FromWebUI(web_ui);
+  content::WebUIDataSource::Add(profile, CreateInspectUIHTMLSource());
+}
+
+InspectUI::~InspectUI() {
+  StopListeningNotifications();
+}
+
+void InspectUI::InitUI() {
+  StartListeningNotifications();
+  PopulateLists();
+  observer_->InitUI();
+}
+
+void InspectUI::PopulateLists() {
+  std::set<RenderViewHost*> tab_rvhs;
+  for (TabContentsIterator it; !it.done(); it.Next())
+    tab_rvhs.insert(it->GetRenderViewHost());
+
+  scoped_ptr<ListValue> target_list(new ListValue());
+
+  std::vector<RenderViewHost*> rvh_vector =
+      DevToolsAgentHost::GetValidRenderViewHosts();
+
+  for (std::vector<RenderViewHost*>::iterator it(rvh_vector.begin());
+       it != rvh_vector.end(); it++) {
+    bool is_tab = tab_rvhs.find(*it) != tab_rvhs.end();
+    target_list->Append(BuildTargetDescriptor(*it, is_tab));
+  }
+  web_ui()->CallJavascriptFunction("populateLists", *target_list.get());
+}
+
+void InspectUI::Observe(int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  if (source != content::Source<WebContents>(web_ui()->GetWebContents()))
+    PopulateLists();
+  else if (type == content::NOTIFICATION_WEB_CONTENTS_DISCONNECTED)
+    StopListeningNotifications();
+}
+
+void InspectUI::StartListeningNotifications() {
+  observer_ = new WorkerCreationDestructionListener();
+  observer_->Init(this);
+
+  Profile* profile = Profile::FromWebUI(web_ui());
   adb_bridge_ = DevToolsAdbBridge::Factory::GetForProfile(profile);
   adb_bridge_->AddListener(this);
-  web_ui->AddMessageHandler(new InspectMessageHandler(adb_bridge_));
-  content::WebUIDataSource::Add(profile, CreateInspectUIHTMLSource());
 
   registrar_.Add(this,
                  content::NOTIFICATION_WEB_CONTENTS_CONNECTED,
@@ -390,33 +420,6 @@ InspectUI::InspectUI(content::WebUI* web_ui)
   registrar_.Add(this,
                  content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
                  content::NotificationService::AllSources());
-}
-
-InspectUI::~InspectUI() {
-  StopListeningNotifications();
-}
-
-void InspectUI::RefreshUI() {
-  web_ui()->CallJavascriptFunction("populateLists");
-}
-
-// static
-bool InspectUI::WeakHandleRequestCallback(
-    const base::WeakPtr<InspectUI>& inspect_ui,
-    const std::string& path,
-    const content::WebUIDataSource::GotDataCallback& callback) {
-  if (!inspect_ui.get())
-    return false;
-  return inspect_ui->HandleRequestCallback(path, callback);
-}
-
-void InspectUI::Observe(int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  if (source != content::Source<WebContents>(web_ui()->GetWebContents()))
-    RefreshUI();
-  else if (type == content::NOTIFICATION_WEB_CONTENTS_DISCONNECTED)
-    StopListeningNotifications();
 }
 
 void InspectUI::StopListeningNotifications()
@@ -436,17 +439,7 @@ content::WebUIDataSource* InspectUI::CreateInspectUIHTMLSource() {
   source->AddResourcePath("inspect.css", IDR_INSPECT_CSS);
   source->AddResourcePath("inspect.js", IDR_INSPECT_JS);
   source->SetDefaultResource(IDR_INSPECT_HTML);
-  source->SetRequestFilter(base::Bind(&InspectUI::WeakHandleRequestCallback,
-                                      weak_factory_.GetWeakPtr()));
   return source;
-}
-
-bool InspectUI::HandleRequestCallback(
-    const std::string& path,
-    const content::WebUIDataSource::GotDataCallback& callback) {
-  if (path == kDataFile)
-    return HandleDataRequestCallback(path, callback);
-  return false;
 }
 
 void InspectUI::RemotePagesChanged(DevToolsAdbBridge::RemotePages* pages) {

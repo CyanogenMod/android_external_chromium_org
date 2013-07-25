@@ -19,7 +19,7 @@
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
-#include "base/process_info.h"
+#include "base/process/process_info.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -1192,6 +1192,10 @@ bool Browser::TabsNeedBeforeUnloadFired() {
   if (IsFastTabUnloadEnabled())
     return fast_unload_controller_->TabsNeedBeforeUnloadFired();
   return unload_controller_->TabsNeedBeforeUnloadFired();
+}
+
+void Browser::OverscrollUpdate(int delta_y) {
+  window_->OverscrollUpdate(delta_y);
 }
 
 bool Browser::IsMouseLocked() const {

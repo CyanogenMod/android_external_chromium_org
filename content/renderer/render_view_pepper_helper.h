@@ -12,7 +12,7 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/platform_file.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "content/common/content_export.h"
 #include "ui/base/ime/text_input_type.h"
 
@@ -32,7 +32,7 @@ class Range;
 
 namespace webkit {
 namespace ppapi {
-class PluginInstance;
+class PluginInstanceImpl;
 }
 }
 
@@ -56,7 +56,7 @@ class CONTENT_EXPORT RenderViewPepperHelper {
 
   // Called by RenderView to implement the corresponding function in its base
   // class RenderWidget (see that for more).
-  virtual webkit::ppapi::PluginInstance* GetBitmapForOptimizedPluginPaint(
+  virtual webkit::ppapi::PluginInstanceImpl* GetBitmapForOptimizedPluginPaint(
       const gfx::Rect& paint_bounds,
       TransportDIB** dib,
       gfx::Rect* location,

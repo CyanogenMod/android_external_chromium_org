@@ -11,6 +11,10 @@
 #include "base/files/file_util_proxy.h"
 #include "content/public/common/content_client.h"
 #include "content/public/renderer/content_renderer_client.h"
+#include "content/renderer/pepper/host_globals.h"
+#include "content/renderer/pepper/ppapi_plugin_instance_impl.h"
+#include "content/renderer/pepper/ppb_file_ref_impl.h"
+#include "content/renderer/pepper/quota_file_io.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/host/dispatch_host_message.h"
 #include "ppapi/host/ppapi_host.h"
@@ -19,10 +23,6 @@
 #include "ppapi/shared_impl/time_conversion.h"
 #include "ppapi/thunk/enter.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
-#include "webkit/plugins/ppapi/host_globals.h"
-#include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
-#include "webkit/plugins/ppapi/ppb_file_ref_impl.h"
-#include "webkit/plugins/ppapi/quota_file_io.h"
 
 namespace content {
 
@@ -58,6 +58,7 @@ PepperFileIOHost::PepperFileIOHost(RendererPpapiHost* host,
                                    PP_Instance instance,
                                    PP_Resource resource)
     : ResourceHost(host->GetPpapiHost(), instance, resource),
+      plugin_delegate_(NULL),
       file_(base::kInvalidPlatformFileValue),
       file_system_type_(PP_FILESYSTEMTYPE_INVALID),
       quota_policy_(quota::kQuotaLimitTypeUnknown),
@@ -65,7 +66,7 @@ PepperFileIOHost::PepperFileIOHost(RendererPpapiHost* host,
       open_flags_(0),
       weak_factory_(this) {
   // TODO(victorhsieh): eliminate plugin_delegate_ as it's no longer needed.
-  webkit::ppapi::PluginInstance* plugin_instance =
+  webkit::ppapi::PluginInstanceImpl* plugin_instance =
       webkit::ppapi::HostGlobals::Get()->GetInstance(instance);
   plugin_delegate_ = plugin_instance ? plugin_instance->delegate() : NULL;
 }

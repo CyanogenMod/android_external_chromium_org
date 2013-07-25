@@ -11,10 +11,10 @@
 #include "base/rand_util.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/media_stream_registry_interface.h"
+#include "content/renderer/pepper/ppb_image_data_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
 #include "third_party/WebKit/public/web/WebMediaStreamRegistry.h"
-#include "webkit/plugins/ppapi/ppb_image_data_impl.h"
 
 using cricket::CaptureState;
 using cricket::VideoFormat;

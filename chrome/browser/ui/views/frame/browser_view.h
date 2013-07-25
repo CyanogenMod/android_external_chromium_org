@@ -232,10 +232,6 @@ class BrowserView : public BrowserWindow,
     return browser_->is_type_tabbed();
   }
 
-  // Returns true if the specified point(BrowserView coordinates) is in
-  // in the window caption area of the browser window.
-  bool IsPositionInWindowCaption(const gfx::Point& point);
-
   // See ImmersiveModeController for description.
   ImmersiveModeController* immersive_mode_controller() const {
     return immersive_mode_controller_.get();
@@ -374,6 +370,7 @@ class BrowserView : public BrowserWindow,
       const gfx::Rect& rect,
       const content::PasswordForm& form,
       autofill::PasswordGenerator* password_generator) OVERRIDE;
+  virtual void OverscrollUpdate(int delta_y) OVERRIDE;
 
   // Overridden from BrowserWindowTesting:
   virtual BookmarkBarView* GetBookmarkBarView() const OVERRIDE;

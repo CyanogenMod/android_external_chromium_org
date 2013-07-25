@@ -258,7 +258,6 @@ LOCAL_SRC_FILES := \
 	content/browser/loader/throttling_resource_handler.cc \
 	content/browser/loader/transfer_navigation_resource_throttle.cc \
 	content/browser/loader/upload_data_stream_builder.cc \
-	content/browser/media_devices_monitor.cc \
 	content/browser/media/media_internals.cc \
 	content/browser/media/media_internals_handler.cc \
 	content/browser/media/media_internals_proxy.cc \
@@ -267,6 +266,7 @@ LOCAL_SRC_FILES := \
 	content/browser/media/webrtc_internals.cc \
 	content/browser/media/webrtc_internals_message_handler.cc \
 	content/browser/media/webrtc_internals_ui.cc \
+	content/browser/media_devices_monitor.cc \
 	content/browser/mime_registry_message_filter.cc \
 	content/browser/net/browser_online_state_observer.cc \
 	content/browser/net/sqlite_persistent_cookie_store.cc \
@@ -277,6 +277,7 @@ LOCAL_SRC_FILES := \
 	content/browser/power_save_blocker_impl.cc \
 	content/browser/profiler_controller_impl.cc \
 	content/browser/profiler_message_filter.cc \
+	content/browser/quota_dispatcher_host.cc \
 	content/browser/renderer_host/backing_store.cc \
 	content/browser/renderer_host/backing_store_manager.cc \
 	content/browser/renderer_host/basic_mouse_wheel_smooth_scroll_gesture.cc \
@@ -292,6 +293,9 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/image_transport_factory_android.cc \
 	content/browser/renderer_host/ime_adapter_android.cc \
 	content/browser/renderer_host/input/immediate_input_router.cc \
+	content/browser/renderer_host/input/web_input_event_builders_android.cc \
+	content/browser/renderer_host/input/web_input_event_util.cc \
+	content/browser/renderer_host/input/web_input_event_util_posix.cc \
 	content/browser/renderer_host/java/java_bound_object.cc \
 	content/browser/renderer_host/java/java_bridge_channel_host.cc \
 	content/browser/renderer_host/java/java_bridge_dispatcher_host.cc \
@@ -320,11 +324,10 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/media/web_contents_tracker.cc \
 	content/browser/renderer_host/media/web_contents_video_capture_device.cc \
 	content/browser/renderer_host/memory_benchmark_message_filter.cc \
-	content/browser/renderer_host/native_web_keyboard_event_android.cc \
 	content/browser/renderer_host/native_web_keyboard_event.cc \
+	content/browser/renderer_host/native_web_keyboard_event_android.cc \
 	content/browser/renderer_host/overscroll_configuration.cc \
 	content/browser/renderer_host/overscroll_controller.cc \
-	content/browser/renderer_host/quota_dispatcher_host.cc \
 	content/browser/renderer_host/render_frame_host_impl.cc \
 	content/browser/renderer_host/render_message_filter.cc \
 	content/browser/renderer_host/render_process_host_impl.cc \
@@ -475,11 +478,11 @@ MY_DEFS_Debug := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
 	$(gyp_intermediate_dir) \
-	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
-	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
-	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(gyp_shared_intermediate_dir)/content \
@@ -604,11 +607,11 @@ MY_DEFS_Release := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
 	$(gyp_intermediate_dir) \
-	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
-	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
-	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(gyp_shared_intermediate_dir)/content \

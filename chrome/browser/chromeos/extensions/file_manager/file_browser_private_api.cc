@@ -441,6 +441,7 @@ FileBrowserPrivateAPI::FileBrowserPrivateAPI(Profile* profile)
   registry->RegisterFunction<ValidatePathNameLengthFunction>();
   registry->RegisterFunction<ZoomFunction>();
   registry->RegisterFunction<RequestAccessTokenFunction>();
+  registry->RegisterFunction<GetShareUrlFunction>();
   event_router_->ObserveFileSystemEvents();
 }
 
@@ -1985,10 +1986,10 @@ bool FileDialogStringsFunction::RunImpl() {
   SET_STRING("CUT_BUTTON_LABEL", IDS_FILE_BROWSER_CUT_BUTTON_LABEL);
   SET_STRING("ZIP_SELECTION_BUTTON_LABEL",
              IDS_FILE_BROWSER_ZIP_SELECTION_BUTTON_LABEL);
-  SET_STRING("PIN_FOLDER_BUTTON_LABEL",
-             IDS_FILE_BROWSER_PIN_FOLDER_BUTTON_LABEL);
-  SET_STRING("UNPIN_FOLDER_BUTTON_LABEL",
-             IDS_FILE_BROWSER_UNPIN_FOLDER_BUTTON_LABEL);
+  SET_STRING("CREATE_FOLDER_SHORTCUT_BUTTON_LABEL",
+             IDS_FILE_BROWSER_CREATE_FOLDER_SHORTCUT_BUTTON_LABEL);
+  SET_STRING("REMOVE_FOLDER_SHORTCUT_BUTTON_LABEL",
+             IDS_FILE_BROWSER_REMOVE_FOLDER_SHORTCUT_BUTTON_LABEL);
   SET_STRING("SHARE_BUTTON_LABEL",
              IDS_FILE_BROWSER_SHARE_BUTTON_LABEL);
 
@@ -3075,5 +3076,47 @@ bool RequestAccessTokenFunction::RunImpl() {
 void RequestAccessTokenFunction::OnAccessTokenFetched(
     google_apis::GDataErrorCode code, const std::string& access_token) {
   SetResult(new base::StringValue(access_token));
+  SendResponse(true);
+}
+
+GetShareUrlFunction::GetShareUrlFunction() {
+}
+
+GetShareUrlFunction::~GetShareUrlFunction() {
+}
+
+bool GetShareUrlFunction::RunImpl() {
+  std::string file_url;
+  if (!args_->GetString(0, &file_url))
+    return false;
+
+  const base::FilePath path = GetLocalPathFromURL(GURL(file_url));
+  DCHECK(drive::util::IsUnderDriveMountPoint(path));
+
+  base::FilePath drive_path = drive::util::ExtractDrivePath(path);
+
+  drive::DriveIntegrationService* integration_service =
+      drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
+  // |integration_service| is NULL if Drive is disabled.
+  if (!integration_service)
+    return false;
+
+  integration_service->file_system()->GetShareUrl(
+      drive_path,
+      file_manager_util::GetFileBrowserExtensionUrl(),  // embed origin
+      base::Bind(&GetShareUrlFunction::OnGetShareUrl, this));
+  return true;
+}
+
+
+void GetShareUrlFunction::OnGetShareUrl(drive::FileError error,
+                                        const GURL& share_url) {
+  if (error != drive::FILE_ERROR_OK) {
+    error_ = "Share Url for this item is not available.";
+    SendResponse(false);
+    return;
+  }
+
+  SetResult(new base::StringValue(share_url.spec()));
   SendResponse(true);
 }

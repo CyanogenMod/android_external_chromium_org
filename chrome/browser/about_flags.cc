@@ -715,7 +715,8 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_QUIC_HTTPS_NAME,
     IDS_FLAGS_ENABLE_QUIC_HTTPS_DESCRIPTION,
     kOsAll,
-    SINGLE_VALUE_TYPE(switches::kEnableQuicHttps)
+    ENABLE_DISABLE_VALUE_TYPE(switches::kEnableQuicHttps,
+                              switches::kDisableQuicHttps)
   },
   {
     "enable-spdy4a2",
@@ -1322,6 +1323,15 @@ const Experiment kExperiments[] = {
         switches::kOverscrollHistoryNavigation, "0")
   },
 #endif
+  {
+    "scroll-end-effect",
+    IDS_FLAGS_SCROLL_END_EFFECT_NAME,
+    IDS_FLAGS_SCROLL_END_EFFECT_DESCRIPTION,
+    kOsCrOS,
+    ENABLE_DISABLE_VALUE_TYPE_AND_VALUE(
+        switches::kScrollEndEffect, "1",
+        switches::kScrollEndEffect, "0")
+  },
   {
     "enable-touch-drag-drop",
     IDS_FLAGS_ENABLE_TOUCH_DRAG_DROP_NAME,

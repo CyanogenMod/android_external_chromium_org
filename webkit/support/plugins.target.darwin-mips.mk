@@ -32,44 +32,6 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
-	webkit/plugins/ppapi/audio_helper.cc \
-	webkit/plugins/ppapi/content_decryptor_delegate.cc \
-	webkit/plugins/ppapi/event_conversion.cc \
-	webkit/plugins/ppapi/host_array_buffer_var.cc \
-	webkit/plugins/ppapi/host_globals.cc \
-	webkit/plugins/ppapi/host_var_tracker.cc \
-	webkit/plugins/ppapi/message_channel.cc \
-	webkit/plugins/ppapi/npapi_glue.cc \
-	webkit/plugins/ppapi/npobject_var.cc \
-	webkit/plugins/ppapi/plugin_module.cc \
-	webkit/plugins/ppapi/plugin_object.cc \
-	webkit/plugins/ppapi/ppapi_interface_factory.cc \
-	webkit/plugins/ppapi/ppapi_plugin_instance.cc \
-	webkit/plugins/ppapi/ppapi_webplugin_impl.cc \
-	webkit/plugins/ppapi/ppb_audio_impl.cc \
-	webkit/plugins/ppapi/ppb_broker_impl.cc \
-	webkit/plugins/ppapi/ppb_buffer_impl.cc \
-	webkit/plugins/ppapi/ppb_file_ref_impl.cc \
-	webkit/plugins/ppapi/ppb_flash_message_loop_impl.cc \
-	webkit/plugins/ppapi/ppb_gpu_blacklist_private_impl.cc \
-	webkit/plugins/ppapi/ppb_graphics_3d_impl.cc \
-	webkit/plugins/ppapi/ppb_image_data_impl.cc \
-	webkit/plugins/ppapi/ppb_network_monitor_private_impl.cc \
-	webkit/plugins/ppapi/ppb_proxy_impl.cc \
-	webkit/plugins/ppapi/ppb_scrollbar_impl.cc \
-	webkit/plugins/ppapi/ppb_tcp_server_socket_private_impl.cc \
-	webkit/plugins/ppapi/ppb_tcp_socket_private_impl.cc \
-	webkit/plugins/ppapi/ppb_uma_private_impl.cc \
-	webkit/plugins/ppapi/ppb_var_deprecated_impl.cc \
-	webkit/plugins/ppapi/ppb_video_decoder_impl.cc \
-	webkit/plugins/ppapi/ppb_widget_impl.cc \
-	webkit/plugins/ppapi/ppb_x509_certificate_private_impl.cc \
-	webkit/plugins/ppapi/quota_file_io.cc \
-	webkit/plugins/ppapi/resource_creation_impl.cc \
-	webkit/plugins/ppapi/resource_helper.cc \
-	webkit/plugins/ppapi/url_request_info_util.cc \
-	webkit/plugins/ppapi/usb_key_code_conversion.cc \
-	webkit/plugins/ppapi/v8_var_converter.cc \
 	webkit/plugins/sad_plugin.cc
 
 
@@ -149,12 +111,12 @@ MY_DEFS_Debug := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(gyp_intermediate_dir) \
 	$(gyp_shared_intermediate_dir)/webkit \
 	$(gyp_shared_intermediate_dir)/ui \
-	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
-	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
-	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH) \
@@ -277,12 +239,12 @@ MY_DEFS_Release := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(gyp_intermediate_dir) \
 	$(gyp_shared_intermediate_dir)/webkit \
 	$(gyp_shared_intermediate_dir)/ui \
-	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
-	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
-	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH) \

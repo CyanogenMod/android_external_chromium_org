@@ -28,7 +28,6 @@
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/pepper_messages.h"
-#include "content/common/pepper_plugin_registry.h"
 #include "content/common/sandbox_util.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
@@ -55,9 +54,16 @@
 #include "content/renderer/pepper/pepper_platform_context_3d_impl.h"
 #include "content/renderer/pepper/pepper_platform_image_2d_impl.h"
 #include "content/renderer/pepper/pepper_platform_video_capture_impl.h"
+#include "content/renderer/pepper/pepper_plugin_registry.h"
 #include "content/renderer/pepper/pepper_proxy_channel_delegate_impl.h"
 #include "content/renderer/pepper/pepper_url_loader_host.h"
+#include "content/renderer/pepper/plugin_module.h"
+#include "content/renderer/pepper/ppapi_plugin_instance_impl.h"
+#include "content/renderer/pepper/ppapi_webplugin_impl.h"
+#include "content/renderer/pepper/ppb_tcp_server_socket_private_impl.h"
+#include "content/renderer/pepper/ppb_tcp_socket_private_impl.h"
 #include "content/renderer/pepper/renderer_ppapi_host_impl.h"
+#include "content/renderer/pepper/resource_helper.h"
 #include "content/renderer/pepper/url_response_info_util.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
@@ -95,12 +101,6 @@
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/gfx/size.h"
 #include "url/gurl.h"
-#include "webkit/plugins/ppapi/plugin_module.h"
-#include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
-#include "webkit/plugins/ppapi/ppapi_webplugin_impl.h"
-#include "webkit/plugins/ppapi/ppb_tcp_server_socket_private_impl.h"
-#include "webkit/plugins/ppapi/ppb_tcp_socket_private_impl.h"
-#include "webkit/plugins/ppapi/resource_helper.h"
 
 using WebKit::WebView;
 using WebKit::WebFrame;
@@ -182,8 +182,8 @@ class HostDispatcherWrapper
           PepperRendererInstanceData(
               0,  // The render process id will be supplied in the browser.
               render_view->GetRoutingID(),
-              plugin_instance->container()->element().document().url(),
-              plugin_instance->plugin_url()),
+              plugin_instance->GetContainer()->element().document().url(),
+              plugin_instance->GetPluginURL()),
           is_external_));
     }
   }
@@ -247,7 +247,7 @@ class QuotaCallbackTranslator : public QuotaDispatcher::Callback {
 
 class PluginInstanceLockTarget : public MouseLockDispatcher::LockTarget {
  public:
-  PluginInstanceLockTarget(webkit::ppapi::PluginInstance* plugin)
+  PluginInstanceLockTarget(webkit::ppapi::PluginInstanceImpl* plugin)
       : plugin_(plugin) {}
 
   virtual void OnLockMouseACK(bool succeeded) OVERRIDE {
@@ -265,7 +265,7 @@ class PluginInstanceLockTarget : public MouseLockDispatcher::LockTarget {
   }
 
  private:
-  webkit::ppapi::PluginInstance* plugin_;
+  webkit::ppapi::PluginInstanceImpl* plugin_;
 };
 
 void DoNotifyCloseFile(int file_open_id, base::PlatformFileError /* unused */) {
@@ -413,7 +413,6 @@ PepperPluginDelegateImpl::CreatePepperPluginModule(
   // module's destructor will remove itself.
   module = new webkit::ppapi::PluginModule(
       info->name, path,
-      PepperPluginRegistry::GetInstance(),
       permissions);
   PepperPluginRegistry::GetInstance()->AddLiveModule(path, module.get());
 
@@ -530,7 +529,7 @@ void PepperPluginDelegateImpl::ViewWillInitiatePaint() {
   // Notify all of our instances that we started painting. This is used for
   // internal bookkeeping only, so we know that the set can not change under
   // us.
-  for (std::set<webkit::ppapi::PluginInstance*>::iterator i =
+  for (std::set<webkit::ppapi::PluginInstanceImpl*>::iterator i =
            active_instances_.begin();
        i != active_instances_.end(); ++i)
     (*i)->ViewWillInitiatePaint();
@@ -540,8 +539,9 @@ void PepperPluginDelegateImpl::ViewInitiatedPaint() {
   // Notify all instances that we painted.  The same caveats apply as for
   // ViewFlushedPaint regarding instances closing themselves, so we take
   // similar precautions.
-  std::set<webkit::ppapi::PluginInstance*> plugins = active_instances_;
-  for (std::set<webkit::ppapi::PluginInstance*>::iterator i = plugins.begin();
+  std::set<webkit::ppapi::PluginInstanceImpl*> plugins = active_instances_;
+  for (std::set<webkit::ppapi::PluginInstanceImpl*>::iterator i =
+          plugins.begin();
        i != plugins.end(); ++i) {
     if (active_instances_.find(*i) != active_instances_.end())
       (*i)->ViewInitiatedPaint();
@@ -553,8 +553,9 @@ void PepperPluginDelegateImpl::ViewFlushedPaint() {
   // we it may ask to close itself as a result. This will, in turn, modify our
   // set, possibly invalidating the iterator. So we iterate on a copy that
   // won't change out from under us.
-  std::set<webkit::ppapi::PluginInstance*> plugins = active_instances_;
-  for (std::set<webkit::ppapi::PluginInstance*>::iterator i = plugins.begin();
+  std::set<webkit::ppapi::PluginInstanceImpl*> plugins = active_instances_;
+  for (std::set<webkit::ppapi::PluginInstanceImpl*>::iterator i =
+           plugins.begin();
        i != plugins.end(); ++i) {
     // The copy above makes sure our iterator is never invalid if some plugins
     // are destroyed. But some plugin may decide to close all of its views in
@@ -577,17 +578,17 @@ void PepperPluginDelegateImpl::ViewFlushedPaint() {
   }
 }
 
-webkit::ppapi::PluginInstance*
+webkit::ppapi::PluginInstanceImpl*
 PepperPluginDelegateImpl::GetBitmapForOptimizedPluginPaint(
     const gfx::Rect& paint_bounds,
     TransportDIB** dib,
     gfx::Rect* location,
     gfx::Rect* clip,
     float* scale_factor) {
-  for (std::set<webkit::ppapi::PluginInstance*>::iterator i =
+  for (std::set<webkit::ppapi::PluginInstanceImpl*>::iterator i =
            active_instances_.begin();
        i != active_instances_.end(); ++i) {
-    webkit::ppapi::PluginInstance* instance = *i;
+    webkit::ppapi::PluginInstanceImpl* instance = *i;
     // In Flash fullscreen , the plugin contents should be painted onto the
     // fullscreen widget instead of the web page.
     if (!instance->FlashIsFullscreenOrPending() &&
@@ -599,7 +600,7 @@ PepperPluginDelegateImpl::GetBitmapForOptimizedPluginPaint(
 }
 
 void PepperPluginDelegateImpl::PluginFocusChanged(
-    webkit::ppapi::PluginInstance* instance,
+    webkit::ppapi::PluginInstanceImpl* instance,
     bool focused) {
   if (focused)
     focused_plugin_ = instance;
@@ -610,25 +611,25 @@ void PepperPluginDelegateImpl::PluginFocusChanged(
 }
 
 void PepperPluginDelegateImpl::PluginTextInputTypeChanged(
-    webkit::ppapi::PluginInstance* instance) {
+    webkit::ppapi::PluginInstanceImpl* instance) {
   if (focused_plugin_ == instance && render_view_)
     render_view_->PpapiPluginTextInputTypeChanged();
 }
 
 void PepperPluginDelegateImpl::PluginCaretPositionChanged(
-    webkit::ppapi::PluginInstance* instance) {
+    webkit::ppapi::PluginInstanceImpl* instance) {
   if (focused_plugin_ == instance && render_view_)
     render_view_->PpapiPluginCaretPositionChanged();
 }
 
 void PepperPluginDelegateImpl::PluginRequestedCancelComposition(
-    webkit::ppapi::PluginInstance* instance) {
+    webkit::ppapi::PluginInstanceImpl* instance) {
   if (focused_plugin_ == instance && render_view_)
     render_view_->PpapiPluginCancelComposition();
 }
 
 void PepperPluginDelegateImpl::PluginSelectionChanged(
-    webkit::ppapi::PluginInstance* instance) {
+    webkit::ppapi::PluginInstanceImpl* instance) {
   if (focused_plugin_ == instance && render_view_)
     render_view_->PpapiPluginSelectionChanged();
 }
@@ -739,14 +740,14 @@ bool PepperPluginDelegateImpl::CanComposeInline() const {
 }
 
 void PepperPluginDelegateImpl::PluginCrashed(
-    webkit::ppapi::PluginInstance* instance) {
+    webkit::ppapi::PluginInstanceImpl* instance) {
   render_view_->PluginCrashed(instance->module()->path(),
                               instance->module()->GetPeerProcessId());
   UnSetAndDeleteLockTargetAdapter(instance);
 }
 
 void PepperPluginDelegateImpl::InstanceCreated(
-    webkit::ppapi::PluginInstance* instance) {
+    webkit::ppapi::PluginInstanceImpl* instance) {
   active_instances_.insert(instance);
 
   // Set the initial focus.
@@ -754,7 +755,7 @@ void PepperPluginDelegateImpl::InstanceCreated(
 }
 
 void PepperPluginDelegateImpl::InstanceDeleted(
-    webkit::ppapi::PluginInstance* instance) {
+    webkit::ppapi::PluginInstanceImpl* instance) {
   active_instances_.erase(instance);
   UnSetAndDeleteLockTargetAdapter(instance);
 
@@ -766,7 +767,7 @@ void PepperPluginDelegateImpl::InstanceDeleted(
 
 scoped_ptr< ::ppapi::thunk::ResourceCreationAPI>
 PepperPluginDelegateImpl::CreateResourceCreationAPI(
-    webkit::ppapi::PluginInstance* instance) {
+    webkit::ppapi::PluginInstanceImpl* instance) {
   RendererPpapiHostImpl* host_impl = static_cast<RendererPpapiHostImpl*>(
       instance->module()->GetEmbedderState());
   return host_impl->CreateInProcessResourceCreationAPI(instance);
@@ -789,7 +790,7 @@ PepperPluginDelegateImpl::CreateImage2D(int width, int height) {
 
 webkit::ppapi::PluginDelegate::PlatformGraphics2D*
 PepperPluginDelegateImpl::GetGraphics2D(
-    webkit::ppapi::PluginInstance* instance,
+    webkit::ppapi::PluginInstanceImpl* instance,
     PP_Resource resource) {
   ppapi::host::ResourceHost* host =
       GetRendererResourceHost(instance->pp_instance(), resource);
@@ -958,14 +959,14 @@ void PepperPluginDelegateImpl::OnAsyncFileOpened(
 }
 
 void PepperPluginDelegateImpl::OnSetFocus(bool has_focus) {
-  for (std::set<webkit::ppapi::PluginInstance*>::iterator i =
+  for (std::set<webkit::ppapi::PluginInstanceImpl*>::iterator i =
            active_instances_.begin();
        i != active_instances_.end(); ++i)
     (*i)->SetContentAreaFocus(has_focus);
 }
 
 void PepperPluginDelegateImpl::PageVisibilityChanged(bool is_visible) {
-  for (std::set<webkit::ppapi::PluginInstance*>::iterator i =
+  for (std::set<webkit::ppapi::PluginInstanceImpl*>::iterator i =
            active_instances_.begin();
        i != active_instances_.end(); ++i)
     (*i)->PageVisibilityChanged(is_visible);
@@ -1266,7 +1267,7 @@ bool PepperPluginDelegateImpl::X509CertificateParseDER(
 
 webkit::ppapi::FullscreenContainer*
 PepperPluginDelegateImpl::CreateFullscreenContainer(
-    webkit::ppapi::PluginInstance* instance) {
+    webkit::ppapi::PluginInstanceImpl* instance) {
   return render_view_->CreatePepperFullscreenContainer(instance);
 }
 
@@ -1287,7 +1288,7 @@ void PepperPluginDelegateImpl::ZoomLimitsChanged(double minimum_factor,
 }
 
 void PepperPluginDelegateImpl::HandleDocumentLoad(
-    webkit::ppapi::PluginInstance* instance,
+    webkit::ppapi::PluginInstanceImpl* instance,
     const WebKit::WebURLResponse& response) {
   DCHECK(!instance->document_loader());
 
@@ -1372,25 +1373,25 @@ ppapi::Preferences PepperPluginDelegateImpl::GetPreferences() {
 }
 
 bool PepperPluginDelegateImpl::LockMouse(
-    webkit::ppapi::PluginInstance* instance) {
+    webkit::ppapi::PluginInstanceImpl* instance) {
   return GetMouseLockDispatcher(instance)->LockMouse(
       GetOrCreateLockTargetAdapter(instance));
 }
 
 void PepperPluginDelegateImpl::UnlockMouse(
-    webkit::ppapi::PluginInstance* instance) {
+    webkit::ppapi::PluginInstanceImpl* instance) {
   GetMouseLockDispatcher(instance)->UnlockMouse(
       GetOrCreateLockTargetAdapter(instance));
 }
 
 bool PepperPluginDelegateImpl::IsMouseLocked(
-    webkit::ppapi::PluginInstance* instance) {
+    webkit::ppapi::PluginInstanceImpl* instance) {
   return GetMouseLockDispatcher(instance)->IsMouseLockedTo(
       GetOrCreateLockTargetAdapter(instance));
 }
 
 void PepperPluginDelegateImpl::DidChangeCursor(
-    webkit::ppapi::PluginInstance* instance,
+    webkit::ppapi::PluginInstanceImpl* instance,
     const WebKit::WebCursorInfo& cursor) {
   // Update the cursor appearance immediately if the requesting plugin is the
   // one which receives the last mouse event. Otherwise, the new cursor won't be
@@ -1402,7 +1403,7 @@ void PepperPluginDelegateImpl::DidChangeCursor(
 }
 
 void PepperPluginDelegateImpl::DidReceiveMouseEvent(
-    webkit::ppapi::PluginInstance* instance) {
+    webkit::ppapi::PluginInstanceImpl* instance) {
   last_mouse_event_target_ = instance;
 }
 
@@ -1648,7 +1649,7 @@ int PepperPluginDelegateImpl::GetSessionID(PP_DeviceType_Dev type,
 
 MouseLockDispatcher::LockTarget*
     PepperPluginDelegateImpl::GetOrCreateLockTargetAdapter(
-    webkit::ppapi::PluginInstance* instance) {
+    webkit::ppapi::PluginInstanceImpl* instance) {
   MouseLockDispatcher::LockTarget* target = mouse_lock_instances_[instance];
   if (target)
     return target;
@@ -1658,7 +1659,7 @@ MouseLockDispatcher::LockTarget*
 }
 
 void PepperPluginDelegateImpl::UnSetAndDeleteLockTargetAdapter(
-    webkit::ppapi::PluginInstance* instance) {
+    webkit::ppapi::PluginInstanceImpl* instance) {
   LockTargetMap::iterator it = mouse_lock_instances_.find(instance);
   if (it != mouse_lock_instances_.end()) {
     MouseLockDispatcher::LockTarget* target = it->second;
@@ -1669,7 +1670,7 @@ void PepperPluginDelegateImpl::UnSetAndDeleteLockTargetAdapter(
 }
 
 MouseLockDispatcher* PepperPluginDelegateImpl::GetMouseLockDispatcher(
-    webkit::ppapi::PluginInstance* instance) {
+    webkit::ppapi::PluginInstanceImpl* instance) {
   if (instance->flash_fullscreen()) {
     RenderWidgetFullscreenPepper* container =
         static_cast<RenderWidgetFullscreenPepper*>(

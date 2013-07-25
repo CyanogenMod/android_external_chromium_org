@@ -31,6 +31,7 @@
 #include "content/renderer/gpu/mailbox_output_surface.h"
 #include "content/renderer/gpu/render_widget_compositor.h"
 #include "content/renderer/ime_event_guard.h"
+#include "content/renderer/pepper/ppapi_plugin_instance_impl.h"
 #include "content/renderer/render_process.h"
 #include "content/renderer/render_process_visibility_manager.h"
 #include "content/renderer/render_thread_impl.h"
@@ -57,8 +58,6 @@
 #include "ui/gfx/skia_util.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/surface/transport_dib.h"
-#include "webkit/glue/webkit_glue.h"
-#include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 #include "webkit/renderer/compositor_bindings/web_rendering_stats_impl.h"
 #include "webkit/renderer/cursor_utils.h"
 
@@ -966,12 +965,13 @@ void RenderWidget::PaintRect(const gfx::Rect& rect,
   TransportDIB* optimized_dib = NULL;
   gfx::Rect optimized_copy_rect, optimized_copy_location;
   float dib_scale_factor;
-  webkit::ppapi::PluginInstance* optimized_instance =
+  webkit::ppapi::PluginInstanceImpl* optimized_instance =
       GetBitmapForOptimizedPluginPaint(rect, &optimized_dib,
                                        &optimized_copy_location,
                                        &optimized_copy_rect,
                                        &dib_scale_factor);
   if (optimized_instance) {
+#if defined(ENABLE_PLUGINS)
     // This plugin can be optimize-painted and we can just ask it to paint
     // itself. We don't actually need the TransportDIB in this case.
     //
@@ -998,8 +998,7 @@ void RenderWidget::PaintRect(const gfx::Rect& rect,
 
     SkAutoCanvasRestore auto_restore(canvas, true);
     canvas->scale(device_scale_factor_, device_scale_factor_);
-    optimized_instance->Paint(webkit_glue::ToWebCanvas(canvas),
-                              optimized_copy_location, rect);
+    optimized_instance->Paint(canvas, optimized_copy_location, rect);
     canvas->restore();
     if (kEnableGpuBenchmarking) {
       base::TimeDelta paint_time =
@@ -1007,13 +1006,14 @@ void RenderWidget::PaintRect(const gfx::Rect& rect,
       if (!is_accelerated_compositing_active_)
         software_stats_.total_paint_time += paint_time;
     }
+#endif
   } else {
     // Normal painting case.
     base::TimeTicks paint_begin_ticks;
     if (kEnableGpuBenchmarking)
       paint_begin_ticks = base::TimeTicks::HighResNow();
 
-    webwidget_->paint(webkit_glue::ToWebCanvas(canvas), rect);
+    webwidget_->paint(canvas, rect);
 
     if (kEnableGpuBenchmarking) {
       base::TimeDelta paint_time =
@@ -2021,12 +2021,13 @@ void RenderWidget::SetDeviceScaleFactor(float device_scale_factor) {
   }
 }
 
-webkit::ppapi::PluginInstance* RenderWidget::GetBitmapForOptimizedPluginPaint(
-    const gfx::Rect& paint_bounds,
-    TransportDIB** dib,
-    gfx::Rect* location,
-    gfx::Rect* clip,
-    float* scale_factor) {
+webkit::ppapi::PluginInstanceImpl*
+    RenderWidget::GetBitmapForOptimizedPluginPaint(
+        const gfx::Rect& paint_bounds,
+        TransportDIB** dib,
+        gfx::Rect* location,
+        gfx::Rect* clip,
+        float* scale_factor) {
   // Bare RenderWidgets don't support optimized plugin painting.
   return NULL;
 }

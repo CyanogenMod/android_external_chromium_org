@@ -530,6 +530,20 @@
    ...
    fun:*CreateLocaleDefaultValue
    ...
+   fun:PermissionQueueControllerTests::SetUp
+}
+{
+   bug_155530_c
+   Heapcheck:Leak
+   ...
+   fun:PermissionQueueControllerTests_OneObservationPerInfoBarCancelled_Test::TestBody
+}
+{
+   bug_155530_d
+   Heapcheck:Leak
+   ...
+   fun:*CreateLocaleDefaultValue
+   ...
    fun:GeolocationInfoBarQueueControllerTests::SetUp
 }
 {
@@ -1070,4 +1084,22 @@
    fun:base::FilePath::Append
    fun:base::FilePath::AppendASCII
    fun:SetUp
+}
+{
+   bug_263748a
+   Heapcheck:Leak
+   ...
+   fun:DisassemblerElf32X86Test_All_Test::TestBody
+}
+{
+   bug_263748b
+   Heapcheck:Leak
+   ...
+   fun:TypedRVATest_*_Test::TestBody
+}
+{
+   bug_263748c
+   Heapcheck:Leak
+   ...
+   fun:EncodeDecodeTest_Elf_Small_Test::TestBody
 }

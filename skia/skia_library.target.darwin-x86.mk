@@ -155,6 +155,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkRegion_path.cpp \
 	third_party/skia/src/core/SkRRect.cpp \
 	third_party/skia/src/core/SkRTree.cpp \
+	third_party/skia/src/core/SkScaledImageCache.cpp \
 	third_party/skia/src/core/SkScalar.cpp \
 	third_party/skia/src/core/SkScalerContext.cpp \
 	third_party/skia/src/core/SkScan.cpp \

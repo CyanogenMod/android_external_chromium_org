@@ -2,15 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-function requestData() {
-  var xhr = new XMLHttpRequest();
-  xhr.open('GET', 'targets-data.json', false);
-  xhr.send(null);
-  if (xhr.status === 200)
-    return JSON.parse(xhr.responseText);
-  return [];
-}
-
 function inspect(data) {
   chrome.send('inspect', [data]);
 }
@@ -38,8 +29,9 @@ function onload() {
     tabHeader.addEventListener('click', selectTab.bind(null, tabContent.id));
     $('navigation').appendChild(tabHeader);
   }
-  selectTab('devices-tab');
-  populateLists();
+  var selectedTabName = window.location.hash.slice(1) || 'devices';
+  selectTab(selectedTabName + '-tab');
+  chrome.send('init-ui');
 }
 
 function selectTab(id) {
@@ -58,20 +50,15 @@ function selectTab(id) {
   }
 }
 
-function populateLists() {
-  var data = requestData();
-
+function populateLists(data) {
   removeChildren('pages');
   removeChildren('extensions');
   removeChildren('apps');
-  removeChildren('workers');
   removeChildren('others');
 
   for (var i = 0; i < data.length; i++) {
     if (data[i].type === 'page')
       addToPagesList(data[i]);
-    else if (data[i].type === 'worker')
-      addToWorkersList(data[i]);
     else if (data[i].type === 'extension')
       addToExtensionsList(data[i]);
     else if (data[i].type === 'app')
@@ -79,6 +66,13 @@ function populateLists() {
     else
       addToOthersList(data[i]);
   }
+}
+
+function populateWorkersList(data) {
+  removeChildren('workers');
+
+  for (var i = 0; i < data.length; i++)
+    addToWorkersList(data[i]);
 }
 
 function populateDeviceLists(pages) {

@@ -608,17 +608,6 @@ gfx::ImageSkia BrowserView::GetOTRAvatarIcon() const {
   return *GetThemeProvider()->GetImageSkiaNamed(GetOTRIconResourceID());
 }
 
-bool BrowserView::IsPositionInWindowCaption(const gfx::Point& point) {
-  if (window_switcher_button_) {
-    gfx::Point window_switcher_point(point);
-    views::View::ConvertPointToTarget(this, window_switcher_button_,
-                                      &window_switcher_point);
-    if (window_switcher_button_->HitTestPoint(window_switcher_point))
-      return false;
-  }
-  return GetBrowserViewLayout()->IsPositionInWindowCaption(point);
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserView, BrowserWindow implementation:
 
@@ -1791,7 +1780,7 @@ void BrowserView::PaintChildren(gfx::Canvas* canvas) {
   // overlapping tabs.
   for (int i = 0; i < child_count(); ++i) {
     View* child = child_at(i);
-    if (child != infobar_container_)
+    if (child != infobar_container_ && !child->layer())
       child->Paint(canvas);
   }
 
@@ -2584,6 +2573,9 @@ void BrowserView::ShowPasswordGenerationBubble(
   views::BubbleDelegateView::CreateBubble(bubble);
   bubble->SetAlignment(views::BubbleBorder::ALIGN_ARROW_TO_MID_ANCHOR);
   bubble->GetWidget()->Show();
+}
+
+void BrowserView::OverscrollUpdate(int delta_y) {
 }
 
 void BrowserView::DoCutCopyPaste(void (content::RenderWidgetHost::*method)(),

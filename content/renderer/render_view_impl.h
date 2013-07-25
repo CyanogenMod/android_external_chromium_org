@@ -17,7 +17,7 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "cc/input/top_controls_state.h"
@@ -87,7 +87,7 @@ struct SelectedFileInfo;
 namespace webkit {
 
 namespace ppapi {
-class PluginInstance;
+class PluginInstanceImpl;
 }  // namespace ppapi
 
 }  // namespace webkit
@@ -130,6 +130,10 @@ struct WebWindowFeatures;
 #if defined(OS_ANDROID)
 class WebHitTestResult;
 #endif
+}
+
+namespace webkit_glue {
+class WebURLResponseExtraDataImpl;
 }
 
 namespace content {
@@ -296,7 +300,7 @@ class CONTENT_EXPORT RenderViewImpl
 
   // Creates a fullscreen container for a pepper plugin instance.
   RenderWidgetFullscreenPepper* CreatePepperFullscreenContainer(
-      webkit::ppapi::PluginInstance* plugin);
+      webkit::ppapi::PluginInstanceImpl* plugin);
 
   // Informs the render view that a PPAPI plugin has gained or lost focus.
   void PpapiPluginFocusChanged();
@@ -566,17 +570,6 @@ class CONTENT_EXPORT RenderViewImpl
       WebKit::WebNavigationType type,
       WebKit::WebNavigationPolicy default_policy,
       bool is_redirect);
-  virtual bool canHandleRequest(WebKit::WebFrame* frame,
-                                const WebKit::WebURLRequest& request);
-  virtual WebKit::WebURLError cannotHandleRequestError(
-      WebKit::WebFrame* frame,
-      const WebKit::WebURLRequest& request);
-  virtual WebKit::WebURLError cancelledError(
-      WebKit::WebFrame* frame,
-      const WebKit::WebURLRequest& request);
-  virtual void unableToImplementPolicyWithError(
-      WebKit::WebFrame* frame,
-      const WebKit::WebURLError& error);
   virtual void willSendSubmitEvent(WebKit::WebFrame* frame,
                                    const WebKit::WebFormElement& form);
   virtual void willSubmitForm(WebKit::WebFrame* frame,
@@ -613,9 +606,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void didNavigateWithinPage(WebKit::WebFrame* frame,
                                      bool is_new_navigation);
   virtual void didUpdateCurrentHistoryItem(WebKit::WebFrame* frame);
-  virtual void assignIdentifierToRequest(WebKit::WebFrame* frame,
-                                         unsigned identifier,
-                                         const WebKit::WebURLRequest& request);
   virtual void willSendRequest(WebKit::WebFrame* frame,
                                unsigned identifier,
                                WebKit::WebURLRequest& request,
@@ -625,9 +615,6 @@ class CONTENT_EXPORT RenderViewImpl
                                   const WebKit::WebURLResponse& response);
   virtual void didFinishResourceLoad(WebKit::WebFrame* frame,
                                      unsigned identifier);
-  virtual void didFailResourceLoad(WebKit::WebFrame* frame,
-                                   unsigned identifier,
-                                   const WebKit::WebURLError& error);
   virtual void didLoadResourceFromMemoryCache(
       WebKit::WebFrame* frame,
       const WebKit::WebURLRequest& request,
@@ -768,7 +755,7 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void WillInitiatePaint() OVERRIDE;
   virtual void DidInitiatePaint() OVERRIDE;
   virtual void DidFlushPaint() OVERRIDE;
-  virtual webkit::ppapi::PluginInstance* GetBitmapForOptimizedPluginPaint(
+  virtual webkit::ppapi::PluginInstanceImpl* GetBitmapForOptimizedPluginPaint(
       const gfx::Rect& paint_bounds,
       TransportDIB** dib,
       gfx::Rect* location,
@@ -829,6 +816,11 @@ class CONTENT_EXPORT RenderViewImpl
   friend class RendererAccessibilityTest;
   friend class RenderViewTest;
 
+  // TODO(nasko): Temporarily friend RenderFrameImpl, so we don't duplicate
+  // utility functions needed in both classes, while we move frame specific
+  // code away from this class.
+  friend class RenderFrameImpl;
+
   FRIEND_TEST_ALL_PREFIXES(ExternalPopupMenuRemoveTest, RemoveOnChange);
   FRIEND_TEST_ALL_PREFIXES(ExternalPopupMenuTest, NormalCase);
   FRIEND_TEST_ALL_PREFIXES(ExternalPopupMenuTest, ShowPopupThenNavigate);
@@ -878,6 +870,17 @@ class CONTENT_EXPORT RenderViewImpl
     HTTP_404,
     CONNECTION_ERROR,
   };
+
+  static WebKit::WebReferrerPolicy GetReferrerPolicyFromRequest(
+      WebKit::WebFrame* frame,
+      const WebKit::WebURLRequest& request);
+
+  static Referrer GetReferrerFromRequest(
+      WebKit::WebFrame* frame,
+      const WebKit::WebURLRequest& request);
+
+  static webkit_glue::WebURLResponseExtraDataImpl* GetExtraDataFromResponse(
+      const WebKit::WebURLResponse& response);
 
   void UpdateURL(WebKit::WebFrame* frame);
   void UpdateTitle(WebKit::WebFrame* frame, const string16& title,

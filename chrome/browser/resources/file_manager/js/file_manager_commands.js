@@ -175,6 +175,7 @@ Commands.unmountCommand = {
 
     event.canExecute = (rootType == RootType.ARCHIVE ||
                         rootType == RootType.REMOVABLE);
+    event.command.setHidden(!event.canExecute);
     event.command.label = rootType == RootType.ARCHIVE ?
         str('CLOSE_ARCHIVE_BUTTON_LABEL') :
         str('UNMOUNT_DEVICE_BUTTON_LABEL');
@@ -537,22 +538,22 @@ Commands.shareCommand = {
     var selection = fileManager.getSelection();
     event.canExecute = fileManager.isOnDrive() &&
         !fileManager.isDriveOffline() &&
-        selection && selection.totalCount == 1 &&
-        selection.directoryCount == 0;
+        selection && selection.totalCount == 1;
     event.command.setHidden(!fileManager.isOnDrive());
   }
 };
 
 /**
- * Pins the selected folder (single only).
+ * Creates a shortcut of the selected folder (single only).
  */
-Commands.pinCommand = {
+Commands.createFolderShortcutCommand = {
   /**
    * @param {Event} event Command event.
    * @param {FileManager} fileManager The file manager instance.
    */
   execute: function(event, fileManager) {
-    fileManager.pinSelection();
+    var entries = fileManager.getSelection().entries;
+    fileManager.createFolderShortcut(entries[0].fullPath);
   },
   /**
    * @param {Event} event Command event.
@@ -570,15 +571,15 @@ Commands.pinCommand = {
     var onlyOneFolderSelected =
         selection && selection.directoryCount == 1 && selection.fileCount == 0;
     event.canExecute = onlyOneFolderSelected &&
-        !fileManager.isFolderPinned(selectionEntries[0].fullPath);
+        !fileManager.folderShortcutExists(selectionEntries[0].fullPath);
     event.command.setHidden(!onlyOneFolderSelected);
   }
 };
 
 /**
- * Unpin the pinned folder.
+ * Removes the folder shortcut.
  */
-Commands.unpinCommand = {
+Commands.removeFolderShortcutCommand = {
   /**
    * @param {Event} event Command event.
    * @param {FileManager} fileManager The file manager instance.
@@ -588,7 +589,7 @@ Commands.unpinCommand = {
     var path = CommandUtil.getCommandRoot(event, directoryTree);
 
     if (path)
-      fileManager.unpinFolder(path);
+      fileManager.removeFolderShortcut(path);
   },
   /**
    * @param {Event} event Command event.
@@ -603,9 +604,9 @@ Commands.unpinCommand = {
     }
 
     var path = CommandUtil.getCommandRoot(event, directoryTree);
-    var isPinned = path && !PathUtil.isRootPath(path);
-    event.canExecute = isPinned;
-    event.command.setHidden(!isPinned);
+    var isShortcut = path && fileManager.folderShortcutExists(path);
+    event.canExecute = isShortcut;
+    event.command.setHidden(!isShortcut);
   }
 };
 

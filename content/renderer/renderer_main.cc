@@ -17,25 +17,24 @@
 #include "base/path_service.h"
 #include "base/pending_task.h"
 #include "base/power_monitor/power_monitor.h"
-#include "base/process_util.h"
 #include "base/strings/string_util.h"
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "base/timer/hi_res_timer_manager.h"
 #include "content/child/child_process.h"
 #include "content/common/content_constants_internal.h"
-#include "content/common/pepper_plugin_registry.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager_impl.h"
+#include "content/renderer/pepper/pepper_plugin_registry.h"
+#include "content/renderer/pepper/ppapi_interface_factory.h"
 #include "content/renderer/render_process_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_main_platform_delegate.h"
 #include "ui/base/ui_base_switches.h"
 #include "webkit/child/webkit_child_helpers.h"
 #include "webkit/glue/webkit_glue.h"
-#include "webkit/plugins/ppapi/ppapi_interface_factory.h"
 
 #if defined(OS_MACOSX)
 #include <Carbon/Carbon.h>
@@ -149,9 +148,6 @@ int RendererMain(const MainFunctionParams& parameters) {
 
   RendererMainPlatformDelegate platform(parameters);
 
-  webkit::ppapi::PpapiInterfaceFactoryManager* factory_manager =
-      webkit::ppapi::PpapiInterfaceFactoryManager::GetInstance();
-  factory_manager->RegisterFactory(ContentPPAPIInterfaceFactory);
 
   base::StatsCounterTimer stats_counter_timer("Content.RendererInit");
   base::StatsScope<base::StatsCounterTimer> startup_timer(stats_counter_timer);
@@ -206,6 +202,10 @@ int RendererMain(const MainFunctionParams& parameters) {
   }
 
 #if defined(ENABLE_PLUGINS)
+  webkit::ppapi::PpapiInterfaceFactoryManager* factory_manager =
+      webkit::ppapi::PpapiInterfaceFactoryManager::GetInstance();
+  factory_manager->RegisterFactory(ContentPPAPIInterfaceFactory);
+
   // Load pepper plugins before engaging the sandbox.
   PepperPluginRegistry::GetInstance();
 #endif

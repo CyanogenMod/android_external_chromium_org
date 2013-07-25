@@ -12730,6 +12730,20 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Settings.HomePageIsNewTabPage" enum="Boolean">
+  <summary>
+    Whether or not the home page user preference is set to the default NTP value
+    when a profile is loaded.
+  </summary>
+</histogram>
+
+<histogram name="Settings.ShowHomeButton" enum="BooleanEnabled">
+  <summary>
+    Whether or not the Home button is enabled in user preferences when a profile
+    is loaded.
+  </summary>
+</histogram>
+
 <histogram name="SimpleCache.CheckCRCResult" enum="CheckCRCResult">
   <summary>
     Whether or not the CRC was checked at the moment when the last reference to
@@ -12840,6 +12854,12 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="SimpleCache.IndexFileStateOnLoad" enum="SimpleIndexState">
+  <summary>
+    The state the index file is at when an attempt is made to load from it.
+  </summary>
+</histogram>
+
 <histogram name="SimpleCache.IndexInitializationWaiters">
   <summary>
     At the time of index initialization, the number of enqueued jobs awaiting
@@ -12870,6 +12890,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.IndexStale" enum="BooleanStale">
+  <obsolete>
+    Deprecated 07/2013, and replaced by IndexFileStateOnLoad.
+  </obsolete>
   <summary>For each index load, whether the index file was stale.</summary>
 </histogram>
 
@@ -12921,6 +12944,21 @@ other types of suffix sets.
 <histogram name="SimpleCache.KeyMatchedOnOpen" enum="BooleanMatched">
   <summary>
     For each call to OpenEntry, whether the key on disk matched the request key.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.LastClusterLossPercent" units="percent">
+  <summary>
+    For each file in the Simple Cache, the percentage of disk space used by the
+    cluster loss, the unused disk space in the last 4096 byte cluster of the
+    file.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.LastClusterSize" units="bytes">
+  <summary>
+    For each file in the Simple Cache, the number of bytes in the last 4096 byte
+    cluster when the entry is saved to disk.
   </summary>
 </histogram>
 
@@ -20422,6 +20460,13 @@ other types of suffix sets.
   <int value="2" label="Over Max Size"/>
   <int value="3" label="Bad State"/>
   <int value="4" label="Synchronous Write Failure"/>
+</enum>
+
+<enum name="SimpleIndexState" type="int">
+  <int value="0" label="Corrupt"/>
+  <int value="1" label="Stale"/>
+  <int value="2" label="Fresh"/>
+  <int value="3" label="Fresh index with cache updated since backend start"/>
 </enum>
 
 <enum name="SocketStreamConnectionType" type="int">

@@ -75,15 +75,6 @@ class CONTENT_EXPORT RenderFrameImpl
       WebKit::WebNavigationType type,
       WebKit::WebNavigationPolicy default_policy,
       bool is_redirect);
-  virtual WebKit::WebURLError cannotHandleRequestError(
-      WebKit::WebFrame* frame,
-      const WebKit::WebURLRequest& request);
-  virtual WebKit::WebURLError cancelledError(
-      WebKit::WebFrame* frame,
-      const WebKit::WebURLRequest& request);
-  virtual void unableToImplementPolicyWithError(
-      WebKit::WebFrame* frame,
-      const WebKit::WebURLError& error);
   virtual void willSendSubmitEvent(WebKit::WebFrame* frame,
                                    const WebKit::WebFormElement& form);
   virtual void willSubmitForm(WebKit::WebFrame* frame,
@@ -132,9 +123,6 @@ class CONTENT_EXPORT RenderFrameImpl
       const WebKit::WebURLResponse& response);
   virtual void didFinishResourceLoad(WebKit::WebFrame* frame,
                                      unsigned identifier);
-  virtual void didFailResourceLoad(WebKit::WebFrame* frame,
-                                   unsigned identifier,
-                                   const WebKit::WebURLError& error);
   virtual void didLoadResourceFromMemoryCache(
       WebKit::WebFrame* frame,
       const WebKit::WebURLRequest& request,
@@ -201,7 +189,7 @@ class CONTENT_EXPORT RenderFrameImpl
                                    int arb_robustness_status_code);
 
   // RenderFrameImpl methods
-  int routing_id() { return routing_id_; }
+  int GetRoutingID() const;
 
  protected:
   RenderFrameImpl(RenderViewImpl* render_view, int32 routing_id);

@@ -22,28 +22,22 @@ class InspectUI : public content::WebUIController,
   explicit InspectUI(content::WebUI* web_ui);
   virtual ~InspectUI();
 
-  void RefreshUI();
+  void InitUI();
 
  private:
   class WorkerCreationDestructionListener;
 
-  static bool WeakHandleRequestCallback(
-      const base::WeakPtr<InspectUI>& inspect_ui,
-      const std::string& path,
-      const content::WebUIDataSource::GotDataCallback& callback);
+  void PopulateLists();
 
   // content::NotificationObserver overrides.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  void StartListeningNotifications();
   void StopListeningNotifications();
 
   content::WebUIDataSource* CreateInspectUIHTMLSource();
-
-  bool HandleRequestCallback(
-      const std::string& path,
-      const content::WebUIDataSource::GotDataCallback& callback);
 
   // DevToolsAdbBridge::Listener overrides.
   virtual void RemotePagesChanged(
@@ -55,7 +49,6 @@ class InspectUI : public content::WebUIController,
   content::NotificationRegistrar registrar_;
 
   DevToolsAdbBridge* adb_bridge_;
-  base::WeakPtrFactory<InspectUI> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(InspectUI);
 };

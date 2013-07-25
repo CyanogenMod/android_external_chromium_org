@@ -59,7 +59,10 @@ def DeviceInfo(serial, options):
     battery_level = int(re.findall('level: (\d+)', battery)[0])
     battery_temp = float(re.findall('temperature: (\d+)', battery)[0]) / 10
   sub_info = device_adb.GetSubscriberInfo()
-  imei_slice = re.findall('Device ID = (\d+)', sub_info)[0][-6:]
+  imei_slice = ''
+  device_id = re.findall('Device ID = (\d+)', sub_info)
+  if device_id and len(device_id):
+    imei_slice = device_id[0][-6:]
   report = ['Device %s (%s)' % (serial, device_type),
             '  Build: %s (%s)' %
               (device_build, device_adb.GetBuildFingerprint()),

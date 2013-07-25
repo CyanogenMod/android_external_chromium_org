@@ -25,8 +25,7 @@
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/pref_value_store.h"
-#include "base/process_info.h"
-#include "base/process_util.h"
+#include "base/process/process_info.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
@@ -82,6 +81,7 @@
 #include "chrome/browser/pref_service_flags_storage.h"
 #include "chrome/browser/prefs/chrome_pref_service_factory.h"
 #include "chrome/browser/prefs/command_line_pref_store.h"
+#include "chrome/browser/prefs/pref_metrics_service.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service_factory.h"
@@ -1522,6 +1522,9 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
   NaClProcessHost::EarlyStartup(new NaClBrowserDelegateImpl);
 #endif
 
+  // Make sure initial prefs are recorded
+  PrefMetricsService::Factory::GetForProfile(profile_);
+
   PreBrowserStart();
 
   // Instantiate the notification UI manager, as this triggers a perf timer
@@ -1687,10 +1690,11 @@ void ChromeBrowserMainParts::PostMainMessageLoopRun() {
   for (size_t i = 0; i < chrome_extra_parts_.size(); ++i)
     chrome_extra_parts_[i]->PostMainMessageLoopRun();
 
-  // TranslateManager's URL fetchers should be destructed in the main thread
+  // Some tests don't set parameters.ui_task, so they started translate
+  // language fetch that was never completed so we need to cleanup here
   // otherwise it will be done by the destructor in a wrong thread.
-  if (translate_manager_ != NULL)
-    translate_manager_->CleanupPendingUrlFetcher();
+  if (parameters().ui_task == NULL && translate_manager_ != NULL)
+    translate_manager_->CleanupPendingUlrFetcher();
 
   if (notify_result_ == ProcessSingleton::PROCESS_NONE)
     process_singleton_->Cleanup();

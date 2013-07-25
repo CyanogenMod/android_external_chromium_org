@@ -95,11 +95,11 @@ MY_DEFS_Debug := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(LOCAL_PATH)/third_party/libphonenumber/src \
 	$(LOCAL_PATH)/third_party/libphonenumber/src/test \
 	$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber \
-	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
-	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/protoc_out \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/protobuf \
@@ -191,11 +191,11 @@ MY_DEFS_Release := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(LOCAL_PATH)/third_party/libphonenumber/src \
 	$(LOCAL_PATH)/third_party/libphonenumber/src/test \
 	$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber \
-	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
-	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/protoc_out \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/protobuf \
