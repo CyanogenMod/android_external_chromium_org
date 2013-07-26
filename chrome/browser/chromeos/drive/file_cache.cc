@@ -238,7 +238,6 @@ bool FileCache::FreeDiskSpaceIfNeededFor(int64 num_bytes) {
 }
 
 void FileCache::GetFileOnUIThread(const std::string& resource_id,
-                                  const std::string& md5,
                                   const GetFileFromCacheCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
@@ -249,7 +248,6 @@ void FileCache::GetFileOnUIThread(const std::string& resource_id,
                                    base::Bind(&FileCache::GetFile,
                                               base::Unretained(this),
                                               resource_id,
-                                              md5,
                                               cache_file_path),
                                    base::Bind(&RunGetFileFromCacheCallback,
                                               callback,
@@ -257,13 +255,12 @@ void FileCache::GetFileOnUIThread(const std::string& resource_id,
 }
 
 FileError FileCache::GetFile(const std::string& resource_id,
-                             const std::string& md5,
                              base::FilePath* cache_file_path) {
   AssertOnSequencedWorkerPool();
   DCHECK(cache_file_path);
 
   FileCacheEntry cache_entry;
-  if (!GetCacheEntry(resource_id, md5, &cache_entry) ||
+  if (!storage_->GetCacheEntry(resource_id, &cache_entry) ||
       !cache_entry.is_present())
     return FILE_ERROR_NOT_FOUND;
 
@@ -417,7 +414,6 @@ FileError FileCache::MarkDirty(const std::string& resource_id) {
   if (cache_entry.is_dirty())
     return FILE_ERROR_OK;
 
-  // Now that file operations have completed, update metadata.
   cache_entry.set_is_dirty(true);
   return storage_->PutCacheEntry(resource_id, cache_entry) ?
       FILE_ERROR_OK : FILE_ERROR_FAILED;
@@ -427,30 +423,24 @@ FileError FileCache::ClearDirty(const std::string& resource_id,
                                 const std::string& md5) {
   AssertOnSequencedWorkerPool();
 
-  // |md5| is the new .<md5> extension to rename the file to.
-  // So, search for entry in cache without comparing md5.
-  FileCacheEntry cache_entry;
-
   // Clearing a dirty file means its entry and actual file blob must exist in
   // cache.
+  FileCacheEntry cache_entry;
   if (!storage_->GetCacheEntry(resource_id, &cache_entry) ||
       !cache_entry.is_present()) {
     LOG(WARNING) << "Can't clear dirty state of a file that wasn't cached: "
-                 << "res_id=" << resource_id
-                 << ", md5=" << md5;
+                 << resource_id;
     return FILE_ERROR_NOT_FOUND;
   }
 
   // If a file is not dirty (it should have been marked dirty via
   // MarkDirtyInCache), clearing its dirty state is an invalid operation.
   if (!cache_entry.is_dirty()) {
-    LOG(WARNING) << "Can't clear dirty state of a non-dirty file: res_id="
-                 << resource_id
-                 << ", md5=" << md5;
+    LOG(WARNING) << "Can't clear dirty state of a non-dirty file: "
+                 << resource_id;
     return FILE_ERROR_INVALID_OPERATION;
   }
 
-  // Now that file operations have completed, update metadata.
   cache_entry.set_md5(md5);
   cache_entry.set_is_dirty(false);
   return storage_->PutCacheEntry(resource_id, cache_entry) ?

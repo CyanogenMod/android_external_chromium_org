@@ -9,12 +9,16 @@
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/files/file_util_proxy.h"
+#include "content/child/child_thread.h"
+#include "content/child/quota_dispatcher.h"
+#include "content/common/fileapi/file_system_messages.h"
 #include "content/public/common/content_client.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/pepper/host_globals.h"
-#include "content/renderer/pepper/ppapi_plugin_instance_impl.h"
+#include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/pepper/ppb_file_ref_impl.h"
 #include "content/renderer/pepper/quota_file_io.h"
+#include "content/renderer/render_thread_impl.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/host/dispatch_host_message.h"
 #include "ppapi/host/ppapi_host.h"
@@ -31,8 +35,6 @@ using ppapi::PPTimeToTime;
 using ppapi::host::ReplyMessageContext;
 using ppapi::thunk::EnterResourceNoLock;
 using ppapi::thunk::PPB_FileRef_API;
-using webkit::ppapi::PPB_FileRef_Impl;
-using webkit::ppapi::PluginDelegate;
 
 namespace {
 
@@ -52,6 +54,48 @@ int32_t ErrorOrByteNumber(int32_t pp_error, int32_t byte_number) {
   return pp_error == PP_OK ? byte_number : pp_error;
 }
 
+class QuotaCallbackTranslator : public QuotaDispatcher::Callback {
+ public:
+  typedef QuotaFileIO::Delegate::AvailableSpaceCallback PluginCallback;
+  explicit QuotaCallbackTranslator(const PluginCallback& cb) : callback_(cb) {}
+  virtual void DidQueryStorageUsageAndQuota(int64 usage, int64 quota) OVERRIDE {
+    callback_.Run(std::max(static_cast<int64>(0), quota - usage));
+  }
+  virtual void DidGrantStorageQuota(int64 granted_quota) OVERRIDE {
+    NOTREACHED();
+  }
+  virtual void DidFail(quota::QuotaStatusCode error) OVERRIDE {
+    callback_.Run(0);
+  }
+ private:
+  PluginCallback callback_;
+};
+
+class QuotaFileIODelegate : public QuotaFileIO::Delegate {
+ public:
+  QuotaFileIODelegate() {}
+  virtual ~QuotaFileIODelegate() {}
+
+  virtual void QueryAvailableSpace(
+      const GURL& origin,
+      quota::StorageType type,
+      const AvailableSpaceCallback& callback) OVERRIDE {
+    ChildThread::current()->quota_dispatcher()->QueryStorageUsageAndQuota(
+        origin, type, new QuotaCallbackTranslator(callback));
+  }
+  virtual void WillUpdateFile(const GURL& file_path) OVERRIDE {
+    ChildThread::current()->Send(new FileSystemHostMsg_WillUpdate(file_path));
+  }
+  virtual void DidUpdateFile(const GURL& file_path, int64_t delta) OVERRIDE {
+    ChildThread::current()->Send(new FileSystemHostMsg_DidUpdate(
+        file_path, delta));
+  }
+  virtual scoped_refptr<base::MessageLoopProxy>
+      GetFileThreadMessageLoopProxy() OVERRIDE {
+    return RenderThreadImpl::current()->GetFileThreadMessageLoopProxy();
+  }
+};
+
 }  // namespace
 
 PepperFileIOHost::PepperFileIOHost(RendererPpapiHost* host,
@@ -66,8 +110,8 @@ PepperFileIOHost::PepperFileIOHost(RendererPpapiHost* host,
       open_flags_(0),
       weak_factory_(this) {
   // TODO(victorhsieh): eliminate plugin_delegate_ as it's no longer needed.
-  webkit::ppapi::PluginInstanceImpl* plugin_instance =
-      webkit::ppapi::HostGlobals::Get()->GetInstance(instance);
+  PepperPluginInstanceImpl* plugin_instance =
+      HostGlobals::Get()->GetInstance(instance);
   plugin_delegate_ = plugin_instance ? plugin_instance->delegate() : NULL;
 }
 
@@ -480,8 +524,8 @@ void PepperFileIOHost::ExecutePlatformOpenFileCallback(
   if (file_ != base::kInvalidPlatformFileValue &&
       (file_system_type_ == PP_FILESYSTEMTYPE_LOCALTEMPORARY ||
        file_system_type_ == PP_FILESYSTEMTYPE_LOCALPERSISTENT)) {
-    quota_file_io_.reset(new webkit::ppapi::QuotaFileIO(
-        pp_instance(), file_, file_system_url_, file_system_type_));
+    quota_file_io_.reset(new QuotaFileIO(
+        new QuotaFileIODelegate, file_, file_system_url_, file_system_type_));
   }
 
   reply_context.params.set_result(pp_error);

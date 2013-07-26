@@ -55,6 +55,7 @@
 #include "content/public/common/drop_data.h"
 #include "content/public/common/favicon_url.h"
 #include "content/public/common/file_chooser_params.h"
+#include "content/public/common/page_zoom.h"
 #include "content/public/common/ssl_status.h"
 #include "content/public/common/three_d_api_types.h"
 #include "content/public/common/url_constants.h"
@@ -97,6 +98,7 @@
 #include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/media_stream_dispatcher.h"
 #include "content/renderer/media/media_stream_impl.h"
+#include "content/renderer/media/midi_dispatcher.h"
 #include "content/renderer/media/render_media_log.h"
 #include "content/renderer/media/rtc_peer_connection_handler.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
@@ -1862,9 +1864,8 @@ void RenderViewImpl::UpdateURL(WebFrame* frame) {
     // Reset the zoom limits in case a plugin had changed them previously. This
     // will also call us back which will cause us to send a message to
     // update WebContentsImpl.
-    webview()->zoomLimitsChanged(
-        WebView::zoomFactorToZoomLevel(kMinimumZoomFactor),
-        WebView::zoomFactorToZoomLevel(kMaximumZoomFactor));
+    webview()->zoomLimitsChanged(ZoomFactorToZoomLevel(kMinimumZoomFactor),
+                                 ZoomFactorToZoomLevel(kMaximumZoomFactor));
 
     // Set zoom level, but don't do it for full-page plugin since they don't use
     // the same zoom settings.
@@ -2234,7 +2235,7 @@ WebExternalPopupMenu* RenderViewImpl::createExternalPopupMenu(
 }
 
 RenderWidgetFullscreenPepper* RenderViewImpl::CreatePepperFullscreenContainer(
-    webkit::ppapi::PluginInstanceImpl* plugin) {
+    PepperPluginInstanceImpl* plugin) {
 #if defined(ENABLE_PLUGINS)
   GURL active_url;
   if (webview() && webview()->mainFrame())
@@ -3970,6 +3971,12 @@ void RenderViewImpl::CheckPreferredSize() {
 
   gfx::Size size = webview()->contentsPreferredMinimumSize();
 
+  // In the presence of zoom, these sizes are still reported as if unzoomed,
+  // so we need to adjust.
+  double zoom_factor = ZoomLevelToZoomFactor(webview()->zoomLevel());
+  size.set_width(static_cast<int>(size.width() * zoom_factor));
+  size.set_height(static_cast<int>(size.height() * zoom_factor));
+
   if (size == preferred_size_)
     return;
 
@@ -5449,13 +5456,12 @@ void RenderViewImpl::DidFlushPaint() {
   }
 }
 
-webkit::ppapi::PluginInstanceImpl*
-    RenderViewImpl::GetBitmapForOptimizedPluginPaint(
-        const gfx::Rect& paint_bounds,
-        TransportDIB** dib,
-        gfx::Rect* location,
-        gfx::Rect* clip,
-        float* scale_factor) {
+PepperPluginInstanceImpl* RenderViewImpl::GetBitmapForOptimizedPluginPaint(
+    const gfx::Rect& paint_bounds,
+    TransportDIB** dib,
+    gfx::Rect* location,
+    gfx::Rect* clip,
+    float* scale_factor) {
   return pepper_helper_->GetBitmapForOptimizedPluginPaint(
       paint_bounds, dib, location, clip, scale_factor);
 }
@@ -6029,9 +6035,9 @@ void RenderViewImpl::zoomLimitsChanged(double minimum_level,
   bool remember = !webview()->mainFrame()->document().isPluginDocument();
 
   int minimum_percent = static_cast<int>(
-      WebView::zoomLevelToZoomFactor(minimum_level) * 100);
+      ZoomLevelToZoomFactor(minimum_level) * 100);
   int maximum_percent = static_cast<int>(
-      WebView::zoomLevelToZoomFactor(maximum_level) * 100);
+      ZoomLevelToZoomFactor(maximum_level) * 100);
 
   Send(new ViewHostMsg_UpdateZoomLimits(
       routing_id_, minimum_percent, maximum_percent, remember));
@@ -6048,6 +6054,14 @@ void RenderViewImpl::zoomLevelChanged() {
   Send(new ViewHostMsg_DidZoomURL(
       routing_id_, zoom_level, remember,
       GURL(webview()->mainFrame()->document().url())));
+}
+
+double RenderViewImpl::zoomLevelToZoomFactor(double zoom_level) const {
+  return ZoomLevelToZoomFactor(zoom_level);
+}
+
+double RenderViewImpl::zoomFactorToZoomLevel(double factor) const {
+  return ZoomFactorToZoomLevel(factor);
 }
 
 void RenderViewImpl::registerProtocolHandler(const WebString& scheme,
@@ -6082,6 +6096,12 @@ WebKit::WebPageVisibilityState RenderViewImpl::visibilityState() const {
 WebKit::WebUserMediaClient* RenderViewImpl::userMediaClient() {
   EnsureMediaStreamClient();
   return web_user_media_client_;
+}
+
+WebKit::WebMIDIClient* RenderViewImpl::webMIDIClient() {
+  if (!midi_dispatcher_)
+    midi_dispatcher_ = new MIDIDispatcher(this);
+  return midi_dispatcher_;
 }
 
 void RenderViewImpl::draggableRegionsChanged() {

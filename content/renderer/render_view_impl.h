@@ -84,14 +84,6 @@ namespace ui {
 struct SelectedFileInfo;
 }  // namespace ui
 
-namespace webkit {
-
-namespace ppapi {
-class PluginInstanceImpl;
-}  // namespace ppapi
-
-}  // namespace webkit
-
 namespace WebKit {
 class WebApplicationCacheHost;
 class WebApplicationCacheHostClient;
@@ -149,11 +141,13 @@ class ImageResourceFetcher;
 class InputTagSpeechDispatcher;
 class JavaBridgeDispatcher;
 class LoadProgressTracker;
+class MIDIDispatcher;
 class MediaStreamClient;
 class MediaStreamDispatcher;
 class MouseLockDispatcher;
 class NavigationState;
 class NotificationProvider;
+class PepperPluginInstanceImpl;
 class RenderViewObserver;
 class RenderViewTest;
 class RendererAccessibility;
@@ -300,7 +294,7 @@ class CONTENT_EXPORT RenderViewImpl
 
   // Creates a fullscreen container for a pepper plugin instance.
   RenderWidgetFullscreenPepper* CreatePepperFullscreenContainer(
-      webkit::ppapi::PluginInstanceImpl* plugin);
+      PepperPluginInstanceImpl* plugin);
 
   // Informs the render view that a PPAPI plugin has gained or lost focus.
   void PpapiPluginFocusChanged();
@@ -502,12 +496,15 @@ class CONTENT_EXPORT RenderViewImpl
   virtual WebKit::WebDeviceOrientationClient* deviceOrientationClient();
   virtual void zoomLimitsChanged(double minimum_level, double maximum_level);
   virtual void zoomLevelChanged();
+  virtual double zoomLevelToZoomFactor(double zoom_level) const;
+  virtual double zoomFactorToZoomLevel(double factor) const;
   virtual void registerProtocolHandler(const WebKit::WebString& scheme,
                                        const WebKit::WebString& base_url,
                                        const WebKit::WebString& url,
                                        const WebKit::WebString& title);
   virtual WebKit::WebPageVisibilityState visibilityState() const;
   virtual WebKit::WebUserMediaClient* userMediaClient();
+  virtual WebKit::WebMIDIClient* webMIDIClient();
   virtual void draggableRegionsChanged();
 
 #if defined(OS_ANDROID)
@@ -755,7 +752,7 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void WillInitiatePaint() OVERRIDE;
   virtual void DidInitiatePaint() OVERRIDE;
   virtual void DidFlushPaint() OVERRIDE;
-  virtual webkit::ppapi::PluginInstanceImpl* GetBitmapForOptimizedPluginPaint(
+  virtual PepperPluginInstanceImpl* GetBitmapForOptimizedPluginPaint(
       const gfx::Rect& paint_bounds,
       TransportDIB** dib,
       gfx::Rect* location,
@@ -1415,6 +1412,9 @@ class CONTENT_EXPORT RenderViewImpl
   MediaStreamClient* media_stream_client_;
   WebKit::WebUserMediaClient* web_user_media_client_;
 
+  // MIDIClient attached to this view; lazily initialized.
+  MIDIDispatcher* midi_dispatcher_;
+
   DevToolsAgent* devtools_agent_;
 
   // The current accessibility mode.
@@ -1535,9 +1535,9 @@ class CONTENT_EXPORT RenderViewImpl
   // DOM automation bindings are enabled.
   scoped_ptr<DomAutomationController> dom_automation_controller_;
 
-   // Allows JS to read out a variety of internal various metrics. The JS object
-   // is only exposed when the stats collection bindings are enabled.
-   scoped_ptr<StatsCollectionController> stats_collection_controller_;
+  // Allows JS to read out a variety of internal various metrics. The JS object
+  // is only exposed when the stats collection bindings are enabled.
+  scoped_ptr<StatsCollectionController> stats_collection_controller_;
 
   // This field stores drag/drop related info for the event that is currently
   // being handled. If the current event results in starting a drag/drop

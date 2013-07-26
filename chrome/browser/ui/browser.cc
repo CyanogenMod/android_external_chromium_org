@@ -88,6 +88,7 @@
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/app_modal_dialogs/javascript_dialog_manager.h"
+#include "chrome/browser/ui/autofill/tab_autofill_manager_delegate.h"
 #include "chrome/browser/ui/blocked_content/blocked_content_tab_helper.h"
 #include "chrome/browser/ui/blocked_content/popup_blocker_tab_helper.h"
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
@@ -1083,6 +1084,9 @@ void Browser::ActiveTabChanged(WebContents* old_contents,
   // This needs to be called after UpdateSearchState().
   if (instant_controller_)
     instant_controller_->ActiveTabChanged();
+
+  autofill::TabAutofillManagerDelegate::FromWebContents(new_contents)->
+      TabActivated(reason);
 }
 
 void Browser::TabMoved(WebContents* contents,
@@ -1289,8 +1293,10 @@ WebContents* Browser::OpenURLFromTab(WebContents* source,
          params.disposition == NEW_BACKGROUND_TAB) &&
         !params.user_gesture && !CommandLine::ForCurrentProcess()->HasSwitch(
                                     switches::kDisablePopupBlocking)) {
-      if (popup_blocker_helper->MaybeBlockPopup(nav_params))
+      if (popup_blocker_helper->MaybeBlockPopup(nav_params,
+                                                WebWindowFeatures())) {
         return NULL;
+      }
     }
   }
 
@@ -1538,7 +1544,7 @@ bool Browser::ShouldCreateWebContents(
     else
       nav_params.disposition = disposition;
 
-    return !popup_blocker_helper->MaybeBlockPopup(nav_params);
+    return !popup_blocker_helper->MaybeBlockPopup(nav_params, features);
   }
 
   return true;

@@ -8,16 +8,14 @@
 #include "content/renderer/pepper/gfx_conversion.h"
 #include "content/renderer/pepper/host_globals.h"
 #include "content/renderer/pepper/mock_plugin_delegate.h"
+#include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/pepper/plugin_module.h"
-#include "content/renderer/pepper/ppapi_interface_factory.h"
-#include "content/renderer/pepper/ppapi_plugin_instance_impl.h"
 #include "ppapi/c/pp_var.h"
 #include "ppapi/c/ppp_instance.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
 
-namespace webkit {
-namespace ppapi {
+namespace content {
 
 namespace {
 
@@ -78,19 +76,19 @@ PpapiUnittest::~PpapiUnittest() {
 
 void PpapiUnittest::SetUp() {
   message_loop_.reset(new base::MessageLoop());
-  delegate_.reset(NewPluginDelegate());
+  delegate_.reset(new MockPluginDelegate());
 
   // Initialize the mock module.
   module_ = new PluginModule("Mock plugin", base::FilePath(),
                              ::ppapi::PpapiPermissions());
   ::ppapi::PpapiGlobals::Get()->ResetMainThreadMessageLoopForTesting();
-  content::PepperPluginInfo::EntryPoints entry_points;
+  PepperPluginInfo::EntryPoints entry_points;
   entry_points.get_interface = &MockGetInterface;
   entry_points.initialize_module = &MockInitializeModule;
   ASSERT_TRUE(module_->InitAsInternalPlugin(entry_points));
 
   // Initialize the mock instance.
-  instance_ = PluginInstanceImpl::Create(
+  instance_ = PepperPluginInstanceImpl::Create(
       delegate_.get(), NULL, module(), NULL, GURL());
 }
 
@@ -99,10 +97,6 @@ void PpapiUnittest::TearDown() {
   module_ = NULL;
   message_loop_.reset();
   PluginModule::ResetHostGlobalsForTest();
-}
-
-MockPluginDelegate* PpapiUnittest::NewPluginDelegate() {
-  return new MockPluginDelegate;
 }
 
 const void* PpapiUnittest::GetMockInterface(const char* interface_name) const {
@@ -123,47 +117,4 @@ void PpapiUnittest::SetViewSize(int width, int height) const {
   instance_->view_data_.clip_rect = instance_->view_data_.rect;
 }
 
-// Tests whether custom PPAPI interface factories are called when PPAPI
-// interfaces are requested.
-class PpapiCustomInterfaceFactoryTest : public PpapiUnittest {
- public:
-  PpapiCustomInterfaceFactoryTest() {}
-  virtual ~PpapiCustomInterfaceFactoryTest() {}
-
-  bool result() {
-    return result_;
-  }
-
-  void reset_result() {
-    result_ = false;
-  }
-
-  static const void* InterfaceFactory(const std::string& interface_name) {
-    result_ = true;
-    return NULL;
-  }
-
- private:
-  static bool result_;
-};
-
-bool PpapiCustomInterfaceFactoryTest::result_ = false;
-
-// This test validates whether custom PPAPI interface factories are invoked in
-// response to PluginModule::GetPluginInterface calls.
-TEST_F(PpapiCustomInterfaceFactoryTest, BasicFactoryTest) {
-  PpapiInterfaceFactoryManager::GetInstance()->RegisterFactory(
-      PpapiCustomInterfaceFactoryTest::InterfaceFactory);
-  (*PluginModule::GetLocalGetInterfaceFunc())("DummyInterface");
-  EXPECT_TRUE(result());
-
-  reset_result();
-  PpapiInterfaceFactoryManager::GetInstance()->UnregisterFactory(
-      PpapiCustomInterfaceFactoryTest::InterfaceFactory);
-
-  (*PluginModule::GetLocalGetInterfaceFunc())("DummyInterface");
-  EXPECT_FALSE(result());
-}
-
-}  // namespace ppapi
-}  // namespace webkit
+}  // namespace content

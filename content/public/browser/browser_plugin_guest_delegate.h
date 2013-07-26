@@ -5,7 +5,7 @@
 #ifndef CONTENT_PUBLIC_BROWSER_BROWSER_PLUGIN_GUEST_DELEGATE_H_
 #define CONTENT_PUBLIC_BROWSER_BROWSER_PLUGIN_GUEST_DELEGATE_H_
 
-#include "base/process_util.h"
+#include "base/process/kill.h"
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
 
@@ -35,6 +35,12 @@ class CONTENT_EXPORT BrowserPluginGuestDelegate {
   virtual void GuestProcessGone(base::TerminationStatus status) {}
 
   virtual bool HandleKeyboardEvent(const NativeWebKeyboardEvent& event);
+
+  // Notification that the guest is no longer hung.
+  virtual void RendererResponsive() {}
+
+  // Notification that the guest is hung.
+  virtual void RendererUnresponsive() {}
 };
 
 }  // namespace content

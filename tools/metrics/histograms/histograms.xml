@@ -12466,6 +12466,19 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="SBClientDownload.DownloadRequestNetError" enum="NetErrorCodes">
+  <summary>
+    The net error code for all CheckClientDownloadRequest URLFetchers.
+  </summary>
+</histogram>
+
+<histogram name="SBClientDownload.DownloadRequestResponseCode">
+  <summary>
+    For CheckClientDownloadRequest URLFetchers with successful status, the HTTP
+    response code that was received.
+  </summary>
+</histogram>
+
 <histogram name="SBClientDownload.SignedBinaryDownload"
     enum="SBClientDownloadIsSignedBinary">
   <summary>
@@ -14132,6 +14145,15 @@ other types of suffix sets.
   <summary>
     Measures the time taken by Google Online Wallet server's update instument
     API call.
+  </summary>
+</histogram>
+
+<histogram name="WebCore.Animation.CSSProperties" enum="MappedCSSProperties">
+  <summary>
+    Counts the number of times each CSS property is animated. There is no limit
+    on the number of times each property is counted per page view -- a property
+    that is animated multiple times during a single page view is counted each
+    time it animates.
   </summary>
 </histogram>
 
@@ -16924,7 +16946,7 @@ other types of suffix sets.
   <int value="51" label="StepAttribute"/>
   <int value="52" label="PageVisits"/>
   <int value="53" label="HTMLMarqueeElement"/>
-  <int value="54" label="CSSOverflowMarquee"/>
+  <int value="54" label="Unused: CSSOverflowMarquee"/>
   <int value="55" label="Reflection"/>
   <int value="56" label="CursorVisibility"/>
   <int value="57" label="StorageInfo"/>
@@ -16950,6 +16972,17 @@ other types of suffix sets.
   <int value="77" label="XMLDocument"/>
   <int value="78" label="XSLProcessingInstruction"/>
   <int value="79" label="XSLTProcessor"/>
+  <int value="80" label="SVGSwitchElement"/>
+  <int value="81" label="PrefixedDocumentRegister"/>
+  <int value="82" label="HTMLShadowElementOlderShadowRoot"/>
+  <int value="83" label="Document.all()"/>
+  <int value="84" label="FormElement"/>
+  <int value="85" label="DemotedFormElement"/>
+  <int value="86" label="CaptureAttributeAsEnum"/>
+  <int value="87" label="ShadowDOMPrefixedPseudo"/>
+  <int value="88" label="ShadowDOMPrefixedCreateShadowRoot"/>
+  <int value="89" label="ShadowDOMPrefixedShadowRoot"/>
+  <int value="90" label="SVGAnimationElement"/>
 </enum>
 
 <enum name="FFmpegCodecs" type="int">

@@ -12,6 +12,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/stats_counters.h"
+#include "base/process/process.h"
 #include "base/process/process_metrics.h"
 #include "base/time/time.h"
 #include "chrome/browser/safe_browsing/prefix_set.h"
@@ -69,6 +70,12 @@ const size_t kMaxWhitelistSize = 5000;
 // lookups to this whitelist will be considered a match.
 const char kWhitelistKillSwitchUrl[] =
     "sb-ssl.google.com/safebrowsing/csd/killswitch";  // Don't change this!
+
+// If the hash of this exact expression is on a whitelist then the
+// malware IP blacklisting feature will be disabled in csd.
+// Don't change this!
+const char kMalwareIPKillSwitchUrl[] =
+    "sb-ssl.google.com/safebrowsing/csd/killswitch_malware";
 
 // To save space, the incoming |chunk_id| and |list_id| are combined
 // into an |encoded_chunk_id| for storage by shifting the |list_id|
@@ -1604,4 +1611,13 @@ void SafeBrowsingDatabaseNew::LoadWhitelist(
     whitelist->second = false;
     whitelist->first.swap(new_whitelist);
   }
+}
+
+bool SafeBrowsingDatabaseNew::IsMalwareIPMatchKillSwitchOn() {
+  SBFullHash malware_kill_switch;
+  crypto::SHA256HashString(kMalwareIPKillSwitchUrl, &malware_kill_switch,
+                           sizeof(malware_kill_switch));
+  std::vector<SBFullHash> full_hashes;
+  full_hashes.push_back(malware_kill_switch);
+  return ContainsWhitelistedHashes(csd_whitelist_, full_hashes);
 }

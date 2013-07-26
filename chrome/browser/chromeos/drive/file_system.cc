@@ -756,7 +756,6 @@ void FileSystem::SearchMetadata(const std::string& query,
 
   drive::internal::SearchMetadata(blocking_task_runner_,
                                   resource_metadata_,
-                                  cache_,
                                   query,
                                   options,
                                   at_most_num_matches,
@@ -949,10 +948,8 @@ void FileSystem::CheckLocalModificationAndRunAfterGetCacheEntry(
 
   // Gets the cache file path.
   const std::string& resource_id = entry->resource_id();
-  const std::string& md5 = entry->file_specific_info().md5();
   cache_->GetFileOnUIThread(
       resource_id,
-      md5,
       base::Bind(
           &FileSystem::CheckLocalModificationAndRunAfterGetCacheFile,
           weak_ptr_factory_.GetWeakPtr(),

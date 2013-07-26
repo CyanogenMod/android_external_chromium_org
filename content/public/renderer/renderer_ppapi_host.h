@@ -8,7 +8,7 @@
 #include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
 #include "base/platform_file.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_platform_file.h"
 #include "ppapi/c/pp_instance.h"
@@ -35,14 +35,8 @@ namespace WebKit {
 class WebPluginContainer;
 }
 
-namespace webkit {
-namespace ppapi {
-class PluginInstance;
-}
-}
-
 namespace content {
-
+class PepperPluginInstance;
 class RenderView;
 
 // Interface that allows components in the embedder app to talk to the
@@ -66,7 +60,7 @@ class RendererPpapiHost {
   // Returns the PluginInstance for the given PP_Instance, or NULL if the
   // PP_Instance is invalid (the common case this will be invalid is during
   // plugin teardown when resource hosts are being force-freed).
-  virtual webkit::ppapi::PluginInstance* GetPluginInstance(
+  virtual PepperPluginInstance* GetPluginInstance(
       PP_Instance instance) const = 0;
 
   // Returns the RenderView for the given plugin instance, or NULL if the

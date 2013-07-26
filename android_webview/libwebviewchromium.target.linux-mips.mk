@@ -92,6 +92,10 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_WebKit_chromium_blink_common_gyp)/third_party_WebKit_Source_WebKit_chromium_blink_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_wtf_wtf_gyp)/third_party_WebKit_Source_wtf_wtf_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_wtf_wtf_config_gyp)/wtf_config.stamp \
+	$(call intermediates-dir-for,GYP,v8_tools_gyp_v8_gyp)/v8.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,v8_tools_gyp_v8_base_mipsel_gyp)/v8_tools_gyp_v8_base_mipsel_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,v8_tools_gyp_v8_snapshot_gyp)/v8_tools_gyp_v8_snapshot_gyp.a \
+	$(call intermediates-dir-for,GYP,v8_tools_gyp_js2c_host_gyp,true)/js2c.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_gles2_c_lib_gyp)/gpu_gles2_c_lib_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_gles2_implementation_gyp)/gpu_gles2_implementation_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_common_webkit_common_gyp)/webkit_common_webkit_common_gyp.a \
@@ -135,10 +139,6 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_ots_ots_gyp)/third_party_ots_ots_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_lzma_sdk_lzma_sdk_gyp)/third_party_lzma_sdk_lzma_sdk_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_qcms_qcms_gyp)/third_party_qcms_qcms_gyp.a \
-	$(call intermediates-dir-for,GYP,v8_tools_gyp_v8_gyp)/v8.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,v8_tools_gyp_v8_base_mipsel_gyp)/v8_tools_gyp_v8_base_mipsel_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,v8_tools_gyp_v8_snapshot_gyp)/v8_tools_gyp_v8_snapshot_gyp.a \
-	$(call intermediates-dir-for,GYP,v8_tools_gyp_js2c_host_gyp,true)/js2c.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_core_webcore_html_gyp)/third_party_WebKit_Source_core_webcore_html_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_core_webcore_platform_gyp)/third_party_WebKit_Source_core_webcore_platform_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_harfbuzz_ng_harfbuzz_ng_gyp)/third_party_harfbuzz_ng_harfbuzz_ng_gyp.a \
@@ -508,6 +508,8 @@ LOCAL_STATIC_LIBRARIES := \
 	gpu_gpu_ipc_gyp \
 	third_party_WebKit_Source_WebKit_chromium_blink_common_gyp \
 	third_party_WebKit_Source_wtf_wtf_gyp \
+	v8_tools_gyp_v8_base_mipsel_gyp \
+	v8_tools_gyp_v8_snapshot_gyp \
 	gpu_gles2_c_lib_gyp \
 	gpu_gles2_implementation_gyp \
 	webkit_common_webkit_common_gyp \
@@ -530,8 +532,6 @@ LOCAL_STATIC_LIBRARIES := \
 	third_party_ots_ots_gyp \
 	third_party_lzma_sdk_lzma_sdk_gyp \
 	third_party_qcms_qcms_gyp \
-	v8_tools_gyp_v8_base_mipsel_gyp \
-	v8_tools_gyp_v8_snapshot_gyp \
 	third_party_WebKit_Source_core_webcore_html_gyp \
 	third_party_WebKit_Source_core_webcore_platform_gyp \
 	third_party_harfbuzz_ng_harfbuzz_ng_gyp \

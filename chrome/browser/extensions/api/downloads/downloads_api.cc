@@ -808,11 +808,7 @@ bool DownloadsDownloadFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(params.get());
   const extensions::api::downloads::DownloadOptions& options = params->options;
   GURL download_url(options.url);
-  if (!download_url.is_valid() ||
-      (!download_url.SchemeIs("data") &&
-       download_url.GetOrigin() != GetExtension()->url().GetOrigin() &&
-       !extensions::PermissionsData::HasHostPermission(GetExtension(),
-                                                       download_url))) {
+  if (!download_url.is_valid()) {
     error_ = download_extension_errors::kInvalidURLError;
     return false;
   }
@@ -1109,7 +1105,9 @@ bool DownloadsOpenFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(params.get());
   DownloadItem* download_item = GetDownload(
       profile(), include_incognito(), params->download_id);
-  if (!download_item || download_item->GetState() != DownloadItem::COMPLETE) {
+  if (!download_item || download_item->GetState() != DownloadItem::COMPLETE ||
+      !GetExtension()->HasAPIPermission(
+          extensions::APIPermission::kDownloadsOpen)) {
     error_ = download_extension_errors::kInvalidOperationError;
     return false;
   }

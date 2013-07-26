@@ -8,7 +8,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/shared_memory.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "base/values.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
@@ -311,18 +311,6 @@ IPC_MESSAGE_CONTROL2(BrowserPluginMsg_GuestContentWindowReady,
 // message.
 IPC_MESSAGE_CONTROL1(BrowserPluginMsg_GuestGone,
                      int /* instance_id */)
-
-// When the guest is unresponsive, the browser process informs the embedder
-// through this message.
-IPC_MESSAGE_CONTROL2(BrowserPluginMsg_GuestUnresponsive,
-                     int /* instance_id */,
-                     int /* process_id */)
-
-// When the guest begins responding again, the browser process informs the
-// embedder through this message.
-IPC_MESSAGE_CONTROL2(BrowserPluginMsg_GuestResponsive,
-                     int /* instance_id */,
-                     int /* process_id */)
 
 // When the user tabs to the end of the tab stops of a guest, the browser
 // process informs the embedder to tab out of the browser plugin.

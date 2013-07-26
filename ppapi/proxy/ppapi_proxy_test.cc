@@ -10,7 +10,6 @@
 #include "base/bind_helpers.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/observer_list.h"
-#include "base/process_util.h"
 #include "base/run_loop.h"
 #include "ipc/ipc_sync_channel.h"
 #include "ppapi/c/pp_errors.h"
@@ -281,6 +280,14 @@ void PluginProxyTestHarness::PluginDelegateMock::PreCacheFont(
 
 void PluginProxyTestHarness::PluginDelegateMock::SetActiveURL(
     const std::string& url) {
+}
+
+PP_Resource PluginProxyTestHarness::PluginDelegateMock::CreateBrowserFont(
+    Connection connection,
+    PP_Instance instance,
+    const PP_BrowserFont_Trusted_Description& desc,
+    const Preferences& prefs) {
+  return 0;
 }
 
 // PluginProxyTest -------------------------------------------------------------

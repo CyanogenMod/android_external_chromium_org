@@ -107,6 +107,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/crypto/key_systems.cc \
 	content/renderer/media/crypto/key_systems_info.cc \
 	content/renderer/media/crypto/proxy_decryptor.cc \
+	content/renderer/media/midi_dispatcher.cc \
 	content/renderer/media/midi_message_filter.cc \
 	content/renderer/media/pepper_platform_video_decoder_impl.cc \
 	content/renderer/media/render_media_log.cc \
@@ -238,6 +239,7 @@ MY_DEFS_Debug := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
@@ -381,6 +383,7 @@ MY_DEFS_Release := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
