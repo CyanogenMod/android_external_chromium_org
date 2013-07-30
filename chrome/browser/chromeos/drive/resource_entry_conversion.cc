@@ -34,17 +34,17 @@ bool HasSharedWithMeLabel(const google_apis::ResourceEntry& entry) {
 
 }  // namespace
 
-ResourceEntry ConvertToResourceEntry(
-    const google_apis::ResourceEntry& input) {
-  ResourceEntry output;
+bool ConvertToResourceEntry(const google_apis::ResourceEntry& input,
+                            ResourceEntry* output) {
+  DCHECK(output);
 
   // For regular files, the 'filename' and 'title' attribute in the metadata
   // may be different (e.g. due to rename). To be consistent with the web
   // interface and other client to use the 'title' attribute, instead of
   // 'filename', as the file name in the local snapshot.
-  output.set_title(input.title());
-  output.set_base_name(util::NormalizeFileName(output.title()));
-  output.set_resource_id(input.resource_id());
+  output->set_title(input.title());
+  output->set_base_name(util::NormalizeFileName(output->title()));
+  output->set_resource_id(input.resource_id());
 
   // Sets parent Resource ID. On drive.google.com, a file can have multiple
   // parents or no parent, but we are forcing a tree-shaped structure (i.e. no
@@ -54,17 +54,17 @@ ResourceEntry ConvertToResourceEntry(
   const google_apis::Link* parent_link =
       input.GetLinkByType(google_apis::Link::LINK_PARENT);
   if (parent_link) {
-    output.set_parent_resource_id(util::ExtractResourceIdFromUrl(
+    output->set_parent_resource_id(util::ExtractResourceIdFromUrl(
         parent_link->href()));
   }
   // Apply mapping from an empty parent to the special dummy directory.
-  if (output.parent_resource_id().empty())
-    output.set_parent_resource_id(util::kDriveOtherDirSpecialResourceId);
+  if (output->parent_resource_id().empty())
+    output->set_parent_resource_id(util::kDriveOtherDirSpecialResourceId);
 
-  output.set_deleted(input.deleted());
-  output.set_shared_with_me(HasSharedWithMeLabel(input));
+  output->set_deleted(input.deleted());
+  output->set_shared_with_me(HasSharedWithMeLabel(input));
 
-  PlatformFileInfoProto* file_info = output.mutable_file_info();
+  PlatformFileInfoProto* file_info = output->mutable_file_info();
 
   file_info->set_last_modified(input.updated_time().ToInternalValue());
   // If the file has never been viewed (last_viewed_time().is_null() == true),
@@ -73,7 +73,7 @@ ResourceEntry ConvertToResourceEntry(
   file_info->set_creation_time(input.published_time().ToInternalValue());
 
   if (input.is_file() || input.is_hosted_document()) {
-    FileSpecificInfo* file_specific_info = output.mutable_file_specific_info();
+    FileSpecificInfo* file_specific_info = output->mutable_file_specific_info();
     if (input.is_file()) {
       file_info->set_size(input.file_size());
       file_specific_info->set_md5(input.file_md5());
@@ -87,8 +87,8 @@ ResourceEntry ConvertToResourceEntry(
       // to UI through the File API stack.
       const std::string document_extension = input.GetHostedDocumentExtension();
       file_specific_info->set_document_extension(document_extension);
-      output.set_base_name(
-          util::NormalizeFileName(output.title() + document_extension));
+      output->set_base_name(
+          util::NormalizeFileName(output->title() + document_extension));
 
       // We don't know the size of hosted docs and it does not matter since
       // is has no effect on the quota.
@@ -107,19 +107,20 @@ ResourceEntry ConvertToResourceEntry(
         input.GetLinkByType(google_apis::Link::LINK_ALTERNATE);
     if (alternate_link)
       file_specific_info->set_alternate_url(alternate_link->href().spec());
-
-    const google_apis::Link* share_link =
-        input.GetLinkByType(google_apis::Link::LINK_SHARE);
-    if (share_link)
-      file_specific_info->set_share_url(share_link->href().spec());
   } else if (input.is_folder()) {
     file_info->set_is_directory(true);
   } else {
-    // Some resource entries don't map into files (i.e. sites).
-    return ResourceEntry();
+    // There are two cases to reach here.
+    // * The entry is something that doesn't map into files (i.e. sites).
+    //   We don't handle these kind of entries hence return false.
+    // * The entry is un-shared to you by other owner. In that case, we
+    //   get an entry with only deleted() and resource_id() fields are
+    //   filled. Since we want to delete such entries locally as well,
+    //   in that case we need to return true to proceed.
+    return input.deleted();
   }
 
-  return output;
+  return true;
 }
 
 }  // namespace drive

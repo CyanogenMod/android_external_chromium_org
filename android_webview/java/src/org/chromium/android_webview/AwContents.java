@@ -350,9 +350,9 @@ public class AwContents {
     private class AwScrollOffsetManagerDelegate implements AwScrollOffsetManager.Delegate {
         @Override
         public void overScrollContainerViewBy(int deltaX, int deltaY, int scrollX, int scrollY,
-                int scrollRangeX, int scrollRangeY) {
+                int scrollRangeX, int scrollRangeY, boolean isTouchEvent) {
             mInternalAccessAdapter.overScrollBy(deltaX, deltaY, scrollX, scrollY,
-                    scrollRangeX, scrollRangeY, 0, 0, true);
+                    scrollRangeX, scrollRangeY, 0, 0, isTouchEvent);
         }
 
         @Override
@@ -475,7 +475,7 @@ public class AwContents {
                         mContentViewCore.updateMultiTouchZoomSupport(supportsMultiTouchZoom);
                     }
                 };
-        mSettings = new AwSettings(hasInternetPermission, zoomListener,
+        mSettings = new AwSettings(mContainerView.getContext(), hasInternetPermission, zoomListener,
                 isAccessFromFileURLsGrantedByDefault, mDIPScale);
         mDefaultVideoPosterRequestHandler = new DefaultVideoPosterRequestHandler(mContentsClient);
         mSettings.setDefaultVideoPosterURL(
@@ -671,7 +671,9 @@ public class AwContents {
     }
 
     public Picture capturePicture() {
-        return nativeCapturePicture(mNativeAwContents);
+        return nativeCapturePicture(mNativeAwContents,
+                mScrollOffsetManager.computeHorizontalScrollRange(),
+                mScrollOffsetManager.computeVerticalScrollRange());
     }
 
     /**
@@ -1257,7 +1259,10 @@ public class AwContents {
      */
     public boolean onTouchEvent(MotionEvent event) {
         if (mNativeAwContents == 0) return false;
+
+        mScrollOffsetManager.setProcessingTouchEvent(true);
         boolean rv = mContentViewCore.onTouchEvent(event);
+        mScrollOffsetManager.setProcessingTouchEvent(false);
 
         if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
             int actionIndex = event.getActionIndex();
@@ -1771,7 +1776,7 @@ public class AwContents {
     private native void nativeSetBackgroundColor(int nativeAwContents, int color);
 
     private native int nativeGetAwDrawGLViewContext(int nativeAwContents);
-    private native Picture nativeCapturePicture(int nativeAwContents);
+    private native Picture nativeCapturePicture(int nativeAwContents, int width, int height);
     private native void nativeEnableOnNewPicture(int nativeAwContents, boolean enabled);
 
     private native void nativeInvokeGeolocationCallback(

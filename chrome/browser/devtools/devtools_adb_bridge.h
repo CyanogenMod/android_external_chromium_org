@@ -14,6 +14,7 @@
 #include "chrome/browser/devtools/adb/android_usb_device.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
+#include "content/public/browser/browser_thread.h"
 #include "net/socket/tcp_client_socket.h"
 
 template<typename T> struct DefaultSingletonTraits;
@@ -41,7 +42,9 @@ typedef base::Callback<void(int, const std::string&)> CommandCallback;
 typedef base::Callback<void(int result, net::StreamSocket*)> SocketCallback;
 
 class DevToolsAdbBridge
-    : public base::RefCountedThreadSafe<DevToolsAdbBridge> {
+    : public base::RefCountedThreadSafe<
+          DevToolsAdbBridge,
+          content::BrowserThread::DeleteOnUIThread> {
  public:
   typedef base::Callback<void(int result,
                               const std::string& response)> Callback;
@@ -77,16 +80,18 @@ class DevToolsAdbBridge
     DISALLOW_COPY_AND_ASSIGN(Factory);
   };
 
+  class AndroidDevice;
+
   class RemotePage : public base::RefCounted<RemotePage> {
    public:
-    RemotePage(const std::string& serial,
-               const std::string& model,
+    RemotePage(scoped_refptr<AndroidDevice> device,
                const std::string& package,
                const std::string& socket,
                const base::DictionaryValue& value);
 
-    std::string serial() { return serial_; }
-    std::string model() { return model_; }
+    scoped_refptr<AndroidDevice> device() { return device_; }
+    std::string serial() { return device_->serial(); }
+    std::string model() { return device_->model(); }
     std::string package() { return package_; }
     std::string socket() { return socket_; }
     std::string id() { return id_; }
@@ -100,8 +105,7 @@ class DevToolsAdbBridge
    private:
     friend class base::RefCounted<RemotePage>;
     virtual ~RemotePage();
-    std::string serial_;
-    std::string model_;
+    scoped_refptr<AndroidDevice> device_;
     std::string package_;
     std::string socket_;
     std::string id_;
@@ -160,15 +164,6 @@ class DevToolsAdbBridge
   typedef std::vector<scoped_refptr<AndroidDevice> > AndroidDevices;
   typedef base::Callback<void(const AndroidDevices&)> AndroidDevicesCallback;
 
-  explicit DevToolsAdbBridge(Profile* profile);
-
-  void EnumerateDevices(const AndroidDevicesCallback& callback);
-
-  void Attach(const std::string& serial,
-              const std::string& socket,
-              const std::string& debug_url,
-              const std::string& frontend_url);
-
   class Listener {
    public:
     virtual void RemotePagesChanged(RemotePages* pages) = 0;
@@ -176,12 +171,22 @@ class DevToolsAdbBridge
     virtual ~Listener() {}
   };
 
+  explicit DevToolsAdbBridge(Profile* profile);
+
+  void EnumerateUsbDevices(const AndroidDevicesCallback& callback);
+  void EnumerateAdbDevices(const AndroidDevicesCallback& callback);
+
+  void Attach(const std::string& page_id);
+
   void AddListener(Listener* listener);
   void RemoveListener(Listener* listener);
 
+  base::MessageLoop* GetAdbMessageLoop();
+
  private:
-  friend class base::RefCountedThreadSafe<DevToolsAdbBridge>;
-  friend class AdbAttachCommand;
+  friend struct content::BrowserThread::DeleteOnThread<
+      content::BrowserThread::UI>;
+  friend class base::DeleteHelper<DevToolsAdbBridge>;
   friend class AdbWebSocket;
   friend class AgentHostDelegate;
 
@@ -204,7 +209,6 @@ class DevToolsAdbBridge
   void ReceivedUsbDevices(const AndroidDevicesCallback& callback,
                           const AndroidUsbDevices& usb_devices);
   void ReceivedAdbDevices(const AndroidDevicesCallback& callback,
-                          AndroidDevices devices,
                           int result,
                           const std::string& response);
 
@@ -215,6 +219,7 @@ class DevToolsAdbBridge
   scoped_refptr<RefCountedAdbThread> adb_thread_;
   bool has_message_loop_;
   scoped_ptr<crypto::RSAPrivateKey> rsa_key_;
+  scoped_ptr<RemotePages> pages_;
   typedef std::vector<Listener*> Listeners;
   Listeners listeners_;
   DISALLOW_COPY_AND_ASSIGN(DevToolsAdbBridge);

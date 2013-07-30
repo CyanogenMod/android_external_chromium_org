@@ -321,10 +321,11 @@ LOCAL_SRC_FILES := \
 	net/quic/quic_framer.cc \
 	net/quic/quic_http_stream.cc \
 	net/quic/quic_packet_creator.cc \
-	net/quic/quic_packet_entropy_manager.cc \
 	net/quic/quic_packet_generator.cc \
 	net/quic/quic_protocol.cc \
+	net/quic/quic_received_entropy_manager.cc \
 	net/quic/quic_reliable_client_stream.cc \
+	net/quic/quic_sent_entropy_manager.cc \
 	net/quic/quic_session.cc \
 	net/quic/quic_spdy_compressor.cc \
 	net/quic/quic_spdy_decompressor.cc \

@@ -11,7 +11,6 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_WebKit_chromium_skia_webkit_gyp)/skia_webkit.stamp \
 	$(call intermediates-dir-for,GYP,third_party_expat_expat_gyp)/expat.stamp
 
 GYP_GENERATED_OUTPUTS :=
@@ -424,6 +423,8 @@ MY_DEFS_Debug := \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
 	'-DSK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK' \
 	'-DIGNORE_ROT_AA_RECT_OPT' \
+	'-DSKIA_IGNORE_GPU_MIPMAPS' \
+	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
 	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(8*1024*1024)' \
 	'-DSK_GAMMA_APPLY_TO_A8' \
 	'-DSK_GAMMA_EXPONENT=1.4' \
@@ -545,6 +546,8 @@ MY_DEFS_Release := \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
 	'-DSK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK' \
 	'-DIGNORE_ROT_AA_RECT_OPT' \
+	'-DSKIA_IGNORE_GPU_MIPMAPS' \
+	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
 	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(8*1024*1024)' \
 	'-DSK_GAMMA_APPLY_TO_A8' \
 	'-DSK_GAMMA_EXPONENT=1.4' \

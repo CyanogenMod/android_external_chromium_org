@@ -567,8 +567,8 @@ void AutofillDialogControllerImpl::Show() {
     { 8, ADDRESS_BILLING_STATE, IDS_AUTOFILL_FIELD_LABEL_STATE },
     { 8, ADDRESS_BILLING_ZIP,
       IDS_AUTOFILL_DIALOG_PLACEHOLDER_POSTAL_CODE },
-    // TODO(estade): this should have a default based on the locale.
-    { 9, ADDRESS_BILLING_COUNTRY, 0 },
+    // We don't allow the user to change the country: http://crbug.com/247518
+    { -1, ADDRESS_BILLING_COUNTRY, 0 },
     { 10, PHONE_BILLING_WHOLE_NUMBER,
       IDS_AUTOFILL_DIALOG_PLACEHOLDER_PHONE_NUMBER },
   };
@@ -580,7 +580,7 @@ void AutofillDialogControllerImpl::Show() {
     { 14, ADDRESS_HOME_CITY, IDS_AUTOFILL_DIALOG_PLACEHOLDER_LOCALITY },
     { 15, ADDRESS_HOME_STATE, IDS_AUTOFILL_FIELD_LABEL_STATE },
     { 15, ADDRESS_HOME_ZIP, IDS_AUTOFILL_DIALOG_PLACEHOLDER_POSTAL_CODE },
-    { 16, ADDRESS_HOME_COUNTRY, 0 },
+    { -1, ADDRESS_HOME_COUNTRY, 0 },
     { 17, PHONE_HOME_WHOLE_NUMBER,
       IDS_AUTOFILL_DIALOG_PLACEHOLDER_PHONE_NUMBER },
   };
@@ -915,10 +915,16 @@ bool AutofillDialogControllerImpl::IsSubmitPausedOn(
 }
 
 void AutofillDialogControllerImpl::GetWalletItems() {
+  DCHECK(previously_selected_instrument_id_.empty());
+  DCHECK(previously_selected_shipping_address_id_.empty());
+
   if (wallet_items_) {
-    previously_selected_instrument_id_ = ActiveInstrument()->object_id();
-    previously_selected_shipping_address_id_ =
-        ActiveShippingAddress()->object_id();
+    if (ActiveInstrument())
+      previously_selected_instrument_id_ = ActiveInstrument()->object_id();
+
+    const wallet::Address* address = ActiveShippingAddress();
+    if (address)
+      previously_selected_shipping_address_id_ = address->object_id();
   }
 
   last_wallet_items_fetch_timestamp_ = base::TimeTicks::Now();
@@ -1895,6 +1901,9 @@ std::vector<DialogNotification> AutofillDialogControllerImpl::
           DialogNotification::WALLET_USAGE_CONFIRMATION,
           l10n_util::GetStringUTF16(
               IDS_AUTOFILL_DIALOG_SAVE_DETAILS_IN_WALLET));
+      notification.set_tooltip_text(
+          l10n_util::GetStringUTF16(
+              IDS_AUTOFILL_DIALOG_SAVE_IN_WALLET_TOOLTIP));
       notification.set_checked(account_chooser_model_.WalletIsSelected());
       notification.set_interactive(!is_submitting_);
       notifications.push_back(notification);

@@ -8,7 +8,7 @@ vars = {
   "sourceforge_url": "http://%(repo)s.svn.sourceforge.net/svnroot/%(repo)s",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "154965",
+  "webkit_revision": "155102",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "swig_revision": "69281",
@@ -29,11 +29,11 @@ vars = {
   "ffmpeg_hash": "245a8c0cdfdd5ab3da9045089661017e9ddd8d0e",
 
   "sfntly_revision": "134",
-  "skia_revision": "10338",
+  "skia_revision": "10402",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
-  "v8_revision": "15886",
+  "v8_revision": "15899",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
@@ -77,7 +77,7 @@ deps = {
     Var("webkit_trunk") + "@" + Var("webkit_revision"),
 
   "src/third_party/icu":
-    "/trunk/deps/third_party/icu46@213354",
+    "/trunk/deps/third_party/icu46@214189",
 
   "src/third_party/libexif/sources":
     "/trunk/deps/third_party/libexif/sources@146817",
@@ -150,9 +150,6 @@ deps = {
 
   "src/third_party/bidichecker":
     (Var("googlecode_url") % "bidichecker") + "/trunk/lib@4",
-
-  "src/third_party/v8-i18n":
-    (Var("googlecode_url") % "v8-i18n") + "/trunk@191",
 
   # When roll to another webgl conformance tests revision, please goto
   # chrome/test/gpu and run generate_webgl_conformance_test_list.py.
@@ -435,7 +432,7 @@ deps_os = {
     # For Linux and Chromium OS.
     "src/third_party/cros_system_api":
       Var("chromiumos_git") + "/platform/system_api.git" +
-      "@295836580061cb441c11ee3b2a6c7225ecf9ebbb",
+      "@9bad33f702cd5cefb0d5603d6853b26428425081",
 
     # Note that this is different from Android's freetype repo.
     "src/third_party/freetype2/src":
@@ -458,7 +455,7 @@ deps_os = {
   "android": {
     "src/third_party/android_tools":
       Var("chromium_git") + "/android_tools.git" +
-      "@e9da75d5e88d3e122ac60ee1d642cdcc1acb2bd8",
+      "@eda719cf5bf102f38b17fe4f583fbc5fde581be6",
 
     "src/third_party/aosp":
       "/trunk/deps/third_party/aosp@148330",

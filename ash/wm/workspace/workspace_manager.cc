@@ -20,9 +20,6 @@
 #include "ash/wm/workspace/auto_window_management.h"
 #include "ash/wm/workspace/desktop_background_fade_controller.h"
 #include "ash/wm/workspace/workspace_animations.h"
-#include "ash/wm/workspace/workspace_cycler.h"
-#include "ash/wm/workspace/workspace_cycler_animator.h"
-#include "ash/wm/workspace/workspace_cycler_configuration.h"
 #include "ash/wm/workspace/workspace_layout_manager.h"
 #include "ash/wm/workspace/workspace.h"
 #include "base/auto_reset.h"
@@ -123,9 +120,6 @@ WorkspaceManager::WorkspaceManager(Window* contents_window)
   workspaces_.push_back(active_workspace_);
   active_workspace_->window()->Show();
   Shell::GetInstance()->AddShellObserver(this);
-
-  if (ash::WorkspaceCyclerConfiguration::IsCyclerEnabled())
-    workspace_cycler_.reset(new WorkspaceCycler(this));
 }
 
 WorkspaceManager::~WorkspaceManager() {
@@ -186,7 +180,7 @@ void WorkspaceManager::SetActiveWorkspaceByWindow(Window* window) {
     return;
 
   if (workspace != active_workspace_) {
-    // A window is being made active. In the following cases we reparent to
+    // A window is being made active. In the following case we reparent to
     // the active desktop:
     // . The window is not tracked by workspace code. This is used for tab
     //   dragging. Since tab dragging needs to happen in the active workspace we
@@ -195,20 +189,10 @@ void WorkspaceManager::SetActiveWorkspaceByWindow(Window* window) {
     //   only transiently used (property reset on input release) we don't worry
     //   about window state. In fact we can't consider window state here as we
     //   have to allow dragging of a fullscreen window to work in this case.
-    // . The window persists across all workspaces. For example, the task
-    //   manager is in the desktop worskpace and the current workspace is
-    //   fullscreen. If we swapped to the desktop you would lose context.
-    //   Instead we reparent.  The exception to this is if the window is
-    //   fullscreen (it needs its own workspace then) or we're in the process of
-    //   fullscreen. If we're in the process of fullscreen the window needs its
-    //   own workspace.
-    if (!GetTrackedByWorkspace(window) ||
-        (GetPersistsAcrossAllWorkspaces(window) &&
-         !wm::IsWindowFullscreen(window))) {
+    if (!GetTrackedByWorkspace(window))
       ReparentWindow(window, active_workspace_->window(), NULL);
-    } else {
+    else
       SetActiveWorkspace(workspace, SWITCH_WINDOW_MADE_ACTIVE);
-    }
   }
 }
 
@@ -230,30 +214,6 @@ Window* WorkspaceManager::GetParentForNewWindow(Window* window) {
     return active_workspace_->window();
 
   return desktop_workspace()->window();
-}
-
-bool WorkspaceManager::CanStartCyclingThroughWorkspaces() const {
-  return workspace_cycler_.get() && workspaces_.size() > 1u;
-}
-
-void WorkspaceManager::InitWorkspaceCyclerAnimatorWithCurrentState(
-    WorkspaceCyclerAnimator* animator) {
-  if (animator)
-    animator->Init(workspaces_, active_workspace_);
-}
-
-void WorkspaceManager::SetActiveWorkspaceFromCycler(Workspace* workspace) {
-  if (!workspace || workspace == active_workspace_)
-    return;
-
-  SetActiveWorkspace(workspace, SWITCH_WORKSPACE_CYCLER);
-
-  // Activate the topmost window in the newly activated workspace as
-  // SetActiveWorkspace() does not do so.
-  aura::Window* topmost_activatable_window =
-      workspace->GetTopmostActivatableWindow();
-  if (topmost_activatable_window)
-    wm::ActivateWindow(topmost_activatable_window);
 }
 
 void WorkspaceManager::DoInitialAnimation() {
@@ -284,11 +244,6 @@ void WorkspaceManager::SetActiveWorkspace(Workspace* workspace,
   DCHECK(workspace);
   if (active_workspace_ == workspace)
     return;
-
-  // It is possible for a user to use accelerator keys to restore windows etc
-  // while the user is cycling through workspaces.
-  if (workspace_cycler_)
-    workspace_cycler_->AbortCycling();
 
   pending_workspaces_.erase(workspace);
 
@@ -339,11 +294,6 @@ void WorkspaceManager::MoveWorkspaceToPendingOrDelete(
     return;
 
   DCHECK_NE(desktop_workspace(), workspace);
-
-  // The user may have closed or minimized a window via accelerator keys while
-  // cycling through workspaces.
-  if (workspace_cycler_)
-    workspace_cycler_->AbortCycling();
 
   if (workspace == active_workspace_)
     SelectNextWorkspace(reason);

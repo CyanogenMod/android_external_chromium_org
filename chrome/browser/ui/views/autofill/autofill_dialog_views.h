@@ -7,6 +7,7 @@
 
 #include <map>
 
+#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observer.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_controller.h"
@@ -91,7 +92,7 @@ class AutofillDialogViews : public AutofillDialogView,
                            const DetailInput& originating_input) OVERRIDE;
   virtual void GetUserInput(DialogSection section,
                             DetailOutputMap* output) OVERRIDE;
-  virtual string16 GetCvc() OVERRIDE;
+  virtual base::string16 GetCvc() OVERRIDE;
   virtual bool SaveDetailsLocally() OVERRIDE;
   virtual const content::NavigationController* ShowSignIn() OVERRIDE;
   virtual void HideSignIn() OVERRIDE;
@@ -103,9 +104,10 @@ class AutofillDialogViews : public AutofillDialogView,
   // TestableAutofillDialogView implementation:
   virtual void SubmitForTesting() OVERRIDE;
   virtual void CancelForTesting() OVERRIDE;
-  virtual string16 GetTextContentsOfInput(const DetailInput& input) OVERRIDE;
+  virtual base::string16 GetTextContentsOfInput(
+      const DetailInput& input) OVERRIDE;
   virtual void SetTextContentsOfInput(const DetailInput& input,
-                                      const string16& contents) OVERRIDE;
+                                      const base::string16& contents) OVERRIDE;
   virtual void SetTextContentsOfSuggestionInput(
       DialogSection section,
       const base::string16& text) OVERRIDE;
@@ -118,12 +120,13 @@ class AutofillDialogViews : public AutofillDialogView,
   virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
 
   // views::DialogDelegate implementation:
-  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual void WindowClosing() OVERRIDE;
   virtual void DeleteDelegate() OVERRIDE;
   virtual views::View* CreateOverlayView() OVERRIDE;
   virtual int GetDialogButtons() const OVERRIDE;
-  virtual string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
+  virtual base::string16 GetDialogButtonLabel(ui::DialogButton button) const
+      OVERRIDE;
   virtual bool ShouldDefaultButtonBeBlue() const OVERRIDE;
   virtual bool IsDialogButtonEnabled(ui::DialogButton button) const OVERRIDE;
   virtual views::View* CreateExtraView() OVERRIDE;
@@ -145,7 +148,7 @@ class AutofillDialogViews : public AutofillDialogView,
 
   // views::TextfieldController implementation:
   virtual void ContentsChanged(views::Textfield* sender,
-                               const string16& new_contents) OVERRIDE;
+                               const base::string16& new_contents) OVERRIDE;
   virtual bool HandleKeyEvent(views::Textfield* sender,
                               const ui::KeyEvent& key_event) OVERRIDE;
   virtual bool HandleMouseEvent(views::Textfield* sender,
@@ -168,7 +171,7 @@ class AutofillDialogViews : public AutofillDialogView,
   // A class that creates and manages a widget for error messages.
   class ErrorBubble : public views::WidgetObserver {
    public:
-    ErrorBubble(views::View* anchor, const string16& message);
+    ErrorBubble(views::View* anchor, const base::string16& message);
     virtual ~ErrorBubble();
 
     bool IsShowing();
@@ -199,8 +202,8 @@ class AutofillDialogViews : public AutofillDialogView,
   // invalid content indications.
   class DecoratedTextfield : public views::Textfield {
    public:
-    DecoratedTextfield(const string16& default_value,
-                       const string16& placeholder,
+    DecoratedTextfield(const base::string16& default_value,
+                       const base::string16& placeholder,
                        views::TextfieldController* controller);
     virtual ~DecoratedTextfield();
 
@@ -280,6 +283,11 @@ class AutofillDialogViews : public AutofillDialogView,
     // The listener is informed when |button_| is pressed.
     explicit OverlayView(views::ButtonListener* listener);
     virtual ~OverlayView();
+
+    // Returns a height which should be used when the contents view has width
+    // |w|. Note that the value returned should be used as the height of the
+    // dialog's contents.
+    int GetHeightForContentsForWidth(int w);
 
     // Sets properties that should be displayed.
     void SetState(const DialogOverlayState& state,
@@ -372,7 +380,7 @@ class AutofillDialogViews : public AutofillDialogView,
   // on the right.
   class SectionContainer : public views::View {
    public:
-    SectionContainer(const string16& label,
+    SectionContainer(const base::string16& label,
                      views::View* controls,
                      views::Button* proxy_button);
     virtual ~SectionContainer();
@@ -408,19 +416,20 @@ class AutofillDialogViews : public AutofillDialogView,
   // edit the suggestion.
   class SuggestionView : public views::View {
    public:
-    SuggestionView(const string16& edit_label,
+    SuggestionView(const base::string16& edit_label,
                    AutofillDialogViews* autofill_dialog);
     virtual ~SuggestionView();
 
     // Sets the display text of the suggestion.
-    void SetSuggestionText(const string16& text, gfx::Font::FontStyle style);
+    void SetSuggestionText(const base::string16& text,
+                           gfx::Font::FontStyle style);
 
     // Sets the icon which should be displayed ahead of the text.
     void SetSuggestionIcon(const gfx::Image& image);
 
     // Shows an auxiliary textfield to the right of the suggestion icon and
     // text. This is currently only used to show a CVC field for the CC section.
-    void ShowTextfield(const string16& placeholder_text,
+    void ShowTextfield(const base::string16& placeholder_text,
                        const gfx::Image& icon);
 
     DecoratedTextfield* decorated_textfield() { return decorated_; }
@@ -540,7 +549,7 @@ class AutofillDialogViews : public AutofillDialogView,
   // should work on Comboboxes or DecoratedTextfields. If |message| is empty,
   // the input is valid.
   template<class T>
-  void SetValidityForInput(T* input, const string16& message);
+  void SetValidityForInput(T* input, const base::string16& message);
 
   // Shows an error bubble pointing at |view| if |view| has a message in
   // |validity_map_|.
@@ -623,6 +632,10 @@ class AutofillDialogViews : public AutofillDialogView,
   // database. It lives in |extra_view_|.
   views::Checkbox* save_in_chrome_checkbox_;
 
+  // View that aren't in the hierarchy but are owned by |this|. Currently
+  // just holds the (hidden) country comboboxes.
+  ScopedVector<views::View> other_owned_views_;
+
   // View to host Autocheckout steps.
   AutocheckoutStepsArea* autocheckout_steps_area_;
 
@@ -646,7 +659,7 @@ class AutofillDialogViews : public AutofillDialogView,
   scoped_ptr<ErrorBubble> error_bubble_;
 
   // Map from input view (textfield or combobox) to error string.
-  std::map<views::View*, string16> validity_map_;
+  std::map<views::View*, base::string16> validity_map_;
 
   ScopedObserver<views::Widget, AutofillDialogViews> observer_;
 

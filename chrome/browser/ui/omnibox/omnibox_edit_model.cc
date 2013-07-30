@@ -28,7 +28,6 @@
 #include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
 #include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/net/predictor.h"
-#include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/omnibox/omnibox_log.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor_factory.h"
@@ -51,6 +50,7 @@
 #include "chrome/browser/ui/search/instant_controller.h"
 #include "chrome/browser/ui/search/search_tab_helper.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/navigation_controller.h"
@@ -1254,27 +1254,25 @@ bool OmniboxEditModel::IsSpaceCharForAcceptingKeyword(wchar_t c) {
   }
 }
 
-metrics::OmniboxEventProto::PageClassification
-    OmniboxEditModel::ClassifyPage() const {
+AutocompleteInput::PageClassification OmniboxEditModel::ClassifyPage() const {
   if (!delegate_->CurrentPageExists())
-    return metrics::OmniboxEventProto::OTHER;
+    return AutocompleteInput::OTHER;
   if (delegate_->IsInstantNTP())
-    return metrics::OmniboxEventProto::INSTANT_NEW_TAB_PAGE;
+    return AutocompleteInput::INSTANT_NEW_TAB_PAGE;
   const GURL& gurl = delegate_->GetURL();
   if (!gurl.is_valid())
-    return metrics::OmniboxEventProto::INVALID_SPEC;
+    return AutocompleteInput::INVALID_SPEC;
   const std::string& url = gurl.spec();
   if (url == chrome::kChromeUINewTabURL)
-    return metrics::OmniboxEventProto::NEW_TAB_PAGE;
+    return AutocompleteInput::NEW_TAB_PAGE;
   if (url == content::kAboutBlankURL)
-    return metrics::OmniboxEventProto::BLANK;
+    return AutocompleteInput::BLANK;
   if (url == profile()->GetPrefs()->GetString(prefs::kHomePage))
-    return metrics::OmniboxEventProto::HOMEPAGE;
+    return AutocompleteInput::HOMEPAGE;
   if (view_->toolbar_model()->WouldReplaceSearchURLWithSearchTerms(true)) {
-    return metrics::
-        OmniboxEventProto::SEARCH_RESULT_PAGE_DOING_SEARCH_TERM_REPLACEMENT;
+    return AutocompleteInput::SEARCH_RESULT_PAGE_DOING_SEARCH_TERM_REPLACEMENT;
   }
-  return metrics::OmniboxEventProto::OTHER;
+  return AutocompleteInput::OTHER;
 }
 
 void OmniboxEditModel::ClassifyStringForPasteAndGo(

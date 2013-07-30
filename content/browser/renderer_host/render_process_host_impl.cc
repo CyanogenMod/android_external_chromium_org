@@ -586,6 +586,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   scoped_refptr<RenderMessageFilter> render_message_filter(
       new RenderMessageFilter(
           GetID(),
+          IsGuest(),
 #if defined(ENABLE_PLUGINS)
           PluginServiceImpl::GetInstance(),
 #else
@@ -935,11 +936,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableWebRtcTcpServerSocket,
     switches::kEnableWebRtcHWDecoding,
 #endif
-#if defined(ANDROID) && !defined(GOOGLE_TV)
-    switches::kEnableWebKitMediaSource,
-#else
     switches::kDisableWebKitMediaSource,
-#endif
     switches::kEnableOverscrollNotifications,
     switches::kEnableStrictSiteIsolation,
     switches::kDisableFullScreen,

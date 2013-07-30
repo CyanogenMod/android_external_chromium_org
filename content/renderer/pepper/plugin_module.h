@@ -31,10 +31,6 @@ namespace base {
 class FilePath;
 }
 
-namespace content {
-class RenderView;
-}
-
 namespace ppapi {
 class CallbackTracker;
 class WebKitForwarding;
@@ -45,9 +41,12 @@ class WebPluginContainer;
 }  // namespace WebKit
 
 namespace content {
-  
+class HostDispatcherWrapper;
 class PepperPluginInstanceImpl;
+class PepperBroker;
 class PluginDelegate;
+class RendererPpapiHostImpl;
+class RenderViewImpl;
 
 // Represents one plugin library loaded into one renderer. This library may
 // have multiple instances.
@@ -58,14 +57,6 @@ class CONTENT_EXPORT PluginModule :
     public base::RefCounted<PluginModule>,
     public base::SupportsWeakPtr<PluginModule> {
  public:
-  // Allows the embedder to associate a class with this module. This is opaque
-  // from the PluginModule's perspective (see Set/GetEmbedderState below) but
-  // the module is in charge of deleting the class.
-  class EmbedderState {
-   public:
-    virtual ~EmbedderState() {}
-  };
-
   typedef std::set<PepperPluginInstanceImpl*> PluginInstanceSet;
 
   // You must call one of the Init functions after the constructor to create a
@@ -81,10 +72,7 @@ class CONTENT_EXPORT PluginModule :
   // Sets the given class as being associated with this module. It will be
   // deleted when the module is destroyed. You can only set it once, subsequent
   // sets will assert.
-  //
-  // See EmbedderState above for more.
-  void SetEmbedderState(scoped_ptr<EmbedderState> state);
-  EmbedderState* GetEmbedderState();
+  void SetRendererPpapiHost(scoped_ptr<RendererPpapiHostImpl> host);
 
   // Initializes this module as an internal plugin with the given entrypoints.
   // This is used for "plugins" compiled into Chrome. Returns true on success.
@@ -97,7 +85,7 @@ class CONTENT_EXPORT PluginModule :
 
   // Initializes this module for the given out of process proxy. This takes
   // ownership of the given pointer, even in the failure case.
-  void InitAsProxied(PluginDelegate::OutOfProcessProxy* out_of_process_proxy);
+  void InitAsProxied(HostDispatcherWrapper* host_dispatcher_wrapper);
 
   // Creates a new module for an external plugin instance that will be using the
   // IPC proxy. We can't use the existing module, or new instances of the plugin
@@ -137,6 +125,10 @@ class CONTENT_EXPORT PluginModule :
   // considered when called on the browser process.
   static bool SupportsInterface(const char* name);
 
+  RendererPpapiHostImpl* renderer_ppapi_host() {
+    return renderer_ppapi_host_.get();
+  }
+
   // Returns the module handle. This may be used before Init() is called (the
   // proxy needs this information to set itself up properly).
   PP_Module pp_module() const { return pp_module_; }
@@ -147,7 +139,7 @@ class CONTENT_EXPORT PluginModule :
 
   PepperPluginInstanceImpl* CreateInstance(
       PluginDelegate* delegate,
-      RenderView* render_view,
+      RenderViewImpl* render_view,
       WebKit::WebPluginContainer* container,
       const GURL& plugin_url);
 
@@ -191,8 +183,8 @@ class CONTENT_EXPORT PluginModule :
   bool ReserveInstanceID(PP_Instance instance);
 
   // These should only be called from the main thread.
-  void SetBroker(PluginDelegate::Broker* broker);
-  PluginDelegate::Broker* GetBroker();
+  void SetBroker(PepperBroker* broker);
+  PepperBroker* GetBroker();
 
   // In production we purposely leak the HostGlobals object but in unittest
   // code, this can interfere with subsequent tests. This deletes the
@@ -208,8 +200,7 @@ class CONTENT_EXPORT PluginModule :
   // entrypoints in that case).
   bool InitializeModule(const PepperPluginInfo::EntryPoints& entry_points);
 
-  // See EmbedderState above.
-  scoped_ptr<EmbedderState> embedder_state_;
+  scoped_ptr<RendererPpapiHostImpl> renderer_ppapi_host_;
 
   // Tracker for completion callbacks, used mainly to ensure that all callbacks
   // are properly aborted on module shutdown.
@@ -227,11 +218,11 @@ class CONTENT_EXPORT PluginModule :
   // Manages the out of process proxy interface. The presence of this
   // pointer indicates that the plugin is running out of process and that the
   // entry_points_ aren't valid.
-  scoped_ptr<PluginDelegate::OutOfProcessProxy> out_of_process_proxy_;
+  scoped_ptr<HostDispatcherWrapper> host_dispatcher_wrapper_;
 
   // Non-owning pointer to the broker for this plugin module, if one exists.
   // It is populated and cleared in the main thread.
-  PluginDelegate::Broker* broker_;
+  PepperBroker* broker_;
 
   // Holds a reference to the base::NativeLibrary handle if this PluginModule
   // instance wraps functions loaded from a library.  Can be NULL.  If
@@ -241,7 +232,7 @@ class CONTENT_EXPORT PluginModule :
 
   // Contains pointers to the entry points of the actual plugin implementation.
   // These will be NULL for out-of-process plugins, which is indicated by the
-  // presence of the out_of_process_proxy_ value.
+  // presence of the host_dispatcher_wrapper_ value.
   PepperPluginInfo::EntryPoints entry_points_;
 
   // The name and file location of the module.

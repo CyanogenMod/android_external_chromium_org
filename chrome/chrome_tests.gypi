@@ -452,6 +452,7 @@
             '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_unscaled_resources.rc',
+            '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.rc',
 
             'browser/ui/views/accessibility/browser_views_accessibility_browsertest.cc',
@@ -1290,7 +1291,7 @@
         'browser/extensions/api/dns/dns_apitest.cc',
         'browser/extensions/api/dns/mock_host_resolver_creator.cc',
         'browser/extensions/api/dns/mock_host_resolver_creator.h',
-        'browser/extensions/api/downloads/downloads_api_unittest.cc',
+        'browser/extensions/api/downloads/downloads_api_browsertest.cc',
         'browser/extensions/api/extension_action/browser_action_apitest.cc',
         'browser/extensions/api/extension_action/page_action_apitest.cc',
         'browser/extensions/api/extension_action/page_as_browser_action_apitest.cc',
@@ -1339,9 +1340,9 @@
         'browser/extensions/api/system_cpu/system_cpu_apitest.cc',
         'browser/extensions/api/system_display/system_display_apitest.cc',
         'browser/extensions/api/system_memory/system_memory_apitest.cc',
-        'browser/extensions/api/system_info_storage/system_info_storage_apitest.cc',
         'browser/extensions/api/system_private/system_private_apitest.cc',
-        'browser/extensions/api/system_info_storage/system_info_storage_eject_apitest.cc',
+        'browser/extensions/api/system_storage/system_storage_apitest.cc',
+        'browser/extensions/api/system_storage/system_storage_eject_apitest.cc',
         'browser/extensions/api/tab_capture/tab_capture_apitest.cc',
         'browser/extensions/api/tabs/tabs_test.cc',
         'browser/extensions/api/terminal/terminal_private_apitest.cc',
@@ -1449,6 +1450,7 @@
         'browser/media/chrome_media_stream_infobar_browsertest.cc',
         'browser/media/chrome_webrtc_browsertest.cc',
         'browser/media/chrome_webrtc_video_quality_browsertest.cc',
+        'browser/media/webrtc_browsertest_base.cc',
         'browser/media/webrtc_browsertest_common.cc',
         'browser/media_galleries/fileapi/itunes_finder_win_browsertest.cc',
         'browser/media_galleries/fileapi/media_file_validator_unittest.cc',
@@ -1638,6 +1640,7 @@
         'browser/ui/webui/options/font_settings_browsertest.js',
         'browser/ui/webui/options/language_options_browsertest.js',
         'browser/ui/webui/options/language_options_dictionary_download_browsertest.js',
+        'browser/ui/webui/options/options_browsertest.cc',
         'browser/ui/webui/options/options_browsertest.js',
         'browser/ui/webui/options/options_ui_browsertest.cc',
         'browser/ui/webui/options/options_ui_browsertest.h',
@@ -1719,7 +1722,8 @@
         'test/gpu/gpu_feature_browsertest.cc',
         'test/gpu/webgl_infobar_browsertest.cc',
         'test/ppapi/ppapi_browsertest.cc',
-        'test/security_tests/sandbox_browsertest.cc',
+        'test/security_tests/sandbox_browsertest_linux.cc',
+        'test/security_tests/sandbox_browsertest_win.cc',
         # TODO(craig): Rename this and run from base_unittests when the test
         # is safe to run there. See http://crbug.com/78722 for details.
         '../base/files/file_path_watcher_browsertest.cc',
@@ -1923,6 +1927,7 @@
             '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_unscaled_resources.rc',
+            '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.rc',
           ],
           'include_dirs': [
@@ -2161,6 +2166,7 @@
             '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_unscaled_resources.rc',
+            '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.rc',
           ],
           'include_dirs': [
@@ -2544,6 +2550,7 @@
             '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_unscaled_resources.rc',
+            '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.rc',
           ],
           'include_dirs': [

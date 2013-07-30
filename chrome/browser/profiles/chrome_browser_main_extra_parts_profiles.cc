@@ -7,7 +7,7 @@
 #include "apps/app_load_service_factory.h"
 #include "apps/app_restore_service_factory.h"
 #include "apps/shell_window_geometry_cache.h"
-#include "apps/shortcut_manager_factory.h"
+#include "chrome/browser/apps/shortcut_manager_factory.h"
 #include "chrome/browser/autofill/autocheckout_whitelist_manager_factory.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/background/background_contents_service_factory.h"
@@ -77,6 +77,7 @@
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service_factory.h"
 #include "chrome/browser/profiles/gaia_info_update_service_factory.h"
+#include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search_engines/template_url_fetcher_factory.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/sessions/session_service_factory.h"
@@ -183,10 +184,10 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
 #endif
   DownloadServiceFactory::GetInstance();
 #if defined(ENABLE_EXTENSIONS)
+  AppShortcutManagerFactory::GetInstance();
   apps::AppLoadServiceFactory::GetInstance();
   apps::AppRestoreServiceFactory::GetInstance();
   apps::ShellWindowGeometryCache::Factory::GetInstance();
-  apps::ShortcutManagerFactory::GetInstance();
   autofill::autocheckout::WhitelistManagerFactory::GetInstance();
   extensions::ActivityLogFactory::GetInstance();
   extensions::ActivityLogAPI::GetFactoryInstance();
@@ -246,7 +247,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
 #endif  // defined(ENABLE_EXTENSIONS)
   FaviconServiceFactory::GetInstance();
 #if defined(OS_CHROMEOS) && defined(FILE_MANAGER_EXTENSION)
-  FileBrowserPrivateAPIFactory::GetInstance();
+  file_manager::FileBrowserPrivateAPIFactory::GetInstance();
 #endif
   FindBarStateFactory::GetInstance();
   GAIAInfoUpdateServiceFactory::GetInstance();
@@ -257,6 +258,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   GoogleURLTrackerFactory::GetInstance();
   HistoryServiceFactory::GetInstance();
   invalidation::InvalidationServiceFactory::GetInstance();
+  InstantServiceFactory::GetInstance();
 #if defined(ENABLE_MANAGED_USERS)
   ManagedUserServiceFactory::GetInstance();
 #endif

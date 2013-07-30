@@ -38,6 +38,7 @@ class MockLayerTreeHost : public LayerTreeHost {
 
   MOCK_METHOD0(AcquireLayerTextures, void());
   MOCK_METHOD0(SetNeedsCommit, void());
+  MOCK_METHOD0(SetNeedsUpdateLayers, void());
   MOCK_METHOD1(StartRateLimiter, void(WebKit::WebGraphicsContext3D* context));
   MOCK_METHOD1(StopRateLimiter, void(WebKit::WebGraphicsContext3D* context));
 };
@@ -118,7 +119,7 @@ TEST_F(TextureLayerTest, SyncImplWhenDrawing) {
   Mock::VerifyAndClearExpectations(layer_tree_host_.get());
 
   EXPECT_CALL(*layer_tree_host_, AcquireLayerTextures()).Times(0);
-  EXPECT_CALL(*layer_tree_host_, SetNeedsCommit()).Times(1);
+  EXPECT_CALL(*layer_tree_host_, SetNeedsUpdateLayers()).Times(1);
   test_layer->SetNeedsDisplayRect(dirty_rect);
   Mock::VerifyAndClearExpectations(layer_tree_host_.get());
 
@@ -584,7 +585,7 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1, true);
     impl_layer->SetTextureMailbox(test_data_.mailbox3_);
-    EXPECT_FALSE(WillDraw(impl_layer.get(), DRAW_MODE_HARDWARE));
+    EXPECT_TRUE(WillDraw(impl_layer.get(), DRAW_MODE_HARDWARE));
   }
 
   {
@@ -947,6 +948,145 @@ class TextureLayerLostContextTest
 };
 
 SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(TextureLayerLostContextTest);
+
+class TextureLayerWithMailboxMainThreadDeleted : public LayerTreeTest {
+ public:
+  void ReleaseCallback(unsigned sync_point, bool lost_resource) {
+    EXPECT_EQ(true, proxy()->IsMainThread());
+    EXPECT_FALSE(lost_resource);
+    ++callback_count_;
+    EndTest();
+  }
+
+  void SetMailbox(char mailbox_char) {
+    TextureMailbox mailbox(
+        std::string(64, mailbox_char),
+        base::Bind(
+            &TextureLayerWithMailboxMainThreadDeleted::ReleaseCallback,
+            base::Unretained(this)));
+    layer_->SetTextureMailbox(mailbox);
+  }
+
+  virtual void SetupTree() OVERRIDE {
+    gfx::Size bounds(100, 100);
+    root_ = Layer::Create();
+    root_->SetAnchorPoint(gfx::PointF());
+    root_->SetBounds(bounds);
+
+    layer_ = TextureLayer::CreateForMailbox(NULL);
+    layer_->SetIsDrawable(true);
+    layer_->SetAnchorPoint(gfx::PointF());
+    layer_->SetBounds(bounds);
+
+    root_->AddChild(layer_);
+    layer_tree_host()->SetRootLayer(root_);
+    layer_tree_host()->SetViewportSize(bounds);
+  }
+
+  virtual void BeginTest() OVERRIDE {
+    callback_count_ = 0;
+
+    // Set the mailbox on the main thread.
+    SetMailbox('1');
+    EXPECT_EQ(0, callback_count_);
+
+    PostSetNeedsCommitToMainThread();
+  }
+
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
+    switch (layer_tree_host()->source_frame_number()) {
+      case 1:
+        // Delete the TextureLayer on the main thread while the mailbox is in
+        // the impl tree.
+        layer_->RemoveFromParent();
+        layer_ = NULL;
+        break;
+    }
+  }
+
+  virtual void AfterTest() OVERRIDE {
+    EXPECT_EQ(1, callback_count_);
+  }
+
+ private:
+  int callback_count_;
+  scoped_refptr<Layer> root_;
+  scoped_refptr<TextureLayer> layer_;
+};
+
+SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
+    TextureLayerWithMailboxMainThreadDeleted);
+
+class TextureLayerWithMailboxImplThreadDeleted : public LayerTreeTest {
+ public:
+  void ReleaseCallback(unsigned sync_point, bool lost_resource) {
+    EXPECT_EQ(true, proxy()->IsMainThread());
+    EXPECT_FALSE(lost_resource);
+    ++callback_count_;
+    EndTest();
+  }
+
+  void SetMailbox(char mailbox_char) {
+    TextureMailbox mailbox(
+        std::string(64, mailbox_char),
+        base::Bind(
+            &TextureLayerWithMailboxImplThreadDeleted::ReleaseCallback,
+            base::Unretained(this)));
+    layer_->SetTextureMailbox(mailbox);
+  }
+
+  virtual void SetupTree() OVERRIDE {
+    gfx::Size bounds(100, 100);
+    root_ = Layer::Create();
+    root_->SetAnchorPoint(gfx::PointF());
+    root_->SetBounds(bounds);
+
+    layer_ = TextureLayer::CreateForMailbox(NULL);
+    layer_->SetIsDrawable(true);
+    layer_->SetAnchorPoint(gfx::PointF());
+    layer_->SetBounds(bounds);
+
+    root_->AddChild(layer_);
+    layer_tree_host()->SetRootLayer(root_);
+    layer_tree_host()->SetViewportSize(bounds);
+  }
+
+  virtual void BeginTest() OVERRIDE {
+    callback_count_ = 0;
+
+    // Set the mailbox on the main thread.
+    SetMailbox('1');
+    EXPECT_EQ(0, callback_count_);
+
+    PostSetNeedsCommitToMainThread();
+  }
+
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
+    switch (layer_tree_host()->source_frame_number()) {
+      case 1:
+        // Remove the TextureLayer on the main thread while the mailbox is in
+        // the impl tree, but don't delete the TextureLayer until after the impl
+        // tree side is deleted.
+        layer_->RemoveFromParent();
+        break;
+      case 2:
+        layer_ = NULL;
+        break;
+    }
+  }
+
+  virtual void AfterTest() OVERRIDE {
+    EXPECT_EQ(1, callback_count_);
+  }
+
+ private:
+  int callback_count_;
+  scoped_refptr<Layer> root_;
+  scoped_refptr<TextureLayer> layer_;
+};
+
+SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
+    TextureLayerWithMailboxImplThreadDeleted);
 
 }  // namespace
 }  // namespace cc

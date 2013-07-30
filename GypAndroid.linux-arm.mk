@@ -106,7 +106,6 @@ include $(LOCAL_PATH)/skia/skia_opts_neon.target.linux-arm.mk
 include $(LOCAL_PATH)/sql/sql.target.linux-arm.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/blink_common.target.linux-arm.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/skia_webkit.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/webkit.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/deprecated_perl_bindings_sources.target.linux-arm.mk
@@ -164,8 +163,11 @@ include $(LOCAL_PATH)/third_party/freetype/ft2.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/harfbuzz-ng/harfbuzz-ng.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/hyphen/hyphen.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/iccjpeg/iccjpeg.target.linux-arm.mk
+include $(LOCAL_PATH)/third_party/icu/icudata.host.linux-arm.mk
 include $(LOCAL_PATH)/third_party/icu/icudata.target.linux-arm.mk
+include $(LOCAL_PATH)/third_party/icu/icui18n.host.linux-arm.mk
 include $(LOCAL_PATH)/third_party/icu/icui18n.target.linux-arm.mk
+include $(LOCAL_PATH)/third_party/icu/icuuc.host.linux-arm.mk
 include $(LOCAL_PATH)/third_party/icu/icuuc.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/icu/system_icu.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/khronos/khronos_headers.target.linux-arm.mk
@@ -200,8 +202,6 @@ include $(LOCAL_PATH)/third_party/qcms/qcms.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/re2/re2.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/smhasher/cityhash.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/sqlite/sqlite.target.linux-arm.mk
-include $(LOCAL_PATH)/third_party/v8-i18n/build/api2c.host.linux-arm.mk
-include $(LOCAL_PATH)/third_party/v8-i18n/build/v8-i18n.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/widevine/cdm/widevine_cdm_version_h.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/zlib/minizip.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/zlib/zip.target.linux-arm.mk

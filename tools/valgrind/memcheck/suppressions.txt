@@ -1194,8 +1194,6 @@
    fun:_ZN7WebCoreL28reportFatalErrorInMainThreadEPKcS1_
    fun:_ZN2v88internal2V823FatalProcessOutOfMemoryEPKcb
    ...
-   fun:_ZN7WebCore16ScriptController8evaluateERKNS_16ScriptSourceCodeE
-   fun:_ZN7WebCore13ScriptElement13executeScriptERKNS_16ScriptSourceCodeE
    fun:_ZN7WebCore16HTMLScriptRunner36executePendingScriptAndDispatchEventERNS_13PendingScriptE
 }
 
@@ -5336,15 +5334,6 @@
    fun:_ZN19OAuth2MintTokenFlow13FireAndForgetEv
 }
 {
-   bug_145701
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_ZN3gpu5gles210ShareGroupC1Ebb
-   fun:_ZN3gpu5gles219GLES2ImplementationC1EPNS0_14GLES2CmdHelperEPNS0_10ShareGroupEPNS_23TransferBufferInterfaceEbbPNS0_12ImageFactoryE
-   fun:_ZN3gpu5gles223GLES2ImplementationTest10InitializeEbb
-   fun:_ZN3gpu5gles2*GLES2Implementation*Test5SetUpEv
-}
-{
    bug_145703
    Memcheck:Leak
    fun:_Znw*
@@ -5628,27 +5617,6 @@
    Memcheck:Uninitialized
    fun:_ZN2v88internalL21ProfilerSignalHandlerEiP7siginfoPv
    obj:/lib/libpthread-2.11.1.so
-}
-{
-   bug_155530a
-   Memcheck:Leak
-   fun:_Znw*
-   ...
-   fun:_ZN77GeolocationInfoBarQueueControllerTests_OneObservationPerInfoBarCancelled_Test8TestBodyEv
-}
-{
-   bug_155530b
-   Memcheck:Leak
-   fun:_Znw*
-   ...
-   fun:_ZN69PermissionQueueControllerTests_OneObservationPerInfoBarCancelled_Test8TestBodyEv
-}
-{
-   bug_156705
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_ZN33GeolocationInfoBarQueueController21CreateInfoBarDelegateEP14InfoBarServicePS_iiiRK4GURLRKSs
-   fun:_ZN33GeolocationInfoBarQueueController17ShowQueuedInfoBarEiiP14InfoBarService
 }
 {
    bug_156829
@@ -7249,30 +7217,6 @@
    fun:_ZN11jingle_glue26ProxyResolvingClientSocket23ProcessProxyResolveDoneEi
 }
 {
-   bug_259357a
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_ZNK15GpuProgramProto3NewEv
-   fun:_ZN*3gpu5gles218MemoryProgramCache*
-   fun:_ZN3gpu5gles2*MemoryProgramCacheTest_*
-}
-{
-   bug_259357b
-   Memcheck:Leak
-   fun:_Znw*
-   ...
-   fun:_ZNSt3setIjSt4lessIjESaIjEE6insertERKj
-   fun:_ZN3gpu11IdAllocator*
-}
-{
-   bug_259357c
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_ZN3gpu19MappedMemoryManager5AllocEjPiPj
-   ...
-   fun:_ZN3gpu*_Test8TestBodyEv
-}
-{
    bug_259357d
    Memcheck:Uninitialized
    ...
@@ -7336,9 +7280,10 @@
    fun:_ZN15webkit_database12_GLOBAL__N_120GetOriginsOnDBThreadEPNS_15DatabaseTrackerEPSt3setI4GURLSt4lessIS4_ESaIS4_EE
 }
 {
-   bug_263753
-   Memcheck:Param
-   sendmsg(msg.msg_name)
-   obj:*libpthread-*.so
-   fun:_ZN3net5tools15QuicSocketUtils11WritePacketEiPKcmRKSt6vectorIhSaIhEERKNS_10IPEndPointEPi
+  bug_264225
+  Memcheck:Leak
+  fun:_Znw*
+  ...
+  fun:_ZN14TestingProfile20CreateRequestContextEPSt3mapISs10linked_ptrIN3net20URLRequestJobFactory15ProtocolHandlerEESt4lessISsESaISt4pairIKSsS5_EEE
+  fun:_ZN20UbertokenFetcherTest5SetUpEv
 }

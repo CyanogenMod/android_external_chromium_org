@@ -21,6 +21,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/policy/async_policy_provider.h"
 #include "chrome/browser/policy/cloud/cloud_policy_client.h"
+#include "chrome/browser/policy/cloud/cloud_policy_refresh_scheduler.h"
 #include "chrome/browser/policy/cloud/cloud_policy_service.h"
 #include "chrome/browser/policy/cloud/device_management_service.h"
 #include "chrome/browser/policy/configuration_policy_provider.h"
@@ -60,6 +61,7 @@
 #include "chrome/browser/chromeos/policy/enterprise_install_attributes.h"
 #include "chrome/browser/chromeos/policy/network_configuration_updater.h"
 #include "chrome/browser/chromeos/policy/network_configuration_updater_impl.h"
+#include "chrome/browser/chromeos/policy/network_configuration_updater_impl_cros.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/cros_settings_provider.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
@@ -70,8 +72,8 @@
 #include "chromeos/cryptohome/cryptohome_library.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/network/certificate_handler.h"
 #include "chromeos/network/managed_network_configuration_handler.h"
+#include "chromeos/network/onc/onc_certificate_importer_impl.h"
 #endif
 
 using content::BrowserThread;
@@ -84,9 +86,6 @@ namespace {
 // on startup. (So that displaying Chrome's GUI does not get delayed.)
 // Delay in milliseconds from startup.
 const int64 kServiceInitializationStartupDelay = 5000;
-
-// Default policy refresh rate.
-const int64 kDefaultPolicyRefreshRateMs = 3 * 60 * 60 * 1000;  // 3 hours.
 
 // The URL for the device management server.
 const char kDefaultDeviceManagementServerUrl[] =
@@ -207,10 +206,11 @@ void BrowserPolicyConnector::Init(
   policy_statistics_collector_->Initialize();
 
 #if defined(OS_CHROMEOS)
-  network_configuration_updater_.reset(
-      new NetworkConfigurationUpdaterImpl(
-          GetPolicyService(),
-          make_scoped_ptr(new chromeos::CertificateHandler)));
+
+  network_configuration_updater_.reset(new NetworkConfigurationUpdaterImpl(
+      GetPolicyService(),
+      scoped_ptr<chromeos::onc::CertificateImporter>(
+          new chromeos::onc::CertificateImporterImpl)));
 #endif
 
   is_initialized_ = true;
@@ -425,11 +425,13 @@ bool BrowserPolicyConnector::IsNonEnterpriseUser(const std::string& username) {
 
 // static
 void BrowserPolicyConnector::RegisterPrefs(PrefRegistrySimple* registry) {
-  registry->RegisterIntegerPref(prefs::kUserPolicyRefreshRate,
-                                kDefaultPolicyRefreshRateMs);
+  registry->RegisterIntegerPref(
+      prefs::kUserPolicyRefreshRate,
+      CloudPolicyRefreshScheduler::kDefaultRefreshDelayMs);
 #if defined(OS_CHROMEOS)
-  registry->RegisterIntegerPref(prefs::kDevicePolicyRefreshRate,
-                                kDefaultPolicyRefreshRateMs);
+  registry->RegisterIntegerPref(
+      prefs::kDevicePolicyRefreshRate,
+      CloudPolicyRefreshScheduler::kDefaultRefreshDelayMs);
 #endif
 }
 

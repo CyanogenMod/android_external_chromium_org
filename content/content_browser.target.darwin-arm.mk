@@ -214,7 +214,6 @@ LOCAL_SRC_FILES := \
 	content/browser/histogram_synchronizer.cc \
 	content/browser/host_zoom_map_impl.cc \
 	content/browser/hyphenator/hyphenator_message_filter.cc \
-	content/browser/in_process_webkit/browser_webkitplatformsupport_impl.cc \
 	content/browser/indexed_db/indexed_db_backing_store.cc \
 	content/browser/indexed_db/indexed_db_callbacks.cc \
 	content/browser/indexed_db/indexed_db_connection.cc \
@@ -288,11 +287,15 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/dip_util.cc \
 	content/browser/renderer_host/file_utilities_message_filter.cc \
 	content/browser/renderer_host/gamepad_browser_message_filter.cc \
-	content/browser/renderer_host/gesture_event_filter.cc \
 	content/browser/renderer_host/gpu_message_filter.cc \
 	content/browser/renderer_host/image_transport_factory_android.cc \
 	content/browser/renderer_host/ime_adapter_android.cc \
+	content/browser/renderer_host/input/gesture_event_filter.cc \
 	content/browser/renderer_host/input/immediate_input_router.cc \
+	content/browser/renderer_host/input/tap_suppression_controller.cc \
+	content/browser/renderer_host/input/touch_event_queue.cc \
+	content/browser/renderer_host/input/touchpad_tap_suppression_controller.cc \
+	content/browser/renderer_host/input/touchscreen_tap_suppression_controller_stub.cc \
 	content/browser/renderer_host/input/web_input_event_builders_android.cc \
 	content/browser/renderer_host/input/web_input_event_util.cc \
 	content/browser/renderer_host/input/web_input_event_util_posix.cc \
@@ -345,10 +348,7 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/socket_stream_dispatcher_host.cc \
 	content/browser/renderer_host/socket_stream_host.cc \
 	content/browser/renderer_host/surface_texture_transport_client_android.cc \
-	content/browser/renderer_host/touch_event_queue.cc \
 	content/browser/renderer_host/touch_smooth_scroll_gesture_android.cc \
-	content/browser/renderer_host/touchpad_tap_suppression_controller.cc \
-	content/browser/renderer_host/touchscreen_tap_suppression_controller_stub.cc \
 	content/browser/resolve_proxy_msg_helper.cc \
 	content/browser/resource_context_impl.cc \
 	content/browser/site_instance_impl.cc \

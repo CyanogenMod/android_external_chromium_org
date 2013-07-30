@@ -11,7 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "content/browser/renderer_host/input/input_router.h"
-#include "content/browser/renderer_host/touch_event_queue.h"
+#include "content/browser/renderer_host/input/touch_event_queue.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 
 namespace ui {
@@ -27,8 +27,9 @@ class RenderWidgetHostImpl;
 
 // A default implementation for browser input event routing. Input commands are
 // forwarded to the renderer immediately upon receipt.
-class ImmediateInputRouter : public InputRouter,
-                             public TouchEventQueueClient {
+class CONTENT_EXPORT ImmediateInputRouter
+    : public NON_EXPORTED_BASE(InputRouter),
+      public NON_EXPORTED_BASE(TouchEventQueueClient) {
  public:
   ImmediateInputRouter(RenderProcessHost* process,
                        InputRouterClient* client,

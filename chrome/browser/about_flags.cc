@@ -528,11 +528,11 @@ const Experiment kExperiments[] = {
     MULTI_VALUE_TYPE(kNaClDebugMaskChoices)
   },
   {
-    "enable-pnacl",  // FLAGS:RECORD_UMA
-    IDS_FLAGS_ENABLE_PNACL_NAME,
-    IDS_FLAGS_ENABLE_PNACL_DESCRIPTION,
+    "disable-pnacl",  // FLAGS:RECORD_UMA
+    IDS_FLAGS_PNACL_NAME,
+    IDS_FLAGS_PNACL_DESCRIPTION,
     kOsDesktop,
-    SINGLE_VALUE_TYPE(switches::kEnablePnacl)
+    ENABLE_DISABLE_VALUE_TYPE("", switches::kDisablePnacl)
   },
   {
     "extension-apis",  // FLAGS:RECORD_UMA
@@ -726,6 +726,13 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kEnableSpdy4a2)
   },
   {
+    "enable-http2-draft-04",
+    IDS_FLAGS_ENABLE_HTTP2_DRAFT_04_NAME,
+    IDS_FLAGS_ENABLE_HTTP2_DRAFT_04_DESCRIPTION,
+    kOsAll,
+    SINGLE_VALUE_TYPE(switches::kEnableHttp2Draft04)
+  },
+  {
     "enable-async-dns",
     IDS_FLAGS_ENABLE_ASYNC_DNS_NAME,
     IDS_FLAGS_ENABLE_ASYNC_DNS_DESCRIPTION,
@@ -733,15 +740,6 @@ const Experiment kExperiments[] = {
     ENABLE_DISABLE_VALUE_TYPE(switches::kEnableAsyncDns,
                               switches::kDisableAsyncDns)
   },
-#if defined(ANDROID) && !defined(GOOGLE_TV)
-  {
-    "enable-media-source",
-    IDS_FLAGS_ENABLE_WEBKIT_MEDIA_SOURCE_NAME,
-    IDS_FLAGS_ENABLE_WEBKIT_MEDIA_SOURCE_DESCRIPTION,
-    kOsAll,
-    SINGLE_VALUE_TYPE(switches::kEnableWebKitMediaSource)
-  },
-#else
   {
     "disable-media-source",
     IDS_FLAGS_DISABLE_WEBKIT_MEDIA_SOURCE_NAME,
@@ -749,19 +747,18 @@ const Experiment kExperiments[] = {
     kOsAll,
     SINGLE_VALUE_TYPE(switches::kDisableWebKitMediaSource)
   },
-#endif
   {
     "enable-encrypted-media",
     IDS_FLAGS_ENABLE_ENCRYPTED_MEDIA_NAME,
     IDS_FLAGS_ENABLE_ENCRYPTED_MEDIA_DESCRIPTION,
-    kOsDesktop,
+    kOsAll,
     SINGLE_VALUE_TYPE(switches::kEnableEncryptedMedia)
   },
   {
     "disable-encrypted-media",
     IDS_FLAGS_DISABLE_PREFIXED_ENCRYPTED_MEDIA_NAME,
     IDS_FLAGS_DISABLE_PREFIXED_ENCRYPTED_MEDIA_DESCRIPTION,
-    kOsDesktop,
+    kOsAll,
     SINGLE_VALUE_TYPE(switches::kDisableLegacyEncryptedMedia)
   },
   {
@@ -1188,12 +1185,6 @@ const Experiment kExperiments[] = {
     kOsCrOS,
     SINGLE_VALUE_TYPE(ash::switches::kAshDisableDragAndDropAppListToLauncher),
   },
-  { "ash-enable-workspace-scrubbing",
-    IDS_FLAGS_ENABLE_WORKSPACE_SCRUBBING_NAME,
-    IDS_FLAGS_ENABLE_WORKSPACE_SCRUBBING_DESCRIPTION,
-    kOsCrOS,
-    SINGLE_VALUE_TYPE(ash::switches::kAshEnableWorkspaceScrubbing),
-  },
   { "ash-immersive-fullscreen-2",
     IDS_FLAGS_ASH_IMMERSIVE_FULLSCREEN_NAME,
     IDS_FLAGS_ASH_IMMERSIVE_FULLSCREEN_DESCRIPTION,
@@ -1333,6 +1324,15 @@ const Experiment kExperiments[] = {
     ENABLE_DISABLE_VALUE_TYPE_AND_VALUE(
         switches::kScrollEndEffect, "1",
         switches::kScrollEndEffect, "0")
+  },
+  {
+    "enable-touch-side-bezels",
+    IDS_FLAGS_ENABLE_TOUCH_SIDE_BEZELS_NAME,
+    IDS_FLAGS_ENABLE_TOUCH_SIDE_BEZELS_DESCRIPTION,
+    kOsCrOS,
+    ENABLE_DISABLE_VALUE_TYPE_AND_VALUE(
+        switches::kTouchSideBezels, "1",
+        switches::kTouchSideBezels, "0")
   },
   {
     "enable-touch-drag-drop",
@@ -1544,11 +1544,12 @@ const Experiment kExperiments[] = {
 #endif
 #if defined(OS_CHROMEOS) || defined(OS_WIN)
   {
-    "enable-omnibox-auto-completion-for-ime",
+    "omnibox-auto-completion-for-ime",
     IDS_FLAGS_ENABLE_OMNIBOX_AUTO_COMPLETION_FOR_IME_NAME,
     IDS_FLAGS_ENABLE_OMNIBOX_AUTO_COMPLETION_FOR_IME_DESCRIPTION,
-    kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kEnableOmniboxAutoCompletionForIme)
+    kOsCrOS | kOsWin,
+    ENABLE_DISABLE_VALUE_TYPE(switches::kEnableOmniboxAutoCompletionForIme,
+                              switches::kDisableOmniboxAutoCompletionForIme)
   },
 #endif
 #if defined(USE_AURA)

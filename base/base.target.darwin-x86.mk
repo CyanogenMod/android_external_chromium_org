@@ -93,6 +93,7 @@ LOCAL_SRC_FILES := \
 	base/files/important_file_writer.cc \
 	base/files/memory_mapped_file.cc \
 	base/files/memory_mapped_file_posix.cc \
+	base/files/scoped_platform_file_closer.cc \
 	base/files/scoped_temp_dir.cc \
 	base/guid.cc \
 	base/guid_posix.cc \

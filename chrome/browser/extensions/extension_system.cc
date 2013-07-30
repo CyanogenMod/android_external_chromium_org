@@ -13,6 +13,7 @@
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/extensions/blacklist.h"
 #include "chrome/browser/extensions/component_loader.h"
+#include "chrome/browser/extensions/error_console/error_console.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_info_map.h"
@@ -87,7 +88,8 @@ ExtensionSystemImpl::Shared::~Shared() {
 void ExtensionSystemImpl::Shared::InitPrefs() {
   lazy_background_task_queue_.reset(new LazyBackgroundTaskQueue(profile_));
   event_router_.reset(new EventRouter(profile_, ExtensionPrefs::Get(profile_)));
-
+// TODO(yoz): Remove once crbug.com/159265 is fixed.
+#if defined(ENABLE_EXTENSIONS)
   // Two state stores. The latter, which contains declarative rules, must be
   // loaded immediately so that the rules are ready before we issue network
   // requests.
@@ -95,6 +97,7 @@ void ExtensionSystemImpl::Shared::InitPrefs() {
       profile_,
       profile_->GetPath().AppendASCII(ExtensionService::kStateStoreName),
       true));
+
   rules_store_.reset(new StateStore(
       profile_,
       profile_->GetPath().AppendASCII(ExtensionService::kRulesStoreName),
@@ -104,12 +107,16 @@ void ExtensionSystemImpl::Shared::InitPrefs() {
 
   standard_management_policy_provider_.reset(
       new StandardManagementPolicyProvider(ExtensionPrefs::Get(profile_)));
+#endif
 }
 
 void ExtensionSystemImpl::Shared::RegisterManagementPolicyProviders() {
+// TODO(yoz): Remove once crbug.com/159265 is fixed.
+#if defined(ENABLE_EXTENSIONS)
   DCHECK(standard_management_policy_provider_.get());
   management_policy_->RegisterProvider(
       standard_management_policy_provider_.get());
+#endif
 }
 
 void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
@@ -214,6 +221,7 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
       new ExtensionWarningBadgeService(profile_));
   extension_warning_service_->AddObserver(
       extension_warning_badge_service_.get());
+  error_console_.reset(new ErrorConsole(profile_));
 }
 
 void ExtensionSystemImpl::Shared::Shutdown() {
@@ -266,6 +274,10 @@ ExtensionWarningService* ExtensionSystemImpl::Shared::warning_service() {
 
 Blacklist* ExtensionSystemImpl::Shared::blacklist() {
   return blacklist_.get();
+}
+
+ErrorConsole* ExtensionSystemImpl::Shared::error_console() {
+  return error_console_.get();
 }
 
 //
@@ -350,6 +362,10 @@ Blacklist* ExtensionSystemImpl::blacklist() {
 
 const OneShotEvent& ExtensionSystemImpl::ready() const {
   return shared_->ready();
+}
+
+ErrorConsole* ExtensionSystemImpl::error_console() {
+  return shared_->error_console();
 }
 
 void ExtensionSystemImpl::RegisterExtensionWithRequestContexts(

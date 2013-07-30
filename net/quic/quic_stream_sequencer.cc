@@ -74,9 +74,18 @@ bool QuicStreamSequencer::OnStreamFrame(const QuicStreamFrame& frame) {
     return true;
   }
 
+  if (frame.fin) {
+    CloseStreamAtOffset(frame.offset + frame.data.size());
+  }
+
   QuicStreamOffset byte_offset = frame.offset;
   const char* data = frame.data.data();
   size_t data_len = frame.data.size();
+
+  if (data_len == 0) {
+    // TODO(rch): Close the stream if there was no data and no fin.
+    return true;
+  }
 
   if (byte_offset == num_bytes_consumed_) {
     DVLOG(1) << "Processing byte offset " << byte_offset;
@@ -194,23 +203,32 @@ int QuicStreamSequencer::Readv(const struct iovec* iov, size_t iov_len) {
 
 void QuicStreamSequencer::MarkConsumed(size_t num_bytes_consumed) {
   size_t end_offset = num_bytes_consumed_ + num_bytes_consumed;
-  while (!frames_.empty()) {
+  while (!frames_.empty() && end_offset != num_bytes_consumed_) {
     FrameMap::iterator it = frames_.begin();
+    if (it->first != num_bytes_consumed_) {
+      LOG(DFATAL) << "Invalid argument to MarkConsumed. "
+                  << " num_bytes_consumed_: " << num_bytes_consumed_
+                  << " end_offset: " << end_offset
+                  << " offset: " << it->first
+                  << " length: " << it->second.length();
+      stream_->Close(QUIC_SERVER_ERROR_PROCESSING_STREAM);
+      return;
+    }
+
     if (it->first + it->second.length() <= end_offset) {
+      num_bytes_consumed_ += it->second.length();
       // This chunk is entirely consumed.
       frames_.erase(it);
       continue;
     }
 
-    if (it->first != end_offset) {
-      // Partially consume this frame.
-      frames_.insert(make_pair(end_offset,
-                               it->second.substr(end_offset - it->first)));
-      frames_.erase(it);
-    }
+    // Partially consume this frame.
+    size_t delta = end_offset - it->first;
+    num_bytes_consumed_ += delta;
+    frames_.insert(make_pair(end_offset, it->second.substr(delta)));
+    frames_.erase(it);
     break;
   }
-  num_bytes_consumed_ = end_offset;
 }
 
 bool QuicStreamSequencer::HasBytesToRead() const {

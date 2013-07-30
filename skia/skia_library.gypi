@@ -256,7 +256,9 @@
     }],
     [ 'OS != "ios"', {
       'dependencies': [
-        '<(DEPTH)/third_party/WebKit/Source/WebKit/chromium/skia_webkit.gyp:skia_webkit',
+        # FIXME: Add a dependency on
+        # '<(DEPTH)/third_party/WebKit/public/blink_skia_config.gyp:blink_skia_config'
+        # once https://codereview.chromium.org/21137002 rolls into Chromium.
       ],
     }],
     [ 'OS != "mac"', {
@@ -433,6 +435,10 @@
     'SK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK',
 
     'IGNORE_ROT_AA_RECT_OPT',
+
+    'SKIA_IGNORE_GPU_MIPMAPS',
+
+    'SK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS',
 
     'SK_DEFAULT_FONT_CACHE_LIMIT=<(default_font_cache_limit)',
   ],

@@ -110,7 +110,6 @@ include $(LOCAL_PATH)/skia/skia_opts.target.linux-x86.mk
 include $(LOCAL_PATH)/sql/sql.target.linux-x86.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/blink_common.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/skia_webkit.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/webkit.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/deprecated_perl_bindings_sources.target.linux-x86.mk
@@ -167,8 +166,11 @@ include $(LOCAL_PATH)/third_party/freetype/ft2.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/harfbuzz-ng/harfbuzz-ng.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/hyphen/hyphen.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/iccjpeg/iccjpeg.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/icu/icudata.host.linux-x86.mk
 include $(LOCAL_PATH)/third_party/icu/icudata.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/icu/icui18n.host.linux-x86.mk
 include $(LOCAL_PATH)/third_party/icu/icui18n.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/icu/icuuc.host.linux-x86.mk
 include $(LOCAL_PATH)/third_party/icu/icuuc.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/icu/system_icu.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/khronos/khronos_headers.target.linux-x86.mk
@@ -203,8 +205,6 @@ include $(LOCAL_PATH)/third_party/qcms/qcms.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/re2/re2.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/smhasher/cityhash.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/sqlite/sqlite.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/v8-i18n/build/api2c.host.linux-x86.mk
-include $(LOCAL_PATH)/third_party/v8-i18n/build/v8-i18n.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/widevine/cdm/widevine_cdm_version_h.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/yasm/config_sources.host.linux-x86.mk
 include $(LOCAL_PATH)/third_party/yasm/generate_files.host.linux-x86.mk

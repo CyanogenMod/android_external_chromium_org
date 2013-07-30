@@ -109,7 +109,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/crypto/proxy_decryptor.cc \
 	content/renderer/media/midi_dispatcher.cc \
 	content/renderer/media/midi_message_filter.cc \
-	content/renderer/media/pepper_platform_video_decoder_impl.cc \
+	content/renderer/media/pepper_platform_video_decoder.cc \
 	content/renderer/media/render_media_log.cc \
 	content/renderer/media/renderer_gpu_video_decoder_factories.cc \
 	content/renderer/media/renderer_webaudiodevice_impl.cc \

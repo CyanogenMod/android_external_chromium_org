@@ -67,6 +67,7 @@ LOCAL_SRC_FILES := \
 	content/child/plugin_message_generator.cc \
 	content/child/plugin_param_traits.cc \
 	content/child/quota_dispatcher.cc \
+	content/child/quota_message_filter.cc \
 	content/child/request_extra_data.cc \
 	content/child/resource_dispatcher.cc \
 	content/child/runtime_features.cc \

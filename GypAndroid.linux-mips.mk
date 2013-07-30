@@ -103,7 +103,6 @@ include $(LOCAL_PATH)/skia/skia_opts.target.linux-mips.mk
 include $(LOCAL_PATH)/sql/sql.target.linux-mips.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/blink_common.target.linux-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/skia_webkit.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/webkit.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/deprecated_perl_bindings_sources.target.linux-mips.mk
@@ -160,8 +159,11 @@ include $(LOCAL_PATH)/third_party/freetype/ft2.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/harfbuzz-ng/harfbuzz-ng.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/hyphen/hyphen.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/iccjpeg/iccjpeg.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/icu/icudata.host.linux-mips.mk
 include $(LOCAL_PATH)/third_party/icu/icudata.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/icu/icui18n.host.linux-mips.mk
 include $(LOCAL_PATH)/third_party/icu/icui18n.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/icu/icuuc.host.linux-mips.mk
 include $(LOCAL_PATH)/third_party/icu/icuuc.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/icu/system_icu.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/khronos/khronos_headers.target.linux-mips.mk
@@ -196,8 +198,6 @@ include $(LOCAL_PATH)/third_party/qcms/qcms.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/re2/re2.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/smhasher/cityhash.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/sqlite/sqlite.target.linux-mips.mk
-include $(LOCAL_PATH)/third_party/v8-i18n/build/api2c.host.linux-mips.mk
-include $(LOCAL_PATH)/third_party/v8-i18n/build/v8-i18n.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/widevine/cdm/widevine_cdm_version_h.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/zlib/minizip.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/zlib/zip.target.linux-mips.mk

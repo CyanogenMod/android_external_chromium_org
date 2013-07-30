@@ -19,6 +19,7 @@
 #include "content/child/indexed_db/proxy_webidbfactory_impl.h"
 #include "content/child/npapi/npobject_util.h"
 #include "content/child/quota_dispatcher.h"
+#include "content/child/quota_message_filter.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/child/webblobregistry_impl.h"
 #include "content/child/webmessageportchannel_impl.h"
@@ -175,13 +176,6 @@ class RendererWebKitPlatformSupportImpl::Hyphenator
       size_t before_index,
       const WebKit::WebString& locale);
 
-  // DEPRECATED
-  virtual size_t computeLastHyphenLocation(
-      const char16* characters,
-      size_t length,
-      size_t before_index,
-      const WebKit::WebString& locale);
-
  private:
   scoped_ptr<content::Hyphenator> hyphenator_;
 
@@ -248,6 +242,7 @@ RendererWebKitPlatformSupportImpl::RendererWebKitPlatformSupportImpl()
   if (ChildThread::current()) {
     sync_message_filter_ = ChildThread::current()->sync_message_filter();
     thread_safe_sender_ = ChildThread::current()->thread_safe_sender();
+    quota_message_filter_ = ChildThread::current()->quota_message_filter();
   }
 }
 
@@ -412,7 +407,7 @@ WebIDBFactory* RendererWebKitPlatformSupportImpl::idbFactory() {
 
 WebFileSystem* RendererWebKitPlatformSupportImpl::fileSystem() {
   if (!web_file_system_)
-    web_file_system_.reset(new WebFileSystemImpl());
+    web_file_system_.reset(new WebFileSystemImpl(child_thread_loop_.get()));
   return web_file_system_.get();
 }
 
@@ -593,19 +588,6 @@ bool RendererWebKitPlatformSupportImpl::Hyphenator::canHyphenate(
     return hyphenator_->Attach(RenderThreadImpl::current(), locale);
   }
   return hyphenator_->CanHyphenate(locale);
-}
-
-// DEPRECATED
-size_t RendererWebKitPlatformSupportImpl::Hyphenator::computeLastHyphenLocation(
-    const char16* characters,
-    size_t length,
-    size_t before_index,
-    const WebKit::WebString& locale) {
-  // Crash if WebKit calls this function when canHyphenate returns false.
-  DCHECK(locale.isEmpty() || locale.equals("en-US"));
-  DCHECK(hyphenator_.get());
-  return hyphenator_->ComputeLastHyphenLocation(string16(characters, length),
-                                                before_index);
 }
 
 size_t RendererWebKitPlatformSupportImpl::Hyphenator::computeLastHyphenLocation(
@@ -1168,10 +1150,14 @@ void RendererWebKitPlatformSupportImpl::queryStorageUsageAndQuota(
     const WebKit::WebURL& storage_partition,
     WebKit::WebStorageQuotaType type,
     WebKit::WebStorageQuotaCallbacks* callbacks) {
-  ChildThread::current()->quota_dispatcher()->QueryStorageUsageAndQuota(
-      storage_partition,
-      static_cast<quota::StorageType>(type),
-      QuotaDispatcher::CreateWebStorageQuotaCallbacksWrapper(callbacks));
+  if (!thread_safe_sender_.get() || !quota_message_filter_.get())
+    return;
+  QuotaDispatcher::ThreadSpecificInstance(
+      thread_safe_sender_.get(),
+      quota_message_filter_.get())->QueryStorageUsageAndQuota(
+          storage_partition,
+          static_cast<quota::StorageType>(type),
+          QuotaDispatcher::CreateWebStorageQuotaCallbacksWrapper(callbacks));
 }
 
 }  // namespace content

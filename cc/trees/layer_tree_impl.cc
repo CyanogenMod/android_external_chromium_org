@@ -231,6 +231,24 @@ void LayerTreeImpl::UpdateMaxScrollOffset() {
   root_scroll_layer_->SetMaxScrollOffset(gfx::ToFlooredVector2d(max_scroll));
 }
 
+static void ApplySentScrollDeltasOn(LayerImpl* layer) {
+  layer->ApplySentScrollDeltas();
+}
+
+void LayerTreeImpl::ApplySentScrollAndScaleDeltas() {
+  DCHECK(IsActiveTree());
+
+  page_scale_factor_ *= sent_page_scale_delta_;
+  page_scale_delta_ /= sent_page_scale_delta_;
+  sent_page_scale_delta_ = 1.f;
+
+  if (!root_layer())
+    return;
+
+  LayerTreeHostCommon::CallFunctionForSubtree(
+      root_layer(), base::Bind(&ApplySentScrollDeltasOn));
+}
+
 void LayerTreeImpl::UpdateSolidColorScrollbars() {
   DCHECK(settings().solid_color_scrollbars);
 
@@ -284,7 +302,7 @@ void LayerTreeImpl::UpdateDrawProperties() {
                  IsActiveTree(),
                  "SourceFrameNumber",
                  source_frame_number_);
-    LayerTreeHostCommon::CalculateDrawProperties(
+    LayerTreeHostCommon::CalcDrawPropsImplInputs inputs(
         root_layer(),
         layer_tree_host_impl_->DeviceViewport().size(),
         layer_tree_host_impl_->DeviceTransform(),
@@ -295,6 +313,7 @@ void LayerTreeImpl::UpdateDrawProperties() {
         settings().can_use_lcd_text,
         settings().layer_transforms_should_scale_layer_contents,
         &render_surface_layer_list_);
+    LayerTreeHostCommon::CalculateDrawProperties(&inputs);
   }
 
   DCHECK(!needs_update_draw_properties_) <<

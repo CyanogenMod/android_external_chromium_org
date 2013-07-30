@@ -12,6 +12,7 @@
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
+#include "ui/gfx/render_text_win.h"
 #endif
 
 #if defined(OS_LINUX)
@@ -409,13 +410,13 @@ TEST_F(RenderTextTest, TruncatedText) {
     { L"01234",   L"01234"   },
     // Long strings should be truncated with an ellipsis appended at the end.
     { L"012345",                  L"0123\x2026"     },
-    { L"012"L" . ",               L"012 \x2026"     },
-    { L"012"L"abc",               L"012a\x2026"     },
-    { L"012"L"a"L"\x5d0\x5d1",    L"012a\x2026"     },
-    { L"012"L"a"L"\x5d1"L"b",     L"012a\x2026"     },
-    { L"012"L"\x5d0\x5d1\x5d2",   L"012\x5d0\x2026" },
-    { L"012"L"\x5d0\x5d1"L"a",    L"012\x5d0\x2026" },
-    { L"012"L"\x5d0"L"a"L"\x5d1", L"012\x5d0\x2026" },
+    { L"012" L" . ",              L"012 \x2026"     },
+    { L"012" L"abc",              L"012a\x2026"     },
+    { L"012" L"a" L"\x5d0\x5d1",  L"012a\x2026"     },
+    { L"012" L"a" L"\x5d1" L"b",  L"012a\x2026"     },
+    { L"012" L"\x5d0\x5d1\x5d2",  L"012\x5d0\x2026" },
+    { L"012" L"\x5d0\x5d1" L"a",  L"012\x5d0\x2026" },
+    { L"012" L"\x5d0" L"a" L"\x5d1",    L"012\x5d0\x2026" },
     // Surrogate pairs should be truncated reasonably enough.
     { L"0123\x0915\x093f",              L"0123\x2026"                },
     { L"0\x05e9\x05bc\x05c1\x05b8",     L"0\x05e9\x05bc\x05c1\x05b8" },
@@ -459,9 +460,8 @@ TEST_F(RenderTextTest, TruncatedCursorMovementLTR) {
   std::vector<SelectionModel> expected;
   expected.push_back(SelectionModel(0, CURSOR_BACKWARD));
   expected.push_back(SelectionModel(1, CURSOR_BACKWARD));
-  expected.push_back(SelectionModel(2, CURSOR_BACKWARD));
-  // The cursor hops over the elided text to the line end.
-  expected.push_back(SelectionModel(4, CURSOR_FORWARD));
+  // The cursor hops over the ellipsis and elided text to the line end.
+  expected.push_back(SelectionModel(4, CURSOR_BACKWARD));
   expected.push_back(SelectionModel(4, CURSOR_FORWARD));
   RunMoveCursorLeftRightTest(render_text.get(), expected, CURSOR_RIGHT);
 
@@ -488,9 +488,8 @@ TEST_F(RenderTextTest, TruncatedCursorMovementRTL) {
   std::vector<SelectionModel> expected;
   expected.push_back(SelectionModel(0, CURSOR_BACKWARD));
   expected.push_back(SelectionModel(1, CURSOR_BACKWARD));
-  expected.push_back(SelectionModel(2, CURSOR_BACKWARD));
-  // The cursor hops over the elided text to the line end.
-  expected.push_back(SelectionModel(4, CURSOR_FORWARD));
+  // The cursor hops over the ellipsis and elided text to the line end.
+  expected.push_back(SelectionModel(4, CURSOR_BACKWARD));
   expected.push_back(SelectionModel(4, CURSOR_FORWARD));
   RunMoveCursorLeftRightTest(render_text.get(), expected, CURSOR_LEFT);
 
@@ -609,7 +608,7 @@ TEST_F(RenderTextTest, MoveCursorLeftRightInLtrRtl) {
 TEST_F(RenderTextTest, MoveCursorLeftRightInLtrRtlLtr) {
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   // LTR-RTL-LTR.
-  render_text->SetText(WideToUTF16(L"a"L"\x05d1"L"b"));
+  render_text->SetText(WideToUTF16(L"a" L"\x05d1" L"b"));
   std::vector<SelectionModel> expected;
   expected.push_back(SelectionModel(0, CURSOR_BACKWARD));
   expected.push_back(SelectionModel(1, CURSOR_BACKWARD));
@@ -654,7 +653,7 @@ TEST_F(RenderTextTest, MoveCursorLeftRightInRtl) {
 TEST_F(RenderTextTest, MoveCursorLeftRightInRtlLtr) {
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   // RTL-LTR
-  render_text->SetText(WideToUTF16(L"\x05d0\x05d1\x05d2"L"abc"));
+  render_text->SetText(WideToUTF16(L"\x05d0\x05d1\x05d2" L"abc"));
   render_text->MoveCursor(LINE_BREAK, CURSOR_RIGHT, false);
   std::vector<SelectionModel> expected;
   expected.push_back(SelectionModel(0, CURSOR_BACKWARD));
@@ -682,7 +681,7 @@ TEST_F(RenderTextTest, MoveCursorLeftRightInRtlLtr) {
 TEST_F(RenderTextTest, MoveCursorLeftRightInRtlLtrRtl) {
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   // RTL-LTR-RTL.
-  render_text->SetText(WideToUTF16(L"\x05d0"L"a"L"\x05d1"));
+  render_text->SetText(WideToUTF16(L"\x05d0" L"a" L"\x05d1"));
   render_text->MoveCursor(LINE_BREAK, CURSOR_RIGHT, false);
   std::vector<SelectionModel> expected;
   expected.push_back(SelectionModel(0, CURSOR_BACKWARD));
@@ -747,10 +746,10 @@ TEST_F(RenderTextTest, MoveCursorLeftRight_MeiryoUILigatures) {
 TEST_F(RenderTextTest, GraphemePositions) {
   // LTR 2-character grapheme, LTR abc, LTR 2-character grapheme.
   const base::string16 kText1 =
-      WideToUTF16(L"\x0915\x093f"L"abc"L"\x0915\x093f");
+      WideToUTF16(L"\x0915\x093f" L"abc" L"\x0915\x093f");
 
   // LTR ab, LTR 2-character grapheme, LTR cd.
-  const base::string16 kText2 = WideToUTF16(L"ab"L"\x0915\x093f"L"cd");
+  const base::string16 kText2 = WideToUTF16(L"ab" L"\x0915\x093f" L"cd");
 
   // The below is 'MUSICAL SYMBOL G CLEF', which is represented in UTF-16 as
   // two characters forming the surrogate pair 0x0001D11E.
@@ -828,12 +827,12 @@ TEST_F(RenderTextTest, EdgeSelectionModels) {
   const base::string16 kLTRGrapheme = WideToUTF16(L"\x0915\x093f");
   // LTR 2-character grapheme, LTR a, LTR 2-character grapheme.
   const base::string16 kHindiLatin =
-      WideToUTF16(L"\x0915\x093f"L"a"L"\x0915\x093f");
+      WideToUTF16(L"\x0915\x093f" L"a" L"\x0915\x093f");
   // RTL 2-character grapheme.
   const base::string16 kRTLGrapheme = WideToUTF16(L"\x05e0\x05b8");
   // RTL 2-character grapheme, LTR a, RTL 2-character grapheme.
   const base::string16 kHebrewLatin =
-      WideToUTF16(L"\x05e0\x05b8"L"a"L"\x05e0\x05b8");
+      WideToUTF16(L"\x05e0\x05b8" L"a" L"\x05e0\x05b8");
 
   struct {
     base::string16 text;
@@ -1021,7 +1020,7 @@ TEST_F(RenderTextTest, MoveLeftRightByWordInBidiText) {
   test.push_back(L"abc \x05E1\x05E2\x05E3 hij");
   test.push_back(L"abc def \x05E1\x05E2\x05E3 \x05E4\x05E5\x05E6 hij opq");
   test.push_back(L"abc def hij \x05E1\x05E2\x05E3 \x05E4\x05E5\x05E6"
-                 L" \x05E7\x05E8\x05E9"L" opq rst uvw");
+                 L" \x05E7\x05E8\x05E9" L" opq rst uvw");
 
   test.push_back(L"\x05E1\x05E2\x05E3 abc");
   test.push_back(L"\x05E1\x05E2\x05E3 \x05E4\x05E5\x05E6 abc def");
@@ -1056,7 +1055,7 @@ TEST_F(RenderTextTest, MoveLeftRightByWordInBidiText_TestEndOfText) {
   render_text->MoveCursor(WORD_BREAK, CURSOR_RIGHT, false);
   EXPECT_EQ(SelectionModel(3, CURSOR_FORWARD), render_text->selection_model());
 
-  render_text->SetText(WideToUTF16(L"\x05E1\x05E2"L"a"));
+  render_text->SetText(WideToUTF16(L"\x05E1\x05E2" L"a"));
   // For logical text "BCa", moving the cursor by word from "aCB|" to the left
   // returns "|aCB".
   render_text->MoveCursor(LINE_BREAK, CURSOR_RIGHT, false);
@@ -1101,6 +1100,22 @@ TEST_F(RenderTextTest, MoveLeftRightByWordInChineseText) {
   EXPECT_EQ(6U, render_text->cursor_position());
 }
 #endif
+
+#if defined(OS_WIN)
+TEST_F(RenderTextTest, Win_LogicalClusters) {
+  scoped_ptr<RenderTextWin> render_text(
+      static_cast<RenderTextWin*>(RenderText::CreateInstance()));
+
+  const base::string16 test_string =
+      WideToUTF16(L"\x0930\x0930\x0930\x0930\x0930");
+  render_text->SetText(test_string);
+  render_text->EnsureLayout();
+  ASSERT_EQ(1U, render_text->runs_.size());
+  WORD* logical_clusters = render_text->runs_[0]->logical_clusters.get();
+  for (size_t i = 0; i < test_string.length(); ++i)
+    EXPECT_EQ(i, logical_clusters[i]);
+}
+#endif  // defined(OS_WIN)
 
 TEST_F(RenderTextTest, StringSizeSanity) {
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
@@ -1516,5 +1531,22 @@ TEST_F(RenderTextTest, DisplayRectShowsCursorRTL) {
   EXPECT_EQ(was_rtl, base::i18n::IsRTL());
 }
 #endif  // !defined(OS_MACOSX)
+
+// Changing colors between ligated Arabic glyphs should not break shaping.
+// TODO(ckocagil): Check whether this test passes on other platforms and enable
+// accordingly.
+#if defined(OS_WIN)
+TEST_F(RenderTextTest, SelectionKeepsLigatures) {
+  const base::string16 kTestLigature = WideToUTF16(L"\x633\x627");
+
+  scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
+  render_text->set_selection_color(SK_ColorRED);
+  render_text->SetText(kTestLigature);
+
+  const int expected_width = render_text->GetStringSize().width();
+  render_text->MoveCursorTo(SelectionModel(ui::Range(0, 1), CURSOR_FORWARD));
+  EXPECT_EQ(expected_width, render_text->GetStringSize().width());
+}
+#endif  // defined(OS_WIN)
 
 }  // namespace gfx

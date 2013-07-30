@@ -5,6 +5,7 @@
 import os
 import tempfile
 
+from perf_tools import loading_metrics
 from telemetry.core import util
 from telemetry.core.platform.profiler import perf_profiler
 from telemetry.page import page_measurement
@@ -12,6 +13,9 @@ from telemetry.page import page_measurement
 class LoadingProfile(page_measurement.PageMeasurement):
   def __init__(self):
     super(LoadingProfile, self).__init__(discard_first_result=True)
+
+    if not perf_profiler.PerfProfiler.is_supported(None):
+      raise Exception('This measurement is not supported on this platform')
 
   @property
   def results_are_the_same_on_every_page(self):
@@ -41,16 +45,7 @@ class LoadingProfile(page_measurement.PageMeasurement):
 
     profile_files = tab.browser.StopProfiling()
 
-    load_timings = tab.EvaluateJavaScript('window.performance.timing')
-    load_time_ms = (
-      float(load_timings['loadEventStart']) -
-      load_timings['navigationStart'])
-    dom_content_loaded_time_ms = (
-      float(load_timings['domContentLoadedEventStart']) -
-      load_timings['navigationStart'])
-    results.Add('load_time', 'ms', load_time_ms)
-    results.Add('dom_content_loaded_time', 'ms',
-                dom_content_loaded_time_ms)
+    loading_metrics.AddResultsForTab(tab, results)
 
     profile_file = None
     for profile_file in profile_files:

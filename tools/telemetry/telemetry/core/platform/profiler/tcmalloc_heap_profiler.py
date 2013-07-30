@@ -6,6 +6,7 @@ import logging
 import os
 import sys
 
+from telemetry.core.chrome import android_browser_finder
 from telemetry.core.platform import profiler
 
 # Enviroment variables to (android properties, default value) mapping.
@@ -63,6 +64,7 @@ class _TCMallocHeapProfilerAndroid(object):
       with file(os.path.join(self._output_path,
                              'browser.pid'), 'w') as pid_file:
         pid_file.write(str(self._browser_backend.pid).rjust(5, '0'))
+    return [self._output_path]
 
 
 class _TCMallocHeapProfilerLinux(object):
@@ -91,6 +93,7 @@ class _TCMallocHeapProfilerLinux(object):
                            'browser.pid'), 'w') as pid_file:
       pid_file.write(str(self._browser_backend.pid))
     print 'TCMalloc dumps available ', os.environ['HEAPPROFILE']
+    return [os.environ['HEAPPROFILE']]
 
 
 class TCMallocHeapProfiler(profiler.Profiler):
@@ -98,7 +101,7 @@ class TCMallocHeapProfiler(profiler.Profiler):
   def __init__(self, browser_backend, platform_backend, output_path):
     super(TCMallocHeapProfiler, self).__init__(
         browser_backend, platform_backend, output_path)
-    if self._browser_backend.options.browser_type.startswith('android'):
+    if platform_backend.GetOSName() == 'android':
       self._platform_profiler = _TCMallocHeapProfilerAndroid(
           browser_backend, output_path)
     else:
@@ -110,10 +113,13 @@ class TCMallocHeapProfiler(profiler.Profiler):
 
   @classmethod
   def is_supported(cls, options):
-    if (not sys.platform.startswith('linux') or
-        options.browser_type.startswith('cros')):
+    if options and options.browser_type.startswith('cros'):
       return False
-    return True
+    if sys.platform.startswith('linux'):
+      return True
+    if not options:
+      return android_browser_finder.CanFindAvailableBrowsers()
+    return options.browser_type.startswith('android')
 
   def CollectProfile(self):
-    self._platform_profiler.CollectProfile()
+    return self._platform_profiler.CollectProfile()

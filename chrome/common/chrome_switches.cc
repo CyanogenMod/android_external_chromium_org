@@ -272,6 +272,9 @@ const char kDisableBackgroundMode[]         = "disable-background-mode";
 // measurements.
 const char kDisableBackgroundNetworking[]   = "disable-background-networking";
 
+// Disables more strict popup blocking.
+const char kDisableBetterPopupBlocking[]    = "disable-better-popup-blocking";
+
 // Disables the bundled PPAPI version of Flash.
 const char kDisableBundledPpapiFlash[]      = "disable-bundled-ppapi-flash";
 
@@ -350,6 +353,10 @@ const char kDisableMinimizeOnSecondLauncherItemClick[] =
 
 // Disables the menu on the NTP for accessing sessions from other devices.
 const char kDisableNTPOtherSessionsMenu[]   = "disable-ntp-other-sessions-menu";
+
+// Disables omnibox auto-completion when IME is active.
+const char kDisableOmniboxAutoCompletionForIme[] =
+    "disable-omnibox-auto-completion-for-ime";
 
 // Disable using a public suffix based domain matching for autofill of
 // passwords.
@@ -511,9 +518,6 @@ const char kEnableAutologin[]               = "enable-autologin";
 // Enables the benchmarking extensions.
 const char kEnableBenchmarking[]            = "enable-benchmarking";
 
-// Enables (experimental) more strict popup blocking.
-const char kEnableBetterPopupBlocking[]     = "enable-better-popup-blocking";
-
 // Enables a sync promo that is displayed in the bookmark bubble.
 const char kEnableBookmarkSyncPromo[]       = "enable-bookmark-sync-promo";
 
@@ -570,6 +574,9 @@ const char kEnableFileCookies[]             = "enable-file-cookies";
 
 // Enables Google Now integration.
 const char kEnableGoogleNowIntegration[]    = "enable-google-now-integration";
+
+// Enable HTTP/2 draft 04. This is a temporary testing flag.
+const char kEnableHttp2Draft04[]            = "enable-http2-draft-04";
 
 // Enable Instant extended API. On mobile, this merely enables query extraction,
 // not the rest of the instant-extended functionality.
@@ -633,8 +640,8 @@ const char kEnablePanels[]                  = "enable-panels";
 // account creation.
 const char kEnablePasswordGeneration[]      = "enable-password-generation";
 
-// Enables the usage of Portable Native Client.
-const char kEnablePnacl[]                   = "enable-pnacl";
+// Disables the usage of Portable Native Client.
+const char kDisablePnacl[]                  = "disable-pnacl";
 
 // Disables the installation of Portable Native Client.
 const char kDisablePnaclInstall[]           = "disable-pnacl-install";

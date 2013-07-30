@@ -9,7 +9,9 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "content/renderer/media/pepper_platform_video_decoder.h"
 #include "content/renderer/pepper/common.h"
+#include "content/renderer/pepper/pepper_platform_context_3d.h"
 #include "content/renderer/pepper/plugin_module.h"
 #include "content/renderer/pepper/ppb_buffer_impl.h"
 #include "content/renderer/pepper/ppb_graphics_3d_impl.h"
@@ -127,7 +129,7 @@ PP_Resource PPB_VideoDecoder_Impl::Create(
 
 bool PPB_VideoDecoder_Impl::Init(
     PP_Resource graphics_context,
-    PluginDelegate::PlatformContext3D* context,
+    PlatformContext3D* context,
     gpu::gles2::GLES2Implementation* gles2_impl,
     PP_VideoDecoder_Profile profile) {
   InitCommon(graphics_context, gles2_impl);
@@ -140,7 +142,7 @@ bool PPB_VideoDecoder_Impl::Init(
   if (!plugin_delegate)
     return false;
 
-  platform_video_decoder_.reset(plugin_delegate->CreateVideoDecoder(
+  platform_video_decoder_.reset(new PlatformVideoDecoder(
       this, command_buffer_route_id));
   if (!platform_video_decoder_)
     return false;

@@ -28,7 +28,6 @@
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/gpu/gpu_mode_manager.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service_factory.h"
@@ -60,6 +59,7 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
@@ -340,8 +340,8 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
     { "themesSetClassic", IDS_THEMES_SET_CLASSIC },
 #else
     { "themes", IDS_THEMES_GROUP_NAME },
-    { "themesReset", IDS_THEMES_RESET_BUTTON },
 #endif
+    { "themesReset", IDS_THEMES_RESET_BUTTON },
 #if defined(OS_CHROMEOS)
     { "accessibilityExplanation",
       IDS_OPTIONS_SETTINGS_ACCESSIBILITY_EXPLANATION },
@@ -1302,11 +1302,11 @@ void BrowserOptionsHandler::CancelProfileRegistration(bool user_initiated) {
 
 void BrowserOptionsHandler::ObserveThemeChanged() {
   Profile* profile = Profile::FromWebUI(web_ui());
-  bool profile_is_managed = ManagedUserService::ProfileIsManaged(profile);
   ThemeService* theme_service = ThemeServiceFactory::GetForProfile(profile);
   bool is_native_theme = false;
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  bool profile_is_managed = ManagedUserService::ProfileIsManaged(profile);
   is_native_theme = theme_service->UsingNativeTheme();
   base::FundamentalValue native_theme_enabled(!is_native_theme &&
                                               !profile_is_managed);
@@ -1316,15 +1316,13 @@ void BrowserOptionsHandler::ObserveThemeChanged() {
 
   bool is_classic_theme = !is_native_theme &&
                           theme_service->UsingDefaultTheme();
-  base::FundamentalValue enabled(!is_classic_theme && !profile_is_managed);
+  base::FundamentalValue enabled(!is_classic_theme);
   web_ui()->CallJavascriptFunction("BrowserOptions.setThemesResetButtonEnabled",
                                    enabled);
 }
 
 void BrowserOptionsHandler::ThemesReset(const ListValue* args) {
   Profile* profile = Profile::FromWebUI(web_ui());
-  if (ManagedUserService::ProfileIsManaged(profile))
-    return;
   content::RecordAction(UserMetricsAction("Options_ThemesReset"));
   ThemeServiceFactory::GetForProfile(profile)->UseDefaultTheme();
 }
@@ -1374,7 +1372,8 @@ scoped_ptr<DictionaryValue> BrowserOptionsHandler::GetSyncStateDictionary() {
 
   ProfileSyncService* service =
       ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile);
-  SigninManagerBase* signin = service->signin();
+  SigninManagerBase* signin = SigninManagerFactory::GetForProfile(profile);
+  DCHECK(signin);
   sync_status->SetBoolean("signoutAllowed", !signout_prohibited);
   sync_status->SetBoolean("signinAllowed", signin->IsSigninAllowed());
   sync_status->SetBoolean("syncSystemEnabled", !!service);
@@ -1385,7 +1384,6 @@ scoped_ptr<DictionaryValue> BrowserOptionsHandler::GetSyncStateDictionary() {
 
   string16 status_label;
   string16 link_label;
-  DCHECK(signin);
   bool status_has_error = sync_ui_util::GetStatusLabels(
       service, *signin, sync_ui_util::WITH_HTML, &status_label, &link_label) ==
           sync_ui_util::SYNC_ERROR;

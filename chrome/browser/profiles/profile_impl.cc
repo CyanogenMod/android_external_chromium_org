@@ -51,7 +51,6 @@
 #include "chrome/browser/net/pref_proxy_config_tracker.h"
 #include "chrome/browser/net/proxy_service_factory.h"
 #include "chrome/browser/net/ssl_config_service_manager.h"
-#include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
@@ -77,6 +76,7 @@
 #include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
+#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/startup_metric_utils.h"
 #include "chrome/common/url_constants.h"
@@ -572,12 +572,8 @@ void ProfileImpl::DoFinalInit() {
 #if !defined(OS_CHROMEOS)
   // Listen for bookmark model load, to bootstrap the sync service.
   // On CrOS sync service will be initialized after sign in.
-  if (!g_browser_process->profile_manager()->will_import()) {
-    // If |will_import()| is true we add the observer in
-    // ProfileManager::OnImportFinished().
-    BookmarkModel* model = BookmarkModelFactory::GetForProfile(this);
-    model->AddObserver(new BookmarkModelLoadedObserver(this));
-  }
+  BookmarkModel* model = BookmarkModelFactory::GetForProfile(this);
+  model->AddObserver(new BookmarkModelLoadedObserver(this));
 #endif
 }
 
@@ -1171,4 +1167,3 @@ PrefProxyConfigTracker* ProfileImpl::CreateProxyConfigTracker() {
   return ProxyServiceFactory::CreatePrefProxyConfigTrackerOfProfile(
       GetPrefs(), g_browser_process->local_state());
 }
-

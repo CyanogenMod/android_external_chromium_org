@@ -475,14 +475,6 @@
   fun:*TestBody
 }
 {
-   bug_145701
-   Heapcheck:Leak
-   fun:ShareGroup
-   fun:GLES2Implementation
-   fun:gpu::gles2::GLES2ImplementationTest::Initialize
-   fun:gpu::gles2::GLES2Implementation*::SetUp
-}
-{
    bug_145703
    Heapcheck:Leak
    ...
@@ -517,34 +509,6 @@
    fun:*didClearWindowObject
    fun:WebKit::FrameLoaderClientImpl::dispatchDidClearWindowObjectInWorld
    fun:WebCore::FrameLoader::dispatchDidClearWindowObjectInWorld
-}
-{
-   bug_155530_a
-   Heapcheck:Leak
-   ...
-   fun:GeolocationInfoBarQueueControllerTests_OneObservationPerInfoBarCancelled_Test::TestBody
-}
-{
-   bug_155530_b
-   Heapcheck:Leak
-   ...
-   fun:*CreateLocaleDefaultValue
-   ...
-   fun:PermissionQueueControllerTests::SetUp
-}
-{
-   bug_155530_c
-   Heapcheck:Leak
-   ...
-   fun:PermissionQueueControllerTests_OneObservationPerInfoBarCancelled_Test::TestBody
-}
-{
-   bug_155530_d
-   Heapcheck:Leak
-   ...
-   fun:*CreateLocaleDefaultValue
-   ...
-   fun:GeolocationInfoBarQueueControllerTests::SetUp
 }
 {
    bug_157885
@@ -619,7 +583,7 @@
    Heapcheck:Leak
    fun:v8::internal::SlotsBufferAllocator::AllocateBuffer
    fun:v8::internal::SlotsBuffer::AddTo
-   fun:v8::internal::MarkCompactCollector::RecordSlot
+   fun:v8::internal::MarkCompactCollector::Record*
    ...
    fun:v8::internal::StaticMarkingVisitor::IterateBody
    fun:v8::internal::IncrementalMarking::VisitObject
@@ -629,91 +593,33 @@
    fun:v8::internal::*Space::AllocateRaw
 }
 {
-   bug_169185_b
-   Heapcheck:Leak
-   fun:v8::internal::SkipList::Update
-   fun:v8::internal::PagedSpace::AllocateRaw
-   fun:v8::internal::Heap::CreateCode
-   fun:v8::internal::Factory::NewCode
-   fun:v8::internal::CodeGenerator::MakeCodeEpilogue
-   fun:v8::internal::FullCodeGenerator::MakeCode
-   fun:*GenerateCode
-   fun:*MakeCode
-   fun:v8::internal::Compiler::CompileLazy
-   fun:*CompileLazyHelper
-   fun:v8::internal::JSFunction::CompileLazy
-   ...
-   fun:*Invoke
-}
-{
-   bug_169185_c
-   Heapcheck:Leak
-   fun:v8::internal::SkipList::Update
-   fun:v8::internal::PagedSpace::AllocateRaw
-   fun:v8::internal::Heap::CreateCode
-   fun:v8::internal::Factory::NewCode
-   fun:v8::internal::StubCompiler::GetCodeWithFlags
-   fun:v8::internal::StubCompiler::GetCodeWithFlags
-   ...
-   fun:v8::internal::StubCache::Compute*
-}
-{
-   bug_169185_d
-   Heapcheck:Leak
-   fun:v8::internal::SkipList::Update
-   fun:v8::internal::PagedSpace::AllocateRaw
-   fun:v8::internal::Heap::CreateCode
-   fun:v8::internal::Factory::NewCode
-   fun:v8::internal::RegExpMacroAssemblerX64::GetCode
-   fun:v8::internal::RegExpCompiler::Assemble
-   fun:v8::internal::RegExpEngine::Compile
-}
-{
-   bug_169185_e
-   Heapcheck:Leak
-   fun:v8::internal::SkipList::Update
-   fun:v8::internal::PagedSpace::AllocateRaw
-   fun:v8::internal::Heap::CreateCode
-   fun:v8::internal::Factory::NewCode
-   fun:v8::internal::CodeGenerator::MakeCodeEpilogue
-   fun:v8::internal::FullCodeGenerator::MakeCode
-   fun:GenerateCode
-   fun:MakeCode
-   fun:MakeFunctionInfo
-   fun:v8::internal::Compiler::Compile
-   fun:v8::Script::New
-   fun:v8::Script::Compile
-   fun:v8::Script::Compile
-   fun:V8UnitTest::ExecuteScriptInContext
-   fun:V8UnitTest::ExecuteJavascriptLibraries
-   fun:V8UnitTest::RunJavascriptTestF
-}
-{
-   bug_169678
+   bug_169678_b
    Heapcheck:Leak
    fun:v8::internal::SlotsBufferAllocator::AllocateBuffer
    fun:v8::internal::SlotsBuffer::AddTo
-   fun:v8::internal::MarkCompactCollector::RecordRelocSlot
-   fun:v8::internal::StaticMarkingVisitor::VisitEmbeddedPointer
-   fun:v8::internal::RelocInfo::Visit
-   fun:v8::internal::Code::CodeIterateBody
-   fun:v8::internal::StaticMarkingVisitor::VisitCode
-   fun:v8::internal::StaticMarkingVisitor::IterateBody
+   fun:v8::internal::MarkCompactCollector::RecordCodeEntrySlot
+   fun:v8::internal::StaticMarkingVisitor::VisitCodeEntry
+   ...
    fun:v8::internal::IncrementalMarking::VisitObject
-   fun:v8::internal::IncrementalMarking::ProcessMarkingDeque
-   fun:v8::internal::IncrementalMarking::Step
+   ...
+   fun:v8::internal::IncrementalMarking::OldSpaceStep
+   fun:v8::internal::FreeList::Allocate
 }
 {
-   bug_169678_a
+   bug_169678_c
    Heapcheck:Leak
    fun:v8::internal::SlotsBufferAllocator::AllocateBuffer
    fun:v8::internal::SlotsBuffer::AddTo
-   fun:v8::internal::MarkCompactCollector::RecordSlot
-   fun:v8::internal::IncrementalMarkingMarkingVisitor::VisitPointers
+   fun:v8::internal::MarkCompactCollector::Record*
    ...
+   fun:v8::internal::Heap::DoScavenge*
+   fun:v8::internal::Heap::Scavenge*
+   fun:v8::internal::Heap::PerformGarbageCollection
    fun:v8::internal::Heap::CollectGarbage
+   fun:v8::internal::Heap::CollectGarbage
+   fun:v8::internal::Factory::NewStringFromUtf8
    ...
-   fun:v8::String::New
+   fun:v8::String::NewFromUtf8
 }
 {
    bug_171547_b
@@ -1000,30 +906,6 @@
    fun:jingle_glue::ProxyResolvingClientSocket::ProcessProxyResolveDone
 }
 {
-   bug_259357a
-   Heapcheck:Leak
-   ...
-   fun:*Proto::*
-   ...
-   fun:gpu::gles2::MemoryProgramCache*
-   fun:gpu::gles2::MemoryProgramCacheTest_*
-}
-{
-   bug_259357b
-   Heapcheck:Leak
-   ...
-   fun:std::set::insert
-   fun:gpu::IdAllocator::*
-}
-{
-   bug_259357c
-   Heapcheck:Leak
-   ...
-   fun:gpu::MappedMemoryManager::Alloc
-   ...
-   fun:gpu::*_Test::TestBody
-}
-{
    bug_222687a
    Heapcheck:Leak
    ...
@@ -1037,53 +919,6 @@
    fun:~StorageMonitorLinux
    fun:~TestStorageMonitorLinux
    fun:~TestStorageMonitorLinux
-}
-{
-   bug_222687b
-   Heapcheck:Leak
-   fun:base::internal::WeakReferenceOwner::GetRef
-   fun:base::WeakPtrFactory::GetWeakPtr
-   fun:chrome::StorageMonitorLinux::Init
-   fun:SetUp
-}
-{
-   bug_222687c
-   Heapcheck:Leak
-   fun:base::internal::WeakReferenceOwner::GetRef
-   fun:base::WeakPtrFactory::GetWeakPtr
-   fun:MtabWatcherLinux
-   fun:CreateMtabWatcherLinuxOnFileThread
-}
-{
-   bug_222687d
-   Heapcheck:Leak
-   ...
-   fun:CreateMtabWatcherLinuxOnFileThread
-}
-{
-   bug_222687e
-   Heapcheck:Leak
-   fun:MessageLoop
-   fun:StorageMonitorLinuxTest
-   fun:StorageMonitorLinuxTest_*_Test
-}
-{
-   bug_222687f
-   Heapcheck:Leak
-   fun:std::basic_string::_Rep::_S_create
-   fun:base::FilePath::clear
-   fun:CancelOnMessageLoopThread
-   fun:WillDestroyCurrentMessageLoop
-   fun:~MessageLoop
-   fun:~StorageMonitorLinuxTest
-}
-{
-   bug_262974
-   Heapcheck:Leak
-   fun:std::basic_string::_Rep::_S_create
-   fun:base::FilePath::Append
-   fun:base::FilePath::AppendASCII
-   fun:SetUp
 }
 {
    bug_263748a
@@ -1102,4 +937,11 @@
    Heapcheck:Leak
    ...
    fun:EncodeDecodeTest_Elf_Small_Test::TestBody
+}
+{
+   bug_264225
+   Heapcheck:Leak
+   ...
+   fun:TestingProfile::CreateRequestContext
+   fun:UbertokenFetcherTest::SetUp
 }

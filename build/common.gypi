@@ -1105,6 +1105,9 @@
     # Turns on compiler optimizations in V8 in Debug build.
     'v8_optimized_debug': 1,
 
+    # Turns on the i18n support in V8.
+    'v8_enable_i18n_support': 1,
+
     'conditions': [
       # The version of GCC in use, set later in platforms that use GCC and have
       # not explicitly chosen to build with clang. Currently, this means all
@@ -3981,9 +3984,16 @@
           'MACOSX_DEPLOYMENT_TARGET': '<(mac_deployment_target)',
           # Keep pch files below xcodebuild/.
           'SHARED_PRECOMPS_DIR': '$(CONFIGURATION_BUILD_DIR)/SharedPrecompiledHeaders',
-
-          # -fno-strict-aliasing, see http://crbug.com/32204
-          'GCC_STRICT_ALIASING': 'NO',
+          'OTHER_CFLAGS': [
+            # Someday this can be replaced by an 'GCC_STRICT_ALIASING': 'NO'
+            # xcode_setting, but not until all downstream projects' mac bots are
+            # using xcode >= 4.6, because that's when the default value of the
+            # flag in the compiler switched.  Pre-4.6, the value 'NO' for that
+            # setting is a no-op as far as xcode is concerned, but the compiler
+            # behaves differently based on whether -fno-strict-aliasing is
+            # specified or not.
+            '-fno-strict-aliasing',  # See http://crbug.com/32204.
+          ],
         },
         'target_conditions': [
           ['_type=="executable"', {

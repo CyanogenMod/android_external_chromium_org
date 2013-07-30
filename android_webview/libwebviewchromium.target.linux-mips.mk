@@ -37,7 +37,6 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp)/skia_skia_library_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_opts_gyp)/skia_skia_opts_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_zlib_zlib_gyp)/third_party_zlib_zlib_gyp.a \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_WebKit_chromium_skia_webkit_gyp)/skia_webkit.stamp \
 	$(call intermediates-dir-for,GYP,third_party_expat_expat_gyp)/expat.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_freetype_ft2_gyp)/third_party_freetype_ft2_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_chrome_gyp)/skia_skia_chrome_gyp.a \
@@ -144,8 +143,6 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_harfbuzz_ng_harfbuzz_ng_gyp)/third_party_harfbuzz_ng_harfbuzz_ng_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_core_webcore_platform_geometry_gyp)/third_party_WebKit_Source_core_webcore_platform_geometry_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_core_webcore_remaining_gyp)/third_party_WebKit_Source_core_webcore_remaining_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_v8_i18n_build_v8_i18n_gyp)/third_party_v8_i18n_build_v8_i18n_gyp.a \
-	$(call intermediates-dir-for,GYP,third_party_v8_i18n_build_api2c_host_gyp,true)/api2c.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_core_webcore_rendering_gyp)/third_party_WebKit_Source_core_webcore_rendering_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_core_webcore_svg_gyp)/third_party_WebKit_Source_core_webcore_svg_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_core_webcore_derived_gyp)/third_party_WebKit_Source_core_webcore_derived_gyp.a \
@@ -537,7 +534,6 @@ LOCAL_STATIC_LIBRARIES := \
 	third_party_harfbuzz_ng_harfbuzz_ng_gyp \
 	third_party_WebKit_Source_core_webcore_platform_geometry_gyp \
 	third_party_WebKit_Source_core_webcore_remaining_gyp \
-	third_party_v8_i18n_build_v8_i18n_gyp \
 	third_party_WebKit_Source_core_webcore_rendering_gyp \
 	third_party_WebKit_Source_core_webcore_svg_gyp \
 	third_party_WebKit_Source_core_webcore_derived_gyp \

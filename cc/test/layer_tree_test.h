@@ -52,10 +52,13 @@ class TestHooks : public AnimationDelegate {
   virtual void ApplyScrollAndScale(gfx::Vector2d scroll_delta,
                                    float scale) {}
   virtual void Animate(base::TimeTicks monotonic_time) {}
+  virtual void WillBeginFrame() {}
+  virtual void DidBeginFrame() {}
   virtual void Layout() {}
   virtual void DidInitializeOutputSurface(bool succeeded) {}
   virtual void DidFailToInitializeOutputSurface() {}
   virtual void DidAddAnimation() {}
+  virtual void WillCommit() {}
   virtual void DidCommit() {}
   virtual void DidCommitAndDrawFrame() {}
   virtual void DidCompleteSwapBuffers() {}
@@ -102,7 +105,7 @@ class LayerTreeTest : public testing::Test, public TestHooks {
   virtual void BeginTest() = 0;
   virtual void SetupTree();
 
-  void EndTest();
+  virtual void EndTest();
   void EndTestAfterDelay(int delay_milliseconds);
 
   void PostAddAnimationToMainThread(Layer* layer_to_receive_animation);

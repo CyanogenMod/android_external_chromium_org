@@ -8,12 +8,14 @@
 #include <string>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/guid.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "cloud_print/gcp20/prototype/command_line_reader.h"
 #include "cloud_print/gcp20/prototype/service_parameters.h"
 #include "cloud_print/gcp20/prototype/special_io.h"
@@ -25,9 +27,12 @@ const base::FilePath::CharType kPrinterStatePath[] =
 
 namespace {
 
+const uint16 kHttpPortDefault = 10101;
+const uint32 kTtlDefault = 60*60;
+
 const char kServiceType[] = "_privet._tcp.local";
-const char kServiceNamePrefix[] = "first_gcp20_device";
-const char kServiceDomainName[] = "my-privet-device.local";
+const char kServiceNamePrefixDefault[] = "first_gcp20_device";
+const char kServiceDomainNameDefault[] = "my-privet-device.local";
 
 const char kPrinterName[] = "Google GCP2.0 Prototype";
 const char kPrinterDescription[] = "Printer emulator";
@@ -35,6 +40,9 @@ const char kPrinterDescription[] = "Printer emulator";
 const char kUserConfirmationTitle[] = "Confirm registration: type 'y' if you "
                                       "agree and any other to discard\n";
 const int64 kUserConfirmationTimeout = 30;  // in seconds
+
+const uint32 kReconnectTimeout = 5;  // in seconds
+const uint32 kPrintJobsTimeout = 10;  // in seconds
 
 const char kCdd[] =
 "{\n"
@@ -92,6 +100,8 @@ net::IPAddressNumber GetLocalIp(const std::string& interface_name,
 
 }  // namespace
 
+using cloud_print_response_parser::Job;
+
 Printer::RegistrationInfo::RegistrationInfo()
     : state(DEV_REG_UNREGISTERED),
       confirmation_state(CONFIRMATION_PENDING) {
@@ -100,7 +110,7 @@ Printer::RegistrationInfo::RegistrationInfo()
 Printer::RegistrationInfo::~RegistrationInfo() {
 }
 
-Printer::Printer() : http_server_(this) {
+Printer::Printer() : http_server_(this), connection_state_(OFFLINE) {
 }
 
 Printer::~Printer() {
@@ -119,7 +129,7 @@ bool Printer::Start() {
   }
   VLOG(1) << "Local address: " << net::IPAddressToString(ip);
 
-  uint16 port = command_line_reader::ReadHttpPort();
+  uint16 port = command_line_reader::ReadHttpPort(kHttpPortDefault);
 
   // Starting HTTP server.
   if (!http_server_.Start(port))
@@ -129,10 +139,14 @@ bool Printer::Start() {
     reg_info_ = RegistrationInfo();
 
   // Starting DNS-SD server.
+  std::string service_name_prefix =
+      command_line_reader::ReadServiceNamePrefix(kServiceNamePrefixDefault);
+  std::string service_domain_name =
+      command_line_reader::ReadDomainName(kServiceDomainNameDefault);
   if (!dns_server_.Start(
-      ServiceParameters(kServiceType, kServiceNamePrefix, kServiceDomainName,
+      ServiceParameters(kServiceType, service_name_prefix, service_domain_name,
                         ip, port),
-      command_line_reader::ReadTtl(),
+      command_line_reader::ReadTtl(kTtlDefault),
       CreateTxt())) {
     http_server_.Shutdown();
     return false;
@@ -147,6 +161,10 @@ bool Printer::Start() {
   xtoken_ = XPrivetToken();
   starttime_ = base::Time::Now();
 
+  print_job_handler_.reset(new PrintJobHandler);
+  connection_state_ = CONNECTING;
+  WakeUp();
+
   return true;
 }
 
@@ -154,10 +172,20 @@ bool Printer::IsOnline() const {
   return requester_;
 }
 
+void Printer::WakeUp() {
+  VLOG(3) << "Function: " << __FUNCTION__;
+
+  if (!IsRegistered())
+    return;
+
+  FetchPrintJobs();
+}
+
 void Printer::Stop() {
   dns_server_.Shutdown();
   http_server_.Shutdown();
   requester_.reset();
+  print_job_handler_.reset();
 }
 
 PrivetHttpServer::RegistrationErrorStatus Printer::RegistrationStart(
@@ -173,24 +201,21 @@ PrivetHttpServer::RegistrationErrorStatus Printer::RegistrationStart(
   reg_info_.user = user;
   reg_info_.state = RegistrationInfo::DEV_REG_REGISTRATION_STARTED;
 
-  printf(kUserConfirmationTitle);
-  base::Time valid_until = base::Time::Now() +
-      base::TimeDelta::FromSeconds(kUserConfirmationTimeout);
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&Printer::WaitUserConfirmation, AsWeakPtr(), valid_until));
+  if (CommandLine::ForCurrentProcess()->HasSwitch("disable-confirmation")) {
+    reg_info_.confirmation_state = RegistrationInfo::CONFIRMATION_CONFIRMED;
+    LOG(INFO) << "Registration confirmed by default.";
+  } else {
+    printf("%s", kUserConfirmationTitle);
+    base::Time valid_until = base::Time::Now() +
+        base::TimeDelta::FromSeconds(kUserConfirmationTimeout);
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&Printer::WaitUserConfirmation, AsWeakPtr(), valid_until));
+  }
 
   requester_->StartRegistration(GenerateProxyId(), kPrinterName, user, kCdd);
 
   return PrivetHttpServer::REG_ERROR_OK;
-}
-
-bool Printer::CheckXPrivetTokenHeader(const std::string& token) const {
-  return xtoken_.CheckValidXToken(token);
-}
-
-bool Printer::IsRegistered() const {
-  return reg_info_.state == RegistrationInfo::DEV_REG_REGISTERED;
 }
 
 PrivetHttpServer::RegistrationErrorStatus Printer::RegistrationGetClaimToken(
@@ -284,7 +309,7 @@ void Printer::CreateInfo(PrivetHttpServer::DeviceInfo* info) {
   info->url = kCloudPrintUrl;
   info->id = reg_info_.device_id;
   info->device_state = "idle";
-  info->connection_state = "offline";
+  info->connection_state = ConnectionStateToString(connection_state_);
   info->manufacturer = "Google";
   info->model = "Prototype";
   info->serial_number = "2.3.5.7.13.17.19.31.61.89.107.127.521.607.1279.2203";
@@ -297,6 +322,14 @@ void Printer::CreateInfo(PrivetHttpServer::DeviceInfo* info) {
     info->api.push_back("/privet/register");
 
   info->type.push_back("printer");
+}
+
+bool Printer::IsRegistered() const {
+  return reg_info_.state == RegistrationInfo::DEV_REG_REGISTERED;
+}
+
+bool Printer::CheckXPrivetTokenHeader(const std::string& token) const {
+  return xtoken_.CheckValidXToken(token);
 }
 
 void Printer::OnRegistrationStartResponseParsed(
@@ -313,6 +346,7 @@ void Printer::OnGetAuthCodeResponseParsed(const std::string& refresh_token) {
   reg_info_.state = RegistrationInfo::DEV_REG_REGISTERED;
   reg_info_.refresh_token = refresh_token;
   SaveToFile(base::FilePath(kPrinterStatePath));
+  FetchPrintJobs();
 }
 
 void Printer::OnRegistrationError(const std::string& description) {
@@ -321,6 +355,52 @@ void Printer::OnRegistrationError(const std::string& description) {
   // TODO(maksymb): Implement waiting after error and timeout of registration.
   reg_info_.state = RegistrationInfo::DEV_REG_REGISTRATION_ERROR;
   reg_info_.error_description = description;
+}
+
+void Printer::OnServerError(const std::string& description) {
+  VLOG(3) << "Function: " << __FUNCTION__;
+  LOG(ERROR) << "Server error: " << description;
+
+  PostDelayedWakeUp(base::TimeDelta::FromSeconds(kReconnectTimeout));
+}
+
+void Printer::OnNetworkError() {
+  VLOG(3) << "Function: " << __FUNCTION__;
+  ChangeState(OFFLINE);
+  PostDelayedWakeUp(base::TimeDelta::FromSeconds(kReconnectTimeout));
+}
+
+void Printer::OnPrintJobsAvailable(const std::vector<Job>& jobs) {
+  VLOG(3) << "Function: " << __FUNCTION__;
+  ChangeState(ONLINE);
+
+  LOG(INFO) << "Available printjobs: " << jobs.size();
+
+  if (jobs.empty()) {
+    PostDelayedWakeUp(base::TimeDelta::FromSeconds(kPrintJobsTimeout));
+    return;
+  }
+
+  // TODO(maksymb): After finishing XMPP add 'Printjobs available' flag.
+  LOG(INFO) << "Downloading first printjob.";
+  requester_->RequestPrintJob(jobs[0]);
+  return;
+}
+
+void Printer::OnPrintJobDownloaded(const Job& job) {
+  VLOG(3) << "Function: " << __FUNCTION__;
+  print_job_handler_->SavePrintJob(
+      job.file,
+      job.ticket,
+      base::StringPrintf("%s.%s", job.create_time.c_str(), job.job_id.c_str()),
+      job.title);
+  requester_->SendPrintJobDone(job.job_id);
+}
+
+void Printer::OnPrintJobDone() {
+  VLOG(3) << "Function: " << __FUNCTION__;
+  // TODO(maksymb): Replace PostTask with with XMPP notifications.
+  PostWakeUp();
 }
 
 PrivetHttpServer::RegistrationErrorStatus Printer::CheckCommonRegErrors(
@@ -375,9 +455,22 @@ std::vector<std::string> Printer::CreateTxt() const {
   txt.push_back("url=" + std::string(kCloudPrintUrl));
   txt.push_back("type=printer");
   txt.push_back("id=" + reg_info_.device_id);
-  txt.push_back("cs=offline");
+  txt.push_back("cs=" + ConnectionStateToString(connection_state_));
 
   return txt;
+}
+
+void Printer::FetchPrintJobs() {
+  VLOG(3) << "Function: " << __FUNCTION__;
+
+  if (!IsRegistered())
+    return;
+
+  if (requester_->IsBusy()) {
+    PostDelayedWakeUp(base::TimeDelta::FromSeconds(kReconnectTimeout));
+  } else {
+    requester_->FetchPrintJobs(reg_info_.refresh_token, reg_info_.device_id);
+  }
 }
 
 void Printer::SaveToFile(const base::FilePath& file_path) const {
@@ -461,6 +554,21 @@ bool Printer::LoadFromFile(const base::FilePath& file_path) {
   return true;
 }
 
+void Printer::PostWakeUp() {
+  VLOG(3) << "Function: " << __FUNCTION__;
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&Printer::WakeUp, AsWeakPtr()));
+}
+
+void Printer::PostDelayedWakeUp(const base::TimeDelta& delay) {
+  VLOG(3) << "Function: " << __FUNCTION__;
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&Printer::WakeUp, AsWeakPtr()),
+      delay);
+}
+
 PrivetHttpServer::RegistrationErrorStatus
     Printer::ConfirmationToRegistrationError(
         RegistrationInfo::ConfirmationState state) {
@@ -478,5 +586,32 @@ PrivetHttpServer::RegistrationErrorStatus
       NOTREACHED();
       return PrivetHttpServer::REG_ERROR_OK;
   }
+}
+
+std::string Printer::ConnectionStateToString(ConnectionState state) const {
+  switch (state) {
+    case OFFLINE:
+      return "offline";
+    case ONLINE:
+      return "online";
+    case CONNECTING:
+      return "connecting";
+    case NOT_CONFIGURED:
+      return "not-configured";
+
+    default:
+      NOTREACHED();
+      return "";
+  }
+}
+
+bool Printer::ChangeState(ConnectionState new_state) {
+  if (connection_state_ == new_state)
+    return false;
+
+  VLOG(1) << "Printer is now " << ConnectionStateToString(new_state);
+  connection_state_ = new_state;
+  dns_server_.UpdateMetadata(CreateTxt());
+  return true;
 }
 

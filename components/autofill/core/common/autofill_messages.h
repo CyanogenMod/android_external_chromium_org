@@ -229,10 +229,6 @@ IPC_MESSAGE_ROUTED5(AutofillHostMsg_QueryFormFieldAutofill,
                     gfx::RectF /* input field bounds, window-relative */,
                     bool /* display warning if autofill disabled */)
 
-// Sent when the popup with Autofill suggestions for a form is shown.
-IPC_MESSAGE_ROUTED1(AutofillHostMsg_DidShowAutofillSuggestions,
-                    bool /* is this a new popup? */)
-
 // Instructs the browser to fill in the values for a form using Autofill
 // profile data.
 IPC_MESSAGE_ROUTED4(AutofillHostMsg_FillAutofillFormData,
@@ -252,12 +248,6 @@ IPC_MESSAGE_ROUTED1(AutofillHostMsg_DidFillAutofillFormData,
 IPC_MESSAGE_ROUTED2(AutofillHostMsg_RequestAutocomplete,
                     autofill::FormData /* form_data */,
                     GURL /* frame_url */)
-
-// Instructs the browser to remove the specified Autocomplete entry from the
-// database.
-IPC_MESSAGE_ROUTED2(AutofillHostMsg_RemoveAutocompleteEntry,
-                    base::string16 /* field name */,
-                    base::string16 /* value */)
 
 // Instructs the browser to show the Autofill dialog.
 IPC_MESSAGE_ROUTED0(AutofillHostMsg_ShowAutofillDialog)

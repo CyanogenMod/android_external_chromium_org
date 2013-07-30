@@ -17,7 +17,7 @@
 #include "base/memory/weak_ptr.h"
 #include "cc/resources/texture_mailbox.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
-#include "content/browser/renderer_host/image_transport_factory.h"
+#include "content/browser/aura/image_transport_factory.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/client/gl_helper.h"
@@ -56,6 +56,7 @@ class Texture;
 }
 
 namespace content {
+class MemoryHolder;
 class RenderWidgetHostImpl;
 class RenderWidgetHostView;
 
@@ -578,8 +579,8 @@ class RenderWidgetHostViewAura
   // The current frontbuffer texture.
   scoped_refptr<ui::Texture> current_surface_;
 
-  // The current software frontbuffer.
-  cc::TextureMailbox current_software_frame_;
+  // This holds the current software framebuffer.
+  scoped_refptr<MemoryHolder> framebuffer_holder_;
 
   // The damage in the previously presented buffer.
   SkRegion previous_damage_;

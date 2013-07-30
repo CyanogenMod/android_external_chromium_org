@@ -147,6 +147,7 @@
                 '<(SHARED_INTERMEDIATE_DIR)/content/browser/tracing/tracing_resources.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_unscaled_resources.rc',
+                '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.rc',
               ],
               'include_dirs': [
@@ -346,12 +347,14 @@
             '<@(chromium_child_dependencies)',
             '../content/content.gyp:content_app_child',
             '../content/content.gyp:content_worker',
+            'chrome_version_resources',
             'policy_path_parser',
           ],
           'defines': [
             'CHROME_MULTIPLE_DLL_CHILD',
           ],
           'sources': [
+            '<(SHARED_INTERMEDIATE_DIR)/chrome_version/chrome_dll_version.rc',
             'app/chrome_main.cc',
             'app/chrome_main_delegate.cc',
             'app/chrome_main_delegate.h',

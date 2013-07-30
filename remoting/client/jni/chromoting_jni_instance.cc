@@ -59,12 +59,10 @@ void ChromotingJniInstance::Cleanup() {
                  this));
 }
 
-void ChromotingJniInstance::ProvideSecret(const char* pin) {
+void ChromotingJniInstance::ProvideSecret(const std::string& pin) {
   DCHECK(jni_runtime_->ui_task_runner()->BelongsToCurrentThread());
   DCHECK(!pin_callback_.is_null());
 
-  // We invoke the string constructor to ensure |pin| gets copied *before* the
-  // asynchronous run, since Java might want it back as soon as we return.
   jni_runtime_->network_task_runner()->PostTask(FROM_HERE,
                                                 base::Bind(pin_callback_, pin));
 }
@@ -217,7 +215,7 @@ void ChromotingJniInstance::ConnectToHostOnNetworkThread() {
                                           *signaling_config_));
 
   network_settings_.reset(new NetworkSettings(
-      NetworkSettings::NAT_TRAVERSAL_OUTGOING));
+      NetworkSettings::NAT_TRAVERSAL_ENABLED));
   scoped_ptr<protocol::TransportFactory> fact(
       protocol::LibjingleTransportFactory::Create(
           *network_settings_,

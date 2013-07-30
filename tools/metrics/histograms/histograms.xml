@@ -3342,6 +3342,12 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Extensions.NonWebStoreNewTabPageOverrides">
+  <summary>
+    Number of non-WebStore extensions on startup that override the new tab page.
+  </summary>
+</histogram>
+
 <histogram name="Extensions.Permissions_AutoDisable" enum="ExtensionPermission">
   <summary>
     The permissions present in an extension when it is automatically disabled
@@ -8928,6 +8934,15 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="NewTabPage.MostVisitedTilePlacementExperiment"
+    enum="NtpTileExperimentActions">
+  <summary>
+    Records anomalous events for the Most Visited Tile Placement experiment,
+    where it is unable to operate as expected. These are recorded during New Tab
+    Page load time, once for every NTP.
+  </summary>
+</histogram>
+
 <histogram name="NewTabPage.NonVisibleScreenshots">
   <summary>
     The number of screenshots that were cached for the non-visible but ranked
@@ -9239,6 +9254,62 @@ other types of suffix sets.
   <summary>
     Generic event of interest from Chrome OS.  Intended mainly to help assess
     the frequency of rare error conditions.
+  </summary>
+</histogram>
+
+<histogram name="Platform.DiskUsage.Cache_Avg" units="KB">
+  <summary>
+    Average size of user's Cache directory. Logged once a day, if disk usage is
+    high.
+  </summary>
+</histogram>
+
+<histogram name="Platform.DiskUsage.Cache_Max" units="KB">
+  <summary>
+    Maximum size of user's Cache directory. Logged once a day, if disk usage is
+    high.
+  </summary>
+</histogram>
+
+<histogram name="Platform.DiskUsage.Downloads_Avg" units="KB">
+  <summary>
+    Average size of user's Cache directory. Logged once a day, if disk usage is
+    high.
+  </summary>
+</histogram>
+
+<histogram name="Platform.DiskUsage.Downloads_Max" units="KB">
+  <summary>
+    Maximum size of user's Cache directory. Logged once a day, if disk usage is
+    high.
+  </summary>
+</histogram>
+
+<histogram name="Platform.DiskUsage.GCache_Avg" units="KB">
+  <summary>
+    Average size of user's GCache directory. Logged once a day, if disk usage is
+    high.
+  </summary>
+</histogram>
+
+<histogram name="Platform.DiskUsage.GCache_Max" units="KB">
+  <summary>
+    Maximum size of user's GCache directory. Logged once a day, if disk usage is
+    high.
+  </summary>
+</histogram>
+
+<histogram name="Platform.DiskUsage.OldestUserOnDevice">
+  <summary>
+    Days since last login of the least recently user on device. Logged once a
+    day, if disk usage is high.
+  </summary>
+</histogram>
+
+<histogram name="Platform.DiskUsage.UsersOnDevice">
+  <summary>
+    Number of user home dirs on device. Logged once a day, if disk usage is
+    high.
   </summary>
 </histogram>
 
@@ -12848,6 +12919,15 @@ other types of suffix sets.
   <summary>Time spent selecting entries for eviction.</summary>
 </histogram>
 
+<histogram name="SimpleCache.GlobalOpenEntryCount">
+  <summary>
+    The number of open entries across all caches backed by the Simple Cache. An
+    entry is opened whenever a caller asks to open it to read or write cache
+    data, and remains open until the last caller asks to close it. Logged
+    whenever an entry is opened or closed.
+  </summary>
+</histogram>
+
 <histogram name="SimpleCache.IndexCorrupt" enum="BooleanCorrupt">
   <summary>For each index load, whether the index file was corrupt.</summary>
 </histogram>
@@ -13047,6 +13127,14 @@ other types of suffix sets.
 <histogram name="SimpleCache.SyncWriteResult" enum="SimpleCacheSyncWriteResult">
   <summary>
     The result, at the synchronous layer, of writing to a cache entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.WriteDependencyType"
+    enum="SimpleCacheWriteDependencyType">
+  <summary>
+    Shows whether a write operation depends on the previous operation in queue
+    particularly in the aspect of its possibility to run in parallel.
   </summary>
 </histogram>
 
@@ -16757,6 +16845,12 @@ other types of suffix sets.
   <int value="507" label="SYSTEM_DISPLAY_GETINFO"/>
   <int value="508" label="SYSTEM_DISPLAY_SETDISPLAYPROPERTIES"/>
   <int value="509" label="SYSTEM_MEMORY_GETINFO"/>
+  <int value="510" label="SYSTEM_STORAGE_GETINFO"/>
+  <int value="511" label="SYSTEM_STORAGE_EJECTDEVICE"/>
+  <int value="512" label="SYSTEM_STORAGE_ADDAVAILABLECAPACITYWATCH"/>
+  <int value="513" label="SYSTEM_STORAGE_REMOVEAVAILABLECAPACITYWATCH"/>
+  <int value="514" label="SYSTEM_STORAGE_GETALLAVAILABLECAPACITYWATCHES"/>
+  <int value="515" label="SYSTEM_STORAGE_REMOVEALLAVAILABLECAPACITYWATCHES"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">
@@ -19438,6 +19532,18 @@ other types of suffix sets.
   <int value="2" label="NTP Promo link clicked"/>
 </enum>
 
+<enum name="NtpTileExperimentActions" type="int">
+  <summary>
+    The types of actions performed by the Most Visited Tile Placement
+    experiment, used to identify the cases where the experiment could not
+    operate as expected, and the reason for it.
+  </summary>
+  <int value="0" label="Removed URL that was already open in browser"/>
+  <int value="1" label="Didn't remove URL, too few suggestions in MV"/>
+  <int value="2" label="Too few URLs, didn't flip tiles 1 and 8"/>
+  <int value="3" label="Too few URLs, didn't flip tiles 1 and 4"/>
+</enum>
+
 <enum name="OfflineStatus" type="int">
   <int value="0" label="Fresh data load from Cache"/>
   <int value="1" label="Successful network request (validation or fetch)."/>
@@ -20311,6 +20417,12 @@ other types of suffix sets.
   <int value="13" label="PING_DISABLED"/>
   <int value="14" label="TRUSTED_EXECUTABLE"/>
   <int value="15" label="OS_NOT_SUPPORTED"/>
+  <int value="16" label="DOWNLOAD_UNCOMMON"/>
+  <int value="17" label="DOWNLOAD_NOT_SUPPORTED"/>
+  <int value="18" label="INVALID_RESPONSE_VERDICT"/>
+  <int value="19" label="ARCHIVE_WITHOUT_BINARIES"/>
+  <int value="20" label="DOWNLOAD_DANGEROUS_HOST"/>
+  <int value="21" label="DOWNLOAD_POTENTIALLY_UNWANTED"/>
 </enum>
 
 <enum name="SBClientDownloadExtensions" type="int">
@@ -20485,6 +20597,17 @@ other types of suffix sets.
   <int value="1" label="Pretruncate Failure"/>
   <int value="2" label="Write Failure"/>
   <int value="3" label="Truncate Failure"/>
+</enum>
+
+<enum name="SimpleCacheWriteDependencyType" type="int">
+  <int value="0" label="First operation in the queue (Optimistic)"/>
+  <int value="1" label="Follows conflicting optimistic write"/>
+  <int value="2" label="Follows non conflicting optimistic write"/>
+  <int value="3" label="Follows conflicting conservative write"/>
+  <int value="4" label="Follows non conflicting conservative write"/>
+  <int value="5" label="Follows conflicting read"/>
+  <int value="6" label="Follows non conflicting read"/>
+  <int value="7" label="Follows other operation"/>
 </enum>
 
 <enum name="SimpleCacheWriteResult" type="int">
@@ -21796,6 +21919,22 @@ other types of suffix sets.
   <affected-histogram name="Cros.ClickOnShelf"/>
 </fieldtrial>
 
+<fieldtrial name="DiskUsagePerUserCount" separator=".">
+  <group name="1User" label="Only 1 user exists on device."/>
+  <group name="2Users" label="2 users exist on device."/>
+  <group name="3Users" label="3 users exist on device."/>
+  <group name="4Users" label="4 users exist on device."/>
+  <group name="5Users" label="5 users exist on device."/>
+  <group name="6Users" label="6 users exist on device."/>
+  <group name="7OrMoreUsers" label="7 or more users exist on device."/>
+  <affected-histogram name="Platform.DiskUsage.Cache_Avg"/>
+  <affected-histogram name="Platform.DiskUsage.Cache_Max"/>
+  <affected-histogram name="Platform.DiskUsage.Downloads_Avg"/>
+  <affected-histogram name="Platform.DiskUsage.Downloads_Max"/>
+  <affected-histogram name="Platform.DiskUsage.GCache_Avg"/>
+  <affected-histogram name="Platform.DiskUsage.GCache_Max"/>
+</fieldtrial>
+
 <fieldtrial name="DnsImpact2">
   <group name="disabled_prefetch"
       label="DNS pre-resolving is disabled in these clients"/>
@@ -22674,19 +22813,11 @@ other types of suffix sets.
 <fieldtrial name="NetConnectivity4a" separator=".">
   <group name="NATBind.Sent2"
       label="Two packets were sent spreading over a random period, to test if
-             the NAT dropped the binding. This histogram recorded the
-             duration (in seconds) of the interval between the sendings of
-             the two packets. Results are only shown in this histogram if at
-             least ten packets were received in the StartPacket test, both
-             packets were received in NATBindRef test, and the first packet
-             of this test arrived at the client."/>
-  <group name="NATBindRef.Sent2"
-      label="Two packets were sent as rapidly as possible right after the
-             NATBind test. This histogram recorded the duration (in seconds)
-             of the interval between the sendings of the two packets in the
-             preceding NetConnectivity4.NATBind test. Results are only shown
-             in this histogram if at least ten packets were received in the
-             StartPacket test."/>
+             the NAT dropped the binding. Afterwords, an extra (short) packet
+             was sent with renewed NAT binding to test whether the network
+             that was used to deliver the first packet is still connected.
+             Results are only shown in this histogram if at least ten packets
+             were received in the StartPacket test."/>
   <group name="NonPacedPacket"
       label="21 Packets were sent as rapidly as possible. Results are only
              shown in this histogram if at least two packets were received in
@@ -22704,23 +22835,31 @@ other types of suffix sets.
 </fieldtrial>
 
 <fieldtrial name="NetConnectivity4NATBindPacketReceives" separator=".">
-  <group name="Failure"
-      label="Only when the second packet never arrived (we wait for 30 extra
-             seconds) did we record the duration in this histogram."/>
-  <group name="Success"
-      label="Only when the second packet arrived did we record the duration
-             in this histogram."/>
+  <group name="Bind.Failure"
+      label="Only when the second packet never arrived (we wait for 10 extra
+             seconds) and the first and the extra (short) packets arrived did
+             we record the duration in seconds between the sendings of the
+             first two packets in this histogram."/>
+  <group name="Bind.Success"
+      label="Only when all three packets including the extra (short) packet
+             arrived did we record the duration in seconds between the
+             sendings of the first two packets in this histogram."/>
+  <group name="Connectivity.Failure"
+      label="Only when the extra (short) packet (with renewed NAT binding)
+             never arrived (we wait for 10 extra seconds) did we record the
+             duration in seconds between the sendings of the first two
+             packets in this histogram."/>
+  <group name="Connectivity.Success"
+      label="Only when the extra (short) packet arrived did we record the
+             duration in seconds between the sendings of the first two
+             packets in this histogram."/>
+  <group name="SendToLastRecvDelay"
+      label="This histogram records the time duration (in milliseconds)
+             between the client sending the request and the receiving of the
+             second packet sent from the server, excluding the idle time
+             between sendings of the first two packets. Results are only
+             shown if the first two packets are both received."/>
   <affected-histogram name="NetConnectivity4.NATBind.Sent2"/>
-</fieldtrial>
-
-<fieldtrial name="NetConnectivity4NATBindRefPacketReceives" separator=".">
-  <group name="Failure"
-      label="Only when both packets did not arrive (we wait for 30 extra
-             seconds) did we record the duration in this histogram."/>
-  <group name="Success"
-      label="Only when both packets arrived did we record the duration in
-             this histogram."/>
-  <affected-histogram name="NetConnectivity4.NATBindRef.Sent2"/>
 </fieldtrial>
 
 <fieldtrial name="NetConnectivity4PacketFirst6" separator=".">
@@ -22781,6 +22920,12 @@ other types of suffix sets.
       label="Each packet was numbered when it was sent by Google. This
              histogram records, for each packet number, how often we received
              that packet."/>
+  <group name="Sent21.SendToLastRecvDelay"
+      label="This histogram records the time duration between the client
+             sending the request and the receiving of the last packet sent
+             from the server, excluding the total pacing time requested by
+             the client. Results are only shown if at least two packets are
+             received."/>
   <group name="Sent21.Success.RTT" label="The histogram shows the RTT for the"/>
   <affected-histogram name="NetConnectivity4.NonPacedPacket"/>
   <affected-histogram name="NetConnectivity4.PacedPacket"/>
@@ -22806,10 +22951,14 @@ other types of suffix sets.
   <group name="80.100B" label="100 bytes of data is sent on port 80."/>
   <group name="80.1200B" label="1200 bytes of data is sent on port 80."/>
   <group name="80.500B" label="500 bytes of data is sent on port 80."/>
-  <affected-histogram name="NetConnectivity4.NATBind.Sent2.Failure"/>
-  <affected-histogram name="NetConnectivity4.NATBind.Sent2.Success"/>
-  <affected-histogram name="NetConnectivity4.NATBindRef.Sent2.Failure"/>
-  <affected-histogram name="NetConnectivity4.NATBindRef.Sent2.Success"/>
+  <affected-histogram name="NetConnectivity4.NATBind.Sent2.Bind.Failure"/>
+  <affected-histogram name="NetConnectivity4.NATBind.Sent2.Bind.Success"/>
+  <affected-histogram
+      name="NetConnectivity4.NATBind.Sent2.Connectivity.Failure"/>
+  <affected-histogram
+      name="NetConnectivity4.NATBind.Sent2.Connectivity.Success"/>
+  <affected-histogram
+      name="NetConnectivity4.NATBind.Sent2.SendToLastRecvDelay"/>
   <affected-histogram name="NetConnectivity4.NonPacedPacket.Sent21.GotAPacket"/>
   <affected-histogram
       name="NetConnectivity4.NonPacedPacket.Sent21.NumRecvFromFirst01Packets"/>
@@ -22859,6 +23008,8 @@ other types of suffix sets.
       name="NetConnectivity4.NonPacedPacket.Sent21.PacketsRecv"/>
   <affected-histogram
       name="NetConnectivity4.NonPacedPacket.Sent21.RecvNthPacket"/>
+  <affected-histogram
+      name="NetConnectivity4.NonPacedPacket.Sent21.SendToLastRecvDelay"/>
   <affected-histogram
       name="NetConnectivity4.NonPacedPacket.Sent21.Success.RTT.Packet01"/>
   <affected-histogram
@@ -22916,6 +23067,8 @@ other types of suffix sets.
   <affected-histogram name="NetConnectivity4.PacedPacket.Sent21.PacketsRecv"/>
   <affected-histogram name="NetConnectivity4.PacedPacket.Sent21.RecvNthPacket"/>
   <affected-histogram
+      name="NetConnectivity4.PacedPacket.Sent21.SendToLastRecvDelay"/>
+  <affected-histogram
       name="NetConnectivity4.PacedPacket.Sent21.Success.RTT.Packet01"/>
   <affected-histogram
       name="NetConnectivity4.PacedPacket.Sent21.Success.RTT.Packet02"/>
@@ -22971,6 +23124,8 @@ other types of suffix sets.
   <affected-histogram name="NetConnectivity4.StartPacket.Sent21.PacketDelay"/>
   <affected-histogram name="NetConnectivity4.StartPacket.Sent21.PacketsRecv"/>
   <affected-histogram name="NetConnectivity4.StartPacket.Sent21.RecvNthPacket"/>
+  <affected-histogram
+      name="NetConnectivity4.StartPacket.Sent21.SendToLastRecvDelay"/>
   <affected-histogram
       name="NetConnectivity4.StartPacket.Sent21.Success.RTT.Packet01"/>
   <affected-histogram

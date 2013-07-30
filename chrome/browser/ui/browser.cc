@@ -63,7 +63,6 @@
 #include "chrome/browser/infobars/simple_alert_infobar_delegate.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
-#include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/pepper_broker_infobar_delegate.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
@@ -145,6 +144,7 @@
 #include "chrome/common/extensions/background_info.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/profiling.h"
 #include "chrome/common/search_types.h"
@@ -1284,8 +1284,8 @@ WebContents* Browser::OpenURLFromTab(WebContents* source,
   if (source)
     popup_blocker_helper = PopupBlockerTabHelper::FromWebContents(source);
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableBetterPopupBlocking) &&
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableBetterPopupBlocking) &&
       popup_blocker_helper) {
 
     if ((params.disposition == NEW_POPUP ||
@@ -1502,49 +1502,6 @@ bool Browser::ShouldCreateWebContents(
     // If a BackgroundContents is created, suppress the normal WebContents.
     return !MaybeCreateBackgroundContents(
         route_id, web_contents, frame_name, target_url);
-  }
-
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableBetterPopupBlocking)) {
-    return true;
-  }
-
-  PopupBlockerTabHelper* popup_blocker_helper =
-      PopupBlockerTabHelper::FromWebContents(web_contents);
-  if (!popup_blocker_helper)
-    return true;
-
-  if ((disposition == NEW_POPUP || disposition == NEW_FOREGROUND_TAB ||
-       disposition == NEW_BACKGROUND_TAB) && !user_gesture &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisablePopupBlocking)) {
-    chrome::NavigateParams nav_params(
-        this, target_url, content::PAGE_TRANSITION_LINK);
-    // TODO(jochen): route window features here.
-    nav_params.referrer = referrer;
-    if (!opener_suppressed)
-      nav_params.source_contents = web_contents;
-    nav_params.is_renderer_initiated = true;
-    nav_params.tabstrip_add_types = TabStripModel::ADD_ACTIVE;
-    nav_params.window_action = chrome::NavigateParams::SHOW_WINDOW;
-    nav_params.user_gesture = user_gesture;
-    web_contents->GetView()->GetContainerBounds(&nav_params.window_bounds);
-    if (features.xSet)
-      nav_params.window_bounds.set_x(features.x);
-    if (features.ySet)
-      nav_params.window_bounds.set_y(features.y);
-    if (features.widthSet)
-      nav_params.window_bounds.set_width(features.width);
-    if (features.heightSet)
-      nav_params.window_bounds.set_height(features.height);
-
-    // Compare RenderViewImpl::show().
-    if (!user_gesture && disposition != NEW_BACKGROUND_TAB)
-      nav_params.disposition = NEW_POPUP;
-    else
-      nav_params.disposition = disposition;
-
-    return !popup_blocker_helper->MaybeBlockPopup(nav_params, features);
   }
 
   return true;

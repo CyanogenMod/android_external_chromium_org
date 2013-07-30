@@ -39,7 +39,6 @@
 #include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/net/chrome_network_delegate.h"
 #include "chrome/browser/net/connection_tester.h"
-#include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -49,6 +48,7 @@
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/logging_chrome.h"
+#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
@@ -82,7 +82,7 @@
 #include "chrome/browser/chromeos/system/syslogs_provider.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/debug_daemon_client.h"
-#include "chromeos/network/certificate_handler.h"
+#include "chromeos/network/onc/onc_certificate_importer_impl.h"
 #include "chromeos/network/onc/onc_constants.h"
 #include "chromeos/network/onc/onc_utils.h"
 #endif
@@ -1555,8 +1555,8 @@ void NetInternalsMessageHandler::OnImportONCFile(const ListValue* list) {
     LOG(ERROR) << error;
   }
 
-  chromeos::CertificateHandler certificate_handler;
-  if (!certificate_handler.ImportCertificates(certificates, onc_source, NULL)) {
+  chromeos::onc::CertificateImporterImpl cert_importer;
+  if (!cert_importer.ImportCertificates(certificates, onc_source, NULL)) {
     error += "Some certificates couldn't be imported. ";
     LOG(ERROR) << error;
   }

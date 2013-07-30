@@ -35,7 +35,8 @@ extern int const kSplashFadeInDialogDurationMs;
 struct DetailInput {
   // Multiple DetailInput structs with the same row_id go on the same row. The
   // actual order of the rows is determined by their order of appearance in
-  // kBillingInputs.
+  // kBillingInputs. If negative, don't show the input at all (leave it hidden
+  // at all times).
   int row_id;
   AutofillFieldType type;
   // Placeholder text resource ID.
@@ -106,8 +107,13 @@ class DialogNotification {
   // Whether this notifications has the "Save details to wallet" checkbox.
   bool HasCheckbox() const;
 
-  const string16& display_text() const { return display_text_; }
   Type type() const { return type_; }
+  const string16& display_text() const { return display_text_; }
+
+  void set_tooltip_text(const string16& tooltip_text) {
+    tooltip_text_ = tooltip_text;
+  }
+  const string16& tooltip_text() const { return tooltip_text_; }
 
   void set_checked(bool checked) { checked_ = checked; }
   bool checked() const { return checked_; }
@@ -118,6 +124,10 @@ class DialogNotification {
  private:
   Type type_;
   string16 display_text_;
+
+  // When non-empty, indicates that a tooltip should be shown on the end of
+  // the notification.
+  string16 tooltip_text_;
 
   // Whether the dialog notification's checkbox should be checked. Only applies
   // when |HasCheckbox()| is true.

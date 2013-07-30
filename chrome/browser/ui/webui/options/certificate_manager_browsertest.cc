@@ -31,7 +31,7 @@ using testing::AnyNumber;
 using testing::Return;
 using testing::_;
 
-class CertificateManagerBrowserTest : public options::OptionsBrowserTest {
+class CertificateManagerBrowserTest : public options::OptionsUIBrowserTest {
  public:
   CertificateManagerBrowserTest() {}
   virtual ~CertificateManagerBrowserTest() {}
@@ -56,6 +56,7 @@ class CertificateManagerBrowserTest : public options::OptionsBrowserTest {
         network_configuration_updater()->SetUserPolicyService(
             true, "", connector->policy_service());
 #endif
+    content::RunAllPendingInMessageLoop();
   }
 
 #if defined(OS_CHROMEOS)

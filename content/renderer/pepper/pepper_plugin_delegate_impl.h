@@ -17,11 +17,12 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "content/public/renderer/render_view_observer.h"
-#include "content/renderer/mouse_lock_dispatcher.h"
 #include "content/renderer/pepper/pepper_browser_connection.h"
 #include "content/renderer/pepper/plugin_delegate.h"
 #include "content/renderer/render_view_pepper_helper.h"
 #include "ppapi/c/pp_file_info.h"
+#include "ppapi/c/ppb_tcp_socket.h"
+#include "ppapi/c/private/ppb_tcp_socket_private.h"
 #include "ppapi/shared_impl/private/ppb_tcp_server_socket_shared.h"
 #include "ppapi/shared_impl/private/tcp_socket_private_impl.h"
 #include "ui/base/ime/text_input_type.h"
@@ -33,6 +34,9 @@ class FilePath;
 namespace ppapi {
 class PepperFilePath;
 class PPB_X509Certificate_Fields;
+namespace host {
+class ResourceHost;
+}
 }
 
 namespace WebKit {
@@ -43,9 +47,9 @@ struct WebCompositionUnderline;
 namespace content {
 class ContextProviderCommandBuffer;
 class GamepadSharedMemoryReader;
-class PepperBrokerImpl;
-class PepperDeviceEnumerationEventHandler;
+class PepperBroker;
 class PluginModule;
+class PPB_Broker_Impl;
 class RenderViewImpl;
 struct WebPluginInfo;
 
@@ -64,31 +68,27 @@ class PepperPluginDelegateImpl
     return &pepper_browser_connection_;
   }
 
+  // A pointer is returned immediately, but it is not ready to be used until
+  // BrokerConnected has been called.
+  // The caller is responsible for calling Disconnect() on the returned pointer
+  // to clean up the corresponding resources allocated during this call.
+  PepperBroker* ConnectToBroker(PPB_Broker_Impl* client);
+
   // Removes broker from pending_connect_broker_ if present. Returns true if so.
-  bool StopWaitingForBrokerConnection(PepperBrokerImpl* broker);
+  bool StopWaitingForBrokerConnection(PepperBroker* broker);
 
-  CONTENT_EXPORT int GetRoutingID() const;
+  void RegisterTCPSocket(PPB_TCPSocket_Private_Impl* socket, uint32 socket_id);
+  void UnregisterTCPSocket(uint32 socket_id);
+  void TCPServerSocketStopListening(uint32 socket_id);
 
-  typedef base::Callback<void (int /* request_id */,
-                               bool /* succeeded */,
-                               const std::string& /* label */)>
-      OpenDeviceCallback;
+  // Notifies that |instance| has changed the cursor.
+  // This will update the cursor appearance if it is currently over the plugin
+  // instance.
+  void DidChangeCursor(PepperPluginInstanceImpl* instance,
+                       const WebKit::WebCursorInfo& cursor);
 
-  // Opens the specified device. The request ID passed into the callback will be
-  // the same as the return value. If successful, the label passed into the
-  // callback identifies a audio/video steam, which can be used to call
-  // CloseDevice() and GetSesssionID().
-  int OpenDevice(PP_DeviceType_Dev type,
-                 const std::string& device_id,
-                 const GURL& document_url,
-                 const OpenDeviceCallback& callback);
-  // Cancels an request to open device, using the request ID returned by
-  // OpenDevice(). It is guaranteed that the callback passed into OpenDevice()
-  // won't be called afterwards.
-  void CancelOpenDevice(int request_id);
-  void CloseDevice(const std::string& label);
-  // Gets audio/video session ID given a label.
-  int GetSessionID(PP_DeviceType_Dev type, const std::string& label);
+  // Notifies that |instance| has received a mouse event.
+  void DidReceiveMouseEvent(PepperPluginInstanceImpl* instance);
 
  private:
   // RenderViewPepperHelper implementation.
@@ -104,15 +104,6 @@ class PepperPluginDelegateImpl
       gfx::Rect* location,
       gfx::Rect* clip,
       float* scale_factor) OVERRIDE;
-  virtual void OnAsyncFileOpened(base::PlatformFileError error_code,
-                                 base::PlatformFile file,
-                                 int message_id) OVERRIDE;
-  virtual void OnPpapiBrokerChannelCreated(
-      int request_id,
-      base::ProcessId broker_pid,
-      const IPC::ChannelHandle& handle) OVERRIDE;
-  virtual void OnPpapiBrokerPermissionResult(int request_id,
-                                             bool result) OVERRIDE;
   virtual void OnSetFocus(bool has_focus) OVERRIDE;
   virtual void PageVisibilityChanged(bool is_visible) OVERRIDE;
   virtual bool IsPluginFocused() const OVERRIDE;
@@ -141,163 +132,14 @@ class PepperPluginDelegateImpl
       PepperPluginInstanceImpl* instance) OVERRIDE;
   virtual void PluginSelectionChanged(
       PepperPluginInstanceImpl* instance) OVERRIDE;
-  virtual void SimulateImeSetComposition(
-      const string16& text,
-      const std::vector<WebKit::WebCompositionUnderline>& underlines,
-      int selection_start,
-      int selection_end) OVERRIDE;
-  virtual void SimulateImeConfirmComposition(const string16& text) OVERRIDE;
-  virtual void PluginCrashed(PepperPluginInstanceImpl* instance) OVERRIDE;
   virtual void InstanceCreated(PepperPluginInstanceImpl* instance) OVERRIDE;
   virtual void InstanceDeleted(PepperPluginInstanceImpl* instance) OVERRIDE;
-  virtual scoped_ptr< ::ppapi::thunk::ResourceCreationAPI>
-      CreateResourceCreationAPI(PepperPluginInstanceImpl* instance) OVERRIDE;
-  virtual SkBitmap* GetSadPluginBitmap() OVERRIDE;
-  virtual WebKit::WebPlugin* CreatePluginReplacement(
-      const base::FilePath& file_path) OVERRIDE;
-  virtual uint32_t GetAudioHardwareOutputSampleRate() OVERRIDE;
-  virtual uint32_t GetAudioHardwareOutputBufferSize() OVERRIDE;
-  virtual PlatformAudioOutput* CreateAudioOutput(
-      uint32_t sample_rate,
-      uint32_t sample_count,
-      PlatformAudioOutputClient* client) OVERRIDE;
-  virtual PlatformAudioInput* CreateAudioInput(
-      const std::string& device_id,
-      const GURL& document_url,
-      uint32_t sample_rate,
-      uint32_t sample_count,
-      PlatformAudioInputClient* client) OVERRIDE;
-  virtual PlatformImage2D* CreateImage2D(int width, int height) OVERRIDE;
-  virtual PlatformGraphics2D* GetGraphics2D(
-      PepperPluginInstanceImpl* instance,
-      PP_Resource resource) OVERRIDE;
-  virtual PlatformContext3D* CreateContext3D() OVERRIDE;
-  virtual PlatformVideoCapture* CreateVideoCapture(
-      const std::string& device_id,
-      const GURL& document_url,
-      PlatformVideoCaptureEventHandler* handler) OVERRIDE;
-  virtual PlatformVideoDecoder* CreateVideoDecoder(
-      media::VideoDecodeAccelerator::Client* client,
-      int32 command_buffer_route_id) OVERRIDE;
-  virtual Broker* ConnectToBroker(PPB_Broker_Impl* client) OVERRIDE;
-  virtual void NumberOfFindResultsChanged(int identifier,
-                                          int total,
-                                          bool final_result) OVERRIDE;
-  virtual void SelectedFindResultChanged(int identifier, int index) OVERRIDE;
   virtual bool AsyncOpenFile(const base::FilePath& path,
                              int flags,
                              const AsyncOpenFileCallback& callback) OVERRIDE;
-  virtual void AsyncOpenFileSystemURL(
-      const GURL& path,
-      int flags,
-      const AsyncOpenFileSystemURLCallback& callback) OVERRIDE;
-  virtual bool IsFileSystemOpened(PP_Instance instance,
-                                  PP_Resource resource) const OVERRIDE;
-  virtual PP_FileSystemType GetFileSystemType(
-      PP_Instance instance,
-      PP_Resource resource) const OVERRIDE;
-  virtual GURL GetFileSystemRootUrl(PP_Instance instance,
-                                    PP_Resource resource) const OVERRIDE;
-  virtual void MakeDirectory(
-      const GURL& path,
-      bool recursive,
-      const StatusCallback& callback) OVERRIDE;
-  virtual void Query(
-      const GURL& path,
-      const MetadataCallback& success_callback,
-      const StatusCallback& error_callback) OVERRIDE;
-  virtual void ReadDirectoryEntries(
-      const GURL& path,
-      const ReadDirectoryCallback& success_callback,
-      const StatusCallback& error_callback) OVERRIDE;
-  virtual void Touch(
-      const GURL& path,
-      const base::Time& last_access_time,
-      const base::Time& last_modified_time,
-      const StatusCallback& callback) OVERRIDE;
-  virtual void SetLength(
-      const GURL& path,
-      int64_t length,
-      const StatusCallback& callback) OVERRIDE;
-  virtual void Delete(
-      const GURL& path,
-      const StatusCallback& callback) OVERRIDE;
-  virtual void Rename(
-      const GURL& file_path,
-      const GURL& new_file_path,
-      const StatusCallback& callback) OVERRIDE;
-  virtual void ReadDirectory(
-      const GURL& directory_path,
-      const ReadDirectoryCallback& success_callback,
-      const StatusCallback& error_callback) OVERRIDE;
-  virtual void SyncGetFileSystemPlatformPath(
-      const GURL& url,
-      base::FilePath* platform_path) OVERRIDE;
   virtual scoped_refptr<base::MessageLoopProxy>
       GetFileThreadMessageLoopProxy() OVERRIDE;
-  virtual uint32 TCPSocketCreate() OVERRIDE;
-  virtual void TCPSocketConnect(PPB_TCPSocket_Private_Impl* socket,
-                                uint32 socket_id,
-                                const std::string& host,
-                                uint16_t port) OVERRIDE;
-  virtual void TCPSocketConnectWithNetAddress(
-      PPB_TCPSocket_Private_Impl* socket,
-      uint32 socket_id,
-      const PP_NetAddress_Private& addr) OVERRIDE;
-  virtual void TCPSocketSSLHandshake(
-      uint32 socket_id,
-      const std::string& server_name,
-      uint16_t server_port,
-      const std::vector<std::vector<char> >& trusted_certs,
-      const std::vector<std::vector<char> >& untrusted_certs) OVERRIDE;
-  virtual void TCPSocketRead(uint32 socket_id, int32_t bytes_to_read) OVERRIDE;
-  virtual void TCPSocketWrite(uint32 socket_id,
-                              const std::string& buffer) OVERRIDE;
-  virtual void TCPSocketDisconnect(uint32 socket_id) OVERRIDE;
-  virtual void TCPSocketSetOption(
-      uint32 socket_id,
-      PP_TCPSocket_Option name,
-      const ppapi::SocketOptionData& value) OVERRIDE;
-  virtual void RegisterTCPSocket(PPB_TCPSocket_Private_Impl* socket,
-                                 uint32 socket_id) OVERRIDE;
-  virtual void TCPServerSocketListen(
-      PP_Resource socket_resource,
-      const PP_NetAddress_Private& addr,
-      int32_t backlog) OVERRIDE;
-  virtual void TCPServerSocketAccept(uint32 server_socket_id) OVERRIDE;
-  virtual void TCPServerSocketStopListening(
-      PP_Resource socket_resource,
-      uint32 socket_id) OVERRIDE;
-  virtual bool AddNetworkListObserver(
-      webkit_glue::NetworkListObserver* observer) OVERRIDE;
-  virtual void RemoveNetworkListObserver(
-      webkit_glue::NetworkListObserver* observer) OVERRIDE;
-  virtual bool X509CertificateParseDER(
-      const std::vector<char>& der,
-      ppapi::PPB_X509Certificate_Fields* fields) OVERRIDE;
-  virtual FullscreenContainer* CreateFullscreenContainer(
-      PepperPluginInstanceImpl* instance) OVERRIDE;
-  virtual gfx::Size GetScreenSize() OVERRIDE;
-  virtual std::string GetDefaultEncoding() OVERRIDE;
-  virtual void ZoomLimitsChanged(double minimum_factor, double maximum_factor)
-      OVERRIDE;
-  virtual base::SharedMemory* CreateAnonymousSharedMemory(size_t size)
-      OVERRIDE;
-  virtual ::ppapi::Preferences GetPreferences() OVERRIDE;
-  virtual bool LockMouse(PepperPluginInstanceImpl* instance) OVERRIDE;
-  virtual void UnlockMouse(PepperPluginInstanceImpl* instance) OVERRIDE;
-  virtual bool IsMouseLocked(PepperPluginInstanceImpl* instance) OVERRIDE;
-  virtual void DidChangeCursor(PepperPluginInstanceImpl* instance,
-                               const WebKit::WebCursorInfo& cursor) OVERRIDE;
-  virtual void DidReceiveMouseEvent(
-      PepperPluginInstanceImpl* instance) OVERRIDE;
-  virtual bool IsInFullscreenMode() OVERRIDE;
   virtual void SampleGamepads(WebKit::WebGamepads* data) OVERRIDE;
-  virtual bool IsPageVisible() const OVERRIDE;
-  virtual int EnumerateDevices(
-      PP_DeviceType_Dev type,
-      const EnumerateDevicesCallback& callback) OVERRIDE;
-  virtual void StopEnumerateDevices(int request_id) OVERRIDE;
   virtual void HandleDocumentLoad(
       PepperPluginInstanceImpl* instance,
       const WebKit::WebURLResponse& response) OVERRIDE;
@@ -343,6 +185,13 @@ class PepperPluginDelegateImpl
                                   uint32 accepted_socket_id,
                                   const PP_NetAddress_Private& local_addr,
                                   const PP_NetAddress_Private& remote_addr);
+  void OnPpapiBrokerChannelCreated(int request_id,
+                                   base::ProcessId broker_pid,
+                                   const IPC::ChannelHandle& handle);
+  void OnAsyncFileOpened(base::PlatformFileError error_code,
+                         IPC::PlatformFileForTransit file_for_transit,
+                         int message_id);
+  void OnPpapiBrokerPermissionResult(int request_id, bool result);
 
   // Attempts to create a PPAPI plugin for the given filepath. On success, it
   // will return the newly-created module.
@@ -358,7 +207,7 @@ class PepperPluginDelegateImpl
       bool* pepper_plugin_was_registered);
 
   // Asynchronously attempts to create a PPAPI broker for the given plugin.
-  scoped_refptr<PepperBrokerImpl> CreateBroker(PluginModule* plugin_module);
+  scoped_refptr<PepperBroker> CreateBroker(PluginModule* plugin_module);
 
   // Create a new HostDispatcher for proxying, hook it to the PluginModule,
   // and perform other common initialization.
@@ -371,21 +220,6 @@ class PepperPluginDelegateImpl
       int plugin_child_id,
       bool is_external);
 
-  MouseLockDispatcher::LockTarget* GetOrCreateLockTargetAdapter(
-      PepperPluginInstanceImpl* instance);
-  void UnSetAndDeleteLockTargetAdapter(PepperPluginInstanceImpl* instance);
-
-  MouseLockDispatcher* GetMouseLockDispatcher(
-      PepperPluginInstanceImpl* instance);
-
-  // Share a given handle with the target process.
-  virtual IPC::PlatformFileForTransit ShareHandleWithRemote(
-      base::PlatformFile handle,
-      base::ProcessId target_process_id,
-      bool should_close_source) const OVERRIDE;
-
-  virtual bool IsRunningInProcess(PP_Instance instance) const OVERRIDE;
-
   // Pointer to the RenderView that owns us.
   RenderViewImpl* render_view_;
 
@@ -394,9 +228,6 @@ class PepperPluginDelegateImpl
   PepperBrowserConnection pepper_browser_connection_;
 
   std::set<PepperPluginInstanceImpl*> active_instances_;
-  typedef std::map<PepperPluginInstanceImpl*,
-                   MouseLockDispatcher::LockTarget*> LockTargetMap;
-  LockTargetMap mouse_lock_instances_;
 
   IDMap<AsyncOpenFileCallback> pending_async_open_files_;
 
@@ -404,7 +235,7 @@ class PepperPluginDelegateImpl
 
   IDMap<ppapi::PPB_TCPServerSocket_Shared> tcp_server_sockets_;
 
-  typedef IDMap<scoped_refptr<PepperBrokerImpl>, IDMapOwnPointer> BrokerMap;
+  typedef IDMap<scoped_refptr<PepperBroker>, IDMapOwnPointer> BrokerMap;
   BrokerMap pending_connect_broker_;
 
   typedef IDMap<base::WeakPtr<PPB_Broker_Impl> > PermissionRequestMap;
@@ -424,9 +255,6 @@ class PepperPluginDelegateImpl
   PepperPluginInstanceImpl* last_mouse_event_target_;
 
   scoped_ptr<GamepadSharedMemoryReader> gamepad_shared_memory_reader_;
-
-  scoped_ptr<PepperDeviceEnumerationEventHandler>
-      device_enumeration_event_handler_;
 
   scoped_refptr<ContextProviderCommandBuffer> offscreen_context3d_;
 

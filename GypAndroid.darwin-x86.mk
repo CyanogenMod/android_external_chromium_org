@@ -110,7 +110,6 @@ include $(LOCAL_PATH)/skia/skia_opts.target.darwin-x86.mk
 include $(LOCAL_PATH)/sql/sql.target.darwin-x86.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/blink_common.target.darwin-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/skia_webkit.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/webkit.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/deprecated_perl_bindings_sources.target.darwin-x86.mk
@@ -167,8 +166,11 @@ include $(LOCAL_PATH)/third_party/freetype/ft2.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/harfbuzz-ng/harfbuzz-ng.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/hyphen/hyphen.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/iccjpeg/iccjpeg.target.darwin-x86.mk
+include $(LOCAL_PATH)/third_party/icu/icudata.host.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/icu/icudata.target.darwin-x86.mk
+include $(LOCAL_PATH)/third_party/icu/icui18n.host.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/icu/icui18n.target.darwin-x86.mk
+include $(LOCAL_PATH)/third_party/icu/icuuc.host.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/icu/icuuc.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/icu/system_icu.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/khronos/khronos_headers.target.darwin-x86.mk
@@ -203,8 +205,6 @@ include $(LOCAL_PATH)/third_party/qcms/qcms.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/re2/re2.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/smhasher/cityhash.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/sqlite/sqlite.target.darwin-x86.mk
-include $(LOCAL_PATH)/third_party/v8-i18n/build/api2c.host.darwin-x86.mk
-include $(LOCAL_PATH)/third_party/v8-i18n/build/v8-i18n.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/widevine/cdm/widevine_cdm_version_h.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/yasm/config_sources.host.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/yasm/generate_files.host.darwin-x86.mk

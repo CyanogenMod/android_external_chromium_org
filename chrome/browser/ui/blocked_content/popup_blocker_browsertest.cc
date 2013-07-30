@@ -36,6 +36,10 @@
 #include "content/public/test/browser_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+#if defined(OS_WIN) && defined(USE_ASH)
+#include "base/win/windows_version.h"
+#endif
+
 using content::WebContents;
 
 namespace {
@@ -73,6 +77,11 @@ class CountRenderViewHosts : public content::NotificationObserver {
 class PopupBlockerBrowserTest : public InProcessBrowserTest {
  public:
   PopupBlockerBrowserTest() {}
+
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    InProcessBrowserTest::SetUpCommandLine(command_line);
+    command_line->AppendSwitch(switches::kDisableBetterPopupBlocking);
+  }
 
   // Returns a url that shows one popup.
   GURL GetTestURL() {
@@ -219,8 +228,7 @@ class BetterPopupBlockerBrowserTest : public PopupBlockerBrowserTest {
   virtual ~BetterPopupBlockerBrowserTest() {}
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    PopupBlockerBrowserTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kEnableBetterPopupBlocking);
+    InProcessBrowserTest::SetUpCommandLine(command_line);
   }
 
  private:
@@ -229,6 +237,12 @@ class BetterPopupBlockerBrowserTest : public PopupBlockerBrowserTest {
 
 IN_PROC_BROWSER_TEST_F(BetterPopupBlockerBrowserTest,
                        BlockWebContentsCreation) {
+#if defined(OS_WIN) && defined(USE_ASH)
+  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
+  if (base::win::GetVersion() >= base::win::VERSION_WIN8)
+    return;
+#endif
+
   CountRenderViewHosts counter;
 
   ui_test_utils::NavigateToURL(browser(), GetTestURL());
@@ -272,6 +286,12 @@ IN_PROC_BROWSER_TEST_F(BetterPopupBlockerBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(BetterPopupBlockerBrowserTest,
                        PopupBlockedFakeClickOnAnchorNoTarget) {
+#if defined(OS_WIN) && defined(USE_ASH)
+  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
+  if (base::win::GetVersion() >= base::win::VERSION_WIN8)
+    return;
+#endif
+
   GURL url(ui_test_utils::GetTestUrl(
       base::FilePath(kTestDir),
       base::FilePath(FILE_PATH_LITERAL("popup-fake-click-on-anchor2.html"))));

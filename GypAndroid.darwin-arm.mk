@@ -106,7 +106,6 @@ include $(LOCAL_PATH)/skia/skia_opts_neon.target.darwin-arm.mk
 include $(LOCAL_PATH)/sql/sql.target.darwin-arm.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/blink_common.target.darwin-arm.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/skia_webkit.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/webkit.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/deprecated_perl_bindings_sources.target.darwin-arm.mk
@@ -164,8 +163,11 @@ include $(LOCAL_PATH)/third_party/freetype/ft2.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/harfbuzz-ng/harfbuzz-ng.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/hyphen/hyphen.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/iccjpeg/iccjpeg.target.darwin-arm.mk
+include $(LOCAL_PATH)/third_party/icu/icudata.host.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/icu/icudata.target.darwin-arm.mk
+include $(LOCAL_PATH)/third_party/icu/icui18n.host.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/icu/icui18n.target.darwin-arm.mk
+include $(LOCAL_PATH)/third_party/icu/icuuc.host.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/icu/icuuc.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/icu/system_icu.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/khronos/khronos_headers.target.darwin-arm.mk
@@ -200,8 +202,6 @@ include $(LOCAL_PATH)/third_party/qcms/qcms.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/re2/re2.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/smhasher/cityhash.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/sqlite/sqlite.target.darwin-arm.mk
-include $(LOCAL_PATH)/third_party/v8-i18n/build/api2c.host.darwin-arm.mk
-include $(LOCAL_PATH)/third_party/v8-i18n/build/v8-i18n.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/widevine/cdm/widevine_cdm_version_h.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/zlib/minizip.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/zlib/zip.target.darwin-arm.mk

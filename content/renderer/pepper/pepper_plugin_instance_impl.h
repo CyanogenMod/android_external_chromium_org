@@ -5,6 +5,7 @@
 #ifndef CONTENT_RENDERER_PEPPER_PEPPER_PLUGIN_INSTANCE_IMPL_H_
 #define CONTENT_RENDERER_PEPPER_PEPPER_PLUGIN_INSTANCE_IMPL_H_
 
+#include <list>
 #include <set>
 #include <string>
 #include <vector>
@@ -17,6 +18,7 @@
 #include "cc/layers/texture_layer_client.h"
 #include "content/common/content_export.h"
 #include "content/public/renderer/pepper_plugin_instance.h"
+#include "content/renderer/mouse_lock_dispatcher.h"
 #include "content/renderer/pepper/plugin_delegate.h"
 #include "content/renderer/pepper/ppp_pdf.h"
 #include "ppapi/c/dev/pp_cursor_type_dev.h"
@@ -97,12 +99,14 @@ namespace content {
 class ContentDecryptorDelegate;
 class FullscreenContainer;
 class MessageChannel;
+class PepperGraphics2DHost;
 class PluginDelegate;
 class PluginModule;
 class PluginObject;
 class PPB_Graphics3D_Impl;
 class PPB_ImageData_Impl;
 class PPB_URLLoader_Impl;
+class RenderViewImpl;
 
 // Represents one time a plugin appears on one web page.
 //
@@ -120,11 +124,12 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // PPP_Instance interface, returns NULL.
   static PepperPluginInstanceImpl* Create(
       PluginDelegate* delegate,
-      RenderView* render_view,
+      RenderViewImpl* render_view,
       PluginModule* module,
       WebKit::WebPluginContainer* container,
       const GURL& plugin_url);
   PluginDelegate* delegate() const { return delegate_; }
+  RenderViewImpl* render_view() const { return render_view_; }
   PluginModule* module() const { return module_.get(); }
   MessageChannel& message_channel() { return *message_channel_; }
 
@@ -250,11 +255,6 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   bool CanRotateView();
   void RotateView(WebKit::WebPlugin::RotationType type);
 
-  // Sets the bound_graphics_2d_platform_ for testing purposes. This is instead
-  // of calling BindGraphics and allows any PlatformGraphics implementation to
-  // be used, not just a resource one.
-  void SetBoundGraphics2DForTest(PluginDelegate::PlatformGraphics2D* graphics);
-
   // There are 2 implementations of the fullscreen interface
   // PPB_FlashFullscreen is used by Pepper Flash.
   // PPB_Fullscreen is intended for other applications including NaCl.
@@ -311,8 +311,6 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
 
   // Implementation of PPP_Messaging.
   void HandleMessage(PP_Var message);
-
-  PluginDelegate::PlatformContext3D* CreateContext3D();
 
   // Returns true if the plugin is processing a user gesture.
   bool IsProcessingUserGesture();
@@ -412,7 +410,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   virtual void ZoomChanged(PP_Instance instance, double factor) OVERRIDE;
   virtual void ZoomLimitsChanged(PP_Instance instance,
                                  double minimum_factor,
-                                 double maximium_factor) OVERRIDE;
+                                 double maximum_factor) OVERRIDE;
   virtual void PostMessage(PP_Instance instance, PP_Var message) OVERRIDE;
   virtual PP_Bool SetCursor(PP_Instance instance,
                             PP_MouseCursor_Type type,
@@ -558,7 +556,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // PPP_Instance_Combined details while still having 1 constructor to maintain
   // for member initialization.
   PepperPluginInstanceImpl(PluginDelegate* delegate,
-                           RenderView* render_view,
+                           RenderViewImpl* render_view,
                            PluginModule* module,
                            ::ppapi::PPP_Instance_Combined* instance_interface,
                            WebKit::WebPluginContainer* container,
@@ -598,10 +596,6 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // print format that we can handle (we can handle only PDF).
   bool GetPreferredPrintOutputFormat(PP_PrintOutputFormat_Dev* format);
   bool PrintPDFOutput(PP_Resource print_output, WebKit::WebCanvas* canvas);
-
-  // Get the bound graphics context as a concrete 2D graphics context or returns
-  // null if the context is not 2D.
-  PluginDelegate::PlatformGraphics2D* GetBoundGraphics2D() const;
 
   // Updates the layer for compositing. This creates a layer and attaches to the
   // container if:
@@ -647,8 +641,14 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   void SetSizeAttributesForFullscreen();
   void ResetSizeAttributesAfterFullscreen();
 
+  bool IsMouseLocked();
+  bool LockMouse();
+  MouseLockDispatcher* GetMouseLockDispatcher();
+  MouseLockDispatcher::LockTarget* GetOrCreateLockTargetAdapter();
+  void UnSetAndDeleteLockTargetAdapter();
+
   PluginDelegate* delegate_;
-  RenderView* render_view_;
+  RenderViewImpl* render_view_;
   scoped_refptr<PluginModule> module_;
   scoped_ptr< ::ppapi::PPP_Instance_Combined> instance_interface_;
   // If this is the NaCl plugin, we create a new module when we switch to the
@@ -692,7 +692,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
 
   // The current device context for painting in 2D and 3D.
   scoped_refptr<PPB_Graphics3D_Impl> bound_graphics_3d_;
-  PluginDelegate::PlatformGraphics2D* bound_graphics_2d_platform_;
+  PepperGraphics2DHost* bound_graphics_2d_platform_;
 
   // We track two types of focus, one from WebKit, which is the focus among
   // all elements of the page, one one from the browser, which is whether the
@@ -852,6 +852,8 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // We store the isolate at construction so that we can be sure to use the
   // Isolate in which this Instance was created when interacting with v8.
   v8::Isolate* isolate_;
+
+  scoped_ptr<MouseLockDispatcher::LockTarget> lock_target_;
 
   friend class PpapiPluginInstanceTest;
   DISALLOW_COPY_AND_ASSIGN(PepperPluginInstanceImpl);

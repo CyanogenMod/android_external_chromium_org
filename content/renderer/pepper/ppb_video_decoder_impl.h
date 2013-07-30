@@ -8,7 +8,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "content/renderer/pepper/plugin_delegate.h"
+#include "media/video/video_decode_accelerator.h"
 #include "ppapi/c/dev/pp_video_dev.h"
 #include "ppapi/c/dev/ppp_video_decoder_dev.h"
 #include "ppapi/c/pp_var.h"
@@ -26,6 +26,8 @@ class GLES2Implementation;
 }  // namespace gpu
 
 namespace content {
+class PlatformContext3D;
+class PlatformVideoDecoder;
 
 class PPB_VideoDecoder_Impl : public ::ppapi::PPB_VideoDecoder_Shared,
                               public media::VideoDecodeAccelerator::Client {
@@ -67,13 +69,13 @@ class PPB_VideoDecoder_Impl : public ::ppapi::PPB_VideoDecoder_Shared,
 
   explicit PPB_VideoDecoder_Impl(PP_Instance instance);
   bool Init(PP_Resource graphics_context,
-            PluginDelegate::PlatformContext3D* context,
+            PlatformContext3D* context,
             gpu::gles2::GLES2Implementation* gles2_impl,
             PP_VideoDecoder_Profile profile);
 
   // This is NULL before initialization, and if this PPB_VideoDecoder_Impl is
   // swapped with another.
-  scoped_ptr<PluginDelegate::PlatformVideoDecoder> platform_video_decoder_;
+  scoped_ptr<PlatformVideoDecoder> platform_video_decoder_;
 
   // Reference to the plugin requesting this interface.
   const PPP_VideoDecoder_Dev* ppp_videodecoder_;

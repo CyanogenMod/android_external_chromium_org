@@ -13,8 +13,9 @@ var util = {};
  * Returns a function that console.log's its arguments, prefixed by |msg|.
  *
  * @param {string} msg The message prefix to use in the log.
- * @param {function=} opt_callback A function to invoke after logging.
- * @return {function} Function that logs.
+ * @param {function(...string)=} opt_callback A function to invoke after
+ *     logging.
+ * @return {function(...string)} Function that logs.
  */
 util.flog = function(msg, opt_callback) {
   return function() {
@@ -30,7 +31,7 @@ util.flog = function(msg, opt_callback) {
  * prefixed by |msg|.
  *
  * @param {string} msg The message prefix to use in the exception.
- * @return {function} Function that throws.
+ * @return {function(...string)} Function that throws.
  */
 util.ferr = function(msg) {
   return function() {
@@ -386,8 +387,8 @@ util.resolvePath = function(root, path, resultCallback, errorCallback) {
  * itself if necessary.
  * @param {DirEntry} root The root entry.
  * @param {string} path The file path.
- * @param {function} successCallback The callback.
- * @param {function} errorCallback The callback.
+ * @param {function(FileEntry)} successCallback The callback.
+ * @param {function(FileError)} errorCallback The callback.
  */
 util.getOrCreateFile = function(root, path, successCallback, errorCallback) {
   var dirname = null;
@@ -419,8 +420,8 @@ util.getOrCreateFile = function(root, path, successCallback, errorCallback) {
  * way.
  * @param {DirEntry} root The root entry.
  * @param {string} path The directory path.
- * @param {function} successCallback The callback.
- * @param {function} errorCallback The callback.
+ * @param {function(FileEntry)} successCallback The callback.
+ * @param {function(FileError)} errorCallback The callback.
  */
 util.getOrCreateDirectory = function(root, path, successCallback,
                                      errorCallback) {
@@ -445,8 +446,8 @@ util.getOrCreateDirectory = function(root, path, successCallback,
 /**
  * Remove a file or a directory.
  * @param {Entry} entry The entry to remove.
- * @param {function} onSuccess The success callback.
- * @param {function} onError The error callback.
+ * @param {function()} onSuccess The success callback.
+ * @param {function(FileError)} onError The error callback.
  */
 util.removeFileOrDirectory = function(entry, onSuccess, onError) {
   if (entry.isDirectory)
@@ -467,7 +468,7 @@ util.removeFileOrDirectory = function(entry, onSuccess, onError) {
  * @param {string} relativePath The path to be deduplicated.
  * @param {function(string)} onSuccess Called with the deduplicated path on
  *     success.
- * @param {function(string,Entry|FileError)} onError Called on error.
+ * @param {function(FileError)} onError Called on error.
  */
 util.deduplicatePath = function(dirEntry, relativePath, onSuccess, onError) {
   // The trial is up to 10.
@@ -490,7 +491,7 @@ util.deduplicatePath = function(dirEntry, relativePath, onSuccess, onError) {
     // to create it during the copy.  However, if the resolve fails with
     // anything other than NOT_FOUND, that's trouble.
     if (err.code != FileError.NOT_FOUND_ERR) {
-      onError('FILESYSTEM_ERROR', err);
+      onError(err);
       return;
     }
 
@@ -498,17 +499,17 @@ util.deduplicatePath = function(dirEntry, relativePath, onSuccess, onError) {
     onSuccess(trialPath);
   }
 
-  // Remember the first existing entry for error.
-  var firstExistingEntry = null;
   var numRetry = MAX_RETRY;
-
   var onResolved = function(entry) {
-    if (!firstExistingEntry)
-      firstExistingEntry = entry;
-
     if (--numRetry == 0) {
       // Hit the limit of the number of retrial.
-      onError('TARGET_EXISTS', firstExistingEntry);
+      // Note that we cannot create FileError object directly, so here we use
+      // Object.create instead.
+      onError(Object.create(FileError.prototype, {
+        code: {
+          get: function() { return FileError.PATH_EXISTS_ERR; }
+        }
+      }));
       return;
     }
 
@@ -601,7 +602,8 @@ util.readFileBytes = function(file, begin, end, callback, onError) {
  * Truncates the file first, so the previous content is fully overwritten.
  * @param {FileEntry} entry File entry.
  * @param {Blob} blob The blob to write.
- * @param {function} onSuccess Completion callback.
+ * @param {function(Event)} onSuccess Completion callback. The first argument is
+ *     a 'writeend' event.
  * @param {function(FileError)} onError Error handler.
  */
 util.writeBlobToFile = function(entry, blob, onSuccess, onError) {
@@ -848,7 +850,7 @@ util.platform = {
   /**
    * @param {string} key Preference name.
    * @param {string|Object} value Preference value.
-   * @param {function=} opt_callback Completion callback.
+   * @param {function()=} opt_callback Completion callback.
    */
   setPreference: function(key, value, opt_callback) {
     if (typeof value != 'string')
@@ -862,7 +864,7 @@ util.platform = {
 
 /**
  * Attach page load handler.
- * @param {function} handler Application-specific load handler.
+ * @param {function()} handler Application-specific load handler.
  */
 util.addPageLoadHandler = function(handler) {
   document.addEventListener('DOMContentLoaded', function() {
@@ -1136,4 +1138,14 @@ util.toggleFullScreen = function(appWindow, enabled) {
 
   console.error(
       'App window not passed. Unable to toggle the full screen mode.');
+};
+
+/**
+ * The type of a file operation error.
+ * @enum {number}
+ */
+util.FileOperationErrorType = {
+  UNEXPECTED_SOURCE_FILE: 0,
+  TARGET_EXISTS: 1,
+  FILESYSTEM_ERROR: 2,
 };

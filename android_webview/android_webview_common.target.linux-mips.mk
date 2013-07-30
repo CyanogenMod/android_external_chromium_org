@@ -44,7 +44,7 @@ LOCAL_SRC_FILES := \
 	android_webview/browser/aw_pref_store.cc \
 	android_webview/browser/aw_request_interceptor.cc \
 	android_webview/browser/find_helper.cc \
-	android_webview/browser/gpu_memory_buffer_impl.cc \
+	android_webview/browser/gpu_memory_buffer_factory_impl.cc \
 	android_webview/browser/icon_helper.cc \
 	android_webview/browser/in_process_view_renderer.cc \
 	android_webview/browser/net/android_stream_reader_url_request_job.cc \
@@ -122,6 +122,7 @@ MY_DEFS_Debug := \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DUSE_CHROMIUM_SKIA' \
 	'-DSK_USE_POSIX_THREADS' \
+	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -229,6 +230,7 @@ MY_DEFS_Release := \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DUSE_CHROMIUM_SKIA' \
 	'-DSK_USE_POSIX_THREADS' \
+	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \

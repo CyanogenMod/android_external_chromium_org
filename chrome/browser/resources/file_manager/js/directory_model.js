@@ -16,7 +16,8 @@ var SHORT_RESCAN_INTERVAL = 100;
  * @param {DirectoryEntry} root File system root.
  * @param {boolean} singleSelection True if only one file could be selected
  *                                  at the time.
- * @param {FileFilter} fileFilter The file-filter.
+ * @param {FileFilter} fileFilter Instance of FileFilter.
+ * @param {FileWatcher} fileWatcher Instance of FileWatcher.
  * @param {MetadataCache} metadataCache The metadata cache service.
  * @param {VolumeManager} volumeManager The volume manager.
  * @param {boolean} isDriveEnabled True if DRIVE enabled (initial value).
@@ -24,7 +25,7 @@ var SHORT_RESCAN_INTERVAL = 100;
  *     available. They should be hidden for the dialogs to save files.
  * @constructor
  */
-function DirectoryModel(root, singleSelection, fileFilter,
+function DirectoryModel(root, singleSelection, fileFilter, fileWatcher,
                         metadataCache, volumeManager, isDriveEnabled,
                         showSpecialSearchRoots) {
   this.root_ = root;
@@ -49,8 +50,12 @@ function DirectoryModel(root, singleSelection, fileFilter,
       this.currentFileListContext_, root);
 
   this.rootsList_ = new cr.ui.ArrayDataModel([]);
-
   this.volumeManager_ = volumeManager;
+
+  this.fileWatcher_ = fileWatcher;
+  this.fileWatcher_.addEventListener(
+      'watcher-directory-changed',
+      this.onWatcherDirectoryChanged_.bind(this));
 }
 
 /**
@@ -160,6 +165,13 @@ DirectoryModel.prototype.start = function() {
       this.enqueueClosure_.bind(this, this.onDriveStatusChanged_));
 
   this.enqueueClosure_(this.updateRoots_);
+};
+
+/**
+ * Disposes the directory model by removing file watchers.
+ */
+DirectoryModel.prototype.dispose = function() {
+  this.fileWatcher_.dispose();
 };
 
 /**
@@ -319,6 +331,14 @@ DirectoryModel.prototype.updateSelectionAndPublishEvent_ =
   if (dispatchNeeded) {
     selection.dispatchEvent(selection.createChangeEvent('change'));
   }
+};
+
+/**
+ * Invoked when a change in the directory is detected by the watcher.
+ * @private
+ */
+DirectoryModel.prototype.onWatcherDirectoryChanged_ = function() {
+  this.rescanSoon();
 };
 
 /**
@@ -710,7 +730,7 @@ DirectoryModel.prototype.findIndexByName_ = function(name) {
  * Rename the entry in the filesystem and update the file list.
  * @param {Entry} entry Entry to rename.
  * @param {string} newName New name.
- * @param {function} errorCallback Called on error.
+ * @param {function(FileError)} errorCallback Called on error.
  * @param {function()=} opt_successCallback Called on success.
  */
 DirectoryModel.prototype.renameEntry = function(entry, newName,
@@ -779,8 +799,8 @@ DirectoryModel.prototype.doesExist = function(entry, name, callback) {
  * Creates directory and updates the file list.
  *
  * @param {string} name Directory name.
- * @param {function} successCallback Callback on success.
- * @param {function} errorCallback Callback on failure.
+ * @param {function(DirectoryEntry)} successCallback Callback on success.
+ * @param {function(FileError)} errorCallback Callback on failure.
  */
 DirectoryModel.prototype.createDirectory = function(name, successCallback,
                                                     errorCallback) {
@@ -916,15 +936,17 @@ DirectoryModel.prototype.changeDirectoryEntrySilent_ = function(dirEntry,
  */
 DirectoryModel.prototype.changeDirectoryEntry_ = function(initial, dirEntry,
                                                           opt_callback) {
-  var previous = this.currentDirContents_.getDirectoryEntry();
-  this.clearSearch_();
-  this.changeDirectoryEntrySilent_(dirEntry, opt_callback);
+  this.fileWatcher_.changeWatchedDirectory(dirEntry, function() {
+    var previous = this.currentDirContents_.getDirectoryEntry();
+    this.clearSearch_();
+    this.changeDirectoryEntrySilent_(dirEntry, opt_callback);
 
-  var e = new cr.Event('directory-changed');
-  e.previousDirEntry = previous;
-  e.newDirEntry = dirEntry;
-  e.initial = initial;
-  this.dispatchEvent(e);
+    var e = new cr.Event('directory-changed');
+    e.previousDirEntry = previous;
+    e.newDirEntry = dirEntry;
+    e.initial = initial;
+    this.dispatchEvent(e);
+  }.bind(this));
 };
 
 /**
@@ -1331,10 +1353,10 @@ DirectoryModel.isMountableRoot = function(path) {
  * name search over current directory wil be performed.
  *
  * @param {string} query Query that will be searched for.
- * @param {function} onSearchRescan Function that will be called when the search
- *     directory is rescanned (i.e. search results are displayed).
- * @param {function} onClearSearch Function to be called when search state gets
- *     cleared.
+ * @param {function(Event)} onSearchRescan Function that will be called when the
+ *     search directory is rescanned (i.e. search results are displayed).
+ * @param {function()} onClearSearch Function to be called when search state
+ *     gets cleared.
  * TODO(olege): Change callbacks to events.
  */
 DirectoryModel.prototype.search = function(query,
@@ -1462,129 +1484,4 @@ DirectoryModel.prototype.clearSearch_ = function() {
     this.onClearSearch_();
     this.onClearSearch_ = null;
   }
-};
-
-/**
- * @param {DirectoryEntry} root Root entry.
- * @param {DirectoryModel} directoryModel Model to watch.
- * @param {VolumeManager} volumeManager Manager to watch.
- * @constructor
- */
-function FileWatcher(root, directoryModel, volumeManager) {
-  this.root_ = root;
-  this.dm_ = directoryModel;
-  this.vm_ = volumeManager;
-  this.watchedDirectoryEntry_ = null;
-  this.updateWatchedDirectoryBound_ =
-      this.updateWatchedDirectory_.bind(this);
-  this.onDirectoryChangedBound_ =
-      this.onDirectoryChanged_.bind(this);
-}
-
-/**
- * Starts watching.
- */
-FileWatcher.prototype.start = function() {
-  chrome.fileBrowserPrivate.onDirectoryChanged.addListener(
-        this.onDirectoryChangedBound_);
-
-  this.dm_.addEventListener('directory-changed',
-      this.updateWatchedDirectoryBound_);
-  this.vm_.addEventListener('change',
-      this.updateWatchedDirectoryBound_);
-
-  this.updateWatchedDirectory_();
-};
-
-/**
- * Stops watching (must be called before page unload).
- */
-FileWatcher.prototype.stop = function() {
-  chrome.fileBrowserPrivate.onDirectoryChanged.removeListener(
-        this.onDirectoryChangedBound_);
-
-  this.dm_.removeEventListener('directory-changed',
-      this.updateWatchedDirectoryBound_);
-  this.vm_.removeEventListener('change',
-      this.updateWatchedDirectoryBound_);
-
-  if (this.watchedDirectoryEntry_)
-    this.changeWatchedEntry(null);
-};
-
-/**
- * @param {Object} event chrome.fileBrowserPrivate.onDirectoryChanged event.
- * @private
- */
-FileWatcher.prototype.onDirectoryChanged_ = function(event) {
-  if (event.directoryUrl == this.watchedDirectoryEntry_.toURL())
-    this.onFileInWatchedDirectoryChanged();
-};
-
-/**
- * Called when file in the watched directory changed.
- */
-FileWatcher.prototype.onFileInWatchedDirectoryChanged = function() {
-  this.dm_.rescanLater();
-};
-
-/**
- * Called when directory changed or volumes mounted/unmounted.
- * @private
- */
-FileWatcher.prototype.updateWatchedDirectory_ = function() {
-  var current = this.watchedDirectoryEntry_;
-  switch (this.dm_.getCurrentRootType()) {
-    case RootType.DRIVE:
-      if (!this.vm_.isMounted(RootDirectory.DRIVE))
-        break;
-    case RootType.DOWNLOADS:
-    case RootType.REMOVABLE:
-      if (!current || current.fullPath != this.dm_.getCurrentDirPath()) {
-        // TODO(serya): Changed in readonly removable directoried don't
-        //              need to be tracked.
-        this.root_.getDirectory(this.dm_.getCurrentDirPath(), {},
-                                this.changeWatchedEntry.bind(this),
-                                this.changeWatchedEntry.bind(this, null));
-      }
-      return;
-  }
-  if (current)
-    this.changeWatchedEntry(null);
-};
-
-/**
- * @param {Entry?} entry Null if no directory need to be watched or
- *                       directory to watch.
- */
-FileWatcher.prototype.changeWatchedEntry = function(entry) {
-  if (this.watchedDirectoryEntry_) {
-    chrome.fileBrowserPrivate.removeFileWatch(
-        this.watchedDirectoryEntry_.toURL(),
-        function(result) {
-          if (!result) {
-            console.error('Failed to remove file watch.');
-          }
-        });
-  }
-  this.watchedDirectoryEntry_ = entry;
-
-  if (this.watchedDirectoryEntry_) {
-    chrome.fileBrowserPrivate.addFileWatch(
-        this.watchedDirectoryEntry_.toURL(),
-        function(result) {
-          if (!result) {
-            console.error('Failed to add file watch.');
-            if (this.watchedDirectoryEntry_ == entry)
-              this.watchedDirectoryEntry_ = null;
-          }
-        }.bind(this));
-  }
-};
-
-/**
- * @return {DirectoryEntry} Current watched directory entry.
- */
-FileWatcher.prototype.getWatchedDirectoryEntry = function() {
-  return this.watchedDirectoryEntry_;
 };

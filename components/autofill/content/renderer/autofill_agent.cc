@@ -65,11 +65,12 @@ const size_t kMaximumDataListSizeForAutofill = 30;
 
 const int kAutocheckoutClickTimeout = 3;
 
-void AppendDataListSuggestions(const WebKit::WebInputElement& element,
-                               std::vector<base::string16>* values,
-                               std::vector<base::string16>* labels,
-                               std::vector<base::string16>* icons,
-                               std::vector<int>* item_ids) {
+
+// Gets all the data list values (with corresponding label) for the given
+// element.
+void GetDataListSuggestions(const WebKit::WebInputElement& element,
+                            std::vector<base::string16>* values,
+                            std::vector<base::string16>* labels) {
   WebNodeCollection options = element.dataListOptions();
   if (options.isNull())
     return;
@@ -94,8 +95,6 @@ void AppendDataListSuggestions(const WebKit::WebInputElement& element,
       labels->push_back(option.label());
     else
       labels->push_back(base::string16());
-    icons->push_back(base::string16());
-    item_ids->push_back(WebAutofillClient::MenuItemIDDataListEntry);
   }
 }
 
@@ -142,6 +141,9 @@ AutofillAgent::AutofillAgent(content::RenderView* render_view,
       has_new_forms_for_browser_(false),
       ignore_text_changes_(false),
       weak_ptr_factory_(this) {
+  // TODO(csharp): Remove once Autofill test flakiness is fixed.
+  LOG(INFO) << "AutofillAgent::AutofillAgent";
+
   render_view->GetWebView()->setAutofillClient(this);
 
   // The PageClickTracker is a RenderViewObserver, and hence will be freed when
@@ -149,7 +151,10 @@ AutofillAgent::AutofillAgent(content::RenderView* render_view,
   new PageClickTracker(render_view, this);
 }
 
-AutofillAgent::~AutofillAgent() {}
+AutofillAgent::~AutofillAgent() {
+  // TODO(csharp): Remove once Autofill test flakiness is fixed.
+  LOG(INFO) << "AutofillAgent::~AutofillAgent";
+}
 
 bool AutofillAgent::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
@@ -419,6 +424,8 @@ void AutofillAgent::TextFieldDidChangeImpl(const WebInputElement& element) {
 
 void AutofillAgent::textFieldDidReceiveKeyDown(const WebInputElement& element,
                                                const WebKeyboardEvent& event) {
+  // TODO(csharp): Remove once Autofill test flakiness is fixed.
+  LOG(INFO) << "AutofillAgent::textFieldDidReceiveKeyDown";
   if (password_autofill_agent_->TextFieldHandlingKeyDown(element, event)) {
     element_ = element;
     return;
@@ -427,54 +434,6 @@ void AutofillAgent::textFieldDidReceiveKeyDown(const WebInputElement& element,
   if (event.windowsKeyCode == ui::VKEY_DOWN ||
       event.windowsKeyCode == ui::VKEY_UP)
     ShowSuggestions(element, true, true, true);
-}
-
-void AutofillAgent::CombineDataListEntriesAndShow(
-    const WebKit::WebInputElement& element,
-    const std::vector<base::string16>& values,
-    const std::vector<base::string16>& labels,
-    const std::vector<base::string16>& icons,
-    const std::vector<int>& item_ids,
-    bool has_autofill_item) {
-  std::vector<base::string16> v;
-  std::vector<base::string16> l;
-  std::vector<base::string16> i;
-  std::vector<int> ids;
-
-  AppendDataListSuggestions(element, &v, &l, &i, &ids);
-
-  // If there are both <datalist> items and Autofill suggestions, add a
-  // separator between them.
-  if (!v.empty() && !values.empty()) {
-    v.push_back(base::string16());
-    l.push_back(base::string16());
-    i.push_back(base::string16());
-    ids.push_back(WebAutofillClient::MenuItemIDSeparator);
-  }
-
-  // Append the Autofill suggestions.
-  v.insert(v.end(), values.begin(), values.end());
-  l.insert(l.end(), labels.begin(), labels.end());
-  i.insert(i.end(), icons.begin(), icons.end());
-  ids.insert(ids.end(), item_ids.begin(), item_ids.end());
-
-  if (v.empty()) {
-    // No suggestions, any popup currently showing is obsolete.
-    HideAutofillUI();
-    return;
-  }
-
-  WebKit::WebView* web_view = render_view()->GetWebView();
-  if (!web_view)
-    return;
-
-  // Send to WebKit for display.
-  web_view->applyAutofillSuggestions(element, v, l, i, ids);
-
-  Send(new AutofillHostMsg_DidShowAutofillSuggestions(
-      routing_id(),
-      has_autofill_item && !has_shown_autofill_popup_for_current_edit_));
-  has_shown_autofill_popup_for_current_edit_ |= has_autofill_item;
 }
 
 void AutofillAgent::AcceptDataListSuggestion(
@@ -676,6 +635,9 @@ void AutofillAgent::ShowSuggestions(const WebInputElement& element,
                                     bool autofill_on_empty_values,
                                     bool requires_caret_at_end,
                                     bool display_warning_if_disabled) {
+  // TODO(csharp): Remove once Autofill test flakiness is fixed.
+  LOG(INFO) << "AutofillAgent::ShowSuggestions";
+
   if (!element.isEnabled() || element.isReadOnly() || !element.isTextField() ||
       element.isPasswordField() || !element.suggestedValue().isEmpty())
     return;
@@ -712,6 +674,9 @@ void AutofillAgent::ShowSuggestions(const WebInputElement& element,
 
 void AutofillAgent::QueryAutofillSuggestions(const WebInputElement& element,
                                              bool display_warning_if_disabled) {
+  // TODO(csharp): Remove once Autofill test flakiness is fixed.
+  LOG(INFO) << "AutofillAgent::QueryAutofillSuggestions";
+
   if (!element.document().frame())
     return;
 
@@ -741,14 +706,7 @@ void AutofillAgent::QueryAutofillSuggestions(const WebInputElement& element,
   // Find the datalist values and send them to the browser process.
   std::vector<base::string16> data_list_values;
   std::vector<base::string16> data_list_labels;
-  std::vector<base::string16> data_list_icons;
-  std::vector<int> data_list_unique_ids;
-  // TODO(csharp): Stop passing in icon and unique id vectors.
-  AppendDataListSuggestions(element_,
-                            &data_list_values,
-                            &data_list_labels,
-                            &data_list_icons,
-                            &data_list_unique_ids);
+  GetDataListSuggestions(element_, &data_list_values, &data_list_labels);
   TrimStringVectorForIPC(&data_list_values);
   TrimStringVectorForIPC(&data_list_labels);
 
