@@ -51,6 +51,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/utils/SkNullCanvas.cpp \
 	third_party/skia/src/utils/SkNWayCanvas.cpp \
 	third_party/skia/src/utils/SkPictureUtils.cpp \
+	third_party/skia/src/utils/SkProxyCanvas.cpp \
 	third_party/skia/src/utils/SkRTConf.cpp \
 	third_party/skia/src/core/Sk64.cpp \
 	third_party/skia/src/core/SkAAClip.cpp \

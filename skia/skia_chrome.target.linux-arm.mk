@@ -29,6 +29,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS := \
 
 LOCAL_SRC_FILES := \
 	skia/ext/analysis_canvas.cc \
+	skia/ext/benchmarking_canvas.cc \
 	skia/ext/bitmap_platform_device_android.cc \
 	skia/ext/convolver.cc \
 	skia/ext/google_logging.cc \

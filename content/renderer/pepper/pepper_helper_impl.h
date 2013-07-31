@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_RENDERER_PEPPER_PEPPER_PLUGIN_DELEGATE_IMPL_H_
-#define CONTENT_RENDERER_PEPPER_PEPPER_PLUGIN_DELEGATE_IMPL_H_
+#ifndef CONTENT_RENDERER_PEPPER_PEPPER_PLUGIN_DELEGATE_H_
+#define CONTENT_RENDERER_PEPPER_PEPPER_PLUGIN_DELEGATE_H_
 
 #include <map>
 #include <set>
@@ -18,14 +18,13 @@
 #include "base/observer_list.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "content/renderer/pepper/pepper_browser_connection.h"
-#include "content/renderer/render_view_pepper_helper.h"
+#include "content/renderer/pepper_helper.h"
 #include "ipc/ipc_platform_file.h"
 #include "ppapi/c/pp_file_info.h"
 #include "ppapi/c/ppb_tcp_socket.h"
 #include "ppapi/c/private/ppb_tcp_socket_private.h"
 #include "ppapi/shared_impl/private/ppb_tcp_server_socket_shared.h"
 #include "ppapi/shared_impl/private/tcp_socket_private_impl.h"
-#include "ppapi/shared_impl/url_response_info_data.h"
 #include "ui/base/ime/text_input_type.h"
 
 namespace base {
@@ -58,13 +57,12 @@ class PPB_TCPSocket_Private_Impl;
 class RenderViewImpl;
 struct WebPluginInfo;
 
-class PepperPluginDelegateImpl
-    : public RenderViewPepperHelper,
-      public base::SupportsWeakPtr<PepperPluginDelegateImpl>,
-      public RenderViewObserver {
+class PepperHelperImpl : public PepperHelper,
+                         public base::SupportsWeakPtr<PepperHelperImpl>,
+                         public RenderViewObserver {
  public:
-  explicit PepperPluginDelegateImpl(RenderViewImpl* render_view);
-  virtual ~PepperPluginDelegateImpl();
+  explicit PepperHelperImpl(RenderViewImpl* render_view);
+  virtual ~PepperHelperImpl();
 
   RenderViewImpl* render_view() { return render_view_; }
 
@@ -146,7 +144,7 @@ class PepperPluginDelegateImpl
       int plugin_child_id);
 
  private:
-  // RenderViewPepperHelper implementation.
+  // PepperHelper implementation.
   virtual WebKit::WebPlugin* CreatePepperWebPlugin(
     const WebPluginInfo& webplugin_info,
     const WebKit::WebPluginParams& params) OVERRIDE;
@@ -245,11 +243,6 @@ class PepperPluginDelegateImpl
       int plugin_child_id,
       bool is_external);
 
-  void DidDataFromWebURLResponse(
-      PP_Instance pp_instance,
-      const WebKit::WebURLResponse& response,
-      const ppapi::URLResponseInfoData& data);
-
   // Pointer to the RenderView that owns us.
   RenderViewImpl* render_view_;
 
@@ -288,9 +281,9 @@ class PepperPluginDelegateImpl
 
   scoped_refptr<ContextProviderCommandBuffer> offscreen_context3d_;
 
-  DISALLOW_COPY_AND_ASSIGN(PepperPluginDelegateImpl);
+  DISALLOW_COPY_AND_ASSIGN(PepperHelperImpl);
 };
 
 }  // namespace content
 
-#endif  // CONTENT_RENDERER_PEPPER_PEPPER_PLUGIN_DELEGATE_IMPL_H_
+#endif  // CONTENT_RENDERER_PEPPER_PEPPER_PLUGIN_DELEGATE_H_

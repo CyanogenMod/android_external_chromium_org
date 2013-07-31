@@ -194,6 +194,7 @@ LayerTreeHostImpl::LayerTreeHostImpl(
       zero_budget_(false),
       device_scale_factor_(1.f),
       overdraw_bottom_height_(0.f),
+      external_stencil_test_enabled_(false),
       animation_registrar_(AnimationRegistrar::Create()),
       rendering_stats_instrumentation_(rendering_stats_instrumentation),
       need_to_update_visible_tiles_before_draw_(false) {
@@ -257,17 +258,32 @@ void LayerTreeHostImpl::CommitComplete() {
   client_->SendManagedMemoryStats();
 }
 
-bool LayerTreeHostImpl::CanDraw() {
+bool LayerTreeHostImpl::CanDraw() const {
   // Note: If you are changing this function or any other function that might
   // affect the result of CanDraw, make sure to call
   // client_->OnCanDrawStateChanged in the proper places and update the
   // NotifyIfCanDrawChanged test.
 
+  if (!renderer_) {
+    TRACE_EVENT_INSTANT0("cc", "LayerTreeHostImpl::CanDraw no renderer",
+                         TRACE_EVENT_SCOPE_THREAD);
+    return false;
+  }
+
+  // Must have an OutputSurface if |renderer_| is not NULL.
+  DCHECK(output_surface_);
+
+  // TODO(boliu): Make draws without root_layer work and move this below
+  // draw_and_swap_full_viewport_every_frame check. Tracked in crbug.com/264967.
   if (!active_tree_->root_layer()) {
     TRACE_EVENT_INSTANT0("cc", "LayerTreeHostImpl::CanDraw no root layer",
                          TRACE_EVENT_SCOPE_THREAD);
     return false;
   }
+
+  if (output_surface_->capabilities().draw_and_swap_full_viewport_every_frame)
+    return true;
+
   if (device_viewport_size_.IsEmpty()) {
     TRACE_EVENT_INSTANT0("cc", "LayerTreeHostImpl::CanDraw empty viewport",
                          TRACE_EVENT_SCOPE_THREAD);
@@ -277,11 +293,6 @@ bool LayerTreeHostImpl::CanDraw() {
     TRACE_EVENT_INSTANT0(
         "cc", "LayerTreeHostImpl::CanDraw viewport size recently changed",
         TRACE_EVENT_SCOPE_THREAD);
-    return false;
-  }
-  if (!renderer_) {
-    TRACE_EVENT_INSTANT0("cc", "LayerTreeHostImpl::CanDraw no renderer",
-                         TRACE_EVENT_SCOPE_THREAD);
     return false;
   }
   if (active_tree_->ContentsTexturesPurged()) {
@@ -568,6 +579,8 @@ bool LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
     // A copy request should cause damage, so we should not have any copy
     // requests in this case.
     DCHECK_EQ(0u, active_tree_->LayersWithCopyOutputRequest().size());
+    DCHECK(!output_surface_->capabilities()
+               .draw_and_swap_full_viewport_every_frame);
     return true;
   }
 
@@ -730,7 +743,8 @@ bool LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
     occlusion_tracker.LeaveLayer(it);
   }
 
-  if (have_copy_request)
+  if (have_copy_request ||
+      output_surface_->capabilities().draw_and_swap_full_viewport_every_frame)
     draw_frame = true;
 
   rendering_stats_instrumentation_->AddLayersDrawn(layers_drawn);
@@ -972,8 +986,11 @@ bool LayerTreeHostImpl::PrepareToDraw(FrameData* frame,
         AddDamageNextUpdate(device_viewport_damage_rect);
   }
 
-  if (!CalculateRenderPasses(frame))
+  if (!CalculateRenderPasses(frame)) {
+    DCHECK(!output_surface_->capabilities()
+               .draw_and_swap_full_viewport_every_frame);
     return false;
+  }
 
   // If we return true, then we expect DrawLayers() to be called before this
   // function is called again.
@@ -1117,6 +1134,10 @@ void LayerTreeHostImpl::SetExternalDrawConstraints(
   external_viewport_ = viewport;
 }
 
+void LayerTreeHostImpl::SetExternalStencilTest(bool enabled) {
+  external_stencil_test_enabled_ = enabled;
+}
+
 void LayerTreeHostImpl::SetNeedsRedrawRect(gfx::Rect damage_rect) {
   client_->SetNeedsRedrawRectOnImplThread(damage_rect);
 }
@@ -1171,6 +1192,10 @@ bool LayerTreeHostImpl::AllowPartialSwap() const {
   return !debug_state_.ShowHudRects();
 }
 
+bool LayerTreeHostImpl::ExternalStencilTestEnabled() const {
+  return external_stencil_test_enabled_;
+}
+
 static void LayerTreeHostImplDidBeginTracingCallback(LayerImpl* layer) {
   layer->DidBeginTracing();
 }
@@ -1182,6 +1207,8 @@ void LayerTreeHostImpl::DrawLayers(FrameData* frame,
 
   if (frame->has_no_damage) {
     TRACE_EVENT0("cc", "EarlyOut_NoDamage");
+    DCHECK(!output_surface_->capabilities()
+               .draw_and_swap_full_viewport_every_frame);
     return;
   }
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "content/renderer/pepper/pepper_plugin_delegate_impl.h"
+#include "content/renderer/pepper/pepper_helper_impl.h"
 
 #include <cmath>
 #include <cstddef>
@@ -111,7 +111,7 @@ void CreateHostForInProcessModule(RenderViewImpl* render_view,
 
 }  // namespace
 
-PepperPluginDelegateImpl::PepperPluginDelegateImpl(RenderViewImpl* render_view)
+PepperHelperImpl::PepperHelperImpl(RenderViewImpl* render_view)
     : RenderViewObserver(render_view),
       render_view_(render_view),
       pepper_browser_connection_(this),
@@ -119,10 +119,10 @@ PepperPluginDelegateImpl::PepperPluginDelegateImpl(RenderViewImpl* render_view)
       last_mouse_event_target_(NULL) {
 }
 
-PepperPluginDelegateImpl::~PepperPluginDelegateImpl() {
+PepperHelperImpl::~PepperHelperImpl() {
 }
 
-WebKit::WebPlugin* PepperPluginDelegateImpl::CreatePepperWebPlugin(
+WebKit::WebPlugin* PepperHelperImpl::CreatePepperWebPlugin(
     const WebPluginInfo& webplugin_info,
     const WebKit::WebPluginParams& params) {
   bool pepper_plugin_was_registered = false;
@@ -139,7 +139,7 @@ WebKit::WebPlugin* PepperPluginDelegateImpl::CreatePepperWebPlugin(
   return NULL;
 }
 
-scoped_refptr<PluginModule> PepperPluginDelegateImpl::CreatePepperPluginModule(
+scoped_refptr<PluginModule> PepperHelperImpl::CreatePepperPluginModule(
     const WebPluginInfo& webplugin_info,
     bool* pepper_plugin_was_registered) {
   *pepper_plugin_was_registered = true;
@@ -202,7 +202,7 @@ scoped_refptr<PluginModule> PepperPluginDelegateImpl::CreatePepperPluginModule(
   return module;
 }
 
-scoped_refptr<PepperBroker> PepperPluginDelegateImpl::CreateBroker(
+scoped_refptr<PepperBroker> PepperHelperImpl::CreateBroker(
     PluginModule* plugin_module) {
   DCHECK(plugin_module);
   DCHECK(!plugin_module->GetBroker());
@@ -222,7 +222,7 @@ scoped_refptr<PepperBroker> PepperPluginDelegateImpl::CreateBroker(
   return broker;
 }
 
-RendererPpapiHost* PepperPluginDelegateImpl::CreateOutOfProcessModule(
+RendererPpapiHost* PepperHelperImpl::CreateOutOfProcessModule(
     PluginModule* module,
     const base::FilePath& path,
     ppapi::PpapiPermissions permissions,
@@ -254,7 +254,7 @@ RendererPpapiHost* PepperPluginDelegateImpl::CreateOutOfProcessModule(
   return host_impl;
 }
 
-void PepperPluginDelegateImpl::OnPpapiBrokerChannelCreated(
+void PepperHelperImpl::OnPpapiBrokerChannelCreated(
     int request_id,
     base::ProcessId broker_pid,
     const IPC::ChannelHandle& handle) {
@@ -277,7 +277,7 @@ void PepperPluginDelegateImpl::OnPpapiBrokerChannelCreated(
 // Iterates through pending_connect_broker_ to find the broker.
 // Cannot use Lookup() directly because pending_connect_broker_ does not store
 // the raw pointer to the broker. Assumes maximum of one copy of broker exists.
-bool PepperPluginDelegateImpl::StopWaitingForBrokerConnection(
+bool PepperHelperImpl::StopWaitingForBrokerConnection(
     PepperBroker* broker) {
   for (BrokerMap::iterator i(&pending_connect_broker_);
        !i.IsAtEnd(); i.Advance()) {
@@ -290,7 +290,7 @@ bool PepperPluginDelegateImpl::StopWaitingForBrokerConnection(
   return false;
 }
 
-void PepperPluginDelegateImpl::ViewWillInitiatePaint() {
+void PepperHelperImpl::ViewWillInitiatePaint() {
   // Notify all of our instances that we started painting. This is used for
   // internal bookkeeping only, so we know that the set can not change under
   // us.
@@ -300,7 +300,7 @@ void PepperPluginDelegateImpl::ViewWillInitiatePaint() {
     (*i)->ViewWillInitiatePaint();
 }
 
-void PepperPluginDelegateImpl::ViewInitiatedPaint() {
+void PepperHelperImpl::ViewInitiatedPaint() {
   // Notify all instances that we painted.  The same caveats apply as for
   // ViewFlushedPaint regarding instances closing themselves, so we take
   // similar precautions.
@@ -312,7 +312,7 @@ void PepperPluginDelegateImpl::ViewInitiatedPaint() {
   }
 }
 
-void PepperPluginDelegateImpl::ViewFlushedPaint() {
+void PepperHelperImpl::ViewFlushedPaint() {
   // Notify all instances that we flushed. This will call into the plugin, and
   // we it may ask to close itself as a result. This will, in turn, modify our
   // set, possibly invalidating the iterator. So we iterate on a copy that
@@ -341,13 +341,12 @@ void PepperPluginDelegateImpl::ViewFlushedPaint() {
   }
 }
 
-PepperPluginInstanceImpl* PepperPluginDelegateImpl::
-    GetBitmapForOptimizedPluginPaint(
-        const gfx::Rect& paint_bounds,
-        TransportDIB** dib,
-        gfx::Rect* location,
-        gfx::Rect* clip,
-        float* scale_factor) {
+PepperPluginInstanceImpl* PepperHelperImpl::GetBitmapForOptimizedPluginPaint(
+    const gfx::Rect& paint_bounds,
+    TransportDIB** dib,
+    gfx::Rect* location,
+    gfx::Rect* clip,
+    float* scale_factor) {
   for (std::set<PepperPluginInstanceImpl*>::iterator i =
            active_instances_.begin();
        i != active_instances_.end(); ++i) {
@@ -362,7 +361,7 @@ PepperPluginInstanceImpl* PepperPluginDelegateImpl::
   return NULL;
 }
 
-void PepperPluginDelegateImpl::PluginFocusChanged(
+void PepperHelperImpl::PluginFocusChanged(
     PepperPluginInstanceImpl* instance,
     bool focused) {
   if (focused)
@@ -373,31 +372,31 @@ void PepperPluginDelegateImpl::PluginFocusChanged(
     render_view_->PpapiPluginFocusChanged();
 }
 
-void PepperPluginDelegateImpl::PluginTextInputTypeChanged(
+void PepperHelperImpl::PluginTextInputTypeChanged(
     PepperPluginInstanceImpl* instance) {
   if (focused_plugin_ == instance && render_view_)
     render_view_->PpapiPluginTextInputTypeChanged();
 }
 
-void PepperPluginDelegateImpl::PluginCaretPositionChanged(
+void PepperHelperImpl::PluginCaretPositionChanged(
     PepperPluginInstanceImpl* instance) {
   if (focused_plugin_ == instance && render_view_)
     render_view_->PpapiPluginCaretPositionChanged();
 }
 
-void PepperPluginDelegateImpl::PluginRequestedCancelComposition(
+void PepperHelperImpl::PluginRequestedCancelComposition(
     PepperPluginInstanceImpl* instance) {
   if (focused_plugin_ == instance && render_view_)
     render_view_->PpapiPluginCancelComposition();
 }
 
-void PepperPluginDelegateImpl::PluginSelectionChanged(
+void PepperHelperImpl::PluginSelectionChanged(
     PepperPluginInstanceImpl* instance) {
   if (focused_plugin_ == instance && render_view_)
     render_view_->PpapiPluginSelectionChanged();
 }
 
-void PepperPluginDelegateImpl::OnImeSetComposition(
+void PepperHelperImpl::OnImeSetComposition(
     const string16& text,
     const std::vector<WebKit::WebCompositionUnderline>& underlines,
     int selection_start,
@@ -425,7 +424,7 @@ void PepperPluginDelegateImpl::OnImeSetComposition(
   }
 }
 
-void PepperPluginDelegateImpl::OnImeConfirmComposition(const string16& text) {
+void PepperHelperImpl::OnImeConfirmComposition(const string16& text) {
   // Here, text.empty() has a special meaning. It means to commit the last
   // update of composition text (see RenderWidgetHost::ImeConfirmComposition()).
   const string16& last_text = text.empty() ? composition_text_ : text;
@@ -456,36 +455,36 @@ void PepperPluginDelegateImpl::OnImeConfirmComposition(const string16& text) {
   composition_text_.clear();
 }
 
-gfx::Rect PepperPluginDelegateImpl::GetCaretBounds() const {
+gfx::Rect PepperHelperImpl::GetCaretBounds() const {
   if (!focused_plugin_)
     return gfx::Rect(0, 0, 0, 0);
   return focused_plugin_->GetCaretBounds();
 }
 
-ui::TextInputType PepperPluginDelegateImpl::GetTextInputType() const {
+ui::TextInputType PepperHelperImpl::GetTextInputType() const {
   if (!focused_plugin_)
     return ui::TEXT_INPUT_TYPE_NONE;
   return focused_plugin_->text_input_type();
 }
 
-void PepperPluginDelegateImpl::GetSurroundingText(string16* text,
-                                                  ui::Range* range) const {
+void PepperHelperImpl::GetSurroundingText(string16* text,
+                                          ui::Range* range) const {
   if (!focused_plugin_)
     return;
   return focused_plugin_->GetSurroundingText(text, range);
 }
 
-bool PepperPluginDelegateImpl::IsPluginAcceptingCompositionEvents() const {
+bool PepperHelperImpl::IsPluginAcceptingCompositionEvents() const {
   if (!focused_plugin_)
     return false;
   return focused_plugin_->IsPluginAcceptingCompositionEvents();
 }
 
-bool PepperPluginDelegateImpl::CanComposeInline() const {
+bool PepperHelperImpl::CanComposeInline() const {
   return IsPluginAcceptingCompositionEvents();
 }
 
-void PepperPluginDelegateImpl::InstanceCreated(
+void PepperHelperImpl::InstanceCreated(
     PepperPluginInstanceImpl* instance) {
   active_instances_.insert(instance);
 
@@ -493,7 +492,7 @@ void PepperPluginDelegateImpl::InstanceCreated(
   instance->SetContentAreaFocus(render_view_->has_focus());
 }
 
-void PepperPluginDelegateImpl::InstanceDeleted(
+void PepperHelperImpl::InstanceDeleted(
     PepperPluginInstanceImpl* instance) {
   active_instances_.erase(instance);
 
@@ -504,7 +503,7 @@ void PepperPluginDelegateImpl::InstanceDeleted(
 }
 
 // If a broker has not already been created for this plugin, creates one.
-PepperBroker* PepperPluginDelegateImpl::ConnectToBroker(
+PepperBroker* PepperHelperImpl::ConnectToBroker(
     PPB_Broker_Impl* client) {
   DCHECK(client);
 
@@ -532,9 +531,8 @@ PepperBroker* PepperPluginDelegateImpl::ConnectToBroker(
   return broker.get();
 }
 
-void PepperPluginDelegateImpl::OnPpapiBrokerPermissionResult(
-    int request_id,
-    bool result) {
+void PepperHelperImpl::OnPpapiBrokerPermissionResult(int request_id,
+                                                     bool result) {
   scoped_ptr<base::WeakPtr<PPB_Broker_Impl> > client_ptr(
       pending_permission_requests_.Lookup(request_id));
   DCHECK(client_ptr.get());
@@ -551,17 +549,16 @@ void PepperPluginDelegateImpl::OnPpapiBrokerPermissionResult(
   broker->OnBrokerPermissionResult(client.get(), result);
 }
 
-bool PepperPluginDelegateImpl::AsyncOpenFile(
-    const base::FilePath& path,
-    int flags,
-    const AsyncOpenFileCallback& callback) {
+bool PepperHelperImpl::AsyncOpenFile(const base::FilePath& path,
+                                     int flags,
+                                     const AsyncOpenFileCallback& callback) {
   int message_id = pending_async_open_files_.Add(
       new AsyncOpenFileCallback(callback));
   return Send(new ViewHostMsg_AsyncOpenFile(
       routing_id(), path, flags, message_id));
 }
 
-void PepperPluginDelegateImpl::OnAsyncFileOpened(
+void PepperHelperImpl::OnAsyncFileOpened(
     base::PlatformFileError error_code,
     IPC::PlatformFileForTransit file_for_transit,
     int message_id) {
@@ -583,25 +580,25 @@ void PepperPluginDelegateImpl::OnAsyncFileOpened(
   delete callback;
 }
 
-void PepperPluginDelegateImpl::OnSetFocus(bool has_focus) {
+void PepperHelperImpl::OnSetFocus(bool has_focus) {
   for (std::set<PepperPluginInstanceImpl*>::iterator i =
            active_instances_.begin();
        i != active_instances_.end(); ++i)
     (*i)->SetContentAreaFocus(has_focus);
 }
 
-void PepperPluginDelegateImpl::PageVisibilityChanged(bool is_visible) {
+void PepperHelperImpl::PageVisibilityChanged(bool is_visible) {
   for (std::set<PepperPluginInstanceImpl*>::iterator i =
            active_instances_.begin();
        i != active_instances_.end(); ++i)
     (*i)->PageVisibilityChanged(is_visible);
 }
 
-bool PepperPluginDelegateImpl::IsPluginFocused() const {
+bool PepperHelperImpl::IsPluginFocused() const {
   return focused_plugin_ != NULL;
 }
 
-void PepperPluginDelegateImpl::WillHandleMouseEvent() {
+void PepperHelperImpl::WillHandleMouseEvent() {
   // This method is called for every mouse event that the render view receives.
   // And then the mouse event is forwarded to WebKit, which dispatches it to the
   // event target. Potentially a Pepper plugin will receive the event.
@@ -612,206 +609,29 @@ void PepperPluginDelegateImpl::WillHandleMouseEvent() {
   last_mouse_event_target_ = NULL;
 }
 
-void PepperPluginDelegateImpl::RegisterTCPSocket(
+void PepperHelperImpl::RegisterTCPSocket(
     PPB_TCPSocket_Private_Impl* socket,
     uint32 socket_id) {
   tcp_sockets_.AddWithID(socket, socket_id);
 }
 
-void PepperPluginDelegateImpl::UnregisterTCPSocket(uint32 socket_id) {
+void PepperHelperImpl::UnregisterTCPSocket(uint32 socket_id) {
   // There is no DCHECK(tcp_sockets_.Lookup(socket_id)) because this method
   // can be called before TCPSocketConnect or TCPSocketConnectWithNetAddress.
   if (tcp_sockets_.Lookup(socket_id))
     tcp_sockets_.Remove(socket_id);
 }
 
-void PepperPluginDelegateImpl::TCPServerSocketStopListening(uint32 socket_id) {
+void PepperHelperImpl::TCPServerSocketStopListening(uint32 socket_id) {
   tcp_server_sockets_.Remove(socket_id);
 }
 
-void PepperPluginDelegateImpl::HandleDocumentLoad(
+void PepperHelperImpl::HandleDocumentLoad(
     PepperPluginInstanceImpl* instance,
     const WebKit::WebURLResponse& response) {
   DCHECK(!instance->document_loader());
-  DataFromWebURLResponse(
-      instance->pp_instance(),
-      response,
-      base::Bind(&PepperPluginDelegateImpl::DidDataFromWebURLResponse,
-                 AsWeakPtr(), instance->pp_instance(), response));
-}
 
-RendererPpapiHost* PepperPluginDelegateImpl::CreateExternalPluginModule(
-    scoped_refptr<PluginModule> module,
-    const base::FilePath& path,
-    ppapi::PpapiPermissions permissions,
-    const IPC::ChannelHandle& channel_handle,
-    base::ProcessId peer_pid,
-    int plugin_child_id) {
-  // We don't call PepperPluginRegistry::AddLiveModule, as this module is
-  // managed externally.
-  return CreateOutOfProcessModule(module.get(),
-                                  path,
-                                  permissions,
-                                  channel_handle,
-                                  peer_pid,
-                                  plugin_child_id,
-                                  true);  // is_external = true
-}
-
-void PepperPluginDelegateImpl::DidChangeCursor(
-    PepperPluginInstanceImpl* instance,
-    const WebKit::WebCursorInfo& cursor) {
-  // Update the cursor appearance immediately if the requesting plugin is the
-  // one which receives the last mouse event. Otherwise, the new cursor won't be
-  // picked up until the plugin gets the next input event. That is bad if, e.g.,
-  // the plugin would like to set an invisible cursor when there isn't any user
-  // input for a while.
-  if (instance == last_mouse_event_target_)
-    render_view_->didChangeCursor(cursor);
-}
-
-void PepperPluginDelegateImpl::DidReceiveMouseEvent(
-    PepperPluginInstanceImpl* instance) {
-  last_mouse_event_target_ = instance;
-}
-
-void PepperPluginDelegateImpl::SampleGamepads(WebKit::WebGamepads* data) {
-  if (!gamepad_shared_memory_reader_)
-    gamepad_shared_memory_reader_.reset(new GamepadSharedMemoryReader);
-  gamepad_shared_memory_reader_->SampleGamepads(*data);
-}
-
-bool PepperPluginDelegateImpl::OnMessageReceived(const IPC::Message& message) {
-  if (pepper_browser_connection_.OnMessageReceived(message))
-    return true;
-
-  bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(PepperPluginDelegateImpl, message)
-    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_ConnectACK,
-                        OnTCPSocketConnectACK)
-    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_SSLHandshakeACK,
-                        OnTCPSocketSSLHandshakeACK)
-    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_ReadACK, OnTCPSocketReadACK)
-    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_WriteACK, OnTCPSocketWriteACK)
-    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_SetOptionACK,
-                        OnTCPSocketSetOptionACK)
-    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPServerSocket_ListenACK,
-                        OnTCPServerSocketListenACK)
-    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPServerSocket_AcceptACK,
-                        OnTCPServerSocketAcceptACK)
-    IPC_MESSAGE_HANDLER(ViewMsg_PpapiBrokerChannelCreated,
-                        OnPpapiBrokerChannelCreated)
-    IPC_MESSAGE_HANDLER(ViewMsg_AsyncOpenFile_ACK, OnAsyncFileOpened)
-    IPC_MESSAGE_HANDLER(ViewMsg_PpapiBrokerPermissionResult,
-                        OnPpapiBrokerPermissionResult)
-    IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP()
-  return handled;
-}
-
-void PepperPluginDelegateImpl::OnDestruct() {
-  // Nothing to do here. Default implementation in RenderViewObserver does
-  // 'delete this' but it's not suitable for PepperPluginDelegateImpl because
-  // it's non-pointer member in RenderViewImpl.
-}
-
-void PepperPluginDelegateImpl::OnTCPSocketConnectACK(
-    uint32 plugin_dispatcher_id,
-    uint32 socket_id,
-    int32_t result,
-    const PP_NetAddress_Private& local_addr,
-    const PP_NetAddress_Private& remote_addr) {
-  PPB_TCPSocket_Private_Impl* socket = tcp_sockets_.Lookup(socket_id);
-  if (socket)
-    socket->OnConnectCompleted(result, local_addr, remote_addr);
-  if (result != PP_OK)
-    tcp_sockets_.Remove(socket_id);
-}
-
-void PepperPluginDelegateImpl::OnTCPSocketSSLHandshakeACK(
-    uint32 plugin_dispatcher_id,
-    uint32 socket_id,
-    bool succeeded,
-    const ppapi::PPB_X509Certificate_Fields& certificate_fields) {
-  PPB_TCPSocket_Private_Impl* socket = tcp_sockets_.Lookup(socket_id);
-  if (socket)
-    socket->OnSSLHandshakeCompleted(succeeded, certificate_fields);
-}
-
-void PepperPluginDelegateImpl::OnTCPSocketReadACK(uint32 plugin_dispatcher_id,
-                                                  uint32 socket_id,
-                                                  int32_t result,
-                                                  const std::string& data) {
-  PPB_TCPSocket_Private_Impl* socket = tcp_sockets_.Lookup(socket_id);
-  if (socket)
-    socket->OnReadCompleted(result, data);
-}
-
-void PepperPluginDelegateImpl::OnTCPSocketWriteACK(uint32 plugin_dispatcher_id,
-                                                   uint32 socket_id,
-                                                   int32_t result) {
-  PPB_TCPSocket_Private_Impl* socket = tcp_sockets_.Lookup(socket_id);
-  if (socket)
-    socket->OnWriteCompleted(result);
-}
-
-void PepperPluginDelegateImpl::OnTCPSocketSetOptionACK(
-    uint32 plugin_dispatcher_id,
-    uint32 socket_id,
-    int32_t result) {
-  PPB_TCPSocket_Private_Impl* socket = tcp_sockets_.Lookup(socket_id);
-  if (socket)
-    socket->OnSetOptionCompleted(result);
-}
-
-void PepperPluginDelegateImpl::OnTCPServerSocketListenACK(
-    uint32 plugin_dispatcher_id,
-    PP_Resource socket_resource,
-    uint32 socket_id,
-    const PP_NetAddress_Private& local_addr,
-    int32_t status) {
-  ppapi::thunk::EnterResource<ppapi::thunk::PPB_TCPServerSocket_Private_API>
-      enter(socket_resource, true);
-  if (enter.succeeded()) {
-    ppapi::PPB_TCPServerSocket_Shared* socket =
-        static_cast<ppapi::PPB_TCPServerSocket_Shared*>(enter.object());
-    if (status == PP_OK)
-      tcp_server_sockets_.AddWithID(socket, socket_id);
-    socket->OnListenCompleted(socket_id, local_addr, status);
-  } else if (socket_id != 0 && status == PP_OK) {
-    // StopListening was called before completion of Listen.
-    Send(new PpapiHostMsg_PPBTCPServerSocket_Destroy(socket_id));
-  }
-}
-
-void PepperPluginDelegateImpl::OnTCPServerSocketAcceptACK(
-    uint32 plugin_dispatcher_id,
-    uint32 server_socket_id,
-    uint32 accepted_socket_id,
-    const PP_NetAddress_Private& local_addr,
-    const PP_NetAddress_Private& remote_addr) {
-  ppapi::PPB_TCPServerSocket_Shared* socket =
-      tcp_server_sockets_.Lookup(server_socket_id);
-  if (socket) {
-    bool succeeded = (accepted_socket_id != 0);
-    socket->OnAcceptCompleted(succeeded,
-                              accepted_socket_id,
-                              local_addr,
-                              remote_addr);
-  } else if (accepted_socket_id != 0) {
-    Send(new PpapiHostMsg_PPBTCPSocket_Disconnect(accepted_socket_id));
-  }
-}
-
-void PepperPluginDelegateImpl::DidDataFromWebURLResponse(
-    PP_Instance pp_instance,
-    const WebKit::WebURLResponse& response,
-    const ppapi::URLResponseInfoData& data) {
-  PepperPluginInstanceImpl* instance =
-      ResourceHelper::PPInstanceToPluginInstance(pp_instance);
-  if (!instance)
-    return;
-
+  PP_Instance pp_instance = instance->pp_instance();
   RendererPpapiHostImpl* host_impl = instance->module()->renderer_ppapi_host();
 
   // Create a loader resource host for this load. Note that we have to set
@@ -827,6 +647,9 @@ void PepperPluginDelegateImpl::DidDataFromWebURLResponse(
   int pending_host_id = host_impl->GetPpapiHost()->AddPendingResourceHost(
       scoped_ptr<ppapi::host::ResourceHost>(loader_host));
   DCHECK(pending_host_id);
+  ppapi::URLResponseInfoData data =
+      DataFromWebURLResponse(pp_instance, response);
+
   if (host_impl->in_process_router()) {
     // Running in-process, we can just create the resource and call the
     // PPP_Instance function directly.
@@ -857,6 +680,168 @@ void PepperPluginDelegateImpl::DidDataFromWebURLResponse(
         ppapi::proxy::HostDispatcher::GetForInstance(pp_instance);
     dispatcher->Send(new PpapiMsg_PPPInstance_HandleDocumentLoad(
         ppapi::API_ID_PPP_INSTANCE, pp_instance, pending_host_id, data));
+  }
+}
+
+RendererPpapiHost* PepperHelperImpl::CreateExternalPluginModule(
+    scoped_refptr<PluginModule> module,
+    const base::FilePath& path,
+    ppapi::PpapiPermissions permissions,
+    const IPC::ChannelHandle& channel_handle,
+    base::ProcessId peer_pid,
+    int plugin_child_id) {
+  // We don't call PepperPluginRegistry::AddLiveModule, as this module is
+  // managed externally.
+  return CreateOutOfProcessModule(module.get(),
+                                  path,
+                                  permissions,
+                                  channel_handle,
+                                  peer_pid,
+                                  plugin_child_id,
+                                  true);  // is_external = true
+}
+
+void PepperHelperImpl::DidChangeCursor(PepperPluginInstanceImpl* instance,
+                                       const WebKit::WebCursorInfo& cursor) {
+  // Update the cursor appearance immediately if the requesting plugin is the
+  // one which receives the last mouse event. Otherwise, the new cursor won't be
+  // picked up until the plugin gets the next input event. That is bad if, e.g.,
+  // the plugin would like to set an invisible cursor when there isn't any user
+  // input for a while.
+  if (instance == last_mouse_event_target_)
+    render_view_->didChangeCursor(cursor);
+}
+
+void PepperHelperImpl::DidReceiveMouseEvent(
+    PepperPluginInstanceImpl* instance) {
+  last_mouse_event_target_ = instance;
+}
+
+void PepperHelperImpl::SampleGamepads(WebKit::WebGamepads* data) {
+  if (!gamepad_shared_memory_reader_)
+    gamepad_shared_memory_reader_.reset(new GamepadSharedMemoryReader);
+  gamepad_shared_memory_reader_->SampleGamepads(*data);
+}
+
+bool PepperHelperImpl::OnMessageReceived(const IPC::Message& message) {
+  if (pepper_browser_connection_.OnMessageReceived(message))
+    return true;
+
+  bool handled = true;
+  IPC_BEGIN_MESSAGE_MAP(PepperHelperImpl, message)
+    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_ConnectACK,
+                        OnTCPSocketConnectACK)
+    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_SSLHandshakeACK,
+                        OnTCPSocketSSLHandshakeACK)
+    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_ReadACK, OnTCPSocketReadACK)
+    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_WriteACK, OnTCPSocketWriteACK)
+    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_SetOptionACK,
+                        OnTCPSocketSetOptionACK)
+    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPServerSocket_ListenACK,
+                        OnTCPServerSocketListenACK)
+    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPServerSocket_AcceptACK,
+                        OnTCPServerSocketAcceptACK)
+    IPC_MESSAGE_HANDLER(ViewMsg_PpapiBrokerChannelCreated,
+                        OnPpapiBrokerChannelCreated)
+    IPC_MESSAGE_HANDLER(ViewMsg_AsyncOpenFile_ACK, OnAsyncFileOpened)
+    IPC_MESSAGE_HANDLER(ViewMsg_PpapiBrokerPermissionResult,
+                        OnPpapiBrokerPermissionResult)
+    IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_END_MESSAGE_MAP()
+  return handled;
+}
+
+void PepperHelperImpl::OnDestruct() {
+  // Nothing to do here. Default implementation in RenderViewObserver does
+  // 'delete this' but it's not suitable for PepperHelperImpl because
+  // it's non-pointer member in RenderViewImpl.
+}
+
+void PepperHelperImpl::OnTCPSocketConnectACK(
+    uint32 plugin_dispatcher_id,
+    uint32 socket_id,
+    int32_t result,
+    const PP_NetAddress_Private& local_addr,
+    const PP_NetAddress_Private& remote_addr) {
+  PPB_TCPSocket_Private_Impl* socket = tcp_sockets_.Lookup(socket_id);
+  if (socket)
+    socket->OnConnectCompleted(result, local_addr, remote_addr);
+  if (result != PP_OK)
+    tcp_sockets_.Remove(socket_id);
+}
+
+void PepperHelperImpl::OnTCPSocketSSLHandshakeACK(
+    uint32 plugin_dispatcher_id,
+    uint32 socket_id,
+    bool succeeded,
+    const ppapi::PPB_X509Certificate_Fields& certificate_fields) {
+  PPB_TCPSocket_Private_Impl* socket = tcp_sockets_.Lookup(socket_id);
+  if (socket)
+    socket->OnSSLHandshakeCompleted(succeeded, certificate_fields);
+}
+
+void PepperHelperImpl::OnTCPSocketReadACK(uint32 plugin_dispatcher_id,
+                                          uint32 socket_id,
+                                          int32_t result,
+                                          const std::string& data) {
+  PPB_TCPSocket_Private_Impl* socket = tcp_sockets_.Lookup(socket_id);
+  if (socket)
+    socket->OnReadCompleted(result, data);
+}
+
+void PepperHelperImpl::OnTCPSocketWriteACK(uint32 plugin_dispatcher_id,
+                                           uint32 socket_id,
+                                           int32_t result) {
+  PPB_TCPSocket_Private_Impl* socket = tcp_sockets_.Lookup(socket_id);
+  if (socket)
+    socket->OnWriteCompleted(result);
+}
+
+void PepperHelperImpl::OnTCPSocketSetOptionACK(
+    uint32 plugin_dispatcher_id,
+    uint32 socket_id,
+    int32_t result) {
+  PPB_TCPSocket_Private_Impl* socket = tcp_sockets_.Lookup(socket_id);
+  if (socket)
+    socket->OnSetOptionCompleted(result);
+}
+
+void PepperHelperImpl::OnTCPServerSocketListenACK(
+    uint32 plugin_dispatcher_id,
+    PP_Resource socket_resource,
+    uint32 socket_id,
+    const PP_NetAddress_Private& local_addr,
+    int32_t status) {
+  ppapi::thunk::EnterResource<ppapi::thunk::PPB_TCPServerSocket_Private_API>
+      enter(socket_resource, true);
+  if (enter.succeeded()) {
+    ppapi::PPB_TCPServerSocket_Shared* socket =
+        static_cast<ppapi::PPB_TCPServerSocket_Shared*>(enter.object());
+    if (status == PP_OK)
+      tcp_server_sockets_.AddWithID(socket, socket_id);
+    socket->OnListenCompleted(socket_id, local_addr, status);
+  } else if (socket_id != 0 && status == PP_OK) {
+    // StopListening was called before completion of Listen.
+    Send(new PpapiHostMsg_PPBTCPServerSocket_Destroy(socket_id));
+  }
+}
+
+void PepperHelperImpl::OnTCPServerSocketAcceptACK(
+    uint32 plugin_dispatcher_id,
+    uint32 server_socket_id,
+    uint32 accepted_socket_id,
+    const PP_NetAddress_Private& local_addr,
+    const PP_NetAddress_Private& remote_addr) {
+  ppapi::PPB_TCPServerSocket_Shared* socket =
+      tcp_server_sockets_.Lookup(server_socket_id);
+  if (socket) {
+    bool succeeded = (accepted_socket_id != 0);
+    socket->OnAcceptCompleted(succeeded,
+                              accepted_socket_id,
+                              local_addr,
+                              remote_addr);
+  } else if (accepted_socket_id != 0) {
+    Send(new PpapiHostMsg_PPBTCPSocket_Disconnect(accepted_socket_id));
   }
 }
 

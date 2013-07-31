@@ -12,7 +12,7 @@ vars = {
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "swig_revision": "69281",
-  "nacl_revision": "11830",
+  "nacl_revision": "11866",
   # After changing nacl_revision, run 'glient sync' and check native_client/DEPS
   # to update other nacl_*_revision's.
   "nacl_tools_revision": "11437",  # native_client/DEPS: tools_rev
@@ -33,7 +33,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
-  "v8_revision": "15899",
+  "v8_revision": "15955",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
@@ -68,7 +68,7 @@ deps = {
 
   "src/third_party/angle_dx11":
     Var("chromium_git") +
-    "/external/angle.git@9b344317b2ced9123da6e0e55aeb75e8abca84c5",
+    "/external/angle.git@57a045443cebf1bb035bfa9cc63d392d875136ed",
 
   "src/third_party/trace-viewer":
     (Var("googlecode_url") % "trace-viewer") + "/trunk@784",
@@ -442,7 +442,7 @@ deps_os = {
     # Build tools for targeting ChromeOS.
     "src/third_party/chromite":
       Var("chromiumos_git") + "/chromite.git" +
-      "@93281fa6a9fa1af48aae02d0a9c142a4450af51e",
+      "@214fb6506eda13715edd74087adf367a29809a3c",
 
     # Dependency of chromite.git.
     "src/third_party/pyelftools":
