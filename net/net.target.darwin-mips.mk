@@ -298,6 +298,7 @@ LOCAL_SRC_FILES := \
 	net/quic/crypto/null_encrypter.cc \
 	net/quic/crypto/p256_key_exchange_openssl.cc \
 	net/quic/crypto/proof_source_chromium.cc \
+	net/quic/crypto/proof_verifier.cc \
 	net/quic/crypto/proof_verifier_chromium.cc \
 	net/quic/crypto/quic_decrypter.cc \
 	net/quic/crypto/quic_encrypter.cc \
