@@ -53,6 +53,7 @@ LOCAL_SRC_FILES := \
 	gpu/command_buffer/service/gpu_tracer.cc \
 	gpu/command_buffer/service/id_manager.cc \
 	gpu/command_buffer/service/image_manager.cc \
+	gpu/command_buffer/service/in_process_command_buffer.cc \
 	gpu/command_buffer/service/logger.cc \
 	gpu/command_buffer/service/mailbox_manager.cc \
 	gpu/command_buffer/service/memory_program_cache.cc \
