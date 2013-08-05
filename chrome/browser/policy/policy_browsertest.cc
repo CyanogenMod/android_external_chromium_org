@@ -50,6 +50,8 @@
 #include "chrome/browser/policy/policy_map.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search/instant_service.h"
+#include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
@@ -76,6 +78,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/browser_child_process_host_iterator.h"
 #include "content/public/browser/browser_context.h"
@@ -127,12 +130,7 @@
 #include "ash/shell_delegate.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
-#include "chrome/browser/chromeos/audio/audio_handler.h"
-#include "chromeos/audio/audio_pref_handler.h"
-#endif
-
-#if defined(OS_WIN) && defined(USE_ASH)
-#include "base/win/windows_version.h"
+#include "chromeos/audio/cras_audio_handler.h"
 #endif
 
 using content::BrowserThread;
@@ -427,17 +425,27 @@ bool ContainsVisibleElement(content::WebContents* contents,
 }
 
 #if defined(OS_CHROMEOS)
-// Volume observer mock used by the audio policy tests.
-class TestVolumeObserver : public chromeos::AudioHandler::VolumeObserver {
+class TestAudioObserver : public chromeos::CrasAudioHandler::AudioObserver {
  public:
-  TestVolumeObserver() {}
-  virtual ~TestVolumeObserver() {}
+  TestAudioObserver() : output_mute_changed_count_(0) {
+  }
 
-  MOCK_METHOD0(OnVolumeChanged, void());
-  MOCK_METHOD0(OnMuteToggled, void());
+  int output_mute_changed_count() const {
+    return output_mute_changed_count_;
+  }
+
+  virtual ~TestAudioObserver() {}
+
+ protected:
+  // chromeos::CrasAudioHandler::AudioObserver overrides.
+  virtual void OnOutputMuteChanged() OVERRIDE {
+    ++output_mute_changed_count_;
+  }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(TestVolumeObserver);
+  int output_mute_changed_count_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestAudioObserver);
 };
 #endif
 
@@ -480,53 +488,6 @@ class PolicyTest : public InProcessBrowserTest {
                  POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
                  base::Value::CreateBooleanValue(!enabled), NULL);
     UpdateProviderPolicy(policies);
-  }
-
-  void TestScreenshotFeedback(bool enabled) {
-    SetScreenshotPolicy(enabled);
-
-    // Wait for feedback page to load.
-    content::WindowedNotificationObserver observer(
-        content::NOTIFICATION_LOAD_STOP,
-        content::NotificationService::AllSources());
-    EXPECT_TRUE(chrome::ExecuteCommand(browser(), IDC_FEEDBACK));
-    observer.Wait();
-    content::WebContents* web_contents =
-        static_cast<content::Source<content::NavigationController> >(
-            observer.source())->GetWebContents();
-
-    // Wait for feedback page to fully initialize.
-    // setupCurrentScreenshot is called when feedback page loads and (among
-    // other things) adds current-screenshots-thumbnailDiv-0-image element.
-    // The code below executes either before setupCurrentScreenshot was called
-    // (setupCurrentScreenshot is replaced with our hook) or after it has
-    // completed (in that case send result immediately).
-    bool result = false;
-    EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
-        web_contents,
-        "function btest_initCompleted(url) {"
-        "  var img = new Image();"
-        "  img.src = url;"
-        "  img.onload = function() {"
-        "    domAutomationController.send(img.width * img.height > 0);"
-        "  };"
-        "  img.onerror = function() {"
-        "    domAutomationController.send(false);"
-        "  };"
-        "}"
-        "function setupCurrentScreenshot(url) {"
-        "  btest_initCompleted(url);"
-        "}"
-        "var img = document.getElementById("
-        "    'current-screenshots-thumbnailDiv-0-image');"
-        "if (img)"
-        "  btest_initCompleted(img.src);",
-        &result));
-    EXPECT_EQ(enabled, result);
-
-    // Feedback page is a singleton page, so close so future calls to this
-    // function work as expected.
-    web_contents->Close();
   }
 
 #if defined(OS_CHROMEOS)
@@ -662,7 +623,7 @@ IN_PROC_BROWSER_TEST_F(LocalePolicyTest, ApplicationLocaleValue) {
 IN_PROC_BROWSER_TEST_F(PolicyTest, BookmarkBarEnabled) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (base::win::GetVersion() >= base::win::VERSION_WIN8)
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
     return;
 #endif
 
@@ -743,6 +704,9 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DefaultSearchProvider) {
       "http://search.example/search#q={searchTerms}");
   const std::string kAlternateURL1("http://search.example/#q={searchTerms}");
   const std::string kSearchTermsReplacementKey("zekey");
+  const std::string kImageURL("http://test.com/searchbyimage/upload");
+  const std::string kImageURLPostParams(
+      "image_content=content,image_url=http://test.com/test.png");
 
   TemplateURLService* service = TemplateURLServiceFactory::GetForProfile(
       browser()->profile());
@@ -756,7 +720,9 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DefaultSearchProvider) {
     default_search->alternate_urls()[0] == kAlternateURL0 &&
     default_search->alternate_urls()[1] == kAlternateURL1 &&
     default_search->search_terms_replacement_key() ==
-        kSearchTermsReplacementKey);
+        kSearchTermsReplacementKey &&
+    default_search->image_url() == kImageURL &&
+    default_search->image_url_post_params() == kImageURLPostParams);
 
   // Override the default search provider using policies.
   PolicyMap policies;
@@ -777,6 +743,14 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DefaultSearchProvider) {
                POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
                base::Value::CreateStringValue(kSearchTermsReplacementKey),
                NULL);
+  policies.Set(key::kDefaultSearchProviderImageURL,
+               POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
+               base::Value::CreateStringValue(kImageURL),
+               NULL);
+  policies.Set(key::kDefaultSearchProviderImageURLPostParams,
+               POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
+               base::Value::CreateStringValue(kImageURLPostParams),
+               NULL);
   UpdateProviderPolicy(policies);
   default_search = service->GetDefaultSearchProvider();
   ASSERT_TRUE(default_search);
@@ -787,6 +761,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DefaultSearchProvider) {
   EXPECT_EQ(kAlternateURL1, default_search->alternate_urls()[1]);
   EXPECT_EQ(kSearchTermsReplacementKey,
             default_search->search_terms_replacement_key());
+  EXPECT_EQ(kImageURL, default_search->image_url());
+  EXPECT_EQ(kImageURLPostParams, default_search->image_url_post_params());
 
   // Verify that searching from the omnibox uses kSearchURL.
   chrome::FocusLocationBar(browser());
@@ -928,6 +904,13 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
   EXPECT_EQ(2U, default_search->alternate_urls().size());
   EXPECT_EQ(kAlternateURL0, default_search->alternate_urls()[0]);
   EXPECT_EQ(kAlternateURL1, default_search->alternate_urls()[1]);
+
+  // Query terms replacement requires that the renderer process be a recognized
+  // Instant renderer. Fake it.
+  InstantService* instant_service =
+      InstantServiceFactory::GetForProfile(browser()->profile());
+  instant_service->AddInstantProcess(browser()->tab_strip_model()->
+      GetActiveWebContents()->GetRenderProcessHost()->GetID());
 
   // Verify that searching from the omnibox does search term replacement with
   // first URL pattern.
@@ -1200,7 +1183,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DeveloperToolsDisabled) {
 IN_PROC_BROWSER_TEST_F(PolicyTest, WebStoreIconHidden) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (base::win::GetVersion() >= base::win::VERSION_WIN8)
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
     return;
 #endif
 
@@ -1267,9 +1250,13 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DownloadDirectory) {
 }
 #endif
 
-// See crbug.com/248464
+// There's a bug filed for flakiness on windows: http://crbug.com/248464.
+// Unfortunately, the bug doesn't contain any actionable information, so this
+// test is temporarily marked FLAKY to get some cycles on the builders in order
+// to gather data on the nature of the flakes.
+// TODO(mnissler): Flip back to DISABLED after obtaining logs from flaky runs.
 #if defined(OS_WIN)
-#define MAYBE_ExtensionInstallBlacklist DISABLED_ExtensionInstallBlacklist
+#define MAYBE_ExtensionInstallBlacklist FLAKY_ExtensionInstallBlacklist
 #else
 #define MAYBE_ExtensionInstallBlacklist ExtensionInstallBlacklist
 #endif
@@ -1489,7 +1476,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallSources) {
 IN_PROC_BROWSER_TEST_F(PolicyTest, HomepageLocation) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (base::win::GetVersion() >= base::win::VERSION_WIN8)
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
     return;
 #endif
 
@@ -1802,27 +1789,6 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, FileURLBlacklist) {
   CheckURLIsBlocked(browser(), file_path2.c_str());
 }
 
-// Flaky on Linux. http://crbug.com/155459
-#if defined(OS_LINUX)
-#define MAYBE_DisableScreenshotsFeedback DISABLED_DisableScreenshotsFeedback
-#else
-#define MAYBE_DisableScreenshotsFeedback DisableScreenshotsFeedback
-#endif
-IN_PROC_BROWSER_TEST_F(PolicyTest, MAYBE_DisableScreenshotsFeedback) {
-#if defined(OS_WIN) && defined(USE_ASH)
-  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (base::win::GetVersion() >= base::win::VERSION_WIN8)
-    return;
-#endif
-
-  // Make sure current screenshot can be taken and displayed on feedback page.
-  TestScreenshotFeedback(true);
-
-  // Check if banning screenshots disabled feedback page's ability to grab a
-  // screenshot.
-  TestScreenshotFeedback(false);
-}
-
 #if defined(OS_CHROMEOS)
 IN_PROC_BROWSER_TEST_F(PolicyTest, DisableScreenshotsFile) {
   int screenshot_count = CountScreenshots();
@@ -1836,44 +1802,41 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DisableScreenshotsFile) {
   ASSERT_EQ(CountScreenshots(), screenshot_count + 1);
 }
 
-// TODO(rkc,jennyz): Fix this once we remove the old Audio Handler completely.
-IN_PROC_BROWSER_TEST_F(PolicyTest, DISABLED_DisableAudioOutput) {
+IN_PROC_BROWSER_TEST_F(PolicyTest, DisableAudioOutput) {
   // Set up the mock observer.
-  chromeos::AudioHandler::Initialize(
-      chromeos::AudioPrefHandler::Create(g_browser_process->local_state()));
-  chromeos::AudioHandler* audio_handler = chromeos::AudioHandler::GetInstance();
-  scoped_ptr<TestVolumeObserver> mock(new TestVolumeObserver());
-  audio_handler->AddVolumeObserver(mock.get());
+  chromeos::CrasAudioHandler* audio_handler = chromeos::CrasAudioHandler::Get();
+  scoped_ptr<TestAudioObserver> test_observer(new TestAudioObserver);
+  audio_handler->AddAudioObserver(test_observer.get());
 
-  bool prior_state = audio_handler->IsMuted();
-  // Make sure we are not muted and then toggle the policy and observe if the
-  // trigger was successful.
-  audio_handler->SetMuted(false);
-  EXPECT_FALSE(audio_handler->IsMuted());
-  EXPECT_CALL(*mock, OnMuteToggled()).Times(1);
+  bool prior_state = audio_handler->IsOutputMuted();
+  // Make sure the audio is not muted and then toggle the policy and observe
+  // if the output mute changed event is fired.
+  audio_handler->SetOutputMute(false);
+  EXPECT_FALSE(audio_handler->IsOutputMuted());
+  EXPECT_EQ(1, test_observer->output_mute_changed_count());
   PolicyMap policies;
   policies.Set(key::kAudioOutputAllowed, POLICY_LEVEL_MANDATORY,
                POLICY_SCOPE_USER, base::Value::CreateBooleanValue(false), NULL);
   UpdateProviderPolicy(policies);
-  EXPECT_TRUE(audio_handler->IsMuted());
-  // This should not change the state now and should not trigger OnMuteToggled.
-  audio_handler->SetMuted(false);
-  EXPECT_TRUE(audio_handler->IsMuted());
+  EXPECT_TRUE(audio_handler->IsOutputMuted());
+  // This should not change the state now and should not trigger output mute
+  // changed event.
+  audio_handler->SetOutputMute(false);
+  EXPECT_TRUE(audio_handler->IsOutputMuted());
+  EXPECT_EQ(1, test_observer->output_mute_changed_count());
 
-  // Toggle back and observe if the trigger was successful.
-  EXPECT_CALL(*mock, OnMuteToggled()).Times(1);
+  // Toggle back and observe if the output mute changed event is fired.
   policies.Set(key::kAudioOutputAllowed, POLICY_LEVEL_MANDATORY,
                POLICY_SCOPE_USER, base::Value::CreateBooleanValue(true), NULL);
   UpdateProviderPolicy(policies);
-  EXPECT_FALSE(audio_handler->IsMuted());
-  EXPECT_CALL(*mock, OnMuteToggled()).Times(1);
-  audio_handler->SetMuted(true);
-  EXPECT_TRUE(audio_handler->IsMuted());
+  EXPECT_FALSE(audio_handler->IsOutputMuted());
+  EXPECT_EQ(1, test_observer->output_mute_changed_count());
+  audio_handler->SetOutputMute(true);
+  EXPECT_TRUE(audio_handler->IsOutputMuted());
+  EXPECT_EQ(2, test_observer->output_mute_changed_count());
   // Revert the prior state.
-  EXPECT_CALL(*mock, OnMuteToggled()).Times(1);
-  audio_handler->SetMuted(prior_state);
-  audio_handler->RemoveVolumeObserver(mock.get());
-  chromeos::AudioHandler::Shutdown();
+  audio_handler->SetOutputMute(prior_state);
+  audio_handler->RemoveAudioObserver(test_observer.get());
 }
 
 IN_PROC_BROWSER_TEST_F(PolicyTest, PRE_SessionLengthLimit) {
@@ -2186,7 +2149,7 @@ IN_PROC_BROWSER_TEST_P(RestoreOnStartupPolicyTest, PRE_RunTest) {
 IN_PROC_BROWSER_TEST_P(RestoreOnStartupPolicyTest, RunTest) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (base::win::GetVersion() >= base::win::VERSION_WIN8)
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
     return;
 #endif
 

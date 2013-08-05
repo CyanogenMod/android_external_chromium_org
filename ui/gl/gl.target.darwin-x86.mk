@@ -115,6 +115,7 @@ LOCAL_SRC_FILES := \
 	ui/gl/gl_gl_api_implementation.cc \
 	ui/gl/gl_image.cc \
 	ui/gl/gl_image_android.cc \
+	ui/gl/gl_image_shm.cc \
 	ui/gl/gl_image_stub.cc \
 	ui/gl/gl_implementation.cc \
 	ui/gl/gl_implementation_android.cc \

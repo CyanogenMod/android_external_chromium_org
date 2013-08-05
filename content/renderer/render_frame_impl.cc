@@ -341,29 +341,6 @@ void RenderFrameImpl::willSubmitForm(WebKit::WebFrame* frame,
   render_view_->willSubmitForm(frame, form);
 }
 
-void RenderFrameImpl::willPerformClientRedirect(WebKit::WebFrame* frame,
-                                                const WebKit::WebURL& from,
-                                                const WebKit::WebURL& to,
-                                                double interval,
-                                                double fire_time) {
-  // Call back to RenderViewImpl for observers to be notified.
-  // TODO(nasko): Remove once we have RenderFrameObserver.
-  render_view_->willPerformClientRedirect(frame, from, to, interval, fire_time);
-}
-
-void RenderFrameImpl::didCancelClientRedirect(WebKit::WebFrame* frame) {
-  // Call back to RenderViewImpl for observers to be notified.
-  // TODO(nasko): Remove once we have RenderFrameObserver.
-  render_view_->didCancelClientRedirect(frame);
-}
-
-void RenderFrameImpl::didCompleteClientRedirect(WebKit::WebFrame* frame,
-                                                const WebKit::WebURL& from) {
-  // Call back to RenderViewImpl for observers to be notified.
-  // TODO(nasko): Remove once we have RenderFrameObserver.
-  render_view_->didCompleteClientRedirect(frame, from);
-}
-
 void RenderFrameImpl::didCreateDataSource(WebKit::WebFrame* frame,
                                           WebKit::WebDataSource* datasource) {
   // TODO(nasko): Move implementation here. Needed state:
@@ -829,23 +806,6 @@ void RenderFrameImpl::deleteFileSystem(
       GURL(origin.toString()),
       static_cast<fileapi::FileSystemType>(type),
       base::Bind(&FileStatusCallbackAdapter, callbacks));
-}
-
-void RenderFrameImpl::queryStorageUsageAndQuota(
-    WebKit::WebFrame* frame,
-    WebKit::WebStorageQuotaType type,
-    WebKit::WebStorageQuotaCallbacks* callbacks) {
-  DCHECK(frame);
-  WebSecurityOrigin origin = frame->document().securityOrigin();
-  if (origin.isUnique()) {
-    // Unique origins cannot store persistent state.
-    callbacks->didFail(WebKit::WebStorageQuotaErrorAbort);
-    return;
-  }
-  ChildThread::current()->quota_dispatcher()->QueryStorageUsageAndQuota(
-      GURL(origin.toString()),
-      static_cast<quota::StorageType>(type),
-      QuotaDispatcher::CreateWebStorageQuotaCallbacksWrapper(callbacks));
 }
 
 void RenderFrameImpl::requestStorageQuota(

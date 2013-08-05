@@ -145,7 +145,10 @@ LOCAL_SRC_FILES := \
 	base/posix/global_descriptors.cc \
 	base/posix/unix_domain_socket_linux.cc \
 	base/power_monitor/power_monitor.cc \
-	base/power_monitor/power_monitor_android.cc \
+	base/power_monitor/power_monitor_device_source_android.cc \
+	base/power_monitor/power_monitor_device_source.cc \
+	base/power_monitor/power_monitor_source.cc \
+	base/power_monitor/power_monitor_test_base.cc \
 	base/process/internal_linux.cc \
 	base/process/kill.cc \
 	base/process/kill_posix.cc \

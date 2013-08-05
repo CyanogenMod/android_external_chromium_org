@@ -159,7 +159,9 @@ const Extension* ExtensionBrowserTest::LoadExtensionWithFlags(
   // The call to OnExtensionInstalled ensures the other extension prefs
   // are set up with the defaults.
   service->extension_prefs()->OnExtensionInstalled(
-      extension, Extension::ENABLED,
+      extension,
+      Extension::ENABLED,
+      extensions::Blacklist::NOT_BLACKLISTED,
       syncer::StringOrdinal::CreateInitialOrdinal());
 
   // Toggling incognito or file access will reload the extension, so wait for
@@ -332,6 +334,20 @@ class MockAutoConfirmExtensionInstallPrompt : public ExtensionInstallPrompt {
   }
 };
 
+const Extension* ExtensionBrowserTest::UpdateExtensionWaitForIdle(
+    const std::string& id,
+    const base::FilePath& path,
+    int expected_change) {
+  return InstallOrUpdateExtension(id,
+                                  path,
+                                  INSTALL_UI_TYPE_NONE,
+                                  expected_change,
+                                  Manifest::INTERNAL,
+                                  browser(),
+                                  false,
+                                  true);
+}
+
 const Extension* ExtensionBrowserTest::InstallExtensionFromWebstore(
     const base::FilePath& path,
     int expected_change) {
@@ -341,7 +357,8 @@ const Extension* ExtensionBrowserTest::InstallExtensionFromWebstore(
                                   expected_change,
                                   Manifest::INTERNAL,
                                   browser(),
-                                  true);
+                                  true,
+                                  false);
 }
 
 const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
@@ -350,7 +367,7 @@ const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
     InstallUIType ui_type,
     int expected_change) {
   return InstallOrUpdateExtension(id, path, ui_type, expected_change,
-                                  Manifest::INTERNAL, browser(), false);
+                                  Manifest::INTERNAL, browser(), false, false);
 }
 
 const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
@@ -361,7 +378,8 @@ const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
     Browser* browser,
     bool from_webstore) {
   return InstallOrUpdateExtension(id, path, ui_type, expected_change,
-                                  Manifest::INTERNAL, browser, from_webstore);
+                                  Manifest::INTERNAL, browser, from_webstore,
+                                  false);
 }
 
 const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
@@ -371,7 +389,7 @@ const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
     int expected_change,
     Manifest::Location install_source) {
   return InstallOrUpdateExtension(id, path, ui_type, expected_change,
-                                  install_source, browser(), false);
+                                  install_source, browser(), false, false);
 }
 
 const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
@@ -381,7 +399,8 @@ const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
     int expected_change,
     Manifest::Location install_source,
     Browser* browser,
-    bool from_webstore) {
+    bool from_webstore,
+    bool wait_for_idle) {
   ExtensionService* service = profile()->GetExtensionService();
   service->set_show_extensions_prompts(false);
   size_t num_before = service->extensions()->size();
@@ -412,7 +431,7 @@ const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
     installer->set_expected_id(id);
     installer->set_is_gallery_install(from_webstore);
     installer->set_install_source(install_source);
-    installer->set_install_wait_for_idle(false);
+    installer->set_install_wait_for_idle(wait_for_idle);
     if (!from_webstore) {
       installer->set_off_store_install_allow_reason(
           extensions::CrxInstaller::OffStoreInstallAllowedInTest);

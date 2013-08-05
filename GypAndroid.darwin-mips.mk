@@ -102,8 +102,6 @@ include $(LOCAL_PATH)/skia/skia_library.target.darwin-mips.mk
 include $(LOCAL_PATH)/skia/skia_opts.target.darwin-mips.mk
 include $(LOCAL_PATH)/sql/sql.target.darwin-mips.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.darwin-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/blink_common.target.darwin-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/webkit.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/deprecated_perl_bindings_sources.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/interface_dependencies.target.darwin-mips.mk
@@ -145,6 +143,8 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_html.target.da
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/frontend_protocol_sources.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/generate_devtools_grd.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/modules/modules.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/web/blink_common.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/web/webkit.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/weborigin/weborigin.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf_config.target.darwin-mips.mk
@@ -157,7 +157,6 @@ include $(LOCAL_PATH)/third_party/ashmem/ashmem.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/expat/expat.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/freetype/ft2.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/harfbuzz-ng/harfbuzz-ng.target.darwin-mips.mk
-include $(LOCAL_PATH)/third_party/hyphen/hyphen.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/iccjpeg/iccjpeg.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/icu/icudata.host.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/icu/icudata.target.darwin-mips.mk

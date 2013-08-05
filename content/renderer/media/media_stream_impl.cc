@@ -57,6 +57,8 @@ void UpdateRequestOptions(
       options->audio_device_id = GetStreamConstraint(
           user_media_request.audioConstraints(),
           kMediaStreamSourceId, true);
+    } else if (audio_stream_source == kMediaStreamSourceSystem) {
+      options->audio_type = content::MEDIA_SYSTEM_AUDIO_CAPTURE;
     }
   }
 
@@ -377,8 +379,6 @@ void MediaStreamImpl::OnStreamGenerationFailed(int request_id) {
 void MediaStreamImpl::OnCreateNativeSourcesComplete(
     WebKit::WebMediaStream* web_stream,
     bool request_succeeded) {
-  DVLOG(1) << "MediaStreamImpl::OnCreateNativeSourcesComplete stream:"
-           << UTF16ToUTF8(web_stream->id());
   UserMediaRequestInfo* request_info = FindUserMediaRequestInfo(web_stream);
   if (!request_info) {
     // This can happen if the request is canceled or the frame reloads while

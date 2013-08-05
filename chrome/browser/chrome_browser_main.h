@@ -17,6 +17,7 @@
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "content/public/browser/browser_main_parts.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/common/main_function_params.h"
 
 class ActiveTabTracker;
 class BrowserProcessImpl;
@@ -39,10 +40,6 @@ extern const char kMissingLocaleDataMessage[];
 
 namespace chrome_browser_metrics {
 class TrackingSynchronizer;
-}
-
-namespace content {
-struct MainFunctionParams;
 }
 
 namespace performance_monitor {
@@ -101,7 +98,6 @@ class ChromeBrowserMainParts : public content::BrowserMainParts {
   }
 
   Profile* profile() { return profile_; }
-  bool do_first_run_tasks() const { return do_first_run_tasks_; }
 
   const PrefService* local_state() const { return local_state_; }
 
@@ -121,8 +117,7 @@ class ChromeBrowserMainParts : public content::BrowserMainParts {
   bool IsMetricsReportingEnabled();
 
   // Record time from process startup to present time in an UMA histogram.
-  // |is_first_run| - is the current launch part of a first run.
-  void RecordBrowserStartupTime(bool is_first_run);
+  void RecordBrowserStartupTime();
 
   // Records a time value to an UMA histogram in the context of the
   // PreReadExperiment field-trial. This also reports to the appropriate
@@ -136,7 +131,7 @@ class ChromeBrowserMainParts : public content::BrowserMainParts {
 
   // Members initialized on construction ---------------------------------------
 
-  const content::MainFunctionParams& parameters_;
+  const content::MainFunctionParams parameters_;
   const CommandLine& parsed_command_line_;
   int result_code_;
 
@@ -195,7 +190,6 @@ class ChromeBrowserMainParts : public content::BrowserMainParts {
 
   // Members initialized in PreMainMessageLoopRun, needed in
   // PreMainMessageLoopRunThreadsCreated.
-  bool do_first_run_tasks_;
   PrefService* local_state_;
   base::FilePath user_data_dir_;
 

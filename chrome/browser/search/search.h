@@ -82,6 +82,10 @@ bool ShouldAssignURLToInstantRenderer(const GURL& url, Profile* profile);
 // Returns true if the Instant |url| should use process per site.
 bool ShouldUseProcessPerSiteForInstantURL(const GURL& url, Profile* profile);
 
+// Returns true if |url| corresponds to a New Tab page (it can be either an
+// Instant Extended NTP or a non-extended NTP).
+bool IsNTPURL(const GURL& url, Profile* profile);
+
 // Returns true if the visible entry of |contents| is a New Tab Page rendered
 // by Instant. A page that matches the search or Instant URL of the default
 // search provider but does not have any search terms is considered an Instant
@@ -122,7 +126,7 @@ bool ShouldShowRecentTabsOnNTP();
 // Returns true if |my_url| matches |other_url|.
 bool MatchesOriginAndPath(const GURL& my_url, const GURL& other_url);
 
-// Transforms the input |url| into its "privileged URL". The returned URL
+// Transforms the input |url| into its "effective URL". The returned URL
 // facilitates grouping process-per-site. The |url| is transformed, for
 // example, from
 //
@@ -139,10 +143,7 @@ bool MatchesOriginAndPath(const GURL& my_url, const GURL& other_url);
 // If |url| is that of the online NTP, its host is replaced with "online-ntp".
 // This forces the NTP and search results pages to have different SiteIntances,
 // and hence different processes.
-GURL GetPrivilegedURLForInstant(const GURL& url, Profile* profile);
-
-// Returns true if the input |url| is a privileged Instant URL.
-bool IsPrivilegedURLForInstant(const GURL& url);
+GURL GetEffectiveURLForInstant(const GURL& url, Profile* profile);
 
 // Returns the staleness timeout (in seconds) that should be used to refresh the
 // InstantLoader.

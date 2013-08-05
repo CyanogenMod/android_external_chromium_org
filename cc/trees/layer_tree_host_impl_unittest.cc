@@ -308,7 +308,8 @@ class LayerTreeHostImplTest : public testing::Test,
     // and make sure that it does not change can_draw.
     set_reduce_memory_result(false);
     host_impl_->SetMemoryPolicy(ManagedMemoryPolicy(
-        host_impl_->memory_allocation_limit_bytes() - 1), true);
+        host_impl_->memory_allocation_limit_bytes() - 1));
+    host_impl_->SetDiscardBackBufferWhenNotVisible(true);
     EXPECT_TRUE(host_impl_->CanDraw());
     EXPECT_FALSE(on_can_draw_state_changed_called_);
     on_can_draw_state_changed_called_ = false;
@@ -316,7 +317,8 @@ class LayerTreeHostImplTest : public testing::Test,
     // Toggle contents textures purged to make sure it toggles can_draw.
     set_reduce_memory_result(true);
     host_impl_->SetMemoryPolicy(ManagedMemoryPolicy(
-        host_impl_->memory_allocation_limit_bytes() - 1), true);
+        host_impl_->memory_allocation_limit_bytes() - 1));
+    host_impl_->SetDiscardBackBufferWhenNotVisible(true);
     if (always_draw) {
       EXPECT_TRUE(host_impl_->CanDraw());
     } else {
@@ -426,9 +428,9 @@ TEST_F(LayerTreeHostImplTest, ScrollDeltaRepeatedScrolls) {
   {
     scoped_ptr<LayerImpl> root =
         LayerImpl::Create(host_impl_->active_tree(), 1);
+    root->SetMaxScrollOffset(gfx::Vector2d(100, 100));
     root->SetScrollOffset(scroll_offset);
     root->SetScrollable(true);
-    root->SetMaxScrollOffset(gfx::Vector2d(100, 100));
     root->ScrollBy(scroll_delta);
     host_impl_->active_tree()->SetRootLayer(root.Pass());
   }
@@ -1055,18 +1057,19 @@ TEST_F(LayerTreeHostImplTest, ScrollbarLinearFadeScheduling) {
   settings.scrollbar_linear_fade_delay_ms = 20;
   settings.scrollbar_linear_fade_length_ms = 20;
 
+  gfx::Size viewport_size(10, 10);
+  gfx::Size content_size(100, 100);
+
   LayerTreeHostImplOverridePhysicalTime* host_impl_override_time =
       new LayerTreeHostImplOverridePhysicalTime(
           settings, this, &proxy_, &stats_instrumentation_);
   host_impl_ = make_scoped_ptr<LayerTreeHostImpl>(host_impl_override_time);
   host_impl_->InitializeRenderer(CreateOutputSurface());
-  host_impl_->SetViewportSize(gfx::Size(10, 10));
+  host_impl_->SetViewportSize(viewport_size);
 
-  gfx::Size content_size(100, 100);
   scoped_ptr<LayerImpl> root =
       LayerImpl::Create(host_impl_->active_tree(), 1);
-  root->SetBounds(content_size);
-  root->SetContentBounds(content_size);
+  root->SetBounds(viewport_size);
 
   scoped_ptr<LayerImpl> scroll =
       LayerImpl::Create(host_impl_->active_tree(), 2);
@@ -3461,6 +3464,8 @@ class PartialSwapContext : public TestWebGraphicsContext3D {
       OVERRIDE {
     if (pname == GL_MAX_TEXTURE_SIZE)
       *value = 8192;
+    else if (pname == GL_ACTIVE_TEXTURE)
+      *value = GL_TEXTURE0;
   }
 };
 
@@ -4842,7 +4847,8 @@ TEST_F(LayerTreeHostImplTest, ReleaseContentsTextureShouldTriggerCommit) {
   host_impl_->set_max_memory_needed_bytes(
       host_impl_->memory_allocation_limit_bytes() - 1);
   host_impl_->SetMemoryPolicy(ManagedMemoryPolicy(
-      host_impl_->memory_allocation_limit_bytes() - 1), true);
+      host_impl_->memory_allocation_limit_bytes() - 1));
+    host_impl_->SetDiscardBackBufferWhenNotVisible(true);
   EXPECT_FALSE(did_request_commit_);
   did_request_commit_ = false;
 
@@ -4853,7 +4859,8 @@ TEST_F(LayerTreeHostImplTest, ReleaseContentsTextureShouldTriggerCommit) {
   host_impl_->set_max_memory_needed_bytes(
       host_impl_->memory_allocation_limit_bytes());
   host_impl_->SetMemoryPolicy(ManagedMemoryPolicy(
-      host_impl_->memory_allocation_limit_bytes() - 1), true);
+      host_impl_->memory_allocation_limit_bytes() - 1));
+  host_impl_->SetDiscardBackBufferWhenNotVisible(true);
   EXPECT_TRUE(did_request_commit_);
   did_request_commit_ = false;
 
@@ -4862,14 +4869,16 @@ TEST_F(LayerTreeHostImplTest, ReleaseContentsTextureShouldTriggerCommit) {
   set_reduce_memory_result(true);
   host_impl_->set_max_memory_needed_bytes(1);
   host_impl_->SetMemoryPolicy(ManagedMemoryPolicy(
-      host_impl_->memory_allocation_limit_bytes() - 1), true);
+      host_impl_->memory_allocation_limit_bytes() - 1));
+  host_impl_->SetDiscardBackBufferWhenNotVisible(true);
   EXPECT_TRUE(did_request_commit_);
   did_request_commit_ = false;
 
   // But if we set it to the same value that it was before, we shouldn't
   // re-commit.
   host_impl_->SetMemoryPolicy(ManagedMemoryPolicy(
-      host_impl_->memory_allocation_limit_bytes()), true);
+      host_impl_->memory_allocation_limit_bytes()));
+  host_impl_->SetDiscardBackBufferWhenNotVisible(true);
   EXPECT_FALSE(did_request_commit_);
 }
 
@@ -6206,14 +6215,14 @@ TEST_F(LayerTreeHostImplTest, DefaultMemoryAllocation) {
 TEST_F(LayerTreeHostImplTest, MemoryPolicy) {
   ManagedMemoryPolicy policy1(
       456, ManagedMemoryPolicy::CUTOFF_ALLOW_EVERYTHING,
-      123, ManagedMemoryPolicy::CUTOFF_ALLOW_NICE_TO_HAVE);
+      123, ManagedMemoryPolicy::CUTOFF_ALLOW_NICE_TO_HAVE, 1000);
   int visible_cutoff_value = ManagedMemoryPolicy::PriorityCutoffToValue(
       policy1.priority_cutoff_when_visible);
   int not_visible_cutoff_value = ManagedMemoryPolicy::PriorityCutoffToValue(
       policy1.priority_cutoff_when_not_visible);
 
   host_impl_->SetVisible(true);
-  host_impl_->SetMemoryPolicy(policy1, false);
+  host_impl_->SetMemoryPolicy(policy1);
   EXPECT_EQ(policy1.bytes_limit_when_visible, current_limit_bytes_);
   EXPECT_EQ(visible_cutoff_value, current_priority_cutoff_value_);
 
@@ -6224,19 +6233,52 @@ TEST_F(LayerTreeHostImplTest, MemoryPolicy) {
   host_impl_->SetVisible(true);
   EXPECT_EQ(policy1.bytes_limit_when_visible, current_limit_bytes_);
   EXPECT_EQ(visible_cutoff_value, current_priority_cutoff_value_);
+}
 
-  // A policy with a 0 allocation is discarded.
-  ManagedMemoryPolicy actual_policy = host_impl_->ActualManagedMemoryPolicy();
-  ManagedMemoryPolicy policy2(
-      0, ManagedMemoryPolicy::CUTOFF_ALLOW_REQUIRED_ONLY,
-      0, ManagedMemoryPolicy::CUTOFF_ALLOW_NOTHING);
-  host_impl_->SetMemoryPolicy(policy2, false);
-  EXPECT_EQ(actual_policy, host_impl_->ActualManagedMemoryPolicy());
-  EXPECT_EQ(policy1.bytes_limit_when_visible, current_limit_bytes_);
-  EXPECT_EQ(visible_cutoff_value, current_priority_cutoff_value_);
-  host_impl_->SetVisible(false);
-  EXPECT_EQ(policy1.bytes_limit_when_not_visible, current_limit_bytes_);
-  EXPECT_EQ(not_visible_cutoff_value, current_priority_cutoff_value_);
+TEST_F(LayerTreeHostImplTest, UIResourceManagement) {
+  scoped_ptr<TestWebGraphicsContext3D> context =
+      TestWebGraphicsContext3D::Create();
+  TestWebGraphicsContext3D* context3d = context.get();
+  scoped_ptr<OutputSurface> output_surface = FakeOutputSurface::Create3d(
+      context.PassAs<WebKit::WebGraphicsContext3D>()).PassAs<OutputSurface>();
+  host_impl_->InitializeRenderer(output_surface.Pass());
+
+  EXPECT_EQ(0u, context3d->NumTextures());
+
+  UIResourceId ui_resource_id = 1;
+  scoped_refptr<UIResourceBitmap> bitmap = UIResourceBitmap::Create(
+      new uint8_t[1], UIResourceBitmap::RGBA8, gfx::Size(1, 1));
+  host_impl_->CreateUIResource(ui_resource_id, bitmap);
+  EXPECT_EQ(1u, context3d->NumTextures());
+  ResourceProvider::ResourceId id1 =
+      host_impl_->ResourceIdForUIResource(ui_resource_id);
+  EXPECT_NE(0u, id1);
+
+  // Multiple requests with the same id is allowed.  The previous texture is
+  // deleted.
+  host_impl_->CreateUIResource(ui_resource_id, bitmap);
+  EXPECT_EQ(1u, context3d->NumTextures());
+  ResourceProvider::ResourceId id2 =
+      host_impl_->ResourceIdForUIResource(ui_resource_id);
+  EXPECT_NE(0u, id2);
+  EXPECT_NE(id1, id2);
+
+  // Deleting invalid UIResourceId is allowed and does not change state.
+  host_impl_->DeleteUIResource(-1);
+  EXPECT_EQ(1u, context3d->NumTextures());
+
+  // Should return zero for invalid UIResourceId.  Number of textures should
+  // not change.
+  EXPECT_EQ(0u, host_impl_->ResourceIdForUIResource(-1));
+  EXPECT_EQ(1u, context3d->NumTextures());
+
+  host_impl_->DeleteUIResource(ui_resource_id);
+  EXPECT_EQ(0u, host_impl_->ResourceIdForUIResource(ui_resource_id));
+  EXPECT_EQ(0u, context3d->NumTextures());
+
+  // Should not change state for multiple deletion on one UIResourceId
+  host_impl_->DeleteUIResource(ui_resource_id);
+  EXPECT_EQ(0u, context3d->NumTextures());
 }
 
 }  // namespace

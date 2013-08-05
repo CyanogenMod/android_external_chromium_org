@@ -150,7 +150,6 @@ ui::Range CharRangeToGlyphRange(const internal::TextRun& run,
             run.logical_clusters[run_range.end()] : run.glyph_count);
   }
   DCHECK(!result.is_reversed());
-  DCHECK(!result.is_empty());
   DCHECK(ui::Range(0, run.glyph_count).Contains(result));
   return result;
 }
@@ -513,6 +512,8 @@ void RenderTextWin::DrawVisualText(Canvas* canvas) {
          ++it) {
       const ui::Range glyph_range = CharRangeToGlyphRange(*run,
           colors().GetRange(it).Intersect(run->range));
+      if (glyph_range.is_empty())
+        continue;
       renderer.SetForegroundColor(it->second);
       renderer.DrawPosText(&pos[glyph_range.start()],
                            &run->glyphs[glyph_range.start()],
@@ -533,6 +534,8 @@ void RenderTextWin::DrawVisualText(Canvas* canvas) {
 
 void RenderTextWin::ItemizeLogicalText() {
   runs_.clear();
+  // Make |string_size_|'s height and |common_baseline_| tall enough to draw
+  // often-used characters which are rendered with fonts in the font list.
   string_size_ = Size(0, font_list().GetHeight());
   common_baseline_ = font_list().GetBaseline();
 
@@ -575,7 +578,7 @@ void RenderTextWin::ItemizeLogicalText() {
   for (size_t run_break = 0; run_break < layout_text_length;) {
     internal::TextRun* run = new internal::TextRun();
     run->range.set_start(run_break);
-    run->font = GetFont();
+    run->font = GetPrimaryFont();
     run->font_style = (style.style(BOLD) ? Font::BOLD : 0) |
                       (style.style(ITALIC) ? Font::ITALIC : 0);
     DeriveFontIfNecessary(run->font.GetFontSize(), run->font.GetHeight(),
@@ -610,6 +613,11 @@ void RenderTextWin::LayoutVisualText() {
     cached_hdc_ = CreateCompatibleDC(NULL);
 
   HRESULT hr = E_FAIL;
+  // Ensure ascent and descent are not smaller than ones of the font list.
+  // Keep them tall enough to draw often-used characters.
+  // For example, if a text field contains a Japanese character, which is
+  // smaller than Latin ones, and then later a Latin one is inserted, this
+  // ensures that the text baseline does not shift.
   int ascent = font_list().GetBaseline();
   int descent = font_list().GetHeight() - font_list().GetBaseline();
   for (size_t i = 0; i < runs_.size(); ++i) {

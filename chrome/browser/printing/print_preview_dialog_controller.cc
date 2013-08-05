@@ -173,7 +173,7 @@ class PrintPreviewWebContentDelegate : public WebDialogWebContentsDelegate {
       const NativeWebKeyboardEvent& event) OVERRIDE;
 
  private:
-  WebContents* tab_;
+  WebContents* initiator_;
 
   DISALLOW_COPY_AND_ASSIGN(PrintPreviewWebContentDelegate);
 };
@@ -182,7 +182,7 @@ PrintPreviewWebContentDelegate::PrintPreviewWebContentDelegate(
     Profile* profile,
     WebContents* initiator)
     : WebDialogWebContentsDelegate(profile, new ChromeWebContentsHandler),
-      tab_(initiator) {}
+      initiator_(initiator) {}
 
 PrintPreviewWebContentDelegate::~PrintPreviewWebContentDelegate() {}
 
@@ -191,7 +191,7 @@ void PrintPreviewWebContentDelegate::HandleKeyboardEvent(
     const NativeWebKeyboardEvent& event) {
   // Disabled on Mac due to http://crbug.com/112173
 #if !defined(OS_MACOSX)
-  Browser* current_browser = chrome::FindBrowserWithWebContents(tab_);
+  Browser* current_browser = chrome::FindBrowserWithWebContents(initiator_);
   if (!current_browser)
     return;
   current_browser->window()->HandleKeyboardEvent(event);
@@ -302,7 +302,7 @@ void PrintPreviewDialogController::EraseInitiatorInfo(
   if (it == preview_dialog_map_.end())
     return;
 
-  RemoveObservers(it->second, INITIATOR);
+  RemoveObservers(it->second);
   preview_dialog_map_[preview_dialog] = NULL;
 }
 
@@ -360,33 +360,35 @@ void PrintPreviewDialogController::OnNavEntryCommitted(
     return;
   }
 
-  DCHECK_EQ(contents, preview_dialog);
+  if (contents == preview_dialog) {
+    // Preview dialog navigated.
+    if (details) {
+      content::PageTransition transition_type =
+          details->entry->GetTransitionType();
+      content::NavigationType nav_type = details->type;
 
-  // Preview dialog navigated.
-  if (details) {
-    content::PageTransition transition_type =
-        details->entry->GetTransitionType();
-    content::NavigationType nav_type = details->type;
+      // New |preview_dialog| is created. Don't update/erase map entry.
+      if (waiting_for_new_preview_page_ &&
+          transition_type == content::PAGE_TRANSITION_AUTO_TOPLEVEL &&
+          nav_type == content::NAVIGATION_TYPE_NEW_PAGE) {
+        waiting_for_new_preview_page_ = false;
+        SaveInitiatorTitle(preview_dialog);
+        return;
+      }
 
-    // New |preview_dialog| is created. Don't update/erase map entry.
-    if (waiting_for_new_preview_page_ &&
-        transition_type == content::PAGE_TRANSITION_AUTO_TOPLEVEL &&
-        nav_type == content::NAVIGATION_TYPE_NEW_PAGE) {
-      waiting_for_new_preview_page_ = false;
-      SaveInitiatorTitle(preview_dialog);
-      return;
+      // Cloud print sign-in causes a reload.
+      if (!waiting_for_new_preview_page_ &&
+          transition_type == content::PAGE_TRANSITION_RELOAD &&
+          nav_type == content::NAVIGATION_TYPE_EXISTING_PAGE &&
+          IsPrintPreviewURL(details->previous_url)) {
+        return;
+      }
     }
-
-    // Cloud print sign-in causes a reload.
-    if (!waiting_for_new_preview_page_ &&
-        transition_type == content::PAGE_TRANSITION_RELOAD &&
-        nav_type == content::NAVIGATION_TYPE_EXISTING_PAGE &&
-        IsPrintPreviewURL(details->previous_url)) {
-      return;
-    }
+    NOTREACHED();
+    return;
   }
 
-  NOTREACHED();
+  RemoveInitiator(contents);
 }
 
 WebContents* PrintPreviewDialogController::CreatePrintPreviewDialog(
@@ -426,8 +428,8 @@ WebContents* PrintPreviewDialogController::CreatePrintPreviewDialog(
   preview_dialog_map_[preview_dialog] = initiator;
   waiting_for_new_preview_page_ = true;
 
-  AddObservers(initiator, INITIATOR);
-  AddObservers(preview_dialog, PREVIEW_DIALOG);
+  AddObservers(initiator);
+  AddObservers(preview_dialog);
 
   return preview_dialog;
 }
@@ -443,14 +445,11 @@ void PrintPreviewDialogController::SaveInitiatorTitle(
   }
 }
 
-void PrintPreviewDialogController::AddObservers(WebContents* contents,
-                                                ContentsType contents_type) {
+void PrintPreviewDialogController::AddObservers(WebContents* contents) {
   registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
                  content::Source<WebContents>(contents));
-  if (contents_type == PREVIEW_DIALOG) {
-    registrar_.Add(this, content::NOTIFICATION_NAV_ENTRY_COMMITTED,
-        content::Source<NavigationController>(&contents->GetController()));
-  }
+  registrar_.Add(this, content::NOTIFICATION_NAV_ENTRY_COMMITTED,
+      content::Source<NavigationController>(&contents->GetController()));
 
   // Multiple sites may share the same RenderProcessHost, so check if this
   // notification has already been added.
@@ -463,14 +462,11 @@ void PrintPreviewDialogController::AddObservers(WebContents* contents,
   }
 }
 
-void PrintPreviewDialogController::RemoveObservers(WebContents* contents,
-                                                   ContentsType contents_type) {
+void PrintPreviewDialogController::RemoveObservers(WebContents* contents) {
   registrar_.Remove(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
                     content::Source<WebContents>(contents));
-  if (contents_type == PREVIEW_DIALOG) {
-    registrar_.Remove(this, content::NOTIFICATION_NAV_ENTRY_COMMITTED,
-        content::Source<NavigationController>(&contents->GetController()));
-  }
+  registrar_.Remove(this, content::NOTIFICATION_NAV_ENTRY_COMMITTED,
+      content::Source<NavigationController>(&contents->GetController()));
 
   // Multiple sites may share the same RenderProcessHost, so check if this
   // notification has already been added.
@@ -491,7 +487,7 @@ void PrintPreviewDialogController::RemoveInitiator(
   // and reaches RemovePreviewDialog(), it does not attempt to also remove the
   // initiator's observers.
   preview_dialog_map_[preview_dialog] = NULL;
-  RemoveObservers(initiator, INITIATOR);
+  RemoveObservers(initiator);
 
   PrintViewManager::FromWebContents(initiator)->PrintPreviewDone();
 
@@ -507,7 +503,7 @@ void PrintPreviewDialogController::RemovePreviewDialog(
   // Remove the initiator's observers before erasing the mapping.
   WebContents* initiator = GetInitiator(preview_dialog);
   if (initiator) {
-    RemoveObservers(initiator, INITIATOR);
+    RemoveObservers(initiator);
     PrintViewManager::FromWebContents(initiator)->PrintPreviewDone();
   }
 
@@ -519,7 +515,7 @@ void PrintPreviewDialogController::RemovePreviewDialog(
     print_preview_ui->OnPrintPreviewDialogDestroyed();
 
   preview_dialog_map_.erase(preview_dialog);
-  RemoveObservers(preview_dialog, PREVIEW_DIALOG);
+  RemoveObservers(preview_dialog);
 }
 
 }  // namespace printing

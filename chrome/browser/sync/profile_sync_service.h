@@ -14,6 +14,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/location.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/strings/string16.h"
@@ -279,6 +280,10 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // is unavailable.
   virtual scoped_ptr<browser_sync::DeviceInfo> GetDeviceInfo(
       const std::string& client_id) const;
+
+  // Gets the device info for all devices signed into the account associated
+  // with this profile.
+  virtual ScopedVector<browser_sync::DeviceInfo> GetAllSignedInDevices() const;
 
   // Fills state_map with a map of current data types that are possible to
   // sync, as well as their states.
@@ -632,11 +637,14 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   void ConfigureDataTypeManager();
 
   // Shuts down the backend sync components.
-  // |sync_disabled| indicates if syncing is being disabled or not.
-  void ShutdownImpl(bool sync_disabled);
+  // |option| indicates if syncing is being disabled or not, and whether
+  // to claim ownership of sync thread from backend.
+  void ShutdownImpl(browser_sync::SyncBackendHost::ShutdownOption option);
 
   // Return SyncCredentials from the TokenService.
   syncer::SyncCredentials GetCredentials();
+
+  virtual syncer::WeakHandle<syncer::JsEventHandler> GetJsEventHandler();
 
   // Test need to override this to create backends that allow setting up
   // initial conditions, such as populating sync nodes.
@@ -900,9 +908,6 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // or must delay loading for some reason).
   browser_sync::FailedDataTypesHandler failed_data_types_handler_;
 
-  scoped_ptr<browser_sync::BackendUnrecoverableErrorHandler>
-      backend_unrecoverable_error_handler_;
-
   browser_sync::DataTypeManager::ConfigureStatus configure_status_;
 
   // If |true|, there is setup UI visible so we should not start downloading
@@ -912,12 +917,16 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // The set of currently enabled sync experiments.
   syncer::Experiments current_experiments_;
 
-  // Factory the backend will use to build the SyncManager.
-  syncer::SyncManagerFactory sync_manager_factory_;
-
   // Sync's internal debug info listener. Used to record datatype configuration
   // and association information.
   syncer::WeakHandle<syncer::DataTypeDebugInfoListener> debug_info_listener_;
+
+  // A thread where all the sync operations happen.
+  // OWNERSHIP Notes:
+  //     * Created when backend starts for the first time.
+  //     * If sync is disabled, PSS claims ownership from backend.
+  //     * If sync is reenabled, PSS passes ownership to new backend.
+  scoped_ptr<base::Thread> sync_thread_;
 
   // Specifies whenever to use oauth2 access token or ClientLogin token in
   // communications with sync and xmpp servers.

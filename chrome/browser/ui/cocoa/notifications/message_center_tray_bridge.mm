@@ -76,6 +76,7 @@ void MessageCenterTrayBridge::HideMessageCenter() {
   [status_item_view_ setHighlight:NO];
   [tray_controller_ close];
   tray_controller_.autorelease();
+  UpdateStatusItem();
 }
 
 bool MessageCenterTrayBridge::ShowNotifierSettings() {
@@ -85,30 +86,27 @@ bool MessageCenterTrayBridge::ShowNotifierSettings() {
 }
 
 void MessageCenterTrayBridge::UpdateStatusItem() {
-  // Only show the status item if there are notifications.
-  if (message_center_->NotificationCount() == 0) {
-    [status_item_view_ removeItem];
-    status_item_view_.reset();
-    return;
-  }
-
   if (!status_item_view_) {
     status_item_view_.reset([[MCStatusItemView alloc] init]);
     [status_item_view_ setCallback:^{ tray_->ToggleMessageCenterBubble(); }];
   }
 
-  size_t unread_count = message_center_->UnreadNotificationCount();
-  [status_item_view_ setUnreadCount:unread_count];
+  // We want a static message center icon while it's visible.
+  if (message_center()->IsMessageCenterVisible())
+    return;
 
-  string16 product_name = l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME);
+  size_t unread_count = message_center_->UnreadNotificationCount();
+  bool quiet_mode = message_center_->IsQuietMode();
+  [status_item_view_ setUnreadCount:unread_count withQuietMode:quiet_mode];
+
   if (unread_count > 0) {
     string16 unread_count_string = base::FormatNumber(unread_count);
     [status_item_view_ setToolTip:
         l10n_util::GetNSStringF(IDS_MESSAGE_CENTER_TOOLTIP_UNREAD,
-            product_name, unread_count_string)];
+            unread_count_string)];
   } else {
     [status_item_view_ setToolTip:
-        l10n_util::GetNSStringF(IDS_MESSAGE_CENTER_TOOLTIP, product_name)];
+        l10n_util::GetNSString(IDS_MESSAGE_CENTER_TOOLTIP)];
   }
 }
 

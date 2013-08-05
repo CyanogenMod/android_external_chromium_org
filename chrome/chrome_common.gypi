@@ -386,6 +386,8 @@
         'common/mac/objc_zombie.h',
         'common/mac/objc_zombie.mm',
         'common/media/webrtc_logging_messages.h',
+        'common/metrics/caching_permuted_entropy_provider.cc',
+        'common/metrics/caching_permuted_entropy_provider.h',
         'common/metrics/entropy_provider.cc',
         'common/metrics/entropy_provider.h',
         'common/metrics/metrics_log_base.cc',
@@ -513,10 +515,10 @@
         }],
         ['OS=="win" or OS=="mac"', {
           'sources': [
-            'common/itunes_library.cc',
-            'common/itunes_library.h',
-            'common/itunes_xml_utils.cc',
-            'common/itunes_xml_utils.h',
+            'common/media_galleries/itunes_library.cc',
+            'common/media_galleries/itunes_library.h',
+            'common/media_galleries/itunes_xml_utils.cc',
+            'common/media_galleries/itunes_xml_utils.h',
             'common/media_galleries/picasa_types.cc',
             'common/media_galleries/picasa_types.h',
             'common/media_galleries/pmp_constants.h',

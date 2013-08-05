@@ -18,8 +18,8 @@
 #include "chrome/browser/ui/gtk/gtk_custom_menu_item.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/base/accelerators/menu_label_accelerator_util_linux.h"
 #include "ui/base/accelerators/platform_accelerator_gtk.h"
-#include "ui/base/gtk/menu_label_accelerator_util.h"
 #include "ui/base/models/button_menu_item_model.h"
 #include "ui/base/models/menu_model.h"
 #include "ui/base/window_open_disposition.h"
@@ -132,6 +132,7 @@ GtkWidget* MenuGtk::Delegate::GetDefaultImageForCommandId(int command_id) {
   switch (command_id) {
     case IDC_NEW_TAB:
     case IDC_CONTENT_CONTEXT_OPENIMAGENEWTAB:
+    case IDC_CONTENT_CONTEXT_SEARCHIMAGENEWTAB:
     case IDC_CONTENT_CONTEXT_OPENLINKNEWTAB:
     case IDC_CONTENT_CONTEXT_OPENAVNEWTAB:
       stock = GTK_STOCK_NEW;

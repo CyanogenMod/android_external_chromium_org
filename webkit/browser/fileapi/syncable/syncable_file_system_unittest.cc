@@ -7,13 +7,12 @@
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
-#include "webkit/browser/fileapi/file_system_task_runners.h"
 #include "webkit/browser/fileapi/isolated_context.h"
-#include "webkit/browser/fileapi/local_file_system_operation.h"
 #include "webkit/browser/fileapi/sandbox_file_system_test_helper.h"
 #include "webkit/browser/fileapi/syncable/canned_syncable_file_system.h"
 #include "webkit/browser/fileapi/syncable/local_file_change_tracker.h"
 #include "webkit/browser/fileapi/syncable/local_file_sync_context.h"
+#include "webkit/browser/fileapi/syncable/sync_file_system_backend.h"
 #include "webkit/browser/fileapi/syncable/syncable_file_system_util.h"
 #include "webkit/browser/quota/quota_manager.h"
 #include "webkit/common/fileapi/file_system_types.h"
@@ -88,7 +87,7 @@ class SyncableFileSystemTest : public testing::Test {
   }
 
   LocalFileChangeTracker* change_tracker() {
-    return file_system_context()->change_tracker();
+    return file_system_.backend()->change_tracker();
   }
 
   ScopedEnableSyncFSDirectoryOperation enable_directory_operation_;

@@ -21,7 +21,7 @@
 #include "ui/message_center/notification_types.h"
 
 namespace {
-const char kExtensionScheme[] = "chrome-extension://";
+const char kExtensionScheme[] = "synced-notification://";
 const char kDefaultSyncedNotificationScheme[] = "https:";
 
 // The name of our first synced notification service.
@@ -203,10 +203,11 @@ void SyncedNotification::Show(NotificationUIManager* notification_manager,
   string16 description = UTF8ToUTF16(GetDescription());
   string16 annotation = UTF8ToUTF16(GetAnnotation());
   // TODO(petewil): Eventually put the display name of the sending service here.
-  string16 display_source = UTF8ToUTF16(GetOriginUrl().spec());
+  string16 display_source = UTF8ToUTF16(GetAppId());
   string16 replace_key = UTF8ToUTF16(GetKey());
   string16 notification_heading = heading;
-  string16 notification_text = text;
+  string16 notification_text = description;
+  string16 newline = UTF8ToUTF16("\n");
 
   // The delegate will eventually catch calls that the notification
   // was read or deleted, and send the changes back to the server.
@@ -272,19 +273,10 @@ void SyncedNotification::Show(NotificationUIManager* notification_manager,
       }
     }
 
-    // Set the heading and text appropriately for the message type.
-    notification_text = annotation;
-    if (notification_type == message_center::NOTIFICATION_TYPE_IMAGE) {
-      // For an image, fill in the description field.
-      notification_text = description;
-    } else if (notification_count == 1) {
-      // For a single collapsed info entry, use the contained message if any.
-      std::string comment_body = GetContainedNotificationMessage(0);
-      std::string comment_header = GetContainedNotificationTitle(0);
-      if (!comment_header.empty() && !comment_body.empty())
-        notification_text = UTF8ToUTF16(comment_header) + UTF8ToUTF16(" ") +
-            UTF8ToUTF16(comment_body);
-    }
+    // The text encompasses both the description and the annotation.
+    if (!notification_text.empty())
+      notification_text = notification_text + newline;
+    notification_text = notification_text + annotation;
 
     // If there is a single person sending, use their picture instead of the app
     // icon.

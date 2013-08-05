@@ -20,11 +20,11 @@
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
-#include "webkit/browser/fileapi/file_system_task_runners.h"
 #include "webkit/browser/fileapi/mock_file_system_options.h"
 #include "webkit/browser/fileapi/sandbox_file_system_backend.h"
 #include "webkit/browser/fileapi/syncable/local_file_change_tracker.h"
 #include "webkit/browser/fileapi/syncable/local_file_sync_context.h"
+#include "webkit/browser/fileapi/syncable/sync_file_system_backend.h"
 #include "webkit/browser/fileapi/syncable/syncable_file_system_util.h"
 #include "webkit/browser/quota/mock_special_storage_policy.h"
 #include "webkit/browser/quota/quota_manager.h"
@@ -232,14 +232,16 @@ void CannedSyncableFileSystem::SetUp() {
       fileapi::FileSystemOptions::PROFILE_MODE_NORMAL,
       additional_allowed_schemes);
 
+  ScopedVector<fileapi::FileSystemBackend> additional_backends;
+  additional_backends.push_back(new SyncFileSystemBackend());
+
   file_system_context_ = new FileSystemContext(
-      make_scoped_ptr(
-          new fileapi::FileSystemTaskRunners(io_task_runner_.get(),
-                                             file_task_runner_.get())),
+      io_task_runner_.get(),
+      file_task_runner_.get(),
       fileapi::ExternalMountPoints::CreateRefCounted().get(),
       storage_policy.get(),
       quota_manager_->proxy(),
-      ScopedVector<fileapi::FileSystemBackend>(),
+      additional_backends.Pass(),
       data_dir_.path(), options);
 
   is_filesystem_set_up_ = true;
@@ -271,7 +273,7 @@ PlatformFileError CannedSyncableFileSystem::OpenFileSystem() {
       base::Bind(&CannedSyncableFileSystem::DidOpenFileSystem,
                  base::Unretained(this)));
   base::MessageLoop::current()->Run();
-  if (file_system_context_->sync_context()) {
+  if (backend()->sync_context()) {
     // Register 'this' as a sync status observer.
     RunOnThread(
         io_task_runner_.get(),
@@ -493,7 +495,7 @@ void CannedSyncableFileSystem::GetChangedURLsInTracker(
       file_task_runner_.get(),
       FROM_HERE,
       base::Bind(&LocalFileChangeTracker::GetAllChangedURLs,
-                 base::Unretained(file_system_context_->change_tracker()),
+                 base::Unretained(backend()->change_tracker()),
                  urls));
 }
 
@@ -503,8 +505,12 @@ void CannedSyncableFileSystem::ClearChangeForURLInTracker(
       file_task_runner_.get(),
       FROM_HERE,
       base::Bind(&LocalFileChangeTracker::ClearChangesForURL,
-                 base::Unretained(file_system_context_->change_tracker()),
+                 base::Unretained(backend()->change_tracker()),
                  url));
+}
+
+SyncFileSystemBackend* CannedSyncableFileSystem::backend() {
+  return SyncFileSystemBackend::GetBackend(file_system_context_);
 }
 
 FileSystemOperationRunner* CannedSyncableFileSystem::operation_runner() {
@@ -666,7 +672,7 @@ void CannedSyncableFileSystem::DidInitializeFileSystemContext(
 
 void CannedSyncableFileSystem::InitializeSyncStatusObserver() {
   ASSERT_TRUE(io_task_runner_->RunsTasksOnCurrentThread());
-  file_system_context_->sync_context()->sync_status()->AddObserver(this);
+  backend()->sync_context()->sync_status()->AddObserver(this);
 }
 
 }  // namespace sync_file_system

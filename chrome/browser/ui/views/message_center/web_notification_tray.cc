@@ -35,13 +35,23 @@ const int kSystemTrayWidth = 16;
 const int kSystemTrayHeight = 16;
 const int kNumberOfSystemTraySprites = 10;
 
-gfx::ImageSkia GetIcon(int unread_count) {
-  bool has_unread = unread_count > 0;
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  if (!has_unread)
-    return *rb.GetImageSkiaNamed(IDR_NOTIFICATION_TRAY_EMPTY);
+// Number of pixels the message center is offset from the mouse.
+const int kMouseOffset = 5;
 
-  return *rb.GetImageSkiaNamed(IDR_NOTIFICATION_TRAY_ATTENTION);
+gfx::ImageSkia* GetIcon(int unread_count, bool is_quiet_mode) {
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  int resource_id = IDR_NOTIFICATION_TRAY_EMPTY;
+
+  if (unread_count) {
+    if (is_quiet_mode)
+      resource_id = IDR_NOTIFICATION_TRAY_DO_NOT_DISTURB_ATTENTION;
+    else
+      resource_id = IDR_NOTIFICATION_TRAY_ATTENTION;
+  } else if (is_quiet_mode) {
+    resource_id = IDR_NOTIFICATION_TRAY_DO_NOT_DISTURB_EMPTY;
+  }
+
+  return rb.GetImageSkiaNamed(resource_id);
 }
 
 }  // namespace
@@ -121,7 +131,7 @@ WebNotificationTray::WebNotificationTray()
       should_update_tray_content_(true) {
   message_center_tray_.reset(
       new MessageCenterTray(this, g_browser_process->message_center()));
-  UpdateStatusIcon();
+  OnMessageCenterTrayChanged();
 }
 
 WebNotificationTray::~WebNotificationTray() {
@@ -199,28 +209,28 @@ void WebNotificationTray::UpdateStatusIcon() {
     return;
   should_update_tray_content_ = false;
 
-  int total_notifications = message_center()->NotificationCount();
-  if (total_notifications == 0) {
-    DestroyStatusIcon();
-    return;
-  }
-
   int unread_notifications = message_center()->UnreadNotificationCount();
-  StatusIcon* status_icon = GetStatusIcon();
-  if (!status_icon)
-    return;
 
-  status_icon->SetImage(GetIcon(unread_notifications));
-
-  string16 product_name(l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME));
+  string16 tool_tip;
   if (unread_notifications > 0) {
     string16 str_unread_count = base::FormatNumber(unread_notifications);
-    status_icon->SetToolTip(l10n_util::GetStringFUTF16(
-        IDS_MESSAGE_CENTER_TOOLTIP_UNREAD, product_name, str_unread_count));
+    tool_tip = l10n_util::GetStringFUTF16(IDS_MESSAGE_CENTER_TOOLTIP_UNREAD,
+                                          str_unread_count);
   } else {
-    status_icon->SetToolTip(
-        l10n_util::GetStringFUTF16(IDS_MESSAGE_CENTER_TOOLTIP, product_name));
+    tool_tip = l10n_util::GetStringUTF16(IDS_MESSAGE_CENTER_TOOLTIP);
   }
+
+  gfx::ImageSkia* icon_image = GetIcon(
+      unread_notifications,
+      message_center()->IsQuietMode());
+
+  if (status_icon_) {
+    status_icon_->SetImage(*icon_image);
+    status_icon_->SetToolTip(tool_tip);
+    return;
+  }
+
+  CreateStatusIcon(*icon_image, tool_tip);
 }
 
 void WebNotificationTray::SendHideMessageCenter() {
@@ -261,36 +271,40 @@ PositionInfo WebNotificationTray::GetPositionInfo() {
   pos_info.max_height = work_area.height();
 
   if (work_area.Contains(mouse_click_point_)) {
-    pos_info.max_height -= std::abs(mouse_click_point_.y() - corner.y());
-
     // Message center is in the work area. So position it few pixels above the
     // mouse click point if alignemnt is towards bottom and few pixels below if
     // alignment is towards top.
-    pos_info.inital_anchor_point
-        .set_y(mouse_click_point_.y() +
-               (pos_info.message_center_alignment & ALIGNMENT_BOTTOM ? -5 : 5));
+    pos_info.inital_anchor_point.set_y(
+        mouse_click_point_.y() +
+        (pos_info.message_center_alignment & ALIGNMENT_BOTTOM ? -kMouseOffset
+                                                              : kMouseOffset));
+
+    // Subtract the distance between mouse click point and the closest
+    // (insetted) edge from the max height to show the message center within the
+    // (insetted) work area bounds. Also subtract the offset from the mouse
+    // click point we added earlier.
+    pos_info.max_height -=
+        std::abs(mouse_click_point_.y() - corner.y()) + kMouseOffset;
   }
   return pos_info;
 }
 
-StatusIcon* WebNotificationTray::GetStatusIcon() {
+void WebNotificationTray::CreateStatusIcon(const gfx::ImageSkia& image,
+                                           const string16& tool_tip) {
   if (status_icon_)
-    return status_icon_;
+    return;
 
   StatusTray* status_tray = g_browser_process->status_tray();
   if (!status_tray)
-    return NULL;
+    return;
 
-  StatusIcon* status_icon =
-      status_tray->CreateStatusIcon(StatusTray::NOTIFICATION_TRAY_ICON);
-  if (!status_icon)
-    return NULL;
+  status_icon_ = status_tray->CreateStatusIcon(
+      StatusTray::NOTIFICATION_TRAY_ICON, image, tool_tip);
+  if (!status_icon_)
+    return;
 
-  status_icon_ = status_icon;
   status_icon_->AddObserver(this);
   AddQuietModeMenu(status_icon_);
-
-  return status_icon_;
 }
 
 void WebNotificationTray::DestroyStatusIcon() {

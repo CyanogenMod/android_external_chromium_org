@@ -9,14 +9,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/compiler_specific.h"
-#include "base/gtest_prod_util.h"
-#include "base/memory/ref_counted.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
-#include "ui/gfx/native_widget_types.h"
 
-class CommandLine;
 class GURL;
 class Profile;
 
@@ -62,9 +55,8 @@ enum FirstRunBubbleOptions {
 };
 
 enum ProcessMasterPreferencesResult {
-  DO_FIRST_RUN_TASKS = 0,       // Should do the first run tasks.
-  SKIP_FIRST_RUN_TASKS,         // Should skip the first run tasks.
-  EULA_EXIT_NOW,                // Should immediately exit due to EULA flow.
+  FIRST_RUN_PROCEED = 0,  // Proceed with first run.
+  EULA_EXIT_NOW,          // Should immediately exit due to EULA flow.
 };
 
 // See ProcessMasterPreferences for more info about this structure.
@@ -92,8 +84,10 @@ struct MasterPrefs {
 // Returns true if this is the first time chrome is run for this user.
 bool IsChromeFirstRun();
 
-// Creates the sentinel file that signals that chrome has been configured.
-bool CreateSentinel();
+// Creates the first run sentinel if needed. This should only be called after
+// the process singleton has been grabbed by the current process
+// (http://crbug.com/264694).
+void CreateSentinelIfNeeded();
 
 // Get RLZ ping delay pref name.
 std::string GetPingDelayPrefName();
@@ -174,28 +168,6 @@ void SetMasterPrefsPathForTesting(const base::FilePath& master_prefs);
 ProcessMasterPreferencesResult ProcessMasterPreferences(
     const base::FilePath& user_data_dir,
     MasterPrefs* out_prefs);
-
-// Show the first run search engine bubble at the first appropriate opportunity.
-// This bubble may be delayed by other UI, like global errors and sync promos.
-class FirstRunBubbleLauncher : public content::NotificationObserver {
- public:
-  // Show the bubble at the first appropriate opportunity. This function
-  // instantiates a FirstRunBubbleLauncher, which manages its own lifetime.
-  static void ShowFirstRunBubbleSoon();
-
- private:
-  FirstRunBubbleLauncher();
-  virtual ~FirstRunBubbleLauncher();
-
-  // content::NotificationObserver override:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
-  content::NotificationRegistrar registrar_;
-
-  DISALLOW_COPY_AND_ASSIGN(FirstRunBubbleLauncher);
-};
 
 }  // namespace first_run
 

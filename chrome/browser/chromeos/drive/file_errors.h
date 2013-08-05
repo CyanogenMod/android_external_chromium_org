@@ -7,6 +7,7 @@
 
 #include "base/callback_forward.h"
 #include "base/platform_file.h"
+#include "chrome/browser/google_apis/gdata_errorcode.h"
 
 namespace drive {
 
@@ -19,7 +20,7 @@ enum FileError {
   FILE_ERROR_ACCESS_DENIED = -5,
   FILE_ERROR_TOO_MANY_OPENED = -6,
   FILE_ERROR_NO_MEMORY = -7,
-  FILE_ERROR_NO_SPACE = -8,
+  FILE_ERROR_NO_SERVER_SPACE = -8,
   FILE_ERROR_NOT_A_DIRECTORY = -9,
   FILE_ERROR_INVALID_OPERATION = -10,
   FILE_ERROR_SECURITY = -11,
@@ -28,6 +29,7 @@ enum FileError {
   FILE_ERROR_NOT_EMPTY = -14,
   FILE_ERROR_INVALID_URL = -15,
   FILE_ERROR_NO_CONNECTION = -16,
+  FILE_ERROR_NO_LOCAL_SPACE = -17,
 };
 
 // Used as callbacks for file operations.
@@ -38,6 +40,9 @@ std::string FileErrorToString(FileError error);
 
 // Returns a PlatformFileError that corresponds to the FileError provided.
 base::PlatformFileError FileErrorToPlatformError(FileError error);
+
+// Converts GData error code into Drive file error code.
+FileError GDataToFileError(google_apis::GDataErrorCode status);
 
 }  // namespace drive
 

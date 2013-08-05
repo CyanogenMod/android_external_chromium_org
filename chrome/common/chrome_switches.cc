@@ -164,6 +164,12 @@ const char kCipherSuiteBlacklist[]          = "cipher-suite-blacklist";
 // expiration of credentials during testing.
 const char kClearTokenService[]             = "clear-token-service";
 
+// The maximum amount of delay in ms between receiving a cloud policy
+// invalidation and fetching the policy. A random delay up to this value is used
+// to prevent Chrome clients from overwhelming the cloud policy server when a
+// policy which affects many users is changed.
+const char kCloudPolicyInvalidationDelay[]  = "cloud-policy-invalidation-delay";
+
 // Used with kCloudPrintFile. Tells Chrome to delete the file when finished
 // displaying the print dialog.
 const char kCloudPrintDeleteFile[]          = "cloud-print-delete-file";
@@ -518,8 +524,8 @@ const char kEnableAutologin[]               = "enable-autologin";
 // Enables the benchmarking extensions.
 const char kEnableBenchmarking[]            = "enable-benchmarking";
 
-// Enables a sync promo that is displayed in the bookmark bubble.
-const char kEnableBookmarkSyncPromo[]       = "enable-bookmark-sync-promo";
+// Enables pushing cloud policy to Chrome using an invalidation service.
+const char kEnableCloudPolicyPush[]         = "enable-cloud-policy-push";
 
 // This applies only when the process type is "service". Enables the Cloud
 // Print Proxy component within the service process.
@@ -548,10 +554,6 @@ const char kEnableDnsProbes[]               = "enable-dns-probes";
 // dragged onto chrome://extensions/.
 const char kEasyOffStoreExtensionInstall[]  =
     "easy-off-store-extension-install";
-
-// Enables extension APIs that are in development.
-const char kEnableExperimentalExtensionApis[] =
-    "enable-experimental-extension-apis";
 
 // Enables logging for extension activity.
 const char kEnableExtensionActivityLogging[] =
@@ -683,6 +685,9 @@ const char kEnableSdch[]                    = "enable-sdch";
 
 // Enables support of sticky keys.
 const char kEnableStickyKeys[]              = "enable-sticky-keys";
+
+// Disables support of sticky keys.
+const char kDisableStickyKeys[]              = "disable-sticky-keys";
 
 // Disable SPDY/3.1. This is a temporary testing flag.
 const char kDisableSpdy31[]                 = "disable-spdy31";
@@ -1005,6 +1010,13 @@ const char kNoServiceAutorun[]              = "no-service-autorun";
 // Does not automatically open a browser window on startup (used when
 // launching Chrome for the purpose of hosting background apps).
 const char kNoStartupWindow[]               = "no-startup-window";
+
+// Disables checking whether we received an acknowledgment when registering
+// a supervised user. Also disables the timeout during registration that waits
+// for the ack. Useful when debugging against a server that does not
+// support notifications.
+const char kNoManagedUserAcknowledgmentCheck[]  =
+    "no-managed-user-acknowledgment-check";
 
 // Specifies the maximum number of threads to use for running the Proxy
 // Autoconfig (PAC) script.
@@ -1476,6 +1488,10 @@ const char kFakeCloudPolicyType[]           = "fake-cloud-policy-type";
 
 // Uses the tablet specific UI components when available.
 const char kTabletUI[]                      = "tablet-ui";
+
+// Enables support for playing videos on Google Cast devices.
+const char kEnableCast[]                    = "enable-cast";
+
 #endif
 
 #if defined(USE_ASH)

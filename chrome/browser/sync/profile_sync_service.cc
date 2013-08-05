@@ -408,6 +408,20 @@ ProfileSyncService::GetDeviceInfo(const std::string& client_id) const {
   return scoped_ptr<browser_sync::DeviceInfo>();
 }
 
+ScopedVector<browser_sync::DeviceInfo>
+    ProfileSyncService::GetAllSignedInDevices() const {
+  ScopedVector<browser_sync::DeviceInfo> devices;
+  if (backend_) {
+    browser_sync::SyncedDeviceTracker* device_tracker =
+        backend_->GetSyncedDeviceTracker();
+    if (device_tracker) {
+      // TODO(lipalani) - Make device tracker return a scoped vector.
+      device_tracker->GetAllSyncedDeviceInfo(&devices);
+    }
+  }
+  return devices.Pass();
+}
+
 void ProfileSyncService::GetDataTypeControllerStates(
   browser_sync::DataTypeController::StateMap* state_map) const {
     for (browser_sync::DataTypeController::TypeMap::const_iterator iter =
@@ -472,18 +486,21 @@ void ProfileSyncService::InitializeBackend(bool delete_stale_data) {
   if (delete_stale_data)
     ClearStaleErrors();
 
-  backend_unrecoverable_error_handler_.reset(
-    new browser_sync::BackendUnrecoverableErrorHandler(
-        MakeWeakHandle(weak_factory_.GetWeakPtr())));
+  scoped_ptr<syncer::UnrecoverableErrorHandler>
+      backend_unrecoverable_error_handler(
+          new browser_sync::BackendUnrecoverableErrorHandler(
+              MakeWeakHandle(weak_factory_.GetWeakPtr())));
 
   backend_->Initialize(
       this,
-      MakeWeakHandle(sync_js_controller_.AsWeakPtr()),
+      sync_thread_.Pass(),
+      GetJsEventHandler(),
       sync_service_url_,
       credentials,
       delete_stale_data,
-      &sync_manager_factory_,
-      backend_unrecoverable_error_handler_.get(),
+      scoped_ptr<syncer::SyncManagerFactory>(
+          new syncer::SyncManagerFactory).Pass(),
+      backend_unrecoverable_error_handler.Pass(),
       &browser_sync::ChromeReportUnrecoverableError);
 }
 
@@ -721,18 +738,21 @@ void ProfileSyncService::Shutdown() {
   if (profile_)
     SigninGlobalError::GetForProfile(profile_)->RemoveProvider(this);
 
-  ShutdownImpl(false);
+  ShutdownImpl(browser_sync::SyncBackendHost::STOP);
+
+  if (sync_thread_)
+    sync_thread_->Stop();
 }
 
-void ProfileSyncService::ShutdownImpl(bool sync_disabled) {
-  // First, we spin down the backend and wait for it to stop syncing completely
-  // before we Stop the data type manager.  This is to avoid a late sync cycle
-  // applying changes to the sync db that wouldn't get applied via
-  // ChangeProcessors, leading to back-from-the-dead bugs.
+void ProfileSyncService::ShutdownImpl(
+    browser_sync::SyncBackendHost::ShutdownOption option) {
+  if (!backend_)
+    return;
+
+  // First, we spin down the backend to stop change processing as soon as
+  // possible.
   base::Time shutdown_start_time = base::Time::Now();
-  if (backend_) {
-    backend_->StopSyncingForShutdown();
-  }
+  backend_->StopSyncingForShutdown();
 
   // Stop all data type controllers, if needed.  Note that until Stop
   // completes, it is possible in theory to have a ChangeProcessor apply a
@@ -758,8 +778,7 @@ void ProfileSyncService::ShutdownImpl(bool sync_disabled) {
   // shutting it down.
   scoped_ptr<SyncBackendHost> doomed_backend(backend_.release());
   if (doomed_backend) {
-    doomed_backend->Shutdown(sync_disabled);
-
+    sync_thread_ = doomed_backend->Shutdown(option);
     doomed_backend.reset();
   }
   base::TimeDelta shutdown_time = base::Time::Now() - shutdown_start_time;
@@ -797,7 +816,7 @@ void ProfileSyncService::DisableForUser() {
   // PSS clients don't think we're set up while we're shutting down.
   sync_prefs_.ClearPreferences();
   ClearUnrecoverableError();
-  ShutdownImpl(true);
+  ShutdownImpl(browser_sync::SyncBackendHost::DISABLE_AND_CLAIM_THREAD);
 }
 
 bool ProfileSyncService::HasSyncSetupCompleted() const {
@@ -878,8 +897,11 @@ void ProfileSyncService::OnUnrecoverableErrorImpl(
 
   // Shut all data types down.
   base::MessageLoop::current()->PostTask(FROM_HERE,
-      base::Bind(&ProfileSyncService::ShutdownImpl, weak_factory_.GetWeakPtr(),
-                 delete_sync_database));
+      base::Bind(&ProfileSyncService::ShutdownImpl,
+                 weak_factory_.GetWeakPtr(),
+                 delete_sync_database ?
+                     browser_sync::SyncBackendHost::DISABLE_AND_CLAIM_THREAD :
+                     browser_sync::SyncBackendHost::STOP_AND_CLAIM_THREAD));
 }
 
 // TODO(zea): Move this logic into the DataTypeController/DataTypeManager.
@@ -1242,7 +1264,7 @@ void ProfileSyncService::OnActionableError(const SyncProtocolError& error) {
       // Sync disabled by domain admin. we should stop syncing until next
       // restart.
       sync_disabled_by_admin_ = true;
-      ShutdownImpl(true);
+      ShutdownImpl(browser_sync::SyncBackendHost::DISABLE_AND_CLAIM_THREAD);
       break;
     default:
       NOTREACHED();
@@ -1837,11 +1859,7 @@ void ProfileSyncService::RequestAccessToken() {
     return;
   request_access_token_retry_timer_.Stop();
   OAuth2TokenService::ScopeSet oauth2_scopes;
-  bool is_managed = false;
-#if defined(ENABLE_MANAGED_USERS)
-  is_managed = ManagedUserService::ProfileIsManaged(profile_);
-#endif
-  if (is_managed) {
+  if (profile_->IsManaged()) {
     oauth2_scopes.insert(GaiaConstants::kChromeSyncManagedOAuth2Scope);
   } else {
     oauth2_scopes.insert(GaiaConstants::kChromeSyncOAuth2Scope);
@@ -2021,7 +2039,7 @@ void ProfileSyncService::StopAndSuppress() {
   if (backend_) {
     backend_->UnregisterInvalidationIds();
   }
-  ShutdownImpl(false);
+  ShutdownImpl(browser_sync::SyncBackendHost::STOP_AND_CLAIM_THREAD);
 }
 
 bool ProfileSyncService::IsStartSuppressed() const {
@@ -2077,12 +2095,18 @@ void ProfileSyncService::OnInternalUnrecoverableError(
 }
 
 std::string ProfileSyncService::GetEffectiveUsername() {
+  if (profile_->IsManaged()) {
 #if defined(ENABLE_MANAGED_USERS)
-  if (ManagedUserService::ProfileIsManaged(profile_)) {
     DCHECK_EQ(std::string(), signin_->GetAuthenticatedUsername());
     return ManagedUserService::GetManagedUserPseudoEmail();
-  }
+#else
+    NOTREACHED();
 #endif
+  }
 
   return signin_->GetAuthenticatedUsername();
+}
+
+WeakHandle<syncer::JsEventHandler> ProfileSyncService::GetJsEventHandler() {
+  return MakeWeakHandle(sync_js_controller_.AsWeakPtr());
 }

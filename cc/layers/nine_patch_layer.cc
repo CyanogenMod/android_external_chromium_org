@@ -33,7 +33,7 @@ void NinePatchLayer::SetTexturePriorities(
     resource_.reset();
     if (!bitmap_.isNull())
       CreateResource();
-  } else if (needs_display_ && bitmap_dirty_ && DrawsContent()) {
+  } else if (bitmap_dirty_ && DrawsContent()) {
     CreateResource();
   }
 
@@ -56,6 +56,8 @@ void NinePatchLayer::SetBitmap(const SkBitmap& bitmap, gfx::Rect aperture) {
 
 bool NinePatchLayer::Update(ResourceUpdateQueue* queue,
                             const OcclusionTracker* occlusion) {
+  bool updated = Layer::Update(queue, occlusion);
+
   CreateUpdaterIfNeeded();
 
   if (resource_ &&
@@ -68,9 +70,9 @@ bool NinePatchLayer::Update(ResourceUpdateQueue* queue,
                                                    gfx::Vector2d());
     queue->AppendFullUpload(upload);
     bitmap_dirty_ = false;
-    return true;
+    updated = true;
   }
-  return false;
+  return updated;
 }
 
 void NinePatchLayer::CreateUpdaterIfNeeded() {
@@ -83,8 +85,7 @@ void NinePatchLayer::CreateUpdaterIfNeeded() {
 void NinePatchLayer::CreateResource() {
   DCHECK(!bitmap_.isNull());
   CreateUpdaterIfNeeded();
-  updater_->set_bitmap(bitmap_);
-  needs_display_ = false;
+  updater_->SetBitmap(bitmap_);
 
   if (!resource_) {
     resource_ = updater_->CreateResource(

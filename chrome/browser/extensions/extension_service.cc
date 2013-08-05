@@ -66,8 +66,6 @@
 #include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/themes/theme_service.h"
-#include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/webui/favicon_source.h"
 #include "chrome/browser/ui/webui/ntp/thumbnail_source.h"
 #include "chrome/browser/ui/webui/theme_source.h"
@@ -434,6 +432,10 @@ const ExtensionSet* ExtensionService::terminated_extensions() const {
 
 const ExtensionSet* ExtensionService::blacklisted_extensions() const {
   return &blacklisted_extensions_;
+}
+
+const ExtensionSet* ExtensionService::delayed_installs() const {
+  return &delayed_installs_;
 }
 
 scoped_ptr<const ExtensionSet>
@@ -1118,16 +1120,6 @@ void ExtensionService::NotifyExtensionUnloaded(
       chrome::NOTIFICATION_EXTENSION_UNLOADED,
       content::Source<Profile>(profile_),
       content::Details<UnloadedExtensionInfo>(&details));
-
-#if defined(ENABLE_THEMES)
-  // If the current theme is being unloaded, tell ThemeService to revert back
-  // to the default theme.
-  if (reason != extension_misc::UNLOAD_REASON_UPDATE && extension->is_theme()) {
-    ThemeService* theme_service = ThemeServiceFactory::GetForProfile(profile_);
-    if (extension->id() == theme_service->GetThemeID())
-      theme_service->UseDefaultTheme();
-  }
-#endif
 
   for (content::RenderProcessHost::iterator i(
           content::RenderProcessHost::AllHostsIterator());
@@ -1873,24 +1865,21 @@ void ExtensionService::UnloadExtension(
   extension_runtime_data_.erase(extension_id);
 
   if (disabled_extensions_.Contains(extension->id())) {
-    UnloadedExtensionInfo details(extension.get(), reason);
-    details.already_disabled = true;
     disabled_extensions_.Remove(extension->id());
-    content::NotificationService::current()->Notify(
-        chrome::NOTIFICATION_EXTENSION_UNLOADED,
-        content::Source<Profile>(profile_),
-        content::Details<UnloadedExtensionInfo>(&details));
     // Make sure the profile cleans up its RequestContexts when an already
     // disabled extension is unloaded (since they are also tracking the disabled
     // extensions).
     system_->UnregisterExtensionWithRequestContexts(extension_id, reason);
-    return;
+  } else {
+    // Remove the extension from our list.
+    extensions_.Remove(extension->id());
+    NotifyExtensionUnloaded(extension.get(), reason);
   }
 
-  // Remove the extension from our list.
-  extensions_.Remove(extension->id());
-
-  NotifyExtensionUnloaded(extension.get(), reason);
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_EXTENSION_REMOVED,
+      content::Source<Profile>(profile_),
+      content::Details<const Extension>(extension.get()));
 }
 
 void ExtensionService::UnloadAllExtensions() {
@@ -1950,15 +1939,6 @@ void ExtensionService::GarbageCollectExtensions() {
               extension_paths))) {
     NOTREACHED();
   }
-
-#if defined(ENABLE_THEMES)
-  // Also garbage-collect themes.  We check |profile_| to be
-  // defensive; in the future, we may call GarbageCollectExtensions()
-  // from somewhere other than Init() (e.g., in a timer).
-  if (profile_) {
-    ThemeServiceFactory::GetForProfile(profile_)->RemoveUnusedThemes();
-  }
-#endif
 }
 
 void ExtensionService::SyncExtensionChangeIfNeeded(const Extension& extension) {
@@ -2034,7 +2014,8 @@ void ExtensionService::AddExtension(const Extension* extension) {
   if (extension_prefs_->IsExtensionBlacklisted(extension->id())) {
     // Only prefs is checked for the blacklist. We rely on callers to check the
     // blacklist before calling into here, e.g. CrxInstaller checks before
-    // installation, we check when loading installed extensions.
+    // installation then threads through the install and pending install flow
+    // of this class, and we check when loading installed extensions.
     blacklisted_extensions_.Insert(extension);
   } else if (!reloading &&
              extension_prefs_->IsExtensionDisabled(extension->id())) {
@@ -2086,6 +2067,7 @@ void ExtensionService::AddComponentExtension(const Extension* extension) {
 
     AddNewOrUpdatedExtension(extension,
                              Extension::ENABLED_COMPONENT,
+                             extensions::Blacklist::NOT_BLACKLISTED,
                              syncer::StringOrdinal());
     return;
   }
@@ -2324,6 +2306,7 @@ void ExtensionService::OnExtensionInstalled(
     const Extension* extension,
     const syncer::StringOrdinal& page_ordinal,
     bool has_requirement_errors,
+    extensions::Blacklist::BlacklistState blacklist_state,
     bool wait_for_idle) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -2380,6 +2363,18 @@ void ExtensionService::OnExtensionInstalled(
     extension_prefs_->ClearDisableReasons(id);
   }
 
+  if (blacklist_state == extensions::Blacklist::BLACKLISTED) {
+    // Installation of a blacklisted extension can happen from sync, policy,
+    // etc, where to maintain consistency we need to install it, just never
+    // load it (see AddExtension). Usually it should be the job of callers to
+    // incercept blacklisted extension earlier (e.g. CrxInstaller, before even
+    // showing the install dialogue).
+    extension_prefs()->AcknowledgeBlacklistedExtension(id);
+    UMA_HISTOGRAM_ENUMERATION("ExtensionBlacklist.SilentInstall",
+                              extension->location(),
+                              Manifest::NUM_LOCATIONS);
+  }
+
   if (!GetInstalledExtension(extension->id())) {
     UMA_HISTOGRAM_ENUMERATION("Extensions.InstallType",
                               extension->GetType(), 100);
@@ -2401,8 +2396,12 @@ void ExtensionService::OnExtensionInstalled(
   const Extension::State initial_state =
       initial_enable ? Extension::ENABLED : Extension::DISABLED;
   if (ShouldDelayExtensionUpdate(id, wait_for_idle)) {
-    extension_prefs_->SetDelayedInstallInfo(extension, initial_state,
-        extensions::ExtensionPrefs::DELAY_REASON_WAIT_FOR_IDLE, page_ordinal);
+    extension_prefs_->SetDelayedInstallInfo(
+        extension,
+        initial_state,
+        blacklist_state,
+        extensions::ExtensionPrefs::DELAY_REASON_WAIT_FOR_IDLE,
+        page_ordinal);
 
     // Transfer ownership of |extension|.
     delayed_installs_.Insert(extension);
@@ -2419,32 +2418,42 @@ void ExtensionService::OnExtensionInstalled(
 
   ImportStatus status = SatisfyImports(extension);
   if (installs_delayed_for_gc()) {
-    extension_prefs_->SetDelayedInstallInfo(extension, initial_state,
-        extensions::ExtensionPrefs::DELAY_REASON_GC, page_ordinal);
+    extension_prefs_->SetDelayedInstallInfo(
+        extension,
+        initial_state,
+        blacklist_state,
+        extensions::ExtensionPrefs::DELAY_REASON_GC,
+        page_ordinal);
     delayed_installs_.Insert(extension);
   } else if (status != IMPORT_STATUS_OK) {
     if (status == IMPORT_STATUS_UNSATISFIED) {
-      extension_prefs_->SetDelayedInstallInfo(extension, initial_state,
+      extension_prefs_->SetDelayedInstallInfo(
+          extension,
+          initial_state,
+          blacklist_state,
           extensions::ExtensionPrefs::DELAY_REASON_WAIT_FOR_IMPORTS,
           page_ordinal);
       delayed_installs_.Insert(extension);
     }
   } else {
-    AddNewOrUpdatedExtension(extension, initial_state, page_ordinal);
+    AddNewOrUpdatedExtension(extension,
+                             initial_state,
+                             blacklist_state,
+                             page_ordinal);
   }
 }
 
 void ExtensionService::AddNewOrUpdatedExtension(
     const Extension* extension,
     Extension::State initial_state,
+    extensions::Blacklist::BlacklistState blacklist_state,
     const syncer::StringOrdinal& page_ordinal) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  extension_prefs_->OnExtensionInstalled(
-      extension,
-      initial_state,
-      page_ordinal);
-
+  extension_prefs_->OnExtensionInstalled(extension,
+                                         initial_state,
+                                         blacklist_state,
+                                         page_ordinal);
+  delayed_installs_.Remove(extension->id());
   FinishInstallation(extension);
 }
 
@@ -2521,20 +2530,6 @@ void ExtensionService::FinishInstallation(const Extension* extension) {
 
   AddExtension(extension);
 
-#if defined(ENABLE_THEMES)
-  // We do this here since AddExtension() is always called on browser startup,
-  // and we only really care about the last theme installed.
-  // If that ever changes and we have to move this code somewhere
-  // else, it should be somewhere that's not in the startup path.
-  if (extension->is_theme() && extensions_.GetByID(extension->id())) {
-    DCHECK_EQ(extensions_.GetByID(extension->id()), extension);
-    // Now that the theme extension is visible from outside the
-    // ExtensionService, notify the ThemeService about the
-    // newly-installed theme.
-    ThemeServiceFactory::GetForProfile(profile_)->SetTheme(extension);
-  }
-#endif
-
   // If this is a new external extension that was disabled, alert the user
   // so he can reenable it. We do this last so that it has already been
   // added to our list of extensions.
@@ -2566,7 +2561,14 @@ void ExtensionService::TrackTerminatedExtension(const Extension* extension) {
 
 void ExtensionService::UntrackTerminatedExtension(const std::string& id) {
   std::string lowercase_id = StringToLowerASCII(id);
+  const Extension* extension = terminated_extensions_.GetByID(lowercase_id);
   terminated_extensions_.Remove(lowercase_id);
+  if (extension) {
+    content::NotificationService::current()->Notify(
+        chrome::NOTIFICATION_EXTENSION_REMOVED,
+        content::Source<Profile>(profile_),
+        content::Details<const Extension>(extension));
+  }
 }
 
 const Extension* ExtensionService::GetTerminatedExtension(
@@ -3050,7 +3052,8 @@ void ExtensionService::ManageBlacklist(
        it != no_longer_blacklisted.end(); ++it) {
     scoped_refptr<const Extension> extension =
         blacklisted_extensions_.GetByID(*it);
-    DCHECK(extension.get());
+    DCHECK(extension.get()) << "Extension " << *it << " no longer blacklisted, "
+                            << "but it was never blacklisted.";
     if (!extension.get())
       continue;
     blacklisted_extensions_.Remove(*it);
@@ -3063,7 +3066,8 @@ void ExtensionService::ManageBlacklist(
   for (std::set<std::string>::iterator it = not_yet_blacklisted.begin();
        it != not_yet_blacklisted.end(); ++it) {
     scoped_refptr<const Extension> extension = GetInstalledExtension(*it);
-    DCHECK(extension.get());
+    DCHECK(extension.get()) << "Extension " << *it << " needs to be "
+                            << "blacklisted, but it's not installed.";
     if (!extension.get())
       continue;
     blacklisted_extensions_.Insert(extension);

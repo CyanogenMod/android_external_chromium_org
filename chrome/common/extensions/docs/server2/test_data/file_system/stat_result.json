@@ -34,7 +34,6 @@
   "runtime.json": "148956",
   "alarms.idl": "143049",
   "declarative_web_request.json": "150421",
-  "web_socket_proxy_private.json": "136747",
   "devtools/": "149291",
   "experimental_idltest.idl": "138707",
   "script_badge.json": "146930",
@@ -83,6 +82,6 @@
   "socket.idl": "150190",
   "OWNERS": "150079",
   "cookies.json": "124878",
-  "experimental_infobars.json": "136747",
+  "infobars.json": "136747",
   "wallpaper_private.json": "148400"
 }

@@ -72,7 +72,7 @@ void ChangeListLoader::CheckForUpdates(const FileOperationCallback& callback) {
     // We only start to check for updates iff the load is done.
     // I.e., we ignore checking updates if not loaded to avoid starting the
     // load without user's explicit interaction (such as opening Drive).
-    util::Log("Checking for updates");
+    util::Log(logging::LOG_INFO, "Checking for updates");
     Load(DirectoryFetchInfo(), callback);
   }
 }
@@ -212,7 +212,8 @@ void ChangeListLoader::OnDirectoryLoadComplete(
     FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  util::Log("Fast-fetch complete: %s => %s",
+  util::Log(logging::LOG_INFO,
+            "Fast-fetch complete: %s => %s",
             directory_fetch_info.ToString().c_str(),
             FileErrorToString(error).c_str());
   const std::string& resource_id = directory_fetch_info.resource_id();
@@ -249,10 +250,10 @@ void ChangeListLoader::LoadFromServerIfNeededAfterGetAbout(
     google_apis::GDataErrorCode status,
     scoped_ptr<google_apis::AboutResource> about_resource) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK_EQ(util::GDataToFileError(status) == FILE_ERROR_OK,
+  DCHECK_EQ(GDataToFileError(status) == FILE_ERROR_OK,
             about_resource.get() != NULL);
 
-  if (util::GDataToFileError(status) == FILE_ERROR_OK) {
+  if (GDataToFileError(status) == FILE_ERROR_OK) {
     DCHECK(about_resource);
     last_known_remote_changestamp_ = about_resource->largest_change_id();
   }
@@ -364,7 +365,7 @@ void ChangeListLoader::OnGetChangeList(
                         base::TimeTicks::Now() - start_time);
   }
 
-  FileError error = util::GDataToFileError(status);
+  FileError error = GDataToFileError(status);
   if (error != FILE_ERROR_OK) {
     callback.Run(ScopedVector<ChangeList>(), error);
     return;
@@ -440,7 +441,8 @@ void ChangeListLoader::CheckChangestampAndLoadDirectoryIfNeeded(
   // enough, but we log this message here, so "Fast-fetch start" and
   // "Fast-fetch complete" always match.
   // TODO(satorux): Distinguish the "not fetching at all" case.
-  util::Log("Fast-fetch start: %s; Server changestamp: %s",
+  util::Log(logging::LOG_INFO,
+            "Fast-fetch start: %s; Server changestamp: %s",
             directory_fetch_info.ToString().c_str(),
             base::Int64ToString(last_known_remote_changestamp_).c_str());
 
@@ -548,7 +550,7 @@ void ChangeListLoader::DoLoadGrandRootDirectoryFromServerAfterGetAboutResource(
   DCHECK_EQ(directory_fetch_info.resource_id(),
             util::kDriveGrandRootSpecialResourceId);
 
-  FileError error = util::GDataToFileError(status);
+  FileError error = GDataToFileError(status);
   if (error != FILE_ERROR_OK) {
     callback.Run(error);
     return;
@@ -630,7 +632,9 @@ void ChangeListLoader::UpdateFromChangeList(
   // the initial content retrieval.
   const bool should_notify_changed_directories = is_delta_update;
 
-  util::Log("Apply change lists (is delta: %d)", is_delta_update);
+  util::Log(logging::LOG_INFO,
+            "Apply change lists (is delta: %d)",
+            is_delta_update);
   blocking_task_runner_->PostTaskAndReply(
       FROM_HERE,
       base::Bind(&ChangeListProcessor::Apply,
@@ -656,7 +660,8 @@ void ChangeListLoader::UpdateFromChangeListAfterApply(
   DCHECK(!callback.is_null());
 
   const base::TimeDelta elapsed = base::Time::Now() - start_time;
-  util::Log("Change lists applied (elapsed time: %sms)",
+  util::Log(logging::LOG_INFO,
+            "Change lists applied (elapsed time: %sms)",
             base::Int64ToString(elapsed.InMilliseconds()).c_str());
 
   if (should_notify_changed_directories) {

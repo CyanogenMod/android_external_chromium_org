@@ -44,6 +44,26 @@
     "channel": "stable",
     "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
   },
+  "app.getDetails": {
+    "contexts": ["blessed_extension", "unblessed_extension", "content_script"],
+    "matches": []
+  },
+  "app.getDetailsForFrame": {
+    "contexts": ["blessed_extension", "unblessed_extension", "content_script"],
+    "matches": []
+  },
+  "app.getIsInstalled": {
+    "contexts": ["blessed_extension", "unblessed_extension", "content_script"],
+    "matches": []
+  },
+  "app.installState": {
+    "contexts": ["blessed_extension", "unblessed_extension", "content_script"],
+    "matches": []
+  },
+  "app.runningState": {
+    "contexts": ["blessed_extension", "unblessed_extension", "content_script"],
+    "matches": []
+  },
   "audio": {
     "dependencies": ["permission:audio"],
     "contexts": ["blessed_extension"]
@@ -185,10 +205,6 @@
     "dependencies": ["permission:experimental"],
     "contexts": ["blessed_extension"]
   },
-  "experimental.infobars": {
-    "dependencies": ["permission:experimental"],
-    "contexts": ["blessed_extension"]
-  },
   "experimental.input.virtualKeyboard": {
     "dependencies": ["permission:experimental"],
     "contexts": ["blessed_extension"]
@@ -282,6 +298,10 @@
     "dependencies": ["permission:idle"],
     "contexts": ["blessed_extension"]
   },
+  "infobars": {
+    "dependencies": ["permission:infobars"],
+    "contexts": ["blessed_extension"]
+  },
   "input.ime": {
     "platform": "chromeos",
     "dependencies": ["permission:input"],
@@ -299,6 +319,16 @@
   "management": {
     "dependencies": ["permission:management"],
     "contexts": ["blessed_extension"]
+  },
+  "management.getPermissionWarningsByManifest": {
+    "dependencies": [],
+    "channel": "stable",
+    "extension_types": ["extension", "packaged_app", "platform_app"]
+  },
+  "management.uninstallSelf": {
+    "dependencies": [],
+    "channel": "stable",
+    "extension_types": ["extension", "packaged_app", "platform_app"]
   },
   "mediaGalleries": {
     "dependencies": ["permission:mediaGalleries"],
@@ -346,10 +376,6 @@
     "dependencies": ["permission:pageCapture"],
     "contexts": ["blessed_extension"]
   },
-  "pageLauncher": {
-    "dependencies": ["manifest:page_launcher"],
-    "contexts": ["blessed_extension"]
-  },
   "permissions": {
     "channel": "stable",
     "extension_types": ["extension", "packaged_app", "platform_app"],
@@ -374,6 +400,11 @@
   },
   "pushMessaging": {
     "dependencies": ["permission:pushMessaging"],
+    "contexts": ["blessed_extension"]
+  },
+  "recoveryPrivate": {
+    "dependencies": ["permission:recoveryPrivate"],
+    "extension_types": ["platform_app"],
     "contexts": ["blessed_extension"]
   },
   "rtcPrivate": {
@@ -551,10 +582,6 @@
     "internal": true,
     "channel": "stable",
     "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
-  },
-  "webSocketProxyPrivate": {
-    "dependencies": ["permission:webSocketProxyPrivate"],
-    "contexts": ["blessed_extension"]
   },
   "webstore": {
     // Hosted apps can use the webstore API from within a blessed context.

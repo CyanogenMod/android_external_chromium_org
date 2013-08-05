@@ -16,6 +16,41 @@
 #include "tools/gn/tokenizer.h"
 #include "tools/gn/value.h"
 
+extern const char kDotfile_Help[] =
+    ".gn file\n"
+    "\n"
+    "  When gn starts, it will search the current directory and parent\n"
+    "  directories for a file called \".gn\". This indicates the source root.\n"
+    "  You can override this detection by using the --root command-line\n"
+    "  argument\n"
+    "\n"
+    "  The .gn file in the source root will be executed. The syntax is the\n"
+    "  same as a buildfile, but with very limited build setup-specific\n"
+    "  meaning.\n"
+    "\n"
+    "Variables:\n"
+    "  buildconfig [required]\n"
+    "      Label of the build config file. This file will be used to setup\n"
+    "      the build file execution environment for each toolchain.\n"
+    "\n"
+    "  secondary_source [optional]\n"
+    "      Label of an alternate directory tree to find input files. When\n"
+    "      searching for a BUILD.gn file (or the build config file discussed\n"
+    "      above), the file fill first be looked for in the source root.\n"
+    "      If it's not found, the secondary source root will be checked\n"
+    "      (which would contain a parallel directory hierarchy).\n"
+    "\n"
+    "      This behavior is intended to be used when BUILD.gn files can't be\n"
+    "      checked in to certain source directories for whaever reason.\n"
+    "\n"
+    "      The secondary source root must be inside the main source tree.\n"
+    "\n"
+    "Example .gn file contents:\n"
+    "\n"
+    "  buildconfig = \"//build/config/BUILDCONFIG.gn\"\n"
+    "\n"
+    "  secondary_source = \"//build/config/temporary_buildfiles/\"\n";
+
 namespace {
 
 // More logging.
@@ -64,13 +99,12 @@ bool Setup::DoSetup() {
     return false;
 
   // FIXME(brettw) get python path!
-/*#if defined(OS_WIN)
-  build_settings_.set_python_path(base::FilePath(
-      //L"P:\\depot_tools\\python_bin\\python.exe"));
-      L"C:\\apps\\depot_tools\\python_bin\\python.exe"));
-#else*/
-  build_settings_.set_python_path(base::FilePath("python"));
-//#endif
+#if defined(OS_WIN)
+  build_settings_.set_python_path(
+      base::FilePath(FILE_PATH_LITERAL("cmd.exe /c python")));
+#else
+  build_settings_.set_python_path(base::FilePath(FILE_PATH_LITERAL("python")));
+#endif
 
   build_settings_.SetBuildDir(SourceDir("//out/gn/"));
 
@@ -179,7 +213,7 @@ bool Setup::FillOtherConfig(const CommandLine& cmdline) {
     }
   }
 
-  // Build config dir.
+  // Build config file.
   const Value* build_config_value =
       dotfile_scope_.GetValue("buildconfig", true);
   if (!build_config_value) {
@@ -187,9 +221,12 @@ bool Setup::FillOtherConfig(const CommandLine& cmdline) {
         "Your .gn file (\"" + FilePathToUTF8(dotfile_name_) + "\")\n"
         "didn't specify a \"buildconfig\" value.").PrintToStdout();
     return false;
+  } else if (!build_config_value->VerifyTypeIs(Value::STRING, &err)) {
+    err.PrintToStdout();
+    return false;
   }
   build_settings_.set_build_config_file(
-      SourceFile("//build/config/BUILDCONFIG.gn"));
+      SourceFile(build_config_value->string_value()));
 
   return true;
 }

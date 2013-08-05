@@ -414,27 +414,6 @@
    fun:*InitializeHelper
 }
 {
-   bug_114750_a
-   Heapcheck:Leak
-   fun:::FindBestMatchFontFamilyName
-   fun:gfx::PlatformFontPango::PlatformFontPango
-   fun:PlatformFontPangoTest_FamilyList_Test::TestBody
-}
-{
-   bug_114750_b
-   Heapcheck:Leak
-   fun:??
-   fun:FindBestMatchFontFamilyName
-   fun:PlatformFontPango
-   fun:gfx::PlatformFont::CreateFromNativeFont
-   fun:Font
-   fun:PlatformFontPango
-   fun:gfx::PlatformFont::CreateDefault
-   fun:Font
-   ...
-   fun:*Test*
-}
-{
    bug_114770
    Heapcheck:Leak
    ...
@@ -804,10 +783,11 @@
    bug_251034_b
    Heapcheck:Leak
    ...
-   fun:Initialize
-   fun:gpu::GLInProcessContext::CreateContext
-   fun:webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl::MaybeInitializeGL
-   fun:webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl::makeContextCurrent
+   fun:gpu::gles2::ShaderTranslator::Init
+   fun:gpu::gles2::ShaderTranslatorCache::GetTranslator
+   fun:gpu::gles2::GLES2DecoderImpl::InitializeShaderTranslator
+   fun:gpu::gles2::GLES2DecoderImpl::Initialize
+   fun:gpu::InProcessCommandBuffer::InitializeOnGpuThread
 }
 {
    bug_251034_c
@@ -833,18 +813,6 @@
    fun:gfx::GLSurfaceOSMesa::Resize
    fun:gfx::NativeViewGLSurfaceOSMesa::Resize
    fun:OnResizeView
-}
-{
-   bug_251827_a
-   Heapcheck:Leak
-   fun:MakePlanarBuffer
-   fun:media::AudioBufferTest*
-}
-{
-   bug_251827_b
-   Heapcheck:Leak
-   fun:MakeInterleavedBuffer
-   fun:media::AudioBufferTest*
 }
 {
    bug_258113
@@ -876,49 +844,6 @@
    fun:ppapi::ThreadAwareCallbackMultiThreadTest_RunOnTargetThread_Test::TestBody
 }
 {
-   bug_259350a
-   Heapcheck:Leak
-   ...
-   fun:SingleLoginAttemptTest_*_Test
-}
-{
-   bug_259350b
-   Heapcheck:Leak
-   ...
-   fun:notifier::SingleLoginAttempt::OnError
-}
-{
-   bug_259350c
-   Heapcheck:Leak
-   ...
-   fun:buzz::XmppClient::Process
-   fun:talk_base::Task::Step
-   fun:talk_base::TaskRunner::InternalRunTasks
-   fun:talk_base::TaskRunner::RunTasks
-   fun:jingle_glue::TaskPump::CheckAndRunTasks
-}
-{
-   bug_259350d
-   Heapcheck:Leak
-   ...
-   fun:jingle_glue::ProxyResolvingClientSocket::ProcessProxyResolveDone
-}
-{
-   bug_222687a
-   Heapcheck:Leak
-   ...
-   fun:chrome::StorageMonitor::GetInstance
-   fun:GetMediaTransferProtocolManager
-   fun:~MediaTransferProtocolDeviceObserverLinux
-   fun:~MediaTransferProtocolDeviceObserverLinux
-   fun:base::DefaultDeleter::operator
-   fun:~scoped_ptr_impl
-   fun:~scoped_ptr
-   fun:~StorageMonitorLinux
-   fun:~TestStorageMonitorLinux
-   fun:~TestStorageMonitorLinux
-}
-{
    bug_263748a
    Heapcheck:Leak
    ...
@@ -937,9 +862,16 @@
    fun:EncodeDecodeTest_Elf_Small_Test::TestBody
 }
 {
-   bug_264225
+   bug_268258
    Heapcheck:Leak
-   ...
-   fun:TestingProfile::CreateRequestContext
-   fun:UbertokenFetcherTest::SetUp
+   fun:WTF::fastMalloc
+   fun:WTF::StringImpl::createStatic
+   fun:WebCore::*Names::init
+}
+{
+   bug_268267
+   Heapcheck:Leak
+   fun:base::internal::WeakReferenceOwner::GetRef
+   fun:GetWeakPtr
+   fun:base::WeakPtrTest_MoveOwnershipAfterInvalidate_Test::TestBody
 }

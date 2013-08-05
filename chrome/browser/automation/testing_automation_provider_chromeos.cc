@@ -19,7 +19,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
-#include "chrome/browser/chromeos/audio/audio_handler.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/login/default_user_images.h"
 #include "chrome/browser/chromeos/login/enrollment/enrollment_screen.h"
@@ -43,6 +42,7 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/audio/cras_audio_handler.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/dbus/update_engine_client.h"
@@ -101,33 +101,6 @@ const char* UpdateStatusToString(
     default:
       return "unknown";
   }
-}
-
-void GetReleaseTrackCallback(AutomationJSONReply* reply,
-                             const std::string& track) {
-  if (track.empty()) {
-    reply->SendError("Unable to get release track.");
-    delete reply;
-    return;
-  }
-
-  scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
-  return_value->SetString("release_track", track);
-
-  const UpdateEngineClient::Status& status =
-      DBusThreadManager::Get()->GetUpdateEngineClient()->GetLastStatus();
-  UpdateEngineClient::UpdateStatusOperation update_status =
-      status.status;
-  return_value->SetString("status", UpdateStatusToString(update_status));
-  if (update_status == UpdateEngineClient::UPDATE_STATUS_DOWNLOADING)
-    return_value->SetDouble("download_progress", status.download_progress);
-  if (status.last_checked_time > 0)
-    return_value->SetInteger("last_checked_time", status.last_checked_time);
-  if (status.new_size > 0)
-    return_value->SetInteger("new_size", status.new_size);
-
-  reply->SendSuccess(return_value.get());
-  delete reply;
 }
 
 void UpdateCheckCallback(AutomationJSONReply* reply,
@@ -1154,13 +1127,6 @@ void TestingAutomationProvider::SetTimezone(DictionaryValue* args,
   reply.SendSuccess(NULL);
 }
 
-void TestingAutomationProvider::GetUpdateInfo(DictionaryValue* args,
-                                              IPC::Message* reply_message) {
-  AutomationJSONReply* reply = new AutomationJSONReply(this, reply_message);
-  DBusThreadManager::Get()->GetUpdateEngineClient()
-      ->GetReleaseTrack(base::Bind(GetReleaseTrackCallback, reply));
-}
-
 void TestingAutomationProvider::UpdateCheck(
     DictionaryValue* args,
     IPC::Message* reply_message) {
@@ -1169,30 +1135,17 @@ void TestingAutomationProvider::UpdateCheck(
       ->RequestUpdateCheck(base::Bind(UpdateCheckCallback, reply));
 }
 
-void TestingAutomationProvider::SetReleaseTrack(DictionaryValue* args,
-                                                IPC::Message* reply_message) {
-  AutomationJSONReply reply(this, reply_message);
-  std::string track;
-  if (!args->GetString("track", &track)) {
-    reply.SendError("Invalid or missing args.");
-    return;
-  }
-
-  DBusThreadManager::Get()->GetUpdateEngineClient()->SetReleaseTrack(track);
-  reply.SendSuccess(NULL);
-}
-
 void TestingAutomationProvider::GetVolumeInfo(DictionaryValue* args,
                                               IPC::Message* reply_message) {
   AutomationJSONReply reply(this, reply_message);
   scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
-  chromeos::AudioHandler* audio_handler = chromeos::AudioHandler::GetInstance();
+  chromeos::CrasAudioHandler* audio_handler = chromeos::CrasAudioHandler::Get();
   if (!audio_handler) {
-    reply.SendError("AudioHandler not initialized.");
+    reply.SendError("CrasAudioHandler not initialized.");
     return;
   }
-  return_value->SetDouble("volume", audio_handler->GetVolumePercent());
-  return_value->SetBoolean("is_mute", audio_handler->IsMuted());
+  return_value->SetDouble("volume", audio_handler->GetOutputVolumePercent());
+  return_value->SetBoolean("is_mute", audio_handler->IsOutputMuted());
   reply.SendSuccess(return_value.get());
 }
 
@@ -1204,12 +1157,12 @@ void TestingAutomationProvider::SetVolume(DictionaryValue* args,
     reply.SendError("Invalid or missing args.");
     return;
   }
-  chromeos::AudioHandler* audio_handler = chromeos::AudioHandler::GetInstance();
+  chromeos::CrasAudioHandler* audio_handler = chromeos::CrasAudioHandler::Get();
   if (!audio_handler) {
-    reply.SendError("AudioHandler not initialized.");
+    reply.SendError("CrasAudioHandler not initialized.");
     return;
   }
-  audio_handler->SetVolumePercent(volume_percent);
+  audio_handler->SetOutputVolumePercent(volume_percent);
   reply.SendSuccess(NULL);
 }
 
@@ -1221,12 +1174,12 @@ void TestingAutomationProvider::SetMute(DictionaryValue* args,
     reply.SendError("Invalid or missing args.");
     return;
   }
-  chromeos::AudioHandler* audio_handler = chromeos::AudioHandler::GetInstance();
+  chromeos::CrasAudioHandler* audio_handler = chromeos::CrasAudioHandler::Get();
   if (!audio_handler) {
-    reply.SendError("AudioHandler not initialized.");
+    reply.SendError("CrasAudioHandler not initialized.");
     return;
   }
-  audio_handler->SetMuted(mute);
+  audio_handler->SetOutputMute(mute);
   reply.SendSuccess(NULL);
 }
 

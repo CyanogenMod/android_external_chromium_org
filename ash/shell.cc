@@ -34,6 +34,7 @@
 #include "ash/shell_delegate.h"
 #include "ash/shell_factory.h"
 #include "ash/shell_window_ids.h"
+#include "ash/system/locale/locale_notification_controller.h"
 #include "ash/system/status_area_widget.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/system_tray_notifier.h"
@@ -50,6 +51,7 @@
 #include "ash/wm/event_rewriter_event_filter.h"
 #include "ash/wm/lock_state_controller.h"
 #include "ash/wm/lock_state_controller_impl2.h"
+#include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/overlay_event_filter.h"
 #include "ash/wm/power_button_controller.h"
 #include "ash/wm/property_util.h"
@@ -65,6 +67,7 @@
 #include "ash/wm/window_animations.h"
 #include "ash/wm/window_cycle_controller.h"
 #include "ash/wm/window_properties.h"
+#include "ash/wm/window_selector_controller.h"
 #include "ash/wm/window_util.h"
 #include "ash/wm/workspace_controller.h"
 #include "base/bind.h"
@@ -199,7 +202,8 @@ bool Shell::initially_hide_cursor_ = false;
 
 Shell::Shell(ShellDelegate* delegate)
     : screen_(new ScreenAsh),
-      active_root_window_(NULL),
+      target_root_window_(NULL),
+      scoped_target_root_window_(NULL),
       delegate_(delegate),
       activation_client_(NULL),
 #if defined(OS_CHROMEOS) && defined(USE_X11)
@@ -226,9 +230,7 @@ Shell::Shell(ShellDelegate* delegate)
       CommandLine::ForCurrentProcess()->HasSwitch(
           ::switches::kDisablePanelFitting);
 
-  output_configurator_->Init(
-      !is_panel_fitting_disabled,
-      delegate_->IsFirstRunAfterBoot() ? kChromeOsBootColor : 0);
+  output_configurator_->Init(!is_panel_fitting_disabled);
 
   base::MessagePumpAuraX11::Current()->AddDispatcherForRootWindow(
       output_configurator());
@@ -249,8 +251,7 @@ Shell::~Shell() {
   // Remove the focus from any window. This will prevent overhead and side
   // effects (e.g. crashes) from changing focus during shutdown.
   // See bug crbug.com/134502.
-  if (active_root_window_)
-    aura::client::GetFocusClient(active_root_window_)->FocusWindow(NULL);
+  aura::client::GetFocusClient(GetPrimaryRootWindow())->FocusWindow(NULL);
 
   // Please keep in same order as in Init() because it's easy to miss one.
   RemovePreTargetHandler(event_rewriter_filter_.get());
@@ -278,6 +279,8 @@ Shell::~Shell() {
   // Destroy SystemTrayDelegate before destroying the status area(s).
   system_tray_delegate_->Shutdown();
   system_tray_delegate_.reset();
+
+  locale_notification_controller_.reset();
 
   // Destroy all child windows including widgets.
   display_controller_->CloseChildWindows();
@@ -307,6 +310,7 @@ Shell::~Shell() {
 
   power_button_controller_.reset();
   lock_state_controller_.reset();
+  mru_window_tracker_.reset();
 
   // This also deletes all RootWindows. Note that we invoke Shutdown() on
   // DisplayController before resetting |display_controller_|, since destruction
@@ -383,7 +387,10 @@ aura::RootWindow* Shell::GetPrimaryRootWindow() {
 
 // static
 aura::RootWindow* Shell::GetActiveRootWindow() {
-  return GetInstance()->active_root_window_;
+  Shell* shell = GetInstance();
+  if (shell->scoped_target_root_window_)
+    return shell->scoped_target_root_window_;
+  return shell->target_root_window_;
 }
 
 // static
@@ -453,8 +460,8 @@ void Shell::Init() {
     output_configurator_->set_state_controller(display_change_observer_.get());
     if (!command_line->HasSwitch(ash::switches::kAshDisableSoftwareMirroring))
       output_configurator_->set_mirroring_controller(display_manager_.get());
-    output_configurator_->Start();
-    display_change_observer_->OnDisplayModeChanged();
+    output_configurator_->Start(
+        delegate_->IsFirstRunAfterBoot() ? kChromeOsBootColor : 0);
     display_initialized = true;
   }
 #endif
@@ -496,7 +503,7 @@ void Shell::Init() {
   display_controller_->Start();
   display_controller_->InitPrimaryDisplay();
   aura::RootWindow* root_window = display_controller_->GetPrimaryRootWindow();
-  active_root_window_ = root_window;
+  target_root_window_ = root_window;
 
   cursor_manager_.SetDisplay(DisplayController::GetPrimaryDisplay());
 
@@ -563,13 +570,15 @@ void Shell::Init() {
 
   magnification_controller_.reset(
       MagnificationController::CreateInstance());
+  mru_window_tracker_.reset(new MruWindowTracker(activation_client_));
 
   partial_magnification_controller_.reset(
       new PartialMagnificationController());
 
   high_contrast_controller_.reset(new HighContrastController);
   video_detector_.reset(new VideoDetector);
-  window_cycle_controller_.reset(new WindowCycleController(activation_client_));
+  window_cycle_controller_.reset(new WindowCycleController());
+  window_selector_controller_.reset(new WindowSelectorController());
 
   tooltip_controller_.reset(new views::corewm::TooltipController(
                                 gfx::SCREEN_TYPE_ALTERNATE));
@@ -606,6 +615,9 @@ void Shell::Init() {
       new internal::RootWindowController(root_window);
   InitRootWindowController(root_window_controller,
                            delegate_->IsFirstRunAfterBoot());
+
+  locale_notification_controller_.reset(
+      new internal::LocaleNotificationController);
 
   // Initialize system_tray_delegate_ after StatusAreaWidget is created.
   system_tray_delegate_->Initialize();
@@ -876,7 +888,8 @@ void Shell::InitRootWindowForSecondaryDisplay(aura::RootWindow* root) {
   high_contrast_controller_->OnRootWindowAdded(root);
   root->ShowRootWindow();
   // Activate new root for testing.
-  active_root_window_ = root;
+  // TODO(oshima): remove this.
+  target_root_window_ = root;
 
   // Create a launcher if a user is already logged.
   if (Shell::GetInstance()->session_state_delegate()->NumberOfLoggedInUsers())
@@ -925,7 +938,7 @@ void Shell::InitRootWindowController(
 
   controller->Init(first_run_after_boot);
 
-  window_cycle_controller_->OnRootWindowAdded(root_window);
+  mru_window_tracker_->OnRootWindowAdded(root_window);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -963,7 +976,7 @@ void Shell::OnEvent(ui::Event* event) {
 void Shell::OnWindowActivated(aura::Window* gained_active,
                               aura::Window* lost_active) {
   if (gained_active)
-    active_root_window_ = gained_active->GetRootWindow();
+    target_root_window_ = gained_active->GetRootWindow();
 }
 
 }  // namespace ash

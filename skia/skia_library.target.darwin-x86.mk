@@ -233,7 +233,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/effects/SkAvoidXfermode.cpp \
 	third_party/skia/src/effects/SkBicubicImageFilter.cpp \
 	third_party/skia/src/effects/SkBitmapSource.cpp \
-	third_party/skia/src/effects/SkBlendImageFilter.cpp \
 	third_party/skia/src/effects/SkBlurDrawLooper.cpp \
 	third_party/skia/src/effects/SkBlurMask.cpp \
 	third_party/skia/src/effects/SkBlurImageFilter.cpp \
@@ -457,6 +456,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/src/image \
+	$(LOCAL_PATH)/third_party/skia/src/ports \
 	$(LOCAL_PATH)/third_party/skia/src/sfnt \
 	$(LOCAL_PATH)/third_party/skia/src/utils \
 	$(LOCAL_PATH)/third_party/skia/src/lazy \
@@ -580,6 +580,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/src/image \
+	$(LOCAL_PATH)/third_party/skia/src/ports \
 	$(LOCAL_PATH)/third_party/skia/src/sfnt \
 	$(LOCAL_PATH)/third_party/skia/src/utils \
 	$(LOCAL_PATH)/third_party/skia/src/lazy \

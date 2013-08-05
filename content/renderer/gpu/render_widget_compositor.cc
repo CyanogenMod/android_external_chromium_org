@@ -274,6 +274,9 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
           : SkColorSetARGB(128, 128, 128, 128);
   settings.solid_color_scrollbar_thickness_dip = 3;
   settings.highp_threshold_min = 2048;
+  // Android WebView handles root layer flings itself.
+  settings.ignore_root_layer_flings =
+      widget->UsingSynchronousRendererCompositor();
 #endif
 
   if (!compositor->initialize(settings))
@@ -356,6 +359,10 @@ void RenderWidgetCompositor::SetLatencyInfo(
 
 int RenderWidgetCompositor::GetLayerTreeId() const {
   return layer_tree_host_->id();
+}
+
+void RenderWidgetCompositor::NotifyInputThrottledUntilCommit() {
+  layer_tree_host_->NotifyInputThrottledUntilCommit();
 }
 
 bool RenderWidgetCompositor::initialize(cc::LayerTreeSettings settings) {
@@ -532,8 +539,9 @@ void RenderWidgetCompositor::ApplyScrollAndScale(gfx::Vector2d scroll_delta,
   widget_->webwidget()->applyScrollAndScale(scroll_delta, page_scale);
 }
 
-scoped_ptr<cc::OutputSurface> RenderWidgetCompositor::CreateOutputSurface() {
-  return widget_->CreateOutputSurface();
+scoped_ptr<cc::OutputSurface> RenderWidgetCompositor::CreateOutputSurface(
+    bool fallback) {
+  return widget_->CreateOutputSurface(fallback);
 }
 
 void RenderWidgetCompositor::DidInitializeOutputSurface(bool success) {

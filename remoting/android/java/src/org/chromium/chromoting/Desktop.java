@@ -7,6 +7,12 @@ package org.chromium.chromoting;
 import android.app.Activity;
 import android.content.res.Configuration;
 import android.os.Bundle;
+import android.util.Log;
+import android.view.KeyEvent;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
 
 import org.chromium.chromoting.jni.JniInterface;
 
@@ -14,7 +20,7 @@ import org.chromium.chromoting.jni.JniInterface;
  * A simple screen that does nothing except display a DesktopView and notify it of rotations.
  */
 public class Desktop extends Activity {
-    /** Whether the device has just been rotated. */
+    /** The surface that displays the remote host's desktop feed. */
     private DesktopView remoteHostDesktop;
 
     /** Called when the activity is first created. */
@@ -36,6 +42,68 @@ public class Desktop extends Activity {
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
-        remoteHostDesktop.requestCanvasRedraw();
+        remoteHostDesktop.requestRecheckConstrainingDimension();
+    }
+
+    /** Called to initialize the action bar. */
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        getMenuInflater().inflate(R.menu.desktop_actionbar, menu);
+        return super.onCreateOptionsMenu(menu);
+    }
+
+    /** Called whenever an action bar button is pressed. */
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        switch (item.getItemId()) {
+            case R.id.actionbar_keyboard:
+                ((InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).toggleSoftInput(0, 0);
+                return true;
+            case R.id.actionbar_hide:
+                getActionBar().hide();
+                return true;
+            default:
+                return super.onOptionsItemSelected(item);
+        }
+    }
+
+    /**
+     * Called once when a keyboard key is pressed, then again when that same key is released. This
+     * is not guaranteed to be notified of all soft keyboard events: certian keyboards might not
+     * call it at all, while others might skip it in certain situations (e.g. swipe input).
+     */
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        boolean depressed = event.getAction() == KeyEvent.ACTION_DOWN;
+
+        switch (event.getKeyCode()) {
+            case KeyEvent.KEYCODE_AT:
+                JniInterface.keyboardAction(KeyEvent.KEYCODE_SHIFT_LEFT, depressed);
+                JniInterface.keyboardAction(KeyEvent.KEYCODE_2, depressed);
+                break;
+            case KeyEvent.KEYCODE_POUND:
+                JniInterface.keyboardAction(KeyEvent.KEYCODE_SHIFT_LEFT, depressed);
+                JniInterface.keyboardAction(KeyEvent.KEYCODE_3, depressed);
+                break;
+            case KeyEvent.KEYCODE_STAR:
+                JniInterface.keyboardAction(KeyEvent.KEYCODE_SHIFT_LEFT, depressed);
+                JniInterface.keyboardAction(KeyEvent.KEYCODE_8, depressed);
+                break;
+            case KeyEvent.KEYCODE_PLUS:
+                JniInterface.keyboardAction(KeyEvent.KEYCODE_SHIFT_LEFT, depressed);
+                JniInterface.keyboardAction(KeyEvent.KEYCODE_EQUALS, depressed);
+                break;
+            default:
+                // We try to send all other key codes to the host directly.
+                JniInterface.keyboardAction(event.getKeyCode(), depressed);
+
+                if (event.getKeyCode() == KeyEvent.KEYCODE_ENTER ||
+                        event.getKeyCode() == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+                    // We stop this key from propagating to prevent the keyboard from closing.
+                    return true;
+                }
+        }
+
+        return super.dispatchKeyEvent(event);
     }
 }

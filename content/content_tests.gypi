@@ -280,6 +280,7 @@
         'browser/byte_stream_unittest.cc',
         'browser/child_process_security_policy_unittest.cc',
         'browser/device_orientation/data_fetcher_impl_android_unittest.cc',
+        'browser/device_orientation/device_motion_provider_unittest.cc',
         'browser/device_orientation/provider_unittest.cc',
         'browser/devtools/devtools_http_handler_unittest.cc',
         'browser/devtools/devtools_manager_unittest.cc',
@@ -307,7 +308,6 @@
         'browser/geolocation/win7_location_provider_unittest_win.cc',
         'browser/gpu/shader_disk_cache_unittest.cc',
         'browser/host_zoom_map_impl_unittest.cc',
-        'browser/hyphenator/hyphenator_message_filter_unittest.cc',
         'browser/indexed_db/indexed_db_backing_store_unittest.cc',
         'browser/indexed_db/indexed_db_cleanup_on_io_error_unittest.cc',
         'browser/indexed_db/indexed_db_database_unittest.cc',
@@ -330,6 +330,7 @@
         'browser/net/sqlite_persistent_cookie_store_unittest.cc',
         'browser/notification_service_impl_unittest.cc',
         'browser/plugin_loader_posix_unittest.cc',
+        'browser/power_monitor_message_broadcaster_unittest.cc',
         'browser/renderer_host/compositing_iosurface_transformer_mac_unittest.cc',
         'browser/renderer_host/gtk_key_bindings_handler_unittest.cc',
 	'browser/renderer_host/input/immediate_input_router_unittest.cc',
@@ -368,6 +369,7 @@
         'browser/speech/google_streaming_remote_engine_unittest.cc',
         'browser/speech/speech_recognizer_impl_unittest.cc',
         'browser/ssl/ssl_host_state_unittest.cc',
+        'browser/startup_task_runner_unittest.cc',
         'browser/storage_partition_impl_unittest.cc',
         'browser/storage_partition_impl_map_unittest.cc',
         'browser/streams/stream_unittest.cc',
@@ -389,6 +391,7 @@
         'child/indexed_db/indexed_db_dispatcher_unittest.cc',
         'child/indexed_db/proxy_webidbcursor_impl_unittest.cc',
         'child/npapi/plugin_lib_unittest.cc',
+        'child/power_monitor_broadcast_source_unittest.cc',
         'child/resource_dispatcher_unittest.cc',
         'common/android/address_parser_unittest.cc',
         'common/cc_messages_unittest.cc',
@@ -414,9 +417,9 @@
         'renderer/date_time_formatter_unittest.cc',
         'renderer/device_orientation/device_motion_event_pump_unittest.cc',
         'renderer/disambiguation_popup_helper_unittest.cc',
+        'renderer/dom_storage/dom_storage_cached_area_unittest.cc',
         'renderer/gpu/input_event_filter_unittest.cc',
         'renderer/gpu/input_handler_proxy_unittest.cc',
-        'renderer/hyphenator/hyphenator_unittest.cc',
         'renderer/ico_image_decoder_unittest.cc',
         'renderer/media/android/media_info_loader_unittest.cc',
         'renderer/media/audio_message_filter_unittest.cc',
@@ -434,11 +437,11 @@
         'renderer/paint_aggregator_unittest.cc',
         'renderer/pepper/host_var_tracker_unittest.cc',
         'renderer/pepper/mock_resource.h',
+        'renderer/pepper/pepper_broker_unittest.cc',
         'renderer/pepper/ppapi_unittest.cc',
         'renderer/pepper/ppapi_unittest.h',
         'renderer/pepper/quota_file_io_unittest.cc',
         'renderer/pepper/v8_var_converter_unittest.cc',
-        'renderer/pepper/pepper_broker_unittest.cc',
         'renderer/render_thread_impl_unittest.cc',
         'renderer/render_view_impl_unittest.cc',
         'renderer/skia_benchmarking_extension_unittest.cc',
@@ -488,6 +491,8 @@
         '../webkit/browser/fileapi/file_system_context_unittest.cc',
         '../webkit/browser/fileapi/file_system_dir_url_request_job_unittest.cc',
         '../webkit/browser/fileapi/file_system_file_stream_reader_unittest.cc',
+        '../webkit/browser/fileapi/file_system_operation_impl_unittest.cc',
+        '../webkit/browser/fileapi/file_system_operation_impl_write_unittest.cc',
         '../webkit/browser/fileapi/file_system_quota_client_unittest.cc',
         '../webkit/browser/fileapi/file_system_url_request_job_unittest.cc',
         '../webkit/browser/fileapi/file_system_url_unittest.cc',
@@ -496,13 +501,12 @@
         '../webkit/browser/fileapi/isolated_context_unittest.cc',
         '../webkit/browser/fileapi/isolated_file_util_unittest.cc',
         '../webkit/browser/fileapi/local_file_stream_writer_unittest.cc',
-        '../webkit/browser/fileapi/local_file_system_operation_unittest.cc',
-        '../webkit/browser/fileapi/local_file_system_operation_write_unittest.cc',
         '../webkit/browser/fileapi/local_file_util_unittest.cc',
         '../webkit/browser/fileapi/mock_file_change_observer.cc',
         '../webkit/browser/fileapi/mock_file_change_observer.h',
         '../webkit/browser/fileapi/native_file_util_unittest.cc',
         '../webkit/browser/fileapi/obfuscated_file_util_unittest.cc',
+        '../webkit/browser/fileapi/sandbox_context_unittest.cc',
         '../webkit/browser/fileapi/sandbox_database_test_helper.cc',
         '../webkit/browser/fileapi/sandbox_database_test_helper.h',
         '../webkit/browser/fileapi/sandbox_directory_database_unittest.cc',
@@ -549,7 +553,6 @@
         '../webkit/browser/quota/quota_temporary_storage_evictor_unittest.cc',
         '../webkit/browser/quota/usage_tracker_unittest.cc',
         '../webkit/renderer/cpp_variant_unittest.cc',
-        '../webkit/renderer/dom_storage/dom_storage_cached_area_unittest.cc',
         '../webkit/renderer/fileapi/webfilewriter_base_unittest.cc',
       ],
       'conditions': [
@@ -697,10 +700,10 @@
             'browser/renderer_host/input/tap_suppression_controller_unittest.cc',
           ],
         }],
-        ['use_aura==1 and OS=="linux"', {
+        ['branding=="Chrome"', {
           'sources!': [
-            # http://crbug.com/234172: these tests depend on single process
-            # mode, which doesn't work in content_browsertests on Linux Aura.
+            # These tests depend on single process mode, which is disabled in
+            # official builds.
             'renderer/dom_serializer_browsertest.cc',
             'renderer/resource_fetcher_browsertest.cc',
             'renderer/savable_resources_browsertest.cc',
@@ -893,7 +896,6 @@
                 # resulting .res files get referenced multiple times.
                 '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.rc',
-                '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_strings_en-US.rc',
               ],
               'dependencies': [
@@ -1003,6 +1005,10 @@
             '../ui/ui.gyp:ui',
             '../ui/gl/gl.gyp:gl',
             '../third_party/WebKit/public/blink.gyp:blink',
+            # The following two dependencies provide the missing
+            # symbol HeapProfilerStart in Linux component builds.
+            '../webkit/support/webkit_support.gyp:glue',
+            '../webkit/support/webkit_support.gyp:glue_child',
           ],
           'include_dirs': [
             '..',
@@ -1024,6 +1030,10 @@
             '../ui/ui.gyp:ui',
             '../ui/gl/gl.gyp:gl',
             '../third_party/WebKit/public/blink.gyp:blink',
+            # The following two dependencies provide the missing
+            # symbol HeapProfilerStart in Linux component builds.
+            '../webkit/support/webkit_support.gyp:glue',
+            '../webkit/support/webkit_support.gyp:glue_child',
           ],
           'include_dirs': [
             '..',

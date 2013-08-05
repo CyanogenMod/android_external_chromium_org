@@ -9,6 +9,7 @@
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
+#include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/stats_counters.h"
 #include "base/strings/string16.h"
@@ -81,6 +82,7 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "ui/base/layout.h"
 #include "ui/base/touch/touch_device.h"
+#include "ui/base/touch/touch_enabled.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
@@ -266,7 +268,8 @@ void MakeNavigateParams(const NavigationEntryImpl& entry,
 }  // namespace
 
 WebContents* WebContents::Create(const WebContents::CreateParams& params) {
-  return WebContentsImpl::CreateWithOpener(params, NULL);
+  return WebContentsImpl::CreateWithOpener(
+      params, static_cast<WebContentsImpl*>(params.opener));
 }
 
 WebContents* WebContents::CreateWithSessionStorage(
@@ -375,7 +378,7 @@ WebContentsImpl::~WebContentsImpl() {
 
   // Clear out any JavaScript state.
   if (dialog_manager_)
-    dialog_manager_->ResetJavaScriptState(this);
+    dialog_manager_->WebContentsDestroyed(this);
 
   if (color_chooser_)
     color_chooser_->End();
@@ -477,11 +480,7 @@ WebPreferences WebContentsImpl::GetWebkitPrefs(RenderViewHost* rvh,
   prefs.experimental_webgl_enabled =
       GpuProcessHost::gpu_enabled() &&
       !command_line.HasSwitch(switches::kDisable3DAPIs) &&
-#if defined(OS_ANDROID)
-      command_line.HasSwitch(switches::kEnableExperimentalWebGL);
-#else
       !command_line.HasSwitch(switches::kDisableExperimentalWebGL);
-#endif
 
   prefs.flash_3d_enabled =
       GpuProcessHost::gpu_enabled() &&
@@ -559,23 +558,9 @@ WebPreferences WebContentsImpl::GetWebkitPrefs(RenderViewHost* rvh,
       switches::kDisableGestureRequirementForMediaPlayback);
 #endif
 
-  bool touch_device_present = false;
-  touch_device_present = ui::IsTouchDevicePresent();
-  const std::string touch_enabled_switch =
-      command_line.HasSwitch(switches::kTouchEvents) ?
-      command_line.GetSwitchValueASCII(switches::kTouchEvents) :
-      switches::kTouchEventsAuto;
-
-  if (touch_enabled_switch.empty() ||
-      touch_enabled_switch == switches::kTouchEventsEnabled) {
-    prefs.touch_enabled = true;
-  } else if (touch_enabled_switch == switches::kTouchEventsAuto) {
-    prefs.touch_enabled = touch_device_present;
-  } else if (touch_enabled_switch != switches::kTouchEventsDisabled) {
-    LOG(ERROR) << "Invalid --touch-events option: " << touch_enabled_switch;
-  }
-
-  prefs.device_supports_touch = prefs.touch_enabled && touch_device_present;
+  prefs.touch_enabled = ui::AreTouchEventsEnabled();
+  prefs.device_supports_touch = prefs.touch_enabled &&
+      ui::IsTouchDevicePresent();
 #if defined(OS_ANDROID)
   prefs.device_supports_mouse = false;
 #endif
@@ -2701,6 +2686,8 @@ void WebContentsImpl::DidNavigateMainFramePostCommit(
     // Once the main frame is navigated, we're no longer considered to have
     // displayed insecure content.
     displayed_insecure_content_ = false;
+    SSLManager::NotifySSLInternalStateChanged(
+        GetController().GetBrowserContext());
   }
 
   // Notify observers about navigation.
@@ -2712,13 +2699,9 @@ void WebContentsImpl::DidNavigateAnyFramePostCommit(
     RenderViewHost* render_view_host,
     const LoadCommittedDetails& details,
     const ViewHostMsg_FrameNavigate_Params& params) {
-  // If we navigate off the page, reset JavaScript state. This does nothing
-  // to prevent a malicious script from spamming messages, since the script
-  // could just reload the page to stop blocking.
-  if (dialog_manager_ && !details.is_in_page) {
-    dialog_manager_->ResetJavaScriptState(this);
-    dialog_manager_ = NULL;
-  }
+  // If we navigate off the page, close all JavaScript dialogs.
+  if (dialog_manager_ && !details.is_in_page)
+    dialog_manager_->CancelActiveAndPendingDialogs(this);
 
   // Notify observers about navigation.
   FOR_EACH_OBSERVER(WebContentsObserver, observers_,

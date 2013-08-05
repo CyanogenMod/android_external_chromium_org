@@ -4,8 +4,10 @@
 
 #include "chrome/browser/ui/cocoa/autofill/autofill_dialog_cocoa.h"
 
+#include "base/bind.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/scoped_nsobject.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_controller.h"
 #include "chrome/browser/ui/chrome_style.h"
@@ -41,7 +43,8 @@ AutofillDialogView* AutofillDialogView::Create(
 }
 
 AutofillDialogCocoa::AutofillDialogCocoa(AutofillDialogController* controller)
-    : controller_(controller) {
+    : close_weak_ptr_factory_(this),
+      controller_(controller) {
 }
 
 AutofillDialogCocoa::~AutofillDialogCocoa() {
@@ -58,15 +61,22 @@ void AutofillDialogCocoa::Show() {
           initWithCustomWindow:[sheet_controller_ window]]);
   constrained_window_.reset(
       new ConstrainedWindowMac(this, controller_->web_contents(), sheet));
-  constrained_window_->SetPreventCloseOnLoadStart(true);
 }
 
 void AutofillDialogCocoa::Hide() {
   [sheet_controller_ hide];
 }
 
-// Closes the sheet and ends the modal loop. Triggers cleanup sequence.
 void AutofillDialogCocoa::PerformClose() {
+  if (!close_weak_ptr_factory_.HasWeakPtrs()) {
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&AutofillDialogCocoa::CloseNow,
+                   close_weak_ptr_factory_.GetWeakPtr()));
+  }
+}
+
+void AutofillDialogCocoa::CloseNow() {
   constrained_window_->CloseWebContentsModalDialog();
 }
 
@@ -165,7 +175,8 @@ void AutofillDialogCocoa::SetTextContentsOfInput(const DetailInput& input,
 void AutofillDialogCocoa::SetTextContentsOfSuggestionInput(
     DialogSection section,
     const base::string16& text) {
-  // TODO(groby): Implement Mac support for this: http://crbug.com/256864
+  [sheet_controller_ setTextContents:base::SysUTF16ToNSString(text)
+              ofSuggestionForSection:section];
 }
 
 void AutofillDialogCocoa::ActivateInput(const DetailInput& input) {
@@ -403,6 +414,11 @@ void AutofillDialogCocoa::OnConstrainedWindowClosed(
     // TODO(groby): Need to find the section for an input directly - wasteful.
     [[mainContainer_ sectionForId:section] setFieldValue:text forInput:input];
   }
+}
+
+- (void)setTextContents:(NSString*)text
+ ofSuggestionForSection:(autofill::DialogSection)section {
+  [[mainContainer_ sectionForId:section] setSuggestionFieldValue:text];
 }
 
 - (void)activateFieldForInput:(const autofill::DetailInput&)input {

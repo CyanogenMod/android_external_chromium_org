@@ -14,6 +14,17 @@ namespace base {
 class FilePath;
 }
 
+#if defined(OS_MACOSX)
+// We don't want to directly include
+// breakpad/src/client/mac/Framework/Breakpad.h here, so we repeat the
+// definition of BreakpadRef.
+//
+// On Mac, when compiling without breakpad support, a stub implementation is
+// compiled in. Not having any includes of the breakpad library allows for
+// reusing this header for the stub.
+typedef void* BreakpadRef;
+#endif
+
 namespace breakpad {
 
 class BreakpadClient;
@@ -67,6 +78,10 @@ class BreakpadClient {
 
   // Returns true if larger crash dumps should be dumped.
   virtual bool GetShouldDumpLargerDumps(bool is_per_user_install);
+
+  // Returns the result code to return when breakpad failed to respawn a
+  // crashed process.
+  virtual int GetResultCodeRespawnFailed();
 #endif
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_IOS)
@@ -98,6 +113,16 @@ class BreakpadClient {
 #if defined(OS_WIN) || defined(OS_MACOSX)
   // Returns true if the user has given consent to collect stats.
   virtual bool GetCollectStatsConsent();
+#endif
+
+#if defined(OS_ANDROID)
+  // Returns the descriptor key of the android minidump global descriptor.
+  virtual int GetAndroidMinidumpDescriptor();
+#endif
+
+#if defined(OS_MACOSX)
+  // Install additional breakpad filter callbacks.
+  virtual void InstallAdditionalFilters(BreakpadRef breakpad);
 #endif
 };
 

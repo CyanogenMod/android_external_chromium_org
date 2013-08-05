@@ -155,6 +155,10 @@ class ExtensionNetworkingPrivateApiTest :
     service_test->SetServiceProperty("stub_wifi2",
                                      flimflam::kSignalStrengthProperty,
                                      base::FundamentalValue(80));
+    service_test->SetServiceProperty("stub_wifi2",
+                                     flimflam::kConnectableProperty,
+                                     base::FundamentalValue(true));
+
     base::ListValue frequencies2;
     frequencies2.AppendInteger(2400);
     frequencies2.AppendInteger(5000);
@@ -267,6 +271,10 @@ IN_PROC_BROWSER_TEST_P(ExtensionNetworkingPrivateApiTest, SetProperties) {
 }
 
 #if defined(OS_CHROMEOS)
+IN_PROC_BROWSER_TEST_P(ExtensionNetworkingPrivateApiTest, GetStateNonExistent) {
+  EXPECT_TRUE(RunNetworkingSubtest("getStateNonExistent")) << message_;
+}
+
 IN_PROC_BROWSER_TEST_P(ExtensionNetworkingPrivateApiTest,
                        GetManagedProperties) {
   ShillServiceClient::TestInterface* service_test =
@@ -358,4 +366,3 @@ INSTANTIATE_TEST_CASE_P(ExtensionNetworkingPrivateApiTestInstantiation,
                         testing::Bool());
 
 }  // namespace chromeos
-

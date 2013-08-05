@@ -4,12 +4,14 @@
 
 /* Special attribute used in HTML to hide elements. */
 body[type='folder'] [invisibleif~='folder'],
+body[type='upload-folder'] [invisibleif~='upload-folder'],
 body[type='saveas-file'] [invisibleif~='saveas-file'],
 body[type='open-file'] [invisibleif~='open-file'],
 body[type='open-multi-file'] [invisibleif~='open-multi-file'],
 body[type='full-page'] [invisibleif~='full-page'],
 
 body[type='folder'] [visibleif]:not([visibleif~='folder']),
+body[type='upload-folder'] [visibleif]:not([visibleif~='upload-folder']),
 body[type='saveas-file'] [visibleif]:not([visibleif~='saveas-file']),
 body[type='open-file'] [visibleif]:not([visibleif~='open-file']),
 body[type='open-multi-file'] [visibleif]:not([visibleif~='open-multi-file']),
@@ -420,27 +422,8 @@ div.splitter {
 .dialog-header #search-box,
 .dialog-header #autocomplete-list,
 .dialog-header #search-icon,
-.dialog-header #search-clear-button,
-.dialog-header .buttonbar button {
+.dialog-header #search-clear-button {
   -webkit-app-region: no-drag;
-}
-
-.dialog-header #gear-button {
-  background-image: -webkit-image-set(
-    url('../images/files/ui/topbar_button_settings.png') 1x,
-    url('../images/files/ui/2x/topbar_button_settings.png') 2x);
-}
-
-.dialog-header #maximize-button {
-  background-image: -webkit-image-set(
-    url('../images/files/ui/topbar_button_maximize.png') 1x,
-    url('../images/files/ui/2x/topbar_button_maximize.png') 2x);
-}
-
-.dialog-header #close-button {
-  background-image: -webkit-image-set(
-    url('../images/files/ui/topbar_button_close.png') 1x,
-    url('../images/files/ui/2x/topbar_button_close.png') 2x);
 }
 
 /* Container for the detail and thumbnail list views. */
@@ -584,40 +567,6 @@ body[drive] .dialog-container[connection='metered'] .offline-icon-space {
   height: 10px;
   overflow: hidden;
   width: 25px;
-}
-
-.dialog-header .buttonbar {
-  -webkit-box-align: center;
-  height: 100%;
-}
-
-.dialog-header .buttonbar button {
-  -webkit-box-shadow: none;
-  -webkit-margin-end: 10px;
-  -webkit-margin-start: 0;
-  background-color: transparent;
-  background-image: none;
-  background-position: center;
-  background-repeat: no-repeat;
-  border: 0 none transparent;
-  display: block;
-  height: 32px;
-  min-width: 0;
-  outline: none;
-  padding: 0;
-  width: 32px;
-}
-
-.dialog-header .buttonbar button:active {
-  -webkit-box-shadow:
-    0 1px 0 0 #c2c2c2 inset,
-    0 0 0 1px #dedede inset;
-}
-
-.dialog-header button:hover,
-.dialog-header button:focus,
-.dialog-header button:active {
-  background-color: #ededed;
 }
 
 #search-box,
@@ -1364,6 +1313,7 @@ input.rename {
     url('../images/files/ui/2x/onbutton_trash.png') 2x);
   background-position: center;
   background-repeat: no-repeat;
+  display: -webkit-box;
   min-width: 21px;  /* overrride */
   padding: 0;  /* overrride */
   width: 21px;
@@ -1376,6 +1326,10 @@ input.rename {
 #tasks-menu menuitem:not(.change-default) {
   background-position: left 10px center;
   padding-left: 32px;
+}
+
+#share-button {
+  min-width: 0;  /* overrride */
 }
 
 #preview-lines {
@@ -1457,6 +1411,7 @@ body:not([type='saveas-file']) #filename-input-box {
 /* Dimmed items */
 
 body[type='folder'] .file,
+body[type='upload-folder'] .file,
 body[drive] .dialog-container[connection='offline'] .dim-offline {
   opacity: 0.4;
 }
@@ -1636,7 +1591,8 @@ body[drive='error'] #unmounted-panel > .error,
   position: relative;
 }
 
-.buttonbar .tooltip {
+.buttonbar .tooltip,
+.topbutton-bar .tooltip {
   right: -12px;
   top: 35px;
 }

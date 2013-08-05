@@ -418,26 +418,11 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kDisableGpuVsync)
   },
   {
-    "enable-webgl",
-    IDS_FLAGS_ENABLE_WEBGL_NAME,
-    IDS_FLAGS_ENABLE_WEBGL_DESCRIPTION,
-    kOsAndroid,
-#if defined(OS_ANDROID)
-    SINGLE_VALUE_TYPE(switches::kEnableExperimentalWebGL)
-#else
-    SINGLE_VALUE_TYPE("")
-#endif
-  },
-  {
     "disable-webgl",
     IDS_FLAGS_DISABLE_WEBGL_NAME,
     IDS_FLAGS_DISABLE_WEBGL_DESCRIPTION,
-    kOsDesktop,
-#if defined(OS_ANDROID)
-    SINGLE_VALUE_TYPE("")
-#else
+    kOsAll,
     SINGLE_VALUE_TYPE(switches::kDisableExperimentalWebGL)
-#endif
   },
   {
     "disable-webrtc",
@@ -459,11 +444,11 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kEnableSCTPDataChannels)
   },
   {
-    "enable-device-enumeration",
-    IDS_FLAGS_ENABLE_DEVICE_ENUMERATION_NAME,
-    IDS_FLAGS_ENABLE_DEVICE_ENUMERATION_DESCRIPTION,
+    "disable-device-enumeration",
+    IDS_FLAGS_DISABLE_DEVICE_ENUMERATION_NAME,
+    IDS_FLAGS_DISABLE_DEVICE_ENUMERATION_DESCRIPTION,
     kOsAll,
-    SINGLE_VALUE_TYPE(switches::kEnableDeviceEnumeration)
+    SINGLE_VALUE_TYPE(switches::kDisableDeviceEnumeration)
   },
 #endif
 #if defined(OS_ANDROID)
@@ -539,7 +524,7 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_EXPERIMENTAL_EXTENSION_APIS_NAME,
     IDS_FLAGS_EXPERIMENTAL_EXTENSION_APIS_DESCRIPTION,
     kOsDesktop,
-    SINGLE_VALUE_TYPE(switches::kEnableExperimentalExtensionApis)
+    SINGLE_VALUE_TYPE(extensions::switches::kEnableExperimentalExtensionApis)
   },
   {
     "extensions-on-chrome-urls",
@@ -1042,6 +1027,13 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kDisableMinimizeOnSecondLauncherItemClick)
   },
   {
+    "enable-overview-mode",
+    IDS_FLAGS_OVERVIEW_MODE_NAME,
+    IDS_FLAGS_OVERVIEW_MODE_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(ash::switches::kAshEnableOverviewMode)
+  },
+  {
     "show-touch-hud",
     IDS_FLAGS_SHOW_TOUCH_HUD_NAME,
     IDS_FLAGS_SHOW_TOUCH_HUD_DESCRIPTION,
@@ -1098,20 +1090,6 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_FILE_MANAGER_SHOW_CHECKBOXES_DESCRIPTION,
     kOsCrOS,
     SINGLE_VALUE_TYPE(chromeos::switches::kFileManagerShowCheckboxes)
-  },
-  {
-    "file-manager-enable-sharing",
-    IDS_FLAGS_FILE_MANAGER_ENABLE_SHARING_NAME,
-    IDS_FLAGS_FILE_MANAGER_ENABLE_SHARING_DESCRIPTION,
-    kOsCrOS,
-    SINGLE_VALUE_TYPE(chromeos::switches::kFileManagerEnableSharing)
-  },
-  {
-    "file-manager-enable-folder-shortcuts",
-    IDS_FLAGS_FILE_MANAGER_ENABLE_FOLDER_SHORTCUTS,
-    IDS_FLAGS_FILE_MANAGER_ENABLE_FOLDER_SHORTCUTS_DESCRIPTION,
-    kOsCrOS,
-    SINGLE_VALUE_TYPE(chromeos::switches::kFileManagerEnableFolderShortcuts)
   },
   {
     "file-manager-enable-webstore-integration",
@@ -1215,14 +1193,6 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(chromeos::switches::kUseNewNetworkConnectionHandler),
   },
   {
-    "ash-enable-new-audio-handler2",
-    IDS_FLAGS_ASH_ENABLE_NEW_AUDIO_HANDLER_NAME,
-    IDS_FLAGS_ASH_ENABLE_NEW_AUDIO_HANDLER_DESCRIPTION,
-    kOsCrOS,
-    ENABLE_DISABLE_VALUE_TYPE(ash::switches::kAshEnableNewAudioHandler,
-                              ash::switches::kAshDisableNewAudioHandler)
-  },
-  {
     "ash-audio-device-menu",
     IDS_FLAGS_ASH_AUDIO_DEVICE_MENU_NAME,
     IDS_FLAGS_ASH_AUDIO_DEVICE_MENU_DESCRIPTION,
@@ -1300,7 +1270,7 @@ const Experiment kExperiments[] = {
     "enable-interactive-autocomplete",
     IDS_FLAGS_ENABLE_INTERACTIVE_AUTOCOMPLETE_NAME,
     IDS_FLAGS_ENABLE_INTERACTIVE_AUTOCOMPLETE_DESCRIPTION,
-    kOsWin | kOsCrOS | kOsAndroid | kOsMac,
+    kOsWin | kOsCrOS | kOsMac,
     ENABLE_DISABLE_VALUE_TYPE(
         autofill::switches::kEnableInteractiveAutocomplete,
         autofill::switches::kDisableInteractiveAutocomplete)
@@ -1603,7 +1573,8 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_STICKY_KEYS_NAME,
     IDS_FLAGS_ENABLE_STICKY_KEYS_DESCRIPTION,
     kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kEnableStickyKeys),
+    ENABLE_DISABLE_VALUE_TYPE(switches::kEnableStickyKeys,
+                              switches::kDisableStickyKeys)
   },
 #endif
   {
@@ -1650,6 +1621,15 @@ const Experiment kExperiments[] = {
     kOsAndroid,
     SINGLE_VALUE_TYPE(switches::kEnableDeviceMotion)
   },
+#if defined(OS_ANDROID)
+  {
+    "enable-cast",
+    IDS_FLAGS_ENABLE_CAST_NAME,
+    IDS_FLAGS_ENABLE_CAST_DESCRIPTION,
+    kOsAndroid,
+    SINGLE_VALUE_TYPE(switches::kEnableCast)
+  },
+#endif
 };
 
 const Experiment* experiments = kExperiments;

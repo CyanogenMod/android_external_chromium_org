@@ -204,6 +204,33 @@ TEST_F(TextureLayerTest, CheckPropertyChangeCausesCorrectBehavior) {
   EXPECT_CALL(*layer_tree_host_, AcquireLayerTextures()).Times(AnyNumber());
 }
 
+TEST_F(TextureLayerTest, VisibleContentOpaqueRegion) {
+  const gfx::Size layer_bounds(100, 100);
+  const gfx::Rect layer_rect(layer_bounds);
+  const Region layer_region(layer_rect);
+
+  scoped_refptr<TextureLayer> layer = TextureLayer::Create(NULL);
+  layer->SetBounds(layer_bounds);
+  layer->draw_properties().visible_content_rect = layer_rect;
+  layer->SetBlendBackgroundColor(true);
+
+  // Verify initial conditions.
+  EXPECT_FALSE(layer->contents_opaque());
+  EXPECT_EQ(0u, layer->background_color());
+  EXPECT_EQ(Region().ToString(),
+            layer->VisibleContentOpaqueRegion().ToString());
+
+  // Opaque background.
+  layer->SetBackgroundColor(SK_ColorWHITE);
+  EXPECT_EQ(layer_region.ToString(),
+            layer->VisibleContentOpaqueRegion().ToString());
+
+  // Transparent background.
+  layer->SetBackgroundColor(SkColorSetARGB(100, 255, 255, 255));
+  EXPECT_EQ(Region().ToString(),
+            layer->VisibleContentOpaqueRegion().ToString());
+}
+
 class FakeTextureLayerClient : public TextureLayerClient {
  public:
   FakeTextureLayerClient() : context_(TestWebGraphicsContext3D::Create()) {}
@@ -766,7 +793,8 @@ class TextureLayerClientTest
         expected_used_textures_on_draw_(0),
         expected_used_textures_on_commit_(0) {}
 
-  virtual scoped_ptr<OutputSurface> CreateOutputSurface() OVERRIDE {
+  virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback)
+      OVERRIDE {
     scoped_ptr<TestWebGraphicsContext3D> context(
         TestWebGraphicsContext3D::Create());
     context_ = context.get();
@@ -880,7 +908,8 @@ class TextureLayerLostContextTest
       : texture_(0),
         draw_count_(0) {}
 
-  virtual scoped_ptr<OutputSurface> CreateOutputSurface() OVERRIDE {
+  virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback)
+      OVERRIDE {
     texture_context_ = TestWebGraphicsContext3D::Create();
     texture_ = texture_context_->createTexture();
     return CreateFakeOutputSurface();

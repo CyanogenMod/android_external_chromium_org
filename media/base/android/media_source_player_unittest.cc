@@ -94,9 +94,12 @@ class MediaSourcePlayerTest : public testing::Test {
  protected:
   // Get the decoder job from the MediaSourcePlayer.
   MediaDecoderJob* GetMediaDecoderJob(bool is_audio) {
-    if (is_audio)
-      return player_->audio_decoder_job_.get();
-    return player_->video_decoder_job_.get();
+    if (is_audio) {
+      return reinterpret_cast<MediaDecoderJob*>(
+          player_->audio_decoder_job_.get());
+    }
+    return reinterpret_cast<MediaDecoderJob*>(
+        player_->video_decoder_job_.get());
   }
 
   // Starts an audio decoder job.
@@ -393,7 +396,10 @@ TEST_F(MediaSourcePlayerTest, DecoderJobsCannotStartWithoutAudio) {
   EXPECT_TRUE(video_decoder_job->is_decoding());
 }
 
-TEST_F(MediaSourcePlayerTest, StartTimeTicksResetAfterDecoderUnderruns) {
+// Disabled due to http://crbug.com/266041.
+// TODO(xhwang/qinmin): Fix this test and reenable it.
+TEST_F(MediaSourcePlayerTest,
+       DISABLED_StartTimeTicksResetAfterDecoderUnderruns) {
   if (!MediaCodecBridge::IsAvailable())
     return;
 

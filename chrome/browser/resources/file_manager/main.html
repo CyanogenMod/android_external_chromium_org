@@ -14,6 +14,8 @@
 
     <meta name="google" value="notranslate">
 
+    <link rel="stylesheet" href="chrome://resources/css/apps/topbutton_bar.css"></link>
+
     <link rel="stylesheet" href="css/list.css"></link>
     <link rel="stylesheet" href="css/table.css"></link>
     <link rel="stylesheet" href="css/tree.css"></link>
@@ -202,11 +204,16 @@
       <menuitem command="#newfolder"
                 visibleif="saveas-file full-page"></menuitem>
     </menu>
+
     <menu id="roots-context-menu" class="chrome-menu" >
       <menuitem command="#import-photos"></menuitem>
       <menuitem command="#unmount"></menuitem>
       <menuitem command="#format"></menuitem>
       <menuitem command="#remove-folder-shortcut"></menuitem>
+    </menu>
+
+    <menu id="directory-tree-context-menu" class="chrome-menu" >
+      <menuitem command="#create-folder-shortcut"></menuitem>
     </menu>
 
     <menu id="gear-menu" class="chrome-menu" showShortcuts>
@@ -287,13 +294,16 @@
             <div id="search-icon"></div>
           </div>
           <div id="search-clear-button"></div>
-          <div class="buttonbar">
-            <button class="menubutton" id="gear-button" tabindex="10"
-                    menu="#gear-menu">
+          <div class="topbutton-bar">
+            <button class="menubutton gear-button" id="gear-button" tabindex="10"
+                    menu="#gear-menu"
+                    i18n-values="aria-label:GEAR_BUTTON_TOOLTIP">
             </button>
-            <button id="maximize-button" visibleif="full-page" tabindex="-1">
+            <button class="maximize-button" id="maximize-button"
+                    visibleif="full-page" tabindex="-1">
             </button>
-            <button id="close-button" visibleif="full-page" tabindex="-1">
+            <button class="close-button" id="close-button"
+                    visibleif="full-page" tabindex="-1">
             </button>
           </div>
         </div>
@@ -340,10 +350,11 @@
               </div>
             </div>
             <div class="right buttonbar" visibleif="full-page">
+              <button id="share-button" command="#share" tabindex="2"
+                      i18n-values="aria-label:SHARE_BUTTON_LABEL"></button>
               <button id="tasks" class="combobutton" menu="#tasks-menu"
-                      tabindex="2">
-              </button>
-              <button id="delete-button" command="#delete" tabindex="3"
+                      tabindex="3"></button>
+              <button id="delete-button" command="#delete" tabindex="4"
                       i18n-values="aria-label:DELETE_BUTTON_LABEL"></button>
             </div>
             <div class=preparing-label i18n-content=PREPARING_LABEL></div>
@@ -352,8 +363,8 @@
             </div>
             <div class="right buttonbar" id="open-panel" visibleif="open-file open-multi-file">
               <select class="file-type"></select>
-              <button class=ok disabled tabindex="6"></button>
-              <button class=cancel i18n-content=CANCEL_LABEL tabindex="7"></button>
+              <button class=ok disabled tabindex="7"></button>
+              <button class=cancel i18n-content=CANCEL_LABEL tabindex="8"></button>
             </div>
           </div>
           <div id="unmounted-panel"></div>
@@ -368,11 +379,11 @@
       <div class="left">
         <button id="new-folder" i18n-content=NEW_FOLDER_BUTTON_LABEL
                 visibleif="saveas-file folder" command="#newfolder"
-                tabindex="4">
+                tabindex="5">
         </button>
         <div id="filename-input-box">
           <div class=filename-label i18n-content=FILENAME_LABEL></div>
-          <input type=text spellcheck=false tabindex="5">
+          <input type=text spellcheck=false tabindex="6">
         </div>
         <div class=preparing-label i18n-content=PREPARING_LABEL></div>
         <div class=progress-bar>
@@ -381,8 +392,8 @@
       </div>
       <div class="right buttonbar">
         <select class="file-type"></select>
-        <button class=ok disabled tabindex="6"></button>
-        <button class=cancel i18n-content=CANCEL_LABEL tabindex="7"></button>
+        <button class=ok disabled tabindex="7"></button>
+        <button class=cancel i18n-content=CANCEL_LABEL tabindex="8"></button>
       </div>
     </div>
     <div id="drag-container"></div>

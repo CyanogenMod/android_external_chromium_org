@@ -222,7 +222,8 @@ class RenderWidgetHostViewAura
   virtual bool HasAcceleratedSurface(const gfx::Size& desired_size) OVERRIDE;
   virtual void GetScreenInfo(WebKit::WebScreenInfo* results) OVERRIDE;
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
-  virtual void GestureEventAck(int gesture_event_type) OVERRIDE;
+  virtual void GestureEventAck(int gesture_event_type,
+                               InputEventAckState ack_result) OVERRIDE;
   virtual void ProcessAckedTouchEvent(
       const TouchEventWithLatencyInfo& touch,
       InputEventAckState ack_result) OVERRIDE;
@@ -326,6 +327,8 @@ class RenderWidgetHostViewAura
   // Overridden from aura::RootWindowObserver:
   virtual void OnRootWindowHostMoved(const aura::RootWindow* root,
                                      const gfx::Point& new_origin) OVERRIDE;
+
+  bool CanCopyToBitmap() const;
 
 #if defined(OS_WIN)
   // Sets the cutout rects from constrained windows. These are rectangles that
@@ -457,7 +460,7 @@ class RenderWidgetHostViewAura
       const base::Callback<void(bool)>& callback,
       scoped_ptr<cc::CopyOutputResult> result);
 
-  ui::Compositor* GetCompositor();
+  ui::Compositor* GetCompositor() const;
 
   // Detaches |this| from the input method object.
   void DetachFromInputMethod();
@@ -507,6 +510,8 @@ class RenderWidgetHostViewAura
       const ui::LatencyInfo& latency_info);
   void SendSoftwareFrameAck(uint32 output_surface_id,
                             unsigned software_frame_id);
+
+  void DidReceiveFrameFromRenderer();
 
   BrowserAccessibilityManager* GetOrCreateBrowserAccessibilityManager();
 

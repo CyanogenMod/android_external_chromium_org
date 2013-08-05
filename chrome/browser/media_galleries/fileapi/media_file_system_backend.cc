@@ -24,11 +24,10 @@
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_file_stream_reader.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
-#include "webkit/browser/fileapi/file_system_task_runners.h"
+#include "webkit/browser/fileapi/file_system_operation_impl.h"
 #include "webkit/browser/fileapi/isolated_context.h"
 #include "webkit/browser/fileapi/isolated_file_util.h"
 #include "webkit/browser/fileapi/local_file_stream_writer.h"
-#include "webkit/browser/fileapi/local_file_system_operation.h"
 #include "webkit/browser/fileapi/native_file_util.h"
 #include "webkit/common/fileapi/file_system_types.h"
 #include "webkit/common/fileapi/file_system_util.h"
@@ -181,8 +180,8 @@ MediaFileSystemBackend::CreateFileSystemOperation(
                                     url.filesystem_id());
   }
 
-  return new fileapi::LocalFileSystemOperation(url, context,
-                                               operation_context.Pass());
+  return new fileapi::FileSystemOperationImpl(url, context,
+                                              operation_context.Pass());
 }
 
 scoped_ptr<webkit_blob::FileStreamReader>
@@ -193,7 +192,7 @@ MediaFileSystemBackend::CreateFileStreamReader(
     FileSystemContext* context) const {
   return scoped_ptr<webkit_blob::FileStreamReader>(
       new webkit_blob::LocalFileStreamReader(
-          context->task_runners()->file_task_runner(),
+          context->default_file_task_runner(),
           url.path(), offset, expected_modification_time));
 }
 
@@ -204,7 +203,7 @@ MediaFileSystemBackend::CreateFileStreamWriter(
     FileSystemContext* context) const {
   return scoped_ptr<fileapi::FileStreamWriter>(
       new fileapi::LocalFileStreamWriter(
-          context->task_runners()->file_task_runner(),
+          context->default_file_task_runner(),
           url.path(), offset));
 }
 

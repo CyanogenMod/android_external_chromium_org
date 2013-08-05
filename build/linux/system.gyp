@@ -379,9 +379,6 @@
                          '--output-h', '<(output_h)',
                          '--output-cc', '<(output_cc)',
                          '--header', '<gio/gio.h>',
-                         # TODO(phajdan.jr): This will no longer be needed
-                         # after switch to Precise, http://crbug.com/158577 .
-                         '--bundled-header', '"build/linux/gsettings.h"',
                          '--link-directly=<(linux_link_gsettings)',
                          'g_settings_new',
                          'g_settings_get_child',
@@ -782,29 +779,29 @@
         ['_toolset=="target"', {
           'direct_dependent_settings': {
             'cflags': [
-              '<!@(<(pkg-config) --cflags pangocairo)',
+              '<!@(<(pkg-config) --cflags pangocairo pangoft2)',
             ],
           },
           'link_settings': {
             'ldflags': [
-              '<!@(<(pkg-config) --libs-only-L --libs-only-other pangocairo)',
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other pangocairo pangoft2)',
             ],
             'libraries': [
-              '<!@(<(pkg-config) --libs-only-l pangocairo)',
+              '<!@(<(pkg-config) --libs-only-l pangocairo pangoft2)',
             ],
           },
         }, {
           'direct_dependent_settings': {
             'cflags': [
-              '<!@(pkg-config --cflags pangocairo)',
+              '<!@(pkg-config --cflags pangocairo pangoft2)',
             ],
           },
           'link_settings': {
             'ldflags': [
-              '<!@(pkg-config --libs-only-L --libs-only-other pangocairo)',
+              '<!@(pkg-config --libs-only-L --libs-only-other pangocairo pangoft2)',
             ],
             'libraries': [
-              '<!@(pkg-config --libs-only-l pangocairo)',
+              '<!@(pkg-config --libs-only-l pangocairo pangoft2)',
             ],
           },
         }],

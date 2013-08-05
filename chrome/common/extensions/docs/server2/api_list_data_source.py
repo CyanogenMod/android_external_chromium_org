@@ -18,37 +18,46 @@ class APIListDataSource(object):
   will contain non-API articles.
   """
   class Factory(object):
-    def __init__(self, compiled_fs_factory, api_path, public_path):
+    def __init__(self, compiled_fs_factory, file_system, api_path, public_path):
       self._compiled_fs = compiled_fs_factory.Create(self._ListAPIs,
                                                      APIListDataSource)
-      self._identity_fs = compiled_fs_factory.CreateIdentity(APIListDataSource)
+      self._file_system = file_system
       def Normalize(string):
         return string if string.endswith('/') else (string + '/')
       self._api_path = Normalize(api_path)
       self._public_path = Normalize(public_path)
 
     def _GetAPIsInSubdirectory(self, api_names, doc_type):
-      public_templates = self._identity_fs.GetFromFileListing(
-          '%s%s/' % (self._public_path, doc_type))
+      public_templates = []
+      for root, _, files in self._file_system.Walk(
+          self._public_path + doc_type):
+        public_templates.extend(
+            ('%s/%s' % (root, name)).lstrip('/') for name in files)
       template_names = set(os.path.splitext(name)[0]
                            for name in public_templates)
       experimental_apis = []
       chrome_apis = []
+      private_apis = []
       for template_name in sorted(template_names):
         if model.UnixName(template_name) not in api_names:
           continue
         entry = {'name': template_name.replace('_', '.')}
         if template_name.startswith('experimental'):
           experimental_apis.append(entry)
+        elif template_name.endswith('Private'):
+          private_apis.append(entry)
         else:
           chrome_apis.append(entry)
       if len(chrome_apis):
         chrome_apis[-1]['last'] = True
       if len(experimental_apis):
         experimental_apis[-1]['last'] = True
+      if len(private_apis):
+        private_apis[-1]['last'] = True
       return {
         'chrome': chrome_apis,
-        'experimental': experimental_apis
+        'experimental': experimental_apis,
+        'private': private_apis
       }
 
     def _ListAPIs(self, base_dir, apis):
@@ -68,7 +77,7 @@ class APIListDataSource(object):
   def GetAllNames(self):
     names = []
     for platform in ['apps', 'extensions']:
-      for category in ['chrome', 'experimental']:
+      for category in ['chrome', 'experimental', 'private']:
        names.extend(self.get(platform).get(category))
     return [api_name['name'] for api_name in names]
 

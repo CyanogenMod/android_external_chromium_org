@@ -1133,6 +1133,66 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Chrome.SearchSelectExempt" enum="SearchEngine">
+  <obsolete>
+    Deprecated 8/2013. No longer tracked.
+  </obsolete>
+  <summary>
+    The default search engine selected by a user not in the search engine dialog
+    experiment.
+  </summary>
+</histogram>
+
+<histogram name="Chrome.SearchSelectExperiment" enum="SearchEngine">
+  <obsolete>
+    Deprecated 8/2013. No longer tracked.
+  </obsolete>
+  <summary>
+    The default search engine selected by a user in the search engine dialog
+    experiment.
+  </summary>
+</histogram>
+
+<histogram name="Chrome.SearchSelectExperimentSlot1" enum="SearchEngine">
+  <obsolete>
+    Deprecated 8/2013. No longer tracked.
+  </obsolete>
+  <summary>
+    The default search engine selected by a user in slot 1 of a randomized
+    search engine dialog.
+  </summary>
+</histogram>
+
+<histogram name="Chrome.SearchSelectExperimentSlot2" enum="SearchEngine">
+  <obsolete>
+    Deprecated 8/2013. No longer tracked.
+  </obsolete>
+  <summary>
+    The default search engine selected by a user in slot 2 of a randomized
+    search engine dialog.
+  </summary>
+</histogram>
+
+<histogram name="Chrome.SearchSelectExperimentSlot3" enum="SearchEngine">
+  <obsolete>
+    Deprecated 8/2013. No longer tracked.
+  </obsolete>
+  <summary>
+    The default search engine selected by a user in slot 3 of a randomized
+    search engine dialog.
+  </summary>
+</histogram>
+
+<histogram name="Chrome.SearchSelectExperimentSlot4" enum="SearchEngine">
+  <obsolete>
+    Deprecated 8/2013. No longer tracked.
+  </obsolete>
+  <summary>
+    The default search engine selected by a user in slot 4 of a randomized
+    search engine dialog.
+  </summary>
+</histogram>
+
 <histogram name="clickjacking.discard_download" units="ms">
   <summary>
     The length of time between a dangerous download appearing on the downloads
@@ -1759,44 +1819,75 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="DnsProbe.ErrorPageUpdateStatus" enum="DnsProbe.ProbeStatus">
+  <summary>Status of DNS probe updates sent to a DNS error page.</summary>
+</histogram>
+
 <histogram name="DnsProbe.Probe.Elapsed" units="ms">
+  <obsolete>
+    Renamed 7/2013 to DnsProbe.ProbeDuration.
+  </obsolete>
   <summary>Time between starting and finishing DNS probe.</summary>
 </histogram>
 
 <histogram name="DnsProbe.Probe.NcnOffline.Elapsed" units="ms">
+  <obsolete>
+    Removed 7/2013.
+  </obsolete>
   <summary>
     Time between starting and finishing DNS probe when NCN says we're offline.
   </summary>
 </histogram>
 
-<histogram name="DnsProbe.Probe.NcnOffline.Result" enum="DnsProbe.Probe.Result">
+<histogram name="DnsProbe.Probe.NcnOffline.Result"
+    enum="DnsProbe.ObsoleteProbeResult">
+  <obsolete>
+    Removed 7/2013.
+  </obsolete>
   <summary>
     Result of DNS probes sent by the probe service when NCN says we're offline.
   </summary>
 </histogram>
 
 <histogram name="DnsProbe.Probe.NcnOnline.Elapsed" units="ms">
+  <obsolete>
+    Removed 7/2013.
+  </obsolete>
   <summary>
     Time between starting and finishing DNS probe when NCN says we're online.
   </summary>
 </histogram>
 
-<histogram name="DnsProbe.Probe.NcnOnline.Result" enum="DnsProbe.Probe.Result">
+<histogram name="DnsProbe.Probe.NcnOnline.Result"
+    enum="DnsProbe.ObsoleteProbeResult">
+  <obsolete>
+    Removed 7/2013.
+  </obsolete>
   <summary>
     Result of DNS probes sent by the probe service when NCN says we're online.
   </summary>
 </histogram>
 
-<histogram name="DnsProbe.Probe.Result" enum="DnsProbe.Probe.Result">
+<histogram name="DnsProbe.Probe.Result" enum="DnsProbe.ObsoleteProbeResult">
+  <obsolete>
+    Renamed 7/2013 to DnsProbe.ProbeResult.  (Also switched to the full
+    DnsProbe.ProbeStatus enum.)
+  </obsolete>
   <summary>Result of DNS probes sent by the probe service.</summary>
 </histogram>
 
 <histogram name="DnsProbe.Probe.ResultBadConfig.Elapsed" units="ms">
+  <obsolete>
+    Removed 7/2013.
+  </obsolete>
   <summary>Elapsed time of DNS probes that return PROBE_BAD_CONFIG.</summary>
 </histogram>
 
 <histogram name="DnsProbe.Probe.ResultBadConfig.SystemIsLocalhost"
-    enum="DnsProbe.Probe.SystemIsLocalhost">
+    enum="DnsProbe.SystemIsLocalhost">
+  <obsolete>
+    Removed 7/2013.
+  </obsolete>
   <summary>
     Whether the only nameserver in the system DNS config was 127.0.0.1 when the
     probe result was BAD_CONFIG.
@@ -1804,7 +1895,10 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="DnsProbe.Probe.ResultBadConfig.SystemJobResult"
-    enum="DnsProbe.Job.Result">
+    enum="DnsProbe.JobResult">
+  <obsolete>
+    Removed 7/2013.
+  </obsolete>
   <summary>
     The result of the system probe job when the overall probe result was
     BAD_CONFIG.
@@ -1812,6 +1906,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="DnsProbe.Probe.ResultBadConfig.SystemNameserverCount">
+  <obsolete>
+    Removed 7/2013.
+  </obsolete>
   <summary>
     The number of nameservers in the system DNS config when the probe result was
     BAD_CONFIG.
@@ -1819,15 +1916,32 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="DnsProbe.Probe.ResultNoInternet.Elapsed" units="ms">
+  <obsolete>
+    Removed 7/2013.
+  </obsolete>
   <summary>Elapsed time of DNS probes that return PROBE_NO_INTERNET.</summary>
 </histogram>
 
 <histogram name="DnsProbe.Probe.ResultNxdomain.Elapsed" units="ms">
+  <obsolete>
+    Removed 7/2013.
+  </obsolete>
   <summary>Elapsed time of DNS probes that return PROBE_NXDOMAIN.</summary>
 </histogram>
 
 <histogram name="DnsProbe.Probe.ResultUnknown.Elapsed" units="ms">
+  <obsolete>
+    Removed 7/2013.
+  </obsolete>
   <summary>Elapsed time of DNS probes that return PROBE_UNKNOWN.</summary>
+</histogram>
+
+<histogram name="DnsProbe.ProbeDuration" units="ms">
+  <summary>Time between starting and finishing DNS probe.</summary>
+</histogram>
+
+<histogram name="DnsProbe.ProbeResult" enum="DnsProbe.ProbeStatus">
+  <summary>Result of DNS probes sent by the probe service.</summary>
 </histogram>
 
 <histogram name="DomainBoundCerts.DBLoadedCount">
@@ -2404,10 +2518,36 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Enterprise.PolicyInvalidations"
+    enum="EnterprisePolicyInvalidations">
+  <summary>
+    Events for counting policy invalidations received with and without payloads.
+    Invalidations indicate that a policy has been updated and should be
+    refreshed. Payloads provide context about the policy update, but may be
+    absent if dropped by the invalidation service.
+  </summary>
+</histogram>
+
+<histogram name="Enterprise.PolicyInvalidationsStartupTime"
+    units="milliseconds">
+  <summary>
+    Time since startup of the cloud policy code until the policy invalidation
+    service first reported its online status.
+  </summary>
+</histogram>
+
 <histogram name="Enterprise.PolicyLoadStatus" enum="EnterprisePolicyLoadStatus">
   <summary>
     Load status from the policy loaders which pull policy settings from the
     underlying platform, such as Windows Group Policy.
+  </summary>
+</histogram>
+
+<histogram name="Enterprise.PolicyRefresh" enum="EnterprisePolicyRefresh">
+  <summary>
+    Events measuring effectiveness of refreshing policy when invalidations are
+    received from a service. For each refresh, indicates whether the policy
+    changed, and whether the policy was invalidated at the time of the refresh.
   </summary>
 </histogram>
 
@@ -2914,8 +3054,18 @@ other types of suffix sets.
 <histogram name="ExtensionBlacklist.BlockCRX" enum="ExtensionLocation">
   <summary>
     The number of extensions that have been blocked from installing grouped by
-    Extension::Location. Logged when CrxInstaller refuses to install a
+    Extension::Location. Logged when ExtensionService refuses to install a
     blacklisted extension.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionBlacklist.SilentInstall" enum="ExtensionLocation">
+  <summary>
+    The number of extensions that have been silently installed in a blacklisted
+    state, grouped by Extension::Location. Logged when ExtensionService installs
+    a blacklisted extension without blocking it (ExtensionBlacklist.BlockCRX
+    would be logged otherwise). Typically this will be when a user has a
+    blacklisted extension synced.
   </summary>
 </histogram>
 
@@ -4169,6 +4319,82 @@ other types of suffix sets.
     Records, on startup, the value of the &quot;Allow your search engine to
     provide Instant result&quot; preference setting for the first profile
     loaded.
+  </summary>
+</histogram>
+
+<histogram name="interstitial.authority_invalid_time" units="milliseconds">
+  <obsolete>
+    Removed on 8/1/13.
+  </obsolete>
+  <summary>
+    The time between the SSL interstitial display and the user decision, which
+    may be either accept or deny.  This is only recorded for overridable SSL
+    warnings with a CERT_AUTHORITY_INVALID warning. Timing begins when user
+    first focuses on the page.
+  </summary>
+</histogram>
+
+<histogram name="interstitial.common_name_invalid_time" units="milliseconds">
+  <obsolete>
+    Removed on 8/1/13.
+  </obsolete>
+  <summary>
+    The time between the SSL interstitial display and the user decision, which
+    may be either accept or deny.  This is only recorded for overridable SSL
+    warnings with a CERT_COMMON_NAME_INVALID warning. Timing begins when user
+    first focuses on the page.
+  </summary>
+</histogram>
+
+<histogram name="interstitial.date_invalid_time" units="milliseconds">
+  <obsolete>
+    Removed on 8/1/13.
+  </obsolete>
+  <summary>
+    The time between the SSL interstitial display and the user decision, which
+    may be either accept or deny.  This is only recorded for overridable SSL
+    warnings with a CERT_DATE_INVALID warning.  Timing begins when user first
+    focuses on the page.
+  </summary>
+</histogram>
+
+<histogram name="interstitial.ssl" enum="SSLResponseTypesV2">
+  <summary>
+    User action when the user is shown a SSL interstitial.  SHOW_ALL and MORE
+    refer to the total number of SSL errors; all of the other numbers pertain to
+    the number of actions related to SSL errors that are overridable.  The
+    counts do not sum to 100%; SHOW_ALL is a superset of SHOW_OVERRIDABLE, which
+    in turn will be a supserset of the PROCEED/DONT_PROCEED variables.
+    SHOW_UNDERSTAND is only being used by an experimental field trial.
+  </summary>
+</histogram>
+
+<histogram name="interstitial.ssl_accept_time" units="milliseconds">
+  <obsolete>
+    Removed on 8/1/13.
+  </obsolete>
+  <summary>
+    The time between the SSL interstitial display and the user decision, when
+    the user accepts the SSL warning.  This is only recorded for overridable SSL
+    warnings.  Timing begins when user first focuses on the page.
+  </summary>
+</histogram>
+
+<histogram name="interstitial.ssl_error_type" enum="SSLErrorTypes">
+  <summary>
+    The type of SSL error that the user encounters.  This is recorded for all
+    SSL warnings, regardless of whether they are overridable.
+  </summary>
+</histogram>
+
+<histogram name="interstitial.ssl_reject_time" units="milliseconds">
+  <obsolete>
+    Removed on 8/1/13.
+  </obsolete>
+  <summary>
+    The time between the SSL interstitial display and the user decision, when
+    the user rejects the SSL warning.  This is only recorded for overridable SSL
+    warnings.  Timing begins when user first focuses on the page.
   </summary>
 </histogram>
 
@@ -9154,6 +9380,14 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="OutdatedUpgradeBubble.NumLaterPerReinstall">
+  <summary>
+    Counts the number of times the user clicked on the later button of the
+    outdated upgrade bubble, before clicking on the reinstall button in the same
+    Chrome session.
+  </summary>
+</histogram>
+
 <histogram name="Overscroll.Completed" enum="OverscrollMode">
   <summary>Completed overscroll gestures.</summary>
   <details>
@@ -11236,6 +11470,46 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Protector.DefaultSearchProvider" enum="ProtectorError">
+  <obsolete>
+    Deprecated 8/2013. No longer tracked.
+  </obsolete>
+  <summary>
+    Errors that Protector detects about default search provider in Web Data.
+    Reported once when Web Data is loaded.
+  </summary>
+</histogram>
+
+<histogram name="Protector.Preferences" enum="ProtectorError">
+  <obsolete>
+    Deprecated 8/2013. No longer tracked.
+  </obsolete>
+  <summary>
+    Errors that Protector detects about protected settings in Preferences.
+    Reported once when profile is loaded.
+  </summary>
+</histogram>
+
+<histogram name="Protector.SearchProvider" enum="SearchEngine">
+  <obsolete>
+    Deprecated 8/2013. No longer tracked.
+  </obsolete>
+  <summary>
+    When the default search provider setting is changed outside of Chrome, which
+    is detected by the Protector, this histogram reports the new setting.
+  </summary>
+</histogram>
+
+<histogram name="Protector.StartupSettings" enum="SessionStartupType">
+  <obsolete>
+    Deprecated 8/2013. No longer tracked.
+  </obsolete>
+  <summary>
+    When the startup settings are changed outside of Chrome, which is detected
+    by the Protector, this histogram reports the new setting.
+  </summary>
+</histogram>
+
 <histogram name="Quickoffice.docPageCount">
   <summary>
     Records the page count when a compound binary format document is opened.
@@ -12543,6 +12817,12 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="SBClientDownload.DownloadRequestPayloadSize" units="bytes">
+  <summary>
+    The size of the upload data for CheckClientDownloadRequest URLFetchers.
+  </summary>
+</histogram>
+
 <histogram name="SBClientDownload.DownloadRequestResponseCode">
   <summary>
     For CheckClientDownloadRequest URLFetchers with successful status, the HTTP
@@ -12930,12 +13210,80 @@ other types of suffix sets.
   <summary>Time spent selecting entries for eviction.</summary>
 </histogram>
 
+<histogram name="SimpleCache.FileDescriptorLimitHard">
+  <summary>
+    The maximum limit of how many file descriptors a process can open.  Emitted
+    each time the browser is launched, if the limit could be retrieved.  (This
+    is the highest value we could raise the current limit to if we liked.)
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.FileDescriptorLimitSoft">
+  <summary>
+    The current limit of how many file descriptors a process can open.  Emitted
+    each time the browser is launched, if the limit could be retrieved.  (We can
+    raise this to the maximum limit if we like, without root access.)
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.FileDescriptorLimitStatus"
+    enum="SimpleCache.FileDescriptorLimitStatus">
+  <summary>
+    The result of trying to get the file descriptor limit.  Emitted each time
+    the browser is launched.
+  </summary>
+</histogram>
+
 <histogram name="SimpleCache.GlobalOpenEntryCount">
   <summary>
     The number of open entries across all caches backed by the Simple Cache. An
     entry is opened whenever a caller asks to open it to read or write cache
     data, and remains open until the last caller asks to close it. Logged
     whenever an entry is opened or closed.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.HeaderSize" units="bytes">
+  <summary>
+    The size of the header stream of a Simple Cache entry, emitted every time
+    the headers are written or rewritten.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.HeaderSizeChange"
+    enum="SimpleCacheHeaderSizeChange">
+  <summary>
+    How the header size has changed in a Simple Cache entry, emitted every time
+    a write operation occurs on the header stream.  (This includes the initial
+    write, rewrites, and other writes that we couldn't classify.)
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.HeaderSizeDecreaseAbsolute" units="bytes">
+  <summary>
+    The absolute size decrease of the header stream of a Simple Cache entry,
+    emitted every time the headers are rewritten with a smaller size.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.HeaderSizeDecreasePercentage" units="percent">
+  <summary>
+    The relative size decrease of the header stream of a Simple Cache entry,
+    emitted every time the headers are rewritten with a smaller size.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.HeaderSizeIncreaseAbsolute" units="bytes">
+  <summary>
+    The absolute size increase of the header stream of a Simple Cache entry,
+    emitted every time the headers are rewritten with a larger size.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.HeaderSizeIncreasePercentage" units="percent">
+  <summary>
+    The relative size increase of the header stream of a Simple Cache entry,
+    emitted every time the headers are rewritten with a larger size.
   </summary>
 </histogram>
 
@@ -13109,29 +13457,95 @@ other types of suffix sets.
 <histogram name="SimpleCache.SyncCreatePlatformFileError"
     enum="PlatformFileError">
   <summary>
-    The platform error of attempting to create a new cache entry.
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.SyncCreatePlatformFileError_WithIndex"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer when the index has already initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.SyncCreatePlatformFileError_WithoutIndex"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer when the index has not yet initialized.
   </summary>
 </histogram>
 
 <histogram name="SimpleCache.SyncCreateResult"
     enum="SimpleCacheSyncCreateResult">
   <summary>
-    The result, at the synchronous layer, of attempting to create a new cache
-    entry.
+    The result, at the synchronous layer, reported when attempting to create a
+    new cache entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.SyncCreateResult_WithIndex"
+    enum="SimpleCacheSyncCreateResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to create a
+    new cache entry when the index has already initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.SyncCreateResult_WithoutIndex"
+    enum="SimpleCacheSyncCreateResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to create a
+    new cache entry when the index has not yet initialized.
   </summary>
 </histogram>
 
 <histogram name="SimpleCache.SyncOpenPlatformFileError"
     enum="PlatformFileError">
   <summary>
-    The platform error of attempting to create a new cache entry.
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.SyncOpenPlatformFileError_WithIndex"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer when the index has already initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.SyncOpenPlatformFileError_WithoutIndex"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer when the index has not initialized.
   </summary>
 </histogram>
 
 <histogram name="SimpleCache.SyncOpenResult" enum="SimpleCacheSyncOpenResult">
   <summary>
-    The result, at the synchronous layer, of attempting to open a new cache
-    entry.
+    The result, at the synchronous layer, reported when attempting to open a new
+    cache entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.SyncOpenResult_WithIndex"
+    enum="SimpleCacheSyncOpenResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to open a new
+    cache entry when the index has already initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.SyncOpenResult_WithoutIndex"
+    enum="SimpleCacheSyncOpenResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to open a new
+    cache entry when the index has not yet initialized.
   </summary>
 </histogram>
 
@@ -15343,9 +15757,10 @@ other types of suffix sets.
 </enum>
 
 <enum name="CheckCRCResult" type="int">
-  <int value="0" label="Was never read to end"/>
+  <int value="0" label="Stream was never read to end"/>
   <int value="1" label="CRC check not done"/>
   <int value="2" label="CRC check done"/>
+  <int value="3" label="Stream was never read at all"/>
 </enum>
 
 <enum name="ChromeDownloadCountType" type="int">
@@ -15515,7 +15930,7 @@ other types of suffix sets.
   <int value="1" label="Success reported but Address List is empty"/>
 </enum>
 
-<enum name="DnsProbe.Job.Result" type="int">
+<enum name="DnsProbe.JobResult" type="int">
   <int value="0" label="SERVERS_UNKNOWN"/>
   <int value="1" label="SERVERS_CORRECT"/>
   <int value="2" label="SERVERS_INCORRECT"/>
@@ -15523,14 +15938,24 @@ other types of suffix sets.
   <int value="4" label="SERVERS_UNREACHABLE"/>
 </enum>
 
-<enum name="DnsProbe.Probe.Result" type="int">
-  <int value="0" label="UNKNOWN"/>
+<enum name="DnsProbe.ObsoleteProbeResult" type="int">
+  <int value="0" label="INCONCLUSIVE"/>
   <int value="1" label="NO_INTERNET"/>
   <int value="2" label="BAD_CONFIG"/>
   <int value="3" label="NXDOMAIN"/>
 </enum>
 
-<enum name="DnsProbe.Probe.SystemIsLocalhost" type="int">
+<enum name="DnsProbe.ProbeStatus" type="int">
+  <int value="0" label="POSSIBLE"/>
+  <int value="1" label="NOT_RUN"/>
+  <int value="2" label="STARTED"/>
+  <int value="3" label="FINISHED_INCONCLUSIVE"/>
+  <int value="4" label="FINISHED_NO_INTERNET"/>
+  <int value="5" label="FINISHED_BAD_CONFIG"/>
+  <int value="6" label="FINISHED_NXDOMAIN"/>
+</enum>
+
+<enum name="DnsProbe.SystemIsLocalhost" type="int">
   <int value="0" label="Not just 127.0.0.1">
     127.0.0.1 was not the only nameserver in the system DNS config.
   </int>
@@ -15622,6 +16047,9 @@ other types of suffix sets.
   <int value="11" label="Calls to AppendDataToFile (Count)"/>
   <int value="12" label="Interrupted at End of Download"/>
   <int value="13" label="Attempt to Append to Detached File"/>
+  <int value="14" label="File Missing After Successful Scan"/>
+  <int value="15" label="Supports ranges and strong validation"/>
+  <int value="16" label="No WebContents at interruption"/>
 </enum>
 
 <enum name="DownloadDatabaseRecordDroppedType" type="int">
@@ -15704,6 +16132,7 @@ other types of suffix sets.
   <int value="1" label="Initiated by Drag-and-drop"/>
   <int value="2" label="Initiated by RPC from Renderer"/>
   <int value="3" label="Initiated by Save from Pepper"/>
+  <int value="4" label="Initiated by Resumption"/>
 </enum>
 
 <enum name="DriveCacheDBOpenStatus" type="int">
@@ -16151,6 +16580,11 @@ other types of suffix sets.
   <int value="198" label="Idle warning delay when running on battery power"/>
 </enum>
 
+<enum name="EnterprisePolicyInvalidations" type="int">
+  <int value="0" label="No payload"/>
+  <int value="1" label="Payload"/>
+</enum>
+
 <enum name="EnterprisePolicyLoadStatus" type="int">
   <summary>
     Status codes produced by the policy loaders that pull policy settings from
@@ -16180,6 +16614,14 @@ other types of suffix sets.
   </int>
   <int value="7" label="TOO_BIG">Data too large to process.</int>
   <int value="8" label="PARSE_ERROR">Parse error.</int>
+</enum>
+
+<enum name="EnterprisePolicyRefresh" type="int">
+  <int value="0" label="Changed"/>
+  <int value="1" label="Changed; Invalidations disabled"/>
+  <int value="2" label="Unchanged"/>
+  <int value="3" label="Invalidated; Changed"/>
+  <int value="4" label="Invalidated; Unchanged"/>
 </enum>
 
 <enum name="EnterprisePolicyType" type="int">
@@ -16862,6 +17304,7 @@ other types of suffix sets.
   <int value="513" label="SYSTEM_STORAGE_REMOVEAVAILABLECAPACITYWATCH"/>
   <int value="514" label="SYSTEM_STORAGE_GETALLAVAILABLECAPACITYWATCHES"/>
   <int value="515" label="SYSTEM_STORAGE_REMOVEALLAVAILABLECAPACITYWATCHES"/>
+  <int value="516" label="INFOBARS_SHOW"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">
@@ -17615,7 +18058,8 @@ other types of suffix sets.
 
 <enum name="GoogleNowEvent" type="int">
   <summary>
-    Events in Google Now component extension. See var DiagnosticEvent.
+    Events in Google Now component extension. See GoogleNowEvent in
+    chrome/browser/resources/google_now/background.js.
   </summary>
   <int value="0" label="REQUEST_FOR_CARDS_TOTAL"/>
   <int value="1" label="REQUEST_FOR_CARDS_SUCCESS"/>
@@ -17626,6 +18070,8 @@ other types of suffix sets.
   <int value="6" label="LOCATION_UPDATE"/>
   <int value="7" label="EXTENSION_START"/>
   <int value="8" label="SHOW_WELCOME_TOAST"/>
+  <int value="9" label="STOPPED"/>
+  <int value="10" label="USER_SUPPRESSED"/>
 </enum>
 
 <enum name="HttpAuthCount" type="int">
@@ -17857,6 +18303,7 @@ other types of suffix sets.
   <int value="10" label="FILE_TRANSIENT_ERROR"/>
   <int value="11" label="FILE_BLOCKED"/>
   <int value="12" label="FILE_SECURITY_CHECK_FAILED"/>
+  <int value="13" label="FILE_TOO_SHORT"/>
   <int value="20" label="NETWORK_FAILED"/>
   <int value="21" label="NETWORK_TIMEOUT"/>
   <int value="22" label="NETWORK_DISCONNECTED"/>
@@ -19231,6 +19678,8 @@ other types of suffix sets.
   <int value="353" label="PIPELINE_EVICTION"/>
   <int value="354" label="CONTENT_LENGTH_MISMATCH"/>
   <int value="355" label="INCOMPLETE_CHUNKED_ENCODING"/>
+  <int value="356" label="QUIC_PROTOCOL_ERROR"/>
+  <int value="357" label="RESPONSE_HEADERS_TRUNCATED"/>
   <int value="400" label="CACHE_MISS"/>
   <int value="401" label="CACHE_READ_FAILURE"/>
   <int value="402" label="CACHE_WRITE_FAILURE"/>
@@ -20045,6 +20494,20 @@ other types of suffix sets.
   <int value="4" label="Canceled"/>
 </enum>
 
+<enum name="ProtectorError" type="int">
+  <obsolete>
+    Deprecated 8/2013. No longer generated.
+  </obsolete>
+  <summary>
+    Codes for errors Protector detects about settings it protects. See
+    chrome/browser/protector/histograms.h for the corresponding enum.
+  </summary>
+  <int value="0" label="Backup invalid"/>
+  <int value="1" label="Value changed"/>
+  <int value="2" label="Value valid"/>
+  <int value="3" label="Value is valid and zero"/>
+</enum>
+
 <enum name="ProtocolVersion" type="int">
   <int value="0" label="UNKNOWN"/>
   <int value="1" label="HTTP 1.1"/>
@@ -20524,11 +20987,65 @@ other types of suffix sets.
   <int value="1" label="Scroll on main-thread"/>
 </enum>
 
+<enum name="SearchEngine" type="int">
+  <obsolete>
+    Deprecated 8/2013. No longer generated.
+  </obsolete>
+  <summary>
+    Indices of most popular prepopulated search engines as defined in
+    chrome/browser/search_engines/search_engine_type.h.
+  </summary>
+  <int value="0" label="OTHER"/>
+  <int value="1" label="GOOGLE"/>
+  <int value="2" label="YAHOO"/>
+  <int value="3" label="YAHOOJP"/>
+  <int value="4" label="BING"/>
+  <int value="5" label="ASK"/>
+  <int value="6" label="YANDEX"/>
+  <int value="7" label="SEZNAM"/>
+  <int value="8" label="CENTRUM"/>
+  <int value="9" label="NETSPRINT"/>
+  <int value="10" label="VIRGILIO"/>
+  <int value="11" label="MAILRU"/>
+  <int value="12" label="ABCSOK"/>
+  <int value="13" label="ALTAVISTA"/>
+  <int value="14" label="BAIDU"/>
+  <int value="15" label="DAUM"/>
+  <int value="16" label="DELFI"/>
+  <int value="17" label="DIRI"/>
+  <int value="18" label="GOO"/>
+  <int value="19" label="IN"/>
+  <int value="20" label="NAJDI"/>
+  <int value="21" label="NAVER"/>
+  <int value="22" label="NETI"/>
+  <int value="23" label="OK"/>
+  <int value="24" label="POGODAK"/>
+  <int value="25" label="POGODOK_MK"/>
+  <int value="26" label="RAMBLER"/>
+  <int value="27" label="SANOOK"/>
+  <int value="28" label="SAPO"/>
+  <int value="29" label="TUT"/>
+  <int value="30" label="WALLA"/>
+  <int value="31" label="ZOZNAM"/>
+  <int value="32" label="YAHOOQC"/>
+  <int value="33" label="NONE"/>
+</enum>
+
 <enum name="SessionStartupPref" type="int">
   <int value="0" label="Open home page (unused)"/>
   <int value="1" label="Continue from last opened pages"/>
   <int value="4" label="Open URLs"/>
   <int value="5" label="Open new tab page"/>
+</enum>
+
+<enum name="SessionStartupType" type="int">
+  <obsolete>
+    Deprecated 8/2013. No longer generated.
+  </obsolete>
+  <int value="0" label="New Tab page"/>
+  <int value="1" label="Homepage (DEPRECATED)"/>
+  <int value="2" label="Last session"/>
+  <int value="3" label="Specified URLs"/>
 </enum>
 
 <enum name="ShillTerminationActionResult" type="int">
@@ -20551,6 +21068,20 @@ other types of suffix sets.
   <int value="0" label="Learn more"/>
   <int value="1" label="Settings page"/>
   <int value="2" label="Dismiss"/>
+</enum>
+
+<enum name="SimpleCache.FileDescriptorLimitStatus" type="int">
+  <int value="0" label="Unsupported"/>
+  <int value="1" label="Supported but failed"/>
+  <int value="2" label="Succeeded"/>
+</enum>
+
+<enum name="SimpleCacheHeaderSizeChange" type="int">
+  <int value="0" label="Written for the first time"/>
+  <int value="1" label="Rewritten with same size"/>
+  <int value="2" label="Rewritten with larger size"/>
+  <int value="3" label="Rewritten with smaller size"/>
+  <int value="4" label="Unexpected header stream write"/>
 </enum>
 
 <enum name="SimpleCacheIndexInitializeMethod" type="int">
@@ -21244,6 +21775,34 @@ other types of suffix sets.
   <int value="49321" label="TLS_PSK_WITH_AES_256_CCM_8"/>
   <int value="49322" label="TLS_PSK_DHE_WITH_AES_128_CCM_8"/>
   <int value="49323" label="TLS_PSK_DHE_WITH_AES_256_CCM_8"/>
+</enum>
+
+<enum name="SSLErrorTypes" type="int">
+  <int value="0" label="CERT_COMMON_NAME_INVALID"/>
+  <int value="1" label="CERT_DATE_INVALID"/>
+  <int value="2" label="CERT_AUTHORITY_INVALID"/>
+  <int value="3" label="CERT_CONTAINS_ERRORS"/>
+  <int value="4" label="CERT_NO_REVOCATION_MECHANISM"/>
+  <int value="5" label="CERT_REVOKED"/>
+  <int value="6" label="CERT_INVALID"/>
+  <int value="7" label="CERT_WEAK_SIGNATURE_ALGORITHM"/>
+  <int value="8" label="CERT_WEAK_KEY"/>
+  <int value="9" label="UNKNOWN"/>
+</enum>
+
+<enum name="SSLResponseTypesV2" type="int">
+  <int value="0" label="SHOW_ALL"/>
+  <int value="1" label="SHOW_OVERRIDABLE"/>
+  <int value="2" label="PROCEED_OVERRIDABLE"/>
+  <int value="3" label="PROCEED_NAME"/>
+  <int value="4" label="PROCEED_DATE"/>
+  <int value="5" label="PROCEED_AUTHORITY"/>
+  <int value="6" label="DONT_PROCEED_OVERRIDABLE"/>
+  <int value="7" label="DONT_PROCEED_NAME"/>
+  <int value="8" label="DONT_PROCEED_DATE"/>
+  <int value="9" label="DONT_PROCEED_AUTHORITY"/>
+  <int value="10" label="MORE"/>
+  <int value="11" label="SHOW_UNDERSTAND"/>
 </enum>
 
 <enum name="SuspendStatus" type="int">
@@ -23556,6 +24115,24 @@ other types of suffix sets.
   <affected-histogram name="Network.Shill.WiFi.ScanResult"/>
   <affected-histogram name="Network.Shill.Wifi.TimeToScan"/>
   <affected-histogram name="Network.Shill.Wifi.TimeToScanAndConnect"/>
+</fieldtrial>
+
+<fieldtrial name="ProtectorSettingChange" separator=".">
+  <obsolete>
+    Deprecated 8/2013. No longer tracked.
+  </obsolete>
+  <group name="Applied" label="change has been accepted by user"/>
+  <group name="Corrupt" label="possibly hijacked, backup invalid"/>
+  <group name="Discarded" label="change has been reverted by user"/>
+  <group name="Fallback" label="fallback provider used (no backup available)"/>
+  <group name="Hijacked" label="hijacked, with a valid backup"/>
+  <group name="Missing" label="fallback provider missing, added"/>
+  <group name="New" label="(obsolete, was sum of Corrupt+Hijacked)"/>
+  <group name="Restored"
+      label="search provider restored by Protector before showing the bubble"/>
+  <group name="Timeout" label="change has been ignored by user (timed out)"/>
+  <affected-histogram name="Protector.SearchProvider"/>
+  <affected-histogram name="Protector.StartupSettings"/>
 </fieldtrial>
 
 <fieldtrial name="ProxyConnectionImpact">

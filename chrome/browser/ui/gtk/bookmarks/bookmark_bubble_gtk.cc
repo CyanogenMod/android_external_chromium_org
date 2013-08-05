@@ -8,7 +8,6 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
@@ -19,6 +18,7 @@
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/bookmarks/bookmark_editor.h"
 #include "chrome/browser/ui/bookmarks/recently_used_folders_combo_model.h"
@@ -29,7 +29,6 @@
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/sync/sync_promo_ui.h"
-#include "chrome/common/chrome_switches.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
@@ -214,9 +213,7 @@ BookmarkBubbleGtk::BookmarkBubbleGtk(GtkWidget* anchor,
 
   gtk_box_pack_start(GTK_BOX(bubble_container), content, TRUE, TRUE, 0);
 
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kEnableBookmarkSyncPromo) &&
-      SyncPromoUI::ShouldShowSyncPromo(profile_)) {
+  if (SyncPromoUI::ShouldShowSyncPromo(profile_)) {
     std::string link_text =
         l10n_util::GetStringUTF8(IDS_BOOKMARK_SYNC_PROMO_LINK);
     char* link_markup = g_markup_printf_escaped(kPromoLinkMarkup,
@@ -350,7 +347,7 @@ void BookmarkBubbleGtk::OnRemoveClicked(GtkWidget* widget) {
 gboolean BookmarkBubbleGtk::OnSignInClicked(GtkWidget* widget, gchar* uri) {
   GtkWindow* window = GTK_WINDOW(gtk_widget_get_toplevel(anchor_));
   Browser* browser = chrome::FindBrowserWithWindow(window);
-  chrome::ShowBrowserSignin(browser, SyncPromoUI::SOURCE_BOOKMARK_BUBBLE);
+  chrome::ShowBrowserSignin(browser, signin::SOURCE_BOOKMARK_BUBBLE);
   bubble_->Close();
   return TRUE;
 }

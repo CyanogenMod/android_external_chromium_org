@@ -114,6 +114,8 @@
         'browser/extensions/api/messaging/native_messaging_test_util.h',
         'browser/extensions/api/system_storage/test_storage_info_provider.cc',
         'browser/extensions/api/system_storage/test_storage_info_provider.h',
+        'browser/extensions/extension_notification_observer.cc',
+        'browser/extensions/extension_notification_observer.h',
         'browser/extensions/fake_safe_browsing_database_manager.cc',
         'browser/extensions/fake_safe_browsing_database_manager.h',
         'browser/extensions/mock_extension_special_storage_policy.cc',
@@ -170,6 +172,8 @@
         'browser/signin/fake_signin_manager.h',
         'browser/ssl/ssl_client_auth_requestor_mock.cc',
         'browser/ssl/ssl_client_auth_requestor_mock.h',
+        'browser/storage_monitor/test_media_transfer_protocol_manager_linux.cc',
+        'browser/storage_monitor/test_media_transfer_protocol_manager_linux.h',
         'browser/storage_monitor/test_storage_monitor.cc',
         'browser/storage_monitor/test_storage_monitor.h',
         'browser/ui/browser.h',
@@ -374,8 +378,8 @@
         }],
         ['OS=="win" or OS=="mac"', {
           'sources': [
-            'utility/media_galleries/pmp_test_helper.cc',
-            'utility/media_galleries/pmp_test_helper.h',
+            'common/media_galleries/pmp_test_helper.cc',
+            'common/media_galleries/pmp_test_helper.h',
           ],
         }],
         ['OS=="mac"', {
@@ -661,6 +665,7 @@
         'browser/chromeos/login/parallel_authenticator_unittest.cc',
         'browser/chromeos/login/screens/screen_context_unittest.cc',
         'browser/chromeos/login/user_manager_unittest.cc',
+        'browser/chromeos/login/wallpaper_manager_unittest.cc',
         'browser/chromeos/memory/oom_priority_manager_unittest.cc',
         'browser/chromeos/mobile/mobile_activator_unittest.cc',
         'browser/chromeos/mobile_config_unittest.cc',
@@ -690,12 +695,9 @@
         'browser/chromeos/settings/owner_key_util_unittest.cc',
         'browser/chromeos/settings/session_manager_operation_unittest.cc',
         'browser/chromeos/settings/stub_cros_settings_provider_unittest.cc',
-        'browser/chromeos/status/network_menu_icon.cc',
-        'browser/chromeos/status/network_menu_icon_unittest.cc',
         'browser/chromeos/system/automatic_reboot_manager_unittest.cc',
         'browser/chromeos/system_logs/lsb_release_log_source_unittest.cc',
         'browser/chromeos/version_loader_unittest.cc',
-        'browser/chromeos/web_socket_proxy_helper_unittest.cc',
         'browser/command_updater_unittest.cc',
         'browser/component_updater/test/component_installers_unittest.cc',
         'browser/component_updater/test/component_patcher_mock.h',
@@ -788,6 +790,8 @@
         'browser/extensions/api/push_messaging/obfuscated_gaia_id_fetcher_unittest.cc',
         'browser/extensions/api/push_messaging/push_messaging_invalidation_handler_unittest.cc',
         'browser/extensions/api/serial/serial_port_enumerator_unittest.cc',
+        'browser/extensions/api/signedin_devices/id_mapping_helper_unittest.cc',
+        'browser/extensions/api/signedin_devices/signedin_devices_api_unittest.cc',
         'browser/extensions/api/socket/socket_api_unittest.cc',
         'browser/extensions/api/socket/tcp_socket_unittest.cc',
         'browser/extensions/api/socket/udp_socket_unittest.cc',
@@ -927,9 +931,11 @@
         'browser/local_discovery/privet_url_fetcher_unittest.cc',
         'browser/mac/keystone_glue_unittest.mm',
         'browser/managed_mode/managed_mode_url_filter_unittest.cc',
-        'browser/managed_mode/managed_user_registration_service_unittest.cc',
         'browser/managed_mode/managed_user_service_unittest.cc',
+        'browser/managed_mode/managed_user_sync_service_unittest.cc',
         'browser/managed_mode/managed_user_refresh_token_fetcher_unittest.cc',
+        'browser/managed_mode/managed_user_registration_utility_unittest.cc',
+        'browser/media/desktop_media_picker_model_unittest.cc',
         'browser/media/webrtc_log_uploader_unittest.cc',
         'browser/media_galleries/fileapi/native_media_file_util_unittest.cc',
         'browser/media_galleries/linux/mtp_device_object_enumerator_unittest.cc',
@@ -1007,6 +1013,7 @@
         'browser/policy/cloud/cloud_external_data_store_unittest.cc',
         'browser/policy/cloud/cloud_policy_client_unittest.cc',
         'browser/policy/cloud/cloud_policy_core_unittest.cc',
+        'browser/policy/cloud/cloud_policy_invalidator_unittest.cc',
         'browser/policy/cloud/cloud_policy_manager_unittest.cc',
         'browser/policy/cloud/cloud_policy_refresh_scheduler_unittest.cc',
         'browser/policy/cloud/cloud_policy_service_unittest.cc',
@@ -1045,6 +1052,7 @@
         'browser/policy/preferences_mock_mac.cc',
         'browser/policy/preferences_mock_mac.h',
         'browser/policy/preg_parser_win_unittest.cc',
+        'browser/policy/registry_dict_win_unittest.cc',
         'browser/policy/url_blacklist_manager_unittest.cc',
         'browser/predictors/autocomplete_action_predictor_table_unittest.cc',
         'browser/predictors/autocomplete_action_predictor_unittest.cc',
@@ -1195,7 +1203,6 @@
         'browser/sync/glue/change_processor_mock.cc',
         'browser/sync/glue/change_processor_mock.h',
         'browser/sync/glue/chrome_encryptor_unittest.cc',
-        'browser/sync/glue/chrome_extensions_activity_monitor_unittest.cc',
         'browser/sync/glue/data_type_controller_mock.cc',
         'browser/sync/glue/data_type_controller_mock.h',
         'browser/sync/glue/data_type_error_handler_mock.cc',
@@ -1203,6 +1210,7 @@
         'browser/sync/glue/data_type_manager_impl_unittest.cc',
         'browser/sync/glue/data_type_manager_mock.cc',
         'browser/sync/glue/data_type_manager_mock.h',
+        'browser/sync/glue/extensions_activity_monitor_unittest.cc',
         'browser/sync/glue/fake_data_type_controller.cc',
         'browser/sync/glue/fake_data_type_controller.h',
         'browser/sync/glue/fake_generic_change_processor.cc',
@@ -1536,7 +1544,9 @@
         'browser/ui/search/search_model_unittest.cc',
         'browser/ui/startup/session_crashed_infobar_delegate_unittest.cc',
         'browser/ui/sync/one_click_signin_helper_unittest.cc',
+        'browser/ui/sync/one_click_signin_sync_starter_unittest.cc',
         'browser/ui/sync/profile_signin_confirmation_helper_unittest.cc',
+        'browser/ui/sync/sync_promo_ui_unittest.cc',
         'browser/ui/tab_contents/tab_contents_iterator_unittest.cc',
         'browser/ui/tabs/dock_info_unittest.cc',
         'browser/ui/tabs/pinned_tab_codec_unittest.cc',
@@ -1561,6 +1571,7 @@
         'browser/ui/toolbar/wrench_menu_model_unittest.cc',
         'browser/ui/views/accelerator_table_unittest.cc',
         'browser/ui/views/accessibility/accessibility_event_router_views_unittest.cc',
+        'browser/ui/views/autofill/decorated_textfield_unittest.cc',
         'browser/ui/views/bookmarks/bookmark_bar_view_unittest.cc',
         'browser/ui/views/bookmarks/bookmark_bubble_view_unittest.cc',
         'browser/ui/views/bookmarks/bookmark_context_menu_test.cc',
@@ -1578,6 +1589,7 @@
         'browser/ui/views/reload_button_unittest.cc',
         'browser/ui/views/select_file_dialog_extension_unittest.cc',
         'browser/ui/views/status_icons/status_tray_win_unittest.cc',
+        'browser/ui/views/sync/one_click_signin_bubble_view_unittest.cc',
         'browser/ui/views/tabs/fake_base_tab_strip_controller.cc',
         'browser/ui/views/tabs/fake_base_tab_strip_controller.h',
         'browser/ui/views/tabs/stacked_tab_strip_layout_unittest.cc',
@@ -1606,7 +1618,7 @@
         'browser/upload_list_unittest.cc',
         'browser/chrome_content_browser_client_unittest.cc',
         'browser/undo/undo_manager_test.cc',
-        'browser/usb/usb_service_unittest.cc',
+        'browser/usb/usb_context_unittest.cc',
         'browser/user_style_sheet_watcher_unittest.cc',
         'browser/value_store/leveldb_value_store_unittest.cc',
         'browser/value_store/testing_value_store_unittest.cc',
@@ -1711,6 +1723,7 @@
         'common/mac/nscoder_util_unittest.mm',
         'common/mac/objc_method_swizzle_unittest.mm',
         'common/mac/objc_zombie_unittest.mm',
+        'common/metrics/caching_permuted_entropy_provider_unittest.cc',
         'common/metrics/entropy_provider_unittest.cc',
         'common/metrics/metrics_log_base_unittest.cc',
         'common/metrics/metrics_log_manager_unittest.cc',
@@ -1730,8 +1743,6 @@
         'common/translate/translate_common_metrics_unittest.cc',
         'common/translate/translate_util_unittest.cc',
         'common/worker_thread_ticker_unittest.cc',
-        'nacl/nacl_ipc_adapter_unittest.cc',
-        'nacl/nacl_validation_query_unittest.cc',
         'renderer/chrome_content_renderer_client_unittest.cc',
         'renderer/content_settings_observer_unittest.cc',
         'renderer/extensions/chrome_v8_context_set_unittest.cc',
@@ -1843,6 +1854,12 @@
         '../components/autofill/core/browser/webdata/autofill_table_unittest.cc',
         '../components/autofill/core/browser/webdata/web_data_service_unittest.cc',
         '../components/autofill/core/common/password_form_fill_data_unittest.cc',
+
+        # TODO(yael): Move to //components/components_tests.gypi once
+        # nacl_defines is moved out of chrome.gyp into a common place.
+        '../components/nacl/loader/nacl_ipc_adapter_unittest.cc',
+        '../components/nacl/loader/nacl_validation_query_unittest.cc',
+
         '../components/webdata/common/web_database_migration_unittest.cc',
         '../components/webdata/common/web_data_service_test_util.cc',
         '../components/webdata/common/web_data_service_test_util.h',
@@ -1966,10 +1983,21 @@
             ['exclude', '^browser/background/'],
           ],
         }],
+        ['enable_spellcheck==0', {
+          'sources/': [
+             ['exclude', '^browser/spellchecker/'],
+             ['exclude', '^renderer/spellchecker/'],
+          ],
+          'dependencies!': [
+             '../third_party/hunspell/hunspell.gyp:hunspell',
+          ],
+        }],
         ['enable_one_click_signin==0', {
           'sources!': [
             'browser/ui/cocoa/one_click_signin_bubble_controller_unittest.mm',
             'browser/ui/sync/one_click_signin_helper_unittest.cc',
+            'browser/ui/sync/one_click_signin_sync_starter_unittest.cc',
+            'browser/ui/views/sync/one_click_signin_bubble_view_unittest.cc',
           ]
         }],
         ['disable_nacl==1', {
@@ -1978,8 +2006,10 @@
             'browser/nacl_host/nacl_validation_cache_unittest.cc',
             'browser/nacl_host/pnacl_host_unittest.cc',
             'browser/nacl_host/pnacl_translation_cache_unittest.cc',
-            'nacl/nacl_ipc_adapter_unittest.cc',
-            'nacl/nacl_validation_query_unittest.cc',
+            # TODO(yael): Move to //components/components_tests.gypi once
+            # nacl_defines is moved out of chrome.gyp into a common place.
+            '../components/nacl/loader/nacl_ipc_adapter_unittest.cc',
+            '../components/nacl/loader/nacl_validation_query_unittest.cc',
           ],
         }],
         ['enable_extensions==0', {
@@ -1987,7 +2017,7 @@
             ['exclude', '^../extensions/'],
             ['exclude', '^browser/extensions/activity_log/'],
             ['exclude', '^browser/extensions/api/'],
-            ['exclude', '^browser/sync/glue/chrome_extensions_activity_monitor_unittest.cc'],
+            ['exclude', '^browser/sync/glue/extensions_activity_monitor_unittest.cc'],
             ['exclude', '^common/extensions/api/'],
             ['exclude', '^common/extensions/manifest_handlers/'],
             ['exclude', '^common/extensions/manifest_tests/'],
@@ -2143,9 +2173,7 @@
             'browser/signin/signin_manager_unittest.cc',
             'browser/storage_monitor/storage_monitor_linux_unittest.cc',
             'browser/ui/sync/one_click_signin_helper_unittest.cc',
-          ],
-          'sources': [
-            'browser/ui/webui/feedback_ui_unittest.cc',
+            'browser/ui/sync/one_click_signin_sync_starter_unittest.cc',
           ],
         }, { # else: chromeos == 0
           'sources/': [
@@ -2282,7 +2310,7 @@
         ['OS=="win" or OS=="mac"', {
           'sources': [
             'browser/media_galleries/fileapi/picasa/picasa_file_util_unittest.cc',
-            'utility/itunes_library_parser_unittest.cc',
+            'utility/media_galleries/itunes_library_parser_unittest.cc',
             'utility/media_galleries/picasa_album_table_reader_unittest.cc',
             'utility/media_galleries/picasa_albums_indexer_unittest.cc',
             'utility/media_galleries/pmp_column_reader_unittest.cc',
@@ -2339,7 +2367,6 @@
             '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_unscaled_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.rc',
-            '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.rc',
           ],
           'link_settings': {
             'libraries': [
@@ -2410,7 +2437,7 @@
             'browser/ui/browser_iterator_unittest.cc',
             'browser/ui/fullscreen/fullscreen_controller_state_unittest.cc',
             'browser/ui/fullscreen/fullscreen_controller_unittest.cc',
-            'browser/ui/search/instant_controller_unittest.cc',
+            'browser/ui/search/instant_ntp_prerenderer_unittest.cc',
             'browser/ui/search/instant_page_unittest.cc',
             'browser/ui/search/search_delegate_unittest.cc',
             'browser/ui/search/search_model_unittest.cc',
@@ -2452,7 +2479,7 @@
             'common/importer/firefox_importer_utils_unittest.cc',
 
             # USB service is not supported on Android.
-            'browser/usb/usb_service_unittest.cc',
+            'browser/usb/usb_context_unittest.cc',
           ],
           'sources/': [
             ['exclude', '^browser/captive_portal/'],
@@ -2472,7 +2499,6 @@
             ['exclude', '^browser/ui/tabs/'],
             ['exclude', '^browser/ui/toolbar/'],
             ['exclude', '^browser/ui/webui/downloads_'],
-            ['exclude', '^browser/ui/webui/feedback_'],
             ['exclude', '^browser/ui/webui/flags_'],
             ['exclude', '^browser/ui/webui/help/'],
             ['exclude', '^browser/ui/webui/options/'],

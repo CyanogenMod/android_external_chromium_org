@@ -4,6 +4,7 @@
 
 #include <string>
 
+#include "base/command_line.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
@@ -12,6 +13,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -23,10 +25,6 @@
 #include "content/public/test/test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "ui/base/keycodes/keyboard_codes.h"
-
-#if defined(OS_WIN) && defined(USE_ASH)
-#include "base/win/windows_version.h"
-#endif
 
 namespace {
 
@@ -45,14 +43,6 @@ class NavigationObserver : public content::NotificationObserver,
 
   virtual ~NavigationObserver() {}
 
-  void Wait() {
-    message_loop_runner_->Run();
-  }
-
-  bool InfoBarWasShown() {
-    return info_bar_shown_;
-  }
-
   // content::NotificationObserver:
   virtual void Observe(int type,
                        const content::NotificationSource& source,
@@ -65,13 +55,19 @@ class NavigationObserver : public content::NotificationObserver,
     info_bar_shown_ = true;
   }
 
-  // content::WebContentsObserver
+  // content::WebContentsObserver:
   virtual void DidFinishLoad(
       int64 frame_id,
       const GURL& validated_url,
       bool is_main_frame,
       content::RenderViewHost* render_view_host) OVERRIDE {
     message_loop_runner_->Quit();
+  }
+
+  bool infobar_shown() { return info_bar_shown_; }
+
+  void Wait() {
+    message_loop_runner_->Run();
   }
 
  private:
@@ -108,7 +104,7 @@ class PasswordManagerBrowserTest : public InProcessBrowserTest {
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, PromptForXHRSubmit) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (base::win::GetVersion() >= base::win::VERSION_WIN8)
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
     return;
 #endif
 
@@ -128,7 +124,7 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, PromptForXHRSubmit) {
       "document.getElementById('submit_button').click()";
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
   observer.Wait();
-  EXPECT_TRUE(observer.InfoBarWasShown());
+  EXPECT_TRUE(observer.infobar_shown());
 }
 
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, NoPromptForOtherXHR) {
@@ -149,5 +145,5 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, NoPromptForOtherXHR) {
       "send_xhr()";
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_navigate));
   observer.Wait();
-  EXPECT_FALSE(observer.InfoBarWasShown());
+  EXPECT_FALSE(observer.infobar_shown());
 }

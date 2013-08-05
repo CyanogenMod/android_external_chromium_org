@@ -359,7 +359,7 @@ are declared in build/common.gypi.
         Media
       </message>
       <message name="IDS_WEBSITE_SETTINGS_TYPE_MIDI_SYSEX" desc="The label used for MIDI system exclusive message permission controls in the Website Settings popup.">
-        MIDI
+        MIDI full control
       </message>
       <message name="IDS_WEBSITE_SETTINGS_SHOW_SITE_DATA" desc="The label of the Show Cookies and Site Data link in the site data section of the Website Settings popup.">
         Show cookies and site data
@@ -787,6 +787,9 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
         <message name="IDS_CONTENT_CONTEXT_SEARCHWEBFOR" desc="The name of the Search the Web for 'string' command in the content area context menu">
           &amp;Search <ph name="SEARCH_ENGINE">$1<ex>Google</ex></ph> for '<ph name="SEARCH_TERMS">$2<ex>flowers</ex></ph>'
         </message>
+        <message name="IDS_CONTENT_CONTEXT_SEARCHWEBFORIMAGE" desc="The name of the Search For Image command in the content area context menu">
+          &amp;Search <ph name="SEARCH_ENGINE">$1<ex>Google</ex></ph> for this image
+        </message>
         <message name="IDS_CONTENT_CONTEXT_GOTOURL" desc="The name of the Go to 'url' command in the content area context menu">
           &amp;Go to <ph name="URL">$1<ex>http://www.google.com/</ex></ph>
         </message>
@@ -995,6 +998,9 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
         </message>
         <message name="IDS_CONTENT_CONTEXT_SEARCHWEBFOR" desc="In Title Case: The name of the Search the Web for 'string' command in the content area context menu">
           &amp;Search <ph name="SEARCH_ENGINE">$1<ex>Google</ex></ph> for '<ph name="SEARCH_TERMS">$2<ex>flowers</ex></ph>'
+        </message>
+        <message name="IDS_CONTENT_CONTEXT_SEARCHWEBFORIMAGE" desc="In Title Case: The name of the Search For Image command in the content area context menu">
+          &amp;Search <ph name="SEARCH_ENGINE">$1<ex>Google</ex></ph> for this image
         </message>
         <message name="IDS_CONTENT_CONTEXT_GOTOURL" desc="In Title Case: The name of the Go to url for 'string' command in the content area context menu">
           &amp;Go to <ph name="URL">$1<ex>http://www.google.com/</ex></ph>
@@ -2893,10 +2899,6 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
          desc="Message shown to the user to validate the download when the download content is classified as uncommon by safebrowsing.">
         <ph name="FILE_NAME">$1<ex>bla.exe</ex></ph> is not commonly downloaded and could be dangerous.
       </message>
-      <message name="IDS_PROMPT_POTENTIALLY_UNWANTED_DOWNLOAD"
-         desc="Message shown on the download shelf when the download is known to modify the browser or computer settings.">
-        <ph name="FILE_NAME">$1<ex>bla.exe</ex></ph> might modify your browser or computer settings.
-      </message>
       <message name="IDS_CONFIRM_KEEP_DANGEROUS_DOWNLOAD_TITLE"
                desc="Title for the confirmation dialog asking whether the user really meant to keep a dangerous download">
         Confirm Download
@@ -2996,6 +2998,10 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
       <message name="IDS_DOWNLOAD_LINK_OPEN_DOWNLOADS_FOLDER"
                desc="Open downloads folder link">
         Open downloads folder
+      </message>
+      <message name="IDS_DOWNLOAD_BY_EXTENSION"
+               desc="Indicates which extension downloaded this file.">
+        Downloaded by <ph name="EXTENSION">$1<ex>The Best Chrome Extension Ever</ex></ph>
       </message>
 
       <!-- Download Context Menu Items -->
@@ -5516,9 +5522,6 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSIONS_NONE_INSTALLED" desc="Text that lets the user know that no extensions are installed.">
         Boo... You have no extensions :-(
       </message>
-      <message name="IDS_APPS_DEVTOOL_TITLE" desc="Title for the apps devtool app.">
-        Apps Developer Tool
-      </message>
       <message name="IDS_EXTENSIONS_PERMISSIONS_HEADING" desc="Heading for permissions dialog in apps_devtools">
         It can:
       </message>
@@ -5532,13 +5535,10 @@ Make sure you do not expose any sensitive information.
         Pack...
       </message>
       <message name="IDS_APPS_DEVTOOL_UPDATE_BUTTON" desc="Text for the 'Update app/extensions' button.">
-        Update now
+        Update
       </message>
       <message name="IDS_APPS_DEVTOOL_SEARCH" desc="Placeholder text that appears inside the search box until the user inputs data.">
         Search
-      </message>
-      <message name="IDS_APPS_DEVTOOL_NO_APPS_INSTALLED" desc="Text that lets the user know that no apps are installed.">
-        Boo... You have no apps :-(
       </message>
       <message name="IDS_APPS_DEVTOOL_APPS_INSTALLED" desc="Text for the word 'Apps'.">
         Apps
@@ -5546,14 +5546,38 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_APPS_DEVTOOL_EXTENSIONS_INSTALLED" desc="Text for the word 'Extensions'.">
         Extensions
       </message>
-      <message name="IDS_APPS_DEVTOOL_NO_UNPACKED_INSTALLED" desc="Text that lets the user know that no unpacked apps or extensions are installed.">
-        No unpacked applications or extensions.
+      <message name="IDS_APPS_DEVTOOL_NO_PACKED_APPS" desc="Text that lets the user know that no packed apps are installed.">
+        No installed applications.
+      </message>
+      <message name="IDS_APPS_DEVTOOL_NO_UNPACKED_APPS" desc="Text that lets the user know that no unpacked apps are installed.">
+        No unpacked applications.
+      </message>
+      <message name="IDS_APPS_DEVTOOL_NO_PACKED_EXTENSIONS" desc="Text that lets the user know that no packed extensions are installed.">
+        No installed extensions.
+      </message>
+      <message name="IDS_APPS_DEVTOOL_NO_UNPACKED_EXTENSIONS" desc="Text that lets the user know that no unpacked extensions are installed.">
+        No unpacked extensions.
       </message>
       <message name="IDS_APPS_DEVTOOL_UNPACKED_INSTALLED" desc="Text for the word 'Unpacked' (unpacked app or extension).">
         Unpacked
       </message>
       <message name="IDS_APPS_DEVTOOL_INSTALLED" desc="Text for the word 'Installed' (installed app or extension).">
         Installed
+      </message>
+      <message name="IDS_APPS_DEVTOOL_UPDATING" desc="Text for the word 'Updating...' when the user clicks on 'Update'.">
+        Updating...
+      </message>
+      <message name="IDS_APPS_DEVTOOL_DELETE_CONFIRMATION_BUTTON" desc="Text of  the delete button in the apps/extension delete confirmation dialog.">
+        Delete
+      </message>
+      <message name="IDS_APPS_DEVTOOL_DELETE_CONFIRMATION_TITLE" desc="Text of the title of the apps/extension delete confirmation dialog.">
+        Delete
+      </message>
+      <message name="IDS_APPS_DEVTOOL_DELETE_CONFIRMATION_MESSAGE_APP" desc="Text of the message of the apps/extension delete confirmation dialog in case the user is deleting an app.">
+        Do you really want to delete this application?
+      </message>
+      <message name="IDS_APPS_DEVTOOL_DELETE_CONFIRMATION_MESSAGE_EXTENSION" desc="Text of the message of the apps/extension delete confirmation dialog in case the user is deleting an extension.">
+        Do you really want to delete this extension?
       </message>
       <message name="IDS_EXTENSIONS_NONE_INSTALLED_SUGGEST_GALLERY" desc="Text on next line after IDS_EXTENSIONS_NONE_INSTALLED that suggests the user look in the gallery for extensions to install.">
         Want to <ph name="BEGIN_LINK">&lt;a target="_blank" href="$1"&gt;</ph>browse the gallery<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> instead?
@@ -5675,6 +5699,12 @@ Make sure you do not expose any sensitive information.
       </message>
       <message name="IDS_EXTENSIONS_LOCKED_MANAGED_USER" desc="The error message (either shown in the extensions UI or logged) informing a supervised user that extensions cannot be changed.">
         Extensions cannot be modified by supervised users.
+      </message>
+      <message name="IDS_EXTENSIONS_USE_APPS_DEV_TOOLS" desc="The message in the banner to invite people to use Apps Developer Tools.">
+        The new Apps Developer Tools makes it easier than ever to manage and debug your apps and extensions. It's also been added to the application list.
+      </message>
+      <message name="IDS_EXTENSIONS_OPEN_APPS_DEV_TOOLS" desc="The text of the button to open Apps Developer Tools in the banner to invite people to use Apps Developer Tools.">
+        Open
       </message>
       <message name="IDS_GET_MORE_EXTENSIONS" desc="The text for getting more extensions. Displayed at bottom of extension management page when there is at least one extension installed.">
         Get more extensions
@@ -6244,6 +6274,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
 
       <if expr="is_android">
         <message name="IDS_POLICY_MANAGED_BOOKMARKS" desc="Mobile: name of the managed bookmarks folder">
+          <ph name="DOMAIN">$1<ex>google.com</ex></ph> bookmarks
+        </message>
+        <message name="IDS_POLICY_MANAGED_BOOKMARKS_DEFAULT_NAME" desc="Mobile: name of the managed bookmarks folder when the management domain can't be determined.">
           Managed bookmarks
         </message>
       </if>
@@ -6711,6 +6744,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_OVERSCROLL_HISTORY_NAVIGATION_DESCRIPTION" desc="Description for the flag to disable history navigation from horizontal overscroll.">
         Experimental history navigation in response to horizontal overscroll.
       </message>
+      <message name="IDS_FLAGS_OVERVIEW_MODE_NAME" desc="Title for the flag to enable window overview mode.">
+        Enable overview mode.
+      </message>
+      <message name="IDS_FLAGS_OVERVIEW_MODE_DESCRIPTION" desc="Description for the flag to enable window overview mode.">
+        Enable overview mode, activated by pushing the switch window button.
+      </message>
       <message name="IDS_FLAGS_SCROLL_END_EFFECT_NAME" desc="Title for the flag for scroll end effect from vertical overscroll.">
         Scroll end effect
       </message>
@@ -6811,11 +6850,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_SCTP_DATA_CHANNELS_DESCRIPTION" desc="Description of about:flags option to turn on SCTP data channels support">
         When enabled, DataChannels created by WebRTC will use the SCTP wire protocol.
       </message>
-      <message name="IDS_FLAGS_ENABLE_DEVICE_ENUMERATION_NAME" desc="Name of about:flags option to turn on WebRTC device enumeration support.">
-        Enable WebRTC device enumeration.
+      <message name="IDS_FLAGS_DISABLE_DEVICE_ENUMERATION_NAME" desc="Name of about:flags option to turn off WebRTC device enumeration support.">
+        Disable WebRTC device enumeration.
       </message>
-      <message name="IDS_FLAGS_ENABLE_DEVICE_ENUMERATION_DESCRIPTION" desc="Description of chrome:flags option to turn on WebRTC device enumeration support">
-        When enabled, MediaStreamTrack can list the available video and audio input devices, and getUserMedia can open these input devices by referencing an opaque id.
+      <message name="IDS_FLAGS_DISABLE_DEVICE_ENUMERATION_DESCRIPTION" desc="Description of chrome:flags option to turn off WebRTC device enumeration support">
+        Disable support for MediaStreamTrack.getSources().
       </message>
       <message name="IDS_FLAGS_DISABLE_WEBAUDIO_NAME" desc="Name of the 'Disable WebAudio' lab.">
         Disable WebAudio
@@ -6994,12 +7033,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_CHROMEOS_USE_NEW_NETWORK_CONNECTION_HANDLER_DESCRIPTION" desc="Description for the flag to enable using the new network connection handler.">
         Enable the new network connection handler.
-      </message>
-      <message name="IDS_FLAGS_ASH_ENABLE_NEW_AUDIO_HANDLER_NAME" desc="Title for the flag to enable using the new audio handler.">
-        Enables new audio handler
-      </message>
-      <message name="IDS_FLAGS_ASH_ENABLE_NEW_AUDIO_HANDLER_DESCRIPTION" desc="Description for the flag to enable using the new audio handler.">
-        Enable the new audio handler which uses the new cras audio dbus apis.
       </message>
       <message name="IDS_FLAGS_ASH_AUDIO_DEVICE_MENU_NAME" desc="Title for a flag for audio switching.">
         Audio input/output menu
@@ -7465,6 +7498,14 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_DEVICE_MOTION_DESCRIPTION" desc="Description for the flag to enable device motion.">
         Enables device motion DOM events in JavaScript.
       </message>
+      <if expr="is_android">
+        <message name="IDS_FLAGS_ENABLE_CAST_NAME" desc="Name of the flag to enable Google Cast support.">
+          Enable Google Cast support
+        </message>
+        <message name="IDS_FLAGS_ENABLE_CAST_DESCRIPTION" desc="Description for the flag to enable playing videos remotely on Google Cast receivers.">
+          Enable playing videos remotely on Google Cast receivers.
+        </message>
+      </if>
 
       <!-- Crashes -->
       <message name="IDS_CRASHES_TITLE" desc="Title for the chrome://crashes page.">
@@ -8026,7 +8067,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
         New tab
       </message>
       <message name="IDS_TOOLTIP_MIC_SEARCH" desc="The tooltip for search-by-voice button">
-        Voice search
+        Search by voice
       </message>
       <message name="IDS_TOOLTIP_ZOOM" desc="The tooltip for zoom icon">
         Zoom: <ph name="VALUE">$1<ex>100</ex></ph>%
@@ -8332,56 +8373,27 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         Skip Import
       </message>
 
-      <!-- Report Bug or Broken Website Dialog -->
-      <message name="IDS_FEEDBACK_TITLE" desc="Dialog title for bug report dialog">
-        Whoops. Let's fix that.
-      </message>
+      <!-- Feedback Dialog -->
       <message name="IDS_FEEDBACK_REPORT_PAGE_TITLE" desc="Label showing the title of the page that will be reported">
-        Feedback
+        Tell us what is happening.
       </message>
       <message name="IDS_FEEDBACK_REPORT_URL_LABEL" desc="Label showing the URL that will be reported">
-        Include this URL:
+        URL (optional):
       </message>
       <message name="IDS_FEEDBACK_USER_EMAIL_LABEL" desc="Label showing the e-mail address that will be reported">
-        Include this email:
+        Email (optional):
       </message>
-      <message name="IDS_FEEDBACK_DESCRIPTION_LABEL" desc="Label for the description field">
-        Tell us what is happening. (required)
-      </message>
-      <if expr="pp_ifdef('chromeos')">
-      <message name="IDS_FEEDBACK_SCREENSHOT_LABEL" desc="Label for the screenshot field if current screenshots are being shown">
-        Include the current screenshot:
-      </message>
-      </if>
-      <if expr="not pp_ifdef('chromeos')">
       <message name="IDS_FEEDBACK_SCREENSHOT_LABEL" desc="Label for the screenshot field if current screenshots are being shown">
         Include this screenshot:
-      </message>
-      </if>
-      <message name="IDS_FEEDBACK_SAVED_SCREENSHOT_LABEL" desc="Label for the screenshot field if saved screenshots are being shown">
-        Include a saved screenshot:
-      </message>
-      <message name="IDS_FEEDBACK_CURRENT_SCREENSHOTS" desc="Radio button for including the last screen image on the bug report dialog box">
-        Send a current page screen shot
-      </message>
-      <message name="IDS_FEEDBACK_SAVED_SCREENSHOTS" desc="Radio button for including the last screen image on the bug report dialog box">
-        Send a saved screen shot
       </message>
       <message name="IDS_FEEDBACK_INCLUDE_SYSTEM_INFORMATION_CHKBOX" desc="Checkbox for including system information on the bug report dialog box">
         Send system information
       </message>
-      <message name="IDS_FEEDBACK_CHOOSE_DIFFERENT_SCREENSHOT" desc="Text for changing the screenshot selection from current to saved">
-        (Choose a different screenshot)
-      </message>
-      <message name="IDS_FEEDBACK_CHOOSE_ORIGINAL_SCREENSHOT" desc="Text for changing the screenshot selection from saved to current">
-        (Go back to original screenshot)
-      </message>
       <message name="IDS_FEEDBACK_ATTACH_FILE_NOTE" desc="Text for describing the maximum size for an attached file">
-        The attached file is uploaded to Google servers for debugging.&lt;br&gt;
-        Note: You can attach one file per feedback report (3 MB limit)
+        The attached file is uploaded to Google servers for debugging.
       </message>
       <message name="IDS_FEEDBACK_ATTACH_FILE_LABEL" desc="Text for the label for the attached filename">
-        Include this file:
+        Attach file:
       </message>
       <message name="IDS_FEEDBACK_READING_FILE" desc="Text to display if reading a file when the user clicks the send report button">
         Reading file..
@@ -8399,17 +8411,8 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         that you provide to improve any Google product or service.
         <ph name="END_BOLD">&lt;/strong&gt;</ph>
       </message>
-      <message name="IDS_FEEDBACK_INCLUDE_NEW_SCREEN_IMAGE" desc="Radio button for including a new screen image on the bug report dialog box">
-        Send last active tab screen shot
-      </message>
-      <message name="IDS_FEEDBACK_INCLUDE_NO_SCREENSHOT" desc="Radio button for not including a screen image on the bug report dialog box">
-        Do not send a screen shot
-      </message>
       <message name="IDS_FEEDBACK_NO_DESCRIPTION" desc="Message shown when no text is entered before hitting send feedback">
         Please tell us what is happening before sending the feedback.
-      </message>
-      <message name="IDS_FEEDBACK_NO_SAVED_SCREENSHOTS_HELP" desc="Message shown when no screenshots are available for selection">
-        You can select saved screenshots from here. Currently there are no screenshots available. You can press Ctrl + the "Window Switch" key together to take a screenshot. The last three screenshots that you have taken will appear here.
       </message>
       <message name="IDS_FEEDBACK_SEND_REPORT" desc="Text for OK button of the send feedback dialog">
         Send feedback
@@ -10057,6 +10060,9 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       </message>
       <message name="IDS_MEDIA_SCREEN_CAPTURE_CONFIRMATION_TEXT" desc="Text for the prompt shown when screen capturing is requrested by an app.">
         Do you want <ph name="APP_NAME">$1<ex>html5rocks.com</ex></ph> to share your screen?
+      </message>
+      <message name="IDS_MEDIA_SCREEN_AND_AUDIO_CAPTURE_CONFIRMATION_TEXT" desc="Text for the prompt shown when screen and audio capturing is requrested by an app.">
+        Do you want <ph name="APP_NAME">$1<ex>html5rocks.com</ex></ph> to share your screen and audio output?
       </message>
       <message name="IDS_MEDIA_SCREEN_CAPTURE_NOTIFICATION_TITLE" desc="Text shown on the button that stops screen capture.">
         Screen capture - <ph name="APP_NAME">$1<ex>Sharing App</ex></ph>
@@ -12590,18 +12596,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_FLAGS_FILE_MANAGER_SHOW_CHECKBOXES_DESCRIPTION" desc="Description of the about:flag option to show the selecting checkboxes to the Files app.">
         Show selecting checkboxes in the Files.app.
       </message>
-      <message name="IDS_FLAGS_FILE_MANAGER_ENABLE_SHARING_NAME" desc="Name of the about:flag option to hide the selecting checkboxes to in the Files app.">
-        Sharing in Files.app.
-      </message>
-      <message name="IDS_FLAGS_FILE_MANAGER_ENABLE_SHARING_DESCRIPTION" desc="Description of the about:flag option to show the sharing option in Files app.">
-        Enables the sharing dialog in Files app under the context menu.
-      </message>
-      <message name="IDS_FLAGS_FILE_MANAGER_ENABLE_FOLDER_SHORTCUTS" desc="Name of the about:flag option to enable the folder-shortcuts feature in the Files app.">
-        Enable folder shortcuts in Files.app.
-      </message>
-      <message name="IDS_FLAGS_FILE_MANAGER_ENABLE_FOLDER_SHORTCUTS_DESCRIPTION" desc="Description of the about:flag option of folder shortcuts feature in Files app.">
-        Enables the folder shortcuts feature in Files.app, which allows you to create shortcuts to folders in the left panel.
-      </message>
       <message name="IDS_FLAGS_FILE_MANAGER_ENABLE_WEBSTORE_INTEGRATION" desc="Name of the about:flag option to enable the webstore integration feature in Files app.">
         Enable the integration of Webstore and Files.app.
       </message>
@@ -13151,6 +13145,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_FILE_BROWSER_OK_LABEL" desc="OK label.">
         OK
       </message>
+      <message name="IDS_FILE_BROWSER_UPLOAD_LABEL" desc="Upload label.">
+        Upload
+      </message>
       <message name="IDS_FILE_BROWSER_SEARCH_TEXT_LABEL" desc="Search text field label.">
         Search
       </message>
@@ -13184,6 +13181,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
 
       <message name="IDS_FILE_BROWSER_SELECT_FOLDER_TITLE" desc="Select folder title.">
         Select a folder to open
+      </message>
+      <message name="IDS_FILE_BROWSER_SELECT_UPLOAD_FOLDER_TITLE" desc="Select folder title for upload.">
+        Select a folder to upload
       </message>
       <message name="IDS_FILE_BROWSER_SELECT_OPEN_FILE_TITLE" desc="Select open file title.">
         Select a file to open
@@ -13528,6 +13528,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
       <message name="IDS_FILE_BROWSER_THUMBNAIL_VIEW_TOOLTIP" desc="Tooltip for the Thumbnail View button.">
         Thumbnail view
+      </message>
+      <message name="IDS_FILE_BROWSER_GEAR_BUTTON_TOOLTIP" desc="Tooltip for the gear button in Files.app.">
+        Settings
       </message>
 
       <message name="IDS_FILE_BROWSER_TIME_TODAY" desc="File date and time in case the date is today.">
@@ -14640,6 +14643,33 @@ Some features may be unavailable.  Please check that the profile exists and you 
       This page has been blocked from tracking your location.
     </message>
 
+    <!-- Web MIDI messages -->
+    <message name="IDS_MIDI_SYSEX_TAB_LABEL" desc="Label for MIDI system exclusive message on Content Settings dialog">
+      MIDI full control
+    </message>
+    <message name="IDS_MIDI_SYSEX_ALLOW_RADIO" desc="A radio button in Content Settings dialog to allow a site to access MIDI devices with system exclusive messages.">
+      Allow all sites to use system exclusive messages to access MIDI devices
+    </message>
+    <message name="IDS_MIDI_SYSEX_BLOCK_RADIO" desc="A radio button in Content Settings dialog to deny a site to access MIDI devices with system exclusive messages.">
+      Do not allow any sites to use system exclusive messages to access MIDI devices
+    </message>
+    <message name="IDS_MIDI_SYSEX_ASK_RADIO" desc="A radio button in Content Settings dialog to allow a site to query the permision to access MIDI devices with system exclusive messages.">
+      Ask me when a site wants to use system exclusive messages to access MIDI devices (recommended)
+    </message>
+
+    <!-- Web MIDI messages -->
+    <message name="IDS_MIDI_SYSEX_INFOBAR_QUESTION" desc="Question asked on the info bar whenever URL wants to access MIDI devices with system exclusive messages.">
+      <ph name="URL">
+        $1<ex>www.google.com</ex>
+      </ph> wants to get full control of your MIDI devices.
+    </message>
+    <message name="IDS_MIDI_SYSEX_ALLOW_BUTTON" desc="A button in MIDI access infobar for allowing full access to MIDI devices for a given domain.">
+      Allow
+    </message>
+    <message name="IDS_MIDI_SYSEX_DENY_BUTTON" desc="A button in MIDI access infobar for denying full access to MIDI devices for a given domain.">
+      Deny
+    </message>
+
     <message name="IDS_REGISTER_PROTOCOL_HANDLER_TOOLTIP" desc="Location bar icon tooltip text when a page wants to use registerProtocolHandler.">
       This page wants to install a service handler.
     </message>
@@ -15090,17 +15120,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
       Deny
     </message>
 
-    <!-- MediaStream capture status tray icon -->
-    <message name="IDS_MEDIA_STREAM_STATUS_TRAY_TEXT_AUDIO_AND_VIDEO" desc="Tool tip for the capture status tray icon when microphone and camera are being used">
-      <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> is using your camera and microphone.
-    </message>
-    <message name="IDS_MEDIA_STREAM_STATUS_TRAY_TEXT_AUDIO_ONLY" desc="Tool tip for the capture status tray icon when microphone is being used">
-      <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> is using your microphone.
-    </message>
-    <message name="IDS_MEDIA_STREAM_STATUS_TRAY_TEXT_VIDEO_ONLY" desc="Tool tip for the capture status tray icon when camera is being used">
-      <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> is using your camera.
-    </message>
-
     <!-- Quota messages -->
     <if expr="is_android">
       <message name="IDS_REQUEST_QUOTA_INFOBAR_QUESTION" desc="Mobile: For Android device. Question asked on the info bar whenever webapp requests new (larger) quota to persistently store data on the device (e.g. for persistent-type filesystem).">
@@ -15249,6 +15268,9 @@ Please check your email at <ph name="ACCOUNT_EMAIL">$2<ex>jane.doe@gmail.com</ex
         <message name="IDS_LOGIN_BUTTON">
           Sign In
         </message>
+        <message name="IDS_LOGIN_POD_USER_REMOVE_WARNING_BUTTON" desc="Login screen user pod menu item text.">
+          Remove This User
+        </message>
       </if>
       <if expr="not pp_ifdef('use_titlecase')">
         <message name="IDS_ADD_USER_BUTTON" desc="Text shown on an add user button on login/locker screen">
@@ -15259,6 +15281,9 @@ Please check your email at <ph name="ACCOUNT_EMAIL">$2<ex>jane.doe@gmail.com</ex
         </message>
         <message name="IDS_LOGIN_BUTTON">
           Sign in
+        </message>
+        <message name="IDS_LOGIN_POD_USER_REMOVE_WARNING_BUTTON" desc="Login screen user pod menu item text.">
+          Remove this user
         </message>
       </if>
       <message name="IDS_GO_INCOGNITO_BUTTON" desc="Text shown on Chrome OS login screen button that launches guest session. Should be short.">
@@ -15279,8 +15304,8 @@ Please check your email at <ph name="ACCOUNT_EMAIL">$2<ex>jane.doe@gmail.com</ex
       <message name="IDS_LOGIN_POD_MENU_REMOVE_ITEM_ACCESSIBLE_NAME" desc="Text to be spoken when 'Remove user' item is selected on the pod menu.">
         Remove this user
       </message>
-      <message name="IDS_LOGIN_POD_REMOVE_USER" desc="Login screen user pod menu item text.">
-        Remove this user
+      <message name="IDS_LOGIN_POD_USER_REMOVE_WARNING" desc="Text shown as a warning when attempting to remove an user.">
+        Are you sure you want to delete this user and all the data associated with it from this computer? This cannot be undone!
       </message>
     </if>
 
@@ -15716,25 +15741,25 @@ Do you accept?
 
     <!-- Reset Profile Settings strings -->
     <message name="IDS_RESET_PROFILE_SETTINGS_SECTION_TITLE" desc="The title of the section in chrome://settings that allows resetting some settings in a profile">
-      Reset
+      Reset browser settings
     </message>
     <message name="IDS_RESET_PROFILE_SETTINGS_DESCRIPTION" desc="A label describing the purpose of the 'reset profile settings' feature">
-      Things got out of control? Revert your Chrome profile to a clean, post install state.
+      Restore browser settings to their original defaults.
     </message>
     <message name="IDS_RESET_PROFILE_SETTINGS_EXPLANATION" desc="A label describing the consequences of the 'reset profile settings' feature">
-      Your browser settings will be restored to their original defaults. This will reset your homepage, new tab page, and search engine, disable your extensions and clear your cookies, content settings and site data.
+      Your browser settings will be restored to their original defaults. This will reset your homepage, new tab page and search engine, disable your extensions and unpin all tabs. It will also clear other temporary and cached data, such as cookies, content and site data.
     </message>
     <message name="IDS_RESET_PROFILE_SETTINGS_BUTTON" desc="The text on the button in chrome://settings that allows resetting some settings in a profile">
-      Reset profile settings...
+      Reset browser settings
     </message>
     <message name="IDS_RESET_PROFILE_SETTINGS_TITLE" desc="Dialog title">
-      Reset profile settings
+      Reset browser settings
     </message>
     <message name="IDS_RESET_PROFILE_SETTINGS_COMMIT_BUTTON" desc="Reset button of the Reset Profile Settings dialog">
       Reset
     </message>
     <message name="IDS_RESET_PROFILE_SETTINGS_FEEDBACK" desc="Feedback label in the Reset Profile Settings dialog">
-      Help protect Chrome users by sharing current settings with Google
+      Help make Google Chrome better by reporting the current settings
     </message>
 
     <!-- Identity internals strings -->
@@ -15789,6 +15814,17 @@ Do you accept?
     <!-- Synced Notification display strings -->
     <message name="IDS_FIRST_SYNCED_NOTIFICATION_SERVICE_NAME" desc="The name of the first service source for synced notifications.">
       Google+
+    </message>
+
+    <!-- Desktop media picker UI for Desktop Capture API -->
+    <message name="IDS_DESKTOP_MEDIA_PICKER_TITLE" desc="Title for the window picker dialog shown when desktop capture is requrested by an app.">
+      Desktop sharing - <ph name="APP_NAME">$1<ex>Google Hangouts</ex></ph>
+    </message>
+    <message name="IDS_DESKTOP_MEDIA_PICKER_TEXT" desc="Text for the window picker dialog shown when desktop capture is requrested by an app.">
+      <ph name="APP_NAME">$1<ex>Google Hangouts</ex></ph> requested to share content of your desktop. Please select a window or the whole screen to share.
+    </message>
+    <message name="IDS_DESKTOP_MEDIA_PICKER_SCREEN_NAME" desc="Name for screens in the desktop media picker UI.">
+      Screen
     </message>
 
     </messages>

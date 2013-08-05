@@ -107,10 +107,9 @@ include $(LOCAL_PATH)/skia/skia_chrome.target.linux-x86.mk
 include $(LOCAL_PATH)/skia/skia_chrome_opts.target.linux-x86.mk
 include $(LOCAL_PATH)/skia/skia_library.target.linux-x86.mk
 include $(LOCAL_PATH)/skia/skia_opts.target.linux-x86.mk
+include $(LOCAL_PATH)/skia/skia_opts_ssse3.target.linux-x86.mk
 include $(LOCAL_PATH)/sql/sql.target.linux-x86.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/blink_common.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/webkit.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/deprecated_perl_bindings_sources.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/interface_dependencies.target.linux-x86.mk
@@ -152,6 +151,8 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_html.target.li
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/frontend_protocol_sources.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/generate_devtools_grd.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/modules/modules.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/web/blink_common.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/web/webkit.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/weborigin/weborigin.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf_config.target.linux-x86.mk
@@ -164,7 +165,6 @@ include $(LOCAL_PATH)/third_party/ashmem/ashmem.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/expat/expat.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/freetype/ft2.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/harfbuzz-ng/harfbuzz-ng.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/hyphen/hyphen.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/iccjpeg/iccjpeg.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/icu/icudata.host.linux-x86.mk
 include $(LOCAL_PATH)/third_party/icu/icudata.target.linux-x86.mk

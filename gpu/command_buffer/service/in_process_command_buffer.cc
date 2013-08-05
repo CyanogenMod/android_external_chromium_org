@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -302,7 +302,7 @@ bool InProcessCommandBuffer::Initialize(
   share_group_id_ = share_group_id;
 
   base::WaitableEvent completion(true, false);
-  bool result;
+  bool result = false;
   base::Callback<bool(void)> init_task =
       base::Bind(&InProcessCommandBuffer::InitializeOnGpuThread,
                  base::Unretained(this),
@@ -453,7 +453,7 @@ bool InProcessCommandBuffer::InitializeOnGpuThread(
 
 void InProcessCommandBuffer::Destroy() {
   base::WaitableEvent completion(true, false);
-  bool result;
+  bool result = false;
   base::Callback<bool(void)> destroy_task = base::Bind(
       &InProcessCommandBuffer::DestroyOnGpuThread, base::Unretained(this));
   QueueTask(
@@ -522,8 +522,10 @@ void InProcessCommandBuffer::RemoveImageOnGpuThread(unsigned int image_id) {
 }
 
 void InProcessCommandBuffer::OnContextLost() {
-  if (!context_lost_callback_.is_null())
+  if (!context_lost_callback_.is_null()) {
     context_lost_callback_.Run();
+    context_lost_callback_.Reset();
+  }
 
   context_lost_ = true;
   if (share_resources_) {
@@ -650,15 +652,16 @@ void InProcessCommandBuffer::SetContextLostReason(
 
 namespace {
 
-static void PostCallback(const scoped_refptr<base::MessageLoopProxy>& loop,
+void PostCallback(const scoped_refptr<base::MessageLoopProxy>& loop,
                          const base::Closure& callback) {
-  if (loop != base::MessageLoopProxy::current())
+  if (!loop->BelongsToCurrentThread()) {
     loop->PostTask(FROM_HERE, callback);
-  else
+  } else {
     callback.Run();
+  }
 }
 
-static void RunCallback(scoped_ptr<base::Closure> callback) {
+void RunOnTargetThread(scoped_ptr<base::Closure> callback) {
   DCHECK(callback.get());
   callback->Run();
 }
@@ -671,10 +674,10 @@ base::Closure InProcessCommandBuffer::WrapCallback(
   // ownership.
   scoped_ptr<base::Closure> scoped_callback(new base::Closure(callback));
   base::Closure callback_on_client_thread =
-      base::Bind(&RunCallback, base::Passed(&scoped_callback));
+      base::Bind(&RunOnTargetThread, base::Passed(&scoped_callback));
   base::Closure wrapped_callback =
       base::Bind(&PostCallback, base::MessageLoopProxy::current(),
-                 callback);
+                 callback_on_client_thread);
   return wrapped_callback;
 }
 

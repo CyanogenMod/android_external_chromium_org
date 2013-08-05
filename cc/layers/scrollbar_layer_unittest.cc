@@ -111,17 +111,19 @@ TEST(ScrollbarLayerTest, ScrollOffsetSynchronization) {
   scoped_refptr<Layer> scrollbar_layer =
       ScrollbarLayer::Create(scrollbar.Pass(),
                              layer_tree_root->id());
-  layer_tree_root->AddChild(content_layer);
-  layer_tree_root->AddChild(scrollbar_layer);
 
+  layer_tree_root->SetScrollable(true);
   layer_tree_root->SetScrollOffset(gfx::Vector2d(10, 20));
   layer_tree_root->SetMaxScrollOffset(gfx::Vector2d(30, 50));
   layer_tree_root->SetBounds(gfx::Size(100, 200));
-  layer_tree_root->SavePaintProperties();
   content_layer->SetBounds(gfx::Size(100, 200));
-  content_layer->SavePaintProperties();
 
   host->SetRootLayer(layer_tree_root);
+  layer_tree_root->AddChild(content_layer);
+  layer_tree_root->AddChild(scrollbar_layer);
+
+  layer_tree_root->SavePaintProperties();
+  content_layer->SavePaintProperties();
 
   LayerImpl* layer_impl_tree_root = host->CommitAndCreateLayerImplTree();
 
@@ -232,6 +234,7 @@ TEST(ScrollbarLayerTest, LayerDrivenSolidColorDrawQuads) {
   scrollbar_layer_impl->SetCurrentPos(4.f);
   scrollbar_layer_impl->SetMaximum(8);
 
+  layer_impl_tree_root->SetScrollable(true);
   layer_impl_tree_root->SetHorizontalScrollbarLayer(scrollbar_layer_impl);
   layer_impl_tree_root->SetMaxScrollOffset(gfx::Vector2d(8, 8));
   layer_impl_tree_root->SetBounds(gfx::Size(2, 2));
@@ -448,6 +451,7 @@ class ScrollbarLayerTestResourceCreation : public testing::Test {
     ResourceUpdateQueue queue;
     OcclusionTracker occlusion_tracker(gfx::Rect(), false);
 
+    scrollbar_layer->SavePaintProperties();
     scrollbar_layer->SetTexturePriorities(calculator);
     layer_tree_host_->contents_texture_manager()->PrioritizeTextures();
     scrollbar_layer->Update(&queue, &occlusion_tracker);
@@ -529,6 +533,7 @@ class ScaledScrollbarLayerTestResourceCreation : public testing::Test {
     ResourceUpdateQueue queue;
     OcclusionTracker occlusion_tracker(gfx::Rect(), false);
 
+    scrollbar_layer->SavePaintProperties();
     scrollbar_layer->SetTexturePriorities(calculator);
     layer_tree_host_->contents_texture_manager()->PrioritizeTextures();
     scrollbar_layer->Update(&queue, &occlusion_tracker);

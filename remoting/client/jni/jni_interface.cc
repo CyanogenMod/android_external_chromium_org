@@ -120,11 +120,23 @@ JNIEXPORT void JNICALL JNI_IMPLEMENTATION(mouseActionNative)(
     jint y,
     jint which_button,
     jboolean button_down) {
+  // Button must be within the bounds of the MouseEvent_MouseButton enum.
+  DCHECK(which_button >= 0 && which_button < 5);
+
   remoting::ChromotingJniRuntime::GetInstance()->session()->PerformMouseAction(
       x,
       y,
       static_cast<remoting::protocol::MouseEvent_MouseButton>(which_button),
       button_down);
+}
+
+JNIEXPORT void JNICALL JNI_IMPLEMENTATION(keyboardActionNative)(
+    JNIEnv* env,
+    jobject that,
+    jint key_code,
+    jboolean key_down) {
+  remoting::ChromotingJniRuntime::GetInstance()->session()->
+      PerformKeyboardAction(key_code, key_down);
 }
 
 }  // extern "C"

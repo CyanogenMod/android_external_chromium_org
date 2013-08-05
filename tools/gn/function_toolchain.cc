@@ -10,6 +10,8 @@
 #include "tools/gn/settings.h"
 #include "tools/gn/toolchain.h"
 
+namespace functions {
+
 namespace {
 
 // This is jsut a unique value to take the address of to use as the key for
@@ -31,11 +33,17 @@ bool ReadString(Scope& scope, const char* var, std::string* dest, Err* err) {
 
 }  // namespace
 
-Value ExecuteToolchain(Scope* scope,
-                       const FunctionCallNode* function,
-                       const std::vector<Value>& args,
-                       BlockNode* block,
-                       Err* err) {
+// toolchain -------------------------------------------------------------------
+
+const char kToolchain[] = "toolchain";
+const char kToolchain_Help[] =
+    "TODO(brettw) write this.";
+
+Value RunToolchain(Scope* scope,
+                   const FunctionCallNode* function,
+                   const std::vector<Value>& args,
+                   BlockNode* block,
+                   Err* err) {
   if (!EnsureNotProcessingImport(function, scope, err) ||
       !EnsureNotProcessingBuildConfig(function, scope, err))
     return Value();
@@ -46,7 +54,7 @@ Value ExecuteToolchain(Scope* scope,
   const SourceDir& input_dir = SourceDirForFunctionCall(function);
   Label label(input_dir, args[0].string_value(), SourceDir(), std::string());
   if (g_scheduler->verbose_logging())
-    g_scheduler->Log("Generating toolchain", label.GetUserVisibleName(true));
+    g_scheduler->Log("Generating toolchain", label.GetUserVisibleName(false));
 
   // This object will actually be copied into the one owned by the toolchain
   // manager, but that has to be done in the lock.
@@ -69,16 +77,23 @@ Value ExecuteToolchain(Scope* scope,
     base::AutoLock lock(build_settings->item_tree().lock());
     build_settings->toolchain_manager().SetToolchainDefinitionLocked(
         toolchain, function->GetRange(), err);
-    build_settings->item_tree().MarkItemGeneratedLocked(label);
+    build_settings->item_tree().MarkItemDefinedLocked(build_settings, label,
+                                                      err);
   }
   return Value();
 }
 
-Value ExecuteTool(Scope* scope,
-                  const FunctionCallNode* function,
-                  const std::vector<Value>& args,
-                  BlockNode* block,
-                  Err* err) {
+// tool ------------------------------------------------------------------------
+
+const char kTool[] = "tool";
+const char kTool_Help[] =
+    "TODO(brettw) write this.";
+
+Value RunTool(Scope* scope,
+              const FunctionCallNode* function,
+              const std::vector<Value>& args,
+              BlockNode* block,
+              Err* err) {
   // Find the toolchain definition we're executing inside of. The toolchain
   // function will set a property pointing to it that we'll pick up.
   Toolchain* toolchain = reinterpret_cast<Toolchain*>(
@@ -124,3 +139,5 @@ Value ExecuteTool(Scope* scope,
   toolchain->SetTool(tool_type, t);
   return Value();
 }
+
+}  // namespace functions

@@ -510,7 +510,13 @@ TEST_F(LayerTest, CheckSetNeedsDisplayCausesCorrectBehavior) {
   EXPECT_TRUE(test_layer->NeedsDisplayForTesting());
   test_layer->ResetNeedsDisplayForTesting();
 
-  // Case 3: SetNeedsDisplay() with a non-drawable layer
+  // Case 3: SetNeedsDisplay() with an empty rect.
+  test_layer->ResetNeedsDisplayForTesting();
+  EXPECT_FALSE(test_layer->NeedsDisplayForTesting());
+  EXPECT_SET_NEEDS_COMMIT(0, test_layer->SetNeedsDisplayRect(gfx::Rect()));
+  EXPECT_FALSE(test_layer->NeedsDisplayForTesting());
+
+  // Case 4: SetNeedsDisplay() with a non-drawable layer
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetIsDrawable(false));
   test_layer->ResetNeedsDisplayForTesting();
   EXPECT_FALSE(test_layer->NeedsDisplayForTesting());
@@ -576,6 +582,9 @@ TEST_F(LayerTest, PushPropertiesAccumulatesUpdateRect) {
   scoped_ptr<LayerImpl> impl_layer =
       LayerImpl::Create(host_impl_.active_tree(), 1);
 
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1,
+                                  layer_tree_host_->SetRootLayer(test_layer));
+
   test_layer->SetNeedsDisplayRect(gfx::RectF(0.f, 0.f, 5.f, 5.f));
   test_layer->PushPropertiesTo(impl_layer.get());
   EXPECT_FLOAT_RECT_EQ(gfx::RectF(0.f, 0.f, 5.f, 5.f),
@@ -602,9 +611,12 @@ TEST_F(LayerTest, PushPropertiesCausesSurfacePropertyChangedForTransform) {
   scoped_ptr<LayerImpl> impl_layer =
       LayerImpl::Create(host_impl_.active_tree(), 1);
 
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1,
+                                  layer_tree_host_->SetRootLayer(test_layer));
+
   gfx::Transform transform;
   transform.Rotate(45.0);
-  test_layer->SetTransform(transform);
+  EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetTransform(transform));
 
   EXPECT_FALSE(impl_layer->LayerSurfacePropertyChanged());
 
@@ -618,7 +630,10 @@ TEST_F(LayerTest, PushPropertiesCausesSurfacePropertyChangedForOpacity) {
   scoped_ptr<LayerImpl> impl_layer =
       LayerImpl::Create(host_impl_.active_tree(), 1);
 
-  test_layer->SetOpacity(0.5f);
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1,
+                                  layer_tree_host_->SetRootLayer(test_layer));
+
+  EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetOpacity(0.5f));
 
   EXPECT_FALSE(impl_layer->LayerSurfacePropertyChanged());
 
@@ -633,6 +648,9 @@ TEST_F(LayerTest,
   scoped_ptr<LayerImpl> impl_layer =
       LayerImpl::Create(host_impl_.active_tree(), 1);
 
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1,
+                                  layer_tree_host_->SetRootLayer(test_layer));
+
   scoped_ptr<AnimationRegistrar> registrar = AnimationRegistrar::Create();
   impl_layer->layer_animation_controller()->SetAnimationRegistrar(
       registrar.get());
@@ -644,7 +662,7 @@ TEST_F(LayerTest,
 
   gfx::Transform transform;
   transform.Rotate(45.0);
-  test_layer->SetTransform(transform);
+  EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetTransform(transform));
 
   EXPECT_FALSE(impl_layer->LayerSurfacePropertyChanged());
   test_layer->PushPropertiesTo(impl_layer.get());
@@ -658,7 +676,7 @@ TEST_F(LayerTest,
   impl_layer->layer_animation_controller()->GetAnimation(Animation::Transform)->
       set_is_impl_only(true);
   transform.Rotate(45.0);
-  test_layer->SetTransform(transform);
+  EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetTransform(transform));
 
   EXPECT_FALSE(impl_layer->LayerSurfacePropertyChanged());
   test_layer->PushPropertiesTo(impl_layer.get());
@@ -671,6 +689,9 @@ TEST_F(LayerTest,
   scoped_ptr<LayerImpl> impl_layer =
       LayerImpl::Create(host_impl_.active_tree(), 1);
 
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1,
+                                  layer_tree_host_->SetRootLayer(test_layer));
+
   scoped_ptr<AnimationRegistrar> registrar = AnimationRegistrar::Create();
   impl_layer->layer_animation_controller()->SetAnimationRegistrar(
       registrar.get());
@@ -681,7 +702,7 @@ TEST_F(LayerTest,
                                    0.7f,
                                    false);
 
-  test_layer->SetOpacity(0.5f);
+  EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetOpacity(0.5f));
 
   EXPECT_FALSE(impl_layer->LayerSurfacePropertyChanged());
   test_layer->PushPropertiesTo(impl_layer.get());
@@ -695,7 +716,7 @@ TEST_F(LayerTest,
                                    false);
   impl_layer->layer_animation_controller()->GetAnimation(Animation::Opacity)->
       set_is_impl_only(true);
-  test_layer->SetOpacity(0.75f);
+  EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetOpacity(0.75f));
 
   EXPECT_FALSE(impl_layer->LayerSurfacePropertyChanged());
   test_layer->PushPropertiesTo(impl_layer.get());

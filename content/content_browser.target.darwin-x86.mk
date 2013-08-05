@@ -82,6 +82,7 @@ LOCAL_SRC_FILES := \
 	content/browser/android/android_browser_process.cc \
 	content/browser/android/browser_jni_registrar.cc \
 	content/browser/android/browser_media_player_manager.cc \
+	content/browser/android/browser_startup_config.cc \
 	content/browser/android/child_process_launcher_android.cc \
 	content/browser/android/content_settings.cc \
 	content/browser/android/content_startup_flags.cc \
@@ -151,8 +152,6 @@ LOCAL_SRC_FILES := \
 	content/browser/device_orientation/device_motion_provider.cc \
 	content/browser/device_orientation/device_motion_service.cc \
 	content/browser/device_orientation/message_filter.cc \
-	content/browser/device_orientation/motion.cc \
-	content/browser/device_orientation/motion_message_filter.cc \
 	content/browser/device_orientation/observer_delegate.cc \
 	content/browser/device_orientation/orientation.cc \
 	content/browser/device_orientation/orientation_message_filter.cc \
@@ -213,7 +212,6 @@ LOCAL_SRC_FILES := \
 	content/browser/histogram_message_filter.cc \
 	content/browser/histogram_synchronizer.cc \
 	content/browser/host_zoom_map_impl.cc \
-	content/browser/hyphenator/hyphenator_message_filter.cc \
 	content/browser/indexed_db/indexed_db_backing_store.cc \
 	content/browser/indexed_db/indexed_db_callbacks.cc \
 	content/browser/indexed_db/indexed_db_connection.cc \
@@ -272,6 +270,7 @@ LOCAL_SRC_FILES := \
 	content/browser/net/view_blob_internals_job_factory.cc \
 	content/browser/net/view_http_cache_job_factory.cc \
 	content/browser/notification_service_impl.cc \
+	content/browser/power_monitor_message_broadcaster.cc \
 	content/browser/power_save_blocker_android.cc \
 	content/browser/power_save_blocker_impl.cc \
 	content/browser/profiler_controller_impl.cc \
@@ -315,6 +314,7 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/media/media_stream_dispatcher_host.cc \
 	content/browser/renderer_host/media/media_stream_manager.cc \
 	content/browser/renderer_host/media/media_stream_ui_proxy.cc \
+	content/browser/renderer_host/media/midi_dispatcher_host.cc \
 	content/browser/renderer_host/media/midi_host.cc \
 	content/browser/renderer_host/media/video_capture_buffer_pool.cc \
 	content/browser/renderer_host/media/video_capture_controller.cc \
@@ -363,6 +363,7 @@ LOCAL_SRC_FILES := \
 	content/browser/ssl/ssl_policy_backend.cc \
 	content/browser/ssl/ssl_policy.cc \
 	content/browser/ssl/ssl_request_info.cc \
+	content/browser/startup_task_runner.cc \
 	content/browser/streams/stream.cc \
 	content/browser/streams/stream_context.cc \
 	content/browser/streams/stream_handle_impl.cc \

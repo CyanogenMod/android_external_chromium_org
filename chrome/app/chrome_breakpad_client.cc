@@ -13,6 +13,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/env_vars.h"
@@ -36,6 +37,10 @@
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
 #include "chrome/installer/util/google_update_settings.h"
+#endif
+
+#if defined(OS_ANDROID)
+#include "chrome/common/descriptors_android.h"
 #endif
 
 namespace chrome {
@@ -177,6 +182,10 @@ bool ChromeBreakpadClient::GetShouldDumpLargerDumps(bool is_per_user_install) {
     return true;
   return false;
 }
+
+int ChromeBreakpadClient::GetResultCodeRespawnFailed() {
+  return chrome::RESULT_CODE_RESPAWN_FAILED;
+}
 #endif
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_IOS)
@@ -236,6 +245,12 @@ bool ChromeBreakpadClient::IsRunningUnattended() {
 #if defined(OS_WIN) || defined(OS_MACOSX)
 bool ChromeBreakpadClient::GetCollectStatsConsent() {
   return GoogleUpdateSettings::GetCollectStatsConsent();
+}
+#endif
+
+#if defined(OS_ANDROID)
+int ChromeBreakpadClient::GetAndroidMinidumpDescriptor() {
+  return kAndroidMinidumpDescriptor;
 }
 #endif
 

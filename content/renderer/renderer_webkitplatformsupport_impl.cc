@@ -34,7 +34,6 @@
 #include "content/renderer/device_orientation/device_motion_event_pump.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/gamepad_shared_memory_reader.h"
-#include "content/renderer/hyphenator/hyphenator.h"
 #include "content/renderer/media/audio_decoder.h"
 #include "content/renderer/media/crypto/key_systems.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
@@ -57,7 +56,6 @@
 #include "third_party/WebKit/public/platform/WebDeviceMotionListener.h"
 #include "third_party/WebKit/public/platform/WebFileInfo.h"
 #include "third_party/WebKit/public/platform/WebGamepads.h"
-#include "third_party/WebKit/public/platform/WebHyphenator.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamCenter.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamCenterClient.h"
 #include "third_party/WebKit/public/platform/WebPluginListBuilder.h"
@@ -91,6 +89,7 @@
 #include "content/common/child_process_sandbox_support_impl_linux.h"
 #include "third_party/WebKit/public/platform/linux/WebFontFamily.h"
 #include "third_party/WebKit/public/platform/linux/WebSandboxSupport.h"
+#include "third_party/icu/source/common/unicode/utf16.h"
 #endif
 
 #if defined(OS_POSIX)
@@ -157,29 +156,9 @@ class RendererWebKitPlatformSupportImpl::FileUtilities
   explicit FileUtilities(ThreadSafeSender* sender)
       : thread_safe_sender_(sender) {}
   virtual bool getFileInfo(const WebString& path, WebFileInfo& result);
-  virtual base::PlatformFile openFile(const WebKit::WebString& path,
-                                      int mode);
  private:
   bool SendSyncMessageFromAnyThread(IPC::SyncMessage* msg) const;
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
-};
-
-class RendererWebKitPlatformSupportImpl::Hyphenator
-    : public WebKit::WebHyphenator {
- public:
-  Hyphenator();
-  virtual ~Hyphenator();
-
-  virtual bool canHyphenate(const WebKit::WebString& locale);
-  virtual size_t computeLastHyphenLocation(
-      const WebKit::WebString& word,
-      size_t before_index,
-      const WebKit::WebString& locale);
-
- private:
-  scoped_ptr<content::Hyphenator> hyphenator_;
-
-  DISALLOW_COPY_AND_ASSIGN(Hyphenator);
 };
 
 #if defined(OS_ANDROID)
@@ -203,7 +182,11 @@ class RendererWebKitPlatformSupportImpl::SandboxSupport
 #elif defined(OS_POSIX)
   virtual void getFontFamilyForCharacters(
       const WebKit::WebUChar* characters,
-      size_t numCharacters,
+      size_t num_characters,
+      const char* preferred_locale,
+      WebKit::WebFontFamily* family);
+  virtual void getFontFamilyForCharacter(
+      WebKit::WebUChar32 character,
       const char* preferred_locale,
       WebKit::WebFontFamily* family);
   virtual void getRenderStyleForStrike(
@@ -212,10 +195,9 @@ class RendererWebKitPlatformSupportImpl::SandboxSupport
  private:
   // WebKit likes to ask us for the correct font family to use for a set of
   // unicode code points. It needs this information frequently so we cache it
-  // here. The key in this map is an array of 16-bit UTF16 values from WebKit.
-  // The value is a string containing the correct font family.
+  // here.
   base::Lock unicode_font_families_mutex_;
-  std::map<string16, WebKit::WebFontFamily> unicode_font_families_;
+  std::map<int32_t, WebKit::WebFontFamily> unicode_font_families_;
 #endif
 };
 #endif  // defined(OS_ANDROID)
@@ -226,7 +208,6 @@ RendererWebKitPlatformSupportImpl::RendererWebKitPlatformSupportImpl()
     : clipboard_client_(new RendererClipboardClient),
       clipboard_(new WebClipboardImpl(clipboard_client_.get())),
       mime_registry_(new RendererWebKitPlatformSupportImpl::MimeRegistry),
-      hyphenator_(new RendererWebKitPlatformSupportImpl::Hyphenator),
       sudden_termination_disables_(0),
       plugin_refresh_allowed_(true),
       shared_worker_repository_(new WebSharedWorkerRepositoryImpl),
@@ -319,16 +300,6 @@ bool RendererWebKitPlatformSupportImpl::isLinkVisited(
 WebKit::WebMessagePortChannel*
 RendererWebKitPlatformSupportImpl::createMessagePortChannel() {
   return new WebMessagePortChannelImpl(child_thread_loop_.get());
-}
-
-void RendererWebKitPlatformSupportImpl::prefetchHostName(
-    const WebString& hostname) {
-  if (hostname.isEmpty())
-    return;
-
-  std::string hostname_utf8 = UTF16ToUTF8(hostname);
-  GetContentClient()->renderer()->PrefetchHostName(
-      hostname_utf8.data(), hostname_utf8.length());
 }
 
 WebKit::WebPrescientNetworking*
@@ -548,15 +519,6 @@ bool RendererWebKitPlatformSupportImpl::FileUtilities::getFileInfo(
   return true;
 }
 
-base::PlatformFile RendererWebKitPlatformSupportImpl::FileUtilities::openFile(
-    const WebString& path,
-    int mode) {
-  IPC::PlatformFileForTransit handle = IPC::InvalidPlatformFileForTransit();
-  SendSyncMessageFromAnyThread(new FileUtilitiesMsg_OpenFile(
-      base::FilePath::FromUTF16Unsafe(path), mode, &handle));
-  return IPC::PlatformFileForTransitToPlatformFile(handle);
-}
-
 bool RendererWebKitPlatformSupportImpl::FileUtilities::
 SendSyncMessageFromAnyThread(IPC::SyncMessage* msg) const {
   base::TimeTicks begin = base::TimeTicks::Now();
@@ -564,40 +526,6 @@ SendSyncMessageFromAnyThread(IPC::SyncMessage* msg) const {
   base::TimeDelta delta = base::TimeTicks::Now() - begin;
   UMA_HISTOGRAM_TIMES("RendererSyncIPC.ElapsedTime", delta);
   return success;
-}
-
-//------------------------------------------------------------------------------
-
-RendererWebKitPlatformSupportImpl::Hyphenator::Hyphenator() {}
-
-RendererWebKitPlatformSupportImpl::Hyphenator::~Hyphenator() {}
-
-bool RendererWebKitPlatformSupportImpl::Hyphenator::canHyphenate(
-    const WebKit::WebString& locale) {
-  // Return false unless WebKit asks for US English dictionaries because WebKit
-  // can currently hyphenate only English words.
-  if (!locale.isEmpty() && !locale.equals("en-US"))
-    return false;
-
-  // Create a hyphenator object and attach it to the render thread so it can
-  // receive a dictionary file opened by a browser.
-  if (!hyphenator_) {
-    hyphenator_.reset(new content::Hyphenator(base::kInvalidPlatformFileValue));
-    if (!hyphenator_)
-      return false;
-    return hyphenator_->Attach(RenderThreadImpl::current(), locale);
-  }
-  return hyphenator_->CanHyphenate(locale);
-}
-
-size_t RendererWebKitPlatformSupportImpl::Hyphenator::computeLastHyphenLocation(
-    const WebKit::WebString& word,
-    size_t before_index,
-    const WebKit::WebString& locale) {
-  // Crash if WebKit calls this function when canHyphenate returns false.
-  DCHECK(locale.isEmpty() || locale.equals("en-US"));
-  DCHECK(hyphenator_.get());
-  return hyphenator_->ComputeLastHyphenLocation(word, before_index);
 }
 
 //------------------------------------------------------------------------------
@@ -656,10 +584,20 @@ RendererWebKitPlatformSupportImpl::SandboxSupport::getFontFamilyForCharacters(
     size_t num_characters,
     const char* preferred_locale,
     WebKit::WebFontFamily* family) {
+  DCHECK(num_characters <= 2);
+  WebKit::WebUChar32 c;
+  U16_GET(characters, 0, 0, num_characters, c);
+  getFontFamilyForCharacter(c, preferred_locale, family);
+}
+
+void
+RendererWebKitPlatformSupportImpl::SandboxSupport::getFontFamilyForCharacter(
+    WebKit::WebUChar32 character,
+    const char* preferred_locale,
+    WebKit::WebFontFamily* family) {
   base::AutoLock lock(unicode_font_families_mutex_);
-  const string16 key(characters, num_characters);
-  const std::map<string16, WebKit::WebFontFamily>::const_iterator iter =
-      unicode_font_families_.find(key);
+  const std::map<int32_t, WebKit::WebFontFamily>::const_iterator iter =
+      unicode_font_families_.find(character);
   if (iter != unicode_font_families_.end()) {
     family->name = iter->second.name;
     family->isBold = iter->second.isBold;
@@ -667,12 +605,8 @@ RendererWebKitPlatformSupportImpl::SandboxSupport::getFontFamilyForCharacters(
     return;
   }
 
-  GetFontFamilyForCharacters(
-      characters,
-      num_characters,
-      preferred_locale,
-      family);
-  unicode_font_families_.insert(make_pair(key, *family));
+  GetFontFamilyForCharacter(character, preferred_locale, family);
+  unicode_font_families_.insert(std::make_pair(character, *family));
 }
 
 void
@@ -1025,16 +959,6 @@ void RendererWebKitPlatformSupportImpl::SetMockGamepadsForTesting(
 
 //------------------------------------------------------------------------------
 
-WebKit::WebHyphenator* RendererWebKitPlatformSupportImpl::hyphenator() {
-  WebKit::WebHyphenator* hyphenator =
-      GetContentClient()->renderer()->OverrideWebHyphenator();
-  if (hyphenator)
-    return hyphenator;
-  return hyphenator_.get();
-}
-
-//------------------------------------------------------------------------------
-
 WebKit::WebSpeechSynthesizer*
 RendererWebKitPlatformSupportImpl::createSpeechSynthesizer(
     WebKit::WebSpeechSynthesizerClient* client) {
@@ -1101,7 +1025,8 @@ void RendererWebKitPlatformSupportImpl::setDeviceMotionListener(
       device_motion_event_pump_->Attach(RenderThreadImpl::current());
     }
     device_motion_event_pump_->SetListener(listener);
-  } else {
+  } else if (listener) {
+    // Testing mode: just echo the test data to the listener.
     base::MessageLoopProxy::current()->PostTask(
         FROM_HERE,
         base::Bind(&WebKit::WebDeviceMotionListener::didChangeDeviceMotion,

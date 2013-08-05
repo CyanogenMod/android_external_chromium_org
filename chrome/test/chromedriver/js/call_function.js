@@ -51,7 +51,7 @@ Cache.prototype = {
       if (item == this.cache_[i])
         return i;
     }
-    var id = this.idPrefix_  + ':' + this.nextId_;
+    var id = this.idPrefix_  + '-' + this.nextId_;
     this.cache_[id] = item;
     this.nextId_++;
     return id;
@@ -98,8 +98,7 @@ Cache.prototype = {
  */
 function getPageCache(opt_doc) {
   var doc = opt_doc || document;
-  // We use the same key as selenium's javascript/atoms/inject.js.
-  var key = '$wdc_';
+  var key = '$cdc_asdjflasutopfhvcZLmcfl_';
   if (!(key in doc))
     doc[key] = new Cache();
   return doc[key];

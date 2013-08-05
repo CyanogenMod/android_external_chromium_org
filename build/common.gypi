@@ -340,6 +340,9 @@
       # Enable printing support and UI.
       'enable_printing%': 1,
 
+      # Enable spell checker.
+      'enable_spellcheck%': 1,
+
       # Webrtc compilation is enabled by default. Set to 0 to disable.
       'enable_webrtc%': 1,
 
@@ -511,6 +514,7 @@
           'enable_extensions%': 0,
           'enable_google_now%': 0,
           'enable_printing%': 0,
+          'enable_spellcheck%': 0,
           'enable_themes%': 0,
           'proprietary_codecs%': 1,
           'remoting%': 0,
@@ -520,8 +524,8 @@
           'native_memory_pressure_signals%': 1,
         }],
 
-        # Enable autofill dialog for Android and Views-enabled platforms for now.
-        ['toolkit_views==1 or (OS=="android" and android_webview_build==0) or OS=="mac"', {
+        # Enable autofill dialog for Mac and Views-enabled platforms for now.
+        ['toolkit_views==1 or OS=="mac"', {
           'enable_autofill_dialog%': 1
         }],
 
@@ -817,6 +821,7 @@
     'test_isolation_fail_on_missing': '<(test_isolation_fail_on_missing)',
     'enable_automation%': '<(enable_automation)',
     'enable_printing%': '<(enable_printing)',
+    'enable_spellcheck%': '<(enable_spellcheck)',
     'enable_google_now%': '<(enable_google_now)',
     'enable_captive_portal_detection%': '<(enable_captive_portal_detection)',
     'disable_ftp_support%': '<(disable_ftp_support)',
@@ -1542,7 +1547,7 @@
           }],
         ],
       }],
-      ['OS=="mac"', {
+      ['OS=="mac" or OS=="ios"', {
         'grit_defines': ['-D', 'scale_factors=2x'],
       }],
       ['OS == "ios"', {
@@ -2239,6 +2244,9 @@
       }],
       ['enable_printing==1', {
         'defines': ['ENABLE_PRINTING=1'],
+      }],
+      ['enable_spellcheck==1', {
+        'defines': ['ENABLE_SPELLCHECK=1'],
       }],
       ['enable_captive_portal_detection==1', {
         'defines': ['ENABLE_CAPTIVE_PORTAL_DETECTION=1'],
@@ -3841,9 +3849,6 @@
                 # this is worth fixing.
                 '-Wno-c++11-narrowing',
 
-                # TODO(thakis): Remove, http://crbug.com/263960
-                '-Wno-reserved-user-defined-literal',
-
                 # Don't die on dtoa code that uses a char as an array index.
                 # This is required solely for base/third_party/dmg_fp/dtoa.cc.
                 '-Wno-char-subscripts',
@@ -4156,8 +4161,6 @@
             '-Wno-unnamed-type-template-args',
             # Match OS X clang C++11 warning settings.
             '-Wno-c++11-narrowing',
-            # TODO(thakis): Remove, http://crbug.com/263960
-            '-Wno-reserved-user-defined-literal',
           ],
         },
         'target_conditions': [

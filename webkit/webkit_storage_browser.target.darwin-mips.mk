@@ -76,10 +76,10 @@ LOCAL_SRC_FILES := \
 	webkit/browser/fileapi/file_system_file_stream_reader.cc \
 	webkit/browser/fileapi/file_system_file_util.cc \
 	webkit/browser/fileapi/file_system_operation_context.cc \
+	webkit/browser/fileapi/file_system_operation_impl.cc \
 	webkit/browser/fileapi/file_system_operation_runner.cc \
 	webkit/browser/fileapi/file_system_options.cc \
 	webkit/browser/fileapi/file_system_quota_client.cc \
-	webkit/browser/fileapi/file_system_task_runners.cc \
 	webkit/browser/fileapi/file_system_url.cc \
 	webkit/browser/fileapi/file_system_url_request_job.cc \
 	webkit/browser/fileapi/file_system_url_request_job_factory.cc \
@@ -89,7 +89,6 @@ LOCAL_SRC_FILES := \
 	webkit/browser/fileapi/isolated_file_system_backend.cc \
 	webkit/browser/fileapi/isolated_file_util.cc \
 	webkit/browser/fileapi/local_file_stream_writer.cc \
-	webkit/browser/fileapi/local_file_system_operation.cc \
 	webkit/browser/fileapi/local_file_util.cc \
 	webkit/browser/fileapi/mount_points.cc \
 	webkit/browser/fileapi/native_file_util.cc \
@@ -109,6 +108,7 @@ LOCAL_SRC_FILES := \
 	webkit/browser/fileapi/syncable/local_file_sync_context.cc \
 	webkit/browser/fileapi/syncable/local_file_sync_status.cc \
 	webkit/browser/fileapi/syncable/sync_file_metadata.cc \
+	webkit/browser/fileapi/syncable/sync_file_system_backend.cc \
 	webkit/browser/fileapi/syncable/sync_status_code.cc \
 	webkit/browser/fileapi/syncable/syncable_file_operation_runner.cc \
 	webkit/browser/fileapi/syncable/syncable_file_system_operation.cc \

@@ -150,6 +150,8 @@ int GetEventFlagsFromXState(unsigned int state) {
     flags |= ui::EF_ALT_DOWN;
   if (state & LockMask)
     flags |= ui::EF_CAPS_LOCK_DOWN;
+  if (state & Mod5Mask)
+    flags |= ui::EF_ALTGR_DOWN;
   if (state & Button1Mask)
     flags |= ui::EF_LEFT_MOUSE_BUTTON;
   if (state & Button2Mask)
@@ -311,7 +313,10 @@ EventType EventTypeFromNative(const base::NativeEvent& native_event) {
         return ET_MOUSE_DRAGGED;
       return ET_MOUSE_MOVED;
     case EnterNotify:
-      return ET_MOUSE_ENTERED;
+      // The standard on Windows is to send a MouseMove event when the mouse
+      // first enters a window instead of sending a special mouse enter event.
+      // To be consistent we follow the same style.
+      return ET_MOUSE_MOVED;
     case LeaveNotify:
       return ET_MOUSE_EXITED;
     case GenericEvent: {
@@ -613,6 +618,22 @@ gfx::Vector2d GetMouseWheelOffset(const base::NativeEvent& native_event) {
   }
 }
 
+void ClearTouchIdIfReleased(const base::NativeEvent& xev) {
+#if defined(USE_XI2_MT)
+  ui::EventType type = ui::EventTypeFromNative(xev);
+  if (type == ui::ET_TOUCH_CANCELLED ||
+      type == ui::ET_TOUCH_RELEASED) {
+    ui::TouchFactory* factory = ui::TouchFactory::GetInstance();
+    ui::DeviceDataManager* manager = ui::DeviceDataManager::GetInstance();
+    double tracking_id;
+    if (manager->GetEventData(
+        *xev, ui::DeviceDataManager::DT_TOUCH_TRACKING_ID, &tracking_id)) {
+      factory->ReleaseSlotForTrackingID(tracking_id);
+    }
+  }
+#endif
+}
+
 int GetTouchId(const base::NativeEvent& xev) {
   double slot = 0;
   ui::TouchFactory* factory = ui::TouchFactory::GetInstance();
@@ -632,11 +653,6 @@ int GetTouchId(const base::NativeEvent& xev) {
     LOG(ERROR) << "Could not get the tracking ID for the event. Using 0.";
   } else {
     slot = factory->GetSlotForTrackingID(tracking_id);
-    ui::EventType type = ui::EventTypeFromNative(xev);
-    if (type == ui::ET_TOUCH_CANCELLED ||
-        type == ui::ET_TOUCH_RELEASED) {
-      factory->ReleaseSlotForTrackingID(tracking_id);
-    }
   }
 #else
   if (!manager->GetEventData(

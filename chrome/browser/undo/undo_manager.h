@@ -21,10 +21,9 @@ class UndoGroup {
   ~UndoGroup();
 
   void AddOperation(scoped_ptr<UndoOperation> operation);
-  bool has_operations() const {
-    return !operations_.empty();
+  const std::vector<UndoOperation*>& undo_operations() {
+    return operations_.get();
   }
-
   void Undo();
 
  private:
@@ -61,13 +60,24 @@ class UndoManager {
   void ResumeUndoTracking();
   bool IsUndoTrakingSuspended() const;
 
+  // Returns all UndoOperations that are awaiting Undo or Redo. Note that
+  // ownership of the UndoOperations is retained by UndoManager.
+  std::vector<UndoOperation*> GetAllUndoOperations() const;
+
+  // Remove all undo and redo operations. Note that grouping of actions and
+  // suspension of undo tracking states are left unchanged.
+  void RemoveAllOperations();
+
  private:
   void Undo(bool* performing_indicator,
             ScopedVector<UndoGroup>* active_undo_group);
+  bool is_user_action() const { return !performing_undo_ && !performing_redo_; }
 
-  void RemoveAllActions();
-  void RemoveAllRedoActions();
+  // Handle the addition of |new_undo_group| to the active undo group container.
+  void AddUndoGroup(UndoGroup* new_undo_group);
 
+  // Returns the undo or redo UndoGroup container that should store the next
+  // change taking into account if an undo or redo is being executed.
   ScopedVector<UndoGroup>* GetActiveUndoGroup();
 
   // Containers of user actions ready for an undo or redo treated as a stack.

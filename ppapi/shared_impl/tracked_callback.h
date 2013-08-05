@@ -116,6 +116,7 @@ class PPAPI_SHARED_EXPORT TrackedCallback
   bool is_blocking() {
     return !callback_.func;
   }
+
   bool is_required() {
     return (callback_.func &&
             !(callback_.flags & PP_COMPLETIONCALLBACK_FLAG_OPTIONAL));

@@ -19,6 +19,7 @@
 #include "content/renderer/browser_plugin/browser_plugin_bindings.h"
 #include "content/renderer/browser_plugin/browser_plugin_compositing_helper.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
+#include "content/renderer/cursor_utils.h"
 #include "content/renderer/drop_data_builder.h"
 #include "content/renderer/render_process_impl.h"
 #include "content/renderer/render_thread_impl.h"
@@ -37,7 +38,6 @@
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "webkit/plugins/sad_plugin.h"
-#include "webkit/renderer/cursor_utils.h"
 
 #if defined (OS_WIN)
 #include "base/sys_info.h"
@@ -613,6 +613,7 @@ void BrowserPlugin::OnUpdateRect(
     browser_plugin_manager()->Send(new BrowserPluginHostMsg_UpdateRect_ACK(
         render_view_routing_id_,
         guest_instance_id_,
+        true,
         auto_size_params,
         resize_guest_params));
     return;
@@ -641,49 +642,51 @@ void BrowserPlugin::OnUpdateRect(
     }
   }
 
-  // No more work to do since the guest is no longer using a damage buffer.
-  if (!UsesDamageBuffer(params))
-    return;
+  if (UsesDamageBuffer(params)) {
 
-  // If we are seeing damage buffers, HW compositing should be turned off.
-  EnableCompositing(false);
+    // If we are seeing damage buffers, HW compositing should be turned off.
+    EnableCompositing(false);
 
-  // If we are now using a new damage buffer, then that means that the guest
-  // has updated its size state in response to a resize request. We change
-  // the backing store's size to accomodate the new damage buffer size.
-  if (use_new_damage_buffer) {
-    int backing_store_width = auto_size ? GetAdjustedMaxWidth() : width();
-    int backing_store_height = auto_size ? GetAdjustedMaxHeight(): height();
-    backing_store_.reset(
-        new BrowserPluginBackingStore(
-            gfx::Size(backing_store_width, backing_store_height),
-            params.scale_factor));
-  }
-
-  // If we just transitioned from the compositing path to the software path
-  // then we might not yet have a damage buffer.
-  if (current_damage_buffer_) {
-    // Update the backing store.
-    if (!params.scroll_rect.IsEmpty()) {
-      backing_store_->ScrollBackingStore(params.scroll_delta,
-                                         params.scroll_rect,
-                                         params.view_size);
+    // If we are now using a new damage buffer, then that means that the guest
+    // has updated its size state in response to a resize request. We change
+    // the backing store's size to accomodate the new damage buffer size.
+    if (use_new_damage_buffer) {
+      int backing_store_width = auto_size ? GetAdjustedMaxWidth() : width();
+      int backing_store_height = auto_size ? GetAdjustedMaxHeight(): height();
+      backing_store_.reset(
+          new BrowserPluginBackingStore(
+              gfx::Size(backing_store_width, backing_store_height),
+              params.scale_factor));
     }
-    backing_store_->PaintToBackingStore(params.bitmap_rect,
-                                        params.copy_rects,
-                                        current_damage_buffer_->memory());
-    // Invalidate the container.
-    // If the BrowserPlugin is scheduled to be deleted, then container_ will be
-    // NULL so we shouldn't attempt to access it.
-    if (container_)
-      container_->invalidate();
+
+    // If we just transitioned from the compositing path to the software path
+    // then we might not yet have a damage buffer.
+    if (current_damage_buffer_) {
+      // Update the backing store.
+      if (!params.scroll_rect.IsEmpty()) {
+        backing_store_->ScrollBackingStore(params.scroll_delta,
+                                          params.scroll_rect,
+                                          params.view_size);
+      }
+      backing_store_->PaintToBackingStore(params.bitmap_rect,
+                                          params.copy_rects,
+                                          current_damage_buffer_->memory());
+      // Invalidate the container.
+      // If the BrowserPlugin is scheduled to be deleted, then container_ will
+      // be NULL so we shouldn't attempt to access it.
+      if (container_)
+        container_->invalidate();
+    }
   }
 
+  // BrowserPluginHostMsg_UpdateRect_ACK is used by both the compositing and
+  // software paths to piggyback updated autosize parameters.
   if (auto_size)
     PopulateAutoSizeParameters(&auto_size_params, auto_size);
   browser_plugin_manager()->Send(new BrowserPluginHostMsg_UpdateRect_ACK(
       render_view_routing_id_,
       guest_instance_id_,
+      UsesDamageBuffer(params),
       auto_size_params,
       resize_guest_params));
 }
@@ -1364,7 +1367,7 @@ bool BrowserPlugin::handleInputEvent(const WebKit::WebInputEvent& event,
                                                 guest_instance_id_,
                                                 plugin_rect_,
                                                 modified_event));
-  webkit_glue::GetWebKitCursorInfo(cursor_, &cursor_info);
+  GetWebKitCursorInfo(cursor_, &cursor_info);
   return true;
 }
 

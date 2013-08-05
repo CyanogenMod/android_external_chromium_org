@@ -16,7 +16,6 @@
 #include "base/logging.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop/message_loop.h"
-#include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -24,6 +23,7 @@
 #include "base/values.h"
 #include "chrome/browser/devtools/adb/android_rsa.h"
 #include "chrome/browser/devtools/adb_client_socket.h"
+#include "chrome/browser/devtools/adb_web_socket.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/devtools/tethering_adb_filter.h"
 #include "chrome/browser/profiles/profile.h"
@@ -36,10 +36,8 @@
 #include "content/public/browser/devtools_manager.h"
 #include "crypto/rsa_private_key.h"
 #include "net/base/net_errors.h"
-#include "net/server/web_socket.h"
 
 using content::BrowserThread;
-using net::WebSocket;
 
 namespace {
 
@@ -53,18 +51,11 @@ static const char kOpenedUnixSocketsCommand[] = "shell:cat /proc/net/unix";
 
 static const char kPageListRequest[] = "GET /json HTTP/1.1\r\n\r\n";
 static const char kVersionRequest[] = "GET /json/version HTTP/1.1\r\n\r\n";
-static const char kWebSocketUpgradeRequest[] = "GET %s HTTP/1.1\r\n"
-    "Upgrade: WebSocket\r\n"
-    "Connection: Upgrade\r\n"
-    "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
-    "Sec-WebSocket-Version: 13\r\n"
-    "\r\n";
 const int kAdbPort = 5037;
 const int kBufferSize = 16 * 1024;
 const int kAdbPollingIntervalMs = 1000;
 
 typedef DevToolsAdbBridge::Callback Callback;
-typedef DevToolsAdbBridge::PagesCallback PagesCallback;
 typedef std::vector<scoped_refptr<DevToolsAdbBridge::AndroidDevice> >
     AndroidDevices;
 typedef base::Callback<void(const AndroidDevices&)> AndroidDevicesCallback;
@@ -164,48 +155,59 @@ class UsbDeviceImpl : public DevToolsAdbBridge::AndroidDevice {
   scoped_refptr<AndroidUsbDevice> device_;
 };
 
-class AdbQueryCommand : public base::RefCounted<AdbQueryCommand> {
+class AdbDevicesCommand : public base::RefCountedThreadSafe<
+    AdbDevicesCommand,
+    content::BrowserThread::DeleteOnUIThread> {
  public:
-  AdbQueryCommand(const std::string& query,
-                  const Callback& callback)
-      : query_(query),
-        callback_(callback) {
-  }
-
-  void Run() {
-    AdbClientSocket::AdbQuery(kAdbPort, query_,
-                              base::Bind(&AdbQueryCommand::Handle, this));
+  AdbDevicesCommand(DevToolsAdbBridge* bridge,
+                    const AndroidDevicesCallback& callback)
+     : bridge_(bridge),
+       callback_(callback) {
+    bridge_->EnumerateUsbDevices(
+        base::Bind(&AdbDevicesCommand::ReceivedUsbDevices, this));
   }
 
  private:
-  friend class base::RefCounted<AdbQueryCommand>;
-  virtual ~AdbQueryCommand() {}
+  friend struct content::BrowserThread::DeleteOnThread<
+      content::BrowserThread::UI>;
+  friend class base::DeleteHelper<AdbDevicesCommand>;
 
-  void Handle(int result, const std::string& response) {
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        base::Bind(&AdbQueryCommand::Respond, this, result, response));
+  virtual ~AdbDevicesCommand() {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   }
 
-  void Respond(int result, const std::string& response) {
-    callback_.Run(result, response);
+  void ReceivedUsbDevices(const AndroidDevices& usb_devices) {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    bridge_->GetAdbMessageLoop()->PostTask(FROM_HERE,
+        base::Bind(&DevToolsAdbBridge::EnumerateAdbDevices, bridge_,
+                   base::Bind(&AdbDevicesCommand::ReceivedAdbDevices,
+                              this,
+                              usb_devices)));
   }
 
-  std::string query_;
-  Callback callback_;
+  void ReceivedAdbDevices(const AndroidDevices& usb_devices,
+                          const AndroidDevices& adb_devices) {
+    AndroidDevices devices(usb_devices);
+    devices.insert(devices.end(), adb_devices.begin(), adb_devices.end());
+    callback_.Run(devices);
+  }
+
+  scoped_refptr<DevToolsAdbBridge> bridge_;
+  AndroidDevicesCallback callback_;
 };
 
 class AdbPagesCommand : public base::RefCountedThreadSafe<
     AdbPagesCommand,
     content::BrowserThread::DeleteOnUIThread> {
  public:
-  explicit AdbPagesCommand(DevToolsAdbBridge* bridge,
-                           const PagesCallback& callback)
+  typedef base::Callback<void(DevToolsAdbBridge::RemoteDevices*)> Callback;
+
+  AdbPagesCommand(DevToolsAdbBridge* bridge, const Callback& callback)
      : bridge_(bridge),
        callback_(callback) {
-    pages_.reset(new DevToolsAdbBridge::RemotePages());
-    bridge_->EnumerateUsbDevices(
-        base::Bind(&AdbPagesCommand::ReceivedUsbDevices, this));
+    remote_devices_.reset(new DevToolsAdbBridge::RemoteDevices());
+    new AdbDevicesCommand(bridge,
+        base::Bind(&AdbPagesCommand::ReceivedDevices, this));
   }
 
  private:
@@ -217,16 +219,8 @@ class AdbPagesCommand : public base::RefCountedThreadSafe<
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   }
 
-  void ReceivedUsbDevices(const AndroidDevices& devices) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  void ReceivedDevices(const AndroidDevices& devices) {
     devices_ = devices;
-    bridge_->GetAdbMessageLoop()->PostTask(FROM_HERE,
-        base::Bind(&DevToolsAdbBridge::EnumerateAdbDevices, bridge_,
-                   base::Bind(&AdbPagesCommand::ReceivedAdbDevices, this)));
-  }
-
-  void ReceivedAdbDevices(const AndroidDevices& devices) {
-    devices_.insert(devices_.end(), devices.begin(), devices.end());
     ProcessSerials();
   }
 
@@ -246,6 +240,8 @@ class AdbPagesCommand : public base::RefCountedThreadSafe<
           devices_.back();
       sockets_.push_back(std::string());
       device->set_model(kUnknownModel);
+      remote_devices_->push_back(
+          new DevToolsAdbBridge::RemoteDevice(bridge_, device));
       device->HttpQuery(
           std::string(), kVersionRequest,
           base::Bind(&AdbPagesCommand::ReceivedVersion, this));
@@ -267,6 +263,8 @@ class AdbPagesCommand : public base::RefCountedThreadSafe<
     }
     scoped_refptr<DevToolsAdbBridge::AndroidDevice> device = devices_.back();
     device->set_model(response);
+    remote_devices_->push_back(
+        new DevToolsAdbBridge::RemoteDevice(bridge_, device));
     device->RunCommand(kOpenedUnixSocketsCommand,
                        base::Bind(&AdbPagesCommand::ReceivedSockets, this));
   }
@@ -348,20 +346,25 @@ class AdbPagesCommand : public base::RefCountedThreadSafe<
 
     scoped_refptr<DevToolsAdbBridge::AndroidDevice> device = devices_.back();
     base::Value* item;
+
+    scoped_refptr<DevToolsAdbBridge::RemoteBrowser> remote_browser =
+        new DevToolsAdbBridge::RemoteBrowser(
+            bridge_, device, socket, socket_to_package_[socket]);
+    remote_devices_->back()->AddBrowser(remote_browser);
+
     for (size_t i = 0; i < list_value->GetSize(); ++i) {
       list_value->Get(i, &item);
       base::DictionaryValue* dict;
       if (!item || !item->GetAsDictionary(&dict))
         continue;
-      pages_->push_back(
-          new DevToolsAdbBridge::RemotePage(
-              device, socket_to_package_[socket], socket, *dict));
+      remote_browser->AddPage(new DevToolsAdbBridge::RemotePage(
+          bridge_, device, remote_browser->socket(), *dict));
     }
     ProcessSockets();
   }
 
   void Respond() {
-    callback_.Run(net::OK, pages_.release());
+    callback_.Run(remote_devices_.release());
   }
 
   void ParseSocketsList(const std::string& response) {
@@ -407,11 +410,11 @@ class AdbPagesCommand : public base::RefCountedThreadSafe<
   }
 
   scoped_refptr<DevToolsAdbBridge> bridge_;
-  PagesCallback callback_;
+  Callback callback_;
   AndroidDevices devices_;
   std::vector<std::string> sockets_;
   std::map<std::string, std::string> socket_to_package_;
-  scoped_ptr<DevToolsAdbBridge::RemotePages> pages_;
+  scoped_ptr<DevToolsAdbBridge::RemoteDevices> remote_devices_;
 };
 
 }  // namespace
@@ -510,193 +513,6 @@ void DevToolsAdbBridge::AndroidDevice::OnHttpSocketOpened2(
   AdbClientSocket::HttpQuery(socket, request, callback);
 }
 
-class AdbWebSocket : public base::RefCountedThreadSafe<AdbWebSocket> {
- public:
-  class Delegate {
-   public:
-    virtual void OnSocketOpened() = 0;
-
-    virtual void OnFrameRead(const std::string& message) = 0;
-
-    virtual void OnSocketClosed(bool closed_by_device) = 0;
-
-    virtual bool ProcessIncomingMessage(const std::string& message) = 0;
-
-    virtual void ProcessOutgoingMessage(const std::string& message) = 0;
-
-   protected:
-    virtual ~Delegate() {}
-  };
-
-  AdbWebSocket(
-      scoped_refptr<DevToolsAdbBridge::AndroidDevice> device,
-      const std::string& socket_name,
-      const std::string& url,
-      scoped_refptr<DevToolsAdbBridge::RefCountedAdbThread> adb_thread,
-      Delegate* delegate)
-      : device_(device),
-        socket_name_(socket_name),
-        url_(url),
-        adb_thread_(adb_thread),
-        delegate_(delegate) {
-  }
-
-  void Connect() {
-    adb_thread_->message_loop()->PostTask(
-        FROM_HERE, base::Bind(&AdbWebSocket::ConnectOnHandlerThread, this));
-  }
-
-  void Disconnect() {
-    adb_thread_->message_loop()->PostTask(
-        FROM_HERE,
-        base::Bind(&AdbWebSocket::DisconnectOnHandlerThread, this, false));
-  }
-
-  void SendFrame(const std::string& message) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    adb_thread_->message_loop()->PostTask(
-        FROM_HERE,
-        base::Bind(&AdbWebSocket::SendFrameOnHandlerThread, this, message));
-  }
-
- private:
-  friend class base::RefCountedThreadSafe<AdbWebSocket>;
-
-  virtual ~AdbWebSocket() {}
-
-  void ConnectOnHandlerThread() {
-    device_->HttpQuery(
-        socket_name_,
-        base::StringPrintf(kWebSocketUpgradeRequest, url_.c_str()),
-        base::Bind(&AdbWebSocket::ConnectedOnHandlerThread, this));
-  }
-
-  void ConnectedOnHandlerThread(int result, net::StreamSocket* socket) {
-    if (result != net::OK || socket == NULL) {
-      BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-          base::Bind(&AdbWebSocket::OnSocketClosed, this, true));
-      return;
-    }
-    socket_.reset(socket);
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-        base::Bind(&AdbWebSocket::OnSocketOpened, this));
-    StartListeningOnHandlerThread();
-  }
-
-  void StartListeningOnHandlerThread() {
-    scoped_refptr<net::IOBuffer> response_buffer =
-        new net::IOBuffer(kBufferSize);
-    int result = socket_->Read(
-        response_buffer.get(),
-        kBufferSize,
-        base::Bind(&AdbWebSocket::OnBytesRead, this, response_buffer));
-    if (result != net::ERR_IO_PENDING)
-      OnBytesRead(response_buffer, result);
-  }
-
-  void OnBytesRead(scoped_refptr<net::IOBuffer> response_buffer, int result) {
-    if (!socket_)
-      return;
-
-    if (result <= 0) {
-      DisconnectOnHandlerThread(true);
-      return;
-    }
-
-    std::string data = std::string(response_buffer->data(), result);
-    response_buffer_ += data;
-
-    int bytes_consumed;
-    std::string output;
-    WebSocket::ParseResult parse_result = WebSocket::DecodeFrameHybi17(
-        response_buffer_, false, &bytes_consumed, &output);
-
-    while (parse_result == WebSocket::FRAME_OK) {
-      response_buffer_ = response_buffer_.substr(bytes_consumed);
-      if (!delegate_ || !delegate_->ProcessIncomingMessage(output)) {
-        BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-            base::Bind(&AdbWebSocket::OnFrameRead, this, output));
-      }
-      parse_result = WebSocket::DecodeFrameHybi17(
-          response_buffer_, false, &bytes_consumed, &output);
-    }
-
-    if (parse_result == WebSocket::FRAME_ERROR ||
-        parse_result == WebSocket::FRAME_CLOSE) {
-      DisconnectOnHandlerThread(true);
-      return;
-    }
-
-    result = socket_->Read(
-        response_buffer.get(),
-        kBufferSize,
-        base::Bind(&AdbWebSocket::OnBytesRead, this, response_buffer));
-    if (result != net::ERR_IO_PENDING)
-      OnBytesRead(response_buffer, result);
-  }
-
-  void SendFrameOnHandlerThread(const std::string& data) {
-    delegate_->ProcessOutgoingMessage(data);
-    int mask = base::RandInt(0, 0x7FFFFFFF);
-    std::string encoded_frame = WebSocket::EncodeFrameHybi17(data, mask);
-    request_buffer_ += encoded_frame;
-    if (request_buffer_.length() == encoded_frame.length())
-      SendPendingRequests(0);
-  }
-
-  void SendPendingRequests(int result) {
-    if (!socket_)
-      return;
-    if (result < 0) {
-      DisconnectOnHandlerThread(true);
-      return;
-    }
-    request_buffer_ = request_buffer_.substr(result);
-    if (request_buffer_.empty())
-      return;
-
-    scoped_refptr<net::StringIOBuffer> buffer =
-        new net::StringIOBuffer(request_buffer_);
-    result = socket_->Write(buffer.get(), buffer->size(),
-                            base::Bind(&AdbWebSocket::SendPendingRequests,
-                                       this));
-    if (result != net::ERR_IO_PENDING)
-      SendPendingRequests(result);
-  }
-
-  void DisconnectOnHandlerThread(bool closed_by_device) {
-    if (!socket_)
-      return;
-    // Wipe out socket_ first since Disconnect can re-enter this method.
-    scoped_ptr<net::StreamSocket> socket(socket_.release());
-    socket->Disconnect();
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-        base::Bind(&AdbWebSocket::OnSocketClosed, this, closed_by_device));
-  }
-
-  void OnSocketOpened() {
-    delegate_->OnSocketOpened();
-  }
-
-  void OnFrameRead(const std::string& message) {
-    delegate_->OnFrameRead(message);
-  }
-
-  void OnSocketClosed(bool closed_by_device) {
-    delegate_->OnSocketClosed(closed_by_device);
-  }
-
-  scoped_refptr<DevToolsAdbBridge::AndroidDevice> device_;
-  std::string socket_name_;
-  std::string url_;
-  scoped_refptr<DevToolsAdbBridge::RefCountedAdbThread> adb_thread_;
-  scoped_ptr<net::StreamSocket> socket_;
-  Delegate* delegate_;
-  std::string response_buffer_;
-  std::string request_buffer_;
-  DISALLOW_COPY_AND_ASSIGN(AdbWebSocket);
-};
-
 class AgentHostDelegate : public content::DevToolsExternalAgentProxyDelegate,
                           public AdbWebSocket::Delegate {
  public:
@@ -706,15 +522,14 @@ class AgentHostDelegate : public content::DevToolsExternalAgentProxyDelegate,
       const std::string& socket_name,
       const std::string& debug_url,
       const std::string& frontend_url,
-      scoped_refptr<DevToolsAdbBridge::RefCountedAdbThread> adb_thread,
+      base::MessageLoop* adb_message_loop,
       Profile* profile)
       : id_(id),
         frontend_url_(frontend_url),
         profile_(profile),
         tethering_adb_filter_(kAdbPort, device->serial()) {
     web_socket_ = new AdbWebSocket(
-        device, socket_name, debug_url, adb_thread, this);
-    web_socket_->Connect();
+        device, socket_name, debug_url, adb_message_loop, this);
     g_host_delegates.Get()[id] = this;
   }
 
@@ -773,12 +588,13 @@ class AgentHostDelegate : public content::DevToolsExternalAgentProxyDelegate,
   DISALLOW_COPY_AND_ASSIGN(AgentHostDelegate);
 };
 
-DevToolsAdbBridge::RemotePage::RemotePage(scoped_refptr<AndroidDevice> device,
-                                          const std::string& package,
-                                          const std::string& socket,
-                                          const base::DictionaryValue& value)
-    : device_(device),
-      package_(package),
+DevToolsAdbBridge::RemotePage::RemotePage(
+    scoped_refptr<DevToolsAdbBridge> bridge,
+    scoped_refptr<AndroidDevice> device,
+    const std::string& socket,
+    const base::DictionaryValue& value)
+    : bridge_(bridge),
+      device_(device),
       socket_(socket) {
   value.GetString("id", &id_);
   value.GetString("url", &url_);
@@ -798,10 +614,50 @@ DevToolsAdbBridge::RemotePage::RemotePage(scoped_refptr<AndroidDevice> device,
     frontend_url_ = frontend_url_.substr(0, ws_param);
   if (frontend_url_.find("http:") == 0)
     frontend_url_ = "https:" + frontend_url_.substr(5);
+
+  global_id_ = base::StringPrintf(
+      "%s:%s:%s", device->serial().c_str(), socket_.c_str(), id_.c_str());
+}
+
+void DevToolsAdbBridge::RemotePage::Inspect(Profile* profile) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  AgentHostDelegates::iterator it =
+      g_host_delegates.Get().find(global_id());
+  if (it != g_host_delegates.Get().end())
+    it->second->OpenFrontend();
+  else if (!debug_url_.empty())
+    new AgentHostDelegate(
+        global_id_, device_, socket_, debug_url_,
+        frontend_url_, bridge_->GetAdbMessageLoop(), profile);
 }
 
 DevToolsAdbBridge::RemotePage::~RemotePage() {
 }
+
+DevToolsAdbBridge::RemoteBrowser::RemoteBrowser(
+    scoped_refptr<DevToolsAdbBridge> bridge,
+    scoped_refptr<AndroidDevice> device,
+    const std::string& socket,
+    const std::string& name)
+    : bridge_(bridge),
+      device_(device),
+      socket_(socket),
+      name_(name) {
+}
+
+DevToolsAdbBridge::RemoteBrowser::~RemoteBrowser() {
+}
+
+DevToolsAdbBridge::RemoteDevice::RemoteDevice(
+    scoped_refptr<DevToolsAdbBridge> bridge,
+    scoped_refptr<AndroidDevice> device)
+    : bridge_(bridge),
+      device_(device) {
+}
+
+DevToolsAdbBridge::RemoteDevice::~RemoteDevice() {
+}
+
 
 DevToolsAdbBridge::RefCountedAdbThread*
 DevToolsAdbBridge::RefCountedAdbThread::instance_ = NULL;
@@ -874,31 +730,10 @@ void DevToolsAdbBridge::EnumerateAdbDevices(
       base::Bind(&DevToolsAdbBridge::ReceivedAdbDevices, this, callback));
 }
 
-void DevToolsAdbBridge::Attach(const std::string& page_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (!has_message_loop_)
-    return;
-
-  for (RemotePages::iterator it = pages_->begin(); it != pages_->end(); ++it) {
-    scoped_refptr<RemotePage> page = *it;
-    // Assuming page->id() is unique across devices (since it is a GUID).
-    if (page->id() == page_id) {
-      AgentHostDelegates::iterator it = g_host_delegates.Get().find(page_id);
-      if (it != g_host_delegates.Get().end())
-        it->second->OpenFrontend();
-      else if (!page->debug_url().empty())
-        new AgentHostDelegate(
-            page_id, page->device(), page->socket(), page->debug_url(),
-            page->frontend_url(), adb_thread_, profile_);
-      break;
-    }
-  }
-}
-
 void DevToolsAdbBridge::AddListener(Listener* listener) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (listeners_.empty())
-    RequestPages();
+    RequestRemoteDevices();
   listeners_.push_back(listener);
 }
 
@@ -956,24 +791,23 @@ void DevToolsAdbBridge::ReceivedAdbDevices(
   callback.Run(devices);
 }
 
-void DevToolsAdbBridge::RequestPages() {
+void DevToolsAdbBridge::RequestRemoteDevices() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (!has_message_loop_)
     return;
 
-  new AdbPagesCommand(this,
-                      base::Bind(&DevToolsAdbBridge::ReceivedPages, this));
+  new AdbPagesCommand(
+      this, base::Bind(&DevToolsAdbBridge::ReceivedRemoteDevices, this));
 }
 
-void DevToolsAdbBridge::ReceivedPages(int result, RemotePages* pages_ptr) {
+void DevToolsAdbBridge::ReceivedRemoteDevices(RemoteDevices* devices_ptr) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  pages_.reset(pages_ptr);
 
-  if (result == net::OK) {
-    Listeners copy(listeners_);
-    for (Listeners::iterator it = copy.begin(); it != copy.end(); ++it)
-      (*it)->RemotePagesChanged(pages_.get());
-  }
+  scoped_ptr<RemoteDevices> devices(devices_ptr);
+
+  Listeners copy(listeners_);
+  for (Listeners::iterator it = copy.begin(); it != copy.end(); ++it)
+    (*it)->RemoteDevicesChanged(devices.get());
 
   if (listeners_.empty())
     return;
@@ -981,6 +815,6 @@ void DevToolsAdbBridge::ReceivedPages(int result, RemotePages* pages_ptr) {
   BrowserThread::PostDelayedTask(
       BrowserThread::UI,
       FROM_HERE,
-      base::Bind(&DevToolsAdbBridge::RequestPages, this),
+      base::Bind(&DevToolsAdbBridge::RequestRemoteDevices, this),
       base::TimeDelta::FromMilliseconds(kAdbPollingIntervalMs));
 }

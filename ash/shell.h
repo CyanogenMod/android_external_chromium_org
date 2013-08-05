@@ -80,6 +80,7 @@ class Launcher;
 class LauncherDelegate;
 class LauncherModel;
 class MagnificationController;
+class MruWindowTracker;
 class NestedDispatcherController;
 class PartialMagnificationController;
 class PowerButtonController;
@@ -97,6 +98,7 @@ class UserWallpaperDelegate;
 class VideoDetector;
 class WebNotificationTray;
 class WindowCycleController;
+class WindowSelectorController;
 
 namespace internal {
 class AcceleratorFilter;
@@ -111,19 +113,20 @@ class EventClientImpl;
 class EventRewriterEventFilter;
 class EventTransformationHandler;
 class FocusCycler;
+class LocaleNotificationController;
 class MouseCursorEventFilter;
 class OutputConfiguratorAnimation;
 class OverlayEventFilter;
 class ResizeShadowController;
 class RootWindowController;
 class RootWindowLayoutManager;
+class ScopedTargetRootWindow;
 class ScreenPositionController;
 class SlowAnimationEventFilter;
 class StatusAreaWidget;
 class SystemGestureEventFilter;
 class SystemModalContainerEventFilter;
 class TouchObserverHUD;
-class WorkspaceController;
 }
 
 namespace shell {
@@ -177,10 +180,12 @@ class ASH_EXPORT Shell
   // that has a launcher.
   static aura::RootWindow* GetPrimaryRootWindow();
 
-  // Returns the active RootWindow. The active RootWindow is the one that
-  // contains the current active window as a decendant child. The active
-  // RootWindow remains the same even when the active window becomes NULL,
-  // until the another window who has a different root window becomes active.
+  // Returns a RootWindow when used as a target when creating a new window.
+  // The root window of the active window is used in most cases, but can
+  // be overridden by using ScopedTargetRootWindow().
+  // If you want to get a RootWindow of the active window, just use
+  // |wm::GetActiveWindow()->GetRootWindow()|.
+  // TODO(oshima): Rename to GetTargetRootWindow() crbug.com/266378.
   static aura::RootWindow* GetActiveRootWindow();
 
   // Returns the global Screen object that's always active in ash.
@@ -205,8 +210,8 @@ class ASH_EXPORT Shell
   // application windows to be maximized only.
   static bool IsForcedMaximizeMode();
 
-  void set_active_root_window(aura::RootWindow* active_root_window) {
-    active_root_window_ = active_root_window;
+  void set_active_root_window(aura::RootWindow* target_root_window) {
+    target_root_window_ = target_root_window;
   }
 
   // Shows the context menu for the background and launcher at
@@ -310,6 +315,9 @@ class ASH_EXPORT Shell
   LockStateController* lock_state_controller() {
     return lock_state_controller_.get();
   }
+  MruWindowTracker* mru_window_tracker() {
+    return mru_window_tracker_.get();
+  }
   UserActivityDetector* user_activity_detector() {
     return user_activity_detector_.get();
   }
@@ -318,6 +326,9 @@ class ASH_EXPORT Shell
   }
   WindowCycleController* window_cycle_controller() {
     return window_cycle_controller_.get();
+  }
+  WindowSelectorController* window_selector_controller() {
+    return window_selector_controller_.get();
   }
   internal::FocusCycler* focus_cycler() {
     return focus_cycler_.get();
@@ -469,6 +480,7 @@ class ASH_EXPORT Shell
   FRIEND_TEST_ALL_PREFIXES(WindowManagerTest, MouseEventCursors);
   FRIEND_TEST_ALL_PREFIXES(WindowManagerTest, TransformActivate);
   friend class internal::RootWindowController;
+  friend class internal::ScopedTargetRootWindow;
   friend class test::ShellTestApi;
   friend class shell::WindowWatcher;
 
@@ -506,8 +518,12 @@ class ASH_EXPORT Shell
 
   ScreenAsh* screen_;
 
-  // Active root window. Never becomes NULL during the session.
-  aura::RootWindow* active_root_window_;
+  // When no explicit target display/RootWindow is given, new windows are
+  // created on |scoped_target_root_window_| , unless NULL in
+  // which case they are created on |target_root_window_|.
+  // |target_root_window_| never becomes NULL during the session.
+  aura::RootWindow* target_root_window_;
+  aura::RootWindow* scoped_target_root_window_;
 
   // The CompoundEventFilter owned by aura::Env object.
   scoped_ptr<views::corewm::CompoundEventFilter> env_filter_;
@@ -544,9 +560,11 @@ class ASH_EXPORT Shell
   scoped_ptr<DesktopBackgroundController> desktop_background_controller_;
   scoped_ptr<PowerButtonController> power_button_controller_;
   scoped_ptr<LockStateController> lock_state_controller_;
+  scoped_ptr<MruWindowTracker> mru_window_tracker_;
   scoped_ptr<UserActivityDetector> user_activity_detector_;
   scoped_ptr<VideoDetector> video_detector_;
   scoped_ptr<WindowCycleController> window_cycle_controller_;
+  scoped_ptr<WindowSelectorController> window_selector_controller_;
   scoped_ptr<internal::FocusCycler> focus_cycler_;
   scoped_ptr<DisplayController> display_controller_;
   scoped_ptr<HighContrastController> high_contrast_controller_;
@@ -582,6 +600,9 @@ class ASH_EXPORT Shell
   scoped_ptr<views::corewm::InputMethodEventFilter> input_method_filter_;
 
   scoped_ptr<internal::DisplayManager> display_manager_;
+
+  scoped_ptr<internal::LocaleNotificationController>
+      locale_notification_controller_;
 
 #if defined(OS_CHROMEOS) && defined(USE_X11)
   // Controls video output device state.

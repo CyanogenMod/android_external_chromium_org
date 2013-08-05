@@ -159,6 +159,7 @@ LOCAL_SRC_FILES := \
 	cc/resources/resource_update_controller.cc \
 	cc/resources/resource_update_queue.cc \
 	cc/resources/scoped_resource.cc \
+	cc/resources/scoped_ui_resource.cc \
 	cc/resources/skpicture_content_layer_updater.cc \
 	cc/resources/sync_point_helper.cc \
 	cc/resources/texture_mailbox.cc \
@@ -166,6 +167,7 @@ LOCAL_SRC_FILES := \
 	cc/resources/tile_manager.cc \
 	cc/resources/tile_priority.cc \
 	cc/resources/transferable_resource.cc \
+	cc/resources/ui_resource_bitmap.cc \
 	cc/resources/video_resource_updater.cc \
 	cc/resources/worker_pool.cc \
 	cc/scheduler/delay_based_time_source.cc \

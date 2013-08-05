@@ -24,6 +24,31 @@ namespace cc {
 
 namespace {
 
+// Memory limit policy works by mapping some bin states to the NEVER bin.
+const ManagedTileBin kBinPolicyMap[NUM_TILE_MEMORY_LIMIT_POLICIES][NUM_BINS] = {
+  {  // [ALLOW_NOTHING]
+    NEVER_BIN,      // [NOW_BIN]
+    NEVER_BIN,      // [SOON_BIN]
+    NEVER_BIN,      // [EVENTUALLY_BIN]
+    NEVER_BIN       // [NEVER_BIN]
+  }, {  // [ALLOW_ABSOLUTE_MINIMUM]
+    NOW_BIN,        // [NOW_BIN]
+    NEVER_BIN,      // [SOON_BIN]
+    NEVER_BIN,      // [EVENTUALLY_BIN]
+    NEVER_BIN       // [NEVER_BIN]
+  }, {  // [ALLOW_PREPAINT_ONLY]
+    NOW_BIN,         // [NOW_BIN]
+    SOON_BIN,        // [SOON_BIN]
+    NEVER_BIN,       // [EVENTUALLY_BIN]
+    NEVER_BIN        // [NEVER_BIN]
+  }, {  // [ALLOW_ANYTHING]
+    NOW_BIN,         // [NOW_BIN]
+    SOON_BIN,        // [SOON_BIN]
+    EVENTUALLY_BIN,  // [EVENTUALLY_BIN]
+    NEVER_BIN        // [NEVER_BIN]
+  }
+};
+
 // Determine bin based on three categories of tiles: things we need now,
 // things we need soon, and eventually.
 inline ManagedTileBin BinFromTilePriority(const TilePriority& prio,
@@ -136,9 +161,10 @@ TileManager::~TileManager() {
 void TileManager::SetGlobalState(
     const GlobalStateThatImpactsTilePriority& global_state) {
   global_state_ = global_state;
-  resource_pool_->SetMaxMemoryUsageBytes(
+  resource_pool_->SetMemoryUsageLimits(
       global_state_.memory_limit_in_bytes,
-      global_state_.unused_memory_limit_in_bytes);
+      global_state_.unused_memory_limit_in_bytes,
+      global_state_.num_resources_limit);
 }
 
 void TileManager::RegisterTile(Tile* tile) {
@@ -246,36 +272,18 @@ class BinComparator {
   }
 };
 
-void TileManager::AssignBinsToTiles(TileRefVector* tiles) {
+void TileManager::GetTilesWithAssignedBins(TileRefVector* tiles) {
+  TRACE_EVENT0("cc", "TileManager::GetTilesWithAssignedBins");
+
+  DCHECK_EQ(0u, tiles->size());
+  tiles->reserve(tiles_.size());
+
+  const TileMemoryLimitPolicy memory_policy = global_state_.memory_limit_policy;
   const TreePriority tree_priority = global_state_.tree_priority;
 
-  // Memory limit policy works by mapping some bin states to the NEVER bin.
-  ManagedTileBin bin_map[NUM_BINS];
-  if (global_state_.memory_limit_policy == ALLOW_NOTHING) {
-    bin_map[NOW_BIN] = NEVER_BIN;
-    bin_map[SOON_BIN] = NEVER_BIN;
-    bin_map[EVENTUALLY_BIN] = NEVER_BIN;
-    bin_map[NEVER_BIN] = NEVER_BIN;
-  } else if (global_state_.memory_limit_policy == ALLOW_ABSOLUTE_MINIMUM) {
-    bin_map[NOW_BIN] = NOW_BIN;
-    bin_map[SOON_BIN] = NEVER_BIN;
-    bin_map[EVENTUALLY_BIN] = NEVER_BIN;
-    bin_map[NEVER_BIN] = NEVER_BIN;
-  } else if (global_state_.memory_limit_policy == ALLOW_PREPAINT_ONLY) {
-    bin_map[NOW_BIN] = NOW_BIN;
-    bin_map[SOON_BIN] = SOON_BIN;
-    bin_map[EVENTUALLY_BIN] = NEVER_BIN;
-    bin_map[NEVER_BIN] = NEVER_BIN;
-  } else {
-    bin_map[NOW_BIN] = NOW_BIN;
-    bin_map[SOON_BIN] = SOON_BIN;
-    bin_map[EVENTUALLY_BIN] = EVENTUALLY_BIN;
-    bin_map[NEVER_BIN] = NEVER_BIN;
-  }
-
   // For each tree, bin into different categories of tiles.
-  for (TileRefVector::iterator it = tiles->begin(); it != tiles->end(); ++it) {
-    Tile* tile = it->get();
+  for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it) {
+    Tile* tile = it->second;
     ManagedTileState& mts = tile->managed_state();
 
     TilePriority prio[NUM_BIN_PRIORITIES];
@@ -308,16 +316,22 @@ void TileManager::AssignBinsToTiles(TileRefVector* tiles) {
     mts.gpu_memmgr_stats_bin =
         BinFromTilePriority(tile->combined_priority(), tree_priority);
 
-    mts.tree_bin[ACTIVE_TREE] = bin_map[
+    mts.tree_bin[ACTIVE_TREE] = kBinPolicyMap[memory_policy][
         BinFromTilePriority(tile->priority(ACTIVE_TREE), tree_priority)];
-    mts.tree_bin[PENDING_TREE] = bin_map[
+    mts.tree_bin[PENDING_TREE] = kBinPolicyMap[memory_policy][
         BinFromTilePriority(tile->priority(PENDING_TREE), tree_priority)];
 
     for (int i = 0; i < NUM_BIN_PRIORITIES; ++i)
-      mts.bin[i] = bin_map[mts.bin[i]];
+      mts.bin[i] = kBinPolicyMap[memory_policy][mts.bin[i]];
 
     mts.visible_and_ready_to_draw =
         mts.tree_bin[ACTIVE_TREE] == NOW_BIN && tile->IsReadyToDraw();
+
+    // Skip and free resources for tiles in the NEVER_BIN on both trees.
+    if (mts.is_in_never_bin_on_both_trees())
+      FreeResourcesForTile(tile);
+    else
+      tiles->push_back(make_scoped_refptr(tile));
   }
 }
 
@@ -328,16 +342,10 @@ void TileManager::SortTiles(TileRefVector* tiles) {
   std::sort(tiles->begin(), tiles->end(), BinComparator());
 }
 
-void TileManager::GetSortedTiles(TileRefVector* tiles) {
-  TRACE_EVENT0("cc", "TileManager::GetSortedTiles");
+void TileManager::GetSortedTilesWithAssignedBins(TileRefVector* tiles) {
+  TRACE_EVENT0("cc", "TileManager::GetSortedTilesWithAssignedBins");
 
-  DCHECK_EQ(0u, tiles->size());
-
-  tiles->reserve(tiles_.size());
-  for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it)
-    tiles->push_back(make_scoped_refptr(it->second));
-
-  AssignBinsToTiles(tiles);
+  GetTilesWithAssignedBins(tiles);
   SortTiles(tiles);
 }
 
@@ -347,7 +355,7 @@ void TileManager::ManageTiles() {
   // Clear |sorted_tiles_| so that tiles kept alive by it can be freed.
   sorted_tiles_.clear();
 
-  GetSortedTiles(&sorted_tiles_);
+  GetSortedTilesWithAssignedBins(&sorted_tiles_);
 
   TileVector tiles_that_need_to_be_rasterized;
   AssignGpuMemoryToTiles(sorted_tiles_, &tiles_that_need_to_be_rasterized);
@@ -467,14 +475,17 @@ void TileManager::AssignGpuMemoryToTiles(
   // Now give memory out to the tiles until we're out, and build
   // the needs-to-be-rasterized queue.
   size_t bytes_releasable = 0;
+  size_t resources_releasable = 0;
   for (TileRefVector::const_iterator it = sorted_tiles.begin();
        it != sorted_tiles.end();
        ++it) {
     const Tile* tile = it->get();
     const ManagedTileState& mts = tile->managed_state();
     for (int mode = 0; mode < NUM_RASTER_MODES; ++mode) {
-      if (mts.tile_versions[mode].resource_)
+      if (mts.tile_versions[mode].resource_) {
         bytes_releasable += tile->bytes_consumed_if_allocated();
+        resources_releasable++;
+      }
     }
   }
 
@@ -487,12 +498,17 @@ void TileManager::AssignGpuMemoryToTiles(
       static_cast<int64>(bytes_releasable) +
       static_cast<int64>(global_state_.memory_limit_in_bytes) -
       static_cast<int64>(resource_pool_->acquired_memory_usage_bytes());
+  int resources_available = resources_releasable +
+                            global_state_.num_resources_limit -
+                            resource_pool_->NumResources();
 
   size_t bytes_allocatable =
       std::max(static_cast<int64>(0), bytes_available);
+  size_t resources_allocatable = std::max(0, resources_available);
 
   size_t bytes_that_exceeded_memory_budget = 0;
   size_t bytes_left = bytes_allocatable;
+  size_t resources_left = resources_allocatable;
   bool oomed = false;
   for (TileRefVector::const_iterator it = sorted_tiles.begin();
        it != sorted_tiles.end();
@@ -516,11 +532,14 @@ void TileManager::AssignGpuMemoryToTiles(
     }
 
     size_t tile_bytes = 0;
+    size_t tile_resources = 0;
 
     // It costs to maintain a resource.
     for (int mode = 0; mode < NUM_RASTER_MODES; ++mode) {
-      if (mts.tile_versions[mode].resource_)
+      if (mts.tile_versions[mode].resource_) {
         tile_bytes += tile->bytes_consumed_if_allocated();
+        tile_resources++;
+      }
     }
 
     // Allow lower priority tiles with initialized resources to keep
@@ -529,12 +548,14 @@ void TileManager::AssignGpuMemoryToTiles(
     if (tiles_that_need_to_be_rasterized->size() < kMaxRasterTasks) {
       // If we don't have the required version, and it's not in flight
       // then we'll have to pay to create a new task.
-      if (!tile_version.resource_ && tile_version.raster_task_.is_null())
+      if (!tile_version.resource_ && tile_version.raster_task_.is_null()) {
         tile_bytes += tile->bytes_consumed_if_allocated();
+        tile_resources++;
+      }
     }
 
     // Tile is OOM.
-    if (tile_bytes > bytes_left) {
+    if (tile_bytes > bytes_left || tile_resources > resources_left) {
       FreeResourcesForTile(tile);
 
       // This tile was already on screen and now its resources have been
@@ -547,6 +568,7 @@ void TileManager::AssignGpuMemoryToTiles(
       bytes_that_exceeded_memory_budget += tile_bytes;
     } else {
       bytes_left -= tile_bytes;
+      resources_left -= tile_resources;
 
       if (tile_version.resource_)
         continue;

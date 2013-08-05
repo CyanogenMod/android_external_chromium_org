@@ -47,6 +47,7 @@ LOCAL_SRC_FILES := \
 	android_webview/browser/gpu_memory_buffer_factory_impl.cc \
 	android_webview/browser/icon_helper.cc \
 	android_webview/browser/in_process_view_renderer.cc \
+	android_webview/browser/gl_view_renderer_manager.cc \
 	android_webview/browser/net/android_stream_reader_url_request_job.cc \
 	android_webview/browser/net/aw_network_delegate.cc \
 	android_webview/browser/net/aw_url_request_context_getter.cc \

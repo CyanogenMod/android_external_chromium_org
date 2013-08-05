@@ -61,7 +61,6 @@ LOCAL_SRC_FILES := \
 	gpu/command_buffer/service/query_manager.cc \
 	gpu/command_buffer/service/renderbuffer_manager.cc \
 	gpu/command_buffer/service/program_cache.cc \
-	gpu/command_buffer/service/program_cache_lru_helper.cc \
 	gpu/command_buffer/service/safe_shared_memory_pool.cc \
 	gpu/command_buffer/service/shader_manager.cc \
 	gpu/command_buffer/service/shader_translator.cc \

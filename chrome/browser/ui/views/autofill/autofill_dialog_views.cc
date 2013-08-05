@@ -11,6 +11,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_controller.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_sign_in_delegate.h"
+#include "chrome/browser/ui/views/autofill/decorated_textfield.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
 #include "components/autofill/content/browser/wallet/wallet_service_url.h"
 #include "components/autofill/core/browser/autofill_type.h"
@@ -69,12 +70,6 @@ const int kMinimumContentsHeight = 100;
 // Horizontal padding between text and other elements (in pixels).
 const int kAroundTextPadding = 4;
 
-// Padding around icons inside DecoratedTextfields.
-const int kTextfieldIconPadding = 3;
-
-// Size of the triangular mark that indicates an invalid textfield (in pixels).
-const int kDogEarSize = 10;
-
 // The space between the edges of a notification bar and the text within (in
 // pixels).
 const int kNotificationPadding = 17;
@@ -116,7 +111,6 @@ const int kOverlayImageBottomMargin = 50;
 // places.
 const SkColor kGreyTextColor = SkColorSetRGB(102, 102, 102);
 
-const char kDecoratedTextfieldClassName[] = "autofill/DecoratedTextfield";
 const char kNotificationAreaClassName[] = "autofill/NotificationArea";
 const char kOverlayViewClassName[] = "autofill/OverlayView";
 
@@ -124,17 +118,27 @@ typedef ui::MultiAnimation::Part Part;
 typedef ui::MultiAnimation::Parts Parts;
 
 // Draws an arrow at the top of |canvas| pointing to |tip_x|.
-void DrawArrow(gfx::Canvas* canvas, int tip_x, const SkColor& color) {
+void DrawArrow(gfx::Canvas* canvas,
+               int tip_x,
+               const SkColor& fill_color,
+               const SkColor& stroke_color) {
   const int arrow_half_width = kArrowWidth / 2.0f;
 
   SkPath arrow;
-  arrow.moveTo(tip_x, 0);
-  arrow.rLineTo(arrow_half_width, kArrowHeight);
-  arrow.rLineTo(-kArrowWidth, 0);
-  arrow.close();
-  SkPaint paint;
-  paint.setColor(color);
-  canvas->DrawPath(arrow, paint);
+  arrow.moveTo(tip_x - arrow_half_width, kArrowHeight);
+  arrow.lineTo(tip_x, 0);
+  arrow.lineTo(tip_x + arrow_half_width, kArrowHeight);
+
+  SkPaint fill_paint;
+  fill_paint.setColor(fill_color);
+  canvas->DrawPath(arrow, fill_paint);
+
+  if (stroke_color != SK_ColorTRANSPARENT) {
+    SkPaint stroke_paint;
+    stroke_paint.setColor(stroke_color);
+    stroke_paint.setStyle(SkPaint::kStroke_Style);
+    canvas->DrawPath(arrow, stroke_paint);
+  }
 }
 
 // This class handles layout for the first row of a SuggestionView.
@@ -193,7 +197,7 @@ class ErrorBubbleContents : public views::View {
  public:
   explicit ErrorBubbleContents(const base::string16& message)
       : color_(kWarningColor) {
-    set_border(views::Border::CreateEmptyBorder(kArrowHeight, 0, 0, 0));
+    set_border(views::Border::CreateEmptyBorder(kArrowHeight - 3, 0, 0, 0));
 
     views::Label* label = new views::Label();
     label->SetText(message);
@@ -210,7 +214,7 @@ class ErrorBubbleContents : public views::View {
 
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
     views::View::OnPaint(canvas);
-    DrawArrow(canvas, width() / 2.0f, color_);
+    DrawArrow(canvas, width() / 2.0f, color_, SK_ColorTRANSPARENT);
   }
 
  private:
@@ -362,6 +366,8 @@ class NotificationView : public views::View {
 
     set_background(
        views::Background::CreateSolidBackground(data.GetBackgroundColor()));
+    set_border(views::Border::CreateSolidSidedBorder(1, 0, 1, 0,
+                                                     data.GetBorderColor()));
   }
 
   virtual ~NotificationView() {}
@@ -480,92 +486,6 @@ gfx::Rect AutofillDialogViews::ErrorBubble::GetBoundsForWidget() {
   bubble_bounds.set_y(anchor_bounds.bottom() - kErrorBubbleOverlap);
 
   return bubble_bounds;
-}
-
-// AutofillDialogViews::DecoratedTextfield -------------------------------------
-
-AutofillDialogViews::DecoratedTextfield::DecoratedTextfield(
-    const base::string16& default_value,
-    const base::string16& placeholder,
-    views::TextfieldController* controller)
-    : border_(new views::FocusableBorder()),
-      invalid_(false) {
-  set_background(
-      views::Background::CreateSolidBackground(GetBackgroundColor()));
-
-  set_border(border_);
-  // Removes the border from |native_wrapper_|.
-  RemoveBorder();
-
-  set_placeholder_text(placeholder);
-  SetText(default_value);
-  SetController(controller);
-  SetHorizontalMargins(0, 0);
-}
-
-AutofillDialogViews::DecoratedTextfield::~DecoratedTextfield() {}
-
-void AutofillDialogViews::DecoratedTextfield::SetInvalid(bool invalid) {
-  invalid_ = invalid;
-  if (invalid)
-    border_->SetColor(kWarningColor);
-  else
-    border_->UseDefaultColor();
-  SchedulePaint();
-}
-
-void AutofillDialogViews::DecoratedTextfield::SetIcon(const gfx::Image& icon) {
-  int icon_space = icon.IsEmpty() ? 0 :
-                                    icon.Width() + 2 * kTextfieldIconPadding;
-  int left = base::i18n::IsRTL() ? icon_space : 0;
-  int right = base::i18n::IsRTL() ? 0 : icon_space;
-  SetHorizontalMargins(left, right);
-  icon_ = icon;
-
-  PreferredSizeChanged();
-  SchedulePaint();
-}
-
-const char* AutofillDialogViews::DecoratedTextfield::GetClassName() const {
-  return kDecoratedTextfieldClassName;
-}
-
-void AutofillDialogViews::DecoratedTextfield::PaintChildren(
-    gfx::Canvas* canvas) {}
-
-void AutofillDialogViews::DecoratedTextfield::OnPaint(gfx::Canvas* canvas) {
-  // Draw the border and background.
-  border_->set_has_focus(HasFocus());
-  views::View::OnPaint(canvas);
-
-  // Then the textfield.
-  views::View::PaintChildren(canvas);
-
-  // Then the icon.
-  if (!icon_.IsEmpty()) {
-    gfx::Rect bounds = GetContentsBounds();
-    int x = base::i18n::IsRTL() ?
-        kTextfieldIconPadding :
-        bounds.right() - icon_.Width() - kTextfieldIconPadding;
-    canvas->DrawImageInt(icon_.AsImageSkia(), x,
-                         bounds.y() + (bounds.height() - icon_.Height()) / 2);
-  }
-
-  // Then the invalid indicator.
-  if (invalid_) {
-    if (base::i18n::IsRTL()) {
-      canvas->Translate(gfx::Vector2d(width(), 0));
-      canvas->Scale(-1, 1);
-    }
-
-    SkPath dog_ear;
-    dog_ear.moveTo(width() - kDogEarSize, 0);
-    dog_ear.lineTo(width(), 0);
-    dog_ear.lineTo(width(), kDogEarSize);
-    dog_ear.close();
-    canvas->ClipPath(dog_ear);
-    canvas->DrawColor(kWarningColor);
-  }
 }
 
 // AutofillDialogViews::AccountChooser -----------------------------------------
@@ -862,7 +782,8 @@ AutofillDialogViews::NotificationArea::NotificationArea(
     : controller_(controller),
       checkbox_(NULL) {
   // Reserve vertical space for the arrow (regardless of whether one exists).
-  set_border(views::Border::CreateEmptyBorder(kArrowHeight, 0, 0, 0));
+  // The -1 accounts for the border.
+  set_border(views::Border::CreateEmptyBorder(kArrowHeight - 1, 0, 0, 0));
 
   views::BoxLayout* box_layout =
       new views::BoxLayout(views::BoxLayout::kVertical, 0, 0, 0);
@@ -907,14 +828,19 @@ const char* AutofillDialogViews::NotificationArea::GetClassName() const {
   return kNotificationAreaClassName;
 }
 
+void AutofillDialogViews::NotificationArea::PaintChildren(
+    gfx::Canvas* canvas) {}
+
 void AutofillDialogViews::NotificationArea::OnPaint(gfx::Canvas* canvas) {
   views::View::OnPaint(canvas);
+  views::View::PaintChildren(canvas);
 
   if (HasArrow()) {
     DrawArrow(
         canvas,
         GetMirroredXInView(width() - arrow_centering_anchor_->width() / 2.0f),
-        notifications_[0].GetBackgroundColor());
+        notifications_[0].GetBackgroundColor(),
+        notifications_[0].GetBorderColor());
   }
 }
 
@@ -954,6 +880,7 @@ AutofillDialogViews::SectionContainer::SectionContainer(
                                               kDetailSectionVerticalPadding,
                                               kDialogEdgePadding));
 
+  // TODO(estade): this label should be semi-bold.
   views::Label* label_view = new views::Label(label);
   label_view->SetHorizontalAlignment(gfx::ALIGN_LEFT);
 
@@ -978,12 +905,8 @@ AutofillDialogViews::SectionContainer::SectionContainer(
   label_bar_layout->StartRow(0, kColumnSetId);
   label_bar_layout->AddView(label_view);
   label_bar_layout->AddView(proxy_button);
-  // TODO(estade): Make this the correct color, also sometimes hide the border.
-  label_bar->set_border(
-      views::Border::CreateSolidSidedBorder(0, 0, 1, 0, SK_ColorLTGRAY));
 
-  // TODO(estade): do something about this '7'.
-  SetLayoutManager(new views::BoxLayout(views::BoxLayout::kVertical, 0, 0, 7));
+  SetLayoutManager(new views::BoxLayout(views::BoxLayout::kVertical, 0, 0, 0));
   AddChildView(label_bar);
   AddChildView(controls);
 }
@@ -1073,6 +996,10 @@ AutofillDialogViews::SuggestionView::SuggestionView(
           new DecoratedTextfield(base::string16(),
                                  base::string16(),
                                  autofill_dialog)) {
+  // TODO(estade): Make this the correct color.
+  set_border(
+      views::Border::CreateSolidSidedBorder(1, 0, 0, 0, SK_ColorLTGRAY));
+
   // Label and icon.
   label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   label_container_->AddChildView(icon_);
@@ -1088,7 +1015,8 @@ AutofillDialogViews::SuggestionView::SuggestionView(
   label_line_2_->SetMultiLine(true);
   AddChildView(label_line_2_);
 
-  SetLayoutManager(new views::BoxLayout(views::BoxLayout::kVertical, 0, 0, 0));
+  // TODO(estade): do something about this '2'.
+  SetLayoutManager(new views::BoxLayout(views::BoxLayout::kVertical, 0, 2, 0));
 }
 
 AutofillDialogViews::SuggestionView::~SuggestionView() {}
@@ -1228,8 +1156,6 @@ void AutofillDialogViews::Show() {
       web_contents_modal_dialog_manager->delegate()->
           GetWebContentsModalDialogHost());
   web_contents_modal_dialog_manager->ShowDialog(window_->GetNativeView());
-  web_contents_modal_dialog_manager->SetPreventCloseOnLoadStart(
-      window_->GetNativeView(), true);
   focus_manager_ = window_->GetFocusManager();
   focus_manager_->AddFocusChangeListener(this);
 
@@ -1966,7 +1892,7 @@ views::View* AutofillDialogViews::InitInputsView(DialogSection section) {
 
     float expand = input.expand_weight;
     column_set->AddColumn(views::GridLayout::FILL,
-                          views::GridLayout::BASELINE,
+                          views::GridLayout::FILL,
                           expand ? expand : 1.0,
                           views::GridLayout::USE_PREF,
                           0,
@@ -1976,7 +1902,7 @@ views::View* AutofillDialogViews::InitInputsView(DialogSection section) {
     // view's preferred width. Thus the width of the column completely depends
     // on |expand|.
     layout->AddView(view_to_add.release(), 1, 1,
-                    views::GridLayout::FILL, views::GridLayout::BASELINE,
+                    views::GridLayout::FILL, views::GridLayout::FILL,
                     1, 0);
   }
 
@@ -2294,7 +2220,7 @@ AutofillDialogViews::DetailsGroup* AutofillDialogViews::GroupForView(
       return group;
 
     views::View* decorated =
-        view->GetAncestorWithClassName(kDecoratedTextfieldClassName);
+        view->GetAncestorWithClassName(DecoratedTextfield::kViewClassName);
 
     // Textfields need to check a second case, since they can be
     // suggested inputs instead of directly editable inputs. Those are

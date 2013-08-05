@@ -75,6 +75,7 @@ var DISMISS_RETENTION_TIME_MS = 20 * 60 * 1000;  // 20 minutes
 var UPDATE_CARDS_TASK_NAME = 'update-cards';
 var DISMISS_CARD_TASK_NAME = 'dismiss-card';
 var RETRY_DISMISS_TASK_NAME = 'retry-dismiss';
+var STATE_CHANGED_TASK_NAME = 'state-changed';
 
 var LOCATION_WATCH_NAME = 'location-watch';
 
@@ -85,12 +86,6 @@ var WELCOME_TOAST_NOTIFICATION_ID = 'enable-now-toast';
  * @enum {number}
  */
 var ToastButtonIndex = {YES: 0, NO: 1};
-
-/**
- * The action that the user performed on the welcome toast.
- * @enum {number}
- */
-var ToastOptionResponse = {CHOSE_YES: 1, CHOSE_NO: 2};
 
 /**
  * Checks if a new task can't be scheduled when another task is already
@@ -119,11 +114,12 @@ function areTasksConflicting(newTaskName, scheduledTaskName) {
   return false;
 }
 
+var googleGeolocationAccessEnabledPref =
+    chrome.preferencesPrivate.googleGeolocationAccessEnabled;
+
 var tasks = buildTaskManager(areTasksConflicting);
 
 // Add error processing to API calls.
-tasks.instrumentApiFunction(chrome.identity, 'getAuthToken', 1);
-tasks.instrumentApiFunction(chrome.identity, 'removeCachedAuthToken', 1);
 tasks.instrumentApiFunction(chrome.location.onLocationUpdate, 'addListener', 0);
 tasks.instrumentApiFunction(chrome.notifications, 'create', 2);
 tasks.instrumentApiFunction(chrome.notifications, 'update', 2);
@@ -132,6 +128,14 @@ tasks.instrumentApiFunction(
     chrome.notifications.onButtonClicked, 'addListener', 0);
 tasks.instrumentApiFunction(chrome.notifications.onClicked, 'addListener', 0);
 tasks.instrumentApiFunction(chrome.notifications.onClosed, 'addListener', 0);
+tasks.instrumentApiFunction(
+    googleGeolocationAccessEnabledPref,
+    'get',
+    1);
+tasks.instrumentApiFunction(
+    googleGeolocationAccessEnabledPref.onChange,
+    'addListener',
+    0);
 tasks.instrumentApiFunction(chrome.runtime.onInstalled, 'addListener', 0);
 tasks.instrumentApiFunction(chrome.runtime.onStartup, 'addListener', 0);
 tasks.instrumentApiFunction(chrome.tabs, 'create', 1);
@@ -149,11 +153,13 @@ var dismissalAttempts = buildAttemptManager(
     MAXIMUM_RETRY_DISMISS_PERIOD_SECONDS);
 var cardSet = buildCardSet();
 
+var authenticationManager = buildAuthenticationManager();
+
 /**
- * Diagnostic event identifier.
+ * Google Now UMA event identifier.
  * @enum {number}
  */
-var DiagnosticEvent = {
+var GoogleNowEvent = {
   REQUEST_FOR_CARDS_TOTAL: 0,
   REQUEST_FOR_CARDS_SUCCESS: 1,
   CARDS_PARSE_SUCCESS: 2,
@@ -163,21 +169,23 @@ var DiagnosticEvent = {
   LOCATION_UPDATE: 6,
   EXTENSION_START: 7,
   SHOW_WELCOME_TOAST: 8,
-  EVENTS_TOTAL: 9  // EVENTS_TOTAL is not an event; all new events need to be
-                   // added before it.
+  STOPPED: 9,
+  USER_SUPPRESSED: 10,
+  EVENTS_TOTAL: 11  // EVENTS_TOTAL is not an event; all new events need to be
+                    // added before it.
 };
 
 /**
- * Records a diagnostic event.
- * @param {DiagnosticEvent} event Event identifier.
+ * Records a Google Now Event.
+ * @param {GoogleNowEvent} event Event identifier.
  */
 function recordEvent(event) {
   var metricDescription = {
     metricName: 'GoogleNow.Event',
     type: 'histogram-linear',
     min: 1,
-    max: DiagnosticEvent.EVENTS_TOTAL,
-    buckets: DiagnosticEvent.EVENTS_TOTAL + 1
+    max: GoogleNowEvent.EVENTS_TOTAL,
+    buckets: GoogleNowEvent.EVENTS_TOTAL + 1
   };
 
   chrome.metricsPrivate.recordValue(metricDescription, event);
@@ -190,13 +198,9 @@ function recordEvent(event) {
  *     parameter.
  */
 function setAuthorization(request, callbackBoolean) {
-  tasks.debugSetStepName('setAuthorization-getAuthToken');
-  chrome.identity.getAuthToken({interactive: false}, function(token) {
-    var errorMessage =
-        chrome.runtime.lastError && chrome.runtime.lastError.message;
-    console.log('setAuthorization: error=' + errorMessage +
-                ', token=' + (token && 'non-empty'));
-    if (chrome.runtime.lastError || !token) {
+  tasks.debugSetStepName('setAuthorization-isSignedIn');
+  authenticationManager.isSignedIn(function(token) {
+    if (!token) {
       callbackBoolean(false);
       return;
     }
@@ -208,11 +212,8 @@ function setAuthorization(request, callbackBoolean) {
     request.onloadend = tasks.wrapCallback(function(event) {
       if (request.status == HTTP_FORBIDDEN ||
           request.status == HTTP_UNAUTHORIZED) {
-        tasks.debugSetStepName('setAuthorization-removeCachedAuthToken');
-        chrome.identity.removeCachedAuthToken({token: token}, function() {
-          // After purging the token cache, call getAuthToken() again to let
-          // Chrome know about the problem with the token.
-          chrome.identity.getAuthToken({interactive: false}, function() {});
+        tasks.debugSetStepName('setAuthorization-removeToken');
+        authenticationManager.removeToken(token, function() {
           originalOnLoadEnd(event);
         });
       } else {
@@ -301,7 +302,7 @@ function parseAndShowNotificationCards(response, callback) {
         }
       }
 
-      recordEvent(DiagnosticEvent.CARDS_PARSE_SUCCESS);
+      recordEvent(GoogleNowEvent.CARDS_PARSE_SUCCESS);
 
       // Create/update notifications and store their new properties.
       var newNotificationsData = {};
@@ -330,6 +331,25 @@ function parseAndShowNotificationCards(response, callback) {
 }
 
 /**
+ * Removes all cards and card state on Google Now close down.
+ * For example, this occurs when the geolocation preference is unchecked in the
+ * content settings.
+ */
+function removeAllCards() {
+  console.log('removeAllCards');
+
+  // TODO(robliao): Once Google Now clears its own checkbox in the
+  // notifications center and bug 260376 is fixed, the below clearing
+  // code is no longer necessary.
+  chrome.notifications.getAll(function(notifications) {
+    for (var notificationId in notifications) {
+      chrome.notifications.clear(notificationId, function() {});
+    }
+    storage.set({notificationsData: {}});
+  });
+}
+
+/**
  * Requests notification cards from the server.
  * @param {Location} position Location of this computer.
  * @param {function()} callback Completion callback.
@@ -343,7 +363,7 @@ function requestNotificationCards(position, callback) {
     return;
   }
 
-  recordEvent(DiagnosticEvent.REQUEST_FOR_CARDS_TOTAL);
+  recordEvent(GoogleNowEvent.REQUEST_FOR_CARDS_TOTAL);
 
   // TODO(vadimt): Should we use 'q' as the parameter name?
   var requestParameters =
@@ -357,7 +377,7 @@ function requestNotificationCards(position, callback) {
   request.onloadend = function(event) {
     console.log('requestNotificationCards-onloadend ' + request.status);
     if (request.status == HTTP_OK) {
-      recordEvent(DiagnosticEvent.REQUEST_FOR_CARDS_SUCCESS);
+      recordEvent(GoogleNowEvent.REQUEST_FOR_CARDS_SUCCESS);
       parseAndShowNotificationCards(request.response, callback);
     } else {
       callback();
@@ -379,11 +399,22 @@ function requestNotificationCards(position, callback) {
  */
 function requestLocation() {
   console.log('requestLocation');
-  recordEvent(DiagnosticEvent.LOCATION_REQUEST);
-  // TODO(vadimt): Figure out location request options.
-  chrome.location.watchLocation(LOCATION_WATCH_NAME, {});
+  recordEvent(GoogleNowEvent.LOCATION_REQUEST);
+  // TODO(vadimt): Figure out location request options. Use experiments
+  // framework to enable setting these parameters remotely.
+  chrome.location.watchLocation(LOCATION_WATCH_NAME, {
+    minDistanceInMeters: 100,
+    minTimeInMilliseconds: 180000  // 3 minutes.
+  });
 }
 
+/**
+ * Stops getting the location.
+ */
+function stopRequestLocation() {
+  console.log('stopRequestLocation');
+  chrome.location.clearWatch(LOCATION_WATCH_NAME);
+}
 
 /**
  * Obtains new location; requests and shows notification cards based on this
@@ -395,15 +426,19 @@ function updateNotificationsCards(position) {
       ' @' + new Date());
   tasks.add(UPDATE_CARDS_TASK_NAME, function(callback) {
     console.log('updateNotificationsCards-task-begin');
-    updateCardsAttempts.planForNext(function() {
-      processPendingDismissals(function(success) {
-        if (success) {
-          // The cards are requested only if there are no unsent dismissals.
-          requestNotificationCards(position, callback);
-        } else {
-          callback();
-        }
-      });
+    updateCardsAttempts.isRunning(function(running) {
+      if (running) {
+        updateCardsAttempts.planForNext(function() {
+          processPendingDismissals(function(success) {
+            if (success) {
+              // The cards are requested only if there are no unsent dismissals.
+              requestNotificationCards(position, callback);
+            } else {
+              callback();
+            }
+          });
+        });
+      }
     });
   });
 }
@@ -429,12 +464,12 @@ function requestCardDismissal(
     return;
   }
 
-  recordEvent(DiagnosticEvent.DISMISS_REQUEST_TOTAL);
+  recordEvent(GoogleNowEvent.DISMISS_REQUEST_TOTAL);
   var request = buildServerRequest('dismiss', 'application/json');
   request.onloadend = function(event) {
     console.log('requestDismissingCard-onloadend ' + request.status);
     if (request.status == HTTP_OK)
-      recordEvent(DiagnosticEvent.DISMISS_REQUEST_SUCCESS);
+      recordEvent(GoogleNowEvent.DISMISS_REQUEST_SUCCESS);
 
     // A dismissal doesn't require further retries if it was successful or
     // doesn't have a chance for successful completion.
@@ -566,21 +601,17 @@ function onNotificationClicked(notificationId, selector) {
  * @param {number} buttonIndex The index of the button which was clicked.
  */
 function onToastNotificationClicked(buttonIndex) {
+  storage.set({userRespondedToToast: true});
+
   if (buttonIndex == ToastButtonIndex.YES) {
     chrome.metricsPrivate.recordUserAction('GoogleNow.WelcomeToastClickedYes');
-    storage.set({toastState: ToastOptionResponse.CHOSE_YES});
-
-    // TODO(zturner): Update chrome geolocation setting once the settings
-    // API is in place.
-    startPollingCards();
+    googleGeolocationAccessEnabledPref.set({value: true});
+    // The googlegeolocationaccessenabled preference change callback
+    // will take care of starting the poll for cards.
   } else {
     chrome.metricsPrivate.recordUserAction('GoogleNow.WelcomeToastClickedNo');
-    storage.set({toastState: ToastOptionResponse.CHOSE_NO});
+    onStateChange();
   }
-
-  chrome.notifications.clear(
-      WELCOME_TOAST_NOTIFICATION_ID,
-      function(wasCleared) {});
 }
 
 /**
@@ -596,7 +627,7 @@ function onNotificationClosed(notificationId, byUser) {
     // Even though they only closed the notification without clicking no, treat
     // it as though they clicked No anwyay, and don't show the toast again.
     chrome.metricsPrivate.recordUserAction('GoogleNow.WelcomeToastDismissed');
-    storage.set({toastState: ToastOptionResponse.CHOSE_NO});
+    storage.set({userRespondedToToast: true});
     return;
   }
 
@@ -642,26 +673,156 @@ function startPollingCards() {
 }
 
 /**
+ * Stops all machinery in the polling system.
+ */
+function stopPollingCards() {
+  stopRequestLocation();
+
+  updateCardsAttempts.stop();
+
+  removeAllCards();
+}
+
+/**
  * Initializes the event page on install or on browser startup.
  */
 function initialize() {
-  recordEvent(DiagnosticEvent.EXTENSION_START);
-  storage.get('toastState', function(items) {
-    // The toast state might be undefined (e.g. not in storage yet) if this is
-    // the first time ever being prompted.
+  recordEvent(GoogleNowEvent.EXTENSION_START);
 
-    // TODO(zturner): Get the value of isGeolocationEnabled from the settings
-    // api and additionally make sure it is true.
-    if (!items.toastState) {
-      if (NOTIFICATION_CARDS_URL) {
-        chrome.identity.getAuthToken({interactive: false}, function(token) {
-          if (!chrome.runtime.lastError && token)
-            showWelcomeToast();
-        });
-      }
-    } else if (items.toastState == ToastOptionResponse.CHOSE_YES) {
-      startPollingCards();
+  // Alarms persist across chrome restarts. This is undesirable since it
+  // prevents us from starting up everything (alarms are a heuristic to
+  // determine if we are already running). To mitigate this, we will
+  // shut everything down on initialize before starting everything up.
+  stopPollingCards();
+  onStateChange();
+}
+
+/**
+ * Starts or stops the polling of cards.
+ * @param {boolean} shouldPollCardsRequest true to start and
+ *     false to stop polling cards.
+ * @param {function} onSuccess Called on completion.
+ */
+function setShouldPollCards(shouldPollCardsRequest, onSuccess) {
+  tasks.debugSetStepName(
+        'setShouldRun-shouldRun-updateCardsAttemptsIsRunning');
+  updateCardsAttempts.isRunning(function(currentValue) {
+    if (shouldPollCardsRequest != currentValue) {
+      console.log('Action Taken setShouldPollCards=' + shouldPollCardsRequest);
+      if (shouldPollCardsRequest)
+        startPollingCards();
+      else
+        stopPollingCards();
     }
+    onSuccess();
+  });
+}
+
+/**
+ * Shows or hides the toast.
+ * @param {boolean} visibleRequest true to show the toast and
+ *     false to hide the toast.
+ * @param {function} onSuccess Called on completion.
+ */
+function setToastVisible(visibleRequest, onSuccess) {
+  tasks.debugSetStepName(
+      'setToastVisible-shouldSetToastVisible-getAllNotifications');
+  chrome.notifications.getAll(function(notifications) {
+    // TODO(vadimt): Figure out what to do when notifications are disabled for
+    // our extension.
+    notifications = notifications || {};
+
+    if (visibleRequest != !!notifications[WELCOME_TOAST_NOTIFICATION_ID]) {
+      console.log('Action Taken setToastVisible=' + visibleRequest);
+      if (visibleRequest)
+        showWelcomeToast();
+      else
+        hideWelcomeToast();
+    }
+
+    onSuccess();
+  });
+}
+
+/**
+ * Does the actual work of deciding what Google Now should do
+ * based off of the current state of Chrome.
+ * @param {boolean} signedIn true if the user is signed in.
+ * @param {boolean} geolocationEnabled true if
+ *     the geolocation option is enabled.
+ * @param {boolean} userRespondedToToast true if
+ *     the user has responded to the toast.
+ * @param {function()} callback Call this function on completion.
+ */
+function updateRunningState(
+    signedIn,
+    geolocationEnabled,
+    userRespondedToToast,
+    callback) {
+
+  console.log(
+      'State Update signedIn=' + signedIn + ' ' +
+      'geolocationEnabled=' + geolocationEnabled + ' ' +
+      'userRespondedToToast=' + userRespondedToToast);
+
+  var shouldSetToastVisible = false;
+  var shouldPollCards = false;
+
+  if (signedIn) {
+    if (geolocationEnabled) {
+      if (!userRespondedToToast) {
+        // If the user enabled geolocation independently of Google Now,
+        // the user has implicitly responded to the toast.
+        // We do not want to show it again.
+        storage.set({userRespondedToToast: true});
+      }
+
+      shouldPollCards = true;
+    } else {
+      if (userRespondedToToast) {
+        recordEvent(GoogleNowEvent.USER_SUPPRESSED);
+      } else {
+        shouldSetToastVisible = true;
+      }
+    }
+  } else {
+    recordEvent(GoogleNowEvent.STOPPED);
+  }
+
+  console.log(
+      'Requested Actions setToastVisible=' + shouldSetToastVisible + ' ' +
+      'setShouldPollCards=' + shouldPollCards);
+
+  setToastVisible(shouldSetToastVisible, function() {
+    setShouldPollCards(shouldPollCards, callback);
+  });
+}
+
+/**
+ * Coordinates the behavior of Google Now for Chrome depending on
+ * Chrome and extension state.
+ */
+function onStateChange() {
+  tasks.add(STATE_CHANGED_TASK_NAME, function(callback) {
+    tasks.debugSetStepName('onStateChange-isSignedIn');
+    authenticationManager.isSignedIn(function(token) {
+      var signedIn = !!token && !!NOTIFICATION_CARDS_URL;
+      tasks.debugSetStepName(
+          'onStateChange-get-googleGeolocationAccessEnabledPref');
+      googleGeolocationAccessEnabledPref.get({}, function(prefValue) {
+        var geolocationEnabled = !!prefValue.value;
+        tasks.debugSetStepName(
+          'onStateChange-get-userRespondedToToast');
+        storage.get('userRespondedToToast', function(items) {
+          var userRespondedToToast = !!items.userRespondedToToast;
+          updateRunningState(
+              signedIn,
+              geolocationEnabled,
+              userRespondedToToast,
+              callback);
+        });
+      });
+    });
   });
 }
 
@@ -670,7 +831,7 @@ function initialize() {
  * Google Now cards.
  */
 function showWelcomeToast() {
-  recordEvent(DiagnosticEvent.SHOW_WELCOME_TOAST);
+  recordEvent(GoogleNowEvent.SHOW_WELCOME_TOAST);
   // TODO(zturner): Localize this once the component extension localization
   // api is complete.
   // TODO(zturner): Add icons.
@@ -687,6 +848,15 @@ function showWelcomeToast() {
       function(notificationId) {});
 }
 
+/**
+ * Hides the welcome toast.
+ */
+function hideWelcomeToast() {
+  chrome.notifications.clear(
+      WELCOME_TOAST_NOTIFICATION_ID,
+      function() {});
+}
+
 chrome.runtime.onInstalled.addListener(function(details) {
   console.log('onInstalled ' + JSON.stringify(details));
   if (details.reason != 'chrome_update') {
@@ -697,6 +867,16 @@ chrome.runtime.onInstalled.addListener(function(details) {
 chrome.runtime.onStartup.addListener(function() {
   console.log('onStartup');
   initialize();
+});
+
+googleGeolocationAccessEnabledPref.onChange.addListener(function(prefValue) {
+  console.log('googleGeolocationAccessEnabledPref onChange ' + prefValue.value);
+  onStateChange();
+});
+
+authenticationManager.addListener(function() {
+  console.log('signIn State Change');
+  onStateChange();
 });
 
 chrome.notifications.onClicked.addListener(
@@ -726,7 +906,7 @@ chrome.notifications.onButtonClicked.addListener(
 chrome.notifications.onClosed.addListener(onNotificationClosed);
 
 chrome.location.onLocationUpdate.addListener(function(position) {
-  recordEvent(DiagnosticEvent.LOCATION_UPDATE);
+  recordEvent(GoogleNowEvent.LOCATION_UPDATE);
   updateNotificationsCards(position);
 });
 

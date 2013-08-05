@@ -82,6 +82,26 @@ function buildTaskManager(areConflicting) {
   var isInTask = false;
 
   /**
+   * True if currently executed code runs in an instrumented callback.
+   * @type {boolean}
+   */
+  var isInInstrumentedCallback = false;
+
+  /**
+   * Checks that we run in an instrumented callback.
+   */
+  function checkInInstrumentedCallback() {
+    if (!isInInstrumentedCallback) {
+      // Cannot use verify() since no one will catch the exception.
+      // This alert will detect bugs at the development stage, and is very
+      // unlikely to be seen by users.
+      var error = 'Not in instrumented callback: ' + new Error().stack;
+      console.error(error);
+      alert(error);
+    }
+  }
+
+  /**
    * Starts the first queued task.
    */
   function startFirst() {
@@ -130,9 +150,10 @@ function buildTaskManager(areConflicting) {
    * task. Otherwise, stores the task for future execution.
    * @param {string} taskName Name of the task.
    * @param {function(function())} task Function to run. Takes a callback
-   *     parameter.
+   *     parameter. Call this callback on completion.
    */
   function add(taskName, task) {
+    checkInInstrumentedCallback();
     console.log('Adding task ' + taskName);
     if (!canQueue(taskName))
       return;
@@ -207,18 +228,21 @@ function buildTaskManager(areConflicting) {
   /**
    * Adds error processing to an API callback.
    * @param {Function} callback Callback to instrument.
-   * @param {boolean=} opt_dontRequire True if the callback is not required to
-   *     be invoked.
+   * @param {boolean=} opt_isEventListener True if the callback is an event
+   *      listener.
    * @return {Function} Instrumented callback.
    */
-  function wrapCallback(callback, opt_dontRequire) {
-    verify(!(opt_dontRequire && isInTask), 'Unrequired callback in a task.');
+  function wrapCallback(callback, opt_isEventListener) {
+    verify(!(opt_isEventListener && isInTask),
+           'Unrequired callback in a task.');
     var callbackId = nextCallbackId++;
     var isTaskCallback = isInTask;
     if (isTaskCallback)
       ++taskPendingCallbackCount;
-    if (!opt_dontRequire)
+    if (!opt_isEventListener) {
+      checkInInstrumentedCallback();
       pendingCallbacks[callbackId] = new Error().stack;
+    }
 
     return function() {
       // This is the wrapper for the callback.
@@ -227,11 +251,16 @@ function buildTaskManager(areConflicting) {
           verify(!isInTask, 'wrapCallback: already in task');
           isInTask = true;
         }
-        if (!opt_dontRequire)
+        if (!opt_isEventListener)
           delete pendingCallbacks[callbackId];
 
         // Call the original callback.
+        verify(!isInInstrumentedCallback, 'Re-entering instrumented callback');
+        isInInstrumentedCallback = true;
         callback.apply(null, arguments);
+        verify(isInInstrumentedCallback,
+               'Instrumented callback is not instrumented upon exit');
+        isInInstrumentedCallback = false;
 
         if (isTaskCallback) {
           verify(isInTask, 'wrapCallback: not in task at exit');
@@ -282,7 +311,9 @@ function buildTaskManager(areConflicting) {
     };
   }
 
+  instrumentApiFunction(chrome.alarms, 'get', 1);
   instrumentApiFunction(chrome.alarms.onAlarm, 'addListener', 0);
+  instrumentApiFunction(chrome.identity, 'getAuthToken', 1);
   instrumentApiFunction(chrome.runtime.onSuspend, 'addListener', 0);
 
   chrome.runtime.onSuspend.addListener(function() {
@@ -329,6 +360,17 @@ function buildAttemptManager(
       periodInMinutes: maximumDelaySeconds / 60
     };
     chrome.alarms.create(alarmName, alarmInfo);
+  }
+
+  /**
+   * Indicates if this attempt manager has started.
+   * @param {function(boolean)} callback The function's boolean parameter is
+   *     true if the attempt manager has started, false otherwise.
+   */
+  function isRunning(callback) {
+    chrome.alarms.get(alarmName, function(alarmInfo) {
+      callback(!!alarmInfo);
+    });
   }
 
   /**
@@ -388,12 +430,98 @@ function buildAttemptManager(
 
   chrome.alarms.onAlarm.addListener(function(alarm) {
     if (alarm.name == alarmName)
-      attempt();
+      isRunning(function(running) {
+        if (running)
+          attempt();
+      });
   });
 
   return {
     start: start,
     planForNext: planForNext,
-    stop: stop
+    stop: stop,
+    isRunning: isRunning
+  };
+}
+
+// TODO(robliao): Ideally, the authentication watcher infrastructure
+// below would be an API change to chrome.identity.
+// When this happens, remove the code below.
+
+/**
+ * Wraps chrome.identity to provide limited listening support for
+ * the sign in state by polling periodically for the auth token.
+ * @return {Object} The Authentication Manager interface.
+ */
+function buildAuthenticationManager() {
+  var alarmName = 'sign-in-alarm';
+
+  /**
+   * Determines if the user is signed in and provides a token if signed in.
+   * @param {function(string=)} callback Called on completion.
+   *     If the user is signed in, the string contains the token.
+   */
+  function isSignedIn(callback) {
+    chrome.identity.getAuthToken({interactive: false}, function(token) {
+      token = chrome.runtime.lastError ? undefined : token;
+      callback(token);
+      checkAndNotifyListeners(!!token);
+    });
+  }
+
+  /**
+   * Removes the specified cached token.
+   * @param {string} token Authentication Token to remove from the cache.
+   * @param {function} onSuccess Called on completion.
+   */
+  function removeToken(token, onSuccess) {
+    chrome.identity.removeCachedAuthToken({token: token}, function() {
+      // Removing the token from the cache will change the sign in state.
+      // Repoll now to check the state and notify listeners.
+      // This also lets Chrome now about a possible problem with the token.
+      isSignedIn(function() {});
+      onSuccess();
+    });
+  }
+
+  var listeners = [];
+
+  /**
+   * Registers a listener that gets called back when the signed in state
+   * is found to be changed.
+   * @param {function} callback Called when the answer to isSignedIn changes.
+   */
+  function addListener(callback) {
+    listeners.push(callback);
+  }
+
+  // Tracks the last answer of isSignedIn. checkAndNotifyListeners will not
+  // notify the listeners if this is null because technically, no sign in
+  // state change occurred.
+  var lastReturnedSignedInState = null;
+
+  function checkAndNotifyListeners(currentSignedInState) {
+    if ((lastReturnedSignedInState !== currentSignedInState) &&
+        (lastReturnedSignedInState !== null)) {
+      for (var listenerIndex in listeners) {
+        listeners[listenerIndex]();
+      }
+    }
+    lastReturnedSignedInState = currentSignedInState;
+  }
+
+  chrome.alarms.onAlarm.addListener(function(alarm) {
+    if (alarm.name == alarmName)
+      isSignedIn(function() {});
+  });
+
+  // Poll for the sign in state every hour.
+  // One hour is just an arbitrary amount of time chosen.
+  chrome.alarms.create(alarmName, {periodInMinutes: 60});
+
+  return {
+    addListener: addListener,
+    isSignedIn: isSignedIn,
+    removeToken: removeToken
   };
 }

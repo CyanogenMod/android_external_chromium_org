@@ -7,6 +7,7 @@
 
 #include "apps/app_launcher.h"
 #include "apps/app_shim/app_shim_handler_mac.h"
+#include "apps/app_shim/app_shim_mac.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
@@ -174,7 +175,7 @@ void CreateAppListShim(const base::FilePath& profile_path) {
   // TODO(tapted): Create a dock icon using chrome/browser/mac/dock.h .
   web_app::CreateShortcuts(shortcut_info,
                            ShellIntegration::ShortcutLocations(),
-                           web_app::SHORTCUT_CREATION_BY_USER);
+                           web_app::SHORTCUT_CREATION_AUTOMATED);
 }
 
 // Check that there is an app list shim. If enabling and there is not, make one.
@@ -240,8 +241,7 @@ bool AppListControllerDelegateCocoa::CanPin() {
 
 bool AppListControllerDelegateCocoa::CanDoCreateShortcutsFlow(
     bool is_platform_app) {
-  return is_platform_app &&
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableAppShims);
+  return is_platform_app && apps::IsAppShimsEnabled();
 }
 
 void AppListControllerDelegateCocoa::DoCreateShortcutsFlow(

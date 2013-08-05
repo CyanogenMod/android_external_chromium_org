@@ -157,11 +157,7 @@ void UpdateStats(const gpu::GpuBlacklist* blacklist,
   const bool kGpuFeatureUserFlags[] = {
       command_line.HasSwitch(switches::kDisableAccelerated2dCanvas),
       command_line.HasSwitch(switches::kDisableAcceleratedCompositing),
-#if defined(OS_ANDROID)
-      !command_line.HasSwitch(switches::kEnableExperimentalWebGL),
-#else
       command_line.HasSwitch(switches::kDisableExperimentalWebGL),
-#endif
       command_line.HasSwitch(switches::kDisableImageTransportSurface)
   };
 #if defined(OS_WIN)
@@ -266,6 +262,8 @@ void ApplyAndroidWorkarounds(const gpu::GPUInfo& gpu_info,
       gpu_info.gl_vendor.find("Broadcom") != std::string::npos;
   bool is_mali_t604 = is_arm &&
       gpu_info.gl_renderer.find("Mali-T604") != std::string::npos;
+  bool is_nvidia =
+      gpu_info.gl_vendor.find("NVIDIA") != std::string::npos;
 
   bool is_vivante =
       gpu_info.gl_extensions.find("GL_VIV_shader_binary") !=
@@ -279,7 +277,7 @@ void ApplyAndroidWorkarounds(const gpu::GPUInfo& gpu_info,
   // IMG: avoid context switching perf problems, crashes with share groups
   // Mali-T604: http://crbug.com/154715
   // QualComm, NVIDIA: Crashes with share groups
-  if (is_vivante || is_img || is_mali_t604 || is_nexus7 || is_qualcomm ||
+  if (is_vivante || is_img || is_mali_t604 || is_nvidia || is_qualcomm ||
       is_broadcom)
     command_line->AppendSwitch(switches::kEnableVirtualGLContexts);
 
@@ -658,6 +656,17 @@ void GpuDataManagerImplPrivate::AppendRendererCommandLine(
   if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE) &&
       !command_line->HasSwitch(switches::kDisableAcceleratedVideoDecode))
     command_line->AppendSwitch(switches::kDisableAcceleratedVideoDecode);
+
+  if (use_software_compositor_ &&
+      !command_line->HasSwitch(switches::kEnableSoftwareCompositing))
+    command_line->AppendSwitch(switches::kEnableSoftwareCompositing);
+
+#if defined(USE_AURA)
+  if (!CanUseGpuBrowserCompositor()) {
+    command_line->AppendSwitch(switches::kDisableGpuCompositing);
+    command_line->AppendSwitch(switches::kDisablePepper3d);
+  }
+#endif
 }
 
 void GpuDataManagerImplPrivate::AppendGpuCommandLine(
@@ -812,6 +821,18 @@ void GpuDataManagerImplPrivate::UpdateRendererWebPrefs(
     prefs->accelerated_compositing_for_3d_transforms_enabled = false;
     prefs->accelerated_compositing_for_plugins_enabled = false;
   }
+
+  if (use_software_compositor_) {
+    prefs->force_compositing_mode = true;
+    prefs->accelerated_compositing_enabled = true;
+    prefs->accelerated_compositing_for_3d_transforms_enabled = true;
+    prefs->accelerated_compositing_for_plugins_enabled = true;
+  }
+
+#if defined(USE_AURA)
+  if (!CanUseGpuBrowserCompositor())
+    prefs->accelerated_2d_canvas_enabled = false;
+#endif
 }
 
 gpu::GpuSwitchingOption
@@ -914,7 +935,9 @@ bool GpuDataManagerImplPrivate::IsUsingAcceleratedSurface() const {
 #endif
 
 bool GpuDataManagerImplPrivate::CanUseGpuBrowserCompositor() const {
-  return !IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING);
+  return !ShouldUseSwiftShader() &&
+         !IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING) &&
+         !IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_FORCE_COMPOSITING_MODE);
 }
 
 void GpuDataManagerImplPrivate::BlockDomainFrom3DAPIs(
@@ -963,7 +986,8 @@ GpuDataManagerImplPrivate::GpuDataManagerImplPrivate(
       domain_blocking_enabled_(true),
       owner_(owner),
       display_count_(0),
-      gpu_process_accessible_(true) {
+      gpu_process_accessible_(true),
+      use_software_compositor_(false) {
   DCHECK(owner_);
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kDisableAcceleratedCompositing)) {
@@ -972,6 +996,8 @@ GpuDataManagerImplPrivate::GpuDataManagerImplPrivate(
   }
   if (command_line->HasSwitch(switches::kDisableGpu))
     DisableHardwareAcceleration();
+  if (command_line->HasSwitch(switches::kEnableSoftwareCompositing))
+    use_software_compositor_ = true;
   if (command_line->HasSwitch(switches::kGpuSwitching)) {
     std::string option_string = command_line->GetSwitchValueASCII(
         switches::kGpuSwitching);

@@ -19,6 +19,7 @@
 #include "content/child/child_process.h"
 #include "content/child/child_resource_message_filter.h"
 #include "content/child/fileapi/file_system_dispatcher.h"
+#include "content/child/power_monitor_broadcast_source.h"
 #include "content/child/quota_dispatcher.h"
 #include "content/child/quota_message_filter.h"
 #include "content/child/resource_dispatcher.h"
@@ -75,14 +76,16 @@ class SuicideOnChannelErrorFilter : public IPC::ChannelProxy::MessageFilter {
     //
     // So, we install a filter on the channel so that we can process this event
     // here and kill the process.
-    //
-    // We want to kill this process after giving it 30 seconds to run the exit
-    // handlers. SIGALRM has a default disposition of terminating the
-    // application.
-    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kChildCleanExit))
-      alarm(30);
-    else
+    if (CommandLine::ForCurrentProcess()->
+        HasSwitch(switches::kChildCleanExit)) {
+      // If clean exit is requested, we want to kill this process after giving
+      // it 60 seconds to run exit handlers. Exit handlers may including ones
+      // that write profile data to disk (which happens under profile collection
+      // mode).
+      alarm(60);
+    } else {
       _exit(0);
+    }
   }
 
  protected:
@@ -154,6 +157,16 @@ void ChildThread::Init() {
       ChildProcess::current()->io_message_loop_proxy()));
   channel_->AddFilter(resource_message_filter_.get());
   channel_->AddFilter(quota_message_filter_.get());
+
+  // In single process mode we may already have a power monitor
+  if (!base::PowerMonitor::Get()) {
+    scoped_ptr<PowerMonitorBroadcastSource> power_monitor_source(
+      new PowerMonitorBroadcastSource());
+    channel_->AddFilter(power_monitor_source->GetMessageFilter());
+
+    power_monitor_.reset(new base::PowerMonitor(
+        power_monitor_source.PassAs<base::PowerMonitorSource>()));
+  }
 
 #if defined(OS_POSIX)
   // Check that --process-type is specified so we don't do this in unit tests

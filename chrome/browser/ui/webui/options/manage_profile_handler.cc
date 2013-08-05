@@ -36,11 +36,6 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/webui/web_ui_util.h"
 
-#if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_user_service.h"
-#include "chrome/browser/managed_mode/managed_user_service_factory.h"
-#endif
-
 #if defined(ENABLE_SETTINGS_APP)
 #include "chrome/browser/ui/app_list/app_list_service.h"
 #include "content/public/browser/web_contents.h"
@@ -180,6 +175,12 @@ void ManageProfileHandler::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   if (type == chrome::NOTIFICATION_PROFILE_CACHED_INFO_CHANGED) {
+    // If the browser shuts down during supervised-profile creation, deleting
+    // the unregistered supervised-user profile triggers this notification,
+    // but the RenderViewHost the profile info would be sent to has already been
+    // destroyed.
+    if (!web_ui()->GetWebContents()->GetRenderViewHost())
+      return;
     SendProfileNames();
     base::StringValue value(kManageProfileIconGridName);
     SendProfileIcons(value);
@@ -295,7 +296,7 @@ void ManageProfileHandler::SetProfileIconAndName(const ListValue* args) {
   }
   ProfileMetrics::LogProfileUpdate(profile_file_path);
 
-  if (ManagedUserService::ProfileIsManaged(profile))
+  if (profile->IsManaged())
     return;
 
   string16 new_profile_name;

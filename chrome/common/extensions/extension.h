@@ -228,7 +228,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // DEPRECATED: These methods have been moved to PermissionsData.
   // TODO(rdevlin.cronin): remove these once all calls have been updated.
   bool HasAPIPermission(APIPermission::ID permission) const;
-  bool HasAPIPermission(const std::string& function_name) const;
+  bool HasAPIPermission(const std::string& permission_name) const;
   scoped_refptr<const PermissionSet> GetActivePermissions() const;
 
   // Whether context menu should be shown for page and browser actions.
@@ -347,8 +347,6 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
 
   // The following are helpers for InitFromValue to load various features of the
   // extension from the manifest.
-
-  bool LoadAppIsolation(string16* error);
 
   bool LoadRequiredFeatures(string16* error);
   bool LoadName(string16* error);
@@ -482,9 +480,6 @@ struct InstalledExtensionInfo {
 
 struct UnloadedExtensionInfo {
   extension_misc::UnloadedExtensionReason reason;
-
-  // Was the extension already disabled?
-  bool already_disabled;
 
   // The extension being unloaded - this should always be non-NULL.
   const Extension* extension;

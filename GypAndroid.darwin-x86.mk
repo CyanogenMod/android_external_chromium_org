@@ -107,10 +107,9 @@ include $(LOCAL_PATH)/skia/skia_chrome.target.darwin-x86.mk
 include $(LOCAL_PATH)/skia/skia_chrome_opts.target.darwin-x86.mk
 include $(LOCAL_PATH)/skia/skia_library.target.darwin-x86.mk
 include $(LOCAL_PATH)/skia/skia_opts.target.darwin-x86.mk
+include $(LOCAL_PATH)/skia/skia_opts_ssse3.target.darwin-x86.mk
 include $(LOCAL_PATH)/sql/sql.target.darwin-x86.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.darwin-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/blink_common.target.darwin-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/webkit.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/deprecated_perl_bindings_sources.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/interface_dependencies.target.darwin-x86.mk
@@ -152,6 +151,8 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_html.target.da
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/frontend_protocol_sources.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/generate_devtools_grd.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/modules/modules.target.darwin-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/web/blink_common.target.darwin-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/web/webkit.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/weborigin/weborigin.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf_config.target.darwin-x86.mk
@@ -164,7 +165,6 @@ include $(LOCAL_PATH)/third_party/ashmem/ashmem.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/expat/expat.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/freetype/ft2.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/harfbuzz-ng/harfbuzz-ng.target.darwin-x86.mk
-include $(LOCAL_PATH)/third_party/hyphen/hyphen.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/iccjpeg/iccjpeg.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/icu/icudata.host.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/icu/icudata.target.darwin-x86.mk

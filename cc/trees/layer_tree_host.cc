@@ -29,6 +29,7 @@
 #include "cc/layers/render_surface.h"
 #include "cc/layers/scrollbar_layer.h"
 #include "cc/resources/prioritized_resource_manager.h"
+#include "cc/resources/ui_resource_client.h"
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_host_impl.h"
@@ -59,6 +60,11 @@ RendererCapabilities::RendererCapabilities()
 
 RendererCapabilities::~RendererCapabilities() {}
 
+UIResourceRequest::UIResourceRequest()
+    : type(UIResourceInvalidRequest), id(0), bitmap(NULL) {}
+
+UIResourceRequest::~UIResourceRequest() {}
+
 bool LayerTreeHost::AnyLayerTreeHostInstanceExists() {
   return s_num_layer_tree_instances > 0;
 }
@@ -78,7 +84,8 @@ static int s_next_tree_id = 1;
 
 LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
                              const LayerTreeSettings& settings)
-    : animating_(false),
+    : next_ui_resource_id_(1),
+      animating_(false),
       needs_full_tree_sync_(true),
       needs_filter_context_(false),
       client_(client),
@@ -354,6 +361,15 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
     pending_page_scale_animation_.reset();
   }
 
+  if (!ui_resource_request_queue_.empty()) {
+    sync_tree->set_ui_resource_request_queue(ui_resource_request_queue_);
+    ui_resource_request_queue_.clear();
+    // Process any ui resource requests in the queue.  For impl-side-painting,
+    // the queue is processed in LayerTreeHostImpl::ActivatePendingTree.
+    if (!settings_.impl_side_painting)
+      sync_tree->ProcessUIResourceRequestQueue();
+  }
+
   DCHECK(!sync_tree->ViewportSizeInvalid());
 
   if (new_impl_tree_has_no_evicted_resources) {
@@ -392,7 +408,7 @@ void LayerTreeHost::CommitComplete() {
 }
 
 scoped_ptr<OutputSurface> LayerTreeHost::CreateOutputSurface() {
-  return client_->CreateOutputSurface();
+  return client_->CreateOutputSurface(num_failed_recreate_attempts_ >= 4);
 }
 
 scoped_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
@@ -418,6 +434,8 @@ void LayerTreeHost::DidLoseOutputSurface() {
 
   if (output_surface_lost_)
     return;
+
+  DidLoseUIResources();
 
   num_failed_recreate_attempts_ = 0;
   output_surface_lost_ = true;
@@ -542,8 +560,10 @@ void LayerTreeHost::SetRootLayer(scoped_refptr<Layer> root_layer) {
   if (root_layer_.get())
     root_layer_->SetLayerTreeHost(NULL);
   root_layer_ = root_layer;
-  if (root_layer_.get())
+  if (root_layer_.get()) {
+    DCHECK(!root_layer_->parent());
     root_layer_->SetLayerTreeHost(this);
+  }
 
   if (hud_layer_.get())
     hud_layer_->RemoveFromParent();
@@ -628,6 +648,10 @@ void LayerTreeHost::StartPageScaleAnimation(gfx::Vector2d target_offset,
   SetNeedsCommit();
 }
 
+void LayerTreeHost::NotifyInputThrottledUntilCommit() {
+  proxy_->NotifyInputThrottledUntilCommit();
+}
+
 void LayerTreeHost::Composite(base::TimeTicks frame_begin_time) {
   if (!proxy_->HasImplThread())
     static_cast<SingleThreadProxy*>(proxy_.get())->CompositeImmediately(
@@ -656,8 +680,7 @@ bool LayerTreeHost::UpdateLayers(ResourceUpdateQueue* queue,
   if (!root_layer())
     return false;
 
-  if (device_viewport_size().IsEmpty())
-    return false;
+  DCHECK(!root_layer()->parent());
 
   if (contents_texture_manager_ && memory_allocation_limit_bytes) {
     contents_texture_manager_->SetMaxMemoryLimitBytes(
@@ -1046,7 +1069,7 @@ bool LayerTreeHost::RequestPartialTextureUpdate() {
 }
 
 void LayerTreeHost::SetDeviceScaleFactor(float device_scale_factor) {
-  if (device_scale_factor ==  device_scale_factor_)
+  if (device_scale_factor == device_scale_factor_)
     return;
   device_scale_factor_ = device_scale_factor;
 
@@ -1099,6 +1122,59 @@ void LayerTreeHost::AnimateLayers(base::TimeTicks time) {
     (*iter).second->Animate(monotonic_time);
     bool start_ready_animations = true;
     (*iter).second->UpdateState(start_ready_animations, NULL);
+  }
+}
+
+UIResourceId LayerTreeHost::CreateUIResource(UIResourceClient* client) {
+  DCHECK(client);
+
+  UIResourceRequest request;
+  bool resource_lost = false;
+  request.type = UIResourceRequest::UIResourceCreate;
+  request.id = next_ui_resource_id_++;
+
+  DCHECK(ui_resource_client_map_.find(request.id) ==
+         ui_resource_client_map_.end());
+
+  request.bitmap = client->GetBitmap(request.id, resource_lost);
+  ui_resource_request_queue_.push_back(request);
+  ui_resource_client_map_[request.id] = client;
+  return request.id;
+}
+
+// Deletes a UI resource.  May safely be called more than once.
+void LayerTreeHost::DeleteUIResource(UIResourceId uid) {
+  UIResourceClientMap::iterator iter = ui_resource_client_map_.find(uid);
+  if (iter == ui_resource_client_map_.end())
+    return;
+
+  UIResourceRequest request;
+  request.type = UIResourceRequest::UIResourceDelete;
+  request.id = uid;
+  ui_resource_request_queue_.push_back(request);
+  ui_resource_client_map_.erase(uid);
+}
+
+void LayerTreeHost::UIResourceLost(UIResourceId uid) {
+  UIResourceClientMap::iterator iter = ui_resource_client_map_.find(uid);
+  if (iter == ui_resource_client_map_.end())
+    return;
+
+  UIResourceRequest request;
+  bool resource_lost = true;
+  request.type = UIResourceRequest::UIResourceCreate;
+  request.id = uid;
+  request.bitmap = iter->second->GetBitmap(uid, resource_lost);
+  DCHECK(request.bitmap.get());
+  ui_resource_request_queue_.push_back(request);
+}
+
+void LayerTreeHost::DidLoseUIResources() {
+  // When output surface is lost, we need to recreate the resource.
+  for (UIResourceClientMap::iterator iter = ui_resource_client_map_.begin();
+       iter != ui_resource_client_map_.end();
+       ++iter) {
+    UIResourceLost(iter->first);
   }
 }
 

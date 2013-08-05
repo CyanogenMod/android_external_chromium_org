@@ -83,13 +83,8 @@ const char kDisableDesktopNotifications[]   = "disable-desktop-notifications";
 // Disables device orientation events.
 const char kDisableDeviceOrientation[]      = "disable-device-orientation";
 
-#if defined(OS_ANDROID)
-// WebGL is disabled by default on Android.
-const char kEnableExperimentalWebGL[]       = "enable-webgl";
-#else
 // Disable experimental WebGL support.
 const char kDisableExperimentalWebGL[]      = "disable-webgl";
-#endif
 
 // Blacklist the GPU for accelerated compositing.
 const char kBlacklistAcceleratedCompositing[] =
@@ -225,8 +220,8 @@ const char kEnableWebRtcAecRecordings[]     = "enable-webrtc-aec-recordings";
 // Enable WebRTC DataChannels SCTP wire protocol support.
 const char kEnableSCTPDataChannels[]        = "enable-sctp-data-channels";
 
-// Enable WebRTC device enumeration.
-const char kEnableDeviceEnumeration[]        = "enable-device-enumeration";
+// Disable WebRTC device enumeration.
+const char kDisableDeviceEnumeration[]        = "disable-device-enumeration";
 
 #endif
 
@@ -331,6 +326,11 @@ const char kEnableDelegatedRenderer[]       = "enable-delegated-renderer";
 
 // Enables device motion events.
 const char kEnableDeviceMotion[]            = "enable-device-motion";
+
+#if defined(OS_ANDROID)
+// Disables device motion events.
+const char kDisableDeviceMotion[]           = "disable-device-motion";
+#endif
 
 // Enables restarting interrupted downloads.
 const char kEnableDownloadResumption[]      = "enable-download-resumption";
@@ -515,9 +515,11 @@ const char kForceFieldTrials[]              = "force-fieldtrials";
 // overrides this if present.
 const char kForceRendererAccessibility[]    = "force-renderer-accessibility";
 
-// Force the compositor to use its software implementation instead of GL.
-const char kEnableSoftwareCompositingGLAdapter[] =
-    "enable-software-compositing-gl-adapter";
+// Allow the compositor to use its software implementation if GL fails.
+const char kEnableSoftwareCompositing[] = "enable-software-compositing";
+
+// Prevent the compositor from using its GPU implementation.
+const char kDisableGpuCompositing[] = "disable-gpu-compositing";
 
 // Passes gpu device_id from browser process to GPU process.
 const char kGpuDeviceID[]                   = "gpu-device-id";
@@ -534,6 +536,9 @@ const char kGpuLauncher[]                   = "gpu-launcher";
 
 // Makes this process a GPU sub-process.
 const char kGpuProcess[]                    = "gpu-process";
+
+// Allow shmat system call in GPU sandbox.
+const char kGpuSandboxAllowSysVShm[]        = "gpu-sandbox-allow-sysv-shm";
 
 // Causes the GPU process to display a dialog on launch.
 const char kGpuStartupDialog[]              = "gpu-startup-dialog";

@@ -26,14 +26,6 @@ WebContentsViewDelegate* ContentBrowserClient::GetWebContentsViewDelegate(
   return NULL;
 }
 
-GURL ContentBrowserClient::GetPossiblyPrivilegedURL(
-    content::BrowserContext* browser_context,
-    const GURL& url,
-    bool is_renderer_initiated,
-    SiteInstance* current_instance) {
-  return url;
-}
-
 GURL ContentBrowserClient::GetEffectiveURL(BrowserContext* browser_context,
                                            const GURL& url) {
   return url;
@@ -279,10 +271,6 @@ bool ContentBrowserClient::AllowPepperSocketAPI(
     bool private_api,
     const SocketPermissionRequest& params) {
   return false;
-}
-
-base::FilePath ContentBrowserClient::GetHyphenDictionaryDirectory() {
-  return base::FilePath();
 }
 
 ui::SelectFilePolicy* ContentBrowserClient::CreateSelectFilePolicy(

@@ -38,11 +38,7 @@ CONTENT_EXPORT extern const char kDisableDeviceOrientation[];
 #if defined(OS_CHROMEOS)
 CONTENT_EXPORT extern const char kEnableEncodedScreenCapture[];
 #endif
-#if defined(OS_ANDROID)
-CONTENT_EXPORT extern const char kEnableExperimentalWebGL[];
-#else
 CONTENT_EXPORT extern const char kDisableExperimentalWebGL[];
-#endif
 CONTENT_EXPORT extern const char kBlacklistAcceleratedCompositing[];
 CONTENT_EXPORT extern const char kBlacklistWebGL[];
 extern const char kDisableFileSystem[];
@@ -56,6 +52,7 @@ CONTENT_EXPORT extern const char kDisableGLMultisampling[];
 CONTENT_EXPORT extern const char kDisableGpuProcessPrelaunch[];
 extern const char kDisableGpuSandbox[];
 extern const char kReduceGpuSandbox[];
+CONTENT_EXPORT extern const char kDisableGpuCompositing[];
 extern const char kDisableGpuWatchdog[];
 CONTENT_EXPORT extern const char kDisableHangMonitor[];
 CONTENT_EXPORT extern const char kDisableHTMLNotifications[];
@@ -85,7 +82,7 @@ CONTENT_EXPORT extern const char kEnableSpeechRecognition[];
 #endif
 CONTENT_EXPORT extern const char kDisableWebAudio[];
 #if defined(ENABLE_WEBRTC)
-CONTENT_EXPORT extern const char kEnableDeviceEnumeration[];
+CONTENT_EXPORT extern const char kDisableDeviceEnumeration[];
 CONTENT_EXPORT extern const char kEnableSCTPDataChannels[];
 extern const char kEnableWebRtcAecRecordings[];
 extern const char kEnableWebRtcHWDecoding[];
@@ -114,6 +111,9 @@ CONTENT_EXPORT extern const char kEnableCssShaders[];
 CONTENT_EXPORT extern const char kDisableDelegatedRenderer[];
 CONTENT_EXPORT extern const char kEnableDelegatedRenderer[];
 CONTENT_EXPORT extern const char kEnableDeviceMotion[];
+#if defined(OS_ANDROID)
+CONTENT_EXPORT extern const char kDisableDeviceMotion[];
+#endif
 CONTENT_EXPORT extern const char kEnableDownloadResumption[];
 CONTENT_EXPORT extern const char kEnableExperimentalWebPlatformFeatures[];
 CONTENT_EXPORT extern const char kEnableRegionBasedColumns[];
@@ -146,7 +146,7 @@ extern const char kEnablePruneGpuCommandBuffers[];
 extern const char kEnableSSLCachedInfo[];
 extern const char kEnableSandboxLogging[];
 extern const char kEnableSpatialNavigation[];
-CONTENT_EXPORT extern const char kEnableSoftwareCompositingGLAdapter[];
+CONTENT_EXPORT extern const char kEnableSoftwareCompositing[];
 CONTENT_EXPORT extern const char kEnableSmoothScrolling[];
 CONTENT_EXPORT extern const char kEnableStatsTable[];
 extern const char kEnableStrictSiteIsolation[];
@@ -165,6 +165,7 @@ extern const char kGpuDriverVendor[];
 extern const char kGpuDriverVersion[];
 extern const char kGpuLauncher[];
 CONTENT_EXPORT extern const char kGpuProcess[];
+extern const char kGpuSandboxAllowSysVShm[];
 extern const char kGpuStartupDialog[];
 extern const char kGpuVendorID[];
 #if defined(OS_ANDROID)

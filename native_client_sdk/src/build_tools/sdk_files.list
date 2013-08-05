@@ -71,6 +71,15 @@ examples/api/mouse_lock/Makefile
 examples/api/mouse_lock/manifest.json
 examples/api/mouse_lock/mouse_lock.cc
 examples/api/mouse_lock/mouse_lock.h
+examples/api/socket/background.js
+examples/api/socket/common.js
+examples/api/socket/example.js
+examples/api/socket/icon128.png
+examples/api/socket/index.html
+[win]examples/api/socket/make.bat
+examples/api/socket/Makefile
+examples/api/socket/manifest.json
+examples/api/socket/socket.cc
 examples/api/url_loader/background.js
 examples/api/url_loader/common.js
 examples/api/url_loader/example.js
@@ -302,9 +311,9 @@ include/json/reader.h
 include/json/value.h
 include/json/writer.h
 include/KHR/khrplatform.h
+include/nacl_io/error.h
 include/nacl_io/event_emitter.h
 include/nacl_io/event_listener.h
-include/nacl_io/error.h
 include/nacl_io/inode_pool.h
 include/nacl_io/ioctl.h
 include/nacl_io/kernel_handle.h
@@ -329,6 +338,7 @@ include/nacl_io/nacl_io.h
 include/nacl_io/osdirent.h
 include/nacl_io/osinttypes.h
 include/nacl_io/osmman.h
+include/nacl_io/ossocket.h
 include/nacl_io/osstat.h
 include/nacl_io/ostime.h
 include/nacl_io/ostypes.h
@@ -341,6 +351,16 @@ include/nacl_io/pepper/undef_macros.h
 include/nacl_io/pepper_interface.h
 include/nacl_io/real_pepper_interface.h
 include/nacl_io/typed_mount_factory.h
+include/newlib/arpa/inet.h
+include/newlib/netdb.h
+include/newlib/netinet/in.h
+include/newlib/netinet6/in6.h
+include/newlib/sys/socket.h
+include/pnacl/arpa/inet.h
+include/pnacl/netdb.h
+include/pnacl/netinet/in.h
+include/pnacl/netinet6/in6.h
+include/pnacl/sys/socket.h
 include/ppapi/c/dev/deprecated_bool.h
 include/ppapi/c/dev/pp_cursor_type_dev.h
 include/ppapi/c/dev/pp_print_settings_dev.h
@@ -432,6 +452,7 @@ include/ppapi/c/ppb_net_address.h
 include/ppapi/c/ppb_network_proxy.h
 include/ppapi/c/ppb_opengles2.h
 include/ppapi/c/ppb_tcp_socket.h
+include/ppapi/c/ppb_text_input_controller.h
 include/ppapi/c/ppb_udp_socket.h
 include/ppapi/c/ppb_url_loader.h
 include/ppapi/c/ppb_url_request_info.h
@@ -537,6 +558,7 @@ include/ppapi/cpp/rect.h
 include/ppapi/cpp/resource.h
 include/ppapi/cpp/size.h
 include/ppapi/cpp/tcp_socket.h
+include/ppapi/cpp/text_input_controller.h
 include/ppapi/cpp/touch_point.h
 include/ppapi/cpp/udp_socket.h
 include/ppapi/cpp/url_loader.h
@@ -886,6 +908,7 @@ src/ppapi_cpp/selection_dev.cc
 src/ppapi_cpp/simple_thread.cc
 src/ppapi_cpp/socket_dev.cc
 src/ppapi_cpp/tcp_socket.cc
+src/ppapi_cpp/text_input_controller.cc
 src/ppapi_cpp/text_input_dev.cc
 src/ppapi_cpp/truetype_font_dev.cc
 src/ppapi_cpp/udp_socket.cc

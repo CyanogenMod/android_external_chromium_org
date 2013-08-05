@@ -9,6 +9,7 @@
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -231,6 +232,7 @@ const char kInstrumentExpYearKey[] = "instrument.credit_card.exp_year";
 const char kInstrumentType[] = "instrument.type";
 const char kInstrumentPhoneNumberKey[] = "instrument_phone_number";
 const char kMerchantDomainKey[] = "merchant_domain";
+const char kPhoneNumberRequired[] = "phone_number_required";
 const char kReasonKey[] = "reason";
 const char kRiskCapabilitiesKey[] = "supported_risk_challenge";
 const char kRiskParamsKey[] = "risk_params";
@@ -239,10 +241,12 @@ const char kSelectedInstrumentIdKey[] = "selected_instrument_id";
 const char kSessionMaterialKey[] = "session_material";
 const char kShippingAddressIdKey[] = "shipping_address_id";
 const char kShippingAddressKey[] = "shipping_address";
+const char kShippingAddressRequired[] = "shipping_address_required";
 const char kAutocheckoutStepsKey[] = "steps";
 const char kSuccessKey[] = "success";
 const char kUpgradedBillingAddressKey[] = "upgraded_billing_address";
 const char kUpgradedInstrumentIdKey[] = "upgraded_instrument_id";
+const char kUseMinimalAddresses[] = "use_minimal_addresses";
 
 }  // namespace
 
@@ -265,7 +269,8 @@ WalletClient::WalletClient(net::URLRequestContextGetter* context_getter,
     : context_getter_(context_getter),
       delegate_(delegate),
       request_type_(NO_PENDING_REQUEST),
-      one_time_pad_(kOneTimePadLength) {
+      one_time_pad_(kOneTimePadLength),
+      weak_ptr_factory_(this) {
   DCHECK(context_getter_.get());
   DCHECK(delegate_);
 }
@@ -335,6 +340,9 @@ void WalletClient::GetFullWallet(const FullWalletRequest& full_wallet_request) {
   base::DictionaryValue request_dict;
   request_dict.SetString(kApiKeyKey, google_apis::GetAPIKey());
   request_dict.SetString(kRiskParamsKey, delegate_->GetRiskData());
+  request_dict.SetBoolean(kUseMinimalAddresses, false);
+  request_dict.SetBoolean(kPhoneNumberRequired, true);
+
   request_dict.SetString(kSelectedInstrumentIdKey,
                          full_wallet_request.instrument_id);
   request_dict.SetString(kSelectedAddressIdKey, full_wallet_request.address_id);
@@ -394,6 +402,8 @@ void WalletClient::SaveToWallet(scoped_ptr<Instrument> instrument,
   request_dict.SetString(kRiskParamsKey, delegate_->GetRiskData());
   request_dict.SetString(kMerchantDomainKey,
                          source_url.GetWithEmptyPath().spec());
+  request_dict.SetBoolean(kUseMinimalAddresses, false);
+  request_dict.SetBoolean(kPhoneNumberRequired, true);
 
   std::string primary_account_number;
   std::string card_verification_number;
@@ -481,6 +491,10 @@ void WalletClient::GetWalletItems(const GURL& source_url) {
   request_dict.SetString(kApiKeyKey, google_apis::GetAPIKey());
   request_dict.SetString(kMerchantDomainKey,
                          source_url.GetWithEmptyPath().spec());
+  request_dict.SetBoolean(kShippingAddressRequired,
+                          delegate_->IsShippingAddressRequired());
+  request_dict.SetBoolean(kUseMinimalAddresses, false);
+  request_dict.SetBoolean(kPhoneNumberRequired, true);
 
   std::string post_body;
   base::JSONWriter::Write(&request_dict, &post_body);
@@ -620,6 +634,14 @@ void WalletClient::OnURLFetchComplete(
   // |method, but should be freed once control leaves the method.
   scoped_ptr<net::URLFetcher> scoped_request(request_.Pass());
 
+  // Prepare to start the next pending request.  This is queued up as an
+  // asynchronous message because |this| WalletClient instance can be destroyed
+  // before the end of the method in response to the current incoming request.
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&WalletClient::StartNextPendingRequest,
+                 weak_ptr_factory_.GetWeakPtr()));;
+
   std::string data;
   source->GetResponseAsString(&data);
   VLOG(1) << "Response body: " << data;
@@ -749,8 +771,6 @@ void WalletClient::OnURLFetchComplete(
     case NO_PENDING_REQUEST:
       NOTREACHED();
   }
-
-  StartNextPendingRequest();
 }
 
 void WalletClient::StartNextPendingRequest() {

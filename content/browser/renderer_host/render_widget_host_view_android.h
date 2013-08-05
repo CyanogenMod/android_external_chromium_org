@@ -149,6 +149,8 @@ class RenderWidgetHostViewAndroid
       const WebKit::WebMouseWheelEvent& event) OVERRIDE;
   virtual InputEventAckState FilterInputEvent(
       const WebKit::WebInputEvent& input_event) OVERRIDE;
+  virtual void GestureEventAck(int gesture_event_type,
+                               InputEventAckState ack_result) OVERRIDE;
   virtual void OnAccessibilityNotifications(
       const std::vector<AccessibilityHostMsg_NotificationParams>&
           params) OVERRIDE;
@@ -232,6 +234,7 @@ class RenderWidgetHostViewAndroid
 
  private:
   void BuffersSwapped(const gpu::Mailbox& mailbox,
+                      uint32_t output_surface_id,
                       const base::Closure& ack_callback);
 
   void RunAckCallbacks();
@@ -297,6 +300,7 @@ class RenderWidgetHostViewAndroid
 
   // The mailbox of the previously received frame.
   gpu::Mailbox current_mailbox_;
+  uint32_t current_mailbox_output_surface_id_;
 
   base::WeakPtrFactory<RenderWidgetHostViewAndroid> weak_ptr_factory_;
 

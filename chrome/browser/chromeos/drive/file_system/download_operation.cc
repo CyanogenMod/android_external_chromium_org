@@ -14,6 +14,7 @@
 #include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
+#include "chrome/browser/chromeos/drive/resource_entry_conversion.h"
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
 #include "content/public/browser/browser_thread.h"
@@ -55,14 +56,17 @@ FileError CheckPreConditionForEnsureFileDownloaded(
   // document.
   if (entry->file_specific_info().is_hosted_document()) {
     base::FilePath gdoc_file_path;
+    base::PlatformFileInfo file_info;
     if (!file_util::CreateTemporaryFileInDir(temporary_file_directory,
                                              &gdoc_file_path) ||
         !util::CreateGDocFile(gdoc_file_path,
                               GURL(entry->file_specific_info().alternate_url()),
-                              entry->resource_id()))
+                              entry->resource_id()) ||
+        !file_util::GetFileInfo(gdoc_file_path, &file_info))
       return FILE_ERROR_FAILED;
 
     *cache_file_path = gdoc_file_path;
+    SetPlatformFileInfoToResourceEntry(file_info, entry);
     return FILE_ERROR_OK;
   }
 
@@ -89,12 +93,8 @@ FileError CheckPreConditionForEnsureFileDownloaded(
   // the drive::FS side is also converted to run fully on blocking pool.
   if (cache_entry.is_dirty()) {
     base::PlatformFileInfo file_info;
-    if (file_util::GetFileInfo(*cache_file_path, &file_info)) {
-      PlatformFileInfoProto entry_file_info;
-      util::ConvertPlatformFileInfoToResourceEntry(file_info,
-                                                   &entry_file_info);
-      *entry->mutable_file_info() = entry_file_info;
-    }
+    if (file_util::GetFileInfo(*cache_file_path, &file_info))
+      SetPlatformFileInfoToResourceEntry(file_info, entry);
   }
 
   return FILE_ERROR_OK;
@@ -164,7 +164,7 @@ FileError PrepareForDownloadFile(internal::FileCache* cache,
 
   // Ensure enough space in the cache.
   if (!cache->FreeDiskSpaceIfNeededFor(expected_file_size))
-    return FILE_ERROR_NO_SPACE;
+    return FILE_ERROR_NO_LOCAL_SPACE;
 
   // Create the temporary file which will store the downloaded content.
   return CreateTemporaryReadableFileInDir(
@@ -185,7 +185,7 @@ FileError UpdateLocalStateForDownloadFile(
     base::FilePath* cache_file_path) {
   DCHECK(cache);
 
-  FileError error = util::GDataToFileError(gdata_error);
+  FileError error = GDataToFileError(gdata_error);
   if (error != FILE_ERROR_OK) {
     base::DeleteFile(downloaded_file_path, false /* recursive */);
     return error;

@@ -16,7 +16,6 @@
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/themes/theme_service_factory.h"
@@ -639,6 +638,11 @@ void GtkThemeService::ClearAllThemeData() {
 }
 
 void GtkThemeService::LoadThemePrefs() {
+  // Initialize the values sent to webkit with the default values.
+  // ThemeService::LoadThemePrefs() will replace them with values for the native
+  // gtk theme if necessary.
+  LoadDefaultValues();
+
   // This takes care of calling SetNativeTheme() if necessary.
   ThemeService::LoadThemePrefs();
 

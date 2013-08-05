@@ -40,7 +40,8 @@ class MediaDecoderJob {
  public:
   enum DecodeStatus {
     DECODE_SUCCEEDED,
-    DECODE_TRY_AGAIN_LATER,
+    DECODE_TRY_ENQUEUE_INPUT_AGAIN_LATER,
+    DECODE_TRY_DEQUEUE_OUTPUT_AGAIN_LATER,
     DECODE_FORMAT_CHANGED,
     DECODE_END_OF_STREAM,
     DECODE_FAILED,
@@ -54,18 +55,13 @@ class MediaDecoderJob {
                               size_t)> DecoderCallback;
 
   // Called by MediaSourcePlayer to decode some data.
-  void Decode(
-      const MediaPlayerHostMsg_ReadFromDemuxerAck_Params::AccessUnit& unit,
-      const base::TimeTicks& start_time_ticks,
-      const base::TimeDelta& start_presentation_timestamp,
-      const MediaDecoderJob::DecoderCallback& callback);
+  void Decode(const AccessUnit& unit,
+              const base::TimeTicks& start_time_ticks,
+              const base::TimeDelta& start_presentation_timestamp,
+              const MediaDecoderJob::DecoderCallback& callback);
 
   // Flush the decoder.
   void Flush();
-
-  struct Deleter {
-    inline void operator()(MediaDecoderJob* ptr) const { ptr->Release(); }
-  };
 
   // Causes this instance to be deleted on the thread it is bound to.
   void Release();
@@ -86,18 +82,19 @@ class MediaDecoderJob {
       const base::TimeDelta& presentation_timestamp,
       const MediaDecoderJob::DecoderCallback& callback, DecodeStatus status);
 
+  DecodeStatus QueueInputBuffer(const AccessUnit& unit);
+
   // Helper function to decoder data on |thread_|. |unit| contains all the data
   // to be decoded. |start_time_ticks| and |start_presentation_timestamp|
   // represent the system time and the presentation timestamp when the first
   // frame is rendered. We use these information to estimate when the current
   // frame should be rendered. If |needs_flush| is true, codec needs to be
   // flushed at the beginning of this call.
-  void DecodeInternal(
-      const MediaPlayerHostMsg_ReadFromDemuxerAck_Params::AccessUnit& unit,
-      const base::TimeTicks& start_time_ticks,
-      const base::TimeDelta& start_presentation_timestamp,
-      bool needs_flush,
-      const MediaDecoderJob::DecoderCallback& callback);
+  void DecodeInternal(const AccessUnit& unit,
+                      const base::TimeTicks& start_time_ticks,
+                      const base::TimeDelta& start_presentation_timestamp,
+                      bool needs_flush,
+                      const MediaDecoderJob::DecoderCallback& callback);
 
   // The UI message loop where callbacks should be dispatched.
   scoped_refptr<base::MessageLoopProxy> ui_loop_;
@@ -122,8 +119,9 @@ class MediaDecoderJob {
   bool is_decoding_;
 };
 
-typedef scoped_ptr<MediaDecoderJob, MediaDecoderJob::Deleter>
-    ScopedMediaDecoderJob;
+struct DecoderJobDeleter {
+  inline void operator()(MediaDecoderJob* ptr) const { ptr->Release(); }
+};
 
 // This class handles media source extensions on Android. It uses Android
 // MediaCodec to decode audio and video streams in two separate threads.
@@ -142,7 +140,7 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid {
   virtual void Pause() OVERRIDE;
   virtual void SeekTo(base::TimeDelta timestamp) OVERRIDE;
   virtual void Release() OVERRIDE;
-  virtual void SetVolume(float leftVolume, float rightVolume) OVERRIDE;
+  virtual void SetVolume(double volume) OVERRIDE;
   virtual int GetVideoWidth() OVERRIDE;
   virtual int GetVideoHeight() OVERRIDE;
   virtual base::TimeDelta GetCurrentTime() OVERRIDE;
@@ -219,6 +217,9 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid {
   bool HasAudioData() const;
   bool HasVideoData() const;
 
+  // Helper function to set the volume.
+  void SetVolumeInternal();
+
   enum PendingEventFlags {
     NO_EVENT_PENDING = 0,
     SEEK_EVENT_PENDING = 1 << 0,
@@ -246,6 +247,7 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid {
   bool playing_;
   bool is_audio_encrypted_;
   bool is_video_encrypted_;
+  double volume_;
 
   // base::TickClock used by |clock_|.
   base::DefaultTickClock default_tick_clock_;
@@ -266,8 +268,8 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid {
   gfx::ScopedJavaSurface surface_;
 
   // Decoder jobs
-  ScopedMediaDecoderJob audio_decoder_job_;
-  ScopedMediaDecoderJob video_decoder_job_;
+  scoped_ptr<AudioDecoderJob, DecoderJobDeleter> audio_decoder_job_;
+  scoped_ptr<VideoDecoderJob, DecoderJobDeleter> video_decoder_job_;
 
   bool reconfig_audio_decoder_;
   bool reconfig_video_decoder_;

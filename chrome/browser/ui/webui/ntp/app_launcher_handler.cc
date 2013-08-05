@@ -47,7 +47,6 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/common/web_application_info.h"
-#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/favicon_url.h"
@@ -81,6 +80,11 @@ void RecordAppLauncherPromoHistogram(
   UMA_HISTOGRAM_ENUMERATION(
       "Apps.AppLauncherPromo", value, apps::APP_LAUNCHER_PROMO_MAX);
 }
+
+// This is used to avoid a DCHECK due to an unhandled WebUI callback. The
+// JavaScript used to switch between pages sends "pageSelected" which is used
+// in the context of the NTP for recording metrics we don't need here.
+void NoOpCallback(const ListValue* args) {}
 
 }  // namespace
 
@@ -124,19 +128,21 @@ void AppLauncherHandler::CreateAppInfo(
 
   bool icon_big_exists = true;
   // Instead of setting grayscale here, we do it in apps_page.js.
-  GURL icon_big =
-      ExtensionIconSource::GetIconURL(extension,
-                                      extension_misc::EXTENSION_ICON_LARGE,
-                                      ExtensionIconSet::MATCH_BIGGER,
-                                      false, &icon_big_exists);
+  GURL icon_big = extensions::ExtensionIconSource::GetIconURL(
+      extension,
+      extension_misc::EXTENSION_ICON_LARGE,
+      ExtensionIconSet::MATCH_BIGGER,
+      false,
+      &icon_big_exists);
   value->SetString("icon_big", icon_big.spec());
   value->SetBoolean("icon_big_exists", icon_big_exists);
   bool icon_small_exists = true;
-  GURL icon_small =
-      ExtensionIconSource::GetIconURL(extension,
-                                      extension_misc::EXTENSION_ICON_BITTY,
-                                      ExtensionIconSet::MATCH_BIGGER,
-                                      false, &icon_small_exists);
+  GURL icon_small = extensions::ExtensionIconSource::GetIconURL(
+      extension,
+      extension_misc::EXTENSION_ICON_BITTY,
+      ExtensionIconSet::MATCH_BIGGER,
+      false,
+      &icon_small_exists);
   value->SetString("icon_small", icon_small.spec());
   value->SetBoolean("icon_small_exists", icon_small_exists);
   value->SetInteger("launch_container",
@@ -222,6 +228,7 @@ void AppLauncherHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("onLearnMore",
       base::Bind(&AppLauncherHandler::OnLearnMore,
                  base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("pageSelected", base::Bind(&NoOpCallback));
 }
 
 void AppLauncherHandler::Observe(int type,
@@ -491,7 +498,7 @@ void AppLauncherHandler::HandleLaunchApp(const ListValue* args) {
     CoreAppLauncherHandler::RecordAppLaunchType(launch_bucket,
                                                 extension->GetType());
   } else {
-    RecordWebStoreLaunch();
+    CoreAppLauncherHandler::RecordWebStoreLaunch();
   }
 
   if (disposition == NEW_FOREGROUND_TAB || disposition == NEW_BACKGROUND_TAB ||
@@ -749,44 +756,8 @@ void AppLauncherHandler::OnLocalStatePreferenceChanged() {
           apps::prefs::kShowAppLauncherPromo)));
 }
 
-// static
-void AppLauncherHandler::RegisterProfilePrefs(
-    user_prefs::PrefRegistrySyncable* registry) {
-  registry->RegisterListPref(prefs::kNtpAppPageNames,
-                             user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-}
-
 void AppLauncherHandler::CleanupAfterUninstall() {
   extension_id_prompting_.clear();
-}
-
-// static
-void AppLauncherHandler::RecordAppListSearchLaunch(const Extension* extension) {
-  extension_misc::AppLaunchBucket bucket =
-      extension_misc::APP_LAUNCH_APP_LIST_SEARCH;
-  if (extension->id() == extension_misc::kWebStoreAppId)
-    bucket = extension_misc::APP_LAUNCH_APP_LIST_SEARCH_WEBSTORE;
-  else if (extension->id() == extension_misc::kChromeAppId)
-    bucket = extension_misc::APP_LAUNCH_APP_LIST_SEARCH_CHROME;
-  CoreAppLauncherHandler::RecordAppLaunchType(bucket, extension->GetType());
-}
-
-// static
-void AppLauncherHandler::RecordAppListMainLaunch(const Extension* extension) {
-  extension_misc::AppLaunchBucket bucket =
-      extension_misc::APP_LAUNCH_APP_LIST_MAIN;
-  if (extension->id() == extension_misc::kWebStoreAppId)
-    bucket = extension_misc::APP_LAUNCH_APP_LIST_MAIN_WEBSTORE;
-  else if (extension->id() == extension_misc::kChromeAppId)
-    bucket = extension_misc::APP_LAUNCH_APP_LIST_MAIN_CHROME;
-  CoreAppLauncherHandler::RecordAppLaunchType(bucket, extension->GetType());
-}
-
-// static
-void AppLauncherHandler::RecordWebStoreLaunch() {
-  CoreAppLauncherHandler::RecordAppLaunchType(
-      extension_misc::APP_LAUNCH_NTP_WEBSTORE,
-      extensions::Manifest::TYPE_HOSTED_APP);
 }
 
 void AppLauncherHandler::PromptToEnableApp(const std::string& extension_id) {

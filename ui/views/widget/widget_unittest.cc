@@ -18,6 +18,7 @@
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/native_widget_delegate.h"
+#include "ui/views/widget/root_view.h"
 #include "ui/views/window/native_frame_view.h"
 
 #if defined(USE_AURA)
@@ -36,7 +37,7 @@
 #endif
 
 namespace views {
-namespace {
+namespace test {
 
 // A generic typedef to pick up relevant NativeWidget implementations.
 #if defined(USE_AURA)
@@ -385,6 +386,18 @@ class WidgetTest : public ViewsTestBase {
 
   Widget* CreateChildNativeWidget() {
     return CreateChildNativeWidgetWithParent(NULL);
+  }
+
+  View* GetMousePressedHandler(internal::RootView* root_view) {
+    return root_view->mouse_pressed_handler_;
+  }
+
+  View* GetMouseMoveHandler(internal::RootView* root_view) {
+    return root_view->mouse_move_handler_;
+  }
+
+  View* GetGestureHandler(internal::RootView* root_view) {
+    return root_view->gesture_handler_;
   }
 };
 
@@ -1985,5 +1998,119 @@ TEST_F(WidgetTest, GetNativeThemeFromDestructor) {
     RunGetNativeThemeFromDestructor(params, false);
 }
 
-}  // namespace
+// Used by HideCloseDestroy. Allows setting a boolean when the widget is
+// destroyed.
+class CloseDestroysWidget : public Widget {
+ public:
+  explicit CloseDestroysWidget(bool* destroyed)
+      : destroyed_(destroyed) {
+  }
+
+  virtual ~CloseDestroysWidget() {
+    if (destroyed_) {
+      *destroyed_ = true;
+      base::MessageLoop::current()->QuitNow();
+    }
+  }
+
+  void Detach() { destroyed_ = NULL; }
+
+ private:
+  // If non-null set to true from destructor.
+  bool* destroyed_;
+
+  DISALLOW_COPY_AND_ASSIGN(CloseDestroysWidget);
+};
+
+// Verifies Close() results in destroying.
+TEST_F(WidgetTest, CloseDestroys) {
+  bool destroyed = false;
+  CloseDestroysWidget* widget = new CloseDestroysWidget(&destroyed);
+  Widget::InitParams params =
+      CreateParams(views::Widget::InitParams::TYPE_MENU);
+  params.opacity = Widget::InitParams::OPAQUE_WINDOW;
+#if defined(USE_AURA) && !defined(OS_CHROMEOS)
+  params.native_widget = new DesktopNativeWidgetAura(widget);
+#endif
+  widget->Init(params);
+  widget->Show();
+  widget->Hide();
+  widget->Close();
+  // Run the message loop as Close() asynchronously deletes.
+  RunPendingMessages();
+  EXPECT_TRUE(destroyed);
+  // Close() should destroy the widget. If not we'll cleanup to avoid leaks.
+  if (!destroyed) {
+    widget->Detach();
+    widget->CloseNow();
+  }
+}
+
+// A view that consumes mouse-pressed event and gesture-tap-down events.
+class RootViewTestView : public View {
+ public:
+  RootViewTestView(): View() {}
+
+ private:
+  virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE {
+    return true;
+  }
+
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
+    if (event->type() == ui::ET_GESTURE_TAP_DOWN)
+      event->SetHandled();
+  }
+};
+
+// Checks if RootView::*_handler_ fields are unset when widget is hidden.
+TEST_F(WidgetTest, TestRootViewHandlersWhenHidden) {
+  Widget* widget = CreateTopLevelNativeWidget();
+  widget->SetBounds(gfx::Rect(0, 0, 300, 300));
+  View* view = new RootViewTestView();
+  view->SetBounds(0, 0, 300, 300);
+  internal::RootView* root_view =
+      static_cast<internal::RootView*>(widget->GetRootView());
+  root_view->AddChildView(view);
+
+  // Check RootView::mouse_pressed_handler_.
+  widget->Show();
+  EXPECT_EQ(NULL, GetMousePressedHandler(root_view));
+  gfx::Point click_location(45, 15);
+  ui::MouseEvent press(ui::ET_MOUSE_PRESSED, click_location, click_location,
+      ui::EF_LEFT_MOUSE_BUTTON);
+  widget->OnMouseEvent(&press);
+  EXPECT_EQ(view, GetMousePressedHandler(root_view));
+  widget->Hide();
+  EXPECT_EQ(NULL, GetMousePressedHandler(root_view));
+
+  // Check RootView::mouse_move_handler_.
+  widget->Show();
+  EXPECT_EQ(NULL, GetMouseMoveHandler(root_view));
+  gfx::Point move_location(45, 15);
+  ui::MouseEvent move(ui::ET_MOUSE_MOVED, move_location, move_location, 0);
+  widget->OnMouseEvent(&move);
+  EXPECT_EQ(view, GetMouseMoveHandler(root_view));
+  widget->Hide();
+  EXPECT_EQ(NULL, GetMouseMoveHandler(root_view));
+
+  // Check RootView::gesture_handler_.
+  widget->Show();
+  EXPECT_EQ(NULL, GetGestureHandler(root_view));
+  ui::GestureEvent tap_down(
+      ui::ET_GESTURE_TAP_DOWN,
+      15,
+      15,
+      0,
+      base::TimeDelta(),
+      ui::GestureEventDetails(ui::ET_GESTURE_TAP_DOWN, 0, 0),
+      1);
+  widget->OnGestureEvent(&tap_down);
+  EXPECT_EQ(view, GetGestureHandler(root_view));
+  widget->Hide();
+  EXPECT_EQ(NULL, GetGestureHandler(root_view));
+
+  widget->Close();
+}
+
+}  // namespace test
 }  // namespace views

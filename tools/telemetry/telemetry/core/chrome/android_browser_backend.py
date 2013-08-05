@@ -10,8 +10,9 @@ import time
 
 from telemetry.core import exceptions
 from telemetry.core import util
+from telemetry.core.backends import browser_backend
+from telemetry.core.backends.chrome import chrome_browser_backend
 from telemetry.core.chrome import adb_commands
-from telemetry.core.chrome import browser_backend
 
 
 class AndroidBrowserBackendSettings(object):
@@ -142,7 +143,7 @@ class WebviewBackendSettings(AndroidBrowserBackendSettings):
     return '/data/data/%s/app_webview/' % self.package
 
 
-class AndroidBrowserBackend(browser_backend.BrowserBackend):
+class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   """The backend for controlling a browser instance running on Android.
   """
   def __init__(self, options, backend_settings):
@@ -163,10 +164,6 @@ class AndroidBrowserBackend(browser_backend.BrowserBackend):
 
     # Kill old browser.
     self._adb.CloseApplication(self._backend_settings.package)
-
-    adb_commands.Forwarder.KillDevice(self._adb)
-    if not options.keep_test_server_ports:
-      adb_commands.Forwarder.KillHost()
 
     if self._adb.Adb().CanAccessProtectedFileContents():
       if not options.dont_override_profile:
@@ -197,7 +194,7 @@ class AndroidBrowserBackend(browser_backend.BrowserBackend):
     self._adb.Adb().SetProtectedFileContents(
         self._backend_settings.cmdline_file, ' '.join(args))
 
-    # Start it up with a fresh log.
+  def Start(self):
     self._adb.RunShellCommand('logcat -c')
     self._adb.StartActivity(self._backend_settings.package,
                             self._backend_settings.activity,
@@ -206,7 +203,7 @@ class AndroidBrowserBackend(browser_backend.BrowserBackend):
                             'chrome://newtab/')
 
     self._adb.Forward('tcp:%d' % self._port,
-                      backend_settings.GetDevtoolsRemotePort())
+                      self._backend_settings.GetDevtoolsRemotePort())
 
     try:
       self._WaitForBrowserToComeUp()

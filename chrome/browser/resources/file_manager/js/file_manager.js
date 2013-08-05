@@ -62,6 +62,7 @@ function unload() {
  */
 var DialogType = {
   SELECT_FOLDER: 'folder',
+  SELECT_UPLOAD_FOLDER: 'upload-folder',
   SELECT_SAVEAS_FILE: 'saveas-file',
   SELECT_OPEN_FILE: 'open-file',
   SELECT_OPEN_MULTI_FILE: 'open-multi-file',
@@ -118,6 +119,7 @@ TextMeasure.prototype.getWidth = function(text) {
  */
 DialogType.isModal = function(type) {
   return type == DialogType.SELECT_FOLDER ||
+      type == DialogType.SELECT_UPLOAD_FOLDER ||
       type == DialogType.SELECT_SAVEAS_FILE ||
       type == DialogType.SELECT_OPEN_FILE ||
       type == DialogType.SELECT_OPEN_MULTI_FILE;
@@ -185,13 +187,13 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       sizeStatsResult, spaceInnerBar, spaceInfoLabel, spaceOuterBar) {
     spaceInnerBar.removeAttribute('pending');
     if (sizeStatsResult) {
-      var sizeStr = util.bytesToString(sizeStatsResult.remainingSizeKB * 1024);
+      var sizeStr = util.bytesToString(sizeStatsResult.remainingSize);
       spaceInfoLabel.textContent = strf('SPACE_AVAILABLE', sizeStr);
 
       var usedSpace =
-          sizeStatsResult.totalSizeKB - sizeStatsResult.remainingSizeKB;
+          sizeStatsResult.totalSize - sizeStatsResult.remainingSize;
       spaceInnerBar.style.width =
-          (100 * usedSpace / sizeStatsResult.totalSizeKB) + '%';
+          (100 * usedSpace / sizeStatsResult.totalSize) + '%';
 
       spaceOuterBar.hidden = false;
     } else {
@@ -240,15 +242,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       chrome.commandLinePrivate.hasSwitch(
           'file-manager-show-checkboxes', function(flag) {
         this.showCheckboxes_ = flag;
-        done();
-      }.bind(this));
-    }.bind(this));
-
-    // TODO(yoshiki): Remove this after launching folder shortcuts feature.
-    group.add(function(done) {
-      chrome.commandLinePrivate.hasSwitch(
-          'file-manager-enable-folder-shortcuts', function(flag) {
-        this.isFolderShortcutsEnabled_ = flag;
         done();
       }.bind(this));
     }.bind(this));
@@ -392,6 +385,11 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         driveConnectionChangedHandler);
     driveConnectionChangedHandler();
 
+    // Set the initial focus and set it as a fallback.
+    this.document_.addEventListener('focusout', function(e) {
+      if (!e.relatedTarget)
+        this.refocus();
+    }.bind(this));
     this.refocus();
 
     this.initDataTransferOperations_();
@@ -423,8 +421,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   FileManager.prototype.initDataTransferOperations_ = function() {
     this.copyManager_ = new FileCopyManagerWrapper.getInstance();
 
-    this.butterBar_ = new ButterBar(this.dialogDom_, this.copyManager_,
-        this.metadataCache_);
+    this.butterBar_ = new ButterBar(this.dialogDom_, this.copyManager_);
 
     // CopyManager and ButterBar are required for 'Delete' operation in
     // Open and Save dialogs. But drag-n-drop and copy-paste are not needed.
@@ -436,11 +433,10 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.copyManager_.addEventListener(
         'copy-progress', this.onCopyProgressBound_);
 
-    this.onCopyManagerOperationCompleteBound_ =
-        this.onCopyManagerOperationComplete_.bind(this);
+    this.onCopyManagerEntryChangedBound_ =
+        this.onCopyManagerEntryChanged_.bind(this);
     this.copyManager_.addEventListener(
-        'copy-operation-complete',
-        this.onCopyManagerOperationCompleteBound_);
+        'entry-changed', this.onCopyManagerEntryChangedBound_);
 
     var controller = this.fileTransferController_ =
         new FileTransferController(this.document_,
@@ -478,8 +474,12 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.rootsContextMenu_ =
         this.dialogDom_.querySelector('#roots-context-menu');
     cr.ui.Menu.decorate(this.rootsContextMenu_);
-
     this.volumeList_.setContextMenu(this.rootsContextMenu_);
+
+    this.directoryTreeContextMenu_ =
+        this.dialogDom_.querySelector('#directory-tree-context-menu');
+    cr.ui.Menu.decorate(this.directoryTreeContextMenu_);
+    this.directoryTree_.contextMenuForSubitems = this.directoryTreeContextMenu_;
 
     this.textContextMenu_ =
         this.dialogDom_.querySelector('#text-context-menu');
@@ -612,8 +612,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         'create-folder-shortcut', Commands.createFolderShortcutCommand, this);
 
     CommandUtil.registerCommand(this.dialogContainer_,
-        'remove-folder-shortcut', Commands.removeFolderShortcutCommand, this,
-        this.volumeList_);
+        'remove-folder-shortcut', Commands.removeFolderShortcutCommand, this);
 
     CommandUtil.registerCommand(this.dialogContainer_, 'search',
         Commands.searchCommand, this,
@@ -633,8 +632,10 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     CommandUtil.registerCommand(doc, 'zoom-out', Commands.zoomOutCommand);
     CommandUtil.registerCommand(doc, 'zoom-reset', Commands.zoomResetCommand);
 
-    CommandUtil.registerCommand(doc, 'cut', Commands.defaultCommand, doc);
-    CommandUtil.registerCommand(doc, 'copy', Commands.defaultCommand, doc);
+    CommandUtil.registerCommand(this.dialogContainer_, 'cut',
+        Commands.defaultCommand, doc);
+    CommandUtil.registerCommand(this.dialogContainer_, 'copy',
+        Commands.defaultCommand, doc);
 
     var inputs = this.dialogDom_.querySelectorAll(
         'input[type=text], input[type=search], textarea');
@@ -772,6 +773,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.fileTypes_ = this.params_.typeList || [];
     metrics.recordEnum('Create', this.dialogType,
         [DialogType.SELECT_FOLDER,
+         DialogType.SELECT_UPLOAD_FOLDER,
          DialogType.SELECT_SAVEAS_FILE,
          DialogType.SELECT_OPEN_FILE,
          DialogType.SELECT_OPEN_MULTI_FILE,
@@ -1022,9 +1024,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.driveBuyMoreStorageCommand_ =
         this.dialogDom_.querySelector('#drive-buy-more-space');
 
-    this.newFolderCommand_ =
-        this.dialogDom_.querySelector('command#newfolder');
-
     this.defaultActionMenuItem_.addEventListener('activate',
         this.dispatchSelectionAction_.bind(this));
 
@@ -1063,6 +1062,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     var singleSelection =
         this.dialogType == DialogType.SELECT_OPEN_FILE ||
         this.dialogType == DialogType.SELECT_FOLDER ||
+        this.dialogType == DialogType.SELECT_UPLOAD_FOLDER ||
         this.dialogType == DialogType.SELECT_SAVEAS_FILE;
 
     var showSpecialSearchRoots =
@@ -1384,44 +1384,36 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   };
 
   /**
-   * Handler of file manager operations. Update directory model
-   * to reflect operation result immediatelly (not waiting directory
-   * update event). Also, preloads thumbnails for the copied images.
+   * Handler of file manager operations. Called when an entry has been
+   * changed.
+   * This updates directory model to reflect operation result immediately (not
+   * waiting for directory update event). Also, preloads thumbnails for the
+   * images of new entries.
+   * See also FileCopyManager.EventRouter.
    *
-   * @param {Event} Operation completion event.
+   * @param {cr.Event} event An event for the entry change.
    * @private
    */
-  FileManager.prototype.onCopyManagerOperationComplete_ = function(event) {
-    var currentPath = this.directoryModel_.getCurrentDirPath();
-    if (this.isOnDrive() && this.directoryModel_.isSearching())
-      return;
+  FileManager.prototype.onCopyManagerEntryChanged_ = function(event) {
+    var type = event.type;
+    var entry = event.entry;
+    this.directoryModel_.onEntryChanged(type, entry);
 
-    var inCurrentDirectory = function(entry) {
-      var fullPath = entry.fullPath;
-      var dirPath = fullPath.substr(0, fullPath.length -
-                                       entry.name.length - 1);
-      return dirPath == currentPath;
-    };
-    for (var i = 0; i < event.affectedEntries.length; i++) {
-      var entry = event.affectedEntries[i];
-      if (inCurrentDirectory(entry)) {
-        this.directoryModel_.onEntryChanged(entry.name);
-      } else if (event.reason == 'copied' && FileType.isImage(entry)) {
-        // Preload a thumbnail if the new copied entry an image.
-        var metadata = entry.getMetadata(function(metadata) {
-          var url = entry.toURL();
-          var thumbnailLoader_ = new ThumbnailLoader(
-              url,
-              ThumbnailLoader.LoaderType.CANVAS,
-              metadata,
-              undefined,  // Media type.
-              FileType.isOnDrive(url) ?
-                  ThumbnailLoader.UseEmbedded.USE_EMBEDDED :
-                  ThumbnailLoader.UseEmbedded.NO_EMBEDDED,
-              10);  // Very low priority.
-              thumbnailLoader_.loadDetachedImage(function(success) {});
-        });
-      }
+    if (type == util.EntryChangedType.CREATE && FileType.isImage(entry)) {
+      // Preload a thumbnail if the new copied entry an image.
+      var metadata = entry.getMetadata(function(metadata) {
+        var url = entry.toURL();
+        var thumbnailLoader_ = new ThumbnailLoader(
+            url,
+            ThumbnailLoader.LoaderType.CANVAS,
+            metadata,
+            undefined,  // Media type.
+            FileType.isOnDrive(url) ?
+                ThumbnailLoader.UseEmbedded.USE_EMBEDDED :
+                ThumbnailLoader.UseEmbedded.NO_EMBEDDED,
+            10);  // Very low priority.
+        thumbnailLoader_.loadDetachedImage(function(success) {});
+      });
     }
   };
 
@@ -1729,6 +1721,11 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         defaultTitle = str('SELECT_FOLDER_TITLE');
         break;
 
+      case DialogType.SELECT_UPLOAD_FOLDER:
+        defaultTitle = str('SELECT_UPLOAD_FOLDER_TITLE');
+        okLabel = str('UPLOAD_LABEL');
+        break;
+
       case DialogType.SELECT_OPEN_FILE:
         defaultTitle = str('SELECT_OPEN_FILE_TITLE');
         break;
@@ -1988,8 +1985,13 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
   FileManager.prototype.onDriveConnectionChanged_ = function() {
     var connection = this.volumeManager_.getDriveConnectionState();
+    this.updateCommands();
     if (this.dialogContainer_)
       this.dialogContainer_.setAttribute('connection', connection.type);
+    if (this.shareDialog_.isShowing()) {
+      this.shareDialog_.hide();
+      this.error.show(str('SHARE_ERROR'));
+    }
   };
 
   /**
@@ -2079,7 +2081,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         this.filePopupCloseCallback_();
         this.filePopupCloseCallback_ = null;
       }
-      this.refocus();
 
       // These operations have to be in the end, otherwise v8 crashes on an
       // assert. See: crbug.com/224174.
@@ -2176,7 +2177,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @return {boolena} True if the flag is enabled.
    */
   FileManager.prototype.isFolderShortcutsEnabled = function() {
-    return this.isFolderShortcutsEnabled_;
+    // TODO(yoshiki): Remove this method in M31.
+    return true;
   };
 
   /**
@@ -2415,11 +2417,24 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       this.closeOnUnmount_ = false;
     }
 
-    this.newFolderCommand_.canExecuteChange();
-
+    this.updateCommands();
     this.updateUnformattedDriveStatus_();
     this.updateTitle_();
     this.updateGearMenu_();
+  };
+
+  /**
+   * Updates commands' states by emiting canExecute events. Should be used
+   * only if there is need to reevaluate states without an user action, eg.
+   * external events.
+   */
+  FileManager.prototype.updateCommands = function() {
+    var commands = this.dialogDom_.querySelectorAll('command');
+    for (var i = 0; i < commands.length; i++) {
+      // Commands may not have been decorated yet.
+      if (commands[i].canExecuteChange)
+        commands[i].canExecuteChange();
+    }
   };
 
   // TODO(haruki): Rename this method. "Drive" here does not refer
@@ -2440,8 +2455,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
       // Update 'canExecute' for format command so the format button's disabled
       // property is properly set.
-      var formatCommand = this.dialogDom_.querySelector('command#format');
-      formatCommand.canExecuteChange(errorNode);
+      this.updateCommands();
     } else {
       this.dialogDom_.removeAttribute('unformatted');
     }
@@ -2478,10 +2492,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         this.copyManager_.removeEventListener(
             'copy-progress', this.onCopyProgressBound_);
       }
-      if (this.onCopyManagerOperationCompleteBound_) {
+      if (this.onCopyManagerEntryChangedBound_) {
         this.copyManager_.removeEventListener(
-            'copy-operation-complete',
-            this.onCopyManagerOperationCompleteBound_);
+            'entry-changed', this.onCopyManagerEntryChangedBound_);
       }
     }
   };
@@ -2612,7 +2625,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       parent.removeAttribute('renaming');
       parent.removeChild(this.renameInput_);
     }
-    this.refocus();
   };
 
   /**
@@ -2656,8 +2668,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       this.grid_.endBatchUpdates();
     }
 
-    this.newFolderCommand_.canExecuteChange();
-
+    this.updateCommands();
     this.table_.list.startBatchUpdates();
     this.grid_.startBatchUpdates();
     this.scanInProgress_ = true;
@@ -2690,8 +2701,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       return;
     }
 
-    this.newFolderCommand_.canExecuteChange();
-
+    this.updateCommands();
     this.hideSpinnerLater_();
     this.refreshCurrentDirectoryMetadata_();
 
@@ -2756,8 +2766,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       return;
     }
 
-    this.newFolderCommand_.canExecuteChange();
-
+    this.updateCommands();
     this.hideSpinnerLater_();
     if (this.scanCompletedTimer_) {
       clearTimeout(this.scanCompletedTimer_);
@@ -2966,7 +2975,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         var selection = this.getSelection();
         if (selection.totalCount == 1 &&
             selection.entries[0].isDirectory &&
-            this.dialogType != DialogType.SELECT_FOLDER) {
+            this.dialogType != DialogType.SELECT_FOLDER &&
+            this.dialogType != DialogType.SELECT_UPLOAD_FOLDER) {
           event.preventDefault();
           this.onDirectoryAction(selection.entries[0]);
         } else if (this.dispatchSelectionAction_()) {
@@ -3285,7 +3295,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     var files = [];
     var selectedIndexes = this.currentList_.selectionModel.selectedIndexes;
 
-    if (this.dialogType == DialogType.SELECT_FOLDER &&
+    if ((this.dialogType == DialogType.SELECT_FOLDER ||
+         this.dialogType == DialogType.SELECT_UPLOAD_FOLDER) &&
         selectedIndexes.length == 0) {
       var url = this.getCurrentDirectoryURL();
       var singleSelection = {
@@ -3330,7 +3341,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
     var selectedEntry = dm.item(selectedIndexes[0]);
 
-    if (this.dialogType == DialogType.SELECT_FOLDER) {
+    if (this.dialogType == DialogType.SELECT_FOLDER ||
+        this.dialogType == DialogType.SELECT_UPLOAD_FOLDER) {
       if (!selectedEntry.isDirectory)
         throw new Error('Selected entry is not a folder!');
     } else if (this.dialogType == DialogType.SELECT_OPEN_FILE) {
@@ -3786,7 +3798,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         this.dialogDom_.querySelector('#default-action-separator');
 
     this.openWithCommand_.canExecuteChange();
-
     this.openWithCommand_.setHidden(!(defaultItem && isMultiple));
     this.defaultActionMenuItem_.hidden = !defaultItem;
     defaultActionSeparator.hidden = !defaultItem;

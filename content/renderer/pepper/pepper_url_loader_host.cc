@@ -54,7 +54,9 @@ PepperURLLoaderHost::PepperURLLoaderHost(RendererPpapiHostImpl* host,
       bytes_sent_(0),
       total_bytes_to_be_sent_(-1),
       bytes_received_(0),
-      total_bytes_to_be_received_(-1) {
+      total_bytes_to_be_received_(-1),
+      pending_response_(false),
+      weak_factory_(this) {
   DCHECK((main_document_loader && !resource) ||
          (!main_document_loader && resource));
 }
@@ -97,9 +99,6 @@ PepperURLLoaderHost::~PepperURLLoaderHost() {
   // via loader_.reset(). Be sure that loader_ is first NULL then destroy
   // the scoped_ptr. See http://crbug.com/159429.
   scoped_ptr<WebKit::WebURLLoader> for_destruction_only(loader_.release());
-
-  for (size_t i = 0; i < pending_replies_.size(); i++)
-    delete pending_replies_[i];
 }
 
 int32_t PepperURLLoaderHost::OnResourceMessageReceived(
@@ -126,6 +125,7 @@ void PepperURLLoaderHost::willSendRequest(
     WebURLLoader* loader,
     WebURLRequest& new_request,
     const WebURLResponse& redirect_response) {
+  DCHECK(out_of_order_replies_.empty());
   if (!request_data_.follow_redirects) {
     SaveResponse(redirect_response);
     SetDefersLoading(true);
@@ -194,15 +194,12 @@ void PepperURLLoaderHost::didFail(WebURLLoader* loader,
     // It's a WebKit error.
     pp_error = PP_ERROR_NOACCESS;
   }
-
   SendUpdateToPlugin(new PpapiPluginMsg_URLLoader_FinishedLoading(pp_error));
 }
 
 void PepperURLLoaderHost::DidConnectPendingHostToResource() {
-  for (size_t i = 0; i < pending_replies_.size(); i++) {
+  for (size_t i = 0; i < pending_replies_.size(); i++)
     host()->SendUnsolicitedReply(pp_resource(), *pending_replies_[i]);
-    delete pending_replies_[i];
-  }
   pending_replies_.clear();
 }
 
@@ -233,9 +230,10 @@ int32_t PepperURLLoaderHost::InternalOnHostMsgOpen(
 
   // Create a copy of the request data since CreateWebURLRequest will populate
   // the file refs.
-  ppapi::URLRequestInfoData filled_in_request_data = request_data;
+  scoped_ptr<ppapi::URLRequestInfoData> filled_in_request_data(
+      new ppapi::URLRequestInfoData(request_data));
 
-  if (URLRequestRequiresUniversalAccess(filled_in_request_data) &&
+  if (URLRequestRequiresUniversalAccess(*filled_in_request_data) &&
       !has_universal_access_) {
     ppapi::PpapiGlobals::Get()->LogWithSource(
         pp_instance(), PP_LOGLEVEL_ERROR, std::string(),
@@ -252,10 +250,36 @@ int32_t PepperURLLoaderHost::InternalOnHostMsgOpen(
   WebFrame* frame = GetFrame();
   if (!frame)
     return PP_ERROR_FAILED;
-  WebURLRequest web_request;
-  if (!CreateWebURLRequest(&filled_in_request_data, frame, &web_request))
-    return PP_ERROR_FAILED;
-  web_request.setRequestorProcessID(renderer_ppapi_host_->GetPluginPID());
+
+  CreateWebURLRequest(filled_in_request_data.Pass(), frame,
+      base::Bind(&PepperURLLoaderHost::DidCreateWebURLRequest,
+          weak_factory_.GetWeakPtr()));
+
+  // Although the request is technically pending, this is not a "Call" message
+  // so we don't return COMPLETIONPENDING.
+  return PP_OK;
+}
+
+void PepperURLLoaderHost::DidCreateWebURLRequest(
+    scoped_ptr<ppapi::URLRequestInfoData> filled_in_request_data,
+    bool success,
+    scoped_ptr<WebURLRequest> web_request) {
+  WebFrame* frame = GetFrame();
+  if (!success || !frame) {
+    SendUpdateToPlugin(
+        new PpapiPluginMsg_URLLoader_FinishedLoading(PP_ERROR_FAILED));
+    return;
+  }
+
+  // Ensure again that we're not in progress.
+  if (loader_.get()) {
+    NOTREACHED();
+    SendUpdateToPlugin(
+        new PpapiPluginMsg_URLLoader_FinishedLoading(PP_ERROR_INPROGRESS));
+    return;
+  }
+
+  web_request->setRequestorProcessID(renderer_ppapi_host_->GetPluginPID());
 
   WebURLLoaderOptions options;
   if (has_universal_access_) {
@@ -265,10 +289,10 @@ int32_t PepperURLLoaderHost::InternalOnHostMsgOpen(
   } else {
     // All other HTTP requests are untrusted.
     options.untrustedHTTP = true;
-    if (filled_in_request_data.allow_cross_origin_requests) {
+    if (filled_in_request_data->allow_cross_origin_requests) {
       // Allow cross-origin requests with access control. The request specifies
       // if credentials are to be sent.
-      options.allowCredentials = filled_in_request_data.allow_credentials;
+      options.allowCredentials = filled_in_request_data->allow_credentials;
       options.crossOriginRequestPolicy =
           WebURLLoaderOptions::CrossOriginRequestPolicyUseAccessControl;
     } else {
@@ -278,16 +302,14 @@ int32_t PepperURLLoaderHost::InternalOnHostMsgOpen(
   }
 
   loader_.reset(frame->createAssociatedURLLoader(options));
-  if (!loader_.get())
-    return PP_ERROR_FAILED;
+  if (!loader_.get()) {
+    SendUpdateToPlugin(
+        new PpapiPluginMsg_URLLoader_FinishedLoading(PP_ERROR_FAILED));
+  }
 
   // Don't actually save the request until we know we're going to load.
-  request_data_ = filled_in_request_data;
-  loader_->loadAsynchronously(web_request, this);
-
-  // Although the request is technically pending, this is not a "Call" message
-  // so we don't return COMPLETIONPENDING.
-  return PP_OK;
+  request_data_ = *filled_in_request_data;
+  loader_->loadAsynchronously(*web_request, this);
 }
 
 int32_t PepperURLLoaderHost::OnHostMsgSetDeferLoading(
@@ -312,12 +334,46 @@ int32_t PepperURLLoaderHost::OnHostMsgGrantUniversalAccess(
   return PP_OK;
 }
 
-void PepperURLLoaderHost::SendUpdateToPlugin(IPC::Message* msg) {
-  if (pp_resource()) {
-    host()->SendUnsolicitedReply(pp_resource(), *msg);
-    delete msg;
+void PepperURLLoaderHost::SendUpdateToPlugin(IPC::Message* message) {
+  // We must send messages to the plugin in the order that the responses are
+  // received from webkit, even when the host isn't ready to send messages or
+  // when the host performs an asynchronous operation.
+  //
+  // Only {FinishedLoading, ReceivedResponse, SendData} have ordering
+  // contraints; all other messages are immediately added to pending_replies_.
+  //
+  // Accepted orderings for {FinishedLoading, ReceivedResponse, SendData} are:
+  //   - {ReceivedResponse, SendData (zero or more times), FinishedLoading}
+  //   - {FinishedLoading (when status != PP_OK)}
+  if (message->type() == PpapiPluginMsg_URLLoader_SendData::ID ||
+      message->type() == PpapiPluginMsg_URLLoader_FinishedLoading::ID) {
+    // Messages that must be sent after ReceivedResponse.
+    if (pending_response_) {
+      out_of_order_replies_.push_back(message);
+    } else {
+      SendOrderedUpdateToPlugin(message);
+    }
+  } else if (message->type() == PpapiPluginMsg_URLLoader_ReceivedResponse::ID) {
+    // Allow SendData and FinishedLoading into the ordered queue.
+    DCHECK(pending_response_);
+    SendOrderedUpdateToPlugin(message);
+    for (size_t i = 0; i < out_of_order_replies_.size(); i++)
+      SendOrderedUpdateToPlugin(out_of_order_replies_[i]);
+    // SendOrderedUpdateToPlugin destroys the messages for us.
+    out_of_order_replies_.weak_clear();
+    pending_response_ = false;
   } else {
-    pending_replies_.push_back(msg);
+    // Messages without ordering constraints.
+    SendOrderedUpdateToPlugin(message);
+  }
+}
+
+void PepperURLLoaderHost::SendOrderedUpdateToPlugin(IPC::Message* message) {
+  if (pp_resource() == 0) {
+    pending_replies_.push_back(message);
+  } else {
+    host()->SendUnsolicitedReply(pp_resource(), *message);
+    delete message;
   }
 }
 
@@ -345,16 +401,29 @@ void PepperURLLoaderHost::SetDefersLoading(bool defers_loading) {
 }
 
 void PepperURLLoaderHost::SaveResponse(const WebURLResponse& response) {
+  // When we're the main document loader, we send the response data up front,
+  // so we don't want to trigger any callbacks in the plugin which aren't
+  // expected. We should not be getting redirects so the response sent
+  // up-front should be valid (plugin document loads happen after all
+  // redirects are processed since WebKit has to know the MIME type).
   if (!main_document_loader_) {
-    // When we're the main document loader, we send the response data up front,
-    // so we don't want to trigger any callbacks in the plugin which aren't
-    // expected. We should not be getting redirects so the response sent
-    // up-front should be valid (plugin document loads happen after all
-    // redirects are processed since WebKit has to know the MIME type).
-    SendUpdateToPlugin(
-        new PpapiPluginMsg_URLLoader_ReceivedResponse(
-            DataFromWebURLResponse(pp_instance(), response)));
+    // We note when there's a callback in flight for a response to ensure that
+    // messages we send to the plugin are not sent out of order. See
+    // SendUpdateToPlugin() for more details.
+    DCHECK(!pending_response_);
+    pending_response_ = true;
+
+    DataFromWebURLResponse(
+        pp_instance(),
+        response,
+        base::Bind(&PepperURLLoaderHost::DidDataFromWebURLResponse,
+            weak_factory_.GetWeakPtr()));
   }
+}
+
+void PepperURLLoaderHost::DidDataFromWebURLResponse(
+    const ppapi::URLResponseInfoData& data) {
+  SendUpdateToPlugin(new PpapiPluginMsg_URLLoader_ReceivedResponse(data));
 }
 
 void PepperURLLoaderHost::UpdateProgress() {

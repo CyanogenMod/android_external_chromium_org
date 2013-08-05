@@ -151,7 +151,7 @@ void MediaPlayer::PopupMediaPlayer() {
 }
 
 GURL MediaPlayer::GetMediaPlayerUrl() {
-  return file_manager_util::GetMediaPlayerUrl();
+  return file_manager::util::GetMediaPlayerUrl();
 }
 
 Browser* MediaPlayer::GetBrowser() {
@@ -159,7 +159,7 @@ Browser* MediaPlayer::GetBrowser() {
     Browser* browser = *it;
     TabStripModel* tab_strip = browser->tab_strip_model();
     for (int idx = 0; idx < tab_strip->count(); idx++) {
-      const GURL& url = tab_strip->GetWebContentsAt(idx)->GetURL();
+      const GURL& url = tab_strip->GetWebContentsAt(idx)->GetVisibleURL();
       GURL base_url(url.GetOrigin().spec() + url.path().substr(1));
       if (base_url == GetMediaPlayerUrl())
         return browser;

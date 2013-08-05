@@ -29,9 +29,7 @@
 #include "webkit/browser/fileapi/file_observers.h"
 #include "webkit/browser/fileapi/file_permission_policy.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_task_runners.h"
 #include "webkit/browser/fileapi/isolated_context.h"
-#include "webkit/browser/fileapi/local_file_system_operation.h"
 #include "webkit/browser/quota/quota_manager.h"
 #include "webkit/common/blob/blob_data.h"
 #include "webkit/common/blob/shareable_file_reference.h"
@@ -44,7 +42,6 @@ using fileapi::FileSystemBackend;
 using fileapi::FileSystemOperation;
 using fileapi::FileSystemURL;
 using fileapi::FileUpdateObserver;
-using fileapi::LocalFileSystemOperation;
 using fileapi::UpdateObserverList;
 using webkit_blob::BlobData;
 using webkit_blob::BlobStorageController;
@@ -139,7 +136,7 @@ void FileAPIMessageFilter::OnChannelClosing() {
 base::TaskRunner* FileAPIMessageFilter::OverrideTaskRunnerForMessage(
     const IPC::Message& message) {
   if (message.type() == FileSystemHostMsg_SyncGetPlatformPath::ID)
-    return context_->task_runners()->file_task_runner();
+    return context_->default_file_task_runner();
   return NULL;
 }
 
@@ -720,7 +717,7 @@ void FileAPIMessageFilter::DidCreateSnapshot(
       file_ref = webkit_blob::ShareableFileReference::GetOrCreate(
           platform_path,
           webkit_blob::ShareableFileReference::DONT_DELETE_ON_FINAL_RELEASE,
-          context_->task_runners()->file_task_runner());
+          context_->default_file_task_runner());
     }
     file_ref->AddFinalReleaseCallback(
         base::Bind(&RevokeFilePermission, process_id_));

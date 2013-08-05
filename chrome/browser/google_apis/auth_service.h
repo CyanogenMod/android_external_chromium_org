@@ -14,8 +14,6 @@
 #include "chrome/browser/google_apis/auth_service_interface.h"
 #include "chrome/browser/signin/oauth2_token_service.h"
 
-class Profile;
-
 namespace net {
 class URLRequestContextGetter;
 }
@@ -26,7 +24,7 @@ class AuthServiceObserver;
 
 // This class provides authentication for Google services.
 // It integrates specific service integration with OAuth2 stack
-// (TokenService) and provides OAuth2 token refresh infrastructure.
+// (OAuth2TokenService) and provides OAuth2 token refresh infrastructure.
 // All public functions must be called on UI thread.
 class AuthService : public AuthServiceInterface,
                     public OAuth2TokenService::Observer {
@@ -55,16 +53,6 @@ class AuthService : public AuthServiceInterface,
   virtual void OnRefreshTokenRevoked(
       const std::string& account_id,
       const GoogleServiceAuthError& error) OVERRIDE;
-
-  // Sets the access_token as specified.  This should be used only for testing.
-  void set_access_token_for_testing(const std::string& token) {
-    access_token_ = token;
-  }
-
-  // Returns true if authentication can be done using the class for the given
-  // profile. For instance, this function returns false if the profile is
-  // used for the incognito mode.
-  static bool CanAuthenticate(Profile* profile);
 
  private:
   // Called when the state of the refresh token changes.

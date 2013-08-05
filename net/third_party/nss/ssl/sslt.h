@@ -4,7 +4,6 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* $Id$ */
 
 #ifndef __sslt_h_
 #define __sslt_h_
@@ -196,7 +195,7 @@ typedef enum {
 #endif
     ssl_signature_algorithms_xtn     = 13,
     ssl_use_srtp_xtn                 = 14,
-    ssl_application_layer_protocol   = 16,
+    ssl_app_layer_protocol_xtn       = 16,
     ssl_session_ticket_xtn           = 35,
     ssl_next_proto_nego_xtn          = 13172,
     ssl_channel_id_xtn               = 30031,

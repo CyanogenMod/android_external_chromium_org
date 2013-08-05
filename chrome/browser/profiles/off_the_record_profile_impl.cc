@@ -28,6 +28,8 @@
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context.h"
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context_factory.h"
 #include "chrome/browser/io_thread.h"
+#include "chrome/browser/media/chrome_midi_permission_context.h"
+#include "chrome/browser/media/chrome_midi_permission_context_factory.h"
 #include "chrome/browser/net/pref_proxy_config_tracker.h"
 #include "chrome/browser/net/proxy_service_factory.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
@@ -117,7 +119,8 @@ void OffTheRecordProfileImpl::Init() {
   InitHostZoomMap();
 
   // Make the chrome//extension-icon/ resource available.
-  ExtensionIconSource* icon_source = new ExtensionIconSource(profile_);
+  extensions::ExtensionIconSource* icon_source =
+      new extensions::ExtensionIconSource(profile_);
   content::URLDataSource::Add(this, icon_source);
 
 #if defined(ENABLE_PLUGINS)
@@ -230,6 +233,10 @@ ExtensionSpecialStoragePolicy*
   return GetOriginalProfile()->GetExtensionSpecialStoragePolicy();
 }
 
+bool OffTheRecordProfileImpl::IsManaged() {
+  return GetOriginalProfile()->IsManaged();
+}
+
 PrefService* OffTheRecordProfileImpl::GetPrefs() {
   return prefs_;
 }
@@ -239,7 +246,7 @@ PrefService* OffTheRecordProfileImpl::GetOffTheRecordPrefs() {
 }
 
 DownloadManagerDelegate* OffTheRecordProfileImpl::GetDownloadManagerDelegate() {
-  return DownloadServiceFactory::GetForProfile(this)->
+  return DownloadServiceFactory::GetForBrowserContext(this)->
       GetDownloadManagerDelegate();
 }
 
@@ -286,8 +293,12 @@ void OffTheRecordProfileImpl::RequestMIDISysExPermission(
       int render_view_id,
       const GURL& requesting_frame,
       const MIDISysExPermissionCallback& callback) {
-  // TODO(toyoshim): Implement. http://crbug.com/257618 .
-  callback.Run(false);
+  ChromeMIDIPermissionContext* context =
+      ChromeMIDIPermissionContextFactory::GetForProfile(this);
+  context->RequestMIDISysExPermission(render_process_id,
+                                      render_view_id,
+                                      requesting_frame,
+                                      callback);
 }
 
 net::URLRequestContextGetter*

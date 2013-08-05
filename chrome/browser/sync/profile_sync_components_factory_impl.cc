@@ -21,8 +21,6 @@
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/spellchecker/spellcheck_factory.h"
-#include "chrome/browser/spellchecker/spellcheck_service.h"
 #include "chrome/browser/sync/glue/autofill_data_type_controller.h"
 #include "chrome/browser/sync/glue/autofill_profile_data_type_controller.h"
 #include "chrome/browser/sync/glue/bookmark_change_processor.h"
@@ -63,9 +61,9 @@
 #include "sync/api/syncable_service.h"
 
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_user_registration_service.h"
-#include "chrome/browser/managed_mode/managed_user_registration_service_factory.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
+#include "chrome/browser/managed_mode/managed_user_sync_service.h"
+#include "chrome/browser/managed_mode/managed_user_sync_service_factory.h"
 #include "chrome/browser/policy/managed_mode_policy_provider.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/policy/profile_policy_connector_factory.h"
@@ -74,6 +72,11 @@
 #if !defined(OS_ANDROID)
 #include "chrome/browser/notifications/sync_notifier/chrome_notifier_service.h"
 #include "chrome/browser/notifications/sync_notifier/chrome_notifier_service_factory.h"
+#endif
+
+#if defined(ENABLE_SPELLCHECK)
+#include "chrome/browser/spellchecker/spellcheck_factory.h"
+#include "chrome/browser/spellchecker/spellcheck_service.h"
 #endif
 
 using browser_sync::AutofillDataTypeController;
@@ -259,8 +262,6 @@ void ProfileSyncComponentsFactoryImpl::RegisterDesktopDataTypes(
   }
 
 #if !defined(OS_ANDROID)
-  // Synced Notifications sync datatype is disabled by default.
-  // TODO(petewil): Switch to enabled by default once datatype support is done.
   if (notifier::ChromeNotifierServiceFactory::UseSyncedNotifications(
           command_line_)) {
     pss->RegisterDataTypeController(
@@ -279,7 +280,7 @@ void ProfileSyncComponentsFactoryImpl::RegisterDesktopDataTypes(
 
 #if defined(ENABLE_MANAGED_USERS)
   if (ManagedUserService::AreManagedUsersEnabled()) {
-    if (ManagedUserService::ProfileIsManaged(profile_)) {
+    if (profile_->IsManaged()) {
       pss->RegisterDataTypeController(
           new UIDataTypeController(
               syncer::MANAGED_USER_SETTINGS, this, profile_, pss));
@@ -379,9 +380,11 @@ base::WeakPtr<syncer::SyncableService> ProfileSyncComponentsFactoryImpl::
           : base::WeakPtr<syncer::SyncableService>();
     }
 #endif
+#if defined(ENABLE_SPELLCHECK)
     case syncer::DICTIONARY:
       return SpellcheckServiceFactory::GetForProfile(profile_)->
           GetCustomDictionary()->AsWeakPtr();
+#endif
     case syncer::FAVICON_IMAGES:
     case syncer::FAVICON_TRACKING: {
       browser_sync::SessionModelAssociator* model_associator =
@@ -396,7 +399,7 @@ base::WeakPtr<syncer::SyncableService> ProfileSyncComponentsFactoryImpl::
       return policy::ProfilePolicyConnectorFactory::GetForProfile(profile_)->
           managed_mode_policy_provider()->AsWeakPtr();
     case syncer::MANAGED_USERS:
-      return ManagedUserRegistrationServiceFactory::GetForProfile(profile_)->
+      return ManagedUserSyncServiceFactory::GetForProfile(profile_)->
           AsWeakPtr();
 #endif
     default:

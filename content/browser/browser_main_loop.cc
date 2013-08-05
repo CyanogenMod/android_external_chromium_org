@@ -13,6 +13,7 @@
 #include "base/metrics/histogram.h"
 #include "base/pending_task.h"
 #include "base/power_monitor/power_monitor.h"
+#include "base/power_monitor/power_monitor_device_source.h"
 #include "base/process/process_metrics.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
@@ -34,6 +35,7 @@
 #include "content/browser/renderer_host/media/audio_mirroring_manager.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
 #include "content/browser/speech/speech_recognition_manager_impl.h"
+#include "content/browser/startup_task_runner.h"
 #include "content/browser/tracing/trace_controller_impl.h"
 #include "content/browser/webui/content_web_ui_controller_factory.h"
 #include "content/browser/webui/url_data_manager.h"
@@ -60,6 +62,7 @@
 
 #if defined(OS_ANDROID)
 #include "base/android/jni_android.h"
+#include "content/browser/android/browser_startup_config.h"
 #include "content/browser/android/surface_texture_peer_browser_impl.h"
 #endif
 
@@ -299,7 +302,8 @@ BrowserMainLoop* BrowserMainLoop::GetInstance() {
 BrowserMainLoop::BrowserMainLoop(const MainFunctionParams& parameters)
     : parameters_(parameters),
       parsed_command_line_(parameters.command_line),
-      result_code_(RESULT_CODE_NORMAL_EXIT) {
+      result_code_(RESULT_CODE_NORMAL_EXIT),
+      created_threads_(false) {
   DCHECK(!g_current_browser_main_loop);
   g_current_browser_main_loop = this;
 }
@@ -394,7 +398,9 @@ void BrowserMainLoop::MainMessageLoopStart() {
   }
   {
     TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:PowerMonitor")
-    power_monitor_.reset(new base::PowerMonitor);
+    scoped_ptr<base::PowerMonitorSource> power_monitor_source(
+      new base::PowerMonitorDeviceSource());
+    power_monitor_.reset(new base::PowerMonitor(power_monitor_source.Pass()));
   }
   {
     TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:HighResTimerManager")
@@ -483,8 +489,7 @@ void BrowserMainLoop::MainMessageLoopStart() {
 #endif
 }
 
-void BrowserMainLoop::CreateThreads() {
-  TRACE_EVENT0("startup", "BrowserMainLoop::CreateThreads")
+int BrowserMainLoop::PreCreateThreads() {
 
   if (parts_) {
     TRACE_EVENT0("startup",
@@ -509,9 +514,44 @@ void BrowserMainLoop::CreateThreads() {
   if (parsed_command_line_.HasSwitch(switches::kSingleProcess))
     RenderProcessHost::SetRunRendererInProcess(true);
 #endif
+  return result_code_;
+}
 
-  if (result_code_ > 0)
-    return;
+void BrowserMainLoop::CreateStartupTasks() {
+  TRACE_EVENT0("startup", "BrowserMainLoop::CreateStartupTasks")
+
+#if defined(OS_ANDROID)
+  scoped_refptr<StartupTaskRunner> task_runner =
+      new StartupTaskRunner(BrowserMayStartAsynchronously(),
+                            base::Bind(&BrowserStartupComplete),
+                            base::MessageLoop::current()->message_loop_proxy());
+#else
+  scoped_refptr<StartupTaskRunner> task_runner =
+      new StartupTaskRunner(false,
+                            base::Callback<void(int)>(),
+                            base::MessageLoop::current()->message_loop_proxy());
+#endif
+  StartupTask pre_create_threads =
+      base::Bind(&BrowserMainLoop::PreCreateThreads, base::Unretained(this));
+  task_runner->AddTask(pre_create_threads);
+
+  StartupTask create_threads =
+      base::Bind(&BrowserMainLoop::CreateThreads, base::Unretained(this));
+  task_runner->AddTask(create_threads);
+
+  StartupTask browser_thread_started = base::Bind(
+      &BrowserMainLoop::BrowserThreadsStarted, base::Unretained(this));
+  task_runner->AddTask(browser_thread_started);
+
+  StartupTask pre_main_message_loop_run = base::Bind(
+      &BrowserMainLoop::PreMainMessageLoopRun, base::Unretained(this));
+  task_runner->AddTask(pre_main_message_loop_run);
+
+  task_runner->StartRunningTasks();
+}
+
+int BrowserMainLoop::CreateThreads() {
+  TRACE_EVENT0("startup", "BrowserMainLoop::CreateThreads");
 
   base::Thread::Options default_options;
   base::Thread::Options io_message_loop_options;
@@ -596,14 +636,11 @@ void BrowserMainLoop::CreateThreads() {
     TRACE_EVENT_END0("startup", "BrowserMainLoop::CreateThreads:start");
 
   }
+  created_threads_ = true;
+  return result_code_;
+}
 
-#if !defined(OS_IOS)
-  indexed_db_thread_.reset(new base::Thread("IndexedDB"));
-  indexed_db_thread_->Start();
-#endif
-
-  BrowserThreadsStarted();
-
+int BrowserMainLoop::PreMainMessageLoopRun() {
   if (parts_) {
     TRACE_EVENT0("startup",
         "BrowserMainLoop::CreateThreads:PreMainMessageLoopRun");
@@ -614,6 +651,7 @@ void BrowserMainLoop::CreateThreads() {
   // Do not allow disk IO from the UI thread.
   base::ThreadRestrictions::SetIOAllowed(false);
   base::ThreadRestrictions::DisallowWaiting();
+  return result_code_;
 }
 
 void BrowserMainLoop::RunMainMessageLoopParts() {
@@ -630,6 +668,11 @@ void BrowserMainLoop::RunMainMessageLoopParts() {
 }
 
 void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
+
+  if (!created_threads_) {
+    // Called early, nothing to do
+    return;
+  }
   // Teardown may start in PostMainMessageLoopRun, and during teardown we
   // need to be able to perform IO.
   base::ThreadRestrictions::SetIOAllowed(true);
@@ -765,8 +808,14 @@ void BrowserMainLoop::InitializeMainThread() {
       new BrowserThreadImpl(BrowserThread::UI, base::MessageLoop::current()));
 }
 
-void BrowserMainLoop::BrowserThreadsStarted() {
+int BrowserMainLoop::BrowserThreadsStarted() {
   TRACE_EVENT0("startup", "BrowserMainLoop::BrowserThreadsStarted")
+
+#if !defined(OS_IOS)
+  indexed_db_thread_.reset(new base::Thread("IndexedDB"));
+  indexed_db_thread_->Start();
+#endif
+
 #if defined(OS_ANDROID)
   // Up the priority of anything that touches with display tasks
   // (this thread is UI thread, and io_thread_ is for IPCs).
@@ -844,6 +893,7 @@ void BrowserMainLoop::BrowserThreadsStarted() {
             CAUSE_FOR_GPU_LAUNCH_BROWSER_STARTUP));
   }
 #endif  // !defined(OS_IOS)
+  return result_code_;
 }
 
 void BrowserMainLoop::InitializeToolkit() {

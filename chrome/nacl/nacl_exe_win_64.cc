@@ -8,6 +8,7 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/power_monitor/power_monitor.h"
+#include "base/power_monitor/power_monitor_device_source.h"
 #include "base/process/launch.h"
 #include "base/process/memory.h"
 #include "base/strings/string_util.h"
@@ -16,11 +17,11 @@
 #include "chrome/app/chrome_breakpad_client.h"
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/logging_chrome.h"
-#include "chrome/nacl/nacl_listener.h"
-#include "chrome/nacl/nacl_main_platform_delegate.h"
 #include "components/breakpad/breakpad_client.h"
 #include "components/nacl/broker/nacl_broker_listener.h"
 #include "components/nacl/common/nacl_switches.h"
+#include "components/nacl/loader/nacl_listener.h"
+#include "components/nacl/loader/nacl_main_platform_delegate.h"
 #include "content/public/app/startup_helper_win.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
@@ -44,7 +45,9 @@ int NaClBrokerMain(const content::MainFunctionParams& parameters) {
   base::MessageLoopForIO main_message_loop;
   base::PlatformThread::SetName("CrNaClBrokerMain");
 
-  base::PowerMonitor power_monitor;
+  scoped_ptr<base::PowerMonitorSource> power_monitor_source(
+      new base::PowerMonitorDeviceSource());
+  base::PowerMonitor power_monitor(power_monitor_source.Pass());
   base::HighResolutionTimerManager hi_res_timer_manager;
 
   NaClBrokerListener listener;

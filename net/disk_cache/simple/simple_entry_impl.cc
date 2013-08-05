@@ -51,6 +51,16 @@ enum WriteResult {
   WRITE_RESULT_MAX = 5,
 };
 
+// Used in histograms, please only add entries at the end.
+enum HeaderSizeChange {
+  HEADER_SIZE_CHANGE_INITIAL,
+  HEADER_SIZE_CHANGE_SAME,
+  HEADER_SIZE_CHANGE_INCREASE,
+  HEADER_SIZE_CHANGE_DECREASE,
+  HEADER_SIZE_CHANGE_UNEXPECTED_WRITE,
+  HEADER_SIZE_CHANGE_MAX
+};
+
 void RecordReadResult(ReadResult result) {
   UMA_HISTOGRAM_ENUMERATION("SimpleCache.ReadResult", result, READ_RESULT_MAX);
 };
@@ -59,6 +69,44 @@ void RecordWriteResult(WriteResult result) {
   UMA_HISTOGRAM_ENUMERATION("SimpleCache.WriteResult",
                             result, WRITE_RESULT_MAX);
 };
+
+// TODO(ttuttle): Consider removing this once we have a good handle on header
+// size changes.
+void RecordHeaderSizeChange(int old_size, int new_size) {
+  HeaderSizeChange size_change;
+
+  UMA_HISTOGRAM_COUNTS_10000("SimpleCache.HeaderSize", new_size);
+
+  if (old_size == 0) {
+    size_change = HEADER_SIZE_CHANGE_INITIAL;
+  } else if (new_size == old_size) {
+    size_change = HEADER_SIZE_CHANGE_SAME;
+  } else if (new_size > old_size) {
+    int delta = new_size - old_size;
+    UMA_HISTOGRAM_COUNTS_10000("SimpleCache.HeaderSizeIncreaseAbsolute",
+                               delta);
+    UMA_HISTOGRAM_PERCENTAGE("SimpleCache.HeaderSizeIncreasePercentage",
+                             delta * 100 / old_size);
+    size_change = HEADER_SIZE_CHANGE_INCREASE;
+  } else {  // new_size < old_size
+    int delta = old_size - new_size;
+    UMA_HISTOGRAM_COUNTS_10000("SimpleCache.HeaderSizeDecreaseAbsolute",
+                               delta);
+    UMA_HISTOGRAM_PERCENTAGE("SimpleCache.HeaderSizeDecreasePercentage",
+                             delta * 100 / old_size);
+    size_change = HEADER_SIZE_CHANGE_DECREASE;
+  }
+
+  UMA_HISTOGRAM_ENUMERATION("SimpleCache.HeaderSizeChange",
+                            size_change,
+                            HEADER_SIZE_CHANGE_MAX);
+}
+
+void RecordUnexpectedStream0Write() {
+  UMA_HISTOGRAM_ENUMERATION("SimpleCache.HeaderSizeChange",
+                            HEADER_SIZE_CHANGE_UNEXPECTED_WRITE,
+                            HEADER_SIZE_CHANGE_MAX);
+}
 
 // Short trampoline to take an owned input parameter and call a net completion
 // callback with its value.
@@ -144,6 +192,7 @@ SimpleEntryImpl::SimpleEntryImpl(const FilePath& path,
 int SimpleEntryImpl::OpenEntry(Entry** out_entry,
                                const CompletionCallback& callback) {
   DCHECK(backend_.get());
+  bool have_index = backend_->index()->initialized();
   // This enumeration is used in histograms, add entries only at end.
   enum OpenEntryIndexEnum {
     INDEX_NOEXIST = 0,
@@ -152,7 +201,7 @@ int SimpleEntryImpl::OpenEntry(Entry** out_entry,
     INDEX_MAX = 3,
   };
   OpenEntryIndexEnum open_entry_index_enum = INDEX_NOEXIST;
-  if (backend_.get()) {
+  if (have_index) {
     if (backend_->index()->Has(entry_hash_))
       open_entry_index_enum = INDEX_HIT;
     else
@@ -167,6 +216,7 @@ int SimpleEntryImpl::OpenEntry(Entry** out_entry,
 
   EnqueueOperation(base::Bind(&SimpleEntryImpl::OpenEntryInternal,
                               this,
+                              have_index,
                               callback,
                               out_entry));
   RunNextOperationIfNeeded();
@@ -177,18 +227,21 @@ int SimpleEntryImpl::CreateEntry(Entry** out_entry,
                                  const CompletionCallback& callback) {
   DCHECK(backend_.get());
   DCHECK_EQ(entry_hash_, simple_util::GetEntryHashKey(key_));
+  bool have_index = backend_->index()->initialized();
   int ret_value = net::ERR_FAILED;
   if (use_optimistic_operations_ &&
       state_ == STATE_UNINITIALIZED && pending_operations_.size() == 0) {
     ReturnEntryToCaller(out_entry);
     EnqueueOperation(base::Bind(&SimpleEntryImpl::CreateEntryInternal,
                                 this,
+                                have_index,
                                 CompletionCallback(),
                                 static_cast<Entry**>(NULL)));
     ret_value = net::OK;
   } else {
     EnqueueOperation(base::Bind(&SimpleEntryImpl::CreateEntryInternal,
                                 this,
+                                have_index,
                                 callback,
                                 out_entry));
     ret_value = net::ERR_IO_PENDING;
@@ -308,6 +361,17 @@ int SimpleEntryImpl::WriteData(int stream_index,
   }
   ScopedOperationRunner operation_runner(this);
 
+  // Currently, Simple Cache is only used for HTTP, which stores the headers in
+  // stream 0 and always writes them with a single, truncating write.  Detect
+  // these writes and record the size and size changes of the headers.  Also,
+  // note writes to stream 0 that violate those assumptions.
+  if (stream_index == 0) {
+    if (offset == 0 && truncate)
+      RecordHeaderSizeChange(data_size_[0], buf_len);
+    else
+      RecordUnexpectedStream0Write();
+  }
+
   // We can only do optimistic Write if there is no pending operations, so
   // that we are sure that the next call to RunNextOperationIfNeeded will
   // actually run the write operation that sets the stream size. It also
@@ -413,7 +477,9 @@ void SimpleEntryImpl::MakeUninitialized() {
   std::memset(crc32s_, 0, sizeof(crc32s_));
   std::memset(have_written_, 0, sizeof(have_written_));
   std::memset(data_size_, 0, sizeof(data_size_));
-  std::memset(crc_check_state_, 0, sizeof(crc_check_state_));
+  for (size_t i = 0; i < arraysize(crc_check_state_); ++i) {
+    crc_check_state_[i] = CRC_CHECK_NEVER_READ_AT_ALL;
+  }
 }
 
 void SimpleEntryImpl::ReturnEntryToCaller(Entry** out_entry) {
@@ -535,7 +601,8 @@ void SimpleEntryImpl::EnqueueWriteOperation(
                                       truncate));
 }
 
-void SimpleEntryImpl::OpenEntryInternal(const CompletionCallback& callback,
+void SimpleEntryImpl::OpenEntryInternal(bool have_index,
+                                        const CompletionCallback& callback,
                                         Entry** out_entry) {
   ScopedOperationRunner operation_runner(this);
   if (state_ == STATE_READY) {
@@ -558,15 +625,28 @@ void SimpleEntryImpl::OpenEntryInternal(const CompletionCallback& callback,
   scoped_ptr<PointerToSimpleSynchronousEntry> sync_entry(
       new PointerToSimpleSynchronousEntry());
   scoped_ptr<int> result(new int());
-  Closure task = base::Bind(&SimpleSynchronousEntry::OpenEntry, path_,
-                            entry_hash_, sync_entry.get(), result.get());
-  Closure reply = base::Bind(&SimpleEntryImpl::CreationOperationComplete, this,
-                             callback, start_time, base::Passed(&sync_entry),
-                             base::Passed(&result), out_entry);
+  scoped_ptr<SimpleEntryStat> entry_stat(
+      new SimpleEntryStat(last_used_, last_modified_, data_size_));
+  Closure task = base::Bind(&SimpleSynchronousEntry::OpenEntry,
+                            path_,
+                            entry_hash_,
+                            have_index,
+                            sync_entry.get(),
+                            entry_stat.get(),
+                            result.get());
+  Closure reply = base::Bind(&SimpleEntryImpl::CreationOperationComplete,
+                             this,
+                             callback,
+                             start_time,
+                             base::Passed(&sync_entry),
+                             base::Passed(&entry_stat),
+                             base::Passed(&result),
+                             out_entry);
   worker_pool_->PostTaskAndReply(FROM_HERE, task, reply);
 }
 
-void SimpleEntryImpl::CreateEntryInternal(const CompletionCallback& callback,
+void SimpleEntryImpl::CreateEntryInternal(bool have_index,
+                                          const CompletionCallback& callback,
                                           Entry** out_entry) {
   ScopedOperationRunner operation_runner(this);
   if (state_ != STATE_UNINITIALIZED) {
@@ -595,11 +675,24 @@ void SimpleEntryImpl::CreateEntryInternal(const CompletionCallback& callback,
   scoped_ptr<PointerToSimpleSynchronousEntry> sync_entry(
       new PointerToSimpleSynchronousEntry());
   scoped_ptr<int> result(new int());
-  Closure task = base::Bind(&SimpleSynchronousEntry::CreateEntry, path_, key_,
-                            entry_hash_, sync_entry.get(), result.get());
-  Closure reply = base::Bind(&SimpleEntryImpl::CreationOperationComplete, this,
-                             callback, start_time, base::Passed(&sync_entry),
-                             base::Passed(&result), out_entry);
+  scoped_ptr<SimpleEntryStat> entry_stat(
+      new SimpleEntryStat(last_used_, last_modified_, data_size_));
+  Closure task = base::Bind(&SimpleSynchronousEntry::CreateEntry,
+                            path_,
+                            key_,
+                            entry_hash_,
+                            have_index,
+                            sync_entry.get(),
+                            entry_stat.get(),
+                            result.get());
+  Closure reply = base::Bind(&SimpleEntryImpl::CreationOperationComplete,
+                             this,
+                             callback,
+                             start_time,
+                             base::Passed(&sync_entry),
+                             base::Passed(&entry_stat),
+                             base::Passed(&result),
+                             out_entry);
   worker_pool_->PostTaskAndReply(FROM_HERE, task, reply);
 }
 
@@ -629,9 +722,11 @@ void SimpleEntryImpl::CloseInternal() {
   }
 
   if (synchronous_entry_) {
-    Closure task = base::Bind(&SimpleSynchronousEntry::Close,
-                              base::Unretained(synchronous_entry_),
-                              base::Passed(&crc32s_to_write));
+    Closure task =
+        base::Bind(&SimpleSynchronousEntry::Close,
+                   base::Unretained(synchronous_entry_),
+                   SimpleEntryStat(last_used_, last_modified_, data_size_),
+                   base::Passed(&crc32s_to_write));
     Closure reply = base::Bind(&SimpleEntryImpl::CloseOperationComplete, this);
     synchronous_entry_ = NULL;
     worker_pool_->PostTaskAndReply(FROM_HERE, task, reply);
@@ -690,13 +785,23 @@ void SimpleEntryImpl::ReadDataInternal(int stream_index,
 
   scoped_ptr<uint32> read_crc32(new uint32());
   scoped_ptr<int> result(new int());
-  Closure task = base::Bind(&SimpleSynchronousEntry::ReadData,
-                            base::Unretained(synchronous_entry_),
-                            stream_index, offset, make_scoped_refptr(buf),
-                            buf_len, read_crc32.get(), result.get());
-  Closure reply = base::Bind(&SimpleEntryImpl::ReadOperationComplete, this,
-                             stream_index, offset, callback,
-                             base::Passed(&read_crc32), base::Passed(&result));
+  scoped_ptr<base::Time> last_used(new base::Time());
+  Closure task = base::Bind(
+      &SimpleSynchronousEntry::ReadData,
+      base::Unretained(synchronous_entry_),
+      SimpleSynchronousEntry::EntryOperationData(stream_index, offset, buf_len),
+      make_scoped_refptr(buf),
+      read_crc32.get(),
+      last_used.get(),
+      result.get());
+  Closure reply = base::Bind(&SimpleEntryImpl::ReadOperationComplete,
+                             this,
+                             stream_index,
+                             offset,
+                             callback,
+                             base::Passed(&read_crc32),
+                             base::Passed(&last_used),
+                             base::Passed(&result));
   worker_pool_->PostTaskAndReply(FROM_HERE, task, reply);
 }
 
@@ -747,6 +852,9 @@ void SimpleEntryImpl::WriteDataInternal(int stream_index,
     crc32s_end_offset_[stream_index] = offset + buf_len;
   }
 
+  // |entry_stat| needs to be initialized before modifying |data_size_|.
+  scoped_ptr<SimpleEntryStat> entry_stat(
+      new SimpleEntryStat(last_used_, last_modified_, data_size_));
   if (truncate) {
     data_size_[stream_index] = offset + buf_len;
   } else {
@@ -763,10 +871,17 @@ void SimpleEntryImpl::WriteDataInternal(int stream_index,
   scoped_ptr<int> result(new int());
   Closure task = base::Bind(&SimpleSynchronousEntry::WriteData,
                             base::Unretained(synchronous_entry_),
-                            stream_index, offset, make_scoped_refptr(buf),
-                            buf_len, truncate, result.get());
-  Closure reply = base::Bind(&SimpleEntryImpl::WriteOperationComplete, this,
-                             stream_index, callback, base::Passed(&result));
+                            SimpleSynchronousEntry::EntryOperationData(
+                                stream_index, offset, buf_len, truncate),
+                            make_scoped_refptr(buf),
+                            entry_stat.get(),
+                            result.get());
+  Closure reply = base::Bind(&SimpleEntryImpl::WriteOperationComplete,
+                             this,
+                             stream_index,
+                             callback,
+                             base::Passed(&entry_stat),
+                             base::Passed(&result));
   worker_pool_->PostTaskAndReply(FROM_HERE, task, reply);
 }
 
@@ -774,6 +889,7 @@ void SimpleEntryImpl::CreationOperationComplete(
     const CompletionCallback& completion_callback,
     const base::TimeTicks& start_time,
     scoped_ptr<SimpleSynchronousEntry*> in_sync_entry,
+    scoped_ptr<SimpleEntryStat> in_entry_stat,
     scoped_ptr<int> in_result,
     Entry** out_entry) {
   DCHECK(io_thread_checker_.CalledOnValidThread());
@@ -807,7 +923,7 @@ void SimpleEntryImpl::CreationOperationComplete(
     // the open case is handled in SimpleBackendImpl.
     DCHECK_EQ(key_, synchronous_entry_->key());
   }
-  SetSynchronousData();
+  UpdateDataFromEntryStat(*in_entry_stat);
   UMA_HISTOGRAM_TIMES("SimpleCache.EntryCreationTime",
                       (base::TimeTicks::Now() - start_time));
   AdjustOpenEntryCountBy(1);
@@ -821,6 +937,7 @@ void SimpleEntryImpl::CreationOperationComplete(
 void SimpleEntryImpl::EntryOperationComplete(
     int stream_index,
     const CompletionCallback& completion_callback,
+    const SimpleEntryStat& entry_stat,
     scoped_ptr<int> result) {
   DCHECK(io_thread_checker_.CalledOnValidThread());
   DCHECK(synchronous_entry_);
@@ -832,7 +949,7 @@ void SimpleEntryImpl::EntryOperationComplete(
     state_ = STATE_FAILURE;
     crc32s_end_offset_[stream_index] = 0;
   } else {
-    SetSynchronousData();
+    UpdateDataFromEntryStat(entry_stat);
   }
 
   if (!completion_callback.is_null()) {
@@ -847,12 +964,18 @@ void SimpleEntryImpl::ReadOperationComplete(
     int offset,
     const CompletionCallback& completion_callback,
     scoped_ptr<uint32> read_crc32,
+    scoped_ptr<base::Time> last_used,
     scoped_ptr<int> result) {
   DCHECK(io_thread_checker_.CalledOnValidThread());
   DCHECK(synchronous_entry_);
   DCHECK_EQ(STATE_IO_PENDING, state_);
   DCHECK(read_crc32);
   DCHECK(result);
+
+  if (*result > 0 &&
+      crc_check_state_[stream_index] == CRC_CHECK_NEVER_READ_AT_ALL) {
+    crc_check_state_[stream_index] = CRC_CHECK_NEVER_READ_TO_END;
+  }
 
   if (*result > 0 && crc32s_end_offset_[stream_index] == offset) {
     uint32 current_crc = offset == 0 ? crc32(0, Z_NULL, 0)
@@ -874,7 +997,9 @@ void SimpleEntryImpl::ReadOperationComplete(
       scoped_ptr<int> new_result(new int());
       Closure task = base::Bind(&SimpleSynchronousEntry::CheckEOFRecord,
                                 base::Unretained(synchronous_entry_),
-                                stream_index, crc32s_[stream_index],
+                                stream_index,
+                                data_size_[stream_index],
+                                crc32s_[stream_index],
                                 new_result.get());
       Closure reply = base::Bind(&SimpleEntryImpl::ChecksumOperationComplete,
                                  this, *result, stream_index,
@@ -901,12 +1026,17 @@ void SimpleEntryImpl::ReadOperationComplete(
       crc_check_state_[stream_index] = CRC_CHECK_NOT_DONE;
     }
   }
-  EntryOperationComplete(stream_index, completion_callback, result.Pass());
+  EntryOperationComplete(
+      stream_index,
+      completion_callback,
+      SimpleEntryStat(*last_used, last_modified_, data_size_),
+      result.Pass());
 }
 
 void SimpleEntryImpl::WriteOperationComplete(
     int stream_index,
     const CompletionCallback& completion_callback,
+    scoped_ptr<SimpleEntryStat> entry_stat,
     scoped_ptr<int> result) {
   if (net_log_.IsLoggingAllEvents()) {
     net_log_.EndEvent(
@@ -918,7 +1048,8 @@ void SimpleEntryImpl::WriteOperationComplete(
     RecordWriteResult(WRITE_RESULT_SUCCESS);
   else
     RecordWriteResult(WRITE_RESULT_SYNC_WRITE_FAILURE);
-  EntryOperationComplete(stream_index, completion_callback, result.Pass());
+  EntryOperationComplete(
+      stream_index, completion_callback, *entry_stat, result.Pass());
 }
 
 void SimpleEntryImpl::ChecksumOperationComplete(
@@ -946,7 +1077,11 @@ void SimpleEntryImpl::ChecksumOperationComplete(
   } else {
     RecordReadResult(READ_RESULT_SYNC_CHECKSUM_FAILURE);
   }
-  EntryOperationComplete(stream_index, completion_callback, result.Pass());
+  EntryOperationComplete(
+      stream_index,
+      completion_callback,
+      SimpleEntryStat(last_used_, last_modified_, data_size_),
+      result.Pass());
 }
 
 void SimpleEntryImpl::CloseOperationComplete() {
@@ -960,20 +1095,28 @@ void SimpleEntryImpl::CloseOperationComplete() {
   RunNextOperationIfNeeded();
 }
 
-void SimpleEntryImpl::SetSynchronousData() {
+void SimpleEntryImpl::UpdateDataFromEntryStat(
+    const SimpleEntryStat& entry_stat) {
   DCHECK(io_thread_checker_.CalledOnValidThread());
   DCHECK(synchronous_entry_);
   DCHECK_EQ(STATE_READY, state_);
-  // TODO(felipeg): These copies to avoid data races are not optimal. While
-  // adding an IO thread index (for fast misses etc...), we can store this data
-  // in that structure. This also solves problems with last_used() on ext4
-  // filesystems not being accurate.
-  last_used_ = synchronous_entry_->last_used();
-  last_modified_ = synchronous_entry_->last_modified();
-  for (int i = 0; i < kSimpleEntryFileCount; ++i)
-    data_size_[i] = synchronous_entry_->data_size(i);
+
+  last_used_ = entry_stat.last_used;
+  last_modified_ = entry_stat.last_modified;
+  for (int i = 0; i < kSimpleEntryFileCount; ++i) {
+    data_size_[i] = entry_stat.data_size[i];
+  }
   if (backend_.get())
-    backend_->index()->UpdateEntrySize(key_, synchronous_entry_->GetFileSize());
+    backend_->index()->UpdateEntrySize(key_, GetDiskUsage());
+}
+
+int64 SimpleEntryImpl::GetDiskUsage() const {
+  int64 file_size = 0;
+  for (int i = 0; i < kSimpleEntryFileCount; ++i) {
+    file_size +=
+        simple_util::GetFileSizeFromKeyAndDataSize(key_, data_size_[i]);
+  }
+  return file_size;
 }
 
 }  // namespace disk_cache

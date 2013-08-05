@@ -27,7 +27,6 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 LOCAL_SRC_FILES := \
 	webkit/renderer/appcache/appcache_frontend_impl.cc \
 	webkit/renderer/appcache/web_application_cache_host_impl.cc \
-	webkit/renderer/dom_storage/dom_storage_cached_area.cc \
 	webkit/renderer/fileapi/webfilewriter_base.cc
 
 

@@ -1417,9 +1417,12 @@ void BrowserPluginGuest::OnUnlockMouseAck(int instance_id) {
 
 void BrowserPluginGuest::OnUpdateRectACK(
     int instance_id,
+    bool needs_ack,
     const BrowserPluginHostMsg_AutoSize_Params& auto_size_params,
     const BrowserPluginHostMsg_ResizeGuest_Params& resize_guest_params) {
-  Send(new ViewMsg_UpdateRect_ACK(routing_id()));
+  // Only the software path expects an ACK.
+  if (needs_ack)
+    Send(new ViewMsg_UpdateRect_ACK(routing_id()));
   OnSetSize(instance_id_, auto_size_params, resize_guest_params);
 }
 
@@ -1552,7 +1555,11 @@ bool BrowserPluginGuest::HandleJavaScriptDialog(
   return false;
 }
 
-void BrowserPluginGuest::ResetJavaScriptState(WebContents* web_contents) {
+void BrowserPluginGuest::CancelActiveAndPendingDialogs(
+    WebContents* web_contents) {
+}
+
+void BrowserPluginGuest::WebContentsDestroyed(WebContents* web_contents) {
 }
 
 void BrowserPluginGuest::OnUpdateRect(

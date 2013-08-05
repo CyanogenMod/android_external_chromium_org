@@ -114,18 +114,6 @@ TestWebKitPlatformSupport::TestWebKitPlatformSupport() {
     DCHECK(file_system_root_.path().empty());
   }
 
-  {
-    // Initialize the hyphen library with a sample dictionary.
-    base::FilePath path;
-    PathService::Get(base::DIR_SOURCE_ROOT, &path);
-    path = path.Append(FILE_PATH_LITERAL("third_party/hyphen/hyph_en_US.dic"));
-    base::PlatformFile dict_file = base::CreatePlatformFile(
-        path,
-        base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ,
-        NULL, NULL);
-    hyphenator_.LoadDictionary(dict_file);
-  }
-
 #if defined(OS_WIN)
   // Ensure we pick up the default theme engine.
   SetThemeEngine(NULL);
@@ -164,10 +152,6 @@ WebKit::WebBlobRegistry* TestWebKitPlatformSupport::blobRegistry() {
   return blob_registry_.get();
 }
 
-WebKit::WebHyphenator* TestWebKitPlatformSupport::hyphenator() {
-  return &hyphenator_;
-}
-
 WebKit::WebIDBFactory* TestWebKitPlatformSupport::idbFactory() {
   NOTREACHED() <<
       "IndexedDB cannot be tested with in-process harnesses.";
@@ -190,9 +174,6 @@ bool TestWebKitPlatformSupport::isLinkVisited(unsigned long long linkHash) {
 WebKit::WebMessagePortChannel*
 TestWebKitPlatformSupport::createMessagePortChannel() {
   return new TestWebMessagePortChannel();
-}
-
-void TestWebKitPlatformSupport::prefetchHostName(const WebKit::WebString&) {
 }
 
 WebKit::WebURLLoader* TestWebKitPlatformSupport::createURLLoader() {

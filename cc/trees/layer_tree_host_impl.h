@@ -5,10 +5,12 @@
 #ifndef CC_TREES_LAYER_TREE_HOST_IMPL_H_
 #define CC_TREES_LAYER_TREE_HOST_IMPL_H_
 
+#include <list>
 #include <string>
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "cc/animation/animation_events.h"
@@ -24,7 +26,9 @@
 #include "cc/output/output_surface_client.h"
 #include "cc/output/renderer.h"
 #include "cc/quads/render_pass.h"
+#include "cc/resources/resource_provider.h"
 #include "cc/resources/tile_manager.h"
+#include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/rect.h"
 
@@ -42,9 +46,10 @@ class PaintTimeCounter;
 class MemoryHistory;
 class RenderingStatsInstrumentation;
 class RenderPassDrawQuad;
-class ResourceProvider;
 class TopControlsManager;
+class UIResourceBitmap;
 struct RendererCapabilities;
+struct UIResourceRequest;
 
 // LayerTreeHost->Proxy callback interface.
 class LayerTreeHostImplClient {
@@ -205,9 +210,8 @@ class CC_EXPORT LayerTreeHostImpl
   virtual void SetExternalStencilTest(bool enabled) OVERRIDE;
   virtual void DidLoseOutputSurface() OVERRIDE;
   virtual void OnSwapBuffersComplete(const CompositorFrameAck* ack) OVERRIDE;
-  virtual void SetMemoryPolicy(
-      const ManagedMemoryPolicy& policy,
-      bool discard_backbuffer_when_not_visible) OVERRIDE;
+  virtual void SetMemoryPolicy(const ManagedMemoryPolicy& policy) OVERRIDE;
+  virtual void SetDiscardBackBufferWhenNotVisible(bool discard) OVERRIDE;
   virtual void SetTreeActivationCallback(const base::Closure& callback)
       OVERRIDE;
 
@@ -257,9 +261,7 @@ class CC_EXPORT LayerTreeHostImpl
 
   ManagedMemoryPolicy ActualManagedMemoryPolicy() const;
 
-  size_t memory_allocation_limit_bytes() const {
-    return managed_memory_policy_.bytes_limit_when_visible;
-  }
+  size_t memory_allocation_limit_bytes() const;
 
   void SetViewportSize(gfx::Size device_viewport_size);
   gfx::Size device_viewport_size() const { return device_viewport_size_; }
@@ -374,6 +376,13 @@ class CC_EXPORT LayerTreeHostImpl
 
   bool page_scale_animation_active() const { return !!page_scale_animation_; }
 
+  void CreateUIResource(UIResourceId uid,
+                        scoped_refptr<UIResourceBitmap> bitmap);
+  // Deletes a UI resource.  May safely be called more than once.
+  void DeleteUIResource(UIResourceId uid);
+
+  ResourceProvider::ResourceId ResourceIdForUIResource(UIResourceId uid) const;
+
  protected:
   LayerTreeHostImpl(
       const LayerTreeSettings& settings,
@@ -438,10 +447,15 @@ class CC_EXPORT LayerTreeHostImpl
   void UpdateCurrentFrameTime(base::TimeTicks* ticks, base::Time* now) const;
 
   void StartScrollbarAnimationRecursive(LayerImpl* layer, base::TimeTicks time);
-  void SetManagedMemoryPolicy(const ManagedMemoryPolicy& policy);
+  void SetManagedMemoryPolicy(const ManagedMemoryPolicy& policy,
+                              bool zero_budget);
   void EnforceManagedMemoryPolicy(const ManagedMemoryPolicy& policy);
 
   void DidInitializeVisibleTile();
+
+  typedef base::hash_map<UIResourceId, ResourceProvider::ResourceId>
+      UIResourceMap;
+  UIResourceMap ui_resource_map_;
 
   scoped_ptr<OutputSurface> output_surface_;
 
@@ -474,7 +488,7 @@ class CC_EXPORT LayerTreeHostImpl
   LayerTreeSettings settings_;
   LayerTreeDebugState debug_state_;
   bool visible_;
-  ManagedMemoryPolicy managed_memory_policy_;
+  ManagedMemoryPolicy cached_managed_memory_policy_;
 
   gfx::Vector2dF accumulated_root_overscroll_;
   gfx::Vector2dF current_fling_velocity_;

@@ -4,11 +4,14 @@
 
 #include "ui/gfx/render_text.h"
 
+#include <algorithm>
+
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/break_list.h"
+#include "ui/gfx/canvas.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -1129,24 +1132,84 @@ TEST_F(RenderTextTest, StringSizeSanity) {
 //                  sizes instead of pixel sizes like other implementations.
 #if !defined(OS_MACOSX)
 TEST_F(RenderTextTest, StringSizeEmptyString) {
-  const Font font;
+  // Ascent and descent of Arial and Symbol are different on most platforms.
+  const FontList font_list("Arial,Symbol, 16px");
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
-  render_text->SetFont(font);
+  render_text->SetFontList(font_list);
 
+  // The empty string respects FontList metrics for non-zero height
+  // and baseline.
   render_text->SetText(base::string16());
-  EXPECT_EQ(font.GetHeight(), render_text->GetStringSize().height());
+  EXPECT_EQ(font_list.GetHeight(), render_text->GetStringSize().height());
   EXPECT_EQ(0, render_text->GetStringSize().width());
+  EXPECT_EQ(font_list.GetBaseline(), render_text->GetBaseline());
 
   render_text->SetText(UTF8ToUTF16(" "));
-  EXPECT_EQ(font.GetHeight(), render_text->GetStringSize().height());
+  EXPECT_EQ(font_list.GetHeight(), render_text->GetStringSize().height());
+  EXPECT_EQ(font_list.GetBaseline(), render_text->GetBaseline());
 }
 #endif  // !defined(OS_MACOSX)
+
+TEST_F(RenderTextTest, StringSizeRespectsFontListMetrics) {
+  // Check that Arial and Symbol have different font metrics.
+  Font arial_font("Arial", 16);
+  Font symbol_font("Symbol", 16);
+  EXPECT_NE(arial_font.GetHeight(), symbol_font.GetHeight());
+  EXPECT_NE(arial_font.GetBaseline(), symbol_font.GetBaseline());
+  // "a" should be rendered with Arial, not with Symbol.
+  const char* arial_font_text = "a";
+  // "®" (registered trademark symbol) should be rendered with Symbol,
+  // not with Arial.
+  const char* symbol_font_text = "\xC2\xAE";
+
+  Font smaller_font = arial_font;
+  Font larger_font = symbol_font;
+  const char* smaller_font_text = arial_font_text;
+  const char* larger_font_text = symbol_font_text;
+  if (symbol_font.GetHeight() < arial_font.GetHeight() &&
+      symbol_font.GetBaseline() < arial_font.GetBaseline()) {
+    std::swap(smaller_font, larger_font);
+    std::swap(smaller_font_text, larger_font_text);
+  }
+  ASSERT_LT(smaller_font.GetHeight(), larger_font.GetHeight());
+  ASSERT_LT(smaller_font.GetBaseline(), larger_font.GetBaseline());
+
+  // Check |smaller_font_text| is rendered with the smaller font.
+  scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
+  render_text->SetText(UTF8ToUTF16(smaller_font_text));
+  render_text->SetFont(smaller_font);
+  EXPECT_EQ(smaller_font.GetHeight(), render_text->GetStringSize().height());
+  EXPECT_EQ(smaller_font.GetBaseline(), render_text->GetBaseline());
+
+  // Layout the same text with mixed fonts.  The text should be rendered with
+  // the smaller font, but the height and baseline are determined with the
+  // metrics of the font list, which is equal to the larger font.
+  std::vector<Font> fonts;
+  fonts.push_back(smaller_font);  // The primary font is the smaller font.
+  fonts.push_back(larger_font);
+  const FontList font_list(fonts);
+  render_text->SetFontList(font_list);
+  EXPECT_LT(smaller_font.GetHeight(), render_text->GetStringSize().height());
+  EXPECT_LT(smaller_font.GetBaseline(), render_text->GetBaseline());
+  EXPECT_EQ(font_list.GetHeight(), render_text->GetStringSize().height());
+  EXPECT_EQ(font_list.GetBaseline(), render_text->GetBaseline());
+}
 
 TEST_F(RenderTextTest, SetFont) {
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   render_text->SetFont(Font("Arial", 12));
-  EXPECT_EQ("Arial", render_text->GetFont().GetFontName());
-  EXPECT_EQ(12, render_text->GetFont().GetFontSize());
+  EXPECT_EQ("Arial", render_text->GetPrimaryFont().GetFontName());
+  EXPECT_EQ(12, render_text->GetPrimaryFont().GetFontSize());
+}
+
+TEST_F(RenderTextTest, SetFontList) {
+  scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
+  render_text->SetFontList(FontList("Arial,Symbol, 13px"));
+  const std::vector<Font>& fonts = render_text->font_list().GetFonts();
+  ASSERT_EQ(2U, fonts.size());
+  EXPECT_EQ("Arial", fonts[0].GetFontName());
+  EXPECT_EQ("Symbol", fonts[1].GetFontName());
+  EXPECT_EQ(13, render_text->GetPrimaryFont().GetFontSize());
 }
 
 TEST_F(RenderTextTest, StringSizeBoldWidth) {
@@ -1370,6 +1433,42 @@ TEST_F(RenderTextTest, CaretWidth) {
   EXPECT_GE(render_text->GetUpdatedCursorBounds().width(), 1);
 }
 
+TEST_F(RenderTextTest, SelectWord) {
+  scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
+  render_text->SetText(ASCIIToUTF16(" foo  a.bc.d bar"));
+
+  struct {
+    size_t cursor;
+    size_t selection_start;
+    size_t selection_end;
+  } cases[] = {
+    { 0,   0,  1 },
+    { 1,   1,  4 },
+    { 2,   1,  4 },
+    { 3,   1,  4 },
+    { 4,   4,  6 },
+    { 5,   4,  6 },
+    { 6,   6,  7 },
+    { 7,   7,  8 },
+    { 8,   8, 10 },
+    { 9,   8, 10 },
+    { 10, 10, 11 },
+    { 11, 11, 12 },
+    { 12, 12, 13 },
+    { 13, 13, 16 },
+    { 14, 13, 16 },
+    { 15, 13, 16 },
+    { 16, 13, 16 },
+  };
+
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+    render_text->SetCursorPosition(cases[i].cursor);
+    render_text->SelectWord();
+    EXPECT_EQ(ui::Range(cases[i].selection_start, cases[i].selection_end),
+              render_text->selection());
+  }
+}
+
 // Make sure the last word is selected when the cursor is at text.length().
 TEST_F(RenderTextTest, LastWordSelected) {
   const std::string kTestURL1 = "http://www.google.com";
@@ -1430,16 +1529,13 @@ TEST_F(RenderTextTest, DisplayRectShowsCursorLTR) {
 
   // Ensure that shrinking the display rectangle keeps the cursor in view.
   render_text->SetDisplayRect(Rect(width - 10, 1));
-  EXPECT_EQ(render_text->display_rect().width() - 1,
+  EXPECT_EQ(render_text->display_rect().width(),
             render_text->GetUpdatedCursorBounds().right());
 
-  // TODO(msw): Investigate why this test passes with
-  // |GetUpdateCursorBounds().x()|, while the above have to use
-  // |.right()|.
   // Ensure that the text will pan to fill its expanding display rectangle.
   render_text->SetDisplayRect(Rect(width - 5, 1));
-  EXPECT_EQ(render_text->display_rect().width() - 1,
-            render_text->GetUpdatedCursorBounds().x());
+  EXPECT_EQ(render_text->display_rect().width(),
+            render_text->GetUpdatedCursorBounds().right());
 
   // Ensure that a sufficiently large display rectangle shows all the text.
   render_text->SetDisplayRect(Rect(width + 10, 1));
@@ -1458,13 +1554,13 @@ TEST_F(RenderTextTest, DisplayRectShowsCursorLTR) {
 
   // Ensure that shrinking the display rectangle keeps the cursor in view.
   render_text->SetDisplayRect(Rect(width - 10, 1));
-  EXPECT_EQ(render_text->display_rect().width() - 1,
+  EXPECT_EQ(render_text->display_rect().width(),
             render_text->GetUpdatedCursorBounds().right());
 
   // Ensure that the text will pan to fill its expanding display rectangle.
   render_text->SetDisplayRect(Rect(width - 5, 1));
-  EXPECT_EQ(render_text->display_rect().width() - 1,
-            render_text->GetUpdatedCursorBounds().x());
+  EXPECT_EQ(render_text->display_rect().width(),
+            render_text->GetUpdatedCursorBounds().right());
 
   // Ensure that a sufficiently large display rectangle shows all the text.
   render_text->SetDisplayRect(Rect(width + 10, 1));
@@ -1532,21 +1628,27 @@ TEST_F(RenderTextTest, DisplayRectShowsCursorRTL) {
 }
 #endif  // !defined(OS_MACOSX)
 
-// Changing colors between ligated Arabic glyphs should not break shaping.
-// TODO(ckocagil): Check whether this test passes on other platforms and enable
-// accordingly.
-#if defined(OS_WIN)
+// Changing colors between or inside ligated glyphs should not break shaping.
 TEST_F(RenderTextTest, SelectionKeepsLigatures) {
-  const base::string16 kTestLigature = WideToUTF16(L"\x633\x627");
+  const wchar_t* kTestStrings[] = {
+    L"\x644\x623",
+    L"\x633\x627"
+  };
 
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   render_text->set_selection_color(SK_ColorRED);
-  render_text->SetText(kTestLigature);
+  Canvas canvas;
 
-  const int expected_width = render_text->GetStringSize().width();
-  render_text->MoveCursorTo(SelectionModel(ui::Range(0, 1), CURSOR_FORWARD));
-  EXPECT_EQ(expected_width, render_text->GetStringSize().width());
+  for (size_t i = 0; i < arraysize(kTestStrings); ++i) {
+    render_text->SetText(WideToUTF16(kTestStrings[i]));
+    const int expected_width = render_text->GetStringSize().width();
+    render_text->MoveCursorTo(SelectionModel(ui::Range(0, 1), CURSOR_FORWARD));
+    EXPECT_EQ(expected_width, render_text->GetStringSize().width());
+    // Draw the text. It shouldn't hit any DCHECKs or crash.
+    // See http://crbug.com/214150
+    render_text->Draw(&canvas);
+    render_text->MoveCursorTo(SelectionModel(0, CURSOR_FORWARD));
+  }
 }
-#endif  // defined(OS_WIN)
 
 }  // namespace gfx

@@ -41,6 +41,7 @@ const char kText4[] = "Traffic slowdown as motorists are hitting zombies";
 const char kText5[] = "Neptune wins, pi to e";
 const char kText6[] = "Beef flavored base for soups";
 const char kText7[] = "You now have the latest version of Push Messaging App.";
+const char kText1And1[] = "Space Needle, 12:00 pm\nSpace Needle, 12:00 pm";
 const char kImageUrl1[] = "http://www.google.com/image1.jpg";
 const char kImageUrl2[] = "http://www.google.com/image2.jpg";
 const char kImageUrl3[] = "http://www.google.com/image3.jpg";
@@ -49,7 +50,7 @@ const char kImageUrl5[] = "http://www.google.com/image5.jpg";
 const char kImageUrl6[] = "http://www.google.com/image6.jpg";
 const char kImageUrl7[] = "http://www.google.com/image7.jpg";
 const char kExpectedOriginUrl[] =
-    "chrome-extension://fboilmbenheemaomgaeehigklolhkhnf/";
+    "synced-notification://fboilmbenheemaomgaeehigklolhkhnf";
 const char kDefaultDestinationTitle[] = "Open web page";
 const char kDefaultDestinationIconUrl[] = "http://www.google.com/image4.jpg";
 const char kDefaultDestinationUrl[] = "chrome://flags";

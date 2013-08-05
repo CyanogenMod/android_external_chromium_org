@@ -7,7 +7,6 @@
 #include "base/command_line.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/invalidation/invalidation_service_util.h"
-#include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
@@ -258,7 +257,23 @@ void TiclInvalidationService::OnGetTokenFailure(
 
 void TiclInvalidationService::OnInvalidatorStateChange(
     syncer::InvalidatorState state) {
-  invalidator_registrar_->UpdateInvalidatorState(state);
+  if (state == syncer::INVALIDATION_CREDENTIALS_REJECTED) {
+    // This may be due to normal OAuth access token expiration.  If so, we must
+    // fetch a new one using our refresh token.  Resetting the invalidator's
+    // access token will not reset the invalidator's exponential backoff, so
+    // it's safe to try to update the token every time we receive this signal.
+    //
+    // We won't be receiving any invalidations while the refresh is in progress,
+    // we set our state to TRANSIENT_INVALIDATION_ERROR.  If the credentials
+    // really are invalid, the refresh request should fail and
+    // OnGetTokenFailure() will put us into a INVALIDATION_CREDENTIALS_REJECTED
+    // state.
+    invalidator_registrar_->UpdateInvalidatorState(
+        syncer::TRANSIENT_INVALIDATION_ERROR);
+    RequestAccessToken();
+  } else {
+    invalidator_registrar_->UpdateInvalidatorState(state);
+  }
 }
 
 void TiclInvalidationService::OnIncomingInvalidation(
@@ -276,7 +291,7 @@ void TiclInvalidationService::Shutdown() {
 }
 
 bool TiclInvalidationService::IsReadyToStart() {
-  if (ManagedUserService::ProfileIsManaged(profile_)) {
+  if (profile_->IsManaged()) {
     DVLOG(2) << "Not starting TiclInvalidationService: User is managed.";
     return false;
   }

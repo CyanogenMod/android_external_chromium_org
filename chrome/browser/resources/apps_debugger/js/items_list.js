@@ -20,6 +20,13 @@ cr.define('apps_dev_tool', function() {
   // The list of all unpacked extensions.
   var unpackedExtensionList = [];
 
+  // Highlight animation is in progress in apps or extensions list.
+  var animating = false;
+
+  // If an update of the list of apps/extensions happened while animation was
+  // in progress, we'll need to update the list at the end of the animation.
+  var needsReloadAppDisplay = false;
+
   /** const*/ var AppsDevTool = apps_dev_tool.AppsDevTool;
 
   /**
@@ -67,7 +74,8 @@ cr.define('apps_dev_tool', function() {
 
   /**
    * Applies the given |filter| to the items list.
-   * @param {string} filter Curent string in the search box.
+   * @param {string} filter Regular expression to that will be used to
+   *     match the name of the items we want to show.
    */
   function rebuildAppList(filter) {
     packedAppList = [];
@@ -77,7 +85,7 @@ cr.define('apps_dev_tool', function() {
 
     for (var i = 0; i < completeList.length; i++) {
       var item = completeList[i];
-      if (filter && item.name.toLowerCase().search(filter.toLowerCase()) < 0)
+      if (filter && item.name.toLowerCase().search(filter) < 0)
         continue;
       if (item.isApp) {
         if (item.is_unpacked)
@@ -132,9 +140,15 @@ cr.define('apps_dev_tool', function() {
      * Creates all items from scratch.
      */
     showItemNodes: function() {
-      var packedItemsList = this.tabNode_.querySelector('#packed-list .items');
+      // Don't reset the content until the animation is finished.
+      if (animating) {
+        needsReloadAppDisplay = true;
+        return;
+      }
+
+      var packedItemsList = this.tabNode_.querySelector('.packed-list .items');
       var unpackedItemsList = this.tabNode_.querySelector(
-          '#unpacked-list .items');
+          '.unpacked-list .items');
       packedItemsList.innerHTML = '';
       unpackedItemsList.innerHTML = '';
 
@@ -145,7 +159,7 @@ cr.define('apps_dev_tool', function() {
 
       // Iterate over the items in the packed items and add each item to the
       // list.
-      this.tabNode_.querySelector('#packed-list').classList.toggle(
+      this.tabNode_.querySelector('.packed-list').classList.toggle(
           'empty-item-list', this.packedItems_.length == 0);
       for (var i = 0; i < this.packedItems_.length; ++i) {
         packedItemsList.appendChild(this.createNode_(this.packedItems_[i]));
@@ -153,7 +167,7 @@ cr.define('apps_dev_tool', function() {
 
       // Iterate over the items in the unpacked items and add each item to the
       // list.
-      this.tabNode_.querySelector('#unpacked-list').classList.toggle(
+      this.tabNode_.querySelector('.unpacked-list').classList.toggle(
           'empty-item-list', this.unpackedItems_.length == 0);
       for (var i = 0; i < this.unpackedItems_.length; ++i) {
         unpackedItemsList.appendChild(this.createNode_(this.unpackedItems_[i]));
@@ -238,47 +252,15 @@ cr.define('apps_dev_tool', function() {
           });
         });
         restart.hidden = false;
-
-        var launchButton = node.querySelector('.extension-run-button');
-        launchButton.addEventListener('click', function(e) {
-          ItemsList.launchApp(item.id);
-        });
-
-        var restartButton = node.querySelector('.extension-restart-button');
-        restartButton.addEventListener('click', function(e) {
-          chrome.developerPrivate.restart(item.id, function() {
-            ItemsList.loadItemsInfo();
-          });
-        });
-
-        var showLogs = node.querySelector('.extension-show-logs-button');
-        showLogs.addEventListener('click', function(e) {
-          if (!item.views.length)
-            return;
-          var view = item.views[0];
-
-          // Opens the devtools inspect window for the page.
-          chrome.developerPrivate.inspect({
-            extension_id: String(item.id),
-            render_process_id: String(view.render_process_id),
-            render_view_id: String(view.render_view_id),
-            incognito: view.incognito,
-          });
-        });
-      } else {
-        node.querySelector('.extension-run-button').hidden = true;
-        node.querySelector('.extension-restart-button').hidden = true;
-        node.querySelector('.extension-show-logs-button').hidden = true;
       }
-
       // The terminated reload link.
       if (!item.terminated)
         this.setEnabledCheckbox_(item, node);
       else
         this.setTerminatedReloadLink_(item, node);
 
-      // Set remove button handler.
-      this.setRemoveButton_(item, node);
+      // Set delete button handler.
+      this.setDeleteButton_(item, node);
 
       // First get the item id.
       var idLabel = node.querySelector('.extension-id');
@@ -299,12 +281,6 @@ cr.define('apps_dev_tool', function() {
         node.querySelector('.managed-message').hidden = false;
 
       this.setActiveViews_(item, node);
-
-      var moreDetailsLink =
-          node.querySelector('.extension-more-details-button');
-      moreDetailsLink.addEventListener('click', function(e) {
-        this.toggleExtensionDetails_(item, node);
-      }.bind(this));
 
       return node;
     },
@@ -385,19 +361,46 @@ cr.define('apps_dev_tool', function() {
     },
 
     /**
-     * Sets the remove button handler.
+     * Shows the delete confirmation dialog and will trigger the deletion
+     * if the user confirms deletion.
+     * @param {!Object} item Information about the item being deleted.
+     * @private
+     */
+    showDeleteConfirmationDialog: function(item) {
+      var message;
+      if (item.isApp)
+        message = loadTimeData.getString('deleteConfirmationMessageApp');
+      else
+        message = loadTimeData.getString('deleteConfirmationMessageExtension');
+
+      alertOverlay.setValues(
+          loadTimeData.getString('deleteConfirmationTitle'),
+          message,
+          loadTimeData.getString('deleteConfirmationDeleteButton'),
+          loadTimeData.getString('cancel'),
+          function() {
+            AppsDevTool.showOverlay(null);
+            var options = {showConfirmDialog: false};
+            chrome.management.uninstall(item.id, options);
+          },
+          function() {
+            AppsDevTool.showOverlay(null);
+          });
+
+      AppsDevTool.showOverlay($('alertOverlay'));
+    },
+
+    /**
+     * Sets the delete button handler.
      * @param {!Object} item A dictionary of item metadata.
      * @param {!HTMLElement} el HTML element containing all items.
      * @private
      */
-    setRemoveButton_: function(item, el) {
+    setDeleteButton_: function(item, el) {
       var deleteLink = el.querySelector('.delete-link');
       deleteLink.addEventListener('click', function(e) {
-        var options = {showConfirmDialog: false};
-        chrome.management.uninstall(item.id, options, function() {
-          ItemsList.loadItemsInfo();
-        });
-      });
+        this.showDeleteConfirmationDialog(item);
+      }.bind(this));
     },
 
     /**
@@ -494,60 +497,15 @@ cr.define('apps_dev_tool', function() {
         }
       });
     },
-
-    /**
-     * If the details of an app / extension is expanded, this function will
-     * collapse it, else it will expand this them.
-     * @param {!Object} item A dictionary of item metadata.
-     * @param {!HTMLElement} node HTML element containing all items.
-     * @private
-     */
-    toggleExtensionDetails_: function(item, node)  {
-      var itemNode = node.querySelector('.extension-details');
-      if (itemNode.classList.contains('expanded'))
-        this.setExtensionDetailsVisible_(node, false);
-      else
-        this.setExtensionDetailsVisible_(node, true);
-    },
-
-    /**
-     * If visible is true, this function will expand the details of an
-     * app/extension, else it will collapse them.
-     * @param {!HTMLElement} node HTML element containing all items.
-     * @param {boolean} visible Visiblity of the details.
-     * @private
-     */
-    setExtensionDetailsVisible_: function(node, visible) {
-      var itemNode = node.querySelector('.extension-details');
-      var details = node.querySelector('.extension-details-all');
-      if (visible) {
-        // Hide other details.
-        var otherNodeList =
-            document.querySelectorAll('extension-list-item-wrapper');
-        for (var i = 0; i < otherNodeList.length; i++) {
-          if (otherNodeList[i] != node)
-            this.setExtensionDetailsVisible_(otherNodeList[i], false);
-        }
-
-        var container =
-            details.querySelector('.extension-details-all-container');
-        // Adds 10 pixels to height because .extension-details-all-bubble has
-        // a 10px top margin.
-        var height = container.clientHeight + 10;
-        details.style.height = height + 'px';
-        itemNode.classList.add('expanded');
-      } else {
-        details.style.height = 0;
-        itemNode.classList.remove('expanded');
-      }
-    }
   };
 
   /**
    * Rebuilds the item list and reloads the app on every search input.
    */
   ItemsList.onSearchInput = function() {
-    rebuildAppList($('search').value);
+    // Escape regexp special chars (e.g. ^, $, etc.).
+    rebuildAppList($('search').value.toLowerCase().replace(
+        /[-\/\\^$*+?.()|[\]{}]/g, '\\$&'));
     reloadAppDisplay();
   };
 
@@ -572,10 +530,7 @@ cr.define('apps_dev_tool', function() {
    */
   ItemsList.launchApp = function(id) {
     chrome.management.launchApp(id, function() {
-      ItemsList.loadItemsInfo(function() {
-        var unpacked = new ItemsList($('unpacked-list'), unpackedList);
-        unpacked.setExtensionDetailsVisible_($(id), true);
-      });
+      ItemsList.loadItemsInfo();
     });
   };
 
@@ -585,19 +540,52 @@ cr.define('apps_dev_tool', function() {
    * @param {string} id Identifier of the app / extension.
    */
   ItemsList.makeUnpackedExtensionVisible = function(id) {
+    // Find which tab contains the item.
     var tabbox = document.querySelector('tabbox');
-    // Unpacked tab is the first tab.
-    tabbox.selectedIndex = 0;
 
-    var firstItem =
-        document.querySelector('#unpacked-list .extension-list-item-wrapper');
-    if (!firstItem)
-      return;
-    // Scroll relatively to the position of the first item.
+    // Select the correct tab.
     var node = $(id);
-    document.body.scrollTop = node.offsetTop - firstItem.offsetTop;
-    var unpacked = new ItemsList($('unpacked-list'), unpackedList);
-    unpacked.setExtensionDetailsVisible_(node, true);
+    if (!node)
+      return;
+
+    var tabNode = findAncestor(node, function(el) {
+      return el.tagName == 'TABPANEL';
+    });
+    tabbox.selectedIndex = tabNode == $('apps-tab') ? 0 : 1;
+
+    // Highlights the item.
+    animating = true;
+    needsReloadAppDisplay = true;
+    node.classList.add('highlighted');
+    // Show highlighted item for 1 sec.
+    setTimeout(function() {
+      node.style.backgroundColor = 'rgba(255, 255, 128, 0)';
+      // Wait for fade animation to happen.
+      node.addEventListener('webkitTransitionEnd', function f(e) {
+        assert(e.propertyName == 'background-color');
+
+        animating = false;
+        if (needsReloadAppDisplay)
+          reloadAppDisplay();
+
+        node.removeEventListener('webkitTransitionEnd', f);
+      });
+    }, 1000);
+
+    // Scroll relatively to the position of the first item.
+    var header = tabNode.querySelector('.unpacked-list .list-header');
+    var container = $('container');
+    if (node.offsetTop - header.offsetTop < container.scrollTop) {
+      // Some padding between the top edge and the node is already provided
+      // by the HTML layout.
+      container.scrollTop = node.offsetTop - header.offsetTop;
+    } else if (node.offsetTop + node.offsetHeight > container.scrollTop +
+        container.offsetHeight + 20) {
+      // Adds padding of 20px between the bottom edge and the bottom of the
+      // node.
+      container.scrollTop = node.offsetTop + node.offsetHeight -
+          container.offsetHeight + 20;
+    }
   };
 
   return {

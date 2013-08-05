@@ -21,6 +21,7 @@
 #include "chrome/browser/chromeos/drive/logging.h"
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "chrome/browser/chromeos/drive/resource_metadata_storage.h"
+#include "chrome/browser/chromeos/profiles/profile_util.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/download/download_util.h"
@@ -52,7 +53,7 @@ namespace {
 bool IsDriveEnabledForProfile(Profile* profile) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  if (!google_apis::AuthService::CanAuthenticate(profile))
+  if (!chromeos::IsProfileAssociatedWithGaiaAccount(profile))
     return false;
 
   // Disable Drive if preference is set.  This can happen with commandline flag
@@ -166,6 +167,7 @@ DriveIntegrationService::DriveIntegrationService(
         blocking_task_runner_.get(),
         GURL(google_apis::DriveApiUrlGenerator::kBaseUrlForProduction),
         GURL(google_apis::DriveApiUrlGenerator::kBaseDownloadUrlForProduction),
+        GURL(google_apis::GDataWapiUrlGenerator::kBaseUrlForProduction),
         GetDriveUserAgent()));
   } else {
     drive_service_.reset(new GDataWapiService(
@@ -270,7 +272,7 @@ void DriveIntegrationService::OnPushNotificationEnabled(bool enabled) {
     drive_app_registry_->Update();
 
   const char* status = (enabled ? "enabled" : "disabled");
-  util::Log("Push notification is %s", status);
+  util::Log(logging::LOG_INFO, "Push notification is %s", status);
 }
 
 bool DriveIntegrationService::IsDriveEnabled() {
@@ -335,7 +337,7 @@ void DriveIntegrationService::AddDriveMountPoint() {
       drive_mount_point);
 
   if (success) {
-    util::Log("Drive mount point is added");
+    util::Log(logging::LOG_INFO, "Drive mount point is added");
     FOR_EACH_OBSERVER(DriveIntegrationServiceObserver, observers_,
                       OnFileSystemMounted());
   }
@@ -355,7 +357,7 @@ void DriveIntegrationService::RemoveDriveMountPoint() {
 
   mount_points->RevokeFileSystem(
       util::GetDriveMountPointPath().BaseName().AsUTF8Unsafe());
-  util::Log("Drive mount point is removed");
+  util::Log(logging::LOG_INFO, "Drive mount point is removed");
 }
 
 void DriveIntegrationService::InitializeAfterMetadataInitialized(
@@ -384,7 +386,7 @@ void DriveIntegrationService::InitializeAfterMetadataInitialized(
     const bool registered =
         drive_notification_manager->push_notification_registered();
     const char* status = (registered ? "registered" : "not registered");
-    util::Log("Push notification is %s", status);
+    util::Log(logging::LOG_INFO, "Push notification is %s", status);
 
     if (drive_notification_manager->push_notification_enabled())
       drive_app_registry_->Update();

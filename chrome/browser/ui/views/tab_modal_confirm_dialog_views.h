@@ -39,6 +39,7 @@ class TabModalConfirmDialogViews : public TabModalConfirmDialog,
   virtual string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
   virtual bool Cancel() OVERRIDE;
   virtual bool Accept() OVERRIDE;
+  virtual bool Close() OVERRIDE;
 
   // views::WidgetDelegate:
   virtual views::View* GetContentsView() OVERRIDE;
@@ -58,12 +59,9 @@ class TabModalConfirmDialogViews : public TabModalConfirmDialog,
 
   // TabModalConfirmDialogCloseDelegate:
   virtual void CloseDialog() OVERRIDE;
-  virtual void SetPreventCloseOnLoadStart(bool prevent) OVERRIDE;
 
   // views::LinkListener:
   virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
-
-  content::WebContents* web_contents_;
 
   scoped_ptr<TabModalConfirmDialogDelegate> delegate_;
 

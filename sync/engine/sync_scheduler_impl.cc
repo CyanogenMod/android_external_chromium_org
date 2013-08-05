@@ -28,7 +28,6 @@ namespace syncer {
 
 using sessions::SyncSession;
 using sessions::SyncSessionSnapshot;
-using sessions::SyncSourceInfo;
 using sync_pb::GetUpdatesCallerInfo;
 
 namespace {
@@ -174,7 +173,7 @@ SyncSchedulerImpl::SyncSchedulerImpl(const std::string& name,
 
 SyncSchedulerImpl::~SyncSchedulerImpl() {
   DCHECK(CalledOnValidThread());
-  StopImpl(base::Closure());
+  StopImpl();
 }
 
 void SyncSchedulerImpl::OnCredentialsUpdated() {
@@ -248,8 +247,7 @@ ModelTypeSet SyncSchedulerImpl::GetEnabledAndUnthrottledTypes() {
 
 void SyncSchedulerImpl::SendInitialSnapshot() {
   DCHECK(CalledOnValidThread());
-  scoped_ptr<SyncSession> dummy(
-      SyncSession::Build(session_context_, this, SyncSourceInfo()));
+  scoped_ptr<SyncSession> dummy(SyncSession::Build(session_context_, this));
   SyncEngineEvent event(SyncEngineEvent::STATUS_CHANGED);
   event.snapshot = dummy->TakeSnapshot();
   session_context_->NotifyListeners(event);
@@ -469,11 +467,7 @@ void SyncSchedulerImpl::DoNudgeSyncSessionJob(JobPriority priority) {
 
   DVLOG(2) << "Will run normal mode sync cycle with routing info "
            << ModelSafeRoutingInfoToString(session_context_->routing_info());
-  scoped_ptr<SyncSession> session(
-      SyncSession::Build(
-          session_context_,
-          this,
-          nudge_tracker_.GetSourceInfo()));
+  scoped_ptr<SyncSession> session(SyncSession::Build(session_context_, this));
   bool premature_exit = !syncer_->NormalSyncShare(
       GetEnabledAndUnthrottledTypes(),
       nudge_tracker_,
@@ -512,14 +506,10 @@ bool SyncSchedulerImpl::DoConfigurationSyncSessionJob(JobPriority priority) {
 
   SDVLOG(2) << "Will run configure SyncShare with routes "
            << ModelSafeRoutingInfoToString(session_context_->routing_info());
-  SyncSourceInfo source_info(pending_configure_params_->source,
-                             ModelSafeRoutingInfoToInvalidationMap(
-                                 session_context_->routing_info(),
-                                 std::string()));
-  scoped_ptr<SyncSession> session(
-      SyncSession::Build(session_context_, this, source_info));
+  scoped_ptr<SyncSession> session(SyncSession::Build(session_context_, this));
   bool premature_exit = !syncer_->ConfigureSyncShare(
       GetRoutingInfoTypes(session_context_->routing_info()),
+      pending_configure_params_->source,
       session.get());
   AdjustPolling(FORCE_RESET);
   // Don't run poll job till the next time poll timer fires.
@@ -565,7 +555,6 @@ void SyncSchedulerImpl::DoPollSyncSessionJob() {
   ModelSafeRoutingInfo r;
   ModelTypeInvalidationMap invalidation_map =
       ModelSafeRoutingInfoToInvalidationMap(r, std::string());
-  SyncSourceInfo info(GetUpdatesCallerInfo::PERIODIC, invalidation_map);
   base::AutoReset<bool> protector(&no_scheduling_allowed_, true);
 
   if (!CanRunJobNow(NORMAL_PRIORITY)) {
@@ -580,8 +569,7 @@ void SyncSchedulerImpl::DoPollSyncSessionJob() {
 
   SDVLOG(2) << "Polling with routes "
            << ModelSafeRoutingInfoToString(session_context_->routing_info());
-  scoped_ptr<SyncSession> session(
-      SyncSession::Build(session_context_, this, info));
+  scoped_ptr<SyncSession> session(SyncSession::Build(session_context_, this));
   syncer_->PollSyncShare(
       GetEnabledAndUnthrottledTypes(),
       session.get());
@@ -656,16 +644,15 @@ void SyncSchedulerImpl::RestartWaiting() {
   }
 }
 
-void SyncSchedulerImpl::RequestStop(const base::Closure& callback) {
+void SyncSchedulerImpl::RequestStop() {
   syncer_->RequestEarlyExit();  // Safe to call from any thread.
   DCHECK(weak_handle_this_.IsInitialized());
   SDVLOG(3) << "Posting StopImpl";
   weak_handle_this_.Call(FROM_HERE,
-                         &SyncSchedulerImpl::StopImpl,
-                         callback);
+                         &SyncSchedulerImpl::StopImpl);
 }
 
-void SyncSchedulerImpl::StopImpl(const base::Closure& callback) {
+void SyncSchedulerImpl::StopImpl() {
   DCHECK(CalledOnValidThread());
   SDVLOG(2) << "StopImpl called";
 
@@ -678,8 +665,6 @@ void SyncSchedulerImpl::StopImpl(const base::Closure& callback) {
   pending_configure_params_.reset();
   if (started_)
     started_ = false;
-  if (!callback.is_null())
-    callback.Run();
 }
 
 // This is the only place where we invoke DoSyncSessionJob with canary

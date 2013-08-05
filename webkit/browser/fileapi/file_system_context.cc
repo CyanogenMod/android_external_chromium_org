@@ -19,14 +19,11 @@
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
 #include "webkit/browser/fileapi/file_system_options.h"
 #include "webkit/browser/fileapi/file_system_quota_client.h"
-#include "webkit/browser/fileapi/file_system_task_runners.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/isolated_context.h"
 #include "webkit/browser/fileapi/isolated_file_system_backend.h"
 #include "webkit/browser/fileapi/mount_points.h"
 #include "webkit/browser/fileapi/sandbox_file_system_backend.h"
-#include "webkit/browser/fileapi/syncable/local_file_change_tracker.h"
-#include "webkit/browser/fileapi/syncable/local_file_sync_context.h"
 #include "webkit/browser/fileapi/test_file_system_backend.h"
 #include "webkit/browser/quota/quota_manager.h"
 #include "webkit/browser/quota/special_storage_policy.h"
@@ -100,30 +97,30 @@ int FileSystemContext::GetPermissionPolicy(FileSystemType type) {
 }
 
 FileSystemContext::FileSystemContext(
-    scoped_ptr<FileSystemTaskRunners> task_runners,
+    base::SingleThreadTaskRunner* io_task_runner,
+    base::SequencedTaskRunner* file_task_runner,
     ExternalMountPoints* external_mount_points,
     quota::SpecialStoragePolicy* special_storage_policy,
     quota::QuotaManagerProxy* quota_manager_proxy,
     ScopedVector<FileSystemBackend> additional_backends,
     const base::FilePath& partition_path,
     const FileSystemOptions& options)
-    : task_runners_(task_runners.Pass()),
+    : io_task_runner_(io_task_runner),
+      default_file_task_runner_(file_task_runner),
       quota_manager_proxy_(quota_manager_proxy),
       sandbox_context_(new SandboxContext(
           quota_manager_proxy,
-          task_runners_->file_task_runner(),
+          file_task_runner,
           partition_path,
-          special_storage_policy)),
-      sandbox_backend_(new SandboxFileSystemBackend(
-          sandbox_context_.get(),
+          special_storage_policy,
           options)),
+      sandbox_backend_(new SandboxFileSystemBackend(
+          sandbox_context_.get())),
       isolated_backend_(new IsolatedFileSystemBackend()),
       additional_backends_(additional_backends.Pass()),
       external_mount_points_(external_mount_points),
       partition_path_(partition_path),
       operation_runner_(new FileSystemOperationRunner(this)) {
-  DCHECK(task_runners_.get());
-
   if (quota_manager_proxy) {
     quota_manager_proxy->RegisterClient(CreateQuotaClient(
             this, options.is_incognito()));
@@ -156,7 +153,7 @@ FileSystemContext::FileSystemContext(
 
 bool FileSystemContext::DeleteDataForOriginOnFileThread(
     const GURL& origin_url) {
-  DCHECK(task_runners_->file_task_runner()->RunsTasksOnCurrentThread());
+  DCHECK(default_file_task_runner()->RunsTasksOnCurrentThread());
   DCHECK(origin_url == origin_url.GetOrigin());
 
   bool success = true;
@@ -228,25 +225,17 @@ bool FileSystemContext::IsSandboxFileSystem(FileSystemType type) const {
 
 const UpdateObserverList* FileSystemContext::GetUpdateObservers(
     FileSystemType type) const {
-  // Currently update observer is only available in SandboxFileSystemBackend
-  // and TestFileSystemBackend.
-  // TODO(kinuko): Probably GetUpdateObservers() virtual method should be
-  // added to FileSystemBackend interface and be called like
-  // other GetFoo() methods do.
-  if (sandbox_backend_->CanHandleType(type))
-    return sandbox_backend_->GetUpdateObservers(type);
-  if (type != kFileSystemTypeTest)
-    return NULL;
   FileSystemBackend* backend = GetFileSystemBackend(type);
-  return static_cast<TestFileSystemBackend*>(
-      backend)->GetUpdateObservers(type);
+  if (backend->GetQuotaUtil())
+    return backend->GetQuotaUtil()->GetUpdateObservers(type);
+  return NULL;
 }
 
 const AccessObserverList* FileSystemContext::GetAccessObservers(
     FileSystemType type) const {
-  // Currently access observer is only available in SandboxFileSystemBackend.
-  if (sandbox_backend_->CanHandleType(type))
-    return sandbox_backend_->GetAccessObservers(type);
+  FileSystemBackend* backend = GetFileSystemBackend(type);
+  if (backend->GetQuotaUtil())
+    return backend->GetQuotaUtil()->GetAccessObservers(type);
   return NULL;
 }
 
@@ -297,7 +286,7 @@ void FileSystemContext::DeleteFileSystem(
   }
 
   base::PostTaskAndReplyWithResult(
-      task_runners()->file_task_runner(),
+      default_file_task_runner(),
       FROM_HERE,
       // It is safe to pass Unretained(quota_util) since context owns it.
       base::Bind(&FileSystemQuotaUtil::DeleteOriginDataOnFileThread,
@@ -339,26 +328,6 @@ FileSystemContext::CreateFileSystemOperationRunner() {
   return make_scoped_ptr(new FileSystemOperationRunner(this));
 }
 
-void FileSystemContext::SetLocalFileChangeTracker(
-    scoped_ptr<sync_file_system::LocalFileChangeTracker> tracker) {
-  DCHECK(!change_tracker_.get());
-  DCHECK(tracker.get());
-  change_tracker_ = tracker.Pass();
-  sandbox_backend_->AddFileUpdateObserver(
-      kFileSystemTypeSyncable,
-      change_tracker_.get(),
-      task_runners_->file_task_runner());
-  sandbox_backend_->AddFileChangeObserver(
-      kFileSystemTypeSyncable,
-      change_tracker_.get(),
-      task_runners_->file_task_runner());
-}
-
-void FileSystemContext::set_sync_context(
-    sync_file_system::LocalFileSyncContext* sync_context) {
-  sync_context_ = sync_context;
-}
-
 FileSystemURL FileSystemContext::CrackURL(const GURL& url) const {
   return CrackFileSystemURL(FileSystemURL(url));
 }
@@ -377,13 +346,11 @@ void FileSystemContext::EnableTemporaryFileSystemInIncognito() {
 #endif
 
 FileSystemContext::~FileSystemContext() {
-  task_runners_->file_task_runner()->DeleteSoon(
-      FROM_HERE, change_tracker_.release());
 }
 
 void FileSystemContext::DeleteOnCorrectThread() const {
-  if (!task_runners_->io_task_runner()->RunsTasksOnCurrentThread() &&
-      task_runners_->io_task_runner()->DeleteSoon(FROM_HERE, this)) {
+  if (!io_task_runner_->RunsTasksOnCurrentThread() &&
+      io_task_runner_->DeleteSoon(FROM_HERE, this)) {
     return;
   }
   delete this;
@@ -412,7 +379,6 @@ FileSystemOperation* FileSystemContext::CreateFileSystemOperation(
     *error_code = fs_error;
   return operation;
 }
-
 
 FileSystemURL FileSystemContext::CrackFileSystemURL(
     const FileSystemURL& url) const {

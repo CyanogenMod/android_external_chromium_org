@@ -11,7 +11,7 @@ from telemetry.core import tab_list
 from telemetry.core import temporary_http_server
 from telemetry.core import wpr_modes
 from telemetry.core import wpr_server
-from telemetry.core.chrome import browser_backend
+from telemetry.core.backends import browser_backend
 from telemetry.core.platform.profiler import profiler_finder
 
 class Browser(object):
@@ -104,7 +104,9 @@ class Browser(object):
         child_process_name = self._browser_backend.GetProcessName(
             child_cmd_line)
       except Exception:
-        child_process_name = 'renderer'
+        # The cmd line was unavailable, assume it'll be impossible to track
+        # any further stats about this process.
+        continue
       process_name_type_key_map = {'gpu-process': 'Gpu', 'renderer': 'Renderer'}
       if child_process_name in process_name_type_key_map:
         child_process_type_key = process_name_type_key_map[child_process_name]
@@ -228,6 +230,10 @@ class Browser(object):
   def GetTraceResultAndReset(self):
     """Returns the result of the trace, as TraceResult object."""
     return self._browser_backend.GetTraceResultAndReset()
+
+  def Start(self):
+    self._browser_backend.Start()
+    self._browser_backend.SetBrowser(self)
 
   def Close(self):
     """Closes this browser."""

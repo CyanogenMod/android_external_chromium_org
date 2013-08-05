@@ -4,7 +4,8 @@
 
 package org.chromium.chromoting;
 
-import android.content.Context;
+import android.app.ActionBar;
+import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -52,6 +53,8 @@ public class DesktopView extends SurfaceView implements Runnable, SurfaceHolder.
         UNDEFINED, WIDTH, HEIGHT
     }
 
+    private ActionBar mActionBar;
+
     private GestureDetector mScroller;
     private ScaleGestureDetector mZoomer;
 
@@ -64,6 +67,9 @@ public class DesktopView extends SurfaceView implements Runnable, SurfaceHolder.
     /** Specifies the dimension by which the zoom level is being lower-bounded. */
     private Constraint mConstraint;
 
+    /** Whether the dimension of constraint should be reckecked on the next aspect ratio change. */
+    private boolean mRecheckConstraint;
+
     /** Whether the right edge of the image was visible on-screen during the last render. */
     private boolean mRightUsedToBeOut;
 
@@ -73,28 +79,27 @@ public class DesktopView extends SurfaceView implements Runnable, SurfaceHolder.
     private int mMouseButton;
     private boolean mMousePressed;
 
-    /** Whether the canvas needs to be redrawn. The update occurs when its size is next updated. */
-    private boolean mCanvasNeedsRedraw;
-
-    public DesktopView(Context context) {
+    public DesktopView(Activity context) {
         super(context);
+        mActionBar = context.getActionBar();
+
         getHolder().addCallback(this);
         DesktopListener listener = new DesktopListener();
-        mScroller = new GestureDetector(context, listener);
+        mScroller = new GestureDetector(context, listener, null, false);
         mZoomer = new ScaleGestureDetector(context, listener);
 
         mTransform = new Matrix();
         mScreenWidth = 0;
         mScreenHeight = 0;
+
         mConstraint = Constraint.UNDEFINED;
+        mRecheckConstraint = false;
 
         mRightUsedToBeOut = false;
         mBottomUsedToBeOut = false;
 
         mMouseButton = BUTTON_UNDEFINED;
         mMousePressed = false;
-
-        mCanvasNeedsRedraw = false;
     }
 
     /**
@@ -127,8 +132,8 @@ public class DesktopView extends SurfaceView implements Runnable, SurfaceHolder.
             boolean recenter = false;
 
             if (mConstraint == Constraint.UNDEFINED) {
-                mConstraint = image.getWidth()/image.getHeight() > mScreenWidth/mScreenHeight ?
-                        Constraint.WIDTH : Constraint.HEIGHT;
+                mConstraint = (double)image.getWidth()/image.getHeight() >
+                        (double)mScreenWidth/mScreenHeight ? Constraint.WIDTH : Constraint.HEIGHT;
                 recenter = true;  // We always rescale and recenter after a rotation.
             }
 
@@ -174,8 +179,7 @@ public class DesktopView extends SurfaceView implements Runnable, SurfaceHolder.
                         // Make the right edge of the image flush with the right screen edge.
                         values[Matrix.MTRANS_X] += mScreenWidth - bottomright[0];
                     }
-                }
-                else {
+                } else {
                     // The else prevents this from being updated during the repositioning process,
                     // in which case the view would begin to oscillate.
                     mRightUsedToBeOut = rightEdgeOutOfBounds;
@@ -186,8 +190,7 @@ public class DesktopView extends SurfaceView implements Runnable, SurfaceHolder.
                     if (topEdgeOutOfBounds != mBottomUsedToBeOut) {
                         // Make the top edge of the image flush with the top screen edge.
                         values[Matrix.MTRANS_Y] = 0;
-                    }
-                    else {
+                    } else {
                         // Make the bottom edge of the image flush with the bottom screen edge.
                         values[Matrix.MTRANS_Y] += mScreenHeight - bottomright[1];
                     }
@@ -209,9 +212,15 @@ public class DesktopView extends SurfaceView implements Runnable, SurfaceHolder.
         getHolder().unlockCanvasAndPost(canvas);
     }
 
-    /** Causes the canvas to be redrawn the next time our surface changes. */
-    public void requestCanvasRedraw() {
-        mCanvasNeedsRedraw = true;
+    /**
+     * Causes the next canvas redraw to perform a check for which screen dimension more tightly
+     * constrains the view of the image. This should be called between the time that a screen size
+     * change is requested and the time it actually occurs. If it is not called in such a case, the
+     * screen will not be rearranged as aggressively (which is desirable when the software keyboard
+     * appears in order to allow it to cover the image without forcing a resize).
+     */
+    public void requestRecheckConstrainingDimension() {
+        mRecheckConstraint = true;
     }
 
     /**
@@ -221,15 +230,20 @@ public class DesktopView extends SurfaceView implements Runnable, SurfaceHolder.
     @Override
     public void surfaceChanged(
             SurfaceHolder holder, int format, int width, int height) {
+        mActionBar.hide();
+
         synchronized (mTransform) {
             mScreenWidth = width;
             mScreenHeight = height;
-            mConstraint = Constraint.UNDEFINED;
+
+            if (mRecheckConstraint) {
+                mConstraint = Constraint.UNDEFINED;
+                mRecheckConstraint = false;
+            }
         }
 
-        if (mCanvasNeedsRedraw) {
-            JniInterface.redrawGraphics();
-            mCanvasNeedsRedraw = false;
+        if (!JniInterface.redrawGraphics()) {
+            JniInterface.provideRedrawCallback(this);
         }
     }
 
@@ -237,7 +251,6 @@ public class DesktopView extends SurfaceView implements Runnable, SurfaceHolder.
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
         Log.i("deskview", "DesktopView.surfaceCreated(...)");
-        JniInterface.provideRedrawCallback(this);
     }
 
     /**
@@ -247,10 +260,9 @@ public class DesktopView extends SurfaceView implements Runnable, SurfaceHolder.
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
         Log.i("deskview", "DesktopView.surfaceDestroyed(...)");
-        JniInterface.provideRedrawCallback(null);
 
-        // Redraw the desktop as soon as the user switches back to this window.
-        mCanvasNeedsRedraw = true;
+        // Stop this canvas from being redrawn.
+        JniInterface.provideRedrawCallback(null);
     }
 
     /** Called when a mouse action is made. */
@@ -270,9 +282,13 @@ public class DesktopView extends SurfaceView implements Runnable, SurfaceHolder.
      */
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        if (event.getPointerCount() == 3) {
+            mActionBar.show();
+        }
+
         boolean handled = mScroller.onTouchEvent(event) || mZoomer.onTouchEvent(event);
 
-        if (event.getPointerCount()==1) {
+        if (event.getPointerCount() == 1) {
             float[] coordinates = {event.getRawX(), event.getY()};
 
             switch (event.getActionMasked()) {
@@ -296,7 +312,8 @@ public class DesktopView extends SurfaceView implements Runnable, SurfaceHolder.
                     if (mMouseButton == BUTTON_UNDEFINED) {
                         // The user pressed and released without moving: do left click and release.
                         Log.i("mouse", "\tStarting and finishing left click");
-                        handleMouseMovement(coordinates, BUTTON_LEFT, true);
+                        handleMouseMovement(new float[] {coordinates[0], coordinates[1]},
+                                BUTTON_LEFT, true);
                         mMouseButton = BUTTON_LEFT;
                         mMousePressed = false;
                     }

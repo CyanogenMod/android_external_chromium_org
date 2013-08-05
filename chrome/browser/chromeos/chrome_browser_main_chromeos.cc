@@ -29,7 +29,6 @@
 #include "chrome/browser/chromeos/app_mode/kiosk_app_launch_error.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_launcher.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
-#include "chrome/browser/chromeos/audio/audio_handler.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/contacts/contact_manager.h"
 #include "chrome/browser/chromeos/cros/cert_library.h"
@@ -75,7 +74,6 @@
 #include "chrome/browser/chromeos/system/statistics_provider.h"
 #include "chrome/browser/chromeos/system_key_event_listener.h"
 #include "chrome/browser/chromeos/upgrade_detector_chromeos.h"
-#include "chrome/browser/chromeos/web_socket_proxy_controller.h"
 #include "chrome/browser/chromeos/xinput_hierarchy_changed_event_listener.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/metrics/metrics_service.h"
@@ -90,7 +88,6 @@
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/audio/audio_devices_pref_handler.h"
-#include "chromeos/audio/audio_pref_handler.h"
 #include "chromeos/audio/cras_audio_handler.h"
 #include "chromeos/chromeos_paths.h"
 #include "chromeos/chromeos_switches.h"
@@ -453,13 +450,8 @@ void ChromeBrowserMainPartsChromeos::PreMainMessageLoopRun() {
       content::BrowserThread::GetMessageLoopProxyForThread(
           content::BrowserThread::IO));
 
-  if (ash::switches::UseNewAudioHandler()) {
-    CrasAudioHandler::Initialize(
-        AudioDevicesPrefHandler::Create(g_browser_process->local_state()));
-  } else {
-    AudioHandler::Initialize(
-       AudioPrefHandler::Create(g_browser_process->local_state()));
-  }
+  CrasAudioHandler::Initialize(
+      AudioDevicesPrefHandler::Create(g_browser_process->local_state()));
 
   if (!StartupUtils::IsOobeCompleted())
     system::StatisticsProvider::GetInstance()->LoadOemManifest();
@@ -784,13 +776,7 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   // even if Initialize() wasn't called.
   SystemKeyEventListener::Shutdown();
   imageburner::BurnManager::Shutdown();
-  if (ash::switches::UseNewAudioHandler()) {
-    CrasAudioHandler::Shutdown();
-  } else {
-    AudioHandler::Shutdown();
-  }
-
-  WebSocketProxyController::Shutdown();
+  CrasAudioHandler::Shutdown();
 
   // Let classes unregister themselves as observers of the ash::Shell singleton
   // before the shell is destroyed.

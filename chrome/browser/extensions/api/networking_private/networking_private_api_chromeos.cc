@@ -163,7 +163,7 @@ bool NetworkingPrivateGetStateFunction::RunImpl() {
       GetNetworkState(service_path);
   if (!state) {
     error_ = "Error.InvalidParameter";
-    SendResponse(false);
+    return false;
   }
 
   scoped_ptr<base::DictionaryValue> result_dict(new base::DictionaryValue);
@@ -294,7 +294,7 @@ bool NetworkingPrivateStartConnectFunction::RunImpl() {
       api::StartConnect::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  const bool ignore_error_state = true;
+  const bool check_error_state = false;
   NetworkHandler::Get()->network_connection_handler()->ConnectToNetwork(
       params->network_guid,  // service path
       base::Bind(
@@ -303,7 +303,7 @@ bool NetworkingPrivateStartConnectFunction::RunImpl() {
       base::Bind(
           &NetworkingPrivateStartConnectFunction::ConnectionStartFailed,
           this),
-      ignore_error_state);
+      check_error_state);
   return true;
 }
 

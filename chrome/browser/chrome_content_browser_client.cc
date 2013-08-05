@@ -76,7 +76,6 @@
 #include "chrome/browser/search_engines/search_provider_install_state_message_filter.h"
 #include "chrome/browser/speech/chrome_speech_recognition_manager_delegate.h"
 #include "chrome/browser/speech/tts_message_filter.h"
-#include "chrome/browser/spellchecker/spellcheck_message_filter.h"
 #include "chrome/browser/ssl/ssl_add_certificate.h"
 #include "chrome/browser/ssl/ssl_blocking_page.h"
 #include "chrome/browser/ssl/ssl_tab_helper.h"
@@ -139,6 +138,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/message_center/message_center_util.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
+#include "webkit/browser/fileapi/syncable/sync_file_system_backend.h"
 #include "webkit/common/webpreferences.h"
 #include "webkit/plugins/plugin_switches.h"
 
@@ -226,6 +226,10 @@
 
 #if defined(USE_X11)
 #include "chrome/browser/chrome_browser_main_extra_parts_x11.h"
+#endif
+
+#if defined(ENABLE_SPELLCHECK)
+#include "chrome/browser/spellchecker/spellcheck_message_filter.h"
 #endif
 
 using WebKit::WebWindowFeatures;
@@ -855,7 +859,10 @@ void ChromeContentBrowserClient::GuestWebContentsAttached(
   const Extension* extension =
       service->extensions()->GetExtensionOrAppByURL(url);
   if (!extension) {
-    NOTREACHED();
+    // It's ok to return here, since we could be running a browser plugin
+    // outside an extension, and don't need to attach a
+    // BrowserPluginGuestDelegate in that case;
+    // e.g. running with flag --enable-browser-plugin-for-all-view-types.
     return;
   }
 
@@ -887,7 +894,9 @@ void ChromeContentBrowserClient::RenderProcessHostCreated(
 #endif
   host->GetChannel()->AddFilter(
       new SearchProviderInstallStateMessageFilter(id, profile));
+#if defined(ENABLE_SPELLCHECK)
   host->GetChannel()->AddFilter(new SpellCheckMessageFilter(id));
+#endif
 #if defined(OS_MACOSX)
   host->GetChannel()->AddFilter(new SpellCheckMessageFilterMac(id));
 #endif
@@ -922,41 +931,16 @@ void ChromeContentBrowserClient::RenderProcessHostCreated(
   host->Send(new ChromeViewMsg_SetContentSettingRules(rules));
 }
 
-GURL ChromeContentBrowserClient::GetPossiblyPrivilegedURL(
-    content::BrowserContext* browser_context,
-    const GURL& url,
-    bool is_renderer_initiated,
-    content::SiteInstance* current_instance) {
-  Profile* profile = Profile::FromBrowserContext(browser_context);
-  if (!profile)
-    return url;
-
-  // Only return the privileged instant URL if we are entering from a browser-
-  // initiated navigation or if we are already in the instant process.
-  bool is_instant_process = false;
-  int process_id = current_instance->GetProcess()->GetID();
-  InstantService* instant_service =
-      InstantServiceFactory::GetForProfile(profile);
-  if (instant_service)
-    is_instant_process = instant_service->IsInstantProcess(process_id);
-
-  DCHECK_EQ(is_instant_process,
-            chrome::IsPrivilegedURLForInstant(current_instance->GetSiteURL()));
-  if (!is_renderer_initiated || is_instant_process) {
-    // If the input |url| should be assigned to the Instant renderer, make its
-    // privileged URL distinct from other URLs on the search provider's domain.
-    if (chrome::ShouldAssignURLToInstantRenderer(url, profile))
-      return chrome::GetPrivilegedURLForInstant(url, profile);
-  }
-
-  return url;
-}
-
 GURL ChromeContentBrowserClient::GetEffectiveURL(
     content::BrowserContext* browser_context, const GURL& url) {
   Profile* profile = Profile::FromBrowserContext(browser_context);
   if (!profile)
     return url;
+
+  // If the input |url| should be assigned to the Instant renderer, make its
+  // effective URL distinct from other URLs on the search provider's domain.
+  if (chrome::ShouldAssignURLToInstantRenderer(url, profile))
+    return chrome::GetEffectiveURLForInstant(url, profile);
 
 #if !defined(OS_CHROMEOS)
   // If the input |url| should be assigned to the Signin renderer, make its
@@ -1454,6 +1438,7 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       autofill::switches::kEnableInteractiveAutocomplete,
       extensions::switches::kAllowLegacyExtensionManifests,
       extensions::switches::kAllowScriptingGallery,
+      extensions::switches::kEnableExperimentalExtensionApis,
       extensions::switches::kExtensionsOnChromeURLs,
       switches::kAllowHTTPBackgroundPage,
       // TODO(victorhsieh): remove the following flag once we move PPAPI FileIO
@@ -1471,7 +1456,6 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kEnableAdviewSrcAttribute,
       switches::kEnableAppWindowControls,
       switches::kEnableBenchmarking,
-      switches::kEnableExperimentalExtensionApis,
       switches::kEnableIPCFuzzing,
       switches::kEnableNaCl,
       switches::kEnableNetBenchmarking,
@@ -1498,9 +1482,9 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
                                    arraysize(kSwitchNames));
   } else if (process_type == switches::kUtilityProcess) {
     static const char* const kSwitchNames[] = {
+      extensions::switches::kEnableExperimentalExtensionApis,
       extensions::switches::kExtensionsOnChromeURLs,
       switches::kAllowHTTPBackgroundPage,
-      switches::kEnableExperimentalExtensionApis,
       switches::kWhitelistedExtensionID,
     };
 
@@ -2186,9 +2170,6 @@ void ChromeContentBrowserClient::OverrideWebkitPrefs(
       static_cast<float>(prefs->GetDouble(prefs::kWebKitFontScaleFactor));
   web_prefs->force_enable_zoom =
       prefs->GetBoolean(prefs::kWebKitForceEnableZoom);
-#if defined(GOOGLE_TV)
-  web_prefs->user_gesture_required_for_media_playback = false;
-#endif
 #endif
 
 #if defined(OS_ANDROID)
@@ -2435,12 +2416,6 @@ bool ChromeContentBrowserClient::AllowPepperSocketAPI(
 #endif
 }
 
-base::FilePath ChromeContentBrowserClient::GetHyphenDictionaryDirectory() {
-  base::FilePath directory;
-  PathService::Get(chrome::DIR_APP_DICTIONARIES, &directory);
-  return directory.Append(FILE_PATH_LITERAL("Hyphen"));
-}
-
 ui::SelectFilePolicy* ChromeContentBrowserClient::CreateSelectFilePolicy(
     WebContents* web_contents) {
   return new ChromeSelectFilePolicy(web_contents);
@@ -2479,6 +2454,8 @@ void ChromeContentBrowserClient::GetAdditionalFileSystemBackends(
   DCHECK(backend->CanHandleType(fileapi::kFileSystemTypeExternal));
   additional_backends->push_back(backend);
 #endif
+
+  additional_backends->push_back(new sync_file_system::SyncFileSystemBackend());
 }
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)

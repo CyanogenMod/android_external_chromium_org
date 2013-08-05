@@ -37,6 +37,7 @@
 #include "chrome/browser/extensions/extension_creator.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_error_ui.h"
+#include "chrome/browser/extensions/extension_notification_observer.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_sorting.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
@@ -69,12 +70,14 @@
 #include "chrome/common/extensions/api/plugins/plugins_handler.h"
 #include "chrome/common/extensions/background_info.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/extension_builder.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
+#include "chrome/common/extensions/value_builder.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/testing_profile.h"
@@ -834,7 +837,9 @@ class ExtensionServiceTest
         EXPECT_EQ(0u, loaded_.size()) << path.value();
       } else {
         EXPECT_EQ(1u, loaded_.size()) << path.value();
-        EXPECT_EQ(expected_extensions_count_, service_->extensions()->size()) <<
+        size_t actual_extension_count = service_->extensions()->size() +
+            service_->disabled_extensions()->size();
+        EXPECT_EQ(expected_extensions_count_, actual_extension_count) <<
             path.value();
         extension = loaded_[0].get();
         EXPECT_TRUE(service_->GetExtensionById(extension->id(), false))
@@ -2202,6 +2207,14 @@ TEST_F(ExtensionServiceTest, PackExtension) {
   creator.reset(new ExtensionCreator());
   ASSERT_FALSE(creator->Run(temp_dir2.path(), crx_path, privkey_path,
                             base::FilePath(), ExtensionCreator::kOverwriteCRX));
+
+  // Try packing with a private key that is a valid key, but invalid for the
+  // extension.
+  base::FilePath bad_private_key_dir = data_dir_.AppendASCII("bad_private_key");
+  crx_path = output_directory.AppendASCII("bad_private_key.crx");
+  privkey_path = data_dir_.AppendASCII("bad_private_key.pem");
+  ASSERT_FALSE(creator->Run(bad_private_key_dir, crx_path, base::FilePath(),
+      privkey_path, ExtensionCreator::kOverwriteCRX));
 }
 
 // Test Packaging and installing an extension whose name contains punctuation.
@@ -2346,6 +2359,7 @@ TEST_F(ExtensionServiceTest, PackExtensionOpenSSLKey) {
 
 TEST_F(ExtensionServiceTest, InstallTheme) {
   InitializeEmptyExtensionService();
+  service_->Init();
 
   // A theme.
   base::FilePath path = data_dir_.AppendASCII("theme.crx");
@@ -2387,6 +2401,8 @@ TEST_F(ExtensionServiceTest, InstallTheme) {
 TEST_F(ExtensionServiceTest, LoadLocalizedTheme) {
   // Load.
   InitializeEmptyExtensionService();
+  service_->Init();
+
   base::FilePath extension_path = data_dir_
       .AppendASCII("theme_i18n");
 
@@ -2487,6 +2503,8 @@ TEST_F(ExtensionServiceTest, UnpackedExtensionMayContainSymlinkedFiles) {
 
 TEST_F(ExtensionServiceTest, InstallLocalizedTheme) {
   InitializeEmptyExtensionService();
+  service_->Init();
+
   base::FilePath theme_path = data_dir_
       .AppendASCII("theme_i18n");
 
@@ -3323,20 +3341,22 @@ TEST_F(ExtensionServiceTest, UnloadBlacklistedExtension) {
 // Unload installed extension from blacklist.
 TEST_F(ExtensionServiceTest, BlacklistedExtensionWillNotInstall) {
   InitializeEmptyExtensionService();
-  std::vector<std::string> blacklist;
-  blacklist.push_back(good_crx);
-  ExtensionSystem::Get(profile_.get())->blacklist()->SetFromUpdater(blacklist,
-                                                                    "v1");
 
-  // Make sure pref is updated
-  loop_.RunUntilIdle();
+  // Fake the blacklisting of good_crx by pretending that we get an update
+  // which includes it.
+  extensions::Blacklist* blacklist =
+      ExtensionSystem::Get(profile_.get())->blacklist();
+  blacklist->SetFromUpdater(std::vector<std::string>(1, good_crx), "v1");
 
-  // Now, the good_crx is blacklisted.
+  // Now good_crx is blacklisted.
   ValidateBooleanPref(good_crx, "blacklist", true);
 
-  // We can not install good_crx.
+  // We cannot install good_crx.
   base::FilePath path = data_dir_.AppendASCII("good.crx");
-  InstallCRX(path, INSTALL_FAILED);
+  // HACK: specify WAS_INSTALLED_BY_DEFAULT so that test machinery doesn't
+  // decide to install this silently. Somebody should fix these tests, all
+  // 6,000 lines of them. Hah!
+  InstallCRX(path, INSTALL_FAILED, Extension::WAS_INSTALLED_BY_DEFAULT);
   EXPECT_EQ(0u, service_->extensions()->size());
   ValidateBooleanPref(good_crx, "blacklist", true);
 }
@@ -6338,4 +6358,43 @@ TEST_F(ExtensionServiceTest, ExternalInstallUpdatesFromWebstoreNewProfile) {
   EXPECT_TRUE(extensions::HasExternalInstallError(service_));
   EXPECT_FALSE(extensions::HasExternalInstallBubble(service_));
   EXPECT_FALSE(service_->IsExtensionEnabled(updates_from_webstore));
+}
+
+TEST_F(ExtensionServiceTest, InstallBlacklistedExtension) {
+  InitializeEmptyExtensionService();
+
+  scoped_refptr<Extension> extension = extensions::ExtensionBuilder()
+      .SetManifest(extensions::DictionaryBuilder()
+          .Set("name", "extension")
+          .Set("version", "1.0")
+          .Set("manifest_version", 2).Build())
+      .Build();
+  ASSERT_TRUE(extension.get());
+  const std::string& id = extension->id();
+
+  std::set<std::string> id_set;
+  id_set.insert(id);
+  extensions::ExtensionNotificationObserver notifications(
+      content::NotificationService::AllSources(), id_set);
+
+  // Installation should be allowed but the extension should never have been
+  // loaded and it should be blacklisted in prefs.
+  service_->OnExtensionInstalled(
+      extension.get(),
+      syncer::StringOrdinal(),
+      false /* has requirement errors */,
+      extensions::Blacklist::BLACKLISTED,
+      false /* wait for idle */);
+  loop_.RunUntilIdle();
+
+  // Extension was installed but not loaded.
+  EXPECT_TRUE(notifications.CheckNotifications(
+      chrome::NOTIFICATION_EXTENSION_INSTALLED));
+
+  EXPECT_TRUE(service_->GetInstalledExtension(id));
+  EXPECT_FALSE(service_->extensions()->Contains(id));
+  EXPECT_TRUE(service_->blacklisted_extensions()->Contains(id));
+  EXPECT_TRUE(service_->extension_prefs()->IsExtensionBlacklisted(id));
+  EXPECT_TRUE(
+      service_->extension_prefs()->IsBlacklistedExtensionAcknowledged(id));
 }

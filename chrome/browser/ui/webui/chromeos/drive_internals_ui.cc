@@ -138,7 +138,7 @@ std::string FormatEntry(const base::FilePath& path,
 
   const drive::PlatformFileInfoProto& file_info = entry.file_info();
   StringAppendF(&out, "  file_info\n");
-  StringAppendF(&out, "    size: %"PRId64"\n", file_info.size());
+  StringAppendF(&out, "    size: %" PRId64 "\n", file_info.size());
   StringAppendF(&out, "    is_directory: %d\n", file_info.is_directory());
   StringAppendF(&out, "    is_symbolic_link: %d\n",
                 file_info.is_symbolic_link());
@@ -177,11 +177,24 @@ std::string FormatEntry(const base::FilePath& path,
     StringAppendF(&out, "  directory_info\n");
     const drive::DirectorySpecificInfo& directory_specific_info =
         entry.directory_specific_info();
-    StringAppendF(&out, "    changestamp: %"PRId64"\n",
+    StringAppendF(&out, "    changestamp: %" PRId64 "\n",
                   directory_specific_info.changestamp());
   }
 
   return out;
+}
+
+std::string SeverityToString(logging::LogSeverity severity) {
+  switch (severity) {
+    case logging::LOG_INFO:
+      return "info";
+    case logging::LOG_WARNING:
+      return "warning";
+    case logging::LOG_ERROR:
+      return "error";
+    default:  // Treat all other higher severities as ERROR.
+      return "error";
+  }
 }
 
 // Class to handle messages from chrome://drive-internals.
@@ -682,10 +695,13 @@ void DriveInternalsWebUIHandler::UpdateEventLogSection() {
     if (log[i].id <= last_sent_event_id_)
       continue;
 
+    std::string severity = SeverityToString(log[i].severity);
+
     base::DictionaryValue* dict = new DictionaryValue;
     dict->SetString("key",
         google_apis::util::FormatTimeAsStringLocaltime(log[i].when));
-    dict->SetString("value", log[i].what);
+    dict->SetString("value", "[" + severity + "] " + log[i].what);
+    dict->SetString("class", "log-" + severity);
     list.Append(dict);
     last_sent_event_id_ = log[i].id;
   }

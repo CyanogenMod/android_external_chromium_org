@@ -60,8 +60,8 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/webui/web_ui_util.h"
 #include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/browser/fileapi/file_system_operation.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
-#include "webkit/browser/fileapi/local_file_system_operation.h"
 #include "webkit/browser/fileapi/syncable/syncable_file_system_util.h"
 #include "webkit/common/blob/shareable_file_reference.h"
 
@@ -1169,14 +1169,18 @@ bool DeveloperPrivateGetStringsFunction::RunImpl() {
   SET_STRING("extensionSettings", IDS_MANAGE_EXTENSIONS_SETTING_WINDOWS_TITLE);
 
   SET_STRING("appsDevtoolSearch", IDS_APPS_DEVTOOL_SEARCH);
-  SET_STRING("appsDevtoolNoApps", IDS_APPS_DEVTOOL_NO_APPS_INSTALLED);
   SET_STRING("appsDevtoolApps", IDS_APPS_DEVTOOL_APPS_INSTALLED);
   SET_STRING("appsDevtoolExtensions", IDS_APPS_DEVTOOL_EXTENSIONS_INSTALLED);
   SET_STRING("appsDevtoolNoExtensions", IDS_EXTENSIONS_NONE_INSTALLED);
   SET_STRING("appsDevtoolUnpacked", IDS_APPS_DEVTOOL_UNPACKED_INSTALLED);
   SET_STRING("appsDevtoolInstalled", IDS_APPS_DEVTOOL_INSTALLED);
-  SET_STRING("appsDevtoolNoUnpacked", IDS_APPS_DEVTOOL_NO_UNPACKED_INSTALLED);
-  SET_STRING("appsDevtoolTitle", IDS_APPS_DEVTOOL_TITLE);
+  SET_STRING("appsDevtoolNoPackedApps", IDS_APPS_DEVTOOL_NO_PACKED_APPS);
+  SET_STRING("appsDevtoolNoUnpackedApps", IDS_APPS_DEVTOOL_NO_UNPACKED_APPS);
+  SET_STRING("appsDevtoolNoPackedExtensions",
+      IDS_APPS_DEVTOOL_NO_PACKED_EXTENSIONS);
+  SET_STRING("appsDevtoolNoUnpackedExtensions",
+      IDS_APPS_DEVTOOL_NO_UNPACKED_EXTENSIONS);
+  SET_STRING("appsDevtoolUpdating", IDS_APPS_DEVTOOL_UPDATING);
   SET_STRING("extensionSettingsGetMoreExtensions", IDS_GET_MORE_EXTENSIONS);
   SET_STRING("extensionSettingsExtensionId", IDS_EXTENSIONS_ID);
   SET_STRING("extensionSettingsExtensionPath", IDS_EXTENSIONS_PATH);
@@ -1230,8 +1234,8 @@ bool DeveloperPrivateGetStringsFunction::RunImpl() {
   SET_STRING("packExtensionOverlay", IDS_EXTENSION_PACK_DIALOG_TITLE);
   SET_STRING("packExtensionHeading", IDS_EXTENSION_ADT_PACK_DIALOG_HEADING);
   SET_STRING("packExtensionCommit", IDS_EXTENSION_PACK_BUTTON);
-  SET_STRING("ok",IDS_OK);
-  SET_STRING("cancel",IDS_CANCEL);
+  SET_STRING("ok", IDS_OK);
+  SET_STRING("cancel", IDS_CANCEL);
   SET_STRING("packExtensionRootDir",
      IDS_EXTENSION_PACK_DIALOG_ROOT_DIRECTORY_LABEL);
   SET_STRING("packExtensionPrivateKey",
@@ -1240,6 +1244,16 @@ bool DeveloperPrivateGetStringsFunction::RunImpl() {
   SET_STRING("packExtensionProceedAnyway", IDS_EXTENSION_PROCEED_ANYWAY);
   SET_STRING("packExtensionWarningTitle", IDS_EXTENSION_PACK_WARNING_TITLE);
   SET_STRING("packExtensionErrorTitle", IDS_EXTENSION_PACK_ERROR_TITLE);
+
+// Delete confirmation dialog.
+  SET_STRING("deleteConfirmationDeleteButton",
+      IDS_APPS_DEVTOOL_DELETE_CONFIRMATION_BUTTON);
+  SET_STRING("deleteConfirmationTitle",
+      IDS_APPS_DEVTOOL_DELETE_CONFIRMATION_TITLE);
+  SET_STRING("deleteConfirmationMessageApp",
+      IDS_APPS_DEVTOOL_DELETE_CONFIRMATION_MESSAGE_APP);
+  SET_STRING("deleteConfirmationMessageExtension",
+      IDS_APPS_DEVTOOL_DELETE_CONFIRMATION_MESSAGE_EXTENSION);
 
   #undef   SET_STRING
   return true;

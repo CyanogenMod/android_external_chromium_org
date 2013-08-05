@@ -10,6 +10,57 @@ var SIMULTANEOUS_RESCAN_INTERVAL = 1000;
 // Used for operations that require almost instant rescan.
 var SHORT_RESCAN_INTERVAL = 100;
 
+function DirectoryModelUtil() {}
+
+/**
+ * Returns root entries asynchronously.
+ * @param {DirectoryEntry} root The root entry of the whole file system.
+ * @param {boolean} isDriveEnabled True if the drive is enabled.
+ * @param {function(Array.<Entry>)} callback Called when roots are resolved.
+ */
+DirectoryModelUtil.resolveRoots = function(root, isDriveEnabled, callback) {
+  var groups = {
+    drive: null,
+    downloads: null,
+    archives: null,
+    removables: null,
+  };
+
+  // Use a fake instead, to return a list as fast as possible.
+  groups.drive = (isDriveEnabled ? [DirectoryModel.fakeDriveEntry_] : []);
+
+  var addRootEntryList = function(key, rootEntryList) {
+    groups[key] = rootEntryList;
+
+    for (var key in groups) {
+      if (!groups[key]) {
+        // There is a pending task.
+        return;
+      }
+    }
+
+    // Concat the result in the order.
+    callback([].concat(
+        groups.drive, groups.downloads, groups.archives, groups.removables));
+  };
+
+  // Resolve download root directory.
+  root.getDirectory(
+      RootDirectory.DOWNLOADS.substring(1),  // Remove the leading '/'.
+      { create: false },
+      function(entry) { addRootEntryList('downloads', [entry]); },
+      function(err) {
+        console.error('Error resolving downloads root dir: ' + error);
+        addRootEntryList('downloads', []);
+      });
+
+  // Reads 'archives' and 'removables' roots.
+  util.readDirectory(root, RootDirectory.ARCHIVE.substring(1),
+                     addRootEntryList.bind(null, 'archives'));
+  util.readDirectory(root, RootDirectory.REMOVABLE.substring(1),
+                     addRootEntryList.bind(null, 'removables'));
+};
+
 /**
  * Data model of the file manager.
  *
@@ -38,7 +89,6 @@ function DirectoryModel(root, singleSelection, fileFilter, fileWatcher,
   this.scanFailures_ = 0;
   this.driveEnabled_ = isDriveEnabled;
   this.showSpecialSearchRoots_ = showSpecialSearchRoots;
-  this.closureQueue_ = [];
 
   this.fileFilter_ = fileFilter;
   this.fileFilter_.addEventListener('changed',
@@ -49,7 +99,9 @@ function DirectoryModel(root, singleSelection, fileFilter, fileWatcher,
   this.currentDirContents_ = new DirectoryContentsBasic(
       this.currentFileListContext_, root);
 
+  // TODO(hidehiko): Move this variable to VolumeManager.
   this.rootsList_ = new cr.ui.ArrayDataModel([]);
+  this.taskQueue_ = new AsyncUtil.Queue();
   this.volumeManager_ = volumeManager;
 
   this.fileWatcher_ = fileWatcher;
@@ -129,42 +181,19 @@ DirectoryModel.FAKE_DRIVE_SPECIAL_SEARCH_ENTRIES = [
 DirectoryModel.prototype.__proto__ = cr.EventTarget.prototype;
 
 /**
- * Enqueues an asynchronous closure. Guarantees that the closured are called
- * sequentially in order they are enqueued. Each of the closures added to the
- * queue must call a callback once handling is completed.
- *
- * @param {function(function())} handler Closure.
- * @private
- */
-DirectoryModel.prototype.enqueueClosure_ = function(handler) {
-  var processQueue = function() {
-    if (this.closureQueue_.length == 0) {
-      this.closureQueueBusy_ = false;
-      return;
-    }
-    var handler = this.closureQueue_.shift();
-    this.closureQueueBusy_ = true;
-    handler(function() {
-      setTimeout(function() {
-        processQueue();
-      }.bind(this), 0);
-    }.bind(this));
-  }.bind(this);
-  this.closureQueue_.push(handler.bind(this));
-  if (!this.closureQueueBusy_)
-    processQueue();
-};
-
-/**
  * Fills the root list and starts tracking changes.
  */
 DirectoryModel.prototype.start = function() {
-  this.volumeManager_.addEventListener('change',
-      this.enqueueClosure_.bind(this, this.onMountChanged_));
-  this.volumeManager_.addEventListener('drive-status-changed',
-      this.enqueueClosure_.bind(this, this.onDriveStatusChanged_));
-
-  this.enqueueClosure_(this.updateRoots_);
+  // TODO(hidehiko): Integrate these callback into VolumeManager.
+  this.volumeManager_.addEventListener(
+      'change',
+      this.taskQueue_.run.bind(
+          this.taskQueue_, this.onMountChanged_.bind(this)));
+  this.volumeManager_.addEventListener(
+      'drive-status-changed',
+      this.taskQueue_.run.bind(
+          this.taskQueue_, this.onDriveStatusChanged_.bind(this)));
+  this.taskQueue_.run(this.updateRoots_.bind(this));
 };
 
 /**
@@ -189,8 +218,12 @@ DirectoryModel.prototype.getFileList = function() {
 DirectoryModel.prototype.setDriveEnabled = function(enabled) {
   if (this.driveEnabled_ == enabled)
     return;
+  // Mount Drive if it was previously disabled and is now enabled.
+  if (enabled)
+    this.volumeManager_.mountDrive(function() {}, function() {});
+
   this.driveEnabled_ = enabled;
-  this.enqueueClosure_(this.updateRoots_);
+  this.taskQueue_.run(this.updateRoots_.bind(this));
   if (!enabled && (this.getCurrentRootType() == RootType.DRIVE ||
                    this.getCurrentRootType() == RootType.DRIVE_OFFLINE))
     this.changeDirectory(this.getDefaultDirectory());
@@ -217,7 +250,8 @@ DirectoryModel.prototype.getFileListSelection = function() {
  * @return {RootType} Root type of current root.
  */
 DirectoryModel.prototype.getCurrentRootType = function() {
-  return PathUtil.getRootType(this.currentDirContents_.getPath());
+  return PathUtil.getRootType(
+      this.currentDirContents_.getDirectoryEntry().fullPath);
 };
 
 /**
@@ -232,7 +266,8 @@ DirectoryModel.prototype.getCurrentRootName = function() {
  * @return {string} Root name.
  */
 DirectoryModel.prototype.getCurrentRootPath = function() {
-  return PathUtil.getRootPath(this.currentDirContents_.getPath());
+  return PathUtil.getRootPath(
+      this.currentDirContents_.getDirectoryEntry().fullPath);
 };
 
 /**
@@ -379,7 +414,7 @@ DirectoryModel.prototype.getCurrentDirectoryURL = function() {
  * @return {string} Path for the current directory.
  */
 DirectoryModel.prototype.getCurrentDirPath = function() {
-  return this.currentDirContents_.getPath();
+  return this.currentDirContents_.getDirectoryEntry().fullPath;
 };
 
 /**
@@ -675,45 +710,50 @@ DirectoryModel.prototype.replaceDirectoryContents_ = function(dirContents) {
 };
 
 /**
- * @param {string} name Filename.
+ * Callback when an entry is changed.
+ * @param {util.EntryChangedType} type How the entry is changed.
+ * @param {Entry} entry The changed entry.
  */
-DirectoryModel.prototype.onEntryChanged = function(name) {
-  var currentEntry = this.getCurrentDirEntry();
-  var fileList = this.getFileList();
-  var self = this;
+DirectoryModel.prototype.onEntryChanged = function(type, entry) {
+  // TODO(hidehiko): We should update directory model even the search result
+  // is shown.
+  var rootType = this.getCurrentRootType();
+  if ((rootType === RootType.DRIVE ||
+       rootType === RootType.DRIVE_SHARED_WITH_ME ||
+       rootType === RootType.DRIVE_RECENT ||
+       rootType === RootType.DRIVE_OFFLINE) &&
+      this.isSearching())
+    return;
 
-  var onEntryFound = function(entry) {
-    // Do nothing if current directory changed during async operations.
-    if (self.getCurrentDirEntry() != currentEntry)
-      return;
-    self.currentDirContents_.prefetchMetadata([entry], function() {
-      // Do nothing if current directory changed during async operations.
-      if (self.getCurrentDirEntry() != currentEntry)
+  if (type == util.EntryChangedType.CREATED) {
+    entry.getParent(function(parentEntry) {
+      if (this.getCurrentDirEntry().fullPath != parentEntry.fullPath) {
+        // Do nothing if current directory changed during async operations.
         return;
+      }
+      this.currentDirContents_.prefetchMetadata([entry], function() {
+        if (this.getCurrentDirEntry().fullPath != parentEntry.fullPath) {
+          // Do nothing if current directory changed during async operations.
+          return;
+        }
 
-      var index = self.findIndexByName_(name);
-      if (index >= 0)
-        fileList.splice(index, 1, entry);
-      else
-        fileList.splice(fileList.length, 0, entry);
-    });
-  };
-
-  var onError = function(err) {
-    if (err.code != FileError.NOT_FOUND_ERR) {
-      self.rescanLater();
-      return;
-    }
-
-    var index = self.findIndexByName_(name);
+        var index = this.findIndexByEntry_(entry);
+        if (index >= 0)
+          fileList.splice(index, 1, entry);
+        else
+          fileList.push(entry);
+      }.bind(this));
+    }.bind(this));
+  } else {
+    // This is the delete event.
+    var index = this.findIndexByEntry_(entry);
     if (index >= 0)
-      fileList.splice(index, 1);
-  };
-
-  util.resolvePath(currentEntry, name, onEntryFound, onError);
+      this.getFileList().splice(index, 1);
+  }
 };
 
 /**
+ * TODO(hidehiko): Migrate this method into findIndexByEntry_ defined below.
  * @param {string} name Filename.
  * @return {number} The index in the fileList.
  * @private
@@ -722,6 +762,19 @@ DirectoryModel.prototype.findIndexByName_ = function(name) {
   var fileList = this.getFileList();
   for (var i = 0; i < fileList.length; i++)
     if (fileList.item(i).name == name)
+      return i;
+  return -1;
+};
+
+/**
+ * @param {Entry} entry The entry to be searched.
+ * @return {number} The index in the fileList, or -1 if not found.
+ * @private
+ */
+DirectoryModel.prototype.findIndexByEntry_ = function(entry) {
+  var fileList = this.getFileList();
+  for (var i = 0; i < fileList.length; i++)
+    if (fileList.item(i).fullPath == entry.fullPath)
       return i;
   return -1;
 };
@@ -1130,86 +1183,24 @@ DirectoryModel.prototype.selectIndex = function(index) {
 };
 
 /**
- * Get root entries asynchronously.
- * @param {function(Array.<Entry>)} callback Called when roots are resolved.
- * @private
- */
-DirectoryModel.prototype.resolveRoots_ = function(callback) {
-  var groups = {
-    drive: null,
-    downloads: null,
-    archives: null,
-    removables: null
-  };
-  var self = this;
-
-  metrics.startInterval('Load.Roots');
-  var done = function() {
-    var roots = [];
-    for (var i in groups) {
-      if (!groups[i])
-        return;
-      roots = roots.concat(groups[i]);
-    }
-
-    callback(roots);
-    metrics.recordInterval('Load.Roots');
-  };
-
-  var append = function(index, values, opt_error) {
-    groups[index] = values;
-    done();
-  };
-
-  var appendSingle = function(index, entry) {
-    groups[index] = [entry];
-    done();
-  };
-
-  var onSingleError = function(index, defaultValue, error) {
-    groups[index] = defaultValue || [];
-    done();
-    console.error('Error resolving root dir ', index, 'error: ', error);
-  };
-
-  var root = this.root_;
-  var readSingle = function(dir, index, opt_defaultValue) {
-    root.getDirectory(dir, { create: false },
-                      appendSingle.bind(this, index),
-                      onSingleError.bind(this, index, opt_defaultValue));
-  };
-
-  readSingle(RootDirectory.DOWNLOADS.substring(1), 'downloads');
-  util.readDirectory(root, RootDirectory.ARCHIVE.substring(1),
-                     append.bind(this, 'archives'));
-  util.readDirectory(root, RootDirectory.REMOVABLE.substring(1),
-                     append.bind(this, 'removables'));
-
-  if (this.driveEnabled_) {
-    // Use a fake instead to return a list as fast as possible.
-    groups.drive = [DirectoryModel.fakeDriveEntry_];
-    done();
-  } else {
-    groups.drive = [];
-    done();
-  }
-};
-
-/**
  * Updates the roots list.
  *
  * @param {function()=} opt_callback Completion callback.
  * @private
  */
 DirectoryModel.prototype.updateRoots_ = function(opt_callback) {
-  var self = this;
-  this.resolveRoots_(function(rootEntries) {
-    var dm = self.rootsList_;
-    var args = [0, dm.length].concat(rootEntries);
-    dm.splice.apply(dm, args);
-    if (opt_callback)
-      opt_callback();
-  });
+  metrics.startInterval('Load.Roots');
+  DirectoryModelUtil.resolveRoots(
+      this.root_, this.driveEnabled_,
+      function(rootEntries) {
+        metrics.recordInterval('Load.Roots');
+
+        var rootsList = this.rootsList_;
+        rootsList.splice.apply(
+            rootsList, [0, rootsList.length].concat(rootEntries));
+        if (opt_callback)
+          opt_callback();
+      }.bind(this));
 };
 
 /**
@@ -1295,25 +1286,6 @@ DirectoryModel.prototype.updateRootEntry_ = function(entry) {
     }
   }
   console.error('Cannot find root: ' + entry.fullPath);
-};
-
-/**
- * Finds the first entry in the roots list model which has the given root type.
- *
- * @param {RootType} rootType RootType of the desired root..
- * @return {DirectoryEntry} Root entry for with the given root type.
- * @private
- */
-DirectoryModel.prototype.findRootEntryByType_ = function(rootType) {
-  var root;
-  for (var index = 0; index < this.rootsList_.length; index++) {
-    if (PathUtil.getRootType(this.rootsList_.item(index).fullPath) ==
-        rootType) {
-      root = this.rootsList_.item(index);
-      break;
-    }
-  }
-  return root;
 };
 
 /**

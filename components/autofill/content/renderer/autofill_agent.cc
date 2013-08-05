@@ -141,9 +141,6 @@ AutofillAgent::AutofillAgent(content::RenderView* render_view,
       has_new_forms_for_browser_(false),
       ignore_text_changes_(false),
       weak_ptr_factory_(this) {
-  // TODO(csharp): Remove once Autofill test flakiness is fixed.
-  LOG(INFO) << "AutofillAgent::AutofillAgent";
-
   render_view->GetWebView()->setAutofillClient(this);
 
   // The PageClickTracker is a RenderViewObserver, and hence will be freed when
@@ -151,10 +148,7 @@ AutofillAgent::AutofillAgent(content::RenderView* render_view,
   new PageClickTracker(render_view, this);
 }
 
-AutofillAgent::~AutofillAgent() {
-  // TODO(csharp): Remove once Autofill test flakiness is fixed.
-  LOG(INFO) << "AutofillAgent::~AutofillAgent";
-}
+AutofillAgent::~AutofillAgent() {}
 
 bool AutofillAgent::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
@@ -581,7 +575,7 @@ void AutofillAgent::OnFillFormsAndClick(
 
   // Fill the form.
   for (size_t i = 0; i < forms.size(); ++i)
-    FillFormIncludingNonFocusableElements(forms[i], form_elements_[i]);
+    FillFormForAllElements(forms[i], form_elements_[i]);
 
   // Click elements in click_elements_after_form_fill.
   for (size_t i = 0; i < click_elements_after_form_fill.size(); ++i) {

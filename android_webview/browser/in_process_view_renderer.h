@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef ANDROID_WEBVIEW_BROWSER_IN_PROCESS_IN_PROCESS_VIEW_RENDERER_H_
-#define ANDROID_WEBVIEW_BROWSER_IN_PROCESS_IN_PROCESS_VIEW_RENDERER_H_
+#ifndef ANDROID_WEBVIEW_BROWSER_IN_PROCESS_VIEW_RENDERER_H_
+#define ANDROID_WEBVIEW_BROWSER_IN_PROCESS_VIEW_RENDERER_H_
 
 #include <string>
 
 #include "android_webview/browser/browser_view_renderer.h"
+#include "android_webview/browser/gl_view_renderer_manager.h"
 #include "base/cancelable_callback.h"
-#include "base/memory/weak_ptr.h"
 #include "content/public/browser/android/synchronous_compositor_client.h"
 #include "ui/gfx/vector2d_f.h"
 
@@ -40,9 +40,9 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   virtual bool OnDraw(jobject java_canvas,
                       bool is_hardware_canvas,
                       const gfx::Vector2d& scroll_,
-                      const gfx::Rect& clip,
-                      const gfx::Rect& visible_rect) OVERRIDE;
+                      const gfx::Rect& clip) OVERRIDE;
   virtual void DrawGL(AwDrawGLInfo* draw_info) OVERRIDE;
+  virtual void SetGlobalVisibleRect(const gfx::Rect& visible_rect) OVERRIDE;
   virtual base::android::ScopedJavaLocalRef<jobject> CapturePicture(
       int width,
       int height) OVERRIDE;
@@ -72,16 +72,26 @@ class InProcessViewRenderer : public BrowserViewRenderer,
                              gfx::Vector2dF current_fling_velocity) OVERRIDE;
 
   void WebContentsGone();
+  bool RequestProcessGL();
 
  private:
-  void EnsureContinuousInvalidation(AwDrawGLInfo* draw_info);
+  // Checks the continuous invalidate and block invalidate state, and schedule
+  // invalidates appropriately. If |invalidate_ignore_compositor| is true,
+  // then send a view invalidate regardless of compositor expectation.
+  void EnsureContinuousInvalidation(
+      AwDrawGLInfo* draw_info,
+      bool invalidate_ignore_compositor);
   bool DrawSWInternal(jobject java_canvas,
                       const gfx::Rect& clip_bounds);
   bool CompositeSW(SkCanvas* canvas);
 
+  void UpdateCachedGlobalVisibleRect();
+
   // If we call up view invalidate and OnDraw is not called before a deadline,
   // then we keep ticking the SynchronousCompositor so it can make progress.
   void FallbackTickFired();
+
+  void NoLongerExpectsDrawGL();
 
   // For debug tracing or logging. Return the string representation of this
   // view renderer's state and the |draw_info| if provided.
@@ -98,12 +108,16 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   bool on_new_picture_enable_;
 
   // When true, we should continuously invalidate and keep drawing, for example
-  // to drive animation.
-  bool continuous_invalidate_;
+  // to drive animation. This value is set by the compositor and should always
+  // reflect the expectation of the compositor and not be reused for other
+  // states.
+  bool compositor_needs_continuous_invalidate_;
+
   // Used to block additional invalidates while one is already pending or before
   // compositor draw which may switch continuous_invalidate on and off in the
   // process.
   bool block_invalidates_;
+
   // Holds a callback to FallbackTickFired while it is pending.
   base::CancelableClosure fallback_tick_;
 
@@ -118,7 +132,8 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   // Not to be used between draw calls.
   EGLContext last_egl_context_;
 
-  gfx::Rect global_visible_rect_at_start_of_frame_;
+  // Should always call UpdateCachedGlobalVisibleRect before using this.
+  gfx::Rect cached_global_visible_rect_;
 
   // Last View scroll when View.onDraw() was called.
   gfx::Vector2d scroll_at_start_of_frame_;
@@ -131,9 +146,11 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   // spot over a period of time).
   gfx::Vector2dF overscroll_rounding_error_;
 
+  GLViewRendererManager::Key manager_key_;
+
   DISALLOW_COPY_AND_ASSIGN(InProcessViewRenderer);
 };
 
 }  // namespace android_webview
 
-#endif  // ANDROID_WEBVIEW_BROWSER_IN_PROCESS_IN_PROCESS_VIEW_RENDERER_H_
+#endif  // ANDROID_WEBVIEW_BROWSER_IN_PROCESS_VIEW_RENDERER_H_

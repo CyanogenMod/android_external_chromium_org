@@ -14,11 +14,11 @@
 #include "webkit/browser/fileapi/file_system_file_util.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
-#include "webkit/browser/fileapi/file_system_task_runners.h"
 #include "webkit/browser/fileapi/syncable/file_change.h"
 #include "webkit/browser/fileapi/syncable/local_file_change_tracker.h"
 #include "webkit/browser/fileapi/syncable/local_origin_change_observer.h"
 #include "webkit/browser/fileapi/syncable/sync_file_metadata.h"
+#include "webkit/browser/fileapi/syncable/sync_file_system_backend.h"
 #include "webkit/browser/fileapi/syncable/syncable_file_operation_runner.h"
 #include "webkit/browser/fileapi/syncable/syncable_file_system_util.h"
 #include "webkit/common/fileapi/file_system_util.h"
@@ -28,7 +28,6 @@ using fileapi::FileSystemFileUtil;
 using fileapi::FileSystemOperation;
 using fileapi::FileSystemOperationContext;
 using fileapi::FileSystemURL;
-using fileapi::LocalFileSystemOperation;
 
 namespace sync_file_system {
 
@@ -93,7 +92,7 @@ void LocalFileSyncContext::GetFileForLocalSync(
   DCHECK(ui_task_runner_->RunsTasksOnCurrentThread());
 
   std::deque<FileSystemURL>* urls = new std::deque<FileSystemURL>;
-  file_system_context->task_runners()->file_task_runner()->PostTaskAndReply(
+  file_system_context->default_file_task_runner()->PostTaskAndReply(
       FROM_HERE,
       base::Bind(&LocalFileSyncContext::GetNextURLsForSyncOnFileThread,
                  this, make_scoped_refptr(file_system_context),
@@ -109,18 +108,22 @@ void LocalFileSyncContext::ClearChangesForURL(
     const base::Closure& done_callback) {
   // This is initially called on UI thread and to be relayed to FILE thread.
   DCHECK(file_system_context);
-  if (!file_system_context->task_runners()->file_task_runner()->
+  if (!file_system_context->default_file_task_runner()->
           RunsTasksOnCurrentThread()) {
     DCHECK(ui_task_runner_->RunsTasksOnCurrentThread());
-    file_system_context->task_runners()->file_task_runner()->PostTask(
+    file_system_context->default_file_task_runner()->PostTask(
         FROM_HERE,
         base::Bind(&LocalFileSyncContext::ClearChangesForURL,
                    this, make_scoped_refptr(file_system_context),
                    url, done_callback));
     return;
   }
-  DCHECK(file_system_context->change_tracker());
-  file_system_context->change_tracker()->ClearChangesForURL(url);
+
+  SyncFileSystemBackend* backend =
+      SyncFileSystemBackend::GetBackend(file_system_context);
+  DCHECK(backend);
+  DCHECK(backend->change_tracker());
+  backend->change_tracker()->ClearChangesForURL(url);
 
   // Call the completion callback on UI thread.
   ui_task_runner_->PostTask(FROM_HERE, done_callback);
@@ -292,10 +295,10 @@ void LocalFileSyncContext::RecordFakeLocalChange(
     const SyncStatusCallback& callback) {
   // This is called on UI thread and to be relayed to FILE thread.
   DCHECK(file_system_context);
-  if (!file_system_context->task_runners()->file_task_runner()->
+  if (!file_system_context->default_file_task_runner()->
           RunsTasksOnCurrentThread()) {
     DCHECK(ui_task_runner_->RunsTasksOnCurrentThread());
-    file_system_context->task_runners()->file_task_runner()->PostTask(
+    file_system_context->default_file_task_runner()->PostTask(
         FROM_HERE,
         base::Bind(&LocalFileSyncContext::RecordFakeLocalChange,
                    this, make_scoped_refptr(file_system_context),
@@ -303,9 +306,12 @@ void LocalFileSyncContext::RecordFakeLocalChange(
     return;
   }
 
-  DCHECK(file_system_context->change_tracker());
-  file_system_context->change_tracker()->MarkDirtyOnDatabase(url);
-  file_system_context->change_tracker()->RecordChange(url, change);
+  SyncFileSystemBackend* backend =
+      SyncFileSystemBackend::GetBackend(file_system_context);
+  DCHECK(backend);
+  DCHECK(backend->change_tracker());
+  backend->change_tracker()->MarkDirtyOnDatabase(url);
+  backend->change_tracker()->RecordChange(url, change);
 
   // Fire the callback on UI thread.
   ui_task_runner_->PostTask(FROM_HERE,
@@ -341,10 +347,10 @@ void LocalFileSyncContext::HasPendingLocalChanges(
     const HasPendingLocalChangeCallback& callback) {
   // This gets called on UI thread and relays the task on FILE thread.
   DCHECK(file_system_context);
-  if (!file_system_context->task_runners()->file_task_runner()->
+  if (!file_system_context->default_file_task_runner()->
           RunsTasksOnCurrentThread()) {
     DCHECK(ui_task_runner_->RunsTasksOnCurrentThread());
-    file_system_context->task_runners()->file_task_runner()->PostTask(
+    file_system_context->default_file_task_runner()->PostTask(
         FROM_HERE,
         base::Bind(&LocalFileSyncContext::HasPendingLocalChanges,
                    this, make_scoped_refptr(file_system_context),
@@ -352,9 +358,12 @@ void LocalFileSyncContext::HasPendingLocalChanges(
     return;
   }
 
-  DCHECK(file_system_context->change_tracker());
+  SyncFileSystemBackend* backend =
+      SyncFileSystemBackend::GetBackend(file_system_context);
+  DCHECK(backend);
+  DCHECK(backend->change_tracker());
   FileChangeList changes;
-  file_system_context->change_tracker()->GetChangesForURL(url, &changes);
+  backend->change_tracker()->GetChangesForURL(url, &changes);
 
   // Fire the callback on UI thread.
   ui_task_runner_->PostTask(FROM_HERE,
@@ -446,7 +455,10 @@ void LocalFileSyncContext::InitializeFileSystemContextOnIOThread(
     FileSystemContext* file_system_context) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(file_system_context);
-  if (!file_system_context->change_tracker()) {
+  SyncFileSystemBackend* backend =
+      SyncFileSystemBackend::GetBackend(file_system_context);
+  DCHECK(backend);
+  if (!backend->change_tracker()) {
     // First registers the service name.
     RegisterSyncableFileSystem();
     // Create and initialize LocalFileChangeTracker and call back this method
@@ -455,7 +467,7 @@ void LocalFileSyncContext::InitializeFileSystemContextOnIOThread(
     scoped_ptr<LocalFileChangeTracker>* tracker_ptr(
         new scoped_ptr<LocalFileChangeTracker>);
     base::PostTaskAndReplyWithResult(
-        file_system_context->task_runners()->file_task_runner(),
+        file_system_context->default_file_task_runner(),
         FROM_HERE,
         base::Bind(&LocalFileSyncContext::InitializeChangeTrackerOnFileThread,
                    this, tracker_ptr,
@@ -478,7 +490,7 @@ void LocalFileSyncContext::InitializeFileSystemContextOnIOThread(
             sync_status_.get()));
     sync_status_->AddObserver(this);
   }
-  file_system_context->set_sync_context(this);
+  backend->set_sync_context(this);
   DidInitialize(source_url, file_system_context,
                 SYNC_STATUS_OK);
 }
@@ -492,7 +504,7 @@ SyncStatusCode LocalFileSyncContext::InitializeChangeTrackerOnFileThread(
   DCHECK(origins_with_changes);
   tracker_ptr->reset(new LocalFileChangeTracker(
           file_system_context->partition_path(),
-          file_system_context->task_runners()->file_task_runner()));
+          file_system_context->default_file_task_runner()));
   const SyncStatusCode status = (*tracker_ptr)->Initialize(file_system_context);
   if (status != SYNC_STATUS_OK)
     return status;
@@ -520,7 +532,11 @@ void LocalFileSyncContext::DidInitializeChangeTrackerOnIOThread(
     DidInitialize(source_url, file_system_context, status);
     return;
   }
-  file_system_context->SetLocalFileChangeTracker(tracker_ptr->Pass());
+
+  SyncFileSystemBackend* backend =
+      SyncFileSystemBackend::GetBackend(file_system_context);
+  DCHECK(backend);
+  backend->SetLocalFileChangeTracker(tracker_ptr->Pass());
 
   origins_with_pending_changes_.insert(origins_with_changes->begin(),
                                        origins_with_changes->end());
@@ -544,7 +560,11 @@ void LocalFileSyncContext::DidInitialize(
   DCHECK(ui_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(!ContainsKey(file_system_contexts_, file_system_context));
   DCHECK(ContainsKey(pending_initialize_callbacks_, file_system_context));
-  DCHECK(file_system_context->change_tracker());
+
+  SyncFileSystemBackend* backend =
+      SyncFileSystemBackend::GetBackend(file_system_context);
+  DCHECK(backend);
+  DCHECK(backend->change_tracker());
 
   file_system_contexts_.insert(file_system_context);
 
@@ -561,10 +581,13 @@ void LocalFileSyncContext::GetNextURLsForSyncOnFileThread(
     FileSystemContext* file_system_context,
     std::deque<FileSystemURL>* urls) {
   DCHECK(file_system_context);
-  DCHECK(file_system_context->task_runners()->file_task_runner()->
+  DCHECK(file_system_context->default_file_task_runner()->
              RunsTasksOnCurrentThread());
-  DCHECK(file_system_context->change_tracker());
-  file_system_context->change_tracker()->GetNextChangedURLs(
+  SyncFileSystemBackend* backend =
+      SyncFileSystemBackend::GetBackend(file_system_context);
+  DCHECK(backend);
+  DCHECK(backend->change_tracker());
+  backend->change_tracker()->GetNextChangedURLs(
       urls, kMaxURLsToFetchForLocalSync);
 }
 
@@ -620,14 +643,14 @@ void LocalFileSyncContext::DidGetWritingStatusForSync(
     const LocalFileSyncInfoCallback& callback) {
   // This gets called on UI thread and relays the task on FILE thread.
   DCHECK(file_system_context);
-  if (!file_system_context->task_runners()->file_task_runner()->
+  if (!file_system_context->default_file_task_runner()->
           RunsTasksOnCurrentThread()) {
     DCHECK(ui_task_runner_->RunsTasksOnCurrentThread());
     if (shutdown_on_ui_) {
       callback.Run(SYNC_STATUS_ABORT, LocalFileSyncInfo());
       return;
     }
-    file_system_context->task_runners()->file_task_runner()->PostTask(
+    file_system_context->default_file_task_runner()->PostTask(
         FROM_HERE,
         base::Bind(&LocalFileSyncContext::DidGetWritingStatusForSync,
                    this, make_scoped_refptr(file_system_context),
@@ -635,9 +658,12 @@ void LocalFileSyncContext::DidGetWritingStatusForSync(
     return;
   }
 
-  DCHECK(file_system_context->change_tracker());
+  SyncFileSystemBackend* backend =
+      SyncFileSystemBackend::GetBackend(file_system_context);
+  DCHECK(backend);
+  DCHECK(backend->change_tracker());
   FileChangeList changes;
-  file_system_context->change_tracker()->GetChangesForURL(url, &changes);
+  backend->change_tracker()->GetChangesForURL(url, &changes);
 
   base::FilePath platform_path;
   base::PlatformFileInfo file_info;

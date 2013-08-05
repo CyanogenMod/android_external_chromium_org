@@ -40,7 +40,6 @@
 #include "chrome/browser/chromeos/options/network_connect.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/sim_dialog_delegate.h"
-#include "chrome/browser/chromeos/status/network_menu_icon.h"
 #include "chrome/browser/chromeos/ui_proxy_config_service.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
@@ -459,7 +458,7 @@ NetworkInfoDictionary::NetworkInfoDictionary(const FavoriteState* favorite,
       connectable_(false),
       connection_type_(favorite->type()),
       remembered_(true),
-      shared_(favorite->IsShared()),
+      shared_(!favorite->IsPrivate()),
       policy_managed_(favorite->IsManaged()) {
   if (favorite->type() == flimflam::kTypeEthernet)
     name_ = l10n_util::GetStringUTF8(IDS_STATUSBAR_NETWORK_DEVICE_ETHERNET);
@@ -1562,7 +1561,7 @@ void PopulateConnectionDetails(const NetworkState* network,
                         ash::network_connect::ErrorString(network->error()));
 
   dictionary->SetBoolean(kTagRemembered, !network->profile_path().empty());
-  bool shared = network->IsShared();
+  bool shared = !network->IsPrivate();
   dictionary->SetBoolean(kTagShared, shared);
 
   const std::string& type = network->type();
@@ -1633,7 +1632,7 @@ void PopulateCellularDetails(const NetworkState* cellular,
                          CommandLine::ForCurrentProcess()->HasSwitch(
                              chromeos::switches::kEnableCarrierSwitching));
   // Cellular network / connection settings.
-  dictionary->SetString(kTagNetworkTechnology, cellular->technology());
+  dictionary->SetString(kTagNetworkTechnology, cellular->network_technology());
   dictionary->SetString(kTagActivationState,
                         ActivationStateString(cellular->activation_state()));
   dictionary->SetString(kTagRoamingState,
@@ -1645,10 +1644,15 @@ void PopulateCellularDetails(const NetworkState* cellular,
                             IDS_CONFIRM_MESSAGEBOX_YES_BUTTON_LABEL) :
                         l10n_util::GetStringUTF8(
                             IDS_CONFIRM_MESSAGEBOX_NO_BUTTON_LABEL));
-  CopyStringFromDictionary(shill_properties, flimflam::kOperatorNameProperty,
-                          kTagOperatorName, dictionary);
-  CopyStringFromDictionary(shill_properties, flimflam::kOperatorCodeProperty,
-                          kTagOperatorCode, dictionary);
+
+  const base::DictionaryValue* serving_operator = NULL;
+  if (shill_properties.GetDictionaryWithoutPathExpansion(
+          flimflam::kServingOperatorProperty, &serving_operator)) {
+    CopyStringFromDictionary(*serving_operator, flimflam::kOperatorNameKey,
+                             kTagOperatorName, dictionary);
+    CopyStringFromDictionary(*serving_operator, flimflam::kOperatorCodeKey,
+                             kTagOperatorCode, dictionary);
+  }
 
   const base::DictionaryValue* olp = NULL;
   if (shill_properties.GetDictionaryWithoutPathExpansion(
@@ -1785,9 +1789,10 @@ void PopulateCellularDetails(const NetworkState* cellular,
       // because the network's proper portal url cannot be generated without it
       const NetworkState* default_network =
           NetworkHandler::Get()->network_state_handler()->DefaultNetwork();
+      const std::string& technology = cellular->network_technology();
       bool force_show_view_account_button =
-          (cellular->technology() == flimflam::kNetworkTechnologyLte ||
-           cellular->technology() == flimflam::kNetworkTechnologyLteAdvanced) &&
+          (technology == flimflam::kNetworkTechnologyLte ||
+           technology == flimflam::kNetworkTechnologyLteAdvanced) &&
           default_network &&
           !mdn.empty();
 

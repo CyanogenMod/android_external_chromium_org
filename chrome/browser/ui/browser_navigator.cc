@@ -45,6 +45,7 @@
 #endif
 
 using content::GlobalRequestID;
+using content::NavigationController;
 using content::WebContents;
 
 class BrowserNavigatorWebContentsAdoption {
@@ -243,7 +244,7 @@ Profile* GetSourceProfile(chrome::NavigateParams* params) {
 void LoadURLInContents(WebContents* target_contents,
                        const GURL& url,
                        chrome::NavigateParams* params) {
-  content::NavigationController::LoadURLParams load_url_params(url);
+  NavigationController::LoadURLParams load_url_params(url);
   load_url_params.referrer = params->referrer;
   load_url_params.transition_type = params->transition;
   load_url_params.extra_headers = params->extra_headers;
@@ -256,6 +257,14 @@ void LoadURLInContents(WebContents* target_contents,
         params->transferred_global_request_id;
   } else if (params->is_renderer_initiated) {
     load_url_params.is_renderer_initiated = true;
+  }
+
+  // Only allows the browser-initiated navigation to use POST.
+  if (params->uses_post && !params->is_renderer_initiated) {
+    load_url_params.load_type =
+        NavigationController::LOAD_TYPE_BROWSER_INITIATED_HTTP_POST;
+    load_url_params.browser_initiated_post_data =
+        params->browser_initiated_post_data;
   }
   target_contents->GetController().LoadURLWithParams(load_url_params);
 }
@@ -320,6 +329,8 @@ content::WebContents* CreateTargetContents(const chrome::NavigateParams& params,
   if (params.source_contents) {
     create_params.initial_size =
         params.source_contents->GetView()->GetContainerSize();
+    if (params.should_set_opener)
+      create_params.opener = params.source_contents;
   }
 #if defined(USE_AURA)
   if (params.browser->window() &&
@@ -329,7 +340,8 @@ content::WebContents* CreateTargetContents(const chrome::NavigateParams& params,
   }
 #endif
 
-  content::WebContents* target_contents = WebContents::Create(create_params);
+  WebContents* target_contents = WebContents::Create(create_params);
+
   // New tabs can have WebUI URLs that will make calls back to arbitrary
   // tab helpers, so the entire set of tab helpers needs to be set up
   // immediately.
@@ -379,6 +391,7 @@ NavigateParams::NavigateParams(Browser* a_browser,
                                const GURL& a_url,
                                content::PageTransition a_transition)
     : url(a_url),
+      uses_post(false),
       target_contents(NULL),
       source_contents(NULL),
       disposition(CURRENT_TAB),
@@ -393,12 +406,14 @@ NavigateParams::NavigateParams(Browser* a_browser,
       browser(a_browser),
       initiating_profile(NULL),
       host_desktop_type(GetHostDesktop(a_browser)),
-      should_replace_current_entry(false) {
+      should_replace_current_entry(false),
+      should_set_opener(false) {
 }
 
 NavigateParams::NavigateParams(Browser* a_browser,
                                WebContents* a_target_contents)
-    : target_contents(a_target_contents),
+    : uses_post(false),
+      target_contents(a_target_contents),
       source_contents(NULL),
       disposition(CURRENT_TAB),
       transition(content::PAGE_TRANSITION_LINK),
@@ -412,13 +427,15 @@ NavigateParams::NavigateParams(Browser* a_browser,
       browser(a_browser),
       initiating_profile(NULL),
       host_desktop_type(GetHostDesktop(a_browser)),
-      should_replace_current_entry(false) {
+      should_replace_current_entry(false),
+      should_set_opener(false) {
 }
 
 NavigateParams::NavigateParams(Profile* a_profile,
                                const GURL& a_url,
                                content::PageTransition a_transition)
     : url(a_url),
+      uses_post(false),
       target_contents(NULL),
       source_contents(NULL),
       disposition(NEW_FOREGROUND_TAB),
@@ -433,7 +450,8 @@ NavigateParams::NavigateParams(Profile* a_profile,
       browser(NULL),
       initiating_profile(a_profile),
       host_desktop_type(chrome::GetActiveDesktop()),
-      should_replace_current_entry(false) {
+      should_replace_current_entry(false),
+      should_set_opener(false) {
 }
 
 NavigateParams::~NavigateParams() {}
@@ -449,6 +467,8 @@ void FillNavigateParamsFromOpenURLParams(chrome::NavigateParams* nav_params,
       params.transferred_global_request_id;
   nav_params->should_replace_current_entry =
       params.should_replace_current_entry;
+  nav_params->uses_post = params.uses_post;
+  nav_params->browser_initiated_post_data = params.browser_initiated_post_data;
 }
 
 void Navigate(NavigateParams* params) {

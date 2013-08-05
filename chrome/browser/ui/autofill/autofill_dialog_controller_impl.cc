@@ -70,7 +70,6 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/webkit_resources.h"
-#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/cert/cert_status_flags.h"
 #include "ui/base/base_window.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -139,7 +138,7 @@ bool DetailInputMatchesField(DialogSection section,
   // The credit card name is filled from the billing section's data.
   if (field.type() == CREDIT_CARD_NAME &&
       (section == SECTION_BILLING || section == SECTION_CC_BILLING)) {
-    return input.type == NAME_FULL;
+    return input.type == NAME_BILLING_FULL;
   }
 
   return InputTypeMatchesFieldType(input, field.type());
@@ -556,7 +555,7 @@ void AutofillDialogControllerImpl::Show() {
   };
 
   const DetailInput kBillingInputs[] = {
-    { 4, NAME_FULL, IDS_AUTOFILL_DIALOG_PLACEHOLDER_CARDHOLDER_NAME },
+    { 4, NAME_BILLING_FULL, IDS_AUTOFILL_DIALOG_PLACEHOLDER_CARDHOLDER_NAME },
     { 5, ADDRESS_BILLING_LINE1,
       IDS_AUTOFILL_DIALOG_PLACEHOLDER_ADDRESS_LINE_1 },
     { 6, ADDRESS_BILLING_LINE2,
@@ -1395,7 +1394,7 @@ const wallet::WalletItems::MaskedInstrument* AutofillDialogControllerImpl::
 
 const wallet::Address* AutofillDialogControllerImpl::
     ActiveShippingAddress() const {
-  if (!IsPayingWithWallet())
+  if (!IsPayingWithWallet() || !IsShippingAddressRequired())
     return NULL;
 
   const SuggestionsMenuModel* model =
@@ -2098,20 +2097,6 @@ void AutofillDialogControllerImpl::Observe(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// content::WebContentsObserver implementation.
-
-void AutofillDialogControllerImpl::DidNavigateMainFrame(
-    const content::LoadCommittedDetails& details,
-    const content::FrameNavigateParams& params) {
-  // Close view if necessary.
-  if (!net::registry_controlled_domains::SameDomainOrHost(
-          details.previous_url, details.entry->GetURL(),
-          net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES)) {
-    Hide();
-  }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // SuggestionsMenuModelDelegate implementation.
 
 void AutofillDialogControllerImpl::SuggestionItemSelected(
@@ -2163,6 +2148,10 @@ std::string AutofillDialogControllerImpl::GetRiskData() const {
 
 std::string AutofillDialogControllerImpl::GetWalletCookieValue() const {
   return wallet_cookie_value_;
+}
+
+bool AutofillDialogControllerImpl::IsShippingAddressRequired() const {
+  return cares_about_shipping_;
 }
 
 void AutofillDialogControllerImpl::OnDidAcceptLegalDocuments() {
@@ -2349,8 +2338,7 @@ AutofillDialogControllerImpl::AutofillDialogControllerImpl(
     const DialogType dialog_type,
     const base::Callback<void(const FormStructure*,
                               const std::string&)>& callback)
-    : WebContentsObserver(contents),
-      profile_(Profile::FromBrowserContext(contents->GetBrowserContext())),
+    : profile_(Profile::FromBrowserContext(contents->GetBrowserContext())),
       contents_(contents),
       initial_user_state_(AutofillMetrics::DIALOG_USER_STATE_UNKNOWN),
       dialog_type_(dialog_type),
@@ -2787,9 +2775,7 @@ bool AutofillDialogControllerImpl::FormStructureCaresAboutSection(
     DialogSection section) const {
   // For now, only SECTION_SHIPPING may be omitted due to a site not asking for
   // any of the fields.
-  // TODO(estade): remove !IsPayingWithWallet() check once WalletClient support
-  // is added. http://crbug.com/243514
-  if (section == SECTION_SHIPPING && !IsPayingWithWallet())
+  if (section == SECTION_SHIPPING)
     return cares_about_shipping_;
 
   return true;
@@ -3059,7 +3045,8 @@ void AutofillDialogControllerImpl::SubmitWithWallet() {
 
   const wallet::Address* active_address = ActiveShippingAddress();
   if (!IsManuallyEditingSection(SECTION_SHIPPING) &&
-      !ShouldUseBillingForShipping()) {
+      !ShouldUseBillingForShipping() &&
+      IsShippingAddressRequired()) {
     active_address_id_ = active_address->object_id();
     DCHECK(!active_address_id_.empty());
   }
@@ -3077,7 +3064,7 @@ void AutofillDialogControllerImpl::SubmitWithWallet() {
   }
 
   scoped_ptr<wallet::Address> inputted_address;
-  if (active_address_id_.empty()) {
+  if (active_address_id_.empty() && IsShippingAddressRequired()) {
     if (ShouldUseBillingForShipping()) {
       const wallet::Address& address = inputted_instrument ?
           *inputted_instrument->address() : active_instrument->address();
@@ -3103,7 +3090,8 @@ void AutofillDialogControllerImpl::SubmitWithWallet() {
 
   // If there's neither an address nor instrument to save, |GetFullWallet()|
   // is called when the risk fingerprint is loaded.
-  if (!active_instrument_id_.empty() && !active_address_id_.empty()) {
+  if (!active_instrument_id_.empty() &&
+      (!active_address_id_.empty() || !IsShippingAddressRequired())) {
     GetFullWallet();
     return;
   }
@@ -3147,7 +3135,7 @@ void AutofillDialogControllerImpl::GetFullWallet() {
   DCHECK(IsPayingWithWallet());
   DCHECK(wallet_items_);
   DCHECK(!active_instrument_id_.empty());
-  DCHECK(!active_address_id_.empty());
+  DCHECK(!active_address_id_.empty() || !IsShippingAddressRequired());
 
   std::vector<wallet::WalletClient::RiskCapability> capabilities;
   capabilities.push_back(wallet::WalletClient::VERIFY_CVC);
@@ -3464,11 +3452,12 @@ void AutofillDialogControllerImpl::MaybeShowCreditCardBubble() {
     return;
   }
 
-  if (!full_wallet_ || !full_wallet_->billing_address() ||
-      !AutofillCreditCardBubbleController::ShouldShowGeneratedCardBubble(
-          profile())) {
-    // If this run of the dialog didn't result in a valid |full_wallet_| or the
-    // generated card bubble shouldn't be shown now, don't show it again.
+  if (!full_wallet_ || !full_wallet_->billing_address())
+    return;
+
+  // Don't show GeneratedCardBubble if Autocheckout failed.
+  if (GetDialogType() == DIALOG_TYPE_AUTOCHECKOUT &&
+      autocheckout_state_ != AUTOCHECKOUT_SUCCESS) {
     return;
   }
 
@@ -3482,7 +3471,7 @@ void AutofillDialogControllerImpl::MaybeShowCreditCardBubble() {
     GetBillingInfoFromOutputs(output, &card, NULL, NULL);
     backing_last_four = card.TypeAndLastFourDigits();
   }
-  AutofillCreditCardBubbleController::ShowGeneratedCardBubble(
+  AutofillCreditCardBubbleController::ShowGeneratedCardUI(
       web_contents(), backing_last_four, full_wallet_->TypeAndLastFourDigits());
 }
 

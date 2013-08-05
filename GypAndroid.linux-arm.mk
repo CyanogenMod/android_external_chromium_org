@@ -105,8 +105,6 @@ include $(LOCAL_PATH)/skia/skia_opts.target.linux-arm.mk
 include $(LOCAL_PATH)/skia/skia_opts_neon.target.linux-arm.mk
 include $(LOCAL_PATH)/sql/sql.target.linux-arm.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.linux-arm.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/blink_common.target.linux-arm.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/webkit.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/deprecated_perl_bindings_sources.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/interface_dependencies.target.linux-arm.mk
@@ -149,6 +147,8 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_html.target.li
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/frontend_protocol_sources.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/generate_devtools_grd.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/modules/modules.target.linux-arm.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/web/blink_common.target.linux-arm.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/web/webkit.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/weborigin/weborigin.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf_config.target.linux-arm.mk
@@ -161,7 +161,6 @@ include $(LOCAL_PATH)/third_party/ashmem/ashmem.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/expat/expat.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/freetype/ft2.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/harfbuzz-ng/harfbuzz-ng.target.linux-arm.mk
-include $(LOCAL_PATH)/third_party/hyphen/hyphen.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/iccjpeg/iccjpeg.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/icu/icudata.host.linux-arm.mk
 include $(LOCAL_PATH)/third_party/icu/icudata.target.linux-arm.mk

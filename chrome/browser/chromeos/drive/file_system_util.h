@@ -9,14 +9,12 @@
 
 #include "base/callback_forward.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
 #include "url/gurl.h"
 
 class Profile;
 
 namespace base {
 class FilePath;
-struct PlatformFileInfo;
 }
 
 namespace fileapi {
@@ -26,7 +24,6 @@ class FileSystemURL;
 namespace drive {
 
 class FileSystemInterface;
-class PlatformFileInfoProto;
 class ResourceEntry;
 
 namespace util {
@@ -181,19 +178,6 @@ void PrepareWritableFileAndRun(Profile* profile,
 void EnsureDirectoryExists(Profile* profile,
                            const base::FilePath& directory,
                            const FileOperationCallback& callback);
-
-// Converts GData error code into file platform error code.
-FileError GDataToFileError(google_apis::GDataErrorCode status);
-
-// Converts the resource entry to the platform file.
-void ConvertResourceEntryToPlatformFileInfo(
-    const PlatformFileInfoProto& entry,
-    base::PlatformFileInfo* file_info);
-
-// Converts the platform file info to the resource entry.
-void ConvertPlatformFileInfoToResourceEntry(
-    const base::PlatformFileInfo& file_info,
-    PlatformFileInfoProto* entry);
 
 // Does nothing with |error|. Used with functions taking FileOperationCallback.
 void EmptyFileOperationCallback(FileError error);

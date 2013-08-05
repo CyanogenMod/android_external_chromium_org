@@ -85,8 +85,7 @@
 #include "ui/webui/web_ui_util.h"
 
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_user_registration_service.h"
-#include "chrome/browser/managed_mode/managed_user_registration_service_factory.h"
+#include "chrome/browser/managed_mode/managed_user_registration_utility.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/managed_mode/managed_user_service_factory.h"
 #endif
@@ -509,7 +508,7 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
 
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   values->SetBoolean("enableStickyKeys",
-                     command_line.HasSwitch(switches::kEnableStickyKeys));
+                     !command_line.HasSwitch(switches::kDisableStickyKeys));
 #endif
 
 #if defined(OS_MACOSX)
@@ -522,10 +521,8 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
   if (ShouldShowMultiProfilesUserList(GetDesktopType()))
     values->Set("profilesInfo", GetProfilesInfoList().release());
 
-#if defined(ENABLE_MANAGED_USERS)
   values->SetBoolean("profileIsManaged",
-      ManagedUserService::ProfileIsManaged(Profile::FromWebUI(web_ui())));
-#endif
+                     Profile::FromWebUI(web_ui())->IsManaged());
 
 #if !defined(OS_CHROMEOS)
   values->SetBoolean(
@@ -1006,6 +1003,12 @@ void BrowserOptionsHandler::Observe(
       break;
 #endif
     case chrome::NOTIFICATION_PROFILE_CACHED_INFO_CHANGED:
+      // If the browser shuts down during supervised-profile creation, deleting
+      // the unregistered supervised-user profile triggers this notification,
+      // but the RenderViewHost the profile info would be sent to has already
+      // been destroyed.
+      if (!web_ui()->GetWebContents()->GetRenderViewHost())
+        return;
       SendProfilesInfo();
       break;
     case chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL:
@@ -1098,13 +1101,11 @@ chrome::HostDesktopType BrowserOptionsHandler::GetDesktopType() {
 }
 
 void BrowserOptionsHandler::CreateProfile(const ListValue* args) {
-#if defined(ENABLE_MANAGED_USERS)
   // This handler could have been called in managed mode, for example because
   // the user fiddled with the web inspector. Silently return in this case.
   Profile* current_profile = Profile::FromWebUI(web_ui());
-  if (ManagedUserService::ProfileIsManaged(current_profile))
+  if (current_profile->IsManaged())
     return;
-#endif
 
   if (!profiles::IsMultipleProfilesEnabled())
     return;
@@ -1133,13 +1134,9 @@ void BrowserOptionsHandler::CreateProfile(const ListValue* args) {
                  managed_user);
 
   if (managed_user && ManagedUserService::AreManagedUsersEnabled()) {
-#if defined(ENABLE_MANAGED_USERS)
     callbacks.push_back(
         base::Bind(&BrowserOptionsHandler::RegisterNewManagedUser,
                    weak_ptr_factory_.GetWeakPtr(), show_user_feedback));
-#else
-    NOTREACHED();
-#endif
   } else {
     callbacks.push_back(show_user_feedback);
   }
@@ -1161,11 +1158,14 @@ void BrowserOptionsHandler::RegisterNewManagedUser(
 
   ManagedUserService* managed_user_service =
       ManagedUserServiceFactory::GetForProfile(new_profile);
-  DCHECK(managed_user_service->ProfileIsManaged());
 
   // Register the managed user using the profile of the custodian.
-  managed_user_service->RegisterAndInitSync(Profile::FromWebUI(web_ui()),
-                                            callback);
+  managed_user_registration_utility_ =
+      ManagedUserRegistrationUtility::Create(Profile::FromWebUI(web_ui()));
+  managed_user_service->RegisterAndInitSync(
+      managed_user_registration_utility_.get(),
+      Profile::FromWebUI(web_ui()),
+      callback);
 }
 
 void BrowserOptionsHandler::RecordProfileCreationMetrics(
@@ -1253,12 +1253,10 @@ void BrowserOptionsHandler::DeleteProfile(const ListValue* args) {
 }
 
 void BrowserOptionsHandler::DeleteProfileAtPath(base::FilePath file_path) {
-#if defined(ENABLE_MANAGED_USERS)
   // This handler could have been called in managed mode, for example because
   // the user fiddled with the web inspector. Silently return in this case.
-  if (ManagedUserService::ProfileIsManaged(Profile::FromWebUI(web_ui())))
+  if (Profile::FromWebUI(web_ui())->IsManaged())
     return;
-#endif
 
   if (!profiles::IsMultipleProfilesEnabled())
     return;
@@ -1286,7 +1284,7 @@ void BrowserOptionsHandler::CancelProfileRegistration(bool user_initiated) {
   // Non-managed user creation cannot be canceled. (Creating a non-managed
   // profile shouldn't take significant time, and it can easily be deleted
   // afterward.)
-  if (!ManagedUserService::ProfileIsManaged(new_profile))
+  if (!new_profile->IsManaged())
     return;
 
   if (user_initiated) {
@@ -1298,10 +1296,8 @@ void BrowserOptionsHandler::CancelProfileRegistration(bool user_initiated) {
     RecordProfileCreationMetrics(Profile::CREATE_STATUS_CANCELED);
   }
 
-  ManagedUserRegistrationService* registration_service =
-      ManagedUserRegistrationServiceFactory::GetForProfile(
-          Profile::FromWebUI(web_ui()));
-  registration_service->CancelPendingRegistration();
+  DCHECK(managed_user_registration_utility_.get());
+  managed_user_registration_utility_.reset();
 
   // Cancelling registration means the callback passed into
   // RegisterAndInitSync() won't be called, so the cleanup must be done here.
@@ -1315,7 +1311,7 @@ void BrowserOptionsHandler::ObserveThemeChanged() {
   bool is_native_theme = false;
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-  bool profile_is_managed = ManagedUserService::ProfileIsManaged(profile);
+  bool profile_is_managed = profile->IsManaged();
   is_native_theme = theme_service->UsingNativeTheme();
   base::FundamentalValue native_theme_enabled(!is_native_theme &&
                                               !profile_is_managed);
@@ -1359,7 +1355,7 @@ void BrowserOptionsHandler::UpdateAccountPicture() {
 scoped_ptr<DictionaryValue> BrowserOptionsHandler::GetSyncStateDictionary() {
   scoped_ptr<DictionaryValue> sync_status(new DictionaryValue);
   Profile* profile = Profile::FromWebUI(web_ui());
-  if (ManagedUserService::ProfileIsManaged(profile)) {
+  if (profile->IsManaged()) {
     sync_status->SetBoolean("supervisedUser", true);
     sync_status->SetBoolean("signinAllowed", false);
     return sync_status.Pass();

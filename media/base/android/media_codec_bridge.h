@@ -75,8 +75,9 @@ class MEDIA_EXPORT MediaCodecBridge {
   // Submits an empty buffer with a EOS (END OF STREAM) flag.
   void QueueEOS(int input_buffer_index);
 
-  // Returns the index of an input buffer to be filled with valid data or
-  // INFO_TRY_AGAIN_LATER if no such buffer is currently available.
+  // Returns an index (>=0) of an input buffer to be filled with valid data,
+  // INFO_TRY_AGAIN_LATER if no such buffer is currently available, or
+  // INFO_MEDIA_CODEC_ERROR if unexpected error happens.
   // Use kTimeOutInfinity for infinite timeout.
   int DequeueInputBuffer(base::TimeDelta timeout);
 
@@ -131,6 +132,9 @@ class AudioCodecBridge : public MediaCodecBridge {
   // Play the output buffer. This call must be called after
   // DequeueOutputBuffer() and before ReleaseOutputBuffer.
   void PlayOutputBuffer(int index, size_t size);
+
+  // Set the volume of the audio output.
+  void SetVolume(double volume);
 
  private:
   explicit AudioCodecBridge(const char* mime);

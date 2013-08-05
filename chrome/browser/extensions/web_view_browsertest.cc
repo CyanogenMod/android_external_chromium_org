@@ -26,6 +26,11 @@
 #include "ui/compositor/compositor_setup.h"
 #include "ui/gl/gl_switches.h"
 
+// For fine-grained suppression on flaky tests.
+#if defined(OS_WIN)
+#include "base/win/windows_version.h"
+#endif
+
 using prerender::PrerenderLinkManager;
 using prerender::PrerenderLinkManagerFactory;
 
@@ -520,6 +525,12 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestCannotMutateEventName) {
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestPartitionRaisesException) {
+#if defined(OS_WIN)
+  // Flaky on XP bot http://crbug.com/267304
+  if (base::win::GetVersion() <= base::win::VERSION_XP)
+    return;
+#endif
+
   TestHelper("testPartitionRaisesException",
              "DoneShimTest.PASSED",
              "DoneShimTest.FAILED",
@@ -527,6 +538,12 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestPartitionRaisesException) {
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestExecuteScriptFail) {
+#if defined(OS_WIN)
+  // Flaky on XP bot http://crbug.com/266185
+  if (base::win::GetVersion() <= base::win::VERSION_XP)
+    return;
+#endif
+
   TestHelper("testExecuteScriptFail",
              "DoneShimTest.PASSED",
              "DoneShimTest.FAILED",
@@ -562,6 +579,12 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestRemoveSrcAttribute) {
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestBrowserPluginNotAllowed) {
+#if defined(OS_WIN)
+  // Flaky on XP bots. http://crbug.com/267300
+  if (base::win::GetVersion() <= base::win::VERSION_XP)
+    return;
+#endif
+
   TestHelper("testBrowserPluginNotAllowed",
              "DoneShimTest.PASSED",
              "DoneShimTest.FAILED",
@@ -941,7 +964,7 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, DISABLED_StoragePersistence) {
 }
 
 #if defined(OS_WIN)
-// This test is very flaky on Win Aura and XP. http://crbug.com/248873
+// This test is very flaky on Win Aura, Win XP, Win 7. http://crbug.com/248873
 #define MAYBE_DOMStorageIsolation DISABLED_DOMStorageIsolation
 #else
 #define MAYBE_DOMStorageIsolation DOMStorageIsolation

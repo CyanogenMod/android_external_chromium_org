@@ -12,14 +12,7 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "chrome/browser/google_apis/auth_service_observer.h"
-#include "chrome/browser/profiles/profile.h"
-#include "google_apis/gaia/gaia_constants.h"
-#include "google_apis/gaia/gaia_urls.h"
 #include "google_apis/gaia/google_service_auth_error.h"
-
-#if defined(OS_CHROMEOS)
-#include "chromeos/login/login_state.h"
-#endif  // OS_CHROMEOS
 
 namespace google_apis {
 
@@ -51,7 +44,6 @@ class AuthRequest : public OAuth2TokenService::Consumer {
                                  const GoogleServiceAuthError& error) OVERRIDE;
 
   AuthStatusCallback callback_;
-  OAuth2TokenService::ScopeSet scopes_;
   scoped_ptr<OAuth2TokenService::Request> request_;
   base::ThreadChecker thread_checker_;
 
@@ -63,11 +55,13 @@ AuthRequest::AuthRequest(
     net::URLRequestContextGetter* url_request_context_getter,
     const AuthStatusCallback& callback,
     const std::vector<std::string>& scopes)
-    : callback_(callback),
-      scopes_(scopes.begin(), scopes.end()) {
+    : callback_(callback) {
   DCHECK(!callback_.is_null());
   request_ = oauth2_token_service->
-      StartRequestWithContext(url_request_context_getter, scopes_, this);
+      StartRequestWithContext(
+          url_request_context_getter,
+          OAuth2TokenService::ScopeSet(scopes.begin(), scopes.end()),
+          this);
 }
 
 AuthRequest::~AuthRequest() {}
@@ -129,7 +123,6 @@ AuthService::AuthService(
       url_request_context_getter_(url_request_context_getter),
       scopes_(scopes),
       weak_ptr_factory_(this) {
-  DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(oauth2_token_service);
 
   // Get OAuth2 refresh token (if we have any) and register for its updates.
@@ -235,22 +228,6 @@ void AuthService::OnHandleRefreshToken(bool has_refresh_token) {
   FOR_EACH_OBSERVER(AuthServiceObserver,
                     observers_,
                     OnOAuth2RefreshTokenChanged());
-}
-
-// static
-bool AuthService::CanAuthenticate(Profile* profile) {
-#if defined(OS_CHROMEOS)
-  if (!chromeos::LoginState::IsInitialized())
-    return false;
-  if (!chromeos::LoginState::Get()->IsUserGaiaAuthenticated())
-    return false;
-#endif  // OS_CHROMEOS
-
-  // Authentication cannot be done with the incognito mode profile.
-  if (profile->IsOffTheRecord())
-    return false;
-
-  return true;
 }
 
 }  // namespace google_apis

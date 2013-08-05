@@ -16,17 +16,15 @@
 #include "chromeos/dbus/cros_disks_client.h"
 #include "webkit/browser/blob/file_stream_reader.h"
 #include "webkit/browser/fileapi/async_file_util_adapter.h"
-#include "webkit/browser/fileapi/copy_or_move_file_validator.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_file_stream_reader.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
-#include "webkit/browser/fileapi/file_system_task_runners.h"
+#include "webkit/browser/fileapi/file_system_operation_impl.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/isolated_context.h"
 #include "webkit/browser/fileapi/isolated_file_util.h"
 #include "webkit/browser/fileapi/local_file_stream_writer.h"
-#include "webkit/browser/fileapi/local_file_system_operation.h"
 
 namespace {
 
@@ -251,8 +249,8 @@ fileapi::FileSystemOperation* FileSystemBackend::CreateFileSystemOperation(
   scoped_ptr<fileapi::FileSystemOperationContext> operation_context(
       new fileapi::FileSystemOperationContext(context));
   operation_context->set_root_path(GetFileSystemRootPath(url));
-  return new fileapi::LocalFileSystemOperation(url, context,
-                                               operation_context.Pass());
+  return new fileapi::FileSystemOperationImpl(url, context,
+                                              operation_context.Pass());
 }
 
 scoped_ptr<webkit_blob::FileStreamReader>
@@ -295,7 +293,7 @@ FileSystemBackend::CreateFileStreamWriter(
   DCHECK(url.type() == fileapi::kFileSystemTypeNativeLocal);
   return scoped_ptr<fileapi::FileStreamWriter>(
       new fileapi::LocalFileStreamWriter(
-          context->task_runners()->file_task_runner(), url.path(), offset));
+          context->default_file_task_runner(), url.path(), offset));
 }
 
 bool FileSystemBackend::GetVirtualPath(

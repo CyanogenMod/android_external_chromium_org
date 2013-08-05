@@ -54,7 +54,6 @@
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/gpu/shader_disk_cache.h"
 #include "content/browser/histogram_message_filter.h"
-#include "content/browser/hyphenator/hyphenator_message_filter.h"
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
 #include "content/browser/indexed_db/indexed_db_dispatcher_host.h"
 #include "content/browser/loader/resource_message_filter.h"
@@ -75,6 +74,7 @@
 #include "content/browser/renderer_host/media/audio_renderer_host.h"
 #include "content/browser/renderer_host/media/device_request_message_filter.h"
 #include "content/browser/renderer_host/media/media_stream_dispatcher_host.h"
+#include "content/browser/renderer_host/media/midi_dispatcher_host.h"
 #include "content/browser/renderer_host/media/midi_host.h"
 #include "content/browser/renderer_host/media/peer_connection_tracker_host.h"
 #include "content/browser/renderer_host/media/video_capture_host.h"
@@ -410,7 +410,8 @@ RenderProcessHostImpl::RenderProcessHostImpl(
           ignore_input_events_(false),
           supports_browser_plugin_(supports_browser_plugin),
           is_guest_(is_guest),
-          gpu_observer_registered_(false) {
+          gpu_observer_registered_(false),
+          power_monitor_broadcaster_(this) {
   widget_helper_ = new RenderWidgetHelper();
 
   ChildProcessSecurityPolicyImpl::GetInstance()->Add(GetID());
@@ -622,6 +623,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       media_internals, media_stream_manager));
   channel_->AddFilter(
       new MIDIHost(BrowserMainLoop::GetInstance()->midi_manager()));
+  channel_->AddFilter(new MIDIDispatcherHost(GetID(), browser_context));
   channel_->AddFilter(new VideoCaptureHost(media_stream_manager));
   channel_->AddFilter(new AppCacheDispatcherHost(
       storage_partition_impl_->GetAppCacheService(),
@@ -658,7 +660,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
 #if defined(ENABLE_PLUGINS)
   // TODO(raymes): PepperMessageFilter should be removed from here.
   channel_->AddFilter(new PepperMessageFilter(GetID(), browser_context));
-  channel_->AddFilter(new PepperRendererConnection);
+  channel_->AddFilter(new PepperRendererConnection(GetID()));
 #endif
 #if defined(ENABLE_INPUT_SPEECH)
   channel_->AddFilter(new InputTagSpeechDispatcherHost(
@@ -719,7 +721,6 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   channel_->AddFilter(new DeviceMotionBrowserMessageFilter());
   channel_->AddFilter(new ProfilerMessageFilter(PROCESS_TYPE_RENDERER));
   channel_->AddFilter(new HistogramMessageFilter());
-  channel_->AddFilter(new HyphenatorMessageFilter(this));
 #if defined(USE_TCMALLOC) && (defined(OS_LINUX) || defined(OS_ANDROID))
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableMemoryBenchmarking))
@@ -884,6 +885,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableGLMultisampling,
     switches::kDisableGpuVsync,
     switches::kDisableGpu,
+    switches::kDisableGpuCompositing,
     switches::kDisableHistogramCustomizer,
     switches::kDisableLocalStorage,
     switches::kDisableLogging,
@@ -900,7 +902,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
 #endif
     switches::kDisableWebAudio,
 #if defined(ENABLE_WEBRTC)
-    switches::kEnableDeviceEnumeration,
+    switches::kDisableDeviceEnumeration,
     switches::kEnableSCTPDataChannels,
 #endif
     switches::kEnableWebAnimationsCSS,
@@ -953,7 +955,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     // Allow this to be set when invoking the browser and relayed along.
     switches::kEnableSandboxLogging,
 #endif
-    switches::kEnableSoftwareCompositingGLAdapter,
+    switches::kEnableSoftwareCompositing,
     switches::kEnableStatsTable,
     switches::kEnableThreadedCompositing,
     switches::kEnableCompositingForFixedPosition,
@@ -1026,6 +1028,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableWebGLDraftExtensions,
     switches::kTraceToConsole,
     switches::kEnableDeviceMotion,
+#if defined(OS_ANDROID)
+    switches::kDisableDeviceMotion,
+#endif
     // Please keep these in alphabetical order. Compositor switches here should
     // also be added to chrome/browser/chromeos/login/chrome_restart_request.cc.
     cc::switches::kBackgroundColorInsteadOfCheckerboard,

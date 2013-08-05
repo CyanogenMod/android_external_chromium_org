@@ -10,7 +10,7 @@
 
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
-#include "chrome/browser/chromeos/extensions/file_manager/file_handler_util.h"
+#include "chrome/browser/chromeos/extensions/file_manager/file_tasks.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
 
 namespace drive {
@@ -27,8 +27,9 @@ class FileTaskExecutor {
   FileTaskExecutor(Profile* profile, const std::string& app_id);
 
   // Executes file tasks, runs |done| and deletes |this|.
-  void Execute(const std::vector<fileapi::FileSystemURL>& file_urls,
-               const file_handler_util::FileTaskFinishedCallback& done);
+  void Execute(
+      const std::vector<fileapi::FileSystemURL>& file_urls,
+      const file_manager::file_tasks::FileTaskFinishedCallback& done);
 
  private:
   ~FileTaskExecutor();
@@ -44,7 +45,7 @@ class FileTaskExecutor {
   Profile* profile_;
   std::string app_id_;
   int current_index_;
-  file_handler_util::FileTaskFinishedCallback done_;
+  file_manager::file_tasks::FileTaskFinishedCallback done_;
 
   base::WeakPtrFactory<FileTaskExecutor> weak_ptr_factory_;
 };

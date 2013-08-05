@@ -56,6 +56,14 @@ class StubNotificationUIManager : public NotificationUIManager {
     profile_ = profile;
   }
 
+  virtual bool Update(const Notification& notification, Profile* profile)
+      OVERRIDE {
+    // Make a deep copy of the notification that we can inspect.
+    notification_ = notification;
+    profile_ = profile;
+    return true;
+  }
+
   // Returns true if any notifications match the supplied ID, either currently
   // displayed or in the queue.
   virtual const Notification* FindById(const std::string& id) const OVERRIDE {
@@ -319,7 +327,7 @@ TEST_F(SyncedNotificationTest, ShowTest) {
   // Check the base fields of the notification.
   EXPECT_EQ(message_center::NOTIFICATION_TYPE_IMAGE, notification.type());
   EXPECT_EQ(std::string(kTitle1), UTF16ToUTF8(notification.title()));
-  EXPECT_EQ(std::string(kText1), UTF16ToUTF8(notification.message()));
+  EXPECT_EQ(std::string(kText1And1), UTF16ToUTF8(notification.message()));
   EXPECT_EQ(std::string(kExpectedOriginUrl), notification.origin_url().spec());
   EXPECT_EQ(std::string(kKey1), UTF16ToUTF8(notification.replace_id()));
 
@@ -398,7 +406,7 @@ TEST_F(SyncedNotificationTest, OnFetchCompleteTest) {
             notification_manager.notification().type());
   EXPECT_EQ(std::string(kTitle1),
             UTF16ToUTF8(notification_manager.notification().title()));
-  EXPECT_EQ(std::string(kText1),
+  EXPECT_EQ(std::string(kText1And1),
             UTF16ToUTF8(notification_manager.notification().message()));
 
   // TODO(petewil): Check that the bitmap in the notification is what we expect.

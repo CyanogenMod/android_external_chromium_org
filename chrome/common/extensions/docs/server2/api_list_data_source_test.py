@@ -24,8 +24,8 @@ _TEST_DATA = _ToTestData({
     'browser_action.json',
     'experimental_bluetooth.idl',
     'experimental_history.idl',
-    'experimental_infobars.idl',
     'experimental_power.idl',
+    'infobars.idl',
     'something_internal.idl',
     'something_else_internal.json',
     'storage.json',
@@ -42,8 +42,8 @@ _TEST_DATA = _ToTestData({
       'alarms.html',
       'browserAction.html',
       'experimental_history.html',
-      'experimental_infobars.html',
       'experimental_power.html',
+      'infobars.html',
       'storage.html',
     ],
   },
@@ -51,9 +51,11 @@ _TEST_DATA = _ToTestData({
 
 class APIListDataSourceTest(unittest.TestCase):
   def setUp(self):
+    file_system = TestFileSystem(deepcopy(_TEST_DATA))
     self._factory = APIListDataSource.Factory(
-        CompiledFileSystem.Factory(TestFileSystem(deepcopy(_TEST_DATA)),
-                                   ObjectStoreCreator.ForTest()),
+        CompiledFileSystem.Factory(
+            file_system, ObjectStoreCreator.ForTest()),
+        file_system,
         'api',
         'public')
 
@@ -74,13 +76,13 @@ class APIListDataSourceTest(unittest.TestCase):
     api_list = self._factory.Create()
     self.assertEqual([{'name': 'alarms'},
                       {'name': 'browserAction'},
+                      {'name': 'infobars'},
                       {'name': 'storage', 'last': True}],
                      sorted(api_list.get('extensions').get('chrome')))
 
   def testExperimentalApps(self):
     api_list = self._factory.Create()
     self.assertEqual([{'name': 'experimental.history'},
-                      {'name': 'experimental.infobars'},
                       {'name': 'experimental.power', 'last': True}],
                      sorted(api_list.get('extensions').get('experimental')))
 

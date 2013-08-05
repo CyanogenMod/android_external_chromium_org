@@ -89,7 +89,7 @@ cr.define('extensions', function() {
      */
     initialize: function() {
       uber.onContentFrameLoaded();
-
+      cr.ui.FocusOutlineManager.forDocument(document);
       measureCheckboxStrings();
 
       // Set the title.
@@ -104,6 +104,8 @@ cr.define('extensions', function() {
           this.handleToggleDevMode_.bind(this));
       $('dev-controls').addEventListener('webkitTransitionEnd',
           this.handleDevControlsTransitionEnd_.bind(this));
+      $('open-apps-dev-tools').addEventListener('click',
+          this.handleOpenAppsDevTools_.bind(this));
 
       // Set up the three dev mode buttons (load unpacked, pack and update).
       $('load-unpacked').addEventListener('click',
@@ -237,6 +239,17 @@ cr.define('extensions', function() {
         $('dev-controls').hidden = true;
       }
     },
+
+    /**
+     * Called when the user clicked on the button to launch Apps Developer
+     * Tools.
+     * @param {!Event} e A click event.
+     * @private
+     */
+    handleOpenAppsDevTools_: function(e) {
+      chrome.send('extensionSettingsLaunch',
+                  ['lphgohfeebnhcpiohjndkgbhhkoapkjc']);
+    },
   };
 
   /**
@@ -296,6 +309,9 @@ cr.define('extensions', function() {
       $('toggle-dev-on').checked = false;
     }
 
+    if (extensionsData.appsDevToolsEnabled)
+      pageDiv.classList.add('apps-dev-tools-mode');
+
     $('load-unpacked').disabled = extensionsData.loadUnpackedDisabled;
 
     ExtensionsList.prototype.data_ = extensionsData;
@@ -346,6 +362,12 @@ cr.define('extensions', function() {
 
     if (node)
       node.classList.add('showing');
+
+    var pages = document.querySelectorAll('.page');
+    for (var i = 0; i < pages.length; i++) {
+      pages[i].setAttribute('aria-hidden', node ? 'true' : 'false');
+    }
+
     overlay.hidden = !node;
     uber.invokeMethodOnParent(node ? 'beginInterceptingEvents' :
                                      'stopInterceptingEvents');

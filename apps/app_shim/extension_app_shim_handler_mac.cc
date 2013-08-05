@@ -5,6 +5,7 @@
 #include "apps/app_shim/extension_app_shim_handler_mac.h"
 
 #include "apps/app_lifetime_monitor_factory.h"
+#include "apps/app_shim/app_shim_host_manager_mac.h"
 #include "apps/app_shim/app_shim_messages.h"
 #include "apps/shell_window.h"
 #include "base/files/file_path.h"
@@ -39,6 +40,13 @@ void ProfileLoadedCallback(base::Callback<void(Profile*)> callback,
 
   // This should never get an error since it only loads existing profiles.
   DCHECK_EQ(Profile::CREATE_STATUS_CREATED, status);
+}
+
+void TerminateIfNoShellWindows() {
+  bool shell_windows_left =
+      extensions::ShellWindowRegistry::IsShellWindowRegisteredInAnyProfile(0);
+  if (!shell_windows_left)
+    chrome::AttemptExit();
 }
 
 }  // namespace
@@ -112,10 +120,11 @@ void ExtensionAppShimHandler::Delegate::LaunchShim(
 }
 
 void ExtensionAppShimHandler::Delegate::MaybeTerminate() {
-  bool shell_windows_left =
-      extensions::ShellWindowRegistry::IsShellWindowRegisteredInAnyProfile(0);
-  if (!shell_windows_left)
-    chrome::AttemptExit();
+  // Post this to give ShellWindows a chance to remove themselves from the
+  // registry.
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&TerminateIfNoShellWindows));
 }
 
 ExtensionAppShimHandler::ExtensionAppShimHandler()
@@ -137,6 +146,29 @@ ExtensionAppShimHandler::ExtensionAppShimHandler()
 }
 
 ExtensionAppShimHandler::~ExtensionAppShimHandler() {}
+
+AppShimHandler::Host* ExtensionAppShimHandler::FindHost(
+    Profile* profile,
+    const std::string& app_id) {
+  HostMap::iterator it = hosts_.find(make_pair(profile, app_id));
+  return it == hosts_.end() ? NULL : it->second;
+}
+
+// static
+void ExtensionAppShimHandler::QuitAppForWindow(ShellWindow* shell_window) {
+  ExtensionAppShimHandler* handler =
+      g_browser_process->platform_part()->app_shim_host_manager()->
+          extension_app_shim_handler();
+  Host* host = handler->FindHost(shell_window->profile(),
+                                 shell_window->extension_id());
+  if (host) {
+    handler->OnShimQuit(host);
+  } else {
+    // App shims might be disabled or the shim is still starting up.
+    extensions::ShellWindowRegistry::Get(shell_window->profile())->
+        CloseAllShellWindowsForApp(shell_window->extension_id());
+  }
+}
 
 void ExtensionAppShimHandler::OnShimLaunch(Host* host,
                                            AppShimLaunchType launch_type) {
@@ -268,15 +300,16 @@ void ExtensionAppShimHandler::OnShimQuit(Host* host) {
   DCHECK(delegate_->ProfileExistsForPath(host->GetProfilePath()));
   Profile* profile = delegate_->ProfileForPath(host->GetProfilePath());
 
+  const std::string& app_id = host->GetAppId();
   const ShellWindowList windows =
-      delegate_->GetWindows(profile, host->GetAppId());
+      delegate_->GetWindows(profile, app_id);
   for (extensions::ShellWindowRegistry::const_iterator it = windows.begin();
        it != windows.end(); ++it) {
     (*it)->GetBaseWindow()->Close();
   }
 
-  DCHECK_NE(0u, hosts_.count(make_pair(profile, host->GetAppId())));
-  hosts_.find(make_pair(profile, host->GetAppId()))->second->OnAppClosed();
+  DCHECK_NE(0u, hosts_.count(make_pair(profile, app_id)));
+  host->OnAppClosed();
 
   if (!browser_opened_ever_ && hosts_.empty())
     delegate_->MaybeTerminate();
@@ -322,9 +355,9 @@ void ExtensionAppShimHandler::Observe(
     case chrome::NOTIFICATION_EXTENSION_UNINSTALLED: {
       const std::string& app_id =
           content::Details<extensions::Extension>(details).ptr()->id();
-      HostMap::const_iterator it = hosts_.find(make_pair(profile, app_id));
-      if (it != hosts_.end())
-        it->second->OnAppClosed();
+      Host* host = FindHost(profile, app_id);
+      if (host)
+        host->OnAppClosed();
       break;
     }
     default: {
@@ -344,10 +377,10 @@ void ExtensionAppShimHandler::OnAppActivated(Profile* profile,
   if (!extension)
     return;
 
-  HostMap::iterator it = hosts_.find(make_pair(profile, app_id));
-  if (it != hosts_.end()) {
-    it->second->OnAppLaunchComplete(APP_SHIM_LAUNCH_SUCCESS);
-    OnShimFocus(it->second, APP_SHIM_FOCUS_NORMAL);
+  Host* host = FindHost(profile, app_id);
+  if (host) {
+    host->OnAppLaunchComplete(APP_SHIM_LAUNCH_SUCCESS);
+    OnShimFocus(host, APP_SHIM_FOCUS_NORMAL);
     return;
   }
 

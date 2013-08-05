@@ -70,7 +70,6 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/bindings_policy.h"
-#include "content/public/common/renderer_preferences.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
 #include "grit/generated_resources.h"
@@ -313,14 +312,21 @@ class InstantPolicyTest : public ExtensionBrowserTest, public InstantTestBase {
 
   void InstallThemeAndVerify(const std::string& theme_dir,
                              const std::string& theme_name) {
-    const base::FilePath theme_path = test_data_dir_.AppendASCII(theme_dir);
-    ASSERT_TRUE(InstallExtensionWithUIAutoConfirm(
-        theme_path, 1, ExtensionBrowserTest::browser()));
     const extensions::Extension* theme =
         ThemeServiceFactory::GetThemeForProfile(
             ExtensionBrowserTest::browser()->profile());
-    ASSERT_NE(static_cast<extensions::Extension*>(NULL), theme);
-    ASSERT_EQ(theme->name(), theme_name);
+    // If there is already a theme installed, the current theme should be
+    // disabled and the new one installed + enabled.
+    int expected_change = theme ? 0 : 1;
+
+    const base::FilePath theme_path = test_data_dir_.AppendASCII(theme_dir);
+    ASSERT_TRUE(InstallExtensionWithUIAutoConfirm(
+        theme_path, expected_change, ExtensionBrowserTest::browser()));
+    const extensions::Extension* new_theme =
+        ThemeServiceFactory::GetThemeForProfile(
+            ExtensionBrowserTest::browser()->profile());
+    ASSERT_NE(static_cast<extensions::Extension*>(NULL), new_theme);
+    ASSERT_EQ(new_theme->name(), theme_name);
   }
 
  private:
@@ -331,7 +337,7 @@ class InstantPolicyTest : public ExtensionBrowserTest, public InstantTestBase {
 
 IN_PROC_BROWSER_TEST_F(InstantExtendedTest, ExtendedModeIsOn) {
   ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
-  EXPECT_TRUE(instant()->extended_enabled_);
+  EXPECT_TRUE(chrome::IsInstantExtendedAPIEnabled());
 }
 
 IN_PROC_BROWSER_TEST_F(InstantExtendedTest, NTPIsPreloaded) {
@@ -842,73 +848,6 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, DISABLED_EscapeClearsOmnibox) {
   EXPECT_LT(0, on_esc_key_press_event_calls_);
 }
 
-// Test that renderer initiated navigations to an instant URL from a non
-// Instant page do not end up in an Instant process if they are bounced to the
-// browser.
-IN_PROC_BROWSER_TEST_F(
-    InstantExtendedTest,
-    DISABLED_RendererInitiatedNavigationNotInInstantProcess) {
-  InstantService* instant_service =
-      InstantServiceFactory::GetForProfile(browser()->profile());
-  ASSERT_NE(static_cast<InstantService*>(NULL), instant_service);
-
-  // Setup Instant.
-  ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
-  FocusOmniboxAndWaitForInstantNTPSupport();
-
-  EXPECT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
-  EXPECT_EQ(1, browser()->tab_strip_model()->count());
-
-  // Don't use https server for the non instant URL so that the browser uses
-  // different RenderViews.
-  GURL non_instant_url = test_server()->GetURL("files/simple.html");
-  ui_test_utils::NavigateToURLWithDisposition(
-      browser(),
-      non_instant_url,
-      CURRENT_TAB,
-      ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
-  content::WebContents* contents =
-      browser()->tab_strip_model()->GetActiveWebContents();
-  EXPECT_FALSE(instant_service->IsInstantProcess(
-      contents->GetRenderProcessHost()->GetID()));
-  EXPECT_EQ(non_instant_url, contents->GetURL());
-
-  int old_render_view_id = contents->GetRenderViewHost()->GetRoutingID();
-  int old_render_process_id = contents->GetRenderProcessHost()->GetID();
-
-  std::string instant_url_with_query = instant_url().spec() + "q=3";
-  std::string add_link_script = base::StringPrintf(
-      "var a = document.createElement('a');"
-      "a.id = 'toClick';"
-      "a.href = '%s';"
-      "document.body.appendChild(a);",
-      instant_url_with_query.c_str());
-  EXPECT_TRUE(content::ExecuteScript(contents, add_link_script));
-
-  // Ensure that navigations are bounced to the browser.
-  contents->GetMutableRendererPrefs()->browser_handles_all_top_level_requests =
-      true;
-  contents->GetRenderViewHost()->SyncRendererPrefs();
-
-  content::WindowedNotificationObserver observer(
-        content::NOTIFICATION_NAV_ENTRY_COMMITTED,
-        content::NotificationService::AllSources());
-  EXPECT_TRUE(content::ExecuteScript(
-      contents, "document.getElementById('toClick').click();"));
-  observer.Wait();
-
-  EXPECT_EQ(1, browser()->tab_strip_model()->count());
-  contents = browser()->tab_strip_model()->GetActiveWebContents();
-  EXPECT_FALSE(instant_service->IsInstantProcess(
-      contents->GetRenderProcessHost()->GetID()));
-  EXPECT_EQ(GURL(instant_url_with_query), contents->GetURL());
-  int new_render_view_id = contents->GetRenderViewHost()->GetRoutingID();
-  int new_render_process_id = contents->GetRenderProcessHost()->GetID();
-
-  EXPECT_TRUE(old_render_process_id != new_render_process_id ||
-              old_render_view_id != new_render_view_id);
-}
-
 IN_PROC_BROWSER_TEST_F(InstantExtendedTest, AcceptingURLSearchDoesNotNavigate) {
   // Get a committed Instant tab, which will be in the Instant process and thus
   // support chrome::GetSearchTerms().
@@ -1345,8 +1284,15 @@ IN_PROC_BROWSER_TEST_F(InstantPolicyTest,
   EXPECT_EQ(1, on_theme_changed_calls);
 }
 
+
+// Flaky on Linux: http://crbug.com/265971
+#if defined(OS_LINUX)
+#define MAYBE_SendThemeBackgroundChangedEvent DISABLED_SendThemeBackgroundChangedEvent
+#else
+#define MAYBE_SendThemeBackgroundChangedEvent SendThemeBackgroundChangedEvent
+#endif
 IN_PROC_BROWSER_TEST_F(InstantPolicyTest,
-                       SendThemeBackgroundChangedEvent) {
+                       MAYBE_SendThemeBackgroundChangedEvent) {
   InstallThemeSource();
   ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
   FocusOmniboxAndWaitForInstantNTPSupport();
@@ -1554,14 +1500,9 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, DISABLED_NavigateBackToNTP) {
   EXPECT_TRUE(chrome::IsInstantNTP(active_tab));
 }
 
-// Flaky on Windows and Mac try bots.
-#if defined(OS_CHROMEOS)
-#define MAYBE_DispatchMVChangeEventWhileNavigatingBackToNTP DispatchMVChangeEventWhileNavigatingBackToNTP
-#else
-#define MAYBE_DispatchMVChangeEventWhileNavigatingBackToNTP DISABLED_DispatchMVChangeEventWhileNavigatingBackToNTP
-#endif
+// Flaky: crbug.com/267119
 IN_PROC_BROWSER_TEST_F(InstantExtendedTest,
-                       MAYBE_DispatchMVChangeEventWhileNavigatingBackToNTP) {
+                       DISABLED_DispatchMVChangeEventWhileNavigatingBackToNTP) {
   // Setup Instant.
   ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
   FocusOmniboxAndWaitForInstantNTPSupport();
@@ -1603,7 +1544,9 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest,
   EXPECT_EQ(1, on_most_visited_change_calls_);
 }
 
-IN_PROC_BROWSER_TEST_F(InstantExtendedTest, OnDefaultSearchProviderChanged) {
+// Flaky: crbug.com/267096
+IN_PROC_BROWSER_TEST_F(InstantExtendedTest,
+                       DISABLED_OnDefaultSearchProviderChanged) {
   InstantService* instant_service =
       InstantServiceFactory::GetForProfile(browser()->profile());
   ASSERT_NE(static_cast<InstantService*>(NULL), instant_service);
@@ -1714,95 +1657,4 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest,
 
   // Make sure the URL remains the same.
   EXPECT_EQ(ntp_url, ntp_contents->GetURL());
-}
-
-IN_PROC_BROWSER_TEST_F(InstantExtendedTest, ProcessIsolation) {
-  // Prior to setup, Instant has an ntp with a failed "google.com" load in
-  // it, which is rendered in the dedicated Instant renderer process.
-  //
-  // TODO(sreeram): Fix this up when we stop doing crazy things on init.
-  InstantService* instant_service =
-        InstantServiceFactory::GetForProfile(browser()->profile());
-  ASSERT_NE(static_cast<InstantService*>(NULL), instant_service);
-#if !defined(OS_MACOSX)
-  // The failed "google.com" load is deleted, which sometimes leads to the
-  // process shutting down on Mac.
-  EXPECT_EQ(1, instant_service->GetInstantProcessCount());
-#endif
-
-  // Setup Instant.
-  ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
-  FocusOmniboxAndWaitForInstantNTPSupport();
-
-  // The registered Instant render process should still exist.
-  EXPECT_EQ(1, instant_service->GetInstantProcessCount());
-  // And the Instant ntp should live inside it.
-  content::WebContents* ntp_contents =
-      instant_service->ntp_prerenderer()->ntp()->contents();
-  EXPECT_TRUE(instant_service->IsInstantProcess(
-      ntp_contents->GetRenderProcessHost()->GetID()));
-
-  // Navigating to the NTP should use the Instant render process.
-  ui_test_utils::NavigateToURLWithDisposition(
-      browser(),
-      GURL(chrome::kChromeUINewTabURL),
-      CURRENT_TAB,
-      ui_test_utils::BROWSER_TEST_NONE);
-  content::WebContents* active_tab =
-      browser()->tab_strip_model()->GetActiveWebContents();
-  EXPECT_TRUE(instant_service->IsInstantProcess(
-      active_tab->GetRenderProcessHost()->GetID()));
-
-  // Navigating elsewhere should not use the Instant render process.
-  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIAboutURL));
-  EXPECT_FALSE(instant_service->IsInstantProcess(
-      active_tab->GetRenderProcessHost()->GetID()));
-}
-
-// Test that renderer initiated navigations to an Instant URL from an
-// Instant process end up in an Instant process.
-IN_PROC_BROWSER_TEST_F(InstantExtendedTest,
-                       RendererInitiatedNavigationInInstantProcess) {
-  InstantService* instant_service =
-      InstantServiceFactory::GetForProfile(browser()->profile());
-  ASSERT_NE(static_cast<InstantService*>(NULL), instant_service);
-
-  // Setup Instant.
-  ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
-  FocusOmniboxAndWaitForInstantNTPSupport();
-
-  EXPECT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
-  EXPECT_EQ(1, browser()->tab_strip_model()->count());
-
-  ui_test_utils::NavigateToURLWithDisposition(
-      browser(),
-      instant_url(),
-      CURRENT_TAB,
-      ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
-  content::WebContents* contents =
-      browser()->tab_strip_model()->GetActiveWebContents();
-  EXPECT_TRUE(instant_service->IsInstantProcess(
-      contents->GetRenderProcessHost()->GetID()));
-
-  std::string instant_url_with_query = instant_url().spec() + "q=3";
-  std::string add_link_script = base::StringPrintf(
-      "var a = document.createElement('a');"
-      "a.id = 'toClick';"
-      "a.href = '%s';"
-      "document.body.appendChild(a);",
-      instant_url_with_query.c_str());
-  EXPECT_TRUE(content::ExecuteScript(contents, add_link_script));
-
-  content::WindowedNotificationObserver observer(
-        content::NOTIFICATION_NAV_ENTRY_COMMITTED,
-        content::NotificationService::AllSources());
-  EXPECT_TRUE(content::ExecuteScript(
-      contents, "document.getElementById('toClick').click();"));
-  observer.Wait();
-
-  EXPECT_EQ(1, browser()->tab_strip_model()->count());
-  contents = browser()->tab_strip_model()->GetActiveWebContents();
-  EXPECT_TRUE(instant_service->IsInstantProcess(
-      contents->GetRenderProcessHost()->GetID()));
-  EXPECT_EQ(GURL(instant_url_with_query), contents->GetURL());
 }

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/atomicops.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/strings/string_number_conversions.h"
@@ -14,14 +15,31 @@
 #include "tools/gn/setup.h"
 #include "tools/gn/standard_out.h"
 
+namespace commands {
+
 namespace {
 
 // Suppress output on success.
 const char kSwitchQuiet[] = "q";
 
+void TargetResolvedCallback(base::subtle::Atomic32* write_counter,
+                            const Target* target) {
+  base::subtle::NoBarrier_AtomicIncrement(write_counter, 1);
+  NinjaTargetWriter::RunAndWriteFile(target);
+}
+
 }  // namespace
 
-int RunGenCommand(const std::vector<std::string>& args) {
+const char kGen[] = "gen";
+const char kGen_HelpShort[] =
+    "gen: Generate ninja files.";
+const char kGen_Help[] =
+    "gn gen\n"
+    "  Generates ninja files from the current tree.\n"
+    "\n"
+    "  See \"gn help\" for the common command-line switches.\n";
+
+int RunGen(const std::vector<std::string>& args) {
   base::TimeTicks begin_time = base::TimeTicks::Now();
 
   // Deliberately leaked to avoid expensive process teardown.
@@ -29,9 +47,11 @@ int RunGenCommand(const std::vector<std::string>& args) {
   if (!setup->DoSetup())
     return 1;
 
-  // Cause the load to also generate the ninja files for each target.
+  // Cause the load to also generate the ninja files for each target. We wrap
+  // the writing to maintain a counter.
+  base::subtle::Atomic32 write_counter = 0;
   setup->build_settings().set_target_resolved_callback(
-      base::Bind(&NinjaTargetWriter::RunAndWriteFile));
+      base::Bind(&TargetResolvedCallback, &write_counter));
 
   // Do the actual load. This will also write out the target ninja files.
   if (!setup->Run())
@@ -49,11 +69,8 @@ int RunGenCommand(const std::vector<std::string>& args) {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(kSwitchQuiet)) {
     OutputString("Done. ", DECORATION_GREEN);
 
-    // TODO(brettw) get the number of targets without getting the entire list.
-    std::vector<const Target*> all_targets;
-    setup->build_settings().target_manager().GetAllTargets(&all_targets);
-    std::string stats = "Generated " +
-        base::IntToString(static_cast<int>(all_targets.size())) +
+    std::string stats = "Wrote " +
+        base::IntToString(static_cast<int>(write_counter)) +
         " targets from " +
         base::IntToString(
             setup->scheduler().input_file_manager()->GetInputFileCount()) +
@@ -64,3 +81,5 @@ int RunGenCommand(const std::vector<std::string>& args) {
 
   return 0;
 }
+
+}  // namespace commands

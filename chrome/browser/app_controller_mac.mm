@@ -4,6 +4,7 @@
 
 #import "chrome/browser/app_controller_mac.h"
 
+#include "apps/app_shim/extension_app_shim_handler_mac.h"
 #include "apps/shell_window.h"
 #include "base/auto_reset.h"
 #include "base/bind.h"
@@ -42,6 +43,7 @@
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/sync_ui_util.h"
 #include "chrome/browser/ui/browser.h"
@@ -386,6 +388,27 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
 }
 
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)app {
+  using extensions::ShellWindowRegistry;
+
+  // If there are no windows, quit immediately.
+  if (chrome::BrowserIterator().done() &&
+      !ShellWindowRegistry::IsShellWindowRegisteredInAnyProfile(0)) {
+    return NSTerminateNow;
+  }
+
+  // Check if this is a keyboard initiated quit on an app window. If so, quit
+  // the app. This could cause the app to trigger another terminate, but that
+  // will be caught by the no windows condition above.
+  if ([[app currentEvent] type] == NSKeyDown) {
+    apps::ShellWindow* shellWindow =
+        ShellWindowRegistry::GetShellWindowForNativeWindowAnyProfile(
+            [app keyWindow]);
+    if (shellWindow) {
+      apps::ExtensionAppShimHandler::QuitAppForWindow(shellWindow);
+      return NSTerminateCancel;
+    }
+  }
+
   // Check if the preference is turned on.
   const PrefService* prefs = g_browser_process->local_state();
   if (!prefs->GetBoolean(prefs::kConfirmToQuitEnabled)) {
@@ -742,7 +765,7 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   std::vector<Profile*> profiles(profile_manager->GetLoadedProfiles());
   for (size_t i = 0; i < profiles.size(); ++i) {
     DownloadService* download_service =
-      DownloadServiceFactory::GetForProfile(profiles[i]);
+      DownloadServiceFactory::GetForBrowserContext(profiles[i]);
     DownloadManager* download_manager =
         (download_service->HasCreatedDownloadManager() ?
          BrowserContext::GetDownloadManager(profiles[i]) : NULL);
@@ -1000,10 +1023,11 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
         chrome::OpenHelpWindow(lastProfile, chrome::HELP_SOURCE_MENU);
       break;
     case IDC_SHOW_SYNC_SETUP:
-      if (Browser* browser = ActivateBrowser(lastProfile))
-        chrome::ShowBrowserSignin(browser, SyncPromoUI::SOURCE_MENU);
-      else
-        chrome::OpenSyncSetupWindow(lastProfile, SyncPromoUI::SOURCE_MENU);
+      if (Browser* browser = ActivateBrowser(lastProfile)) {
+        chrome::ShowBrowserSignin(browser, signin::SOURCE_MENU);
+      } else {
+        chrome::OpenSyncSetupWindow(lastProfile, signin::SOURCE_MENU);
+      }
       break;
     case IDC_TASK_MANAGER:
       content::RecordAction(UserMetricsAction("TaskManager"));

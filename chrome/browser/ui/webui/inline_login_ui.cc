@@ -6,14 +6,15 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/signin/token_service.h"
 #include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/ui/sync/one_click_signin_sync_starter.h"
-#include "chrome/browser/ui/sync/sync_promo_ui.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
@@ -133,7 +134,8 @@ class InlineLoginUIHandler : public content::WebUIMessageHandler {
         OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS,
         true /* force_same_tab_navigation */,
         OneClickSigninSyncStarter::NO_CONFIRMATION,
-        SyncPromoUI::SOURCE_UNKNOWN);
+        signin::SOURCE_UNKNOWN,
+        OneClickSigninSyncStarter::Callback());
     web_ui()->CallJavascriptFunction("inline.login.closeDialog");
 #endif
   }

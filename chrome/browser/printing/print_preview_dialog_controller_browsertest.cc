@@ -62,8 +62,8 @@ class PrintPreviewDialogClonedObserver : public WebContentsObserver {
   }
   virtual ~PrintPreviewDialogClonedObserver() {}
 
-  RequestPrintPreviewObserver* request_preview_tab_observer() {
-    return request_preview_tab_observer_.get();
+  RequestPrintPreviewObserver* request_preview_dialog_observer() {
+    return request_preview_dialog_observer_.get();
   }
 
  private:
@@ -71,11 +71,11 @@ class PrintPreviewDialogClonedObserver : public WebContentsObserver {
   virtual void DidCloneToNewWebContents(
       WebContents* old_web_contents,
       WebContents* new_web_contents) OVERRIDE {
-    request_preview_tab_observer_.reset(
+    request_preview_dialog_observer_.reset(
         new RequestPrintPreviewObserver(new_web_contents));
   }
 
-  scoped_ptr<RequestPrintPreviewObserver> request_preview_tab_observer_;
+  scoped_ptr<RequestPrintPreviewObserver> request_preview_dialog_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(PrintPreviewDialogClonedObserver);
 };
@@ -112,7 +112,7 @@ class PrintPreviewDialogControllerBrowserTest : public InProcessBrowserTest {
 
   void PrintPreview() {
     base::RunLoop run_loop;
-    request_preview_tab_observer()->set_quit_closure(run_loop.QuitClosure());
+    request_preview_dialog_observer()->set_quit_closure(run_loop.QuitClosure());
     chrome::Print(browser());
     run_loop.Run();
   }
@@ -153,8 +153,8 @@ class PrintPreviewDialogControllerBrowserTest : public InProcessBrowserTest {
     initiator_ = NULL;
   }
 
-  RequestPrintPreviewObserver* request_preview_tab_observer() {
-    return cloned_tab_observer_->request_preview_tab_observer();
+  RequestPrintPreviewObserver* request_preview_dialog_observer() {
+    return cloned_tab_observer_->request_preview_dialog_observer();
   }
 
   scoped_ptr<PrintPreviewDialogClonedObserver> cloned_tab_observer_;

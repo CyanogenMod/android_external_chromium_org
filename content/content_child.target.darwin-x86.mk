@@ -66,6 +66,7 @@ LOCAL_SRC_FILES := \
 	content/child/npapi/webplugin_delegate_impl_android.cc \
 	content/child/plugin_message_generator.cc \
 	content/child/plugin_param_traits.cc \
+	content/child/power_monitor_broadcast_source.cc \
 	content/child/quota_dispatcher.cc \
 	content/child/quota_message_filter.cc \
 	content/child/request_extra_data.cc \

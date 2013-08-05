@@ -333,20 +333,6 @@ void CrasAudioHandler::AudioClientRestarted() {
   InitializeAudioState();
 }
 
-void CrasAudioHandler::OutputMuteChanged(bool mute_on) {
-  if (output_mute_on_ != mute_on) {
-    LOG(WARNING) << "output mute state inconsistent, internal mute="
-        << output_mute_on_  << ", dbus signal mute=" << mute_on;
-  }
-}
-
-void CrasAudioHandler::InputMuteChanged(bool mute_on) {
-  if (input_mute_on_ != mute_on) {
-    LOG(WARNING) << "input mute state inconsistent, internal mute="
-        << input_mute_on_  << ", dbus signal mute=" << mute_on;
-  }
-}
-
 void CrasAudioHandler::NodesChanged() {
   // Refresh audio nodes data.
   GetNodes();
@@ -399,8 +385,8 @@ void CrasAudioHandler::SetupAudioInputState() {
 void CrasAudioHandler::SetupAudioOutputState() {
   const AudioDevice* device = GetDeviceFromId(active_output_node_id_);
   if (!device) {
-      LOG(ERROR) << "Can't set up audio state for unknow output device id ="
-        << "0x" << std::hex << active_output_node_id_;
+    LOG(ERROR) << "Can't set up audio state for unknow output device id ="
+               << "0x" << std::hex << active_output_node_id_;
     return;
   }
   output_mute_on_ = audio_pref_handler_->GetMuteValue(*device);
@@ -417,8 +403,14 @@ void CrasAudioHandler::InitializeAudioState() {
 void CrasAudioHandler::ApplyAudioPolicy() {
   output_mute_locked_ = false;
   if (!audio_pref_handler_->GetAudioOutputAllowedValue()) {
-    SetOutputMute(true);
+    // Mute the device, but do not update the preference.
+    SetOutputMuteInternal(true);
     output_mute_locked_ = true;
+  } else {
+    // Restore the mute state.
+    const AudioDevice* device = GetDeviceFromId(active_output_node_id_);
+    if (device)
+      SetOutputMuteInternal(audio_pref_handler_->GetMuteValue(*device));
   }
 
   input_mute_locked_ = false;

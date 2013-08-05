@@ -101,8 +101,6 @@ scoped_ptr<base::Value> TilePriority::AsValue() const {
              MathUtil::AsValueSafely(time_to_visible_in_seconds).release());
   state->Set("distance_to_visible_in_pixels",
              MathUtil::AsValueSafely(distance_to_visible_in_pixels).release());
-  state->Set("current_screen_quad",
-             MathUtil::AsValue(current_screen_quad).release());
   return state.PassAs<base::Value>();
 }
 
@@ -190,6 +188,9 @@ scoped_ptr<base::Value> GlobalStateThatImpactsTilePriority::AsValue() const {
   state->Set("memory_limit_policy",
              TileMemoryLimitPolicyAsValue(memory_limit_policy).release());
   state->SetInteger("memory_limit_in_bytes", memory_limit_in_bytes);
+  state->SetInteger("unused_memory_limit_in_bytes",
+                    unused_memory_limit_in_bytes);
+  state->SetInteger("num_resources_limit", num_resources_limit);
   state->Set("tree_priority", TreePriorityAsValue(tree_priority).release());
   return state.PassAs<base::Value>();
 }

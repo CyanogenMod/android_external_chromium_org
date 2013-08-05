@@ -50,6 +50,7 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
   void SetNeedsRedrawRect(gfx::Rect damage_rect);
   void SetLatencyInfo(const ui::LatencyInfo& latency_info);
   int GetLayerTreeId() const;
+  void NotifyInputThrottledUntilCommit();
 
   // WebLayerTreeView implementation.
   virtual void setSurfaceReady();
@@ -96,7 +97,8 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
   virtual void Layout() OVERRIDE;
   virtual void ApplyScrollAndScale(gfx::Vector2d scroll_delta,
                                    float page_scale) OVERRIDE;
-  virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface() OVERRIDE;
+  virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(bool fallback)
+      OVERRIDE;
   virtual void DidInitializeOutputSurface(bool success) OVERRIDE;
   virtual void WillCommit() OVERRIDE;
   virtual void DidCommit() OVERRIDE;

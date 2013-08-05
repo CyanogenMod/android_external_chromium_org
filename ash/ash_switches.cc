@@ -63,11 +63,6 @@ const char kAshDisableAutoWindowPlacement[] =
 const char kAshDisableDisplayChangeLimiter[] =
     "ash-disable-display-change-limiter";
 
-#if defined(OS_CHROMEOS)
-// Disable the new cras audio handler.
-const char kAshDisableNewAudioHandler[] = "ash-disable-new-audio-handler";
-#endif
-
 // If present new lock animations are enabled.
 const char kAshDisableNewLockAnimations[] = "ash-disable-new-lock-animations";
 
@@ -116,15 +111,11 @@ const char kAshEnableImmersiveFullscreen[] = "ash-enable-immersive-fullscreen";
 const char kAshEnableMemoryMonitor[] = "ash-enable-memory-monitor";
 #endif
 
-#if defined(OS_CHROMEOS)
-// TODO(jamescook): Remove this unused flag. It exists only to allow the
-// "Enable new audio handler" about:flags item to have the tri-state
-// default/enabled/disabled UI.
-const char kAshEnableNewAudioHandler[] = "ash-enable-new-audio-handler";
-#endif
-
 // Enables the Oak tree viewer.
 const char kAshEnableOak[] = "ash-enable-oak";
+
+// Enables overview mode for window switching.
+const char kAshEnableOverviewMode[] = "ash-enable-overview-mode";
 
 // Enables "sticky" edges instead of "snap-to-edge"
 const char kAshEnableStickyEdges[] = "ash-enable-sticky-edges";
@@ -200,15 +191,9 @@ bool UseAlternateShelfLayout() {
 }
 
 #if defined(OS_CHROMEOS)
-bool UseNewAudioHandler() {
-  return !CommandLine::ForCurrentProcess()->
-      HasSwitch(ash::switches::kAshDisableNewAudioHandler);
-}
-
 bool ShowAudioDeviceMenu() {
-  return ash::switches::UseNewAudioHandler() &&
-      !CommandLine::ForCurrentProcess()->
-          HasSwitch(ash::switches::kAshDisableAudioDeviceMenu);
+  return !CommandLine::ForCurrentProcess()->
+      HasSwitch(ash::switches::kAshDisableAudioDeviceMenu);
 }
 
 bool UseUsbChargerNotification() {

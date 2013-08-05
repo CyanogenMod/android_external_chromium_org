@@ -189,11 +189,13 @@
   ],
   "downloads": {
     "channel": "beta",
-    "extension_types": [
-      "extension"
-    ]
+    "extension_types": ["extension"]
   },
   "downloads.open": {
+    "channel": "beta",
+    "extension_types": ["extension"]
+  },
+  "downloads.shelf": {
     "channel": "beta",
     "extension_types": ["extension"]
   },
@@ -293,6 +295,10 @@
     "channel": "stable",
     "extension_types": ["extension", "packaged_app", "platform_app"]
   },
+  "infobars": {
+    "channel": "dev",
+    "extension_types": ["extension", "packaged_app", "platform_app"]
+  },
   "input": {
     "channel": "stable",
     "extension_types": ["extension", "packaged_app"],
@@ -317,7 +323,7 @@
     {
       "channel": "dev",
       "extension_types": [
-        "extension", "packaged_app", "hosted_app", "platform_app"
+        "extension", "packaged_app", "platform_app"
       ]
     },
     {
@@ -455,7 +461,7 @@
   "power": {
     "channel": "stable",
     "extension_types": [
-      "extension", "hosted_app", "packaged_app", "platform_app"
+      "extension", "packaged_app", "platform_app"
     ]
   },
   "preferencesPrivate":  {
@@ -476,6 +482,13 @@
   "pushMessaging": {
     "channel": "stable",
     "extension_types": ["extension", "platform_app"]
+  },
+  "recoveryPrivate": {
+    "channel": "dev",
+    "extension_types": ["platform_app"],
+    "whitelist": [
+      "nmedaodmkamdcnmfceajookiaicfnkhd"
+    ]
   },
   "rtcPrivate": {
     "channel": "stable",
@@ -544,23 +557,15 @@
   },
   "system.cpu": {
     "channel": "dev",
-    "extension_types": [
-      "extension", "packaged_app", "hosted_app", "platform_app"
-    ],
-    "whitelist": [""]
+    "extension_types": ["extension", "packaged_app", "platform_app"]
   },
   "system.memory": {
     "channel": "dev",
-    "extension_types": [
-      "extension", "packaged_app", "hosted_app", "platform_app"
-    ],
-    "whitelist": [""]
+    "extension_types": ["extension", "packaged_app", "platform_app"]
   },
   "system.storage": {
     "channel": "stable",
-    "extension_types": [
-      "extension", "packaged_app", "platform_app"
-    ]
+    "extension_types": ["extension", "packaged_app", "platform_app"]
   },
   "system.display": {
     "channel": "stable",
@@ -635,17 +640,6 @@
   "webNavigation": {
     "channel": "stable",
     "extension_types": ["extension", "packaged_app"]
-  },
-  "webSocketProxyPrivate": {
-    "channel": "stable",
-    "extension_types": ["extension", "packaged_app"],
-    "whitelist": [
-      "haiffjcadagjlijoggckpgfnoeiflnem",  // Citrix Receiver
-      "gnedhmakppccajfpfiihfcdlnpgomkcf",  // Citrix Receiver Beta
-      "fjcibdnjlbfnbfdjneajpipnlcppleek",  // Citrix Receiver Dev
-      "pnhechapfaindjhompbnflcldabbghjo",  // HTerm
-      "okddffdblfhhnmhodogpojmfkjmhinfp"   // HTerm dev
-    ]
   },
   "webstorePrivate": {
     "channel": "stable",

@@ -24,7 +24,7 @@ class Browser;
 class GoogleServiceAuthError;
 class ManagedModeURLFilter;
 class ManagedModeSiteList;
-class ManagedUserRegistrationService;
+class ManagedUserRegistrationUtility;
 class Profile;
 
 namespace policy {
@@ -56,12 +56,6 @@ class ManagedUserService : public BrowserContextKeyedService,
 
   // ProfileKeyedService override:
   virtual void Shutdown() OVERRIDE;
-
-  bool ProfileIsManaged() const;
-
-  // Checks whether the given profile is managed without constructing a
-  // ManagedUserService (which could lead to cyclic dependencies).
-  static bool ProfileIsManaged(Profile* profile);
 
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
@@ -123,14 +117,13 @@ class ManagedUserService : public BrowserContextKeyedService,
   // mint access tokens for Sync.
   void InitSync(const std::string& refresh_token);
 
-  // Convenience method that registers this managed user with
-  // |registration_service| and initializes sync with the returned token.
-  // Note that |registration_service| should belong to the custodian's profile,
-  // not this one. The |callback| will be called when registration is complete,
-  // whether it suceeded or not -- unless registration was cancelled in the
-  // ManagedUserRegistrationService manually, in which case the callback will
-  // be ignored.
-  void RegisterAndInitSync(Profile* custodian_profile,
+  // Convenience method that registers this managed user using
+  // |registration_utility| and initializes sync with the returned token.
+  // The |callback| will be called when registration is complete,
+  // whether it suceeded or not -- unless registration was cancelled manually,
+  // in which case the callback will be ignored.
+  void RegisterAndInitSync(ManagedUserRegistrationUtility* registration_utility,
+                           Profile* custodian_profile,
                            const ProfileManager::CreateCallback& callback);
 
   // Returns a pseudo-email address for systems that expect well-formed email
@@ -162,6 +155,10 @@ class ManagedUserService : public BrowserContextKeyedService,
  private:
   friend class ManagedUserServiceExtensionTest;
   friend class ManagedUserServiceFactory;
+  FRIEND_TEST_ALL_PREFIXES(ManagedUserServiceTest,
+                           ExtensionManagementPolicyProviderUnmanaged);
+  FRIEND_TEST_ALL_PREFIXES(ManagedUserServiceTest,
+                           ExtensionManagementPolicyProviderManaged);
 
   // A bridge from ManagedMode (which lives on the UI thread) to the
   // ManagedModeURLFilters, one of which lives on the IO thread. This class
@@ -205,6 +202,8 @@ class ManagedUserService : public BrowserContextKeyedService,
                                const std::string& token);
 
   void SetupSync();
+
+  bool ProfileIsManaged() const;
 
   // Internal implementation for ExtensionManagementPolicy::Delegate methods.
   // If |error| is not NULL, it will be filled with an error message if the

@@ -6,6 +6,7 @@
 
 #include <ApplicationServices/ApplicationServices.h>
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -106,7 +107,7 @@ void RenderTextMac::EnsureLayout() {
   runs_.clear();
   runs_valid_ = false;
 
-  const Font& font = GetFont();
+  const Font& font = GetPrimaryFont();
   base::ScopedCFTypeRef<CFStringRef> font_name_cf_string(
       base::SysUTF8ToCFStringRef(font.GetFontName()));
   base::ScopedCFTypeRef<CTFontRef> ct_font(
@@ -140,6 +141,15 @@ void RenderTextMac::EnsureLayout() {
   CGFloat leading = 0;
   // TODO(asvitkine): Consider using CTLineGetBoundsWithOptions() on 10.8+.
   double width = CTLineGetTypographicBounds(line_, &ascent, &descent, &leading);
+  // Ensure ascent and descent are not smaller than ones of the font list.
+  // Keep them tall enough to draw often-used characters.
+  // For example, if a text field contains a Japanese character, which is
+  // smaller than Latin ones, and then later a Latin one is inserted, this
+  // ensures that the text baseline does not shift.
+  CGFloat font_list_height = font_list().GetHeight();
+  CGFloat font_list_baseline = font_list().GetBaseline();
+  ascent = std::max(ascent, font_list_baseline);
+  descent = std::max(descent, font_list_height - font_list_baseline);
   string_size_ = Size(width, ascent + descent + leading);
   common_baseline_ = ascent;
 }

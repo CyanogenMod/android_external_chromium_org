@@ -4418,24 +4418,6 @@ FITNESS FOR A PARTICULAR PURPOSE.  THE SOFTWARE PROVIDED HEREUNDER IS
 ON AN "AS IS" BASIS, AND THE COPYRIGHT HOLDER HAS NO OBLIGATION TO
 PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
 
-GPL 2.0/LGPL 2.1/MPL 1.1 tri-license
-
-The contents of this software may be used under the terms of
-the GNU General Public License Version 2 or later (the "GPL"), or
-the GNU Lesser General Public License Version 2.1 or later (the "LGPL",
-see COPYING.LGPL) or the Mozilla Public License Version 1.1 or later
-(the "MPL", see COPYING.MPL).
-
-The Plain TeX hyphenation tables "hyphen.tex" by Donald E. Knuth
-has a non MPL/LGPL compatible license, but freely redistributable:
-"Unlimited copying and redistribution of this file are permitted as long
-as this file is not modified. Modifications are permitted, but only if
-the resulting file is not named hyphen.tex."
-
-Software distributed under these licenses is distributed on an "AS IS" basis,
-WITHOUT WARRANTY OF ANY KIND, either express or implied. See the licences
-for the specific language governing rights and limitations under the licenses.
-
 /*************************************************************************
  *
  *  IAccessible2 IDL Specification 
@@ -5407,7 +5389,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-Copyright (c) 2004--2005, Google Inc.
+Copyright (c) 2013, Google Inc.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -5429,8 +5411,8 @@ LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
 CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
 GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
 HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY 
-WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF 
+STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY
+WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 SUCH DAMAGE.
 (Copied from the README.)
 

@@ -2,6 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import sys
+
+from telemetry.core.platform import linux_platform_backend
+from telemetry.core.platform import mac_platform_backend
+from telemetry.core.platform import win_platform_backend
+
 class Platform(object):
   """The platform that the target browser is running on.
 
@@ -84,3 +90,34 @@ class Platform(object):
 
     Examples: VISTA, WIN7, LION, MOUNTAINLION"""
     return self._platform_backend.GetOSVersionName()
+
+  def CanFlushIndividualFilesFromSystemCache(self):
+    """Returns true if the disk cache can be flushed for specific files."""
+    return self._platform_backend.CanFlushIndividualFilesFromSystemCache()
+
+  def FlushEntireSystemCache(self):
+    """Flushes the OS's file cache completely.
+
+    This function may require root or administrator access."""
+    return self._platform_backend.FlushEntireSystemCache()
+
+  def FlushSystemCacheForDirectory(self, directory, ignoring=None):
+    """Flushes the OS's file cache for the specified directory.
+
+    Any files or directories inside |directory| matching a name in the
+    |ignoring| list will be skipped.
+
+    This function does not require root or administrator access."""
+    return self._platform_backend.FlushSystemCacheForDirectory(
+        directory, ignoring=ignoring)
+
+
+def CreatePlatformBackendForCurrentOS():
+  if sys.platform.startswith('linux'):
+    return linux_platform_backend.LinuxPlatformBackend()
+  elif sys.platform == 'darwin':
+    return mac_platform_backend.MacPlatformBackend()
+  elif sys.platform == 'win32':
+    return win_platform_backend.WinPlatformBackend()
+  else:
+    raise NotImplementedError()

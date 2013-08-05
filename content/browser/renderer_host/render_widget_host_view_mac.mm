@@ -4,6 +4,7 @@
 
 #include "content/browser/renderer_host/render_widget_host_view_mac.h"
 
+#import <objc/runtime.h>
 #include <QuartzCore/QuartzCore.h>
 
 #include "base/bind.h"
@@ -135,6 +136,29 @@ static inline int ToWebKitModifiers(NSUInteger flags) {
   if (flags & NSAlternateKeyMask) modifiers |= WebInputEvent::AltKey;
   if (flags & NSCommandKeyMask) modifiers |= WebInputEvent::MetaKey;
   return modifiers;
+}
+
+// This method will return YES for OS X versions 10.7.3 and later, and NO
+// otherwise.
+// Used to prevent a crash when building with the 10.7 SDK and accessing the
+// notification below. See: http://crbug.com/260595.
+static BOOL SupportsBackingPropertiesChangedNotification() {
+  // windowDidChangeBackingProperties: method has been added to the
+  // NSWindowDelegate protocol in 10.7.3, at the same time as the
+  // NSWindowDidChangeBackingPropertiesNotification notification was added.
+  // If the protocol contains this method description, the notification should
+  // be supported as well.
+  Protocol* windowDelegateProtocol = NSProtocolFromString(@"NSWindowDelegate");
+  struct objc_method_description methodDescription =
+      protocol_getMethodDescription(
+          windowDelegateProtocol,
+          @selector(windowDidChangeBackingProperties:),
+          NO,
+          YES);
+
+  // If the protocol does not contain the method, the returned method
+  // description is {NULL, NULL}
+  return methodDescription.name != NULL || methodDescription.types != NULL;
 }
 
 static float ScaleFactor(NSView* view) {
@@ -428,7 +452,7 @@ RenderWidgetHostViewMac::~RenderWidgetHostViewMac() {
   UnlockMouse();
 
   // Make sure that the layer doesn't reach into the now-invalid object.
-  DestroyCompositedIOSurfaceAndLayer();
+  DestroyCompositedIOSurfaceAndLayer(kDestroyContext);
   software_layer_.reset();
 
   // We are owned by RenderWidgetHostViewCocoa, so if we go away before the
@@ -551,7 +575,8 @@ bool RenderWidgetHostViewMac::CreateCompositedIOSurfaceLayer() {
          (compositing_iosurface_layer_ || !use_core_animation_);
 }
 
-void RenderWidgetHostViewMac::DestroyCompositedIOSurfaceAndLayer() {
+void RenderWidgetHostViewMac::DestroyCompositedIOSurfaceAndLayer(
+    DestroyContextBehavior destroy_context_behavior) {
   ScopedCAActionDisabler disabler;
 
   compositing_iosurface_.reset();
@@ -561,8 +586,17 @@ void RenderWidgetHostViewMac::DestroyCompositedIOSurfaceAndLayer() {
     [compositing_iosurface_layer_ disableCompositing];
     compositing_iosurface_layer_.reset();
   }
-  ClearBoundContextDrawable();
-  compositing_iosurface_context_ = NULL;
+  switch (destroy_context_behavior) {
+    case kLeaveContextBoundToView:
+      break;
+    case kDestroyContext:
+      ClearBoundContextDrawable();
+      compositing_iosurface_context_ = NULL;
+      break;
+    default:
+      NOTREACHED();
+      break;
+  }
 }
 
 void RenderWidgetHostViewMac::ClearBoundContextDrawable() {
@@ -1414,7 +1448,7 @@ bool RenderWidgetHostViewMac::DrawIOSurfaceWithoutCoreAnimation() {
 
 void RenderWidgetHostViewMac::GotAcceleratedCompositingError() {
   AckPendingSwapBuffers();
-  DestroyCompositedIOSurfaceAndLayer();
+  DestroyCompositedIOSurfaceAndLayer(kDestroyContext);
   // The existing GL contexts may be in a bad state, so don't re-use any of the
   // existing ones anymore, rather, allocate new ones.
   CompositingIOSurfaceContext::MarkExistingContextsAsNotShareable();
@@ -1616,7 +1650,7 @@ void RenderWidgetHostViewMac::AcceleratedSurfaceSuspend() {
 }
 
 void RenderWidgetHostViewMac::AcceleratedSurfaceRelease() {
-  DestroyCompositedIOSurfaceAndLayer();
+  DestroyCompositedIOSurfaceAndLayer(kDestroyContext);
 }
 
 bool RenderWidgetHostViewMac::HasAcceleratedSurface(
@@ -1744,8 +1778,19 @@ void RenderWidgetHostViewMac::GotSoftwareFrame() {
 
     AckPendingSwapBuffers();
 
-    // Forget IOSurface since we are drawing a software frame now.
-    DestroyCompositedIOSurfaceAndLayer();
+    // If overlapping views are allowed, then don't unbind the context
+    // from the view (that is, don't call clearDrawble -- just delete the
+    // texture and IOSurface). Rather, let it sit behind the software frame
+    // that will be put up in front. This will prevent transparent
+    // flashes.
+    // http://crbug.com/154531
+    // Also note that it is necessary that clearDrawable be called if
+    // overlapping views are not allowed, e.g, for content shell.
+    // http://crbug.com/178408
+    if (allow_overlapping_views_)
+      DestroyCompositedIOSurfaceAndLayer(kLeaveContextBoundToView);
+    else
+      DestroyCompositedIOSurfaceAndLayer(kDestroyContext);
   }
 }
 
@@ -2431,7 +2476,8 @@ void RenderWidgetHostViewMac::FrameSwapped() {
 
   // Backing property notifications crash on 10.6 when building with the 10.7
   // SDK, see http://crbug.com/260595.
-  BOOL supportsBackingPropertiesNotification = base::mac::IsOSLionOrLater();
+  static BOOL supportsBackingPropertiesNotification =
+      SupportsBackingPropertiesChangedNotification();
 
   if (oldWindow) {
     if (supportsBackingPropertiesNotification) {

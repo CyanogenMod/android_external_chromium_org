@@ -1,4 +1,4 @@
- // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -76,14 +76,7 @@ class PrintPreviewDialogController
  private:
   friend class base::RefCounted<PrintPreviewDialogController>;
 
-  // Used to distinguish between the two varieties of WebContents dealt with by
-  // this class.
-  enum ContentsType {
-    INITIATOR,
-    PREVIEW_DIALOG
-  };
-
-  // 1:1 relationship between a print preview dialog and its initiator.
+  // 1:1 relationship between a print preview dialog and its initiator tab.
   // Key: Print preview dialog.
   // Value: Initiator.
   typedef std::map<content::WebContents*, content::WebContents*>
@@ -113,9 +106,8 @@ class PrintPreviewDialogController
   void SaveInitiatorTitle(content::WebContents* preview_dialog);
 
   // Adds/Removes observers for notifications from |contents|.
-  void AddObservers(content::WebContents* contents, ContentsType contents_type);
-  void RemoveObservers(content::WebContents* contents,
-                       ContentsType contents_type);
+  void AddObservers(content::WebContents* contents);
+  void RemoveObservers(content::WebContents* contents);
 
   // Removes WebContents when they close/crash/navigate.
   void RemoveInitiator(content::WebContents* initiator);

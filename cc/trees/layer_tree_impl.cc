@@ -75,6 +75,7 @@ void LayerTreeImpl::FindRootScrollLayer() {
   root_scroll_layer_ = FindRootScrollLayerRecursive(root_layer_.get());
 
   if (root_scroll_layer_) {
+    UpdateMaxScrollOffset();
     root_scroll_layer_->SetScrollOffsetDelegate(
         root_layer_scroll_offset_delegate_);
   }
@@ -103,6 +104,9 @@ scoped_ptr<LayerImpl> LayerTreeImpl::DetachLayerTree() {
 }
 
 void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
+  // The request queue should have been processed and does not require a push.
+  DCHECK_EQ(ui_resource_request_queue_.size(), 0u);
+
   target_tree->SetLatencyInfo(latency_info_);
   latency_info_.Clear();
   target_tree->SetPageScaleFactorAndLimits(
@@ -215,15 +219,6 @@ void LayerTreeImpl::UpdateMaxScrollOffset() {
   gfx::Vector2dF max_scroll = gfx::Rect(ScrollableSize()).bottom_right() -
       gfx::RectF(ScrollableViewportSize()).bottom_right();
 
-  // The scrollable viewport size is based on device viewport instead of Blink's
-  // container layer, so we need to adjust for non-overlay scrollbars.
-  ScrollbarLayerImpl* horiz = root_scroll->horizontal_scrollbar_layer();
-  ScrollbarLayerImpl* vertical = root_scroll->vertical_scrollbar_layer();
-  if (horiz && !horiz->is_overlay_scrollbar())
-    max_scroll.set_y(max_scroll.y() + horiz->thumb_thickness());
-  if (vertical && !vertical->is_overlay_scrollbar())
-    max_scroll.set_x(max_scroll.x() + vertical->thumb_thickness());
-
   // The viewport may be larger than the contents in some cases, such as
   // having a vertical scrollbar but no horizontal overflow.
   max_scroll.SetToMax(gfx::Vector2dF());
@@ -290,7 +285,7 @@ void LayerTreeImpl::UpdateDrawProperties() {
 
   // For max_texture_size.
   if (!layer_tree_host_impl_->renderer())
-      return;
+    return;
 
   if (!root_layer())
     return;
@@ -362,10 +357,11 @@ static void DidBecomeActiveRecursive(LayerImpl* layer) {
 }
 
 void LayerTreeImpl::DidBecomeActive() {
-  if (root_layer())
-    DidBecomeActiveRecursive(root_layer());
+  if (!root_layer())
+    return;
+
+  DidBecomeActiveRecursive(root_layer());
   FindRootScrollLayer();
-  UpdateMaxScrollOffset();
 }
 
 bool LayerTreeImpl::ContentsTexturesPurged() const {
@@ -536,7 +532,7 @@ scoped_ptr<base::Value> LayerTreeImpl::AsValue() const {
 }
 
 void LayerTreeImpl::SetRootLayerScrollOffsetDelegate(
-      LayerScrollOffsetDelegate* root_layer_scroll_offset_delegate) {
+    LayerScrollOffsetDelegate* root_layer_scroll_offset_delegate) {
   root_layer_scroll_offset_delegate_ = root_layer_scroll_offset_delegate;
   if (root_scroll_layer_) {
     root_scroll_layer_->SetScrollOffsetDelegate(
@@ -577,6 +573,35 @@ void LayerTreeImpl::ClearLatencyInfo() {
 
 void LayerTreeImpl::WillModifyTilePriorities() {
   layer_tree_host_impl_->SetNeedsManageTiles();
+}
+
+void LayerTreeImpl::set_ui_resource_request_queue(
+    const UIResourceRequestQueue& queue) {
+  ui_resource_request_queue_ = queue;
+}
+
+ResourceProvider::ResourceId LayerTreeImpl::ResourceIdForUIResource(
+    UIResourceId uid) const {
+  return layer_tree_host_impl_->ResourceIdForUIResource(uid);
+}
+
+void LayerTreeImpl::ProcessUIResourceRequestQueue() {
+  while (ui_resource_request_queue_.size() > 0) {
+    UIResourceRequest req = ui_resource_request_queue_.front();
+    ui_resource_request_queue_.pop_front();
+
+    switch (req.type) {
+      case UIResourceRequest::UIResourceCreate:
+        layer_tree_host_impl_->CreateUIResource(req.id, req.bitmap);
+        break;
+      case UIResourceRequest::UIResourceDelete:
+        layer_tree_host_impl_->DeleteUIResource(req.id);
+        break;
+      default:
+        NOTREACHED();
+        break;
+    }
+  }
 }
 
 void LayerTreeImpl::AddLayerWithCopyOutputRequest(LayerImpl* layer) {

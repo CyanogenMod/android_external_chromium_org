@@ -31,6 +31,7 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.webkit.GeolocationPermissions;
 import android.webkit.ValueCallback;
+import android.widget.OverScroller;
 
 import com.google.common.annotations.VisibleForTesting;
 
@@ -149,8 +150,7 @@ public class AwContents {
     // This can be accessed on any thread after construction. See AwContentsIoThreadClient.
     private final AwSettings mSettings;
 
-    private boolean mIsPaused;
-    private boolean mIsVisible;  // Equivalent to windowVisible && viewVisible && !mIsPaused.
+    private boolean mIsVisible;  // Equivalent to windowVisible && viewVisible.
     private boolean mIsAttachedToWindow;
     private Bitmap mFavicon;
     private boolean mHasRequestedVisitedHistoryFromClient;
@@ -168,8 +168,6 @@ public class AwContents {
     // Bound method for suppling Picture instances to the AwContentsClient. Will be null if the
     // picture listener API has not yet been enabled, or if it is using invalidation-only mode.
     private Callable<Picture> mPictureListenerContentProvider;
-
-    private final Rect mLastGlobalVisibleBounds = new Rect();
 
     private boolean mContainerViewFocused;
     private boolean mWindowFocused;
@@ -372,10 +370,15 @@ public class AwContents {
         public int getContainerViewScrollY() {
             return mContainerView.getScrollY();
         }
+
+        @Override
+        public void invalidate() {
+            mContainerView.invalidate();
+        }
     }
 
     //--------------------------------------------------------------------------------------------
-    private class AwPinchGestureStateListener implements ContentViewCore.PinchGestureStateListener {
+    private class AwGestureStateListener implements ContentViewCore.GestureStateListener {
         @Override
         public void onPinchGestureStart() {
             // While it's possible to re-layout the view during a pinch gesture, the effect is very
@@ -387,24 +390,27 @@ public class AwContents {
             mLayoutSizer.freezeLayoutRequests();
         }
 
+        @Override
         public void onPinchGestureEnd() {
             mLayoutSizer.unfreezeLayoutRequests();
         }
-    }
 
-    //--------------------------------------------------------------------------------------------
-    private class ScrollChangeListener implements ViewTreeObserver.OnScrollChangedListener {
         @Override
-        public void onScrollChanged() {
-            // We do this to cover the case that when the view hierarchy is scrolled,
-            // more of the containing view  becomes visible (i.e. a containing view
-            // with a width/height of "wrap_content" and dimensions greater than
-            // that of the screen).
-            AwContents.this.updateGlobalVisibleBounds();
-         }
-    };
+        public void onFlingStartGesture(int velocityX, int velocityY) {
+            mScrollOffsetManager.onFlingStartGesture(velocityX, velocityY);
+        }
 
-    private ScrollChangeListener mScrollChangeListener;
+
+        @Override
+        public void onFlingCancelGesture() {
+            mScrollOffsetManager.onFlingCancelGesture();
+        }
+
+        @Override
+        public void onUnhandledFlingStartEvent() {
+            mScrollOffsetManager.onUnhandledFlingStartEvent();
+        }
+    }
 
     /**
      * @param browserContext the browsing context to associate this view contents with.
@@ -424,7 +430,7 @@ public class AwContents {
 
     private static ContentViewCore createAndInitializeContentViewCore(ViewGroup containerView,
             InternalAccessDelegate internalDispatcher, int nativeWebContents,
-            ContentViewCore.PinchGestureStateListener pinchGestureStateListener,
+            ContentViewCore.GestureStateListener pinchGestureStateListener,
             ContentViewClient contentViewClient,
             ContentViewCore.ZoomControlsDelegate zoomControlsDelegate) {
       ContentViewCore contentViewCore = new ContentViewCore(containerView.getContext());
@@ -432,7 +438,7 @@ public class AwContents {
       // compositor, not because input events are delivered immediately.
       contentViewCore.initialize(containerView, internalDispatcher, nativeWebContents, null,
                 ContentViewCore.INPUT_EVENTS_DELIVERED_IMMEDIATELY);
-      contentViewCore.setPinchGestureStateListener(pinchGestureStateListener);
+      contentViewCore.setGestureStateListener(pinchGestureStateListener);
       contentViewCore.setContentViewClient(contentViewClient);
       contentViewCore.setZoomControlsDelegate(zoomControlsDelegate);
       return contentViewCore;
@@ -479,7 +485,8 @@ public class AwContents {
         mSettings.setDefaultVideoPosterURL(
                 mDefaultVideoPosterRequestHandler.getDefaultVideoPosterURL());
         mContentsClient.setDIPScale(mDIPScale);
-        mScrollOffsetManager = new AwScrollOffsetManager(new AwScrollOffsetManagerDelegate());
+        mScrollOffsetManager = new AwScrollOffsetManager(new AwScrollOffsetManagerDelegate(),
+                new OverScroller(mContainerView.getContext()));
 
         setOverScrollMode(mContainerView.getOverScrollMode());
 
@@ -513,7 +520,7 @@ public class AwContents {
         int nativeWebContents = nativeGetWebContents(mNativeAwContents);
         mContentViewCore = createAndInitializeContentViewCore(
                 mContainerView, mInternalAccessAdapter, nativeWebContents,
-                new AwPinchGestureStateListener(), mContentsClient.getContentViewClient(),
+                new AwGestureStateListener(), mContentsClient.getContentViewClient(),
                 mZoomControls);
         nativeSetJavaPeers(mNativeAwContents, this, mWebContentsDelegate, mContentsClientBridge,
                 mIoThreadClient, mInterceptNavigationDelegate);
@@ -521,6 +528,10 @@ public class AwContents {
         mContentViewCore.setUpdateFrameInfoListener(new AwContentUpdateFrameInfoListener());
         mSettings.setWebContents(nativeWebContents);
         nativeSetDipScale(mNativeAwContents, (float) mDIPScale);
+        updateGlobalVisibleRect();
+
+        // The only call to onShow. onHide should never be called.
+        mContentViewCore.onShow();
    }
 
     /**
@@ -548,7 +559,7 @@ public class AwContents {
         // Save existing view state.
         final boolean wasAttached = mIsAttachedToWindow;
         final boolean wasVisible = getContainerViewVisible();
-        final boolean wasPaused = mIsPaused;
+        final boolean wasPaused = mUnimplementedIsPaused;
         final boolean wasFocused = mWindowFocused;
 
         // Properly clean up existing mContentViewCore and mNativeAwContents.
@@ -617,8 +628,16 @@ public class AwContents {
         return nativeGetAwDrawGLViewContext(mNativeAwContents);
     }
 
-    private void updateGlobalVisibleBounds() {
-        mContainerView.getGlobalVisibleRect(mLastGlobalVisibleBounds);
+    // This is only to avoid heap allocations inside updateGLobalVisibleRect. It should treated
+    // as a local variable in the function and not used anywhere else.
+    private static final Rect sLocalGlobalVisibleRect = new Rect();
+
+    @CalledByNative
+    private void updateGlobalVisibleRect() {
+        mContainerView.getGlobalVisibleRect(sLocalGlobalVisibleRect);
+        nativeSetGlobalVisibleRect(mNativeAwContents, sLocalGlobalVisibleRect.left,
+                sLocalGlobalVisibleRect.top, sLocalGlobalVisibleRect.right,
+                sLocalGlobalVisibleRect.bottom);
     }
 
     //--------------------------------------------------------------------------------------------
@@ -640,9 +659,7 @@ public class AwContents {
         if (!nativeOnDraw(mNativeAwContents, canvas, canvas.isHardwareAccelerated(),
                     mContainerView.getScrollX(), mContainerView.getScrollY(),
                     mClipBoundsTemporary.left, mClipBoundsTemporary.top,
-                    mClipBoundsTemporary.right, mClipBoundsTemporary.bottom,
-                    mLastGlobalVisibleBounds.left, mLastGlobalVisibleBounds.top,
-                    mLastGlobalVisibleBounds.right, mLastGlobalVisibleBounds.bottom)) {
+                    mClipBoundsTemporary.right, mClipBoundsTemporary.bottom)) {
             Log.w(TAG, "nativeOnDraw failed; clearing to background color.");
             canvas.drawColor(getEffectiveBackgroundColor());
         }
@@ -870,6 +887,13 @@ public class AwContents {
     }
 
     /**
+     * @see View.computeScroll()
+     */
+    public void computeScroll() {
+        mScrollOffsetManager.computeScrollAndAbsorbGlow(mOverScrollGlow);
+    }
+
+    /**
      * @see View#computeHorizontalScrollRange()
      */
     public int computeHorizontalScrollRange() {
@@ -969,7 +993,6 @@ public class AwContents {
     /**
      * @see android.webkit.WebView#pauseTimers()
      */
-    // TODO(kristianm): Remove
     public void pauseTimers() {
         ContentViewStatics.setWebKitSharedTimersSuspended(true);
     }
@@ -977,36 +1000,31 @@ public class AwContents {
     /**
      * @see android.webkit.WebView#resumeTimers()
      */
-    // TODO(kristianm): Remove
     public void resumeTimers() {
         ContentViewStatics.setWebKitSharedTimersSuspended(false);
     }
+
+    private boolean mUnimplementedIsPaused;
 
     /**
      * @see android.webkit.WebView#onPause()
      */
     public void onPause() {
-        mIsPaused = true;
-        updateVisibilityState();
-        mContentViewCore.onActivityPause();
+        mUnimplementedIsPaused = true;
     }
 
     /**
      * @see android.webkit.WebView#onResume()
      */
     public void onResume() {
-        mIsPaused = false;
-        updateVisibilityState();
-        // Not calling mContentViewCore.onActivityResume because it is the same
-        // as onShow, but we do not want to call onShow yet, since AwContents
-        // visibility depends on other things. TODO(boliu): Clean this up.
+        mUnimplementedIsPaused = false;
     }
 
     /**
      * @see android.webkit.WebView#isPaused()
      */
     public boolean isPaused() {
-        return mIsPaused;
+        return mUnimplementedIsPaused;
     }
 
     /**
@@ -1176,8 +1194,8 @@ public class AwContents {
     /**
      * @see android.webkit.WebView#flingScroll(int, int)
      */
-    public void flingScroll(int vx, int vy) {
-        mContentViewCore.flingScroll(vx, vy);
+    public void flingScroll(int velocityX, int velocityY) {
+        mContentViewCore.flingScroll(velocityX, velocityY);
     }
 
     /**
@@ -1304,34 +1322,20 @@ public class AwContents {
      */
     public void onAttachedToWindow() {
         mIsAttachedToWindow = true;
-        if (mScrollChangeListener == null) {
-            mScrollChangeListener = new ScrollChangeListener();
-        }
-        mContainerView.getViewTreeObserver().addOnScrollChangedListener(mScrollChangeListener);
 
         mContentViewCore.onAttachedToWindow();
         nativeOnAttachedToWindow(mNativeAwContents, mContainerView.getWidth(),
                 mContainerView.getHeight());
-
-        // This is for the case where this is created by restoreState, which
-        // needs to call to NavigationController::LoadIfNecessary to actually
-        // load the restored page.
-        if (!mIsPaused) onResume();
     }
 
     /**
      * @see android.view.View#onDetachedFromWindow()
      */
     public void onDetachedFromWindow() {
+        hideAutofillPopup();
         mIsAttachedToWindow = false;
         if (mNativeAwContents != 0) {
             nativeOnDetachedFromWindow(mNativeAwContents);
-        }
-
-        if (mScrollChangeListener != null) {
-            mContainerView.getViewTreeObserver().removeOnScrollChangedListener(
-                    mScrollChangeListener);
-            mScrollChangeListener = null;
         }
 
         mContentViewCore.onDetachedFromWindow();
@@ -1389,7 +1393,7 @@ public class AwContents {
         boolean windowVisible = mContainerView.getWindowVisibility() == View.VISIBLE;
         boolean viewVisible = mContainerView.getVisibility() == View.VISIBLE;
 
-        return windowVisible && viewVisible && !mIsPaused;
+        return windowVisible && viewVisible;
     }
 
     private void setVisibilityInternal(boolean visible) {
@@ -1397,11 +1401,6 @@ public class AwContents {
         // visibility. In general, callers should use updateVisibilityState
         // instead.
         mIsVisible = visible;
-        if (mIsVisible) {
-            mContentViewCore.onShow();
-        } else {
-            mContentViewCore.onHide();
-        }
         nativeSetVisibility(mNativeAwContents, mIsVisible);
     }
 
@@ -1649,7 +1648,7 @@ public class AwContents {
     @CalledByNative
     private void setAwAutofillManagerDelegate(AwAutofillManagerDelegate delegate) {
         mAwAutofillManagerDelegate = delegate;
-        delegate.init(mContentViewCore, mDIPScale);
+        delegate.init(mContentViewCore);
     }
 
     @CalledByNative
@@ -1658,7 +1657,7 @@ public class AwContents {
             mOverScrollGlow.setOverScrollDeltas(deltaX, deltaY);
         }
 
-        mScrollOffsetManager.overscrollBy(deltaX, deltaY);
+        mScrollOffsetManager.overScrollBy(deltaX, deltaY);
 
         if (mOverScrollGlow != null && mOverScrollGlow.isAnimating()) {
             mContainerView.invalidate();
@@ -1740,8 +1739,9 @@ public class AwContents {
     private native void nativeAddVisitedLinks(int nativeAwContents, String[] visitedLinks);
     private native boolean nativeOnDraw(int nativeAwContents, Canvas canvas,
             boolean isHardwareAccelerated, int scrollX, int ScrollY,
-            int clipLeft, int clipTop, int clipRight, int clipBottom,
-            int visibleLeft, int visibleTop, int visibleRight, int visibleBottom);
+            int clipLeft, int clipTop, int clipRight, int clipBottom);
+    private native void nativeSetGlobalVisibleRect(int nativeAwContents, int visibleLeft,
+            int visibleTop, int visibleRight, int visibleBottom);
     private native void nativeFindAllAsync(int nativeAwContents, String searchString);
     private native void nativeFindNext(int nativeAwContents, boolean forward);
     private native void nativeClearMatches(int nativeAwContents);

@@ -8,36 +8,35 @@ vars = {
   "sourceforge_url": "http://%(repo)s.svn.sourceforge.net/svnroot/%(repo)s",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "155102",
+  "webkit_revision": "155496",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "swig_revision": "69281",
-  "nacl_revision": "11866",
+  "nacl_revision": "11912",
   # After changing nacl_revision, run 'glient sync' and check native_client/DEPS
   # to update other nacl_*_revision's.
   "nacl_tools_revision": "11437",  # native_client/DEPS: tools_rev
   "gtm_revision": "616",
 
-  "libjingle_revision": "374",
   "libphonenumber_revision": "584",
   "libvpx_revision": "212364",
   "lss_revision": "20",
 
   # These two FFmpeg variables must be updated together.  One is used for SVN
   # checkouts and the other for Git checkouts.
-  "ffmpeg_revision": "203786",
-  "ffmpeg_hash": "245a8c0cdfdd5ab3da9045089661017e9ddd8d0e",
+  "ffmpeg_revision": "214392",
+  "ffmpeg_hash": "894e6f715645528e815aee2dad45b59704238dcd",
 
   "sfntly_revision": "134",
-  "skia_revision": "10422",
+  "skia_revision": "10499",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
-  "v8_revision": "15955",
+  "v8_revision": "15975",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
-  "webrtc_revision": "4409",
+  "webrtc_revision": "4462",
   "jsoncpp_revision": "248",
   "nss_revision": "209026",
   # Three lines of non-changing comments so that
@@ -68,10 +67,10 @@ deps = {
 
   "src/third_party/angle_dx11":
     Var("chromium_git") +
-    "/external/angle.git@57a045443cebf1bb035bfa9cc63d392d875136ed",
+    "/external/angle.git@b93f84acdecd3eebf316750d8024b8b592c9012b",
 
   "src/third_party/trace-viewer":
-    (Var("googlecode_url") % "trace-viewer") + "/trunk@784",
+    (Var("googlecode_url") % "trace-viewer") + "/trunk@816",
 
   "src/third_party/WebKit":
     Var("webkit_trunk") + "@" + Var("webkit_revision"),
@@ -171,16 +170,16 @@ deps = {
     "/trunk/deps/third_party/ffmpeg@" +
     Var("ffmpeg_revision"),
 
-  "src/third_party/libjingle/source":
-    (Var("googlecode_url") % "libjingle") + "/trunk@" +
-    Var("libjingle_revision"),
+  "src/third_party/libjingle/source/talk":
+    (Var("googlecode_url") % "webrtc") + "/stable/talk@" +
+    Var("webrtc_revision"),
 
   "src/third_party/usrsctp/usrsctplib":
     (Var("googlecode_url") % "sctp-refimpl") +
     "/trunk/KERN/usrsctp/usrsctplib@8463",
 
   "src/third_party/libsrtp":
-    "/trunk/deps/third_party/libsrtp@212698",
+    "/trunk/deps/third_party/libsrtp@214783",
 
   "src/third_party/speex":
     "/trunk/deps/third_party/speex@198168",
@@ -232,7 +231,7 @@ deps = {
          Var("libphonenumber_revision"),
 
   "src/tools/deps2git":
-    "/trunk/tools/deps2git@202885",
+    "/trunk/tools/deps2git@214390",
 
   "src/third_party/webpagereplay":
     (Var("googlecode_url") % "web-page-replay") + "/trunk@518",
@@ -244,7 +243,7 @@ deps = {
     "/trunk/deps/third_party/opus@185324",
 
   "src/third_party/accessibility-developer-tools":
-    Var("chromium_git") + "/external/accessibility-developer-tools.git@ad5df9a5341d38778658c90e4aa241c4ebe4e8aa",
+    Var("chromium_git") + "/external/accessibility-developer-tools.git@03a584c1b3b9c164cd3c7747c6bd3c2f291aabb2",
 
   "src/webkit/renderer/media/crypto/ppapi/cdm":
     "/trunk/deps/cdm@181763",
@@ -313,7 +312,7 @@ deps_os = {
     # Binary level profile guided optimizations. This points to the
     # latest release binaries for the toolchain.
     "src/third_party/syzygy/binaries":
-      (Var("googlecode_url") % "sawbuck") + "/trunk/syzygy/binaries@1627",
+      (Var("googlecode_url") % "sawbuck") + "/trunk/syzygy/binaries@1689",
 
     # Binaries for nacl sdk.
     "src/third_party/nacl_sdk_binaries":

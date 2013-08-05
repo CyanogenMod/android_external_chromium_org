@@ -24,7 +24,6 @@
 #include "chrome/browser/ui/webui/downloads_ui.h"
 #include "chrome/browser/ui/webui/extensions/extension_info_ui.h"
 #include "chrome/browser/ui/webui/extensions/extensions_ui.h"
-#include "chrome/browser/ui/webui/feedback_ui.h"
 #include "chrome/browser/ui/webui/flags_ui.h"
 #include "chrome/browser/ui/webui/flash_ui.h"
 #include "chrome/browser/ui/webui/help/help_ui.h"
@@ -152,9 +151,9 @@ WebUIController* NewWebUI<ExtensionWebUI>(WebUI* web_ui,
 }
 
 template<>
-WebUIController* NewWebUI<ExtensionInfoUI>(WebUI* web_ui,
-                                           const GURL& url) {
-  return new ExtensionInfoUI(web_ui, url);
+WebUIController* NewWebUI<extensions::ExtensionInfoUI>(WebUI* web_ui,
+                                                       const GURL& url) {
+  return new extensions::ExtensionInfoUI(web_ui, url);
 }
 
 // Special case for older about: handlers.
@@ -287,9 +286,6 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
   // Downloads list on Android uses the built-in download manager.
   if (url.host() == chrome::kChromeUIDownloadsHost)
     return &NewWebUI<DownloadsUI>;
-  // Feedback on Android uses the built-in feedback app.
-  if (url.host() == chrome::kChromeUIFeedbackHost)
-    return &NewWebUI<FeedbackUI>;
   // Flash is not available on android.
   if (url.host() == chrome::kChromeUIFlashHost)
     return &NewWebUI<FlashUI>;
@@ -426,10 +422,10 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
 #if defined(ENABLE_EXTENSIONS)
   if (url.host() == chrome::kChromeUIExtensionInfoHost &&
       extensions::FeatureSwitch::script_badges()->IsEnabled()) {
-    return &NewWebUI<ExtensionInfoUI>;
+    return &NewWebUI<extensions::ExtensionInfoUI>;
   }
   if (url.host() == chrome::kChromeUIExtensionsFrameHost)
-    return &NewWebUI<ExtensionsUI>;
+    return &NewWebUI<extensions::ExtensionsUI>;
 #endif
 #if defined(ENABLE_PRINTING)
   if (url.host() == chrome::kChromeUIPrintHost &&
@@ -589,8 +585,15 @@ base::RefCountedMemory* ChromeWebUIControllerFactory::GetFaviconResourceBytes(
     return DownloadsUI::GetFaviconResourceBytes(scale_factor);
 
   // Android doesn't use the Options pages.
-  if (page_url.host() == chrome::kChromeUISettingsFrameHost)
+  if (page_url.host() == chrome::kChromeUISettingsHost ||
+      page_url.host() == chrome::kChromeUISettingsFrameHost)
     return options::OptionsUI::GetFaviconResourceBytes(scale_factor);
+
+#if defined(ENABLE_EXTENSIONS)
+  if (page_url.host() == chrome::kChromeUIExtensionsHost ||
+      page_url.host() == chrome::kChromeUIExtensionsFrameHost)
+    return extensions::ExtensionsUI::GetFaviconResourceBytes(scale_factor);
+#endif
 
   // Android doesn't use the plugins pages.
   if (page_url.host() == chrome::kChromeUIPluginsHost)

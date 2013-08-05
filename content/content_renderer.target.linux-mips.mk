@@ -54,6 +54,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/android/email_detector.cc \
 	content/renderer/android/phone_number_detector.cc \
 	content/renderer/android/synchronous_compositor_factory.cc \
+	content/renderer/cursor_utils.cc \
 	content/renderer/device_orientation_dispatcher.cc \
 	content/renderer/device_orientation/device_motion_event_pump.cc \
 	content/renderer/devtools/devtools_agent.cc \
@@ -61,6 +62,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/devtools/devtools_client.cc \
 	content/renderer/disambiguation_popup_helper.cc \
 	content/renderer/dom_automation_controller.cc \
+	content/renderer/dom_storage/dom_storage_cached_area.cc \
 	content/renderer/dom_storage/dom_storage_dispatcher.cc \
 	content/renderer/dom_storage/webstoragearea_impl.cc \
 	content/renderer/dom_storage/webstoragenamespace_impl.cc \
@@ -79,7 +81,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/gpu/mailbox_output_surface.cc \
 	content/renderer/gpu/stream_texture_host_android.cc \
 	content/renderer/gpu/render_widget_compositor.cc \
-	content/renderer/hyphenator/hyphenator.cc \
 	content/renderer/idle_user_detector.cc \
 	content/renderer/image_loading_helper.cc \
 	content/renderer/internal_document_state_data.cc \
@@ -294,7 +295,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
 	$(LOCAL_PATH)/third_party/WebKit \
-	$(LOCAL_PATH)/third_party/hyphen \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/libjingle/overrides \
@@ -436,7 +436,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
 	$(LOCAL_PATH)/third_party/WebKit \
-	$(LOCAL_PATH)/third_party/hyphen \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/libjingle/overrides \

@@ -31,7 +31,6 @@ LOCAL_SRC_FILES := \
 	webkit/renderer/cpp_bound_class.cc \
 	webkit/renderer/cpp_variant.cc \
 	webkit/renderer/clipboard_utils.cc \
-	webkit/renderer/cursor_utils.cc \
 	webkit/renderer/webpreferences_renderer.cc
 
 

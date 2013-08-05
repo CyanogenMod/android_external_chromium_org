@@ -11,7 +11,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/extensions/shell_window_registry.h"
 #include "chrome/browser/extensions/suggest_permission_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
@@ -108,7 +107,9 @@ void ShellWindow::Init(const GURL& url,
   // If left and top are left undefined, the native shell window will center
   // the window on the main screen in a platform-defined manner.
 
-  ui::WindowShowState cached_state = ui::SHOW_STATE_DEFAULT;
+  CreateParams new_params = params;
+
+  // Load cached state if it exists.
   if (!params.window_key.empty()) {
     window_key_ = params.window_key;
 
@@ -116,25 +117,22 @@ void ShellWindow::Init(const GURL& url,
 
     gfx::Rect cached_bounds;
     gfx::Rect cached_screen_bounds;
+    ui::WindowShowState cached_state = ui::SHOW_STATE_DEFAULT;
     if (cache->GetGeometry(extension()->id(), params.window_key, &cached_bounds,
                            &cached_screen_bounds, &cached_state)) {
-      bounds = cached_bounds;
       // App window has cached screen bounds, make sure it fits on screen in
       // case the screen resolution changed.
-      if (!cached_screen_bounds.IsEmpty()) {
-        gfx::Screen* screen = gfx::Screen::GetNativeScreen();
-        gfx::Display display = screen->GetDisplayMatching(cached_bounds);
-        gfx::Rect current_screen_bounds = display.work_area();
-        AdjustBoundsToBeVisibleOnScreen(cached_bounds,
-                                        cached_screen_bounds,
-                                        current_screen_bounds,
-                                        params.minimum_size,
-                                        &bounds);
-      }
+      gfx::Screen* screen = gfx::Screen::GetNativeScreen();
+      gfx::Display display = screen->GetDisplayMatching(cached_bounds);
+      gfx::Rect current_screen_bounds = display.work_area();
+      AdjustBoundsToBeVisibleOnScreen(cached_bounds,
+                                      cached_screen_bounds,
+                                      current_screen_bounds,
+                                      params.minimum_size,
+                                      &bounds);
+      new_params.state = cached_state;
     }
   }
-
-  CreateParams new_params = params;
 
   gfx::Size& minimum_size = new_params.minimum_size;
   gfx::Size& maximum_size = new_params.maximum_size;
@@ -157,9 +155,6 @@ void ShellWindow::Init(const GURL& url,
     bounds.set_height(minimum_size.height());
 
   new_params.bounds = bounds;
-
-  if (cached_state != ui::SHOW_STATE_DEFAULT)
-    new_params.state = cached_state;
 
   native_app_window_.reset(NativeAppWindow::Create(this, new_params));
 
@@ -356,6 +351,9 @@ void ShellWindow::SetAppIconUrl(const GURL& url) {
   // Avoid using any previous app icons were are being downloaded.
   image_loader_ptr_factory_.InvalidateWeakPtrs();
 
+  // Reset |app_icon_image_| to abort pending image load (if any).
+  app_icon_image_.reset();
+
   app_icon_url_ = url;
   web_contents()->DownloadImage(
       url,
@@ -405,10 +403,6 @@ void ShellWindow::Restore() {
 //------------------------------------------------------------------------------
 // Private methods
 
-void ShellWindow::OnImageLoaded(const gfx::Image& image) {
-  UpdateAppIcon(image);
-}
-
 void ShellWindow::DidDownloadFavicon(int id,
                                      int http_status_code,
                                      const GURL& image_url,
@@ -429,20 +423,27 @@ void ShellWindow::DidDownloadFavicon(int id,
   UpdateAppIcon(gfx::Image::CreateFrom1xBitmap(largest));
 }
 
+void ShellWindow::OnExtensionIconImageChanged(extensions::IconImage* image) {
+  DCHECK_EQ(app_icon_image_.get(), image);
+
+  UpdateAppIcon(gfx::Image(app_icon_image_->image_skia()));
+}
+
 void ShellWindow::UpdateExtensionAppIcon() {
   // Avoid using any previous app icons were are being downloaded.
   image_loader_ptr_factory_.InvalidateWeakPtrs();
 
-  // Enqueue OnImageLoaded callback.
-  extensions::ImageLoader* loader = extensions::ImageLoader::Get(profile());
-  loader->LoadImageAsync(
+  app_icon_image_.reset(new extensions::IconImage(
+      profile(),
       extension(),
-      extensions::IconsInfo::GetIconResource(extension(),
-                                             delegate_->PreferredIconSize(),
-                                             ExtensionIconSet::MATCH_BIGGER),
-      gfx::Size(delegate_->PreferredIconSize(), delegate_->PreferredIconSize()),
-      base::Bind(&ShellWindow::OnImageLoaded,
-                 image_loader_ptr_factory_.GetWeakPtr()));
+      extensions::IconsInfo::GetIcons(extension()),
+      delegate_->PreferredIconSize(),
+      extensions::IconsInfo::GetDefaultAppIcon(),
+      this));
+
+  // Triggers actual image loading with 1x resources. The 2x resource will
+  // be handled by IconImage class when requested.
+  app_icon_image_->image_skia().GetRepresentation(ui::SCALE_FACTOR_100P);
 }
 
 void ShellWindow::CloseContents(WebContents* contents) {
@@ -589,16 +590,12 @@ void ShellWindow::AdjustBoundsToBeVisibleOnScreen(
     const gfx::Rect& current_screen_bounds,
     const gfx::Size& minimum_size,
     gfx::Rect* bounds) const {
-  if (!bounds)
-    return;
-
   *bounds = cached_bounds;
 
   // Reposition and resize the bounds if the cached_screen_bounds is different
   // from the current screen bounds and the current screen bounds doesn't
   // completely contain the bounds.
-  if (!cached_screen_bounds.IsEmpty() &&
-      cached_screen_bounds != current_screen_bounds &&
+  if (cached_screen_bounds != current_screen_bounds &&
       !current_screen_bounds.Contains(cached_bounds)) {
     bounds->set_width(
         std::max(minimum_size.width(),

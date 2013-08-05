@@ -44,6 +44,8 @@
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context_factory.h"
 #include "chrome/browser/history/shortcuts_backend.h"
 #include "chrome/browser/history/top_sites.h"
+#include "chrome/browser/media/chrome_midi_permission_context.h"
+#include "chrome/browser/media/chrome_midi_permission_context_factory.h"
 #include "chrome/browser/metrics/metrics_service.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
 #include "chrome/browser/net/net_pref_observer.h"
@@ -699,6 +701,10 @@ Profile* ProfileImpl::GetOriginalProfile() {
   return this;
 }
 
+bool ProfileImpl::IsManaged() {
+  return GetPrefs()->GetBoolean(prefs::kProfileIsManaged);
+}
+
 ExtensionService* ProfileImpl::GetExtensionService() {
   return extensions::ExtensionSystem::Get(this)->extension_service();
 }
@@ -863,8 +869,12 @@ void ProfileImpl::RequestMIDISysExPermission(
       int render_view_id,
       const GURL& requesting_frame,
       const MIDISysExPermissionCallback& callback) {
-  // TODO(toyoshim): Implement. http://crbug.com/257618 .
-  callback.Run(false);
+  ChromeMIDIPermissionContext* context =
+      ChromeMIDIPermissionContextFactory::GetForProfile(this);
+  context->RequestMIDISysExPermission(render_process_id,
+                                      render_view_id,
+                                      requesting_frame,
+                                      callback);
 }
 
 content::ResourceContext* ProfileImpl::GetResourceContext() {
@@ -908,7 +918,7 @@ content::GeolocationPermissionContext*
 }
 
 DownloadManagerDelegate* ProfileImpl::GetDownloadManagerDelegate() {
-  return DownloadServiceFactory::GetForProfile(this)->
+  return DownloadServiceFactory::GetForBrowserContext(this)->
       GetDownloadManagerDelegate();
 }
 

@@ -81,9 +81,6 @@ cr.define('options', function() {
         chrome.send('SyncSetupStopSyncing');
         self.closeOverlay_();
       };
-      $('sync-configure-content').onclick = function() {
-        self.onConfigurationClicked_();
-      };
     },
 
     showOverlay_: function() {
@@ -111,29 +108,6 @@ cr.define('options', function() {
     onEncryptionRadioChanged_: function() {
       var visible = $('full-encryption-option').checked;
       $('sync-custom-passphrase').hidden = !visible;
-    },
-
-    onConfigurationClicked_: function() {
-      // Avoid to foucus on labeled checkboxes and radio buttons.
-      // We don't want to show focus rings for them when labels are clicked.
-      if (event.target.tagName == 'INPUT')
-        return;
-      for (var node = event.target; node; node = node.parentNode) {
-        if (node.tagName != 'LABEL')
-          continue;
-        var control = node.control;
-        if (!control || control.disabled)
-          return;
-        if (control.type == 'checkbox') {
-          control.checked = !control.checked;
-          event.preventDefault();
-        } else if (control.type == 'radio') {
-          control.checked = !control.checked;
-          this.onEncryptionRadioChanged_();
-          event.preventDefault();
-        }
-        return;
-      }
     },
 
     /**
@@ -277,7 +251,9 @@ cr.define('options', function() {
       // Don't allow the user to tweak the settings once we send the
       // configuration to the backend.
       this.setInputElementsDisabledState_(true);
-      this.animateDisableLink_($('use-default-link'), true, null);
+      $('use-default-link').hidden = true;
+      $('use-default-link').disabled = true;
+      $('use-default-link').onclick = null;
 
       // These values need to be kept in sync with where they are read in
       // SyncSetupFlow::GetDataTypeChoiceData().
@@ -320,37 +296,13 @@ cr.define('options', function() {
         configureElements[i].disabled = disabled;
       $('sync-select-datatypes').disabled = disabled;
 
-      var self = this;
-      this.animateDisableLink_($('customize-link'), disabled, function() {
-        self.showCustomizePage_(null, DataTypeSelection.SYNC_EVERYTHING);
+      $('customize-link').hidden = disabled;
+      $('customize-link').disabled = disabled;
+      $('customize-link').onclick = (disabled ? null : function() {
+        SyncSetupOverlay.showCustomizePage(null,
+                                           DataTypeSelection.SYNC_EVERYTHING);
+        return false;
       });
-    },
-
-    /**
-     * Animate a link being enabled/disabled. The link is hidden by animating
-     * its opacity, but to ensure the user doesn't click it during that time,
-     * its onclick handler is changed to null as well.
-     * @param {HTMLElement} elt The anchor element to enable/disable.
-     * @param {boolean} disabled True if the link should be disabled.
-     * @param {function} enabledFunction The onclick handler when the link is
-     *     enabled.
-     * @private
-     */
-    animateDisableLink_: function(elt, disabled, enabledFunction) {
-      if (disabled) {
-        elt.classList.add('transparent');
-        elt.onclick = null;
-        elt.addEventListener('webkitTransitionEnd', function f(e) {
-          if (e.propertyName != 'opacity')
-            return;
-          elt.removeEventListener('webkitTransitionEnd', f);
-          elt.classList.remove('transparent');
-          elt.hidden = true;
-        });
-      } else {
-        elt.hidden = false;
-        elt.onclick = enabledFunction;
-      }
     },
 
     /**
@@ -564,6 +516,8 @@ cr.define('options', function() {
 
       // Hide the "use default settings" link.
       $('use-default-link').hidden = true;
+      $('use-default-link').disabled = true;
+      $('use-default-link').onclick = null;
     },
 
     /**
@@ -578,6 +532,8 @@ cr.define('options', function() {
       // Once we require a passphrase, we prevent the user from returning to
       // the Sync Everything pane.
       $('use-default-link').hidden = true;
+      $('use-default-link').disabled = true;
+      $('use-default-link').onclick = null;
       $('sync-custom-passphrase-container').hidden = true;
       $('sync-existing-passphrase-container').hidden = false;
 
@@ -635,10 +591,12 @@ cr.define('options', function() {
       } else {
         // We only show the 'Use Default' link if we're not prompting for an
         // existing passphrase.
-        var self = this;
-        this.animateDisableLink_($('use-default-link'), false, function() {
-          self.showSyncEverythingPage_();
-        });
+        $('use-default-link').hidden = false;
+        $('use-default-link').disabled = false;
+        $('use-default-link').onclick = function() {
+          SyncSetupOverlay.showSyncEverythingPage();
+          return false;
+        };
       }
     },
 
@@ -793,6 +751,14 @@ cr.define('options', function() {
 
   SyncSetupOverlay.showSyncSetupPage = function(page, args) {
     SyncSetupOverlay.getInstance().showSyncSetupPage_(page, args);
+  };
+
+  SyncSetupOverlay.showCustomizePage = function(args, index) {
+    SyncSetupOverlay.getInstance().showCustomizePage_(args, index);
+  };
+
+  SyncSetupOverlay.showSyncEverythingPage = function() {
+    SyncSetupOverlay.getInstance().showSyncEverythingPage_();
   };
 
   SyncSetupOverlay.showStopSyncingUI = function() {

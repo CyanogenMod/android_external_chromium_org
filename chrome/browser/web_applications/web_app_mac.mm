@@ -7,6 +7,7 @@
 #import <Carbon/Carbon.h>
 #import <Cocoa/Cocoa.h>
 
+#include "apps/app_shim/app_shim_mac.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_enumerator.h"
@@ -414,7 +415,8 @@ size_t WebAppShortcutCreator::CreateShortcutsIn(
   return succeeded;
 }
 
-bool WebAppShortcutCreator::CreateShortcuts() {
+bool WebAppShortcutCreator::CreateShortcuts(
+    ShortcutCreationReason creation_reason) {
   base::FilePath dst_path = GetDestinationPath();
   if (dst_path.empty() || !base::DirectoryExists(dst_path.DirName())) {
     LOG(ERROR) << "Couldn't find an Applications directory to copy app to.";
@@ -452,7 +454,9 @@ bool WebAppShortcutCreator::CreateShortcuts() {
     dock::AddIcon(internal_app_list_app_path, nil);
   }
 
-  RevealAppShimInFinder();
+  if (creation_reason == SHORTCUT_CREATION_BY_USER)
+    RevealAppShimInFinder();
+
   return true;
 }
 
@@ -691,7 +695,7 @@ base::FilePath GetAppInstallPath(
 }
 
 void MaybeLaunchShortcut(const ShellIntegration::ShortcutInfo& shortcut_info) {
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableAppShims))
+  if (!apps::IsAppShimsEnabled())
     return;
 
   content::BrowserThread::PostTask(
@@ -705,11 +709,11 @@ bool CreatePlatformShortcuts(
     const base::FilePath& app_data_path,
     const ShellIntegration::ShortcutInfo& shortcut_info,
     const ShellIntegration::ShortcutLocations& creation_locations,
-    ShortcutCreationReason /*creation_reason*/) {
+    ShortcutCreationReason creation_reason) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
   WebAppShortcutCreator shortcut_creator(
       app_data_path, shortcut_info, base::mac::BaseBundleID());
-  return shortcut_creator.CreateShortcuts();
+  return shortcut_creator.CreateShortcuts(creation_reason);
 }
 
 void DeletePlatformShortcuts(

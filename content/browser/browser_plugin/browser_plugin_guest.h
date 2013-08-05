@@ -222,7 +222,9 @@ class CONTENT_EXPORT BrowserPluginGuest
   virtual bool HandleJavaScriptDialog(WebContents* web_contents,
                                       bool accept,
                                       const string16* prompt_override) OVERRIDE;
-  virtual void ResetJavaScriptState(WebContents* web_contents) OVERRIDE;
+  virtual void CancelActiveAndPendingDialogs(
+      WebContents* web_contents) OVERRIDE;
+  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
 
   // Exposes the protected web_contents() from WebContentsObserver.
   WebContentsImpl* GetWebContents();
@@ -410,6 +412,7 @@ class CONTENT_EXPORT BrowserPluginGuest
   void OnUpdateGeometry(int instance_id, const gfx::Rect& view_rect);
   void OnUpdateRectACK(
       int instance_id,
+      bool needs_ack,
       const BrowserPluginHostMsg_AutoSize_Params& auto_size_params,
       const BrowserPluginHostMsg_ResizeGuest_Params& resize_guest_params);
 

@@ -205,6 +205,7 @@
         'INTERACTIVE_TESTS',
       ],
       'sources': [
+        '../apps/app_shim/app_shim_quit_interactive_uitest_mac.mm',
         'browser/autofill/autofill_interactive_uitest.cc',
         'browser/browser_keyevents_browsertest.cc',
         'browser/extensions/api/omnibox/omnibox_api_interactive_test.cc',
@@ -328,6 +329,7 @@
         ['use_ash==1', {
           'sources': [
             '../ash/drag_drop/drag_drop_interactive_uitest.cc',
+            'browser/ui/window_sizer/window_sizer_ash_uitest.cc',
           ],
         }],
         ['OS=="linux" and toolkit_views==1', {
@@ -389,6 +391,7 @@
           'sources': [
             'browser/chromeos/cros/cros_in_process_browser_test.cc',
             'browser/chromeos/cros/cros_in_process_browser_test.h',
+            'browser/chromeos/input_method/keyboard_browsertest.cc',
             'browser/chromeos/input_method/textinput_browsertest.cc',
             'browser/chromeos/input_method/textinput_surroundingtext_browsertest.cc',
             'browser/chromeos/input_method/textinput_test_helper.cc',
@@ -453,7 +456,6 @@
             '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_unscaled_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.rc',
-            '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.rc',
 
             'browser/ui/views/accessibility/browser_views_accessibility_browsertest.cc',
           ],
@@ -999,8 +1001,6 @@
       'sources': [
         'test/chromedriver/server/http_handler.cc',
         'test/chromedriver/server/http_handler.h',
-        'test/chromedriver/server/http_response.cc',
-        'test/chromedriver/server/http_response.h',
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
@@ -1015,13 +1015,10 @@
         '..',
       ],
       'sources': [
-        '../third_party/mongoose/mongoose.c',
-        '../third_party/mongoose/mongoose.h',
         'test/chromedriver/server/chromedriver_server.cc',
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-      # c4306 is because Mongoose casts -1 directly to a handle type.
-      'msvs_disabled_warnings': [ 4306, 4267, ],
+      'msvs_disabled_warnings': [ 4267, ],
     },
     {
       'target_name': 'chromedriver2_unittests',
@@ -1061,7 +1058,6 @@
         'test/chromedriver/commands_unittest.cc',
         'test/chromedriver/logging_unittest.cc',
         'test/chromedriver/server/http_handler_unittest.cc',
-        'test/chromedriver/server/http_response_unittest.cc',
         'test/chromedriver/session_commands_unittest.cc',
         'test/chromedriver/session_unittest.cc',
         'test/chromedriver/util_unittest.cc',
@@ -1352,7 +1348,6 @@
         'browser/extensions/api/usb/usb_manual_apitest.cc',
         'browser/extensions/api/web_navigation/web_navigation_apitest.cc',
         'browser/extensions/api/web_request/web_request_apitest.cc',
-        'browser/extensions/api/web_socket_proxy_private/web_socket_proxy_private_apitest.cc',
         'browser/extensions/api/webstore_private/webstore_private_apitest.cc',
         'browser/extensions/app_background_page_apitest.cc',
         'browser/extensions/app_process_apitest.cc',
@@ -1484,6 +1479,7 @@
         'browser/policy/policy_prefs_browsertest.cc',
         'browser/policy/test_utils.cc',
         'browser/policy/test_utils.h',
+        'browser/prefs/pref_functional_browsertest.cc',
         'browser/prefs/pref_service_browsertest.cc',
         'browser/prerender/prefetch_browsertest.cc',
         'browser/prerender/prerender_browsertest.cc',
@@ -1592,6 +1588,7 @@
         'browser/ui/panels/panel_extension_browsertest.cc',
         'browser/ui/prefs/prefs_tab_helper_browsertest.cc',
         'browser/ui/startup/startup_browser_creator_browsertest.cc',
+        'browser/ui/sync/one_click_signin_bubble_links_delegate_browsertest.cc',
         'browser/ui/sync/profile_signin_confirmation_helper_browsertest.cc',
         'browser/ui/tab_modal_confirm_dialog_browsertest.cc',
         'browser/ui/tab_modal_confirm_dialog_browsertest.h',
@@ -1605,7 +1602,6 @@
         'browser/ui/views/frame/immersive_mode_controller_ash_browsertest.cc',
         'browser/ui/views/location_bar/zoom_bubble_view_browsertest.cc',
         'browser/ui/views/select_file_dialog_extension_browsertest.cc',
-        'browser/ui/views/sync/one_click_signin_bubble_view_browsertest.cc',
         'browser/ui/views/toolbar_view_browsertest.cc',
         'browser/ui/views/web_dialog_view_browsertest.cc',
         'browser/ui/webui/bidi_checker_web_ui_test.cc',
@@ -1640,6 +1636,7 @@
         'browser/ui/webui/options/font_settings_browsertest.js',
         'browser/ui/webui/options/language_options_browsertest.js',
         'browser/ui/webui/options/language_options_dictionary_download_browsertest.js',
+        'browser/ui/webui/options/manage_profile_browsertest.js',
         'browser/ui/webui/options/options_browsertest.cc',
         'browser/ui/webui/options/options_browsertest.js',
         'browser/ui/webui/options/options_ui_browsertest.cc',
@@ -1760,7 +1757,7 @@
         ['enable_one_click_signin==0', {
           'sources!': [
             'browser/ui/gtk/one_click_signin_bubble_gtk_browsertest.cc',
-            'browser/ui/views/sync/one_click_signin_bubble_view_browsertest.cc',
+            'browser/ui/sync/one_click_signin_bubble_links_delegate_browsertest.cc',
           ]
         }],
         ['disable_nacl==0', {
@@ -1928,7 +1925,6 @@
             '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_unscaled_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.rc',
-            '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.rc',
           ],
           'include_dirs': [
             '<(DEPTH)/third_party/wtl/include',
@@ -2167,7 +2163,6 @@
             '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_unscaled_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.rc',
-            '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.rc',
           ],
           'include_dirs': [
             '<(DEPTH)/third_party/wtl/include',
@@ -2551,7 +2546,6 @@
             '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_unscaled_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.rc',
-            '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.rc',
           ],
           'include_dirs': [
             '<(DEPTH)/third_party/wtl/include',

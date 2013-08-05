@@ -264,7 +264,8 @@ FileSelectionHandler.prototype.updateOkButton = function() {
   var selectable;
   var dialogType = this.fileManager_.dialogType;
 
-  if (dialogType == DialogType.SELECT_FOLDER) {
+  if (dialogType == DialogType.SELECT_FOLDER ||
+      dialogType == DialogType.SELECT_UPLOAD_FOLDER) {
     // In SELECT_FOLDER mode, we allow to select current directory
     // when nothing is selected.
     selectable = this.selection.directoryCount <= 1 &&
@@ -533,11 +534,8 @@ FileSelectionHandler.prototype.updateFileSelectionAsync = function(selection) {
   }
 
   // Sync the commands availability.
-  if (selection.totalCount != 0) {
-    var commands = this.fileManager_.dialogDom_.querySelectorAll('command');
-    for (var i = 0; i < commands.length; i++)
-      commands[i].canExecuteChange();
-  }
+  if (selection.totalCount != 0)
+    this.fileManager_.updateCommands();
 
   // Update context menu.
   this.fileManager_.updateContextMenuActionItems(null, false);

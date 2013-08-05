@@ -127,8 +127,8 @@ class TestDelegate : public OutputConfigurator::Delegate {
     AppendAction(GetBackgroundAction(color_argb));
   }
   virtual void ForceDPMSOn() OVERRIDE { AppendAction(kForceDPMS); }
-  virtual std::vector<OutputConfigurator::OutputSnapshot> GetOutputs()
-      OVERRIDE {
+  virtual std::vector<OutputConfigurator::OutputSnapshot> GetOutputs(
+      const OutputConfigurator::StateController* controller) OVERRIDE {
     return outputs_;
   }
   virtual bool GetModeDetails(
@@ -210,6 +210,12 @@ class TestStateController : public OutputConfigurator::StateController {
   // OutputConfigurator::StateController overrides:
   virtual OutputState GetStateForDisplayIds(
       const std::vector<int64>& outputs) const OVERRIDE { return state_; }
+  virtual bool GetResolutionForDisplayId(
+      int64 display_id,
+      int *width,
+      int *height) const OVERRIDE {
+    return false;
+  }
 
  private:
   OutputState state_;
@@ -255,6 +261,7 @@ class OutputConfiguratorTest : public testing::Test {
     o->crtc = 10;
     o->current_mode = kSmallModeId;
     o->native_mode = kSmallModeId;
+    o->selected_mode = kSmallModeId;
     o->mirror_mode = kSmallModeId;
     o->y = 0;
     o->height = kSmallModeHeight;
@@ -268,6 +275,7 @@ class OutputConfiguratorTest : public testing::Test {
     o->crtc = 11;
     o->current_mode = kBigModeId;
     o->native_mode = kBigModeId;
+    o->selected_mode = kBigModeId;
     o->mirror_mode = kSmallModeId;
     o->y = 0;
     o->height = kBigModeHeight;
@@ -309,10 +317,9 @@ class OutputConfiguratorTest : public testing::Test {
   virtual void InitWithSingleOutput() {
     UpdateOutputs(1);
     EXPECT_EQ(kNoActions, delegate_->GetActionsAndClear());
-    configurator_.Init(false, 0);
-    EXPECT_EQ(JoinActions(kGrab, kUngrab, NULL),
-              delegate_->GetActionsAndClear());
-    configurator_.Start();
+    configurator_.Init(false);
+    EXPECT_EQ(kNoActions, delegate_->GetActionsAndClear());
+    configurator_.Start(0);
     EXPECT_EQ(JoinActions(kGrab, kInitXRandR,
                           GetFramebufferAction(kSmallModeWidth,
                               kSmallModeHeight, outputs_[0].crtc, 0).c_str(),
@@ -662,9 +669,9 @@ TEST_F(OutputConfiguratorTest, SuspendAndResume) {
 TEST_F(OutputConfiguratorTest, Headless) {
   UpdateOutputs(0);
   EXPECT_EQ(kNoActions, delegate_->GetActionsAndClear());
-  configurator_.Init(false, 0);
-  EXPECT_EQ(JoinActions(kGrab, kUngrab, NULL), delegate_->GetActionsAndClear());
-  configurator_.Start();
+  configurator_.Init(false);
+  EXPECT_EQ(kNoActions, delegate_->GetActionsAndClear());
+  configurator_.Start(0);
   EXPECT_EQ(JoinActions(kGrab, kInitXRandR, kForceDPMS, kUngrab,
                         kProjectingOff, NULL),
             delegate_->GetActionsAndClear());
@@ -682,6 +689,7 @@ TEST_F(OutputConfiguratorTest, Headless) {
   // Connect an external display and check that it's configured correctly.
   outputs_[0].is_internal = false;
   outputs_[0].native_mode = kBigModeId;
+  outputs_[0].selected_mode = kBigModeId;
   UpdateOutputs(1);
   EXPECT_TRUE(test_api_.SendOutputChangeEvents(true));
   EXPECT_EQ(JoinActions(kUpdateXRandR, kGrab,
@@ -696,11 +704,11 @@ TEST_F(OutputConfiguratorTest, Headless) {
 TEST_F(OutputConfiguratorTest, StartWithTwoOutputs) {
   UpdateOutputs(2);
   EXPECT_EQ(kNoActions, delegate_->GetActionsAndClear());
-  configurator_.Init(false, 0);
-  EXPECT_EQ(JoinActions(kGrab, kUngrab, NULL), delegate_->GetActionsAndClear());
+  configurator_.Init(false);
+  EXPECT_EQ(kNoActions, delegate_->GetActionsAndClear());
 
   state_controller_.set_state(STATE_DUAL_MIRROR);
-  configurator_.Start();
+  configurator_.Start(0);
   EXPECT_EQ(JoinActions(kGrab, kInitXRandR,
                         GetFramebufferAction(kSmallModeWidth, kSmallModeHeight,
                             outputs_[0].crtc, outputs_[1].crtc).c_str(),
@@ -715,8 +723,8 @@ TEST_F(OutputConfiguratorTest, StartWithTwoOutputs) {
 TEST_F(OutputConfiguratorTest, InvalidOutputStates) {
   UpdateOutputs(0);
   EXPECT_EQ(kNoActions, delegate_->GetActionsAndClear());
-  configurator_.Init(false, 0);
-  configurator_.Start();
+  configurator_.Init(false);
+  configurator_.Start(0);
   EXPECT_TRUE(configurator_.SetDisplayMode(STATE_HEADLESS));
   EXPECT_FALSE(configurator_.SetDisplayMode(STATE_SINGLE));
   EXPECT_FALSE(configurator_.SetDisplayMode(STATE_DUAL_MIRROR));
@@ -742,8 +750,8 @@ TEST_F(OutputConfiguratorTest, GetOutputStateForDisplays) {
   outputs_[0].has_display_id = false;
   UpdateOutputs(2);
 
-  configurator_.Init(false, 0);
-  configurator_.Start();
+  configurator_.Init(false);
+  configurator_.Start(0);
 
   state_controller_.set_state(STATE_DUAL_MIRROR);
   test_api_.SendOutputChangeEvents(true);

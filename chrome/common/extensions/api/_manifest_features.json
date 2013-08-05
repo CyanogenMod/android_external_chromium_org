@@ -147,7 +147,7 @@
     }
   ],
   "export": {
-    "channel": "dev",
+    "channel": "stable",
     "extension_types": ["shared_module"],
     "whitelist": [
       "gpcckkmippodnppallflahfabmeilgjg", // browser and unit tests
@@ -177,7 +177,7 @@
     "extension_types": "all"
   },
   "import": {
-    "channel": "dev",
+    "channel": "stable",
     "extension_types": "all"
   },
   "incognito": {
@@ -281,10 +281,6 @@
     "channel": "stable",
     "extension_types": ["extension"],
     "max_manifest_version": 1
-  },
-  "page_launcher": {
-    "channel": "dev",
-    "extension_types": ["platform_app"]
   },
   "permissions": {
     "channel": "stable",

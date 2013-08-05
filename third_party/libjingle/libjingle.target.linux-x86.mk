@@ -43,7 +43,6 @@ LOCAL_SRC_FILES := \
 	third_party/libjingle/source/talk/base/firewallsocketserver.cc \
 	third_party/libjingle/source/talk/base/flags.cc \
 	third_party/libjingle/source/talk/base/helpers.cc \
-	third_party/libjingle/source/talk/base/host.cc \
 	third_party/libjingle/source/talk/base/httpbase.cc \
 	third_party/libjingle/source/talk/base/httpclient.cc \
 	third_party/libjingle/source/talk/base/httpcommon.cc \

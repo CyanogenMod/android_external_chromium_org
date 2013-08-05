@@ -36,6 +36,7 @@
 #include "content/public/test/test_utils.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
 
+namespace file_manager {
 namespace {
 
 enum EntryType {
@@ -377,7 +378,7 @@ void FileManagerBrowserTest::SetUpOnMainThread() {
     for (size_t i = 0; i < arraysize(kTestEntrySetDriveOnly); ++i)
       drive_volume_->CreateEntry(kTestEntrySetDriveOnly[i]);
 
-    drive_test_util::WaitUntilDriveMountPointIsAdded(browser()->profile());
+    test_util::WaitUntilDriveMountPointIsAdded(browser()->profile());
   }
 }
 
@@ -454,9 +455,8 @@ INSTANTIATE_TEST_CASE_P(
                                     "galleryOpenDownloads"),
                       TestParameter(NOT_IN_GUEST_MODE, "galleryOpenDrive")));
 
-// TODO(mtomasz): Fix this test. crbug.com/252561
 INSTANTIATE_TEST_CASE_P(
-    DISABLED_KeyboardOperations,
+    KeyboardOperations,
     FileManagerBrowserTest,
     ::testing::Values(TestParameter(IN_GUEST_MODE, "keyboardDeleteDownloads"),
                       TestParameter(NOT_IN_GUEST_MODE,
@@ -508,4 +508,6 @@ INSTANTIATE_TEST_CASE_P(
                       TestParameter(NOT_IN_GUEST_MODE, "restoreSortColumn"),
                       TestParameter(IN_GUEST_MODE, "restoreCurrentView"),
                       TestParameter(NOT_IN_GUEST_MODE, "restoreCurrentView")));
+
 }  // namespace
+}  // namespace file_manager

@@ -1198,8 +1198,8 @@ IPC_MESSAGE_ROUTED1(ViewMsg_SetActive,
 // Sent when the worker has started.
 IPC_MESSAGE_ROUTED0(ViewMsg_WorkerCreated)
 
-// The response to ViewHostMsg_AsyncOpenFile.
-IPC_MESSAGE_ROUTED3(ViewMsg_AsyncOpenFile_ACK,
+// The response to ViewHostMsg_AsyncOpenPepperFile.
+IPC_MESSAGE_ROUTED3(ViewMsg_AsyncOpenPepperFile_ACK,
                     base::PlatformFileError /* error_code */,
                     IPC::PlatformFileForTransit /* file descriptor */,
                     int /* message_id */)
@@ -1882,6 +1882,17 @@ IPC_MESSAGE_CONTROL3(ViewHostMsg_DidDeleteOutOfProcessPepperInstance,
                      int32 /* pp_instance */,
                      bool /* is_external */)
 
+// Message from the renderer to the browser indicating the in-process instance
+// has been created.
+IPC_MESSAGE_CONTROL2(ViewHostMsg_DidCreateInProcessInstance,
+                     int32 /* instance */,
+                     content::PepperRendererInstanceData /* instance_data */)
+
+// Message from the renderer to the browser indicating the in-process instance
+// has been destroyed.
+IPC_MESSAGE_CONTROL1(ViewHostMsg_DidDeleteInProcessInstance,
+                     int32 /* instance */)
+
 // A renderer sends this to the browser process when it wants to
 // create a ppapi broker.  The browser will create the broker process
 // if necessary, and will return a handle to the channel on success.
@@ -1891,6 +1902,13 @@ IPC_MESSAGE_CONTROL3(ViewHostMsg_OpenChannelToPpapiBroker,
                      int /* routing_id */,
                      int /* request_id */,
                      base::FilePath /* path */)
+
+// Opens a Pepper file asynchronously. The response returns a file descriptor
+// and an error code from base/platform_file.h.
+IPC_MESSAGE_ROUTED3(ViewHostMsg_AsyncOpenPepperFile,
+                    base::FilePath /* file path */,
+                    int /* pp_open_flags */,
+                    int /* message_id */)
 
 // A renderer sends this to the browser process when it wants to access a PPAPI
 // broker. In contrast to ViewHostMsg_OpenChannelToPpapiBroker, this is called
@@ -2071,13 +2089,6 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_SwapCompositorFrame,
 IPC_MESSAGE_ROUTED2(ViewHostMsg_DidOverscroll,
                     gfx::Vector2dF /* accumulated_overscroll */,
                     gfx::Vector2dF /* current_fling_velocity */)
-
-// Opens a file asynchronously. The response returns a file descriptor
-// and an error code from base/platform_file.h.
-IPC_MESSAGE_ROUTED3(ViewHostMsg_AsyncOpenFile,
-                    base::FilePath /* file path */,
-                    int /* flags */,
-                    int /* message_id */)
 
 // Reply to a snapshot request containing whether snapshotting succeeded and the
 // SkBitmap if it succeeded.

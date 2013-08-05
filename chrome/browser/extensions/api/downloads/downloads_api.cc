@@ -47,17 +47,22 @@
 #include "chrome/browser/icon_loader.h"
 #include "chrome/browser/icon_manager.h"
 #include "chrome/browser/platform_util.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_host/chrome_render_message_filter.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/cancelable_task_tracker.h"
 #include "chrome/common/extensions/api/downloads.h"
+#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/permissions/permissions_data.h"
 #include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_save_info.h"
 #include "content/public/browser/download_url_parameters.h"
+#include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_context.h"
@@ -82,6 +87,7 @@ namespace download_extension_errors {
 
 const char kEmptyFile[] = "Filename not yet determined";
 const char kFileAlreadyDeleted[] = "Download file already deleted";
+const char kHostPermission[] = "Access to that hostname must be requested";
 const char kIconNotFound[] = "Icon not found";
 const char kInvalidDangerType[] = "Invalid danger type";
 const char kInvalidFilename[] = "Invalid filename";
@@ -99,6 +105,9 @@ const char kNotDangerous[] = "Download must be dangerous";
 const char kNotInProgress[] = "Download must be in progress";
 const char kNotResumable[] = "DownloadItem.canResume must be true";
 const char kOpenPermission[] = "The \"downloads.open\" permission is required";
+const char kShelfDisabled[] = "Another extension has disabled the shelf";
+const char kShelfPermission[] = "downloads.setShelfEnabled requires the "
+  "\"downloads.shelf\" permission";
 const char kTooManyListeners[] = "Each extension may have at most one "
   "onDeterminingFilename listener between all of its renderer execution "
   "contexts.";
@@ -114,6 +123,8 @@ namespace {
 const int  kDefaultIconSize = 32;
 
 // Parameter keys
+const char kByExtensionIdKey[] = "byExtensionId";
+const char kByExtensionNameKey[] = "byExtensionName";
 const char kBytesReceivedKey[] = "bytesReceived";
 const char kCanResumeKey[] = "canResume";
 const char kDangerAccepted[] = "accepted";
@@ -227,7 +238,7 @@ std::string TimeToISO8601(const base::Time& t) {
 
 scoped_ptr<base::DictionaryValue> DownloadItemToJSON(
     DownloadItem* download_item,
-    bool incognito) {
+    Profile* profile) {
   base::DictionaryValue* json = new base::DictionaryValue();
   json->SetBoolean(kExistsKey, !download_item->GetFileExternallyRemoved());
   json->SetInteger(kIdKey, download_item->GetId());
@@ -246,7 +257,7 @@ scoped_ptr<base::DictionaryValue> DownloadItemToJSON(
   json->SetString(kStartTimeKey, TimeToISO8601(download_item->GetStartTime()));
   json->SetInteger(kBytesReceivedKey, download_item->GetReceivedBytes());
   json->SetInteger(kTotalBytesKey, download_item->GetTotalBytes());
-  json->SetBoolean(kIncognitoKey, incognito);
+  json->SetBoolean(kIncognitoKey, profile->IsOffTheRecord());
   if (download_item->GetState() == DownloadItem::INTERRUPTED) {
     json->SetString(kErrorKey, content::InterruptReasonDebugString(
         download_item->GetLastReason()));
@@ -260,6 +271,20 @@ scoped_ptr<base::DictionaryValue> DownloadItemToJSON(
   if (download_item->TimeRemaining(&time_remaining)) {
     base::Time now = base::Time::Now();
     json->SetString(kEstimatedEndTimeKey, TimeToISO8601(now + time_remaining));
+  }
+  DownloadedByExtension* by_ext = DownloadedByExtension::Get(download_item);
+  if (by_ext) {
+    json->SetString(kByExtensionIdKey, by_ext->id());
+    json->SetString(kByExtensionNameKey, by_ext->name());
+    // Lookup the extension's current name() in case the user changed their
+    // language. This won't work if the extension was uninstalled, so the name
+    // might be the wrong language.
+    bool include_disabled = true;
+    const extensions::Extension* extension = extensions::ExtensionSystem::Get(
+        profile)->extension_service()->GetExtensionById(
+            by_ext->id(), include_disabled);
+    if (extension)
+      json->SetString(kByExtensionNameKey, extension->name());
   }
   // TODO(benjhayden): Implement fileSize.
   json->SetInteger(kFileSizeKey, download_item->GetTotalBytes());
@@ -398,7 +423,7 @@ enum DownloadsFunctionName {
   DOWNLOADS_FUNCTION_RESUME = 3,
   DOWNLOADS_FUNCTION_CANCEL = 4,
   DOWNLOADS_FUNCTION_ERASE = 5,
-  DOWNLOADS_FUNCTION_SET_DESTINATION = 6,
+  // 6 unused
   DOWNLOADS_FUNCTION_ACCEPT_DANGER = 7,
   DOWNLOADS_FUNCTION_SHOW = 8,
   DOWNLOADS_FUNCTION_DRAG = 9,
@@ -406,6 +431,7 @@ enum DownloadsFunctionName {
   DOWNLOADS_FUNCTION_OPEN = 11,
   DOWNLOADS_FUNCTION_REMOVE_FILE = 12,
   DOWNLOADS_FUNCTION_SHOW_DEFAULT_FOLDER = 13,
+  DOWNLOADS_FUNCTION_SET_SHELF_ENABLED = 14,
   // Insert new values here, not at the beginning.
   DOWNLOADS_FUNCTION_LAST
 };
@@ -882,6 +908,25 @@ bool IsDownloadDeltaField(const std::string& field) {
 
 }  // namespace
 
+const char DownloadedByExtension::kKey[] =
+  "DownloadItem DownloadedByExtension";
+
+DownloadedByExtension* DownloadedByExtension::Get(
+    content::DownloadItem* item) {
+  base::SupportsUserData::Data* data = item->GetUserData(kKey);
+  return (data == NULL) ? NULL :
+      static_cast<DownloadedByExtension*>(data);
+}
+
+DownloadedByExtension::DownloadedByExtension(
+    content::DownloadItem* item,
+    const std::string& id,
+    const std::string& name)
+  : id_(id),
+    name_(name) {
+  item->SetUserData(kKey, this);
+}
+
 DownloadsDownloadFunction::DownloadsDownloadFunction() {}
 
 DownloadsDownloadFunction::~DownloadsDownloadFunction() {}
@@ -892,7 +937,12 @@ bool DownloadsDownloadFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(params.get());
   const extensions::api::downloads::DownloadOptions& options = params->options;
   GURL download_url(options.url);
-  if (Fault(!download_url.is_valid(), errors::kInvalidURL, &error_))
+  if (Fault(!download_url.is_valid(), errors::kInvalidURL, &error_) ||
+      Fault((!download_url.SchemeIs("data") &&
+             (download_url.GetOrigin() != GetExtension()->url().GetOrigin()) &&
+             !extensions::PermissionsData::HasHostPermission(
+                 GetExtension(), download_url)),
+            errors::kHostPermission, &error_))
     return false;
 
   Profile* current_profile = profile();
@@ -985,6 +1035,9 @@ void DownloadsDownloadFunction::OnStarted(
       data->CreatorSuggestedFilename(
           creator_suggested_filename, creator_conflict_action);
     }
+    new DownloadedByExtension(
+        item, GetExtension()->id(), GetExtension()->name());
+    item->UpdateObservers();
   } else {
     DCHECK_NE(net::OK, error);
     error_ = net::ErrorToString(error);
@@ -1022,7 +1075,8 @@ bool DownloadsSearchFunction::RunImpl() {
     bool off_record = ((incognito_manager != NULL) &&
                        (incognito_manager->GetDownload(download_id) != NULL));
     scoped_ptr<base::DictionaryValue> json_item(DownloadItemToJSON(
-        *it, off_record));
+        *it, off_record ? profile()->GetOffTheRecordProfile()
+                        : profile()->GetOriginalProfile()));
     json_results->Append(json_item.release());
   }
   SetResult(json_results);
@@ -1301,6 +1355,64 @@ bool DownloadsDragFunction::RunImpl() {
   return true;
 }
 
+DownloadsSetShelfEnabledFunction::DownloadsSetShelfEnabledFunction() {}
+
+DownloadsSetShelfEnabledFunction::~DownloadsSetShelfEnabledFunction() {}
+
+bool DownloadsSetShelfEnabledFunction::RunImpl() {
+  scoped_ptr<extensions::api::downloads::SetShelfEnabled::Params> params(
+      extensions::api::downloads::SetShelfEnabled::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
+  if (!GetExtension()->HasAPIPermission(
+        extensions::APIPermission::kDownloadsShelf)) {
+    error_ = download_extension_errors::kShelfPermission;
+    return false;
+  }
+
+  RecordApiFunctions(DOWNLOADS_FUNCTION_SET_SHELF_ENABLED);
+  DownloadManager* manager = NULL;
+  DownloadManager* incognito_manager = NULL;
+  GetManagers(profile(), include_incognito(), &manager, &incognito_manager);
+  DownloadService* service = NULL;
+  DownloadService* incognito_service = NULL;
+  if (manager) {
+    service = DownloadServiceFactory::GetForBrowserContext(
+        manager->GetBrowserContext());
+    service->GetExtensionEventRouter()->SetShelfEnabled(
+        GetExtension(), params->enabled);
+  }
+  if (incognito_manager) {
+    incognito_service = DownloadServiceFactory::GetForBrowserContext(
+        incognito_manager->GetBrowserContext());
+    incognito_service->GetExtensionEventRouter()->SetShelfEnabled(
+        GetExtension(), params->enabled);
+  }
+
+  BrowserList* browsers = BrowserList::GetInstance(chrome::GetActiveDesktop());
+  if (browsers) {
+    for (BrowserList::const_iterator iter = browsers->begin();
+        iter != browsers->end(); ++iter) {
+      const Browser* browser = *iter;
+      DownloadService* current_service =
+        DownloadServiceFactory::GetForBrowserContext(browser->profile());
+      if (((current_service == service) ||
+           (current_service == incognito_service)) &&
+          browser->window()->IsDownloadShelfVisible() &&
+          !current_service->IsShelfEnabled())
+        browser->window()->GetDownloadShelf()->Close(DownloadShelf::AUTOMATIC);
+    }
+  }
+
+  if (params->enabled &&
+      ((manager && !service->IsShelfEnabled()) ||
+       (incognito_manager && !incognito_service->IsShelfEnabled()))) {
+    error_ = download_extension_errors::kShelfDisabled;
+    return false;
+  }
+
+  return true;
+}
+
 DownloadsGetFileIconFunction::DownloadsGetFileIconFunction()
     : icon_extractor_(new DownloadFileIconExtractorImpl()) {
 }
@@ -1358,6 +1470,8 @@ ExtensionDownloadsEventRouter::ExtensionDownloadsEventRouter(
       notifier_(manager, this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(profile_);
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+                 content::Source<Profile>(profile_));
   extensions::EventRouter* router = extensions::ExtensionSystem::Get(profile_)->
       event_router();
   if (router)
@@ -1370,6 +1484,22 @@ ExtensionDownloadsEventRouter::~ExtensionDownloadsEventRouter() {
       event_router();
   if (router)
     router->UnregisterObserver(this);
+}
+
+void ExtensionDownloadsEventRouter::SetShelfEnabled(
+    const extensions::Extension* extension, bool enabled) {
+  std::set<const extensions::Extension*>::iterator iter =
+    shelf_disabling_extensions_.find(extension);
+  if (iter == shelf_disabling_extensions_.end()) {
+    if (!enabled)
+      shelf_disabling_extensions_.insert(extension);
+  } else if (enabled) {
+    shelf_disabling_extensions_.erase(extension);
+  }
+}
+
+bool ExtensionDownloadsEventRouter::IsShelfEnabled() const {
+  return shelf_disabling_extensions_.empty();
 }
 
 // The method by which extensions hook into the filename determination process
@@ -1413,7 +1543,7 @@ void ExtensionDownloadsEventRouter::OnDeterminingFilename(
   data->set_filename_change_callbacks(no_change, change);
   bool any_determiners = false;
   base::DictionaryValue* json = DownloadItemToJSON(
-      item, profile_->IsOffTheRecord()).release();
+      item, profile_).release();
   json->SetString(kFilenameKey, suggested_path.LossyDisplayName());
   DispatchEvent(events::kOnDownloadDeterminingFilename,
                 false,
@@ -1534,7 +1664,7 @@ void ExtensionDownloadsEventRouter::OnDownloadCreated(
     return;
   }
   scoped_ptr<base::DictionaryValue> json_item(
-      DownloadItemToJSON(download_item, profile_->IsOffTheRecord()));
+      DownloadItemToJSON(download_item, profile_));
   DispatchEvent(events::kOnDownloadCreated,
                 true,
                 extensions::Event::WillDispatchCallback(),
@@ -1565,7 +1695,7 @@ void ExtensionDownloadsEventRouter::OnDownloadUpdated(
         scoped_ptr<base::DictionaryValue>(new base::DictionaryValue()));
   }
   scoped_ptr<base::DictionaryValue> new_json(DownloadItemToJSON(
-      download_item, profile_->IsOffTheRecord()));
+      download_item, profile_));
   scoped_ptr<base::DictionaryValue> delta(new base::DictionaryValue());
   delta->SetInteger(kIdKey, download_item->GetId());
   std::set<std::string> new_fields;
@@ -1660,4 +1790,21 @@ void ExtensionDownloadsEventRouter::DispatchEvent(
       chrome::NOTIFICATION_EXTENSION_DOWNLOADS_EVENT,
       content_source,
       content::Details<std::string>(&json_args));
+}
+
+void ExtensionDownloadsEventRouter::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  switch (type) {
+    case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
+      extensions::UnloadedExtensionInfo* unloaded =
+          content::Details<extensions::UnloadedExtensionInfo>(details).ptr();
+      std::set<const extensions::Extension*>::iterator iter =
+        shelf_disabling_extensions_.find(unloaded->extension);
+      if (iter != shelf_disabling_extensions_.end())
+        shelf_disabling_extensions_.erase(iter);
+      break;
+    }
+  }
 }

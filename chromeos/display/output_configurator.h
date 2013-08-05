@@ -55,6 +55,7 @@ class CHROMEOS_EXPORT OutputConfigurator
     RRMode current_mode;
     RRMode native_mode;
     RRMode mirror_mode;
+    RRMode selected_mode;
 
     int y;
     int height;
@@ -114,6 +115,12 @@ class CHROMEOS_EXPORT OutputConfigurator
     // Called when displays are detected.
     virtual OutputState GetStateForDisplayIds(
         const std::vector<int64>& display_ids) const = 0;
+
+    // Queries the resolution (|width|x|height|) in pixels
+    // to select output mode for the given display id.
+    virtual bool GetResolutionForDisplayId(int64 display_id,
+                                           int* width,
+                                           int* height) const = 0;
   };
 
   // Interface for classes that implement software based mirroring.
@@ -158,7 +165,9 @@ class CHROMEOS_EXPORT OutputConfigurator
     virtual void ForceDPMSOn() = 0;
 
     // Returns information about the current outputs.
-    virtual std::vector<OutputSnapshot> GetOutputs() = 0;
+    // This method may block for 60 milliseconds or more.
+    virtual std::vector<OutputSnapshot> GetOutputs(
+        const StateController* state_controller) = 0;
 
     // Gets details corresponding to |mode|.  Parameters may be NULL.
     // Returns true on success.
@@ -251,13 +260,13 @@ class CHROMEOS_EXPORT OutputConfigurator
 
   // Initialization, must be called right after constructor.
   // |is_panel_fitting_enabled| indicates hardware panel fitting support.
+  void Init(bool is_panel_fitting_enabled);
+
+  // Does initial configuration of displays during startup.
   // If |background_color_argb| is non zero and there are multiple displays,
   // OutputConfigurator sets the background color of X's RootWindow to this
   // color.
-  void Init(bool is_panel_fitting_enabled, uint32 background_color_argb);
-
-  // Detects displays first time from unknown state.
-  void Start();
+  void Start(uint32 background_color_argb);
 
   // Stop handling display configuration events/requests.
   void Stop();
@@ -302,13 +311,13 @@ class CHROMEOS_EXPORT OutputConfigurator
     return mirrored_display_area_ratio_map_;
   }
 
- private:
-  // Configure outputs.
-  void ConfigureOutputs();
-
   // Configure outputs with |kConfigureDelayMs| delay,
   // so that time-consuming ConfigureOutputs() won't be called multiple times.
   void ScheduleConfigureOutputs();
+
+ private:
+  // Configure outputs.
+  void ConfigureOutputs();
 
   // Fires OnDisplayModeChanged() event to the observers.
   void NotifyOnDisplayChanged();

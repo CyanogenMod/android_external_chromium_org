@@ -179,7 +179,7 @@ bool TextureLayer::DrawsContent() const {
 
 bool TextureLayer::Update(ResourceUpdateQueue* queue,
                           const OcclusionTracker* occlusion) {
-  bool updated = false;
+  bool updated = Layer::Update(queue, occlusion);
   if (client_) {
     if (uses_mailbox_) {
       TextureMailbox mailbox;
@@ -197,8 +197,6 @@ bool TextureLayer::Update(ResourceUpdateQueue* queue,
       updated = true;
     }
   }
-
-  needs_display_ = false;
 
   // SetTextureMailbox could be called externally and the same mailbox used for
   // different textures.  Such callers notify this layer that the texture has
@@ -230,6 +228,16 @@ void TextureLayer::PushPropertiesTo(LayerImpl* layer) {
     texture_layer->set_texture_id(texture_id_);
   }
   content_committed_ = DrawsContent();
+}
+
+Region TextureLayer::VisibleContentOpaqueRegion() const {
+  if (contents_opaque())
+    return visible_content_rect();
+
+  if (blend_background_color_ && (SkColorGetA(background_color()) == 0xFF))
+    return visible_content_rect();
+
+  return Region();
 }
 
 bool TextureLayer::BlocksPendingCommit() const {

@@ -29,8 +29,7 @@ scoped_refptr<Layer> Layer::Create() {
 }
 
 Layer::Layer()
-    : needs_display_(false),
-      needs_push_properties_(false),
+    : needs_push_properties_(false),
       num_dependents_need_push_properties_(false),
       stacking_order_changed_(false),
       layer_id_(s_next_layer_id++),
@@ -418,6 +417,8 @@ void Layer::CalculateContentsScale(
     float* contents_scale_x,
     float* contents_scale_y,
     gfx::Size* content_bounds) {
+  DCHECK(layer_tree_host_);
+
   *contents_scale_x = 1;
   *contents_scale_y = 1;
   *content_bounds = bounds();
@@ -671,16 +672,14 @@ void Layer::SetHideLayerAndSubtree(bool hide) {
 }
 
 void Layer::SetNeedsDisplayRect(const gfx::RectF& dirty_rect) {
-  if (!update_rect_.Contains(dirty_rect)) {
-    SetNeedsPushProperties();
-  }
+  if (dirty_rect.IsEmpty())
+    return;
 
+  SetNeedsPushProperties();
   update_rect_.Union(dirty_rect);
-  needs_display_ = true;
 
-  if (DrawsContent() && !update_rect_.IsEmpty()) {
+  if (DrawsContent())
     SetNeedsUpdate();
-  }
 }
 
 bool Layer::DescendantIsFixedToContainerLayer() const {
@@ -729,10 +728,18 @@ static void PostCopyCallbackToMainThread(
 }
 
 void Layer::PushPropertiesTo(LayerImpl* layer) {
+  DCHECK(layer_tree_host_);
+
+  // If we did not SavePaintProperties() for the layer this frame, then push the
+  // real property values, not the paint property values.
+  bool use_paint_properties = paint_properties_.source_frame_number ==
+                              layer_tree_host_->source_frame_number();
+
   layer->SetAnchorPoint(anchor_point_);
   layer->SetAnchorPointZ(anchor_point_z_);
   layer->SetBackgroundColor(background_color_);
-  layer->SetBounds(paint_properties_.bounds);
+  layer->SetBounds(use_paint_properties ? paint_properties_.bounds
+                                        : bounds_);
   layer->SetContentBounds(content_bounds());
   layer->SetContentsScale(contents_scale_x(), contents_scale_y());
   layer->SetDebugName(debug_name_);
@@ -839,13 +846,21 @@ bool Layer::DrawsContent() const {
 }
 
 void Layer::SavePaintProperties() {
+  DCHECK(layer_tree_host_);
+
   // TODO(reveman): Save all layer properties that we depend on not
   // changing until PushProperties() has been called. crbug.com/231016
   paint_properties_.bounds = bounds_;
+  paint_properties_.source_frame_number =
+      layer_tree_host_->source_frame_number();
 }
 
 bool Layer::Update(ResourceUpdateQueue* queue,
                    const OcclusionTracker* occlusion) {
+  DCHECK(layer_tree_host_);
+  DCHECK_EQ(layer_tree_host_->source_frame_number(),
+            paint_properties_.source_frame_number) <<
+      "SavePaintProperties must be called for any layer that is painted.";
   return false;
 }
 

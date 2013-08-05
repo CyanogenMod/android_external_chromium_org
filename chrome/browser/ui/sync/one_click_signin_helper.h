@@ -8,8 +8,10 @@
 #include <string>
 
 #include "base/gtest_prod_util.h"
+#include "base/memory/weak_ptr.h"
+#include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
-#include "chrome/browser/ui/sync/sync_promo_ui.h"
+#include "chrome/browser/ui/sync/one_click_signin_sync_starter.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
@@ -187,7 +189,7 @@ class OneClickSigninHelper
   static void ShowInfoBarUIThread(const std::string& session_index,
                                   const std::string& email,
                                   AutoAccept auto_accept,
-                                  SyncPromoUI::Source source,
+                                  signin::Source source,
                                   const GURL& continue_url,
                                   int child_id,
                                   int route_id);
@@ -221,6 +223,12 @@ class OneClickSigninHelper
   // ProfileSyncServiceObserver.
   virtual void OnStateChanged() OVERRIDE;
 
+  OneClickSigninSyncStarter::Callback CreateSyncStarterCallback();
+
+  // Callback invoked when OneClickSigninSyncStarter completes sync setup.
+  void SyncSetupCompletedCallback(
+      OneClickSigninSyncStarter::SyncSetupResult result);
+
   // Tracks if we are in the process of showing the signin or one click
   // interstitial page. It's set to true the first time we load one of those
   // pages and set to false when transient state is cleaned.
@@ -232,7 +240,7 @@ class OneClickSigninHelper
   std::string email_;
   std::string password_;
   AutoAccept auto_accept_;
-  SyncPromoUI::Source source_;
+  signin::Source source_;
   bool switched_to_advanced_;
   GURL continue_url_;
   // The orignal continue URL after sync setup is complete.
@@ -254,6 +262,8 @@ class OneClickSigninHelper
   // Allows unittests to avoid accessing the ResourceContext for clearing a
   // pending e-mail.
   bool do_not_clear_pending_email_;
+
+  base::WeakPtrFactory<OneClickSigninHelper> weak_pointer_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(OneClickSigninHelper);
 };

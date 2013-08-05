@@ -148,7 +148,6 @@
                 '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_unscaled_resources.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.rc',
-                '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.rc',
               ],
               'include_dirs': [
                 '<(DEPTH)/third_party/wtl/include',
@@ -291,6 +290,7 @@
                     'app/breakpad_mac.h',
                     'app/chrome_breakpad_client.cc',
                     'app/chrome_breakpad_client.h',
+                    'app/chrome_breakpad_client_mac.mm',
                   ],
                 }, {  # else: mac_breakpad_compiled_in!=1
                   # No Breakpad, put in the stubs.
@@ -356,6 +356,8 @@
             'CHROME_MULTIPLE_DLL_CHILD',
           ],
           'sources': [
+            '<(SHARED_INTERMEDIATE_DIR)/chrome/common_resources.rc',
+            '<(SHARED_INTERMEDIATE_DIR)/chrome/extensions_api_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/chrome_version/chrome_dll_version.rc',
             'app/chrome_main.cc',
             'app/chrome_main_delegate.cc',

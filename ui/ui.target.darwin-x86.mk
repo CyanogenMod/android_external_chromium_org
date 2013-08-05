@@ -78,6 +78,7 @@ LOCAL_SRC_FILES := \
 	ui/base/theme_provider.cc \
 	ui/base/touch/touch_device_android.cc \
 	ui/base/touch/touch_editing_controller.cc \
+	ui/base/touch/touch_enabled.cc \
 	ui/base/ui_base_exports.cc \
 	ui/base/ui_base_paths.cc \
 	ui/base/ui_base_switches.cc \
@@ -101,6 +102,7 @@ LOCAL_SRC_FILES := \
 	ui/gfx/font_list.cc \
 	ui/gfx/font_render_params_android.cc \
 	ui/gfx/gfx_paths.cc \
+	ui/gfx/gpu_memory_buffer.cc \
 	ui/gfx/image/canvas_image_source.cc \
 	ui/gfx/image/image.cc \
 	ui/gfx/image/image_family.cc \

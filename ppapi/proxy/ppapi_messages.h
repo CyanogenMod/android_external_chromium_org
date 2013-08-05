@@ -1286,6 +1286,10 @@ IPC_MESSAGE_CONTROL2(PpapiHostMsg_AttachToPendingHost,
 IPC_MESSAGE_CONTROL2(PpapiHostMsg_ResourceCall,
                      ppapi::proxy::ResourceMessageCallParams /* call_params */,
                      IPC::Message /* nested_msg */)
+IPC_MESSAGE_CONTROL3(PpapiHostMsg_InProcessResourceCall,
+                     int /* routing_id */,
+                     ppapi::proxy::ResourceMessageCallParams /* call_params */,
+                     IPC::Message /* nested_msg */)
 
 // A resource reply is a response to a ResourceCall from a host to the
 // plugin. The resource ID + sequence number in the params will correspond to
@@ -1294,6 +1298,11 @@ IPC_MESSAGE_CONTROL2(
     PpapiPluginMsg_ResourceReply,
     ppapi::proxy::ResourceMessageReplyParams /* reply_params */,
     IPC::Message /* nested_msg */)
+IPC_MESSAGE_ROUTED2(
+    PpapiHostMsg_InProcessResourceReply,
+    ppapi::proxy::ResourceMessageReplyParams /* reply_params */,
+    IPC::Message /* nested_msg */)
+
 
 IPC_SYNC_MESSAGE_CONTROL2_2(PpapiHostMsg_ResourceSyncCall,
     ppapi::proxy::ResourceMessageCallParams /* call_params */,
@@ -1377,9 +1386,15 @@ IPC_MESSAGE_CONTROL2(PpapiHostMsg_FileIO_Open,
                      int32_t /* open_flags */)
 IPC_MESSAGE_CONTROL0(PpapiPluginMsg_FileIO_OpenReply)
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_FileIO_Close)
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_FileIO_Query)
+IPC_MESSAGE_CONTROL1(PpapiPluginMsg_FileIO_QueryReply, PP_FileInfo /* info */)
 IPC_MESSAGE_CONTROL2(PpapiHostMsg_FileIO_Touch,
                      PP_Time /* last_access_time */,
                      PP_Time /* last_modified_time */)
+IPC_MESSAGE_CONTROL2(PpapiHostMsg_FileIO_Read,
+                     int64_t /* offset */,
+                     int32_t /* bytes_to_read */)
+IPC_MESSAGE_CONTROL1(PpapiPluginMsg_FileIO_ReadReply, std::string /* data */)
 IPC_MESSAGE_CONTROL2(PpapiHostMsg_FileIO_Write,
                      int64_t /* offset */,
                      std::string /* data */)
@@ -1821,21 +1836,23 @@ IPC_MESSAGE_CONTROL1(PpapiPluginMsg_BrowserFontSingleton_GetFontFamiliesReply,
 // |child_process_id|. |routing_id| is sent so that the reply can be routed
 // properly in the renderer.
 // Only sent from the renderer to the browser.
-IPC_MESSAGE_CONTROL3(PpapiHostMsg_FileRef_GetInfoForRenderer,
+IPC_MESSAGE_CONTROL4(PpapiHostMsg_FileRef_GetInfoForRenderer,
                      int /* routing_id */,
                      int /* child_process_id */,
-                     ppapi::proxy::ResourceMessageCallParams /* params */)
+                     int32_t /* sequence */,
+                     std::vector<PP_Resource> /* resources */)
 
 // Reply to PpapiHostMsg_FileRef_GetInfoForRenderer with a sequence number for
 // invoking the right callback, |fs_type| which indicates the file system, and
 // path information in either |file_system_url_spec| (for internal file systems)
 // or |external_path| (for external file systems).
 // Only sent from the browser to the renderer.
-IPC_MESSAGE_ROUTED4(PpapiHostMsg_FileRef_GetInfoForRendererReply,
+IPC_MESSAGE_ROUTED5(PpapiHostMsg_FileRef_GetInfoForRendererReply,
                     int32_t /* sequence */,
-                    PP_FileSystemType /* fs_type */,
-                    std::string /* file_system_url_spec */,
-                    base::FilePath /* external_path */)
+                    std::vector<PP_Resource> /* resources */,
+                    std::vector<PP_FileSystemType> /* fs_type */,
+                    std::vector<std::string> /* file_system_url_spec */,
+                    std::vector<base::FilePath> /* external_path */)
 
 // Flash -----------------------------------------------------------------------
 
@@ -1930,7 +1947,7 @@ IPC_MESSAGE_CONTROL3(PpapiHostMsg_FlashClipboard_WriteData,
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_FlashFile_Create)
 IPC_MESSAGE_CONTROL2(PpapiHostMsg_FlashFile_OpenFile,
                      ppapi::PepperFilePath /* path */,
-                     int /* flags */)
+                     int /* pp_open_flags */)
 IPC_MESSAGE_CONTROL2(PpapiHostMsg_FlashFile_RenameFile,
                      ppapi::PepperFilePath /* from_path */,
                      ppapi::PepperFilePath /* to_path */)

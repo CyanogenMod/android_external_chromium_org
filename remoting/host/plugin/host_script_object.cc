@@ -18,6 +18,7 @@
 #include "net/base/net_util.h"
 #include "remoting/base/auth_token_util.h"
 #include "remoting/base/auto_thread.h"
+#include "remoting/base/resources.h"
 #include "remoting/base/rsa_key_pair.h"
 #include "remoting/host/chromoting_host.h"
 #include "remoting/host/chromoting_host_context.h"
@@ -57,6 +58,7 @@ const char* kAttrNameOnStateChanged = "onStateChanged";
 const char* kAttrNameXmppServerAddress = "xmppServerAddress";
 const char* kAttrNameXmppServerUseTls = "xmppServerUseTls";
 const char* kAttrNameDirectoryBotJid = "directoryBotJid";
+const char* kAttrNameSupportedFeatures = "supportedFeatures";
 const char* kFuncNameConnect = "connect";
 const char* kFuncNameDisconnect = "disconnect";
 const char* kFuncNameLocalize = "localize";
@@ -85,6 +87,9 @@ const char* kAttrNameInvalidDomainError = "INVALID_DOMAIN_ERROR";
 
 const int kMaxLoginAttempts = 5;
 
+// Space separated list of features supported in addition to the base protocol.
+const char* kSupportedFeatures = "pairingRegistry";
+
 }  // namespace
 
 // Internal implementation of the plugin's It2Me host function.
@@ -104,8 +109,7 @@ class HostNPScriptObject::It2MeImpl
   // Creates It2Me host structures and starts the host.
   void Connect(const std::string& uid,
                const std::string& auth_token,
-               const std::string& auth_service,
-               const UiStrings& ui_strings);
+               const std::string& auth_service);
 
   // Disconnects the host, ready for tear-down.
   // Also called internally, from the network thread.
@@ -222,22 +226,19 @@ HostNPScriptObject::It2MeImpl::It2MeImpl(
 void HostNPScriptObject::It2MeImpl::Connect(
     const std::string& uid,
     const std::string& auth_token,
-    const std::string& auth_service,
-    const UiStrings& ui_strings) {
+    const std::string& auth_service) {
   if (!host_context_->ui_task_runner()->BelongsToCurrentThread()) {
     DCHECK(plugin_task_runner_->BelongsToCurrentThread());
     host_context_->ui_task_runner()->PostTask(
         FROM_HERE,
-        base::Bind(&It2MeImpl::Connect, this, uid, auth_token, auth_service,
-                   ui_strings));
+        base::Bind(&It2MeImpl::Connect, this, uid, auth_token, auth_service));
     return;
   }
 
   desktop_environment_factory_.reset(new It2MeDesktopEnvironmentFactory(
       host_context_->network_task_runner(),
       host_context_->input_task_runner(),
-      host_context_->ui_task_runner(),
-      ui_strings));
+      host_context_->ui_task_runner()));
 
   // Start monitoring configured policies.
   policy_watcher_.reset(
@@ -800,7 +801,8 @@ bool HostNPScriptObject::HasProperty(const std::string& property_name) {
           property_name == kAttrNameError ||
           property_name == kAttrNameXmppServerAddress ||
           property_name == kAttrNameXmppServerUseTls ||
-          property_name == kAttrNameDirectoryBotJid);
+          property_name == kAttrNameDirectoryBotJid ||
+          property_name == kAttrNameSupportedFeatures);
 }
 
 bool HostNPScriptObject::GetProperty(const std::string& property_name,
@@ -869,6 +871,9 @@ bool HostNPScriptObject::GetProperty(const std::string& property_name,
     return true;
   } else if (property_name == kAttrNameDirectoryBotJid) {
     *result = NPVariantFromString(directory_bot_jid_);
+    return true;
+  } else if (property_name == kAttrNameSupportedFeatures) {
+    *result = NPVariantFromString(kSupportedFeatures);
     return true;
   } else {
     SetException("GetProperty: unsupported property " + property_name);
@@ -1056,7 +1061,7 @@ bool HostNPScriptObject::Connect(const NPVariant* args,
   it2me_impl_ = new It2MeImpl(
       host_context.Pass(), plugin_task_runner_, weak_ptr_,
       xmpp_server_config_, directory_bot_jid_);
-  it2me_impl_->Connect(uid, auth_token, auth_service, ui_strings_);
+  it2me_impl_->Connect(uid, auth_token, auth_service);
 
   return true;
 }
@@ -1496,23 +1501,13 @@ void HostNPScriptObject::SetWindow(NPWindow* np_window) {
 void HostNPScriptObject::LocalizeStrings(NPObject* localize_func) {
   DCHECK(plugin_task_runner_->BelongsToCurrentThread());
 
-  string16 direction;
-  LocalizeString(localize_func, "@@bidi_dir", &direction);
-  ui_strings_.direction = UTF16ToUTF8(direction) == "rtl" ?
-      remoting::UiStrings::RTL : remoting::UiStrings::LTR;
-  LocalizeString(localize_func, /*i18n-content*/"PRODUCT_NAME",
-                 &ui_strings_.product_name);
-  LocalizeString(localize_func, /*i18n-content*/"DISCONNECT_OTHER_BUTTON",
-                 &ui_strings_.disconnect_button_text);
-  LocalizeString(localize_func, /*i18n-content*/"CONTINUE_PROMPT",
-                 &ui_strings_.continue_prompt);
-  LocalizeString(localize_func, /*i18n-content*/"CONTINUE_BUTTON",
-                 &ui_strings_.continue_button_text);
-  LocalizeString(localize_func, /*i18n-content*/"STOP_SHARING_BUTTON",
-                 &ui_strings_.stop_sharing_button_text);
-  LocalizeStringWithSubstitution(localize_func,
-                                 /*i18n-content*/"MESSAGE_SHARED", "$1",
-                                 &ui_strings_.disconnect_message);
+  // Reload resources for the current locale. The default UI locale is used on
+  // Windows.
+#if !defined(OS_WIN)
+  string16 ui_locale;
+  LocalizeString(localize_func, "@@ui_locale", &ui_locale);
+  remoting::LoadResources(UTF16ToUTF8(ui_locale));
+#endif  // !defined(OS_WIN)
 }
 
 bool HostNPScriptObject::LocalizeString(NPObject* localize_func,

@@ -16,6 +16,7 @@ from telemetry.core import browser_finder
 from telemetry.core import exceptions
 from telemetry.core import util
 from telemetry.core import wpr_modes
+from telemetry.core.platform.profiler import profiler_finder
 from telemetry.page import page_filter as page_filter_module
 from telemetry.page import page_runner_repeat
 from telemetry.page import page_test
@@ -39,7 +40,10 @@ class _RunState(object):
       assert not self.tab
       self.browser = possible_browser.Create()
       self.browser.credentials.credentials_path = credentials_path
-      test.SetUpBrowser(self.browser)
+
+      test.WillStartBrowser(self.browser)
+      self.browser.Start()
+      test.DidStartBrowser(self.browser)
 
       if self._first_browser:
         self._first_browser = False
@@ -140,7 +144,10 @@ def AddCommandLineOptions(parser):
 
 
 def _LogStackTrace(title, browser):
-  stack_trace = browser.GetStackTrace()
+  if browser:
+    stack_trace = browser.GetStackTrace()
+  else:
+    stack_trace = 'Browser object is empty, no stack trace.'
   stack_trace = (('\nStack Trace:\n') +
             ('*' * 80) +
             '\n\t' + stack_trace.replace('\n', '\n\t') + '\n' +
@@ -206,6 +213,9 @@ def Run(test, page_set, expectations, options):
 
   # Create a possible_browser with the given options.
   test.CustomizeBrowserOptions(options)
+  if options.profiler:
+    profiler_class = profiler_finder.FindProfiler(options.profiler)
+    profiler_class.CustomizeBrowserOptions(options)
   try:
     possible_browser = browser_finder.FindBrowser(options)
   except browser_finder.BrowserTypeRequiredException, e:

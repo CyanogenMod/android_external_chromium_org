@@ -532,6 +532,12 @@ enum NotificationType {
   // removed the extension from its internal state.
   NOTIFICATION_EXTENSION_UNLOADED,
 
+  // Sent when an Extension object is removed from ExtensionService. This
+  // can happen when an extension is uninstalled, upgraded, or blacklisted,
+  // including all cases when the Extension is deleted. The details are an
+  // Extension, and the source is a Profile.
+  NOTIFICATION_EXTENSION_REMOVED,
+
   // Sent after a new ExtensionHost is created. The details are
   // an ExtensionHost* and the source is a Profile*.
   NOTIFICATION_EXTENSION_HOST_CREATED,
@@ -670,7 +676,10 @@ enum NotificationType {
   NOTIFICATION_EXTENSION_UPDATE_FOUND,
 
   // Component Updater -------------------------------------------------------
-
+  //
+  // The component updater notifications are deprecated and they will be
+  // removed soon.
+  //
   // Sent when the component updater starts doing update checks. If no
   // component has been registered for update this notification is not
   // generated. The source is the component updater itself and there are
@@ -1133,12 +1142,6 @@ enum NotificationType {
   // Sent when the Ash session ended. Currently this means the metro app exited.
   // Used only on Windows.
   NOTIFICATION_ASH_SESSION_ENDED,
-#endif
-
-#if defined(OS_CHROMEOS)
-  // Sent when WebSocketProxy started accepting connections; details is integer
-  // port on which proxy is listening.
-  NOTIFICATION_WEB_SOCKET_PROXY_STARTED,
 #endif
 
   // Sent when a new web store promo has been loaded.
