@@ -184,7 +184,8 @@ FileCopyManager.Task.prototype.setEntries = function(entries, callback) {
   util.recurseAndResolveEntries(entries, !this.move, function(result) {
     self.pendingDirectories = result.dirEntries;
     self.pendingFiles = result.fileEntries;
-    self.pendingBytes = result.fileBytes;
+    self.totalBytes = result.fileBytes;
+    self.completedBytes = 0;
 
     callback();
   });
@@ -238,7 +239,6 @@ FileCopyManager.Task.prototype.markEntryComplete = function(entry, size) {
       if (this.pendingFiles[i].inProgress) {
         this.completedFiles.push(entry);
         this.completedBytes += size;
-        this.pendingBytes -= size;
         this.pendingFiles.splice(i, 1);
         return;
       }
@@ -255,10 +255,8 @@ FileCopyManager.Task.prototype.markEntryComplete = function(entry, size) {
  * @param {number} size Number of bytes that has been copied since last update.
  */
 FileCopyManager.Task.prototype.updateFileCopyProgress = function(entry, size) {
-  if (entry.isFile && this.pendingFiles && this.pendingFiles[0].inProgress) {
+  if (entry.isFile && this.pendingFiles && this.pendingFiles[0].inProgress)
     this.completedBytes += size;
-    this.pendingBytes -= size;
-  }
 };
 
 /**
@@ -383,7 +381,7 @@ FileCopyManager.prototype.getStatus = function() {
     var pendingDirectories = task.pendingDirectories.length;
     rv.pendingFiles += pendingFiles;
     rv.pendingDirectories += pendingDirectories;
-    rv.pendingBytes += task.pendingBytes;
+    rv.pendingBytes += (task.totalBytes - task.completedBytes);
 
     rv.completedFiles += task.completedFiles.length;
     rv.completedDirectories += task.completedDirectories.length;
@@ -485,8 +483,10 @@ FileCopyManager.prototype.resetQueue_ = function() {
  */
 FileCopyManager.prototype.requestCancel = function(opt_callback) {
   this.cancelRequested_ = true;
-  if (this.cancelCallback_)
+  if (this.cancelCallback_) {
     this.cancelCallback_();
+    this.cancelCallback_ = null;
+  }
   if (opt_callback)
     this.cancelObservers_.push(opt_callback);
 
@@ -865,7 +865,7 @@ FileCopyManager.prototype.processCopyEntry_ = function(
             if (targetRelativePath != originalPath) {
               task.registerRename(originalPath, targetRelativePath);
             }
-            onCopyComplete(targetEntry);
+            onCopyComplete(targetEntry, 0);
           },
           util.flog('Error getting dir: ' + targetRelativePath,
                     onFilesystemError));
@@ -889,9 +889,17 @@ FileCopyManager.prototype.processCopyEntry_ = function(
           targetRelativePath,
           {create: true, exclusive: true},
           function(targetEntry) {
-            self.copyFileEntry_(
+            self.cancelCallback_ = self.copyFileEntry_(
                 sourceEntry, targetEntry,
-                onCopyProgress, onCopyComplete, onFilesystemError);
+                onCopyProgress,
+                function(entry, size) {
+                  self.cancelCallback_ = null;
+                  onCopyComplete(entry, size);
+                },
+                function(error) {
+                  self.cancelCallback_ = null;
+                  onFilesystemError(error);
+                });
           },
           util.flog('Error getting file: ' + targetRelativePath,
                     onFilesystemError));
@@ -901,122 +909,75 @@ FileCopyManager.prototype.processCopyEntry_ = function(
     // Sending a file from a) Drive to Drive, b) Drive to local or c) local to
     // Drive.
     var sourceFileUrl = sourceEntry.toURL();
-    var targetFileUrl =
-        targetDirEntry.toURL() + '/' + encodeURIComponent(targetRelativePath);
     var sourceFilePath = util.extractFilePath(sourceFileUrl);
-    var targetFilePath = util.extractFilePath(targetFileUrl);
 
-    // Progress callback. TODO(hidehiko): Simplify this progress mechanism.
-    var transferedBytes = 0;
-    var downTransfer = 0;
-    var onFileTransfersUpdated = function(statusList) {
-      for (var i = 0; i < statusList.length; i++) {
-        var s = statusList[i];
-        // Comparing urls is unreliable, since they may use different
-        // url encoding schemes (eg. rfc2396 vs. rfc3986).
-        var filePath = util.extractFilePath(s.fileUrl);
-        if (filePath == sourceFilePath || filePath == targetFilePath) {
-          var processed = s.processed;
+    // Progress callback.
+    // Because the uploading the file from local cache to Drive server will be
+    // done as a part of background Drive file system sync, so for this copy
+    // operation, what we need to take care about is only file downloading.
+    var numTransferredBytes = 0;
+    var onFileTransfersUpdated = null;
+    if (isSourceOnDrive) {
+      onFileTransfersUpdated = function(statusList) {
+        for (var i = 0; i < statusList.length; i++) {
+          var status = statusList[i];
 
-          // It becomes tricky when both the sides are on Drive.
-          // Currently, it is implemented by download followed by upload.
-          // Note, however, download will not happen if the file is cached.
-          if (isSourceOnDrive && isTargetOnDrive) {
-            if (filePath == sourceFilePath) {
-              // Download transfer is detected. Let's halve the progress.
-              downTransfer = processed = (s.processed >> 1);
-            } else {
-              // If download transfer has been detected, the upload transfer
-              // is stacked on top of it after halving. Otherwise, just use
-              // the upload transfer as-is.
-              processed = downTransfer > 0 ?
-                  downTransfer + (s.processed >> 1) : s.processed;
+          // Comparing urls is unreliable, since they may use different
+          // url encoding schemes (eg. rfc2396 vs. rfc3986).
+          var filePath = util.extractFilePath(status.fileUrl);
+          if (filePath == sourceFilePath) {
+            var processed = status.processed;
+            if (processed > numTransferredBytes) {
+              onCopyProgress(sourceEntry, processed - numTransferredBytes);
+              numTransferredBytes = processed;
             }
-          }
-
-          if (processed > transferedBytes) {
-            onCopyProgress(sourceEntry, processed - transferedBytes);
-            transferedBytes = processed;
+            return;
           }
         }
-      }
-    };
-
-    var onStartTransfer = function() {
-      chrome.fileBrowserPrivate.onFileTransfersUpdated.addListener(
-          onFileTransfersUpdated);
-    };
-
-    var onSuccessTransfer = function(targetEntry) {
-      self.cancelCallback_ = null;
-      chrome.fileBrowserPrivate.onFileTransfersUpdated.removeListener(
-          onFileTransfersUpdated);
-
-      targetEntry.getMetadata(function(metadata) {
-        if (metadata.size > transferedBytes)
-          onCopyProgress(sourceEntry, metadata.size - transferedBytes);
-        onCopyComplete(targetEntry, metadata.size);
-      });
-    };
-
-    var onFailTransfer = function(err) {
-      self.cancelCallback_ = null;
-      chrome.fileBrowserPrivate.onFileTransfersUpdated.removeListener(
-          onFileTransfersUpdated);
-      console.error(
-          'Error copying ' + sourceFileUrl + ' to ' + targetFileUrl);
-      onFilesystemError(err);
-    };
-
-    self.cancelCallback_ = function() {
-      self.cancelCallback_ = null;
+      };
 
       // Currently, we do NOT upload the file during the copy operation.
       // It will be done as a part of file system sync after copy operation.
       // So, we can cancel only file downloading.
-      if (isSourceOnDrive) {
+      self.cancelCallback_ = function() {
+        self.cancelCallback_ = null;
         chrome.fileBrowserPrivate.cancelFileTransfers(
             [sourceFileUrl], function() {});
-      }
-    };
-
-    // Note: for hosted documents, copyTo implementation of Drive file system
-    // and transferFile private API has special handling.
-    // See also drive::file_system::CopyOperation.
-    if (isSourceOnDrive && isTargetOnDrive) {
-      // If this is the copy operation inside Drive file system,
-      // we use copyTo method.
-      targetDirEntry.getDirectory(
-          PathUtil.dirname(targetRelativePath), {create: false},
-          function(dirEntry) {
-            onStartTransfer();
-            sourceEntry.copyTo(
-                dirEntry, PathUtil.basename(targetRelativePath),
-                onSuccessTransfer, onFailTransfer);
-          },
-          onFilesystemError);
-    } else {
-      // Sending a file either a) from local to Drive, or b) from Drive to
-      // local.
-      // TODO(hidehiko): Migrate this code into copyFileEntry_().
-      onStartTransfer();
-      chrome.fileBrowserPrivate.transferFile(
-          sourceFileUrl, targetFileUrl,
-          function() {
-            self.cancelCallback_ = null;
-            if (chrome.runtime.lastError) {
-              console.error(chrome.runtime.lastError.message);
-              onFailTransfer(Object.create(FileError.prototype, {
-                code: {
-                  get: function() { return FileError.INVALID_MODIFICATION_ERR; }
-                }
-              }));
-              return;
-            }
-            targetDirEntry.getFile(
-                targetRelativePath, {}, onSuccessTransfer, onFailTransfer);
-          });
+      };
     }
+
+    // If this is the copy operation from Drive file system,
+    // we use copyTo method.
+    targetDirEntry.getDirectory(
+        PathUtil.dirname(targetRelativePath), {create: false},
+        function(dirEntry) {
+          if (onFileTransfersUpdated)
+            chrome.fileBrowserPrivate.onFileTransfersUpdated
+                .addListener(onFileTransfersUpdated);
+
+          sourceEntry.copyTo(
+              dirEntry, PathUtil.basename(targetRelativePath),
+              function(entry) {
+                self.cancelCallback_ = null;
+                if (onFileTransfersUpdated)
+                  chrome.fileBrowserPrivate.onFileTransfersUpdated
+                      .removeListener(onFileTransfersUpdated);
+
+                entry.getMetadata(function(metadata) {
+                  if (metadata.size > numTransferredBytes)
+                    onCopyProgress(
+                        sourceEntry, metadata.size - numTransferredBytes);
+                  onCopyComplete(entry, 0);
+                });
+              },
+              function(error) {
+                self.cancelCallback_ = null;
+                chrome.fileBrowserPrivate.onFileTransfersUpdated.removeListener(
+                    onFileTransfersUpdated);
+                onFilesystemError(error);
+              });
+        },
+        onFilesystemError);
   };
 
   FileCopyManager.Task.deduplicatePath(
@@ -1038,6 +999,9 @@ FileCopyManager.prototype.processCopyEntry_ = function(
  * @param {function(FileError)} errorCallback Function that will be called
  *     if an error is encountered. Takes error type and additional error data
  *     as parameters.
+ * @return {function()} Callback to cancel the current file copy operation.
+ *     When the cancel is done, errorCallback will be called. The returned
+ *     callback must not be called more than once.
  * @private
  */
 FileCopyManager.prototype.copyFileEntry_ = function(sourceEntry,
@@ -1045,24 +1009,37 @@ FileCopyManager.prototype.copyFileEntry_ = function(sourceEntry,
                                                     progressCallback,
                                                     successCallback,
                                                     errorCallback) {
-  if (this.maybeCancel_())
-    return;
+  // Set to true when cancel is requested.
+  var cancelRequested = false;
 
-  var self = this;
+  sourceEntry.file(function(file) {
+    if (cancelRequested) {
+      errorCallback(util.createFileError(FileError.ABORT_ERR));
+      return;
+    }
 
-  var onSourceFileFound = function(file) {
-    var onWriterCreated = function(writer) {
+    targetEntry.createWriter(function(writer) {
+      if (cancelRequested) {
+        errorCallback(util.createFileError(FileError.ABORT_ERR));
+        return;
+      }
+
       var reportedProgress = 0;
-      writer.onerror = function(progress) {
-        errorCallback(writer.error);
+      writer.onerror = writer.onabort = function(progress) {
+        errorCallback(cancelRequested ?
+            util.createFileError(FileError.ABORT_ERR) :
+            writer.error);
       };
 
       writer.onprogress = function(progress) {
-        if (self.maybeCancel_()) {
+        if (cancelRequested) {
           // If the copy was cancelled, we should abort the operation.
+          // The errorCallback will be called by writer.onabort after the
+          // termination.
           writer.abort();
           return;
         }
+
         // |progress.loaded| will contain total amount of data copied by now.
         // |progressCallback| expects data amount delta from the last progress
         // update.
@@ -1071,20 +1048,31 @@ FileCopyManager.prototype.copyFileEntry_ = function(sourceEntry,
       };
 
       writer.onwrite = function() {
+        if (cancelRequested) {
+          errorCallback(util.createFileError(FileError.ABORT_ERR));
+          return;
+        }
+
         sourceEntry.getMetadata(function(metadata) {
-          chrome.fileBrowserPrivate.setLastModified(targetEntry.toURL(),
+          if (cancelRequested) {
+            errorCallback(util.createFileError(FileError.ABORT_ERR));
+            return;
+          }
+
+          chrome.fileBrowserPrivate.setLastModified(
+              targetEntry.toURL(),
               '' + Math.round(metadata.modificationTime.getTime() / 1000));
           successCallback(targetEntry, file.size - reportedProgress);
         });
       };
 
       writer.write(file);
-    };
+    }, errorCallback);
+  }, errorCallback);
 
-    targetEntry.createWriter(onWriterCreated, errorCallback);
+  return function() {
+    cancelRequested = true;
   };
-
-  sourceEntry.file(onSourceFileFound, errorCallback);
 };
 
 /**
@@ -1243,11 +1231,7 @@ FileCopyManager.prototype.serviceZipTask_ = function(
             onFilesystemError);
       } else {
         onFilesystemError(
-            Object.create(FileError.prototype, {
-              code: {
-                get: function() { return FileError.INVALID_MODIFICATION_ERR; }
-              }
-            }));
+            util.createFileError(FileError.INVALID_MODIFICATION_ERR));
       }
     };
 
@@ -1392,8 +1376,9 @@ FileCopyManager.prototype.zipSelection = function(dirEntry, selectionEntries) {
   zipTask.zip = true;
   zipTask.setEntries(selectionEntries, function() {
     // TODO: per-entry zip progress update with accurate byte count.
-    // For now just set pendingBytes to zero so that the progress bar is full.
-    zipTask.pendingBytes = 0;
+    // For now just set completedBytes to same value as totalBytes so that the
+    // progress bar is full.
+    zipTask.completedBytes = zip.Task.totalBytes;
     self.copyTasks_.push(zipTask);
     if (self.copyTasks_.length == 1) {
       // Assume self.cancelRequested_ == false.

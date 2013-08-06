@@ -20,6 +20,7 @@
 #include "base/win/windows_version.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/feedback_private/feedback_private_api.h"
+#include "chrome/browser/feedback/feedback_data.h"
 #include "chrome/browser/metrics/variations/variations_http_header_provider.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/safe_browsing/safe_browsing_util.h"
@@ -65,12 +66,12 @@ void DispatchFeedback(Profile* profile, std::string* post_body, int64 delay);
 bool IsScreensizeInfo(const std::string key,
                       const std::string value,
                       gfx::Rect* screen_size) {
-  if (key == feedback_util::kScreensizeHeightKey) {
+  if (key == FeedbackData::kScreensizeHeightKey) {
     int height = 0;
     base::StringToInt(value, &height);
     screen_size->SetRect(0, 0, screen_size->width(), height);
     return true;
-  } else if (key == feedback_util::kScreensizeWidthKey) {
+  } else if (key == FeedbackData::kScreensizeWidthKey) {
     int width = 0;
     base::StringToInt(value, &width);
     screen_size->SetRect(0, 0, width, screen_size->height());
@@ -290,9 +291,6 @@ void ShowFeedbackPage(Browser* browser,
 
 namespace feedback_util {
 
-const char kScreensizeHeightKey[] = "ScreensizeHeight";
-const char kScreensizeWidthKey[] = "ScreensizeWidth";
-
 void SendReport(scoped_refptr<FeedbackData> data) {
   if (!data.get()) {
     LOG(ERROR) << "SendReport called with NULL data!";
@@ -319,8 +317,8 @@ void SendReport(scoped_refptr<FeedbackData> data) {
 
   gfx::Rect screen_size;
   if (data->sys_info()) {
-    for (SystemLogsMap::const_iterator i = data->sys_info()->begin();
-        i != data->sys_info()->end(); ++i) {
+    for (FeedbackData::SystemLogsMap::const_iterator i =
+        data->sys_info()->begin(); i != data->sys_info()->end(); ++i) {
       if (!IsScreensizeInfo(i->first, i->second, &screen_size)) {
         if (ValidFeedbackSize(i->second))
           AddFeedbackData(&feedback_data, i->first, i->second);

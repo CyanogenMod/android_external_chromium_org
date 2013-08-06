@@ -86,6 +86,8 @@ IPC_ENUM_TRAITS(content::NavigationGesture)
 IPC_ENUM_TRAITS(content::PageZoom)
 IPC_ENUM_TRAITS(content::RendererPreferencesHintingEnum)
 IPC_ENUM_TRAITS(content::RendererPreferencesSubpixelRenderingEnum)
+IPC_ENUM_TRAITS_MAX_VALUE(content::TapMultipleTargetsStrategy,
+                          content::TAP_MULTIPLE_TARGETS_STRATEGY_MAX)
 IPC_ENUM_TRAITS(content::StopFindAction)
 IPC_ENUM_TRAITS(content::ThreeDAPIType)
 IPC_ENUM_TRAITS(media::ChannelLayout)
@@ -267,6 +269,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::RendererPreferences)
   IPC_STRUCT_TRAITS_MEMBER(report_frame_name_changes)
   IPC_STRUCT_TRAITS_MEMBER(touchpad_fling_profile)
   IPC_STRUCT_TRAITS_MEMBER(touchscreen_fling_profile)
+  IPC_STRUCT_TRAITS_MEMBER(tap_multiple_targets_strategy)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::CookieData)
@@ -529,6 +532,9 @@ IPC_STRUCT_BEGIN(ViewHostMsg_TextInputState_Params)
   // true, the IME will only be shown if the type is appropriate (e.g. not
   // TEXT_INPUT_TYPE_NONE).
   IPC_STRUCT_MEMBER(bool, show_ime_if_needed)
+
+  // Whether an acknowledgement is required for this update.
+  IPC_STRUCT_MEMBER(bool, require_ack)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewHostMsg_UpdateRect_Params)
@@ -1304,6 +1310,10 @@ IPC_MESSAGE_ROUTED0(ViewMsg_ShowImeIfNeeded)
 IPC_MESSAGE_ROUTED1(ViewMsg_BeginFrame,
                     cc::BeginFrameArgs /* args */)
 
+// Sent by the browser when an IME update that requires acknowledgement has been
+// processed on the browser side.
+IPC_MESSAGE_ROUTED0(ViewMsg_ImeEventAck)
+
 #elif defined(OS_MACOSX)
 // Let the RenderView know its window has changed visibility.
 IPC_MESSAGE_ROUTED1(ViewMsg_SetWindowVisibility,
@@ -1905,10 +1915,11 @@ IPC_MESSAGE_CONTROL3(ViewHostMsg_OpenChannelToPpapiBroker,
 
 // Opens a Pepper file asynchronously. The response returns a file descriptor
 // and an error code from base/platform_file.h.
-IPC_MESSAGE_ROUTED3(ViewHostMsg_AsyncOpenPepperFile,
-                    base::FilePath /* file path */,
-                    int /* pp_open_flags */,
-                    int /* message_id */)
+IPC_MESSAGE_CONTROL4(ViewHostMsg_AsyncOpenPepperFile,
+                     int /* routing_id */,
+                     base::FilePath /* file path */,
+                     int /* pp_open_flags */,
+                     int /* message_id */)
 
 // A renderer sends this to the browser process when it wants to access a PPAPI
 // broker. In contrast to ViewHostMsg_OpenChannelToPpapiBroker, this is called

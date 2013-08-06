@@ -149,8 +149,10 @@ LOCAL_SRC_FILES := \
 	content/browser/device_orientation/data_fetcher_impl_android.cc \
 	content/browser/device_orientation/data_fetcher_orientation_android.cc \
 	content/browser/device_orientation/data_fetcher_shared_memory_android.cc \
+	content/browser/device_orientation/device_motion_message_filter.cc \
 	content/browser/device_orientation/device_motion_provider.cc \
 	content/browser/device_orientation/device_motion_service.cc \
+	content/browser/device_orientation/device_orientation_message_filter.cc \
 	content/browser/device_orientation/message_filter.cc \
 	content/browser/device_orientation/observer_delegate.cc \
 	content/browser/device_orientation/orientation.cc \
@@ -282,7 +284,6 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/clipboard_message_filter.cc \
 	content/browser/renderer_host/compositor_impl_android.cc \
 	content/browser/renderer_host/database_message_filter.cc \
-	content/browser/renderer_host/device_motion_browser_message_filter.cc \
 	content/browser/renderer_host/dip_util.cc \
 	content/browser/renderer_host/file_utilities_message_filter.cc \
 	content/browser/renderer_host/gamepad_browser_message_filter.cc \

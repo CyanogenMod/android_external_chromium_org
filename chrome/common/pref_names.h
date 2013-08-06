@@ -425,6 +425,7 @@ extern const char kPasswordsUseLocalProfileId[];
 extern const char kProfileAvatarIndex[];
 extern const char kProfileName[];
 extern const char kProfileIsManaged[];
+extern const char kManagedUserId[];
 
 extern const char kInvertNotificationShown[];
 
@@ -617,6 +618,8 @@ extern const char kDevToolsEditedFiles[];
 extern const char kDevToolsFileSystemPaths[];
 extern const char kDevToolsHSplitLocation[];
 extern const char kDevToolsOpenDocked[];
+extern const char kDevToolsPortForwardingEnabled[];
+extern const char kDevToolsPortForwardingConfig[];
 #if defined(OS_ANDROID)
 extern const char kDevToolsRemoteEnabled[];
 #endif

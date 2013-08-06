@@ -283,6 +283,11 @@ void TestingProfile::CreateTempProfileDir() {
 }
 
 void TestingProfile::Init() {
+  // If threads have been initialized, we should be on the UI thread.
+  DCHECK(
+      !content::BrowserThread::IsWellKnownThread(content::BrowserThread::UI) ||
+      content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+
   // Normally this would happen during browser startup, but for tests
   // we need to trigger creation of Profile-related services.
   ChromeBrowserMainExtraPartsProfiles::
@@ -547,7 +552,8 @@ Profile* TestingProfile::GetOriginalProfile() {
 }
 
 bool TestingProfile::IsManaged() {
-  return GetPrefs()->GetBoolean(prefs::kProfileIsManaged);
+  return GetPrefs()->GetBoolean(prefs::kProfileIsManaged) ||
+      !GetPrefs()->GetString(prefs::kManagedUserId).empty();
 }
 
 ExtensionService* TestingProfile::GetExtensionService() {

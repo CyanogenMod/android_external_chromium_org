@@ -46,6 +46,12 @@ class FakeDriveService : public DriveServiceInterface {
     default_max_results_ = default_max_results;
   }
 
+  // Sets the url to the test server to be used as a base for generated share
+  // urls to the share dialog.
+  void set_share_url_base(const GURL& share_url_base) {
+    share_url_base_ = share_url_base;
+  }
+
   // Returns the largest changestamp, which starts from 0 by default. See
   // also comments at LoadAccountMetadataForWapi().
   int64 largest_changestamp() const { return largest_changestamp_; }
@@ -67,6 +73,10 @@ class FakeDriveService : public DriveServiceInterface {
   int about_resource_load_count() const {
     return about_resource_load_count_;
   }
+
+  // Returns the number of times the app list is successfully loaded by
+  // GetAppList().
+  int app_list_load_count() const { return app_list_load_count_; }
 
   // Returns the file path whose request is cancelled just before this method
   // invocation.
@@ -272,8 +282,10 @@ class FakeDriveService : public DriveServiceInterface {
   int change_list_load_count_;
   int directory_load_count_;
   int about_resource_load_count_;
+  int app_list_load_count_;
   bool offline_;
   base::FilePath last_cancelled_file_;
+  GURL share_url_base_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeDriveService);
 };

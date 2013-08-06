@@ -79,6 +79,7 @@
 #include "chrome/browser/ssl/ssl_add_certificate.h"
 #include "chrome/browser/ssl/ssl_blocking_page.h"
 #include "chrome/browser/ssl/ssl_tab_helper.h"
+#include "chrome/browser/sync_file_system/local/sync_file_system_backend.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/browser/ui/sync/sync_promo_ui.h"
@@ -138,7 +139,6 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/message_center/message_center_util.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
-#include "webkit/browser/fileapi/syncable/sync_file_system_backend.h"
 #include "webkit/common/webpreferences.h"
 #include "webkit/plugins/plugin_switches.h"
 
@@ -831,7 +831,7 @@ void ChromeContentBrowserClient::GuestWebContentsCreated(
     return;
   }
   std::string api_type;
-  extra_params->GetString(guestview::kAttributeApi, &api_type);
+  extra_params->GetString(guestview::kParameterApi, &api_type);
 
   if (api_type == "adview") {
     *guest_delegate  = new AdViewGuest(guest_web_contents);
@@ -845,7 +845,6 @@ void ChromeContentBrowserClient::GuestWebContentsCreated(
 void ChromeContentBrowserClient::GuestWebContentsAttached(
     WebContents* guest_web_contents,
     WebContents* embedder_web_contents,
-    int browser_plugin_instance_id,
     const base::DictionaryValue& extra_params) {
   Profile* profile = Profile::FromBrowserContext(
       embedder_web_contents->GetBrowserContext());
@@ -873,7 +872,6 @@ void ChromeContentBrowserClient::GuestWebContentsAttached(
   }
   guest->Attach(embedder_web_contents,
                 extension->id(),
-                browser_plugin_instance_id,
                 extra_params);
 }
 
@@ -2024,10 +2022,8 @@ bool ChromeContentBrowserClient::CanCreateWindow(
   HostContentSettingsMap* content_settings =
       ProfileIOData::FromResourceContext(context)->GetHostContentSettingsMap();
 
-  if ((disposition == NEW_POPUP || disposition == NEW_FOREGROUND_TAB ||
-       disposition == NEW_BACKGROUND_TAB) && !user_gesture &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisablePopupBlocking)) {
+  if (!user_gesture && !CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kDisablePopupBlocking)) {
     if (content_settings->GetContentSetting(opener_url,
                                             opener_url,
                                             CONTENT_SETTINGS_TYPE_POPUPS,

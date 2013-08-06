@@ -14,11 +14,9 @@
 #include "content/renderer/pepper/ppb_image_data_impl.h"
 #include "content/renderer/pepper/ppb_network_monitor_private_impl.h"
 #include "content/renderer/pepper/ppb_scrollbar_impl.h"
-#include "content/renderer/pepper/ppb_tcp_server_socket_private_impl.h"
 #include "content/renderer/pepper/ppb_tcp_socket_private_impl.h"
 #include "content/renderer/pepper/ppb_video_decoder_impl.h"
 #include "content/renderer/pepper/ppb_x509_certificate_private_impl.h"
-#include "content/renderer/pepper/resource_helper.h"
 #include "ppapi/c/pp_size.h"
 #include "ppapi/shared_impl/ppb_audio_config_shared.h"
 #include "ppapi/shared_impl/ppb_image_data_shared.h"
@@ -255,7 +253,7 @@ PP_Resource ResourceCreationImpl::CreateResourceArray(
 
 PP_Resource ResourceCreationImpl::CreateTCPServerSocketPrivate(
     PP_Instance instance) {
-  return PPB_TCPServerSocket_Private_Impl::CreateResource(instance);
+  return 0;  // Not supported in-process.
 }
 
 PP_Resource ResourceCreationImpl::CreateTCPSocket(PP_Instance instance) {

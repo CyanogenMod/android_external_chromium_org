@@ -113,6 +113,7 @@ _OS_NEGATIVE_FILTER['win'] = [
     'RenderedWebElementTest.canClickOnASuckerFishStyleMenu',
     # Flaky: https://code.google.com/p/chromedriver/issues/detail?id=416
     'TakesScreenshotTest.testShouldCaptureScreenshotAtIFramePageAfterSwitching',
+    'TakesScreenshotTest.testShouldCaptureScreenshotAtFramePage',
 ]
 _OS_NEGATIVE_FILTER['linux'] = []
 _OS_NEGATIVE_FILTER['mac'] = [
@@ -175,6 +176,9 @@ _OS_NEGATIVE_FILTER['android'] = [
     'UploadTest.testFileUploading',
     # Not applicable on Chromium Test Shell (doesn't support tabs).
     'WindowSwitchingTest.*',
+
+    # Flaky: https://code.google.com/p/chromedriver/issues/detail?id=441
+    'PageLoadingTest.testShouldBeAbleToNavigateBackInTheBrowserHistory',
 ]
 
 

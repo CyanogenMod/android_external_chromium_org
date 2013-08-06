@@ -32,6 +32,7 @@
 #include "content/public/common/webplugininfo.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/device_orientation/device_motion_event_pump.h"
+#include "content/renderer/device_orientation/device_orientation_event_pump.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/gamepad_shared_memory_reader.h"
 #include "content/renderer/media/audio_decoder.h"
@@ -54,6 +55,7 @@
 #include "net/base/net_util.h"
 #include "third_party/WebKit/public/platform/WebBlobRegistry.h"
 #include "third_party/WebKit/public/platform/WebDeviceMotionListener.h"
+#include "third_party/WebKit/public/platform/WebDeviceOrientationListener.h"
 #include "third_party/WebKit/public/platform/WebFileInfo.h"
 #include "third_party/WebKit/public/platform/WebGamepads.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamCenter.h"
@@ -180,11 +182,6 @@ class RendererWebKitPlatformSupportImpl::SandboxSupport
       CGFontRef* container,
       uint32* font_id);
 #elif defined(OS_POSIX)
-  virtual void getFontFamilyForCharacters(
-      const WebKit::WebUChar* characters,
-      size_t num_characters,
-      const char* preferred_locale,
-      WebKit::WebFontFamily* family);
   virtual void getFontFamilyForCharacter(
       WebKit::WebUChar32 character,
       const char* preferred_locale,
@@ -577,18 +574,6 @@ bool RendererWebKitPlatformSupportImpl::SandboxSupport::loadFont(
 // whole class for android.
 
 #elif defined(OS_POSIX)
-
-void
-RendererWebKitPlatformSupportImpl::SandboxSupport::getFontFamilyForCharacters(
-    const WebKit::WebUChar* characters,
-    size_t num_characters,
-    const char* preferred_locale,
-    WebKit::WebFontFamily* family) {
-  DCHECK(num_characters <= 2);
-  WebKit::WebUChar32 c;
-  U16_GET(characters, 0, 0, num_characters, c);
-  getFontFamilyForCharacter(c, preferred_locale, family);
-}
 
 void
 RendererWebKitPlatformSupportImpl::SandboxSupport::getFontFamilyForCharacter(
@@ -1039,6 +1024,17 @@ void RendererWebKitPlatformSupportImpl::setDeviceMotionListener(
 void RendererWebKitPlatformSupportImpl::SetMockDeviceMotionDataForTesting(
     const WebKit::WebDeviceMotionData& data) {
   g_test_device_motion_data.Get() = data;
+}
+
+//------------------------------------------------------------------------------
+
+void RendererWebKitPlatformSupportImpl::setDeviceOrientationListener(
+    WebKit::WebDeviceOrientationListener* listener) {
+  if (!device_orientation_event_pump_) {
+    device_orientation_event_pump_.reset(new DeviceOrientationEventPump);
+    device_orientation_event_pump_->Attach(RenderThreadImpl::current());
+  }
+  device_orientation_event_pump_->SetListener(listener);
 }
 
 //------------------------------------------------------------------------------

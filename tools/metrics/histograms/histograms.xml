@@ -1133,6 +1133,14 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="CertificateType">
+  <summary>
+    Information about the certificate algorithms and sizes in use on the web, to
+    examine compliance with the CA/Browser Forum requirements and security best
+    practice.
+  </summary>
+</histogram>
+
 <histogram name="Chrome.SearchSelectExempt" enum="SearchEngine">
   <obsolete>
     Deprecated 8/2013. No longer tracked.
@@ -9324,6 +9332,13 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Omnibox.FocusToOpenTime" units="ms">
+  <summary>
+    The length of time between when a user focused on the omnibox and opened an
+    omnibox match (which could be what they typed or a suggestion).
+  </summary>
+</histogram>
+
 <histogram name="Omnibox.ProviderTime" units="ms">
   <summary>
     The length of time taken by the named provider&quot;s synchronous pass.
@@ -16936,7 +16951,8 @@ other types of suffix sets.
   <int value="146" label="SOCKET_CONNECT"/>
   <int value="147" label="BOOKMARKS_GETSUBTREE"/>
   <int value="148" label="HISTORY_DELETEURL"/>
-  <int value="149" label="EXPERIMENTAL_MEDIAGALLERIES_ASSEMBLEMEDIAFILE"/>
+  <int value="149"
+      label="DELETED_EXPERIMENTAL_MEDIAGALLERIES_ASSEMBLEMEDIAFILE"/>
   <int value="150" label="BOOKMARKMANAGERPRIVATE_STARTDRAG"/>
   <int value="151" label="BROWSINGDATA_REMOVEPASSWORDS"/>
   <int value="152" label="DOWNLOADS_DRAG"/>
@@ -16968,7 +16984,7 @@ other types of suffix sets.
   <int value="178" label="BOOKMARKS_GETTREE"/>
   <int value="179" label="FILEBROWSERPRIVATE_SELECTFILES"/>
   <int value="180" label="RUNTIME_GETBACKGROUNDPAGE"/>
-  <int value="181" label="EXPERIMENTAL_RECORD_REPLAYURLS"/>
+  <int value="181" label="DELETED_EXPERIMENTAL_RECORD_REPLAYURLS"/>
   <int value="182" label="WEBSTOREPRIVATE_COMPLETEINSTALL"/>
   <int value="183" label="DELETED_EXPERIMENTAL_SPEECHINPUT_START"/>
   <int value="184" label="COOKIES_GETALL"/>
@@ -17138,7 +17154,7 @@ other types of suffix sets.
   <int value="348" label="CONTEXTMENUS_CREATE"/>
   <int value="349" label="MEDIAPLAYERPRIVATE_GETPLAYLIST"/>
   <int value="350" label="DOWNLOADS_ERASE"/>
-  <int value="351" label="EXPERIMENTAL_RECORD_CAPTUREURLS"/>
+  <int value="351" label="DELETED_EXPERIMENTAL_RECORD_CAPTUREURLS"/>
   <int value="352" label="TTS_ISSPEAKING"/>
   <int value="353" label="BOOKMARKS_REMOVETREE"/>
   <int value="354" label="FILEBROWSERPRIVATE_SEARCHDRIVE"/>
@@ -22420,6 +22436,41 @@ other types of suffix sets.
   <affected-histogram name="PLT.BeginToFinishDoc"/>
   <affected-histogram name="PLT.BeginToFirstPaint"/>
   <affected-histogram name="PLT.CommitToFirstPaint"/>
+</fieldtrial>
+
+<fieldtrial name="CertificateTypeAlgorithms" separator=".">
+  <group name="DH" label="DH"/>
+  <group name="DSA" label="DSA"/>
+  <group name="ECDH" label="ECDH"/>
+  <group name="ECDSA" label="ECDSA"/>
+  <group name="RSA" label="RSA"/>
+  <group name="Unknown" label="SPKI unrecognized by cert library"/>
+  <group name="Unsupported" label="Un-histogrammed type - please fix"/>
+  <affected-histogram name="CertificateType.BR.Intermediate"/>
+  <affected-histogram name="CertificateType.BR.Leaf"/>
+  <affected-histogram name="CertificateType.BR.Root"/>
+  <affected-histogram name="CertificateType.NonBR.Intermediate"/>
+  <affected-histogram name="CertificateType.NonBR.Leaf"/>
+  <affected-histogram name="CertificateType.NonBR.Root"/>
+</fieldtrial>
+
+<fieldtrial name="CertificateTypeBRValidity" separator=".">
+  <group name="BR"
+      label="The *leaf* certificate of the chain expires after 2013-12-31,
+             meaning that it should be in scope for the Baseline
+             Requirement's key size requirements"/>
+  <group name="NonBR"
+      label="The *leaf* certificate of the chain expires on or before
+             2013-12-31"/>
+  <affected-histogram name="CertificateType"/>
+</fieldtrial>
+
+<fieldtrial name="CertificateTypeChainPosition" separator=".">
+  <group name="Intermediate" label="Intermediate's SPKI"/>
+  <group name="Leaf" label="Leaf's SPKI"/>
+  <group name="Root" label="Root's SPKI"/>
+  <affected-histogram name="CertificateType.BR"/>
+  <affected-histogram name="CertificateType.NonBR"/>
 </fieldtrial>
 
 <fieldtrial name="ConnCountImpact">

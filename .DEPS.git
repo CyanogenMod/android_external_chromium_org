@@ -11,7 +11,7 @@ vars = {
     'git_url':
          'https://chromium.googlesource.com',
     'webkit_rev':
-         '@8c82c160f5a6da25b626a7dd9460279d469372ae'
+         '@261282bdd547b4a2f4da7a0e3d030d1bf9edefef'
 }
 
 deps = {
@@ -38,7 +38,7 @@ deps = {
     'src/third_party/WebKit':
         Var('webkit_url') + Var('webkit_rev'),
     'src/third_party/accessibility-developer-tools':
-        Var('git_url') + '/external/accessibility-developer-tools.git@03a584c1b3b9c164cd3c7747c6bd3c2f291aabb2',
+        Var('git_url') + '/external/accessibility-developer-tools.git@2e3c9c8e49277a0ca1eeba510271eb03f9486d8f',
     'src/third_party/angle_dx11':
         Var('git_url') + '/external/angle.git@b93f84acdecd3eebf316750d8024b8b592c9012b',
     'src/third_party/bidichecker':
@@ -98,11 +98,11 @@ deps = {
     'src/third_party/sfntly/cpp/src':
         Var('git_url') + '/external/sfntly/cpp/src.git@cfb2f1743f0169ad8d01035458617bce97107539',
     'src/third_party/skia/gyp':
-        Var('git_url') + '/external/skia/gyp.git@d845c1411dfceccc82a7f39ddd6637c8d68db878',
+        Var('git_url') + '/external/skia/gyp.git@d95165ef4512bb4d6218095cb46c4f03d77f41be',
     'src/third_party/skia/include':
-        Var('git_url') + '/external/skia/include.git@cd8f89c884d3acf8e7ae0a4d272dec6af45f2b7e',
+        Var('git_url') + '/external/skia/include.git@3f23893b4976bd86b562ebf07d6562ed9c86233a',
     'src/third_party/skia/src':
-        Var('git_url') + '/external/skia/src.git@03b202fbda1605402f98f73cece3975fc60f484e',
+        Var('git_url') + '/external/skia/src.git@637bc0f8ff83db7ba461ee7f562860613d8e5fdc',
     'src/third_party/smhasher/src':
         Var('git_url') + '/external/smhasher.git@6f63a4882e6b2cf87e8eec1a3ef8644e0d963283',
     'src/third_party/snappy/src':
@@ -136,7 +136,7 @@ deps = {
     'src/tools/swarm_client':
         Var('git_url') + '/chromium/tools/swarm_client.git@86681e9a54c88972dba217b4f1007222dd8936a4',
     'src/v8':
-        Var('git_url') + '/external/v8.git@c22f2d813ad21e25e8df5d4a371fd63f582e4262',
+        Var('git_url') + '/external/v8.git@8bfa5f44e028b8b546a548514c7e00fc1a2e2538',
     'src/webkit/renderer/media/crypto/ppapi/cdm':
         Var('git_url') + '/chromium/cdm.git@c2b192a02546916d28233cfd8b7717ffcdcc8347',
 }

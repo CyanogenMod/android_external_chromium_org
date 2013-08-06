@@ -929,14 +929,6 @@ const Experiment kExperiments[] = {
     kOsWin | kOsLinux | kOsCrOS,
     SINGLE_VALUE_TYPE(switches::kDisableTouchAdjustment)
   },
-  {
-    "enable-tab-capture",
-    IDS_ENABLE_TAB_CAPTURE_NAME,
-    IDS_ENABLE_TAB_CAPTURE_DESCRIPTION,
-    kOsWin | kOsMac | kOsLinux | kOsCrOS,
-    ENABLE_DISABLE_VALUE_TYPE_AND_VALUE(switches::kTabCapture, "1",
-                                        switches::kTabCapture, "0")
-  },
 #if defined(OS_CHROMEOS)
   {
       "ash-use-alternate-shelf",
@@ -1014,10 +1006,10 @@ const Experiment kExperiments[] = {
 #if defined(USE_ASH)
   {
     "show-launcher-alignment-menu",
-    IDS_FLAGS_SHOW_LAUNCHER_ALIGNMENT_MENU_NAME,
-    IDS_FLAGS_SHOW_LAUNCHER_ALIGNMENT_MENU_DESCRIPTION,
+    IDS_FLAGS_SHOW_SHELF_ALIGNMENT_MENU_NAME,
+    IDS_FLAGS_SHOW_SHELF_ALIGNMENT_MENU_DESCRIPTION,
     kOsAll,
-    SINGLE_VALUE_TYPE(switches::kShowLauncherAlignmentMenu)
+    SINGLE_VALUE_TYPE(switches::kShowShelfAlignmentMenu)
   },
   {
     "disable-minimize-on-second-launcher-item-click",

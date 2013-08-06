@@ -104,7 +104,7 @@ bool ShouldShowPromo(Profile* profile) {
     return false;
 
   // Don't show for managed profiles.
-  if (profile->GetPrefs()->GetBoolean(prefs::kProfileIsManaged))
+  if (profile->IsManaged())
     return false;
 
   // Display the signin promo if the user is not signed in.
@@ -124,10 +124,6 @@ bool ShouldShowPromoAtStartup(Profile* profile, bool is_new_profile) {
 
   if (!ShouldShowPromo(profile))
     return false;
-
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kNoFirstRun))
-    is_new_profile = false;
 
   if (!is_new_profile) {
     if (!HasShownPromoAtStartup(profile))

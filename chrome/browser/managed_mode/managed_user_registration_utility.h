@@ -16,6 +16,7 @@
 #include "base/timer/timer.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service_observer.h"
+#include "chrome/browser/managed_mode/managed_users.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 
@@ -54,13 +55,20 @@ class ManagedUserRegistrationUtility
 
   static scoped_ptr<ManagedUserRegistrationUtility> Create(Profile* profile);
 
-  // Registers a new managed user with the server. |info| contains necessary
-  // information like the display name of the  the user. |callback| is called
-  // with the result of the registration. We use the info here and not the
-  // profile, because on Chrome OS the profile of the managed user does
-  // not yet exist.
-  void Register(const ManagedUserRegistrationInfo& info,
+  static std::string GenerateNewManagedUserId();
+
+  // Registers a new managed user with the server. |managed_user_id| is a new
+  // unique ID for the new managed user. If its value is the same as that of
+  // of one of the existing managed users, then the same user will be created
+  // on this machine. |info| contains necessary information like the display
+  // name of the  the user. |callback| is called with the result of the
+  // registration. We use the info here and not the profile, because on
+  // Chrome OS the profile of the managed user does not yet exist.
+  void Register(const std::string& managed_user_id,
+                const ManagedUserRegistrationInfo& info,
                 const RegistrationCallback& callback);
+
+  void StartRegistrationTimer();
 
   // ManagedUserSyncServiceObserver:
   virtual void OnManagedUserAcknowledged(const std::string& managed_user_id)
@@ -120,6 +128,7 @@ class ManagedUserRegistrationUtility
   std::string pending_managed_user_id_;
   std::string pending_managed_user_token_;
   bool pending_managed_user_acknowledged_;
+  bool is_existing_managed_user_;
   RegistrationCallback callback_;
 
   DISALLOW_COPY_AND_ASSIGN(ManagedUserRegistrationUtility);

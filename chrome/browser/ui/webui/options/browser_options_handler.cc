@@ -29,6 +29,10 @@
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/gpu/gpu_mode_manager.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/managed_mode/managed_user_registration_utility.h"
+#include "chrome/browser/managed_mode/managed_user_service.h"
+#include "chrome/browser/managed_mode/managed_user_service_factory.h"
+#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service_factory.h"
@@ -63,6 +67,7 @@
 #include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chromeos/chromeos_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/navigation_controller.h"
@@ -84,15 +89,8 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/webui/web_ui_util.h"
 
-#if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_user_registration_utility.h"
-#include "chrome/browser/managed_mode/managed_user_service.h"
-#include "chrome/browser/managed_mode/managed_user_service_factory.h"
-#endif
-
 #if !defined(OS_CHROMEOS)
 #include "chrome/browser/ui/webui/options/advanced_options_utils.h"
-#include "chromeos/chromeos_switches.h"
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -104,7 +102,6 @@
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/webui/options/chromeos/timezone_options_util.h"
-#include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager_client.h"
 #include "ui/gfx/image/image_skia.h"
@@ -126,8 +123,8 @@ namespace options {
 namespace {
 
 // Constants for the new tab button field trial.
- const char kProfileResetTrialName[] = "ManualResetProfile";
- const char kProfileResetTrialEnableGroupName[] = "Enable";
+const char kProfileResetTrialName[] = "ManualResetProfile";
+const char kProfileResetTrialEnableGroupName[] = "Enable";
 
 bool ShouldShowMultiProfilesUserList(chrome::HostDesktopType desktop_type) {
 #if defined(OS_CHROMEOS)
@@ -1115,14 +1112,19 @@ void BrowserOptionsHandler::CreateProfile(const ListValue* args) {
 
   string16 name;
   string16 icon;
+  std::string managed_user_id;
   bool create_shortcut = false;
   bool managed_user = false;
   if (args->GetString(0, &name) && args->GetString(1, &icon)) {
     if (args->GetBoolean(2, &create_shortcut)) {
       bool success = args->GetBoolean(3, &managed_user);
       DCHECK(success);
+      success = args->GetString(4, &managed_user_id);
+      DCHECK(success);
     }
   }
+  if (!IsValidExistingManagedUserId(managed_user_id))
+    return;
 
   std::vector<ProfileManager::CreateCallback> callbacks;
   if (create_shortcut)
@@ -1134,9 +1136,15 @@ void BrowserOptionsHandler::CreateProfile(const ListValue* args) {
                  managed_user);
 
   if (managed_user && ManagedUserService::AreManagedUsersEnabled()) {
+    if (managed_user_id.empty()) {
+      managed_user_id =
+          ManagedUserRegistrationUtility::GenerateNewManagedUserId();
+    }
     callbacks.push_back(
-        base::Bind(&BrowserOptionsHandler::RegisterNewManagedUser,
-                   weak_ptr_factory_.GetWeakPtr(), show_user_feedback));
+        base::Bind(&BrowserOptionsHandler::RegisterManagedUser,
+                   weak_ptr_factory_.GetWeakPtr(),
+                   show_user_feedback,
+                   managed_user_id));
   } else {
     callbacks.push_back(show_user_feedback);
   }
@@ -1145,11 +1153,12 @@ void BrowserOptionsHandler::CreateProfile(const ListValue* args) {
 
   profile_path_being_created_ = ProfileManager::CreateMultiProfileAsync(
       name, icon, base::Bind(&RunProfileCreationCallbacks, callbacks),
-      managed_user);
+      managed_user_id);
 }
 
-void BrowserOptionsHandler::RegisterNewManagedUser(
+void BrowserOptionsHandler::RegisterManagedUser(
     const ProfileManager::CreateCallback& callback,
+    const std::string& managed_user_id,
     Profile* new_profile,
     Profile::CreateStatus status) {
   DCHECK(profile_path_being_created_ == new_profile->GetPath());
@@ -1165,6 +1174,7 @@ void BrowserOptionsHandler::RegisterNewManagedUser(
   managed_user_service->RegisterAndInitSync(
       managed_user_registration_utility_.get(),
       Profile::FromWebUI(web_ui()),
+      managed_user_id,
       callback);
 }
 
@@ -1731,6 +1741,31 @@ void BrowserOptionsHandler::SetupProxySettingsSection() {
                                    disabled, extension_controlled);
 
 #endif  // !defined(OS_CHROMEOS)
+}
+
+bool BrowserOptionsHandler::IsValidExistingManagedUserId(
+    const std::string& existing_managed_user_id) const {
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kAllowCreateExistingManagedUsers)) {
+    return false;
+  }
+
+  if (existing_managed_user_id.empty())
+    return true;
+  DictionaryPrefUpdate update(Profile::FromWebUI(web_ui())->GetPrefs(),
+                              prefs::kManagedUsers);
+  DictionaryValue* dict = update.Get();
+  if (!dict->HasKey(existing_managed_user_id))
+    return false;
+
+  // Check if this managed user is already exists on this machine.
+  const ProfileInfoCache& cache =
+      g_browser_process->profile_manager()->GetProfileInfoCache();
+  for (size_t i = 0; i < cache.GetNumberOfProfiles(); ++i) {
+    if (existing_managed_user_id == cache.GetManagedUserIdOfProfileAtIndex(i))
+      return false;
+  }
+  return true;
 }
 
 }  // namespace options

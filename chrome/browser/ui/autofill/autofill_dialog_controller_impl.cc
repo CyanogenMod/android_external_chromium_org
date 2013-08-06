@@ -8,6 +8,7 @@
 #include <map>
 #include <string>
 
+#include "apps/native_app_window.h"
 #include "apps/shell_window.h"
 #include "base/base64.h"
 #include "base/bind.h"
@@ -31,7 +32,6 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/extensions/native_app_window.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
@@ -145,7 +145,7 @@ bool DetailInputMatchesField(DialogSection section,
 }
 
 bool IsCreditCardType(AutofillFieldType type) {
-  return AutofillType(type).group() == AutofillType::CREDIT_CARD;
+  return AutofillType(type).group() == CREDIT_CARD;
 }
 
 // Returns true if |input| should be used to fill a site-requested |field| which
@@ -1275,6 +1275,15 @@ bool AutofillDialogControllerImpl::ShouldShowProgressBar() const {
   // Show the progress bar while Autocheckout is running but hide it on errors,
   // as there's no use leaving it up if the flow has failed.
   return autocheckout_state_ == AUTOCHECKOUT_IN_PROGRESS;
+}
+
+gfx::Image AutofillDialogControllerImpl::ButtonStripImage() const {
+  if (ShouldShowDetailArea() && IsPayingWithWallet()) {
+    return ui::ResourceBundle::GetSharedInstance().GetImageNamed(
+        IDR_WALLET_LOGO);
+  }
+
+  return gfx::Image();
 }
 
 string16 AutofillDialogControllerImpl::LabelForSection(DialogSection section)

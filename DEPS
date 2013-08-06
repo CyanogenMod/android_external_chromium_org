@@ -5,10 +5,10 @@ vars = {
   # Use this googlecode_url variable only if there is an internal mirror for it.
   # If you do not know, use the full path while defining your new deps entry.
   "googlecode_url": "http://%s.googlecode.com/svn",
-  "sourceforge_url": "http://%(repo)s.svn.sourceforge.net/svnroot/%(repo)s",
+  "sourceforge_url": "http://svn.code.sf.net/p/%(repo)s/code",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "155496",
+  "webkit_revision": "155530",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "swig_revision": "69281",
@@ -28,11 +28,11 @@ vars = {
   "ffmpeg_hash": "894e6f715645528e815aee2dad45b59704238dcd",
 
   "sfntly_revision": "134",
-  "skia_revision": "10499",
+  "skia_revision": "10524",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
-  "v8_revision": "15975",
+  "v8_revision": "16053",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
@@ -243,7 +243,7 @@ deps = {
     "/trunk/deps/third_party/opus@185324",
 
   "src/third_party/accessibility-developer-tools":
-    Var("chromium_git") + "/external/accessibility-developer-tools.git@03a584c1b3b9c164cd3c7747c6bd3c2f291aabb2",
+    Var("chromium_git") + "/external/accessibility-developer-tools.git@2e3c9c8e49277a0ca1eeba510271eb03f9486d8f",
 
   "src/webkit/renderer/media/crypto/ppapi/cdm":
     "/trunk/deps/cdm@181763",

@@ -8,14 +8,12 @@
  * Watches for changes in the tracked directory, including local metadata
  * changes.
  *
- * @param {DirectoryEntry} root Root entry.
  * @param {MetadataCache} metadataCache Instance of MetadataCache.
  * @extends {cr.EventTarget}
  * @constructor
  */
-function FileWatcher(root, metadataCache) {
+function FileWatcher(metadataCache) {
   this.queue_ = new AsyncUtil.Queue();
-  this.root_ = root;
   this.metadataCache_ = metadataCache;
   this.watchedDirectoryEntry_ = null;
 
@@ -40,7 +38,7 @@ FileWatcher.prototype.dispose = function() {
   chrome.fileBrowserPrivate.onDirectoryChanged.removeListener(
       this.onDirectoryChangedBound_);
   if (this.watchedDirectoryEntry_)
-    this.resetWatchedEntry_();
+    this.resetWatchedEntry_(function() {}, function() {});
 };
 
 /**

@@ -128,6 +128,7 @@ tasks.instrumentApiFunction(
     chrome.notifications.onButtonClicked, 'addListener', 0);
 tasks.instrumentApiFunction(chrome.notifications.onClicked, 'addListener', 0);
 tasks.instrumentApiFunction(chrome.notifications.onClosed, 'addListener', 0);
+tasks.instrumentApiFunction(chrome.omnibox.onInputEntered, 'addListener', 0);
 tasks.instrumentApiFunction(
     googleGeolocationAccessEnabledPref,
     'get',
@@ -701,9 +702,9 @@ function initialize() {
  * Starts or stops the polling of cards.
  * @param {boolean} shouldPollCardsRequest true to start and
  *     false to stop polling cards.
- * @param {function} onSuccess Called on completion.
+ * @param {function} callback Called on completion.
  */
-function setShouldPollCards(shouldPollCardsRequest, onSuccess) {
+function setShouldPollCards(shouldPollCardsRequest, callback) {
   tasks.debugSetStepName(
         'setShouldRun-shouldRun-updateCardsAttemptsIsRunning');
   updateCardsAttempts.isRunning(function(currentValue) {
@@ -714,7 +715,7 @@ function setShouldPollCards(shouldPollCardsRequest, onSuccess) {
       else
         stopPollingCards();
     }
-    onSuccess();
+    callback();
   });
 }
 
@@ -722,9 +723,9 @@ function setShouldPollCards(shouldPollCardsRequest, onSuccess) {
  * Shows or hides the toast.
  * @param {boolean} visibleRequest true to show the toast and
  *     false to hide the toast.
- * @param {function} onSuccess Called on completion.
+ * @param {function} callback Called on completion.
  */
-function setToastVisible(visibleRequest, onSuccess) {
+function setToastVisible(visibleRequest, callback) {
   tasks.debugSetStepName(
       'setToastVisible-shouldSetToastVisible-getAllNotifications');
   chrome.notifications.getAll(function(notifications) {
@@ -740,7 +741,7 @@ function setToastVisible(visibleRequest, onSuccess) {
         hideWelcomeToast();
     }
 
-    onSuccess();
+    callback();
   });
 }
 

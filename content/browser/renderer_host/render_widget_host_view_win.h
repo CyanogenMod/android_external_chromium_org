@@ -25,7 +25,6 @@
 #include "ui/base/gestures/gesture_recognizer.h"
 #include "ui/base/gestures/gesture_types.h"
 #include "ui/base/ime/text_input_client.h"
-#include "ui/base/ime/win/imm32_manager.h"
 #include "ui/base/ime/win/tsf_bridge.h"
 #include "ui/base/win/extra_sdk_defines.h"
 #include "ui/gfx/native_widget_types.h"
@@ -45,6 +44,7 @@ class Message;
 }
 
 namespace ui {
+class IMM32Manager;
 class ViewProp;
 }
 
@@ -475,7 +475,7 @@ class RenderWidgetHostViewWin
 
   // Wrapper class for IMM32 APIs.
   // (See "ui/base/ime/win/imm32_manager.h" for its details.)
-  ui::IMM32Manager imm32_manager_;
+  scoped_ptr<ui::IMM32Manager> imm32_manager_;
 
   // Represents whether or not this browser process is receiving status
   // messages about the focused edit control from a renderer process.

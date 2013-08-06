@@ -21,6 +21,11 @@ namespace switches {
 // all work out.
 // -----------------------------------------------------------------------------
 
+// Allows choosing an existing managed user profile during the managed
+// user creation flow.
+const char kAllowCreateExistingManagedUsers[] =
+    "allow-create-existing-managed-users";
+
 // Allows third-party content included on a page to prompt for a HTTP basic
 // auth username/password pair.
 const char kAllowCrossOriginAuthPrompt[]    = "allow-cross-origin-auth-prompt";
@@ -1252,8 +1257,8 @@ const char kShowAppList[]                   = "show-app-list";
 // See kHideIcons.
 const char kShowIcons[]                     = "show-icons";
 
-// If true the alignment of the launcher can be changed.
-const char kShowLauncherAlignmentMenu[]     = "show-launcher-alignment-menu";
+// If true the alignment of the shelf can be changed.
+const char kShowShelfAlignmentMenu[]        = "show-launcher-alignment-menu";
 
 // Marks a renderer as the signin process.
 const char kSigninProcess[]                 = "signin-process";
@@ -1381,9 +1386,6 @@ const char kSyncfsEnableDirectoryOperation[] =
 
 // Enables tab dragging to create a real browser.
 const char kTabBrowserDragging[]            = "enable-tab-browser-dragging";
-
-// Enables tab capture.
-const char kTabCapture[]                    = "enable-tab-capture";
 
 // Passes the name of the current running automated test to Chrome.
 const char kTestName[]                      = "test-name";

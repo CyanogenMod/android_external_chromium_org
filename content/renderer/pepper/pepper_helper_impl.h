@@ -5,27 +5,20 @@
 #ifndef CONTENT_RENDERER_PEPPER_PEPPER_PLUGIN_DELEGATE_H_
 #define CONTENT_RENDERER_PEPPER_PEPPER_PLUGIN_DELEGATE_H_
 
-#include <map>
 #include <set>
 #include <string>
-#include <vector>
 
 #include "base/basictypes.h"
 #include "base/id_map.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/observer_list.h"
 #include "content/public/renderer/render_view_observer.h"
-#include "content/renderer/pepper/pepper_browser_connection.h"
 #include "content/renderer/pepper_helper.h"
-#include "ipc/ipc_platform_file.h"
 #include "ppapi/c/pp_file_info.h"
 #include "ppapi/c/ppb_tcp_socket.h"
 #include "ppapi/c/private/ppb_tcp_socket_private.h"
-#include "ppapi/shared_impl/private/ppb_tcp_server_socket_shared.h"
 #include "ppapi/shared_impl/private/tcp_socket_private_impl.h"
-#include "ppapi/shared_impl/url_response_info_data.h"
 #include "ui/base/ime/text_input_type.h"
 
 namespace base {
@@ -33,12 +26,8 @@ class FilePath;
 }
 
 namespace ppapi {
-class PepperFilePath;
 class PpapiPermissions;
-class PPB_X509Certificate_Fields;
-namespace host {
-class ResourceHost;
-}
+struct URLResponseInfoData;
 }
 
 namespace WebKit {
@@ -54,7 +43,6 @@ class GamepadSharedMemoryReader;
 class PepperBroker;
 class PluginModule;
 class PPB_Broker_Impl;
-class PPB_TCPSocket_Private_Impl;
 class RenderViewImpl;
 struct WebPluginInfo;
 
@@ -67,10 +55,6 @@ class PepperHelperImpl : public PepperHelper,
 
   RenderViewImpl* render_view() { return render_view_; }
 
-  PepperBrowserConnection* pepper_browser_connection() {
-    return &pepper_browser_connection_;
-  }
-
   // A pointer is returned immediately, but it is not ready to be used until
   // BrokerConnected has been called.
   // The caller is responsible for calling Disconnect() on the returned pointer
@@ -79,10 +63,6 @@ class PepperHelperImpl : public PepperHelper,
 
   // Removes broker from pending_connect_broker_ if present. Returns true if so.
   bool StopWaitingForBrokerConnection(PepperBroker* broker);
-
-  void RegisterTCPSocket(PPB_TCPSocket_Private_Impl* socket, uint32 socket_id);
-  void UnregisterTCPSocket(uint32 socket_id);
-  void TCPServerSocketStopListening(uint32 socket_id);
 
   // Notifies that |instance| has changed the cursor.
   // This will update the cursor appearance if it is currently over the plugin
@@ -116,23 +96,8 @@ class PepperHelperImpl : public PepperHelper,
   // from this call.
   void InstanceDeleted(PepperPluginInstanceImpl* instance);
 
-  // Sends an async IPC to open a local file.
-  typedef base::Callback<void (base::PlatformFileError, base::PassPlatformFile)>
-      AsyncOpenFileCallback;
-  bool AsyncOpenFile(const base::FilePath& path,
-                     int pp_open_flags,
-                     const AsyncOpenFileCallback& callback);
-
   // Retrieve current gamepad data.
   void SampleGamepads(WebKit::WebGamepads* data);
-
-  // Notifies the plugin of the document load. This should initiate the call to
-  // PPP_Instance.HandleDocumentLoad.
-  //
-  // The loader object should set itself on the PluginInstance as the document
-  // loader using set_document_loader.
-  void HandleDocumentLoad(PepperPluginInstanceImpl* instance,
-                          const WebKit::WebURLResponse& response);
 
   // Sets up the renderer host and out-of-process proxy for an external plugin
   // module. Returns the renderer host, or NULL if it couldn't be created.
@@ -179,42 +144,9 @@ class PepperHelperImpl : public PepperHelper,
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void OnDestruct() OVERRIDE;
 
-  void OnTCPSocketConnectACK(uint32 plugin_dispatcher_id,
-                             uint32 socket_id,
-                             int32_t result,
-                             const PP_NetAddress_Private& local_addr,
-                             const PP_NetAddress_Private& remote_addr);
-  void OnTCPSocketSSLHandshakeACK(
-      uint32 plugin_dispatcher_id,
-      uint32 socket_id,
-      bool succeeded,
-      const ppapi::PPB_X509Certificate_Fields& certificate_fields);
-  void OnTCPSocketReadACK(uint32 plugin_dispatcher_id,
-                          uint32 socket_id,
-                          int32_t result,
-                          const std::string& data);
-  void OnTCPSocketWriteACK(uint32 plugin_dispatcher_id,
-                           uint32 socket_id,
-                           int32_t result);
-  void OnTCPSocketSetOptionACK(uint32 plugin_dispatcher_id,
-                               uint32 socket_id,
-                               int32_t result);
-  void OnTCPServerSocketListenACK(uint32 plugin_dispatcher_id,
-                                  PP_Resource socket_resource,
-                                  uint32 socket_id,
-                                  const PP_NetAddress_Private& local_addr,
-                                  int32_t status);
-  void OnTCPServerSocketAcceptACK(uint32 plugin_dispatcher_id,
-                                  uint32 socket_id,
-                                  uint32 accepted_socket_id,
-                                  const PP_NetAddress_Private& local_addr,
-                                  const PP_NetAddress_Private& remote_addr);
   void OnPpapiBrokerChannelCreated(int request_id,
                                    base::ProcessId broker_pid,
                                    const IPC::ChannelHandle& handle);
-  void OnAsyncFileOpened(base::PlatformFileError error_code,
-                         IPC::PlatformFileForTransit file_for_transit,
-                         int message_id);
   void OnPpapiBrokerPermissionResult(int request_id, bool result);
 
   // Attempts to create a PPAPI plugin for the given filepath. On success, it
@@ -244,26 +176,10 @@ class PepperHelperImpl : public PepperHelper,
       int plugin_child_id,
       bool is_external);
 
-  void DidDataFromWebURLResponse(
-      PP_Instance pp_instance,
-      const WebKit::WebURLResponse& response,
-      int pending_host_id,
-      const ppapi::URLResponseInfoData& data);
-
   // Pointer to the RenderView that owns us.
   RenderViewImpl* render_view_;
 
-  // Connection for sending and receiving pepper host-related messages to/from
-  // the browser.
-  PepperBrowserConnection pepper_browser_connection_;
-
   std::set<PepperPluginInstanceImpl*> active_instances_;
-
-  IDMap<AsyncOpenFileCallback> pending_async_open_files_;
-
-  IDMap<PPB_TCPSocket_Private_Impl> tcp_sockets_;
-
-  IDMap<ppapi::PPB_TCPServerSocket_Shared> tcp_server_sockets_;
 
   typedef IDMap<scoped_refptr<PepperBroker>, IDMapOwnPointer> BrokerMap;
   BrokerMap pending_connect_broker_;

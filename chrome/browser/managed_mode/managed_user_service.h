@@ -13,6 +13,7 @@
 #include "base/strings/string16.h"
 #include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/managed_mode/managed_mode_url_filter.h"
+#include "chrome/browser/managed_mode/managed_users.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
@@ -124,6 +125,7 @@ class ManagedUserService : public BrowserContextKeyedService,
   // in which case the callback will be ignored.
   void RegisterAndInitSync(ManagedUserRegistrationUtility* registration_utility,
                            Profile* custodian_profile,
+                           const std::string& managed_user_id,
                            const ProfileManager::CreateCallback& callback);
 
   // Returns a pseudo-email address for systems that expect well-formed email

@@ -54,7 +54,6 @@
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
-#include "ui/aura/window_destruction_observer.h"
 #include "ui/aura/window_observer.h"
 #include "ui/aura/window_tracker.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
@@ -1027,7 +1026,7 @@ void RenderWidgetHostViewAura::UpdateCursor(const WebCursor& cursor) {
   current_cursor_ = cursor;
   const gfx::Display display = gfx::Screen::GetScreenFor(window_)->
       GetDisplayNearestWindow(window_);
-  current_cursor_.SetDeviceScaleFactor(display.device_scale_factor());
+  current_cursor_.SetDisplayInfo(display);
   UpdateCursorIfOverSelf();
 }
 
@@ -1241,8 +1240,6 @@ bool RenderWidgetHostViewAura::CanCopyToBitmap() const {
 }
 
 bool RenderWidgetHostViewAura::CanCopyToVideoFrame() const {
-  // TODO(skaslev): Implement this path for s/w compositing by handling software
-  // CopyOutputResult in CopyFromCompositingSurfaceHasResultForVideo().
   return GetCompositor() &&
          window_->layer()->has_external_content() &&
          host_->is_accelerated_compositing_active();
@@ -1386,8 +1383,7 @@ void RenderWidgetHostViewAura::DidReceiveFrameFromRenderer() {
     if (frame_subscriber()->ShouldCaptureFrame(present_time,
                                                &frame, &callback)) {
       CopyFromCompositingSurfaceToVideoFrame(
-          gfx::Rect(ConvertSizeToDIP(current_surface_->device_scale_factor(),
-                                     current_surface_->size())),
+          gfx::Rect(current_frame_size_),
           frame,
           base::Bind(callback, present_time));
     }
@@ -1887,8 +1883,35 @@ void RenderWidgetHostViewAura::CopyFromCompositingSurfaceHasResultForVideo(
 
   // We only handle texture readbacks for now. If the compositor is in software
   // mode, we could produce a software-backed VideoFrame here as well.
-  if (!result->HasTexture())
+  if (!result->HasTexture()) {
+    DCHECK(result->HasBitmap());
+    scoped_ptr<SkBitmap> bitmap = result->TakeBitmap();
+    // Scale the bitmap to the required size, if necessary.
+    SkBitmap scaled_bitmap;
+    if (result->size().width() != region_in_frame.width() ||
+        result->size().height() != region_in_frame.height()) {
+      skia::ImageOperations::ResizeMethod method =
+          skia::ImageOperations::RESIZE_GOOD;
+      scaled_bitmap = skia::ImageOperations::Resize(*bitmap.get(), method,
+                                                    region_in_frame.width(),
+                                                    region_in_frame.height());
+    } else {
+      scaled_bitmap = *bitmap.get();
+    }
+
+    {
+      SkAutoLockPixels scaled_bitmap_locker(scaled_bitmap);
+
+      media::CopyRGBToVideoFrame(
+          reinterpret_cast<uint8*>(scaled_bitmap.getPixels()),
+          scaled_bitmap.rowBytes(),
+          region_in_frame,
+          video_frame.get());
+    }
+    scoped_callback_runner.Release();
+    callback.Run(true);
     return;
+  }
 
   ImageTransportFactory* factory = ImageTransportFactory::GetInstance();
   GLHelper* gl_helper = factory->GetGLHelper();
@@ -2303,6 +2326,8 @@ void RenderWidgetHostViewAura::OnDisplayBoundsChanged(
   gfx::Screen* screen = gfx::Screen::GetScreenFor(window_);
   if (display.id() == screen->GetDisplayNearestWindow(window_).id()) {
     UpdateScreenInfo(window_);
+    current_cursor_.SetDisplayInfo(display);
+    UpdateCursorIfOverSelf();
   }
 }
 
@@ -2397,8 +2422,11 @@ void RenderWidgetHostViewAura::OnDeviceScaleFactorChanged(
     backing_store->ScaleFactorChanged(device_scale_factor);
 
   UpdateScreenInfo(window_);
-  DCHECK_EQ(current_device_scale_factor_, device_scale_factor);
-  current_cursor_.SetDeviceScaleFactor(device_scale_factor);
+
+  const gfx::Display display = gfx::Screen::GetScreenFor(window_)->
+      GetDisplayNearestWindow(window_);
+  DCHECK_EQ(device_scale_factor, display.device_scale_factor());
+  current_cursor_.SetDisplayInfo(display);
 }
 
 void RenderWidgetHostViewAura::OnWindowDestroying() {
@@ -2476,12 +2504,13 @@ void RenderWidgetHostViewAura::OnKeyEvent(ui::KeyEvent* event) {
       aura::Window* host = *(host_tracker_->windows().begin());
       aura::client::FocusClient* client = aura::client::GetFocusClient(host);
       if (client) {
-        // Calling host->Focus() may delete |this|. We create a local
-        // observer for that. In that case we exit without further
-        // access to any members.
-        aura::WindowDestructionObserver destruction_observer(window_);
+        // Calling host->Focus() may delete |this|. We create a local observer
+        // for that. In that case we exit without further access to any members.
+        aura::WindowTracker tracker;
+        aura::Window* window = window_;
+        tracker.Add(window);
         host->Focus();
-        if (destruction_observer.destroyed()) {
+        if (!tracker.Contains(window)) {
           event->SetHandled();
           return;
         }

@@ -228,11 +228,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_visitedlink_browser_gyp)/components_visitedlink_browser_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_visitedlink_common_gyp)/components_visitedlink_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_visitedlink_renderer_gyp)/components_visitedlink_renderer_gyp.a \
-	$(call intermediates-dir-for,GYP,content_content_gyp)/content.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_app_gyp)/content_content_app_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_plugin_gyp)/content_content_plugin_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_ppapi_plugin_gyp)/content_content_ppapi_plugin_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_worker_gyp)/content_content_worker_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_app_both_gyp)/content_content_app_both_gyp.a \
 	$(call intermediates-dir-for,GYP,android_webview_android_webview_pak_gyp)/android_webview_pak.stamp
 
 GYP_GENERATED_OUTPUTS :=
@@ -598,10 +594,7 @@ LOCAL_STATIC_LIBRARIES := \
 	components_visitedlink_browser_gyp \
 	components_visitedlink_common_gyp \
 	components_visitedlink_renderer_gyp \
-	content_content_app_gyp \
-	content_content_plugin_gyp \
-	content_content_ppapi_plugin_gyp \
-	content_content_worker_gyp
+	content_content_app_both_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

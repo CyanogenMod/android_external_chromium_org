@@ -522,7 +522,7 @@ Press any key to continue exploring.
     Continue
   </message>
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_START_BUTTON_TEXT" desc="Text shown on start button in supervised user creation dialog.">
-    Create supervised user.
+    Create supervised user
   </message>
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_NEXT_BUTTON_TEXT" desc="Text shown on next button in supervised user creation dialog.">
     Next
@@ -1013,6 +1013,9 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_OPTIONS_SETTINGS_DISCONNECT" desc="In the settings tab, the text on the button to disconnect from a network.">
     Disconnect
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_CONFIGURE" desc="In the settings tab, the text on the button to configure a network.">
+    Configure
   </message>
   <message name="IDS_OPTIONS_SETTINGS_FORGET" desc="In the settings tab, the text on the button to forget this network.">
     Forget this network

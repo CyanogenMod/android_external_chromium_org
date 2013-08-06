@@ -49,7 +49,6 @@
 #include "third_party/WebKit/public/platform/WebCanvas.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
-#include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/public/web/WebPlugin.h"
 #include "third_party/WebKit/public/web/WebUserGestureToken.h"
@@ -138,10 +137,6 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // Returns the PP_Instance uniquely identifying this instance. Guaranteed
   // nonzero.
   PP_Instance pp_instance() const { return pp_instance_; }
-
-  ::ppapi::PPP_Instance_Combined* instance_interface() const {
-    return instance_interface_.get();
-  }
 
   ::ppapi::thunk::ResourceCreationAPI& resource_creation() {
     return *resource_creation_.get();
@@ -369,10 +364,9 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   virtual bool IsFullPagePlugin() OVERRIDE;
   virtual void FlashSetFullscreen(bool fullscreen, bool delay_report) OVERRIDE;
   virtual bool IsRectTopmost(const gfx::Rect& rect) OVERRIDE;
-  virtual void Navigate(const ::ppapi::URLRequestInfoData& request,
-                        const char* target,
-                        bool from_user_action,
-                        const base::Callback<void(int32_t)>& callback) OVERRIDE;
+  virtual int32_t Navigate(const ::ppapi::URLRequestInfoData& request,
+                           const char* target,
+                           bool from_user_action) OVERRIDE;
 
   // PPB_Instance_API implementation.
   virtual PP_Bool BindGraphics(PP_Instance instance,
@@ -648,13 +642,10 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   MouseLockDispatcher::LockTarget* GetOrCreateLockTargetAdapter();
   void UnSetAndDeleteLockTargetAdapter();
 
-  void DidCreateWebURLRequest(
-      const std::string& target,
-      bool from_user_action,
-      const base::Callback<void(int32_t)>& callback,
-      scoped_ptr<ppapi::URLRequestInfoData> data,
-      bool success,
-      scoped_ptr<WebKit::WebURLRequest> web_request);
+  void DidDataFromWebURLResponse(
+      const WebKit::WebURLResponse& response,
+      int pending_host_id,
+      const ppapi::URLResponseInfoData& data);
 
   PepperHelperImpl* helper_;
   RenderViewImpl* render_view_;

@@ -815,8 +815,8 @@
         'quic/quic_packet_generator.h',
         'quic/quic_protocol.cc',
         'quic/quic_protocol.h',
-        'quic/quic_received_entropy_manager.cc',
-        'quic/quic_received_entropy_manager.h',
+        'quic/quic_received_packet_manager.cc',
+        'quic/quic_received_packet_manager.h',
         'quic/quic_reliable_client_stream.cc',
         'quic/quic_reliable_client_stream.h',
         'quic/quic_sent_entropy_manager.cc',
@@ -1714,6 +1714,8 @@
         'quic/test_tools/quic_framer_peer.h',
         'quic/test_tools/quic_packet_creator_peer.cc',
         'quic/test_tools/quic_packet_creator_peer.h',
+        'quic/test_tools/quic_received_packet_manager_peer.cc',
+        'quic/test_tools/quic_received_packet_manager_peer.h',
         'quic/test_tools/quic_session_peer.cc',
         'quic/test_tools/quic_session_peer.h',
         'quic/test_tools/quic_test_utils.cc',
@@ -1741,7 +1743,7 @@
         'quic/quic_packet_creator_test.cc',
         'quic/quic_packet_generator_test.cc',
         'quic/quic_protocol_test.cc',
-        'quic/quic_received_entropy_manager_test.cc',
+        'quic/quic_received_packet_manager_test.cc',
         'quic/quic_reliable_client_stream_test.cc',
         'quic/quic_sent_entropy_manager_test.cc',
         'quic/quic_session_test.cc',
@@ -1852,7 +1854,9 @@
       'conditions': [
         ['os_posix == 1 and OS != "mac" and OS != "ios" and OS != "android"', {
           'dependencies': [
-            'quic_library'
+            'quic_library',
+            'flip_in_mem_edsm_server_library',
+            'flip_balsa_and_epoll_library',
           ],
           'sources': [
             'tools/flip_server/simple_buffer.cc',
@@ -2605,8 +2609,8 @@
           ],
         },
         {
-          'target_name': 'flip_in_mem_edsm_server',
-          'type': 'executable',
+          'target_name': 'flip_in_mem_edsm_server_library',
+          'type': 'static_library',
           'cflags': [
             '-Wno-deprecated',
           ],
@@ -2628,7 +2632,6 @@
             'tools/flip_server/create_listener.h',
             'tools/flip_server/flip_config.cc',
             'tools/flip_server/flip_config.h',
-            'tools/flip_server/flip_in_mem_edsm_server.cc',
             'tools/flip_server/http_interface.cc',
             'tools/flip_server/http_interface.h',
             'tools/flip_server/loadtime_measurement.h',
@@ -2652,6 +2655,22 @@
             'tools/flip_server/streamer_interface.cc',
             'tools/flip_server/streamer_interface.h',
             'tools/flip_server/string_piece_utils.h',
+          ],
+        },
+        {
+          'target_name': 'flip_in_mem_edsm_server',
+          'type': 'executable',
+          'cflags': [
+            '-Wno-deprecated',
+          ],
+          'dependencies': [
+            '../base/base.gyp:base',
+            'flip_balsa_and_epoll_library',
+            'flip_in_mem_edsm_server_library',
+            'net',
+          ],
+          'sources': [
+            'tools/flip_server/flip_in_mem_edsm_server.cc',
           ],
         },
         {

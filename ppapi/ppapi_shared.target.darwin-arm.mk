@@ -84,7 +84,6 @@ LOCAL_SRC_FILES := \
 	ppapi/shared_impl/private/net_address_private_impl.cc \
 	ppapi/shared_impl/private/net_address_private_impl_constants.cc \
 	ppapi/shared_impl/private/ppb_char_set_shared.cc \
-	ppapi/shared_impl/private/ppb_tcp_server_socket_shared.cc \
 	ppapi/shared_impl/private/ppb_x509_certificate_private_shared.cc \
 	ppapi/shared_impl/private/tcp_socket_private_impl.cc \
 	ppapi/thunk/enter.cc \

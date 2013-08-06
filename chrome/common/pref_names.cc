@@ -1245,6 +1245,9 @@ const char kProfileName[] = "profile.name";
 // Whether the profile is managed.
 const char kProfileIsManaged[] = "profile.is_managed";
 
+// The managed user ID.
+const char kManagedUserId[] = "profile.managed_user_id";
+
 // Indicates if we've already shown a notification that high contrast
 // mode is on, recommending high-contrast extensions and themes.
 const char kInvertNotificationShown[] = "invert_notification_version_2_shown";
@@ -1785,6 +1788,13 @@ const char kDevToolsHSplitLocation[] = "devtools.split_location";
 
 // A boolean specifying whether dev tools window should be opened docked.
 const char kDevToolsOpenDocked[] = "devtools.open_docked";
+
+// A boolean specifying whether port forwarding should be enabled.
+const char kDevToolsPortForwardingEnabled[] =
+    "devtools.port_forwarding_enabled";
+
+// A dictionary of port->location pairs for port forwarding.
+const char kDevToolsPortForwardingConfig[] = "devtools.port_forwarding_config";
 
 #if defined(OS_ANDROID)
 // A boolean specifying whether remote dev tools debugging is enabled.

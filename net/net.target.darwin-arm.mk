@@ -324,7 +324,7 @@ LOCAL_SRC_FILES := \
 	net/quic/quic_packet_creator.cc \
 	net/quic/quic_packet_generator.cc \
 	net/quic/quic_protocol.cc \
-	net/quic/quic_received_entropy_manager.cc \
+	net/quic/quic_received_packet_manager.cc \
 	net/quic/quic_reliable_client_stream.cc \
 	net/quic/quic_sent_entropy_manager.cc \
 	net/quic/quic_session.cc \

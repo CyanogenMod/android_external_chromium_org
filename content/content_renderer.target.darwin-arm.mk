@@ -57,6 +57,8 @@ LOCAL_SRC_FILES := \
 	content/renderer/cursor_utils.cc \
 	content/renderer/device_orientation_dispatcher.cc \
 	content/renderer/device_orientation/device_motion_event_pump.cc \
+	content/renderer/device_orientation/device_orientation_event_pump.cc \
+	content/renderer/device_orientation/device_sensor_event_pump.cc \
 	content/renderer/devtools/devtools_agent.cc \
 	content/renderer/devtools/devtools_agent_filter.cc \
 	content/renderer/devtools/devtools_client.cc \

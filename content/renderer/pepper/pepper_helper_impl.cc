@@ -13,7 +13,6 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
-#include "base/files/file_util_proxy.h"
 #include "base/logging.h"
 #include "base/platform_file.h"
 #include "base/strings/string_split.h"
@@ -38,22 +37,19 @@
 #include "content/renderer/p2p/socket_dispatcher.h"
 #include "content/renderer/pepper/content_renderer_pepper_host_factory.h"
 #include "content/renderer/pepper/host_dispatcher_wrapper.h"
+#include "content/renderer/pepper/host_globals.h"
 #include "content/renderer/pepper/pepper_broker.h"
 #include "content/renderer/pepper/pepper_browser_connection.h"
 #include "content/renderer/pepper/pepper_file_system_host.h"
 #include "content/renderer/pepper/pepper_graphics_2d_host.h"
 #include "content/renderer/pepper/pepper_hung_plugin_filter.h"
 #include "content/renderer/pepper/pepper_in_process_resource_creation.h"
-#include "content/renderer/pepper/pepper_in_process_router.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/pepper/pepper_plugin_registry.h"
-#include "content/renderer/pepper/pepper_url_loader_host.h"
 #include "content/renderer/pepper/pepper_webplugin_impl.h"
 #include "content/renderer/pepper/plugin_module.h"
-#include "content/renderer/pepper/ppb_tcp_server_socket_private_impl.h"
 #include "content/renderer/pepper/ppb_tcp_socket_private_impl.h"
 #include "content/renderer/pepper/renderer_ppapi_host_impl.h"
-#include "content/renderer/pepper/resource_helper.h"
 #include "content/renderer/pepper/url_response_info_util.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
@@ -118,9 +114,9 @@ void CreateHostForInProcessModule(RenderViewImpl* render_view,
 PepperHelperImpl::PepperHelperImpl(RenderViewImpl* render_view)
     : RenderViewObserver(render_view),
       render_view_(render_view),
-      pepper_browser_connection_(this),
       focused_plugin_(NULL),
       last_mouse_event_target_(NULL) {
+  new PepperBrowserConnection(render_view);
 }
 
 PepperHelperImpl::~PepperHelperImpl() {
@@ -496,7 +492,9 @@ void PepperHelperImpl::InstanceCreated(
   instance->SetContentAreaFocus(render_view_->has_focus());
 
   if (!instance->module()->IsProxied()) {
-    pepper_browser_connection_.DidCreateInProcessInstance(
+    PepperBrowserConnection* browser_connection =
+        PepperBrowserConnection::Get(render_view_);
+    browser_connection->DidCreateInProcessInstance(
         instance->pp_instance(),
         render_view_->GetRoutingID(),
         instance->container()->element().document().url(),
@@ -514,7 +512,9 @@ void PepperHelperImpl::InstanceDeleted(
     PluginFocusChanged(instance, false);
 
   if (!instance->module()->IsProxied()) {
-    pepper_browser_connection_.DidDeleteInProcessInstance(
+    PepperBrowserConnection* browser_connection =
+        PepperBrowserConnection::Get(render_view_);
+    browser_connection->DidDeleteInProcessInstance(
         instance->pp_instance());
   }
 }
@@ -524,7 +524,8 @@ PepperBroker* PepperHelperImpl::ConnectToBroker(
     PPB_Broker_Impl* client) {
   DCHECK(client);
 
-  PluginModule* plugin_module = ResourceHelper::GetPluginModule(client);
+  PluginModule* plugin_module =
+      HostGlobals::Get()->GetInstance(client->pp_instance())->module();
   if (!plugin_module)
     return NULL;
 
@@ -558,43 +559,13 @@ void PepperHelperImpl::OnPpapiBrokerPermissionResult(int request_id,
   if (!client.get())
     return;
 
-  PluginModule* plugin_module = ResourceHelper::GetPluginModule(client.get());
+  PluginModule* plugin_module =
+      HostGlobals::Get()->GetInstance(client->pp_instance())->module();
   if (!plugin_module)
     return;
 
   PepperBroker* broker = static_cast<PepperBroker*>(plugin_module->GetBroker());
   broker->OnBrokerPermissionResult(client.get(), result);
-}
-
-bool PepperHelperImpl::AsyncOpenFile(const base::FilePath& path,
-                                     int pp_open_flags,
-                                     const AsyncOpenFileCallback& callback) {
-  int message_id = pending_async_open_files_.Add(
-      new AsyncOpenFileCallback(callback));
-  return Send(new ViewHostMsg_AsyncOpenPepperFile(
-      routing_id(), path, pp_open_flags, message_id));
-}
-
-void PepperHelperImpl::OnAsyncFileOpened(
-    base::PlatformFileError error_code,
-    IPC::PlatformFileForTransit file_for_transit,
-    int message_id) {
-  AsyncOpenFileCallback* callback =
-      pending_async_open_files_.Lookup(message_id);
-  DCHECK(callback);
-  pending_async_open_files_.Remove(message_id);
-
-  base::PlatformFile file =
-      IPC::PlatformFileForTransitToPlatformFile(file_for_transit);
-  callback->Run(error_code, base::PassPlatformFile(&file));
-  // Make sure we won't leak file handle if the requester has died.
-  if (file != base::kInvalidPlatformFileValue) {
-    base::FileUtilProxy::Close(
-        RenderThreadImpl::current()->GetFileThreadMessageLoopProxy().get(),
-        file,
-        base::FileUtilProxy::StatusCallback());
-  }
-  delete callback;
 }
 
 void PepperHelperImpl::OnSetFocus(bool has_focus) {
@@ -624,58 +595,6 @@ void PepperHelperImpl::WillHandleMouseEvent() {
   // event, it will notify us via DidReceiveMouseEvent() and set itself as
   // |last_mouse_event_target_|.
   last_mouse_event_target_ = NULL;
-}
-
-void PepperHelperImpl::RegisterTCPSocket(
-    PPB_TCPSocket_Private_Impl* socket,
-    uint32 socket_id) {
-  tcp_sockets_.AddWithID(socket, socket_id);
-}
-
-void PepperHelperImpl::UnregisterTCPSocket(uint32 socket_id) {
-  // There is no DCHECK(tcp_sockets_.Lookup(socket_id)) because this method
-  // can be called before TCPSocketConnect or TCPSocketConnectWithNetAddress.
-  if (tcp_sockets_.Lookup(socket_id))
-    tcp_sockets_.Remove(socket_id);
-}
-
-void PepperHelperImpl::TCPServerSocketStopListening(uint32 socket_id) {
-  tcp_server_sockets_.Remove(socket_id);
-}
-
-void PepperHelperImpl::HandleDocumentLoad(
-    PepperPluginInstanceImpl* instance,
-    const WebKit::WebURLResponse& response) {
-  DCHECK(!instance->document_loader());
-
-  // Create a loader resource host for this load. Note that we have to set
-  // the document_loader before issuing the in-process
-  // PPP_Instance.HandleDocumentLoad call below, since this may reentrantly
-  // call into the instance and expect it to be valid.
-  RendererPpapiHostImpl* host_impl = instance->module()->renderer_ppapi_host();
-  PepperURLLoaderHost* loader_host =
-      new PepperURLLoaderHost(host_impl, true, instance->pp_instance(), 0);
-  // TODO(teravest): Remove set_document_loader() from instance and clean up
-  // this relationship.
-  instance->set_document_loader(loader_host);
-  loader_host->didReceiveResponse(NULL, response);
-
-  // This host will be pending until the resource object attaches to it.
-  //
-  // PpapiHost now owns the pointer to loader_host, so we don't have to worry
-  // about managing it.
-  int pending_host_id = host_impl->GetPpapiHost()->AddPendingResourceHost(
-      scoped_ptr<ppapi::host::ResourceHost>(loader_host));
-  DCHECK(pending_host_id);
-
-  DataFromWebURLResponse(
-      instance->pp_instance(),
-      response,
-      base::Bind(&PepperHelperImpl::DidDataFromWebURLResponse,
-                 AsWeakPtr(),
-                 instance->pp_instance(),
-                 response,
-                 pending_host_id));
 }
 
 RendererPpapiHost* PepperHelperImpl::CreateExternalPluginModule(
@@ -719,26 +638,10 @@ void PepperHelperImpl::SampleGamepads(WebKit::WebGamepads* data) {
 }
 
 bool PepperHelperImpl::OnMessageReceived(const IPC::Message& message) {
-  if (pepper_browser_connection_.OnMessageReceived(message))
-    return true;
-
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(PepperHelperImpl, message)
-    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_ConnectACK,
-                        OnTCPSocketConnectACK)
-    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_SSLHandshakeACK,
-                        OnTCPSocketSSLHandshakeACK)
-    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_ReadACK, OnTCPSocketReadACK)
-    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_WriteACK, OnTCPSocketWriteACK)
-    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_SetOptionACK,
-                        OnTCPSocketSetOptionACK)
-    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPServerSocket_ListenACK,
-                        OnTCPServerSocketListenACK)
-    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPServerSocket_AcceptACK,
-                        OnTCPServerSocketAcceptACK)
     IPC_MESSAGE_HANDLER(ViewMsg_PpapiBrokerChannelCreated,
                         OnPpapiBrokerChannelCreated)
-    IPC_MESSAGE_HANDLER(ViewMsg_AsyncOpenPepperFile_ACK, OnAsyncFileOpened)
     IPC_MESSAGE_HANDLER(ViewMsg_PpapiBrokerPermissionResult,
                         OnPpapiBrokerPermissionResult)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -750,132 +653,6 @@ void PepperHelperImpl::OnDestruct() {
   // Nothing to do here. Default implementation in RenderViewObserver does
   // 'delete this' but it's not suitable for PepperHelperImpl because
   // it's non-pointer member in RenderViewImpl.
-}
-
-void PepperHelperImpl::OnTCPSocketConnectACK(
-    uint32 plugin_dispatcher_id,
-    uint32 socket_id,
-    int32_t result,
-    const PP_NetAddress_Private& local_addr,
-    const PP_NetAddress_Private& remote_addr) {
-  PPB_TCPSocket_Private_Impl* socket = tcp_sockets_.Lookup(socket_id);
-  if (socket)
-    socket->OnConnectCompleted(result, local_addr, remote_addr);
-  if (result != PP_OK)
-    tcp_sockets_.Remove(socket_id);
-}
-
-void PepperHelperImpl::OnTCPSocketSSLHandshakeACK(
-    uint32 plugin_dispatcher_id,
-    uint32 socket_id,
-    bool succeeded,
-    const ppapi::PPB_X509Certificate_Fields& certificate_fields) {
-  PPB_TCPSocket_Private_Impl* socket = tcp_sockets_.Lookup(socket_id);
-  if (socket)
-    socket->OnSSLHandshakeCompleted(succeeded, certificate_fields);
-}
-
-void PepperHelperImpl::OnTCPSocketReadACK(uint32 plugin_dispatcher_id,
-                                          uint32 socket_id,
-                                          int32_t result,
-                                          const std::string& data) {
-  PPB_TCPSocket_Private_Impl* socket = tcp_sockets_.Lookup(socket_id);
-  if (socket)
-    socket->OnReadCompleted(result, data);
-}
-
-void PepperHelperImpl::OnTCPSocketWriteACK(uint32 plugin_dispatcher_id,
-                                           uint32 socket_id,
-                                           int32_t result) {
-  PPB_TCPSocket_Private_Impl* socket = tcp_sockets_.Lookup(socket_id);
-  if (socket)
-    socket->OnWriteCompleted(result);
-}
-
-void PepperHelperImpl::OnTCPSocketSetOptionACK(
-    uint32 plugin_dispatcher_id,
-    uint32 socket_id,
-    int32_t result) {
-  PPB_TCPSocket_Private_Impl* socket = tcp_sockets_.Lookup(socket_id);
-  if (socket)
-    socket->OnSetOptionCompleted(result);
-}
-
-void PepperHelperImpl::OnTCPServerSocketListenACK(
-    uint32 plugin_dispatcher_id,
-    PP_Resource socket_resource,
-    uint32 socket_id,
-    const PP_NetAddress_Private& local_addr,
-    int32_t status) {
-  ppapi::thunk::EnterResource<ppapi::thunk::PPB_TCPServerSocket_Private_API>
-      enter(socket_resource, true);
-  if (enter.succeeded()) {
-    ppapi::PPB_TCPServerSocket_Shared* socket =
-        static_cast<ppapi::PPB_TCPServerSocket_Shared*>(enter.object());
-    if (status == PP_OK)
-      tcp_server_sockets_.AddWithID(socket, socket_id);
-    socket->OnListenCompleted(socket_id, local_addr, status);
-  } else if (socket_id != 0 && status == PP_OK) {
-    // StopListening was called before completion of Listen.
-    Send(new PpapiHostMsg_PPBTCPServerSocket_Destroy(socket_id));
-  }
-}
-
-void PepperHelperImpl::OnTCPServerSocketAcceptACK(
-    uint32 plugin_dispatcher_id,
-    uint32 server_socket_id,
-    uint32 accepted_socket_id,
-    const PP_NetAddress_Private& local_addr,
-    const PP_NetAddress_Private& remote_addr) {
-  ppapi::PPB_TCPServerSocket_Shared* socket =
-      tcp_server_sockets_.Lookup(server_socket_id);
-  if (socket) {
-    bool succeeded = (accepted_socket_id != 0);
-    socket->OnAcceptCompleted(succeeded,
-                              accepted_socket_id,
-                              local_addr,
-                              remote_addr);
-  } else if (accepted_socket_id != 0) {
-    Send(new PpapiHostMsg_PPBTCPSocket_Disconnect(accepted_socket_id));
-  }
-}
-
-void PepperHelperImpl::DidDataFromWebURLResponse(
-    PP_Instance pp_instance,
-    const WebKit::WebURLResponse& response,
-    int pending_host_id,
-    const ppapi::URLResponseInfoData& data) {
-  PepperPluginInstanceImpl* instance =
-      ResourceHelper::PPInstanceToPluginInstance(pp_instance);
-  if (!instance)
-    return;
-
-  RendererPpapiHostImpl* host_impl = instance->module()->renderer_ppapi_host();
-
-  if (host_impl->in_process_router()) {
-    // Running in-process, we can just create the resource and call the
-    // PPP_Instance function directly.
-    scoped_refptr<ppapi::proxy::URLLoaderResource> loader_resource(
-        new ppapi::proxy::URLLoaderResource(
-            host_impl->in_process_router()->GetPluginConnection(pp_instance),
-            pp_instance, pending_host_id, data));
-
-    PP_Resource loader_pp_resource = loader_resource->GetReference();
-    if (!instance->instance_interface()->HandleDocumentLoad(
-            instance->pp_instance(), loader_pp_resource))
-      loader_resource->Close();
-    // We don't pass a ref into the plugin, if it wants one, it will have taken
-    // an additional one.
-    ppapi::PpapiGlobals::Get()->GetResourceTracker()->ReleaseResource(
-        loader_pp_resource);
-  } else {
-    // Running out-of-process. Initiate an IPC call to notify the plugin
-    // process.
-    ppapi::proxy::HostDispatcher* dispatcher =
-        ppapi::proxy::HostDispatcher::GetForInstance(pp_instance);
-    dispatcher->Send(new PpapiMsg_PPPInstance_HandleDocumentLoad(
-        ppapi::API_ID_PPP_INSTANCE, pp_instance, pending_host_id, data));
-  }
 }
 
 }  // namespace content

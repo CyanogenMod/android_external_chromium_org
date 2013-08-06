@@ -848,9 +848,6 @@
     'spdy_proxy_auth_value%': '<(spdy_proxy_auth_value)',
     'enable_mdns%' : '<(enable_mdns)',
 
-    # Use system mesa instead of bundled one.
-    'use_system_mesa%': 0,
-
     # Use system nspr instead of the bundled one.
     'use_system_nspr%': 0,
 
@@ -1414,6 +1411,12 @@
       }],  # OS=="mac" or OS=="ios"
       ['OS=="win"', {
         'conditions': [
+          # This is the architecture convention used in WinSDK paths.
+          ['target_arch=="ia32"', {
+            'winsdk_arch%': 'x86',
+          },{
+            'winsdk_arch%': '<(target_arch)',
+          }],
           ['component=="shared_library"', {
             'win_use_allocator_shim%': 0,
           }],
@@ -4540,6 +4543,9 @@
                 'conditions': [
                   ['asan==0', {
                     'AdditionalOptions': ['/largeaddressaware'],
+                  }],
+                  ['clang==1', {
+                    'AdditionalOptions!': ['/safeseh'],
                   }],
                 ],
               },

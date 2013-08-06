@@ -1727,6 +1727,8 @@ void RenderViewImpl::OnSetName(const std::string& name) {
 
 void RenderViewImpl::OnSetEditableSelectionOffsets(int start, int end) {
   base::AutoReset<bool> handling_select_range(&handling_select_range_, true);
+  if (!ShouldHandleImeEvent())
+    return;
   ImeEventGuard guard(this);
   webview()->setEditableSelectionOffsets(start, end);
 }
@@ -1734,14 +1736,14 @@ void RenderViewImpl::OnSetEditableSelectionOffsets(int start, int end) {
 void RenderViewImpl::OnSetCompositionFromExistingText(
     int start, int end,
     const std::vector<WebKit::WebCompositionUnderline>& underlines) {
-  if (!webview())
+  if (!ShouldHandleImeEvent())
     return;
   ImeEventGuard guard(this);
   webview()->setCompositionFromExistingText(start, end, underlines);
 }
 
 void RenderViewImpl::OnExtendSelectionAndDelete(int before, int after) {
-  if (!webview())
+  if (!ShouldHandleImeEvent())
     return;
   ImeEventGuard guard(this);
   webview()->extendSelectionAndDelete(before, after);
@@ -2360,7 +2362,7 @@ void RenderViewImpl::didChangeSelection(bool is_empty_selection) {
   SyncSelectionIfRequired();
   UpdateTextInputType();
 #if defined(OS_ANDROID)
-  UpdateTextInputState(DO_NOT_SHOW_IME);
+  UpdateTextInputState(false, true);
 #endif
 }
 
@@ -6213,37 +6215,45 @@ bool RenderViewImpl::didTapMultipleTargets(
   if (!new_total_scale)
     return false;
 
-  gfx::Size canvas_size = gfx::ToCeiledSize(gfx::ScaleSize(zoom_rect.size(),
-                                                           new_total_scale));
-  TransportDIB* transport_dib = NULL;
-  {
-    scoped_ptr<skia::PlatformCanvas> canvas(
-        RenderProcess::current()->GetDrawingCanvas(&transport_dib,
-                                                   gfx::Rect(canvas_size)));
-    if (!canvas)
-      return false;
+  TapMultipleTargetsStrategy multitarget_strategy =
+    renderer_preferences_.tap_multiple_targets_strategy;
+  if (multitarget_strategy == TAP_MULTIPLE_TARGETS_STRATEGY_ZOOM) {
+      return webview()->zoomToMultipleTargetsRect(zoom_rect);
+  } else if (multitarget_strategy == TAP_MULTIPLE_TARGETS_STRATEGY_POPUP) {
+      gfx::Size canvas_size =
+          gfx::ToCeiledSize(gfx::ScaleSize(zoom_rect.size(), new_total_scale));
+      TransportDIB* transport_dib = NULL;
+      {
+        scoped_ptr<skia::PlatformCanvas> canvas(
+            RenderProcess::current()->GetDrawingCanvas(&transport_dib,
+                                                       gfx::Rect(canvas_size)));
+        if (!canvas)
+          return false;
 
-    // TODO(trchen): Cleanup the device scale factor mess.
-    // device scale will be applied in WebKit
-    // --> zoom_rect doesn't include device scale,
-    //     but WebKit will still draw on zoom_rect * device_scale_factor_
-    canvas->scale(new_total_scale / device_scale_factor_,
-                  new_total_scale / device_scale_factor_);
-    canvas->translate(-zoom_rect.x() * device_scale_factor_,
-                      -zoom_rect.y() * device_scale_factor_);
+        // TODO(trchen): Cleanup the device scale factor mess.
+        // device scale will be applied in WebKit
+        // --> zoom_rect doesn't include device scale,
+        //     but WebKit will still draw on zoom_rect * device_scale_factor_
+        canvas->scale(new_total_scale / device_scale_factor_,
+                      new_total_scale / device_scale_factor_);
+        canvas->translate(-zoom_rect.x() * device_scale_factor_,
+                          -zoom_rect.y() * device_scale_factor_);
 
-    webwidget_->paint(
-        canvas.get(),
-        zoom_rect,
-        WebWidget::ForceSoftwareRenderingAndIgnoreGPUResidentContent);
+        webwidget_->paint(
+            canvas.get(),
+            zoom_rect,
+            WebWidget::ForceSoftwareRenderingAndIgnoreGPUResidentContent);
+      }
+
+      gfx::Rect physical_window_zoom_rect = gfx::ToEnclosingRect(
+          ClientRectToPhysicalWindowRect(gfx::RectF(zoom_rect)));
+      Send(new ViewHostMsg_ShowDisambiguationPopup(routing_id_,
+                                                   physical_window_zoom_rect,
+                                                   canvas_size,
+                                                   transport_dib->id()));
+  } else {
+    return false;
   }
-
-  gfx::Rect physical_window_zoom_rect = gfx::ToEnclosingRect(
-      ClientRectToPhysicalWindowRect(gfx::RectF(zoom_rect)));
-  Send(new ViewHostMsg_ShowDisambiguationPopup(routing_id_,
-                                               physical_window_zoom_rect,
-                                               canvas_size,
-                                               transport_dib->id()));
 
   return true;
 }

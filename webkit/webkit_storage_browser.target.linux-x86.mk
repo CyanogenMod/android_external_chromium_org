@@ -103,16 +103,6 @@ LOCAL_SRC_FILES := \
 	webkit/browser/fileapi/sandbox_origin_database.cc \
 	webkit/browser/fileapi/sandbox_origin_database_interface.cc \
 	webkit/browser/fileapi/sandbox_quota_observer.cc \
-	webkit/browser/fileapi/syncable/file_change.cc \
-	webkit/browser/fileapi/syncable/local_file_change_tracker.cc \
-	webkit/browser/fileapi/syncable/local_file_sync_context.cc \
-	webkit/browser/fileapi/syncable/local_file_sync_status.cc \
-	webkit/browser/fileapi/syncable/sync_file_metadata.cc \
-	webkit/browser/fileapi/syncable/sync_file_system_backend.cc \
-	webkit/browser/fileapi/syncable/sync_status_code.cc \
-	webkit/browser/fileapi/syncable/syncable_file_operation_runner.cc \
-	webkit/browser/fileapi/syncable/syncable_file_system_operation.cc \
-	webkit/browser/fileapi/syncable/syncable_file_system_util.cc \
 	webkit/browser/fileapi/test_file_system_backend.cc \
 	webkit/browser/fileapi/timed_task_helper.cc \
 	webkit/browser/fileapi/transient_file_util.cc \

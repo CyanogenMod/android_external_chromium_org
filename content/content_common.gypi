@@ -152,8 +152,10 @@
     'common/cookie_data.h',
     'common/database_messages.h',
     'common/desktop_notification_messages.h',
-    'common/device_motion_messages.h',
-    'common/device_orientation_messages.h',
+    'common/device_motion_hardware_buffer.h',
+    'common/device_orientation/device_motion_messages.h',
+    'common/device_orientation/device_orientation_hardware_buffer.h',
+    'common/device_orientation/device_orientation_messages.h',
     'common/devtools_messages.h',
     'common/dom_storage_messages.h',
     'common/drag_event_source_info.h',
@@ -551,7 +553,7 @@
       {
         'action_name': 'extract_xinput',
         'variables': {
-          'input': 'APR2007_xinput_x86.cab',
+          'input': 'APR2007_xinput_<(winsdk_arch).cab',
           'output': 'xinput1_3.dll',
         },
         'inputs': [
