@@ -209,6 +209,7 @@ include $(LOCAL_PATH)/ui/surface/surface.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/ui.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/ui_jni_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/ui_resources.target.linux-mips.mk
+include $(LOCAL_PATH)/ui/window_open_disposition_java.target.linux-mips.mk
 include $(LOCAL_PATH)/url/url_lib.target.linux-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/js2c.host.linux-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/mksnapshot.mipsel.host.linux-mips.mk

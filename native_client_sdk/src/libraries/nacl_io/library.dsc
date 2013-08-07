@@ -1,9 +1,10 @@
 {
-  'TOOLS': ['newlib', 'glibc', 'pnacl', 'win'],
+  'TOOLS': ['newlib', 'glibc', 'pnacl'],
   'SEARCH': [
     '.',
     'pepper',
     '../third_party/newlib-extras',
+    'include',
   ],
   'TARGETS': [
     {
@@ -12,6 +13,7 @@
       'SOURCES' : [
         "event_emitter.cc",
         "event_listener.cc",
+        "inet_ntoa.cc",
         "kernel_handle.cc",
         "kernel_intercept.cc",
         "kernel_object.cc",
@@ -50,10 +52,13 @@
         "syscalls/lchown.c",
         "syscalls/mkdir.c",
         "syscalls/mount.c",
+        "syscalls/poll.c",
         "syscalls/remove.c",
         "syscalls/rmdir.c",
+        "syscalls/select.c",
         "syscalls/unlink.c",
         "syscalls/umount.c",
+        "syscalls/uname.c",
         "syscalls/utime.c",
       ],
     }
@@ -107,7 +112,10 @@
         "netdb.h",
         "netinet/in.h",
         "netinet6/in6.h",
+        "poll.h",
+        "sys/select.h",
         "sys/socket.h",
+        "sys/utsname.h",
       ],
       'DEST': 'include/newlib',
     },
@@ -117,9 +125,18 @@
         "netdb.h",
         "netinet/in.h",
         "netinet6/in6.h",
+        "poll.h",
+        "sys/select.h",
         "sys/socket.h",
+        "sys/utsname.h",
       ],
       'DEST': 'include/pnacl',
+    },
+    {
+      'FILES': [
+        "poll.h",
+      ],
+      'DEST': 'include/win',
     },
     {
       'FILES': [

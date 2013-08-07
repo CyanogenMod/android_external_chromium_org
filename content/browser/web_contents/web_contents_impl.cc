@@ -2133,30 +2133,24 @@ void WebContentsImpl::DidStartProvisionalLoadForFrame(
       render_view_host->GetProcess();
   RenderViewHost::FilterURL(render_process_host, false, &validated_url);
 
-  if (is_main_frame) {
+  if (is_main_frame)
     DidChangeLoadProgress(0);
 
-    // If there is no browser-initiated pending entry for this navigation,
-    // create one using the current SiteInstance, and ensure the address bar
-    // updates accordingly.  We don't know the referrer or extra headers at this
-    // point, but the referrer will be set properly upon commit.
-    NavigationEntry* pending_entry = controller_.GetPendingEntry();
-    bool has_browser_initiated_pending_entry = pending_entry &&
-        !NavigationEntryImpl::FromNavigationEntry(pending_entry)->
-            is_renderer_initiated();
-    if (!has_browser_initiated_pending_entry) {
-      NavigationEntryImpl* entry = NavigationEntryImpl::FromNavigationEntry(
-          controller_.CreateNavigationEntry(validated_url,
-                                            content::Referrer(),
-                                            content::PAGE_TRANSITION_LINK,
-                                            true /* is_renderer_initiated */,
-                                            std::string(),
-                                            GetBrowserContext()));
-      entry->set_site_instance(
-          static_cast<SiteInstanceImpl*>(GetSiteInstance()));
-      controller_.SetPendingEntry(entry);
-      NotifyNavigationStateChanged(content::INVALIDATE_TYPE_URL);
-    }
+  // Create a pending entry for this provisional load (if none exists) using the
+  // current SiteInstance, and ensure the address bar updates accordingly.
+  // We don't know the referrer or extra headers at this point, but the referrer
+  // will be set properly upon commit.
+  if (is_main_frame && !controller_.GetPendingEntry()) {
+    NavigationEntryImpl* entry = NavigationEntryImpl::FromNavigationEntry(
+        controller_.CreateNavigationEntry(validated_url,
+                                          content::Referrer(),
+                                          content::PAGE_TRANSITION_LINK,
+                                          true /* is_renderer_initiated */,
+                                          std::string(), GetBrowserContext()));
+    entry->set_site_instance(
+        static_cast<SiteInstanceImpl*>(GetSiteInstance()));
+    controller_.SetPendingEntry(entry);
+    NotifyNavigationStateChanged(content::INVALIDATE_TYPE_URL);
   }
 
   // Notify observers about the start of the provisional load.
@@ -2491,29 +2485,26 @@ void WebContentsImpl::OnWebUISend(const GURL& source_url,
 }
 
 void WebContentsImpl::OnRequestPpapiBrokerPermission(
-    int request_id,
+    int routing_id,
     const GURL& url,
     const base::FilePath& plugin_path) {
   if (!delegate_) {
-    OnPpapiBrokerPermissionResult(request_id, false);
+    OnPpapiBrokerPermissionResult(routing_id, false);
     return;
   }
 
   if (!delegate_->RequestPpapiBrokerPermission(
       this, url, plugin_path,
       base::Bind(&WebContentsImpl::OnPpapiBrokerPermissionResult,
-                 base::Unretained(this), request_id))) {
+                 base::Unretained(this), routing_id))) {
     NOTIMPLEMENTED();
-    OnPpapiBrokerPermissionResult(request_id, false);
+    OnPpapiBrokerPermissionResult(routing_id, false);
   }
 }
 
-void WebContentsImpl::OnPpapiBrokerPermissionResult(int request_id,
+void WebContentsImpl::OnPpapiBrokerPermissionResult(int routing_id,
                                                     bool result) {
-  RenderViewHostImpl* rvh = GetRenderViewHostImpl();
-  rvh->Send(new ViewMsg_PpapiBrokerPermissionResult(rvh->GetRoutingID(),
-                                                    request_id,
-                                                    result));
+  Send(new ViewMsg_PpapiBrokerPermissionResult(routing_id, result));
 }
 
 void WebContentsImpl::OnBrowserPluginMessage(const IPC::Message& message) {

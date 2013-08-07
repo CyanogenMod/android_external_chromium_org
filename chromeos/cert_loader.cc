@@ -44,8 +44,7 @@ base::TimeDelta GetNextRequestDelayMs(base::TimeDelta last_delay) {
 }
 
 void LoadNSSCertificates(net::CertificateList* cert_list) {
-  if (base::chromeos::IsRunningOnChromeOS())
-    net::NSSCertDatabase::GetInstance()->ListCerts(cert_list);
+  net::NSSCertDatabase::GetInstance()->ListCerts(cert_list);
 }
 
 void CallOpenPersistentNSSDB() {
@@ -54,13 +53,13 @@ void CallOpenPersistentNSSDB() {
 
   // Ensure we've opened the user's key/certificate database.
   crypto::OpenPersistentNSSDB();
-  if (base::chromeos::IsRunningOnChromeOS())
-    crypto::EnableTPMTokenForNSS();
+  crypto::EnableTPMTokenForNSS();
 }
 
 }  // namespace
 
 static CertLoader* g_cert_loader = NULL;
+
 // static
 void CertLoader::Initialize() {
   CHECK(!g_cert_loader);
@@ -77,8 +76,7 @@ void CertLoader::Shutdown() {
 
 // static
 CertLoader* CertLoader::Get() {
-  CHECK(g_cert_loader)
-      << "CertLoader::Get() called before Initialize()";
+  CHECK(g_cert_loader) << "CertLoader::Get() called before Initialize()";
   return g_cert_loader;
 }
 
@@ -109,6 +107,11 @@ void CertLoader::SetCryptoTaskRunner(
     const scoped_refptr<base::SequencedTaskRunner>& crypto_task_runner) {
   crypto_task_runner_ = crypto_task_runner;
   MaybeRequestCertificates();
+}
+
+void CertLoader::SetSlowTaskRunnerForTest(
+    const scoped_refptr<base::SequencedTaskRunner>& task_runner) {
+  slow_task_runner_for_test_ = task_runner;
 }
 
 CertLoader::~CertLoader() {
@@ -151,6 +154,9 @@ void CertLoader::MaybeRequestCertificates() {
 
   // Ensure we only initialize the TPM token once.
   DCHECK_EQ(tpm_token_state_, TPM_STATE_UNKNOWN);
+  if (!base::chromeos::IsRunningOnChromeOS())
+    tpm_token_state_ = TPM_DISABLED;
+
   InitializeTokenAndLoadCertificates();
 }
 
@@ -197,16 +203,14 @@ void CertLoader::InitializeTokenAndLoadCertificates() {
       return;
     }
     case TPM_TOKEN_INFO_RECEIVED: {
-      if (base::chromeos::IsRunningOnChromeOS()) {
-        base::PostTaskAndReplyWithResult(
-            crypto_task_runner_.get(),
-            FROM_HERE,
-            base::Bind(&crypto::InitializeTPMToken,
-                       tpm_token_name_, tpm_user_pin_),
-            base::Bind(&CertLoader::OnTPMTokenInitialized,
-                       initialize_token_factory_.GetWeakPtr()));
-        return;
-      }
+      base::PostTaskAndReplyWithResult(
+          crypto_task_runner_.get(),
+          FROM_HERE,
+          base::Bind(
+              &crypto::InitializeTPMToken, tpm_token_name_, tpm_user_pin_),
+          base::Bind(&CertLoader::OnTPMTokenInitialized,
+                     initialize_token_factory_.GetWeakPtr()));
+      return;
       tpm_token_state_ = TPM_TOKEN_INITIALIZED;
       // FALL_THROUGH_INTENDED
     }
@@ -332,13 +336,16 @@ void CertLoader::StartLoadCertificates() {
   net::CertificateList* cert_list = new net::CertificateList;
   certificates_update_running_ = true;
   certificates_update_required_ = false;
-  base::WorkerPool::GetTaskRunner(true /* task_is_slow */)->
-      PostTaskAndReply(
-          FROM_HERE,
-          base::Bind(LoadNSSCertificates, cert_list),
-          base::Bind(&CertLoader::UpdateCertificates,
-                     update_certificates_factory_.GetWeakPtr(),
-                     base::Owned(cert_list)));
+
+  base::TaskRunner* task_runner = slow_task_runner_for_test_.get();
+  if (!task_runner)
+    task_runner = base::WorkerPool::GetTaskRunner(true /* task is slow */);
+  task_runner->PostTaskAndReply(
+      FROM_HERE,
+      base::Bind(LoadNSSCertificates, cert_list),
+      base::Bind(&CertLoader::UpdateCertificates,
+                 update_certificates_factory_.GetWeakPtr(),
+                 base::Owned(cert_list)));
 }
 
 void CertLoader::UpdateCertificates(net::CertificateList* cert_list) {
@@ -349,8 +356,9 @@ void CertLoader::UpdateCertificates(net::CertificateList* cert_list) {
   // Ignore any existing certificates.
   cert_list_.swap(*cert_list);
 
-  NotifyCertificatesLoaded(!certificates_loaded_);
+  bool initial_load = !certificates_loaded_;
   certificates_loaded_ = true;
+  NotifyCertificatesLoaded(initial_load);
 
   certificates_update_running_ = false;
   if (certificates_update_required_)

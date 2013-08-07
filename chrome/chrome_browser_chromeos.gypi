@@ -275,6 +275,8 @@
         'browser/chromeos/drive/file_task_executor.h',
         'browser/chromeos/drive/file_write_helper.cc',
         'browser/chromeos/drive/file_write_helper.h',
+        'browser/chromeos/drive/file_write_watcher.cc',
+        'browser/chromeos/drive/file_write_watcher.h',
         'browser/chromeos/drive/fileapi_worker.cc',
         'browser/chromeos/drive/fileapi_worker.h',
         'browser/chromeos/drive/job_list.cc',
@@ -874,26 +876,9 @@
           ],
         }],
         ['use_cras==1', {
-          'cflags': [
-            '<!@(<(pkg-config) --cflags libcras)',
-          ],
-          'link_settings': {
-            'libraries': [
-              '<!@(<(pkg-config) --libs libcras)',
-            ],
-          },
           'defines': [
             'USE_CRAS',
-          ],
-          'sources/': [
-            ['exclude', '^browser/chromeos/audio/audio_mixer_alsa.cc'],
-            ['exclude', '^browser/chromeos/audio/audio_mixer_alsa.h'],
-          ],
-        }, {  # use_cras==0
-          'sources/': [
-            ['exclude', '^browser/chromeos/audio/audio_mixer_cras.cc'],
-            ['exclude', '^browser/chromeos/audio/audio_mixer_cras.h'],
-          ],
+          ],          
         }],
         ['file_manager_extension==0', {
           'sources/': [

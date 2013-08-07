@@ -655,17 +655,7 @@ void BrowserOptionsHandler::RegisterMessages() {
 }
 
 void BrowserOptionsHandler::OnStateChanged() {
-  web_ui()->CallJavascriptFunction("BrowserOptions.updateSyncState",
-                                   *GetSyncStateDictionary());
-
-  SendProfilesInfo();
-}
-
-void BrowserOptionsHandler::OnSigninAllowedPrefChange() {
-  web_ui()->CallJavascriptFunction("BrowserOptions.updateSyncState",
-                                   *GetSyncStateDictionary());
-
-  SendProfilesInfo();
+  UpdateSyncState();
 }
 
 void BrowserOptionsHandler::PageLoadStarted() {
@@ -1123,8 +1113,6 @@ void BrowserOptionsHandler::CreateProfile(const ListValue* args) {
       DCHECK(success);
     }
   }
-  if (!IsValidExistingManagedUserId(managed_user_id))
-    return;
 
   std::vector<ProfileManager::CreateCallback> callbacks;
   if (create_shortcut)
@@ -1136,6 +1124,9 @@ void BrowserOptionsHandler::CreateProfile(const ListValue* args) {
                  managed_user);
 
   if (managed_user && ManagedUserService::AreManagedUsersEnabled()) {
+    if (!IsValidExistingManagedUserId(managed_user_id))
+      return;
+
     if (managed_user_id.empty()) {
       managed_user_id =
           ManagedUserRegistrationUtility::GenerateNewManagedUserId();
@@ -1183,11 +1174,9 @@ void BrowserOptionsHandler::RecordProfileCreationMetrics(
   UMA_HISTOGRAM_ENUMERATION("Profile.CreateResult",
                             status,
                             Profile::MAX_CREATE_STATUS);
-  UMA_HISTOGRAM_CUSTOM_TIMES("Profile.CreateTime",
-      base::TimeTicks::Now() - profile_creation_start_time_,
-      base::TimeDelta::FromMilliseconds(1),
-      base::TimeDelta::FromSeconds(30),  // From kRegistrationTimeoutMS.
-      100);
+  UMA_HISTOGRAM_MEDIUM_TIMES(
+      "Profile.CreateTimeNoTimeout",
+      base::TimeTicks::Now() - profile_creation_start_time_);
 }
 
 void BrowserOptionsHandler::ShowProfileCreationFeedback(
@@ -1298,11 +1287,9 @@ void BrowserOptionsHandler::CancelProfileRegistration(bool user_initiated) {
     return;
 
   if (user_initiated) {
-    UMA_HISTOGRAM_CUSTOM_TIMES("Profile.CreateTimeCanceled",
-      base::TimeTicks::Now() - profile_creation_start_time_,
-      base::TimeDelta::FromMilliseconds(1),
-      base::TimeDelta::FromSeconds(30),  // From kRegistrationTimeoutMS.
-      100);
+    UMA_HISTOGRAM_MEDIUM_TIMES(
+        "Profile.CreateTimeCanceledNoTimeout",
+        base::TimeTicks::Now() - profile_creation_start_time_);
     RecordProfileCreationMetrics(Profile::CREATE_STATUS_CANCELED);
   }
 
@@ -1457,6 +1444,15 @@ void BrowserOptionsHandler::MouseExists(bool exists) {
   web_ui()->CallJavascriptFunction("BrowserOptions.showMouseControls", val);
 }
 #endif
+
+void BrowserOptionsHandler::UpdateSyncState() {
+  web_ui()->CallJavascriptFunction("BrowserOptions.updateSyncState",
+                                   *GetSyncStateDictionary());
+}
+
+void BrowserOptionsHandler::OnSigninAllowedPrefChange() {
+  UpdateSyncState();
+}
 
 void BrowserOptionsHandler::HandleAutoOpenButton(const ListValue* args) {
   content::RecordAction(UserMetricsAction("Options_ResetAutoOpenFiles"));
@@ -1745,20 +1741,21 @@ void BrowserOptionsHandler::SetupProxySettingsSection() {
 
 bool BrowserOptionsHandler::IsValidExistingManagedUserId(
     const std::string& existing_managed_user_id) const {
+  if (existing_managed_user_id.empty())
+    return true;
+
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kAllowCreateExistingManagedUsers)) {
     return false;
   }
 
-  if (existing_managed_user_id.empty())
-    return true;
   DictionaryPrefUpdate update(Profile::FromWebUI(web_ui())->GetPrefs(),
                               prefs::kManagedUsers);
   DictionaryValue* dict = update.Get();
   if (!dict->HasKey(existing_managed_user_id))
     return false;
 
-  // Check if this managed user is already exists on this machine.
+  // Check if this managed user already exists on this machine.
   const ProfileInfoCache& cache =
       g_browser_process->profile_manager()->GetProfileInfoCache();
   for (size_t i = 0; i < cache.GetNumberOfProfiles(); ++i) {

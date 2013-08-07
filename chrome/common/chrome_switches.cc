@@ -260,6 +260,9 @@ const char kDiagnostics[]                   = "diagnostics";
 // Sets the output format for diagnostic modes enabled by diagnostics flag.
 const char kDiagnosticsFormat[]             = "diagnostics-format";
 
+// Tells the diagnostics mode to do the requested recovery step(s).
+const char kDiagnosticsRecovery[]           = "diagnostics-recovery";
+
 // If set, the app list will be disabled at startup. Note this doesn't prevent
 // the app list from running, it just makes Chrome think the app list hasn't
 // been enabled (as in kEnableAppList) yet.
@@ -667,8 +670,8 @@ const char kEnableQuic[]                    = "enable-quic";
 // testing flag.  This only has an effect if QUIC protocol is enabled.
 const char kEnableQuicHttps[]               = "enable-quic-https";
 
-// Enables the Quickoffoce/Chrome document editor rather than the viewer.
-const char kEnableQuickofficeEdit[]         = "enable-quickoffice-editing";
+// Enables the Quickoffoce/Chrome document viewer rather than the editor.
+const char kEnableQuickofficeViewing[]      = "enable-quickoffice-viewing";
 
 // Enables support in chrome://settings to reset settings in your profile
 // that are often touched by malware.
@@ -990,11 +993,6 @@ const char kNoFirstRun[]                    = "no-first-run";
 // page will result in consistent js-generated data and XHR requests.
 // Pages may still be able to generate inconsistent data from plugins.
 const char kNoJsRandomness[]                = "no-js-randomness";
-
-// Disables the timeout during registration of a new managed-user profile;
-// useful for debugging.
-const char kNoManagedUserRegistrationTimeout[]  =
-    "no-managed-user-registration-timeout";
 
 // Whether or not the browser should warn if the profile is on a network share.
 // This flag is only relevant for Windows currently.
@@ -1402,6 +1400,9 @@ const char kTrackActiveVisitTime[]          = "track-active-visit-time";
 
 // Overrides the default server used for Google Translate.
 const char kTranslateScriptURL[]            = "translate-script-url";
+
+// Overrides security-origin with which Translate runs in an isolated world.
+const char kTranslateSecurityOrigin[]       = "translate-security-origin";
 
 // Disables same-origin check on HTTP resources pushed via a SPDY proxy.
 // The value is the host:port of the trusted proxy.

@@ -213,6 +213,7 @@ include $(LOCAL_PATH)/ui/surface/surface.target.darwin-arm.mk
 include $(LOCAL_PATH)/ui/ui.target.darwin-arm.mk
 include $(LOCAL_PATH)/ui/ui_jni_headers.target.darwin-arm.mk
 include $(LOCAL_PATH)/ui/ui_resources.target.darwin-arm.mk
+include $(LOCAL_PATH)/ui/window_open_disposition_java.target.darwin-arm.mk
 include $(LOCAL_PATH)/url/url_lib.target.darwin-arm.mk
 include $(LOCAL_PATH)/v8/tools/gyp/js2c.host.darwin-arm.mk
 include $(LOCAL_PATH)/v8/tools/gyp/mksnapshot.arm.host.darwin-arm.mk

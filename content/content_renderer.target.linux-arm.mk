@@ -152,7 +152,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/fetchers/multi_resolution_image_resource_fetcher.cc \
 	content/renderer/fetchers/resource_fetcher.cc \
 	content/renderer/ime_event_guard.cc \
-	content/renderer/pepper_helper.cc \
 	content/renderer/render_frame_impl.cc \
 	content/renderer/render_process_impl.cc \
 	content/renderer/render_process_visibility_manager.cc \

@@ -592,6 +592,10 @@ const char kLogPluginMessages[]             = "log-plugin-messages";
 // Renderer.Memory histogram. Used in memory tests.
 const char kMemoryMetrics[]                 = "memory-metrics";
 
+// Mutes audio sent to the audio device so it is not audible during
+// automated testing.
+const char kMuteAudio[]                     = "mute-audio";
+
 // Don't send HTTP-Referer headers.
 const char kNoReferrers[]                   = "no-referrers";
 
@@ -869,9 +873,6 @@ const char kDefaultTileHeight[]             = "default-tile-height";
 // Sets the width and height above which a composited layer will get tiled.
 const char kMaxUntiledLayerWidth[]          = "max-untiled-layer-width";
 const char kMaxUntiledLayerHeight[]         = "max-untiled-layer-height";
-
-// Use ExynosVideoDecodeAccelerator for video decode (instead of SECOMX)
-const char kUseExynosVda[]                  = "use-exynos-vda";
 
 const char kEnableFixedPositionCreatesStackingContext[]
     = "enable-fixed-position-creates-stacking-context";

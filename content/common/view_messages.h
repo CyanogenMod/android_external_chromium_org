@@ -1217,16 +1217,14 @@ IPC_MESSAGE_CONTROL1(ViewMsg_NetworkStateChanged,
 
 // Reply to ViewHostMsg_OpenChannelToPpapiBroker
 // Tells the renderer that the channel to the broker has been created.
-IPC_MESSAGE_ROUTED3(ViewMsg_PpapiBrokerChannelCreated,
-                    int /* request_id */,
+IPC_MESSAGE_ROUTED2(ViewMsg_PpapiBrokerChannelCreated,
                     base::ProcessId /* broker_pid */,
                     IPC::ChannelHandle /* handle */)
 
 // Reply to ViewHostMsg_RequestPpapiBrokerPermission.
 // Tells the renderer whether permission to access to PPAPI broker was granted
 // or not.
-IPC_MESSAGE_ROUTED2(ViewMsg_PpapiBrokerPermissionResult,
-                    int /* request_id */,
+IPC_MESSAGE_ROUTED1(ViewMsg_PpapiBrokerPermissionResult,
                     bool /* result */)
 
 // Tells the renderer to empty its plugin list cache, optional reloading
@@ -1908,9 +1906,8 @@ IPC_MESSAGE_CONTROL1(ViewHostMsg_DidDeleteInProcessInstance,
 // if necessary, and will return a handle to the channel on success.
 // On error an empty string is returned.
 // The browser will respond with ViewMsg_PpapiBrokerChannelCreated.
-IPC_MESSAGE_CONTROL3(ViewHostMsg_OpenChannelToPpapiBroker,
+IPC_MESSAGE_CONTROL2(ViewHostMsg_OpenChannelToPpapiBroker,
                      int /* routing_id */,
-                     int /* request_id */,
                      base::FilePath /* path */)
 
 // Opens a Pepper file asynchronously. The response returns a file descriptor
@@ -1926,7 +1923,7 @@ IPC_MESSAGE_CONTROL4(ViewHostMsg_AsyncOpenPepperFile,
 // for every connection.
 // The browser will respond with ViewMsg_PpapiBrokerPermissionResult.
 IPC_MESSAGE_ROUTED3(ViewHostMsg_RequestPpapiBrokerPermission,
-                    int /* request_id */,
+                    int /* routing_id */,
                     GURL /* document_url */,
                     base::FilePath /* plugin_path */)
 
@@ -2018,6 +2015,10 @@ IPC_MESSAGE_ROUTED4(ViewHostMsg_AddMessageToConsole,
                     string16, /* msg */
                     int32, /* line number */
                     string16 /* source id */)
+
+// Sent to the renderer process to indicate completion of the previous
+// ViewHostMsg_AddMessageToConsole operation.
+IPC_MESSAGE_ROUTED0(ViewMsg_AddMessageToConsole_ACK)
 
 // Sent by the renderer process to indicate that a plugin instance has crashed.
 // Note: |plugin_pid| should not be trusted. The corresponding process has

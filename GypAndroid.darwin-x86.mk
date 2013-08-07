@@ -227,6 +227,7 @@ include $(LOCAL_PATH)/ui/surface/surface.target.darwin-x86.mk
 include $(LOCAL_PATH)/ui/ui.target.darwin-x86.mk
 include $(LOCAL_PATH)/ui/ui_jni_headers.target.darwin-x86.mk
 include $(LOCAL_PATH)/ui/ui_resources.target.darwin-x86.mk
+include $(LOCAL_PATH)/ui/window_open_disposition_java.target.darwin-x86.mk
 include $(LOCAL_PATH)/url/url_lib.target.darwin-x86.mk
 include $(LOCAL_PATH)/v8/tools/gyp/js2c.host.darwin-x86.mk
 include $(LOCAL_PATH)/v8/tools/gyp/mksnapshot.ia32.host.darwin-x86.mk

@@ -14,9 +14,9 @@
 #include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "chrome/browser/ui/autofill/account_chooser_model.h"
-#include "chrome/browser/ui/autofill/autofill_dialog_controller.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_models.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_types.h"
+#include "chrome/browser/ui/autofill/autofill_dialog_view_delegate.h"
 #include "chrome/browser/ui/autofill/autofill_popup_controller_impl.h"
 #include "chrome/browser/ui/autofill/country_combobox_model.h"
 #include "components/autofill/content/browser/autocheckout_steps.h"
@@ -66,7 +66,7 @@ class WalletSigninHelper;
 
 // This class drives the dialog that appears when a site uses the imperative
 // autocomplete API to fill out a form.
-class AutofillDialogControllerImpl : public AutofillDialogController,
+class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
                                      public AutofillPopupDelegate,
                                      public content::NotificationObserver,
                                      public SuggestionsMenuModelDelegate,
@@ -111,7 +111,7 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // actually implements |AutofillDialogView::GetTestableView()|).
   TestableAutofillDialogView* GetTestableView();
 
-  // AutofillDialogController implementation.
+  // AutofillDialogViewDelegate implementation.
   virtual string16 DialogTitle() const OVERRIDE;
   virtual string16 AccountChooserText() const OVERRIDE;
   virtual string16 SignInLinkText() const OVERRIDE;
@@ -136,21 +136,17 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   virtual const DetailInputs& RequestedFieldsForSection(DialogSection section)
       const OVERRIDE;
   virtual ui::ComboboxModel* ComboboxModelForAutofillType(
-      AutofillFieldType type) OVERRIDE;
+      ServerFieldType type) OVERRIDE;
   virtual ui::MenuModel* MenuModelForSection(DialogSection section) OVERRIDE;
-#if defined(OS_ANDROID)
-  virtual ui::MenuModel* MenuModelForSectionHack(DialogSection section)
-      OVERRIDE;
-#endif
   virtual string16 LabelForSection(DialogSection section) const OVERRIDE;
   virtual SuggestionState SuggestionStateForSection(
       DialogSection section) OVERRIDE;
   virtual void EditClickedForSection(DialogSection section) OVERRIDE;
   virtual void EditCancelledForSection(DialogSection section) OVERRIDE;
-  virtual gfx::Image IconForField(AutofillFieldType type,
+  virtual gfx::Image IconForField(ServerFieldType type,
                                   const string16& user_input) const OVERRIDE;
   virtual string16 InputValidityMessage(DialogSection section,
-                                        AutofillFieldType type,
+                                        ServerFieldType type,
                                         const string16& value) OVERRIDE;
   virtual ValidityData InputsAreValid(
       DialogSection section,
@@ -382,7 +378,7 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // Gets the value for |type| in |section|, whether it comes from manual user
   // input or the active suggestion.
   string16 GetValueFromSection(DialogSection section,
-                               AutofillFieldType type);
+                               ServerFieldType type);
 
   // Saves the data in |profile| to the personal data manager. This may add
   // a new profile or tack onto an existing profile.
@@ -414,7 +410,7 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // Identifying info is loaded into the last three outparams as well as
   // |popup_guids_|.
   void GetProfileSuggestions(
-      AutofillFieldType type,
+      ServerFieldType type,
       const string16& field_contents,
       const DetailInputs& inputs,
       std::vector<string16>* popup_values,
@@ -690,7 +686,7 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // Whether |callback_| was Run() with a filled |form_structure_|.
   bool data_was_passed_back_;
 
-  typedef std::map<AutofillFieldType,
+  typedef std::map<ServerFieldType,
       std::pair<base::string16, base::string16> > TypeErrorInputMap;
   typedef std::map<DialogSection, TypeErrorInputMap> WalletValidationErrors;
   // Wallet validation errors. section->type->(error_msg, input_value).

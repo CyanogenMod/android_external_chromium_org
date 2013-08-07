@@ -1085,6 +1085,12 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Canvas.ContextType" enum="CanvasContextType">
+  <summary>
+    Records the context type names used to create canvas rendering contexts.
+  </summary>
+</histogram>
+
 <histogram name="Cellular.ActivationFailure">
   <summary>
     The count of cellular device activation failures (Chrome OS).
@@ -3263,10 +3269,26 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Extensions.ExternalItemState" enum="ExtensionState">
+  <summary>
+    The number of sideloaded apps/extensions loaded on startup grouped by
+    enabled/disabled state.
+  </summary>
+</histogram>
+
 <histogram name="Extensions.ExternalJsonCount">
   <summary>
     Number of extensions referenced in the external extensions source at path
     chrome::DIR_EXTERNAL_EXTENSIONS.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.FromWebstoreInconsistency"
+    enum="ExtensionFromWebstoreInconcistencyEnum">
+  <summary>
+    Number of apps/extensions loaded on startup with an inconsistent &quot;from
+    webstore&quot; state. This means an item that is flagged as from_webstore,
+    but with either a non-webstore update_url or an external install location.
   </summary>
 </histogram>
 
@@ -3497,6 +3519,13 @@ other types of suffix sets.
   <summary>
     Time that network requests were blocked due to relevant rule registries
     loading.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.NonWebstoreLocation" enum="ExtensionLocation">
+  <summary>
+    The number of apps/extensions with a non-webstore update_url loaded at
+    startup time grouped by Extension::Location.
   </summary>
 </histogram>
 
@@ -6657,11 +6686,19 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Net.PreconnectedLinkNavigation" enum="PreconnectedNavigation">
+  <summary>
+    Indicate whether a link navigation was preceded by a recent pre-connect
+    trigger (within 10 seconds). There is a high chance that loading the page
+    used a preconnected TCP session.
+  </summary>
+</histogram>
+
 <histogram name="Net.PreconnectedNavigation" enum="PreconnectedNavigation">
   <summary>
-    Indicate whether the navigation was preceded by a recent pre-connect
-    (pre-connect within 10 seconds). There is a high chance that loading the
-    page used a preconnected TCP session.
+    Indicate whether a URLRequest was preceded by a recent pre-connect trigger
+    (within 10 seconds). There is a high chance that loading the resource used a
+    preconnected TCP session.
   </summary>
 </histogram>
 
@@ -6712,6 +6749,14 @@ other types of suffix sets.
     preresolve, or do nothing. This histogram can be used to select those static
     thresholds.
   </details>
+</histogram>
+
+<histogram name="Net.PreconnectTriggerUsed" enum="PreconnectTriggerUsed">
+  <summary>
+    Indicate whether if a preconnect trigger is followed by a resource request
+    (from link navigations) to the host or not. This is to measure precision of
+    link-based preconnect triggers.
+  </summary>
 </histogram>
 
 <histogram name="Net.PreconnectUtilization" enum="NetPreconnectUtilization">
@@ -13109,7 +13154,19 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Settings.GivenShowHomeButton_HomePageIsNewTabPage"
+    enum="Boolean">
+  <summary>
+    Whether or not the home page user preference is set to the default NTP value
+    when a profile is loaded. This is only logged if the home button is shown.
+  </summary>
+</histogram>
+
 <histogram name="Settings.HomePageIsNewTabPage" enum="Boolean">
+  <obsolete>
+    Deprecated 08/05/2013. Replaced by
+    Settings.GivenShowHomeButton_HomePageIsNewTabPage.
+  </obsolete>
   <summary>
     Whether or not the home page user preference is set to the default NTP value
     when a profile is loaded.
@@ -13118,7 +13175,7 @@ other types of suffix sets.
 
 <histogram name="Settings.ShowHomeButton" enum="BooleanEnabled">
   <summary>
-    Whether or not the Home button is enabled in user preferences when a profile
+    Whether or not the home button is enabled in user preferences when a profile
     is loaded.
   </summary>
 </histogram>
@@ -15738,6 +15795,13 @@ other types of suffix sets.
   <int value="1" label="Wiped out"/>
 </enum>
 
+<enum name="CanvasContextType" type="int">
+  <int value="0" label="2d"/>
+  <int value="1" label="webkit-3d"/>
+  <int value="2" label="experimental-webgl"/>
+  <int value="3" label="webgl"/>
+</enum>
+
 <enum name="ChannelLayout" type="int">
   <int value="0" label="CHANNEL_LAYOUT_NONE"/>
   <int value="1" label="CHANNEL_LAYOUT_UNSUPPORTED"/>
@@ -16799,6 +16863,11 @@ other types of suffix sets.
   <int value="3" label="CANT_READ_CRX_FILE"/>
 </enum>
 
+<enum name="ExtensionFromWebstoreInconcistencyEnum" type="int">
+  <int value="0" label="Non-webstore update URL"/>
+  <int value="1" label="External install location"/>
+</enum>
+
 <enum name="ExtensionFunctions" type="int">
 <!-- Generated from ../../../chrome/browser/extensions/extension_function_histogram_value.h -->
 
@@ -17144,7 +17213,7 @@ other types of suffix sets.
   <int value="338" label="APP_CURRENTWINDOWINTERNAL_MAXIMIZE"/>
   <int value="339" label="EXPERIMENTAL_DISCOVERY_CLEARALLSUGGESTIONS"/>
   <int value="340" label="DELETED_MANAGEDMODEPRIVATE_ENTER"/>
-  <int value="341" label="FILEBROWSERPRIVATE_TRANSFERFILE"/>
+  <int value="341" label="DELETED_FILEBROWSERPRIVATE_TRANSFERFILE"/>
   <int value="342" label="BROWSERACTION_SETPOPUP"/>
   <int value="343" label="TABS_GETSELECTED"/>
   <int value="344" label="FONTSETTINGS_GETFONT"/>
@@ -17380,6 +17449,13 @@ other types of suffix sets.
   <int value="28" label="SOCKET_SPECIFIC_HOSTS"/>
 </enum>
 
+<enum name="ExtensionState" type="int">
+  <int value="0" label="DISABLED"/>
+  <int value="1" label="ENABLED"/>
+  <int value="2" label="EXTERNAL_EXTENSION_UNINSTALLED"/>
+  <int value="3" label="ENABLED_COMPONENT"/>
+</enum>
+
 <enum name="ExtensionType" type="int">
   <int value="0" label="UNKNOWN"/>
   <int value="1" label="EXTENSION"/>
@@ -17547,6 +17623,15 @@ other types of suffix sets.
   <int value="88" label="ShadowDOMPrefixedCreateShadowRoot"/>
   <int value="89" label="ShadowDOMPrefixedShadowRoot"/>
   <int value="90" label="SVGAnimationElement"/>
+  <int value="91" label="KeyboardEventKeyLocation"/>
+  <int value="92" label="CaptureEvents"/>
+  <int value="93" label="ReleaseEvents"/>
+  <int value="94" label="CSSDisplayRunIn"/>
+  <int value="95" label="CSSDisplayCompact"/>
+  <int value="96" label="LineClamp"/>
+  <int value="97" label="SubFrameBeforeUnloadRegistered"/>
+  <int value="98" label="SubFrameBeforeUnloadFired"/>
+  <int value="99" label="CSSPseudoElementPrefixedDistributed"/>
 </enum>
 
 <enum name="FFmpegCodecs" type="int">
@@ -20285,8 +20370,8 @@ other types of suffix sets.
 </enum>
 
 <enum name="PreconnectedNavigation" type="int">
-  <int value="0" label="Page nav. preceded by a pre-connect"/>
-  <int value="1" label="No recent pre-connect to the page"/>
+  <int value="0" label="No recent pre-connect to the page"/>
+  <int value="1" label="Page nav. preceded by a pre-connect"/>
 </enum>
 
 <enum name="PreconnectMotivation" type="int">
@@ -20307,6 +20392,11 @@ other types of suffix sets.
   <int value="0" label="PRECONNECTION"/>
   <int value="1" label="PRERESOLUTION"/>
   <int value="2" label="TOO_NEW"/>
+</enum>
+
+<enum name="PreconnectTriggerUsed" type="int">
+  <int value="0" label="The pre-connect triggered host was not accessed"/>
+  <int value="1" label="The pre-connect triggered host was accessed"/>
 </enum>
 
 <enum name="PrerenderFinalStatus" type="int">
@@ -20417,6 +20507,11 @@ other types of suffix sets.
   <int value="48" label="Tab Helper URL seen namespace match"/>
   <int value="49" label="URL lookup multiple source webcontents"/>
   <int value="50" label="Continue prerender check side-effect free whitelist"/>
+  <int value="51" label="Continue prerender check Examine next URL"/>
+  <int value="52" label="Issuing prerender, already prerendering"/>
+  <int value="53" label="Issuing prerender, new prerender"/>
+  <int value="54" label="Issuing prerender, cancelled old prerender"/>
+  <int value="55" label="Continue prerender check fallthrough prerendering"/>
 </enum>
 
 <enum name="PrerenderLocalVisitCoreTransition" type="int">
@@ -20493,6 +20588,10 @@ other types of suffix sets.
   <int value="4" label="Mainframe commit"/>
   <int value="5" label="Mainframe commit, logged in"/>
   <int value="6" label="Login action added"/>
+  <int value="7" label="Login action added, Mainframe"/>
+  <int value="8" label="Login action added, Mainframe, pw empty"/>
+  <int value="9" label="Login action added, Subframe"/>
+  <int value="10" label="Login action added, Subframe, pw empty"/>
 </enum>
 
 <enum name="PreTapEvents" type="int">
@@ -22649,6 +22748,14 @@ other types of suffix sets.
   <group name="Google" label="only Google cookies are recorded."/>
   <group name="Other" label="only NON-Google cookies are recorded."/>
   <affected-histogram name="Cookie.ReinstatedCookies"/>
+</fieldtrial>
+
+<fieldtrial name="ExternalExtensionEvent" separator="">
+  <group name="NonWebstore"
+      label="sideloaded extensions that don't update from the webstore"/>
+  <group name="Webstore"
+      label="sideloaded extensions that update from the webstore"/>
+  <affected-histogram name="Extensions.ExternalExtensionEvent"/>
 </fieldtrial>
 
 <fieldtrial name="FileBrowserLoad" separator=".">

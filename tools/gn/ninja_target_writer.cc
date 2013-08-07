@@ -229,6 +229,15 @@ void NinjaTargetWriter::WriteCustomRules() {
   // Precompute the common dependencies for each step. This includes the
   // script itself (changing the script should force a rebuild) and any data
   // files.
+  //
+  // TODO(brettW) this needs to be re-thought. "data" is supposed to be runtime
+  // data (i.e. for tests and such) rather than compile-time dependencies for
+  // each target. If we really need this, we need to have a different way to
+  // express it.
+  //
+  // One idea: add an "inputs" variable to specify this kind of thing. We
+  // should probably make it an error to specify data but no inputs for a
+  // script as a way to catch people doing the wrong way.
   std::ostringstream common_deps_stream;
   path_output_.WriteFile(common_deps_stream, target_->script());
   const Target::FileList& datas = target_->data();
@@ -360,15 +369,18 @@ void NinjaTargetWriter::WriteCompilerVars() {
   out_ << std::endl;
 
   // C flags and friends.
-  out_ << "cflags =";
-  RecursiveTargetConfigStringsToStream(target_, &ConfigValues::cflags, out_);
-  out_ << std::endl;
-  out_ << "cflags_c =";
-  RecursiveTargetConfigStringsToStream(target_, &ConfigValues::cflags_c, out_);
-  out_ << std::endl;
-  out_ << "cflags_cc =";
-  RecursiveTargetConfigStringsToStream(target_, &ConfigValues::cflags_cc, out_);
-  out_ << std::endl;
+#define WRITE_FLAGS(name) \
+    out_ << #name " ="; \
+    RecursiveTargetConfigStringsToStream(target_, &ConfigValues::name, out_); \
+    out_ << std::endl;
+
+  WRITE_FLAGS(cflags)
+  WRITE_FLAGS(cflags_c)
+  WRITE_FLAGS(cflags_cc)
+  WRITE_FLAGS(cflags_objc)
+  WRITE_FLAGS(cflags_objcc)
+
+#undef WRITE_FLAGS
 
   out_ << std::endl;
 }
@@ -429,7 +441,12 @@ void NinjaTargetWriter::WriteLinkerStuff(
   out_ << std::endl;
 
   // Libraries to link.
-  out_ << "libs =" << std::endl;
+  out_ << "libs =";
+  if (settings_->IsMac()) {
+    // TODO(brettw) fix this.
+    out_ << " -framework AppKit -framework ApplicationServices -framework Carbon -framework CoreFoundation -framework Foundation -framework IOKit -framework Security";
+  }
+  out_ << std::endl;
 
   // The external output file is the one that other libs depend on.
   OutputFile external_output_file = helper_.GetTargetOutputFile(target_);
@@ -449,43 +466,8 @@ void NinjaTargetWriter::WriteLinkerStuff(
     internal_output_file = external_output_file;
   }
 
-  // TODO(brettw) should we append data files to this?
-
   // In Python see "self.ninja.build(output, command, input,"
-  out_ << "build ";
-  path_output_.WriteFile(out_, internal_output_file);
-  if (external_output_file != internal_output_file) {
-    out_ << " ";
-    path_output_.WriteFile(out_, external_output_file);
-  }
-  out_ << ": " << GetCommandForTargetType();
-  for (size_t i = 0; i < object_files.size(); i++) {
-    out_ << " ";
-    path_output_.WriteFile(out_, object_files[i]);
-  }
-
-  if (target_->output_type() == Target::EXECUTABLE ||
-      target_->output_type() == Target::SHARED_LIBRARY ||
-      target_->output_type() == Target::LOADABLE_MODULE) {
-    const std::vector<const Target*>& deps = target_->deps();
-    const std::set<const Target*>& inherited = target_->inherited_libraries();
-
-    // Now append linkable libraries to the linker command.
-    for (size_t i = 0; i < deps.size(); i++) {
-      if (deps[i]->IsLinkable() &&
-          inherited.find(deps[i]) == inherited.end()) {
-        out_ << " ";
-        path_output_.WriteFile(out_,
-                               helper_.GetTargetOutputFile(target_->deps()[i]));
-      }
-    }
-    for (std::set<const Target*>::const_iterator i = inherited.begin();
-         i != inherited.end(); ++i) {
-      out_ << " ";
-      path_output_.WriteFile(out_, helper_.GetTargetOutputFile(*i));
-    }
-  }
-  out_ << std::endl;
+  WriteLinkCommand(external_output_file, internal_output_file, object_files);
 
   if (target_->output_type() == Target::SHARED_LIBRARY) {
     out_ << "  soname = ";
@@ -505,9 +487,89 @@ void NinjaTargetWriter::WriteLinkerStuff(
       path_output_.WriteFile(out_, external_output_file);
       out_ << std::endl;
     }
+
+    // TODO(brettw) postbuild steps.
+    if (settings_->IsMac())
+      out_ << "  postbuilds = $ && (export BUILT_PRODUCTS_DIR=/Users/brettw/prj/src/out/gn; export CONFIGURATION=Debug; export DYLIB_INSTALL_NAME_BASE=@rpath; export EXECUTABLE_NAME=libbase.dylib; export EXECUTABLE_PATH=libbase.dylib; export FULL_PRODUCT_NAME=libbase.dylib; export LD_DYLIB_INSTALL_NAME=@rpath/libbase.dylib; export MACH_O_TYPE=mh_dylib; export PRODUCT_NAME=base; export PRODUCT_TYPE=com.apple.product-type.library.dynamic; export SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.7.sdk; export SRCROOT=/Users/brettw/prj/src/out/gn/../../base; export SOURCE_ROOT=\"$${SRCROOT}\"; export TARGET_BUILD_DIR=/Users/brettw/prj/src/out/gn; export TEMP_DIR=\"$${TMPDIR}\"; (cd ../../base && ../build/mac/strip_from_xcode); G=$$?; ((exit $$G) || rm -rf libbase.dylib) && exit $$G)";
   }
 
-  // TODO(brettw) postbuild steps here.
+  out_ << std::endl;
+}
+
+void NinjaTargetWriter::WriteLinkCommand(
+    const OutputFile& external_output_file,
+    const OutputFile& internal_output_file,
+    const std::vector<OutputFile>& object_files) {
+  out_ << "build ";
+  path_output_.WriteFile(out_, internal_output_file);
+  if (external_output_file != internal_output_file) {
+    out_ << " ";
+    path_output_.WriteFile(out_, external_output_file);
+  }
+  out_ << ": " << GetCommandForTargetType();
+
+  // Object files.
+  for (size_t i = 0; i < object_files.size(); i++) {
+    out_ << " ";
+    path_output_.WriteFile(out_, object_files[i]);
+  }
+
+  // Library inputs (deps and inherited static libraries).
+  //
+  // Static libraries since they're just a collection of the object files so
+  // don't need libraries linked with them, but we still need to go through
+  // the list and find non-linkable data deps in the "deps" section. We'll
+  // collect all non-linkable deps and put it in the order-only deps below.
+  std::vector<const Target*> extra_data_deps;
+  const std::vector<const Target*>& deps = target_->deps();
+  const std::set<const Target*>& inherited = target_->inherited_libraries();
+  for (size_t i = 0; i < deps.size(); i++) {
+    if (inherited.find(deps[i]) != inherited.end())
+      continue;
+    if (target_->output_type() != Target::STATIC_LIBRARY &&
+        deps[i]->IsLinkable()) {
+      out_ << " ";
+      path_output_.WriteFile(out_, helper_.GetTargetOutputFile(deps[i]));
+    } else {
+      extra_data_deps.push_back(deps[i]);
+    }
+  }
+  for (std::set<const Target*>::const_iterator i = inherited.begin();
+       i != inherited.end(); ++i) {
+    if (target_->output_type() == Target::STATIC_LIBRARY) {
+      extra_data_deps.push_back(*i);
+    } else {
+      out_ << " ";
+      path_output_.WriteFile(out_, helper_.GetTargetOutputFile(*i));
+    }
+  }
+
+  // Append data dependencies as order-only dependencies.
+  const std::vector<const Target*>& datadeps = target_->datadeps();
+  const std::vector<SourceFile>& data = target_->data();
+  if (!extra_data_deps.empty() || !datadeps.empty() || !data.empty()) {
+    out_ << " ||";
+
+    // Non-linkable deps in the deps section above.
+    for (size_t i = 0; i < extra_data_deps.size(); i++) {
+      out_ << " ";
+      path_output_.WriteFile(out_,
+                             helper_.GetTargetOutputFile(extra_data_deps[i]));
+    }
+
+    // Data deps.
+    for (size_t i = 0; i < datadeps.size(); i++) {
+      out_ << " ";
+      path_output_.WriteFile(out_, helper_.GetTargetOutputFile(datadeps[i]));
+    }
+
+    // Data files.
+    const std::vector<SourceFile>& data = target_->data();
+    for (size_t i = 0; i < data.size(); i++) {
+      out_ << " ";
+      path_output_.WriteFile(out_, data[i]);
+    }
+  }
 
   out_ << std::endl;
 }

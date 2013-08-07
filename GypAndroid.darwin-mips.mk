@@ -209,6 +209,7 @@ include $(LOCAL_PATH)/ui/surface/surface.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/ui.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/ui_jni_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/ui_resources.target.darwin-mips.mk
+include $(LOCAL_PATH)/ui/window_open_disposition_java.target.darwin-mips.mk
 include $(LOCAL_PATH)/url/url_lib.target.darwin-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/js2c.host.darwin-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/mksnapshot.mipsel.host.darwin-mips.mk
