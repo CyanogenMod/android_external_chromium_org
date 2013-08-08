@@ -75,10 +75,6 @@ void GLImageEGL::Destroy() {
 }
 
 void GLImageEGL::ReleaseTexImage() {
-  // === START ANDROID WORKAROUND http://b/10205015
-  static bool is_qcom = strcmp((char*)glGetString(GL_VENDOR), "Qualcomm") == 0;
-  if (is_qcom) return;
-  // === END   ANDROID WORKAROUND http://b/10205015
   char zero[4] = { 0, };
   glTexImage2D(GL_TEXTURE_2D,
                0,
