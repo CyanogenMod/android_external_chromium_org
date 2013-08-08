@@ -10,7 +10,8 @@
 #include "ui/base/ui_export.h"
 
 #if defined(OS_ANDROID)
-#include <third_party/khronos/EGL/egl.h>
+#include "base/memory/ref_counted.h"
+#include "ui/gfx/gpu_memory_handle.h"
 #endif
 
 namespace gfx {
@@ -26,7 +27,7 @@ struct GpuMemoryBufferHandle {
       : type(EMPTY_BUFFER),
         handle(base::SharedMemory::NULLHandle())
 #if defined(OS_ANDROID)
-        , native_buffer(NULL)
+        , native_buffer_handle()
 #endif
   {
   }
@@ -34,7 +35,7 @@ struct GpuMemoryBufferHandle {
   GpuMemoryBufferType type;
   base::SharedMemoryHandle handle;
 #if defined(OS_ANDROID)
-  EGLClientBuffer native_buffer;
+  scoped_refptr<GpuMemoryHandle> native_buffer_handle;
 #endif
 };
 

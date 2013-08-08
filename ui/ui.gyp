@@ -458,6 +458,8 @@
         'gfx/gfx_paths.h',
         'gfx/gpu_memory_buffer.cc',
         'gfx/gpu_memory_buffer.h',
+        'gfx/gpu_memory_handle.cc',
+        'gfx/gpu_memory_handle.h',
         'gfx/image/canvas_image_source.cc',
         'gfx/image/canvas_image_source.h',
         'gfx/image/image.cc',
