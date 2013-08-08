@@ -104,6 +104,7 @@ LOCAL_SRC_FILES := \
 	ui/gfx/font_render_params_android.cc \
 	ui/gfx/gfx_paths.cc \
 	ui/gfx/gpu_memory_buffer.cc \
+	ui/gfx/gpu_memory_handle.cc \
 	ui/gfx/image/canvas_image_source.cc \
 	ui/gfx/image/image.cc \
 	ui/gfx/image/image_family.cc \

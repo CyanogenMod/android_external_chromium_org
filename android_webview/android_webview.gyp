@@ -133,6 +133,8 @@
         'browser/find_helper.h',
         'browser/gpu_memory_buffer_factory_impl.cc',
         'browser/gpu_memory_buffer_factory_impl.h',
+        'browser/gpu_memory_handle_impl.cc',
+        'browser/gpu_memory_handle_impl.h',
         'browser/icon_helper.cc',
         'browser/icon_helper.h',
         'browser/in_process_view_renderer.cc',
