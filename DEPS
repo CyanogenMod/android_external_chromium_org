@@ -8,9 +8,10 @@ vars = {
   "sourceforge_url": "http://svn.code.sf.net/p/%(repo)s/code",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "155634",
+  "webkit_revision": "155688",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
+  "skia_git": "https://skia.googlesource.com",
   "swig_revision": "69281",
   "nacl_revision": "11930",
   # After changing nacl_revision, run 'glient sync' and check native_client/DEPS
@@ -28,11 +29,12 @@ vars = {
   "ffmpeg_hash": "894e6f715645528e815aee2dad45b59704238dcd",
 
   "sfntly_revision": "134",
-  "skia_revision": "10553",
+  "skia_revision": "10602",
+  "skia_hash": "6d04e64f56b658635eeb46fcdb02188ce54f1567",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
-  "v8_revision": "16065",
+  "v8_revision": "16104",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
@@ -312,7 +314,7 @@ deps_os = {
     # Binary level profile guided optimizations. This points to the
     # latest release binaries for the toolchain.
     "src/third_party/syzygy/binaries":
-      (Var("googlecode_url") % "sawbuck") + "/trunk/syzygy/binaries@1689",
+      (Var("googlecode_url") % "sawbuck") + "/trunk/syzygy/binaries@1718",
 
     # Binaries for nacl sdk.
     "src/third_party/nacl_sdk_binaries":

@@ -270,7 +270,7 @@ bool GrantFileSystemAccessToFileBrowser(Profile* profile) {
   return true;
 }
 
-// Executes handler specifed with |extension_id| and |action_id| for |url|.
+// Executes handler specified with |extension_id| and |action_id| for |url|.
 void ExecuteHandler(Profile* profile,
                     std::string extension_id,
                     std::string action_id,
@@ -314,7 +314,7 @@ void OpenFileBrowserImpl(const base::FilePath& path,
     return;
 
   // Some values of |action_id| are not listed in the manifest and are used
-  // to parametrize the behavior when opening the Files app window.
+  // to parameterize the behavior when opening the Files app window.
   ExecuteHandler(profile, kFileBrowserDomain, action_id, url,
                  file_tasks::kTaskFile);
 }
@@ -414,7 +414,7 @@ bool ExecuteExtensionHandler(Profile* profile,
                      file_tasks::kTaskFile);
       return true;
     }
-    return ExecuteBuiltinHandler(browser, path, action_id);
+    return ExecuteBuiltinHandler(browser, path);
   }
 
   ExecuteHandler(profile, extension_id, action_id, url,
@@ -755,8 +755,7 @@ void ShowFileInFolder(const base::FilePath& path) {
   OpenFileBrowserImpl(path, "select");
 }
 
-bool ExecuteBuiltinHandler(Browser* browser, const base::FilePath& path,
-    const std::string& internal_task_id) {
+bool ExecuteBuiltinHandler(Browser* browser, const base::FilePath& path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   Profile* profile = browser->profile();

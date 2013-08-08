@@ -27,6 +27,9 @@
             # Whether or not we are building the Ash shell.
             'use_ash%': 0,
 
+            # Whether or not we are using CRAS, the ChromeOS Audio Server.
+            'use_cras%': 0,
+
             # Use a raw surface abstraction.
             'use_ozone%': 0,
           },
@@ -34,6 +37,7 @@
           'chromeos%': '<(chromeos)',
           'use_aura%': '<(use_aura)',
           'use_ash%': '<(use_ash)',
+          'use_cras%': '<(use_cras)',
           'use_ozone%': '<(use_ozone)',
 
           # Whether we are using Views Toolkit
@@ -98,6 +102,7 @@
         'chromeos%': '<(chromeos)',
         'use_aura%': '<(use_aura)',
         'use_ash%': '<(use_ash)',
+        'use_cras%': '<(use_cras)',
         'use_ozone%': '<(use_ozone)',
         'use_openssl%': '<(use_openssl)',
         'enable_viewport%': '<(enable_viewport)',
@@ -179,6 +184,7 @@
       'toolkit_uses_gtk%': '<(toolkit_uses_gtk)',
       'use_aura%': '<(use_aura)',
       'use_ash%': '<(use_ash)',
+      'use_cras%': '<(use_cras)',
       'use_ozone%': '<(use_ozone)',
       'use_openssl%': '<(use_openssl)',
       'enable_viewport%': '<(enable_viewport)',
@@ -693,7 +699,16 @@
         }],
         ['OS=="win" or OS=="linux"', {
             'enable_mdns%' : 1,
-        }]
+        }],
+
+        # Turns on compiler optimizations in V8 in Debug build, except
+        # on android_clang, where we're hitting a weird linker error.
+        # TODO(dpranke): http://crbug.com/266155 .
+        ['OS=="android"', {
+          'v8_optimized_debug': 1,
+        }, {
+          'v8_optimized_debug': 2,
+        }],
       ],
 
       # Set this to 1 to enable use of concatenated impulse responses
@@ -755,6 +770,7 @@
     'ui_compositor_image_transport%': '<(ui_compositor_image_transport)',
     'use_aura%': '<(use_aura)',
     'use_ash%': '<(use_ash)',
+    'use_cras%': '<(use_cras)',
     'use_openssl%': '<(use_openssl)',
     'use_nss%': '<(use_nss)',
     'os_bsd%': '<(os_bsd)',
@@ -847,6 +863,7 @@
     'spdy_proxy_auth_property%': '<(spdy_proxy_auth_property)',
     'spdy_proxy_auth_value%': '<(spdy_proxy_auth_value)',
     'enable_mdns%' : '<(enable_mdns)',
+    'v8_optimized_debug': '<(v8_optimized_debug)',
 
     # Use system nspr instead of the bundled one.
     'use_system_nspr%': 0,
@@ -1103,9 +1120,6 @@
     # Whether we are using the rlz library or not.  Platforms like Android send
     # rlz codes for searches but do not use the library.
     'enable_rlz%': 0,
-
-    # Turns on compiler optimizations in V8 in Debug build.
-    'v8_optimized_debug': 1,
 
     # Turns on the i18n support in V8.
     'v8_enable_i18n_support': 1,
@@ -1927,6 +1941,9 @@
       }],
       ['use_ash==1', {
         'defines': ['USE_ASH=1'],
+      }],
+      ['use_cras==1', {
+        'defines': ['USE_CRAS=1'],
       }],
       ['use_ozone==1', {
         'defines': ['USE_OZONE=1'],

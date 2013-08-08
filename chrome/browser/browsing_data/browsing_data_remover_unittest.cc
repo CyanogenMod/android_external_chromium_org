@@ -32,6 +32,7 @@
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/personal_data_manager_observer.h"
 #include "content/public/browser/dom_storage_context.h"
+#include "content/public/browser/local_storage_usage_info.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/test/test_browser_thread.h"
@@ -45,7 +46,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/quota/mock_quota_manager.h"
 #include "webkit/browser/quota/quota_manager.h"
-#include "webkit/common/dom_storage/dom_storage_types.h"
 #include "webkit/common/quota/quota_types.h"
 
 using content::BrowserThread;
@@ -284,8 +284,10 @@ class RemoveServerBoundCertTester : public net::SSLConfigService::Observer {
                                    base::Time creation_time,
                                    base::Time expiration_time) {
     GetCertStore()->SetServerBoundCert(server_identifier,
-                                       net::CLIENT_CERT_RSA_SIGN, creation_time,
-                                       expiration_time, "a", "b");
+                                       creation_time,
+                                       expiration_time,
+                                       "a",
+                                       "b");
   }
 
   // Add a server bound cert for |server|, with the current time as the
@@ -520,7 +522,7 @@ class RemoveLocalStorageTester {
                    base::Unretained(this)));
   }
   void OnGotLocalStorageUsage(
-      const std::vector<dom_storage::LocalStorageUsageInfo>& infos) {
+      const std::vector<content::LocalStorageUsageInfo>& infos) {
     infos_ = infos;
     await_completion_.Notify();
   }
@@ -529,7 +531,7 @@ class RemoveLocalStorageTester {
   TestingProfile* profile_;
   content::DOMStorageContext* dom_storage_context_;
 
-  std::vector<dom_storage::LocalStorageUsageInfo> infos_;
+  std::vector<content::LocalStorageUsageInfo> infos_;
 
   AwaitCompletionHelper await_completion_;
 

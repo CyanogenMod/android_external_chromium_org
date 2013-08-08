@@ -76,6 +76,7 @@ LOCAL_SRC_FILES := \
 	content/common/content_param_traits.cc \
 	content/common/content_paths.cc \
 	content/common/cookie_data.cc \
+	content/common/dom_storage/dom_storage_map.cc \
 	content/common/find_match_rect_android.cc \
 	content/common/font_list.cc \
 	content/common/font_list_android.cc \

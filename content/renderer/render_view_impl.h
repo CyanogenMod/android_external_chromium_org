@@ -330,7 +330,6 @@ class CONTENT_EXPORT RenderViewImpl
   bool GetPepperCaretBounds(gfx::Rect* rect);
 
   bool IsPepperAcceptingCompositionEvents() const;
-#endif
 
   // Notification that the given plugin has crashed.
   void PluginCrashed(const base::FilePath& plugin_path,
@@ -368,6 +367,8 @@ class CONTENT_EXPORT RenderViewImpl
                      const std::string& mime_type,
                      WebPluginInfo* plugin_info,
                      std::string* actual_mime_type);
+
+#endif  // ENABLE_PLUGINS
 
   void TransferActiveWheelFlingAnimation(
       const WebKit::WebActiveWheelFlingParameters& params);
@@ -932,7 +933,6 @@ class CONTENT_EXPORT RenderViewImpl
   // The documentation for these functions should be in
   // content/common/*_messages.h for the message that the function is handling.
 
-  void OnConsoleMessageAck();
   void OnCopy();
   void OnCut();
   void OnDelete();
@@ -1564,12 +1564,6 @@ class CONTENT_EXPORT RenderViewImpl
 
   ui::MenuSourceType context_menu_source_type_;
   gfx::Point touch_editing_context_menu_location_;
-
-  // Console log message throttling. Ensures that the memory bloat from
-  // runaway logging occurs in the renderer, evenutaly crashing it, rather
-  // than in the browser.
-  int inflight_console_message_count_;
-  std::deque<IPC::Message*> deferred_console_messages_;
 
   // ---------------------------------------------------------------------------
   // ADDING NEW DATA? Please see if it fits appropriately in one of the above

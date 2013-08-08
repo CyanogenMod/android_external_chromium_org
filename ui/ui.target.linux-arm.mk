@@ -59,6 +59,7 @@ LOCAL_SRC_FILES := \
 	ui/base/l10n/l10n_util.cc \
 	ui/base/l10n/l10n_util_android.cc \
 	ui/base/l10n/l10n_util_posix.cc \
+	ui/base/l10n/time_format.cc \
 	ui/base/layout.cc \
 	ui/base/models/button_menu_item_model.cc \
 	ui/base/models/combobox_model.cc \

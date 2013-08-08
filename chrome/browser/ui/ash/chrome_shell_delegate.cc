@@ -41,7 +41,6 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/immersive_fullscreen_configuration.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/time_format.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/chromium_strings.h"
@@ -415,14 +414,6 @@ void ChromeShellDelegate::RecordUserMetricsAction(
       content::RecordAction(content::UserMetricsAction("MaxButton_ShowBubble"));
       break;
   }
-}
-
-string16 ChromeShellDelegate::GetTimeRemainingString(base::TimeDelta delta) {
-  return TimeFormat::TimeRemainingLong(delta);
-}
-
-string16 ChromeShellDelegate::GetTimeDurationLongString(base::TimeDelta delta) {
-  return TimeFormat::TimeDurationLong(delta);
 }
 
 ui::MenuModel* ChromeShellDelegate::CreateContextMenu(aura::RootWindow* root) {

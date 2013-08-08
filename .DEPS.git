@@ -11,7 +11,7 @@ vars = {
     'git_url':
          'https://chromium.googlesource.com',
     'webkit_rev':
-         '@224e93089f131d160474b7de59b6d2b2b23e01dd'
+         '@88c9a95505973e4bc340d847a42caaae3e709774'
 }
 
 deps = {
@@ -98,11 +98,11 @@ deps = {
     'src/third_party/sfntly/cpp/src':
         Var('git_url') + '/external/sfntly/cpp/src.git@cfb2f1743f0169ad8d01035458617bce97107539',
     'src/third_party/skia/gyp':
-        Var('git_url') + '/external/skia/gyp.git@67b4c8c19afc9520f1d3a3decd4f012c50c32d0f',
+        Var('git_url') + '/external/skia/gyp.git@dccf47acbdb65e21ed989fa3f45e638caffa6ce6',
     'src/third_party/skia/include':
-        Var('git_url') + '/external/skia/include.git@35fdbf8a5dd166a876e7fd81d55adc49343f1bf5',
+        Var('git_url') + '/external/skia/include.git@970ef2af6ab2e1d6554207e3f66cce934cd091d5',
     'src/third_party/skia/src':
-        Var('git_url') + '/external/skia/src.git@3e45b0d5d63c5b8623679a2fb937d8f27d271699',
+        Var('git_url') + '/external/skia/src.git@d2da8bcbed4791ae93c3070c50e89865b6398e10',
     'src/third_party/smhasher/src':
         Var('git_url') + '/external/smhasher.git@6f63a4882e6b2cf87e8eec1a3ef8644e0d963283',
     'src/third_party/snappy/src':
@@ -136,7 +136,7 @@ deps = {
     'src/tools/swarm_client':
         Var('git_url') + '/chromium/tools/swarm_client.git@86681e9a54c88972dba217b4f1007222dd8936a4',
     'src/v8':
-        Var('git_url') + '/external/v8.git@307dd6ea3b729c8058ada645b42a1cf083c92128',
+        Var('git_url') + '/external/v8.git@54d8a9855f2c6a6c3c33b5b66cbfbbac2cbcaa00',
     'src/webkit/renderer/media/crypto/ppapi/cdm':
         Var('git_url') + '/chromium/cdm.git@c2b192a02546916d28233cfd8b7717ffcdcc8347',
 }
@@ -341,7 +341,7 @@ deps_os = {
         'src/third_party/swig/win':
             Var('git_url') + '/chromium/deps/swig/win.git@986f013ba518541adf5c839811efb35630a31031',
         'src/third_party/syzygy/binaries':
-            Var('git_url') + '/external/sawbuck/syzygy/binaries.git@bcae0722f0e45aa098e7d2eee350234749efba8f',
+            Var('git_url') + '/external/sawbuck/syzygy/binaries.git@d25845b9eb9b5e2b42e60e8dadcfc711987ebd18',
         'src/third_party/xulrunner-sdk':
             Var('git_url') + '/chromium/deps/xulrunner-sdk.git@e9b241c183fa4e7af838ecd70714069ca0eb150c',
         'src/third_party/yasm/binaries':

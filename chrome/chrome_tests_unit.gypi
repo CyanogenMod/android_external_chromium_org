@@ -30,6 +30,7 @@
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../third_party/zlib/zlib.gyp:zlib',
+        '../ui/message_center/message_center.gyp:message_center_test_support',
       ],
       'export_dependent_settings': [
         'app/policy/cloud_policy_codegen.gyp:policy_test_support',
@@ -645,6 +646,7 @@
         'browser/chromeos/drive/webkit_file_stream_reader_impl_unittest.cc',
         'browser/chromeos/extensions/default_app_order_unittest.cc',
         'browser/chromeos/extensions/file_manager/desktop_notifications_unittest.cc',
+        'browser/chromeos/extensions/file_manager/file_watcher_unittest.cc',
         'browser/chromeos/extensions/wallpaper_private_api_unittest.cc',
         'browser/chromeos/external_metrics_unittest.cc',
         'browser/chromeos/fileapi/file_access_permissions_unittest.cc',
@@ -791,6 +793,7 @@
         'browser/extensions/api/identity/gaia_web_auth_flow_unittest.cc',
         'browser/extensions/api/identity/identity_mint_queue_unittest.cc',
         'browser/extensions/api/idle/idle_api_unittest.cc',
+        'browser/extensions/api/log_private/syslog_parser_unittest.cc',
         'browser/extensions/api/messaging/native_message_process_host_unittest.cc',
         'browser/extensions/api/messaging/native_messaging_host_manifest_unittest.cc',
         'browser/extensions/api/omnibox/omnibox_unittest.cc',
@@ -997,6 +1000,7 @@
         'browser/net/url_info_unittest.cc',
         'browser/notifications/desktop_notification_service_unittest.cc',
         'browser/notifications/message_center_notifications_unittest_win.cc',
+        'browser/notifications/message_center_settings_controller_unittest.cc',
         'browser/notifications/sync_notifier/chrome_notifier_service_unittest.cc',
         'browser/notifications/sync_notifier/synced_notification_unittest.cc',
         'browser/notifications/sync_notifier/sync_notifier_test_utils.cc',
@@ -1762,7 +1766,6 @@
         'common/service_process_util_unittest.cc',
         'common/switch_utils_unittest.cc',
         'common/thumbnail_score_unittest.cc',
-        'common/time_format_unittest.cc',
         'common/translate/language_detection_util_unittest.cc',
         'common/translate/translate_common_metrics_unittest.cc',
         'common/translate/translate_util_unittest.cc',
@@ -2209,6 +2212,7 @@
           'sources!': [
             'browser/extensions/api/enterprise_platform_keys_private/enterprise_platform_keys_private_api_unittest.cc',
             'browser/net/gaia/gaia_oauth_fetcher_unittest.cc',
+            'browser/extensions/api/log_private/syslog_parser_unittest.cc',
           ],
         }],
         ['use_x11==1', {

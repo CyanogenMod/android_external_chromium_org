@@ -171,19 +171,18 @@ Commands.defaultCommand = {
 Commands.unmountCommand = {
   /**
    * @param {Event} event Command event.
-   * @param {NavigationList} navigationList Target navigation list.
+   * @param {FileManager} fileManager The file manager instance.
    */
-  execute: function(event, navigationList, fileManager) {
-    var root = CommandUtil.getCommandPath(navigationList);
+  execute: function(event, fileManager) {
+    var root = CommandUtil.getCommandPath(event.target);
     if (root)
       fileManager.unmountVolume(PathUtil.getRootPath(root));
   },
   /**
    * @param {Event} event Command event.
-   * @param {NavigationList} navigationList Target navigation list.
    */
-  canExecute: function(event, navigationList) {
-    var rootType = CommandUtil.getCommandRootType(navigationList);
+  canExecute: function(event) {
+    var rootType = CommandUtil.getCommandRootType(event.target);
 
     event.canExecute = (rootType == RootType.ARCHIVE ||
                         rootType == RootType.REMOVABLE);
@@ -200,11 +199,10 @@ Commands.unmountCommand = {
 Commands.formatCommand = {
   /**
    * @param {Event} event Command event.
-   * @param {NavigationList} navigationList Target navigation list.
    * @param {FileManager} fileManager The file manager instance.
    */
-  execute: function(event, navigationList, fileManager) {
-    var root = CommandUtil.getCommandPath(navigationList);
+  execute: function(event, fileManager) {
+    var root = CommandUtil.getCommandPath(event.target);
 
     if (root) {
       var url = util.makeFilesystemUrl(PathUtil.getRootPath(root));
@@ -215,12 +213,11 @@ Commands.formatCommand = {
   },
   /**
    * @param {Event} event Command event.
-   * @param {NavigationList} navigationList Target navigation list.
    * @param {FileManager} fileManager The file manager instance.
    * @param {DirectoryModel} directoryModel The directory model instance.
    */
-  canExecute: function(event, navigationList, fileManager, directoryModel) {
-    var root = CommandUtil.getCommandPath(navigationList);
+  canExecute: function(event, fileManager, directoryModel) {
+    var root = CommandUtil.getCommandPath(event.target);
     var removable = root &&
                     PathUtil.getRootType(root) == RootType.REMOVABLE;
     var isReadOnly = root && directoryModel.isPathReadOnly(root);
@@ -599,7 +596,7 @@ Commands.createFolderShortcutCommand = {
     var eligible = path && PathUtil.isEligibleForFolderShortcut(path);
     event.canExecute =
         eligible && onlyOneFolderSelected && !folderShortcutExists;
-    event.command.setHidden(!onlyOneFolderSelected);
+    event.command.setHidden(!eligible || !onlyOneFolderSelected);
   }
 };
 
@@ -635,7 +632,7 @@ Commands.removeFolderShortcutCommand = {
     var eligible = path && PathUtil.isEligibleForFolderShortcut(path);
     var isShortcut = path && fileManager.folderShortcutExists(path);
     event.canExecute = isShortcut && eligible;
-    event.command.setHidden(!isShortcut);
+    event.command.setHidden(!event.canExecute);
   }
 };
 

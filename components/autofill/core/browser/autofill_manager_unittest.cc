@@ -522,7 +522,7 @@ class TestAutofillManager : public AutofillManager {
                  expected_submitted_field_types_[i].begin();
              it != expected_submitted_field_types_[i].end(); ++it) {
           EXPECT_TRUE(possible_types.count(*it))
-              << "Expected type: " << AutofillType::FieldTypeToString(*it);
+              << "Expected type: " << AutofillType(*it).ToString();
         }
       }
     }
@@ -2652,7 +2652,7 @@ TEST_F(AutofillManagerTest, FormSubmittedServerTypes) {
   std::vector<ServerFieldType> heuristic_types, server_types;
   for (size_t i = 0; i < form.fields.size(); ++i) {
     heuristic_types.push_back(UNKNOWN_TYPE);
-    server_types.push_back(form_structure->field(i)->Type().server_type());
+    server_types.push_back(form_structure->field(i)->heuristic_type());
   }
   form_structure->SetFieldTypes(heuristic_types, server_types);
   autofill_manager_->AddSeenForm(form_structure);
@@ -3113,12 +3113,13 @@ class MockAutofillManagerDelegate : public TestAutofillManagerDelegate {
 
   virtual ~MockAutofillManagerDelegate() {}
 
-  virtual void ShowAutocheckoutBubble(
+  virtual bool ShowAutocheckoutBubble(
       const gfx::RectF& bounds,
       bool is_google_user,
       const base::Callback<void(AutocheckoutBubbleState)>& callback) OVERRIDE {
     autocheckout_bubble_shown_ = true;
     callback.Run(AUTOCHECKOUT_BUBBLE_ACCEPTED);
+    return true;
   }
 
   virtual void ShowRequestAutocompleteDialog(
@@ -3166,7 +3167,7 @@ TEST_F(AutofillManagerTest, TestBubbleShown) {
   std::vector<ServerFieldType> heuristic_types, server_types;
   for (size_t i = 0; i < form.fields.size(); ++i) {
     heuristic_types.push_back(UNKNOWN_TYPE);
-    server_types.push_back(form_structure->field(i)->Type().server_type());
+    server_types.push_back(form_structure->field(i)->heuristic_type());
   }
   form_structure->SetFieldTypes(heuristic_types, server_types);
   autofill_manager_->AddSeenForm(form_structure);
@@ -3195,7 +3196,7 @@ TEST_F(AutofillManagerTest, TestAutocheckoutBubbleNotShown) {
   // Build form structure without server data.
   std::vector<ServerFieldType> heuristic_types, server_types;
   for (size_t i = 0; i < form.fields.size(); ++i) {
-    heuristic_types.push_back(form_structure->field(i)->Type().server_type());
+    heuristic_types.push_back(form_structure->field(i)->heuristic_type());
     server_types.push_back(NO_SERVER_DATA);
   }
   form_structure->SetFieldTypes(heuristic_types, server_types);
@@ -3240,7 +3241,7 @@ TEST_F(AutofillManagerTest, DynamicFormsSeenAndIgnored) {
   std::vector<ServerFieldType> heuristic_types, server_types;
   for (size_t i = 0; i < address.fields.size(); ++i) {
     heuristic_types.push_back(UNKNOWN_TYPE);
-    server_types.push_back(form_structure->field(i)->Type().server_type());
+    server_types.push_back(form_structure->field(i)->heuristic_type());
   }
   form_structure->SetFieldTypes(heuristic_types, server_types);
   autofill_manager_->AddSeenForm(form_structure.release());

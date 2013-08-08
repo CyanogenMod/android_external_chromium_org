@@ -103,6 +103,7 @@ LOCAL_SRC_FILES := \
 	net/cert/cert_verify_result.cc \
 	net/cert/crl_set.cc \
 	net/cert/ev_root_ca_metadata.cc \
+	net/cert/jwk_serializer_openssl.cc \
 	net/cert/multi_threaded_cert_verifier.cc \
 	net/cert/pem_tokenizer.cc \
 	net/cert/single_request_cert_verifier.cc \
@@ -149,6 +150,7 @@ LOCAL_SRC_FILES := \
 	net/disk_cache/simple/simple_backend_impl.cc \
 	net/disk_cache/simple/simple_entry_format.cc \
 	net/disk_cache/simple/simple_entry_impl.cc \
+	net/disk_cache/simple/simple_entry_operation.cc \
 	net/disk_cache/simple/simple_index.cc \
 	net/disk_cache/simple/simple_index_file.cc \
 	net/disk_cache/simple/simple_net_log_parameters.cc \

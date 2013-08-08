@@ -16,7 +16,7 @@
 #include "content/common/device_orientation/device_motion_messages.h"
 #include "content/common/device_orientation/device_orientation_messages.h"
 #include "content/common/devtools_messages.h"
-#include "content/common/dom_storage_messages.h"
+#include "content/common/dom_storage/dom_storage_messages.h"
 #include "content/common/drag_messages.h"
 #include "content/common/drag_traits.h"
 #include "content/common/file_utilities_messages.h"
@@ -30,7 +30,6 @@
 #include "content/common/input_messages.h"
 #include "content/common/java_bridge_messages.h"
 #include "content/common/media/audio_messages.h"
-#include "content/common/media/encoded_video_capture_messages.h"
 #include "content/common/media/midi_messages.h"
 #if defined(OS_ANDROID)
 #include "content/common/media/media_player_messages_android.h"

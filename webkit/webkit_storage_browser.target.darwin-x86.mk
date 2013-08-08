@@ -57,16 +57,6 @@ LOCAL_SRC_FILES := \
 	webkit/browser/database/database_util.cc \
 	webkit/browser/database/databases_table.cc \
 	webkit/browser/database/vfs_backend.cc \
-	webkit/browser/dom_storage/dom_storage_area.cc \
-	webkit/browser/dom_storage/dom_storage_context.cc \
-	webkit/browser/dom_storage/dom_storage_database.cc \
-	webkit/browser/dom_storage/dom_storage_host.cc \
-	webkit/browser/dom_storage/dom_storage_namespace.cc \
-	webkit/browser/dom_storage/dom_storage_session.cc \
-	webkit/browser/dom_storage/dom_storage_task_runner.cc \
-	webkit/browser/dom_storage/local_storage_database_adapter.cc \
-	webkit/browser/dom_storage/session_storage_database.cc \
-	webkit/browser/dom_storage/session_storage_database_adapter.cc \
 	webkit/browser/fileapi/async_file_util_adapter.cc \
 	webkit/browser/fileapi/copy_or_move_operation_delegate.cc \
 	webkit/browser/fileapi/external_mount_points.cc \

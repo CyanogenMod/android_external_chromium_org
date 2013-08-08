@@ -35,6 +35,7 @@ LOCAL_SRC_FILES := \
 	android_webview/browser/aw_devtools_delegate.cc \
 	android_webview/browser/aw_download_manager_delegate.cc \
 	android_webview/browser/aw_form_database_service.cc \
+	android_webview/browser/aw_gl_surface.cc \
 	android_webview/browser/aw_http_auth_handler_base.cc \
 	android_webview/browser/aw_javascript_dialog_manager.cc \
 	android_webview/browser/aw_login_delegate.cc \

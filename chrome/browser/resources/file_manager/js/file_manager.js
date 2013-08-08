@@ -493,9 +493,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.gearButton_.addEventListener('menushow',
         this.refreshRemainingSpace_.bind(this,
                                          false /* Without loading caption. */));
-    cr.ui.decorate(this.gearButton_, cr.ui.MenuButton);
     this.dialogDom_.querySelector('#gear-menu').menuItemSelector =
       'menuitem, hr';
+    cr.ui.decorate(this.gearButton_, cr.ui.MenuButton);
 
     if (this.dialogType == DialogType.FULL_PAGE) {
       var maximizeButton = this.dialogDom_.querySelector('#maximize-button');
@@ -570,13 +570,13 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         Commands.changeDefaultAppCommand, this);
 
     CommandUtil.registerCommand(this.navigationList_, 'unmount',
-        Commands.unmountCommand, this.navigationList_, this);
+        Commands.unmountCommand, this);
 
     CommandUtil.registerCommand(this.navigationList_, 'import-photos',
         Commands.importCommand, this.navigationList_);
 
     CommandUtil.registerCommand(this.dialogContainer_, 'format',
-        Commands.formatCommand, this.navigationList_, this,
+        Commands.formatCommand, this,
         this.directoryModel_);
 
     CommandUtil.registerCommand(this.dialogContainer_, 'delete',

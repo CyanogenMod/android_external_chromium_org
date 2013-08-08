@@ -1916,25 +1916,21 @@ const char kGoogleServicesUsernamePattern[] =
     "google.services.username_pattern";
 
 #if !defined(OS_ANDROID)
-// Tracks the number of times that we have shown the sync promo at startup.
-const char kSyncPromoStartupCount[] = "sync_promo.startup_count";
+// Tracks the number of times that we have shown the sign in promo at startup.
+const char kSignInPromoStartupCount[] = "sync_promo.startup_count";
 
-// Boolean tracking whether the user chose to skip the sync promo.
-const char kSyncPromoUserSkipped[] = "sync_promo.user_skipped";
+// Boolean tracking whether the user chose to skip the sign in promo.
+const char kSignInPromoUserSkipped[] = "sync_promo.user_skipped";
 
-// Boolean that specifies if the sync promo is allowed to show on first run.
+// Boolean that specifies if the sign in promo is allowed to show on first run.
 // This preference is specified in the master preference file to suppress the
-// sync promo for some installations.
-const char kSyncPromoShowOnFirstRunAllowed[] =
+// sign in promo for some installations.
+const char kSignInPromoShowOnFirstRunAllowed[] =
     "sync_promo.show_on_first_run_allowed";
 
 // Boolean that specifies if we should show a bubble in the new tab page.
 // The bubble is used to confirm that the user is signed into sync.
-const char kSyncPromoShowNTPBubble[] = "sync_promo.show_ntp_bubble";
-
-// An error to show in the sync promo bubble, if needed.  If the sign in was
-// successful, this property holds an empty string.
-const char kSyncPromoErrorMessage[] = "sync_promo.error_message";
+const char kSignInPromoShowNTPBubble[] = "sync_promo.show_ntp_bubble";
 #endif
 
 // Time when the user's GAIA info was last updated (represented as an int64).
@@ -2060,6 +2056,20 @@ const char kDailyHttpOriginalContentLength[] =
 // has been received from the network.
 const char kDailyHttpReceivedContentLength[] =
     "data_reduction.daily_received_length";
+
+// A List pref that contains daily totals of the size of all HTTP content that
+// has been received via the data reduction proxy.
+const char kDailyHttpReceivedContentLengthViaDataReductionProxy[] =
+    "data_reduction.daily_received_length_via_data_reduction_proxy";
+
+// A List pref that contains daily totals of the size of all HTTP content that
+// has been received when the data reduction proxy is enabled.
+// Note: this is different from
+// kDailyHttpReceivedContentLengthViaDataReductionProxy because content
+// doesn't necessarily go through the data reduction proxy when it is enabled.
+// E.g., the proxy doesn't handle HTTPS traffic.
+const char kDailyHttpReceivedContentLengthWithDataReductionProxyEnabled[] =
+    "data_reduction.daily_received_length_with_data_reduction_proxy_enabled";
 
 // An int64 pref that contains an internal representation of midnight on the
 // date of the last update to |kDailyHttp{Original,Received}ContentLength|.

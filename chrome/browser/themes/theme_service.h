@@ -13,7 +13,6 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
@@ -85,11 +84,10 @@ class ThemeService : public base::NonThreadSafe,
       int id,
       ui::ScaleFactor scale_factor) const OVERRIDE;
 #if defined(OS_MACOSX)
-  virtual NSImage* GetNSImageNamed(int id, bool allow_default) const OVERRIDE;
-  virtual NSColor* GetNSImageColorNamed(int id,
-                                        bool allow_default) const OVERRIDE;
-  virtual NSColor* GetNSColor(int id, bool allow_default) const OVERRIDE;
-  virtual NSColor* GetNSColorTint(int id, bool allow_default) const OVERRIDE;
+  virtual NSImage* GetNSImageNamed(int id) const OVERRIDE;
+  virtual NSColor* GetNSImageColorNamed(int id) const OVERRIDE;
+  virtual NSColor* GetNSColor(int id) const OVERRIDE;
+  virtual NSColor* GetNSColorTint(int id) const OVERRIDE;
   virtual NSGradient* GetNSGradient(int id) const OVERRIDE;
 #elif defined(OS_POSIX) && !defined(TOOLKIT_VIEWS) && !defined(OS_ANDROID)
   // This mismatch between what this class defines and whether or not it
@@ -136,10 +134,8 @@ class ThemeService : public base::NonThreadSafe,
   // destroyed, uninstalls all themes that aren't the currently selected.
   void OnInfobarDestroyed();
 
-  // Uninstall theme extensions which are no longer in use. |ignore_infobars| is
-  // whether unused themes should be removed despite a theme infobar being
-  // visible.
-  void RemoveUnusedThemes(bool ignore_infobars);
+  // Remove preference values for themes that are no longer in use.
+  void RemoveUnusedThemes();
 
   // Returns the syncable service for syncing theme. The returned service is
   // owned by |this| object.
@@ -174,7 +170,7 @@ class ThemeService : public base::NonThreadSafe,
 #endif  // OS_MACOSX
 
   // Clears the platform-specific caches. Do not call directly; it's called
-  // from ClearCaches().
+  // from ClearAllThemeData().
   virtual void FreePlatformCaches();
 
   Profile* profile() const { return profile_; }
@@ -185,19 +181,21 @@ class ThemeService : public base::NonThreadSafe,
     return theme_supplier_.get();
   }
 
+  // True if the theme service is ready to be used.
+  // TODO(pkotwicz): Add DCHECKS to the theme service's getters once
+  // ThemeSource no longer uses the ThemeService when it is not ready.
+  bool ready_;
+
  private:
   friend class theme_service_internal::ThemeServiceTest;
-
-  // Called when the extension service is ready.
-  void OnExtensionServiceReady();
-
-  // Migrate the theme to the new theme pack schema by recreating the data pack
-  // from the extension.
-  void MigrateTheme();
 
   // Replaces the current theme supplier with a new one and calls
   // StopUsingTheme() or StartUsingTheme() as appropriate.
   void SwapThemeSupplier(scoped_refptr<CustomThemeSupplier> theme_supplier);
+
+  // Migrate the theme to the new theme pack schema by recreating the data pack
+  // from the extension.
+  void MigrateTheme();
 
   // Saves the filename of the cached theme pack.
   void SavePackName(const base::FilePath& pack_path);
@@ -225,11 +223,12 @@ class ThemeService : public base::NonThreadSafe,
   typedef std::map<int, GdkPixbuf*> GdkPixbufMap;
   mutable GdkPixbufMap gdk_pixbufs_;
 #elif defined(OS_MACOSX)
+  // |nsimage_cache_| retains the images it has cached.
   typedef std::map<int, NSImage*> NSImageMap;
   mutable NSImageMap nsimage_cache_;
 
-  // The bool member of the pair is whether the color is a default color.
-  typedef std::map<int, std::pair<NSColor*, bool> > NSColorMap;
+  // |nscolor_cache_| retains the colors it has cached.
+  typedef std::map<int, NSColor*> NSColorMap;
   mutable NSColorMap nscolor_cache_;
 
   typedef std::map<int, NSGradient*> NSGradientMap;
@@ -239,19 +238,7 @@ class ThemeService : public base::NonThreadSafe,
   ui::ResourceBundle& rb_;
   Profile* profile_;
 
-  // True if the theme service is ready to be used.
-  // TODO(pkotwicz): Add DCHECKS to the theme service's getters once
-  // ThemeSource no longer uses the ThemeService when it is not ready.
-  bool ready_;
-
   scoped_refptr<CustomThemeSupplier> theme_supplier_;
-
-  // The id of the theme extension which has just been installed but has not
-  // been loaded yet. The theme extension with |installed_pending_load_id_| may
-  // never be loaded if the install is due to updating a disabled theme.
-  // |pending_install_id_| should be set to |kDefaultThemeID| if there are no
-  // recently installed theme extensions
-  std::string installed_pending_load_id_;
 
   // The number of infobars currently displayed.
   int number_of_infobars_;
@@ -259,8 +246,6 @@ class ThemeService : public base::NonThreadSafe,
   content::NotificationRegistrar registrar_;
 
   scoped_ptr<ThemeSyncableService> theme_syncable_service_;
-
-  base::WeakPtrFactory<ThemeService> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ThemeService);
 };

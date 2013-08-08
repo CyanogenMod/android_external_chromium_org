@@ -144,8 +144,10 @@ cr.define('cr.ui', function() {
         this.selectedIndex = 0;
       }
 
-      if (this.selectedItem)
+      if (this.selectedItem) {
         this.selectedItem.focus();
+        this.setAttribute('aria-activedescendant', this.selectedItem.id);
+      }
     },
 
     /**
@@ -153,6 +155,19 @@ cr.define('cr.ui', function() {
      */
     get length() {
       return this.menuItems.length;
+    },
+
+    /**
+     * Returns if the menu has any visible item.
+     * @return {boolean} True if the menu has visible item. Otherwise, false.
+     */
+    hasVisibleItems: function() {
+      var menuItems = this.menuItems;  // Cache.
+      for (var i = 0, menuItem; menuItem = menuItems[i]; i++) {
+        if (!menuItem.hidden)
+          return true;
+      }
+      return false;
     },
 
     /**

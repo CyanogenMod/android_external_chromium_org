@@ -771,8 +771,7 @@ class SSLClientSocketNSS::Core : public base::RefCountedThreadSafe<Core> {
   ////////////////////////////////////////////////////////////////////////////
   int DoBufferRecv(IOBuffer* buffer, int len);
   int DoBufferSend(IOBuffer* buffer, int len);
-  int DoGetDomainBoundCert(const std::string& host,
-                           const std::vector<uint8>& requested_cert_types);
+  int DoGetDomainBoundCert(const std::string& host);
 
   void OnGetDomainBoundCertComplete(int result);
   void OnHandshakeStateUpdated(const HandshakeState& state);
@@ -903,7 +902,6 @@ class SSLClientSocketNSS::Core : public base::RefCountedThreadSafe<Core> {
   // prior to invoking OnHandshakeIOComplete.
   // Read on the NSS task runner when once OnHandshakeIOComplete is invoked
   // on the NSS task runner.
-  SSLClientCertType domain_bound_cert_type_;
   std::string domain_bound_private_key_;
   std::string domain_bound_cert_;
 
@@ -944,8 +942,7 @@ SSLClientSocketNSS::Core::Core(
       user_write_buf_len_(0),
       network_task_runner_(network_task_runner),
       nss_task_runner_(nss_task_runner),
-      weak_net_log_(weak_net_log_factory_.GetWeakPtr()),
-      domain_bound_cert_type_(CLIENT_CERT_INVALID_TYPE) {
+      weak_net_log_(weak_net_log_factory_.GetWeakPtr()) {
 }
 
 SSLClientSocketNSS::Core::~Core() {
@@ -1274,7 +1271,6 @@ SECStatus SSLClientSocketNSS::Core::OwnAuthCertHandler(
     PRFileDesc* socket,
     PRBool checksig,
     PRBool is_server) {
-#ifdef SSL_ENABLE_FALSE_START
   Core* core = reinterpret_cast<Core*>(arg);
   if (!core->handshake_callback_called_) {
     // Only need to turn off False Start in the initial handshake. Also, it is
@@ -1296,7 +1292,6 @@ SECStatus SSLClientSocketNSS::Core::OwnAuthCertHandler(
       SSL_OptionSet(socket, SSL_ENABLE_FALSE_START, PR_FALSE);
     }
   }
-#endif
 
   // Tell NSS to not verify the certificate.
   return SECSuccess;
@@ -2318,17 +2313,15 @@ SECStatus SSLClientSocketNSS::Core::ClientChannelIDHandler(
   // We have negotiated the TLS channel ID extension.
   core->channel_id_xtn_negotiated_ = true;
   std::string host = core->host_and_port_.host();
-  std::vector<uint8> requested_cert_types;
-  requested_cert_types.push_back(CLIENT_CERT_ECDSA_SIGN);
   int error = ERR_UNEXPECTED;
   if (core->OnNetworkTaskRunner()) {
-    error = core->DoGetDomainBoundCert(host, requested_cert_types);
+    error = core->DoGetDomainBoundCert(host);
   } else {
     bool posted = core->network_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(
             IgnoreResult(&Core::DoGetDomainBoundCert),
-            core, host, requested_cert_types));
+            core, host));
     error = posted ? ERR_IO_PENDING : ERR_ABORTED;
   }
 
@@ -2372,9 +2365,7 @@ int SSLClientSocketNSS::Core::ImportChannelIDKeys(SECKEYPublicKey** public_key,
     return MapNSSError(PORT_GetError());
 
   // Set the private key.
-  switch (domain_bound_cert_type_) {
-    case CLIENT_CERT_ECDSA_SIGN: {
-      if (!crypto::ECPrivateKey::ImportFromEncryptedPrivateKeyInfo(
+  if (!crypto::ECPrivateKey::ImportFromEncryptedPrivateKeyInfo(
           ServerBoundCertService::kEPKIPassword,
           reinterpret_cast<const unsigned char*>(
               domain_bound_private_key_.data()),
@@ -2384,15 +2375,8 @@ int SSLClientSocketNSS::Core::ImportChannelIDKeys(SECKEYPublicKey** public_key,
           false,
           key,
           public_key)) {
-        int error = MapNSSError(PORT_GetError());
-        return error;
-      }
-      break;
-    }
-
-    default:
-      NOTREACHED();
-      return ERR_INVALID_ARGUMENT;
+    int error = MapNSSError(PORT_GetError());
+    return error;
   }
 
   return OK;
@@ -2433,8 +2417,8 @@ void SSLClientSocketNSS::Core::UpdateConnectionStatus() {
          SSL_CONNECTION_COMPRESSION_MASK) <<
         SSL_CONNECTION_COMPRESSION_SHIFT;
 
-    // NSS 3.12.x doesn't have version macros for TLS 1.1 and 1.2 (because NSS
-    // doesn't support them yet), so we use 0x0302 and 0x0303 directly.
+    // NSS 3.14.x doesn't have a version macro for TLS 1.2 (because NSS didn't
+    // support it yet), so use 0x0303 directly.
     int version = SSL_CONNECTION_VERSION_UNKNOWN;
     if (channel_info.protocolVersion < SSL_LIBRARY_VERSION_3_0) {
       // All versions less than SSL_LIBRARY_VERSION_3_0 are treated as SSL
@@ -2444,7 +2428,7 @@ void SSLClientSocketNSS::Core::UpdateConnectionStatus() {
       version = SSL_CONNECTION_VERSION_SSL3;
     } else if (channel_info.protocolVersion == SSL_LIBRARY_VERSION_3_1_TLS) {
       version = SSL_CONNECTION_VERSION_TLS1;
-    } else if (channel_info.protocolVersion == 0x0302) {
+    } else if (channel_info.protocolVersion == SSL_LIBRARY_VERSION_TLS_1_1) {
       version = SSL_CONNECTION_VERSION_TLS1_1;
     } else if (channel_info.protocolVersion == 0x0303) {
       version = SSL_CONNECTION_VERSION_TLS1_2;
@@ -2454,10 +2438,6 @@ void SSLClientSocketNSS::Core::UpdateConnectionStatus() {
         SSL_CONNECTION_VERSION_SHIFT;
   }
 
-  // SSL_HandshakeNegotiatedExtension was added in NSS 3.12.6.
-  // Since SSL_MAX_EXTENSIONS was added at the same time, we can test
-  // SSL_MAX_EXTENSIONS for the presence of SSL_HandshakeNegotiatedExtension.
-#if defined(SSL_MAX_EXTENSIONS)
   PRBool peer_supports_renego_ext;
   ok = SSL_HandshakeNegotiatedExtension(nss_fd_, ssl_renegotiation_info_xtn,
                                         &peer_supports_renego_ext);
@@ -2491,7 +2471,6 @@ void SSLClientSocketNSS::Core::UpdateConnectionStatus() {
                             peer_supports_renego_ext == PR_TRUE);
     }
   }
-#endif
 
   if (ssl_config_.version_fallback) {
     nss_handshake_state_.ssl_connection_status |=
@@ -2620,9 +2599,7 @@ int SSLClientSocketNSS::Core::DoBufferSend(IOBuffer* send_buffer, int len) {
   return rv;
 }
 
-int SSLClientSocketNSS::Core::DoGetDomainBoundCert(
-    const std::string& host,
-    const std::vector<uint8>& requested_cert_types) {
+int SSLClientSocketNSS::Core::DoGetDomainBoundCert(const std::string& host) {
   DCHECK(OnNetworkTaskRunner());
 
   if (detached_)
@@ -2632,8 +2609,6 @@ int SSLClientSocketNSS::Core::DoGetDomainBoundCert(
 
   int rv = server_bound_cert_service_->GetDomainBoundCert(
       host,
-      requested_cert_types,
-      &domain_bound_cert_type_,
       &domain_bound_private_key_,
       &domain_bound_cert_,
       base::Bind(&Core::OnGetDomainBoundCertComplete, base::Unretained(this)),
@@ -3168,25 +3143,18 @@ int SSLClientSocketNSS::InitializeSSLOptions() {
     SSL_CipherPrefSet(nss_fd_, *it, PR_FALSE);
   }
 
-#ifdef SSL_ENABLE_SESSION_TICKETS
   // Support RFC 5077
   rv = SSL_OptionSet(nss_fd_, SSL_ENABLE_SESSION_TICKETS, PR_TRUE);
   if (rv != SECSuccess) {
     LogFailedNSSFunction(
         net_log_, "SSL_OptionSet", "SSL_ENABLE_SESSION_TICKETS");
   }
-#else
-  #error "You need to install NSS-3.12 or later to build chromium"
-#endif
 
-#ifdef SSL_ENABLE_FALSE_START
   rv = SSL_OptionSet(nss_fd_, SSL_ENABLE_FALSE_START,
                      ssl_config_.false_start_enabled);
   if (rv != SECSuccess)
     LogFailedNSSFunction(net_log_, "SSL_OptionSet", "SSL_ENABLE_FALSE_START");
-#endif
 
-#ifdef SSL_ENABLE_RENEGOTIATION
   // We allow servers to request renegotiation. Since we're a client,
   // prohibiting this is rather a waste of time. Only servers are in a
   // position to prevent renegotiation attacks.
@@ -3198,14 +3166,12 @@ int SSLClientSocketNSS::InitializeSSLOptions() {
     LogFailedNSSFunction(
         net_log_, "SSL_OptionSet", "SSL_ENABLE_RENEGOTIATION");
   }
-#endif  // SSL_ENABLE_RENEGOTIATION
 
-#ifdef SSL_CBC_RANDOM_IV
   rv = SSL_OptionSet(nss_fd_, SSL_CBC_RANDOM_IV, PR_TRUE);
   if (rv != SECSuccess)
     LogFailedNSSFunction(net_log_, "SSL_OptionSet", "SSL_CBC_RANDOM_IV");
-#endif
 
+// Added in NSS 3.15
 #ifdef SSL_ENABLE_OCSP_STAPLING
   if (IsOCSPStaplingSupported()) {
     rv = SSL_OptionSet(nss_fd_, SSL_ENABLE_OCSP_STAPLING, PR_TRUE);
@@ -3216,6 +3182,7 @@ int SSLClientSocketNSS::InitializeSSLOptions() {
   }
 #endif
 
+// Chromium patch to libssl
 #ifdef SSL_ENABLE_CACHED_INFO
   rv = SSL_OptionSet(nss_fd_, SSL_ENABLE_CACHED_INFO,
                      ssl_config_.cached_info_enabled);

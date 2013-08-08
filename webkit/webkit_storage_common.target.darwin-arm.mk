@@ -29,8 +29,6 @@ LOCAL_SRC_FILES := \
 	webkit/common/blob/shareable_file_reference.cc \
 	webkit/common/database/database_connections.cc \
 	webkit/common/database/database_identifier.cc \
-	webkit/common/dom_storage/dom_storage_map.cc \
-	webkit/common/dom_storage/dom_storage_types.cc \
 	webkit/common/fileapi/directory_entry.cc \
 	webkit/common/fileapi/file_system_util.cc \
 	webkit/common/quota/quota_status_code.cc

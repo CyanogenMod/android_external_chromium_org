@@ -89,7 +89,6 @@ LOCAL_SRC_FILES := \
 	media/base/demuxer.cc \
 	media/base/demuxer_stream.cc \
 	media/base/djb2.cc \
-	media/base/encoded_bitstream_buffer.cc \
 	media/base/filter_collection.cc \
 	media/base/media.cc \
 	media/base/media_keys.cc \

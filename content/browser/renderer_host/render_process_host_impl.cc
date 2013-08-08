@@ -46,7 +46,7 @@
 #include "content/browser/device_orientation/device_motion_message_filter.h"
 #include "content/browser/device_orientation/device_orientation_message_filter.h"
 #include "content/browser/device_orientation/orientation_message_filter.h"
-#include "content/browser/dom_storage/dom_storage_context_impl.h"
+#include "content/browser/dom_storage/dom_storage_context_wrapper.h"
 #include "content/browser/dom_storage/dom_storage_message_filter.h"
 #include "content/browser/download/mhtml_generation_manager.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
@@ -977,9 +977,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDefaultTileHeight,
     switches::kMaxUntiledLayerWidth,
     switches::kMaxUntiledLayerHeight,
-#if defined(OS_CHROMEOS)
-    switches::kEnableEncodedScreenCapture,
-#endif
     switches::kEnableViewport,
     switches::kEnableInbandTextTracks,
     switches::kEnableOpusPlayback,

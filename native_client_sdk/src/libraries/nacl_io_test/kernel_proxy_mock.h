@@ -11,6 +11,7 @@
 
 #include "nacl_io/kernel_proxy.h"
 #include "nacl_io/ossocket.h"
+#include "nacl_io/ostermios.h"
 
 class KernelProxyMock : public nacl_io::KernelProxy {
  public:
@@ -43,6 +44,8 @@ class KernelProxyMock : public nacl_io::KernelProxy {
   MOCK_METHOD1(remove, int(const char*));
   MOCK_METHOD1(rmdir, int(const char*));
   MOCK_METHOD2(stat, int(const char*, struct stat*));
+  MOCK_METHOD2(tcgetattr, int(int, struct termios*));
+  MOCK_METHOD3(tcsetattr, int(int, int, const struct termios*));
   MOCK_METHOD1(umount, int(const char*));
   MOCK_METHOD1(unlink, int(const char*));
   MOCK_METHOD2(utime, int(const char*, const struct utimbuf*));
@@ -60,9 +63,12 @@ class KernelProxyMock : public nacl_io::KernelProxy {
   MOCK_METHOD3(accept, int(int, struct sockaddr*, socklen_t*));
   MOCK_METHOD3(bind, int(int, const struct sockaddr*, socklen_t));
   MOCK_METHOD3(connect, int(int, const struct sockaddr*, socklen_t));
+  MOCK_METHOD1(gethostbyname, struct hostent*(const char*));
   MOCK_METHOD3(getpeername, int(int, struct sockaddr*, socklen_t*));
   MOCK_METHOD3(getsockname, int(int, struct sockaddr*, socklen_t*));
   MOCK_METHOD5(getsockopt, int(int, int, int, void*, socklen_t*));
+  MOCK_METHOD1(herror, void(const char*));
+  MOCK_METHOD1(hstrerror, const char*(int));
   MOCK_METHOD2(listen, int(int, int));
   MOCK_METHOD4(recv, ssize_t(int, void*, size_t, int));
   MOCK_METHOD6(recvfrom, ssize_t(int, void*, size_t, int,

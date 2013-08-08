@@ -57,6 +57,7 @@ LOCAL_SRC_FILES := \
 	content/public/browser/indexed_db_info.cc \
 	content/public/browser/javascript_dialog_manager.cc \
 	content/public/browser/load_from_memory_cache_details.cc \
+	content/public/browser/local_storage_usage_info.cc \
 	content/public/browser/navigation_controller.cc \
 	content/public/browser/navigation_details.cc \
 	content/public/browser/notification_registrar.cc \
@@ -159,8 +160,18 @@ LOCAL_SRC_FILES := \
 	content/browser/device_orientation/orientation_message_filter.cc \
 	content/browser/device_orientation/provider.cc \
 	content/browser/device_orientation/provider_impl.cc \
+	content/browser/dom_storage/dom_storage_area.cc \
 	content/browser/dom_storage/dom_storage_context_impl.cc \
+	content/browser/dom_storage/dom_storage_context_wrapper.cc \
+	content/browser/dom_storage/dom_storage_database.cc \
+	content/browser/dom_storage/dom_storage_host.cc \
 	content/browser/dom_storage/dom_storage_message_filter.cc \
+	content/browser/dom_storage/dom_storage_namespace.cc \
+	content/browser/dom_storage/dom_storage_session.cc \
+	content/browser/dom_storage/dom_storage_task_runner.cc \
+	content/browser/dom_storage/local_storage_database_adapter.cc \
+	content/browser/dom_storage/session_storage_database.cc \
+	content/browser/dom_storage/session_storage_database_adapter.cc \
 	content/browser/dom_storage/session_storage_namespace_impl.cc \
 	content/browser/download/base_file.cc \
 	content/browser/download/base_file_posix.cc \

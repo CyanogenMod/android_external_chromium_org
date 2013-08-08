@@ -55,15 +55,6 @@ LOCAL_SRC_FILES := \
 	content/child/npapi/npobject_stub.cc \
 	content/child/npapi/npobject_util.cc \
 	content/child/npapi/npruntime_util.cc \
-	content/child/npapi/plugin_host.cc \
-	content/child/npapi/plugin_instance.cc \
-	content/child/npapi/plugin_lib.cc \
-	content/child/npapi/plugin_stream.cc \
-	content/child/npapi/plugin_stream_posix.cc \
-	content/child/npapi/plugin_stream_url.cc \
-	content/child/npapi/plugin_string_stream.cc \
-	content/child/npapi/webplugin_delegate_impl.cc \
-	content/child/npapi/webplugin_delegate_impl_android.cc \
 	content/child/plugin_message_generator.cc \
 	content/child/plugin_param_traits.cc \
 	content/child/power_monitor_broadcast_source.cc \

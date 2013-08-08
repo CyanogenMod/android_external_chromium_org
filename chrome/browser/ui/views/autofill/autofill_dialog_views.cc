@@ -1115,6 +1115,7 @@ AutofillDialogViews::AutofillDialogViews(AutofillDialogViewDelegate* delegate)
       overlay_view_(NULL),
       button_strip_extra_view_(NULL),
       save_in_chrome_checkbox_(NULL),
+      save_in_chrome_checkbox_container_(NULL),
       button_strip_image_(NULL),
       autocheckout_steps_area_(NULL),
       autocheckout_progress_bar_view_(NULL),
@@ -1150,10 +1151,10 @@ void AutofillDialogViews::Show() {
   // care of deleting itself after calling DeleteDelegate().
   WebContentsModalDialogManager* web_contents_modal_dialog_manager =
       WebContentsModalDialogManager::FromWebContents(
-          delegate_->web_contents());
+          delegate_->GetWebContents());
   window_ = CreateWebContentsModalDialogViews(
       this,
-      delegate_->web_contents()->GetView()->GetNativeView(),
+      delegate_->GetWebContents()->GetView()->GetNativeView(),
       web_contents_modal_dialog_manager->delegate()->
           GetWebContentsModalDialogHost());
   web_contents_modal_dialog_manager->ShowDialog(window_->GetNativeView());
@@ -1163,7 +1164,7 @@ void AutofillDialogViews::Show() {
   // Listen for size changes on the browser.
   views::Widget* browser_widget =
       views::Widget::GetTopLevelWidgetForNativeView(
-          delegate_->web_contents()->GetView()->GetNativeView());
+          delegate_->GetWebContents()->GetView()->GetNativeView());
   observer_.Add(browser_widget);
 
   gfx::Image splash_image = delegate_->SplashPageImage();
@@ -1432,7 +1433,7 @@ gfx::Size AutofillDialogViews::GetPreferredSize() {
     // bottom of the browser window.
     views::Widget* widget =
         views::Widget::GetTopLevelWidgetForNativeView(
-            delegate_->web_contents()->GetView()->GetNativeView());
+            delegate_->GetWebContents()->GetView()->GetNativeView());
     int browser_window_height =
         widget ? widget->GetContentsView()->bounds().height() : INT_MAX;
     const int kWindowDecorationHeight = 200;
@@ -1588,7 +1589,7 @@ views::NonClientFrameView* AutofillDialogViews::CreateNonClientFrameView(
     views::Widget* widget) {
   return CreateConstrainedStyleNonClientFrameView(
       widget,
-      delegate_->web_contents()->GetBrowserContext());
+      delegate_->GetWebContents()->GetBrowserContext());
 }
 
 void AutofillDialogViews::ButtonPressed(views::Button* sender,
@@ -1697,10 +1698,18 @@ void AutofillDialogViews::InitChildViews() {
   button_strip_extra_view_->SetLayoutManager(
       new views::BoxLayout(views::BoxLayout::kHorizontal, 0, 0, 0));
 
+  save_in_chrome_checkbox_container_ = new views::View();
+  save_in_chrome_checkbox_container_->SetLayoutManager(
+      new views::BoxLayout(views::BoxLayout::kHorizontal, 0, 0, 7));
+  button_strip_extra_view_->AddChildView(save_in_chrome_checkbox_container_);
+
   save_in_chrome_checkbox_ =
       new views::Checkbox(delegate_->SaveLocallyText());
   save_in_chrome_checkbox_->SetChecked(true);
-  button_strip_extra_view_->AddChildView(save_in_chrome_checkbox_);
+  save_in_chrome_checkbox_container_->AddChildView(save_in_chrome_checkbox_);
+
+  save_in_chrome_checkbox_container_->AddChildView(
+      new TooltipIcon(delegate_->SaveLocallyTooltip()));
 
   button_strip_image_ = new views::ImageView();
   button_strip_extra_view_->AddChildView(button_strip_image_);
@@ -2188,7 +2197,7 @@ void AutofillDialogViews::TextfieldEditedOrActivated(
 }
 
 void AutofillDialogViews::UpdateButtonStripExtraView() {
-  save_in_chrome_checkbox_->SetVisible(
+  save_in_chrome_checkbox_container_->SetVisible(
       delegate_->ShouldOfferToSaveInChrome());
 
   gfx::Image image = delegate_->ButtonStripImage();

@@ -53,6 +53,7 @@ LOCAL_SRC_FILES := \
 	base/android/jni_registrar.cc \
 	base/android/jni_string.cc \
 	base/android/memory_pressure_listener_android.cc \
+	base/android/java_handler_thread.cc \
 	base/android/path_service_android.cc \
 	base/android/path_utils.cc \
 	base/android/sys_utils.cc \

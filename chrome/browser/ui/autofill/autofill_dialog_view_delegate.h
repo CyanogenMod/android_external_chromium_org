@@ -46,6 +46,7 @@ class AutofillDialogViewDelegate {
   virtual string16 CancelButtonText() const = 0;
   virtual string16 ConfirmButtonText() const = 0;
   virtual string16 SaveLocallyText() const = 0;
+  virtual string16 SaveLocallyTooltip() const = 0;
   virtual string16 LegalDocumentsText() = 0;
 
   // State ---------------------------------------------------------------------
@@ -205,7 +206,7 @@ class AutofillDialogViewDelegate {
   virtual Profile* profile() = 0;
 
   // The web contents that prompted the dialog.
-  virtual content::WebContents* web_contents() = 0;
+  virtual content::WebContents* GetWebContents() = 0;
 
  protected:
   virtual ~AutofillDialogViewDelegate();

@@ -1197,6 +1197,25 @@
    fun:_ZN7WebCore16HTMLScriptRunner36executePendingScriptAndDispatchEventERNS_13PendingScriptE
 }
 
+# http://crbug.com/269278 causes really widespread, flaky leaks in
+# value objects that own some memory.  These suppressions will cover
+# all such objects, even though it's possible to get real leaks that
+# look the same way (e.g. by allocating such an object in an arena).
+{
+   bug_269278a
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN4base4Bind*Callback*BindState*
+}
+{
+   bug_269278b
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN9__gnu_cxx13new_allocator*allocate*
+   fun:_ZNSt12_Vector_base*_M_allocate*
+}
+
+
 #-----------------------------------------------------------------------
 # 3. Suppressions for real chromium bugs that are not yet fixed.
 # These should all be in chromium's bug tracking system (but a few aren't yet).
@@ -5764,19 +5783,6 @@
    fun:_ZN11dom_storage17DomStorageContext18DeleteLocalStorageERK4GURL
 }
 {
-   bug_166485
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_ZN9__gnu_cxx13new_allocator*FilePath*allocate*
-   fun:_ZNSt12_Vector_base*FilePath*_M_allocate*
-   fun:_ZNSt6vector*FilePath*_M_insert_aux*
-   fun:_ZNSt6vector*FilePath*push_back*
-   fun:_ZN9file_util26CreateDirectoryAndGetError*
-   fun:_ZN9file_util15CreateDirectory*
-   fun:_ZN11dom_storage17DomStorageContext19GetStorageNamespaceEl
-   fun:_ZN11dom_storage17DomStorageContext18DeleteLocalStorageERK4GURL
-}
-{
    bug_166709
    Memcheck:Leak
    fun:_Znw*
@@ -7216,3 +7222,12 @@
   fun:_ZN7content10PluginList17ReadWebPluginInfoERKN4base8FilePathEPNS_13WebPluginInfoE
   fun:_ZN7content10PluginList14ReadPluginInfoERKN4base8FilePathEPNS_13WebPluginInfoE
 }
+{
+   bug_269201
+   Memcheck:Unaddressable
+   ...
+   fun:_ZN4base8internal17IncomingTaskQueue18AddToIncomingQueueERKN15tracked_objects8LocationERKNS_8CallbackIFvvEEENS_9TimeDeltaEb
+   fun:_ZN4base11MessageLoop8PostTaskERKN15tracked_objects8LocationERKNS_8CallbackIFvvEEE
+   fun:_ZN8printing8PrintJob21UpdatePrintedDocumentEPNS_15PrintedDocumentE
+   fun:_ZN8printing8PrintJob4StopEv
+ }

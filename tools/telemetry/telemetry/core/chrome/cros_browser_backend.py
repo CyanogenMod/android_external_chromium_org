@@ -18,8 +18,9 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
                   '/usr/local/opt/google/chrome/chrome ']
 
   def __init__(self, browser_type, options, cri, is_guest):
-    super(CrOSBrowserBackend, self).__init__(is_content_shell=False,
-        supports_extensions=not is_guest, options=options)
+    super(CrOSBrowserBackend, self).__init__(
+        is_content_shell=False, supports_extensions=not is_guest,
+        options=options)
     # Initialize fields so that an explosion during init doesn't break in Close.
     self._browser_type = browser_type
     self._options = options
@@ -84,6 +85,8 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
             '--disable-default-apps',
             # Jump to the login screen, skipping network selection, eula, etc.
             '--login-screen=login',
+            # Skip user image selection screen, and post login screens.
+            '--oobe-skip-postlogin',
             # Allow devtools to connect to chrome.
             '--remote-debugging-port=%i' % self._remote_debugging_port,
             # Open a maximized window.
@@ -110,9 +113,8 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
         return pid
     return None
 
-  @property
-  def pid(self):
-    """Locates the pid of the main chrome browser process.
+  def _GetChromeProcess(self):
+    """Locates the the main chrome browser process.
 
     Chrome on cros is usually in /opt/google/chrome, but could be in
     /usr/local/ for developer workflows - debug chrome is too large to fit on
@@ -134,8 +136,26 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
         continue
       for path in self.CHROME_PATHS:
         if process.startswith(path):
-          return pid
+          return {'pid': pid, 'path': path}
     return None
+
+  @property
+  def pid(self):
+    result = self._GetChromeProcess()
+    if 'pid' in result:
+      return result['pid']
+    return None
+
+  @property
+  def browser_directory(self):
+    result = self._GetChromeProcess()
+    if 'path' in result:
+      return result['path']
+    return None
+
+  @property
+  def profile_directory(self):
+    return '/home/chronos/Default'
 
   @property
   def hwid(self):
@@ -268,8 +288,8 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
 
   def _HandleUserImageSelectionScreen(self):
     """If we're stuck on the user image selection screen, we click the ok
-    button. TODO(achuith): Figure out a better way to bypass user image
-    selection. crbug.com/249182."""
+    button.
+    """
     oobe = self.oobe
     if oobe:
       try:
@@ -285,7 +305,8 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   def _IsLoggedIn(self):
     """Returns True if we're logged in (cryptohome has mounted), and the oobe
     has been dismissed."""
-    self._HandleUserImageSelectionScreen()
+    if self.chrome_branch_number <= 1547:
+      self._HandleUserImageSelectionScreen()
     return self._IsCryptohomeMounted() and not self.oobe
 
   def _StartupWindow(self):

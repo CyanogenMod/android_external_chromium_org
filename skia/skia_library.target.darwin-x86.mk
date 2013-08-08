@@ -40,6 +40,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/ports/SkThread_pthread.cpp \
 	third_party/skia/src/ports/SkTime_Unix.cpp \
 	third_party/skia/src/ports/SkTLS_pthread.cpp \
+	third_party/skia/src/sfnt/SkOTTable_name.cpp \
 	third_party/skia/src/sfnt/SkOTUtils.cpp \
 	third_party/skia/src/utils/debugger/SkDebugCanvas.cpp \
 	third_party/skia/src/utils/debugger/SkDrawCommand.cpp \
@@ -241,6 +242,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/effects/SkColorFilterImageFilter.cpp \
 	third_party/skia/src/effects/SkColorMatrix.cpp \
 	third_party/skia/src/effects/SkColorMatrixFilter.cpp \
+	third_party/skia/src/effects/SkComposeImageFilter.cpp \
 	third_party/skia/src/effects/SkCornerPathEffect.cpp \
 	third_party/skia/src/effects/SkDashPathEffect.cpp \
 	third_party/skia/src/effects/SkDiscretePathEffect.cpp \

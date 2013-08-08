@@ -493,7 +493,7 @@
    bug_157885
    Heapcheck:Leak
    ...
-   fun:dom_storage::DomStorageContext::CreateSessionNamespace
+   fun:content::DOMStorageContextImpl::CreateSessionNamespace
 }
 {
    bug_159191
@@ -556,47 +556,6 @@
    fun:ash::ImageCursors::SetDeviceScaleFactor
    fun:ash::CursorManager::SetDeviceScaleFactor
    fun:ash::Shell::Init
-}
-{
-   bug_169185_a
-   Heapcheck:Leak
-   fun:v8::internal::SlotsBufferAllocator::AllocateBuffer
-   fun:v8::internal::SlotsBuffer::AddTo
-   fun:v8::internal::MarkCompactCollector::Record*
-   ...
-   fun:v8::internal::StaticMarkingVisitor::IterateBody
-   fun:v8::internal::IncrementalMarking::VisitObject
-   fun:v8::internal::IncrementalMarking::ProcessMarkingDeque
-   fun:v8::internal::IncrementalMarking::Step
-   ...
-   fun:v8::internal::*Space::AllocateRaw
-}
-{
-   bug_169678_b
-   Heapcheck:Leak
-   fun:v8::internal::SlotsBufferAllocator::AllocateBuffer
-   fun:v8::internal::SlotsBuffer::AddTo
-   fun:v8::internal::MarkCompactCollector::RecordCodeEntrySlot
-   fun:v8::internal::StaticMarkingVisitor::VisitCodeEntry
-   ...
-   fun:v8::internal::IncrementalMarking::VisitObject
-   ...
-   fun:v8::internal::IncrementalMarking::OldSpaceStep
-   fun:v8::internal::FreeList::Allocate
-}
-{
-   bug_169678_c
-   Heapcheck:Leak
-   fun:v8::internal::SlotsBufferAllocator::AllocateBuffer
-   fun:v8::internal::SlotsBuffer::AddTo
-   fun:v8::internal::MarkCompactCollector::Record*
-   ...
-   fun:v8::internal::Heap::DoScavenge*
-   fun:v8::internal::Heap::Scavenge*
-   ...
-   fun:v8::internal::Heap::PerformGarbageCollection
-   fun:v8::internal::Heap::CollectGarbage
-   fun:v8::internal::Heap::CollectGarbage
 }
 {
    bug_171547_b
@@ -874,4 +833,25 @@
    fun:base::internal::WeakReferenceOwner::GetRef
    fun:GetWeakPtr
    fun:base::WeakPtrTest_MoveOwnershipAfterInvalidate_Test::TestBody
+}
+{
+   bug_269716a
+   Heapcheck:Leak
+   fun:PL_ArenaAllocate
+   fun:net::NSSCertDatabase::DeleteCertAndKey
+   fun:chromeos::NetworkCertMigratorTest::CleanupTestCert
+}
+{
+   bug_269716b
+   Heapcheck:Leak
+   fun:PR_NewLock
+   fun:net::NSSCertDatabase::DeleteCertAndKey
+   fun:chromeos::NetworkCertMigratorTest::CleanupTestCert
+}
+{
+   bug_269716c
+   Heapcheck:Leak
+   fun:nss_ZAlloc
+   fun:net::NSSCertDatabase::DeleteCertAndKey
+   fun:chromeos::NetworkCertMigratorTest::CleanupTestCert
 }

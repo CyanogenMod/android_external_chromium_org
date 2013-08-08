@@ -138,7 +138,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/mouse_lock_dispatcher.cc \
 	content/renderer/paint_aggregator.cc \
 	content/renderer/password_form_conversion_utils.cc \
-	content/renderer/plugin_channel_host.cc \
 	content/renderer/browser_plugin/browser_plugin.cc \
 	content/renderer/browser_plugin/browser_plugin_backing_store.cc \
 	content/renderer/browser_plugin/browser_plugin_bindings.cc \
@@ -185,8 +184,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/webcrypto_impl.cc \
 	content/renderer/web_ui_extension.cc \
 	content/renderer/web_ui_extension_data.cc \
-	content/renderer/webplugin_delegate_proxy.cc \
-	content/renderer/webplugin_impl.cc \
 	content/renderer/websharedworker_proxy.cc \
 	content/renderer/websharedworkerrepository_impl.cc
 

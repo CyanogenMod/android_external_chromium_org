@@ -22,6 +22,7 @@ class MockAutofillDialogViewDelegate : public AutofillDialogViewDelegate {
   MOCK_CONST_METHOD0(CancelButtonText, string16());
   MOCK_CONST_METHOD0(ConfirmButtonText, string16());
   MOCK_CONST_METHOD0(SaveLocallyText, string16());
+  MOCK_CONST_METHOD0(SaveLocallyTooltip, string16());
   MOCK_METHOD0(LegalDocumentsText, string16());
   MOCK_CONST_METHOD0(SignedInState, DialogSignedInState());
   MOCK_CONST_METHOD0(ShouldShowSpinner, bool());
@@ -74,7 +75,7 @@ class MockAutofillDialogViewDelegate : public AutofillDialogViewDelegate {
   MOCK_METHOD0(OnCancel, bool());
   MOCK_METHOD0(OnAccept, bool());
   MOCK_METHOD0(profile, Profile*());
-  MOCK_METHOD0(web_contents, content::WebContents*());
+  MOCK_METHOD0(GetWebContents, content::WebContents*());
  private:
   DetailInputs default_inputs_;
   DetailInputs cc_default_inputs_;  // Default inputs for SECTION_CC.

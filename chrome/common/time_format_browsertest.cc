@@ -13,8 +13,8 @@
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/scoped_locale.h"
-#include "chrome/common/time_format.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "ui/base/l10n/time_format.h"
 
 using base::TimeDelta;
 
@@ -34,6 +34,7 @@ IN_PROC_BROWSER_TEST_F(TimeFormatBrowserTest, DecimalPointNotDot) {
   // This showed up on the browser on estimated download time, for example.
   // http://crbug.com/60476
 
-  string16 one_min = TimeFormat::TimeRemainingShort(TimeDelta::FromMinutes(1));
+  string16 one_min =
+      ui::TimeFormat::TimeRemainingShort(TimeDelta::FromMinutes(1));
   EXPECT_EQ(ASCIIToUTF16("1 min"), one_min);
 }

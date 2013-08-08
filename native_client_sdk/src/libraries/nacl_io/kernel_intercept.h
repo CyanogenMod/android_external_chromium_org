@@ -10,6 +10,7 @@
 
 #include "nacl_io/ossocket.h"
 #include "nacl_io/osstat.h"
+#include "nacl_io/ostermios.h"
 #include "nacl_io/ostypes.h"
 #include "nacl_io/osutime.h"
 #include "sdk_util/macros.h"
@@ -70,14 +71,22 @@ int ki_poll(struct pollfd *fds, nfds_t nfds, int timeout);
 int ki_select(int nfds, fd_set* readfds, fd_set* writefds,
               fd_set* exceptfds, struct timeval* timeout);
 
+int ki_tcflush(int fd, int queue_selector);
+int ki_tcgetattr(int fd, struct termios* termios_p);
+int ki_tcsetattr(int fd, int optional_actions,
+                 const struct termios *termios_p);
+
 #ifdef PROVIDES_SOCKET_API
 // Socket Functions
 int ki_accept(int fd, struct sockaddr* addr, socklen_t* len);
 int ki_bind(int fd, const struct sockaddr* addr, socklen_t len);
 int ki_connect(int fd, const struct sockaddr* addr, socklen_t len);
+struct hostent* ki_gethostbyname(const char* name);
 int ki_getpeername(int fd, struct sockaddr* addr, socklen_t* len);
 int ki_getsockname(int fd, struct sockaddr* addr, socklen_t* len);
 int ki_getsockopt(int fd, int lvl, int optname, void* optval, socklen_t* len);
+void ki_herror(const char *s);
+const char *ki_hstrerror(int err);
 int ki_listen(int fd, int backlog);
 ssize_t ki_recv(int fd, void* buf, size_t len, int flags);
 ssize_t ki_recvfrom(int fd, void* buf, size_t len, int flags,
@@ -92,7 +101,7 @@ int ki_setsockopt(int fd, int lvl, int optname, const void* optval,
 int ki_shutdown(int fd, int how);
 int ki_socket(int domain, int type, int protocol);
 int ki_socketpair(int domain, int type, int protocl, int* sv);
-#endif // PROVIDES_SOCKET_API
+#endif  // PROVIDES_SOCKET_API
 
 EXTERN_C_END
 
