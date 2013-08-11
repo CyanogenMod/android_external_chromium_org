@@ -16,6 +16,8 @@
 #include "ui/views/view.h"
 
 namespace views {
+class Label;
+class MenuButton;
 class MenuRunner;
 }
 
@@ -64,7 +66,8 @@ class MESSAGE_CENTER_EXPORT NotifierSettingsView
                                    const gfx::Point& point) OVERRIDE;
 
   views::ImageButton* title_arrow_;
-  views::View* title_entry_;
+  views::Label* title_label_;
+  views::MenuButton* notifier_group_selector_;
   views::ScrollView* scroller_;
   NotifierSettingsProvider* provider_;
   std::set<NotifierButton*> buttons_;

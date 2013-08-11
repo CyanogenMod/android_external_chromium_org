@@ -14,6 +14,7 @@
 #include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "chrome/browser/ui/autofill/account_chooser_model.h"
+#include "chrome/browser/ui/autofill/autofill_dialog_controller.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_models.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_types.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_view_delegate.h"
@@ -68,6 +69,7 @@ class WalletSigninHelper;
 // This class drives the dialog that appears when a site uses the imperative
 // autocomplete API to fill out a form.
 class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
+                                     public AutofillDialogController,
                                      public AutofillPopupDelegate,
                                      public content::NotificationObserver,
                                      public content::WebContentsObserver,
@@ -89,25 +91,16 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
 
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
-  void Show();
-  void Hide();
-
-  // Called when the tab hosting this dialog is activated by a user gesture.
-  // Used to trigger a refresh of the user's Wallet data.
-  void TabActivated();
-
-  // Adds a step in the flow to the Autocheckout UI.
-  void AddAutocheckoutStep(AutocheckoutStepType step_type);
-
-  // Updates the status of a step in the Autocheckout UI.
-  void UpdateAutocheckoutStep(AutocheckoutStepType step_type,
-                              AutocheckoutStepStatus step_status);
-
-  // Called when there is an error in an active Autocheckout flow.
-  void OnAutocheckoutError();
-
-  // Called when an Autocheckout flow completes successfully.
-  void OnAutocheckoutSuccess();
+  // AutofillDialogController implementation.
+  virtual void Show() OVERRIDE;
+  virtual void Hide() OVERRIDE;
+  virtual void TabActivated() OVERRIDE;
+  virtual void AddAutocheckoutStep(AutocheckoutStepType step_type) OVERRIDE;
+  virtual void UpdateAutocheckoutStep(
+      AutocheckoutStepType step_type,
+      AutocheckoutStepStatus step_status) OVERRIDE;
+  virtual void OnAutocheckoutError() OVERRIDE;
+  virtual void OnAutocheckoutSuccess() OVERRIDE;
 
   // Returns |view_| as a testable version of itself (if |view_| exists and
   // actually implements |AutofillDialogView::GetTestableView()|).
@@ -294,6 +287,12 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
 
   AutocheckoutState autocheckout_state() const { return autocheckout_state_; }
 
+  // Shows a new credit card saved bubble and passes ownership of |new_card| and
+  // |billing_profile| to the bubble. Exposed for testing.
+  virtual void ShowNewCreditCardBubble(
+      scoped_ptr<CreditCard> new_card,
+      scoped_ptr<AutofillProfile> billing_profile);
+
  private:
   // Whether or not the current request wants credit info back.
   bool RequestingCreditCardInfo() const;
@@ -333,7 +332,7 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   void ShowEditUiIfBadSuggestion(DialogSection section);
 
   // Whether the |value| of |input| should be preserved on account change.
-  bool InputWasEdited(const DetailInput& input,
+  bool InputWasEdited(ServerFieldType type,
                       const base::string16& value);
 
   // Takes a snapshot of the newly inputted user data in |view_| (if it exists).

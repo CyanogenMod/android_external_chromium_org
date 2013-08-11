@@ -17,7 +17,7 @@ class PepperPluginInstanceImpl;
 // "old-style" resources are handled here. See
 // content/renderer/pepper/pepper_in_process_resource_creation.h for functions
 // that implement "new-style" resources.
-class ResourceCreationImpl : public ::ppapi::thunk::ResourceCreationAPI {
+class ResourceCreationImpl : public ppapi::thunk::ResourceCreationAPI {
  public:
   explicit ResourceCreationImpl(PepperPluginInstanceImpl* instance);
   virtual ~ResourceCreationImpl();
@@ -35,11 +35,6 @@ class ResourceCreationImpl : public ::ppapi::thunk::ResourceCreationAPI {
   virtual PP_Resource CreateBroker(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateBuffer(PP_Instance instance,
                                    uint32_t size) OVERRIDE;
-  virtual PP_Resource CreateFileRef(PP_Instance instance,
-                                    PP_Resource file_system,
-                                    const char* path) OVERRIDE;
-  virtual PP_Resource CreateFileRef(
-      const ::ppapi::PPB_FileRef_CreateInfo& serialized) OVERRIDE;
   virtual PP_Resource CreateFlashDRM(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateFlashFontFile(
       PP_Instance instance,

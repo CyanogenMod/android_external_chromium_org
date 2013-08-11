@@ -9,7 +9,6 @@ import sys
 import tempfile
 import time
 import traceback
-import urlparse
 import random
 
 from telemetry.core import browser_finder
@@ -18,6 +17,7 @@ from telemetry.core import util
 from telemetry.core import wpr_modes
 from telemetry.core.platform.profiler import profiler_finder
 from telemetry.page import page_filter as page_filter_module
+from telemetry.page import page_measurement_results
 from telemetry.page import page_runner_repeat
 from telemetry.page import page_test
 
@@ -109,8 +109,7 @@ class PageState(object):
     self._did_login = False
 
   def PreparePage(self, page, tab, test=None):
-    parsed_url = urlparse.urlparse(page.url)
-    if parsed_url[0] == 'file':
+    if page.is_file:
       serving_dirs, filename = page.serving_dirs_and_file
       if tab.browser.SetHTTPServerDirectories(serving_dirs) and test:
         test.DidStartHTTPServer(tab)
@@ -165,7 +164,7 @@ def _PrepareAndRunPage(test, page_set, expectations, options, page,
   results_for_current_run = results
   if state.first_page[page] and test.discard_first_result:
     # If discarding results, substitute a dummy object.
-    results_for_current_run = type(results)()
+    results_for_current_run = page_measurement_results.PageMeasurementResults()
   results_for_current_run.StartTest(page)
   tries = 3
   while tries:
@@ -264,7 +263,7 @@ def Run(test, page_set, expectations, options):
   try:
     test.WillRunTest(state.tab)
     repeat_state = page_runner_repeat.PageRunnerRepeatState(
-                       options.repeat_options)
+        options.repeat_options)
 
     repeat_state.WillRunPageSet()
     while repeat_state.ShouldRepeatPageSet():
@@ -307,8 +306,7 @@ def _CheckArchives(page_set, pages, results):
   Logs warnings if any are missing."""
   page_set_has_live_sites = False
   for page in pages:
-    parsed_url = urlparse.urlparse(page.url)
-    if parsed_url.scheme != 'chrome' and parsed_url.scheme != 'file':
+    if not page.is_local:
       page_set_has_live_sites = True
       break
 
@@ -329,8 +327,7 @@ def _CheckArchives(page_set, pages, results):
   pages_missing_archive_data = []
 
   for page in pages:
-    parsed_url = urlparse.urlparse(page.url)
-    if parsed_url.scheme == 'chrome' or parsed_url.scheme == 'file':
+    if page.is_local:
       continue
 
     if not page.archive_path:

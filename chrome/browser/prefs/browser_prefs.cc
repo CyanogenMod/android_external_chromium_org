@@ -71,8 +71,6 @@
 #include "chrome/browser/translate/translate_prefs.h"
 #include "chrome/browser/ui/alternate_error_tab_observer.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
-#include "chrome/browser/ui/autofill/autofill_credit_card_bubble_controller.h"
-#include "chrome/browser/ui/autofill/autofill_dialog_controller_impl.h"
 #include "chrome/browser/ui/browser_ui_prefs.h"
 #include "chrome/browser/ui/network_profile_bubble.h"
 #include "chrome/browser/ui/prefs/prefs_tab_helper.h"
@@ -94,6 +92,10 @@
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/render_process_host.h"
+
+#if defined(ENABLE_AUTOFILL_DIALOG)
+#include "chrome/browser/ui/autofill/autofill_dialog_controller.h"
+#endif
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "chrome/browser/policy/browser_policy_connector.h"
@@ -153,6 +155,8 @@
 
 #if defined(OS_ANDROID)
 #include "chrome/browser/ui/webui/ntp/android/promo_handler.h"
+#else
+#include "chrome/browser/ui/autofill/generated_credit_card_bubble_controller.h"
 #endif
 
 #if defined(ENABLE_PLUGIN_INSTALLATION)
@@ -287,9 +291,10 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   // User prefs. Please keep this list alphabetized.
   AlternateErrorPageTabObserver::RegisterProfilePrefs(registry);
   apps::RegisterProfilePrefs(registry);
-  autofill::AutofillCreditCardBubbleController::RegisterUserPrefs(registry);
-  autofill::AutofillDialogControllerImpl::RegisterProfilePrefs(registry);
   autofill::AutofillManager::RegisterProfilePrefs(registry);
+#if !defined(OS_ANDROID)
+  autofill::GeneratedCreditCardBubbleController::RegisterUserPrefs(registry);
+#endif
   BookmarkPromptPrefs::RegisterProfilePrefs(registry);
   bookmark_utils::RegisterProfilePrefs(registry);
   browser_sync::SyncPrefs::RegisterProfilePrefs(registry);
@@ -320,6 +325,10 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   SessionStartupPref::RegisterProfilePrefs(registry);
   TemplateURLPrepopulateData::RegisterProfilePrefs(registry);
   TranslatePrefs::RegisterProfilePrefs(registry);
+
+#if defined(ENABLE_AUTOFILL_DIALOG)
+  autofill::AutofillDialogController::RegisterProfilePrefs(registry);
+#endif
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
   policy::URLBlacklistManager::RegisterProfilePrefs(registry);

@@ -286,7 +286,7 @@ void MediaStreamDependencyFactory::CreateNativeMediaSources(
         source_data->device_info().device.type ==
             content::MEDIA_TAB_VIDEO_CAPTURE ||
         source_data->device_info().device.type ==
-            content::MEDIA_SCREEN_VIDEO_CAPTURE;
+            content::MEDIA_DESKTOP_VIDEO_CAPTURE;
     source_data->SetVideoSource(
         CreateLocalVideoSource(source_data->device_info().session_id,
                                is_screencast,
@@ -551,8 +551,8 @@ MediaStreamDependencyFactory::CreatePeerConnection(
             web_frame);
 
   PeerConnectionIdentityService* identity_service =
-      new PeerConnectionIdentityService(GURL(web_frame->document().url().spec())
-                                            .GetOrigin());
+      PeerConnectionIdentityService::Create(
+          GURL(web_frame->document().url().spec()).GetOrigin());
 
   return pc_factory_->CreatePeerConnection(ice_servers,
                                            constraints,

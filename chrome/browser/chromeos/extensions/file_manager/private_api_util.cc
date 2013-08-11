@@ -9,6 +9,7 @@
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/chromeos/extensions/file_manager/fileapi_util.h"
 #include "chrome/browser/chromeos/fileapi/file_system_backend.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
@@ -48,19 +49,17 @@ void ContinueGetSelectedFileInfo(Profile* profile,
 void GetSelectedFileInfoInternal(Profile* profile,
                                  scoped_ptr<GetSelectedFileInfoParams> params) {
   DCHECK(profile);
+  drive::DriveIntegrationService* integration_service =
+      drive::DriveIntegrationServiceFactory::GetForProfile(profile);
 
   for (size_t i = params->selected_files.size();
        i < params->file_paths.size(); ++i) {
     const base::FilePath& file_path = params->file_paths[i];
-    // When the caller of the select file dialog wants local file paths,
-    // we should retrieve Drive files onto the local cache.
-    if (params->local_path_option == NO_LOCAL_PATH_RESOLUTION ||
-        !drive::util::IsUnderDriveMountPoint(file_path)) {
+
+    if (!drive::util::IsUnderDriveMountPoint(file_path)) {
       params->selected_files.push_back(
           ui::SelectedFileInfo(file_path, base::FilePath()));
     } else {
-      drive::DriveIntegrationService* integration_service =
-          drive::DriveIntegrationServiceFactory::GetForProfile(profile);
       // |integration_service| is NULL if Drive is disabled.
       if (!integration_service) {
         ContinueGetSelectedFileInfo(profile,
@@ -70,15 +69,29 @@ void GetSelectedFileInfoInternal(Profile* profile,
                                     scoped_ptr<drive::ResourceEntry>());
         return;
       }
-      // TODO(kinaba): crbug.com/140425 support FOR_SAVING
-      DCHECK(params->local_path_option == NEED_LOCAL_PATH_FOR_OPENING);
-      integration_service->file_system()->GetFileByPath(
-          drive::util::ExtractDrivePath(file_path),
-          base::Bind(&ContinueGetSelectedFileInfo,
-                     profile,
-                     base::Passed(&params)));
-      return;
-    }
+      // When the caller of the select file dialog wants local file paths,
+      // we should retrieve Drive files onto the local cache.
+      switch (params->local_path_option) {
+        case NO_LOCAL_PATH_RESOLUTION:
+          params->selected_files.push_back(
+              ui::SelectedFileInfo(file_path, base::FilePath()));
+          break;
+        case NEED_LOCAL_PATH_FOR_OPENING:
+          integration_service->file_system()->GetFileByPath(
+              drive::util::ExtractDrivePath(file_path),
+              base::Bind(&ContinueGetSelectedFileInfo,
+                         profile,
+                         base::Passed(&params)));
+          return;  // Remaining work is done in ContinueGetSelectedFileInfo.
+        case NEED_LOCAL_PATH_FOR_SAVING:
+          integration_service->file_system()->GetFileByPathForSaving(
+              drive::util::ExtractDrivePath(file_path),
+              base::Bind(&ContinueGetSelectedFileInfo,
+                         profile,
+                         base::Passed(&params)));
+          return;  // Remaining work is done in ContinueGetSelectedFileInfo.
+      }
+   }
   }
   params->callback.Run(params->selected_files);
 }
@@ -144,10 +157,9 @@ base::FilePath GetLocalPathFromURL(
   DCHECK(render_view_host);
   DCHECK(profile);
 
-  content::SiteInstance* site_instance = render_view_host->GetSiteInstance();
   scoped_refptr<fileapi::FileSystemContext> file_system_context =
-      content::BrowserContext::GetStoragePartition(profile, site_instance)->
-      GetFileSystemContext();
+      fileapi_util::GetFileSystemContextForRenderViewHost(
+          profile, render_view_host);
 
   const fileapi::FileSystemURL filesystem_url(
       file_system_context->CrackURL(url));

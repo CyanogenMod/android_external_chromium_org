@@ -401,6 +401,7 @@ extern const char kAutofillDialogHasPaidWithWallet[];
 extern const char kAutofillDialogPayWithoutWallet[];
 extern const char kAutofillDialogShowCount[];
 extern const char kAutofillGeneratedCardBubbleTimesShown[];
+extern const char kAutofillDialogDefaults[];
 extern const char kEditBookmarksEnabled[];
 
 extern const char kEnableTranslate[];
@@ -907,6 +908,7 @@ extern const char kOverscrollMinimumThresholdStart[];
 extern const char kOverscrollVerticalThresholdStart[];
 extern const char kOverscrollHorizontalResistThreshold[];
 extern const char kOverscrollVerticalResistThreshold[];
+extern const char kGestureConfigIsTrustworthy[];
 #endif
 
 extern const char kNetworkProfileWarningsLeft[];

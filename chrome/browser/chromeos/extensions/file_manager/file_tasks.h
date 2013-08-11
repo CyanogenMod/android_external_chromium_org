@@ -80,9 +80,10 @@
 // (Files.app) and the latter looks like "419782477519" (Pixlr Editor).
 //
 // <task-type> is either of
-// - "file" - Files.app built-in handler
+// - "file" - File browser handler - app/extension declaring
+//            "file_browser_handlers" in manifest.
+// - "app" - File handler - app declaring "file_handlers" in manifest.json.
 // - "drive" - Drive App
-// - "app" - Regular Chrome Extension/App ID
 //
 // <task-action-id> is an ID string used for identifying actions provided
 // from a single Chrome Extension/App. In other words, a single
@@ -109,17 +110,24 @@
 #ifndef CHROME_BROWSER_CHROMEOS_EXTENSIONS_FILE_MANAGER_FILE_TASKS_H_
 #define CHROME_BROWSER_CHROMEOS_EXTENSIONS_FILE_MANAGER_FILE_TASKS_H_
 
+#include <set>
 #include <string>
 #include <vector>
 
+#include "base/basictypes.h"
 #include "base/callback_forward.h"
-#include "base/platform_file.h"
-#include "chrome/common/extensions/extension.h"
 
-class Browser;
 class FileBrowserHandler;
 class GURL;
 class Profile;
+
+namespace base {
+class FilePath;
+}
+
+namespace extensions {
+class Extension;
+}
 
 namespace fileapi {
 class FileSystemURL;
@@ -128,20 +136,11 @@ class FileSystemURL;
 namespace file_manager {
 namespace file_tasks {
 
-// Tasks are stored as a vector in order of priorities.
-typedef std::vector<const FileBrowserHandler*> FileBrowserHandlerList;
-
-// Specifies the task type for a task id that represents some file action, Drive
-// action, or Web Intent action.
-extern const char kTaskFile[];
-extern const char kTaskDrive[];
-extern const char kTaskApp[];
-
-void UpdateFileHandlerUsageStats(Profile* profile, const std::string& task_id);
-
-// Returns true if the task should be used as a fallback. Such tasks are
-// Files.app's internal handlers as well as quick office extensions.
-bool IsFallbackTask(const FileBrowserHandler* task);
+// Task types encoded in task IDs. See also the comment at the beginning of
+// the file about <task-type>.
+extern const char kFileBrowserHandlerTaskType[];
+extern const char kFileHandlerTaskType[];
+extern const char kDriveTaskType[];
 
 // Update the default file handler for the given sets of suffixes and MIME
 // types.
@@ -158,8 +157,9 @@ std::string GetDefaultTaskIdFromPrefs(Profile* profile,
                                       const std::string& mime_type,
                                       const std::string& suffix);
 
-// Generates task id for the action specified by the extension. The |task_type|
-// must be one of kTaskFile, kTaskDrive or kTaskApp.
+// Generates task id for the action specified by the extension. The
+// |task_type| must be one of kFileBrowserHandlerTaskType, kDriveTaskType or
+// kFileHandlerTaskType.
 std::string MakeTaskID(const std::string& extension_id,
                        const std::string& task_type,
                        const std::string& action_id);
@@ -175,45 +175,86 @@ bool CrackTaskID(const std::string& task_id,
                  std::string* task_type,
                  std::string* action_id);
 
-// This generates a list of default tasks (tasks set as default by the user in
-// prefs) from the |common_tasks|.
-void FindDefaultTasks(Profile* profile,
-                      const std::vector<base::FilePath>& files_list,
-                      const FileBrowserHandlerList& common_tasks,
-                      FileBrowserHandlerList* default_tasks);
-
-// This generates list of tasks common for all files in |file_list|.
-bool FindCommonTasks(Profile* profile,
-                     const std::vector<GURL>& files_list,
-                     FileBrowserHandlerList* common_tasks);
-
-// Finds a task for a file whose URL is |url| and whose path is |path|.
-// Returns default task if one is defined (The default task is the task that is
-// assigned to file browser task button by default). If default task is not
-// found, tries to match the url with one of the builtin tasks.
-bool GetTaskForURLAndPath(Profile* profile,
-                          const GURL& url,
-                          const base::FilePath& path,
-                          const FileBrowserHandler** handler);
-
-// Used for returning success or failure from task executions.
-typedef base::Callback<void(bool)> FileTaskFinishedCallback;
+// The callback is used for ExecuteFileTask(). Will be called with true if
+// the file task execution is successful, or false if unsuccessful.
+typedef base::Callback<void(bool success)> FileTaskFinishedCallback;
 
 // Executes file handler task for each element of |file_urls|.
 // Returns |false| if the execution cannot be initiated. Otherwise returns
 // |true| and then eventually calls |done| when all the files have been handled.
 // |done| can be a null callback.
+//
+// Parameters:
+// profile    - The profile used for making this function call.
+// source_url - The source URL which originates this function call.
+// tab_id     - The ID of the tab which originates this function call.
+//              This can be 0 if no tab is associated.
+// app_id     - See the comment at the beginning of the file for <app-id>.
+// task_type  - See the comment at the beginning of the file for <task-type>.
+// action_id  - See the comment at the beginning of the file for <action-id>.
+// file_urls  - URLs of the target files.
+// done       - The callback which will be called on completion.
+//              The callback won't be called if the function returns false.
 bool ExecuteFileTask(Profile* profile,
                      const GURL& source_url,
                      const std::string& file_browser_id,
                      int32 tab_id,
-                     const std::string& extension_id,
+                     const std::string& app_id,
                      const std::string& task_type,
                      const std::string& action_id,
                      const std::vector<fileapi::FileSystemURL>& file_urls,
                      const FileTaskFinishedCallback& done);
 
 }  // namespace file_tasks
+
+// TODO(satorux): Move this into a separate file: crbug.com/270429
+namespace file_browser_handlers {
+
+// Tasks are stored as a vector in order of priorities.
+typedef std::vector<const FileBrowserHandler*> FileBrowserHandlerList;
+
+// Returns true if the given file browser handler should be used as a
+// fallback. Such handlers are Files.app's internal handlers as well as quick
+// office extensions.
+bool IsFallbackFileBrowserHandler(const FileBrowserHandler* handler);
+
+// Finds file browser handlers set as default from |common_tasks| for
+// |file_list|. If no handlers are set as default, choose the the firstly
+// found fallback handler as default.
+FileBrowserHandlerList FindDefaultFileBrowserHandlers(
+    Profile* profile,
+    const std::vector<base::FilePath>& files_list,
+    const FileBrowserHandlerList& common_tasks);
+
+// Returns the list of file browser handlers that can open all files in
+// |file_list|.
+FileBrowserHandlerList FindCommonFileBrowserHandlers(
+    Profile* profile,
+    const std::vector<GURL>& files_list);
+
+// Finds a file browser handler for a file whose URL is |url| and whose path
+// is |path|. Returns the default handler if one is defined (The default
+// handler is the one that is assigned to the file manager task button by
+// default). If the default handler is not found, tries to match the url with
+// one of the file browser handlers.
+const FileBrowserHandler* FindFileBrowserHandlerForURLAndPath(
+    Profile* profile,
+    const GURL& url,
+    const base::FilePath& path);
+
+// Executes a file browser handler specified by |extension| of the given
+// action ID for |file_urls|. Returns false if undeclared handlers are
+// found. |done| is on completion. See also the comment at ExecuteFileTask()
+// for other parameters.
+bool ExecuteFileBrowserHandler(
+    Profile* profile,
+    const extensions::Extension* extension,
+    int32 tab_id,
+    const std::string& action_id,
+    const std::vector<fileapi::FileSystemURL>& file_urls,
+    const file_tasks::FileTaskFinishedCallback& done);
+
+}  // namespace file_browser_handlers
 }  // namespace file_manager
 
 #endif  // CHROME_BROWSER_CHROMEOS_EXTENSIONS_FILE_MANAGER_FILE_TASKS_H_

@@ -31,7 +31,6 @@ CHROMEOS_EXPORT extern const char kDisableDrive[];
 CHROMEOS_EXPORT extern const char kDisableLocalAccounts[];
 CHROMEOS_EXPORT extern const char kDisableLoginAnimations[];
 CHROMEOS_EXPORT extern const char kDisableNewChannelSwitcherUI[];
-CHROMEOS_EXPORT extern const char kDisableNewNetworkChangeNotifier[];
 CHROMEOS_EXPORT extern const char kDisableOOBEBlockingUpdate[];
 CHROMEOS_EXPORT extern const char kDisableOnlineEULA[];
 CHROMEOS_EXPORT extern const char kDisableOobeAnimation[];
@@ -52,7 +51,7 @@ CHROMEOS_EXPORT extern const char kEnterpriseEnrollmentInitialModulus[];
 CHROMEOS_EXPORT extern const char kEnterpriseEnrollmentModulusLimit[];
 CHROMEOS_EXPORT extern const char kFileManagerShowCheckboxes[];
 CHROMEOS_EXPORT extern const char kFileManagerEnableWebstoreIntegration[];
-CHROMEOS_EXPORT extern const char kFirstBoot[];
+CHROMEOS_EXPORT extern const char kFirstExecAfterBoot[];
 CHROMEOS_EXPORT extern const char kForceLoginManagerInTests[];
 CHROMEOS_EXPORT extern const char kGuestSession[];
 CHROMEOS_EXPORT extern const char kHasChromeOSDiamondKey[];
@@ -71,7 +70,6 @@ CHROMEOS_EXPORT extern const char kSkipHWIDCheck[];
 CHROMEOS_EXPORT extern const char kSmsTestMessages[];
 CHROMEOS_EXPORT extern const char kStubCrosSettings[];
 CHROMEOS_EXPORT extern const char kUseNewNetworkConfigurationHandlers[];
-CHROMEOS_EXPORT extern const char kUseNewNetworkConnectionHandler[];
 
 }  // namespace switches
 }  // namespace chromeos

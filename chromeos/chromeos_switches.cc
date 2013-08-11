@@ -82,10 +82,6 @@ const char kEnableChromeAudioSwitching[] = "enable-chrome-audio-switching";
 const char kEnableChromeCaptivePortalDetector[] =
     "enable-chrome-captive-portal-detector";
 
-// Disables the new NetworkChangeNotifier which uses NetworkStateHandler.
-const char kDisableNewNetworkChangeNotifier[] =
-    "disable-new-network-change-notifier";
-
 // Enables screensaver extensions.
 const char kEnableScreensaverExtensions[] = "enable-screensaver-extensions";
 
@@ -124,8 +120,9 @@ const char kFileManagerShowCheckboxes[]     = "file-manager-show-checkboxes";
 const char kFileManagerEnableWebstoreIntegration[] =
     "file-manager-enable-webstore-integration";
 
-// Passed to Chrome on first boot. Not passed on restart after sign out.
-const char kFirstBoot[]                     = "first-boot";
+// Passed to Chrome the first time that it's run after the system boots.
+// Not passed on restart after sign out.
+const char kFirstExecAfterBoot[]            = "first-exec-after-boot";
 
 // Usually in browser tests the usual login manager bringup is skipped so that
 // tests can change how it's brought up. This flag disables that.
@@ -191,9 +188,6 @@ const char kStubCrosSettings[]              = "stub-cros-settings";
 // NetworkConfigurationHandler singletons.
 const char kUseNewNetworkConfigurationHandlers[] =
     "use-new-network-configuration-handlers";
-
-const char kUseNewNetworkConnectionHandler[] =
-    "use-new-network-connection-handler";
 
 }  // namespace switches
 }  // namespace chromeos

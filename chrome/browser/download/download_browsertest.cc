@@ -15,6 +15,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
@@ -1066,8 +1067,9 @@ class DownloadTest : public InProcessBrowserTest {
   // A mock install prompt that simulates the user allowing an install request.
   void SetAllowMockInstallPrompt() {
     download_crx_util::SetMockInstallPromptForTesting(
-        new MockAutoConfirmExtensionInstallPrompt(
-            browser()->tab_strip_model()->GetActiveWebContents()));
+        scoped_ptr<ExtensionInstallPrompt>(
+            new MockAutoConfirmExtensionInstallPrompt(
+                browser()->tab_strip_model()->GetActiveWebContents())));
   }
 
   // This method:
@@ -1924,7 +1926,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, PRE_DownloadTest_History) {
   HistoryServiceFactory::GetForProfile(
       browser()->profile(), Profile::IMPLICIT_ACCESS)->FlushForTest(
       base::Bind(&base::MessageLoop::Quit,
-                  base::Unretained(base::MessageLoop::current()->current())));
+                 base::Unretained(base::MessageLoop::current()->current())));
   content::RunMessageLoop();
 }
 
@@ -1948,9 +1950,17 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, MAYBE_DownloadTest_History) {
   manager->GetAllDownloads(&downloads);
   ASSERT_EQ(1UL, downloads.size());
   DownloadItem* item = downloads[0];
-  ASSERT_EQ(file.value(), item->GetFullPath().BaseName().value());
-  ASSERT_EQ(file.value(), item->GetTargetFilePath().BaseName().value());
-  ASSERT_EQ(download_url, item->GetURL());
+  EXPECT_EQ(file.value(), item->GetFullPath().BaseName().value());
+  EXPECT_EQ(file.value(), item->GetTargetFilePath().BaseName().value());
+  EXPECT_EQ(download_url, item->GetURL());
+  // The following are set by download-test1.lib.mock-http-headers.
+  std::string etag = item->GetETag();
+  TrimWhitespaceASCII(etag, TRIM_ALL, &etag);
+  EXPECT_EQ("abracadabra", etag);
+
+  std::string last_modified = item->GetLastModifiedTime();
+  TrimWhitespaceASCII(last_modified, TRIM_ALL, &last_modified);
+  EXPECT_EQ("Mon, 13 Nov 2006 20:31:09 GMT", last_modified);
 }
 
 // Test for crbug.com/14505. This tests that chrome:// urls are still functional
@@ -2090,7 +2100,8 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, CrxInstallDenysPermissions) {
   // Install a mock install UI that simulates a user denying permission to
   // finish the install.
   download_crx_util::SetMockInstallPromptForTesting(
-      new MockAbortExtensionInstallPrompt());
+      scoped_ptr<ExtensionInstallPrompt>(
+          new MockAbortExtensionInstallPrompt()));
 
   scoped_ptr<content::DownloadTestObserver> observer(
       DangerousDownloadWaiter(

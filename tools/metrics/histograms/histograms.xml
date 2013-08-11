@@ -1140,10 +1140,27 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="CertificateType">
+  <obsolete>
+    Deprecated as of 8/2013. This histogram only considered the leaf certificate
+    expiry date as a proxy for whether a certificate was in-scope for the BRs,
+    but did not consider the issuance date. As some CAs have issued long-lived
+    certs prior to the BRs, this disproportionately reported those certs as
+    being subject to the BRs, but non-compliant, when in reality they're not
+    subject.
+  </obsolete>
   <summary>
     Information about the certificate algorithms and sizes in use on the web, to
     examine compliance with the CA/Browser Forum requirements and security best
     practice.
+  </summary>
+</histogram>
+
+<histogram name="CertificateType2">
+  <summary>
+    Information about the certificate algorithms and sizes in use on the web, to
+    examine compliance with the CA/Browser Forum requirements and security best
+    practice. This histogram considers the notBefore as the issuance date, for
+    purposes of what requirements apply.
   </summary>
 </histogram>
 
@@ -4056,6 +4073,14 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="HistoryPage.ClickPositionSubset">
+  <summary>
+    Subset of the Click Position histogram. Contains only the first smaller
+    subset of entries on the page. Number of entries that the clicked entry is
+    older than in History page. Last bucket is entries of that value or higher.
+  </summary>
+</histogram>
+
 <histogram name="HistoryPage.OtherDevicesMenu" enum="NtpOtherSessionsType">
   <summary>
     Histogram for usage of the section in the history page that allows the user
@@ -4068,6 +4093,16 @@ other types of suffix sets.
     Number of entries that the deleted entry is older than in History page. Last
     bucket is any entry of that value or higher. Confirmed removal is not
     guaranteed, just an initiation of 'Remove selected items'.
+  </summary>
+</histogram>
+
+<histogram name="HistoryPage.RemoveEntryPositionSubset">
+  <summary>
+    Subset of Remove Entry Position histogram. Contains only the first smaller
+    subset of entries on the page. Number of entries that the deleted entry is
+    older than in History page. Last bucket is any entry of that value or
+    higher. Confirmed removal is not guaranteed, just an initiation of 'Remove
+    selected items'.
   </summary>
 </histogram>
 
@@ -7110,10 +7145,21 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Net.QuicSession.QuicVersion">
+  <summary>Version of the QUIC protocol used for this connection.</summary>
+</histogram>
+
 <histogram name="Net.RenegotiationExtensionSupported">
   <summary>
     True if the HTTP request was sent to a server which supports the TLS
     renegotiation extension.
+  </summary>
+</histogram>
+
+<histogram name="Net.ResourceLoader.ReadDeferral" units="milliseconds">
+  <summary>
+    When starting a cross-site navigation, the time between reading the headers
+    and body of the response.
   </summary>
 </histogram>
 
@@ -9650,6 +9696,13 @@ other types of suffix sets.
   <summary>
     Maximum size of user's GCache directory. Logged once a day, if disk usage is
     high.
+  </summary>
+</histogram>
+
+<histogram name="Platform.DiskUsage.NumUserHomeDirectories"
+    units="home directories">
+  <summary>
+    Number of users home directories on the device. Logged once a day.
   </summary>
 </histogram>
 
@@ -13233,6 +13286,20 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Settings.HomePageIsNewTabPage.PulledFromSync" enum="Boolean">
+  <summary>
+    The value of the home-page-is-new-tab-page pref when pulled down from sync
+    to update an out-of-sync local pref store.
+  </summary>
+</histogram>
+
+<histogram name="Settings.HomePageIsNewTabPage.PushedToSync" enum="Boolean">
+  <summary>
+    The value of the home-page-is-new-tab-page pref when pushed up to sync from
+    a change made locally.
+  </summary>
+</histogram>
+
 <histogram name="Settings.ShowHomeButton" enum="BooleanEnabled">
   <summary>
     Whether or not the home button is enabled in user preferences when a profile
@@ -13240,8 +13307,37 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Settings.ShowHomeButton.PulledFromSync" enum="BooleanEnabled">
+  <summary>
+    The enabled state of the Home button pref when pulled down from sync to
+    update an out-of-sync local pref store.
+  </summary>
+</histogram>
+
+<histogram name="Settings.ShowHomeButton.PushedToSync" enum="BooleanEnabled">
+  <summary>
+    The enabled state of the Home button pref when pushed up to sync from a
+    change made locally.
+  </summary>
+</histogram>
+
 <histogram name="Settings.StartupPageLoadSettings" enum="SessionStartupPref">
   <summary>The startup page settings when a profile is loaded.</summary>
+</histogram>
+
+<histogram name="Settings.StartupPageLoadSettings.PulledFromSync"
+    enum="SessionStartupPref">
+  <summary>
+    The startup page setting when pulled down from sync to update an out-of-sync
+    local pref store.
+  </summary>
+</histogram>
+
+<histogram name="Settings.StartupPageLoadSettings.PushedToSync"
+    enum="SessionStartupPref">
+  <summary>
+    The startup page setting when pushed up to sync from a change made locally.
+  </summary>
 </histogram>
 
 <histogram name="Settings.StartupPageLoadURLs">
@@ -14573,6 +14669,21 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="UserManager.LoginUserType" enum="UserType">
+  <summary>
+    The number of users of different types that log in to the system (Chrome
+    OS).
+  </summary>
+</histogram>
+
+<histogram name="UserManager.LogoutToLoginDelay" units="seconds">
+  <summary>
+    The time between one regular user logging out and a different regular user
+    logging in (Chrome OS). Delays above thirty minutes or which span system
+    reboots or non-regular-user logins are not reported.
+  </summary>
+</histogram>
+
 <histogram name="Variations.DisabledNoEntropyProvider" enum="BooleanHit">
   <obsolete>
     Deprecated 1/2013. No longer tracked.
@@ -15052,7 +15163,52 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="WebFont.DownloadTime.0.Under10KB" units="milliseconds">
+  <summary>
+    The time it takes for a webfont download to finish, for webfonts of under
+    10KB.
+  </summary>
+</histogram>
+
+<histogram name="WebFont.DownloadTime.1.10KBTo50KB" units="milliseconds">
+  <summary>
+    The time it takes for a webfont download to finish, for webfonts of
+    10KB-50KB.
+  </summary>
+</histogram>
+
+<histogram name="WebFont.DownloadTime.2.50KBTo100KB" units="milliseconds">
+  <summary>
+    The time it takes for a webfont download to finish, for webfonts of
+    50KB-100KB.
+  </summary>
+</histogram>
+
+<histogram name="WebFont.DownloadTime.3.100KBTo1MB" units="milliseconds">
+  <summary>
+    The time it takes for a webfont download to finish, for webfonts of
+    100KB-1MB.
+  </summary>
+</histogram>
+
+<histogram name="WebFont.DownloadTime.4.Over1MB" units="milliseconds">
+  <summary>
+    The time it takes for a webfont download to finish, for webfonts of over
+    1MB.
+  </summary>
+</histogram>
+
+<histogram name="WebFont.DownloadTime.LoadError" units="milliseconds">
+  <summary>
+    The time taken for a webfont download that failed. Includes aborted
+    requests.
+  </summary>
+</histogram>
+
 <histogram name="WebFont.LoadTime.0.Under10KB" units="milliseconds">
+  <obsolete>
+    Deprecated as of 8/2013, replaced by WebFont.DownloadTime.0.Under10KB.
+  </obsolete>
   <summary>
     The time it takes for a webfont download to finish, for webfonts of under
     10KB.
@@ -15060,6 +15216,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="WebFont.LoadTime.1.10KBTo50KB" units="milliseconds">
+  <obsolete>
+    Deprecated as of 8/2013, replaced by WebFont.DownloadTime.1.10KBTo50KB.
+  </obsolete>
   <summary>
     The time it takes for a webfont download to finish, for webfonts of
     10KB-50KB.
@@ -15067,6 +15226,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="WebFont.LoadTime.2.50KBTo100KB" units="milliseconds">
+  <obsolete>
+    Deprecated as of 8/2013, replaced by WebFont.DownloadTime.2.50KBTo100KB.
+  </obsolete>
   <summary>
     The time it takes for a webfont download to finish, for webfonts of
     50KB-100KB.
@@ -15074,6 +15236,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="WebFont.LoadTime.3.100KBTo1MB" units="milliseconds">
+  <obsolete>
+    Deprecated as of 8/2013, replaced by WebFont.DownloadTime.3.100KBTo1MB.
+  </obsolete>
   <summary>
     The time it takes for a webfont download to finish, for webfonts of
     100KB-1MB.
@@ -15081,6 +15246,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="WebFont.LoadTime.4.Over1MB" units="milliseconds">
+  <obsolete>
+    Deprecated as of 8/2013, replaced by WebFont.DownloadTime.4.Over1MB.
+  </obsolete>
   <summary>
     The time it takes for a webfont download to finish, for webfonts of over
     1MB.
@@ -15088,6 +15256,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="WebFont.LoadTime.LoadError" units="milliseconds">
+  <obsolete>
+    Deprecated as of 8/2013, replaced by WebFont.DownloadTime.LoadError.
+  </obsolete>
   <summary>
     The time taken for a webfont download that failed. Includes aborted
     requests.
@@ -16182,8 +16353,8 @@ other types of suffix sets.
   <int value="7" label="Cancelled"/>
   <int value="8" label="Started"/>
   <int value="9" label="Interrupted"/>
-  <int value="10" label="Calls to AppendDataToFile (Size)"/>
-  <int value="11" label="Calls to AppendDataToFile (Count)"/>
+  <int value="10" label="Calls to AppendDataToFile (Size) (Obsolete)"/>
+  <int value="11" label="Calls to AppendDataToFile (Count) (Obsolete)"/>
   <int value="12" label="Interrupted at End of Download"/>
   <int value="13" label="Attempt to Append to Detached File"/>
   <int value="14" label="File Missing After Successful Scan"/>
@@ -17450,6 +17621,7 @@ other types of suffix sets.
   <int value="514" label="SYSTEM_STORAGE_GETALLAVAILABLECAPACITYWATCHES"/>
   <int value="515" label="SYSTEM_STORAGE_REMOVEALLAVAILABLECAPACITYWATCHES"/>
   <int value="516" label="INFOBARS_SHOW"/>
+  <int value="517" label="EXPERIMENTAL_INPUT_VIRTUALKEYBOARD_MOVECURSOR"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">
@@ -21980,6 +22152,8 @@ other types of suffix sets.
   <int value="11" label="SHOW_UNDERSTAND"/>
   <int value="12" label="SHOW_INTERNAL_HOSTNAME"/>
   <int value="13" label="PROCEED_INTERNAL_HOSTNAME"/>
+  <int value="14" label="SHOW_NEW_SITE"/>
+  <int value="15" label="PROCEED_NEW_SITE"/>
 </enum>
 
 <enum name="SuspendStatus" type="int">
@@ -22002,6 +22176,8 @@ other types of suffix sets.
   <int value="3" label="Partially evicted"/>
   <int value="4" label="Reloaded due to backgrounding"/>
   <int value="5" label="Reloaded due to incognito"/>
+  <int value="6" label="Reloaded due to cold start (fg tab on start)"/>
+  <int value="7" label="Reloaded due to cold start (bg tab on switch)"/>
 </enum>
 
 <enum name="TabSwitchedToForegroundLaunchedWithURL" type="int">
@@ -22241,6 +22417,15 @@ other types of suffix sets.
   <int value="10" label="kFileSystemScheme"/>
 </enum>
 
+<enum name="UserType" type="int">
+  <int value="0" label="Regular"/>
+  <int value="1" label="Guest"/>
+  <int value="2" label="Retail Mode"/>
+  <int value="3" label="Public Account"/>
+  <int value="4" label="Locally Managed"/>
+  <int value="5" label="Kiosk App"/>
+</enum>
+
 <enum name="VariationsResourceRequestsAllowedState" type="int">
   <int value="0" label="Resource requests allowed"/>
   <int value="1" label="Resource requests not allowed"/>
@@ -22375,6 +22560,9 @@ other types of suffix sets.
   <int value="8" label="Spending limit exceeded"/>
   <int value="9" label="Unsupported API version"/>
   <int value="10" label="Unknown error"/>
+  <int value="11" label="Unsupported merchant"/>
+  <int value="12" label="Unsupported buyer legal address"/>
+  <int value="13" label="Unverified know your customer status"/>
 </enum>
 
 <enum name="WalletRequiredActions" type="int">
@@ -22613,9 +22801,23 @@ other types of suffix sets.
   <affected-histogram name="CertificateType.NonBR.Intermediate"/>
   <affected-histogram name="CertificateType.NonBR.Leaf"/>
   <affected-histogram name="CertificateType.NonBR.Root"/>
+  <affected-histogram name="CertificateType2.BR.Intermediate"/>
+  <affected-histogram name="CertificateType2.BR.Leaf"/>
+  <affected-histogram name="CertificateType2.BR.Root"/>
+  <affected-histogram name="CertificateType2.NonBR.Intermediate"/>
+  <affected-histogram name="CertificateType2.NonBR.Leaf"/>
+  <affected-histogram name="CertificateType2.NonBR.Root"/>
 </fieldtrial>
 
 <fieldtrial name="CertificateTypeBRValidity" separator=".">
+  <obsolete>
+    Deprecated as of 8/2013. This histogram only considered the leaf certificate
+    expiry date as a proxy for whether a certificate was in-scope for the BRs,
+    but did not consider the issuance date. As some CAs have issued long-lived
+    certs prior to the BRs, this disproportionately reported those certs as
+    being subject to the BRs, but non-compliant, when in reality they're not
+    subject.
+  </obsolete>
   <group name="BR"
       label="The *leaf* certificate of the chain expires after 2013-12-31,
              meaning that it should be in scope for the Baseline
@@ -22626,12 +22828,26 @@ other types of suffix sets.
   <affected-histogram name="CertificateType"/>
 </fieldtrial>
 
+<fieldtrial name="CertificateTypeBRValidity2" separator=".">
+  <group name="BR"
+      label="The *leaf* certificate of the chain expires after 2013-12-31 and
+             was issued on or after 2012-07-01, as judged by the notBefore,
+             meaning that it should be in scope for the Baseline
+             Requirement's key size requirements"/>
+  <group name="NonBR"
+      label="The *leaf* certificate of the chain expires on or before
+             2013-12-31 or was issued before 2012-07-01"/>
+  <affected-histogram name="CertificateType2"/>
+</fieldtrial>
+
 <fieldtrial name="CertificateTypeChainPosition" separator=".">
   <group name="Intermediate" label="Intermediate's SPKI"/>
   <group name="Leaf" label="Leaf's SPKI"/>
   <group name="Root" label="Root's SPKI"/>
   <affected-histogram name="CertificateType.BR"/>
   <affected-histogram name="CertificateType.NonBR"/>
+  <affected-histogram name="CertificateType2.BR"/>
+  <affected-histogram name="CertificateType2.NonBR"/>
 </fieldtrial>
 
 <fieldtrial name="ConnCountImpact">

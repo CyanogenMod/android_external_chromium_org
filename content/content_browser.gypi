@@ -707,6 +707,8 @@
     'browser/media/media_internals_ui.h',
     'browser/media/webrtc_identity_store.cc',
     'browser/media/webrtc_identity_store.h',
+    'browser/media/webrtc_identity_store_backend.cc',
+    'browser/media/webrtc_identity_store_backend.h',
     'browser/media/webrtc_internals.cc',
     'browser/media/webrtc_internals.h',
     'browser/media/webrtc_internals_message_handler.cc',
@@ -1290,8 +1292,8 @@
     }],
     ['enable_webrtc==1 and (OS=="linux" or OS=="mac" or OS=="win")', {
       'sources': [
-        'browser/renderer_host/media/screen_capture_device.cc',
-        'browser/renderer_host/media/screen_capture_device.h',
+        'browser/renderer_host/media/desktop_capture_device.cc',
+        'browser/renderer_host/media/desktop_capture_device.h',
       ],
       'dependencies': [
         '../third_party/webrtc/modules/modules.gyp:desktop_capture',
@@ -1348,14 +1350,6 @@
       'dependencies': [
         '../build/linux/system.gyp:udev',
         '../sandbox/sandbox.gyp:libc_urandom_override',
-      ],
-      # Set LINUX_SANDBOX_PATH for Linux, including Chrome OS
-      'conditions': [
-        ['linux_sandbox_path != ""', {
-          'defines': [
-            'LINUX_SANDBOX_PATH="<(linux_sandbox_path)"',
-          ],
-        }],
       ],
     }],
     ['OS=="linux" and use_aura==1', {

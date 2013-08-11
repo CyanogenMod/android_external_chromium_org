@@ -102,7 +102,12 @@ syncer::SyncMergeResult ChromeNotifierService::MergeDataAndStartSyncing(
           if (incoming->GetReadState() == SyncedNotification::kDismissed) {
             // If it is marked as read on the server, but not the client.
             found->NotificationHasBeenDismissed();
-            // Tell the Notification UI Manager to mark it read.
+            // Tell the Notification UI Manager to remove it.
+            notification_manager_->CancelById(found->GetKey());
+          } else if (incoming->GetReadState() == SyncedNotification::kRead) {
+            // If it is marked as read on the server, but not the client.
+            found->NotificationHasBeenRead();
+            // Tell the Notification UI Manager to remove it.
             notification_manager_->CancelById(found->GetKey());
           } else {
             // If it is marked as read on the client, but not the server.
@@ -122,7 +127,7 @@ syncer::SyncMergeResult ChromeNotifierService::MergeDataAndStartSyncing(
         found->Update(sync_data);
 
         // Tell the notification manager to update the notification.
-        Display(found);
+        UpdateInMessageCenter(found);
       }
     }
   }
@@ -147,10 +152,9 @@ syncer::SyncDataList ChromeNotifierService::GetAllSyncData(
   syncer::SyncDataList sync_data;
 
   // Copy our native format data into a SyncDataList format.
-  for (std::vector<SyncedNotification*>::const_iterator it =
-          notification_data_.begin();
-      it != notification_data_.end();
-      ++it) {
+  ScopedVector<SyncedNotification>::const_iterator it =
+      notification_data_.begin();
+  for (; it != notification_data_.end(); ++it) {
     sync_data.push_back(CreateSyncDataFromNotification(**it));
   }
 
@@ -177,15 +181,38 @@ syncer::SyncError ChromeNotifierService::ProcessSyncChanges(
       continue;
     }
 
+    const std::string& key = new_notification->GetKey();
+    DCHECK_GT(key.length(), 0U);
+    SyncedNotification* found = FindNotificationById(key);
+
     switch (change_type) {
       case syncer::SyncChange::ACTION_ADD:
-        // TODO(petewil): Update the notification if it already exists
-        // as opposed to adding it.
-        Add(new_notification.Pass());
+        // Intentional fall through, cases are identical.
+      case syncer::SyncChange::ACTION_UPDATE:
+        if (found == NULL) {
+          Add(new_notification.Pass());
+          break;
+        }
+        // Update it in our store.
+        found->Update(sync_data);
+        // Tell the notification manager to update the notification.
+        UpdateInMessageCenter(found);
         break;
-      // TODO(petewil): Implement code to add delete and update actions.
+
+      case syncer::SyncChange::ACTION_DELETE:
+        if (found == NULL) {
+          break;
+        }
+        // Remove it from our store.
+        FreeNotificationById(key);
+        // Remove it from the message center.
+        UpdateInMessageCenter(new_notification.get());
+        // TODO(petewil): Do I need to remember that it was deleted in case the
+        // add arrives after the delete?  If so, how long do I need to remember?
+        break;
 
       default:
+        NOTREACHED();
         break;
     }
   }
@@ -225,11 +252,15 @@ scoped_ptr<SyncedNotification>
     return scoped_ptr<SyncedNotification>();
   }
 
-  // TODO(petewil): Is this the right set?  Should I add more?
   bool is_well_formed_unread_notification =
       (static_cast<SyncedNotification::ReadState>(
           specifics.coalesced_notification().read_state()) ==
        SyncedNotification::kUnread &&
+       specifics.coalesced_notification().has_render_info());
+  bool is_well_formed_read_notification =
+      (static_cast<SyncedNotification::ReadState>(
+          specifics.coalesced_notification().read_state()) ==
+       SyncedNotification::kRead &&
        specifics.coalesced_notification().has_render_info());
   bool is_well_formed_dismissed_notification =
       (static_cast<SyncedNotification::ReadState>(
@@ -238,12 +269,15 @@ scoped_ptr<SyncedNotification>
 
   // If the notification is poorly formed, return a null pointer.
   if (!is_well_formed_unread_notification &&
+      !is_well_formed_read_notification &&
       !is_well_formed_dismissed_notification) {
     DVLOG(1) << "Synced Notification is not well formed."
              << " unread well formed? "
              << is_well_formed_unread_notification
              << " dismissed well formed? "
-             << is_well_formed_dismissed_notification;
+             << is_well_formed_dismissed_notification
+             << " read well formed? "
+             << is_well_formed_read_notification;
     return scoped_ptr<SyncedNotification>();
   }
 
@@ -261,16 +295,27 @@ SyncedNotification* ChromeNotifierService::FindNotificationById(
   // TODO(petewil): We can make a performance trade off here.
   // While the vector has good locality of reference, a map has faster lookup.
   // Based on how big we expect this to get, maybe change this to a map.
-  for (std::vector<SyncedNotification*>::const_iterator it =
-          notification_data_.begin();
-      it != notification_data_.end();
-      ++it) {
+  ScopedVector<SyncedNotification>::const_iterator it =
+      notification_data_.begin();
+  for (; it != notification_data_.end(); ++it) {
     SyncedNotification* notification = *it;
     if (notification_id == notification->GetKey())
       return *it;
   }
 
   return NULL;
+}
+
+void ChromeNotifierService::FreeNotificationById(
+    const std::string& notification_id) {
+  ScopedVector<SyncedNotification>::iterator it = notification_data_.begin();
+  for (; it != notification_data_.end(); ++it) {
+    SyncedNotification* notification = *it;
+    if (notification_id == notification->GetKey()) {
+      notification_data_.erase(it);
+      return;
+    }
+  }
 }
 
 void ChromeNotifierService::GetSyncedNotificationServices(
@@ -305,13 +350,13 @@ void ChromeNotifierService::GetSyncedNotificationServices(
   notifiers->push_back(notifier_service);
 }
 
-void ChromeNotifierService::MarkNotificationAsDismissed(
+void ChromeNotifierService::MarkNotificationAsRead(
     const std::string& key) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   SyncedNotification* notification = FindNotificationById(key);
   CHECK(notification != NULL);
 
-  notification->NotificationHasBeenDismissed();
+  notification->NotificationHasBeenRead();
   syncer::SyncChangeList new_changes;
 
   syncer::SyncData sync_data = CreateSyncDataFromNotification(*notification);
@@ -340,24 +385,38 @@ void ChromeNotifierService::Add(scoped_ptr<SyncedNotification> notification) {
     return;
   }
 
-  Display(notification_copy);
+  UpdateInMessageCenter(notification_copy);
 }
 
 void ChromeNotifierService::AddForTest(
     scoped_ptr<notifier::SyncedNotification> notification) {
-    notification_data_.push_back(notification.release());
-  }
+  notification_data_.push_back(notification.release());
+}
 
-void ChromeNotifierService::Display(SyncedNotification* notification) {
+void ChromeNotifierService::UpdateInMessageCenter(
+    SyncedNotification* notification) {
   // If the feature is disabled, exit now.
   if (!notifier::ChromeNotifierServiceFactory::UseSyncedNotifications(
-          CommandLine::ForCurrentProcess()))
+      CommandLine::ForCurrentProcess()))
     return;
 
+  notification->LogNotification();
+
+  if (notification->GetReadState() == SyncedNotification::kUnread) {
+    // If the message is unread, update it.
+    Display(notification);
+  } else {
+    // If the message is read or deleted, dismiss it from the center.
+    // We intentionally ignore errors if it is not in the center.
+    notification_manager_->CancelById(notification->GetKey());
+  }
+}
+
+void ChromeNotifierService::Display(SyncedNotification* notification) {
   // Set up to fetch the bitmaps.
   notification->QueueBitmapFetchJobs(notification_manager_,
-                                          this,
-                                          profile_);
+                                     this,
+                                     profile_);
 
   // Our tests cannot use the network for reliability reasons.
   if (avoid_bitmap_fetching_for_test_) {

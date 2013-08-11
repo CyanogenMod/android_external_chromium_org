@@ -19,6 +19,7 @@
 #include "ppapi/proxy/ext_crx_file_system_private_resource.h"
 #include "ppapi/proxy/file_chooser_resource.h"
 #include "ppapi/proxy/file_io_resource.h"
+#include "ppapi/proxy/file_ref_resource.h"
 #include "ppapi/proxy/file_system_resource.h"
 #include "ppapi/proxy/graphics_2d_resource.h"
 #include "ppapi/proxy/ppapi_messages.h"
@@ -85,6 +86,15 @@ PP_Resource PepperInProcessResourceCreation::CreateFileIO(
       instance))->GetReference();
 }
 
+PP_Resource PepperInProcessResourceCreation::CreateFileRef(
+    PP_Instance instance,
+    const ppapi::FileRefCreateInfo& create_info) {
+  return ppapi::proxy::FileRefResource::CreateFileRef(
+      host_impl_->in_process_router()->GetPluginConnection(instance),
+      instance,
+      create_info);
+}
+
 PP_Resource PepperInProcessResourceCreation::CreateFileSystem(
     PP_Instance instance,
     PP_FileSystemType type) {
@@ -127,7 +137,7 @@ PP_Resource PepperInProcessResourceCreation::CreateURLRequestInfo(
     PP_Instance instance) {
   return (new ppapi::proxy::URLRequestInfoResource(
       host_impl_->in_process_router()->GetPluginConnection(instance),
-      instance, ::ppapi::URLRequestInfoData()))->GetReference();
+      instance, ppapi::URLRequestInfoData()))->GetReference();
 }
 
 PP_Resource PepperInProcessResourceCreation::CreateWebSocket(

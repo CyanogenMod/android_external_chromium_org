@@ -38,6 +38,16 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   static InProcessViewRenderer* FromWebContents(
       content::WebContents* contents);
 
+  // TODO(joth): consider extracting this to its own utility class.
+  typedef base::Callback<bool(SkCanvas*)> RenderMethod;
+  static bool RenderViaAuxilaryBitmapIfNeeded(
+      jobject java_canvas,
+      JavaHelper* java_helper,
+      const gfx::Vector2d& scroll_correction,
+      const gfx::Rect& clip,
+      RenderMethod render_source,
+      void* owner_key);
+
   // BrowserViewRenderer overrides
   virtual bool OnDraw(jobject java_canvas,
                       bool is_hardware_canvas,
@@ -45,9 +55,8 @@ class InProcessViewRenderer : public BrowserViewRenderer,
                       const gfx::Rect& clip) OVERRIDE;
   virtual void DrawGL(AwDrawGLInfo* draw_info) OVERRIDE;
   virtual void SetGlobalVisibleRect(const gfx::Rect& visible_rect) OVERRIDE;
-  virtual base::android::ScopedJavaLocalRef<jobject> CapturePicture(
-      int width,
-      int height) OVERRIDE;
+  virtual skia::RefPtr<SkPicture> CapturePicture(int width,
+                                                 int height) OVERRIDE;
   virtual void EnableOnNewPicture(bool enabled) OVERRIDE;
   virtual void OnVisibilityChanged(bool visible) OVERRIDE;
   virtual void OnSizeChanged(int width, int height) OVERRIDE;
@@ -116,6 +125,13 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   // reflect the expectation of the compositor and not be reused for other
   // states.
   bool compositor_needs_continuous_invalidate_;
+
+  // If this is true, then the fallback tick is posted with zero delay. This
+  // is to reduce the time in cases when blink main thread is blocked waiting.
+  // This is set when |compositor_needs_continuous_invalidate_| is set.
+  // Eventually, this should correspond to BeginFrame when BeginFrame and
+  // BeginFrameDeadline are separate functions.
+  bool need_fast_invalidate_;
 
   // Used to block additional invalidates while one is already pending or before
   // compositor draw which may switch continuous_invalidate on and off in the

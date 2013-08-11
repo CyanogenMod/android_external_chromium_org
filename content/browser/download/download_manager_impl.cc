@@ -177,6 +177,8 @@ class DownloadItemFactoryImpl : public DownloadItemFactory {
       const GURL& referrer_url,
       const base::Time& start_time,
       const base::Time& end_time,
+      const std::string& etag,
+      const std::string& last_modified,
       int64 received_bytes,
       int64 total_bytes,
       DownloadItem::DownloadState state,
@@ -193,6 +195,8 @@ class DownloadItemFactoryImpl : public DownloadItemFactory {
         referrer_url,
         start_time,
         end_time,
+        etag,
+        last_modified,
         received_bytes,
         total_bytes,
         state,
@@ -418,6 +422,13 @@ void DownloadManagerImpl::StartDownloadWithId(
           delegate_->GenerateFileHash(),
           stream.Pass(), download->GetBoundNetLog(),
           download->DestinationObserverAsWeakPtr()));
+
+  // Attach the client ID identifying the app to the AV system.
+  if (download_file.get() && delegate_) {
+    download_file->SetClientGuid(
+        delegate_->ApplicationClientIdForFileScanning());
+  }
+
   scoped_ptr<DownloadRequestHandleInterface> req_handle(
       new DownloadRequestHandle(info->request_handle));
   download->Start(download_file.Pass(), req_handle.Pass());
@@ -617,6 +628,8 @@ DownloadItem* DownloadManagerImpl::CreateDownloadItem(
     const GURL& referrer_url,
     const base::Time& start_time,
     const base::Time& end_time,
+    const std::string& etag,
+    const std::string& last_modified,
     int64 received_bytes,
     int64 total_bytes,
     DownloadItem::DownloadState state,
@@ -635,6 +648,8 @@ DownloadItem* DownloadManagerImpl::CreateDownloadItem(
       referrer_url,
       start_time,
       end_time,
+      etag,
+      last_modified,
       received_bytes,
       total_bytes,
       state,

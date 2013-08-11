@@ -226,7 +226,8 @@ TEST(TemplateURLPrepopulateDataTest, ClearProvidersFromPrefs) {
   EXPECT_FALSE(t_urls[default_index]->instant_url().empty());
   EXPECT_FALSE(t_urls[default_index]->image_url().empty());
   EXPECT_FALSE(t_urls[default_index]->image_url_post_params().empty());
-  EXPECT_EQ(SEARCH_ENGINE_GOOGLE,
+  EXPECT_EQ(
+      SEARCH_ENGINE_GOOGLE,
       TemplateURLPrepopulateData::GetEngineType(t_urls[default_index]->url()));
 }
 
@@ -263,7 +264,8 @@ TEST(TemplateURLPrepopulateDataTest, ProvidersFromPrepopulated) {
   EXPECT_GT(t_urls[default_index]->alternate_urls().size(), 1u);
   for (size_t i = 0; i < t_urls[default_index]->alternate_urls().size(); ++i)
     EXPECT_FALSE(t_urls[default_index]->alternate_urls()[i].empty());
-  EXPECT_EQ(SEARCH_ENGINE_GOOGLE,
+  EXPECT_EQ(
+      SEARCH_ENGINE_GOOGLE,
       TemplateURLPrepopulateData::GetEngineType(t_urls[default_index]->url()));
   EXPECT_FALSE(t_urls[default_index]->search_terms_replacement_key().empty());
 }
@@ -297,20 +299,29 @@ TEST_F(TemplateURLPrepopulateDataTest, GetEngineTypeAdvanced) {
     EXPECT_EQ(SEARCH_ENGINE_GOOGLE,
               TemplateURLPrepopulateData::GetEngineType(kGoogleURLs[i]));
   }
+
   // Non-Google URLs.
   const char* kYahooURLs[] = {
       "http://search.yahoo.com/search?"
       "ei={inputEncoding}&fr=crmas&p={searchTerms}",
-      "http://search.yahoo.com/search?p={searchTerms}"
+      "http://search.yahoo.com/search?p={searchTerms}",
+      // Aggressively match types by checking just TLD+1.
+      "http://someothersite.yahoo.com/",
   };
   for (size_t i = 0; i < arraysize(kYahooURLs); ++i) {
     EXPECT_EQ(SEARCH_ENGINE_YAHOO,
               TemplateURLPrepopulateData::GetEngineType(kYahooURLs[i]));
   }
+
   // URLs for engines not present in country-specific lists.
   EXPECT_EQ(SEARCH_ENGINE_NIGMA,
             TemplateURLPrepopulateData::GetEngineType(
-                "http://www.nigma.ru/?s={searchTerms}&arg1=value1"));
+                "http://nigma.ru/?s={searchTerms}&arg1=value1"));
+  // Also test matching against alternate URLs (and TLD+1 matching).
+  EXPECT_EQ(SEARCH_ENGINE_SOFTONIC,
+            TemplateURLPrepopulateData::GetEngineType(
+                "http://test.softonic.com.br/?{searchTerms}"));
+
   // Search URL for which no prepopulated search provider exists.
   EXPECT_EQ(SEARCH_ENGINE_OTHER,
             TemplateURLPrepopulateData::GetEngineType(

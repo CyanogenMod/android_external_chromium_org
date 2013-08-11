@@ -264,6 +264,16 @@ string16 Address::DisplayNameDetail() const {
 
 string16 Address::GetInfo(const AutofillType& type,
                           const std::string& app_locale) const {
+  if (type.html_type() == HTML_TYPE_COUNTRY_CODE) {
+    DCHECK(IsStringASCII(country_name_code()));
+    return ASCIIToUTF16(country_name_code());
+  } else if (type.html_type() == HTML_TYPE_STREET_ADDRESS) {
+    base::string16 address = address_line_1();
+    if (!address_line_2().empty())
+      address += ASCIIToUTF16(", ") + address_line_2();
+    return address;
+  }
+
   switch (type.GetStorableType()) {
     case NAME_FULL:
       return recipient_name();

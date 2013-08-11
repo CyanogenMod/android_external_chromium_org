@@ -48,7 +48,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/accessibility/renderer_accessibility.cc \
 	content/renderer/accessibility/renderer_accessibility_complete.cc \
 	content/renderer/accessibility/renderer_accessibility_focus_only.cc \
-	content/renderer/all_rendering_benchmarks.cc \
 	content/renderer/android/address_detector.cc \
 	content/renderer/android/content_detector.cc \
 	content/renderer/android/email_detector.cc \
@@ -95,7 +94,8 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/android/media_source_delegate.cc \
 	content/renderer/media/android/proxy_media_keys.cc \
 	content/renderer/media/android/renderer_media_player_manager.cc \
-	content/renderer/media/android/stream_texture_factory_android.cc \
+	content/renderer/media/android/stream_texture_factory_android_impl.cc \
+	content/renderer/media/android/stream_texture_factory_android_synchronous_impl.cc \
 	content/renderer/media/android/webmediaplayer_android.cc \
 	content/renderer/media/android/webmediaplayer_proxy_android.cc \
 	content/renderer/media/audio_decoder.cc \
@@ -171,6 +171,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/renderer_webcolorchooser_impl.cc \
 	content/renderer/renderer_webkitplatformsupport_impl.cc \
 	content/renderer/rendering_benchmark.cc \
+	content/renderer/sad_plugin.cc \
 	content/renderer/savable_resources.cc \
 	content/renderer/scoped_clipboard_writer_glue.cc \
 	content/renderer/shared_memory_seqlock_reader.cc \
@@ -244,6 +245,7 @@ MY_DEFS_Debug := \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DUSE_CHROMIUM_SKIA' \
 	'-DSK_USE_POSIX_THREADS' \
+	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DFEATURE_ENABLE_SSL' \
 	'-DFEATURE_ENABLE_VOICEMAIL' \
@@ -385,6 +387,7 @@ MY_DEFS_Release := \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DUSE_CHROMIUM_SKIA' \
 	'-DSK_USE_POSIX_THREADS' \
+	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DFEATURE_ENABLE_SSL' \
 	'-DFEATURE_ENABLE_VOICEMAIL' \

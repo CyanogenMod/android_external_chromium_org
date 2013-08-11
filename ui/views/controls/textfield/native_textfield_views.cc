@@ -457,7 +457,7 @@ void NativeTextfieldViews::WriteDragDataForView(views::View* sender,
   data->SetString(GetSelectedText());
   scoped_ptr<gfx::Canvas> canvas(
       views::GetCanvasForDragImage(textfield_->GetWidget(), size()));
-  GetRenderText()->DrawSelectedText(canvas.get());
+  GetRenderText()->DrawSelectedTextForDrag(canvas.get());
   drag_utils::SetDragImageOnDataObject(*canvas, size(),
                                        press_pt.OffsetFromOrigin(),
                                        data);
@@ -957,6 +957,10 @@ gfx::NativeWindow NativeTextfieldViews::GetAttachedWindow() const {
 
 ui::TextInputType NativeTextfieldViews::GetTextInputType() const {
   return textfield_->GetTextInputType();
+}
+
+ui::TextInputMode NativeTextfieldViews::GetTextInputMode() const {
+  return ui::TEXT_INPUT_MODE_DEFAULT;
 }
 
 bool NativeTextfieldViews::CanComposeInline() const {

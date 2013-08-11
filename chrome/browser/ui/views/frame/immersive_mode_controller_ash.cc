@@ -353,7 +353,7 @@ void ImmersiveModeControllerAsh::SetEnabled(bool enabled) {
 
     if (reveal_state_ == REVEALED) {
       // Reveal was unsuccessful. Reacquire the revealed locks if appropriate.
-      UpdateLocatedEventRevealedLock(NULL);
+      UpdateLocatedEventRevealedLock(NULL, ALLOW_REVEAL_WHILE_CLOSING_NO);
       UpdateFocusRevealedLock();
     }
   } else {
@@ -440,7 +440,7 @@ void ImmersiveModeControllerAsh::OnMouseEvent(ui::MouseEvent* event) {
     return;
 
   if (IsRevealed())
-    UpdateLocatedEventRevealedLock(event);
+    UpdateLocatedEventRevealedLock(event, ALLOW_REVEAL_WHILE_CLOSING_NO);
 
   // Trigger a reveal if the cursor pauses at the top of the screen for a
   // while.
@@ -452,7 +452,7 @@ void ImmersiveModeControllerAsh::OnTouchEvent(ui::TouchEvent* event) {
   if (!enabled_ || event->type() != ui::ET_TOUCH_PRESSED)
     return;
 
-  UpdateLocatedEventRevealedLock(event);
+  UpdateLocatedEventRevealedLock(event, ALLOW_REVEAL_WHILE_CLOSING_NO);
 }
 
 void ImmersiveModeControllerAsh::OnGestureEvent(ui::GestureEvent* event) {
@@ -493,15 +493,6 @@ void ImmersiveModeControllerAsh::OnWillChangeFocus(views::View* focused_before,
 
 void ImmersiveModeControllerAsh::OnDidChangeFocus(views::View* focused_before,
                                                   views::View* focused_now) {
-  scoped_ptr<ImmersiveRevealedLock> lock;
-  if (reveal_state_ == REVEALED || reveal_state_ == SLIDING_OPEN) {
-    // Acquire a lock so that if UpdateLocatedEventRevealedLock() or
-    // UpdateFocusRevealedLock() ends the reveal, it occurs after the
-    // function terminates. This is useful in tests.
-    lock.reset(GetRevealedLock(ANIMATE_REVEAL_YES));
-  }
-
-  UpdateLocatedEventRevealedLock(NULL);
   UpdateFocusRevealedLock();
 }
 
@@ -517,20 +508,21 @@ void ImmersiveModeControllerAsh::OnWidgetDestroying(views::Widget* widget) {
 void ImmersiveModeControllerAsh::OnWidgetActivationChanged(
     views::Widget* widget,
     bool active) {
-  scoped_ptr<ImmersiveRevealedLock> lock;
-  if (reveal_state_ == REVEALED || reveal_state_ == SLIDING_OPEN) {
-    // Acquire a lock so that if UpdateLocatedEventRevealedLock() or
-    // UpdateFocusRevealedLock() ends the reveal, it occurs after the
-    // function terminates. This is useful in tests.
-    lock.reset(GetRevealedLock(ANIMATE_REVEAL_YES));
-  }
-
   // Mouse hover should not initiate revealing the top-of-window views while
   // |native_window_| is inactive.
   top_edge_hover_timer_.Stop();
 
-  UpdateLocatedEventRevealedLock(NULL);
   UpdateFocusRevealedLock();
+
+  // Allow the top-of-window views to stay revealed if all of the revealed locks
+  // were released in the process of activating |widget| but the mouse is still
+  // hovered above the top-of-window views. For instance, if the bubble which
+  // has been keeping the top-of-window views revealed is hidden but the mouse
+  // is hovered above the top-of-window views, the top-of-window views should
+  // stay revealed. We cannot call UpdateLocatedEventRevealedLock() from
+  // BubbleManager::UpdateRevealedLock() because |widget| is not yet active
+  // at that time.
+  UpdateLocatedEventRevealedLock(NULL, ALLOW_REVEAL_WHILE_CLOSING_YES);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -623,12 +615,12 @@ void ImmersiveModeControllerAsh::SetForceHideTabIndicatorsForTest(bool force) {
 void ImmersiveModeControllerAsh::StartRevealForTest(bool hovered) {
   MaybeStartReveal(ANIMATE_NO);
   MoveMouse(top_container_, hovered);
-  UpdateLocatedEventRevealedLock(NULL);
+  UpdateLocatedEventRevealedLock(NULL, ALLOW_REVEAL_WHILE_CLOSING_NO);
 }
 
 void ImmersiveModeControllerAsh::SetMouseHoveredForTest(bool hovered) {
   MoveMouse(top_container_, hovered);
-  UpdateLocatedEventRevealedLock(NULL);
+  UpdateLocatedEventRevealedLock(NULL, ALLOW_REVEAL_WHILE_CLOSING_NO);
 }
 
 void ImmersiveModeControllerAsh::DisableAnimationsForTest() {
@@ -746,7 +738,8 @@ void ImmersiveModeControllerAsh::UpdateTopEdgeHoverTimer(
 }
 
 void ImmersiveModeControllerAsh::UpdateLocatedEventRevealedLock(
-    ui::LocatedEvent* event) {
+    ui::LocatedEvent* event,
+    AllowRevealWhileClosing allow_reveal_while_closing) {
   if (!enabled_)
     return;
   DCHECK(!event || event->IsMouseEvent() || event->IsTouchEvent());
@@ -755,8 +748,11 @@ void ImmersiveModeControllerAsh::UpdateLocatedEventRevealedLock(
   // views are sliding closed or are closed with the following exceptions:
   // - Hovering at y = 0 which is handled in OnMouseEvent().
   // - Doing a SWIPE_OPEN edge gesture which is handled in OnGestureEvent().
-  if (reveal_state_ == SLIDING_CLOSED || reveal_state_ == CLOSED)
+  if (reveal_state_ == CLOSED ||
+      (reveal_state_ == SLIDING_CLOSED &&
+       allow_reveal_while_closing == ALLOW_REVEAL_WHILE_CLOSING_NO)) {
     return;
+  }
 
   // Neither the mouse nor touch should keep the top-of-window views revealed if
   // |native_window_| is not active.
@@ -895,7 +891,7 @@ bool ImmersiveModeControllerAsh::UpdateRevealedLocksForSwipe(
         return true;
 
       // Ending the reveal was unsuccessful. Reaquire the locks if appropriate.
-      UpdateLocatedEventRevealedLock(NULL);
+      UpdateLocatedEventRevealedLock(NULL, ALLOW_REVEAL_WHILE_CLOSING_NO);
       UpdateFocusRevealedLock();
     }
   }
@@ -1031,7 +1027,7 @@ void ImmersiveModeControllerAsh::OnSlideOpenAnimationCompleted(Layout layout) {
 
   // The user may not have moved the mouse since the reveal was initiated.
   // Update the revealed lock to reflect the mouse's current state.
-  UpdateLocatedEventRevealedLock(NULL);
+  UpdateLocatedEventRevealedLock(NULL, ALLOW_REVEAL_WHILE_CLOSING_NO);
 }
 
 void ImmersiveModeControllerAsh::MaybeEndReveal(Animate animate) {
@@ -1123,19 +1119,31 @@ bool ImmersiveModeControllerAsh::ShouldIgnoreMouseEventAtLocation(
 
 bool ImmersiveModeControllerAsh::ShouldHandleGestureEvent(
     const gfx::Point& location) const {
+  gfx::Rect top_container_bounds_in_screen =
+      top_container_->GetBoundsInScreen();
+
   // All of the gestures that are of interest start in a region with left &
   // right edges agreeing with |top_container_|. When CLOSED it is difficult to
   // hit the bounds due to small size of the tab strip, so the hit target needs
-  // to be extended on the bottom, thus the inset call. Finally there may be a
-  // bezel sensor off screen logically above |top_container_| thus the test
-  // needs to include gestures starting above.
-  gfx::Rect near_bounds = top_container_->GetBoundsInScreen();
+  // to be extended on the bottom, thus the inset call.
+  gfx::Rect near_bounds = top_container_bounds_in_screen;
   if (reveal_state_ == CLOSED)
     near_bounds.Inset(gfx::Insets(0, 0, -kNearTopContainerDistance, 0));
-  return near_bounds.Contains(location) ||
-      ((location.y() < near_bounds.y()) &&
-       (location.x() >= near_bounds.x()) &&
-       (location.x() < near_bounds.right()));
+  if (near_bounds.Contains(location))
+    return true;
+
+  // There may be a bezel sensor off screen logically above |top_container_|
+  // thus the test needs to include gestures starting above, but this needs to
+  // be distinguished from events originating on another screen from
+  // (potentially) an extended desktop. The check for the event not contained by
+  // the closest screen ensures that the event is from a valid bezel and can be
+  // interpreted as such.
+  gfx::Rect screen_bounds =
+      ash::Shell::GetScreen()->GetDisplayNearestPoint(location).bounds();
+  return (!screen_bounds.Contains(location) &&
+          location.y() < top_container_bounds_in_screen.y() &&
+          location.x() >= top_container_bounds_in_screen.x() &&
+          location.x() < top_container_bounds_in_screen.right());
 }
 
 void ImmersiveModeControllerAsh::SetRenderWindowTopInsetsForTouch(
@@ -1143,10 +1151,13 @@ void ImmersiveModeControllerAsh::SetRenderWindowTopInsetsForTouch(
   content::WebContents* contents = delegate_->GetWebContents();
   if (contents) {
     aura::Window* window = contents->GetView()->GetContentNativeView();
-    gfx::Insets inset(top_inset, 0, 0, 0);
-    window->SetHitTestBoundsOverrideOuter(
-        window->hit_test_bounds_override_outer_mouse(),
-        inset);
+    // |window| is NULL if the renderer crashed.
+    if (window) {
+      gfx::Insets inset(top_inset, 0, 0, 0);
+      window->SetHitTestBoundsOverrideOuter(
+          window->hit_test_bounds_override_outer_mouse(),
+          inset);
+    }
   }
 }
 

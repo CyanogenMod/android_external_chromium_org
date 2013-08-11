@@ -28,12 +28,12 @@
 #include "content/child/npapi/webplugin.h"
 #include "content/child/npapi/webplugin_ime_win.h"
 #include "content/common/plugin_constants_win.h"
+#include "content/public/common/content_constants.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/base/win/dpi.h"
 #include "ui/base/win/hwnd_util.h"
 #include "webkit/common/cursors/webcursor.h"
-#include "webkit/plugins/plugin_constants.h"
 
 using WebKit::WebKeyboardEvent;
 using WebKit::WebInputEvent;
@@ -947,10 +947,10 @@ LRESULT CALLBACK WebPluginDelegateImpl::NativeWndProc(
     // Get the invalid rect which is in screen coordinates and convert to
     // window coordinates.
     gfx::Rect invalid_rect;
-    invalid_rect.set_x(wparam >> 16);
-    invalid_rect.set_y(wparam & 0xFFFF);
-    invalid_rect.set_width(lparam >> 16);
-    invalid_rect.set_height(lparam & 0xFFFF);
+    invalid_rect.set_x(static_cast<short>(LOWORD(wparam)));
+    invalid_rect.set_y(static_cast<short>(HIWORD(wparam)));
+    invalid_rect.set_width(static_cast<short>(LOWORD(lparam)));
+    invalid_rect.set_height(static_cast<short>(HIWORD(lparam)));
 
     RECT window_rect;
     GetWindowRect(hwnd, &window_rect);

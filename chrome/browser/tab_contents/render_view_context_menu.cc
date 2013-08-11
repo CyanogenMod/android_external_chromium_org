@@ -30,7 +30,7 @@
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
-#include "chrome/browser/download/download_util.h"
+#include "chrome/browser/download/download_stats.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -1566,8 +1566,7 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
       break;
 
     case IDC_CONTENT_CONTEXT_SAVELINKAS: {
-      download_util::RecordDownloadSource(
-          download_util::INITIATED_BY_CONTEXT_MENU);
+      RecordDownloadSource(DOWNLOAD_INITIATED_BY_CONTEXT_MENU);
       const GURL& referrer =
           params_.frame_url.is_empty() ? params_.page_url : params_.frame_url;
       const GURL& url = params_.link_url;
@@ -1584,8 +1583,7 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
 
     case IDC_CONTENT_CONTEXT_SAVEAVAS:
     case IDC_CONTENT_CONTEXT_SAVEIMAGEAS: {
-      download_util::RecordDownloadSource(
-          download_util::INITIATED_BY_CONTEXT_MENU);
+      RecordDownloadSource(DOWNLOAD_INITIATED_BY_CONTEXT_MENU);
       const GURL& referrer =
           params_.frame_url.is_empty() ? params_.page_url : params_.frame_url;
       const GURL& url = params_.src_url;
@@ -1979,11 +1977,6 @@ void RenderViewContextMenu::MenuClosed(ui::SimpleMenuModel* source) {
   if (rvh) {
     rvh->NotifyContextMenuClosed(params_.custom_context);
   }
-
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_RENDER_VIEW_CONTEXT_MENU_CLOSED,
-      content::Source<RenderViewContextMenu>(this),
-      content::NotificationService::NoDetails());
 
   if (!command_executed_) {
     FOR_EACH_OBSERVER(RenderViewContextMenuObserver,

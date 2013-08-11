@@ -203,7 +203,6 @@ NaClBrowserTestBase::~NaClBrowserTestBase() {
 }
 
 void NaClBrowserTestBase::SetUpCommandLine(CommandLine* command_line) {
-  command_line->AppendSwitch(switches::kNoFirstRun);
   command_line->AppendSwitch(switches::kEnableNaCl);
 }
 
@@ -321,9 +320,9 @@ void NaClBrowserTestPnaclDisabled::SetUpCommandLine(CommandLine* command_line) {
   command_line->AppendSwitch(switches::kDisablePnacl);
 }
 
-NaClBrowserTestPnaclWithNewCache::NaClBrowserTestPnaclWithNewCache() {
+NaClBrowserTestPnaclWithOldCache::NaClBrowserTestPnaclWithOldCache() {
   scoped_ptr<base::Environment> env(base::Environment::Create());
-  env->SetVar("PNACL_USE_NEW_CACHE", "true");
+  env->SetVar("PNACL_USE_OLD_CACHE", "true");
 }
 
 base::FilePath::StringType NaClBrowserTestStatic::Variant() {

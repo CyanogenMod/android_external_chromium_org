@@ -9,6 +9,7 @@
 #include "ash/display/display_controller.h"
 #include "ash/display/display_manager.h"
 #include "ash/display/output_configurator_animation.h"
+#include "ash/display/resolution_notification_controller.h"
 #include "ash/screen_ash.h"
 #include "ash/shell.h"
 #include "base/bind.h"
@@ -19,6 +20,7 @@
 #include "chrome/browser/chromeos/display/display_preferences.h"
 #include "chromeos/display/output_configurator.h"
 #include "content/public/browser/web_ui.h"
+#include "grit/ash_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/display.h"
@@ -100,11 +102,11 @@ void DisplayOptionsHandler::GetLocalizedValues(
   localized_strings->SetString("orientation0", l10n_util::GetStringUTF16(
       IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_STANDARD_ORIENTATION));
   localized_strings->SetString("orientation90", l10n_util::GetStringUTF16(
-      IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_ORIENTATION_90));
+      IDS_ASH_STATUS_TRAY_DISPLAY_ORIENTATION_90));
   localized_strings->SetString("orientation180", l10n_util::GetStringUTF16(
-      IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_ORIENTATION_180));
+      IDS_ASH_STATUS_TRAY_DISPLAY_ORIENTATION_180));
   localized_strings->SetString("orientation270", l10n_util::GetStringUTF16(
-      IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_ORIENTATION_270));
+      IDS_ASH_STATUS_TRAY_DISPLAY_ORIENTATION_270));
   localized_strings->SetString(
       "startCalibratingOverscan", l10n_util::GetStringUTF16(
           IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_START_CALIBRATING_OVERSCAN));
@@ -343,9 +345,34 @@ void DisplayOptionsHandler::HandleSetResolution(const base::ListValue* args) {
     return;
   }
 
-  // TODO(mukai): creates a confirmation dialog.
-  GetDisplayManager()->SetDisplayResolution(
-      display_id, gfx::ToFlooredSize(gfx::SizeF(width, height)));
+  const ash::internal::DisplayInfo& display_info =
+      GetDisplayManager()->GetDisplayInfo(display_id);
+  gfx::Size new_resolution = gfx::ToFlooredSize(gfx::SizeF(width, height));
+  gfx::Size old_resolution = display_info.size_in_pixel();
+  bool has_new_resolution = false;
+  bool has_old_resolution = false;
+  for (size_t i = 0; i < display_info.resolutions().size(); ++i) {
+    ash::internal::Resolution resolution = display_info.resolutions()[i];
+    if (resolution.size == new_resolution)
+      has_new_resolution = true;
+    if (resolution.size == old_resolution)
+      has_old_resolution = true;
+  }
+  if (!has_new_resolution) {
+    LOG(ERROR) << "No new resolution " << new_resolution.ToString()
+               << " is found in the display info " << display_info.ToString();
+    return;
+  }
+  if (!has_old_resolution) {
+    LOG(ERROR) << "No old resolution " << old_resolution.ToString()
+               << " is found in the display info " << display_info.ToString();
+    return;
+  }
+
+  ash::Shell::GetInstance()->resolution_notification_controller()->
+      SetDisplayResolutionAndNotify(
+          display_id, old_resolution, new_resolution,
+          base::Bind(&StoreDisplayPrefs));
 }
 
 void DisplayOptionsHandler::HandleSetOrientation(const base::ListValue* args) {

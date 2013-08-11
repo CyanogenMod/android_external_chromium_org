@@ -51,6 +51,10 @@
 #include "policy/policy_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/user_manager.h"
+#endif
+
 using base::DictionaryValue;
 using base::Value;
 using content::BrowserThread;
@@ -238,13 +242,25 @@ void ManagedUserService::GetCategoryNames(CategoryList* list) {
 }
 
 std::string ManagedUserService::GetCustodianEmailAddress() const {
+#if defined(OS_CHROMEOS)
+  return chromeos::UserManager::Get()->
+      GetManagerDisplayEmailForManagedUser(
+          chromeos::UserManager::Get()->GetActiveUser()->email());
+#else
   return profile_->GetPrefs()->GetString(prefs::kManagedUserCustodianEmail);
+#endif
 }
 
 std::string ManagedUserService::GetCustodianName() const {
+#if defined(OS_CHROMEOS)
+  return UTF16ToUTF8(chromeos::UserManager::Get()->
+      GetManagerDisplayNameForManagedUser(
+          chromeos::UserManager::Get()->GetActiveUser()->email()));
+#else
   std::string name = profile_->GetPrefs()->GetString(
       prefs::kManagedUserCustodianName);
   return name.empty() ? GetCustodianEmailAddress() : name;
+#endif
 }
 
 void ManagedUserService::AddNavigationBlockedCallback(
@@ -430,6 +446,16 @@ void ManagedUserService::OnDefaultFilteringBehaviorChanged() {
 
 void ManagedUserService::UpdateSiteLists() {
   url_filter_context_.LoadWhitelists(GetActiveSiteLists());
+}
+
+bool ManagedUserService::AccessRequestsEnabled() {
+  ProfileSyncService* service =
+      ProfileSyncServiceFactory::GetForProfile(profile_);
+  GoogleServiceAuthError::State state = service->GetAuthError().state();
+  // We allow requesting access if Sync is working or has a transient error.
+  return (state == GoogleServiceAuthError::NONE ||
+          state == GoogleServiceAuthError::CONNECTION_FAILED ||
+          state == GoogleServiceAuthError::SERVICE_UNAVAILABLE);
 }
 
 void ManagedUserService::AddAccessRequest(const GURL& url) {

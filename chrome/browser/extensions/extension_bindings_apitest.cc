@@ -9,11 +9,18 @@
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/test/browser_test_utils.h"
 
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, ExceptionInHandlerShouldNotCrash) {
+namespace extensions {
+namespace {
+
+class ExtensionBindingsApiTest : public ExtensionApiTest {};
+
+IN_PROC_BROWSER_TEST_F(ExtensionBindingsApiTest,
+                       ExceptionInHandlerShouldNotCrash) {
   ASSERT_TRUE(RunExtensionSubtest(
       "bindings/exception_in_handler_should_not_crash",
       "page.html")) << message_;
@@ -21,6 +28,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, ExceptionInHandlerShouldNotCrash) {
 
 // Tests that an error raised during an async function still fires
 // the callback, but sets chrome.runtime.lastError.
+// FIXME should be in ExtensionBindingsApiTest.
 IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, LastError) {
   ASSERT_TRUE(LoadExtension(
       test_data_dir_.AppendASCII("browsertest").AppendASCII("last_error")));
@@ -36,8 +44,38 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, LastError) {
   EXPECT_TRUE(result);
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, InternalAPIsNotOnChromeObject) {
+// Regression test that we don't delete our own bindings with about:blank
+// iframes.
+IN_PROC_BROWSER_TEST_F(ExtensionBindingsApiTest, AboutBlankIframe) {
+  ResultCatcher catcher;
+  ExtensionTestMessageListener listener("load", true);
+
+  ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII("bindings")
+                                          .AppendASCII("about_blank_iframe")));
+
+  ASSERT_TRUE(listener.WaitUntilSatisfied());
+
+  const Extension* extension = LoadExtension(
+        test_data_dir_.AppendASCII("bindings")
+                      .AppendASCII("internal_apis_not_on_chrome_object"));
+  ASSERT_TRUE(extension);
+  listener.Reply(extension->id());
+
+  ASSERT_TRUE(catcher.GetNextResult()) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionBindingsApiTest,
+                       InternalAPIsNotOnChromeObject) {
   ASSERT_TRUE(RunExtensionSubtest(
       "bindings/internal_apis_not_on_chrome_object",
       "page.html")) << message_;
 }
+
+// Tests that we don't override events when bindings are re-injected.
+// Regression test for http://crbug.com/269149.
+IN_PROC_BROWSER_TEST_F(ExtensionBindingsApiTest, EventOverriding) {
+  ASSERT_TRUE(RunExtensionTest("bindings/event_overriding")) << message_;
+}
+
+}  // namespace
+}  // namespace extensions

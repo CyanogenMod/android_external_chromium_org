@@ -423,6 +423,7 @@ Download.prototype.update = function(download) {
   this.state_ = download.state;
   this.fileExternallyRemoved_ = download.file_externally_removed;
   this.dangerType_ = download.danger_type;
+  this.finchString_ = download.finch_string;
   this.lastReasonDescription_ = download.last_reason_text;
   this.byExtensionId_ = download.by_ext_id;
   this.byExtensionName_ = download.by_ext_name;
@@ -451,6 +452,10 @@ Download.prototype.update = function(download) {
     } else if (this.dangerType_ == Download.DangerType.POTENTIALLY_UNWANTED) {
       this.dangerDesc_.textContent = loadTimeData.getStringF(
           'danger_potentially_unwanted_desc', this.fileName_);
+    }
+    if (this.finchString_) {
+      // Finch trial overrides the normal display string.
+      this.dangerDesc_.textContent = this.finchString_;
     }
     this.danger_.style.display = 'block';
     this.safe_.style.display = 'none';
@@ -753,7 +758,19 @@ function load() {
 function setSearch(searchText) {
   fifoResults.length = 0;
   downloads.setSearchText(searchText);
-  chrome.send('getDownloads', [searchText.toString()]);
+  searchText = searchText.toString().match(/(?:[^\s"]+|"[^"]*")+/g);
+  if (searchText) {
+    searchText = searchText.map(function(term) {
+      // strip quotes
+      return (term.match(/\s/) &&
+              term[0].match(/["']/) &&
+              term[term.length - 1] == term[0]) ?
+        term.substr(1, term.length - 2) : term;
+    });
+  } else {
+    searchText = [];
+  }
+  chrome.send('getDownloads', searchText);
 }
 
 function clearAll() {

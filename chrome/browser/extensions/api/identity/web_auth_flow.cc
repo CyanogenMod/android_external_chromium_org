@@ -59,7 +59,7 @@ WebAuthFlow::~WebAuthFlow() {
   WebContentsObserver::Observe(NULL);
 
   if (!shell_window_key_.empty()) {
-    ShellWindowRegistry::Get(profile_)->RemoveObserver(this);
+    apps::ShellWindowRegistry::Get(profile_)->RemoveObserver(this);
 
     if (shell_window_ && shell_window_->web_contents())
       shell_window_->web_contents()->Close();
@@ -67,13 +67,12 @@ WebAuthFlow::~WebAuthFlow() {
 }
 
 void WebAuthFlow::Start() {
-  ShellWindowRegistry::Get(profile_)->AddObserver(this);
+  apps::ShellWindowRegistry::Get(profile_)->AddObserver(this);
 
   // Attach a random ID string to the window so we can recoginize it
   // in OnShellWindowAdded.
   std::string random_bytes;
   crypto::RandBytes(WriteInto(&random_bytes, 33), 32);
-  std::string key;
   bool success = base::Base64Encode(random_bytes, &shell_window_key_);
   DCHECK(success);
 

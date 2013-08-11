@@ -411,8 +411,8 @@ const gfx::ImageSkia* BadgeForNetworkTechnology(const NetworkState* network,
   const std::string& technology = network->network_technology();
   if (technology == flimflam::kNetworkTechnologyEvdo) {
     id = IconTypeIsDark(icon_type) ?
-        IDR_AURA_UBER_TRAY_NETWORK_3G_DARK :
-        IDR_AURA_UBER_TRAY_NETWORK_3G_LIGHT;
+        IDR_AURA_UBER_TRAY_NETWORK_EVDO_DARK :
+        IDR_AURA_UBER_TRAY_NETWORK_EVDO_LIGHT;
   } else if (technology == flimflam::kNetworkTechnology1Xrtt) {
     id = IDR_AURA_UBER_TRAY_NETWORK_1X;
   } else if (technology == flimflam::kNetworkTechnologyGprs) {
@@ -783,7 +783,6 @@ void GetDefaultNetworkImageAndLabel(IconType icon_type,
   // network.
   if (connecting_network &&
       (!connected_network ||
-       state_handler->connecting_network() == connecting_network->path() ||
        connect_handler->HasConnectingNetwork(connecting_network->path()))) {
     network = connecting_network;
   } else {

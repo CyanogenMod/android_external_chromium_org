@@ -13,12 +13,13 @@
 #include "base/strings/utf_string_conversion_utils.h"
 #include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_profile_handler.h"
-#include "chromeos/network/network_ui_data.h"
 #include "chromeos/network/network_util.h"
 #include "chromeos/network/onc/onc_utils.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 namespace {
+
+const char kErrorUnknown[] = "Unknown";
 
 bool ConvertListValueToStringVector(const base::ListValue& string_list,
                                     std::vector<std::string>* result) {
@@ -49,23 +50,6 @@ std::string ValidateUTF8(const std::string& str) {
     }
   }
   return result;
-}
-
-// Returns a new NetworkUIData* if |ui_data_value| is a valid NetworkUIData
-// dictionary string, otherwise returns NULL.
-chromeos::NetworkUIData* CreateUIDataFromValue(
-    const base::Value& ui_data_value) {
-  std::string ui_data_str;
-  if (!ui_data_value.GetAsString(&ui_data_str))
-    return NULL;
-  if (ui_data_str.empty())
-    return new chromeos::NetworkUIData();
-
-  scoped_ptr<base::DictionaryValue> ui_data_dict(
-      chromeos::onc::ReadDictionaryFromJson(ui_data_str));
-  if (!ui_data_dict)
-    return NULL;
-  return new chromeos::NetworkUIData(*ui_data_dict);
 }
 
 bool IsCaCertNssSet(const base::DictionaryValue& properties) {
@@ -104,7 +88,6 @@ NetworkState::NetworkState(const std::string& path)
       auto_connect_(false),
       favorite_(false),
       priority_(0),
-      onc_source_(onc::ONC_SOURCE_NONE),
       prefix_length_(0),
       signal_strength_(0),
       connectable_(false),
@@ -128,7 +111,12 @@ bool NetworkState::PropertyChanged(const std::string& key,
   } else if (key == flimflam::kConnectableProperty) {
     return GetBooleanValue(key, value, &connectable_);
   } else if (key == flimflam::kErrorProperty) {
-    return GetStringValue(key, value, &error_);
+    if (!GetStringValue(key, value, &error_))
+      return false;
+    // Shill uses "Unknown" to indicate an unset error state.
+    if (error_ == kErrorUnknown)
+      error_.clear();
+    return true;
   } else if (key == shill::kErrorDetailsProperty) {
     return GetStringValue(key, value, &error_details_);
   } else if (key == IPConfigProperty(flimflam::kAddressProperty)) {
@@ -180,7 +168,7 @@ bool NetworkState::PropertyChanged(const std::string& key,
     }
     return true;
   } else if (key == flimflam::kUIDataProperty) {
-    if (!GetOncSource(value, &onc_source_)) {
+    if (!GetUIDataFromValue(value, &ui_data_)) {
       NET_LOG_ERROR("Failed to parse " + key, path());
       return false;
     }
@@ -310,8 +298,8 @@ bool NetworkState::IsConnectingState() const {
 }
 
 bool NetworkState::IsManaged() const {
-  return onc_source_ == onc::ONC_SOURCE_DEVICE_POLICY ||
-         onc_source_ == onc::ONC_SOURCE_USER_POLICY;
+  return ui_data_.onc_source() == onc::ONC_SOURCE_DEVICE_POLICY ||
+         ui_data_.onc_source() == onc::ONC_SOURCE_USER_POLICY;
 }
 
 bool NetworkState::IsPrivate() const {
@@ -432,12 +420,20 @@ std::string NetworkState::IPConfigProperty(const char* key) {
 }
 
 // static
-bool NetworkState::GetOncSource(const base::Value& ui_data_value,
-                                onc::ONCSource* out) {
-  scoped_ptr<NetworkUIData> ui_data(CreateUIDataFromValue(ui_data_value));
-  if (!ui_data)
+bool NetworkState::GetUIDataFromValue(const base::Value& ui_data_value,
+                                      NetworkUIData* out) {
+  std::string ui_data_str;
+  if (!ui_data_value.GetAsString(&ui_data_str))
     return false;
-  *out = ui_data->onc_source();
+  if (ui_data_str.empty()) {
+    *out = NetworkUIData();
+    return true;
+  }
+  scoped_ptr<base::DictionaryValue> ui_data_dict(
+      chromeos::onc::ReadDictionaryFromJson(ui_data_str));
+  if (!ui_data_dict)
+    return false;
+  *out = NetworkUIData(*ui_data_dict);
   return true;
 }
 

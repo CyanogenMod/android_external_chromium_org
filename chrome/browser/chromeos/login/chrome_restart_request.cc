@@ -40,7 +40,6 @@
 #include "ui/gl/gl_switches.h"
 #include "ui/views/corewm/corewm_switches.h"
 #include "url/gurl.h"
-#include "webkit/plugins/plugin_switches.h"
 
 using content::BrowserThread;
 
@@ -184,7 +183,6 @@ std::string DeriveCommandLine(const GURL& start_url,
       chromeos::switches::kLoginProfile,
       chromeos::switches::kNaturalScrollDefault,
       chromeos::switches::kUseNewNetworkConfigurationHandlers,
-      chromeos::switches::kUseNewNetworkConnectionHandler,
       gfx::switches::kEnableBrowserTextSubpixelPositioning,
       gfx::switches::kEnableWebkitTextSubpixelPositioning,
       views::corewm::switches::kNoDropShadows,

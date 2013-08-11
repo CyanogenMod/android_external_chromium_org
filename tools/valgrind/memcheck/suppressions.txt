@@ -6276,17 +6276,6 @@
    fun:_ZN2v88internal8Debugger18CallCEventCallbackENS_10DebugEventENS0_6HandleINS0_6ObjectEEES5_PNS_5Debug10ClientDataE
 }
 {
-   bug_181691
-   Memcheck:Leak
-   fun:_Znw*
-   ...
-   fun:_Z10InitThreadv
-   fun:ShCompile
-   fun:_ZN3gpu5gles216ShaderTranslator9TranslateEPKc
-   fun:_ZN3gpu5gles214ProgramManager18ForceCompileShaderEPKSsPNS0_6ShaderEPNS0_16ShaderTranslatorEPNS0_11FeatureInfoE
-   fun:_ZN3gpu5gles214ProgramManager15DoCompileShaderEPNS0_6ShaderEPNS0_16ShaderTranslatorEPNS0_11FeatureInfoE
-}
-{
    bug_184264
    Memcheck:Leak
    fun:_Znw*
@@ -6547,44 +6536,6 @@
    fun:_ZN7testing4Test11DeleteSelf_Ev
 }
 {
-   bug_230366a
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_Z28InitializeGlobalParseContextv
-   fun:_Z10InitThreadv
-   fun:ShCompile
-   fun:_ZN6webkit3gpu33WebGraphicsContext3DInProcessImpl25AngleValidateShaderSourceEPNS1_17ShaderSourceEntryE
-   fun:_ZN6webkit3gpu33WebGraphicsContext3DInProcessImpl13compileShaderEj
-   fun:_ZN2cc18ProgramBindingBase10LoadShaderEPN6WebKit20WebGraphicsContext3DEjRKSs
-   fun:_ZN2cc18ProgramBindingBase4InitEPN6WebKit20WebGraphicsContext3DERKSsS5_
-   fun:_ZN2cc14ProgramBindingINS_26VertexShaderPosTexIdentityENS_21FragmentShaderRGBATexEEC1EPN6WebKit20WebGraphicsContext3DENS_17TexCoordPrecisionE
-   fun:_ZN2cc24AcceleratedTextureCopierC1EPN6WebKit20WebGraphicsContext3DEbi
-   fun:_ZN2cc24AcceleratedTextureCopier6CreateEPN6WebKit20WebGraphicsContext3DEbi
-   fun:_ZN2cc16ResourceProvider10InitializeEi
-   fun:_ZN2cc16ResourceProvider6CreateEPNS_13OutputSurfaceEi
-   fun:_ZN2cc17LayerTreeHostImpl18InitializeRendererE10scoped_ptrINS_13OutputSurfaceEN4base14DefaultDeleterIS2_EEE
-   fun:_ZN2cc11ThreadProxy30InitializeRendererOnImplThreadEPNS_15CompletionEventEPbPNS_20RendererCapabilitiesE
-}
-{
-   bug_230366b
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_Z21InitializeGlobalPoolsv
-   fun:_Z10InitThreadv
-   fun:ShCompile
-   fun:_ZN6webkit3gpu33WebGraphicsContext3DInProcessImpl25AngleValidateShaderSourceEPNS1_17ShaderSourceEntryE
-   fun:_ZN6webkit3gpu33WebGraphicsContext3DInProcessImpl13compileShaderEj
-   fun:_ZN2cc18ProgramBindingBase10LoadShaderEPN6WebKit20WebGraphicsContext3DEjRKSs
-   fun:_ZN2cc18ProgramBindingBase4InitEPN6WebKit20WebGraphicsContext3DERKSsS5_
-   fun:_ZN2cc14ProgramBindingINS_26VertexShaderPosTexIdentityENS_21FragmentShaderRGBATexEEC1EPN6WebKit20WebGraphicsContext3DENS_17TexCoordPrecisionE
-   fun:_ZN2cc24AcceleratedTextureCopierC1EPN6WebKit20WebGraphicsContext3DEbi
-   fun:_ZN2cc24AcceleratedTextureCopier6CreateEPN6WebKit20WebGraphicsContext3DEbi
-   fun:_ZN2cc16ResourceProvider10InitializeEi
-   fun:_ZN2cc16ResourceProvider6CreateEPNS_13OutputSurfaceEi
-   fun:_ZN2cc17LayerTreeHostImpl18InitializeRendererE10scoped_ptrINS_13OutputSurfaceEN4base14DefaultDeleterIS2_EEE
-   fun:_ZN2cc11ThreadProxy30InitializeRendererOnImplThreadEPNS_15CompletionEventEPbPNS_20RendererCapabilitiesE
-}
-{
    bug_233541
    Memcheck:Leak
    fun:_Znw*
@@ -6719,7 +6670,6 @@
    fun:_ZN7WebCore6V8Node23appendChildMethodCustomERKN2v820FunctionCallbackInfoINS1_5ValueEEE
    fun:_ZN7WebCore14NodeV8InternalL37appendChildMethodCallbackForMainWorldERKN2v820FunctionCallbackInfoINS1_5ValueEEE
 }
-
 {
    bug_241932
    Memcheck:Leak
@@ -7040,16 +6990,25 @@
    fun:_ZN7content11ContentMainEiPPKcPNS_19ContentMainDelegateE
 }
 {
-   bug_252641
+   bug_252641_a
    Memcheck:Uninitialized
    fun:pthread_rwlock_init$UNIX2003
    fun:_ZN3re25MutexC2Ev
    fun:_ZN3re25MutexC1Ev
    ...
    fun:_ZN11leveldb_env19ParseMethodAndErrorEPKcPNS_8MethodIDEPi
-   fun:_ZN7contentL21HistogramLevelDBErrorERKSsRKN7leveldb6StatusE
-   fun:_ZN7content15LevelDBDatabase4OpenERKN4base8FilePathEPKNS_17LevelDBComparatorEPb
-   fun:_ZN7content12_GLOBAL__N_139LevelDBDatabaseTest_CorruptionTest_Test8TestBodyEv
+}
+{
+   bug_252641_b
+   Memcheck:Uninitialized
+   fun:pthread_rwlock_init$UNIX2003
+   fun:_ZN3re25MutexC2Ev
+   fun:_ZN3re25MutexC1Ev
+   ...
+   fun:_ZN11leveldb_env19ParseMethodAndErrorEPKcPNS_8MethodIDEPi
+   fun:_ZN7content23RecoveryCouldBeFruitfulEN7leveldb6StatusE
+   fun:_ZN7content21IndexedDBBackingStore4OpenERKSsRKN4base8FilePathES2_PN6WebKit15WebIDBCallbacks8DataLossEPNS_14LevelDBFactoryE
+   fun:_ZN12_GLOBAL__N_137IndexedDBIOErrorTest_CleanUpTest_Test8TestBodyEv
 }
 {
    bug_253797
@@ -7230,4 +7189,51 @@
    fun:_ZN4base11MessageLoop8PostTaskERKN15tracked_objects8LocationERKNS_8CallbackIFvvEEE
    fun:_ZN8printing8PrintJob21UpdatePrintedDocumentEPNS_15PrintedDocumentE
    fun:_ZN8printing8PrintJob4StopEv
- }
+}
+{
+   bug_269844
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN9__gnu_cxx13new_allocatorIPN4base11PendingTaskEE8allocateEmPKv
+   fun:_ZNSt11_Deque_baseIN4base11PendingTaskESaIS1_EE15_M_allocate_mapEm
+   fun:_ZNSt5dequeIN4base11PendingTaskESaIS1_EE17_M_reallocate_mapEmb
+   ...
+   fun:_ZN4base8internal17IncomingTaskQueue15PostPendingTaskEPNS_11PendingTaskE
+   fun:_ZN4base8internal17IncomingTaskQueue18AddToIncomingQueueERKN15tracked_objects8LocationERKNS_8CallbackIFvvEEENS_9TimeDeltaEb
+   fun:_ZN4base11MessageLoop8PostTaskERKN15tracked_objects8LocationERKNS_8CallbackIFvvEEE
+}
+{
+   bug_269884a
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN24SkColorFilterImageFilter6CreateEP13SkColorFilterP13SkImageFilterPK7SkIRect
+   fun:_ZN7WebCore22SkiaImageFilterBuilder19transformColorSpaceEP13SkImageFilterNS_10ColorSpaceES3_
+   fun:_ZN7WebCore22SkiaImageFilterBuilder5buildERKNS_16FilterOperationsE
+}
+{
+   bug_269884b
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN19SkPerlinNoiseShader15CreateTubulenceEffifPK7SkTSizeIiE
+   fun:_ZN7WebCore12FETurbulence12createShaderERKNS_7IntRectE
+   fun:_ZN7WebCore12FETurbulence17createImageFilterEPNS_22SkiaImageFilterBuilderE
+   fun:_ZN7WebCore22SkiaImageFilterBuilder5buildEPNS_12FilterEffectENS_10ColorSpaceE
+   fun:_ZN7WebCore22SkiaImageFilterBuilder5buildERKNS_16FilterOperationsE
+}
+{
+   bug_270312
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN14message_center22MessageCenterButtonBarC1EPNS_17MessageCenterViewEPNS_13MessageCenterEPNS_24NotifierSettingsProviderEb
+   fun:_ZN14message_center17MessageCenterViewC1EPNS_13MessageCenterEPNS_17MessageCenterTrayEibb
+   fun:_ZN14message_center21MessageCenterViewTest5SetUpEv
+}
+{
+   bug_270742
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN16sync_file_system13drive_backend12_GLOBAL__N_120ReadDatabaseContentsEPN7leveldb2DBEPNS0_16DatabaseContentsE
+   fun:_ZN16sync_file_system13drive_backend16MetadataDatabase22InitializeOnTaskRunnerERKN4base8FilePathE
+   fun:_ZN16sync_file_system13drive_backend16MetadataDatabase18CreateOnTaskRunnerEPN4base22SingleThreadTaskRunnerEPNS2_19SequencedTaskRunnerERKNS2_8FilePathERKNS2_8CallbackIFvNS_14SyncStatusCodeE10scoped_ptrIS1_NS2_14DefaultDeleterIS1_EEEEEE
+}
+

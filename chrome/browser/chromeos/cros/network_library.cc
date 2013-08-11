@@ -15,6 +15,7 @@
 #include "chrome/browser/chromeos/cros/native_network_parser.h"
 #include "chrome/browser/chromeos/cros/network_library_impl_cros.h"
 #include "chrome/browser/chromeos/cros/network_library_impl_stub.h"
+#include "chrome/browser/chromeos/enrollment_dialog_view.h"
 #include "chrome/common/net/x509_certificate_model.h"
 #include "chromeos/network/certificate_pattern.h"
 #include "chromeos/network/certificate_pattern_matcher.h"
@@ -331,6 +332,10 @@ bool Network::RequiresUserProfile() const {
 void Network::CopyCredentialsFromRemembered(Network* remembered) {
 }
 
+void Network::SetEnrollmentDelegate(EnrollmentDelegate* delegate) {
+  enrollment_delegate_.reset(delegate);
+}
+
 void Network::SetValueProperty(const char* prop, const base::Value& value) {
   DCHECK(prop);
   if (!EnsureRunningOnChromeOS())
@@ -419,11 +424,6 @@ void Network::AttemptConnection(const base::Closure& closure) {
 
 void Network::set_connecting() {
   state_ = STATE_CONNECT_REQUESTED;
-  // Set the connecting network in NetworkStateHandler for the status area UI.
-  if (NetworkHandler::IsInitialized()) {
-    NetworkHandler::Get()->network_state_handler()->
-        SetConnectingNetwork(service_path());
-  }
 }
 
 void Network::SetProfilePath(const std::string& profile_path) {

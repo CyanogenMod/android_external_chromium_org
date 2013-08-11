@@ -150,17 +150,6 @@ enum NotificationType {
   // starting and finishing all painting.
   NOTIFICATION_INITIAL_NEW_TAB_UI_LOAD,
 
-#if defined(OS_ANDROID)
-  // Indicates that the new tab page is ready.  This is different than
-  // NOTIFICATION_INITIAL_NEW_TAB_UI_LOAD as the NTP might do some more in-page
-  // navigations after it's done loading, potentially causing flakyness in tests
-  // that would navigate as soon as the NTP is done loading.
-  // When this notification happen, it guarantees the page is not going to do
-  // any further navigation.
-  // The source is the WebContents containing the NTP.
-  NOTIFICATION_NEW_TAB_READY,
-#endif
-
   // Used to fire notifications about how long various events took to
   // complete.  E.g., this is used to get more fine grained timings from the
   // new tab page.  The source is a WebContents and the details is a
@@ -203,14 +192,6 @@ enum NotificationType {
   // Details encompass a FindNotificationDetail object that tells whether the
   // match was found or not found.
   NOTIFICATION_FIND_RESULT_AVAILABLE,
-
-#if defined(OS_ANDROID)
-  // This notification is sent when the match rects of a find-in-page search
-  // are available. The source is a Source<WebContents>. Details encompass a
-  // FindMatchRectsDetails object that contains the result version and the
-  // rects information.
-  NOTIFICATION_FIND_MATCH_RECTS_AVAILABLE,
-#endif
 
   // BackgroundContents ------------------------------------------------------
 
@@ -355,9 +336,6 @@ enum NotificationType {
 
   // Task Manager ------------------------------------------------------------
 
-  // Sent when WebUI TaskManager opens and is ready for showing tasks.
-  NOTIFICATION_TASK_MANAGER_WINDOW_READY,
-
   // The TaskManagerChildProcessResourceProvider collects the list of child
   // processes when StartUpdating is called. This data is collected on the IO
   // thread and passed back to the UI thread. Once all entries are added to the
@@ -492,9 +470,6 @@ enum NotificationType {
   // Sent when an extension's permissions change. The details are an
   // UpdatedExtensionPermissionsInfo, and the source is a Profile.
   NOTIFICATION_EXTENSION_PERMISSIONS_UPDATED,
-
-  // Sent when an extension install turns out to not be a theme.
-  NOTIFICATION_NO_THEME_DETECTED,
 
   // Sent when new extensions are installed, or existing extensions are updated.
   // The details are an InstalledExtensionInfo, and the source is a Profile.
@@ -656,31 +631,6 @@ enum NotificationType {
   // extensions::UpdateDetails object with the extension id and version of the
   // found update.
   NOTIFICATION_EXTENSION_UPDATE_FOUND,
-
-  // Component Updater -------------------------------------------------------
-  //
-  // The component updater notifications are deprecated and they will be
-  // removed soon.
-  //
-  // Sent when the component updater starts doing update checks. If no
-  // component has been registered for update this notification is not
-  // generated. The source is the component updater itself and there are
-  // no details.
-  NOTIFICATION_COMPONENT_UPDATER_STARTED,
-
-  // Sent when the component updater is going to take a long nap. The
-  // source is the component updater itself and there are no details.
-  NOTIFICATION_COMPONENT_UPDATER_SLEEPING,
-
-  // Sent when there is a new version of a registered component. After
-  // the notification is send the component will be downloaded. The source
-  // is the id of the component and there are no details.
-  NOTIFICATION_COMPONENT_UPDATE_FOUND,
-
-  // Send when the new component has been downloaded and an installation
-  // or upgrade is about to be attempted. The source is the id of the
-  // component and there are no details.
-  NOTIFICATION_COMPONENT_UPDATE_READY,
 
   // Desktop Notifications ---------------------------------------------------
 
@@ -923,39 +873,19 @@ enum NotificationType {
   // notification.
   NOTIFICATION_LOGIN_WEBUI_LOADED,
 
-  // Sent when the login screen has loaded in retail mode. The first paint event
-  // after this fires NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE.
-  NOTIFICATION_DEMO_WEBUI_LOADED,
-
-  // Sent when the user images on the WebUI login screen have all been loaded.
-  // "Normal boot" i.e. for the device with at least one user would generate
-  // this one on boot. First paint event after this fires
-  // NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE.
-  NOTIFICATION_LOGIN_USER_IMAGES_LOADED,
-
   // Sent when a network error message is displayed on the WebUI login screen.
   // First paint event of this fires NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE.
   NOTIFICATION_LOGIN_NETWORK_ERROR_SHOWN,
 
-  // Sent when the first OOBE screen has been displayed. Note that the screen
-  // may not be fully rendered at this point. First paint event after this fires
-  // NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE.
-  NOTIFICATION_WIZARD_FIRST_SCREEN_SHOWN,
-
   // Sent when the specific part of login/lock WebUI is considered to be
   // visible. That moment is tracked as the first paint event after one of the:
-  // 1. NOTIFICATION_LOGIN_USER_IMAGES_LOADED
-  // 2. NOTIFICATION_LOGIN_WEBUI_LOADED
-  // 3. NOTIFICATION_LOGIN_NETWORK_ERROR_SHOWN
-  // 4. NOTIFICATION_WIZARD_FIRST_SCREEN_SHOWN
-  // 5. NOTIFICATION_DEMO_WEBUI_LOADED
+  // 1. NOTIFICATION_LOGIN_WEBUI_LOADED
+  // 2. NOTIFICATION_LOGIN_NETWORK_ERROR_SHOWN
   //
   // Possible series of notifications:
   // 1. Boot into fresh OOBE
-  //    NOTIFICATION_WIZARD_FIRST_SCREEN_SHOWN
   //    NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE
   // 2. Boot into user pods list (normal boot). Same for lock screen.
-  //    NOTIFICATION_LOGIN_USER_IMAGES_LOADED
   //    NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE
   // 3. Boot into GAIA sign in UI (user pods display disabled or no users):
   //    if no network is connected or flaky network
@@ -964,7 +894,6 @@ enum NotificationType {
   //    NOTIFICATION_LOGIN_WEBUI_LOADED
   //    NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE
   // 4. Boot into retail mode
-  //    NOTIFICATION_DEMO_WEBUI_LOADED
   //    NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE
   // 5. Boot into kiosk mode
   //    NOTIFICATION_KIOSK_APP_LAUNCHED
@@ -1055,9 +984,6 @@ enum NotificationType {
   // menu has been created and shown.
   NOTIFICATION_RENDER_VIEW_CONTEXT_MENU_SHOWN,
 
-  // Send when a context menu is closed.
-  NOTIFICATION_RENDER_VIEW_CONTEXT_MENU_CLOSED,
-
   // Sent when the Instant Controller determines whether an Instant tab supports
   // the Instant API or not.
   NOTIFICATION_INSTANT_TAB_SUPPORT_DETERMINED,
@@ -1110,9 +1036,6 @@ enum NotificationType {
   // Used only on Windows.
   NOTIFICATION_ASH_SESSION_ENDED,
 #endif
-
-  // Sent when a new web store promo has been loaded.
-  NOTIFICATION_WEB_STORE_PROMO_LOADED,
 
   // Protocol Handler Registry -----------------------------------------------
   // Sent when a ProtocolHandlerRegistry is changed. The source is the profile.

@@ -13,6 +13,7 @@
 #include "ash/launcher/launcher_icon_observer.h"
 #include "ash/launcher/launcher_model.h"
 #include "ash/launcher/launcher_tooltip_manager.h"
+#include "ash/launcher/launcher_types.h"
 #include "ash/root_window_controller.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_widget.h"
@@ -333,17 +334,33 @@ class LauncherViewTest : public AshTestBase {
     }
   }
 
-  views::View* SimulateDrag(internal::LauncherButtonHost::Pointer pointer,
-                            int button_index,
-                            int destination_index) {
+  views::View* SimulateButtonPressed(
+      internal::LauncherButtonHost::Pointer pointer,
+      int button_index) {
     internal::LauncherButtonHost* button_host = launcher_view_;
-
-    // Mouse down.
     views::View* button = test_api_->GetButton(button_index);
     ui::MouseEvent click_event(ui::ET_MOUSE_PRESSED,
                                button->bounds().origin(),
                                button->bounds().origin(), 0);
     button_host->PointerPressedOnButton(button, pointer, click_event);
+    return button;
+  }
+
+  views::View* SimulateClick(internal::LauncherButtonHost::Pointer pointer,
+                             int button_index) {
+    internal::LauncherButtonHost* button_host = launcher_view_;
+    views::View* button = SimulateButtonPressed(pointer, button_index);
+    button_host->PointerReleasedOnButton(button,
+                                         internal::LauncherButtonHost::MOUSE,
+                                         false);
+    return button;
+  }
+
+  views::View* SimulateDrag(internal::LauncherButtonHost::Pointer pointer,
+                            int button_index,
+                            int destination_index) {
+    internal::LauncherButtonHost* button_host = launcher_view_;
+    views::View* button = SimulateButtonPressed(pointer, button_index);
 
     // Drag.
     views::View* destination = test_api_->GetButton(destination_index);
@@ -433,6 +450,49 @@ TEST_P(LauncherViewTextDirectionTest, IdealBoundsOfItemIcon) {
   ideal_bounds.Offset(screen_origin.x(), screen_origin.y());
   EXPECT_EQ(item_bounds.x(), ideal_bounds.x());
   EXPECT_EQ(item_bounds.y(), ideal_bounds.y());
+}
+
+// Checks that launcher view contents are considered in the correct drag group.
+TEST_F(LauncherViewTest, EnforceDragType) {
+  EXPECT_TRUE(test_api_->SameDragType(TYPE_TABBED, TYPE_TABBED));
+  EXPECT_TRUE(test_api_->SameDragType(TYPE_TABBED, TYPE_PLATFORM_APP));
+  EXPECT_FALSE(test_api_->SameDragType(TYPE_TABBED, TYPE_APP_SHORTCUT));
+  EXPECT_FALSE(test_api_->SameDragType(TYPE_TABBED, TYPE_BROWSER_SHORTCUT));
+  EXPECT_FALSE(test_api_->SameDragType(TYPE_TABBED, TYPE_WINDOWED_APP));
+  EXPECT_FALSE(test_api_->SameDragType(TYPE_TABBED, TYPE_APP_LIST));
+  EXPECT_FALSE(test_api_->SameDragType(TYPE_TABBED, TYPE_APP_PANEL));
+
+  EXPECT_TRUE(test_api_->SameDragType(TYPE_PLATFORM_APP, TYPE_PLATFORM_APP));
+  EXPECT_FALSE(test_api_->SameDragType(TYPE_PLATFORM_APP, TYPE_APP_SHORTCUT));
+  EXPECT_FALSE(test_api_->SameDragType(TYPE_PLATFORM_APP,
+                                       TYPE_BROWSER_SHORTCUT));
+  EXPECT_FALSE(test_api_->SameDragType(TYPE_PLATFORM_APP, TYPE_WINDOWED_APP));
+  EXPECT_FALSE(test_api_->SameDragType(TYPE_PLATFORM_APP, TYPE_APP_LIST));
+  EXPECT_FALSE(test_api_->SameDragType(TYPE_PLATFORM_APP, TYPE_APP_PANEL));
+
+  EXPECT_TRUE(test_api_->SameDragType(TYPE_APP_SHORTCUT, TYPE_APP_SHORTCUT));
+  EXPECT_TRUE(test_api_->SameDragType(TYPE_APP_SHORTCUT,
+                                      TYPE_BROWSER_SHORTCUT));
+  EXPECT_FALSE(test_api_->SameDragType(TYPE_APP_SHORTCUT,
+                                       TYPE_WINDOWED_APP));
+  EXPECT_FALSE(test_api_->SameDragType(TYPE_APP_SHORTCUT, TYPE_APP_LIST));
+  EXPECT_FALSE(test_api_->SameDragType(TYPE_APP_SHORTCUT, TYPE_APP_PANEL));
+
+  EXPECT_TRUE(test_api_->SameDragType(TYPE_BROWSER_SHORTCUT,
+                                      TYPE_BROWSER_SHORTCUT));
+  EXPECT_FALSE(test_api_->SameDragType(TYPE_BROWSER_SHORTCUT,
+                                       TYPE_WINDOWED_APP));
+  EXPECT_FALSE(test_api_->SameDragType(TYPE_BROWSER_SHORTCUT, TYPE_APP_LIST));
+  EXPECT_FALSE(test_api_->SameDragType(TYPE_BROWSER_SHORTCUT, TYPE_APP_PANEL));
+
+  EXPECT_TRUE(test_api_->SameDragType(TYPE_WINDOWED_APP, TYPE_WINDOWED_APP));
+  EXPECT_FALSE(test_api_->SameDragType(TYPE_WINDOWED_APP, TYPE_APP_LIST));
+  EXPECT_FALSE(test_api_->SameDragType(TYPE_WINDOWED_APP, TYPE_APP_PANEL));
+
+  EXPECT_TRUE(test_api_->SameDragType(TYPE_APP_LIST, TYPE_APP_LIST));
+  EXPECT_FALSE(test_api_->SameDragType(TYPE_APP_LIST, TYPE_APP_PANEL));
+
+  EXPECT_TRUE(test_api_->SameDragType(TYPE_APP_PANEL, TYPE_APP_PANEL));
 }
 
 // Adds browser button until overflow and verifies that the last added browser
@@ -751,6 +811,31 @@ TEST_F(LauncherViewTest, SimultaneousDrag) {
                                        internal::LauncherButtonHost::TOUCH,
                                        false);
   ASSERT_NO_FATAL_FAILURE(CheckModelIDs(id_map));
+}
+
+// Check that clicking first on one item and then dragging another works as
+// expected.
+TEST_F(LauncherViewTest, ClickOneDragAnother) {
+  internal::LauncherButtonHost* button_host = launcher_view_;
+
+  std::vector<std::pair<LauncherID, views::View*> > id_map;
+  SetupForDragTest(&id_map);
+
+  // A click on item 1 is simulated.
+  SimulateClick(internal::LauncherButtonHost::MOUSE, 1);
+
+  // Dragging browser index at 0 should change the model order correctly.
+  EXPECT_TRUE(model_->items()[0].type == TYPE_BROWSER_SHORTCUT);
+  views::View* dragged_button = SimulateDrag(
+      internal::LauncherButtonHost::MOUSE, 0, 2);
+  std::rotate(id_map.begin(),
+              id_map.begin() + 1,
+              id_map.begin() + 3);
+  ASSERT_NO_FATAL_FAILURE(CheckModelIDs(id_map));
+  button_host->PointerReleasedOnButton(dragged_button,
+                                       internal::LauncherButtonHost::MOUSE,
+                                       false);
+  EXPECT_TRUE(model_->items()[2].type == TYPE_BROWSER_SHORTCUT);
 }
 
 // Confirm that item status changes are reflected in the buttons.

@@ -4,14 +4,18 @@
 
 #include "cc/trees/layer_tree_host.h"
 
+#include "base/bind.h"
 #include "cc/layers/delegated_renderer_layer.h"
 #include "cc/layers/delegated_renderer_layer_client.h"
 #include "cc/layers/delegated_renderer_layer_impl.h"
+#include "cc/output/compositor_frame.h"
+#include "cc/output/compositor_frame_ack.h"
 #include "cc/output/delegated_frame_data.h"
 #include "cc/quads/shared_quad_state.h"
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/test/fake_delegated_renderer_layer.h"
 #include "cc/test/fake_delegated_renderer_layer_impl.h"
+#include "cc/test/fake_output_surface.h"
 #include "cc/test/layer_tree_test.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "gpu/GLES2/gl2extchromium.h"
@@ -31,6 +35,49 @@ class LayerTreeHostDelegatedTest : public LayerTreeTest {
                       root_output_rect,
                       root_damage_rect,
                       gfx::Transform());
+    frame->render_pass_list.push_back(root_pass.Pass());
+    return frame.Pass();
+  }
+
+  scoped_ptr<DelegatedFrameData> CreateInvalidFrameData(
+      gfx::Rect root_output_rect,
+      gfx::Rect root_damage_rect) {
+    scoped_ptr<DelegatedFrameData> frame(new DelegatedFrameData);
+
+    scoped_ptr<RenderPass> root_pass(RenderPass::Create());
+    root_pass->SetNew(RenderPass::Id(1, 1),
+                      root_output_rect,
+                      root_damage_rect,
+                      gfx::Transform());
+
+    scoped_ptr<SharedQuadState> shared_quad_state = SharedQuadState::Create();
+
+    gfx::Rect rect = root_output_rect;
+    gfx::Rect opaque_rect = root_output_rect;
+    // An invalid resource id! The resource isn't part of the frame.
+    unsigned resource_id = 5;
+    bool premultiplied_alpha = false;
+    gfx::PointF uv_top_left = gfx::PointF(0.f, 0.f);
+    gfx::PointF uv_bottom_right = gfx::PointF(1.f, 1.f);
+    SkColor background_color = 0;
+    float vertex_opacity[4] = {1.f, 1.f, 1.f, 1.f};
+    bool flipped = false;
+
+    scoped_ptr<TextureDrawQuad> invalid_draw_quad = TextureDrawQuad::Create();
+    invalid_draw_quad->SetNew(shared_quad_state.get(),
+                              rect,
+                              opaque_rect,
+                              resource_id,
+                              premultiplied_alpha,
+                              uv_top_left,
+                              uv_bottom_right,
+                              background_color,
+                              vertex_opacity,
+                              flipped);
+    root_pass->quad_list.push_back(invalid_draw_quad.PassAs<DrawQuad>());
+
+    root_pass->shared_quad_state_list.push_back(shared_quad_state.Pass());
+
     frame->render_pass_list.push_back(root_pass.Pass());
     return frame.Pass();
   }
@@ -64,6 +111,54 @@ class LayerTreeHostDelegatedTest : public LayerTreeTest {
   scoped_ptr<DelegatedFrameData> CreateEmptyFrameData() {
     scoped_ptr<DelegatedFrameData> frame(new DelegatedFrameData);
     return frame.Pass();
+  }
+
+
+  static ResourceProvider::ResourceId AppendResourceId(
+      std::vector<ResourceProvider::ResourceId>* resources_in_last_sent_frame,
+      ResourceProvider::ResourceId resource_id) {
+    resources_in_last_sent_frame->push_back(resource_id);
+    return resource_id;
+  }
+
+  void ReturnUnusedResourcesFromParent(LayerTreeHostImpl* host_impl) {
+    DelegatedFrameData* delegated_frame_data =
+        output_surface()->last_sent_frame().delegated_frame_data.get();
+    if (!delegated_frame_data)
+      return;
+
+    std::vector<ResourceProvider::ResourceId> resources_in_last_sent_frame;
+    for (size_t i = 0; i < delegated_frame_data->render_pass_list.size(); ++i) {
+      RenderPass* pass = delegated_frame_data->render_pass_list.at(i);
+      for (size_t j = 0; j < pass->quad_list.size(); ++j) {
+        DrawQuad* quad = pass->quad_list[j];
+        quad->IterateResources(base::Bind(&AppendResourceId,
+                                          &resources_in_last_sent_frame));
+      }
+    }
+
+    std::vector<ResourceProvider::ResourceId> resources_to_return;
+
+    const TransferableResourceArray& resources_held_by_parent =
+        output_surface()->resources_held_by_parent();
+    for (size_t i = 0; i < resources_held_by_parent.size(); ++i) {
+      ResourceProvider::ResourceId resource_in_parent =
+          resources_held_by_parent[i].id;
+      bool resource_in_parent_is_not_part_of_frame =
+          std::find(resources_in_last_sent_frame.begin(),
+                    resources_in_last_sent_frame.end(),
+                    resource_in_parent) == resources_in_last_sent_frame.end();
+      if (resource_in_parent_is_not_part_of_frame)
+        resources_to_return.push_back(resource_in_parent);
+    }
+
+    if (resources_to_return.empty())
+      return;
+
+    CompositorFrameAck ack;
+    for (size_t i = 0; i < resources_to_return.size(); ++i)
+      output_surface()->ReturnResource(resources_to_return[i], &ack);
+    host_impl->OnSwapBuffersComplete(&ack);
   }
 };
 
@@ -267,13 +362,18 @@ class LayerTreeHostDelegatedTestLayerUsesFrameDamage
                                                  gfx::Rect(5, 5, 1, 1)));
         break;
       case 13:
+        // An invalid frame isn't used, so it should not cause damage.
+        delegated_->SetFrameData(CreateInvalidFrameData(gfx::Rect(0, 0, 10, 10),
+                                                        gfx::Rect(5, 5, 1, 1)));
+        break;
+      case 14:
         // Should create gfx::Rect(1, 1, 2, 2) of damage. The frame size is
         // 5x5 and the display size is now set to 10x10, so this should result
         // in a gfx::Rect(2, 2, 4, 4) damage rect.
         delegated_->SetFrameData(CreateFrameData(gfx::Rect(0, 0, 5, 5),
                                                  gfx::Rect(1, 1, 2, 2)));
         break;
-      case 14:
+      case 15:
         // Should create zero damage.
         layer_tree_host()->SetNeedsCommit();
         break;
@@ -352,10 +452,14 @@ class LayerTreeHostDelegatedTestLayerUsesFrameDamage
                   damage_rect.ToString());
         break;
       case 13:
-        EXPECT_EQ(gfx::RectF(2.f, 2.f, 4.f, 4.f).ToString(),
+        EXPECT_EQ(gfx::RectF(0.f, 0.f, 0.f, 0.f).ToString(),
                   damage_rect.ToString());
         break;
       case 14:
+        EXPECT_EQ(gfx::RectF(2.f, 2.f, 4.f, 4.f).ToString(),
+                  damage_rect.ToString());
+        break;
+      case 15:
         EXPECT_EQ(gfx::RectF(0.f, 0.f, 0.f, 0.f).ToString(),
                   damage_rect.ToString());
         EndTest();
@@ -479,7 +583,7 @@ class LayerTreeHostDelegatedTestReturnUnusedResources
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual void DidCommit() OVERRIDE {
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
     scoped_ptr<DelegatedFrameData> frame;
     TransferableResourceArray resources;
 
@@ -495,6 +599,11 @@ class LayerTreeHostDelegatedTestReturnUnusedResources
         delegated_->SetFrameData(frame.Pass());
         break;
       case 2:
+        // Retrieve unused resources to the main thread.
+        // TODO(danakj): Shouldn't need to commit to get resources.
+        layer_tree_host()->SetNeedsCommit();
+        return;
+      case 3:
         // All of the resources are in use.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(0u, resources.size());
@@ -506,7 +615,12 @@ class LayerTreeHostDelegatedTestReturnUnusedResources
         AddTransferableResource(frame.get(), 444);
         delegated_->SetFrameData(frame.Pass());
         break;
-      case 3:
+      case 4:
+        // Retrieve unused resources to the main thread.
+        // TODO(danakj): Shouldn't need to commit to get resources.
+        layer_tree_host()->SetNeedsCommit();
+        return;
+      case 5:
         // 555 is no longer in use.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(1u, resources.size());
@@ -516,7 +630,12 @@ class LayerTreeHostDelegatedTestReturnUnusedResources
         frame = CreateFrameData(gfx::Rect(0, 0, 1, 1), gfx::Rect(0, 0, 1, 1));
         delegated_->SetFrameData(frame.Pass());
         break;
-      case 4:
+      case 6:
+        // Postpone collecting resources for a frame. They should still be there
+        // the next frame.
+        layer_tree_host()->SetNeedsCommit();
+        return;
+      case 7:
         // 444 and 999 are no longer in use.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(2u, resources.size());
@@ -537,11 +656,15 @@ class LayerTreeHostDelegatedTestReturnUnusedResources
     EXPECT_TRUE(empty_resources.empty());
   }
 
+  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
+                                   bool result) OVERRIDE {
+    ReturnUnusedResourcesFromParent(host_impl);
+  }
+
   virtual void AfterTest() OVERRIDE {}
 };
 
-// Enable this for delegating renderer. crbug.com/239290
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
+SINGLE_AND_MULTI_THREAD_TEST_F(
     LayerTreeHostDelegatedTestReturnUnusedResources);
 
 class LayerTreeHostDelegatedTestReusedResources
@@ -551,7 +674,7 @@ class LayerTreeHostDelegatedTestReusedResources
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual void DidCommit() OVERRIDE {
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
     scoped_ptr<DelegatedFrameData> frame;
     TransferableResourceArray resources;
 
@@ -569,6 +692,11 @@ class LayerTreeHostDelegatedTestReusedResources
         delegated_->SetFrameData(frame.Pass());
         break;
       case 2:
+        // Retrieve unused resources to the main thread.
+        // TODO(danakj): Shouldn't need to commit to get resources.
+        layer_tree_host()->SetNeedsCommit();
+        return;
+      case 3:
         // All of the resources are in use.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(0u, resources.size());
@@ -588,7 +716,12 @@ class LayerTreeHostDelegatedTestReusedResources
         AddTextureQuad(frame.get(), 444);
         delegated_->SetFrameData(frame.Pass());
         break;
-      case 3:
+      case 4:
+        // Retrieve unused resources to the main thread.
+        // TODO(danakj): Shouldn't need to commit to get resources.
+        layer_tree_host()->SetNeedsCommit();
+        return;
+      case 5:
         // The 999 resource is the only unused one.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(1u, resources.size());
@@ -598,12 +731,15 @@ class LayerTreeHostDelegatedTestReusedResources
     }
   }
 
+  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
+                                   bool result) OVERRIDE {
+    ReturnUnusedResourcesFromParent(host_impl);
+  }
+
   virtual void AfterTest() OVERRIDE {}
 };
 
-// Enable this for delegating renderer. crbug.com/239290
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
-    LayerTreeHostDelegatedTestReusedResources);
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestReusedResources);
 
 class LayerTreeHostDelegatedTestFrameBeforeAck
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
@@ -612,7 +748,7 @@ class LayerTreeHostDelegatedTestFrameBeforeAck
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual void DidCommit() OVERRIDE {
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
     scoped_ptr<DelegatedFrameData> frame;
     TransferableResourceArray resources;
 
@@ -630,6 +766,11 @@ class LayerTreeHostDelegatedTestFrameBeforeAck
         delegated_->SetFrameData(frame.Pass());
         break;
       case 2:
+        // Retrieve unused resources to the main thread.
+        // TODO(danakj): Shouldn't need to commit to get resources.
+        layer_tree_host()->SetNeedsCommit();
+        return;
+      case 3:
         // All of the resources are in use.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(0u, resources.size());
@@ -645,7 +786,12 @@ class LayerTreeHostDelegatedTestFrameBeforeAck
 
         // The parent compositor (this one) does a commit.
         break;
-      case 3:
+      case 4:
+        // Retrieve unused resources to the main thread.
+        // TODO(danakj): Shouldn't need to commit to get resources.
+        layer_tree_host()->SetNeedsCommit();
+        return;
+      case 5:
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(2u, resources.size());
         if (resources[0].id == 555) {
@@ -668,7 +814,7 @@ class LayerTreeHostDelegatedTestFrameBeforeAck
   }
 
   virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
-    if (host_impl->active_tree()->source_frame_number() != 3)
+    if (host_impl->active_tree()->source_frame_number() != 5)
       return;
 
     LayerImpl* root_impl = host_impl->active_tree()->root_layer();
@@ -697,12 +843,15 @@ class LayerTreeHostDelegatedTestFrameBeforeAck
     EndTest();
   }
 
+  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
+                                   bool result) OVERRIDE {
+    ReturnUnusedResourcesFromParent(host_impl);
+  }
+
   virtual void AfterTest() OVERRIDE {}
 };
 
-// Enable this for delegating renderer. crbug.com/239290
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
-    LayerTreeHostDelegatedTestFrameBeforeAck);
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestFrameBeforeAck);
 
 class LayerTreeHostDelegatedTestFrameBeforeTakeResources
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
@@ -711,7 +860,7 @@ class LayerTreeHostDelegatedTestFrameBeforeTakeResources
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual void DidCommit() OVERRIDE {
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
     scoped_ptr<DelegatedFrameData> frame;
     TransferableResourceArray resources;
 
@@ -729,6 +878,11 @@ class LayerTreeHostDelegatedTestFrameBeforeTakeResources
         delegated_->SetFrameData(frame.Pass());
         break;
       case 2:
+        // Retrieve unused resources to the main thread.
+        // TODO(danakj): Shouldn't need to commit to get resources.
+        layer_tree_host()->SetNeedsCommit();
+        return;
+      case 3:
         // All of the resources are in use.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(0u, resources.size());
@@ -744,7 +898,12 @@ class LayerTreeHostDelegatedTestFrameBeforeTakeResources
 
         // The parent compositor (this one) does a commit.
         break;
-      case 3:
+      case 4:
+        // Retrieve unused resources to the main thread.
+        // TODO(danakj): Shouldn't need to commit to get resources.
+        layer_tree_host()->SetNeedsCommit();
+        return;
+      case 5:
         // The child compositor sends a frame before taking resources back
         // from the previous commit. This frame makes use of the resources 555
         // and 444, which were just released during commit.
@@ -758,7 +917,12 @@ class LayerTreeHostDelegatedTestFrameBeforeTakeResources
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(0u, resources.size());
         break;
-      case 4:
+      case 6:
+        // Retrieve unused resources to the main thread.
+        // TODO(danakj): Shouldn't need to commit to get resources.
+        layer_tree_host()->SetNeedsCommit();
+        return;
+      case 7:
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(0u, resources.size());
         EndTest();
@@ -767,7 +931,7 @@ class LayerTreeHostDelegatedTestFrameBeforeTakeResources
   }
 
   virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
-    if (host_impl->active_tree()->source_frame_number() != 3)
+    if (host_impl->active_tree()->source_frame_number() != 5)
       return;
 
     LayerImpl* root_impl = host_impl->active_tree()->root_layer();
@@ -803,11 +967,15 @@ class LayerTreeHostDelegatedTestFrameBeforeTakeResources
     EXPECT_EQ(map.find(444)->second, quad3->resource_id);
   }
 
+  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
+                                   bool result) OVERRIDE {
+    ReturnUnusedResourcesFromParent(host_impl);
+  }
+
   virtual void AfterTest() OVERRIDE {}
 };
 
-// Enable this for delegating renderer. crbug.com/239290
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
+SINGLE_AND_MULTI_THREAD_TEST_F(
     LayerTreeHostDelegatedTestFrameBeforeTakeResources);
 
 class LayerTreeHostDelegatedTestBadFrame
@@ -817,7 +985,7 @@ class LayerTreeHostDelegatedTestBadFrame
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual void DidCommit() OVERRIDE {
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
     scoped_ptr<DelegatedFrameData> frame;
     TransferableResourceArray resources;
 
@@ -833,6 +1001,11 @@ class LayerTreeHostDelegatedTestBadFrame
         delegated_->SetFrameData(frame.Pass());
         break;
       case 2:
+        // Retrieve unused resources to the main thread.
+        // TODO(danakj): Shouldn't need to commit to get resources.
+        layer_tree_host()->SetNeedsCommit();
+        return;
+      case 3:
         // All of the resources are in use.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(0u, resources.size());
@@ -851,7 +1024,12 @@ class LayerTreeHostDelegatedTestBadFrame
 
         // The parent compositor (this one) does a commit.
         break;
-      case 3:
+      case 4:
+        // Retrieve unused resources to the main thread.
+        // TODO(danakj): Shouldn't need to commit to get resources.
+        layer_tree_host()->SetNeedsCommit();
+        return;
+      case 5:
         // The bad frame's resource is given back to the child compositor.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(1u, resources.size());
@@ -862,7 +1040,12 @@ class LayerTreeHostDelegatedTestBadFrame
         AddTextureQuad(frame.get(), 999);
         delegated_->SetFrameData(frame.Pass());
         break;
-      case 4:
+      case 6:
+        // Retrieve unused resources to the main thread.
+        // TODO(danakj): Shouldn't need to commit to get resources.
+        layer_tree_host()->SetNeedsCommit();
+        return;
+      case 7:
         // The unused 555 from the last good frame is now released.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(1u, resources.size());
@@ -873,9 +1056,12 @@ class LayerTreeHostDelegatedTestBadFrame
     }
   }
 
-  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
+                                   bool result) OVERRIDE {
     if (host_impl->active_tree()->source_frame_number() < 1)
       return;
+
+    ReturnUnusedResourcesFromParent(host_impl);
 
     LayerImpl* root_impl = host_impl->active_tree()->root_layer();
     FakeDelegatedRendererLayerImpl* delegated_impl =
@@ -907,7 +1093,7 @@ class LayerTreeHostDelegatedTestBadFrame
         EXPECT_EQ(map.find(555)->second, quad2->resource_id);
         break;
       }
-      case 2: {
+      case 3: {
         // We only keep resources from the last valid frame.
         EXPECT_EQ(2u, map.size());
         EXPECT_EQ(1u, map.count(999));
@@ -929,7 +1115,14 @@ class LayerTreeHostDelegatedTestBadFrame
         EXPECT_EQ(map.find(555)->second, quad2->resource_id);
         break;
       }
-      case 3: {
+      case 5:
+        // Resources given to our parent compositor will be returned now, but
+        // the DelegatedRendererLayerImpl doesn't know about it until the next
+        // commit.
+        // TODO(danakj): Shouldn't need a commit to return resources to the
+        // DelegatedRendererLayerImpl or to the main thread.
+        break;
+      case 6: {
         // We have the new good frame with just 999 in it.
         EXPECT_EQ(1u, map.size());
         EXPECT_EQ(1u, map.count(999));
@@ -950,9 +1143,7 @@ class LayerTreeHostDelegatedTestBadFrame
   virtual void AfterTest() OVERRIDE {}
 };
 
-// Enable this for delegating renderer. crbug.com/239290
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
-    LayerTreeHostDelegatedTestBadFrame);
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestBadFrame);
 
 class LayerTreeHostDelegatedTestUnnamedResource
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
@@ -1077,13 +1268,7 @@ SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestDontLeakResource);
 class LayerTreeHostDelegatedTestResourceSentToParent
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {
  public:
-  virtual void BeginTest() OVERRIDE {
-    // Prevent drawing with resources that are sent to the grandparent.
-    layer_tree_host()->SetViewportSize(gfx::Size());
-    PostSetNeedsCommitToMainThread();
-  }
-
-  virtual void DidCommit() OVERRIDE {
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
     scoped_ptr<DelegatedFrameData> frame;
     TransferableResourceArray resources;
 
@@ -1113,6 +1298,8 @@ class LayerTreeHostDelegatedTestResourceSentToParent
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(0u, resources.size());
 
+        // The impl side will get back the resource at some point.
+        // TODO(danakj): The test should work without this.
         layer_tree_host()->SetNeedsCommit();
         break;
       case 4:
@@ -1148,15 +1335,7 @@ class LayerTreeHostDelegatedTestResourceSentToParent
         EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(999)->second));
         EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(555)->second));
 
-        // The 999 resource is sent to a grandparent compositor.
-        ResourceProvider::ResourceIdArray resources_for_parent;
-        resources_for_parent.push_back(map.find(999)->second);
-        TransferableResourceArray transferable_resources;
-        host_impl->resource_provider()->PrepareSendToParent(
-            resources_for_parent, &transferable_resources);
-
-        resource_in_grandparent = transferable_resources[0];
-        EXPECT_EQ(map.find(999)->second, resource_in_grandparent.id);
+        // The 999 resource will be sent to a grandparent compositor.
         break;
       }
       case 2: {
@@ -1164,17 +1343,14 @@ class LayerTreeHostDelegatedTestResourceSentToParent
         EXPECT_EQ(1u, map.count(999));
         EXPECT_EQ(1u, map.count(555));
 
-        /// 999 is in the parent, so not held by delegated renderer layer.
+        // 999 is in the parent, so not held by delegated renderer layer.
         EXPECT_EQ(1u, delegated_impl->Resources().size());
         EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(555)->second));
 
         // Receive 999 back from the grandparent.
-        EXPECT_EQ(map.find(999)->second, resource_in_grandparent.id);
-        TransferableResourceArray transferable_resources;
-        transferable_resources.push_back(resource_in_grandparent);
-
-        host_impl->resource_provider()->ReceiveFromParent(
-            transferable_resources);
+        CompositorFrameAck ack;
+        output_surface()->ReturnResource(map.find(999)->second, &ack);
+        host_impl->OnSwapBuffersComplete(&ack);
         break;
       }
       case 3:
@@ -1184,6 +1360,7 @@ class LayerTreeHostDelegatedTestResourceSentToParent
 
         EXPECT_EQ(1u, delegated_impl->Resources().size());
         EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(555)->second));
+        break;
     }
   }
 
@@ -1192,7 +1369,8 @@ class LayerTreeHostDelegatedTestResourceSentToParent
   TransferableResource resource_in_grandparent;
 };
 
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDelegatedTestResourceSentToParent);
+SINGLE_AND_MULTI_THREAD_DELEGATING_RENDERER_TEST_F(
+    LayerTreeHostDelegatedTestResourceSentToParent);
 
 class LayerTreeHostDelegatedTestCommitWithoutTake
     : public LayerTreeHostDelegatedTestCaseSingleDelegatedLayer {

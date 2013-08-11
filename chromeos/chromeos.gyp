@@ -17,6 +17,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:base_prefs',
+        '../crypto/crypto.gyp:crypto',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../build/linux/system.gyp:dbus',
         '../build/linux/system.gyp:ssl',
@@ -84,6 +85,8 @@
         'dbus/cros_disks_client.h',
         'dbus/cryptohome_client.cc',
         'dbus/cryptohome_client.h',
+        'dbus/cryptohome_client_stub.cc',
+        'dbus/cryptohome_client_stub.h',
         'dbus/dbus_client_implementation_type.h',
         'dbus/dbus_method_call_status.h',
         'dbus/dbus_thread_manager.cc',

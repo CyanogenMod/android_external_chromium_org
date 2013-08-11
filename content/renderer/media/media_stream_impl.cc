@@ -10,6 +10,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/public/common/desktop_media_id.h"
 #include "content/renderer/media/media_stream_audio_renderer.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/media_stream_dispatcher.h"
@@ -71,7 +72,9 @@ void UpdateRequestOptions(
           user_media_request.videoConstraints(),
           kMediaStreamSourceId, true);
     } else if (video_stream_source == kMediaStreamSourceScreen) {
-      options->video_type = content::MEDIA_SCREEN_VIDEO_CAPTURE;
+      options->video_type = content::MEDIA_DESKTOP_VIDEO_CAPTURE;
+      options->video_device_id =
+          DesktopMediaID(DesktopMediaID::TYPE_SCREEN, 0).ToString();
     }
   }
 }
@@ -371,6 +374,24 @@ void MediaStreamImpl::OnStreamGenerationFailed(int request_id) {
                               &request_info->request,
                               false);
   DeleteUserMediaRequestInfo(request_info);
+}
+
+// Callback from MediaStreamDispatcher.
+// The user has requested to stop the media stream.
+void MediaStreamImpl::OnStopGeneratedStream(const std::string& label) {
+  DCHECK(CalledOnValidThread());
+  DVLOG(1) << "MediaStreamImpl::OnStopGeneratedStream(" << label << ")";
+
+  UserMediaRequestInfo* user_media_request = FindUserMediaRequestInfo(label);
+  if (user_media_request) {
+    // No need to call media_stream_dispatcher_->StopStream() because the
+    // request has come from the browser process.
+    StopLocalAudioTrack(user_media_request->web_stream);
+    DeleteUserMediaRequestInfo(user_media_request);
+  } else {
+    DVLOG(1) << "MediaStreamImpl::OnStopGeneratedStream: the stream has "
+             << "already been stopped.";
+  }
 }
 
 // Callback from MediaStreamDependencyFactory when the sources in |web_stream|

@@ -159,7 +159,23 @@ std::vector<aura::Window*> DesktopRootWindowHostX11::GetAllOpenWindows() {
 
 void DesktopRootWindowHostX11::HandleNativeWidgetActivationChanged(
     bool active) {
+  if (active)
+    root_window_host_delegate_->OnHostActivated();
   native_widget_delegate_->OnNativeWidgetActivationChanged(active);
+  // If we're not active we need to deactivate the corresponding aura::Window.
+  // This way if a child widget is active it gets correctly deactivated (child
+  // widgets don't get native desktop activation changes, only aura activation
+  // changes).
+  if (!active) {
+    aura::client::ActivationClient* activation_client =
+        aura::client::GetActivationClient(root_window_);
+    if (activation_client) {
+      aura::Window* active_window = activation_client->GetActiveWindow();
+      if (active_window)
+        activation_client->DeactivateWindow(active_window);
+    }
+  }
+
   native_widget_delegate_->AsWidget()->GetRootView()->SchedulePaint();
 }
 
@@ -930,7 +946,7 @@ aura::RootWindow* DesktopRootWindowHostX11::InitRootWindow(
   desktop_native_widget_aura_->InstallInputMethodEventFilter(root_window_);
 
   drag_drop_client_.reset(new DesktopDragDropClientAuraX11(
-      this, root_window_, desktop_native_cursor_manager, xdisplay_, xwindow_));
+      root_window_, desktop_native_cursor_manager, xdisplay_, xwindow_));
   aura::client::SetDragDropClient(root_window_, drag_drop_client_.get());
 
   // TODO(erg): Unify this code once the other consumer goes away.

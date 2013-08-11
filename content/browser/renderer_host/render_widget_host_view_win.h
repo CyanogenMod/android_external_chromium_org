@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
@@ -270,6 +271,7 @@ class RenderWidgetHostViewWin
   virtual void InsertChar(char16 ch, int flags) OVERRIDE;
   virtual gfx::NativeWindow GetAttachedWindow() const OVERRIDE;
   virtual ui::TextInputType GetTextInputType() const OVERRIDE;
+  virtual ui::TextInputMode GetTextInputMode() const OVERRIDE;
   virtual bool CanComposeInline() const OVERRIDE;
   virtual gfx::Rect GetCaretBounds() OVERRIDE;
   virtual bool GetCompositionCharacterBounds(uint32 index,
@@ -360,6 +362,9 @@ class RenderWidgetHostViewWin
   void OnFinalMessage(HWND window);
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewWinBrowserTest,
+                           TextInputTypeChanged);
+
   // Updates the display cursor to the current cursor if the cursor is over this
   // render view.
   void UpdateCursorIfOverSelf();
@@ -533,6 +538,7 @@ class RenderWidgetHostViewWin
   // Stores the current text input type received by TextInputStateChanged()
   // method.
   ui::TextInputType text_input_type_;
+  ui::TextInputMode text_input_mode_;
   bool can_compose_inline_;
 
   ScopedVector<ui::ViewProp> props_;

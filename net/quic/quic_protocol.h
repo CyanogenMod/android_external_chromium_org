@@ -180,14 +180,16 @@ enum QuicPacketPrivateFlags {
 // The available versions of QUIC. Guaranteed that the integer value of the enum
 // will match the version number.
 // When adding a new version to this enum you should add it to
-// kSupportedVersions (if appropriate), and also add a new case to the helper
-// methods QuicVersionToQuicTag, and QuicTagToQuicVersion.
+// kSupportedQuicVersions (if appropriate), and also add a new case to the
+// helper methods QuicVersionToQuicTag, QuicTagToQuicVersion, and
+// QuicVersionToString.
 enum QuicVersion {
   // Special case to indicate unknown/unsupported QUIC version.
   QUIC_VERSION_UNSUPPORTED = 0,
 
   QUIC_VERSION_6 = 6,
-  QUIC_VERSION_7 = 7,  // Current version.
+  QUIC_VERSION_7 = 7,
+  QUIC_VERSION_8 = 8,  // Current version.
 };
 
 // This vector contains QUIC versions which we currently support.
@@ -195,7 +197,7 @@ enum QuicVersion {
 // element, with subsequent elements in descending order (versions can be
 // skipped as necessary).
 static const QuicVersion kSupportedQuicVersions[] =
-    {QUIC_VERSION_7, QUIC_VERSION_6};
+    {QUIC_VERSION_8, QUIC_VERSION_7, QUIC_VERSION_6};
 
 typedef std::vector<QuicVersion> QuicVersionVector;
 
@@ -424,7 +426,15 @@ struct NET_EXPORT_PRIVATE QuicPublicResetPacket {
 
 enum QuicVersionNegotiationState {
   START_NEGOTIATION = 0,
-  SENT_NEGOTIATION_PACKET,
+  // Server-side this implies we've sent a version negotiation packet and are
+  // waiting on the client to select a compatible version.  Client-side this
+  // implies we've gotten a version negotiation packet, are retransmitting the
+  // initial packets with a supported version and are waiting for our first
+  // packet from the server.
+  NEGOTIATION_IN_PROGRESS,
+  // This indicates this endpoint has received a packet from the peer with a
+  // version this endpoint supports.  Version negotiation is complete, and the
+  // version number will no longer be sent with future packets.
   NEGOTIATED_VERSION
 };
 

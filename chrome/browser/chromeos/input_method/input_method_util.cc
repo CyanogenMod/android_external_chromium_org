@@ -53,7 +53,7 @@ const struct {
     "\xe6\x8b\xbc" },
   { "_comp_ime_nmblnjkfdkabgdofidlkienfnnbjhnabzh-t-i0-pinyin",
     "\xe6\x8b\xbc" },
-  { "_comp_ime_jcffnbbngddhenhcnebafkbdomehdhpdzh-t-i0-wubi-1986",
+  { "_comp_ime_gjhclobljhjhgoebiipblnmdodbmpdgdzh-t-i0-wubi-1986",
     "\xe4\xba\x94" }, // U+4E94
   { "pinyin-dv", "\xe6\x8b\xbc" },
   // For traditional Chinese input methods
@@ -102,7 +102,7 @@ const struct {
     IDS_LANGUAGES_MEDIUM_LEN_NAME_CHINESE_SIMPLIFIED},
   { "_comp_ime_nmblnjkfdkabgdofidlkienfnnbjhnabzh-t-i0-pinyin",
     IDS_LANGUAGES_MEDIUM_LEN_NAME_CHINESE_SIMPLIFIED },
-  { "_comp_ime_jcffnbbngddhenhcnebafkbdomehdhpdzh-t-i0-wubi-1986",
+  { "_comp_ime_gjhclobljhjhgoebiipblnmdodbmpdgdzh-t-i0-wubi-1986",
     IDS_LANGUAGES_MEDIUM_LEN_NAME_CHINESE_SIMPLIFIED },
   { "_comp_ime_ekbifjdfhkmdeeajnolmgdlmkllopefizh-hant-t-i0-und",
     IDS_LANGUAGES_MEDIUM_LEN_NAME_CHINESE_TRADITIONAL },
@@ -128,6 +128,8 @@ const struct {
   { "ja", "us", "_comp_ime_fpfbhcjppmaeaijcidgiibchfbnhbeljnacl_mozc_us" },
   { "ja", "jp", "_comp_ime_fpfbhcjppmaeaijcidgiibchfbnhbeljnacl_mozc_jp" },
   { "zh-CN", "us", "_comp_ime_nmblnjkfdkabgdofidlkienfnnbjhnabzh-t-i0-pinyin" },
+  { "zh-TW", "us",
+    "_comp_ime_goedamlknlnjaengojinmfgpmdjmkooozh-hant-t-i0-und" },
   { "th", "us", "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_th" },
   { "vi", "us", "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_vi_tcvn" },
   { "vi", "us", "_comp_ime_jhffeifommiaekmbkkjlpmilogcfdohpvkd_vi_tcvn" },

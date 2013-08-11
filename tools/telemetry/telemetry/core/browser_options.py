@@ -89,11 +89,15 @@ class BrowserOptions(optparse.Values):
         '--remote',
         dest='cros_remote',
         help='The IP address of a remote ChromeOS device to use.')
+    identity = None
+    testing_rsa = os.path.join(
+        util.GetChromiumSrcDir(),
+        'third_party', 'chromite', 'ssh_keys', 'testing_rsa')
+    if os.path.exists(testing_rsa):
+      identity = testing_rsa
     group.add_option('--identity',
         dest='cros_ssh_identity',
-        default=os.path.join(
-            util.GetChromiumSrcDir(),
-            'third_party', 'chromite', 'ssh_keys', 'testing_rsa'),
+        default=identity,
         help='The identity file to use when ssh\'ing into the ChromeOS device')
     parser.add_option_group(group)
 
@@ -107,6 +111,10 @@ class BrowserOptions(optparse.Values):
         choices=profile_choices,
         help=('The user profile to use. A clean profile is used by default. '
               'Supported values: ' + ', '.join(profile_choices)))
+    group.add_option('--profile-dir',
+        dest='profile_dir',
+        help='Profile directory to launch the browser with. '
+             'A clean profile is used by default')
     group.add_option('--extra-browser-args',
         dest='extra_browser_args_as_string',
         help='Additional arguments to pass to the browser when it starts')
@@ -214,7 +222,12 @@ class BrowserOptions(optparse.Values):
       # Parse repeat options
       self.repeat_options.UpdateFromParseResults(self, parser)
 
-      self.profile_dir = profile_types.GetProfileDir(self.profile_type)
+      # TODO(jeremy): I'm in the process of adding explicit knowledge of profile
+      # directories to Telemetry. As part of this work profile_type needs to be
+      # reworked to not override profile_dir.
+      if not self.profile_dir:
+        self.profile_dir = profile_types.GetProfileDir(self.profile_type)
+
       return ret
     parser.parse_args = ParseArgs
     return parser
@@ -222,3 +235,7 @@ class BrowserOptions(optparse.Values):
   def AppendExtraBrowserArg(self, arg):
     if arg not in self.extra_browser_args:
       self.extra_browser_args.append(arg)
+
+  def MergeDefaultValues(self, defaults):
+    for k, v in defaults.__dict__.items():
+      self.ensure_value(k, v)

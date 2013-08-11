@@ -45,19 +45,13 @@ cr.define('cr.ui', function() {
     }, true);
   }
 
-  /**
-   * The class name to set on the document element.
-   * @const
-   */
-  FocusOutlineManager.CLASS_NAME = CLASS_NAME;
-
   FocusOutlineManager.prototype = {
     /**
      * Whether focus change is triggered by TAB key.
      * @type {boolean}
      * @private
      */
-    focusByKeyboard_: false,
+    focusByKeyboard_: true,
 
     /**
      * Whether the focus outline should be visible.

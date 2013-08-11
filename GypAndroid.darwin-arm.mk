@@ -85,8 +85,6 @@ include $(LOCAL_PATH)/net/net_errors_java.target.darwin-arm.mk
 include $(LOCAL_PATH)/net/net_jni_headers.target.darwin-arm.mk
 include $(LOCAL_PATH)/net/net_resources.target.darwin-arm.mk
 include $(LOCAL_PATH)/net/private_key_types_java.target.darwin-arm.mk
-include $(LOCAL_PATH)/ppapi/ppapi_c.target.darwin-arm.mk
-include $(LOCAL_PATH)/ppapi/ppapi_shared.target.darwin-arm.mk
 include $(LOCAL_PATH)/printing/printing.target.darwin-arm.mk
 include $(LOCAL_PATH)/sandbox/sandbox.target.darwin-arm.mk
 include $(LOCAL_PATH)/sandbox/sandbox_services.target.darwin-arm.mk
@@ -150,6 +148,7 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf_config.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_minimal.target.darwin-arm.mk
+include $(LOCAL_PATH)/third_party/WebKit/public/blink_skia_config.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/angle_dx11/src/preprocessor.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/angle_dx11/src/translator_common.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/angle_dx11/src/translator_glsl.target.darwin-arm.mk
@@ -226,14 +225,12 @@ include $(LOCAL_PATH)/webkit/common/gpu/webkit_gpu.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/user_agent.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/webkit_version.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/common/webkit_common.target.darwin-arm.mk
-include $(LOCAL_PATH)/webkit/plugins/plugins_common.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_bindings.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_support.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/renderer/webkit_renderer.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/support/glue.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/support/glue_child.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/support/overscroller_jni_headers.target.darwin-arm.mk
-include $(LOCAL_PATH)/webkit/support/plugins.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/webkit_resources.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_browser.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_common.target.darwin-arm.mk

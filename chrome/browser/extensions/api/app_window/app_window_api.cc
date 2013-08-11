@@ -7,17 +7,17 @@
 #include "apps/app_window_contents.h"
 #include "apps/native_app_window.h"
 #include "apps/shell_window.h"
+#include "apps/shell_window_registry.h"
 #include "base/command_line.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/devtools/devtools_window.h"
-#include "chrome/browser/extensions/shell_window_registry.h"
 #include "chrome/browser/extensions/window_controller.h"
 #include "chrome/browser/ui/apps/chrome_shell_window_delegate.h"
 #include "chrome/common/extensions/api/app_window.h"
-#include "chrome/common/extensions/features/feature.h"
+#include "chrome/common/extensions/features/feature_channel.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
@@ -150,7 +150,7 @@ bool AppWindowCreateFunction::RunImpl() {
       create_params.window_key = *options->id;
 
       if (!options->singleton || *options->singleton) {
-        ShellWindow* window = ShellWindowRegistry::Get(profile())->
+        ShellWindow* window = apps::ShellWindowRegistry::Get(profile())->
             GetShellWindowForAppAndKey(extension_id(),
                                        create_params.window_key);
         if (window) {
@@ -207,7 +207,7 @@ bool AppWindowCreateFunction::RunImpl() {
         create_params.bounds.set_y(*bounds->top.get());
     }
 
-    if (Feature::GetCurrentChannel() <= chrome::VersionInfo::CHANNEL_DEV ||
+    if (GetCurrentChannel() <= chrome::VersionInfo::CHANNEL_DEV ||
         GetExtension()->location() == extensions::Manifest::COMPONENT) {
       if (options->type == extensions::api::app_window::WINDOW_TYPE_PANEL) {
           create_params.window_type = ShellWindow::WINDOW_TYPE_PANEL;
@@ -318,7 +318,8 @@ bool AppWindowCreateFunction::RunImpl() {
   SetCreateResultFromShellWindow(shell_window, result);
   SetResult(result);
 
-  if (ShellWindowRegistry::Get(profile())->HadDevToolsAttached(created_view)) {
+  if (apps::ShellWindowRegistry::Get(profile())->
+          HadDevToolsAttached(created_view)) {
     new DevToolsRestorer(this, created_view);
     return true;
   }

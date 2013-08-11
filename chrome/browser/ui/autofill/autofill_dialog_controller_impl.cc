@@ -10,6 +10,7 @@
 
 #include "apps/native_app_window.h"
 #include "apps/shell_window.h"
+#include "apps/shell_window_registry.h"
 #include "base/base64.h"
 #include "base/bind.h"
 #include "base/i18n/rtl.h"
@@ -22,12 +23,15 @@
 #include "base/time/time.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/extensions/shell_window_registry.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/autofill/autofill_credit_card_bubble_controller.h"
+#include "chrome/browser/ui/autofill/autofill_dialog_common.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_view.h"
 #include "chrome/browser/ui/autofill/data_model_wrapper.h"
+#if !defined(OS_ANDROID)
+#include "chrome/browser/ui/autofill/generated_credit_card_bubble_controller.h"
+#include "chrome/browser/ui/autofill/new_credit_card_bubble_controller.h"
+#endif
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_navigator.h"
@@ -110,50 +114,6 @@ bool IsWalletSupportedCard(const std::string& card_type) {
          card_type == autofill::kDiscoverCard;
 }
 
-// Returns true if |input| should be shown when |field_type| has been requested.
-bool InputTypeMatchesFieldType(const DetailInput& input,
-                               const AutofillType& field_type) {
-  // If any credit card expiration info is asked for, show both month and year
-  // inputs.
-  ServerFieldType server_type = field_type.GetStorableType();
-  if (server_type == CREDIT_CARD_EXP_4_DIGIT_YEAR ||
-      server_type == CREDIT_CARD_EXP_2_DIGIT_YEAR ||
-      server_type == CREDIT_CARD_EXP_DATE_4_DIGIT_YEAR ||
-      server_type == CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR ||
-      server_type == CREDIT_CARD_EXP_MONTH) {
-    return input.type == CREDIT_CARD_EXP_4_DIGIT_YEAR ||
-           input.type == CREDIT_CARD_EXP_MONTH;
-  }
-
-  if (server_type == CREDIT_CARD_TYPE)
-    return input.type == CREDIT_CARD_NUMBER;
-
-  // Check the groups to distinguish billing types from shipping ones.
-  AutofillType input_type = AutofillType(input.type);
-  return input_type.GetStorableType() == server_type &&
-         input_type.group() == field_type.group();
-}
-
-// Returns true if |input| in the given |section| should be used for a
-// site-requested |field|.
-bool DetailInputMatchesField(DialogSection section,
-                             const DetailInput& input,
-                             const AutofillField& field) {
-  AutofillType field_type = field.Type();
-
-  // The credit card name is filled from the billing section's data.
-  if (field_type.GetStorableType() == CREDIT_CARD_NAME &&
-      (section == SECTION_BILLING || section == SECTION_CC_BILLING)) {
-    return input.type == NAME_BILLING_FULL;
-  }
-
-  return InputTypeMatchesFieldType(input, field_type);
-}
-
-bool IsCreditCardType(ServerFieldType type) {
-  return AutofillType(type).group() == CREDIT_CARD;
-}
-
 // Returns true if |input| should be used to fill a site-requested |field| which
 // is notated with a "shipping" tag, for use when the user has decided to use
 // the billing address as the shipping address.
@@ -165,17 +125,7 @@ bool DetailInputMatchesShippingField(const DetailInput& input,
       AutofillType::GetEquivalentBillingFieldType(
           field.Type().GetStorableType());
 
-  return InputTypeMatchesFieldType(input, AutofillType(field_type));
-}
-
-// Constructs |inputs| from template data.
-void BuildInputs(const DetailInput* input_template,
-                 size_t template_size,
-                 DetailInputs* inputs) {
-  for (size_t i = 0; i < template_size; ++i) {
-    const DetailInput* input = &input_template[i];
-    inputs->push_back(*input);
-  }
+  return common::InputTypeMatchesFieldType(input, AutofillType(field_type));
 }
 
 // Initializes |form_group| from user-entered data.
@@ -225,7 +175,7 @@ void GetBillingInfoFromOutputs(const DetailOutputMap& output,
       if (card && it->first->type == NAME_FULL)
         card->SetRawInfo(CREDIT_CARD_NAME, trimmed);
 
-      if (IsCreditCardType(it->first->type)) {
+      if (common::IsCreditCardType(it->first->type)) {
         if (card)
           card->SetRawInfo(it->first->type, trimmed);
       } else if (profile) {
@@ -247,7 +197,7 @@ ui::BaseWindow* GetBaseWindowForWebContents(
   gfx::NativeWindow native_window =
       web_contents->GetView()->GetTopLevelNativeWindow();
   apps::ShellWindow* shell_window =
-      extensions::ShellWindowRegistry::
+      apps::ShellWindowRegistry::
           GetShellWindowForNativeWindowAnyProfile(native_window);
   return shell_window->GetBaseWindow();
 }
@@ -385,6 +335,14 @@ base::string16 WalletErrorMessage(wallet::WalletClient::ErrorType error_type) {
     case wallet::WalletClient::BUYER_ACCOUNT_ERROR:
       return l10n_util::GetStringUTF16(IDS_AUTOFILL_WALLET_BUYER_ACCOUNT_ERROR);
 
+    case wallet::WalletClient::BUYER_LEGAL_ADDRESS_NOT_SUPPORTED:
+      return l10n_util::GetStringUTF16(
+          IDS_AUTOFILL_WALLET_BUYER_COUNTRY_NOT_SUPPORTED);
+
+    case wallet::WalletClient::UNSUPPORTED_MERCHANT:
+      return l10n_util::GetStringUTF16(
+          IDS_AUTOFILL_WALLET_UNSUPPORTED_MERCHANT);
+
     case wallet::WalletClient::BAD_REQUEST:
       return l10n_util::GetStringFUTF16(
           IDS_AUTOFILL_WALLET_UPGRADE_CHROME_ERROR,
@@ -394,6 +352,10 @@ base::string16 WalletErrorMessage(wallet::WalletClient::ErrorType error_type) {
       return l10n_util::GetStringFUTF16(
           IDS_AUTOFILL_WALLET_UPGRADE_CHROME_ERROR,
           ASCIIToUTF16("42"));
+
+    case wallet::WalletClient::UNVERIFIED_KNOW_YOUR_CUSTOMER_STATUS:
+      return l10n_util::GetStringUTF16(
+          IDS_AUTOFILL_WALLET_UNVERIFIED_KNOW_YOUR_CUSTOMER_STATUS);
 
     case wallet::WalletClient::UNSUPPORTED_API_VERSION:
       return l10n_util::GetStringFUTF16(
@@ -432,7 +394,6 @@ gfx::Image GetGeneratedCardImage(const string16& card_number) {
   gfx::Canvas canvas(card->size(), ui::SCALE_FACTOR_100P, false);
   canvas.DrawImageInt(*card, 0, 0);
 
-#if !defined(OS_ANDROID)
   gfx::Rect display_rect(gfx::Point(), card->size());
   display_rect.Inset(14, 0, 14, 0);
   // TODO(estade): fallback font for systems that don't have Helvetica?
@@ -446,7 +407,6 @@ gfx::Image GetGeneratedCardImage(const string16& card_number) {
       helvetica,
       SK_ColorWHITE,
       display_rect, 0, 0, shadows);
-#endif
 
   gfx::ImageSkia skia(canvas.ExtractImageRep());
   return gfx::Image(skia);
@@ -470,7 +430,6 @@ AutofillDialogControllerImpl::~AutofillDialogControllerImpl() {
   }
 }
 
-#if !defined(OS_ANDROID)
 // static
 base::WeakPtr<AutofillDialogControllerImpl>
     AutofillDialogControllerImpl::Create(
@@ -489,7 +448,6 @@ base::WeakPtr<AutofillDialogControllerImpl>
                                        callback);
   return autofill_dialog_controller->weak_ptr_factory_.GetWeakPtr();
 }
-#endif  // !defined(OS_ANDROID)
 
 // static
 void AutofillDialogControllerImpl::RegisterProfilePrefs(
@@ -509,6 +467,27 @@ void AutofillDialogControllerImpl::RegisterProfilePrefs(
   registry->RegisterDictionaryPref(
       ::prefs::kAutofillDialogAutofillDefault,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+}
+
+// static
+base::WeakPtr<AutofillDialogController> AutofillDialogController::Create(
+    content::WebContents* contents,
+    const FormData& form_structure,
+    const GURL& source_url,
+    const DialogType dialog_type,
+    const base::Callback<void(const FormStructure*,
+                              const std::string&)>& callback) {
+  return AutofillDialogControllerImpl::Create(contents,
+                                              form_structure,
+                                              source_url,
+                                              dialog_type,
+                                              callback);
+}
+
+// static
+void AutofillDialogController::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  AutofillDialogControllerImpl::RegisterProfilePrefs(registry);
 }
 
 void AutofillDialogControllerImpl::Show() {
@@ -551,70 +530,16 @@ void AutofillDialogControllerImpl::Show() {
     return;
   }
 
-  const DetailInput kEmailInputs[] = {
-    { 1, EMAIL_ADDRESS, IDS_AUTOFILL_DIALOG_PLACEHOLDER_EMAIL },
-  };
-
-  const DetailInput kCCInputs[] = {
-    { 2, CREDIT_CARD_NUMBER, IDS_AUTOFILL_DIALOG_PLACEHOLDER_CARD_NUMBER },
-    { 3, CREDIT_CARD_EXP_MONTH },
-    { 3, CREDIT_CARD_EXP_4_DIGIT_YEAR },
-    { 3, CREDIT_CARD_VERIFICATION_CODE, IDS_AUTOFILL_DIALOG_PLACEHOLDER_CVC,
-      1.5 },
-  };
-
-  const DetailInput kBillingInputs[] = {
-    { 4, NAME_BILLING_FULL, IDS_AUTOFILL_DIALOG_PLACEHOLDER_CARDHOLDER_NAME },
-    { 5, ADDRESS_BILLING_LINE1,
-      IDS_AUTOFILL_DIALOG_PLACEHOLDER_ADDRESS_LINE_1 },
-    { 6, ADDRESS_BILLING_LINE2,
-      IDS_AUTOFILL_DIALOG_PLACEHOLDER_ADDRESS_LINE_2 },
-    { 7, ADDRESS_BILLING_CITY,
-      IDS_AUTOFILL_DIALOG_PLACEHOLDER_LOCALITY },
-    // TODO(estade): state placeholder should depend on locale.
-    { 8, ADDRESS_BILLING_STATE, IDS_AUTOFILL_FIELD_LABEL_STATE },
-    { 8, ADDRESS_BILLING_ZIP,
-      IDS_AUTOFILL_DIALOG_PLACEHOLDER_POSTAL_CODE },
-    // We don't allow the user to change the country: http://crbug.com/247518
-    { -1, ADDRESS_BILLING_COUNTRY, 0 },
-    { 10, PHONE_BILLING_WHOLE_NUMBER,
-      IDS_AUTOFILL_DIALOG_PLACEHOLDER_PHONE_NUMBER },
-  };
-
-  const DetailInput kShippingInputs[] = {
-    { 11, NAME_FULL, IDS_AUTOFILL_DIALOG_PLACEHOLDER_ADDRESSEE_NAME },
-    { 12, ADDRESS_HOME_LINE1, IDS_AUTOFILL_DIALOG_PLACEHOLDER_ADDRESS_LINE_1 },
-    { 13, ADDRESS_HOME_LINE2, IDS_AUTOFILL_DIALOG_PLACEHOLDER_ADDRESS_LINE_2 },
-    { 14, ADDRESS_HOME_CITY, IDS_AUTOFILL_DIALOG_PLACEHOLDER_LOCALITY },
-    { 15, ADDRESS_HOME_STATE, IDS_AUTOFILL_FIELD_LABEL_STATE },
-    { 15, ADDRESS_HOME_ZIP, IDS_AUTOFILL_DIALOG_PLACEHOLDER_POSTAL_CODE },
-    { -1, ADDRESS_HOME_COUNTRY, 0 },
-    { 17, PHONE_HOME_WHOLE_NUMBER,
-      IDS_AUTOFILL_DIALOG_PLACEHOLDER_PHONE_NUMBER },
-  };
-
-  BuildInputs(kEmailInputs,
-              arraysize(kEmailInputs),
-              &requested_email_fields_);
-
-  BuildInputs(kCCInputs,
-              arraysize(kCCInputs),
-              &requested_cc_fields_);
-
-  BuildInputs(kBillingInputs,
-              arraysize(kBillingInputs),
-              &requested_billing_fields_);
-
-  BuildInputs(kCCInputs,
-              arraysize(kCCInputs),
-              &requested_cc_billing_fields_);
-  BuildInputs(kBillingInputs,
-              arraysize(kBillingInputs),
-              &requested_cc_billing_fields_);
-
-  BuildInputs(kShippingInputs,
-              arraysize(kShippingInputs),
-              &requested_shipping_fields_);
+  common::BuildInputsForSection(SECTION_EMAIL,
+                                &requested_email_fields_);
+  common::BuildInputsForSection(SECTION_CC,
+                                &requested_cc_fields_);
+  common::BuildInputsForSection(SECTION_BILLING,
+                                &requested_billing_fields_);
+  common::BuildInputsForSection(SECTION_CC_BILLING,
+                                &requested_cc_billing_fields_);
+  common::BuildInputsForSection(SECTION_SHIPPING,
+                                &requested_shipping_fields_);
 
   // Test whether we need to show the shipping section. If filling that section
   // would be a no-op, don't show it.
@@ -622,7 +547,7 @@ void AutofillDialogControllerImpl::Show() {
   EmptyDataModelWrapper empty_wrapper;
   cares_about_shipping_ = empty_wrapper.FillFormStructure(
       inputs,
-      base::Bind(DetailInputMatchesField, SECTION_SHIPPING),
+      base::Bind(common::DetailInputMatchesField, SECTION_SHIPPING),
       &form_structure_);
 
   SuggestionsUpdated();
@@ -788,9 +713,8 @@ bool AutofillDialogControllerImpl::ShouldShowSpinner() const {
 }
 
 string16 AutofillDialogControllerImpl::AccountChooserText() const {
-  // TODO(aruslan): this should be l10n "Not using Google Wallet".
   if (!account_chooser_model_.WalletIsSelected())
-    return l10n_util::GetStringUTF16(IDS_AUTOFILL_DIALOG_PAY_WITHOUT_WALLET);
+    return l10n_util::GetStringUTF16(IDS_AUTOFILL_DIALOG_PAYING_WITHOUT_WALLET);
 
   if (SignedInState() == SIGNED_IN)
     return account_chooser_model_.active_wallet_account_name();
@@ -802,14 +726,15 @@ string16 AutofillDialogControllerImpl::AccountChooserText() const {
 string16 AutofillDialogControllerImpl::SignInLinkText() const {
   return l10n_util::GetStringUTF16(
       signin_registrar_.IsEmpty() ? IDS_AUTOFILL_DIALOG_SIGN_IN :
-                                    IDS_AUTOFILL_DIALOG_PAY_WITHOUT_WALLET);
+                                    IDS_AUTOFILL_DIALOG_CANCEL_SIGN_IN);
 }
 
 bool AutofillDialogControllerImpl::ShouldOfferToSaveInChrome() const {
   return !IsPayingWithWallet() &&
       !profile_->IsOffTheRecord() &&
       IsManuallyEditingAnySection() &&
-      ShouldShowDetailArea();
+      ShouldShowDetailArea() &&
+      !ShouldShowSpinner();
 }
 
 int AutofillDialogControllerImpl::GetDialogButtons() const {
@@ -853,10 +778,7 @@ DialogOverlayState AutofillDialogControllerImpl::GetDialogOverlay() const {
 
   state.strings.push_back(DialogOverlayString());
   DialogOverlayString& string = state.strings.back();
-#if !defined(OS_ANDROID)
-  // gfx::Font isn't implemented on Android; DeriveFont() causes a null deref.
   string.font = rb.GetFont(ui::ResourceBundle::BaseFont).DeriveFont(4);
-#endif
 
   // First-run, post-submit, Wallet expository page.
   if (full_wallet_ && full_wallet_->required_actions().empty()) {
@@ -1102,13 +1024,13 @@ void AutofillDialogControllerImpl::ShowEditUiIfBadSuggestion(
   }
 }
 
-bool AutofillDialogControllerImpl::InputWasEdited(const DetailInput& input,
+bool AutofillDialogControllerImpl::InputWasEdited(ServerFieldType type,
                                                   const base::string16& value) {
   if (value.empty())
     return false;
 
-  // If this is a combobox at the default value, don't preserve.
-  ui::ComboboxModel* model = ComboboxModelForAutofillType(input.type);
+  // If this is a combobox at the default value, don't preserve it.
+  ui::ComboboxModel* model = ComboboxModelForAutofillType(type);
   if (model && model->GetItemAt(model->GetDefaultIndex()) == value)
     return false;
 
@@ -1131,7 +1053,7 @@ DetailOutputMap AutofillDialogControllerImpl::TakeUserInputSnapshot() {
     // Remove fields that are empty, at their default values, or invalid.
     for (DetailOutputMap::iterator it = outputs.begin(); it != outputs.end();
          ++it) {
-      if (InputWasEdited(*it->first, it->second) &&
+      if (InputWasEdited(it->first->type, it->second) &&
           InputValidityMessage(section, it->first->type, it->second).empty()) {
         snapshot.insert(std::make_pair(it->first, it->second));
       }
@@ -1156,7 +1078,7 @@ void AutofillDialogControllerImpl::RestoreUserInputFromSnapshot(
     wrapper.FillInputs(inputs);
 
     for (size_t i = 0; i < inputs->size(); ++i) {
-      if (InputWasEdited((*inputs)[i], (*inputs)[i].initial_value)) {
+      if (InputWasEdited((*inputs)[i].type, (*inputs)[i].initial_value)) {
         SuggestionsMenuModelForSection(section)->SetCheckedItem(kAddNewItemKey);
         break;
       }
@@ -1507,7 +1429,7 @@ void AutofillDialogControllerImpl::EditClickedForSection(
   UpdateSection(section);
 
   GetMetricLogger().LogDialogUiEvent(
-      GetDialogType(), DialogSectionToUiEditEvent(section));
+      GetDialogType(), common::DialogSectionToUiEditEvent(section));
 }
 
 void AutofillDialogControllerImpl::EditCancelledForSection(
@@ -1602,7 +1524,17 @@ string16 AutofillDialogControllerImpl::InputValidityMessage(
     }
 
     case CREDIT_CARD_EXP_MONTH:
+      if (!InputWasEdited(CREDIT_CARD_EXP_MONTH, value)) {
+        return l10n_util::GetStringUTF16(
+            IDS_AUTOFILL_DIALOG_VALIDATION_MISSING_VALUE);
+      }
+      break;
+
     case CREDIT_CARD_EXP_4_DIGIT_YEAR:
+      if (!InputWasEdited(CREDIT_CARD_EXP_4_DIGIT_YEAR, value)) {
+        return l10n_util::GetStringUTF16(
+            IDS_AUTOFILL_DIALOG_VALIDATION_MISSING_VALUE);
+      }
       break;
 
     case CREDIT_CARD_VERIFICATION_CODE:
@@ -1672,11 +1604,16 @@ ValidityData AutofillDialogControllerImpl::InputsAreValid(
   std::map<ServerFieldType, string16> field_values;
   for (DetailOutputMap::const_iterator iter = inputs.begin();
        iter != inputs.end(); ++iter) {
-    // Skip empty fields in edit mode.
-    if (validation_type == VALIDATE_EDIT && iter->second.empty())
-      continue;
-
     const ServerFieldType type = iter->first->type;
+
+    // Skip empty/unchanged fields in edit mode. Ignore country code as it
+    // always has a value.
+    if (validation_type == VALIDATE_EDIT &&
+        !InputWasEdited(type, iter->second) &&
+        ComboboxModelForAutofillType(type) != &country_combobox_model_) {
+      continue;
+    }
+
     string16 message = InputValidityMessage(section, type, iter->second);
     if (!message.empty())
       invalid_messages[type] = message;
@@ -1688,6 +1625,10 @@ ValidityData AutofillDialogControllerImpl::InputsAreValid(
   // never supposed to have 2-digit years, so not checked).
   if (field_values.count(CREDIT_CARD_EXP_4_DIGIT_YEAR) &&
       field_values.count(CREDIT_CARD_EXP_MONTH) &&
+      InputWasEdited(CREDIT_CARD_EXP_4_DIGIT_YEAR,
+                     field_values[CREDIT_CARD_EXP_4_DIGIT_YEAR]) &&
+      InputWasEdited(CREDIT_CARD_EXP_MONTH,
+                     field_values[CREDIT_CARD_EXP_MONTH]) &&
       !IsCreditCardExpirationValid(field_values[CREDIT_CARD_EXP_4_DIGIT_YEAR],
                                    field_values[CREDIT_CARD_EXP_MONTH])) {
     // The dialog shows the same error message for the month and year fields.
@@ -1761,7 +1702,7 @@ void AutofillDialogControllerImpl::UserEditedOrActivatedInput(
   }
 
   std::vector<string16> popup_values, popup_labels, popup_icons;
-  if (IsCreditCardType(input->type)) {
+  if (common::IsCreditCardType(input->type)) {
     GetManager()->GetCreditCardSuggestions(AutofillType(input->type),
                                            field_contents,
                                            &popup_values,
@@ -2063,7 +2004,7 @@ void AutofillDialogControllerImpl::DidAcceptSuggestion(const string16& value,
   const PersonalDataManager::GUIDPair& pair = popup_guids_[identifier];
 
   scoped_ptr<DataModelWrapper> wrapper;
-  if (IsCreditCardType(input_showing_popup_->type)) {
+  if (common::IsCreditCardType(input_showing_popup_->type)) {
     wrapper.reset(new AutofillCreditCardWrapper(
         GetManager()->GetCreditCardByGUID(pair.first)));
   } else {
@@ -2338,7 +2279,7 @@ bool AutofillDialogControllerImpl::RequestingCreditCardInfo() const {
 
   for (size_t i = 0; i < form_structure_.field_count(); ++i) {
     AutofillType type = form_structure_.field(i)->Type();
-    if (IsCreditCardType(type.GetStorableType()))
+    if (common::IsCreditCardType(type.GetStorableType()))
       return true;
   }
 
@@ -2347,6 +2288,16 @@ bool AutofillDialogControllerImpl::RequestingCreditCardInfo() const {
 
 bool AutofillDialogControllerImpl::TransmissionWillBeSecure() const {
   return source_url_.SchemeIs(chrome::kHttpsScheme);
+}
+
+void AutofillDialogControllerImpl::ShowNewCreditCardBubble(
+    scoped_ptr<CreditCard> new_card,
+    scoped_ptr<AutofillProfile> billing_profile) {
+#if !defined(OS_ANDROID)
+  NewCreditCardBubbleController::Show(profile(),
+                                      new_card.Pass(),
+                                      billing_profile.Pass());
+#endif
 }
 
 AutofillDialogControllerImpl::AutofillDialogControllerImpl(
@@ -2416,9 +2367,7 @@ void AutofillDialogControllerImpl::LoadRiskFingerprintData() {
   DCHECK(success);
 
   gfx::Rect window_bounds;
-#if !defined(OS_ANDROID)
   window_bounds = GetBaseWindowForWebContents(web_contents())->GetBounds();
-#endif
 
   PrefService* user_prefs = profile_->GetPrefs();
   std::string charset = user_prefs->GetString(::prefs::kDefaultCharset);
@@ -2448,14 +2397,12 @@ void AutofillDialogControllerImpl::OnDidLoadRiskFingerprintData(
 }
 
 void AutofillDialogControllerImpl::OpenTabWithUrl(const GURL& url) {
-#if !defined(OS_ANDROID)
   chrome::NavigateParams params(
       chrome::FindBrowserWithWebContents(web_contents()),
       url,
       content::PAGE_TRANSITION_AUTO_BOOKMARK);
   params.disposition = NEW_FOREGROUND_TAB;
   chrome::Navigate(&params);
-#endif
 }
 
 bool AutofillDialogControllerImpl::IsEditingExistingData(
@@ -2782,7 +2729,7 @@ void AutofillDialogControllerImpl::FillOutputForSectionWithComparator(
 
 void AutofillDialogControllerImpl::FillOutputForSection(DialogSection section) {
   FillOutputForSectionWithComparator(
-      section, base::Bind(DetailInputMatchesField, section));
+      section, base::Bind(common::DetailInputMatchesField, section));
 }
 
 bool AutofillDialogControllerImpl::FormStructureCaresAboutSection(
@@ -3384,10 +3331,10 @@ void AutofillDialogControllerImpl::LogSuggestionItemSelectedMetric(
   AutofillMetrics::DialogUiEvent dialog_ui_event;
   if (model.GetItemKeyForCheckedItem() == kAddNewItemKey) {
     // Selected to add a new item.
-    dialog_ui_event = DialogSectionToUiItemAddedEvent(section);
+    dialog_ui_event = common::DialogSectionToUiItemAddedEvent(section);
   } else if (IsASuggestionItemKey(model.GetItemKeyForCheckedItem())) {
     // Selected an existing item.
-    dialog_ui_event = DialogSectionToUiSelectionChangedEvent(section);
+    dialog_ui_event = common::DialogSectionToUiSelectionChangedEvent(section);
   } else {
     // TODO(estade): add logging for "Manage items" or "Use billing for
     // shipping"?
@@ -3463,8 +3410,28 @@ void AutofillDialogControllerImpl::MaybeShowCreditCardBubble() {
     return;
 
   if (newly_saved_card_) {
-    AutofillCreditCardBubbleController::ShowNewCardSavedBubble(
-        web_contents(), newly_saved_card_->TypeAndLastFourDigits());
+    scoped_ptr<AutofillProfile> billing_profile;
+    if (IsManuallyEditingSection(SECTION_BILLING)) {
+      // Scrape the view as the user's entering or updating information.
+      DetailOutputMap outputs;
+      view_->GetUserInput(SECTION_BILLING, &outputs);
+      billing_profile.reset(new AutofillProfile);
+      FillFormGroupFromOutputs(outputs, billing_profile.get());
+    } else {
+      // Just snag the currently suggested profile.
+      std::string item_key = SuggestionsMenuModelForSection(SECTION_BILLING)->
+          GetItemKeyForCheckedItem();
+      AutofillProfile* profile = GetManager()->GetProfileByGUID(item_key);
+      billing_profile.reset(new AutofillProfile(*profile));
+    }
+
+    // The bubble also needs the associated email address.
+    billing_profile->SetRawInfo(
+        EMAIL_ADDRESS,
+        GetValueFromSection(SECTION_EMAIL, EMAIL_ADDRESS));
+
+    ShowNewCreditCardBubble(newly_saved_card_.Pass(),
+                            billing_profile.Pass());
     return;
   }
 
@@ -3487,8 +3454,12 @@ void AutofillDialogControllerImpl::MaybeShowCreditCardBubble() {
     GetBillingInfoFromOutputs(output, &card, NULL, NULL);
     backing_last_four = card.TypeAndLastFourDigits();
   }
-  AutofillCreditCardBubbleController::ShowGeneratedCardUI(
-      web_contents(), backing_last_four, full_wallet_->TypeAndLastFourDigits());
+#if !defined(OS_ANDROID)
+  GeneratedCreditCardBubbleController::Show(
+      web_contents(),
+      backing_last_four,
+      full_wallet_->TypeAndLastFourDigits());
+#endif
 }
 
 }  // namespace autofill

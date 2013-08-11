@@ -17,13 +17,12 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_settings_pattern.h"
-#include "chrome/common/extensions/chrome_manifest_handlers.h"
+#include "chrome/common/extensions/chrome_extensions_client.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_process_policy.h"
 #include "chrome/common/extensions/extension_set.h"
-#include "chrome/common/extensions/permissions/chrome_api_permissions.h"
 #include "chrome/common/external_ipc_fuzzer.h"
 #include "chrome/common/localized_error.h"
 #include "chrome/common/pepper_permission_util.h"
@@ -344,9 +343,8 @@ void ChromeContentRendererClient::RenderThreadStarted() {
   WebSecurityPolicy::registerURLSchemeAsBypassingContentSecurityPolicy(
       extension_resource_scheme);
 
-  extensions::PermissionsInfo::GetInstance()->InitializeWithDelegate(
-      extensions::ChromeAPIPermissions());
-  extensions::RegisterChromeManifestHandlers();
+  extensions::ExtensionsClient::Set(
+      extensions::ChromeExtensionsClient::GetInstance());
 }
 
 void ChromeContentRendererClient::RenderViewCreated(
@@ -1087,7 +1085,7 @@ ChromeContentRendererClient::GetPrescientNetworking() {
 
 bool ChromeContentRendererClient::ShouldOverridePageVisibilityState(
     const content::RenderView* render_view,
-    WebKit::WebPageVisibilityState* override_state) const {
+    WebKit::WebPageVisibilityState* override_state) {
   if (!prerender::PrerenderHelper::IsPrerendering(render_view))
     return false;
 
@@ -1228,8 +1226,16 @@ const void* ChromeContentRendererClient::CreatePPAPIInterface(
   return NULL;
 }
 
+bool ChromeContentRendererClient::IsExternalPepperPlugin(
+    const std::string& module_name) {
+  // TODO(bbudge) remove this when the trusted NaCl plugin has been removed.
+  // We must defer certain plugin events for NaCl instances since we switch
+  // from the in-process to the out-of-process proxy after instantiating them.
+  return module_name == "Native Client";
+}
+
 bool ChromeContentRendererClient::IsPluginAllowedToCallRequestOSFileHandle(
-    WebKit::WebPluginContainer* container) const {
+    WebKit::WebPluginContainer* container) {
 #if defined(ENABLE_PLUGINS)
   if (!container)
     return false;
@@ -1252,7 +1258,7 @@ ChromeContentRendererClient::OverrideSpeechSynthesizer(
 }
 
 bool ChromeContentRendererClient::AllowBrowserPlugin(
-    WebKit::WebPluginContainer* container) const {
+    WebKit::WebPluginContainer* container) {
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableBrowserPluginForAllViewTypes))
     return true;
@@ -1278,7 +1284,7 @@ bool ChromeContentRendererClient::AllowBrowserPlugin(
 }
 
 bool ChromeContentRendererClient::AllowPepperMediaStreamAPI(
-    const GURL& url) const {
+    const GURL& url) {
 #if !defined(OS_ANDROID)
   std::string host = url.host();
   // Allow only the Hangouts app to use the MediaStream APIs. It's OK to check

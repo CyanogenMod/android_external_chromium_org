@@ -44,7 +44,7 @@ remoting.ThirdPartyTokenFetcher = function(
   this.xsrfToken_ = remoting.generateXsrfToken();
   this.tokenUrlPatterns_ = tokenUrlPatterns;
   this.hostPublicKey_ = hostPublicKey;
-  if (chrome.experimental && chrome.experimental.identity) {
+  if (chrome.identity) {
     /** @type {function():void}
      * @private */
     this.fetchTokenInternal_ = this.fetchTokenIdentityApi_.bind(this);
@@ -93,9 +93,9 @@ remoting.ThirdPartyTokenFetcher.prototype.parseRedirectUrl_ =
     function(responseUrl) {
   var token = '';
   var sharedSecret = '';
-  if (responseUrl &&
-      responseUrl.search(this.redirectUri_ + '#') == 0) {
-    var query = responseUrl.substring(this.redirectUri_.length + 1);
+
+  if (responseUrl && responseUrl.search('#') >= 0) {
+    var query = responseUrl.substring(responseUrl.search('#') + 1);
     var parts = query.split('&');
     /** @type {Object.<string>} */
     var queryArgs = {};
@@ -105,8 +105,7 @@ remoting.ThirdPartyTokenFetcher.prototype.parseRedirectUrl_ =
     }
 
     // Check that 'state' contains the same XSRF token we sent in the request.
-    var xsrfToken = queryArgs['state'];
-    if (xsrfToken == this.xsrfToken_ &&
+    if ('state' in queryArgs && queryArgs['state'] == this.xsrfToken_ &&
         'code' in queryArgs && 'access_token' in queryArgs) {
       // Terminology note:
       // In the OAuth code/token exchange semantics, 'code' refers to the value
@@ -169,8 +168,7 @@ remoting.ThirdPartyTokenFetcher.prototype.fetchTokenWindowOpen_ = function() {
  */
 remoting.ThirdPartyTokenFetcher.prototype.fetchTokenIdentityApi_ = function() {
   var fullTokenUrl = this.getFullTokenUrl_();
-  // TODO(rmsousa): chrome.identity.launchWebAuthFlow is experimental.
-  chrome.experimental.identity.launchWebAuthFlow(
+  chrome.identity.launchWebAuthFlow(
     {'url': fullTokenUrl, 'interactive': true},
     this.parseRedirectUrl_.bind(this));
 };

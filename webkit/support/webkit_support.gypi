@@ -34,7 +34,6 @@
         '<(DEPTH)/webkit/storage_renderer.gyp:webkit_storage_renderer',
         'glue',
         'glue_child',
-        'plugins',
         'webkit_support_common',
       ],
       'include_dirs': [
@@ -98,7 +97,6 @@
       'variables': { 'enable_wexit_time_destructors': 1, },
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
-        '<(DEPTH)/crypto/crypto.gyp:crypto',
         '<(DEPTH)/net/net.gyp:net',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/zlib/zlib.gyp:zlib',

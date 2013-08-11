@@ -288,8 +288,8 @@ void TrayBackgroundView::TrayContainer::UpdateLayout() {
     set_border(views::Border::CreateEmptyBorder(
         vertical_padding,
         horizontal_padding,
-        horizontal_padding,
-        vertical_padding));
+        vertical_padding,
+        horizontal_padding));
 
     views::BoxLayout* layout =
         new views::BoxLayout(views::BoxLayout::kHorizontal, 0, 0, 0);
@@ -530,11 +530,15 @@ gfx::Rect TrayBackgroundView::GetBubbleAnchorRect(
       }
     } else if (anchor_type == TrayBubbleView::ANCHOR_TYPE_BUBBLE) {
       // Invert the offsets to align with the bubble below.
+      // Note that with the alternate shelf layout the tips are not shown and
+      // the offsets for left and right alignment do not need to be applied.
+      int vertical_alignment = ash::switches::UseAlternateShelfLayout() ?
+          0 : kPaddingFromInnerEdgeOfLauncherVerticalAlignment;
       if (anchor_alignment == TrayBubbleView::ANCHOR_ALIGNMENT_LEFT) {
-        rect.Inset(kPaddingFromInnerEdgeOfLauncherVerticalAlignment,
+        rect.Inset(vertical_alignment,
                    0, 0, kPaddingFromBottomOfScreenVerticalAlignment);
       } else if (anchor_alignment == TrayBubbleView::ANCHOR_ALIGNMENT_RIGHT) {
-        rect.Inset(0, 0, kPaddingFromInnerEdgeOfLauncherVerticalAlignment,
+        rect.Inset(0, 0, vertical_alignment,
                    kPaddingFromBottomOfScreenVerticalAlignment);
       }
     }

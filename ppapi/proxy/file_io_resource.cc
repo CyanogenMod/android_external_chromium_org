@@ -5,11 +5,14 @@
 #include "ppapi/proxy/file_io_resource.h"
 
 #include "base/bind.h"
+#include "base/task_runner_util.h"
 #include "ipc/ipc_message.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/shared_impl/array_writer.h"
+#include "ppapi/shared_impl/file_type_conversion.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
+#include "ppapi/shared_impl/proxy_lock.h"
 #include "ppapi/shared_impl/resource_tracker.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_file_ref_api.h"
@@ -20,9 +23,19 @@ using ppapi::thunk::PPB_FileRef_API;
 
 namespace {
 
+// We must allocate a buffer sized according to the request of the plugin. To
+// reduce the chance of out-of-memory errors, we cap the read size to 32MB.
+// This is OK since the API specifies that it may perform a partial read.
+static const int32_t kMaxReadSize = 32 * 1024 * 1024;  // 32MB
+
 // An adapter to let Read() share the same implementation with ReadToArray().
 void* DummyGetDataBuffer(void* user_data, uint32_t count, uint32_t size) {
   return user_data;
+}
+
+// File thread task to close the file handle.
+void DoClose(base::PlatformFile file) {
+  base::ClosePlatformFile(file);
 }
 
 }  // namespace
@@ -30,12 +43,45 @@ void* DummyGetDataBuffer(void* user_data, uint32_t count, uint32_t size) {
 namespace ppapi {
 namespace proxy {
 
+FileIOResource::QueryOp::QueryOp(PP_FileHandle file_handle)
+    : file_handle_(file_handle) {
+}
+
+FileIOResource::QueryOp::~QueryOp() {
+}
+
+int32_t FileIOResource::QueryOp::DoWork() {
+  return base::GetPlatformFileInfo(file_handle_, &file_info_) ?
+      PP_OK : PP_ERROR_FAILED;
+}
+
+FileIOResource::ReadOp::ReadOp(PP_FileHandle file_handle,
+                               int64_t offset,
+                               int32_t bytes_to_read)
+  : file_handle_(file_handle),
+    offset_(offset),
+    bytes_to_read_(bytes_to_read) {
+}
+
+FileIOResource::ReadOp::~ReadOp() {
+}
+
+int32_t FileIOResource::ReadOp::DoWork() {
+  DCHECK(!buffer_.get());
+  buffer_.reset(new char[bytes_to_read_]);
+  return base::ReadPlatformFile(
+      file_handle_, offset_, buffer_.get(), bytes_to_read_);
+}
+
 FileIOResource::FileIOResource(Connection connection, PP_Instance instance)
-    : PluginResource(connection, instance) {
+    : PluginResource(connection, instance),
+      file_handle_(base::kInvalidPlatformFileValue),
+      file_system_type_(PP_FILESYSTEMTYPE_INVALID) {
   SendCreate(RENDERER, PpapiHostMsg_FileIO_Create());
 }
 
 FileIOResource::~FileIOResource() {
+  CloseFileHandle();
 }
 
 PPB_FileIO_API* FileIOResource::AsPPB_FileIO_API() {
@@ -49,6 +95,17 @@ int32_t FileIOResource::Open(PP_Resource file_ref,
   if (enter.failed())
     return PP_ERROR_BADRESOURCE;
 
+  PPB_FileRef_API* file_ref_api = enter.object();
+  PP_FileSystemType type = file_ref_api->GetFileSystemType();
+  if (type != PP_FILESYSTEMTYPE_LOCALPERSISTENT &&
+      type != PP_FILESYSTEMTYPE_LOCALTEMPORARY &&
+      type != PP_FILESYSTEMTYPE_EXTERNAL &&
+      type != PP_FILESYSTEMTYPE_ISOLATED) {
+    NOTREACHED();
+    return PP_ERROR_FAILED;
+  }
+  file_system_type_ = type;
+
   int32_t rv = state_manager_.CheckOperationState(
       FileIOStateManager::OPERATION_EXCLUSIVE, false);
   if (rv != PP_OK)
@@ -56,7 +113,7 @@ int32_t FileIOResource::Open(PP_Resource file_ref,
 
   Call<PpapiPluginMsg_FileIO_OpenReply>(RENDERER,
       PpapiHostMsg_FileIO_Open(
-          enter.resource()->host_resource().host_resource(),
+          file_ref,
           open_flags),
       base::Bind(&FileIOResource::OnPluginMsgOpenFileComplete, this,
                  callback));
@@ -71,13 +128,35 @@ int32_t FileIOResource::Query(PP_FileInfo* info,
       FileIOStateManager::OPERATION_EXCLUSIVE, true);
   if (rv != PP_OK)
     return rv;
-
-  Call<PpapiPluginMsg_FileIO_QueryReply>(RENDERER,
-      PpapiHostMsg_FileIO_Query(),
-      base::Bind(&FileIOResource::OnPluginMsgQueryComplete, this,
-                 callback, info));
+  if (!info)
+    return PP_ERROR_BADARGUMENT;
+  if (file_handle_ == base::kInvalidPlatformFileValue)
+    return PP_ERROR_FAILED;
 
   state_manager_.SetPendingOperation(FileIOStateManager::OPERATION_EXCLUSIVE);
+  scoped_refptr<QueryOp> query_op(new QueryOp(file_handle_));
+
+  // If the callback is blocking, perform the task on the calling thread.
+  if (callback->is_blocking()) {
+    int32_t result;
+    {
+      // Release the proxy lock while making a potentially slow file call.
+      ProxyAutoUnlock unlock;
+      result = query_op->DoWork();
+    }
+    return OnQueryComplete(query_op, info, result);
+  }
+
+  // For the non-blocking case, post a task to the file thread and add a
+  // completion task to write the result.
+  base::PostTaskAndReplyWithResult(
+      PpapiGlobals::Get()->GetFileTaskRunner(pp_instance()),
+      FROM_HERE,
+      Bind(&FileIOResource::QueryOp::DoWork, query_op),
+      RunWhileLocked(Bind(&TrackedCallback::Run, callback)));
+  callback->set_completion_task(
+      Bind(&FileIOResource::OnQueryComplete, this, query_op, info));
+
   return PP_OK_COMPLETIONPENDING;
 }
 
@@ -110,7 +189,6 @@ int32_t FileIOResource::Read(int64_t offset,
   PP_ArrayOutput output_adapter;
   output_adapter.GetDataBuffer = &DummyGetDataBuffer;
   output_adapter.user_data = buffer;
-  state_manager_.SetPendingOperation(FileIOStateManager::OPERATION_READ);
   return ReadValidated(offset, bytes_to_read, output_adapter, callback);
 }
 
@@ -124,7 +202,6 @@ int32_t FileIOResource::ReadToArray(int64_t offset,
   if (rv != PP_OK)
     return rv;
 
-  state_manager_.SetPendingOperation(FileIOStateManager::OPERATION_READ);
   return ReadValidated(offset, max_read_length, *array_output, callback);
 }
 
@@ -181,6 +258,7 @@ int32_t FileIOResource::Flush(scoped_refptr<TrackedCallback> callback) {
 }
 
 void FileIOResource::Close() {
+  CloseFileHandle();
   Post(RENDERER, PpapiHostMsg_FileIO_Close());
 }
 
@@ -190,38 +268,6 @@ int32_t FileIOResource::GetOSFileDescriptor() {
   SyncCall<PpapiPluginMsg_FileIO_GetOSFileDescriptorReply>(
       RENDERER, PpapiHostMsg_FileIO_GetOSFileDescriptor(), &file_descriptor);
   return file_descriptor;
-}
-
-int32_t FileIOResource::WillWrite(int64_t offset,
-                                  int32_t bytes_to_write,
-                                  scoped_refptr<TrackedCallback> callback) {
-  Call<PpapiPluginMsg_FileIO_GeneralReply>(RENDERER,
-      PpapiHostMsg_FileIO_WillWrite(offset, bytes_to_write),
-      base::Bind(&FileIOResource::OnPluginMsgGeneralComplete, this,
-                 callback));
-  state_manager_.SetPendingOperation(FileIOStateManager::OPERATION_EXCLUSIVE);
-  return PP_OK_COMPLETIONPENDING;
-}
-
-int32_t FileIOResource::WillSetLength(int64_t length,
-                                      scoped_refptr<TrackedCallback> callback) {
-  Call<PpapiPluginMsg_FileIO_GeneralReply>(RENDERER,
-      PpapiHostMsg_FileIO_WillSetLength(length),
-      base::Bind(&FileIOResource::OnPluginMsgGeneralComplete, this,
-                 callback));
-  state_manager_.SetPendingOperation(FileIOStateManager::OPERATION_EXCLUSIVE);
-  return PP_OK_COMPLETIONPENDING;
-}
-
-int32_t FileIOResource::ReadValidated(int64_t offset,
-                                      int32_t bytes_to_read,
-                                      const PP_ArrayOutput& array_output,
-                                      scoped_refptr<TrackedCallback> callback) {
-  Call<PpapiPluginMsg_FileIO_ReadReply>(RENDERER,
-      PpapiHostMsg_FileIO_Read(offset, bytes_to_read),
-      base::Bind(&FileIOResource::OnPluginMsgReadComplete, this,
-                 callback, array_output));
-  return PP_OK_COMPLETIONPENDING;
 }
 
 int32_t FileIOResource::RequestOSFileHandle(
@@ -241,6 +287,111 @@ int32_t FileIOResource::RequestOSFileHandle(
   return PP_OK_COMPLETIONPENDING;
 }
 
+int32_t FileIOResource::WillWrite(int64_t offset,
+                                  int32_t bytes_to_write,
+                                  scoped_refptr<TrackedCallback> callback) {
+  Call<PpapiPluginMsg_FileIO_GeneralReply>(RENDERER,
+      PpapiHostMsg_FileIO_WillWrite(offset, bytes_to_write),
+      base::Bind(&FileIOResource::OnPluginMsgGeneralComplete, this, callback));
+
+  state_manager_.SetPendingOperation(FileIOStateManager::OPERATION_EXCLUSIVE);
+  return PP_OK_COMPLETIONPENDING;
+}
+
+int32_t FileIOResource::WillSetLength(int64_t length,
+                                      scoped_refptr<TrackedCallback> callback) {
+  Call<PpapiPluginMsg_FileIO_GeneralReply>(RENDERER,
+      PpapiHostMsg_FileIO_WillSetLength(length),
+      base::Bind(&FileIOResource::OnPluginMsgGeneralComplete, this, callback));
+
+  state_manager_.SetPendingOperation(FileIOStateManager::OPERATION_EXCLUSIVE);
+  return PP_OK_COMPLETIONPENDING;
+}
+
+int32_t FileIOResource::ReadValidated(int64_t offset,
+                                      int32_t bytes_to_read,
+                                      const PP_ArrayOutput& array_output,
+                                      scoped_refptr<TrackedCallback> callback) {
+  if (bytes_to_read < 0)
+    return PP_ERROR_FAILED;
+  if (file_handle_ == base::kInvalidPlatformFileValue)
+    return PP_ERROR_FAILED;
+
+  state_manager_.SetPendingOperation(FileIOStateManager::OPERATION_READ);
+
+  bytes_to_read = std::min(bytes_to_read, kMaxReadSize);
+  scoped_refptr<ReadOp> read_op(
+      new ReadOp(file_handle_, offset, bytes_to_read));
+  if (callback->is_blocking()) {
+    int32_t result;
+    {
+      // Release the proxy lock while making a potentially slow file call.
+      ProxyAutoUnlock unlock;
+      result = read_op->DoWork();
+    }
+    return OnReadComplete(read_op, array_output, result);
+  }
+
+  // For the non-blocking case, post a task to the file thread.
+  base::PostTaskAndReplyWithResult(
+      PpapiGlobals::Get()->GetFileTaskRunner(pp_instance()),
+      FROM_HERE,
+      Bind(&FileIOResource::ReadOp::DoWork, read_op),
+      RunWhileLocked(Bind(&TrackedCallback::Run, callback)));
+  callback->set_completion_task(
+      Bind(&FileIOResource::OnReadComplete, this, read_op, array_output));
+
+  return PP_OK_COMPLETIONPENDING;
+}
+
+void FileIOResource::CloseFileHandle() {
+  if (file_handle_ != base::kInvalidPlatformFileValue) {
+    // Close our local fd on the file thread.
+    base::TaskRunner* file_task_runner =
+        PpapiGlobals::Get()->GetFileTaskRunner(pp_instance());
+    file_task_runner->PostTask(FROM_HERE,
+                               base::Bind(&DoClose, file_handle_));
+
+    file_handle_ = base::kInvalidPlatformFileValue;
+  }
+}
+
+int32_t FileIOResource::OnQueryComplete(scoped_refptr<QueryOp> query_op,
+                                        PP_FileInfo* info,
+                                        int32_t result) {
+  DCHECK(state_manager_.get_pending_operation() ==
+         FileIOStateManager::OPERATION_EXCLUSIVE);
+
+  if (result == PP_OK) {
+    // This writes the file info into the plugin's PP_FileInfo struct.
+    ppapi::PlatformFileInfoToPepperFileInfo(query_op->file_info(),
+                                            file_system_type_,
+                                            info);
+  }
+  state_manager_.SetOperationFinished();
+  return result;
+}
+
+int32_t FileIOResource::OnReadComplete(scoped_refptr<ReadOp> read_op,
+                                       PP_ArrayOutput array_output,
+                                       int32_t result) {
+  DCHECK(state_manager_.get_pending_operation() ==
+         FileIOStateManager::OPERATION_READ);
+  if (result >= 0) {
+    ArrayWriter output;
+    output.set_pp_array_output(array_output);
+    if (output.is_valid())
+      output.StoreArray(read_op->buffer(), result);
+    else
+      result = PP_ERROR_FAILED;
+  } else {
+    // The read operation failed.
+    result = PP_ERROR_FAILED;
+  }
+  state_manager_.SetOperationFinished();
+  return result;
+}
+
 void FileIOResource::OnPluginMsgGeneralComplete(
     scoped_refptr<TrackedCallback> callback,
     const ResourceMessageReplyParams& params) {
@@ -248,7 +399,8 @@ void FileIOResource::OnPluginMsgGeneralComplete(
          FileIOStateManager::OPERATION_EXCLUSIVE ||
          state_manager_.get_pending_operation() ==
          FileIOStateManager::OPERATION_WRITE);
-  // End the operation now. The callback may perform another file operation.
+  // End this operation now, so the user's callback can execute another FileIO
+  // operation, assuming there are no other pending operations.
   state_manager_.SetOperationFinished();
   callback->Run(params.result());
 }
@@ -260,45 +412,13 @@ void FileIOResource::OnPluginMsgOpenFileComplete(
          FileIOStateManager::OPERATION_EXCLUSIVE);
   if (params.result() == PP_OK)
     state_manager_.SetOpenSucceed();
-  // End the operation now. The callback may perform another file operation.
-  state_manager_.SetOperationFinished();
-  callback->Run(params.result());
-}
 
-void FileIOResource::OnPluginMsgQueryComplete(
-    scoped_refptr<TrackedCallback> callback,
-    PP_FileInfo* output_info,
-    const ResourceMessageReplyParams& params,
-    const PP_FileInfo& info) {
-  DCHECK(state_manager_.get_pending_operation() ==
-         FileIOStateManager::OPERATION_EXCLUSIVE);
-  *output_info = info;
-  // End the operation now. The callback may perform another file operation.
-  state_manager_.SetOperationFinished();
-  callback->Run(params.result());
-}
-
-void FileIOResource::OnPluginMsgReadComplete(
-    scoped_refptr<TrackedCallback> callback,
-    PP_ArrayOutput array_output,
-    const ResourceMessageReplyParams& params,
-    const std::string& data) {
-  DCHECK(state_manager_.get_pending_operation() ==
-         FileIOStateManager::OPERATION_READ);
-
-  // The result code should contain the data size if it's positive.
   int32_t result = params.result();
-  DCHECK((result < 0 && data.size() == 0) ||
-         result == static_cast<int32_t>(data.size()));
-
-  ArrayWriter output;
-  output.set_pp_array_output(array_output);
-  if (output.is_valid())
-    output.StoreArray(data.data(), std::max(0, result));
-  else
-    result = PP_ERROR_FAILED;
-
-  // End the operation now. The callback may perform another file operation.
+  IPC::PlatformFileForTransit transit_file;
+  if ((result == PP_OK) && params.TakeFileHandleAtIndex(0, &transit_file))
+    file_handle_ = IPC::PlatformFileForTransitToPlatformFile(transit_file);
+  // End this operation now, so the user's callback can execute another FileIO
+  // operation, assuming there are no other pending operations.
   state_manager_.SetOperationFinished();
   callback->Run(result);
 }
@@ -321,7 +441,8 @@ void FileIOResource::OnPluginMsgRequestOSFileHandleComplete(
     result = PP_ERROR_FAILED;
   *output_handle = IPC::PlatformFileForTransitToPlatformFile(transit_file);
 
-  // End the operation now. The callback may perform another file operation.
+  // End this operation now, so the user's callback can execute another FileIO
+  // operation, assuming there are no other pending operations.
   state_manager_.SetOperationFinished();
   callback->Run(result);
 }
