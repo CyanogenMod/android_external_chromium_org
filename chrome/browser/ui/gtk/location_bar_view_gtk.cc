@@ -92,7 +92,6 @@
 #include "ui/gfx/font.h"
 #include "ui/gfx/gtk_util.h"
 #include "ui/gfx/image/image.h"
-#include "ui/gfx/rect.h"
 
 using content::NavigationEntry;
 using content::OpenURLParams;
@@ -618,12 +617,6 @@ WebContents* LocationBarViewGtk::GetWebContents() const {
   return browser_->tab_strip_model()->GetActiveWebContents();
 }
 
-gfx::Rect LocationBarViewGtk::GetOmniboxBounds() const {
-  GtkAllocation hbox_allocation;
-  gtk_widget_get_allocation(hbox_.get(), &hbox_allocation);
-  return AllocationToRect(hbox_allocation);
-}
-
 void LocationBarViewGtk::SetPreviewEnabledPageAction(
     ExtensionAction* page_action,
     bool preview_enabled) {
@@ -949,7 +942,7 @@ void LocationBarViewGtk::UpdateOpenPDFInReaderPrompt() {
   // Not implemented on Gtk.
 }
 
-void LocationBarViewGtk::UpdateAutofillCreditCardView() {
+void LocationBarViewGtk::UpdateGeneratedCreditCardView() {
   NOTIMPLEMENTED();
 }
 

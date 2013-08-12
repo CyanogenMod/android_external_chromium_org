@@ -218,7 +218,7 @@ void LocationBarViewMac::UpdateOpenPDFInReaderPrompt() {
   // Not implemented on Mac.
 }
 
-void LocationBarViewMac::UpdateAutofillCreditCardView() {
+void LocationBarViewMac::UpdateGeneratedCreditCardView() {
   // TODO(dbeam): encourage groby@ to implement via prodding or chocolate.
   NOTIMPLEMENTED();
 }
@@ -355,10 +355,6 @@ int LocationBarViewMac::PageActionVisibleCount() {
 
 WebContents* LocationBarViewMac::GetWebContents() const {
   return browser_->tab_strip_model()->GetActiveWebContents();
-}
-
-gfx::Rect LocationBarViewMac::GetOmniboxBounds() const {
-  return gfx::Rect(NSRectToCGRect([field_ frame]));
 }
 
 PageActionDecoration* LocationBarViewMac::GetPageActionDecoration(

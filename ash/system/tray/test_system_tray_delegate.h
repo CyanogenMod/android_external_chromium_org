@@ -42,6 +42,7 @@ class TestSystemTrayDelegate : public SystemTrayDelegate {
   virtual void ShowNetworkSettings(const std::string& service_path) OVERRIDE;
   virtual void ShowBluetoothSettings() OVERRIDE;
   virtual void ShowDisplaySettings() OVERRIDE;
+  virtual void ShowChromeSlow() OVERRIDE;
   virtual bool ShouldShowDisplayNotification() OVERRIDE;
   virtual void ShowDriveSettings() OVERRIDE;
   virtual void ShowIMESettings() OVERRIDE;
@@ -69,11 +70,14 @@ class TestSystemTrayDelegate : public SystemTrayDelegate {
   virtual void GetDriveOperationStatusList(
       ash::DriveOperationStatusList*) OVERRIDE;
   virtual void ConfigureNetwork(const std::string& network_id) OVERRIDE;
-  virtual void ConnectToNetwork(const std::string& network_id) OVERRIDE;
+  virtual void EnrollOrConfigureNetwork(
+      const std::string& network_id,
+      gfx::NativeWindow parent_window) OVERRIDE;
   virtual void ManageBluetoothDevices() OVERRIDE;
   virtual void ToggleBluetooth() OVERRIDE;
   virtual bool IsBluetoothDiscovering() OVERRIDE;
   virtual void ShowMobileSimDialog() OVERRIDE;
+  virtual void ShowMobileSetup(const std::string& network_id) OVERRIDE;
   virtual void ShowOtherWifi() OVERRIDE;
   virtual void ShowOtherVPN() OVERRIDE;
   virtual void ShowOtherCellular() OVERRIDE;

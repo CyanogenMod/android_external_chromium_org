@@ -33,10 +33,10 @@ const int kBubbleSpacing = 20;
 
 // The new theme adjusts the menus / bubbles to be flush with the shelf when
 // there is no bubble. These are the offsets which need to be applied.
-const int kArrowOffsetTopBottom = 5;
+const int kArrowOffsetTopBottom = 4;
 const int kArrowOffsetLeft = 9;
 const int kArrowOffsetRight = -5;
-const int kOffsetLeftRightForTopBottomOrientation = 2;
+const int kOffsetLeftRightForTopBottomOrientation = 5;
 
 }  // namespace
 
@@ -86,8 +86,6 @@ class TrayBubbleBorder : public BubbleBorder {
       return rect;
     }
 
-    // TODO(skuhne): With shelf LR alignment, arrow-less messages get
-    // automatically offsetted from an open status menu which needs addressing.
     gfx::Size border_size(contents_size);
     gfx::Insets insets = GetInsets();
     border_size.Enlarge(insets.width(), insets.height());

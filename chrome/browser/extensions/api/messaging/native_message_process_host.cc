@@ -8,6 +8,7 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/platform_file.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/messaging/native_messaging_host_manifest.h"
 #include "chrome/browser/extensions/api/messaging/native_process_launcher.h"
@@ -77,13 +78,14 @@ NativeMessageProcessHost::~NativeMessageProcessHost() {
 
 // static
 scoped_ptr<NativeMessageProcessHost> NativeMessageProcessHost::Create(
+    gfx::NativeView native_view,
     base::WeakPtr<Client> weak_client_ui,
     const std::string& source_extension_id,
     const std::string& native_host_name,
     int destination_port) {
   return CreateWithLauncher(weak_client_ui, source_extension_id,
                             native_host_name, destination_port,
-                            NativeProcessLauncher::CreateDefault());
+                            NativeProcessLauncher::CreateDefault(native_view));
 }
 
 // static
@@ -136,10 +138,18 @@ void NativeMessageProcessHost::OnHostProcessLaunched(
   }
 
   read_file_ = read_file;
+
+  scoped_refptr<base::TaskRunner> task_runner(
+      content::BrowserThread::GetBlockingPool()->
+          GetTaskRunnerWithShutdownBehavior(
+              base::SequencedWorkerPool::SKIP_ON_SHUTDOWN));
+
   read_stream_.reset(new net::FileStream(
-      read_file, base::PLATFORM_FILE_READ | base::PLATFORM_FILE_ASYNC, NULL));
+      read_file, base::PLATFORM_FILE_READ | base::PLATFORM_FILE_ASYNC, NULL,
+      task_runner));
   write_stream_.reset(new net::FileStream(
-      write_file, base::PLATFORM_FILE_WRITE | base::PLATFORM_FILE_ASYNC, NULL));
+      write_file, base::PLATFORM_FILE_WRITE | base::PLATFORM_FILE_ASYNC, NULL,
+      task_runner));
 
   WaitRead();
   DoWrite();

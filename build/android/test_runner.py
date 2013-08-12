@@ -357,16 +357,22 @@ def ProcessUIAutomatorOptions(options, error_func):
 
 def AddMonkeyTestOptions(option_parser):
   """Adds monkey test options to |option_parser|."""
+
+  option_parser.usage = '%prog monkey [options]'
+  option_parser.command_list = []
+  option_parser.example = (
+      '%prog monkey --package-name=org.chromium.content_shell_apk'
+      ' --activity-name=.ContentShellActivity')
+
   option_parser.add_option('--package-name', help='Allowed package.')
   option_parser.add_option(
-      '--activity-name', default='com.google.android.apps.chrome.Main',
-      help='Name of the activity to start [default: %default].')
+      '--activity-name', help='Name of the activity to start.')
   option_parser.add_option(
       '--event-count', default=10000, type='int',
       help='Number of events to generate [default: %default].')
   option_parser.add_option(
       '--category', default='',
-      help='A list of allowed categories [default: %default].')
+      help='A list of allowed categories.')
   option_parser.add_option(
       '--throttle', default=100, type='int',
       help='Delay between events (ms) [default: %default]. ')
@@ -676,8 +682,7 @@ def main(argv):
       command_list=VALID_COMMANDS.keys())
 
   if len(argv) < 2 or argv[1] not in VALID_COMMANDS:
-    option_parser.print_help()
-    return 0
+    option_parser.error('Invalid command.')
   command = argv[1]
   VALID_COMMANDS[command].add_options_func(option_parser)
   options, args = option_parser.parse_args(argv)

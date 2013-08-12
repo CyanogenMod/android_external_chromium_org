@@ -85,8 +85,6 @@ include $(LOCAL_PATH)/net/net_errors_java.target.linux-arm.mk
 include $(LOCAL_PATH)/net/net_jni_headers.target.linux-arm.mk
 include $(LOCAL_PATH)/net/net_resources.target.linux-arm.mk
 include $(LOCAL_PATH)/net/private_key_types_java.target.linux-arm.mk
-include $(LOCAL_PATH)/ppapi/ppapi_c.target.linux-arm.mk
-include $(LOCAL_PATH)/ppapi/ppapi_shared.target.linux-arm.mk
 include $(LOCAL_PATH)/printing/printing.target.linux-arm.mk
 include $(LOCAL_PATH)/sandbox/sandbox.target.linux-arm.mk
 include $(LOCAL_PATH)/sandbox/sandbox_services.target.linux-arm.mk
@@ -150,6 +148,7 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf_config.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_minimal.target.linux-arm.mk
+include $(LOCAL_PATH)/third_party/WebKit/public/blink_skia_config.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/angle_dx11/src/preprocessor.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/angle_dx11/src/translator_common.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/angle_dx11/src/translator_glsl.target.linux-arm.mk
@@ -226,14 +225,12 @@ include $(LOCAL_PATH)/webkit/common/gpu/webkit_gpu.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/user_agent.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/webkit_version.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/common/webkit_common.target.linux-arm.mk
-include $(LOCAL_PATH)/webkit/plugins/plugins_common.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_bindings.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_support.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/renderer/webkit_renderer.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/support/glue.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/support/glue_child.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/support/overscroller_jni_headers.target.linux-arm.mk
-include $(LOCAL_PATH)/webkit/support/plugins.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/webkit_resources.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_browser.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_common.target.linux-arm.mk

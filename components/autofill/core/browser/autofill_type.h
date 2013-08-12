@@ -20,6 +20,8 @@ class AutofillType {
   AutofillType(const AutofillType& autofill_type);
   AutofillType& operator=(const AutofillType& autofill_type);
 
+  HtmlFieldType html_type() const { return html_type_; }
+
   FieldTypeGroup group() const;
 
   // Returns true if both the |server_type_| and the |html_type_| are set to
@@ -29,23 +31,18 @@ class AutofillType {
   // Maps |this| type to a field type that can be directly stored in an Autofill
   // data model (in the sense that it makes sense to call
   // |AutofillDataModel::SetRawInfo()| with the returned field type as the first
-  // parameter).
+  // parameter).  Note that the returned type might not be exactly equivalent to
+  // |this| type.  For example, there is no exact analogue to the
+  // 'street-address' HTML type hint among the storable field types.
   ServerFieldType GetStorableType() const;
 
   // Serializes |this| type to a string.
   std::string ToString() const;
 
-  // Maps |field_type| to a field type from ADDRESS_BILLING FieldTypeGroup if
-  // field type is an Address type.
-  // TODO(isherman): This method is only used by the
-  // AutofillDialogControllerImpl class.  Consider moving it to a more focused
-  // location.
+  // Maps |field_type| to the corresponding billing field type if the field type
+  // is an address, name, or phone number type.
   static ServerFieldType GetEquivalentBillingFieldType(
       ServerFieldType field_type);
-
-  // TODO(isherman): This method is only used be a single test class.  Move the
-  // logic into there or something, eh?
-  static ServerFieldType StringToFieldType(const std::string& str);
 
  private:
   // The server-native field type, or UNKNOWN_TYPE if unset.

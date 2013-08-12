@@ -8,12 +8,12 @@ vars = {
   "sourceforge_url": "http://svn.code.sf.net/p/%(repo)s/code",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "155688",
+  "webkit_revision": "155921",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "skia_git": "https://skia.googlesource.com",
   "swig_revision": "69281",
-  "nacl_revision": "11930",
+  "nacl_revision": "11988",
   # After changing nacl_revision, run 'glient sync' and check native_client/DEPS
   # to update other nacl_*_revision's.
   "nacl_tools_revision": "11437",  # native_client/DEPS: tools_rev
@@ -29,16 +29,16 @@ vars = {
   "ffmpeg_hash": "894e6f715645528e815aee2dad45b59704238dcd",
 
   "sfntly_revision": "134",
-  "skia_revision": "10602",
-  "skia_hash": "6d04e64f56b658635eeb46fcdb02188ce54f1567",
+  "skia_revision": "10648",
+  "skia_hash": "a5b11fcd59d769450ac85a3b1e88d2e6eaca865e",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
-  "v8_revision": "16104",
+  "v8_revision": "16142",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
-  "webrtc_revision": "4490",
+  "webrtc_revision": "4520",
   "jsoncpp_revision": "248",
   "nss_revision": "209026",
   # Three lines of non-changing comments so that
@@ -55,9 +55,6 @@ deps = {
   "src/breakpad/src":
     (Var("googlecode_url") % "google-breakpad") + "/trunk/src@1199",
 
-  "src/googleurl":
-    (Var("googlecode_url") % "google-url") + "/trunk@185",
-
   "src/sdch/open-vcdiff":
     (Var("googlecode_url") % "open-vcdiff") + "/trunk@42",
 
@@ -72,7 +69,7 @@ deps = {
     "/external/angle.git@b93f84acdecd3eebf316750d8024b8b592c9012b",
 
   "src/third_party/trace-viewer":
-    (Var("googlecode_url") % "trace-viewer") + "/trunk@816",
+    (Var("googlecode_url") % "trace-viewer") + "/trunk@847",
 
   "src/third_party/WebKit":
     Var("webkit_trunk") + "@" + Var("webkit_revision"),
@@ -247,7 +244,7 @@ deps = {
   "src/third_party/accessibility-developer-tools":
     Var("chromium_git") + "/external/accessibility-developer-tools.git@2e3c9c8e49277a0ca1eeba510271eb03f9486d8f",
 
-  "src/webkit/renderer/media/crypto/ppapi/cdm":
+  "src/media/cdm/ppapi/api":
     "/trunk/deps/cdm@181763",
 
   "src/third_party/mesa/src":
@@ -456,7 +453,7 @@ deps_os = {
   "android": {
     "src/third_party/android_tools":
       Var("chromium_git") + "/android_tools.git" +
-      "@eda719cf5bf102f38b17fe4f583fbc5fde581be6",
+      "@881586ca84f2fb8e82faa9c8d645416d175d0f01",
 
     "src/third_party/aosp":
       "/trunk/deps/third_party/aosp@148330",
@@ -513,8 +510,6 @@ include_rules = [
   "+third_party/icu/source/common/unicode",
   "+third_party/icu/source/i18n/unicode",
   "+url",
-  # TODO(tfarina): Temporary, until we finish the migration to url. Remove this!
-  "!googleurl",
 ]
 
 
@@ -523,7 +518,6 @@ skip_child_includes = [
   "breakpad",
   "chrome_frame",
   "delegate_execute",
-  "googleurl",
   "metro_driver",
   "native_client_sdk",
   "o3d",

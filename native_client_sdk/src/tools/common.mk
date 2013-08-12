@@ -476,9 +476,9 @@ run: check_for_chrome all $(PAGE)
 run_package: check_for_chrome all
 	$(CHROME_PATH) --load-and-launch-app=$(CURDIR) $(CHROME_ARGS)
 
-
-GDB_ARGS += -D $(TC_PATH)/$(OSNAME)_x86_$(TOOLCHAIN)/bin/$(SYSARCH)-nacl-gdb
-GDB_ARGS += -D $(abspath $(OUTDIR))/$(TARGET)_$(SYSARCH).nexe
+GDB_ARGS += -D $(TC_PATH)/$(OSNAME)_x86_newlib/bin/$(SYSARCH)-nacl-gdb
+GDB_ARGS += -D --eval-command="nacl-manifest $(abspath $(OUTDIR))/$(TARGET).nmf"
+GDB_ARGS += -D $(GDB_DEBUG_TARGET)
 
 .PHONY: debug
 debug: check_for_chrome all $(PAGE)

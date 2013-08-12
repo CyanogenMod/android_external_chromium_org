@@ -8,8 +8,11 @@
 
 #include "base/metrics/field_trial.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "chrome/browser/autocomplete/autocomplete_input.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/common/metrics/metrics_util.h"
 #include "chrome/common/metrics/variations/variation_ids.h"
 #include "chrome/common/metrics/variations/variations_util.h"
@@ -21,11 +24,12 @@ const char kHUPCullRedirectsFieldTrialName[] = "OmniboxHUPCullRedirects";
 const char kHUPCreateShorterMatchFieldTrialName[] =
     "OmniboxHUPCreateShorterMatch";
 const char kStopTimerFieldTrialName[] = "OmniboxStopTimer";
-const char kShortcutsScoringFieldTrialName[] = "OmniboxShortcutsScoring";
 const char kBundledExperimentFieldTrialName[] = "OmniboxBundledExperimentV1";
 
 // Rule names used by the bundled experiment.
+const char kShortcutsScoringMaxRelevanceRule[] = "ShortcutsScoringMaxRelevance";
 const char kSearchHistoryRule[] = "SearchHistory";
+const char kDemoteByTypeRule[] = "DemoteByType";
 
 // The autocomplete dynamic field trial name prefix.  Each field trial is
 // configured dynamically and is retrieved automatically by Chrome during
@@ -132,14 +136,9 @@ int OmniboxFieldTrial::GetDisabledProviderTypes() {
       continue;
     int types = 0;
     if (!base::StringToInt(base::StringPiece(
-            group_name.substr(strlen(kDisabledProviders))), &types)) {
-      LOG(WARNING) << "Malformed DisabledProviders string: " << group_name;
+            group_name.substr(strlen(kDisabledProviders))), &types))
       continue;
-    }
-    if (types == 0)
-      LOG(WARNING) << "Expecting a non-zero bitmap; group = " << group_name;
-    else
-      provider_types |= types;
+    provider_types |= types;
   }
   return provider_types;
 }
@@ -204,20 +203,18 @@ bool OmniboxFieldTrial::InZeroSuggestFieldTrial() {
   return false;
 }
 
-// If the active group name starts with "MaxRelevance_", extract the
-// int that immediately following that, returning true on success.
-bool OmniboxFieldTrial::ShortcutsScoringMaxRelevance(int* max_relevance) {
-  std::string group_name =
-      base::FieldTrialList::FindFullName(kShortcutsScoringFieldTrialName);
-  const char kMaxRelevanceGroupPrefix[] = "MaxRelevance_";
-  if (!StartsWithASCII(group_name, kMaxRelevanceGroupPrefix, true))
+bool OmniboxFieldTrial::ShortcutsScoringMaxRelevance(
+    AutocompleteInput::PageClassification current_page_classification,
+    int* max_relevance) {
+  // The value of the rule is a string that encodes an integer containing
+  // the max relevance.
+  const std::string& max_relevance_str =
+      OmniboxFieldTrial::GetValueForRuleInContext(
+          kShortcutsScoringMaxRelevanceRule, current_page_classification);
+  if (max_relevance_str.empty())
     return false;
-  if (!base::StringToInt(base::StringPiece(
-          group_name.substr(strlen(kMaxRelevanceGroupPrefix))),
-                         max_relevance)) {
-    LOG(WARNING) << "Malformed MaxRelevance string: " << group_name;
+  if (!base::StringToInt(max_relevance_str, max_relevance))
     return false;
-  }
   return true;
 }
 
@@ -233,25 +230,67 @@ bool OmniboxFieldTrial::SearchHistoryDisable(
       kSearchHistoryRule, current_page_classification) == "Disable";
 }
 
+void OmniboxFieldTrial::GetDemotionsByType(
+    AutocompleteInput::PageClassification current_page_classification,
+    DemotionMultipliers* demotions_by_type) {
+  demotions_by_type->clear();
+  const std::string demotion_rule =
+      OmniboxFieldTrial::GetValueForRuleInContext(
+          kDemoteByTypeRule,
+          current_page_classification);
+  // The value of the DemoteByType rule is a comma-separated list of
+  // {ResultType + ":" + Number} where ResultType is an AutocompleteMatchType::
+  // Type enum represented as an integer and Number is an integer number
+  // between 0 and 100 inclusive.   Relevance scores of matches of that result
+  // type are multiplied by Number / 100.  100 means no change.
+  base::StringPairs kv_pairs;
+  if (base::SplitStringIntoKeyValuePairs(demotion_rule, ':', ',', &kv_pairs)) {
+    for (base::StringPairs::const_iterator it = kv_pairs.begin();
+         it != kv_pairs.end(); ++it) {
+      // This is a best-effort conversion; we trust the hand-crafted parameters
+      // downloaded from the server to be perfect.  There's no need for handle
+      // errors smartly.
+      int k, v;
+      base::StringToInt(it->first, &k);
+      base::StringToInt(it->second, &v);
+      (*demotions_by_type)[static_cast<AutocompleteMatchType::Type>(k)] =
+          static_cast<float>(v) / 100.0f;
+    }
+  }
+}
+
 // Background and implementation details:
 //
 // Each experiment group in any field trial can come with an optional set of
 // parameters (key-value pairs).  In the bundled omnibox experiment
 // (kBundledExperimentFieldTrialName), each experiment group comes with a
 // list of parameters in the form:
-//   key=<Rule>:<AutocompleteInput::PageClassification (as an int)>
+//   key=<Rule>:
+//       <AutocompleteInput::PageClassification (as an int)>:
+//       <whether Instant Extended is enabled (as a 1 or 0)>
+//     (note that there are no linebreaks in keys; this format is for
+//      presentation only>
 //   value=<arbitrary string>
-// The AutocompleteInput::PageClassification can also be "*", which means
-// this rule applies in all page classification contexts.
+// Both the AutocompleteInput::PageClassification and the Instant Extended
+// entries can be "*", which means this rule applies for all values of the
+// matching portion of the context.
 // One example parameter is
-//   key=SearchHistory:6
+//   key=SearchHistory:6:1
 //   value=PreventInlining
 // This means in page classification context 6 (a search result page doing
-// search term replacement), the SearchHistory experiment should
-// PreventInlining.
+// search term replacement) with Instant Extended enabled, the SearchHistory
+// experiment should PreventInlining.
+//
+// When an exact match to the rule in the current context is missing, we
+// give preference to a wildcard rule that matches the instant extended
+// context over a wildcard rule that matches the page classification
+// context.  Hopefully, though, users will write their field trial configs
+// so as not to rely on this fall back order.
 //
 // In short, this function tries to find the value associated with key
-// |rule|:|page_classification|, failing that it looks up |rule|:*,
+// |rule|:|page_classification|:|instant_extended|, failing that it looks up
+// |rule|:*:|instant_extended|, failing that it looks up
+// |rule|:|page_classification|:*, failing that it looks up |rule|:*:*,
 // and failing that it returns the empty string.
 std::string OmniboxFieldTrial::GetValueForRuleInContext(
     const std::string& rule,
@@ -261,13 +300,24 @@ std::string OmniboxFieldTrial::GetValueForRuleInContext(
                                              &params)) {
     return std::string();
   }
+  const std::string page_classification_str =
+      base::IntToString(static_cast<int>(page_classification));
+  const std::string instant_extended =
+      chrome::IsInstantExtendedAPIEnabled() ? "1" : "0";
   // Look up rule in this exact context.
-  std::map<std::string, std::string>::iterator it =
-      params.find(rule + ":" + base::IntToString(
-          static_cast<int>(page_classification)));
+  std::map<std::string, std::string>::iterator it = params.find(
+      rule + ":" + page_classification_str + ":" + instant_extended);
+  if (it != params.end())
+    return it->second;
+  // Fall back to the global page classification context.
+  it = params.find(rule + ":*:" + instant_extended);
+  if (it != params.end())
+    return it->second;
+  // Fall back to the global instant extended context.
+  it = params.find(rule + ":" + page_classification_str + ":*");
   if (it != params.end())
     return it->second;
   // Look up rule in the global context.
-  it = params.find(rule + ":*");
+  it = params.find(rule + ":*:*");
   return (it != params.end()) ? it->second : std::string();
 }

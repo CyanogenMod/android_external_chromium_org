@@ -11,6 +11,7 @@
 #include "nacl_io/kernel_wrap.h"
 
 #include <alloca.h>
+#include <assert.h>
 #include <dirent.h>
 #include <errno.h>
 #include <irt.h>
@@ -103,9 +104,14 @@ EXTERN_C_BEGIN
 // Macro to get the WRAP function
 #define WRAP(name) __nacl_irt_##name##_wrap
 
-// Declare REAL function pointer and assign it the REAL function.
+// Declare REAL function pointer.
 #define DECLARE_REAL_PTR(name) \
-  typeof(__nacl_irt_##name) REAL(name) = __nacl_irt_##name;
+  typeof(__nacl_irt_##name) REAL(name);
+
+// Assign the REAL function pointer.
+#define ASSIGN_REAL_PTR(name) \
+  assert(__nacl_irt_##name != NULL); \
+  REAL(name) = __nacl_irt_##name;
 
 // Switch IRT's pointer to the REAL pointer
 #define USE_REAL(name) \
@@ -279,90 +285,6 @@ int WRAP(write)(int fd, const void* buf, size_t count, size_t* nwrote) {
   return (signed_nwrote < 0) ? errno : 0;
 }
 
-// Socket functions
-int accept(int fd, struct sockaddr* addr, socklen_t* len) {
-  return ki_accept(fd, addr, len);
-}
-
-int bind(int fd, const struct sockaddr* addr, socklen_t len) {
-  return ki_bind(fd, addr, len);
-}
-
-int connect(int fd, const struct sockaddr* addr, socklen_t len) {
-  return ki_connect(fd, addr, len);
-}
-
-struct hostent* gethostbyname(const char* name) {
-  return ki_gethostbyname(name);
-}
-
-int getpeername(int fd, struct sockaddr* addr, socklen_t* len) {
-  return ki_getpeername(fd, addr, len);
-}
-
-int getsockname(int fd, struct sockaddr* addr, socklen_t* len) {
-  return ki_getsockname(fd, addr, len);
-}
-
-int getsockopt(int fd, int lvl, int optname, void* optval, socklen_t* len) {
-  return ki_getsockopt(fd, lvl, optname, optval, len);
-}
-
-void herror(const char *s) {
-  return ki_herror(s);
-}
-
-const char *hstrerror(int err) {
-  return ki_hstrerror(err);
-}
-
-int listen(int fd, int backlog) {
-  return ki_listen(fd, backlog);
-}
-
-ssize_t recv(int fd, void* buf, size_t len, int flags) {
-  return ki_recv(fd, buf, len, flags);
-}
-
-ssize_t recvfrom(int fd, void* buf, size_t len, int flags,
-                 struct sockaddr* addr, socklen_t* addrlen) {
-  return ki_recvfrom(fd, buf, len, flags, addr, addrlen);
-}
-
-ssize_t recvmsg(int fd, struct msghdr* msg, int flags) {
-  return ki_recvmsg(fd, msg, flags);
-}
-
-ssize_t send(int fd, const void* buf, size_t len, int flags) {
-  return ki_send(fd, buf, len, flags);
-}
-
-ssize_t sendto(int fd, const void* buf, size_t len, int flags,
-               const struct sockaddr* addr, socklen_t addrlen) {
-  return ki_sendto(fd, buf, len, flags, addr, addrlen);
-}
-
-ssize_t sendmsg(int fd, const struct msghdr* msg, int flags) {
-  return ki_sendmsg(fd, msg, flags);
-}
-
-int setsockopt(int fd, int lvl, int optname, const void* optval,
-                  socklen_t len) {
-  return ki_setsockopt(fd, lvl, optname, optval, len);
-}
-
-int shutdown(int fd, int how) {
-  return ki_shutdown(fd, how);
-}
-
-int socket(int domain, int type, int protocol) {
-  return ki_socket(domain, type, protocol);
-}
-
-int socketpair(int domain, int type, int protocol, int* sv) {
-  return ki_socketpair(domain, type, protocol, sv);
-}
-
 // "real" functions, i.e. the unwrapped original functions.
 
 int _real_close(int fd) {
@@ -454,8 +376,13 @@ uint64_t usec_since_epoch() {
 }
 
 static bool s_wrapped = false;
+static bool s_assigned = false;
 void kernel_wrap_init() {
   if (!s_wrapped) {
+    if (!s_assigned) {
+      EXPAND_SYMBOL_LIST_OPERATION(ASSIGN_REAL_PTR)
+      s_assigned = true;
+    }
     EXPAND_SYMBOL_LIST_OPERATION(USE_WRAP)
     s_wrapped = true;
   }

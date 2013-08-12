@@ -37,6 +37,7 @@ LOCAL_SRC_FILES := \
 	android_webview/native/aw_form_database.cc \
 	android_webview/native/aw_geolocation_permission_context.cc \
 	android_webview/native/aw_http_auth_handler.cc \
+	android_webview/native/aw_picture.cc \
 	android_webview/native/aw_quota_manager_bridge_impl.cc \
 	android_webview/native/aw_resource.cc \
 	android_webview/native/aw_settings.cc \
@@ -104,6 +105,7 @@ MY_DEFS_Debug := \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DUSE_CHROMIUM_SKIA' \
 	'-DSK_USE_POSIX_THREADS' \
+	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -213,6 +215,7 @@ MY_DEFS_Release := \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DUSE_CHROMIUM_SKIA' \
 	'-DSK_USE_POSIX_THREADS' \
+	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \

@@ -38,13 +38,12 @@
 #include "chrome/browser/ui/views/bookmarks/bookmark_prompt_view.h"
 #include "chrome/browser/ui/views/browser_dialogs.h"
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
-#include "chrome/browser/ui/views/location_bar/autofill_credit_card_view.h"
 #include "chrome/browser/ui/views/location_bar/content_setting_image_view.h"
 #include "chrome/browser/ui/views/location_bar/ev_bubble_view.h"
+#include "chrome/browser/ui/views/location_bar/generated_credit_card_view.h"
 #include "chrome/browser/ui/views/location_bar/keyword_hint_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_layout.h"
 #include "chrome/browser/ui/views/location_bar/location_icon_view.h"
-#include "chrome/browser/ui/views/location_bar/mic_search_view.h"
 #include "chrome/browser/ui/views/location_bar/open_pdf_in_reader_view.h"
 #include "chrome/browser/ui/views/location_bar/page_action_image_view.h"
 #include "chrome/browser/ui/views/location_bar/page_action_with_badge_view.h"
@@ -79,6 +78,7 @@
 #include "ui/views/background.h"
 #include "ui/views/border.h"
 #include "ui/views/button_drag_utils.h"
+#include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/widget/widget.h"
@@ -185,7 +185,7 @@ LocationBarView::LocationBarView(Browser* browser,
       keyword_hint_view_(NULL),
       mic_search_view_(NULL),
       zoom_view_(NULL),
-      autofill_credit_card_view_(NULL),
+      generated_credit_card_view_(NULL),
       open_pdf_in_reader_view_(NULL),
       script_bubble_icon_view_(NULL),
       star_view_(NULL),
@@ -225,6 +225,15 @@ LocationBarView::~LocationBarView() {
     template_url_service_->RemoveObserver(this);
   if (browser_)
     browser_->search_model()->RemoveObserver(this);
+}
+
+// static
+void LocationBarView::InitTouchableLocationBarChildView(views::View* view) {
+  int horizontal_padding = GetBuiltInHorizontalPaddingForChildViews();
+  if (horizontal_padding != 0) {
+    view->set_border(views::Border::CreateEmptyBorder(
+        3, horizontal_padding, 3, horizontal_padding));
+  }
 }
 
 void LocationBarView::Init() {
@@ -314,8 +323,19 @@ void LocationBarView::Init() {
       background_color);
   AddChildView(keyword_hint_view_);
 
-  mic_search_view_ = new MicSearchView(this);
+  mic_search_view_ = new views::ImageButton(this);
+  mic_search_view_->set_id(VIEW_ID_MIC_SEARCH_BUTTON);
+  mic_search_view_->set_accessibility_focusable(true);
+  mic_search_view_->SetTooltipText(
+      l10n_util::GetStringUTF16(IDS_TOOLTIP_MIC_SEARCH));
+  mic_search_view_->SetImage(
+      views::Button::STATE_NORMAL,
+      ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+          IDR_OMNIBOX_MIC_SEARCH));
+  mic_search_view_->SetImageAlignment(views::ImageButton::ALIGN_CENTER,
+                                      views::ImageButton::ALIGN_MIDDLE);
   mic_search_view_->SetVisible(false);
+  InitTouchableLocationBarChildView(mic_search_view_);
   AddChildView(mic_search_view_);
 
   for (int i = 0; i < CONTENT_SETTINGS_NUM_TYPES; ++i) {
@@ -328,8 +348,8 @@ void LocationBarView::Init() {
     AddChildView(content_blocked_view);
   }
 
-  autofill_credit_card_view_ = new AutofillCreditCardView(model_, delegate_);
-  AddChildView(autofill_credit_card_view_);
+  generated_credit_card_view_ = new GeneratedCreditCardView(model_, delegate_);
+  AddChildView(generated_credit_card_view_);
 
   zoom_view_ = new ZoomView(model_, delegate_);
   zoom_view_->set_id(VIEW_ID_ZOOM_BUTTON);
@@ -467,7 +487,7 @@ void LocationBarView::Update(const WebContents* tab_for_state_restoring) {
       !model_->GetInputInProgress() && browser_ &&
       browser_->search_model()->voice_search_supported());
   RefreshContentSettingViews();
-  autofill_credit_card_view_->Update();
+  generated_credit_card_view_->Update();
   ZoomBubbleView::CloseBubble();
   RefreshZoomView();
   RefreshPageActionViews();
@@ -530,8 +550,8 @@ void LocationBarView::UpdateOpenPDFInReaderPrompt() {
   SchedulePaint();
 }
 
-void LocationBarView::UpdateAutofillCreditCardView() {
-  autofill_credit_card_view_->Update();
+void LocationBarView::UpdateGeneratedCreditCardView() {
+  generated_credit_card_view_->Update();
   Layout();
   SchedulePaint();
 }
@@ -716,25 +736,25 @@ void LocationBarView::Layout() {
   } else {
     leading_decorations.AddDecoration(
         vertical_edge_thickness(), location_height,
-        location_icon_view_->GetBuiltInHorizontalPadding(),
+        GetBuiltInHorizontalPaddingForChildViews(),
         location_icon_view_);
   }
 
   if (star_view_ && star_view_->visible()) {
     trailing_decorations.AddDecoration(
         vertical_edge_thickness(), location_height,
-        star_view_->GetBuiltInHorizontalPadding(), star_view_);
+        GetBuiltInHorizontalPaddingForChildViews(), star_view_);
   }
   if (script_bubble_icon_view_ && script_bubble_icon_view_->visible()) {
     trailing_decorations.AddDecoration(
         vertical_edge_thickness(), location_height,
-        script_bubble_icon_view_->GetBuiltInHorizontalPadding(),
+        GetBuiltInHorizontalPaddingForChildViews(),
         script_bubble_icon_view_);
   }
   if (open_pdf_in_reader_view_ && open_pdf_in_reader_view_->visible()) {
     trailing_decorations.AddDecoration(
         vertical_edge_thickness(), location_height,
-        open_pdf_in_reader_view_->GetBuiltInHorizontalPadding(),
+        GetBuiltInHorizontalPaddingForChildViews(),
         open_pdf_in_reader_view_);
   }
   for (PageActionViews::const_iterator i(page_action_views_.begin());
@@ -742,7 +762,7 @@ void LocationBarView::Layout() {
     if ((*i)->visible()) {
       trailing_decorations.AddDecoration(
           vertical_edge_thickness(), location_height,
-          (*i)->GetBuiltInHorizontalPadding(), (*i));
+          GetBuiltInHorizontalPaddingForChildViews(), (*i));
     }
   }
   if (zoom_view_->visible()) {
@@ -755,13 +775,13 @@ void LocationBarView::Layout() {
     if ((*i)->visible()) {
       trailing_decorations.AddDecoration(
           bubble_location_y, bubble_height, false, 0, item_padding,
-          item_padding, (*i)->GetBuiltInHorizontalPadding(), (*i));
+          item_padding, GetBuiltInHorizontalPaddingForChildViews(), (*i));
     }
   }
-  if (autofill_credit_card_view_->visible()) {
+  if (generated_credit_card_view_->visible()) {
     trailing_decorations.AddDecoration(vertical_edge_thickness(),
                                        location_height, 0,
-                                       autofill_credit_card_view_);
+                                       generated_credit_card_view_);
   }
   if (mic_search_view_->visible()) {
     trailing_decorations.AddDecoration(vertical_edge_thickness(),
@@ -993,8 +1013,8 @@ void LocationBarView::OnMouseCaptureLost() {
 }
 #endif
 
-views::View* LocationBarView::autofill_credit_card_view() {
-  return autofill_credit_card_view_;
+views::View* LocationBarView::generated_credit_card_view() {
+  return generated_credit_card_view_;
 }
 
 void LocationBarView::OnAutocompleteAccept(
@@ -1078,8 +1098,10 @@ WebContents* LocationBarView::GetWebContents() const {
   return delegate_->GetWebContents();
 }
 
-gfx::Rect LocationBarView::GetOmniboxBounds() const {
-  return bounds();
+// static
+int LocationBarView::GetBuiltInHorizontalPaddingForChildViews() {
+  return (ui::GetDisplayLayout() == ui::LAYOUT_TOUCH) ?
+      GetItemPadding() / 2 : 0;
 }
 
 int LocationBarView::GetHorizontalEdgeThickness() const {
@@ -1237,8 +1259,8 @@ void LocationBarView::PaintPageActionBackgrounds(gfx::Canvas* canvas) {
        page_action_view != page_action_views_.end();
        ++page_action_view) {
     gfx::Rect bounds = (*page_action_view)->bounds();
-    int horizontal_padding = GetItemPadding() -
-        (*page_action_view)->GetBuiltInHorizontalPadding();
+    int horizontal_padding =
+        GetItemPadding() - GetBuiltInHorizontalPaddingForChildViews();
     // Make the bounding rectangle include the whole vertical range of the
     // location bar, and the mid-point pixels between adjacent page actions.
     //

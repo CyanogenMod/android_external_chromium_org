@@ -175,7 +175,7 @@
             '../ppapi/ppapi_internal.gyp:ppapi_shared',
             '../ppapi/ppapi_internal.gyp:ppapi_unittest_shared',
             '../third_party/WebKit/public/blink.gyp:blink',
-            '../third_party/WebKit/Tools/DumpRenderTree/DumpRenderTree.gyp/DumpRenderTree.gyp:TestRunner',
+            '../third_party/WebKit/public/blink_test_runner.gyp:blink_test_runner',
             '../ui/surface/surface.gyp:surface',
             '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
             '../webkit/renderer/compositor_bindings/compositor_bindings.gyp:webkit_compositor_support',
@@ -586,15 +586,12 @@
             '../ui/gl/gl.gyp:gl',
             '../v8/tools/gyp/v8.gyp:v8',
             '../webkit/common/webkit_common.gyp:webkit_common',
-            '../webkit/plugins/webkit_plugins.gyp:plugins_common',
             '../webkit/renderer/webkit_renderer.gyp:webkit_renderer',
             '../webkit/storage_browser.gyp:webkit_storage_browser',
             '../webkit/storage_common.gyp:webkit_storage_common',
             '../webkit/storage_renderer.gyp:webkit_storage_renderer',
             '../webkit/support/webkit_support.gyp:glue',
             '../webkit/support/webkit_support.gyp:glue_child',
-            '../webkit/support/webkit_support.gyp:plugins',
-            '../webkit/plugins/webkit_plugins.gyp:plugins_common',
           ],
         }],
         ['enable_plugins==0', {
@@ -640,7 +637,7 @@
         }],
         ['enable_webrtc==1 and (OS=="linux" or OS=="mac" or OS=="win")', {
           'sources': [
-            'browser/renderer_host/media/screen_capture_device_unittest.cc',
+            'browser/renderer_host/media/desktop_capture_device_unittest.cc',
           ],
           'dependencies': [
             '../third_party/webrtc/modules/modules.gyp:desktop_capture',
@@ -776,7 +773,6 @@
             '../webkit/renderer/webkit_renderer.gyp:webkit_renderer',
             '../webkit/support/webkit_support.gyp:glue',
             '../webkit/support/webkit_support.gyp:glue_child',
-            '../webkit/plugins/webkit_plugins.gyp:plugins_common',
           ],
           'include_dirs': [
             '..',
@@ -955,6 +951,7 @@
                 'browser/accessibility/accessibility_win_browsertest.cc',
                 'browser/accessibility/dump_accessibility_tree_browsertest.cc',
                 'browser/plugin_browsertest.cc',
+                'browser/renderer_host/render_widget_host_view_win_browsertest.cc',
               ],
             }],
             ['OS!="android" and OS!="ios"', {
@@ -982,7 +979,7 @@
               'dependencies': [
                 # Runtime dependencies.
                 '../third_party/widevine/cdm/widevine_cdm.gyp:widevinecdmadapter',
-                '../webkit/support/webkit_support.gyp:clearkeycdmadapter',
+                '../media/media.gyp:clearkeycdmadapter',
               ],
             }],
             ['input_speech==0', {

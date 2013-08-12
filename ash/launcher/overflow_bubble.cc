@@ -10,6 +10,7 @@
 #include "ash/launcher/launcher_view.h"
 #include "ash/root_window_controller.h"
 #include "ash/shelf/shelf_layout_manager.h"
+#include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/system/tray/system_tray.h"
 #include "ui/aura/root_window.h"
@@ -200,7 +201,7 @@ gfx::Rect OverflowBubbleView::GetBubbleBounds() {
       views::BubbleBorder::is_arrow_on_horizontal(arrow()) ?
       bubble_insets.left() : bubble_insets.top();
   const int arrow_offset = border_size + kPadding + kLauncherViewLeadingInset +
-      kLauncherPreferredSize / 2;
+      ShelfLayoutManager::GetPreferredShelfSize() / 2;
 
   const gfx::Size content_size = GetPreferredSize();
   border->set_arrow_offset(arrow_offset);
@@ -276,6 +277,8 @@ void OverflowBubble::OnWidgetDestroying(views::Widget* widget) {
   DCHECK(widget == bubble_->GetWidget());
   bubble_ = NULL;
   launcher_view_ = NULL;
+  ShelfLayoutManager::ForLauncher(
+      widget->GetNativeView())->shelf_widget()->launcher()->SchedulePaint();
 }
 
 }  // namespace internal

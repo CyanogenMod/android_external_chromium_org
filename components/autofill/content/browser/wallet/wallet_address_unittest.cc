@@ -409,5 +409,70 @@ TEST_F(WalletAddressTest, FromAutofillProfile) {
   }
 }
 
+// Verifies that WalletAddress::GetInfo() can correctly return both country
+// codes and localized country names.
+TEST_F(WalletAddressTest, GetCountryInfo) {
+  Address address("FR",
+                  ASCIIToUTF16("recipient_name"),
+                  ASCIIToUTF16("address_line_1"),
+                  ASCIIToUTF16("address_line_2"),
+                  ASCIIToUTF16("locality_name"),
+                  ASCIIToUTF16("administrative_area_name"),
+                  ASCIIToUTF16("postal_code_number"),
+                  ASCIIToUTF16("phone_number"),
+                  "id1");
+
+  AutofillType type = AutofillType(HTML_TYPE_COUNTRY_CODE, HTML_MODE_NONE);
+  EXPECT_EQ(ASCIIToUTF16("FR"), address.GetInfo(type, "en-US"));
+
+  type = AutofillType(HTML_TYPE_COUNTRY_NAME, HTML_MODE_NONE);
+  EXPECT_EQ(ASCIIToUTF16("France"), address.GetInfo(type, "en-US"));
+
+  type = AutofillType(ADDRESS_HOME_COUNTRY);
+  EXPECT_EQ(ASCIIToUTF16("France"), address.GetInfo(type, "en-US"));
+}
+
+// Verifies that WalletAddress::GetInfo() can correctly return a concatenated
+// full street address.
+TEST_F(WalletAddressTest, GetStreetAddress) {
+  // Address has both lines 1 and 2.
+  Address address1("FR",
+                   ASCIIToUTF16("recipient_name"),
+                   ASCIIToUTF16("address_line_1"),
+                   ASCIIToUTF16("address_line_2"),
+                   ASCIIToUTF16("locality_name"),
+                   ASCIIToUTF16("administrative_area_name"),
+                   ASCIIToUTF16("postal_code_number"),
+                   ASCIIToUTF16("phone_number"),
+                   "id1");
+  AutofillType type = AutofillType(HTML_TYPE_STREET_ADDRESS, HTML_MODE_NONE);
+  EXPECT_EQ(ASCIIToUTF16("address_line_1, address_line_2"),
+            address1.GetInfo(type, "en-US"));
+
+  // Address has only line 1.
+  Address address2("FR",
+                   ASCIIToUTF16("recipient_name"),
+                   ASCIIToUTF16("address_line_1"),
+                   base::string16(),
+                   ASCIIToUTF16("locality_name"),
+                   ASCIIToUTF16("administrative_area_name"),
+                   ASCIIToUTF16("postal_code_number"),
+                   ASCIIToUTF16("phone_number"),
+                   "id1");
+  EXPECT_EQ(ASCIIToUTF16("address_line_1"), address2.GetInfo(type, "en-US"));
+
+  // Address has no address lines.
+  Address address3("FR",
+                   ASCIIToUTF16("recipient_name"),
+                   base::string16(),
+                   base::string16(),
+                   ASCIIToUTF16("locality_name"),
+                   ASCIIToUTF16("administrative_area_name"),
+                   ASCIIToUTF16("postal_code_number"),
+                   ASCIIToUTF16("phone_number"),
+                   "id1");
+  EXPECT_EQ(base::string16(), address3.GetInfo(type, "en-US"));
+}
+
 }  // namespace wallet
 }  // namespace autofill

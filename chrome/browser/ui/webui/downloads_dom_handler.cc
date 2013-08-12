@@ -13,6 +13,7 @@
 #include "base/i18n/rtl.h"
 #include "base/i18n/time_formatting.h"
 #include "base/memory/singleton.h"
+#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_piece.h"
@@ -49,10 +50,6 @@
 #include "net/base/net_util.h"
 #include "ui/base/l10n/time_format.h"
 #include "ui/gfx/image/image.h"
-
-#if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
-#endif
 
 using content::BrowserContext;
 using content::BrowserThread;
@@ -184,9 +181,23 @@ DictionaryValue* CreateDownloadItemValue(
                    content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST ||
                download_item->GetDangerType() ==
                    content::DOWNLOAD_DANGER_TYPE_POTENTIALLY_UNWANTED);
+        std::string trial_condition =
+            base::FieldTrialList::FindFullName(download_util::kFinchTrialName);
         const char* danger_type_value =
             GetDangerTypeString(download_item->GetDangerType());
         file_value->SetString("danger_type", danger_type_value);
+        if (!trial_condition.empty()) {
+          base::string16 finch_string;
+          content::DownloadDangerType danger_type =
+              download_item->GetDangerType();
+          if (danger_type == content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL ||
+              danger_type == content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT ||
+              danger_type == content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST) {
+            finch_string = download_util::AssembleMalwareFinchString(
+                trial_condition, file_name);
+          }
+          file_value->SetString("finch_string", finch_string);
+        }
       } else if (download_item->IsPaused()) {
         file_value->SetString("state", "PAUSED");
       } else {
@@ -247,8 +258,7 @@ bool IsDownloadDisplayable(const content::DownloadItem& item) {
 }  // namespace
 
 DownloadsDOMHandler::DownloadsDOMHandler(content::DownloadManager* dlm)
-    : search_text_(),
-      main_notifier_(dlm, this),
+    : main_notifier_(dlm, this),
       update_scheduled_(false),
       weak_ptr_factory_(this) {
   // Create our fileicon data source.
@@ -323,16 +333,14 @@ void DownloadsDOMHandler::OnDownloadUpdated(
     content::DownloadManager* manager,
     content::DownloadItem* download_item) {
   if (IsDownloadDisplayable(*download_item)) {
-    if (!search_text_.empty()) {
+    if (search_terms_ && !search_terms_->empty()) {
       // Don't CallDownloadUpdated() if download_item doesn't match
-      // search_text_.
+      // search_terms_.
       // TODO(benjhayden): Consider splitting MatchesQuery() out to a function.
       content::DownloadManager::DownloadVector all_items, filtered_items;
       all_items.push_back(download_item);
       DownloadQuery query;
-      scoped_ptr<base::Value> query_text(base::Value::CreateStringValue(
-          search_text_));
-      query.AddFilter(DownloadQuery::FILTER_QUERY, *query_text.get());
+      query.AddFilter(DownloadQuery::FILTER_QUERY, *search_terms_.get());
       query.Search(all_items.begin(), all_items.end(), &filtered_items);
       if (filtered_items.empty())
         return;
@@ -364,7 +372,7 @@ void DownloadsDOMHandler::OnDownloadRemoved(
 
 void DownloadsDOMHandler::HandleGetDownloads(const base::ListValue* args) {
   CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_GET_DOWNLOADS);
-  search_text_ = ExtractStringValue(args);
+  search_terms_.reset((args && !args->empty()) ? args->DeepCopy() : NULL);
   SendCurrentDownloads();
 }
 
@@ -508,10 +516,8 @@ void DownloadsDOMHandler::SendCurrentDownloads() {
     original_notifier_->GetManager()->CheckForHistoryFilesRemoval();
   }
   DownloadQuery query;
-  if (!search_text_.empty()) {
-    scoped_ptr<base::Value> query_text(base::Value::CreateStringValue(
-        search_text_));
-    query.AddFilter(DownloadQuery::FILTER_QUERY, *query_text.get());
+  if (search_terms_ && !search_terms_->empty()) {
+    query.AddFilter(DownloadQuery::FILTER_QUERY, *search_terms_.get());
   }
   query.AddFilter(base::Bind(&IsDownloadDisplayable));
   query.AddSorter(DownloadQuery::SORT_START_TIME, DownloadQuery::DESCENDING);

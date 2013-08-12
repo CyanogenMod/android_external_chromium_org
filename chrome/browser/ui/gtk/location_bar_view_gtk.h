@@ -122,7 +122,6 @@ class LocationBarViewGtk : public OmniboxEditController,
   virtual string16 GetTitle() const OVERRIDE;
   virtual InstantController* GetInstant() OVERRIDE;
   virtual content::WebContents* GetWebContents() const OVERRIDE;
-  virtual gfx::Rect GetOmniboxBounds() const OVERRIDE;
 
   // LocationBar:
   virtual void ShowFirstRunBubble() OVERRIDE;
@@ -136,7 +135,7 @@ class LocationBarViewGtk : public OmniboxEditController,
   virtual void UpdatePageActions() OVERRIDE;
   virtual void InvalidatePageActions() OVERRIDE;
   virtual void UpdateOpenPDFInReaderPrompt() OVERRIDE;
-  virtual void UpdateAutofillCreditCardView() OVERRIDE;
+  virtual void UpdateGeneratedCreditCardView() OVERRIDE;
   virtual void SaveStateToContents(content::WebContents* contents) OVERRIDE;
   virtual void Revert() OVERRIDE;
   virtual const OmniboxView* GetLocationEntry() const OVERRIDE;

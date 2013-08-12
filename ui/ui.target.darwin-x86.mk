@@ -89,6 +89,7 @@ LOCAL_SRC_FILES := \
 	ui/gfx/android/device_display_info.cc \
 	ui/gfx/android/java_bitmap.cc \
 	ui/gfx/blit.cc \
+	ui/gfx/box_f.cc \
 	ui/gfx/canvas.cc \
 	ui/gfx/canvas_android.cc \
 	ui/gfx/codec/jpeg_codec.cc \
@@ -208,6 +209,7 @@ MY_DEFS_Debug := \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DUSE_CHROMIUM_SKIA' \
 	'-DSK_USE_POSIX_THREADS' \
+	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \
@@ -327,6 +329,7 @@ MY_DEFS_Release := \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DUSE_CHROMIUM_SKIA' \
 	'-DSK_USE_POSIX_THREADS' \
+	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \

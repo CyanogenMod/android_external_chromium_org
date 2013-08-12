@@ -16,6 +16,12 @@ FakeDelegatedRendererLayerImpl::FakeDelegatedRendererLayerImpl(
 
 FakeDelegatedRendererLayerImpl::~FakeDelegatedRendererLayerImpl() {}
 
+scoped_ptr<LayerImpl> FakeDelegatedRendererLayerImpl::CreateLayerImpl(
+    LayerTreeImpl* tree_impl) {
+  return FakeDelegatedRendererLayerImpl::Create(
+      tree_impl, id()).PassAs<LayerImpl>();
+}
+
 static ResourceProvider::ResourceId AddResourceToFrame(
     DelegatedFrameData* frame,
     ResourceProvider::ResourceId resource_id) {
@@ -40,7 +46,8 @@ void FakeDelegatedRendererLayerImpl::SetFrameDataForRenderPasses(
   }
 
   TransferableResourceArray resources_for_ack;
-  SetFrameData(delegated_frame.Pass(), gfx::RectF(), &resources_for_ack);
+  SetFrameData(delegated_frame.Pass(), gfx::RectF());
+  CollectUnusedResources(&resources_for_ack);
 }
 
 }  // namespace cc

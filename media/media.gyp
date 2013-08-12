@@ -261,6 +261,8 @@
         'base/filter_collection.h',
         'base/media.cc',
         'base/media.h',
+        'base/media_file_checker.cc',
+        'base/media_file_checker.h',
         'base/media_keys.cc',
         'base/media_keys.h',
         'base/media_log.cc',
@@ -312,8 +314,8 @@
         'base/video_util.h',
         'base/yuv_convert.cc',
         'base/yuv_convert.h',
-        'crypto/aes_decryptor.cc',
-        'crypto/aes_decryptor.h',
+        'cdm/aes_decryptor.cc',
+        'cdm/aes_decryptor.h',
         'ffmpeg/ffmpeg_common.cc',
         'ffmpeg/ffmpeg_common.h',
         'filters/audio_decoder_selector.cc',
@@ -466,6 +468,8 @@
           'sources!': [
             'base/container_names.cc',
             'base/container_names.h',
+            'base/media_file_checker.cc',
+            'base/media_file_checker.h',
             'base/media_posix.cc',
             'ffmpeg/ffmpeg_common.cc',
             'ffmpeg/ffmpeg_common.h',
@@ -926,6 +930,7 @@
         'base/decoder_buffer_unittest.cc',
         'base/djb2_unittest.cc',
         'base/gmock_callback_support_unittest.cc',
+        'base/media_file_checker_unittest.cc',
         'base/multi_channel_resampler_unittest.cc',
         'base/pipeline_unittest.cc',
         'base/ranges_unittest.cc',
@@ -940,7 +945,7 @@
         'base/video_frame_unittest.cc',
         'base/video_util_unittest.cc',
         'base/yuv_convert_unittest.cc',
-        'crypto/aes_decryptor_unittest.cc',
+        'cdm/aes_decryptor_unittest.cc',
         'ffmpeg/ffmpeg_common_unittest.cc',
         'filters/audio_decoder_selector_unittest.cc',
         'filters/audio_file_reader_unittest.cc',
@@ -997,6 +1002,10 @@
         ['media_use_ffmpeg==1', {
           'dependencies': [
             '../third_party/ffmpeg/ffmpeg.gyp:ffmpeg',
+          ],
+        }, {  # media_use_ffmpeg== 0
+          'sources!': [
+            'base/media_file_checker_unittest.cc',
           ],
         }],
         ['os_posix==1 and OS!="mac" and OS!="ios"', {
@@ -1285,6 +1294,9 @@
       ], # targets
     }],
     ['OS!="ios"', {
+      'includes': [
+        'media_cdm.gypi',
+      ],
       'targets': [
         {
           # Minimal target for NaCl and other renderer side media clients which

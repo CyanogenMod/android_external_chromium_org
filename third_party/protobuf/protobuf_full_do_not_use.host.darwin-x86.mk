@@ -24,13 +24,16 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
+	third_party/protobuf/src/google/protobuf/compiler/java/java_doc_comment.cc \
 	third_party/protobuf/src/google/protobuf/stubs/strutil.cc \
 	third_party/protobuf/src/google/protobuf/stubs/substitute.cc \
+	third_party/protobuf/src/google/protobuf/stubs/stringprintf.cc \
 	third_party/protobuf/src/google/protobuf/stubs/structurally_valid.cc \
 	third_party/protobuf/src/google/protobuf/descriptor.cc \
 	third_party/protobuf/src/google/protobuf/descriptor.pb.cc \
 	third_party/protobuf/src/google/protobuf/descriptor_database.cc \
 	third_party/protobuf/src/google/protobuf/dynamic_message.cc \
+	third_party/protobuf/src/google/protobuf/extension_set.cc \
 	third_party/protobuf/src/google/protobuf/extension_set_heavy.cc \
 	third_party/protobuf/src/google/protobuf/generated_message_reflection.cc \
 	third_party/protobuf/src/google/protobuf/message.cc \
@@ -48,7 +51,6 @@ LOCAL_SRC_FILES := \
 	third_party/protobuf/src/google/protobuf/unknown_field_set.cc \
 	third_party/protobuf/src/google/protobuf/stubs/common.cc \
 	third_party/protobuf/src/google/protobuf/stubs/once.cc \
-	third_party/protobuf/src/google/protobuf/extension_set.cc \
 	third_party/protobuf/src/google/protobuf/generated_message_util.cc \
 	third_party/protobuf/src/google/protobuf/message_lite.cc \
 	third_party/protobuf/src/google/protobuf/repeated_field.cc \

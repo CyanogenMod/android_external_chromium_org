@@ -83,6 +83,9 @@ class ManagedUserService : public BrowserContextKeyedService,
   // be fast.
   void GetCategoryNames(CategoryList* list);
 
+  // Whether the user can request access to blocked URLs.
+  bool AccessRequestsEnabled();
+
   // Adds an access request for the given URL. The requests are stored using
   // a prefix followed by a URIEncoded version of the URL. Each entry contains
   // a dictionary which currently has the timestamp of the request in it.
@@ -140,6 +143,8 @@ class ManagedUserService : public BrowserContextKeyedService,
 
   void AddNavigationBlockedCallback(const NavigationBlockedCallback& callback);
   void DidBlockNavigation(content::WebContents* web_contents);
+
+  void AddInitCallback(const base::Closure& callback);
 
   // extensions::ManagementPolicy::Provider implementation:
   virtual std::string GetDebugPolicyProviderName() const OVERRIDE;
@@ -253,6 +258,8 @@ class ManagedUserService : public BrowserContextKeyedService,
   // True iff we're waiting for the Sync service to be initialized.
   bool waiting_for_sync_initialization_;
   bool is_profile_active_;
+
+  std::vector<base::Closure> init_callbacks_;
 
   std::vector<NavigationBlockedCallback> navigation_blocked_callbacks_;
 

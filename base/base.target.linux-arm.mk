@@ -148,7 +148,6 @@ LOCAL_SRC_FILES := \
 	base/power_monitor/power_monitor_device_source_android.cc \
 	base/power_monitor/power_monitor_device_source.cc \
 	base/power_monitor/power_monitor_source.cc \
-	base/power_monitor/power_monitor_test_base.cc \
 	base/process/internal_linux.cc \
 	base/process/kill.cc \
 	base/process/kill_posix.cc \

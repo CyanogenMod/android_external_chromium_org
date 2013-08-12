@@ -132,7 +132,6 @@
 #include "ui/gl/gl_switches.h"
 #include "webkit/browser/fileapi/sandbox_file_system_backend.h"
 #include "webkit/common/resource_type.h"
-#include "webkit/plugins/plugin_switches.h"
 
 #if defined(OS_ANDROID)
 #include "content/browser/android/vibration_message_filter.h"
@@ -652,7 +651,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   channel_->AddFilter(gpu_message_filter_);
 #if defined(ENABLE_WEBRTC)
   channel_->AddFilter(new WebRTCIdentityServiceHost(
-      storage_partition_impl_->GetWebRTCIdentityStore()));
+      GetID(), storage_partition_impl_->GetWebRTCIdentityStore()));
   peer_connection_tracker_host_ = new PeerConnectionTrackerHost(GetID());
   channel_->AddFilter(peer_connection_tracker_host_.get());
   channel_->AddFilter(new MediaStreamDispatcherHost(
@@ -1028,6 +1027,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kVModule,
     switches::kWebCoreLogChannels,
     switches::kEnableWebGLDraftExtensions,
+    switches::kEnableHTMLImports,
     switches::kTraceToConsole,
     switches::kEnableDeviceMotion,
 #if defined(OS_ANDROID)

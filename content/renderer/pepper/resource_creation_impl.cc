@@ -8,7 +8,6 @@
 #include "content/renderer/pepper/ppb_audio_impl.h"
 #include "content/renderer/pepper/ppb_broker_impl.h"
 #include "content/renderer/pepper/ppb_buffer_impl.h"
-#include "content/renderer/pepper/ppb_file_ref_impl.h"
 #include "content/renderer/pepper/ppb_flash_message_loop_impl.h"
 #include "content/renderer/pepper/ppb_graphics_3d_impl.h"
 #include "content/renderer/pepper/ppb_image_data_impl.h"
@@ -50,8 +49,8 @@ PP_Resource ResourceCreationImpl::CreateAudioConfig(
     PP_Instance instance,
     PP_AudioSampleRate sample_rate,
     uint32_t sample_frame_count) {
-  return ::ppapi::PPB_AudioConfig_Shared::Create(
-      ::ppapi::OBJECT_IS_IMPL, instance, sample_rate, sample_frame_count);
+  return ppapi::PPB_AudioConfig_Shared::Create(
+      ppapi::OBJECT_IS_IMPL, instance, sample_rate, sample_frame_count);
 }
 
 PP_Resource ResourceCreationImpl::CreateAudioTrusted(
@@ -70,22 +69,6 @@ PP_Resource ResourceCreationImpl::CreateBroker(PP_Instance instance) {
 PP_Resource ResourceCreationImpl::CreateBuffer(PP_Instance instance,
                                                uint32_t size) {
   return PPB_Buffer_Impl::Create(instance, size);
-}
-
-PP_Resource ResourceCreationImpl::CreateFileRef(
-    PP_Instance instance,
-    PP_Resource file_system,
-    const char* path) {
-  PPB_FileRef_Impl* res = PPB_FileRef_Impl::CreateInternal(
-      instance, file_system, path);
-  return res ? res->GetReference() : 0;
-}
-
-PP_Resource ResourceCreationImpl::CreateFileRef(
-    const ::ppapi::PPB_FileRef_CreateInfo& serialized) {
-  // When we're in-process, the host resource in the create info *is* the
-  // resource, so we don't need to do anything.
-  return serialized.resource.host_resource();
 }
 
 PP_Resource ResourceCreationImpl::CreateFlashDRM(PP_Instance instance) {
@@ -138,7 +121,7 @@ PP_Resource ResourceCreationImpl::CreateImageData(
     const PP_Size* size,
     PP_Bool init_to_zero) {
   return PPB_ImageData_Impl::Create(instance,
-                                    ::ppapi::PPB_ImageData_Shared::PLATFORM,
+                                    ppapi::PPB_ImageData_Shared::PLATFORM,
                                     format, *size, init_to_zero);
 }
 
@@ -148,7 +131,7 @@ PP_Resource ResourceCreationImpl::CreateImageDataSimple(
     const PP_Size* size,
     PP_Bool init_to_zero) {
   return PPB_ImageData_Impl::Create(instance,
-                                    ::ppapi::PPB_ImageData_Shared::SIMPLE,
+                                    ppapi::PPB_ImageData_Shared::SIMPLE,
                                     format, *size, init_to_zero);
 }
 
@@ -163,7 +146,7 @@ PP_Resource ResourceCreationImpl::CreateIMEInputEvent(
     uint32_t selection_start,
     uint32_t selection_end) {
   return PPB_InputEvent_Shared::CreateIMEInputEvent(
-      ::ppapi::OBJECT_IS_IMPL, instance, type, time_stamp, text, segment_number,
+      ppapi::OBJECT_IS_IMPL, instance, type, time_stamp, text, segment_number,
       segment_offsets, target_segment, selection_start, selection_end);
 }
 
@@ -181,7 +164,7 @@ PP_Resource ResourceCreationImpl::CreateKeyboardInputEvent(
     uint32_t key_code,
     struct PP_Var character_text) {
   return PPB_InputEvent_Shared::CreateKeyboardInputEvent(
-      ::ppapi::OBJECT_IS_IMPL, instance, type, time_stamp, modifiers, key_code,
+      ppapi::OBJECT_IS_IMPL, instance, type, time_stamp, modifiers, key_code,
       character_text);
 }
 
@@ -195,7 +178,7 @@ PP_Resource ResourceCreationImpl::CreateMouseInputEvent(
     int32_t click_count,
     const PP_Point* mouse_movement) {
   return PPB_InputEvent_Shared::CreateMouseInputEvent(
-      ::ppapi::OBJECT_IS_IMPL, instance, type, time_stamp, modifiers,
+      ppapi::OBJECT_IS_IMPL, instance, type, time_stamp, modifiers,
       mouse_button, mouse_position, click_count, mouse_movement);
 }
 
@@ -223,7 +206,7 @@ PP_Resource ResourceCreationImpl::CreateTouchInputEvent(
     PP_TimeTicks time_stamp,
     uint32_t modifiers) {
   return PPB_InputEvent_Shared::CreateTouchInputEvent(
-      ::ppapi::OBJECT_IS_IMPL, instance, type, time_stamp, modifiers);
+      ppapi::OBJECT_IS_IMPL, instance, type, time_stamp, modifiers);
 }
 
 PP_Resource ResourceCreationImpl::CreateNetworkMonitor(
@@ -247,7 +230,7 @@ PP_Resource ResourceCreationImpl::CreateResourceArray(
     const PP_Resource elements[],
     uint32_t size) {
   PPB_ResourceArray_Shared* object = new PPB_ResourceArray_Shared(
-      ::ppapi::OBJECT_IS_IMPL, instance, elements, size);
+      ppapi::OBJECT_IS_IMPL, instance, elements, size);
   return object->GetReference();
 }
 
@@ -301,7 +284,7 @@ PP_Resource ResourceCreationImpl::CreateWheelInputEvent(
     const PP_FloatPoint* wheel_ticks,
     PP_Bool scroll_by_page) {
   return PPB_InputEvent_Shared::CreateWheelInputEvent(
-      ::ppapi::OBJECT_IS_IMPL, instance, time_stamp, modifiers,
+      ppapi::OBJECT_IS_IMPL, instance, time_stamp, modifiers,
       wheel_delta, wheel_ticks, scroll_by_page);
 }
 

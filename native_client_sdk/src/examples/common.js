@@ -6,6 +6,10 @@
 // string.
 var isTest = false;
 
+// Set to true when loading a "Release" NaCl module, false when loading a
+// "Debug" NaCl module.
+var isRelease = false;
+
 // Javascript module pattern:
 //   see http://en.wikipedia.org/wiki/Unobtrusive_JavaScript#Namespaces
 // In essence, we define an anonymous function which is immediately called and
@@ -22,11 +26,10 @@ var common = (function() {
    * Return the mime type for NaCl plugin.
    *
    * @param {string} tool The name of the toolchain, e.g. "glibc", "newlib" etc.
-   * @param {bool} isRelease True if this is a release build.
    * @return {string} The mime-type for the kind of NaCl plugin matching
    * the given toolchain.
    */
-  function mimeTypeForTool(tool, isRelease) {
+  function mimeTypeForTool(tool) {
     // For NaCl modules use application/x-nacl.
     var mimetype = 'application/x-nacl';
     if (isHostToolchain(tool)) {
@@ -36,7 +39,7 @@ var common = (function() {
         mimetype = 'application/x-ppapi-release';
       else
         mimetype = 'application/x-ppapi-debug';
-    } else if (tool == 'pnacl') {
+    } else if (tool == 'pnacl' && isRelease) {
       mimetype = 'application/x-pnacl';
     }
     return mimetype;
@@ -293,8 +296,7 @@ var common = (function() {
     // status message indicating that the module is still loading.  Otherwise,
     // do not change the status message.
     updateStatus('Page loaded.');
-    var isRelease = path.toLowerCase().indexOf('release') != -1;
-    if (!browserSupportsNaCl(tool, isRelease)) {
+    if (!browserSupportsNaCl(tool)) {
       updateStatus(
           'Browser does not support NaCl (' + tool + '), or NaCl is disabled');
     } else if (common.naclModule == null) {
@@ -399,6 +401,7 @@ document.addEventListener('DOMContentLoaded', function() {
       var path = pathFormat.replace('{tc}', tc).replace('{config}', config);
 
       isTest = searchVars.test === 'true';
+      isRelease = path.toLowerCase().indexOf('release') != -1;
 
       loadFunction(body.dataset.name, tc, path, body.dataset.width,
                    body.dataset.height, attrs);

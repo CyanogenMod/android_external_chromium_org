@@ -318,6 +318,8 @@
         <include name="IDR_SIM_UNLOCK_HTML" file="resources\chromeos\sim_unlock.html" flattenhtml="true" type="BINDATA" />
         <include name="IDR_WRENCH_MENU_CSS" file="resources\chromeos\wrench_menu.css" flattenhtml="true" type="BINDATA" />
         <include name="IDR_WRENCH_MENU_JS" file="resources\chromeos\wrench_menu.js" flattenhtml="true" type="BINDATA" />
+        <include name="IDR_SLOW_HTML" file="resources\chromeos\slow.html" flattenhtml="true" type="BINDATA" />
+        <include name="IDR_SLOW_JS" file="resources\chromeos\slow.js" type="BINDATA" />
       </if>
       <if expr="pp_ifdef('file_manager_extension')">
         <include name="IDR_FILEMANAGER_MANIFEST" file="resources\file_manager\manifest.json" type="BINDATA" />
@@ -355,8 +357,8 @@
         <include name="IDR_SET_AS_DEFAULT_BROWSER_HTML" file="resources\set_as_default_browser.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       </if>
       <if expr="not is_android and not pp_ifdef('ios') and not pp_ifdef('chromeos')">
-        <include name="IDR_USER_CHOOSER_JS" file="resources\user_chooser\user_chooser.js" flattenhtml="true" type="BINDATA" />
-        <include name="IDR_USER_CHOOSER_HTML" file="resources\user_chooser\user_chooser.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
+        <include name="IDR_USER_MANAGER_JS" file="resources\user_manager\user_manager.js" flattenhtml="true" type="BINDATA" />
+        <include name="IDR_USER_MANAGER_HTML" file="resources\user_manager\user_manager.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       </if>
       <include name="IDR_MANAGED_MODE_BLOCK_INTERSTITIAL_HTML" file="resources\managed_mode_block_interstitial.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_PROFILE_SIGNIN_CONFIRMATION_HTML" file="resources\profile_signin_confirmation.html" type="BINDATA" />

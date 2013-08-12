@@ -140,7 +140,7 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
         section, inputs, validation_type);
   }
 
-  // Saving to Chrome is tested in AutofillDialogController unit tests.
+  // Saving to Chrome is tested in AutofillDialogControllerImpl unit tests.
   // TODO(estade): test that the view defaults to saving to Chrome.
   virtual bool ShouldOfferToSaveInChrome() const OVERRIDE {
     return false;
@@ -301,7 +301,8 @@ class AutofillDialogControllerTest : public InProcessBrowserTest {
     ExpectDomMessage("clicked");
 
     AutofillDialogControllerImpl* controller =
-        delegate->GetDialogControllerForTesting();
+        static_cast<AutofillDialogControllerImpl*>(
+            delegate->GetDialogControllerForTesting());
     DCHECK(controller);
     return controller;
   }
@@ -562,8 +563,17 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
 
 // Tests that changing the value of a CC expiration date combobox works as
 // expected when Autofill is used to fill text inputs.
+//
+// Flaky on Win7, WinXP, and Win Aura.  http://crbug.com/270314.
+// TODO(groby): Enable this test on mac once AutofillDialogCocoa handles
+// comboboxes for GetTextContentsForInput. http://crbug.com/270205
+#if defined(OS_MACOSX) || defined(OS_WIN)
+#define MAYBE_FillComboboxFromAutofill DISABLED_FillComboboxFromAutofill
+#else
+#define MAYBE_FillComboboxFromAutofill FillComboboxFromAutofill
+#endif
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
-                       FillComboboxFromAutofill) {
+                       MAYBE_FillComboboxFromAutofill) {
   InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
 
   CreditCard card1;
@@ -793,7 +803,13 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, NoCvcSegfault) {
       controller()->GetTestableView()->SubmitForTesting());
 }
 
-IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, PreservedSections) {
+// Flaky on Win7, WinXP, and Win Aura.  http://crbug.com/270314.
+#if defined(OS_WIN)
+#define MAYBE_PreservedSections DISABLED_PreservedSections
+#else
+#define MAYBE_PreservedSections PreservedSections
+#endif
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, MAYBE_PreservedSections) {
   InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
   controller()->set_use_validation(true);
 

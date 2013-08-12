@@ -59,7 +59,6 @@
 #include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/extensions/pending_extension_manager.h"
 #include "chrome/browser/extensions/permissions_updater.h"
-#include "chrome/browser/extensions/shell_window_registry.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/extensions/update_observer.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
@@ -80,7 +79,7 @@
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/feature_switch.h"
-#include "chrome/common/extensions/features/feature.h"
+#include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/common/extensions/incognito_handler.h"
 #include "chrome/common/extensions/manifest.h"
 #include "chrome/common/extensions/manifest_handlers/app_isolation_info.h"
@@ -627,11 +626,12 @@ bool ExtensionService::UpdateExtension(const std::string& id,
 
   // We want a silent install only for non-pending extensions and
   // pending extensions that have install_silently set.
-  ExtensionInstallPrompt* client = NULL;
+  scoped_ptr<ExtensionInstallPrompt> client;
   if (pending_extension_info && !pending_extension_info->install_silently())
-    client = ExtensionInstallUI::CreateInstallPromptWithProfile(profile_);
+    client.reset(ExtensionInstallUI::CreateInstallPromptWithProfile(profile_));
 
-  scoped_refptr<CrxInstaller> installer(CrxInstaller::Create(this, client));
+  scoped_refptr<CrxInstaller> installer(
+      CrxInstaller::Create(this, client.Pass()));
   installer->set_expected_id(id);
   if (pending_extension_info) {
     installer->set_install_source(pending_extension_info->install_source());
@@ -2035,13 +2035,17 @@ void ExtensionService::AddExtension(const Extension* extension) {
   }
 
   bool is_extension_upgrade = false;
-  if (const Extension* old = GetInstalledExtension(extension->id())) {
-    is_extension_upgrade = true;
-    DCHECK_NE(extension, old);
+  bool is_extension_installed = false;
+  const Extension* old = GetInstalledExtension(extension->id());
+  if (old) {
+    is_extension_installed = true;
+    int version_compare_result =
+        extension->version()->CompareTo(*(old->version()));
+    is_extension_upgrade = version_compare_result > 0;
     // Other than for unpacked extensions, CrxInstaller should have guaranteed
     // that we aren't downgrading.
     if (!Manifest::IsUnpackedLocation(extension->location()))
-      CHECK_GE(extension->version()->CompareTo(*(old->version())), 0);
+      CHECK_GE(version_compare_result, 0);
   }
   SetBeingUpgraded(extension, is_extension_upgrade);
 
@@ -2056,9 +2060,9 @@ void ExtensionService::AddExtension(const Extension* extension) {
 
   // Check if the extension's privileges have changed and mark the
   // extension disabled if necessary.
-  CheckPermissionsIncrease(extension, is_extension_upgrade);
+  CheckPermissionsIncrease(extension, is_extension_installed);
 
-  if (is_extension_upgrade && !reloading) {
+  if (is_extension_installed && !reloading) {
     // To upgrade an extension in place, unload the old one and then load the
     // new one.  ReloadExtension disables the extension, which is sufficient.
     UnloadExtension(extension->id(), extension_misc::UNLOAD_REASON_UPDATE);
@@ -2161,7 +2165,7 @@ void ExtensionService::UpdateActivePermissions(const Extension* extension) {
 }
 
 void ExtensionService::CheckPermissionsIncrease(const Extension* extension,
-                                                bool is_extension_upgrade) {
+                                                bool is_extension_installed) {
   UpdateActivePermissions(extension);
 
   // We keep track of all permissions the user has granted each extension.
@@ -2188,7 +2192,7 @@ void ExtensionService::CheckPermissionsIncrease(const Extension* extension,
   int disable_reasons = extension_prefs_->GetDisableReasons(extension->id());
 
   bool auto_grant_permission =
-      (!is_extension_upgrade && extension->was_installed_by_default()) ||
+      (!is_extension_installed && extension->was_installed_by_default()) ||
       chrome::IsRunningInForcedAppMode();
   // Silently grant all active permissions to default apps only on install.
   // After install they should behave like other apps.
@@ -2216,7 +2220,7 @@ void ExtensionService::CheckPermissionsIncrease(const Extension* extension,
         extension->GetActivePermissions().get(), extension->GetType());
   }
 
-  if (is_extension_upgrade) {
+  if (is_extension_installed) {
     // If the extension was already disabled, suppress any alerts for becoming
     // disabled on permissions increase.
     bool previously_disabled =
@@ -2725,7 +2729,7 @@ bool ExtensionService::OnExternalExtensionFileFound(
   }
 
   // no client (silent install)
-  scoped_refptr<CrxInstaller> installer(CrxInstaller::Create(this, NULL));
+  scoped_refptr<CrxInstaller> installer(CrxInstaller::CreateSilent(this));
   installer->set_install_source(location);
   installer->set_expected_id(id);
   installer->set_expected_version(*version);
@@ -2815,7 +2819,7 @@ void ExtensionService::Observe(int type,
 
       // Extensions need to know the channel for API restrictions.
       process->Send(new ExtensionMsg_SetChannel(
-          extensions::Feature::GetCurrentChannel()));
+          extensions::GetCurrentChannel()));
 
       // Platform apps need to know the system font.
       scoped_ptr<base::DictionaryValue> fonts(new base::DictionaryValue);

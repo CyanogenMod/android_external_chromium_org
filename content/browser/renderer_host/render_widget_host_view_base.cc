@@ -171,8 +171,8 @@ BOOL CALLBACK PaintEnumChildProc(HWND hwnd, LPARAM lparam) {
   gfx::Rect* rect = reinterpret_cast<gfx::Rect*>(lparam);
   gfx::Rect rect_in_pixels = ui::win::DIPToScreenRect(*rect);
   static UINT msg = RegisterWindowMessage(kPaintMessageName);
-  WPARAM wparam = rect_in_pixels.x() << 16 | rect_in_pixels.y();
-  lparam = rect_in_pixels.width() << 16 | rect_in_pixels.height();
+  WPARAM wparam = MAKEWPARAM(rect_in_pixels.x(), rect_in_pixels.y());
+  lparam = MAKELPARAM(rect_in_pixels.width(), rect_in_pixels.height());
 
   // SendMessage gets the message across much quicker than PostMessage, since it
   // doesn't get queued.  When the plugin thread calls PeekMessage or other
@@ -217,6 +217,10 @@ void RenderWidgetHostViewBase::MovePluginWindowsHelper(
     NOTREACHED();
     return;
   }
+
+#if defined(USE_AURA)
+  std::vector<RECT> invalidate_rects;
+#endif
 
   for (size_t i = 0; i < moves.size(); ++i) {
     unsigned long flags = 0;
@@ -290,6 +294,19 @@ void RenderWidgetHostViewBase::MovePluginWindowsHelper(
       // Note: System will own the hrgn after we call SetWindowRgn,
       // so we don't need to call DeleteObject(hrgn)
       ::SetWindowRgn(window, hrgn, !move.clip_rect.IsEmpty());
+
+#if defined(USE_AURA)
+      // When using the software compositor, if the clipping rectangle is empty
+      // then DeferWindowPos won't redraw the newly uncovered area under the
+      // plugin.
+      if (clip_rect_in_pixel.IsEmpty() &&
+          !GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor()) {
+        RECT r;
+        GetClientRect(window, &r);
+        MapWindowPoints(window, parent, reinterpret_cast<POINT*>(&r), 2);
+        invalidate_rects.push_back(r);
+      }
+#endif
     } else {
       flags |= SWP_NOMOVE;
       flags |= SWP_NOSIZE;
@@ -321,6 +338,13 @@ void RenderWidgetHostViewBase::MovePluginWindowsHelper(
       GetWindowRect(move.window, &r);
       gfx::Rect gr(r);
       PaintEnumChildProc(move.window, reinterpret_cast<LPARAM>(&gr));
+    }
+  } else {
+      for (size_t i = 0; i < invalidate_rects.size(); ++i) {
+      ::RedrawWindow(
+          parent, &invalidate_rects[i], NULL,
+          // These flags are from WebPluginDelegateImpl::NativeWndProc.
+          RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_FRAME | RDW_UPDATENOW);
     }
   }
 #endif

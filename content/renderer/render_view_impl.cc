@@ -29,7 +29,8 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
-#include "content/child/appcache_dispatcher.h"
+#include "content/child/appcache/appcache_dispatcher.h"
+#include "content/child/appcache/web_application_cache_host_impl.h"
 #include "content/child/child_thread.h"
 #include "content/child/fileapi/file_system_dispatcher.h"
 #include "content/child/fileapi/webfilesystem_callback_adapters.h"
@@ -205,7 +206,6 @@
 #include "ui/shell_dialogs/selected_file_info.h"
 #include "v8/include/v8.h"
 #include "webkit/child/weburlresponse_extradata_impl.h"
-#include "webkit/renderer/appcache/web_application_cache_host_impl.h"
 #include "webkit/renderer/webpreferences_renderer.h"
 
 #if defined(OS_ANDROID)
@@ -218,7 +218,8 @@
 #include "content/renderer/android/email_detector.h"
 #include "content/renderer/android/phone_number_detector.h"
 #include "content/renderer/media/android/renderer_media_player_manager.h"
-#include "content/renderer/media/android/stream_texture_factory_android.h"
+#include "content/renderer/media/android/stream_texture_factory_android_impl.h"
+#include "content/renderer/media/android/stream_texture_factory_android_synchronous_impl.h"
 #include "content/renderer/media/android/webmediaplayer_android.h"
 #include "content/renderer/media/android/webmediaplayer_proxy_android.h"
 #include "skia/ext/platform_canvas.h"
@@ -336,10 +337,8 @@ using WebKit::WebVector;
 using WebKit::WebView;
 using WebKit::WebWidget;
 using WebKit::WebWindowFeatures;
-using appcache::WebApplicationCacheHostImpl;
 using base::Time;
 using base::TimeDelta;
-
 using webkit_glue::WebURLResponseExtraDataImpl;
 
 #if defined(OS_ANDROID)
@@ -3022,6 +3021,15 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
     media_player_proxy_ = new WebMediaPlayerProxyAndroid(
         this, media_player_manager_.get());
   }
+
+  scoped_ptr<StreamTextureFactory> stream_texture_factory;
+  if (UsingSynchronousRendererCompositor()) {
+    stream_texture_factory.reset(new StreamTextureFactorySynchronousImpl);
+  } else {
+    stream_texture_factory.reset(new StreamTextureFactoryImpl(
+        context_provider->Context3d(), gpu_channel_host, routing_id_));
+  }
+
   scoped_ptr<WebMediaPlayerAndroid> web_media_player_android(
       new WebMediaPlayerAndroid(
           frame,
@@ -3029,8 +3037,7 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
           AsWeakPtr(),
           media_player_manager_.get(),
           media_player_proxy_,
-          new StreamTextureFactory(
-              context_provider->Context3d(), gpu_channel_host, routing_id_),
+          stream_texture_factory.release(),
           new RenderMediaLog()));
 #if defined(ENABLE_WEBRTC) && defined(GOOGLE_TV)
   if (media_stream_client_->IsMediaStream(url)) {

@@ -38,8 +38,9 @@ public class AwTargetDensityDpiTest extends AwTestBase {
         int actualWidth = Integer.parseInt(getTitleOnUiThread(awContents));
         assertEquals((float)deviceInfo.getDisplayWidth(), (float)actualWidth, 10f);
 
-        float displayWidth = (float)(deviceInfo.getDisplayWidth() / deviceInfo.getDIPScale());
-        float deviceDpi = (float)(120f * deviceInfo.getDIPScale());
+        float displayWidth = (float)(deviceInfo.getDisplayWidth());
+        float deviceDpi = (float)(160f * deviceInfo.getDIPScale());
+
         loadDataSync(awContents, onPageFinishedHelper, pageHighDpi, "text/html", false);
         actualWidth = Integer.parseInt(getTitleOnUiThread(awContents));
         assertEquals(displayWidth * (240f / deviceDpi), (float)actualWidth, 10f);

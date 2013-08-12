@@ -52,7 +52,7 @@ class OneClickSigninHelper
     AUTO_ACCEPT_ACCEPTED,
 
     // User has explicitly accepted to sign in, but wants to configure sync
-    // settings before turing it on.
+    // settings before turning it on.
     AUTO_ACCEPT_CONFIGURE,
 
     // User has explicitly rejected to sign in.  Furthermore, the user does
@@ -133,6 +133,8 @@ class OneClickSigninHelper
                            ShowSigninBubbleAfterSigninComplete);
   FRIEND_TEST_ALL_PREFIXES(OneClickSigninHelperTest, SigninCancelled);
   FRIEND_TEST_ALL_PREFIXES(OneClickSigninHelperTest, SigninFailed);
+  FRIEND_TEST_ALL_PREFIXES(OneClickSigninHelperTest,
+                           CleanTransientStateOnNavigate);
   FRIEND_TEST_ALL_PREFIXES(OneClickSigninHelperIOTest, CanOfferOnIOThread);
   FRIEND_TEST_ALL_PREFIXES(OneClickSigninHelperIOTest,
                            CanOfferOnIOThreadIncognito);

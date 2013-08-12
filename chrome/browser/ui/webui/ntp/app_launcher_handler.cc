@@ -317,12 +317,6 @@ void AppLauncherHandler::Observe(int type,
       }
       break;
     }
-    // The promo may not load until a couple seconds after the first NTP view,
-    // so we listen for the load notification and notify the NTP when ready.
-    case chrome::NOTIFICATION_WEB_STORE_PROMO_LOADED:
-      // TODO(estade): Try to get rid of this inefficient operation.
-      HandleGetApps(NULL);
-      break;
     case chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR: {
       CrxInstaller* crx_installer = content::Source<CrxInstaller>(source).ptr();
       if (!Profile::FromWebUI(web_ui())->IsSameProfile(
@@ -454,8 +448,6 @@ void AppLauncherHandler::HandleGetApps(const ListValue* args) {
     registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LAUNCHER_REORDERED,
         content::Source<ExtensionSorting>(
             extension_service_->extension_prefs()->extension_sorting()));
-    registrar_.Add(this, chrome::NOTIFICATION_WEB_STORE_PROMO_LOADED,
-        content::Source<Profile>(profile));
     registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR,
         content::Source<CrxInstaller>(NULL));
     registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOAD_ERROR,
@@ -727,7 +719,7 @@ void AppLauncherHandler::OnFaviconForApp(
   }
 
   scoped_refptr<CrxInstaller> installer(
-      CrxInstaller::Create(extension_service_, NULL));
+      CrxInstaller::CreateSilent(extension_service_));
   installer->set_error_on_unsupported_requirements(true);
   installer->set_page_ordinal(install_info->page_ordinal);
   installer->InstallWebApp(*web_app);

@@ -1181,35 +1181,35 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   FileManager.prototype.initSidebar_ = function() {
     this.directoryTree_ = this.dialogDom_.querySelector('#directory-tree');
     DirectoryTree.decorate(this.directoryTree_, this.directoryModel_);
-    this.directoryTree_.addEventListener('content-updated', function() {
-      this.updateMiddleBarVisibility_(true);
-    }.bind(this));
 
     this.navigationList_ = this.dialogDom_.querySelector('#volume-list');
-    NavigationList.decorate(this.navigationList_,
-                            this.directoryModel_,
-                            this.folderShortcutsModel_);
+    NavigationList.decorate(this.navigationList_, this.directoryModel_);
+    this.navigationList_.fileManager = this;
+    this.navigationList_.dataModel =
+        new NavigationListModel(this.directoryModel_.getRootsList(),
+                                this.folderShortcutsModel_);
+
+    this.navigationList_.addEventListener(
+        'shortcut-target-not-found',
+        function(e) {
+          var path = e.path;
+          var label = e.label;
+          this.confirm.showWithTitle(
+            label,
+            str('SHORTCUT_TARGET_UNAVAILABLE'),
+            // 'Yes' is clicked.
+            function() {
+              this.removeFolderShortcut(path);
+            }.bind(this));
+        }.bind(this));
   };
 
   /**
-   * @param {boolean=} opt_delayed If true, updating is delayed by 500ms.
    * @private
    */
-  FileManager.prototype.updateMiddleBarVisibility_ = function(opt_delayed) {
-    if (this.updateMiddleBarVisibilityTimer_) {
-      clearTimeout(this.updateMiddleBarVisibilityTimer_);
-      this.updateMiddleBarVisibilityTimer_ = null;
-    }
-
-    if (opt_delayed) {
-      this.updateMiddleBarVisibilityTimer_ =
-          setTimeout(this.updateMiddleBarVisibility_.bind(this, false), 500);
-      return;
-    }
+  FileManager.prototype.updateMiddleBarVisibility_ = function() {
     var currentPath = this.directoryModel_.getCurrentDirPath();
-    var visible =
-        (this.directoryTree_.items.length > 0) &&
-        (!DirectoryTreeUtil.shouldHideTree(currentPath));
+    var visible = DirectoryTreeUtil.isEligiblePathForDirectoryTree(currentPath);
     this.dialogDom_.
         querySelector('.dialog-middlebar-contents').hidden = !visible;
     this.dialogDom_.querySelector('#middlebar-splitter').hidden = !visible;
@@ -1591,10 +1591,10 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       return;
 
     if (!path) {
-      path = this.directoryModel_.getDefaultDirectory();
+      path = PathUtil.DEFAULT_DIRECTORY;
     } else if (path.indexOf('/') == -1) {
       // Path is a file name.
-      path = this.directoryModel_.getDefaultDirectory() + '/' + path;
+      path = PathUtil.DEFAULT_DIRECTORY + '/' + path;
     }
 
     // In the FULL_PAGE mode if the hash path points to a file we might have
@@ -2015,10 +2015,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
   FileManager.prototype.isDriveEnabled = function() {
     // Auto resolving to local path does not work for folders (e.g., dialog for
-    // loading unpacked extensions) and saving.
-    // TODO(kinaba): make it work for the save dialog http://crbug.com/140425
+    // loading unpacked extensions).
     var noLocalPathResolution =
-      this.params_.type == DialogType.SELECT_SAVEAS_FILE ||
       this.params_.type == DialogType.SELECT_FOLDER ||
       this.params_.type == DialogType.SELECT_UPLOAD_FOLDER;
     if (noLocalPathResolution && this.params_.shouldReturnLocalPath)
@@ -2685,9 +2683,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       this.scanUpdatedTimer_ = null;
     }
 
-    if (!this.spinner_.hidden) {
+    if (this.spinner_.hidden) {
       this.cancelSpinnerTimeout_();
-      this.showSpinner_(false);
       this.showSpinnerTimeout_ =
           setTimeout(this.showSpinner_.bind(this, true), 500);
     }

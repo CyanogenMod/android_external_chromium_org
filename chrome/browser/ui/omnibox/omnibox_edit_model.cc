@@ -502,8 +502,7 @@ void OmniboxEditModel::StartAutocomplete(
       (has_selected_text && inline_autocomplete_text_.empty()) ||
       (paste_state_ != NONE),
       keyword_is_selected,
-      keyword_is_selected || allow_exact_keyword_match_,
-      controller_->GetOmniboxBounds().x());
+      keyword_is_selected || allow_exact_keyword_match_);
 }
 
 void OmniboxEditModel::StopAutocomplete() {
@@ -728,12 +727,11 @@ void OmniboxEditModel::OpenMatch(const AutocompleteMatch& match,
 
     // Track whether the destination URL sends us to a search results page
     // using the default search provider.
-    TemplateURL* default_provider =
-        TemplateURLServiceFactory::GetForProfile(profile_)->
-            GetDefaultSearchProvider();
-    if (default_provider && default_provider->IsSearchURL(destination_url))
+    if (TemplateURLServiceFactory::GetForProfile(profile_)->
+        IsSearchResultsPageFromDefaultSearchProvider(destination_url)) {
       content::RecordAction(
           UserMetricsAction("OmniboxDestinationURLIsSearchOnDSP"));
+    }
 
     // This calls RevertAll again.
     base::AutoReset<bool> tmp(&in_revert_, true);
@@ -860,8 +858,9 @@ void OmniboxEditModel::OnKillFocus() {
 }
 
 bool OmniboxEditModel::OnEscapeKeyPressed() {
+  const AutocompleteMatch& match = CurrentMatch(NULL);
   if (has_temporary_text_) {
-    if (CurrentMatch(NULL).destination_url != original_url_) {
+    if (match.destination_url != original_url_) {
       RevertTemporaryText(true);
       return true;
     }
@@ -879,7 +878,10 @@ bool OmniboxEditModel::OnEscapeKeyPressed() {
   // When the permanent text isn't all selected we still fall through to the
   // SelectAll() call below so users can arrow around in the text and then hit
   // <esc> to quickly replace all the text; this matches IE.
-  if (!user_input_in_progress_ && view_->IsSelectAll())
+  const bool has_zero_suggest_match = match.provider &&
+      (match.provider->type() == AutocompleteProvider::TYPE_ZERO_SUGGEST);
+  if (!has_zero_suggest_match && !user_input_in_progress_ &&
+      view_->IsSelectAll())
     return false;
 
   if (!user_text_.empty()) {
@@ -1293,6 +1295,9 @@ AutocompleteInput::PageClassification OmniboxEditModel::ClassifyPage() const {
     return AutocompleteInput::HOMEPAGE;
   if (view_->toolbar_model()->WouldReplaceSearchURLWithSearchTerms(true)) {
     return AutocompleteInput::SEARCH_RESULT_PAGE_DOING_SEARCH_TERM_REPLACEMENT;
+  }
+  if (delegate_->IsSearchResultsPage()) {
+    return AutocompleteInput::SEARCH_RESULT_PAGE_NO_SEARCH_TERM_REPLACEMENT;
   }
   return AutocompleteInput::OTHER;
 }

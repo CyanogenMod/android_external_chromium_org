@@ -247,29 +247,32 @@ TEST_F(FullStreamUIPolicyTest, GetTodaysActions) {
   ActivityLogPolicy* policy = new FullStreamUIPolicy(profile_.get());
 
   // Use a mock clock to ensure that events are not recorded on the wrong day
-  // when the test is run close to local midnight.
-  base::SimpleTestClock mock_clock;
-  mock_clock.SetNow(base::Time::Now().LocalMidnight() +
-                    base::TimeDelta::FromHours(12));
-  policy->SetClockForTesting(&mock_clock);
+  // when the test is run close to local midnight.  Note: Ownership is passed
+  // to the policy, but we still keep a pointer locally.  The policy will take
+  // care of destruction; this is safe since the policy outlives all our
+  // accesses to the mock clock.
+  base::SimpleTestClock* mock_clock = new base::SimpleTestClock();
+  mock_clock->SetNow(base::Time::Now().LocalMidnight() +
+                     base::TimeDelta::FromHours(12));
+  policy->SetClockForTesting(scoped_ptr<base::Clock>(mock_clock));
 
   // Record some actions
   scoped_refptr<Action> action =
       new Action("punky",
-                 mock_clock.Now() - base::TimeDelta::FromMinutes(40),
+                 mock_clock->Now() - base::TimeDelta::FromMinutes(40),
                  Action::ACTION_API_CALL,
                  "brewster");
   action->mutable_args()->AppendString("woof");
   policy->ProcessAction(action);
 
   action =
-      new Action("punky", mock_clock.Now(), Action::ACTION_DOM_ACCESS, "lets");
+      new Action("punky", mock_clock->Now(), Action::ACTION_DOM_ACCESS, "lets");
   action->mutable_args()->AppendString("vamoose");
   action->set_page_url(GURL("http://www.google.com"));
   policy->ProcessAction(action);
 
   action = new Action(
-      "scoobydoo", mock_clock.Now(), Action::ACTION_DOM_ACCESS, "lets");
+      "scoobydoo", mock_clock->Now(), Action::ACTION_DOM_ACCESS, "lets");
   action->mutable_args()->AppendString("vamoose");
   action->set_page_url(GURL("http://www.google.com"));
   policy->ProcessAction(action);
@@ -288,15 +291,15 @@ TEST_F(FullStreamUIPolicyTest, GetOlderActions) {
 
   // Use a mock clock to ensure that events are not recorded on the wrong day
   // when the test is run close to local midnight.
-  base::SimpleTestClock mock_clock;
-  mock_clock.SetNow(base::Time::Now().LocalMidnight() +
-                    base::TimeDelta::FromHours(12));
-  policy->SetClockForTesting(&mock_clock);
+  base::SimpleTestClock* mock_clock = new base::SimpleTestClock();
+  mock_clock->SetNow(base::Time::Now().LocalMidnight() +
+                     base::TimeDelta::FromHours(12));
+  policy->SetClockForTesting(scoped_ptr<base::Clock>(mock_clock));
 
   // Record some actions
   scoped_refptr<Action> action =
       new Action("punky",
-                 mock_clock.Now() - base::TimeDelta::FromDays(3) -
+                 mock_clock->Now() - base::TimeDelta::FromDays(3) -
                      base::TimeDelta::FromMinutes(40),
                  Action::ACTION_API_CALL,
                  "brewster");
@@ -304,7 +307,7 @@ TEST_F(FullStreamUIPolicyTest, GetOlderActions) {
   policy->ProcessAction(action);
 
   action = new Action("punky",
-                      mock_clock.Now() - base::TimeDelta::FromDays(3),
+                      mock_clock->Now() - base::TimeDelta::FromDays(3),
                       Action::ACTION_DOM_ACCESS,
                       "lets");
   action->mutable_args()->AppendString("vamoose");
@@ -312,7 +315,7 @@ TEST_F(FullStreamUIPolicyTest, GetOlderActions) {
   policy->ProcessAction(action);
 
   action = new Action("punky",
-                      mock_clock.Now(),
+                      mock_clock->Now(),
                       Action::ACTION_DOM_ACCESS,
                       "lets");
   action->mutable_args()->AppendString("too new");
@@ -320,7 +323,7 @@ TEST_F(FullStreamUIPolicyTest, GetOlderActions) {
   policy->ProcessAction(action);
 
   action = new Action("punky",
-                      mock_clock.Now() - base::TimeDelta::FromDays(7),
+                      mock_clock->Now() - base::TimeDelta::FromDays(7),
                       Action::ACTION_DOM_ACCESS,
                       "lets");
   action->mutable_args()->AppendString("too old");

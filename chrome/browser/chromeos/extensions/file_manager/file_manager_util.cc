@@ -18,7 +18,9 @@
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/chromeos/extensions/file_manager/file_browser_handlers.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_tasks.h"
+#include "chrome/browser/chromeos/extensions/file_manager/fileapi_util.h"
 #include "chrome/browser/chromeos/media/media_player.h"
 #include "chrome/browser/extensions/api/file_handlers/app_file_handler_util.h"
 #include "chrome/browser/extensions/crx_installer.h"
@@ -98,15 +100,6 @@ const char* kBrowserSupportedExtensions[] = {
     ".mhtml", ".mht", ".svg"
 };
 
-// List of all extensions we want to be shown in histogram that keep track of
-// files that were unsuccessfully tried to be opened.
-// The list has to be synced with histogram values.
-const char* kUMATrackingExtensions[] = {
-  "other", ".doc", ".docx", ".odt", ".rtf", ".pdf", ".ppt", ".pptx", ".odp",
-  ".xls", ".xlsx", ".ods", ".csv", ".odf", ".rar", ".asf", ".wma", ".wmv",
-  ".mov", ".mpg", ".log"
-};
-
 // Returns a file manager URL for the given |path|.
 GURL GetFileManagerUrl(const char* path) {
   return GURL(std::string("chrome-extension://") + kFileBrowserDomain + path);
@@ -152,19 +145,6 @@ bool IsFlashPluginEnabled(Profile* profile) {
   if (plugin_path.empty())
     PathService::Get(chrome::FILE_PEPPER_FLASH_PLUGIN, &plugin_path);
   return IsPepperPluginEnabled(profile, plugin_path);
-}
-
-// Returns index |ext| has in the |array|. If there is no |ext| in |array|, last
-// element's index is return (last element should have irrelevant value).
-int UMAExtensionIndex(const char *file_extension,
-                      const char** array,
-                      size_t array_size) {
-  for (size_t i = 0; i < array_size; i++) {
-    if (base::strcasecmp(file_extension, array[i]) == 0) {
-      return i;
-    }
-  }
-  return 0;
 }
 
 // Convert numeric dialog type to a string.
@@ -238,7 +218,8 @@ void InstallCRX(Browser* browser, const base::FilePath& path) {
   scoped_refptr<extensions::CrxInstaller> installer(
       extensions::CrxInstaller::Create(
           service,
-          new ExtensionInstallPrompt(browser->profile(), NULL, NULL)));
+          scoped_ptr<ExtensionInstallPrompt>(new ExtensionInstallPrompt(
+              browser->profile(), NULL, NULL))));
   installer->set_error_on_unsupported_requirements(true);
   installer->set_is_gallery_install(false);
   installer->set_allow_silent_install(false);
@@ -270,22 +251,18 @@ bool GrantFileSystemAccessToFileBrowser(Profile* profile) {
   return true;
 }
 
-// Executes handler specified with |extension_id| and |action_id| for |url|.
+// Executes handler specified with |task| for |url|.
 void ExecuteHandler(Profile* profile,
-                    std::string extension_id,
-                    std::string action_id,
-                    const GURL& url,
-                    const std::string& task_type) {
+                    const file_tasks::TaskDescriptor& task,
+                    const GURL& url) {
   // If File Browser has not been open yet then it did not request access
   // to the file system. Do it now.
   if (!GrantFileSystemAccessToFileBrowser(profile))
     return;
 
-  GURL site = extensions::ExtensionSystem::Get(profile)->extension_service()->
-      GetSiteForExtensionId(kFileBrowserDomain);
   fileapi::FileSystemContext* file_system_context =
-      BrowserContext::GetStoragePartitionForSite(profile, site)->
-          GetFileSystemContext();
+      fileapi_util::GetFileSystemContextForExtensionId(
+          profile, kFileBrowserDomain);
 
   // We are executing the task on behalf of File Browser extension.
   const GURL source_url = GetFileBrowserUrl();
@@ -297,9 +274,7 @@ void ExecuteHandler(Profile* profile,
       source_url,
       kFileBrowserDomain,
       0, // no tab id
-      extension_id,
-      task_type,
-      action_id,
+      task,
       urls,
       file_tasks::FileTaskFinishedCallback());
 }
@@ -313,10 +288,10 @@ void OpenFileBrowserImpl(const base::FilePath& path,
   if (!ConvertFileToFileSystemUrl(profile, path, kFileBrowserDomain, &url))
     return;
 
-  // Some values of |action_id| are not listed in the manifest and are used
-  // to parameterize the behavior when opening the Files app window.
-  ExecuteHandler(profile, kFileBrowserDomain, action_id, url,
-                 file_tasks::kTaskFile);
+  file_tasks::TaskDescriptor task(kFileBrowserDomain,
+                                  file_tasks::kFileBrowserHandlerTaskType,
+                                  action_id);
+  ExecuteHandler(profile, task, url);
 }
 
 Browser* GetBrowserForUrl(GURL target_url) {
@@ -370,11 +345,15 @@ bool ExecuteDefaultAppHandler(Profile* profile,
     for (FileHandlerList::iterator i = file_handlers.begin();
          i != file_handlers.end(); ++i) {
       const extensions::FileHandlerInfo* handler = *i;
-      std::string task_id = file_tasks::MakeTaskID(extension->id(),
-          file_tasks::kTaskApp, handler->id);
+      std::string task_id = file_tasks::MakeTaskID(
+          extension->id(),
+          file_tasks::kFileHandlerTaskType,
+          handler->id);
       if (task_id == default_task_id) {
-        ExecuteHandler(profile, extension->id(), handler->id, url,
-                       file_tasks::kTaskApp);
+        file_tasks::TaskDescriptor task(extension->id(),
+                                        file_tasks::kFileHandlerTaskType,
+                                        handler->id);
+        ExecuteHandler(profile, task, url);
         return true;
 
       } else if (!first_handler) {
@@ -384,8 +363,10 @@ bool ExecuteDefaultAppHandler(Profile* profile,
     }
   }
   if (first_handler) {
-    ExecuteHandler(profile, extension_for_first_handler->id(),
-                   first_handler->id, url, file_tasks::kTaskApp);
+    file_tasks::TaskDescriptor task(extension_for_first_handler->id(),
+                                    file_tasks::kFileHandlerTaskType,
+                                    first_handler->id);
+    ExecuteHandler(profile, task, url);
     return true;
   }
   return false;
@@ -410,15 +391,19 @@ bool ExecuteExtensionHandler(Profile* profile,
         action_id == kFileBrowserMountArchiveTaskId ||
         action_id == kFileBrowserPlayTaskId ||
         action_id == kFileBrowserWatchTaskId) {
-      ExecuteHandler(profile, extension_id, action_id, url,
-                     file_tasks::kTaskFile);
+      file_tasks::TaskDescriptor task(extension_id,
+                                      file_tasks::kFileBrowserHandlerTaskType,
+                                      action_id);
+      ExecuteHandler(profile, task, url);
       return true;
     }
     return ExecuteBuiltinHandler(browser, path);
   }
 
-  ExecuteHandler(profile, extension_id, action_id, url,
-                 file_tasks::kTaskFile);
+  file_tasks::TaskDescriptor task(extension_id,
+                                  file_tasks::kFileBrowserHandlerTaskType,
+                                  action_id);
+  ExecuteHandler(profile, task, url);
   return true;
 }
 
@@ -430,7 +415,6 @@ bool ExecuteDefaultHandler(Profile* profile, const base::FilePath& path) {
   std::string mime_type = GetMimeTypeForPath(path);
   std::string default_task_id = file_tasks::GetDefaultTaskIdFromPrefs(
       profile, mime_type, path.Extension());
-  const FileBrowserHandler* handler;
 
   // We choose the file handler from the following in decreasing priority or
   // fail if none support the file type:
@@ -440,15 +424,20 @@ bool ExecuteDefaultHandler(Profile* profile, const base::FilePath& path) {
   // 4. non-default app
   // 5. non-default extension
   // Note that there can be at most one of default extension and default app.
-  if (!file_tasks::GetTaskForURLAndPath(profile, url, path, &handler)) {
+  const FileBrowserHandler* handler =
+      file_browser_handlers::FindFileBrowserHandlerForURLAndPath(
+          profile, url, path);
+  if (!handler) {
     return ExecuteDefaultAppHandler(
         profile, path, url, mime_type, default_task_id);
   }
 
   std::string handler_task_id = file_tasks::MakeTaskID(
-        handler->extension_id(), file_tasks::kTaskFile, handler->id());
+        handler->extension_id(),
+        file_tasks::kFileBrowserHandlerTaskType,
+        handler->id());
   if (handler_task_id != default_task_id &&
-      !file_tasks::IsFallbackTask(handler) &&
+      !file_browser_handlers::IsFallbackFileBrowserHandler(handler) &&
       ExecuteDefaultAppHandler(
           profile, path, url, mime_type, default_task_id)) {
     return true;
@@ -740,11 +729,9 @@ void ViewItem(const base::FilePath& path) {
     return;
   }
 
-  GURL site = extensions::ExtensionSystem::Get(profile)->extension_service()->
-      GetSiteForExtensionId(kFileBrowserDomain);
   scoped_refptr<fileapi::FileSystemContext> file_system_context =
-      BrowserContext::GetStoragePartitionForSite(profile, site)->
-      GetFileSystemContext();
+      fileapi_util::GetFileSystemContextForExtensionId(
+          profile, kFileBrowserDomain);
 
   CheckIfDirectoryExists(file_system_context, url,
                          base::Bind(&ContinueViewItem, profile, path));
@@ -807,13 +794,8 @@ bool ExecuteBuiltinHandler(Browser* browser, const base::FilePath& path) {
     return true;
   }
 
-  // Unknown file type. Record UMA and show an error message.
-  size_t extension_index = UMAExtensionIndex(file_extension.data(),
-                                             kUMATrackingExtensions,
-                                             arraysize(kUMATrackingExtensions));
-  UMA_HISTOGRAM_ENUMERATION("FileBrowser.OpeningFileType",
-                            extension_index,
-                            arraysize(kUMATrackingExtensions) - 1);
+  // Failed to open the file of unknown type.
+  LOG(WARNING) << "Unknown file type: " << path.value();
   return false;
 }
 

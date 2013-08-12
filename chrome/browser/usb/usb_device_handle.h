@@ -11,21 +11,28 @@
 #include "base/memory/ref_counted.h"
 #include "base/strings/string16.h"
 #include "base/synchronization/lock.h"
+#include "base/threading/thread_checker.h"
 #include "chrome/browser/usb/usb_interface.h"
+#include "content/public/browser/browser_thread.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
 
-struct libusb_device;
 struct libusb_device_handle;
 struct libusb_iso_packet_descriptor;
 struct libusb_transfer;
 
-typedef libusb_device* PlatformUsbDevice;
 typedef libusb_device_handle* PlatformUsbDeviceHandle;
 typedef libusb_iso_packet_descriptor* PlatformUsbIsoPacketDescriptor;
 typedef libusb_transfer* PlatformUsbTransferHandle;
 
-class UsbService;
+class UsbContext;
+class UsbConfigDescriptor;
+class UsbDevice;
+class UsbInterface;
+
+namespace base {
+  class MessageLoopProxy;
+}  // namespace base
 
 namespace net {
 class IOBuffer;
@@ -45,35 +52,33 @@ enum UsbTransferStatus {
 typedef base::Callback<void(UsbTransferStatus, scoped_refptr<net::IOBuffer>,
     size_t)> UsbTransferCallback;
 
-// A UsbDevice wraps the platform's underlying representation of what a USB
-// device actually is, and provides accessors for performing many of the
-// standard USB operations.
-class UsbDeviceHandle : public base::RefCounted<UsbDeviceHandle> {
+// UsbDeviceHandle class provides basic I/O related functionalities.
+class UsbDeviceHandle : public base::RefCountedThreadSafe<UsbDeviceHandle> {
  public:
   enum TransferRequestType { STANDARD, CLASS, VENDOR, RESERVED };
   enum TransferRecipient { DEVICE, INTERFACE, ENDPOINT, OTHER };
 
-  // Usually you will not want to directly create a UsbDevice, favoring to let
-  // the UsbService take care of the logistics of getting a platform device
-  // handle and handling events for it.
-  UsbDeviceHandle(UsbService* service, PlatformUsbDeviceHandle handle);
+  scoped_refptr<UsbDevice> device() const;
+  PlatformUsbDeviceHandle handle() const { return handle_; }
 
-  PlatformUsbDeviceHandle handle() { return handle_; }
-
-  // Close the USB device and release the underlying platform device.
+  // Notifies UsbDevice to drop the reference of this object; cancels all the
+  // flying transfers.
+  // It is possible that the object has no other reference after this call. So
+  // if it is called using a raw pointer, it could be invalidated.
+  // The platform device handle will be closed when UsbDeviceHandle destructs.
   virtual void Close();
 
-  // Device manipulation operations. These methods are blocking.
-  virtual bool ListInterfaces(UsbConfigDescriptor* config);
+  // Device manipulation operations. These methods are blocking and must be
+  // called on FILE thread.
   virtual bool ClaimInterface(const int interface_number);
   virtual bool ReleaseInterface(const int interface_number);
   virtual bool SetInterfaceAlternateSetting(
       const int interface_number,
       const int alternate_setting);
   virtual bool ResetDevice();
-  bool GetSerial(base::string16* serial);
+  virtual bool GetSerial(base::string16* serial);
 
-  // Async IO.
+  // Async IO. Can be called on any thread.
   virtual void ControlTransfer(const UsbEndpointDirection direction,
                                const TransferRequestType request_type,
                                const TransferRecipient recipient,
@@ -108,32 +113,34 @@ class UsbDeviceHandle : public base::RefCounted<UsbDeviceHandle> {
                                    const unsigned int timeout,
                                    const UsbTransferCallback& callback);
 
-  // Normal code should not call this function. It is called by the platform's
-  // callback mechanism in such a way that it cannot be made private. Invokes
-  // the callbacks associated with a given transfer, and removes it from the
-  // in-flight transfer set.
-  void TransferComplete(PlatformUsbTransferHandle transfer);
-
  protected:
+  friend class base::RefCountedThreadSafe<UsbDeviceHandle>;
+  friend class UsbDevice;
+
+  // This constructor is called by UsbDevice.
+  UsbDeviceHandle(scoped_refptr<UsbContext> context,
+                  UsbDevice* device, PlatformUsbDeviceHandle handle);
+
   // This constructor variant is for use in testing only.
   UsbDeviceHandle();
-
-  friend class base::RefCounted<UsbDeviceHandle>;
   virtual ~UsbDeviceHandle();
 
+  UsbDevice* device_;
+
  private:
-  struct Transfer {
-    Transfer();
-    ~Transfer();
+  friend void HandleTransferCompletion(PlatformUsbTransferHandle handle);
 
-    UsbTransferType transfer_type;
-    scoped_refptr<net::IOBuffer> buffer;
-    size_t length;
-    UsbTransferCallback callback;
-  };
+  class InterfaceClaimer;
+  struct Transfer;
 
-  // Checks that the device has not yet been closed.
-  void CheckDevice();
+  // Refresh endpoint_map_ after ClaimInterface, ReleaseInterface and
+  // SetInterfaceAlternateSetting.
+  void RefreshEndpointMap();
+
+  // Look up the claimed interface by endpoint. Return NULL if the interface
+  // of the endpoint is not found.
+  scoped_refptr<InterfaceClaimer> GetClaimedInterfaceForEndpoint(
+      unsigned char endpoint);
 
   // Submits a transfer and starts tracking it. Retains the buffer and copies
   // the completion callback until the transfer finishes, whereupon it invokes
@@ -142,20 +149,35 @@ class UsbDeviceHandle : public base::RefCounted<UsbDeviceHandle> {
                       UsbTransferType transfer_type,
                       net::IOBuffer* buffer,
                       const size_t length,
+                      scoped_refptr<base::MessageLoopProxy> message_loop_proxy,
                       const UsbTransferCallback& callback);
 
-  // The UsbService isn't referenced here to prevent a dependency cycle between
-  // the service and the devices. Since a service owns every device, and is
-  // responsible for its destruction, there is no case where a UsbDevice can
-  // have outlived its originating UsbService.
-  UsbService* const service_;
+  // Invokes the callbacks associated with a given transfer, and removes it from
+  // the in-flight transfer set.
+  void TransferComplete(PlatformUsbTransferHandle transfer);
+
+  // Informs the object to drop internal references.
+  void InternalClose();
+
   PlatformUsbDeviceHandle handle_;
 
-  // transfers_ tracks all in-flight transfers associated with this device,
-  // allowing the device to retain the buffer and callback associated with a
-  // transfer until such time that it completes. It is protected by lock_.
-  base::Lock lock_;
-  std::map<PlatformUsbTransferHandle, Transfer> transfers_;
+  scoped_refptr<UsbConfigDescriptor> interfaces_;
+
+  typedef std::map<int, scoped_refptr<InterfaceClaimer> > ClaimedInterfaceMap;
+  ClaimedInterfaceMap claimed_interfaces_;
+
+  typedef std::map<PlatformUsbTransferHandle, Transfer> TransferMap;
+  TransferMap transfers_;
+
+  // A map from endpoints to interfaces
+  typedef std::map<int, int> EndpointMap;
+  EndpointMap endpoint_map_;
+
+  // Retain the UsbContext so that the platform context will not be destroyed
+  // before this handle.
+  scoped_refptr<UsbContext> context_;
+
+  base::ThreadChecker thread_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(UsbDeviceHandle);
 };

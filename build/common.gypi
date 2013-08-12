@@ -530,8 +530,8 @@
           'native_memory_pressure_signals%': 1,
         }],
 
-        # Enable autofill dialog for Mac and Views-enabled platforms for now.
-        ['toolkit_views==1 or OS=="mac"', {
+        # Enable autofill dialog for Android, Mac and Views-enabled platforms.
+        ['toolkit_views==1 or (OS=="android" and android_webview_build==0) or OS=="mac"', {
           'enable_autofill_dialog%': 1
         }],
 
@@ -963,11 +963,6 @@
     # remaining.
     'win_third_party_warn_as_error%': 'true',
 
-    # This is the location of the sandbox binary. Chrome looks for this before
-    # running the zygote process. If found, and SUID, it will be used to
-    # sandbox the zygote process and, thus, all renderer processes.
-    'linux_sandbox_path%': '',
-
     # Clang stuff.
     'clang%': '<(clang)',
     'make_clang_dir%': 'third_party/llvm-build/Release+Asserts',
@@ -1227,12 +1222,15 @@
              'android_sdk_root%': '<!(cd <(DEPTH) && pwd -P)/third_party/android_tools/sdk/',
              'android_host_arch%': '<!(uname -m)',
              # Android API-level of the SDK used for compilation.
-             'android_sdk_version%': '17',
+             'android_sdk_version%': '<!(/bin/echo -n ${ANDROID_SDK_VERSION})',
+             # Android SDK build tools (e.g. dx, aapt, aidl)
+             'android_sdk_tools%': '<!(/bin/echo -n ${ANDROID_SDK_TOOLS})',
           },
           # Copy conditionally-set variables out one scope.
           'android_ndk_root%': '<(android_ndk_root)',
           'android_sdk_root%': '<(android_sdk_root)',
           'android_sdk_version%': '<(android_sdk_version)',
+          'android_sdk_tools%': '<(android_sdk_tools)',
           'android_stlport_root': '<(android_ndk_root)/sources/cxx-stl/stlport',
 
           'android_sdk%': '<(android_sdk_root)/platforms/android-<(android_sdk_version)',
@@ -1278,7 +1276,7 @@
 
         'android_ndk_include': '<(android_ndk_sysroot)/usr/include',
         'android_ndk_lib': '<(android_ndk_sysroot)/usr/lib',
-        'android_sdk_tools%': '<(android_sdk_root)/platform-tools',
+        'android_sdk_tools%': '<(android_sdk_tools)',
         'android_sdk%': '<(android_sdk)',
         'android_sdk_jar%': '<(android_sdk)/android.jar',
 

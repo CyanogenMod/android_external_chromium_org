@@ -611,12 +611,6 @@ MessageCenterView::MessageCenterView(MessageCenter* message_center,
                                            initially_settings_visible);
 
   const int button_height = button_bar_->GetPreferredSize().height();
-  button_bar_->set_border(views::Border::CreateSolidSidedBorder(
-      top_down_ ? 0 : kButtonBarBorderThickness,
-      0,
-      top_down_ ? kButtonBarBorderThickness : 0,
-      0,
-      kFooterDelimiterColor));
 
   scroller_ =
       new BoundedScrollView(kMinScrollViewHeight, max_height - button_height);
@@ -715,8 +709,9 @@ void MessageCenterView::SetSettingsVisible(bool visible) {
   settings_transition_animation_->set_delegate(this);
   settings_transition_animation_->set_continuous(false);
   settings_transition_animation_->Start();
-}
 
+  button_bar_->SetBackArrowVisible(visible);
+}
 
 void MessageCenterView::ClearAllNotifications() {
   if (is_closing_)
@@ -730,6 +725,7 @@ void MessageCenterView::ClearAllNotifications() {
 void MessageCenterView::OnAllNotificationsCleared() {
   scroller_->SetEnabled(true);
   button_bar_->SetAllButtonsEnabled(true);
+  button_bar_->SetCloseAllButtonEnabled(false);
   message_center_->RemoveAllNotifications(true);  // Action by user.
 }
 
@@ -776,6 +772,26 @@ void MessageCenterView::Layout() {
                             width(),
                             height() - button_height);
 
+  bool is_scrollable = false;
+  if (scroller_->visible())
+    is_scrollable = scroller_->height() < message_list_view_->height();
+  else
+    is_scrollable = settings_view_->IsScrollable();
+
+  if (is_scrollable && !button_bar_->border()) {
+    // Draw separator line on the top of the button bar if it is on the bottom
+    // or draw it at the bottom if the bar is on the top.
+    button_bar_->set_border(views::Border::CreateSolidSidedBorder(
+        top_down_ ? 0 : 1,
+        0,
+        top_down_ ? 1 : 0,
+        0,
+        kFooterDelimiterColor));
+    button_bar_->SchedulePaint();
+  } else if (!is_scrollable && button_bar_->border()) {
+    button_bar_->set_border(NULL);
+    button_bar_->SchedulePaint();
+  }
   button_bar_->SetBounds(0,
                          top_down_ ? 0 : height() - button_height,
                          width(),
@@ -971,7 +987,7 @@ void MessageCenterView::NotificationsChanged() {
   bool no_message_views = message_views_.empty();
 
   no_notifications_message_view_->SetVisible(no_message_views);
-  button_bar_->SetCloseAllButtonVisible(!no_message_views);
+  button_bar_->SetCloseAllButtonEnabled(!no_message_views);
   scroller_->set_focusable(!no_message_views);
 
   scroller_->InvalidateLayout();

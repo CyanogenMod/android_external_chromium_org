@@ -368,16 +368,6 @@ void NetworkStateHandler::RequestUpdateForAllNetworks() {
   }
 }
 
-void NetworkStateHandler::SetConnectingNetwork(
-    const std::string& service_path) {
-  connecting_network_ = service_path;
-  const NetworkState* network = GetNetworkState(service_path);
-  if (network)
-    NET_LOG_EVENT("SetConnectingNetwork", GetManagedStateLogName(network));
-  else
-    NET_LOG_ERROR("SetConnectingNetwork to unknown network", service_path);
-}
-
 void NetworkStateHandler::SetCheckPortalList(
     const std::string& check_portal_list) {
   NET_LOG_EVENT("SetCheckPortalList", check_portal_list);
@@ -440,7 +430,7 @@ void NetworkStateHandler::UpdateManagedList(ManagedState::ManagedType type,
     }
     list_entries.insert(path);
   }
-  // Delete any remaning entries in managed_map.
+  // Delete any remaining entries in managed_map.
   STLDeleteContainerPairSecondPointers(managed_map.begin(), managed_map.end());
 }
 
@@ -524,29 +514,43 @@ void NetworkStateHandler::UpdateNetworkServiceProperty(
   if (!network)
     return;
   std::string prev_connection_state = network->connection_state();
+  std::string prev_profile_path = network->profile_path();
   if (!network->PropertyChanged(key, value))
     return;
 
   if (key == flimflam::kStateProperty) {
-    if (ConnectionStateChanged(network, prev_connection_state))
+    if (ConnectionStateChanged(network, prev_connection_state)) {
       OnNetworkConnectionStateChanged(network);
+      // If the connection state changes, other properties such as IPConfig
+      // may have changed, so request a full update.
+      RequestUpdateForNetwork(service_path);
+    }
   } else {
-    if (network->path() == default_network_path_ &&
-        key != flimflam::kSignalStrengthProperty &&
-        key != shill::kWifiFrequencyListProperty) {
-      // WiFi SignalStrength and WifiFrequencyList updates are too noisy, so
+    bool noisy_property =
+        key == flimflam::kSignalStrengthProperty ||
+        key == shill::kWifiFrequencyListProperty;
+    if (network->path() == default_network_path_ && !noisy_property) {
+      // Wifi SignalStrength and WifiFrequencyList updates are too noisy, so
       // don't trigger default network updates for those changes.
       OnDefaultNetworkChanged();
     }
-    std::string detail = network->name() + "." + key;
-    detail += " = " + network_event_log::ValueAsString(value);
-    network_event_log::LogLevel log_level = network_event_log::LOG_LEVEL_EVENT;
-    if (key == flimflam::kErrorProperty || key == shill::kErrorDetailsProperty)
-      log_level = network_event_log::LOG_LEVEL_ERROR;
-    else if (key == flimflam::kSignalStrengthProperty ||
-             key == shill::kWifiFrequencyListProperty)
-      log_level = network_event_log::LOG_LEVEL_DEBUG;
-    NET_LOG_LEVEL(log_level, "NetworkPropertyUpdated", detail);
+    if (prev_profile_path.empty() && !network->profile_path().empty()) {
+      // If added to a Profile, request a full update so that a FavoriteState
+      // gets created.
+      RequestUpdateForNetwork(service_path);
+    }
+    if (!noisy_property) {
+      std::string detail = network->name() + "." + key;
+      detail += " = " + network_event_log::ValueAsString(value);
+      network_event_log::LogLevel log_level;
+      if (key == flimflam::kErrorProperty ||
+          key == shill::kErrorDetailsProperty) {
+        log_level = network_event_log::LOG_LEVEL_ERROR;
+      } else {
+        log_level = network_event_log::LOG_LEVEL_EVENT;
+      }
+      NET_LOG_LEVEL(log_level, "NetworkPropertyUpdated", detail);
+    }
   }
   NetworkPropertiesUpdated(network);
 }
@@ -596,8 +600,8 @@ void NetworkStateHandler::ManagedStateListChanged(
   } else if (type == ManagedState::MANAGED_TYPE_FAVORITE) {
     NET_LOG_DEBUG("FavoriteListChanged",
                   base::StringPrintf("Size:%" PRIuS, favorite_list_.size()));
-    FOR_EACH_OBSERVER(NetworkStateHandlerObserver, observers_,
-                      NetworkListChanged());
+    // The FavoriteState list only changes when the NetworkState list changes,
+    // so no need to signal observers here again.
   } else if (type == ManagedState::MANAGED_TYPE_DEVICE) {
     NET_LOG_DEBUG("DeviceListChanged",
                   base::StringPrintf("Size:%" PRIuS, device_list_.size()));
@@ -689,16 +693,6 @@ void NetworkStateHandler::NetworkPropertiesUpdated(
     const NetworkState* network) {
   FOR_EACH_OBSERVER(NetworkStateHandlerObserver, observers_,
                     NetworkPropertiesUpdated(network));
-  // If |connecting_network_| transitions to a non-idle, non-connecting state,
-  // clear it *after* signalling observers.
-  if (network->path() == connecting_network_ &&
-      !network->IsConnectingState() &&
-      network->connection_state() != flimflam::kStateIdle) {
-    connecting_network_.clear();
-    NET_LOG_EVENT("ClearConnectingNetwork", base::StringPrintf(
-        "%s:%s", GetManagedStateLogName(network).c_str(),
-        network->connection_state().c_str()));
-  }
 }
 
 void NetworkStateHandler::ScanCompleted(const std::string& type) {

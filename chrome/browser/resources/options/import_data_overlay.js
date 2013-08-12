@@ -42,6 +42,7 @@ cr.define('options', function() {
       $('import-browsers').onchange = function() {
         self.updateCheckboxes_();
         self.validateCommitButton_();
+        self.updateBottomBar_();
       };
 
       $('import-data-commit').onclick = function() {
@@ -55,6 +56,10 @@ cr.define('options', function() {
 
       $('import-data-cancel').onclick = function() {
         ImportDataOverlay.dismiss();
+      };
+
+      $('import-choose-file').onclick = function() {
+        chrome.send('chooseBookmarksFile');
       };
 
       $('import-data-show-bookmarks-bar').onchange = function() {
@@ -93,6 +98,7 @@ cr.define('options', function() {
       for (var i = 0; i < checkboxes.length; i++)
         this.setUpCheckboxState_(checkboxes[i], enabled);
       $('import-data-commit').disabled = !enabled;
+      $('mac-password-keychain').hidden = !enabled;
     },
 
     /**
@@ -115,6 +121,10 @@ cr.define('options', function() {
      */
     updateCheckboxes_: function() {
       var index = $('import-browsers').selectedIndex;
+      var bookmarksFileSelected = index == this.browserProfiles.length - 1;
+      $('import-choose-file').hidden = !bookmarksFileSelected;
+      $('import-data-commit').hidden = bookmarksFileSelected;
+
       var browserProfile;
       if (this.browserProfiles.length > index)
         browserProfile = this.browserProfiles[index];
@@ -122,10 +132,24 @@ cr.define('options', function() {
       for (var i = 0; i < importOptions.length; i++) {
         var checkbox = $('import-' + importOptions[i]);
         var enable = browserProfile && browserProfile[importOptions[i]];
+        checkbox.checked = enable;
         this.setUpCheckboxState_(checkbox, enable);
         var checkboxWithLabel = $('import-' + importOptions[i] + '-with-label');
         checkboxWithLabel.style.display = enable ? '' : 'none';
       }
+    },
+
+    /**
+     * Show or hide gray message at the bottom.
+     * @private
+     */
+    updateBottomBar_: function() {
+      var index = $('import-browsers').selectedIndex;
+      var browserProfile;
+      if (this.browserProfiles.length > index)
+        browserProfile = this.browserProfiles[index];
+      var enable = browserProfile && browserProfile['show_bottom_bar'];
+      $('mac-password-keychain').hidden = !enable;
     },
 
     /**
@@ -155,6 +179,7 @@ cr.define('options', function() {
 
         this.updateCheckboxes_();
         this.validateCommitButton_();
+        this.updateBottomBar_();
       }
     },
 

@@ -11,6 +11,7 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_skia_config_gyp)/blink_skia_config.stamp \
 	$(call intermediates-dir-for,GYP,third_party_expat_expat_gyp)/expat.stamp
 
 GYP_GENERATED_OUTPUTS :=
@@ -107,6 +108,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkFilterShader.cpp \
 	third_party/skia/src/core/SkFlattenable.cpp \
 	third_party/skia/src/core/SkFlattenableBuffers.cpp \
+	third_party/skia/src/core/SkFlattenableSerialization.cpp \
 	third_party/skia/src/core/SkFloat.cpp \
 	third_party/skia/src/core/SkFloatBits.cpp \
 	third_party/skia/src/core/SkFontHost.cpp \
@@ -246,6 +248,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/effects/SkDashPathEffect.cpp \
 	third_party/skia/src/effects/SkDiscretePathEffect.cpp \
 	third_party/skia/src/effects/SkDisplacementMapEffect.cpp \
+	third_party/skia/src/effects/SkDropShadowImageFilter.cpp \
 	third_party/skia/src/effects/SkEmbossMask.cpp \
 	third_party/skia/src/effects/SkEmbossMaskFilter.cpp \
 	third_party/skia/src/effects/SkGpuBlurUtils.cpp \
@@ -429,6 +432,7 @@ MY_DEFS_Debug := \
 	'-DSK_GAMMA_EXPONENT=1.4' \
 	'-DSK_GAMMA_CONTRAST=0.0' \
 	'-DSK_USE_POSIX_THREADS' \
+	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \
@@ -550,6 +554,7 @@ MY_DEFS_Release := \
 	'-DSK_GAMMA_EXPONENT=1.4' \
 	'-DSK_GAMMA_CONTRAST=0.0' \
 	'-DSK_USE_POSIX_THREADS' \
+	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \

@@ -16,13 +16,14 @@
 #include "content/browser/renderer_host/media/web_contents_video_capture_device.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/desktop_media_id.h"
 #include "content/public/common/media_stream_request.h"
 #include "media/base/scoped_histogram_timer.h"
 #include "media/video/capture/fake_video_capture_device.h"
 #include "media/video/capture/video_capture_device.h"
 
 #if defined(ENABLE_SCREEN_CAPTURE)
-#include "content/browser/renderer_host/media/screen_capture_device.h"
+#include "content/browser/renderer_host/media/desktop_capture_device.h"
 #endif
 
 namespace content {
@@ -157,17 +158,19 @@ void VideoCaptureManager::OnOpen(int capture_session_id,
 
   // Check if another session has already opened this device. If so, just
   // use that opened device.
-  media::VideoCaptureDevice* video_capture_device = GetOpenedDevice(device);
-  if (video_capture_device) {
+  media::VideoCaptureDevice* opened_video_capture_device =
+      GetOpenedDevice(device);
+  if (opened_video_capture_device) {
     DeviceEntry& new_entry = devices_[capture_session_id];
     new_entry.stream_type = device.device.type;
-    new_entry.capture_device = video_capture_device;
+    new_entry.capture_device = opened_video_capture_device;
     PostOnOpened(device.device.type, capture_session_id);
     return;
   }
 
-  // Open the device.
+  scoped_ptr<media::VideoCaptureDevice> video_capture_device;
 
+  // Open the device.
   switch (device.device.type) {
     case MEDIA_DEVICE_VIDEO_CAPTURE: {
       // We look up the device id from the renderer in our local enumeration
@@ -176,24 +179,23 @@ void VideoCaptureManager::OnOpen(int capture_session_id,
       media::VideoCaptureDevice::Name* found =
           video_capture_devices_.FindById(device.device.id);
       if (found) {
-        video_capture_device = use_fake_device_ ?
+        video_capture_device.reset(use_fake_device_ ?
             media::FakeVideoCaptureDevice::Create(*found) :
-            media::VideoCaptureDevice::Create(*found);
+            media::VideoCaptureDevice::Create(*found));
       }
       break;
     }
     case MEDIA_TAB_VIDEO_CAPTURE: {
-      video_capture_device = WebContentsVideoCaptureDevice::Create(
-          device.device.id);
+      video_capture_device.reset(
+          WebContentsVideoCaptureDevice::Create(device.device.id));
       break;
     }
-    case MEDIA_SCREEN_VIDEO_CAPTURE: {
+    case MEDIA_DESKTOP_VIDEO_CAPTURE: {
 #if defined(ENABLE_SCREEN_CAPTURE)
-      scoped_refptr<base::SequencedWorkerPool> blocking_pool =
-          BrowserThread::GetBlockingPool();
-      video_capture_device = new ScreenCaptureDevice(
-          blocking_pool->GetSequencedTaskRunner(
-              blocking_pool->GetSequenceToken()));
+      DesktopMediaID id = DesktopMediaID::Parse(device.device.id);
+      if (id.type != DesktopMediaID::TYPE_NONE) {
+        video_capture_device = DesktopCaptureDevice::Create(id);
+      }
 #endif  // defined(ENABLE_SCREEN_CAPTURE)
       break;
     }
@@ -210,7 +212,7 @@ void VideoCaptureManager::OnOpen(int capture_session_id,
 
   DeviceEntry& new_entry = devices_[capture_session_id];
   new_entry.stream_type = device.device.type;
-  new_entry.capture_device = video_capture_device;
+  new_entry.capture_device = video_capture_device.release();
   PostOnOpened(device.device.type, capture_session_id);
 }
 
@@ -434,7 +436,7 @@ void VideoCaptureManager::GetAvailableDevices(
       *device_names = video_capture_devices_;
       break;
 
-    case MEDIA_SCREEN_VIDEO_CAPTURE:
+    case MEDIA_DESKTOP_VIDEO_CAPTURE:
       device_names->clear();
       break;
 

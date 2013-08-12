@@ -80,9 +80,10 @@
 // (Files.app) and the latter looks like "419782477519" (Pixlr Editor).
 //
 // <task-type> is either of
-// - "file" - Files.app built-in handler
+// - "file" - File browser handler - app/extension declaring
+//            "file_browser_handlers" in manifest.
+// - "app" - File handler - app declaring "file_handlers" in manifest.json.
 // - "drive" - Drive App
-// - "app" - Regular Chrome Extension/App ID
 //
 // <task-action-id> is an ID string used for identifying actions provided
 // from a single Chrome Extension/App. In other words, a single
@@ -109,15 +110,13 @@
 #ifndef CHROME_BROWSER_CHROMEOS_EXTENSIONS_FILE_MANAGER_FILE_TASKS_H_
 #define CHROME_BROWSER_CHROMEOS_EXTENSIONS_FILE_MANAGER_FILE_TASKS_H_
 
+#include <set>
 #include <string>
 #include <vector>
 
+#include "base/basictypes.h"
 #include "base/callback_forward.h"
-#include "base/platform_file.h"
-#include "chrome/common/extensions/extension.h"
 
-class Browser;
-class FileBrowserHandler;
 class GURL;
 class Profile;
 
@@ -128,20 +127,29 @@ class FileSystemURL;
 namespace file_manager {
 namespace file_tasks {
 
-// Tasks are stored as a vector in order of priorities.
-typedef std::vector<const FileBrowserHandler*> FileBrowserHandlerList;
+// Task types encoded in task IDs. See also the comment at the beginning of
+// the file about <task-type>.
+extern const char kFileBrowserHandlerTaskType[];
+extern const char kFileHandlerTaskType[];
+extern const char kDriveTaskType[];
 
-// Specifies the task type for a task id that represents some file action, Drive
-// action, or Web Intent action.
-extern const char kTaskFile[];
-extern const char kTaskDrive[];
-extern const char kTaskApp[];
+// Describes a task.
+// See the comment above for <app-id>, <task-type>, and <action-id>.
+struct TaskDescriptor {
+  TaskDescriptor(const std::string& in_app_id,
+                 const std::string& in_task_type,
+                 const std::string& in_action_id)
+      : app_id(in_app_id),
+        task_type(in_task_type),
+        action_id(in_action_id) {
+  }
+  TaskDescriptor() {
+  }
 
-void UpdateFileHandlerUsageStats(Profile* profile, const std::string& task_id);
-
-// Returns true if the task should be used as a fallback. Such tasks are
-// Files.app's internal handlers as well as quick office extensions.
-bool IsFallbackTask(const FileBrowserHandler* task);
+  std::string app_id;
+  std::string task_type;
+  std::string action_id;
+};
 
 // Update the default file handler for the given sets of suffixes and MIME
 // types.
@@ -158,58 +166,51 @@ std::string GetDefaultTaskIdFromPrefs(Profile* profile,
                                       const std::string& mime_type,
                                       const std::string& suffix);
 
-// Generates task id for the action specified by the extension. The |task_type|
-// must be one of kTaskFile, kTaskDrive or kTaskApp.
+// Generates task id for the task specified by |app_id|, |task_type| and
+// |action_id|. The |task_type| must be one of kFileBrowserHandlerTaskType,
+// kDriveTaskType or kFileHandlerTaskType.
+// <app-id> is either of Chrome Extension/App ID or Drive App ID.
 std::string MakeTaskID(const std::string& extension_id,
                        const std::string& task_type,
                        const std::string& action_id);
 
-// Extracts action, type and extension id bound to the file task ID. Either
-// |target_extension_id| or |action_id| are allowed to be NULL if caller isn't
-// interested in those values.  Returns false on failure to parse.
+// Returns a task id for the Drive app with |app_id|.
+// TODO(gspencer): For now, the action id is always "open-with", but we
+// could add any actions that the drive app supports.
+std::string MakeDriveAppTaskId(const std::string& app_id);
+
+// Parses the task ID and extracts app ID, task type, and action ID into
+// |task|. On failure, returns false, and the contents of |task| are
+// undefined.
 //
 // See also the comment at the beginning of the file for details for how
 // "task_id" looks like.
-bool CrackTaskID(const std::string& task_id,
-                 std::string* target_extension_id,
-                 std::string* task_type,
-                 std::string* action_id);
+bool ParseTaskID(const std::string& task_id, TaskDescriptor* task);
 
-// This generates a list of default tasks (tasks set as default by the user in
-// prefs) from the |common_tasks|.
-void FindDefaultTasks(Profile* profile,
-                      const std::vector<base::FilePath>& files_list,
-                      const FileBrowserHandlerList& common_tasks,
-                      FileBrowserHandlerList* default_tasks);
-
-// This generates list of tasks common for all files in |file_list|.
-bool FindCommonTasks(Profile* profile,
-                     const std::vector<GURL>& files_list,
-                     FileBrowserHandlerList* common_tasks);
-
-// Finds a task for a file whose URL is |url| and whose path is |path|.
-// Returns default task if one is defined (The default task is the task that is
-// assigned to file browser task button by default). If default task is not
-// found, tries to match the url with one of the builtin tasks.
-bool GetTaskForURLAndPath(Profile* profile,
-                          const GURL& url,
-                          const base::FilePath& path,
-                          const FileBrowserHandler** handler);
-
-// Used for returning success or failure from task executions.
-typedef base::Callback<void(bool)> FileTaskFinishedCallback;
+// The callback is used for ExecuteFileTask(). Will be called with true if
+// the file task execution is successful, or false if unsuccessful.
+typedef base::Callback<void(bool success)> FileTaskFinishedCallback;
 
 // Executes file handler task for each element of |file_urls|.
 // Returns |false| if the execution cannot be initiated. Otherwise returns
 // |true| and then eventually calls |done| when all the files have been handled.
 // |done| can be a null callback.
+//
+// Parameters:
+// profile    - The profile used for making this function call.
+// source_url - The source URL which originates this function call.
+// tab_id     - The ID of the tab which originates this function call.
+//              This can be 0 if no tab is associated.
+// task       - See the comment at TaskDescriptor struct.
+// file_urls  - URLs of the target files.
+// done       - The callback which will be called on completion.
+//              The callback won't be called if the function returns
+//              false.
 bool ExecuteFileTask(Profile* profile,
                      const GURL& source_url,
                      const std::string& file_browser_id,
                      int32 tab_id,
-                     const std::string& extension_id,
-                     const std::string& task_type,
-                     const std::string& action_id,
+                     const TaskDescriptor& task,
                      const std::vector<fileapi::FileSystemURL>& file_urls,
                      const FileTaskFinishedCallback& done);
 

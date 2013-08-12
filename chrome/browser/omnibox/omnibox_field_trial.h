@@ -5,16 +5,23 @@
 #ifndef CHROME_BROWSER_OMNIBOX_OMNIBOX_FIELD_TRIAL_H_
 #define CHROME_BROWSER_OMNIBOX_OMNIBOX_FIELD_TRIAL_H_
 
+#include <map>
 #include <string>
 #include <vector>
 
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
+#include "chrome/common/autocomplete_match_type.h"
 
 // This class manages the Omnibox field trials.
 class OmniboxFieldTrial {
  public:
+  // A mapping that contains multipliers indicating that matches of the
+  // specified type should have their relevance score multiplied by the
+  // given number.  Omitted types are assumed to have multipliers of 1.0.
+  typedef std::map<AutocompleteMatchType::Type, float> DemotionMultipliers;
+
   // Creates the static field trial groups.
   // *** MUST NOT BE CALLED MORE THAN ONCE. ***
   static void ActivateStaticTrials();
@@ -87,20 +94,22 @@ class OmniboxFieldTrial {
   static bool InZeroSuggestFieldTrial();
 
   // ---------------------------------------------------------
-  // For the ShortcutsScoring field trial.
+  // For the ShortcutsScoringMaxRelevance experiment that's part of the
+  // bundled omnibox field trial.
 
-  // If the field trial is active and the user is in an experiment
-  // group, extract from the experiment group name the maximum
-  // relevance score ShortcutsProvider:: CalculateScore() can return.
-  // Returns true on a successful extraction.  If the extraction failed,
-  // if the field trial is not active, etc., returns false.
-  // CalculateScore()'s return value is a product of this maximum
-  // relevance score and some attenuating factors that are all between
-  // 0 and 1.  (Note that Shortcuts results may have their scores
-  // reduced later if the assigned score is higher than allowed for
-  // non-inlineable results.  Shortcuts results are not allowed to be
+  // If the user is in an experiment group that, given the provided
+  // |current_page_classification| context, changes the maximum relevance
+  // ShortcutsProvider::CalculateScore() is supposed to assign, extract
+  // that maximum relevance score and put in in |max_relevance|.  Returns
+  // true on a successful extraction.  CalculateScore()'s return value is
+  // a product of this maximum relevance score and some attenuating factors
+  // that are all between 0 and 1.  (Note that Shortcuts results may have
+  // their scores reduced later if the assigned score is higher than allowed
+  // for non-inlineable results.  Shortcuts results are not allowed to be
   // inlined.)
-  static bool ShortcutsScoringMaxRelevance(int* max_relevance);
+  static bool ShortcutsScoringMaxRelevance(
+      AutocompleteInput::PageClassification current_page_classification,
+      int* max_relevance);
 
   // ---------------------------------------------------------
   // For the SearchHistory experiment that's part of the bundled omnibox
@@ -118,8 +127,20 @@ class OmniboxFieldTrial {
   static bool SearchHistoryDisable(
       AutocompleteInput::PageClassification current_page_classification);
 
+  // ---------------------------------------------------------
+  // For the DemoteByType experiment that's part of the bundled omnibox field
+  // trial.
+
+  // If the user is in an experiment group that, in the provided
+  // |current_page_classification| context, demotes the relevance scores
+  // of certain types of matches, populates the |demotions_by_type| map
+  // appropriately.  Otherwise, clears |demotions_by_type|.
+  static void GetDemotionsByType(
+      AutocompleteInput::PageClassification current_page_classification,
+      DemotionMultipliers* demotions_by_type);
+
  private:
-  FRIEND_TEST_ALL_PREFIXES(OmniboxFieldTrialTest, GetValueForRuleInContext);
+  friend class OmniboxFieldTrialTest;
 
   // The bundled omnibox experiment comes with a set of parameters
   // (key-value pairs).  Each key indicates a certain rule that applies in
@@ -129,14 +150,13 @@ class OmniboxFieldTrial {
   // prevent search history matches from inlining.
   //
   // This function returns the value associated with the |rule| that applies
-  // in the current context (which currently only consists of
-  // |page_classification| but will soon contain other features, some not
-  // passed in as parameters, such as whether Instant Extended is enabled).
-  // If no such rule exists in the current context, looks for that rule in
-  // the global context and return its value if found.  If the rule remains
-  // unfound in the global context, returns the empty string.  For more
-  // details, see the implementation.  How to interpret the value is left
-  // to the caller; this is rule-dependent.
+  // in the current context (which currently consists of |page_classification|
+  // and whether Instant Extended is enabled).  If no such rule exists in the
+  // current context, fall back to the rule in various wildcard contexts and
+  // return its value if found.  If the rule remains unfound in the global
+  // context, returns the empty string.  For more details, including how we
+  // prioritize different wildcard contexts, see the implementation.  How to
+  // interpret the value is left to the caller; this is rule-dependent.
   static std::string GetValueForRuleInContext(
       const std::string& rule,
       AutocompleteInput::PageClassification page_classification);

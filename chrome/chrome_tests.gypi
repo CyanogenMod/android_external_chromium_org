@@ -1337,6 +1337,8 @@
         'browser/extensions/api/system_display/system_display_apitest.cc',
         'browser/extensions/api/system_memory/system_memory_apitest.cc',
         'browser/extensions/api/system_private/system_private_apitest.cc',
+        'browser/extensions/api/system_storage/storage_api_test_util.cc',
+        'browser/extensions/api/system_storage/storage_api_test_util.h',
         'browser/extensions/api/system_storage/system_storage_apitest.cc',
         'browser/extensions/api/system_storage/system_storage_eject_apitest.cc',
         'browser/extensions/api/tab_capture/tab_capture_apitest.cc',
@@ -1444,12 +1446,13 @@
         'browser/managed_mode/managed_user_service_browsertest.cc',
         'browser/media/chrome_media_stream_infobar_browsertest.cc',
         'browser/media/chrome_webrtc_browsertest.cc',
+        'browser/media/chrome_webrtc_audio_quality_browsertest.cc',
         'browser/media/chrome_webrtc_video_quality_browsertest.cc',
         'browser/media/webrtc_browsertest_base.cc',
         'browser/media/webrtc_browsertest_base.h',
         'browser/media/webrtc_browsertest_common.cc',
         'browser/media_galleries/fileapi/itunes_finder_win_browsertest.cc',
-        'browser/media_galleries/fileapi/media_file_validator_unittest.cc',
+        'browser/media_galleries/fileapi/media_file_validator_browsertest.cc',
         'browser/media_galleries/media_galleries_dialog_controller_mock.cc',
         'browser/media_galleries/media_galleries_dialog_controller_mock.h',
         'browser/metrics/metrics_service_browsertest.cc',
@@ -1482,6 +1485,7 @@
         'browser/policy/test_utils.h',
         'browser/prefs/pref_functional_browsertest.cc',
         'browser/prefs/pref_service_browsertest.cc',
+        'browser/prefs/synced_pref_change_registrar_browsertest.cc',
         'browser/prerender/prefetch_browsertest.cc',
         'browser/prerender/prerender_browsertest.cc',
         'browser/printing/cloud_print/test/cloud_print_policy_browsertest.cc',
@@ -2069,7 +2073,7 @@
           'dependencies': [
             # Runtime dependency.
             '../third_party/widevine/cdm/widevine_cdm.gyp:widevinecdmadapter',
-            '../webkit/support/webkit_support.gyp:clearkeycdmadapter',
+            '../media/media.gyp:clearkeycdmadapter',
           ],
         }],
       ],  # conditions
@@ -3295,7 +3299,7 @@
           'dependencies': [
             'browser_tests',
             'chrome',
-            '../third_party/WebKit/Tools/DumpRenderTree/DumpRenderTree.gyp/DumpRenderTree.gyp:copy_TestNetscapePlugIn',
+            '../third_party/WebKit/public/blink_test_plugin.gyp:blink_test_plugin',
           ],
           'includes': [
             '../build/isolate.gypi',

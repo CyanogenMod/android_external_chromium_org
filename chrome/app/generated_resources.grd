@@ -4786,6 +4786,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_EXTENSION_WARNINGS_CREDENTIALS_CONFLICT" desc="Warning message which indicates that two or more extensions tried to modify a network request in a conflicting way and the modification of this extension was ignored">
         This extension failed to provide credentials to a network request because another extension (<ph name="EXTENSION_NAME">$1<ex>My Cool Extension</ex></ph>) provided different credentials.
       </message>
+      <message name="IDS_EXTENSION_WARNINGS_DOWNLOAD_FILENAME_CONFLICT" desc="Warning message which indicates that two or more extensions tried to determine the filename of a downloaded file in a conflicting way and the modification of this extension was ignored">
+        This extension failed to name the download "<ph name="ATTEMPTED_FILENAME">$1<ex>apple.png</ex></ph>" because another extension (<ph name="EXTENSION_NAME">$2<ex>My Cool Extension</ex></ph>) determined a different filename "<ph name="ACTUAL_FILENAME">$3<ex>banana.png</ex></ph>".
+      </message>
 
       <!-- External extension install alerts -->
       <!-- TODO(mpcomplete): We may need to change Chrome to
@@ -5752,6 +5755,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ENABLE_PANELS_DESCRIPTION" desc="Description for the flag to enable Panel windows.">
         Enable Panel windows that open outside of the browser frame. Attempts to open a Panel will open a popup instead if not enabled. Panels are always enabled on the dev and canary channels.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_HTML_IMPORTS_NAME" desc="Enable HTML Imports.">
+        Enable HTML Imports
+      </message>
+      <message name="IDS_FLAGS_ENABLE_HTML_IMPORTS_DESCRIPTION" desc="Description of 'Enable HTML Imports' flag.">
+        Enabling this option allows web applications to load HTML Imports.
       </message>
       <message name="IDS_FLAGS_ENABLE_WEBGL_NAME" desc="Name of the 'Enable WebGL' lab.">
         Enable WebGL
@@ -7207,6 +7216,9 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       <message name="IDS_IMPORT_FROM_SAFARI" desc="browser combo box: Safari">
         Safari
       </message>
+      <message name="IDS_IMPORT_FROM_BOOKMARKS_HTML_FILE" desc="browser combo box: Bookmarks HTML File">
+        Bookmarks HTML File
+      </message>
       <message name="IDS_IMPORT_ITEMS_LABEL" desc="Label before item select checkboxes">
         Select items to import:
       </message>
@@ -7232,6 +7244,9 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       <message name="IDS_IMPORT_COMMIT" desc="Text for OK button on dialog">
         Import
       </message>
+      <message name="IDS_IMPORT_CHOOSE_FILE" desc="Text for the Choose File on dialog">
+        Choose File
+      </message>
 
       <message name="IDS_IMPORTER_GOOGLE_LOGIN_TEXT" desc="The message to be displayed on dialog">
         In order to import Toolbar bookmarks into Chrome, you must be signed in to your Google account.  Please sign in and try to import again.
@@ -7239,6 +7254,10 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       <message name="IDS_IMPORT_NO_PROFILE_FOUND" desc="Message displayed when we do not find any supported browser to import from.">
         No supported browser found
       </message>
+      <message name="IDS_IMPORT_PASSWORD_KEYCHAIN_WARNING" desc="Message displayed at the bottom of the Import Dialog for Safari on Mac OS">
+        Passwords saved in the Mac OS X Keychain will be used to help you sign in without typing.
+      </message>
+
 
       <!-- Import progress popup -->
       <message name="IDS_IMPORT_PROGRESS_TITLE" desc="Title for the importing progress dialog">
@@ -7332,6 +7351,9 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       </message>
       <message name="IDS_FEEDBACK_SAVED_SCREENSHOTS" desc="Radio button for including the last screen image on the bug report dialog box">
         Send a saved screen shot
+      </message>
+      <message name="IDS_FEEDBACK_INCLUDE_PERFORMANCE_TRACE_CHECKBOX" desc="Checkbox for including system information on the bug report dialog box">
+        Send performance trace data
       </message>
       <message name="IDS_FEEDBACK_INCLUDE_SYSTEM_INFORMATION_CHKBOX" desc="Checkbox for including system information on the bug report dialog box">
         Send system information
@@ -7460,6 +7482,9 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       </message>
       <message name="IDS_BLOCK_INTERSTITIAL_MESSAGE" desc="A message for the supervised user when they attempt to visit a site that is not permitted by the manager.">
         Oops, looks like you need permission from <ph name="NAME">$1<ex>John Doe</ex></ph> to access this page.
+      </message>
+      <message name="IDS_BLOCK_INTERSTITIAL_MESSAGE_ACCESS_REQUESTS_DISABLED" desc="A message for the supervised user when they attempt to visit a site that is not permitted by the manager (and they can't ask for permission).">
+        Oops, looks like you don't have permission to access this page.
       </message>
       <message name="IDS_BACK_BUTTON" desc="A button for going back to the last safe url after being blocked.">
         Go back
@@ -9762,6 +9787,12 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_AUTOFILL_DIALOG_PLACEHOLDER_CARD_NUMBER" desc="The placeholder/label text for credit card number in the requestAutocomplete dialog.">
         Card number
       </message>
+      <message name="IDS_AUTOFILL_DIALOG_PLACEHOLDER_EXPIRY_MONTH" desc="The placeholder/label text for credit card expiration month in the requestAutocomplete dialog.">
+        Month
+      </message>
+      <message name="IDS_AUTOFILL_DIALOG_PLACEHOLDER_EXPIRY_YEAR" desc="The placeholder/label text for credit card expiration year in the requestAutocomplete dialog.">
+        Year
+      </message>
       <message name="IDS_AUTOFILL_DIALOG_PLACEHOLDER_CVC" desc="The placeholder/label text for credit card verification code in the requestAutocomplete dialog.">
         CVC
       </message>
@@ -9795,11 +9826,17 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_AUTOFILL_DIALOG_TITLE" desc="Title for autofill dialog which asks user to input address + payment info.">
         Pay
       </message>
-      <message name="IDS_AUTOFILL_DIALOG_PAY_WITHOUT_WALLET" desc="This text is shown in a payment method chooser when a user is forced to pay without Google Wallet because the service is unavailable.">
-        Chrome Autofill
+      <message name="IDS_AUTOFILL_DIALOG_PAY_WITHOUT_WALLET" desc="This text is shown in a payment method chooser as a way for a user to pay with local Chrome Autofill data instead of using Wallet.">
+        Disable Google Wallet
+      </message>
+      <message name="IDS_AUTOFILL_DIALOG_PAYING_WITHOUT_WALLET" desc="This text is shown as the click target for a dormant payment method chooser when using Chrome Autofill data instead of Wallet.">
+        Google Wallet disabled
       </message>
       <message name="IDS_AUTOFILL_DIALOG_SIGN_IN" desc="This link text is shown when the user is not signed into a GAIA account.">
         Sign in to pay with Google Wallet
+      </message>
+      <message name="IDS_AUTOFILL_DIALOG_CANCEL_SIGN_IN" desc="This link text is shown when the user is signing into a GAIA account as a way to cancel sign in.">
+        Back
       </message>
       <message name="IDS_AUTOFILL_DIALOG_GOOGLE_WALLET" desc="The menu item that allows a user to select Google Wallet as their payment backend.">
         Google Wallet
@@ -9860,6 +9897,15 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <!--- Autofill dialog: Wallet error messages -->
       <message name="IDS_AUTOFILL_WALLET_BUYER_ACCOUNT_ERROR" desc="Text explaining that the user's Wallet account cannot be used.">
         There's something wrong with your Google Wallet account [12].
+      </message>
+      <message name="IDS_AUTOFILL_WALLET_BUYER_COUNTRY_NOT_SUPPORTED" desc="Text explaining that the user's Wallet Buyer Legal Address has a country which is unsupported.">
+        lorem ipsum - unsupported buyer bla.
+      </message>
+      <message name="IDS_AUTOFILL_WALLET_UNVERIFIED_KNOW_YOUR_CUSTOMER_STATUS" desc="Text explaining that Google Wallet failed/pending Know Your Customer (KYC) check, and would require user to call Google Wallet.">
+        lorem ipsum - kyc.
+      </message>
+      <message name="IDS_AUTOFILL_WALLET_UNSUPPORTED_MERCHANT" desc="Text explaining that the merchant is blacklisted for Google Wallet Chrome Payments due to compliance violation.">
+        lorem ipsum - unsupported_merchant.
       </message>
       <message name="IDS_AUTOFILL_WALLET_UPGRADE_CHROME_ERROR" desc="Text explaining that user must upgrade Chrome to use Wallet.">
         You must upgrade Chrome to use Google Wallet [<ph name="ERROR_CODE">$1<ex>54</ex></ph>].
@@ -10048,14 +10094,14 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         No, Thanks
       </message>
 
-      <!-- Autofill dialog post-submit bubble -->
-      <message name="IDS_AUTOFILL_CREDIT_CARD_BUBBLE_GENERATED_TITLE" desc="Title of a bubble shown directly after a new card has been generated via Online Wallet using the Autofill dialog.">
+      <!-- Autofill dialog post-submit bubbles -->
+      <message name="IDS_AUTOFILL_GENERATED_CREDIT_CARD_BUBBLE_TITLE" desc="Title of a bubble shown directly after a new card has been generated via Online Wallet using the Autofill dialog.">
         Google Wallet is protecting your card
       </message>
-      <message name="IDS_AUTOFILL_CREDIT_CARD_BUBBLE_GENERATED_TEXT" desc="Text in the bubble explaining that a temporary card has been generated for the user's security by Google Wallet.">
+      <message name="IDS_AUTOFILL_GENERATED_CREDIT_CARD_BUBBLE_CONTENTS" desc="Text in the bubble explaining that a temporary card has been generated for the user's security by Google Wallet.">
         Don't worry, this purchase will still be charged to your |$1|. Your card has been protected with the Google Wallet Virtual Online Card (|$2|), this number will appear on your receipt.
       </message>
-      <message name="IDS_AUTOFILL_CREDIT_CARD_BUBBLE_MANAGE_CARDS" desc="The text of a link at the bottom of the autofill dialog bubble that sends users to a Google Wallet billing/card management page.">
+      <message name="IDS_AUTOFILL_NEW_CREDIT_CARD_BUBBLE_LINK" desc="The text of a link at the bottom of the autofill dialog bubble that sends users to a Google Wallet billing/card management page.">
         Manage Saved Cards
       </message>
 
@@ -12001,6 +12047,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_FILE_BROWSER_REMOVE_FOLDER_SHORTCUT_BUTTON_LABEL" desc="Menu item label, unpinning the selected folder from the left nav.">
         Remove shortcut
       </message>
+      <message name="IDS_FILE_BROWSER_SHORTCUT_TARGET_UNAVAILABLE" desc="The message which is shown when the user selects a shortcut to a missing folder and ask whether to remove said shortcut.">
+        The folder referred by this shortcut has been changed or deleted. Do you want to remove it?
+      </message>
       <message name="IDS_FILE_BROWSER_SHARE_BUTTON_LABEL" desc="Menu item label, showing dialog to share the selected file.">
         Share
       </message>
@@ -13060,7 +13109,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_TRANSLATE_INFOBAR_BEFORE_MESSAGE" desc="Message that page is in specified language and ask if should translate">
         This page is in<ph name="original_language">$1<ex>French</ex></ph>Would you like to translate it?
       </message>
-      <if expr="is_android">
+      <if expr="is_android or pp_ifdef('ios')">
         <message name="IDS_TRANSLATE_INFOBAR_BEFORE_MESSAGE_MOBILE" desc="Mobile: Message that page is in specified language and ask if should translate.">
           Translate from <ph name="original_language">$1<ex>French</ex></ph> to <ph name="target_language">$2<ex>English</ex></ph>?
         </message>
@@ -13086,7 +13135,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_TRANSLATE_INFOBAR_AFTER_MESSAGE_AUTODETERMINED_SOURCE_LANGUAGE" desc="Message that page has been translated to another with server side auto language detection">
         This page has been translated to <ph name="target_language">$1<ex>German</ex></ph>
       </message>
-      <if expr="is_android">
+      <if expr="is_android or pp_ifdef('ios')">
       <message name="IDS_TRANSLATE_INFOBAR_AFTER_MESSAGE_MOBILE" desc="Mobile: Message that page has been translated from one language to another">
         This page has been translated to <ph name="target_language">$1<ex>German</ex></ph>
       </message>
@@ -13112,7 +13161,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_TRANSLATE_INFOBAR_UNSUPPORTED_PAGE_LANGUAGE" desc="Error message shown when the translate server translated the page and returned the page was in a language the browser does not know.">
         This page has been translated from an unknown language to <ph name="language_language">$1<ex>English</ex></ph>
       </message>
-      <if expr="is_android">
+      <if expr="is_android or pp_ifdef('ios')">
       <message name="IDS_TRANSLATE_INFOBAR_ERROR_MOBILE" desc="Mobile: Translate Error message">
         The translation to <ph name="target_language">$1<ex>German</ex></ph> failed.
       </message>
@@ -13585,7 +13634,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
       The following sites have been blocked from tracking your location on this page:
     </message>
     <message name="IDS_GEOLOCATION_BUBBLE_REQUIRE_RELOAD_TO_CLEAR" desc="Hint text for the geolocation bubble informing user they must reload the page for the Clear settings command to take effect.">
-      Settings will be cleared on next reload
+      Settings will be cleared on next reload.
     </message>
     <message name="IDS_GEOLOCATION_BUBBLE_CLEAR_LINK" desc="Link on the geolocation bubble that resets the list of allowed and blocked sites.">
       Clear these settings for future visits
@@ -13613,8 +13662,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
     <message name="IDS_MIDI_SYSEX_ASK_RADIO" desc="A radio button in Content Settings dialog to allow a site to query the permision to access MIDI devices with system exclusive messages.">
       Ask me when a site wants to use system exclusive messages to access MIDI devices (recommended)
     </message>
-
-    <!-- Web MIDI messages -->
     <message name="IDS_MIDI_SYSEX_INFOBAR_QUESTION" desc="Question asked on the info bar whenever URL wants to access MIDI devices with system exclusive messages.">
       <ph name="URL">
         $1<ex>www.google.com</ex>
@@ -13626,11 +13673,34 @@ Some features may be unavailable.  Please check that the profile exists and you 
     <message name="IDS_MIDI_SYSEX_DENY_BUTTON" desc="A button in MIDI access infobar for denying full access to MIDI devices for a given domain.">
       Deny
     </message>
+    <message name="IDS_MIDI_SYSEX_ALLOWED_TOOLTIP" desc="Location bar icon tooltip text when a page is allowed to use MIDI system exclusive messages.">
+      This page has full control of MIDI devices.
+    </message>
+    <message name="IDS_MIDI_SYSEX_BLOCKED_TOOLTIP" desc="Location bar icon tooltip text when a page is blocked from using MIDI system exclusive messages.">
+      This page has been blocked from having full control of MIDI devices.
+    </message>
+    <message name="IDS_MIDI_SYSEX_BUBBLE_ALLOWED" desc="Title of the MIDI bubble where system exclusive messages are allowed.">
+      This site has full control of MIDI devices.
+    </message>
+    <message name="IDS_MIDI_SYSEX_BUBBLE_DENIED" desc="Title of the MIDI bubble where system exclusive messages are blocked.">
+      This site has been blocked from having full control of MIDI devices.
+    </message>
+    <message name="IDS_MIDI_SYSEX_BUBBLE_REQUIRE_RELOAD_TO_CLEAR" desc="Hint text for the MIDI bubble informing user they must reload the page for the Clear settings command to take effect.">
+      Settings will be cleared on next reload.
+    </message>
+    <message name="IDS_MIDI_SYSEX_BUBBLE_CLEAR_LINK" desc="Link on the MIDI bubble that resets the list of allowed and blocked sites.">
+      Clear these settings for future visits
+    </message>
+    <message name="IDS_MIDI_SYSEX_BUBBLE_MANAGE_LINK" desc="Link on the MIDI bubble that opens up the Content Settings management dialog.">
+      Manage MIDI settings...
+    </message>
 
+    <!-- Protocol Handler -->
     <message name="IDS_REGISTER_PROTOCOL_HANDLER_TOOLTIP" desc="Location bar icon tooltip text when a page wants to use registerProtocolHandler.">
       This page wants to install a service handler.
     </message>
 
+    <!-- Media Stream -->
     <message name="IDS_MEDIASTREAM_BUBBLE_MANAGE_LINK" desc="Link on the media (camera and microphone) bubble that opens up the Content Settings management dialog for media settings.">
       Manage media settings...
     </message>
@@ -14163,6 +14233,10 @@ Some features may be unavailable.  Please check that the profile exists and you 
     <message name="IDS_PROFILES_CREATE_MANAGED_SIGNED_IN_LABEL" desc="Label for the 'Supervised user' checkbox in the create-profile dialog when the current user is signed in. This will be followed by a 'Learn more' link.">
       This is a supervised user managed by <ph name="CUSTODIAN_EMAIL">$1<ex>user@gmail.com</ex>.</ph>
     </message>
+    <message name="IDS_PROFILES_CREATE_MANAGED_ACCOUNT_DETAILS_OUT_OF_DATE_LABEL" desc="Label for the 'Supervised user' checkbox in the create-profile dialog when the current user is signed in, but their login information is invalid. This will be followed by a 'Sign in again' link.">
+      This is a supervised user managed by <ph name="CUSTODIAN_EMAIL">$1<ex>user@gmail.com</ex>.</ph>
+Your account sign-in details are out of date.
+    </message>
     <message name="IDS_PROFILES_CREATE_MANAGED_NOT_SIGNED_IN_LABEL" desc="Label for the (disabled) 'Supervised user' checkbox in the create-profile dialog when the current user is not signed in. This will be followed by a 'Sign in now' link.">
       This is a supervised user who will be managed by you.
 You need to be signed in to use this feature.
@@ -14170,8 +14244,11 @@ You need to be signed in to use this feature.
     <message name="IDS_PROFILES_CREATE_MANAGED_NOT_SIGNED_IN_LINK" desc="Text for the sign-in promo link, shown after the (disabled) 'Supervised user' checkbox in the create-profile dialog when the current user is not signed in.">
       Sign in now
     </message>
+    <message name="IDS_PROFILES_CREATE_MANAGED_ACCOUNT_SIGN_IN_AGAIN_LINK" desc="Text for the sign-in promo link, shown after the message telling the user that their sign-in credentials are out of date in the create supervised user dialog.">
+      Sign in again
+    </message>
     <message name="IDS_PROFILES_CREATE_MANAGED_FROM_EXISTING_LABEL" desc="Label for the 'Select an exisiting managed user' checkbox. During managed user creation a custodian will have an option to select an existing managed profile rather creating a new one.">
-      Select an existing managed user: 
+      Select an existing managed user:
     </message>
     <message name="IDS_PROFILES_CREATE_SHORTCUT_CHECKBOX" desc="Create Shortcut checkbox when creating a new profile">
       Create a desktop shortcut for this user
@@ -14217,7 +14294,7 @@ Please check your email at <ph name="ACCOUNT_EMAIL">$2<ex>jane.doe@gmail.com</ex
     </message>
 
     <if expr="not is_android and not pp_ifdef('ios') and not pp_ifdef('chromeos')">
-      <!-- User chooser web UI -->
+      <!-- User manager web UI -->
       <if expr="pp_ifdef('use_titlecase')">
         <message name="IDS_ADD_USER_BUTTON" desc="Text shown on an add user button on login/locker screen">
           Add User
@@ -14246,6 +14323,9 @@ Please check your email at <ph name="ACCOUNT_EMAIL">$2<ex>jane.doe@gmail.com</ex
           Remove this user
         </message>
       </if>
+      <message name="IDS_USER_MANAGER_SCREEN_TITLE" desc="String to be displayed in the title bar of the user manager page">
+        User Manager
+      </message>
       <message name="IDS_GO_INCOGNITO_BUTTON" desc="Text shown on Chrome OS login screen button that launches guest session. Should be short.">
         Browse as Guest
       </message>
