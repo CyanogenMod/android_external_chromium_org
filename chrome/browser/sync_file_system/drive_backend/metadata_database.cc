@@ -102,11 +102,11 @@ scoped_ptr<FileMetadata> CreateFileMetadataFromChangeResource(
 
   google_apis::DriveEntryKind kind = file_resource.GetKind();
   if (kind == google_apis::ENTRY_KIND_FILE)
-    details->set_kind(KIND_FILE);
+    details->set_file_kind(FILE_KIND_FILE);
   else if (kind == google_apis::ENTRY_KIND_FOLDER)
-    details->set_kind(KIND_FOLDER);
+    details->set_file_kind(FILE_KIND_FOLDER);
   else
-    details->set_kind(KIND_UNSUPPORTED);
+    details->set_file_kind(FILE_KIND_UNSUPPORTED);
 
   details->set_md5(file_resource.md5_checksum());
   details->set_etag(file_resource.etag());
@@ -641,7 +641,10 @@ void MetadataDatabase::UpdateByChangeList(
 
     if (FindTrackersByFileID(file_id, NULL)) {
       PutFileToBatch(*file, batch.get());
-      file_by_id_[file_id] = file.release();
+
+      FileMetadata* file_ptr = file.release();
+      std::swap(file_ptr, file_by_id_[file_id]);
+      delete file_ptr;
     }
   }
 
@@ -803,7 +806,7 @@ void MetadataDatabase::MakeTrackerActive(int64 tracker_id,
   }
   tracker->set_active(true);
   tracker->set_needs_folder_listing(
-      tracker->synced_details().kind() == KIND_FOLDER);
+      tracker->synced_details().file_kind() == FILE_KIND_FOLDER);
   tracker->set_dirty(true);
   dirty_trackers_.insert(tracker);
 

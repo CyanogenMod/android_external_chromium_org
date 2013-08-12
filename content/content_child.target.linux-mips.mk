@@ -31,8 +31,10 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
 	content/child/android/child_jni_registrar.cc \
-	content/child/appcache_backend_proxy.cc \
-	content/child/appcache_dispatcher.cc \
+	content/child/appcache/appcache_backend_proxy.cc \
+	content/child/appcache/appcache_dispatcher.cc \
+	content/child/appcache/appcache_frontend_impl.cc \
+	content/child/appcache/web_application_cache_host_impl.cc \
 	content/child/child_histogram_message_filter.cc \
 	content/child/child_process.cc \
 	content/child/child_resource_message_filter.cc \

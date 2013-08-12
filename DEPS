@@ -8,12 +8,12 @@ vars = {
   "sourceforge_url": "http://svn.code.sf.net/p/%(repo)s/code",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "155898",
+  "webkit_revision": "155921",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "skia_git": "https://skia.googlesource.com",
   "swig_revision": "69281",
-  "nacl_revision": "11963",
+  "nacl_revision": "11988",
   # After changing nacl_revision, run 'glient sync' and check native_client/DEPS
   # to update other nacl_*_revision's.
   "nacl_tools_revision": "11437",  # native_client/DEPS: tools_rev
@@ -54,9 +54,6 @@ vars = {
 deps = {
   "src/breakpad/src":
     (Var("googlecode_url") % "google-breakpad") + "/trunk/src@1199",
-
-  "src/googleurl":
-    (Var("googlecode_url") % "google-url") + "/trunk@185",
 
   "src/sdch/open-vcdiff":
     (Var("googlecode_url") % "open-vcdiff") + "/trunk@42",
@@ -513,8 +510,6 @@ include_rules = [
   "+third_party/icu/source/common/unicode",
   "+third_party/icu/source/i18n/unicode",
   "+url",
-  # TODO(tfarina): Temporary, until we finish the migration to url. Remove this!
-  "!googleurl",
 ]
 
 
@@ -523,7 +518,6 @@ skip_child_includes = [
   "breakpad",
   "chrome_frame",
   "delegate_execute",
-  "googleurl",
   "metro_driver",
   "native_client_sdk",
   "o3d",

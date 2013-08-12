@@ -645,14 +645,6 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
     return web_contents->GetController().GetDefaultSessionStorageNamespace();
   }
 
-  virtual void SetUp() OVERRIDE {
-    // TODO(danakj): The GPU Video Decoder needs real GL bindings.
-    // crbug.com/269087
-    UseRealGLBindings();
-
-    InProcessBrowserTest::SetUp();
-  }
-
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
 #if defined(FULL_SAFE_BROWSING)
     SafeBrowsingService::RegisterFactory(safe_browsing_factory_.get());
@@ -2483,7 +2475,8 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderClearHistory) {
 
 // Checks that when the cache is cleared, prerenders are cancelled but
 // prerendering history is not cleared.
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderClearCache) {
+// Flaky/times out on linux_aura, win, mac - http://crbug.com/270948
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, DISABLED_PrerenderClearCache) {
   PrerenderTestURL("files/prerender/prerender_page.html",
                    FINAL_STATUS_CACHE_OR_HISTORY_CLEARED,
                    1);
@@ -2750,10 +2743,6 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
 class PrerenderBrowserTestWithExtensions : public PrerenderBrowserTest,
                                            public ExtensionApiTest {
  public:
-  virtual void SetUp() OVERRIDE {
-    PrerenderBrowserTest::SetUp();
-  }
-
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     PrerenderBrowserTest::SetUpCommandLine(command_line);
     ExtensionApiTest::SetUpCommandLine(command_line);

@@ -25,8 +25,6 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
-	webkit/renderer/appcache/appcache_frontend_impl.cc \
-	webkit/renderer/appcache/web_application_cache_host_impl.cc \
 	webkit/renderer/fileapi/webfilewriter_base.cc
 
 

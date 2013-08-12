@@ -27,6 +27,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
 	url/gurl.cc \
+	url/third_party/mozilla/url_parse.cc \
 	url/url_canon_etc.cc \
 	url/url_canon_filesystemurl.cc \
 	url/url_canon_fileurl.cc \
@@ -40,7 +41,6 @@ LOCAL_SRC_FILES := \
 	url/url_canon_query.cc \
 	url/url_canon_relative.cc \
 	url/url_canon_stdurl.cc \
-	url/url_parse.cc \
 	url/url_parse_file.cc \
 	url/url_util.cc
 
