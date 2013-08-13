@@ -1579,7 +1579,6 @@
         'browser/ui/cocoa/one_click_signin_dialog_controller_browsertest.mm',
         'browser/ui/cocoa/profile_signin_confirmation_view_controller_browsertest.mm',
         'browser/ui/cocoa/ssl_client_certificate_selector_cocoa_browsertest.mm',
-        'browser/ui/cocoa/tab_contents/overlayable_contents_controller_browsertest.mm',
         'browser/ui/cocoa/view_id_util_browsertest.mm',
         'browser/ui/find_bar/find_bar_host_browsertest.cc',
         'browser/ui/fullscreen/fullscreen_controller_browsertest.cc',
@@ -2074,6 +2073,20 @@
             # Runtime dependency.
             '../third_party/widevine/cdm/widevine_cdm.gyp:widevinecdmadapter',
             '../media/media.gyp:clearkeycdmadapter',
+          ],
+        }],
+        ['enable_printing!=1', {
+          'sources/': [
+            ['exclude', '^browser/extensions/api/cloud_print_private/cloud_print_private_apitest.cc'],
+            ['exclude', '^browser/printing/cloud_print/test/.*'],
+            ['exclude', '^browser/printing/print_dialog_cloud_interative_uitest.cc'],
+            ['exclude', '^browser/printing/printing_layout_browsertest.cc'],
+            ['exclude', '^browser/printing/print_preview_dialog_controller_browsertest.cc'],
+            ['exclude', '^browser/ui/webui/print_preview/print_preview_ui_browsertest.cc'],
+            ['exclude', '^renderer/printing/print_web_view_helper_browsertest.cc'],
+            ['exclude', '^test/data/webui/print_preview.cc'],
+            ['exclude', '^test/data/webui/print_preview.h'],
+            ['exclude', '^test/data/webui/print_preview.js'],
           ],
         }],
       ],  # conditions
