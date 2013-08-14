@@ -38,7 +38,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
-  "webrtc_revision": "4520",
+  "webrtc_revision": "4533",
   "jsoncpp_revision": "248",
   "nss_revision": "209026",
   # Three lines of non-changing comments so that
@@ -152,7 +152,7 @@ deps = {
   # When roll to another webgl conformance tests revision, please goto
   # chrome/test/gpu and run generate_webgl_conformance_test_list.py.
   "src/third_party/webgl_conformance":
-    "/trunk/deps/third_party/webgl/sdk/tests@202601",
+    "/trunk/deps/third_party/webgl/sdk/tests@217097",
 
   "src/third_party/swig/Lib":
     "/trunk/deps/third_party/swig/Lib@" + Var("swig_revision"),
