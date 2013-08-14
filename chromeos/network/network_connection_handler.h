@@ -139,7 +139,7 @@ class CHROMEOS_EXPORT NetworkConnectionHandler
   void Init(NetworkStateHandler* network_state_handler,
             NetworkConfigurationHandler* network_configuration_handler);
 
-  ConnectRequest* pending_request(const std::string& service_path);
+  ConnectRequest* GetPendingRequest(const std::string& service_path);
 
   // Callback from Shill.Service.GetProperties. Parses |properties| to verify
   // whether or not the network appears to be configured. If configured,
@@ -167,7 +167,10 @@ class CHROMEOS_EXPORT NetworkConnectionHandler
 
   void CheckPendingRequest(const std::string service_path);
   void CheckAllPendingRequests();
-  bool CertificateIsConfigured(NetworkUIData* ui_data, std::string* pkcs11_id);
+
+  // Returns the PKCS#11 ID of a cert matching the certificate pattern in
+  // |ui_data|. Returns empty string otherwise.
+  std::string CertificateIsConfigured(NetworkUIData* ui_data);
   void ErrorCallbackForPendingRequest(const std::string& service_path,
                                       const std::string& error_name);
 

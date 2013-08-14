@@ -22,7 +22,6 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/test/base/test_launcher_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/dom_operation_notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -116,15 +115,6 @@ PPAPITestBase::PPAPITestBase() {
 }
 
 void PPAPITestBase::SetUpCommandLine(CommandLine* command_line) {
-  // Do not use mesa if real GPU is required.
-  if (!command_line->HasSwitch(switches::kUseGpuInTests)) {
-#if !defined(OS_MACOSX)
-    CHECK(test_launcher_utils::OverrideGLImplementation(
-        command_line, gfx::kGLImplementationOSMesaName)) <<
-        "kUseGL must not be set by test framework code!";
-#endif
-  }
-
   // The test sends us the result via a cookie.
   command_line->AppendSwitch(switches::kEnableFileCookies);
 
@@ -338,8 +328,9 @@ void PPAPINaClTest::SetUpCommandLine(CommandLine* command_line) {
   EXPECT_TRUE(PathService::Get(chrome::FILE_NACL_PLUGIN, &plugin_lib));
   EXPECT_TRUE(base::PathExists(plugin_lib));
 
-  // Enable running (non-portable) NaCl outside of the Chrome web store.
+  // Enable running NaCl outside of the store.
   command_line->AppendSwitch(switches::kEnableNaCl);
+  command_line->AppendSwitch(switches::kEnablePnacl);
   command_line->AppendSwitchASCII(switches::kAllowNaClSocketAPI, "127.0.0.1");
   command_line->AppendSwitch(switches::kUseFakeDeviceForMediaStream);
   command_line->AppendSwitch(switches::kUseFakeUIForMediaStream);
@@ -374,8 +365,9 @@ void PPAPINaClTestDisallowedSockets::SetUpCommandLine(
   EXPECT_TRUE(PathService::Get(chrome::FILE_NACL_PLUGIN, &plugin_lib));
   EXPECT_TRUE(base::PathExists(plugin_lib));
 
-  // Enable running (non-portable) NaCl outside of the Chrome web store.
+  // Enable running NaCl outside of the store.
   command_line->AppendSwitch(switches::kEnableNaCl);
+  command_line->AppendSwitch(switches::kEnablePnacl);
 }
 
 // Append the correct mode and testcase string

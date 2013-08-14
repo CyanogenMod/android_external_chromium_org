@@ -359,9 +359,15 @@
             '../build/linux/system.gyp:ssl',
           ],
         }],
-        ['OS!="android" and OS!="ios"', {
+        ['enable_printing==1', {
           'dependencies': [
             'service',
+          ],
+        }],
+        ['enable_printing==0', {
+          'sources/': [
+            ['exclude', '^renderer/mock_printer.cc'],
+            ['exclude', '^renderer/mock_printer.h'],
           ],
         }],
         ['OS=="android"', {
@@ -1780,6 +1786,7 @@
         'common/worker_thread_ticker_unittest.cc',
         'renderer/chrome_content_renderer_client_unittest.cc',
         'renderer/content_settings_observer_unittest.cc',
+        'renderer/extensions/activity_log_converter_strategy_unittest.cc',
         'renderer/extensions/chrome_v8_context_set_unittest.cc',
         'renderer/extensions/event_unittest.cc',
         'renderer/extensions/extension_localization_peer_unittest.cc',
@@ -1940,6 +1947,7 @@
         '../tools/json_schema_compiler/test/idl_schemas_unittest.cc',
         '../tools/json_schema_compiler/test/objects_unittest.cc',
         '../tools/json_schema_compiler/test/simple_api_unittest.cc',
+        '../tools/json_schema_compiler/test/error_generation_unittest.cc',
         '../ui/views/test/desktop_test_views_delegate.cc',
         '../ui/views/test/desktop_test_views_delegate.h',
         '../ui/views/test/test_views_delegate.cc',
@@ -2557,10 +2565,6 @@
             ['exclude', '^browser/ui/webui/signin/'],
             ['exclude', '^browser/ui/webui/suggestions_internals'],
             ['exclude', '^browser/ui/webui/sync_promo'],
-            # No service process on Android.
-            ['exclude', '^browser/service/'],
-            ['exclude', '^common/service_'],
-            ['exclude', '^service/'],
             ['exclude', '^utility/importer/'],
           ],
           'conditions': [
@@ -2572,6 +2576,14 @@
             }],
           ],
         }],  # OS == android
+        ['enable_printing!=1', {
+          'sources/': [
+            # No need for service process.
+            ['exclude', '^browser/service/'],
+            ['exclude', '^common/service_'],
+            ['exclude', '^service/'],
+          ],
+        }],
         ['enable_themes==0', {
           'sources!': [
             'browser/ui/webui/theme_source_unittest.cc',

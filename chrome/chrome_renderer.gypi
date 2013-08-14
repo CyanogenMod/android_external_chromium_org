@@ -49,6 +49,8 @@
       'sources': [
         'renderer/benchmarking_extension.cc',
         'renderer/benchmarking_extension.h',
+        'renderer/extensions/activity_log_converter_strategy.cc',
+        'renderer/extensions/activity_log_converter_strategy.h',
         'renderer/extensions/api_activity_logger.cc',
         'renderer/extensions/api_activity_logger.h',
         'renderer/extensions/api_definitions_natives.cc',
@@ -396,11 +398,15 @@
             ['exclude', '^renderer/automation/']
           ]
         }],
+	['enable_printing==0', {
+          'sources/': [
+            ['exclude', '^renderer/printing/']
+          ]
+	}],
         ['OS=="android"', {
           'sources!': [
             'renderer/prerender/prerender_media_load_deferrer.cc',
             'renderer/prerender/prerender_media_load_deferrer.h',
-            'renderer/printing/print_web_view_helper.cc',
           ],
           'defines': [
             'ENABLE_MOBILE_YOUTUBE_PLUGIN',

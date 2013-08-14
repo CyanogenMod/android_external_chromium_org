@@ -2186,28 +2186,6 @@
    fun:_ZN2v88internal6InvokeEbNS0_6HandleINS0_10JSFunctionEEENS1_INS0_6ObjectEEEiPPPS4_Pb
 }
 {
-   bug_60656
-   Memcheck:Overlap
-   fun:strcpy
-   fun:lFloatConst
-   fun:byte_scan
-   fun:yylex_CPP
-   fun:_Z8yy_inputPci
-   fun:_Z18yy_get_next_bufferv
-   fun:_Z5yylexP7YYSTYPEPv
-   fun:_Z7yyparsePv
-   fun:_Z14PaParseStringsPKPKcPKiiR13TParseContext
-   fun:_ZN9TCompiler7compileEPKPKcii
-   fun:ShCompile
-   fun:_ZN6WebKit31WebGraphicsContext3DDefaultImpl25angleValidateShaderSourceERNS0_17ShaderSourceEntryE
-   fun:_ZN6WebKit31WebGraphicsContext3DDefaultImpl13compileShaderEj
-   fun:_ZN7WebCore25GraphicsContext3DInternal13compileShaderEi
-   fun:_ZN7WebCore17GraphicsContext3D13compileShaderEi
-   fun:_ZN7WebCore21WebGLRenderingContext13compileShaderEPNS_11WebGLShaderERi
-   fun:_ZN7WebCore29WebGLRenderingContextInternal21compileShaderCallbackERKN2v89ArgumentsE
-   fun:_ZN2v88internal19HandleApiCallHelperILb0EEEPNS0_6ObjectENS0_47_GLOBAL__N_v8_src_builtins.cc_00000000_03DBA2A116BuiltinArgumentsILNS0_21BuiltinExtraArgumentsE1EEE
-}
-{
    bug_60667c
    Memcheck:Leak
    ...
@@ -4241,14 +4219,6 @@
    fun:_ZN7WebCore21WebGLRenderingContext6createEPNS_17HTMLCanvasElementEPNS_22WebGLContextAttributesE
    fun:_ZN7WebCore17HTMLCanvasElement10getContextERKN3WTF6StringEPNS_23CanvasContextAttributesE
    fun:_ZN7WebCore19V8HTMLCanvasElement18getContextCallbackERKN2v89ArgumentsE
-}
-{
-   bug_109495g
-   Memcheck:Leak
-   ...
-   fun:_ZN9TCompiler22InitBuiltInSymbolTableERK18ShBuiltInResources
-   fun:_ZN9TCompiler4InitERK18ShBuiltInResources
-   fun:ShConstructCompiler
 }
 {
    bug_109496
@@ -7227,4 +7197,15 @@
    fun:_ZN14message_center22MessageCenterButtonBarC1EPNS_17MessageCenterViewEPNS_13MessageCenterEPNS_24NotifierSettingsProviderEb
    fun:_ZN14message_center17MessageCenterViewC1EPNS_13MessageCenterEPNS_17MessageCenterTrayEibb
    fun:_ZN14message_center21MessageCenterViewTest5SetUpEv
+}
+{
+   bug_271431
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN8autofill33TestGeneratedCreditCardBubbleView6CreateERKN4base7WeakPtrINS_35GeneratedCreditCardBubbleControllerEEE
+   fun:_ZN8autofill12_GLOBAL__N_139TestGeneratedCreditCardBubbleController12CreateBubbleEv
+   fun:_ZN8autofill35GeneratedCreditCardBubbleController4ShowEb
+   fun:_ZN8autofill35GeneratedCreditCardBubbleController12SetupAndShowERKSbItN4base20string16_char_traitsESaItEES6_
+   fun:_ZN8autofill35GeneratedCreditCardBubbleController4ShowEPN7content11WebContentsERKSbItN4base20string16_char_traitsESaItEES9_
+   fun:_ZN8autofill12_GLOBAL__N_139GeneratedCreditCardBubbleControllerTest4ShowEv
 }

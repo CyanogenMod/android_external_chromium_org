@@ -8,7 +8,7 @@ vars = {
   "sourceforge_url": "http://svn.code.sf.net/p/%(repo)s/code",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "155921",
+  "webkit_revision": "155942",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "skia_git": "https://skia.googlesource.com",
@@ -29,22 +29,22 @@ vars = {
   "ffmpeg_hash": "894e6f715645528e815aee2dad45b59704238dcd",
 
   "sfntly_revision": "134",
-  "skia_revision": "10648",
-  "skia_hash": "a5b11fcd59d769450ac85a3b1e88d2e6eaca865e",
+  "skia_revision": "10680",
+  "skia_hash": "8f4825bfb1da69439e1e96a0c6ea04488757d95e",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
-  "v8_revision": "16142",
+  "v8_revision": "16159",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
-  "webrtc_revision": "4520",
+  "webrtc_revision": "4533",
   "jsoncpp_revision": "248",
   "nss_revision": "209026",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling swarm_client
   # and whatever else without interference from each other.
-  "swarm_revision": "213621",
+  "swarm_revision": "217028",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling openssl
   # and whatever else without interference from each other.
@@ -103,7 +103,7 @@ deps = {
     (Var("googlecode_url") % "grit-i18n") + "/trunk@129",
 
   "src/tools/gyp":
-    (Var("googlecode_url") % "gyp") + "/trunk@1682",
+    (Var("googlecode_url") % "gyp") + "/trunk@1693",
 
   "src/tools/swarm_client":
     "/trunk/tools/swarm_client@" + Var("swarm_revision"),
@@ -152,7 +152,7 @@ deps = {
   # When roll to another webgl conformance tests revision, please goto
   # chrome/test/gpu and run generate_webgl_conformance_test_list.py.
   "src/third_party/webgl_conformance":
-    "/trunk/deps/third_party/webgl/sdk/tests@202601",
+    "/trunk/deps/third_party/webgl/sdk/tests@217097",
 
   "src/third_party/swig/Lib":
     "/trunk/deps/third_party/swig/Lib@" + Var("swig_revision"),

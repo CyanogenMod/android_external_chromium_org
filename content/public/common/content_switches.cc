@@ -424,6 +424,9 @@ const char kEnableNewMediaInternals[]       = "enable-new-media-internals";
 // Enables use of cache if offline, even if it's stale
 const char kEnableOfflineCacheAccess[]      = "enable-offline-cache-access";
 
+// Enables overlay scrollbars on Aura or Linux. Does nothing on Mac.
+const char kEnableOverlayScrollbars[]       = "enable-overlay-scrollbars";
+
 // Forward overscroll event data from the renderer to the browser.
 const char kEnableOverscrollNotifications[] = "enable-overscroll-notifications";
 
@@ -531,8 +534,6 @@ const char kEnableWebRtcTcpServerSocket[]   = "enable-webrtc-tcp-server-socket";
 // Enables experimental features for the geolocation API.
 // Current features:
 // - CoreLocation support for Mac OS X 10.6
-// - Gateway location for Linux and Windows
-// - Location platform support for Windows 7
 const char kExperimentalLocationFeatures[]  = "experimental-location-features";
 
 // Load NPAPI plugins from the specified directory.
@@ -913,6 +914,11 @@ const char kDisablePanelFitting[]           = "disable-panel-fitting";
 #if defined(OS_MACOSX) && !defined(OS_IOS)
 const char kDisableCarbonInterposing[]      = "disable-carbon-interposing";
 
+// Disables support for Core Animation plugins. This is triggered when
+// accelerated compositing is disabled. See http://crbug.com/122430 .
+const char kDisableCoreAnimationPlugins[] =
+    "disable-core-animation-plugins";
+
 // Use core animation to draw the RenderWidgetHostView on Mac.
 const char kUseCoreAnimation[]              = "use-core-animation";
 #endif
@@ -928,5 +934,8 @@ extern const char kTestCompositor[]         = "test-compositor";
 #endif
 
 // Don't dump stuff here, follow the same order as the header.
+
+// Allows filters (SkImageFilter objects) to be sent between processes over IPC
+const char kAllowFiltersOverIPC[] = "allow-filters-over-ipc";
 
 }  // namespace switches

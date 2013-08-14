@@ -57,7 +57,8 @@ void GetPropertiesCallback(
     const base::DictionaryValue& properties) {
   // Get the correct name from WifiHex if necessary.
   scoped_ptr<base::DictionaryValue> properties_copy(properties.DeepCopy());
-  std::string name = NetworkState::GetNameFromProperties(properties);
+  std::string name = NetworkState::GetNameFromProperties(
+      service_path, properties);
   if (!name.empty()) {
     properties_copy->SetStringWithoutPathExpansion(
         flimflam::kNameProperty, name);
@@ -279,29 +280,20 @@ void NetworkConfigurationHandler::CreateConfiguration(
   NET_LOG_USER("CreateConfiguration", type);
   LogConfigProperties("Configure", type, properties);
 
-  // Shill supports ConfigureServiceForProfile only for network type WiFi. In
-  // all other cases, we have to rely on GetService for now. This is
-  // unproblematic for VPN (user profile only), but will lead to inconsistencies
-  // with WiMax, for example.
-  if (type == flimflam::kTypeWifi) {
-    std::string profile;
-    properties.GetStringWithoutPathExpansion(flimflam::kProfileProperty,
-                                             &profile);
-    manager->ConfigureServiceForProfile(
-        dbus::ObjectPath(profile),
-        properties,
-        base::Bind(&NetworkConfigurationHandler::RunCreateNetworkCallback,
-                   AsWeakPtr(), callback),
-        base::Bind(&network_handler::ShillErrorCallbackFunction,
-                   "Config.CreateConfiguration Failed", "", error_callback));
-  } else {
-    manager->ConfigureService(
-        properties,
-        base::Bind(&NetworkConfigurationHandler::RunCreateNetworkCallback,
-                   AsWeakPtr(), callback),
-        base::Bind(&network_handler::ShillErrorCallbackFunction,
-                   "Config.CreateConfiguration Failed", "", error_callback));
-  }
+  std::string profile;
+  properties.GetStringWithoutPathExpansion(flimflam::kProfileProperty,
+                                           &profile);
+  DCHECK(!profile.empty());
+  manager->ConfigureServiceForProfile(
+      dbus::ObjectPath(profile),
+      properties,
+      base::Bind(&NetworkConfigurationHandler::RunCreateNetworkCallback,
+                 AsWeakPtr(),
+                 callback),
+      base::Bind(&network_handler::ShillErrorCallbackFunction,
+                 "Config.CreateConfiguration Failed",
+                 "",
+                 error_callback));
 }
 
 void NetworkConfigurationHandler::RemoveConfiguration(

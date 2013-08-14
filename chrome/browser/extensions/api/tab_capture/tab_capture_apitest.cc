@@ -37,6 +37,14 @@ class TabCaptureApiTest : public ExtensionApiTest {
  public:
   TabCaptureApiTest() {}
 
+  virtual void SetUp() OVERRIDE {
+    // TODO(danakj): The GPU Video Decoder needs real GL bindings.
+    // crbug.com/269087
+    UseRealGLBindings();
+
+    ExtensionApiTest::SetUp();
+  }
+
   void AddExtensionToCommandLineWhitelist() {
     CommandLine::ForCurrentProcess()->AppendSwitchASCII(
         switches::kWhitelistedExtensionID, kExtensionId);
@@ -47,6 +55,9 @@ class TabCaptureApiTest : public ExtensionApiTest {
 
 // http://crbug.com/261493 and http://crbug.com/268644
 #if defined(OS_LINUX) || defined(OS_CHROMEOS) || defined(USE_AURA)
+#define MAYBE_ApiTests DISABLED_ApiTests
+#elif defined(OS_WIN)
+// http://crbug.com/263951
 #define MAYBE_ApiTests DISABLED_ApiTests
 #else
 #define MAYBE_ApiTests ApiTests
@@ -72,6 +83,9 @@ IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_ApiTests) {
 
 // http://crbug.com/268644
 #if defined(USE_AURA)
+#define MAYBE_ApiTestsAudio DISABLED_ApiTestsAudio
+#elif defined(OS_WIN)
+// http://crbug.com/263951
 #define MAYBE_ApiTestsAudio DISABLED_ApiTestsAudio
 #else
 #define MAYBE_ApiTestsAudio ApiTestsAudio

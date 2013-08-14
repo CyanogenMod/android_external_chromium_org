@@ -9,7 +9,7 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/memory/weak_ptr.h"
+#include "base/memory/ref_counted.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/devtools/adb_web_socket.h"
 #include "chrome/browser/devtools/devtools_adb_bridge.h"
@@ -20,18 +20,33 @@ namespace base {
 class MessageLoop;
 }
 
-class TetheringAdbFilter {
+class TetheringAdbFilter : public base::RefCountedThreadSafe<
+    TetheringAdbFilter,
+    content::BrowserThread::DeleteOnUIThread> {
  public:
+  typedef DevToolsAdbBridge::RemoteDevice::PortStatus PortStatus;
+  typedef DevToolsAdbBridge::RemoteDevice::PortStatusMap PortStatusMap;
+
   TetheringAdbFilter(scoped_refptr<DevToolsAdbBridge::AndroidDevice> device,
                      base::MessageLoop* adb_message_loop,
                      PrefService* pref_service,
                      scoped_refptr<AdbWebSocket> web_socket);
-  ~TetheringAdbFilter();
+
+  const PortStatusMap& GetPortStatusMap();
 
   bool ProcessIncomingMessage(const std::string& message);
 
  private:
+  friend struct content::BrowserThread::DeleteOnThread<
+      content::BrowserThread::UI>;
+  friend class base::DeleteHelper<TetheringAdbFilter>;
+
+  virtual ~TetheringAdbFilter();
+
   typedef std::map<int, std::string> ForwardingMap;
+
+  typedef base::Callback<void(PortStatus)> CommandCallback;
+  typedef std::map<int, CommandCallback> CommandCallbackMap;
 
   void OnPrefsChange();
 
@@ -42,6 +57,13 @@ class TetheringAdbFilter {
                         const ForwardingMap& new_map);
 
   void SendCommand(const std::string& method, int port);
+  bool ProcessResponse(const std::string& json);
+
+  void ProcessBindResponse(int port, PortStatus status);
+  void ProcessUnbindResponse(int port, PortStatus status);
+  void UpdateSocketCount(int port, int increment);
+  void UpdatePortStatusMap();
+  void UpdatePortStatusMapOnUIThread(const PortStatusMap& status_map);
 
   scoped_refptr<DevToolsAdbBridge::AndroidDevice> device_;
   base::MessageLoop* adb_message_loop_;
@@ -49,7 +71,9 @@ class TetheringAdbFilter {
   scoped_refptr<AdbWebSocket> web_socket_;
   int command_id_;
   ForwardingMap forwarding_map_;
-  base::WeakPtrFactory<TetheringAdbFilter> weak_factory_;
+  CommandCallbackMap pending_responses_;
+  PortStatusMap port_status_;
+  PortStatusMap port_status_on_ui_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(TetheringAdbFilter);
 };

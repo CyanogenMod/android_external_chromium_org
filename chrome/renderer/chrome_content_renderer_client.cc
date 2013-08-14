@@ -208,6 +208,7 @@ bool ShouldUseJavaScriptSettingForPlugin(const WebPluginInfo& plugin) {
 #if defined(ENABLE_PLUGINS)
 const char* kPredefinedAllowedFileHandleOrigins[] = {
   "6EAED1924DB611B6EEF2A664BD077BE7EAD33B8F",  // see crbug.com/234789
+  "4EB74897CB187C7633357C2FE832E0AD6A44883A"   // see crbug.com/234789
 };
 #endif
 
@@ -578,13 +579,12 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
       case ChromeViewHostMsg_GetPluginInfo_Status::kAllowed: {
         const char* kPnaclMimeType = "application/x-pnacl";
         if (actual_mime_type == kPnaclMimeType) {
-          if (CommandLine::ForCurrentProcess()->HasSwitch(
-                  switches::kDisablePnacl)) {
+          if (!CommandLine::ForCurrentProcess()->HasSwitch(
+                  switches::kEnablePnacl)) {
             frame->addMessageToConsole(
                 WebConsoleMessage(
                     WebConsoleMessage::LevelError,
-                    "Portable Native Client must not be disabled in"
-                    " about:flags."));
+                    "Portable Native Client must be enabled in about:flags."));
             placeholder = PluginPlaceholder::CreateBlockedPlugin(
                 render_view, frame, params, plugin, identifier, group_name,
                 IDR_BLOCKED_PLUGIN_HTML,

@@ -5326,11 +5326,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_NACL_DEBUG_MASK_CHOICE_EXCLUDE_UTILS">
         Debug everything except secure shell
       </message>
-      <message name="IDS_FLAGS_PNACL_NAME" desc="Name of the 'Portable Native Client' lab.">
+      <message name="IDS_FLAGS_ENABLE_PNACL_NAME" desc="Name of the 'Enable Portable Native Client' lab.">
         Portable Native Client.
       </message>
-      <message name="IDS_FLAGS_PNACL_DESCRIPTION" desc="Description of the 'Disable Portable Native Client' lab.">
-        Allows web pages to use Portable Native Client.
+      <message name="IDS_FLAGS_ENABLE_PNACL_DESCRIPTION" desc="Description of the 'Enable Portable Native Client' lab.">
+        Enable support for Portable Native Client.
       </message>
       <message name="IDS_FLAGS_SAVE_PAGE_AS_MHTML_NAME" desc="Name of the 'Save Page as MHTML' lab.">
         Save Page as MHTML
@@ -13210,6 +13210,11 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_NOTIFICATION_POSITION_UPPER_RIGHT" desc="Menu label for positioning in upper right corner">
         Upper right
       </message>
+      <if expr="is_macosx">
+        <message name="IDS_MESSAGE_CENTER_FOOTER_WITH_PRODUCT_TITLE" desc="The label in the footer of the message center tray, with the product title.">
+          <ph name="product_name">$1<ex>Chrome</ex></ph> Notifications
+        </message>
+      </if>
 
       <!-- Mac AppleScript -->
       <if expr="is_macosx">
@@ -14229,6 +14234,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
     </message>
     <message name="IDS_PROFILES_CREATE_REMOTE_ERROR" desc="Message shown when a remote error (for example, a network error) occurs during creation of a new supervised user.">
       Oops! The new supervised user couldn't be created. Please check your network connection and try again later.
+    </message>
+    <message name="IDS_PROFILES_CREATE_SIGN_IN_ERROR" desc="Message shown when a sign-in error occurs during creation of a new supervised user.">
+      Oops! The new supervised user couldn't be created. Please make sure you're signed in properly and try again.
     </message>
     <message name="IDS_PROFILES_CREATE_MANAGED_SIGNED_IN_LABEL" desc="Label for the 'Supervised user' checkbox in the create-profile dialog when the current user is signed in. This will be followed by a 'Learn more' link.">
       This is a supervised user managed by <ph name="CUSTODIAN_EMAIL">$1<ex>user@gmail.com</ex>.</ph>
