@@ -48,6 +48,7 @@ LOCAL_SRC_FILES := \
 	gpu/command_buffer/service/gles2_cmd_validation.cc \
 	gpu/command_buffer/service/gl_context_virtual.cc \
 	gpu/command_buffer/service/gl_state_restorer_impl.cc \
+	gpu/command_buffer/service/gpu_control_service.cc \
 	gpu/command_buffer/service/gpu_scheduler.cc \
 	gpu/command_buffer/service/gpu_switches.cc \
 	gpu/command_buffer/service/gpu_tracer.cc \
