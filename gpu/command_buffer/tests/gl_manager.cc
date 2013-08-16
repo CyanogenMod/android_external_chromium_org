@@ -16,6 +16,7 @@
 #include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/gl_context_virtual.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
+#include "gpu/command_buffer/service/gpu_control_service.h"
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
@@ -38,8 +39,7 @@ GLManager::Options::Options()
       virtual_manager(NULL),
       bind_generates_resource(false),
       context_lost_allowed(false),
-      image_manager(NULL),
-      image_factory(NULL) {
+      image_manager(NULL) {
 }
 
 GLManager::GLManager()
@@ -143,6 +143,10 @@ void GLManager::Initialize(const GLManager::Options& options) {
   ASSERT_TRUE(command_buffer_->Initialize())
       << "could not create command buffer service";
 
+  gpu_control_.reset(
+      new GpuControlService(decoder_->GetContextGroup()->image_manager(),
+                            options.gpu_memory_buffer_factory));
+
   gpu_scheduler_.reset(new GpuScheduler(command_buffer_.get(),
                                         decoder_.get(),
                                         decoder_.get()));
@@ -200,7 +204,7 @@ void GLManager::Initialize(const GLManager::Options& options) {
       client_share_group,
       transfer_buffer_.get(),
       options.bind_generates_resource,
-      options.image_factory));
+      gpu_control_.get()));
 
   ASSERT_TRUE(gles2_implementation_->Initialize(
       kStartTransferBufferSize,
