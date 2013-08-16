@@ -197,6 +197,7 @@ LayerTreeHostImpl::LayerTreeHostImpl(
       zero_budget_(false),
       device_scale_factor_(1.f),
       overdraw_bottom_height_(0.f),
+      device_viewport_valid_for_tile_management_(true),
       external_stencil_test_enabled_(false),
       animation_registrar_(AnimationRegistrar::Create()),
       rendering_stats_instrumentation_(rendering_stats_instrumentation),
@@ -287,7 +288,7 @@ bool LayerTreeHostImpl::CanDraw() const {
   if (output_surface_->capabilities().draw_and_swap_full_viewport_every_frame)
     return true;
 
-  if (device_viewport_size_.IsEmpty()) {
+  if (DeviceViewport().IsEmpty()) {
     TRACE_EVENT_INSTANT0("cc", "LayerTreeHostImpl::CanDraw empty viewport",
                          TRACE_EVENT_SCOPE_THREAD);
     return false;
@@ -347,7 +348,7 @@ void LayerTreeHostImpl::StartPageScaleAnimation(gfx::Vector2d target_offset,
   gfx::Vector2dF scroll_total =
       RootScrollLayer()->scroll_offset() + RootScrollLayer()->ScrollDelta();
   gfx::SizeF scaled_scrollable_size = active_tree_->ScrollableSize();
-  gfx::SizeF viewport_size = VisibleViewportSize();
+  gfx::SizeF viewport_size = UnscaledScrollableViewportSize();
 
   double start_time_seconds = (start_time - base::TimeTicks()).InSecondsF();
 
@@ -1151,9 +1152,13 @@ void LayerTreeHostImpl::SetManagedMemoryPolicy(
 
 void LayerTreeHostImpl::SetExternalDrawConstraints(
     const gfx::Transform& transform,
-    gfx::Rect viewport) {
+    gfx::Rect viewport,
+    gfx::Rect clip,
+    bool valid_for_tile_management) {
   external_transform_ = transform;
   external_viewport_ = viewport;
+  external_clip_ = clip;
+  device_viewport_valid_for_tile_management_ = valid_for_tile_management;
 }
 
 void LayerTreeHostImpl::SetExternalStencilTest(bool enabled) {
@@ -1347,7 +1352,7 @@ float LayerTreeHostImpl::DeviceScaleFactor() const {
   return device_scale_factor_;
 }
 
-gfx::SizeF LayerTreeHostImpl::VisibleViewportSize() const {
+gfx::SizeF LayerTreeHostImpl::UnscaledScrollableViewportSize() const {
   // The container layer bounds should be used if non-overlay scrollbars may
   // exist since it adjusts for them.
   LayerImpl* container_layer = active_tree_->RootContainerLayer();
@@ -1358,7 +1363,7 @@ gfx::SizeF LayerTreeHostImpl::VisibleViewportSize() const {
   }
 
   gfx::SizeF dip_size =
-      gfx::ScaleSize(device_viewport_size(), 1.f / device_scale_factor());
+      gfx::ScaleSize(device_viewport_size_, 1.f / device_scale_factor());
 
   float top_offset =
       top_controls_manager_ ? top_controls_manager_->content_top_offset() : 0.f;
@@ -1780,6 +1785,10 @@ gfx::Rect LayerTreeHostImpl::DeviceViewport() const {
     return gfx::Rect(device_viewport_size_);
 
   return external_viewport_;
+}
+
+gfx::Rect LayerTreeHostImpl::DeviceClip() const {
+  return external_clip_;
 }
 
 const gfx::Transform& LayerTreeHostImpl::DeviceTransform() const {
@@ -2229,7 +2238,7 @@ scoped_ptr<ScrollAndScaleSet> LayerTreeHostImpl::ProcessScrollDeltas() {
 }
 
 void LayerTreeHostImpl::SetFullRootLayerDamage() {
-  SetViewportDamage(gfx::Rect(device_viewport_size_));
+  SetViewportDamage(gfx::Rect(DeviceViewport().size()));
 }
 
 void LayerTreeHostImpl::AnimatePageScale(base::TimeTicks time) {
