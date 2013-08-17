@@ -20,7 +20,7 @@
         }, {
           'skia_support_gpu': 1,
         }],
-        ['OS=="ios" or OS=="android"', {
+        ['OS=="ios"', {
           'skia_support_pdf': 0,
         }, {
           'skia_support_pdf': 1,

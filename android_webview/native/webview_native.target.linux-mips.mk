@@ -47,6 +47,8 @@ LOCAL_SRC_FILES := \
 	android_webview/native/intercepted_request_data_impl.cc \
 	android_webview/native/java_browser_view_renderer_helper.cc \
 	android_webview/native/net_init_native_callback.cc \
+	android_webview/native/aw_pdf_exporter.cc \
+	android_webview/native/skia_java_output_stream.cc \
 	android_webview/native/state_serializer.cc
 
 
