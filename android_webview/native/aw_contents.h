@@ -31,6 +31,9 @@ namespace android_webview {
 class AwContentsContainer;
 class AwContentsClientBridge;
 class AwWebContentsDelegate;
+// START: Printing fork b/10190508
+class AwPdfExporter;
+// END: Printing fork b/10190508
 
 // Native side of java-class of same name.
 // Provides the ownership of and access to browser components required for
@@ -86,6 +89,12 @@ class AwContents : public FindHelper::Listener,
   void Destroy(JNIEnv* env, jobject obj);
   void DocumentHasImages(JNIEnv* env, jobject obj, jobject message);
   void GenerateMHTML(JNIEnv* env, jobject obj, jstring jpath, jobject callback);
+// START: Printing fork b/10190508
+  void CreatePdfExporter(JNIEnv* env, jobject obj, jobject pdfExporter);
+ private:
+  scoped_ptr<AwPdfExporter> pdf_exporter_;
+ public:
+// END: Printing fork b/10190508
   void AddVisitedLinks(JNIEnv* env, jobject obj, jobjectArray jvisited_links);
   base::android::ScopedJavaLocalRef<jbyteArray> GetCertificate(
       JNIEnv* env, jobject obj);

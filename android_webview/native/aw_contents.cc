@@ -15,6 +15,9 @@
 #include "android_webview/native/aw_browser_dependency_factory.h"
 #include "android_webview/native/aw_contents_client_bridge.h"
 #include "android_webview/native/aw_contents_io_thread_client_impl.h"
+// START: Printing fork b/10190508
+#include "android_webview/native/aw_pdf_exporter.h"
+// END: Printing fork b/10190508
 #include "android_webview/native/aw_picture.h"
 #include "android_webview/native/aw_web_contents_delegate.h"
 #include "android_webview/native/java_browser_view_renderer_helper.h"
@@ -306,6 +309,16 @@ void AwContents::GenerateMHTML(JNIEnv* env, jobject obj,
       base::FilePath(ConvertJavaStringToUTF8(env, jpath)),
       base::Bind(&GenerateMHTMLCallback, base::Owned(j_callback)));
 }
+
+// START: Printing fork b/10190508
+void AwContents::CreatePdfExporter(JNIEnv* env,
+                                   jobject obj,
+                                   jobject pdfExporter) {
+
+  pdf_exporter_.reset(
+      new AwPdfExporter(env, pdfExporter, browser_view_renderer_.get()));
+}
+// END: Printing fork b/10190508
 
 void AwContents::PerformLongClick() {
   JNIEnv* env = AttachCurrentThread();

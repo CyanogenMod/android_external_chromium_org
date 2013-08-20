@@ -9,6 +9,9 @@
 #include "android_webview/native/aw_contents.h"
 #include "android_webview/native/aw_contents_client_bridge.h"
 #include "android_webview/native/aw_contents_io_thread_client_impl.h"
+// START: Printing fork b/10190508
+#include "android_webview/native/aw_pdf_exporter.h"
+// END: Printing fork b/10190508
 #include "android_webview/native/aw_form_database.h"
 #include "android_webview/native/aw_http_auth_handler.h"
 #include "android_webview/native/aw_picture.h"
@@ -20,6 +23,9 @@
 #include "android_webview/native/input_stream_impl.h"
 #include "android_webview/native/intercepted_request_data_impl.h"
 #include "android_webview/native/java_browser_view_renderer_helper.h"
+// START: Printing fork b/10190508
+#include "android_webview/native/skia_java_output_stream.h"
+// END: Printing fork b/10190508
 #include "base/android/jni_android.h"
 #include "base/android/jni_registrar.h"
 #include "base/debug/trace_event.h"
@@ -44,6 +50,10 @@ static base::android::RegistrationMethod kWebViewRegisteredMethods[] = {
   { "InterceptedRequestDataImpl", RegisterInterceptedRequestData },
   { "InputStream", RegisterInputStream },
   { "JavaBrowserViewRendererHelper", RegisterJavaBrowserViewRendererHelper },
+  // START: Printing fork b/10190508
+  { "AwPdfExporter", RegisterAwPdfExporter },
+  { "SkiaJavaOutputStream", RegisterSkiaJavaOutputStream },
+  // END: Printing fork b/10190508
 };
 
 bool RegisterJni(JNIEnv* env) {

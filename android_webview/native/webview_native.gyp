@@ -71,6 +71,12 @@
         'java_browser_view_renderer_helper.cc',
         'java_browser_view_renderer_helper.h',
         'net_init_native_callback.cc',
+# START: Printing fork b/10190508
+        'aw_pdf_exporter.cc',
+        'aw_pdf_exporter.h',
+        'skia_java_output_stream.cc',
+        'skia_java_output_stream.h',
+# END: Printing fork b/10190508
         'state_serializer.cc',
         'state_serializer.h',
       ],
@@ -84,6 +90,26 @@
       },
       'includes': [ '../../build/jar_file_jni_generator.gypi' ],
     },
+# START: Printing fork b/10190508
+    {
+      'target_name': 'output_stream_android_jar_jni_headers',
+      'type': 'none',
+      'variables': {
+        'jni_gen_package': 'android_webview',
+        'input_java_class': 'java/io/OutputStream.class',
+      },
+      'includes': [ '../../build/jar_file_jni_generator.gypi' ],
+    },
+    {
+      'target_name': 'cancellation_signal_android_jar_jni_headers',
+      'type': 'none',
+      'variables': {
+        'jni_gen_package': 'android_webview',
+        'input_java_class': 'android/os/CancellationSignal.class',
+      },
+      'includes': [ '../../build/jar_file_jni_generator.gypi' ],
+    },
+# END: Printing fork b/10190508
     {
       'target_name': 'android_webview_native_jni',
       'type': 'none',
@@ -103,6 +129,9 @@
           '../java/src/org/chromium/android_webview/AwWebContentsDelegate.java',
           '../java/src/org/chromium/android_webview/InterceptedRequestData.java',
           '../java/src/org/chromium/android_webview/JavaBrowserViewRendererHelper.java',
+# START: Printing fork b/10190508
+          '../java/src/org/chromium/android_webview/AwPdfExporter.java',
+# END: Printing fork b/10190508
       ],
       'variables': {
         'jni_gen_package': 'android_webview',
@@ -110,6 +139,11 @@
       'includes': [ '../../build/jni_generator.gypi' ],
       'dependencies': [
         'android_jar_jni_headers',
+# START: Printing fork b/10190508
+# TODO(sgurun) rename the android_jar_jni_headers (above) to input_stream_android_jar_jni_headers
+        'output_stream_android_jar_jni_headers',
+        'cancellation_signal_android_jar_jni_headers',
+# END: Printing fork b/10190508
       ],
     },
   ],

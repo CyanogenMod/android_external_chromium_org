@@ -638,6 +638,21 @@ public class AwContents {
         return mSettings;
     }
 
+    // START: Printing fork b/10190508
+    private AwPdfExporter mAwPdfExporter;
+
+    public AwPdfExporter getPdfExporter() {
+        if (mAwPdfExporter == null) {
+            mAwPdfExporter = new AwPdfExporter(this);
+            nativeCreatePdfExporter(mNativeAwContents, mAwPdfExporter);
+        }
+        return mAwPdfExporter;
+    }
+    private native void nativeCreatePdfExporter(
+            int nativeAwContents, AwPdfExporter awPdfExporter);
+
+    // END: Printing fork b/10190508
+
     public static void setAwDrawSWFunctionTable(int functionTablePointer) {
         nativeSetAwDrawSWFunctionTable(functionTablePointer);
     }
