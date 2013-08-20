@@ -34,13 +34,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,crypto_crypto_gyp)/crypto_crypto_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_openssl_openssl_gyp)/third_party_openssl_openssl_gyp.a \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp)/skia.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp)/skia_skia_library_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_opts_gyp)/skia_skia_opts_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_opts_ssse3_gyp)/skia_skia_opts_ssse3_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_zlib_zlib_gyp)/third_party_zlib_zlib_gyp.a \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_skia_config_gyp)/blink_skia_config.stamp \
-	$(call intermediates-dir-for,GYP,third_party_expat_expat_gyp)/expat.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_freetype_ft2_gyp)/third_party_freetype_ft2_gyp.a \
+	$(call intermediates-dir-for,GYP,skia_skia_library_gyp)/skia_library.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_chrome_gyp)/skia_skia_chrome_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_chrome_opts_gyp)/skia_skia_chrome_opts_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_opus_opus_gyp)/third_party_opus_opus_gyp.a \
@@ -51,6 +45,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,net_net_gyp)/net_net_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,sdch_sdch_gyp)/sdch_sdch_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_zlib_zlib_gyp)/third_party_zlib_zlib_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,url_url_lib_gyp)/url_url_lib_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_icu_icudata_gyp)/icudata.stamp \
 	$(call intermediates-dir-for,GYP,net_net_resources_gyp)/net_resources.stamp \
@@ -205,6 +200,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,sandbox_sandbox_services_headers_gyp)/sandbox_services_headers.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_webdata_common_gyp)/components_webdata_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libjingle_libjingle_gyp)/third_party_libjingle_libjingle_gyp.a \
+	$(call intermediates-dir-for,GYP,third_party_expat_expat_gyp)/expat.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libjingle_libjingle_p2p_constants_gyp)/third_party_libjingle_libjingle_p2p_constants_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libphonenumber_libphonenumber_gyp)/third_party_libphonenumber_libphonenumber_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libphonenumber_libphonenumber_without_metadata_gyp)/third_party_libphonenumber_libphonenumber_without_metadata_gyp.a \
@@ -307,6 +303,7 @@ MY_DEFS_Debug := \
 LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/skia_library/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
@@ -395,6 +392,7 @@ MY_DEFS_Release := \
 LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/skia_library/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
@@ -477,11 +475,6 @@ LOCAL_STATIC_LIBRARIES := \
 	media_media_gyp \
 	crypto_crypto_gyp \
 	third_party_openssl_openssl_gyp \
-	skia_skia_library_gyp \
-	skia_skia_opts_gyp \
-	skia_skia_opts_ssse3_gyp \
-	third_party_zlib_zlib_gyp \
-	third_party_freetype_ft2_gyp \
 	skia_skia_chrome_gyp \
 	skia_skia_chrome_opts_gyp \
 	third_party_opus_opus_gyp \
@@ -489,6 +482,7 @@ LOCAL_STATIC_LIBRARIES := \
 	base_base_i18n_gyp \
 	net_net_gyp \
 	sdch_sdch_gyp \
+	third_party_zlib_zlib_gyp \
 	url_url_lib_gyp \
 	third_party_libpng_libpng_gyp \
 	gpu_command_buffer_common_gyp \
@@ -598,11 +592,12 @@ LOCAL_SHARED_LIBRARIES := \
 	libcutils \
 	libandroid \
 	libOpenSLES \
-	libexpat \
+	libskia \
 	libjnigraphics \
 	libicui18n \
 	libicuuc \
 	libjpeg \
+	libexpat \
 	libstlport \
 	libdl
 

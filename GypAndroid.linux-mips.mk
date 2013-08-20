@@ -93,7 +93,6 @@ include $(LOCAL_PATH)/skia/skia.target.linux-mips.mk
 include $(LOCAL_PATH)/skia/skia_chrome.target.linux-mips.mk
 include $(LOCAL_PATH)/skia/skia_chrome_opts.target.linux-mips.mk
 include $(LOCAL_PATH)/skia/skia_library.target.linux-mips.mk
-include $(LOCAL_PATH)/skia/skia_opts.target.linux-mips.mk
 include $(LOCAL_PATH)/sql/sql.target.linux-mips.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.linux-mips.mk
@@ -144,13 +143,11 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf_config.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_minimal.target.linux-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/public/blink_skia_config.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/angle_dx11/src/preprocessor.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/angle_dx11/src/translator_common.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/angle_dx11/src/translator_glsl.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/ashmem/ashmem.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/expat/expat.target.linux-mips.mk
-include $(LOCAL_PATH)/third_party/freetype/ft2.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/harfbuzz-ng/harfbuzz-ng.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/iccjpeg/iccjpeg.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/icu/icudata.host.linux-mips.mk
