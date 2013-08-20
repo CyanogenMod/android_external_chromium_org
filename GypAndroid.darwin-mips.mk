@@ -93,7 +93,6 @@ include $(LOCAL_PATH)/skia/skia.target.darwin-mips.mk
 include $(LOCAL_PATH)/skia/skia_chrome.target.darwin-mips.mk
 include $(LOCAL_PATH)/skia/skia_chrome_opts.target.darwin-mips.mk
 include $(LOCAL_PATH)/skia/skia_library.target.darwin-mips.mk
-include $(LOCAL_PATH)/skia/skia_opts.target.darwin-mips.mk
 include $(LOCAL_PATH)/sql/sql.target.darwin-mips.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.darwin-mips.mk
@@ -144,13 +143,11 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf_config.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_minimal.target.darwin-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/public/blink_skia_config.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/angle_dx11/src/preprocessor.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/angle_dx11/src/translator_common.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/angle_dx11/src/translator_glsl.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/ashmem/ashmem.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/expat/expat.target.darwin-mips.mk
-include $(LOCAL_PATH)/third_party/freetype/ft2.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/harfbuzz-ng/harfbuzz-ng.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/iccjpeg/iccjpeg.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/icu/icudata.host.darwin-mips.mk
