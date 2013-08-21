@@ -351,6 +351,7 @@ public class AwContents {
                 implements ContentViewCore.UpdateFrameInfoListener {
         @Override
         public void onFrameInfoUpdated(float widthCss, float heightCss, float pageScaleFactor) {
+            if (mNativeAwContents == 0) return;
             int widthPix = (int) Math.floor(widthCss * mDIPScale * pageScaleFactor);
             int heightPix = (int) Math.floor(heightCss * mDIPScale * pageScaleFactor);
             mScrollOffsetManager.setContentSize(widthPix, heightPix);
@@ -375,6 +376,7 @@ public class AwContents {
 
         @Override
         public void scrollNativeTo(int x, int y) {
+            if (mNativeAwContents == 0) return;
             nativeScrollTo(mNativeAwContents, x, y);
         }
 
@@ -675,6 +677,10 @@ public class AwContents {
     }
 
     public int getAwDrawGLViewContext() {
+        // Only called during early construction, so client should not have had a chance to
+        // call destroy yet.
+        assert mNativeAwContents != 0;
+
         // Using the native pointer as the returned viewContext. This is matched by the
         // reinterpret_cast back to BrowserViewRenderer pointer in the native DrawGLFunction.
         return nativeGetAwDrawGLViewContext(mNativeAwContents);
@@ -686,6 +692,7 @@ public class AwContents {
 
     @CalledByNative
     private void updateGlobalVisibleRect() {
+        if (mNativeAwContents == 0) return;
         if (!mContainerView.getGlobalVisibleRect(sLocalGlobalVisibleRect)) {
             sLocalGlobalVisibleRect.setEmpty();
         }
@@ -739,6 +746,7 @@ public class AwContents {
     }
 
     public Picture capturePicture() {
+        if (mNativeAwContents == 0) return null;
         return new AwPicture(nativeCapturePicture(mNativeAwContents,
                     mScrollOffsetManager.computeHorizontalScrollRange(),
                     mScrollOffsetManager.computeVerticalScrollRange()));
@@ -750,6 +758,7 @@ public class AwContents {
      * @param invalidationOnly Flag to call back only on invalidation without providing a picture.
      */
     public void enableOnNewPicture(boolean enabled, boolean invalidationOnly) {
+        if (mNativeAwContents == 0) return;
         if (invalidationOnly) {
             mPictureListenerContentProvider = null;
         } else if (enabled && mPictureListenerContentProvider == null) {
@@ -868,6 +877,7 @@ public class AwContents {
     }
 
     public void requestFocus() {
+        if (mNativeAwContents == 0) return;
         if (!mContainerView.isInTouchMode() && mSettings.shouldFocusFirstNode()) {
             nativeFocusFirstNode(mNativeAwContents);
         }
@@ -952,7 +962,7 @@ public class AwContents {
      * @see View#overlayHorizontalScrollbar()
      */
     public boolean overlayHorizontalScrollbar() {
-        return mOverlayVerticalScrollbar;
+        return mOverlayHorizontalScrollbar;
     }
 
     /**
@@ -1424,6 +1434,7 @@ public class AwContents {
      * Note that this is also called from receivePopupContents.
      */
     public void onAttachedToWindow() {
+        if (mNativeAwContents == 0) return;
         mIsAttachedToWindow = true;
 
         mContentViewCore.onAttachedToWindow();
@@ -1526,7 +1537,7 @@ public class AwContents {
      * @return False if saving state failed.
      */
     public boolean saveState(Bundle outState) {
-        if (outState == null) return false;
+        if (mNativeAwContents == 0 || outState == null) return false;
 
         byte[] state = nativeGetOpaqueState(mNativeAwContents);
         if (state == null) return false;
@@ -1541,7 +1552,7 @@ public class AwContents {
      * @return False if restoring state failed.
      */
     public boolean restoreState(Bundle inState) {
-        if (inState == null) return false;
+        if (mNativeAwContents == 0 || inState == null) return false;
 
         byte[] state = inState.getByteArray(SAVE_RESTORE_STATE_KEY);
         if (state == null) return false;
@@ -1663,6 +1674,7 @@ public class AwContents {
                             mBrowserContext.getGeolocationPermissions().deny(origin);
                         }
                     }
+                    if (mNativeAwContents == 0) return;
                     nativeInvokeGeolocationCallback(mNativeAwContents, allow, origin);
                 }
             });
@@ -1671,6 +1683,7 @@ public class AwContents {
 
     @CalledByNative
     private void onGeolocationPermissionsShowPrompt(String origin) {
+        if (mNativeAwContents == 0) return;
         AwGeolocationPermissions permissions = mBrowserContext.getGeolocationPermissions();
         // Reject if geoloaction is disabled, or the origin has a retained deny
         if (!mSettings.getGeolocationEnabled()) {
