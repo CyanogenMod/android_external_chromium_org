@@ -21,6 +21,7 @@ libraries that should be included in the APK.
 # http://crbug.com/225558
 
 import json
+import fnmatch
 import optparse
 import os
 import re
@@ -32,9 +33,31 @@ _options = None
 _library_re = re.compile(
     '.*NEEDED.*Shared library: \[(?P<library_name>[\w/.]+)\]')
 
+#return filenames only in '_options.input_libraries'
+def InputLibNames():
+  input_libs = build_utils.ParseGypList(_options.input_libraries)
+  return input_libs
+
+#search recursively in all the folders under 'path' and check
+#if file exist and return the path of file
+def FindFullPath(name, path):
+  matches = []
+  for root, dirnames, filenames in os.walk(path):
+    for filename in fnmatch.filter(filenames, name):
+      abs_path = os.path.join(root)+"/"+name
+      #Update match if abs_path exist in _options.input_libraries
+      for file_name in fnmatch.filter(InputLibNames(), abs_path):
+        matches.append(os.path.join(root))
+  if(len(matches) > 0):
+    return matches.pop(0)
+  return None
 
 def FullLibraryPath(library_name):
-  return '%s/%s' % (_options.libraries_dir, library_name)
+  full_path = FindFullPath(library_name, _options.libraries_dir)
+  if full_path is not None:
+    return '%s/%s' % (full_path, library_name)
+  else:
+    return '%s/%s' % (_options.libraries_dir, library_name)
 
 
 def IsSystemLibrary(library_name):
@@ -101,6 +124,7 @@ def main(argv):
       help='The directory which contains shared libraries.')
   parser.add_option('--readelf', help='Path to the readelf binary.')
   parser.add_option('--output', help='Path to the generated .json file.')
+  parser.add_option('--output_abs_path', help='Path to the generated .json file with absolute path')
   parser.add_option('--stamp', help='Path to touch on success.')
 
   global _options
@@ -113,6 +137,8 @@ def main(argv):
   else:
     libraries = GetSortedTransitiveDependenciesForExecutable(libraries[0])
 
+  full_path_libraries = [FullLibraryPath(lib) for lib in libraries]
+  build_utils.WriteJson(full_path_libraries, _options.output_abs_path, only_if_changed=True)
   build_utils.WriteJson(libraries, _options.output, only_if_changed=True)
 
   if _options.stamp:

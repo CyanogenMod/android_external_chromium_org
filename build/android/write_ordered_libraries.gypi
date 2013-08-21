@@ -31,6 +31,7 @@
   ],
   'outputs': [
     '<(ordered_libraries_file)',
+    '<(ordered_libsfile_abs_path)',
   ],
   'action': [
     'python', '<(DEPTH)/build/android/gyp/write_ordered_libraries.py',
@@ -38,5 +39,6 @@
     '--libraries-dir=<(SHARED_LIB_DIR)',
     '--readelf=<(android_readelf)',
     '--output=<(ordered_libraries_file)',
+    '--output_abs_path=<(ordered_libsfile_abs_path)',
   ],
 }

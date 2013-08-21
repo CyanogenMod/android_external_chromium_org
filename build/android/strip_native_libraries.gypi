@@ -29,6 +29,7 @@
     '<(DEPTH)/build/android/gyp/util/build_utils.py',
     '<(DEPTH)/build/android/gyp/strip_library_for_device.py',
     '<(ordered_libraries_file)',
+    '<(ordered_libsfile_abs_path)',
     '>@(input_paths)',
   ],
   'outputs': [
@@ -49,6 +50,7 @@
     '--stripped-libraries-dir=<(stripped_libraries_dir)',
     '--libraries-dir=<(SHARED_LIB_DIR)',
     '--libraries-file=<(ordered_libraries_file)',
-    '--stamp=<(stamp)',
+    '--lib-absolute-path=<(ordered_libsfile_abs_path)',
+    '--stamp=<(strip_stamp)',
   ],
 }
