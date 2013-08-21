@@ -110,6 +110,7 @@ const char kIpConfigNetmask[] = "netmask";
 const char kIpConfigGateway[] = "gateway";
 const char kIpConfigNameServers[] = "nameServers";
 const char kIpConfigAutoConfig[] = "ipAutoConfig";
+const char kIpConfigWebProxyAutoDiscoveryUrl[] = "webProxyAutoDiscoveryUrl";
 
 // These are types of name server selections from the web ui.
 const char kNameServerTypeAutomatic[] = "automatic";
@@ -260,6 +261,11 @@ const int kPreferredPriority = 1;
 void ShillError(const std::string& function,
                 const std::string& error_name,
                 scoped_ptr<base::DictionaryValue> error_data) {
+  // UpdateConnectionData may send requests for stale services; ignore
+  // these errors.
+  if (function == "UpdateConnectionData" &&
+      error_name == network_handler::kDBusFailedError)
+    return;
   NET_LOG_ERROR("Shill Error from InternetOptionsHandler: " + error_name,
                 function);
 }
@@ -833,7 +839,6 @@ void InternetOptionsHandler::GetLocalizedValues(
     { "configureButton", IDS_OPTIONS_SETTINGS_CONFIGURE },
     { "disconnectButton", IDS_OPTIONS_SETTINGS_DISCONNECT },
     { "viewAccountButton", IDS_STATUSBAR_NETWORK_VIEW_ACCOUNT },
-
     { "wimaxConnTabLabel", IDS_OPTIONS_SETTINGS_INTERNET_TAB_WIMAX },
 
     // Wifi Tab.
@@ -913,6 +918,9 @@ void InternetOptionsHandler::GetLocalizedValues(
     { "lockSimCard", IDS_OPTIONS_SETTINGS_INTERNET_CELLULAR_LOCK_SIM_CARD },
     { "changePinButton",
       IDS_OPTIONS_SETTINGS_INTERNET_CELLULAR_CHANGE_PIN_BUTTON },
+
+    // Proxy Tab.
+    { "webProxyAutoDiscoveryUrl", IDS_PROXY_WEB_PROXY_AUTO_DISCOVERY },
   };
 
   RegisterStrings(localized_strings, resources, arraysize(resources));
@@ -1457,6 +1465,8 @@ void InternetOptionsHandler::PopulateDictionaryDetailsCallback(
   ipconfig_dhcp->SetString(kIpConfigGateway, network->gateway());
   std::string ipconfig_name_servers = network->GetDnsServersAsString();
   ipconfig_dhcp->SetString(kIpConfigNameServers, ipconfig_name_servers);
+  ipconfig_dhcp->SetString(kIpConfigWebProxyAutoDiscoveryUrl,
+                           network->web_proxy_auto_discovery_url().spec());
   SetValueDictionary(&dictionary,
                      kDictionaryIpConfig,
                      ipconfig_dhcp.release(),
@@ -1768,6 +1778,16 @@ void PopulateCellularDetails(const NetworkState* cellular,
       kTagDisableConnectButton,
       cellular->activation_state() == flimflam::kActivationStateActivating ||
       cellular->IsConnectingState());
+
+  // Don't show any account management related buttons if the activation
+  // state is unknown or no payment portal URL is available.
+  std::string support_url;
+  if (cellular->activation_state() == flimflam::kActivationStateUnknown ||
+      !dictionary->GetString(kTagSupportUrl, &support_url) ||
+      support_url.empty()) {
+    VLOG(2) << "No support URL is available. Don't display buttons.";
+    return;
+  }
 
   if (cellular->activation_state() != flimflam::kActivationStateActivating &&
       cellular->activation_state() != flimflam::kActivationStateActivated) {
