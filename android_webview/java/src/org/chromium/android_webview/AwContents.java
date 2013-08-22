@@ -1513,7 +1513,17 @@ public class AwContents {
         if (mNativeAwContents == 0) return;
         mScrollOffsetManager.setContainerViewSize(w, h);
         mContentViewCore.onPhysicalBackingSizeChanged(w, h);
-        mContentViewCore.onSizeChanged(w, h, ow, oh);
+        double pageScaleFactor = mLayoutSizer.getPageScaleFactorAtLastOnMeasure();
+        if (pageScaleFactor == 0) {
+            // The renderer hadn't sent us the pageScale yet. Assume 1.0. If it's different later
+            // on we'll go through one more round of layout anyway.
+            pageScaleFactor = 1.0;
+        }
+        // This method results in a change of the logical viewport. ContentViewCore assumes that
+        // the parameters are in DIP-scaled pixels which is why we need to remove the
+        // pageScaleFactor.
+        mContentViewCore.onSizeChanged((int)(w / pageScaleFactor), (int)(h / pageScaleFactor),
+                (int) (ow / pageScaleFactor), (int) (oh / pageScaleFactor));
         nativeOnSizeChanged(mNativeAwContents, w, h, ow, oh);
     }
 
