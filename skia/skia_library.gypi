@@ -20,7 +20,7 @@
         }, {
           'skia_support_gpu': 1,
         }],
-        ['OS=="ios"', {
+        ['OS=="ios" or enable_printing == 0', {
           'skia_support_pdf': 0,
         }, {
           'skia_support_pdf': 1,
@@ -41,7 +41,7 @@
       'SK_SUPPORT_GPU=<(skia_support_gpu)',
       'GR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"',
     ],
-    
+
     'default_font_cache_limit': '(20*1024*1024)',
 
     'conditions': [
@@ -355,7 +355,7 @@
       'sources/': [
         ['exclude', 'opts_check_SSE2\\.cpp$'],
       ],
-      
+
       # The main skia_opts target does not currently work on iOS because the
       # target architecture on iOS is determined at compile time rather than
       # gyp time (simulator builds are x86, device builds are arm).  As a
