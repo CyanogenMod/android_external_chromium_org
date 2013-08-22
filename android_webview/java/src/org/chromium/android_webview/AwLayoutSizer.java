@@ -26,6 +26,8 @@ public class AwLayoutSizer {
     // Page scale factor. This is set to zero initially so that we don't attempt to do a layout if
     // we get the content size change notification first and a page scale change second.
     private double mPageScaleFactor = 0.0;
+    // See dosc for getPageScaleFactorAtLastOnMeasure().
+    private double mPageScaleFactorAtLastOnMeasure = 0.0;
 
     // Whether to postpone layout requests.
     private boolean mFreezeLayoutRequests;
@@ -112,6 +114,15 @@ public class AwLayoutSizer {
         doUpdate(mContentWidthCss, mContentHeightCss, pageScaleFactor);
     }
 
+    /**
+     * The page scale factor that was used to calculate the physical size of the view at the most
+     * recent call to onMeasure. It is assumed that the values we get in onSizeChanged are scaled
+     * by this factor.
+     */
+    public double getPageScaleFactorAtLastOnMeasure() {
+        return mPageScaleFactorAtLastOnMeasure;
+    }
+
     private void doUpdate(int widthCss, int heightCss, double pageScaleFactor) {
         // We want to request layout only if the size or scale change, however if any of the
         // measurements are 'fixed', then changing the underlying size won't have any effect, so we
@@ -149,6 +160,8 @@ public class AwLayoutSizer {
 
         int contentHeightPix = (int) (mContentHeightCss * mPageScaleFactor * mDIPScale);
         int contentWidthPix = (int) (mContentWidthCss * mPageScaleFactor * mDIPScale);
+
+        mPageScaleFactorAtLastOnMeasure = mPageScaleFactor;
 
         // Always use the given size unless unspecified. This matches WebViewClassic behavior.
         mWidthMeasurementIsFixed = (widthMode != MeasureSpec.UNSPECIFIED);
