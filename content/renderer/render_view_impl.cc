@@ -32,10 +32,7 @@
 #include "content/child/appcache/appcache_dispatcher.h"
 #include "content/child/appcache/web_application_cache_host_impl.h"
 #include "content/child/child_thread.h"
-#include "content/child/fileapi/file_system_dispatcher.h"
-#include "content/child/fileapi/webfilesystem_callback_adapters.h"
 #include "content/child/npapi/webplugin_delegate_impl.h"
-#include "content/child/quota_dispatcher.h"
 #include "content/child/request_extra_data.h"
 #include "content/child/webmessageportchannel_impl.h"
 #include "content/common/clipboard_messages.h"
@@ -67,9 +64,9 @@
 #include "content/public/renderer/document_state.h"
 #include "content/public/renderer/history_item_serialization.h"
 #include "content/public/renderer/navigation_state.h"
-#include "content/public/renderer/password_form_conversion_utils.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "content/public/renderer/render_view_visitor.h"
+#include "content/public/renderer/web_preferences.h"
 #include "content/renderer/accessibility/renderer_accessibility.h"
 #include "content/renderer/accessibility/renderer_accessibility_complete.h"
 #include "content/renderer/accessibility/renderer_accessibility_focus_only.h"
@@ -132,7 +129,7 @@
 #include "media/base/filter_collection.h"
 #include "media/base/media_switches.h"
 #include "media/filters/audio_renderer_impl.h"
-#include "media/filters/gpu_video_decoder_factories.h"
+#include "media/filters/gpu_video_accelerator_factories.h"
 #include "net/base/data_url.h"
 #include "net/base/escape.h"
 #include "net/base/net_errors.h"
@@ -140,7 +137,6 @@
 #include "net/http/http_util.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
 #include "third_party/WebKit/public/platform/WebDragData.h"
-#include "third_party/WebKit/public/platform/WebFileSystemType.h"
 #include "third_party/WebKit/public/platform/WebHTTPBody.h"
 #include "third_party/WebKit/public/platform/WebImage.h"
 #include "third_party/WebKit/public/platform/WebMessagePortChannel.h"
@@ -165,7 +161,6 @@
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebFileChooserParams.h"
-#include "third_party/WebKit/public/web/WebFileSystemCallbacks.h"
 #include "third_party/WebKit/public/web/WebFindOptions.h"
 #include "third_party/WebKit/public/web/WebFormControlElement.h"
 #include "third_party/WebKit/public/web/WebFormElement.h"
@@ -185,6 +180,7 @@
 #include "third_party/WebKit/public/web/WebPluginDocument.h"
 #include "third_party/WebKit/public/web/WebPluginParams.h"
 #include "third_party/WebKit/public/web/WebRange.h"
+#include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "third_party/WebKit/public/web/WebScriptSource.h"
 #include "third_party/WebKit/public/web/WebSearchableFormData.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
@@ -206,7 +202,6 @@
 #include "ui/shell_dialogs/selected_file_info.h"
 #include "v8/include/v8.h"
 #include "webkit/child/weburlresponse_extradata_impl.h"
-#include "webkit/renderer/webpreferences_renderer.h"
 
 #if defined(OS_ANDROID)
 #include <cpu-features.h>
@@ -217,9 +212,9 @@
 #include "content/renderer/android/content_detector.h"
 #include "content/renderer/android/email_detector.h"
 #include "content/renderer/android/phone_number_detector.h"
+#include "content/renderer/android/synchronous_compositor_factory.h"
 #include "content/renderer/media/android/renderer_media_player_manager.h"
 #include "content/renderer/media/android/stream_texture_factory_android_impl.h"
-#include "content/renderer/media/android/stream_texture_factory_android_synchronous_impl.h"
 #include "content/renderer/media/android/webmediaplayer_android.h"
 #include "content/renderer/media/android/webmediaplayer_proxy_android.h"
 #include "skia/ext/platform_canvas.h"
@@ -276,8 +271,6 @@ using WebKit::WebElement;
 using WebKit::WebExternalPopupMenu;
 using WebKit::WebExternalPopupMenuClient;
 using WebKit::WebFileChooserCompletion;
-using WebKit::WebFileSystem;
-using WebKit::WebFileSystemCallbacks;
 using WebKit::WebFindOptions;
 using WebKit::WebFormControlElement;
 using WebKit::WebFormElement;
@@ -311,6 +304,7 @@ using WebKit::WebPopupMenuInfo;
 using WebKit::WebRange;
 using WebKit::WebRect;
 using WebKit::WebReferrerPolicy;
+using WebKit::WebRuntimeFeatures;
 using WebKit::WebScriptSource;
 using WebKit::WebSearchableFormData;
 using WebKit::WebSecurityOrigin;
@@ -780,7 +774,8 @@ WebDragData DropDataToWebDragData(const DropData& drop_data) {
 RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
     : RenderWidget(WebKit::WebPopupTypeNone,
                    params->screen_info,
-                   params->swapped_out),
+                   params->swapped_out,
+                   params->hidden),
       webkit_preferences_(params->webkit_prefs),
       send_content_state_immediately_(false),
       enabled_bindings_(0),
@@ -900,6 +895,8 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
   // Take a reference on behalf of the RenderThread.  This will be balanced
   // when we receive ViewMsg_ClosePage.
   AddRef();
+  if (is_hidden_)
+    RenderThread::Get()->WidgetHidden();
 
   // If this is a popup, we must wait for the CreatingNew_ACK message before
   // completing initialization.  Otherwise, we can finish it now.
@@ -920,7 +917,7 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
   webview()->settings()->setAcceleratedCompositingForFixedRootBackgroundEnabled(
       ShouldUseAcceleratedFixedRootBackground(device_scale_factor_));
 
-  webkit_glue::ApplyWebPreferences(webkit_preferences_, webview());
+  ApplyWebPreferences(webkit_preferences_, webview());
   webview()->initializeMainFrame(main_render_frame_.get());
 
   if (switches::IsTouchDragDropEnabled())
@@ -1073,6 +1070,7 @@ RenderViewImpl* RenderViewImpl::Create(
     const string16& frame_name,
     bool is_renderer_created,
     bool swapped_out,
+    bool hidden,
     int32 next_page_id,
     const WebKit::WebScreenInfo& screen_info,
     AccessibilityMode accessibility_mode,
@@ -1090,6 +1088,7 @@ RenderViewImpl* RenderViewImpl::Create(
       frame_name,
       is_renderer_created,
       swapped_out,
+      hidden,
       next_page_id,
       screen_info,
       accessibility_mode,
@@ -1991,10 +1990,6 @@ void RenderViewImpl::UpdateURL(WebFrame* frame) {
   params.searchable_form_url = internal_data->searchable_form_url();
   params.searchable_form_encoding = internal_data->searchable_form_encoding();
 
-  const PasswordForm* password_form_data = document_state->password_form_data();
-  if (password_form_data)
-    params.password_form = *password_form_data;
-
   params.gesture = navigation_gesture_;
   navigation_gesture_ = NavigationGestureUnknown;
 
@@ -2342,9 +2337,10 @@ WebView* RenderViewImpl::createView(
       surface_id,
       cloned_session_storage_namespace_id,
       string16(),  // WebCore will take care of setting the correct name.
-      true,
-      false,
-      1,
+      true,  // is_renderer_created
+      false, // swapped_out
+      false, // hidden
+      1,     // next_page_id
       screen_info_,
       accessibility_mode_,
       allow_partial_swap_);
@@ -2387,9 +2383,21 @@ WebStorageNamespace* RenderViewImpl::createSessionStorageNamespace() {
   return new WebStorageNamespaceImpl(session_storage_namespace_id_);
 }
 
+bool RenderViewImpl::shouldReportDetailedMessageForSource(
+    const WebString& source) {
+  return GetContentClient()->renderer()->ShouldReportDetailedMessageForSource(
+      source);
+}
+
 void RenderViewImpl::didAddMessageToConsole(
     const WebConsoleMessage& message, const WebString& source_name,
     unsigned source_line) {
+  didAddMessageToConsole(message, source_name, source_line, WebString());
+}
+
+void RenderViewImpl::didAddMessageToConsole(
+    const WebConsoleMessage& message, const WebString& source_name,
+    unsigned source_line, const WebString& stack_trace) {
   logging::LogSeverity log_severity = logging::LOG_VERBOSE;
   switch (message.level) {
     case WebConsoleMessage::LevelDebug:
@@ -2412,7 +2420,8 @@ void RenderViewImpl::didAddMessageToConsole(
                                            static_cast<int32>(log_severity),
                                            message.text,
                                            static_cast<int32>(source_line),
-                                           source_name));
+                                           source_name,
+                                           stack_trace));
 }
 
 void RenderViewImpl::printPage(WebFrame* frame) {
@@ -2685,6 +2694,10 @@ void RenderViewImpl::showContextMenu(
 
   FOR_EACH_OBSERVER(
       RenderViewObserver, observers_, DidRequestShowContextMenu(frame, data));
+}
+
+void RenderViewImpl::clearContextMenu() {
+  context_menu_node_.reset();
 }
 
 void RenderViewImpl::setStatusText(const WebString& text) {
@@ -3024,7 +3037,9 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
 
   scoped_ptr<StreamTextureFactory> stream_texture_factory;
   if (UsingSynchronousRendererCompositor()) {
-    stream_texture_factory.reset(new StreamTextureFactorySynchronousImpl);
+    SynchronousCompositorFactory* factory =
+        SynchronousCompositorFactory::GetInstance();
+    stream_texture_factory = factory->CreateStreamTextureFactory(routing_id_);
   } else {
     stream_texture_factory.reset(new StreamTextureFactoryImpl(
         context_provider->Context3d(), gpu_channel_host, routing_id_));
@@ -3038,6 +3053,7 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
           media_player_manager_.get(),
           media_player_proxy_,
           stream_texture_factory.release(),
+          RenderThreadImpl::current()->GetMediaThreadMessageLoopProxy(),
           new RenderMediaLog()));
 #if defined(ENABLE_WEBRTC) && defined(GOOGLE_TV)
   if (media_stream_client_->IsMediaStream(url)) {
@@ -3066,7 +3082,7 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
     DVLOG(1) << "Using AudioRendererMixerManager-provided sink: " << sink.get();
   }
 
-  scoped_refptr<media::GpuVideoDecoderFactories> gpu_factories =
+  scoped_refptr<media::GpuVideoAcceleratorFactories> gpu_factories =
       RenderThreadImpl::current()->GetGpuFactories(
           RenderThreadImpl::current()->GetMediaThreadMessageLoopProxy());
 
@@ -3380,7 +3396,8 @@ WebNavigationPolicy RenderViewImpl::decidePolicyForNavigation(
 
 void RenderViewImpl::willSendSubmitEvent(WebKit::WebFrame* frame,
     const WebKit::WebFormElement& form) {
-  NOTREACHED();
+  FOR_EACH_OBSERVER(
+      RenderViewObserver, observers_, WillSendSubmitEvent(frame, form));
 }
 
 void RenderViewImpl::willSubmitForm(WebFrame* frame,
@@ -3482,7 +3499,7 @@ void RenderViewImpl::PopulateDocumentStateFromPending(
   InternalDocumentStateData* internal_data =
       InternalDocumentStateData::FromDocumentState(document_state);
 
-  if (!params.url.SchemeIs(chrome::kJavaScriptScheme) &&
+  if (!params.url.SchemeIs(kJavaScriptScheme) &&
       params.navigation_type == ViewMsg_Navigate_Type::RESTORE) {
     // We're doing a load of a page that was restored from the last session. By
     // default this prefers the cache over loading (LOAD_PREFERRING_CACHE) which
@@ -3515,7 +3532,7 @@ NavigationState* RenderViewImpl::CreateNavigationStateFromPending() {
   // A navigation resulting from loading a javascript URL should not be treated
   // as a browser initiated event.  Instead, we want it to look as if the page
   // initiated any load resulting from JS execution.
-  if (!params.url.SchemeIs(chrome::kJavaScriptScheme)) {
+  if (!params.url.SchemeIs(kJavaScriptScheme)) {
     navigation_state = NavigationState::CreateBrowserInitiated(
         params.page_id,
         params.pending_history_list_offset,
@@ -3594,23 +3611,6 @@ void RenderViewImpl::didStartProvisionalLoad(WebFrame* frame) {
   if (is_top_most) {
     navigation_gesture_ = WebUserGestureIndicator::isProcessingUserGesture() ?
         NavigationGestureUser : NavigationGestureAuto;
-
-    // If the navigation is not triggered by a user gesture, e.g. by some ajax
-    // callback, then inherit the submitted password form from the previous
-    // state. This fixes the no password save issue for ajax login, tracked in
-    // [http://crbug/43219]. Note that there are still some sites that this
-    // fails for because they use some element other than a submit button to
-    // trigger submission.
-    if (navigation_gesture_ == NavigationGestureAuto) {
-      DocumentState* old_document_state = DocumentState::FromDataSource(
-          frame->dataSource());
-      const content::PasswordForm* old_password_form =
-          old_document_state->password_form_data();
-      if (old_password_form) {
-        document_state->set_password_form_data(
-            make_scoped_ptr(new content::PasswordForm(*old_password_form)));
-      }
-    }
   } else if (frame->parent()->isLoading()) {
     // Take note of AUTO_SUBFRAME loads here, so that we can know how to
     // load an error page.  See didFailProvisionalLoad.
@@ -3960,9 +3960,6 @@ void RenderViewImpl::didNavigateWithinPage(
   new_state->set_was_within_same_page(true);
 
   didCommitProvisionalLoad(frame, is_new_navigation);
-
-  WebDataSource* datasource = frame->view()->mainFrame()->dataSource();
-  UpdateTitle(frame, datasource->pageTitle(), datasource->pageTitleDirection());
 }
 
 void RenderViewImpl::didUpdateCurrentHistoryItem(WebFrame* frame) {
@@ -4236,22 +4233,6 @@ void RenderViewImpl::reportFindInPageMatchCount(int request_id,
 void RenderViewImpl::reportFindInPageSelection(int request_id,
                                                int active_match_ordinal,
                                                const WebRect& selection_rect) {
-  NOTREACHED();
-}
-
-void RenderViewImpl::openFileSystem(
-    WebFrame* frame,
-    WebKit::WebFileSystemType type,
-    long long size,
-    bool create,
-    WebFileSystemCallbacks* callbacks) {
-  NOTREACHED();
-}
-
-void RenderViewImpl::deleteFileSystem(
-    WebFrame* frame,
-    WebKit::WebFileSystemType type ,
-    WebFileSystemCallbacks* callbacks) {
   NOTREACHED();
 }
 
@@ -5033,6 +5014,9 @@ void RenderViewImpl::OnCSSInsertRequest(const string16& frame_xpath,
 void RenderViewImpl::OnAllowBindings(int enabled_bindings_flags) {
   if ((enabled_bindings_flags & BINDINGS_POLICY_WEB_UI) &&
       !(enabled_bindings_ & BINDINGS_POLICY_WEB_UI)) {
+    // WebUI uses <dialog> which is not yet enabled by default in Chrome.
+    WebRuntimeFeatures::enableDialogElement(true);
+
     RenderThread::Get()->RegisterExtension(WebUIExtension::Get());
     new WebUIExtensionData(this);
   }
@@ -5100,7 +5084,7 @@ void RenderViewImpl::OnDragSourceSystemDragEnded() {
 
 void RenderViewImpl::OnUpdateWebPreferences(const WebPreferences& prefs) {
   webkit_preferences_ = prefs;
-  webkit_glue::ApplyWebPreferences(webkit_preferences_, webview());
+  ApplyWebPreferences(webkit_preferences_, webview());
 }
 
 void RenderViewImpl::OnUpdateTimezone() {
@@ -5270,6 +5254,9 @@ void RenderViewImpl::OnMediaPlayerActionAt(const gfx::Point& location,
 }
 
 void RenderViewImpl::OnOrientationChangeEvent(int orientation) {
+  FOR_EACH_OBSERVER(RenderViewObserver,
+                    observers_,
+                    OrientationChangeEvent(orientation));
   webview()->mainFrame()->sendOrientationChangeEvent(orientation);
 }
 

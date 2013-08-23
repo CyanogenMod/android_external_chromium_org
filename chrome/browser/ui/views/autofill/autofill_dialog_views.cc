@@ -15,6 +15,7 @@
 #include "chrome/browser/ui/views/constrained_window_views.h"
 #include "components/autofill/content/browser/wallet/wallet_service_url.h"
 #include "components/autofill/core/browser/autofill_type.h"
+#include "components/web_modal/web_contents_modal_dialog_host.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/native_web_keyboard_event.h"
@@ -59,6 +60,7 @@
 #include "ui/views/window/dialog_client_view.h"
 
 using web_modal::WebContentsModalDialogManager;
+using web_modal::WebContentsModalDialogManagerDelegate;
 
 namespace autofill {
 
@@ -862,7 +864,13 @@ void AutofillDialogViews::OnWidgetClosing(views::Widget* widget) {
 
 void AutofillDialogViews::OnWidgetBoundsChanged(views::Widget* widget,
                                                 const gfx::Rect& new_bounds) {
-  ContentsPreferredSizeChanged();
+  // Wait until at least 100ms pass without any bounds change event before
+  // reacting. This way drags don't cause an excessive number of layouts.
+  browser_resize_timer_.Start(
+      FROM_HERE,
+      base::TimeDelta::FromMilliseconds(100),
+      base::Bind(&AutofillDialogViews::ContentsPreferredSizeChanged,
+                 base::Unretained(this)));
 }
 
 void AutofillDialogViews::NotificationArea::ButtonPressed(
@@ -1178,7 +1186,10 @@ AutofillDialogView* AutofillDialogView::Create(
 
 AutofillDialogViews::AutofillDialogViews(AutofillDialogViewDelegate* delegate)
     : delegate_(delegate),
+      updates_scope_(0),
+      needs_update_(false),
       window_(NULL),
+      browser_resize_timer_(false, false),
       notification_area_(NULL),
       account_chooser_(NULL),
       sign_in_webview_(NULL),
@@ -1225,11 +1236,14 @@ void AutofillDialogViews::Show() {
   WebContentsModalDialogManager* web_contents_modal_dialog_manager =
       WebContentsModalDialogManager::FromWebContents(
           delegate_->GetWebContents());
-  window_ = CreateWebContentsModalDialogViews(
+  WebContentsModalDialogManagerDelegate* modal_delegate =
+      web_contents_modal_dialog_manager->delegate();
+  DCHECK(modal_delegate);
+
+  window_ = views::Widget::CreateWindowAsFramelessChild(
       this,
       delegate_->GetWebContents()->GetView()->GetNativeView(),
-      web_contents_modal_dialog_manager->delegate()->
-          GetWebContentsModalDialogHost());
+      modal_delegate->GetWebContentsModalDialogHost()->GetHostView());
   web_contents_modal_dialog_manager->ShowDialog(window_->GetNativeView());
   focus_manager_ = window_->GetFocusManager();
   focus_manager_->AddFocusChangeListener(this);
@@ -1252,6 +1266,19 @@ void AutofillDialogViews::Show() {
 void AutofillDialogViews::Hide() {
   if (window_)
     window_->Close();
+}
+
+void AutofillDialogViews::UpdatesStarted() {
+  updates_scope_++;
+}
+
+void AutofillDialogViews::UpdatesFinished() {
+  updates_scope_--;
+  DCHECK_GE(updates_scope_, 0);
+  if (updates_scope_ == 0 && needs_update_) {
+    needs_update_ = false;
+    ContentsPreferredSizeChanged();
+  }
 }
 
 void AutofillDialogViews::UpdateAccountChooser() {
@@ -1475,58 +1502,10 @@ gfx::Size AutofillDialogViews::GetSize() const {
 }
 
 gfx::Size AutofillDialogViews::GetPreferredSize() {
-  gfx::Insets insets = GetInsets();
-  gfx::Size scroll_size = scrollable_area_->contents()->GetPreferredSize();
-  int width = scroll_size.width() + insets.width();
+  if (preferred_size_.IsEmpty())
+    preferred_size_ = CalculatePreferredSize();
 
-  if (sign_in_webview_->visible()) {
-    gfx::Size size = static_cast<views::View*>(sign_in_webview_)->
-        GetPreferredSize();
-    return gfx::Size(width, size.height() + insets.height());
-  }
-
-  int base_height = insets.height();
-  int notification_height = notification_area_->
-      GetHeightForWidth(scroll_size.width());
-  if (notification_height > 0)
-    base_height += notification_height + views::kRelatedControlVerticalSpacing;
-
-  int steps_height = autocheckout_steps_area_->
-      GetHeightForWidth(scroll_size.width());
-  if (steps_height > 0)
-    base_height += steps_height + views::kRelatedControlVerticalSpacing;
-
-  gfx::Size preferred_size;
-  // When the scroll area isn't visible, it still sets the width but doesn't
-  // factor into height.
-  if (!scrollable_area_->visible()) {
-    preferred_size.SetSize(width, base_height);
-  } else {
-    // Show as much of the scroll view as is possible without going past the
-    // bottom of the browser window.
-    views::Widget* widget =
-        views::Widget::GetTopLevelWidgetForNativeView(
-            delegate_->GetWebContents()->GetView()->GetNativeView());
-    int browser_window_height =
-        widget ? widget->GetContentsView()->bounds().height() : INT_MAX;
-    const int kWindowDecorationHeight = 200;
-    int height = base_height + std::min(
-        scroll_size.height(),
-        std::max(kMinimumContentsHeight,
-                 browser_window_height - base_height -
-                     kWindowDecorationHeight));
-    preferred_size.SetSize(width, height);
-  }
-
-  if (!overlay_view_->visible())
-    return preferred_size;
-
-  int height_of_overlay =
-      overlay_view_->GetHeightForContentsForWidth(preferred_size.width());
-  if (height_of_overlay > 0)
-    preferred_size.set_height(height_of_overlay);
-
-  return preferred_size;
+  return preferred_size_;
 }
 
 void AutofillDialogViews::Layout() {
@@ -1766,6 +1745,54 @@ void AutofillDialogViews::OnSelectedIndexChanged(views::Combobox* combobox) {
 void AutofillDialogViews::StyledLabelLinkClicked(const ui::Range& range,
                                                  int event_flags) {
   delegate_->LegalDocumentLinkClicked(range);
+}
+
+gfx::Size AutofillDialogViews::CalculatePreferredSize() {
+  gfx::Insets insets = GetInsets();
+  gfx::Size scroll_size = scrollable_area_->contents()->GetPreferredSize();
+  // Width is always set by the scroll area.
+  const int width = scroll_size.width();
+
+  if (sign_in_webview_->visible()) {
+    gfx::Size size = static_cast<views::View*>(sign_in_webview_)->
+        GetPreferredSize();
+    return gfx::Size(width + insets.width(), size.height() + insets.height());
+  }
+
+  if (overlay_view_->visible()) {
+    int height = overlay_view_->GetHeightForContentsForWidth(width);
+    if (height != 0)
+      return gfx::Size(width + insets.width(), height + insets.height());
+  }
+
+  int height = 0;
+  int notification_height = notification_area_->GetHeightForWidth(width);
+  if (notification_height > 0)
+    height += notification_height + views::kRelatedControlVerticalSpacing;
+
+  int steps_height = autocheckout_steps_area_->GetHeightForWidth(width);
+  if (steps_height > 0)
+    height += steps_height + views::kRelatedControlVerticalSpacing;
+
+  if (scrollable_area_->visible()) {
+    // Show as much of the scroll view as is possible without going past the
+    // bottom of the browser window.
+    views::Widget* widget =
+        views::Widget::GetTopLevelWidgetForNativeView(
+            delegate_->GetWebContents()->GetView()->GetNativeView());
+    int browser_window_height =
+        widget ? widget->GetContentsView()->bounds().height() : INT_MAX;
+    const int kWindowDecorationHeight = 200;
+    int browser_constrained_height =
+        browser_window_height - height - kWindowDecorationHeight;
+    int scroll_height = std::min(
+        scroll_size.height(),
+        std::max(kMinimumContentsHeight, browser_constrained_height));
+
+    height += scroll_height;
+  }
+
+  return gfx::Size(width + insets.width(), height + insets.height());
 }
 
 void AutofillDialogViews::InitChildViews() {
@@ -2272,6 +2299,13 @@ void AutofillDialogViews::UpdateButtonStripExtraView() {
 }
 
 void AutofillDialogViews::ContentsPreferredSizeChanged() {
+  if (updates_scope_ != 0) {
+    needs_update_ = true;
+    return;
+  }
+
+  preferred_size_ = gfx::Size();
+
   if (GetWidget()) {
     GetWidget()->SetSize(GetWidget()->non_client_view()->GetPreferredSize());
     // If the above line does not cause the dialog's size to change, |contents_|

@@ -150,6 +150,7 @@ bool NetworkStats::Start(net::HostResolver* host_resolver,
   net::HostResolver::RequestInfo request(server_host_port_pair);
   int rv =
       resolver->Resolve(request,
+                        net::DEFAULT_PRIORITY,
                         &addresses_,
                         base::Bind(base::IgnoreResult(&NetworkStats::DoConnect),
                                    base::Unretained(this)),
@@ -189,28 +190,25 @@ bool NetworkStats::DoConnect(int result) {
     return false;
   }
 
-  net::DatagramClientSocket* udp_socket =
+  scoped_ptr<net::DatagramClientSocket> udp_socket =
       socket_factory_->CreateDatagramClientSocket(
           net::DatagramSocket::DEFAULT_BIND,
           net::RandIntCallback(),
           NULL,
           net::NetLog::Source());
-  if (!udp_socket) {
-    TestPhaseComplete(SOCKET_CREATE_FAILED, net::ERR_INVALID_ARGUMENT);
-    return false;
-  }
-  DCHECK(!socket_.get());
-  socket_.reset(udp_socket);
+  DCHECK(udp_socket);
+  DCHECK(!socket_);
+  socket_ = udp_socket.Pass();
 
   const net::IPEndPoint& endpoint = addresses_.front();
-  int rv = udp_socket->Connect(endpoint);
+  int rv = socket_->Connect(endpoint);
   if (rv < 0) {
     TestPhaseComplete(CONNECT_FAILED, rv);
     return false;
   }
 
-  udp_socket->SetSendBufferSize(kMaxUdpSendBufferSize);
-  udp_socket->SetReceiveBufferSize(kMaxUdpReceiveBufferSize);
+  socket_->SetSendBufferSize(kMaxUdpSendBufferSize);
+  socket_->SetReceiveBufferSize(kMaxUdpReceiveBufferSize);
   return ConnectComplete(rv);
 }
 
@@ -239,7 +237,9 @@ void NetworkStats::SendHelloRequest() {
   probe_packet.set_group_id(current_test_index_);
   std::string output = probe_message_.MakeEncodedPacket(probe_packet);
 
-  SendData(output);
+  int result = SendData(output);
+  if (result < 0 && result != net::ERR_IO_PENDING)
+    TestPhaseComplete(WRITE_FAILED, result);
 }
 
 void NetworkStats::SendProbeRequest() {
@@ -286,7 +286,9 @@ void NetworkStats::SendProbeRequest() {
 
   StartReadDataTimer(timeout_seconds, current_test_index_);
   probe_request_time_ = base::TimeTicks::Now();
-  SendData(output);
+  int result = SendData(output);
+  if (result < 0 && result != net::ERR_IO_PENDING)
+    TestPhaseComplete(WRITE_FAILED, result);
 }
 
 void NetworkStats::ReadData() {
@@ -409,8 +411,9 @@ bool NetworkStats::UpdateReception(const ProbePacket& probe_packet) {
   return true;
 }
 
-void NetworkStats::SendData(const std::string& output) {
-  DCHECK(!write_buffer_.get());
+int NetworkStats::SendData(const std::string& output) {
+  if (write_buffer_.get() || !socket_.get())
+    return net::ERR_UNEXPECTED;
   scoped_refptr<net::StringIOBuffer> buffer(new net::StringIOBuffer(output));
   write_buffer_ = new net::DrainableIOBuffer(buffer.get(), buffer->size());
 
@@ -418,13 +421,10 @@ void NetworkStats::SendData(const std::string& output) {
       write_buffer_.get(),
       write_buffer_->BytesRemaining(),
       base::Bind(&NetworkStats::OnWriteComplete, base::Unretained(this)));
-  if (bytes_written < 0) {
-    if (bytes_written != net::ERR_IO_PENDING)
-      // There is some unexpected error.
-      TestPhaseComplete(WRITE_FAILED, bytes_written);
-  } else {
-    UpdateSendBuffer(bytes_written);
-  }
+  if (bytes_written < 0)
+    return bytes_written;
+  UpdateSendBuffer(bytes_written);
+  return net::OK;
 }
 
 void NetworkStats::OnWriteComplete(int result) {

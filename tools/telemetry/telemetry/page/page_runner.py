@@ -20,6 +20,8 @@ from telemetry.page import page_filter as page_filter_module
 from telemetry.page import page_measurement_results
 from telemetry.page import page_runner_repeat
 from telemetry.page import page_test
+from telemetry.page import results_options
+from telemetry.page.actions import navigate
 
 
 class _RunState(object):
@@ -32,6 +34,7 @@ class _RunState(object):
     self._first_browser = True
     self.first_page = collections.defaultdict(lambda: True)
     self.profiler_dir = None
+    self.repeat_state = None
 
   def StartBrowser(self, test, page_set, page, possible_browser,
                    credentials_path, archive_path):
@@ -110,12 +113,9 @@ class PageState(object):
 
   def PreparePage(self, page, tab, test=None):
     if page.is_file:
-      serving_dirs, filename = page.serving_dirs_and_file
+      serving_dirs = page.serving_dirs_and_file[0]
       if tab.browser.SetHTTPServerDirectories(serving_dirs) and test:
         test.DidStartHTTPServer(tab)
-      target_side_url = tab.browser.http_server.UrlOf(filename)
-    else:
-      target_side_url = page.url
 
     if page.credentials:
       if not tab.browser.credentials.LoginNeeded(tab, page.credentials):
@@ -125,13 +125,20 @@ class PageState(object):
     if test:
       if test.clear_cache_before_each_run:
         tab.ClearCache()
-      test.WillNavigateToPage(page, tab)
-    tab.Navigate(target_side_url, page.script_to_evaluate_on_commit)
-    if test:
-      test.DidNavigateToPage(page, tab)
 
-    page.WaitToLoad(tab, 60)
-    tab.WaitForDocumentReadyStateToBeInteractiveOrBetter()
+  def ImplicitPageNavigation(self, page, tab, test=None):
+    """Executes the implicit navigation that occurs for every page iteration.
+
+    This function will be called once per page before any actions are executed.
+    """
+    if test:
+      test.WillNavigateToPage(page, tab)
+      test.RunNavigateSteps(page, tab)
+      test.DidNavigateToPage(page, tab)
+    else:
+      i = navigate.NavigateAction()
+      i.RunAction(page, tab, None)
+      page.WaitToLoad(tab, 60)
 
   def CleanUpPage(self, page, tab):
     if page.credentials and self._did_login:
@@ -140,6 +147,7 @@ class PageState(object):
 
 def AddCommandLineOptions(parser):
   page_filter_module.PageFilter.AddCommandLineOptions(parser)
+  results_options.AddResultsOptions(parser)
 
 
 def _LogStackTrace(title, browser):
@@ -172,16 +180,15 @@ def _PrepareAndRunPage(test, page_set, expectations, options, page,
       state.StartBrowser(test, page_set, page, possible_browser,
                          credentials_path, page.archive_path)
 
+      expectation = expectations.GetExpectationForPage(state.browser, page)
+
       _WaitForThermalThrottlingIfNeeded(state.browser.platform)
 
       if options.profiler:
         state.StartProfiling(page, options)
 
-      expectation = expectations.GetExpectationForPage(
-          state.browser.platform, page)
-
       try:
-        _RunPage(test, page, state.tab, expectation,
+        _RunPage(test, page, state, expectation,
                  results_for_current_run, options)
         _CheckThermalThrottling(state.browser.platform)
       except exceptions.TabCrashException:
@@ -208,7 +215,7 @@ def _PrepareAndRunPage(test, page_set, expectations, options, page,
 
 def Run(test, page_set, expectations, options):
   """Runs a given test against a given page_set with the given options."""
-  results = test.PrepareResults(options)
+  results = results_options.PrepareResults(test, options)
 
   # Create a possible_browser with the given options.
   test.CustomizeBrowserOptions(options)
@@ -262,19 +269,21 @@ def Run(test, page_set, expectations, options):
 
   try:
     test.WillRunTest(state.tab)
-    repeat_state = page_runner_repeat.PageRunnerRepeatState(
-        options.repeat_options)
+    state.repeat_state = page_runner_repeat.PageRunnerRepeatState(
+                             options.repeat_options)
 
-    repeat_state.WillRunPageSet()
-    while repeat_state.ShouldRepeatPageSet():
+    state.repeat_state.WillRunPageSet()
+    while state.repeat_state.ShouldRepeatPageSet():
       for page in pages:
-        repeat_state.WillRunPage()
-        while repeat_state.ShouldRepeatPage():
+        state.repeat_state.WillRunPage()
+        test.WillRunPageRepeats(page, state.tab)
+        while state.repeat_state.ShouldRepeatPage():
           # execute test on page
           _PrepareAndRunPage(test, page_set, expectations, options, page,
                              credentials_path, possible_browser, results, state)
-          repeat_state.DidRunPage()
-      repeat_state.DidRunPageSet()
+          state.repeat_state.DidRunPage()
+        test.DidRunPageRepeats(page, state.tab)
+      state.repeat_state.DidRunPageSet()
 
     test.DidRunTest(state.tab, results)
   finally:
@@ -356,13 +365,24 @@ def _CheckArchives(page_set, pages, results):
           pages_missing_archive_path + pages_missing_archive_data]
 
 
-def _RunPage(test, page, tab, expectation, results, options):
+def _RunPage(test, page, state, expectation, results, options):
   logging.info('Running %s' % page.url)
 
   page_state = PageState()
+  tab = state.tab
+
+  def ProcessError():
+    logging.error('%s:\n%s', page.url, traceback.format_exc())
+    if expectation == 'fail':
+      logging.info('Error was expected\n')
+      results.AddSuccess(page)
+    else:
+      results.AddError(page, sys.exc_info())
 
   try:
     page_state.PreparePage(page, tab, test)
+    if state.repeat_state.ShouldNavigate(options.skip_navigate_on_repeat):
+      page_state.ImplicitPageNavigation(page, tab, test)
     test.Run(options, page, tab, results)
     util.CloseConnections(tab)
   except page_test.Failure:
@@ -374,11 +394,9 @@ def _RunPage(test, page, tab, expectation, results, options):
       results.AddFailure(page, sys.exc_info())
   except (util.TimeoutException, exceptions.LoginException,
           exceptions.ProfilingException):
-    logging.error('%s:\n%s', page.url, traceback.format_exc())
-    results.AddError(page, sys.exc_info())
+    ProcessError()
   except (exceptions.TabCrashException, exceptions.BrowserGoneException):
-    logging.error('%s:\n%s', page.url, traceback.format_exc())
-    results.AddError(page, sys.exc_info())
+    ProcessError()
     # Run() catches these exceptions to relaunch the tab/browser, so re-raise.
     raise
   except Exception:

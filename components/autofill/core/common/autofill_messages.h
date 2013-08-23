@@ -38,7 +38,8 @@ IPC_STRUCT_TRAITS_BEGIN(autofill::WebElementDescriptor)
   IPC_STRUCT_TRAITS_MEMBER(retrieval_method)
 IPC_STRUCT_TRAITS_END()
 
-IPC_ENUM_TRAITS(autofill::WebElementDescriptor::RetrievalMethod)
+IPC_ENUM_TRAITS_MAX_VALUE(autofill::WebElementDescriptor::RetrievalMethod,
+                          autofill::WebElementDescriptor::NONE)
 
 IPC_STRUCT_TRAITS_BEGIN(autofill::FormFieldData)
   IPC_STRUCT_TRAITS_MEMBER(label)
@@ -99,7 +100,9 @@ IPC_STRUCT_TRAITS_BEGIN(autofill::PasswordAndRealm)
   IPC_STRUCT_TRAITS_MEMBER(realm)
 IPC_STRUCT_TRAITS_END()
 
-IPC_ENUM_TRAITS(WebKit::WebFormElement::AutocompleteResult)
+IPC_ENUM_TRAITS_MAX_VALUE(
+    WebKit::WebFormElement::AutocompleteResult,
+    WebKit::WebFormElement::AutocompleteResultErrorInvalid)
 
 // Autofill messages sent from the browser to the renderer.
 
@@ -208,6 +211,10 @@ IPC_MESSAGE_ROUTED1(AutofillHostMsg_PasswordFormsParsed,
 // forms are visible on the page (e.g. not set to display:none.)
 IPC_MESSAGE_ROUTED1(AutofillHostMsg_PasswordFormsRendered,
                     std::vector<content::PasswordForm> /* forms */)
+
+// Notification that this password form was submitted by the user.
+IPC_MESSAGE_ROUTED1(AutofillHostMsg_PasswordFormSubmitted,
+                    content::PasswordForm /* form */)
 
 // Notification that a form has been submitted.  The user hit the button.
 IPC_MESSAGE_ROUTED2(AutofillHostMsg_FormSubmitted,

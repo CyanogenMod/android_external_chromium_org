@@ -18,14 +18,12 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/api/extension_api.h"
+#include "chrome/common/extensions/api/runtime.h"
 #include "chrome/common/extensions/background_info.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_messages.h"
-#include "chrome/common/extensions/features/feature.h"
 #include "chrome/common/extensions/features/feature_channel.h"
-#include "chrome/common/extensions/manifest.h"
 #include "chrome/common/extensions/manifest_handlers/externally_connectable.h"
 #include "chrome/common/extensions/manifest_handlers/sandboxed_page_info.h"
 #include "chrome/common/extensions/message_bundle.h"
@@ -43,6 +41,7 @@
 #include "chrome/renderer/extensions/chrome_v8_extension.h"
 #include "chrome/renderer/extensions/content_watcher.h"
 #include "chrome/renderer/extensions/context_menus_custom_bindings.h"
+#include "chrome/renderer/extensions/document_custom_bindings.h"
 #include "chrome/renderer/extensions/dom_activity_logger.h"
 #include "chrome/renderer/extensions/event_bindings.h"
 #include "chrome/renderer/extensions/extension_custom_bindings.h"
@@ -78,7 +77,10 @@
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/v8_value_converter.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/features/feature.h"
 #include "extensions/common/features/feature_provider.h"
+#include "extensions/common/manifest.h"
+#include "extensions/common/manifest_constants.h"
 #include "extensions/common/view_type.h"
 #include "grit/common_resources.h"
 #include "grit/renderer_resources.h"
@@ -109,14 +111,14 @@ using content::RenderView;
 
 namespace extensions {
 
+namespace runtime = api::runtime;
+
 namespace {
 
 static const int64 kInitialExtensionIdleHandlerDelayMs = 5*1000;
 static const int64 kMaxExtensionIdleHandlerDelayMs = 5*60*1000;
 static const char kEventModule[] = "event_bindings";
 static const char kEventDispatchFunction[] = "dispatchEvent";
-static const char kOnSuspendEvent[] = "runtime.onSuspend";
-static const char kOnSuspendCanceledEvent[] = "runtime.onSuspendCanceled";
 
 // Returns the global value for "chrome" from |context|. If one doesn't exist
 // creates a new object for it.
@@ -513,8 +515,7 @@ void Dispatcher::OnSetSystemFont(const std::string& font_family,
 }
 
 void Dispatcher::OnSetChannel(int channel) {
-  extensions::SetCurrentChannel(
-      static_cast<chrome::VersionInfo::Channel>(channel));
+  SetCurrentChannel(static_cast<chrome::VersionInfo::Channel>(channel));
 }
 
 void Dispatcher::OnMessageInvoke(const std::string& extension_id,
@@ -664,7 +665,7 @@ void Dispatcher::AddOrRemoveBindingsForContext(ChromeV8Context* context) {
            it != extensions_.end(); ++it) {
         ExternallyConnectableInfo* info =
             static_cast<ExternallyConnectableInfo*>((*it)->GetManifestData(
-                extension_manifest_keys::kExternallyConnectable));
+                manifest_keys::kExternallyConnectable));
         if (info && info->matches.MatchesURL(context->GetURL())) {
           runtime_is_available = true;
           break;
@@ -688,6 +689,9 @@ void Dispatcher::AddOrRemoveBindingsForContext(ChromeV8Context* context) {
         const std::string& api_name = *it;
         Feature* feature = feature_provider->GetFeature(api_name);
         DCHECK(feature);
+
+        // Internal APIs are included via require(api_name) from internal code
+        // rather than chrome[api_name].
         if (feature->IsInternal())
           continue;
 
@@ -704,26 +708,12 @@ void Dispatcher::AddOrRemoveBindingsForContext(ChromeV8Context* context) {
         if (parent_feature_available)
           continue;
 
-        if (!context->IsAnyFeatureAvailableToContext(api_name)) {
-          DeregisterBinding(api_name, context);
-          continue;
-        }
-
-        RegisterBinding(api_name, context);
+        if (context->IsAnyFeatureAvailableToContext(api_name))
+          RegisterBinding(api_name, context);
       }
       break;
     }
   }
-}
-
-void Dispatcher::DeregisterBinding(const std::string& api_name,
-                                   ChromeV8Context* context) {
-  std::string bind_name;
-  v8::Handle<v8::Object> bind_object =
-      GetOrCreateBindObjectIfAvailable(api_name, &bind_name, context);
-  v8::Handle<v8::String> v8_bind_name = v8::String::New(bind_name.c_str());
-  if (!bind_object.IsEmpty() && bind_object->HasRealNamedProperty(v8_bind_name))
-    bind_object->Delete(v8_bind_name);
 }
 
 v8::Handle<v8::Object> Dispatcher::GetOrCreateBindObjectIfAvailable(
@@ -865,6 +855,9 @@ void Dispatcher::RegisterNativeHandlers(ModuleSystem* module_system,
   module_system->RegisterNativeHandler("context_menus",
       scoped_ptr<NativeHandler>(
           new ContextMenusCustomBindings(this, context)));
+  module_system->RegisterNativeHandler("document_natives",
+      scoped_ptr<NativeHandler>(
+          new DocumentCustomBindings(this, context)));
   module_system->RegisterNativeHandler("extension",
       scoped_ptr<NativeHandler>(
           new ExtensionCustomBindings(this, context)));
@@ -1133,7 +1126,9 @@ void Dispatcher::DidCreateScriptContext(
         std::string hexencoded_id_hash = base::HexEncode(id_hash.c_str(),
                                                          id_hash.length());
         if (hexencoded_id_hash == "8C3741E3AF0B93B6E8E0DDD499BB0B74839EA578" ||
-            hexencoded_id_hash == "E703483CEF33DEC18B4B6DD84B5C776FB9182BDB")
+            hexencoded_id_hash == "E703483CEF33DEC18B4B6DD84B5C776FB9182BDB" ||
+            hexencoded_id_hash == "1A26E32DE447A17CBE5E9750CDBA78F58539B39C" ||
+            hexencoded_id_hash == "59048028102D7B4C681DBC7BC6CD980C3DC66DA3")
           includeExperimental = true;
       }
       if (includeExperimental)
@@ -1300,11 +1295,11 @@ void Dispatcher::AddOrRemoveOriginPermissions(
 }
 
 void Dispatcher::EnableCustomElementWhiteList() {
-  WebKit::WebRuntimeFeatures::enableCustomElements(true);
-  WebKit::WebCustomElement::allowTagName("webview");
+  WebKit::WebRuntimeFeatures::enableEmbedderCustomElements(true);
+  WebKit::WebCustomElement::addEmbedderCustomElementName("webview");
   // TODO(fsamuel): Add <adview> to the whitelist once it has been converted
   // into a custom element.
-  WebKit::WebCustomElement::allowTagName("browser-plugin");
+  WebKit::WebCustomElement::addEmbedderCustomElementName("browser-plugin");
 }
 
 void Dispatcher::AddOrRemoveBindings(const std::string& extension_id) {
@@ -1418,23 +1413,22 @@ void Dispatcher::OnSuspend(const std::string& extension_id) {
   // the browser know when we are starting and stopping the event dispatch, so
   // that it still considers the extension idle despite any activity the suspend
   // event creates.
-  DispatchEvent(extension_id, kOnSuspendEvent);
+  DispatchEvent(extension_id, runtime::OnSuspend::kEventName);
   RenderThread::Get()->Send(new ExtensionHostMsg_SuspendAck(extension_id));
 }
 
 void Dispatcher::OnCancelSuspend(const std::string& extension_id) {
-  DispatchEvent(extension_id, kOnSuspendCanceledEvent);
+  DispatchEvent(extension_id, runtime::OnSuspendCanceled::kEventName);
 }
 
 // TODO(kalman): This is checking for the wrong thing, it should be checking if
 // the frame's security origin is unique. The extension sandbox directive is
 // checked for in chrome/common/extensions/csp_handler.cc.
 bool Dispatcher::IsSandboxedPage(const GURL& url) const {
-  if (url.SchemeIs(extensions::kExtensionScheme)) {
+  if (url.SchemeIs(kExtensionScheme)) {
     const Extension* extension = extensions_.GetByID(url.host());
     if (extension) {
-      return extensions::SandboxedPageInfo::IsSandboxedPage(extension,
-                                                            url.path());
+      return SandboxedPageInfo::IsSandboxedPage(extension, url.path());
     }
   }
   return false;
@@ -1512,9 +1506,6 @@ bool Dispatcher::CheckContextAccessToExtensionAPI(
 
   Feature::Availability availability = context->GetAvailability(function_name);
   if (!availability.is_available()) {
-    APIActivityLogger::LogBlockedCall(context->extension()->id(),
-                                      function_name,
-                                      availability.result());
     v8::ThrowException(v8::Exception::Error(
         v8::String::New(availability.message().c_str())));
   }

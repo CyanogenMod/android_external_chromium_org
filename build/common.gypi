@@ -523,15 +523,29 @@
           'enable_automation%': 0,
           'enable_extensions%': 0,
           'enable_google_now%': 0,
-          'enable_printing%': 0,
           'enable_spellcheck%': 0,
           'enable_themes%': 0,
-          'proprietary_codecs%': 1,
           'remoting%': 0,
           'arm_neon%': 0,
           'arm_neon_optional%': 1,
           'native_discardable_memory%': 1,
           'native_memory_pressure_signals%': 1,
+        }],
+
+        # Enable basic printing for Chrome for Android but disable printing
+        # completely for WebView.
+        ['OS=="android" and android_webview_build==0', {
+          'enable_printing%': 2,
+        }],
+        ['OS=="android" and android_webview_build==1', {
+          'enable_printing%': 0,
+        }],
+
+        # Android OS includes support for proprietary codecs regardless of
+        # building Chromium or Google Chrome. We also ship Google Chrome with
+        # proprietary codecs.
+        ['OS=="android" or branding=="Chrome"', {
+          'proprietary_codecs%': 1,
         }],
 
         # Enable autofill dialog for Android, Mac and Views-enabled platforms.
@@ -910,6 +924,10 @@
     # Currently ignored on Windows.
     'coverage%': 0,
 
+    # Set to 1 to enable java code coverage. Instruments classes during build
+    # to produce .ec files during runtime.
+    'emma_coverage%': 0,
+
     # Set to 1 to force Visual C++ to use legacy debug information format /Z7.
     # This is useful for parallel compilation tools which can't support /Zi.
     # Only used on Windows.
@@ -922,9 +940,6 @@
     #  'win_release_RuntimeLibrary': 2
     # to ~/.gyp/include.gypi, gclient runhooks --force, and do a release build.
     'win_use_allocator_shim%': 1, # 1 = shim allocator via libcmt; 0 = msvcrt
-
-    # Whether usage of OpenMAX is enabled.
-    'enable_openmax%': 0,
 
     # Whether proprietary audio/video codecs are assumed to be included with
     # this build (only meaningful if branding!=Chrome).
@@ -1435,6 +1450,9 @@
           }],
           ['component=="shared_library"', {
             'win_use_allocator_shim%': 0,
+          },{
+            # Turn on multiple dll by default on Windows when in static_library.
+            'chrome_multiple_dll%': 1,
           }],
           ['component=="shared_library" and "<(GENERATOR)"=="ninja"', {
             # Only enabled by default for ninja because it's buggy in VS.
@@ -1571,8 +1589,7 @@
       }],
       ['OS == "ios"', {
         'grit_defines': [
-          # define for iOS specific resources.
-          '-D', 'ios',
+          '-t', 'ios',
           # iOS uses a whitelist to filter resources.
           '-w', '<(DEPTH)/build/ios/grit_whitelist.txt'
         ],
@@ -1898,9 +1915,6 @@
         'dependencies': [
           '<(DEPTH)/base/allocator/allocator.gyp:type_profiler',
         ],
-      }],
-      ['chrome_multiple_dll', {
-        'defines': ['CHROME_MULTIPLE_DLL'],
       }],
       ['OS=="linux" and clang==1 and host_arch=="ia32"', {
         # TODO(dmikurube): Remove -Wno-sentinel when Clang/LLVM is fixed.
@@ -2989,6 +3003,7 @@
                   ['chromeos==1 and disable_sse2==0', {
                     'cflags': [
                       '-msse2',
+                      '-mfpmath=sse',
                     ],
                   }],
                   # Use gold linker for Android ia32 target.

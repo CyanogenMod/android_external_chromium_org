@@ -9,14 +9,14 @@
 #include "base/values.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_messages.h"
-#include "chrome/common/extensions/features/feature.h"
-#include "chrome/common/extensions/manifest.h"
 #include "chrome/renderer/extensions/api_activity_logger.h"
 #include "chrome/renderer/extensions/chrome_v8_context.h"
 #include "chrome/renderer/extensions/dispatcher.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/v8_value_converter.h"
+#include "extensions/common/features/feature.h"
 #include "extensions/common/features/feature_provider.h"
+#include "extensions/common/manifest.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebView.h"
@@ -54,9 +54,9 @@ void RuntimeCustomBindings::OpenChannelToExtension(
   CHECK(args[0]->IsString() && args[1]->IsString());
 
   ExtensionMsg_ExternalConnectionInfo info;
-  info.source_id = context()->extension() ? context()->extension()->id() : "";
+  info.source_id = context()->GetExtensionID();
   info.target_id = *v8::String::Utf8Value(args[0]->ToString());
-  info.source_url = renderview->GetWebView()->mainFrame()->document().url();
+  info.source_url = context()->GetURL();
   std::string channel_name = *v8::String::Utf8Value(args[1]->ToString());
   int port_id = -1;
   renderview->Send(new ExtensionHostMsg_OpenChannelToExtension(
@@ -73,12 +73,8 @@ void RuntimeCustomBindings::OpenChannelToNativeApp(
               GetExtensionForRenderView(),
               context()->context_type(),
               context()->GetURL());
-  if (!availability.is_available()) {
-    APIActivityLogger::LogBlockedCall(context()->extension()->id(),
-                                      "nativeMessaging",
-                                      availability.result());
+  if (!availability.is_available())
     return;
-  }
 
   // Get the current RenderView so that we can send a routed IPC message from
   // the correct source.

@@ -290,9 +290,6 @@ const char kDisableBackgroundMode[]         = "disable-background-mode";
 // measurements.
 const char kDisableBackgroundNetworking[]   = "disable-background-networking";
 
-// Disables more strict popup blocking.
-const char kDisableBetterPopupBlocking[]    = "disable-better-popup-blocking";
-
 // Disables the bundled PPAPI version of Flash.
 const char kDisableBundledPpapiFlash[]      = "disable-bundled-ppapi-flash";
 
@@ -306,6 +303,9 @@ const char kDisableBookmarkAutocompleteProvider[] =
 // preferences.
 const char kDisableClientSidePhishingDetection[] =
     "disable-client-side-phishing-detection";
+
+// Disables pushing cloud policy to Chrome using an invalidation service.
+const char kDisableCloudPolicyPush[]        = "disable-cloud-policy-push";
 
 const char kDisableComponentUpdate[]        = "disable-component-update";
 
@@ -533,11 +533,12 @@ const char kEnablePasswordAutofillPublicSuffixDomainMatching[] =
 // GAIA login page, an info bar can help the user login.
 const char kEnableAutologin[]               = "enable-autologin";
 
+// Enables running all beforeunload handlers before closing any browser windows
+// on shutdown.
+const char kEnableBatchedShutdown[]         = "enable-batched-shutdown";
+
 // Enables the benchmarking extensions.
 const char kEnableBenchmarking[]            = "enable-benchmarking";
-
-// Enables pushing cloud policy to Chrome using an invalidation service.
-const char kEnableCloudPolicyPush[]         = "enable-cloud-policy-push";
 
 // This applies only when the process type is "service". Enables the Cloud
 // Print Proxy component within the service process.
@@ -654,8 +655,11 @@ const char kEnablePanels[]                  = "enable-panels";
 // account creation.
 const char kEnablePasswordGeneration[]      = "enable-password-generation";
 
-// Enables the usage of Portable Native Client.
-const char kEnablePnacl[]                   = "enable-pnacl";
+// Disables the usage of Portable Native Client.
+const char kDisablePnacl[]                  = "disable-pnacl";
+
+// Disables crash throttling for Portable Native Client.
+const char kDisablePnaclCrashThrottling[]   = "disable-pnacl-crash-throttling";
 
 // Disables the installation of Portable Native Client.
 const char kDisablePnaclInstall[]           = "disable-pnacl-install";
@@ -733,6 +737,9 @@ const char kEnableTabGroupsContextMenu[]    = "enable-tab-groups-context-menu";
 // Enables fanciful thumbnail processing. Used with NTP for
 // instant-extended-api, where thumbnails are generally smaller.
 const char kEnableThumbnailRetargeting[]   = "enable-thumbnail-retargeting";
+
+// Enables Translate experimental new UX which replaces the infobar.
+const char kEnableTranslateNewUX[]         = "enable-translate-new-ux";
 
 // Enables Translate settings in chrome://settings/languages.
 const char kEnableTranslateSettings[]      = "enable-translate-settings";
@@ -896,9 +903,6 @@ const char kIncognito[]                     = "incognito";
 // Causes Chrome to attempt to get metadata from the webstore for the
 // app/extension ID given, and then prompt the user to download and install it.
 const char kInstallFromWebstore[]           = "install-from-webstore";
-
-// Causes Chrome to load this URL instead of chrome://newtab for New Tab pages.
-const char kInstantNewTabURL[]              = "instant-new-tab-url";
 
 // Marks a renderer as an Instant process.
 const char kInstantProcess[]                = "instant-process";
@@ -1113,6 +1117,9 @@ const char kPrerenderModeSwitchValuePrefetchOnly[] = "prefetch_only";
 // Enable conversion from vector to raster for any page.
 const char kPrintRaster[]                   = "print-raster";
 
+// Use IPv6 only for privet HTTP.
+const char kPrivetIPv6Only[]                   = "privet-ipv6-only";
+
 // Outputs the product version information and quit. Used as an internal api to
 // detect the installed version of Chrome on Linux.
 const char kProductVersion[]                = "product-version";
@@ -1259,9 +1266,6 @@ const char kShowAppList[]                   = "show-app-list";
 
 // See kHideIcons.
 const char kShowIcons[]                     = "show-icons";
-
-// If true the alignment of the shelf can be changed.
-const char kShowShelfAlignmentMenu[]        = "show-launcher-alignment-menu";
 
 // Marks a renderer as the signin process.
 const char kSigninProcess[]                 = "signin-process";
@@ -1483,6 +1487,10 @@ const char kEnableSpdyProxyAuth[]           = "enable-spdy-proxy-auth";
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
 #if defined(OS_ANDROID)
+// Enable the accessibility tab switcher.
+const char kEnableAccessibilityTabSwitcher[] =
+    "enable-accessibility-tab-switcher";
+
 // Enables the new NTP.
 const char kEnableNewNTP[]                  = "enable-new-ntp";
 

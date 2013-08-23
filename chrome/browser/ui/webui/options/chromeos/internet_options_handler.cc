@@ -30,14 +30,13 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/choose_mobile_network_dialog.h"
-#include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/cros/network_property_ui_data.h"
 #include "chrome/browser/chromeos/enrollment_dialog_view.h"
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/mobile_config.h"
+#include "chrome/browser/chromeos/net/onc_utils.h"
 #include "chrome/browser/chromeos/options/network_config_view.h"
-#include "chrome/browser/chromeos/options/network_connect.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/sim_dialog_delegate.h"
 #include "chrome/browser/chromeos/ui_proxy_config_service.h"
@@ -110,6 +109,7 @@ const char kIpConfigNetmask[] = "netmask";
 const char kIpConfigGateway[] = "gateway";
 const char kIpConfigNameServers[] = "nameServers";
 const char kIpConfigAutoConfig[] = "ipAutoConfig";
+const char kIpConfigWebProxyAutoDiscoveryUrl[] = "webProxyAutoDiscoveryUrl";
 
 // These are types of name server selections from the web ui.
 const char kNameServerTypeAutomatic[] = "automatic";
@@ -260,6 +260,11 @@ const int kPreferredPriority = 1;
 void ShillError(const std::string& function,
                 const std::string& error_name,
                 scoped_ptr<base::DictionaryValue> error_data) {
+  // UpdateConnectionData may send requests for stale services; ignore
+  // these errors.
+  if (function == "UpdateConnectionData" &&
+      error_name == network_handler::kDBusFailedError)
+    return;
   NET_LOG_ERROR("Shill Error from InternetOptionsHandler: " + error_name,
                 function);
 }
@@ -648,7 +653,7 @@ void PopulateVPNDetails(const NetworkState* vpn,
 
   onc::ONCSource onc_source = onc::ONC_SOURCE_NONE;
   const base::DictionaryValue* onc =
-      network_connect::FindPolicyForActiveUser(vpn, &onc_source);
+      onc::FindPolicyForActiveUser(vpn->guid(), &onc_source);
 
   NetworkPropertyUIData hostname_ui_data;
   hostname_ui_data.ParseOncProperty(
@@ -712,14 +717,17 @@ void PopulateConnectionDetails(const NetworkState* network,
 // TODO(stevenjb): Move implementation here.
 
 // Helper methods for SetIPConfigProperties
-void AppendPropertyKeyIfPresent(const std::string& key,
+bool AppendPropertyKeyIfPresent(const std::string& key,
                                 const base::DictionaryValue& old_properties,
                                 std::vector<std::string>* property_keys) {
-  if (old_properties.HasKey(key))
+  if (old_properties.HasKey(key)) {
     property_keys->push_back(key);
+    return true;
+  }
+  return false;
 }
 
-void AddStringPropertyIfChanged(const std::string& key,
+bool AddStringPropertyIfChanged(const std::string& key,
                                 const std::string& new_value,
                                 const base::DictionaryValue& old_properties,
                                 base::DictionaryValue* new_properties) {
@@ -727,10 +735,12 @@ void AddStringPropertyIfChanged(const std::string& key,
   if (!old_properties.GetStringWithoutPathExpansion(key, &old_value) ||
       new_value != old_value) {
     new_properties->SetStringWithoutPathExpansion(key, new_value);
+    return true;
   }
+  return false;
 }
 
-void AddIntegerPropertyIfChanged(const std::string& key,
+bool AddIntegerPropertyIfChanged(const std::string& key,
                                  int new_value,
                                  const base::DictionaryValue& old_properties,
                                  base::DictionaryValue* new_properties) {
@@ -738,7 +748,18 @@ void AddIntegerPropertyIfChanged(const std::string& key,
   if (!old_properties.GetIntegerWithoutPathExpansion(key, &old_value) ||
       new_value != old_value) {
     new_properties->SetIntegerWithoutPathExpansion(key, new_value);
+    return true;
   }
+  return false;
+}
+
+void RequestReconnect(const std::string& service_path,
+                      gfx::NativeWindow owning_window) {
+  NetworkHandler::Get()->network_connection_handler()->DisconnectNetwork(
+      service_path,
+      base::Bind(&ash::network_connect::ConnectToNetwork,
+                 service_path, owning_window),
+      base::Bind(&ShillError, "RequestReconnect"));
 }
 
 }  // namespace
@@ -833,7 +854,6 @@ void InternetOptionsHandler::GetLocalizedValues(
     { "configureButton", IDS_OPTIONS_SETTINGS_CONFIGURE },
     { "disconnectButton", IDS_OPTIONS_SETTINGS_DISCONNECT },
     { "viewAccountButton", IDS_STATUSBAR_NETWORK_VIEW_ACCOUNT },
-
     { "wimaxConnTabLabel", IDS_OPTIONS_SETTINGS_INTERNET_TAB_WIMAX },
 
     // Wifi Tab.
@@ -913,6 +933,9 @@ void InternetOptionsHandler::GetLocalizedValues(
     { "lockSimCard", IDS_OPTIONS_SETTINGS_INTERNET_CELLULAR_LOCK_SIM_CARD },
     { "changePinButton",
       IDS_OPTIONS_SETTINGS_INTERNET_CELLULAR_CHANGE_PIN_BUTTON },
+
+    // Proxy Tab.
+    { "webProxyAutoDiscoveryUrl", IDS_PROXY_WEB_PROXY_AUTO_DISCOVERY },
   };
 
   RegisterStrings(localized_strings, resources, arraysize(resources));
@@ -1076,7 +1099,7 @@ void InternetOptionsHandler::ShowMorePlanInfoCallback(
     NOTREACHED();
     return;
   }
-  network_connect::ShowMobileSetup(service_path);
+  ash::network_connect::ShowMobileSetup(service_path);
 }
 
 void InternetOptionsHandler::BuyDataPlanCallback(const base::ListValue* args) {
@@ -1087,7 +1110,7 @@ void InternetOptionsHandler::BuyDataPlanCallback(const base::ListValue* args) {
     NOTREACHED();
     return;
   }
-  network_connect::ShowMobileSetup(service_path);
+  ash::network_connect::ShowMobileSetup(service_path);
 }
 
 void InternetOptionsHandler::SetApnCallback(const base::ListValue* args) {
@@ -1366,20 +1389,24 @@ void InternetOptionsHandler::SetIPConfigProperties(
     NOTREACHED();
     return;
   }
-  NET_LOG_EVENT("SetIPConfigProperties", service_path);
+  NET_LOG_USER("SetIPConfigProperties", service_path);
 
+  bool request_reconnect = false;
   std::vector<std::string> properties_to_clear;
   base::DictionaryValue properties_to_set;
 
   if (dhcp_for_ip) {
-    AppendPropertyKeyIfPresent(shill::kStaticIPAddressProperty,
-                               shill_properties, &properties_to_clear);
-    AppendPropertyKeyIfPresent(shill::kStaticIPPrefixlenProperty,
-                               shill_properties, &properties_to_clear);
-    AppendPropertyKeyIfPresent(shill::kStaticIPGatewayProperty,
-                               shill_properties, &properties_to_clear);
+    request_reconnect |= AppendPropertyKeyIfPresent(
+        shill::kStaticIPAddressProperty,
+        shill_properties, &properties_to_clear);
+    request_reconnect |= AppendPropertyKeyIfPresent(
+        shill::kStaticIPPrefixlenProperty,
+        shill_properties, &properties_to_clear);
+    request_reconnect |= AppendPropertyKeyIfPresent(
+        shill::kStaticIPGatewayProperty,
+        shill_properties, &properties_to_clear);
   } else {
-    AddStringPropertyIfChanged(
+    request_reconnect |= AddStringPropertyIfChanged(
         shill::kStaticIPAddressProperty,
         address, shill_properties, &properties_to_set);
     int prefixlen = network_util::NetmaskToPrefixLength(netmask);
@@ -1387,10 +1414,10 @@ void InternetOptionsHandler::SetIPConfigProperties(
       LOG(ERROR) << "Invalid prefix length for: " << service_path;
       prefixlen = 0;
     }
-    AddIntegerPropertyIfChanged(
+    request_reconnect |= AddIntegerPropertyIfChanged(
         shill::kStaticIPPrefixlenProperty,
         prefixlen, shill_properties, &properties_to_set);
-    AddStringPropertyIfChanged(
+    request_reconnect |= AddStringPropertyIfChanged(
         shill::kStaticIPGatewayProperty,
         gateway, shill_properties, &properties_to_set);
   }
@@ -1422,9 +1449,15 @@ void InternetOptionsHandler::SetIPConfigProperties(
   shill_properties.GetStringWithoutPathExpansion(
       flimflam::kDeviceProperty, &device_path);
   if (!device_path.empty()) {
-    // TODO(stevenjb): Enable this once 18873007 has landed.
-    // NetworkHandler::Get()->network_device_handler()->RequestRefreshIPConfigs(
-    //     device_path);
+    base::Closure callback = base::Bind(&base::DoNothing);
+    // If auto config or a static IP property changed, we need to reconnect
+    // to the network.
+    if (request_reconnect)
+      callback = base::Bind(&RequestReconnect, service_path, GetNativeWindow());
+    NetworkHandler::Get()->network_device_handler()->RequestRefreshIPConfigs(
+        device_path,
+        callback,
+        base::Bind(&ShillError, "RequestRefreshIPConfigs"));
   }
 }
 
@@ -1439,7 +1472,7 @@ void InternetOptionsHandler::PopulateDictionaryDetailsCallback(
 
   onc::ONCSource onc_source = onc::ONC_SOURCE_NONE;
   const base::DictionaryValue* onc =
-      network_connect::FindPolicyForActiveUser(network, &onc_source);
+      onc::FindPolicyForActiveUser(network->guid(), &onc_source);
   const NetworkPropertyUIData property_ui_data(onc_source);
 
   base::DictionaryValue dictionary;
@@ -1457,6 +1490,8 @@ void InternetOptionsHandler::PopulateDictionaryDetailsCallback(
   ipconfig_dhcp->SetString(kIpConfigGateway, network->gateway());
   std::string ipconfig_name_servers = network->GetDnsServersAsString();
   ipconfig_dhcp->SetString(kIpConfigNameServers, ipconfig_name_servers);
+  ipconfig_dhcp->SetString(kIpConfigWebProxyAutoDiscoveryUrl,
+                           network->web_proxy_auto_discovery_url().spec());
   SetValueDictionary(&dictionary,
                      kDictionaryIpConfig,
                      ipconfig_dhcp.release(),
@@ -1768,6 +1803,16 @@ void PopulateCellularDetails(const NetworkState* cellular,
       kTagDisableConnectButton,
       cellular->activation_state() == flimflam::kActivationStateActivating ||
       cellular->IsConnectingState());
+
+  // Don't show any account management related buttons if the activation
+  // state is unknown or no payment portal URL is available.
+  std::string support_url;
+  if (cellular->activation_state() == flimflam::kActivationStateUnknown ||
+      !dictionary->GetString(kTagSupportUrl, &support_url) ||
+      support_url.empty()) {
+    VLOG(2) << "No support URL is available. Don't display buttons.";
+    return;
+  }
 
   if (cellular->activation_state() != flimflam::kActivationStateActivating &&
       cellular->activation_state() != flimflam::kActivationStateActivated) {

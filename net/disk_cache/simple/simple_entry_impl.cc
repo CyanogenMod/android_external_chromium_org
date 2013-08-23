@@ -246,7 +246,7 @@ int SimpleEntryImpl::CreateEntry(Entry** out_entry,
   // have the entry in the index but we don't have the created files yet, this
   // way we never leak files. CreationOperationComplete will remove the entry
   // from the index if the creation fails.
-  backend_->index()->Insert(key_);
+  backend_->index()->Insert(entry_hash_);
 
   RunNextOperationIfNeeded();
   return ret_value;
@@ -536,7 +536,7 @@ void SimpleEntryImpl::RemoveSelfFromBackend() {
 void SimpleEntryImpl::MarkAsDoomed() {
   if (!backend_.get())
     return;
-  backend_->index()->Remove(key_);
+  backend_->index()->Remove(entry_hash_);
   RemoveSelfFromBackend();
 }
 
@@ -780,7 +780,7 @@ void SimpleEntryImpl::ReadDataInternal(int stream_index,
 
   state_ = STATE_IO_PENDING;
   if (backend_.get())
-    backend_->index()->UseIfExists(key_);
+    backend_->index()->UseIfExists(entry_hash_);
 
   scoped_ptr<uint32> read_crc32(new uint32());
   scoped_ptr<int> result(new int());
@@ -840,7 +840,7 @@ void SimpleEntryImpl::WriteDataInternal(int stream_index,
   DCHECK_EQ(STATE_READY, state_);
   state_ = STATE_IO_PENDING;
   if (backend_.get())
-    backend_->index()->UseIfExists(key_);
+    backend_->index()->UseIfExists(entry_hash_);
   // It is easy to incrementally compute the CRC from [0 .. |offset + buf_len|)
   // if |offset == 0| or we have already computed the CRC for [0 .. offset).
   // We rely on most write operations being sequential, start to end to compute
@@ -1120,7 +1120,7 @@ void SimpleEntryImpl::UpdateDataFromEntryStat(
     data_size_[i] = entry_stat.data_size[i];
   }
   if (backend_.get())
-    backend_->index()->UpdateEntrySize(key_, GetDiskUsage());
+    backend_->index()->UpdateEntrySize(entry_hash_, GetDiskUsage());
 }
 
 int64 SimpleEntryImpl::GetDiskUsage() const {
@@ -1136,13 +1136,30 @@ void SimpleEntryImpl::RecordReadIsParallelizable(
     const SimpleEntryOperation& operation) const {
   if (!executing_operation_)
     return;
-  // TODO(clamy): The values of this histogram should be changed to something
-  // more useful.
-  bool parallelizable_read =
-      !operation.alone_in_queue() &&
-      executing_operation_->type() == SimpleEntryOperation::TYPE_READ;
-  UMA_HISTOGRAM_BOOLEAN("SimpleCache.ReadIsParallelizable",
-                        parallelizable_read);
+  // Used in histograms, please only add entries at the end.
+  enum ReadDependencyType {
+    // READ_STANDALONE = 0, Deprecated.
+    READ_FOLLOWS_READ = 1,
+    READ_FOLLOWS_CONFLICTING_WRITE = 2,
+    READ_FOLLOWS_NON_CONFLICTING_WRITE = 3,
+    READ_FOLLOWS_OTHER = 4,
+    READ_ALONE_IN_QUEUE = 5,
+    READ_DEPENDENCY_TYPE_MAX = 6,
+  };
+
+  ReadDependencyType type = READ_FOLLOWS_OTHER;
+  if (operation.alone_in_queue()) {
+    type = READ_ALONE_IN_QUEUE;
+  } else if (executing_operation_->type() == SimpleEntryOperation::TYPE_READ) {
+    type = READ_FOLLOWS_READ;
+  } else if (executing_operation_->type() == SimpleEntryOperation::TYPE_WRITE) {
+    if (executing_operation_->ConflictsWith(operation))
+      type = READ_FOLLOWS_CONFLICTING_WRITE ;
+    else
+      type = READ_FOLLOWS_NON_CONFLICTING_WRITE;
+  }
+  UMA_HISTOGRAM_ENUMERATION(
+      "SimpleCache.ReadIsParallelizable", type, READ_DEPENDENCY_TYPE_MAX);
 }
 
 void SimpleEntryImpl::RecordWriteDependencyType(

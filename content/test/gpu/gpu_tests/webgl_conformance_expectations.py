@@ -7,11 +7,15 @@ from telemetry.page import test_expectations
 # Valid expectation conditions are:
 # win xp vista win7
 # mac leopard snowleopard lion mountainlion
-# linux chromeos
+# linux chromeos android
 # nvidia amd intel
+# Specific gpu's can be listed as a tuple with vendor name and device ID.
+# Example: ('nvidia', 0x1234)
+# Device ID's must be paired with a gpu vendor.
 
 class WebGLConformanceExpectations(test_expectations.TestExpectations):
   def SetExpectations(self):
     # Sample Usage:
-    # self.Fail("gl-enable-vertex-attrib.html", ["mac", "win"], bug=1234)
+    # self.Fail("gl-enable-vertex-attrib.html",
+    #     ['mac', 'amd', ('nvidia', 0x1234)], bug=123)
     pass

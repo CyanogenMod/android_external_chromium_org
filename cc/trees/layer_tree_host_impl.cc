@@ -28,8 +28,8 @@
 #include "cc/layers/heads_up_display_layer_impl.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/layers/layer_iterator.h"
+#include "cc/layers/painted_scrollbar_layer_impl.h"
 #include "cc/layers/render_surface_impl.h"
-#include "cc/layers/scrollbar_layer_impl.h"
 #include "cc/output/compositor_frame_metadata.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/output/delegating_renderer.h"
@@ -246,10 +246,11 @@ void LayerTreeHostImpl::BeginCommit() {}
 void LayerTreeHostImpl::CommitComplete() {
   TRACE_EVENT0("cc", "LayerTreeHostImpl::CommitComplete");
 
-  // Impl-side painting needs an update immediately post-commit to have the
-  // opportunity to create tilings.  Other paths can call UpdateDrawProperties
-  // more lazily when needed prior to drawing.
   if (settings_.impl_side_painting) {
+    // Impl-side painting needs an update immediately post-commit to have the
+    // opportunity to create tilings.  Other paths can call UpdateDrawProperties
+    // more lazily when needed prior to drawing.
+    pending_tree()->ApplyScrollDeltasSinceBeginFrame();
     pending_tree_->set_needs_update_draw_properties();
     pending_tree_->UpdateDrawProperties();
     // Start working on newly created tiles immediately if needed.
@@ -327,9 +328,11 @@ void LayerTreeHostImpl::ManageTiles() {
 
   size_t memory_required_bytes;
   size_t memory_nice_to_have_bytes;
+  size_t memory_allocated_bytes;
   size_t memory_used_bytes;
   tile_manager_->GetMemoryStats(&memory_required_bytes,
                                 &memory_nice_to_have_bytes,
+                                &memory_allocated_bytes,
                                 &memory_used_bytes);
   SendManagedMemoryStats(memory_required_bytes,
                          memory_nice_to_have_bytes,
@@ -466,7 +469,7 @@ void LayerTreeHostImpl::FrameData::AppendRenderPass(
 static DrawMode GetDrawMode(OutputSurface* output_surface) {
   if (output_surface->ForcedDrawToSoftwareDevice()) {
     return DRAW_MODE_RESOURCELESS_SOFTWARE;
-  } else if (output_surface->context3d()) {
+  } else if (output_surface->context_provider()) {
     return DRAW_MODE_HARDWARE;
   } else {
     DCHECK(output_surface->software_device());
@@ -1224,24 +1227,25 @@ static void LayerTreeHostImplDidBeginTracingCallback(LayerImpl* layer) {
 
 void LayerTreeHostImpl::DrawLayers(FrameData* frame,
                                    base::TimeTicks frame_begin_time) {
-  TRACE_EVENT0("cc", "LayerTreeHostImpl::DrawLayers");
+  TRACE_EVENT_BEGIN0("cc", "LayerTreeHostImpl::DrawLayers");
   DCHECK(CanDraw());
 
   if (frame->has_no_damage) {
     TRACE_EVENT0("cc", "EarlyOut_NoDamage");
     DCHECK(!output_surface_->capabilities()
                .draw_and_swap_full_viewport_every_frame);
+    TRACE_EVENT_END0("cc", "LayerTreeHostImpl::DrawLayers");
     return;
   }
 
   DCHECK(!frame->render_passes.empty());
 
+  int old_dropped_frame_count = fps_counter_->dropped_frame_count();
   fps_counter_->SaveTimeStamp(frame_begin_time);
 
-  rendering_stats_instrumentation_->SetScreenFrameCount(
-      fps_counter_->current_frame_number());
-  rendering_stats_instrumentation_->SetDroppedFrameCount(
-      fps_counter_->dropped_frame_count());
+  rendering_stats_instrumentation_->IncrementScreenFrameCount(1);
+  rendering_stats_instrumentation_->IncrementDroppedFrameCount(
+      fps_counter_->dropped_frame_count() - old_dropped_frame_count);
 
   if (tile_manager_) {
     memory_history_->SaveEntry(
@@ -1260,7 +1264,7 @@ void LayerTreeHostImpl::DrawLayers(FrameData* frame,
   if (!settings_.impl_side_painting && debug_state_.continuous_painting) {
     const RenderingStats& stats =
         rendering_stats_instrumentation_->GetRenderingStats();
-    paint_time_counter_->SavePaintTime(stats.total_paint_time);
+    paint_time_counter_->SavePaintTime(stats.main_stats.paint_time);
   }
 
   bool is_new_trace;
@@ -1305,6 +1309,10 @@ void LayerTreeHostImpl::DrawLayers(FrameData* frame,
         DidDrawDamagedArea();
   }
   active_tree_->root_layer()->ResetAllChangeTrackingForSubtree();
+  TRACE_EVENT_END1("cc", "LayerTreeHostImpl::DrawLayers",
+                   "data", rendering_stats_instrumentation_->
+                   GetImplThreadRenderingStats().AsTraceableData());
+  rendering_stats_instrumentation_->AccumulateAndClearImplThreadStats();
 }
 
 void LayerTreeHostImpl::DidDrawAllLayers(const FrameData& frame) {
@@ -1509,8 +1517,8 @@ void LayerTreeHostImpl::ActivatePendingTree() {
     const RenderingStats& stats =
         rendering_stats_instrumentation_->GetRenderingStats();
     paint_time_counter_->SavePaintTime(
-        stats.total_paint_time + stats.total_record_time +
-            stats.total_rasterize_time_for_now_bins_on_pending_tree);
+        stats.main_stats.paint_time + stats.main_stats.record_time +
+            stats.impl_stats.rasterize_time_for_now_bins_on_pending_tree);
   }
 
   client_->DidActivatePendingTree();
@@ -1526,6 +1534,11 @@ void LayerTreeHostImpl::SetVisible(bool visible) {
   visible_ = visible;
   DidVisibilityChange(this, visible_);
   EnforceManagedMemoryPolicy(ActualManagedMemoryPolicy());
+
+  // Evict tiles immediately if invisible since this tab may never get another
+  // draw or timer tick.
+  if (!visible_)
+    ManageTiles();
 
   if (!renderer_)
     return;
@@ -1574,7 +1587,7 @@ void LayerTreeHostImpl::CreateAndSetRenderer(
   if (output_surface->capabilities().delegated_rendering) {
     renderer_ =
         DelegatingRenderer::Create(this, output_surface, resource_provider);
-  } else if (output_surface->context3d() && !skip_gl_renderer) {
+  } else if (output_surface->context_provider() && !skip_gl_renderer) {
     renderer_ = GLRenderer::Create(this,
                                    output_surface,
                                    resource_provider,
@@ -1685,7 +1698,7 @@ bool LayerTreeHostImpl::DeferredInitialize(
   DCHECK(output_surface_->capabilities().deferred_gl_initialization);
   DCHECK(settings_.impl_side_painting);
   DCHECK(settings_.solid_color_scrollbars);
-  DCHECK(output_surface_->context3d());
+  DCHECK(output_surface_->context_provider());
 
   ReleaseTreeResources();
   renderer_.reset();
@@ -1708,7 +1721,7 @@ void LayerTreeHostImpl::ReleaseGL() {
   DCHECK(output_surface_->capabilities().deferred_gl_initialization);
   DCHECK(settings_.impl_side_painting);
   DCHECK(settings_.solid_color_scrollbars);
-  DCHECK(output_surface_->context3d());
+  DCHECK(output_surface_->context_provider());
 
   ReleaseTreeResources();
   renderer_.reset();
@@ -2500,7 +2513,9 @@ void LayerTreeHostImpl::CreateUIResource(
   if (id)
     DeleteUIResource(uid);
   id = resource_provider_->CreateResource(
-      bitmap->GetSize(), GL_RGBA, ResourceProvider::TextureUsageAny);
+      bitmap->GetSize(),
+      resource_provider_->best_texture_format(),
+      ResourceProvider::TextureUsageAny);
 
   ui_resource_map_[uid] = id;
   resource_provider_->SetPixels(id,

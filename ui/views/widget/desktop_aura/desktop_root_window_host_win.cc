@@ -30,7 +30,6 @@
 #include "ui/views/corewm/window_animations.h"
 #include "ui/views/ime/input_method_bridge.h"
 #include "ui/views/widget/desktop_aura/desktop_activation_client.h"
-#include "ui/views/widget/desktop_aura/desktop_capture_client.h"
 #include "ui/views/widget/desktop_aura/desktop_cursor_loader_updater.h"
 #include "ui/views/widget/desktop_aura/desktop_dispatcher_client.h"
 #include "ui/views/widget/desktop_aura/desktop_drag_drop_client_win.h"
@@ -134,8 +133,7 @@ aura::RootWindow* DesktopRootWindowHostWin::Init(
   root_window_->Init();
   root_window_->AddChild(content_window_);
 
-  capture_client_.reset(new views::DesktopCaptureClient(root_window_));
-  aura::client::SetCaptureClient(root_window_, capture_client_.get());
+  desktop_native_widget_aura_->CreateCaptureClient(root_window_);
 
   if (corewm::UseFocusControllerOnDesktop()) {
     corewm::FocusController* focus_controller =
@@ -388,13 +386,6 @@ void DesktopRootWindowHostWin::OnNativeWidgetFocus() {
 void DesktopRootWindowHostWin::OnNativeWidgetBlur() {
 }
 
-void DesktopRootWindowHostWin::SetInactiveRenderingDisabled(
-    bool disable_inactive) {
-  // Force the non-client area (most notably the title bar) to paint as either
-  // active or inactive, depending on the input.
-  SendMessage(message_handler_->hwnd(), WM_NCACTIVATE, !!disable_inactive, 0);
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // DesktopRootWindowHostWin, RootWindowHost implementation:
 
@@ -504,14 +495,6 @@ void DesktopRootWindowHostWin::MoveCursorTo(const gfx::Point& location) {
 }
 
 void DesktopRootWindowHostWin::SetFocusWhenShown(bool focus_when_shown) {
-}
-
-bool DesktopRootWindowHostWin::CopyAreaToSkCanvas(
-    const gfx::Rect& source_bounds,
-    const gfx::Point& dest_offset,
-    SkCanvas* canvas) {
-  NOTIMPLEMENTED();
-  return false;
 }
 
 void DesktopRootWindowHostWin::PostNativeEvent(
@@ -749,6 +732,10 @@ void DesktopRootWindowHostWin::HandleMove() {
 
 void DesktopRootWindowHostWin::HandleWorkAreaChanged() {
   GetWidget()->widget_delegate()->OnWorkAreaChanged();
+}
+
+void DesktopRootWindowHostWin::HandleVisibilityChanging(bool visible) {
+  native_widget_delegate_->OnNativeWidgetVisibilityChanging(visible);
 }
 
 void DesktopRootWindowHostWin::HandleVisibilityChanged(bool visible) {

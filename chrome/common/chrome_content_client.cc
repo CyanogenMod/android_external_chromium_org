@@ -6,6 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/cpu.h"
+#include "base/debug/crash_logging.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
@@ -18,6 +19,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
+#include "chrome/common/crash_keys.h"
 #include "chrome/common/pepper_flash.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
@@ -170,7 +172,8 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
                                                 kNaClPluginExtension,
                                                 kNaClPluginDescription);
       nacl.mime_types.push_back(nacl_mime_type);
-      if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnablePnacl)) {
+      if (!CommandLine::ForCurrentProcess()->HasSwitch(
+              switches::kDisablePnacl)) {
         content::WebPluginMimeType pnacl_mime_type(kPnaclPluginMimeType,
                                                    kPnaclPluginExtension,
                                                    kPnaclPluginDescription);
@@ -385,7 +388,8 @@ bool GetBundledPepperFlash(content::PepperPluginInfo* plugin) {
 namespace chrome {
 
 void ChromeContentClient::SetActiveURL(const GURL& url) {
-  child_process_logging::SetActiveURL(url);
+  base::debug::SetCrashKeyValue(crash_keys::kActiveURL,
+                                url.possibly_invalid_spec());
 }
 
 void ChromeContentClient::SetGpuInfo(const gpu::GPUInfo& gpu_info) {

@@ -21,7 +21,7 @@
 namespace {
 
 std::string GetDeviceIdString(const chromeos::AudioDevice& device) {
-  return device.display_name + " : " +
+  return device.device_name + " : " +
          base::Uint64ToString(device.id & static_cast<uint64>(0xffffffff));
 }
 
@@ -45,7 +45,6 @@ double AudioDevicesPrefHandlerImpl::GetVolumeGainValue(
 
 void AudioDevicesPrefHandlerImpl::SetVolumeGainValue(
     const AudioDevice& device, double value) {
-  value = std::min(std::max(value, 0.0), 100.0);
   device_volume_settings_->SetDouble(GetDeviceIdString(device), value);
 
   SaveDevicesVolumePref();

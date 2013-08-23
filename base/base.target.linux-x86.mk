@@ -26,6 +26,7 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
+	base/async_socket_io_handler_posix.cc \
 	base/event_recorder_stubs.cc \
 	base/linux_util.cc \
 	base/md5.cc \
@@ -158,6 +159,7 @@ LOCAL_SRC_FILES := \
 	base/process/process_handle_posix.cc \
 	base/process/process_iterator.cc \
 	base/process/process_iterator_linux.cc \
+	base/process/process_metrics.cc \
 	base/process/process_metrics_linux.cc \
 	base/process/process_metrics_posix.cc \
 	base/process/process_posix.cc \

@@ -12,6 +12,7 @@
 #include "base/sequenced_task_runner.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
+#include "third_party/leveldatabase/env_chromium.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
 #include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
 
@@ -37,7 +38,7 @@ const base::FilePath::CharType kResourceMapDBName[] =
 const base::FilePath::CharType kChildMapDBName[] =
     FILE_PATH_LITERAL("resource_metadata_child_map.db");
 
-// Meant to be a character which never happen to be in real resource IDs.
+// Meant to be a character which never happen to be in real IDs.
 const char kDBKeyDelimeter = '\0';
 
 // String used as a suffix of a key for a cache entry.
@@ -57,8 +58,8 @@ bool IsChildEntryKey(const leveldb::Slice& key) {
 }
 
 // Returns a string to be used as a key for a cache entry.
-std::string GetCacheEntryKey(const std::string& resource_id) {
-  std::string key(resource_id);
+std::string GetCacheEntryKey(const std::string& id) {
+  std::string key(id);
   key.push_back(kDBKeyDelimeter);
   key.append(kCacheEntryKeySuffix);
   return key;
@@ -91,6 +92,39 @@ DBInitStatus LevelDBStatusToDBInitStatus(const leveldb::Status status) {
   return DB_INIT_FAILED;
 }
 
+// Returns true when the status indicates an unrecoverable error.
+bool IsUnrecoverableError(const leveldb::Status& status) {
+  leveldb_env::MethodID method;
+  int error = 0;
+  leveldb_env::ErrorParsingResult result = leveldb_env::ParseMethodAndError(
+      status.ToString().c_str(), &method, &error);
+  switch (result) {
+    case leveldb_env::METHOD_ONLY:
+    case leveldb_env::NONE:
+      return false;
+    case leveldb_env::METHOD_AND_PFE:
+      switch (static_cast<base::PlatformFileError>(error)) {
+        case base::PLATFORM_FILE_ERROR_TOO_MANY_OPENED:
+        case base::PLATFORM_FILE_ERROR_NO_MEMORY:
+        case base::PLATFORM_FILE_ERROR_NO_SPACE:
+          return true;
+        default:
+          return false;
+      }
+    case leveldb_env::METHOD_AND_ERRNO:
+      switch (error) {
+        case EMFILE:
+        case ENOMEM:
+        case ENOSPC:
+          return true;
+        default:
+          return false;
+      }
+  }
+  NOTREACHED();
+  return false;
+}
+
 }  // namespace
 
 ResourceMetadataStorage::Iterator::Iterator(scoped_ptr<leveldb::Iterator> it)
@@ -115,7 +149,11 @@ bool ResourceMetadataStorage::Iterator::IsAtEnd() const {
   return !it_->Valid();
 }
 
-const ResourceEntry& ResourceMetadataStorage::Iterator::Get() const {
+std::string ResourceMetadataStorage::Iterator::GetID() const {
+  return it_->key().ToString();
+}
+
+const ResourceEntry& ResourceMetadataStorage::Iterator::GetValue() const {
   base::ThreadRestrictions::AssertIOAllowed();
   DCHECK(!IsAtEnd());
   return entry_;
@@ -181,7 +219,7 @@ bool ResourceMetadataStorage::CacheEntryIterator::IsAtEnd() const {
 const std::string& ResourceMetadataStorage::CacheEntryIterator::GetID() const {
   base::ThreadRestrictions::AssertIOAllowed();
   DCHECK(!IsAtEnd());
-  return resource_id_;
+  return id_;
 }
 
 const FileCacheEntry&
@@ -213,7 +251,7 @@ void ResourceMetadataStorage::CacheEntryIterator::AdvanceInternal() {
       // Drop the suffix |kDBKeyDelimeter + kCacheEntryKeySuffix| from the key.
       const size_t kSuffixLength = arraysize(kCacheEntryKeySuffix) - 1;
       const int id_length = it_->key().size() - 1 - kSuffixLength;
-      resource_id_.assign(it_->key().data(), id_length);
+      id_.assign(it_->key().data(), id_length);
       break;
     }
   }
@@ -253,9 +291,9 @@ bool ResourceMetadataStorage::Initialize() {
   options.create_if_missing = false;
 
   DBInitStatus open_existing_result = DB_INIT_NOT_FOUND;
+  leveldb::Status status;
   if (base::PathExists(resource_map_path)) {
-    leveldb::Status status =
-        leveldb::DB::Open(options, resource_map_path.AsUTF8Unsafe(), &db);
+    status = leveldb::DB::Open(options, resource_map_path.AsUTF8Unsafe(), &db);
     open_existing_result = LevelDBStatusToDBInitStatus(status);
   }
 
@@ -282,12 +320,13 @@ bool ResourceMetadataStorage::Initialize() {
                             open_existing_result,
                             DB_INIT_MAX_VALUE);
 
+  if (IsUnrecoverableError(status))
+    return false;
+
   DBInitStatus init_result = DB_INIT_SUCCESS;
 
   // Failed to open the existing DB, create new DB.
   if (!resource_map_) {
-    resource_map_.reset();
-
     // Clean up the destination.
     const bool kRecursive = true;
     base::DeleteFile(resource_map_path, kRecursive);
@@ -296,8 +335,7 @@ bool ResourceMetadataStorage::Initialize() {
     options.max_open_files = 0;  // Use minimum.
     options.create_if_missing = true;
 
-    leveldb::Status status =
-        leveldb::DB::Open(options, resource_map_path.AsUTF8Unsafe(), &db);
+    status = leveldb::DB::Open(options, resource_map_path.AsUTF8Unsafe(), &db);
     if (status.ok()) {
       resource_map_.reset(db);
 
@@ -343,13 +381,14 @@ int64 ResourceMetadataStorage::GetLargestChangestamp() {
   return header.largest_changestamp();
 }
 
-bool ResourceMetadataStorage::PutEntry(const ResourceEntry& entry) {
+bool ResourceMetadataStorage::PutEntry(const std::string& id,
+                                       const ResourceEntry& entry) {
   base::ThreadRestrictions::AssertIOAllowed();
-  DCHECK(!entry.resource_id().empty());
+  DCHECK(!id.empty());
 
   std::string serialized_entry;
   if (!entry.SerializeToString(&serialized_entry)) {
-    DLOG(ERROR) << "Failed to serialize the entry: " << entry.resource_id();
+    DLOG(ERROR) << "Failed to serialize the entry: " << id;
     return false;
   }
 
@@ -357,55 +396,51 @@ bool ResourceMetadataStorage::PutEntry(const ResourceEntry& entry) {
 
   // Remove from the old parent.
   ResourceEntry old_entry;
-  if (GetEntry(entry.resource_id(), &old_entry) &&
-      !old_entry.parent_resource_id().empty()) {
-    batch.Delete(GetChildEntryKey(old_entry.parent_resource_id(),
+  if (GetEntry(id, &old_entry) && !old_entry.parent_local_id().empty()) {
+    batch.Delete(GetChildEntryKey(old_entry.parent_local_id(),
                                   old_entry.base_name()));
   }
 
   // Add to the new parent.
-  if (!entry.parent_resource_id().empty()) {
-    batch.Put(GetChildEntryKey(entry.parent_resource_id(), entry.base_name()),
-              entry.resource_id());
-  }
+  if (!entry.parent_local_id().empty())
+    batch.Put(GetChildEntryKey(entry.parent_local_id(), entry.base_name()), id);
 
   // Put the entry itself.
-  batch.Put(entry.resource_id(), serialized_entry);
+  batch.Put(id, serialized_entry);
 
   const leveldb::Status status = resource_map_->Write(leveldb::WriteOptions(),
                                                       &batch);
   return status.ok();
 }
 
-bool ResourceMetadataStorage::GetEntry(const std::string& resource_id,
+bool ResourceMetadataStorage::GetEntry(const std::string& id,
                                        ResourceEntry* out_entry) {
   base::ThreadRestrictions::AssertIOAllowed();
-  DCHECK(!resource_id.empty());
+  DCHECK(!id.empty());
 
   std::string serialized_entry;
   const leveldb::Status status = resource_map_->Get(leveldb::ReadOptions(),
-                                                    leveldb::Slice(resource_id),
+                                                    leveldb::Slice(id),
                                                     &serialized_entry);
   return status.ok() && out_entry->ParseFromString(serialized_entry);
 }
 
-bool ResourceMetadataStorage::RemoveEntry(const std::string& resource_id) {
+bool ResourceMetadataStorage::RemoveEntry(const std::string& id) {
   base::ThreadRestrictions::AssertIOAllowed();
-  DCHECK(!resource_id.empty());
+  DCHECK(!id.empty());
 
   ResourceEntry entry;
-  if (!GetEntry(resource_id, &entry))
+  if (!GetEntry(id, &entry))
     return false;
 
   leveldb::WriteBatch batch;
 
   // Remove from the parent.
-  if (!entry.parent_resource_id().empty()) {
-    batch.Delete(GetChildEntryKey(entry.parent_resource_id(),
-                                  entry.base_name()));
-  }
+  if (!entry.parent_local_id().empty())
+    batch.Delete(GetChildEntryKey(entry.parent_local_id(), entry.base_name()));
+
   // Remove the entry itself.
-  batch.Delete(resource_id);
+  batch.Delete(id);
 
   const leveldb::Status status = resource_map_->Write(leveldb::WriteOptions(),
                                                       &batch);
@@ -421,28 +456,26 @@ ResourceMetadataStorage::GetIterator() {
   return make_scoped_ptr(new Iterator(it.Pass()));
 }
 
-std::string ResourceMetadataStorage::GetChild(
-    const std::string& parent_resource_id,
-    const std::string& child_name) {
+std::string ResourceMetadataStorage::GetChild(const std::string& parent_id,
+                                              const std::string& child_name) {
   base::ThreadRestrictions::AssertIOAllowed();
 
-  std::string child_resource_id;
-  resource_map_->Get(
-      leveldb::ReadOptions(),
-      leveldb::Slice(GetChildEntryKey(parent_resource_id, child_name)),
-      &child_resource_id);
-  return child_resource_id;
+  std::string child_id;
+  resource_map_->Get(leveldb::ReadOptions(),
+                     leveldb::Slice(GetChildEntryKey(parent_id, child_name)),
+                     &child_id);
+  return child_id;
 }
 
-void ResourceMetadataStorage::GetChildren(const std::string& parent_resource_id,
+void ResourceMetadataStorage::GetChildren(const std::string& parent_id,
                                           std::vector<std::string>* children) {
   base::ThreadRestrictions::AssertIOAllowed();
 
-  // Iterate over all entries with keys starting with |parent_resource_id|.
+  // Iterate over all entries with keys starting with |parent_id|.
   scoped_ptr<leveldb::Iterator> it(
       resource_map_->NewIterator(leveldb::ReadOptions()));
-  for (it->Seek(parent_resource_id);
-       it->Valid() && it->key().starts_with(leveldb::Slice(parent_resource_id));
+  for (it->Seek(parent_id);
+       it->Valid() && it->key().starts_with(leveldb::Slice(parent_id));
        it->Next()) {
     if (IsChildEntryKey(it->key()))
       children->push_back(it->value().ToString());
@@ -450,10 +483,10 @@ void ResourceMetadataStorage::GetChildren(const std::string& parent_resource_id,
   DCHECK(it->status().ok());
 }
 
-bool ResourceMetadataStorage::PutCacheEntry(const std::string& resource_id,
+bool ResourceMetadataStorage::PutCacheEntry(const std::string& id,
                                             const FileCacheEntry& entry) {
   base::ThreadRestrictions::AssertIOAllowed();
-  DCHECK(!resource_id.empty());
+  DCHECK(!id.empty());
 
   std::string serialized_entry;
   if (!entry.SerializeToString(&serialized_entry)) {
@@ -463,31 +496,31 @@ bool ResourceMetadataStorage::PutCacheEntry(const std::string& resource_id,
 
   const leveldb::Status status = resource_map_->Put(
       leveldb::WriteOptions(),
-      leveldb::Slice(GetCacheEntryKey(resource_id)),
+      leveldb::Slice(GetCacheEntryKey(id)),
       leveldb::Slice(serialized_entry));
   return status.ok();
 }
 
-bool ResourceMetadataStorage::GetCacheEntry(const std::string& resource_id,
+bool ResourceMetadataStorage::GetCacheEntry(const std::string& id,
                                             FileCacheEntry* out_entry) {
   base::ThreadRestrictions::AssertIOAllowed();
-  DCHECK(!resource_id.empty());
+  DCHECK(!id.empty());
 
   std::string serialized_entry;
   const leveldb::Status status = resource_map_->Get(
       leveldb::ReadOptions(),
-      leveldb::Slice(GetCacheEntryKey(resource_id)),
+      leveldb::Slice(GetCacheEntryKey(id)),
       &serialized_entry);
   return status.ok() && out_entry->ParseFromString(serialized_entry);
 }
 
-bool ResourceMetadataStorage::RemoveCacheEntry(const std::string& resource_id) {
+bool ResourceMetadataStorage::RemoveCacheEntry(const std::string& id) {
   base::ThreadRestrictions::AssertIOAllowed();
-  DCHECK(!resource_id.empty());
+  DCHECK(!id.empty());
 
   const leveldb::Status status = resource_map_->Delete(
       leveldb::WriteOptions(),
-      leveldb::Slice(GetCacheEntryKey(resource_id)));
+      leveldb::Slice(GetCacheEntryKey(id)));
   return status.ok();
 }
 
@@ -510,9 +543,9 @@ void ResourceMetadataStorage::DestroyOnBlockingPool() {
 
 // static
 std::string ResourceMetadataStorage::GetChildEntryKey(
-    const std::string& parent_resource_id,
+    const std::string& parent_id,
     const std::string& child_name) {
-  std::string key = parent_resource_id;
+  std::string key = parent_id;
   key.push_back(kDBKeyDelimeter);
   key.append(child_name);
   key.push_back(kDBKeyDelimeter);
@@ -586,7 +619,7 @@ bool ResourceMetadataStorage::CheckValidity() {
   size_t num_child_entries = 0;
   ResourceEntry entry;
   std::string serialized_parent_entry;
-  std::string child_resource_id;
+  std::string child_id;
   for (it->Next(); it->Valid(); it->Next()) {
     // Count child entries.
     if (IsChildEntryKey(it->key())) {
@@ -599,17 +632,16 @@ bool ResourceMetadataStorage::CheckValidity() {
       continue;
 
     // Check if stored data is broken.
-    if (!entry.ParseFromArray(it->value().data(), it->value().size()) ||
-        entry.resource_id() != it->key()) {
+    if (!entry.ParseFromArray(it->value().data(), it->value().size())) {
       DLOG(ERROR) << "Broken entry detected";
       return false;
     }
 
-    if (!entry.parent_resource_id().empty()) {
+    if (!entry.parent_local_id().empty()) {
       // Check if the parent entry is stored.
       leveldb::Status status = resource_map_->Get(
           options,
-          leveldb::Slice(entry.parent_resource_id()),
+          leveldb::Slice(entry.parent_local_id()),
           &serialized_parent_entry);
       if (!status.ok()) {
         DLOG(ERROR) << "Can't get parent entry. status = " << status.ToString();
@@ -619,10 +651,10 @@ bool ResourceMetadataStorage::CheckValidity() {
       // Check if parent-child relationship is stored correctly.
       status = resource_map_->Get(
           options,
-          leveldb::Slice(GetChildEntryKey(entry.parent_resource_id(),
+          leveldb::Slice(GetChildEntryKey(entry.parent_local_id(),
                                           entry.base_name())),
-          &child_resource_id);
-      if (!status.ok() || child_resource_id != entry.resource_id()) {
+          &child_id);
+      if (!status.ok() || leveldb::Slice(child_id) != it->key()) {
         DLOG(ERROR) << "Child map is broken. status = " << status.ToString();
         return false;
       }

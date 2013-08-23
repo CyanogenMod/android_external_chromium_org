@@ -6,6 +6,7 @@
 
 #include "ash/ash_switches.h"
 #include "ash/shell.h"
+#include "ash/system/tray/test_system_tray_delegate.h"
 #include "ash/test/display_manager_test_api.h"
 #include "ash/test/shell_test_api.h"
 #include "ash/test/test_session_state_delegate.h"
@@ -15,9 +16,11 @@
 #include "ui/base/ime/input_method_initializer.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/message_center/message_center.h"
+#include "ui/views/corewm/capture_controller.h"
 
 #if defined(OS_CHROMEOS)
 #include "chromeos/audio/cras_audio_handler.h"
+#include "chromeos/network/network_handler.h"
 #endif
 
 #if defined(USE_X11)
@@ -29,7 +32,8 @@ namespace test {
 
 AshTestHelper::AshTestHelper(base::MessageLoopForUI* message_loop)
     : message_loop_(message_loop),
-      test_shell_delegate_(NULL) {
+      test_shell_delegate_(NULL),
+      tear_down_network_handler_(false) {
   CHECK(message_loop_);
 #if defined(USE_X11)
   aura::test::SetUseOverrideRedirectWindowByDefault(true);
@@ -56,8 +60,16 @@ void AshTestHelper::SetUp(bool start_session) {
   // Create CrasAudioHandler for testing since g_browser_process is not
   // created in AshTestBase tests.
   chromeos::CrasAudioHandler::InitializeForTesting();
-#endif
 
+  // Some tests may not initialize NetworkHandler. Initialize it here if that
+  // is the case.
+  if (!chromeos::NetworkHandler::IsInitialized()) {
+    tear_down_network_handler_ = true;
+    chromeos::NetworkHandler::Initialize();
+  }
+
+  RunAllPendingInMessageLoop();
+#endif
   ash::Shell::CreateInstance(test_shell_delegate_);
   Shell* shell = Shell::GetInstance();
   if (start_session) {
@@ -80,13 +92,20 @@ void AshTestHelper::TearDown() {
   message_center::MessageCenter::Shutdown();
 
 #if defined(OS_CHROMEOS)
+  if (tear_down_network_handler_ && chromeos::NetworkHandler::IsInitialized())
+    chromeos::NetworkHandler::Shutdown();
   chromeos::CrasAudioHandler::Shutdown();
 #endif
 
   aura::Env::DeleteInstance();
 
+  // Need to reset the initial login status.
+  TestSystemTrayDelegate::SetInitialLoginStatus(user::LOGGED_IN_USER);
+
   ui::ShutdownInputMethodForTesting();
   zero_duration_mode_.reset();
+
+  CHECK(!views::corewm::ScopedCaptureClient::IsActive());
 }
 
 void AshTestHelper::RunAllPendingInMessageLoop() {

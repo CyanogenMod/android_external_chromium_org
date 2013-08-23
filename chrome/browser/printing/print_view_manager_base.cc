@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -88,7 +88,7 @@ void PrintViewManagerBase::UpdateScriptedPrintingBlocked() {
        !printing_enabled_.GetValue() || tab_content_blocked_));
 }
 
-void PrintViewManagerBase::StopNavigation() {
+void PrintViewManagerBase::NavigationStopped() {
   // Cancel the current job, wait for the worker to finish.
   TerminatePrintJob(true);
 }

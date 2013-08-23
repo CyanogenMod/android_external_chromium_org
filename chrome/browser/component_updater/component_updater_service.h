@@ -92,6 +92,20 @@ struct CrxComponent {
   ~CrxComponent();
 };
 
+// This convenience function returns component id of given CrxComponent.
+std::string GetCrxComponentID(const CrxComponent& component);
+
+// Convenience structure to use with component listing / enumeration.
+struct CrxComponentInfo {
+  // |id| is currently derived from |CrxComponent.pk_hash|, see rest of the
+  // class implementation for details.
+  std::string id;
+  std::string version;
+  std::string name;
+  CrxComponentInfo();
+  ~CrxComponentInfo();
+};
+
 // The component update service is in charge of installing or upgrading
 // select parts of chrome. Each part is called a component and managed by
 // instances of CrxComponent registered using RegisterComponent(). On the
@@ -125,6 +139,9 @@ class ComponentUpdateService {
     virtual int NextCheckDelay() = 0;
     // Delay in seconds from each task step. Used to smooth out CPU/IO usage.
     virtual int StepDelay() = 0;
+    // Delay in seconds between applying updates for different components, if
+    // several updates are available at a given time.
+    virtual int StepDelayMedium() = 0;
     // Minimum delta time in seconds before checking again the same component.
     virtual int MinimumReCheckWait() = 0;
     // Minimum delta time in seconds before an on-demand check is allowed
@@ -171,7 +188,10 @@ class ComponentUpdateService {
   // no time guarantee, there is no notification if the item is not updated.
   // However, the ComponentInstaller should know if an update succeeded
   // via the Install() hook.
-  virtual Status CheckForUpdateSoon(const CrxComponent& component) = 0;
+  virtual Status CheckForUpdateSoon(const std::string& component_id) = 0;
+
+  // Returns a list of registered components.
+  virtual void GetComponents(std::vector<CrxComponentInfo>* components) = 0;
 
   virtual ~ComponentUpdateService() {}
 };

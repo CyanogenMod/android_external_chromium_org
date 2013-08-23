@@ -18,6 +18,7 @@ from telemetry.core import wpr_server
 from telemetry.core.backends import browser_backend
 from telemetry.core.chrome import extension_dict_backend
 from telemetry.core.chrome import misc_web_contents_backend
+from telemetry.core.chrome import system_info_backend
 from telemetry.core.chrome import tab_list_backend
 from telemetry.core.chrome import tracing_backend
 from telemetry.unittest import options_for_unittests
@@ -36,8 +37,9 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     self._port = None
 
     self._inspector_protocol_version = 0
-    self._chrome_branch_number = 0
+    self._chrome_branch_number = None
     self._tracing_backend = None
+    self._system_info_backend = None
 
     self.webpagereplay_local_http_port = util.GetAvailableLocalPort()
     self.webpagereplay_local_https_port = util.GetAvailableLocalPort()
@@ -75,6 +77,7 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     args.append('--disable-background-networking')
     args.append('--metrics-recording-only')
     args.append('--no-first-run')
+    args.append('--no-proxy-server')
     if self.options.wpr_mode != wpr_modes.WPR_OFF:
       args.extend(wpr_server.GetChromeFlags(
           self.WEBPAGEREPLAY_HOST,
@@ -142,6 +145,9 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     if 'Protocol-Version' in resp:
       self._inspector_protocol_version = resp['Protocol-Version']
 
+      if self._chrome_branch_number:
+        return
+
       if 'Browser' in resp:
         branch_number_match = re.search('Chrome/\d+\.\d+\.(\d+)\.\d+',
                                         resp['Browser'])
@@ -167,7 +173,9 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     if path:
       url += '/' + path
     try:
-      req = urllib2.urlopen(url, timeout=timeout)
+      proxy_handler = urllib2.ProxyHandler({})  # Bypass any system proxy.
+      opener = urllib2.build_opener(proxy_handler)
+      req = opener.open(url, timeout=timeout)
       return req.read()
     except (socket.error, httplib.BadStatusLine, urllib2.URLError) as e:
       if throw_network_exception:
@@ -186,15 +194,16 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
 
   @property
   def chrome_branch_number(self):
+    assert self._chrome_branch_number
     return self._chrome_branch_number
 
   @property
   def supports_tab_control(self):
-    return self._chrome_branch_number >= 1303
+    return self.chrome_branch_number >= 1303
 
   @property
   def supports_tracing(self):
-    return self.is_content_shell or self._chrome_branch_number >= 1385
+    return self.is_content_shell or self.chrome_branch_number >= 1385
 
   def StartTracing(self, custom_categories=None,
                    timeout=web_contents.DEFAULT_WEB_CONTENTS_TIMEOUT):
@@ -229,3 +238,21 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     if self._tracing_backend:
       self._tracing_backend.Close()
       self._tracing_backend = None
+    if self._system_info_backend:
+      self._system_info_backend.Close()
+      self._system_info_backend = None
+
+  @property
+  def supports_system_info(self):
+    return self.GetSystemInfo() != None
+
+  def GetSystemInfo(self):
+    if self._system_info_backend is None:
+      self._system_info_backend = system_info_backend.SystemInfoBackend(
+          self._port)
+    return self._system_info_backend.GetSystemInfo()
+
+  def _SetBranchNumber(self, version):
+    assert version
+    self._chrome_branch_number = re.search(r'\d+\.\d+\.(\d+)\.\d+',
+                                           version).group(1)

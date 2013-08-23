@@ -11,16 +11,6 @@ import url_constants
 
 _EXTENSIONS_URL = '/chrome/extensions'
 
-_STRING_CONSTANTS = {
-  'app': 'app',
-  'apps_title': 'Apps',
-  'extension': 'extension',
-  'extensions_title': 'Extensions',
-  'events': 'events',
-  'methods': 'methods',
-  'properties': 'properties',
-  }
-
 class TemplateDataSource(object):
   """Renders Handlebar templates, providing them with the context in which to
   render.
@@ -46,9 +36,11 @@ class TemplateDataSource(object):
                  compiled_fs_factory,
                  ref_resolver_factory,
                  manifest_data_source,
+                 permissions_data_source,
                  public_template_path,
                  private_template_path,
-                 base_path):
+                 base_path,
+                 data_sources):
       self._api_data_source_factory = api_data_source_factory
       self._api_list_data_source_factory = api_list_data_source_factory
       self._intro_data_source_factory = intro_data_source_factory
@@ -57,10 +49,12 @@ class TemplateDataSource(object):
       self._cache = compiled_fs_factory.Create(self._CreateTemplate,
                                                TemplateDataSource)
       self._ref_resolver = ref_resolver_factory.Create()
+      self._manifest_data_source = manifest_data_source
+      self._permissions_data_source = permissions_data_source
       self._public_template_path = public_template_path
       self._private_template_path = private_template_path
-      self._manifest_data_source = manifest_data_source
       self._base_path = base_path
+      self._data_sources = data_sources
 
     def _CreateTemplate(self, template_name, text):
       return Handlebar(self._ref_resolver.ResolveAllLinks(text))
@@ -76,9 +70,11 @@ class TemplateDataSource(object):
           self._sidenav_data_source_factory.Create(path),
           self._cache,
           self._manifest_data_source,
+          self._permissions_data_source,
           self._public_template_path,
           self._private_template_path,
-          self._base_path)
+          self._base_path,
+          self._data_sources)
 
   def __init__(self,
                api_data_source,
@@ -88,9 +84,11 @@ class TemplateDataSource(object):
                sidenav_data_source,
                cache,
                manifest_data_source,
+               permissions_data_source,
                public_template_path,
                private_template_path,
-               base_path):
+               base_path,
+               data_sources):
     self._api_list_data_source = api_list_data_source
     self._intro_data_source = intro_data_source
     self._samples_data_source = samples_data_source
@@ -100,7 +98,9 @@ class TemplateDataSource(object):
     self._public_template_path = public_template_path
     self._private_template_path = private_template_path
     self._manifest_data_source = manifest_data_source
+    self._permissions_data_source = permissions_data_source
     self._base_path = base_path
+    self._data_sources = data_sources
 
   def Render(self, template_name):
     """This method will render a template named |template_name|, fetching all
@@ -111,21 +111,23 @@ class TemplateDataSource(object):
     if template is None:
       return None
       # TODO error handling
-    render_data = template.render({
+    render_context = {
       'api_list': self._api_list_data_source,
       'apis': self._api_data_source,
       'intros': self._intro_data_source,
       'sidenavs': self._sidenav_data_source,
       'partials': self,
       'manifest_source': self._manifest_data_source,
+      'permissions': self._permissions_data_source,
       'samples': self._samples_data_source,
       'apps_samples_url': url_constants.GITHUB_BASE,
       'extensions_samples_url': url_constants.EXTENSIONS_SAMPLES,
       'static': self._base_path + '/static',
-      'strings': _STRING_CONSTANTS,
       'true': True,
       'false': False
-    })
+    }
+    render_context.update(self._data_sources)
+    render_data = template.render(render_context)
     if render_data.errors:
       logging.error('Handlebar error(s) rendering %s:\n%s' %
           (template_name, '  \n'.join(render_data.errors)))

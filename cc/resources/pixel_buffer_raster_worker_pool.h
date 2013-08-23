@@ -29,6 +29,7 @@ class CC_EXPORT PixelBufferRasterWorkerPool : public RasterWorkerPool {
 
   // Overridden from RasterWorkerPool:
   virtual void ScheduleTasks(RasterTask::Queue* queue) OVERRIDE;
+  virtual GLenum GetResourceFormat() const OVERRIDE;
   virtual void OnRasterTasksFinished() OVERRIDE;
   virtual void OnRasterTasksRequiredForActivationFinished() OVERRIDE;
 
@@ -67,6 +68,7 @@ class CC_EXPORT PixelBufferRasterWorkerPool : public RasterWorkerPool {
 
   size_t scheduled_raster_task_count_;
   size_t bytes_pending_upload_;
+  size_t max_bytes_pending_upload_;
   bool has_performed_uploads_since_last_flush_;
   base::CancelableClosure check_for_completed_raster_tasks_callback_;
   bool check_for_completed_raster_tasks_pending_;

@@ -490,53 +490,6 @@ class PolicyTest : public InProcessBrowserTest {
     UpdateProviderPolicy(policies);
   }
 
-  void TestScreenshotFeedback(bool enabled) {
-    SetScreenshotPolicy(enabled);
-
-    // Wait for feedback page to load.
-    content::WindowedNotificationObserver observer(
-        content::NOTIFICATION_LOAD_STOP,
-        content::NotificationService::AllSources());
-    EXPECT_TRUE(chrome::ExecuteCommand(browser(), IDC_FEEDBACK));
-    observer.Wait();
-    content::WebContents* web_contents =
-        static_cast<content::Source<content::NavigationController> >(
-            observer.source())->GetWebContents();
-
-    // Wait for feedback page to fully initialize.
-    // setupCurrentScreenshot is called when feedback page loads and (among
-    // other things) adds current-screenshots-thumbnailDiv-0-image element.
-    // The code below executes either before setupCurrentScreenshot was called
-    // (setupCurrentScreenshot is replaced with our hook) or after it has
-    // completed (in that case send result immediately).
-    bool result = false;
-    EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
-        web_contents,
-        "function btest_initCompleted(url) {"
-        "  var img = new Image();"
-        "  img.src = url;"
-        "  img.onload = function() {"
-        "    domAutomationController.send(img.width * img.height > 0);"
-        "  };"
-        "  img.onerror = function() {"
-        "    domAutomationController.send(false);"
-        "  };"
-        "}"
-        "function setupCurrentScreenshot(url) {"
-        "  btest_initCompleted(url);"
-        "}"
-        "var img = document.getElementById("
-        "    'current-screenshots-thumbnailDiv-0-image');"
-        "if (img)"
-        "  btest_initCompleted(img.src);",
-        &result));
-    EXPECT_EQ(enabled, result);
-
-    // Feedback page is a singleton page, so close so future calls to this
-    // function work as expected.
-    web_contents->Close();
-  }
-
 #if defined(OS_CHROMEOS)
   void TestScreenshotFile(bool enabled) {
     SetScreenshotPolicy(enabled);
@@ -754,6 +707,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DefaultSearchProvider) {
   const std::string kImageURL("http://test.com/searchbyimage/upload");
   const std::string kImageURLPostParams(
       "image_content=content,image_url=http://test.com/test.png");
+  const std::string kNewTabURL("http://search.example/newtab");
 
   TemplateURLService* service = TemplateURLServiceFactory::GetForProfile(
       browser()->profile());
@@ -769,7 +723,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DefaultSearchProvider) {
     default_search->search_terms_replacement_key() ==
         kSearchTermsReplacementKey &&
     default_search->image_url() == kImageURL &&
-    default_search->image_url_post_params() == kImageURLPostParams);
+    default_search->image_url_post_params() == kImageURLPostParams &&
+    default_search->new_tab_url() == kNewTabURL);
 
   // Override the default search provider using policies.
   PolicyMap policies;
@@ -798,6 +753,10 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DefaultSearchProvider) {
                POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
                base::Value::CreateStringValue(kImageURLPostParams),
                NULL);
+  policies.Set(key::kDefaultSearchProviderNewTabURL,
+               POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
+               base::Value::CreateStringValue(kNewTabURL),
+               NULL);
   UpdateProviderPolicy(policies);
   default_search = service->GetDefaultSearchProvider();
   ASSERT_TRUE(default_search);
@@ -810,6 +769,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DefaultSearchProvider) {
             default_search->search_terms_replacement_key());
   EXPECT_EQ(kImageURL, default_search->image_url());
   EXPECT_EQ(kImageURLPostParams, default_search->image_url_post_params());
+  EXPECT_EQ(kNewTabURL, default_search->new_tab_url());
 
   // Verify that searching from the omnibox uses kSearchURL.
   chrome::FocusLocationBar(browser());
@@ -1832,27 +1792,6 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, FileURLBlacklist) {
 
   CheckCanOpenURL(browser(), file_path1.c_str());
   CheckURLIsBlocked(browser(), file_path2.c_str());
-}
-
-// Flaky on Linux. http://crbug.com/155459
-#if defined(OS_LINUX)
-#define MAYBE_DisableScreenshotsFeedback DISABLED_DisableScreenshotsFeedback
-#else
-#define MAYBE_DisableScreenshotsFeedback DisableScreenshotsFeedback
-#endif
-IN_PROC_BROWSER_TEST_F(PolicyTest, MAYBE_DisableScreenshotsFeedback) {
-#if defined(OS_WIN) && defined(USE_ASH)
-  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
-    return;
-#endif
-
-  // Make sure current screenshot can be taken and displayed on feedback page.
-  TestScreenshotFeedback(true);
-
-  // Check if banning screenshots disabled feedback page's ability to grab a
-  // screenshot.
-  TestScreenshotFeedback(false);
 }
 
 #if defined(OS_CHROMEOS)

@@ -91,10 +91,13 @@ class LocationBarView : public LocationBar,
   class Delegate {
    public:
     // Should return the current web contents.
-    virtual content::WebContents* GetWebContents() const = 0;
+    virtual content::WebContents* GetWebContents() = 0;
 
     // Returns the InstantController, or NULL if there isn't one.
     virtual InstantController* GetInstant() = 0;
+
+    virtual ToolbarModel* GetToolbarModel() = 0;
+    virtual const ToolbarModel* GetToolbarModel() const = 0;
 
     // Creates Widget for the given delegate.
     virtual views::Widget* CreateViewsBubble(
@@ -134,7 +137,6 @@ class LocationBarView : public LocationBar,
   LocationBarView(Browser* browser,
                   Profile* profile,
                   CommandUpdater* command_updater,
-                  ToolbarModel* model,
                   Delegate* delegate,
                   bool is_popup_mode);
 
@@ -266,7 +268,9 @@ class LocationBarView : public LocationBar,
   virtual gfx::Image GetFavicon() const OVERRIDE;
   virtual string16 GetTitle() const OVERRIDE;
   virtual InstantController* GetInstant() OVERRIDE;
-  virtual content::WebContents* GetWebContents() const OVERRIDE;
+  virtual content::WebContents* GetWebContents() OVERRIDE;
+  virtual ToolbarModel* GetToolbarModel() OVERRIDE;
+  virtual const ToolbarModel* GetToolbarModel() const OVERRIDE;
 
   // views::View:
   virtual const char* GetClassName() const OVERRIDE;
@@ -431,9 +435,6 @@ class LocationBarView : public LocationBar,
 
   // Command updater which corresponds to this View.
   CommandUpdater* command_updater_;
-
-  // The model.
-  ToolbarModel* model_;
 
   // Our delegate.
   Delegate* delegate_;

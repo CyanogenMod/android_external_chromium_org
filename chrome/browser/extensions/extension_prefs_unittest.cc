@@ -18,13 +18,13 @@
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/common/extensions/permissions/permissions_info.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/test/mock_notification_observer.h"
+#include "extensions/common/manifest_constants.h"
 #include "sync/api/string_ordinal.h"
 
 using base::Time;
@@ -169,9 +169,9 @@ class ExtensionPrefsGrantedPermissions : public ExtensionPrefsTest {
         permission_info->CreateAPIPermission());
     {
       scoped_ptr<base::ListValue> value(new base::ListValue());
-      value->Append(Value::CreateStringValue("tcp-connect:*.example.com:80"));
-      value->Append(Value::CreateStringValue("udp-bind::8080"));
-      value->Append(Value::CreateStringValue("udp-send-to::8888"));
+      value->Append(new base::StringValue("tcp-connect:*.example.com:80"));
+      value->Append(new base::StringValue("udp-bind::8080"));
+      value->Append(new base::StringValue("udp-send-to::8888"));
       if (!permission->FromValue(value.get()))
         NOTREACHED();
     }
@@ -441,9 +441,8 @@ class ExtensionPrefsDelayedInstallInfo : public ExtensionPrefsTest {
   // Sets idle install information for one test extension.
   void SetIdleInfo(std::string id, int num) {
     DictionaryValue manifest;
-    manifest.SetString(extension_manifest_keys::kName, "test");
-    manifest.SetString(extension_manifest_keys::kVersion,
-                       "1." + base::IntToString(num));
+    manifest.SetString(manifest_keys::kName, "test");
+    manifest.SetString(manifest_keys::kVersion, "1." + base::IntToString(num));
     base::FilePath path =
         prefs_.extensions_dir().AppendASCII(base::IntToString(num));
     std::string errors;
@@ -470,7 +469,7 @@ class ExtensionPrefsDelayedInstallInfo : public ExtensionPrefsTest {
               info->extension_path.BaseName().MaybeAsASCII());
   }
 
-  bool HasInfoForId(extensions::ExtensionPrefs::ExtensionsInfo* info,
+  bool HasInfoForId(ExtensionPrefs::ExtensionsInfo* info,
                     const std::string& id) {
     for (size_t i = 0; i < info->size(); ++i) {
       if (info->at(i)->extension_id == id)
@@ -492,7 +491,7 @@ class ExtensionPrefsDelayedInstallInfo : public ExtensionPrefsTest {
     SetIdleInfo(id2_, 2);
     VerifyIdleInfo(id1_, 1);
     VerifyIdleInfo(id2_, 2);
-    scoped_ptr<extensions::ExtensionPrefs::ExtensionsInfo> info(
+    scoped_ptr<ExtensionPrefs::ExtensionsInfo> info(
         prefs()->GetAllDelayedInstallInfo());
     EXPECT_EQ(2u, info->size());
     EXPECT_TRUE(HasInfoForId(info.get(), id1_));
@@ -524,7 +523,7 @@ class ExtensionPrefsDelayedInstallInfo : public ExtensionPrefsTest {
 
   virtual void Verify() OVERRIDE {
     // Make sure the info for the 3 extensions we expect is present.
-    scoped_ptr<extensions::ExtensionPrefs::ExtensionsInfo> info(
+    scoped_ptr<ExtensionPrefs::ExtensionsInfo> info(
         prefs()->GetAllDelayedInstallInfo());
     EXPECT_EQ(3u, info->size());
     EXPECT_TRUE(HasInfoForId(info.get(), id1_));
@@ -547,6 +546,65 @@ class ExtensionPrefsDelayedInstallInfo : public ExtensionPrefsTest {
   std::string id4_;
 };
 TEST_F(ExtensionPrefsDelayedInstallInfo, DelayedInstallInfo) {}
+
+// Tests the FinishDelayedInstallInfo function.
+class ExtensionPrefsFinishDelayedInstallInfo : public ExtensionPrefsTest {
+ public:
+  virtual void Initialize() OVERRIDE {
+    DictionaryValue dictionary;
+    dictionary.SetString(manifest_keys::kName, "test");
+    dictionary.SetString(manifest_keys::kVersion, "0.1");
+    dictionary.SetString(manifest_keys::kBackgroundPage, "background.html");
+    scoped_refptr<Extension> extension =
+        prefs_.AddExtensionWithManifest(dictionary, Manifest::INTERNAL);
+    id_ = extension->id();
+
+
+    // Set idle info
+    DictionaryValue manifest;
+    manifest.SetString(manifest_keys::kName, "test");
+    manifest.SetString(manifest_keys::kVersion, "0.2");
+    scoped_ptr<ListValue> scripts(new ListValue);
+    scripts->AppendString("test.js");
+    manifest.Set(manifest_keys::kBackgroundScripts, scripts.release());
+    base::FilePath path =
+        prefs_.extensions_dir().AppendASCII("test_0.2");
+    std::string errors;
+    scoped_refptr<Extension> new_extension = Extension::Create(
+        path, Manifest::INTERNAL, manifest, Extension::NO_FLAGS, id_, &errors);
+    ASSERT_TRUE(new_extension.get()) << errors;
+    ASSERT_EQ(id_, new_extension->id());
+    prefs()->SetDelayedInstallInfo(new_extension.get(),
+                                   Extension::ENABLED,
+                                   Blacklist::NOT_BLACKLISTED,
+                                   ExtensionPrefs::DELAY_REASON_WAIT_FOR_IDLE,
+                                   syncer::StringOrdinal());
+
+    // Finish idle installation
+    ASSERT_TRUE(prefs()->FinishDelayedInstallInfo(id_));
+  }
+
+  virtual void Verify() OVERRIDE {
+    EXPECT_FALSE(prefs()->GetDelayedInstallInfo(id_));
+
+    const DictionaryValue* manifest;
+    ASSERT_TRUE(prefs()->ReadPrefAsDictionary(id_, "manifest", &manifest));
+    ASSERT_TRUE(manifest);
+    std::string value;
+    EXPECT_TRUE(manifest->GetString(manifest_keys::kName, &value));
+    EXPECT_EQ("test", value);
+    EXPECT_TRUE(manifest->GetString(manifest_keys::kVersion, &value));
+    EXPECT_EQ("0.2", value);
+    EXPECT_FALSE(manifest->GetString(manifest_keys::kBackgroundPage, &value));
+    const ListValue* scripts;
+    ASSERT_TRUE(manifest->GetList(manifest_keys::kBackgroundScripts, &scripts));
+    EXPECT_EQ(1u, scripts->GetSize());
+  }
+
+ protected:
+  std::string id_;
+};
+TEST_F(ExtensionPrefsFinishDelayedInstallInfo, FinishDelayedInstallInfo) {}
 
 class ExtensionPrefsOnExtensionInstalled : public ExtensionPrefsTest {
  public:
@@ -600,25 +658,24 @@ class ExtensionPrefsFlags : public ExtensionPrefsTest {
   virtual void Initialize() OVERRIDE {
     {
       base::DictionaryValue dictionary;
-      dictionary.SetString(extension_manifest_keys::kName, "from_webstore");
-      dictionary.SetString(extension_manifest_keys::kVersion, "0.1");
+      dictionary.SetString(manifest_keys::kName, "from_webstore");
+      dictionary.SetString(manifest_keys::kVersion, "0.1");
       webstore_extension_ = prefs_.AddExtensionWithManifestAndFlags(
           dictionary, Manifest::INTERNAL, Extension::FROM_WEBSTORE);
     }
 
     {
       base::DictionaryValue dictionary;
-      dictionary.SetString(extension_manifest_keys::kName, "from_bookmark");
-      dictionary.SetString(extension_manifest_keys::kVersion, "0.1");
+      dictionary.SetString(manifest_keys::kName, "from_bookmark");
+      dictionary.SetString(manifest_keys::kVersion, "0.1");
       bookmark_extension_ = prefs_.AddExtensionWithManifestAndFlags(
           dictionary, Manifest::INTERNAL, Extension::FROM_BOOKMARK);
     }
 
     {
       base::DictionaryValue dictionary;
-      dictionary.SetString(extension_manifest_keys::kName,
-                           "was_installed_by_default");
-      dictionary.SetString(extension_manifest_keys::kVersion, "0.1");
+      dictionary.SetString(manifest_keys::kName, "was_installed_by_default");
+      dictionary.SetString(manifest_keys::kVersion, "0.1");
       default_extension_ = prefs_.AddExtensionWithManifestAndFlags(
           dictionary,
           Manifest::INTERNAL,
@@ -648,8 +705,8 @@ PrefsPrepopulatedTestBase::PrefsPrepopulatedTestBase()
   DictionaryValue simple_dict;
   std::string error;
 
-  simple_dict.SetString(extension_manifest_keys::kVersion, "1.0.0.0");
-  simple_dict.SetString(extension_manifest_keys::kName, "unused");
+  simple_dict.SetString(manifest_keys::kVersion, "1.0.0.0");
+  simple_dict.SetString(manifest_keys::kName, "unused");
 
   extension1_ = Extension::Create(
       prefs_.temp_dir().AppendASCII("ext1_"),

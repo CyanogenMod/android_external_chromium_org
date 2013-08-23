@@ -91,7 +91,7 @@ void ShellWindow::Init(const GURL& url,
 
   web_contents->SetDelegate(this);
   WebContentsModalDialogManager::FromWebContents(web_contents)->
-      set_delegate(this);
+      SetDelegate(this);
   extensions::SetViewType(web_contents, extensions::VIEW_TYPE_APP_SHELL);
 
   // Initialize the window
@@ -362,6 +362,10 @@ void ShellWindow::SetAppIconUrl(const GURL& url) {
       0,  // no maximum size
       base::Bind(&ShellWindow::DidDownloadFavicon,
                  image_loader_ptr_factory_.GetWeakPtr()));
+}
+
+void ShellWindow::UpdateInputRegion(scoped_ptr<SkRegion> region) {
+  native_app_window_->UpdateInputRegion(region.Pass());
 }
 
 void ShellWindow::UpdateDraggableRegions(

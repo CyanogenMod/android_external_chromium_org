@@ -17,6 +17,8 @@ namespace test {
 
 namespace {
 
+user::LoginStatus g_initial_status = user::LOGGED_IN_USER;
+
 class TestVolumeControlDelegate : public VolumeControlDelegate {
  public:
   TestVolumeControlDelegate() {}
@@ -38,14 +40,26 @@ class TestVolumeControlDelegate : public VolumeControlDelegate {
 
 }  // namespace
 
+// static
+void TestSystemTrayDelegate::SetInitialLoginStatus(
+    user::LoginStatus login_status) {
+  g_initial_status = login_status;
+}
+
 TestSystemTrayDelegate::TestSystemTrayDelegate()
     : bluetooth_enabled_(true),
       caps_lock_enabled_(false),
       should_show_display_notification_(false),
+      login_status_(g_initial_status),
       volume_control_delegate_(new TestVolumeControlDelegate) {
 }
 
 TestSystemTrayDelegate::~TestSystemTrayDelegate() {
+}
+
+void TestSystemTrayDelegate::SetLoginStatus(user::LoginStatus login_status) {
+  login_status_ = login_status;
+  Shell::GetInstance()->UpdateAfterLoginStatusChange(login_status);
 }
 
 void TestSystemTrayDelegate::Initialize() {
@@ -60,6 +74,12 @@ bool TestSystemTrayDelegate::GetTrayVisibilityOnStartup() {
 
 // Overridden from SystemTrayDelegate:
 user::LoginStatus TestSystemTrayDelegate::GetUserLoginStatus() const {
+  // Initial login status has been changed for testing.
+  if (g_initial_status != user::LOGGED_IN_USER &&
+      g_initial_status == login_status_) {
+    return login_status_;
+  }
+
   // At new user image screen manager->IsUserLoggedIn() would return true
   // but there's no browser session available yet so use SessionStarted().
   SessionStateDelegate* delegate =
@@ -69,9 +89,7 @@ user::LoginStatus TestSystemTrayDelegate::GetUserLoginStatus() const {
     return ash::user::LOGGED_IN_NONE;
   if (delegate->IsScreenLocked())
     return user::LOGGED_IN_LOCKED;
-  // TODO(nkostylev): Support LOGGED_IN_OWNER, LOGGED_IN_GUEST, LOGGED_IN_KIOSK,
-  //                  LOGGED_IN_PUBLIC.
-  return user::LOGGED_IN_USER;
+  return login_status_;
 }
 
 bool TestSystemTrayDelegate::IsOobeCompleted() const {
@@ -112,6 +130,10 @@ base::HourClockType TestSystemTrayDelegate::GetHourClockType() const {
 }
 
 void TestSystemTrayDelegate::ShowSettings() {
+}
+
+bool TestSystemTrayDelegate::ShouldShowSettings() {
+  return true;
 }
 
 void TestSystemTrayDelegate::ShowDateSettings() {
@@ -234,7 +256,8 @@ bool TestSystemTrayDelegate::IsBluetoothDiscovering() {
 void TestSystemTrayDelegate::ShowMobileSimDialog() {
 }
 
-void TestSystemTrayDelegate::ShowMobileSetup(const std::string& network_id) {
+void TestSystemTrayDelegate::ShowMobileSetupDialog(
+    const std::string& service_path) {
 }
 
 void TestSystemTrayDelegate::ShowOtherWifi() {
@@ -252,15 +275,6 @@ bool TestSystemTrayDelegate::GetBluetoothAvailable() {
 
 bool TestSystemTrayDelegate::GetBluetoothEnabled() {
   return bluetooth_enabled_;
-}
-
-bool TestSystemTrayDelegate::GetCellularCarrierInfo(std::string* carrier_id,
-                                                    std::string* topup_url,
-                                                    std::string* setup_url) {
-  return false;
-}
-
-void TestSystemTrayDelegate::ShowCellularURL(const std::string& url) {
 }
 
 void TestSystemTrayDelegate::ChangeProxySettings() {
@@ -289,11 +303,6 @@ bool TestSystemTrayDelegate::GetSessionLengthLimit(
 int TestSystemTrayDelegate::GetSystemTrayMenuWidth() {
   // This is the default width for English languages.
   return 300;
-}
-
-base::string16 TestSystemTrayDelegate::FormatTimeDuration(
-    const base::TimeDelta& delta) const {
-  return base::string16();
 }
 
 void TestSystemTrayDelegate::MaybeSpeak(const std::string& utterance) const {

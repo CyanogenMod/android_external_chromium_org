@@ -19,6 +19,8 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from pylib import constants
 
 
+CHROMIUM_COVERAGE_BUCKET = 'chromium-code-coverage'
+
 _BotConfig = collections.namedtuple(
     'BotConfig', ['bot_id', 'host_obj', 'test_obj'])
 
@@ -144,12 +146,14 @@ def GetBotStepMap():
       B('fyi-x86-builder-dbg',
         H(compile_step + std_host_tests, experimental, target_arch='x86')),
       B('fyi-builder-dbg',
-        H(std_build_steps + std_host_tests, experimental)),
+        H(std_build_steps + std_host_tests, experimental,
+          extra_gyp='emma_coverage=1')),
       B('x86-builder-dbg',
         H(compile_step + std_host_tests, target_arch='x86')),
       B('fyi-builder-rel', H(std_build_steps,  experimental)),
       B('fyi-tests', H(std_test_steps),
-        T(std_tests, ['--experimental', flakiness_server])),
+        T(std_tests, ['--experimental', flakiness_server,
+                      '--coverage-bucket', CHROMIUM_COVERAGE_BUCKET])),
       B('fyi-component-builder-tests-dbg',
         H(compile_step, extra_gyp='component=shared_library'),
         T(std_tests, ['--experimental', flakiness_server])),
@@ -161,6 +165,10 @@ def GetBotStepMap():
       B('webkit-latest-contentshell', H(compile_step),
         T(['webkit_layout'], ['--auto-reconnect'])),
       B('builder-unit-tests', H(compile_step), T(['unit'])),
+      B('webrtc-builder',
+        H(std_build_steps,
+          extra_args=['--build-targets=android_builder_webrtc'],
+          extra_gyp='include_tests=1 enable_tracing=1')),
       B('webrtc-tests', H(std_test_steps), T(['webrtc'], [flakiness_server])),
 
       # Generic builder config (for substring match).
@@ -180,7 +188,6 @@ def GetBotStepMap():
       ('try-tests', 'main-tests'),
       ('try-fyi-tests', 'fyi-tests'),
       ('webkit-latest-tests', 'main-tests'),
-      ('webrtc-builder', 'main-builder-rel'),
   ]
   for to_id, from_id in copy_map:
     assert to_id not in bot_map

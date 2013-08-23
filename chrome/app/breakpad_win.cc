@@ -31,6 +31,7 @@
 #include "chrome/app/breakpad_field_trial_win.h"
 #include "chrome/app/hard_error_handler_win.h"
 #include "chrome/common/child_process_logging.h"
+#include "chrome/common/chrome_constants.h"
 #include "components/breakpad/breakpad_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
@@ -100,7 +101,6 @@ typedef NTSTATUS (WINAPI* NtTerminateProcessPtr)(HANDLE ProcessHandle,
                                                  NTSTATUS ExitStatus);
 char* g_real_terminate_process_stub = NULL;
 
-static size_t g_url_chunks_offset = 0;
 static size_t g_num_of_extensions_offset = 0;
 static size_t g_extension_ids_offset = 0;
 static size_t g_client_id_offset = 0;
@@ -110,23 +110,74 @@ static size_t g_num_of_views_offset = 0;
 static size_t g_num_switches_offset = 0;
 static size_t g_switches_offset = 0;
 static size_t g_dynamic_keys_offset = 0;
-typedef std::map<std::string, google_breakpad::CustomInfoEntry*>
+typedef std::map<std::wstring, google_breakpad::CustomInfoEntry*>
     DynamicEntriesMap;
 DynamicEntriesMap* g_dynamic_entries = NULL;
-static size_t g_dynamic_entries_count = 0;
+// Allow for 128 entries. POSIX uses 64 entries of 256 bytes, so Windows needs
+// 256 entries of 64 bytes to match. See CustomInfoEntry::kValueMaxLength in
+// Breakpad.
+const size_t kMaxDynamicEntries = 256;
 
 // Maximum length for plugin path to include in plugin crash reports.
 const size_t kMaxPluginPathLength = 256;
 
+// These values track the browser crash dump registry key and pre-computed
+// registry value name, which we use as a "smoke-signal" for counting dumps.
+static HKEY g_browser_crash_dump_regkey = NULL;
+static const wchar_t kBrowserCrashDumpValueFormatStr[] = L"%08x-%08x";
+static const int kBrowserCrashDumpValueLength = 17;
+static wchar_t g_browser_crash_dump_value[kBrowserCrashDumpValueLength+1] = {0};
+
+void InitBrowserCrashDumpsRegKey() {
+  DCHECK(g_browser_crash_dump_regkey == NULL);
+
+  base::string16 key_str(chrome::kBrowserCrashDumpAttemptsRegistryPath);
+  key_str += L"\\";
+  key_str += UTF8ToWide(chrome::kChromeVersion);
+
+  base::win::RegKey regkey;
+  if (regkey.Create(HKEY_CURRENT_USER,
+                    key_str.c_str(),
+                    KEY_ALL_ACCESS) != ERROR_SUCCESS) {
+    return;
+  }
+
+  g_browser_crash_dump_regkey = regkey.Take();
+
+  // We use the current process id and the curren tick count as a (hopefully)
+  // unique combination for the crash dump value. There's a small chance that
+  // across a reboot we might have a crash dump signal written, and the next
+  // browser process might have the same process id and tick count, but crash
+  // before consuming the signal (overwriting the signal with an identical one).
+  // For now, we're willing to live with that risk.
+  int length = swprintf(g_browser_crash_dump_value,
+                        sizeof(g_browser_crash_dump_value),
+                        kBrowserCrashDumpValueFormatStr,
+                        ::GetCurrentProcessId(),
+                        ::GetTickCount());
+  DCHECK_EQ(kBrowserCrashDumpValueLength, length);
+}
+
+void SendSmokeSignalForCrashDump() {
+  if (g_browser_crash_dump_regkey != NULL) {
+    base::win::RegKey regkey(g_browser_crash_dump_regkey);
+    regkey.WriteValue(g_browser_crash_dump_value, 1);
+    g_browser_crash_dump_regkey = NULL;
+  }
+}
+
 // Dumps the current process memory.
 extern "C" void __declspec(dllexport) __cdecl DumpProcess() {
-  if (g_breakpad)
+  if (g_breakpad) {
+    SendSmokeSignalForCrashDump();
     g_breakpad->WriteMinidump();
+  }
 }
 
 // Used for dumping a process state when there is no crash.
 extern "C" void __declspec(dllexport) __cdecl DumpProcessWithoutCrash() {
   if (g_dumphandler_no_crash) {
+    SendSmokeSignalForCrashDump();
     g_dumphandler_no_crash->WriteMinidump();
   }
 }
@@ -173,6 +224,7 @@ InjectDumpForHangDebugging(HANDLE process) {
 extern "C" void DumpProcessAbnormalSignature() {
   if (!g_breakpad)
     return;
+  SendSmokeSignalForCrashDump();
   g_custom_entries->push_back(
       google_breakpad::CustomInfoEntry(L"unusual-crash-signature", L""));
   g_breakpad->WriteMinidump();
@@ -458,15 +510,6 @@ google_breakpad::CustomClientInfo* GetCustomInfo(const std::wstring& exe_path,
     g_num_of_views_offset = g_custom_entries->size();
     g_custom_entries->push_back(
         google_breakpad::CustomInfoEntry(L"num-views", L""));
-    // Create entries for the URL. Currently we only allow each chunk to be 64
-    // characters, which isn't enough for a URL. As a hack we create 8 entries
-    // and split the URL across the g_custom_entries.
-    g_url_chunks_offset = g_custom_entries->size();
-    // one-based index for the name suffix.
-    for (int i = 1; i <= kMaxUrlChunks; ++i) {
-      g_custom_entries->push_back(google_breakpad::CustomInfoEntry(
-          base::StringPrintf(L"url-chunk-%i", i).c_str(), L""));
-    }
 
     if (type == L"plugin" || type == L"ppapi") {
       std::wstring plugin_path =
@@ -508,9 +551,8 @@ google_breakpad::CustomClientInfo* GetCustomInfo(const std::wstring& exe_path,
 
   // Create space for dynamic ad-hoc keys. The names and values are set using
   // the API defined in base/debug/crash_logging.h.
-  g_dynamic_entries_count = breakpad::GetBreakpadClient()->RegisterCrashKeys();
   g_dynamic_keys_offset = g_custom_entries->size();
-  for (size_t i = 0; i < g_dynamic_entries_count; ++i) {
+  for (size_t i = 0; i < kMaxDynamicEntries; ++i) {
     // The names will be mutated as they are set. Un-numbered since these are
     // merely placeholders. The name cannot be empty because Breakpad's
     // HTTPUpload will interpret that as an invalid parameter.
@@ -613,38 +655,6 @@ long WINAPI ServiceExceptionFilter(EXCEPTION_POINTERS* info) {
   return EXCEPTION_EXECUTE_HANDLER;
 }
 
-extern "C" void __declspec(dllexport) __cdecl SetActiveURL(
-    const wchar_t* url_cstring) {
-  DCHECK(url_cstring);
-
-  if (!g_custom_entries)
-    return;
-
-  std::wstring url(url_cstring);
-  size_t chunk_index = 0;
-  size_t url_size = url.size();
-
-  // Split the url across all the chunks.
-  for (size_t url_offset = 0;
-       chunk_index < kMaxUrlChunks && url_offset < url_size; ++chunk_index) {
-    size_t current_chunk_size = std::min(url_size - url_offset,
-        static_cast<size_t>(
-            google_breakpad::CustomInfoEntry::kValueMaxLength - 1));
-
-    wchar_t* entry_value =
-        (*g_custom_entries)[g_url_chunks_offset + chunk_index].value;
-    url._Copy_s(entry_value,
-                google_breakpad::CustomInfoEntry::kValueMaxLength,
-                current_chunk_size, url_offset);
-    entry_value[current_chunk_size] = L'\0';
-    url_offset += current_chunk_size;
-  }
-
-  // And null terminate any unneeded chunks.
-  for (; chunk_index < kMaxUrlChunks; ++chunk_index)
-    (*g_custom_entries)[g_url_chunks_offset + chunk_index].value[0] = L'\0';
-}
-
 extern "C" void __declspec(dllexport) __cdecl SetClientId(
     const wchar_t* client_id) {
   if (client_id == NULL)
@@ -718,43 +728,41 @@ extern "C" void __declspec(dllexport) __cdecl SetNumberOfViews(
   SetIntegerValue(g_num_of_views_offset, number_of_views);
 }
 
-void SetCrashKeyValue(const base::StringPiece& key,
-                      const base::StringPiece& value) {
+// NOTE: This function is used by SyzyASAN to annotate crash reports. If you
+// change the name or signature of this function you will break SyzyASAN
+// instrumented releases of Chrome. Please contact syzygy-team@chromium.org
+// before doing so!
+extern "C" void __declspec(dllexport) __cdecl SetCrashKeyValueImpl(
+    const wchar_t* key, const wchar_t* value) {
   // CustomInfoEntry limits the length of key and value. If they exceed
   // their maximum length the underlying string handling functions raise
   // an exception and prematurely trigger a crash. Truncate here.
-  base::StringPiece safe_key(key.substr(
+  std::wstring safe_key(std::wstring(key).substr(
       0, google_breakpad::CustomInfoEntry::kNameMaxLength  - 1));
-  base::StringPiece safe_value(value.substr(
+  std::wstring safe_value(std::wstring(value).substr(
       0, google_breakpad::CustomInfoEntry::kValueMaxLength - 1));
-
-  // Keep a copy of the safe key as a std::string, we'll reuse it later.
-  std::string key_string(safe_key.begin(), safe_key.end());
 
   // If we already have a value for this key, update it; otherwise, insert
   // the new value if we have not exhausted the pre-allocated slots for dynamic
   // entries.
-  DynamicEntriesMap::iterator it = g_dynamic_entries->find(key_string);
+  DynamicEntriesMap::iterator it = g_dynamic_entries->find(safe_key);
   google_breakpad::CustomInfoEntry* entry = NULL;
   if (it == g_dynamic_entries->end()) {
-    if (g_dynamic_entries->size() >= g_dynamic_entries_count)
+    if (g_dynamic_entries->size() >= kMaxDynamicEntries)
       return;
     entry = &(*g_custom_entries)[g_dynamic_keys_offset++];
-    g_dynamic_entries->insert(std::make_pair(key_string, entry));
+    g_dynamic_entries->insert(std::make_pair(safe_key, entry));
   } else {
     entry = it->second;
   }
 
-  entry->set(UTF8ToWide(safe_key).data(), UTF8ToWide(safe_value).data());
+  entry->set(safe_key.data(), safe_value.data());
 }
 
-extern "C" void __declspec(dllexport) __cdecl SetCrashKeyValuePair(
-    const char* key, const char* value) {
-  SetCrashKeyValue(base::StringPiece(key), base::StringPiece(value));
-}
-
-void ClearCrashKeyValue(const base::StringPiece& key) {
-  DynamicEntriesMap::iterator it = g_dynamic_entries->find(key.as_string());
+extern "C" void __declspec(dllexport) __cdecl ClearCrashKeyValueImpl(
+    const wchar_t* key) {
+  std::wstring key_string(key);
+  DynamicEntriesMap::iterator it = g_dynamic_entries->find(key_string);
   if (it == g_dynamic_entries->end())
     return;
 
@@ -827,9 +835,13 @@ bool ShowRestartDialogIfCrashed(bool* exit_now) {
 // Crashes the process after generating a dump for the provided exception. Note
 // that the crash reporter should be initialized before calling this function
 // for it to do anything.
+// NOTE: This function is used by SyzyASAN to invoke a crash. If you change the
+// the name or signature of this function you will break SyzyASAN instrumented
+// releases of Chrome. Please contact syzygy-team@chromium.org before doing so!
 extern "C" int __declspec(dllexport) CrashForException(
     EXCEPTION_POINTERS* info) {
   if (g_breakpad) {
+    SendSmokeSignalForCrashDump();
     g_breakpad->WriteMinidumpForException(info);
     // Patched stub exists based on conditions (See InitCrashReporter).
     // As a side note this function also gets called from
@@ -991,9 +1003,6 @@ void InitCrashReporter() {
   bool is_per_user_install = breakpad::GetBreakpadClient()->GetIsPerUserInstall(
       base::FilePath(exe_path));
 
-  base::debug::SetCrashKeyReportingFunctions(
-      &SetCrashKeyValue, &ClearCrashKeyValue);
-
   google_breakpad::CustomClientInfo* custom_info =
       GetCustomInfo(exe_path, process_type);
 
@@ -1011,6 +1020,7 @@ void InitCrashReporter() {
 
   if (process_type == L"browser") {
     InitPipeNameEnvVar(is_per_user_install);
+    InitBrowserCrashDumpsRegKey();
   }
 
   scoped_ptr<base::Environment> env(base::Environment::Create());
@@ -1070,7 +1080,6 @@ void InitCrashReporter() {
     g_breakpad->set_handle_debug_exceptions(true);
 
 #ifndef _WIN64
-    std::string headless;
     if (process_type != L"browser" &&
         !breakpad::GetBreakpadClient()->IsRunningUnattended()) {
       // Initialize the hook TerminateProcess to catch unexpected exits.

@@ -261,6 +261,8 @@ bool ChromeRenderViewObserver::OnMessageReceived(const IPC::Message& message) {
 #if defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_UpdateTopControlsState,
                         OnUpdateTopControlsState)
+    IPC_MESSAGE_HANDLER(ChromeViewMsg_RetrieveWebappInformation,
+                        OnRetrieveWebappInformation)
 #endif
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SetWindowFeatures, OnSetWindowFeatures)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -337,6 +339,47 @@ void ChromeRenderViewObserver::OnUpdateTopControlsState(
     bool animate) {
   render_view()->UpdateTopControlsState(constraints, current, animate);
 }
+
+void ChromeRenderViewObserver::OnRetrieveWebappInformation(
+    const GURL& expected_url) {
+  bool webapp_capable = false;
+
+  WebFrame* main_frame = render_view()->GetWebView()->mainFrame();
+  WebDocument document =
+      main_frame ? main_frame->document() : WebDocument();
+
+  WebElement head = document.isNull() ? WebElement() : document.head();
+  GURL document_url = document.isNull() ? GURL() : GURL(document.url());
+
+  // Make sure we're checking the right page.
+  bool success = document_url == expected_url;
+
+  // Search the DOM for the webapp <meta> tags.
+  if (!head.isNull()) {
+    WebNodeList children = head.childNodes();
+    for (unsigned i = 0; i < children.length(); ++i) {
+      WebNode child = children.item(i);
+      if (!child.isElementNode())
+        continue;
+      WebElement elem = child.to<WebElement>();
+
+      if (elem.hasTagName("meta") && elem.hasAttribute("name")) {
+        std::string name = elem.getAttribute("name").utf8();
+        WebString content = elem.getAttribute("content");
+        if (content == "yes" && (name == "mobile-web-app-capable"
+            || name == "apple-mobile-web-app-capable")) {
+          webapp_capable = true;
+        }
+      }
+    }
+  } else {
+    success = false;
+  }
+
+  Send(new ChromeViewHostMsg_DidRetrieveWebappInformation(routing_id(),
+                                                          success,
+                                                          webapp_capable));
+}
 #endif
 
 void ChromeRenderViewObserver::OnSetWindowFeatures(
@@ -380,6 +423,7 @@ void ChromeRenderViewObserver::OnRequestThumbnailForContextNode(
     int thumbnail_min_area_pixels, gfx::Size thumbnail_max_size_pixels) {
   WebNode context_node = render_view()->GetContextMenuNode();
   SkBitmap thumbnail;
+  CHECK(!context_node.isNull());
   if (context_node.isElementNode()) {
     WebKit::WebImage image = context_node.to<WebElement>().imageContents();
     thumbnail = Downscale(image,

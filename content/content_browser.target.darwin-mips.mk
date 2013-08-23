@@ -83,7 +83,7 @@ LOCAL_SRC_FILES := \
 	content/browser/android/android_browser_process.cc \
 	content/browser/android/browser_jni_registrar.cc \
 	content/browser/android/browser_media_player_manager.cc \
-	content/browser/android/browser_startup_config.cc \
+	content/browser/android/browser_startup_controller.cc \
 	content/browser/android/child_process_launcher_android.cc \
 	content/browser/android/content_settings.cc \
 	content/browser/android/content_startup_flags.cc \
@@ -140,6 +140,7 @@ LOCAL_SRC_FILES := \
 	content/browser/devtools/devtools_netlog_observer.cc \
 	content/browser/devtools/devtools_protocol.cc \
 	content/browser/devtools/devtools_protocol_constants.cc \
+	content/browser/devtools/devtools_system_info_handler.cc \
 	content/browser/devtools/devtools_tracing_handler.cc \
 	content/browser/devtools/ipc_devtools_agent_host.cc \
 	content/browser/devtools/render_view_devtools_agent_host.cc \
@@ -150,9 +151,9 @@ LOCAL_SRC_FILES := \
 	content/browser/device_orientation/data_fetcher_impl_android.cc \
 	content/browser/device_orientation/data_fetcher_orientation_android.cc \
 	content/browser/device_orientation/data_fetcher_shared_memory_android.cc \
+	content/browser/device_orientation/data_fetcher_shared_memory_base.cc \
+	content/browser/device_orientation/device_inertial_sensor_service.cc \
 	content/browser/device_orientation/device_motion_message_filter.cc \
-	content/browser/device_orientation/device_motion_provider.cc \
-	content/browser/device_orientation/device_motion_service.cc \
 	content/browser/device_orientation/device_orientation_message_filter.cc \
 	content/browser/device_orientation/message_filter.cc \
 	content/browser/device_orientation/observer_delegate.cc \

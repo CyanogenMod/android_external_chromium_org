@@ -83,16 +83,13 @@ class FileSystem : public FileSystemInterface,
                               int options,
                               int at_most_num_matches,
                               const SearchMetadataCallback& callback) OVERRIDE;
-  virtual void TransferFileFromRemoteToLocal(
-      const base::FilePath& remote_src_file_path,
-      const base::FilePath& local_dest_file_path,
-      const FileOperationCallback& callback) OVERRIDE;
   virtual void TransferFileFromLocalToRemote(
       const base::FilePath& local_src_file_path,
       const base::FilePath& remote_dest_file_path,
       const FileOperationCallback& callback) OVERRIDE;
   virtual void OpenFile(const base::FilePath& file_path,
                         OpenMode open_mode,
+                        const std::string& mime_type,
                         const OpenFileCallback& callback) OVERRIDE;
   virtual void Copy(const base::FilePath& src_file_path,
                     const base::FilePath& dest_file_path,
@@ -109,6 +106,7 @@ class FileSystem : public FileSystemInterface,
                                const FileOperationCallback& callback) OVERRIDE;
   virtual void CreateFile(const base::FilePath& file_path,
                           bool is_exclusive,
+                          const std::string& mime_type,
                           const FileOperationCallback& callback) OVERRIDE;
   virtual void TouchFile(const base::FilePath& file_path,
                          const base::Time& last_access_time,

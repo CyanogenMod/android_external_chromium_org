@@ -21,6 +21,7 @@
 #include "chrome/common/content_settings.h"
 #include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/instant_types.h"
+#include "chrome/common/ntp_logging_events.h"
 #include "chrome/common/omnibox_focus_state.h"
 #include "chrome/common/search_provider.h"
 #include "chrome/common/translate/language_detection_details.h"
@@ -229,6 +230,9 @@ IPC_STRUCT_TRAITS_BEGIN(LanguageDetectionDetails)
   IPC_STRUCT_TRAITS_MEMBER(contents)
 IPC_STRUCT_TRAITS_END()
 
+IPC_ENUM_TRAITS_MAX_VALUE(NTPLoggingEventType,
+                          NTP_NUM_EVENT_TYPES)
+
 //-----------------------------------------------------------------------------
 // RenderView messages
 // These are messages sent from the browser to the renderer process.
@@ -391,6 +395,12 @@ IPC_MESSAGE_ROUTED1(ChromeViewMsg_SetWindowFeatures,
 IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_RequestThumbnailForContextNode_ACK,
                     SkBitmap /* thumbnail */)
 
+#if defined(OS_ANDROID)
+// Asks the renderer to return information about whether the current page can
+// be treated as a webapp.
+IPC_MESSAGE_ROUTED1(ChromeViewMsg_RetrieveWebappInformation,
+                    GURL /* expected_url */)
+#endif  // defined(OS_ANDROID)
 
 // JavaScript related messages -----------------------------------------------
 
@@ -617,6 +627,13 @@ IPC_MESSAGE_ROUTED0(ChromeViewHostMsg_DidBlockDisplayingInsecureContent)
 // a secure origin by a security policy.  The page may appear incomplete.
 IPC_MESSAGE_ROUTED0(ChromeViewHostMsg_DidBlockRunningInsecureContent)
 
+#if defined(OS_ANDROID)
+// Contains info about whether the current page can be treated as a webapp.
+IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_DidRetrieveWebappInformation,
+                    bool /* success */,
+                    bool /* is_webapp_capable */)
+#endif  // defined(OS_ANDROID)
+
 // Message sent from renderer to the browser when the element that is focused
 // has been touched. A bool is passed in this message which indicates if the
 // node is editable.
@@ -663,9 +680,10 @@ IPC_MESSAGE_CONTROL2(ChromeViewHostMsg_FPS,
                      int /* routing id */,
                      float /* frames per second */)
 
-// Counts a mouseover event on an InstantExtended most visited tile.
-IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_CountMouseover,
-                    int /* page_id */)
+// Logs events from InstantExtended New Tab Pages.
+IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_LogEvent,
+                    int /* page_id */,
+                    NTPLoggingEventType /* event */)
 
 // Tells InstantExtended to set the omnibox focus state.
 IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_FocusOmnibox,

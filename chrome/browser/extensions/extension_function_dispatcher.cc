@@ -38,7 +38,6 @@
 #include "ipc/ipc_message_macros.h"
 #include "webkit/common/resource_type.h"
 
-using extensions::api::activity_log_private::BlockedChromeActivityDetail;
 using extensions::Extension;
 using extensions::ExtensionAPI;
 using extensions::Feature;
@@ -72,39 +71,6 @@ void LogSuccess(const std::string& extension_id,
     activity_log->LogAction(action);
   }
 }
-
-void LogFailure(const std::string& extension_id,
-                const std::string& api_name,
-                scoped_ptr<base::ListValue> args,
-                BlockedChromeActivityDetail::Reason reason,
-                Profile* profile) {
-  // The ActivityLog can only be accessed from the main (UI) thread.  If we're
-  // running on the wrong thread, re-dispatch from the main thread.
-  if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
-    BrowserThread::PostTask(BrowserThread::UI,
-                            FROM_HERE,
-                            base::Bind(&LogFailure,
-                                       extension_id,
-                                       api_name,
-                                       base::Passed(&args),
-                                       reason,
-                                       profile));
-  } else {
-    extensions::ActivityLog* activity_log =
-        extensions::ActivityLog::GetInstance(profile);
-    scoped_refptr<extensions::Action> action =
-        new extensions::Action(extension_id,
-                               base::Time::Now(),
-                               extensions::Action::ACTION_API_BLOCKED,
-                               api_name);
-    action->set_args(args.Pass());
-    action->mutable_other()
-        ->SetString(activity_log_constants::kActionBlockedReason,
-                    BlockedChromeActivityDetail::ToString(reason));
-    activity_log->LogAction(action);
-  }
-}
-
 
 // Separate copy of ExtensionAPI used for IO thread extension functions. We need
 // this because ExtensionAPI has mutable data. It should be possible to remove
@@ -282,14 +248,8 @@ void ExtensionFunctionDispatcher::DispatchOnIOThread(
                               profile, callback));
   scoped_ptr<ListValue> args(params.arguments.DeepCopy());
 
-  if (!function.get()) {
-    LogFailure(extension->id(),
-               params.name,
-               args.Pass(),
-               BlockedChromeActivityDetail::REASON_ACCESS_DENIED,
-               profile_cast);
+  if (!function.get())
     return;
-  }
 
   IOThreadExtensionFunction* function_io =
       function->AsIOThreadExtensionFunction();
@@ -302,14 +262,8 @@ void ExtensionFunctionDispatcher::DispatchOnIOThread(
   function->set_include_incognito(
       extension_info_map->IsIncognitoEnabled(extension->id()));
 
-  if (!CheckPermissions(function.get(), extension, params, callback)) {
-    LogFailure(extension->id(),
-               params.name,
-               args.Pass(),
-               BlockedChromeActivityDetail::REASON_ACCESS_DENIED,
-               profile_cast);
+  if (!CheckPermissions(function.get(), extension, params, callback))
     return;
-  }
 
   ExtensionsQuotaService* quota = extension_info_map->GetQuotaService();
   std::string violation_error = quota->Assess(extension->id(),
@@ -323,11 +277,6 @@ void ExtensionFunctionDispatcher::DispatchOnIOThread(
                profile_cast);
     function->Run();
   } else {
-    LogFailure(extension->id(),
-               params.name,
-               args.Pass(),
-               BlockedChromeActivityDetail::REASON_QUOTA_EXCEEDED,
-               profile_cast);
     function->OnQuotaExceeded(violation_error);
   }
 }
@@ -385,14 +334,8 @@ void ExtensionFunctionDispatcher::DispatchWithCallback(
                               profile(), callback));
   scoped_ptr<ListValue> args(params.arguments.DeepCopy());
 
-  if (!function.get()) {
-    LogFailure(extension->id(),
-               params.name,
-               args.Pass(),
-               BlockedChromeActivityDetail::REASON_ACCESS_DENIED,
-               profile());
+  if (!function.get())
     return;
-  }
 
   UIThreadExtensionFunction* function_ui =
       function->AsUIThreadExtensionFunction();
@@ -405,14 +348,8 @@ void ExtensionFunctionDispatcher::DispatchWithCallback(
   function_ui->set_profile(profile_);
   function->set_include_incognito(service->CanCrossIncognito(extension));
 
-  if (!CheckPermissions(function.get(), extension, params, callback)) {
-    LogFailure(extension->id(),
-               params.name,
-               args.Pass(),
-               BlockedChromeActivityDetail::REASON_ACCESS_DENIED,
-               profile());
+  if (!CheckPermissions(function.get(), extension, params, callback))
     return;
-  }
 
   ExtensionsQuotaService* quota = service->quota_service();
   std::string violation_error = quota->Assess(extension->id(),
@@ -425,11 +362,6 @@ void ExtensionFunctionDispatcher::DispatchWithCallback(
     LogSuccess(extension->id(), params.name, args.Pass(), profile());
     function->Run();
   } else {
-    LogFailure(extension->id(),
-               params.name,
-               args.Pass(),
-               BlockedChromeActivityDetail::REASON_QUOTA_EXCEEDED,
-               profile());
     function->OnQuotaExceeded(violation_error);
   }
 

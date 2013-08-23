@@ -31,6 +31,8 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     self._port = self._remote_debugging_port
     self._forwarder = None
 
+    self._SetBranchNumber(self._GetChromeVersion())
+
     self._login_ext_dir = os.path.join(os.path.dirname(__file__),
                                        'chromeos_login_ext')
 
@@ -106,7 +108,7 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   def _GetSessionManagerPid(self, procs):
     """Returns the pid of the session_manager process, given the list of
     processes."""
-    for pid, process, _ in procs:
+    for pid, process, _, _ in procs:
       if process.startswith('/sbin/session_manager '):
         return pid
     return None
@@ -129,13 +131,20 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
       return None
 
     # Find the chrome process that is the child of the session_manager.
-    for pid, process, ppid in procs:
+    for pid, process, ppid, _ in procs:
       if ppid != session_manager_pid:
         continue
       for path in self.CHROME_PATHS:
         if process.startswith(path):
           return {'pid': pid, 'path': path}
     return None
+
+  def _GetChromeVersion(self):
+    result = self._GetChromeProcess()
+    assert result and result['path']
+    (version, _) = self._cri.RunCmdOnDevice([result['path'], '--version'])
+    assert version
+    return version
 
   @property
   def pid(self):
@@ -148,7 +157,7 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   def browser_directory(self):
     result = self._GetChromeProcess()
     if result and 'path' in result:
-      return result['path']
+      return os.path.dirname(result['path'])
     return None
 
   @property

@@ -16,13 +16,17 @@ namespace gfx {
 class Size;
 }
 
+#if defined(OS_ANDROID)
+namespace gfx {
+class SurfaceTextureBridge;
+}
+#endif
+
 namespace gpu {
 
 namespace gles2 {
 class GLES2Implementation;
 }
-
-class GpuMemoryBufferFactory;
 
 // The default uninitialized value is -1.
 struct GLES2_IMPL_EXPORT GLInProcessContextAttribs {
@@ -41,9 +45,6 @@ struct GLES2_IMPL_EXPORT GLInProcessContextAttribs {
 class GLES2_IMPL_EXPORT GLInProcessContext {
  public:
   virtual ~GLInProcessContext() {}
-
-  // Must be called before any GLInProcessContext instances are created.
-  static void SetGpuMemoryBufferFactory(GpuMemoryBufferFactory* factory);
 
   // Create a GLInProcessContext, if |is_offscreen| is true, renders to an
   // offscreen context. |attrib_list| must be NULL or a NONE-terminated list
@@ -78,6 +79,11 @@ class GLES2_IMPL_EXPORT GLInProcessContext {
   // Allows direct access to the GLES2 implementation so a GLInProcessContext
   // can be used without making it current.
   virtual gles2::GLES2Implementation* GetImplementation() = 0;
+
+#if defined(OS_ANDROID)
+  virtual scoped_refptr<gfx::SurfaceTextureBridge> GetSurfaceTexture(
+      uint32 stream_id) = 0;
+#endif
 };
 
 }  // namespace gpu

@@ -17,7 +17,6 @@
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/thread.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #include "chrome/browser/chromeos/input_method/mock_input_method_manager.h"
 #include "chrome/browser/chromeos/login/authenticator.h"
@@ -272,15 +271,17 @@ class LoginUtilsTest : public testing::Test,
     test_cros_settings_.reset(new ScopedTestCrosSettings);
     test_user_manager_.reset(new ScopedTestUserManager);
 
+    // IOThread creates ProxyConfigServiceImpl and
+    // BrowserPolicyConnector::Init() creates a NetworkConfigurationUpdater,
+    // which both access NetworkHandler. Thus initialize it here before creating
+    // IOThread and before calling BrowserPolicyConnector::Init().
+    NetworkHandler::Initialize();
+
     browser_process_->SetProfileManager(
         new ProfileManagerWithoutInit(scoped_temp_dir_.path()));
     connector_ = browser_process_->browser_policy_connector();
     connector_->Init(local_state_.Get(),
                      browser_process_->system_request_context());
-
-    // IOThread creates ProxyConfigServiceImpl which in turn needs
-    // NetworkHandler. Thus initialize it here before creating IOThread.
-    NetworkHandler::Initialize();
 
     io_thread_state_.reset(new IOThread(local_state_.Get(),
                                         browser_process_->policy_service(),
@@ -503,8 +504,6 @@ class LoginUtilsTest : public testing::Test,
   }
 
  protected:
-  ScopedStubNetworkLibraryEnabler stub_network_library_enabler_;
-
   base::Closure fake_io_thread_work_;
   base::WaitableEvent fake_io_thread_completion_;
   base::Thread fake_io_thread_;

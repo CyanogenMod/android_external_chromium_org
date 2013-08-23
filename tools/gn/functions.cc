@@ -22,12 +22,6 @@
 
 namespace {
 
-void FillNeedsBlockError(const FunctionCallNode* function, Err* err) {
-  *err = Err(function->function(), "This function call requires a block.",
-      "The block's \"{\" must be on the same line as the function "
-      "call's \")\".");
-}
-
 // This is called when a template is invoked. When we see a template
 // declaration, that funciton is RunTemplate.
 Value RunTemplateInvocation(Scope* scope,
@@ -38,9 +32,10 @@ Value RunTemplateInvocation(Scope* scope,
                             Err* err) {
   if (!EnsureNotProcessingImport(invocation, scope, err))
     return Value();
+
   Scope block_scope(scope);
   if (!FillTargetBlockScope(scope, invocation,
-                            invocation->function().value().data(),
+                            invocation->function().value().as_string(),
                             block, args, &block_scope, err))
     return Value();
 
@@ -90,7 +85,7 @@ bool EnsureNotProcessingBuildConfig(const ParseNode* node,
 
 bool FillTargetBlockScope(const Scope* scope,
                           const FunctionCallNode* function,
-                          const char* target_type,
+                          const std::string& target_type,
                           const BlockNode* block,
                           const std::vector<Value>& args,
                           Scope* block_scope,
@@ -122,6 +117,12 @@ bool FillTargetBlockScope(const Scope* scope,
   return true;
 }
 
+void FillNeedsBlockError(const FunctionCallNode* function, Err* err) {
+  *err = Err(function->function(), "This function call requires a block.",
+      "The block's \"{\" must be on the same line as the function "
+      "call's \")\".");
+}
+
 bool EnsureSingleStringArg(const FunctionCallNode* function,
                            const std::vector<Value>& args,
                            Err* err) {
@@ -133,10 +134,6 @@ bool EnsureSingleStringArg(const FunctionCallNode* function,
   return args[0].VerifyTypeIs(Value::STRING, err);
 }
 
-const SourceDir& SourceDirForFunctionCall(const FunctionCallNode* function) {
-  return function->function().location().file()->dir();
-}
-
 const Label& ToolchainLabelForScope(const Scope* scope) {
   return scope->settings()->toolchain()->label();
 }
@@ -144,9 +141,9 @@ const Label& ToolchainLabelForScope(const Scope* scope) {
 Label MakeLabelForScope(const Scope* scope,
                         const FunctionCallNode* function,
                         const std::string& name) {
-  const SourceDir& input_dir = SourceDirForFunctionCall(function);
   const Label& toolchain_label = ToolchainLabelForScope(scope);
-  return Label(input_dir, name, toolchain_label.dir(), toolchain_label.name());
+  return Label(scope->GetSourceDir(), name, toolchain_label.dir(),
+               toolchain_label.name());
 }
 
 namespace functions {
@@ -155,18 +152,42 @@ namespace functions {
 
 const char kAssert[] = "assert";
 const char kAssert_Help[] =
-    "TODO(brettw) WRITE ME";
+    "assert: Assert an expression is true at generation time.\n"
+    "\n"
+    "  assert(<condition> [, <error string>])\n"
+    "\n"
+    "  If the condition is false, the build will fail with an error. If the\n"
+    "  optional second argument is provided, that string will be printed\n"
+    "  with the error message.\n"
+    "\n"
+    "Examples:\n"
+    "  assert(is_win)\n"
+    "  assert(defined(sources), \"Sources must be defined\")\n";
 
 Value RunAssert(Scope* scope,
                 const FunctionCallNode* function,
                 const std::vector<Value>& args,
                 Err* err) {
-  if (args.size() != 1) {
+  if (args.size() != 1 && args.size() != 2) {
     *err = Err(function->function(), "Wrong number of arguments.",
-               "assert() takes one argument, "
+               "assert() takes one or two argument, "
                "were you expecting somethig else?");
-  } else if (args[0].InterpretAsInt() == 0) {
-    *err = Err(function->function(), "Assertion failed.");
+  } else if (args[0].type() != Value::BOOLEAN) {
+    *err = Err(function->function(), "Assertion value not a bool.");
+  } else if (!args[0].boolean_value()) {
+    if (args.size() == 2) {
+      // Optional string message.
+      if (args[1].type() != Value::STRING) {
+        *err = Err(function->function(), "Assertion failed.",
+            "<<<ERROR MESSAGE IS NOT A STRING>>>");
+      } else {
+        *err = Err(function->function(), "Assertion failed.",
+            args[1].string_value());
+      }
+    } else {
+      *err = Err(function->function(), "Assertion failed.");
+    }
+
     if (args[0].origin()) {
       // If you do "assert(foo)" we'd ideally like to show you where foo was
       // set, and in this case the origin of the args will tell us that.
@@ -216,7 +237,7 @@ Value RunConfig(const FunctionCallNode* function,
     return Value();
 
   // Fill it.
-  const SourceDir input_dir = SourceDirForFunctionCall(function);
+  const SourceDir& input_dir = scope->GetSourceDir();
   ConfigValuesGenerator gen(&config->config_values(), scope,
                             function->function(), input_dir, err);
   gen.Run();
@@ -236,46 +257,84 @@ Value RunConfig(const FunctionCallNode* function,
 
 const char kDeclareArgs[] = "declare_args";
 const char kDeclareArgs_Help[] =
-    "TODO(brettw) write this.";
+    "declare_args: Declare build arguments used by this file.\n"
+    "\n"
+    "  Introduces the given arguments into the current scope. If they are\n"
+    "  not specified on the command line or in a toolchain's arguments,\n"
+    "  the default values given in the declare_args block will be used.\n"
+    "  However, these defaults will not override command-line values.\n"
+    "\n"
+    "  See also \"gn help buildargs\" for an overview.\n"
+    "\n"
+    "Example:\n"
+    "  declare_args() {\n"
+    "    enable_teleporter = true\n"
+    "    enable_doom_melon = false\n"
+    "  }\n"
+    "\n"
+    "  If you want to override the (default disabled) Doom Melon:\n"
+    "    gn --args=\"enable_doom_melon=true enable_teleporter=false\"\n"
+    "  This also sets the teleporter, but it's already defaulted to on so\n"
+    "  it will have no effect.\n";
 
-Value RunDeclareArgs(const FunctionCallNode* function,
+Value RunDeclareArgs(Scope* scope,
+                     const FunctionCallNode* function,
                      const std::vector<Value>& args,
-                     Scope* scope,
+                     BlockNode* block,
                      Err* err) {
-  // Only allow this to be called once. We use a variable in the current scope
-  // with a name the parser will reject if the user tried to type it.
-  const char did_declare_args_var[] = "@@declared_args";
-  if (scope->GetValue(did_declare_args_var)) {
-    *err = Err(function->function(), "Duplicate call to declared_args.");
-    err->AppendSubErr(
-        Err(scope->GetValue(did_declare_args_var)->origin()->GetRange(),
-                            "See the original call."));
+  Scope block_scope(scope);
+  block->ExecuteBlockInScope(&block_scope, err);
+  if (err->has_error())
     return Value();
-  }
 
-  // Find the root scope where the values will be set.
-  Scope* root = scope->mutable_containing();
-  if (!root || root->containing() || !scope->IsProcessingBuildConfig()) {
-    *err = Err(function->function(), "declare_args called incorrectly."
-        "It must be called only from the build config script and in the "
-        "root scope.");
-    return Value();
-  }
-
-  // Take all variables set in the current scope as default values and put
-  // them in the parent scope. The values in the current scope are the defaults,
-  // then we apply the external args to this list.
-  Scope::KeyValueVector values;
-  scope->GetCurrentScopeValues(&values);
-  for (size_t i = 0; i < values.size(); i++) {
-    // TODO(brettw) actually import the arguments from the command line rather
-    // than only using the defaults.
-    root->SetValue(values[i].first, values[i].second,
-                   values[i].second.origin());
-  }
-
-  scope->SetValue(did_declare_args_var, Value(function, 1), NULL);
+  // Pass the values from our scope into the Args object for adding to the
+  // scope with the proper values (taking into account the defaults given in
+  // the block_scope, and arguments passed into the build).
+  Scope::KeyValueMap values;
+  block_scope.GetCurrentScopeValues(&values);
+  scope->settings()->build_settings()->build_args().DeclareArgs(
+      values, scope, err);
   return Value();
+}
+
+// defined ---------------------------------------------------------------------
+
+const char kDefined[] = "defined";
+const char kDefined_Help[] =
+    "defined: Returns whether an identifier is defined.\n"
+    "\n"
+    "  Returns true if the given argument is defined. This is most useful in\n"
+    "  templates to assert that the caller set things up properly.\n"
+    "\n"
+    "Example:\n"
+    "\n"
+    "  template(\"mytemplate\") {\n"
+    "    # To help users call this template properly...\n"
+    "    assert(defined(sources), \"Sources must be defined\")\n"
+    "\n"
+    "    # If we want to accept an optional \"values\" argument, we don't\n"
+    "    # want to dereference something that may not be defined.\n"
+    "    if (!defined(outputs)) {\n"
+    "      outputs = []\n"
+    "    }\n"
+    "  }\n";
+
+Value RunDefined(Scope* scope,
+                 const FunctionCallNode* function,
+                 const ListNode* args_list,
+                 Err* err) {
+  const std::vector<const ParseNode*>& args_vector = args_list->contents();
+  const IdentifierNode* identifier = NULL;
+  if (args_vector.size() != 1 ||
+      !(identifier = args_vector[0]->AsIdentifier())) {
+    *err = Err(function, "Bad argument to defined().",
+        "defined() takes one argument which should be an identifier.");
+    return Value();
+  }
+
+  if (scope->GetValue(identifier->value().value()))
+    return Value(function, true);
+  return Value(function, false);
 }
 
 // import ----------------------------------------------------------------------
@@ -319,53 +378,11 @@ Value RunImport(Scope* scope,
       !EnsureNotProcessingImport(function, scope, err))
     return Value();
 
-  const SourceDir input_dir = SourceDirForFunctionCall(function);
+  const SourceDir& input_dir = scope->GetSourceDir();
   SourceFile import_file =
       input_dir.ResolveRelativeFile(args[0].string_value());
   scope->settings()->import_manager().DoImport(import_file, function,
                                                scope, err);
-  return Value();
-}
-
-// set_defaults ----------------------------------------------------------------
-
-const char kSetDefaults[] = "set_defaults";
-const char kSetDefaults_Help[] =
-    "TODO(brettw) write this.";
-
-Value RunSetDefaults(Scope* scope,
-                     const FunctionCallNode* function,
-                     const std::vector<Value>& args,
-                     BlockNode* block,
-                     Err* err) {
-  if (!EnsureSingleStringArg(function, args, err))
-    return Value();
-  const std::string& target_type(args[0].string_value());
-
-  // Ensure there aren't defaults already set.
-  if (scope->GetTargetDefaults(target_type)) {
-    *err = Err(function->function(),
-               "This target type defaults were already set.");
-    return Value();
-  }
-
-  // Execute the block in a new scope that has a parent of the containing
-  // scope.
-  Scope block_scope(scope);
-  if (!FillTargetBlockScope(scope, function,
-                            function->function().value().data(),
-                            block, args, &block_scope, err))
-    return Value();
-
-  // Run the block for the rule invocation.
-  block->ExecuteBlockInScope(&block_scope, err);
-  if (err->has_error())
-    return Value();
-
-  // Now copy the values set on the scope we made into the free-floating one
-  // (with no containing scope) used to hold the target defaults.
-  Scope* dest = scope->MakeTargetDefaults(target_type);
-  block_scope.NonRecursiveMergeTo(dest, function, "<SHOULD NOT FAIL>", err);
   return Value();
 }
 
@@ -416,7 +433,7 @@ Value RunPrint(Scope* scope,
   for (size_t i = 0; i < args.size(); i++) {
     if (i != 0)
       std::cout << " ";
-    std::cout << args[i].ToString();
+    std::cout << args[i].ToString(false);
   }
   std::cout << std::endl;
   return Value();
@@ -425,28 +442,40 @@ Value RunPrint(Scope* scope,
 // -----------------------------------------------------------------------------
 
 FunctionInfo::FunctionInfo()
-    : generic_block_runner(NULL),
+    : self_evaluating_args_runner(NULL),
+      generic_block_runner(NULL),
       executed_block_runner(NULL),
       no_block_runner(NULL),
       help(NULL) {
 }
 
+FunctionInfo::FunctionInfo(SelfEvaluatingArgsFunction seaf, const char* in_help)
+    : self_evaluating_args_runner(seaf),
+      generic_block_runner(NULL),
+      executed_block_runner(NULL),
+      no_block_runner(NULL),
+      help(in_help) {
+}
+
 FunctionInfo::FunctionInfo(GenericBlockFunction gbf, const char* in_help)
-    : generic_block_runner(gbf),
+    : self_evaluating_args_runner(NULL),
+      generic_block_runner(gbf),
       executed_block_runner(NULL),
       no_block_runner(NULL),
       help(in_help) {
 }
 
 FunctionInfo::FunctionInfo(ExecutedBlockFunction ebf, const char* in_help)
-    : generic_block_runner(NULL),
+    : self_evaluating_args_runner(NULL),
+      generic_block_runner(NULL),
       executed_block_runner(ebf),
       no_block_runner(NULL),
       help(in_help) {
 }
 
 FunctionInfo::FunctionInfo(NoBlockFunction nbf, const char* in_help)
-    : generic_block_runner(NULL),
+    : self_evaluating_args_runner(NULL),
+      generic_block_runner(NULL),
       executed_block_runner(NULL),
       no_block_runner(nbf),
       help(in_help) {
@@ -470,6 +499,7 @@ struct FunctionInfoInitializer {
     INSERT_FUNCTION(Copy)
     INSERT_FUNCTION(Custom)
     INSERT_FUNCTION(DeclareArgs)
+    INSERT_FUNCTION(Defined)
     INSERT_FUNCTION(ExecScript)
     INSERT_FUNCTION(Executable)
     INSERT_FUNCTION(Group)
@@ -486,6 +516,7 @@ struct FunctionInfoInitializer {
     INSERT_FUNCTION(Test)
     INSERT_FUNCTION(Tool)
     INSERT_FUNCTION(Toolchain)
+    INSERT_FUNCTION(ToolchainArgs)
     INSERT_FUNCTION(WriteFile)
 
     #undef INSERT_FUNCTION
@@ -499,7 +530,7 @@ const FunctionInfoMap& GetFunctions() {
 
 Value RunFunction(Scope* scope,
                   const FunctionCallNode* function,
-                  const std::vector<Value>& args,
+                  const ListNode* args_list,
                   BlockNode* block,
                   Err* err) {
   const Token& name = function->function();
@@ -511,12 +542,27 @@ Value RunFunction(Scope* scope,
     // No build-in function matching this, check for a template.
     const FunctionCallNode* rule =
         scope->GetTemplate(function->function().value().as_string());
-    if (rule)
-      return RunTemplateInvocation(scope, function, args, block, rule, err);
+    if (rule) {
+      Value args = args_list->Execute(scope, err);
+      if (err->has_error())
+        return Value();
+      return RunTemplateInvocation(scope, function, args.list_value(), block,
+                                   rule, err);
+    }
 
     *err = Err(name, "Unknown function.");
     return Value();
   }
+
+  if (found_function->second.self_evaluating_args_runner) {
+    return found_function->second.self_evaluating_args_runner(
+        scope, function, args_list, err);
+  }
+
+  // All other function types take a pre-executed set of args.
+  Value args = args_list->Execute(scope, err);
+  if (err->has_error())
+    return Value();
 
   if (found_function->second.generic_block_runner) {
     if (!block) {
@@ -524,7 +570,7 @@ Value RunFunction(Scope* scope,
       return Value();
     }
     return found_function->second.generic_block_runner(
-        scope, function, args, block, err);
+        scope, function, args.list_value(), block, err);
   }
 
   if (found_function->second.executed_block_runner) {
@@ -538,11 +584,12 @@ Value RunFunction(Scope* scope,
     if (err->has_error())
       return Value();
     return found_function->second.executed_block_runner(
-        function, args, &block_scope, err);
+        function, args.list_value(), &block_scope, err);
   }
 
   // Otherwise it's a no-block function.
-  return found_function->second.no_block_runner(scope, function, args, err);
+  return found_function->second.no_block_runner(scope, function,
+                                                args.list_value(), err);
 }
 
 }  // namespace functions

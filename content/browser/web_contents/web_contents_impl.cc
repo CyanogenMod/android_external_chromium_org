@@ -29,6 +29,7 @@
 #include "content/browser/download/download_stats.h"
 #include "content/browser/download/mhtml_generation_manager.h"
 #include "content/browser/download/save_package.h"
+#include "content/browser/gpu/compositor_util.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/host_zoom_map_impl.h"
@@ -53,7 +54,6 @@
 #include "content/port/browser/render_widget_host_view_port.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/color_chooser.h"
-#include "content/public/browser/compositor_util.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/download_manager.h"
@@ -1049,9 +1049,7 @@ void WebContentsImpl::DecrementCapturerCount() {
   if (is_being_destroyed_)
     return;
 
-  // While capturer_count_ was greater than zero, the WasHidden() calls to RWHV
-  // were being prevented.  If there are no more capturers, make the call now.
-  if (capturer_count_ == 0 && !should_normally_be_visible_) {
+  if (IsHidden()) {
     DVLOG(1) << "Executing delayed WasHidden().";
     WasHidden();
   }
@@ -1157,7 +1155,7 @@ bool WebContentsImpl::NeedToFireBeforeUnload() {
 
 void WebContentsImpl::Stop() {
   render_manager_.Stop();
-  FOR_EACH_OBSERVER(WebContentsObserver, observers_, StopNavigation());
+  FOR_EACH_OBSERVER(WebContentsObserver, observers_, NavigationStopped());
 }
 
 WebContents* WebContentsImpl::Clone() {
@@ -1422,23 +1420,6 @@ void WebContentsImpl::CreateNewWindow(
     int main_frame_route_id,
     const ViewHostMsg_CreateWindow_Params& params,
     SessionStorageNamespace* session_storage_namespace) {
-  if (delegate_ &&
-      !delegate_->ShouldCreateWebContents(this,
-                                          route_id,
-                                          params.window_container_type,
-                                          params.frame_name,
-                                          params.target_url,
-                                          params.referrer,
-                                          params.disposition,
-                                          params.features,
-                                          params.user_gesture,
-                                          params.opener_suppressed)) {
-    GetRenderViewHost()->GetProcess()->ResumeRequestsForView(route_id);
-    GetRenderViewHost()->GetProcess()->ResumeRequestsForView(
-        main_frame_route_id);
-    return;
-  }
-
   // We usually create the new window in the same BrowsingInstance (group of
   // script-related windows), by passing in the current SiteInstance.  However,
   // if the opener is being suppressed (in a non-guest), we create a new
@@ -1449,12 +1430,6 @@ void WebContentsImpl::CreateNewWindow(
       params.opener_suppressed && !is_guest ?
       SiteInstance::CreateForURL(GetBrowserContext(), params.target_url) :
       GetSiteInstance();
-
-  // Create the new web contents. This will automatically create the new
-  // WebContentsView. In the future, we may want to create the view separately.
-  WebContentsImpl* new_contents =
-      new WebContentsImpl(GetBrowserContext(),
-                          params.opener_suppressed ? NULL : this);
 
   // We must assign the SessionStorageNamespace before calling Init().
   //
@@ -1470,6 +1445,27 @@ void WebContentsImpl::CreateNewWindow(
   SessionStorageNamespaceImpl* session_storage_namespace_impl =
       static_cast<SessionStorageNamespaceImpl*>(session_storage_namespace);
   CHECK(session_storage_namespace_impl->IsFromContext(dom_storage_context));
+
+  if (delegate_ &&
+      !delegate_->ShouldCreateWebContents(this,
+                                          route_id,
+                                          params.window_container_type,
+                                          params.frame_name,
+                                          params.target_url,
+                                          partition_id,
+                                          session_storage_namespace)) {
+    GetRenderViewHost()->GetProcess()->ResumeRequestsForView(route_id);
+    GetRenderViewHost()->GetProcess()->ResumeRequestsForView(
+        main_frame_route_id);
+    return;
+  }
+
+  // Create the new web contents. This will automatically create the new
+  // WebContentsView. In the future, we may want to create the view separately.
+  WebContentsImpl* new_contents =
+      new WebContentsImpl(GetBrowserContext(),
+                          params.opener_suppressed ? NULL : this);
+
   new_contents->GetController().SetSessionStorageNamespace(
       partition_id,
       session_storage_namespace);
@@ -1488,6 +1484,8 @@ void WebContentsImpl::CreateNewWindow(
     BrowserPluginGuest::CreateWithOpener(instance_id, new_contents_impl,
         GetBrowserPluginGuest(), !!new_contents_impl->opener());
   }
+  if (params.disposition == NEW_BACKGROUND_TAB)
+    create_params.initially_hidden = true;
   new_contents->Init(create_params);
 
   // Save the window for later if we're not suppressing the opener (since it
@@ -1549,7 +1547,7 @@ void WebContentsImpl::CreateNewWidget(int route_id,
                                       WebKit::WebPopupType popup_type) {
   RenderProcessHost* process = GetRenderProcessHost();
   RenderWidgetHostImpl* widget_host =
-      new RenderWidgetHostImpl(this, process, route_id);
+      new RenderWidgetHostImpl(this, process, route_id, IsHidden());
   created_widgets_.insert(widget_host);
 
   RenderWidgetHostViewPort* widget_view = RenderWidgetHostViewPort::FromRWHV(
@@ -1806,7 +1804,7 @@ bool WebContentsImpl::NavigateToEntry(
     // do not generate content.  What we really need is a message from the
     // renderer telling us that a new page was not created.  The same message
     // could be used for mailto: URLs and the like.
-    if (entry.GetURL().SchemeIs(chrome::kJavaScriptScheme))
+    if (entry.GetURL().SchemeIs(kJavaScriptScheme))
       return false;
   }
 
@@ -2430,10 +2428,20 @@ void WebContentsImpl::OnFindMatchRectsReply(
 
 void WebContentsImpl::OnOpenDateTimeDialog(
     const ViewHostMsg_DateTimeDialogValue_Params& value) {
-  date_time_chooser_->ShowDialog(
-      ContentViewCore::FromWebContents(this), GetRenderViewHost(),
-      value.dialog_type, value.year, value.month, value.day, value.hour,
-      value.minute, value.second, value.week, value.minimum, value.maximum);
+  date_time_chooser_->ShowDialog(ContentViewCore::FromWebContents(this),
+                                 GetRenderViewHost(),
+                                 value.dialog_type,
+                                 value.year,
+                                 value.month,
+                                 value.day,
+                                 value.hour,
+                                 value.minute,
+                                 value.second,
+                                 value.milli,
+                                 value.week,
+                                 value.minimum,
+                                 value.maximum,
+                                 value.step);
 }
 
 #endif
@@ -3417,7 +3425,8 @@ void WebContentsImpl::RunBeforeUnloadConfirm(RenderViewHost* rvh,
 bool WebContentsImpl::AddMessageToConsole(int32 level,
                                           const string16& message,
                                           int32 line_no,
-                                          const string16& source_id) {
+                                          const string16& source_id,
+                                          const string16& stack_trace) {
   if (!delegate_)
     return false;
   return delegate_->AddMessageToConsole(this, level, message, line_no,
@@ -3434,7 +3443,8 @@ WebPreferences WebContentsImpl::GetWebkitPrefs() {
 
 int WebContentsImpl::CreateSwappedOutRenderView(
     SiteInstance* instance) {
-  return render_manager_.CreateRenderView(instance, MSG_ROUTING_NONE, true);
+  return render_manager_.CreateRenderView(instance, MSG_ROUTING_NONE,
+                                          true, true);
 }
 
 void WebContentsImpl::OnUserGesture() {
@@ -3452,6 +3462,7 @@ void WebContentsImpl::OnIgnoredUIEvent() {
 }
 
 void WebContentsImpl::RendererUnresponsive(RenderViewHost* rvh,
+                                           bool is_during_beforeunload,
                                            bool is_during_unload) {
   // Don't show hung renderer dialog for a swapped out RVH.
   if (rvh != GetRenderViewHost())
@@ -3465,7 +3476,7 @@ void WebContentsImpl::RendererUnresponsive(RenderViewHost* rvh,
   if (DevToolsAgentHost::IsDebuggerAttached(this))
     return;
 
-  if (is_during_unload) {
+  if (is_during_beforeunload || is_during_unload) {
     // Hang occurred while firing the beforeunload/unload handler.
     // Pretend the handler fired so tab closing continues as if it had.
     rvhi->set_sudden_termination_allowed(true);
@@ -3474,10 +3485,17 @@ void WebContentsImpl::RendererUnresponsive(RenderViewHost* rvh,
       return;
 
     // If the tab hangs in the beforeunload/unload handler there's really
-    // nothing we can do to recover. Pretend the unload listeners have
-    // all fired and close the tab. If the hang is in the beforeunload handler
-    // then the user will not have the option of cancelling the close.
-    Close(rvh);
+    // nothing we can do to recover. If the hang is in the beforeunload handler,
+    // pretend the beforeunload listeners have all fired and allow the delegate
+    // to continue closing; the user will not have the option of cancelling the
+    // close. Otherwise, pretend the unload listeners have all fired and close
+    // the tab.
+    bool close = true;
+    if (is_during_beforeunload) {
+      delegate_->BeforeUnloadFired(this, true, &close);
+    }
+    if (close)
+      Close(rvh);
     return;
   }
 
@@ -3604,7 +3622,8 @@ int WebContentsImpl::CreateOpenerRenderViews(SiteInstance* instance) {
 
   // Create a swapped out RenderView in the given SiteInstance if none exists,
   // setting its opener to the given route_id.  Return the new view's route_id.
-  return render_manager_.CreateRenderView(instance, opener_route_id, true);
+  return render_manager_.CreateRenderView(instance, opener_route_id,
+                                          true, true);
 }
 
 NavigationControllerImpl& WebContentsImpl::GetControllerForRenderManager() {
@@ -3654,6 +3673,13 @@ bool WebContentsImpl::CreateRenderViewForRenderManager(
   return true;
 }
 
+#if defined(OS_ANDROID)
+bool WebContentsImpl::CreateRenderViewForInitialEmptyDocument() {
+  return CreateRenderViewForRenderManager(GetRenderViewHost(),
+                                          MSG_ROUTING_NONE);
+}
+#endif
+
 void WebContentsImpl::OnDialogClosed(RenderViewHost* rvh,
                                      IPC::Message* reply_msg,
                                      bool success,
@@ -3682,6 +3708,10 @@ void WebContentsImpl::CreateViewAndSetSizeForRVH(RenderViewHost* rvh) {
   // Can be NULL during tests.
   if (rwh_view)
     rwh_view->SetSize(GetView()->GetContainerSize());
+}
+
+bool WebContentsImpl::IsHidden() {
+  return capturer_count_ == 0 && !should_normally_be_visible_;
 }
 
 RenderViewHostImpl* WebContentsImpl::GetRenderViewHostImpl() {

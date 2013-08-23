@@ -356,16 +356,6 @@ void CompareCharArraysWithHexError(
       << HexDumpWithMarks(actual, actual_len, marks.get(), max_len);
 }
 
-void CompareQuicDataWithHexError(
-    const string& description,
-    QuicData* actual,
-    QuicData* expected) {
-  CompareCharArraysWithHexError(
-      description,
-      actual->data(), actual->length(),
-      expected->data(), expected->length());
-}
-
 static QuicPacket* ConstructPacketFromHandshakeMessage(
     QuicGuid guid,
     const CryptoHandshakeMessage& message,
@@ -399,20 +389,22 @@ QuicPacket* ConstructHandshakePacket(QuicGuid guid, QuicTag tag) {
   return ConstructPacketFromHandshakeMessage(guid, message, false);
 }
 
-size_t GetPacketLengthForOneStream(QuicVersion version,
-                                   bool include_version,
-                                   InFecGroup is_in_fec_group,
-                                   size_t* payload_length) {
+size_t GetPacketLengthForOneStream(
+    QuicVersion version,
+    bool include_version,
+    QuicSequenceNumberLength sequence_number_length,
+    InFecGroup is_in_fec_group,
+    size_t* payload_length) {
   *payload_length = 1;
   const size_t stream_length =
       NullEncrypter().GetCiphertextSize(*payload_length) +
       QuicPacketCreator::StreamFramePacketOverhead(
           version, PACKET_8BYTE_GUID, include_version,
-          PACKET_6BYTE_SEQUENCE_NUMBER, is_in_fec_group);
+          sequence_number_length, is_in_fec_group);
   const size_t ack_length = NullEncrypter().GetCiphertextSize(
       QuicFramer::GetMinAckFrameSize()) +
       GetPacketHeaderSize(PACKET_8BYTE_GUID, include_version,
-                          PACKET_6BYTE_SEQUENCE_NUMBER, is_in_fec_group);
+                          sequence_number_length, is_in_fec_group);
   if (stream_length < ack_length) {
     *payload_length = 1 + ack_length - stream_length;
   }
@@ -420,7 +412,7 @@ size_t GetPacketLengthForOneStream(QuicVersion version,
   return NullEncrypter().GetCiphertextSize(*payload_length) +
       QuicPacketCreator::StreamFramePacketOverhead(
           version, PACKET_8BYTE_GUID, include_version,
-          PACKET_6BYTE_SEQUENCE_NUMBER, is_in_fec_group);
+          sequence_number_length, is_in_fec_group);
 }
 
 // Size in bytes of the stream frame fields for an arbitrary StreamID and

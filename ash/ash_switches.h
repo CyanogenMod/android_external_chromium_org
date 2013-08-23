@@ -30,13 +30,9 @@ ASH_EXPORT extern const char kAshDefaultWallpaperSmall[];
 ASH_EXPORT extern const char kAshDisableAudioDeviceMenu[];
 #endif
 ASH_EXPORT extern const char kAshDisableAutoMaximizing[];
-ASH_EXPORT extern const char kAshDisableAutoWindowPlacement[];
 ASH_EXPORT extern const char kAshDisableDisplayChangeLimiter[];
 ASH_EXPORT extern const char kAshDisableImmersiveFullscreen[];
 ASH_EXPORT extern const char kAshDisableNewLockAnimations[];
-ASH_EXPORT extern const char kAshDisablePerAppLauncher[];
-ASH_EXPORT extern const char kAshDisableUIScaling[];
-ASH_EXPORT extern const char kAshDisableDisplayRotation[];
 ASH_EXPORT extern const char kAshDisableDragAndDropAppListToLauncher[];
 #if defined(OS_CHROMEOS)
 ASH_EXPORT extern const char kAshDisableSoftwareMirroring[];
@@ -68,8 +64,14 @@ ASH_EXPORT extern const char kForceAshToDesktop[];
 #endif
 ASH_EXPORT extern const char kForcedMaximizeMode[];
 
+ASH_EXPORT extern const char kShowShelfAlignmentMenu[];
+ASH_EXPORT extern const char kHideShelfAlignmentMenu[];
+
 // Returns true if the alternate shelf layout should be used.
 ASH_EXPORT bool UseAlternateShelfLayout();
+
+// Returns true if side shelf alignment is enabled.
+ASH_EXPORT bool ShowShelfAlignmentMenu();
 
 #if defined(OS_CHROMEOS)
 // Returns true if new audio handler should be used.

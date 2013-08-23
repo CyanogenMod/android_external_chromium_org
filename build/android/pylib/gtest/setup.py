@@ -15,9 +15,7 @@ from pylib import android_commands
 from pylib import cmd_helper
 from pylib import constants
 from pylib import ports
-from pylib.base import base_test_result
 
-import gtest_config
 import test_package_apk
 import test_package_exe
 import test_runner
@@ -69,14 +67,14 @@ _ISOLATE_SCRIPT = os.path.join(
     constants.DIR_SOURCE_ROOT, 'tools', 'swarm_client', 'isolate.py')
 
 
-def _GenerateDepsDirUsingIsolate(suite_name, build_type):
+def _GenerateDepsDirUsingIsolate(suite_name):
   """Generate the dependency dir for the test suite using isolate.
 
   Args:
     suite_name: Name of the test suite (e.g. base_unittests).
-    build_type: Release/Debug
   """
-  product_dir = os.path.join(cmd_helper.OutDirectory.get(), build_type)
+  product_dir = os.path.join(cmd_helper.OutDirectory.get(),
+      constants.GetBuildType())
   assert os.path.isabs(product_dir)
 
   if os.path.isdir(constants.ISOLATE_DEPS_DIR):
@@ -142,7 +140,8 @@ def _GenerateDepsDirUsingIsolate(suite_name, build_type):
       shutil.move(os.path.join(root, filename), paks_dir)
 
   # Move everything in PRODUCT_DIR to top level.
-  deps_product_dir = os.path.join(constants.ISOLATE_DEPS_DIR, 'out', build_type)
+  deps_product_dir = os.path.join(constants.ISOLATE_DEPS_DIR, 'out',
+      constants.GetBuildType())
   if os.path.isdir(deps_product_dir):
     for p in os.listdir(deps_product_dir):
       shutil.move(os.path.join(deps_product_dir, p), constants.ISOLATE_DEPS_DIR)
@@ -257,11 +256,12 @@ def _GetTestsFiltered(suite_name, gtest_filter, runner_factory, devices):
   return tests
 
 
-def Setup(test_options):
+def Setup(test_options, devices):
   """Create the test runner factory and tests.
 
   Args:
     test_options: A GTestOptions object.
+    devices: A list of attached devices.
 
   Returns:
     A tuple of (TestRunnerFactory, tests).
@@ -270,19 +270,17 @@ def Setup(test_options):
   if not ports.ResetTestServerPortAllocation():
     raise Exception('Failed to reset test server port.')
 
-  test_package = test_package_apk.TestPackageApk(test_options.suite_name,
-                                                 test_options.build_type)
+  test_package = test_package_apk.TestPackageApk(test_options.suite_name)
   if not os.path.exists(test_package.suite_path):
     test_package = test_package_exe.TestPackageExecutable(
-        test_options.suite_name, test_options.build_type)
+        test_options.suite_name)
     if not os.path.exists(test_package.suite_path):
       raise Exception(
           'Did not find %s target. Ensure it has been built.'
           % test_options.suite_name)
   logging.warning('Found target %s', test_package.suite_path)
 
-  _GenerateDepsDirUsingIsolate(test_options.suite_name,
-                               test_options.build_type)
+  _GenerateDepsDirUsingIsolate(test_options.suite_name)
 
   # Constructs a new TestRunner with the current options.
   def TestRunnerFactory(device, shard_index):
@@ -291,12 +289,11 @@ def Setup(test_options):
         device,
         test_package)
 
-  attached_devices = android_commands.GetAttachedDevices()
   tests = _GetTestsFiltered(test_options.suite_name, test_options.gtest_filter,
-                            TestRunnerFactory, attached_devices)
+                            TestRunnerFactory, devices)
   # Coalesce unit tests into a single test per device
   if test_options.suite_name != 'content_browsertests':
-    num_devices = len(attached_devices)
+    num_devices = len(devices)
     tests = [':'.join(tests[i::num_devices]) for i in xrange(num_devices)]
     tests = [t for t in tests if t]
 

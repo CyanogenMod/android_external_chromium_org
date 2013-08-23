@@ -18,7 +18,7 @@ namespace net {
 ClientSocketHandle::ClientSocketHandle()
     : is_initialized_(false),
       pool_(NULL),
-      layered_pool_(NULL),
+      higher_pool_(NULL),
       is_reused_(false),
       callback_(base::Bind(&ClientSocketHandle::OnIOComplete,
                            base::Unretained(this))),
@@ -43,7 +43,7 @@ void ClientSocketHandle::ResetInternal(bool cancel) {
     if (pool_)
       // If we've still got a socket, release it back to the ClientSocketPool so
       // it can be deleted or reused.
-      pool_->ReleaseSocket(group_name_, release_socket(), pool_id_);
+      pool_->ReleaseSocket(group_name_, PassSocket(), pool_id_);
   } else if (cancel) {
     // If we did not get initialized yet, we've got a socket request pending.
     // Cancel it.
@@ -53,10 +53,8 @@ void ClientSocketHandle::ResetInternal(bool cancel) {
   group_name_.clear();
   is_reused_ = false;
   user_callback_.Reset();
-  if (layered_pool_) {
-    pool_->RemoveLayeredPool(layered_pool_);
-    layered_pool_ = NULL;
-  }
+  if (higher_pool_)
+    RemoveHigherLayeredPool(higher_pool_);
   pool_ = NULL;
   idle_time_ = base::TimeDelta();
   init_time_ = base::TimeTicks();
@@ -82,24 +80,30 @@ LoadState ClientSocketHandle::GetLoadState() const {
 }
 
 bool ClientSocketHandle::IsPoolStalled() const {
+  if (!pool_)
+    return false;
   return pool_->IsStalled();
 }
 
-void ClientSocketHandle::AddLayeredPool(LayeredPool* layered_pool) {
-  CHECK(layered_pool);
-  CHECK(!layered_pool_);
+void ClientSocketHandle::AddHigherLayeredPool(HigherLayeredPool* higher_pool) {
+  CHECK(higher_pool);
+  CHECK(!higher_pool_);
+  // TODO(mmenke):  |pool_| should only be NULL in tests.  Maybe stop doing that
+  // so this be be made into a DCHECK, and the same can be done in
+  // RemoveHigherLayeredPool?
   if (pool_) {
-    pool_->AddLayeredPool(layered_pool);
-    layered_pool_ = layered_pool;
+    pool_->AddHigherLayeredPool(higher_pool);
+    higher_pool_ = higher_pool;
   }
 }
 
-void ClientSocketHandle::RemoveLayeredPool(LayeredPool* layered_pool) {
-  CHECK(layered_pool);
-  CHECK(layered_pool_);
+void ClientSocketHandle::RemoveHigherLayeredPool(
+    HigherLayeredPool* higher_pool) {
+  CHECK(higher_pool_);
+  CHECK_EQ(higher_pool_, higher_pool);
   if (pool_) {
-    pool_->RemoveLayeredPool(layered_pool);
-    layered_pool_ = NULL;
+    pool_->RemoveHigherLayeredPool(higher_pool);
+    higher_pool_ = NULL;
   }
 }
 
@@ -121,11 +125,19 @@ bool ClientSocketHandle::GetLoadTimingInfo(
   return true;
 }
 
+void ClientSocketHandle::SetSocket(scoped_ptr<StreamSocket> s) {
+  socket_ = s.Pass();
+}
+
 void ClientSocketHandle::OnIOComplete(int result) {
   CompletionCallback callback = user_callback_;
   user_callback_.Reset();
   HandleInitCompletion(result);
   callback.Run(result);
+}
+
+scoped_ptr<StreamSocket> ClientSocketHandle::PassSocket() {
+  return socket_.Pass();
 }
 
 void ClientSocketHandle::HandleInitCompletion(int result) {

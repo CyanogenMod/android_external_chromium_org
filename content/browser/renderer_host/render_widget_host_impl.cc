@@ -22,6 +22,7 @@
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
+#include "content/browser/gpu/compositor_util.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/gpu/gpu_process_host_ui_shim.h"
 #include "content/browser/gpu/gpu_surface_tracker.h"
@@ -40,7 +41,6 @@
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/port/browser/render_widget_host_view_port.h"
-#include "content/public/browser/compositor_util.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
@@ -115,7 +115,8 @@ size_t RenderWidgetHost::BackingStoreMemorySize() {
 
 RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
                                            RenderProcessHost* process,
-                                           int routing_id)
+                                           int routing_id,
+                                           bool hidden)
     : view_(NULL),
       renderer_initialized_(false),
       hung_renderer_delay_ms_(kHungRendererDelayMs),
@@ -124,11 +125,12 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       routing_id_(routing_id),
       surface_id_(0),
       is_loading_(false),
-      is_hidden_(false),
+      is_hidden_(hidden),
       is_fullscreen_(false),
       is_accelerated_compositing_active_(false),
       repaint_ack_pending_(false),
       resize_ack_pending_(false),
+      screen_info_out_of_date_(false),
       overdraw_bottom_height_(0.f),
       should_auto_resize_(false),
       waiting_for_screen_rects_ack_(false),
@@ -175,9 +177,11 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
   g_routing_id_widget_map.Get().insert(std::make_pair(
       RenderWidgetHostID(process->GetID(), routing_id_), this));
   process_->AddRoute(routing_id_, this);
-  // Because the widget initializes as is_hidden_ == false,
-  // tell the process host that we're alive.
-  process_->WidgetRestored();
+
+  // If we're initially visible, tell the process host that we're alive.
+  // Otherwise we'll notify the process host when we are first shown.
+  if (!hidden)
+    process_->WidgetRestored();
 
   accessibility_mode_ =
       BrowserAccessibilityStateImpl::GetInstance()->accessibility_mode();
@@ -479,6 +483,9 @@ bool RenderWidgetHostImpl::Send(IPC::Message* msg) {
 }
 
 void RenderWidgetHostImpl::WasHidden() {
+  if (is_hidden_)
+    return;
+
   is_hidden_ = true;
 
   // Don't bother reporting hung state when we aren't active.
@@ -499,7 +506,6 @@ void RenderWidgetHostImpl::WasHidden() {
 }
 
 void RenderWidgetHostImpl::WasShown() {
-  // When we create the widget, it is created as *not* hidden.
   if (!is_hidden_)
     return;
   is_hidden_ = false;
@@ -565,7 +571,7 @@ void RenderWidgetHostImpl::WasResized() {
 
   bool size_changed = new_size != last_requested_size_;
   bool side_payload_changed =
-      !screen_info_.get() ||
+      screen_info_out_of_date_ ||
       old_physical_backing_size != physical_backing_size_ ||
       was_fullscreen != is_fullscreen_ ||
       old_overdraw_bottom_height != overdraw_bottom_height_;
@@ -838,20 +844,20 @@ void RenderWidgetHostImpl::DonePaintingToBackingStore() {
   Send(new ViewMsg_UpdateRect_ACK(GetRoutingID()));
 }
 
-void RenderWidgetHostImpl::ScheduleComposite() {
+bool RenderWidgetHostImpl::ScheduleComposite() {
   if (is_hidden_ || !is_accelerated_compositing_active_ ||
-      current_size_.IsEmpty()) {
-      return;
+      current_size_.IsEmpty() || repaint_ack_pending_ ||
+      resize_ack_pending_ || view_being_painted_) {
+    return false;
   }
 
   // Send out a request to the renderer to paint the view if required.
-  if (!repaint_ack_pending_ && !resize_ack_pending_ && !view_being_painted_) {
-    repaint_start_time_ = TimeTicks::Now();
-    repaint_ack_pending_ = true;
-    TRACE_EVENT_ASYNC_BEGIN0(
-        "renderer_host", "RenderWidgetHostImpl::repaint_ack_pending_", this);
-    Send(new ViewMsg_Repaint(routing_id_, current_size_));
-  }
+  repaint_start_time_ = TimeTicks::Now();
+  repaint_ack_pending_ = true;
+  TRACE_EVENT_ASYNC_BEGIN0(
+      "renderer_host", "RenderWidgetHostImpl::repaint_ack_pending_", this);
+  Send(new ViewMsg_Repaint(routing_id_, current_size_));
+  return true;
 }
 
 void RenderWidgetHostImpl::StartHangMonitorTimeout(TimeDelta delay) {
@@ -1134,6 +1140,7 @@ void RenderWidgetHostImpl::GetWebScreenInfo(WebKit::WebScreenInfo* result) {
     static_cast<RenderWidgetHostViewPort*>(GetView())->GetScreenInfo(result);
   else
     RenderWidgetHostViewPort::GetDefaultScreenInfo(result);
+  screen_info_out_of_date_ = false;
 }
 
 const NativeWebKeyboardEvent*
@@ -1150,6 +1157,7 @@ void RenderWidgetHostImpl::NotifyScreenInfoChanged() {
 }
 
 void RenderWidgetHostImpl::InvalidateScreenInfo() {
+  screen_info_out_of_date_ = true;
   screen_info_.reset();
 }
 
@@ -1482,7 +1490,9 @@ bool RenderWidgetHostImpl::OnSwapCompositorFrame(
       ack.gl_frame_data = frame->gl_frame_data.Pass();
       ack.gl_frame_data->sync_point = 0;
     } else if (frame->delegated_frame_data) {
-      ack.resources.swap(frame->delegated_frame_data->resource_list);
+      cc::TransferableResource::ReturnResources(
+          frame->delegated_frame_data->resource_list,
+          &ack.resources);
     } else if (frame->software_frame_data) {
       ack.last_software_frame_id = frame->software_frame_data->id;
     }

@@ -15,7 +15,7 @@ GYP_TARGET_DEPENDENCIES :=
 
 
 ### Generated for rule "media_media_gyp_media_android_jni_headers_target_generate_jni_headers":
-# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/media/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['base/android/java/src/org/chromium/media/AudioManagerAndroid.java', 'base/android/java/src/org/chromium/media/MediaCodecBridge.java', 'base/android/java/src/org/chromium/media/MediaPlayerBridge.java', 'base/android/java/src/org/chromium/media/MediaPlayerListener.java', 'base/android/java/src/org/chromium/media/WebAudioMediaCodecBridge.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/media/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
+# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/media/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['base/android/java/src/org/chromium/media/AudioManagerAndroid.java', 'base/android/java/src/org/chromium/media/MediaCodecBridge.java', 'base/android/java/src/org/chromium/media/MediaDrmBridge.java', 'base/android/java/src/org/chromium/media/MediaPlayerBridge.java', 'base/android/java/src/org/chromium/media/MediaPlayerListener.java', 'base/android/java/src/org/chromium/media/WebAudioMediaCodecBridge.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/media/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/media/jni/AudioManagerAndroid_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/media/jni/AudioManagerAndroid_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/jni/AudioManagerAndroid_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
@@ -35,6 +35,16 @@ $(gyp_shared_intermediate_dir)/media/jni/MediaCodecBridge_jni.h: $(LOCAL_PATH)/m
 
 .PHONY: media_media_android_jni_headers_gyp_rule_trigger
 media_media_android_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/jni/MediaCodecBridge_jni.h
+
+$(gyp_shared_intermediate_dir)/media/jni/MediaDrmBridge_jni.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/media/jni/MediaDrmBridge_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/media/jni/MediaDrmBridge_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
+$(gyp_shared_intermediate_dir)/media/jni/MediaDrmBridge_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
+$(gyp_shared_intermediate_dir)/media/jni/MediaDrmBridge_jni.h: $(LOCAL_PATH)/media/base/android/java/src/org/chromium/media/MediaDrmBridge.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
+	mkdir -p $(gyp_shared_intermediate_dir)/media/jni; cd $(gyp_local_path)/media; ../base/android/jni_generator/jni_generator.py --input_file base/android/java/src/org/chromium/media/MediaDrmBridge.java --output_dir "$(gyp_shared_intermediate_dir)/media/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt
+
+.PHONY: media_media_android_jni_headers_gyp_rule_trigger
+media_media_android_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/media/jni/MediaDrmBridge_jni.h
 
 $(gyp_shared_intermediate_dir)/media/jni/MediaPlayerBridge_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/media/jni/MediaPlayerBridge_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -71,6 +81,7 @@ media_media_android_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)
 GYP_GENERATED_OUTPUTS := \
 	$(gyp_shared_intermediate_dir)/media/jni/AudioManagerAndroid_jni.h \
 	$(gyp_shared_intermediate_dir)/media/jni/MediaCodecBridge_jni.h \
+	$(gyp_shared_intermediate_dir)/media/jni/MediaDrmBridge_jni.h \
 	$(gyp_shared_intermediate_dir)/media/jni/MediaPlayerBridge_jni.h \
 	$(gyp_shared_intermediate_dir)/media/jni/MediaPlayerListener_jni.h \
 	$(gyp_shared_intermediate_dir)/media/jni/WebAudioMediaCodecBridge_jni.h
@@ -81,6 +92,7 @@ LOCAL_ADDITIONAL_DEPENDENCIES := $(GYP_TARGET_DEPENDENCIES) $(GYP_GENERATED_OUTP
 LOCAL_GENERATED_SOURCES := \
 	$(gyp_shared_intermediate_dir)/media/jni/AudioManagerAndroid_jni.h \
 	$(gyp_shared_intermediate_dir)/media/jni/MediaCodecBridge_jni.h \
+	$(gyp_shared_intermediate_dir)/media/jni/MediaDrmBridge_jni.h \
 	$(gyp_shared_intermediate_dir)/media/jni/MediaPlayerBridge_jni.h \
 	$(gyp_shared_intermediate_dir)/media/jni/MediaPlayerListener_jni.h \
 	$(gyp_shared_intermediate_dir)/media/jni/WebAudioMediaCodecBridge_jni.h \

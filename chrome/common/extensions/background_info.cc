@@ -21,7 +21,7 @@
 #include "ui/base/l10n/l10n_util.h"
 
 using base::DictionaryValue;
-namespace keys = extension_manifest_keys;
+namespace keys = extensions::manifest_keys;
 namespace values = extension_manifest_values;
 namespace errors = extension_manifest_errors;
 
@@ -58,6 +58,12 @@ GURL BackgroundInfo::GetBackgroundURL(const Extension* extension) {
   if (info.background_scripts_.empty())
     return info.background_url_;
   return extension->GetResourceURL(kGeneratedBackgroundPageFilename);
+}
+
+// static
+bool BackgroundInfo::HasGeneratedBackgroundPage(const Extension* extension) {
+  const BackgroundInfo& info = GetBackgroundInfo(extension);
+  return !info.background_scripts_.empty();
 }
 
 // static

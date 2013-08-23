@@ -21,7 +21,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/crx_installer.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_sorting.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -270,10 +269,23 @@ void AppLauncherHandler::Observe(int type,
 
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
-      const Extension* extension =
-          content::Details<extensions::UnloadedExtensionInfo>(
-              details)->extension;
+    case chrome::NOTIFICATION_EXTENSION_UNLOADED:
+    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED: {
+      const Extension* extension = NULL;
+      bool uninstalled = false;
+      if (type == chrome::NOTIFICATION_EXTENSION_UNINSTALLED) {
+        extension = content::Details<const Extension>(details).ptr();
+        uninstalled = true;
+      } else {  // NOTIFICATION_EXTENSION_UNLOADED
+        if (content::Details<extensions::UnloadedExtensionInfo>(
+                details)->reason == extension_misc::UNLOAD_REASON_UNINSTALL) {
+          // Uninstalls are tracked by NOTIFICATION_EXTENSION_UNINSTALLED.
+          return;
+        }
+        extension = content::Details<extensions::UnloadedExtensionInfo>(
+            details)->extension;
+        uninstalled = false;
+      }
       if (!extension->is_app())
         return;
 
@@ -282,13 +294,11 @@ void AppLauncherHandler::Observe(int type,
         return;
 
       scoped_ptr<DictionaryValue> app_info(GetAppInfo(extension));
-      scoped_ptr<base::FundamentalValue> uninstall_value(
-          Value::CreateBooleanValue(
-              content::Details<extensions::UnloadedExtensionInfo>(
-                  details)->reason == extension_misc::UNLOAD_REASON_UNINSTALL));
       if (app_info.get()) {
         visible_apps_.erase(extension->id());
 
+        scoped_ptr<base::FundamentalValue> uninstall_value(
+            Value::CreateBooleanValue(uninstalled));
         scoped_ptr<base::FundamentalValue> from_page(
             Value::CreateBooleanValue(!extension_id_prompting_.empty()));
         web_ui()->CallJavascriptFunction(
@@ -437,13 +447,14 @@ void AppLauncherHandler::HandleGetApps(const ListValue* args) {
         base::Unretained(this));
     extension_pref_change_registrar_.Init(
         extension_service_->extension_prefs()->pref_service());
-    extension_pref_change_registrar_.Add(ExtensionPrefs::kExtensionsPref,
-                                         callback);
+    extension_pref_change_registrar_.Add(prefs::kExtensionsPref, callback);
     extension_pref_change_registrar_.Add(prefs::kNtpAppPageNames, callback);
 
     registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
         content::Source<Profile>(profile));
     registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+        content::Source<Profile>(profile));
+    registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
         content::Source<Profile>(profile));
     registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LAUNCHER_REORDERED,
         content::Source<ExtensionSorting>(

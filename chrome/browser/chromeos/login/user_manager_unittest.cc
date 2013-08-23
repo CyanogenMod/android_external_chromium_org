@@ -11,7 +11,6 @@
 #include "base/run_loop.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/user_manager_impl.h"
@@ -77,10 +76,6 @@ class UserManagerTest : public testing::Test {
     return GetUserManagerImpl()->ephemeral_users_enabled_;
   }
 
-  bool GetUserManagerLocallyManagedUsersEnabledByPolicy() const {
-    return GetUserManagerImpl()->locally_managed_users_enabled_by_policy_;
-  }
-
   void SetUserManagerEphemeralUsersEnabled(bool ephemeral_users_enabled) {
     GetUserManagerImpl()->ephemeral_users_enabled_ = ephemeral_users_enabled;
   }
@@ -127,7 +122,6 @@ class UserManagerTest : public testing::Test {
   scoped_ptr<TestingPrefServiceSimple> local_state_;
 
   ScopedTestDeviceSettingsService test_device_settings_service_;
-  ScopedStubNetworkLibraryEnabler stub_network_library_enabler_;
   ScopedTestCrosSettings test_cros_settings_;
 
   scoped_ptr<ScopedUserManagerEnabler> user_manager_enabler_;
@@ -183,15 +177,6 @@ TEST_F(UserManagerTest, RegularUserLoggedInAsEphemeral) {
   const UserList* users = &UserManager::Get()->GetUsers();
   EXPECT_EQ(1U, users->size());
   EXPECT_EQ((*users)[0]->email(), "owner@invalid.domain");
-}
-
-TEST_F(UserManagerTest, DisablingLMUByDeviceSettings) {
-  SetDeviceSettings(false, "owner@invalid.domain", false);
-  RetrieveTrustedDevicePolicies();
-  EXPECT_EQ(GetUserManagerLocallyManagedUsersEnabledByPolicy(), false);
-  SetDeviceSettings(false, "owner@invalid.domain", true);
-  RetrieveTrustedDevicePolicies();
-  EXPECT_EQ(GetUserManagerLocallyManagedUsersEnabledByPolicy(), true);
 }
 
 }  // namespace chromeos

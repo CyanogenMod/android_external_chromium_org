@@ -239,6 +239,11 @@ class Browser : public TabStripModelObserver,
   BrowserWindow* window() const { return window_; }
   ToolbarModel* toolbar_model() { return toolbar_model_.get(); }
   const ToolbarModel* toolbar_model() const { return toolbar_model_.get(); }
+#if defined(UNIT_TEST)
+  void swap_toolbar_models(scoped_ptr<ToolbarModel>* toolbar_model) {
+    toolbar_model->swap(toolbar_model_);
+  }
+#endif
   TabStripModel* tab_strip_model() const { return tab_strip_model_.get(); }
   chrome::BrowserCommandController* command_controller() {
     return command_controller_.get();
@@ -288,8 +293,27 @@ class Browser : public TabStripModelObserver,
 
   // OnBeforeUnload handling //////////////////////////////////////////////////
 
-  // Gives beforeunload handlers the chance to cancel the close.
+  // Gives beforeunload handlers the chance to cancel the close. Returns whether
+  // to proceed with the close. If called while the process begun by
+  // CallBeforeUnloadHandlers is in progress, returns false without taking
+  // action.
   bool ShouldCloseWindow();
+
+  // Begins the process of confirming whether the associated browser can be
+  // closed. If there are no tabs with beforeunload handlers it will immediately
+  // return false. Otherwise, it starts prompting the user, returns true and
+  // will call |on_close_confirmed| with the result of the user's decision.
+  // After calling this function, if the window will not be closed, call
+  // ResetBeforeUnloadHandlers() to reset all beforeunload handlers; calling
+  // this function multiple times without an intervening call to
+  // ResetBeforeUnloadHandlers() will run only the beforeunload handlers
+  // registered since the previous call.
+  bool CallBeforeUnloadHandlers(
+      const base::Callback<void(bool)>& on_close_confirmed);
+
+  // Clears the results of any beforeunload confirmation dialogs triggered by a
+  // CallBeforeUnloadHandlers call.
+  void ResetBeforeUnloadHandlers();
 
   // Figure out if there are tabs that have beforeunload handlers.
   // It starts beforeunload/unload processing as a side-effect.
@@ -572,11 +596,8 @@ class Browser : public TabStripModelObserver,
       WindowContainerType window_container_type,
       const string16& frame_name,
       const GURL& target_url,
-      const content::Referrer& referrer,
-      WindowOpenDisposition disposition,
-      const WebKit::WebWindowFeatures& features,
-      bool user_action,
-      bool opener_suppressed) OVERRIDE;
+      const std::string& partition_id,
+      content::SessionStorageNamespace* session_storage_namespace) OVERRIDE;
   virtual void WebContentsCreated(content::WebContents* source_contents,
                                   int64 source_frame_id,
                                   const string16& frame_name,
@@ -780,10 +801,13 @@ class Browser : public TabStripModelObserver,
 
   // Creates a BackgroundContents if appropriate; return true if one was
   // created.
-  bool MaybeCreateBackgroundContents(int route_id,
-                                     content::WebContents* opener_web_contents,
-                                     const string16& frame_name,
-                                     const GURL& target_url);
+  bool MaybeCreateBackgroundContents(
+      int route_id,
+      content::WebContents* opener_web_contents,
+      const string16& frame_name,
+      const GURL& target_url,
+      const std::string& partition_id,
+      content::SessionStorageNamespace* session_storage_namespace);
 
   // Data members /////////////////////////////////////////////////////////////
 

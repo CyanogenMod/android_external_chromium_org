@@ -28,6 +28,7 @@ struct hash<cc::LayerImpl*> {
 
 namespace cc {
 
+class ContextProvider;
 class DebugRectHistory;
 class FrameRateCounter;
 class HeadsUpDisplayLayerImpl;
@@ -58,6 +59,7 @@ class CC_EXPORT LayerTreeImpl {
   // ---------------------------------------------------------------------------
   const LayerTreeSettings& settings() const;
   const RendererCapabilities& GetRendererCapabilities() const;
+  ContextProvider* context_provider() const;
   OutputSurface* output_surface() const;
   ResourceProvider* resource_provider() const;
   TileManager* tile_manager() const;
@@ -114,7 +116,8 @@ class CC_EXPORT LayerTreeImpl {
 
   void FindRootScrollLayer();
   void UpdateMaxScrollOffset();
-  void ApplySentScrollAndScaleDeltas();
+  void ApplySentScrollAndScaleDeltasFromAbortedCommit();
+  void ApplyScrollDeltasSinceBeginFrame();
 
   SkColor background_color() const { return background_color_; }
   void set_background_color(SkColor color) { background_color_ = color; }

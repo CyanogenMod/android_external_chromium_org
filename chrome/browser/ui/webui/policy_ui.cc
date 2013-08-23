@@ -63,10 +63,10 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/policy/policy_domain_descriptor.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_set.h"
-#include "chrome/common/extensions/manifest.h"
-#include "chrome/common/policy/policy_schema.h"
+#include "components/policy/core/common/policy_schema.h"
+#include "extensions/common/manifest.h"
+#include "extensions/common/manifest_constants.h"
 #endif
 
 namespace em = enterprise_management;
@@ -451,7 +451,8 @@ void DeviceLocalAccountPolicyStatusProvider::OnDeviceLocalAccountsChanged() {
 #endif
 
 PolicyUIHandler::PolicyUIHandler()
-    : weak_factory_(this) {
+    : initialized_(false),
+      weak_factory_(this) {
 }
 
 PolicyUIHandler::~PolicyUIHandler() {
@@ -568,7 +569,7 @@ void PolicyUIHandler::SendPolicyNames() const {
     const extensions::Extension* extension = it->get();
     // Skip this extension if it's not an enterprise extension.
     if (!extension->manifest()->HasPath(
-        extension_manifest_keys::kStorageManagedSchema))
+        extensions::manifest_keys::kStorageManagedSchema))
       continue;
     base::DictionaryValue* extension_value = new base::DictionaryValue;
     extension_value->SetString("name", extension->name());
@@ -581,7 +582,7 @@ void PolicyUIHandler::SendPolicyNames() const {
       const policy::PolicySchemaMap* policies = schema->second->GetProperties();
       policy::PolicySchemaMap::const_iterator it_policies;
       for (it_policies = policies->begin(); it_policies != policies->end();
-           it_policies++) {
+           ++it_policies) {
         policy_names->SetBoolean(it_policies->first, true);
       }
     }
@@ -615,7 +616,7 @@ void PolicyUIHandler::SendPolicyValues() const {
     const extensions::Extension* extension = it->get();
     // Skip this extension if it's not an enterprise extension.
     if (!extension->manifest()->HasPath(
-        extension_manifest_keys::kStorageManagedSchema))
+        extensions::manifest_keys::kStorageManagedSchema))
       continue;
     base::DictionaryValue* extension_policies = new base::DictionaryValue;
     policy::PolicyNamespace policy_namespace = policy::PolicyNamespace(

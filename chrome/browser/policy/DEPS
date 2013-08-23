@@ -31,19 +31,6 @@ specific_include_rules = {
   ],
 
   # TODO(joaodasilva): remove these exceptions.
-  r"async_policy_loader\.cc": [
-    "+content/public/browser/browser_thread.h",
-  ],
-
-  r"async_policy_provider\.cc": [
-    "+content/public/browser/browser_thread.h",
-  ],
-
-  r"async_policy_provider_unittest\.cc": [
-    "+content/public/browser/browser_thread.h",
-    "+content/public/test/test_browser_thread.h",
-  ],
-
   r"configuration_policy_handler_android\.cc": [
     "+chrome/common/net/url_fixer_upper.h",
     "+chrome/common/pref_names.h",
@@ -51,7 +38,7 @@ specific_include_rules = {
 
   r"configuration_policy_handler\.cc": [
     "+chrome/browser/chrome_notification_types.h",
-    "+chrome/browser/download/download_util.h",
+    "+chrome/browser/download/download_prefs.h",
     "+chrome/browser/extensions/external_policy_loader.h",
     "+chrome/browser/prefs/proxy_config_dictionary.h",
     "+chrome/browser/prefs/proxy_prefs.h",
@@ -87,40 +74,8 @@ specific_include_rules = {
     "+chrome/common/pref_names.h",
   ],
 
-  r"configuration_policy_provider_test\.h": [
-    "+content/public/test/test_browser_thread.h",
-  ],
-
-  r"policy_domain_descriptor\.cc": [
-    "+chrome/common/policy/policy_schema.h",
-  ],
-
-  r"policy_domain_descriptor_unittest\.cc": [
-    "+chrome/common/policy/policy_schema.h",
-  ],
-
-  r"policy_loader_mac\.cc": [
-    "+chrome/common/chrome_paths.h",
-    "+chrome/common/policy/policy_schema.h",
-  ],
-
-  r"policy_loader_win\.cc": [
-    "+chrome/common/json_schema/json_schema_constants.h",
-  ],
-
-  r"policy_loader_win_unittest\.cc": [
-    "+chrome/common/chrome_paths.h",
-    "+chrome/common/json_schema/json_schema_constants.h",
-  ],
-
   r"policy_path_parser_win\.cc": [
     "+chrome/common/chrome_switches.h",
-  ],
-
-  r"policy_service_impl_unittest\.cc": [
-    "+chrome/common/policy/policy_schema.h",
-    "+content/public/browser/browser_thread.h",
-    "+content/public/test/test_browser_thread_bundle.h",
   ],
 
   r"policy_statistics_collector\.cc": [
@@ -130,21 +85,5 @@ specific_include_rules = {
   r"policy_statistics_collector_unittest\.cc": [
     "+chrome/browser/prefs/browser_prefs.h",
     "+chrome/common/pref_names.h",
-  ],
-
-  r"preg_parser_win_unittest\.cc": [
-    "+chrome/common/chrome_paths.h",
-  ],
-
-  r"registry_dict_win\.cc": [
-    "+chrome/common/json_schema/json_schema_constants.h",
-  ],
-
-  r"registry_dict_win_unittest\.cc": [
-    "+chrome/common/json_schema/json_schema_constants.h",
-  ],
-
-  r"test/local_policy_test_server\.cc": [
-    "+chrome/common/chrome_paths.h",
   ],
 }

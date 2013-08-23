@@ -125,7 +125,7 @@ base::ListValue* GetTabsForProcess(int process_id) {
     if (contents) {
       tab_id = ExtensionTabUtil::GetTabId(contents);
       if (tab_id != -1)
-        tabs_list->Append(Value::CreateIntegerValue(tab_id));
+        tabs_list->Append(new base::FundamentalValue(tab_id));
     }
   }
 
@@ -401,14 +401,14 @@ void ProcessesEventRouter::OnItemsToBeRemoved(int start, int length) {
   scoped_ptr<base::ListValue> args(new base::ListValue());
 
   // First arg: The id of the process that was closed.
-  args->Append(Value::CreateIntegerValue(
+  args->Append(new base::FundamentalValue(
       model_->GetUniqueChildProcessId(start)));
 
   // Second arg: The exit type for the process.
-  args->Append(Value::CreateIntegerValue(0));
+  args->Append(new base::FundamentalValue(0));
 
   // Third arg: The exit code for the process.
-  args->Append(Value::CreateIntegerValue(0));
+  args->Append(new base::FundamentalValue(0));
 
   DispatchEvent(keys::kOnExited, args.Pass());
 #endif  // defined(ENABLE_TASK_MANAGER)
@@ -452,13 +452,13 @@ void ProcessesEventRouter::ProcessClosedEvent(
   scoped_ptr<base::ListValue> args(new base::ListValue());
 
   // First arg: The id of the process that was closed.
-  args->Append(Value::CreateIntegerValue(rph->GetID()));
+  args->Append(new base::FundamentalValue(rph->GetID()));
 
   // Second arg: The exit type for the process.
-  args->Append(Value::CreateIntegerValue(details->status));
+  args->Append(new base::FundamentalValue(details->status));
 
   // Third arg: The exit code for the process.
-  args->Append(Value::CreateIntegerValue(details->exit_code));
+  args->Append(new base::FundamentalValue(details->exit_code));
 
   DispatchEvent(keys::kOnExited, args.Pass());
 #endif  // defined(ENABLE_TASK_MANAGER)
@@ -554,9 +554,9 @@ bool GetProcessIdForTabFunction::RunImpl() {
     base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
         &GetProcessIdForTabFunction::GetProcessIdForTab, this));
   } else {
-    registrar_.Add(this,
-                   chrome::NOTIFICATION_TASK_MANAGER_CHILD_PROCESSES_DATA_READY,
-                   content::NotificationService::AllSources());
+    TaskManager::GetInstance()->model()->RegisterOnDataReadyCallback(
+        base::Bind(&GetProcessIdForTabFunction::GetProcessIdForTab, this));
+
     ProcessesAPI::Get(profile_)->processes_event_router()->
         StartTaskManagerListening();
   }
@@ -568,15 +568,6 @@ bool GetProcessIdForTabFunction::RunImpl() {
 #endif  // defined(ENABLE_TASK_MANAGER)
 }
 
-void GetProcessIdForTabFunction::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK_EQ(type, chrome::NOTIFICATION_TASK_MANAGER_CHILD_PROCESSES_DATA_READY);
-  registrar_.RemoveAll();
-  GetProcessIdForTab();
-}
-
 void GetProcessIdForTabFunction::GetProcessIdForTab() {
   content::WebContents* contents = NULL;
   int tab_index = -1;
@@ -585,11 +576,11 @@ void GetProcessIdForTabFunction::GetProcessIdForTab() {
     error_ = ErrorUtils::FormatErrorMessage(
         extensions::tabs_constants::kTabNotFoundError,
         base::IntToString(tab_id_));
-    SetResult(Value::CreateIntegerValue(-1));
+    SetResult(new base::FundamentalValue(-1));
     SendResponse(false);
   } else {
     int process_id = contents->GetRenderProcessHost()->GetID();
-    SetResult(Value::CreateIntegerValue(process_id));
+    SetResult(new base::FundamentalValue(process_id));
     SendResponse(true);
   }
 
@@ -617,9 +608,9 @@ bool TerminateFunction::RunImpl() {
     base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
         &TerminateFunction::TerminateProcess, this));
   } else {
-    registrar_.Add(this,
-                   chrome::NOTIFICATION_TASK_MANAGER_CHILD_PROCESSES_DATA_READY,
-                   content::NotificationService::AllSources());
+    TaskManager::GetInstance()->model()->RegisterOnDataReadyCallback(
+        base::Bind(&TerminateFunction::TerminateProcess, this));
+
     ProcessesAPI::Get(profile_)->processes_event_router()->
         StartTaskManagerListening();
   }
@@ -631,14 +622,6 @@ bool TerminateFunction::RunImpl() {
 #endif  // defined(ENABLE_TASK_MANAGER)
 }
 
-void TerminateFunction::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK_EQ(type, chrome::NOTIFICATION_TASK_MANAGER_CHILD_PROCESSES_DATA_READY);
-  registrar_.RemoveAll();
-  TerminateProcess();
-}
 
 void TerminateFunction::TerminateProcess() {
   TaskManagerModel* model = TaskManager::GetInstance()->model();
@@ -664,7 +647,7 @@ void TerminateFunction::TerminateProcess() {
         base::IntToString(process_id_));
     SendResponse(false);
   } else {
-    SetResult(Value::CreateBooleanValue(killed));
+    SetResult(new base::FundamentalValue(killed));
     SendResponse(true);
   }
 
@@ -705,9 +688,9 @@ bool GetProcessInfoFunction::RunImpl() {
     base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
         &GetProcessInfoFunction::GatherProcessInfo, this));
   } else {
-    registrar_.Add(this,
-                   chrome::NOTIFICATION_TASK_MANAGER_CHILD_PROCESSES_DATA_READY,
-                   content::NotificationService::AllSources());
+    TaskManager::GetInstance()->model()->RegisterOnDataReadyCallback(
+        base::Bind(&GetProcessInfoFunction::GatherProcessInfo, this));
+
     ProcessesAPI::Get(profile_)->processes_event_router()->
         StartTaskManagerListening();
   }
@@ -717,15 +700,6 @@ bool GetProcessInfoFunction::RunImpl() {
   error_ = errors::kExtensionNotSupported;
   return false;
 #endif  // defined(ENABLE_TASK_MANAGER)
-}
-
-void GetProcessInfoFunction::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK_EQ(type, chrome::NOTIFICATION_TASK_MANAGER_CHILD_PROCESSES_DATA_READY);
-  registrar_.RemoveAll();
-  GatherProcessInfo();
 }
 
 void GetProcessInfoFunction::GatherProcessInfo() {

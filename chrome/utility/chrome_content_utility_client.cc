@@ -17,7 +17,6 @@
 #include "chrome/common/extensions/chrome_extensions_client.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
-#include "chrome/common/extensions/manifest.h"
 #include "chrome/common/extensions/update_manifest.h"
 #include "chrome/common/safe_browsing/zip_analyzer.h"
 #include "chrome/utility/extensions/unpacker.h"
@@ -26,6 +25,7 @@
 #include "content/public/child/image_decoder_utils.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/utility/utility_thread.h"
+#include "extensions/common/manifest.h"
 #include "media/base/media.h"
 #include "media/base/media_file_checker.h"
 #include "printing/page_range.h"
@@ -147,6 +147,8 @@ bool ChromeContentUtilityClient::OnMessageReceived(
                         OnParseITunesLibraryXmlFile)
     IPC_MESSAGE_HANDLER(ChromeUtilityMsg_ParsePicasaPMPDatabase,
                         OnParsePicasaPMPDatabase)
+    IPC_MESSAGE_HANDLER(ChromeUtilityMsg_IndexPicasaAlbumsContents,
+                        OnIndexPicasaAlbumsContents)
 #endif  // defined(OS_WIN) || defined(OS_MACOSX)
 
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -591,15 +593,11 @@ void ChromeContentUtilityClient::OnParsePicasaPMPDatabase(
   ReleaseProcessIfNeeded();
 }
 
-void OnIndexPicasaAlbumsContents(
+void ChromeContentUtilityClient::OnIndexPicasaAlbumsContents(
     const picasa::AlbumUIDSet& album_uids,
     const std::vector<picasa::FolderINIContents>& folders_inis) {
   picasa::PicasaAlbumsIndexer indexer(album_uids);
-  for (std::vector<picasa::FolderINIContents>::const_iterator it =
-           folders_inis.begin();
-       it != folders_inis.end(); ++it) {
-    indexer.ParseFolderINI(it->folder_path, it->ini_contents);
-  }
+  indexer.ParseFolderINI(folders_inis);
 
   Send(new ChromeUtilityHostMsg_IndexPicasaAlbumsContents_Finished(
       indexer.albums_images()));

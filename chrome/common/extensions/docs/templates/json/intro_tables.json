@@ -50,7 +50,7 @@
         "text": "\"cookies\""
       },
       {
-        "link": "declare_permissions.html",
+        "link": "declare_permissions.html#host-permissions",
         "text": "host permissions"
       }
     ]
@@ -74,7 +74,7 @@
         "text": "\"declarativeWebRequest\""
       },
       {
-        "link": "declare_permissions.html",
+        "link": "declare_permissions.html#host-permissions",
         "text": "host permissions"
       }
     ]
@@ -151,6 +151,14 @@
       {
         "link": "https://developers.google.com/live/shows/83992232-1001/",
         "text": "Chrome Apps Office Hours: Rich Notifications"
+      }
+    ]
+  },
+  "permissions": {
+    "Learn More": [
+      {
+        "link": "declare_permissions.html#host-permissions",
+        "text": "Declaring permissions"
       }
     ]
   },
@@ -242,8 +250,7 @@
   "tabs": {
     "Permissions": [
       {
-        "class": "code",
-        "text": "\"tabs\""
+        "partial": "intro_tables/tabs_permissions.html"
       }
     ]
   },
@@ -270,7 +277,7 @@
         "text": "\"webRequest\""
       },
       {
-        "link": "declare_permissions.html",
+        "link": "declare_permissions.html#host-permissions",
         "text": "host permissions"
       }
     ]
@@ -280,6 +287,13 @@
       {
         "link": "https://developers.google.com/chrome/web-store/docs/inline_installation",
         "text": "Using Inline Installation"
+      }
+    ]
+  },
+  "windows": {
+    "Permissions": [
+      {
+        "partial": "intro_tables/windows_permissions.html"
       }
     ]
   }

@@ -13,7 +13,7 @@
 #include "base/task_runner_util.h"
 #include "content/child/child_thread.h"
 #include "media/base/bind_to_loop.h"
-#include "media/filters/gpu_video_decoder_factories.h"
+#include "media/filters/gpu_video_accelerator_factories.h"
 #include "third_party/webrtc/system_wrappers/interface/ref_count.h"
 
 namespace content {
@@ -69,7 +69,7 @@ RTCVideoDecoder::BufferData::BufferData() {}
 RTCVideoDecoder::BufferData::~BufferData() {}
 
 RTCVideoDecoder::RTCVideoDecoder(
-    const scoped_refptr<media::GpuVideoDecoderFactories>& factories)
+    const scoped_refptr<media::GpuVideoAcceleratorFactories>& factories)
     : weak_factory_(this),
       weak_this_(weak_factory_.GetWeakPtr()),
       factories_(factories),
@@ -122,7 +122,7 @@ RTCVideoDecoder::~RTCVideoDecoder() {
 
 scoped_ptr<RTCVideoDecoder> RTCVideoDecoder::Create(
     webrtc::VideoCodecType type,
-    const scoped_refptr<media::GpuVideoDecoderFactories>& factories) {
+    const scoped_refptr<media::GpuVideoAcceleratorFactories>& factories) {
   scoped_ptr<RTCVideoDecoder> decoder;
   // Convert WebRTC codec type to media codec profile.
   media::VideoCodecProfile profile;
@@ -136,8 +136,8 @@ scoped_ptr<RTCVideoDecoder> RTCVideoDecoder::Create(
   }
 
   decoder.reset(new RTCVideoDecoder(factories));
-  decoder->vda_
-      .reset(factories->CreateVideoDecodeAccelerator(profile, decoder.get()));
+  decoder->vda_ =
+      factories->CreateVideoDecodeAccelerator(profile, decoder.get()).Pass();
   // vda can be NULL if VP8 is not supported.
   if (decoder->vda_ != NULL) {
     decoder->state_ = INITIALIZED;
@@ -195,8 +195,17 @@ int32_t RTCVideoDecoder::Decode(
     // Return an error to request a key frame.
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
-  if (inputImage._frameType == webrtc::kKeyFrame)
+  if (inputImage._frameType == webrtc::kKeyFrame) {
+    DVLOG(2) << "Got key frame. size=" << inputImage._encodedWidth << "x"
+             << inputImage._encodedHeight;
     frame_size_.SetSize(inputImage._encodedWidth, inputImage._encodedHeight);
+  } else if (IsFirstBufferAfterReset(next_bitstream_buffer_id_,
+                                     reset_bitstream_buffer_id_)) {
+    // TODO(wuchengli): VDA should handle it. Remove this when
+    // http://crosbug.com/p/21913 is fixed.
+    DVLOG(1) << "The first frame should be a key frame. Drop this.";
+    return WEBRTC_VIDEO_CODEC_ERROR;
+  }
 
   // Create buffer metadata.
   BufferData buffer_data(next_bitstream_buffer_id_,
@@ -397,7 +406,7 @@ scoped_refptr<media::VideoFrame> RTCVideoDecoder::CreateVideoFrame(
       visible_rect,
       natural_size,
       timestamp_ms,
-      base::Bind(&media::GpuVideoDecoderFactories::ReadPixels,
+      base::Bind(&media::GpuVideoAcceleratorFactories::ReadPixels,
                  factories_,
                  pb.texture_id(),
                  decoder_texture_target_,
@@ -524,6 +533,12 @@ bool RTCVideoDecoder::IsBufferAfterReset(int32 id_buffer, int32 id_reset) {
   if (diff <= 0)
     diff += ID_LAST + 1;
   return diff < ID_HALF;
+}
+
+bool RTCVideoDecoder::IsFirstBufferAfterReset(int32 id_buffer, int32 id_reset) {
+  if (id_reset == ID_INVALID)
+    return id_buffer == 0;
+  return id_buffer == ((id_reset + 1) & ID_LAST);
 }
 
 void RTCVideoDecoder::SaveToDecodeBuffers_Locked(

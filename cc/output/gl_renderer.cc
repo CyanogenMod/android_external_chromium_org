@@ -151,7 +151,7 @@ GLRenderer::GLRenderer(RendererClient* client,
     : DirectRenderer(client, output_surface, resource_provider),
       offscreen_framebuffer_id_(0),
       shared_geometry_quad_(gfx::RectF(-0.5f, -0.5f, 1.0f, 1.0f)),
-      context_(output_surface->context3d()),
+      context_(output_surface->context_provider()->Context3d()),
       is_backbuffer_discarded_(false),
       discard_backbuffer_when_not_visible_(false),
       is_using_bind_uniform_(false),
@@ -162,8 +162,7 @@ GLRenderer::GLRenderer(RendererClient* client,
       highp_threshold_min_(highp_threshold_min),
       highp_threshold_cache_(0),
       offscreen_context_labelled_(false),
-      on_demand_tile_raster_resource_id_(0),
-      weak_factory_(this) {
+      on_demand_tile_raster_resource_id_(0) {
   DCHECK(context_);
 }
 
@@ -510,7 +509,7 @@ static inline SkBitmap ApplyFilters(GLRenderer* renderer,
   offscreen_contexts->Context3d()->flush();
 
   // Use the compositor's GL context again.
-  renderer->resource_provider()->GraphicsContext3D()->makeContextCurrent();
+  renderer->Context()->makeContextCurrent();
   return source;
 }
 
@@ -592,7 +591,7 @@ static SkBitmap ApplyImageFilter(GLRenderer* renderer,
   offscreen_contexts->Context3d()->flush();
 
   // Use the compositor's GL context again.
-  renderer->resource_provider()->GraphicsContext3D()->makeContextCurrent();
+  renderer->Context()->makeContextCurrent();
 
   return device.accessBitmap(false);
 }
@@ -2178,25 +2177,26 @@ void GLRenderer::GetFramebufferPixels(void* pixels, gfx::Rect rect) {
                          AsyncGetFramebufferPixelsCleanupCallback());
 }
 
-void GLRenderer::DeleteTextureReleaseCallbackOnImplThread(unsigned texture_id,
-                                                          unsigned sync_point,
-                                                          bool lost_resource) {
+static void DeleteTextureReleaseCallbackOnImplThread(
+    const scoped_refptr<ContextProvider>& context_provider,
+    unsigned texture_id,
+    unsigned sync_point,
+    bool lost_resource) {
   if (sync_point)
-    context_->waitSyncPoint(sync_point);
-  context_->deleteTexture(texture_id);
+    context_provider->Context3d()->waitSyncPoint(sync_point);
+  context_provider->Context3d()->deleteTexture(texture_id);
 }
 
-// static
-void GLRenderer::DeleteTextureReleaseCallback(
-    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
-    base::WeakPtr<GLRenderer> gl_renderer,
+static void DeleteTextureReleaseCallback(
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+    const scoped_refptr<ContextProvider>& context_provider,
     unsigned texture_id,
     unsigned sync_point,
     bool lost_resource) {
   task_runner->PostTask(
       FROM_HERE,
-      base::Bind(&GLRenderer::DeleteTextureReleaseCallbackOnImplThread,
-                 gl_renderer,
+      base::Bind(&DeleteTextureReleaseCallbackOnImplThread,
+                 context_provider,
                  texture_id,
                  sync_point,
                  lost_resource));
@@ -2245,9 +2245,9 @@ void GLRenderer::GetFramebufferPixelsAsync(
     sync_point = context_->insertSyncPoint();
     scoped_ptr<TextureMailbox> texture_mailbox = make_scoped_ptr(
         new TextureMailbox(mailbox,
-                           base::Bind(&GLRenderer::DeleteTextureReleaseCallback,
+                           base::Bind(&DeleteTextureReleaseCallback,
                                       base::MessageLoopProxy::current(),
-                                      weak_factory_.GetWeakPtr(),
+                                      output_surface_->context_provider(),
                                       texture_id),
                            GL_TEXTURE_2D,
                            sync_point));
@@ -2348,7 +2348,7 @@ void GLRenderer::DoGetFramebufferPixels(
   if (is_async) {
     query = context_->createQueryEXT();
     GLC(context_, context_->beginQueryEXT(
-        GL_ASYNC_PIXEL_TRANSFERS_COMPLETED_CHROMIUM,
+        GL_ASYNC_READ_PIXELS_COMPLETED_CHROMIUM,
         query));
   }
 
@@ -2389,7 +2389,7 @@ void GLRenderer::DoGetFramebufferPixels(
 
   if (is_async) {
     GLC(context_, context_->endQueryEXT(
-        GL_ASYNC_PIXEL_TRANSFERS_COMPLETED_CHROMIUM));
+        GL_ASYNC_READ_PIXELS_COMPLETED_CHROMIUM));
     SyncPointHelper::SignalQuery(
         context_,
         query,

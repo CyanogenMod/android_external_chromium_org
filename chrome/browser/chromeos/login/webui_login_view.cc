@@ -48,7 +48,8 @@ using web_modal::WebContentsModalDialogManager;
 
 namespace {
 
-// These strings must be kept in sync with handleAccelerator() in oobe.js.
+// These strings must be kept in sync with handleAccelerator()
+// in display_manager.js.
 const char kAccelNameCancel[] = "cancel";
 const char kAccelNameEnrollment[] = "enrollment";
 const char kAccelNameKioskEnable[] = "kiosk_enable";
@@ -58,6 +59,7 @@ const char kAccelNameLeft[] = "left";
 const char kAccelNameRight[] = "right";
 const char kAccelNameDeviceRequisition[] = "device_requisition";
 const char kAccelNameDeviceRequisitionRemora[] = "device_requisition_remora";
+const char kAccelNameAppLaunchBailout[] = "app_launch_bailout";
 
 // Observes IPC messages from the FrameSniffer and notifies JS if error
 // appears.
@@ -92,26 +94,6 @@ class SnifferObserver : public content::RenderViewHostObserver {
   content::WebUI* webui_;
 };
 
-// A View class which places its first child at the right most position.
-class RightAlignedView : public views::View {
- public:
-  virtual void Layout() OVERRIDE;
-  virtual void ChildPreferredSizeChanged(View* child) OVERRIDE;
-};
-
-void RightAlignedView::Layout() {
-  if (has_children()) {
-    views::View* child = child_at(0);
-    gfx::Size preferred_size = child->GetPreferredSize();
-    child->SetBounds(width() - preferred_size.width(),
-                     0, preferred_size.width(), preferred_size.height());
-  }
-}
-
-void RightAlignedView::ChildPreferredSizeChanged(View* child) {
-  Layout();
-}
-
 // A class to change arrow key traversal behavior when it's alive.
 class ScopedArrowKeyTraversal {
  public:
@@ -143,8 +125,6 @@ const char WebUILoginView::kViewClassName[] =
 
 WebUILoginView::WebUILoginView()
     : webui_login_(NULL),
-      login_window_(NULL),
-      host_window_frozen_(false),
       is_hidden_(false),
       login_prompt_visible_handled_(false),
       should_emit_login_prompt_visible_(true),
@@ -183,20 +163,26 @@ WebUILoginView::WebUILoginView()
       ui::Accelerator(ui::VKEY_H, ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN)] =
       kAccelNameDeviceRequisitionRemora;
 
+  accel_map_[ui::Accelerator(ui::VKEY_S,
+                             ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN)] =
+      kAccelNameAppLaunchBailout;
+
   for (AccelMap::iterator i(accel_map_.begin()); i != accel_map_.end(); ++i)
     AddAccelerator(i->first);
 }
 
 WebUILoginView::~WebUILoginView() {
+  FOR_EACH_OBSERVER(web_modal::WebContentsModalDialogHostObserver,
+                    observer_list_,
+                    OnHostDestroying());
+
   if (ash::Shell::GetInstance()->HasPrimaryStatusArea()) {
     ash::Shell::GetInstance()->GetPrimarySystemTray()->
         SetNextFocusableView(NULL);
   }
 }
 
-void WebUILoginView::Init(views::Widget* login_window) {
-  login_window_ = login_window;
-
+void WebUILoginView::Init() {
   Profile* signin_profile = ProfileHelper::GetSigninProfile();
   auth_extension_.reset(new ScopedGaiaAuthExtension(signin_profile));
   webui_login_ = new views::WebView(signin_profile);
@@ -212,7 +198,7 @@ void WebUILoginView::Init(views::Widget* login_window) {
   // LoginHandlerViews uses a constrained window for the password manager view.
   WebContentsModalDialogManager::CreateForWebContents(web_contents);
   WebContentsModalDialogManager::FromWebContents(web_contents)->
-      set_delegate(this);
+      SetDelegate(this);
 
   web_contents->SetDelegate(this);
   renderer_preferences_util::UpdateFromSystemSettings(
@@ -276,12 +262,6 @@ bool WebUILoginView::AcceleratorPressed(
 
 gfx::NativeWindow WebUILoginView::GetNativeWindow() const {
   return GetWidget()->GetNativeWindow();
-}
-
-void WebUILoginView::OnWindowCreated() {
-}
-
-void WebUILoginView::UpdateWindowType() {
 }
 
 void WebUILoginView::LoadURL(const GURL & url) {

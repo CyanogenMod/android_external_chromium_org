@@ -29,6 +29,7 @@ LOCAL_SRC_FILES := \
 	content/gpu/gpu_main.cc \
 	content/gpu/gpu_process.cc \
 	content/gpu/gpu_child_thread.cc \
+	content/gpu/gpu_main_thread.cc \
 	content/gpu/gpu_watchdog_thread.cc
 
 

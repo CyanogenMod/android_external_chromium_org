@@ -9,7 +9,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chromeos/enrollment_dialog_view.h"
-#include "chrome/browser/chromeos/options/network_connect.h"
+#include "chrome/browser/chromeos/net/onc_utils.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/net/x509_certificate_model.h"
 #include "chromeos/network/network_configuration_handler.h"
@@ -275,21 +275,26 @@ string16 VPNConfigView::GetTitle() const {
 }
 
 views::View* VPNConfigView::GetInitiallyFocusedView() {
-  // Put focus in the first editable field.
-  if (server_textfield_)
-    return server_textfield_;
-  else if (service_textfield_)
-    return service_textfield_;
-  else if (provider_type_combobox_)
-    return provider_type_combobox_;
-  else if (psk_passphrase_textfield_ && psk_passphrase_textfield_->enabled())
-    return psk_passphrase_textfield_;
-  else if (user_cert_combobox_ && user_cert_combobox_->enabled())
-    return user_cert_combobox_;
-  else if (server_ca_cert_combobox_ && server_ca_cert_combobox_->enabled())
-    return server_ca_cert_combobox_;
-  else
-    return NULL;
+  if (service_path_.empty()) {
+    // Put focus in the first editable field.
+    if (server_textfield_)
+      return server_textfield_;
+    else if (service_textfield_)
+      return service_textfield_;
+    else if (provider_type_combobox_)
+      return provider_type_combobox_;
+    else if (psk_passphrase_textfield_ && psk_passphrase_textfield_->enabled())
+      return psk_passphrase_textfield_;
+    else if (user_cert_combobox_ && user_cert_combobox_->enabled())
+      return user_cert_combobox_;
+    else if (server_ca_cert_combobox_ && server_ca_cert_combobox_->enabled())
+      return server_ca_cert_combobox_;
+  }
+  if (user_passphrase_textfield_)
+    return user_passphrase_textfield_;
+  else if (otp_textfield_)
+    return otp_textfield_;
+  return NULL;
 }
 
 bool VPNConfigView::CanLogin() {
@@ -518,17 +523,18 @@ void VPNConfigView::Init() {
   enable_group_name_ = true;
 
   // Server label and input.
-  // Only provide Server name when configuring a new VPN.
-  if (service_path_.empty()) {
-    layout_->StartRow(0, 0);
-    layout_->AddView(new views::Label(l10n_util::GetStringUTF16(
-      IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_VPN_SERVER_HOSTNAME)));
-    server_textfield_ = new views::Textfield(views::Textfield::STYLE_DEFAULT);
-    server_textfield_->SetController(this);
-    layout_->AddView(server_textfield_);
-    layout_->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
-  } else {
-    server_textfield_ = NULL;
+  layout_->StartRow(0, 0);
+  views::View* server_label =
+      new views::Label(l10n_util::GetStringUTF16(
+          IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_VPN_SERVER_HOSTNAME));
+  layout_->AddView(server_label);
+  server_textfield_ = new views::Textfield(views::Textfield::STYLE_DEFAULT);
+  server_textfield_->SetController(this);
+  layout_->AddView(server_textfield_);
+  layout_->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
+  if (!service_path_.empty()) {
+    server_label->SetEnabled(false);
+    server_textfield_->SetEnabled(false);
   }
 
   // Service label and name or input.
@@ -818,8 +824,10 @@ void VPNConfigView::SetConfigProperties(
     case PROVIDER_TYPE_INDEX_L2TP_IPSEC_USER_CERT: {
       std::string ca_cert_pem = GetServerCACertPEM();
       if (!ca_cert_pem.empty()) {
-        properties->SetStringWithoutPathExpansion(
-            shill::kL2tpIpsecCaCertPemProperty, ca_cert_pem);
+        base::ListValue* pem_list = new base::ListValue;
+        pem_list->AppendString(ca_cert_pem);
+        properties->SetWithoutPathExpansion(
+            shill::kL2tpIpsecCaCertPemProperty, pem_list);
       }
       properties->SetStringWithoutPathExpansion(
           flimflam::kL2tpIpsecClientCertIdProperty, GetUserCertID());
@@ -841,7 +849,7 @@ void VPNConfigView::SetConfigProperties(
       std::string ca_cert_pem = GetServerCACertPEM();
       if (!ca_cert_pem.empty()) {
         base::ListValue* pem_list = new base::ListValue;
-        pem_list->AppendString(GetServerCACertPEM());
+        pem_list->AppendString(ca_cert_pem);
         properties->SetWithoutPathExpansion(
             shill::kOpenVPNCaCertPemProperty, pem_list);
       }
@@ -1037,7 +1045,7 @@ void VPNConfigView::ParseVPNUIProperty(
     NetworkPropertyUIData* property_ui_data) {
   onc::ONCSource onc_source = onc::ONC_SOURCE_NONE;
   const base::DictionaryValue* onc =
-      network_connect::FindPolicyForActiveUser(network, &onc_source);
+      onc::FindPolicyForActiveUser(network->guid(), &onc_source);
 
   VLOG_IF(1, !onc) << "No ONC found for VPN network " << network->guid();
   property_ui_data->ParseOncProperty(

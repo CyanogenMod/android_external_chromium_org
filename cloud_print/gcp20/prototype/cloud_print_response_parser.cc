@@ -7,6 +7,7 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 
 namespace cloud_print_response_parser {
@@ -183,21 +184,101 @@ bool ParseFetchResponse(const std::string& response,
   }
 
   std::vector<Job> job_list(jobs->GetSize());
+  std::string create_time_str;
   for (size_t idx = 0; idx < job_list.size(); ++idx) {
     base::DictionaryValue* job = NULL;
     jobs->GetDictionary(idx, &job);
     if (!job->GetString("id", &job_list[idx].job_id) ||
-        !job->GetString("createTime", &job_list[idx].create_time) ||
+        !job->GetString("createTime", &create_time_str) ||
         !job->GetString("fileUrl", &job_list[idx].file_url) ||
         !job->GetString("ticketUrl", &job_list[idx].ticket_url) ||
         !job->GetString("title", &job_list[idx].title)) {
       *error_description = "Cannot parse job info.";
       return false;
     }
+    int64 create_time_ms = 0;
+    if (!base::StringToInt64(create_time_str, &create_time_ms)) {
+      *error_description = "Cannot convert time.";
+      return false;
+    }
+    job_list[idx].create_time =
+        base::Time::UnixEpoch() +
+        base::TimeDelta::FromMilliseconds(create_time_ms);
   }
 
   *list = job_list;
+  return true;
+}
 
+bool ParseLocalSettingsResponse(const std::string& response,
+                                std::string* error_description,
+                                LocalSettings::State* state,
+                                LocalSettings* settings) {
+  scoped_ptr<base::Value> json(base::JSONReader::Read(response));
+  base::DictionaryValue* response_dictionary = NULL;
+  bool json_success;
+  std::string message;
+  if (!GetJsonDictinaryAndCheckSuccess(json.get(), error_description,
+                                       &json_success, &message,
+                                       &response_dictionary)) {
+    return false;
+  }
+
+  if (!json_success) {  // Let's suppose our printer was deleted.
+    *state = LocalSettings::PRINTER_DELETED;
+    return true;
+  }
+
+  base::ListValue* list = NULL;
+  if (!response_dictionary->GetList("printers", &list)) {
+    *error_description = "No printers list specified.";
+    return false;
+  }
+
+  base::DictionaryValue* printer = NULL;
+  if (!list->GetDictionary(0, &printer)) {
+    *error_description = "Printers list is empty or printer is not dictionary.";
+    return false;
+  }
+
+  base::DictionaryValue* local_settings_dict = NULL;
+  if (!printer->GetDictionary("local_settings", &local_settings_dict)) {
+    *error_description = "No local_settings found.";
+    return false;
+  }
+
+  base::DictionaryValue* current = NULL;
+  if (!local_settings_dict->GetDictionary("current", &current)) {
+    *error_description = "No *current* local settings found.";
+    return false;
+  }
+
+  LocalSettings::State settings_state;
+  base::DictionaryValue* pending = NULL;
+  base::DictionaryValue* settings_to_parse = NULL;
+  if (local_settings_dict->GetDictionary("pending", &pending)) {
+    settings_to_parse = pending;
+    settings_state = LocalSettings::PENDING;
+  } else {
+    settings_to_parse = current;
+    settings_state = LocalSettings::CURRENT;
+  }
+
+  LocalSettings local_settings;
+  if (!settings_to_parse->GetBoolean("local_discovery",
+                                     &local_settings.local_discovery) ||
+      !settings_to_parse->GetBoolean("access_token_enabled",
+                                     &local_settings.access_token_enabled) ||
+      !settings_to_parse->GetBoolean("printer/local_printing_enabled",
+                                     &local_settings.local_printing_enabled) ||
+      !settings_to_parse->GetInteger("xmpp_timeout_value",
+                                     &local_settings.xmpp_timeout_value)) {
+    *error_description = "Cannot parse local_settings info.";
+    return false;
+  }
+
+  *state = settings_state;
+  *settings = local_settings;
   return true;
 }
 

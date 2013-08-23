@@ -16,6 +16,7 @@
 namespace chrome {
 
 // TODO(msw): Resolve chrome_frame dependency on these constants.
+extern const char kAboutComponentsURL[];
 extern const char kAboutPluginsURL[];
 extern const char kAboutVersionURL[];
 
@@ -27,6 +28,7 @@ extern const char kChromeUIBookmarksURL[];
 extern const char kChromeUICertificateViewerURL[];
 extern const char kChromeUIChromeURLsURL[];
 extern const char kChromeUICloudPrintResourcesURL[];
+extern const char kChromeUIComponentsURL[];
 extern const char kChromeUIConflictsURL[];
 extern const char kChromeUIConstrainedHTMLTestURL[];
 extern const char kChromeUICrashesURL[];
@@ -87,7 +89,6 @@ extern const char kChromeUIWelcomeURL[];
 
 #if defined(OS_CHROMEOS)
 extern const char kChromeUIActivationMessage[];
-extern const char kChromeUIAppLaunchURL[];
 extern const char kChromeUIBluetoothPairingURL[];
 extern const char kChromeUIChooseMobileNetworkURL[];
 extern const char kChromeUIDiagnosticsURL[];
@@ -107,10 +108,6 @@ extern const char kChromeUISlowURL[];
 extern const char kChromeUISystemInfoURL[];
 extern const char kChromeUITermsOemURL[];
 extern const char kChromeUIUserImageURL[];
-#endif
-
-#if defined(USE_ASH)
-extern const char kChromeUITransparencyURL[];
 #endif
 
 #if defined(FILE_MANAGER_EXTENSION)
@@ -188,6 +185,7 @@ extern const char kChromeUINewTabHost[];
 extern const char kChromeUIOmniboxHost[];
 extern const char kChromeUIPerformanceMonitorHost[];
 extern const char kChromeUIPluginsHost[];
+extern const char kChromeUIComponentsHost[];
 extern const char kChromeUIPolicyHost[];
 extern const char kChromeUIProfileSigninConfirmationHost[];
 extern const char kChromeUIUserManagerHost[];
@@ -266,10 +264,6 @@ extern const char kChromeUIWrenchMenu[];
 extern const char kEULAPathFormat[];
 extern const char kOemEulaURLPath[];
 extern const char kOnlineEulaURLPath[];
-#endif
-
-#if defined(USE_ASH)
-extern const char kChromeUITransparencyHost[];
 #endif
 
 #if defined(FILE_MANAGER_EXTENSION)

@@ -18,17 +18,10 @@ cycling all pages.
 import os
 import sys
 
-from metrics import histogram
+from metrics import io
 from metrics import memory
 from telemetry.core import util
 from telemetry.page import page_measurement
-
-
-MEMORY_HISTOGRAMS = [
-    {'name': 'V8.MemoryExternalFragmentationTotal', 'units': 'percent'},
-    {'name': 'V8.MemoryHeapSampleTotalCommitted', 'units': 'kb'},
-    {'name': 'V8.MemoryHeapSampleTotalUsed', 'units': 'kb'}]
-
 
 class PageCycler(page_measurement.PageMeasurement):
   def __init__(self, *args, **kwargs):
@@ -39,7 +32,6 @@ class PageCycler(page_measurement.PageMeasurement):
       self._page_cycler_js = f.read()
 
     self._memory_metric = None
-    self._histograms = None
 
   def AddCommandLineOptions(self, parser):
     # The page cyclers should default to 10 iterations. In order to change the
@@ -53,10 +45,6 @@ class PageCycler(page_measurement.PageMeasurement):
   def DidStartBrowser(self, browser):
     """Initialize metrics once right after the browser has been launched."""
     self._memory_metric = memory.MemoryMetric(browser)
-    self._memory_metric.Start()
-    self._histograms = [histogram.HistogramMetric(
-                           h, histogram.RENDERER_HISTOGRAM)
-                       for h in MEMORY_HISTOGRAMS]
 
   def DidStartHTTPServer(self, tab):
     # Avoid paying for a cross-renderer navigation on the first page on legacy
@@ -67,66 +55,30 @@ class PageCycler(page_measurement.PageMeasurement):
     page.script_to_evaluate_on_commit = self._page_cycler_js
 
   def DidNavigateToPage(self, page, tab):
-    for h in self._histograms:
-      h.Start(page, tab)
+    self._memory_metric.Start(page, tab)
 
   def CustomizeBrowserOptions(self, options):
-    options.AppendExtraBrowserArg('--enable-stats-collection-bindings')
+    memory.MemoryMetric.CustomizeBrowserOptions(options)
+    io.IOMetric.CustomizeBrowserOptions(options)
     options.AppendExtraBrowserArg('--js-flags=--expose_gc')
-    options.AppendExtraBrowserArg('--no-sandbox')
-
-    # Old commandline flags used for reference builds.
-    options.AppendExtraBrowserArg('--dom-automation')
 
     # Temporarily disable typical_25 page set on mac.
     if sys.platform == 'darwin' and sys.argv[-1].endswith('/typical_25.json'):
       print 'typical_25 is currently disabled on mac. Skipping test.'
       sys.exit(0)
 
-  def MeasureIO(self, tab, results):
-    io_stats = tab.browser.io_stats
-    if not io_stats['Browser']:
-      return
-
-    def AddSummariesForProcessType(process_type_io, process_type_trace):
-      if 'ReadOperationCount' in io_stats[process_type_io]:
-        results.AddSummary('read_operations_' + process_type_trace, '',
-                           io_stats[process_type_io]
-                           ['ReadOperationCount'],
-                           data_type='unimportant')
-      if 'WriteOperationCount' in io_stats[process_type_io]:
-        results.AddSummary('write_operations_' + process_type_trace, '',
-                           io_stats[process_type_io]
-                           ['WriteOperationCount'],
-                           data_type='unimportant')
-      if 'ReadTransferCount' in io_stats[process_type_io]:
-        results.AddSummary('read_bytes_' + process_type_trace, 'kb',
-                           io_stats[process_type_io]
-                           ['ReadTransferCount'] / 1024,
-                           data_type='unimportant')
-      if 'WriteTransferCount' in io_stats[process_type_io]:
-        results.AddSummary('write_bytes_' + process_type_trace, 'kb',
-                           io_stats[process_type_io]
-                           ['WriteTransferCount'] / 1024,
-                           data_type='unimportant')
-    AddSummariesForProcessType('Browser', 'browser')
-    AddSummariesForProcessType('Renderer', 'renderer')
-    AddSummariesForProcessType('Gpu', 'gpu')
-
   def MeasurePage(self, page, tab, results):
     def _IsDone():
       return bool(tab.EvaluateJavaScript('__pc_load_time'))
     util.WaitFor(_IsDone, 60)
-
-    for h in self._histograms:
-      h.GetValue(page, tab, results)
-
     results.Add('page_load_time', 'ms',
                 int(float(tab.EvaluateJavaScript('__pc_load_time'))),
                 chart_name='times')
 
-  def DidRunTest(self, tab, results):
-    self._memory_metric.Stop()
+    self._memory_metric.Stop(page, tab)
     self._memory_metric.AddResults(tab, results)
-    self.MeasureIO(tab, results)
+
+  def DidRunTest(self, tab, results):
+    self._memory_metric.AddSummaryResults(results)
+    io.IOMetric().AddSummaryResults(tab, results)
 

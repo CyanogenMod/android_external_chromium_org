@@ -15,6 +15,7 @@
 #include "content/browser/browser_plugin/browser_plugin_guest_manager.h"
 #include "content/browser/browser_plugin/browser_plugin_host_factory.h"
 #include "content/browser/browser_thread_impl.h"
+#include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
@@ -42,6 +43,7 @@
 #include "content/public/common/drop_data.h"
 #include "content/public/common/media_stream_request.h"
 #include "content/public/common/result_codes.h"
+#include "content/public/common/url_utils.h"
 #include "net/url_request/url_request.h"
 #include "third_party/WebKit/public/web/WebCursorInfo.h"
 #include "ui/base/keycodes/keyboard_codes.h"
@@ -127,7 +129,7 @@ class BrowserPluginGuest::GeolocationRequest : public PermissionRequest {
               // in the fact whether the embedder/app has geolocation
               // permission. Therefore we use an invalid |bridge_id|.
               -1 /* bridge_id */,
-              web_contents->GetURL(),
+              web_contents->GetLastCommittedURL(),
               geolocation_callback);
           return;
         }
@@ -347,7 +349,9 @@ BrowserPluginGuest::BrowserPluginGuest(
       pending_lock_request_(false),
       embedder_visible_(true),
       next_permission_request_id_(browser_plugin::kInvalidPermissionRequestID),
-      has_render_view_(has_render_view) {
+      has_render_view_(has_render_view),
+      last_seen_auto_size_enabled_(false),
+      is_in_destruction_(false) {
   DCHECK(web_contents);
   web_contents->SetDelegate(this);
   if (opener)
@@ -421,6 +425,7 @@ int BrowserPluginGuest::RequestPermission(
 }
 
 void BrowserPluginGuest::Destroy() {
+  is_in_destruction_ = true;
   if (!attached() && opener())
     opener()->pending_new_windows_.erase(this);
   DestroyUnattachedWindows();
@@ -541,6 +546,18 @@ void BrowserPluginGuest::Initialize(
         GetWebContents()->GetRenderViewHost());
     guest_rvh->SetInputMethodActive(true);
   }
+
+  // Inform the embedder of the guest's information.
+  // We pull the partition information from the site's URL, which is of the form
+  // guest://site/{persist}?{partition_name}.
+  const GURL& site_url = GetWebContents()->GetSiteInstance()->GetSiteURL();
+  BrowserPluginMsg_Attach_ACK_Params ack_params;
+  ack_params.storage_partition_id = site_url.query();
+  ack_params.persist_storage =
+      site_url.path().find("persist") != std::string::npos;
+  ack_params.name = name_;
+  SendMessageToEmbedder(
+      new BrowserPluginMsg_Attach_ACK(instance_id_, ack_params));
 }
 
 BrowserPluginGuest::~BrowserPluginGuest() {
@@ -764,6 +781,10 @@ WebContentsImpl* BrowserPluginGuest::GetWebContents() {
 
 base::SharedMemory* BrowserPluginGuest::GetDamageBufferFromEmbedder(
     const BrowserPluginHostMsg_ResizeGuest_Params& params) {
+  if (!attached()) {
+    LOG(WARNING) << "Attempting to map a damage buffer prior to attachment.";
+    return NULL;
+  }
 #if defined(OS_WIN)
   base::ProcessHandle handle =
       embedder_web_contents_->GetRenderProcessHost()->GetHandle();
@@ -1123,18 +1144,6 @@ void BrowserPluginGuest::Attach(
 
   Initialize(embedder_web_contents, params);
 
-  // Inform the embedder of the guest's information.
-  // We pull the partition information from the site's URL, which is of the form
-  // guest://site/{persist}?{partition_name}.
-  const GURL& site_url = GetWebContents()->GetSiteInstance()->GetSiteURL();
-  BrowserPluginMsg_Attach_ACK_Params ack_params;
-  ack_params.storage_partition_id = site_url.query();
-  ack_params.persist_storage =
-      site_url.path().find("persist") != std::string::npos;
-  ack_params.name = name_;
-  SendMessageToEmbedder(
-      new BrowserPluginMsg_Attach_ACK(instance_id_, ack_params));
-
   SendQueuedMessages();
 
   RecordAction(UserMetricsAction("BrowserPlugin.Guest.Attached"));
@@ -1259,7 +1268,7 @@ void BrowserPluginGuest::OnLockMouse(bool user_gesture,
                    base::Value::CreateBooleanValue(last_unlocked_by_target));
   request_info.Set(browser_plugin::kURL,
                    base::Value::CreateStringValue(
-                       web_contents()->GetURL().spec()));
+                       web_contents()->GetLastCommittedURL().spec()));
 
   RequestPermission(BROWSER_PLUGIN_PERMISSION_TYPE_POINTER_LOCK,
                     new PointerLockRequest(this),
@@ -1283,6 +1292,21 @@ void BrowserPluginGuest::OnNavigateGuest(
   // should never be sent to BrowserPluginGuest (browser process).
   DCHECK(!src.empty());
   if (!src.empty()) {
+    // Do not allow navigating a guest to schemes other than known safe schemes.
+    // This will block the embedder trying to load unwanted schemes, e.g.
+    // chrome://settings.
+    if (!ChildProcessSecurityPolicyImpl::GetInstance()->IsWebSafeScheme(
+            url.scheme()) &&
+        !ChildProcessSecurityPolicyImpl::GetInstance()->IsPseudoScheme(
+            url.scheme())) {
+      if (delegate_) {
+        std::string error_type;
+        RemoveChars(net::ErrorToString(net::ERR_ABORTED), "net::", &error_type);
+        delegate_->LoadAbort(true /* is_top_level */, url, error_type);
+      }
+      return;
+    }
+
     // As guests do not swap processes on navigation, only navigations to
     // normal web URLs are supported.  No protocol handlers are installed for
     // other schemes (e.g., WebUI or extensions), and no permissions or bindings
@@ -1315,6 +1339,13 @@ void BrowserPluginGuest::OnResizeGuest(
       guest_device_scale_factor_ = params.scale_factor;
       render_widget_host->NotifyScreenInfoChanged();
     }
+  }
+  // When autosize is turned off and as a result there is a layout change, we
+  // send a sizechanged event.
+  if (!auto_size_enabled_ && last_seen_auto_size_enabled_ &&
+      !params.view_rect.size().IsEmpty() && delegate_) {
+    delegate_->SizeChanged(last_seen_view_size_, params.view_rect.size());
+    last_seen_auto_size_enabled_ = false;
   }
   // Invalid damage buffer means we are in HW compositing mode,
   // so just resize the WebContents and repaint if needed.
@@ -1577,6 +1608,16 @@ void BrowserPluginGuest::OnUpdateRect(
   relay_params.is_resize_ack = ViewHostMsg_UpdateRect_Flags::is_resize_ack(
       params.flags);
   relay_params.needs_ack = params.needs_ack;
+
+  bool size_changed = last_seen_view_size_ != params.view_size;
+  gfx::Size old_size = last_seen_view_size_;
+  last_seen_view_size_ = params.view_size;
+
+  if ((auto_size_enabled_ || last_seen_auto_size_enabled_) &&
+      size_changed && delegate_) {
+    delegate_->SizeChanged(old_size, last_seen_view_size_);
+  }
+  last_seen_auto_size_enabled_ = auto_size_enabled_;
 
   // HW accelerated case, acknowledge resize only
   if (!params.needs_ack || !damage_buffer_) {

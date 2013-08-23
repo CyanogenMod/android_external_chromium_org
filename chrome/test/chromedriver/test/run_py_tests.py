@@ -35,6 +35,15 @@ if util.IsLinux():
   from pylib import valgrind_tools
 
 
+_NEGATIVE_FILTER = {}
+_NEGATIVE_FILTER['HEAD'] = [
+    # https://code.google.com/p/chromedriver/issues/detail?id=213
+    'ChromeDriverTest.testClickElementInSubFrame',
+    # This test is flaky since it uses setTimeout.
+    # Re-enable once crbug.com/177511 is fixed and we can remove setTimeout.
+    'ChromeDriverTest.testAlert',
+]
+
 _DESKTOP_OS_SPECIFIC_FILTER = []
 if util.IsWindows():
   _DESKTOP_OS_SPECIFIC_FILTER = [
@@ -60,14 +69,12 @@ elif util.IsMac():
 
 _DESKTOP_NEGATIVE_FILTER = {}
 _DESKTOP_NEGATIVE_FILTER['HEAD'] = (
+    _NEGATIVE_FILTER['HEAD'] +
     _DESKTOP_OS_SPECIFIC_FILTER + [
-        # https://code.google.com/p/chromedriver/issues/detail?id=213
-        'ChromeDriverTest.testClickElementInSubFrame',
-        # This test is flaky since it uses setTimeout.
-        # Re-enable once crbug.com/177511 is fixed and we can remove setTimeout.
-        'ChromeDriverTest.testAlert',
-        # Desktop doesn't support TAP.
+        # Desktop doesn't support touch (without --touch-events).
         'ChromeDriverTest.testSingleTapElement',
+        'ChromeDriverTest.testTouchDownUpElement',
+        'ChromeDriverTest.testTouchMovedElement',
     ]
 )
 
@@ -80,15 +87,14 @@ def _GetDesktopNegativeFilter(version_name):
 
 _ANDROID_NEGATIVE_FILTER = {}
 _ANDROID_NEGATIVE_FILTER['com.google.android.apps.chrome'] = (
-    _DESKTOP_NEGATIVE_FILTER['HEAD'] + [
+    _NEGATIVE_FILTER['HEAD'] + [
         # Android doesn't support switches and extensions.
         'ChromeSwitchesCapabilityTest.*',
         'ChromeExtensionsCapabilityTest.*',
-        # https://code.google.com/p/chromedriver/issues/detail?id=262
-        'ChromeDriverTest.testCloseWindow',
-        'ChromeDriverTest.testGetWindowHandles',
-        'ChromeDriverTest.testSwitchToWindow',
+        # https://code.google.com/p/chromedriver/issues/detail?id=459
         'ChromeDriverTest.testShouldHandleNewWindowLoadingProperly',
+        # https://crbug.com/274650
+        'ChromeDriverTest.testCloseWindow',
         # https://code.google.com/p/chromedriver/issues/detail?id=259
         'ChromeDriverTest.testSendKeysToElement',
         # https://code.google.com/p/chromedriver/issues/detail?id=270
@@ -104,8 +110,21 @@ _ANDROID_NEGATIVE_FILTER['com.google.android.apps.chrome'] = (
         'PerfTest.testColdExecuteScript',
     ]
 )
+_ANDROID_NEGATIVE_FILTER['com.android.chrome'] = (
+    _ANDROID_NEGATIVE_FILTER['com.google.android.apps.chrome'] + [
+        # Touch support was added to devtools in Chrome v30.
+        'ChromeDriverTest.testTouchDownUpElement',
+        'ChromeDriverTest.testTouchMovedElement',
+    ]
+)
+_ANDROID_NEGATIVE_FILTER['com.chrome.beta'] = (
+    _ANDROID_NEGATIVE_FILTER['com.google.android.apps.chrome'])
 _ANDROID_NEGATIVE_FILTER['org.chromium.chrome.testshell'] = (
-    _ANDROID_NEGATIVE_FILTER['com.google.android.apps.chrome'] + []
+    _ANDROID_NEGATIVE_FILTER['com.google.android.apps.chrome'] + [
+        # ChromiumTestShell doesn't support multiple tabs.
+        'ChromeDriverTest.testGetWindowHandles',
+        'ChromeDriverTest.testSwitchToWindow',
+    ]
 )
 
 
@@ -353,7 +372,6 @@ class ChromeDriverTest(ChromeDriverBaseTest):
         'document.body.innerHTML = "<div>old</div>";'
         'var div = document.getElementsByTagName("div")[0];'
         'div.addEventListener("click", function() {'
-        '  var div = document.getElementsByTagName("div")[0];'
         '  div.innerHTML="new<br>";'
         '});'
         'return div;')
@@ -364,12 +382,38 @@ class ChromeDriverTest(ChromeDriverBaseTest):
     div = self._driver.ExecuteScript(
         'document.body.innerHTML = "<div>old</div>";'
         'var div = document.getElementsByTagName("div")[0];'
-        'div.addEventListener("click", function() {'
-        '  var div = document.getElementsByTagName("div")[0];'
+        'div.addEventListener("touchend", function() {'
         '  div.innerHTML="new<br>";'
         '});'
         'return div;')
     div.SingleTap()
+    self.assertEquals(1, len(self._driver.FindElements('tag name', 'br')))
+
+  def testTouchDownUpElement(self):
+    div = self._driver.ExecuteScript(
+        'document.body.innerHTML = "<div>old</div>";'
+        'var div = document.getElementsByTagName("div")[0];'
+        'div.addEventListener("touchend", function() {'
+        '  div.innerHTML="new<br>";'
+        '});'
+        'return div;')
+    loc = div.GetLocation()
+    self._driver.TouchDown(loc['x'], loc['y'])
+    self._driver.TouchUp(loc['x'], loc['y'])
+    self.assertEquals(1, len(self._driver.FindElements('tag name', 'br')))
+
+  def testTouchMovedElement(self):
+    div = self._driver.ExecuteScript(
+        'document.body.innerHTML = "<div>old</div>";'
+        'var div = document.getElementsByTagName("div")[0];'
+        'div.addEventListener("touchmove", function() {'
+        '  div.innerHTML="new<br>";'
+        '});'
+        'return div;')
+    loc = div.GetLocation()
+    self._driver.TouchDown(loc['x'], loc['y'])
+    self._driver.TouchMove(loc['x'] + 1, loc['y'] + 1)
+    self._driver.TouchUp(loc['x'] + 1, loc['y'] + 1)
     self.assertEquals(1, len(self._driver.FindElements('tag name', 'br')))
 
   def testClickElementInSubFrame(self):
@@ -404,7 +448,7 @@ class ChromeDriverTest(ChromeDriverBaseTest):
     self.assertEquals('0123456789+-*/ Hi, there!', value)
 
   def testGetCurrentUrl(self):
-    self.assertTrue('data:' in self._driver.GetCurrentUrl())
+    self.assertTrue('about:blank' in self._driver.GetCurrentUrl())
 
   def testGoBackAndGoForward(self):
     self._driver.Load(self.GetHttpUrlForFile('/chromedriver/empty.html'))

@@ -13,8 +13,11 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop/message_loop.h"
+#include "chrome/browser/chromeos/extensions/file_manager/app_id.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_browser_private_api.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
+#include "chrome/browser/chromeos/extensions/file_manager/fileapi_util.h"
+#include "chrome/browser/chromeos/extensions/file_manager/url_util.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -332,11 +335,12 @@ void SelectFileDialogExtension::SelectFileImpl(
   // an invalid temporal cache file path may passed as |default_dialog_path|
   // (crbug.com/178013 #9-#11). In such a case, we use the last selected
   // directory as a workaround. Real fix is tracked at crbug.com/110119.
+  using file_manager::kFileManagerAppId;
   if (default_dialog_path.IsAbsolute() &&
-      (file_manager::util::ConvertFileToRelativeFileSystemPath(
-           profile_, kFileBrowserDomain, default_dialog_path, &virtual_path) ||
-       file_manager::util::ConvertFileToRelativeFileSystemPath(
-           profile_, kFileBrowserDomain, fallback_path, &virtual_path))) {
+      (file_manager::util::ConvertAbsoluteFilePathToRelativeFileSystemPath(
+           profile_, kFileManagerAppId, default_dialog_path, &virtual_path) ||
+       file_manager::util::ConvertAbsoluteFilePathToRelativeFileSystemPath(
+           profile_, kFileManagerAppId, fallback_path, &virtual_path))) {
     virtual_path = base::FilePath("/").Append(virtual_path);
   } else {
     // If the path was relative, or failed to convert, just use the base name,
@@ -346,11 +350,12 @@ void SelectFileDialogExtension::SelectFileImpl(
   has_multiple_file_type_choices_ =
       file_types ? file_types->extensions.size() > 1 : true;
 
-  GURL file_browser_url = file_manager::util::GetFileBrowserUrlWithParams(
-      type, title, virtual_path, file_types, file_type_index,
-      default_extension);
+  GURL file_manager_url =
+      file_manager::util::GetFileManagerMainPageUrlWithParams(
+          type, title, virtual_path, file_types, file_type_index,
+          default_extension);
 
-  ExtensionDialog* dialog = ExtensionDialog::Show(file_browser_url,
+  ExtensionDialog* dialog = ExtensionDialog::Show(file_manager_url,
       base_window, profile_, web_contents,
       kFileManagerWidth, kFileManagerHeight,
       kFileManagerWidth,

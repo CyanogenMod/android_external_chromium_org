@@ -16,7 +16,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
-#include "content/shell/shell.h"
+#include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
 #include "ui/aura/root_window.h"
@@ -333,8 +333,15 @@ class TouchEditableImplAuraTest : public ContentBrowserTest {
   DISALLOW_COPY_AND_ASSIGN(TouchEditableImplAuraTest);
 };
 
+#if defined(OS_CHROMEOS)
+#define MAYBE_TouchSelectionOriginatingFromWebpageTest \
+    DISABLED_TouchSelectionOriginatingFromWebpageTest
+#else
+#define MAYBE_TouchSelectionOriginatingFromWebpageTest \
+    TouchSelectionOriginatingFromWebpageTest
+#endif
 IN_PROC_BROWSER_TEST_F(TouchEditableImplAuraTest,
-                       TouchSelectionOriginatingFromWebpageTest) {
+                       MAYBE_TouchSelectionOriginatingFromWebpageTest) {
   TestTouchSelectionOriginatingFromWebpage();
 }
 

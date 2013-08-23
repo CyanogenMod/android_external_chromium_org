@@ -77,7 +77,6 @@
 #include "content/renderer/memory_benchmarking_extension.h"
 #include "content/renderer/p2p/socket_dispatcher.h"
 #include "content/renderer/render_process_impl.h"
-#include "content/renderer/render_process_visibility_manager.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
 #include "content/renderer/skia_benchmarking_extension.h"
@@ -87,9 +86,10 @@
 #include "ipc/ipc_platform_file.h"
 #include "media/base/audio_hardware_config.h"
 #include "media/base/media.h"
-#include "media/filters/gpu_video_decoder_factories.h"
+#include "media/filters/gpu_video_accelerator_factories.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
+#include "third_party/skia/include/core/SkGraphics.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/web/WebColorName.h"
 #include "third_party/WebKit/public/web/WebDatabase.h"
@@ -622,28 +622,24 @@ void RenderThreadImpl::SetResourceDispatcherDelegate(
 }
 
 void RenderThreadImpl::WidgetHidden() {
-  DCHECK(hidden_widget_count_ < widget_count_);
+  DCHECK_LT(hidden_widget_count_, widget_count_);
   hidden_widget_count_++;
 
-  RenderProcessVisibilityManager* manager =
-      RenderProcessVisibilityManager::GetInstance();
-  manager->WidgetVisibilityChanged(false);
-
-  if (!GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden()) {
-    return;
+  if (widget_count_ && hidden_widget_count_ == widget_count_) {
+#if !defined(SYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE)
+    // TODO(vollick): Remove this this heavy-handed approach once we're polling
+    // the real system memory pressure.
+    base::MemoryPressureListener::NotifyMemoryPressure(
+        base::MemoryPressureListener::MEMORY_PRESSURE_MODERATE);
+#endif
+    if (GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden())
+      ScheduleIdleHandler(kInitialIdleHandlerDelayMs);
   }
-
-  if (widget_count_ && hidden_widget_count_ == widget_count_)
-    ScheduleIdleHandler(kInitialIdleHandlerDelayMs);
 }
 
 void RenderThreadImpl::WidgetRestored() {
   DCHECK_GT(hidden_widget_count_, 0);
   hidden_widget_count_--;
-
-  RenderProcessVisibilityManager* manager =
-      RenderProcessVisibilityManager::GetInstance();
-  manager->WidgetVisibilityChanged(true);
 
   if (!GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden()) {
     return;
@@ -887,22 +883,20 @@ void RenderThreadImpl::PostponeIdleNotification() {
   idle_notifications_to_skip_ = 2;
 }
 
-scoped_refptr<RendererGpuVideoDecoderFactories>
+scoped_refptr<RendererGpuVideoAcceleratorFactories>
 RenderThreadImpl::GetGpuFactories(
     const scoped_refptr<base::MessageLoopProxy>& factories_loop) {
   DCHECK(IsMainThread());
 
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-  scoped_refptr<RendererGpuVideoDecoderFactories> gpu_factories;
+  scoped_refptr<RendererGpuVideoAcceleratorFactories> gpu_factories;
   WebGraphicsContext3DCommandBufferImpl* context3d = NULL;
   if (!cmd_line->HasSwitch(switches::kDisableAcceleratedVideoDecode))
     context3d = GetGpuVDAContext3D();
-  if (context3d) {
-    GpuChannelHost* gpu_channel_host = GetGpuChannel();
-    if (gpu_channel_host) {
-      gpu_factories = new RendererGpuVideoDecoderFactories(
-          gpu_channel_host, factories_loop, context3d);
-    }
+  GpuChannelHost* gpu_channel_host = GetGpuChannel();
+  if (gpu_channel_host) {
+    gpu_factories = new RendererGpuVideoAcceleratorFactories(
+        gpu_channel_host, factories_loop, context3d);
   }
   return gpu_factories;
 }
@@ -964,9 +958,7 @@ RenderThreadImpl::OffscreenContextProviderForMainThread() {
   if (!shared_contexts_main_thread_.get() ||
       shared_contexts_main_thread_->DestroyedOnMainThread()) {
     shared_contexts_main_thread_ =
-        ContextProviderCommandBuffer::Create(
-            base::Bind(&RenderThreadImpl::CreateOffscreenContext3d,
-                       base::Unretained(this)));
+        ContextProviderCommandBuffer::Create(CreateOffscreenContext3d());
     if (shared_contexts_main_thread_.get() &&
         !shared_contexts_main_thread_->BindToCurrentThread())
       shared_contexts_main_thread_ = NULL;
@@ -988,9 +980,7 @@ RenderThreadImpl::OffscreenContextProviderForCompositorThread() {
   if (!shared_contexts_compositor_thread_.get() ||
       shared_contexts_compositor_thread_->DestroyedOnMainThread()) {
     shared_contexts_compositor_thread_ =
-        ContextProviderCommandBuffer::Create(
-            base::Bind(&RenderThreadImpl::CreateOffscreenContext3d,
-                       base::Unretained(this)));
+        ContextProviderCommandBuffer::Create(CreateOffscreenContext3d());
   }
   return shared_contexts_compositor_thread_;
 }
@@ -1148,6 +1138,7 @@ void RenderThreadImpl::OnCreateNewView(const ViewMsg_New_Params& params) {
       params.frame_name,
       false,
       params.swapped_out,
+      params.hidden,
       params.next_page_id,
       params.screen_info,
       params.accessibility_mode,
@@ -1277,6 +1268,10 @@ void RenderThreadImpl::OnMemoryPressure(
     v8::V8::LowMemoryNotification();
     // Clear the image cache.
     WebKit::WebImageCache::clear();
+    // Purge Skia font cache, by setting it to 0 and then again to the previous
+    // limit.
+    size_t font_cache_limit = SkGraphics::SetFontCacheLimit(0);
+    SkGraphics::SetFontCacheLimit(font_cache_limit);
   } else {
     // Otherwise trigger a couple of v8 GCs using IdleNotification.
     if (!v8::V8::IdleNotification())

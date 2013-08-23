@@ -25,7 +25,7 @@
 #include "ui/base/l10n/l10n_util.h"
 
 namespace errors = extension_manifest_errors;
-namespace keys = extension_manifest_keys;
+namespace keys = extensions::manifest_keys;
 
 static std::string& GetProcessLocale() {
   CR_DEFINE_STATIC_LOCAL(std::string, locale, ());
@@ -166,6 +166,18 @@ bool LocalizeManifest(const extensions::MessageBundle& messages,
   // Initialize app.launch.web_url.
   if (!LocalizeManifestValue(keys::kLaunchWebURL, messages, manifest, error))
     return false;
+
+  // Initialize description of commmands.
+  base::DictionaryValue* commands_handler = NULL;
+  if (manifest->GetDictionary(keys::kCommands, &commands_handler)) {
+    for (DictionaryValue::Iterator iter(*commands_handler); !iter.IsAtEnd();
+         iter.Advance()) {
+      key.assign(base::StringPrintf("commands.%s.description",
+                                    iter.key().c_str()));
+      if (!LocalizeManifestValue(key, messages, manifest, error))
+        return false;
+    }
+  }
 
   // Add current locale key to the manifest, so we can overwrite prefs
   // with new manifest when chrome locale changes.

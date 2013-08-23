@@ -38,6 +38,7 @@
 #import "chrome/browser/ui/cocoa/location_bar/ev_bubble_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/keyword_hint_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_icon_decoration.h"
+#import "chrome/browser/ui/cocoa/location_bar/mic_search_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/page_action_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/selected_keyword_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/star_decoration.h"
@@ -81,11 +82,9 @@ const static int kFirstRunBubbleYOffset = 1;
 LocationBarViewMac::LocationBarViewMac(
     AutocompleteTextField* field,
     CommandUpdater* command_updater,
-    ToolbarModel* toolbar_model,
     Profile* profile,
     Browser* browser)
-    : omnibox_view_(new OmniboxViewMac(this, toolbar_model, profile,
-                                       command_updater, field)),
+    : omnibox_view_(new OmniboxViewMac(this, profile, command_updater, field)),
       command_updater_(command_updater),
       field_(field),
       disposition_(CURRENT_TAB),
@@ -96,9 +95,9 @@ LocationBarViewMac::LocationBarViewMac(
       star_decoration_(new StarDecoration(command_updater)),
       zoom_decoration_(new ZoomDecoration(this)),
       keyword_hint_decoration_(new KeywordHintDecoration()),
+      mic_search_decoration_(new MicSearchDecoration(command_updater)),
       profile_(profile),
       browser_(browser),
-      toolbar_model_(toolbar_model),
       transition_(content::PageTransitionFromInt(
           content::PAGE_TRANSITION_TYPED |
           content::PAGE_TRANSITION_FROM_ADDRESS_BAR)),
@@ -123,11 +122,15 @@ LocationBarViewMac::LocationBarViewMac(
       profile_->GetPrefs(),
       base::Bind(&LocationBarViewMac::OnEditBookmarksEnabledChanged,
                  base::Unretained(this)));
+
+  browser_->search_model()->AddObserver(this);
 }
 
 LocationBarViewMac::~LocationBarViewMac() {
   // Disconnect from cell in case it outlives us.
   [[field_ cell] clearDecorations];
+
+  browser_->search_model()->RemoveObserver(this);
 }
 
 void LocationBarViewMac::ShowFirstRunBubble() {
@@ -184,10 +187,8 @@ void LocationBarViewMac::FocusSearch() {
 }
 
 void LocationBarViewMac::UpdateContentSettingsIcons() {
-  if (RefreshContentSettingsDecorations()) {
-    [field_ updateMouseTracking];
-    [field_ setNeedsDisplay:YES];
-  }
+  if (RefreshContentSettingsDecorations())
+    OnDecorationsChanged();
 }
 
 void LocationBarViewMac::UpdatePageActions() {
@@ -228,8 +229,7 @@ void LocationBarViewMac::SaveStateToContents(WebContents* contents) {
   omnibox_view_->SaveStateToTab(contents);
 }
 
-void LocationBarViewMac::Update(const WebContents* contents,
-                                bool should_restore_state) {
+void LocationBarViewMac::Update(const WebContents* contents) {
   command_updater_->UpdateCommandEnabled(IDC_BOOKMARK_PAGE, IsStarEnabled());
   command_updater_->UpdateCommandEnabled(IDC_BOOKMARK_PAGE_FROM_STAR,
                                          IsStarEnabled());
@@ -237,8 +237,8 @@ void LocationBarViewMac::Update(const WebContents* contents,
   UpdateZoomDecoration();
   RefreshPageActionDecorations();
   RefreshContentSettingsDecorations();
-  // OmniboxView restores state if the tab is non-NULL.
-  omnibox_view_->Update(should_restore_state ? contents : NULL);
+  UpdateMicSearchDecorationVisibility();
+  omnibox_view_->Update(contents);
   OnChanged();
 }
 
@@ -297,8 +297,8 @@ void LocationBarViewMac::OnSelectionBoundsChanged() {
 }
 
 void LocationBarViewMac::OnInputInProgress(bool in_progress) {
-  toolbar_model_->SetInputInProgress(in_progress);
-  Update(NULL, false);
+  GetToolbarModel()->set_input_in_progress(in_progress);
+  Update(NULL);
 }
 
 void LocationBarViewMac::OnSetFocus() {
@@ -353,8 +353,16 @@ int LocationBarViewMac::PageActionVisibleCount() {
   return result;
 }
 
-WebContents* LocationBarViewMac::GetWebContents() const {
+WebContents* LocationBarViewMac::GetWebContents() {
   return browser_->tab_strip_model()->GetActiveWebContents();
+}
+
+ToolbarModel* LocationBarViewMac::GetToolbarModel() {
+  return browser_->toolbar_model();
+}
+
+const ToolbarModel* LocationBarViewMac::GetToolbarModel() const {
+  return browser_->toolbar_model();
 }
 
 PageActionDecoration* LocationBarViewMac::GetPageActionDecoration(
@@ -385,7 +393,7 @@ void LocationBarViewMac::SetPreviewEnabledPageAction(
     return;
 
   decoration->set_preview_enabled(preview_enabled);
-  decoration->UpdateVisibility(contents, toolbar_model_->GetURL());
+  decoration->UpdateVisibility(contents, GetToolbarModel()->GetURL());
 }
 
 NSRect LocationBarViewMac::GetPageActionFrame(ExtensionAction* page_action) {
@@ -494,7 +502,7 @@ void LocationBarViewMac::ZoomChangedForActiveTab(bool can_show_bubble) {
   OnDecorationsChanged();
 
   if (can_show_bubble && zoom_decoration_->IsVisible())
-    zoom_decoration_->ToggleBubble(YES);
+    zoom_decoration_->ShowBubble(YES);
 }
 
 NSPoint LocationBarViewMac::GetBookmarkBubblePoint() const {
@@ -561,6 +569,12 @@ void LocationBarViewMac::Observe(int type,
   }
 }
 
+void LocationBarViewMac::ModelChanged(const SearchModel::State& old_state,
+                                      const SearchModel::State& new_state) {
+  if (UpdateMicSearchDecorationVisibility())
+    Layout();
+}
+
 void LocationBarViewMac::OnEditBookmarksEnabledChanged() {
   UpdateStarDecorationVisibility();
   OnChanged();
@@ -572,7 +586,7 @@ void LocationBarViewMac::PostNotification(NSString* notification) {
 }
 
 bool LocationBarViewMac::RefreshContentSettingsDecorations() {
-  const bool input_in_progress = toolbar_model_->GetInputInProgress();
+  const bool input_in_progress = GetToolbarModel()->input_in_progress();
   WebContents* web_contents = input_in_progress ?
       NULL : browser_->tab_strip_model()->GetActiveWebContents();
   bool icons_updated = false;
@@ -617,11 +631,10 @@ void LocationBarViewMac::RefreshPageActionDecorations() {
     }
   }
 
-  GURL url = toolbar_model_->GetURL();
+  GURL url = GetToolbarModel()->GetURL();
   for (size_t i = 0; i < page_action_decorations_.size(); ++i) {
     page_action_decorations_[i]->UpdateVisibility(
-        toolbar_model_->GetInputInProgress() ? NULL : web_contents,
-        url);
+        GetToolbarModel()->input_in_progress() ? NULL : web_contents, url);
   }
 }
 
@@ -650,6 +663,7 @@ void LocationBarViewMac::Layout() {
   }
 
   [cell addRightDecoration:keyword_hint_decoration_.get()];
+  [cell addRightDecoration:mic_search_decoration_.get()];
 
   // By default only the location icon is visible.
   location_icon_decoration_->SetVisible(true);
@@ -673,13 +687,13 @@ void LocationBarViewMac::Layout() {
     selected_keyword_decoration_->SetVisible(true);
     selected_keyword_decoration_->SetKeyword(short_name, is_extension_keyword);
     selected_keyword_decoration_->SetImage(GetKeywordImage(keyword));
-  } else if (toolbar_model_->GetSecurityLevel(false) ==
+  } else if (GetToolbarModel()->GetSecurityLevel(false) ==
              ToolbarModel::EV_SECURE) {
     // Switch from location icon to show the EV bubble instead.
     location_icon_decoration_->SetVisible(false);
     ev_bubble_decoration_->SetVisible(true);
 
-    string16 label(toolbar_model_->GetEVCertName());
+    string16 label(GetToolbarModel()->GetEVCertName());
     ev_bubble_decoration_->SetFullLabel(base::SysUTF16ToNSString(label));
   } else if (!keyword.empty() && is_keyword_hint) {
     keyword_hint_decoration_->SetKeyword(short_name,
@@ -705,7 +719,7 @@ void LocationBarViewMac::RedrawDecoration(LocationBarDecoration* decoration) {
 bool LocationBarViewMac::IsStarEnabled() {
   return [field_ isEditable] &&
          browser_defaults::bookmarks_enabled &&
-         !toolbar_model_->GetInputInProgress() &&
+         !GetToolbarModel()->input_in_progress() &&
          edit_bookmarks_enabled_.GetValue();
 }
 
@@ -719,4 +733,13 @@ void LocationBarViewMac::UpdateZoomDecoration() {
 
 void LocationBarViewMac::UpdateStarDecorationVisibility() {
   star_decoration_->SetVisible(IsStarEnabled());
+}
+
+bool LocationBarViewMac::UpdateMicSearchDecorationVisibility() {
+  bool is_visible = !GetToolbarModel()->input_in_progress() &&
+                    browser_->search_model()->voice_search_supported();
+  if (mic_search_decoration_->IsVisible() == is_visible)
+    return false;
+  mic_search_decoration_->SetVisible(is_visible);
+  return true;
 }

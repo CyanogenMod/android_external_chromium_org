@@ -110,7 +110,8 @@ class CONTENT_EXPORT RenderViewHostImpl
   // |routing_id| could be a valid route id, or it could be MSG_ROUTING_NONE, in
   // which case RenderWidgetHost will create a new one.  |swapped_out| indicates
   // whether the view should initially be swapped out (e.g., for an opener
-  // frame being rendered by another process).
+  // frame being rendered by another process). |hidden| indicates whether the
+  // view is initially hidden or visible.
   //
   // The |session_storage_namespace| parameter allows multiple render views and
   // WebContentses to share the same session storage (part of the WebStorage
@@ -123,7 +124,8 @@ class CONTENT_EXPORT RenderViewHostImpl
       RenderWidgetHostDelegate* widget_delegate,
       int routing_id,
       int main_frame_routing_id,
-      bool swapped_out);
+      bool swapped_out,
+      bool hidden);
   virtual ~RenderViewHostImpl();
 
   // RenderViewHost implementation.
@@ -553,7 +555,8 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnAddMessageToConsole(int32 level,
                              const string16& message,
                              int32 line_no,
-                             const string16& source_id);
+                             const string16& source_id,
+                             const string16& stack_trace);
   void OnUpdateInspectorSetting(const std::string& key,
                                 const std::string& value);
   void OnShouldCloseACK(

@@ -12,6 +12,7 @@ include_rules = [
   "+components/browser_context_keyed_service",
   "+components/nacl/common",
   "+components/navigation_interception",
+  "+components/policy",
   "+components/user_prefs",
   "+components/visitedlink/browser",
   "+components/webdata",
@@ -48,6 +49,9 @@ include_rules = [
   "+win8/util",
   "+win8/viewer",
   "+xib_localizers", # For generated mac localization helpers
+
+  # Unsafe to use from //chrome, see http://goo.gl/QQG5wo
+  "-content/public/test/test_browser_context.h",
 
   # TODO(stuartmorgan): Remove these by refactoring necessary code out of
   # webkit/. See crbug.com/146251

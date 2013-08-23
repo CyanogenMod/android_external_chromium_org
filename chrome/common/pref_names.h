@@ -169,6 +169,7 @@ extern const char kDefaultSearchProviderSearchURL[];
 extern const char kDefaultSearchProviderSuggestURL[];
 extern const char kDefaultSearchProviderInstantURL[];
 extern const char kDefaultSearchProviderImageURL[];
+extern const char kDefaultSearchProviderNewTabURL[];
 extern const char kDefaultSearchProviderSearchURLPostParams[];
 extern const char kDefaultSearchProviderSuggestURLPostParams[];
 extern const char kDefaultSearchProviderInstantURLPostParams[];
@@ -441,6 +442,9 @@ extern const char kManagedUsers[];
 extern const char kMessageCenterDisabledExtensionIds[];
 extern const char kMessageCenterDisabledSystemComponentIds[];
 extern const char kMessageCenterEnabledSyncNotifierIds[];
+
+extern const char kExtensionsPref[];
+extern const char kExtensionsLastChromeVersion[];
 
 // Local state prefs. Please add Profile prefs above instead.
 extern const char kCertRevocationCheckingEnabled[];
@@ -933,6 +937,8 @@ extern const char kModuleConflictBubbleShown[];
 
 extern const char kDRMSalt[];
 extern const char kEnableDRM[];
+
+extern const char kWatchdogExtensionActive[];
 
 }  // namespace prefs
 

@@ -316,12 +316,7 @@ void FFmpegDemuxer::Stop(const base::Closure& callback) {
   data_source_->Stop(BindToCurrentLoop(base::Bind(
       &FFmpegDemuxer::OnDataSourceStopped, weak_this_,
       BindToCurrentLoop(callback))));
-
-  // TODO(scherkus): Reenable after figuring why Stop() gets called multiple
-  // times, see http://crbug.com/235933
-#if 0
   data_source_ = NULL;
-#endif
 }
 
 void FFmpegDemuxer::Seek(base::TimeDelta time, const PipelineStatusCB& cb) {
@@ -476,7 +471,7 @@ void FFmpegDemuxer::OnOpenContextDone(const PipelineStatusCB& status_cb,
 void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
                                          int result) {
   DCHECK(message_loop_->BelongsToCurrentThread());
-  if (!blocking_thread_.IsRunning()) {
+  if (!blocking_thread_.IsRunning() || !data_source_) {
     status_cb.Run(PIPELINE_ERROR_ABORT);
     return;
   }
@@ -595,8 +590,11 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
 
     media_log_->SetStringProperty("audio_sample_format", sample_name);
 
-    media_log_->SetStringProperty("audio_codec_name",
-                                  audio_codec->codec_name);
+    AVCodec* codec = avcodec_find_decoder(audio_codec->codec_id);
+    if (codec) {
+      media_log_->SetStringProperty("audio_codec_name", codec->name);
+    }
+
     media_log_->SetIntegerProperty("audio_sample_rate",
                                    audio_codec->sample_rate);
     media_log_->SetIntegerProperty("audio_channels_count",
@@ -611,7 +609,12 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
   if (video_stream) {
     AVCodecContext* video_codec = video_stream->codec;
     media_log_->SetBooleanProperty("found_video_stream", true);
-    media_log_->SetStringProperty("video_codec_name", video_codec->codec_name);
+
+    AVCodec* codec = avcodec_find_decoder(video_codec->codec_id);
+    if (codec) {
+      media_log_->SetStringProperty("video_codec_name", codec->name);
+    }
+
     media_log_->SetIntegerProperty("width", video_codec->width);
     media_log_->SetIntegerProperty("height", video_codec->height);
     media_log_->SetIntegerProperty("coded_width",

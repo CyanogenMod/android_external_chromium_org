@@ -66,6 +66,8 @@ class WebUIScreenLocker : public WebUILoginView,
   virtual void AnimateAuthenticationSuccess() OVERRIDE;
   virtual gfx::NativeWindow GetNativeWindow() const OVERRIDE;
   virtual content::WebUI* GetAssociatedWebUI() OVERRIDE;
+  virtual void OnLockWebUIReady() OVERRIDE;
+  virtual void OnLockBackgroundDisplayed() OVERRIDE;
 
   // LoginDisplay::Delegate: implementation
   virtual void CancelPasswordChangedFlow() OVERRIDE;
@@ -89,6 +91,7 @@ class WebUIScreenLocker : public WebUILoginView,
   virtual void ResyncUserData() OVERRIDE;
   virtual void SetDisplayEmail(const std::string& email) OVERRIDE;
   virtual void Signout() OVERRIDE;
+  virtual void LoginAsKioskApp(const std::string& app_id) OVERRIDE;
 
   // content::NotificationObserver (via WebUILoginView) implementation.
   virtual void Observe(int type,

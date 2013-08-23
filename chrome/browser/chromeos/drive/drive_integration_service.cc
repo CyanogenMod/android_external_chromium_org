@@ -16,15 +16,13 @@
 #include "chrome/browser/chromeos/drive/file_cache.h"
 #include "chrome/browser/chromeos/drive/file_system.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
-#include "chrome/browser/chromeos/drive/file_write_helper.h"
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/chromeos/drive/logging.h"
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "chrome/browser/chromeos/drive/resource_metadata_storage.h"
-#include "chrome/browser/chromeos/profiles/profile_util.h"
+#include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
-#include "chrome/browser/download/download_util.h"
 #include "chrome/browser/drive/drive_api_service.h"
 #include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/drive/drive_notification_manager.h"
@@ -48,22 +46,6 @@ using content::BrowserThread;
 
 namespace drive {
 namespace {
-
-// Returns true if Drive is enabled for the given Profile.
-bool IsDriveEnabledForProfile(Profile* profile) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  if (!chromeos::IsProfileAssociatedWithGaiaAccount(profile))
-    return false;
-
-  // Disable Drive if preference is set.  This can happen with commandline flag
-  // --disable-gdata or enterprise policy, or probably with user settings too
-  // in the future.
-  if (profile->GetPrefs()->GetBoolean(prefs::kDisableDrive))
-    return false;
-
-  return true;
-}
 
 // Returns a user agent string used for communicating with the Drive backend,
 // both WAPI and Drive API.  The user agent looks like:
@@ -145,7 +127,7 @@ DriveIntegrationService::DriveIntegrationService(
     const base::FilePath& test_cache_root,
     FileSystemInterface* test_file_system)
     : profile_(profile),
-      drive_disabled_(false),
+      is_initialized_(false),
       cache_root_directory_(!test_cache_root.empty() ?
                             test_cache_root : util::GetCacheRootPath(profile)),
       weak_ptr_factory_(this) {
@@ -204,9 +186,7 @@ DriveIntegrationService::DriveIntegrationService(
           resource_metadata_.get(),
           blocking_task_runner_.get(),
           cache_root_directory_.Append(util::kTemporaryFileDirectory)));
-  file_write_helper_.reset(new FileWriteHelper(file_system()));
-  download_handler_.reset(new DownloadHandler(file_write_helper(),
-                                              file_system()));
+  download_handler_.reset(new DownloadHandler(file_system()));
   debug_info_collector_.reset(
       new DebugInfoCollector(file_system(), cache_.get()));
 }
@@ -243,7 +223,6 @@ void DriveIntegrationService::Shutdown() {
   RemoveDriveMountPoint();
   debug_info_collector_.reset();
   download_handler_.reset();
-  file_write_helper_.reset();
   file_system_.reset();
   drive_app_registry_.reset();
   scheduler_.reset();
@@ -278,14 +257,10 @@ void DriveIntegrationService::OnPushNotificationEnabled(bool enabled) {
 bool DriveIntegrationService::IsDriveEnabled() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  if (!IsDriveEnabledForProfile(profile_))
+  if (!util::IsDriveEnabledForProfile(profile_))
     return false;
 
-  // Drive may be disabled for cache initialization failure, etc.
-  if (drive_disabled_)
-    return false;
-
-  return true;
+  return is_initialized_;
 }
 
 void DriveIntegrationService::ClearCacheAndRemountFileSystem(
@@ -365,11 +340,19 @@ void DriveIntegrationService::InitializeAfterMetadataInitialized(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   if (error != FILE_ERROR_OK) {
-    LOG(WARNING) << "Failed to initialize. Disabling Drive : "
-                 << FileErrorToString(error);
-    DisableDrive();
+    LOG(WARNING) << "Failed to initialize: " << FileErrorToString(error);
+
+    // Change the download directory to the default value if the download
+    // destination is set to under Drive mount point.
+    PrefService* pref_service = profile_->GetPrefs();
+    if (util::IsUnderDriveMountPoint(
+            pref_service->GetFilePath(prefs::kDownloadDefaultDirectory))) {
+      pref_service->SetFilePath(prefs::kDownloadDefaultDirectory,
+                                DownloadPrefs::GetDefaultDownloadDirectory());
+    }
     return;
   }
+  is_initialized_ = true;
 
   content::DownloadManager* download_manager =
       g_browser_process->download_status_updater() ?
@@ -393,20 +376,6 @@ void DriveIntegrationService::InitializeAfterMetadataInitialized(
   }
 
   AddDriveMountPoint();
-}
-
-void DriveIntegrationService::DisableDrive() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  drive_disabled_ = true;
-  // Change the download directory to the default value if the download
-  // destination is set to under Drive mount point.
-  PrefService* pref_service = profile_->GetPrefs();
-  if (util::IsUnderDriveMountPoint(
-          pref_service->GetFilePath(prefs::kDownloadDefaultDirectory))) {
-    pref_service->SetFilePath(prefs::kDownloadDefaultDirectory,
-                              download_util::GetDefaultDownloadDirectory());
-  }
 }
 
 //===================== DriveIntegrationServiceFactory =======================

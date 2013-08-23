@@ -80,6 +80,7 @@
 #include "chrome/common/extensions/value_builder.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/test/base/scoped_browser_locale.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/dom_storage_context.h"
@@ -145,7 +146,7 @@ using extensions::PermissionSet;
 using extensions::TestExtensionSystem;
 using extensions::URLPatternSet;
 
-namespace keys = extension_manifest_keys;
+namespace keys = extensions::manifest_keys;
 
 namespace {
 
@@ -826,7 +827,9 @@ class ExtensionServiceTest
         EXPECT_EQ(0u, loaded_.size()) << path.value();
       } else {
         EXPECT_EQ(1u, loaded_.size()) << path.value();
-        EXPECT_EQ(expected_extensions_count_, service_->extensions()->size()) <<
+        size_t actual_extension_count = service_->extensions()->size() +
+            service_->disabled_extensions()->size();
+        EXPECT_EQ(expected_extensions_count_, actual_extension_count) <<
             path.value();
         extension = loaded_[0].get();
         EXPECT_TRUE(service_->GetExtensionById(extension->id(), false))
@@ -1101,7 +1104,7 @@ class ExtensionServiceTest
     msg += " = ";
     msg += base::IntToString(value);
 
-    SetPref(extension_id, pref_path, Value::CreateIntegerValue(value), msg);
+    SetPref(extension_id, pref_path, new base::FundamentalValue(value), msg);
   }
 
   void SetPrefBool(const std::string& extension_id,
@@ -1112,7 +1115,7 @@ class ExtensionServiceTest
     msg += " = ";
     msg += (value ? "true" : "false");
 
-    SetPref(extension_id, pref_path, Value::CreateBooleanValue(value), msg);
+    SetPref(extension_id, pref_path, new base::FundamentalValue(value), msg);
   }
 
   void ClearPref(const std::string& extension_id,
@@ -1138,7 +1141,7 @@ class ExtensionServiceTest
     ListValue* list_value = new ListValue();
     for (std::set<std::string>::const_iterator iter = value.begin();
          iter != value.end(); ++iter)
-      list_value->Append(Value::CreateStringValue(*iter));
+      list_value->Append(new base::StringValue(*iter));
 
     SetPref(extension_id, pref_path, list_value, msg);
   }
@@ -1588,13 +1591,11 @@ TEST_F(ExtensionServiceTest, InstallExtension) {
   InstallCRX(path, INSTALL_FAILED);
   ValidatePrefKeyCount(pref_count);
 
-  // Extensions cannot have folders or files that have underscores except in
-  // certain whitelisted cases (eg _locales). This is an example of a broader
-  // class of validation that we do to the directory structure of the extension.
-  // We did not used to handle this correctly for installation.
+  // Packed extensions may have folders or files that have underscores.
+  // This will only cause a warning, rather than a fatal error.
   path = data_dir_.AppendASCII("bad_underscore.crx");
-  InstallCRX(path, INSTALL_FAILED);
-  ValidatePrefKeyCount(pref_count);
+  InstallCRX(path, INSTALL_NEW);
+  ValidatePrefKeyCount(++pref_count);
 
   // TODO(erikkay): add more tests for many of the failure cases.
   // TODO(erikkay): add tests for upgrade cases.
@@ -2103,7 +2104,7 @@ TEST_F(ExtensionServiceTest, GrantedAPIAndHostPermissions) {
 
   ListValue* api_permissions = new ListValue();
   api_permissions->Append(
-      Value::CreateStringValue("tabs"));
+      new base::StringValue("tabs"));
   SetPref(extension_id, "granted_permissions.api",
           api_permissions, "granted_permissions.api");
   SetPrefStringSet(
@@ -2346,6 +2347,7 @@ TEST_F(ExtensionServiceTest, PackExtensionOpenSSLKey) {
 
 TEST_F(ExtensionServiceTest, InstallTheme) {
   InitializeEmptyExtensionService();
+  service_->Init();
 
   // A theme.
   base::FilePath path = data_dir_.AppendASCII("theme.crx");
@@ -2387,6 +2389,8 @@ TEST_F(ExtensionServiceTest, InstallTheme) {
 TEST_F(ExtensionServiceTest, LoadLocalizedTheme) {
   // Load.
   InitializeEmptyExtensionService();
+  service_->Init();
+
   base::FilePath extension_path = data_dir_
       .AppendASCII("theme_i18n");
 
@@ -2485,8 +2489,20 @@ TEST_F(ExtensionServiceTest, UnpackedExtensionMayContainSymlinkedFiles) {
 }
 #endif
 
+TEST_F(ExtensionServiceTest, UnpackedExtensionMayNotHaveUnderscore) {
+  InitializeEmptyExtensionService();
+  base::FilePath extension_path = data_dir_
+      .AppendASCII("underscore_name");
+  extensions::UnpackedInstaller::Create(service_)->Load(extension_path);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(1u, GetErrors().size());
+  EXPECT_EQ(0u, service_->extensions()->size());
+}
+
 TEST_F(ExtensionServiceTest, InstallLocalizedTheme) {
   InitializeEmptyExtensionService();
+  service_->Init();
+
   base::FilePath theme_path = data_dir_
       .AppendASCII("theme_i18n");
 
@@ -3355,7 +3371,7 @@ TEST_F(ExtensionServiceTest, UnloadBlacklistedExtensionPolicy) {
 
   base::ListValue whitelist;
   PrefService* prefs = service_->extension_prefs()->pref_service();
-  whitelist.Append(base::Value::CreateStringValue(good_crx));
+  whitelist.Append(new base::StringValue(good_crx));
   prefs->Set(prefs::kExtensionInstallAllowList, whitelist);
 
   std::vector<std::string> blacklist;
@@ -3419,7 +3435,7 @@ TEST_F(ExtensionServiceTest, BlacklistedByPolicyWillNotInstall) {
     ListPrefUpdate update(profile_->GetPrefs(),
                           prefs::kExtensionInstallDenyList);
     ListValue* blacklist = update.Get();
-    blacklist->Append(Value::CreateStringValue("*"));
+    blacklist->Append(new base::StringValue("*"));
   }
 
   // Blacklist prevents us from installing good_crx.
@@ -3432,7 +3448,7 @@ TEST_F(ExtensionServiceTest, BlacklistedByPolicyWillNotInstall) {
     ListPrefUpdate update(profile_->GetPrefs(),
                           prefs::kExtensionInstallAllowList);
     ListValue* whitelist = update.Get();
-    whitelist->Append(Value::CreateStringValue(good_crx));
+    whitelist->Append(new base::StringValue(good_crx));
   }
 
   // Ensure we can now install good_crx.
@@ -3456,7 +3472,7 @@ TEST_F(ExtensionServiceTest, BlacklistedByPolicyRemovedIfRunning) {
     ASSERT_TRUE(blacklist != NULL);
 
     // Blacklist this extension.
-    blacklist->Append(Value::CreateStringValue(good_crx));
+    blacklist->Append(new base::StringValue(good_crx));
   }
 
   // Extension should not be running now.
@@ -3473,7 +3489,7 @@ TEST_F(ExtensionServiceTest, ComponentExtensionWhitelisted) {
     ListPrefUpdate update(profile_->GetPrefs(),
                           prefs::kExtensionInstallDenyList);
     ListValue* blacklist = update.Get();
-    blacklist->Append(Value::CreateStringValue("*"));
+    blacklist->Append(new base::StringValue("*"));
   }
 
   // Install a component extension.
@@ -3502,7 +3518,7 @@ TEST_F(ExtensionServiceTest, ComponentExtensionWhitelisted) {
     ListPrefUpdate update(profile_->GetPrefs(),
                           prefs::kExtensionInstallDenyList);
     ListValue* blacklist = update.Get();
-    blacklist->Append(Value::CreateStringValue(good0));
+    blacklist->Append(new base::StringValue(good0));
   }
   base::RunLoop().RunUntilIdle();
   ASSERT_EQ(1u, service_->extensions()->size());
@@ -3551,7 +3567,7 @@ TEST_F(ExtensionServiceTest, PolicyInstalledExtensionsWhitelisted) {
     ListPrefUpdate update(profile_->GetPrefs(),
                           prefs::kExtensionInstallDenyList);
     ListValue* blacklist = update.Get();
-    blacklist->Append(Value::CreateStringValue(good0));
+    blacklist->Append(new base::StringValue(good0));
   }
   base::RunLoop().RunUntilIdle();
   ASSERT_EQ(1u, service_->extensions()->size());
@@ -4661,23 +4677,6 @@ TEST_F(ExtensionServiceTest, MultipleExternalUpdateCheck) {
   EXPECT_EQ(0u, GetErrors().size());
   EXPECT_EQ(0u, loaded_.size());
 }
-
-namespace {
-  class ScopedBrowserLocale {
-   public:
-    explicit ScopedBrowserLocale(const std::string& new_locale)
-      : old_locale_(g_browser_process->GetApplicationLocale()) {
-      g_browser_process->SetApplicationLocale(new_locale);
-    }
-
-    ~ScopedBrowserLocale() {
-      g_browser_process->SetApplicationLocale(old_locale_);
-    }
-
-   private:
-    std::string old_locale_;
-  };
-}  // namespace
 
 TEST_F(ExtensionServiceTest, ExternalPrefProvider) {
   InitializeEmptyExtensionService();

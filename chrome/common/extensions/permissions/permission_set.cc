@@ -263,6 +263,14 @@ std::vector<string16> PermissionSet::GetWarningMessages(
       }
     }
 
+    // The warning message for declarativeWebRequest permissions speaks about
+    // blocking parts of pages, which is a subset of what the "<all_urls>"
+    // access allows. Therefore we display only the "<all_urls>" warning message
+    // if both permissions are required.
+    if (id == PermissionMessage::kDeclarativeWebRequest &&
+        HasEffectiveAccessToAllHosts())
+      continue;
+
     messages.push_back(i->message());
   }
 
@@ -468,8 +476,6 @@ std::set<PermissionMessage> PermissionSet::GetAPIPermissionMessages() const {
   std::set<PermissionMessage> messages;
   for (APIPermissionSet::const_iterator permission_it = apis_.begin();
        permission_it != apis_.end(); ++permission_it) {
-    DCHECK_GT(PermissionMessage::kNone,
-              PermissionMessage::kUnknown);
     if (permission_it->HasMessages()) {
       PermissionMessages new_messages = permission_it->GetMessages();
       messages.insert(new_messages.begin(), new_messages.end());
@@ -516,6 +522,14 @@ bool PermissionSet::HasLessAPIPrivilegesThan(
   PermissionMsgSet delta_warnings =
       base::STLSetDifference<PermissionMsgSet>(new_warnings, current_warnings);
 
+  // A special hack: the DWR permission is weaker than all hosts permission.
+  if (delta_warnings.size() == 1u &&
+      delta_warnings.begin()->id() ==
+          PermissionMessage::kDeclarativeWebRequest &&
+      HasEffectiveAccessToAllHosts()) {
+    return false;
+  }
+
   // We have less privileges if there are additional warnings present.
   return !delta_warnings.empty();
 }
@@ -545,11 +559,9 @@ bool PermissionSet::HasLessHostPrivilegesThan(
   // considered an elevation, even though it is not (http://crbug.com/65337).
   std::set<std::string> new_hosts_set(GetDistinctHosts(new_list, false, false));
   std::set<std::string> old_hosts_set(GetDistinctHosts(old_list, false, false));
-  std::set<std::string> new_hosts_only;
-
-  std::set_difference(new_hosts_set.begin(), new_hosts_set.end(),
-                      old_hosts_set.begin(), old_hosts_set.end(),
-                      std::inserter(new_hosts_only, new_hosts_only.begin()));
+  std::set<std::string> new_hosts_only =
+      base::STLSetDifference<std::set<std::string> >(new_hosts_set,
+                                                     old_hosts_set);
 
   return !new_hosts_only.empty();
 }

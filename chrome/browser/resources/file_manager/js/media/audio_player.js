@@ -5,15 +5,18 @@
 'use strict';
 
 /**
+ * TODO(mtomasz): Rewrite the entire audio player.
+ *
  * @param {HTMLElement} container Container element.
+ * @param {VolumeManager} volumeManager VolumeManager of the system.
  * @constructor
  */
-function AudioPlayer(container) {
+function AudioPlayer(container, volumeManager) {
   this.container_ = container;
   this.metadataCache_ = MetadataCache.createFull();
   this.currentTrack_ = -1;
   this.playlistGeneration_ = 0;
-  this.volumeManager_ = VolumeManager.getInstance();
+  this.volumeManager_ = volumeManager;
 
   this.container_.classList.add('collapsed');
 
@@ -49,17 +52,13 @@ function AudioPlayer(container) {
 
   this.volumeManager_.addEventListener('externally-unmounted',
       this.onExternallyUnmounted_.bind(this));
+
+  window.addEventListener('resize', this.onResize_.bind(this));
+
+  // Show the window after DOM is processed.
+  var currentWindow = chrome.app.window.current();
+  setTimeout(currentWindow.show.bind(currentWindow), 0);
 }
-
-/**
- * Key in the local storage for the list of track urls.
- */
-AudioPlayer.PLAYLIST_KEY = 'audioPlaylist';
-
-/**
- * Key in the local storage for the number of the current track.
- */
-AudioPlayer.TRACK_KEY = 'audioTrack';
 
 /**
  * Initial load method (static).
@@ -67,12 +66,13 @@ AudioPlayer.TRACK_KEY = 'audioTrack';
 AudioPlayer.load = function() {
   document.ondragstart = function(e) { e.preventDefault() };
 
-  // If the audio player is starting before the first instance of the File
-  // Manager then it does not have access to filesystem URLs. Request it now.
-  chrome.fileBrowserPrivate.requestFileSystem(function() {
+  // TODO(mtomasz): Consider providing an exact size icon, instead of relying
+  // on downsampling by ash.
+  chrome.app.window.current().setIcon('images/media/2x/audio_player.png');
+
+  VolumeManager.getInstance(function(volumeManager) {
     AudioPlayer.instance =
-        new AudioPlayer(document.querySelector('.audio-player'));
-    chrome.mediaPlayerPrivate.onPlaylistChanged.addListener(getPlaylist);
+        new AudioPlayer(document.querySelector('.audio-player'), volumeManager);
     reload();
   });
 };
@@ -91,27 +91,10 @@ function unload() {
  */
 function reload() {
   if (window.appState) {
-    // Launching/reloading a v2 app.
     util.saveAppState();
     AudioPlayer.instance.load(window.appState);
     return;
   }
-
-  // Lauching/reloading a v1 app.
-  if (document.location.hash) {
-    // The window is reloading, restore the state.
-    AudioPlayer.instance.load(null);
-  } else {
-    getPlaylist();
-  }
-}
-
-/**
- * Get the playlist from Chrome.
- */
-function getPlaylist() {
-  chrome.mediaPlayerPrivate.getPlaylist(
-      AudioPlayer.instance.load.bind(AudioPlayer.instance));
 }
 
 /**
@@ -119,39 +102,9 @@ function getPlaylist() {
  * @param {Playlist} playlist Playlist object passed via mediaPlayerPrivate.
  */
 AudioPlayer.prototype.load = function(playlist) {
-  if (!playlist || !playlist.items.length) {
-    // playlist is null if the window is being reloaded.
-    // playlist is empty if ChromeOS has restarted with the Audio Player open.
-    // Restore the playlist from the local storage.
-    util.platform.getPreferences(function(prefs) {
-      try {
-        var restoredPlaylist = {
-          items: JSON.parse(prefs[AudioPlayer.PLAYLIST_KEY]),
-          position: Number(prefs[AudioPlayer.TRACK_KEY]),
-          time: true // Force restoring time from document.location.
-        };
-        if (restoredPlaylist.items.length)
-          this.load(restoredPlaylist);
-      } catch (ignore) {}
-    }.bind(this));
-    return;
-  }
-
-  if (!window.appState) {
-    // Remember the playlist for the restart.
-    // App v2 handles that in the background page.
-    util.platform.setPreference(
-        AudioPlayer.PLAYLIST_KEY, JSON.stringify(playlist.items));
-    util.platform.setPreference(
-        AudioPlayer.TRACK_KEY, playlist.position);
-  }
-
   this.playlistGeneration_++;
-
   this.audioControls_.pause();
-
   this.currentTrack_ = -1;
-
   this.urls_ = playlist.items;
 
   this.invalidTracks_ = {};
@@ -412,57 +365,114 @@ AudioPlayer.prototype.cancelAutoAdvance_ = function() {
 };
 
 /**
- * Expand/collapse button click handler.
+ * Expand/collapse button click handler. Toggles the mode and updates the
+ * height of the window.
+ *
  * @private
  */
 AudioPlayer.prototype.onExpandCollapse_ = function() {
-  this.container_.classList.toggle('collapsed');
+  if (!this.isCompact_()) {
+    this.setExpanded_(false);
+    this.lastExpandedHeight_ = window.innerHeight;
+  } else {
+    this.setExpanded_(true);
+  }
   this.syncHeight_();
-  if (!this.isCompact_())
+};
+
+/**
+ * Toggles the current expand mode.
+ *
+ * @param {boolean} on True if on, false otherwise.
+ * @private
+ */
+AudioPlayer.prototype.setExpanded_ = function(on) {
+  if (on) {
+    this.container_.classList.remove('collapsed');
     this.scrollToCurrent_(true);
+  } else {
+    this.container_.classList.add('collapsed');
+  }
+};
+
+/**
+ * Toggles the expanded mode when resizing.
+ *
+ * @param {Event} event Resize event.
+ * @private
+ */
+AudioPlayer.prototype.onResize_ = function(event) {
+  if (this.isCompact_() &&
+      window.innerHeight >= AudioPlayer.EXPANDED_MODE_MIN_HEIGHT) {
+    this.setExpanded_(true);
+  } else if (!this.isCompact_() &&
+             window.innerHeight < AudioPlayer.EXPANDED_MODE_MIN_HEIGHT) {
+    this.setExpanded_(false);
+  }
 };
 
 /* Keep the below constants in sync with the CSS. */
 
 /**
- * Player header height.
- * TODO(kaznacheev): Set to 30 when the audio player is title-less.
+ * Window header size in pixels.
+ * @type {number}
+ * @const
  */
-AudioPlayer.HEADER_HEIGHT = 0;
+AudioPlayer.HEADER_HEIGHT = 28;
 
 /**
- * Track height.
+ * Track height in pixels.
+ * @type {number}
+ * @const
  */
 AudioPlayer.TRACK_HEIGHT = 58;
 
 /**
- * Controls bar height.
+ * Controls bar height in pixels.
+ * @type {number}
+ * @const
  */
 AudioPlayer.CONTROLS_HEIGHT = 35;
+
+/**
+ * Default number of items in the expanded mode.
+ * @type {number}
+ * @const
+ */
+AudioPlayer.DEFAULT_EXPANDED_ITEMS = 5;
+
+/**
+ * Minimum size of the window in the expanded mode in pixels.
+ * @type {number}
+ * @const
+ */
+AudioPlayer.EXPANDED_MODE_MIN_HEIGHT = AudioPlayer.CONTROLS_HEIGHT +
+                                       AudioPlayer.TRACK_HEIGHT * 2;
 
 /**
  * Set the correct player window height.
  * @private
  */
 AudioPlayer.prototype.syncHeight_ = function() {
-  var expandedListHeight =
-      Math.min(this.urls_.length, 3) * AudioPlayer.TRACK_HEIGHT;
-  this.trackList_.style.height = expandedListHeight + 'px';
+  var targetHeight;
 
-  var targetClientHeight = AudioPlayer.CONTROLS_HEIGHT +
-      (this.isCompact_() ?
-      AudioPlayer.TRACK_HEIGHT :
-      AudioPlayer.HEADER_HEIGHT + expandedListHeight);
+  if (!this.isCompact_()) {
+    // Expanded.
+    if (this.lastExpandedHeight_) {
+      targetHeight = this.lastExpandedHeight_;
+    } else {
+      var expandedListHeight =
+        Math.min(this.urls_.length, AudioPlayer.DEFAULT_EXPANDED_ITEMS) *
+                                    AudioPlayer.TRACK_HEIGHT;
+      targetHeight = AudioPlayer.CONTROLS_HEIGHT + expandedListHeight;
+    }
+  } else {
+    // Not expaned.
+    targetHeight = AudioPlayer.CONTROLS_HEIGHT + AudioPlayer.TRACK_HEIGHT;
+  }
 
-  var appWindow = chrome.app.window.current();
-  var oldHeight = appWindow.contentWindow.outerHeight;
-  var bottom = appWindow.contentWindow.screenY + oldHeight;
-  var newTop = Math.max(0, bottom - targetClientHeight);
-  appWindow.moveTo(appWindow.contentWindow.screenX, newTop);
-  appWindow.resizeTo(appWindow.contentWindow.outerWidth,
-      oldHeight + targetClientHeight - this.container_.clientHeight);
+  window.resizeTo(window.innerWidth, targetHeight + AudioPlayer.HEADER_HEIGHT);
 };
-
 
 /**
  * Create a TrackInfo object encapsulating the information about one track.

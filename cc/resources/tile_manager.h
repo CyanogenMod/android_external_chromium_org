@@ -69,6 +69,7 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
   scoped_ptr<base::Value> AllTilesAsValue() const;
   void GetMemoryStats(size_t* memory_required_bytes,
                       size_t* memory_nice_to_have_bytes,
+                      size_t* memory_allocated_bytes,
                       size_t* memory_used_bytes) const;
 
   const MemoryHistory::Entry& memory_stats_from_last_assign() const {
@@ -79,18 +80,36 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
     return all_tiles_required_for_activation_have_been_initialized_;
   }
 
+  void InitializeTilesWithResourcesForTesting(
+      const std::vector<Tile*>& tiles,
+      ResourceProvider* resource_provider) {
+    for (size_t i = 0; i < tiles.size(); ++i) {
+      ManagedTileState& mts = tiles[i]->managed_state();
+      ManagedTileState::TileVersion& tile_version =
+          mts.tile_versions[HIGH_QUALITY_NO_LCD_RASTER_MODE];
+
+      tile_version.resource_ = make_scoped_ptr(
+          new ResourcePool::Resource(resource_provider,
+                                     gfx::Size(1, 1),
+                                     resource_provider->best_texture_format()));
+
+      bytes_releasable_ += tiles[i]->bytes_consumed_if_allocated();
+      ++resources_releasable_;
+    }
+  }
+
  protected:
   TileManager(TileManagerClient* client,
               ResourceProvider* resource_provider,
               scoped_ptr<RasterWorkerPool> raster_worker_pool,
               size_t num_raster_threads,
-              RenderingStatsInstrumentation* rendering_stats_instrumentation,
-              GLenum texture_format);
+              RenderingStatsInstrumentation* rendering_stats_instrumentation);
 
   // Methods called by Tile
   friend class Tile;
   void RegisterTile(Tile* tile);
   void UnregisterTile(Tile* tile);
+  void DidChangeTilePriority(Tile* tile);
 
   // Overriden from RasterWorkerPoolClient:
   virtual bool ShouldForceTasksRequiredForActivationToComplete() const
@@ -109,7 +128,6 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
       PrioritizedTileSet* tiles,
       TileVector* tiles_that_need_to_be_rasterized);
   void GetTilesWithAssignedBins(PrioritizedTileSet* tiles);
-  void GetPrioritizedTileSet(PrioritizedTileSet* tiles);
 
  private:
   void OnImageDecodeTaskCompleted(
@@ -132,6 +150,7 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
       Tile* tile, skia::LazyPixelRef* pixel_ref);
   RasterWorkerPool::RasterTask CreateRasterTask(Tile* tile);
   scoped_ptr<base::Value> GetMemoryRequirementsAsValue() const;
+  PrioritizedTileSet* GetPrioritizedTileSet();
 
   TileManagerClient* client_;
   scoped_ptr<ResourcePool> resource_pool_;
@@ -142,10 +161,14 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
   TileMap tiles_;
 
   PrioritizedTileSet prioritized_tiles_;
+  bool prioritized_tiles_dirty_;
 
   bool all_tiles_that_need_to_be_rasterized_have_memory_;
   bool all_tiles_required_for_activation_have_memory_;
   bool all_tiles_required_for_activation_have_been_initialized_;
+
+  size_t bytes_releasable_;
+  size_t resources_releasable_;
 
   bool ever_exceeded_memory_budget_;
   MemoryHistory::Entry memory_stats_from_last_assign_;
@@ -153,8 +176,6 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
   RenderingStatsInstrumentation* rendering_stats_instrumentation_;
 
   bool did_initialize_visible_tile_;
-
-  GLenum texture_format_;
 
   typedef base::hash_map<uint32_t, RasterWorkerPool::Task> PixelRefTaskMap;
   typedef base::hash_map<int, PixelRefTaskMap> LayerPixelRefTaskMap;

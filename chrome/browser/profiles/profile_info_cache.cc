@@ -184,13 +184,12 @@ ProfileInfoCache::ProfileInfoCache(PrefService* prefs,
     string16 name;
     info->GetString(kNameKey, &name);
     sorted_keys_.insert(FindPositionForProfile(it.key(), name), it.key());
-    // TODO(ibraaaa): delete this when we fully migrate to
-    // |prefs::kManagedUserId|.
+    // TODO(ibraaaa): delete this when 97% of our users are using M31.
+    // http://crbug.com/276163
     bool is_managed = false;
-    info->GetBoolean(kIsManagedKey, &is_managed);
-    if (is_managed) {
-      info->SetString(kManagedUserId, "DUMMY_ID");
+    if (info->GetBoolean(kIsManagedKey, &is_managed)) {
       info->Remove(kIsManagedKey, NULL);
+      info->SetString(kManagedUserId, is_managed ? "DUMMY_ID" : std::string());
     }
   }
 }
@@ -441,11 +440,10 @@ size_t ProfileInfoCache::GetAvatarIconIndexOfProfileAtIndex(size_t index)
   std::string icon_url;
   GetInfoForProfileAtIndex(index)->GetString(kAvatarIconKey, &icon_url);
   size_t icon_index = 0;
-  if (IsDefaultAvatarIconUrl(icon_url, &icon_index))
-    return icon_index;
+  if (!IsDefaultAvatarIconUrl(icon_url, &icon_index))
+    DLOG(WARNING) << "Unknown avatar icon: " << icon_url;
 
-  DLOG(WARNING) << "Unknown avatar icon: " << icon_url;
-  return GetDefaultAvatarIconResourceIDAtIndex(0);
+  return icon_index;
 }
 
 void ProfileInfoCache::SetNameOfProfileAtIndex(size_t index,

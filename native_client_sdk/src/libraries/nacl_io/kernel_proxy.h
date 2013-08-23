@@ -11,6 +11,8 @@
 #include "nacl_io/host_resolver.h"
 #include "nacl_io/kernel_object.h"
 #include "nacl_io/mount_factory.h"
+#include "nacl_io/mount_socket.h"
+#include "nacl_io/ossignal.h"
 #include "nacl_io/ossocket.h"
 #include "nacl_io/ostypes.h"
 #include "nacl_io/osutime.h"
@@ -20,6 +22,9 @@ struct timeval;
 namespace nacl_io {
 
 class PepperInterface;
+class SignalEmitter;
+
+typedef sdk_util::ScopedRef<SignalEmitter> ScopedSignalEmitter;
 
 // KernelProxy provide one-to-one mapping for libc kernel calls.  Calls to the
 // proxy will result in IO access to the provided Mount and MountNode objects.
@@ -124,6 +129,9 @@ class KernelProxy : protected KernelObject {
   virtual int tcsetattr(int fd, int optional_actions,
                            const struct termios *termios_p);
 
+  virtual int kill(pid_t pid, int sig);
+  virtual sighandler_t sigset(int signum, sighandler_t handler);
+
 #ifdef PROVIDES_SOCKET_API
   virtual int select(int nfds, fd_set* readfds, fd_set* writefds,
                     fd_set* exceptfds, struct timeval* timeout);
@@ -174,9 +182,11 @@ class KernelProxy : protected KernelObject {
 
  protected:
   MountFactoryMap_t factories_;
+  sdk_util::ScopedRef<MountSocket> socket_mount_;
   int dev_;
   PepperInterface* ppapi_;
   static KernelProxy *s_instance_;
+  sighandler_t sigwinch_handler_;
 #ifdef PROVIDES_SOCKET_API
   HostResolver host_resolver_;
 #endif
@@ -185,6 +195,7 @@ class KernelProxy : protected KernelObject {
   virtual int AcquireSocketHandle(int fd, ScopedKernelHandle* handle);
 #endif
 
+  ScopedSignalEmitter signal_emitter_;
   DISALLOW_COPY_AND_ASSIGN(KernelProxy);
 };
 

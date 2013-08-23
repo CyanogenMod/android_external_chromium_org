@@ -42,8 +42,8 @@ LOCAL_SRC_FILES := \
 	content/child/database_util.cc \
 	content/child/db_message_filter.cc \
 	content/child/fileapi/file_system_dispatcher.cc \
-	content/child/fileapi/webfilesystem_callback_adapters.cc \
 	content/child/fileapi/webfilesystem_impl.cc \
+	content/child/fileapi/webfilewriter_base.cc \
 	content/child/fileapi/webfilewriter_impl.cc \
 	content/child/image_decoder.cc \
 	content/child/indexed_db/indexed_db_dispatcher.cc \

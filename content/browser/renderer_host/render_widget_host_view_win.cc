@@ -312,7 +312,7 @@ void GetScreenInfoForWindow(gfx::NativeViewId id,
 
   MONITORINFOEX monitor_info;
   monitor_info.cbSize = sizeof(MONITORINFOEX);
-  if (!GetMonitorInfo(monitor, &monitor_info))
+  if (!base::win::GetMonitorInfoWrapper(monitor, &monitor_info))
     return;
 
   DEVMODE dev_mode;
@@ -762,6 +762,7 @@ void RenderWidgetHostViewWin::DidUpdateBackingStore(
     const gfx::Vector2d& scroll_delta,
     const std::vector<gfx::Rect>& copy_rects,
     const ui::LatencyInfo& latency_info) {
+  TRACE_EVENT0("content", "RenderWidgetHostViewWin::DidUpdateBackingStore");
   software_latency_info_.MergeWith(latency_info);
   if (is_hidden_)
     return;
@@ -780,6 +781,7 @@ void RenderWidgetHostViewWin::DidUpdateBackingStore(
   }
 
   if (!scroll_rect.IsEmpty()) {
+    TRACE_EVENT0("content", "ScrollWindowEx");
     gfx::Rect pixel_rect = ui::win::DIPToScreenRect(scroll_rect);
     // Damage might not be DIP aligned.
     pixel_rect.Inset(-1, -1);
@@ -895,7 +897,8 @@ void RenderWidgetHostViewWin::CopyFromCompositingSurfaceToVideoFrame(
   if (!accelerated_surface_)
     return;
 
-  if (!target || target->format() != media::VideoFrame::YV12)
+  if (!target || (target->format() != media::VideoFrame::YV12 &&
+                  target->format() != media::VideoFrame::I420))
     return;
 
   if (src_subrect.IsEmpty())

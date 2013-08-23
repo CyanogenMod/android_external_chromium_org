@@ -16,6 +16,7 @@
 #include "net/cert/cert_verifier.h"
 #include "net/dns/host_resolver.h"
 #include "net/dns/single_request_host_resolver.h"
+#include "net/http/http_server_properties.h"
 #include "net/quic/crypto/proof_verifier_chromium.h"
 #include "net/quic/crypto/quic_random.h"
 #include "net/quic/quic_client_session.h"
@@ -147,9 +148,10 @@ void QuicStreamFactory::Job::OnIOComplete(int rv) {
 int QuicStreamFactory::Job::DoResolveHost() {
   io_state_ = STATE_RESOLVE_HOST_COMPLETE;
   return host_resolver_.Resolve(
-      HostResolver::RequestInfo(host_port_proxy_pair_.first), &address_list_,
-      base::Bind(&QuicStreamFactory::Job::OnIOComplete,
-                 base::Unretained(this)),
+      HostResolver::RequestInfo(host_port_proxy_pair_.first),
+      DEFAULT_PRIORITY,
+      &address_list_,
+      base::Bind(&QuicStreamFactory::Job::OnIOComplete, base::Unretained(this)),
       net_log_);
 }
 
@@ -226,6 +228,7 @@ int QuicStreamFactory::Job::DoConnect() {
                                      cert_verifier_, address_list_, net_log_);
   session_->StartReading();
   int rv = session_->CryptoConnect(
+      factory_->require_confirmation(),
       base::Bind(&QuicStreamFactory::Job::OnIOComplete,
                  base::Unretained(this)));
   return rv;
@@ -244,11 +247,14 @@ int QuicStreamFactory::Job::DoConnectComplete(int rv) {
 QuicStreamFactory::QuicStreamFactory(
     HostResolver* host_resolver,
     ClientSocketFactory* client_socket_factory,
+    base::WeakPtr<HttpServerProperties> http_server_properties,
     QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory,
     QuicRandom* random_generator,
     QuicClock* clock)
-    : host_resolver_(host_resolver),
+    : require_confirmation_(true),
+      host_resolver_(host_resolver),
       client_socket_factory_(client_socket_factory),
+      http_server_properties_(http_server_properties),
       quic_crypto_client_stream_factory_(quic_crypto_client_stream_factory),
       random_generator_(random_generator),
       clock_(clock),
@@ -301,6 +307,7 @@ int QuicStreamFactory::Create(const HostPortProxyPair& host_port_proxy_pair,
 
 void QuicStreamFactory::OnJobComplete(Job* job, int rv) {
   if (rv == OK) {
+    require_confirmation_ = false;
     // Create all the streams, but do not notify them yet.
     for (RequestSet::iterator it = job_requests_map_[job].begin();
          it != job_requests_map_[job].end() ; ++it) {
@@ -351,6 +358,13 @@ void QuicStreamFactory::OnSessionClose(QuicClientSession* session) {
     DCHECK(active_sessions_.count(*it));
     DCHECK_EQ(session, active_sessions_[*it]);
     active_sessions_.erase(*it);
+    if (!session->IsCryptoHandshakeConfirmed() && http_server_properties_) {
+      // TODO(rch):  In the special case where the session has received no
+      // packets from the peer, we should consider blacklisting this
+      // differently so that we still race TCP but we don't consider the
+      // session connected until the handshake has been confirmed.
+      http_server_properties_->SetBrokenAlternateProtocol(it->first);
+    }
   }
   all_sessions_.erase(session);
   session_aliases_.erase(session);
@@ -393,6 +407,7 @@ base::Value* QuicStreamFactory::QuicStreamFactoryInfoToValue() const {
 
 void QuicStreamFactory::OnIPAddressChanged() {
   CloseAllSessions(ERR_NETWORK_CHANGED);
+  require_confirmation_ = true;
 }
 
 bool QuicStreamFactory::HasActiveSession(
@@ -408,10 +423,10 @@ QuicClientSession* QuicStreamFactory::CreateSession(
     const BoundNetLog& net_log) {
   QuicGuid guid = random_generator_->RandUint64();
   IPEndPoint addr = *address_list.begin();
-  DatagramClientSocket* socket =
+  scoped_ptr<DatagramClientSocket> socket(
       client_socket_factory_->CreateDatagramClientSocket(
           DatagramSocket::DEFAULT_BIND, base::Bind(&base::RandInt),
-          net_log.net_log(), net_log.source());
+          net_log.net_log(), net_log.source()));
   socket->Connect(addr);
 
   // We should adaptively set this buffer size, but for now, we'll use a size
@@ -437,7 +452,7 @@ QuicClientSession* QuicStreamFactory::CreateSession(
       base::MessageLoop::current()->message_loop_proxy().get(),
       clock_.get(),
       random_generator_,
-      socket);
+      socket.get());
 
   QuicConnection* connection = new QuicConnection(guid, addr, helper, false,
                                                   QuicVersionMax());
@@ -447,7 +462,7 @@ QuicClientSession* QuicStreamFactory::CreateSession(
   DCHECK(crypto_config);
 
   QuicClientSession* session =
-      new QuicClientSession(connection, socket, this,
+      new QuicClientSession(connection, socket.Pass(), this,
                             quic_crypto_client_stream_factory_,
                             host_port_proxy_pair.first.host(), config_,
                             crypto_config, net_log.net_log());

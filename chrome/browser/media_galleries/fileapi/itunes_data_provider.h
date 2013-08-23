@@ -36,10 +36,13 @@ class ITunesDataProvider {
 
   // Ask the data provider to refresh the data if necessary. |ready_callback|
   // will be called with the result; false if unable to parse the XML file.
-  void RefreshData(const ReadyCallback& ready_callback);
+  virtual void RefreshData(const ReadyCallback& ready_callback);
 
   // Get the platform path for the library XML file.
   const base::FilePath& library_path() const;
+
+  // Get the platform path for the auto-add directory.
+  virtual const base::FilePath& auto_add_path() const;
 
   // Returns true if |artist| exists in the library.
   bool KnownArtist(const ArtistName& artist) const;
@@ -68,17 +71,6 @@ class ITunesDataProvider {
   typedef std::map<AlbumName, Album> Artist;
   typedef std::map<ArtistName, Artist> Library;
 
-  // These are hacks to work around http://crbug.com/165590. Otherwise a
-  // WeakPtrFactory would be the obvious answer here.
-  // static so they can call their real counterparts.
-  // TODO(vandebo) Remove these when the bug is fixed.
-  static void OnLibraryWatchStartedCallback(
-      scoped_ptr<base::FilePathWatcher> library_watcher);
-  static void OnLibraryChangedCallback(const base::FilePath& path, bool error);
-  static void OnLibraryParsedCallback(const ReadyCallback& ready_callback,
-                                      bool result,
-                                      const parser::Library& library);
-
   // Called when the FilePathWatcher for |library_path_| has tried to add an
   // watch.
   void OnLibraryWatchStarted(scoped_ptr<base::FilePathWatcher> library_watcher);
@@ -94,6 +86,9 @@ class ITunesDataProvider {
   // Path to the library XML file.
   const base::FilePath library_path_;
 
+  // Path to the auto-add directory.
+  const base::FilePath auto_add_path_;
+
   // The parsed and uniquified data.
   Library library_;
 
@@ -108,6 +103,8 @@ class ITunesDataProvider {
   scoped_ptr<base::FilePathWatcher> library_watcher_;
 
   scoped_refptr<SafeITunesLibraryParser> xml_parser_;
+
+  base::WeakPtrFactory<ITunesDataProvider> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ITunesDataProvider);
 };

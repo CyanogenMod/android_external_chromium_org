@@ -68,8 +68,6 @@ ProfileOAuth2TokenService::~ProfileOAuth2TokenService() {
 }
 
 void ProfileOAuth2TokenService::Initialize(Profile* profile) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-
   DCHECK(profile);
   DCHECK(!profile_);
   profile_ = profile;
@@ -88,14 +86,12 @@ void ProfileOAuth2TokenService::Initialize(Profile* profile) {
                  chrome::NOTIFICATION_TOKEN_AVAILABLE,
                  token_service_source);
   registrar_.Add(this,
-                 chrome::NOTIFICATION_TOKEN_REQUEST_FAILED,
-                 token_service_source);
-  registrar_.Add(this,
                  chrome::NOTIFICATION_TOKEN_LOADING_FINISHED,
                  token_service_source);
 }
 
 void ProfileOAuth2TokenService::Shutdown() {
+  DCHECK(profile_) << "Shutdown() called without matching call to Initialize()";
   CancelAllRequests();
   signin_global_error_->RemoveProvider(this);
   GlobalErrorServiceFactory::GetForProfile(profile_)->RemoveGlobalError(
@@ -109,6 +105,10 @@ std::string ProfileOAuth2TokenService::GetRefreshToken() {
     return std::string();
   }
   return token_service->GetOAuth2LoginRefreshToken();
+}
+
+net::URLRequestContextGetter* ProfileOAuth2TokenService::GetRequestContext() {
+  return profile_->GetRequestContext();
 }
 
 void ProfileOAuth2TokenService::UpdateAuthError(
@@ -147,25 +147,6 @@ void ProfileOAuth2TokenService::Observe(
       }
       break;
     }
-    case chrome::NOTIFICATION_TOKEN_REQUEST_FAILED: {
-      TokenService::TokenRequestFailedDetails* tok_details =
-          content::Details<TokenService::TokenRequestFailedDetails>(details)
-              .ptr();
-      if (tok_details->service() == GaiaConstants::kLSOService ||
-          tok_details->service() ==
-              GaiaConstants::kGaiaOAuth2LoginRefreshToken) {
-        // TODO(fgorski): Canceling all requests will not be correct in a
-        // multi-login environment. We should cacnel only the requests related
-        // to the failed refresh token.
-        // Failed refresh token is not available at this point, but since
-        // there are no other refresh tokens, we cancel all active requests.
-        CancelAllRequests();
-        ClearCache();
-        UpdateAuthError(tok_details->error());
-        FireRefreshTokenRevoked(GetAccountId(profile_), tok_details->error());
-      }
-      break;
-    }
     case chrome::NOTIFICATION_TOKENS_CLEARED: {
       CancelAllRequests();
       ClearCache();
@@ -174,6 +155,15 @@ void ProfileOAuth2TokenService::Observe(
       break;
     }
     case chrome::NOTIFICATION_TOKEN_LOADING_FINISHED:
+      // During startup, if the user is signed in and the OAuth2 refresh token
+      // is empty, flag it as an error by badging the menu. Otherwise, if the
+      // user goes on to set up sync, they will have to make two attempts:
+      // One to surface the OAuth2 error, and a second one after signing in.
+      // See crbug.com/276650.
+      if (!GetAccountId(profile_).empty() && GetRefreshToken().empty()) {
+        UpdateAuthError(GoogleServiceAuthError(
+            GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
+      }
       FireRefreshTokensLoaded();
       break;
     default:
@@ -184,10 +174,6 @@ void ProfileOAuth2TokenService::Observe(
 
 GoogleServiceAuthError ProfileOAuth2TokenService::GetAuthStatus() const {
   return last_auth_error_;
-}
-
-net::URLRequestContextGetter* ProfileOAuth2TokenService::GetRequestContext() {
-  return profile_->GetRequestContext();
 }
 
 void ProfileOAuth2TokenService::RegisterCacheEntry(
@@ -254,8 +240,7 @@ void ProfileOAuth2TokenService::RevokeCredentials(
         TokenWebData::FromBrowserContext(profile_);
     if (token_web_data.get())
       token_web_data->RemoveTokenForService(ApplyAccountIdPrefix(account_id));
-    FireRefreshTokenRevoked(account_id,
-        GoogleServiceAuthError(GoogleServiceAuthError::REQUEST_CANCELED));
+    FireRefreshTokenRevoked(account_id);
 
     // TODO(fgorski): Notify diagnostic observers.
   }
@@ -265,12 +250,11 @@ void ProfileOAuth2TokenService::RevokeAllCredentials() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
   CancelAllRequests();
-  GoogleServiceAuthError error(GoogleServiceAuthError::REQUEST_CANCELED);
   for (std::map<std::string, std::string>::const_iterator iter =
            refresh_tokens_.begin();
        iter != refresh_tokens_.end();
        ++iter) {
-    FireRefreshTokenRevoked(iter->first, error);
+    FireRefreshTokenRevoked(iter->first);
   }
   refresh_tokens_.clear();
 

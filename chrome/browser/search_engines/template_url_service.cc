@@ -57,29 +57,6 @@ typedef TemplateURLService::SyncDataMap SyncDataMap;
 
 namespace {
 
-// String in the URL that is replaced by the search term.
-const char kSearchTermParameter[] = "{searchTerms}";
-
-// String in Initializer that is replaced with kSearchTermParameter.
-const char kTemplateParameter[] = "%s";
-
-// Term used when generating a search url. Use something obscure so that on
-// the rare case the term replaces the URL it's unlikely another keyword would
-// have the same url.
-const char kReplacementTerm[] = "blah.blah.blah.blah.blah";
-
-// The name of the histogram used to track default search changes. See the
-// comment for DefaultSearchChangeOrigin.
-const char kDSPChangeHistogramName[] = "Search.DefaultSearchChangeOrigin";
-
-// The name of the histogram used to track whether or not the user has a default
-// search provider.
-const char kHasDSPHistogramName[] = "Search.HasDefaultSearchProvider";
-
-// The name of the histogram used to store the id of the default search
-// provider.
-const char kDSPHistogramName[] = "Search.DefaultSearchProvider";
-
 bool TemplateURLsHaveSamePrefs(const TemplateURL* url1,
                                const TemplateURL* url2) {
   if (url1 == url2)
@@ -91,12 +68,12 @@ bool TemplateURLsHaveSamePrefs(const TemplateURL* url1,
       (url1->suggestions_url() == url2->suggestions_url()) &&
       (url1->instant_url() == url2->instant_url()) &&
       (url1->image_url() == url2->image_url()) &&
+      (url1->new_tab_url() == url2->new_tab_url()) &&
       (url1->search_url_post_params() == url2->search_url_post_params()) &&
       (url1->suggestions_url_post_params() ==
           url2->suggestions_url_post_params()) &&
       (url1->instant_url_post_params() == url2->instant_url_post_params()) &&
       (url1->image_url_post_params() == url2->image_url_post_params()) &&
-      (url1->image_url() == url2->image_url()) &&
       (url1->favicon_url() == url2->favicon_url()) &&
       (url1->safe_for_autoreplace() == url2->safe_for_autoreplace()) &&
       (url1->show_in_default_list() == url2->show_in_default_list()) &&
@@ -436,12 +413,14 @@ GURL TemplateURLService::GenerateSearchURLUsingTermsData(
   if (!search_ref.SupportsReplacementUsingTermsData(search_terms_data))
     return GURL(t_url->url());
 
-  // TODO(jnd): Adds additional parameters to get post data when the search URL
+  // Use something obscure for the search terms argument so that in the rare
+  // case the term replaces the URL it's unlikely another keyword would have the
+  // same url.
+  // TODO(jnd): Add additional parameters to get post data when the search URL
   // has post parameters.
   return GURL(search_ref.ReplaceSearchTermsUsingTermsData(
-      TemplateURLRef::SearchTermsArgs(ASCIIToUTF16(kReplacementTerm)),
-      search_terms_data,
-      NULL));
+      TemplateURLRef::SearchTermsArgs(ASCIIToUTF16("blah.blah.blah.blah.blah")),
+      search_terms_data, NULL));
 }
 
 bool TemplateURLService::CanReplaceKeyword(
@@ -1274,6 +1253,7 @@ syncer::SyncData TemplateURLService::CreateSyncDataFromTemplateURL(
   se_specifics->set_instant_url(turl.instant_url());
   if (!turl.image_url().empty())
     se_specifics->set_image_url(turl.image_url());
+  se_specifics->set_new_tab_url(turl.new_tab_url());
   if (!turl.search_url_post_params().empty())
     se_specifics->set_search_url_post_params(turl.search_url_post_params());
   if (!turl.suggestions_url_post_params().empty()) {
@@ -1338,6 +1318,7 @@ TemplateURL* TemplateURLService::CreateTemplateURLFromTemplateURLAndSyncData(
   data.suggestions_url = specifics.suggestions_url();
   data.instant_url = specifics.instant_url();
   data.image_url = specifics.image_url();
+  data.new_tab_url = specifics.new_tab_url();
   data.search_url_post_params = specifics.search_url_post_params();
   data.suggestions_url_post_params = specifics.suggestions_url_post_params();
   data.instant_url_post_params = specifics.instant_url_post_params();
@@ -1448,19 +1429,12 @@ void TemplateURLService::Init(const Initializer* initializers,
       DCHECK(initializers[i].url);
       DCHECK(initializers[i].content);
 
-      size_t template_position =
-          std::string(initializers[i].url).find(kTemplateParameter);
-      DCHECK(template_position != std::string::npos);
-      std::string osd_url(initializers[i].url);
-      osd_url.replace(template_position, arraysize(kTemplateParameter) - 1,
-                      kSearchTermParameter);
-
       // TemplateURLService ends up owning the TemplateURL, don't try and free
       // it.
       TemplateURLData data;
       data.short_name = UTF8ToUTF16(initializers[i].content);
       data.SetKeyword(UTF8ToUTF16(initializers[i].keyword));
-      data.SetURL(osd_url);
+      data.SetURL(initializers[i].url);
       TemplateURL* template_url = new TemplateURL(profile_, data);
       AddNoNotify(template_url, true);
 
@@ -1608,6 +1582,7 @@ void TemplateURLService::SaveDefaultSearchProviderToPrefs(
   std::string suggest_url;
   std::string instant_url;
   std::string image_url;
+  std::string new_tab_url;
   std::string search_url_post_params;
   std::string suggest_url_post_params;
   std::string instant_url_post_params;
@@ -1627,6 +1602,7 @@ void TemplateURLService::SaveDefaultSearchProviderToPrefs(
     suggest_url = t_url->suggestions_url();
     instant_url = t_url->instant_url();
     image_url = t_url->image_url();
+    new_tab_url = t_url->new_tab_url();
     search_url_post_params = t_url->search_url_post_params();
     suggest_url_post_params = t_url->suggestions_url_post_params();
     instant_url_post_params = t_url->instant_url_post_params();
@@ -1648,6 +1624,7 @@ void TemplateURLService::SaveDefaultSearchProviderToPrefs(
   prefs->SetString(prefs::kDefaultSearchProviderSuggestURL, suggest_url);
   prefs->SetString(prefs::kDefaultSearchProviderInstantURL, instant_url);
   prefs->SetString(prefs::kDefaultSearchProviderImageURL, image_url);
+  prefs->SetString(prefs::kDefaultSearchProviderNewTabURL, new_tab_url);
   prefs->SetString(prefs::kDefaultSearchProviderSearchURLPostParams,
                    search_url_post_params);
   prefs->SetString(prefs::kDefaultSearchProviderSuggestURLPostParams,
@@ -1708,6 +1685,8 @@ bool TemplateURLService::LoadDefaultSearchProviderFromPrefs(
       prefs->GetString(prefs::kDefaultSearchProviderInstantURL);
   std::string image_url =
       prefs->GetString(prefs::kDefaultSearchProviderImageURL);
+  std::string new_tab_url =
+      prefs->GetString(prefs::kDefaultSearchProviderNewTabURL);
   std::string search_url_post_params =
       prefs->GetString(prefs::kDefaultSearchProviderSearchURLPostParams);
   std::string suggest_url_post_params =
@@ -1735,6 +1714,7 @@ bool TemplateURLService::LoadDefaultSearchProviderFromPrefs(
   data.suggestions_url = suggest_url;
   data.instant_url = instant_url;
   data.image_url = image_url;
+  data.new_tab_url = new_tab_url;
   data.search_url_post_params = search_url_post_params;
   data.suggestions_url_post_params = suggest_url_post_params;
   data.instant_url_post_params = instant_url_post_params;
@@ -1916,9 +1896,6 @@ void TemplateURLService::UpdateKeywordSearchTermsForURL(
       provider_map_->GetURLsForHost(row.url().host());
   if (!urls_for_host)
     return;
-
-  QueryTerms query_terms;
-  const std::string path = row.url().path();
 
   for (TemplateURLSet::const_iterator i = urls_for_host->begin();
        i != urls_for_host->end(); ++i) {
@@ -2122,8 +2099,8 @@ bool TemplateURLService::SetDefaultSearchProviderNoNotify(TemplateURL* url) {
   // changed, and needs to be persisted below (for example, when this is called
   // from UpdateNoNotify).
   if (default_search_provider_ != url) {
-    UMA_HISTOGRAM_ENUMERATION(kDSPChangeHistogramName, dsp_change_origin_,
-                              DSP_CHANGE_MAX);
+    UMA_HISTOGRAM_ENUMERATION("Search.DefaultSearchChangeOrigin",
+                              dsp_change_origin_, DSP_CHANGE_MAX);
     default_search_provider_ = url;
   }
 
@@ -2480,7 +2457,6 @@ void TemplateURLService::MergeInSyncTemplateURL(
   }
 
   if (should_add_sync_turl) {
-    const std::string guid = sync_turl->sync_guid();
     // Force the local ID to kInvalidTemplateURLID so we can add it.
     TemplateURLData data(sync_turl->data());
     data.id = kInvalidTemplateURLID;
@@ -2623,7 +2599,7 @@ void TemplateURLService::EnsureDefaultSearchProviderExists() {
   if (!is_default_search_managed_) {
     bool has_default_search_provider = default_search_provider_ &&
         default_search_provider_->SupportsReplacement();
-    UMA_HISTOGRAM_BOOLEAN(kHasDSPHistogramName,
+    UMA_HISTOGRAM_BOOLEAN("Search.HasDefaultSearchProvider",
                           has_default_search_provider);
     // Ensure that default search provider exists. See http://crbug.com/116952.
     if (!has_default_search_provider) {
@@ -2631,11 +2607,15 @@ void TemplateURLService::EnsureDefaultSearchProviderExists() {
           SetDefaultSearchProviderNoNotify(FindNewDefaultSearchProvider());
       DCHECK(success);
     }
-    // Don't log anything if the user has a NULL default search provider. A
-    // logged value of 0 indicates a custom default search provider.
+    // Don't log anything if the user has a NULL default search provider.
     if (default_search_provider_) {
+      // TODO(pkasting): This histogram obsoletes the next one.  Remove the next
+      // one in Chrome 32 or later.
+      UMA_HISTOGRAM_ENUMERATION("Search.DefaultSearchProviderType",
+          TemplateURLPrepopulateData::GetEngineType(*default_search_provider_),
+          SEARCH_ENGINE_MAX);
       UMA_HISTOGRAM_ENUMERATION(
-          kDSPHistogramName,
+          "Search.DefaultSearchProvider",
           default_search_provider_->prepopulate_id(),
           TemplateURLPrepopulateData::kMaxPrepopulatedEngineID);
     }

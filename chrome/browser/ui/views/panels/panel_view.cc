@@ -10,6 +10,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/panels/panel.h"
 #include "chrome/browser/ui/panels/panel_bounds_animation.h"
 #include "chrome/browser/ui/panels/panel_manager.h"
@@ -290,9 +291,8 @@ PanelView::PanelView(Panel* panel, const gfx::Rect& bounds, bool always_on_top)
       ShellIntegration::GetAppModelIdForProfile(UTF8ToWide(panel->app_name()),
                                                 panel->profile()->GetPath()),
       views::HWNDForWidget(window_));
+  ui::win::PreventWindowFromPinning(views::HWNDForWidget(window_));
 #endif
-
-  views::WidgetFocusManager::GetInstance()->AddFocusChangeListener(this);
 }
 
 PanelView::~PanelView() {
@@ -435,8 +435,6 @@ void PanelView::ClosePanel() {
     panel_->OnWindowClosing();
     return;
   }
-
-  views::WidgetFocusManager::GetInstance()->RemoveFocusChangeListener(this);
 
   panel_->OnNativePanelClosed();
   if (window_)
@@ -947,10 +945,13 @@ void PanelView::OnWidgetActivationChanged(views::Widget* widget, bool active) {
   if (window_closed_)
     return;
 
-  // The panel window is in focus (actually accepting keystrokes) if it is
-  // active and belongs to a foreground application.
-  bool focused = active &&
-      views::HWNDForWidget(widget) == ::GetForegroundWindow();
+  bool focused = active;
+  if (chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_NATIVE) {
+    // The panel window is in focus (actually accepting keystrokes) if it is
+    // active and belongs to a foreground application.
+    focused = active &&
+        views::HWNDForWidget(widget) == ::GetForegroundWindow();
+  }
 #else
   NOTIMPLEMENTED();
   bool focused = active;
@@ -978,23 +979,19 @@ void PanelView::OnWidgetActivationChanged(views::Widget* widget, bool active) {
 #endif
 
   panel()->OnActiveStateChanged(focused);
+
+   // Give web contents view a chance to set focus to the appropriate element.
+  if (focused_) {
+    content::WebContents* web_contents = panel_->GetWebContents();
+    if (web_contents)
+      web_contents->GetView()->RestoreFocus();
+  }
 }
 
 void PanelView::OnWidgetBoundsChanged(views::Widget* widget,
                                       const gfx::Rect& new_bounds) {
   if (user_resizing_)
     panel()->collection()->OnPanelResizedByMouse(panel(), new_bounds);
-}
-
-void PanelView::OnNativeFocusChange(gfx::NativeView focused_before,
-                                    gfx::NativeView focused_now) {
-  if (focused_now != window_->GetNativeView())
-    return;
-
-  // Give web contents view a chance to set focus to the appropriate element.
-  content::WebContents* web_contents = panel_->GetWebContents();
-  if (web_contents)
-    web_contents->GetView()->RestoreFocus();
 }
 
 bool PanelView::OnTitlebarMousePressed(const gfx::Point& mouse_location) {

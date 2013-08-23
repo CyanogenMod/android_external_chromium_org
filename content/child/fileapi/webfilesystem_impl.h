@@ -7,8 +7,11 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/id_map.h"
 #include "base/memory/ref_counted.h"
+#include "base/threading/non_thread_safe.h"
 #include "third_party/WebKit/public/platform/WebFileSystem.h"
+#include "webkit/child/worker_task_runner.h"
 
 namespace base {
 class MessageLoopProxy;
@@ -22,12 +25,38 @@ class WebFileWriterClient;
 
 namespace content {
 
-class WebFileSystemImpl : public WebKit::WebFileSystem {
+class WebFileSystemImpl
+    : public WebKit::WebFileSystem,
+      public webkit_glue::WorkerTaskRunner::Observer,
+      public base::NonThreadSafe {
  public:
+  // Returns thread-specific instance.  If non-null |main_thread_loop|
+  // is given and no thread-specific instance has been created it may
+  // create a new instance.
+  static WebFileSystemImpl* ThreadSpecificInstance(
+      base::MessageLoopProxy* main_thread_loop);
+
+  // Deletes thread-specific instance (if exists). For workers it deletes
+  // itself in OnWorkerRunLoopStopped(), but for an instance created on the
+  // main thread this method must be called.
+  static void DeleteThreadSpecificInstance();
+
   explicit WebFileSystemImpl(base::MessageLoopProxy* main_thread_loop);
   virtual ~WebFileSystemImpl();
 
+  // webkit_glue::WorkerTaskRunner::Observer implementation.
+  virtual void OnWorkerRunLoopStopped() OVERRIDE;
+
   // WebFileSystem implementation.
+  virtual void openFileSystem(
+      const WebKit::WebURL& storage_partition,
+      const WebKit::WebFileSystemType type,
+      bool create,
+      WebKit::WebFileSystemCallbacks*);
+  virtual void deleteFileSystem(
+      const WebKit::WebURL& storage_partition,
+      const WebKit::WebFileSystemType type,
+      WebKit::WebFileSystemCallbacks*);
   virtual void move(
       const WebKit::WebURL& src_path,
       const WebKit::WebURL& dest_path,
@@ -72,8 +101,15 @@ class WebFileSystemImpl : public WebKit::WebFileSystem {
       const WebKit::WebURL& path,
       WebKit::WebFileSystemCallbacks*);
 
+  int RegisterCallbacks(WebKit::WebFileSystemCallbacks* callbacks);
+  WebKit::WebFileSystemCallbacks* GetAndUnregisterCallbacks(
+      int callbacks_id);
+
  private:
   scoped_refptr<base::MessageLoopProxy> main_thread_loop_;
+  IDMap<WebKit::WebFileSystemCallbacks> callbacks_;
+
+  DISALLOW_COPY_AND_ASSIGN(WebFileSystemImpl);
 };
 
 }  // namespace content

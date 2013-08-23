@@ -5,15 +5,14 @@
 #include "content/child/fileapi/webfilesystem_impl.h"
 
 #include "base/bind.h"
-#include "base/id_map.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread_local.h"
 #include "content/child/child_thread.h"
 #include "content/child/fileapi/file_system_dispatcher.h"
-#include "content/child/fileapi/webfilesystem_callback_adapters.h"
 #include "content/child/fileapi/webfilewriter_impl.h"
 #include "content/common/fileapi/file_system_messages.h"
 #include "third_party/WebKit/public/platform/WebFileInfo.h"
@@ -38,62 +37,8 @@ namespace content {
 
 namespace {
 
-class CallbacksMap;
-
-base::LazyInstance<base::ThreadLocalPointer<CallbacksMap> >::Leaky
-    g_callbacks_map_tls = LAZY_INSTANCE_INITIALIZER;
-
-// TODO(kinuko): Integrate this into WebFileSystemImpl when blink side
-// becomes ready to make WebFileSystemImpl thread-local.
-class CallbacksMap : public WorkerTaskRunner::Observer {
- public:
-  static CallbacksMap* Get() {
-    return g_callbacks_map_tls.Pointer()->Get();
-  }
-
-  static CallbacksMap* GetOrCreate() {
-    if (g_callbacks_map_tls.Pointer()->Get())
-      return g_callbacks_map_tls.Pointer()->Get();
-    CallbacksMap* map = new CallbacksMap;
-    if (WorkerTaskRunner::Instance()->CurrentWorkerId())
-      WorkerTaskRunner::Instance()->AddStopObserver(map);
-    return map;
-  }
-
-  virtual ~CallbacksMap() {
-    IDMap<WebFileSystemCallbacks>::iterator iter(&callbacks_);
-    while (!iter.IsAtEnd()) {
-      iter.GetCurrentValue()->didFail(WebKit::WebFileErrorAbort);
-      iter.Advance();
-    }
-    g_callbacks_map_tls.Pointer()->Set(NULL);
-  }
-
-  // webkit_glue::WorkerTaskRunner::Observer implementation.
-  virtual void OnWorkerRunLoopStopped() OVERRIDE {
-    delete this;
-  }
-
-  int RegisterCallbacks(WebFileSystemCallbacks* callbacks) {
-    return callbacks_.Add(callbacks);
-  }
-
-  WebFileSystemCallbacks* GetAndUnregisterCallbacks(
-      int callbacks_id) {
-    WebFileSystemCallbacks* callbacks = callbacks_.Lookup(callbacks_id);
-    callbacks_.Remove(callbacks_id);
-    return callbacks;
-  }
-
- private:
-  CallbacksMap() {
-    g_callbacks_map_tls.Pointer()->Set(this);
-  }
-
-  IDMap<WebFileSystemCallbacks> callbacks_;
-
-  DISALLOW_COPY_AND_ASSIGN(CallbacksMap);
-};
+base::LazyInstance<base::ThreadLocalPointer<WebFileSystemImpl> >::Leaky
+    g_webfilesystem_tls = LAZY_INSTANCE_INITIALIZER;
 
 class WaitableCallbackResults {
  public:
@@ -161,10 +106,12 @@ void CallDispatcherOnMainThread(
 // Run WebFileSystemCallbacks's |method| with |params|.
 template <typename Method, typename Params>
 void RunCallbacks(int callbacks_id, Method method, const Params& params) {
-  if (!CallbacksMap::Get())
+  WebFileSystemImpl* filesystem =
+      WebFileSystemImpl::ThreadSpecificInstance(NULL);
+  if (!filesystem)
     return;
   WebFileSystemCallbacks* callbacks =
-      CallbacksMap::Get()->GetAndUnregisterCallbacks(callbacks_id);
+      filesystem->GetAndUnregisterCallbacks(callbacks_id);
   DCHECK(callbacks);
   DispatchToMethod(callbacks, method, params);
 }
@@ -191,6 +138,21 @@ void CallbackFileSystemCallbacks(
   DispatchResultsClosure(
       thread_id, callbacks_id, waitable_results,
       base::Bind(&RunCallbacks<Method, Params>, callbacks_id, method, params));
+}
+
+//-----------------------------------------------------------------------------
+// Callback adapters. Callbacks must be called on the original calling thread,
+// so these callback adapters relay back the results to the calling thread
+// if necessary.
+
+void OpenFileSystemCallbackAdapter(
+    int thread_id, int callbacks_id,
+    WaitableCallbackResults* waitable_results,
+    const std::string& name, const GURL& root) {
+  CallbackFileSystemCallbacks(
+      thread_id, callbacks_id, waitable_results,
+      &WebFileSystemCallbacks::didOpenFileSystem,
+      MakeTuple(UTF8ToUTF16(name), root));
 }
 
 void StatusCallbackAdapter(int thread_id, int callbacks_id,
@@ -241,11 +203,13 @@ void DidCreateFileWriter(
     WebKit::WebFileWriterClient* client,
     base::MessageLoopProxy* main_thread_loop,
     const base::PlatformFileInfo& file_info) {
-  if (!CallbacksMap::Get())
+  WebFileSystemImpl* filesystem =
+      WebFileSystemImpl::ThreadSpecificInstance(NULL);
+  if (!filesystem)
     return;
 
   WebFileSystemCallbacks* callbacks =
-      CallbacksMap::Get()->GetAndUnregisterCallbacks(callbacks_id);
+      filesystem->GetAndUnregisterCallbacks(callbacks_id);
   DCHECK(callbacks);
 
   if (file_info.is_directory || file_info.size < 0) {
@@ -278,11 +242,13 @@ void DidCreateSnapshotFile(
     const base::PlatformFileInfo& file_info,
     const base::FilePath& platform_path,
     int request_id) {
-  if (!CallbacksMap::Get())
+  WebFileSystemImpl* filesystem =
+      WebFileSystemImpl::ThreadSpecificInstance(NULL);
+  if (!filesystem)
     return;
 
   WebFileSystemCallbacks* callbacks =
-      CallbacksMap::Get()->GetAndUnregisterCallbacks(callbacks_id);
+      filesystem->GetAndUnregisterCallbacks(callbacks_id);
   DCHECK(callbacks);
 
   WebFileInfo web_file_info;
@@ -312,18 +278,89 @@ void CreateSnapshotFileCallbackAdapter(
 
 }  // namespace
 
-WebFileSystemImpl::~WebFileSystemImpl() {
+//-----------------------------------------------------------------------------
+// WebFileSystemImpl
+
+WebFileSystemImpl* WebFileSystemImpl::ThreadSpecificInstance(
+    base::MessageLoopProxy* main_thread_loop) {
+  if (g_webfilesystem_tls.Pointer()->Get() || !main_thread_loop)
+    return g_webfilesystem_tls.Pointer()->Get();
+  WebFileSystemImpl* filesystem = new WebFileSystemImpl(main_thread_loop);
+  if (WorkerTaskRunner::Instance()->CurrentWorkerId())
+    WorkerTaskRunner::Instance()->AddStopObserver(filesystem);
+  return filesystem;
+}
+
+void WebFileSystemImpl::DeleteThreadSpecificInstance() {
+  DCHECK(!WorkerTaskRunner::Instance()->CurrentWorkerId());
+  if (g_webfilesystem_tls.Pointer()->Get())
+    delete g_webfilesystem_tls.Pointer()->Get();
 }
 
 WebFileSystemImpl::WebFileSystemImpl(base::MessageLoopProxy* main_thread_loop)
     : main_thread_loop_(main_thread_loop) {
+  g_webfilesystem_tls.Pointer()->Set(this);
+}
+
+WebFileSystemImpl::~WebFileSystemImpl() {
+  IDMap<WebFileSystemCallbacks>::iterator iter(&callbacks_);
+  while (!iter.IsAtEnd()) {
+    iter.GetCurrentValue()->didFail(WebKit::WebFileErrorAbort);
+    iter.Advance();
+  }
+  g_webfilesystem_tls.Pointer()->Set(NULL);
+}
+
+void WebFileSystemImpl::OnWorkerRunLoopStopped() {
+  delete this;
+}
+
+void WebFileSystemImpl::openFileSystem(
+    const WebKit::WebURL& storage_partition,
+    WebKit::WebFileSystemType type,
+    bool create,
+    WebKit::WebFileSystemCallbacks* callbacks) {
+  int callbacks_id = RegisterCallbacks(callbacks);
+  WaitableCallbackResults* waitable_results =
+      WaitableCallbackResults::MaybeCreate(callbacks);
+  CallDispatcherOnMainThread(
+      main_thread_loop_.get(),
+      &FileSystemDispatcher::OpenFileSystem,
+      MakeTuple(GURL(storage_partition),
+                static_cast<fileapi::FileSystemType>(type),
+                0 /* size (not used) */, create,
+                base::Bind(&OpenFileSystemCallbackAdapter,
+                           CurrentWorkerId(), callbacks_id,
+                           base::Unretained(waitable_results)),
+                base::Bind(&StatusCallbackAdapter,
+                           CurrentWorkerId(), callbacks_id,
+                           base::Unretained(waitable_results))),
+      make_scoped_ptr(waitable_results));
+}
+
+void WebFileSystemImpl::deleteFileSystem(
+    const WebKit::WebURL& storage_partition,
+    WebKit::WebFileSystemType type,
+    WebKit::WebFileSystemCallbacks* callbacks) {
+  int callbacks_id = RegisterCallbacks(callbacks);
+  WaitableCallbackResults* waitable_results =
+      WaitableCallbackResults::MaybeCreate(callbacks);
+  CallDispatcherOnMainThread(
+      main_thread_loop_.get(),
+      &FileSystemDispatcher::DeleteFileSystem,
+      MakeTuple(GURL(storage_partition),
+                static_cast<fileapi::FileSystemType>(type),
+                base::Bind(&StatusCallbackAdapter,
+                           CurrentWorkerId(), callbacks_id,
+                           base::Unretained(waitable_results))),
+      make_scoped_ptr(waitable_results));
 }
 
 void WebFileSystemImpl::move(
     const WebKit::WebURL& src_path,
     const WebKit::WebURL& dest_path,
     WebKit::WebFileSystemCallbacks* callbacks) {
-  int callbacks_id = CallbacksMap::GetOrCreate()->RegisterCallbacks(callbacks);
+  int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
       WaitableCallbackResults::MaybeCreate(callbacks);
   CallDispatcherOnMainThread(
@@ -340,7 +377,7 @@ void WebFileSystemImpl::copy(
     const WebKit::WebURL& src_path,
     const WebKit::WebURL& dest_path,
     WebKit::WebFileSystemCallbacks* callbacks) {
-  int callbacks_id = CallbacksMap::GetOrCreate()->RegisterCallbacks(callbacks);
+  int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
       WaitableCallbackResults::MaybeCreate(callbacks);
   CallDispatcherOnMainThread(
@@ -356,7 +393,7 @@ void WebFileSystemImpl::copy(
 void WebFileSystemImpl::remove(
     const WebKit::WebURL& path,
     WebKit::WebFileSystemCallbacks* callbacks) {
-  int callbacks_id = CallbacksMap::GetOrCreate()->RegisterCallbacks(callbacks);
+  int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
       WaitableCallbackResults::MaybeCreate(callbacks);
   CallDispatcherOnMainThread(
@@ -372,7 +409,7 @@ void WebFileSystemImpl::remove(
 void WebFileSystemImpl::removeRecursively(
     const WebKit::WebURL& path,
     WebKit::WebFileSystemCallbacks* callbacks) {
-  int callbacks_id = CallbacksMap::GetOrCreate()->RegisterCallbacks(callbacks);
+  int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
       WaitableCallbackResults::MaybeCreate(callbacks);
   CallDispatcherOnMainThread(
@@ -388,7 +425,7 @@ void WebFileSystemImpl::removeRecursively(
 void WebFileSystemImpl::readMetadata(
     const WebKit::WebURL& path,
     WebKit::WebFileSystemCallbacks* callbacks) {
-  int callbacks_id = CallbacksMap::GetOrCreate()->RegisterCallbacks(callbacks);
+  int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
       WaitableCallbackResults::MaybeCreate(callbacks);
   CallDispatcherOnMainThread(
@@ -408,7 +445,7 @@ void WebFileSystemImpl::createFile(
     const WebKit::WebURL& path,
     bool exclusive,
     WebKit::WebFileSystemCallbacks* callbacks) {
-  int callbacks_id = CallbacksMap::GetOrCreate()->RegisterCallbacks(callbacks);
+  int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
       WaitableCallbackResults::MaybeCreate(callbacks);
   CallDispatcherOnMainThread(
@@ -425,7 +462,7 @@ void WebFileSystemImpl::createDirectory(
     const WebKit::WebURL& path,
     bool exclusive,
     WebKit::WebFileSystemCallbacks* callbacks) {
-  int callbacks_id = CallbacksMap::GetOrCreate()->RegisterCallbacks(callbacks);
+  int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
       WaitableCallbackResults::MaybeCreate(callbacks);
   CallDispatcherOnMainThread(
@@ -441,7 +478,7 @@ void WebFileSystemImpl::createDirectory(
 void WebFileSystemImpl::fileExists(
     const WebKit::WebURL& path,
     WebKit::WebFileSystemCallbacks* callbacks) {
-  int callbacks_id = CallbacksMap::GetOrCreate()->RegisterCallbacks(callbacks);
+  int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
       WaitableCallbackResults::MaybeCreate(callbacks);
   CallDispatcherOnMainThread(
@@ -457,7 +494,7 @@ base::Unretained(waitable_results))),
 void WebFileSystemImpl::directoryExists(
     const WebKit::WebURL& path,
     WebKit::WebFileSystemCallbacks* callbacks) {
-  int callbacks_id = CallbacksMap::GetOrCreate()->RegisterCallbacks(callbacks);
+  int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
       WaitableCallbackResults::MaybeCreate(callbacks);
   CallDispatcherOnMainThread(
@@ -473,7 +510,7 @@ void WebFileSystemImpl::directoryExists(
 void WebFileSystemImpl::readDirectory(
     const WebKit::WebURL& path,
     WebKit::WebFileSystemCallbacks* callbacks) {
-  int callbacks_id = CallbacksMap::GetOrCreate()->RegisterCallbacks(callbacks);
+  int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
       WaitableCallbackResults::MaybeCreate(callbacks);
   CallDispatcherOnMainThread(
@@ -500,7 +537,7 @@ void WebFileSystemImpl::createFileWriter(
     const WebURL& path,
     WebKit::WebFileWriterClient* client,
     WebKit::WebFileSystemCallbacks* callbacks) {
-  int callbacks_id = CallbacksMap::GetOrCreate()->RegisterCallbacks(callbacks);
+  int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
       WaitableCallbackResults::MaybeCreate(callbacks);
   CallDispatcherOnMainThread(
@@ -520,7 +557,7 @@ void WebFileSystemImpl::createFileWriter(
 void WebFileSystemImpl::createSnapshotFileAndReadMetadata(
     const WebKit::WebURL& path,
     WebKit::WebFileSystemCallbacks* callbacks) {
-  int callbacks_id = CallbacksMap::GetOrCreate()->RegisterCallbacks(callbacks);
+  int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
       WaitableCallbackResults::MaybeCreate(callbacks);
   CallDispatcherOnMainThread(
@@ -535,6 +572,17 @@ void WebFileSystemImpl::createSnapshotFileAndReadMetadata(
                            CurrentWorkerId(), callbacks_id,
                            base::Unretained(waitable_results))),
       make_scoped_ptr(waitable_results));
+}
+
+int WebFileSystemImpl::RegisterCallbacks(WebFileSystemCallbacks* callbacks) {
+  return callbacks_.Add(callbacks);
+}
+
+WebFileSystemCallbacks* WebFileSystemImpl::GetAndUnregisterCallbacks(
+    int callbacks_id) {
+  WebFileSystemCallbacks* callbacks = callbacks_.Lookup(callbacks_id);
+  callbacks_.Remove(callbacks_id);
+  return callbacks;
 }
 
 }  // namespace content

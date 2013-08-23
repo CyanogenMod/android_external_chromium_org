@@ -179,18 +179,6 @@ Press any key to continue exploring.
   <message name="IDS_NETWORK_ENROLLMENT_HANDLER_BUTTON" desc="Text of the accept button for generating a new network certificate.">
     Get new certificate
   </message>
-  <message name="IDS_NETWORK_ACTIVATION_ERROR_TITLE" desc="Title for network connection error notification">
-    Network Activation Error
-  </message>
-  <message name="IDS_NETWORK_ACTIVATION_NEEDS_CONNECTION" desc="Message when attempting to activate a mobile network that requries a connection">
-    Activation of '<ph name="name">$1<ex>Generic Wireless</ex></ph>' requires a network connection.
-  </message>
-  <message name="IDS_NETWORK_CELLULAR_ACTIVATED_TITLE" desc="Title for cellular activated notification">
-    Cellular Activated
-  </message>
-  <message name="IDS_NETWORK_CELLULAR_ACTIVATED" desc="Text of the cellular activated notification">
-    Congratulations! Your '<ph name="name">$1<ex>Generic Wireless</ex></ph>' data service has been activated and is ready to go.
-  </message>
   <message name="IDS_LOW_BATTERY_TITLE" desc="Title for low battery notification">
     Battery Low
   </message>
@@ -1291,6 +1279,9 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_ADVANCED_BUTTON" desc="In settings Internet options, Join other network, the text on the button to show advanced settings.">
     Advanced
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_EAP_SUBJECT_MATCH" desc="In settings Internet options, the label for the EAP Subject Match field.">
+    Subject Match:
   </message>
   <message name="IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_BAD_PASSPHRASE" desc="In settings Internet options, the label for the bad passphrase.">
     Incorrect password.
@@ -2533,6 +2524,9 @@ Battery full
   </message>
   <message name="IDS_PROXY_BYPASS" desc="Label for the proxy bypass list.">
     Do not use the proxy settings for these hosts and domains:
+  </message>
+  <message name="IDS_PROXY_WEB_PROXY_AUTO_DISCOVERY" desc="Label for the web proxy auto discovery url.">
+    Web Proxy Auto Discovery URL
   </message>
 
   <!-- Accessibility strings, to be spoken -->

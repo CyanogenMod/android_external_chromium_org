@@ -65,12 +65,14 @@ WebMediaPlayerAndroid::WebMediaPlayerAndroid(
     RendererMediaPlayerManager* manager,
     WebMediaPlayerProxyAndroid* proxy,
     StreamTextureFactory* factory,
+    const scoped_refptr<base::MessageLoopProxy>& media_loop,
     media::MediaLog* media_log)
     : frame_(frame),
       client_(client),
       delegate_(delegate),
       buffered_(1u),
       main_loop_(base::MessageLoopProxy::current()),
+      media_loop_(media_loop),
       ignore_metadata_duration_change_(false),
       pending_seek_(0),
       seeking_(false),
@@ -193,25 +195,33 @@ WebMediaPlayerAndroid::~WebMediaPlayerAndroid() {
 #endif
 }
 
-void WebMediaPlayerAndroid::load(const WebURL& url, CORSMode cors_mode) {
-  load(url, NULL, cors_mode);
-}
-
-void WebMediaPlayerAndroid::load(const WebURL& url,
-                                 WebMediaSource* media_source,
+void WebMediaPlayerAndroid::load(LoadType load_type,
+                                 const WebKit::WebURL& url,
                                  CORSMode cors_mode) {
-  source_type_ = MediaPlayerAndroid::SOURCE_TYPE_URL;
+#if defined(GOOGLE_TV)
+  // TODO(acolwell): Remove this hack once Blink-side changes land.
+  if (load_type == LoadTypeURL && media_stream_client_)
+    load_type = LoadTypeMediaStream;
+#endif
+
+  switch (load_type) {
+    case LoadTypeURL:
+      source_type_ = MediaPlayerAndroid::SOURCE_TYPE_URL;
+      break;
+    case LoadTypeMediaSource:
+      source_type_ = MediaPlayerAndroid::SOURCE_TYPE_MSE;
+      break;
+    case LoadTypeMediaStream:
+#if defined(GOOGLE_TV)
+      source_type_ = MediaPlayerAndroid::SOURCE_TYPE_MSE;
+#else
+      source_type_ = MediaPlayerAndroid::SOURCE_TYPE_URL;
+#endif
+      break;
+  }
+
   has_media_metadata_ = false;
   has_media_info_ = false;
-
-  if (media_source)
-    source_type_ = MediaPlayerAndroid::SOURCE_TYPE_MSE;
-#if defined(GOOGLE_TV)
-  if (media_stream_client_) {
-    DCHECK(!media_source);
-    source_type_ = MediaPlayerAndroid::SOURCE_TYPE_STREAM;
-  }
-#endif
 
   media::SetDecryptorReadyCB set_decryptor_ready_cb;
   if (decryptor_) {  // |decryptor_| can be NULL is EME if not enabled.
@@ -222,11 +232,12 @@ void WebMediaPlayerAndroid::load(const WebURL& url,
   if (source_type_ != MediaPlayerAndroid::SOURCE_TYPE_URL) {
     has_media_info_ = true;
     media_source_delegate_.reset(
-        new MediaSourceDelegate(proxy_, player_id_, media_log_));
+        new MediaSourceDelegate(proxy_, player_id_, media_loop_, media_log_));
     // |media_source_delegate_| is owned, so Unretained() is safe here.
     if (source_type_ == MediaPlayerAndroid::SOURCE_TYPE_MSE) {
       media_source_delegate_->InitializeMediaSource(
-          media_source,
+          base::Bind(&WebMediaPlayerAndroid::OnMediaSourceOpened,
+                     base::Unretained(this)),
           base::Bind(&WebMediaPlayerAndroid::OnNeedKey, base::Unretained(this)),
           set_decryptor_ready_cb,
           base::Bind(&WebMediaPlayerAndroid::UpdateNetworkState,
@@ -1111,6 +1122,11 @@ void WebMediaPlayerAndroid::OnKeyMessage(const std::string& session_id,
                       message.empty() ? NULL : &message[0],
                       message.size(),
                       destination_url_gurl);
+}
+
+void WebMediaPlayerAndroid::OnMediaSourceOpened(
+    WebKit::WebMediaSourceNew* web_media_source) {
+  client_->mediaSourceOpened(web_media_source);
 }
 
 void WebMediaPlayerAndroid::OnNeedKey(const std::string& session_id,

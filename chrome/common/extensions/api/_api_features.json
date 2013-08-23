@@ -141,6 +141,10 @@
     "dependencies": ["permission:declarativeWebRequest"],
     "contexts": ["blessed_extension"]
   },
+  "desktopCapture": {
+    "dependencies": ["permission:desktopCapture"],
+    "contexts": ["blessed_extension"]
+  },
   "developerPrivate": {
     "dependencies": ["permission:developerPrivate"],
     "contexts": ["blessed_extension"]
@@ -206,10 +210,6 @@
     "contexts": ["blessed_extension"]
   },
   "experimental.input.virtualKeyboard": {
-    "dependencies": ["permission:experimental"],
-    "contexts": ["blessed_extension"]
-  },
-  "experimental.processes": {
     "dependencies": ["permission:experimental"],
     "contexts": ["blessed_extension"]
   },
@@ -327,6 +327,13 @@
     "channel": "stable",
     "extension_types": ["extension", "packaged_app", "platform_app"]
   },
+  // This is not a real API, only here for documentation purposes.
+  // See http://crbug.com/275944 for background.
+  "manifestTypes": {
+    "internal": true,
+    "channel": "stable",
+    "contexts": "all"
+  },
   "mediaGalleries": {
     "dependencies": ["permission:mediaGalleries"],
     "contexts": ["blessed_extension"]
@@ -389,6 +396,10 @@
   },
   "privacy": {
     "dependencies": ["permission:privacy"],
+    "contexts": ["blessed_extension"]
+  },
+  "processes": {
+    "dependencies": ["permission:processes"],
     "contexts": ["blessed_extension"]
   },
   "proxy": {
@@ -458,12 +469,17 @@
     "dependencies": ["permission:serial"],
     "contexts": ["blessed_extension"]
   },
-  "sessionRestore": {
-    "dependencies": ["permission:sessionRestore"],
+  "sessions": {
+    "dependencies": ["permission:sessions"],
     "contexts": ["blessed_extension"]
   },
   "socket": {
     "dependencies": ["permission:socket"],
+    "contexts": ["blessed_extension"]
+  },
+  "sockets.udp": {
+    "dependencies": ["permission:sockets.udp"],
+    "channel": "dev",
     "contexts": ["blessed_extension"]
   },
   "storage": {

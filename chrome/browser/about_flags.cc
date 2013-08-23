@@ -10,6 +10,7 @@
 #include <set>
 #include <utility>
 
+#include "ash/ash_switches.h"
 #include "base/command_line.h"
 #include "base/memory/singleton.h"
 #include "base/strings/string_number_conversions.h"
@@ -513,11 +514,11 @@ const Experiment kExperiments[] = {
     MULTI_VALUE_TYPE(kNaClDebugMaskChoices)
   },
   {
-    "enable-pnacl",  // FLAGS:RECORD_UMA
-    IDS_FLAGS_ENABLE_PNACL_NAME,
-    IDS_FLAGS_ENABLE_PNACL_DESCRIPTION,
+    "disable-pnacl",  // FLAGS:RECORD_UMA
+    IDS_FLAGS_PNACL_NAME,
+    IDS_FLAGS_PNACL_DESCRIPTION,
     kOsDesktop,
-    SINGLE_VALUE_TYPE(switches::kEnablePnacl)
+    ENABLE_DISABLE_VALUE_TYPE("", switches::kDisablePnacl)
   },
   {
     "extension-apis",  // FLAGS:RECORD_UMA
@@ -589,13 +590,6 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_DISABLE_HYPERLINK_AUDITING_DESCRIPTION,
     kOsAll,
     SINGLE_VALUE_TYPE(switches::kNoPings)
-  },
-  {
-    "experimental-location-features",  // FLAGS:RECORD_UMA
-    IDS_FLAGS_EXPERIMENTAL_LOCATION_FEATURES_NAME,
-    IDS_FLAGS_EXPERIMENTAL_LOCATION_FEATURES_DESCRIPTION,
-    kOsMac,
-    SINGLE_VALUE_TYPE(switches::kExperimentalLocationFeatures)
   },
   {
     "tab-groups-context-menu",
@@ -781,20 +775,6 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ASH_AUTO_MAXIMIZING_DESCRIPTION,
     kOsWin | kOsLinux | kOsCrOS,
     SINGLE_VALUE_TYPE(ash::switches::kAshDisableAutoMaximizing)
-  },
-  {
-    "ash-disable-auto-window-placement",
-    IDS_FLAGS_ASH_AUTO_WINDOW_PLACEMENT_NAME,
-    IDS_FLAGS_ASH_AUTO_WINDOW_PLACEMENT_DESCRIPTION,
-    kOsWin | kOsLinux | kOsCrOS,
-    SINGLE_VALUE_TYPE(ash::switches::kAshDisableAutoWindowPlacement)
-  },
-  {
-    "ash-disable-per-app-launcher",
-    IDS_FLAGS_ASH_DISABLE_PER_APP_LAUNCHER_NAME,
-    IDS_FLAGS_ASH_DISABLE_PER_APP_LAUNCHER_DESCRIPTION,
-    kOsWin | kOsLinux | kOsCrOS,
-    SINGLE_VALUE_TYPE(ash::switches::kAshDisablePerAppLauncher)
   },
 #endif
   {
@@ -1009,7 +989,9 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_SHOW_SHELF_ALIGNMENT_MENU_NAME,
     IDS_FLAGS_SHOW_SHELF_ALIGNMENT_MENU_DESCRIPTION,
     kOsAll,
-    SINGLE_VALUE_TYPE(switches::kShowShelfAlignmentMenu)
+    ENABLE_DISABLE_VALUE_TYPE(
+        ash::switches::kShowShelfAlignmentMenu,
+        ash::switches::kHideShelfAlignmentMenu)
   },
   {
     "disable-minimize-on-second-launcher-item-click",
@@ -1256,7 +1238,7 @@ const Experiment kExperiments[] = {
     "enable-interactive-autocomplete",
     IDS_FLAGS_ENABLE_INTERACTIVE_AUTOCOMPLETE_NAME,
     IDS_FLAGS_ENABLE_INTERACTIVE_AUTOCOMPLETE_DESCRIPTION,
-    kOsWin | kOsCrOS | kOsMac,
+    kOsWin | kOsCrOS | kOsAndroid | kOsMac,
     ENABLE_DISABLE_VALUE_TYPE(
         autofill::switches::kEnableInteractiveAutocomplete,
         autofill::switches::kDisableInteractiveAutocomplete)
@@ -1289,6 +1271,15 @@ const Experiment kExperiments[] = {
     ENABLE_DISABLE_VALUE_TYPE_AND_VALUE(
         switches::kTouchSideBezels, "1",
         switches::kTouchSideBezels, "0")
+  },
+  {
+    "enable-no-touch-to-renderer-while-scrolling",
+    IDS_FLAGS_ENABLE_NO_TOUCH_TO_RENDERER_WHILE_SCROLLING_NAME,
+    IDS_FLAGS_ENABLE_NO_TOUCH_TO_RENDERER_WHILE_SCROLLING_DESCRIPTION,
+    kOsDesktop,
+    ENABLE_DISABLE_VALUE_TYPE_AND_VALUE(
+        switches::kNoTouchToRendererWhileScrolling, "1",
+        switches::kNoTouchToRendererWhileScrolling, "0")
   },
   {
     "enable-touch-drag-drop",
@@ -1598,15 +1589,38 @@ const Experiment kExperiments[] = {
     kOsMac | kOsWin | kOsLinux,
     SINGLE_VALUE_TYPE(switches::kGaiaProfileInfo)
   },
-#if defined(OS_WIN)
   {
     "disable-app-launcher",
     IDS_FLAGS_DISABLE_APP_LIST_NAME,
     IDS_FLAGS_DISABLE_APP_LIST_DESCRIPTION,
-    kOsAll,
+    kOsMac | kOsWin,
     SINGLE_VALUE_TYPE(switches::kDisableAppList)
   },
+#if defined(OS_CHROMEOS)
+  {
+    "disable-user-image-sync",
+    IDS_FLAGS_DISABLE_USER_IMAGE_SYNC_NAME,
+    IDS_FLAGS_DISABLE_USER_IMAGE_SYNC_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(chromeos::switches::kDisableUserImageSync)
+  },
 #endif
+#if defined(OS_ANDROID)
+  {
+    "enable-accessibility-tab-switcher",
+    IDS_FLAGS_ENABLE_ACCESSIBILITY_TAB_SWITCHER_NAME,
+    IDS_FLAGS_ENABLE_ACCESSIBILITY_TAB_SWITCHER_DESCRIPTION,
+    kOsAndroid,
+    SINGLE_VALUE_TYPE(switches::kEnableAccessibilityTabSwitcher)
+  },
+#endif
+  {
+    "enable-batched-shutdown",
+    IDS_FLAGS_ENABLE_BATCHED_SHUTDOWN_NAME,
+    IDS_FLAGS_ENABLE_BATCHED_SHUTDOWN_DESCRIPTION,
+    kOsDesktop,
+    SINGLE_VALUE_TYPE(switches::kEnableBatchedShutdown)
+  },
 };
 
 const Experiment* experiments = kExperiments;

@@ -389,6 +389,8 @@ cr.define('options.internet', function() {
       updateHidden('#details-internet-page .wimax-details', !this.wimax);
       updateHidden('#details-internet-page .vpn-details', !this.vpn);
       updateHidden('#details-internet-page .proxy-details', !this.showProxy);
+      updateHidden('#details-internet-page .gsm-only', !this.gsm);
+      updateHidden('#details-internet-page .cdma-only', this.gsm);
       /* Network information merged into the Wifi tab for wireless networks
          unless the option is set for enabling a static IP configuration. */
       updateHidden('#details-internet-page .network-details',
@@ -589,6 +591,7 @@ cr.define('options.internet', function() {
     $('buyplan-details').hidden = true;
     $('activate-details').hidden = true;
     $('view-account-details').hidden = true;
+    $('web-proxy-auto-discovery').hidden = true;
     detailsPage.cellular = false;
     detailsPage.wireless = false;
     detailsPage.vpn = false;
@@ -820,13 +823,13 @@ cr.define('options.internet', function() {
     if (data.type != Constants.TYPE_ETHERNET)
       $('details-internet-disconnect').hidden = !data.connected;
 
-    if (data.type == Constants.TYPE_WIMAX ||
-        data.type == Constants.TYPE_WIFI ||
-        data.type == Constants.TYPE_VPN)
+    if ((data.type == Constants.TYPE_WIFI && data.encryption) ||
+        data.type == Constants.TYPE_WIMAX ||
+        data.type == Constants.TYPE_VPN) {
       $('details-internet-configure').hidden = false;
-    else
+    } else {
       $('details-internet-configure').hidden = true;
-
+    }
     $('connection-state').data = data;
   }
 
@@ -881,12 +884,14 @@ cr.define('options.internet', function() {
       $('details-internet-disconnect').hidden = true;
     else
       $('details-internet-disconnect').hidden = !data.connected;
-    if (data.type == Constants.TYPE_WIMAX ||
-        data.type == Constants.TYPE_WIFI ||
-        data.type == Constants.TYPE_VPN)
+    if ((data.type == Constants.TYPE_WIFI && data.encryption) ||
+        data.type == Constants.TYPE_WIMAX ||
+        data.type == Constants.TYPE_VPN) {
       $('details-internet-configure').hidden = false;
-    else
+    } else {
       $('details-internet-configure').hidden = true;
+    }
+    $('web-proxy-auto-discovery').hidden = true;
 
     detailsPage.deviceConnected = data.deviceConnected;
     detailsPage.connecting = data.connecting;
@@ -911,6 +916,11 @@ cr.define('options.internet', function() {
       inetNetmask.value = data.ipconfig.value.netmask;
       inetGateway.automatic = data.ipconfig.value.gateway;
       inetGateway.value = data.ipconfig.value.gateway;
+      if (data.ipconfig.value.webProxyAutoDiscoveryUrl) {
+        $('web-proxy-auto-discovery').hidden = false;
+        $('web-proxy-auto-discovery-url').value =
+            data.ipconfig.value.webProxyAutoDiscoveryUrl;
+      }
     }
 
     // Override the "automatic" values with the real saved DHCP values,
@@ -1088,18 +1098,29 @@ cr.define('options.internet', function() {
       $('model-id').textContent = data.modelId;
       $('firmware-revision').textContent = data.firmwareRevision;
       $('hardware-revision').textContent = data.hardwareRevision;
-      $('prl-version').textContent = data.prlVersion;
-      $('meid').textContent = data.meid;
-      $('iccid').textContent = data.iccid;
-      $('imei').textContent = data.imei;
       $('mdn').textContent = data.mdn;
-      $('esn').textContent = data.esn;
       $('min').textContent = data.min;
+      $('operator-name').textContent = data.operatorName;
+      $('operator-code').textContent = data.operatorCode;
+
+      // Show IMEI/ESN/MEID only if they are available.
+      (function() {
+        var setContentOrHide = function(property) {
+          var value = data[property];
+          if (value)
+            $(property).textContent = value;
+          else
+            $(property).parentElement.hidden = true;
+        };
+        setContentOrHide('esn');
+        setContentOrHide('imei');
+        setContentOrHide('meid');
+        setContentOrHide('prl-version');
+      })();
       detailsPage.gsm = data.gsm;
       if (data.gsm) {
-        $('operator-name').textContent = data.operatorName;
-        $('operator-code').textContent = data.operatorCode;
-        $('imsi').textContent = data.imsi;
+        $('iccid').textContent = data.iccid ? data.iccid : '';
+        $('imsi').textContent = data.imsi ? data.imsi : '';
 
         var apnSelector = $('select-apn');
         // Clear APN lists, keep only last element that "other".

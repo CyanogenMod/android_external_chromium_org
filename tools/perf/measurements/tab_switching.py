@@ -20,6 +20,7 @@ class TabSwitching(page_measurement.PageMeasurement):
   def CustomizeBrowserOptions(self, options):
     options.AppendExtraBrowserArg('--enable-stats-collection-bindings')
     options.AppendExtraBrowserArg('--dom-automation')
+    options.AppendExtraBrowserArg('--reduce-security-for-dom-automation-tests')
 
   def CanRunForPage(self, page):
     return not page.page_set.pages.index(page)
@@ -30,6 +31,7 @@ class TabSwitching(page_measurement.PageMeasurement):
 
       page_state = page_runner.PageState()
       page_state.PreparePage(page.page_set.pages[i], t)
+      page_state.ImplicitPageNavigation(page.page_set.pages[i], t)
 
   def MeasurePage(self, _, tab, results):
     """Although this is called MeasurePage, we're actually using this function
@@ -37,7 +39,7 @@ class TabSwitching(page_measurement.PageMeasurement):
     thenrecord a single histogram for the tab switching metric.
     """
     histogram_name = 'MPArch.RWH_TabSwitchPaintDuration'
-    histogram_type = 'getBrowserHistogram'
+    histogram_type = histogram_util.BROWSER_HISTOGRAM
     first_histogram = histogram_util.GetHistogramFromDomAutomation(
         histogram_type, histogram_name, tab)
     prev_histogram = first_histogram

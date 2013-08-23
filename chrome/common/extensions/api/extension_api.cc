@@ -18,9 +18,9 @@
 #include "base/values.h"
 #include "chrome/common/extensions/api/generated_schemas.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/features/feature.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/common/extensions/permissions/permissions_data.h"
+#include "extensions/common/features/feature.h"
 #include "extensions/common/features/feature_provider.h"
 #include "grit/common_resources.h"
 #include "grit/extensions_api_resources.h"
@@ -243,8 +243,6 @@ void ExtensionAPI::InitDefaultConfiguration() {
       IDR_EXTENSION_API_JSON_DECLARATIVE_WEBREQUEST);
   RegisterSchemaResource("experimental.input.virtualKeyboard",
       IDR_EXTENSION_API_JSON_EXPERIMENTAL_INPUT_VIRTUALKEYBOARD);
-  RegisterSchemaResource("experimental.processes",
-      IDR_EXTENSION_API_JSON_EXPERIMENTAL_PROCESSES);
   RegisterSchemaResource("experimental.rlz",
       IDR_EXTENSION_API_JSON_EXPERIMENTAL_RLZ);
   RegisterSchemaResource("runtime", IDR_EXTENSION_API_JSON_RUNTIME);
@@ -257,6 +255,7 @@ void ExtensionAPI::InitDefaultConfiguration() {
   RegisterSchemaResource("pageAction", IDR_EXTENSION_API_JSON_PAGEACTION);
   RegisterSchemaResource("pageActions", IDR_EXTENSION_API_JSON_PAGEACTIONS);
   RegisterSchemaResource("privacy", IDR_EXTENSION_API_JSON_PRIVACY);
+  RegisterSchemaResource("processes", IDR_EXTENSION_API_JSON_PROCESSES);
   RegisterSchemaResource("proxy", IDR_EXTENSION_API_JSON_PROXY);
   RegisterSchemaResource("scriptBadge", IDR_EXTENSION_API_JSON_SCRIPTBADGE);
   RegisterSchemaResource("streamsPrivate",
@@ -284,6 +283,7 @@ void ExtensionAPI::RegisterDependencyProvider(const std::string& name,
 }
 
 bool ExtensionAPI::IsAnyFeatureAvailableToContext(const std::string& api_name,
+                                                  const Extension* extension,
                                                   Feature::Context context,
                                                   const GURL& url) {
   FeatureProviderMap::iterator provider = dependency_providers_.find("api");
@@ -297,11 +297,11 @@ bool ExtensionAPI::IsAnyFeatureAvailableToContext(const std::string& api_name,
        i != features.end(); ++i) {
     const std::string& feature_name = *i;
     if (feature_name != api_name && feature_name.find(api_name + ".") == 0) {
-      if (IsAvailable(feature_name, NULL, context, url).is_available())
+      if (IsAvailable(feature_name, extension, context, url).is_available())
         return true;
     }
   }
-  return IsAvailable(api_name, NULL, context, url).is_available();
+  return IsAvailable(api_name, extension, context, url).is_available();
 }
 
 Feature::Availability ExtensionAPI::IsAvailable(const std::string& full_name,

@@ -8,14 +8,15 @@
 #include "base/message_loop/message_loop.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "cc/output/output_surface_client.h"
+#include "cc/resources/returned_resource.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace cc {
 
 FakeOutputSurface::FakeOutputSurface(
-    scoped_ptr<WebKit::WebGraphicsContext3D> context3d,
+    scoped_refptr<ContextProvider> context_provider,
     bool delegated_rendering)
-    : OutputSurface(context3d.Pass()),
+    : OutputSurface(context_provider),
       client_(NULL),
       num_sent_frames_(0),
       needs_begin_frame_(false),
@@ -41,10 +42,10 @@ FakeOutputSurface::FakeOutputSurface(
 }
 
 FakeOutputSurface::FakeOutputSurface(
-    scoped_ptr<WebKit::WebGraphicsContext3D> context3d,
+    scoped_refptr<ContextProvider> context_provider,
     scoped_ptr<SoftwareOutputDevice> software_device,
     bool delegated_rendering)
-    : OutputSurface(context3d.Pass(), software_device.Pass()),
+    : OutputSurface(context_provider, software_device.Pass()),
       client_(NULL),
       num_sent_frames_(0),
       forced_draw_to_software_device_(false),
@@ -59,7 +60,7 @@ FakeOutputSurface::~FakeOutputSurface() {}
 
 void FakeOutputSurface::SwapBuffers(CompositorFrame* frame) {
   if (frame->software_frame_data || frame->delegated_frame_data ||
-      !context3d()) {
+      !context_provider()) {
     frame->AssignTo(&last_sent_frame_);
 
     if (last_sent_frame_.delegated_frame_data) {
@@ -111,13 +112,6 @@ bool FakeOutputSurface::BindToClient(OutputSurfaceClient* client) {
   }
 }
 
-bool FakeOutputSurface::SetAndInitializeContext3D(
-    scoped_ptr<WebKit::WebGraphicsContext3D> context3d) {
-  context3d_.reset();
-  return InitializeAndSetContext3D(context3d.Pass(),
-                                   scoped_refptr<ContextProvider>());
-}
-
 void FakeOutputSurface::SetTreeActivationCallback(
     const base::Closure& callback) {
   DCHECK(client_);
@@ -133,7 +127,7 @@ void FakeOutputSurface::ReturnResource(unsigned id, CompositorFrameAck* ack) {
       break;
   }
   DCHECK(it != resources_held_by_parent_.end());
-  ack->resources.push_back(*it);
+  ack->resources.push_back(it->ToReturnedResource());
   resources_held_by_parent_.erase(it);
 }
 

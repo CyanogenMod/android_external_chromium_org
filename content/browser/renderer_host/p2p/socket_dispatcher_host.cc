@@ -51,7 +51,9 @@ class P2PSocketDispatcherHost::DnsRequest {
 
     net::HostResolver::RequestInfo info(net::HostPortPair(host_name_, 0));
     int result = resolver_.Resolve(
-        info, &addresses_,
+        info,
+        net::DEFAULT_PRIORITY,
+        &addresses_,
         base::Bind(&P2PSocketDispatcherHost::DnsRequest::OnDone,
                    base::Unretained(this)),
         net::BoundNetLog());

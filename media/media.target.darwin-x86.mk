@@ -31,7 +31,6 @@ LOCAL_SRC_FILES := \
 	media/audio/android/audio_manager_android.cc \
 	media/audio/android/opensles_input.cc \
 	media/audio/android/opensles_output.cc \
-	media/audio/async_socket_io_handler_posix.cc \
 	media/audio/audio_buffers_state.cc \
 	media/audio/audio_device_name.cc \
 	media/audio/audio_device_thread.cc \
@@ -49,6 +48,7 @@ LOCAL_SRC_FILES := \
 	media/audio/audio_output_resampler.cc \
 	media/audio/audio_power_monitor.cc \
 	media/audio/audio_util.cc \
+	media/audio/clockless_audio_sink.cc \
 	media/audio/cross_process_notification.cc \
 	media/audio/cross_process_notification_posix.cc \
 	media/audio/fake_audio_consumer.cc \
@@ -84,8 +84,8 @@ LOCAL_SRC_FILES := \
 	media/base/data_source.cc \
 	media/base/decoder_buffer.cc \
 	media/base/decoder_buffer_queue.cc \
-	media/base/decryptor.cc \
 	media/base/decrypt_config.cc \
+	media/base/decryptor.cc \
 	media/base/demuxer.cc \
 	media/base/demuxer_stream.cc \
 	media/base/djb2.cc \
@@ -108,6 +108,7 @@ LOCAL_SRC_FILES := \
 	media/base/sinc_resampler.cc \
 	media/base/stream_parser.cc \
 	media/base/stream_parser_buffer.cc \
+	media/base/user_input_monitor.cc \
 	media/base/video_decoder.cc \
 	media/base/video_decoder_config.cc \
 	media/base/video_frame.cc \
@@ -123,8 +124,8 @@ LOCAL_SRC_FILES := \
 	media/filters/decrypting_demuxer_stream.cc \
 	media/filters/decrypting_video_decoder.cc \
 	media/filters/file_data_source.cc \
+	media/filters/gpu_video_accelerator_factories.cc \
 	media/filters/gpu_video_decoder.cc \
-	media/filters/gpu_video_decoder_factories.cc \
 	media/filters/h264_to_annex_b_bitstream_converter.cc \
 	media/filters/in_memory_url_protocol.cc \
 	media/filters/opus_audio_decoder.cc \
@@ -142,6 +143,7 @@ LOCAL_SRC_FILES := \
 	media/video/capture/video_capture_proxy.cc \
 	media/video/picture.cc \
 	media/video/video_decode_accelerator.cc \
+	media/video/video_encode_accelerator.cc \
 	media/webm/webm_audio_client.cc \
 	media/webm/webm_cluster_parser.cc \
 	media/webm/webm_constants.cc \
@@ -217,6 +219,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DMEDIA_IMPLEMENTATION' \
+	'-DDISABLE_USER_INPUT_MONITOR' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
@@ -330,6 +333,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DMEDIA_IMPLEMENTATION' \
+	'-DDISABLE_USER_INPUT_MONITOR' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \

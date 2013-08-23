@@ -14,139 +14,137 @@
 #include "content/common/indexed_db/indexed_db_key.h"
 #include "content/common/indexed_db/indexed_db_key_path.h"
 
+// LevelDB Coding Scheme
+// =====================
+//
 // LevelDB stores key/value pairs. Keys and values are strings of bytes,
 // normally of type std::string.
 //
-// The keys in the backing store are variable-length tuples with different types
-// of fields. Each key in the backing store starts with a ternary prefix:
-// (database id, object store id, index id). For each, 0 is reserved for
-// meta-data.
+// The keys in the backing store are variable-length tuples with different
+// types of fields. Each key in the backing store starts with a ternary
+// prefix: (database id, object store id, index id). For each, 0 is reserved
+// for metadata. See KeyPrefix::Decode() for details of the prefix coding.
+//
 // The prefix makes sure that data for a specific database, object store, and
-// index are grouped together. The locality is important for performance: common
-// operations should only need a minimal number of seek operations. For example,
-// all the meta-data for a database is grouped together so that reading that
-// meta-data only requires one seek.
+// index are grouped together. The locality is important for performance:
+// common operations should only need a minimal number of seek operations. For
+// example, all the metadata for a database is grouped together so that
+// reading that metadata only requires one seek.
 //
 // Each key type has a class (in square brackets below) which knows how to
 // encode, decode, and compare that key type.
 //
-// Global meta-data have keys with prefix (0,0,0), followed by a type byte:
-//
-//     <0, 0, 0, 0>                                           =>
-// IndexedDB/LevelDB schema version [SchemaVersionKey]
-//     <0, 0, 0, 1>                                           => The maximum
-// database id ever allocated [MaxDatabaseIdKey]
-//     <0, 0, 0, 2>                                           =>
-// SerializedScriptValue version [DataVersionKey]
-//     <0, 0, 0, 100, database id>                            => Existence
-// implies the database id is in the free list [DatabaseFreeListKey]
-//     <0, 0, 0, 201, utf16 origin name, utf16 database name> => Database id
-// [DatabaseNameKey]
+// Strings (origins, names, etc) are encoded as UTF-16BE.
 //
 //
-// Database meta-data:
+// Global metadata
+// ---------------
+// The prefix is <0, 0, 0>, followed by a metadata type byte:
 //
-//     Again, the prefix is followed by a type byte.
-//
-//     <database id, 0, 0, 0> => utf16 origin name [DatabaseMetaDataKey]
-//     <database id, 0, 0, 1> => utf16 database name [DatabaseMetaDataKey]
-//     <database id, 0, 0, 2> => utf16 user version data [DatabaseMetaDataKey]
-//     <database id, 0, 0, 3> => maximum object store id ever allocated
-// [DatabaseMetaDataKey]
-//     <database id, 0, 0, 4> => user integer version (var int)
-// [DatabaseMetaDataKey]
-//
-//
-// Object store meta-data:
-//
-//     The prefix is followed by a type byte, then a variable-length integer,
-// and then another type byte.
-//
-//     <database id, 0, 0, 50, object store id, 0> => utf16 object store name
-// [ObjectStoreMetaDataKey]
-//     <database id, 0, 0, 50, object store id, 1> => utf16 key path
-// [ObjectStoreMetaDataKey]
-//     <database id, 0, 0, 50, object store id, 2> => has auto increment
-// [ObjectStoreMetaDataKey]
-//     <database id, 0, 0, 50, object store id, 3> => is evictable
-// [ObjectStoreMetaDataKey]
-//     <database id, 0, 0, 50, object store id, 4> => last "version" number
-// [ObjectStoreMetaDataKey]
-//     <database id, 0, 0, 50, object store id, 5> => maximum index id ever
-// allocated [ObjectStoreMetaDataKey]
-//     <database id, 0, 0, 50, object store id, 6> => has key path (vs. null)
-// [ObjectStoreMetaDataKey]
-//     <database id, 0, 0, 50, object store id, 7> => key generator current
-// number [ObjectStoreMetaDataKey]
+// <0, 0, 0, 0> => backing store schema version [SchemaVersionKey]
+// <0, 0, 0, 1> => maximum allocated database [MaxDatabaseIdKey]
+// <0, 0, 0, 2> => SerializedScriptValue version [DataVersionKey]
+// <0, 0, 0, 100, database id>
+//   => Existence implies the database id is in the free list
+//      [DatabaseFreeListKey]
+// <0, 0, 0, 201, origin, database name> => Database id [DatabaseNameKey]
 //
 //
-// Index meta-data:
+// Database metadata: [DatabaseMetaDataKey]
+// ----------------------------------------
+// The prefix is <database id, 0, 0> followed by a metadata type byte:
 //
-//     The prefix is followed by a type byte, then two variable-length integers,
-// and then another type byte.
-//
-//     <database id, 0, 0, 100, object store id, index id, 0> => utf16 index
-// name [IndexMetaDataKey]
-//     <database id, 0, 0, 100, object store id, index id, 1> => are index keys
-// unique [IndexMetaDataKey]
-//     <database id, 0, 0, 100, object store id, index id, 2> => utf16 key path
-// [IndexMetaDataKey]
-//     <database id, 0, 0, 100, object store id, index id, 3> => is index
-// multi-entry [IndexMetaDataKey]
+// <database id, 0, 0, 0> => origin name
+// <database id, 0, 0, 1> => database name
+// <database id, 0, 0, 2> => IDB string version data (obsolete)
+// <database id, 0, 0, 3> => maximum allocated object store id
+// <database id, 0, 0, 4> => IDB integer version (var int)
 //
 //
-// Other object store and index meta-data:
+// Object store metadata: [ObjectStoreMetaDataKey]
+// -----------------------------------------------
+// The prefix is <database id, 0, 0>, followed by a type byte (50), then the
+// object store id (var int), then a metadata type byte.
 //
-//     The prefix is followed by a type byte. The object store and index id are
-// variable length integers, the utf16 strings are variable length strings.
+// <database id, 0, 0, 50, object store id, 0> => object store name
+// <database id, 0, 0, 50, object store id, 1> => key path
+// <database id, 0, 0, 50, object store id, 2> => auto increment flag
+// <database id, 0, 0, 50, object store id, 3> => is evictable
+// <database id, 0, 0, 50, object store id, 4> => last "version" number
+// <database id, 0, 0, 50, object store id, 5> => maximum allocated index id
+// <database id, 0, 0, 50, object store id, 6> => has key path flag (obsolete)
+// <database id, 0, 0, 50, object store id, 7> => key generator current number
 //
-//     <database id, 0, 0, 150, object store id>                   => existence
-// implies the object store id is in the free list [ObjectStoreFreeListKey]
-//     <database id, 0, 0, 151, object store id, index id>         => existence
-// implies the index id is in the free list [IndexFreeListKey]
-//     <database id, 0, 0, 200, utf16 object store name>           => object
-// store id [ObjectStoreNamesKey]
-//     <database id, 0, 0, 201, object store id, utf16 index name> => index id
-// [IndexNamesKey]
+// The key path was originally just a string (#1) or null (identified by flag,
+// #6). To support null, string, or array the coding is now identified by the
+// leading bytes in #1 - see EncodeIDBKeyPath.
 //
-//
-// Object store data:
-//
-//     The prefix is followed by a type byte. The user key is an encoded
-// IndexedDBKey.
-//
-//     <database id, object store id, 1, user key> => "version", serialized
-// script value [ObjectStoreDataKey]
-//
-//
-// "Exists" entry:
-//
-//     The prefix is followed by a type byte. The user key is an encoded
-// IndexedDBKey.
-//
-//     <database id, object store id, 2, user key> => "version" [ExistsEntryKey]
+// The "version" field is used to weed out stale index data. Whenever new
+// object store data is inserted, it gets a new "version" number, and new
+// index data is written with this number. When the index is used for
+// look-ups, entries are validated against the "exists" entries, and records
+// with old "version" numbers are deleted when they are encountered in
+// GetPrimaryKeyViaIndex, IndexCursorImpl::LoadCurrentRow and
+// IndexKeyCursorImpl::LoadCurrentRow.
 //
 //
-// Index data:
+// Index metadata: [IndexMetaDataKey]
+// ----------------------------------
+// The prefix is <database id, 0, 0>, followed by a type byte (100), then the
+// object store id (var int), then the index id (var int), then a metadata
+// type byte.
 //
-//     The prefix is followed by a type byte. The index key is an encoded
-// IndexedDBKey. The sequence number is a variable length integer.
-//     The primary key is an encoded IndexedDBKey.
+// <database id, 0, 0, 100, object store id, index id, 0> => index name
+// <database id, 0, 0, 100, object store id, index id, 1> => unique flag
+// <database id, 0, 0, 100, object store id, index id, 2> => key path
+// <database id, 0, 0, 100, object store id, index id, 3> => multi-entry flag
 //
-//     <database id, object store id, index id, index key, sequence number,
-// primary key> => "version", primary key [IndexDataKey]
 //
-//     (The sequence number is obsolete; it was used to allow two entries with
-//     the same user (index) key in non-unique indexes prior to the inclusion of
-//     the primary key in the data. The "version" field is used to weed out
-// stale
-//     index data. Whenever new object store data is inserted, it gets a new
-//     "version" number, and new index data is written with this number. When
-//     the index is used for look-ups, entries are validated against the
-//     "exists" entries, and records with old "version" numbers are deleted
-//     when they are encountered in get_primary_key_via_index,
-//     IndexCursorImpl::load_current_row, and
-// IndexKeyCursorImpl::load_current_row).
+// Other object store and index metadata
+// -------------------------------------
+// The prefix is <database id, 0, 0> followed by a type byte. The object
+// store and index id are variable length integers, the names are variable
+// length strings.
+//
+// <database id, 0, 0, 150, object store id>
+//   => existence implies the object store id is in the free list
+//      [ObjectStoreFreeListKey]
+// <database id, 0, 0, 151, object store id, index id>
+//   => existence implies the index id is in the free list [IndexFreeListKey]
+// <database id, 0, 0, 200, object store name>
+//   => object store id [ObjectStoreNamesKey]
+// <database id, 0, 0, 201, object store id, index name>
+//   => index id [IndexNamesKey]
+//
+//
+// Object store data: [ObjectStoreDataKey]
+// ---------------------------------------
+// The prefix is followed by a type byte and the encoded IDB primary key. The
+// data has a "version" prefix followed by the serialized script value.
+//
+// <database id, object store id, 1, user key>
+//   => "version", serialized script value
+//
+//
+// "Exists" entry: [ExistsEntryKey]
+// --------------------------------
+// The prefix is followed by a type byte and the encoded IDB primary key.
+//
+// <database id, object store id, 2, user key> => "version"
+//
+//
+// Index data
+// ----------
+// The prefix is followed by a type byte, the encoded IDB index key, a
+// "sequence" number (obsolete; var int), and the encoded IDB primary key.
+//
+// <database id, object store id, index id, index key, sequence number,
+//   primary key> => "version", primary key [IndexDataKey]
+//
+// The sequence number is obsolete; it was used to allow two entries with the
+// same user (index) key in non-unique indexes prior to the inclusion of the
+// primary key in the data.
+
 
 using base::StringPiece;
 using WebKit::WebIDBKeyType;
@@ -744,7 +742,10 @@ int CompareEncodedIDBKeys(const std::string& key_a,
 namespace {
 
 template <typename KeyType>
-int Compare(const StringPiece& a, const StringPiece& b, bool, bool* ok) {
+int Compare(const StringPiece& a,
+            const StringPiece& b,
+            bool only_compare_index_keys,
+            bool* ok) {
   KeyType key_a;
   KeyType key_b;
 
@@ -766,7 +767,7 @@ int Compare(const StringPiece& a, const StringPiece& b, bool, bool* ok) {
 template <>
 int Compare<ExistsEntryKey>(const StringPiece& a,
                             const StringPiece& b,
-                            bool,
+                            bool only_compare_index_keys,
                             bool* ok) {
   KeyPrefix prefix_a;
   KeyPrefix prefix_b;
@@ -793,7 +794,7 @@ int Compare<ExistsEntryKey>(const StringPiece& a,
 template <>
 int Compare<ObjectStoreDataKey>(const StringPiece& a,
                                 const StringPiece& b,
-                                bool,
+                                bool only_compare_index_keys,
                                 bool* ok) {
   KeyPrefix prefix_a;
   KeyPrefix prefix_b;
@@ -820,7 +821,7 @@ int Compare<ObjectStoreDataKey>(const StringPiece& a,
 template <>
 int Compare<IndexDataKey>(const StringPiece& a,
                           const StringPiece& b,
-                          bool ignore_duplicates,
+                          bool only_compare_index_keys,
                           bool* ok) {
   KeyPrefix prefix_a;
   KeyPrefix prefix_b;
@@ -845,7 +846,7 @@ int Compare<IndexDataKey>(const StringPiece& a,
   int result = CompareEncodedIDBKeys(&slice_a, &slice_b, ok);
   if (!*ok || result)
     return result;
-  if (ignore_duplicates)
+  if (only_compare_index_keys)
     return 0;
 
   // sequence number [optional]
@@ -877,7 +878,7 @@ int Compare<IndexDataKey>(const StringPiece& a,
 
 int Compare(const StringPiece& a,
             const StringPiece& b,
-            bool index_keys,
+            bool only_compare_index_keys,
             bool* ok) {
   StringPiece slice_a(a);
   StringPiece slice_b(b);
@@ -918,11 +919,12 @@ int Compare(const StringPiece& a,
       if (type_byte_a < kMaxSimpleGlobalMetaDataTypeByte)
         return 0;
 
-      const bool ignore_duplicates = false;
       if (type_byte_a == kDatabaseFreeListTypeByte)
-        return Compare<DatabaseFreeListKey>(a, b, ignore_duplicates, ok);
+        return Compare<DatabaseFreeListKey>(
+            a, b, only_compare_index_keys, ok);
       if (type_byte_a == kDatabaseNameTypeByte)
-        return Compare<DatabaseNameKey>(a, b, ignore_duplicates, ok);
+        return Compare<DatabaseNameKey>(
+            a, b, /*only_compare_index_keys*/ false, ok);
       break;
     }
 
@@ -947,19 +949,24 @@ int Compare(const StringPiece& a,
       if (type_byte_a < DatabaseMetaDataKey::MAX_SIMPLE_METADATA_TYPE)
         return 0;
 
-      const bool ignore_duplicates = false;
       if (type_byte_a == kObjectStoreMetaDataTypeByte)
-        return Compare<ObjectStoreMetaDataKey>(a, b, ignore_duplicates, ok);
+        return Compare<ObjectStoreMetaDataKey>(
+            a, b, only_compare_index_keys, ok);
       if (type_byte_a == kIndexMetaDataTypeByte)
-        return Compare<IndexMetaDataKey>(a, b, ignore_duplicates, ok);
+        return Compare<IndexMetaDataKey>(
+            a, b, /*only_compare_index_keys*/ false, ok);
       if (type_byte_a == kObjectStoreFreeListTypeByte)
-        return Compare<ObjectStoreFreeListKey>(a, b, ignore_duplicates, ok);
+        return Compare<ObjectStoreFreeListKey>(
+            a, b, only_compare_index_keys, ok);
       if (type_byte_a == kIndexFreeListTypeByte)
-        return Compare<IndexFreeListKey>(a, b, ignore_duplicates, ok);
+        return Compare<IndexFreeListKey>(
+            a, b, /*only_compare_index_keys*/ false, ok);
       if (type_byte_a == kObjectStoreNamesTypeByte)
-        return Compare<ObjectStoreNamesKey>(a, b, ignore_duplicates, ok);
+        return Compare<ObjectStoreNamesKey>(
+            a, b, only_compare_index_keys, ok);
       if (type_byte_a == kIndexNamesKeyTypeByte)
-        return Compare<IndexNamesKey>(a, b, ignore_duplicates, ok);
+        return Compare<IndexNamesKey>(
+            a, b, /*only_compare_index_keys*/ false, ok);
       break;
     }
 
@@ -969,8 +976,8 @@ int Compare(const StringPiece& a,
       // TODO(jsbell): This case of non-existing user keys should not have to be
       // handled this way.
 
-      const bool ignore_duplicates = false;
-      return Compare<ObjectStoreDataKey>(a, b, ignore_duplicates, ok);
+      return Compare<ObjectStoreDataKey>(
+          a, b, /*only_compare_index_keys*/ false, ok);
     }
 
     case KeyPrefix::EXISTS_ENTRY: {
@@ -979,8 +986,8 @@ int Compare(const StringPiece& a,
       // TODO(jsbell): This case of non-existing user keys should not have to be
       // handled this way.
 
-      const bool ignore_duplicates = false;
-      return Compare<ExistsEntryKey>(a, b, ignore_duplicates, ok);
+      return Compare<ExistsEntryKey>(
+          a, b, /*only_compare_index_keys*/ false, ok);
     }
 
     case KeyPrefix::INDEX_DATA: {
@@ -989,8 +996,7 @@ int Compare(const StringPiece& a,
       // TODO(jsbell): This case of non-existing user keys should not have to be
       // handled this way.
 
-      bool ignore_duplicates = index_keys;
-      return Compare<IndexDataKey>(a, b, ignore_duplicates, ok);
+      return Compare<IndexDataKey>(a, b, only_compare_index_keys, ok);
     }
 
     case KeyPrefix::INVALID_TYPE:
@@ -1004,9 +1010,11 @@ int Compare(const StringPiece& a,
 
 }  // namespace
 
-int Compare(const StringPiece& a, const StringPiece& b, bool index_keys) {
+int Compare(const StringPiece& a,
+            const StringPiece& b,
+            bool only_compare_index_keys) {
   bool ok;
-  int result = Compare(a, b, index_keys, &ok);
+  int result = Compare(a, b, only_compare_index_keys, &ok);
   DCHECK(ok);
   if (!ok)
     return 0;
@@ -1782,7 +1790,7 @@ std::string IndexDataKey::EncodeMaxKey(int64 database_id,
 }
 
 int IndexDataKey::Compare(const IndexDataKey& other,
-                          bool ignore_duplicates,
+                          bool only_compare_index_keys,
                           bool* ok) {
   DCHECK_GE(database_id_, 0);
   DCHECK_GE(object_store_id_, 0);
@@ -1791,7 +1799,7 @@ int IndexDataKey::Compare(const IndexDataKey& other,
       CompareEncodedIDBKeys(encoded_user_key_, other.encoded_user_key_, ok);
   if (!*ok || result)
     return result;
-  if (ignore_duplicates)
+  if (only_compare_index_keys)
     return 0;
   result = CompareEncodedIDBKeys(
       encoded_primary_key_, other.encoded_primary_key_, ok);

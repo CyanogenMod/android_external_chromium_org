@@ -229,7 +229,6 @@ IPC_STRUCT_TRAITS_BEGIN(content::FrameNavigateParams)
   IPC_STRUCT_TRAITS_MEMBER(should_update_history)
   IPC_STRUCT_TRAITS_MEMBER(searchable_form_url)
   IPC_STRUCT_TRAITS_MEMBER(searchable_form_encoding)
-  IPC_STRUCT_TRAITS_MEMBER(password_form)
   IPC_STRUCT_TRAITS_MEMBER(contents_mime_type)
   IPC_STRUCT_TRAITS_MEMBER(socket_address)
 IPC_STRUCT_TRAITS_END()
@@ -391,9 +390,11 @@ IPC_STRUCT_BEGIN(ViewHostMsg_DateTimeDialogValue_Params)
   IPC_STRUCT_MEMBER(int, hour)
   IPC_STRUCT_MEMBER(int, minute)
   IPC_STRUCT_MEMBER(int, second)
+  IPC_STRUCT_MEMBER(int, milli)
   IPC_STRUCT_MEMBER(int, week)
   IPC_STRUCT_MEMBER(double, minimum)
   IPC_STRUCT_MEMBER(double, maximum)
+  IPC_STRUCT_MEMBER(double, step)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewHostMsg_DidFailProvisionalLoadWithError_Params)
@@ -712,6 +713,9 @@ IPC_STRUCT_BEGIN(ViewMsg_New_Params)
 
   // Whether the RenderView should initially be swapped out.
   IPC_STRUCT_MEMBER(bool, swapped_out)
+
+  // Whether the RenderView should initially be hidden.
+  IPC_STRUCT_MEMBER(bool, hidden)
 
   // The initial page ID to use for this view, which must be larger than any
   // existing navigation that might be loaded in the view.  Page IDs are unique
@@ -2010,11 +2014,12 @@ IPC_MESSAGE_ROUTED0(ViewHostMsg_ImeCancelComposition)
 
 // WebKit and JavaScript error messages to log to the console
 // or debugger UI.
-IPC_MESSAGE_ROUTED4(ViewHostMsg_AddMessageToConsole,
+IPC_MESSAGE_ROUTED5(ViewHostMsg_AddMessageToConsole,
                     int32, /* log level */
                     string16, /* msg */
                     int32, /* line number */
-                    string16 /* source id */)
+                    string16, /* source id */
+                    string16 /* stack trace */ )
 
 // Sent by the renderer process to indicate that a plugin instance has crashed.
 // Note: |plugin_pid| should not be trusted. The corresponding process has

@@ -316,7 +316,7 @@ remoting.ClientPluginAsync.prototype.handleMessage_ = function(messageStr) {
   } else if (message.method == 'extensionMessage') {
     // No messages currently supported.
     console.log('Unexpected message received: ' +
-                message.data.type + ': ' + message.data.data);
+                message.data['type'] + ': ' + message.data['data']);
   }
 };
 
@@ -520,11 +520,6 @@ remoting.ClientPluginAsync.prototype.notifyClientResolution =
           data: { width: width * device_scale,
                   height: height * device_scale,
                   x_dpi: dpi, y_dpi: dpi }}));
-  } else if (this.hasFeature(
-                 remoting.ClientPlugin.Feature.NOTIFY_CLIENT_DIMENSIONS)) {
-    this.plugin.postMessage(JSON.stringify(
-        { method: 'notifyClientDimensions',
-          data: { width: width, height: height }}));
   }
 };
 

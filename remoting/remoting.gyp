@@ -82,17 +82,16 @@
       ['OS=="win"', {
         'host_plugin_extension': 'dll',
         'host_plugin_prefix': '',
-      }],
-      ['OS=="win"', {
         # Use auto-generated CLSIDs to make sure that the newly installed COM
         # classes will be used during/after upgrade even if there are old
         # instances running already.
-        # The parameter passed to uuidgen.py is ignored, but needed to make sure
-        # that the script will be invoked separately for each CLSID. Otherwise
-        # GYP will reuse the value returned by the first invocation of
-        # the script.
-        'daemon_controller_clsid': '<!(python tools/uuidgen.py 1)',
-        'rdp_desktop_session_clsid': '<!(python tools/uuidgen.py 2)',
+        # The parameter at the end is ignored, but needed to make sure that the
+        # script will be invoked separately for each CLSID. Otherwise GYP will
+        # reuse the value returned by the first invocation of the script.
+        'daemon_controller_clsid':
+            '<!(python -c "import uuid; print uuid.uuid4()" 1)',
+        'rdp_desktop_session_clsid':
+            '<!(python -c "import uuid; print uuid.uuid4()" 2)',
       }],
     ],
 
@@ -565,27 +564,6 @@
         },  # end of target 'remoting_me2me_host_static'
 
         {
-          'target_name': 'remoting_host_keygen',
-          'type': 'executable',
-          'dependencies': [
-            'remoting_base',
-            '../base/base.gyp:base',
-            '../base/base.gyp:base_i18n',
-            '../crypto/crypto.gyp:crypto',
-          ],
-          'sources': [
-            'host/keygen_main.cc',
-          ],
-          'conditions': [
-            ['OS=="linux" and linux_use_tcmalloc==1', {
-              'dependencies': [
-                '../base/allocator/allocator.gyp:allocator',
-              ],
-            }],
-          ],
-        },  # end of target 'remoting_host_keygen'
-
-        {
           'target_name': 'remoting_host_setup_base',
           'type': 'static_library',
           'variables': { 'enable_wexit_time_destructors': 1, },
@@ -612,6 +590,8 @@
             'host/setup/native_messaging_reader.h',
             'host/setup/native_messaging_writer.cc',
             'host/setup/native_messaging_writer.h',
+            'host/setup/oauth_client.cc',
+            'host/setup/oauth_client.h',
             'host/setup/oauth_helper.cc',
             'host/setup/oauth_helper.h',
             'host/setup/pin_validator.cc',
@@ -1149,6 +1129,7 @@
             'remoting_host_prefpane',
             'remoting_host_uninstaller',
             'remoting_me2me_host',
+            'remoting_native_messaging_host',
           ],
           'variables': {
             'host_name': '<!(python <(version_py_path) -f <(branding_path) -t "@HOST_PLUGIN_FILE_NAME@")',
@@ -1170,11 +1151,15 @@
                 '<(PRODUCT_DIR)/remoting_host_prefpane.prefPane',
                 '<(PRODUCT_DIR)/remoting_me2me_host.app',
                 '<(PRODUCT_DIR)/remoting_host_uninstaller.app',
+                '<(PRODUCT_DIR)/remoting_native_messaging_host',
+                '<(PRODUCT_DIR)/remoting/com.google.chrome.remote_desktop.json',
               ],
               'generated_files_dst': [
                 'PreferencePanes/org.chromium.chromoting.prefPane',
                 'PrivilegedHelperTools/org.chromium.chromoting.me2me_host.app',
                 'Applications/<(host_uninstaller_name).app',
+                'PrivilegedHelperTools/org.chromium.chromoting.me2me_host.app/Contents/MacOS/native_messaging_host',
+		'Config/com.google.chrome.remote_desktop.json',
               ],
               'source_files': [
                 '<@(remoting_host_installer_mac_files)',
@@ -1747,7 +1732,7 @@
         },  # end of target 'remoting_host_messages'
 
         # Generates localized the version information resources for the Windows
-        # binaries. 
+        # binaries.
         # The substitution strings are taken from:
         #   - build/util/LASTCHANGE - the last source code revision.
         #   - chrome/VERSION - the major, build & patch versions.
@@ -1969,13 +1954,13 @@
           'generated_files': [
             '<@(_compiled_inputs)',
             '<(sas_dll_path)/sas.dll',
-            '<(PRODUCT_DIR)/remoting/native_messaging_manifest.json',
+            '<(PRODUCT_DIR)/remoting/com.google.chrome.remote_desktop.json',
             'resources/chromoting.ico',
           ],
           'generated_files_dst': [
             '<@(_compiled_inputs_dst)',
             'files/sas.dll',
-            'files/native_messaging_manifest.json',
+            'files/com.google.chrome.remote_desktop.json',
             'files/chromoting.ico',
           ],
           'zip_path': '<(PRODUCT_DIR)/remoting-me2me-host-<(OS).zip',
@@ -2070,8 +2055,12 @@
       'sources': [
         'client/plugin/chromoting_instance.cc',
         'client/plugin/chromoting_instance.h',
-        'client/plugin/mac_key_event_processor.cc',
-        'client/plugin/mac_key_event_processor.h',
+        'client/plugin/normalizing_input_filter.cc',
+        'client/plugin/delegating_signal_strategy.cc',
+        'client/plugin/delegating_signal_strategy.h',
+        'client/plugin/normalizing_input_filter.h',
+        'client/plugin/normalizing_input_filter_cros.cc',
+        'client/plugin/normalizing_input_filter_mac.cc',
         'client/plugin/pepper_audio_player.cc',
         'client/plugin/pepper_audio_player.h',
         'client/plugin/pepper_entrypoints.cc',
@@ -2088,12 +2077,17 @@
         'client/plugin/pepper_port_allocator.h',
         'client/plugin/pepper_token_fetcher.cc',
         'client/plugin/pepper_token_fetcher.h',
-        'client/plugin/pepper_view.cc',
-        'client/plugin/pepper_view.h',
         'client/plugin/pepper_util.cc',
         'client/plugin/pepper_util.h',
-        'client/plugin/pepper_signal_strategy.cc',
-        'client/plugin/pepper_signal_strategy.h',
+        'client/plugin/pepper_view.cc',
+        'client/plugin/pepper_view.h',
+      ],
+      'conditions' : [
+        [ '(OS!="linux" or chromeos==0)', {
+          'sources!': [
+            'client/plugin/normalizing_input_filter_cros.cc',
+          ],
+        }],
       ],
     },  # end of target 'remoting_client_plugin'
 
@@ -2230,7 +2224,7 @@
       'target_conditions': [
         # We cannot currently build the appsv2 version of WebApp on Windows as
         # there isn't a version of the "patch" tool available on windows. We
-        # should remove this condition when we remove the reliance on the 'patch'.
+        # should remove this condition when we remove the reliance on patch.
 
         # We define this in a 'target_conditions' section because 'plugin_path'
         # is defined in a 'conditions' section so its value is not available
@@ -2295,42 +2289,55 @@
       ],
       'variables': {
         'input': 'host/setup/native_messaging_manifest.json',
-        'output': '<(PRODUCT_DIR)/remoting/native_messaging_manifest.json',
+        'output': '<(PRODUCT_DIR)/remoting/com.google.chrome.remote_desktop.json',
       },
-      'conditions': [
-        [ 'OS=="win"', {
-          'variables': {
-            'native_messaging_host_path': 'remoting_host.exe',
-          },
-        }, {
-          'variables': {
-            'native_messaging_host_path': '/opt/google/chrome-remote-desktop/native-messaging-host',
-          },
-        }],
-      ],
-      'actions': [
-        {
-          'action_name': 'generate_manifest',
-          'inputs': [
-            '<(remoting_localize_path)',
-            '<(input)',
-          ],
-          'outputs': [
-            '<(output)',
-          ],
-          'action': [
-            'python',
-            '<(remoting_localize_path)',
-            '--define', 'NATIVE_MESSAGING_HOST_PATH=<(native_messaging_host_path)',
-            '--locale_dir', '<(webapp_locale_dir)',
-            '--template', '<(input)',
-            '--locale_output',
-            '<(output)',
-            '--encoding', 'utf-8',
-            'en',
-          ],
+      'target_conditions': [
+        ['OS == "win" or OS == "mac" or OS == "linux"', {
+          'conditions': [
+            [ 'OS == "win"', {
+              'variables': {
+                'native_messaging_host_path': 'remoting_host.exe',
+              },
+            }], [ 'OS == "mac"', {
+              'variables': {
+                'native_messaging_host_path': '/Library/PrivilegedHelperTools/org.chromium.chromoting.me2me_host.app/Contents/MacOS/native_messaging_host',
+              },
+            }], ['OS == "linux"', {
+              'variables': {
+                'native_messaging_host_path': '/opt/google/chrome-remote-desktop/native-messaging-host',
+              },
+            }], ['OS != "linux" and OS != "mac" and OS != "win"', {
+              'variables': {
+                'native_messaging_host_path': '/opt/google/chrome-remote-desktop/native-messaging-host',
+              },
+            }],
+          ],  # conditions
+          'actions': [
+            {
+              'action_name': 'generate_manifest',
+              'inputs': [
+                '<(remoting_localize_path)',
+                '<(input)',
+              ],
+              'outputs': [
+                '<(output)',
+              ],
+              'action': [
+                'python',
+                '<(remoting_localize_path)',
+                '--define', 'NATIVE_MESSAGING_HOST_PATH=<(native_messaging_host_path)',
+                '--locale_dir', '<(webapp_locale_dir)',
+                '--template', '<(input)',
+                '--locale_output',
+                '<(output)',
+                '--encoding', 'utf-8',
+                'en',
+              ],
+            },
+          ],  # actions
         },
-      ],
+       ],
+      ],  # target_conditions
     },  # end of target 'remoting_native_messaging_manifest'
     {
       'target_name': 'remoting_resources',
@@ -2762,7 +2769,8 @@
         'base/util_unittest.cc',
         'client/audio_player_unittest.cc',
         'client/key_event_mapper_unittest.cc',
-        'client/plugin/mac_key_event_processor_unittest.cc',
+        'client/plugin/normalizing_input_filter_cros_unittest.cc',
+        'client/plugin/normalizing_input_filter_mac_unittest.cc',
         'codec/audio_encoder_opus_unittest.cc',
         'codec/codec_test.cc',
         'codec/codec_test.h',
@@ -2875,7 +2883,7 @@
             ],
           },
         }],
-        ['OS=="mac" or (OS=="linux" and chromeos==0)', {
+        [ 'OS=="mac" or (OS=="linux" and chromeos==0)', {
           # Javascript unittests are disabled on CrOS because they cause
           # valgrind and test errors.
           #
@@ -2907,6 +2915,11 @@
             'webapp/all_js_load.gtestjs',
             'webapp/format_iq.gtestjs',
             '<@(remoting_webapp_js_files)',
+          ],
+        }],
+        [ '(OS!="linux" or chromeos==0)', {
+          'sources!': [
+            'client/plugin/normalizing_input_filter_cros_unittest.cc',
           ],
         }],
         ['enable_remoting_host == 0', {

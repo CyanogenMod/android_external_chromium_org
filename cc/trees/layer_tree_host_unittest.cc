@@ -10,12 +10,13 @@
 #include "base/synchronization/lock.h"
 #include "cc/animation/timing_function.h"
 #include "cc/debug/frame_rate_counter.h"
+#include "cc/debug/test_web_graphics_context_3d.h"
 #include "cc/layers/content_layer.h"
 #include "cc/layers/content_layer_client.h"
 #include "cc/layers/io_surface_layer.h"
 #include "cc/layers/layer_impl.h"
+#include "cc/layers/painted_scrollbar_layer.h"
 #include "cc/layers/picture_layer.h"
-#include "cc/layers/scrollbar_layer.h"
 #include "cc/layers/solid_color_layer.h"
 #include "cc/layers/video_layer.h"
 #include "cc/output/begin_frame_args.h"
@@ -30,11 +31,11 @@
 #include "cc/test/fake_content_layer_client.h"
 #include "cc/test/fake_layer_tree_host_client.h"
 #include "cc/test/fake_output_surface.h"
+#include "cc/test/fake_painted_scrollbar_layer.h"
 #include "cc/test/fake_picture_layer.h"
 #include "cc/test/fake_picture_layer_impl.h"
 #include "cc/test/fake_proxy.h"
 #include "cc/test/fake_scoped_ui_resource.h"
-#include "cc/test/fake_scrollbar_layer.h"
 #include "cc/test/fake_video_frame_provider.h"
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/layer_tree_test.h"
@@ -393,9 +394,8 @@ class LayerTreeHostTestNoExtraCommitFromScrollbarInvalidate
 
     bool paint_scrollbar = true;
     bool has_thumb = false;
-    scrollbar_ = FakeScrollbarLayer::Create(paint_scrollbar,
-                                            has_thumb,
-                                            root_layer_->id());
+    scrollbar_ = FakePaintedScrollbarLayer::Create(
+        paint_scrollbar, has_thumb, root_layer_->id());
     scrollbar_->SetPosition(gfx::Point(0, 10));
     scrollbar_->SetBounds(gfx::Size(10, 10));
 
@@ -436,7 +436,7 @@ class LayerTreeHostTestNoExtraCommitFromScrollbarInvalidate
  private:
   FakeContentLayerClient client_;
   scoped_refptr<Layer> root_layer_;
-  scoped_refptr<FakeScrollbarLayer> scrollbar_;
+  scoped_refptr<FakePaintedScrollbarLayer> scrollbar_;
 };
 
 SINGLE_AND_MULTI_THREAD_TEST_F(
@@ -1111,7 +1111,7 @@ class LayerTreeHostTestDeviceScaleFactorScalesViewportAndLayers
 MULTI_THREAD_TEST_F(LayerTreeHostTestDeviceScaleFactorScalesViewportAndLayers);
 
 // Verify atomicity of commits and reuse of textures.
-class LayerTreeHostTestAtomicCommit : public LayerTreeHostTest {
+class LayerTreeHostTestDirectRendererAtomicCommit : public LayerTreeHostTest {
  public:
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
     // Make sure partial texture updates are turned off.
@@ -1126,8 +1126,8 @@ class LayerTreeHostTestAtomicCommit : public LayerTreeHostTest {
 
     bool paint_scrollbar = true;
     bool has_thumb = false;
-    scrollbar_ =
-        FakeScrollbarLayer::Create(paint_scrollbar, has_thumb, layer_->id());
+    scrollbar_ = FakePaintedScrollbarLayer::Create(
+        paint_scrollbar, has_thumb, layer_->id());
     scrollbar_->SetPosition(gfx::Point(0, 10));
     scrollbar_->SetBounds(gfx::Size(10, 10));
 
@@ -1146,7 +1146,7 @@ class LayerTreeHostTestAtomicCommit : public LayerTreeHostTest {
     ASSERT_EQ(0u, layer_tree_host()->settings().max_partial_texture_updates);
 
     TestWebGraphicsContext3D* context = static_cast<TestWebGraphicsContext3D*>(
-        impl->output_surface()->context3d());
+        impl->output_surface()->context_provider()->Context3d());
 
     switch (impl->active_tree()->source_frame_number()) {
       case 0:
@@ -1162,19 +1162,18 @@ class LayerTreeHostTestAtomicCommit : public LayerTreeHostTest {
         PostSetNeedsCommitToMainThread();
         break;
       case 1:
-        // Number of textures should be doubled as the first textures
-        // are used by impl thread and cannot by used for update.
-        ASSERT_EQ(4u, context->NumTextures());
-        // Number of textures used for commit should still be
-        // one for each layer.
+        // Number of textures should be one for scrollbar layer since it was
+        // requested and deleted on the impl-thread, and double for the content
+        // layer since its first texture is used by impl thread and cannot by
+        // used for update.
+        ASSERT_EQ(3u, context->NumTextures());
+        // Number of textures used for commit should be one for each layer.
         EXPECT_EQ(2u, context->NumUsedTextures());
         // First textures should not have been used.
         EXPECT_FALSE(context->UsedTexture(context->TextureAt(0)));
-        EXPECT_FALSE(context->UsedTexture(context->TextureAt(1)));
+        EXPECT_TRUE(context->UsedTexture(context->TextureAt(1)));
         // New textures should have been used.
         EXPECT_TRUE(context->UsedTexture(context->TextureAt(2)));
-        EXPECT_TRUE(context->UsedTexture(context->TextureAt(3)));
-
         context->ResetUsedTextures();
         PostSetNeedsCommitToMainThread();
         break;
@@ -1189,7 +1188,7 @@ class LayerTreeHostTestAtomicCommit : public LayerTreeHostTest {
 
   virtual void DrawLayersOnThread(LayerTreeHostImpl* impl) OVERRIDE {
     TestWebGraphicsContext3D* context = static_cast<TestWebGraphicsContext3D*>(
-        impl->output_surface()->context3d());
+        impl->output_surface()->context_provider()->Context3d());
 
     if (drew_frame_ == impl->active_tree()->source_frame_number()) {
       EXPECT_EQ(0u, context->NumUsedTextures()) << "For frame " << drew_frame_;
@@ -1209,14 +1208,68 @@ class LayerTreeHostTestAtomicCommit : public LayerTreeHostTest {
 
   virtual void AfterTest() OVERRIDE {}
 
- private:
+ protected:
   FakeContentLayerClient client_;
   scoped_refptr<FakeContentLayer> layer_;
-  scoped_refptr<FakeScrollbarLayer> scrollbar_;
+  scoped_refptr<FakePaintedScrollbarLayer> scrollbar_;
   int drew_frame_;
 };
 
-MULTI_THREAD_TEST_F(LayerTreeHostTestAtomicCommit);
+MULTI_THREAD_DIRECT_RENDERER_TEST_F(
+    LayerTreeHostTestDirectRendererAtomicCommit);
+
+class LayerTreeHostTestDelegatingRendererAtomicCommit
+    : public LayerTreeHostTestDirectRendererAtomicCommit {
+ public:
+  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* impl) OVERRIDE {
+    ASSERT_EQ(0u, layer_tree_host()->settings().max_partial_texture_updates);
+
+    TestWebGraphicsContext3D* context = static_cast<TestWebGraphicsContext3D*>(
+        impl->output_surface()->context_provider()->Context3d());
+
+    switch (impl->active_tree()->source_frame_number()) {
+      case 0:
+        // Number of textures should be one for each layer
+        ASSERT_EQ(2u, context->NumTextures());
+        // Number of textures used for commit should be one for each layer.
+        EXPECT_EQ(2u, context->NumUsedTextures());
+        // Verify that used texture is correct.
+        EXPECT_TRUE(context->UsedTexture(context->TextureAt(0)));
+        EXPECT_TRUE(context->UsedTexture(context->TextureAt(1)));
+        context->ResetUsedTextures();
+        PostSetNeedsCommitToMainThread();
+        break;
+      case 1:
+        // Number of textures should be doubled as the first context layer
+        // texture is being used by the impl-thread and cannot be used for
+        // update.  The scrollbar behavior is different direct renderer because
+        // UI resource deletion with delegating renderer occurs after tree
+        // activation.
+        ASSERT_EQ(4u, context->NumTextures());
+        // Number of textures used for commit should still be
+        // one for each layer.
+        EXPECT_EQ(2u, context->NumUsedTextures());
+        // First textures should not have been used.
+        EXPECT_FALSE(context->UsedTexture(context->TextureAt(0)));
+        EXPECT_FALSE(context->UsedTexture(context->TextureAt(1)));
+        // New textures should have been used.
+        EXPECT_TRUE(context->UsedTexture(context->TextureAt(2)));
+        EXPECT_TRUE(context->UsedTexture(context->TextureAt(3)));
+        context->ResetUsedTextures();
+        PostSetNeedsCommitToMainThread();
+        break;
+      case 2:
+        EndTest();
+        break;
+      default:
+        NOTREACHED();
+        break;
+    }
+  }
+};
+
+MULTI_THREAD_DELEGATING_RENDERER_TEST_F(
+    LayerTreeHostTestDelegatingRendererAtomicCommit);
 
 static void SetLayerPropertiesForTesting(Layer* layer,
                                          Layer* parent,
@@ -1294,7 +1347,7 @@ class LayerTreeHostTestAtomicCommitWithPartialUpdate
     ASSERT_EQ(1u, layer_tree_host()->settings().max_partial_texture_updates);
 
     TestWebGraphicsContext3D* context = static_cast<TestWebGraphicsContext3D*>(
-        impl->output_surface()->context3d());
+        impl->output_surface()->context_provider()->Context3d());
 
     switch (impl->active_tree()->source_frame_number()) {
       case 0:
@@ -1359,7 +1412,7 @@ class LayerTreeHostTestAtomicCommitWithPartialUpdate
     EXPECT_LT(impl->active_tree()->source_frame_number(), 5);
 
     TestWebGraphicsContext3D* context = static_cast<TestWebGraphicsContext3D*>(
-        impl->output_surface()->context3d());
+        impl->output_surface()->context_provider()->Context3d());
 
     // Number of textures used for drawing should one per layer except for
     // frame 3 where the viewport only contains one layer.
@@ -2317,21 +2370,10 @@ class LayerTreeHostTestChangeLayerPropertiesInPaintContents
 
 SINGLE_THREAD_TEST_F(LayerTreeHostTestChangeLayerPropertiesInPaintContents);
 
-class MockIOSurfaceWebGraphicsContext3D : public FakeWebGraphicsContext3D {
+class MockIOSurfaceWebGraphicsContext3D : public TestWebGraphicsContext3D {
  public:
-  MockIOSurfaceWebGraphicsContext3D()
-      : FakeWebGraphicsContext3D() {}
-
   virtual WebKit::WebGLId createTexture() OVERRIDE {
     return 1;
-  }
-
-  virtual WebKit::WebString getString(WebKit::WGC3Denum name) OVERRIDE {
-    if (name == GL_EXTENSIONS) {
-      return WebKit::WebString(
-          "GL_CHROMIUM_iosurface GL_ARB_texture_rectangle");
-    }
-    return WebKit::WebString();
   }
 
   MOCK_METHOD1(activeTexture, void(WebKit::WGC3Denum texture));
@@ -2349,6 +2391,7 @@ class MockIOSurfaceWebGraphicsContext3D : public FakeWebGraphicsContext3D {
                                   WebKit::WGC3Dsizei count,
                                   WebKit::WGC3Denum type,
                                   WebKit::WGC3Dintptr offset));
+  MOCK_METHOD1(deleteTexture, void(WebKit::WGC3Denum texture));
 };
 
 
@@ -2356,11 +2399,14 @@ class LayerTreeHostTestIOSurfaceDrawing : public LayerTreeHostTest {
  protected:
   virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback)
       OVERRIDE {
-    scoped_ptr<MockIOSurfaceWebGraphicsContext3D> context(
+    scoped_ptr<MockIOSurfaceWebGraphicsContext3D> mock_context_owned(
         new MockIOSurfaceWebGraphicsContext3D);
-    mock_context_ = context.get();
-    scoped_ptr<OutputSurface> output_surface = FakeOutputSurface::Create3d(
-        context.PassAs<WebKit::WebGraphicsContext3D>()).PassAs<OutputSurface>();
+    mock_context_ = mock_context_owned.get();
+
+    mock_context_->set_have_extension_io_surface(true);
+
+    scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
+        mock_context_owned.PassAs<TestWebGraphicsContext3D>()));
     return output_surface.Pass();
   }
 
@@ -2439,6 +2485,8 @@ class LayerTreeHostTestIOSurfaceDrawing : public LayerTreeHostTest {
 
   virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
     Mock::VerifyAndClearExpectations(&mock_context_);
+
+    EXPECT_CALL(*mock_context_, deleteTexture(1)).Times(1);
     EndTest();
   }
 
@@ -2542,10 +2590,14 @@ class LayerTreeHostTestAsyncReadback : public LayerTreeHostTest {
 
   virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback)
       OVERRIDE {
-    if (use_gl_renderer_)
-      return FakeOutputSurface::Create3d().PassAs<OutputSurface>();
-    return FakeOutputSurface::CreateSoftware(
-        make_scoped_ptr(new SoftwareOutputDevice)).PassAs<OutputSurface>();
+    scoped_ptr<FakeOutputSurface> output_surface;
+    if (use_gl_renderer_) {
+      output_surface = FakeOutputSurface::Create3d().Pass();
+    } else {
+      output_surface = FakeOutputSurface::CreateSoftware(
+          make_scoped_ptr(new SoftwareOutputDevice)).Pass();
+    }
+    return output_surface.PassAs<OutputSurface>();
   }
 
   bool use_gl_renderer_;
@@ -2984,6 +3036,144 @@ class LayerTreeHostTestAsyncTwoReadbacksWithoutDraw : public LayerTreeHostTest {
 SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
     LayerTreeHostTestAsyncTwoReadbacksWithoutDraw);
 
+class LayerTreeHostTestAsyncReadbackLostOutputSurface
+    : public LayerTreeHostTest {
+ protected:
+  virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback)
+      OVERRIDE {
+    if (!first_context_provider_.get()) {
+      first_context_provider_ = TestContextProvider::Create();
+      return FakeOutputSurface::Create3d(first_context_provider_)
+          .PassAs<OutputSurface>();
+    }
+
+    EXPECT_FALSE(second_context_provider_.get());
+    second_context_provider_ = TestContextProvider::Create();
+    return FakeOutputSurface::Create3d(second_context_provider_)
+        .PassAs<OutputSurface>();
+  }
+
+  virtual void SetupTree() OVERRIDE {
+    root_ = FakeContentLayer::Create(&client_);
+    root_->SetBounds(gfx::Size(20, 20));
+
+    copy_layer_ = FakeContentLayer::Create(&client_);
+    copy_layer_->SetBounds(gfx::Size(10, 10));
+    root_->AddChild(copy_layer_);
+
+    layer_tree_host()->SetRootLayer(root_);
+    LayerTreeHostTest::SetupTree();
+  }
+
+  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
+
+  void CopyOutputCallback(scoped_ptr<CopyOutputResult> result) {
+    EXPECT_TRUE(layer_tree_host()->proxy()->IsMainThread());
+    EXPECT_EQ(gfx::Size(10, 10).ToString(), result->size().ToString());
+    EXPECT_TRUE(result->HasTexture());
+
+    // Save the result for later.
+    EXPECT_FALSE(result_);
+    result_ = result.Pass();
+
+    // Post a commit to lose the output surface.
+    layer_tree_host()->SetNeedsCommit();
+  }
+
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
+    switch (layer_tree_host()->source_frame_number()) {
+      case 1:
+        // The layers have been pushed to the impl side. The layer textures have
+        // been allocated.
+
+        // Request a copy of the layer. This will use another texture.
+        copy_layer_->RequestCopyOfOutput(
+            CopyOutputRequest::CreateRequest(base::Bind(
+                &LayerTreeHostTestAsyncReadbackLostOutputSurface::
+                CopyOutputCallback,
+                base::Unretained(this))));
+        break;
+      case 4:
+        // With SingleThreadProxy it takes two commits to finally swap after a
+        // context loss.
+      case 5:
+        // Now destroy the CopyOutputResult, releasing the texture inside back
+        // to the compositor.
+        EXPECT_TRUE(result_);
+        result_.reset();
+
+        // Check that it is released.
+        base::SingleThreadTaskRunner* task_runner =
+            HasImplThread() ? ImplThreadTaskRunner()
+                            : base::MessageLoopProxy::current();
+        task_runner->PostTask(
+            FROM_HERE,
+            base::Bind(&LayerTreeHostTestAsyncReadbackLostOutputSurface::
+                           CheckNumTextures,
+                       base::Unretained(this),
+                       num_textures_after_loss_ - 1));
+        break;
+    }
+  }
+
+  virtual void SwapBuffersOnThread(LayerTreeHostImpl *impl, bool result)
+      OVERRIDE {
+    switch (impl->active_tree()->source_frame_number()) {
+      case 0:
+        // The layers have been drawn, so their textures have been allocated.
+        EXPECT_FALSE(result_);
+        num_textures_without_readback_ =
+            first_context_provider_->TestContext3d()->NumTextures();
+        break;
+      case 1:
+        // We did a readback, so there will be a readback texture around now.
+        EXPECT_LT(num_textures_without_readback_,
+                  first_context_provider_->TestContext3d()->NumTextures());
+        break;
+      case 2:
+        // The readback texture is collected.
+        EXPECT_TRUE(result_);
+
+        // Lose the output surface.
+        first_context_provider_->TestContext3d()->loseContextCHROMIUM(
+            GL_GUILTY_CONTEXT_RESET_ARB,
+            GL_INNOCENT_CONTEXT_RESET_ARB);
+        break;
+      case 3:
+        // With SingleThreadProxy it takes two commits to finally swap after a
+        // context loss.
+      case 4:
+        // The output surface has been recreated.
+        EXPECT_TRUE(second_context_provider_.get());
+
+        num_textures_after_loss_ =
+            first_context_provider_->TestContext3d()->NumTextures();
+        break;
+    }
+  }
+
+  void CheckNumTextures(size_t expected_num_textures) {
+    EXPECT_EQ(expected_num_textures,
+              first_context_provider_->TestContext3d()->NumTextures());
+    EndTest();
+  }
+
+  virtual void AfterTest() OVERRIDE {}
+
+  scoped_refptr<TestContextProvider> first_context_provider_;
+  scoped_refptr<TestContextProvider> second_context_provider_;
+  size_t num_textures_without_readback_;
+  size_t num_textures_after_loss_;
+  FakeContentLayerClient client_;
+  scoped_refptr<FakeContentLayer> root_;
+  scoped_refptr<FakeContentLayer> copy_layer_;
+  scoped_ptr<CopyOutputResult> result_;
+};
+
+// No output to copy for delegated renderers.
+SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
+    LayerTreeHostTestAsyncReadbackLostOutputSurface);
+
 class LayerTreeHostTestNumFramesPending : public LayerTreeHostTest {
  public:
   virtual void BeginTest() OVERRIDE {
@@ -3130,10 +3320,12 @@ class LayerTreeHostTestDeferredInitialize : public LayerTreeHostTest {
   void DeferredInitializeAndRedraw(LayerTreeHostImpl* host_impl) {
     EXPECT_FALSE(did_initialize_gl_);
     // SetAndInitializeContext3D calls SetNeedsCommit.
-    EXPECT_TRUE(static_cast<FakeOutputSurface*>(host_impl->output_surface())
-                    ->SetAndInitializeContext3D(
-                          scoped_ptr<WebKit::WebGraphicsContext3D>(
-                              TestWebGraphicsContext3D::Create())));
+    FakeOutputSurface* fake_output_surface =
+        static_cast<FakeOutputSurface*>(host_impl->output_surface());
+    scoped_refptr<TestContextProvider> context_provider =
+        TestContextProvider::Create();  // Not bound to thread.
+    EXPECT_TRUE(fake_output_surface->InitializeAndSetContext3d(
+        context_provider, NULL));
     did_initialize_gl_ = true;
   }
 
@@ -3201,7 +3393,7 @@ class LayerTreeHostTestUIResource : public LayerTreeHostTest {
 
   void PerformTest(LayerTreeHostImpl* impl) {
     TestWebGraphicsContext3D* context = static_cast<TestWebGraphicsContext3D*>(
-        impl->output_surface()->context3d());
+        impl->output_surface()->context_provider()->Context3d());
 
     int frame = num_commits_;
     switch (frame) {
@@ -3313,19 +3505,13 @@ class LayerTreeHostTestLayersPushProperties : public LayerTreeHostTest {
     child_ = PushPropertiesCountingLayer::Create();
     child2_ = PushPropertiesCountingLayer::Create();
     grandchild_ = PushPropertiesCountingLayer::Create();
-
-    if (layer_tree_host()->settings().impl_side_painting)
-      leaf_picture_layer_ = FakePictureLayer::Create(&client_);
-    else
-      leaf_content_layer_ = FakeContentLayer::Create(&client_);
+    leaf_scrollbar_layer_ =
+        FakePaintedScrollbarLayer::Create(false, false, root_->id());
 
     root_->AddChild(child_);
     root_->AddChild(child2_);
     child_->AddChild(grandchild_);
-    if (leaf_picture_layer_)
-      child2_->AddChild(leaf_picture_layer_);
-    if (leaf_content_layer_)
-      child2_->AddChild(leaf_content_layer_);
+    child2_->AddChild(leaf_scrollbar_layer_);
 
     other_root_ = PushPropertiesCountingLayer::Create();
 
@@ -3344,16 +3530,10 @@ class LayerTreeHostTestLayersPushProperties : public LayerTreeHostTest {
               child2_->push_properties_count());
     EXPECT_EQ(expected_push_properties_other_root_,
               other_root_->push_properties_count());
-    if (leaf_content_layer_) {
-      EXPECT_EQ(expected_push_properties_leaf_layer_,
-                leaf_content_layer_->push_properties_count());
-    }
-    if (leaf_picture_layer_) {
-      EXPECT_EQ(expected_push_properties_leaf_layer_,
-                leaf_picture_layer_->push_properties_count());
-    }
+    EXPECT_EQ(expected_push_properties_leaf_layer_,
+              leaf_scrollbar_layer_->push_properties_count());
 
-    // The content/picture layer always needs to be pushed.
+    // The scrollbar layer always needs to be pushed.
     if (root_->layer_tree_host()) {
       EXPECT_TRUE(root_->descendant_needs_push_properties());
       EXPECT_FALSE(root_->needs_push_properties());
@@ -3362,13 +3542,9 @@ class LayerTreeHostTestLayersPushProperties : public LayerTreeHostTest {
       EXPECT_TRUE(child2_->descendant_needs_push_properties());
       EXPECT_FALSE(child2_->needs_push_properties());
     }
-    if (leaf_content_layer_.get() && leaf_content_layer_->layer_tree_host()) {
-      EXPECT_FALSE(leaf_content_layer_->descendant_needs_push_properties());
-      EXPECT_TRUE(leaf_content_layer_->needs_push_properties());
-    }
-    if (leaf_picture_layer_.get() && leaf_picture_layer_->layer_tree_host()) {
-      EXPECT_FALSE(leaf_picture_layer_->descendant_needs_push_properties());
-      EXPECT_TRUE(leaf_picture_layer_->needs_push_properties());
+    if (leaf_scrollbar_layer_->layer_tree_host()) {
+      EXPECT_FALSE(leaf_scrollbar_layer_->descendant_needs_push_properties());
+      EXPECT_TRUE(leaf_scrollbar_layer_->needs_push_properties());
     }
 
     // child_ and grandchild_ don't persist their need to push properties.
@@ -3479,8 +3655,7 @@ class LayerTreeHostTestLayersPushProperties : public LayerTreeHostTest {
 
     // Content/Picture layers require PushProperties every commit that they are
     // in the tree.
-    if ((leaf_content_layer_.get() && leaf_content_layer_->layer_tree_host()) ||
-        (leaf_picture_layer_.get() && leaf_picture_layer_->layer_tree_host()))
+    if (leaf_scrollbar_layer_->layer_tree_host())
       ++expected_push_properties_leaf_layer_;
   }
 
@@ -3493,8 +3668,7 @@ class LayerTreeHostTestLayersPushProperties : public LayerTreeHostTest {
   scoped_refptr<PushPropertiesCountingLayer> child2_;
   scoped_refptr<PushPropertiesCountingLayer> grandchild_;
   scoped_refptr<PushPropertiesCountingLayer> other_root_;
-  scoped_refptr<FakeContentLayer> leaf_content_layer_;
-  scoped_refptr<FakePictureLayer> leaf_picture_layer_;
+  scoped_refptr<FakePaintedScrollbarLayer> leaf_scrollbar_layer_;
   size_t expected_push_properties_root_;
   size_t expected_push_properties_child_;
   size_t expected_push_properties_child2_;
@@ -3518,8 +3692,8 @@ class LayerTreeHostTestPropertyChangesDuringUpdateArePushed
 
     bool paint_scrollbar = true;
     bool has_thumb = false;
-    scrollbar_layer_ =
-        FakeScrollbarLayer::Create(paint_scrollbar, has_thumb, root_->id());
+    scrollbar_layer_ = FakePaintedScrollbarLayer::Create(
+        paint_scrollbar, has_thumb, root_->id());
 
     root_->AddChild(scrollbar_layer_);
 
@@ -3559,7 +3733,7 @@ class LayerTreeHostTestPropertyChangesDuringUpdateArePushed
   virtual void AfterTest() OVERRIDE {}
 
   scoped_refptr<Layer> root_;
-  scoped_refptr<FakeScrollbarLayer> scrollbar_layer_;
+  scoped_refptr<FakePaintedScrollbarLayer> scrollbar_layer_;
 };
 
 MULTI_THREAD_TEST_F(LayerTreeHostTestPropertyChangesDuringUpdateArePushed);

@@ -57,8 +57,8 @@ void CopyStringFromDictionary(const base::DictionaryValue& source,
 
 bool NetworkRequiresActivation(const NetworkState* network) {
   return (network->type() == flimflam::kTypeCellular &&
-          (network->activation_state() != flimflam::kActivationStateActivated ||
-           network->cellular_out_of_credits()));
+      ((network->activation_state() != flimflam::kActivationStateActivated &&
+        network->activation_state() != flimflam::kActivationStateUnknown)));
 }
 
 bool VPNIsConfigured(const std::string& service_path,
@@ -93,7 +93,7 @@ bool VPNIsConfigured(const std::string& service_path,
     provider_properties.GetBooleanWithoutPathExpansion(
         flimflam::kL2tpIpsecPskRequiredProperty, &passphrase_required);
     if (passphrase_required) {
-      NET_LOG_EVENT("VPN: Passphrase Required", service_path);
+      NET_LOG_EVENT("VPN: PSK Required", service_path);
       return false;
     }
     NET_LOG_EVENT("VPN Is Configured", service_path);
@@ -332,6 +332,10 @@ void NetworkConnectionHandler::ActivateNetwork(
 bool NetworkConnectionHandler::HasConnectingNetwork(
     const std::string& service_path) {
   return pending_requests_.count(service_path) != 0;
+}
+
+bool NetworkConnectionHandler::HasPendingConnectRequest() {
+  return pending_requests_.size() > 0;
 }
 
 void NetworkConnectionHandler::NetworkListChanged() {

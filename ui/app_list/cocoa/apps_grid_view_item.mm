@@ -271,6 +271,7 @@ void ItemModelObserverBridge::ItemPercentDownloadedChanged() {
 }
 
 - (void)setModel:(app_list::AppListItemModel*)itemModel {
+  [trackingArea_.get() clearOwner];
   if (!itemModel) {
     observerBridge_.reset();
     return;
@@ -333,14 +334,6 @@ void ItemModelObserverBridge::ItemPercentDownloadedChanged() {
   // Button is always hidden until the drag animation completes.
   [button setHidden:YES];
   return imageRep;
-}
-
-- (void)onInitialModelBuilt {
-  if ([self model]->highlighted()) {
-    [self ensureVisible];
-    if (![self model]->is_installing())
-      [self setSelected:YES];
-  }
 }
 
 - (void)ensureVisible {

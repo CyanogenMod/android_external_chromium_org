@@ -7,8 +7,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "content/child/appcache/appcache_dispatcher.h"
-#include "content/child/fileapi/file_system_dispatcher.h"
-#include "content/child/fileapi/webfilesystem_callback_adapters.h"
 #include "content/child/quota_dispatcher.h"
 #include "content/child/request_extra_data.h"
 #include "content/common/socket_stream_handle_data.h"
@@ -35,7 +33,6 @@
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebFileSystemCallbacks.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebNavigationPolicy.h"
 #include "third_party/WebKit/public/web/WebPlugin.h"
@@ -49,7 +46,6 @@
 
 using WebKit::WebDataSource;
 using WebKit::WebDocument;
-using WebKit::WebFileSystemCallbacks;
 using WebKit::WebFrame;
 using WebKit::WebNavigationPolicy;
 using WebKit::WebPluginParams;
@@ -274,6 +270,17 @@ void RenderFrameImpl::loadURLExternally(
 
 WebKit::WebNavigationPolicy RenderFrameImpl::decidePolicyForNavigation(
     WebKit::WebFrame* frame,
+    WebKit::WebDataSource::ExtraData* extra_data,
+    const WebKit::WebURLRequest& request,
+    WebKit::WebNavigationType type,
+    WebKit::WebNavigationPolicy default_policy,
+    bool is_redirect) {
+  return render_view_->decidePolicyForNavigation(
+      frame, extra_data, request, type, default_policy, is_redirect);
+}
+
+WebKit::WebNavigationPolicy RenderFrameImpl::decidePolicyForNavigation(
+    WebKit::WebFrame* frame,
     const WebKit::WebURLRequest& request,
     WebKit::WebNavigationType type,
     WebKit::WebNavigationPolicy default_policy,
@@ -284,13 +291,9 @@ WebKit::WebNavigationPolicy RenderFrameImpl::decidePolicyForNavigation(
 
 void RenderFrameImpl::willSendSubmitEvent(WebKit::WebFrame* frame,
                                           const WebKit::WebFormElement& form) {
-  // Some login forms have onSubmit handlers that put a hash of the password
-  // into a hidden field and then clear the password. (Issue 28910.)
-  // This method gets called before any of those handlers run, so save away
-  // a copy of the password in case it gets lost.
-  DocumentState* document_state =
-      DocumentState::FromDataSource(frame->dataSource());
-  document_state->set_password_form_data(CreatePasswordForm(form));
+  // Call back to RenderViewImpl for observers to be notified.
+  // TODO(nasko): Remove once we have RenderFrameObserver.
+  render_view_->willSendSubmitEvent(frame, form);
 }
 
 void RenderFrameImpl::willSubmitForm(WebKit::WebFrame* frame,
@@ -311,25 +314,6 @@ void RenderFrameImpl::willSubmitForm(WebKit::WebFrame* frame,
   internal_data->set_searchable_form_url(web_searchable_form_data.url());
   internal_data->set_searchable_form_encoding(
       web_searchable_form_data.encoding().utf8());
-  scoped_ptr<PasswordForm> password_form_data =
-      CreatePasswordForm(form);
-
-  // In order to save the password that the user actually typed and not one
-  // that may have gotten transformed by the site prior to submit, recover it
-  // from the form contents already stored by |willSendSubmitEvent| into the
-  // dataSource's NavigationState (as opposed to the provisionalDataSource's,
-  // which is what we're storing into now.)
-  if (password_form_data) {
-    DocumentState* old_document_state =
-        DocumentState::FromDataSource(frame->dataSource());
-    if (old_document_state) {
-      PasswordForm* old_form_data = old_document_state->password_form_data();
-      if (old_form_data && old_form_data->action == password_form_data->action)
-        password_form_data->password_value = old_form_data->password_value;
-    }
-  }
-
-  document_state->set_password_form_data(password_form_data.Pass());
 
   // Call back to RenderViewImpl for observers to be notified.
   // TODO(nasko): Remove once we have RenderFrameObserver.
@@ -760,47 +744,6 @@ void RenderFrameImpl::reportFindInPageSelection(
                                   selection_rect,
                                   active_match_ordinal,
                                   false));
-}
-
-void RenderFrameImpl::openFileSystem(
-    WebKit::WebFrame* frame,
-    WebKit::WebFileSystemType type,
-    long long size,
-    bool create,
-    WebKit::WebFileSystemCallbacks* callbacks) {
-  DCHECK(callbacks);
-
-  WebSecurityOrigin origin = frame->document().securityOrigin();
-  if (origin.isUnique()) {
-    // Unique origins cannot store persistent state.
-    callbacks->didFail(WebKit::WebFileErrorAbort);
-    return;
-  }
-
-  ChildThread::current()->file_system_dispatcher()->OpenFileSystem(
-      GURL(origin.toString()), static_cast<fileapi::FileSystemType>(type),
-      size, create,
-      base::Bind(&OpenFileSystemCallbackAdapter, callbacks),
-      base::Bind(&FileStatusCallbackAdapter, callbacks));
-}
-
-void RenderFrameImpl::deleteFileSystem(
-    WebKit::WebFrame* frame,
-    WebKit::WebFileSystemType type,
-    WebKit::WebFileSystemCallbacks* callbacks) {
-  DCHECK(callbacks);
-
-  WebSecurityOrigin origin = frame->document().securityOrigin();
-  if (origin.isUnique()) {
-    // Unique origins cannot store persistent state.
-    callbacks->didSucceed();
-    return;
-  }
-
-  ChildThread::current()->file_system_dispatcher()->DeleteFileSystem(
-      GURL(origin.toString()),
-      static_cast<fileapi::FileSystemType>(type),
-      base::Bind(&FileStatusCallbackAdapter, callbacks));
 }
 
 void RenderFrameImpl::requestStorageQuota(

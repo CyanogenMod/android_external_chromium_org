@@ -112,7 +112,6 @@ void ClearQuotaManagedOriginsOnIOThread(quota::QuotaManager* quota_manager,
     return;
   }
 
-  std::set<GURL>::const_iterator origin;
   size_t* origins_to_delete_count = new size_t(origins.size());
   for (std::set<GURL>::const_iterator origin = origins.begin();
        origin != origins.end(); ++origin) {
@@ -304,6 +303,9 @@ StoragePartitionImpl::~StoragePartitionImpl() {
         base::Bind(&webkit_database::DatabaseTracker::Shutdown,
                    GetDatabaseTracker()));
   }
+
+  if (GetFileSystemContext())
+    GetFileSystemContext()->Shutdown();
 
   if (GetDOMStorageContext())
     GetDOMStorageContext()->Shutdown();

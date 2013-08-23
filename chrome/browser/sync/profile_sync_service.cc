@@ -409,7 +409,7 @@ ProfileSyncService::GetDeviceInfo(const std::string& client_id) const {
 }
 
 ScopedVector<browser_sync::DeviceInfo>
-    ProfileSyncService::GetAllSignedInDevices() const {
+    ProfileSyncService::GetAllSignedinDevices() const {
   ScopedVector<browser_sync::DeviceInfo> devices;
   if (backend_) {
     browser_sync::SyncedDeviceTracker* device_tracker =
@@ -536,11 +536,6 @@ void ProfileSyncService::StartUp(StartUpDeferredOption deferred_option) {
   }
 
   DCHECK(IsSyncEnabledAndLoggedIn());
-
-  if (use_oauth2_token_ && access_token_.empty()) {
-    RequestAccessToken();
-    return;
-  }
 
   if (start_up_time_.is_null()) {
     start_up_time_ = base::Time::Now();
@@ -670,8 +665,6 @@ void ProfileSyncService::OnGetTokenFailure(
     }
     case GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS: {
       // Report time since token was issued for invalid credentials error.
-      // TODO(pavely): crbug.com/246817 Collect UMA histogram for auth token
-      // rejections from invalidation service.
       base::Time auth_token_time =
           AboutSigninInternalsFactory::GetForProfile(profile_)->
               GetTokenTime(GaiaConstants::kGaiaOAuth2LoginRefreshToken);
@@ -702,8 +695,7 @@ void ProfileSyncService::OnRefreshTokenAvailable(
 }
 
 void ProfileSyncService::OnRefreshTokenRevoked(
-    const std::string& account_id,
-    const GoogleServiceAuthError& error) {
+    const std::string& account_id) {
   if (!IsOAuthRefreshTokenAvailable()) {
     // The additional check around IsOAuthRefreshTokenAvailable() above
     // prevents us sounding the alarm if we actually have a valid token but
@@ -711,7 +703,8 @@ void ProfileSyncService::OnRefreshTokenRevoked(
     // (e.g. flaky network). It's possible the token we do have is also
     // invalid, but in that case we should already have (or can expect) an
     // auth error sent from the sync backend.
-    UpdateAuthErrorState(error);
+    UpdateAuthErrorState(
+        GoogleServiceAuthError(GoogleServiceAuthError::REQUEST_CANCELED));
   }
 }
 
@@ -1419,6 +1412,14 @@ const AuthError& ProfileSyncService::GetAuthError() const {
 }
 
 GoogleServiceAuthError ProfileSyncService::GetAuthStatus() const {
+  // If waiting_for_auth() returns true, it means that ProfileSyncService has
+  // detected that the user has just successfully completed gaia signin, but the
+  // backend is yet to update its connection state. In such a case, we do not
+  // want to continue surfacing an auth error to the UI via SigninGlobalError.
+  // Otherwise, it will make for a confusing UX, since the user just re-entered
+  // their credentials. See http://crbug.com/261317.
+  if (waiting_for_auth())
+    return AuthError::AuthErrorNone();
   return GetAuthError();
 }
 
@@ -1970,6 +1971,14 @@ void ProfileSyncService::Observe(int type,
           GetAuthError().state() != AuthError::NONE) {
         // Track the fact that we're still waiting for auth to complete.
         is_auth_in_progress_ = true;
+
+        // The user has just successfully completed re-auth, so immediately
+        // clear any auth error that was showing in the UI. If the backend is
+        // yet to update its connection state, GetAuthStatus() will return
+        // AuthError::NONE while |is_auth_in_progress_| is set to true.
+        // See http://crbug.com/261317.
+        if (profile_)
+          SigninGlobalError::GetForProfile(profile_)->AuthStatusChanged();
       }
       break;
     }

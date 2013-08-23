@@ -46,6 +46,12 @@ class VIEWS_EXPORT NativeWidgetAura
   //             NativeWidgetWin.
   static gfx::Font GetWindowTitleFont();
 
+  // Called internally by NativeWidgetAura and DesktopNativeWidgetAura to
+  // associate |native_widget| with |window|.
+  static void RegisterNativeWidgetForWindow(
+      internal::NativeWidgetPrivate* native_widget,
+      aura::Window* window);
+
   // Overridden from internal::NativeWidgetPrivate:
   virtual void InitNativeWidget(const Widget::InitParams& params) OVERRIDE;
   virtual NonClientFrameView* CreateNonClientFrameView() OVERRIDE;
@@ -189,6 +195,9 @@ class VIEWS_EXPORT NativeWidgetAura
 
   internal::NativeWidgetDelegate* delegate_;
 
+  // WARNING: set to NULL when destroyed. As the Widget is not necessarily
+  // destroyed along with |window_| all usage of |window_| should first verify
+  // non-NULL.
   aura::Window* window_;
 
   // See class documentation for Widget in widget.h for a note about ownership.

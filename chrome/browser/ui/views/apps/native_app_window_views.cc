@@ -524,7 +524,8 @@ bool NativeAppWindowViews::CanResize() const {
 }
 
 bool NativeAppWindowViews::CanMaximize() const {
-  return resizable_ && maximum_size_.IsEmpty();
+  return resizable_ && maximum_size_.IsEmpty() &&
+      !shell_window_->window_type_is_panel();
 }
 
 string16 NativeAppWindowViews::GetWindowTitle() const {
@@ -600,6 +601,14 @@ views::NonClientFrameView* NativeAppWindowViews::CreateNonClientFrameView(
     return frame_view;
   }
   return views::WidgetDelegateView::CreateNonClientFrameView(widget);
+}
+
+bool NativeAppWindowViews::WidgetHasHitTestMask() const {
+  return input_region_ != NULL;
+}
+
+void NativeAppWindowViews::GetWidgetHitTestMask(gfx::Path* mask) const {
+  input_region_->getBoundaryPath(mask);
 }
 
 bool NativeAppWindowViews::ShouldDescendIntoChildForEventHandling(
@@ -739,6 +748,10 @@ void NativeAppWindowViews::UpdateWindowIcon() {
 
 void NativeAppWindowViews::UpdateWindowTitle() {
   window_->UpdateWindowTitle();
+}
+
+void NativeAppWindowViews::UpdateInputRegion(scoped_ptr<SkRegion> region) {
+  input_region_ = region.Pass();
 }
 
 void NativeAppWindowViews::UpdateDraggableRegions(

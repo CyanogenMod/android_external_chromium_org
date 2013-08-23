@@ -21,7 +21,6 @@ class ZoomDecorationTest : public InProcessBrowserTest {
  protected:
   ZoomDecorationTest()
       : InProcessBrowserTest(),
-        old_toolbar_model_(NULL),
         should_quit_on_zoom_(false),
         zoom_callback_(base::Bind(&ZoomDecorationTest::OnZoomChanged,
                                   base::Unretained(this))) {
@@ -30,15 +29,11 @@ class ZoomDecorationTest : public InProcessBrowserTest {
   virtual void SetUpOnMainThread() OVERRIDE {
     content::HostZoomMap::GetForBrowserContext(
         browser()->profile())->AddZoomLevelChangedCallback(zoom_callback_);
-
-    old_toolbar_model_ = GetLocationBar()->toolbar_model_;
-    GetLocationBar()->toolbar_model_ = &test_toolbar_model_;
   }
 
   virtual void CleanUpOnMainThread() OVERRIDE {
     content::HostZoomMap::GetForBrowserContext(
         browser()->profile())->RemoveZoomLevelChangedCallback(zoom_callback_);
-    GetLocationBar()->toolbar_model_ = old_toolbar_model_;
   }
 
   LocationBarViewMac* GetLocationBar() const {
@@ -59,10 +54,6 @@ class ZoomDecorationTest : public InProcessBrowserTest {
     return [controller locationBarBridge]->zoom_decoration_.get();
   }
 
-  ZoomBubbleController* GetBubble() const {
-    return GetZoomDecoration()->bubble_;
-  }
-
   void Zoom(content::PageZoom zoom) {
     content::WebContents* web_contents =
         browser()->tab_strip_model()->GetActiveWebContents();
@@ -80,10 +71,7 @@ class ZoomDecorationTest : public InProcessBrowserTest {
     }
   }
 
-  TestToolbarModel test_toolbar_model_;
-
  private:
-  ToolbarModel* old_toolbar_model_;
   bool should_quit_on_zoom_;
   content::HostZoomMap::ZoomLevelChangedCallback zoom_callback_;
 
@@ -103,12 +91,12 @@ IN_PROC_BROWSER_TEST_F(ZoomDecorationTest, BubbleAtDefaultZoom) {
   // Zoom in and show bubble then reset.
   Zoom(content::PAGE_ZOOM_IN);
   EXPECT_TRUE(zoom_decoration->IsVisible());
-  zoom_decoration->ToggleBubble(false);
+  zoom_decoration->ShowBubble(false);
   Zoom(content::PAGE_ZOOM_RESET);
   EXPECT_TRUE(zoom_decoration->IsVisible());
 
   // Hide bubble and verify the decoration is hidden.
-  [GetBubble() close];
+  zoom_decoration->CloseBubble();
   EXPECT_FALSE(zoom_decoration->IsVisible());
 }
 
@@ -119,7 +107,9 @@ IN_PROC_BROWSER_TEST_F(ZoomDecorationTest, HideOnInputProgress) {
   Zoom(content::PAGE_ZOOM_IN);
   EXPECT_TRUE(zoom_decoration->IsVisible());
 
-  test_toolbar_model_.SetInputInProgress(true);
+  scoped_ptr<ToolbarModel> toolbar_model(new TestToolbarModel);
+  toolbar_model->set_input_in_progress(true);
+  browser()->swap_toolbar_models(&toolbar_model);
   GetLocationBar()->ZoomChangedForActiveTab(false);
   EXPECT_FALSE(zoom_decoration->IsVisible());
 }
@@ -130,7 +120,7 @@ IN_PROC_BROWSER_TEST_F(ZoomDecorationTest, CloseBrowserWithOpenBubble) {
   // Create a new browser so that it can be closed properly.
   Browser* browser2 = CreateBrowser(browser()->profile());
   ZoomDecoration* zoom_decoration = GetZoomDecorationForBrowser(browser2);
-  zoom_decoration->ToggleBubble(true);
+  zoom_decoration->ShowBubble(true);
 
   // Test shouldn't crash.
   browser2->window()->Close();

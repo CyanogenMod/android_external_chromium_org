@@ -63,9 +63,20 @@ void GetPropertiesCallback(
     properties_copy->SetStringWithoutPathExpansion(
         flimflam::kNameProperty, name);
   }
-  network_handler::GetPropertiesCallback(
-      callback, error_callback, service_path, call_status,
-      *properties_copy.get());
+  if (call_status != DBUS_METHOD_CALL_SUCCESS) {
+    // Because network services are added and removed frequently, we will see
+    // failures regularly, so don't log these.
+    if (!error_callback.is_null()) {
+      scoped_ptr<base::DictionaryValue> error_data(
+          network_handler::CreateErrorData(
+              service_path,
+              network_handler::kDBusFailedError,
+              network_handler::kDBusFailedErrorMessage));
+      error_callback.Run(network_handler::kDBusFailedError, error_data.Pass());
+    }
+  } else if (!callback.is_null()) {
+    callback.Run(service_path, *properties_copy.get());
+  }
 }
 
 void SetNetworkProfileErrorCallback(
@@ -88,7 +99,6 @@ bool IsPassphrase(const std::string& key) {
       key == flimflam::kPassphraseProperty ||
       key == flimflam::kOpenVPNOTPProperty ||
       key == flimflam::kEapPrivateKeyProperty ||
-      key == flimflam::kEapPrivateKeyPasswordProperty ||
       key == flimflam::kEapPinProperty ||
       key == flimflam::kApnPasswordProperty;
 }

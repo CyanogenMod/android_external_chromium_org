@@ -5,42 +5,275 @@
 #include "chrome/browser/ui/webui/local_discovery/local_discovery_ui_handler.h"
 
 #include "base/bind.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
+#include "chrome/browser/local_discovery/privet_device_lister_impl.h"
+#include "chrome/browser/local_discovery/privet_http_impl.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/profile_oauth2_token_service.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_base.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "content/public/browser/web_ui.h"
+#include "net/base/host_port_pair.h"
+#include "net/base/net_util.h"
+#include "net/http/http_status_code.h"
 
-LocalDiscoveryUIHandler::LocalDiscoveryUIHandler()
-    : action_callback_(base::Bind(&LocalDiscoveryUIHandler::OnNewDevice,
-                                  base::Unretained(this))) {
-  content::AddActionCallback(action_callback_);
+namespace local_discovery {
+
+namespace {
+// TODO(noamsml): This is a temporary shim until automated_url is in the
+// response.
+const char kPrivetAutomatedClaimURLFormat[] = "%s/confirm?token=%s";
+
+LocalDiscoveryUIHandler::Factory* g_factory = NULL;
+}  // namespace
+
+LocalDiscoveryUIHandler::LocalDiscoveryUIHandler() {
+}
+
+LocalDiscoveryUIHandler::LocalDiscoveryUIHandler(
+    scoped_ptr<PrivetDeviceLister> privet_lister) {
+  privet_lister.swap(privet_lister_);
 }
 
 LocalDiscoveryUIHandler::~LocalDiscoveryUIHandler() {
-  content::RemoveActionCallback(action_callback_);
+  if (service_discovery_client_.get()) {
+    service_discovery_client_ = NULL;
+    ServiceDiscoveryHostClientFactory::ReleaseClient();
+  }
 }
 
-void LocalDiscoveryUIHandler::RegisterMessages() {}
-
-void LocalDiscoveryUIHandler::OnNewDevice(const std::string& name) {
-  // TODO(gene): Once we receive information about new locally discovered
-  // device, we should add it to the page.
-  // Here is an example how to do it:
-  //
-  // base::StringValue service_name(name);
-  //
-  // base::DictionaryValue info;
-  // info.SetString("domain", "domain.local");
-  // info.SetString("port", "80");
-  // info.SetString("ip", "XXX.XXX.XXX.XXX");
-  // info.SetString("metadata", "metadata\nmetadata");
-  // info.SetString("lastSeen", "unknown");
-  // info.SetString("registered", "not registered");
-  //
-  // base::StringValue domain("domain.local");
-  // base::StringValue port("80");
-  // base::StringValue ip("XXX.XXX.XXX.XXX");
-  // base::StringValue metadata("metadata<br>metadata");
-  // base::StringValue lastSeen("unknown");
-  // base::StringValue registered("not registered");
-  //
-  // web_ui()->CallJavascriptFunction("onServiceUpdate", service_name, info);
+// static
+LocalDiscoveryUIHandler* LocalDiscoveryUIHandler::Create() {
+  if (g_factory) return g_factory->CreateLocalDiscoveryUIHandler();
+  return new LocalDiscoveryUIHandler();
 }
+
+// static
+void LocalDiscoveryUIHandler::SetFactory(Factory* factory) {
+  g_factory = factory;
+}
+
+void LocalDiscoveryUIHandler::RegisterMessages() {
+  web_ui()->RegisterMessageCallback("start", base::Bind(
+      &LocalDiscoveryUIHandler::HandleStart,
+      base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("registerDevice", base::Bind(
+      &LocalDiscoveryUIHandler::HandleRegisterDevice,
+      base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("info", base::Bind(
+      &LocalDiscoveryUIHandler::HandleInfoRequested,
+      base::Unretained(this)));
+}
+
+void LocalDiscoveryUIHandler::HandleStart(const base::ListValue* args) {
+  // If privet_lister_ is already set, it is a mock used for tests or the result
+  // of a reload.
+  if (!privet_lister_) {
+    service_discovery_client_ = ServiceDiscoveryHostClientFactory::GetClient();
+    privet_lister_.reset(new PrivetDeviceListerImpl(
+        service_discovery_client_.get(), this));
+    privet_http_factory_.reset(new PrivetHTTPAsynchronousFactoryImpl(
+        service_discovery_client_.get(),
+        Profile::FromWebUI(web_ui())->GetRequestContext()));
+  }
+
+  privet_lister_->Start();
+  privet_lister_->DiscoverNewDevices(false);
+}
+
+void LocalDiscoveryUIHandler::HandleRegisterDevice(
+    const base::ListValue* args) {
+  std::string device_name;
+
+  bool rv = args->GetString(0, &device_name);
+  DCHECK(rv);
+
+  privet_resolution_ = privet_http_factory_->CreatePrivetHTTP(
+      device_name,
+      device_descriptions_[device_name].address,
+      base::Bind(&LocalDiscoveryUIHandler::StartRegisterHTTP,
+                 base::Unretained(this)));
+  privet_resolution_->Start();
+}
+
+void LocalDiscoveryUIHandler::HandleInfoRequested(const base::ListValue* args) {
+  std::string device_name;
+  args->GetString(0, &device_name);
+
+  privet_resolution_ = privet_http_factory_->CreatePrivetHTTP(
+      device_name,
+      device_descriptions_[device_name].address,
+      base::Bind(&LocalDiscoveryUIHandler::StartInfoHTTP,
+                 base::Unretained(this)));
+  privet_resolution_->Start();
+}
+
+void LocalDiscoveryUIHandler::StartRegisterHTTP(
+    scoped_ptr<PrivetHTTPClient> http_client) {
+  current_http_client_.swap(http_client);
+
+  if (!current_http_client_) {
+    LogRegisterErrorToWeb("Resolution failed");
+    return;
+  }
+
+  Profile* profile = Profile::FromWebUI(web_ui());
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetForProfileIfExists(profile);
+
+  if (!signin_manager) {
+    LogRegisterErrorToWeb("You must be signed in");
+    return;
+  }
+
+  std::string username = signin_manager->GetAuthenticatedUsername();
+
+  current_register_operation_ =
+      current_http_client_->CreateRegisterOperation(username, this);
+  current_register_operation_->Start();
+}
+
+void LocalDiscoveryUIHandler::StartInfoHTTP(
+    scoped_ptr<PrivetHTTPClient> http_client) {
+  current_http_client_.swap(http_client);
+  if (!current_http_client_) {
+    LogRegisterErrorToWeb("Resolution failed");
+    return;
+  }
+
+  current_info_operation_ = current_http_client_->CreateInfoOperation(this);
+  current_info_operation_->Start();
+}
+
+void LocalDiscoveryUIHandler::OnPrivetRegisterClaimToken(
+    PrivetRegisterOperation* operation,
+    const std::string& token,
+    const GURL& url) {
+  if (device_descriptions_.count(current_http_client_->GetName()) == 0) {
+    LogRegisterErrorToWeb("Device no longer exists");
+    return;
+  }
+
+  GURL automated_claim_url(base::StringPrintf(
+      kPrivetAutomatedClaimURLFormat,
+      device_descriptions_[current_http_client_->GetName()].url.c_str(),
+      token.c_str()));
+
+  Profile* profile = Profile::FromWebUI(web_ui());
+
+  OAuth2TokenService* token_service =
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
+
+  if (!token_service) {
+    LogRegisterErrorToWeb("Could not get token service");
+    return;
+  }
+
+  confirm_api_call_flow_.reset(new PrivetConfirmApiCallFlow(
+      profile->GetRequestContext(),
+      token_service,
+      automated_claim_url,
+      base::Bind(&LocalDiscoveryUIHandler::OnConfirmDone,
+                 base::Unretained(this))));
+
+  confirm_api_call_flow_->Start();
+}
+
+void LocalDiscoveryUIHandler::OnPrivetRegisterError(
+    PrivetRegisterOperation* operation,
+    const std::string& action,
+    PrivetRegisterOperation::FailureReason reason,
+    int printer_http_code,
+    const DictionaryValue* json) {
+  // TODO(noamsml): Add detailed error message.
+  LogRegisterErrorToWeb("Registration error");
+}
+
+void LocalDiscoveryUIHandler::OnPrivetRegisterDone(
+    PrivetRegisterOperation* operation,
+    const std::string& device_id) {
+  current_register_operation_.reset();
+  current_http_client_.reset();
+
+  LogRegisterDoneToWeb(device_id);
+}
+
+void LocalDiscoveryUIHandler::OnConfirmDone(
+    PrivetConfirmApiCallFlow::Status status) {
+  if (status == PrivetConfirmApiCallFlow::SUCCESS) {
+    DLOG(INFO) << "Confirm success.";
+    confirm_api_call_flow_.reset();
+    current_register_operation_->CompleteRegistration();
+  } else {
+    // TODO(noamsml): Add detailed error message.
+    LogRegisterErrorToWeb("Confirm error");
+  }
+}
+
+void LocalDiscoveryUIHandler::DeviceChanged(
+    bool added,
+    const std::string& name,
+    const DeviceDescription& description) {
+  device_descriptions_[name] = description;
+
+  base::StringValue service_name(name);
+  base::DictionaryValue info;
+  info.SetString("domain", description.address.host());
+  info.SetInteger("port", description.address.port());
+  std::string ip_addr_string;
+  if (!description.ip_address.empty())
+    ip_addr_string = net::IPAddressToString(description.ip_address);
+
+  info.SetString("ip", ip_addr_string);
+  info.SetString("lastSeen", "unknown");
+  info.SetBoolean("registered", !description.id.empty());
+
+  web_ui()->CallJavascriptFunction("local_discovery.onServiceUpdate",
+                                   service_name, info);
+}
+
+void LocalDiscoveryUIHandler::DeviceRemoved(const std::string& name) {
+  device_descriptions_.erase(name);
+  scoped_ptr<base::Value> null_value(base::Value::CreateNullValue());
+  base::StringValue name_value(name);
+
+  web_ui()->CallJavascriptFunction("local_discovery.onServiceUpdate",
+                                   name_value, *null_value);
+}
+
+void LocalDiscoveryUIHandler::LogRegisterErrorToWeb(const std::string& error) {
+  base::StringValue error_value(error);
+  web_ui()->CallJavascriptFunction("local_discovery.registrationFailed",
+                                   error_value);
+  DLOG(ERROR) << error;
+}
+
+void LocalDiscoveryUIHandler::LogRegisterDoneToWeb(const std::string& id) {
+  base::StringValue id_value(id);
+  web_ui()->CallJavascriptFunction("local_discovery.registrationSuccess",
+                                   id_value);
+  DLOG(INFO) << "Registered " << id;
+}
+
+void LocalDiscoveryUIHandler::LogInfoErrorToWeb(const std::string& error) {
+  base::StringValue error_value(error);
+  web_ui()->CallJavascriptFunction("local_discovery.infoFailed", error_value);
+  LOG(ERROR) << error;
+}
+
+void LocalDiscoveryUIHandler::OnPrivetInfoDone(
+    PrivetInfoOperation* operation,
+    int http_code,
+    const base::DictionaryValue* json_value) {
+  if (http_code != net::HTTP_OK || !json_value) {
+    LogInfoErrorToWeb(base::StringPrintf("HTTP error %d", http_code));
+    return;
+  }
+
+  web_ui()->CallJavascriptFunction("local_discovery.renderInfo", *json_value);
+}
+
+}  // namespace local_discovery

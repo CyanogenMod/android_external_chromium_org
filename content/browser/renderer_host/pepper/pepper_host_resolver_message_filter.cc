@@ -179,6 +179,7 @@ void PepperHostResolverMessageFilter::DoResolve(
       new PepperLookupRequest<ReplyMessageContext>(
           host_resolver,
           request_info,
+          net::DEFAULT_PRIORITY,
           bound_info.release(),
           base::Bind(&PepperHostResolverMessageFilter::OnLookupFinished, this));
   lookup_request->Start();

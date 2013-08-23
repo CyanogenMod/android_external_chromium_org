@@ -7,6 +7,7 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_registrar.h"
 #include "base/debug/trace_event.h"
+#include "chrome/browser/android/bookmarks_bridge.h"
 #include "chrome/browser/android/chrome_web_contents_delegate_android.h"
 #include "chrome/browser/android/content_view_util.h"
 #include "chrome/browser/android/dev_tools_server.h"
@@ -17,6 +18,7 @@
 #include "chrome/browser/android/most_visited_sites.h"
 #include "chrome/browser/android/omnibox/omnibox_prerender.h"
 #include "chrome/browser/android/provider/chrome_browser_provider.h"
+#include "chrome/browser/android/shortcut_helper.h"
 #include "chrome/browser/android/signin/signin_manager_android.h"
 #include "chrome/browser/android/tab_android.h"
 #include "chrome/browser/autofill/android/personal_data_manager_android.h"
@@ -63,6 +65,7 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
     autofill::AutofillDialogResult::RegisterAutofillDialogResult },
   { "AutofillPopup",
     autofill::AutofillPopupViewAndroid::RegisterAutofillPopupViewAndroid },
+  { "BookmarksBridge", BookmarksBridge::RegisterBookmarksBridge },
   { "CertificateViewer", RegisterCertificateViewer },
   { "ChromeBrowserProvider",
     ChromeBrowserProvider::RegisterChromeBrowserProvider },
@@ -76,6 +79,7 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
   { "FieldTrialHelper", RegisterFieldTrialHelper },
   { "ForeignSessionHelper",
     ForeignSessionHelper::RegisterForeignSessionHelper },
+  { "ShortcutHelper", ShortcutHelper::RegisterShortcutHelper },
   { "IntentHelper", RegisterIntentHelper },
   { "JavascriptAppModalDialog",
     JavascriptAppModalDialogAndroid::RegisterJavascriptAppModalDialog },

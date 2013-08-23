@@ -908,10 +908,9 @@ void BrowserWindowGtk::UpdateReloadStopState(bool is_loading, bool force) {
       force);
 }
 
-void BrowserWindowGtk::UpdateToolbar(content::WebContents* contents,
-                                     bool should_restore_state) {
+void BrowserWindowGtk::UpdateToolbar(content::WebContents* contents) {
   TRACE_EVENT0("ui::gtk", "BrowserWindowGtk::UpdateToolbar");
-  toolbar_->UpdateWebContents(contents, should_restore_state);
+  toolbar_->UpdateWebContents(contents);
 }
 
 void BrowserWindowGtk::FocusToolbar() {
@@ -1073,12 +1072,15 @@ bool BrowserWindowGtk::PreHandleKeyboardEvent(
     // 1. The logic is a little complicated.
     // 2. We should be careful not to introduce any accelerators that trigger
     //    customized code instead of browser commands.
+    bool original_block_command_state =
+        browser_->command_controller()->block_command_execution();
     browser_->command_controller()->SetBlockCommandExecution(true);
     gtk_window_activate_key(window_, os_event);
     // We don't need to care about the WindowOpenDisposition value,
     // because all commands executed in this path use the default value.
     id = browser_->command_controller()->GetLastBlockedCommand(NULL);
-    browser_->command_controller()->SetBlockCommandExecution(false);
+    browser_->command_controller()->SetBlockCommandExecution(
+        original_block_command_state);
   }
 
   if (id == -1)
@@ -1154,8 +1156,8 @@ WebContentsModalDialogHost* BrowserWindowGtk::GetWebContentsModalDialogHost() {
 void BrowserWindowGtk::ShowAvatarBubble(WebContents* web_contents,
                                         const gfx::Rect& rect) {
   GtkWidget* widget = web_contents->GetView()->GetContentNativeView();
-  new AvatarMenuBubbleGtk(browser_.get(), widget,
-      BubbleGtk::ANCHOR_TOP_LEFT, &rect);
+  new AvatarMenuBubbleGtk(browser_.get(), widget, BubbleGtk::ANCHOR_TOP_RIGHT,
+                          &rect);
 }
 
 void BrowserWindowGtk::ShowAvatarBubbleFromAvatarButton() {
@@ -1176,8 +1178,13 @@ void BrowserWindowGtk::ShowPasswordGenerationBubble(
   new PasswordGenerationBubbleGtk(rect, form, web_contents, password_generator);
 }
 
-void BrowserWindowGtk::ConfirmBrowserCloseWithPendingDownloads() {
-  DownloadInProgressDialogGtk::Show(browser(), GetNativeWindow());
+void BrowserWindowGtk::ConfirmBrowserCloseWithPendingDownloads(
+    int download_count,
+    Browser::DownloadClosePreventionType dialog_type,
+    bool app_modal,
+    const base::Callback<void(bool)>& callback) {
+  DownloadInProgressDialogGtk::Show(
+      GetNativeWindow(), download_count, dialog_type, app_modal, callback);
 }
 
 void BrowserWindowGtk::Observe(int type,
@@ -1521,7 +1528,7 @@ void BrowserWindowGtk::RegisterProfilePrefs(
 }
 
 WebContents* BrowserWindowGtk::GetDisplayedTab() {
-  return contents_container_->GetVisibleTab();
+  return contents_container_->tab();
 }
 
 void BrowserWindowGtk::QueueToolbarRedraw() {
@@ -1927,9 +1934,6 @@ void BrowserWindowGtk::MaybeShowBookmarkBar(bool animate) {
     bookmark_bar_->SetPageNavigator(browser_.get());
 
   BookmarkBar::State state = browser_->bookmark_bar_state();
-  if (contents_container_->HasOverlay() && state == BookmarkBar::DETACHED)
-    state = BookmarkBar::HIDDEN;
-
   toolbar_->UpdateForBookmarkBarVisibility(state == BookmarkBar::DETACHED);
   PlaceBookmarkBar(state == BookmarkBar::DETACHED);
   bookmark_bar_->SetBookmarkBarState(

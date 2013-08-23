@@ -288,6 +288,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/GrAddPathRenderers_default.cpp \
 	third_party/skia/src/gpu/GrAllocPool.cpp \
 	third_party/skia/src/gpu/GrAtlas.cpp \
+	third_party/skia/src/gpu/GrBlend.cpp \
 	third_party/skia/src/gpu/GrBufferAllocPool.cpp \
 	third_party/skia/src/gpu/GrCacheID.cpp \
 	third_party/skia/src/gpu/GrClipData.cpp \
@@ -327,6 +328,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/GrTextureAccess.cpp \
 	third_party/skia/src/gpu/gr_unittests.cpp \
 	third_party/skia/src/gpu/effects/GrConfigConversionEffect.cpp \
+	third_party/skia/src/gpu/effects/GrBezierEffect.cpp \
 	third_party/skia/src/gpu/effects/GrConvolutionEffect.cpp \
 	third_party/skia/src/gpu/effects/GrSimpleTextureEffect.cpp \
 	third_party/skia/src/gpu/effects/GrSingleTextureEffect.cpp \
@@ -430,7 +432,7 @@ MY_DEFS_Debug := \
 	'-DIGNORE_ROT_AA_RECT_OPT' \
 	'-DSKIA_IGNORE_GPU_MIPMAPS' \
 	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
-	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(8*1024*1024)' \
+	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(1*1024*1024)' \
 	'-DSK_GAMMA_APPLY_TO_A8' \
 	'-DSK_GAMMA_EXPONENT=1.4' \
 	'-DSK_GAMMA_CONTRAST=0.0' \
@@ -554,7 +556,7 @@ MY_DEFS_Release := \
 	'-DIGNORE_ROT_AA_RECT_OPT' \
 	'-DSKIA_IGNORE_GPU_MIPMAPS' \
 	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
-	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(8*1024*1024)' \
+	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(1*1024*1024)' \
 	'-DSK_GAMMA_APPLY_TO_A8' \
 	'-DSK_GAMMA_EXPONENT=1.4' \
 	'-DSK_GAMMA_CONTRAST=0.0' \

@@ -411,6 +411,11 @@ const char kDefaultSearchProviderInstantURL[] =
 const char kDefaultSearchProviderImageURL[] =
     "default_search_provider.image_url";
 
+// The URL (as understood by TemplateURLRef) the default search provider uses
+// for the new tab page.
+const char kDefaultSearchProviderNewTabURL[] =
+    "default_search_provider.new_tab_url";
+
 // The string of post parameters (as understood by TemplateURLRef) the default
 // search provider uses for searches by using POST.
 const char kDefaultSearchProviderSearchURLPostParams[] =
@@ -1291,6 +1296,14 @@ const char kMessageCenterDisabledSystemComponentIds[] =
 // notifications to the message center.
 extern const char kMessageCenterEnabledSyncNotifierIds[] =
     "message_center.enabled_sync_notifier_ids";
+
+// Dictionary pref that keeps track of per-extension settings. The keys are
+// extension ids.
+const char kExtensionsPref[] = "extensions.settings";
+
+// String pref for what version chrome was last time the extension prefs were
+// loaded.
+const char kExtensionsLastChromeVersion[] = "extensions.last_chrome_version";
 
 // *************** LOCAL STATE ***************
 // These are attached to the machine/installation
@@ -2543,5 +2556,11 @@ extern const char kModuleConflictBubbleShown[] = "module_conflict.bubble_shown";
 const char kDRMSalt[] = "settings.privacy.drm_salt";
 // A boolean pref that enables the (private) pepper GetDeviceID() call.
 const char kEnableDRM[] = "settings.privacy.drm_enabled";
+
+// A boolean per-profile pref that signals if the watchdog extension is
+// installed and active. We need to know if the watchdog extension active for
+// ActivityLog initialization before the extension system is initialized.
+const char kWatchdogExtensionActive[] =
+    "profile.extensions.activity_log.watchdog_extension_active";
 
 }  // namespace prefs

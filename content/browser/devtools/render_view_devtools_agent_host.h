@@ -59,11 +59,14 @@ class CONTENT_EXPORT RenderViewDevToolsAgentHost
   void RenderViewHostDestroyed(RenderViewHost* rvh);
   void RenderViewCrashed();
   bool OnRvhMessageReceived(const IPC::Message& message);
+  void OnSwapCompositorFrame();
 
   void OnDispatchOnInspectorFrontend(const std::string& message);
   void OnSaveAgentRuntimeState(const std::string& state);
   void OnClearBrowserCache();
   void OnClearBrowserCookies();
+
+  void ClientDetachedFromRenderer();
 
   RenderViewHost* render_view_host_;
   scoped_ptr<DevToolsAgentHostRvhObserver> rvh_observer_;

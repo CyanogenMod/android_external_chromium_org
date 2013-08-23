@@ -54,6 +54,7 @@ class BrowserOptions(optparse.Values):
 
     self.repeat_options = repeat_options.RepeatOptions()
     self.output_file = None
+    self.skip_navigate_on_repeat = False
 
   def Copy(self):
     return copy.deepcopy(self)
@@ -185,11 +186,11 @@ class BrowserOptions(optparse.Values):
       ret = real_parse(args, self) # pylint: disable=E1121
 
       if self.verbosity >= 2:
-        logging.basicConfig(level=logging.DEBUG)
+        logging.getLogger().setLevel(logging.DEBUG)
       elif self.verbosity:
-        logging.basicConfig(level=logging.INFO)
+        logging.getLogger().setLevel(logging.INFO)
       else:
-        logging.basicConfig(level=logging.WARNING)
+        logging.getLogger().setLevel(logging.WARNING)
 
       if self.browser_executable and not self.browser_type:
         self.browser_type = 'exact'
@@ -214,10 +215,6 @@ class BrowserOptions(optparse.Values):
         delattr(self, 'extra_wpr_args_as_string')
       if self.profile_type == 'default':
         self.dont_override_profile = True
-
-      if ((hasattr(self, 'output_format') and self.output_format == 'html') and
-          (not hasattr(self, 'output_file') or not self.output_file)):
-        self.output_file = os.path.join(util.GetBaseDir(), 'results.html')
 
       # Parse repeat options
       self.repeat_options.UpdateFromParseResults(self, parser)

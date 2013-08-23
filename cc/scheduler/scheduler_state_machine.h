@@ -8,10 +8,15 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "cc/base/cc_export.h"
 #include "cc/output/begin_frame_args.h"
 #include "cc/scheduler/scheduler_settings.h"
+
+namespace base {
+class Value;
+}
 
 namespace cc {
 
@@ -38,18 +43,21 @@ class CC_EXPORT SchedulerStateMachine {
     COMMIT_STATE_WAITING_FOR_FIRST_DRAW,
     COMMIT_STATE_WAITING_FOR_FIRST_FORCED_DRAW,
   };
+  static const char* CommitStateToString(CommitState state);
 
   enum TextureState {
     LAYER_TEXTURE_STATE_UNLOCKED,
     LAYER_TEXTURE_STATE_ACQUIRED_BY_MAIN_THREAD,
     LAYER_TEXTURE_STATE_ACQUIRED_BY_IMPL_THREAD,
   };
+  static const char* TextureStateToString(TextureState state);
 
   enum OutputSurfaceState {
     OUTPUT_SURFACE_ACTIVE,
     OUTPUT_SURFACE_LOST,
     OUTPUT_SURFACE_CREATING,
   };
+  static const char* OutputSurfaceStateToString(OutputSurfaceState state);
 
   bool CommitPending() const {
     return commit_state_ == COMMIT_STATE_FRAME_IN_PROGRESS ||
@@ -66,9 +74,14 @@ class CC_EXPORT SchedulerStateMachine {
     ACTION_ACTIVATE_PENDING_TREE_IF_NEEDED,
     ACTION_DRAW_IF_POSSIBLE,
     ACTION_DRAW_FORCED,
+    ACTION_DRAW_AND_SWAP_ABORT,
     ACTION_BEGIN_OUTPUT_SURFACE_CREATION,
     ACTION_ACQUIRE_LAYER_TEXTURES_FOR_MAIN_THREAD,
   };
+  static const char* ActionToString(Action action);
+
+  scoped_ptr<base::Value> AsValue() const;
+
   Action NextAction() const;
   void UpdateState(Action action);
 
@@ -153,23 +166,22 @@ class CC_EXPORT SchedulerStateMachine {
   // Exposed for testing purposes.
   void SetMaximumNumberOfFailedDrawsBeforeDrawIsForced(int num_draws);
 
-  // False if drawing is not being prevented, true if drawing won't happen
-  // for some reason, such as not being visible.
-  bool DrawSuspendedUntilCommit() const;
-
-  std::string ToString();
+  // True if we need to abort draws to make forward progress.
+  bool PendingDrawsShouldBeAborted() const;
 
  protected:
   bool ShouldDrawForced() const;
-  bool ScheduledToDraw() const;
   bool ShouldDraw() const;
   bool ShouldAttemptTreeActivation() const;
   bool ShouldAcquireLayerTexturesForMainThread() const;
   bool ShouldUpdateVisibleTiles() const;
+
   bool HasDrawnThisFrame() const;
   bool HasAttemptedTreeActivationThisFrame() const;
   bool HasUpdatedVisibleTilesThisFrame() const;
-  void SetPostCommitFlags();
+
+  void HandleCommitInternal(bool commit_was_aborted);
+  void UpdateStateOnDraw(bool did_swap);
 
   const SchedulerSettings settings_;
 

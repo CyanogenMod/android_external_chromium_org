@@ -3,7 +3,7 @@
   {{?api.types}}
     <h2 id="types">Types</h2>
     {{#api.types}}
-      {{+partials.type api:api display_name:name}}
+      {{+partials.type display_name:name}}
     {{/}}
   {{/api.types}}
   {{?api.properties}}
@@ -15,7 +15,7 @@
   {{?api.functions}}
     <h2 id="methods">Methods</h2>
     {{#api.functions}}
-      {{+partials.function api:api}}
+      {{+partials.function @:@ api:api}}
     {{/}}
   {{/api.functions}}
   {{?api.events}}

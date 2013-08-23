@@ -705,9 +705,7 @@ Profile* ProfileImpl::GetOriginalProfile() {
 }
 
 bool ProfileImpl::IsManaged() {
-  // TODO(ibraaaa): migrate away from |prefs::kProfileIsManaged|.
-  return GetPrefs()->GetBoolean(prefs::kProfileIsManaged) ||
-      !GetPrefs()->GetString(prefs::kManagedUserId).empty();
+  return !GetPrefs()->GetString(prefs::kManagedUserId).empty();
 }
 
 ExtensionService* ProfileImpl::GetExtensionService() {
@@ -757,7 +755,7 @@ void ProfileImpl::OnPrefsLoaded(bool success) {
   prefs_->SetBoolean(prefs::kSessionExitedCleanly, true);
 
   BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(
-      this, false);
+      this);
 
   DCHECK(!net_pref_observer_);
   {

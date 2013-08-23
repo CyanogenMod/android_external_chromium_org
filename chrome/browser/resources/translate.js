@@ -9,7 +9,11 @@
 
 var cr = {};
 
-cr.googleTranslate = (function(key) {
+/**
+ * An object to provide functions to interact with the Translate library.
+ * @type {object}
+ */
+cr.googleTranslate = (function() {
   /**
    * The Translate Element library's instance.
    * @type {object}
@@ -73,55 +77,6 @@ cr.googleTranslate = (function(key) {
    * @type {number}
    */
   var endTime = 0.0;
-
-  // Create another call point for appendChild.
-  var head = document.head;
-  head._appendChild = head.appendChild;
-
-  // TODO(toyoshim): This is temporary solution and will be removed once server
-  // side fixed to use https always. See also, http://crbug.com/164584 .
-  function forceToHttps(url) {
-    if (url.indexOf('http:') == 0)
-      return url.replace('http', 'https');
-
-    return url;
-  }
-
-  /**
-   * Inserts CSS element into the main world.
-   * @param {Object} child Link element for CSS.
-   */
-  function insertCSS(child) {
-    child.href = forceToHttps(child.href);
-    head._appendChild(child);
-  }
-
-  /**
-   * Inserts JavaScript into the isolated world.
-   * @param {string} src JavaScript URL.
-   */
-  function insertJS(src) {
-    var xhr = new XMLHttpRequest();
-    xhr.open('GET', forceToHttps(src), true);
-    xhr.onreadystatechange = function() {
-      if (this.readyState != this.DONE || this.status != 200)
-        return;
-      eval(this.responseText);
-    }
-    xhr.send();
-  }
-
-  /**
-   * Alternate implementation of appendChild. In the isolated world, appendChild
-   * for the first head element is replaced with this function in order to make
-   * CSS link tag and script tag injection work fine like the main world.
-   */
-  head.appendChild = function(child) {
-    if (child.type == 'text/css')
-      insertCSS(child);
-    else
-      insertJS(child.src);
-  };
 
   function checkLibReady() {
     if (lib.isAvailable()) {
@@ -239,7 +194,14 @@ cr.googleTranslate = (function(key) {
       if (!libReady)
         return false;
       startTime = performance.now();
-      lib.translatePage(originalLang, targetLang, onTranslateProgress);
+      try {
+        lib.translatePage(originalLang, targetLang, onTranslateProgress);
+      } catch (err) {
+        console.error('Translate: ' + err);
+        // TODO(toyoshim): Check if it shows an error notification.
+        error = true;
+        return false;
+      }
       return true;
     },
 
@@ -259,16 +221,56 @@ cr.googleTranslate = (function(key) {
       loadedTime = performance.now();
       try {
         lib = google.translate.TranslateService({
-          'key': key,
+          // translateApiKey is predefined by translate_script.cc.
+          'key': translateApiKey,
           'useSecureConnection': true
         });
+        translateApiKey = undefined;
       } catch (err) {
         error = true;
+        translateApiKey = undefined;
         return;
       }
       // The TranslateService is not available immediately as it needs to start
       // Flash.  Let's wait until it is ready.
       checkLibReady();
+    },
+
+    /**
+     * Entry point called by the Translate Element when it want to load an
+     * external CSS resource into the page.
+     * @param {string} url URL of an external CSS resource to load.
+     */
+    onLoadCSS: function(url) {
+      var element = document.createElement('link');
+      element.type = 'text/css';
+      element.rel = 'stylesheet';
+      element.charset = 'UTF-8';
+      element.href = url;
+      document.head.appendChild(element);
+    },
+
+    /**
+     * Entry point called by the Translate Element when it want to load and run
+     * an external JavaScript on the page.
+     * @param {string} url URL of an external JavaScript to load.
+     */
+    onLoadJavascript: function(url) {
+      // securityOrigin is predefined by translate_script.cc.
+      if (url.indexOf(securityOrigin) != 0) {
+        // TODO(toyoshim): Handle this error to show an error notification.
+        console.error('Translate: ' + url + ' is not allowed to load.');
+        error = true;
+        return;
+      }
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', url, true);
+      xhr.onreadystatechange = function() {
+        if (this.readyState != this.DONE || this.status != 200)
+          return;
+        eval(this.responseText);
+      }
+      xhr.send();
     }
   };
-})/* Calling code '(|key|);' will be appended by TranslateHelper in C++ here. */
+})();

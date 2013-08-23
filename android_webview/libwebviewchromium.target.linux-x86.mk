@@ -171,7 +171,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_browser_gyp)/content_content_browser_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_browser_speech_proto_speech_proto_gyp)/content_browser_speech_proto_speech_proto_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,google_apis_google_apis_gyp)/google_apis_google_apis_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_zlib_zip_gyp)/third_party_zlib_zip_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_zlib_google_zip_gyp)/third_party_zlib_google_zip_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_zlib_minizip_gyp)/third_party_zlib_minizip_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_snapshot_snapshot_gyp)/ui_snapshot_snapshot_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_gpu_gyp)/content_content_gpu_gyp.a \
@@ -194,6 +194,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_concatenated_devtools_profiles_js_gyp)/concatenated_devtools_profiles_js.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_concatenated_devtools_audits_js_gyp)/concatenated_devtools_audits_js.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_concatenated_devtools_codemirror_js_gyp)/concatenated_devtools_codemirror_js.stamp \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_concatenated_devtools_layers_js_gyp)/concatenated_devtools_layers_js.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_concatenated_heap_snapshot_worker_js_gyp)/concatenated_heap_snapshot_worker_js.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_concatenated_script_formatter_worker_js_gyp)/concatenated_script_formatter_worker_js.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_concatenated_devtools_css_gyp)/concatenated_devtools_css.stamp \
@@ -219,7 +220,6 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,jingle_jingle_glue_gyp)/jingle_glue.stamp \
 	$(call intermediates-dir-for,GYP,third_party_widevine_cdm_widevine_cdm_version_h_gyp)/widevine_cdm_version_h.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_renderer_webkit_renderer_gyp)/webkit_renderer_webkit_renderer_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_webkit_storage_renderer_gyp)/webkit_webkit_storage_renderer_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_navigation_interception_gyp)/components_navigation_interception_gyp.a \
 	$(call intermediates-dir-for,GYP,components_navigation_interception_jni_headers_gyp)/navigation_interception_jni_headers.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_visitedlink_browser_gyp)/components_visitedlink_browser_gyp.a \
@@ -561,7 +561,7 @@ LOCAL_STATIC_LIBRARIES := \
 	content_content_browser_gyp \
 	content_browser_speech_proto_speech_proto_gyp \
 	google_apis_google_apis_gyp \
-	third_party_zlib_zip_gyp \
+	third_party_zlib_google_zip_gyp \
 	third_party_zlib_minizip_gyp \
 	ui_snapshot_snapshot_gyp \
 	content_content_gpu_gyp \
@@ -583,7 +583,6 @@ LOCAL_STATIC_LIBRARIES := \
 	components_autofill_content_renderer_gyp \
 	content_content_renderer_gyp \
 	webkit_renderer_webkit_renderer_gyp \
-	webkit_webkit_storage_renderer_gyp \
 	components_navigation_interception_gyp \
 	components_visitedlink_browser_gyp \
 	components_visitedlink_common_gyp \

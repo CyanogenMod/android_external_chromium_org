@@ -156,7 +156,6 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     InitParams();
     explicit InitParams(Type type);
 
-
     // Will return the first of the following that isn't NULL: the native view,
     // |parent|, |context|.
     gfx::NativeView GetContext() const;
@@ -248,6 +247,14 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
                                                   gfx::NativeView context,
                                                   const gfx::Rect& bounds);
 
+  // Creates an undecorated child window Widget. |new_style_parent| is the
+  // parent to use for new style dialogs, |parent| for currently-styled dialogs.
+  //
+  // TODO(wittman): use a single parent parameter once we move fully to
+  // new-style dialogs.
+  static Widget* CreateWindowAsFramelessChild(WidgetDelegate* widget_delegate,
+                                              gfx::NativeView parent,
+                                              gfx::NativeView new_style_parent);
 
   // Enumerates all windows pertaining to us and notifies their
   // view hierarchies that the locale has changed.
@@ -637,11 +644,6 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     focus_on_creation_ = focus_on_creation;
   }
 
-  // Returns a View* that any child Widgets backed by NativeWidgetViews
-  // are added to.  The default implementation returns the contents view
-  // if it exists and the root view otherwise.
-  virtual View* GetChildViewParent();
-
   // True if the widget is considered top level widget. Top level widget
   // is a widget of TYPE_WINDOW, TYPE_PANEL, TYPE_WINDOW_FRAMELESS, BUBBLE,
   // POPUP or MENU, and has a focus manager and input method object associated
@@ -674,6 +676,7 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   virtual void OnNativeWidgetActivationChanged(bool active) OVERRIDE;
   virtual void OnNativeFocus(gfx::NativeView old_focused_view) OVERRIDE;
   virtual void OnNativeBlur(gfx::NativeView new_focused_view) OVERRIDE;
+  virtual void OnNativeWidgetVisibilityChanging(bool visible) OVERRIDE;
   virtual void OnNativeWidgetVisibilityChanged(bool visible) OVERRIDE;
   virtual void OnNativeWidgetCreated(bool desktop_widget) OVERRIDE;
   virtual void OnNativeWidgetDestroying() OVERRIDE;

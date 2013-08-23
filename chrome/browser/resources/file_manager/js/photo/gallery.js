@@ -4,19 +4,6 @@
 
 'use strict';
 
-util.addPageLoadHandler(function() {
-  if (!location.hash)
-    return;
-
-  var pageState;
-  if (location.search) {
-    try {
-      pageState = JSON.parse(decodeURIComponent(location.search.substr(1)));
-    } catch (ignore) {}
-  }
-  Gallery.openStandalone(decodeURI(location.hash.substr(1)), pageState);
-});
-
 /**
  * Called from the main frame when unloading.
  * @return {string?} User-visible message on null if it is OK to close.
@@ -44,15 +31,17 @@ function unload(opt_exiting) { Gallery.instance.onUnload(opt_exiting) }
  *     {string} readonlyDirName Directory name for readonly warning or null.
  *     {DirEntry} saveDirEntry Directory to save to.
  *     {function(string)} displayStringFunction.
+ * @param {VolumeManager} volumeManager The VolumeManager instance of the
+ *      system.
  * @class
  * @constructor
  */
-function Gallery(context) {
+function Gallery(context, volumeManager) {
   this.container_ = document.querySelector('.gallery');
   this.document_ = document;
   this.context_ = context;
   this.metadataCache_ = context.metadataCache;
-  this.volumeManager_ = VolumeManager.getInstance();
+  this.volumeManager_ = volumeManager;
 
   this.dataModel_ = new cr.ui.ArrayDataModel([]);
   this.selectionModel_ = new cr.ui.ListSelectionModel();
@@ -71,95 +60,13 @@ Gallery.prototype.__proto__ = cr.EventTarget.prototype;
  * Create and initialize a Gallery object based on a context.
  *
  * @param {Object} context Gallery context.
+ * @param {VolumeManager} volumeManager VolumeManager of the system.
  * @param {Array.<string>} urls Array of urls.
  * @param {Array.<string>} selectedUrls Array of selected urls.
  */
-Gallery.open = function(context, urls, selectedUrls) {
-  Gallery.instance = new Gallery(context);
+Gallery.open = function(context, volumeManager, urls, selectedUrls) {
+  Gallery.instance = new Gallery(context, volumeManager);
   Gallery.instance.load(urls, selectedUrls);
-};
-
-/**
- * Create a Gallery object in a tab.
- * TODO(mtomasz): Remove it after dropping support for Files.app V1.
- *
- * @param {string} path File system path to a selected file.
- * @param {Object} pageState Page state object.
- * @param {function=} opt_callback Called when gallery object is constructed.
- */
-Gallery.openStandalone = function(path, pageState, opt_callback) {
-  ImageUtil.metrics = metrics;
-
-  var currentDir;
-  var urls = [];
-  var selectedUrls = [];
-  var appWindow = chrome.app.window.current();
-
-  Gallery.getFileBrowserPrivate().requestFileSystem(function(filesystem) {
-    // If the path points to the directory scan it.
-    filesystem.root.getDirectory(path, {create: false}, scanDirectory,
-        function() {
-          // Try to scan the parent directory.
-          var pathParts = path.split('/');
-          pathParts.pop();
-          var parentPath = pathParts.join('/');
-          filesystem.root.getDirectory(parentPath, {create: false},
-              scanDirectory, open /* no data, just display an error */);
-        });
-  });
-
-  var scanDirectory = function(dirEntry) {
-    currentDir = dirEntry;
-    util.forEachDirEntry(currentDir, function(entry) {
-      if (entry == null) {
-        open();
-      } else if (FileType.isImageOrVideo(entry)) {
-        var url = entry.toURL();
-        urls.push(url);
-        if (entry.fullPath == path)
-          selectedUrls = [url];
-      }
-    });
-  };
-
-  var onBack = function() {
-    // Exiting to the Files app seems arbitrary. Consider closing the tab.
-    document.location = 'main.html?' +
-        JSON.stringify({defaultPath: document.location.hash.substr(1)});
-  };
-
-  var onClose = function() {
-    window.close();
-  };
-
-  var onMaximize = function() {
-    var appWindow = chrome.app.window.current();
-    if (appWindow.isMaximized())
-      appWindow.restore();
-    else
-      appWindow.maximize();
-  };
-
-  function open() {
-    urls.sort();
-    Gallery.getFileBrowserPrivate().getStrings(function(strings) {
-      loadTimeData.data = strings;
-      var context = {
-        readonlyDirName: null,
-        curDirEntry: currentDir,
-        saveDirEntry: null,
-        metadataCache: MetadataCache.createFull(),
-        pageState: pageState,
-        appWindow: appWindow,
-        onBack: onBack,
-        onClose: onClose,
-        onMaximize: onMaximize,
-        displayStringFunction: strf
-      };
-      Gallery.open(context, urls, selectedUrls);
-      if (opt_callback) opt_callback();
-    });
-  }
 };
 
 /**

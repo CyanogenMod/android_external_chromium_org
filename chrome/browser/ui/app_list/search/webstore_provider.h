@@ -8,7 +8,10 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/ui/app_list/search/search_provider.h"
+#include "chrome/browser/ui/app_list/search/webstore_cache.h"
 
 class AppListControllerDelegate;
 class Profile;
@@ -41,8 +44,11 @@ class WebstoreProvider : public SearchProvider {
  private:
   friend class app_list::test::WebstoreProviderTest;
 
+  // Start the search request with |query_|.
+  void StartQuery();
+
   void OnWebstoreSearchFetched(scoped_ptr<base::DictionaryValue> json);
-  void ProcessWebstoreSearchResults(base::DictionaryValue* json);
+  void ProcessWebstoreSearchResults(const base::DictionaryValue* json);
   scoped_ptr<ChromeSearchResult> CreateResult(
       const base::DictionaryValue& dict);
 
@@ -50,10 +56,28 @@ class WebstoreProvider : public SearchProvider {
     webstore_search_fetched_callback_ = callback;
   }
 
+  void set_use_throttling(bool use) { use_throttling_ = use; }
+
   Profile* profile_;
   AppListControllerDelegate* controller_;
   scoped_ptr<WebstoreSearchFetcher> webstore_search_;
   base::Closure webstore_search_fetched_callback_;
+
+  // The cache of the search result which will be valid only in a single
+  // input session.
+  WebstoreCache cache_;
+
+  // The timestamp when the last key event happened.
+  base::Time last_keytyped_;
+
+  // The timer to throttle QPS to the webstore search .
+  base::OneShotTimer<WebstoreProvider> query_throttler_;
+
+  // The current query.
+  std::string query_;
+
+  // The flag for tests. It prevents the throttling If set to false.
+  bool use_throttling_;
 
   DISALLOW_COPY_AND_ASSIGN(WebstoreProvider);
 };

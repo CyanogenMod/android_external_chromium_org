@@ -43,7 +43,7 @@ FileError RefreshEntriesOnBlockingPool(
       continue;  // Skip non-file entries.
 
     const std::string id = entry.resource_id();
-    FileError error = resource_metadata->RefreshEntry(entry);
+    FileError error = resource_metadata->RefreshEntry(id, entry);
     if (error == FILE_ERROR_NOT_FOUND) {
       // The result is absent in local resource metadata. This can happen if
       // the metadata is not synced to the latest server state yet. In that
@@ -53,7 +53,7 @@ FileError RefreshEntriesOnBlockingPool(
       //
       // It will be moved to the right place when the metadata gets synced
       // in normal loading process in ChangeListProcessor.
-      entry.set_parent_resource_id(util::kDriveOtherDirSpecialResourceId);
+      entry.set_parent_local_id(util::kDriveOtherDirSpecialResourceId);
       error = resource_metadata->AddEntry(entry);
 
       // FILE_ERROR_EXISTS may happen if we have already added the entry to

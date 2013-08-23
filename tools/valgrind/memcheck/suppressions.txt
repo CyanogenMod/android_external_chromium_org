@@ -208,6 +208,13 @@
    fun:dlopen@@GLIBC_2.1
 }
 {
+   dlopen leak on error. Chromium issues 268368,273385. See http://sourceware.org/bugzilla/show_bug.cgi?id=12878.
+   Memcheck:Leak
+   fun:calloc
+   fun:_dlerror_run
+   fun:dlopen@@GLIBC_2.2.5
+}
+{
    glibc leak.  See also http://sources.redhat.com/bugzilla/show_bug.cgi?id=2451
    Memcheck:Leak
    fun:malloc
@@ -6261,12 +6268,6 @@
    fun:_ZN7WebCore12EventHandler10mouseMovedERKNS_18PlatformMouseEventE
 }
 {
-   bug_189194
-   Memcheck:Leak
-   ...
-   fun:*ProfileSigninConfirmationDialogTest_*
-}
-{
    bug_195160_a
    Memcheck:Leak
    fun:_Znw*
@@ -6586,16 +6587,6 @@
    fun:_ZN7WebCore10UseCounter17recordMeasurementENS0_7FeatureE
 }
 {
-   bug_241044
-   Memcheck:Uninitialized
-   fun:_ZN7WebCore8Settings29setOpenGLMultisamplingEnabledEb
-   fun:_ZN6WebKit15WebSettingsImpl29setOpenGLMultisamplingEnabledEb
-   fun:_ZN11webkit_glue19ApplyWebPreferencesERK14WebPreferencesPN6WebKit7WebViewE
-   fun:_ZN7content14RenderViewImpl10InitializeEPNS_20RenderViewImplParamsE
-   fun:_ZN7content14RenderViewImpl6CreateEiRKNS_19RendererPreferencesERK14WebPreferencesPN4base14RefCountedDataIiEEiilRKSbItNS7_20string16_char_traitsESaItEEbbiRKN6WebKit13WebScreenInfoE17AccessibilityModeb
-   fun:_ZN7content16RenderThreadImpl15OnCreateNewViewERK18ViewMsg_New_Params
-}
-{
    bug_241892a
    Memcheck:Leak
    fun:_Znw*
@@ -6639,6 +6630,17 @@
    fun:_ZN7WebCore4Node11appendChildEN3WTF10PassRefPtrIS0_EERiNS_14AttachBehaviorE
    fun:_ZN7WebCore6V8Node23appendChildMethodCustomERKN2v820FunctionCallbackInfoINS1_5ValueEEE
    fun:_ZN7WebCore14NodeV8InternalL37appendChildMethodCallbackForMainWorldERKN2v820FunctionCallbackInfoINS1_5ValueEEE
+}
+{
+   bug_241892d
+   Memcheck:Leak
+   fun:malloc
+   fun:_ZN3WTF10fastMallocEm
+   fun:_ZN3WTF10RefCountedIN7WebCore11CSSSelector8RareDataEEnwEm
+   fun:_ZN7WebCore11CSSSelector8RareData6createEN3WTF10PassRefPtrINS2_10StringImplEEE
+   fun:_ZN7WebCore11CSSSelector14createRareDataEv
+   ...
+   fun:_Z10cssyyparsePN7WebCore9CSSParserE
 }
 {
    bug_241932
@@ -6777,10 +6779,10 @@
    Memcheck:Uninitialized
    fun:_ZN7WebCore8Settings29setOpenGLMultisamplingEnabledEb
    fun:_ZN6WebKit15WebSettingsImpl29setOpenGLMultisamplingEnabledEb
-   fun:_ZN11webkit_glue19ApplyWebPreferencesERK14WebPreferencesPN6WebKit7WebViewE
+   fun:_ZN7content19ApplyWebPreferencesERK14WebPreferencesPN6WebKit7WebViewE
    ...
    fun:_ZN7content14RenderViewImpl10InitializeEPNS_20RenderViewImplParamsE
-   fun:_ZN7content14RenderViewImpl6CreateEiRKNS_19RendererPreferencesERK14WebPreferencesPN4base14RefCountedDataIiEEiiilRKSbItNS7_20string16_char_traitsESaItEEbbiRKN6WebKit13WebScreenInfoE17AccessibilityModeb
+   fun:_ZN7content14RenderViewImpl6CreateE*
    fun:_ZN7content16RenderThreadImpl15OnCreateNewViewERK18ViewMsg_New_Params
 }
 {
@@ -7142,16 +7144,6 @@
    fun:_ZN4base45WeakPtrTest_MoveOwnershipAfterInvalidate_Test8TestBodyEv
 }
 {
-  bug_268368
-  Memcheck:Leak
-  fun:calloc
-  fun:_dlerror_run
-  ...
-  fun:_ZN4base17LoadNativeLibraryERKNS_8FilePathEPSs
-  fun:_ZN7content10PluginList17ReadWebPluginInfoERKN4base8FilePathEPNS_13WebPluginInfoE
-  fun:_ZN7content10PluginList14ReadPluginInfoERKN4base8FilePathEPNS_13WebPluginInfoE
-}
-{
    bug_269201
    Memcheck:Unaddressable
    ...
@@ -7173,24 +7165,6 @@
    fun:_ZN4base11MessageLoop8PostTaskERKN15tracked_objects8LocationERKNS_8CallbackIFvvEEE
 }
 {
-   bug_269884a
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_ZN24SkColorFilterImageFilter6CreateEP13SkColorFilterP13SkImageFilterPK7SkIRect
-   fun:_ZN7WebCore22SkiaImageFilterBuilder19transformColorSpaceEP13SkImageFilterNS_10ColorSpaceES3_
-   fun:_ZN7WebCore22SkiaImageFilterBuilder5buildERKNS_16FilterOperationsE
-}
-{
-   bug_269884b
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_ZN19SkPerlinNoiseShader15CreateTubulenceEffifPK7SkTSizeIiE
-   fun:_ZN7WebCore12FETurbulence12createShaderERKNS_7IntRectE
-   fun:_ZN7WebCore12FETurbulence17createImageFilterEPNS_22SkiaImageFilterBuilderE
-   fun:_ZN7WebCore22SkiaImageFilterBuilder5buildEPNS_12FilterEffectENS_10ColorSpaceE
-   fun:_ZN7WebCore22SkiaImageFilterBuilder5buildERKNS_16FilterOperationsE
-}
-{
    bug_270312
    Memcheck:Leak
    fun:_Znw*
@@ -7199,13 +7173,66 @@
    fun:_ZN14message_center21MessageCenterViewTest5SetUpEv
 }
 {
-   bug_271431
+   bug_272179_a
+   Memcheck:Uninitialized
+   ...
+   fun:_ZN7WebCore14HarfBuzzShaper17shapeHarfBuzzRuns*
+}
+{
+   bug_272179_b
+   Memcheck:Uninitialized
+   ...
+   fun:_ZN7WebCore14HarfBuzzShaper19collectHarfBuzzRunsEv
+}
+{
+   bug_272179_c 
+   Memcheck:Param
+   sendmsg(msg.msg_iov[0])
+   obj:/lib/x86_64-linux-gnu/libpthread-2.15.so
+   ...
+   fun:_ZN7WebCore14HarfBuzzShaper19collectHarfBuzzRunsEv
+}
+{
+   bug_272596
+   Memcheck:Leak
+   ...
+   fun:nssPKIObjectCollection_AddInstanceAsObject
+   fun:nssToken_TraverseCertificates
+   fun:NSSTrustDomain_TraverseCertificates
+   fun:PK11_ListCerts
+   fun:_ZN3net15NSSCertDatabase9ListCertsEPSt6vectorI13scoped_refptrINS_15X509CertificateEESaIS4_EE
+   fun:_ZN8chromeos12_GLOBAL__N_119LoadNSSCertificatesEPSt6vectorI13scoped_refptrIN3net15X509CertificateEESaIS5_EE
+}
+{
+   bug_272083
    Memcheck:Leak
    fun:_Znw*
-   fun:_ZN8autofill33TestGeneratedCreditCardBubbleView6CreateERKN4base7WeakPtrINS_35GeneratedCreditCardBubbleControllerEEE
-   fun:_ZN8autofill12_GLOBAL__N_139TestGeneratedCreditCardBubbleController12CreateBubbleEv
-   fun:_ZN8autofill35GeneratedCreditCardBubbleController4ShowEb
-   fun:_ZN8autofill35GeneratedCreditCardBubbleController12SetupAndShowERKSbItN4base20string16_char_traitsESaItEES6_
-   fun:_ZN8autofill35GeneratedCreditCardBubbleController4ShowEPN7content11WebContentsERKSbItN4base20string16_char_traitsESaItEES9_
-   fun:_ZN8autofill12_GLOBAL__N_139GeneratedCreditCardBubbleControllerTest4ShowEv
+   fun:_ZN12ThemeService19SetManagedUserThemeEv
+   fun:_ZN12ThemeService24OnManagedUserInitializedEv
+}
+{
+   bug_273398
+   Memcheck:Leak
+   ...
+   fun:_ZN6Pickle6ResizeEm
+   fun:_ZN6PickleC1Ev
+   fun:_ZN7content14ZygoteHostImpl20GetTerminationStatusEibPi
+   fun:_ZN7content20ChildProcessLauncher25GetChildTerminationStatusEbPi
+   fun:_ZN7content27BrowserChildProcessHostImpl20GetTerminationStatusEPi
+   fun:_ZN7content27BrowserChildProcessHostImpl19OnChildDisconnectedEv
+}
+{
+   bug_274193
+   Memcheck:Leak
+   ...
+   fun:_mesa_glsl_compile_shader
+   fun:compile_shader
+   fun:_mesa_CompileShaderARB
+   fun:shared_dispatch_stub_529
+   fun:_ZN3gfx9GLApiBase17glCompileShaderFnEj
+   fun:_ZN3gpu5gles214ProgramManager15DoCompileShaderEPNS0_6ShaderEPNS0_16ShaderTranslatorEPNS0_11FeatureInfoE
+   fun:_ZN3gpu5gles216GLES2DecoderImpl15DoCompileShaderEj
+   fun:_ZN3gpu5gles216GLES2DecoderImpl19HandleCompileShaderEjRKNS0_4cmds13CompileShaderE
+   fun:_ZN3gpu5gles216GLES2DecoderImpl9DoCommandEjjPKv
+   fun:_ZN3gpu13CommandParser14ProcessCommandEv
 }

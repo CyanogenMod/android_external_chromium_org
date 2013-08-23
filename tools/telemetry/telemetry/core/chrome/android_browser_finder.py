@@ -12,6 +12,7 @@ import sys
 from telemetry.core import browser
 from telemetry.core import possible_browser
 from telemetry.core import profile_types
+from telemetry.core import util
 from telemetry.core.chrome import adb_commands
 from telemetry.core.chrome import android_browser_backend
 from telemetry.core.platform import android_platform_backend
@@ -91,8 +92,7 @@ def CanFindAvailableBrowsers(logging=real_logging):
           logging.warn('  sudo `which adb` devices\n\n')
         adb_works = True
     except OSError:
-      platform_tools_path = os.path.join(
-          os.path.dirname(__file__), '..', '..', '..', '..', '..'
+      platform_tools_path = os.path.join(util.GetChromiumSrcDir(),
           'third_party', 'android_tools', 'sdk', 'platform-tools')
       if (sys.platform.startswith('linux') and
           os.path.exists(os.path.join(platform_tools_path, 'adb'))):
@@ -101,6 +101,19 @@ def CanFindAvailableBrowsers(logging=real_logging):
         adb_works = True
       else:
         adb_works = False
+  if adb_works and sys.platform.startswith('linux'):
+    # Workaround for crbug.com/268450
+    import psutil
+    adb_commands.GetAttachedDevices()
+    pids  = [p.pid for p in psutil.process_iter() if 'adb' in p.name]
+    with open(os.devnull, 'w') as devnull:
+      for pid in pids:
+        ret = subprocess.call(['taskset', '-p', '0x1', str(pid)],
+                              stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE,
+                              stdin=devnull)
+        if ret:
+          logging.warn('Failed to taskset %d (%s)', pid, ret)
 
   return adb_works
 

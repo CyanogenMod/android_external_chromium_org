@@ -20,7 +20,7 @@ namespace {
 // kDoubleTickDivisor prevents ticks from running within the specified
 // fraction of an interval.  This helps account for jitter in the timebase as
 // well as quick timer reactivation.
-static const int kDoubleTickDivisor = 4;
+static const int kDoubleTickDivisor = 2;
 
 // kIntervalChangeThreshold is the fraction of the interval that will trigger an
 // immediate interval change.  kPhaseChangeThreshold is the fraction of the
@@ -51,18 +51,30 @@ DelayBasedTimeSource::DelayBasedTimeSource(
 
 DelayBasedTimeSource::~DelayBasedTimeSource() {}
 
-void DelayBasedTimeSource::SetActive(bool active) {
+base::TimeTicks DelayBasedTimeSource::SetActive(bool active) {
   TRACE_EVENT1("cc", "DelayBasedTimeSource::SetActive", "active", active);
   if (active == active_)
-    return;
+    return base::TimeTicks();
   active_ = active;
 
   if (!active_) {
     weak_factory_.InvalidateWeakPtrs();
-    return;
+    return base::TimeTicks();
   }
 
   PostNextTickTask(Now());
+
+  // Determine if there was a tick that was missed while not active.
+  base::TimeTicks last_tick_time_if_always_active =
+    current_parameters_.tick_target - current_parameters_.interval;
+  base::TimeTicks new_tick_time_threshold =
+    last_tick_time_ + current_parameters_.interval / kDoubleTickDivisor;
+  if (last_tick_time_if_always_active >  new_tick_time_threshold) {
+    last_tick_time_ = last_tick_time_if_always_active;
+    return last_tick_time_;
+  }
+
+  return base::TimeTicks();
 }
 
 bool DelayBasedTimeSource::Active() const { return active_; }
@@ -193,9 +205,17 @@ base::TimeTicks DelayBasedTimeSource::Now() const {
 base::TimeTicks DelayBasedTimeSource::NextTickTarget(base::TimeTicks now) {
   const base::TimeDelta epsilon(base::TimeDelta::FromMicroseconds(1));
   base::TimeDelta new_interval = next_parameters_.interval;
-  int intervals_elapsed =
-      (now - next_parameters_.tick_target + new_interval - epsilon) /
-      new_interval;
+
+  // Integer division rounds towards 0, but we always want to round down the
+  // number of intervals_elapsed, so we need the extra condition here.
+  int intervals_elapsed;
+  if (next_parameters_.tick_target < now) {
+    intervals_elapsed =
+        (now - next_parameters_.tick_target + new_interval - epsilon) /
+        new_interval;
+  } else {
+    intervals_elapsed = (now - next_parameters_.tick_target) / new_interval;
+  }
   base::TimeTicks new_tick_target =
       next_parameters_.tick_target + new_interval * intervals_elapsed;
   DCHECK(now <= new_tick_target)

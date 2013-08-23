@@ -36,16 +36,15 @@ class ChromotingModule : public pp::Module {
 int32_t PPP_InitializeModule(PP_Module module_id,
                              PPB_GetInterface get_browser_interface) {
   ChromotingModule* module = new ChromotingModule();
-  if (!module)
-    return PP_ERROR_FAILED;
-
   if (!module->InternalInit(module_id, get_browser_interface)) {
     delete module;
     return PP_ERROR_FAILED;
   }
 
-  // Register a global log handler.
+#if !defined(NDEBUG)
+  // Register a global log handler, but only in Debug builds.
   ChromotingInstance::RegisterLogMessageHandler();
+#endif
 
   g_module_singleton = module;
   return PP_OK;

@@ -248,11 +248,16 @@ div.splitter {
 }
 
 #volume-list li.root-item {
-  -webkit-animation: fadeIn 150ms ease-in-out;
   -webkit-box-align: center;
   display: -webkit-box;
   line-height: 22px;  /* To accomodate for icons. */
   padding-left: 11px;
+}
+
+/* TODO(yoshiki): Animation is temporary disabled for volumes. Add animation
+   back. crbug.com/276132. */
+#volume-list li[item-type=shortcut].root-item {
+  -webkit-animation: fadeIn 150ms ease-in-out;
 }
 
 /* This selector is used by JavaScript. "fadeout" class will be dinamically
@@ -432,27 +437,8 @@ div.splitter {
 .dialog-header #search-box,
 .dialog-header #autocomplete-list,
 .dialog-header #search-icon,
-.dialog-header #search-clear-button,
-.dialog-header .buttonbar button {
+.dialog-header #search-clear-button {
   -webkit-app-region: no-drag;
-}
-
-.dialog-header #gear-button {
-  background-image: -webkit-image-set(
-    url('../images/files/ui/topbar_button_settings.png') 1x,
-    url('../images/files/ui/2x/topbar_button_settings.png') 2x);
-}
-
-.dialog-header #maximize-button {
-  background-image: -webkit-image-set(
-    url('../images/files/ui/topbar_button_maximize.png') 1x,
-    url('../images/files/ui/2x/topbar_button_maximize.png') 2x);
-}
-
-.dialog-header #close-button {
-  background-image: -webkit-image-set(
-    url('../images/files/ui/topbar_button_close.png') 1x,
-    url('../images/files/ui/2x/topbar_button_close.png') 2x);
 }
 
 /* Container for the detail and thumbnail list views. */
@@ -486,6 +472,7 @@ div.splitter {
   -webkit-box-orient: horizontal;
   border-top: 1px solid rgb(225, 225, 225);
   display: -webkit-box;
+  outline: none;
   padding: 10px;
 }
 
@@ -559,9 +546,6 @@ body[drive] .dialog-container[connection='metered'] .offline-icon-space {
   width: 26px;
 }
 
-#search-breadcrumbs {
-}
-
 .breadcrumbs > [collapsed]::before {
   content: '...';
 }
@@ -596,40 +580,6 @@ body[drive] .dialog-container[connection='metered'] .offline-icon-space {
   height: 10px;
   overflow: hidden;
   width: 25px;
-}
-
-.dialog-header .buttonbar {
-  -webkit-box-align: center;
-  height: 100%;
-}
-
-.dialog-header .buttonbar button {
-  -webkit-box-shadow: none;
-  -webkit-margin-end: 10px;
-  -webkit-margin-start: 0;
-  background-color: transparent;
-  background-image: none;
-  background-position: center;
-  background-repeat: no-repeat;
-  border: 0 none transparent;
-  display: block;
-  height: 32px;
-  min-width: 0;
-  outline: none;
-  padding: 0;
-  width: 32px;
-}
-
-.dialog-header .buttonbar button:active {
-  -webkit-box-shadow:
-    0 1px 0 0 #c2c2c2 inset,
-    0 0 0 1px #dedede inset;
-}
-
-.dialog-header button:hover,
-.dialog-header button:focus,
-.dialog-header button:active {
-  background-color: #ededed;
 }
 
 #search-box,
@@ -672,9 +622,6 @@ body[drive] .dialog-container[connection='metered'] .offline-icon-space {
 
 #search-box::-webkit-search-cancel-button {
   -webkit-appearance: none;
-}
-
-#search-box::-webkit-search-cancel-button {
   right: 2px;
 }
 
@@ -1020,8 +967,6 @@ body[type='full-page'] .thumbnail-grid .thumbnail-bottom {
 @-webkit-keyframes acceptsBlink {
   0% {
     background-color: transparent;
-  }
-  50% {
   }
 }
 
@@ -1665,7 +1610,8 @@ body[drive='error'] #unmounted-panel > .error,
   position: relative;
 }
 
-.buttonbar .tooltip {
+.buttonbar .tooltip,
+.topbutton-bar .tooltip {
   right: -12px;
   top: 35px;
 }

@@ -4,16 +4,28 @@
 
 #include "chrome/browser/chromeos/net/onc_utils.h"
 
+#include "base/bind_helpers.h"
+#include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/ui_proxy_config.h"
 #include "chrome/browser/prefs/proxy_config_dictionary.h"
+#include "chromeos/network/managed_network_configuration_handler.h"
+#include "chromeos/network/network_configuration_handler.h"
+#include "chromeos/network/network_handler.h"
+#include "chromeos/network/network_profile.h"
+#include "chromeos/network/network_profile_handler.h"
+#include "chromeos/network/network_ui_data.h"
+#include "chromeos/network/onc/onc_normalizer.h"
+#include "chromeos/network/onc/onc_signature.h"
+#include "chromeos/network/onc/onc_translator.h"
 #include "chromeos/network/onc/onc_utils.h"
 #include "net/base/host_port_pair.h"
 #include "net/proxy/proxy_bypass_rules.h"
 #include "net/proxy/proxy_server.h"
+#include "third_party/cros_system_api/dbus/service_constants.h"
 #include "url/gurl.h"
 
 namespace chromeos {
@@ -153,23 +165,11 @@ class UserStringSubstitution : public chromeos::onc::StringSubstitution {
   DISALLOW_COPY_AND_ASSIGN(UserStringSubstitution);
 };
 
-const chromeos::User* GetLoggedInUserByHash(const std::string& userhash) {
-  const chromeos::UserList& users =
-      chromeos::UserManager::Get()->GetLoggedInUsers();
-  for (chromeos::UserList::const_iterator it = users.begin(); it != users.end();
-       ++it) {
-    if ((*it)->username_hash() == userhash)
-      return *it;
-  }
-  return NULL;
-}
-
 }  // namespace
 
 void ExpandStringPlaceholdersInNetworksForUser(
-    const std::string& hashed_username,
+    const chromeos::User* user,
     base::ListValue* network_configs) {
-  const chromeos::User* user = GetLoggedInUserByHash(hashed_username);
   if (!user) {
     // In tests no user may be logged in. It's not harmful if we just don't
     // expand the strings.
@@ -177,6 +177,67 @@ void ExpandStringPlaceholdersInNetworksForUser(
   }
   UserStringSubstitution substitution(user);
   chromeos::onc::ExpandStringsInNetworks(substitution, network_configs);
+}
+
+void ImportNetworksForUser(const chromeos::User* user,
+                           const base::ListValue& network_configs,
+                           std::string* error) {
+  error->clear();
+
+  scoped_ptr<base::ListValue> expanded_networks(network_configs.DeepCopy());
+  ExpandStringPlaceholdersInNetworksForUser(user, expanded_networks.get());
+
+  const NetworkProfile* profile =
+      NetworkHandler::Get()->network_profile_handler()->GetProfileForUserhash(
+          user->username_hash());
+  if (!profile) {
+    *error = "User profile doesn't exist.";
+    return;
+  }
+
+  for (base::ListValue::const_iterator it = expanded_networks->begin();
+       it != expanded_networks->end();
+       ++it) {
+    const base::DictionaryValue* network = NULL;
+    (*it)->GetAsDictionary(&network);
+    DCHECK(network);
+
+    // Remove irrelevant fields.
+    onc::Normalizer normalizer(true /* remove recommended fields */);
+    scoped_ptr<base::DictionaryValue> normalized_network =
+        normalizer.NormalizeObject(&onc::kNetworkConfigurationSignature,
+                                   *network);
+
+    scoped_ptr<base::DictionaryValue> shill_dict =
+        onc::TranslateONCObjectToShill(&onc::kNetworkConfigurationSignature,
+                                       *normalized_network);
+
+    scoped_ptr<NetworkUIData> ui_data = NetworkUIData::CreateFromONC(
+        onc::ONC_SOURCE_USER_IMPORT, *normalized_network);
+    base::DictionaryValue ui_data_dict;
+    ui_data->FillDictionary(&ui_data_dict);
+    std::string ui_data_json;
+    base::JSONWriter::Write(&ui_data_dict, &ui_data_json);
+    shill_dict->SetStringWithoutPathExpansion(flimflam::kUIDataProperty,
+                                              ui_data_json);
+
+    shill_dict->SetStringWithoutPathExpansion(flimflam::kProfileProperty,
+                                              profile->path);
+
+    NetworkHandler::Get()->network_configuration_handler()->CreateConfiguration(
+        *shill_dict,
+        network_handler::StringResultCallback(),
+        network_handler::ErrorCallback());
+  }
+}
+
+const base::DictionaryValue* FindPolicyForActiveUser(
+    const std::string& guid,
+    onc::ONCSource* onc_source) {
+  const User* user = UserManager::Get()->GetActiveUser();
+  std::string username_hash = user ? user->username_hash() : std::string();
+  return NetworkHandler::Get()->managed_network_configuration_handler()->
+      FindPolicyByGUID(username_hash, guid, onc_source);
 }
 
 }  // namespace onc

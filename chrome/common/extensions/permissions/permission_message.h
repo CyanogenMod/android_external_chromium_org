@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "base/basictypes.h"
 #include "base/strings/string16.h"
 
 namespace extensions {
@@ -30,6 +31,7 @@ class PermissionMessage {
     kTabs,
     kManagement,
     kDebugger,
+    kDesktopCapture,
     kHosts1,
     kHosts2,
     kHosts3,
@@ -67,8 +69,11 @@ class PermissionMessage {
     kBluetoothDevices,
     kDownloadsOpen,
     kNetworkingPrivate,
+    kDeclarativeWebRequest,
     kEnumBoundary,
   };
+  COMPILE_ASSERT(PermissionMessage::kNone > PermissionMessage::kUnknown,
+                 kNone_not_greater_than_kUnknown);
 
   // Creates the corresponding permission message for a list of hosts. This is
   // simply a convenience method around the constructor, since the messages

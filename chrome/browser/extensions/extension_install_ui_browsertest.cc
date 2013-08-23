@@ -50,8 +50,12 @@ class ExtensionInstallUIBrowserTest : public ExtensionBrowserTest {
   // Install the given theme from the data dir and verify expected name.
   void InstallThemeAndVerify(const char* theme_name,
                              const std::string& expected_name) {
+    // If there is already a theme installed, the current theme should be
+    // disabled and the new one installed + enabled.
+    int expected_change = GetTheme() ? 0 : 1;
     const base::FilePath theme_path = test_data_dir_.AppendASCII(theme_name);
-    ASSERT_TRUE(InstallExtensionWithUIAutoConfirm(theme_path, 1, browser()));
+    ASSERT_TRUE(InstallExtensionWithUIAutoConfirm(theme_path, expected_change,
+        browser()));
     const Extension* theme = GetTheme();
     ASSERT_TRUE(theme);
     ASSERT_EQ(theme->name(), expected_name);
@@ -88,7 +92,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionInstallUIBrowserTest,
   ASSERT_EQ(NULL, GetTheme());
 
   // Set the same theme twice and undo to verify we go back to default theme.
-  ASSERT_TRUE(InstallExtensionWithUIAutoConfirm(theme_crx, 1, browser()));
+  ASSERT_TRUE(InstallExtensionWithUIAutoConfirm(theme_crx, 0, browser()));
   theme = GetTheme();
   ASSERT_TRUE(theme);
   ASSERT_EQ(theme_id, theme->id());
@@ -206,7 +210,12 @@ class NewTabUISortingBrowserTest : public ExtensionInstallUIBrowserTest {
   DISALLOW_COPY_AND_ASSIGN(NewTabUISortingBrowserTest);
 };
 
-IN_PROC_BROWSER_TEST_F(NewTabUISortingBrowserTest, ReorderDuringInstall) {
+#if defined(OS_WIN)
+#define MAYBE_ReorderDuringInstall DISABLED_ReorderDuringInstall
+#else
+#define MAYBE_ReorderDuringInstall ReorderDuringInstall
+#endif
+IN_PROC_BROWSER_TEST_F(NewTabUISortingBrowserTest, MAYBE_ReorderDuringInstall) {
   ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUINewTabURL));
   ExtensionService* service = extensions::ExtensionSystem::Get(
       browser()->profile())->extension_service();

@@ -23,10 +23,11 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/timer/hi_res_timer_manager.h"
 #include "content/browser/browser_thread_impl.h"
-#include "content/browser/device_orientation/device_motion_service.h"
+#include "content/browser/device_orientation/device_inertial_sensor_service.h"
 #include "content/browser/download/save_file_manager.h"
 #include "content/browser/gamepad/gamepad_service.h"
 #include "content/browser/gpu/browser_gpu_channel_host_factory.h"
+#include "content/browser/gpu/compositor_util.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/gpu/gpu_process_host_ui_shim.h"
@@ -43,7 +44,6 @@
 #include "content/browser/webui/url_data_manager.h"
 #include "content/public/browser/browser_main_parts.h"
 #include "content/public/browser/browser_shutdown.h"
-#include "content/public/browser/compositor_util.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/content_switches.h"
@@ -52,6 +52,7 @@
 #include "crypto/nss_util.h"
 #include "media/audio/audio_manager.h"
 #include "media/base/media.h"
+#include "media/base/user_input_monitor.h"
 #include "media/midi/midi_manager.h"
 #include "net/base/network_change_notifier.h"
 #include "net/socket/client_socket_factory.h"
@@ -64,7 +65,7 @@
 
 #if defined(OS_ANDROID)
 #include "base/android/jni_android.h"
-#include "content/browser/android/browser_startup_config.h"
+#include "content/browser/android/browser_startup_controller.h"
 #include "content/browser/android/surface_texture_peer_browser_impl.h"
 #endif
 
@@ -795,7 +796,7 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
   // Must happen after the I/O thread is shutdown since this class lives on the
   // I/O thread and isn't threadsafe.
   GamepadService::GetInstance()->Terminate();
-  DeviceMotionService::GetInstance()->Shutdown();
+  DeviceInertialSensorService::GetInstance()->Shutdown();
 
   URLDataManager::DeleteDataSources();
 #endif  // !defined(OS_IOS)
@@ -872,6 +873,14 @@ int BrowserMainLoop::BrowserThreadsStarted() {
         audio_manager_.get(), media_stream_manager_.get()));
   }
 
+  {
+    TRACE_EVENT0(
+        "startup",
+        "BrowserMainLoop::BrowserThreadsStarted::InitUserInputMonitor");
+    user_input_monitor_ = media::UserInputMonitor::Create(
+        io_thread_->message_loop_proxy(), main_thread_->message_loop_proxy());
+  }
+
   // Alert the clipboard class to which threads are allowed to access the
   // clipboard:
   std::vector<base::PlatformThreadId> allowed_clipboard_threads;
@@ -887,8 +896,13 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   // When running the GPU thread in-process, avoid optimistically starting it
   // since creating the GPU thread races against creation of the one-and-only
   // ChildProcess instance which is created by the renderer thread.
+  bool always_uses_gpu = IsForceCompositingModeEnabled();
+#if defined(USE_AURA)
+  if (!GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor())
+    always_uses_gpu = false;
+#endif
   if (GpuDataManagerImpl::GetInstance()->GpuAccessAllowed(NULL) &&
-      IsForceCompositingModeEnabled() &&
+      always_uses_gpu &&
       !parsed_command_line_.HasSwitch(switches::kDisableGpuProcessPrelaunch) &&
       !parsed_command_line_.HasSwitch(switches::kSingleProcess) &&
       !parsed_command_line_.HasSwitch(switches::kInProcessGPU)) {

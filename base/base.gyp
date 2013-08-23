@@ -237,6 +237,9 @@
         'third_party/nspr/prtypes.h',
         'third_party/xdg_user_dirs/xdg_user_dir_lookup.cc',
         'third_party/xdg_user_dirs/xdg_user_dir_lookup.h',
+        'async_socket_io_handler.h',
+        'async_socket_io_handler_posix.cc',
+        'async_socket_io_handler_win.cc',
         'auto_reset.h',
         'event_recorder.h',
         'event_recorder_stubs.cc',
@@ -447,6 +450,7 @@
         'android/jni_string_unittest.cc',
         'android/path_utils_unittest.cc',
         'android/scoped_java_ref_unittest.cc',
+        'async_socket_io_handler_unittest.cc',
         'at_exit_unittest.cc',
         'atomicops_unittest.cc',
         'base64_unittest.cc',
@@ -834,6 +838,7 @@
         'base_i18n',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
+        '../third_party/libxml/libxml.gyp:libxml',
         'third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
       ],
       'export_dependent_settings': [
@@ -864,6 +869,8 @@
         'test/expectations/expectation.h',
         'test/expectations/parser.cc',
         'test/expectations/parser.h',
+        'test/gtest_xml_util.cc',
+        'test/gtest_xml_util.h',
         'test/mock_chrome_application_mac.h',
         'test/mock_chrome_application_mac.mm',
         'test/mock_devices_changed_observer.cc',
@@ -927,6 +934,9 @@
         'test/thread_test_helper.h',
         'test/trace_event_analyzer.cc',
         'test/trace_event_analyzer.h',
+        'test/unit_test_launcher_ios.cc',
+        'test/unit_test_launcher.cc',
+        'test/unit_test_launcher.h',
         'test/values_test_util.cc',
         'test/values_test_util.h',
       ],
@@ -936,6 +946,10 @@
             # Pull in specific Mac files for iOS (which have been filtered out
             # by file name rules).
             ['include', '^test/test_file_util_mac\\.cc$'],
+          ],
+          'sources!': [
+            # iOS uses its own unit test launcher.
+            'test/unit_test_launcher.cc',
           ],
         }],
       ],  # target_conditions

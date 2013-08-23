@@ -312,14 +312,21 @@ class InstantPolicyTest : public ExtensionBrowserTest, public InstantTestBase {
 
   void InstallThemeAndVerify(const std::string& theme_dir,
                              const std::string& theme_name) {
-    const base::FilePath theme_path = test_data_dir_.AppendASCII(theme_dir);
-    ASSERT_TRUE(InstallExtensionWithUIAutoConfirm(
-        theme_path, 1, ExtensionBrowserTest::browser()));
     const extensions::Extension* theme =
         ThemeServiceFactory::GetThemeForProfile(
             ExtensionBrowserTest::browser()->profile());
-    ASSERT_NE(static_cast<extensions::Extension*>(NULL), theme);
-    ASSERT_EQ(theme->name(), theme_name);
+    // If there is already a theme installed, the current theme should be
+    // disabled and the new one installed + enabled.
+    int expected_change = theme ? 0 : 1;
+
+    const base::FilePath theme_path = test_data_dir_.AppendASCII(theme_dir);
+    ASSERT_TRUE(InstallExtensionWithUIAutoConfirm(
+        theme_path, expected_change, ExtensionBrowserTest::browser()));
+    const extensions::Extension* new_theme =
+        ThemeServiceFactory::GetThemeForProfile(
+            ExtensionBrowserTest::browser()->profile());
+    ASSERT_NE(static_cast<extensions::Extension*>(NULL), new_theme);
+    ASSERT_EQ(new_theme->name(), theme_name);
   }
 
  private:
@@ -1372,16 +1379,11 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest,
   EXPECT_EQ(ASCIIToUTF16("flowers"), omnibox()->GetText());
 }
 
-// Flaky on Mac and Linux Tests bots.
-#if defined(OS_MACOSX) || defined(OS_LINUX)
-#define MAYBE_UpdateSearchQueryOnForwardNavigation DISABLED_UpdateSearchQueryOnForwardNavigation
-#else
-#define MAYBE_UpdateSearchQueryOnForwardNavigation UpdateSearchQueryOnForwardNavigation
-#endif
+// Flaky: crbug.com/253092.
 // Test to verify that the omnibox search query is updated on browser
 // forward button press events.
 IN_PROC_BROWSER_TEST_F(InstantExtendedTest,
-                       MAYBE_UpdateSearchQueryOnForwardNavigation) {
+                       DISABLED_UpdateSearchQueryOnForwardNavigation) {
   ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
 
   // Focus omnibox and confirm overlay isn't shown.

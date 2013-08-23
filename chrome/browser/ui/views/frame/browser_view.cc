@@ -568,11 +568,20 @@ bool BrowserView::IsGuestSession() const {
   return browser_->profile()->IsGuestSession();
 }
 
+int BrowserView::GetGuestIconResourceID() const {
+  return IDR_GUEST_ICON;
+}
+
 bool BrowserView::ShouldShowAvatar() const {
   if (!IsBrowserTypeNormal())
     return false;
+#if defined(OS_CHROMEOS)
   if (IsOffTheRecord() && !IsGuestSession())
     return true;
+#else
+  if (IsOffTheRecord())  // Desktop guest is incognito and needs avatar.
+    return true;
+#endif
   // Tests may not have a profile manager.
   if (!g_browser_process->profile_manager())
     return false;
@@ -964,9 +973,8 @@ void BrowserView::UpdateReloadStopState(bool is_loading, bool force) {
       is_loading ? ReloadButton::MODE_STOP : ReloadButton::MODE_RELOAD, force);
 }
 
-void BrowserView::UpdateToolbar(content::WebContents* contents,
-                                bool should_restore_state) {
-  toolbar_->Update(contents, should_restore_state);
+void BrowserView::UpdateToolbar(content::WebContents* contents) {
+  toolbar_->Update(contents);
 }
 
 void BrowserView::FocusToolbar() {
@@ -1155,8 +1163,13 @@ DownloadShelf* BrowserView::GetDownloadShelf() {
   return download_shelf_.get();
 }
 
-void BrowserView::ConfirmBrowserCloseWithPendingDownloads() {
-  DownloadInProgressDialogView::Show(browser_.get(), GetNativeWindow());
+void BrowserView::ConfirmBrowserCloseWithPendingDownloads(
+    int download_count,
+    Browser::DownloadClosePreventionType dialog_type,
+    bool app_modal,
+    const base::Callback<void(bool)>& callback) {
+  DownloadInProgressDialogView::Show(
+      GetNativeWindow(), download_count, dialog_type, app_modal, callback);
 }
 
 void BrowserView::ShowCreateChromeAppShortcutsDialog(
@@ -1257,13 +1270,14 @@ bool BrowserView::PreHandleKeyboardEvent(const NativeWebKeyboardEvent& event,
   // the |browser_| object then send the keyboard event to the
   // |focus_manager| as if we are activating an accelerator key.
   // Then we can retrieve the command id from the |browser_| object.
+  bool original_block_command_state = controller->block_command_execution();
   controller->SetBlockCommandExecution(true);
   // If the |accelerator| is a non-browser shortcut (e.g. Ash shortcut), the
   // command execution cannot be blocked and true is returned. However, it is
   // okay as long as is_app() is false. See comments in this function.
   const bool processed = focus_manager->ProcessAccelerator(accelerator);
   const int id = controller->GetLastBlockedCommand(NULL);
-  controller->SetBlockCommandExecution(false);
+  controller->SetBlockCommandExecution(original_block_command_state);
 
   // Executing the command may cause |this| object to be destroyed.
   if (controller->IsReservedCommandOrKey(id, event)) {

@@ -16,6 +16,7 @@
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/process/process_iterator.h"
+#include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -25,6 +26,7 @@
 #include "build/build_config.h"
 #include "chrome/browser/nacl_host/nacl_browser.h"
 #include "chrome/browser/nacl_host/nacl_host_message_filter.h"
+#include "chrome/common/chrome_switches.h"
 #include "components/nacl/common/nacl_browser_delegate.h"
 #include "components/nacl/common/nacl_cmd_line.h"
 #include "components/nacl/common/nacl_host_messages.h"
@@ -67,6 +69,56 @@ using content::ChildProcessData;
 using content::ChildProcessHost;
 using ppapi::proxy::SerializedHandle;
 
+#if defined(OS_WIN)
+
+namespace {
+
+// Looks for the largest contiguous unallocated region of address
+// space and returns it via |*out_addr| and |*out_size|.
+void FindAddressSpace(base::ProcessHandle process,
+                      char** out_addr, size_t* out_size) {
+  *out_addr = NULL;
+  *out_size = 0;
+  char* addr = 0;
+  while (true) {
+    MEMORY_BASIC_INFORMATION info;
+    size_t result = VirtualQueryEx(process, static_cast<void*>(addr),
+                                   &info, sizeof(info));
+    if (result < sizeof(info))
+      break;
+    if (info.State == MEM_FREE && info.RegionSize > *out_size) {
+      *out_addr = addr;
+      *out_size = info.RegionSize;
+    }
+    addr += info.RegionSize;
+  }
+}
+
+}  // namespace
+
+namespace nacl {
+
+// Allocates |size| bytes of address space in the given process at a
+// randomised address.
+void* AllocateAddressSpaceASLR(base::ProcessHandle process, size_t size) {
+  char* addr;
+  size_t avail_size;
+  FindAddressSpace(process, &addr, &avail_size);
+  if (avail_size < size)
+    return NULL;
+  size_t offset = base::RandGenerator(avail_size - size);
+  const int kPageSize = 0x10000;
+  void* request_addr =
+      reinterpret_cast<void*>(reinterpret_cast<uint64>(addr + offset)
+                              & ~(kPageSize - 1));
+  return VirtualAllocEx(process, request_addr, size,
+                        MEM_RESERVE, PAGE_NOACCESS);
+}
+
+}  // namespace nacl
+
+#endif  // defined(OS_WIN)
+
 namespace {
 
 #if defined(OS_WIN)
@@ -83,23 +135,16 @@ class NaClSandboxedProcessLauncherDelegate
   virtual ~NaClSandboxedProcessLauncherDelegate() {}
 
   virtual void PostSpawnTarget(base::ProcessHandle process) {
-#if !defined(NACL_WIN64)
     // For Native Client sel_ldr processes on 32-bit Windows, reserve 1 GB of
     // address space to prevent later failure due to address space fragmentation
     // from .dll loading. The NaCl process will attempt to locate this space by
     // scanning the address space using VirtualQuery.
     // TODO(bbudge) Handle the --no-sandbox case.
     // http://code.google.com/p/nativeclient/issues/detail?id=2131
-    const SIZE_T kOneGigabyte = 1 << 30;
-    void* nacl_mem = VirtualAllocEx(process,
-                                    NULL,
-                                    kOneGigabyte,
-                                    MEM_RESERVE,
-                                    PAGE_NOACCESS);
-    if (!nacl_mem) {
+    const SIZE_T kNaClSandboxSize = 1 << 30;
+    if (!nacl::AllocateAddressSpaceASLR(process, kNaClSandboxSize)) {
       DLOG(WARNING) << "Failed to reserve address space for Native Client";
     }
-#endif  // !defined(NACL_WIN64)
   }
 };
 
@@ -181,6 +226,7 @@ NaClProcessHost::NaClProcessHost(const GURL& manifest_url,
                                  bool uses_irt,
                                  bool enable_dyncode_syscalls,
                                  bool enable_exception_handling,
+                                 bool enable_crash_throttling,
                                  bool off_the_record,
                                  const base::FilePath& profile_directory)
     : manifest_url_(manifest_url),
@@ -198,6 +244,7 @@ NaClProcessHost::NaClProcessHost(const GURL& manifest_url,
       enable_debug_stub_(false),
       enable_dyncode_syscalls_(enable_dyncode_syscalls),
       enable_exception_handling_(enable_exception_handling),
+      enable_crash_throttling_(enable_crash_throttling),
       off_the_record_(off_the_record),
       profile_directory_(profile_directory),
       ipc_plugin_listener_(this),
@@ -252,6 +299,14 @@ NaClProcessHost::~NaClProcessHost() {
 #endif
 }
 
+void NaClProcessHost::OnProcessCrashed(int exit_status) {
+  if (enable_crash_throttling_ &&
+      !CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisablePnaclCrashThrottling)) {
+    NaClBrowser::GetInstance()->OnProcessCrashed();
+  }
+}
+
 // This is called at browser startup.
 // static
 void NaClProcessHost::EarlyStartup(NaClBrowserDelegate* delegate) {
@@ -283,6 +338,18 @@ void NaClProcessHost::Launch(
   nacl_host_message_filter_ = nacl_host_message_filter;
   reply_msg_ = reply_msg;
   manifest_path_ = manifest_path;
+
+  // Do not launch the requested NaCl module if NaCl is marked "unstable" due
+  // to too many crashes within a given time period.
+  if (enable_crash_throttling_ &&
+      !CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisablePnaclCrashThrottling) &&
+      NaClBrowser::GetInstance()->IsThrottled()) {
+    SendErrorToRenderer("Process creation was throttled due to excessive"
+                        " crashes");
+    delete this;
+    return;
+  }
 
   const CommandLine* cmd = CommandLine::ForCurrentProcess();
 #if defined(OS_WIN)

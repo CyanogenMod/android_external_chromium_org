@@ -40,6 +40,7 @@ class CONTENT_EXPORT BrowserPlugin :
   RenderViewImpl* render_view() const { return render_view_.get(); }
   int render_view_routing_id() const { return render_view_routing_id_; }
   int guest_instance_id() const { return guest_instance_id_; }
+  bool attached() const { return attached_; }
 
   static BrowserPlugin* FromContainer(WebKit::WebPluginContainer* container);
 
@@ -115,10 +116,6 @@ class CONTENT_EXPORT BrowserPlugin :
 
   // A request to enable hardware compositing.
   void EnableCompositing(bool enable);
-  // A request from content client to track lifetime of a JavaScript object.
-  // This is used to track permission request objects, and new window API
-  // window objects.
-  void TrackObjectLifetime(const NPVariant* request, int id);
 
   // Returns true if |point| lies within the bounds of the plugin rectangle.
   // Not OK to use this function for making security-sensitive decision since it
@@ -270,9 +267,6 @@ class CONTENT_EXPORT BrowserPlugin :
   // Informs the guest of an updated autosize state.
   void UpdateGuestAutoSizeState(bool current_auto_size);
 
-  // Informs the BrowserPlugin that guest has changed its size in autosize mode.
-  void SizeChangedDueToAutoSize(const gfx::Size& old_view_size);
-
   // Indicates whether a damage buffer was used by the guest process for the
   // provided |params|.
   static bool UsesDamageBuffer(
@@ -282,14 +276,6 @@ class CONTENT_EXPORT BrowserPlugin :
   // given the provided |params|.
   bool UsesPendingDamageBuffer(
       const BrowserPluginMsg_UpdateRect_Params& params);
-
-  // Called when the tracked object of |id| ID becomes unreachable in
-  // JavaScript.
-  void OnTrackedObjectGarbageCollected(int id);
-  // V8 garbage collection callback for |object|.
-  static void WeakCallbackForTrackedObject(v8::Isolate* isolate,
-                                           v8::Persistent<v8::Value>* object,
-                                           void* param);
 
   // IPC message handlers.
   // Please keep in alphabetical order.
@@ -312,6 +298,9 @@ class CONTENT_EXPORT BrowserPlugin :
   // This is the browser-process-allocated instance ID that uniquely identifies
   // a guest WebContents.
   int guest_instance_id_;
+  // This indicates whether this BrowserPlugin has been attached to a
+  // WebContents.
+  bool attached_;
   base::WeakPtr<RenderViewImpl> render_view_;
   // We cache the |render_view_|'s routing ID because we need it on destruction.
   // If the |render_view_| is destroyed before the BrowserPlugin is destroyed
@@ -343,7 +332,6 @@ class CONTENT_EXPORT BrowserPlugin :
   WebCursor cursor_;
 
   gfx::Size last_view_size_;
-  bool size_changed_in_flight_;
   bool before_first_navigation_;
   bool mouse_locked_;
 

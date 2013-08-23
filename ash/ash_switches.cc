@@ -54,10 +54,6 @@ const char kAshDisableAudioDeviceMenu[] =
 // Disable auto window maximization logic.
 const char kAshDisableAutoMaximizing[] = "ash-disable-auto-maximizing";
 
-// Disable support for auto window placement.
-const char kAshDisableAutoWindowPlacement[] =
-    "ash-enable-auto-window-placement";
-
 // Disables the limitter to throttle how quickly a user
 // can change display settings.
 const char kAshDisableDisplayChangeLimiter[] =
@@ -66,18 +62,9 @@ const char kAshDisableDisplayChangeLimiter[] =
 // If present new lock animations are enabled.
 const char kAshDisableNewLockAnimations[] = "ash-disable-new-lock-animations";
 
-// Disable the per application grouping version of the launcher.
-const char kAshDisablePerAppLauncher[] = "ash-disable-per-app-launcher";
-
-// Disables display rotation.
-const char kAshDisableDisplayRotation[] = "ash-disable-display-rotation";
-
 // Disable immersive fullscreen mode, regardless of default setting.
 const char kAshDisableImmersiveFullscreen[] =
     "ash-disable-immersive-fullscreen";
-
-// Disables ui scaling.
-const char kAshDisableUIScaling[] = "ash-disable-ui-scaling";
 
 #if defined(OS_CHROMEOS)
 // Disable compositor based mirroring.
@@ -159,6 +146,10 @@ const char kAshTouchHud[] = "ash-touch-hud";
 // crbug's [244983, 244990, 244994, 245005, 245012]
 const char kAshUseAlternateShelfLayout[] = "ash-use-alternate-shelf";
 
+// Flags explicitly show or hide the shelf alignment menu.
+const char kShowShelfAlignmentMenu[] = "show-launcher-alignment-menu";
+const char kHideShelfAlignmentMenu[] = "hide-launcher-alignment-menu";
+
 // Uses the 1st display in --ash-host-window-bounds as internal display.
 // This is for debugging on linux desktop.
 const char kAshUseFirstDisplayAsInternal[] =
@@ -187,7 +178,12 @@ const char kForcedMaximizeMode[] = "forced-maximize-mode";
 
 bool UseAlternateShelfLayout() {
   return CommandLine::ForCurrentProcess()->
-        HasSwitch(ash::switches::kAshUseAlternateShelfLayout);
+      HasSwitch(ash::switches::kAshUseAlternateShelfLayout);
+}
+
+bool ShowShelfAlignmentMenu() {
+  return CommandLine::ForCurrentProcess()->
+      HasSwitch(switches::kShowShelfAlignmentMenu);
 }
 
 #if defined(OS_CHROMEOS)
@@ -198,7 +194,7 @@ bool ShowAudioDeviceMenu() {
 
 bool UseUsbChargerNotification() {
   return !CommandLine::ForCurrentProcess()->
-        HasSwitch(ash::switches::kAshDisableUsbChargerNotification);
+      HasSwitch(ash::switches::kAshDisableUsbChargerNotification);
 }
 #endif
 

@@ -84,11 +84,11 @@ are declared in build/common.gypi.
          be 'nb'. -->
     <output filename="generated_resources_nb.pak" type="data_package" lang="no" />
     <output filename="generated_resources_pl.pak" type="data_package" lang="pl" />
-    <if expr="pp_ifdef('ios')">
+    <if expr="is_ios">
       <!-- iOS uses pt for pt-BR -->
       <output filename="generated_resources_pt.pak" type="data_package" lang="pt-BR" />
     </if>
-    <if expr="not pp_ifdef('ios')">
+    <if expr="not is_ios">
       <output filename="generated_resources_pt-BR.pak" type="data_package" lang="pt-BR" />
     </if>
     <output filename="generated_resources_pt-PT.pak" type="data_package" lang="pt-PT" />
@@ -2309,12 +2309,12 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
       <message name="IDS_CERT_ERROR_EXTRA_INFO_TITLE" desc="The title for the extra information section displayed when a page contains a certificate error">
         Help me understand
       </message>
-      <if expr="is_android or pp_ifdef('ios')">
+      <if expr="is_android or is_ios">
         <message name="IDS_CERT_ERROR_EXTRA_INFO_1" desc="Mobile: 1st paragraph of extra information for any certificate error">
           When you connect to a secure website, the server hosting that site presents your browser with something called a "certificate" to verify its identity. This certificate contains identity information, such as the address of the website, which is verified by a third party that your device trusts. By checking that the address in the certificate matches the address of the website, it is possible to verify that you are securely communicating with the website you intended, and not a third party (such as an attacker on your network).
         </message>
       </if>
-      <if expr="not is_android and not pp_ifdef('ios')">
+      <if expr="not is_android and not is_ios">
         <message name="IDS_CERT_ERROR_EXTRA_INFO_1" desc="1st paragraph of extra information for any certificate error">
           When you connect to a secure website, the server hosting that site presents your browser with something called a "certificate" to verify its identity. This certificate contains identity information, such as the address of the website, which is verified by a third party that your computer trusts. By checking that the address in the certificate matches the address of the website, it is possible to verify that you are securely communicating with the website you intended, and not a third party (such as an attacker on your network).
         </message>
@@ -2352,7 +2352,7 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
       <message name="IDS_CERT_ERROR_AUTHORITY_INVALID_TITLE" desc="Title for an X509 certificate with an invalid authority">
         The site's security certificate is not trusted!
       </message>
-      <if expr="is_android or pp_ifdef('ios')">
+      <if expr="is_android or is_ios">
         <message name="IDS_CERT_ERROR_AUTHORITY_INVALID_EXTRA_INFO_2" desc="Mobile: 2nd paragraph of extra information for a X509 certificate with an invalid authority">
           In this case, the certificate has not been verified by a third party that your device trusts. Anyone can create a certificate claiming to be whatever website they choose, which is why it must be verified by a trusted third party. Without that verification, the identity information in the certificate is meaningless. It is therefore not possible to verify that you are communicating with <ph name="DOMAIN">&lt;strong&gt;$1<ex>paypal.com</ex>&lt;/strong&gt;</ph> instead of an attacker who generated his own certificate claiming to be <ph name="DOMAIN2">&lt;strong&gt;$2<ex>paypal.com</ex>&lt;/strong&gt;</ph>. You should not proceed past this point.
         </message>
@@ -2362,7 +2362,7 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
           If, however, you work in an organization that generates its own certificates, and you are trying to connect to an internal website of that organization using such a certificate, you may be able to solve this problem securely. You can import your organization's root certificate as a "root certificate", and then certificates issued or verified by your organization will be trusted and you will not see this error next time you try to connect to an internal website. Contact your organization's help staff for assistance in adding a new root certificate to your device.
         </message>
       </if>
-      <if expr="not is_android and not pp_ifdef('ios')">
+      <if expr="not is_android and not is_ios">
         <message name="IDS_CERT_ERROR_AUTHORITY_INVALID_EXTRA_INFO_2" desc="2nd paragraph of extra information for a X509 certificate with an invalid authority">
           In this case, the certificate has not been verified by a third party that your computer trusts. Anyone can create a certificate claiming to be whatever website they choose, which is why it must be verified by a trusted third party. Without that verification, the identity information in the certificate is meaningless. It is therefore not possible to verify that you are communicating with <ph name="DOMAIN">&lt;strong&gt;$1<ex>paypal.com</ex>&lt;/strong&gt;</ph> instead of an attacker who generated his own certificate claiming to be <ph name="DOMAIN2">&lt;strong&gt;$2<ex>paypal.com</ex>&lt;/strong&gt;</ph>. You should not proceed past this point.
         </message>
@@ -4198,6 +4198,12 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_PROMPT_WARNING_NETWORKING_PRIVATE" desc="Permission string for Networking Private API.">
         Manage network connections
       </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_DESKTOP_CAPTURE" desc="Permission string for Desktop Capture API.">
+        Capture content of your screen
+      </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_DECLARATIVE_WEB_REQUEST" desc="Permission string for Declarative Web Request API.">
+        Block parts of web pages
+      </message>
 
       <!-- Extension/App error messages -->
       <message name="IDS_EXTENSION_CANT_GET_ABSOLUTE_PATH" desc="Warning displayed in pack dialog when the absolute path to the extension directory can not be found.">
@@ -4477,7 +4483,7 @@ Make sure you do not expose any sensitive information.
         Update
       </message>
       <message name="IDS_APPS_DEVTOOL_SEARCH" desc="Placeholder text that appears inside the search box until the user inputs data.">
-        Search
+        search
       </message>
       <message name="IDS_APPS_DEVTOOL_APPS_INSTALLED" desc="Text for the word 'Apps'.">
         Apps
@@ -4536,6 +4542,9 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSIONS_VIEW_INACTIVE" desc="Text that signifies that the extension view is an inactive transient page.">
         (Inactive)
       </message>
+      <message name="IDS_EXTENSIONS_BACKGROUND_PAGE" desc="Display name for an autogenerated background page.">
+        background page
+      </message>
       <message name="IDS_EXTENSIONS_ID" desc="The ID label in front of the extension ID.">
         ID:
       </message>
@@ -4586,6 +4595,16 @@ Make sure you do not expose any sensitive information.
       <if expr="not is_macosx">
         <message name="IDS_EXTENSIONS_RELOAD_UNPACKED" desc="The link for reloading unpacked extensions.">
           Reload (Ctrl+R)
+        </message>
+      </if>
+      <if expr="is_macosx">
+        <message name="IDS_APPS_DEV_TOOLS_RELOAD_UNPACKED" desc="The link for reloading unpacked apps/extensions.">
+          Reload
+        </message>
+      </if>
+      <if expr="not is_macosx">
+        <message name="IDS_APPS_DEV_TOOLS_RELOAD_UNPACKED" desc="The link for reloading unpacked apps/extensions.">
+          Reload
         </message>
       </if>
       <message name="IDS_EXTENSIONS_OPTIONS_LINK" desc="The link text for the Options link.">
@@ -4640,7 +4659,7 @@ Make sure you do not expose any sensitive information.
         Extensions cannot be modified by supervised users.
       </message>
       <message name="IDS_EXTENSIONS_USE_APPS_DEV_TOOLS" desc="The message in the banner to invite people to use Apps Developer Tools.">
-        The new Apps Developer Tools makes it easier than ever to manage and debug your apps and extensions. It's also been added to the application list.
+        The new Apps Developer Tools makes it easier than ever to manage and debug your apps and extensions. It's now available in the Chrome App Launcher.
       </message>
       <message name="IDS_EXTENSIONS_OPEN_APPS_DEV_TOOLS" desc="The text of the button to open Apps Developer Tools in the banner to invite people to use Apps Developer Tools.">
         Open
@@ -4675,14 +4694,23 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_PACK_DIALOG_TITLE" desc="Title of pack extension dialog">
         Pack Extension
       </message>
+      <message name="IDS_EXTENSION_PACK_APP_DIALOG_TITLE" desc="Title of pack application dialog">
+        Pack Application
+      </message>
       <message name="IDS_EXTENSION_PACK_BUTTON" desc="Text of the pack extension button">
         Pack Extension
+      </message>
+      <message name="IDS_EXTENSION_ADT_PACK_BUTTON" desc="Text of the pack button in apps developer tool.">
+        Pack
       </message>
       <message name="IDS_EXTENSION_PACK_DIALOG_HEADING" desc="The heading of the pack extension dialog.">
         Select the root directory of the extension to pack. To update an extension, also select the private key file to reuse.
       </message>
       <message name="IDS_EXTENSION_ADT_PACK_DIALOG_HEADING" desc="The heading of the pack extension dialog in the Apps Developer Tool.">
         The packed extension and the private key will be written in the parent directory of the root directory of the extension to pack. To update an extension, select the private key file to reuse.
+      </message>
+      <message name="IDS_EXTENSION_ADT_PACK_APP_DIALOG_HEADING" desc="The heading of the pack application dialog in the Apps Developer Tool.">
+        The packed application and the private key will be written in the parent directory of the root directory of the application to pack. To update an application, select the private key file to reuse.
       </message>
       <message name="IDS_EXTENSION_PACK_DIALOG_ROOT_DIRECTORY_LABEL" desc="Label in the pack extension dialog for the control that lets the user select the extension to pack.">
         Extension root directory:
@@ -4858,6 +4886,23 @@ Keep your key file in a safe place. You will need it to create new versions of y
           Sign in with your Google Account to allow apps to synchronize settings and provide other customized services.
         </message>
       </if>
+
+      <!-- Components -->
+      <message name="IDS_COMPONENTS_TITLE" desc="Title for the chrome://components page.">
+        Components
+      </message>
+      <message name="IDS_COMPONENTS_VERSION" desc="The label in front of a component version number.">
+        Version:
+      </message>
+      <message name="IDS_COMPONENTS_NONE_INSTALLED" desc="Text that lets the user know that no components are installed.">
+        No components installed.
+      </message>
+      <message name="IDS_COMPONENTS_NO_COMPONENTS" desc="Text that indicates that no components are installed">
+        No components are installed
+      </message>
+      <message name="IDS_COMPONENTS_CHECK_FOR_UPDATE" desc="The button label for triggering update check.">
+        Check for update
+      </message>
 
       <!-- Plugins -->
       <message name="IDS_PLUGINS_TITLE" desc="Title for the chrome://plugins page.">
@@ -5326,10 +5371,10 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_NACL_DEBUG_MASK_CHOICE_EXCLUDE_UTILS">
         Debug everything except secure shell
       </message>
-      <message name="IDS_FLAGS_ENABLE_PNACL_NAME" desc="Name of the 'Enable Portable Native Client' lab.">
+      <message name="IDS_FLAGS_PNACL_NAME" desc="Name of the 'Portable Native Client' lab.">
         Portable Native Client.
       </message>
-      <message name="IDS_FLAGS_ENABLE_PNACL_DESCRIPTION" desc="Description of the 'Enable Portable Native Client' lab.">
+      <message name="IDS_FLAGS_PNACL_DESCRIPTION" desc="Description of the 'Portable Native Client' lab.">
         Enable support for Portable Native Client.
       </message>
       <message name="IDS_FLAGS_SAVE_PAGE_AS_MHTML_NAME" desc="Name of the 'Save Page as MHTML' lab.">
@@ -5356,6 +5401,14 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_SCROLL_PREDICTION_DESCRIPTION" desc="Description of the flag to enable scroll prediction.">
         Predicts the finger's future position during scrolls allowing time to render the frame before the finger is there.
       </message>
+      <if expr="is_android">
+        <message name="IDS_FLAGS_ENABLE_ACCESSIBILITY_TAB_SWITCHER_NAME" desc="Name of the flag to enable the accessibility tab switcher.">
+          Enable Accessibility Tab Switcher.
+        </message>
+        <message name="IDS_FLAGS_ENABLE_ACCESSIBILITY_TAB_SWITCHER_DESCRIPTION" desc="Description of the flag to enable the accessibility tab switcher.">
+          Enable the accessibility tab switcher for Android.
+        </message>
+      </if>
       <message name="IDS_TOUCH_EVENTS_NAME" desc="Title of the touch-events flag." >
         Enable touch events
       </message>
@@ -5519,6 +5572,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_APP_WINDOW_CONTROLS_DESCRIPTION" desc="Description of the 'Enable 'window-controls' element' lab.">
         Enables using 'window-controls' HTML elements in packaged apps.
       </message>
+      <message name="IDS_FLAGS_ENABLE_BATCHED_SHUTDOWN_DESCRIPTION" desc="Description of the 'Batched shutdown' lab.">
+        Enabling this options delays closing browser windows during shutdown until the shutdown is no longer cancellable.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_BATCHED_SHUTDOWN_NAME" desc="Name of the 'Batched shutdown' lab.">
+        Enable batched browser shutdown
+      </message>
       <message name="IDS_FLAGS_SCRIPT_BADGES_NAME" desc="Name of the 'Script Badges' lab.">
         Script badges
       </message>
@@ -5591,6 +5650,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ENABLE_NEW_NTP_DESCRIPTION" desc="Description for the flag to enable the new NTP.">
         Whether or not the new style New Tab Page is enabled.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_NO_TOUCH_TO_RENDERER_WHILE_SCROLLING_NAME" desc="Name of the flag that enables not sending touch events to renderer while scrolling.">
+        Enable not sending touch events to renderer while scrolling
+      </message>
+      <message name="IDS_FLAGS_ENABLE_NO_TOUCH_TO_RENDERER_WHILE_SCROLLING_DESCRIPTION" desc="Description of the flag to enable not sending touch events to renderer while scrolling.">
+        Enable not sending touch events to renderer while scrolling.
       </message>
       <message name="IDS_FLAGS_ENABLE_GESTURE_TAP_HIGHLIGHTING_NAME" desc="Title for the flag to turn on gesture tap highlighting">
         Gesture Tap Highlighting
@@ -5914,12 +5979,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ASH_AUTO_MAXIMIZING_DESCRIPTION" desc="Description for the option to disable the auto window maximizing functionality.">
         Disable automatic window maximization for browser / app windows if they are started the first time.
-      </message>
-      <message name="IDS_FLAGS_ASH_DISABLE_PER_APP_LAUNCHER_NAME" desc="Name for the option to enable/disable the per application sorting launcher functionality.">
-        Disable per application sorting in the launcher.
-      </message>
-      <message name="IDS_FLAGS_ASH_DISABLE_PER_APP_LAUNCHER_DESCRIPTION" desc="Description for the option to enable/disable the per application sorting launcher functionality.">
-        Disable the per application sorting mode of the launcher.
       </message>
       <message name="IDS_FLAGS_DISABLE_GESTURE_REQUIREMENT_FOR_MEDIA_PLAYBACK_NAME" desc="Title for the flag to disable gesture requiment for media playback">
         Disable gesture requirement for media playback.
@@ -6440,6 +6499,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_DEVICE_MOTION_DESCRIPTION" desc="Description for the flag to enable device motion.">
         Enables device motion DOM events in JavaScript.
       </message>
+      <message name="IDS_FLAGS_DISABLE_USER_IMAGE_SYNC_NAME" desc="Name of the flag to disable sync of user account image.">
+        Disable avatar sync.
+      </message>
+      <message name="IDS_FLAGS_DISABLE_USER_IMAGE_SYNC_DESCRIPTION" desc="Description for the flag to disable sync of user account image.">
+        Disables sync of user account image between different ChromeOS devices.
+      </message>
 
       <!-- Crashes -->
       <message name="IDS_CRASHES_TITLE" desc="Title for the chrome://crashes page.">
@@ -6952,7 +7017,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_OMNIBOX_KEYWORD_TEXT" desc="Text shown in the search button at the front of the omnibox when the user has selected a keyword">
         Search <ph name="SITE_NAME">$1<ex>google.com</ex></ph>:
       </message>
-      <if expr="pp_ifdef('ios')">
+      <if expr="is_ios">
         <message name="IDS_OMNIBOX_EMPTY_HINT" desc="The text displayed in the omnibox when it is empty.">
           Search or type URL
         </message>
@@ -7104,7 +7169,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_ACCNAME_WEB_CONTENTS" desc="The accessible name for the web contents.">
         Web Contents
       </message>
-      <if expr="pp_ifdef('ios')">
+      <if expr="is_ios">
         <message name="IDS_ACCNAME_CLEAR_TEXT" desc="The accessibility label for the clear text button in the location bar [Length: unlimited].">
           Clear Text
         </message>
@@ -7317,40 +7382,18 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         Skip Import
       </message>
 
-      <!-- Report Bug or Broken Website Dialog -->
-      <message name="IDS_FEEDBACK_TITLE" desc="Dialog title for bug report dialog">
-        Whoops. Let's fix that.
-      </message>
+      <!-- Feedback Dialog -->
       <message name="IDS_FEEDBACK_REPORT_PAGE_TITLE" desc="Label showing the title of the page that will be reported">
-        Feedback
+        Tell us what is happening.
       </message>
       <message name="IDS_FEEDBACK_REPORT_URL_LABEL" desc="Label showing the URL that will be reported">
-        Include this URL:
+        URL (optional):
       </message>
       <message name="IDS_FEEDBACK_USER_EMAIL_LABEL" desc="Label showing the e-mail address that will be reported">
-        Include this email:
+        Email (optional):
       </message>
-      <message name="IDS_FEEDBACK_DESCRIPTION_LABEL" desc="Label for the description field">
-        Tell us what is happening. (required)
-      </message>
-      <if expr="pp_ifdef('chromeos')">
-      <message name="IDS_FEEDBACK_SCREENSHOT_LABEL" desc="Label for the screenshot field if current screenshots are being shown">
-        Include the current screenshot:
-      </message>
-      </if>
-      <if expr="not pp_ifdef('chromeos')">
       <message name="IDS_FEEDBACK_SCREENSHOT_LABEL" desc="Label for the screenshot field if current screenshots are being shown">
         Include this screenshot:
-      </message>
-      </if>
-      <message name="IDS_FEEDBACK_SAVED_SCREENSHOT_LABEL" desc="Label for the screenshot field if saved screenshots are being shown">
-        Include a saved screenshot:
-      </message>
-      <message name="IDS_FEEDBACK_CURRENT_SCREENSHOTS" desc="Radio button for including the last screen image on the bug report dialog box">
-        Send a current page screen shot
-      </message>
-      <message name="IDS_FEEDBACK_SAVED_SCREENSHOTS" desc="Radio button for including the last screen image on the bug report dialog box">
-        Send a saved screen shot
       </message>
       <message name="IDS_FEEDBACK_INCLUDE_PERFORMANCE_TRACE_CHECKBOX" desc="Checkbox for including system information on the bug report dialog box">
         Send performance trace data
@@ -7358,18 +7401,11 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       <message name="IDS_FEEDBACK_INCLUDE_SYSTEM_INFORMATION_CHKBOX" desc="Checkbox for including system information on the bug report dialog box">
         Send system information
       </message>
-      <message name="IDS_FEEDBACK_CHOOSE_DIFFERENT_SCREENSHOT" desc="Text for changing the screenshot selection from current to saved">
-        (Choose a different screenshot)
-      </message>
-      <message name="IDS_FEEDBACK_CHOOSE_ORIGINAL_SCREENSHOT" desc="Text for changing the screenshot selection from saved to current">
-        (Go back to original screenshot)
-      </message>
       <message name="IDS_FEEDBACK_ATTACH_FILE_NOTE" desc="Text for describing the maximum size for an attached file">
-        The attached file is uploaded to Google servers for debugging.&lt;br&gt;
-        Note: You can attach one file per feedback report (3 MB limit)
+        The attached file is uploaded to Google servers for debugging.
       </message>
       <message name="IDS_FEEDBACK_ATTACH_FILE_LABEL" desc="Text for the label for the attached filename">
-        Include this file:
+        Attach file:
       </message>
       <message name="IDS_FEEDBACK_READING_FILE" desc="Text to display if reading a file when the user clicks the send report button">
         Reading file..
@@ -7387,17 +7423,8 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         that you provide to improve any Google product or service.
         <ph name="END_BOLD">&lt;/strong&gt;</ph>
       </message>
-      <message name="IDS_FEEDBACK_INCLUDE_NEW_SCREEN_IMAGE" desc="Radio button for including a new screen image on the bug report dialog box">
-        Send last active tab screen shot
-      </message>
-      <message name="IDS_FEEDBACK_INCLUDE_NO_SCREENSHOT" desc="Radio button for not including a screen image on the bug report dialog box">
-        Do not send a screen shot
-      </message>
       <message name="IDS_FEEDBACK_NO_DESCRIPTION" desc="Message shown when no text is entered before hitting send feedback">
         Please tell us what is happening before sending the feedback.
-      </message>
-      <message name="IDS_FEEDBACK_NO_SAVED_SCREENSHOTS_HELP" desc="Message shown when no screenshots are available for selection">
-        You can select saved screenshots from here. Currently there are no screenshots available. You can press Ctrl + the "Window Switch" key together to take a screenshot. The last three screenshots that you have taken will appear here.
       </message>
       <message name="IDS_FEEDBACK_SEND_REPORT" desc="Text for OK button of the send feedback dialog">
         Send feedback
@@ -8387,14 +8414,14 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       <message name="IDS_ERRORPAGES_SUGGESTION_PROXY_CONFIG_HEADER" desc="When a webpage fails to load, in some cases we suggest checking the proxy server configuration, or disabling the proxy server.  This is a header above some details.">
         If you use a proxy server...
       </message>
-      <if expr="is_android or pp_ifdef('ios')">
+      <if expr="is_android or is_ios">
         <message name="IDS_ERRORPAGES_SUGGESTION_PROXY_CONFIG_BODY" desc="When a webpage fails to load, in some cases we suggest checking the proxy server configuration, or disabling the proxy server.  These are instructions below a header.">
           Check your proxy settings or contact your network administrator to
           make sure the proxy server is working.
           <ph name="PLATFORM_TEXT">$1<ex>Goto the wrench menu and choose Fix It.</ex></ph>
         </message>
       </if>
-      <if expr="not is_android and not pp_ifdef('ios')">
+      <if expr="not is_android and not is_ios">
         <message name="IDS_ERRORPAGES_SUGGESTION_PROXY_CONFIG_BODY" desc="When a webpage fails to load, in some cases we suggest checking the proxy server configuration, or disabling the proxy server.  These are instructions below a header.">
           Check your proxy settings or contact your network administrator to
           make sure the proxy server is working. If you don't believe you should
@@ -8530,7 +8557,7 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       <message name="IDS_ERRORPAGES_SUMMARY_FILE_ACCESS_DENIED" desc="Summary in the error page when we can't open a file.">
         The file at <ph name="URL">&lt;strong jscontent="failedUrl"&gt;&lt;/strong&gt;<ex>http://www.google.com/</ex></ph> is not readable.  It may have been removed, moved, or file permissions may be preventing access.
       </message>
-      <if expr="is_android or pp_ifdef('ios')">
+      <if expr="is_android or is_ios">
         <message name="IDS_ERRORPAGES_SUMMARY_NETWORK_ACCESS_DENIED" desc="Mobile: Summary in the error page when we're not being allowed to access the network.">
           <ph name="PRODUCT_NAME">&lt;span jscontent="productName"&gt;&lt;/span&gt;<ex>Google Chrome</ex></ph>
           is having trouble accessing the network.
@@ -8551,7 +8578,7 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
           The page can be loaded once you connect to a network.
         </message>
       </if>
-      <if expr="not is_android and not pp_ifdef('ios')">
+      <if expr="not is_android and not is_ios">
         <message name="IDS_ERRORPAGES_SUMMARY_NETWORK_ACCESS_DENIED" desc="Summary in the error page when we're not being allowed to access the network.">
           <ph name="PRODUCT_NAME">&lt;span jscontent="productName"&gt;&lt;/span&gt;<ex>Google Chrome</ex></ph>
           is having trouble accessing the network.
@@ -8640,7 +8667,7 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         If the problem persists, try clearing the cache.  In some cases, this
         can also be a symptom of hardware starting to fail.
       </message>
-      <if expr="is_android or pp_ifdef('ios')">
+      <if expr="is_android or is_ios">
         <message name="IDS_ERRORPAGES_SUMMARY_NETWORK_IO_SUSPENDED" desc="Mobile: Summary in the error page when a page load failed due to the device entering sleep/suspend mode.">
           Unable to load the webpage because your device entered sleep or
           hibernate mode.  When this happens, network connections are shut
@@ -8648,7 +8675,7 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
           resolve this.
         </message>
       </if>
-      <if expr="not is_android and not pp_ifdef('ios')">
+      <if expr="not is_android and not is_ios">
         <message name="IDS_ERRORPAGES_SUMMARY_NETWORK_IO_SUSPENDED" desc="Summary in the error page when a page load failed due to the computer entering sleep/suspend mode.">
           Unable to load the webpage because your computer entered sleep or
           hibernate mode.  When this happens, network connections are shut
@@ -8659,7 +8686,7 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       <message name="IDS_ERRORPAGES_SUMMARY_NOT_FOUND" desc="Summary in the error page when the server returns a 404.">
         No webpage was found for the web address: <ph name="URL">&lt;strong jscontent="failedUrl"&gt;&lt;/strong&gt;</ph>
       </message>
-      <if expr="is_android or pp_ifdef('ios')">
+      <if expr="is_android or is_ios">
         <message name="IDS_ERRORPAGES_SUMMARY_TOO_MANY_REDIRECTS" desc="Mobile: Summary in the error page when there are too many URL redirects.">
           The webpage at <ph name="URL">&lt;strong jscontent="failedUrl"&gt;&lt;/strong&gt;</ph> has resulted in
           too many redirects.  Clearing your cookies for this site or allowing third-party cookies may fix the problem.  If
@@ -8667,7 +8694,7 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
           device.
         </message>
       </if>
-      <if expr="not is_android and not pp_ifdef('ios')">
+      <if expr="not is_android and not is_ios">
         <message name="IDS_ERRORPAGES_SUMMARY_TOO_MANY_REDIRECTS" desc="Summary in the error page when there are too many URL redirects.">
           The webpage at <ph name="URL">&lt;strong jscontent="failedUrl"&gt;&lt;/strong&gt;</ph> has resulted in
           too many redirects.  Clearing your cookies for this site or allowing third-party cookies may fix the problem.  If
@@ -8916,7 +8943,7 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       </message>
 
       <!-- iOS specific error page messages -->
-      <if expr="pp_ifdef('ios')">
+      <if expr="is_ios">
         <message name="IDS_ERRORPAGES_HEADING_DOWNLOAD_FILE_TYPE_ERROR" desc="A one-line title for error message to tell user that the requested type of file cannot be downloaded. [Length: 20em]">
           Download Failed
         </message>
@@ -9019,7 +9046,7 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       <message name="IDS_PAGE_INFO_SITE_INFO_TITLE" desc="The name of the site information section.">
         Site information
       </message>
-      <if expr="pp_ifdef('ios')">
+      <if expr="is_ios">
         <message name="IDS_PAGE_INFO_SECURITY_BUTTON_ACCESSIBILITY_LABEL" desc="The accessibility text for the page security info button">
           Page Security Info
         </message>
@@ -9673,14 +9700,8 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_OPTIONS_PASSWORDS_MANAGE_PASSWORDS" desc="The label of the 'Manage saved passwords' button">
         Manage saved passwords...
       </message>
-      <message name="IDS_OPTIONS_PASSWORDS_MAC_WARNING" desc="The warning for OS X that passwords are shared across profiles in the keychain.">
-          On Mac, passwords are saved to your Keychain and may be accessed or synced by other Chrome users sharing this OS X account.
-      </message>
       <message name="IDS_OPTIONS_PASSWORDS_AUTOLOGIN" desc="The label of the 'autologinEnabled' checkbox">
         Offer to sign into Google sites automatically with this account
-      </message>
-      <message name="IDS_AUTOFILL_CC_INFOBAR_TEXT" desc="Text to show in the Autofill credit card request infobar.">
-        Do you want Chrome to save this credit card information for completing web forms?
       </message>
       <message name="IDS_OPTIONS_AUTOFILL_ENABLE" desc="The label of the 'Ask me to enable Autofill' radio button">
         Enable Autofill to fill out web forms in a single click.
@@ -9696,6 +9717,9 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       </message>
       <message name="IDS_OPTIONS_MANAGE_AUTOFILL_SETTINGS_LINK" desc="The label of the 'Manage Autofill settings' link">
         Manage Autofill settings
+      </message>
+      <message name="IDS_AUTOFILL_HELP_LABEL" desc="The label of the Help link in the Autofill settings overlay.">
+        About Autofill
       </message>
       <message name="IDS_AUTOFILL_ADD_ADDRESS_BUTTON" desc="The label of the button that adds a new Autofill address.">
         Add new street address...
@@ -9818,10 +9842,6 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         Phone number
       </message>
 
-      <message name="IDS_AUTOFILL_HELP_LABEL" desc="The label of the Help link on the Autofill dialog.">
-        About Autofill
-      </message>
-
       <!-- Autofill dialog: title bar -->
       <message name="IDS_AUTOFILL_DIALOG_TITLE" desc="Title for autofill dialog which asks user to input address + payment info.">
         Pay
@@ -9906,9 +9926,6 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       </message>
       <message name="IDS_AUTOFILL_WALLET_UNSUPPORTED_MERCHANT" desc="Text explaining that the merchant is blacklisted for Google Wallet Chrome Payments due to compliance violation.">
         lorem ipsum - unsupported_merchant.
-      </message>
-      <message name="IDS_AUTOFILL_WALLET_UPGRADE_CHROME_ERROR" desc="Text explaining that user must upgrade Chrome to use Wallet.">
-        You must upgrade Chrome to use Google Wallet [<ph name="ERROR_CODE">$1<ex>54</ex></ph>].
       </message>
       <message name="IDS_AUTOFILL_WALLET_SERVICE_UNAVAILABLE_ERROR" desc="Text explaining that Wallet is currently unavailable.">
         Google Wallet is currently unavailable [61].
@@ -10114,7 +10131,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_THEMES_RESET_BUTTON" desc="The button to reset your theme">
         Reset to default theme
       </message>
-      <if expr="is_posix and not is_macosx">
+      <if expr="is_posix and not is_macosx and not is_ios">
         <message name="IDS_THEMES_GTK_BUTTON" desc="The button to choose GTK colors and icons as the current theme.">
           Use GTK+ theme
         </message>
@@ -10129,12 +10146,12 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         Get themes
       </message>
 
-      <if expr="is_android or pp_ifdef('ios')">
+      <if expr="is_android or is_ios">
         <message name="IDS_OPTIONS_SYSTEM_PROXIES_LABEL" desc="Mobile: The info label for the 'Proxy settings' button when managed by the system.">
           <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> is using your device's system proxy settings to connect to the network.
         </message>
       </if>
-      <if expr="not is_android and not pp_ifdef('ios')">
+      <if expr="not is_android and not is_ios">
         <message name="IDS_OPTIONS_SYSTEM_PROXIES_LABEL" desc="The info label for the 'Proxy settings' button when managed by the system.">
           <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> is using your computer's system proxy settings to connect to the network.
         </message>
@@ -10328,7 +10345,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       </message>
 
       <!-- Auto-login infobar -->
-      <if expr="pp_ifdef('ios')">
+      <if expr="is_ios">
         <message name="IDS_AUTOLOGIN_INFOBAR_MESSAGE" desc="The string shown in the infobar explaining that they can press one button to auto-login instead of entering their user name and password. [length: 60em]">
           Automatic sign-in is available <ph name="EMAIL_ADDRESS">$1</ph>
         </message>
@@ -10336,7 +10353,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
           Login
         </message>
       </if>
-      <if expr="not pp_ifdef('ios')">
+      <if expr="not is_ios">
         <message name="IDS_AUTOLOGIN_INFOBAR_MESSAGE" desc="The string shown in the infobar explaining that they can press one button to auto-login instead of entering their user name and password.">
           Sign in to this site as: <ph name="EMAIL_ADDRESS">$1</ph>
         </message>
@@ -10344,12 +10361,12 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
           Sign in
         </message>
       </if>
-      <if expr="not is_android and not pp_ifdef('ios')">
+      <if expr="not is_android and not is_ios">
         <message name="IDS_AUTOLOGIN_INFOBAR_CANCEL_BUTTON" desc="The string used in the infobar button that the user presses to never see this infobar again.">
           Never offer to sign me in
         </message>
       </if>
-      <if expr="is_android or pp_ifdef('ios')">
+      <if expr="is_android or is_ios">
         <message name="IDS_AUTOLOGIN_INFOBAR_CANCEL_BUTTON" desc="Mobile: The string used in the autologin infobar button that the user presses to close the infobar without logging in.">
           Cancel
         </message>
@@ -12048,7 +12065,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
         Remove shortcut
       </message>
       <message name="IDS_FILE_BROWSER_SHORTCUT_TARGET_UNAVAILABLE" desc="The message which is shown when the user selects a shortcut to a missing folder and ask whether to remove said shortcut.">
-        The folder referred by this shortcut has been changed or deleted. Do you want to remove it?
+        This folder shortcut has been modified and no longer works. Do you want to remove it?
       </message>
       <message name="IDS_FILE_BROWSER_SHARE_BUTTON_LABEL" desc="Menu item label, showing dialog to share the selected file.">
         Share
@@ -12997,7 +13014,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
           Sign in again...
         </message>
         <message name="IDS_SYNC_SIGN_IN_ERROR_WRENCH_MENU_ITEM" desc="The sync error wrench menu item when the user needs to sign in again.">
-            Sync Error: Sign in again...
+            Sign in again...
         </message>
       </if>
       <if expr="not pp_ifdef('use_titlecase') and pp_ifdef('chromeos')">
@@ -13005,7 +13022,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
           Sign out then sign in again...
         </message>
         <message name="IDS_SYNC_SIGN_IN_ERROR_WRENCH_MENU_ITEM" desc="The sync error wrench menu item when the user needs to sign out and sign in again to Chrome OS.">
-          Sync Error: Sign out then sign in again...
+          Sign out then sign in again...
         </message>
       </if>
 
@@ -13025,7 +13042,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
           Sign in Again...
         </message>
         <message name="IDS_SYNC_SIGN_IN_ERROR_WRENCH_MENU_ITEM" desc="The sync error wrench menu item when the user needs to sign in again.">
-          Sync Error: Sign in Again...
+          Sign in Again...
         </message>
       </if>
       <if expr="pp_ifdef('use_titlecase') and pp_ifdef('chromeos')">
@@ -13033,7 +13050,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
           Sign out then Sign in Again...
         </message>
         <message name="IDS_SYNC_SIGN_IN_ERROR_WRENCH_MENU_ITEM" desc="The sync error wrench menu item when the user needs to sign out and sign in again to Chrome OS.">
-          Sync Error: Sign out then Sign in Again...
+          Sign out then Sign in Again...
         </message>
       </if>
 
@@ -13109,7 +13126,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_TRANSLATE_INFOBAR_BEFORE_MESSAGE" desc="Message that page is in specified language and ask if should translate">
         This page is in<ph name="original_language">$1<ex>French</ex></ph>Would you like to translate it?
       </message>
-      <if expr="is_android or pp_ifdef('ios')">
+      <if expr="is_android or is_ios">
         <message name="IDS_TRANSLATE_INFOBAR_BEFORE_MESSAGE_MOBILE" desc="Mobile: Message that page is in specified language and ask if should translate.">
           Translate from <ph name="original_language">$1<ex>French</ex></ph> to <ph name="target_language">$2<ex>English</ex></ph>?
         </message>
@@ -13135,7 +13152,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_TRANSLATE_INFOBAR_AFTER_MESSAGE_AUTODETERMINED_SOURCE_LANGUAGE" desc="Message that page has been translated to another with server side auto language detection">
         This page has been translated to <ph name="target_language">$1<ex>German</ex></ph>
       </message>
-      <if expr="is_android or pp_ifdef('ios')">
+      <if expr="is_android or is_ios">
       <message name="IDS_TRANSLATE_INFOBAR_AFTER_MESSAGE_MOBILE" desc="Mobile: Message that page has been translated from one language to another">
         This page has been translated to <ph name="target_language">$1<ex>German</ex></ph>
       </message>
@@ -13161,7 +13178,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_TRANSLATE_INFOBAR_UNSUPPORTED_PAGE_LANGUAGE" desc="Error message shown when the translate server translated the page and returned the page was in a language the browser does not know.">
         This page has been translated from an unknown language to <ph name="language_language">$1<ex>English</ex></ph>
       </message>
-      <if expr="is_android or pp_ifdef('ios')">
+      <if expr="is_android or is_ios">
       <message name="IDS_TRANSLATE_INFOBAR_ERROR_MOBILE" desc="Mobile: Translate Error message">
         The translation to <ph name="target_language">$1<ex>German</ex></ph> failed.
       </message>
@@ -13255,7 +13272,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
 
 
       <!-- Mac Menubar Menus -->
-      <if expr="is_macosx">
+      <if expr="is_macosx or is_ios">
         <!-- Menubar Menu Titles -->
         <!-- NOTE: Some of these exist in context menus with Title Case support, but we use different IDs in case we need slightly different strings in some language due to the different context. -->
         <message name="IDS_FILE_MENU_MAC" desc="The menu title of the Mac file menu.">
@@ -13520,7 +13537,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </if> <!-- is_macosx -->
 
       <!-- Linux Global Menubar Menus -->
-      <if expr="is_posix and not is_macosx">
+      <if expr="is_posix and not is_macosx and not is_ios">
         <!-- Unity and some other GNOME configurations now have a permanent,
              Mac-like menu bar that lives outside the window at the top of the
              screen. The following strings should be in Linux style, not Mac
@@ -13731,6 +13748,10 @@ Some features may be unavailable.  Please check that the profile exists and you 
       New camera and microphone settings will take effect after reloading the page.
     </message>
 
+    <message name="IDS_SAVE_PASSWORD" desc="The status text that is used as tooltip text for the save password icon and as status text of the save password bubble when a password can be saved.">
+      Would you like to save this password?
+    </message>
+
     <!-- ProcessSingleton -->
     <message name="IDS_PROFILE_IN_USE_LINUX" desc="Message shown when the browser cannot start because the profile is in use on a different host.">
       The profile appears to be in use by process <ph name="PROCESS_ID">$1<ex>12345</ex></ph> on host <ph name="HOST_NAME">$2<ex>example.com</ex></ph>.  If you are sure no other processes are using this profile, delete the file <ph name="LOCK_FILE">$3<ex>/home/user/.config/google-chrome/SingletonLock</ex></ph> and relaunch <ph name="PRODUCT_NAME">$4<ex>Google Chrome</ex></ph>.
@@ -13814,7 +13835,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <part file="chromeos_strings.grdp" />
     </if>
 
-    <if expr="is_posix and not is_macosx">
+    <if expr="is_posix and not is_macosx and not is_ios">
       <!-- Linux proxy configuration fallback help -->
       <message name="IDS_ABOUT_LINUX_PROXY_CONFIG_TITLE" desc="Title of HTML page shown on systems where system proxy configuration is unsupported.">
         Proxy Configuration Help
@@ -14301,7 +14322,7 @@ Please check your email at <ph name="ACCOUNT_EMAIL">$2<ex>jane.doe@gmail.com</ex
       Switch to <ph name="NEW_PROFILE_NAME">$1<ex>New User</ex></ph>
     </message>
 
-    <if expr="not is_android and not pp_ifdef('ios') and not pp_ifdef('chromeos')">
+    <if expr="not is_android and not is_ios and not pp_ifdef('chromeos')">
       <!-- User manager web UI -->
       <if expr="pp_ifdef('use_titlecase')">
         <message name="IDS_ADD_USER_BUTTON" desc="Text shown on an add user button on login/locker screen">
@@ -14735,7 +14756,7 @@ Do you accept?
     </if>
 
     <!-- iOS Chrome to Device strings-->
-    <if expr="pp_ifdef('ios')">
+    <if expr="is_ios">
       <message name="IDS_CHROME_TO_DEVICE_PRINT_TO_PHONE" desc="The message indicating print-to-phone jobs are now available. [Length: 30em]">
         Your document is ready to view.
       </message>
@@ -14745,7 +14766,7 @@ Do you accept?
     </if>
 
       <!-- iOS Net-Export strings -->
-      <if expr="pp_ifdef('ios')">
+      <if expr="is_ios">
         <message name="IDS_NET_EXPORT_NO_EMAIL_ACCOUNTS_ALERT_MESSAGE" desc="The message of the alert informing a user with no email accounts that he or she needs to configure an email account to send net-export data. [Length: 70em]">
           To send net-export data, please configure your email account in System Settings.
         </message>
@@ -14875,9 +14896,91 @@ Do you accept?
       Screen
     </message>
 
-    </messages>
+    <!-- About network UI display strings -->
+    <if expr="pp_ifdef('chromeos')">
+      <message name="IDS_NETWORK_TITLE" desc="Title of the page">
+        Network
+      </message>
+      <message name="IDS_NETWORK_AUTO_REFRESH" desc="A instruction of how to auto-refresh the page">
+        Add a query param in URL to auto-refresh the page: chrome://network/?refresh=&lt;sec&gt;
+      </message>
+      <message name="IDS_NETWORK_LOG_REFRESH" desc="Button to refresh network log">
+        Refresh
+      </message>
+      <message name="IDS_NETWORK_LOG_LEVEL_SHOW" desc="'Show' label before logging level checkboxes">
+        Show:
+      </message>
+      <message name="IDS_NETWORK_LOG_LEVEL_ERROR" desc="Error logging level checkbox">
+        Error
+      </message>
+      <message name="IDS_NETWORK_LOG_LEVEL_USER" desc="User logging level checkbox">
+        User
+      </message>
+      <message name="IDS_NETWORK_LOG_LEVEL_EVENT" desc="Event logging level checkbox">
+        Event
+      </message>
+      <message name="IDS_NETWORK_LOG_LEVEL_DEBUG" desc="Debug logging level checkbox">
+        Debug
+      </message>
+      <message name="IDS_NETWORK_LOG_ENTRY" desc="The log entry displayed in network event log table.">
+        [<ph name="TIMESTAMP">$1<ex>Timestamp</ex></ph>]
+        <ph name="EVENT_NAME">$2<ex>Event Name</ex></ph>
+        <ph name="DESCRIPTION">$3<ex>Description</ex></ph>
+      </message>
+    </if>
 
-    <structures fallback_to_english="true">
+    <!-- Local Device Discovery display strings -->
+    <message name="IDS_LOCAL_DISCOVERY_SERVICE_NAME" desc="Table header for service name">
+      Name
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_SERVICE_DOMAIN" desc="Table header for service domain">
+      Domain
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_SERVICE_PORT" desc="Table header for service port">
+      Port
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_SERVICE_IP" desc="Table header for IP">
+      IP
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_SERVICE_LASTSEEN" desc="Table header for when a service was last seen">
+      Last seen
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_SERVICE_REGISTER" desc="Table header for registering a service">
+      Register
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_REGISTERING_SERVICE" desc="Message to indicate a service is being registered">
+      Registering <ph name="DEVICE_NAME">$1</ph>...
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_REGISTRATION_FAILED" desc="Message to indicate service registration has failed">
+      Registration failed: <ph name="ERROR_STRING">$1</ph>.
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_REGISTRATION_SUCCEEDED" desc="Message to indicate service registration has succeeded">
+      Successfully registered device with ID <ph name="DEVICE_ID">$1</ph>.
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_REGISTERED" desc="Message to show that a listed service has already been registered">
+      Registered
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_INFO_STARTED" desc="Message to show that a listed service is being asked for info">
+      Info request started for <ph name="DEVICE_NAME">$1</ph>...
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_INFO_FAILED" desc="Message to show that an info request has failed">
+      Info request failed: <ph name="ERROR_STRING">$1</ph>...
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_SERVICE_INFO" desc="Table header and button for info requests">
+      Info
+    </message>
+    <message name="IDS_LOCAL_DISOCVERY_NOTIFICATION_TITLE_PRINTER" desc="Title of notification for a new printer showing up on your network">
+      New printer on your network
+    </message>
+    <message name="IDS_LOCAL_DISOCVERY_NOTIFICATION_CONTENTS_PRINTER" desc="Contents of notification for a new printer showing up on your network">
+      Add <ph name="PRINTER_NAME">$1</ph> to Cloud Print so you can print from anywhere.
+    </message>
+    <message name="IDS_LOCAL_DISOCVERY_NOTIFICATION_DISPLAY_SOURCE_PRINTER" desc="Display name for notification for a new printer showing up on your network">
+      Google Cloud Print
+    </message>
+  </messages>
+
+  <structures fallback_to_english="true">
       <!-- Make sure these stay in sync with the structures in generated_resources.grd. -->
       <structure name="IDD_CHROME_FRAME_FIND_DIALOG" file="cf_resources.rc" type="dialog" >
       </structure>

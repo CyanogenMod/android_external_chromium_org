@@ -93,12 +93,11 @@ class IconMappingMigrationTest : public HistoryUnitTestBase {
     data_path = data_path.AppendASCII("History");
 
     history_db_name_ = profile_->GetPath().Append(chrome::kHistoryFilename);
-    // Set up history and thumbnails as they would be before migration.
     ASSERT_NO_FATAL_FAILURE(
         ExecuteSQLScript(data_path.AppendASCII("history.20.sql"),
                          history_db_name_));
     thumbnail_db_name_ =
-        profile_->GetPath().Append(chrome::kThumbnailsFilename);
+        profile_->GetPath().Append(chrome::kFaviconsFilename);
     ASSERT_NO_FATAL_FAILURE(
         ExecuteSQLScript(data_path.AppendASCII("thumbnails.3.sql"),
                          thumbnail_db_name_));
@@ -111,66 +110,6 @@ class IconMappingMigrationTest : public HistoryUnitTestBase {
  private:
   scoped_ptr<TestingProfile> profile_;
 };
-
-TEST_F(ThumbnailDatabaseTest, GetFaviconAfterMigrationToTopSites) {
-  ThumbnailDatabase db;
-  ASSERT_EQ(sql::INIT_OK, db.Init(file_name_, NULL, NULL));
-  db.BeginTransaction();
-
-  std::vector<unsigned char> data(blob1, blob1 + sizeof(blob1));
-  scoped_refptr<base::RefCountedBytes> favicon(new base::RefCountedBytes(data));
-
-  GURL url("http://google.com");
-  chrome::FaviconID icon_id = db.AddFavicon(url, chrome::FAVICON);
-  base::Time time = base::Time::Now();
-  FaviconBitmapID bitmap1_id = db.AddFaviconBitmap(icon_id, favicon, time,
-                                                   kSmallSize);
-  FaviconBitmapID bitmap2_id = db.AddFaviconBitmap(icon_id, favicon, time,
-                                                   kLargeSize);
-  EXPECT_TRUE(db.RenameAndDropThumbnails(file_name_, new_file_name_));
-  EXPECT_TRUE(db.IsLatestVersion());
-
-  GURL url_out;
-  chrome::IconType icon_type_out;
-  EXPECT_TRUE(db.GetFaviconHeader(icon_id, &url_out, &icon_type_out));
-
-  EXPECT_EQ(url, url_out);
-  EXPECT_EQ(chrome::FAVICON, icon_type_out);
-
-  std::vector<FaviconBitmap> favicon_bitmaps_out;
-  EXPECT_TRUE(db.GetFaviconBitmaps(icon_id, &favicon_bitmaps_out));
-  EXPECT_EQ(2u, favicon_bitmaps_out.size());
-
-  FaviconBitmap favicon_bitmap1 = favicon_bitmaps_out[0];
-  FaviconBitmap favicon_bitmap2 = favicon_bitmaps_out[1];
-
-  // Favicon bitmaps do not need to be in particular order.
-  if (favicon_bitmap1.bitmap_id == bitmap2_id) {
-    FaviconBitmap tmp_favicon_bitmap = favicon_bitmap1;
-    favicon_bitmap1 = favicon_bitmap2;
-    favicon_bitmap2 = tmp_favicon_bitmap;
-  }
-
-  EXPECT_EQ(bitmap1_id, favicon_bitmap1.bitmap_id);
-  EXPECT_EQ(icon_id, favicon_bitmap1.icon_id);
-  EXPECT_EQ(time.ToInternalValue(),
-            favicon_bitmap1.last_updated.ToInternalValue());
-  EXPECT_EQ(data.size(), favicon_bitmap1.bitmap_data->size());
-  EXPECT_TRUE(std::equal(data.begin(),
-                         data.end(),
-                         favicon_bitmap1.bitmap_data->front()));
-  EXPECT_EQ(kSmallSize, favicon_bitmap1.pixel_size);
-
-  EXPECT_EQ(bitmap2_id, favicon_bitmap2.bitmap_id);
-  EXPECT_EQ(icon_id, favicon_bitmap2.icon_id);
-  EXPECT_EQ(time.ToInternalValue(),
-            favicon_bitmap2.last_updated.ToInternalValue());
-  EXPECT_EQ(data.size(), favicon_bitmap2.bitmap_data->size());
-  EXPECT_TRUE(std::equal(data.begin(),
-                         data.end(),
-                         favicon_bitmap2.bitmap_data->front()));
-  EXPECT_EQ(kLargeSize, favicon_bitmap2.pixel_size);
-}
 
 TEST_F(ThumbnailDatabaseTest, AddIconMapping) {
   ThumbnailDatabase db;
@@ -470,16 +409,12 @@ TEST_F(ThumbnailDatabaseTest, UpgradeToVersion7) {
   EXPECT_EQ(chrome::TOUCH_ICON, statement.ColumnInt(2));
 }
 
-// Test that only data moved to a temporary table is left in the main table
-// once the temporary table is committed.
-TEST_F(ThumbnailDatabaseTest, TemporaryTables) {
+TEST_F(ThumbnailDatabaseTest, RetainDataForPageUrls) {
   ThumbnailDatabase db;
 
   ASSERT_EQ(sql::INIT_OK, db.Init(file_name_, NULL, NULL));
 
   db.BeginTransaction();
-
-  EXPECT_TRUE(db.InitTemporaryTables());
 
   std::vector<unsigned char> data(blob1, blob1 + sizeof(blob1));
   scoped_refptr<base::RefCountedBytes> favicon(new base::RefCountedBytes(data));
@@ -492,24 +427,25 @@ TEST_F(ThumbnailDatabaseTest, TemporaryTables) {
   chrome::FaviconID kept_id = db.AddFavicon(kept_url, chrome::FAVICON);
   db.AddFaviconBitmap(kept_id, favicon, base::Time::Now(), kLargeSize);
 
-  GURL page_url("http://google.com");
-  db.AddIconMapping(page_url, unkept_id);
-  db.AddIconMapping(page_url, kept_id);
+  GURL unkept_page_url("http://chromium.org");
+  db.AddIconMapping(unkept_page_url, unkept_id);
+  db.AddIconMapping(unkept_page_url, kept_id);
 
-  chrome::FaviconID new_favicon_id =
-      db.CopyFaviconAndFaviconBitmapsToTemporaryTables(kept_id);
-  EXPECT_NE(0, new_favicon_id);
-  EXPECT_TRUE(db.AddToTemporaryIconMappingTable(page_url, new_favicon_id));
+  GURL kept_page_url("http://google.com");
+  db.AddIconMapping(kept_page_url, kept_id);
 
-  EXPECT_TRUE(db.CommitTemporaryTables());
+  // RetainDataForPageUrls() uses schema manipulations for efficiency.
+  // Grab a copy of the schema to make sure the final schema matches.
+  const std::string original_schema = db.db_.GetSchema();
+
+  EXPECT_TRUE(db.RetainDataForPageUrls(std::vector<GURL>(1, kept_page_url)));
 
   // Only copied data should be left.
   std::vector<IconMapping> icon_mappings;
-  EXPECT_TRUE(
-      db.GetIconMappingsForPageURL(page_url, chrome::FAVICON, &icon_mappings));
+  EXPECT_TRUE(db.GetIconMappingsForPageURL(
+                  kept_page_url, chrome::FAVICON, &icon_mappings));
   EXPECT_EQ(1u, icon_mappings.size());
-  EXPECT_EQ(new_favicon_id, icon_mappings[0].icon_id);
-  EXPECT_EQ(page_url, icon_mappings[0].page_url);
+  EXPECT_EQ(kept_page_url, icon_mappings[0].page_url);
 
   std::vector<FaviconBitmap> favicon_bitmaps;
   EXPECT_TRUE(db.GetFaviconBitmaps(icon_mappings[0].icon_id, &favicon_bitmaps));
@@ -517,6 +453,9 @@ TEST_F(ThumbnailDatabaseTest, TemporaryTables) {
   EXPECT_EQ(kLargeSize, favicon_bitmaps[0].pixel_size);
 
   EXPECT_FALSE(db.GetFaviconIDForFaviconURL(unkept_url, false, NULL));
+
+  // Schema should be the same.
+  EXPECT_EQ(original_schema, db.db_.GetSchema());
 }
 
 // Tests that deleting a favicon deletes the favicon row and favicon bitmap

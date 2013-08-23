@@ -31,6 +31,7 @@ LOCAL_SRC_FILES := \
 	webkit/common/gpu/context_provider_in_process.cc \
 	webkit/common/gpu/gl_bindings_skia_cmd_buffer.cc \
 	webkit/common/gpu/grcontext_for_webgraphicscontext3d.cc \
+	webkit/common/gpu/managed_memory_policy_convert.cc \
 	webkit/common/gpu/test_context_provider_factory.cc \
 	webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.cc \
 	webkit/common/gpu/webgraphicscontext3d_provider_impl.cc
@@ -114,9 +115,9 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
+	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
-	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/include/config \
@@ -232,9 +233,9 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
+	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
-	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/include/config \

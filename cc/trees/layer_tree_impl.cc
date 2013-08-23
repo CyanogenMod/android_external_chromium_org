@@ -9,8 +9,8 @@
 #include "cc/animation/scrollbar_animation_controller.h"
 #include "cc/debug/traced_value.h"
 #include "cc/layers/heads_up_display_layer_impl.h"
+#include "cc/layers/painted_scrollbar_layer_impl.h"
 #include "cc/layers/render_surface_impl.h"
-#include "cc/layers/scrollbar_layer_impl.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "ui/gfx/size_conversions.h"
@@ -226,11 +226,11 @@ void LayerTreeImpl::UpdateMaxScrollOffset() {
   root_scroll_layer_->SetMaxScrollOffset(gfx::ToFlooredVector2d(max_scroll));
 }
 
-static void ApplySentScrollDeltasOn(LayerImpl* layer) {
-  layer->ApplySentScrollDeltas();
+static void ApplySentScrollDeltasFromAbortedCommitTo(LayerImpl* layer) {
+  layer->ApplySentScrollDeltasFromAbortedCommit();
 }
 
-void LayerTreeImpl::ApplySentScrollAndScaleDeltas() {
+void LayerTreeImpl::ApplySentScrollAndScaleDeltasFromAbortedCommit() {
   DCHECK(IsActiveTree());
 
   page_scale_factor_ *= sent_page_scale_delta_;
@@ -241,7 +241,20 @@ void LayerTreeImpl::ApplySentScrollAndScaleDeltas() {
     return;
 
   LayerTreeHostCommon::CallFunctionForSubtree(
-      root_layer(), base::Bind(&ApplySentScrollDeltasOn));
+      root_layer(), base::Bind(&ApplySentScrollDeltasFromAbortedCommitTo));
+}
+
+static void ApplyScrollDeltasSinceBeginFrameTo(LayerImpl* layer) {
+  layer->ApplyScrollDeltasSinceBeginFrame();
+}
+
+void LayerTreeImpl::ApplyScrollDeltasSinceBeginFrame() {
+  DCHECK(IsPendingTree());
+  if (!root_layer())
+    return;
+
+  LayerTreeHostCommon::CallFunctionForSubtree(
+      root_layer(), base::Bind(&ApplyScrollDeltasSinceBeginFrameTo));
 }
 
 void LayerTreeImpl::UpdateSolidColorScrollbars() {
@@ -258,14 +271,16 @@ void LayerTreeImpl::UpdateSolidColorScrollbars() {
   if (RootContainerLayer())
     vertical_adjust = layer_tree_host_impl_->VisibleViewportSize().height() -
                       RootContainerLayer()->bounds().height();
-  if (ScrollbarLayerImpl* horiz = root_scroll->horizontal_scrollbar_layer()) {
-    horiz->set_vertical_adjust(vertical_adjust);
-    horiz->set_visible_to_total_length_ratio(
+  if (PaintedScrollbarLayerImpl* horiz =
+          root_scroll->horizontal_scrollbar_layer()) {
+    horiz->SetVerticalAdjust(vertical_adjust);
+    horiz->SetVisibleToTotalLengthRatio(
         scrollable_viewport.width() / ScrollableSize().width());
   }
-  if (ScrollbarLayerImpl* vertical = root_scroll->vertical_scrollbar_layer()) {
-    vertical->set_vertical_adjust(vertical_adjust);
-    vertical->set_visible_to_total_length_ratio(
+  if (PaintedScrollbarLayerImpl* vertical =
+          root_scroll->vertical_scrollbar_layer()) {
+    vertical->SetVerticalAdjust(vertical_adjust);
+    vertical->SetVisibleToTotalLengthRatio(
         scrollable_viewport.height() / ScrollableSize().height());
   }
 }
@@ -406,6 +421,10 @@ const LayerTreeSettings& LayerTreeImpl::settings() const {
 
 const RendererCapabilities& LayerTreeImpl::GetRendererCapabilities() const {
   return layer_tree_host_impl_->GetRendererCapabilities();
+}
+
+ContextProvider* LayerTreeImpl::context_provider() const {
+  return output_surface()->context_provider();
 }
 
 OutputSurface* LayerTreeImpl::output_surface() const {

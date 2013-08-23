@@ -16,6 +16,7 @@
 #include "base/synchronization/lock.h"
 #include "tools/gn/config_values.h"
 #include "tools/gn/item.h"
+#include "tools/gn/script_values.h"
 #include "tools/gn/source_file.h"
 
 class InputFile;
@@ -25,11 +26,11 @@ class Token;
 class Target : public Item {
  public:
   enum OutputType {
-    NONE,
+    UNKNOWN,
+    GROUP,
     EXECUTABLE,
     SHARED_LIBRARY,
     STATIC_LIBRARY,
-    LOADABLE_MODULE,
     COPY_FILES,
     CUSTOM,
   };
@@ -38,6 +39,9 @@ class Target : public Item {
 
   Target(const Settings* settings, const Label& label);
   virtual ~Target();
+
+  // Returns a string naming the output type.
+  static const char* GetStringForOutputType(OutputType type);
 
   // Item overrides.
   virtual Target* AsTarget() OVERRIDE;
@@ -77,7 +81,8 @@ class Target : public Item {
   void swap_in_configs(std::vector<const Config*>* c) { configs_.swap(*c); }
 
   // List of configs that all dependencies (direct and indirect) of this
-  // target get. These configs are not added to this target.
+  // target get. These configs are not added to this target. Note that due
+  // to the way this is computed, there may be duplicates in this list.
   const std::vector<const Config*>& all_dependent_configs() const {
     return all_dependent_configs_;
   }
@@ -94,6 +99,15 @@ class Target : public Item {
     direct_dependent_configs_.swap(*c);
   }
 
+  // A list of a subset of deps where we'll re-export direct_dependent_configs
+  // as direct_dependent_configs of this target.
+  const std::vector<const Target*>& forward_dependent_configs() const {
+    return forward_dependent_configs_;
+  }
+  void swap_in_forward_dependent_configs(std::vector<const Target*>* t) {
+    forward_dependent_configs_.swap(*t);
+  }
+
   const std::set<const Target*>& inherited_libraries() const {
     return inherited_libraries_;
   }
@@ -102,19 +116,11 @@ class Target : public Item {
   ConfigValues& config_values() { return config_values_; }
   const ConfigValues& config_values() const { return config_values_; }
 
+  ScriptValues& script_values() { return script_values_; }
+  const ScriptValues& script_values() const { return script_values_; }
+
   const SourceDir& destdir() const { return destdir_; }
   void set_destdir(const SourceDir& d) { destdir_ = d; }
-
-  const SourceFile& script() const { return script_; }
-  void set_script(const SourceFile& s) { script_ = s; }
-
-  const std::vector<std::string>& script_args() const { return script_args_; }
-  void swap_in_script_args(std::vector<std::string>* sa) {
-    script_args_.swap(*sa);
-  }
-
-  const FileList& outputs() const { return outputs_; }
-  void swap_in_outputs(FileList* s) { outputs_.swap(*s); }
 
  private:
   const Settings* settings_;
@@ -127,20 +133,17 @@ class Target : public Item {
   std::vector<const Config*> configs_;
   std::vector<const Config*> all_dependent_configs_;
   std::vector<const Config*> direct_dependent_configs_;
+  std::vector<const Target*> forward_dependent_configs_;
 
   // Libraries from transitive deps. Libraries need to be linked only
   // with the end target (executable, shared library). These do not get
   // pushed beyond shared library boundaries.
   std::set<const Target*> inherited_libraries_;
 
-  ConfigValues config_values_;
+  ConfigValues config_values_;  // Used for all binary targets.
+  ScriptValues script_values_;  // Used for script (CUSTOM) targets.
 
   SourceDir destdir_;
-
-  // Script target stuff.
-  SourceFile script_;
-  std::vector<std::string> script_args_;
-  FileList outputs_;
 
   bool generated_;
   const Token* generator_function_;  // Who generated this: for error messages.

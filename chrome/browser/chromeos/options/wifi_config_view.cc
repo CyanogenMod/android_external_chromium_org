@@ -9,7 +9,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chromeos/enrollment_dialog_view.h"
-#include "chrome/browser/chromeos/options/network_connect.h"
+#include "chrome/browser/chromeos/net/onc_utils.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chromeos/login/login_state.h"
 #include "chromeos/network/network_configuration_handler.h"
@@ -342,6 +342,8 @@ WifiConfigView::WifiConfigView(NetworkConfigView* parent,
       user_cert_combobox_(NULL),
       server_ca_cert_label_(NULL),
       server_ca_cert_combobox_(NULL),
+      subject_match_label_(NULL),
+      subject_match_textfield_(NULL),
       identity_label_(NULL),
       identity_textfield_(NULL),
       identity_anonymous_label_(NULL),
@@ -505,6 +507,15 @@ void WifiConfigView::RefreshEapFields() {
                                        server_ca_cert_ui_data_.IsEditable());
   server_ca_cert_combobox_->ModelChanged();
   server_ca_cert_combobox_->SetSelectedIndex(0);
+
+  // Subject Match
+  bool subject_match_enabled =
+      ca_cert_enabled && eap_method_combobox_ &&
+      eap_method_combobox_->selected_index() == EAP_METHOD_INDEX_TLS;
+  subject_match_label_->SetEnabled(subject_match_enabled);
+  subject_match_textfield_->SetEnabled(subject_match_enabled);
+  if (!subject_match_enabled)
+    subject_match_textfield_->SetText(string16());
 
   // No anonymous identity if no phase 2 auth.
   bool identity_anonymous_enabled = phase_2_auth_enabled;
@@ -785,6 +796,11 @@ bool WifiConfigView::GetEapUseSystemCas() const {
   return server_ca_cert_combobox_->selected_index() == 0;
 }
 
+std::string WifiConfigView::GetEapSubjectMatch() const {
+  DCHECK(subject_match_textfield_);
+  return UTF16ToUTF8(subject_match_textfield_->text());
+}
+
 std::string WifiConfigView::GetEapClientCertPkcs11Id() const {
   DCHECK(user_cert_combobox_);
   if (!HaveUserCerts()) {
@@ -816,6 +832,8 @@ void WifiConfigView::SetEapProperties(base::DictionaryValue* properties) {
       flimflam::kEapPhase2AuthProperty, GetEapPhase2Auth());
   properties->SetStringWithoutPathExpansion(
       flimflam::kEapAnonymousIdentityProperty, GetEapAnonymousIdentity());
+  properties->SetStringWithoutPathExpansion(
+      shill::kEapSubjectMatchProperty, GetEapSubjectMatch());
 
   // shill requires both CertID and KeyID for TLS connections, despite
   // the fact that by convention they are the same ID.
@@ -979,6 +997,19 @@ void WifiConfigView::Init(bool show_8021x) {
         new ControlledSettingIndicatorView(server_ca_cert_ui_data_));
     layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
 
+    // Subject Match
+    layout->StartRow(0, column_view_set_id);
+    string16 subject_match_label_text = l10n_util::GetStringUTF16(
+        IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_EAP_SUBJECT_MATCH);
+    subject_match_label_ = new views::Label(subject_match_label_text);
+    layout->AddView(subject_match_label_);
+    subject_match_textfield_ =
+        new views::Textfield(views::Textfield::STYLE_DEFAULT);
+    subject_match_textfield_->SetAccessibleName(subject_match_label_text);
+    subject_match_textfield_->SetController(this);
+    layout->AddView(subject_match_textfield_);
+    layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
+
     // User certificate
     layout->StartRow(0, column_view_set_id);
     string16 user_cert_label_text = l10n_util::GetStringUTF16(
@@ -1001,8 +1032,7 @@ void WifiConfigView::Init(bool show_8021x) {
         IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_CERT_IDENTITY);
     identity_label_ = new views::Label(identity_label_text);
     layout->AddView(identity_label_);
-    identity_textfield_ = new views::Textfield(
-        views::Textfield::STYLE_DEFAULT);
+    identity_textfield_ = new views::Textfield(views::Textfield::STYLE_DEFAULT);
     identity_textfield_->SetAccessibleName(identity_label_text);
     identity_textfield_->SetController(this);
     identity_textfield_->SetEnabled(identity_ui_data_.IsEditable());
@@ -1179,6 +1209,12 @@ void WifiConfigView::InitFromProperties(
     identity_anonymous_textfield_->SetText(UTF8ToUTF16(eap_anonymous_identity));
   }
 
+  // Subject match
+  std::string subject_match;
+  properties.GetStringWithoutPathExpansion(
+      shill::kEapSubjectMatchProperty, &subject_match);
+  subject_match_textfield_->SetText(UTF8ToUTF16(subject_match));
+
   // Server CA certificate.
   if (CaCertActive()) {
     std::string eap_ca_cert_pem;
@@ -1265,7 +1301,7 @@ void WifiConfigView::ParseWiFiUIProperty(
     const std::string& key) {
   onc::ONCSource onc_source = onc::ONC_SOURCE_NONE;
   const base::DictionaryValue* onc =
-      network_connect::FindPolicyForActiveUser(network, &onc_source);
+      onc::FindPolicyForActiveUser(network->guid(), &onc_source);
 
   property_ui_data->ParseOncProperty(
       onc_source,

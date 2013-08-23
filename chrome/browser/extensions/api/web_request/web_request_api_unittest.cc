@@ -29,8 +29,8 @@
 #include "chrome/browser/extensions/extension_warning_set.h"
 #include "chrome/browser/net/about_protocol_handler.h"
 #include "chrome/browser/net/chrome_network_delegate.h"
+#include "chrome/common/extensions/api/web_request.h"
 #include "chrome/common/extensions/extension_messages.h"
-#include "chrome/common/extensions/features/feature.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
@@ -38,6 +38,7 @@
 #include "chrome/test/base/testing_profile_manager.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "extensions/common/features/feature.h"
 #include "net/base/auth.h"
 #include "net/base/capturing_net_log.h"
 #include "net/base/net_util.h"
@@ -52,6 +53,7 @@
 
 namespace helpers = extension_web_request_api_helpers;
 namespace keys = extension_web_request_api_constants;
+namespace web_request = extensions::api::web_request;
 
 using base::BinaryValue;
 using base::DictionaryValue;
@@ -218,7 +220,7 @@ TEST_F(ExtensionWebRequestTest, BlockingEventPrecedenceRedirect) {
   std::string extension1_id("1");
   std::string extension2_id("2");
   ExtensionWebRequestEventRouter::RequestFilter filter;
-  const std::string kEventName(keys::kOnBeforeRequestEvent);
+  const std::string kEventName(web_request::OnBeforeRequest::kEventName);
   base::WeakPtrFactory<TestIPCSender> ipc_sender_factory(&ipc_sender_);
   ExtensionWebRequestEventRouter::GetInstance()->AddEventListener(
       &profile_, extension1_id, extension1_id, kEventName, kEventName + "/1",
@@ -353,7 +355,7 @@ TEST_F(ExtensionWebRequestTest, BlockingEventPrecedenceCancel) {
   std::string extension1_id("1");
   std::string extension2_id("2");
   ExtensionWebRequestEventRouter::RequestFilter filter;
-  const std::string kEventName(keys::kOnBeforeRequestEvent);
+  const std::string kEventName(web_request::OnBeforeRequest::kEventName);
   base::WeakPtrFactory<TestIPCSender> ipc_sender_factory(&ipc_sender_);
   ExtensionWebRequestEventRouter::GetInstance()->AddEventListener(
     &profile_, extension1_id, extension1_id, kEventName, kEventName + "/1",
@@ -420,8 +422,8 @@ TEST_F(ExtensionWebRequestTest, SimulateChancelWhileBlocked) {
   ExtensionWebRequestEventRouter::RequestFilter filter;
 
   // Subscribe to OnBeforeRequest and OnErrorOccurred.
-  const std::string kEventName(keys::kOnBeforeRequestEvent);
-  const std::string kEventName2(keys::kOnErrorOccurredEvent);
+  const std::string kEventName(web_request::OnBeforeRequest::kEventName);
+  const std::string kEventName2(web_request::OnErrorOccurred::kEventName);
   base::WeakPtrFactory<TestIPCSender> ipc_sender_factory(&ipc_sender_);
   ExtensionWebRequestEventRouter::GetInstance()->AddEventListener(
     &profile_, extension_id, extension_id, kEventName, kEventName + "/1",
@@ -584,7 +586,7 @@ TEST_F(ExtensionWebRequestTest, AccessRequestBodyData) {
       &raw);
   extensions::subtle::AppendKeyValuePair(
       keys::kRequestBodyRawFileKey,
-      Value::CreateStringValue(std::string()),
+      new base::StringValue(std::string()),
       &raw);
   extensions::subtle::AppendKeyValuePair(
       keys::kRequestBodyRawBytesKey,
@@ -604,7 +606,7 @@ TEST_F(ExtensionWebRequestTest, AccessRequestBodyData) {
 #undef kBoundary
 
   // Set up a dummy extension name.
-  const std::string kEventName(keys::kOnBeforeRequestEvent);
+  const std::string kEventName(web_request::OnBeforeRequest::kEventName);
   ExtensionWebRequestEventRouter::RequestFilter filter;
   std::string extension_id("1");
   const std::string string_spec_post("blocking,requestBody");
@@ -695,7 +697,7 @@ TEST_F(ExtensionWebRequestTest, NoAccessRequestBodyData) {
   const char* kMethods[] = { "POST", "PUT", "GET" };
 
   // Set up a dummy extension name.
-  const std::string kEventName(keys::kOnBeforeRequestEvent);
+  const std::string kEventName(web_request::OnBeforeRequest::kEventName);
   ExtensionWebRequestEventRouter::RequestFilter filter;
   const std::string extension_id("1");
   int extra_info_spec = 0;
@@ -1165,11 +1167,11 @@ TEST(ExtensionWebRequestHelpersTest,
 
 TEST(ExtensionWebRequestHelpersTest, TestStringToCharList) {
   ListValue list_value;
-  list_value.Append(Value::CreateIntegerValue('1'));
-  list_value.Append(Value::CreateIntegerValue('2'));
-  list_value.Append(Value::CreateIntegerValue('3'));
-  list_value.Append(Value::CreateIntegerValue(0xFE));
-  list_value.Append(Value::CreateIntegerValue(0xD1));
+  list_value.Append(new base::FundamentalValue('1'));
+  list_value.Append(new base::FundamentalValue('2'));
+  list_value.Append(new base::FundamentalValue('3'));
+  list_value.Append(new base::FundamentalValue(0xFE));
+  list_value.Append(new base::FundamentalValue(0xD1));
 
   unsigned char char_value[] = {'1', '2', '3', 0xFE, 0xD1};
   std::string string_value(reinterpret_cast<char *>(char_value), 5);

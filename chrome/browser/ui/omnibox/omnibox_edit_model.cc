@@ -49,6 +49,7 @@
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/search/instant_controller.h"
 #include "chrome/browser/ui/search/search_tab_helper.h"
+#include "chrome/browser/ui/toolbar/toolbar_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
@@ -357,7 +358,8 @@ void OmniboxEditModel::GetDataForURLExport(GURL* url,
 }
 
 bool OmniboxEditModel::CurrentTextIsURL() const {
-  if (view_->toolbar_model()->WouldReplaceSearchURLWithSearchTerms(false))
+  if (controller_->GetToolbarModel()->WouldReplaceSearchURLWithSearchTerms(
+      false))
     return false;
 
   // If current text is not composed of replaced search terms and
@@ -385,7 +387,8 @@ void OmniboxEditModel::AdjustTextForCopy(int sel_min,
   // Do not adjust if selection did not start at the beginning of the field, or
   // if the URL was replaced by search terms.
   if ((sel_min != 0) ||
-      view_->toolbar_model()->WouldReplaceSearchURLWithSearchTerms(false))
+      controller_->GetToolbarModel()->WouldReplaceSearchURLWithSearchTerms(
+          false))
     return;
 
   if (!user_input_in_progress_ && is_all_selected) {
@@ -695,6 +698,11 @@ void OmniboxEditModel::OpenMatch(const AutocompleteMatch& match,
       // in template_url.h.
     }
 
+    // TODO(pkasting): This histogram obsoletes the next one.  Remove the next
+    // one in Chrome 32 or later.
+    UMA_HISTOGRAM_ENUMERATION("Omnibox.SearchEngineType",
+        TemplateURLPrepopulateData::GetEngineType(*template_url),
+        SEARCH_ENGINE_MAX);
     // NOTE: Non-prepopulated engines will all have ID 0, which is fine as
     // the prepopulate IDs start at 1.  Distribution-specific engines will
     // all have IDs above the maximum, and will be automatically lumped
@@ -722,7 +730,8 @@ void OmniboxEditModel::OpenMatch(const AutocompleteMatch& match,
 
     RecordPercentageMatchHistogram(
         permanent_text_, current_text,
-        view_->toolbar_model()->WouldReplaceSearchURLWithSearchTerms(false),
+        controller_->GetToolbarModel()->WouldReplaceSearchURLWithSearchTerms(
+            false),
         match.transition);
 
     // Track whether the destination URL sends us to a search results page
@@ -812,7 +821,14 @@ void OmniboxEditModel::OnSetFocus(bool control_down) {
   SetFocusState(OMNIBOX_FOCUS_VISIBLE, OMNIBOX_FOCUS_CHANGE_EXPLICIT);
   control_key_state_ = control_down ? DOWN_WITHOUT_CHANGE : UP;
 
-  if (delegate_->CurrentPageExists()) {
+  // Try to get ZeroSuggest suggestions if a page is loaded and the user has
+  // not been typing in the omnibox.  The |user_input_in_progress_| check is
+  // used to detect the case where this function is called after right-clicking
+  // in the omnibox and selecting paste in Linux (in which case we actually get
+  // the OnSetFocus() call after the process of handling the paste has kicked
+  // off).
+  // TODO(hfung): Remove this when crbug/271590 is fixed.
+  if (delegate_->CurrentPageExists() && !user_input_in_progress_) {
     // TODO(jered): We may want to merge this into Start() and just call that
     // here rather than having a special entry point for zero-suggest.  Note
     // that we avoid PermanentURL() here because it's not guaranteed to give us
@@ -1175,8 +1191,8 @@ void OmniboxEditModel::GetInfoForCurrentText(AutocompleteMatch* match,
                                              GURL* alternate_nav_url) const {
   DCHECK(match != NULL);
 
-  if (!user_input_in_progress_ &&
-      view_->toolbar_model()->WouldReplaceSearchURLWithSearchTerms(false)) {
+  if (controller_->GetToolbarModel()->WouldReplaceSearchURLWithSearchTerms(
+      false)) {
     // Any time the user hits enter on the unchanged omnibox, we should reload.
     // When we're not extracting search terms, AcceptInput() will take care of
     // this (see code referring to PAGE_TRANSITION_RELOAD there), but when we're
@@ -1298,7 +1314,8 @@ AutocompleteInput::PageClassification OmniboxEditModel::ClassifyPage() const {
     return AutocompleteInput::BLANK;
   if (url == profile()->GetPrefs()->GetString(prefs::kHomePage))
     return AutocompleteInput::HOMEPAGE;
-  if (view_->toolbar_model()->WouldReplaceSearchURLWithSearchTerms(true)) {
+  if (controller_->GetToolbarModel()->WouldReplaceSearchURLWithSearchTerms(
+      true)) {
     return AutocompleteInput::SEARCH_RESULT_PAGE_DOING_SEARCH_TERM_REPLACEMENT;
   }
   if (delegate_->IsSearchResultsPage()) {

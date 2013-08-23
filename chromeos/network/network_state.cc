@@ -117,8 +117,6 @@ bool NetworkState::PropertyChanged(const std::string& key,
     if (error_ == kErrorUnknown)
       error_.clear();
     return true;
-  } else if (key == shill::kErrorDetailsProperty) {
-    return GetStringValue(key, value, &error_details_);
   } else if (key == IPConfigProperty(flimflam::kAddressProperty)) {
     return GetStringValue(key, value, &ip_address_);
   } else if (key == IPConfigProperty(flimflam::kGatewayProperty)) {
@@ -132,6 +130,24 @@ bool NetworkState::PropertyChanged(const std::string& key,
     return true;
   } else if (key == IPConfigProperty(flimflam::kPrefixlenProperty)) {
     return GetIntegerValue(key, value, &prefix_length_);
+  } else if (key == IPConfigProperty(
+      shill::kWebProxyAutoDiscoveryUrlProperty)) {
+    std::string url_string;
+    if (!GetStringValue(key, value, &url_string))
+      return false;
+    if (url_string.empty()) {
+      web_proxy_auto_discovery_url_ = GURL();
+    } else {
+      GURL gurl(url_string);
+      if (!gurl.is_valid()) {
+        web_proxy_auto_discovery_url_ = gurl;
+      } else {
+        NET_LOG_ERROR("Invalid WebProxyAutoDiscoveryUrl: " + url_string,
+                      path());
+        web_proxy_auto_discovery_url_ = GURL();
+      }
+    }
+    return true;
   } else if (key == flimflam::kActivationStateProperty) {
     return GetStringValue(key, value, &activation_state_);
   } else if (key == flimflam::kRoamingStateProperty) {
@@ -227,8 +243,6 @@ void NetworkState::GetProperties(base::DictionaryValue* dictionary) const {
 
   dictionary->SetStringWithoutPathExpansion(flimflam::kErrorProperty,
                                             error_);
-  dictionary->SetStringWithoutPathExpansion(shill::kErrorDetailsProperty,
-                                            error_details_);
 
   // IPConfig properties
   base::DictionaryValue* ipconfig_properties = new base::DictionaryValue;
@@ -242,7 +256,9 @@ void NetworkState::GetProperties(base::DictionaryValue* dictionary) const {
                                                name_servers);
   ipconfig_properties->SetIntegerWithoutPathExpansion(
       flimflam::kPrefixlenProperty, prefix_length_);
-
+  ipconfig_properties->SetStringWithoutPathExpansion(
+      shill::kWebProxyAutoDiscoveryUrlProperty,
+      web_proxy_auto_discovery_url_.spec());
   dictionary->SetWithoutPathExpansion(shill::kIPConfigProperty,
                                       ipconfig_properties);
 
@@ -335,13 +351,13 @@ bool NetworkState::UpdateName(const base::DictionaryValue& properties) {
 std::string NetworkState::GetNameFromProperties(
     const std::string& service_path,
     const base::DictionaryValue& properties) {
-  std::string name;
+  std::string name, hex_ssid;
   properties.GetStringWithoutPathExpansion(flimflam::kNameProperty, &name);
-
-  std::string hex_ssid;
   properties.GetStringWithoutPathExpansion(flimflam::kWifiHexSsid, &hex_ssid);
 
   if (hex_ssid.empty()) {
+    if (name.empty())
+      return name;
     // Validate name for UTF8.
     std::string valid_ssid = ValidateUTF8(name);
     if (valid_ssid != name) {

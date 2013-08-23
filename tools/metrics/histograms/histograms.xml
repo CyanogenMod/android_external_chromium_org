@@ -1164,6 +1164,12 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Chrome.BrowserCrashDumpAttempts">
+  <summary>
+    Number of time the browser processes attempts to generate a crash dump.
+  </summary>
+</histogram>
+
 <histogram name="Chrome.SearchSelectExempt" enum="SearchEngine">
   <obsolete>
     Deprecated 8/2013. No longer tracked.
@@ -3882,6 +3888,34 @@ other types of suffix sets.
     Chrome OS File Browser: number of files and directories in the Downloads
     directory (not including the contents of nested directories). Computed every
     time the File Browser current directory changes to Downloads.
+  </summary>
+</histogram>
+
+<histogram name="FileBrowser.FolderShortcut.Add">
+  <summary>
+    Chrome OS File Browser: this is recorded when the user adds a folder
+    shortcut.
+  </summary>
+</histogram>
+
+<histogram name="FileBrowser.FolderShortcut.Count">
+  <summary>
+    Chrome OS File Browser: number of saved folder shorcuts. This is recorded
+    when Files.app is launched.
+  </summary>
+</histogram>
+
+<histogram name="FileBrowser.FolderShortcut.Navigate">
+  <summary>
+    Chrome OS File Browser: this is recorded when the user clicks or selects a
+    folder shortcut and is navigated to the target folder.
+  </summary>
+</histogram>
+
+<histogram name="FileBrowser.FolderShortcut.Remove">
+  <summary>
+    Chrome OS File Browser: this is recorded when the user removes a folder
+    shortcut.
   </summary>
 </histogram>
 
@@ -6781,7 +6815,7 @@ other types of suffix sets.
   </summary>
 </histogram>
 
-<histogram name="Net.PreconnectedLinkNavigation" enum="PreconnectedNavigation">
+<histogram name="Net.PreconnectedLinkNavigations" enum="PreconnectedNavigation">
   <summary>
     Indicate whether a link navigation was preceded by a recent pre-connect
     trigger (within 10 seconds). There is a high chance that loading the page
@@ -7120,6 +7154,22 @@ other types of suffix sets.
     enum="QuicErrorCodes">
   <summary>
     The QUIC error code which resulted in the connection being closed.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicSession.ConnectionCloseErrorCodeClient"
+    enum="QuicErrorCodes">
+  <summary>
+    The QUIC error code which resulted in the connection being closed by the
+    client.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicSession.ConnectionCloseErrorCodeServer"
+    enum="QuicErrorCodes">
+  <summary>
+    The QUIC error code which resulted in the connection being closed by the
+    server.
   </summary>
 </histogram>
 
@@ -8887,10 +8937,14 @@ other types of suffix sets.
   </summary>
 </histogram>
 
-<histogram name="Network.Shill.Wifi.FrequenciesConnectedEver">
+<histogram name="Network.Shill.WiFi.FrequenciesConnectedEver">
   <summary>
-    Chrome OS network diagnostic metric sampling the number of different WiFi
-    frequencies to which the user's machine has ever connected.
+    Chrome OS metric sampling the number of different frequencies (i.e.
+    channels) on which a device has connected to a WiFi network. This value is
+    sampled every time a WiFi connection is established
+    (WPASupplicant::kInterfaceStateCompleted). Note that the word
+    &quot;Ever&quot; in the metric name is misleading. ChromeOS actually ages
+    out historical information, currently after 3 weeks.
   </summary>
 </histogram>
 
@@ -9415,6 +9469,17 @@ other types of suffix sets.
   <summary>Time spent on the Suggested Sites NTP pane, in seconds.</summary>
 </histogram>
 
+<histogram name="NewTabPage.ThumbnailErrorRate">
+  <summary>
+    The percentage of errors per attempts to load image thumbnails on the New
+    Tab Page. When an error occurs, a grey tile is shown instead of a thumbnail
+    image. We measure the rate instead of the number of errors because multiple
+    attempts are made to load images at different times during the NTP's
+    lifetime. Each NTP session's error rate is logged after the user navigates
+    to a new URL from that NTP.
+  </summary>
+</histogram>
+
 <histogram name="NewTabPage.VisibleScreenshots">
   <summary>
     The number of screenshots that were cached for the visible suggestions on
@@ -9521,6 +9586,12 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Omnibox.SearchEngineType" enum="OmniboxSearchEngineType">
+  <summary>
+    The type of search engine associated with a match opened from the omnibox.
+  </summary>
+</histogram>
+
 <histogram name="Omnibox.SuggestRequest.Failure.GoogleResponseTime"
     units="milliseconds">
   <summary>
@@ -9584,6 +9655,14 @@ other types of suffix sets.
   <summary>
     Breakdown of how other possible usernames are displayed. Recorded every time
     we autofill a password form.
+  </summary>
+</histogram>
+
+<histogram name="PasswordManager.ProvisionalSaveFailure"
+    enum="ProvisionalSaveFailure">
+  <summary>
+    Breakdown of cases where a password is submitted, but we don't even try and
+    save it. Recorded for every password form submit.
   </summary>
 </histogram>
 
@@ -9933,6 +10012,18 @@ other types of suffix sets.
 
 <histogram name="Platform.StatefulUsage" units="%">
   <summary>Chrome OS stateful partition usage level.</summary>
+</histogram>
+
+<histogram name="Platform.SwapInLong" units="pages/second">
+  <summary>
+    Average pages/second swapped IN over a 30s interval, sampled every 30s.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapInShort" units="pages/second">
+  <summary>
+    Average pages/second swapped IN over a 1s interval, sampled every 30s.
+  </summary>
 </histogram>
 
 <histogram name="Platform.SwapJank.Scroll.Cpu.Swap0.Time1" units="%">
@@ -10415,6 +10506,18 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Platform.SwapOutLong" units="pages/second">
+  <summary>
+    Average pages/second swapped OUT over a 30s interval, sampled every 30s.
+  </summary>
+</histogram>
+
+<histogram name="Platform.SwapOutShort" units="pages/second">
+  <summary>
+    Average pages/second swapped OUT over a 1s interval, sampled every 30s.
+  </summary>
+</histogram>
+
 <histogram name="Platform.Temperature.Junction" units="Celsius">
   <summary>
     Peak junction temperature for the last sample interval, read from TSEN on
@@ -10538,6 +10641,13 @@ other types of suffix sets.
   <summary>TBD</summary>
 </histogram>
 
+<histogram name="PLT.BeginToFinish_AfterPreconnectRequest" units="milliseconds">
+  <summary>
+    PLT.BeginToFinish, but for pages requested just after a new preconnect
+    request.
+  </summary>
+</histogram>
+
 <histogram name="PLT.BeginToFinish_ContentPrefetcher" units="milliseconds">
   <summary>
     PLT.BeginToFinish, but for pages which contained prefetch links.
@@ -10554,6 +10664,14 @@ other types of suffix sets.
 
 <histogram name="PLT.BeginToFinishDoc">
   <summary>TBD</summary>
+</histogram>
+
+<histogram name="PLT.BeginToFinishDoc_AfterPreconnectRequest"
+    units="milliseconds">
+  <summary>
+    PLT.BeginToFinishDoc, but for pages requested just after a new preconnect
+    request.
+  </summary>
 </histogram>
 
 <histogram name="PLT.BeginToFinishDoc_ContentPrefetcher" units="milliseconds">
@@ -11640,6 +11758,13 @@ other types of suffix sets.
     Time elapsed before the user decided to cancel creation of a new profile.
     Since only managed-user profile creation can be canceled, this time comes
     from managed-user registration.
+  </summary>
+</histogram>
+
+<histogram name="ProfileReset.SendFeedback" enum="Boolean">
+  <summary>
+    Signifies if the user selected &quot;Send feedback&quot; checkbox in the
+    Reset Profile dialog.
   </summary>
 </histogram>
 
@@ -13267,11 +13392,50 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Search.DefaultSearchProviderType"
+    enum="OmniboxSearchEngineType">
+  <summary>
+    The type of the default search engine that is loaded when a profile is
+    opened or after a profile reset.  Note that at least one profile is opened
+    on startup.
+  </summary>
+</histogram>
+
+<histogram name="Settings.DefaultSearchProvider" enum="OmniboxSearchEngine">
+  <obsolete>
+    Deprecated in Chrome 30.  Use Search.DefaultSearchProviderType instead.
+  </obsolete>
+  <summary>
+    The id of the default search engine domain that is specified in user
+    preferences when a profile is loaded.
+  </summary>
+</histogram>
+
 <histogram name="Settings.GivenShowHomeButton_HomePageIsNewTabPage"
     enum="Boolean">
   <summary>
     Whether or not the home page user preference is set to the default NTP value
     when a profile is loaded. This is only logged if the home button is shown.
+  </summary>
+</histogram>
+
+<histogram name="Settings.HomePageDomain" enum="OmniboxSearchEngine">
+  <obsolete>
+    Deprecated in Chrome 30.  Replaced by Settings.HomePageEngineType.
+  </obsolete>
+  <summary>
+    The id of the home page domain that is specified in user preferences when a
+    profile is loaded.
+  </summary>
+</histogram>
+
+<histogram name="Settings.HomePageEngineType" enum="OmniboxSearchEngineType">
+  <summary>
+    Tries to pretend the home page URL is a search URL, and records the search
+    engine type of that URL by comparing the TLD+1 of the home page URL with
+    those of the different known search engines.  Recorded when a profile is
+    opened, if a home page URL has been set.  Note that at least one profile is
+    opened on startup.
   </summary>
 </histogram>
 
@@ -13318,6 +13482,27 @@ other types of suffix sets.
   <summary>
     The enabled state of the Home button pref when pushed up to sync from a
     change made locally.
+  </summary>
+</histogram>
+
+<histogram name="Settings.StartupPageDomains" enum="OmniboxSearchEngine">
+  <obsolete>
+    Deprecated in Chrome 30.  Replaced by Settings.StartupPageEngineTypes.
+  </obsolete>
+  <summary>
+    The ids of startup page domains that are specified in user preferences when
+    a profile is loaded.
+  </summary>
+</histogram>
+
+<histogram name="Settings.StartupPageEngineTypes"
+    enum="OmniboxSearchEngineType">
+  <summary>
+    Tries to pretend the startup page URLs are search URLs, and records the
+    search engine types of those URLs by comparing the TLD+1s of the URLs with
+    those of the different known search engines.  Recorded when a profile is
+    opened, if startup page URLs have been set.  Note that at least one profile
+    is opened on startup.
   </summary>
 </histogram>
 
@@ -13727,6 +13912,13 @@ other types of suffix sets.
   <summary>
     The result, at the synchronous layer, reported when attempting to create a
     new cache entry when the index has not yet initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.SyncOpenEntryAge" units="hours">
+  <summary>
+    The age of the entry (time since last modified), when opened at the
+    synchronous layer.
   </summary>
 </histogram>
 
@@ -15125,6 +15317,13 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="WebCore.PreloadDelayMs" units="milliseconds">
+  <summary>
+    The delay between when the preload scanner discovers a resource on the
+    parser thread and when the preload request is issued on the main thread.
+  </summary>
+</histogram>
+
 <histogram name="WebCore.V8DOMWindowShell.createContext.IsolatedWorld"
     units="milliseconds">
   <summary>
@@ -15205,6 +15404,16 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="WebFont.LayoutLatency" units="milliseconds">
+  <obsolete>
+    Renamed to WebFont.StyleRecalcToDownloadLatency for clarity.
+  </obsolete>
+  <summary>
+    The time from when the webfont was referenced by a calculated style for the
+    first time to the start of the font download.
+  </summary>
+</histogram>
+
 <histogram name="WebFont.LoadTime.0.Under10KB" units="milliseconds">
   <obsolete>
     Deprecated as of 8/2013, replaced by WebFont.DownloadTime.0.Under10KB.
@@ -15269,6 +15478,25 @@ other types of suffix sets.
   <summary>
     Whether a locallly installed font is actually used when @font-face had local
     sources.
+  </summary>
+</histogram>
+
+<histogram name="WebFont.StyleRecalcToDownloadLatency" units="milliseconds">
+  <summary>
+    The time from when the webfont was referenced by a calculated style for the
+    first time to the start of the font download.
+  </summary>
+</histogram>
+
+<histogram name="WebFont.UsageType" enum="WebFontUsageType">
+  <summary>
+    For each webfont, this records (a) if the font was 'styled', i.e. referenced
+    by a calculated style for a RenderText before the font data was used, and
+    (b) if the font was actually used or not, i.e. the renderer requested the
+    font data or not. (A Font can be used without being styled, for example when
+    drawn by a Canvas 2D Context.) This is recorded upon a download request of a
+    webfont, or destruction of a CSSFontFaceSource object. Recorded at most once
+    for each url() source of @font-face CSS rule.
   </summary>
 </histogram>
 
@@ -17139,7 +17367,7 @@ other types of suffix sets.
   <int value="34" label="AUTOTESTPRIVATE_RESTART"/>
   <int value="35" label="USB_CLAIMINTERFACE"/>
   <int value="36" label="MEDIAPLAYERPRIVATE_SETWINDOWHEIGHT"/>
-  <int value="37" label="EXPERIMENTAL_PROCESSES_GETPROCESSINFO"/>
+  <int value="37" label="PROCESSES_GETPROCESSINFO"/>
   <int value="38" label="HISTORY_GETVISITS"/>
   <int value="39" label="SOCKET_BIND"/>
   <int value="40" label="TABS_MOVE"/>
@@ -17204,7 +17432,7 @@ other types of suffix sets.
   <int value="99" label="WINDOWS_CREATE"/>
   <int value="100" label="DEVELOPERPRIVATE_LOADUNPACKED"/>
   <int value="101" label="DELETED_DOWNLOADS_SETDESTINATION"/>
-  <int value="102" label="EXPERIMENTAL_PROCESSES_GETPROCESSIDFORTAB"/>
+  <int value="102" label="PROCESSES_GETPROCESSIDFORTAB"/>
   <int value="103" label="BOOKMARKS_GETCHILDREN"/>
   <int value="104" label="BROWSERACTION_GETTITLE"/>
   <int value="105" label="TERMINALPRIVATE_OPENTERMINALPROCESS"/>
@@ -17398,7 +17626,7 @@ other types of suffix sets.
   <int value="292" label="EXPERIMENTAL_APP_NOTIFY"/>
   <int value="293" label="METRICSPRIVATE_RECORDLONGTIME"/>
   <int value="294" label="SOCKET_READ"/>
-  <int value="295" label="EXPERIMENTAL_PROCESSES_TERMINATE"/>
+  <int value="295" label="PROCESSES_TERMINATE"/>
   <int value="296" label="METRICSPRIVATE_RECORDTIME"/>
   <int value="297" label="BOOKMARKMANAGERPRIVATE_GETSTRINGS"/>
   <int value="298" label="USB_ISOCHRONOUSTRANSFER"/>
@@ -17622,6 +17850,7 @@ other types of suffix sets.
   <int value="515" label="SYSTEM_STORAGE_REMOVEALLAVAILABLECAPACITYWATCHES"/>
   <int value="516" label="INFOBARS_SHOW"/>
   <int value="517" label="EXPERIMENTAL_INPUT_VIRTUALKEYBOARD_MOVECURSOR"/>
+  <int value="518" label="AUTOTESTPRIVATE_SIMULATEASANMEMORYBUG"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">
@@ -17747,6 +17976,8 @@ other types of suffix sets.
   <int value="3" label="ENABLED (in webstore)"/>
   <int value="4" label="DISABLED (not in webstore)"/>
   <int value="5" label="ENABLED (not in webstore)"/>
+  <int value="6" label="UNINSTALLED (in webstore)"/>
+  <int value="7" label="UNINSTALLED (not in webstore)"/>
 </enum>
 
 <enum name="Exynos5250LotIdEnum" type="int">
@@ -17866,6 +18097,29 @@ other types of suffix sets.
   <int value="97" label="SubFrameBeforeUnloadRegistered"/>
   <int value="98" label="SubFrameBeforeUnloadFired"/>
   <int value="99" label="CSSPseudoElementPrefixedDistributed"/>
+  <int value="100" label="TextReplaceWholeText"/>
+  <int value="101" label="PrefixedShadowRootConstructor"/>
+  <int value="102" label="ConsoleMarkTimeline"/>
+  <int value="103" label="CSSPseudoElementUserAgentCustomPseudo"/>
+  <int value="104" label="DocumentTypeEntities"/>
+  <int value="105" label="DocumentTypeInternalSubset"/>
+  <int value="106" label="DocumentTypeNotations"/>
+  <int value="107" label="ElementGetAttributeNode"/>
+  <int value="108" label="ElementSetAttributeNode"/>
+  <int value="109" label="ElementRemoveAttributeNode"/>
+  <int value="110" label="ElementGetAttributeNodeNS"/>
+  <int value="111" label="DocumentCreateAttribute"/>
+  <int value="112" label="DocumentCreateAttributeNS"/>
+  <int value="113" label="DocumentCreateCDATASection"/>
+  <int value="114" label="DocumentInputEncoding"/>
+  <int value="115" label="DocumentXMLEncoding"/>
+  <int value="116" label="DocumentXMLStandalone"/>
+  <int value="117" label="DocumentXMLVersion"/>
+  <int value="118" label="NodeIsSameNode"/>
+  <int value="119" label="NodeIsSupported"/>
+  <int value="120" label="NodeNamespaceURI"/>
+  <int value="121" label="NodePrefix"/>
+  <int value="122" label="NodeLocalName"/>
 </enum>
 
 <enum name="FFmpegCodecs" type="int">
@@ -20393,6 +20647,7 @@ other types of suffix sets.
   <int value="32" label="diri"/>
   <int value="33" label="Custom"/>
   <int value="35" label="AOL"/>
+  <int value="36" label="Conduit"/>
   <int value="37" label="Rediff"/>
   <int value="38" label="guruji"/>
   <int value="40" label="GO.com"/>
@@ -20400,6 +20655,7 @@ other types of suffix sets.
   <int value="44" label="NETI"/>
   <int value="45" label="DELFI"/>
   <int value="46" label="Fonecta 02.fi"/>
+  <int value="50" label="AVG"/>
   <int value="51" label="search.ch"/>
   <int value="54" label="in.gr"/>
   <int value="55" label="Walla!"/>
@@ -20424,6 +20680,70 @@ other types of suffix sets.
   <int value="99" label="Spray"/>
   <int value="100" label="Sanook!"/>
   <int value="101" label="MYNET"/>
+  <int value="102" label="searchnu.com"/>
+  <int value="103" label="babylon.com"/>
+  <int value="104" label="delta-search.com"/>
+  <int value="105" label="iminent.com"/>
+  <int value="106" label="hao123.com"/>
+  <int value="107" label="sweetim.com"/>
+  <int value="108" label="snap.do"/>
+  <int value="109" label="snapdo.com"/>
+  <int value="110" label="softonic.com"/>
+  <int value="111" label="searchfunmoods.com"/>
+  <int value="112" label="incredibar.com"/>
+  <int value="113" label="sweetpacks.com"/>
+  <int value="114" label="imesh.net"/>
+</enum>
+
+<enum name="OmniboxSearchEngineType" type="int">
+  <int value="0" label="Unknown"/>
+  <int value="1" label="AOL"/>
+  <int value="2" label="Ask"/>
+  <int value="3" label="Atlas"/>
+  <int value="4" label="AVG"/>
+  <int value="5" label="Baidu"/>
+  <int value="6" label="Babylon"/>
+  <int value="7" label="Bing"/>
+  <int value="8" label="Conduit"/>
+  <int value="9" label="Daum"/>
+  <int value="10" label="DELFI"/>
+  <int value="11" label="Delta"/>
+  <int value="12" label="Funmoods"/>
+  <int value="13" label="goo"/>
+  <int value="14" label="Google"/>
+  <int value="15" label="iminent.com"/>
+  <int value="16" label="IMesh"/>
+  <int value="17" label="in.gr"/>
+  <int value="18" label="incredibar.com"/>
+  <int value="19" label="Kvasir"/>
+  <int value="20" label="Libero"/>
+  <int value="21" label="@MAIL.RU"/>
+  <int value="22" label="Najdi.si"/>
+  <int value="23" label="Nate"/>
+  <int value="24" label="Naver"/>
+  <int value="25" label="NETI"/>
+  <int value="26" label="Nigma"/>
+  <int value="27" label="OK.hu"/>
+  <int value="28" label="Onet.pl"/>
+  <int value="29" label="Rambler"/>
+  <int value="30" label="SAPO"/>
+  <int value="31" label="searchnu"/>
+  <int value="32" label="search-results.com"/>
+  <int value="33" label="Seznam"/>
+  <int value="34" label="snap.do"/>
+  <int value="35" label="softonic.com"/>
+  <int value="36" label="Sogou"/>
+  <int value="37" label="Soso"/>
+  <int value="38" label="sweetim.com/sweetpacks.com"/>
+  <int value="39" label="Terra"/>
+  <int value="40" label="TUT.BY"/>
+  <int value="41" label="Vinden.nl"/>
+  <int value="42" label="Virgilio"/>
+  <int value="43" label="Walla!"/>
+  <int value="44" label="Wirtualna Polska"/>
+  <int value="45" label="Yahoo!"/>
+  <int value="46" label="Yandex"/>
+  <int value="47" label="Zoznam"/>
 </enum>
 
 <enum name="OmniboxSuggestRequests" type="int">
@@ -20866,6 +21186,16 @@ other types of suffix sets.
   <int value="5" label="SPDY 3.0"/>
 </enum>
 
+<enum name="ProvisionalSaveFailure" type="int">
+  <int value="0" label="SAVING_DISABLED"/>
+  <int value="1" label="EMPTY_PASSWORD"/>
+  <int value="2" label="NO_MATCHING_FORM"/>
+  <int value="3" label="MATCHING_NOT_COMPLETE"/>
+  <int value="4" label="FORM_BLACKLISTED"/>
+  <int value="5" label="INVALID_FORM"/>
+  <int value="6" label="AUTOCOMPLETE_OFF"/>
+</enum>
+
 <enum name="ProxyStatus" type="int">
   <int value="0" label="PROXY_STATUS_IGNORED"/>
   <int value="1" label="PROXY_UNINITIALIZED"/>
@@ -20947,6 +21277,9 @@ other types of suffix sets.
   <int value="43" label="CRYPTO_DUPLICATE_TAG"/>
   <int value="44" label="CRYPTO_ENCRYPTION_LEVEL_INCORRECT"/>
   <int value="45" label="CRYPTO_SERVER_CONFIG_EXPIRED"/>
+  <int value="46" label="INVALID_STREAM_DATA"/>
+  <int value="47" label="INVALID_CONGESTION_FEEDBACK_DATA"/>
+  <int value="48" label="MISSING_PAYLOAD"/>
 </enum>
 
 <enum name="QuicHandshakeState" type="int">
@@ -21446,8 +21779,12 @@ other types of suffix sets.
 </enum>
 
 <enum name="SimpleCacheReadParallelizable" type="int">
-  <int value="0" label="Standalone Read"/>
-  <int value="1" label="Read in a sequence"/>
+  <int value="0" label="Standalone Read (obsolete)"/>
+  <int value="1" label="Follows read"/>
+  <int value="2" label="Follows conflicting write"/>
+  <int value="3" label="Follows non conflicting write"/>
+  <int value="4" label="Follows other operation"/>
+  <int value="5" label="Read alone in queue"/>
 </enum>
 
 <enum name="SimpleCacheReadResult" type="int">
@@ -22580,6 +22917,12 @@ other types of suffix sets.
   <int value="9" label="Verify CVV"/>
   <int value="10" label="Invalid form field"/>
   <int value="11" label="Require phone number"/>
+</enum>
+
+<enum name="WebFontUsageType" type="int">
+  <int value="0" label="Styled, and used"/>
+  <int value="1" label="Styled, but not used"/>
+  <int value="2" label="Not styled, but used"/>
 </enum>
 
 <enum name="WebHistoryStatus" type="int">

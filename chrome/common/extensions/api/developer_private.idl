@@ -24,10 +24,10 @@ namespace developerPrivate {
 
     long render_view_id;
     boolean incognito;
+    boolean generatedBackgroundPage;
   };
 
   dictionary InstallWarning {
-    boolean is_html;
     DOMString message;
   };
 

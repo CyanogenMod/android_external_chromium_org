@@ -8,10 +8,13 @@
 #include <stack>
 #include <string>
 
+#include "base/bind.h"
 #include "base/containers/hash_tables.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/renderer/pepper/host_array_buffer_var.h"
+#include "content/renderer/pepper/resource_converter.h"
 #include "ppapi/shared_impl/array_var.h"
 #include "ppapi/shared_impl/dictionary_var.h"
 #include "ppapi/shared_impl/var.h"
@@ -61,7 +64,6 @@ inline size_t hash_value(const HashedHandle& handle) {
 }  // namespace BASE_HASH_NAMESPACE
 
 namespace content {
-namespace V8VarConverter {
 
 namespace {
 
@@ -165,7 +167,8 @@ bool GetOrCreateVar(v8::Handle<v8::Value> val,
                     PP_Var* result,
                     bool* did_create,
                     HandleVarMap* visited_handles,
-                    ParentHandleSet* parent_handles) {
+                    ParentHandleSet* parent_handles,
+                    ResourceConverter* resource_converter) {
   CHECK(!val.IsEmpty());
   *did_create = false;
 
@@ -231,6 +234,21 @@ bool CanHaveChildren(PP_Var var) {
 
 }  // namespace
 
+V8VarConverter::V8VarConverter()
+    : message_loop_proxy_(base::MessageLoopProxy::current()),
+      resource_converter_(new ResourceConverterImpl()) {
+}
+
+V8VarConverter::V8VarConverter(
+    const scoped_refptr<base::MessageLoopProxy>& message_loop_proxy,
+    scoped_ptr<ResourceConverter> resource_converter)
+    : message_loop_proxy_(message_loop_proxy),
+      resource_converter_(resource_converter.release()) {
+}
+
+V8VarConverter::~V8VarConverter() {
+}
+
 // To/FromV8Value use a stack-based DFS search to traverse V8/Var graph. Each
 // iteration, the top node on the stack examined. If the node has not been
 // visited yet (i.e. sentinel == false) then it is added to the list of parents
@@ -241,9 +259,9 @@ bool CanHaveChildren(PP_Var var) {
 // node at the top of the stack has already been visited, then we pop it off the
 // stack and erase it from the list of parents.
 // static
-bool ToV8Value(const PP_Var& var,
-               v8::Handle<v8::Context> context,
-               v8::Handle<v8::Value>* result) {
+bool V8VarConverter::ToV8Value(const PP_Var& var,
+                               v8::Handle<v8::Context> context,
+                               v8::Handle<v8::Value>* result) {
   v8::Context::Scope context_scope(context);
   v8::HandleScope handle_scope;
 
@@ -344,9 +362,10 @@ bool ToV8Value(const PP_Var& var,
   return true;
 }
 
-bool FromV8Value(v8::Handle<v8::Value> val,
-                 v8::Handle<v8::Context> context,
-                 PP_Var* result) {
+void V8VarConverter::FromV8Value(
+    v8::Handle<v8::Value> val,
+    v8::Handle<v8::Context> context,
+    const base::Callback<void(const ScopedPPVar&, bool)>& callback) {
   v8::Context::Scope context_scope(context);
   v8::HandleScope handle_scope;
 
@@ -373,8 +392,11 @@ bool FromV8Value(v8::Handle<v8::Value> val,
 
     bool did_create = false;
     if (!GetOrCreateVar(current_v8, &current_var, &did_create,
-                        &visited_handles, &parent_handles)) {
-      return false;
+                        &visited_handles, &parent_handles,
+                        resource_converter_.get())) {
+      message_loop_proxy_->PostTask(FROM_HERE,
+          base::Bind(callback, ScopedPPVar(PP_MakeUndefined()), false));
+      return;
     }
 
     if (is_root) {
@@ -391,22 +413,30 @@ bool FromV8Value(v8::Handle<v8::Value> val,
       ArrayVar* array_var = ArrayVar::FromPPVar(current_var);
       if (!array_var) {
         NOTREACHED();
-        return false;
+        message_loop_proxy_->PostTask(FROM_HERE,
+            base::Bind(callback, ScopedPPVar(PP_MakeUndefined()), false));
+        return;
       }
 
       for (uint32 i = 0; i < v8_array->Length(); ++i) {
         v8::TryCatch try_catch;
         v8::Handle<v8::Value> child_v8 = v8_array->Get(i);
-        if (try_catch.HasCaught())
-          return false;
+        if (try_catch.HasCaught()) {
+          message_loop_proxy_->PostTask(FROM_HERE,
+              base::Bind(callback, ScopedPPVar(PP_MakeUndefined()), false));
+          return;
+        }
 
         if (!v8_array->HasRealIndexedProperty(i))
           continue;
 
         PP_Var child_var;
         if (!GetOrCreateVar(child_v8, &child_var, &did_create,
-                            &visited_handles, &parent_handles)) {
-          return false;
+                            &visited_handles, &parent_handles,
+                            resource_converter_.get())) {
+          message_loop_proxy_->PostTask(FROM_HERE,
+              base::Bind(callback, ScopedPPVar(PP_MakeUndefined()), false));
+          return;
         }
         if (did_create && child_v8->IsObject())
           stack.push(child_v8);
@@ -421,7 +451,9 @@ bool FromV8Value(v8::Handle<v8::Value> val,
       DictionaryVar* dict_var = DictionaryVar::FromPPVar(current_var);
       if (!dict_var) {
         NOTREACHED();
-        return false;
+        message_loop_proxy_->PostTask(FROM_HERE,
+            base::Bind(callback, ScopedPPVar(PP_MakeUndefined()), false));
+        return;
       }
 
       v8::Handle<v8::Array> property_names(v8_object->GetOwnPropertyNames());
@@ -432,7 +464,9 @@ bool FromV8Value(v8::Handle<v8::Value> val,
         if (!key->IsString() && !key->IsNumber()) {
           NOTREACHED() << "Key \"" << *v8::String::AsciiValue(key) << "\" "
                           "is neither a string nor a number";
-          return false;
+          message_loop_proxy_->PostTask(FROM_HERE,
+              base::Bind(callback, ScopedPPVar(PP_MakeUndefined()), false));
+          return;
         }
 
         // Skip all callbacks: crbug.com/139933
@@ -443,13 +477,19 @@ bool FromV8Value(v8::Handle<v8::Value> val,
 
         v8::TryCatch try_catch;
         v8::Handle<v8::Value> child_v8 = v8_object->Get(key);
-        if (try_catch.HasCaught())
-          return false;
+        if (try_catch.HasCaught()) {
+          message_loop_proxy_->PostTask(FROM_HERE,
+              base::Bind(callback, ScopedPPVar(PP_MakeUndefined()), false));
+          return;
+        }
 
         PP_Var child_var;
         if (!GetOrCreateVar(child_v8, &child_var, &did_create,
-                            &visited_handles, &parent_handles)) {
-          return false;
+                            &visited_handles, &parent_handles,
+                            resource_converter_.get())) {
+          message_loop_proxy_->PostTask(FROM_HERE,
+              base::Bind(callback, ScopedPPVar(PP_MakeUndefined()), false));
+          return;
         }
         if (did_create && child_v8->IsObject())
           stack.push(child_v8);
@@ -460,9 +500,7 @@ bool FromV8Value(v8::Handle<v8::Value> val,
       }
     }
   }
-  *result = root.Release();
-  return true;
+  resource_converter_->ShutDown(base::Bind(callback, root));
 }
 
-}  // namespace V8VarConverter
 }  // namespace content

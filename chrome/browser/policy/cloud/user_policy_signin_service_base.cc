@@ -8,9 +8,9 @@
 #include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
 #include "base/prefs/pref_service.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
+#include "chrome/browser/policy/cloud/device_management_service.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -23,8 +23,12 @@
 namespace policy {
 
 UserPolicySigninServiceBase::UserPolicySigninServiceBase(
-    Profile* profile)
+    Profile* profile,
+    PrefService* local_state,
+    DeviceManagementService* device_management_service)
     : profile_(profile),
+      local_state_(local_state),
+      device_management_service_(device_management_service),
       weak_factory_(this) {
   if (profile_->GetPrefs()->GetBoolean(prefs::kDisableCloudPolicyOnSignin))
     return;
@@ -68,7 +72,7 @@ void UserPolicySigninServiceBase::Observe(
     const content::NotificationDetails& details) {
   // If using a TestingProfile with no SigninManager or UserCloudPolicyManager,
   // skip initialization.
-  if (!GetManager() || !SigninManagerFactory::GetForProfile(profile_)) {
+  if (!GetManager() || !GetSigninManager()) {
     DVLOG(1) << "Skipping initialization for tests due to missing components.";
     return;
   }
@@ -129,6 +133,10 @@ void UserPolicySigninServiceBase::OnClientError(CloudPolicyClient* client) {
 }
 
 void UserPolicySigninServiceBase::Shutdown() {
+  PrepareForUserCloudPolicyManagerShutdown();
+}
+
+void UserPolicySigninServiceBase::PrepareForUserCloudPolicyManagerShutdown() {
   UserCloudPolicyManager* manager = GetManager();
   if (manager && manager->core()->client())
     manager->core()->client()->RemoveObserver(this);
@@ -155,13 +163,11 @@ scoped_ptr<CloudPolicyClient> UserPolicySigninServiceBase::PrepareToRegister(
   }
 
   // If the DeviceManagementService is not yet initialized, start it up now.
-  BrowserPolicyConnector* connector =
-      g_browser_process->browser_policy_connector();
-  connector->ScheduleServiceInitialization(0);
+  device_management_service_->ScheduleInitialization(0);
 
   // Create a new CloudPolicyClient for fetching the DMToken.
   return UserCloudPolicyManager::CreateCloudPolicyClient(
-      connector->device_management_service());
+      device_management_service_);
 }
 
 bool UserPolicySigninServiceBase::ShouldLoadPolicyForUser(
@@ -179,9 +185,7 @@ bool UserPolicySigninServiceBase::ShouldLoadPolicyForUser(
 }
 
 void UserPolicySigninServiceBase::InitializeOnProfileReady() {
-  SigninManager* signin_manager =
-      SigninManagerFactory::GetForProfile(profile_);
-  std::string username = signin_manager->GetAuthenticatedUsername();
+  std::string username = GetSigninManager()->GetAuthenticatedUsername();
   if (username.empty())
     ShutdownUserCloudPolicyManager();
   else
@@ -202,11 +206,9 @@ void UserPolicySigninServiceBase::InitializeForSignedInUser(
     // If there is no cached DMToken then we can detect this when the
     // OnInitializationCompleted() callback is invoked and this will
     // initiate a policy fetch.
-    BrowserPolicyConnector* connector =
-        g_browser_process->browser_policy_connector();
     InitializeUserCloudPolicyManager(
         UserCloudPolicyManager::CreateCloudPolicyClient(
-            connector->device_management_service()).Pass());
+            device_management_service_).Pass());
   }
 
   // If the CloudPolicyService is initialized, kick off registration.
@@ -220,7 +222,7 @@ void UserPolicySigninServiceBase::InitializeUserCloudPolicyManager(
     scoped_ptr<CloudPolicyClient> client) {
   UserCloudPolicyManager* manager = GetManager();
   DCHECK(!manager->core()->client());
-  manager->Connect(g_browser_process->local_state(), client.Pass());
+  manager->Connect(local_state_, client.Pass());
   DCHECK(manager->core()->service());
 
   // Observe the client to detect errors fetching policy.
@@ -230,7 +232,7 @@ void UserPolicySigninServiceBase::InitializeUserCloudPolicyManager(
 }
 
 void UserPolicySigninServiceBase::ShutdownUserCloudPolicyManager() {
-  Shutdown();
+  PrepareForUserCloudPolicyManagerShutdown();
   UserCloudPolicyManager* manager = GetManager();
   if (manager)
     manager->DisconnectAndRemovePolicy();
@@ -238,6 +240,10 @@ void UserPolicySigninServiceBase::ShutdownUserCloudPolicyManager() {
 
 UserCloudPolicyManager* UserPolicySigninServiceBase::GetManager() {
   return UserCloudPolicyManagerFactory::GetForProfile(profile_);
+}
+
+SigninManager* UserPolicySigninServiceBase::GetSigninManager() {
+  return SigninManagerFactory::GetForProfile(profile_);
 }
 
 }  // namespace policy

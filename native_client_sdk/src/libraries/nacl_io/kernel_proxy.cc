@@ -14,10 +14,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/time.h>
+#include <unistd.h>
 
 #include <iterator>
 #include <string>
 
+#include "nacl_io/dbgprint.h"
 #include "nacl_io/host_resolver.h"
 #include "nacl_io/kernel_handle.h"
 #include "nacl_io/kernel_wrap_real.h"
@@ -27,6 +29,8 @@
 #include "nacl_io/mount_http.h"
 #include "nacl_io/mount_mem.h"
 #include "nacl_io/mount_node.h"
+#include "nacl_io/mount_node_tcp.h"
+#include "nacl_io/mount_node_udp.h"
 #include "nacl_io/mount_passthrough.h"
 #include "nacl_io/osmman.h"
 #include "nacl_io/ossocket.h"
@@ -43,7 +47,31 @@
 
 namespace nacl_io {
 
-KernelProxy::KernelProxy() : dev_(0), ppapi_(NULL) {
+class SignalEmitter : public EventEmitter {
+ public:
+  // From EventEmitter.  The SignalEmitter exists in order
+  // to inturrupt anything waiting in select()/poll() when kill()
+  // is called.  It is an edge trigger only and therefore has no
+  // persistent readable/wriable/error state.
+  uint32_t GetEventStatus() {
+     return 0;
+  }
+
+  int GetType() {
+    // For lack of a better type, report socket to signify it can be in an
+    // used to signal.
+    return S_IFSOCK;
+  }
+
+  void SignalOccurred() {
+    RaiseEvent(POLLERR);
+  }
+};
+
+KernelProxy::KernelProxy() : dev_(0), ppapi_(NULL),
+                             sigwinch_handler_(SIG_IGN),
+                             signal_emitter_(new SignalEmitter) {
+
 }
 
 KernelProxy::~KernelProxy() {
@@ -82,6 +110,10 @@ void KernelProxy::Init(PepperInterface* ppapi) {
 #ifdef PROVIDES_SOCKET_API
   host_resolver_.Init(ppapi_);
 #endif
+
+  StringMap_t args;
+  socket_mount_.reset(new MountSocket());
+  socket_mount_->Init(0, args, ppapi);
 }
 
 int KernelProxy::open_resource(const char* path) {
@@ -704,11 +736,77 @@ int KernelProxy::tcsetattr(int fd, int optional_actions,
   return 0;
 }
 
+int KernelProxy::kill(pid_t pid, int sig) {
+  // Currently we don't even pretend that other processes exist
+  // so we can only send a signal to outselves.  For kill(2)
+  // pid 0 means the current process group and -1 means all the
+  // processes we have permission to send signals to.
+  if (pid != getpid() && pid != -1 && pid != 0) {
+    errno = ESRCH;
+    return -1;
+  }
+
+  // Raise an event so that select/poll get interrupted.
+  signal_emitter_->SignalOccurred();
+  switch (sig) {
+    case SIGWINCH:
+      if (sigwinch_handler_ != SIG_IGN)
+        sigwinch_handler_(SIGWINCH);
+      break;
+
+    case SIGUSR1:
+    case SIGUSR2:
+      break;
+
+    default:
+      errno = EINVAL;
+      return -1;
+  }
+
+  return 0;
+}
+
+sighandler_t KernelProxy::sigset(int signum, sighandler_t handler) {
+  switch (signum) {
+    // Handled signals.
+    case SIGWINCH: {
+      sighandler_t old_value = sigwinch_handler_;
+      if (handler == SIG_DFL)
+        handler = SIG_IGN;
+      sigwinch_handler_ = handler;
+      return old_value;
+    }
+
+    // Known signals
+    case SIGHUP:
+    case SIGINT:
+    case SIGKILL:
+    case SIGPIPE:
+    case SIGPOLL:
+    case SIGPROF:
+    case SIGTERM:
+    case SIGCHLD:
+    case SIGURG:
+    case SIGFPE:
+    case SIGILL:
+    case SIGQUIT:
+    case SIGSEGV:
+    case SIGTRAP:
+      if (handler == SIG_DFL)
+        return SIG_DFL;
+      break;
+  }
+
+  errno = EINVAL;
+  return SIG_ERR;
+}
+
 #ifdef PROVIDES_SOCKET_API
 
 int KernelProxy::select(int nfds, fd_set* readfds, fd_set* writefds,
                         fd_set* exceptfds, struct timeval* timeout) {
   ScopedEventListener listener(new EventListener);
+
   std::vector<struct pollfd> fds;
 
   fd_set readout, writeout, exceptout;
@@ -785,7 +883,7 @@ int KernelProxy::select(int nfds, fd_set* readfds, fd_set* writefds,
 
       // If the timeout is invalid or too long (larger than signed 32 bit).
       if ((timeout->tv_sec < 0) || (timeout->tv_sec >= (INT_MAX / 1000)) ||
-          (timeout->tv_usec < 0) || (timeout->tv_usec >= 1000) ||
+          (timeout->tv_usec < 0) || (timeout->tv_usec >= 1000000) ||
           (ms < 0) || (ms >= INT_MAX)) {
         errno = EINVAL;
         return -1;
@@ -794,9 +892,24 @@ int KernelProxy::select(int nfds, fd_set* readfds, fd_set* writefds,
       ms_timeout = static_cast<int>(ms);
     }
 
+    // Add a special node to listen for events
+    // coming from the KernelProxy itself (kill will
+    // generated a SIGERR event).
+    listener->Track(-1, signal_emitter_, POLLERR, -1);
+    event_track += 1;
+
     events.resize(event_track);
+
+    bool interrupted = false;
     listener->Wait(events.data(), event_track, ms_timeout, &ready_cnt);
     for (fd = 0; static_cast<int>(fd) < ready_cnt; fd++) {
+      if (events[fd].user_data == static_cast<uint64_t>(-1)) {
+        if (events[fd].events & POLLERR) {
+          interrupted = true;
+        }
+        continue;
+      }
+
       if (events[fd].events & POLLIN) {
         FD_SET(events[fd].user_data, &readout);
         event_cnt++;
@@ -811,6 +924,11 @@ int KernelProxy::select(int nfds, fd_set* readfds, fd_set* writefds,
         FD_SET(events[fd].user_data, &exceptout);
         event_cnt++;
       }
+    }
+
+    if (0 == event_cnt && interrupted) {
+      errno = EINTR;
+      return -1;
     }
   }
 
@@ -829,10 +947,11 @@ int KernelProxy::select(int nfds, fd_set* readfds, fd_set* writefds,
 
 int KernelProxy::poll(struct pollfd *fds, nfds_t nfds, int timeout) {
   ScopedEventListener listener(new EventListener);
+  listener->Track(-1, signal_emitter_, POLLERR, 0);
 
   int index;
   size_t event_cnt = 0;
-  size_t event_track = 0;
+  size_t event_track = 1;
   for (index = 0; static_cast<nfds_t>(index) < nfds; index++) {
     ScopedKernelHandle handle;
     struct pollfd* info = &fds[index];
@@ -867,13 +986,22 @@ int KernelProxy::poll(struct pollfd *fds, nfds_t nfds, int timeout) {
     std::vector<EventData> events;
     int ready_cnt;
 
+    bool interrupted = false;
     events.resize(event_track);
     listener->Wait(events.data(), event_track, timeout, &ready_cnt);
     for (index = 0; index < ready_cnt; index++) {
       struct pollfd* info = &fds[events[index].user_data];
+      if (!info) {
+        interrupted = true;
+        continue;
+      }
 
       info->revents = events[index].events;
       event_cnt++;
+    }
+    if (0 == event_cnt && interrupted) {
+      errno = EINTR;
+      return -1;
     }
   }
 
@@ -907,8 +1035,13 @@ int KernelProxy::bind(int fd, const struct sockaddr* addr, socklen_t len) {
   if (AcquireSocketHandle(fd, &handle) == -1)
     return -1;
 
-  errno = EINVAL;
-  return -1;
+  Error err = handle->socket_node()->Bind(addr, len);
+  if (err != 0) {
+    errno = err;
+    return -1;
+  }
+
+  return 0;
 }
 
 int KernelProxy::connect(int fd, const struct sockaddr* addr, socklen_t len) {
@@ -921,8 +1054,13 @@ int KernelProxy::connect(int fd, const struct sockaddr* addr, socklen_t len) {
   if (AcquireSocketHandle(fd, &handle) == -1)
     return -1;
 
-  errno = EACCES;
-  return -1;
+  Error err = handle->socket_node()->Connect(addr, len);
+  if (err != 0) {
+    errno = err;
+    return -1;
+  }
+
+  return 0;
 }
 
 struct hostent* KernelProxy::gethostbyname(const char* name) {
@@ -939,8 +1077,13 @@ int KernelProxy::getpeername(int fd, struct sockaddr* addr, socklen_t* len) {
   if (AcquireSocketHandle(fd, &handle) == -1)
     return -1;
 
-  errno = EINVAL;
-  return -1;
+  Error err = handle->socket_node()->GetPeerName(addr, len);
+  if (err != 0) {
+    errno = err;
+    return -1;
+  }
+
+  return 0;
 }
 
 int KernelProxy::getsockname(int fd, struct sockaddr* addr, socklen_t* len) {
@@ -953,8 +1096,13 @@ int KernelProxy::getsockname(int fd, struct sockaddr* addr, socklen_t* len) {
   if (AcquireSocketHandle(fd, &handle) == -1)
     return -1;
 
-  errno = EINVAL;
-  return -1;
+  Error err = handle->socket_node()->GetSockName(addr, len);
+  if (err != 0) {
+    errno = err;
+    return -1;
+  }
+
+  return 0;
 }
 
 int KernelProxy::getsockopt(int fd,
@@ -997,8 +1145,14 @@ ssize_t KernelProxy::recv(int fd,
   if (AcquireSocketHandle(fd, &handle) == -1)
     return -1;
 
-  errno = EINVAL;
-  return -1;
+  int out_len = 0;
+  Error err = handle->socket_node()->Recv(buf, len, flags, &out_len);
+  if (err != 0) {
+    errno = err;
+    return -1;
+  }
+
+  return static_cast<ssize_t>(out_len);
 }
 
 ssize_t KernelProxy::recvfrom(int fd,
@@ -1021,8 +1175,19 @@ ssize_t KernelProxy::recvfrom(int fd,
   if (AcquireSocketHandle(fd, &handle) == -1)
     return -1;
 
-  errno = EINVAL;
-  return -1;
+  int out_len = 0;
+  Error err = handle->socket_node()->RecvFrom(buf,
+                                              len,
+                                              flags,
+                                              addr,
+                                              addrlen,
+                                              &out_len);
+  if (err != 0) {
+    errno = err;
+    return -1;
+  }
+
+  return static_cast<ssize_t>(out_len);
 }
 
 ssize_t KernelProxy::recvmsg(int fd, struct msghdr* msg, int flags) {
@@ -1049,8 +1214,14 @@ ssize_t KernelProxy::send(int fd, const void* buf, size_t len, int flags) {
   if (AcquireSocketHandle(fd, &handle) == -1)
     return -1;
 
-  errno = EINVAL;
-  return -1;
+  int out_len = 0;
+  Error err = handle->socket_node()->Send(buf, len, flags, &out_len);
+  if (err != 0) {
+    errno = err;
+    return -1;
+  }
+
+  return static_cast<ssize_t>(out_len);
 }
 
 ssize_t KernelProxy::sendto(int fd,
@@ -1073,8 +1244,16 @@ ssize_t KernelProxy::sendto(int fd,
   if (AcquireSocketHandle(fd, &handle) == -1)
     return -1;
 
-  errno = EINVAL;
-  return -1;
+  int out_len = 0;
+  Error err =
+      handle->socket_node()->SendTo(buf, len, flags, addr, addrlen, &out_len);
+
+  if (err != 0) {
+    errno = err;
+    return -1;
+  }
+
+  return static_cast<ssize_t>(out_len);
 }
 
 ssize_t KernelProxy::sendmsg(int fd, const struct msghdr* msg, int flags) {
@@ -1114,8 +1293,13 @@ int KernelProxy::shutdown(int fd, int how) {
   if (AcquireSocketHandle(fd, &handle) == -1)
     return -1;
 
-  errno = EINVAL;
-  return -1;
+  Error err = handle->socket_node()->Shutdown(how);
+  if (err != 0) {
+    errno = err;
+    return -1;
+  }
+
+  return 0;
 }
 
 int KernelProxy::socket(int domain, int type, int protocol) {
@@ -1124,13 +1308,29 @@ int KernelProxy::socket(int domain, int type, int protocol) {
     return -1;
   }
 
-  if (SOCK_STREAM != type && SOCK_DGRAM != type) {
-    errno = EPROTONOSUPPORT;
-    return -1;
+  MountNodeSocket* sock = NULL;
+  switch (type) {
+    case SOCK_DGRAM:
+      sock = new MountNodeUDP(socket_mount_.get());
+      break;
+
+    case SOCK_STREAM:
+      sock = new MountNodeTCP(socket_mount_.get());
+      break;
+
+    default:
+      errno = EPROTONOSUPPORT;
+      return -1;
   }
 
-  errno = EACCES;
-  return -1;
+  ScopedMountNode node(sock);
+  if (sock->Init(S_IREAD | S_IWRITE) == 0) {
+    ScopedKernelHandle handle(new KernelHandle(socket_mount_, node));
+    return AllocateFD(handle);
+  }
+
+  // If we failed to init, assume we don't have access.
+  return EACCES;
 }
 
 int KernelProxy::socketpair(int domain, int type, int protocol, int* sv) {

@@ -153,8 +153,12 @@ RenderViewHostImpl::RenderViewHostImpl(
     RenderWidgetHostDelegate* widget_delegate,
     int routing_id,
     int main_frame_routing_id,
-    bool swapped_out)
-    : RenderWidgetHostImpl(widget_delegate, instance->GetProcess(), routing_id),
+    bool swapped_out,
+    bool hidden)
+    : RenderWidgetHostImpl(widget_delegate,
+                           instance->GetProcess(),
+                           routing_id,
+                           hidden),
       delegate_(delegate),
       instance_(static_cast<SiteInstanceImpl*>(instance)),
       waiting_for_drag_context_response_(false),
@@ -259,6 +263,7 @@ bool RenderViewHostImpl::CreateRenderView(
   // Ensure the RenderView sets its opener correctly.
   params.opener_route_id = opener_route_id;
   params.swapped_out = is_swapped_out_;
+  params.hidden = is_hidden();
   params.next_page_id = next_page_id;
   GetWebScreenInfo(&params.screen_info);
   params.accessibility_mode = accessibility_mode();
@@ -338,7 +343,7 @@ void RenderViewHostImpl::Navigate(const ViewMsg_Navigate_Params& params) {
   //
   // WebKit doesn't send throb notifications for JavaScript URLs, so we
   // don't want to either.
-  if (!params.url.SchemeIs(chrome::kJavaScriptScheme))
+  if (!params.url.SchemeIs(kJavaScriptScheme))
     delegate_->DidStartLoading(this);
 
   FOR_EACH_OBSERVER(RenderViewHostObserver, observers_, Navigate(params.url));
@@ -736,7 +741,8 @@ void RenderViewHostImpl::JavaScriptDialogClosed(IPC::Message* reply_msg,
   // This must be done after sending the reply since RenderView can't close
   // correctly while waiting for a response.
   if (is_waiting && are_javascript_messages_suppressed_)
-    delegate_->RendererUnresponsive(this, is_waiting);
+    delegate_->RendererUnresponsive(
+        this, is_waiting_for_beforeunload_ack_, is_waiting_for_unload_ack_);
 }
 
 void RenderViewHostImpl::DragSourceEndedAt(
@@ -763,6 +769,12 @@ void RenderViewHostImpl::DragSourceSystemDragEnded() {
 }
 
 void RenderViewHostImpl::AllowBindings(int bindings_flags) {
+  // Never grant any bindings to browser plugin guests.
+  if (GetProcess()->IsGuest()) {
+    NOTREACHED() << "Never grant bindings to a guest process.";
+    return;
+  }
+
   // Ensure we aren't granting WebUI bindings to a process that has already
   // been used for non-privileged views.
   if (bindings_flags & BINDINGS_POLICY_WEB_UI &&
@@ -775,12 +787,6 @@ void RenderViewHostImpl::AllowBindings(int bindings_flags) {
         static_cast<RenderProcessHostImpl*>(GetProcess());
     if (process->GetActiveViewCount() > 1)
       return;
-  }
-
-  // Never grant any bindings to browser plugin guests.
-  if (GetProcess()->IsGuest()) {
-    NOTREACHED() << "Never grant bindings to a guest process.";
-    return;
   }
 
   if (bindings_flags & BINDINGS_POLICY_WEB_UI) {
@@ -1239,8 +1245,6 @@ void RenderViewHostImpl::OnNavigate(const IPC::Message& msg) {
     FilterURL(policy, process, false, &(*it));
   }
   FilterURL(policy, process, true, &validated_params.searchable_form_url);
-  FilterURL(policy, process, true, &validated_params.password_form.origin);
-  FilterURL(policy, process, true, &validated_params.password_form.action);
 
   // Without this check, the renderer can trick the browser into using
   // filenames it can't access in a future session restore.
@@ -1464,7 +1468,7 @@ void RenderViewHostImpl::OnStartDragging(
       ChildProcessSecurityPolicyImpl::GetInstance();
 
   // Allow drag of Javascript URLs to enable bookmarklet drag to bookmark bar.
-  if (!filtered_data.url.SchemeIs(chrome::kJavaScriptScheme))
+  if (!filtered_data.url.SchemeIs(kJavaScriptScheme))
     FilterURL(policy, process, true, &filtered_data.url);
   FilterURL(policy, process, false, &filtered_data.html_base_url);
   // Filter out any paths that the renderer didn't have access to. This prevents
@@ -1519,9 +1523,12 @@ void RenderViewHostImpl::OnAddMessageToConsole(
     int32 level,
     const string16& message,
     int32 line_no,
-    const string16& source_id) {
-  if (delegate_->AddMessageToConsole(level, message, line_no, source_id))
+    const string16& source_id,
+    const string16& stack_trace) {
+  if (delegate_->AddMessageToConsole(
+          level, message, line_no, source_id, stack_trace)) {
     return;
+  }
   // Pass through log level only on WebUI pages to limit console spew.
   int32 resolved_level = HasWebUIScheme(delegate_->GetURL()) ? level : 0;
 
@@ -1595,7 +1602,7 @@ void RenderViewHostImpl::OnClosePageACK() {
 
 void RenderViewHostImpl::NotifyRendererUnresponsive() {
   delegate_->RendererUnresponsive(
-      this, is_waiting_for_beforeunload_ack_ || is_waiting_for_unload_ack_);
+      this, is_waiting_for_beforeunload_ack_, is_waiting_for_unload_ack_);
 }
 
 void RenderViewHostImpl::NotifyRendererResponsive() {
@@ -1953,7 +1960,7 @@ void RenderViewHostImpl::OnShowDesktopNotification(
   // allows unwanted cross-domain access.
   GURL url = params.contents_url;
   if (params.is_html &&
-      (url.SchemeIs(chrome::kJavaScriptScheme) ||
+      (url.SchemeIs(kJavaScriptScheme) ||
        url.SchemeIs(chrome::kFileScheme))) {
     return;
   }

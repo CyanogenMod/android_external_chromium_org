@@ -29,6 +29,8 @@ const char kKeyResults[] = "results";
 const char kKeyId[] = "id";
 const char kKeyLocalizedName[] = "localized_name";
 const char kKeyIconUrl[] = "icon_url";
+const size_t kMinimumQueryLength = 3u;
+const int kWebstoreQueryThrottleIntrevalInMs = 100;
 
 // Returns true if the launcher should send queries to the web store server.
 bool UseWebstoreSearch() {
@@ -85,7 +87,8 @@ bool IsSensitiveInput(const string16& query) {
 WebstoreProvider::WebstoreProvider(Profile* profile,
                                    AppListControllerDelegate* controller)
   : profile_(profile),
-    controller_(controller) {}
+    controller_(controller),
+    use_throttling_(true) {}
 
 WebstoreProvider::~WebstoreProvider() {}
 
@@ -94,10 +97,26 @@ void WebstoreProvider::Start(const base::string16& query) {
 
   // If |query| contains sensitive data, bail out and do not create the place
   // holder "search-web-store" result.
-  if (IsSensitiveInput(query))
+  if (IsSensitiveInput(query)) {
+    query_.clear();
     return;
+  }
 
   const std::string query_utf8 = UTF16ToUTF8(query);
+
+  if (query_utf8.size() < kMinimumQueryLength) {
+    query_.clear();
+    return;
+  }
+
+  query_ = query_utf8;
+  const base::DictionaryValue* cached_result = cache_.Get(query_);
+  if (cached_result) {
+    ProcessWebstoreSearchResults(cached_result);
+    if (!webstore_search_fetched_callback_.is_null())
+      webstore_search_fetched_callback_.Run();
+    return;
+  }
 
   if (UseWebstoreSearch() && chrome::IsSuggestPrefEnabled(profile_)) {
     if (!webstore_search_) {
@@ -106,8 +125,19 @@ void WebstoreProvider::Start(const base::string16& query) {
                      base::Unretained(this)),
           profile_->GetRequestContext()));
     }
-    webstore_search_->Start(query_utf8,
-                            g_browser_process->GetApplicationLocale());
+
+    base::TimeDelta interval =
+        base::TimeDelta::FromMilliseconds(kWebstoreQueryThrottleIntrevalInMs);
+    if (!use_throttling_ || base::Time::Now() - last_keytyped_ > interval) {
+      query_throttler_.Stop();
+      StartQuery();
+    } else {
+      query_throttler_.Start(
+          FROM_HERE,
+          interval,
+          base::Bind(&WebstoreProvider::StartQuery, base::Unretained(this)));
+    }
+    last_keytyped_ = base::Time::Now();
   }
 
   // Add a placeholder result which when clicked will run the user's query in a
@@ -121,17 +151,26 @@ void WebstoreProvider::Stop() {
     webstore_search_->Stop();
 }
 
+void WebstoreProvider::StartQuery() {
+  // |query_| can be NULL when the query is scheduled but then canceled.
+  if (!webstore_search_ || query_.empty())
+    return;
+
+  webstore_search_->Start(query_, g_browser_process->GetApplicationLocale());
+}
+
 void WebstoreProvider::OnWebstoreSearchFetched(
     scoped_ptr<base::DictionaryValue> json) {
   ProcessWebstoreSearchResults(json.get());
+  cache_.Put(query_, json.Pass());
 
   if (!webstore_search_fetched_callback_.is_null())
     webstore_search_fetched_callback_.Run();
 }
 
 void WebstoreProvider::ProcessWebstoreSearchResults(
-    base::DictionaryValue* json) {
-  base::ListValue* result_list = NULL;
+    const base::DictionaryValue* json) {
+  const base::ListValue* result_list = NULL;
   if (!json ||
       !json->GetList(kKeyResults, &result_list) ||
       !result_list ||
@@ -143,7 +182,7 @@ void WebstoreProvider::ProcessWebstoreSearchResults(
   for (ListValue::const_iterator it = result_list->begin();
        it != result_list->end();
        ++it) {
-    base::DictionaryValue* dict;
+    const base::DictionaryValue* dict;
     if (!(*it)->GetAsDictionary(&dict))
       continue;
 

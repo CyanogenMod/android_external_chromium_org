@@ -26,6 +26,7 @@ LOCAL_SRC_FILES := \
 	content/public/utility/content_utility_client.cc \
 	content/public/utility/utility_thread.cc \
 	content/utility/utility_main.cc \
+	content/utility/utility_main_thread.cc \
 	content/utility/utility_thread_impl.cc
 
 

@@ -17,6 +17,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/media_galleries/fileapi/mtp_device_map_service.h"
 #include "chrome/browser/media_galleries/imported_media_gallery_registry.h"
 #include "chrome/browser/media_galleries/media_file_system_context.h"
 #include "chrome/browser/media_galleries/media_galleries_dialog_controller.h"
@@ -31,6 +32,7 @@
 #include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/navigation_details.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -56,6 +58,24 @@ struct InvalidatedGalleriesInfo {
   std::set<ExtensionGalleriesHost*> extension_hosts;
   std::set<MediaGalleryPrefId> pref_ids;
 };
+
+void OnMTPDeviceAsyncDelegateCreated(
+    const base::FilePath::StringType& device_location,
+    MTPDeviceAsyncDelegate* delegate) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  MTPDeviceMapService::GetInstance()->AddAsyncDelegate(
+      device_location, delegate);
+}
+
+void InitMTPDeviceAsyncDelegate(
+    const base::FilePath::StringType& device_location) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  content::BrowserThread::PostTask(
+      content::BrowserThread::IO, FROM_HERE, base::Bind(
+          &CreateMTPDeviceAsyncDelegate,
+          device_location,
+          base::Bind(&OnMTPDeviceAsyncDelegateCreated, device_location)));
+}
 
 }  // namespace
 
@@ -150,6 +170,10 @@ class RPHReferenceManager : public content::NotificationObserver {
         break;
       }
       case content::NOTIFICATION_NAV_ENTRY_COMMITTED: {
+        content::LoadCommittedDetails* load_details =
+            content::Details<content::LoadCommittedDetails>(details).ptr();
+        if (load_details->is_in_page)
+          break;
         NavigationController* controller =
             content::Source<NavigationController>(source).ptr();
         WebContents* contents = controller->GetWebContents();
@@ -243,11 +267,9 @@ class ExtensionGalleriesHost
          ++it) {
       old_galleries.insert(it->first);
     }
-    MediaGalleryPrefIdSet invalid_galleries;
-    std::set_difference(old_galleries.begin(), old_galleries.end(),
-                        new_galleries.begin(), new_galleries.end(),
-                        std::inserter(invalid_galleries,
-                                      invalid_galleries.begin()));
+    MediaGalleryPrefIdSet invalid_galleries =
+        base::STLSetDifference<MediaGalleryPrefIdSet>(old_galleries,
+                                                      new_galleries);
     for (MediaGalleryPrefIdSet::const_iterator it = invalid_galleries.begin();
          it != invalid_galleries.end();
          ++it) {
@@ -678,13 +700,20 @@ MediaFileSystemRegistry::GetOrCreateScopedMTPDeviceMapEntry(
           base::Bind(&MediaFileSystemRegistry::RemoveScopedMTPDeviceMapEntry,
                      base::Unretained(this),
                      device_location));
-  mtp_device_host->Init();
+  InitMTPDeviceAsyncDelegate(device_location);
   mtp_device_delegate_map_[device_location] = mtp_device_host.get();
   return mtp_device_host;
 }
 
 void MediaFileSystemRegistry::RemoveScopedMTPDeviceMapEntry(
     const base::FilePath::StringType& device_location) {
+  content::BrowserThread::PostTask(
+      content::BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&MTPDeviceMapService::RemoveAsyncDelegate,
+                 base::Unretained(MTPDeviceMapService::GetInstance()),
+                 device_location));
+
   MTPDeviceDelegateMap::iterator delegate_it =
       mtp_device_delegate_map_.find(device_location);
   DCHECK(delegate_it != mtp_device_delegate_map_.end());

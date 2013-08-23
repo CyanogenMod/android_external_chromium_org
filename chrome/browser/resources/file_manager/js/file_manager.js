@@ -246,10 +246,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       }.bind(this));
     }.bind(this));
 
-    // Removes the user data which is no longer used.
-    // TODO(yoshiki): Remove this in M31 http://crbug.com/268784/
-    chrome.storage.local.remove('folder-shortcuts-list');
-
     group.run(callback);
   };
 
@@ -271,10 +267,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       this.filesystem_ = filesystem;
       callback();
     }.bind(this));
-
-    // Mount Drive if enabled.
-    if (this.isDriveEnabled())
-      this.volumeManager_.mountDrive(function() {}, function() {});
   };
 
   /**
@@ -288,7 +280,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.grid_.startBatchUpdates();
 
     this.initFileList_();
-    this.setupCurrentDirectory_(true /* page loading */);
+    this.setupCurrentDirectory_();
 
     // PyAuto tests monitor this state by polling this variable
     this.__defineGetter__('workerInitialized_', function() {
@@ -389,12 +381,16 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         driveConnectionChangedHandler);
     driveConnectionChangedHandler();
 
-    // Set the initial focus and set it as a fallback.
-    this.document_.addEventListener('focusout', function(e) {
-      if (!e.relatedTarget)
-        setTimeout(this.refocus.bind(this), 0);
-    }.bind(this));
+    // Set the initial focus.
     this.refocus();
+    // Set it as a fallback when there is no focus.
+    this.document_.addEventListener('focusout', function(e) {
+      setTimeout(function() {
+        // When there is no focus, the active element is the <body>.
+        if (this.document_.activeElement == this.document_.body)
+          this.refocus();
+      }.bind(this), 0);
+    }.bind(this));
 
     this.initDataTransferOperations_();
 
@@ -563,6 +559,11 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     CommandUtil.registerCommand(this.dialogContainer_, 'newfolder',
         Commands.newFolderCommand, this, this.directoryModel_);
 
+    // Required to handle the command outside of the container, on the footer.
+    // TODO(mtomasz): Remove after fixing crbug.com/275235.
+    CommandUtil.registerCommand(this.dialogDom_.querySelector('.dialog-footer'),
+        'newfolder', Commands.newFolderCommand, this, this.directoryModel_);
+
     CommandUtil.registerCommand(this.dialogContainer_, 'newwindow',
         Commands.newWindowCommand, this, this.directoryModel_);
 
@@ -683,8 +684,12 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.initializeQueue_.add(
         this.initPreferences_.bind(this), [], 'initPreferences');
     this.initializeQueue_.add(
+        this.initVolumeManager_.bind(this),
+        ['initPreferences'], 'initVolumeManager');
+    this.initializeQueue_.add(
         this.initFileSystem_.bind(this),
-        ['initGeneral', 'initPreferences'], 'initFileSystem');
+        ['initGeneral', 'initPreferences', 'initVolumeManager'],
+        'initFileSystem');
 
     this.initializeQueue_.run();
   };
@@ -716,7 +721,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @private
    */
   FileManager.prototype.initGeneral_ = function(callback) {
-    this.volumeManager_ = VolumeManager.getInstance();
     if (window.appState) {
       this.params_ = window.appState.params || {};
       this.defaultPath = window.appState.defaultPath;
@@ -749,6 +753,23 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         callback();
       });
     }
+  };
+
+  /**
+   * Initializes the VolumeManager instance.
+   * @param {function()} callback Completion callback.
+   * @private
+   */
+  FileManager.prototype.initVolumeManager_ = function(callback) {
+    VolumeManager.getInstance(function(volumeManager) {
+      this.volumeManager_ = volumeManager;
+
+      // Mount Drive if enabled.
+      // TODO(hidehiko): Mounting state of Drive file system should be
+      // handled by C++ backend side.
+      volumeManager.setDriveEnabled(this.isDriveEnabled());
+      callback();
+    }.bind(this));
   };
 
   /**
@@ -1090,9 +1111,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         this.fileWatcher_,
         this.metadataCache_,
         this.volumeManager_,
-        this.isDriveEnabled(),
         showSpecialSearchRoots);
-
     this.directoryModel_.start();
 
     this.folderShortcutsModel_ = new FolderShortcutsDataModel();
@@ -1183,10 +1202,13 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     DirectoryTree.decorate(this.directoryTree_, this.directoryModel_);
 
     this.navigationList_ = this.dialogDom_.querySelector('#volume-list');
-    NavigationList.decorate(this.navigationList_, this.directoryModel_);
+    NavigationList.decorate(this.navigationList_,
+                            this.volumeManager_,
+                            this.directoryModel_);
     this.navigationList_.fileManager = this;
     this.navigationList_.dataModel =
-        new NavigationListModel(this.directoryModel_.getRootsList(),
+        new NavigationListModel(this.filesystem_,
+                                this.directoryModel_.getRootsList(),
                                 this.folderShortcutsModel_);
 
     this.navigationList_.addEventListener(
@@ -1209,7 +1231,10 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    */
   FileManager.prototype.updateMiddleBarVisibility_ = function() {
     var currentPath = this.directoryModel_.getCurrentDirPath();
-    var visible = DirectoryTreeUtil.isEligiblePathForDirectoryTree(currentPath);
+    var driveStatus = this.volumeManager_.getDriveStatus();
+    var visible =
+        DirectoryTreeUtil.isEligiblePathForDirectoryTree(currentPath) &&
+        driveStatus == VolumeManager.DriveStatus.MOUNTED;
     this.dialogDom_.
         querySelector('.dialog-middlebar-contents').hidden = !visible;
     this.dialogDom_.querySelector('#middlebar-splitter').hidden = !visible;
@@ -1397,11 +1422,11 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @private
    */
   FileManager.prototype.onCopyManagerEntryChanged_ = function(event) {
-    var type = event.type;
+    var kind = event.kind;
     var entry = event.entry;
-    this.directoryModel_.onEntryChanged(type, entry);
+    this.directoryModel_.onEntryChanged(kind, entry);
 
-    if (type == util.EntryChangedType.CREATE && FileType.isImage(entry)) {
+    if (kind == util.EntryChangedKind.CREATE && FileType.isImage(entry)) {
       // Preload a thumbnail if the new copied entry an image.
       var metadata = entry.getMetadata(function(metadata) {
         var url = entry.toURL();
@@ -1578,17 +1603,12 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * Default path may also contain a file name. Freshly opened file manager
    * window has neither.
    *
-   * @param {boolean} pageLoading True if the page is loading,
-   *                              false if popping state.
    * @private
    */
-  FileManager.prototype.setupCurrentDirectory_ = function(pageLoading) {
+  FileManager.prototype.setupCurrentDirectory_ = function() {
     var path = location.hash ?  // Location hash has the highest priority.
         decodeURIComponent(location.hash.substr(1)) :
         this.defaultPath;
-
-    if (!pageLoading && path == this.directoryModel_.getCurrentDirPath())
-      return;
 
     if (!path) {
       path = PathUtil.DEFAULT_DIRECTORY;
@@ -1597,21 +1617,15 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       path = PathUtil.DEFAULT_DIRECTORY + '/' + path;
     }
 
-    // In the FULL_PAGE mode if the hash path points to a file we might have
-    // to invoke a task after selecting it.
-    // If the file path is in params_ we only want to select the file.
-    var invokeHandlers = pageLoading && (this.params_.action != 'select') &&
-        this.dialogType == DialogType.FULL_PAGE;
-
     if (PathUtil.getRootType(path) === RootType.DRIVE) {
       if (!this.isDriveEnabled()) {
         var leafName = path.substr(path.indexOf('/') + 1);
-        path = this.directoryModel_.getDefaultDirectory() + '/' + leafName;
-        this.finishSetupCurrentDirectory_(path, invokeHandlers);
+        path = PathUtil.DEFAULT_DIRECTORY + '/' + leafName;
+        this.finishSetupCurrentDirectory_(path);
         return;
       }
       if (this.volumeManager_.isMounted(RootDirectory.DRIVE)) {
-        this.finishSetupCurrentDirectory_(path, invokeHandlers);
+        this.finishSetupCurrentDirectory_(path);
         return;
       }
 
@@ -1623,36 +1637,37 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       this.volumeManager_.mountDrive(function() {
         tracker.stop();
         if (!tracker.hasChanged)
-          this.finishSetupCurrentDirectory_(path, invokeHandlers);
+          this.finishSetupCurrentDirectory_(path);
       }.bind(this), function(error) {
         tracker.stop();
       });
     } else {
-      this.finishSetupCurrentDirectory_(path, invokeHandlers);
+      this.finishSetupCurrentDirectory_(path);
     }
   };
 
   /**
    * @param {string} path Path to setup.
-   * @param {boolean} invokeHandlers If thrue and |path| points to a file
-   *     then default handler is triggered.
-   *
    * @private
    */
-  FileManager.prototype.finishSetupCurrentDirectory_ = function(
-      path, invokeHandlers) {
-    if (invokeHandlers) {
-      var onResolve = function(baseName, leafName, exists) {
-        var urls = null;
-        var action = null;
+  FileManager.prototype.finishSetupCurrentDirectory_ = function(path) {
+    this.directoryModel_.setupPath(path, function(baseName, leafName, exists) {
+      if (this.dialogType == DialogType.FULL_PAGE) {
+        // In the FULL_PAGE mode if the hash path points to a file we might have
+        // to invoke a task after selecting it.
+        // If the file path is in params_ we only want to select the file.
+        if (this.params_.action == 'select')
+          return;
 
+        var task = null;
         if (!exists || leafName == '') {
           // Non-existent file or a directory.
           if (this.params_.gallery) {
             // Reloading while the Gallery is open with empty or multiple
             // selection. Open the Gallery when the directory is scanned.
-            urls = [];
-            action = 'gallery';
+            task = function() {
+              new FileTasks(this, this.params_).openGallery([]);
+            }.bind(this);
           }
         } else {
           // There are 3 ways we can get here:
@@ -1662,44 +1677,38 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
           // 3. A user manually entered a URL pointing to a file.
           // We call the appropriate methods of FileTasks directly as we do
           // not need any of the preparations that |execute| method does.
-          if (FileType.isImageOrVideo(path)) {
-            urls = [util.makeFilesystemUrl(path)];
-            action = 'gallery';
-          }
-          if (FileType.getMediaType(path) == 'archive') {
-            urls = [util.makeFilesystemUrl(path)];
-            action = 'archives';
+          var mediaType = FileType.getMediaType(path);
+          if (mediaType == 'image' || mediaType == 'video') {
+            task = function() {
+              new FileTasks(this, this.params_).openGallery(
+                  [util.makeFilesystemUrl(path)]);
+            }.bind(this);
+          } else if (mediaType == 'archive') {
+            task = function() {
+              new FileTasks(this, this.params_).mountArchives(
+                  [util.makeFilesystemUrl(path)]);
+            }.bind(this);
           }
         }
 
-        if (urls) {
+        // If there is a task to be run, run it after the scan is completed.
+        if (task) {
           var listener = function() {
             this.directoryModel_.removeEventListener(
                 'scan-completed', listener);
-            var tasks = new FileTasks(this, this.params_);
-            if (action == 'gallery') {
-              tasks.openGallery(urls);
-            } else if (action == 'archives') {
-              tasks.mountArchives(urls);
-            }
+            task();
           }.bind(this);
           this.directoryModel_.addEventListener('scan-completed', listener);
         }
-      }.bind(this);
+        return;
+      }
 
-      this.directoryModel_.setupPath(path, onResolve);
-      return;
-    }
-
-    if (this.dialogType == DialogType.SELECT_SAVEAS_FILE) {
-      this.directoryModel_.setupPath(path, function(basePath, leafName) {
+      if (this.dialogType == DialogType.SELECT_SAVEAS_FILE) {
         this.filenameInput_.value = leafName;
         this.selectDefaultPathInFilenameInput_();
-      }.bind(this));
-      return;
-    }
-
-    this.directoryModel_.setupPath(path);
+        return;
+      }
+    }.bind(this));
   };
 
   /**
@@ -1959,7 +1968,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       self.initDateTimeFormatters_();
       self.refreshCurrentDirectoryMetadata_();
 
-      self.directoryModel_.setDriveEnabled(self.isDriveEnabled());
+      self.volumeManager_.setDriveEnabled(self.isDriveEnabled());
 
       if (prefs.cellularDisabled)
         self.syncButton.setAttribute('checked', '');
@@ -2310,16 +2319,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    *                               changed.
    */
   FileManager.prototype.onDirectoryAction = function(entry) {
-    var mountError = this.volumeManager_.getMountError(
-        PathUtil.getRootPath(entry.fullPath));
-    if (mountError == VolumeManager.Error.UNKNOWN_FILESYSTEM) {
-      return this.butterBar_.show(ButterBar.Mode.ERROR,
-                                  str('UNKNOWN_FILESYSTEM_WARNING'));
-    } else if (mountError == VolumeManager.Error.UNSUPPORTED_FILESYSTEM) {
-      return this.butterBar_.show(ButterBar.Mode.ERROR,
-                                  str('UNSUPPORTED_FILESYSTEM_WARNING'));
-    }
-
     return this.directoryModel_.changeDirectory(entry.fullPath);
   };
 
@@ -2439,10 +2438,10 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   // TODO(haruki): Rename this method. "Drive" here does not refer
   // "Google Drive".
   FileManager.prototype.updateUnformattedDriveStatus_ = function() {
-    var volumeInfo = this.volumeManager_.getVolumeInfo_(
+    var volumeInfo = this.volumeManager_.getVolumeInfo(
         PathUtil.getRootPath(this.directoryModel_.getCurrentRootPath()));
 
-    if (volumeInfo.error) {
+    if (volumeInfo && volumeInfo.error) {
       this.dialogDom_.setAttribute('unformatted', '');
 
       var errorNode = this.dialogDom_.querySelector('#format-panel > .error');
@@ -2589,20 +2588,39 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       // case of success.
       nameNode.textContent = newName;
 
-      this.directoryModel_.doesExist(entry, newName, function(exists, isFile) {
-        if (!exists) {
-          var onError = function(err) {
-            this.alert.show(strf('ERROR_RENAMING', entry.name,
-                                 util.getFileErrorString(err.code)));
-          }.bind(this);
-          this.directoryModel_.renameEntry(entry, newName, onError.bind(this));
-        } else {
-          nameNode.textContent = entry.name;
-          var message = isFile ? 'FILE_ALREADY_EXISTS' :
-                                 'DIRECTORY_ALREADY_EXISTS';
-          this.alert.show(strf(message, newName));
-        }
-      }.bind(this));
+      util.rename(
+          entry, newName,
+          function(newEntry) {
+            this.directoryModel_.onRenameEntry(entry, newEntry);
+          }.bind(this),
+          function(error) {
+            // Write back to the old name.
+            nameNode.textContent = entry.name;
+
+            // Show error dialog.
+            var message;
+            if (error.code == FileError.PATH_EXISTS_ERR ||
+                error.code == FileError.TYPE_MISMATCH_ERR) {
+              // Check the existing entry is file or not.
+              // 1) If the entry is a file:
+              //   a) If we get PATH_EXISTS_ERR, a file exists.
+              //   b) If we get TYPE_MISMATCH_ERR, a directory exists.
+              // 2) If the entry is a directory:
+              //   a) If we get PATH_EXISTS_ERR, a directory exists.
+              //   b) If we get TYPE_MISMATCH_ERR, a file exists.
+              message = strf(
+                  (entry.isFile && error.code == FileError.PATH_EXISTS_ERR) ||
+                  (!entry.isFile && error.code == FileError.TYPE_MISMATCH_ERR) ?
+                      'FILE_ALREADY_EXISTS' :
+                      'DIRECTORY_ALREADY_EXISTS',
+                  newName);
+            } else {
+              message = strf('ERROR_RENAMING', entry.name,
+                             util.getFileErrorString(err.code));
+            }
+
+            this.alert.show(message);
+          }.bind(this));
     };
 
     // TODO(haruki): this.getCurrentDirectoryURL() might not return the actual

@@ -17,7 +17,7 @@
 #include "chrome/browser/ui/cocoa/omnibox/omnibox_view_mac.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_controller.h"
-#include "chrome/browser/ui/toolbar/toolbar_model.h"
+#include "chrome/browser/ui/search/search_model_observer.h"
 #include "chrome/common/content_settings_types.h"
 
 @class AutocompleteTextField;
@@ -27,11 +27,11 @@ class EVBubbleDecoration;
 class KeywordHintDecoration;
 class LocationBarDecoration;
 class LocationIconDecoration;
+class MicSearchDecoration;
 class PageActionDecoration;
 class Profile;
 class SelectedKeywordDecoration;
 class StarDecoration;
-class ToolbarModel;
 class ZoomDecoration;
 class ZoomDecorationTest;
 
@@ -42,11 +42,11 @@ class ZoomDecorationTest;
 class LocationBarViewMac : public LocationBar,
                            public LocationBarTesting,
                            public OmniboxEditController,
-                           public content::NotificationObserver {
+                           public content::NotificationObserver,
+                           public SearchModelObserver {
  public:
   LocationBarViewMac(AutocompleteTextField* field,
                      CommandUpdater* command_updater,
-                     ToolbarModel* toolbar_model,
                      Profile* profile,
                      Browser* browser);
   virtual ~LocationBarViewMac();
@@ -104,10 +104,10 @@ class LocationBarViewMac : public LocationBar,
   // redrawn and laid out if necessary.
   void OnDecorationsChanged();
 
-  // Updates the location bar.  Resets the bar's permanent text and
-  // security style, and if |should_restore_state| is true, restores
-  // saved state from the tab (for tab switching).
-  void Update(const content::WebContents* tab, bool should_restore_state);
+  // Updates the location bar.  Resets the bar's permanent text and security
+  // style, and if |tab| is non-NULL, restores saved state from the tab (for tab
+  // switching).
+  void Update(const content::WebContents* tab);
 
   // Layout the various decorations which live in the field.
   void Layout();
@@ -152,7 +152,9 @@ class LocationBarViewMac : public LocationBar,
   virtual gfx::Image GetFavicon() const OVERRIDE;
   virtual string16 GetTitle() const OVERRIDE;
   virtual InstantController* GetInstant() OVERRIDE;
-  virtual content::WebContents* GetWebContents() const OVERRIDE;
+  virtual content::WebContents* GetWebContents() OVERRIDE;
+  virtual ToolbarModel* GetToolbarModel() OVERRIDE;
+  virtual const ToolbarModel* GetToolbarModel() const OVERRIDE;
 
   NSImage* GetKeywordImage(const string16& keyword);
 
@@ -164,8 +166,11 @@ class LocationBarViewMac : public LocationBar,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  // SearchModelObserver:
+  virtual void ModelChanged(const SearchModel::State& old_state,
+                            const SearchModel::State& new_state) OVERRIDE;
+
   Browser* browser() const { return browser_; }
-  ToolbarModel* toolbar_model() const { return toolbar_model_; }
 
  private:
   friend ZoomDecorationTest;
@@ -199,6 +204,10 @@ class LocationBarViewMac : public LocationBar,
 
   // Ensures the star decoration is visible or hidden, as required.
   void UpdateStarDecorationVisibility();
+
+  // Updates the voice search decoration. Returns true if the visible state was
+  // changed.
+  bool UpdateMicSearchDecorationVisibility();
 
   scoped_ptr<OmniboxViewMac> omnibox_view_;
 
@@ -243,11 +252,12 @@ class LocationBarViewMac : public LocationBar,
   // Keyword hint decoration displayed on the right-hand side.
   scoped_ptr<KeywordHintDecoration> keyword_hint_decoration_;
 
+  // The voice search icon.
+  scoped_ptr<MicSearchDecoration> mic_search_decoration_;
+
   Profile* profile_;
 
   Browser* browser_;
-
-  ToolbarModel* toolbar_model_;  // Weak, owned by Browser.
 
   // The transition type to use for the navigation.
   content::PageTransition transition_;

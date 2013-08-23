@@ -7,6 +7,7 @@
 #include "apps/native_app_window.h"
 #include "apps/shell_window_registry.h"
 #include "ash/keyboard_overlay/keyboard_overlay_view.h"
+#include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/window_util.h"
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
@@ -15,7 +16,7 @@
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/chromeos/background/ash_user_wallpaper_delegate.h"
 #include "chrome/browser/chromeos/display/display_preferences.h"
-#include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
+#include "chrome/browser/chromeos/extensions/file_manager/app_id.h"
 #include "chrome/browser/chromeos/extensions/media_player_api.h"
 #include "chrome/browser/chromeos/extensions/media_player_event_router.h"
 #include "chrome/browser/chromeos/system/ash_system_tray_delegate.h"
@@ -43,6 +44,21 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 
+namespace {
+
+// This function is used for restoring focus after the user session is started.
+// It's needed because some windows can be opened in background while login UI
+// is still active because we currently restore browser windows before login UI
+// is deleted.
+void RestoreFocus() {
+  ash::MruWindowTracker::WindowList mru_list =
+      ash::Shell::GetInstance()->mru_window_tracker()->BuildMruWindowList();
+  if (!mru_list.empty())
+    mru_list.front()->Focus();
+}
+
+}  // anonymous namespace
+
 bool ChromeShellDelegate::IsFirstRunAfterBoot() const {
   return CommandLine::ForCurrentProcess()->HasSwitch(
       chromeos::switches::kFirstExecAfterBoot);
@@ -69,19 +85,20 @@ void ChromeShellDelegate::OpenFileManager(bool as_dialog) {
       return;
     }
   } else {
+    using file_manager::kFileManagerAppId;
     Profile* const profile = ProfileManager::GetDefaultProfileOrOffTheRecord();
     const apps::ShellWindowRegistry* const registry =
         apps::ShellWindowRegistry::Get(profile);
     const apps::ShellWindowRegistry::ShellWindowList list =
-        registry->GetShellWindowsForApp(kFileBrowserDomain);
+        registry->GetShellWindowsForApp(kFileManagerAppId);
     if (list.empty()) {
       // Open the new window.
       const ExtensionService* const service = profile->GetExtensionService();
       if (service == NULL ||
-          !service->IsExtensionEnabledForLauncher(kFileBrowserDomain))
+          !service->IsExtensionEnabledForLauncher(kFileManagerAppId))
         return;
       const extensions::Extension* const extension =
-          service->GetInstalledExtension(kFileBrowserDomain);
+          service->GetInstalledExtension(kFileManagerAppId);
       // event_flags = 0 means this invokes the same behavior as the launcher
       // item is clicked without any keyboard modifiers.
       chrome::OpenApplication(
@@ -242,6 +259,7 @@ void ChromeShellDelegate::Observe(int type,
       ash::Shell::GetInstance()->CreateLauncher();
       break;
     case chrome::NOTIFICATION_SESSION_STARTED:
+      RestoreFocus();
       ash::Shell::GetInstance()->ShowLauncher();
       break;
     default:

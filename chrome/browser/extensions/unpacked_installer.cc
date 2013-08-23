@@ -18,9 +18,9 @@
 #include "chrome/common/extensions/api/plugins/plugins_handler.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/common/extensions/manifest.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/common/id_util.h"
+#include "extensions/common/manifest.h"
 #include "sync/api/string_ordinal.h"
 
 using content::BrowserThread;
@@ -214,6 +214,15 @@ void UnpackedInstaller::GetAbsolutePath() {
 
   extension_path_ = base::MakeAbsoluteFilePath(extension_path_);
 
+  std::string error;
+  if (!extension_file_util::CheckForIllegalFilenames(extension_path_,
+                                                     &error)) {
+    BrowserThread::PostTask(
+        BrowserThread::UI,
+        FROM_HERE,
+        base::Bind(&UnpackedInstaller::ReportExtensionLoadError, this, error));
+    return;
+  }
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&UnpackedInstaller::CheckExtensionFileAccess, this));

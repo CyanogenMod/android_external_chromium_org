@@ -79,21 +79,6 @@ static void DispatchEventToExtension(Profile* profile,
 
 }  // namespace
 
-namespace events {
-
-const char kOnActivate[] = "input.ime.onActivate";
-const char kOnDeactivated[] = "input.ime.onDeactivated";
-const char kOnFocus[] = "input.ime.onFocus";
-const char kOnBlur[] = "input.ime.onBlur";
-const char kOnInputContextUpdate[] = "input.ime.onInputContextUpdate";
-const char kOnKeyEvent[] = "input.ime.onKeyEvent";
-const char kOnCandidateClicked[] = "input.ime.onCandidateClicked";
-const char kOnMenuItemActivated[] = "input.ime.onMenuItemActivated";
-const char kOnSurroundingTextChanged[] = "input.ime.onSurroundingTextChanged";
-const char kOnReset[] = "input.ime.onReset";
-
-}  // namespace events
-
 namespace chromeos {
 class ImeObserver : public chromeos::InputMethodEngine::Observer {
  public:
@@ -111,10 +96,10 @@ class ImeObserver : public chromeos::InputMethodEngine::Observer {
       return;
 
     scoped_ptr<base::ListValue> args(new base::ListValue());
-    args->Append(Value::CreateStringValue(engine_id));
+    args->Append(new base::StringValue(engine_id));
 
     DispatchEventToExtension(profile_, extension_id_,
-                             events::kOnActivate, args.Pass());
+                             input_ime::OnActivate::kEventName, args.Pass());
   }
 
   virtual void OnDeactivated(const std::string& engine_id) OVERRIDE {
@@ -122,10 +107,10 @@ class ImeObserver : public chromeos::InputMethodEngine::Observer {
       return;
 
     scoped_ptr<base::ListValue> args(new base::ListValue());
-    args->Append(Value::CreateStringValue(engine_id));
+    args->Append(new base::StringValue(engine_id));
 
     DispatchEventToExtension(profile_, extension_id_,
-                             events::kOnDeactivated, args.Pass());
+                             input_ime::OnDeactivated::kEventName, args.Pass());
   }
 
   virtual void OnFocus(
@@ -141,7 +126,7 @@ class ImeObserver : public chromeos::InputMethodEngine::Observer {
     args->Append(dict);
 
     DispatchEventToExtension(profile_, extension_id_,
-                             events::kOnFocus, args.Pass());
+                             input_ime::OnFocus::kEventName, args.Pass());
   }
 
   virtual void OnBlur(int context_id) OVERRIDE {
@@ -149,10 +134,10 @@ class ImeObserver : public chromeos::InputMethodEngine::Observer {
       return;
 
     scoped_ptr<base::ListValue> args(new base::ListValue());
-    args->Append(Value::CreateIntegerValue(context_id));
+    args->Append(new base::FundamentalValue(context_id));
 
     DispatchEventToExtension(profile_, extension_id_,
-                             events::kOnBlur, args.Pass());
+                             input_ime::OnBlur::kEventName, args.Pass());
   }
 
   virtual void OnInputContextUpdate(
@@ -167,8 +152,10 @@ class ImeObserver : public chromeos::InputMethodEngine::Observer {
     scoped_ptr<base::ListValue> args(new base::ListValue());
     args->Append(dict);
 
-    DispatchEventToExtension(profile_, extension_id_,
-                             events::kOnInputContextUpdate, args.Pass());
+    DispatchEventToExtension(profile_,
+                             extension_id_,
+                             input_ime::OnInputContextUpdate::kEventName,
+                             args.Pass());
   }
 
   virtual void OnKeyEvent(
@@ -193,11 +180,11 @@ class ImeObserver : public chromeos::InputMethodEngine::Observer {
     dict->SetBoolean("capsLock", event.caps_lock);
 
     scoped_ptr<base::ListValue> args(new base::ListValue());
-    args->Append(Value::CreateStringValue(engine_id));
+    args->Append(new base::StringValue(engine_id));
     args->Append(dict);
 
     DispatchEventToExtension(profile_, extension_id_,
-                             events::kOnKeyEvent, args.Pass());
+                             input_ime::OnKeyEvent::kEventName, args.Pass());
   }
 
   virtual void OnCandidateClicked(
@@ -208,26 +195,28 @@ class ImeObserver : public chromeos::InputMethodEngine::Observer {
       return;
 
     scoped_ptr<base::ListValue> args(new base::ListValue());
-    args->Append(Value::CreateStringValue(engine_id));
-    args->Append(Value::CreateIntegerValue(candidate_id));
+    args->Append(new base::StringValue(engine_id));
+    args->Append(new base::FundamentalValue(candidate_id));
     switch (button) {
       case chromeos::InputMethodEngine::MOUSE_BUTTON_MIDDLE:
-        args->Append(Value::CreateStringValue("middle"));
+        args->Append(new base::StringValue("middle"));
         break;
 
       case chromeos::InputMethodEngine::MOUSE_BUTTON_RIGHT:
-        args->Append(Value::CreateStringValue("right"));
+        args->Append(new base::StringValue("right"));
         break;
 
       case chromeos::InputMethodEngine::MOUSE_BUTTON_LEFT:
       // Default to left.
       default:
-        args->Append(Value::CreateStringValue("left"));
+        args->Append(new base::StringValue("left"));
         break;
     }
 
-    DispatchEventToExtension(profile_, extension_id_,
-                             events::kOnCandidateClicked, args.Pass());
+    DispatchEventToExtension(profile_,
+                             extension_id_,
+                             input_ime::OnCandidateClicked::kEventName,
+                             args.Pass());
   }
 
   virtual void OnMenuItemActivated(const std::string& engine_id,
@@ -236,11 +225,13 @@ class ImeObserver : public chromeos::InputMethodEngine::Observer {
       return;
 
     scoped_ptr<base::ListValue> args(new base::ListValue());
-    args->Append(Value::CreateStringValue(engine_id));
-    args->Append(Value::CreateStringValue(menu_id));
+    args->Append(new base::StringValue(engine_id));
+    args->Append(new base::StringValue(menu_id));
 
-    DispatchEventToExtension(profile_, extension_id_,
-                             events::kOnMenuItemActivated, args.Pass());
+    DispatchEventToExtension(profile_,
+                             extension_id_,
+                             input_ime::OnMenuItemActivated::kEventName,
+                             args.Pass());
   }
 
   virtual void OnSurroundingTextChanged(const std::string& engine_id,
@@ -255,21 +246,25 @@ class ImeObserver : public chromeos::InputMethodEngine::Observer {
     dict->SetInteger("anchor", anchor_pos);
 
     scoped_ptr<ListValue> args(new base::ListValue);
-    args->Append(Value::CreateStringValue(engine_id));
+    args->Append(new base::StringValue(engine_id));
     args->Append(dict);
 
-    DispatchEventToExtension(profile_, extension_id_,
-                             events::kOnSurroundingTextChanged, args.Pass());
+    DispatchEventToExtension(profile_,
+                             extension_id_,
+                             input_ime::OnSurroundingTextChanged::kEventName,
+                             args.Pass());
   }
 
   virtual void OnReset(const std::string& engine_id) OVERRIDE {
     if (profile_ == NULL || extension_id_.empty())
       return;
     scoped_ptr<base::ListValue> args(new base::ListValue());
-    args->Append(Value::CreateStringValue(engine_id));
+    args->Append(new base::StringValue(engine_id));
 
-    DispatchEventToExtension(profile_, extension_id_,
-                             events::kOnReset, args.Pass());
+    DispatchEventToExtension(profile_,
+                             extension_id_,
+                             input_ime::OnReset::kEventName,
+                             args.Pass());
   }
 
  private:
@@ -436,7 +431,7 @@ bool InputImeSetCompositionFunction::RunImpl() {
   chromeos::InputMethodEngine* engine =
       InputImeEventRouter::GetInstance()->GetActiveEngine(extension_id());
   if (!engine) {
-    SetResult(Value::CreateBooleanValue(false));
+    SetResult(new base::FundamentalValue(false));
     return true;
   }
 
@@ -471,7 +466,7 @@ bool InputImeSetCompositionFunction::RunImpl() {
   int selection_end =
       params.selection_end ? *params.selection_end : params.cursor;
 
-  SetResult(Value::CreateBooleanValue(
+  SetResult(new base::FundamentalValue(
       engine->SetComposition(params.context_id, params.text.c_str(),
                              selection_start, selection_end, params.cursor,
                              segments, &error_)));
@@ -482,7 +477,7 @@ bool InputImeClearCompositionFunction::RunImpl() {
   chromeos::InputMethodEngine* engine =
       InputImeEventRouter::GetInstance()->GetActiveEngine(extension_id());
   if (!engine) {
-    SetResult(Value::CreateBooleanValue(false));
+    SetResult(new base::FundamentalValue(false));
     return true;
   }
 
@@ -491,7 +486,7 @@ bool InputImeClearCompositionFunction::RunImpl() {
   const ClearComposition::Params::Parameters& params =
       parent_params->parameters;
 
-  SetResult(Value::CreateBooleanValue(
+  SetResult(new base::FundamentalValue(
       engine->ClearComposition(params.context_id, &error_)));
   return true;
 }
@@ -501,7 +496,7 @@ bool InputImeCommitTextFunction::RunImpl() {
   chromeos::InputMethodEngine* engine =
       InputImeEventRouter::GetInstance()->GetActiveEngine(extension_id());
   if (!engine) {
-    SetResult(Value::CreateBooleanValue(false));
+    SetResult(new base::FundamentalValue(false));
     return true;
   }
 
@@ -510,7 +505,7 @@ bool InputImeCommitTextFunction::RunImpl() {
   const CommitText::Params::Parameters& params =
       parent_params->parameters;
 
-  SetResult(Value::CreateBooleanValue(
+  SetResult(new base::FundamentalValue(
       engine->CommitText(params.context_id, params.text.c_str(), &error_)));
   return true;
 }
@@ -526,7 +521,7 @@ bool InputImeSetCandidateWindowPropertiesFunction::RunImpl() {
                                                     params.engine_id);
 
   if (!engine) {
-    SetResult(Value::CreateBooleanValue(false));
+    SetResult(new base::FundamentalValue(false));
     return true;
   }
 
@@ -535,7 +530,7 @@ bool InputImeSetCandidateWindowPropertiesFunction::RunImpl() {
 
   if (properties.visible &&
       !engine->SetCandidateWindowVisible(*properties.visible, &error_)) {
-    SetResult(Value::CreateBooleanValue(false));
+    SetResult(new base::FundamentalValue(false));
     return true;
   }
 
@@ -568,7 +563,7 @@ bool InputImeSetCandidateWindowPropertiesFunction::RunImpl() {
         chromeos::InputMethodEngine::WINDOW_POS_CURSOR);
   }
 
-  SetResult(Value::CreateBooleanValue(true));
+  SetResult(new base::FundamentalValue(true));
 
   return true;
 }
@@ -578,7 +573,7 @@ bool InputImeSetCandidatesFunction::RunImpl() {
   chromeos::InputMethodEngine* engine =
       InputImeEventRouter::GetInstance()->GetActiveEngine(extension_id());
   if (!engine) {
-    SetResult(Value::CreateBooleanValue(false));
+    SetResult(new base::FundamentalValue(false));
     return true;
   }
 
@@ -605,7 +600,7 @@ bool InputImeSetCandidatesFunction::RunImpl() {
     }
   }
 
-  SetResult(Value::CreateBooleanValue(
+  SetResult(new base::FundamentalValue(
       engine->SetCandidates(params.context_id, candidates_out, &error_)));
   return true;
 }
@@ -614,7 +609,7 @@ bool InputImeSetCursorPositionFunction::RunImpl() {
   chromeos::InputMethodEngine* engine =
       InputImeEventRouter::GetInstance()->GetActiveEngine(extension_id());
   if (!engine) {
-    SetResult(Value::CreateBooleanValue(false));
+    SetResult(new base::FundamentalValue(false));
     return true;
   }
 
@@ -623,7 +618,7 @@ bool InputImeSetCursorPositionFunction::RunImpl() {
   const SetCursorPosition::Params::Parameters& params =
       parent_params->parameters;
 
-  SetResult(Value::CreateBooleanValue(
+  SetResult(new base::FundamentalValue(
       engine->SetCursorPosition(params.context_id, params.candidate_id,
                                 &error_)));
   return true;

@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/chromeos/login/screen_locker.h"
+
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/cros/cros_in_process_browser_test.h"
 #include "chrome/browser/chromeos/login/mock_authenticator.h"
-#include "chrome/browser/chromeos/login/screen_locker.h"
 #include "chrome/browser/chromeos/login/screen_locker_tester.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -16,6 +16,7 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/fake_session_manager_client.h"
@@ -88,7 +89,7 @@ class Waiter : public content::NotificationObserver {
 
 namespace chromeos {
 
-class ScreenLockerTest : public CrosInProcessBrowserTest {
+class ScreenLockerTest : public InProcessBrowserTest {
  public:
   ScreenLockerTest() : fake_session_manager_client_(NULL) {
   }
@@ -118,7 +119,7 @@ class ScreenLockerTest : public CrosInProcessBrowserTest {
     MockDBusThreadManagerWithoutGMock* mock_dbus_thread_manager =
         new MockDBusThreadManagerWithoutGMock;
     DBusThreadManager::InitializeForTesting(mock_dbus_thread_manager);
-    CrosInProcessBrowserTest::SetUpInProcessBrowserTestFixture();
+    InProcessBrowserTest::SetUpInProcessBrowserTestFixture();
     fake_session_manager_client_ =
         mock_dbus_thread_manager->fake_session_manager_client();
     zero_duration_mode_.reset(new ui::ScopedAnimationDurationScaleMode(

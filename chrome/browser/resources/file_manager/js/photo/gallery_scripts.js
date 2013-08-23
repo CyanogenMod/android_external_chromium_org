@@ -32,6 +32,7 @@
 // 'strict mode' is invoked for this scope.
 
 //<include src="../file_type.js">
+//<include src="../async_util.js">
 //<include src="../util.js">
 //<include src="../volume_manager.js">
 
@@ -58,8 +59,6 @@
 //<include src="mosaic_mode.js">
 //<include src="slide_mode.js">
 //<include src="ribbon.js">
-
-//<include src="gallery_testapi.js">
 
 // Exports
 window.ImageUtil = ImageUtil;

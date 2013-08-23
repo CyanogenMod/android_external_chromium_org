@@ -14,8 +14,6 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/features/base_feature_provider.h"
-#include "chrome/common/extensions/features/feature.h"
-#include "chrome/common/extensions/manifest.h"
 #include "chrome/common/extensions/permissions/api_permission_set.h"
 #include "chrome/common/extensions/permissions/chrome_scheme_hosts.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
@@ -23,12 +21,14 @@
 #include "content/public/common/url_constants.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/features/feature.h"
+#include "extensions/common/manifest.h"
 #include "extensions/common/switches.h"
 #include "extensions/common/url_pattern_set.h"
 #include "extensions/common/user_script.h"
 #include "url/gurl.h"
 
-namespace keys = extension_manifest_keys;
+namespace keys = extensions::manifest_keys;
 namespace errors = extension_manifest_errors;
 
 namespace extensions {
@@ -157,8 +157,8 @@ bool ParseHelper(Extension* extension,
       // Don't fail, but warn the developer that the manifest contains
       // unrecognized permissions. This may happen legitimately if the
       // extensions requests platform- or channel-specific permissions.
-      extension->AddInstallWarning(InstallWarning(InstallWarning::FORMAT_TEXT,
-                                                  availability.message()));
+      extension->AddInstallWarning(InstallWarning(availability.message(),
+                                                  feature->name()));
       to_remove.push_back(iter->id());
       continue;
     }
@@ -231,10 +231,11 @@ bool ParseHelper(Extension* extension,
     // It's probably an unknown API permission. Do not throw an error so
     // extensions can retain backwards compatability (http://crbug.com/42742).
     extension->AddInstallWarning(InstallWarning(
-        InstallWarning::FORMAT_TEXT,
-        base::StringPrintf(
+       base::StringPrintf(
             "Permission '%s' is unknown or URL pattern is malformed.",
-            permission_str.c_str())));
+            permission_str.c_str()),
+        key,
+        permission_str));
   }
 
   return true;

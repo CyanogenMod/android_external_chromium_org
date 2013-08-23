@@ -134,11 +134,6 @@ using content::RenderViewHost;
 // Interface tests.
 //
 
-// Disable tests under ASAN.  http://crbug.com/104832.
-// This is a bit heavy handed, but the majority of these tests fail under ASAN.
-// See bug for history.
-#if !defined(ADDRESS_SANITIZER)
-
 TEST_PPAPI_IN_PROCESS(Broker)
 // Flaky, http://crbug.com/111355
 TEST_PPAPI_OUT_OF_PROCESS(DISABLED_Broker)
@@ -477,7 +472,13 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, URLLoader) {
       LIST_TEST(URLLoader_PrefetchBufferThreshold)
   );
 }
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, URLLoader) {
+// Timing out on Windows dbg. http://crbug.com/95005
+#if defined(OS_WIN) && !defined(NDEBUG)
+#define MAYBE_URLLoader DISABLED_URLLoader
+#else
+#define MAYBE_URLLoader URLLoader
+#endif
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_URLLoader) {
   RunTestViaHTTP(
       LIST_TEST(URLLoader_BasicGET)
       LIST_TEST(URLLoader_BasicPOST)
@@ -1312,8 +1313,13 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, AudioConfig) {
       LIST_TEST(AudioConfig_InvalidConfigs));
 }
 
-
-IN_PROC_BROWSER_TEST_F(PPAPITest, Audio) {
+// Flaky on ChromeOS dbg, http://crbug.com/277564.
+#if defined(OS_CHROMEOS) && !defined(NDEBUG)
+#define MAYBE_Audio DISABLED_Audio
+#else
+#define MAYBE_Audio Audio
+#endif
+IN_PROC_BROWSER_TEST_F(PPAPITest, MAYBE_Audio) {
   RunTest(LIST_TEST(Audio_Creation)
           LIST_TEST(Audio_DestroyNoStop)
           LIST_TEST(Audio_Failures)
@@ -1521,5 +1527,3 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, FlashDRM) {
 
 TEST_PPAPI_IN_PROCESS(TalkPrivate)
 TEST_PPAPI_OUT_OF_PROCESS(TalkPrivate)
-
-#endif // ADDRESS_SANITIZER

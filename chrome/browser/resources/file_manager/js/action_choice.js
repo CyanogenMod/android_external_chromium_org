@@ -13,16 +13,17 @@ document.addEventListener('DOMContentLoaded', function() {
  *
  * @param {HTMLElement} dom Container.
  * @param {FileSystem} filesystem Local file system.
+ * @param {VolumeManager} volumeManager VolueManager of the app.
  * @param {Object} params Parameters.
  * @constructor
  */
-function ActionChoice(dom, filesystem, params) {
+function ActionChoice(dom, filesystem, volumeManager, params) {
   this.dom_ = dom;
   this.filesystem_ = filesystem;
   this.params_ = params;
   this.document_ = this.dom_.ownerDocument;
   this.metadataCache_ = this.params_.metadataCache;
-  this.volumeManager_ = VolumeManager.getInstance();
+  this.volumeManager_ = volumeManager;
   this.volumeManager_.addEventListener('externally-unmounted',
      this.onDeviceUnmounted_.bind(this));
   this.initDom_();
@@ -102,7 +103,10 @@ ActionChoice.load = function(opt_filesystem, opt_params) {
 
   var onFilesystem = function(filesystem) {
     var dom = document.querySelector('.action-choice');
-    ActionChoice.instance = new ActionChoice(dom, filesystem, params);
+    VolumeManager.getInstance(function(volumeManager) {
+      ActionChoice.instance = new ActionChoice(
+          dom, filesystem, volumeManager, params);
+    });
   };
 
   chrome.fileBrowserPrivate.getStrings(function(strings) {
@@ -315,7 +319,8 @@ ActionChoice.prototype.loadSource_ = function(source, callback) {
     this.sourceEntry_ = entry;
     this.document_.querySelector('title').textContent = entry.name;
 
-    var deviceType = this.volumeManager_.getDeviceType(entry.fullPath);
+    var volumeInfo = this.volumeManager_.getVolumeInfo(entry.fullPath);
+    var deviceType = volumeInfo && volumeInfo.deviceType;
     if (deviceType != 'sd') deviceType = 'usb';
     this.dom_.querySelector('.device-type').setAttribute('device-type',
         deviceType);
@@ -323,11 +328,26 @@ ActionChoice.prototype.loadSource_ = function(source, callback) {
         loadTimeData.getString('ACTION_CHOICE_LOADING_' +
                                deviceType.toUpperCase());
 
-    util.traverseTree(entry, onTraversed, 0 /* infinite depth */,
-        FileType.isVisible);
+    var entryList = [];
+    util.traverseTree(
+        entry,
+        function(traversedEntry) {
+          if (!FileType.isVisible(traversedEntry))
+            return false;
+          entryList.push(traversedEntry);
+          return true;
+        },
+        function() {
+          onTraversed(entryList);
+        },
+        function(error) {
+          console.error(
+              'Failed to traverse [' + entry.fullPath + ']: ' + error.code);
+        });
   }.bind(this);
 
   var onReady = function() {
+    // TODO(hidehiko): Replace filesystem by volumeManager.
     util.resolvePath(this.filesystem_.root, source, onEntry, function() {
       this.recordAction_('error');
       this.close_();
@@ -438,8 +458,8 @@ ActionChoice.prototype.runAction_ = function(action) {
   }
 
   if (action == this.watchSingleVideoAction_) {
-    chrome.fileBrowserPrivate.viewFiles([this.singleVideo_.toURL()],
-        function(success) {});
+    util.viewFilesInBrowser([this.singleVideo_.toURL()],
+                            function(success) {});
     this.recordAction_('watch-single-video');
     this.close_();
     return;

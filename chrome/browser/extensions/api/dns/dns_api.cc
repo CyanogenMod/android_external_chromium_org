@@ -60,9 +60,12 @@ void DnsResolveFunction::WorkOnIOThread() {
 
   net::HostResolver::RequestInfo request_info(host_port_pair);
   int resolve_result = host_resolver->Resolve(
-      request_info, addresses_.get(),
+      request_info,
+      net::DEFAULT_PRIORITY,
+      addresses_.get(),
       base::Bind(&DnsResolveFunction::OnLookupFinished, this),
-      request_handle_.get(), net::BoundNetLog());
+      request_handle_.get(),
+      net::BoundNetLog());
 
   // Balanced in OnLookupFinished.
   AddRef();

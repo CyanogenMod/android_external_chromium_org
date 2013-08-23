@@ -22,17 +22,17 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/web_application_info.h"
 #include "crypto/sha2.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/manifest_constants.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "url/gurl.h"
 
 namespace extensions {
 
-namespace keys = extension_manifest_keys;
+namespace keys = manifest_keys;
 
 using base::Time;
 
@@ -57,8 +57,7 @@ std::string GenerateKey(const GURL& manifest_url) {
   return key;
 }
 
-}
-
+}  // namespace
 
 // Generates a version for the converted app using the current date. This isn't
 // really needed, but it seems like useful information.
@@ -133,14 +132,14 @@ scoped_refptr<Extension> ConvertWebAppToExtension(
   base::ListValue* permissions = new base::ListValue();
   root->Set(keys::kPermissions, permissions);
   for (size_t i = 0; i < web_app.permissions.size(); ++i) {
-    permissions->Append(Value::CreateStringValue(web_app.permissions[i]));
+    permissions->Append(new base::StringValue(web_app.permissions[i]));
   }
 
   // Add the URLs.
   base::ListValue* urls = new base::ListValue();
   root->Set(keys::kWebURLs, urls);
   for (size_t i = 0; i < web_app.urls.size(); ++i) {
-    urls->Append(Value::CreateStringValue(web_app.urls[i].spec()));
+    urls->Append(new base::StringValue(web_app.urls[i].spec()));
   }
 
   // Write the manifest.

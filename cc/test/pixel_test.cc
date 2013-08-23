@@ -148,12 +148,9 @@ void PixelTest::SetUpGLRenderer(bool use_skia_gpu_backend) {
   CHECK(fake_client_);
   CHECK(gfx::InitializeGLBindings(gfx::kGLImplementationOSMesaGL));
 
-  using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
-  scoped_ptr<WebKit::WebGraphicsContext3D> context3d(
-      WebGraphicsContext3DInProcessCommandBufferImpl::CreateOffscreenContext(
-          WebKit::WebGraphicsContext3D::Attributes()));
+  using webkit::gpu::ContextProviderInProcess;
   output_surface_.reset(new PixelTestOutputSurface(
-      context3d.PassAs<WebKit::WebGraphicsContext3D>()));
+      ContextProviderInProcess::CreateOffscreen()));
   output_surface_->BindToClient(fake_client_.get());
 
   resource_provider_ = ResourceProvider::Create(output_surface_.get(), 0);
@@ -164,7 +161,7 @@ void PixelTest::SetUpGLRenderer(bool use_skia_gpu_backend) {
                                  use_skia_gpu_backend).PassAs<DirectRenderer>();
 
   scoped_refptr<webkit::gpu::ContextProviderInProcess> offscreen_contexts =
-      webkit::gpu::ContextProviderInProcess::Create();
+      webkit::gpu::ContextProviderInProcess::CreateOffscreen();
   ASSERT_TRUE(offscreen_contexts->BindToCurrentThread());
   resource_provider_->set_offscreen_context_provider(offscreen_contexts);
 }

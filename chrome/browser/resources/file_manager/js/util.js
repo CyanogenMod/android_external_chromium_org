@@ -148,15 +148,19 @@ util.recurseAndResolveEntries = function(entries, recurse, successCallback) {
         if (!recurse)
           return;
         pendingSubdirectories++;
-        util.forEachDirEntry(entry, function(inEntry) {
-          if (inEntry == null) {
-            // Null entry indicates we're done scanning this directory.
-            pendingSubdirectories--;
-            steps.areWeThereYet();
-            return;
-          }
-          steps.tallyEntry(inEntry, originalSourcePath);
-        });
+        util.forEachDirEntry(
+            entry,
+            function(inEntry, callback) {
+              steps.tallyEntry(inEntry, originalSourcePath);
+              callback();
+            },
+            function() {
+              pendingSubdirectories--;
+              steps.areWeThereYet();
+            },
+            function(err) {
+              console.error('Failed to read dir entries at ' + entry.fullPath);
+            });
       } else {
         fileEntries.push(entry);
         pendingFiles++;
@@ -193,33 +197,35 @@ util.recurseAndResolveEntries = function(entries, recurse, successCallback) {
 };
 
 /**
- * Utility function to invoke callback once for each entry in dirEntry.
- * callback is called with 'null' after all entries are visited to indicate
- * the end of the directory scan.
+ * Iterates the entries contained by dirEntry, and invokes callback once for
+ * each entry. On completion, successCallback will be invoked.
  *
- * @param {DirectoryEntry} dirEntry The directory entry to enumerate.
- * @param {function(Entry)} callback The function to invoke for each entry in
- *     dirEntry.
+ * @param {DirectoryEntry} dirEntry The entry of the directory.
+ * @param {function(Entry, function())} callback Invoked for each entry.
+ * @param {function()} successCallback Invoked on completion.
+ * @param {function(FileError)} errorCallback Invoked if an error is found on
+ *     directory entry reading.
  */
-util.forEachDirEntry = function(dirEntry, callback) {
-  var reader;
+util.forEachDirEntry = function(
+    dirEntry, callback, successCallback, errorCallback) {
+  var reader = dirEntry.createReader();
+  var iterate = function() {
+    reader.readEntries(function(entries) {
+      if (entries.length == 0) {
+        successCallback();
+        return;
+      }
 
-  var onError = function(err) {
-    console.error('Failed to read  dir entries at ' + dirEntry.fullPath);
+      AsyncUtil.forEach(
+          entries,
+          function(forEachCallback, entry) {
+            // Do not pass index nor entries.
+            callback(entry, forEachCallback);
+          },
+          iterate);
+    }, errorCallback);
   };
-
-  var onReadSome = function(results) {
-    if (results.length == 0)
-      return callback(null);
-
-    for (var i = 0; i < results.length; i++)
-      callback(results[i]);
-
-    reader.readEntries(onReadSome, onError);
-  };
-
-  reader = dirEntry.createReader();
-  reader.readEntries(onReadSome, onError);
+  iterate();
 };
 
 /**
@@ -441,6 +447,42 @@ util.getOrCreateDirectory = function(root, path, successCallback,
   };
 
   getOrCreateNextName(root);
+};
+
+/**
+ * Renames the entry to newName.
+ * @param {Entry} entry The entry to be renamed.
+ * @param {string} newName The new name.
+ * @param {function(Entry)} successCallback Callback invoked when the rename
+ *     is successfully done.
+ * @param {function(FileError)} errorCallback Callback invoked when an error
+ *     is found.
+ */
+util.rename = function(entry, newName, successCallback, errorCallback) {
+  entry.getParent(function(parent) {
+    // Before moving, we need to check if there is an existing entry at
+    // parent/newName, since moveTo will overwrite it.
+    // Note that this way has some timing issue. After existing check,
+    // a new entry may be create on background. However, there is no way not to
+    // overwrite the existing file, unfortunately. The risk should be low,
+    // assuming the unsafe period is very short.
+    (entry.isFile ? parent.getFile : parent.getDirectory).call(
+        parent, newName, {create: false},
+        function(entry) {
+          // The entry with the name already exists.
+          errorCallback(util.createFileError(FileError.PATH_EXISTS_ERR));
+        },
+        function(error) {
+          if (error.code != FileError.NOT_FOUND_ERR) {
+            // Unexpected error is found.
+            errorCallback(error);
+            return;
+          }
+
+          // No existing entry is found.
+          entry.moveTo(parent, newName, successCallback, errorCallback);
+        });
+  }, errorCallback);
 };
 
 /**
@@ -670,83 +712,30 @@ util.extractFilePath = function(url) {
 };
 
 /**
- * Traverses a tree up to a certain depth.
- * @param {FileEntry} root Root entry.
- * @param {function(Array.<Entry>)} callback The callback is called at the very
- *     end with a list of entries found.
- * @param {number?} max_depth Maximum depth. Pass zero to traverse everything.
- * @param {function(entry):boolean=} opt_filter Optional filter to skip some
- *     files/directories.
+ * Traverses a directory tree whose root is the given entry, and invokes
+ * callback for each entry. Upon completion, successCallback will be called.
+ * On error, errorCallback will be called.
+ *
+ * @param {Entry} entry The root entry.
+ * @param {function(Entry):boolean} callback Callback invoked for each entry.
+ *     If this returns false, entries under it won't be traversed. Note that
+ *     its siblings (and their children) will be still traversed.
+ * @param {function()} successCallback Called upon successful completion.
+ * @param {function(error)} errorCallback Called upon error.
  */
-util.traverseTree = function(root, callback, max_depth, opt_filter) {
-  var list = [];
-  util.forEachEntryInTree(root, function(entry) {
-    if (entry) {
-      list.push(entry);
-    } else {
-      callback(list);
-    }
-    return true;
-  }, max_depth, opt_filter);
-};
-
-/**
- * Traverses a tree up to a certain depth, and calls a callback for each entry.
- * callback is called with 'null' after all entries are visited to indicate
- * the end of the traversal.
- * @param {FileEntry} root Root entry.
- * @param {function(Entry):boolean} callback The callback is called for each
- *     entry, and then once with null passed. If callback returns false once,
- *     the whole traversal is stopped.
- * @param {number?} max_depth Maximum depth. Pass zero to traverse everything.
- * @param {function(entry):boolean=} opt_filter Optional filter to skip some
- *     files/directories.
- */
-util.forEachEntryInTree = function(root, callback, max_depth, opt_filter) {
-  if (root.isFile) {
-    if (opt_filter && !opt_filter(root)) {
-      callback(null);
-      return;
-    }
-    if (callback(root))
-      callback(null);
+util.traverseTree = function(entry, callback, successCallback, errorCallback) {
+  if (!callback(entry)) {
+    successCallback();
     return;
   }
 
-  var pending = 0;
-  var cancelled = false;
-
-  var maybeDone = function() {
-    if (pending == 0 && !cancelled)
-      callback(null);
-  };
-
-  var readEntry = function(entry, depth) {
-    if (cancelled) return;
-    if (opt_filter && !opt_filter(entry)) return;
-
-    if (!callback(entry)) {
-      cancelled = true;
-      return;
-    }
-
-    // Do not recurse too deep and into files.
-    if (entry.isFile || (max_depth != 0 && depth >= max_depth))
-      return;
-
-    pending++;
-    util.forEachDirEntry(entry, function(childEntry) {
-      if (childEntry == null) {
-        // Null entry indicates we're done scanning this directory.
-        pending--;
-        maybeDone();
-      } else {
-        readEntry(childEntry, depth + 1);
-      }
-    });
-  };
-
-  readEntry(root, 0);
+  util.forEachDirEntry(
+      entry,
+      function(child, iterationCallback) {
+        util.traverseTree(child, callback, iterationCallback, errorCallback);
+      },
+      successCallback,
+      errorCallback);
 };
 
 /**
@@ -1147,10 +1136,10 @@ util.FileOperationErrorType = {
 };
 
 /**
- * The type of an entry changed event.
+ * The kind of an entry changed event.
  * @enum {number}
  */
-util.EntryChangedType = {
+util.EntryChangedKind = {
   CREATED: 0,
   DELETED: 1,
 };
@@ -1198,4 +1187,15 @@ util.isParentEntry = function(parent, child) {
   // Currently, we can assume there is only one root.
   // When we support multi-file system, we need to look at filesystem, too.
   return PathUtil.isParentPath(parent.fullPath, child.fullPath);
+};
+
+/**
+ * Views files in the browser.
+ *
+ * @param {Array.<string>} urls URLs of files to view.
+ * @param {function(bool)} callback Callback notifying success or not.
+ */
+util.viewFilesInBrowser = function(urls, callback) {
+  var taskId = chrome.runtime.id + '|file|view-in-browser';
+  chrome.fileBrowserPrivate.executeTask(taskId, urls, callback);
 };

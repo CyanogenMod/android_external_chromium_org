@@ -29,13 +29,13 @@
 #include "net/quic/congestion_control/quic_congestion_manager.h"
 #include "net/quic/quic_alarm.h"
 #include "net/quic/quic_blocked_writer_interface.h"
+#include "net/quic/quic_connection_stats.h"
 #include "net/quic/quic_framer.h"
 #include "net/quic/quic_packet_creator.h"
 #include "net/quic/quic_packet_generator.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_received_packet_manager.h"
 #include "net/quic/quic_sent_entropy_manager.h"
-#include "net/quic/quic_stats.h"
 
 namespace net {
 
@@ -94,6 +94,12 @@ class NET_EXPORT_PRIVATE QuicConnectionDebugVisitorInterface
                             EncryptionLevel level,
                             const QuicEncryptedPacket& packet,
                             int rv) = 0;
+
+  // Called when the contents of a packet have been retransmitted as
+  // a new packet.
+  virtual void OnPacketRetransmitted(
+      QuicPacketSequenceNumber old_sequence_number,
+      QuicPacketSequenceNumber new_sequence_number) = 0;
 
   // Called when a packet has been received, but before it is
   // validated or parsed.
@@ -197,8 +203,6 @@ class NET_EXPORT_PRIVATE QuicConnection
                  bool is_server,
                  QuicVersion version);
   virtual ~QuicConnection();
-
-  static void DeleteEnclosedFrame(QuicFrame* frame);
 
   // Send the data payload to the peer.
   // Returns a pair with the number of bytes consumed from data, and a boolean
@@ -449,13 +453,16 @@ class NET_EXPORT_PRIVATE QuicConnection
   };
 
   struct RetransmissionInfo {
-    explicit RetransmissionInfo(QuicPacketSequenceNumber sequence_number)
+    RetransmissionInfo(QuicPacketSequenceNumber sequence_number,
+                       QuicSequenceNumberLength sequence_number_length)
         : sequence_number(sequence_number),
+          sequence_number_length(sequence_number_length),
           number_nacks(0),
           number_retransmissions(0) {
     }
 
     QuicPacketSequenceNumber sequence_number;
+    QuicSequenceNumberLength sequence_number_length;
     size_t number_nacks;
     size_t number_retransmissions;
   };
@@ -509,6 +516,12 @@ class NET_EXPORT_PRIVATE QuicConnection
   // Called from OnCanWrite and WriteIfNotBlocked to write queued packets.
   // Returns false if the socket has become blocked.
   bool DoWrite();
+
+  // Calculates the smallest sequence number length that can also represent four
+  // times the maximum of the congestion window and the difference between the
+  // least_packet_awaited_by_peer_ and |sequence_number|.
+  QuicSequenceNumberLength CalculateSequenceNumberLength(
+      QuicPacketSequenceNumber sequence_number);
 
   // Drop packet corresponding to |sequence_number| by deleting entries from
   // |unacked_packets_| and |retransmission_map_|, if present. We need to drop

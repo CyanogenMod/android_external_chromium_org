@@ -6,6 +6,7 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/files/file_path.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/values.h"
@@ -126,6 +127,7 @@ class TestHarness : public PolicyProviderTestHarness {
   virtual void SetUp() OVERRIDE;
 
   virtual ConfigurationPolicyProvider* CreateProvider(
+      scoped_refptr<base::SequencedTaskRunner> task_runner,
       const PolicyDefinitionList* policy_definition_list) OVERRIDE;
 
   virtual void InstallEmptyPolicy() OVERRIDE;
@@ -158,10 +160,11 @@ TestHarness::~TestHarness() {}
 void TestHarness::SetUp() {}
 
 ConfigurationPolicyProvider* TestHarness::CreateProvider(
+    scoped_refptr<base::SequencedTaskRunner> task_runner,
     const PolicyDefinitionList* policy_definition_list) {
   prefs_ = new MockPreferences();
-  scoped_ptr<AsyncPolicyLoader> loader(
-      new PolicyLoaderMac(policy_definition_list, prefs_));
+  scoped_ptr<AsyncPolicyLoader> loader(new PolicyLoaderMac(
+      task_runner, policy_definition_list, base::FilePath(), prefs_));
   return new AsyncPolicyProvider(loader.Pass());
 }
 
@@ -230,7 +233,10 @@ class PolicyLoaderMacTest : public PolicyTestBase {
  protected:
   PolicyLoaderMacTest()
       : prefs_(new MockPreferences()),
-        loader_(new PolicyLoaderMac(&test_policy_definitions::kList, prefs_)),
+        loader_(new PolicyLoaderMac(loop_.message_loop_proxy(),
+                                    &test_policy_definitions::kList,
+                                    base::FilePath(),
+                                    prefs_)),
         provider_(scoped_ptr<AsyncPolicyLoader>(loader_)) {}
   virtual ~PolicyLoaderMacTest() {}
 

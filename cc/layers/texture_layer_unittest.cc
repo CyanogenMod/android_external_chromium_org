@@ -7,11 +7,14 @@
 #include <string>
 
 #include "base/callback.h"
+#include "cc/debug/test_web_graphics_context_3d.h"
 #include "cc/layers/texture_layer_client.h"
 #include "cc/layers/texture_layer_impl.h"
+#include "cc/resources/returned_resource.h"
 #include "cc/test/fake_impl_proxy.h"
 #include "cc/test/fake_layer_tree_host_client.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
+#include "cc/test/fake_output_surface.h"
 #include "cc/test/layer_test_common.h"
 #include "cc/test/layer_tree_test.h"
 #include "cc/trees/layer_tree_host.h"
@@ -618,8 +621,10 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
   {
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1, false);
+    ContextProvider* context_provider =
+        host_impl_.output_surface()->context_provider();
     unsigned texture =
-        host_impl_.output_surface()->context3d()->createTexture();
+        context_provider->Context3d()->createTexture();
     impl_layer->set_texture_id(texture);
     EXPECT_TRUE(WillDraw(impl_layer.get(), DRAW_MODE_HARDWARE));
   }
@@ -657,8 +662,10 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
   {
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1, false);
+    ContextProvider* context_provider =
+        host_impl_.output_surface()->context_provider();
     unsigned texture =
-        host_impl_.output_surface()->context3d()->createTexture();
+        context_provider->Context3d()->createTexture();
     impl_layer->set_texture_id(texture);
     EXPECT_FALSE(WillDraw(impl_layer.get(), DRAW_MODE_SOFTWARE));
   }
@@ -681,8 +688,10 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
   {
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1, false);
+    ContextProvider* context_provider =
+        host_impl_.output_surface()->context_provider();
     unsigned texture =
-        host_impl_.output_surface()->context3d()->createTexture();
+        context_provider->Context3d()->createTexture();
     impl_layer->set_texture_id(texture);
     EXPECT_FALSE(WillDraw(impl_layer.get(), DRAW_MODE_RESOURCELESS_SOFTWARE));
   }
@@ -777,7 +786,9 @@ TEST_F(TextureLayerImplWithMailboxTest, TestCallbackOnInUseResource) {
   EXPECT_CALL(test_data_.mock_callback_,
               Release(test_data_.mailbox_name1_, _, false))
       .Times(1);
-  provider->ReceiveFromParent(list);
+  ReturnedResourceArray returned;
+  TransferableResource::ReturnResources(list, &returned);
+  provider->ReceiveReturnsFromParent(returned);
 }
 
 // Check that ClearClient correctly clears the state so that the impl side
@@ -799,8 +810,7 @@ class TextureLayerClientTest
         TestWebGraphicsContext3D::Create());
     context_ = context.get();
     texture_ = context->createTexture();
-    return FakeOutputSurface::Create3d(
-        context.PassAs<WebKit::WebGraphicsContext3D>()).PassAs<OutputSurface>();
+    return FakeOutputSurface::Create3d(context.Pass()).PassAs<OutputSurface>();
   }
 
   virtual unsigned PrepareTexture() OVERRIDE {

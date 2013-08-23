@@ -21,6 +21,7 @@ using std::string;
 using testing::InSequence;
 using testing::Return;
 using testing::SaveArg;
+using testing::StrictMock;
 using testing::_;
 
 namespace net {
@@ -98,11 +99,11 @@ class QuicPacketGeneratorTest : public ::testing::Test {
       : framer_(QuicVersionMax(), QuicTime::Zero(), false),
         creator_(42, &framer_, &random_, false),
         generator_(&delegate_, NULL, &creator_),
-        packet_(0, NULL, 0, NULL),
-        packet2_(0, NULL, 0, NULL),
-        packet3_(0, NULL, 0, NULL),
-        packet4_(0, NULL, 0, NULL),
-        packet5_(0, NULL, 0, NULL) {
+        packet_(0, PACKET_1BYTE_SEQUENCE_NUMBER, NULL, 0, NULL),
+        packet2_(0, PACKET_1BYTE_SEQUENCE_NUMBER, NULL, 0, NULL),
+        packet3_(0, PACKET_1BYTE_SEQUENCE_NUMBER, NULL, 0, NULL),
+        packet4_(0, PACKET_1BYTE_SEQUENCE_NUMBER, NULL, 0, NULL),
+        packet5_(0, PACKET_1BYTE_SEQUENCE_NUMBER, NULL, 0, NULL) {
   }
 
   ~QuicPacketGeneratorTest() {
@@ -198,7 +199,7 @@ class QuicPacketGeneratorTest : public ::testing::Test {
   QuicFramer framer_;
   MockRandom random_;
   QuicPacketCreator creator_;
-  testing::StrictMock<MockDelegate> delegate_;
+  StrictMock<MockDelegate> delegate_;
   QuicPacketGenerator generator_;
   SimpleQuicFramer simple_framer_;
   SerializedPacket packet_;
@@ -211,6 +212,12 @@ class QuicPacketGeneratorTest : public ::testing::Test {
   scoped_ptr<char[]> data_array_;
 };
 
+class MockDebugDelegate : public QuicPacketGenerator::DebugDelegateInterface {
+ public:
+  MOCK_METHOD1(OnFrameAddedToPacket,
+               void(const QuicFrame&));
+};
+
 TEST_F(QuicPacketGeneratorTest, ShouldSendAck_NotWritable) {
   delegate_.SetCanNotWrite();
 
@@ -219,10 +226,14 @@ TEST_F(QuicPacketGeneratorTest, ShouldSendAck_NotWritable) {
 }
 
 TEST_F(QuicPacketGeneratorTest, ShouldSendAck_WritableAndShouldNotFlush) {
+  StrictMock<MockDebugDelegate> debug_delegate;
+
+  generator_.set_debug_delegate(&debug_delegate);
   delegate_.SetCanWriteOnlyNonRetransmittable();
   generator_.StartBatchOperations();
 
   EXPECT_CALL(delegate_, CreateAckFrame()).WillOnce(Return(CreateAckFrame()));
+  EXPECT_CALL(debug_delegate, OnFrameAddedToPacket(_)).Times(1);
 
   generator_.SetShouldSendAck(false);
   EXPECT_TRUE(generator_.HasQueuedFrames());

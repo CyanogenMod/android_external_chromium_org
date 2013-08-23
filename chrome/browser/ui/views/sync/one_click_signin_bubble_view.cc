@@ -208,8 +208,7 @@ void OneClickSigninBubbleView::InitDialogContent(views::GridLayout* layout) {
     layout->StartRow(0, COLUMN_SET_TITLE_BAR);
 
     views::Label* label = new views::Label(
-        l10n_util::GetStringFUTF16(IDS_ONE_CLICK_SIGNIN_DIALOG_TITLE_NEW,
-                                   email_));
+        l10n_util::GetStringUTF16(IDS_ONE_CLICK_SIGNIN_DIALOG_TITLE_NEW));
     label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
     label->SetFont(label->font().DeriveFont(3, gfx::Font::BOLD));
     layout->AddView(label);
@@ -317,14 +316,15 @@ bool OneClickSigninBubbleView::AcceleratorPressed(
             one_click_signin::HISTOGRAM_CONFIRM_RETURN);
 
         base::ResetAndReturn(&start_sync_callback_).Run(
-          OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS);
+            OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS);
       } else if (accelerator.key_code() == ui::VKEY_ESCAPE) {
         OneClickSigninHelper::LogConfirmHistogramValue(
         clicked_learn_more_ ?
             one_click_signin::HISTOGRAM_CONFIRM_LEARN_MORE_ESCAPE :
             one_click_signin::HISTOGRAM_CONFIRM_ESCAPE);
 
-        start_sync_callback_.Reset();
+        base::ResetAndReturn(&start_sync_callback_).Run(
+            OneClickSigninSyncStarter::UNDO_SYNC);
       }
     }
 
@@ -355,7 +355,7 @@ void OneClickSigninBubbleView::LinkClicked(views::Link* source,
             one_click_signin::HISTOGRAM_CONFIRM_ADVANCED);
 
       base::ResetAndReturn(&start_sync_callback_).Run(
-      OneClickSigninSyncStarter::CONFIGURE_SYNC_FIRST);
+          OneClickSigninSyncStarter::CONFIGURE_SYNC_FIRST);
     } else {
       delegate_->OnAdvancedLinkClicked();
     }

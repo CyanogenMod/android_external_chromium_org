@@ -140,6 +140,7 @@ LOCAL_SRC_FILES := \
 	ui/gfx/switches.cc \
 	ui/gfx/sys_color_change_listener.cc \
 	ui/gfx/text_utils.cc \
+	ui/gfx/text_utils_android.cc \
 	ui/gfx/transform.cc \
 	ui/gfx/transform_util.cc \
 	ui/gfx/vector2d.cc \

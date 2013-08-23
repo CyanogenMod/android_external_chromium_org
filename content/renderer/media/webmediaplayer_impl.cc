@@ -27,7 +27,7 @@
 #include "content/renderer/media/webmediaplayer_delegate.h"
 #include "content/renderer/media/webmediaplayer_params.h"
 #include "content/renderer/media/webmediaplayer_util.h"
-#include "content/renderer/media/webmediasourceclient_impl.h"
+#include "content/renderer/media/webmediasource_impl.h"
 #include "content/renderer/pepper/pepper_webplugin_impl.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "media/audio/null_audio_sink.h"
@@ -43,16 +43,16 @@
 #include "media/filters/ffmpeg_audio_decoder.h"
 #include "media/filters/ffmpeg_demuxer.h"
 #include "media/filters/ffmpeg_video_decoder.h"
+#include "media/filters/gpu_video_accelerator_factories.h"
 #include "media/filters/gpu_video_decoder.h"
-#include "media/filters/gpu_video_decoder_factories.h"
 #include "media/filters/opus_audio_decoder.h"
 #include "media/filters/video_renderer_base.h"
 #include "media/filters/vpx_video_decoder.h"
+#include "third_party/WebKit/public/platform/WebMediaSource.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
-#include "third_party/WebKit/public/web/WebMediaSource.h"
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "v8/include/v8.h"
@@ -246,24 +246,18 @@ URLSchemeForHistogram URLScheme(const GURL& url) {
 
 }  // anonymous namespace
 
-void WebMediaPlayerImpl::load(const WebKit::WebURL& url, CORSMode cors_mode) {
-  load(url, NULL, cors_mode);
-}
-
-void WebMediaPlayerImpl::load(const WebKit::WebURL& url,
-                              WebKit::WebMediaSource* media_source,
+void WebMediaPlayerImpl::load(LoadType load_type, const WebKit::WebURL& url,
                               CORSMode cors_mode) {
   if (!defer_load_cb_.is_null()) {
     defer_load_cb_.Run(base::Bind(
-        &WebMediaPlayerImpl::DoLoad, AsWeakPtr(), url, media_source,
-        cors_mode));
+        &WebMediaPlayerImpl::DoLoad, AsWeakPtr(), load_type, url, cors_mode));
     return;
   }
-  DoLoad(url, media_source, cors_mode);
+  DoLoad(load_type, url, cors_mode);
 }
 
-void WebMediaPlayerImpl::DoLoad(const WebKit::WebURL& url,
-                                WebKit::WebMediaSource* media_source,
+void WebMediaPlayerImpl::DoLoad(LoadType load_type,
+                                const WebKit::WebURL& url,
                                 CORSMode cors_mode) {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
@@ -272,6 +266,8 @@ void WebMediaPlayerImpl::DoLoad(const WebKit::WebURL& url,
 
   // Set subresource URL for crash reporting.
   base::debug::SetCrashKeyValue("subresource_url", gurl.spec());
+
+  load_type_ = load_type;
 
   // Handle any volume/preload changes that occurred before load().
   setVolume(GetClient()->volume());
@@ -282,9 +278,9 @@ void WebMediaPlayerImpl::DoLoad(const WebKit::WebURL& url,
   media_log_->AddEvent(media_log_->CreateLoadEvent(url.spec()));
 
   // Media source pipelines can start immediately.
-  if (media_source) {
+  if (load_type == LoadTypeMediaSource) {
     supports_save_ = false;
-    StartPipeline(media_source);
+    StartPipeline();
     return;
   }
 
@@ -300,7 +296,7 @@ void WebMediaPlayerImpl::DoLoad(const WebKit::WebURL& url,
           &WebMediaPlayerImpl::DataSourceInitialized,
           AsWeakPtr(), gurl));
 
-  is_local_source_ = !gurl.SchemeIs("http") && !gurl.SchemeIs("https");
+  is_local_source_ = !gurl.SchemeIsHTTPOrHTTPS();
 }
 
 void WebMediaPlayerImpl::play() {
@@ -912,10 +908,9 @@ void WebMediaPlayerImpl::OnPipelineBufferingState(
   Repaint();
 }
 
-void WebMediaPlayerImpl::OnDemuxerOpened(
-    scoped_ptr<WebKit::WebMediaSource> media_source) {
+void WebMediaPlayerImpl::OnDemuxerOpened() {
   DCHECK(main_loop_->BelongsToCurrentThread());
-  media_source->open(new WebMediaSourceClientImpl(
+  GetClient()->mediaSourceOpened(new WebMediaSourceImpl(
       chunk_demuxer_, base::Bind(&LogMediaSourceError, media_log_)));
 }
 
@@ -1011,7 +1006,7 @@ void WebMediaPlayerImpl::DataSourceInitialized(const GURL& gurl, bool success) {
     return;
   }
 
-  StartPipeline(NULL);
+  StartPipeline();
 }
 
 void WebMediaPlayerImpl::NotifyDownloading(bool is_downloading) {
@@ -1025,15 +1020,16 @@ void WebMediaPlayerImpl::NotifyDownloading(bool is_downloading) {
           "is_downloading_data", is_downloading));
 }
 
-void WebMediaPlayerImpl::StartPipeline(WebKit::WebMediaSource* media_source) {
+void WebMediaPlayerImpl::StartPipeline() {
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
   bool increase_preroll_on_underflow = true;
 
   // Keep track if this is a MSE or non-MSE playback.
-  UMA_HISTOGRAM_BOOLEAN("Media.MSE.Playback", (media_source != NULL));
+  UMA_HISTOGRAM_BOOLEAN("Media.MSE.Playback",
+                        (load_type_ == LoadTypeMediaSource));
 
   // Figure out which demuxer to use.
-  if (!media_source) {
+  if (load_type_ != LoadTypeMediaSource) {
     DCHECK(!chunk_demuxer_);
     DCHECK(data_source_);
 
@@ -1052,10 +1048,8 @@ void WebMediaPlayerImpl::StartPipeline(WebKit::WebMediaSource* media_source) {
           base::Bind(&WebMediaPlayerImpl::OnTextTrack, base::Unretained(this));
     }
 
-    scoped_ptr<WebKit::WebMediaSource> ms(media_source);
     chunk_demuxer_ = new media::ChunkDemuxer(
-        BIND_TO_RENDER_LOOP_1(&WebMediaPlayerImpl::OnDemuxerOpened,
-                              base::Passed(&ms)),
+        BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnDemuxerOpened),
         BIND_TO_RENDER_LOOP_1(&WebMediaPlayerImpl::OnNeedKey, ""),
         add_text_track_cb,
         base::Bind(&LogMediaSourceError, media_log_));
@@ -1104,8 +1098,10 @@ void WebMediaPlayerImpl::StartPipeline(WebKit::WebMediaSource* media_source) {
   // Create our video decoders and renderer.
   ScopedVector<media::VideoDecoder> video_decoders;
 
-  if (gpu_factories_.get())
-    video_decoders.push_back(new media::GpuVideoDecoder(gpu_factories_));
+  if (gpu_factories_.get()) {
+    video_decoders.push_back(
+        new media::GpuVideoDecoder(gpu_factories_, media_log_));
+  }
 
   // TODO(phajdan.jr): Remove ifdefs when libvpx with vp9 support is released
   // (http://crbug.com/174287) .

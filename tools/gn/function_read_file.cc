@@ -50,13 +50,13 @@ Value RunReadFile(Scope* scope,
     return Value();
 
   // Compute the file name.
-  const SourceDir& cur_dir = SourceDirForFunctionCall(function);
+  const SourceDir& cur_dir = scope->GetSourceDir();
   SourceFile source_file = cur_dir.ResolveRelativeFile(args[0].string_value());
   base::FilePath file_path =
       scope->settings()->build_settings()->GetFullPath(source_file);
 
   // Ensure that everything is recomputed if the read file changes.
-  g_scheduler->AddGenDependency(source_file);
+  g_scheduler->AddGenDependency(file_path);
 
   // Read contents.
   std::string file_contents;

@@ -73,9 +73,6 @@ class NET_EXPORT_PRIVATE CryptoHandshakeMessage {
 
   const QuicTagValueMap& tag_value_map() const { return tag_value_map_; }
 
-  void Insert(QuicTagValueMap::const_iterator begin,
-              QuicTagValueMap::const_iterator end);
-
   // SetTaglist sets an element with the given tag to contain a list of tags,
   // passed as varargs. The argument list must be terminated with a 0 element.
   void SetTaglist(QuicTag tag, ...);
@@ -160,7 +157,6 @@ struct NET_EXPORT_PRIVATE QuicCryptoNegotiatedParameters {
   QuicCryptoNegotiatedParameters();
   ~QuicCryptoNegotiatedParameters();
 
-  uint16 version;
   QuicTag key_exchange;
   QuicTag aead;
   std::string initial_premaster_secret;
@@ -265,6 +261,9 @@ class NET_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
     // SetProof stores a certificate chain and signature.
     void SetProof(const std::vector<std::string>& certs,
                   base::StringPiece signature);
+
+    // Clears the certificate chain and signature and invalidates the proof.
+    void ClearProof();
 
     // SetProofValid records that the certificate chain and signature have been
     // validated and that it's safe to assume that the server is legitimate.

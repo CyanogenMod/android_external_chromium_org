@@ -19,6 +19,7 @@
 
 class Browser;
 class GURL;
+class PasswordManager;
 class ProfileIOData;
 
 namespace content {
@@ -78,6 +79,10 @@ class OneClickSigninHelper
     CAN_OFFER_FOR_INTERSTITAL_ONLY
   };
 
+  static void CreateForWebContentsWithPasswordManager(
+      content::WebContents* contents,
+      PasswordManager* password_manager);
+
   virtual ~OneClickSigninHelper();
 
   // Returns true if the one-click signin feature can be offered at this time.
@@ -125,7 +130,7 @@ class OneClickSigninHelper
  private:
   friend class content::WebContentsUserData<OneClickSigninHelper>;
   friend class OneClickSigninHelperTest;
-  FRIEND_TEST_ALL_PREFIXES(OneClickSigninHelperTest,
+  FRIEND_TEST_ALL_PREFIXES(OneClickSigninHelperIncognitoTest,
                            ShowInfoBarUIThreadIncognito);
   FRIEND_TEST_ALL_PREFIXES(OneClickSigninHelperTest,
                            SigninFromWebstoreWithConfigSyncfirst);
@@ -166,7 +171,8 @@ class OneClickSigninHelper
   // SAML-based accounts, but causes bug crbug.com/181163.
   static const int kMaxNavigationsSince;
 
-  explicit OneClickSigninHelper(content::WebContents* web_contents);
+  OneClickSigninHelper(content::WebContents* web_contents,
+                       PasswordManager* password_manager);
 
   // Returns true if the one-click signin feature can be offered at this time.
   // It can be offered if the io_data is not in an incognito window and if the
@@ -208,11 +214,10 @@ class OneClickSigninHelper
   // TestingProfile provides.
   void SetDoNotClearPendingEmailForTesting();
 
-  // Grab Gaia password if available.
-  bool OnFormSubmitted(const content::PasswordForm& form);
+  // Called when password has been submitted.
+  void PasswordSubmitted(const content::PasswordForm& form);
 
   // content::WebContentsObserver overrides.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void NavigateToPendingEntry(
       const GURL& url,
       content::NavigationController::ReloadType reload_type) OVERRIDE;

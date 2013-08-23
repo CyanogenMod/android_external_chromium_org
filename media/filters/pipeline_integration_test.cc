@@ -5,6 +5,7 @@
 #include "media/filters/pipeline_integration_test_base.h"
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_util.h"
 #include "build/build_config.h"
@@ -57,6 +58,9 @@ static const int k640IsoCencFileDurationMs = 2736;
 static const int k1280IsoFileDurationMs = 2736;
 static const int kVP9WebMFileDurationMs = 2735;
 static const int kVP8AWebMFileDurationMs = 2700;
+
+// Command line switch for runtime adjustment of audio file to be benchmarked.
+static const char kBenchmarkAudioFile[] = "benchmark-audio-file";
 
 // Note: Tests using this class only exercise the DecryptingDemuxerStream path.
 // They do not exercise the Decrypting{Audio|Video}Decoder path.
@@ -403,8 +407,8 @@ TEST_F(PipelineIntegrationTest, BasicPlayback) {
 }
 
 TEST_F(PipelineIntegrationTest, BasicPlaybackHashed) {
-  ASSERT_TRUE(Start(GetTestDataFilePath("bear-320x240.webm"),
-                    PIPELINE_OK, true));
+  ASSERT_TRUE(Start(
+      GetTestDataFilePath("bear-320x240.webm"), PIPELINE_OK, kHashed));
 
   Play();
 
@@ -414,8 +418,31 @@ TEST_F(PipelineIntegrationTest, BasicPlaybackHashed) {
   EXPECT_EQ("-3.59,-2.06,-0.43,2.15,0.77,-0.95,", GetAudioHash());
 }
 
+TEST_F(PipelineIntegrationTest, AudioPlaybackBenchmark) {
+  // Audio-only files are all that is allowed for clockless playback.
+  // Audio file can be specified on the command line
+  // (--benchmark-audio-file=id3_png_test.mp3), so check for it.
+  std::string filename(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+      kBenchmarkAudioFile));
+  if (filename.empty())
+    filename = "sfx_f32le.wav";
+
+  ASSERT_TRUE(Start(GetTestDataFilePath(filename), PIPELINE_OK, kClockless));
+
+  Play();
+
+  ASSERT_TRUE(WaitUntilOnEnded());
+
+  // Call Stop() to ensure that the rendering is complete.
+  Stop();
+  printf("Clockless playback of %s took %.2f ms.\n",
+         filename.c_str(),
+         GetAudioTime().InMillisecondsF());
+}
+
 TEST_F(PipelineIntegrationTest, F32PlaybackHashed) {
-  ASSERT_TRUE(Start(GetTestDataFilePath("sfx_f32le.wav"), PIPELINE_OK, true));
+  ASSERT_TRUE(
+      Start(GetTestDataFilePath("sfx_f32le.wav"), PIPELINE_OK, kHashed));
   Play();
   ASSERT_TRUE(WaitUntilOnEnded());
   EXPECT_EQ(std::string(kNullVideoHash), GetVideoHash());
@@ -601,7 +628,7 @@ TEST_F(PipelineIntegrationTest,
   source.Abort();
 }
 
-#if defined(GOOGLE_CHROME_BUILD) || defined(USE_PROPRIETARY_CODECS)
+#if defined(USE_PROPRIETARY_CODECS)
 TEST_F(PipelineIntegrationTest, MediaSource_ConfigChange_MP4) {
   MockMediaSource source("bear-640x360-av_frag.mp4", kMP4, kAppendWholeFile);
   StartPipelineWithMediaSource(&source);
@@ -777,7 +804,7 @@ TEST_F(PipelineIntegrationTest, EncryptedPlayback_NoEncryptedFrames_WebM) {
   Stop();
 }
 
-#if defined(GOOGLE_CHROME_BUILD) || defined(USE_PROPRIETARY_CODECS)
+#if defined(USE_PROPRIETARY_CODECS)
 TEST_F(PipelineIntegrationTest, EncryptedPlayback_MP4_CENC_VideoOnly) {
   MockMediaSource source("bear-1280x720-v_frag-cenc.mp4",
                          kMP4Video, kAppendWholeFile);

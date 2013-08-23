@@ -23,6 +23,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 #include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
@@ -77,13 +78,16 @@
 namespace {
 
 // URL which corresponds to the login WebUI.
-const char kLoginURL[] = "chrome://oobe/login#login";
+const char kLoginURL[] = "chrome://oobe/login";
 
 // URL which corresponds to the OOBE WebUI.
-const char kOobeURL[] = "chrome://oobe#login";
+const char kOobeURL[] = "chrome://oobe/oobe";
 
 // URL which corresponds to the user adding WebUI.
-const char kUserAddingURL[] = "chrome://oobe/login#user-adding";
+const char kUserAddingURL[] = "chrome://oobe/user-adding";
+
+// URL which corresponds to the app launch splash WebUI.
+const char kAppLaunchSplashURL[] = "chrome://oobe/app-launch-splash";
 
 // Duration of sign-in transition animation.
 const int kLoginFadeoutTransitionDurationMs = 700;
@@ -509,6 +513,20 @@ void LoginDisplayHostImpl::PrewarmAuthentication() {
                  pointer_factory_.GetWeakPtr()));
 }
 
+void LoginDisplayHostImpl::StartAppLaunch(const std::string& app_id) {
+  LOG(WARNING) << "Login WebUI >> start app launch.";
+  SetStatusAreaVisible(false);
+  if (!login_window_)
+    LoadURL(GURL(kAppLaunchSplashURL));
+
+  login_view_->set_should_emit_login_prompt_visible(false);
+
+  app_launch_controller_.reset(new AppLaunchController(
+      app_id, this, GetOobeUI()));
+
+  app_launch_controller_->StartAppLaunch();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // LoginDisplayHostImpl, public
 
@@ -773,7 +791,7 @@ void LoginDisplayHostImpl::InitLoginWindowAndView() {
   }
   login_view_ = new WebUILoginView();
 
-  login_view_->Init(login_window_);
+  login_view_->Init();
 
   views::corewm::SetWindowVisibilityAnimationDuration(
       login_window_->GetNativeView(),
@@ -783,7 +801,6 @@ void LoginDisplayHostImpl::InitLoginWindowAndView() {
       views::corewm::ANIMATE_HIDE);
 
   login_window_->SetContentsView(login_view_);
-  login_view_->UpdateWindowType();
 
   // If WebUI is initialized in hidden state, show it only if we're no
   // longer waiting for wallpaper animation/user images loading. Otherwise,
@@ -797,7 +814,6 @@ void LoginDisplayHostImpl::InitLoginWindowAndView() {
     login_view_->set_is_hidden(true);
   }
   login_window_->GetNativeView()->SetName("WebUILoginView");
-  login_view_->OnWindowCreated();
 }
 
 void LoginDisplayHostImpl::ResetLoginWindowAndView() {
@@ -852,6 +868,13 @@ void ShowLoginWizard(const std::string& first_screen_name) {
           manager->GetInputMethodUtil()->GetHardwareInputMethodId();
     }
     manager->EnableLayouts(locale, initial_input_method_id);
+
+    // Apply owner preferences for tap-to-click and mouse buttons swap for
+    // login screen.
+    system::mouse_settings::SetPrimaryButtonRight(
+        prefs->GetBoolean(prefs::kOwnerPrimaryMouseButtonRight));
+    system::touchpad_settings::SetTapToClick(
+      prefs->GetBoolean(prefs::kOwnerTapToClickEnabled));
   }
 
   ui::SetNaturalScroll(CommandLine::ForCurrentProcess()->HasSwitch(
@@ -868,12 +891,22 @@ void ShowLoginWizard(const std::string& first_screen_name) {
     LoginState::Get()->SetLoggedInState(
         LoginState::LOGGED_IN_NONE, LoginState::LOGGED_IN_USER_NONE);
   }
+
+  LoginDisplayHost* display_host = new LoginDisplayHostImpl(screen_bounds);
+
+  bool show_app_launch_splash_screen = (first_screen_name ==
+      chromeos::WizardController::kAppLaunchSplashScreenName);
+
+  if (show_app_launch_splash_screen) {
+    const std::string& auto_launch_app_id =
+        chromeos::KioskAppManager::Get()->GetAutoLaunchApp();
+    display_host->StartAppLaunch(auto_launch_app_id);
+    return;
+  }
+
   bool show_login_screen =
       (first_screen_name.empty() && oobe_complete) ||
       first_screen_name == chromeos::WizardController::kLoginScreenName;
-
-  chromeos::LoginDisplayHost* display_host =
-      new chromeos::LoginDisplayHostImpl(screen_bounds);
 
   if (show_login_screen) {
     // R11 > R12 migration fix. See http://crosbug.com/p/4898.
@@ -938,6 +971,9 @@ void ShowLoginWizard(const std::string& first_screen_name) {
       // Set the application locale here so that the language switch
       // menu works properly with the newly loaded locale.
       g_browser_process->SetApplicationLocale(loaded_locale);
+
+      // Reload font settings here to use correct font for initial_locale.
+      LanguageSwitchMenu::LoadFontsForCurrentLocale();
     }
   }
 

@@ -15,6 +15,7 @@ namespace switches {
 // All switches in alphabetical order. The switches should be documented
 // alongside the definition of their values in the .cc file.
 CONTENT_EXPORT extern const char kAllowFileAccessFromFiles[];
+CONTENT_EXPORT extern const char kAllowFiltersOverIPC[];
 CONTENT_EXPORT extern const char kAllowNoSandboxJob[];
 extern const char kAllowSandboxDebugging[];
 extern const char kAllowWebUICompositing[];
@@ -159,7 +160,6 @@ extern const char kEnableWebAnimationsSVG[];
 CONTENT_EXPORT extern const char kEnableWebGLDraftExtensions[];
 extern const char kEnableWebMIDI[];
 extern const char kEnableWebRtcTcpServerSocket[];
-CONTENT_EXPORT extern const char kExperimentalLocationFeatures[];
 CONTENT_EXPORT extern const char kExtraPluginDir[];
 CONTENT_EXPORT extern const char kForceCompositingMode[];
 extern const char kForceFieldTrials[];
@@ -224,6 +224,7 @@ extern const char kTapDownDeferralTimeMs[];
 CONTENT_EXPORT extern const char kTestingFixedHttpPort[];
 CONTENT_EXPORT extern const char kTestingFixedHttpsPort[];
 CONTENT_EXPORT extern const char kTestSandbox[];
+CONTENT_EXPORT extern const char kNoTouchToRendererWhileScrolling[];
 extern const char kTraceStartup[];
 extern const char kTraceStartupDuration[];
 extern const char kTraceStartupFile[];
@@ -248,6 +249,7 @@ CONTENT_EXPORT extern const char kDisableDeviceEnumeration[];
 CONTENT_EXPORT extern const char kEnableSCTPDataChannels[];
 extern const char kEnableWebRtcAecRecordings[];
 extern const char kEnableWebRtcHWDecoding[];
+extern const char kEnableWebRtcHWEncoding[];
 #endif
 
 #if defined(OS_ANDROID)
@@ -282,8 +284,6 @@ CONTENT_EXPORT extern const char kTestCompositor[];
 
 // DON'T ADD RANDOM STUFF HERE. Put it in the main section above in
 // alphabetical order, or in one of the ifdefs (also in order in each section).
-
-CONTENT_EXPORT extern const char kAllowFiltersOverIPC[];
 
 }  // namespace switches
 

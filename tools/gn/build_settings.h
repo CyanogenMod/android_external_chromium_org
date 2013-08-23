@@ -8,6 +8,7 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/files/file_path.h"
+#include "tools/gn/args.h"
 #include "tools/gn/item_tree.h"
 #include "tools/gn/scope.h"
 #include "tools/gn/source_dir.h"
@@ -27,7 +28,8 @@ class BuildSettings {
   // Absolute path of the source root on the local system. Everything is
   // relative to this.
   const base::FilePath& root_path() const { return root_path_; }
-  void set_root_path(const base::FilePath& r) { root_path_ = r; }
+  const std::string& root_path_utf8() const { return root_path_utf8_; }
+  void SetRootPath(const base::FilePath& r);
 
   // When nonempty, specifies a parallel directory higherarchy in which to
   // search for buildfiles if they're not found in the root higherarchy. This
@@ -55,6 +57,10 @@ class BuildSettings {
   const std::string& build_to_source_dir_string() const {
     return build_to_source_dir_string_;
   }
+
+  // The build args are normally specified on the command-line.
+  Args& build_args() { return build_args_; }
+  const Args& build_args() const { return build_args_; }
 
   // These accessors do not return const objects since the resulting objects
   // are threadsafe. In this setting, we use constness primarily to ensure
@@ -90,12 +96,14 @@ class BuildSettings {
 
  private:
   base::FilePath root_path_;
+  std::string root_path_utf8_;
   base::FilePath secondary_source_path_;
   base::FilePath python_path_;
 
   SourceFile build_config_file_;
   SourceDir build_dir_;
   std::string build_to_source_dir_string_;
+  Args build_args_;
 
   TargetResolvedCallback target_resolved_callback_;
 

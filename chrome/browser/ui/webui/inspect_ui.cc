@@ -89,10 +89,12 @@ static const char kRouteIdField[]  = "routeId";
 static const char kUrlField[]  = "url";
 static const char kNameField[]  = "name";
 static const char kFaviconUrlField[] = "faviconUrl";
+static const char kDescription[] = "description";
 static const char kPidField[]  = "pid";
 static const char kAdbSerialField[] = "adbSerial";
 static const char kAdbModelField[] = "adbModel";
 static const char kAdbBrowserProductField[] = "adbBrowserProduct";
+static const char kAdbBrowserPackageField[] = "adbBrowserPackage";
 static const char kAdbBrowserVersionField[] = "adbBrowserVersion";
 static const char kAdbGlobalIdField[] = "adbGlobalId";
 static const char kAdbBrowsersField[] = "browsers";
@@ -105,6 +107,7 @@ DictionaryValue* BuildTargetDescriptor(
     const GURL& url,
     const std::string& name,
     const GURL& favicon_url,
+    const std::string& description,
     int process_id,
     int route_id,
     base::ProcessHandle handle = base::kNullProcessHandle) {
@@ -117,6 +120,7 @@ DictionaryValue* BuildTargetDescriptor(
   target_data->SetString(kNameField, net::EscapeForHTML(name));
   target_data->SetInteger(kPidField, base::GetProcId(handle));
   target_data->SetString(kFaviconUrlField, favicon_url.spec());
+  target_data->SetString(kDescription, description);
 
   return target_data;
 }
@@ -167,6 +171,7 @@ DictionaryValue* BuildTargetDescriptor(RenderViewHost* rvh, bool is_tab) {
                                url,
                                title,
                                favicon_url,
+                               "",
                                rvh->GetProcess()->GetID(),
                                rvh->GetRoutingID());
 }
@@ -405,6 +410,7 @@ class InspectUI::WorkerCreationDestructionListener
           worker_info[i].url,
           UTF16ToUTF8(worker_info[i].name),
           GURL(),
+          "",
           worker_info[i].process_id,
           worker_info[i].route_id,
           worker_info[i].handle));
@@ -598,6 +604,7 @@ void InspectUI::RemoteDevicesChanged(
       DevToolsAdbBridge::RemoteBrowser* browser = bit->get();
       DictionaryValue* browser_data = new DictionaryValue();
       browser_data->SetString(kAdbBrowserProductField, browser->product());
+      browser_data->SetString(kAdbBrowserPackageField, browser->package());
       browser_data->SetString(kAdbBrowserVersionField, browser->version());
       std::string browser_id = base::StringPrintf(
           "browser:%s:%s:%s",
@@ -616,7 +623,7 @@ void InspectUI::RemoteDevicesChanged(
         DictionaryValue* page_data = BuildTargetDescriptor(
             kAdbTargetType, page->attached(),
             GURL(page->url()), page->title(), GURL(page->favicon_url()),
-            0, 0);
+            page->description(), 0, 0);
         std::string page_id = base::StringPrintf("page:%s:%s:%s",
             device->serial().c_str(),
             browser->socket().c_str(),

@@ -260,7 +260,8 @@ SerializedPacket QuicFramer::BuildDataPacket(
     const QuicFrames& frames,
     size_t packet_size) {
   QuicDataWriter writer(packet_size);
-  const SerializedPacket kNoPacket(0, NULL, 0, NULL);
+  const SerializedPacket kNoPacket(
+      0, PACKET_1BYTE_SEQUENCE_NUMBER, NULL, 0, NULL);
   if (!WritePacketHeader(header, &writer)) {
     return kNoPacket;
   }
@@ -331,7 +332,8 @@ SerializedPacket QuicFramer::BuildDataPacket(
                                              packet->FecProtectedData());
   }
 
-  return SerializedPacket(header.packet_sequence_number, packet,
+  return SerializedPacket(header.packet_sequence_number,
+                          header.public_header.sequence_number_length, packet,
                           GetPacketEntropyHash(header), NULL);
 }
 
@@ -343,7 +345,8 @@ SerializedPacket QuicFramer::BuildFecPacket(const QuicPacketHeader& header,
   len += fec.redundancy.length();
 
   QuicDataWriter writer(len);
-  SerializedPacket kNoPacket = SerializedPacket(0, NULL, 0, NULL);
+  const SerializedPacket kNoPacket(
+      0, PACKET_1BYTE_SEQUENCE_NUMBER, NULL, 0, NULL);
   if (!WritePacketHeader(header, &writer)) {
     return kNoPacket;
   }
@@ -354,6 +357,7 @@ SerializedPacket QuicFramer::BuildFecPacket(const QuicPacketHeader& header,
 
   return SerializedPacket(
       header.packet_sequence_number,
+      header.public_header.sequence_number_length,
       QuicPacket::NewFecPacket(writer.take(), len, true,
                                header.public_header.guid_length,
                                header.public_header.version_flag,
@@ -877,8 +881,8 @@ bool QuicFramer::ProcessPacketSequenceNumber(
 
 bool QuicFramer::ProcessFrameData() {
   if (reader_->IsDoneReading()) {
-    set_detailed_error("Unable to read frame type.");
-    return RaiseError(QUIC_INVALID_FRAME_DATA);
+    set_detailed_error("Packet has no frames.");
+    return RaiseError(QUIC_MISSING_PAYLOAD);
   }
   while (!reader_->IsDoneReading()) {
     uint8 frame_type;
@@ -890,7 +894,7 @@ bool QuicFramer::ProcessFrameData() {
     if ((frame_type & kQuicFrameType0BitMask) == 0) {
       QuicStreamFrame frame;
       if (!ProcessStreamFrame(frame_type, &frame)) {
-        return RaiseError(QUIC_INVALID_FRAME_DATA);
+        return RaiseError(QUIC_INVALID_STREAM_DATA);
       }
       if (!visitor_->OnStreamFrame(frame)) {
         DLOG(INFO) << "Visitor asked to stop further processing.";
@@ -904,7 +908,7 @@ bool QuicFramer::ProcessFrameData() {
     if ((frame_type & kQuicFrameType0BitMask) == 0) {
       QuicAckFrame frame;
       if (!ProcessAckFrame(&frame)) {
-        return RaiseError(QUIC_INVALID_FRAME_DATA);
+        return RaiseError(QUIC_INVALID_ACK_DATA);
       }
       if (!visitor_->OnAckFrame(frame)) {
         DLOG(INFO) << "Visitor asked to stop further processing.";
@@ -918,7 +922,7 @@ bool QuicFramer::ProcessFrameData() {
     if ((frame_type & kQuicFrameType0BitMask) == 0) {
       QuicCongestionFeedbackFrame frame;
       if (!ProcessQuicCongestionFeedbackFrame(&frame)) {
-        return RaiseError(QUIC_INVALID_FRAME_DATA);
+        return RaiseError(QUIC_INVALID_CONGESTION_FEEDBACK_DATA);
       }
       if (!visitor_->OnCongestionFeedbackFrame(frame)) {
         DLOG(INFO) << "Visitor asked to stop further processing.";

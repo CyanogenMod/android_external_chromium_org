@@ -13,7 +13,6 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/push_messaging/push_messaging_invalidation_handler.h"
-#include "chrome/browser/extensions/event_names.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -78,7 +77,7 @@ void PushMessagingEventRouter::OnMessage(const std::string& extension_id,
 
   scoped_ptr<base::ListValue> args(glue::OnMessage::Create(message));
   scoped_ptr<extensions::Event> event(new extensions::Event(
-      event_names::kOnPushMessage, args.Pass()));
+      glue::OnMessage::kEventName, args.Pass()));
   event->restrict_to_profile = profile_;
   ExtensionSystem::Get(profile_)->event_router()->DispatchEventToExtension(
       extension_id, event.Pass());
@@ -117,6 +116,8 @@ bool PushMessagingGetChannelIdFunction::RunImpl() {
     }
   }
 
+  DVLOG(2) << "Logged in profile name: " << profile()->GetProfileName();
+
   StartAccessTokenFetch();
   return true;
 }
@@ -134,6 +135,7 @@ void PushMessagingGetChannelIdFunction::OnRefreshTokenAvailable(
     const std::string& account_id) {
   ProfileOAuth2TokenServiceFactory::GetForProfile(profile())
       ->RemoveObserver(this);
+  DVLOG(2) << "Newly logged in: " << profile()->GetProfileName();
   StartAccessTokenFetch();
 }
 
@@ -156,6 +158,8 @@ void PushMessagingGetChannelIdFunction::OnGetTokenFailure(
   // TODO(fgorski): We are currently ignoring the error passed in upon failure.
   // It should be revisited when we are working on improving general error
   // handling for the identity related code.
+  DVLOG(1) << "Cannot obtain access token for this user "
+           << error.error_message() << " " << error.state();
   error_ = kUserAccessTokenFailure;
   ReportResult(std::string(), error_);
 }

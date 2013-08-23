@@ -20,6 +20,7 @@
 #include "chrome/browser/content_settings/content_settings_details.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
+#include "chrome/browser/password_manager/password_form_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/render_messages.h"
@@ -240,7 +241,8 @@ bool TabSpecificContentSettings::IsContentAllowed(
       content_type != CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA &&
       content_type != CONTENT_SETTINGS_TYPE_PPAPI_BROKER &&
       content_type != CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS &&
-      content_type != CONTENT_SETTINGS_TYPE_MIDI_SYSEX) {
+      content_type != CONTENT_SETTINGS_TYPE_MIDI_SYSEX &&
+      content_type != CONTENT_SETTINGS_TYPE_SAVE_PASSWORD) {
     return false;
   }
 
@@ -320,7 +322,8 @@ void TabSpecificContentSettings::OnContentAllowed(ContentSettingsType type) {
   DCHECK(type != CONTENT_SETTINGS_TYPE_GEOLOCATION)
       << "Geolocation settings handled by OnGeolocationPermissionSet";
   bool access_changed = false;
-  if (type == CONTENT_SETTINGS_TYPE_MEDIASTREAM) {
+  if (type == CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC ||
+      type == CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA) {
     // The setting for media is overwritten here because media does not need to
     // reload the page to have the new setting kick in. See issue/175993.
     if (content_blocked_[type]) {
@@ -460,6 +463,21 @@ void TabSpecificContentSettings::OnGeolocationPermissionSet(
       content::NotificationService::NoDetails());
 }
 
+// TODO(npentrel): Save the password when user accepts the prompt
+void TabSpecificContentSettings::OnPasswordSubmitted(
+      PasswordFormManager* form_to_save) {
+  OnContentAllowed(CONTENT_SETTINGS_TYPE_SAVE_PASSWORD);
+  NotifySiteDataObservers();
+}
+
+TabSpecificContentSettings::PasswordSavingState
+TabSpecificContentSettings::GetPasswordSavingState() const {
+  if (IsContentAllowed(CONTENT_SETTINGS_TYPE_SAVE_PASSWORD))
+    return PASSWORD_TO_BE_SAVED;
+  else
+    return NO_PASSWORD_TO_BE_SAVED;
+}
+
 TabSpecificContentSettings::MicrophoneCameraState
 TabSpecificContentSettings::GetMicrophoneCameraState() const {
   if (IsContentAllowed(CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC) &&
@@ -483,20 +501,44 @@ TabSpecificContentSettings::GetMicrophoneCameraState() const {
   return MICROPHONE_CAMERA_NOT_ACCESSED;
 }
 
-void TabSpecificContentSettings::OnMicrophoneAccessed() {
-  OnContentAllowed(CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC);
-}
+void TabSpecificContentSettings::OnMediaStreamPermissionSet(
+    const GURL& request_origin,
+    const MediaStreamDevicesController::MediaStreamTypePermissionMap&
+        request_permissions) {
+  media_stream_access_origin_ = request_origin;
 
-void TabSpecificContentSettings::OnMicrophoneAccessBlocked() {
-  OnContentBlocked(CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC, std::string());
-}
+  MediaStreamDevicesController::MediaStreamTypePermissionMap::const_iterator
+      it = request_permissions.find(content::MEDIA_DEVICE_AUDIO_CAPTURE);
+  if (it != request_permissions.end()) {
+    switch (it->second) {
+      case MediaStreamDevicesController::MEDIA_ALLOWED:
+        OnContentAllowed(CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC);
+        break;
+      // TODO(grunell): UI should show for what reason access has been blocked.
+      case MediaStreamDevicesController::MEDIA_BLOCKED_BY_POLICY:
+      case MediaStreamDevicesController::MEDIA_BLOCKED_BY_USER_SETTING:
+      case MediaStreamDevicesController::MEDIA_BLOCKED_BY_USER:
+        OnContentBlocked(CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC,
+                         std::string());
+        break;
+    }
+  }
 
-void TabSpecificContentSettings::OnCameraAccessed() {
-  OnContentAllowed(CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA);
-}
-
-void TabSpecificContentSettings::OnCameraAccessBlocked() {
-  OnContentBlocked(CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA, std::string());
+  it = request_permissions.find(content::MEDIA_DEVICE_VIDEO_CAPTURE);
+  if (it != request_permissions.end()) {
+    switch (it->second) {
+      case MediaStreamDevicesController::MEDIA_ALLOWED:
+        OnContentAllowed(CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA);
+        break;
+      // TODO(grunell): UI should show for what reason access has been blocked.
+      case MediaStreamDevicesController::MEDIA_BLOCKED_BY_POLICY:
+      case MediaStreamDevicesController::MEDIA_BLOCKED_BY_USER_SETTING:
+      case MediaStreamDevicesController::MEDIA_BLOCKED_BY_USER:
+        OnContentBlocked(CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA,
+                         std::string());
+        break;
+    }
+  }
 }
 
 void TabSpecificContentSettings::OnMIDISysExAccessed(
@@ -652,12 +694,12 @@ void TabSpecificContentSettings::Observe(
 
   content::Details<const ContentSettingsDetails> settings_details(details);
   const NavigationController& controller = web_contents()->GetController();
-  NavigationEntry* entry = controller.GetActiveEntry();
+  NavigationEntry* entry = controller.GetVisibleEntry();
   GURL entry_url;
   if (entry)
     entry_url = entry->GetURL();
   if (settings_details.ptr()->update_all() ||
-      // The active NavigationEntry is the URL in the URL field of a tab.
+      // The visible NavigationEntry is the URL in the URL field of a tab.
       // Currently this should be matched by the |primary_pattern|.
       settings_details.ptr()->primary_pattern().Matches(entry_url)) {
     Profile* profile =

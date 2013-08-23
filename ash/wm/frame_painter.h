@@ -31,7 +31,6 @@ class SlideAnimation;
 namespace views {
 class ImageButton;
 class NonClientFrameView;
-class ToggleImageButton;
 class View;
 class Widget;
 }
@@ -160,19 +159,14 @@ class ASH_EXPORT FramePainter : public aura::WindowObserver,
   FRIEND_TEST_ALL_PREFIXES(FramePainterTest, GetHeaderOpacity);
   FRIEND_TEST_ALL_PREFIXES(FramePainterTest, TitleIconAlignment);
   FRIEND_TEST_ALL_PREFIXES(FramePainterTest, ChildWindowVisibility);
+  FRIEND_TEST_ALL_PREFIXES(FramePainterTest,
+                           NoCrashShutdownWithAlwaysOnTopWindow);
 
   // Sets the images for a button based on IDs from the |frame_| theme provider.
   void SetButtonImages(views::ImageButton* button,
                        int normal_image_id,
                        int hot_image_id,
                        int pushed_image_id);
-
-  // Sets the toggled-state button images for a button based on IDs from the
-  // |frame_| theme provider.
-  void SetToggledButtonImages(views::ToggleImageButton* button,
-                              int normal_image_id,
-                              int hot_image_id,
-                              int pushed_image_id);
 
   // Returns the offset between window left edge and title string.
   int GetTitleOffsetX() const;

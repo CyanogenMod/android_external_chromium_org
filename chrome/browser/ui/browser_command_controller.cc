@@ -10,6 +10,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/avatar_menu_model.h"
 #include "chrome/browser/profiles/profile.h"
@@ -46,7 +47,7 @@
 #if defined(OS_WIN)
 #include "base/win/metro.h"
 #include "base/win/windows_version.h"
-#include "chrome/browser/ui/extensions/apps_metro_handler_win.h"
+#include "chrome/browser/ui/apps/apps_metro_handler_win.h"
 #endif
 
 #if defined(USE_ASH)
@@ -234,14 +235,15 @@ bool BrowserCommandController::IsReservedCommandOrKey(
     return false;
 
 #if defined(OS_CHROMEOS)
-  // On Chrome OS, the top row of keys are mapped to F1-F10.  We don't want web
-  // pages to be able to change the behavior of these keys.  Ash handles F4 and
-  // up; this leaves us needing to reserve F1-F3 here.
+  // On Chrome OS, the top row of keys are mapped to browser actions like
+  // back/forward or refresh. We don't want web pages to be able to change the
+  // behavior of these keys.  Ash handles F4 and up; this leaves us needing to
+  // reserve browser back/forward and refresh here.
   ui::KeyboardCode key_code =
     static_cast<ui::KeyboardCode>(event.windowsKeyCode);
-  if ((key_code == ui::VKEY_F1 && command_id == IDC_BACK) ||
-      (key_code == ui::VKEY_F2 && command_id == IDC_FORWARD) ||
-      (key_code == ui::VKEY_F3 && command_id == IDC_RELOAD)) {
+  if ((key_code == ui::VKEY_BROWSER_BACK && command_id == IDC_BACK) ||
+      (key_code == ui::VKEY_BROWSER_FORWARD && command_id == IDC_FORWARD) ||
+      (key_code == ui::VKEY_BROWSER_REFRESH && command_id == IDC_RELOAD)) {
     return true;
   }
 #endif
@@ -448,7 +450,7 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
       content::RecordAction(content::UserMetricsAction("Win8DesktopRestart"));
       break;
     case IDC_WIN8_METRO_RESTART:
-      if (!chrome::VerifySwitchToMetroForApps(window()->GetNativeWindow()))
+      if (!VerifySwitchToMetroForApps(window()->GetNativeWindow()))
         break;
 
       // SwitchToMetroUIHandler deletes itself.

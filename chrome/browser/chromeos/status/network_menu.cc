@@ -18,6 +18,7 @@
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/mobile_config.h"
 #include "chrome/browser/chromeos/options/network_config_view.h"
+#include "chrome/browser/chromeos/sim_dialog_delegate.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/url_constants.h"
@@ -61,8 +62,7 @@ bool ShouldHighlightNetwork(const NetworkState* network) {
 void ToggleTechnology(const std::string& technology) {
   NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
   bool is_enabled = handler->IsTechnologyEnabled(technology);
-  handler->SetTechnologyEnabled(technology, !is_enabled,
-                                network_handler::ErrorCallback());
+  ash::network_connect::SetTechnologyEnabled(technology, !is_enabled);
 }
 
 }  // namespace
@@ -160,13 +160,6 @@ class NetworkMenuModel : public ui::MenuModel {
 
   // Weak pointer to NetworkMenu that owns this MenuModel.
   base::WeakPtr<NetworkMenu> owner_;
-
-  // Top up URL of the current carrier on empty string if there's none.
-  std::string top_up_url_;
-
-  // Carrier ID which top up URL is initialized for.
-  // Used to update top up URL only when cellular carrier has changed.
-  std::string carrier_id_;
 
  private:
   // Open a dialog to set up and connect to a network.
@@ -388,7 +381,6 @@ void MainMenuModel::InitMenuItems(bool should_open_button_options) {
   NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
 
   // Populate our MenuItems with the current list of networks.
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
   string16 label;
 
   // Ethernet
@@ -570,8 +562,6 @@ void MainMenuModel::InitMenuItems(bool should_open_button_options) {
       label = l10n_util::GetStringFUTF16(id,
           l10n_util::GetStringUTF16(IDS_STATUSBAR_NETWORK_DEVICE_CELLULAR));
       gfx::ImageSkia icon;
-      if (is_locked)
-        icon = *rb.GetImageSkiaNamed(IDR_AURA_UBER_TRAY_NETWORK_SECURE_DARK);
       int flag = FLAG_TOGGLE_MOBILE;
       if (mobile_state == NetworkStateHandler::TECHNOLOGY_ENABLING)
         flag |= FLAG_DISABLED;

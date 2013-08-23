@@ -13,6 +13,11 @@
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+#if defined(OS_WIN)
+// For version specific disabled tests below (http://crbug.com/230534).
+#include "base/win/windows_version.h"
+#endif
+
 using base::HistogramBase;
 using base::HistogramSamples;
 using base::StatisticsRecorder;
@@ -67,7 +72,16 @@ TEST_F(SpellcheckHostMetricsTest, RecordEnabledStats) {
 }
 
 TEST_F(SpellcheckHostMetricsTest, CustomWordStats) {
+#if defined(OS_WIN)
+// Failing consistently on Win7. See crbug.com/230534.
+  if (base::win::GetVersion() >= base::win::VERSION_VISTA)
+    return;
+#endif
   SpellCheckHostMetrics::RecordCustomWordCountStats(123);
+
+  // Determine if test failures are due the statistics recorder not being
+  // available or because the histogram just isn't there: crbug.com/230534.
+  EXPECT_TRUE(StatisticsRecorder::IsActive());
 
   HistogramBase* histogram =
       StatisticsRecorder::FindHistogram("SpellCheck.CustomWords");

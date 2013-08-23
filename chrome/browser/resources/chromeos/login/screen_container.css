@@ -124,14 +124,21 @@
   opacity: 1;
 }
 
-body.login-display #inner-container {
+body:not(.oobe-display) #inner-container {
   height: 262px;
   padding: 0;
   width: 1100px;
 }
 
-body.login-display #progress-dots {
+body:not(.oobe-display) #progress-dots {
   display: none;
+}
+
+#outer-container.fullscreen,
+#outer-container.fullscreen #oobe,
+#outer-container.fullscreen #oobe #inner-container {
+  height: 100%;
+  width: 100%;
 }
 
 html[build=chrome] #header-sections {

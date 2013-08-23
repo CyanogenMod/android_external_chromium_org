@@ -25,13 +25,16 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
+	media/base/android/audio_decoder_job.cc \
 	media/base/android/media_codec_bridge.cc \
+	media/base/android/media_decoder_job.cc \
 	media/base/android/media_drm_bridge.cc \
 	media/base/android/media_jni_registrar.cc \
 	media/base/android/media_player_android.cc \
 	media/base/android/media_player_bridge.cc \
 	media/base/android/media_player_listener.cc \
 	media/base/android/media_source_player.cc \
+	media/base/android/video_decoder_job.cc \
 	media/base/android/webaudio_media_codec_bridge.cc
 
 

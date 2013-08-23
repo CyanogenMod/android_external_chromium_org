@@ -20,11 +20,11 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "extensions/common/id_util.h"
+#include "extensions/common/manifest_constants.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -86,11 +86,11 @@ std::string LookupWebstoreName() {
   return l10n_util::GetStringUTF8(string_id);
 }
 
-std::string GenerateId(const DictionaryValue* manifest,
+std::string GenerateId(const base::DictionaryValue* manifest,
                        const base::FilePath& path) {
   std::string raw_key;
   std::string id_input;
-  CHECK(manifest->GetString(extension_manifest_keys::kPublicKey, &raw_key));
+  CHECK(manifest->GetString(manifest_keys::kPublicKey, &raw_key));
   CHECK(Extension::ParsePEMKeyBytes(raw_key, &id_input));
   std::string id = id_util::GenerateId(id_input);
   return id;
@@ -99,7 +99,7 @@ std::string GenerateId(const DictionaryValue* manifest,
 }  // namespace
 
 ComponentLoader::ComponentExtensionInfo::ComponentExtensionInfo(
-    const DictionaryValue* manifest, const base::FilePath& directory)
+    const base::DictionaryValue* manifest, const base::FilePath& directory)
     : manifest(manifest),
       root_directory(directory) {
   if (!root_directory.IsAbsolute()) {
@@ -128,17 +128,17 @@ void ComponentLoader::LoadAll() {
   }
 }
 
-DictionaryValue* ComponentLoader::ParseManifest(
+base::DictionaryValue* ComponentLoader::ParseManifest(
     const std::string& manifest_contents) const {
   JSONStringValueSerializer serializer(manifest_contents);
-  scoped_ptr<Value> manifest(serializer.Deserialize(NULL, NULL));
+  scoped_ptr<base::Value> manifest(serializer.Deserialize(NULL, NULL));
 
-  if (!manifest.get() || !manifest->IsType(Value::TYPE_DICTIONARY)) {
+  if (!manifest.get() || !manifest->IsType(base::Value::TYPE_DICTIONARY)) {
     LOG(ERROR) << "Failed to parse extension manifest.";
     return NULL;
   }
   // Transfer ownership to the caller.
-  return static_cast<DictionaryValue*>(manifest.release());
+  return static_cast<base::DictionaryValue*>(manifest.release());
 }
 
 void ComponentLoader::ClearAllRegistered() {
@@ -149,6 +149,19 @@ void ComponentLoader::ClearAllRegistered() {
   }
 
   component_extensions_.clear();
+}
+
+std::string ComponentLoader::GetExtensionID(
+    int manifest_resource_id,
+    const base::FilePath& root_directory) {
+  std::string manifest_contents = ResourceBundle::GetSharedInstance().
+      GetRawDataResource(manifest_resource_id).as_string();
+  base::DictionaryValue* manifest = ParseManifest(manifest_contents);
+  if (!manifest)
+    return std::string();
+
+  ComponentExtensionInfo info(manifest, root_directory);
+  return info.extension_id;
 }
 
 std::string ComponentLoader::Add(int manifest_resource_id,
@@ -163,13 +176,13 @@ std::string ComponentLoader::Add(const std::string& manifest_contents,
                                  const base::FilePath& root_directory) {
   // The Value is kept for the lifetime of the ComponentLoader. This is
   // required in case LoadAll() is called again.
-  DictionaryValue* manifest = ParseManifest(manifest_contents);
+  base::DictionaryValue* manifest = ParseManifest(manifest_contents);
   if (manifest)
     return Add(manifest, root_directory);
   return std::string();
 }
 
-std::string ComponentLoader::Add(const DictionaryValue* parsed_manifest,
+std::string ComponentLoader::Add(const base::DictionaryValue* parsed_manifest,
                                  const base::FilePath& root_directory) {
   ComponentExtensionInfo info(parsed_manifest, root_directory);
   component_extensions_.push_back(info);
@@ -181,7 +194,7 @@ std::string ComponentLoader::Add(const DictionaryValue* parsed_manifest,
 std::string ComponentLoader::AddOrReplace(const base::FilePath& path) {
   base::FilePath absolute_path = base::MakeAbsoluteFilePath(path);
   std::string error;
-  scoped_ptr<DictionaryValue> manifest(
+  scoped_ptr<base::DictionaryValue> manifest(
       extension_file_util::LoadManifest(absolute_path, &error));
   if (!manifest) {
     LOG(ERROR) << "Could not load extension from '" <<
@@ -224,14 +237,6 @@ void ComponentLoader::Load(const ComponentExtensionInfo& info) {
 
   CHECK_EQ(info.extension_id, extension->id()) << extension->name();
   extension_service_->AddComponentExtension(extension.get());
-}
-
-void ComponentLoader::RemoveAll() {
-  RegisteredComponentExtensions::iterator it = component_extensions_.begin();
-  for (; it != component_extensions_.end(); ++it)
-    UnloadComponent(&(*it));
-
-  component_extensions_.clear();
 }
 
 void ComponentLoader::Remove(const base::FilePath& root_directory) {
@@ -306,11 +311,11 @@ void ComponentLoader::AddWithName(int manifest_resource_id,
 
   // The Value is kept for the lifetime of the ComponentLoader. This is
   // required in case LoadAll() is called again.
-  DictionaryValue* manifest = ParseManifest(manifest_contents);
+  base::DictionaryValue* manifest = ParseManifest(manifest_contents);
 
   if (manifest) {
     // Update manifest to use a proper name.
-    manifest->SetString(extension_manifest_keys::kName, name);
+    manifest->SetString(manifest_keys::kName, name);
     Add(manifest, root_directory);
   }
 }
@@ -399,8 +404,8 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
 
   if (!skip_session_components) {
     // Apps Debugger
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kAppsDevtool)) {
+    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAppsDevtool) &&
+        profile_prefs_->GetBoolean(prefs::kExtensionsUIDeveloperMode)) {
       Add(IDR_APPS_DEBUGGER_MANIFEST,
           base::FilePath(FILE_PATH_LITERAL("apps_debugger")));
     }
@@ -413,6 +418,10 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
         base::FilePath(FILE_PATH_LITERAL("settings_app")));
 #endif
   }
+
+#if defined(GOOGLE_CHROME_BUILD)
+    Add(IDR_FEEDBACK_MANIFEST, base::FilePath(FILE_PATH_LITERAL("feedback")));
+#endif  // defined(GOOGLE_CHROME_BUILD)
 
 #if defined(OS_CHROMEOS)
   if (!skip_session_components) {
@@ -470,7 +479,15 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(ENABLE_GOOGLE_NOW)
-  if (base::FieldTrialList::FindFullName("GoogleNow") == "Enable" ||
+  const char kEnablePrefix[] = "Enable";
+  const char kFieldTrialName[] = "GoogleNow";
+  std::string enable_prefix(kEnablePrefix);
+  std::string field_trial_result =
+      base::FieldTrialList::FindFullName(kFieldTrialName);
+  if ((field_trial_result.compare(
+          0,
+          enable_prefix.length(),
+          enable_prefix) == 0) ||
       CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableGoogleNowIntegration)) {
     Add(IDR_GOOGLE_NOW_MANIFEST,
@@ -484,7 +501,7 @@ void ComponentLoader::UnloadComponent(ComponentExtensionInfo* component) {
   if (extension_service_->is_ready()) {
     extension_service_->
         UnloadExtension(component->extension_id,
-                        extension_misc::UNLOAD_REASON_DISABLE);
+                        extension_misc::UNLOAD_REASON_UNINSTALL);
   }
 }
 

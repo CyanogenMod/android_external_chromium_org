@@ -81,6 +81,10 @@ class ContentViewGestureHandler implements LongPressDelegate {
     // we will first show the press state, then trigger the click.
     private boolean mShowPressIsCalled;
 
+    // This flag is used for ignoring the remaining touch events, i.e., All the events until the
+    // next ACTION_DOWN. This is automatically set to false on the next ACTION_DOWN.
+    private boolean mIgnoreRemainingTouchEvents;
+
     // TODO(klobag): this is to avoid a bug in GestureDetector. With multi-touch,
     // mAlwaysInTapRegion is not reset. So when the last finger is up, onSingleTapUp()
     // will be mistakenly fired.
@@ -176,6 +180,7 @@ class ContentViewGestureHandler implements LongPressDelegate {
     static final int DOUBLE_TAP_DRAG_MODE_NONE = 0;
     static final int DOUBLE_TAP_DRAG_MODE_DETECTION_IN_PROGRESS = 1;
     static final int DOUBLE_TAP_DRAG_MODE_ZOOM = 2;
+    static final int DOUBLE_TAP_DRAG_MODE_DISABLED = 3;
 
     private class TouchEventTimeoutHandler implements Runnable {
         private static final int TOUCH_EVENT_TIMEOUT = 200;
@@ -510,6 +515,7 @@ class ContentViewGestureHandler implements LongPressDelegate {
 
                     @Override
                     public boolean onDoubleTapEvent(MotionEvent e) {
+                        if (isDoubleTapDragDisabled()) return false;
                         switch (e.getActionMasked()) {
                             case MotionEvent.ACTION_DOWN:
                                 sendShowPressCancelIfNecessary(e);
@@ -569,7 +575,8 @@ class ContentViewGestureHandler implements LongPressDelegate {
                     @Override
                     public void onLongPress(MotionEvent e) {
                         if (!mZoomManager.isScaleGestureDetectionInProgress() &&
-                                mDoubleTapDragMode == DOUBLE_TAP_DRAG_MODE_NONE) {
+                                (mDoubleTapDragMode == DOUBLE_TAP_DRAG_MODE_NONE ||
+                                 isDoubleTapDragDisabled())) {
                             sendShowPressCancelIfNecessary(e);
                             sendMotionEventAsGesture(GESTURE_LONG_PRESS, e, null);
                         }
@@ -664,6 +671,7 @@ class ContentViewGestureHandler implements LongPressDelegate {
      *              to send. This argument is an optional and can be null.
      */
     void endDoubleTapDragMode(MotionEvent event) {
+        if (isDoubleTapDragDisabled()) return;
         if (mDoubleTapDragMode == DOUBLE_TAP_DRAG_MODE_ZOOM) {
             if (event == null) event = obtainActionCancelMotionEvent();
             pinchEnd(event.getEventTime());
@@ -763,12 +771,32 @@ class ContentViewGestureHandler implements LongPressDelegate {
     }
 
     /**
+     * Cancel the current touch event sequence by sending ACTION_CANCEL and ignore all the
+     * subsequent events until the next ACTION_DOWN.
+     *
+     * One example usecase is stop processing the touch events when showing context popup menu.
+     */
+    public void setIgnoreRemainingTouchEvents() {
+        onTouchEvent(obtainActionCancelMotionEvent());
+        mIgnoreRemainingTouchEvents = true;
+    }
+
+    /**
      * Handle the incoming MotionEvent.
      * @return Whether the event was handled.
      */
     boolean onTouchEvent(MotionEvent event) {
         try {
             TraceEvent.begin("onTouchEvent");
+
+            if (mIgnoreRemainingTouchEvents) {
+                if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                    mIgnoreRemainingTouchEvents = false;
+                } else {
+                    return false;
+                }
+            }
+
             mLongPressDetector.cancelLongPressIfNeeded(event);
             mSnapScrollController.setSnapScrollingMode(event);
             // Notify native that scrolling has stopped whenever a down action is processed prior to
@@ -1147,5 +1175,16 @@ class ContentViewGestureHandler implements LongPressDelegate {
      */
     boolean hasScheduledTouchTimeoutEventForTesting() {
         return mTouchEventTimeoutHandler.hasScheduledTimeoutEventForTesting();
+    }
+
+    public void updateDoubleTapDragSupport(boolean supportDoubleTapDrag) {
+        assert (mDoubleTapDragMode == DOUBLE_TAP_DRAG_MODE_DISABLED ||
+                mDoubleTapDragMode == DOUBLE_TAP_DRAG_MODE_NONE);
+        mDoubleTapDragMode = supportDoubleTapDrag ?
+                DOUBLE_TAP_DRAG_MODE_NONE : DOUBLE_TAP_DRAG_MODE_DISABLED;
+    }
+
+    private boolean isDoubleTapDragDisabled() {
+        return mDoubleTapDragMode == DOUBLE_TAP_DRAG_MODE_DISABLED;
     }
 }

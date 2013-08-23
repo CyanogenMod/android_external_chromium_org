@@ -29,6 +29,7 @@
 #include "ui/views/widget/widget_deletion_observer.h"
 #include "ui/views/widget/widget_observer.h"
 #include "ui/views/window/custom_frame_view.h"
+#include "ui/views/window/dialog_delegate.h"
 
 #if !defined(OS_MACOSX)
 #include "ui/views/controls/menu/menu_controller.h"
@@ -239,6 +240,30 @@ Widget* Widget::CreateWindowWithContextAndBounds(WidgetDelegate* delegate,
   params.context = context;
   params.bounds = bounds;
   widget->Init(params);
+  return widget;
+}
+
+// static
+Widget* Widget::CreateWindowAsFramelessChild(WidgetDelegate* widget_delegate,
+                                             gfx::NativeView parent,
+                                             gfx::NativeView new_style_parent) {
+  views::Widget* widget = new views::Widget;
+
+  views::Widget::InitParams params;
+  params.delegate = widget_delegate;
+  params.child = true;
+  if (views::DialogDelegate::UseNewStyle()) {
+    params.parent = new_style_parent;
+    params.remove_standard_frame = true;
+#if defined(USE_AURA)
+    params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
+#endif
+  } else {
+    params.parent = parent;
+  }
+
+  widget->Init(params);
+
   return widget;
 }
 
@@ -923,10 +948,6 @@ bool Widget::SetInitialFocus() {
   return !!v;
 }
 
-View* Widget::GetChildViewParent() {
-  return GetContentsView() ? GetContentsView() : GetRootView();
-}
-
 gfx::Rect Widget::GetWorkAreaBoundsInScreen() const {
   return native_widget_->GetWorkAreaBoundsInScreen();
 }
@@ -985,6 +1006,11 @@ void Widget::OnNativeFocus(gfx::NativeView old_focused_view) {
 void Widget::OnNativeBlur(gfx::NativeView new_focused_view) {
   WidgetFocusManager::GetInstance()->OnWidgetFocusEvent(GetNativeView(),
                                                         new_focused_view);
+}
+
+void Widget::OnNativeWidgetVisibilityChanging(bool visible) {
+  FOR_EACH_OBSERVER(WidgetObserver, observers_,
+                    OnWidgetVisibilityChanging(this, visible));
 }
 
 void Widget::OnNativeWidgetVisibilityChanged(bool visible) {

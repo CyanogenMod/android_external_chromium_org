@@ -63,7 +63,6 @@ class CC_EXPORT ResourceProvider {
 
   void DidLoseOutputSurface() { lost_output_surface_ = true; }
 
-  WebKit::WebGraphicsContext3D* GraphicsContext3D();
   int max_texture_size() const { return max_texture_size_; }
   GLenum best_texture_format() const { return best_texture_format_; }
   size_t num_resources() const { return resources_.size(); }
@@ -119,6 +118,7 @@ class CC_EXPORT ResourceProvider {
   double EstimatedUploadsPerSecond();
   void FlushUploads();
   void ReleaseCachedData();
+  base::TimeDelta TextureUpdateTickRate();
 
   // Flush all context operations, kicking uploads and ensuring ordering with
   // respect to other contexts.
@@ -153,9 +153,9 @@ class CC_EXPORT ResourceProvider {
   // Resources are removed from the ResourceProvider. Note: the resource IDs
   // passed are in the parent namespace and will be translated to the child
   // namespace when returned.
-  void PrepareSendToChild(int child,
-                          const ResourceIdArray& resources,
-                          TransferableResourceArray* transferable_resources);
+  void PrepareSendReturnsToChild(int child,
+                                 const ResourceIdArray& resources,
+                                 ReturnedResourceArray* returned_resources);
 
   // Receives resources from a child, moving them from mailboxes. Resource IDs
   // passed are in the child namespace, and will be translated to the parent
@@ -169,8 +169,8 @@ class CC_EXPORT ResourceProvider {
   // IDs passed are in the child namespace.
   // NOTE: if the sync_point is set on any TransferableResource, this will
   // wait on it.
-  void ReceiveFromParent(
-      const TransferableResourceArray& transferable_resources);
+  void ReceiveReturnsFromParent(
+      const ReturnedResourceArray& transferable_resources);
 
   // The following lock classes are part of the ResourceProvider API and are
   // needed to read and write the resource contents. The user must ensure
@@ -324,11 +324,11 @@ class CC_EXPORT ResourceProvider {
   // Indicates if we can currently lock this resource for write.
   bool CanLockForWrite(ResourceId id);
 
-  cc::ContextProvider* offscreen_context_provider() {
+  ContextProvider* offscreen_context_provider() {
     return offscreen_context_provider_.get();
   }
   void set_offscreen_context_provider(
-      scoped_refptr<cc::ContextProvider> offscreen_context_provider) {
+      scoped_refptr<ContextProvider> offscreen_context_provider) {
     offscreen_context_provider_ = offscreen_context_provider;
   }
   static GLint GetActiveTextureUnit(WebKit::WebGraphicsContext3D* context);
@@ -354,9 +354,10 @@ class CC_EXPORT ResourceProvider {
     uint8_t* pixels;
     uint8_t* pixel_buffer;
     int lock_for_read_count;
+    int imported_count;
+    int exported_count;
     bool locked_for_write;
     bool external;
-    bool exported;
     bool marked_for_deletion;
     bool pending_set_pixels;
     bool set_pixels_completion_forced;
@@ -392,6 +393,7 @@ class CC_EXPORT ResourceProvider {
 
   void CleanUpGLIfNeeded();
 
+  Resource* GetResource(ResourceId id);
   const Resource* LockForRead(ResourceId id);
   void UnlockForRead(ResourceId id);
   const Resource* LockForWrite(ResourceId id);
@@ -399,7 +401,7 @@ class CC_EXPORT ResourceProvider {
   static void PopulateSkBitmapWithResource(SkBitmap* sk_bitmap,
                                            const Resource* resource);
 
-  bool TransferResource(WebKit::WebGraphicsContext3D* context,
+  void TransferResource(WebKit::WebGraphicsContext3D* context,
                         ResourceId id,
                         TransferableResource* resource);
   enum DeleteStyle {
@@ -420,6 +422,9 @@ class CC_EXPORT ResourceProvider {
   void UnbindForSampling(ResourceProvider::ResourceId resource_id,
                          GLenum target,
                          GLenum unit);
+
+  // Returns NULL if the output_surface_ does not have a ContextProvider.
+  WebKit::WebGraphicsContext3D* Context3d() const;
 
   OutputSurface* output_surface_;
   bool lost_output_surface_;

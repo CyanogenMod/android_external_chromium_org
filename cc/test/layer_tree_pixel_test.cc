@@ -52,11 +52,9 @@ scoped_ptr<OutputSurface> LayerTreePixelTest::CreateOutputSurface(
     case GL_WITH_BITMAP: {
       CHECK(gfx::InitializeGLBindings(gfx::kGLImplementationOSMesaGL));
 
-      using WebKit::WebGraphicsContext3D;
-      using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
+      using webkit::gpu::ContextProviderInProcess;
       output_surface = make_scoped_ptr(new PixelTestOutputSurface(
-          WebGraphicsContext3DInProcessCommandBufferImpl::
-              CreateOffscreenContext(WebGraphicsContext3D::Attributes())));
+          ContextProviderInProcess::CreateOffscreen()));
       break;
     }
   }
@@ -69,7 +67,7 @@ scoped_ptr<OutputSurface> LayerTreePixelTest::CreateOutputSurface(
 scoped_refptr<cc::ContextProvider>
 LayerTreePixelTest::OffscreenContextProviderForMainThread() {
   scoped_refptr<webkit::gpu::ContextProviderInProcess> provider =
-      webkit::gpu::ContextProviderInProcess::Create();
+      webkit::gpu::ContextProviderInProcess::CreateOffscreen();
   CHECK(provider->BindToCurrentThread());
   return provider;
 }
@@ -77,7 +75,7 @@ LayerTreePixelTest::OffscreenContextProviderForMainThread() {
 scoped_refptr<cc::ContextProvider>
 LayerTreePixelTest::OffscreenContextProviderForCompositorThread() {
   scoped_refptr<webkit::gpu::ContextProviderInProcess> provider =
-      webkit::gpu::ContextProviderInProcess::Create();
+      webkit::gpu::ContextProviderInProcess::CreateOffscreen();
   CHECK(provider.get());
   return provider;
 }

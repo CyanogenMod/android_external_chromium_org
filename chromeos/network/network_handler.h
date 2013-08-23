@@ -6,13 +6,17 @@
 #define CHROMEOS_NETWORK_NETWORK_HANDLER_H_
 
 #include "base/basictypes.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "chromeos/chromeos_export.h"
 
 namespace chromeos {
 
+class ClientCertResolver;
 class GeolocationHandler;
 class ManagedNetworkConfigurationHandler;
+class ManagedNetworkConfigurationHandlerImpl;
 class NetworkCertMigrator;
 class NetworkConfigurationHandler;
 class NetworkConnectionHandler;
@@ -38,6 +42,10 @@ class CHROMEOS_EXPORT NetworkHandler {
   // Returns true if the global instance has been initialized.
   static bool IsInitialized();
 
+  // Returns the MessageLoopProxy for posting NetworkHandler calls from
+  // other threads.
+  base::MessageLoopProxy* message_loop() { return message_loop_.get(); }
+
   // Do not use these accessors within this module; all dependencies should be
   // explicit so that classes can be constructed explicitly in tests without
   // NetworkHandler.
@@ -57,13 +65,15 @@ class CHROMEOS_EXPORT NetworkHandler {
   void Init();
 
   // The order of these determines the (inverse) destruction order.
+  scoped_refptr<base::MessageLoopProxy> message_loop_;
   scoped_ptr<NetworkStateHandler> network_state_handler_;
   scoped_ptr<NetworkDeviceHandler> network_device_handler_;
   scoped_ptr<NetworkProfileHandler> network_profile_handler_;
-  scoped_ptr<NetworkCertMigrator> network_cert_migrator_;
   scoped_ptr<NetworkConfigurationHandler> network_configuration_handler_;
-  scoped_ptr<ManagedNetworkConfigurationHandler>
+  scoped_ptr<ManagedNetworkConfigurationHandlerImpl>
       managed_network_configuration_handler_;
+  scoped_ptr<NetworkCertMigrator> network_cert_migrator_;
+  scoped_ptr<ClientCertResolver> client_cert_resolver_;
   scoped_ptr<NetworkConnectionHandler> network_connection_handler_;
   scoped_ptr<NetworkSmsHandler> network_sms_handler_;
   scoped_ptr<GeolocationHandler> geolocation_handler_;

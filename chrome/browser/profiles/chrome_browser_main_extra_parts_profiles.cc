@@ -44,8 +44,10 @@
 #include "chrome/browser/extensions/api/processes/processes_api.h"
 #include "chrome/browser/extensions/api/push_messaging/push_messaging_api.h"
 #include "chrome/browser/extensions/api/serial/serial_connection.h"
-#include "chrome/browser/extensions/api/session_restore/session_restore_api.h"
+#include "chrome/browser/extensions/api/sessions/sessions_api.h"
 #include "chrome/browser/extensions/api/socket/socket.h"
+#include "chrome/browser/extensions/api/socket/udp_socket.h"
+#include "chrome/browser/extensions/api/sockets_udp/udp_socket_event_dispatcher.h"
 #include "chrome/browser/extensions/api/streams_private/streams_private_api.h"
 #include "chrome/browser/extensions/api/system_info/system_info_api.h"
 #include "chrome/browser/extensions/api/tab_capture/tab_capture_registry_factory.h"
@@ -140,6 +142,10 @@
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
 #endif
 
+#if defined(ENABLE_MDNS)
+#include "chrome/browser/local_discovery/privet_notifications_factory.h"
+#endif
+
 namespace chrome {
 
 void AddProfilesExtraParts(ChromeBrowserMainParts* main_parts) {
@@ -197,11 +203,14 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   extensions::ActivityLogFactory::GetInstance();
   extensions::ActivityLogAPI::GetFactoryInstance();
   extensions::AlarmManager::GetFactoryInstance();
+  extensions::ApiResourceManager<extensions::ResumableUDPSocket>::
+      GetFactoryInstance();
   extensions::ApiResourceManager<extensions::SerialConnection>::
       GetFactoryInstance();
   extensions::ApiResourceManager<extensions::Socket>::GetFactoryInstance();
   extensions::ApiResourceManager<extensions::UsbDeviceResource>::
       GetFactoryInstance();
+  extensions::api::UDPSocketEventDispatcher::GetFactoryInstance();
   extensions::AudioAPI::GetFactoryInstance();
   extensions::BookmarksAPI::GetFactoryInstance();
   extensions::BluetoothAPIFactory::GetInstance();
@@ -240,7 +249,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   extensions::PreferenceAPI::GetFactoryInstance();
   extensions::ProcessesAPI::GetFactoryInstance();
   extensions::PushMessagingAPI::GetFactoryInstance();
-  extensions::SessionRestoreAPI::GetFactoryInstance();
+  extensions::SessionsAPI::GetFactoryInstance();
 #if defined(ENABLE_SPELLCHECK)
   extensions::SpellcheckAPI::GetFactoryInstance();
 #endif
@@ -266,6 +275,9 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   HistoryServiceFactory::GetInstance();
   invalidation::InvalidationServiceFactory::GetInstance();
   InstantServiceFactory::GetInstance();
+#if defined(ENABLE_MDNS)
+  local_discovery::PrivetNotificationServiceFactory::GetInstance();
+#endif
 #if defined(ENABLE_MANAGED_USERS)
   ManagedUserServiceFactory::GetInstance();
   ManagedUserSyncServiceFactory::GetInstance();

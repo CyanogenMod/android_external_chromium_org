@@ -107,14 +107,21 @@ static const char kPolicyMiscSetup[] =
 static const char kStringTableCleanup[] =
     "DELETE FROM string_ids WHERE id NOT IN\n"
     "(SELECT extension_id_x FROM activitylog_compressed\n"
+    "    WHERE extension_id_x IS NOT NULL\n"
     " UNION SELECT api_name_x FROM activitylog_compressed\n"
+    "    WHERE api_name_x IS NOT NULL\n"
     " UNION SELECT args_x FROM activitylog_compressed\n"
+    "    WHERE args_x IS NOT NULL\n"
     " UNION SELECT page_title_x FROM activitylog_compressed\n"
-    " UNION SELECT other_x FROM activitylog_compressed)";
+    "    WHERE page_title_x IS NOT NULL\n"
+    " UNION SELECT other_x FROM activitylog_compressed\n"
+    "    WHERE other_x IS NOT NULL)";
 static const char kUrlTableCleanup[] =
     "DELETE FROM url_ids WHERE id NOT IN\n"
     "(SELECT page_url_x FROM activitylog_compressed\n"
-    " UNION SELECT arg_url_x FROM activitylog_compressed)";
+    "    WHERE page_url_x IS NOT NULL\n"
+    " UNION SELECT arg_url_x FROM activitylog_compressed\n"
+    "    WHERE arg_url_x IS NOT NULL)";
 
 }  // namespace
 
@@ -128,7 +135,9 @@ class CountedAction : public Action {
                 const base::Time& time,
                 const ActionType action_type,
                 const std::string& api_name)
-      : Action(extension_id, time, action_type, api_name) {}
+      : Action(extension_id, time, action_type, api_name),
+        count_(0) {
+  }
 
   // Number of merged records for this action.
   int count() const { return count_; }
@@ -196,7 +205,27 @@ void CountingPolicy::QueueAction(scoped_refptr<Action> action) {
     action = action->Clone();
     Util::StripPrivacySensitiveFields(action);
     Util::StripArguments(api_arg_whitelist_, action);
-    queued_actions_.push_back(action);
+
+    // If the current action falls on a different date than the ones in the
+    // queue, flush the queue out now to prevent any false merging (actions
+    // from different days being merged).
+    base::Time new_date = action->time().LocalMidnight();
+    if (new_date != queued_actions_date_)
+      activity_database()->AdviseFlush(ActivityDatabase::kFlushImmediately);
+    queued_actions_date_ = new_date;
+
+    ActionQueue::iterator queued_entry = queued_actions_.find(action);
+    if (queued_entry == queued_actions_.end()) {
+      queued_actions_[action] = 1;
+    } else {
+      // Update the timestamp in the key to be the latest time seen.  Modifying
+      // the time is safe since that field is not involved in key comparisons
+      // in the map.
+      using std::max;
+      queued_entry->first->set_time(
+          max(queued_entry->first->time(), action->time()));
+      queued_entry->second++;
+    }
     activity_database()->AdviseFlush(queued_actions_.size());
   }
 }
@@ -206,7 +235,7 @@ bool CountingPolicy::FlushDatabase(sql::Connection* db) {
   static const char* matched_columns[] = {
       "extension_id_x", "action_type", "api_name_x", "args_x", "page_url_x",
       "page_title_x", "arg_url_x", "other_x"};
-  Action::ActionVector queue;
+  ActionQueue queue;
   queue.swap(queued_actions_);
 
   // Whether to clean old records out of the activity log database.  Do this
@@ -228,7 +257,7 @@ bool CountingPolicy::FlushDatabase(sql::Connection* db) {
       "INSERT INTO " + std::string(kTableName) + "(count, time";
   std::string update_str =
       "UPDATE " + std::string(kTableName) +
-      " SET count = count + 1, time = max(?, time)"
+      " SET count = count + ?, time = max(?, time)"
       " WHERE time >= ? AND time < ?";
 
   for (size_t i = 0; i < arraysize(matched_columns); i++) {
@@ -237,15 +266,15 @@ bool CountingPolicy::FlushDatabase(sql::Connection* db) {
     update_str = base::StringPrintf(
         "%s AND %s IS ?", update_str.c_str(), matched_columns[i]);
   }
-  insert_str += ") VALUES (1, ?";
+  insert_str += ") VALUES (?, ?";
   for (size_t i = 0; i < arraysize(matched_columns); i++) {
     insert_str += ", ?";
   }
   insert_str += ")";
 
-  Action::ActionVector::size_type i;
-  for (i = 0; i != queue.size(); ++i) {
-    const Action& action = *queue[i];
+  for (ActionQueue::iterator i = queue.begin(); i != queue.end(); ++i) {
+    const Action& action = *i->first;
+    int count = i->second;
 
     base::Time day_start = action.time().LocalMidnight();
     base::Time next_day = Util::AddDays(day_start, 1);
@@ -320,9 +349,10 @@ bool CountingPolicy::FlushDatabase(sql::Connection* db) {
     // count.
     sql::Statement update_statement(db->GetCachedStatement(
         sql::StatementID(SQL_FROM_HERE), update_str.c_str()));
-    update_statement.BindInt64(0, action.time().ToInternalValue());
-    update_statement.BindInt64(1, day_start.ToInternalValue());
-    update_statement.BindInt64(2, next_day.ToInternalValue());
+    update_statement.BindInt(0, count);
+    update_statement.BindInt64(1, action.time().ToInternalValue());
+    update_statement.BindInt64(2, day_start.ToInternalValue());
+    update_statement.BindInt64(3, next_day.ToInternalValue());
     for (size_t j = 0; j < matched_values.size(); j++) {
       // A call to BindNull when matched_values contains -1 is likely not
       // necessary as parameters default to null before they are explicitly
@@ -330,9 +360,9 @@ bool CountingPolicy::FlushDatabase(sql::Connection* db) {
       // ever comes with some values already bound, we bind all parameters
       // (even null ones) explicitly.
       if (matched_values[j] == -1)
-        update_statement.BindNull(j + 3);
+        update_statement.BindNull(j + 4);
       else
-        update_statement.BindInt64(j + 3, matched_values[j]);
+        update_statement.BindInt64(j + 4, matched_values[j]);
     }
     if (!update_statement.Run())
       return false;
@@ -349,12 +379,13 @@ bool CountingPolicy::FlushDatabase(sql::Connection* db) {
     }
     sql::Statement insert_statement(db->GetCachedStatement(
         sql::StatementID(SQL_FROM_HERE), insert_str.c_str()));
-    insert_statement.BindInt64(0, action.time().ToInternalValue());
+    insert_statement.BindInt(0, count);
+    insert_statement.BindInt64(1, action.time().ToInternalValue());
     for (size_t j = 0; j < matched_values.size(); j++) {
       if (matched_values[j] == -1)
-        insert_statement.BindNull(j + 1);
+        insert_statement.BindNull(j + 2);
       else
-        insert_statement.BindInt64(j + 1, matched_values[j]);
+        insert_statement.BindInt64(j + 2, matched_values[j]);
     }
     if (!insert_statement.Run())
       return false;

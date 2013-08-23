@@ -19,6 +19,7 @@
 #include "cc/output/output_surface.h"
 #include "cc/trees/layer_tree_host.h"
 #include "content/child/npapi/webplugin.h"
+#include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/input_messages.h"
 #include "content/common/swapped_out_messages.h"
@@ -34,7 +35,6 @@
 #include "content/renderer/ime_event_guard.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/render_process.h"
-#include "content/renderer/render_process_visibility_manager.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
 #include "ipc/ipc_sync_message.h"
@@ -188,7 +188,8 @@ namespace content {
 
 RenderWidget::RenderWidget(WebKit::WebPopupType popup_type,
                            const WebKit::WebScreenInfo& screen_info,
-                           bool swapped_out)
+                           bool swapped_out,
+                           bool hidden)
     : routing_id_(MSG_ROUTING_NONE),
       surface_id_(0),
       webwidget_(NULL),
@@ -204,7 +205,7 @@ RenderWidget::RenderWidget(WebKit::WebPopupType popup_type,
       using_asynchronous_swapbuffers_(false),
       num_swapbuffers_complete_pending_(0),
       did_show_(false),
-      is_hidden_(false),
+      is_hidden_(hidden),
       is_fullscreen_(false),
       needs_repainting_on_restore_(false),
       has_focus_(false),
@@ -238,8 +239,6 @@ RenderWidget::RenderWidget(WebKit::WebPopupType popup_type,
   is_threaded_compositing_enabled_ =
       CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableThreadedCompositing);
-
-  RenderProcessVisibilityManager::GetInstance()->WidgetVisibilityChanged(true);
 }
 
 RenderWidget::~RenderWidget() {
@@ -254,7 +253,7 @@ RenderWidget::~RenderWidget() {
     current_paint_buf_ = NULL;
   }
   // If we are swapped out, we have released already.
-  if (!is_swapped_out_)
+  if (!is_swapped_out_ && RenderProcess::current())
     RenderProcess::current()->ReleaseProcess();
 }
 
@@ -264,7 +263,7 @@ RenderWidget* RenderWidget::Create(int32 opener_id,
                                    const WebKit::WebScreenInfo& screen_info) {
   DCHECK(opener_id != MSG_ROUTING_NONE);
   scoped_refptr<RenderWidget> widget(
-      new RenderWidget(popup_type, screen_info, false));
+      new RenderWidget(popup_type, screen_info, false, false));
   if (widget->Init(opener_id)) {  // adds reference on success.
     return widget.get();
   }
@@ -312,6 +311,8 @@ bool RenderWidget::DoInit(int32 opener_id,
     // Take a reference on behalf of the RenderThread.  This will be balanced
     // when we receive ViewMsg_Close.
     AddRef();
+    if (is_hidden_)
+      RenderThread::Get()->WidgetHidden();
     return true;
   } else {
     // The above Send can fail when the tab is closing.
@@ -669,37 +670,54 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
   attributes.stencil = false;
   if (command_line.HasSwitch(cc::switches::kForceDirectLayerDrawing))
     attributes.stencil = true;
-  WebGraphicsContext3DCommandBufferImpl* context = NULL;
-  if (!fallback)
-    context = CreateGraphicsContext3D(attributes);
+  scoped_refptr<ContextProviderCommandBuffer> context_provider;
+  if (!fallback) {
+    context_provider = ContextProviderCommandBuffer::Create(
+        CreateGraphicsContext3D(attributes));
+  }
 
-  if (!context) {
+  if (!context_provider.get()) {
     if (!command_line.HasSwitch(switches::kEnableSoftwareCompositing))
       return scoped_ptr<cc::OutputSurface>();
-    return scoped_ptr<cc::OutputSurface>(
-        new CompositorOutputSurface(routing_id(),
-                                    output_surface_id,
-                                    NULL,
-                                    new CompositorSoftwareOutputDevice(),
-                                    true));
+
+    scoped_ptr<cc::SoftwareOutputDevice> software_device(
+        new CompositorSoftwareOutputDevice());
+
+    return scoped_ptr<cc::OutputSurface>(new CompositorOutputSurface(
+        routing_id(),
+        output_surface_id,
+        NULL,
+        software_device.Pass(),
+        true));
   }
 
   if (command_line.HasSwitch(switches::kEnableDelegatedRenderer) &&
       !command_line.HasSwitch(switches::kDisableDelegatedRenderer)) {
     DCHECK(is_threaded_compositing_enabled_);
     return scoped_ptr<cc::OutputSurface>(
-        new DelegatedCompositorOutputSurface(routing_id(), output_surface_id,
-                                             context, NULL));
+        new DelegatedCompositorOutputSurface(
+            routing_id(),
+            output_surface_id,
+            context_provider,
+            scoped_ptr<cc::SoftwareOutputDevice>()));
   }
   if (command_line.HasSwitch(cc::switches::kCompositeToMailbox)) {
     DCHECK(is_threaded_compositing_enabled_);
     return scoped_ptr<cc::OutputSurface>(
-        new MailboxOutputSurface(routing_id(), output_surface_id,
-                                 context, NULL));
+        new MailboxOutputSurface(
+            routing_id(),
+            output_surface_id,
+            context_provider,
+            scoped_ptr<cc::SoftwareOutputDevice>()));
   }
+  bool use_swap_compositor_frame_message = false;
   return scoped_ptr<cc::OutputSurface>(
-      new CompositorOutputSurface(routing_id(), output_surface_id,
-                                  context, NULL, false));
+      new CompositorOutputSurface(
+          routing_id(),
+          output_surface_id,
+          context_provider,
+          scoped_ptr<cc::SoftwareOutputDevice>(),
+          use_swap_compositor_frame_message));
 }
 
 void RenderWidget::OnViewContextSwapBuffersAborted() {
@@ -1020,7 +1038,7 @@ void RenderWidget::PaintRect(const gfx::Rect& rect,
       base::TimeDelta paint_time =
           base::TimeTicks::HighResNow() - paint_begin_ticks;
       if (!is_accelerated_compositing_active_)
-        software_stats_.total_paint_time += paint_time;
+        software_stats_.main_stats.paint_time += paint_time;
     }
 #endif
   } else {
@@ -1035,7 +1053,7 @@ void RenderWidget::PaintRect(const gfx::Rect& rect,
       base::TimeDelta paint_time =
           base::TimeTicks::HighResNow() - paint_begin_ticks;
       if (!is_accelerated_compositing_active_)
-        software_stats_.total_paint_time += paint_time;
+        software_stats_.main_stats.paint_time += paint_time;
     }
 
     // Flush to underlying bitmap.  TODO(darin): is this needed?
@@ -1047,7 +1065,7 @@ void RenderWidget::PaintRect(const gfx::Rect& rect,
 
   if (kEnableGpuBenchmarking) {
     int64 num_pixels_processed = rect.width() * rect.height();
-    software_stats_.total_pixels_painted += num_pixels_processed;
+    software_stats_.main_stats.painted_pixel_count += num_pixels_processed;
   }
 }
 
@@ -1254,8 +1272,8 @@ void RenderWidget::DoDeferredUpdate() {
   last_do_deferred_update_time_ = frame_begin_ticks;
 
   if (!is_accelerated_compositing_active_) {
-    software_stats_.animation_frame_count++;
-    software_stats_.screen_frame_count++;
+    software_stats_.main_stats.animation_frame_count++;
+    software_stats_.main_stats.screen_frame_count++;
   }
 
   // OK, save the pending update to a local since painting may cause more
@@ -2436,14 +2454,14 @@ void RenderWidget::GetRenderingStats(
   if (compositor_)
     compositor_->GetRenderingStats(&stats.rendering_stats);
 
-  stats.rendering_stats.animation_frame_count +=
-      software_stats_.animation_frame_count;
-  stats.rendering_stats.screen_frame_count +=
-      software_stats_.screen_frame_count;
-  stats.rendering_stats.total_paint_time +=
-      software_stats_.total_paint_time;
-  stats.rendering_stats.total_pixels_painted +=
-      software_stats_.total_pixels_painted;
+  stats.rendering_stats.main_stats.animation_frame_count +=
+      software_stats_.main_stats.animation_frame_count;
+  stats.rendering_stats.main_stats.screen_frame_count +=
+      software_stats_.main_stats.screen_frame_count;
+  stats.rendering_stats.main_stats.paint_time +=
+      software_stats_.main_stats.paint_time;
+  stats.rendering_stats.main_stats.painted_pixel_count +=
+      software_stats_.main_stats.painted_pixel_count;
 }
 
 bool RenderWidget::GetGpuRenderingStats(GpuRenderingStats* stats) const {
@@ -2506,13 +2524,14 @@ bool RenderWidget::HasTouchEventHandlersAt(const gfx::Point& point) const {
   return true;
 }
 
-WebGraphicsContext3DCommandBufferImpl* RenderWidget::CreateGraphicsContext3D(
+scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
+RenderWidget::CreateGraphicsContext3D(
     const WebKit::WebGraphicsContext3D::Attributes& attributes) {
   if (!webwidget_)
-    return NULL;
+    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableGpuCompositing))
-    return NULL;
+    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context(
       new WebGraphicsContext3DCommandBufferImpl(
           surface_id(),
@@ -2524,8 +2543,8 @@ WebGraphicsContext3DCommandBufferImpl* RenderWidget::CreateGraphicsContext3D(
           attributes,
           false /* bind generates resources */,
           CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE))
-    return NULL;
-  return context.release();
+    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
+  return context.Pass();
 }
 
 }  // namespace content

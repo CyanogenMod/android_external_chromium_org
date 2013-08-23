@@ -152,7 +152,7 @@ HRESULT OpenFilePickerSession::SinglePickerDone(SingleFileAsyncOp* async,
       LOG(ERROR) << "NULL IStorageItem";
     }
   } else {
-    LOG(ERROR) << "Unexpected async status " << status;
+    LOG(ERROR) << "Unexpected async status " << static_cast<int>(status);
   }
   app_view_->OnOpenFileCompleted(this, success_);
   return S_OK;
@@ -203,7 +203,7 @@ HRESULT OpenFilePickerSession::MultiPickerDone(MultiFileAsyncOp* async,
       LOG(ERROR) << "NULL StorageFileVectorCollection";
     }
   } else {
-    LOG(ERROR) << "Unexpected async status " << status;
+    LOG(ERROR) << "Unexpected async status " << static_cast<int>(status);
   }
   app_view_->OnOpenFileCompleted(this, success_);
   return S_OK;
@@ -249,7 +249,6 @@ HRESULT OpenFilePickerSession::StartFilePicker() {
 
       // Metro wants suffixes only, not patterns.
       mswrw::HString extension;
-      std::vector<string16> extensions;
       for (size_t i = 0; i < extensions_win32_style.size(); ++i) {
         if (extensions_win32_style[i] == L"*.*") {
           // The wildcard filter is "*" for Metro. The string "*.*" produces
@@ -543,7 +542,7 @@ HRESULT SaveFilePickerSession::FilePickerDone(SaveFileAsyncOp* async,
       LOG(ERROR) << "NULL IStorageItem";
     }
   } else {
-    LOG(ERROR) << "Unexpected async status " << status;
+    LOG(ERROR) << "Unexpected async status " << static_cast<int>(status);
   }
   app_view_->OnSaveFileCompleted(this, success_);
   return S_OK;
@@ -612,7 +611,7 @@ HRESULT FolderPickerSession::FolderPickerDone(FolderPickerAsyncOp* async,
       LOG(ERROR) << "NULL IStorageItem";
     }
   } else {
-    LOG(ERROR) << "Unexpected async status " << status;
+    LOG(ERROR) << "Unexpected async status " << static_cast<int>(status);
   }
   app_view_->OnFolderPickerCompleted(this, success_);
   return S_OK;

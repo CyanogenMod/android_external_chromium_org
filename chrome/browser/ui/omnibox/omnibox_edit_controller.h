@@ -11,6 +11,7 @@
 
 class GURL;
 class InstantController;
+class ToolbarModel;
 
 namespace content {
 class WebContents;
@@ -67,7 +68,10 @@ class OmniboxEditController {
   virtual InstantController* GetInstant() = 0;
 
   // Returns the WebContents of the currently active tab.
-  virtual content::WebContents* GetWebContents() const = 0;
+  virtual content::WebContents* GetWebContents() = 0;
+
+  virtual ToolbarModel* GetToolbarModel() = 0;
+  virtual const ToolbarModel* GetToolbarModel() const = 0;
 
  protected:
   virtual ~OmniboxEditController() {}

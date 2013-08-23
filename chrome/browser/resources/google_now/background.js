@@ -23,8 +23,7 @@
 // TODO(vadimt): Honor the flag the enables Google Now integration.
 // TODO(vadimt): Figure out the final values of the constants.
 // TODO(vadimt): Remove 'console' calls.
-// TODO(vadimt): Consider sending JS stacks for chrome.* API errors and
-// malformed server responses.
+// TODO(vadimt): Consider sending JS stacks for malformed server responses.
 
 /**
  * Standard response code for successful HTTP requests. This is the only success
@@ -133,6 +132,9 @@ tasks.instrumentChromeApiFunction(
 tasks.instrumentChromeApiFunction(
     'preferencesPrivate.googleGeolocationAccessEnabled.onChange.addListener',
     0);
+tasks.instrumentChromeApiFunction('permissions.contains', 1);
+tasks.instrumentChromeApiFunction('permissions.remove', 1);
+tasks.instrumentChromeApiFunction('permissions.request', 1);
 tasks.instrumentChromeApiFunction('runtime.onInstalled.addListener', 0);
 tasks.instrumentChromeApiFunction('runtime.onStartup.addListener', 0);
 tasks.instrumentChromeApiFunction('tabs.create', 1);
@@ -343,6 +345,7 @@ function removeAllCards() {
   // notifications center and bug 260376 is fixed, the below clearing
   // code is no longer necessary.
   instrumented.notifications.getAll(function(notifications) {
+    notifications = notifications || {};
     for (var notificationId in notifications) {
       chrome.notifications.clear(notificationId, function() {});
     }
@@ -402,7 +405,7 @@ function requestLocation() {
   console.log('requestLocation');
   recordEvent(GoogleNowEvent.LOCATION_REQUEST);
   // TODO(vadimt): Figure out location request options.
-  chrome.metricsPrivate.getVariationParams('GoogleNow', function(params) {
+  instrumented.metricsPrivate.getVariationParams('GoogleNow', function(params) {
     var minDistanceInMeters =
         parseInt(params && params.minDistanceInMeters, 10) ||
         100;
@@ -579,15 +582,12 @@ function retryPendingDismissals() {
  */
 function onNotificationClicked(notificationId, selector) {
   instrumented.storage.local.get('notificationsData', function(items) {
-    items.notificationsData = items.notificationsData || {};
+    var notificationData = items &&
+        items.notificationsData &&
+        items.notificationsData[notificationId];
 
-    var notificationData = items.notificationsData[notificationId];
-
-    if (!notificationData) {
-      // 'notificationsData' in storage may not match the actual list of
-      // notifications.
+    if (!notificationData)
       return;
-    }
 
     var actionUrls = notificationData.actionUrls;
     if (typeof actionUrls != 'object') {
@@ -595,13 +595,14 @@ function onNotificationClicked(notificationId, selector) {
     }
 
     var url = selector(actionUrls);
-
-    if (typeof url != 'string')
+    if (!url)
       return;
 
     instrumented.tabs.create({url: url}, function(tab) {
-      if (!tab)
-        chrome.windows.create({url: url});
+      if (tab)
+        chrome.windows.update(tab.windowId, {focused: true});
+      else
+        chrome.windows.create({url: url, focused: true});
     });
   });
 }
@@ -762,6 +763,36 @@ function setToastVisible(visibleRequest, callback) {
 }
 
 /**
+ * Enables or disables the Google Now background permission.
+ * @param {boolean} backgroundEnable true to run in the background.
+ *     false to not run in the background.
+ * @param {function} callback Called on completion.
+ */
+function setBackgroundEnable(backgroundEnable, callback) {
+  instrumented.permissions.contains({permissions: ['background']},
+      function(hasPermission) {
+        if (backgroundEnable != hasPermission) {
+          console.log('Action Taken setBackgroundEnable=' + backgroundEnable);
+          if (backgroundEnable)
+            instrumented.permissions.request(
+                {permissions: ['background']},
+                function() {
+                  callback();
+                });
+          else
+            instrumented.permissions.remove(
+                {permissions: ['background']},
+                function() {
+                  callback();
+                });
+        } else {
+          console.log('Action Ignored setBackgroundEnable=' + backgroundEnable);
+          callback();
+        }
+      });
+}
+
+/**
  * Does the actual work of deciding what Google Now should do
  * based off of the current state of Chrome.
  * @param {boolean} signedIn true if the user is signed in.
@@ -769,12 +800,15 @@ function setToastVisible(visibleRequest, callback) {
  *     the geolocation option is enabled.
  * @param {boolean} userRespondedToToast true if
  *     the user has responded to the toast.
+ * @param {boolean} enableBackground true if
+ *     the background permission should be requested.
  * @param {function()} callback Call this function on completion.
  */
 function updateRunningState(
     signedIn,
     geolocationEnabled,
     userRespondedToToast,
+    enableBackground,
     callback) {
 
   console.log(
@@ -784,6 +818,7 @@ function updateRunningState(
 
   var shouldSetToastVisible = false;
   var shouldPollCards = false;
+  var shouldSetBackground = false;
 
   if (signedIn) {
     if (geolocationEnabled) {
@@ -793,6 +828,9 @@ function updateRunningState(
         // We do not want to show it again.
         chrome.storage.local.set({userRespondedToToast: true});
       }
+
+      if (enableBackground)
+        shouldSetBackground = true;
 
       shouldPollCards = true;
     } else {
@@ -807,11 +845,14 @@ function updateRunningState(
   }
 
   console.log(
-      'Requested Actions setToastVisible=' + shouldSetToastVisible + ' ' +
+      'Requested Actions shouldSetBackground=' + shouldSetBackground + ' ' +
+      'setToastVisible=' + shouldSetToastVisible + ' ' +
       'setShouldPollCards=' + shouldPollCards);
 
-  setToastVisible(shouldSetToastVisible, function() {
-    setShouldPollCards(shouldPollCards, callback);
+  setBackgroundEnable(shouldSetBackground, function() {
+    setToastVisible(shouldSetToastVisible, function() {
+      setShouldPollCards(shouldPollCards, callback);
+    });
   });
 }
 
@@ -824,24 +865,32 @@ function onStateChange() {
     tasks.debugSetStepName('onStateChange-isSignedIn');
     authenticationManager.isSignedIn(function(token) {
       var signedIn = !!token && !!NOTIFICATION_CARDS_URL;
-      tasks.debugSetStepName(
-          'onStateChange-get-googleGeolocationAccessEnabledPref');
-      instrumented.
-          preferencesPrivate.
-          googleGeolocationAccessEnabled.
-          get({}, function(prefValue) {
-            var geolocationEnabled = !!prefValue.value;
+      instrumented.metricsPrivate.getVariationParams(
+          'GoogleNow',
+          function(response) {
+            var enableBackground =
+                (!response || (response.enableBackground != 'false'));
             tasks.debugSetStepName(
-              'onStateChange-get-userRespondedToToast');
-            instrumented.storage.local.get(
-                'userRespondedToToast',
-                function(items) {
-                  var userRespondedToToast = !!items.userRespondedToToast;
-                  updateRunningState(
-                      signedIn,
-                      geolocationEnabled,
-                      userRespondedToToast,
-                      callback);
+                'onStateChange-get-googleGeolocationAccessEnabledPref');
+            instrumented.
+                preferencesPrivate.
+                googleGeolocationAccessEnabled.
+                get({}, function(prefValue) {
+                  var geolocationEnabled = !!prefValue.value;
+                  tasks.debugSetStepName(
+                    'onStateChange-get-userRespondedToToast');
+                  instrumented.storage.local.get(
+                      'userRespondedToToast',
+                      function(items) {
+                        var userRespondedToToast =
+                            !items || !!items.userRespondedToToast;
+                        updateRunningState(
+                            signedIn,
+                            geolocationEnabled,
+                            userRespondedToToast,
+                            enableBackground,
+                            callback);
+                      });
                 });
           });
     });
@@ -922,10 +971,9 @@ instrumented.notifications.onButtonClicked.addListener(
         chrome.metricsPrivate.recordUserAction(
             'GoogleNow.ButtonClicked' + buttonIndex);
         onNotificationClicked(notificationId, function(actionUrls) {
-          if (!Array.isArray(actionUrls.buttonUrls))
-            return undefined;
-
-          return actionUrls.buttonUrls[buttonIndex];
+          var url = actionUrls.buttonUrls[buttonIndex];
+          verify(url, 'onButtonClicked: no url for a button');
+          return url;
         });
       }
     });

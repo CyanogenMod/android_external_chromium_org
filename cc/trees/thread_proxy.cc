@@ -52,7 +52,7 @@ struct ThreadProxy::CommitPendingRequest {
 
 struct ThreadProxy::SchedulerStateRequest {
   CompletionEvent completion;
-  std::string state;
+  scoped_ptr<base::Value> state;
 };
 
 scoped_ptr<Proxy> ThreadProxy::Create(
@@ -695,6 +695,7 @@ void ThreadProxy::BeginFrameOnMainThread(
     scoped_ptr<BeginFrameAndCommitState> begin_frame_state) {
   TRACE_EVENT0("cc", "ThreadProxy::BeginFrameOnMainThread");
   DCHECK(IsMainThread());
+
   if (!layer_tree_host_)
     return;
 
@@ -816,7 +817,7 @@ void ThreadProxy::BeginFrameOnMainThread(
   // point of view, but asynchronously performed on the impl thread,
   // coordinated by the Scheduler.
   {
-    TRACE_EVENT0("cc", "ThreadProxy::BeginFrameOnMainThread::commit");
+    TRACE_EVENT_BEGIN0("cc", "ThreadProxy::BeginFrameOnMainThread::commit");
 
     DebugScopedSetMainThreadBlocked main_thread_blocked(this);
 
@@ -836,6 +837,10 @@ void ThreadProxy::BeginFrameOnMainThread(
 
     base::TimeDelta duration = stats_instrumentation->EndRecording(start_time);
     stats_instrumentation->AddCommit(duration);
+    TRACE_EVENT_END1("cc", "ThreadProxy::BeginFrameOnMainThread::commit",
+                     "data", stats_instrumentation->
+                     GetMainThreadRenderingStats().AsTraceableData());
+    stats_instrumentation->AccumulateAndClearMainThreadStats();
   }
 
   layer_tree_host_->CommitComplete();
@@ -902,7 +907,8 @@ void ThreadProxy::BeginFrameAbortedByMainThreadOnImplThread(bool did_handle) {
   // by the main thread, so the active tree needs to be updated as if these sent
   // values were applied and committed.
   if (did_handle) {
-    layer_tree_host_impl_->active_tree()->ApplySentScrollAndScaleDeltas();
+    layer_tree_host_impl_->active_tree()
+        ->ApplySentScrollAndScaleDeltasFromAbortedCommit();
     layer_tree_host_impl_->active_tree()->ResetContentsTexturesPurged();
     SetInputThrottledUntilCommitOnImplThread(false);
   }
@@ -968,6 +974,7 @@ void ThreadProxy::ScheduledActionActivatePendingTreeIfNeeded() {
 
 void ThreadProxy::ScheduledActionBeginOutputSurfaceCreation() {
   DCHECK(IsImplThread());
+  TRACE_EVENT0("cc", "ThreadProxy::ScheduledActionBeginOutputSurfaceCreation");
   Proxy::MainThreadTaskRunner()->PostTask(
       FROM_HERE,
       base::Bind(&ThreadProxy::CreateAndInitializeOutputSurface,
@@ -1398,27 +1405,27 @@ void ThreadProxy::CommitPendingOnImplThreadForTesting(
   request->completion.Signal();
 }
 
-std::string ThreadProxy::SchedulerStateAsStringForTesting() {
+scoped_ptr<base::Value> ThreadProxy::SchedulerStateAsValueForTesting() {
   if (IsImplThread())
-    return scheduler_on_impl_thread_->StateAsStringForTesting();
+    return scheduler_on_impl_thread_->StateAsValueForTesting().Pass();
 
   SchedulerStateRequest scheduler_state_request;
   {
     DebugScopedSetMainThreadBlocked main_thread_blocked(this);
     Proxy::ImplThreadTaskRunner()->PostTask(
         FROM_HERE,
-        base::Bind(&ThreadProxy::SchedulerStateAsStringOnImplThreadForTesting,
+        base::Bind(&ThreadProxy::SchedulerStateAsValueOnImplThreadForTesting,
                    impl_thread_weak_ptr_,
                    &scheduler_state_request));
     scheduler_state_request.completion.Wait();
   }
-  return scheduler_state_request.state;
+  return scheduler_state_request.state.Pass();
 }
 
-void ThreadProxy::SchedulerStateAsStringOnImplThreadForTesting(
+void ThreadProxy::SchedulerStateAsValueOnImplThreadForTesting(
     SchedulerStateRequest* request) {
   DCHECK(IsImplThread());
-  request->state = scheduler_on_impl_thread_->StateAsStringForTesting();
+  request->state = scheduler_on_impl_thread_->StateAsValueForTesting();
   request->completion.Signal();
 }
 

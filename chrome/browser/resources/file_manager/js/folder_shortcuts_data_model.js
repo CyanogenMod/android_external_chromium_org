@@ -35,7 +35,10 @@ function FolderShortcutsDataModel() {
     if (list instanceof Array) {
       list = filter(list);
 
-      var permutation = this.calculatePermitation_(this.array_, list);
+      // Record metrics.
+      metrics.recordSmallCount('FolderShortcut.Count', list.length);
+
+      var permutation = this.calculatePermutation_(this.array_, list);
       this.array_ = list;
       this.firePermutedEvent_(permutation);
     }
@@ -66,7 +69,7 @@ function FolderShortcutsDataModel() {
           return;
       }
 
-      var permutation = this.calculatePermitation_(this.array_, list);
+      var permutation = this.calculatePermutation_(this.array_, list);
       this.array_ = list;
       this.firePermutedEvent_(permutation);
     }
@@ -88,6 +91,18 @@ FolderShortcutsDataModel.prototype = {
    */
   get length() {
     return this.array_.length;
+  },
+
+  /**
+   * Returns the paths in the given range as a new array instance. The
+   * arguments and return value are compatible with Array.slice().
+   *
+   * @param {number} start Where to start the selection.
+   * @param {number=} opt_end Where to end the selection.
+   * @return {Array.<string>} Paths in the selected range.
+   */
+  slice: function(begin, opt_end) {
+    return this.array_.slice(begin, opt_end);
   },
 
   /**
@@ -158,8 +173,9 @@ FolderShortcutsDataModel.prototype = {
     }
 
     this.firePermutedEvent_(
-        this.calculatePermitation_(oldArray, this.array_));
+        this.calculatePermutation_(oldArray, this.array_));
     this.save_();
+    metrics.recordUserAction('FolderShortcut.Add');
     return addedIndex;
   },
 
@@ -182,8 +198,9 @@ FolderShortcutsDataModel.prototype = {
 
     if (removedIndex != -1) {
       this.firePermutedEvent_(
-          this.calculatePermitation_(oldArray, this.array_));
+          this.calculatePermutation_(oldArray, this.array_));
       this.save_();
+      metrics.recordUserAction('FolderShortcut.Remove');
       return removedIndex;
     }
 
@@ -220,7 +237,7 @@ FolderShortcutsDataModel.prototype = {
    * @return {Array.<number>} Created permutation array.
    * @private
    */
-  calculatePermitation_: function(oldArray, newArray) {
+  calculatePermutation_: function(oldArray, newArray) {
     var oldIndex = 0;  // Index of oldArray.
     var newIndex = 0;  // Index of newArray.
 

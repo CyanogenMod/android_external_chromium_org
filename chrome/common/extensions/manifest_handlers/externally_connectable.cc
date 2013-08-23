@@ -9,10 +9,10 @@
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/common/extensions/api/manifest_types.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/permissions/api_permission_set.h"
 #include "chrome/common/extensions/permissions/permissions_data.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/manifest_constants.h"
 #include "extensions/common/url_pattern.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "url/gurl.h"
@@ -22,7 +22,6 @@ namespace rcd = net::registry_controlled_domains;
 namespace extensions {
 
 namespace externally_connectable_errors {
-const char kErrorInvalid[] = "Invalid value for 'externally_connectable'";
 const char kErrorInvalidMatchPattern[] = "Invalid match pattern '*'";
 const char kErrorInvalidId[] = "Invalid ID '*'";
 const char kErrorNothingSpecified[] =
@@ -35,7 +34,7 @@ const char kErrorWildcardHostsNotAllowed[] =
     "Wildcard domain patterns such as \"*\" are not allowed";
 }  // namespace externally_connectable_errors
 
-namespace keys = extension_manifest_keys;
+namespace keys = extensions::manifest_keys;
 namespace errors = externally_connectable_errors;
 using api::manifest_types::ExternallyConnectable;
 
@@ -94,11 +93,9 @@ scoped_ptr<ExternallyConnectableInfo> ExternallyConnectableInfo::FromValue(
     std::vector<InstallWarning>* install_warnings,
     string16* error) {
   scoped_ptr<ExternallyConnectable> externally_connectable =
-      ExternallyConnectable::FromValue(value);
-  if (!externally_connectable) {
-    *error = UTF8ToUTF16(errors::kErrorInvalid);
+      ExternallyConnectable::FromValue(value, error);
+  if (!externally_connectable)
     return scoped_ptr<ExternallyConnectableInfo>();
-  }
 
   URLPatternSet matches;
 
@@ -118,9 +115,11 @@ scoped_ptr<ExternallyConnectableInfo> ExternallyConnectableInfo::FromValue(
       // Wildcard hosts are not allowed.
       if (pattern.host().empty()) {
         // Warning not error for forwards compatibility.
-        install_warnings->push_back(
-            InstallWarning::Text(ErrorUtils::FormatErrorMessage(
-                errors::kErrorWildcardHostsNotAllowed, *it)));
+        install_warnings->push_back(InstallWarning(
+            ErrorUtils::FormatErrorMessage(
+                errors::kErrorWildcardHostsNotAllowed, *it),
+            keys::kExternallyConnectable,
+            *it));
         continue;
       }
 
@@ -146,11 +145,13 @@ scoped_ptr<ExternallyConnectableInfo> ExternallyConnectableInfo::FromValue(
       // are not allowed. However just "appspot.com" is ok.
       if (registry_length == 0 && pattern.match_subdomains()) {
         // Warning not error for forwards compatibility.
-        install_warnings->push_back(InstallWarning::Text(
+        install_warnings->push_back(InstallWarning(
             ErrorUtils::FormatErrorMessage(
                 errors::kErrorTopLevelDomainsNotAllowed,
                 pattern.host().c_str(),
-                *it)));
+                *it),
+            keys::kExternallyConnectable,
+            *it));
         continue;
       }
 
@@ -179,8 +180,9 @@ scoped_ptr<ExternallyConnectableInfo> ExternallyConnectableInfo::FromValue(
 
   if (!externally_connectable->matches &&
       !externally_connectable->ids) {
-    install_warnings->push_back(InstallWarning::Text(
-        errors::kErrorNothingSpecified));
+    install_warnings->push_back(InstallWarning(
+        errors::kErrorNothingSpecified,
+        keys::kExternallyConnectable));
   }
 
   return make_scoped_ptr(

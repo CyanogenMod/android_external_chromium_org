@@ -60,7 +60,12 @@ class MediaStreamInfoBarTest : public WebRtcTestBase {
 
 // Actual tests ---------------------------------------------------------------
 
-IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest, TestAllowingUserMedia) {
+#if defined(OS_CHROMEOS) && !defined(NDEBUG)
+#define MAYBE_TestAllowingUserMedia DISABLED_TestAllowingUserMedia
+#else
+#define MAYBE_TestAllowingUserMedia TestAllowingUserMedia
+#endif
+IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest, MAYBE_TestAllowingUserMedia) {
   content::WebContents* tab_contents = LoadTestPageInTab();
   GetUserMediaAndAccept(tab_contents);
 }
@@ -75,8 +80,17 @@ IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest, TestDismissingInfobar) {
   GetUserMediaAndDismiss(tab_contents);
 }
 
+// Failing on ChromiumOS Debug and Win Aura, so disabling on Aura.
+// See http://crbug.com/263333.
+#if defined(USE_AURA)
+#define MAYBE_TestAcceptThenDenyWhichShouldBeSticky \
+  DISABLED_TestAcceptThenDenyWhichShouldBeSticky
+#else
+#define MAYBE_TestAcceptThenDenyWhichShouldBeSticky \
+  TestAcceptThenDenyWhichShouldBeSticky
+#endif
 IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
-                       TestAcceptThenDenyWhichShouldBeSticky) {
+                       MAYBE_TestAcceptThenDenyWhichShouldBeSticky) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
@@ -144,8 +158,15 @@ IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
                                                kVideoOnlyCallConstraints);
 }
 
+#if defined(OS_CHROMEOS) && !defined(NDEBUG)
+#define MAYBE_DenyingCameraDoesNotCauseStickyDenyForMics \
+  DISABLED_DenyingCameraDoesNotCauseStickyDenyForMics
+#else
+#define MAYBE_DenyingCameraDoesNotCauseStickyDenyForMics \
+  DenyingCameraDoesNotCauseStickyDenyForMics
+#endif
 IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
-                       DenyingCameraDoesNotCauseStickyDenyForMics) {
+                       MAYBE_DenyingCameraDoesNotCauseStickyDenyForMics) {
   content::WebContents* tab_contents = LoadTestPageInTab();
 
   // If camera blocking also blocked mics, the second call here would hang.

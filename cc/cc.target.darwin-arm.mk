@@ -54,6 +54,8 @@ LOCAL_SRC_FILES := \
 	cc/debug/paint_time_counter.cc \
 	cc/debug/rendering_stats.cc \
 	cc/debug/rendering_stats_instrumentation.cc \
+	cc/debug/test_context_provider.cc \
+	cc/debug/test_web_graphics_context_3d.cc \
 	cc/debug/traced_picture.cc \
 	cc/debug/traced_value.cc \
 	cc/input/page_scale_animation.cc \
@@ -74,14 +76,14 @@ LOCAL_SRC_FILES := \
 	cc/layers/layer_position_constraint.cc \
 	cc/layers/nine_patch_layer.cc \
 	cc/layers/nine_patch_layer_impl.cc \
+	cc/layers/painted_scrollbar_layer.cc \
+	cc/layers/painted_scrollbar_layer_impl.cc \
 	cc/layers/picture_image_layer.cc \
 	cc/layers/picture_image_layer_impl.cc \
 	cc/layers/picture_layer.cc \
 	cc/layers/picture_layer_impl.cc \
 	cc/layers/render_surface.cc \
 	cc/layers/render_surface_impl.cc \
-	cc/layers/scrollbar_layer.cc \
-	cc/layers/scrollbar_layer_impl.cc \
 	cc/layers/solid_color_layer.cc \
 	cc/layers/solid_color_layer_impl.cc \
 	cc/layers/texture_layer.cc \

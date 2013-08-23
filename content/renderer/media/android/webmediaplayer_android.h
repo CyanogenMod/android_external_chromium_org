@@ -77,6 +77,7 @@ class WebMediaPlayerAndroid
       RendererMediaPlayerManager* manager,
       WebMediaPlayerProxyAndroid* proxy,
       StreamTextureFactory* factory,
+      const scoped_refptr<base::MessageLoopProxy>& media_loop,
       media::MediaLog* media_log);
   virtual ~WebMediaPlayerAndroid();
 
@@ -86,10 +87,9 @@ class WebMediaPlayerAndroid
   virtual bool canEnterFullscreen() const;
 
   // Resource loading.
-  virtual void load(const WebKit::WebURL& url, CORSMode cors_mode);
-  virtual void load(const WebKit::WebURL& url,
-                    WebKit::WebMediaSource* media_source,
-                    CORSMode cors_mode);
+  virtual void load(LoadType load_type,
+                    const WebKit::WebURL& url,
+                    CORSMode cors_mode) OVERRIDE;
 
   // Playback controls.
   virtual void play();
@@ -220,6 +220,8 @@ class WebMediaPlayerAndroid
                     const std::vector<uint8>& message,
                     const std::string& destination_url);
 
+  void OnMediaSourceOpened(WebKit::WebMediaSourceNew* web_media_source);
+
   void OnNeedKey(const std::string& type,
                  const std::string& session_id,
                  scoped_ptr<uint8[]> init_data,
@@ -301,6 +303,9 @@ class WebMediaPlayerAndroid
 
   // Message loop for main renderer thread.
   const scoped_refptr<base::MessageLoopProxy> main_loop_;
+
+  // Message loop for media thread.
+  const scoped_refptr<base::MessageLoopProxy> media_loop_;
 
   // URL of the media file to be fetched.
   GURL url_;

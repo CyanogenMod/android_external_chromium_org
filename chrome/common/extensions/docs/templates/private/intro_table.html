@@ -1,9 +1,7 @@
-<table class="intro">
-  {{#api.intro_list}}
+<table class="intro" id="intro">
+  {{#api.introList}}
   <tr>
-    <td>
-      <strong>{{title}}:</strong>
-    </td>
+    <td class="title">{{title}}:</td>
     <td>
       {{#content}}
         {{?link}}<a href="{{link}}">{{/link}}
@@ -16,5 +14,5 @@
       {{/content}}
     </td>
   </tr>
-  {{/api.intro_list}}
+  {{/api.introList}}
 </table>

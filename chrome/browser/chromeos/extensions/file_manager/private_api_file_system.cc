@@ -73,7 +73,7 @@ base::DictionaryValue* CreateValueFromDisk(
   std::string mount_path;
   if (!volume->mount_path().empty()) {
     base::FilePath relative_mount_path;
-    util::ConvertFileToRelativeFileSystemPath(
+    util::ConvertAbsoluteFilePathToRelativeFileSystemPath(
         profile, extension_id, base::FilePath(volume->mount_path()),
         &relative_mount_path);
     mount_path = relative_mount_path.value();
@@ -145,7 +145,7 @@ void GetSizeStatsOnBlockingPool(const std::string& mount_path,
 // Returns 0 if it could not be queried.
 size_t GetFileNameMaxLengthOnBlockingPool(const std::string& path) {
   struct statvfs stat = {};
-  if (statvfs(path.c_str(), &stat) != 0) {
+  if (HANDLE_EINTR(statvfs(path.c_str(), &stat)) != 0) {
     // The filesystem seems not supporting statvfs(). Assume it to be a commonly
     // used bound 255, and log the failure.
     LOG(ERROR) << "Cannot statvfs() the name length limit for: " << path;
@@ -274,7 +274,7 @@ bool RequestFileSystemFunction::RunImpl() {
   set_log_on_completion(true);
 
   scoped_refptr<fileapi::FileSystemContext> file_system_context =
-      fileapi_util::GetFileSystemContextForRenderViewHost(
+      util::GetFileSystemContextForRenderViewHost(
           profile(), render_view_host());
 
   const GURL origin_url = source_url_.GetOrigin();
@@ -313,7 +313,7 @@ bool FileWatchFunctionBase::RunImpl() {
     return false;
 
   scoped_refptr<fileapi::FileSystemContext> file_system_context =
-      fileapi_util::GetFileSystemContextForRenderViewHost(
+      util::GetFileSystemContextForRenderViewHost(
           profile(), render_view_host());
 
   FileSystemURL file_watch_url = file_system_context->CrackURL(GURL(url));
@@ -538,7 +538,7 @@ bool ValidatePathNameLengthFunction::RunImpl() {
     return false;
 
   scoped_refptr<fileapi::FileSystemContext> file_system_context =
-      fileapi_util::GetFileSystemContextForRenderViewHost(
+      util::GetFileSystemContextForRenderViewHost(
           profile(), render_view_host());
 
   fileapi::FileSystemURL filesystem_url(

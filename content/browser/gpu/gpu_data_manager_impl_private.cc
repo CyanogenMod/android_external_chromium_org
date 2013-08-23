@@ -358,6 +358,13 @@ void GpuDataManagerImplPrivate::InitializeForTesting(
 }
 
 bool GpuDataManagerImplPrivate::IsFeatureBlacklisted(int feature) const {
+#if defined(OS_CHROMEOS)
+  if (feature == gpu::GPU_FEATURE_TYPE_PANEL_FITTING &&
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisablePanelFitting)) {
+    return true;
+  }
+#endif  // OS_CHROMEOS
   if (use_swiftshader_) {
     // Skia's software rendering is probably more efficient than going through
     // software emulation of the GPU, so use that.
@@ -736,6 +743,11 @@ void GpuDataManagerImplPrivate::AppendGpuCommandLine(
                                     IntSetToString(gpu_driver_bugs_));
   }
 
+  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE) &&
+      !command_line->HasSwitch(switches::kDisableAcceleratedVideoDecode)) {
+    command_line->AppendSwitch(switches::kDisableAcceleratedVideoDecode);
+  }
+
 #if defined(OS_WIN)
   // DisplayLink 7.1 and earlier can cause the GPU process to crash on startup.
   // http://crbug.com/177611
@@ -829,6 +841,7 @@ void GpuDataManagerImplPrivate::UpdateRendererWebPrefs(
     prefs->accelerated_compositing_enabled = true;
     prefs->accelerated_compositing_for_3d_transforms_enabled = true;
     prefs->accelerated_compositing_for_plugins_enabled = true;
+    prefs->accelerated_compositing_for_video_enabled = true;
   }
 
 #if defined(USE_AURA)
@@ -1246,4 +1259,3 @@ void GpuDataManagerImplPrivate::OnGpuProcessInitFailure() {
 }
 
 }  // namespace content
-

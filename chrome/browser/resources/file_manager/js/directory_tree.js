@@ -130,31 +130,14 @@ DirectoryTreeUtil.generateTopLevelEntries = function() {
  * Retrieves the file list with the latest information.
  *
  * @param {DirectoryTree|DirectoryItem} item Parent to be reloaded.
- * @param {DirectoryModel} dm The directory model.
  * @param {function(Array.<Entry>)} successCallback Callback on success.
  * @param {function()=} opt_errorCallback Callback on failure.
  */
 DirectoryTreeUtil.updateSubDirectories = function(
-    item, dm, successCallback, opt_errorCallback) {
-  // Tries to retrieve new entry if the cached entry is dummy.
+    item, successCallback, opt_errorCallback) {
   if (util.isFakeDirectoryEntry(item.entry)) {
-    // Fake Drive root.
-    dm.resolveDirectory(
-        item.fullPath,
-        function(entry) {
-          item.dirEntry_ = entry;
-
-          // If the retrieved entry is dummy again, returns with an error.
-          if (util.isFakeDirectoryEntry(entry)) {
-            if (opt_errorCallback)
-              opt_errorCallback();
-            return;
-          }
-
-          DirectoryTreeUtil.updateSubDirectories(
-              item, dm, successCallback, opt_errorCallback);
-        },
-        opt_errorCallback || function() {});
+    if (opt_errorCallback)
+      opt_errorCallback();
     return;
   }
 
@@ -292,7 +275,6 @@ DirectoryItem.prototype.decorate = function(
   this.hasChildren = false;
 
   this.addEventListener('expand', this.onExpand_.bind(this), false);
-  var volumeManager = VolumeManager.getInstance();
   var icon = this.querySelector('.icon');
   icon.classList.add('volume-icon');
   var iconType = PathUtil.getRootType(path);
@@ -309,7 +291,7 @@ DirectoryItem.prototype.decorate = function(
         if (!PathUtil.isUnmountableByUser(path))
           return;
 
-        volumeManager.unmount(path, function() {}, function() {});
+        tree.volumeManager.unmount(path, function() {}, function() {});
       }.bind(this));
 
   if (this.parentTree_.contextMenuForSubitems)
@@ -373,7 +355,6 @@ DirectoryItem.prototype.updateSubDirectories = function(
     recursive, opt_successCallback, opt_errorCallback) {
   DirectoryTreeUtil.updateSubDirectories(
       this,
-      this.directoryModel_,
       function(entries) {
         this.entries_ = entries;
         this.redrawSubDirectoryList_(recursive);
@@ -455,10 +436,11 @@ function DirectoryTree() {}
  * Decorates an element.
  * @param {HTMLElement} el Element to be DirectoryTree.
  * @param {DirectoryModel} directoryModel Current DirectoryModel.
+ * @param {VolumeManager} volumeManager VolumeManager of the system.
  */
-DirectoryTree.decorate = function(el, directoryModel) {
+DirectoryTree.decorate = function(el, directoryModel, volumeManager) {
   el.__proto__ = DirectoryTree.prototype;
-  (/** @type {DirectoryTree} */ el).decorate(directoryModel);
+  (/** @type {DirectoryTree} */ el).decorate(directoryModel, volumeManager);
 };
 
 DirectoryTree.prototype = {
@@ -471,9 +453,31 @@ DirectoryTree.prototype = {
    */
   set expanded(value) {},
 
+  /**
+   * The DirectoryEntry corresponding to this DirectoryItem. This may be
+   * a dummy DirectoryEntry.
+   * @type {DirectoryEntry|Object}
+   * @override
+   **/
+  get entry() {
+    return this.dirEntry_;
+  },
+
+  /**
+   * The DirectoryModel this tree corresponds to.
+   * @type {DirectoryModel}
+   */
   get directoryModel() {
     return this.directoryModel_;
-  }
+  },
+
+  /**
+   * The VolumeManager instance of the system.
+   * @type {VolumeManager}
+   */
+  get volumeManager() {
+    return this.volumeManager_;
+  },
 };
 
 cr.defineProperty(DirectoryTree, 'contextMenuForSubitems', cr.PropertyKind.JS);
@@ -481,11 +485,13 @@ cr.defineProperty(DirectoryTree, 'contextMenuForSubitems', cr.PropertyKind.JS);
 /**
  * Decorates an element.
  * @param {DirectoryModel} directoryModel Current DirectoryModel.
+ * @param {VolumeManager} volumeManager VolumeManager of the system.
  */
-DirectoryTree.prototype.decorate = function(directoryModel) {
+DirectoryTree.prototype.decorate = function(directoryModel, volumeManager) {
   cr.ui.Tree.prototype.decorate.call(this);
 
   this.directoryModel_ = directoryModel;
+  this.volumeManager_ = volumeManager;
   this.entries_ = DirectoryTreeUtil.generateTopLevelEntries();
 
   this.fileFilter_ = this.directoryModel_.getFileFilter();
@@ -514,7 +520,13 @@ DirectoryTree.prototype.decorate = function(directoryModel) {
   this.scrollBar_ = MainPanelScrollBar();
   this.scrollBar_.initialize(this.parentNode, this);
 
+  // Once, draws the list with the fake '/drive/' entry.
   this.redraw(false /* recursive */);
+  // Resoves 'My Drive' entry and replaces the fake with the true one.
+  this.maybeResolveMyDriveRoot_(function() {
+    // After the true entry is resolved, draws the list again.
+    this.redraw(true /* recursive */);
+  }.bind(this));
 };
 
 /**
@@ -527,20 +539,53 @@ DirectoryTree.prototype.selectByEntry = function(entry) {
   if (!DirectoryTreeUtil.isEligiblePathForDirectoryTree(entry.fullPath))
     return;
 
-  if (this.selectedItem && util.isSameEntry(entry, this.selectedItem.entry))
-    return;
+  this.maybeResolveMyDriveRoot_(function() {
+    if (this.selectedItem && util.isSameEntry(entry, this.selectedItem.entry))
+      return;
 
-  if (DirectoryTreeUtil.searchAndSelectByEntry(this.items, entry))
-    return;
+    if (DirectoryTreeUtil.searchAndSelectByEntry(this.items, entry))
+      return;
 
-  this.selectedItem = null;
-  this.updateSubDirectories(
-      false /* recursive */,
-      // Success callback, failure is not handled.
-      function() {
-        if (!DirectoryTreeUtil.searchAndSelectByEntry(this.items, entry))
-          this.selectedItem = null;
-      }.bind(this));
+    this.selectedItem = null;
+    this.updateSubDirectories(
+        false /* recursive */,
+        // Success callback, failure is not handled.
+        function() {
+          if (!DirectoryTreeUtil.searchAndSelectByEntry(this.items, entry))
+            this.selectedItem = null;
+        }.bind(this));
+  }.bind(this));
+};
+
+/**
+ * Resolves the My Drive root's entry, if it is a fake. If the entry is already
+ * resolved to a DirectoryEntry, completionCallback() will be called
+ * immediately.
+ * @param {function()} completionCallback Called when the resolving is
+ *     done (or the entry is already resolved), regardless if it is
+ *     successfully done or not.
+ * @private
+ */
+DirectoryTree.prototype.maybeResolveMyDriveRoot_ = function(
+    completionCallback) {
+  var myDriveItem = this.items[0];
+  if (!util.isFakeDirectoryEntry(myDriveItem.entry)) {
+    // The entry is already resolved. Don't need to try again.
+    completionCallback();
+    return;
+  }
+
+  // The entry is a fake.
+  this.directoryModel_.resolveDirectory(
+      myDriveItem.fullPath,
+      function(entry) {
+        if (!util.isFakeDirectoryEntry(entry)) {
+          myDriveItem.dirEntry_ = entry;
+        }
+
+        completionCallback();
+      },
+      completionCallback);
 };
 
 /**
@@ -554,7 +599,6 @@ DirectoryTree.prototype.updateSubDirectories = function(
   var myDriveItem = this.items[0];
   DirectoryTreeUtil.updateSubDirectories(
       myDriveItem,
-      this.directoryModel_,
       function(entries) {
         this.entries_ = entries;
         this.redraw(recursive);

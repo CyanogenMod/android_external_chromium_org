@@ -153,6 +153,7 @@ LOCAL_SRC_FILES := \
 	net/disk_cache/simple/simple_entry_operation.cc \
 	net/disk_cache/simple/simple_index.cc \
 	net/disk_cache/simple/simple_index_file.cc \
+	net/disk_cache/simple/simple_index_file_posix.cc \
 	net/disk_cache/simple/simple_net_log_parameters.cc \
 	net/disk_cache/simple/simple_synchronous_entry.cc \
 	net/disk_cache/simple/simple_util.cc \
@@ -319,6 +320,7 @@ LOCAL_SRC_FILES := \
 	net/quic/quic_connection.cc \
 	net/quic/quic_connection_helper.cc \
 	net/quic/quic_connection_logger.cc \
+	net/quic/quic_connection_stats.cc \
 	net/quic/quic_data_reader.cc \
 	net/quic/quic_data_writer.cc \
 	net/quic/quic_fec_group.cc \
@@ -333,7 +335,6 @@ LOCAL_SRC_FILES := \
 	net/quic/quic_session.cc \
 	net/quic/quic_spdy_compressor.cc \
 	net/quic/quic_spdy_decompressor.cc \
-	net/quic/quic_stats.cc \
 	net/quic/quic_stream_factory.cc \
 	net/quic/quic_stream_sequencer.cc \
 	net/quic/quic_time.cc \

@@ -70,8 +70,7 @@ class TestBrowserWindow : public BrowserWindow {
   virtual LocationBar* GetLocationBar() const OVERRIDE;
   virtual void SetFocusToLocationBar(bool select_all) OVERRIDE {}
   virtual void UpdateReloadStopState(bool is_loading, bool force) OVERRIDE {}
-  virtual void UpdateToolbar(content::WebContents* contents,
-                             bool should_restore_state) OVERRIDE {}
+  virtual void UpdateToolbar(content::WebContents* contents) OVERRIDE {}
   virtual void FocusToolbar() OVERRIDE {}
   virtual void FocusAppMenu() OVERRIDE {}
   virtual void FocusBookmarksToolbar() OVERRIDE {}
@@ -107,7 +106,11 @@ class TestBrowserWindow : public BrowserWindow {
 #endif
   virtual bool IsDownloadShelfVisible() const OVERRIDE;
   virtual DownloadShelf* GetDownloadShelf() OVERRIDE;
-  virtual void ConfirmBrowserCloseWithPendingDownloads() OVERRIDE {}
+  virtual void ConfirmBrowserCloseWithPendingDownloads(
+      int download_count,
+      Browser::DownloadClosePreventionType dialog_type,
+      bool app_modal,
+      const base::Callback<void(bool)>& callback) OVERRIDE {}
   virtual void UserChangedTheme() OVERRIDE {}
   virtual int GetExtraRenderViewHeight() const OVERRIDE;
   virtual void WebContentsFocused(content::WebContents* contents) OVERRIDE {}

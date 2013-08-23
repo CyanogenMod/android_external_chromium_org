@@ -7,7 +7,7 @@
 
 #include "webkit/browser/fileapi/file_system_backend.h"
 #include "webkit/browser/fileapi/file_system_quota_util.h"
-#include "webkit/browser/fileapi/sandbox_context.h"
+#include "webkit/browser/fileapi/sandbox_file_system_backend_delegate.h"
 
 namespace sync_file_system {
 
@@ -15,8 +15,7 @@ class LocalFileChangeTracker;
 class LocalFileSyncContext;
 
 class SyncFileSystemBackend
-    : public fileapi::FileSystemBackend,
-      public fileapi::FileSystemQuotaUtil {
+    : public fileapi::FileSystemBackend {
  public:
   SyncFileSystemBackend();
   virtual ~SyncFileSystemBackend();
@@ -52,48 +51,6 @@ class SyncFileSystemBackend
       fileapi::FileSystemContext* context) const OVERRIDE;
   virtual fileapi::FileSystemQuotaUtil* GetQuotaUtil() OVERRIDE;
 
-  // FileSystemQuotaUtil overrides.
-  virtual base::PlatformFileError DeleteOriginDataOnFileThread(
-      fileapi::FileSystemContext* context,
-      quota::QuotaManagerProxy* proxy,
-      const GURL& origin_url,
-      fileapi::FileSystemType type) OVERRIDE;
-  virtual void GetOriginsForTypeOnFileThread(
-      fileapi::FileSystemType type,
-      std::set<GURL>* origins) OVERRIDE;
-  virtual void GetOriginsForHostOnFileThread(
-      fileapi::FileSystemType type,
-      const std::string& host,
-      std::set<GURL>* origins) OVERRIDE;
-  virtual int64 GetOriginUsageOnFileThread(
-      fileapi::FileSystemContext* context,
-      const GURL& origin_url,
-      fileapi::FileSystemType type) OVERRIDE;
-  virtual void InvalidateUsageCache(
-      const GURL& origin_url,
-      fileapi::FileSystemType type) OVERRIDE;
-  virtual void StickyInvalidateUsageCache(
-      const GURL& origin_url,
-      fileapi::FileSystemType type) OVERRIDE;
-  virtual void AddFileUpdateObserver(
-      fileapi::FileSystemType type,
-      fileapi::FileUpdateObserver* observer,
-      base::SequencedTaskRunner* task_runner) OVERRIDE;
-  virtual void AddFileChangeObserver(
-      fileapi::FileSystemType type,
-      fileapi::FileChangeObserver* observer,
-      base::SequencedTaskRunner* task_runner) OVERRIDE;
-  virtual void AddFileAccessObserver(
-      fileapi::FileSystemType type,
-      fileapi::FileAccessObserver* observer,
-      base::SequencedTaskRunner* task_runner) OVERRIDE;
-  virtual const fileapi::UpdateObserverList* GetUpdateObservers(
-      fileapi::FileSystemType type) const OVERRIDE;
-  virtual const fileapi::ChangeObserverList* GetChangeObservers(
-      fileapi::FileSystemType type) const OVERRIDE;
-  virtual const fileapi::AccessObserverList* GetAccessObservers(
-      fileapi::FileSystemType type) const OVERRIDE;
-
   static SyncFileSystemBackend* GetBackend(
       const fileapi::FileSystemContext* context);
 
@@ -109,15 +66,8 @@ class SyncFileSystemBackend
   void set_sync_context(sync_file_system::LocalFileSyncContext* sync_context);
 
  private:
-  // Observers for internal sync.
-  fileapi::UpdateObserverList update_observers_;
-  fileapi::ChangeObserverList change_observers_;
-
-  fileapi::UpdateObserverList syncable_update_observers_;
-  fileapi::ChangeObserverList syncable_change_observers_;
-
   // Owned by FileSystemContext.
-  fileapi::SandboxContext* sandbox_context_;
+  fileapi::SandboxFileSystemBackendDelegate* delegate_;
 
   scoped_ptr<sync_file_system::LocalFileChangeTracker> change_tracker_;
   scoped_refptr<sync_file_system::LocalFileSyncContext> sync_context_;

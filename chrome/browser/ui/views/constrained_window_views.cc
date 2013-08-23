@@ -6,48 +6,23 @@
 
 #include <algorithm>
 
-#include "base/command_line.h"
-#include "base/strings/utf_string_conversions.h"
-#include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/platform_util.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/browser_finder.h"
-#include "chrome/browser/ui/toolbar/toolbar_model.h"
-#include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/theme_image_mapper.h"
-#include "chrome/common/chrome_constants.h"
 #include "components/web_modal/web_contents_modal_dialog_host.h"
-#include "components/web_modal/web_contents_modal_dialog_manager.h"
-#include "content/public/browser/navigation_controller.h"
-#include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
-#include "net/base/net_util.h"
-#include "ui/aura/client/aura_constants.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/base/ui_base_switches.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
-#include "ui/gfx/path.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/screen.h"
 #include "ui/views/border.h"
 #include "ui/views/color_constants.h"
 #include "ui/views/controls/button/image_button.h"
-#include "ui/views/focus/focus_manager.h"
-#include "ui/views/views_delegate.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_observer.h"
-#include "ui/views/window/client_view.h"
-#include "ui/views/window/dialog_client_view.h"
 #include "ui/views/window/dialog_delegate.h"
 #include "ui/views/window/frame_background.h"
-#include "ui/views/window/non_client_view.h"
 #include "ui/views/window/window_resources.h"
 #include "ui/views/window/window_shape.h"
 
@@ -58,25 +33,14 @@
 
 #if defined(USE_AURA)
 #include "ui/aura/window.h"
-#include "ui/views/corewm/shadow_types.h"
-#include "ui/views/corewm/visibility_controller.h"
-#include "ui/views/corewm/window_animations.h"
-#include "ui/views/corewm/window_modality_controller.h"
 #endif
 
 #if defined(USE_ASH)
-#include "ash/ash_constants.h"
-#include "ash/shell.h"
 #include "ash/wm/custom_frame_view_ash.h"
 #endif
 
-using base::TimeDelta;
 using web_modal::WebContentsModalDialogHost;
 using web_modal::WebContentsModalDialogHostObserver;
-
-namespace views {
-class ClientView;
-}
 
 namespace {
 // The name of a key to store on the window handle to associate
@@ -104,7 +68,8 @@ class WebContentsModalDialogHostObserverViews
   }
 
   virtual ~WebContentsModalDialogHostObserverViews() {
-    host_->RemoveObserver(this);
+    if (host_)
+      host_->RemoveObserver(this);
     target_widget_->RemoveObserver(this);
     target_widget_->SetNativeWindowProperty(native_window_property_,
                                             NULL);
@@ -117,22 +82,12 @@ class WebContentsModalDialogHostObserverViews
 
   // WebContentsModalDialogHostObserver overrides
   virtual void OnPositionRequiresUpdate() OVERRIDE {
-    gfx::Size size = target_widget_->GetWindowBoundsInScreen().size();
-    gfx::Point position = host_->GetDialogPosition(size);
-    views::Border* border =
-        target_widget_->non_client_view()->frame_view()->border();
-    // Border may be null during widget initialization.
-    if (border) {
-      // Align the first row of pixels inside the border. This is the apparent
-      // top of the dialog.
-      position.set_y(position.y() - border->GetInsets().top());
-    }
+    UpdateWebContentsModalDialogPosition(target_widget_, host_);
+  }
 
-    if (target_widget_->is_top_level())
-      position += views::Widget::GetWidgetForNativeView(host_->GetHostView())->
-          GetClientAreaBoundsInScreen().OffsetFromOrigin();
-
-    target_widget_->SetBounds(gfx::Rect(position, size));
+  virtual void OnHostDestroying() OVERRIDE {
+    host_->RemoveObserver(this);
+    host_ = NULL;
   }
 
  private:
@@ -612,78 +567,27 @@ void ConstrainedWindowFrameView::InitClass() {
   }
 }
 
-#if defined(USE_ASH)
-// Ash has its own window frames, but we need the special close semantics for
-// constrained windows.
-class ConstrainedWindowFrameViewAsh : public ash::CustomFrameViewAsh {
- public:
-  explicit ConstrainedWindowFrameViewAsh()
-      : ash::CustomFrameViewAsh(),
-        container_(NULL) {
+void UpdateWebContentsModalDialogPosition(
+    views::Widget* widget,
+    web_modal::WebContentsModalDialogHost* dialog_host) {
+  gfx::Size size = widget->GetWindowBoundsInScreen().size();
+  gfx::Point position = dialog_host->GetDialogPosition(size);
+  views::Border* border =
+      widget->non_client_view()->frame_view()->border();
+  // Border may be null during widget initialization.
+  if (border) {
+    // Align the first row of pixels inside the border. This is the apparent
+    // top of the dialog.
+    position.set_y(position.y() - border->GetInsets().top());
   }
 
-  void Init(views::Widget* container) {
-    container_ = container;
-    ash::CustomFrameViewAsh::Init(container);
-    // Always use "active" look.
-    SetInactiveRenderingDisabled(true);
+  if (widget->is_top_level()) {
+    position +=
+        views::Widget::GetWidgetForNativeView(dialog_host->GetHostView())->
+            GetClientAreaBoundsInScreen().OffsetFromOrigin();
   }
 
-  // views::ButtonListener overrides:
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE {
-    if (sender == close_button())
-      container_->Close();
-  }
-
- private:
-  views::Widget* container_;  // not owned
-  DISALLOW_COPY_AND_ASSIGN(ConstrainedWindowFrameViewAsh);
-};
-#endif  // defined(USE_ASH)
-
-views::Widget* CreateWebContentsModalDialogViews(
-    views::WidgetDelegate* widget_delegate,
-    gfx::NativeView parent,
-    WebContentsModalDialogHost* dialog_host) {
-  views::Widget* dialog = new views::Widget;
-
-  views::Widget::InitParams params;
-  params.delegate = widget_delegate;
-  params.child = true;
-  WebContentsModalDialogHostObserver* dialog_host_observer = NULL;
-  if (views::DialogDelegate::UseNewStyle()) {
-    params.parent = dialog_host->GetHostView();
-    params.remove_standard_frame = true;
-    dialog_host_observer =
-        new WebContentsModalDialogHostObserverViews(
-            dialog_host,
-            dialog,
-            kWebContentsModalDialogHostObserverViewsKey);
-#if defined(USE_AURA)
-    params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
-#endif
-  } else {
-    params.parent = parent;
-  }
-
-  dialog->Init(params);
-
-#if defined(USE_AURA)
-  if (views::DialogDelegate::UseNewStyle()) {
-    // TODO(msw): Add a matching shadow type and remove the bubble frame border?
-    views::corewm::SetShadowType(dialog->GetNativeWindow(),
-                                 views::corewm::SHADOW_TYPE_NONE);
-  }
-#endif
-
-  if (dialog_host_observer) {
-    dialog_host_observer->OnPositionRequiresUpdate();
-    dialog->SetNativeWindowProperty(kWebContentsModalDialogHostObserverViewsKey,
-                                    dialog_host_observer);
-  }
-
-  return dialog;
+  widget->SetBounds(gfx::Rect(position, size));
 }
 
 views::Widget* CreateBrowserModalDialogViews(views::DialogDelegate* dialog,
@@ -720,8 +624,10 @@ views::NonClientFrameView* CreateConstrainedStyleNonClientFrameView(
                                                           force_opaque_border);
   }
 #if defined(USE_ASH)
-  ConstrainedWindowFrameViewAsh* frame = new ConstrainedWindowFrameViewAsh;
+  ash::CustomFrameViewAsh* frame = new ash::CustomFrameViewAsh;
   frame->Init(widget);
+  // Always use "active" look.
+  frame->SetInactiveRenderingDisabled(true);
   return frame;
 #endif
   return new ConstrainedWindowFrameView(widget,

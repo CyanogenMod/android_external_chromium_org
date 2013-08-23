@@ -5,12 +5,117 @@
 'use strict';
 
 /**
+ * Represents each volume, such as "drive", "download directory", each "USB
+ * flush storage", or "mounted zip archive" etc.
+ *
+ * @param {string} mountPath Where the volume is mounted.
+ * @param {string} error The error if an error is found.
+ * @param {string} deviceType The type of device ('usb'|'sd'|'optical'|'mobile'
+ *     |'unknown') (as defined in chromeos/disks/disk_mount_manager.cc).
+ *     Can be null.
+ * @param {boolean} isReadOnly True if the volume is read only.
+ * @constructor
+ */
+function VolumeInfo(mountPath, error, deviceType, isReadOnly) {
+  // TODO(hidehiko): This should include FileSystem instance.
+  this.mountPath_ = mountPath;
+  this.error_ = error;
+  this.deviceType_ = deviceType;
+  this.isReadOnly_ = !!isReadOnly;
+}
+
+VolumeInfo.prototype = {
+  get mountPath() { return this.mountPath_; },
+  get error() { return this.error_; },
+  get deviceType() { return this.deviceType_; },
+  get isReadOnly() { return this.isReadOnly_; },
+};
+
+/**
+ * Utilities for volume manager implementation.
+ */
+var volumeManagerUtil = {};
+
+/**
+ * Throws an Error when the given error is not in VolumeManager.Error.
+ * @param {VolumeManager.Error} error Status string usually received from APIs.
+ */
+volumeManagerUtil.validateError = function(error) {
+  for (var key in VolumeManager.Error) {
+    if (error == VolumeManager.Error[key])
+      return;
+  }
+
+  throw new Error('Invalid mount error: ' + error);
+};
+
+/**
+ * The regex pattern which matches valid mount paths.
+ * The valid paths are:
+ * - Either of '/drive', '/drive_shared_with_me', '/drive_offline',
+ *   '/drive_recent' or '/Download'
+ * - For archive, drive, removable can have (exactly one) sub directory in the
+ *  root path. E.g. '/arhive/foo', '/removable/usb1' etc.
+ *
+ * @type {RegExp}
+ * @private
+ */
+volumeManagerUtil.validateMountPathRegExp_ = new RegExp(
+    '^/(drive|drive_shared_with_me|drive_offline|drive_recent|Downloads|' +
+    '((archive|drive|removable)\/[^/]+))$');
+
+/**
+ * Throws an Error if the validation fails.
+ * @param {string} mountPath The target path of the validation.
+ */
+volumeManagerUtil.validateMountPath = function(mountPath) {
+  if (!volumeManagerUtil.validateMountPathRegExp_.test(mountPath))
+    throw new Error('Invalid mount path: ' + mountPath);
+};
+
+/**
+ * Builds the VolumeInfo data for mountPath.
+ * @param {string} mountPath Path to the volume.
+ * @param {VolumeManager.Error} error The error string if available.
+ * @param {function(Object)} callback Called on completion.
+ *     TODO(hidehiko): Replace the type from Object to its original type.
+ */
+volumeManagerUtil.createVolumeInfo = function(mountPath, error, callback) {
+  // Validation of the input.
+  volumeManagerUtil.validateMountPath(mountPath);
+  if (error)
+    volumeManagerUtil.validateError(error);
+
+  // TODO(hidehiko): Do we really need to create a volume info for error
+  // case?
+  chrome.fileBrowserPrivate.getVolumeMetadata(
+      util.makeFilesystemUrl(mountPath),
+      function(metadata) {
+        if (chrome.runtime.lastError && !error)
+          error = VolumeManager.Error.UNKNOWN;
+        callback(new VolumeInfo(
+            mountPath, error,
+            metadata && metadata.deviceType,
+            !!metadata && metadata.isReadOnly));
+      });
+};
+
+/**
  * VolumeManager is responsible for tracking list of mounted volumes.
  *
+ * @param {Entry} root The root of file system.
  * @constructor
  * @extends {cr.EventTarget}
  */
-function VolumeManager() {
+function VolumeManager(root) {
+  /**
+   * Root enty of the whole file system.
+   * TODO(hidehiko): Remove this when multi-file system is supported.
+   * @type {Entry}
+   * @private
+   */
+  this.root_ = root;
+
   /**
    * The list of archives requested to mount. We will show contents once
    * archive is mounted, but only for mounts from within this filebrowser tab.
@@ -20,7 +125,8 @@ function VolumeManager() {
   this.requests_ = {};
 
   /**
-   * @type {Object.<string, Object>}
+   * TODO(hidehiko): Replace Object with cr.ui.ArrayDataModel.
+   * @type {Object.<string, VolumeInfo>}
    * @private
    */
   this.mountedVolumes_ = {};
@@ -31,6 +137,15 @@ function VolumeManager() {
    * @private
    */
   this.ready_ = false;
+
+  /**
+   * True if Drive file system is enabled.
+   * TODO(hidehiko): This should be migrated into the multi-file system
+   * support. If drive file system is disabled, Files.app should receive
+   * unmounted event and UI should hide Drive.
+   * @type {boolean}
+   */
+  this.driveEnabled = false;
 
   this.initMountPoints_();
   this.driveStatus_ = VolumeManager.DriveStatus.UNMOUNTED;
@@ -43,7 +158,6 @@ function VolumeManager() {
   chrome.fileBrowserPrivate.onDriveConnectionStatusChanged.addListener(
       this.onDriveConnectionStatusChanged_.bind(this));
   this.onDriveConnectionStatusChanged_();
-
 }
 
 /**
@@ -139,11 +253,60 @@ VolumeManager.TIMEOUT = 15 * 60 * 1000;
 VolumeManager.MOUNTING_DELAY = 500;
 
 /**
- * @return {VolumeManager} Singleton instance.
+ * The singleton instance of VolumeManager. Initialized by the first invocation
+ * of getInstance().
+ * @type {VolumeManager}
+ * @private
  */
-VolumeManager.getInstance = function() {
-  return VolumeManager.instance_ = VolumeManager.instance_ ||
-                                   new VolumeManager();
+VolumeManager.instance_ = null;
+
+/**
+ * The queue of pending getInstance invocations.
+ * @type {AsyncUtil.Queue}
+ * @private
+ */
+VolumeManager.getInstanceQueue_ = new AsyncUtil.Queue();
+
+/**
+ * @param {function(VolumeManager)} callback Callback to obtain VolumeManager
+ *     instance.
+ */
+VolumeManager.getInstance = function(callback) {
+  VolumeManager.getInstanceQueue_.run(function(completionCallback) {
+    if (VolumeManager.instance_) {
+      callback(VolumeManager.instance_);
+      completionCallback();
+      return;
+    }
+
+    chrome.fileBrowserPrivate.requestFileSystem(function(filesystem) {
+      VolumeManager.instance_ = new VolumeManager(filesystem.root);
+      callback(VolumeManager.instance_);
+      completionCallback();
+    });
+  });
+};
+
+
+/**
+ * Enables/disables Drive file system. Dispatches
+ * 'drive-enabled-status-changed' event, when the enabled state is actually
+ * changed.
+ * @param {boolean} enabled True if Drive file system is enabled.
+ */
+VolumeManager.prototype.setDriveEnabled = function(enabled) {
+  console.error('VolumeManager: setDriveEnabled: ' + enabled);
+  if (this.driveEnabled == enabled)
+    return;
+  this.driveEnabled = enabled;
+
+  // When drive is enabled, start to mount.
+  if (enabled)
+    this.mountDrive(function() {}, function() {});
+
+  var e = new cr.Event('drive-enabled-status-changed');
+  e.enabled = enabled;
+  this.dispatchEvent(e);
 };
 
 /**
@@ -169,7 +332,7 @@ VolumeManager.prototype.getDriveStatus = function() {
  * @return {boolean} True if mounted.
  */
 VolumeManager.prototype.isMounted = function(mountPath) {
-  this.validateMountPath_(mountPath);
+  volumeManagerUtil.validateMountPath(mountPath);
   return mountPath in this.mountedVolumes_;
 };
 
@@ -185,46 +348,57 @@ VolumeManager.prototype.isReady = function() {
  * @private
  */
 VolumeManager.prototype.initMountPoints_ = function() {
-  var mountedVolumes = [];
-  var self = this;
-  var index = 0;
   this.deferredQueue_ = [];
-  var step = function(mountPoints) {
-    if (index < mountPoints.length) {
-      var info = mountPoints[index];
-      if (info.mountType == 'drive')
-        console.error('Drive is not expected initially mounted');
-      var error = info.mountCondition ? 'error_' + info.mountCondition : '';
-      var onVolumeInfo = function(volume) {
-        mountedVolumes.push(volume);
-        index++;
-        step(mountPoints);
-      };
-      self.makeVolumeInfo_('/' + info.mountPath, error, onVolumeInfo);
-    } else {
-      for (var i = 0; i < mountedVolumes.length; i++) {
-        var volume = mountedVolumes[i];
-        self.mountedVolumes_[volume.mountPath] = volume;
-      }
+  chrome.fileBrowserPrivate.getMountPoints(function(mountPointList) {
+    // According to the C++ implementation, getMountPoints only looks at
+    // the connected devices (such as USB memory), and doesn't return anything
+    // about Drive, Downloads nor archives.
+    // TODO(hidehiko): Figure out the historical intention of the method,
+    // and clean them up.
 
+    // Create VolumeInfo for each mount point.
+    var group = new AsyncUtil.Group();
+    for (var i = 0; i < mountPointList.length; i++) {
+      var mountPoint = mountPointList[i];
+
+      // TODO(hidehiko): It should be ok that the drive is mounted already.
+      if (mountPoint.mountType == 'drive')
+        console.error('Drive is not expected initially mounted');
+
+      var error = mountPoint.mountCondition ?
+          'error_' + mountPoint.mountCondition : '';
+      group.add(function(mountPoint, error, callback) {
+        volumeManagerUtil.createVolumeInfo(
+            '/' + mountPoint.mountPath, error,
+            function(volumeInfo) {
+              this.mountedVolumes_[volumeInfo.mountPath] = volumeInfo;
+              callback();
+            }.bind(this));
+      }.bind(this, mountPoint, error));
+    }
+
+    // Then, finalize the initialization.
+    group.run(function() {
       // Subscribe to the mount completed event when mount points initialized.
       chrome.fileBrowserPrivate.onMountCompleted.addListener(
-          self.onMountCompleted_.bind(self));
+          this.onMountCompleted_.bind(this));
 
-      var deferredQueue = self.deferredQueue_;
-      self.deferredQueue_ = null;
+      // Run pending tasks.
+      var deferredQueue = this.deferredQueue_;
+      this.deferredQueue_ = null;
       for (var i = 0; i < deferredQueue.length; i++) {
         deferredQueue[i]();
       }
 
-      cr.dispatchSimpleEvent(self, 'ready');
-      self.ready_ = true;
-      if (mountedVolumes.length > 0)
-        cr.dispatchSimpleEvent(self, 'change');
-    }
-  };
+      // Now, the initialization is completed. Set the state to the ready.
+      this.ready_ = true;
 
-  chrome.fileBrowserPrivate.getMountPoints(step);
+      // Notify event listeners that the initialization is done.
+      cr.dispatchSimpleEvent(this, 'ready');
+      if (mountPointList.length > 0)
+        cr.dispatchSimpleEvent(self, 'change');
+    }.bind(this));
+  }.bind(this));
 };
 
 /**
@@ -238,18 +412,19 @@ VolumeManager.prototype.onMountCompleted_ = function(event) {
       var requestKey = this.makeRequestKey_(
           'mount', event.mountType, event.sourcePath);
       var error = event.status == 'success' ? '' : event.status;
-      this.makeVolumeInfo_(event.mountPath, error, function(volume) {
-        this.mountedVolumes_[volume.mountPath] = volume;
-        this.finishRequest_(requestKey, event.status, event.mountPath);
-        cr.dispatchSimpleEvent(this, 'change');
-      }.bind(this));
+      volumeManagerUtil.createVolumeInfo(
+          event.mountPath, error, function(volume) {
+            this.mountedVolumes_[volume.mountPath] = volume;
+            this.finishRequest_(requestKey, event.status, event.mountPath);
+            cr.dispatchSimpleEvent(this, 'change');
+          }.bind(this));
     } else {
       console.warn('No mount path.');
       this.finishRequest_(requestKey, event.status);
     }
   } else if (event.eventType == 'unmount') {
     var mountPath = event.mountPath;
-    this.validateMountPath_(mountPath);
+    volumeManagerUtil.validateMountPath(mountPath);
     var status = event.status;
     if (status == VolumeManager.Error.PATH_UNMOUNTED) {
       console.warn('Volume already unmounted: ', mountPath);
@@ -310,45 +485,21 @@ VolumeManager.prototype.onMountCompleted_ = function(event) {
  * @private
  */
 VolumeManager.prototype.waitDriveLoaded_ = function(mountPath, callback) {
-  chrome.fileBrowserPrivate.requestFileSystem(function(filesystem) {
-    filesystem.root.getDirectory(mountPath, {},
-        function(entry) {
-          // After file system is mounted, we need to "read" drive grand root
-          // entry at first. It loads mydrive root entry as a part of
-          // 'fast-fetch' quickly, and starts full feed fetch in parallel.
-          // Without this read, accessing mydrive root will be 'full-fetch'
-          // rather than 'fast-fetch' on the current architecture.
-          // Just "getting" the grand root entry doesn't trigger it. Rather,
-          // it starts when the entry is "read".
-          entry.createReader().readEntries(
-              callback.bind(null, true),
-              callback.bind(null, false));
-        },
-        callback.bind(null, false));
-  });
-};
-
-/**
- * @param {string} mountPath Path to the volume.
- * @param {VolumeManager?} error Mounting error if any.
- * @param {function(Object)} callback Result acceptor.
- * @private
- */
-VolumeManager.prototype.makeVolumeInfo_ = function(
-    mountPath, error, callback) {
-  if (error)
-    this.validateError_(error);
-  this.validateMountPath_(mountPath);
-  var onVolumeMetadata = function(metadata) {
-   callback({
-     mountPath: mountPath,
-     error: error,
-     deviceType: metadata && metadata.deviceType,
-     readonly: !!metadata && metadata.isReadOnly
-   });
-  };
-  chrome.fileBrowserPrivate.getVolumeMetadata(
-      util.makeFilesystemUrl(mountPath), onVolumeMetadata);
+  this.root_.getDirectory(
+      mountPath, {},
+      function(entry) {
+        // After file system is mounted, we need to "read" drive grand root
+        // entry at first. It loads mydrive root entry as a part of
+        // 'fast-fetch' quickly, and starts full feed fetch in parallel.
+        // Without this read, accessing mydrive root will be 'full-fetch'
+        // rather than 'fast-fetch' on the current architecture.
+        // Just "getting" the grand root entry doesn't trigger it. Rather,
+        // it starts when the entry is "read".
+        entry.createReader().readEntries(
+            callback.bind(null, true),
+            callback.bind(null, false));
+      },
+      callback.bind(null, false));
 };
 
 /**
@@ -411,7 +562,7 @@ VolumeManager.prototype.mountArchive = function(fileUrl, successCallback,
 VolumeManager.prototype.unmount = function(mountPath,
                                            successCallback,
                                            errorCallback) {
-  this.validateMountPath_(mountPath);
+  volumeManagerUtil.validateMountPath(mountPath);
   if (this.deferredQueue_) {
     this.deferredQueue_.push(this.unmount.bind(this,
         mountPath, successCallback, errorCallback));
@@ -431,49 +582,11 @@ VolumeManager.prototype.unmount = function(mountPath,
 
 /**
  * @param {string} mountPath Volume mounted path.
- * @return {VolumeManager.Error?} Returns mount error code
- *                                or undefined if no error.
+ * @return {VolumeInfo} The data about the volume.
  */
-VolumeManager.prototype.getMountError = function(mountPath) {
-  return this.getVolumeInfo_(mountPath).error;
-};
-
-/**
- * @param {string} mountPath Volume mounted path.
- * @return {boolean} True if volume at |mountedPath| is mounted but not usable.
- */
-VolumeManager.prototype.isUnreadable = function(mountPath) {
-  var error = this.getMountError(mountPath);
-  return error == VolumeManager.Error.UNKNOWN_FILESYSTEM ||
-         error == VolumeManager.Error.UNSUPPORTED_FILESYSTEM;
-};
-
-/**
- * @param {string} mountPath Volume mounted path.
- * @return {string} Device type ('usb'|'sd'|'optical'|'mobile'|'unknown')
- *   (as defined in chromeos/disks/disk_mount_manager.cc).
- */
-VolumeManager.prototype.getDeviceType = function(mountPath) {
-  return this.getVolumeInfo_(mountPath).deviceType;
-};
-
-/**
- * @param {string} mountPath Volume mounted path.
- * @return {boolean} True if volume at |mountedPath| is read only.
- */
-VolumeManager.prototype.isReadOnly = function(mountPath) {
-  return !!this.getVolumeInfo_(mountPath).readonly;
-};
-
-/**
- * Helper method.
- * @param {string} mountPath Volume mounted path.
- * @return {Object} Structure created in |startRequest_|.
- * @private
- */
-VolumeManager.prototype.getVolumeInfo_ = function(mountPath) {
-  this.validateMountPath_(mountPath);
-  return this.mountedVolumes_[mountPath] || {};
+VolumeManager.prototype.getVolumeInfo = function(mountPath) {
+  volumeManagerUtil.validateMountPath(mountPath);
+  return this.mountedVolumes_[mountPath];
 };
 
 /**
@@ -570,30 +683,7 @@ VolumeManager.prototype.invokeRequestCallbacks_ = function(request, status,
   if (status == 'success') {
     callEach(request.successCallbacks, this, [opt_mountPath]);
   } else {
-    this.validateError_(status);
+    volumeManagerUtil.validateError(status);
     callEach(request.errorCallbacks, this, [status]);
   }
-};
-
-/**
- * @param {VolumeManager.Error} error Status string iusually received from API.
- * @private
- */
-VolumeManager.prototype.validateError_ = function(error) {
-  for (var i in VolumeManager.Error) {
-    if (error == VolumeManager.Error[i])
-      return;
-  }
-  throw new Error('Invalid mount error: ', error);
-};
-
-/**
- * @param {string} mountPath Mount path.
- * @private
- */
-VolumeManager.prototype.validateMountPath_ = function(mountPath) {
-  if (!/^\/(drive|drive_shared_with_me|drive_offline|drive_recent|Downloads)$/
-       .test(mountPath) &&
-      !/^\/((archive|removable|drive)\/[^\/]+)$/.test(mountPath))
-    throw new Error('Invalid mount path: ', mountPath);
 };

@@ -29,8 +29,6 @@
 #include "ui/gfx/point.h"
 #include "ui/gfx/transform.h"
 
-class SkCanvas;
-
 namespace gfx {
 class Size;
 class Transform;
@@ -86,6 +84,7 @@ class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
   ui::Compositor* compositor() { return compositor_.get(); }
   gfx::NativeCursor last_cursor() const { return last_cursor_; }
   Window* mouse_pressed_handler() { return mouse_pressed_handler_; }
+  Window* mouse_moved_handler() { return mouse_moved_handler_; }
 
   // Initializes the root window.
   void Init();
@@ -100,6 +99,8 @@ class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
   void PrepareForShutdown();
 
   // Repost event for re-processing. Used when exiting context menus.
+  // We only support the ET_MOUSE_PRESSED and ET_GESTURE_TAP_DOWN event
+  // types.
   void RepostEvent(const ui::LocatedEvent& event);
 
   RootWindowHostDelegate* AsRootWindowHostDelegate();
@@ -239,12 +240,6 @@ class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
   // Sets if the window should be focused when shown.
   void SetFocusWhenShown(bool focus_when_shown);
 
-  // Copies |source_bounds| from the root window (as displayed on the host
-  // machine) to |canvas| at offset |dest_offset|.
-  bool CopyAreaToSkCanvas(const gfx::Rect& source_bounds,
-                          const gfx::Point& dest_offset,
-                          SkCanvas* canvas);
-
   // Gets the last location seen in a mouse event in this root window's
   // coordinates. This may return a point outside the root window's bounds.
   gfx::Point GetLastMouseLocationInRoot() const;
@@ -285,10 +280,6 @@ class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
 
   // Exposes RootWindowHost::QueryMouseLocation() for test purposes.
   bool QueryMouseLocationForTest(gfx::Point* point) const;
-
-  // Clears internal mouse state (such as mouse ups should be sent to the same
-  // window that ate mouse downs).
-  void ClearMouseHandlers();
 
   void SetRootWindowTransformer(scoped_ptr<RootWindowTransformer> transformer);
   gfx::Transform GetRootTransform() const;
@@ -405,6 +396,10 @@ class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
   void SynthesizeMouseMoveEvent();
 
   gfx::Transform GetInverseRootTransform() const;
+
+  // Reposts the gesture event to the Window which is a target for the event
+  // passed in.
+  bool DispatchGestureEventRepost(ui::GestureEvent* event);
 
   scoped_ptr<ui::Compositor> compositor_;
 

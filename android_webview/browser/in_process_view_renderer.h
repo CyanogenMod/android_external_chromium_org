@@ -58,7 +58,9 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   virtual skia::RefPtr<SkPicture> CapturePicture(int width,
                                                  int height) OVERRIDE;
   virtual void EnableOnNewPicture(bool enabled) OVERRIDE;
-  virtual void OnVisibilityChanged(bool visible) OVERRIDE;
+  virtual void SetIsPaused(bool paused) OVERRIDE;
+  virtual void SetViewVisibility(bool visible) OVERRIDE;
+  virtual void SetWindowVisibility(bool visible) OVERRIDE;
   virtual void OnSizeChanged(int width, int height) OVERRIDE;
   virtual void ScrollTo(gfx::Vector2d new_value) OVERRIDE;
   virtual void SetPageScaleFactor(float page_scale_factor) OVERRIDE;
@@ -66,7 +68,7 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   virtual void OnDetachedFromWindow() OVERRIDE;
   virtual void SetDipScale(float dip_scale) OVERRIDE;
   virtual bool IsAttachedToWindow() OVERRIDE;
-  virtual bool IsViewVisible() OVERRIDE;
+  virtual bool IsVisible() OVERRIDE;
   virtual gfx::Rect GetScreenRect() OVERRIDE;
 
   // SynchronousCompositorClient overrides
@@ -115,7 +117,10 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   content::WebContents* web_contents_;
   content::SynchronousCompositor* compositor_;
 
-  bool visible_;
+  bool is_paused_;
+  bool view_visible_;
+  bool window_visible_;  // Only applicable if |attached_to_window_| is true.
+  bool attached_to_window_;
   float dip_scale_;
   float page_scale_factor_;
   bool on_new_picture_enable_;
@@ -125,13 +130,6 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   // reflect the expectation of the compositor and not be reused for other
   // states.
   bool compositor_needs_continuous_invalidate_;
-
-  // If this is true, then the fallback tick is posted with zero delay. This
-  // is to reduce the time in cases when blink main thread is blocked waiting.
-  // This is set when |compositor_needs_continuous_invalidate_| is set.
-  // Eventually, this should correspond to BeginFrame when BeginFrame and
-  // BeginFrameDeadline are separate functions.
-  bool need_fast_invalidate_;
 
   // Used to block additional invalidates while one is already pending or before
   // compositor draw which may switch continuous_invalidate on and off in the
@@ -144,7 +142,6 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   int width_;
   int height_;
 
-  bool attached_to_window_;
   bool hardware_initialized_;
   bool hardware_failed_;
   scoped_refptr<AwGLSurface> gl_surface_;

@@ -71,6 +71,7 @@ BrowserPlugin::BrowserPlugin(
     WebKit::WebFrame* frame,
     const WebPluginParams& params)
     : guest_instance_id_(browser_plugin::kInstanceIDNone),
+      attached_(false),
       render_view_(render_view->AsWeakPtr()),
       render_view_routing_id_(render_view->GetRoutingID()),
       container_(NULL),
@@ -85,7 +86,6 @@ BrowserPlugin::BrowserPlugin(
       content_window_routing_id_(MSG_ROUTING_NONE),
       plugin_focused_(false),
       visible_(true),
-      size_changed_in_flight_(false),
       before_first_navigation_(true),
       mouse_locked_(false),
       browser_plugin_manager_(render_view->GetBrowserPluginManager()),
@@ -280,7 +280,8 @@ bool BrowserPlugin::ParseSrcAttribute(std::string* error_message) {
     // BrowserPlugin and sending a BrowserPluginHostMsg_CreateGuest to the
     // browser process in order to create a new guest.
     if (before_first_navigation_) {
-      browser_plugin_manager()->AllocateInstanceID(this);
+      browser_plugin_manager()->AllocateInstanceID(
+          weak_ptr_factory_.GetWeakPtr());
       before_first_navigation_ = false;
     }
     return true;
@@ -328,21 +329,6 @@ void BrowserPlugin::UpdateGuestAutoSizeState(bool current_auto_size) {
                                            guest_instance_id_,
                                            auto_size_params,
                                            resize_guest_params));
-}
-
-void BrowserPlugin::SizeChangedDueToAutoSize(const gfx::Size& old_view_size) {
-  size_changed_in_flight_ = false;
-
-  std::map<std::string, base::Value*> props;
-  props[browser_plugin::kOldHeight] =
-      new base::FundamentalValue(old_view_size.height());
-  props[browser_plugin::kOldWidth] =
-      new base::FundamentalValue(old_view_size.width());
-  props[browser_plugin::kNewHeight] =
-      new base::FundamentalValue(last_view_size_.height());
-  props[browser_plugin::kNewWidth] =
-      new base::FundamentalValue(last_view_size_.width());
-  TriggerEvent(browser_plugin::kEventSizeChanged, &props);
 }
 
 // static
@@ -409,6 +395,7 @@ void BrowserPlugin::OnAttachACK(
             params.storage_partition_id;
     UpdateDOMAttribute(browser_plugin::kAttributePartition, partition_name);
   }
+  attached_ = true;
 }
 
 void BrowserPlugin::OnBuffersSwapped(
@@ -515,8 +502,9 @@ void BrowserPlugin::OnUpdateRect(
   // In HW mode, we need to do it here so we can continue sending
   // resize messages when needed.
   if (params.is_resize_ack ||
-      (!params.needs_ack && (auto_size || auto_size_ack_pending_)))
+      (!params.needs_ack && (auto_size || auto_size_ack_pending_))) {
     resize_ack_received_ = true;
+  }
 
   auto_size_ack_pending_ = false;
 
@@ -559,24 +547,7 @@ void BrowserPlugin::OnUpdateRect(
   if (auto_size && (params.view_size != last_view_size_)) {
     if (backing_store_)
       backing_store_->Clear(SK_ColorWHITE);
-    gfx::Size old_view_size = last_view_size_;
     last_view_size_ = params.view_size;
-    // Schedule a SizeChanged instead of calling it directly to ensure that
-    // the backing store has been updated before the developer attempts to
-    // resize to avoid flicker. |size_changed_in_flight_| acts as a form of
-    // flow control for SizeChanged events. If the guest's view size is changing
-    // rapidly before a SizeChanged event fires, then we avoid scheduling
-    // another SizeChanged event. SizeChanged reads the new size from
-    // |last_view_size_| so we can be sure that it always fires an event
-    // with the last seen view size.
-    if (container_ && !size_changed_in_flight_) {
-      size_changed_in_flight_ = true;
-      base::MessageLoop::current()->PostTask(
-          FROM_HERE,
-          base::Bind(&BrowserPlugin::SizeChangedDueToAutoSize,
-                     base::Unretained(this),
-                     old_view_size));
-    }
   }
 
   if (UsesDamageBuffer(params)) {
@@ -828,62 +799,6 @@ void BrowserPlugin::TriggerEvent(const std::string& event_name,
   container()->element().dispatchEvent(event);
 }
 
-void BrowserPlugin::OnTrackedObjectGarbageCollected(int id) {
-  // Remove from alive objects.
-  std::map<int, TrackedV8ObjectID*>::iterator iter =
-      tracked_v8_objects_.find(id);
-  if (iter != tracked_v8_objects_.end())
-    tracked_v8_objects_.erase(iter);
-
-  std::map<std::string, base::Value*> props;
-  props[browser_plugin::kId] = new base::FundamentalValue(id);
-  TriggerEvent(browser_plugin::kEventInternalTrackedObjectGone, &props);
-}
-
-void BrowserPlugin::TrackObjectLifetime(const NPVariant* request, int id) {
-  // An object of a given ID can only be tracked once.
-  if (tracked_v8_objects_.find(id) != tracked_v8_objects_.end())
-    return;
-
-  v8::Isolate* isolate = v8::Isolate::GetCurrent();
-  v8::Persistent<v8::Value> weak_request(
-      isolate, WebKit::WebBindings::toV8Value(request));
-
-  TrackedV8ObjectID* new_item =
-      new std::pair<int, base::WeakPtr<BrowserPlugin> >(
-          id, weak_ptr_factory_.GetWeakPtr());
-
-  std::pair<std::map<int, TrackedV8ObjectID*>::iterator, bool>
-      result = tracked_v8_objects_.insert(
-          std::make_pair(id, new_item));
-  CHECK(result.second);  // Inserted in the map.
-  TrackedV8ObjectID* request_item = result.first->second;
-  weak_request.MakeWeak(static_cast<void*>(request_item),
-                        WeakCallbackForTrackedObject);
-}
-
-// static
-void BrowserPlugin::WeakCallbackForTrackedObject(
-    v8::Isolate* isolate, v8::Persistent<v8::Value>* object, void* param) {
-
-  TrackedV8ObjectID* item_ptr = static_cast<TrackedV8ObjectID*>(param);
-  int object_id = item_ptr->first;
-  base::WeakPtr<BrowserPlugin> plugin = item_ptr->second;
-  delete item_ptr;
-
-  object->Dispose();
-  if (plugin.get()) {
-    // Asynchronously remove item from |tracked_v8_objects_|.
-    // Note that we are using weak pointer for the following PostTask, so we
-    // don't need to worry about BrowserPlugin going away.
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&BrowserPlugin::OnTrackedObjectGarbageCollected,
-                   plugin,
-                   object_id));
-  }
-}
-
 void BrowserPlugin::UpdateGuestFocusState() {
   if (!HasGuestInstanceID())
     return;
@@ -1089,7 +1004,7 @@ void BrowserPlugin::updateGeometry(
   int old_width = width();
   int old_height = height();
   plugin_rect_ = window_rect;
-  if (!HasGuestInstanceID())
+  if (!attached())
     return;
 
   // In AutoSize mode, guests don't care when the BrowserPlugin container is

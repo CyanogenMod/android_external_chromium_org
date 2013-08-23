@@ -287,7 +287,7 @@ cr.define('apps_dev_tool', function() {
         var list = panel.querySelector('ul');
         item.install_warnings.forEach(function(warning) {
           var li = document.createElement('li');
-          li[warning.isHTML ? 'innerHTML' : 'textContent'] = warning.message;
+          li.textContent = warning.message;
           list.appendChild(li);
         });
       }
@@ -366,6 +366,17 @@ cr.define('apps_dev_tool', function() {
     setPackButton_: function(item, el) {
       var packButton = el.querySelector('.pack-link');
       packButton.addEventListener('click', function(e) {
+        if (item.isApp) {
+          $('pack-heading').textContent =
+              loadTimeData.getString('packAppHeading');
+          $('pack-title').textContent =
+              loadTimeData.getString('packAppOverlay');
+        } else {
+          $('pack-heading').textContent =
+              loadTimeData.getString('packExtensionHeading');
+          $('pack-title').textContent =
+              loadTimeData.getString('packExtensionOverlay');
+        }
         $('item-root-dir').value = item.path;
         AppsDevTool.showOverlay($('packItemOverlay'));
       });
@@ -489,8 +500,10 @@ cr.define('apps_dev_tool', function() {
       var link = activeViews.querySelector('a');
 
       item.views.forEach(function(view, i) {
-        var label = view.path +
-            (view.incognito ? ' ' + str('viewIncognito') : '') +
+        var displayName = view.generatedBackgroundPage ?
+            str('backgroundPage') : view.path;
+        var label =
+            displayName + (view.incognito ? ' ' + str('viewIncognito') : '') +
             (view.render_process_id == -1 ? ' ' + str('viewInactive') : '');
         link.textContent = label;
         link.addEventListener('click', function(e) {

@@ -40,8 +40,8 @@
     {
       # The current list of tests for android.  This is temporary
       # until the full set supported.  If adding a new test here,
-      # please also add it to build/android/run_tests.py, else the
-      # test is not run.
+      # please also add it to build/android/pylib/gtest/gtest_config.py,
+      # else the test is not run.
       #
       # WARNING:
       # Do not add targets here without communicating the implications
@@ -115,6 +115,22 @@
         }],
       ],
     },
+    {
+      # WebRTC Android APK tests.
+      'target_name': 'android_builder_webrtc',
+      'type': 'none',
+      'variables': {
+        # WebRTC tests are normally not built by Chromium bots.
+        'include_tests%': 0,
+      },
+      'conditions': [
+        ['"<(gtest_target_type)"=="shared_library" and include_tests==1', {
+          'dependencies': [
+            '../third_party/webrtc/build/apk_tests.gyp:*',
+          ],
+        }],
+      ],
+    },  # target_name: android_builder_webrtc
     {
       # Experimental / in-progress targets that are expected to fail
       # but we still try to compile them on bots (turning the stage

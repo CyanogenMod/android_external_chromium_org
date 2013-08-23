@@ -86,7 +86,12 @@ public class SyncStatusHelper {
         }
     }
 
+    @Deprecated
     public static final String AUTH_TOKEN_TYPE_SYNC = "chromiumsync";
+
+    // This should always have the same value as GaiaConstants::kChromeSyncOAuth2Scope.
+    public static final String CHROME_SYNC_OAUTH2_SCOPE =
+            "https://www.googleapis.com/auth/chromesync";
 
     public static final String TAG = "SyncStatusHelper";
 
@@ -126,8 +131,7 @@ public class SyncStatusHelper {
             SyncContentResolverDelegate syncContentResolverWrapper) {
         mApplicationContext = context.getApplicationContext();
         mSyncContentResolverWrapper = syncContentResolverWrapper;
-        mContractAuthority =
-                InvalidationController.get(mApplicationContext).getContractAuthority();
+        mContractAuthority = getContractAuthority();
 
         updateMasterSyncAutomaticallySetting();
 
@@ -181,6 +185,13 @@ public class SyncStatusHelper {
             }
             sSyncStatusHelper = new SyncStatusHelper(context, syncContentResolverWrapper);
         }
+    }
+
+    /**
+     * Returns the contract authority to use when requesting sync.
+     */
+    public String getContractAuthority() {
+        return mApplicationContext.getPackageName();
     }
 
     /**

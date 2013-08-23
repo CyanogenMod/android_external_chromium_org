@@ -44,7 +44,6 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_messages.h"
-#include "chrome/common/extensions/features/feature.h"
 #include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_message_filter.h"
@@ -54,6 +53,7 @@
 #include "content/public/browser/user_metrics.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/event_filtering_info.h"
+#include "extensions/common/features/feature.h"
 #include "extensions/common/url_pattern.h"
 #include "grit/generated_resources.h"
 #include "net/base/auth.h"
@@ -93,10 +93,10 @@ const char kWebView[] = "webview";
 // List of all the webRequest events.
 const char* const kWebRequestEvents[] = {
   keys::kOnBeforeRedirectEvent,
-  keys::kOnBeforeRequestEvent,
+  web_request::OnBeforeRequest::kEventName,
   keys::kOnBeforeSendHeadersEvent,
   keys::kOnCompletedEvent,
-  keys::kOnErrorOccurredEvent,
+  web_request::OnErrorOccurred::kEventName,
   keys::kOnSendHeadersEvent,
   keys::kOnAuthRequiredEvent,
   keys::kOnResponseStartedEvent,
@@ -631,13 +631,13 @@ int ExtensionWebRequestEventRouter::OnBeforeRequest(
 
   initialize_blocked_requests |=
       ProcessDeclarativeRules(profile, extension_info_map,
-                              keys::kOnBeforeRequestEvent, request,
+                              web_request::OnBeforeRequest::kEventName, request,
                               extensions::ON_BEFORE_REQUEST, NULL);
 
   int extra_info_spec = 0;
   std::vector<const EventListener*> listeners =
       GetMatchingListeners(profile, extension_info_map,
-                           keys::kOnBeforeRequestEvent, request,
+                           web_request::OnBeforeRequest::kEventName, request,
                            &extra_info_spec);
   if (!listeners.empty() &&
       !GetAndSetSignaled(request->identifier(), kOnBeforeRequest)) {
@@ -1057,7 +1057,7 @@ void ExtensionWebRequestEventRouter::OnErrorOccurred(
   int extra_info_spec = 0;
   std::vector<const EventListener*> listeners =
       GetMatchingListeners(profile, extension_info_map,
-                           keys::kOnErrorOccurredEvent, request,
+                           web_request::OnErrorOccurred::kEventName, request,
                            &extra_info_spec);
   if (listeners.empty())
     return;

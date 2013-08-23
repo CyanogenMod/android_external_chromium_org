@@ -175,11 +175,10 @@ TEST_F(DisplayPreferencesTest, PairedLayoutOverrides) {
   shell->display_manager()->UpdateDisplays();
   // Check if the layout settings are notified to the system properly.
   // The paired layout overrides old layout.
-  ash::DisplayController* display_controller = shell->display_controller();
   // Inverted one of for specified pair (id1, id2).  Not used for the pair
   // (id1, dummy_id) since dummy_id is not connected right now.
   EXPECT_EQ("top, 20",
-            display_controller->GetCurrentDisplayLayout().ToString());
+            shell->display_manager()->GetCurrentDisplayLayout().ToString());
   EXPECT_EQ("top, 20", GetRegisteredDisplayLayoutStr(id1, id2));
   EXPECT_EQ("left, 30", GetRegisteredDisplayLayoutStr(id1, dummy_id));
 }
@@ -190,7 +189,7 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
   ash::internal::DisplayManager* display_manager =
       ash::Shell::GetInstance()->display_manager();
 
-  UpdateDisplay("200x200*2,400x300");
+  UpdateDisplay("200x200*2, 400x300#400x400|300x200");
   int64 id1 = gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().id();
   gfx::Display::SetInternalDisplayId(id1);
   int64 id2 = ash::ScreenAsh::GetSecondaryDisplay().id();
@@ -271,7 +270,7 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
   EXPECT_FALSE(property->GetInteger("width", &width));
   EXPECT_FALSE(property->GetInteger("height", &height));
 
-  display_manager->SetDisplayResolution(id2, gfx::Size(400, 300));
+  display_manager->SetDisplayResolution(id2, gfx::Size(300, 200));
 
   display_controller->SetPrimaryDisplayId(id2);
 
@@ -282,12 +281,13 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
   EXPECT_FALSE(property->GetInteger("width", &width));
   EXPECT_FALSE(property->GetInteger("height", &height));
 
-  // External dispaly's resolution must be stored this time.
+  // External dispaly's resolution must be stored this time because
+  // it's not best.
   EXPECT_TRUE(properties->GetDictionary(base::Int64ToString(id2), &property));
   EXPECT_TRUE(property->GetInteger("width", &width));
   EXPECT_TRUE(property->GetInteger("height", &height));
-  EXPECT_EQ(400, width);
-  EXPECT_EQ(300, height);
+  EXPECT_EQ(300, width);
+  EXPECT_EQ(200, height);
 
   // The layout remains the same.
   EXPECT_TRUE(displays->GetDictionary(key, &layout_value));
@@ -331,12 +331,18 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
   EXPECT_TRUE(properties->GetDictionary(base::Int64ToString(id2), &property));
   EXPECT_TRUE(property->GetInteger("width", &width));
   EXPECT_TRUE(property->GetInteger("height", &height));
-  EXPECT_EQ(400, width);
-  EXPECT_EQ(300, height);
+  EXPECT_EQ(300, width);
+  EXPECT_EQ(200, height);
 
   // Set new display's selected resolution.
-  display_manager->SetDisplayResolution(id2 + 1, gfx::Size(500, 400));
-  UpdateDisplay("200x200*2,500x400");
+  display_manager->RegisterDisplayProperty(id2 + 1,
+                                           gfx::Display::ROTATE_0,
+                                           1.0f,
+                                           NULL,
+                                           gfx::Size(500, 400));
+
+  UpdateDisplay("200x200*2, 600x500#600x500|500x400");
+
   // Update key as the 2nd display gets new id.
   id2 = ash::ScreenAsh::GetSecondaryDisplay().id();
   key = base::Int64ToString(id1) + "," + base::Int64ToString(id2);
@@ -362,14 +368,14 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
 TEST_F(DisplayPreferencesTest, PreventStore) {
   ResolutionNotificationController::SuppressTimerForTest();
   LoggedInAsUser();
-  UpdateDisplay("400x300");
+  UpdateDisplay("400x300#500x400|400x300|300x200");
   int64 id = ash::Shell::GetScreen()->GetPrimaryDisplay().id();
   // Set display's resolution in single display. It creates the notification and
   // display preferences should not stored meanwhile.
   ash::Shell::GetInstance()->resolution_notification_controller()->
       SetDisplayResolutionAndNotify(
           id, gfx::Size(400, 300), gfx::Size(500, 400), base::Closure());
-  UpdateDisplay("500x400");
+  UpdateDisplay("500x400#500x400|400x300|300x200");
 
   const base::DictionaryValue* properties =
       local_state()->GetDictionary(prefs::kDisplayProperties);
@@ -390,7 +396,7 @@ TEST_F(DisplayPreferencesTest, PreventStore) {
   // by SetDisplayResolution.
   ash::Shell::GetInstance()->display_manager()->SetDisplayResolution(
       id, gfx::Size(300, 200));
-  UpdateDisplay("300x200");
+  UpdateDisplay("300x200#500x400|400x300|300x200");
 
   property = NULL;
   EXPECT_TRUE(properties->GetDictionary(base::Int64ToString(id), &property));
@@ -468,8 +474,8 @@ TEST_F(DisplayPreferencesTest, DontStoreInGuestMode) {
   gfx::Screen* screen = gfx::Screen::GetNativeScreen();
   EXPECT_EQ(id2, screen->GetPrimaryDisplay().id());
   EXPECT_EQ(ash::DisplayLayout::BOTTOM,
-            display_controller->GetCurrentDisplayLayout().position);
-  EXPECT_EQ(-10, display_controller->GetCurrentDisplayLayout().offset);
+            display_manager->GetCurrentDisplayLayout().position);
+  EXPECT_EQ(-10, display_manager->GetCurrentDisplayLayout().offset);
   const gfx::Display& primary_display = screen->GetPrimaryDisplay();
   EXPECT_EQ("178x176", primary_display.bounds().size().ToString());
   EXPECT_EQ(gfx::Display::ROTATE_90, primary_display.rotation());

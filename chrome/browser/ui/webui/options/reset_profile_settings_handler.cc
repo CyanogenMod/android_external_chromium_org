@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string16.h"
 #include "base/values.h"
@@ -38,6 +39,12 @@ ResetProfileSettingsHandler::~ResetProfileSettingsHandler() {
 void ResetProfileSettingsHandler::InitializeHandler() {
   Profile* profile = Profile::FromWebUI(web_ui());
   resetter_.reset(new ProfileResetter(profile));
+}
+
+void ResetProfileSettingsHandler::InitializePage() {
+  web_ui()->CallJavascriptFunction(
+      "ResetProfileSettingsOverlay.setResettingState",
+      base::FundamentalValue(resetter_->IsActive()));
 }
 
 void ResetProfileSettingsHandler::GetLocalizedValues(
@@ -146,6 +153,7 @@ void ResetProfileSettingsHandler::ResetProfile(bool send_settings) {
       base::Bind(&ResetProfileSettingsHandler::OnResetProfileSettingsDone,
                  AsWeakPtr()));
   content::RecordAction(content::UserMetricsAction("ResetProfile"));
+  UMA_HISTOGRAM_BOOLEAN("ProfileReset.SendFeedback", send_settings);
 }
 
 }  // namespace options

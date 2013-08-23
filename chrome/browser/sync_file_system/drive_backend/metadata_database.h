@@ -37,6 +37,7 @@ class ResourceEntry;
 namespace sync_file_system {
 namespace drive_backend {
 
+class FileDetails;
 class FileMetadata;
 class FileTracker;
 class ServiceMetadata;
@@ -108,11 +109,13 @@ class MetadataDatabase {
   typedef std::map<std::string, TrackerSet> TrackersByTitle;
   typedef std::map<int64, TrackersByTitle> TrackersByParentAndTitle;
   typedef std::map<std::string, FileTracker*> TrackerByAppID;
+  typedef std::vector<std::string> FileIDList;
 
   typedef base::Callback<
       void(SyncStatusCode status, scoped_ptr<MetadataDatabase> instance)>
       CreateCallback;
 
+  // The entry point of the MetadataDatabase for production code.
   static void Create(base::SequencedTaskRunner* task_runner,
                      const base::FilePath& database_path,
                      const CreateCallback& callback);
@@ -184,6 +187,13 @@ class MetadataDatabase {
   void UpdateByChangeList(ScopedVector<google_apis::ChangeResource> changes,
                           const SyncStatusCallback& callback);
 
+  // Adds |child_file_ids| to |folder_id| as its children.
+  // This method affects the active tracker only.
+  // If the tracker has no further change to sync, unmarks its dirty flag.
+  void PopulateFolder(const std::string& folder_id,
+                      const FileIDList& child_file_ids,
+                      const SyncStatusCallback& callback);
+
  private:
   struct DirtyTrackerComparator {
     bool operator()(const FileTracker* left,
@@ -211,6 +221,8 @@ class MetadataDatabase {
                                 leveldb::WriteBatch* batch);
   void MakeTrackerActive(int64 tracker_id, leveldb::WriteBatch* batch);
   void MakeTrackerInactive(int64 tracker_id, leveldb::WriteBatch* batch);
+  void MakeAppRootDisabled(int64 tracker_id, leveldb::WriteBatch* batch);
+  void MakeAppRootEnabled(int64 tracker_id, leveldb::WriteBatch* batch);
 
   void UnregisterTrackerAsAppRoot(const std::string& app_id,
                                   leveldb::WriteBatch* batch);
@@ -240,6 +252,10 @@ class MetadataDatabase {
                              leveldb::WriteBatch* batch);
 
   int64 GetNextTrackerID(leveldb::WriteBatch* batch);
+
+  void RecursiveMarkTrackerAsDirty(int64 root_tracker_id,
+                                   leveldb::WriteBatch* batch);
+  bool ShouldKeepDirty(const FileTracker& tracker) const;
 
   void WriteToDatabase(scoped_ptr<leveldb::WriteBatch> batch,
                        const SyncStatusCallback& callback);

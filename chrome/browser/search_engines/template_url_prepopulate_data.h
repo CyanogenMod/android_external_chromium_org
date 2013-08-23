@@ -61,12 +61,17 @@ void ClearPrepopulatedEnginesInPrefs(Profile* profile);
 // not used.
 TemplateURL* GetPrepopulatedDefaultSearch(Profile* profile);
 
-// Returns the type of the matching engine, or SEARCH_ENGINE_OTHER if no engines
-// match.  This uses same-origin checks unless the |url| is a Google seach URL,
-// in which case we'll identify any valid Google hostname as "Google".
+// Returns the type of the provided engine, or SEARCH_ENGINE_OTHER if no engines
+// match.  This checks the TLD+1 for the most part, but will report the type as
+// SEARCH_ENGINE_GOOGLE for any hostname that causes
+// google_util::IsGoogleHostname() to return true.
 //
 // NOTE: Must be called on the UI thread.
-SearchEngineType GetEngineType(const std::string& url);
+SearchEngineType GetEngineType(const TemplateURL& template_url);
+
+// Like the above, but takes a GURL which is expected to represent a search URL.
+// This may be called on any thread.
+SearchEngineType GetEngineType(const GURL& url);
 
 // Returns the logo at the specified |size| for |template_url|.  If no logo is
 // known, this will return an empty GURL.

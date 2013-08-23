@@ -25,7 +25,6 @@
 #include "chrome/common/extensions/extension_l10n_util.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_messages.h"
-#include "chrome/common/extensions/manifest.h"
 #include "chrome/common/extensions/manifest_handler.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/extensions/manifest_handlers/theme_handler.h"
@@ -33,6 +32,7 @@
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/install_warning.h"
+#include "extensions/common/manifest.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
 #include "net/base/file_stream.h"
@@ -264,10 +264,11 @@ bool ValidateExtension(const Extension* extension,
     return false;
 
   // Check children of extension root to see if any of them start with _ and is
-  // not on the reserved list.
-  if (!CheckForIllegalFilenames(extension->path(), error)) {
-    return false;
-  }
+  // not on the reserved list. We only warn, and do not block the loading of the
+  // extension.
+  std::string warning;
+  if (!CheckForIllegalFilenames(extension->path(), &warning))
+    warnings->push_back(extensions::InstallWarning(warning));
 
   // Check that extensions don't include private key files.
   std::vector<base::FilePath> private_keys =
@@ -284,7 +285,6 @@ bool ValidateExtension(const Extension* extension,
   } else {
     for (size_t i = 0; i < private_keys.size(); ++i) {
       warnings->push_back(extensions::InstallWarning(
-          extensions::InstallWarning::FORMAT_TEXT,
           l10n_util::GetStringFUTF8(
               IDS_EXTENSION_CONTAINS_PRIVATE_KEY,
               private_keys[i].LossyDisplayName())));

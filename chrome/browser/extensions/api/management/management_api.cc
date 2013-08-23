@@ -20,7 +20,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/management/management_api_constants.h"
-#include "chrome/browser/extensions/event_names.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -60,7 +59,6 @@ namespace keys = extension_management_api_constants;
 
 namespace extensions {
 
-namespace events = event_names;
 namespace management = api::management;
 
 namespace {
@@ -209,8 +207,8 @@ void AddExtensionInfo(const ExtensionSet& extensions,
        iter != extensions.end(); ++iter) {
     const Extension& extension = *iter->get();
 
-    if (extension.location() == Manifest::COMPONENT)
-      continue;  // Skip built-in extensions.
+    if (extension.ShouldNotBeVisible())
+      continue;  // Skip built-in extensions/apps.
 
     extension_list->push_back(make_linked_ptr<management::ExtensionInfo>(
         CreateExtensionInfo(extension, system).release()));
@@ -459,7 +457,7 @@ bool ManagementSetEnabledFunction::RunImpl() {
   extension_id_ = params->id;
 
   const Extension* extension = service()->GetInstalledExtension(extension_id_);
-  if (!extension) {
+  if (!extension || extension->ShouldNotBeVisible()) {
     error_ = ErrorUtils::FormatErrorMessage(
         keys::kNoExtensionError, extension_id_);
     return false;
@@ -524,7 +522,7 @@ bool ManagementUninstallFunctionBase::Uninstall(
     bool show_confirm_dialog) {
   extension_id_ = extension_id;
   const Extension* extension = service()->GetExtensionById(extension_id_, true);
-  if (!extension) {
+  if (!extension || extension->ShouldNotBeVisible()) {
     error_ = ErrorUtils::FormatErrorMessage(
         keys::kNoExtensionError, extension_id_);
     return false;
@@ -652,20 +650,20 @@ void ManagementEventRouter::Observe(
 
   switch (type) {
     case chrome::NOTIFICATION_EXTENSION_INSTALLED:
-      event_name = events::kOnExtensionInstalled;
+      event_name = management::OnInstalled::kEventName;
       extension =
           content::Details<const InstalledExtensionInfo>(details)->extension;
       break;
     case chrome::NOTIFICATION_EXTENSION_UNINSTALLED:
-      event_name = events::kOnExtensionUninstalled;
+      event_name = management::OnUninstalled::kEventName;
       extension = content::Details<const Extension>(details).ptr();
       break;
     case chrome::NOTIFICATION_EXTENSION_LOADED:
-      event_name = events::kOnExtensionEnabled;
+      event_name = management::OnEnabled::kEventName;
       extension = content::Details<const Extension>(details).ptr();
       break;
     case chrome::NOTIFICATION_EXTENSION_UNLOADED:
-      event_name = events::kOnExtensionDisabled;
+      event_name = management::OnDisabled::kEventName;
       extension =
           content::Details<const UnloadedExtensionInfo>(details)->extension;
       break;
@@ -676,9 +674,12 @@ void ManagementEventRouter::Observe(
   DCHECK(event_name);
   DCHECK(extension);
 
+  if (extension->ShouldNotBeVisible())
+    return; // Don't dispatch events for built-in extensions.
+
   scoped_ptr<base::ListValue> args(new base::ListValue());
-  if (event_name == events::kOnExtensionUninstalled) {
-    args->Append(Value::CreateStringValue(extension->id()));
+  if (event_name == management::OnUninstalled::kEventName) {
+    args->Append(new base::StringValue(extension->id()));
   } else {
     scoped_ptr<management::ExtensionInfo> info = CreateExtensionInfo(
         *extension, ExtensionSystem::Get(profile));
@@ -692,13 +693,13 @@ void ManagementEventRouter::Observe(
 ManagementAPI::ManagementAPI(Profile* profile)
     : profile_(profile) {
   ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, events::kOnExtensionInstalled);
+      this, management::OnInstalled::kEventName);
   ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, events::kOnExtensionUninstalled);
+      this, management::OnUninstalled::kEventName);
   ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, events::kOnExtensionEnabled);
+      this, management::OnEnabled::kEventName);
   ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, events::kOnExtensionDisabled);
+      this, management::OnDisabled::kEventName);
 }
 
 ManagementAPI::~ManagementAPI() {

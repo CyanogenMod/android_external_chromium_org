@@ -25,6 +25,11 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+#if defined(OS_WIN)
+// For version specific disabled tests below (http://crbug.com/230534).
+#include "base/win/windows_version.h"
+#endif
+
 using base::HistogramBase;
 using base::HistogramSamples;
 using base::StatisticsRecorder;
@@ -1069,8 +1074,17 @@ TEST_F(SpellcheckCustomDictionaryTest, DictionarySyncLimit) {
 }
 
 TEST_F(SpellcheckCustomDictionaryTest, RecordSizeStatsCorrectly) {
+#if defined(OS_WIN)
+// Failing consistently on Win7. See crbug.com/230534.
+  if (base::win::GetVersion() >= base::win::VERSION_VISTA)
+    return;
+#endif
   // Record a baseline.
   SpellCheckHostMetrics::RecordCustomWordCountStats(123);
+
+  // Determine if test failures are due the statistics recorder not being
+  // available or because the histogram just isn't there: crbug.com/230534.
+  EXPECT_TRUE(StatisticsRecorder::IsActive());
 
   HistogramBase* histogram =
       StatisticsRecorder::FindHistogram("SpellCheck.CustomWords");

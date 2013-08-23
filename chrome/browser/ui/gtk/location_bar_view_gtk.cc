@@ -21,6 +21,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/accessibility/accessibility_events.h"
+#include "chrome/browser/accessibility/accessibility_extension_api.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
@@ -82,6 +83,7 @@
 #include "grit/theme_resources.h"
 #include "net/base/net_util.h"
 #include "ui/base/accelerators/platform_accelerator_gtk.h"
+#include "ui/base/accessibility/accessibility_types.h"
 #include "ui/base/dragdrop/gtk_dnd_util.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/gtk/gtk_signal_registrar.h"
@@ -174,7 +176,7 @@ class ContentSettingImageViewGtk : public LocationBarViewGtk::PageToolViewGtk,
                                    public BubbleDelegateGtk {
  public:
   ContentSettingImageViewGtk(ContentSettingsType content_type,
-                             const LocationBarViewGtk* parent);
+                             LocationBarViewGtk* parent);
   virtual ~ContentSettingImageViewGtk();
 
   // PageToolViewGtk
@@ -194,6 +196,9 @@ class ContentSettingImageViewGtk : public LocationBarViewGtk::PageToolViewGtk,
   virtual void BubbleClosing(BubbleGtk* bubble,
                              bool closed_by_escape) OVERRIDE;
 
+  // The owning LocationBarViewGtk.
+  LocationBarViewGtk* parent_;
+
   scoped_ptr<ContentSettingImageModel> content_setting_image_model_;
 
   // The currently shown bubble if any.
@@ -204,8 +209,9 @@ class ContentSettingImageViewGtk : public LocationBarViewGtk::PageToolViewGtk,
 
 ContentSettingImageViewGtk::ContentSettingImageViewGtk(
     ContentSettingsType content_type,
-    const LocationBarViewGtk* parent)
-    : PageToolViewGtk(parent),
+    LocationBarViewGtk* parent)
+    : PageToolViewGtk(),
+      parent_(parent),
       content_setting_image_model_(
           ContentSettingImageModel::CreateContentSettingImageModel(
               content_type)),
@@ -349,7 +355,6 @@ LocationBarViewGtk::LocationBarViewGtk(Browser* browser)
       tab_to_search_hint_icon_(NULL),
       tab_to_search_hint_trailing_label_(NULL),
       command_updater_(browser->command_controller()->command_updater()),
-      toolbar_model_(browser->toolbar_model()),
       browser_(browser),
       disposition_(CURRENT_TAB),
       transition_(content::PageTransitionFromInt(
@@ -390,8 +395,9 @@ void LocationBarViewGtk::Init(bool popup_window_mode) {
   gtk_widget_set_redraw_on_allocate(hbox_.get(), TRUE);
 
   // Now initialize the OmniboxViewGtk.
-  location_entry_.reset(new OmniboxViewGtk(this, toolbar_model_, browser_,
-      browser_->profile(), command_updater_, popup_window_mode_, hbox_.get()));
+  location_entry_.reset(new OmniboxViewGtk(this, browser_, browser_->profile(),
+                                           command_updater_, popup_window_mode_,
+                                           hbox_.get()));
   location_entry_->Init();
 
   g_signal_connect(hbox_.get(), "expose-event",
@@ -613,8 +619,16 @@ void LocationBarViewGtk::SetSiteTypeDragSource() {
                                       ui::CHROME_NAMED_URL);
 }
 
-WebContents* LocationBarViewGtk::GetWebContents() const {
+WebContents* LocationBarViewGtk::GetWebContents() {
   return browser_->tab_strip_model()->GetActiveWebContents();
+}
+
+ToolbarModel* LocationBarViewGtk::GetToolbarModel() {
+  return browser_->toolbar_model();
+}
+
+const ToolbarModel* LocationBarViewGtk::GetToolbarModel() const {
+  return browser_->toolbar_model();
 }
 
 void LocationBarViewGtk::SetPreviewEnabledPageAction(
@@ -791,9 +805,9 @@ void LocationBarViewGtk::OnInputInProgress(bool in_progress) {
   // This is identical to the Windows code, except that we don't proxy the call
   // back through the Toolbar, and just access the model here.
   // The edit should make sure we're only notified when something changes.
-  DCHECK(toolbar_model_->GetInputInProgress() != in_progress);
+  DCHECK_NE(GetToolbarModel()->input_in_progress(), in_progress);
 
-  toolbar_model_->SetInputInProgress(in_progress);
+  GetToolbarModel()->set_input_in_progress(in_progress);
   Update(NULL);
 }
 
@@ -807,21 +821,21 @@ void LocationBarViewGtk::OnSetFocus() {
       l10n_util::GetStringUTF8(IDS_ACCNAME_LOCATION),
       std::string(),
       false);
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_ACCESSIBILITY_CONTROL_FOCUSED,
-      content::Source<Profile>(profile),
-      content::Details<AccessibilityTextBoxInfo>(&info));
+  ExtensionAccessibilityEventRouter::GetInstance()->HandleControlEvent(
+      ui::AccessibilityTypes::EVENT_FOCUS,
+      &info);
 
   // Update the keyword and search hint states.
   OnChanged();
 }
 
 gfx::Image LocationBarViewGtk::GetFavicon() const {
-  return FaviconTabHelper::FromWebContents(GetWebContents())->GetFavicon();
+  return FaviconTabHelper::FromWebContents(
+      browser_->tab_strip_model()->GetActiveWebContents())->GetFavicon();
 }
 
 string16 LocationBarViewGtk::GetTitle() const {
-  return GetWebContents()->GetTitle();
+  return browser_->tab_strip_model()->GetActiveWebContents()->GetTitle();
 }
 
 InstantController* LocationBarViewGtk::GetInstant() {
@@ -870,8 +884,8 @@ void LocationBarViewGtk::UpdateContentSettingsIcons() {
   for (ScopedVector<PageToolViewGtk>::iterator i(
            content_setting_views_.begin());
        i != content_setting_views_.end(); ++i) {
-    (*i)->Update(
-        toolbar_model_->GetInputInProgress() ? NULL : GetWebContents());
+    (*i)->Update(GetToolbarModel()->input_in_progress() ?
+        NULL : GetWebContents());
     any_visible = (*i)->IsVisible() || any_visible;
   }
 
@@ -916,7 +930,7 @@ void LocationBarViewGtk::UpdatePageActions() {
 
     for (size_t i = 0; i < page_action_views_.size(); i++) {
       page_action_views_[i]->UpdateVisibility(
-          toolbar_model_->GetInputInProgress() ? NULL : contents, url);
+          GetToolbarModel()->input_in_progress() ? NULL : contents, url);
     }
     gtk_widget_queue_draw(hbox_.get());
   }
@@ -1190,7 +1204,7 @@ void LocationBarViewGtk::UpdateSiteTypeArea() {
       GTK_IMAGE(location_icon_image_),
       theme_service_->GetImageNamed(resource_id).ToGdkPixbuf());
 
-  if (toolbar_model_->GetSecurityLevel(false) == ToolbarModel::EV_SECURE) {
+  if (GetToolbarModel()->GetSecurityLevel(false) == ToolbarModel::EV_SECURE) {
     if (!gtk_util::IsActingAsRoundedWindow(site_type_event_box_)) {
       // Fun fact: If wee try to make |site_type_event_box_| act as a
       // rounded window while it doesn't have a visible window, GTK interprets
@@ -1206,7 +1220,7 @@ void LocationBarViewGtk::UpdateSiteTypeArea() {
                                    gtk_util::BORDER_ALL);
     }
 
-    string16 info_text = toolbar_model_->GetEVCertName();
+    string16 info_text = GetToolbarModel()->GetEVCertName();
     gtk_label_set_text(GTK_LABEL(security_info_label_),
                        UTF16ToUTF8(info_text).c_str());
 
@@ -1371,7 +1385,8 @@ gboolean LocationBarViewGtk::OnIconReleased(GtkWidget* sender,
     if (event->x == 0 && event->y == 0)
       return FALSE;
 
-    NavigationEntry* nav_entry = tab->GetController().GetActiveEntry();
+    // Important to use GetVisibleEntry to match what's showing in the omnibox.
+    NavigationEntry* nav_entry = tab->GetController().GetVisibleEntry();
     if (!nav_entry) {
       NOTREACHED();
       return FALSE;
@@ -1413,8 +1428,8 @@ void LocationBarViewGtk::OnIconDragBegin(GtkWidget* sender,
   gfx::Image favicon = GetFavicon();
   if (favicon.IsEmpty())
     return;
-  drag_icon_ = bookmark_utils::GetDragRepresentation(favicon.ToGdkPixbuf(),
-      GetTitle(), theme_service_);
+  drag_icon_ =
+      GetDragRepresentation(favicon.ToGdkPixbuf(), GetTitle(), theme_service_);
   gtk_drag_set_icon_widget(context, drag_icon_, 0, 0);
 
   WebContents* tab = GetWebContents();
@@ -1507,7 +1522,7 @@ gboolean LocationBarViewGtk::OnStarButtonPress(GtkWidget* widget,
 }
 
 void LocationBarViewGtk::ShowZoomBubble() {
-  if (toolbar_model_->GetInputInProgress() || !GetWebContents())
+  if (GetToolbarModel()->input_in_progress() || !GetWebContents())
     return;
 
   ZoomBubbleGtk::ShowBubble(GetWebContents(), true);
@@ -1551,7 +1566,7 @@ void LocationBarViewGtk::UpdateZoomIcon() {
   ZoomController* zoom_controller =
       ZoomController::FromWebContents(web_contents);
   if (!zoom_controller || zoom_controller->IsAtDefaultZoom() ||
-      toolbar_model_->GetInputInProgress()) {
+      GetToolbarModel()->input_in_progress()) {
     gtk_widget_hide(zoom_.get());
     ZoomBubbleGtk::CloseBubble();
     return;
@@ -1591,8 +1606,8 @@ void LocationBarViewGtk::UpdateStarIcon() {
   // Indicate the star icon is not correctly sized. It will be marked as sized
   // when the next size-allocate signal is received by the star widget.
   star_sized_ = false;
-  bool star_enabled = !toolbar_model_->GetInputInProgress() &&
-                      edit_bookmarks_enabled_.GetValue();
+  bool star_enabled = !GetToolbarModel()->input_in_progress() &&
+      edit_bookmarks_enabled_.GetValue();
   command_updater_->UpdateCommandEnabled(IDC_BOOKMARK_PAGE, star_enabled);
   command_updater_->UpdateCommandEnabled(IDC_BOOKMARK_PAGE_FROM_STAR,
                                          star_enabled);
@@ -1677,14 +1692,12 @@ void LocationBarViewGtk::AdjustChildrenVisibility() {
 ////////////////////////////////////////////////////////////////////////////////
 // LocationBarViewGtk::PageToolViewGtk
 
-LocationBarViewGtk::PageToolViewGtk::PageToolViewGtk(
-    const LocationBarViewGtk* parent)
+LocationBarViewGtk::PageToolViewGtk::PageToolViewGtk()
     : alignment_(gtk_alignment_new(0, 0, 1, 1)),
       event_box_(gtk_event_box_new()),
       hbox_(gtk_hbox_new(FALSE, InnerPadding())),
       image_(gtk_image_new()),
       label_(gtk_label_new(NULL)),
-      parent_(parent),
       animation_(this),
       weak_factory_(this) {
   gtk_alignment_set_padding(GTK_ALIGNMENT(alignment_.get()), 1, 1, 0, 0);

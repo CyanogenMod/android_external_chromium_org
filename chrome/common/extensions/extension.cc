@@ -21,7 +21,6 @@
 #include "base/values.h"
 #include "base/version.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/manifest.h"
 #include "chrome/common/extensions/manifest_handler.h"
 #include "chrome/common/extensions/permissions/api_permission_set.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
@@ -31,6 +30,7 @@
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/id_util.h"
+#include "extensions/common/manifest.h"
 #include "extensions/common/switches.h"
 #include "extensions/common/url_pattern_set.h"
 #include "grit/chromium_strings.h"
@@ -42,7 +42,7 @@
 #include "grit/generated_resources.h"
 #endif
 
-namespace keys = extension_manifest_keys;
+namespace keys = extensions::manifest_keys;
 namespace values = extension_manifest_values;
 namespace errors = extension_manifest_errors;
 
@@ -390,21 +390,13 @@ bool Extension::ShouldDisplayInExtensionSettings() const {
   if (is_theme())
     return false;
 
-  // Don't show component extensions because they are only extensions as an
-  // implementation detail of Chrome.
-  if (location() == Manifest::COMPONENT &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kShowComponentExtensionOptions)) {
+  // Don't show component extensions and invisible apps.
+  if (ShouldNotBeVisible())
     return false;
-  }
 
   // Always show unpacked extensions and apps.
   if (Manifest::IsUnpackedLocation(location()))
     return true;
-
-  // Don't show apps that aren't visible in either launcher or ntp.
-  if (is_app() && !ShouldDisplayInAppLauncher() && !ShouldDisplayInNewTabPage())
-    return false;
 
   // Unless they are unpacked, never show hosted apps. Note: We intentionally
   // show packaged apps and platform apps because there are some pieces of
@@ -415,6 +407,26 @@ bool Extension::ShouldDisplayInExtensionSettings() const {
     return false;
 
   return true;
+}
+
+bool Extension::ShouldNotBeVisible() const {
+  // Don't show component extensions because they are only extensions as an
+  // implementation detail of Chrome.
+  if (location() == Manifest::COMPONENT &&
+      !CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kShowComponentExtensionOptions)) {
+    return true;
+  }
+
+  // Always show unpacked extensions and apps.
+  if (Manifest::IsUnpackedLocation(location()))
+    return false;
+
+  // Don't show apps that aren't visible in either launcher or ntp.
+  if (is_app() && !ShouldDisplayInAppLauncher() && !ShouldDisplayInNewTabPage())
+    return true;
+
+  return false;
 }
 
 Extension::ManifestData* Extension::GetManifestData(const std::string& key)
@@ -752,13 +764,15 @@ bool Extension::LoadManifestVersion(string16* error) {
   }
 
   manifest_version_ = manifest_->GetManifestVersion();
-  if (creation_flags_ & REQUIRE_MODERN_MANIFEST_VERSION &&
-      manifest_version_ < kModernManifestVersion &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kAllowLegacyExtensionManifests)) {
+  if (manifest_version_ < kModernManifestVersion &&
+      ((creation_flags_ & REQUIRE_MODERN_MANIFEST_VERSION &&
+        !CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kAllowLegacyExtensionManifests)) ||
+       GetType() == Manifest::TYPE_PLATFORM_APP)) {
     *error = ErrorUtils::FormatErrorMessageUTF16(
         errors::kInvalidManifestVersionOld,
-        base::IntToString(kModernManifestVersion));
+        base::IntToString(kModernManifestVersion),
+        is_platform_app() ? "apps" : "extensions");
     return false;
   }
 

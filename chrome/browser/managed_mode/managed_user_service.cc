@@ -213,6 +213,24 @@ bool ManagedUserService::AreManagedUsersEnabled() {
              switches::kEnableManagedUsers);
 }
 
+// static
+void ManagedUserService::MigrateUserPrefs(PrefService* prefs) {
+  if (!prefs->HasPrefPath(prefs::kProfileIsManaged))
+    return;
+
+  bool is_managed = prefs->GetBoolean(prefs::kProfileIsManaged);
+  prefs->ClearPref(prefs::kProfileIsManaged);
+
+  if (!is_managed)
+    return;
+
+  std::string managed_user_id = prefs->GetString(prefs::kManagedUserId);
+  if (!managed_user_id.empty())
+    return;
+
+  prefs->SetString(prefs::kManagedUserId, "Dummy ID");
+}
+
 scoped_refptr<const ManagedModeURLFilter>
 ManagedUserService::GetURLFilterForIOThread() {
   return url_filter_context_.io_url_filter();
@@ -298,17 +316,18 @@ bool ManagedUserService::UserMayLoad(const extensions::Extension* extension,
   if (ExtensionManagementPolicyImpl(extension, &tmp_error))
     return true;
 
-  // If the extension is already loaded, we allow it, otherwise we'd unload
-  // all existing extensions.
-  ExtensionService* extension_service =
-      extensions::ExtensionSystem::Get(profile_)->extension_service();
-
-  // |extension_service| can be NULL in a unit test.
-  if (extension_service &&
-      extension_service->GetInstalledExtension(extension->id()))
-    return true;
-
+  // |extension| can be NULL in a unit test.
   if (extension) {
+    // If the extension is already loaded, we allow it, otherwise we'd unload
+    // all existing extensions.
+    ExtensionService* extension_service =
+        extensions::ExtensionSystem::Get(profile_)->extension_service();
+
+    // |extension_service| can be NULL in a unit test.
+    if (extension_service &&
+        extension_service->GetInstalledExtension(extension->id()))
+      return true;
+
     bool was_installed_by_default = extension->was_installed_by_default();
 #if defined(OS_CHROMEOS)
     // On Chrome OS all external sources are controlled by us so it means that
@@ -517,8 +536,8 @@ void ManagedUserService::GetManualExceptionsForHost(const std::string& host,
 }
 
 void ManagedUserService::InitForTesting() {
-  DCHECK(!profile_->GetPrefs()->GetBoolean(prefs::kProfileIsManaged));
-  profile_->GetPrefs()->SetBoolean(prefs::kProfileIsManaged, true);
+  DCHECK(!profile_->IsManaged());
+  profile_->GetPrefs()->SetString(prefs::kManagedUserId, "Test ID");
   Init();
 }
 
@@ -615,7 +634,7 @@ void ManagedUserService::RegisterAndInitSync(
     ManagedUserRegistrationUtility* registration_utility,
     Profile* custodian_profile,
     const std::string& managed_user_id,
-    const ProfileManager::CreateCallback& callback) {
+    const AuthErrorCallback& callback) {
   DCHECK(ProfileIsManaged());
   DCHECK(!custodian_profile->IsManaged());
 
@@ -646,23 +665,21 @@ void ManagedUserService::OnCustodianProfileDownloaded(
 }
 
 void ManagedUserService::OnManagedUserRegistered(
-    const ProfileManager::CreateCallback& callback,
+    const AuthErrorCallback& callback,
     Profile* custodian_profile,
     const GoogleServiceAuthError& auth_error,
     const std::string& token) {
-  if (auth_error.state() != GoogleServiceAuthError::NONE) {
-    LOG(ERROR) << "Managed user OAuth error: " << auth_error.ToString();
+  if (auth_error.state() == GoogleServiceAuthError::NONE) {
+    InitSync(token);
+    SigninManagerBase* signin =
+        SigninManagerFactory::GetForProfile(custodian_profile);
+    profile_->GetPrefs()->SetString(prefs::kManagedUserCustodianEmail,
+                                    signin->GetAuthenticatedUsername());
+  } else {
     DCHECK_EQ(std::string(), token);
-    callback.Run(profile_, Profile::CREATE_STATUS_REMOTE_FAIL);
-    return;
   }
 
-  InitSync(token);
-  SigninManagerBase* signin =
-      SigninManagerFactory::GetForProfile(custodian_profile);
-  profile_->GetPrefs()->SetString(prefs::kManagedUserCustodianEmail,
-                                  signin->GetAuthenticatedUsername());
-  callback.Run(profile_, Profile::CREATE_STATUS_INITIALIZED);
+  callback.Run(auth_error);
 }
 
 void ManagedUserService::UpdateManualHosts() {

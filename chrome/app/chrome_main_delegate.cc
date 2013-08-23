@@ -41,6 +41,7 @@
 #include <atlbase.h>
 #include <malloc.h>
 #include "base/strings/string_util.h"
+#include "chrome/common/child_process_logging.h"
 #include "sandbox/win/src/sandbox.h"
 #include "tools/memory_watcher/memory_watcher.h"
 #include "ui/base/resource/resource_bundle_win.h"
@@ -587,6 +588,10 @@ void ChromeMainDelegate::PreSandboxStartup() {
   InitMacCrashReporter(command_line, process_type);
 #endif
 
+#if defined(OS_WIN)
+  child_process_logging::Init();
+#endif
+
   // Notice a user data directory override if any
   base::FilePath user_data_dir =
       command_line.GetSwitchValuePath(switches::kUserDataDir);
@@ -662,7 +667,6 @@ void ChromeMainDelegate::PreSandboxStartup() {
     ResourceBundle::InitSharedInstanceWithPakFile(locale_pak_fd, false);
 
     int extra_pak_keys[] = {
-      kAndroidChromePakDescriptor,
       kAndroidChrome100PercentPakDescriptor,
       kAndroidUIResourcesPakDescriptor,
     };
@@ -739,10 +743,9 @@ int ChromeMainDelegate::RunProcess(
     const content::MainFunctionParams& main_function_params) {
   // ANDROID doesn't support "service", so no ServiceProcessMain, and arraysize
   // doesn't support empty array. So we comment out the block for Android.
-#if !defined(OS_ANDROID) && \
-    (!defined(CHROME_MULTIPLE_DLL) || defined(CHROME_MULTIPLE_DLL_BROWSER))
+#if !defined(OS_ANDROID)
   static const MainFunction kMainFunctions[] = {
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_FULL_PRINTING) && !defined(CHROME_MULTIPLE_DLL_CHILD)
     { switches::kServiceProcess,     ServiceProcessMain },
 #endif
 
@@ -751,9 +754,8 @@ int ChromeMainDelegate::RunProcess(
       mac_relauncher::internal::RelauncherMain },
 #endif
 
-#if !defined(DISABLE_NACL) && \
-    (!defined(CHROME_MULTIPLE_DLL) || defined(CHROME_MULTIPLE_DLL_CHILD))
-    { switches::kNaClLoaderProcess, NaClMain },
+#if !defined(DISABLE_NACL) && !defined(CHROME_MULTIPLE_DLL_BROWSER)
+    { switches::kNaClLoaderProcess,  NaClMain },
 #endif  // DISABLE_NACL
   };
 

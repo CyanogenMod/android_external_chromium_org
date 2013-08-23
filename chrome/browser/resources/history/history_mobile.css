@@ -66,11 +66,6 @@ html[dir='rtl'] #search-field {
   background-position: right 16px center;
 }
 
-/* Hide the search field if it is empty (!valid) and there are no results. */
-body:not(.has-results) #search-field:not(:valid) {
-  display: none;
-}
-
 .no-results-message {
   margin-bottom: 1em;
   padding-left: 16px;
@@ -170,7 +165,7 @@ input {
   margin: 0;
 }
 
-<if expr="pp_ifdef('ios')">
+<if expr="is_ios">
 /* Add extra spacing caused by the missing search bar on iOS. */
 h3:first-of-type {
   margin-top: 16px;
@@ -221,7 +216,7 @@ h3:first-of-type {
   margin-top: 16px;
 }
 
-<if expr="pp_ifdef('ios')">
+<if expr="is_ios">
 /* iOS does not support the latest flexbox syntax, only the 2009 working draft
    syntax (http://www.w3.org/TR/2009/WD-css3-flexbox-20090723/). */
 .entry-box,

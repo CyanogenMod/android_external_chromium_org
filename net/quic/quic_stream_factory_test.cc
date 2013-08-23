@@ -29,12 +29,14 @@ class QuicStreamFactoryTest : public ::testing::Test {
   QuicStreamFactoryTest()
       : clock_(new MockClock()),
         factory_(&host_resolver_, &socket_factory_,
+                 base::WeakPtr<HttpServerProperties>(),
                  &crypto_client_stream_factory_,
                  &random_generator_, clock_),
         host_port_proxy_pair_(HostPortPair("www.google.com", 443),
                               ProxyServer::Direct()),
         is_https_(false),
         cert_verifier_(CertVerifier::CreateDefault()) {
+    factory_.set_require_confirmation(false);
   }
 
   scoped_ptr<QuicEncryptedPacket> ConstructRstPacket(
@@ -342,6 +344,7 @@ TEST_F(QuicStreamFactoryTest, OnIPAddressChanged) {
   factory_.OnIPAddressChanged();
   EXPECT_EQ(ERR_NETWORK_CHANGED,
             stream->ReadResponseHeaders(callback_.callback()));
+  EXPECT_TRUE(factory_.require_confirmation());
 
   // Now attempting to request a stream to the same origin should create
   // a new session.

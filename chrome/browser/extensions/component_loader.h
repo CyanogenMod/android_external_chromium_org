@@ -34,10 +34,6 @@ class ComponentLoader {
   // Creates and loads all registered component extensions.
   void LoadAll();
 
-  // Clear the list of all registered extensions and unloads them from the
-  // extension service.
-  void RemoveAll();
-
   // Registers and possibly loads a component extension. If ExtensionService
   // has been initialized, the extension is loaded; otherwise, the load is
   // deferred until LoadAll is called. The ID of the added extension is
@@ -59,6 +55,11 @@ class ComponentLoader {
   // Loads a component extension from file system. Replaces previously added
   // extension with the same ID.
   std::string AddOrReplace(const base::FilePath& path);
+
+  // Returns the extension ID of a component extension specified by resource
+  // id of its manifest file.
+  std::string GetExtensionID(int manifest_resource_id,
+                             const base::FilePath& root_directory);
 
   // Returns true if an extension with the specified id has been added.
   bool Exists(const std::string& id) const;

@@ -70,17 +70,8 @@ class APP_LIST_EXPORT AppListViewDelegate {
   // Invoked when the app list is closing.
   virtual void ViewClosing() = 0;
 
-  // Invoked when the app list's activated state changes.
-  virtual void ViewActivationChanged(bool active) = 0;
-
   // Returns the icon to be displayed in the window and taskbar.
   virtual gfx::ImageSkia GetWindowIcon() = 0;
-
-  // Returns the name of the current user.
-  virtual base::string16 GetCurrentUserName() = 0;
-
-  // Returns the email of the current user.
-  virtual base::string16 GetCurrentUserEmail() = 0;
 
   // Open the settings UI.
   virtual void OpenSettings() = 0;

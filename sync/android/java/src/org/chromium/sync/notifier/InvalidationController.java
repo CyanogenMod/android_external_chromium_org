@@ -10,9 +10,9 @@ import android.content.Intent;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
 
 import org.chromium.base.ActivityStatus;
+import org.chromium.base.CollectionUtil;
 import org.chromium.sync.internal_api.pub.base.ModelType;
 
 import java.util.Set;
@@ -66,7 +66,7 @@ public class InvalidationController implements ActivityStatus.StateListener {
                 }
             }
             registerIntent.putStringArrayListExtra(EXTRA_REGISTERED_TYPES,
-                    Lists.newArrayList(selectedTypesArray));
+                    CollectionUtil.newArrayList(selectedTypesArray));
             registerIntent.putExtra(EXTRA_ACCOUNT, account);
             return registerIntent;
         }
@@ -136,13 +136,6 @@ public class InvalidationController implements ActivityStatus.StateListener {
         Intent intent = new Intent(mContext, InvalidationService.class);
         intent.putExtra(IntentProtocol.EXTRA_STOP, true);
         mContext.startService(intent);
-    }
-
-    /**
-     * Returns the contract authority to use when requesting sync.
-     */
-    public String getContractAuthority() {
-        return mContext.getPackageName();
     }
 
     /**

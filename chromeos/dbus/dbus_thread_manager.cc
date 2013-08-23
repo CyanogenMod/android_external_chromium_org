@@ -30,7 +30,6 @@
 #include "chromeos/dbus/shill_service_client.h"
 #include "chromeos/dbus/system_clock_client.h"
 #include "chromeos/dbus/ibus/ibus_client.h"
-#include "chromeos/dbus/ibus/ibus_config_client.h"
 #include "chromeos/dbus/ibus/ibus_engine_factory_service.h"
 #include "chromeos/dbus/ibus/ibus_engine_service.h"
 #include "chromeos/dbus/ibus/ibus_input_context_client.h"
@@ -201,14 +200,10 @@ class DBusThreadManagerImpl : public DBusThreadManager {
     ibus_address_ = ibus_address;
     VLOG(1) << "Connected to ibus-daemon: " << ibus_address;
 
-    DBusClientImplementationType client_type =
-        base::chromeos::IsRunningOnChromeOS() ? REAL_DBUS_CLIENT_IMPLEMENTATION
-                                              : STUB_DBUS_CLIENT_IMPLEMENTATION;
+    DBusClientImplementationType client_type = STUB_DBUS_CLIENT_IMPLEMENTATION;
 
     ibus_client_.reset(
         IBusClient::Create(client_type, ibus_bus_.get()));
-    ibus_config_client_.reset(
-        IBusConfigClient::Create(client_type, ibus_bus_.get()));
     ibus_input_context_client_.reset(
         IBusInputContextClient::Create(client_type));
     ibus_engine_factory_service_.reset(
@@ -336,10 +331,6 @@ class DBusThreadManagerImpl : public DBusThreadManager {
     return ibus_client_.get();
   }
 
-  virtual IBusConfigClient* GetIBusConfigClient() OVERRIDE {
-    return ibus_config_client_.get();
-  }
-
   virtual IBusInputContextClient* GetIBusInputContextClient() OVERRIDE {
     return ibus_input_context_client_.get();
   }
@@ -350,14 +341,11 @@ class DBusThreadManagerImpl : public DBusThreadManager {
 
   virtual IBusEngineService* GetIBusEngineService(
       const dbus::ObjectPath& object_path) OVERRIDE {
-    const DBusClientImplementationType client_type =
-        base::chromeos::IsRunningOnChromeOS() ? REAL_DBUS_CLIENT_IMPLEMENTATION
-                                              : STUB_DBUS_CLIENT_IMPLEMENTATION;
-
     if (ibus_engine_services_.find(object_path)
             == ibus_engine_services_.end()) {
       ibus_engine_services_[object_path] =
-          IBusEngineService::Create(client_type, ibus_bus_.get(), object_path);
+          IBusEngineService::Create(STUB_DBUS_CLIENT_IMPLEMENTATION,
+                                    ibus_bus_.get(), object_path);
     }
     return ibus_engine_services_[object_path];
   }
@@ -412,7 +400,6 @@ class DBusThreadManagerImpl : public DBusThreadManager {
   scoped_ptr<SMSClient> sms_client_;
   scoped_ptr<UpdateEngineClient> update_engine_client_;
   scoped_ptr<IBusClient> ibus_client_;
-  scoped_ptr<IBusConfigClient> ibus_config_client_;
   scoped_ptr<IBusInputContextClient> ibus_input_context_client_;
   scoped_ptr<IBusEngineFactoryService> ibus_engine_factory_service_;
   std::map<dbus::ObjectPath, IBusEngineService*> ibus_engine_services_;

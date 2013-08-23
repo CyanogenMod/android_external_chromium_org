@@ -30,7 +30,7 @@ InstallTracker::InstallTracker(Profile* profile,
       content::Source<Profile>(profile));
 
   pref_change_registrar_.Init(prefs->pref_service());
-  pref_change_registrar_.Add(extensions::ExtensionPrefs::kExtensionsPref,
+  pref_change_registrar_.Add(prefs::kExtensionsPref,
                              base::Bind(&InstallTracker::OnAppsReordered,
                                         base::Unretained(this)));
 }
@@ -101,6 +101,9 @@ void InstallTracker::Observe(int type,
       const Extension* extension = unload_info->extension;
       FOR_EACH_OBSERVER(InstallObserver, observers_,
                         OnExtensionUnloaded(extension));
+      if (unload_info->reason == extension_misc::UNLOAD_REASON_UNINSTALL)
+        FOR_EACH_OBSERVER(InstallObserver, observers_,
+                          OnExtensionUninstalled(extension));
       break;
     }
     case chrome::NOTIFICATION_EXTENSION_UNINSTALLED: {

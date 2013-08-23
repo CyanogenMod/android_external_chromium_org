@@ -14,6 +14,7 @@
 #include "base/observer_list.h"
 #include "chrome/browser/content_settings/content_settings_usages_state.h"
 #include "chrome/browser/content_settings/local_shared_objects_container.h"
+#include "chrome/browser/media/media_stream_devices_controller.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/content_settings_types.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
@@ -21,9 +22,11 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
+#include "content/public/common/media_stream_request.h"
 #include "net/cookies/canonical_cookie.h"
 
 class CookiesTreeModel;
+class PasswordFormManager;
 class Profile;
 
 namespace content {
@@ -51,6 +54,11 @@ class TabSpecificContentSettings
     MICROPHONE_BLOCKED,
     CAMERA_BLOCKED,
     MICROPHONE_CAMERA_BLOCKED,
+  };
+
+  enum PasswordSavingState {
+    NO_PASSWORD_TO_BE_SAVED = 0,
+    PASSWORD_TO_BE_SAVED,
   };
 
   // Classes that want to be notified about site data events must implement
@@ -188,8 +196,16 @@ class TabSpecificContentSettings
   // only tracks cookies.
   bool IsContentAllowed(ContentSettingsType content_type) const;
 
+  const GURL& media_stream_access_origin() const {
+    return media_stream_access_origin_;
+  }
+
   // Returns the state of the camera and microphone usage.
   MicrophoneCameraState GetMicrophoneCameraState() const;
+
+  // TODO(npentrel): Change to bool if not needed once feature is implemented.
+  // Returns the state of whether there is a password to be saved or not.
+  PasswordSavingState GetPasswordSavingState() const;
 
   const std::set<std::string>& BlockedResourcesForType(
       ContentSettingsType content_type) const;
@@ -205,6 +221,8 @@ class TabSpecificContentSettings
   const ContentSettingsUsagesState& midi_usages_state() const {
     return midi_usages_state_;
   }
+
+  void OnPasswordSubmitted(PasswordFormManager* form_to_save);
 
   // Call to indicate that there is a protocol handler pending user approval.
   void set_pending_protocol_handler(const ProtocolHandler& handler) {
@@ -310,12 +328,13 @@ class TabSpecificContentSettings
   void OnGeolocationPermissionSet(const GURL& requesting_frame,
                                   bool allowed);
 
-  // These methods are called to update the status about the microphone and
-  // camera stream access.
-  void OnMicrophoneAccessed();
-  void OnMicrophoneAccessBlocked();
-  void OnCameraAccessed();
-  void OnCameraAccessBlocked();
+  // This method is called to update the status about the microphone and
+  // camera stream access. |request_permissions| contains a list of requested
+  // media stream types and the permission for each type.
+  void OnMediaStreamPermissionSet(
+      const GURL& request_origin,
+      const MediaStreamDevicesController::MediaStreamTypePermissionMap&
+          request_permissions);
 
   // There methods are called to update the status about MIDI access.
   void OnMIDISysExAccessed(const GURL& reqesting_origin);
@@ -392,6 +411,11 @@ class TabSpecificContentSettings
   bool load_plugins_link_enabled_;
 
   content::NotificationRegistrar registrar_;
+
+  // The origin of the media stream request. Note that we only support handling
+  // settings for one request per tab. The latest request's origin will be
+  // stored here. http://crbug.com/259794
+  GURL media_stream_access_origin_;
 
   DISALLOW_COPY_AND_ASSIGN(TabSpecificContentSettings);
 };

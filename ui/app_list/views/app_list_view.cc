@@ -4,6 +4,7 @@
 
 #include "ui/app_list/views/app_list_view.h"
 
+#include "base/callback.h"
 #include "base/command_line.h"
 #include "base/strings/string_util.h"
 #include "ui/app_list/app_list_constants.h"
@@ -37,6 +38,8 @@ namespace app_list {
 
 namespace {
 
+base::Closure g_next_paint_callback;
+
 // The distance between the arrow tip and edge of the anchor view.
 const int kArrowOffset = 10;
 
@@ -52,14 +55,11 @@ AppListView::AppListView(AppListViewDelegate* delegate)
       signin_view_(NULL) {
   if (delegate_)
     delegate_->SetModel(model_.get());
-  if (GetSigninDelegate())
-    GetSigninDelegate()->AddObserver(this);
+  model_->AddObserver(this);
 }
 
 AppListView::~AppListView() {
-  if (GetSigninDelegate())
-    GetSigninDelegate()->RemoveObserver(this);
-
+  model_->RemoveObserver(this);
   // Models are going away, ensure their references are cleared.
   RemoveAllChildViews(true);
 }
@@ -142,7 +142,7 @@ void AppListView::SetAnchorPoint(const gfx::Point& anchor_point) {
 }
 
 void AppListView::SetDragAndDropHostOfCurrentAppList(
-    app_list::ApplicationDragAndDropHost* drag_and_drop_host) {
+    ApplicationDragAndDropHost* drag_and_drop_host) {
   app_list_main_view_->SetDragAndDropHostOfCurrentAppList(drag_and_drop_host);
 }
 
@@ -166,6 +166,14 @@ gfx::Size AppListView::GetPreferredSize() {
   return app_list_main_view_->GetPreferredSize();
 }
 
+void AppListView::Paint(gfx::Canvas* canvas) {
+  views::BubbleDelegateView::Paint(canvas);
+  if (!g_next_paint_callback.is_null()) {
+    g_next_paint_callback.Run();
+    g_next_paint_callback.Reset();
+  }
+}
+
 bool AppListView::ShouldHandleSystemCommands() const {
   return true;
 }
@@ -175,12 +183,22 @@ void AppListView::Prerender() {
 }
 
 void AppListView::OnSigninStatusChanged() {
-  const bool needs_signin =
-      GetSigninDelegate() && GetSigninDelegate()->NeedSignin();
-
-  signin_view_->SetVisible(needs_signin);
-  app_list_main_view_->SetVisible(!needs_signin);
+  signin_view_->SetVisible(!model_->signed_in());
+  app_list_main_view_->SetVisible(model_->signed_in());
   app_list_main_view_->search_box_view()->InvalidateMenu();
+}
+
+void AppListView::AddObserver(Observer* observer) {
+  observers_.AddObserver(observer);
+}
+
+void AppListView::RemoveObserver(Observer* observer) {
+  observers_.RemoveObserver(observer);
+}
+
+// static
+void AppListView::SetNextPaintCallback(const base::Closure& callback) {
+  g_next_paint_callback = callback;
 }
 
 #if defined(OS_WIN)
@@ -247,8 +265,9 @@ void AppListView::OnWidgetActivationChanged(views::Widget* widget,
                                             bool active) {
   // Do not called inherited function as the bubble delegate auto close
   // functionality is not used.
-  if (delegate_ && widget == GetWidget())
-    delegate_->ViewActivationChanged(active);
+  if (widget == GetWidget())
+    FOR_EACH_OBSERVER(Observer, observers_,
+                      OnActivationChanged(widget, active));
 }
 
 void AppListView::OnWidgetVisibilityChanged(views::Widget* widget,
@@ -268,12 +287,16 @@ void AppListView::OnWidgetVisibilityChanged(views::Widget* widget,
   Layout();
 }
 
-void AppListView::OnSigninSuccess() {
+SigninDelegate* AppListView::GetSigninDelegate() {
+  return delegate_ ? delegate_->GetSigninDelegate() : NULL;
+}
+
+void AppListView::OnAppListModelSigninStatusChanged() {
   OnSigninStatusChanged();
 }
 
-SigninDelegate* AppListView::GetSigninDelegate() {
-  return delegate_ ? delegate_->GetSigninDelegate() : NULL;
+void AppListView::OnAppListModelCurrentUserChanged() {
+  OnSigninStatusChanged();
 }
 
 }  // namespace app_list

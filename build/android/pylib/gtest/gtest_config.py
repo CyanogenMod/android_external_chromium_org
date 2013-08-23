@@ -12,6 +12,7 @@ EXPERIMENTAL_TEST_SUITES = [
 # This list determines which suites are run by default, both for local
 # testing and on android trybots running on commit-queue.
 STABLE_TEST_SUITES = [
+    'content_browsertests',
     'android_webview_unittests',
     'base_unittests',
     'cc_unittests',
@@ -29,7 +30,6 @@ STABLE_TEST_SUITES = [
     'webkit_unit_tests',
     'breakpad_unittests',
     'sandbox_linux_unittests',
-    'content_browsertests',
 ]
 
 WEBRTC_TEST_SUITES = [
@@ -37,7 +37,7 @@ WEBRTC_TEST_SUITES = [
     'common_audio_unittests',
     'common_video_unittests',
     'metrics_unittests',
-    'modules_integrationtests',
+    'modules_tests',
     'modules_unittests',
     'neteq_unittests',
     'system_wrappers_unittests',

@@ -9,6 +9,7 @@
 
 #include "base/bind.h"
 #include "base/debug/trace_event.h"
+#include "base/win/win_util.h"
 #include "base/win/windows_version.h"
 #include "ui/base/events/event.h"
 #include "ui/base/events/event_utils.h"
@@ -180,7 +181,7 @@ bool GetMonitorAndRects(const RECT& rect,
     return false;
   MONITORINFO monitor_info = { 0 };
   monitor_info.cbSize = sizeof(monitor_info);
-  GetMonitorInfo(*monitor, &monitor_info);
+  base::win::GetMonitorInfoWrapper(*monitor, &monitor_info);
   *monitor_rect = gfx::Rect(monitor_info.rcMonitor);
   *work_area = gfx::Rect(monitor_info.rcWork);
   return true;
@@ -392,7 +393,8 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
       paint_layered_window_factory_(this),
       can_update_layered_window_(true),
       is_first_nccalc_(true),
-      autohide_factory_(this) {
+      autohide_factory_(this),
+      touch_event_factory_(this) {
 }
 
 HWNDMessageHandler::~HWNDMessageHandler() {
@@ -503,7 +505,7 @@ void HWNDMessageHandler::GetWindowPlacement(
     } else {
       MONITORINFO mi;
       mi.cbSize = sizeof(mi);
-      const bool succeeded = GetMonitorInfo(
+      const bool succeeded = base::win::GetMonitorInfoWrapper(
           MonitorFromWindow(hwnd(), MONITOR_DEFAULTTONEAREST), &mi) != 0;
       DCHECK(succeeded);
 
@@ -1120,7 +1122,7 @@ void HWNDMessageHandler::ResetWindowRegion(bool force) {
     HMONITOR monitor = MonitorFromWindow(hwnd(), MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi;
     mi.cbSize = sizeof mi;
-    GetMonitorInfo(monitor, &mi);
+    base::win::GetMonitorInfoWrapper(monitor, &mi);
     CRect work_rect = mi.rcWork;
     work_rect.OffsetRect(-window_rect.left, -window_rect.top);
     new_region = CreateRectRgnIndirect(&work_rect);
@@ -1591,6 +1593,8 @@ LRESULT HWNDMessageHandler::OnNCActivate(UINT message,
   // cleared before it is converted to BOOL.
   BOOL active = static_cast<BOOL>(LOWORD(w_param));
 
+  bool inactive_rendering_disabled = delegate_->IsInactiveRenderingDisabled();
+
   if (delegate_->CanActivate())
     delegate_->HandleActivationChanged(!!active);
 
@@ -1603,7 +1607,6 @@ LRESULT HWNDMessageHandler::OnNCActivate(UINT message,
     return TRUE;
 
   // On activation, lift any prior restriction against rendering as inactive.
-  bool inactive_rendering_disabled = delegate_->IsInactiveRenderingDisabled();
   if (active && inactive_rendering_disabled)
     delegate_->EnableInactiveRendering();
 
@@ -2039,11 +2042,17 @@ void HWNDMessageHandler::OnThemeChanged() {
 LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
                                          WPARAM w_param,
                                          LPARAM l_param) {
+  // Handle touch events only on Aura for now.
+#if !defined(USE_AURA)
+  SetMsgHandled(FALSE);
+  return 0;
+#endif
   int num_points = LOWORD(w_param);
   scoped_ptr<TOUCHINPUT[]> input(new TOUCHINPUT[num_points]);
   if (ui::GetTouchInputInfoWrapper(reinterpret_cast<HTOUCHINPUT>(l_param),
                                    num_points, input.get(),
                                    sizeof(TOUCHINPUT))) {
+    TouchEvents touch_events;
     for (int i = 0; i < num_points; ++i) {
       ui::EventType touch_event_type = ui::ET_UNKNOWN;
 
@@ -2056,8 +2065,6 @@ LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
       } else if (input[i].dwFlags & TOUCHEVENTF_MOVE) {
         touch_event_type = ui::ET_TOUCH_MOVED;
       }
-      // Handle touch events only on Aura for now.
-#if defined(USE_AURA)
       if (touch_event_type != ui::ET_UNKNOWN) {
         POINT point;
         point.x = TOUCH_COORD_TO_PIXEL(input[i].x) /
@@ -2072,10 +2079,16 @@ LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
             gfx::Point(point.x, point.y),
             input[i].dwID % ui::GestureSequence::kMaxGesturePoints,
             base::TimeDelta::FromMilliseconds(input[i].dwTime));
-        delegate_->HandleTouchEvent(event);
+        touch_events.push_back(event);
       }
-#endif
     }
+    // Handle the touch events asynchronously. We need this because touch
+    // events on windows don't fire if we enter a modal loop in the context of
+    // a touch event.
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&HWNDMessageHandler::HandleTouchEvents,
+            touch_event_factory_.GetWeakPtr(), touch_events));
   }
   CloseTouchInputHandle(reinterpret_cast<HTOUCHINPUT>(l_param));
   SetMsgHandled(FALSE);
@@ -2155,6 +2168,11 @@ void HWNDMessageHandler::OnWindowPosChanging(WINDOWPOS* window_pos) {
     window_pos->flags &= ~SWP_SHOWWINDOW;
   }
 
+  if (window_pos->flags & SWP_SHOWWINDOW)
+    delegate_->HandleVisibilityChanging(true);
+  else if (window_pos->flags & SWP_HIDEWINDOW)
+    delegate_->HandleVisibilityChanging(false);
+
   SetMsgHandled(FALSE);
 }
 
@@ -2172,6 +2190,13 @@ void HWNDMessageHandler::OnWindowPosChanged(WINDOWPOS* window_pos) {
   else if (window_pos->flags & SWP_HIDEWINDOW)
     delegate_->HandleVisibilityChanged(false);
   SetMsgHandled(FALSE);
+}
+
+void HWNDMessageHandler::HandleTouchEvents(const TouchEvents& touch_events) {
+  if (!delegate_)
+    return;
+  for (size_t i = 0; i < touch_events.size(); ++i)
+    delegate_->HandleTouchEvent(touch_events[i]);
 }
 
 }  // namespace views

@@ -161,11 +161,6 @@ enum NotificationType {
   // invoked on.
   NOTIFICATION_TAB_CONTENTS_APPLICATION_EXTENSION_CHANGED,
 
-  // Notification posted when the element that is focused has been touched. A
-  // bool parameter is passed in this notification which indicates if this node
-  // accepts. The source is the RenderViewHost.
-  NOTIFICATION_FOCUSED_NODE_TOUCHED,
-
   // Tabs --------------------------------------------------------------------
 
   // Sent when a tab is added to a WebContentsDelegate. The source is the
@@ -336,12 +331,6 @@ enum NotificationType {
 
   // Task Manager ------------------------------------------------------------
 
-  // The TaskManagerChildProcessResourceProvider collects the list of child
-  // processes when StartUpdating is called. This data is collected on the IO
-  // thread and passed back to the UI thread. Once all entries are added to the
-  // task manager, this notification is sent.
-  NOTIFICATION_TASK_MANAGER_CHILD_PROCESSES_DATA_READY,
-
   // Sent when a renderer process is notified of new v8 heap statistics. The
   // source is the ID of the renderer process, and the details are a
   // V8HeapStatsDetails object.
@@ -425,13 +414,6 @@ enum NotificationType {
   // Sent when there are new user scripts available.  The details are a
   // pointer to SharedMemory containing the new scripts.
   NOTIFICATION_USER_SCRIPTS_UPDATED,
-
-#if !defined(OS_ANDROID)
-  // User Style Sheet --------------------------------------------------------
-
-  // Sent when the user style sheet has changed.
-  NOTIFICATION_USER_STYLE_SHEET_UPDATED,
-#endif
 
   // Extensions --------------------------------------------------------------
 
@@ -670,40 +652,6 @@ enum NotificationType {
   // acknowledged the module incompatibility. No details are expected.
   NOTIFICATION_MODULE_INCOMPATIBILITY_BADGE_CHANGE,
 
-  // Accessibility Notifications ---------------------------------------------
-
-  // Notification that a window in the browser UI (not the web content)
-  // was opened, for propagating to an accessibility extension.
-  // Details will be an AccessibilityWindowInfo.
-  NOTIFICATION_ACCESSIBILITY_WINDOW_OPENED,
-
-  // Notification that a window in the browser UI was closed.
-  // Details will be an AccessibilityWindowInfo.
-  NOTIFICATION_ACCESSIBILITY_WINDOW_CLOSED,
-
-  // Notification that a control in the browser UI was focused.
-  // Details will be an AccessibilityControlInfo.
-  NOTIFICATION_ACCESSIBILITY_CONTROL_FOCUSED,
-
-  // Notification that a control in the browser UI had its action taken,
-  // like pressing a button or toggling a checkbox.
-  // Details will be an AccessibilityControlInfo.
-  NOTIFICATION_ACCESSIBILITY_CONTROL_ACTION,
-
-  // Notification that text box in the browser UI had text change.
-  // Details will be an AccessibilityControlInfo.
-  NOTIFICATION_ACCESSIBILITY_TEXT_CHANGED,
-
-  // Notification that a pop-down menu was opened, for propagating
-  // to an accessibility extension.
-  // Details will be an AccessibilityMenuInfo.
-  NOTIFICATION_ACCESSIBILITY_MENU_OPENED,
-
-  // Notification that a pop-down menu was closed, for propagating
-  // to an accessibility extension.
-  // Details will be an AccessibilityMenuInfo.
-  NOTIFICATION_ACCESSIBILITY_MENU_CLOSED,
-
   // Content Settings --------------------------------------------------------
 
   // Sent when content settings change. The source is a HostContentSettings
@@ -850,12 +798,6 @@ enum NotificationType {
   // Sent when a chromium os user attempts to log in.  The source is
   // all and the details are AuthenticationNotificationDetails.
   NOTIFICATION_LOGIN_AUTHENTICATION,
-
-  // Sent when webui lock screen is ready.
-  NOTIFICATION_LOCK_WEBUI_READY,
-
-  // Sent when webui lock screen wallpaper is loaded and displayed.
-  NOTIFICATION_LOCK_BACKGROUND_DISPLAYED,
 
   // Sent when GAIA iframe has been loaded. First paint event after this fires
   // NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE.

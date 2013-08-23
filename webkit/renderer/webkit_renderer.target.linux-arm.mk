@@ -30,8 +30,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 LOCAL_SRC_FILES := \
 	webkit/renderer/cpp_bound_class.cc \
 	webkit/renderer/cpp_variant.cc \
-	webkit/renderer/clipboard_utils.cc \
-	webkit/renderer/webpreferences_renderer.cc
+	webkit/renderer/clipboard_utils.cc
 
 
 # Flags passed to both C and C++ files.

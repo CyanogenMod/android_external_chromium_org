@@ -88,6 +88,7 @@ LOCAL_SRC_FILES := \
 	content/common/gpu/client/gl_helper_scaling.cc \
 	content/common/gpu/client/gpu_channel_host.cc \
 	content/common/gpu/client/gpu_video_decode_accelerator_host.cc \
+	content/common/gpu/client/gpu_video_encode_accelerator_host.cc \
 	content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.cc \
 	content/common/gpu/gpu_channel.cc \
 	content/common/gpu/gpu_channel_manager.cc \
@@ -103,6 +104,7 @@ LOCAL_SRC_FILES := \
 	content/common/gpu/media/h264_bit_reader.cc \
 	content/common/gpu/media/h264_parser.cc \
 	content/common/gpu/media/gpu_video_decode_accelerator.cc \
+	content/common/gpu/media/gpu_video_encode_accelerator.cc \
 	content/common/gpu/sync_point_manager.cc \
 	content/common/gpu/texture_image_transport_surface.cc \
 	content/common/indexed_db/indexed_db_key.cc \

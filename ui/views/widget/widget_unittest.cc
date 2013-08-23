@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <algorithm>
+#include <set>
+
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
@@ -941,6 +944,99 @@ TEST_F(WidgetOwnershipTest,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Test to verify using various Widget methods doesn't crash when the underlying
+// NativeView is destroyed.
+//
+class WidgetWithDestroyedNativeViewTest : public ViewsTestBase {
+ public:
+  WidgetWithDestroyedNativeViewTest() {}
+  virtual ~WidgetWithDestroyedNativeViewTest() {}
+
+  void InvokeWidgetMethods(Widget* widget) {
+    widget->GetNativeView();
+    widget->GetNativeWindow();
+    ui::Accelerator accelerator;
+    widget->GetAccelerator(0, &accelerator);
+    widget->GetTopLevelWidget();
+    widget->GetWindowBoundsInScreen();
+    widget->GetClientAreaBoundsInScreen();
+    widget->SetBounds(gfx::Rect(0, 0, 100, 80));
+    widget->SetSize(gfx::Size(10, 11));
+    widget->SetBoundsConstrained(gfx::Rect(0, 0, 120, 140));
+    widget->SetVisibilityChangedAnimationsEnabled(false);
+    widget->StackAtTop();
+    widget->IsClosed();
+    widget->Close();
+    widget->Show();
+    widget->Hide();
+    widget->Activate();
+    widget->Deactivate();
+    widget->IsActive();
+    widget->DisableInactiveRendering();
+    widget->SetAlwaysOnTop(true);
+    widget->Maximize();
+    widget->Minimize();
+    widget->Restore();
+    widget->IsMaximized();
+    widget->IsFullscreen();
+    widget->SetOpacity(0);
+    widget->SetUseDragFrame(true);
+    widget->FlashFrame(true);
+    widget->IsVisible();
+    widget->GetThemeProvider();
+    widget->GetNativeTheme();
+    widget->GetFocusManager();
+    widget->GetInputMethod();
+    widget->SchedulePaintInRect(gfx::Rect(0, 0, 1, 2));
+    widget->IsMouseEventsEnabled();
+    widget->SetNativeWindowProperty("xx", widget);
+    widget->GetNativeWindowProperty("xx");
+    widget->GetFocusTraversable();
+    widget->GetLayer();
+    widget->ReorderNativeViews();
+    widget->SetCapture(widget->GetRootView());
+    widget->ReleaseCapture();
+    widget->HasCapture();
+    widget->TooltipTextChanged(widget->GetRootView());
+    widget->GetWorkAreaBoundsInScreen();
+    // These three crash with NativeWidgetWin, so I'm assuming we don't need
+    // them to work for the other NativeWidget impls.
+    // widget->CenterWindow(gfx::Size(50, 60));
+    // widget->GetRestoredBounds();
+    // widget->ShowInactive();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(WidgetWithDestroyedNativeViewTest);
+};
+
+TEST_F(WidgetWithDestroyedNativeViewTest, Test) {
+  {
+    Widget widget;
+    Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
+    params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+    widget.Init(params);
+    widget.Show();
+
+    widget.native_widget_private()->CloseNow();
+    InvokeWidgetMethods(&widget);
+  }
+#if defined(USE_AURA) && !defined(OS_CHROMEOS)
+  {
+    Widget widget;
+    Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
+    params.native_widget = new DesktopNativeWidgetAura(&widget);
+    params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+    widget.Init(params);
+    widget.Show();
+
+    widget.native_widget_private()->CloseNow();
+    InvokeWidgetMethods(&widget);
+  }
+#endif
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Widget observer tests.
 //
 
@@ -1181,7 +1277,15 @@ TEST_F(WidgetTest, ExitFullscreenRestoreState) {
 // Checks that if a mouse-press triggers a capture on a different widget (which
 // consumes the mouse-release event), then the target of the press does not have
 // capture.
-TEST_F(WidgetTest, CaptureWidgetFromMousePress) {
+// Fails on chromium.webkit Windows bot, see crbug.com/264872.
+#if defined(OS_WIN)
+#define MAYBE_DisableCaptureWidgetFromMousePress\
+    DISABLED_CaptureWidgetFromMousePress
+#else
+#define MAYBE_DisableCaptureWidgetFromMousePress\
+    CaptureWidgetFromMousePress
+#endif
+TEST_F(WidgetTest, MAYBE_DisableCaptureWidgetFromMousePress) {
   // The test creates two widgets: |first| and |second|.
   // The View in |first| makes |second| visible, sets capture on it, and starts
   // a nested loop (like a menu does). The View in |second| terminates the
@@ -2063,7 +2167,15 @@ class RootViewTestView : public View {
 };
 
 // Checks if RootView::*_handler_ fields are unset when widget is hidden.
-TEST_F(WidgetTest, TestRootViewHandlersWhenHidden) {
+// Fails on chromium.webkit Windows bot, see crbug.com/264872.
+#if defined(OS_WIN)
+#define MAYBE_DisableTestRootViewHandlersWhenHidden\
+    DISABLED_TestRootViewHandlersWhenHidden
+#else
+#define MAYBE_DisableTestRootViewHandlersWhenHidden\
+    TestRootViewHandlersWhenHidden
+#endif
+TEST_F(WidgetTest, MAYBE_DisableTestRootViewHandlersWhenHidden) {
   Widget* widget = CreateTopLevelNativeWidget();
   widget->SetBounds(gfx::Rect(0, 0, 300, 300));
   View* view = new RootViewTestView();
@@ -2110,6 +2222,38 @@ TEST_F(WidgetTest, TestRootViewHandlersWhenHidden) {
   EXPECT_EQ(NULL, GetGestureHandler(root_view));
 
   widget->Close();
+}
+
+// Test the result of Widget::GetAllChildWidgets().
+TEST_F(WidgetTest, GetAllChildWidgets) {
+  // Create the following widget hierarchy:
+  //
+  // toplevel
+  // +-- w1
+  //     +-- w11
+  // +-- w2
+  //     +-- w21
+  //     +-- w22
+  Widget* toplevel = CreateTopLevelPlatformWidget();
+  Widget* w1 = CreateChildPlatformWidget(toplevel->GetNativeView());
+  Widget* w11 = CreateChildPlatformWidget(w1->GetNativeView());
+  Widget* w2 = CreateChildPlatformWidget(toplevel->GetNativeView());
+  Widget* w21 = CreateChildPlatformWidget(w2->GetNativeView());
+  Widget* w22 = CreateChildPlatformWidget(w2->GetNativeView());
+
+  std::set<Widget*> expected;
+  expected.insert(toplevel);
+  expected.insert(w1);
+  expected.insert(w11);
+  expected.insert(w2);
+  expected.insert(w21);
+  expected.insert(w22);
+
+  std::set<Widget*> widgets;
+  Widget::GetAllChildWidgets(toplevel->GetNativeView(), &widgets);
+
+  EXPECT_EQ(expected.size(), widgets.size());
+  EXPECT_TRUE(std::equal(expected.begin(), expected.end(), widgets.begin()));
 }
 
 }  // namespace test

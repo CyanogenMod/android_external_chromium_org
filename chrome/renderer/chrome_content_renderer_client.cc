@@ -44,7 +44,6 @@
 #include "chrome/renderer/net/prescient_networking_dispatcher.h"
 #include "chrome/renderer/net/renderer_net_predictor.h"
 #include "chrome/renderer/net_benchmarking_extension.h"
-#include "chrome/renderer/one_click_signin_agent.h"
 #include "chrome/renderer/page_load_histograms.h"
 #include "chrome/renderer/pepper/pepper_helper.h"
 #include "chrome/renderer/pepper/ppb_nacl_private_impl.h"
@@ -389,10 +388,6 @@ void ChromeContentRendererClient::RenderViewCreated(
 #endif
 
   new NetErrorHelper(render_view);
-
-#if defined(ENABLE_ONE_CLICK_SIGNIN)
-  new OneClickSigninAgent(render_view);
-#endif
 }
 
 void ChromeContentRendererClient::SetNumberOfViews(int number_of_views) {
@@ -579,12 +574,13 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
       case ChromeViewHostMsg_GetPluginInfo_Status::kAllowed: {
         const char* kPnaclMimeType = "application/x-pnacl";
         if (actual_mime_type == kPnaclMimeType) {
-          if (!CommandLine::ForCurrentProcess()->HasSwitch(
-                  switches::kEnablePnacl)) {
+          if (CommandLine::ForCurrentProcess()->HasSwitch(
+                  switches::kDisablePnacl)) {
             frame->addMessageToConsole(
                 WebConsoleMessage(
                     WebConsoleMessage::LevelError,
-                    "Portable Native Client must be enabled in about:flags."));
+                    "Portable Native Client must not be disabled in"
+                    " about:flags."));
             placeholder = PluginPlaceholder::CreateBlockedPlugin(
                 render_view, frame, params, plugin, identifier, group_name,
                 IDR_BLOCKED_PLUGIN_HTML,
@@ -1303,5 +1299,9 @@ bool ChromeContentRendererClient::AllowPepperMediaStreamAPI(
   return false;
 }
 
+bool ChromeContentRendererClient::ShouldReportDetailedMessageForSource(
+    const base::string16& source) const {
+  return GURL(source).SchemeIs(extensions::kExtensionScheme);
+}
 
 }  // namespace chrome

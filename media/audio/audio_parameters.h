@@ -14,6 +14,7 @@ namespace media {
 struct MEDIA_EXPORT AudioInputBufferParameters {
   double volume;
   uint32 size;
+  bool key_pressed;
 };
 
 // Use a struct-in-struct approach to ensure that we can calculate the required
@@ -82,6 +83,7 @@ class MEDIA_EXPORT AudioParameters {
   // Comparison with other AudioParams.
   bool operator==(const AudioParameters& other) const {
     return format_ == other.format() &&
+           sample_rate_ == other.sample_rate() &&
            channel_layout_ == other.channel_layout() &&
            channels_ == other.channels() &&
            input_channels_ == other.input_channels() &&

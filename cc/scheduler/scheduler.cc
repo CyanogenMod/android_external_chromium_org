@@ -7,6 +7,7 @@
 #include "base/auto_reset.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "cc/debug/traced_value.h"
 
 namespace cc {
 
@@ -199,8 +200,13 @@ void Scheduler::ProcessScheduledActions() {
 
   base::AutoReset<bool> mark_inside(&inside_process_scheduled_actions_, true);
 
-  SchedulerStateMachine::Action action = state_machine_.NextAction();
-  while (action != SchedulerStateMachine::ACTION_NONE) {
+  SchedulerStateMachine::Action action;
+  do {
+    action = state_machine_.NextAction();
+    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("cc.debug.scheduler"),
+                 "SchedulerStateMachine",
+                 "state",
+                 TracedValue::FromValue(state_machine_.AsValue().release()));
     state_machine_.UpdateState(action);
     switch (action) {
       case SchedulerStateMachine::ACTION_NONE:
@@ -223,6 +229,10 @@ void Scheduler::ProcessScheduledActions() {
       case SchedulerStateMachine::ACTION_DRAW_FORCED:
         DrawAndSwapForced();
         break;
+      case SchedulerStateMachine::ACTION_DRAW_AND_SWAP_ABORT:
+        // No action is actually performed, but this allows the state machine to
+        // advance out of its waiting to draw state without actually drawing.
+        break;
       case SchedulerStateMachine::ACTION_BEGIN_OUTPUT_SURFACE_CREATION:
         client_->ScheduledActionBeginOutputSurfaceCreation();
         break;
@@ -230,15 +240,14 @@ void Scheduler::ProcessScheduledActions() {
         client_->ScheduledActionAcquireLayerTexturesForMainThread();
         break;
     }
-    action = state_machine_.NextAction();
-  }
+  } while (action != SchedulerStateMachine::ACTION_NONE);
 
   SetupNextBeginFrameIfNeeded();
   client_->DidAnticipatedDrawTimeChange(AnticipatedDrawTime());
 }
 
 bool Scheduler::WillDrawIfNeeded() const {
-  return !state_machine_.DrawSuspendedUntilCommit();
+  return !state_machine_.PendingDrawsShouldBeAborted();
 }
 
 }  // namespace cc

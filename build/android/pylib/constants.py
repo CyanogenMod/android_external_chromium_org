@@ -14,10 +14,12 @@ DIR_SOURCE_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__),
 ISOLATE_DEPS_DIR = os.path.join(DIR_SOURCE_ROOT, 'isolate_deps_dir')
 EMULATOR_SDK_ROOT = os.path.abspath(os.path.join(DIR_SOURCE_ROOT, os.pardir,
                                                  os.pardir))
-
 CHROME_PACKAGE = 'com.google.android.apps.chrome'
 CHROME_ACTIVITY = 'com.google.android.apps.chrome.Main'
 CHROME_DEVTOOLS_SOCKET = 'chrome_devtools_remote'
+
+CHROME_STABLE_PACKAGE = 'com.android.chrome'
+CHROME_BETA_PACKAGE = 'com.chrome.beta'
 
 CHROME_TESTS_PACKAGE = 'com.google.android.apps.chrome.tests'
 
@@ -52,6 +54,7 @@ LIGHTTPD_DEFAULT_PORT = 9000
 LIGHTTPD_RANDOM_PORT_FIRST = 8001
 LIGHTTPD_RANDOM_PORT_LAST = 8999
 TEST_SYNC_SERVER_PORT = 9031
+TEST_SEARCH_BY_IMAGE_SERVER_PORT = 9041
 
 # The net test server is started from port 10201.
 # TODO(pliard): http://crbug.com/239014. Remove this dirty workaround once
@@ -81,6 +84,17 @@ ANDROID_NDK_ROOT = os.path.join(DIR_SOURCE_ROOT,
                                 'third_party/android_tools/ndk')
 
 UPSTREAM_FLAKINESS_SERVER = 'test-results.appspot.com'
+
+
+def GetBuildType():
+  try:
+    return os.environ['BUILDTYPE']
+  except KeyError:
+    raise Exception('The BUILDTYPE environment variable has not been set')
+
+
+def SetBuildType(build_type):
+  os.environ['BUILDTYPE'] = build_type
 
 
 def _GetADBPath():

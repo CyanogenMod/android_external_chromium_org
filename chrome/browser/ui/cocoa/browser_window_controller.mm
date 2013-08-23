@@ -361,11 +361,10 @@ enum {
     // registering for the appropriate command state changes from the back-end.
     // Adds the toolbar to the content area.
     toolbarController_.reset([[ToolbarController alloc]
-              initWithModel:browser->toolbar_model()
-                   commands:browser->command_controller()->command_updater()
-                    profile:browser->profile()
-                    browser:browser
-             resizeDelegate:self]);
+              initWithCommands:browser->command_controller()->command_updater()
+                       profile:browser->profile()
+                       browser:browser
+                resizeDelegate:self]);
     [toolbarController_ setHasToolbar:[self hasToolbar]
                        hasLocationBar:[self hasLocationBar]];
 
@@ -1249,10 +1248,8 @@ enum {
   return [view convertRect:[view bounds] toView:nil];
 }
 
-- (void)updateToolbarWithContents:(WebContents*)tab
-               shouldRestoreState:(BOOL)shouldRestore {
-  [toolbarController_ updateToolbarWithContents:tab
-                             shouldRestoreState:shouldRestore];
+- (void)updateToolbarWithContents:(WebContents*)tab {
+  [toolbarController_ updateToolbarWithContents:tab];
 }
 
 - (void)setStarredState:(BOOL)isStarred {
@@ -1658,13 +1655,14 @@ enum {
   return style;
 }
 
-- (NSPoint)themePatternPhaseForAlignment:(ThemePatternAlignment)alignment {
+- (NSPoint)themeImagePositionForAlignment:(ThemeImageAlignment)alignment {
   NSView* windowChromeView = [[[self window] contentView] superview];
   NSView* tabStripView = nil;
-  if (alignment == THEME_PATTERN_ALIGN_WITH_TAB_STRIP && [self hasTabStrip])
+  if ([self hasTabStrip])
     tabStripView = [self tabStripView];
-  return [BrowserWindowUtils themePatternPhaseFor:windowChromeView
-                                     withTabStrip:tabStripView];
+  return [BrowserWindowUtils themeImagePositionFor:windowChromeView
+                                      withTabStrip:tabStripView
+                                         alignment:alignment];
 }
 
 - (NSPoint)bookmarkBubblePoint {

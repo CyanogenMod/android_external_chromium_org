@@ -16,49 +16,71 @@ function DirectoryModelUtil() {}
  * Returns root entries asynchronously.
  * @param {DirectoryEntry} root The root entry of the whole file system.
  * @param {boolean} isDriveEnabled True if the drive is enabled.
- * @param {function(Array.<Entry>)} callback Called when roots are resolved.
+ * @param {function(Array.<Entry>)} completionCallback Called when roots are
+ *     resolved.
  */
-DirectoryModelUtil.resolveRoots = function(root, isDriveEnabled, callback) {
-  var groups = {
-    drive: null,
-    downloads: null,
-    archives: null,
-    removables: null,
+DirectoryModelUtil.resolveRoots = function(
+    root, isDriveEnabled, completionCallback) {
+  var rootEntryGroup = {
+    drive: [],
+    downloads: [],
+    archives: [],
+    removables: [],
   };
 
-  // Use a fake instead, to return a list as fast as possible.
-  groups.drive = (isDriveEnabled ? [DirectoryModel.fakeDriveEntry_] : []);
+  // Add the entry at path as a root.
+  var addRootEntry = function(absolutePath, key, callback) {
+    root.getDirectory(
+        absolutePath.substring(1),  // Remove the leading '/'.
+        {create: false},
+        function(entry) {
+          rootEntryGroup[key] = [entry];
+          callback();
+        },
+        function(error) {
+          console.error('Error resolving ' + key + ' root dir: ' + error);
+          callback();
+        });
+  };
 
-  var addRootEntryList = function(key, rootEntryList) {
-    groups[key] = rootEntryList;
+  // Read the directory at path, and add all contained entries as roots.
+  var addRootEntryList = function(absolutePath, key, callback) {
+    util.readDirectory(
+        root,
+        absolutePath.substring(1),  // Remove the leading '/'.
+        function(entryList) {
+          rootEntryGroup[key] = entryList;
+          callback();
+        });
+  };
 
-    for (var key in groups) {
-      if (!groups[key]) {
-        // There is a pending task.
-        return;
-      }
+  var group = new AsyncUtil.Group();
+
+  // Resolve the Drive root if enabled.
+  if (isDriveEnabled) {
+    group.add(addRootEntry.bind(
+        null, RootDirectory.DRIVE + '/' + DriveSubRootDirectory.ROOT, 'drive'));
+  }
+
+  // Resolve Download, Archives and Removables directories.
+  group.add(addRootEntry.bind(null, RootDirectory.DOWNLOADS, 'downloads'));
+  group.add(addRootEntryList.bind(null, RootDirectory.ARCHIVE, 'archives'));
+  group.add(addRootEntryList.bind(
+      null, RootDirectory.REMOVABLE, 'removables'));
+
+  group.run(function() {
+    if (!rootEntryGroup.drive && isDriveEnabled) {
+      // Drive is enabled, but not available. Use the fake entry here.
+      rootEntryGroup.drive = [DirectoryModel.fakeDriveEntry_];
     }
 
     // Concat the result in the order.
-    callback([].concat(
-        groups.drive, groups.downloads, groups.archives, groups.removables));
-  };
-
-  // Resolve download root directory.
-  root.getDirectory(
-      RootDirectory.DOWNLOADS.substring(1),  // Remove the leading '/'.
-      { create: false },
-      function(entry) { addRootEntryList('downloads', [entry]); },
-      function(err) {
-        console.error('Error resolving downloads root dir: ' + error);
-        addRootEntryList('downloads', []);
-      });
-
-  // Reads 'archives' and 'removables' roots.
-  util.readDirectory(root, RootDirectory.ARCHIVE.substring(1),
-                     addRootEntryList.bind(null, 'archives'));
-  util.readDirectory(root, RootDirectory.REMOVABLE.substring(1),
-                     addRootEntryList.bind(null, 'removables'));
+    completionCallback([].concat(
+        rootEntryGroup.drive,
+        rootEntryGroup.downloads,
+        rootEntryGroup.archives,
+        rootEntryGroup.removables));
+  });
 };
 
 /**
@@ -71,13 +93,12 @@ DirectoryModelUtil.resolveRoots = function(root, isDriveEnabled, callback) {
  * @param {FileWatcher} fileWatcher Instance of FileWatcher.
  * @param {MetadataCache} metadataCache The metadata cache service.
  * @param {VolumeManager} volumeManager The volume manager.
- * @param {boolean} isDriveEnabled True if DRIVE enabled (initial value).
  * @param {boolean} showSpecialSearchRoots True if special-search roots are
  *     available. They should be hidden for the dialogs to save files.
  * @constructor
  */
 function DirectoryModel(root, singleSelection, fileFilter, fileWatcher,
-                        metadataCache, volumeManager, isDriveEnabled,
+                        metadataCache, volumeManager,
                         showSpecialSearchRoots) {
   this.root_ = root;
   this.fileListSelection_ = singleSelection ?
@@ -87,7 +108,6 @@ function DirectoryModel(root, singleSelection, fileFilter, fileWatcher,
   this.pendingScan_ = null;
   this.rescanTime_ = null;
   this.scanFailures_ = 0;
-  this.driveEnabled_ = isDriveEnabled;
   this.showSpecialSearchRoots_ = showSpecialSearchRoots;
 
   this.fileFilter_ = fileFilter;
@@ -193,6 +213,9 @@ DirectoryModel.prototype.start = function() {
       'drive-status-changed',
       this.taskQueue_.run.bind(
           this.taskQueue_, this.onDriveStatusChanged_.bind(this)));
+  this.volumeManager_.addEventListener(
+      'drive-enabled-status-changed',
+      this.onDriveEnabledStatusChanged_.bind(this));
   this.taskQueue_.run(this.updateRoots_.bind(this));
 };
 
@@ -211,22 +234,24 @@ DirectoryModel.prototype.getFileList = function() {
 };
 
 /**
- * Sets whether DRIVE appears in the roots list and
- * if it could be used as current directory.
- * @param {boolead} enabled True if DRIVE enabled.
+ * Called when the drive enable status is changed.
+ * @param {cr.Event} event Event object for the status change.
+ * @private
  */
-DirectoryModel.prototype.setDriveEnabled = function(enabled) {
-  if (this.driveEnabled_ == enabled)
-    return;
-  // Mount Drive if it was previously disabled and is now enabled.
-  if (enabled)
-    this.volumeManager_.mountDrive(function() {}, function() {});
+DirectoryModel.prototype.onDriveEnabledStatusChanged_ = function(event) {
+  this.taskQueue_.run(function(callback) {
+    // TODO(hidehiko): This should be moved to VolumeManager, when rootsList
+    // is moved to there.
+    this.taskQueue_.run(this.updateRoots_.bind(this));
 
-  this.driveEnabled_ = enabled;
-  this.taskQueue_.run(this.updateRoots_.bind(this));
-  if (!enabled && (this.getCurrentRootType() == RootType.DRIVE ||
-                   this.getCurrentRootType() == RootType.DRIVE_OFFLINE))
-    this.changeDirectory(PathUtil.DEFAULT_DIRECTORY);
+    if (!event.enabled &&
+        PathUtil.isDriveBasedPath(this.getCurrentDirEntry().fullPath)) {
+      // Currently, this is on Drive's directory, but Drive file system is
+      // disabled. So, move back to the default directory.
+      this.changeDirectory(PathUtil.DEFAULT_DIRECTORY);
+    }
+    callback();
+  }.bind(this));
 };
 
 /**
@@ -320,10 +345,16 @@ DirectoryModel.prototype.isSearching = function() {
  * @return {boolean} True if the |path| is read only.
  */
 DirectoryModel.prototype.isPathReadOnly = function(path) {
+  // TODO(hidehiko): Migrate this into VolumeInfo.
   switch (PathUtil.getRootType(path)) {
     case RootType.REMOVABLE:
-      return !!this.volumeManager_.isReadOnly(PathUtil.getRootPath(path)) ||
-             !!this.volumeManager_.getMountError(PathUtil.getRootPath(path));
+      var volumeInfo = this.volumeManager_.getVolumeInfo(
+          PathUtil.getRootPath(path));
+      // Returns true if the volume is actually read only, or if an error
+      // is found during the mounting.
+      // TODO(hidehiko): Remove "error" check here, by removing error'ed volume
+      // info from VolumeManager.
+      return volumeInfo && (volumeInfo.isReadOnly || !!volumeInfo.error);
     case RootType.ARCHIVE:
       return true;
     case RootType.DOWNLOADS:
@@ -711,10 +742,10 @@ DirectoryModel.prototype.replaceDirectoryContents_ = function(dirContents) {
 
 /**
  * Callback when an entry is changed.
- * @param {util.EntryChangedType} type How the entry is changed.
+ * @param {util.EntryChangedKind} kind How the entry is changed.
  * @param {Entry} entry The changed entry.
  */
-DirectoryModel.prototype.onEntryChanged = function(type, entry) {
+DirectoryModel.prototype.onEntryChanged = function(kind, entry) {
   // TODO(hidehiko): We should update directory model even the search result
   // is shown.
   var rootType = this.getCurrentRootType();
@@ -725,7 +756,7 @@ DirectoryModel.prototype.onEntryChanged = function(type, entry) {
       this.isSearching())
     return;
 
-  if (type == util.EntryChangedType.CREATED) {
+  if (kind == util.EntryChangedKind.CREATED) {
     entry.getParent(function(parentEntry) {
       if (this.getCurrentDirEntry().fullPath != parentEntry.fullPath) {
         // Do nothing if current directory changed during async operations.
@@ -739,9 +770,9 @@ DirectoryModel.prototype.onEntryChanged = function(type, entry) {
 
         var index = this.findIndexByEntry_(entry);
         if (index >= 0)
-          fileList.splice(index, 1, entry);
+          this.getFileList().splice(index, 1, entry);
         else
-          fileList.push(entry);
+          this.getFileList().push(entry);
       }.bind(this));
     }.bind(this));
   } else {
@@ -753,99 +784,61 @@ DirectoryModel.prototype.onEntryChanged = function(type, entry) {
 };
 
 /**
- * TODO(hidehiko): Migrate this method into findIndexByEntry_ defined below.
- * @param {string} name Filename.
- * @return {number} The index in the fileList.
- * @private
- */
-DirectoryModel.prototype.findIndexByName_ = function(name) {
-  var fileList = this.getFileList();
-  for (var i = 0; i < fileList.length; i++)
-    if (fileList.item(i).name == name)
-      return i;
-  return -1;
-};
-
-/**
  * @param {Entry} entry The entry to be searched.
  * @return {number} The index in the fileList, or -1 if not found.
  * @private
  */
 DirectoryModel.prototype.findIndexByEntry_ = function(entry) {
   var fileList = this.getFileList();
-  for (var i = 0; i < fileList.length; i++)
-    if (fileList.item(i).fullPath == entry.fullPath)
+  for (var i = 0; i < fileList.length; i++) {
+    if (util.isSameEntry(fileList.item(i), entry))
       return i;
+  }
   return -1;
 };
 
 /**
- * Rename the entry in the filesystem and update the file list.
- * @param {Entry} entry Entry to rename.
- * @param {string} newName New name.
- * @param {function(FileError)} errorCallback Called on error.
- * @param {function()=} opt_successCallback Called on success.
+ * Called when rename is done successfully.
+ * Note: conceptually, DirectoryModel should work without this, because entries
+ * can be renamed by other systems anytime and Files.app should reflect it
+ * correctly.
+ * TODO(hidehiko): investigate more background, and remove this if possible.
+ *
+ * @param {Entry} oldEntry The old entry.
+ * @param {Entry} newEntry The new entry.
+ * @param {function()} opt_callback Called on completion.
  */
-DirectoryModel.prototype.renameEntry = function(entry, newName,
-                                                errorCallback,
-                                                opt_successCallback) {
-  var currentDirPath = this.getCurrentDirPath();
-  var onSuccess = function(newEntry) {
-    this.currentDirContents_.prefetchMetadata([newEntry], function() {
-      // If the current directory is the old entry, then quietly change to the
-      // new one.
-      if (entry.fullPath == this.getCurrentDirPath())
-        this.changeDirectory(newEntry.fullPath);
+DirectoryModel.prototype.onRenameEntry = function(
+    oldEntry, newEntry, opt_callback) {
+  this.currentDirContents_.prefetchMetadata([newEntry], function() {
+    // If the current directory is the old entry, then quietly change to the
+    // new one.
+    if (util.isSameEntry(oldEntry, this.getCurrentDirEntry()))
+      this.changeDirectory(newEntry.fullPath);
 
-      // Update selection and call the success callback if still in the same
-      // directory as while started renaming.
-      if (currentDirPath != this.getCurrentDirPath())
-        return;
-
-      var index = this.findIndexByName_(entry.name);
-
-      if (index >= 0) {
-        var wasSelected = this.fileListSelection_.getIndexSelected(index);
-
-        this.getFileList().splice(index, 1, newEntry);
-
-        if (wasSelected)
-          this.fileListSelection_.setIndexSelected(
-              this.findIndexByName_(newName), true);
+    // Look for the old entry.
+    // If the entry doesn't exist in the list, it has been updated from
+    // outside (probably by directory rescan).
+    var index = this.findIndexByEntry_(oldEntry);
+    if (index >= 0) {
+      // Update the content list and selection status.
+      var wasSelected = this.fileListSelection_.getIndexSelected(index);
+      this.fileListSelection_.beginChange();
+      this.fileListSelection_.setIndexSelected(index, false);
+      this.getFileList().splice(index, 1, newEntry);
+      if (wasSelected) {
+        // We re-search the index, because splice may trigger sorting so that
+        // index may be stale.
+        this.fileListSelection_.setIndexSelected(
+            this.findIndexByEntry_(newEntry), true);
       }
+      this.fileListSelection_.endChange();
+    }
 
-      // If the entry doesn't exist in the list it mean that it updated from
-      // outside (probably by directory rescan).
-      if (opt_successCallback)
-         opt_successCallback();
-    }.bind(this));
-  }.bind(this);
-
-  var onParentFound = function(parentEntry) {
-    entry.moveTo(parentEntry, newName, onSuccess, errorCallback);
-  };
-
-  entry.getParent(onParentFound, errorCallback);
-};
-
-/**
- * Checks if current directory contains a file or directory with this name.
- * @param {string} entry Entry to which newName will be given.
- * @param {string} name Name to check.
- * @param {function(boolean, boolean?)} callback Called when the result's
- *     available. First parameter is true if the entry exists and second
- *     is true if it's a file.
- */
-DirectoryModel.prototype.doesExist = function(entry, name, callback) {
-  var onParentFound = function(parentEntry) {
-    util.resolvePath(parentEntry, name,
-        function(foundEntry) {
-          callback(true, foundEntry.isFile);
-        },
-        callback.bind(window, false));
-  };
-
-  entry.getParent(onParentFound, callback.bind(window, false));
+    // Run callback, finally.
+    if (opt_callback)
+      opt_callback();
+  }.bind(this));
 };
 
 /**
@@ -1177,7 +1170,7 @@ DirectoryModel.prototype.selectIndex = function(index) {
 DirectoryModel.prototype.updateRoots_ = function(opt_callback) {
   metrics.startInterval('Load.Roots');
   DirectoryModelUtil.resolveRoots(
-      this.root_, this.driveEnabled_,
+      this.root_, this.volumeManager_.driveEnabled,
       function(rootEntries) {
         metrics.recordInterval('Load.Roots');
 
@@ -1223,55 +1216,40 @@ DirectoryModel.prototype.onMountChanged_ = function(callback) {
  * @private
  */
 DirectoryModel.prototype.onDriveStatusChanged_ = function(callback) {
-  var mounted = this.isDriveMounted();
-  if (mounted) {
-    // Change fake entry to real one and rescan.
-    var onGotDirectory = function(entry) {
-      this.updateRootEntry_(entry);
-      var currentDirEntry = this.getCurrentDirEntry();
+  this.updateRoots_(function() {
+    var currentDirEntry = this.getCurrentDirEntry();
+    if (this.isDriveMounted()) {
       if (currentDirEntry == DirectoryModel.fakeDriveEntry_) {
-        this.changeDirectoryEntrySilent_(entry);
+        // Replace the fake entry by real DirectoryEntry silently.
+        for (var i = 0; i < this.rootsList_.length; i++) {
+          if (this.rootsList_.item(i).fullPath ==
+              DirectoryModel.fakeDriveEntry_.fullPath) {
+            this.changeDirectoryEntrySilent_(this.rootsList_.item(i));
+            break;
+          }
+        }
       } else if (PathUtil.isSpecialSearchRoot(currentDirEntry.fullPath)) {
         this.rescan();
       }
-      callback();
-    };
-    this.root_.getDirectory(
-        DirectoryModel.fakeDriveEntry_.fullPath, {},
-        onGotDirectory.bind(this));
-  } else {
-    var rootType = this.getCurrentRootType();
-    if (rootType != RootType.DRIVE && rootType != RootType.DRIVE_OFFLINE) {
-      callback();
-      return;
-    }
-
-    // Current entry unmounted. Replace with fake drive one.
-    this.updateRootEntry_(DirectoryModel.fakeDriveEntry_);
-    if (this.getCurrentDirPath() == DirectoryModel.fakeDriveEntry_.fullPath) {
-      // Replace silently and rescan.
-      this.changeDirectoryEntrySilent_(DirectoryModel.fakeDriveEntry_);
     } else {
-      this.changeDirectoryEntry_(false, DirectoryModel.fakeDriveEntry_);
+      // TODO(hidehiko): Conceptually, fakeDriveEntry should be a trick to
+      // initialize Drive file system mounting state lazily. So, moving back
+      // to the fakeDriveEntry sounds weird state. Disabling the Drive File
+      // System should be handled as same as other file systems (such as
+      // unmounting zip-archive, disconnecting USB flush storage, etc.).
+      // The handling code is here due to historical reason. Clean this up.
+      if (currentDirEntry.fullPath == DirectoryModel.fakeDriveEntry_.fullPath) {
+        // Replace silently and rescan.
+        this.changeDirectoryEntrySilent_(DirectoryModel.fakeDriveEntry_);
+      } else if (PathUtil.isDriveBasedPath(currentDirEntry.fullPath)) {
+        // Now, Drive file system is unmounted. Go back to the fake Drive
+        // entry.
+        this.changeDirectoryEntry_(false, DirectoryModel.fakeDriveEntry_);
+      }
     }
-    callback();
-  }
-};
 
-/**
- * Update the entry in the roots list model.
- *
- * @param {DirectoryEntry} entry New entry.
- * @private
- */
-DirectoryModel.prototype.updateRootEntry_ = function(entry) {
-  for (var i = 0; i != this.rootsList_.length; i++) {
-    if (this.rootsList_.item(i).fullPath == entry.fullPath) {
-      this.rootsList_.splice(i, 1, entry);
-      return;
-    }
-  }
-  console.error('Cannot find root: ' + entry.fullPath);
+    callback();
+  }.bind(this));
 };
 
 /**

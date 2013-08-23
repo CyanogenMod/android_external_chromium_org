@@ -274,7 +274,8 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   virtual bool AddMessageToConsole(int32 level,
                                    const string16& message,
                                    int32 line_no,
-                                   const string16& source_id);
+                                   const string16& source_id,
+                                   const string16& stack_trace);
 
   // Return a dummy RendererPreferences object that will be used by the renderer
   // associated with the owning RenderViewHost.
@@ -299,6 +300,7 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // Notification that the renderer has become unresponsive. The
   // delegate can use this notification to show a warning to the user.
   virtual void RendererUnresponsive(RenderViewHost* render_view_host,
+                                    bool is_during_before_unload,
                                     bool is_during_unload) {}
 
   // Notification that a previously unresponsive renderer has become

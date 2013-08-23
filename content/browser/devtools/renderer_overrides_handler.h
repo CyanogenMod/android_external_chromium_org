@@ -26,15 +26,28 @@ class RendererOverridesHandler : public DevToolsProtocol::Handler {
   explicit RendererOverridesHandler(DevToolsAgentHost* agent);
   virtual ~RendererOverridesHandler();
 
+  void OnClientDetached();
+  void OnSwapCompositorFrame();
+
  private:
+
+  // DOM domain.
   scoped_refptr<DevToolsProtocol::Response>
       GrantPermissionsForSetFileInputFiles(
           scoped_refptr<DevToolsProtocol::Command> command);
+
+  // Page domain.
+  scoped_refptr<DevToolsProtocol::Response> PageDisable(
+      scoped_refptr<DevToolsProtocol::Command> command);
   scoped_refptr<DevToolsProtocol::Response> PageHandleJavaScriptDialog(
       scoped_refptr<DevToolsProtocol::Command> command);
   scoped_refptr<DevToolsProtocol::Response> PageNavigate(
       scoped_refptr<DevToolsProtocol::Command> command);
   scoped_refptr<DevToolsProtocol::Response> PageCaptureScreenshot(
+      scoped_refptr<DevToolsProtocol::Command> command);
+  scoped_refptr<DevToolsProtocol::Response> PageStartScreencast(
+      scoped_refptr<DevToolsProtocol::Command> command);
+  scoped_refptr<DevToolsProtocol::Response> PageStopScreencast(
       scoped_refptr<DevToolsProtocol::Command> command);
 
   void ScreenshotCaptured(
@@ -45,8 +58,15 @@ class RendererOverridesHandler : public DevToolsProtocol::Handler {
       bool success,
       const SkBitmap& bitmap);
 
+  // Input domain.
+  scoped_refptr<DevToolsProtocol::Response> InputDispatchMouseEvent(
+      scoped_refptr<DevToolsProtocol::Command> command);
+  scoped_refptr<DevToolsProtocol::Response> InputDispatchGestureEvent(
+      scoped_refptr<DevToolsProtocol::Command> command);
+
   DevToolsAgentHost* agent_;
   base::WeakPtrFactory<RendererOverridesHandler> weak_factory_;
+  scoped_refptr<DevToolsProtocol::Command> screencast_command_;
   DISALLOW_COPY_AND_ASSIGN(RendererOverridesHandler);
 };
 

@@ -21,10 +21,10 @@
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/manifest.h"
 #include "chrome/common/extensions/permissions/api_permission.h"
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/install_warning.h"
+#include "extensions/common/manifest.h"
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
 #include "ui/base/accelerators/accelerator.h"
@@ -250,6 +250,11 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // Returns true if the extension should be displayed in the extension
   // settings page (i.e. chrome://extensions).
   bool ShouldDisplayInExtensionSettings() const;
+
+  // Returns true if the extension should not be shown anywhere. This is
+  // mostly the same as the extension being a component extension, but also
+  // includes non-component apps that are hidden from the app launcher and ntp.
+  bool ShouldNotBeVisible() const;
 
   // Get the manifest data associated with the key, or NULL if there is none.
   // Can only be called after InitValue is finished.

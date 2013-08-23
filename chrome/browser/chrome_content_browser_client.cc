@@ -31,7 +31,7 @@
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/defaults.h"
-#include "chrome/browser/download/download_util.h"
+#include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
 #include "chrome/browser/extensions/browser_permissions_policy_delegate.h"
@@ -115,7 +115,6 @@
 #include "content/public/browser/browser_url_handler.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/child_process_security_policy.h"
-#include "content/public/browser/compositor_util.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_context.h"
@@ -204,7 +203,7 @@
 #endif
 
 #if defined(FILE_MANAGER_EXTENSION)
-#include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
+#include "chrome/browser/chromeos/extensions/file_manager/app_id.h"
 #endif
 
 #if defined(TOOLKIT_GTK)
@@ -562,16 +561,6 @@ void HandleBlockedPopupOnUIThread(const BlockedPopupParams& params) {
   if (!tab)
     return;
 
-  prerender::PrerenderManager* prerender_manager =
-      prerender::PrerenderManagerFactory::GetForProfile(
-          Profile::FromBrowserContext(tab->GetBrowserContext()));
-  if (prerender_manager) {
-    prerender_manager->DestroyPrerenderForRenderView(
-        params.render_process_id,
-        params.opener_id,
-        prerender::FINAL_STATUS_CREATE_NEW_WINDOW);
-  }
-
   PopupBlockerTabHelper* popup_helper =
       PopupBlockerTabHelper::FromWebContents(tab);
   if (!popup_helper)
@@ -791,13 +780,6 @@ content::WebContentsViewDelegate*
   return chrome::CreateWebContentsViewDelegate(web_contents);
 }
 
-// Check if the extension activity log is enabled for the profile.
-static bool IsExtensionActivityLogEnabledForProfile(Profile* profile) {
-  // crbug.com/247908 - This should be IsLogEnabled except for an issue
-  // in chrome_frame_net_tests
-  return extensions::ActivityLog::IsLogEnabledOnAnyProfile();
-}
-
 void ChromeContentBrowserClient::GuestWebContentsCreated(
     WebContents* guest_web_contents,
     WebContents* opener_web_contents,
@@ -870,9 +852,7 @@ void ChromeContentBrowserClient::GuestWebContentsAttached(
     NOTREACHED();
     return;
   }
-  guest->Attach(embedder_web_contents,
-                extension->id(),
-                extra_params);
+  guest->Attach(embedder_web_contents, extension->id(), extra_params);
 }
 
 void ChromeContentBrowserClient::RenderProcessHostCreated(
@@ -920,7 +900,7 @@ void ChromeContentBrowserClient::RenderProcessHostCreated(
       profile->IsOffTheRecord()));
 
   host->Send(new ChromeViewMsg_SetExtensionActivityLogEnabled(
-      IsExtensionActivityLogEnabledForProfile(profile)));
+      extensions::ActivityLog::GetInstance(profile)->IsLogEnabled()));
 
   SendExtensionWebRequestStatusToHost(host);
 
@@ -1423,9 +1403,6 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
 #endif
     }
 
-    if (content::IsThreadedCompositingEnabled())
-      command_line->AppendSwitch(switches::kEnableThreadedCompositing);
-
     if (message_center::IsRichNotificationEnabled())
       command_line->AppendSwitch(switches::kDisableHTMLNotifications);
 
@@ -1448,6 +1425,7 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kDebugPrint,
       switches::kDisableBundledPpapiFlash,
       switches::kDisableExtensionsResourceWhitelist,
+      switches::kDisablePnacl,
       switches::kDisableScriptedPrintThrottling,
       switches::kEnableAdview,
       switches::kEnableAdviewSrcAttribute,
@@ -1457,7 +1435,6 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kEnableNaCl,
       switches::kEnableNetBenchmarking,
       switches::kEnablePasswordGeneration,
-      switches::kEnablePnacl,
       switches::kEnableWatchdog,
       switches::kMemoryProfiling,
       switches::kMessageLoopHistogrammer,
@@ -2011,12 +1988,15 @@ bool ChromeContentBrowserClient::CanCreateWindow(
     return false;
   }
 
-#if !defined(OS_ANDROID)
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableBetterPopupBlocking)) {
-    return true;
+  if (g_browser_process->prerender_tracker() &&
+      g_browser_process->prerender_tracker()->TryCancelOnIOThread(
+          render_process_id,
+          opener_id,
+          prerender::FINAL_STATUS_CREATE_NEW_WINDOW)) {
+    return false;
   }
 
+#if !defined(OS_ANDROID)
   if (is_guest)
     return true;
 
@@ -2221,9 +2201,6 @@ void ChromeContentBrowserClient::OverrideWebkitPrefs(
   }
   DCHECK(!web_prefs->default_encoding.empty());
 
-  if (content::IsForceCompositingModeEnabled())
-    web_prefs->force_compositing_mode = true;
-
   WebContents* web_contents = WebContents::FromRenderViewHost(rvh);
   extensions::ViewType view_type = extensions::GetViewType(web_contents);
   ExtensionService* service =
@@ -2255,7 +2232,7 @@ void ChromeContentBrowserClient::OverrideWebkitPrefs(
   // file manager, which is implemented using WebUI but wants HW acceleration
   // for video decode & render.
   if (url.SchemeIs(extensions::kExtensionScheme) &&
-      url.host() == kFileBrowserDomain) {
+      url.host() == file_manager::kFileManagerAppId) {
     web_prefs->accelerated_compositing_enabled = true;
     web_prefs->accelerated_2d_canvas_enabled = true;
   }
@@ -2317,7 +2294,7 @@ void ChromeContentBrowserClient::ClearCookies(RenderViewHost* rvh) {
 }
 
 base::FilePath ChromeContentBrowserClient::GetDefaultDownloadDirectory() {
-  return download_util::GetDefaultDownloadDirectory();
+  return DownloadPrefs::GetDefaultDownloadDirectory();
 }
 
 std::string ChromeContentBrowserClient::GetDefaultDownloadName() {
@@ -2466,16 +2443,10 @@ void ChromeContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
   DCHECK(!data_path.empty());
 
   int flags = base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ;
-  base::FilePath chrome_pak = data_path.AppendASCII("chrome.pak");
-  base::PlatformFile f =
-      base::CreatePlatformFile(chrome_pak, flags, NULL, NULL);
-  DCHECK(f != base::kInvalidPlatformFileValue);
-  mappings->push_back(FileDescriptorInfo(kAndroidChromePakDescriptor,
-                                         FileDescriptor(f, true)));
-
   base::FilePath chrome_resources_pak =
       data_path.AppendASCII("chrome_100_percent.pak");
-  f = base::CreatePlatformFile(chrome_resources_pak, flags, NULL, NULL);
+  base::PlatformFile f =
+      base::CreatePlatformFile(chrome_resources_pak, flags, NULL, NULL);
   DCHECK(f != base::kInvalidPlatformFileValue);
   mappings->push_back(FileDescriptorInfo(kAndroidChrome100PercentPakDescriptor,
                                          FileDescriptor(f, true)));

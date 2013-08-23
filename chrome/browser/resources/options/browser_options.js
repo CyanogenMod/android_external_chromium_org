@@ -293,12 +293,6 @@ cr.define('options', function() {
           OptionsPage.closeOverlay();
         };
 
-        $('bluetooth-reconnect-device').onmousedown = function(event) {
-          // Prevent 'blur' event, which would reset the list selection,
-          // thereby disabling the apply button.
-          event.preventDefault();
-        };
-
         $('bluetooth-paired-devices-list').addEventListener('change',
             function() {
           var item = $('bluetooth-paired-devices-list').selectedItem;
@@ -631,19 +625,20 @@ cr.define('options', function() {
       }
 
       var pageContainer = $('page-container');
-      var pageTop = parseFloat(pageContainer.style.top);
-      var topSection = document.querySelector('#page-container section');
-      var pageHeight = document.body.scrollHeight - topSection.offsetTop;
+      // pageContainer.offsetTop is relative to the screen.
+      var pageTop = pageContainer.offsetTop;
+      var sectionBottom = section.offsetTop + section.offsetHeight;
+      // section.offsetTop is relative to the 'page-container'.
       var sectionTop = section.offsetTop;
-      var sectionHeight = section.offsetHeight;
-      var marginBottom = window.getComputedStyle(section).marginBottom;
-      if (marginBottom)
-        sectionHeight += parseFloat(marginBottom);
-      if (pageHeight - pageTop < sectionTop + sectionHeight) {
-        pageContainer.oldScrollTop = sectionTop + sectionHeight - pageHeight;
-        var verticalPosition = pageContainer.getBoundingClientRect().top -
-            pageContainer.oldScrollTop;
-        pageContainer.style.top = verticalPosition + 'px';
+      if (pageTop + sectionBottom > document.body.scrollHeight ||
+          pageTop + sectionTop < 0) {
+        pageContainer.oldScrollTop = -pageTop;
+        // Currently not all layout updates are guaranteed to precede the
+        // initializationComplete event (for example 'set-as-default-browser'
+        // button) leaving some uncertainty in the optimal scroll position.
+        // The section is placed approximately in the middle of the screen.
+        pageContainer.style.top = document.body.scrollHeight / 2 -
+            sectionBottom + 'px';
       }
     },
 
@@ -1067,21 +1062,12 @@ cr.define('options', function() {
     },
 
     /**
-     * Reports a local error (e.g., disk full) to the "create" overlay during
-     * profile creation.
+     * Reports an error to the "create" overlay during profile creation.
+     * @param {string} error The error message to display.
      * @private
      */
-    showCreateProfileLocalError_: function() {
-      CreateProfileOverlay.onLocalError();
-    },
-
-    /**
-    * Reports a remote error (e.g., a network error during managed-user
-    * registration) to the "create" overlay during profile creation.
-    * @private
-    */
-    showCreateProfileRemoteError_: function() {
-      CreateProfileOverlay.onRemoteError();
+    showCreateProfileError_: function(error) {
+      CreateProfileOverlay.onError(error);
     },
 
     /**
@@ -1479,8 +1465,7 @@ cr.define('options', function() {
     'setupPageZoomSelector',
     'setupProxySettingsSection',
     'showBluetoothSettings',
-    'showCreateProfileLocalError',
-    'showCreateProfileRemoteError',
+    'showCreateProfileError',
     'showCreateProfileSuccess',
     'showMouseControls',
     'showTouchpadControls',

@@ -16,6 +16,10 @@ class ListValue;
 }
 
 namespace chromeos {
+
+class NetworkState;
+class User;
+
 namespace onc {
 
 // Translates |onc_proxy_settings|, which has to be a valid ONC ProxySettings
@@ -32,8 +36,18 @@ scoped_ptr<base::DictionaryValue> ConvertOncProxySettingsToProxyConfig(
 // implemented, which are replaced by attributes of the logged-in user with
 // |hashed_username|.
 void ExpandStringPlaceholdersInNetworksForUser(
-    const std::string& hashed_username,
+    const chromeos::User* user,
     base::ListValue* network_configs);
+
+void ImportNetworksForUser(const chromeos::User* user,
+                           const base::ListValue& network_configs,
+                           std::string* error);
+
+// Looks up the policy for |guid| for the current active user and sets
+// |onc_source| accordingly.
+const base::DictionaryValue* FindPolicyForActiveUser(
+    const std::string& guid,
+    onc::ONCSource* onc_source);
 
 }  // namespace onc
 }  // namespace chromeos

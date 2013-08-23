@@ -1077,6 +1077,7 @@ TemplateURL* MakePrepopulatedTemplateURL(
     const base::StringPiece& suggest_url,
     const base::StringPiece& instant_url,
     const base::StringPiece& image_url,
+    const base::StringPiece& new_tab_url,
     const base::StringPiece& search_url_post_params,
     const base::StringPiece& suggest_url_post_params,
     const base::StringPiece& instant_url_post_params,
@@ -1095,6 +1096,7 @@ TemplateURL* MakePrepopulatedTemplateURL(
   data.suggestions_url = suggest_url.as_string();
   data.instant_url = instant_url.as_string();
   data.image_url = image_url.as_string();
+  data.new_tab_url = new_tab_url.as_string();
   data.search_url_post_params = search_url_post_params.as_string();
   data.suggestions_url_post_params = suggest_url_post_params.as_string();
   data.instant_url_post_params = instant_url_post_params.as_string();
@@ -1148,6 +1150,7 @@ void GetPrepopulatedTemplateFromPrefs(Profile* profile,
       std::string suggest_url;
       std::string instant_url;
       std::string image_url;
+      std::string new_tab_url;
       std::string search_url_post_params;
       std::string suggest_url_post_params;
       std::string instant_url_post_params;
@@ -1158,6 +1161,7 @@ void GetPrepopulatedTemplateFromPrefs(Profile* profile,
       engine->GetString("suggest_url", &suggest_url);
       engine->GetString("instant_url", &instant_url);
       engine->GetString("image_url", &image_url);
+      engine->GetString("new_tab_url", &new_tab_url);
       engine->GetString("search_url_post_params", &search_url_post_params);
       engine->GetString("suggest_url_post_params", &suggest_url_post_params);
       engine->GetString("instant_url_post_params", &instant_url_post_params);
@@ -1166,7 +1170,7 @@ void GetPrepopulatedTemplateFromPrefs(Profile* profile,
       engine->GetString("search_terms_replacement_key",
           &search_terms_replacement_key);
       t_urls->push_back(MakePrepopulatedTemplateURL(profile, name, keyword,
-          search_url, suggest_url, instant_url, image_url,
+          search_url, suggest_url, instant_url, image_url, new_tab_url,
           search_url_post_params, suggest_url_post_params,
           instant_url_post_params, image_url_post_params,
           favicon_url, encoding, *alternate_urls, search_terms_replacement_key,
@@ -1188,10 +1192,11 @@ TemplateURL* MakePrepopulatedTemplateURLFromPrepopulateEngine(
 
   return MakePrepopulatedTemplateURL(profile, WideToUTF16(engine.name),
       WideToUTF16(engine.keyword), engine.search_url, engine.suggest_url,
-      engine.instant_url, engine.image_url, engine.search_url_post_params,
-      engine.suggest_url_post_params, engine.instant_url_post_params,
-      engine.image_url_post_params, engine.favicon_url, engine.encoding,
-      alternate_urls, engine.search_terms_replacement_key, engine.id);
+      engine.instant_url, engine.image_url, engine.new_tab_url,
+      engine.search_url_post_params, engine.suggest_url_post_params,
+      engine.instant_url_post_params, engine.image_url_post_params,
+      engine.favicon_url, engine.encoding, alternate_urls,
+      engine.search_terms_replacement_key, engine.id);
 }
 
 bool SameDomain(const GURL& given_url, const GURL& prepopulated_url) {
@@ -1287,24 +1292,22 @@ TemplateURL* GetPrepopulatedDefaultSearch(Profile* profile) {
   return default_search_provider;
 }
 
-SearchEngineType GetEngineType(const std::string& url) {
+SearchEngineType GetEngineType(const TemplateURL& url) {
   // Restricted to UI thread because ReplaceSearchTerms() is so restricted.
   using content::BrowserThread;
   DCHECK(!BrowserThread::IsThreadInitialized(BrowserThread::UI) ||
          BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  // We may get a valid URL, or we may get the Google prepopulate URL which
-  // can't be converted directly to a GURL.  To handle the latter, we first
-  // construct a TemplateURL from the provided |url|, then call
-  // ReplaceSearchTerms().  This should return a valid URL even when the input
-  // has Google base URLs.
-  TemplateURLData data;
-  data.SetURL(url);
-  TemplateURL turl(NULL, data);
-  GURL as_gurl(turl.url_ref().ReplaceSearchTerms(
-      TemplateURLRef::SearchTermsArgs(ASCIIToUTF16("x"))));
-  if (!as_gurl.is_valid())
-    return SEARCH_ENGINE_OTHER;
+  // By calling ReplaceSearchTerms, we ensure that even TemplateURLs whose URLs
+  // can't be directly inspected (e.g. due to containing {google:baseURL}) can
+  // be converted to GURLs we can look at.
+  GURL gurl(url.url_ref().ReplaceSearchTerms(TemplateURLRef::SearchTermsArgs(
+      ASCIIToUTF16("x"))));
+  return gurl.is_valid() ? GetEngineType(gurl) : SEARCH_ENGINE_OTHER;
+}
+
+SearchEngineType GetEngineType(const GURL& url) {
+  DCHECK(url.is_valid());
 
   // Check using TLD+1s, in order to more aggressively match search engine types
   // for data imported from other browsers.
@@ -1312,19 +1315,19 @@ SearchEngineType GetEngineType(const std::string& url) {
   // First special-case Google, because the prepopulate URL for it will not
   // convert to a GURL and thus won't have an origin.  Instead see if the
   // incoming URL's host is "[*.]google.<TLD>".
-  if (google_util::IsGoogleHostname(as_gurl.host(),
+  if (google_util::IsGoogleHostname(url.host(),
                                     google_util::DISALLOW_SUBDOMAIN))
     return google.type;
 
   // Now check the rest of the prepopulate data.
   for (size_t i = 0; i < arraysize(kAllEngines); ++i) {
     // First check the main search URL.
-    if (SameDomain(as_gurl, GURL(kAllEngines[i]->search_url)))
+    if (SameDomain(url, GURL(kAllEngines[i]->search_url)))
       return kAllEngines[i]->type;
 
     // Then check the alternate URLs.
     for (size_t j = 0; j < kAllEngines[i]->alternate_urls_size; ++j) {
-      if (SameDomain(as_gurl, GURL(kAllEngines[i]->alternate_urls[j])))
+      if (SameDomain(url, GURL(kAllEngines[i]->alternate_urls[j])))
         return kAllEngines[i]->type;
     }
   }
@@ -1333,12 +1336,10 @@ SearchEngineType GetEngineType(const std::string& url) {
 }
 
 GURL GetLogoURL(const TemplateURL& template_url, LogoSize size) {
-  if (GetEngineType(template_url.url()) == SEARCH_ENGINE_GOOGLE) {
-    return GURL((size == LOGO_200_PERCENT) ?
-                google_logos.logo_200_percent_url :
-                google_logos.logo_100_percent_url);
-  }
-  return GURL();
+  if (GetEngineType(template_url) != SEARCH_ENGINE_GOOGLE)
+    return GURL();
+  return GURL((size == LOGO_200_PERCENT) ?
+      google_logos.logo_200_percent_url : google_logos.logo_100_percent_url);
 }
 
 }  // namespace TemplateURLPrepopulateData

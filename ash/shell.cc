@@ -45,7 +45,6 @@
 #include "ash/wm/ash_focus_rules.h"
 #include "ash/wm/ash_native_cursor_manager.h"
 #include "ash/wm/base_layout_manager.h"
-#include "ash/wm/capture_controller.h"
 #include "ash/wm/coordinate_conversion.h"
 #include "ash/wm/custom_frame_view_ash.h"
 #include "ash/wm/event_client_impl.h"
@@ -54,6 +53,7 @@
 #include "ash/wm/lock_state_controller_impl2.h"
 #include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/overlay_event_filter.h"
+#include "ash/wm/overview/window_selector_controller.h"
 #include "ash/wm/power_button_controller.h"
 #include "ash/wm/property_util.h"
 #include "ash/wm/resize_shadow_controller.h"
@@ -68,7 +68,6 @@
 #include "ash/wm/window_animations.h"
 #include "ash/wm/window_cycle_controller.h"
 #include "ash/wm/window_properties.h"
-#include "ash/wm/window_selector_controller.h"
 #include "ash/wm/window_util.h"
 #include "ash/wm/workspace_controller.h"
 #include "base/bind.h"
@@ -112,14 +111,13 @@
 #if defined(OS_CHROMEOS)
 #if defined(USE_X11)
 #include "ash/ash_constants.h"
-#include "ash/display/display_change_observer_x11.h"
-#include "ash/display/display_error_observer.h"
+#include "ash/display/display_change_observer_chromeos.h"
+#include "ash/display/display_error_observer_chromeos.h"
 #include "ash/display/output_configurator_animation.h"
 #include "base/chromeos/chromeos_version.h"
 #include "base/message_loop/message_pump_aurax11.h"
 #include "chromeos/display/output_configurator.h"
 #include "content/public/browser/gpu_data_manager.h"
-#include "content/public/common/content_switches.h"
 #include "gpu/config/gpu_feature_type.h"
 #endif  // defined(USE_X11)
 #include "ash/system/chromeos/power/power_status.h"
@@ -227,9 +225,7 @@ Shell::Shell(ShellDelegate* delegate)
 #if defined(OS_CHROMEOS) && defined(USE_X11)
   bool is_panel_fitting_disabled =
       content::GpuDataManager::GetInstance()->IsFeatureBlacklisted(
-          gpu::GPU_FEATURE_TYPE_PANEL_FITTING) ||
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          ::switches::kDisablePanelFitting);
+          gpu::GPU_FEATURE_TYPE_PANEL_FITTING);
 
   output_configurator_->Init(!is_panel_fitting_disabled);
 
@@ -283,6 +279,9 @@ Shell::~Shell() {
 
   locale_notification_controller_.reset();
 
+  // Drag-and-drop must be canceled prior to close all windows.
+  drag_drop_controller_.reset();
+
   // Destroy all child windows including widgets.
   display_controller_->CloseChildWindows();
 
@@ -293,7 +292,6 @@ Shell::~Shell() {
   // These need a valid Shell instance to clean up properly, so explicitly
   // delete them before invalidating the instance.
   // Alphabetical. TODO(oshima): sort.
-  drag_drop_controller_.reset();
   magnification_controller_.reset();
   partial_magnification_controller_.reset();
   resize_shadow_controller_.reset();
@@ -301,7 +299,6 @@ Shell::~Shell() {
   tooltip_controller_.reset();
   event_client_.reset();
   window_cycle_controller_.reset();
-  capture_controller_.reset();
   nested_dispatcher_controller_.reset();
   user_action_client_.reset();
   visibility_controller_.reset();
@@ -454,7 +451,7 @@ void Shell::Init() {
       new internal::OutputConfiguratorAnimation());
   output_configurator_->AddObserver(output_configurator_animation_.get());
   if (base::chromeos::IsRunningOnChromeOS()) {
-    display_change_observer_.reset(new internal::DisplayChangeObserverX11);
+    display_change_observer_.reset(new internal::DisplayChangeObserver);
     // Register |display_change_observer_| first so that the rest of
     // observer gets invoked after the root windows are configured.
     output_configurator_->AddObserver(display_change_observer_.get());
@@ -467,7 +464,7 @@ void Shell::Init() {
         delegate_->IsFirstRunAfterBoot() ? kChromeOsBootColor : 0);
     display_initialized = true;
   }
-#endif
+#endif  // defined(OS_CHROMEOS) && defined(USE_X11)
   if (!display_initialized)
     display_manager_->InitFromCommandLine();
 
@@ -545,8 +542,6 @@ void Shell::Init() {
 
   system_gesture_filter_.reset(new internal::SystemGestureEventFilter);
   AddPreTargetHandler(system_gesture_filter_.get());
-
-  capture_controller_.reset(new internal::CaptureController);
 
   // The keyboard system must be initialized before the RootWindowController is
   // created.
@@ -920,7 +915,6 @@ void Shell::InitRootWindowController(
   DCHECK(activation_client_);
   DCHECK(visibility_controller_.get());
   DCHECK(drag_drop_controller_.get());
-  DCHECK(capture_controller_.get());
   DCHECK(window_cycle_controller_.get());
 
   aura::client::SetFocusClient(root_window, focus_client_.get());
@@ -933,7 +927,6 @@ void Shell::InitRootWindowController(
   }
   aura::client::SetVisibilityClient(root_window, visibility_controller_.get());
   aura::client::SetDragDropClient(root_window, drag_drop_controller_.get());
-  aura::client::SetCaptureClient(root_window, capture_controller_.get());
   aura::client::SetScreenPositionClient(root_window,
                                         screen_position_controller_.get());
   aura::client::SetCursorClient(root_window, &cursor_manager_);

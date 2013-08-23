@@ -133,6 +133,7 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_c
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_css.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_elements_js.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_js.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_layers_js.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_network_js.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_profiles_js.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_resources_js.target.linux-x86.mk
@@ -211,8 +212,8 @@ include $(LOCAL_PATH)/third_party/yasm/genstring.host.linux-x86.mk
 include $(LOCAL_PATH)/third_party/yasm/genversion.host.linux-x86.mk
 include $(LOCAL_PATH)/third_party/yasm/re2c.host.linux-x86.mk
 include $(LOCAL_PATH)/third_party/yasm/yasm.host.linux-x86.mk
+include $(LOCAL_PATH)/third_party/zlib/google/zip.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/zlib/minizip.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/zlib/zip.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/zlib/zlib.target.linux-x86.mk
 include $(LOCAL_PATH)/ui/base/strings/ui_strings.target.linux-x86.mk
 include $(LOCAL_PATH)/ui/gl/gl.target.linux-x86.mk
@@ -248,7 +249,6 @@ include $(LOCAL_PATH)/webkit/support/overscroller_jni_headers.target.linux-x86.m
 include $(LOCAL_PATH)/webkit/webkit_resources.target.linux-x86.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_browser.target.linux-x86.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_common.target.linux-x86.mk
-include $(LOCAL_PATH)/webkit/webkit_storage_renderer.target.linux-x86.mk
 include $(LOCAL_PATH)/webkit/webkit_strings.target.linux-x86.mk
 
 # "gyp_all_modules" is a concatenation of the "gyp_all_modules" targets from

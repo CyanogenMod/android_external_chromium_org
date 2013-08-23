@@ -88,9 +88,6 @@ bool IsSpecialResourceId(const std::string& resource_id);
 // Returns a ResourceEntry for "/drive/root" directory.
 ResourceEntry CreateMyDriveRootEntry(const std::string& root_resource_id);
 
-// Returns a ResourceEntry for "/drive/other" directory.
-ResourceEntry CreateOtherDirEntry();
-
 // Returns the Drive mount path as string.
 const std::string& GetDriveMountPointPathAsString();
 
@@ -151,19 +148,16 @@ void MigrateCacheFilesFromOldDirectories(
 
 // Callback type for PrepareWritableFileAndRun.
 typedef base::Callback<void (FileError, const base::FilePath& path)>
-    OpenFileCallback;
+    PrepareWritableFileCallback;
 
 // Invokes |callback| on blocking thread pool, after converting virtual |path|
 // string like "/special/drive/foo.txt" to the concrete local cache file path.
 // After |callback| returns, the written content is synchronized to the server.
 //
-// If |path| is not a Drive path, it is regarded as a local path and no path
-// conversion takes place.
-//
-// Must be called from UI thread.
+// The |path| must be a path under Drive. Must be called from UI thread.
 void PrepareWritableFileAndRun(Profile* profile,
                                const base::FilePath& path,
-                               const OpenFileCallback& callback);
+                               const PrepareWritableFileCallback& callback);
 
 // Ensures the existence of |directory| of '/special/drive/foo'.  This will
 // create |directory| and its ancestors if they don't exist.  |callback| is
@@ -212,6 +206,9 @@ std::string ReadResourceIdFromGDocFile(const base::FilePath& file_path);
 // Returns the (base-16 encoded) MD5 digest of the file content at |file_path|,
 // or an empty string if an error is found.
 std::string GetMd5Digest(const base::FilePath& file_path);
+
+// Returns true if Drive is enabled for the given Profile.
+bool IsDriveEnabledForProfile(Profile* profile);
 
 }  // namespace util
 }  // namespace drive

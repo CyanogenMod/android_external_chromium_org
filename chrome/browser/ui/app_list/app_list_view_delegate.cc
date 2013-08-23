@@ -7,6 +7,7 @@
 #include "base/callback.h"
 #include "base/files/file_path.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/feedback/feedback_util.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -23,6 +24,7 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_source.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/user_metrics.h"
 
@@ -54,12 +56,41 @@ void CreateShortcutInWebAppDir(
 AppListViewDelegate::AppListViewDelegate(AppListControllerDelegate* controller,
                                          Profile* profile)
     : controller_(controller),
-      profile_(profile) {}
+      profile_(profile),
+      model_(NULL) {
+  DCHECK(profile_);
+  registrar_.Add(this, chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
+                 content::Source<Profile>(profile_));
+  registrar_.Add(this, chrome::NOTIFICATION_GOOGLE_SIGNIN_FAILED,
+                 content::Source<Profile>(profile_));
+  registrar_.Add(this, chrome::NOTIFICATION_GOOGLE_SIGNED_OUT,
+                 content::Source<Profile>(profile_));
+  g_browser_process->profile_manager()->GetProfileInfoCache().AddObserver(this);
+}
 
-AppListViewDelegate::~AppListViewDelegate() {}
+AppListViewDelegate::~AppListViewDelegate() {
+  g_browser_process->
+      profile_manager()->GetProfileInfoCache().RemoveObserver(this);
+}
+
+void AppListViewDelegate::OnProfileChanged() {
+  model_->SetSignedIn(!signin_delegate_->NeedSignin());
+  ProfileInfoCache& cache =
+      g_browser_process->profile_manager()->GetProfileInfoCache();
+  // Populate the current user details.
+  size_t profile_index = cache.GetIndexOfProfileWithPath(profile_->GetPath());
+  // The profile won't exist in the cache if the current app list profile is
+  // being deleted.
+  if (profile_index == std::string::npos)
+    return;
+
+  model_->SetCurrentUser(cache.GetNameOfProfileAtIndex(profile_index),
+                         cache.GetUserNameOfProfileAtIndex(profile_index));
+}
 
 void AppListViewDelegate::SetModel(app_list::AppListModel* model) {
   if (model) {
+    model_ = model;
     apps_builder_.reset(new AppsModelBuilder(profile_,
                                              model->apps(),
                                              controller_.get()));
@@ -74,9 +105,12 @@ void AppListViewDelegate::SetModel(app_list::AppListModel* model) {
     app_sync_ui_state_watcher_.reset(new AppSyncUIStateWatcher(profile_,
                                                                model));
 #endif
+    OnProfileChanged();
   } else {
+    model_ = NULL;
     apps_builder_.reset();
     search_controller_.reset();
+    signin_delegate_.reset();
 #if defined(USE_ASH)
     app_sync_ui_state_watcher_.reset();
 #endif
@@ -122,12 +156,12 @@ void AppListViewDelegate::GetShortcutPathForApp(
 }
 
 void AppListViewDelegate::StartSearch() {
-  if (search_controller_.get())
+  if (search_controller_)
     search_controller_->Start();
 }
 
 void AppListViewDelegate::StopSearch() {
-  if (search_controller_.get())
+  if (search_controller_)
     search_controller_->Stop();
 }
 
@@ -152,32 +186,8 @@ void AppListViewDelegate::ViewClosing() {
   controller_->ViewClosing();
 }
 
-void AppListViewDelegate::ViewActivationChanged(bool active) {
-  controller_->ViewActivationChanged(active);
-}
-
 gfx::ImageSkia AppListViewDelegate::GetWindowIcon() {
   return controller_->GetWindowIcon();
-}
-
-string16 AppListViewDelegate::GetCurrentUserName() {
-  ProfileInfoCache& cache =
-      g_browser_process->profile_manager()->GetProfileInfoCache();
-  size_t profile_index = cache.GetIndexOfProfileWithPath(profile_->GetPath());
-  if (profile_index != std::string::npos)
-    return cache.GetNameOfProfileAtIndex(profile_index);
-
-  return string16();
-}
-
-string16 AppListViewDelegate::GetCurrentUserEmail()  {
-  ProfileInfoCache& cache =
-      g_browser_process->profile_manager()->GetProfileInfoCache();
-  size_t profile_index = cache.GetIndexOfProfileWithPath(profile_->GetPath());
-  if (profile_index != std::string::npos)
-    return cache.GetUserNameOfProfileAtIndex(profile_index);
-
-  return string16();
 }
 
 void AppListViewDelegate::OpenSettings() {
@@ -208,4 +218,20 @@ void AppListViewDelegate::OpenFeedback() {
       profile_, desktop);
   chrome::ShowFeedbackPage(browser, std::string(),
                            chrome::kAppLauncherCategoryTag);
+}
+
+void AppListViewDelegate::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  OnProfileChanged();
+}
+
+void AppListViewDelegate::OnProfileNameChanged(
+    const base::FilePath& profile_path,
+    const base::string16& old_profile_name) {
+  if (profile_->GetPath() != profile_path)
+    return;
+
+  OnProfileChanged();
 }

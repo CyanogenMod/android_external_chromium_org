@@ -52,11 +52,11 @@ class ToolbarView : public views::AccessiblePaneView,
   // Create the contents of the Browser Toolbar.
   void Init();
 
-  // Updates the toolbar (and transitively the location bar) with the states of
-  // the specified |tab|.  If |should_restore_state| is true, we're switching
-  // (back?) to this tab and should restore any previous location bar state
-  // (such as user editing) as well.
-  void Update(content::WebContents* tab, bool should_restore_state);
+  // Forces the toolbar (and transitively the location bar) to update its
+  // current state.  If |tab| is non-NULL, we're switching (back?) to this tab
+  // and should restore any previous location bar state (such as user editing)
+  // as well.
+  void Update(content::WebContents* tab);
 
   // Set focus to the toolbar with complete keyboard access, with the
   // focus initially set to the app menu. Focus will be restored
@@ -93,7 +93,9 @@ class ToolbarView : public views::AccessiblePaneView,
                                    const gfx::Point& point) OVERRIDE;
 
   // Overridden from LocationBarView::Delegate:
-  virtual content::WebContents* GetWebContents() const OVERRIDE;
+  virtual content::WebContents* GetWebContents() OVERRIDE;
+  virtual ToolbarModel* GetToolbarModel() OVERRIDE;
+  virtual const ToolbarModel* GetToolbarModel() const OVERRIDE;
   virtual InstantController* GetInstant() OVERRIDE;
   virtual views::Widget* CreateViewsBubble(
       views::BubbleDelegateView* bubble_delegate) OVERRIDE;
@@ -194,9 +196,6 @@ class ToolbarView : public views::AccessiblePaneView,
   void OnShowHomeButtonChanged();
 
   int content_shadow_height() const;
-
-  // The model that contains the security level, text, icon to display...
-  ToolbarModel* model_;
 
   // Controls
   views::ImageButton* back_;

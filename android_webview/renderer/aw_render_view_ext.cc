@@ -24,6 +24,7 @@
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebHitTestResult.h"
+#include "third_party/WebKit/public/web/WebImageCache.h"
 #include "third_party/WebKit/public/web/WebNode.h"
 #include "third_party/WebKit/public/web/WebNodeList.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
@@ -121,7 +122,7 @@ void PopulateHitTestData(const GURL& absolute_link_url,
     data->img_src = absolute_image_url;
 
   const bool is_javascript_scheme =
-      absolute_link_url.SchemeIs(chrome::kJavaScriptScheme);
+      absolute_link_url.SchemeIs(content::kJavaScriptScheme);
   const bool has_link_url = !absolute_link_url.is_empty();
   const bool has_image_url = !absolute_image_url.is_empty();
 
@@ -219,6 +220,17 @@ void AwRenderViewExt::UpdatePageScaleFactor() {
     Send(new AwViewHostMsg_PageScaleFactorChanged(routing_id(),
                                                   page_scale_factor_));
   }
+}
+
+void AwRenderViewExt::Navigate(const GURL& url) {
+  // Navigate is called only on NEW navigations, so WebImageCache won't be freed
+  // when the user just clicks on links, but only when a navigation is started,
+  // for instance via loadUrl. A better approach would be clearing the cache on
+  // cross-site boundaries, however this would require too many changes both on
+  // the browser side (in RenderViewHostManger), to the IPCmessages and to the
+  // RenderViewObserver. Thus, clearing decoding image cache on Navigate, seems
+  // a more acceptable compromise.
+  WebKit::WebImageCache::clear();
 }
 
 void AwRenderViewExt::FocusedNodeChanged(const WebKit::WebNode& node) {

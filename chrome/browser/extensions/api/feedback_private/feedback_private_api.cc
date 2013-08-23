@@ -6,10 +6,10 @@
 
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/feedback_private/feedback_service.h"
-#include "chrome/browser/extensions/event_names.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "grit/generated_resources.h"
@@ -17,11 +17,12 @@
 #include "ui/webui/web_ui_util.h"
 #include "url/url_util.h"
 
-
 namespace extensions {
 
-using api::feedback_private::SystemInformation;
-using api::feedback_private::FeedbackInfo;
+namespace feedback_private = api::feedback_private;
+
+using feedback_private::SystemInformation;
+using feedback_private::FeedbackInfo;
 
 static base::LazyInstance<ProfileKeyedAPIFactory<FeedbackPrivateAPI> >
     g_factory = LAZY_INSTANCE_INITIALIZER;
@@ -49,21 +50,55 @@ FeedbackService* FeedbackPrivateAPI::GetService() const {
 void FeedbackPrivateAPI::RequestFeedback(
     const std::string& description_template,
     const std::string& category_tag,
-    const GURL& page_url) {
+    const GURL& page_url,
+    const gfx::Rect& screen_size) {
   if (profile_ && ExtensionSystem::Get(profile_)->event_router()) {
     FeedbackInfo info;
     info.description = description_template;
     info.category_tag = make_scoped_ptr(new std::string(category_tag));
     info.page_url = make_scoped_ptr(new std::string(page_url.spec()));
+    info.system_information.reset(new SystemInformationList);
+
+    FeedbackService::PopulateSystemInfo(
+        info.system_information.get(), FeedbackData::kScreensizeHeightKey,
+        base::IntToString(screen_size.height()));
+    FeedbackService::PopulateSystemInfo(
+        info.system_information.get(), FeedbackData::kScreensizeWidthKey,
+        base::IntToString(screen_size.width()));
 
     scoped_ptr<base::ListValue> args(new base::ListValue());
     args->Append(info.ToValue().release());
 
-    scoped_ptr<Event> event(
-        new Event(event_names::kOnFeedbackRequested, args.Pass()));
+    scoped_ptr<Event> event(new Event(
+        feedback_private::OnFeedbackRequested::kEventName, args.Pass()));
     ExtensionSystem::Get(profile_)->event_router()->BroadcastEvent(
         event.Pass());
   }
+}
+
+bool FeedbackPrivateGetStringsFunction::RunImpl() {
+  DictionaryValue* dict = new DictionaryValue();
+  SetResult(dict);
+
+#define SET_STRING(id, idr) \
+  dict->SetString(id, l10n_util::GetStringUTF16(idr))
+  SET_STRING("page-title", IDS_FEEDBACK_REPORT_PAGE_TITLE);
+  SET_STRING("page-url", IDS_FEEDBACK_REPORT_URL_LABEL);
+  SET_STRING("screenshot", IDS_FEEDBACK_SCREENSHOT_LABEL);
+  SET_STRING("user-email", IDS_FEEDBACK_USER_EMAIL_LABEL);
+  SET_STRING("sysinfo", IDS_FEEDBACK_INCLUDE_SYSTEM_INFORMATION_CHKBOX);
+  SET_STRING("attach-file-label", IDS_FEEDBACK_ATTACH_FILE_LABEL);
+  SET_STRING("attach-file-note", IDS_FEEDBACK_ATTACH_FILE_NOTE);
+  SET_STRING("attach-file-to-big", IDS_FEEDBACK_ATTACH_FILE_TO_BIG);
+  SET_STRING("reading-file", IDS_FEEDBACK_READING_FILE);
+  SET_STRING("send-report", IDS_FEEDBACK_SEND_REPORT);
+  SET_STRING("cancel", IDS_CANCEL);
+  SET_STRING("no-description", IDS_FEEDBACK_NO_DESCRIPTION);
+  SET_STRING("privacy-note", IDS_FEEDBACK_PRIVACY_NOTE);
+#undef SET_STRING
+
+  webui::SetFontAndTextDirection(dict);
+  return true;
 }
 
 bool FeedbackPrivateGetUserEmailFunction::RunImpl() {
@@ -71,7 +106,7 @@ bool FeedbackPrivateGetUserEmailFunction::RunImpl() {
       FeedbackPrivateAPI::GetFactoryInstance()->GetForProfile(
           profile())->GetService();
   DCHECK(service);
-  SetResult(base::Value::CreateStringValue(service->GetUserEmail()));
+  SetResult(new base::StringValue(service->GetUserEmail()));
   return true;
 }
 
@@ -88,30 +123,26 @@ bool FeedbackPrivateGetSystemInformationFunction::RunImpl() {
 
 void FeedbackPrivateGetSystemInformationFunction::OnCompleted(
     const SystemInformationList& sys_info) {
-  results_ = api::feedback_private::GetSystemInformation::Results::Create(
+  results_ = feedback_private::GetSystemInformation::Results::Create(
       sys_info);
   SendResponse(true);
 }
 
 bool FeedbackPrivateSendFeedbackFunction::RunImpl() {
-  scoped_ptr<api::feedback_private::SendFeedback::Params> params(
-      api::feedback_private::SendFeedback::Params::Create(*args_));
+  scoped_ptr<feedback_private::SendFeedback::Params> params(
+      feedback_private::SendFeedback::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
   const FeedbackInfo &feedback_info = params->feedback;
 
   std::string attached_file_url, screenshot_url;
-  if (feedback_info.attached_file.get() &&
-      feedback_info.attached_file_blob_url.get() &&
-      !feedback_info.attached_file_blob_url->empty()) {
+  if (feedback_info.attached_file_blob_url.get() &&
+      !feedback_info.attached_file_blob_url->empty())
     attached_file_url = *feedback_info.attached_file_blob_url;
-  }
 
-  if (feedback_info.screenshot.get() &&
-      feedback_info.screenshot_blob_url.get() &&
-      !feedback_info.screenshot_blob_url->empty()) {
+  if (feedback_info.screenshot_blob_url.get() &&
+      !feedback_info.screenshot_blob_url->empty())
     screenshot_url = *feedback_info.screenshot_blob_url;
-  }
 
   // Populate feedback data.
   scoped_refptr<FeedbackData> feedback_data(new FeedbackData());
@@ -134,11 +165,8 @@ bool FeedbackPrivateSendFeedbackFunction::RunImpl() {
   if (!screenshot_url.empty())
     feedback_data->set_screenshot_url(GURL(screenshot_url));
 
-  // TODO(rkc): Take this out of OS_CHROMEOS once we have FeedbackData and
-  // FeedbackUtil migrated to handle system logs for both Chrome and ChromeOS.
-#if defined(OS_CHROMEOS)
-  scoped_ptr<chromeos::SystemLogsResponse> sys_logs(
-      new chromeos::SystemLogsResponse);
+  scoped_ptr<FeedbackData::SystemLogsMap> sys_logs(
+      new FeedbackData::SystemLogsMap);
   SystemInformationList* sys_info = feedback_info.system_information.get();
   if (sys_info) {
     for (SystemInformationList::iterator it = sys_info->begin();
@@ -146,7 +174,6 @@ bool FeedbackPrivateSendFeedbackFunction::RunImpl() {
       (*sys_logs.get())[it->get()->key] = it->get()->value;
   }
   feedback_data->set_sys_info(sys_logs.Pass());
-#endif
 
   FeedbackService* service = FeedbackPrivateAPI::GetFactoryInstance()->
       GetForProfile(profile())->GetService();
@@ -160,9 +187,9 @@ bool FeedbackPrivateSendFeedbackFunction::RunImpl() {
 
 void FeedbackPrivateSendFeedbackFunction::OnCompleted(
     bool success) {
-  results_ = api::feedback_private::SendFeedback::Results::Create(
-      success ? api::feedback_private::STATUS_SUCCESS :
-                api::feedback_private::STATUS_DELAYED);
+  results_ = feedback_private::SendFeedback::Results::Create(
+      success ? feedback_private::STATUS_SUCCESS :
+                feedback_private::STATUS_DELAYED);
   SendResponse(true);
 }
 

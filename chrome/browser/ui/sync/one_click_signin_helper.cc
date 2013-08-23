@@ -26,6 +26,9 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/google/google_util.h"
+#include "chrome/browser/history/history_service.h"
+#include "chrome/browser/history/history_service_factory.h"
+#include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
@@ -54,7 +57,6 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/net/url_util.h"
-#include "chrome/common/one_click_signin_messages.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
@@ -519,13 +521,17 @@ void CurrentHistoryCleaner::DidCommitProvisionalLoadForFrame(
     return;
 
   content::NavigationController* nc = &web_contents()->GetController();
+  HistoryService* hs = HistoryServiceFactory::GetForProfile(
+      Profile::FromBrowserContext(web_contents()->GetBrowserContext()),
+      Profile::IMPLICIT_ACCESS);
 
   // Have to wait until something else gets added to history before removal.
   if (history_index_to_remove_ < nc->GetLastCommittedEntryIndex()) {
     content::NavigationEntry* entry =
         nc->GetEntryAtIndex(history_index_to_remove_);
-    if (signin::IsContinueUrlForWebBasedSigninFlow(entry->GetURL()) &&
-        nc->RemoveEntryAtIndex(history_index_to_remove_)) {
+    if (signin::IsContinueUrlForWebBasedSigninFlow(entry->GetURL())) {
+      hs->DeleteURL(entry->GetURL());
+      nc->RemoveEntryAtIndex(history_index_to_remove_);
       delete this;  // Success.
     }
   }
@@ -560,7 +566,8 @@ DEFINE_WEB_CONTENTS_USER_DATA_KEY(OneClickSigninHelper);
 // static
 const int OneClickSigninHelper::kMaxNavigationsSince = 10;
 
-OneClickSigninHelper::OneClickSigninHelper(content::WebContents* web_contents)
+OneClickSigninHelper::OneClickSigninHelper(content::WebContents* web_contents,
+                                           PasswordManager* password_manager)
     : content::WebContentsObserver(web_contents),
       showing_signin_(false),
       auto_accept_(AUTO_ACCEPT_NONE),
@@ -570,6 +577,12 @@ OneClickSigninHelper::OneClickSigninHelper(content::WebContents* web_contents)
       untrusted_confirmation_required_(false),
       do_not_clear_pending_email_(false),
       weak_pointer_factory_(this) {
+  // May be NULL during testing.
+  if (password_manager) {
+    password_manager->AddSubmissionCallback(
+        base::Bind(&OneClickSigninHelper::PasswordSubmitted,
+                   weak_pointer_factory_.GetWeakPtr()));
+  }
 }
 
 OneClickSigninHelper::~OneClickSigninHelper() {
@@ -581,6 +594,16 @@ OneClickSigninHelper::~OneClickSigninHelper() {
         ProfileSyncServiceFactory::GetForProfile(profile);
     if (sync_service && sync_service->HasObserver(this))
       sync_service->RemoveObserver(this);
+  }
+}
+
+// static
+void OneClickSigninHelper::CreateForWebContentsWithPasswordManager(
+    content::WebContents* contents,
+    PasswordManager* password_manager) {
+  if (!FromWebContents(contents)) {
+    contents->SetUserData(UserDataKey(),
+                          new OneClickSigninHelper(contents, password_manager));
   }
 }
 
@@ -886,6 +909,15 @@ void OneClickSigninHelper::ShowInfoBarUIThread(
     helper->source_ = source;
   }
 
+  // Save the email in the one-click signin manager.  The manager may
+  // not exist if the contents is incognito or if the profile is already
+  // connected to a Google account.
+  if (!session_index.empty())
+    helper->session_index_ = session_index;
+
+  if (!email.empty())
+    helper->email_ = email;
+
   CanOfferFor can_offer_for =
       (auto_accept != AUTO_ACCEPT_EXPLICIT &&
           helper->auto_accept_ != AUTO_ACCEPT_EXPLICIT) ?
@@ -914,15 +946,6 @@ void OneClickSigninHelper::ShowInfoBarUIThread(
       SigninManagerFactory::GetForProfile(profile) : NULL;
   helper->untrusted_confirmation_required_ |=
       (manager && !manager->IsSigninProcess(child_id));
-
-  // Save the email in the one-click signin manager.  The manager may
-  // not exist if the contents is incognito or if the profile is already
-  // connected to a Google account.
-  if (!session_index.empty())
-    helper->session_index_ = session_index;
-
-  if (!email.empty())
-    helper->email_ = email;
 
   if (continue_url.is_valid()) {
     // Set |original_continue_url_| if it is currently empty. |continue_url|
@@ -999,29 +1022,13 @@ void OneClickSigninHelper::CleanTransientState() {
   }
 }
 
-bool OneClickSigninHelper::OnMessageReceived(const IPC::Message& message) {
-  bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(OneClickSigninHelper, message)
-    IPC_MESSAGE_HANDLER(OneClickSigninHostMsg_FormSubmitted, OnFormSubmitted)
-    IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP()
-
-  return handled;
-}
-
-bool OneClickSigninHelper::OnFormSubmitted(const content::PasswordForm& form) {
-  // |password_| used to be set in DidNavigateAnyFrame, this is too late because
-  // it is not executed until the end of redirect chains and password may
-  // get lost if one of the redirects requires context swap.
-
+void OneClickSigninHelper::PasswordSubmitted(
+    const content::PasswordForm& form) {
   // We only need to scrape the password for Gaia logins.
-  if (form.origin.is_valid() &&
-      gaia::IsGaiaSignonRealm(GURL(form.signon_realm))) {
+  if (gaia::IsGaiaSignonRealm(GURL(form.signon_realm))) {
     VLOG(1) << "OneClickSigninHelper::DidNavigateAnyFrame: got password";
     password_ = UTF16ToUTF8(form.password_value);
   }
-
-  return true;
 }
 
 void OneClickSigninHelper::SetDoNotClearPendingEmailForTesting() {
@@ -1148,17 +1155,6 @@ void OneClickSigninHelper::DidStopLoading(
     return;
   }
 
-  // When the user uses the first-run, ntp, or hotdog menu to sign in, then have
-  // the option of checking the the box "Let me choose what to sync".  When the
-  // sign in process started, the source parameter in the continue URL may have
-  // indicated one of the three options above.  However, once this box is
-  // checked, the source parameter will indicate settings.  This will only be
-  // communicated back to chrome when Gaia redirects to the continue URL, and
-  // this is considered here a last minute change to the source.  See a little
-  // further below for when this variable is set to a web contents that must be
-  // used to show the sync setup page.
-  content::WebContents* sync_setup_contents = NULL;
-
   if (!continue_url_match && IsValidGaiaSigninRedirectOrResponseURL(url))
     return;
 
@@ -1193,10 +1189,7 @@ void OneClickSigninHelper::DidStopLoading(
     signin::Source source = signin::GetSourceForPromoURL(url);
     if (source != source_) {
       source_ = source;
-      if (source == signin::SOURCE_SETTINGS) {
-        sync_setup_contents = web_contents();
-        switched_to_advanced_ = true;
-      }
+      switched_to_advanced_ = source == signin::SOURCE_SETTINGS;
     }
   }
 
@@ -1256,11 +1249,14 @@ void OneClickSigninHelper::DidStopLoading(
       //   default settings.
       // - If sign in was initiated from the settings page for first time sync
       //   set up, show the advanced sync settings dialog.
-      // - If sign in was initiated from the settings page due to a re-auth,
-      //   simply navigate back to the settings page.
+      // - If sign in was initiated from the settings page due to a re-auth when
+      //   sync was already setup, simply navigate back to the settings page.
+      ProfileSyncService* sync_service =
+          ProfileSyncServiceFactory::GetForProfile(profile);
       OneClickSigninSyncStarter::StartSyncMode start_mode =
           source_ == signin::SOURCE_SETTINGS ?
-              SigninGlobalError::GetForProfile(profile)->HasMenuItem() ?
+              (SigninGlobalError::GetForProfile(profile)->HasMenuItem() &&
+               sync_service && sync_service->HasSyncSetupCompleted()) ?
                   OneClickSigninSyncStarter::SHOW_SETTINGS_WITHOUT_CONFIGURE :
                   OneClickSigninSyncStarter::CONFIGURE_SYNC_FIRST :
               OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS;
@@ -1274,7 +1270,7 @@ void OneClickSigninHelper::DidStopLoading(
 
         // No need to display a second confirmation so pass false below.
         // TODO(atwilson): Move this into OneClickSigninSyncStarter.
-        // If |sync_setup_contents| is deleted before the callback execution,
+        // If |contents| is deleted before the callback execution,
         // the tab modal dialog is closed and the callback is never executed.
         ConfirmEmailDialogDelegate::AskForConfirmation(
             contents,
@@ -1283,16 +1279,15 @@ void OneClickSigninHelper::DidStopLoading(
             base::Bind(
                 &StartExplicitSync,
                 StartSyncArgs(profile, browser, auto_accept_,
-                              session_index_, email_, password_,
-                              sync_setup_contents,
+                              session_index_, email_, password_, contents,
                               false /* confirmation_required */, source_,
                               CreateSyncStarterCallback()),
                 contents,
                 start_mode));
       } else {
         StartSync(
-            StartSyncArgs(profile, browser, auto_accept_, session_index_,
-                          email_, password_, sync_setup_contents,
+            StartSyncArgs(profile, browser, auto_accept_,
+                          session_index_, email_, password_, contents,
                           untrusted_confirmation_required_, source_,
                           CreateSyncStarterCallback()),
             start_mode);

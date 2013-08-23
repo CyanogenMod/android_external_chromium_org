@@ -24,7 +24,7 @@ enum SourceFileType {
   SOURCE_H,
   SOURCE_M,
   SOURCE_MM,
-  //SOURCE_S,  // TODO(brettw) what is this?
+  SOURCE_S,
   SOURCE_RC,
 };
 
@@ -98,6 +98,22 @@ bool EnsureStringIsInOutputDir(const SourceDir& dir,
                                Err* err);
 
 // ----------------------------------------------------------------------------
+
+// Returns true if the input string is absolute. Double-slashes at the
+// beginning are treated as source-relative paths. On Windows, this handles
+// paths of both the native format: "C:/foo" and ours "/C:/foo"
+bool IsPathAbsolute(const base::StringPiece& path);
+
+// Given an absolute path, checks to see if is it is inside the source root.
+// If it is, fills a source-absolute path into the given output and returns
+// true. If it isn't, clears the dest and returns false.
+//
+// The source_root should be a base::FilePath converted to UTF-8. On Windows,
+// it should begin with a "C:/" rather than being our SourceFile's style
+// ("/C:/"). The source root can end with a slash or not.
+bool MakeAbsolutePathRelativeIfPossible(const base::StringPiece& source_root,
+                                        const base::StringPiece& path,
+                                        std::string* dest);
 
 // Converts a directory to its inverse (e.g. "/foo/bar/" -> "../../").
 // This will be the empty string for the root directories ("/" and "//"), and

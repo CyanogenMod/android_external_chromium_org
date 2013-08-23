@@ -6,8 +6,9 @@
 #define CHROME_BROWSER_UI_BROWSER_WINDOW_H_
 
 #include "base/callback_forward.h"
-#include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/lifetime/browser_close_manager.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_exit_bubble_type.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/sync/one_click_signin_sync_starter.h"
@@ -151,8 +152,7 @@ class BrowserWindow : public ui::BaseWindow {
   virtual void UpdateReloadStopState(bool is_loading, bool force) = 0;
 
   // Updates the toolbar with the state for the specified |contents|.
-  virtual void UpdateToolbar(content::WebContents* contents,
-                             bool should_restore_state) = 0;
+  virtual void UpdateToolbar(content::WebContents* contents) = 0;
 
   // Focuses the toolbar (for accessibility).
   virtual void FocusToolbar() = 0;
@@ -244,9 +244,12 @@ class BrowserWindow : public ui::BaseWindow {
 
   // Shows the confirmation dialog box warning that the browser is closing with
   // in-progress downloads.
-  // This method should call Browser::InProgressDownloadResponse once the user
-  // has confirmed.
-  virtual void ConfirmBrowserCloseWithPendingDownloads() = 0;
+  // This method should call |callback| with the user's response.
+  virtual void ConfirmBrowserCloseWithPendingDownloads(
+      int download_count,
+      Browser::DownloadClosePreventionType dialog_type,
+      bool app_modal,
+      const base::Callback<void(bool)>& callback) = 0;
 
   // ThemeService calls this when a user has changed his or her theme,
   // indicating that it's time to redraw everything.
@@ -360,7 +363,7 @@ class BrowserWindow : public ui::BaseWindow {
   virtual void OverscrollUpdate(int delta_y) {}
 
  protected:
-  friend void chrome::CloseAllBrowsers();
+  friend class BrowserCloseManager;
   friend class BrowserView;
   virtual void DestroyBrowser() = 0;
 };

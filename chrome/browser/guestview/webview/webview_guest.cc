@@ -16,6 +16,7 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/resource_request_details.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/result_codes.h"
@@ -182,6 +183,16 @@ bool WebViewGuest::HandleKeyboardEvent(
   return false;
 }
 
+void WebViewGuest::LoadAbort(bool is_top_level,
+                             const GURL& url,
+                             const std::string& error_type) {
+  scoped_ptr<DictionaryValue> args(new DictionaryValue());
+  args->SetBoolean(guestview::kIsTopLevel, is_top_level);
+  args->SetString(guestview::kUrl, url.spec());
+  args->SetString(guestview::kReason, error_type);
+  DispatchEvent(new GuestView::Event(webview::kEventLoadAbort, args.Pass()));
+}
+
 // TODO(fsamuel): Find a reliable way to test the 'responsive' and
 // 'unresponsive' events.
 void WebViewGuest::RendererResponsive() {
@@ -294,6 +305,26 @@ void WebViewGuest::Terminate() {
     base::KillProcess(process_handle, content::RESULT_CODE_KILLED, false);
 }
 
+bool WebViewGuest::ClearData(const base::Time remove_since,
+                             uint32 removal_mask,
+                             const base::Closure& callback) {
+  content::StoragePartition* partition =
+      content::BrowserContext::GetStoragePartition(
+          web_contents()->GetBrowserContext(),
+          web_contents()->GetSiteInstance());
+
+  if (!partition)
+    return false;
+
+  partition->ClearDataForRange(
+      removal_mask,
+      content::StoragePartition::QUOTA_MANAGED_STORAGE_MASK_ALL,
+      remove_since,
+      base::Time::Now(),
+      callback);
+  return true;
+}
+
 WebViewGuest::~WebViewGuest() {
 }
 
@@ -325,12 +356,7 @@ void WebViewGuest::DidFailProvisionalLoad(
   // Translate the |error_code| into an error string.
   std::string error_type;
   RemoveChars(net::ErrorToString(error_code), "net::", &error_type);
-
-  scoped_ptr<DictionaryValue> args(new DictionaryValue());
-  args->SetBoolean(guestview::kIsTopLevel, is_main_frame);
-  args->SetString(guestview::kUrl, validated_url.spec());
-  args->SetString(guestview::kReason, error_type);
-  DispatchEvent(new GuestView::Event(webview::kEventLoadAbort, args.Pass()));
+  LoadAbort(is_main_frame, validated_url, error_type);
 }
 
 void WebViewGuest::DidStartProvisionalLoadForFrame(
@@ -405,4 +431,14 @@ void WebViewGuest::RemoveWebViewFromExtensionRendererState(
           base::Unretained(ExtensionRendererState::GetInstance()),
           web_contents->GetRenderProcessHost()->GetID(),
           web_contents->GetRoutingID()));
+}
+
+void WebViewGuest::SizeChanged(const gfx::Size& old_size,
+                               const gfx::Size& new_size) {
+  scoped_ptr<DictionaryValue> args(new DictionaryValue());
+  args->SetInteger(webview::kOldHeight, old_size.height());
+  args->SetInteger(webview::kOldWidth, old_size.width());
+  args->SetInteger(webview::kNewHeight, new_size.height());
+  args->SetInteger(webview::kNewWidth, new_size.width());
+  DispatchEvent(new GuestView::Event(webview::kEventSizeChanged, args.Pass()));
 }

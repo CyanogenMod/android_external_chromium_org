@@ -462,6 +462,7 @@ base::DictionaryValue* ManagedUserSpecificsToValue(
   SET_STR(id);
   SET_STR(name);
   SET_BOOL(acknowledged);
+  SET_STR(master_key);
   return value;
 }
 
@@ -549,6 +550,7 @@ base::DictionaryValue* SearchEngineSpecificsToValue(
   SET_STR(suggestions_url_post_params);
   SET_STR(instant_url_post_params);
   SET_STR(image_url_post_params);
+  SET_STR(new_tab_url);
   return value;
 }
 

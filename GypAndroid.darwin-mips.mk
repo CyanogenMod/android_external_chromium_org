@@ -125,6 +125,7 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_c
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_css.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_elements_js.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_js.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_layers_js.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_network_js.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_profiles_js.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_resources_js.target.darwin-mips.mk
@@ -193,8 +194,8 @@ include $(LOCAL_PATH)/third_party/re2/re2.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/smhasher/cityhash.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/sqlite/sqlite.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/widevine/cdm/widevine_cdm_version_h.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/zlib/google/zip.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/zlib/minizip.target.darwin-mips.mk
-include $(LOCAL_PATH)/third_party/zlib/zip.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/zlib/zlib.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/base/strings/ui_strings.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/gl/gl.target.darwin-mips.mk
@@ -230,7 +231,6 @@ include $(LOCAL_PATH)/webkit/support/overscroller_jni_headers.target.darwin-mips
 include $(LOCAL_PATH)/webkit/webkit_resources.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_browser.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_common.target.darwin-mips.mk
-include $(LOCAL_PATH)/webkit/webkit_storage_renderer.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_strings.target.darwin-mips.mk
 
 # "gyp_all_modules" is a concatenation of the "gyp_all_modules" targets from

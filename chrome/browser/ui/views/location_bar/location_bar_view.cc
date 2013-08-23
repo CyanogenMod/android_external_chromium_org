@@ -164,13 +164,11 @@ const char LocationBarView::kViewClassName[] = "LocationBarView";
 LocationBarView::LocationBarView(Browser* browser,
                                  Profile* profile,
                                  CommandUpdater* command_updater,
-                                 ToolbarModel* model,
                                  Delegate* delegate,
                                  bool is_popup_mode)
     : browser_(browser),
       profile_(profile),
       command_updater_(command_updater),
-      model_(model),
       delegate_(delegate),
       disposition_(CURRENT_TAB),
       transition_(content::PageTransitionFromInt(
@@ -280,16 +278,30 @@ void LocationBarView::Init() {
   AddChildView(ev_bubble_view_);
 
   // Initialize the Omnibox view.
-  location_entry_.reset(CreateOmniboxView(this, model_, profile_,
-      command_updater_, is_popup_mode_, this, font_list, font_y_offset));
+  location_entry_.reset(CreateOmniboxView(this, profile_, command_updater_,
+                                          is_popup_mode_, this, font_list,
+                                          font_y_offset));
   SetLocationEntryFocusable(true);
   location_entry_view_ = location_entry_->AddToView(this);
 
   // Initialize the inline autocomplete view which is visible only when IME is
   // turned on.  Use the same font with the omnibox and highlighted background.
   ime_inline_autocomplete_view_ = new views::Label(string16(), font);
-  ime_inline_autocomplete_view_->set_border(
-      views::Border::CreateEmptyBorder(font_y_offset, 0, 0, 0));
+  {
+    // views::Label (|ime_inline_autocomplete_view_|) supports only gfx::Font
+    // and ignores the rest of fonts but the first in |font_list| while
+    // views::Textfield (|location_entry_view_|) supports gfx::FontList and
+    // layouts text based on all fonts in the list.  Thus the font height and
+    // baseline can be different between them.  We add padding to align them
+    // on the same baseline.
+    // TODO(yukishiino): Remove this hack once views::Label supports
+    // gfx::FontList.
+    const int baseline_diff = location_entry_view_->GetBaseline() -
+        ime_inline_autocomplete_view_->GetBaseline();
+    ime_inline_autocomplete_view_->set_border(
+        views::Border::CreateEmptyBorder(
+            font_y_offset + baseline_diff, 0, 0, 0));
+  }
   ime_inline_autocomplete_view_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   ime_inline_autocomplete_view_->SetAutoColorReadabilityEnabled(false);
   ime_inline_autocomplete_view_->set_background(
@@ -348,10 +360,10 @@ void LocationBarView::Init() {
     AddChildView(content_blocked_view);
   }
 
-  generated_credit_card_view_ = new GeneratedCreditCardView(model_, delegate_);
+  generated_credit_card_view_ = new GeneratedCreditCardView(delegate_);
   AddChildView(generated_credit_card_view_);
 
-  zoom_view_ = new ZoomView(model_, delegate_);
+  zoom_view_ = new ZoomView(delegate_);
   zoom_view_->set_id(VIEW_ID_ZOOM_BUTTON);
   AddChildView(zoom_view_);
 
@@ -484,7 +496,7 @@ void LocationBarView::SetAnimationOffset(int offset) {
 
 void LocationBarView::Update(const WebContents* tab_for_state_restoring) {
   mic_search_view_->SetVisible(
-      !model_->GetInputInProgress() && browser_ &&
+      !GetToolbarModel()->input_in_progress() && browser_ &&
       browser_->search_model()->voice_search_supported());
   RefreshContentSettingViews();
   generated_credit_card_view_->Update();
@@ -493,11 +505,11 @@ void LocationBarView::Update(const WebContents* tab_for_state_restoring) {
   RefreshPageActionViews();
   RefreshScriptBubble();
   open_pdf_in_reader_view_->Update(
-      model_->GetInputInProgress() ? NULL : GetWebContents());
+      GetToolbarModel()->input_in_progress() ? NULL : GetWebContents());
 
-  bool star_enabled =
-      browser_defaults::bookmarks_enabled && !is_popup_mode_ && star_view_ &&
-      !model_->GetInputInProgress() && edit_bookmarks_enabled_.GetValue();
+  bool star_enabled = browser_defaults::bookmarks_enabled && !is_popup_mode_ &&
+      star_view_ && !GetToolbarModel()->input_in_progress() &&
+      edit_bookmarks_enabled_.GetValue();
 
   command_updater_->UpdateCommandEnabled(IDC_BOOKMARK_PAGE, star_enabled);
   command_updater_->UpdateCommandEnabled(IDC_BOOKMARK_PAGE_FROM_STAR,
@@ -545,7 +557,7 @@ void LocationBarView::InvalidatePageActions() {
 
 void LocationBarView::UpdateOpenPDFInReaderPrompt() {
   open_pdf_in_reader_view_->Update(
-      model_->GetInputInProgress() ? NULL : GetWebContents());
+      GetToolbarModel()->input_in_progress() ? NULL : GetWebContents());
   Layout();
   SchedulePaint();
 }
@@ -584,7 +596,7 @@ void LocationBarView::SetPreviewEnabledPageAction(ExtensionAction* page_action,
     return;
 
   page_action_view->image_view()->set_preview_enabled(preview_enabled);
-  page_action_view->UpdateVisibility(contents, model_->GetURL());
+  page_action_view->UpdateVisibility(contents, GetToolbarModel()->GetURL());
   Layout();
   SchedulePaint();
 }
@@ -726,8 +738,9 @@ void LocationBarView::Layout() {
         selected_keyword_view_->set_is_extension_icon(false);
       }
     }
-  } else if (model_->GetSecurityLevel(false) == ToolbarModel::EV_SECURE) {
-    ev_bubble_view_->SetLabel(model_->GetEVCertName());
+  } else if (GetToolbarModel()->GetSecurityLevel(false) ==
+      ToolbarModel::EV_SECURE) {
+    ev_bubble_view_->SetLabel(GetToolbarModel()->GetEVCertName());
     // The largest fraction of the omnibox that can be taken by the EV bubble.
     const double kMaxBubbleFraction = 0.5;
     leading_decorations.AddDecoration(bubble_location_y, bubble_height, false,
@@ -1094,8 +1107,16 @@ InstantController* LocationBarView::GetInstant() {
   return delegate_->GetInstant();
 }
 
-WebContents* LocationBarView::GetWebContents() const {
+WebContents* LocationBarView::GetWebContents() {
   return delegate_->GetWebContents();
+}
+
+ToolbarModel* LocationBarView::GetToolbarModel() {
+  return delegate_->GetToolbarModel();
+}
+
+const ToolbarModel* LocationBarView::GetToolbarModel() const {
+  return delegate_->GetToolbarModel();
 }
 
 // static
@@ -1113,7 +1134,8 @@ int LocationBarView::GetHorizontalEdgeThickness() const {
 void LocationBarView::RefreshContentSettingViews() {
   for (ContentSettingViews::const_iterator i(content_setting_views_.begin());
        i != content_setting_views_.end(); ++i) {
-    (*i)->Update(model_->GetInputInProgress() ? NULL : GetWebContents());
+    (*i)->Update(GetToolbarModel()->input_in_progress() ?
+        NULL : GetWebContents());
   }
 }
 
@@ -1177,8 +1199,8 @@ void LocationBarView::RefreshPageActionViews() {
 
     for (PageActionViews::const_iterator i(page_action_views_.begin());
          i != page_action_views_.end(); ++i) {
-      (*i)->UpdateVisibility(model_->GetInputInProgress() ? NULL : contents,
-                             url);
+      (*i)->UpdateVisibility(
+          GetToolbarModel()->input_in_progress() ? NULL : contents, url);
 
       // Check if the visibility of the action changed and notify if it did.
       ExtensionAction* action = (*i)->image_view()->page_action();
@@ -1250,7 +1272,7 @@ void LocationBarView::PaintPageActionBackgrounds(gfx::Canvas* canvas) {
 
   const int32 tab_id = SessionID::IdForTab(web_contents);
   const ToolbarModel::SecurityLevel security_level =
-      model_->GetSecurityLevel(false);
+      GetToolbarModel()->GetSecurityLevel(false);
   const SkColor text_color = GetColor(security_level, TEXT);
   const SkColor background_color = GetColor(security_level, BACKGROUND);
 
@@ -1517,8 +1539,8 @@ void LocationBarView::Observe(int type,
 
 void LocationBarView::ModelChanged(const SearchModel::State& old_state,
                                    const SearchModel::State& new_state) {
-  const bool visible =
-      !model_->GetInputInProgress() && new_state.voice_search_supported;
+  const bool visible = !GetToolbarModel()->input_in_progress() &&
+      new_state.voice_search_supported;
   if (mic_search_view_->visible() != visible) {
     mic_search_view_->SetVisible(visible);
     Layout();

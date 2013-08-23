@@ -46,6 +46,7 @@
 #include "chrome/browser/ui/webui/print_preview/sticky_settings.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/cloud_print/cloud_print_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/print_messages.h"
 #include "content/public/browser/browser_context.h"
@@ -65,9 +66,6 @@
 #include "third_party/icu/source/i18n/unicode/ulocdata.h"
 
 #if defined(OS_CHROMEOS)
-// TODO(kinaba): provide more non-intrusive way for handling local/remote
-// distinction and remove these ugly #ifdef's. http://crbug.com/140425
-#include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service.h"
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service_factory.h"
 #endif
@@ -81,9 +79,6 @@ using content::WebContents;
 using printing::Metafile;
 
 namespace {
-
-// The cloud print OAuth2 scope.
-const char kCloudPrintAuth[] = "https://www.googleapis.com/auth/cloudprint";
 
 enum UserActionBuckets {
   PRINT_TO_PRINTER,
@@ -170,7 +165,6 @@ const char kPrintAutomaticallyInKioskMode[] = "printAutomaticallyInKioskMode";
 // Name of a dictionary field holding the state of selection for document.
 const char kDocumentHasSelection[] = "documentHasSelection";
 
-
 // Get the print job settings dictionary from |args|. The caller takes
 // ownership of the returned DictionaryValue. Returns NULL on failure.
 DictionaryValue* GetSettingsDictionary(const ListValue* args) {
@@ -248,22 +242,6 @@ void PrintToPdfCallback(Metafile* metafile, const base::FilePath& path) {
       base::Bind(&base::DeletePointer<Metafile>, metafile));
 }
 
-#if defined(OS_CHROMEOS)
-void PrintToPdfCallbackWithCheck(Metafile* metafile,
-                                 drive::FileError error,
-                                 const base::FilePath& path) {
-  if (error != drive::FILE_ERROR_OK) {
-    LOG(ERROR) << "Save to pdf failed to write: " << error;
-  } else {
-    metafile->SaveTo(path);
-  }
-  // |metafile| must be deleted on the UI thread.
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(&base::DeletePointer<Metafile>, metafile));
-}
-#endif
-
 static base::LazyInstance<printing::StickySettings> sticky_settings =
     LAZY_INSTANCE_INITIALIZER;
 
@@ -293,7 +271,7 @@ class PrintPreviewHandler::AccessTokenService
 
     if (service) {
       OAuth2TokenService::ScopeSet oauth_scopes;
-      oauth_scopes.insert(kCloudPrintAuth);
+      oauth_scopes.insert(cloud_print::kCloudPrintAuth);
       scoped_ptr<OAuth2TokenService::Request> request(
           service->StartRequest(oauth_scopes, this));
       requests_[type].reset(request.release());
@@ -960,7 +938,6 @@ void PrintPreviewHandler::SelectFile(const base::FilePath& default_filename) {
   ui::SelectFileDialog::FileTypeInfo file_type_info;
   file_type_info.extensions.resize(1);
   file_type_info.extensions[0].push_back(FILE_PATH_LITERAL("pdf"));
-  file_type_info.support_drive = true;
 
   // Initializing save_path_ if it is not already initialized.
   printing::StickySettings* sticky_settings = GetStickySettings();
@@ -1033,18 +1010,9 @@ void PrintPreviewHandler::PostPrintToPdfTask() {
   printing::PreviewMetafile* metafile = new printing::PreviewMetafile;
   metafile->InitFromData(static_cast<const void*>(data->front()), data->size());
   // PrintToPdfCallback takes ownership of |metafile|.
-#if defined(OS_CHROMEOS)
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  drive::util::PrepareWritableFileAndRun(
-      Profile::FromBrowserContext(preview_web_contents()->GetBrowserContext()),
-      *print_to_pdf_path_,
-      base::Bind(&PrintToPdfCallbackWithCheck, metafile));
-#else
   BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
                           base::Bind(&PrintToPdfCallback, metafile,
                                      *print_to_pdf_path_));
-#endif
-
   print_to_pdf_path_.reset();
   ClosePreviewDialog();
 }
@@ -1088,4 +1056,3 @@ bool PrintPreviewHandler::GetPreviewDataAndTitle(
   *title = print_preview_ui->initiator_title();
   return true;
 }
-

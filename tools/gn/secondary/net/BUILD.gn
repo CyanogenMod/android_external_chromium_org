@@ -1,0 +1,25 @@
+# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//tools/grit/grit_rule.gni")
+
+component("net") {
+  deps = [
+    ":net_resources",
+    "//base",
+    "//base:base_i18n",
+    "//base/third_party/dynamic_annotations",
+    "//crypto",
+    "//sdch",
+    "//third_party/icu:icui18n",
+    "//third_party/icu:icuuc",
+    "//third_party/zlib",
+    "//url:url_lib",
+  ]
+}
+
+
+grit("net_resources") {
+  source = "base/net_resources.grd"
+}

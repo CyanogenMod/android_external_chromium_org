@@ -13,7 +13,6 @@
 #include "base/containers/hash_tables.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/linked_hash_map.h"
-#include "net/quic/blocked_list.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_crypto_stream.h"
 #include "net/quic/quic_packet_creator.h"
@@ -21,6 +20,7 @@
 #include "net/quic/quic_spdy_compressor.h"
 #include "net/quic/quic_spdy_decompressor.h"
 #include "net/quic/reliable_quic_stream.h"
+#include "net/spdy/write_blocked_list.h"
 
 namespace net {
 
@@ -105,6 +105,14 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   //
   // Servers will simply call it once with HANDSHAKE_CONFIRMED.
   virtual void OnCryptoHandshakeEvent(CryptoHandshakeEvent event);
+
+  // Called by the QuicCryptoStream when a handshake message is sent.
+  virtual void OnCryptoHandshakeMessageSent(
+      const CryptoHandshakeMessage& message);
+
+  // Called by the QuicCryptoStream when a handshake message is received.
+  virtual void OnCryptoHandshakeMessageReceived(
+      const CryptoHandshakeMessage& message);
 
   // Returns mutable config for this session. Returned config is owned
   // by QuicSession.
@@ -234,7 +242,7 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   base::hash_set<QuicStreamId> implicitly_created_streams_;
 
   // A list of streams which need to write more data.
-  BlockedList<QuicStreamId> write_blocked_streams_;
+  WriteBlockedList<QuicStreamId> write_blocked_streams_;
 
   // A map of headers waiting to be compressed, and the streams
   // they are associated with.

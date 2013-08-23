@@ -20,7 +20,6 @@
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/location_bar/location_icon_view.h"
 #include "chrome/browser/ui/views/reload_button.h"
-#include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
@@ -38,7 +37,6 @@
 
 using content::WebContents;
 using views::GridLayout;
-using web_modal::WebContentsModalDialogManager;
 
 namespace {
 
@@ -156,14 +154,11 @@ void SimpleWebViewDialog::StartLoad(const GURL& url) {
   PasswordManagerDelegateImpl::CreateForWebContents(web_contents);
   PasswordManager::CreateForWebContentsAndDelegate(
       web_contents, PasswordManagerDelegateImpl::FromWebContents(web_contents));
-
-  // LoginHandlerViews uses a constrained window for the password manager view.
-  WebContentsModalDialogManager::CreateForWebContents(web_contents);
-  WebContentsModalDialogManager::FromWebContents(web_contents)->
-      set_delegate(this);
 }
 
 void SimpleWebViewDialog::Init() {
+  toolbar_model_.reset(new ToolbarModelImpl(this));
+
   set_background(views::Background::CreateSolidBackground(SK_ColorWHITE));
 
   // Back/Forward buttons.
@@ -185,11 +180,9 @@ void SimpleWebViewDialog::Init() {
   forward_->SetAccessibleName(l10n_util::GetStringUTF16(IDS_ACCNAME_FORWARD));
   forward_->set_id(VIEW_ID_FORWARD_BUTTON);
 
-  toolbar_model_.reset(new ToolbarModelImpl(this));
-
   // Location bar.
   location_bar_ = new LocationBarView(NULL, profile_, command_updater_.get(),
-                                      toolbar_model_.get(), this, true);
+                                      this, true);
 
   // Reload button.
   reload_ = new ReloadButton(location_bar_, command_updater_.get());
@@ -238,10 +231,6 @@ void SimpleWebViewDialog::Init() {
 
 void SimpleWebViewDialog::Layout() {
   views::WidgetDelegateView::Layout();
-
-  FOR_EACH_OBSERVER(web_modal::WebContentsModalDialogHostObserver,
-                    observer_list_,
-                    OnPositionRequiresUpdate());
 }
 
 views::View* SimpleWebViewDialog::GetContentsView() {
@@ -278,8 +267,16 @@ void SimpleWebViewDialog::LoadingStateChanged(WebContents* source) {
   command_updater_->UpdateCommandEnabled(IDC_STOP, is_loading);
 }
 
-WebContents* SimpleWebViewDialog::GetWebContents() const {
+WebContents* SimpleWebViewDialog::GetWebContents() {
   return NULL;
+}
+
+ToolbarModel* SimpleWebViewDialog::GetToolbarModel() {
+  return toolbar_model_.get();
+}
+
+const ToolbarModel* SimpleWebViewDialog::GetToolbarModel() const {
+  return toolbar_model_.get();
 }
 
 InstantController* SimpleWebViewDialog::GetInstant() {
@@ -349,33 +346,6 @@ void SimpleWebViewDialog::ExecuteCommandWithDisposition(
     default:
       NOTREACHED();
   }
-}
-
-web_modal::WebContentsModalDialogHost*
-    SimpleWebViewDialog::GetWebContentsModalDialogHost() {
-  return this;
-}
-
-gfx::NativeView SimpleWebViewDialog::GetHostView() const {
-  return GetWidget()->GetNativeView();
-}
-
-gfx::Point SimpleWebViewDialog::GetDialogPosition(const gfx::Size& size) {
-  // Center the widget.
-  gfx::Size widget_size = GetWidget()->GetWindowBoundsInScreen().size();
-  return gfx::Point(widget_size.width() / 2 - size.width() / 2,
-                    widget_size.height() / 2 - size.height() / 2);
-}
-
-void SimpleWebViewDialog::AddObserver(
-    web_modal::WebContentsModalDialogHostObserver* observer) {
-  if (observer && !observer_list_.HasObserver(observer))
-    observer_list_.AddObserver(observer);
-}
-
-void SimpleWebViewDialog::RemoveObserver(
-    web_modal::WebContentsModalDialogHostObserver* observer) {
-  observer_list_.RemoveObserver(observer);
 }
 
 void SimpleWebViewDialog::LoadImages() {

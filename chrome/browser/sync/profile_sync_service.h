@@ -269,7 +269,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // null.
   // TODO(zea): Figure out a better way to expose this to the UI elements that
   // need it.
-  browser_sync::SessionModelAssociator* GetSessionModelAssociator();
+  virtual browser_sync::SessionModelAssociator* GetSessionModelAssociator();
 
   // Returns sync's representation of the local device info.
   // Return value is an empty scoped_ptr if the device info is unavailable.
@@ -283,7 +283,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   // Gets the device info for all devices signed into the account associated
   // with this profile.
-  virtual ScopedVector<browser_sync::DeviceInfo> GetAllSignedInDevices() const;
+  virtual ScopedVector<browser_sync::DeviceInfo> GetAllSignedinDevices() const;
 
   // Fills state_map with a map of current data types that are possible to
   // sync, as well as their states.
@@ -610,9 +610,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   // OAuth2TokenService::Observer implementation.
   virtual void OnRefreshTokenAvailable(const std::string& account_id) OVERRIDE;
-  virtual void OnRefreshTokenRevoked(
-      const std::string& account_id,
-      const GoogleServiceAuthError& error) OVERRIDE;
+  virtual void OnRefreshTokenRevoked(const std::string& account_id) OVERRIDE;
   virtual void OnRefreshTokensLoaded() OVERRIDE;
   virtual void OnRefreshTokensCleared() OVERRIDE;
 

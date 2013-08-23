@@ -11,14 +11,18 @@ window.addEventListener('DOMContentLoaded', function() {
   'use strict';
 
   fillMostVisited(document.location, function(params, data) {
+    function logEvent(eventName) {
+      chrome.embeddedSearch.newTabPage.logEvent(eventName);
+    }
     function showDomainElement() {
+      logEvent(NTP_LOGGING_EVENT_TYPE.NTP_THUMBNAIL_ERROR);
       var link = createMostVisitedLink(params, data.url, data.title);
       var domain = document.createElement('div');
       domain.textContent = data.domain;
       link.appendChild(domain);
       document.body.appendChild(link);
     };
-    if (data.thumbnailUrl) {
+    function createAndAppendThumbnail(isVisible) {
       var image = new Image();
       image.onload = function() {
         var shadow = document.createElement('span');
@@ -28,9 +32,33 @@ window.addEventListener('DOMContentLoaded', function() {
         link.appendChild(image);
         document.body.appendChild(link);
       };
+      if (!isVisible) {
+        image.style.visibility = 'hidden';
+      }
+      return image;
+    }
 
-      image.onerror = showDomainElement;
+    if (data.thumbnailUrl) {
+      var image = createAndAppendThumbnail(true);
+      // If a backup thumbnail URL was provided, preload it in case the first
+      // thumbnail errors. The backup thumbnail is always preloaded so that the
+      // server can't gain knowledge on the local thumbnail DB by specifying a
+      // second URL that is only sometimes fetched.
+      if (data.thumbnailUrl2) {
+        var image2 = createAndAppendThumbnail(false);
+        image2.onerror = showDomainElement;
+        image2.src = data.thumbnailUrl2;
+        // The first thumbnail's onerror function will swap the visibility of
+        // the two thumbnails.
+        image.onerror = function() {
+          image.style.visibility = 'hidden';
+          image2.style.visibility = 'visible';
+        };
+      } else {
+        image.onerror = showDomainElement;
+      }
       image.src = data.thumbnailUrl;
+      logEvent(NTP_LOGGING_EVENT_TYPE.NTP_THUMBNAIL_ATTEMPT);
     } else {
       showDomainElement();
     }

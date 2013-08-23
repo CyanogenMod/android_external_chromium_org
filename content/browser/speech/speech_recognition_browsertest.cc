@@ -18,7 +18,7 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/test/fake_speech_recognition_manager.h"
 #include "content/public/test/test_utils.h"
-#include "content/shell/shell.h"
+#include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
@@ -69,7 +69,7 @@ class SpeechRecognitionBrowserTest : public ContentBrowserTest {
     // then sets the URL fragment as 'pass' if it received the expected string.
     LoadAndStartSpeechRecognitionTest(filename);
 
-    EXPECT_EQ("pass", shell()->web_contents()->GetURL().ref());
+    EXPECT_EQ("pass", shell()->web_contents()->GetLastCommittedURL().ref());
   }
 
   // ContentBrowserTest methods.

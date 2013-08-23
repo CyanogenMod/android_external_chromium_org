@@ -13,7 +13,7 @@ import buildbot_common
 import build_version
 import parse_dsc
 
-from build_paths import OUT_DIR, SRC_DIR, SDK_SRC_DIR
+from build_paths import OUT_DIR, SRC_DIR, SDK_SRC_DIR, SCRIPT_DIR
 
 sys.path.append(os.path.join(SDK_SRC_DIR, 'tools'))
 import getos
@@ -61,9 +61,6 @@ DISABLED_TESTS = [
     {'name': 'graphics_3d', 'platform': ('win', 'linux')},
 ]
 
-DEFAULT_RETRY_ON_FAILURE_TIMES = 3
-
-
 def ValidateToolchains(toolchains):
   invalid_toolchains = set(toolchains) - set(ALL_TOOLCHAINS)
   if invalid_toolchains:
@@ -75,6 +72,12 @@ def GetServingDirForProject(desc):
   dest = desc['DEST']
   path = os.path.join(pepperdir, *dest.split('/'))
   return os.path.join(path, desc['NAME'])
+
+
+def GetRepoServingDirForProject(desc):
+  # This differs from GetServingDirForProject, because it returns the location
+  # within the Chrome repository of the project, not the "pepperdir".
+  return os.path.dirname(desc['FILEPATH'])
 
 
 def GetExecutableDirForProject(desc, toolchain, config):
@@ -89,15 +92,17 @@ def GetBrowserTesterCommand(desc, toolchain, config):
     '--timeout', '30.0',  # seconds
     # Prevent the infobar that shows up when requesting filesystem quota.
     '--browser_flag', '--unlimited-storage',
-    # Some samples need the use the socket API.  Enabling this for all
-    # tests should be harmless.
-    '--browser_flag', '--allow-nacl-socket-api=localhost',
+    '--enable_sockets',
   ]
 
   args.extend(['--serving_dir', GetServingDirForProject(desc)])
-  exe_dir = GetExecutableDirForProject(desc, toolchain, config)
+  # Fall back on the example directory in the Chromium repo, to find test.js.
+  args.extend(['--serving_dir', GetRepoServingDirForProject(desc)])
+  # If it is not found there, fall back on the dummy one (in this directory.)
+  args.extend(['--serving_dir', SCRIPT_DIR])
 
   if toolchain == platform:
+    exe_dir = GetExecutableDirForProject(desc, toolchain, config)
     ppapi_plugin = os.path.join(exe_dir, desc['NAME'])
     if platform == 'win':
       ppapi_plugin += '.dll'
@@ -181,9 +186,16 @@ def GetTestName(desc, toolchain, config):
 
 def IsTestDisabled(desc, toolchain, config):
   def AsList(value):
-    if type(value) in (list, tuple):
-      return (value,)
+    if type(value) not in (list, tuple):
+      return [value]
     return value
+
+  def TestMatchesDisabled(test_values, disabled_test):
+    for key in test_values:
+      if key in disabled_test:
+        if test_values[key] not in AsList(disabled_test[key]):
+          return False
+    return True
 
   test_values = {
       'name': desc['NAME'],
@@ -193,10 +205,8 @@ def IsTestDisabled(desc, toolchain, config):
   }
 
   for disabled_test in DISABLED_TESTS:
-    for key in test_values:
-      if key in disabled_test:
-        if test_values[key] in AsList(disabled_test[key]):
-          return True
+    if TestMatchesDisabled(test_values, disabled_test):
+      return True
   return False
 
 
@@ -265,7 +275,7 @@ def GetProjectTree(include):
 
 def main(args):
   parser = optparse.OptionParser()
-  parser.add_option('--config',
+  parser.add_option('-c', '--config',
       help='Choose configuration to run (Debug or Release).  Runs both '
            'by default', action='append')
   parser.add_option('-x', '--experimental',
@@ -281,7 +291,7 @@ def main(args):
       action='append')
   parser.add_option('--retry-times',
       help='Number of types to retry on failure (Default: %default)',
-          type='int', default=DEFAULT_RETRY_ON_FAILURE_TIMES)
+          type='int', default=1)
 
   options, args = parser.parse_args(args[1:])
   if args:

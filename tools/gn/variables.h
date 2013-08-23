@@ -21,9 +21,29 @@ extern const char kDefaultToolchain[];
 extern const char kDefaultToolchain_HelpShort[];
 extern const char kDefaultToolchain_Help[];
 
+extern const char kIsLinux[];
+extern const char kIsLinux_HelpShort[];
+extern const char kIsLinux_Help[];
+
+extern const char kIsMac[];
+extern const char kIsMac_HelpShort[];
+extern const char kIsMac_Help[];
+
+extern const char kIsPosix[];
+extern const char kIsPosix_HelpShort[];
+extern const char kIsPosix_Help[];
+
+extern const char kIsWin[];
+extern const char kIsWin_HelpShort[];
+extern const char kIsWin_Help[];
+
 extern const char kPythonPath[];
 extern const char kPythonPath_HelpShort[];
 extern const char kPythonPath_Help[];
+
+extern const char kRelativeBuildToSourceRootDir[];
+extern const char kRelativeBuildToSourceRootDir_HelpShort[];
+extern const char kRelativeBuildToSourceRootDir_Help[];
 
 extern const char kRelativeRootGenDir[];
 extern const char kRelativeRootGenDir_HelpShort[];
@@ -32,6 +52,10 @@ extern const char kRelativeRootGenDir_Help[];
 extern const char kRelativeRootOutputDir[];
 extern const char kRelativeRootOutputDir_HelpShort[];
 extern const char kRelativeRootOutputDir_Help[];
+
+extern const char kRelativeSourceRootDir[];
+extern const char kRelativeSourceRootDir_HelpShort[];
+extern const char kRelativeSourceRootDir_Help[];
 
 extern const char kRelativeTargetGenDir[];
 extern const char kRelativeTargetGenDir_HelpShort[];
@@ -86,6 +110,10 @@ extern const char kDeps_Help[];
 extern const char kDirectDependentConfigs[];
 extern const char kDirectDependentConfigs_HelpShort[];
 extern const char kDirectDependentConfigs_Help[];
+
+extern const char kForwardDependentConfigsFrom[];
+extern const char kForwardDependentConfigsFrom_HelpShort[];
+extern const char kForwardDependentConfigsFrom_Help[];
 
 extern const char kLdflags[];
 extern const char kLdflags_HelpShort[];

@@ -8,6 +8,7 @@
 #include "apps/app_launcher.h"
 #include "apps/app_shim/app_shim_handler_mac.h"
 #include "apps/app_shim/app_shim_mac.h"
+#include "apps/pref_names.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
@@ -15,7 +16,6 @@
 #include "base/mac/scoped_nsobject.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop/message_loop.h"
-#include "base/observer_list.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -24,6 +24,7 @@
 #include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/browser/ui/app_list/app_list_service_impl.h"
 #include "chrome/browser/ui/app_list/app_list_view_delegate.h"
+#include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/web_applications/web_app_ui.h"
 #include "chrome/browser/web_applications/web_app.h"
@@ -46,6 +47,9 @@ class ImageSkia;
 }
 
 namespace {
+
+// Version of the app list shortcut version installed.
+const int kShortcutVersion = 1;
 
 // AppListServiceMac manages global resources needed for the app list to
 // operate, and controls when the app list is opened and closed.
@@ -71,7 +75,6 @@ class AppListServiceMac : public AppListServiceImpl,
 
   // AppListServiceImpl overrides:
   virtual void CreateShortcut() OVERRIDE;
-  virtual void OnSigninStatusChanged() OVERRIDE;
 
   // AppShimHandler overrides:
   virtual void OnShimLaunch(apps::AppShimHandler::Host* host,
@@ -91,11 +94,6 @@ class AppListServiceMac : public AppListServiceImpl,
   base::scoped_nsobject<AppListWindowController> window_controller_;
   base::scoped_nsobject<NSRunningApplication> previously_active_application_;
 
-  // App shim hosts observing when the app list is dismissed. In normal user
-  // usage there should only be one. However, it can't be guaranteed, so use
-  // an ObserverList rather than handling corner cases.
-  ObserverList<apps::AppShimHandler::Host> observers_;
-
   DISALLOW_COPY_AND_ASSIGN(AppListServiceMac);
 };
 
@@ -110,6 +108,7 @@ class AppListControllerDelegateCocoa : public AppListControllerDelegate {
   virtual gfx::NativeWindow GetAppListWindow() OVERRIDE;
   virtual bool CanPin() OVERRIDE;
   virtual bool CanDoCreateShortcutsFlow(bool is_platform_app) OVERRIDE;
+  virtual void CreateNewWindow(Profile* profile, bool incognito) OVERRIDE;
   virtual void DoCreateShortcutsFlow(Profile* profile,
                                      const std::string& extension_id) OVERRIDE;
   virtual void ActivateApp(Profile* profile,
@@ -172,10 +171,24 @@ void CreateAppListShim(const base::FilePath& profile_path) {
         *resource_bundle.GetImageSkiaNamed(IDR_APP_LIST_256));
   }
 
-  // TODO(tapted): Create a dock icon using chrome/browser/mac/dock.h .
+  ShellIntegration::ShortcutLocations shortcut_locations;
+  PrefService* local_state = g_browser_process->local_state();
+  int installed_version =
+      local_state->GetInteger(apps::prefs::kAppLauncherShortcutVersion);
+
+  // If this is a first-time install, add a dock icon. Otherwise just update
+  // the target, and wait for OSX to refresh its icon caches. This might not
+  // occur until a reboot, but OSX does not offer a nicer way. Deleting cache
+  // files on disk and killing processes can easily result in icon corruption.
+  if (installed_version == 0)
+    shortcut_locations.in_quick_launch_bar = true;
+
   web_app::CreateShortcuts(shortcut_info,
-                           ShellIntegration::ShortcutLocations(),
+                           shortcut_locations,
                            web_app::SHORTCUT_CREATION_AUTOMATED);
+
+  local_state->SetInteger(apps::prefs::kAppLauncherShortcutVersion,
+                          kShortcutVersion);
 }
 
 // Check that there is an app list shim. If enabling and there is not, make one.
@@ -257,6 +270,13 @@ void AppListControllerDelegateCocoa::DoCreateShortcutsFlow(
       *extension, profile, base::Bind(&CreateShortcutsInDefaultLocation));
 }
 
+void AppListControllerDelegateCocoa::CreateNewWindow(
+    Profile* profile, bool incognito) {
+  Profile* window_profile = incognito ?
+      profile->GetOffTheRecordProfile() : profile;
+  chrome::NewEmptyWindow(window_profile, chrome::GetActiveDesktop());
+}
+
 void AppListControllerDelegateCocoa::ActivateApp(
     Profile* profile, const extensions::Extension* extension, int event_flags) {
   LaunchApp(profile, extension, event_flags);
@@ -277,12 +297,21 @@ void AppListServiceMac::Init(Profile* initial_profile) {
   if (initial_profile && !init_called_with_profile) {
     init_called_with_profile = true;
     HandleCommandLineFlags(initial_profile);
+    PrefService* local_state = g_browser_process->local_state();
     if (!apps::IsAppLauncherEnabled()) {
+      local_state->SetInteger(apps::prefs::kAppLauncherShortcutVersion, 0);
+
       // Not yet enabled via the Web Store. Check for the chrome://flag.
       content::BrowserThread::PostTask(
           content::BrowserThread::FILE, FROM_HERE,
           base::Bind(&CheckAppListShimOnFileThread,
                      initial_profile->GetPath()));
+    } else {
+      int installed_shortcut_version =
+          local_state->GetInteger(apps::prefs::kAppLauncherShortcutVersion);
+
+      if (kShortcutVersion > installed_shortcut_version)
+        CreateShortcut();
     }
   }
 
@@ -312,6 +341,9 @@ void AppListServiceMac::CreateForProfile(Profile* requested_profile) {
 }
 
 void AppListServiceMac::ShowForProfile(Profile* requested_profile) {
+  if (requested_profile->IsManaged())
+    return;
+
   InvalidatePendingProfileLoads();
 
   if (IsAppListVisible() && (requested_profile == profile())) {
@@ -347,10 +379,6 @@ void AppListServiceMac::DismissAppList() {
     return;
 
   [[window_controller_ window] close];
-
-  FOR_EACH_OBSERVER(apps::AppShimHandler::Host,
-                    observers_,
-                    OnAppClosed());
 }
 
 bool AppListServiceMac::IsAppListVisible() const {
@@ -366,33 +394,26 @@ NSWindow* AppListServiceMac::GetAppListWindow() {
   return [window_controller_ window];
 }
 
-void AppListServiceMac::OnSigninStatusChanged() {
-  [[window_controller_ appListViewController] onSigninStatusChanged];
-}
-
 void AppListServiceMac::OnShimLaunch(apps::AppShimHandler::Host* host,
                                      apps::AppShimLaunchType launch_type) {
-  Show();
-  observers_.AddObserver(host);
-  host->OnAppLaunchComplete(apps::APP_SHIM_LAUNCH_SUCCESS);
+  if (IsAppListVisible())
+    DismissAppList();
+  else
+    Show();
+
+  // Always close the shim process immediately.
+  host->OnAppLaunchComplete(apps::APP_SHIM_LAUNCH_DUPLICATE_HOST);
 }
 
-void AppListServiceMac::OnShimClose(apps::AppShimHandler::Host* host) {
-  observers_.RemoveObserver(host);
-  DismissAppList();
-}
+void AppListServiceMac::OnShimClose(apps::AppShimHandler::Host* host) {}
 
 void AppListServiceMac::OnShimFocus(apps::AppShimHandler::Host* host,
-                                    apps::AppShimFocusType focus_type) {
-  DismissAppList();
-}
+                                    apps::AppShimFocusType focus_type) {}
 
 void AppListServiceMac::OnShimSetHidden(apps::AppShimHandler::Host* host,
                                         bool hidden) {}
 
-void AppListServiceMac::OnShimQuit(apps::AppShimHandler::Host* host) {
-  DismissAppList();
-}
+void AppListServiceMac::OnShimQuit(apps::AppShimHandler::Host* host) {}
 
 enum DockLocation {
   DockLocationOtherDisplay,

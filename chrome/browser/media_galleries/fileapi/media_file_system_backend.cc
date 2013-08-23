@@ -19,7 +19,6 @@
 #include "chrome/browser/media_galleries/fileapi/native_media_file_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "webkit/browser/blob/local_file_stream_reader.h"
-#include "webkit/browser/fileapi/async_file_util_adapter.h"
 #include "webkit/browser/fileapi/copy_or_move_file_validator.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_file_stream_reader.h"
@@ -59,7 +58,7 @@ MediaFileSystemBackend::MediaFileSystemBackend(
 #if defined(OS_WIN) || defined(OS_MACOSX)
       ,
       picasa_file_util_(new picasa::PicasaFileUtil(media_path_filter_.get())),
-      itunes_file_util_(new itunes::ItunesFileUtil(media_path_filter_.get()))
+      itunes_file_util_(new itunes::ITunesFileUtil(media_path_filter_.get()))
 #endif  // defined(OS_WIN) || defined(OS_MACOSX)
 {
 }

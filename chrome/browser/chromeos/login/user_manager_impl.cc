@@ -68,6 +68,10 @@ const char kRegularUsers[] = "LoggedInUsers";
 // A vector pref of the public accounts defined on this device.
 const char kPublicAccounts[] = "PublicAccounts";
 
+// A map from locally managed user local user id to sync user id.
+const char kManagedUserSyncId[] =
+    "ManagedUserSyncId";
+
 // A map from locally managed user id to manager user id.
 const char kManagedUserManagers[] =
     "ManagedUserManagers";
@@ -202,6 +206,7 @@ void UserManager::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterDictionaryPref(kUserOAuthTokenStatus);
   registry->RegisterDictionaryPref(kUserDisplayName);
   registry->RegisterDictionaryPref(kUserDisplayEmail);
+  registry->RegisterDictionaryPref(kManagedUserSyncId);
   registry->RegisterDictionaryPref(kManagedUserManagers);
   registry->RegisterDictionaryPref(kManagedUserManagerNames);
   registry->RegisterDictionaryPref(kManagedUserManagerDisplayEmails);
@@ -220,7 +225,6 @@ UserManagerImpl::UserManagerImpl()
       is_current_user_new_(false),
       is_current_user_ephemeral_regular_user_(false),
       ephemeral_users_enabled_(false),
-      locally_managed_users_enabled_by_policy_(false),
       merge_session_state_(MERGE_STATUS_NOT_STARTED),
       observed_sync_service_(NULL),
       user_image_manager_(new UserImageManagerImpl),
@@ -269,6 +273,7 @@ void UserManagerImpl::Shutdown() {
 
   if (observed_sync_service_)
     observed_sync_service_->RemoveObserver(this);
+  user_image_manager_->Shutdown();
 }
 
 UserImageManager* UserManagerImpl::GetUserImageManager() {
@@ -339,7 +344,7 @@ void UserManagerImpl::UserLoggedIn(const std::string& email,
                (AreEphemeralUsersEnabled() || browser_restart)) {
       RegularUserLoggedInAsEphemeral(email);
     } else {
-      RegularUserLoggedIn(email, browser_restart);
+      RegularUserLoggedIn(email);
     }
 
     // Initialize the session length limiter and start it only if
@@ -449,7 +454,8 @@ std::string UserManagerImpl::GenerateUniqueLocallyManagedUserId() {
 
 const User* UserManagerImpl::CreateLocallyManagedUserRecord(
       const std::string& manager_id,
-      const std::string& e_mail,
+      const std::string& local_user_id,
+      const std::string& sync_user_id,
       const string16& display_name) {
   const User* user = FindLocallyManagedUser(display_name);
   DCHECK(!user);
@@ -458,32 +464,45 @@ const User* UserManagerImpl::CreateLocallyManagedUserRecord(
 
   PrefService* local_state = g_browser_process->local_state();
 
-  User* new_user = User::CreateLocallyManagedUser(e_mail);
+  User* new_user = User::CreateLocallyManagedUser(local_user_id);
   ListPrefUpdate prefs_users_update(local_state, kRegularUsers);
-  prefs_users_update->Insert(0, new base::StringValue(e_mail));
+  prefs_users_update->Insert(0, new base::StringValue(local_user_id));
   ListPrefUpdate prefs_new_users_update(local_state,
                                         kLocallyManagedUsersFirstRun);
-  prefs_new_users_update->Insert(0, new base::StringValue(e_mail));
+  prefs_new_users_update->Insert(0, new base::StringValue(local_user_id));
   users_.insert(users_.begin(), new_user);
 
   const User* manager = FindUser(manager_id);
   CHECK(manager);
 
+  DictionaryPrefUpdate sync_id_update(local_state, kManagedUserSyncId);
   DictionaryPrefUpdate manager_update(local_state, kManagedUserManagers);
   DictionaryPrefUpdate manager_name_update(local_state,
                                            kManagedUserManagerNames);
   DictionaryPrefUpdate manager_email_update(local_state,
                                             kManagedUserManagerDisplayEmails);
-  manager_update->SetWithoutPathExpansion(e_mail,
+  sync_id_update->SetWithoutPathExpansion(local_user_id,
+      new base::StringValue(sync_user_id));
+  manager_update->SetWithoutPathExpansion(local_user_id,
       new base::StringValue(manager->email()));
-  manager_name_update->SetWithoutPathExpansion(e_mail,
+  manager_name_update->SetWithoutPathExpansion(local_user_id,
       new base::StringValue(manager->GetDisplayName()));
-  manager_email_update->SetWithoutPathExpansion(e_mail,
+  manager_email_update->SetWithoutPathExpansion(local_user_id,
       new base::StringValue(manager->display_email()));
 
-  SaveUserDisplayName(e_mail, display_name);
+  SaveUserDisplayName(local_user_id, display_name);
   g_browser_process->local_state()->CommitPendingWrite();
   return new_user;
+}
+
+std::string UserManagerImpl::GetManagedUserSyncId(
+    const std::string& managed_user_id) const {
+  PrefService* local_state = g_browser_process->local_state();
+  const DictionaryValue* sync_user_ids =
+      local_state->GetDictionary(kManagedUserSyncId);
+  std::string result;
+  sync_user_ids->GetStringWithoutPathExpansion(managed_user_id, &result);
+  return result;
 }
 
 string16 UserManagerImpl::GetManagerDisplayNameForManagedUser(
@@ -740,7 +759,6 @@ void UserManagerImpl::Observe(int type,
     case chrome::NOTIFICATION_LOGIN_USER_PROFILE_PREPARED:
       if (IsUserLoggedIn() &&
           !IsLoggedInAsGuest() &&
-          !IsLoggedInAsLocallyManagedUser() &&
           !IsLoggedInAsKioskApp()) {
         Profile* profile = content::Details<Profile>(details).ptr();
         if (!profile->IsOffTheRecord() &&
@@ -781,16 +799,15 @@ void UserManagerImpl::OnStateChanged() {
       state != GoogleServiceAuthError::REQUEST_CANCELED) {
     // Invalidate OAuth token to force Gaia sign-in flow. This is needed
     // because sign-out/sign-in solution is suggested to the user.
-    // TODO(altimofeev): this code isn't needed after crosbug.com/25978 is
-    // implemented.
-    DVLOG(1) << "Invalidate OAuth token because of a sync error.";
+    // TODO(nkostylev): Remove after crosbug.com/25978 is implemented.
+    LOG(ERROR) << "Invalidate OAuth token because of a sync error: "
+               << observed_sync_service_->GetAuthError().ToString();
     // http://crbug.com/230860
     // TODO(nkostylev): Figure out whether we want to have observers
     // for each logged in user.
     // TODO(nkostyelv): Change observer after active user has changed.
-    SaveUserOAuthStatus(
-        active_user_->email(),
-        User::OAUTH2_TOKEN_STATUS_INVALID);
+    SaveUserOAuthStatus(active_user_->email(),
+                        User::OAUTH2_TOKEN_STATUS_INVALID);
   }
 }
 
@@ -1021,12 +1038,11 @@ void UserManagerImpl::EnsureUsersLoaded() {
        it != regular_users.end(); ++it) {
     User* user = NULL;
     const std::string domain = gaia::ExtractDomainName(*it);
-    if (domain == UserManager::kLocallyManagedUserDomain) {
+    if (domain == UserManager::kLocallyManagedUserDomain)
       user = User::CreateLocallyManagedUser(*it);
-    } else {
+    else
       user = User::CreateRegularUser(*it);
-      user->set_oauth_token_status(LoadUserOAuthStatus(*it));
-    }
+    user->set_oauth_token_status(LoadUserOAuthStatus(*it));
     users_.push_back(user);
 
     string16 display_name;
@@ -1058,7 +1074,6 @@ void UserManagerImpl::EnsureUsersLoaded() {
 
 void UserManagerImpl::RetrieveTrustedDevicePolicies() {
   ephemeral_users_enabled_ = false;
-  locally_managed_users_enabled_by_policy_ = false;
   owner_email_ = "";
 
   // Schedule a callback if device policy has not yet been verified.
@@ -1070,8 +1085,6 @@ void UserManagerImpl::RetrieveTrustedDevicePolicies() {
 
   cros_settings_->GetBoolean(kAccountsPrefEphemeralUsersEnabled,
                              &ephemeral_users_enabled_);
-  cros_settings_->GetBoolean(kAccountsPrefSupervisedUsersEnabled,
-                             &locally_managed_users_enabled_by_policy_);
   cros_settings_->GetString(kDeviceOwner, &owner_email_);
 
   EnsureUsersLoaded();
@@ -1153,8 +1166,7 @@ void UserManagerImpl::GuestUserLoggedIn() {
                                                    false);
 }
 
-void UserManagerImpl::RegularUserLoggedIn(const std::string& email,
-                                          bool browser_restart) {
+void UserManagerImpl::RegularUserLoggedIn(const std::string& email) {
   // Remove the user from the user list.
   active_user_ = RemoveRegularOrLocallyManagedUserFromList(email);
 
@@ -1176,10 +1188,7 @@ void UserManagerImpl::RegularUserLoggedIn(const std::string& email,
 
   user_image_manager_->UserLoggedIn(email, is_current_user_new_, false);
 
-  if (!browser_restart) {
-    // For GAIA login flow, logged in user wallpaper may not be loaded.
-    WallpaperManager::Get()->EnsureLoggedInUserWallpaperLoaded();
-  }
+  WallpaperManager::Get()->EnsureLoggedInUserWallpaperLoaded();
 
   default_pinned_apps_field_trial::SetupForUser(email, is_current_user_new_);
 
@@ -1640,8 +1649,11 @@ void UserManagerImpl::SetAppModeChromeClientOAuthInfo(
 }
 
 bool UserManagerImpl::AreLocallyManagedUsersAllowed() const {
+  bool locally_managed_users_allowed = false;
+  cros_settings_->GetBoolean(kAccountsPrefSupervisedUsersEnabled,
+                             &locally_managed_users_allowed);
   return ManagedUserService::AreManagedUsersEnabled() &&
-        (locally_managed_users_enabled_by_policy_ ||
+        (locally_managed_users_allowed ||
          !g_browser_process->browser_policy_connector()->IsEnterpriseManaged());
 }
 

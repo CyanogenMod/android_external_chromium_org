@@ -22,7 +22,6 @@
 #include "chrome/browser/extensions/api/developer_private/developer_private_api_factory.h"
 #include "chrome/browser/extensions/api/developer_private/entry_picker.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
-#include "chrome/browser/extensions/event_names.h"
 #include "chrome/browser/extensions/extension_disabled_ui.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -72,7 +71,7 @@ using content::RenderViewHost;
 
 namespace extensions {
 
-namespace events = event_names;
+namespace developer_private = api::developer_private;
 
 namespace {
 
@@ -212,7 +211,7 @@ void DeveloperPrivateEventRouter::Observe(
   scoped_ptr<ListValue> args(new ListValue());
   args->Append(event_data.ToValue().release());
 
-  event_name = events::kDeveloperPrivateOnItemStateChanged;
+  event_name = developer_private::OnItemStateChanged::kEventName;
   scoped_ptr<Event> event(new Event(event_name, args.Pass()));
   ExtensionSystem::Get(profile)->event_router()->BroadcastEvent(event.Pass());
 }
@@ -223,7 +222,7 @@ void DeveloperPrivateAPI::SetLastUnpackedDirectory(const base::FilePath& path) {
 
 void DeveloperPrivateAPI::RegisterNotifications() {
   ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, events::kDeveloperPrivateOnItemStateChanged);
+      this, developer_private::OnItemStateChanged::kEventName);
 }
 
 DeveloperPrivateAPI::~DeveloperPrivateAPI() {}
@@ -240,7 +239,7 @@ void DeveloperPrivateAPI::OnListenerAdded(
 void DeveloperPrivateAPI::OnListenerRemoved(
     const EventListenerInfo& details) {
   if (!ExtensionSystem::Get(profile_)->event_router()->HasEventListener(
-          event_names::kDeveloperPrivateOnItemStateChanged))
+          developer_private::OnItemStateChanged::kEventName))
     developer_private_event_router_.reset(NULL);
 }
 
@@ -250,7 +249,7 @@ bool DeveloperPrivateAutoUpdateFunction::RunImpl() {
   ExtensionUpdater* updater = GetExtensionUpdater(profile());
   if (updater)
     updater->CheckNow(ExtensionUpdater::CheckParams());
-  SetResult(Value::CreateBooleanValue(true));
+  SetResult(new base::FundamentalValue(true));
   return true;
 }
 
@@ -304,7 +303,6 @@ scoped_ptr<developer::ItemInfo>
              item.install_warnings().begin();
          it != item.install_warnings().end(); ++it) {
       developer::InstallWarning* warning = new developer::InstallWarning();
-      warning->is_html = (it->format == InstallWarning::FORMAT_HTML);
       warning->message = it->message;
       info->install_warnings.push_back(make_linked_ptr(warning));
     }
@@ -362,7 +360,8 @@ void DeveloperPrivateGetItemsInfoFunction::
         constructInspectView(web_contents->GetURL(),
                              process->GetID(),
                              host->GetRoutingID(),
-                             process->GetBrowserContext()->IsOffTheRecord()));
+                             process->GetBrowserContext()->IsOffTheRecord(),
+                             false));
   }
 }
 
@@ -385,7 +384,8 @@ void DeveloperPrivateGetItemsInfoFunction::
         constructInspectView(web_contents->GetURL(),
                              process->GetID(),
                              host->GetRoutingID(),
-                             process->GetBrowserContext()->IsOffTheRecord()));
+                             process->GetBrowserContext()->IsOffTheRecord(),
+                             false));
   }
 }
 
@@ -394,7 +394,8 @@ linked_ptr<developer::ItemInspectView> DeveloperPrivateGetItemsInfoFunction::
         const GURL& url,
         int render_process_id,
         int render_view_id,
-        bool incognito) {
+        bool incognito,
+        bool generated_background_page) {
   linked_ptr<developer::ItemInspectView> view(new developer::ItemInspectView());
 
   if (url.scheme() == kExtensionScheme) {
@@ -408,6 +409,7 @@ linked_ptr<developer::ItemInspectView> DeveloperPrivateGetItemsInfoFunction::
   view->render_process_id = render_process_id;
   view->render_view_id = render_view_id;
   view->incognito = incognito;
+  view->generated_background_page = generated_background_page;
   return view;
 }
 
@@ -432,7 +434,11 @@ ItemInspectViewList DeveloperPrivateGetItemsInfoFunction::
       extension_is_enabled &&
       !process_manager->GetBackgroundHostForExtension(extension->id())) {
     result.push_back(constructInspectView(
-        BackgroundInfo::GetBackgroundURL(extension), -1, -1, false));
+        BackgroundInfo::GetBackgroundURL(extension),
+        -1,
+        -1,
+        false,
+        BackgroundInfo::HasGeneratedBackgroundPage(extension)));
   }
 
   ExtensionService* service = profile()->GetExtensionService();
@@ -450,7 +456,11 @@ ItemInspectViewList DeveloperPrivateGetItemsInfoFunction::
         extension_is_enabled &&
         !process_manager->GetBackgroundHostForExtension(extension->id())) {
     result.push_back(constructInspectView(
-        BackgroundInfo::GetBackgroundURL(extension), -1, -1, false));
+        BackgroundInfo::GetBackgroundURL(extension),
+        -1,
+        -1,
+        false,
+        BackgroundInfo::HasGeneratedBackgroundPage(extension)));
     }
   }
 
@@ -485,20 +495,9 @@ bool DeveloperPrivateGetItemsInfoFunction::RunImpl() {
        iter != items.end(); ++iter) {
     const Extension& item = *iter->get();
 
-    // Don't show component extensions because they are only extensions as an
-    // implementation detail of Chrome.
-    if (item.location() == Manifest::COMPONENT &&
-        !CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kShowComponentExtensionOptions)) {
+    // Don't show component extensions and invisible apps.
+    if (item.ShouldNotBeVisible())
       continue;
-    }
-
-    // Don't show apps that aren't visible in either launcher or ntp.
-    if (item.is_app() && !item.ShouldDisplayInAppLauncher() &&
-        !item.ShouldDisplayInNewTabPage() &&
-        !Manifest::IsUnpackedLocation(item.location())) {
-      continue;
-    }
 
     item_list.push_back(make_linked_ptr<developer::ItemInfo>(
         CreateItemInfo(
@@ -1095,7 +1094,7 @@ void DeveloperPrivateLoadProjectFunction::GetUnpackedExtension(
   const Extension* extension = GetExtensionByPath(extensions, path);
   bool success = true;
   if (extension) {
-    SetResult(base::Value::CreateStringValue(extension->id()));
+    SetResult(new base::StringValue(extension->id()));
   } else {
     SetError("unable to load the project");
     success = false;
@@ -1154,7 +1153,7 @@ bool DeveloperPrivateChoosePathFunction::RunImpl() {
 
 void DeveloperPrivateChoosePathFunction::FileSelected(
     const base::FilePath& path) {
-  SetResult(base::Value::CreateStringValue(
+  SetResult(new base::StringValue(
       UTF16ToUTF8(path.LossyDisplayName())));
   SendResponse(true);
   Release();
@@ -1198,6 +1197,7 @@ bool DeveloperPrivateGetStringsFunction::RunImpl() {
              IDS_EXTENSIONS_INSTALL_WARNINGS);
   SET_STRING("viewIncognito", IDS_EXTENSIONS_VIEW_INCOGNITO);
   SET_STRING("viewInactive", IDS_EXTENSIONS_VIEW_INACTIVE);
+  SET_STRING("backgroundPage", IDS_EXTENSIONS_BACKGROUND_PAGE);
   SET_STRING("extensionSettingsEnable", IDS_EXTENSIONS_ENABLE);
   SET_STRING("extensionSettingsEnabled", IDS_EXTENSIONS_ENABLED);
   SET_STRING("extensionSettingsRemove", IDS_EXTENSIONS_REMOVE);
@@ -1207,7 +1207,8 @@ bool DeveloperPrivateGetStringsFunction::RunImpl() {
              IDS_EXTENSIONS_ALLOW_FILE_ACCESS);
   SET_STRING("extensionSettingsReloadTerminated",
              IDS_EXTENSIONS_RELOAD_TERMINATED);
-  SET_STRING("extensionSettingsReloadUnpacked", IDS_EXTENSIONS_RELOAD_UNPACKED);
+  SET_STRING("extensionSettingsReloadUnpacked",
+             IDS_APPS_DEV_TOOLS_RELOAD_UNPACKED);
   SET_STRING("extensionSettingsLaunch", IDS_EXTENSIONS_LAUNCH);
   SET_STRING("extensionSettingsRestart", IDS_EXTENSIONS_RESTART);
   SET_STRING("extensionSettingsOptions", IDS_EXTENSIONS_OPTIONS_LINK);
@@ -1242,7 +1243,7 @@ bool DeveloperPrivateGetStringsFunction::RunImpl() {
 // Pack Extension strings
   SET_STRING("packExtensionOverlay", IDS_EXTENSION_PACK_DIALOG_TITLE);
   SET_STRING("packExtensionHeading", IDS_EXTENSION_ADT_PACK_DIALOG_HEADING);
-  SET_STRING("packExtensionCommit", IDS_EXTENSION_PACK_BUTTON);
+  SET_STRING("packButton", IDS_EXTENSION_ADT_PACK_BUTTON);
   SET_STRING("ok", IDS_OK);
   SET_STRING("cancel", IDS_CANCEL);
   SET_STRING("packExtensionRootDir",
@@ -1253,6 +1254,8 @@ bool DeveloperPrivateGetStringsFunction::RunImpl() {
   SET_STRING("packExtensionProceedAnyway", IDS_EXTENSION_PROCEED_ANYWAY);
   SET_STRING("packExtensionWarningTitle", IDS_EXTENSION_PACK_WARNING_TITLE);
   SET_STRING("packExtensionErrorTitle", IDS_EXTENSION_PACK_ERROR_TITLE);
+  SET_STRING("packAppOverlay", IDS_EXTENSION_PACK_APP_DIALOG_TITLE);
+  SET_STRING("packAppHeading", IDS_EXTENSION_ADT_PACK_APP_DIALOG_HEADING);
 
 // Delete confirmation dialog.
   SET_STRING("deleteConfirmationDeleteButton",

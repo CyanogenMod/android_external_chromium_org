@@ -5,18 +5,146 @@
 'use strict';
 
 /**
+ * Entry of NavigationListModel. This construtor should be called only from
+ * the helper methods (NavigationModelItem.createWithPath/createWithEntry).
+ *
+ * @param {FileSystem} filesystem Fielsystem.
+ * @param {?string} path Path.
+ * @param {DirectoryEntry} entry Entry. Can be a fake.
+ * @extends {cr.EventTarget}
+ * @constructor
+ */
+function NavigationModelItem(filesystem, path, entry) {
+  this.filesystem_ = filesystem;
+  this.path_ = path;
+  this.entry_ = entry;
+
+  this.resolvingQueue_ = new AsyncUtil.Queue();
+}
+
+NavigationModelItem.prototype = {
+  __proto__: cr.EventTarget.prototype,
+  get path() { return this.path_; }
+};
+
+/**
+ * Returns the cached entry of the item. This may returns NULL if the target is
+ * not available on the filesystem, is not resolved or is under resolving the
+ * entry.
+ *
+ * @return {Entry} Cached entry.
+ */
+NavigationModelItem.prototype.getCachedEntry = function() {
+  return this.entry_;
+};
+
+/**
+ * @param {FileSystem} filesystem FileSystem.
+ * @param {string} path Path.
+ * @return {NavigationModelItem} Created NavigationModelItem.
+ */
+NavigationModelItem.createWithPath = function(filesystem, path) {
+  var modelItem = new NavigationModelItem(
+      filesystem,
+      path,
+      null);
+  modelItem.resolveDirectoryEntry_();
+  return modelItem;
+};
+
+/**
+ * @param {DirectoryEntry} entry Entry. Can be a fake.
+ * @return {NavigationModelItem} Created NavigationModelItem.
+ */
+NavigationModelItem.createWithEntry = function(entry) {
+  if (entry) {
+    return new NavigationModelItem(
+        entry.filesystem,
+        entry.fullPath,
+        entry);
+  } else {
+    return null;
+  }
+};
+
+/**
+ * Retrieves the entry. If the entry is being retrived, wait until it ends. If
+ * it is nessesary to resolve entry from the path, resolveDirectoryEntry must be
+ * called before using this method.
+ *
+ * @param {function(Entry)} callback Called with the resolved entry. The entry
+ *     may be NULL if resolving is failed.
+ */
+NavigationModelItem.prototype.getEntryAsync = function(callback) {
+  // If resolveDirectoryEntry_() is running, waits until it finishes.
+  this.resolvingQueue_.run(function(continueCallback) {
+    callback(this.entry_);
+    continueCallback();
+  }.bind(this));
+};
+
+/**
+ * Resolves an directory entry.
+ * @private
+ */
+NavigationModelItem.prototype.resolveDirectoryEntry_ = function() {
+  this.resolvingQueue_.run(function(continueCallback) {
+    this.filesystem_.root.getDirectory(
+        this.path_,
+        {create: false},
+        function(directoryEntry) {
+          this.entry_ = directoryEntry;
+          continueCallback();
+        }.bind(this),
+        function(error) {
+          this.entry_ = null;
+          console.error('Error on resolving path: ' + this.path_);
+          continueCallback();
+        }.bind(this));
+  }.bind(this));
+};
+
+/**
+ * Returns if this item is a shortcut or a volume root.
+ * @return {boolean} True if a shortcut, false if a volume root.
+ */
+NavigationModelItem.prototype.isShortcut = function() {
+  return !PathUtil.isRootPath(this.path_);
+};
+
+/**
  * A navigation list model. This model combines the 2 lists.
+ * @param {FileSystem} filesystem FileSystem.
  * @param {cr.ui.ArrayDataModel} volumesList The first list of the model.
  * @param {cr.ui.ArrayDataModel} pinnedList The second list of the model.
  * @constructor
  * @extends {cr.EventTarget}
  */
-function NavigationListModel(volumesList, pinnedList) {
-  this.volumesList_ = volumesList;
-  this.pinnedList_ = pinnedList;
+function NavigationListModel(filesystem, volumesList, pinnedList) {
+  this.volumesListModel_ = volumesList;
+  this.pinnedListModel_ = pinnedList;
+
+  /**
+   * (Re)generates this.volumesList_ and this.pinnedList_ from the models.
+   * This should be called whenever the models are updated.
+   */
+  var generateLists = function() {
+    this.volumesList_ =
+        this.volumesListModel_.slice(0).map(function(entry) {
+          return NavigationModelItem.createWithEntry(entry);
+        });
+    this.pinnedList_ =
+        this.pinnedListModel_.slice(0).map(function(path) {
+            return NavigationModelItem.createWithPath(filesystem, path);
+        });
+  }.bind(this);
+
+  generateLists();
 
   // Generates a combined 'permuted' event from an event of either list.
   var permutedHandler = function(listNum, e) {
+    generateLists();
+
     var permutedEvent = new Event('permuted');
     var newPermutation = [];
     var newLength;
@@ -44,18 +172,24 @@ function NavigationListModel(volumesList, pinnedList) {
     permutedEvent.permutation = newPermutation;
     this.dispatchEvent(permutedEvent);
   };
-  this.volumesList_.addEventListener('permuted', permutedHandler.bind(this, 1));
-  this.pinnedList_.addEventListener('permuted', permutedHandler.bind(this, 2));
+  this.volumesListModel_.addEventListener(
+      'permuted', permutedHandler.bind(this, 1));
+  this.pinnedListModel_.addEventListener(
+      'permuted', permutedHandler.bind(this, 2));
 
   // Generates a combined 'change' event from an event of either list.
   var changeHandler = function(listNum, e) {
+    generateLists();
+
     var changeEvent = new Event('change');
     changeEvent.index =
         (listNum == 1) ? e.index : (e.index + this.volumesList_.length);
     this.dispatchEvent(changeEvent);
   };
-  this.volumesList_.addEventListener('change', changeHandler.bind(this, 1));
-  this.pinnedList_.addEventListener('change', changeHandler.bind(this, 2));
+  this.volumesListModel_.addEventListener(
+      'change', changeHandler.bind(this, 1));
+  this.pinnedListModel_.addEventListener(
+      'change', changeHandler.bind(this, 2));
 
   // 'splice' and 'sorted' events are not implemented, since they are not used
   // in list.js.
@@ -77,12 +211,10 @@ NavigationListModel.prototype = {
  */
 NavigationListModel.prototype.item = function(index) {
   var offset = this.volumesList_.length;
-  if (index < offset) {
-    var entry = this.volumesList_.item(index);
-    return entry ? entry.fullPath : undefined;
-  } else {
-    return this.pinnedList_.item(index - offset);
-  }
+  if (index < offset)
+    return this.volumesList_[index];
+  else
+    return this.pinnedList_[index - offset];
 };
 
 /**
@@ -96,14 +228,14 @@ NavigationListModel.prototype.length_ = function() {
 
 /**
  * Returns the first matching item.
- * @param {Entry} item The entry to find.
+ * @param {NavigationModelItem} modelItem The entry to find.
  * @param {number=} opt_fromIndex If provided, then the searching start at
  *     the {@code opt_fromIndex}.
  * @return {number} The index of the first found element or -1 if not found.
  */
-NavigationListModel.prototype.indexOf = function(item, opt_fromIndex) {
+NavigationListModel.prototype.indexOf = function(modelItem, opt_fromIndex) {
   for (var i = opt_fromIndex || 0; i < this.length; i++) {
-    if (item === this.item(i))
+    if (modelItem === this.item(i))
       return i;
   }
   return -1;
@@ -118,6 +250,7 @@ var NavigationListItem = cr.ui.define('li');
 
 NavigationListItem.prototype = {
   __proto__: HTMLLIElement.prototype,
+  get modelItem() { return this.modelItem_; },
 };
 
 /**
@@ -146,23 +279,27 @@ NavigationListItem.prototype.decorate = function() {
 
 /**
  * Associate a path with this item.
- * @param {string} path Path of this item.
+ * @param {NavigationModelItem} modelItem NavigationModelItem of this item.
+ * @param {string=} opt_deviceType The type of the device. Available iff the
+ *     path represents removable storage.
  */
-NavigationListItem.prototype.setPath = function(path) {
-  if (this.path_)
-    console.warn('NavigationListItem.setPath should be called only once.');
+NavigationListItem.prototype.setModelItem =
+    function(modelItem, opt_deviceType) {
+  if (this.modelItem_)
+    console.warn('NavigationListItem.setModelItem should be called only once.');
 
-  this.path_ = path;
+  this.modelItem_ = modelItem;
 
-  var rootType = PathUtil.getRootType(path);
+  this.setAttribute('item-type',
+                    modelItem.isShortcut() ? 'shortcut' : 'volume');
 
+  var rootType = PathUtil.getRootType(modelItem.path);
   this.iconDiv_.setAttribute('volume-type-icon', rootType);
-  if (rootType === RootType.REMOVABLE) {
-    this.iconDiv_.setAttribute('volume-subtype',
-        VolumeManager.getInstance().getDeviceType(path));
+  if (opt_deviceType) {
+    this.iconDiv_.setAttribute('volume-subtype', opt_deviceType);
   }
 
-  this.label_.textContent = PathUtil.getFolderLabel(path);
+  this.label_.textContent = PathUtil.getFolderLabel(modelItem.path);
 
   if (rootType === RootType.ARCHIVE || rootType === RootType.REMOVABLE) {
     this.eject_ = cr.doc.createElement('div');
@@ -187,14 +324,14 @@ NavigationListItem.prototype.setPath = function(path) {
  * @param {cr.ui.Menu} menu Menu this item.
  */
 NavigationListItem.prototype.maybeSetContextMenu = function(menu) {
-  if (!this.path_) {
+  if (!this.modelItem_.path) {
     console.error('NavigationListItem.maybeSetContextMenu must be called ' +
-                  'after setPath().');
+                  'after setModelItem().');
     return;
   }
 
-  var isRoot = PathUtil.isRootPath(this.path_);
-  var rootType = PathUtil.getRootType(this.path_);
+  var isRoot = PathUtil.isRootPath(this.modelItem_.path);
+  var rootType = PathUtil.getRootType(this.modelItem_.path);
   // The context menu is shown on the following items:
   // - Removable and Archive volumes
   // - Folder shortcuts
@@ -242,24 +379,26 @@ NavigationList.prototype = {
 
 /**
  * @param {HTMLElement} el Element to be DirectoryItem.
+ * @param {VolumeManager} volumeManager The VolumeManager of the system.
  * @param {DirectoryModel} directoryModel Current DirectoryModel.
  *     folders.
  */
-NavigationList.decorate = function(el, directoryModel) {
+NavigationList.decorate = function(el, volumeManager, directoryModel) {
   el.__proto__ = NavigationList.prototype;
-  el.decorate(directoryModel);
+  el.decorate(volumeManager, directoryModel);
 };
 
 /**
+ * @param {VolumeManager} volumeManager The VolumeManager of the system.
  * @param {DirectoryModel} directoryModel Current DirectoryModel.
  */
-NavigationList.prototype.decorate = function(directoryModel) {
+NavigationList.prototype.decorate = function(volumeManager, directoryModel) {
   cr.ui.List.decorate(this);
   this.__proto__ = NavigationList.prototype;
 
   this.fileManager_ = null;
   this.directoryModel_ = directoryModel;
-  this.volumeManager_ = VolumeManager.getInstance();
+  this.volumeManager_ = volumeManager;
   this.selectionModel = new cr.ui.ListSingleSelectionModel();
 
   this.directoryModel_.addEventListener('directory-changed',
@@ -277,8 +416,8 @@ NavigationList.prototype.decorate = function(directoryModel) {
   this.setAttribute('role', 'listbox');
 
   var self = this;
-  this.itemConstructor = function(path) {
-    return self.renderRoot_(path);
+  this.itemConstructor = function(modelItem) {
+    return self.renderRoot_(modelItem);
   };
 };
 
@@ -291,6 +430,13 @@ NavigationList.prototype.decorate = function(directoryModel) {
  * @override
  */
 NavigationList.prototype.removeChild = function(item) {
+  // TODO(yoshiki): Animation is temporary disabled for volumes. Add animation
+  // back. crbug.com/276132.
+  if (!item.modelItem.isShortcut()) {
+    Node.prototype.removeChild.call(this, item);
+    return;
+  }
+
   var removeElement = function(e) {
     // Must keep the animation name 'fadeOut' in sync with the css.
     if (e.animationName == 'fadeOut')
@@ -307,17 +453,24 @@ NavigationList.prototype.removeChild = function(item) {
 /**
  * Creates an element of a navigation list. This method is called from
  * cr.ui.List internally.
- * @param {string} path Path of the directory to be rendered.
+ *
+ * @param {NavigationModelItem} modelItem NavigationModelItem to be rendered.
  * @return {NavigationListItem} Rendered element.
  * @private
  */
-NavigationList.prototype.renderRoot_ = function(path) {
+NavigationList.prototype.renderRoot_ = function(modelItem) {
   var item = new NavigationListItem();
-  item.setPath(path);
+  var volumeInfo =
+      PathUtil.isRootPath(modelItem.path) &&
+      this.volumeManager_.getVolumeInfo(modelItem.path);
+  item.setModelItem(modelItem, volumeInfo && volumeInfo.deviceType);
 
   var handleClick = function() {
-    if (item.selected && path !== this.directoryModel_.getCurrentDirPath())
-      this.changeDirectory_(path);
+    if (item.selected &&
+        modelItem.path !== this.directoryModel_.getCurrentDirPath()) {
+      metrics.recordUserAction('FolderShortcut.Navigate');
+      this.changeDirectory_(modelItem.path);
+    }
   }.bind(this);
   item.addEventListener('click', handleClick);
 
@@ -371,6 +524,7 @@ NavigationList.prototype.setContextMenu = function(menu) {
 
 /**
  * Selects the n-th item from the list.
+ *
  * @param {number} index Item index.
  * @return {boolean} True for success, otherwise false.
  */
@@ -378,14 +532,17 @@ NavigationList.prototype.selectByIndex = function(index) {
   if (index < 0 || index > this.dataModel.length - 1)
     return false;
 
-  var newPath = this.dataModel.item(index);
+  var newPath = this.dataModel.item(index).path;
   if (!newPath)
     return false;
 
   // Prevents double-moving to the current directory.
+  // eg. When user clicks the item, changing directory has already been done in
+  //     click handler.
   if (this.directoryModel_.getCurrentDirEntry().fullPath == newPath)
     return false;
 
+  metrics.recordUserAction('FolderShortcut.Navigate');
   this.changeDirectory_(newPath);
   return true;
 };
@@ -447,7 +604,7 @@ NavigationList.prototype.selectBestMatchItem_ = function() {
   var bestMatchIndex = -1;
   var bestMatchSubStringLen = 0;
   for (var i = 0; i < this.dataModel.length; i++) {
-    var itemPath = this.dataModel.item(i);
+    var itemPath = this.dataModel.item(i).path;
     if (path.indexOf(itemPath) == 0) {
       if (bestMatchSubStringLen < itemPath.length) {
         bestMatchIndex = i;
@@ -466,7 +623,7 @@ NavigationList.prototype.selectBestMatchItem_ = function() {
   // (2) Selects the volume of the current directory.
   var newRootPath = PathUtil.getRootPath(path);
   for (var i = 0; i < this.dataModel.length; i++) {
-    var itemPath = this.dataModel.item(i);
+    var itemPath = this.dataModel.item(i).path;
     if (PathUtil.getRootPath(itemPath) == newRootPath) {
       // Not to invoke the handler of this instance, sets the guard.
       this.dontHandleSelectionEvent_ = true;

@@ -47,12 +47,17 @@ class WebViewGuest : public GuestView,
   virtual void GuestProcessGone(base::TerminationStatus status) OVERRIDE;
   virtual bool HandleKeyboardEvent(
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
+  virtual void LoadAbort(bool is_top_level,
+                         const GURL& url,
+                         const std::string& error_type) OVERRIDE;
   virtual void RendererResponsive() OVERRIDE;
   virtual void RendererUnresponsive() OVERRIDE;
   virtual bool RequestPermission(
       BrowserPluginPermissionType permission_type,
       const base::DictionaryValue& request_info,
       const PermissionResponseCallback& callback) OVERRIDE;
+  virtual void SizeChanged(const gfx::Size& old_size, const gfx::Size& new_size)
+      OVERRIDE;
 
   // NotificationObserver implementation.
   virtual void Observe(int type,
@@ -78,6 +83,14 @@ class WebViewGuest : public GuestView,
 
   // Kill the guest process.
   void Terminate();
+
+  // Clears data in the storage partition of this guest.
+  //
+  // Partition data that are newer than |removal_since| will be removed.
+  // |removal_mask| corresponds to bitmask in StoragePartition::RemoveDataMask.
+  bool ClearData(const base::Time remove_since,
+                 uint32 removal_mask,
+                 const base::Closure& callback);
 
   extensions::ScriptExecutor* script_executor() {
     return script_executor_.get();

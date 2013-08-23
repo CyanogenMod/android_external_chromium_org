@@ -64,8 +64,6 @@
 #include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/themes/theme_service.h"
-#include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/webui/favicon_source.h"
 #include "chrome/browser/ui/webui/ntp/thumbnail_source.h"
 #include "chrome/browser/ui/webui/theme_source.h"
@@ -81,7 +79,6 @@
 #include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/common/extensions/incognito_handler.h"
-#include "chrome/common/extensions/manifest.h"
 #include "chrome/common/extensions/manifest_handlers/app_isolation_info.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_handlers/shared_module_info.h"
@@ -101,6 +98,7 @@
 #include "content/public/browser/url_data_source.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/manifest.h"
 #include "grit/generated_resources.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "sync/api/sync_change.h"
@@ -161,6 +159,34 @@ static const int kGarbageCollectStartupDelay = 30;
 static bool IsSharedModule(const Extension* extension) {
   return SharedModuleInfo::IsSharedModule(extension);
 }
+
+static bool IsCWSSharedModule(const Extension* extension) {
+  return extension->from_webstore() && IsSharedModule(extension);
+}
+
+class SharedModuleProvider : public extensions::ManagementPolicy::Provider {
+ public:
+  SharedModuleProvider() {}
+  virtual ~SharedModuleProvider() {}
+
+  virtual std::string GetDebugPolicyProviderName() const OVERRIDE {
+    return "SharedModuleProvider";
+  }
+
+  virtual bool UserMayModifySettings(const Extension* extension,
+                                     string16* error) const OVERRIDE {
+    return !IsCWSSharedModule(extension);
+  }
+
+  virtual bool MustRemainEnabled(const Extension* extension,
+                                 string16* error) const OVERRIDE {
+    return IsCWSSharedModule(extension);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(SharedModuleProvider);
+};
+
 
 }  // namespace
 
@@ -413,6 +439,8 @@ ExtensionService::ExtensionService(Profile* profile,
       new extensions::ExtensionActionStorageManager(profile_));
 #endif
 
+  shared_module_policy_provider_.reset(new SharedModuleProvider);
+
   // How long is the path to the Extensions directory?
   UMA_HISTOGRAM_CUSTOM_COUNTS("Extensions.ExtensionRootPathLength",
                               install_directory_.value().length(), 0, 500, 100);
@@ -481,7 +509,8 @@ void ExtensionService::InitEventRouters() {
 }
 
 void ExtensionService::Shutdown() {
-  // Do nothing for now.
+  system_->management_policy()->UnregisterProvider(
+      shared_module_policy_provider_.get());
 }
 
 const Extension* ExtensionService::GetExtensionById(
@@ -547,6 +576,21 @@ void ExtensionService::Init() {
     component_loader_->LoadAll();
     extensions::InstalledLoader(this).LoadAllExtensions();
 
+    // Attempt to re-enable extensions whose only disable reason is reloading.
+    std::vector<std::string> extensions_to_enable;
+    for (ExtensionSet::const_iterator iter = disabled_extensions_.begin();
+        iter != disabled_extensions_.end(); ++iter) {
+      const Extension* e = iter->get();
+      if (extension_prefs_->GetDisableReasons(e->id()) ==
+          Extension::DISABLE_RELOAD) {
+        extensions_to_enable.push_back(e->id());
+      }
+    }
+    for (std::vector<std::string>::iterator it = extensions_to_enable.begin();
+         it != extensions_to_enable.end(); ++it) {
+      EnableExtension(*it);
+    }
+
     // Finish install (if possible) of extensions that were still delayed while
     // the browser was shut down.
     scoped_ptr<extensions::ExtensionPrefs::ExtensionsInfo> delayed_info(
@@ -590,6 +634,8 @@ void ExtensionService::Init() {
       GarbageCollectIsolatedStorage();
       extension_prefs_->SetNeedsStorageGarbageCollection(false);
     }
+    system_->management_policy()->RegisterProvider(
+        shared_module_policy_provider_.get());
   }
 }
 
@@ -1144,16 +1190,6 @@ void ExtensionService::NotifyExtensionUnloaded(
       content::Source<Profile>(profile_),
       content::Details<UnloadedExtensionInfo>(&details));
 
-#if defined(ENABLE_THEMES)
-  // If the current theme is being unloaded, tell ThemeService to revert back
-  // to the default theme.
-  if (reason != extension_misc::UNLOAD_REASON_UPDATE && extension->is_theme()) {
-    ThemeService* theme_service = ThemeServiceFactory::GetForProfile(profile_);
-    if (extension->id() == theme_service->GetThemeID())
-      theme_service->UseDefaultTheme();
-  }
-#endif
-
   for (content::RenderProcessHost::iterator i(
           content::RenderProcessHost::AllHostsIterator());
        !i.IsAtEnd(); i.Advance()) {
@@ -1476,7 +1512,6 @@ bool ExtensionService::ProcessExtensionSyncDataHelper(
 
   // Handle uninstalls first.
   if (extension_sync_data.uninstalled()) {
-    std::string error;
     if (!UninstallExtensionHelper(this, id)) {
       LOG(WARNING) << "Could not uninstall extension " << id
                    << " for sync";
@@ -1983,15 +2018,6 @@ void ExtensionService::GarbageCollectExtensions() {
               extension_paths))) {
     NOTREACHED();
   }
-
-#if defined(ENABLE_THEMES)
-  // Also garbage-collect themes.  We check |profile_| to be
-  // defensive; in the future, we may call GarbageCollectExtensions()
-  // from somewhere other than Init() (e.g., in a timer).
-  if (profile_) {
-    ThemeServiceFactory::GetForProfile(profile_)->RemoveUnusedThemes();
-  }
-#endif
 }
 
 void ExtensionService::SyncExtensionChangeIfNeeded(const Extension& extension) {
@@ -2352,7 +2378,7 @@ void ExtensionService::PruneSharedModulesOnUninstall(
         scoped_ptr<const ExtensionSet> dependents =
             GetDependentExtensions(imported_module);
         if (dependents->size() == 0) {
-          UninstallExtension(i->extension_id, false, NULL);
+          UninstallExtension(i->extension_id, true, NULL);
         }
       }
     }
@@ -2582,24 +2608,10 @@ void ExtensionService::FinishInstallation(const Extension* extension) {
 
   AddExtension(extension);
 
-#if defined(ENABLE_THEMES)
-  // We do this here since AddExtension() is always called on browser startup,
-  // and we only really care about the last theme installed.
-  // If that ever changes and we have to move this code somewhere
-  // else, it should be somewhere that's not in the startup path.
-  if (extension->is_theme() && extensions_.GetByID(extension->id())) {
-    DCHECK_EQ(extensions_.GetByID(extension->id()), extension);
-    // Now that the theme extension is visible from outside the
-    // ExtensionService, notify the ThemeService about the
-    // newly-installed theme.
-    ThemeServiceFactory::GetForProfile(profile_)->SetTheme(extension);
-  }
-#endif
-
   // If this is a new external extension that was disabled, alert the user
   // so he can reenable it. We do this last so that it has already been
   // added to our list of extensions.
-  if (unacknowledged_external) {
+  if (unacknowledged_external && !is_update) {
     UpdateExternalExtensionAlert();
     UMA_HISTOGRAM_ENUMERATION("Extensions.ExternalExtensionEvent",
                               EXTERNAL_EXTENSION_INSTALLED,
@@ -3112,16 +3124,12 @@ void ExtensionService::ManageBlacklist(
     const std::set<std::string>& new_blacklisted_ids) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  std::set<std::string> no_longer_blacklisted;
-  std::set_difference(old_blacklisted_ids.begin(), old_blacklisted_ids.end(),
-                      new_blacklisted_ids.begin(), new_blacklisted_ids.end(),
-                      std::inserter(no_longer_blacklisted,
-                                    no_longer_blacklisted.begin()));
-  std::set<std::string> not_yet_blacklisted;
-  std::set_difference(new_blacklisted_ids.begin(), new_blacklisted_ids.end(),
-                      old_blacklisted_ids.begin(), old_blacklisted_ids.end(),
-                      std::inserter(not_yet_blacklisted,
-                                    not_yet_blacklisted.begin()));
+  std::set<std::string> no_longer_blacklisted =
+      base::STLSetDifference<std::set<std::string> >(old_blacklisted_ids,
+                                                     new_blacklisted_ids);
+  std::set<std::string> not_yet_blacklisted =
+      base::STLSetDifference<std::set<std::string> >(new_blacklisted_ids,
+                                                     old_blacklisted_ids);
 
   for (std::set<std::string>::iterator it = no_longer_blacklisted.begin();
        it != no_longer_blacklisted.end(); ++it) {

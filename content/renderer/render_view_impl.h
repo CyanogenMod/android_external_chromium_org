@@ -18,6 +18,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/process/process.h"
+#include "base/strings/string16.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "cc/input/top_controls_state.h"
@@ -41,7 +42,6 @@
 #include "content/renderer/renderer_webcookiejar_impl.h"
 #include "content/renderer/stats_collection_observer.h"
 #include "ipc/ipc_platform_file.h"
-#include "third_party/WebKit/public/platform/WebFileSystem.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
@@ -212,6 +212,7 @@ class CONTENT_EXPORT RenderViewImpl
       const string16& frame_name,
       bool is_renderer_created,
       bool swapped_out,
+      bool hidden,
       int32 next_page_id,
       const WebKit::WebScreenInfo& screen_info,
       AccessibilityMode accessibility_mode,
@@ -445,10 +446,18 @@ class CONTENT_EXPORT RenderViewImpl
       const WebKit::WebPopupMenuInfo& popup_menu_info,
       WebKit::WebExternalPopupMenuClient* popup_menu_client);
   virtual WebKit::WebStorageNamespace* createSessionStorageNamespace();
+  virtual bool shouldReportDetailedMessageForSource(
+      const WebKit::WebString& source);
+  // TODO(rdevlin.cronin): Remove this version once
+  // https://codereview.chromium.org/18822004/ lands.
   virtual void didAddMessageToConsole(
       const WebKit::WebConsoleMessage& message,
       const WebKit::WebString& source_name,
       unsigned source_line);
+  virtual void didAddMessageToConsole(
+      const WebKit::WebConsoleMessage& message,
+      const WebKit::WebString& source_name,
+      unsigned source_line, const WebKit::WebString& stack_trace);
   virtual void printPage(WebKit::WebFrame* frame);
   virtual WebKit::WebNotificationPresenter* notificationPresenter();
   virtual bool enumerateChosenDirectory(
@@ -484,6 +493,7 @@ class CONTENT_EXPORT RenderViewImpl
                                           const WebKit::WebString& message);
   virtual void showContextMenu(WebKit::WebFrame* frame,
                                const WebKit::WebContextMenuData& data);
+  virtual void clearContextMenu();
   virtual void setStatusText(const WebKit::WebString& text);
   virtual void setMouseOverURL(const WebKit::WebURL& url);
   virtual void setKeyboardFocusURL(const WebKit::WebURL& url);
@@ -654,14 +664,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void reportFindInPageSelection(int request_id,
                                          int active_match_ordinal,
                                          const WebKit::WebRect& sel);
-  virtual void openFileSystem(WebKit::WebFrame* frame,
-                              WebKit::WebFileSystemType type,
-                              long long size,
-                              bool create,
-                              WebKit::WebFileSystemCallbacks* callbacks);
-  virtual void deleteFileSystem(WebKit::WebFrame* frame,
-                                WebKit::WebFileSystemType type,
-                                WebKit::WebFileSystemCallbacks* callbacks);
   virtual void requestStorageQuota(
       WebKit::WebFrame* frame,
       WebKit::WebStorageQuotaType type,

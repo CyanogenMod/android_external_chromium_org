@@ -8,8 +8,10 @@
 #include <string>
 
 #include "base/time/time.h"
-#include "chrome/browser/ui/ash/launcher/chrome_launcher_controller_per_app.h"
 #include "chrome/browser/ui/ash/launcher/launcher_item_controller.h"
+#include "url/gurl.h"
+
+class URLPattern;
 
 namespace aura {
 class Window;
@@ -27,13 +29,13 @@ class ChromeLauncherController;
 class AppShortcutLauncherItemController : public LauncherItemController {
  public:
   AppShortcutLauncherItemController(const std::string& app_id,
-                                    ChromeLauncherControllerPerApp* controller);
+                                    ChromeLauncherController* controller);
 
   virtual ~AppShortcutLauncherItemController();
 
   // LauncherItemController overrides:
   virtual string16 GetTitle() OVERRIDE;
-  virtual bool HasWindow(aura::Window* window) const OVERRIDE;
+  virtual bool IsCurrentlyShownInWindow(aura::Window* window) const OVERRIDE;
   virtual bool IsOpen() const OVERRIDE;
   virtual bool IsVisible() const OVERRIDE;
   virtual void Launch(int event_flags) OVERRIDE;
@@ -79,11 +81,12 @@ class AppShortcutLauncherItemController : public LauncherItemController {
   bool AllowNextLaunchAttempt();
 
   GURL refocus_url_;
-  ChromeLauncherControllerPerApp* app_controller_;
 
   // Since V2 applications can be undetectable after launching, this timer is
   // keeping track of the last launch attempt.
   base::Time last_launch_attempt_;
+
+  ChromeLauncherController* chrome_launcher_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(AppShortcutLauncherItemController);
 };

@@ -5,12 +5,14 @@
 #include "cc/trees/layer_tree_host.h"
 
 #include "base/basictypes.h"
+#include "cc/debug/test_context_provider.h"
+#include "cc/debug/test_web_graphics_context_3d.h"
 #include "cc/layers/content_layer.h"
 #include "cc/layers/heads_up_display_layer.h"
 #include "cc/layers/io_surface_layer.h"
 #include "cc/layers/layer_impl.h"
+#include "cc/layers/painted_scrollbar_layer.h"
 #include "cc/layers/picture_layer.h"
-#include "cc/layers/scrollbar_layer.h"
 #include "cc/layers/texture_layer.h"
 #include "cc/layers/texture_layer_impl.h"
 #include "cc/layers/video_layer.h"
@@ -19,18 +21,16 @@
 #include "cc/test/fake_content_layer.h"
 #include "cc/test/fake_content_layer_client.h"
 #include "cc/test/fake_content_layer_impl.h"
-#include "cc/test/fake_context_provider.h"
 #include "cc/test/fake_delegated_renderer_layer.h"
 #include "cc/test/fake_delegated_renderer_layer_impl.h"
 #include "cc/test/fake_layer_tree_host_client.h"
 #include "cc/test/fake_output_surface.h"
+#include "cc/test/fake_painted_scrollbar_layer.h"
 #include "cc/test/fake_scoped_ui_resource.h"
 #include "cc/test/fake_scrollbar.h"
-#include "cc/test/fake_scrollbar_layer.h"
 #include "cc/test/fake_video_frame_provider.h"
 #include "cc/test/layer_tree_test.h"
 #include "cc/test/render_pass_test_common.h"
-#include "cc/test/test_web_graphics_context_3d.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/single_thread_proxy.h"
@@ -108,11 +108,11 @@ class LayerTreeHostContextTest : public LayerTreeTest {
     }
 
     if (delegating_renderer()) {
-      return FakeOutputSurface::CreateDelegating3d(
-          context3d.PassAs<WebGraphicsContext3D>()).PassAs<OutputSurface>();
+      return FakeOutputSurface::CreateDelegating3d(context3d.Pass())
+          .PassAs<OutputSurface>();
     }
-    return FakeOutputSurface::Create3d(
-        context3d.PassAs<WebGraphicsContext3D>()).PassAs<OutputSurface>();
+    return FakeOutputSurface::Create3d(context3d.Pass())
+        .PassAs<OutputSurface>();
   }
 
   scoped_ptr<TestWebGraphicsContext3D> CreateOffscreenContext3d() {
@@ -141,10 +141,11 @@ class LayerTreeHostContextTest : public LayerTreeTest {
 
     if (!offscreen_contexts_main_thread_.get() ||
         offscreen_contexts_main_thread_->DestroyedOnMainThread()) {
-      offscreen_contexts_main_thread_ = FakeContextProvider::Create(
-          base::Bind(&LayerTreeHostContextTest::CreateOffscreenContext3d,
-                     base::Unretained(this)));
-      if (offscreen_contexts_main_thread_.get() &&
+      offscreen_contexts_main_thread_ =
+          TestContextProvider::Create(
+              base::Bind(&LayerTreeHostContextTest::CreateOffscreenContext3d,
+                         base::Unretained(this)));
+      if (offscreen_contexts_main_thread_ &&
           !offscreen_contexts_main_thread_->BindToCurrentThread())
         offscreen_contexts_main_thread_ = NULL;
     }
@@ -157,9 +158,10 @@ class LayerTreeHostContextTest : public LayerTreeTest {
 
     if (!offscreen_contexts_compositor_thread_.get() ||
         offscreen_contexts_compositor_thread_->DestroyedOnMainThread()) {
-      offscreen_contexts_compositor_thread_ = FakeContextProvider::Create(
-          base::Bind(&LayerTreeHostContextTest::CreateOffscreenContext3d,
-                     base::Unretained(this)));
+      offscreen_contexts_compositor_thread_ =
+          TestContextProvider::Create(
+              base::Bind(&LayerTreeHostContextTest::CreateOffscreenContext3d,
+                         base::Unretained(this)));
     }
     return offscreen_contexts_compositor_thread_;
   }
@@ -236,8 +238,8 @@ class LayerTreeHostContextTest : public LayerTreeTest {
   bool context_should_support_io_surface_;
   bool fallback_context_works_;
 
-  scoped_refptr<FakeContextProvider> offscreen_contexts_main_thread_;
-  scoped_refptr<FakeContextProvider> offscreen_contexts_compositor_thread_;
+  scoped_refptr<TestContextProvider> offscreen_contexts_main_thread_;
+  scoped_refptr<TestContextProvider> offscreen_contexts_compositor_thread_;
 };
 
 class LayerTreeHostContextTestLostContextSucceeds
@@ -1198,9 +1200,9 @@ class LayerTreeHostContextTestDontUseLostResources
     debug_state.show_property_changed_rects = true;
     layer_tree_host()->SetDebugState(debug_state);
 
-    scoped_refptr<ScrollbarLayer> scrollbar_ = ScrollbarLayer::Create(
-        scoped_ptr<Scrollbar>(new FakeScrollbar).Pass(),
-        content_->id());
+    scoped_refptr<PaintedScrollbarLayer> scrollbar_ =
+        PaintedScrollbarLayer::Create(
+            scoped_ptr<Scrollbar>(new FakeScrollbar).Pass(), content_->id());
     scrollbar_->SetBounds(gfx::Size(10, 10));
     scrollbar_->SetAnchorPoint(gfx::PointF());
     scrollbar_->SetIsDrawable(true);
@@ -1219,6 +1221,10 @@ class LayerTreeHostContextTestDontUseLostResources
     LayerTreeHostContextTest::CommitCompleteOnThread(host_impl);
 
     ResourceProvider* resource_provider = host_impl->resource_provider();
+    ContextProvider* context_provider =
+        host_impl->output_surface()->context_provider();
+
+    DCHECK(context_provider);
 
     if (host_impl->active_tree()->source_frame_number() == 0) {
       // Set up impl resources on the first commit.
@@ -1255,9 +1261,8 @@ class LayerTreeHostContextTestDontUseLostResources
           static_cast<TextureLayerImpl*>(
               host_impl->active_tree()->root_layer()->children()[2]);
       texture_impl->set_texture_id(
-          resource_provider->GraphicsContext3D()->createTexture());
+          context_provider->Context3d()->createTexture());
 
-      DCHECK(resource_provider->GraphicsContext3D());
       ResourceProvider::ResourceId texture = resource_provider->CreateResource(
           gfx::Size(4, 4),
           resource_provider->default_resource_type(),
@@ -1265,9 +1270,8 @@ class LayerTreeHostContextTestDontUseLostResources
       ResourceProvider::ScopedWriteLockGL lock(resource_provider, texture);
 
       gpu::Mailbox mailbox;
-      resource_provider->GraphicsContext3D()->genMailboxCHROMIUM(mailbox.name);
-      unsigned sync_point =
-          resource_provider->GraphicsContext3D()->insertSyncPoint();
+      context_provider->Context3d()->genMailboxCHROMIUM(mailbox.name);
+      unsigned sync_point = context_provider->Context3d()->insertSyncPoint();
 
       color_video_frame_ = VideoFrame::CreateColorFrame(
           gfx::Size(4, 4), 0x80, 0x80, 0x80, base::TimeDelta());
@@ -1343,7 +1347,7 @@ class LayerTreeHostContextTestDontUseLostResources
   scoped_refptr<VideoLayer> video_hw_;
   scoped_refptr<VideoLayer> video_scaled_hw_;
   scoped_refptr<IOSurfaceLayer> io_surface_;
-  scoped_refptr<ScrollbarLayer> scrollbar_;
+  scoped_refptr<PaintedScrollbarLayer> scrollbar_;
 
   scoped_refptr<VideoFrame> color_video_frame_;
   scoped_refptr<VideoFrame> hw_video_frame_;
@@ -1515,7 +1519,7 @@ class ScrollbarLayerLostContext : public LayerTreeHostContextTest {
 
   virtual void BeginTest() OVERRIDE {
     scoped_refptr<Layer> scroll_layer = Layer::Create();
-    scrollbar_layer_ = FakeScrollbarLayer::Create(
+    scrollbar_layer_ = FakePaintedScrollbarLayer::Create(
         false, true, scroll_layer->id());
     scrollbar_layer_->SetBounds(gfx::Size(10, 100));
     layer_tree_host()->root_layer()->AddChild(scrollbar_layer_);
@@ -1549,7 +1553,7 @@ class ScrollbarLayerLostContext : public LayerTreeHostContextTest {
 
  private:
   int commits_;
-  scoped_refptr<FakeScrollbarLayer> scrollbar_layer_;
+  scoped_refptr<FakePaintedScrollbarLayer> scrollbar_layer_;
 };
 
 SINGLE_AND_MULTI_THREAD_TEST_F(ScrollbarLayerLostContext);

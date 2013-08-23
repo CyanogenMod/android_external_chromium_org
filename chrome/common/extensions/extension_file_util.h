@@ -5,12 +5,12 @@
 #ifndef CHROME_COMMON_EXTENSIONS_EXTENSION_FILE_UTIL_H_
 #define CHROME_COMMON_EXTENSIONS_EXTENSION_FILE_UTIL_H_
 
-#include <string>
 #include <map>
+#include <string>
 
 #include "base/memory/ref_counted.h"
-#include "chrome/common/extensions/manifest.h"
 #include "chrome/common/extensions/message_bundle.h"
+#include "extensions/common/manifest.h"
 
 class ExtensionIconSet;
 class GURL;
@@ -87,7 +87,6 @@ bool ValidateExtension(const extensions::Extension* extension,
 // extension.
 std::set<base::FilePath> GetBrowserImagePaths(
     const extensions::Extension* extension);
-
 
 // Returns a list of files that contain private keys inside |extension_dir|.
 std::vector<base::FilePath> FindPrivateKeyFiles(

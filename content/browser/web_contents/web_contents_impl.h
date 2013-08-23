@@ -153,6 +153,13 @@ class CONTENT_EXPORT WebContentsImpl
   JavaBridgeDispatcherHostManager* java_bridge_dispatcher_host_manager() const {
     return java_bridge_dispatcher_host_manager_.get();
   }
+
+  // In Android WebView, the RenderView needs created even there is no
+  // navigation entry, this allows Android WebViews to use
+  // javascript: URLs that load into the DOMWindow before the first page
+  // load. This is not safe to do in any context that a web page could get a
+  // reference to the DOMWindow before the first page load.
+  bool CreateRenderViewForInitialEmptyDocument();
 #endif
 
   // Expose the render manager for testing.
@@ -400,13 +407,15 @@ class CONTENT_EXPORT WebContentsImpl
   virtual bool AddMessageToConsole(int32 level,
                                    const string16& message,
                                    int32 line_no,
-                                   const string16& source_id) OVERRIDE;
+                                   const string16& source_id,
+                                   const string16& stack_trace) OVERRIDE;
   virtual RendererPreferences GetRendererPrefs(
       BrowserContext* browser_context) const OVERRIDE;
   virtual WebPreferences GetWebkitPrefs() OVERRIDE;
   virtual void OnUserGesture() OVERRIDE;
   virtual void OnIgnoredUIEvent() OVERRIDE;
   virtual void RendererUnresponsive(RenderViewHost* render_view_host,
+                                    bool is_during_beforeunload,
                                     bool is_during_unload) OVERRIDE;
   virtual void RendererResponsive(RenderViewHost* render_view_host) OVERRIDE;
   virtual void LoadStateChanged(const GURL& url,
@@ -492,6 +501,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual bool FocusLocationBarByDefault() OVERRIDE;
   virtual void SetFocusToLocationBar(bool select_all) OVERRIDE;
   virtual void CreateViewAndSetSizeForRVH(RenderViewHost* rvh) OVERRIDE;
+  virtual bool IsHidden() OVERRIDE;
 
   // NotificationObserver ------------------------------------------------------
 

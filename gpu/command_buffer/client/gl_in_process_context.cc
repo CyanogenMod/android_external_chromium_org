@@ -23,14 +23,16 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
-#include "gpu/command_buffer/client/gpu_memory_buffer_factory.h"
-#include "gpu/command_buffer/client/image_factory.h"
 #include "gpu/command_buffer/client/transfer_buffer.h"
 #include "gpu/command_buffer/common/command_buffer.h"
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/command_buffer/service/in_process_command_buffer.h"
 #include "ui/gfx/size.h"
 #include "ui/gl/gl_image.h"
+
+#if defined(OS_ANDROID)
+#include "ui/gl/android/surface_texture_bridge.h"
+#endif
 
 namespace gpu {
 
@@ -43,11 +45,8 @@ const size_t kStartTransferBufferSize = 4 * 1024 * 1024;
 const size_t kMinTransferBufferSize = 1 * 256 * 1024;
 const size_t kMaxTransferBufferSize = 16 * 1024 * 1024;
 
-static GpuMemoryBufferFactory* g_gpu_memory_buffer_factory = NULL;
-
 class GLInProcessContextImpl
     : public GLInProcessContext,
-      public gles2::ImageFactory,
       public base::SupportsWeakPtr<GLInProcessContextImpl> {
  public:
   explicit GLInProcessContextImpl();
@@ -70,11 +69,10 @@ class GLInProcessContextImpl
       OVERRIDE;
   virtual gles2::GLES2Implementation* GetImplementation() OVERRIDE;
 
-  // ImageFactory implementation:
-  virtual scoped_ptr<gfx::GpuMemoryBuffer> CreateGpuMemoryBuffer(
-      int width, int height, GLenum internalformat,
-      unsigned* image_id) OVERRIDE;
-  virtual void DeleteGpuMemoryBuffer(unsigned image_id) OVERRIDE;
+#if defined(OS_ANDROID)
+  virtual scoped_refptr<gfx::SurfaceTextureBridge> GetSurfaceTexture(
+      uint32 stream_id) OVERRIDE;
+#endif
 
  private:
   void Destroy();
@@ -106,24 +104,6 @@ base::LazyInstance<std::set<GLInProcessContextImpl*> > g_all_shared_contexts =
 size_t SharedContextCount() {
   base::AutoLock lock(g_all_shared_contexts_lock.Get());
   return g_all_shared_contexts.Get().size();
-}
-
-scoped_ptr<gfx::GpuMemoryBuffer> GLInProcessContextImpl::CreateGpuMemoryBuffer(
-    int width, int height, GLenum internalformat, unsigned int* image_id) {
-  scoped_ptr<gfx::GpuMemoryBuffer> buffer(
-      g_gpu_memory_buffer_factory->CreateGpuMemoryBuffer(width,
-                                                         height,
-                                                         internalformat));
-  if (!buffer)
-    return scoped_ptr<gfx::GpuMemoryBuffer>();
-
-  *image_id = command_buffer_->CreateImageForGpuMemoryBuffer(
-      buffer->GetHandle(), gfx::Size(width, height));
-  return buffer.Pass();
-}
-
-void GLInProcessContextImpl::DeleteGpuMemoryBuffer(unsigned int image_id) {
-  command_buffer_->RemoveImage(image_id);
 }
 
 GLInProcessContextImpl::GLInProcessContextImpl()
@@ -279,7 +259,7 @@ bool GLInProcessContextImpl::Initialize(
       share_group,
       transfer_buffer_.get(),
       false,
-      this));
+      command_buffer_.get()));
 
   if (share_resources) {
     g_all_shared_contexts.Get().insert(this);
@@ -289,7 +269,8 @@ bool GLInProcessContextImpl::Initialize(
   if (!gles2_implementation_->Initialize(
       kStartTransferBufferSize,
       kMinTransferBufferSize,
-      kMaxTransferBufferSize)) {
+      kMaxTransferBufferSize,
+      gles2::GLES2Implementation::kNoLimit)) {
     return false;
   }
 
@@ -361,6 +342,13 @@ void GLInProcessContextImpl::SignalQuery(
   }
 }
 
+#if defined(OS_ANDROID)
+scoped_refptr<gfx::SurfaceTextureBridge>
+GLInProcessContextImpl::GetSurfaceTexture(uint32 stream_id) {
+  return command_buffer_->GetSurfaceTexture(stream_id);
+}
+#endif
+
 }  // anonymous namespace
 
 GLInProcessContextAttribs::GLInProcessContextAttribs()
@@ -419,13 +407,6 @@ GLInProcessContext* GLInProcessContext::CreateWithSurface(
     return NULL;
 
   return context.release();
-}
-
-// static
-void GLInProcessContext::SetGpuMemoryBufferFactory(
-    GpuMemoryBufferFactory* factory) {
-  DCHECK_EQ(0u, SharedContextCount());
-  g_gpu_memory_buffer_factory = factory;
 }
 
 }  // namespace gpu

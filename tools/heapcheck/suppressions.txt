@@ -154,7 +154,7 @@
    bug_119677
    Heapcheck:Leak
    ...
-   fun:DisplayChangeObserverX11
+   fun:DisplayChangeObserver
    fun:aura::Env::Init
    fun:aura::Env::GetInstance
 }
@@ -180,21 +180,11 @@
    fun:aura::RootWindowHost::Create
 }
 
-# There is not CloseTestNSSDB due to NSS bug 588269.
-# When NSS 3.14 is the minimum version required, this should be removed.
-# http://crbug.com/156433 .
+# When NSS 3.15 is the minimum version required, this should be removed.
 {
-   bug_156433_a
+   bug_272673
    Heapcheck:Leak
-   fun:sqlite3MemMalloc
-   fun:*OpenUserDB
-   fun:*OpenTestNSSDB
-   fun:*ScopedTestNSSDB
-}
-{
-   bug_156433_b
-   Heapcheck:Leak
-   fun:PORT_Alloc_Util
+   fun:*
    fun:*OpenUserDB
    fun:*OpenTestNSSDB
    fun:*ScopedTestNSSDB
@@ -624,15 +614,6 @@
    fun:gfx::PlatformFontPango::*
 }
 {
-   bug_189194_a
-   Heapcheck:Leak
-   ...
-   fun:extensions::SettingsFrontend::Create
-   fun:ExtensionService::ExtensionService
-   fun:extensions::TestExtensionSystem::CreateExtensionService
-   fun:ProfileSigninConfirmationHelperTest::SetUp
-}
-{
   bug_225596
   Heapcheck:Leak
   fun:chromeos::input_method::InputMethodManagerImpl::Init
@@ -850,11 +831,39 @@
    fun:message_center::MessageCenterViewTest::SetUp
 }
 {
-   bug_271431
+   bug_272083
+   Heapcheck:Leak
+   fun:ThemeService::SetManagedUserTheme
+   fun:ThemeService::OnManagedUserInitialized
+}
+{
+   bug_272596
+   Heapcheck:Leak
+   fun:*
+   fun:net::NSSCertDatabase::ListCerts
+   fun:LoadNSSCertificates
+}
+{
+   bug_274114
    Heapcheck:Leak
    ...
-   fun:CreateBubble
-   fun:autofill::GeneratedCreditCardBubbleController::Show
-   fun:autofill::GeneratedCreditCardBubbleController::SetupAndShow
-   fun:autofill::GeneratedCreditCardBubbleController::Show
+   fun:gfx::RenderTextLinux::GetBaseline
+   fun:views::NativeTextfieldViews::GetTextfieldBaseline
+   fun:_init
+   fun:LocationBarView::Init
+   fun:ToolbarView::Init
+   fun:BrowserView::InitViews
+   fun:BrowserView::ViewHierarchyChanged
+   fun:views::View::ViewHierarchyChangedImpl
+   fun:views::View::PropagateAddNotifications
+   fun:views::View::AddChildViewAt
+   fun:views::NonClientView::ViewHierarchyChanged
+   fun:views::View::ViewHierarchyChangedImpl
+   fun:views::View::PropagateAddNotifications
+   fun:views::View::AddChildViewAt
+   fun:views::View::AddChildView
+   fun:views::internal::RootView::SetContentsView
+   fun:views::Widget::SetContentsView
+   fun:views::Widget::Init
+   fun:BrowserFrame::InitBrowserFrame
 }

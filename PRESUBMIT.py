@@ -25,6 +25,7 @@ _EXCLUDED_PATHS = (
     r".*MakeFile$",
     r".+_autogen\.h$",
     r".+[\\\/]pnacl_shim\.c$",
+    r"^gpu[\\\/]config[\\\/].*_list_json\.cc$",
 )
 
 # Fragment of a regular expression that matches C++ and Objective-C++
@@ -156,7 +157,8 @@ _BANNED_CPP_FUNCTIONS = (
       ),
       True,
       (
-        r"^content[\\\/]shell[\\\/]shell_browser_main\.cc$",
+        r"^content[\\\/]shell[\\\/]browser[\\\/]shell_browser_main\.cc$",
+        r"^content[\\\/]shell[\\\/]browser[\\\/]shell_message_filter\.cc$",
         r"^net[\\\/]disk_cache[\\\/]cache_util\.cc$",
       ),
     ),

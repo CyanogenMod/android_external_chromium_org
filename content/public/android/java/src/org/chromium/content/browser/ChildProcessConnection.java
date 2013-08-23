@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.CpuFeatures;
+import org.chromium.base.SysUtils;
 import org.chromium.base.ThreadUtils;
 import org.chromium.content.app.ChildProcessService;
 import org.chromium.content.common.CommandLine;
@@ -94,9 +95,9 @@ public class ChildProcessConnection {
 
     // Synchronization: While most internal flow occurs on the UI thread, the public API
     // (specifically start and stop) may be called from any thread, hence all entry point methods
-    // into the class are synchronized on the ChildProcessConnection instance to protect access to
-    // these members. But see also the TODO where AsyncBoundServiceConnection is created.
-    private final Object mUiThreadLock = new Object();
+    // into the class are synchronized on the lock to protect access to these members. But see also
+    // the TODO where AsyncBoundServiceConnection is created.
+    private final Object mLock = new Object();
     private IChildProcessService mService = null;
     // Set to true when the service connect is finished, even if it fails.
     private boolean mServiceConnectComplete = false;
@@ -186,7 +187,7 @@ public class ChildProcessConnection {
 
         @Override
         public void onServiceConnected(ComponentName className, IBinder service) {
-            synchronized(mUiThreadLock) {
+            synchronized(mLock) {
                 // A flag from the parent class ensures we run the post-connection logic only once
                 // (instead of once per each ChildServiceConnection).
                 if (mServiceConnectComplete) {
@@ -252,7 +253,7 @@ public class ChildProcessConnection {
     }
 
     IChildProcessService getService() {
-        synchronized(mUiThreadLock) {
+        synchronized(mLock) {
             return mService;
         }
     }
@@ -273,7 +274,7 @@ public class ChildProcessConnection {
      *                    the command line parameters must instead be passed to setupConnection().
      */
     void start(String[] commandLine) {
-        synchronized(mUiThreadLock) {
+        synchronized(mLock) {
             TraceEvent.begin();
             assert !ThreadUtils.runningOnUiThread();
 
@@ -300,7 +301,7 @@ public class ChildProcessConnection {
             FileDescriptorInfo[] filesToBeMapped,
             IChildProcessCallback processCallback,
             ConnectionCallbacks connectionCallbacks) {
-        synchronized(mUiThreadLock) {
+        synchronized(mLock) {
             TraceEvent.begin();
             assert mConnectionParams == null;
             mConnectionCallbacks = connectionCallbacks;
@@ -319,7 +320,7 @@ public class ChildProcessConnection {
      * this multiple times.
      */
     void stop() {
-        synchronized(mUiThreadLock) {
+        synchronized(mLock) {
             mInitialBinding.unbind();
             mStrongBinding.unbind();
             mWaivedBinding.unbind();
@@ -420,7 +421,7 @@ public class ChildProcessConnection {
      * renderer will not be killed immediately after the call.
      */
     void removeInitialBinding() {
-        synchronized(mUiThreadLock) {
+        synchronized(mLock) {
             if (!mInitialBinding.isBound()) {
                 // While it is safe to post and execute the unbinding multiple times, we prefer to
                 // avoid spamming the message queue.
@@ -430,7 +431,7 @@ public class ChildProcessConnection {
         ThreadUtils.postOnUiThreadDelayed(new Runnable() {
             @Override
             public void run() {
-                synchronized(mUiThreadLock) {
+                synchronized(mLock) {
                     mInitialBinding.unbind();
                 }
             }
@@ -444,7 +445,7 @@ public class ChildProcessConnection {
      * multiple bindings, we count the requests and unbind when the count drops to zero.
      */
     void attachAsActive() {
-        synchronized(mUiThreadLock) {
+        synchronized(mLock) {
             if (mService == null) {
                 Log.w(TAG, "The connection is not bound for " + mPID);
                 return;
@@ -456,17 +457,19 @@ public class ChildProcessConnection {
         }
     }
 
-    private static final long DETACH_AS_ACTIVE_DELAY_MILLIS = 5 * 1000;  // Five seconds.
+    private static final long DETACH_AS_ACTIVE_HIGH_END_DELAY_MILLIS = 5 * 1000;  // Five seconds.
 
     /**
-     * Called when the service is no longer considered active. Actual binding is removed after a
-     * fixed delay period so that the renderer will not be killed immediately after the call.
+     * Called when the service is no longer considered active. For devices that are not considered
+     * low memory the actual binding is removed after a fixed delay period so that the renderer will
+     * not be killed immediately after the call. We don't delay the unbinding for low memory devices
+     * to avoid putting the OS there on strain of having multiple renderers it can't kill.
      */
     void detachAsActive() {
         ThreadUtils.postOnUiThreadDelayed(new Runnable() {
             @Override
             public void run() {
-                synchronized(mUiThreadLock) {
+                synchronized(mLock) {
                     if (mService == null) {
                         Log.w(TAG, "The connection is not bound for " + mPID);
                         return;
@@ -478,14 +481,14 @@ public class ChildProcessConnection {
                     }
                 }
             }
-        }, DETACH_AS_ACTIVE_DELAY_MILLIS);
+        }, SysUtils.isLowEndDevice() ? 0 : DETACH_AS_ACTIVE_HIGH_END_DELAY_MILLIS);
     }
 
     /**
      * @return The connection PID, or 0 if not yet connected.
      */
     int getPid() {
-        synchronized(mUiThreadLock) {
+        synchronized(mLock) {
             return mPID;
         }
     }

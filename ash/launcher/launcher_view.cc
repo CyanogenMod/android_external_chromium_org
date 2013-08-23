@@ -1317,10 +1317,15 @@ void LauncherView::LauncherItemChanged(int model_index,
     model_index = CancelDrag(model_index);
     scoped_ptr<views::View> old_view(view_model_->view_at(model_index));
     bounds_animator_->StopAnimatingView(old_view.get());
+    // Removing and re-inserting a view in our view model will strip the ideal
+    // bounds from the item. To avoid recalculation of everything the bounds
+    // get remembered and restored after the insertion to the previous value.
+    gfx::Rect old_ideal_bounds = view_model_->ideal_bounds(model_index);
     view_model_->Remove(model_index);
     views::View* new_view = CreateViewForItem(item);
     AddChildView(new_view);
     view_model_->Add(new_view, model_index);
+    view_model_->set_ideal_bounds(model_index, old_ideal_bounds);
     new_view->SetBoundsRect(old_view->bounds());
     return;
   }
@@ -1521,6 +1526,11 @@ void LauncherView::ButtonPressed(views::Button* sender,
       case TYPE_TABBED:
       case TYPE_APP_PANEL:
         delegate_->ItemSelected(model_->items()[view_index], event);
+        // Don't show the menu when the user creates a new browser using ctrl
+        // click.
+        if (model_->items()[view_index].type != TYPE_BROWSER_SHORTCUT ||
+            !(event.flags() & ui::EF_CONTROL_DOWN))
+          ShowListMenuForView(model_->items()[view_index], sender, event);
         break;
 
       case TYPE_APP_LIST:
@@ -1530,9 +1540,6 @@ void LauncherView::ButtonPressed(views::Button* sender,
         break;
     }
   }
-
-  if (model_->items()[view_index].type != TYPE_APP_LIST)
-    ShowListMenuForView(model_->items()[view_index], sender, event);
 }
 
 bool LauncherView::ShowListMenuForView(const LauncherItem& item,

@@ -7,7 +7,6 @@
 import collections
 
 InstrumentationOptions = collections.namedtuple('InstrumentationOptions', [
-    'build_type',
     'tool',
     'cleanup_test_files',
     'push_deps',
@@ -18,6 +17,7 @@ InstrumentationOptions = collections.namedtuple('InstrumentationOptions', [
     'save_perf_json',
     'screenshot_failures',
     'wait_for_debugger',
+    'coverage_dir',
     'test_apk',
     'test_apk_path',
     'test_apk_jar_path'])

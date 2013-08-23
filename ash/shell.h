@@ -102,7 +102,7 @@ class AcceleratorFilter;
 class ActivationController;
 class AppListController;
 class CaptureController;
-class DisplayChangeObserverX11;
+class DisplayChangeObserver;
 class DisplayErrorObserver;
 class DisplayManager;
 class DragDropController;
@@ -547,7 +547,6 @@ class ASH_EXPORT Shell
   scoped_ptr<internal::AppListController> app_list_controller_;
 
   scoped_ptr<internal::ActivationController> activation_controller_;
-  scoped_ptr<internal::CaptureController> capture_controller_;
   scoped_ptr<internal::DragDropController> drag_drop_controller_;
   scoped_ptr<internal::ResizeShadowController> resize_shadow_controller_;
   scoped_ptr<views::corewm::ShadowController> shadow_controller_;
@@ -609,8 +608,8 @@ class ASH_EXPORT Shell
       output_configurator_animation_;
   scoped_ptr<internal::DisplayErrorObserver> display_error_observer_;
 
-  // Receives output change events and udpates the display manager.
-  scoped_ptr<internal::DisplayChangeObserverX11> display_change_observer_;
+  // Listens for output changes and updates the display manager.
+  scoped_ptr<internal::DisplayChangeObserver> display_change_observer_;
 #endif  // defined(OS_CHROMEOS) && defined(USE_X11)
 
   scoped_ptr<internal::ResolutionNotificationController>

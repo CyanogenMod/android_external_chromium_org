@@ -114,7 +114,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/midi_message_filter.cc \
 	content/renderer/media/pepper_platform_video_decoder.cc \
 	content/renderer/media/render_media_log.cc \
-	content/renderer/media/renderer_gpu_video_decoder_factories.cc \
+	content/renderer/media/renderer_gpu_video_accelerator_factories.cc \
 	content/renderer/media/renderer_webaudiodevice_impl.cc \
 	content/renderer/media/renderer_webmidiaccessor_impl.cc \
 	content/renderer/media/rtc_video_renderer.cc \
@@ -130,7 +130,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/webmediaplayer_ms.cc \
 	content/renderer/media/webmediaplayer_params.cc \
 	content/renderer/media/webmediaplayer_util.cc \
-	content/renderer/media/webmediasourceclient_impl.cc \
+	content/renderer/media/webmediasource_impl.cc \
 	content/renderer/media/websourcebuffer_impl.cc \
 	content/renderer/memory_benchmarking_extension.cc \
 	content/renderer/menu_item_builder.cc \
@@ -153,7 +153,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/ime_event_guard.cc \
 	content/renderer/render_frame_impl.cc \
 	content/renderer/render_process_impl.cc \
-	content/renderer/render_process_visibility_manager.cc \
 	content/renderer/render_thread_impl.cc \
 	content/renderer/render_view_impl.cc \
 	content/renderer/render_view_impl_android.cc \
@@ -166,11 +165,11 @@ LOCAL_SRC_FILES := \
 	content/renderer/renderer_date_time_picker.cc \
 	content/renderer/renderer_main.cc \
 	content/renderer/renderer_main_platform_delegate_android.cc \
+	content/renderer/renderer_main_thread.cc \
 	content/renderer/renderer_webapplicationcachehost_impl.cc \
 	content/renderer/renderer_webcookiejar_impl.cc \
 	content/renderer/renderer_webcolorchooser_impl.cc \
 	content/renderer/renderer_webkitplatformsupport_impl.cc \
-	content/renderer/rendering_benchmark.cc \
 	content/renderer/sad_plugin.cc \
 	content/renderer/savable_resources.cc \
 	content/renderer/scoped_clipboard_writer_glue.cc \
@@ -182,9 +181,10 @@ LOCAL_SRC_FILES := \
 	content/renderer/text_input_client_observer.cc \
 	content/renderer/v8_value_converter_impl.cc \
 	content/renderer/webclipboard_impl.cc \
-	content/renderer/webcrypto_impl.cc \
+	content/renderer/web_preferences.cc \
 	content/renderer/web_ui_extension.cc \
 	content/renderer/web_ui_extension_data.cc \
+	content/renderer/webcrypto_impl.cc \
 	content/renderer/websharedworker_proxy.cc \
 	content/renderer/websharedworkerrepository_impl.cc
 

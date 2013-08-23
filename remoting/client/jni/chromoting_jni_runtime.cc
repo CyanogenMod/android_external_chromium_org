@@ -50,8 +50,7 @@ ChromotingJniRuntime::ChromotingJniRuntime() {
   display_task_runner_ = AutoThread::Create("native_disp",
                                             ui_task_runner_);
 
-  url_requester_ = new URLRequestContextGetter(ui_task_runner_,
-                                               network_task_runner_);
+  url_requester_ = new URLRequestContextGetter(network_task_runner_);
 
   // Allows later decoding of video frames.
   media::InitializeCPUSpecificYUVConversions();
@@ -124,13 +123,14 @@ void ChromotingJniRuntime::ReportConnectionStatus(
     error);
 }
 
-void ChromotingJniRuntime::DisplayAuthenticationPrompt() {
+void ChromotingJniRuntime::DisplayAuthenticationPrompt(bool pairing_supported) {
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
 
   JNIEnv* env = base::android::AttachCurrentThread();
   env->CallStaticVoidMethod(
       class_,
-      env->GetStaticMethodID(class_, "displayAuthenticationPrompt", "()V"));
+      env->GetStaticMethodID(class_, "displayAuthenticationPrompt", "(Z)V"),
+      pairing_supported);
 }
 
 void ChromotingJniRuntime::CommitPairingCredentials(const std::string& host,

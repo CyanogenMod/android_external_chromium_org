@@ -54,13 +54,6 @@ void FakeFileSystem::CheckForUpdates() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
-void FakeFileSystem::TransferFileFromRemoteToLocal(
-    const base::FilePath& remote_src_file_path,
-    const base::FilePath& local_dest_file_path,
-    const FileOperationCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-}
-
 void FakeFileSystem::TransferFileFromLocalToRemote(
     const base::FilePath& local_src_file_path,
     const base::FilePath& remote_dest_file_path,
@@ -70,6 +63,7 @@ void FakeFileSystem::TransferFileFromLocalToRemote(
 
 void FakeFileSystem::OpenFile(const base::FilePath& file_path,
                               OpenMode open_mode,
+                              const std::string& mime_type,
                               const OpenFileCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
@@ -102,6 +96,7 @@ void FakeFileSystem::CreateDirectory(
 
 void FakeFileSystem::CreateFile(const base::FilePath& file_path,
                                 bool is_exclusive,
+                                const std::string& mime_type,
                                 const FileOperationCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }

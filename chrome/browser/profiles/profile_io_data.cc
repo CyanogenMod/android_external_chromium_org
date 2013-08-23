@@ -19,6 +19,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/content_settings_provider.h"
@@ -209,7 +210,11 @@ class DebugDevToolsInterceptor
       net::NetworkDelegate* network_delegate) const OVERRIDE {
     base::FilePath path;
     if (IsSupportedDevToolsURL(request->url(), &path))
-      return new net::URLRequestFileJob(request, network_delegate, path);
+      return new net::URLRequestFileJob(
+          request, network_delegate, path,
+          content::BrowserThread::GetBlockingPool()->
+              GetTaskRunnerWithShutdownBehavior(
+                  base::SequencedWorkerPool::SKIP_ON_SHUTDOWN));
 
     return NULL;
   }
@@ -835,7 +840,11 @@ scoped_ptr<net::URLRequestJobFactory> ProfileIOData::SetUpJobFactoryDefaults(
   // NOTE(willchan): Keep these protocol handlers in sync with
   // ProfileIOData::IsHandledProtocol().
   bool set_protocol = job_factory->SetProtocolHandler(
-      chrome::kFileScheme, new net::FileProtocolHandler());
+      chrome::kFileScheme,
+      new net::FileProtocolHandler(
+          content::BrowserThread::GetBlockingPool()->
+              GetTaskRunnerWithShutdownBehavior(
+                  base::SequencedWorkerPool::SKIP_ON_SHUTDOWN)));
   DCHECK(set_protocol);
 
   DCHECK(extension_info_map_.get());

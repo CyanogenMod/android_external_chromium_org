@@ -84,11 +84,6 @@ void CryptoHandshakeMessage::MarkDirty() {
   serialized_.reset();
 }
 
-void CryptoHandshakeMessage::Insert(QuicTagValueMap::const_iterator begin,
-                                    QuicTagValueMap::const_iterator end) {
-  tag_value_map_.insert(begin, end);
-}
-
 void CryptoHandshakeMessage::SetTaglist(QuicTag tag, ...) {
   // Warning, if sizeof(QuicTag) > sizeof(int) then this function will break
   // because the terminating 0 will only be promoted to int.
@@ -326,8 +321,7 @@ string CryptoHandshakeMessage::DebugStringInternal(size_t indent) const {
 }
 
 QuicCryptoNegotiatedParameters::QuicCryptoNegotiatedParameters()
-    : version(0),
-      key_exchange(0),
+    : key_exchange(0),
       aead(0) {
 }
 
@@ -468,6 +462,12 @@ void QuicCryptoClientConfig::CachedState::SetProof(const vector<string>& certs,
   SetProofInvalid();
   certs_ = certs;
   server_config_sig_ = signature.as_string();
+}
+
+void QuicCryptoClientConfig::CachedState::ClearProof() {
+  SetProofInvalid();
+  certs_.clear();
+  server_config_sig_.clear();
 }
 
 void QuicCryptoClientConfig::CachedState::SetProofValid() {
@@ -822,8 +822,9 @@ QuicErrorCode QuicCryptoClientConfig::ProcessRejection(
   }
 
   StringPiece proof, cert_bytes;
-  if (rej.GetStringPiece(kPROF, &proof) &&
-      rej.GetStringPiece(kCertificateTag, &cert_bytes)) {
+  bool has_proof = rej.GetStringPiece(kPROF, &proof);
+  bool has_cert = rej.GetStringPiece(kCertificateTag, &cert_bytes);
+  if (has_proof && has_cert) {
     vector<string> certs;
     if (!CertCompressor::DecompressChain(cert_bytes, out_params->cached_certs,
                                          common_cert_sets, &certs)) {
@@ -832,6 +833,17 @@ QuicErrorCode QuicCryptoClientConfig::ProcessRejection(
     }
 
     cached->SetProof(certs, proof);
+  } else {
+    cached->ClearProof();
+    if (has_proof && !has_cert) {
+      *error_details = "Certificate missing";
+      return QUIC_INVALID_CRYPTO_MESSAGE_PARAMETER;
+    }
+
+    if (!has_proof && has_cert) {
+      *error_details = "Proof missing";
+      return QUIC_INVALID_CRYPTO_MESSAGE_PARAMETER;
+    }
   }
 
   return QUIC_NO_ERROR;

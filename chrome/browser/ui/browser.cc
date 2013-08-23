@@ -368,8 +368,7 @@ Browser::Browser(const CreateParams& params)
 
   toolbar_model_.reset(new ToolbarModelImpl(toolbar_model_delegate_.get()));
   search_model_.reset(new SearchModel());
-  search_delegate_.reset(
-      new SearchDelegate(search_model_.get(), toolbar_model_.get()));
+  search_delegate_.reset(new SearchDelegate(search_model_.get()));
 
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
@@ -600,6 +599,24 @@ bool Browser::ShouldCloseWindow() {
   if (IsFastTabUnloadEnabled())
     return fast_unload_controller_->ShouldCloseWindow();
   return unload_controller_->ShouldCloseWindow();
+}
+
+bool Browser::CallBeforeUnloadHandlers(
+    const base::Callback<void(bool)>& on_close_confirmed) {
+  cancel_download_confirmation_state_ = RESPONSE_RECEIVED;
+  if (IsFastTabUnloadEnabled()) {
+    return fast_unload_controller_->CallBeforeUnloadHandlers(
+        on_close_confirmed);
+  }
+  return unload_controller_->CallBeforeUnloadHandlers(on_close_confirmed);
+}
+
+void Browser::ResetBeforeUnloadHandlers() {
+  cancel_download_confirmation_state_ = NOT_PROMPTED;
+  if (IsFastTabUnloadEnabled())
+    fast_unload_controller_->ResetBeforeUnloadHandlers();
+  else
+    unload_controller_->ResetBeforeUnloadHandlers();
 }
 
 bool Browser::HasCompletedUnloadProcessing() const {
@@ -1290,10 +1307,7 @@ WebContents* Browser::OpenURLFromTab(WebContents* source,
   if (source)
     popup_blocker_helper = PopupBlockerTabHelper::FromWebContents(source);
 
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableBetterPopupBlocking) &&
-      popup_blocker_helper) {
-
+  if (popup_blocker_helper) {
     if ((params.disposition == NEW_POPUP ||
          params.disposition == NEW_FOREGROUND_TAB ||
          params.disposition == NEW_BACKGROUND_TAB ||
@@ -1500,15 +1514,16 @@ bool Browser::ShouldCreateWebContents(
     WindowContainerType window_container_type,
     const string16& frame_name,
     const GURL& target_url,
-    const content::Referrer& referrer,
-    WindowOpenDisposition disposition,
-    const WebWindowFeatures& features,
-    bool user_gesture,
-    bool opener_suppressed) {
+    const std::string& partition_id,
+    content::SessionStorageNamespace* session_storage_namespace) {
   if (window_container_type == WINDOW_CONTAINER_TYPE_BACKGROUND) {
     // If a BackgroundContents is created, suppress the normal WebContents.
-    return !MaybeCreateBackgroundContents(
-        route_id, web_contents, frame_name, target_url);
+    return !MaybeCreateBackgroundContents(route_id,
+                                          web_contents,
+                                          frame_name,
+                                          target_url,
+                                          partition_id,
+                                          session_storage_namespace);
   }
 
   return true;
@@ -1858,8 +1873,8 @@ void Browser::OnDevToolsDisabledChanged() {
 // Browser, UI update coalescing and handling (private):
 
 void Browser::UpdateToolbar(bool should_restore_state) {
-  window_->UpdateToolbar(tab_strip_model_->GetActiveWebContents(),
-                         should_restore_state);
+  window_->UpdateToolbar(should_restore_state ?
+      tab_strip_model_->GetActiveWebContents() : NULL);
 }
 
 void Browser::UpdateSearchState(WebContents* contents) {
@@ -2038,14 +2053,20 @@ bool Browser::CanCloseWithInProgressDownloads() {
     return cancel_download_confirmation_state_ != WAITING_FOR_RESPONSE;
 
   int num_downloads_blocking;
-  if (DOWNLOAD_CLOSE_OK ==
-      OkToCloseWithInProgressDownloads(&num_downloads_blocking))
+  Browser::DownloadClosePreventionType dialog_type =
+      OkToCloseWithInProgressDownloads(&num_downloads_blocking);
+  if (dialog_type == DOWNLOAD_CLOSE_OK)
     return true;
 
   // Closing this window will kill some downloads; prompt to make sure
   // that's ok.
   cancel_download_confirmation_state_ = WAITING_FOR_RESPONSE;
-  window_->ConfirmBrowserCloseWithPendingDownloads();
+  window_->ConfirmBrowserCloseWithPendingDownloads(
+      num_downloads_blocking,
+      dialog_type,
+      false,
+      base::Bind(&Browser::InProgressDownloadResponse,
+                 weak_factory_.GetWeakPtr()));
 
   // Return false so the browser does not close.  We'll close if the user
   // confirms in the dialog.
@@ -2064,7 +2085,7 @@ void Browser::SetAsDelegate(WebContents* web_contents, Browser* delegate) {
       set_delegate(delegate);
   BookmarkTabHelper::FromWebContents(web_contents)->set_delegate(delegate);
   WebContentsModalDialogManager::FromWebContents(web_contents)->
-      set_delegate(delegate);
+      SetDelegate(delegate);
   CoreTabHelper::FromWebContents(web_contents)->set_delegate(delegate);
   SearchEngineTabHelper::FromWebContents(web_contents)->set_delegate(delegate);
   ZoomController::FromWebContents(web_contents)->set_observer(delegate);
@@ -2181,10 +2202,13 @@ bool Browser::ShouldHideUIForFullscreen() const {
   return window_ && window_->ShouldHideUIForFullscreen();
 }
 
-bool Browser::MaybeCreateBackgroundContents(int route_id,
-                                            WebContents* opener_web_contents,
-                                            const string16& frame_name,
-                                            const GURL& target_url) {
+bool Browser::MaybeCreateBackgroundContents(
+    int route_id,
+    WebContents* opener_web_contents,
+    const string16& frame_name,
+    const GURL& target_url,
+    const std::string& partition_id,
+    content::SessionStorageNamespace* session_storage_namespace) {
   GURL opener_url = opener_web_contents->GetURL();
   ExtensionService* extensions_service =
       extensions::ExtensionSystem::Get(profile_)->extension_service();
@@ -2247,7 +2271,9 @@ bool Browser::MaybeCreateBackgroundContents(int route_id,
                                         route_id,
                                         profile_,
                                         frame_name,
-                                        ASCIIToUTF16(extension->id()));
+                                        ASCIIToUTF16(extension->id()),
+                                        partition_id,
+                                        session_storage_namespace);
 
   // When a separate process is used, the original renderer cannot access the
   // new window later, thus we need to navigate the window now.

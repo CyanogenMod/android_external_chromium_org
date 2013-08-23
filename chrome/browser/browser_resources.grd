@@ -9,10 +9,10 @@
   </outputs>
   <release seq="1">
     <structures>
-      <if expr="is_posix and not is_macosx">
+      <if expr="is_posix and not is_macosx and not is_ios">
         <structure name="IDR_ABOUT_MEMORY_HTML" file="resources\about_memory_linux.html" flattenhtml="true" type="chrome_html" />
       </if>
-      <if expr="is_macosx">
+      <if expr="is_macosx or is_ios">
         <structure name="IDR_ABOUT_MEMORY_HTML" file="resources\about_memory_mac.html" flattenhtml="true" type="chrome_html" />
       </if>
       <if expr="is_win">
@@ -27,8 +27,6 @@
       <if expr="pp_ifdef('chromeos')">
         <structure name="IDR_DEMO_USER_LOGIN_HTML" file="resources\chromeos\login\demo_user_login.html" flattenhtml="true" type="chrome_html" />
         <structure name="IDR_DEMO_USER_LOGIN_JS" file="resources\chromeos\login\demo_user_login.js" flattenhtml="true" type="chrome_html" />
-        <structure name="IDR_APP_LAUNCH_SPLASH_HTML" file="resources\chromeos\app_launch\app_launch.html" flattenhtml="true" type="chrome_html" />
-        <structure name="IDR_APP_LAUNCH_SPLASH_JS" file="resources\chromeos\app_launch\app_launch.js" flattenhtml="true" type="chrome_html" />
       </if>
       <structure name="IDR_DOWNLOADS_CSS" file="resources\downloads\downloads.css" flattenhtml="true" type="chrome_html" />
       <structure name="IDR_DOWNLOADS_HTML" file="resources\downloads\downloads.html" flattenhtml="true" allowexternalscript="true" type="chrome_html" />
@@ -37,12 +35,14 @@
       <structure name="IDR_HELP_HTML" file="resources\help\help.html" flattenhtml="true" type="chrome_html" />
       <structure name="IDR_HELP_CHANNEL_CHANGE_PAGE_CSS" file="resources\help\channel_change_page.css" flattenhtml="true" type="chrome_html" />
       <structure name="IDR_HELP_CHANNEL_CHANGE_PAGE_HTML" file="resources\help\channel_change_page.html" flattenhtml="true" type="chrome_html" />
-      <structure name="IDR_INCOGNITO_TAB_HTML" file="resources\incognito_tab.html" flattenhtml="true" type="chrome_html" />
+      <structure name="IDR_INCOGNITO_TAB_HTML" file="resources\ntp4\incognito_tab.html" flattenhtml="true" type="chrome_html" />
+      <structure name="IDR_GUEST_TAB_HTML" file="resources\ntp4\guest_tab.html" flattenhtml="true" type="chrome_html" />
       <if expr="pp_ifdef('chromeos')">
         <structure name="IDR_LOGIN_HTML" file="resources\chromeos\login\login.html" flattenhtml="true" type="chrome_html" variables="OOBE=login" expand_variables="true"/>
         <structure name="IDR_LOGIN_JS" file="resources\chromeos\login\login.js" flattenhtml="true" type="chrome_html" />
       </if>
-      <structure name="IDR_NEW_INCOGNITO_TAB_THEME_CSS" file="resources\new_incognito_tab_theme.css" flattenhtml="true" type="chrome_html" />
+      <structure name="IDR_NEW_INCOGNITO_TAB_THEME_CSS" file="resources\ntp4\new_incognito_tab_theme.css" flattenhtml="true" type="chrome_html" />
+      <structure name="IDR_NEW_GUEST_TAB_THEME_CSS" file="resources\ntp4\new_guest_tab_theme.css" flattenhtml="true" type="chrome_html" />
       <if expr="not is_android">
         <structure name="IDR_NEW_TAB_4_HTML" file="resources\ntp4\new_tab.html" flattenhtml="true" type="chrome_html" />
         <structure name="IDR_NEW_TAB_4_THEME_CSS" file="resources\ntp4\new_tab_theme.css" flattenhtml="true" type="chrome_html" />
@@ -53,10 +53,10 @@
       <if expr="pp_ifdef('chromeos')">
         <structure name="IDR_OOBE_HTML" file="resources\chromeos\login\oobe.html" flattenhtml="true" type="chrome_html" variables="OOBE=oobe" expand_variables="true"/>
         <structure name="IDR_OOBE_JS" file="resources\chromeos\login\oobe.js" flattenhtml="true" type="chrome_html" />
-	<structure name="IDR_OOBE_RESOURCE_LOADER_JS" file="resources\chromeos\login\resource_loader.js" flattenhtml="true" type="chrome_html" />
-	<structure name="IDR_OOBE_ENROLLMENT_HTML" file="resources\chromeos\login\oobe_screen_oauth_enrollment.html" flattenhtml="true" type="chrome_html" />
-	<structure name="IDR_OOBE_ENROLLMENT_CSS" file="resources\chromeos\login\oobe_screen_oauth_enrollment.css" flattenhtml="true" type="chrome_html" />
-	<structure name="IDR_OOBE_ENROLLMENT_JS" file="resources\chromeos\login\oobe_screen_oauth_enrollment.js" flattenhtml="true" type="chrome_html" />
+        <structure name="IDR_OOBE_RESOURCE_LOADER_JS" file="resources\chromeos\login\resource_loader.js" flattenhtml="true" type="chrome_html" />
+        <structure name="IDR_OOBE_ENROLLMENT_HTML" file="resources\chromeos\login\oobe_screen_oauth_enrollment.html" flattenhtml="true" type="chrome_html" />
+        <structure name="IDR_OOBE_ENROLLMENT_CSS" file="resources\chromeos\login\oobe_screen_oauth_enrollment.css" flattenhtml="true" type="chrome_html" />
+        <structure name="IDR_OOBE_ENROLLMENT_JS" file="resources\chromeos\login\oobe_screen_oauth_enrollment.js" flattenhtml="true" type="chrome_html" />
         <structure name="IDR_KEYBOARD_UTILS_JS" file="resources\chromeos\keyboard\keyboard_utils.js" flattenhtml="true" type="chrome_html" />
       </if>
       <structure name="IDR_READER_OUT_OF_DATE_HTML" file="resources\reader_out_of_date.html" flattenhtml="true" type="chrome_html" />
@@ -85,7 +85,7 @@
       </if>
       <include name="IDR_BOOKMARKS_MANIFEST" file="resources\bookmark_manager\manifest.json" type="BINDATA" />
       <include name="IDR_APPS_DEBUGGER_MANIFEST" file="resources\apps_debugger\manifest.json" type="BINDATA" />
-      <if expr="is_posix and not is_macosx">
+      <if expr="is_posix and not is_macosx and not is_ios">
         <include name="IDR_CERTIFICATE_VIEWER_HTML" file="resources\certificate_viewer.html" type="BINDATA" />
         <include name="IDR_CERTIFICATE_VIEWER_JS" file="resources\certificate_viewer.js" type="BINDATA" />
         <include name="IDR_CERTIFICATE_VIEWER_CSS" file="resources\certificate_viewer.css" type="BINDATA" />
@@ -117,6 +117,7 @@
         <include name="IDR_EXTENSION_INFO_JS" file="resources\extensions\extension_info.js" flattenhtml="true" type="BINDATA" />
         <include name="IDR_EXTENSIONS_JS" file="resources\extensions\extensions.js" flattenhtml="true" type="BINDATA" />
       </if>
+      <include name="IDR_FEEDBACK_MANIFEST" file="resources\feedback\manifest.json" type="BINDATA" />
       <include name="IDR_FLAGS_HTML" file="resources\flags.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_FLAGS_JS" file="resources\flags.js" type="BINDATA" />
       <include name="IDR_HELP_JS" file="resources\help\help.js" flattenhtml="true" type="BINDATA" />
@@ -177,6 +178,10 @@
         <include name="IDR_PLUGINS_HTML" file="resources\plugins.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
         <include name="IDR_PLUGINS_JS" file="resources\plugins.js" type="BINDATA" />
       </if>
+      <if expr="not is_android or pp_ifdef('google_tv')">
+        <include name="IDR_COMPONENTS_HTML" file="resources\components.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
+        <include name="IDR_COMPONENTS_JS" file="resources\components.js" type="BINDATA" />
+      </if>
       <if expr="is_android and pp_ifdef('google_tv')">
         <include name="IDR_PLUGIN_DB_JSON" file="resources\plugin_metadata\plugins_tv.json" type="BINDATA" />
       </if>
@@ -202,8 +207,7 @@
       </if>
       <include name="IDR_POLICY_HTML" file="resources\policy.html" flattenhtml="true" allowexternalscript="true" type="BINDATA"/>
       <include name="IDR_POLICY_JS" file="resources\policy.js" type="BINDATA"/>
-      <include name="IDR_PRERENDER_URL_WHITELIST"
-	       file="resources\prerender_url_whitelist.dat" type="BINDATA"/>
+      <include name="IDR_PRERENDER_URL_WHITELIST" file="resources\prerender_url_whitelist.dat" type="BINDATA"/>
       <if expr="pp_ifdef('enable_printing')">
         <include name="IDR_PRINT_PREVIEW_HTML" file="resources\print_preview\print_preview.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
         <include name="IDR_PRINT_PREVIEW_PAGE" file="resources\print_preview\print_preview_page.html" flattenhtml="true" allowexternalscript="false" type="BINDATA" />
@@ -242,9 +246,6 @@
         <include name="IDR_SUGGESTIONS_PAGE_JS" file="resources\ntp4\suggestions_page.js" type="BINDATA" />
       </if>
       <include name="IDR_TRANSLATE_JS" file="resources\translate.js" type="BINDATA" />
-      <include name="IDR_FEEDBACK_HTML" file="resources\feedback.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
-      <include name="IDR_FEEDBACK_HTML_INVALID" file="resources\feedback_invalid.html" allowexternalscript="true" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_FEEDBACK_JS" file="resources\feedback.js" flattenhtml="true" type="BINDATA" />
       <include name="IDR_UBER_HTML" file="resources\uber\uber.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_UBER_JS" file="resources\uber\uber.js" type="BINDATA" />
       <include name="IDR_UBER_FRAME_HTML" file="resources\uber\uber_frame.html" flattenhtml="true" type="BINDATA" />
@@ -356,7 +357,7 @@
         <include name="IDR_SET_AS_DEFAULT_BROWSER_JS" file="resources\set_as_default_browser.js" flattenhtml="true" type="BINDATA" />
         <include name="IDR_SET_AS_DEFAULT_BROWSER_HTML" file="resources\set_as_default_browser.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       </if>
-      <if expr="not is_android and not pp_ifdef('ios') and not pp_ifdef('chromeos')">
+      <if expr="not is_android and not is_ios and not pp_ifdef('chromeos')">
         <include name="IDR_USER_MANAGER_JS" file="resources\user_manager\user_manager.js" flattenhtml="true" type="BINDATA" />
         <include name="IDR_USER_MANAGER_HTML" file="resources\user_manager\user_manager.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       </if>
@@ -369,6 +370,11 @@
         <include name="IDR_IDENTITY_INTERNALS_HTML" file="resources\identity_internals.html" type="BINDATA" />
         <include name="IDR_IDENTITY_INTERNALS_CSS" file="resources\identity_internals.css" type="BINDATA" />
         <include name="IDR_IDENTITY_INTERNALS_JS" file="resources\identity_internals.js" type="BINDATA" />
+      </if>
+      <if expr="pp_ifdef('chromeos')">
+        <include name="IDR_NETWORK_HTML" file="resources\chromeos\network.html" type="BINDATA" />
+        <include name="IDR_NETWORK_JS" file="resources\chromeos\network.js" type="BINDATA" />
+        <include name="IDR_NETWORK_CSS" file="resources\chromeos\network.css" type="BINDATA" />
       </if>
     </includes>
   </release>

@@ -16,7 +16,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/download/download_util.h"
+#include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/extensions/external_policy_loader.h"
 #include "chrome/browser/policy/configuration_policy_pref_store.h"
 #include "chrome/browser/policy/external_data_fetcher.h"
@@ -102,6 +102,9 @@ const DefaultSearchSimplePolicyHandlerEntry kDefaultSearchPolicyMap[] = {
     Value::TYPE_STRING },
   { key::kDefaultSearchProviderImageURL,
     prefs::kDefaultSearchProviderImageURL,
+    Value::TYPE_STRING },
+  { key::kDefaultSearchProviderNewTabURL,
+    prefs::kDefaultSearchProviderNewTabURL,
     Value::TYPE_STRING },
   { key::kDefaultSearchProviderSearchURLPostParams,
     prefs::kDefaultSearchProviderSearchURLPostParams,
@@ -739,7 +742,7 @@ void DownloadDirPolicyHandler::ApplyPolicySettings(const PolicyMap& policies,
   // This is checked after path expansion because a non-empty policy value can
   // lead to an empty path value after expansion (e.g. "\"\"").
   if (expanded_value.empty())
-    expanded_value = download_util::GetDefaultDownloadDirectory().value();
+    expanded_value = DownloadPrefs::GetDefaultDownloadDirectory().value();
   prefs->SetValue(prefs::kDownloadDefaultDirectory,
                   Value::CreateStringValue(expanded_value));
   prefs->SetValue(prefs::kPromptForDownload,
@@ -967,6 +970,7 @@ void DefaultSearchPolicyHandler::ApplyPolicySettings(const PolicyMap& policies,
     prefs->SetString(prefs::kDefaultSearchProviderEncodings, std::string());
     prefs->SetString(prefs::kDefaultSearchProviderKeyword, std::string());
     prefs->SetString(prefs::kDefaultSearchProviderInstantURL, std::string());
+    prefs->SetString(prefs::kDefaultSearchProviderNewTabURL, std::string());
     prefs->SetValue(prefs::kDefaultSearchProviderAlternateURLs,
                     new ListValue());
     prefs->SetString(prefs::kDefaultSearchProviderSearchTermsReplacementKey,
@@ -996,6 +1000,7 @@ void DefaultSearchPolicyHandler::ApplyPolicySettings(const PolicyMap& policies,
       EnsureStringPrefExists(prefs, prefs::kDefaultSearchProviderEncodings);
       EnsureStringPrefExists(prefs, prefs::kDefaultSearchProviderKeyword);
       EnsureStringPrefExists(prefs, prefs::kDefaultSearchProviderInstantURL);
+      EnsureStringPrefExists(prefs, prefs::kDefaultSearchProviderNewTabURL);
       EnsureListPrefExists(prefs, prefs::kDefaultSearchProviderAlternateURLs);
       EnsureStringPrefExists(prefs,
           prefs::kDefaultSearchProviderSearchTermsReplacementKey);

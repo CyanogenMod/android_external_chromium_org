@@ -46,11 +46,11 @@ Chrome supports. -->
     <output filename="google_chrome_strings_nb.pak" type="data_package" lang="no" />
     <!-- 'no' for Norwegian Bokmål. It should be 'nb'. -->
     <output filename="google_chrome_strings_pl.pak" type="data_package" lang="pl" />
-    <if expr="pp_ifdef('ios')">
+    <if expr="is_ios">
       <!-- iOS uses pt for pt-BR -->
       <output filename="google_chrome_strings_pt.pak" type="data_package" lang="pt-BR" />
     </if>
-    <if expr="not pp_ifdef('ios')">
+    <if expr="not is_ios">
       <output filename="google_chrome_strings_pt-BR.pak" type="data_package" lang="pt-BR" />
     </if>
     <output filename="google_chrome_strings_pt-PT.pak" type="data_package" lang="pt-PT" />
@@ -213,13 +213,13 @@ Chrome supports. -->
       <message name="IDS_CERT_ERROR_NOT_YET_VALID_DETAILS" desc="Details for an X509 certificate that is not yet valid">
         You attempted to reach &lt;strong&gt;<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presented a certificate that is not yet valid. No information is available to indicate whether that certificate can be trusted. Google Chrome cannot reliably guarantee that you are communicating with &lt;strong&gt;<ph name="DOMAIN2">$2<ex>paypal.com</ex></ph>&lt;/strong&gt; and not an attacker. Your computer's clock is currently set to <ph name="CURRENT_TIME">$3<ex>Monday, July 18th, 2012 12:31PM</ex></ph>. Does that look right? If not, you should correct your system's clock and then refresh this page.
       </message>
-      <if expr="pp_ifdef('ios')">
+      <if expr="is_ios">
         <message name="IDS_CERT_ERROR_AUTHORITY_INVALID_DETAILS" desc="Details for an X509 certificate with an invalid authority">
           You attempted to reach &lt;strong&gt;<ph
 name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presented a certificate issued by an entity that is not trusted by Google Chrome. This may mean that the server has generated its own security credentials, which Chrome cannot rely on for identity information, or an attacker may be trying to intercept your communications.
         </message>
       </if>
-      <if expr="not pp_ifdef('ios')">
+      <if expr="not is_ios">
         <message name="IDS_CERT_ERROR_AUTHORITY_INVALID_DETAILS" desc="Details for an X509 certificate with an invalid authority">
           You attempted to reach &lt;strong&gt;<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presented a certificate issued by an entity that is not trusted by your computer's operating system. This may mean that the server has generated its own security credentials, which Chrome cannot rely on for identity information, or an attacker may be trying to intercept your communications.
         </message>
@@ -316,13 +316,13 @@ name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presente
           Get Started with Chrome OS
         </message>
       </if>
-      <if expr="pp_ifdef('ios')">
+      <if expr="is_ios">
         <message name="IDS_NEW_TAB_CHROME_WELCOME_PAGE_TITLE"
                  desc="Title for the hard-coded thumbnail that represents the Google Chrome Welcome page.  This is used on the NTP when there aren't enough thumbnails to show. [Length: 14em]">
           Welcome
         </message>
       </if>
-      <if expr="not pp_ifdef('chromeos') and not pp_ifdef('ios')">
+      <if expr="not pp_ifdef('chromeos') and not is_ios">
         <message name="IDS_NEW_TAB_CHROME_WELCOME_PAGE_TITLE"
                  desc="Title for the hard-coded thumbnail that represents the Google Chrome OS Welcome page. This is used on the NTP when there aren't enough thumbnails to show.">
           Welcome to Google Chrome
@@ -595,7 +595,7 @@ Google Chrome is unable to recover your settings.
       </message>
 
       <!-- "Create application shortcuts" dialog -->
-      <if expr="is_posix and not is_macosx">
+      <if expr="is_posix and not is_macosx and not is_ios">
         <message name="IDS_CREATE_SHORTCUTS_ERROR_LABEL" desc="Contents of the main label in the error dialog box when creating an application shortcut failed for unknown reasons.">
           Google Chrome could not create an application shortcut.
         </message>
@@ -690,7 +690,7 @@ For Google Chrome, processes used to display diagnostics information (such as th
       </if>
 
       <!-- iOS Upgrade available info bar-->
-      <if expr="pp_ifdef('ios')">
+      <if expr="is_ios">
         <message name="IDS_UPGRADE_AVAILABLE" desc="Text to inform the user of the presence of a new version of the application">
           Chrome just got better! A new version is available.
         </message>
@@ -780,10 +780,10 @@ For Google Chrome, processes used to display diagnostics information (such as th
       <if expr="not pp_ifdef('chromeos')">
         <!-- New one-click signin dialog contents for SAML support -->
         <message name="IDS_ONE_CLICK_SIGNIN_DIALOG_TITLE_NEW" desc="The title of the modal dialog window that opens when the user chooses to use one click sign in.">
-          Sign in to Chrome with <ph name="USER_EMAIL_ADDRESS">$1<ex>foo@gmail.com</ex></ph>?
+          You're signed in to Chrome!
         </message>
         <message name="IDS_ONE_CLICK_SIGNIN_DIALOG_MESSAGE_NEW" desc="The message of the one click sign in dialog.">
-          You're signing in to Chrome using your <ph name="USER_EMAIL_ADDRESS">$1<ex>foo@gmail.com</ex></ph> account. You will be able to access your bookmarks, history, and other settings on all of your signed in devices.
+          You're signed in as <ph name="USER_EMAIL_ADDRESS">$1<ex>foo@gmail.com</ex></ph>. Now you can access your bookmarks, history, and other settings on all your signed in devices.
         </message>
         <message name="IDS_ONE_CLICK_SIGNIN_BUBBLE_MESSAGE" desc="The body of the sync promo NTP bubble.">
           You're now signed in to Chrome! Your bookmarks, history, and other settings will be synced to your Google Account.
@@ -827,6 +827,13 @@ Signing in anyway will merge Chrome information like bookmarks, history, and oth
         You are signing in with a managed account and giving its administrator control over your Google Chrome profile. Your Chrome data, such as your apps, bookmarks, history, passwords, and other settings will become permanently tied to <ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>. You will be able to delete this data via the Google Accounts Dashboard, but you will not be able to associate this data with another account. You can optionally create a new profile to keep your existing Chrome data separate. <ph name="LEARN_MORE">$2<ex>Learn more</ex></ph>
       </message>
 
+      <message name="IDS_OPTIONS_PASSWORDS_MAC_WARNING" desc="The warning for OS X that passwords are shared across profiles in the keychain.">
+        On Mac, passwords are saved to your Keychain and may be accessed or synced by other Chrome users sharing this OS X account.
+      </message>
+
+      <message name="IDS_AUTOFILL_CC_INFOBAR_TEXT" desc="Text to show in the Autofill credit card request infobar.">
+        Do you want Chrome to save this credit card information for completing web forms?
+      </message>
       <message name="IDS_AUTOFILL_DIALOG_SAVE_LOCALLY_CHECKBOX" desc="Checkbox that controls whether info the user types into the autofill dialog is saved by chrome.">
         Save details in Chrome
       </message>
@@ -835,6 +842,9 @@ Signing in anyway will merge Chrome information like bookmarks, history, and oth
       </message>
       <message name="IDS_AUTOFILL_NEW_CREDIT_CARD_BUBBLE_TITLE" desc="Title text of the new credit card bubble informing a user their billing information has been saved in chrome.">
         Your billing details have been saved in Chrome.
+      </message>
+      <message name="IDS_AUTOFILL_WALLET_UPGRADE_CHROME_ERROR" desc="Text explaining that user must upgrade Chrome to use Wallet.">
+        You must upgrade Chrome to use Google Wallet [<ph name="ERROR_CODE">$1<ex>54</ex></ph>].
       </message>
 
       <!-- Network Error Pages -->
@@ -852,18 +862,18 @@ Signing in anyway will merge Chrome information like bookmarks, history, and oth
         Allow Chrome to access the network in your firewall or antivirus
         settings.
       </message>
-      <if expr="is_macosx and not pp_ifdef('ios')">
+      <if expr="is_macosx">
         <message name="IDS_ERRORPAGES_SUGGESTION_PROXY_DISABLE_PLATFORM" desc="Mac OSX instructions for disabling use of a proxy server.">
           Go to
           Applications &gt; System Preferences &gt; Network &gt; Advanced &gt; Proxies
           and deselect any proxies that have been selected.
         </message>
       </if>
-      <if expr="is_android or pp_ifdef('ios')">
+      <if expr="is_android or is_ios">
         <message name="IDS_ERRORPAGES_SUGGESTION_PROXY_DISABLE_PLATFORM" desc="Instructions for disabling use of a proxy server (leave empty for Android and iOS).">
         </message>
       </if>
-      <if expr="not pp_ifdef('chromeos') and is_posix and not is_macosx and not is_android and not pp_ifdef('ios')">
+      <if expr="not pp_ifdef('chromeos') and is_posix and not is_macosx and not is_android and not is_ios">
         <message name="IDS_ERRORPAGES_SUGGESTION_PROXY_DISABLE_PLATFORM" desc="Linux instructions for disabling use of a proxy server.">
           Go to
           the Chrome menu &gt;

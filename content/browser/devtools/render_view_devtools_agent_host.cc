@@ -17,6 +17,7 @@
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/devtools_messages.h"
+#include "content/common/view_messages.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
@@ -194,6 +195,11 @@ void RenderViewDevToolsAgentHost::OnClientAttached() {
 }
 
 void RenderViewDevToolsAgentHost::OnClientDetached() {
+  overrides_handler_->OnClientDetached();
+  ClientDetachedFromRenderer();
+}
+
+void RenderViewDevToolsAgentHost::ClientDetachedFromRenderer() {
   if (!render_view_host_)
     return;
 
@@ -278,7 +284,7 @@ void RenderViewDevToolsAgentHost::ConnectRenderViewHost(RenderViewHost* rvh) {
 }
 
 void RenderViewDevToolsAgentHost::DisconnectRenderViewHost() {
-  OnClientDetached();
+  ClientDetachedFromRenderer();
   rvh_observer_.reset();
   render_view_host_ = NULL;
 }
@@ -311,9 +317,15 @@ bool RenderViewDevToolsAgentHost::OnRvhMessageReceived(
     IPC_MESSAGE_HANDLER(DevToolsHostMsg_ClearBrowserCache, OnClearBrowserCache)
     IPC_MESSAGE_HANDLER(DevToolsHostMsg_ClearBrowserCookies,
                         OnClearBrowserCookies)
+    IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_SwapCompositorFrame,
+                                handled = false; OnSwapCompositorFrame())
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
+}
+
+void RenderViewDevToolsAgentHost::OnSwapCompositorFrame() {
+  overrides_handler_->OnSwapCompositorFrame();
 }
 
 void RenderViewDevToolsAgentHost::OnSaveAgentRuntimeState(

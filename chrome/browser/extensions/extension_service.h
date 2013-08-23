@@ -27,6 +27,7 @@
 #include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/extensions/extensions_quota_service.h"
 #include "chrome/browser/extensions/external_provider_interface.h"
+#include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/extensions/menu_manager.h"
 #include "chrome/browser/extensions/pending_extension_manager.h"
 #include "chrome/browser/extensions/process_map.h"
@@ -34,10 +35,10 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_set.h"
-#include "chrome/common/extensions/manifest.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/common/manifest.h"
 #include "extensions/common/one_shot_event.h"
 #include "sync/api/string_ordinal.h"
 #include "sync/api/sync_change.h"
@@ -949,6 +950,8 @@ class ExtensionService
   scoped_ptr<extensions::ExtensionActionStorageManager>
       extension_action_storage_manager_;
 #endif
+  scoped_ptr<extensions::ManagementPolicy::Provider>
+      shared_module_policy_provider_;
 
   ObserverList<extensions::UpdateObserver, true> update_observers_;
 
