@@ -35,9 +35,13 @@ SkiaJavaOutputStream::SkiaJavaOutputStream(
 
 SkiaJavaOutputStream::~SkiaJavaOutputStream() { }
 
-// TODO(sgurun) make sure shutdown while writing/flush is handled properly
-// potentially via a cancel API in webview.
 bool SkiaJavaOutputStream::write(const void* buffer, size_t size) {
+
+  if (buffer == NULL) {
+    LOG(WARNING) << "write: buffer pointer is NULL";
+    return false;
+  }
+
   if (!buffer_.obj()) {
     // Allocate transfer buffer.
     base::android::ScopedJavaLocalRef<jbyteArray> temp(
