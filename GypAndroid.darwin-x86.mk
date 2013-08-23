@@ -216,7 +216,6 @@ include $(LOCAL_PATH)/ui/base/strings/ui_strings.target.darwin-x86.mk
 include $(LOCAL_PATH)/ui/gl/gl.target.darwin-x86.mk
 include $(LOCAL_PATH)/ui/gl/gl_jni_headers.target.darwin-x86.mk
 include $(LOCAL_PATH)/ui/gl/surface_jni_headers.target.darwin-x86.mk
-include $(LOCAL_PATH)/ui/gl/surface_texture_jni_headers.target.darwin-x86.mk
 include $(LOCAL_PATH)/ui/native_theme/native_theme.target.darwin-x86.mk
 include $(LOCAL_PATH)/ui/shell_dialogs.target.darwin-x86.mk
 include $(LOCAL_PATH)/ui/snapshot/snapshot.target.darwin-x86.mk

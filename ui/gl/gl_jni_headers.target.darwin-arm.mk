@@ -12,12 +12,21 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
-	$(call intermediates-dir-for,GYP,ui_gl_surface_texture_jni_headers_gyp)/surface_texture_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,ui_gl_surface_jni_headers_gyp)/surface_jni_headers.stamp
 
 
 ### Generated for rule "ui_gl_gl_gyp_gl_jni_headers_target_generate_jni_headers":
-# "{'inputs': ['../../base/android/jni_generator/jni_generator.py', '../../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/ui/gl/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['../android/java/src/org/chromium/ui/gfx/SurfaceTextureListener.java'], 'action': ['../../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/ui/gl/jni', '--optimize_generation', '0', '--jarjar', '../../android_webview/build/jarjar-rules.txt'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
+# "{'inputs': ['../../base/android/jni_generator/jni_generator.py', '../../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/ui/gl/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['../android/java/src/org/chromium/ui/gfx/SurfaceTextureBridge.java', '../android/java/src/org/chromium/ui/gfx/SurfaceTextureListener.java'], 'action': ['../../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/ui/gl/jni', '--optimize_generation', '0', '--jarjar', '../../android_webview/build/jarjar-rules.txt'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
+$(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureBridge_jni.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureBridge_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureBridge_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
+$(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureBridge_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
+$(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureBridge_jni.h: $(LOCAL_PATH)/ui/android/java/src/org/chromium/ui/gfx/SurfaceTextureBridge.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
+	mkdir -p $(gyp_shared_intermediate_dir)/ui/gl/jni; cd $(gyp_local_path)/ui/gl; ../../base/android/jni_generator/jni_generator.py --input_file ../android/java/src/org/chromium/ui/gfx/SurfaceTextureBridge.java --output_dir "$(gyp_shared_intermediate_dir)/ui/gl/jni" --optimize_generation 0 --jarjar ../../android_webview/build/jarjar-rules.txt
+
+.PHONY: ui_gl_gl_jni_headers_gyp_rule_trigger
+ui_gl_gl_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureBridge_jni.h
+
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
@@ -31,12 +40,14 @@ ui_gl_gl_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/ui/gl/jni/
 ### Finished generating for all rules
 
 GYP_GENERATED_OUTPUTS := \
+	$(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureBridge_jni.h \
 	$(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h
 
 # Make sure our deps and generated files are built first.
 LOCAL_ADDITIONAL_DEPENDENCIES := $(GYP_TARGET_DEPENDENCIES) $(GYP_GENERATED_OUTPUTS)
 
 LOCAL_GENERATED_SOURCES := \
+	$(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureBridge_jni.h \
 	$(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h \
 	ui_gl_gl_jni_headers_gyp_rule_trigger
 

@@ -496,9 +496,11 @@ public class AwContents {
         AwSettings.ZoomSupportChangeListener zoomListener =
                 new AwSettings.ZoomSupportChangeListener() {
                     @Override
-                    public void onMultiTouchZoomSupportChanged(boolean supportsMultiTouchZoom) {
-                        mContentViewCore.updateMultiTouchZoomSupport(supportsMultiTouchZoom);
+                    public void onGestureZoomSupportChanged(boolean supportsGestureZoom) {
+                        mContentViewCore.updateMultiTouchZoomSupport(supportsGestureZoom);
+                        mContentViewCore.updateDoubleTapDragSupport(supportsGestureZoom);
                     }
+
                 };
         mSettings = new AwSettings(mContainerView.getContext(), hasInternetPermission, zoomListener,
                 isAccessFromFileURLsGrantedByDefault, mDIPScale);
@@ -907,7 +909,7 @@ public class AwContents {
     }
 
     public boolean isMultiTouchZoomSupported() {
-        return mSettings.supportsMultiTouchZoom();
+        return mSettings.supportsGestureZoom();
     }
 
     public View getZoomControlsForTest() {
@@ -1005,6 +1007,15 @@ public class AwContents {
                     mScrollOffsetManager.computeMaximumHorizontalScrollOffset(),
                     mScrollOffsetManager.computeMaximumVerticalScrollOffset());
         }
+    }
+
+    /**
+     * @see WebView#requestChildRectangleOnScreen(View, Rect, boolean)
+     */
+    public boolean requestChildRectangleOnScreen(View child, Rect rect, boolean immediate) {
+        return mScrollOffsetManager.requestChildRectangleOnScreen(
+                child.getLeft() - child.getScrollX(), child.getTop() - child.getScrollY(),
+                rect, immediate);
     }
 
     /**
