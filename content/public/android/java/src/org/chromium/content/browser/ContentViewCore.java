@@ -757,8 +757,6 @@ import java.util.Map;
         mContainerViewInternals = internalDispatcher;
 
         mContainerView.setWillNotDraw(false);
-        mContainerView.setFocusable(true);
-        mContainerView.setFocusableInTouchMode(true);
         mContainerView.setClickable(true);
 
         mZoomManager = new ZoomManager(mContext, this);
@@ -1883,7 +1881,10 @@ import java.util.Map;
 
     private void handleTapOrPress(
             long timeMs, float xPix, float yPix, int isLongPressOrTap, boolean showPress) {
-        if (!mContainerView.isFocused()) mContainerView.requestFocus();
+        if (mContainerView.isFocusable() && mContainerView.isFocusableInTouchMode()
+                && !mContainerView.isFocused())  {
+            mContainerView.requestFocus();
+        }
 
         if (!mPopupZoomer.isShowing()) mPopupZoomer.setLastTouch(xPix, yPix);
 
@@ -1916,6 +1917,10 @@ import java.util.Map;
 
     public void updateMultiTouchZoomSupport(boolean supportsMultiTouchZoom) {
         mZoomManager.updateMultiTouchSupport(supportsMultiTouchZoom);
+    }
+
+    public void updateDoubleTapDragSupport(boolean supportsDoubleTapDrag) {
+        mContentViewGestureHandler.updateDoubleTapDragSupport(supportsDoubleTapDrag);
     }
 
     public void selectPopupMenuItems(int[] indices) {
