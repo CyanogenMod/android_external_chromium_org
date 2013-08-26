@@ -863,6 +863,7 @@ struct SubtreeGlobals {
   float page_scale_factor;
   LayerType* page_scale_application_layer;
   bool can_adjust_raster_scales;
+  bool can_update_tile_priorities;
 };
 
 template<typename LayerType, typename RenderSurfaceType>
@@ -1616,7 +1617,8 @@ static void CalculateDrawPropertiesInternal(
     }
   }
 
-  UpdateTilePrioritiesForLayer(layer);
+  if (globals.can_update_tile_priorities)
+    UpdateTilePrioritiesForLayer(layer);
   SavePaintPropertiesLayer(layer);
 
   // If neither this layer nor any of its children were added, early out.
@@ -1670,6 +1672,7 @@ void LayerTreeHostCommon::CalculateDrawProperties(
   globals.page_scale_factor = inputs->page_scale_factor;
   globals.page_scale_application_layer = inputs->page_scale_application_layer;
   globals.can_adjust_raster_scales = inputs->can_adjust_raster_scales;
+  globals.can_update_tile_priorities = inputs->can_update_tile_priorities;
 
   DataForRecursion<Layer, RenderSurface> data_for_recursion;
   data_for_recursion.parent_matrix = scaled_device_transform;
@@ -1728,6 +1731,7 @@ void LayerTreeHostCommon::CalculateDrawProperties(
   globals.page_scale_factor = inputs->page_scale_factor;
   globals.page_scale_application_layer = inputs->page_scale_application_layer;
   globals.can_adjust_raster_scales = inputs->can_adjust_raster_scales;
+  globals.can_update_tile_priorities = inputs->can_update_tile_priorities;
 
   DataForRecursion<LayerImpl, RenderSurfaceImpl> data_for_recursion;
   data_for_recursion.parent_matrix = scaled_device_transform;

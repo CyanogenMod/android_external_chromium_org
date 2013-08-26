@@ -255,13 +255,28 @@ gfx::RectF DirectRenderer::ComputeScissorRectForRenderPass(
   return render_pass_scissor;
 }
 
+gfx::Rect DirectRenderer::DeviceClipRect(const DrawingFrame* frame) const {
+  if (frame->current_render_pass != frame->root_render_pass)
+    return gfx::Rect();
+
+  gfx::Rect device_clip_rect = client_->DeviceClip();
+  if (FlippedFramebuffer())
+    device_clip_rect.set_y(current_surface_size_.height() -
+                           device_clip_rect.bottom());
+  return device_clip_rect;
+}
+
 void DirectRenderer::SetScissorStateForQuad(const DrawingFrame* frame,
                                             const DrawQuad& quad) {
   if (quad.isClipped()) {
-    gfx::RectF quad_scissor_rect = quad.clipRect();
-    SetScissorTestRect(MoveFromDrawToWindowSpace(quad_scissor_rect));
+    SetScissorTestRectInDrawSpace(frame, quad.clipRect());
   } else {
-    EnsureScissorTestDisabled();
+    gfx::Rect device_clip_rect = DeviceClipRect(frame);
+    if (!device_clip_rect.IsEmpty()) {
+      SetScissorTestRect(device_clip_rect);
+    } else {
+      EnsureScissorTestDisabled();
+    }
   }
 }
 
@@ -281,7 +296,16 @@ void DirectRenderer::SetScissorStateForQuadWithRenderPassScissor(
   }
 
   *should_skip_quad = false;
-  SetScissorTestRect(MoveFromDrawToWindowSpace(quad_scissor_rect));
+  SetScissorTestRectInDrawSpace(frame, quad_scissor_rect);
+}
+
+void DirectRenderer::SetScissorTestRectInDrawSpace(const DrawingFrame* frame,
+                                                   gfx::RectF draw_space_rect) {
+  gfx::Rect window_space_rect = MoveFromDrawToWindowSpace(draw_space_rect);
+  gfx::Rect device_clip_rect = DeviceClipRect(frame);
+  if (!device_clip_rect.IsEmpty())
+    window_space_rect.Intersect(device_clip_rect);
+  SetScissorTestRect(window_space_rect);
 }
 
 void DirectRenderer::FinishDrawingQuadList() {}
@@ -298,7 +322,7 @@ void DirectRenderer::DrawRenderPass(DrawingFrame* frame,
 
   if (using_scissor_as_optimization) {
     render_pass_scissor = ComputeScissorRectForRenderPass(frame);
-    SetScissorTestRect(MoveFromDrawToWindowSpace(render_pass_scissor));
+    SetScissorTestRectInDrawSpace(frame, render_pass_scissor);
   }
 
   if (frame->current_render_pass != frame->root_render_pass ||

@@ -179,13 +179,18 @@ class CC_EXPORT LayerTreeHostImpl
 
   // Returns the currently visible viewport size in DIP. This value excludes
   // the URL bar and non-overlay scrollbars.
-  gfx::SizeF VisibleViewportSize() const;
+  gfx::SizeF UnscaledScrollableViewportSize() const;
 
   // Evict all textures by enforcing a memory policy with an allocation of 0.
   void EvictTexturesForTesting();
 
+  bool device_viewport_valid_for_tile_management() const {
+    return device_viewport_valid_for_tile_management_;
+  }
+
   // RendererClient implementation
   virtual gfx::Rect DeviceViewport() const OVERRIDE;
+  virtual gfx::Rect DeviceClip() const OVERRIDE;
  private:
   virtual float DeviceScaleFactor() const OVERRIDE;
   virtual const LayerTreeSettings& Settings() const OVERRIDE;
@@ -206,8 +211,11 @@ class CC_EXPORT LayerTreeHostImpl
   virtual void ReleaseGL() OVERRIDE;
   virtual void SetNeedsRedrawRect(gfx::Rect rect) OVERRIDE;
   virtual void BeginFrame(const BeginFrameArgs& args) OVERRIDE;
-  virtual void SetExternalDrawConstraints(const gfx::Transform& transform,
-                                          gfx::Rect viewport) OVERRIDE;
+  virtual void SetExternalDrawConstraints(
+      const gfx::Transform& transform,
+      gfx::Rect viewport,
+      gfx::Rect clip,
+      bool valid_for_tile_management) OVERRIDE;
   virtual void SetExternalStencilTest(bool enabled) OVERRIDE;
   virtual void DidLoseOutputSurface() OVERRIDE;
   virtual void OnSwapBuffersComplete(const CompositorFrameAck* ack) OVERRIDE;
@@ -265,7 +273,6 @@ class CC_EXPORT LayerTreeHostImpl
   size_t memory_allocation_limit_bytes() const;
 
   void SetViewportSize(gfx::Size device_viewport_size);
-  gfx::Size device_viewport_size() const { return device_viewport_size_; }
 
   void SetOverdrawBottomHeight(float overdraw_bottom_height);
   float overdraw_bottom_height() const { return overdraw_bottom_height_; }
@@ -536,12 +543,18 @@ class CC_EXPORT LayerTreeHostImpl
   // the page when the keyboard is up.
   float overdraw_bottom_height_;
 
-  // Optional top-level constraints that can be set by the OutputSurface.  The
-  // external_viewport_'s size takes precedence over device_viewport_size_ for
-  // DrawQuad generation and Renderer; however, device_viewport_size_ is still
-  // used for scrollable size.
+  // Optional top-level constraints that can be set by the OutputSurface.
+  // - external_transform_ applies a transform above the root layer
+  // - external_viewport_ is used DrawProperties, tile management and
+  // glViewport/window projection matrix.
+  // - external_clip_ specifies a top-level clip rect
+  // - external_stencil_test_enabled_ tells CC to respect existing stencil bits
+  // (When these are specified, device_viewport_size_ remains used only for
+  // scrollable size.)
   gfx::Transform external_transform_;
   gfx::Rect external_viewport_;
+  gfx::Rect external_clip_;
+  bool device_viewport_valid_for_tile_management_;
   bool external_stencil_test_enabled_;
 
   gfx::Rect viewport_damage_rect_;
