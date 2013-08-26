@@ -207,7 +207,7 @@ void LayerTreeImpl::SetPageScaleDelta(float delta) {
 }
 
 gfx::SizeF LayerTreeImpl::ScrollableViewportSize() const {
-  return gfx::ScaleSize(layer_tree_host_impl_->VisibleViewportSize(),
+  return gfx::ScaleSize(layer_tree_host_impl_->UnscaledScrollableViewportSize(),
                         1.0f / total_page_scale_factor());
 }
 
@@ -256,8 +256,9 @@ void LayerTreeImpl::UpdateSolidColorScrollbars() {
       ScrollableViewportSize());
   float vertical_adjust = 0.0f;
   if (RootContainerLayer())
-    vertical_adjust = layer_tree_host_impl_->VisibleViewportSize().height() -
-                      RootContainerLayer()->bounds().height();
+    vertical_adjust =
+        layer_tree_host_impl_->UnscaledScrollableViewportSize().height() -
+        RootContainerLayer()->bounds().height();
   if (ScrollbarLayerImpl* horiz = root_scroll->horizontal_scrollbar_layer()) {
     horiz->SetVerticalAdjust(vertical_adjust);
     horiz->SetVisibleToTotalLengthRatio(
@@ -307,6 +308,7 @@ void LayerTreeImpl::UpdateDrawProperties() {
         MaxTextureSize(),
         settings().can_use_lcd_text,
         settings().layer_transforms_should_scale_layer_contents,
+        layer_tree_host_impl_->device_viewport_valid_for_tile_management(),
         &render_surface_layer_list_);
     LayerTreeHostCommon::CalculateDrawProperties(&inputs);
   }
@@ -482,6 +484,14 @@ void LayerTreeImpl::SetNeedsCommit() {
   layer_tree_host_impl_->SetNeedsCommit();
 }
 
+gfx::Rect LayerTreeImpl::DeviceViewport() const {
+  return layer_tree_host_impl_->DeviceViewport();
+}
+
+bool LayerTreeImpl::DeviceViewportValidForTileManagement() const {
+  return layer_tree_host_impl_->device_viewport_valid_for_tile_management();
+}
+
 void LayerTreeImpl::SetNeedsRedraw() {
   layer_tree_host_impl_->SetNeedsRedraw();
 }
@@ -492,10 +502,6 @@ const LayerTreeDebugState& LayerTreeImpl::debug_state() const {
 
 float LayerTreeImpl::device_scale_factor() const {
   return layer_tree_host_impl_->device_scale_factor();
-}
-
-gfx::Size LayerTreeImpl::device_viewport_size() const {
-  return layer_tree_host_impl_->device_viewport_size();
 }
 
 DebugRectHistory* LayerTreeImpl::debug_rect_history() const {

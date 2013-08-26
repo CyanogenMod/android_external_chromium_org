@@ -151,7 +151,7 @@ static gfx::Size DeviceViewportSize(const LayerTreeHost* host) {
   return host->device_viewport_size();
 }
 static gfx::Size DeviceViewportSize(const LayerTreeHostImpl* host_impl) {
-  return host_impl->device_viewport_size();
+  return host_impl->DeviceViewport().size();
 }
 
 template <typename LayerTreeHostType>

@@ -22,6 +22,7 @@ class CC_EXPORT RendererClient {
   // progress, this is guaranteed to be contained within the output surface
   // size.
   virtual gfx::Rect DeviceViewport() const = 0;
+  virtual gfx::Rect DeviceClip() const = 0;
 
   virtual float DeviceScaleFactor() const = 0;
   virtual const LayerTreeSettings& Settings() const = 0;

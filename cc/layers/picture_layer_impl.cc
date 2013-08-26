@@ -299,6 +299,9 @@ void PictureLayerImpl::UpdateTilePriorities() {
   if (!tilings_->num_tilings())
     return;
 
+  if (!layer_tree_impl()->DeviceViewportValidForTileManagement())
+    return;
+
   double current_frame_time_in_seconds =
       (layer_tree_impl()->CurrentFrameTimeTicks() -
        base::TimeTicks()).InSecondsF();
@@ -321,12 +324,13 @@ void PictureLayerImpl::UpdateTilePriorities() {
 
   gfx::Transform current_screen_space_transform = screen_space_transform();
 
+  gfx::Size device_viewport_size = layer_tree_impl()->DeviceViewport().size();
   gfx::Rect viewport_in_content_space;
   gfx::Transform screen_to_layer(gfx::Transform::kSkipInitialization);
   if (screen_space_transform().GetInverse(&screen_to_layer)) {
-    gfx::Rect device_viewport(layer_tree_impl()->device_viewport_size());
-    viewport_in_content_space = gfx::ToEnclosingRect(
-        MathUtil::ProjectClippedRect(screen_to_layer, device_viewport));
+    viewport_in_content_space =
+        gfx::ToEnclosingRect(MathUtil::ProjectClippedRect(
+            screen_to_layer, gfx::Rect(device_viewport_size)));
   }
 
   WhichTree tree =
@@ -335,7 +339,7 @@ void PictureLayerImpl::UpdateTilePriorities() {
       layer_tree_impl()->settings().max_tiles_for_interest_area;
   tilings_->UpdateTilePriorities(
       tree,
-      layer_tree_impl()->device_viewport_size(),
+      device_viewport_size,
       viewport_in_content_space,
       visible_content_rect(),
       last_bounds_,

@@ -40,6 +40,7 @@ class CC_EXPORT LayerTreeHostCommon {
                         int max_texture_size,
                         bool can_use_lcd_text,
                         bool can_adjust_raster_scales,
+                        bool can_update_tile_priorities,
                         RenderSurfaceLayerListType* render_surface_layer_list)
         : root_layer(root_layer),
           device_viewport_size(device_viewport_size),
@@ -50,6 +51,7 @@ class CC_EXPORT LayerTreeHostCommon {
           max_texture_size(max_texture_size),
           can_use_lcd_text(can_use_lcd_text),
           can_adjust_raster_scales(can_adjust_raster_scales),
+          can_update_tile_priorities(can_update_tile_priorities),
           render_surface_layer_list(render_surface_layer_list) {}
 
     LayerType* root_layer;
@@ -61,6 +63,7 @@ class CC_EXPORT LayerTreeHostCommon {
     int max_texture_size;
     bool can_use_lcd_text;
     bool can_adjust_raster_scales;
+    bool can_update_tile_priorities;
     RenderSurfaceLayerListType* render_surface_layer_list;
   };
 
