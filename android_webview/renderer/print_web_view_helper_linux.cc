@@ -1,12 +1,12 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/renderer/printing/print_web_view_helper.h"
+#include "android_webview/renderer/print_web_view_helper.h"
 
+#include "android_webview/common/print_messages.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/common/print_messages.h"
 #include "content/public/renderer/render_thread.h"
 #include "printing/metafile.h"
 #include "printing/metafile_impl.h"
@@ -147,7 +147,7 @@ bool PrintWebViewHelper::PrintPagesNative(WebKit::WebFrame* frame,
     printed_page_params.metafile_data_handle.fd = -1;
   }
   return true;
-#endif  // defined(OS_CHROMEOS)
+#endif  // defined(OS_CHROMEOS) || defined(OS_ANDROID)
 }
 
 void PrintWebViewHelper::PrintPageInternal(

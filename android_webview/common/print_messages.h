@@ -17,8 +17,8 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 
-#ifndef CHROME_COMMON_PRINT_MESSAGES_H_
-#define CHROME_COMMON_PRINT_MESSAGES_H_
+#ifndef AW_COMMON_PRINT_MESSAGES_H_
+#define AW_COMMON_PRINT_MESSAGES_H_
 
 struct PrintMsg_Print_Params {
   PrintMsg_Print_Params();
@@ -71,7 +71,7 @@ struct PrintHostMsg_RequestPrintPreview_Params {
   bool selection_only;
 };
 
-#endif  // CHROME_COMMON_PRINT_MESSAGES_H_
+#endif  // AW_COMMON_PRINT_MESSAGES_H_
 
 #define IPC_MESSAGE_START PrintMsgStart
 
@@ -370,18 +370,15 @@ IPC_SYNC_MESSAGE_ROUTED1_1(PrintHostMsg_ScriptedPrint,
                            PrintMsg_PrintPages_Params
                                /* settings chosen by the user*/)
 
-#if defined(OS_CHROMEOS) || defined(OS_ANDROID)
+#if defined(OS_ANDROID)
 // Asks the browser to create a temporary file for the renderer to fill
 // in resulting NativeMetafile in printing.
-IPC_SYNC_MESSAGE_CONTROL1_2(PrintHostMsg_AllocateTempFileForPrinting,
-                            int /* render_view_id */,
-                            base::FileDescriptor /* temp file fd */,
-                            int /* fd in browser*/) // Used only by Chrome OS.
-IPC_MESSAGE_CONTROL2(PrintHostMsg_TempFileForPrintingWritten,
-                     int /* render_view_id */,
-                     int /* fd in browser */) // Used only by Chrome OS.
+IPC_SYNC_MESSAGE_ROUTED0_2(PrintHostMsg_AllocateTempFileForPrinting,
+                           base::FileDescriptor /* temp file fd */,
+                           int /* fd in browser*/)
+IPC_MESSAGE_ROUTED1(PrintHostMsg_TempFileForPrintingWritten,
+                    int /* fd in browser */)
 #endif
-
 // Asks the browser to do print preview.
 IPC_MESSAGE_ROUTED1(PrintHostMsg_RequestPrintPreview,
                     PrintHostMsg_RequestPrintPreview_Params /* params */)

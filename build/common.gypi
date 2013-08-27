@@ -535,12 +535,11 @@
 
 	# Enable basic printing for Chrome for Android but disable printing
 	# completely for WebView.
-        ['OS=="android" and android_webview_build==0', {
+# BEGIN: Starting fork b/10190508
+        ['OS=="android"', {
           'enable_printing%': 2,
         }],
-        ['OS=="android" and android_webview_build==1', {
-          'enable_printing%': 0,
-        }],
+# END: Printing fork b/10190508
 
         # Enable autofill dialog for Android, Mac and Views-enabled platforms.
         ['toolkit_views==1 or (OS=="android" and android_webview_build==0) or OS=="mac"', {

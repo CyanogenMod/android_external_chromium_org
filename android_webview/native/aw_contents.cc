@@ -316,7 +316,10 @@ void AwContents::CreatePdfExporter(JNIEnv* env,
                                    jobject pdfExporter) {
 
   pdf_exporter_.reset(
-      new AwPdfExporter(env, pdfExporter, browser_view_renderer_.get()));
+      new AwPdfExporter(env,
+                        pdfExporter,
+                        browser_view_renderer_.get(),
+                        web_contents_.get()));
 }
 // END: Printing fork b/10190508
 
