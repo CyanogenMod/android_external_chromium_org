@@ -1656,6 +1656,11 @@ public class AwContents {
             mAwAutofillManagerDelegate.hideAutofillPopup();
     }
 
+    public void setNetworkAvailable(boolean networkUp) {
+        if (mNativeAwContents == 0) return;
+        nativeSetJsOnlineProperty(mNativeAwContents, networkUp);
+    }
+
     //--------------------------------------------------------------------------------------------
     //  Methods called from native via JNI
     //--------------------------------------------------------------------------------------------
@@ -1934,4 +1939,6 @@ public class AwContents {
 
     private native void nativeInvokeGeolocationCallback(
             int nativeAwContents, boolean value, String requestingFrame);
+
+    private native void nativeSetJsOnlineProperty(int nativeAwContents, boolean networkUp);
 }
