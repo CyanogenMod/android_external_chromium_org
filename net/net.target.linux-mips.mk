@@ -153,6 +153,7 @@ LOCAL_SRC_FILES := \
 	net/disk_cache/simple/simple_entry_operation.cc \
 	net/disk_cache/simple/simple_index.cc \
 	net/disk_cache/simple/simple_index_file.cc \
+	net/disk_cache/simple/simple_index_file_posix.cc \
 	net/disk_cache/simple/simple_net_log_parameters.cc \
 	net/disk_cache/simple/simple_synchronous_entry.cc \
 	net/disk_cache/simple/simple_util.cc \

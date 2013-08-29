@@ -563,6 +563,11 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     CommandUtil.registerCommand(this.dialogContainer_, 'newfolder',
         Commands.newFolderCommand, this, this.directoryModel_);
 
+    // Required to handle the command outside of the container, on the footer.
+    // TODO(mtomasz): Remove after fixing crbug.com/275235.
+    CommandUtil.registerCommand(this.dialogDom_.querySelector('.dialog-footer'),
+        'newfolder', Commands.newFolderCommand, this, this.directoryModel_);
+
     CommandUtil.registerCommand(this.dialogContainer_, 'newwindow',
         Commands.newWindowCommand, this, this.directoryModel_);
 
@@ -1209,7 +1214,10 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    */
   FileManager.prototype.updateMiddleBarVisibility_ = function() {
     var currentPath = this.directoryModel_.getCurrentDirPath();
-    var visible = DirectoryTreeUtil.isEligiblePathForDirectoryTree(currentPath);
+    var driveStatus = this.volumeManager_.getDriveStatus();
+    var visible =
+        DirectoryTreeUtil.isEligiblePathForDirectoryTree(currentPath) &&
+        driveStatus == VolumeManager.DriveStatus.MOUNTED;
     this.dialogDom_.
         querySelector('.dialog-middlebar-contents').hidden = !visible;
     this.dialogDom_.querySelector('#middlebar-splitter').hidden = !visible;
