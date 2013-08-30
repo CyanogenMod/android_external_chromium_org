@@ -61,7 +61,7 @@ void PrintManager::OnAllocateTempFileForPrinting(
   // we don't really use the sequence number.
   *sequence_number = 0;
   temp_file_fd->fd = fd_;
-  temp_file_fd->auto_close = true;
+  temp_file_fd->auto_close = false;
 }
 
 void PrintManager::OnTempFileForPrintingWritten(int sequence_number) {
