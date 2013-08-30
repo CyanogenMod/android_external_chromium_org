@@ -7,56 +7,54 @@
 
 #include <jni.h>
 
+#include "android_webview/browser/renderer_host/print_manager.h"
 #include "base/android/jni_helper.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/basictypes.h"
-#include "base/memory/weak_ptr.h"
+#include "base/memory/scoped_ptr.h"
+#include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkPicture.h"
+
+namespace content {
+class WebContents;
+};
+
+namespace printing {
+class PrintSettings;
+};
 
 namespace android_webview {
 
 class BrowserViewRenderer;
 
-class AwPdfExporter {
+class AwPdfExporter : public PrintManagerDelegate {
 
  public:
-  AwPdfExporter(JNIEnv* env, jobject obj, BrowserViewRenderer* view_renderer);
+  AwPdfExporter(JNIEnv* env,
+                jobject obj,
+                BrowserViewRenderer* view_renderer,
+                content::WebContents* web_contents);
 
   virtual ~AwPdfExporter();
 
   void ExportToPdf(JNIEnv* env,
                    jobject obj,
-                   jobject outStream,
-                   int width,
-                   int height,
-                   int horizontal_scroll_range,
-                   int vertical_scroll_range,
-                   jobject callback,
+                   int fd,
                    jobject cancel_signal);
 
+  // Implement PrintManagerDelegate methods
+  void DidExportPdf(bool success);
+  bool IsCancelled();
+
  private:
-  struct PrintParams {
-    int width;
-    int height;
-    int horizontal_scroll_range;
-    int vertical_scroll_range;
-  };
-
-  static void ExportPage(
-      const base::WeakPtr<AwPdfExporter>& self,
-      PrintParams params,
-      const skia::RefPtr<SkPicture>& picture,
-      const base::android::ScopedJavaGlobalRef<jobject>& stream,
-      const base::android::ScopedJavaGlobalRef<jobject>& callback,
-      const base::android::ScopedJavaGlobalRef<jobject>& cancel_signal);
-
-  void DidExportPdf(
-      const base::android::ScopedJavaGlobalRef<jobject>& callback,
-      int success);
+  void CreatePdfSettings(JNIEnv* env, jobject obj);
 
   JavaObjectWeakGlobalRef java_ref_;
   BrowserViewRenderer* view_renderer_;
-  base::WeakPtrFactory<AwPdfExporter> weak_factory_;
+  content::WebContents* web_contents_;
+
+  scoped_ptr<PrintManager> print_manager_;
+  scoped_ptr<printing::PrintSettings> print_settings_;
 
   DISALLOW_COPY_AND_ASSIGN(AwPdfExporter);
 };

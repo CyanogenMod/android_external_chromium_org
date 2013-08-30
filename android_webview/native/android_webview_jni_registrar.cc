@@ -23,9 +23,6 @@
 #include "android_webview/native/input_stream_impl.h"
 #include "android_webview/native/intercepted_request_data_impl.h"
 #include "android_webview/native/java_browser_view_renderer_helper.h"
-// START: Printing fork b/10190508
-#include "android_webview/native/skia_java_output_stream.h"
-// END: Printing fork b/10190508
 #include "base/android/jni_android.h"
 #include "base/android/jni_registrar.h"
 #include "base/debug/trace_event.h"
@@ -52,7 +49,6 @@ static base::android::RegistrationMethod kWebViewRegisteredMethods[] = {
   { "JavaBrowserViewRendererHelper", RegisterJavaBrowserViewRendererHelper },
   // START: Printing fork b/10190508
   { "AwPdfExporter", RegisterAwPdfExporter },
-  { "SkiaJavaOutputStream", RegisterSkiaJavaOutputStream },
   // END: Printing fork b/10190508
 };
 

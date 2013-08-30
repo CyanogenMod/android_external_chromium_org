@@ -87,6 +87,10 @@
         '../ui/gl/gl.gyp:gl',
         '../ui/ui.gyp:shell_dialogs',
         '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
+# START: Printing fork b/10190508
+        '../printing/printing.gyp:printing',
+        '../third_party/WebKit/public/blink.gyp:blink',
+# END: Printing fork b/10190508
         'android_webview_pak',
       ],
       'include_dirs': [
@@ -189,6 +193,16 @@
         'renderer/aw_render_process_observer.h',
         'renderer/aw_render_view_ext.cc',
         'renderer/aw_render_view_ext.h',
+# START: Printing fork b/10190508
+        'browser/renderer_host/print_manager.cc',
+        'browser/renderer_host/print_manager.h',
+        'common/print_messages.cc',
+        'common/print_messages.h',
+        'renderer/print_web_view_helper.cc',
+        'renderer/print_web_view_helper.h',
+        'renderer/print_web_view_helper_android.cc',
+        'renderer/print_web_view_helper_linux.cc',
+# END: Printing fork b/10190508
       ],
     },
     {
