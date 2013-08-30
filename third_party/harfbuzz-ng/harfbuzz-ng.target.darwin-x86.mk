@@ -105,6 +105,7 @@ MY_DEFS_Debug := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DHAVE_OT' \
 	'-DHAVE_ICU' \
 	'-DHB_NO_MT' \
@@ -196,6 +197,7 @@ MY_DEFS_Release := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DHAVE_OT' \
 	'-DHAVE_ICU' \
 	'-DHB_NO_MT' \
