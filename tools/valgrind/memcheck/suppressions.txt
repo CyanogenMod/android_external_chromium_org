@@ -5658,13 +5658,6 @@
    fun:_ZNK6SkDraw8drawPathERK6SkPathRK7SkPaintPK8SkMatrixb
 }
 {
-   bug_163111
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_ZN4dbus8Response14FromMethodCallEPNS_10MethodCallE
-   fun:_ZN8chromeos20IBusPanelServiceImpl*
-}
-{
    bug_163922
    Memcheck:Leak
    fun:_Znw*
@@ -6383,12 +6376,12 @@
 {
    bug_222883
    Memcheck:Uninitialized
-   fun:_ZN2v88internal15ScavengeVisitor15ScavengePointerEPPNS0_6ObjectE.isra.327
+   fun:_ZN2v88internal15ScavengeVisitor15ScavengePointerEPPNS0_6ObjectE.isra.*
    fun:_ZN2v88internal15ScavengeVisitor13VisitPointersEPPNS0_6ObjectES4_
    fun:_ZNK2v88internal13StandardFrame18IterateExpressionsEPNS0_13ObjectVisitorE
    ...
    fun:_ZN2v88internal4Heap8ScavengeEv
-   fun:_ZN2v88internal4Heap24PerformGarbageCollectionENS0_16GarbageCollectorEPNS0_8GCTracerE.constprop.678
+   fun:_ZN2v88internal4Heap24PerformGarbageCollectionENS0_16GarbageCollectorEPNS0_8GCTracerE.constprop.*
 }
 {
    bug_222887
@@ -7204,13 +7197,6 @@
    fun:_ZN8chromeos12_GLOBAL__N_119LoadNSSCertificatesEPSt6vectorI13scoped_refptrIN3net15X509CertificateEESaIS5_EE
 }
 {
-   bug_272083
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_ZN12ThemeService19SetManagedUserThemeEv
-   fun:_ZN12ThemeService24OnManagedUserInitializedEv
-}
-{
    bug_273398
    Memcheck:Leak
    ...
@@ -7235,4 +7221,21 @@
    fun:_ZN3gpu5gles216GLES2DecoderImpl19HandleCompileShaderEjRKNS0_4cmds13CompileShaderE
    fun:_ZN3gpu5gles216GLES2DecoderImpl9DoCommandEjjPKv
    fun:_ZN3gpu13CommandParser14ProcessCommandEv
+}
+{
+   bug_280931
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN3net10QuicPacket13NewDataPacketEPcmbNS_14QuicGuidLengthEbNS_24QuicSequenceNumberLengthE
+   fun:_ZN3net10QuicFramer15BuildDataPacketERKNS_16QuicPacketHeaderERKSt6vectorINS_9QuicFrameESaIS5_EEm
+   fun:_ZN3net17QuicPacketCreator15SerializePacketEv
+   fun:_ZN3net19QuicPacketGenerator22SerializeAndSendPacketEv
+   fun:_ZN3net19QuicPacketGenerator16SendQueuedFramesEv
+   fun:_ZN3net19QuicPacketGenerator15AddControlFrameERKNS_9QuicFrameE
+   fun:_ZN3net14QuicConnection13SendRstStreamEjNS_22QuicRstStreamErrorCodeE
+   fun:_ZN3net11QuicSession13SendRstStreamEjNS_22QuicRstStreamErrorCodeE
+   fun:_ZN3net17QuicClientSession13SendRstStreamEjNS_22QuicRstStreamErrorCodeE
+   fun:_ZN3net18ReliableQuicStream5CloseENS_22QuicRstStreamErrorCodeE
+   fun:_ZN3net14QuicHttpStream5CloseEb
+   fun:_ZN3net4test40QuicStreamFactoryTest_MaxOpenStream_Test8TestBodyEv
 }

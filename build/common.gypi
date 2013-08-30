@@ -165,14 +165,6 @@
           }, {
             'use_default_render_theme%': 0,
           }],
-
-          # TODO(thestig) Remove the linux_lsb_release check after all the
-          # official Ubuntu Lucid builder are gone.
-          ['OS=="linux" and branding=="Chrome" and buildtype=="Official" and chromeos==0', {
-            'linux_lsb_release%': '<!(lsb_release -r -s)',
-          }, {
-            'linux_lsb_release%': '',
-          }], # OS=="linux" and branding=="Chrome" and buildtype=="Official" and chromeos==0
         ],
       },
 
@@ -197,7 +189,6 @@
       'buildtype%': '<(buildtype)',
       'branding%': '<(branding)',
       'arm_version%': '<(arm_version)',
-      'linux_lsb_release%': '<(linux_lsb_release)',
 
       # Set to 1 to enable fast builds. Set to 2 for even faster builds
       # (it disables debug info for fastest compilation - only for use
@@ -546,6 +537,8 @@
         # proprietary codecs.
         ['OS=="android" or branding=="Chrome"', {
           'proprietary_codecs%': 1,
+        }, {
+          'proprietary_codecs%': 0,
         }],
 
         # Enable autofill dialog for Android, Mac and Views-enabled platforms.
@@ -672,7 +665,8 @@
           'sysroot%': '<!(cd <(DEPTH) && pwd -P)/arm-sysroot',
         }], # OS=="linux" and target_arch=="arm" and chromeos==0
 
-        ['linux_lsb_release=="12.04"', {
+
+        ['OS=="linux" and branding=="Chrome" and buildtype=="Official" and chromeos==0', {
           'conditions': [
             ['target_arch=="x64"', {
               'sysroot%': '<!(cd <(DEPTH) && pwd -P)/chrome/installer/linux/debian_wheezy_amd64-sysroot',
@@ -681,7 +675,7 @@
               'sysroot%': '<!(cd <(DEPTH) && pwd -P)/chrome/installer/linux/debian_wheezy_i386-sysroot',
             }],
         ],
-        }], # linux_lsb_release=="12.04"
+        }], # OS=="linux" and branding=="Chrome" and buildtype=="Official" and chromeos==0
 
         ['OS=="linux" and target_arch=="mipsel"', {
           'sysroot%': '<!(cd <(DEPTH) && pwd -P)/mipsel-sysroot/sysroot',
@@ -882,6 +876,7 @@
     'spdy_proxy_auth_value%': '<(spdy_proxy_auth_value)',
     'enable_mdns%' : '<(enable_mdns)',
     'v8_optimized_debug': '<(v8_optimized_debug)',
+    'proprietary_codecs%': '<(proprietary_codecs)',
 
     # Use system nspr instead of the bundled one.
     'use_system_nspr%': 0,
@@ -940,10 +935,6 @@
     #  'win_release_RuntimeLibrary': 2
     # to ~/.gyp/include.gypi, gclient runhooks --force, and do a release build.
     'win_use_allocator_shim%': 1, # 1 = shim allocator via libcmt; 0 = msvcrt
-
-    # Whether proprietary audio/video codecs are assumed to be included with
-    # this build (only meaningful if branding!=Chrome).
-    'proprietary_codecs%': 0,
 
     # TODO(bradnelson): eliminate this when possible.
     # To allow local gyp files to prevent release.vsprops from being included.
@@ -1625,6 +1616,9 @@
       }],
       ['enable_webrtc==1', {
         'grit_defines': ['-D', 'enable_webrtc'],
+      }],
+      ['enable_mdns==1', {
+        'grit_defines': ['-D', 'enable_mdns'],
       }],
       ['clang_use_chrome_plugins==1 and OS!="win"', {
         'clang_chrome_plugins_flags': [

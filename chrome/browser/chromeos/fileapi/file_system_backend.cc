@@ -144,7 +144,7 @@ bool FileSystemBackend::IsAccessAllowed(
   std::string extension_id = origin_url.host();
   // TODO(mtomasz): Temporarily whitelist TimeScapes. Remove this in M-31.
   // See: crbug.com/271946
-  if (extension_id == "mppoamgbcpnkpacolchbacppkflagjbp" &&
+  if (extension_id == "mlbmkoenclnokonejhlfakkeabdlmpek" &&
       url.type() == fileapi::kFileSystemTypeRestrictedNativeLocal) {
     return true;
   }
@@ -212,13 +212,6 @@ std::vector<base::FilePath> FileSystemBackend::GetRootDirectories() const {
   for (size_t i = 0; i < mount_points.size(); ++i)
     root_dirs.push_back(mount_points[i].path);
   return root_dirs;
-}
-
-fileapi::FileSystemFileUtil* FileSystemBackend::GetFileUtil(
-    fileapi::FileSystemType type) {
-  DCHECK(type == fileapi::kFileSystemTypeNativeLocal ||
-         type == fileapi::kFileSystemTypeRestrictedNativeLocal);
-  return local_file_util_->sync_file_util();
 }
 
 fileapi::AsyncFileUtil* FileSystemBackend::GetAsyncFileUtil(

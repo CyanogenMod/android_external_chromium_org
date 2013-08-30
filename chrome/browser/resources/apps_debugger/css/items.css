@@ -19,9 +19,9 @@ hr {
 /* Override the visual style of tabs. */
 
 #tabs-header-container {
-  margin: 0 auto;
+  margin: 0 20px;
   position: relative;
-  width: 720px;
+  width: calc(100% - 40px);
 }
 
 #tabs {
@@ -77,10 +77,15 @@ tabpanel {
 /* Header */
 
 #header {
-  border-bottom: 1px solid #d1d1d1;
   border-top: 1px solid #d1d1d1;
   height: 58px;
   width: 100%;
+}
+
+#header-bottom-separator {
+  border-bottom: 1px solid #d1d1d1;
+  margin: 0 20px;
+  width: calc(100% - 40px);
 }
 
 #developer-controls {
@@ -104,15 +109,15 @@ tabpanel {
   background-image: -webkit-image-set(
       url(../images/search.png) 1x,
       url(../images/2x/search.png) 2x);
-  background-position: 0 8px;
+  background-position: 10px 8px;
   background-repeat: no-repeat;
   border: none;
   font-size: 13px;
   height: 18px;
   position: absolute;
-  right: 16px;
-  top: 15px;
-  width: 220px;
+  right: 0;
+  top: 16px;
+  width: 230px;
 }
 
 html[dir='rtl'] #search {
@@ -213,13 +218,12 @@ html[dir='rtl'] .load-unpacked {
 #extensions-tab {
   height: 100%;
   overflow-y: scroll;
-  width: 720px;
 }
 
 .packed-list,
 .unpacked-list {
-  margin: 0 auto;
-  width: 720px;
+  margin: 0 20px;
+  width: calc(100% - 40px);
 }
 
 .loading #no-extensions,
@@ -287,6 +291,10 @@ html[dir='rtl'] .extension-list-item {
   color: inherit;
 }
 
+.extension-title-container {
+  margin-bottom: 5px;
+}
+
 .extension-version {
   -webkit-padding-end: 7px;
   -webkit-user-select: text;
@@ -333,7 +341,6 @@ html[dir='rtl'] .enable-control {
 }
 
 .enable-checkbox-text {
-  /* Matches width of trash. */
   -webkit-margin-end: 30px;
   min-width: 62px;
 }
@@ -377,6 +384,7 @@ html[dir='rtl'] .enable-control {
   display: inline-block;
 }
 
+.extension-warnings,
 .install-warnings {
   background: pink;
   border-radius: 3px;
@@ -384,16 +392,23 @@ html[dir='rtl'] .enable-control {
   padding: 2px 5px;
 }
 
+.extension-warnings a,
 .install-warnings a {
   -webkit-margin-start: 0;
 }
 
+.extension-warnings ul,
 .install-warnings ul {
   margin: 0;
 }
 
+.extension-warnings li,
+.install-warnings li {
+  word-wrap: break-word;
+}
+
 .extension-details-summary {
-  margin-bottom: 10px;
+  margin-bottom: 5px;
 }
 
 .extension-details-all {
@@ -428,38 +443,42 @@ html[dir='rtl'] .delete-link {
 /* Overlays */
 
 #overlay {
+  background-color: rgba(0, 0, 0, 0.6);
   z-index: 5;
+}
+
+#overlay .page {
+  -webkit-border-radius: 0;
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  box-shadow: 0 1px 5px 1px rgba(0, 0, 0, 0.25);
+  padding: 25px;
 }
 
 #overlay .page:not(.showing) {
   display: none;
 }
 
+#overlay .page h1 {
+  font-size: 21px;
+  padding: 0;
+}
+
+#overlay .page .content-area,
+#overlay .page .action-area {
+  font-size: 13px;
+  margin-top: 40px;
+  padding: 0;
+}
+
+/* Pack dialog button size and delete dialog button size */
+#packItemOverlay .button-strip button,
+#item-private-key-container button,
+#alertOverlay .button-strip button {
+  width: 90px;
+}
+
 .extension-id {
   -webkit-user-select: text;
-}
-
-#extension-settings .trash {
-  -webkit-transition: opacity 200ms;
-  height: 22px;
-  opacity: 0.8;
-  position: absolute;
-  right: 0;
-  top: 3px;
-  vertical-align: middle;
-}
-
-html[dir='rtl'] #extension-settings .trash {
-  left: 0;
-  right: auto;
-}
-
-.extension-list-item:not(:hover) .trash:not(:focus) {
-  opacity: 0;
-}
-
-.extension-list-item-wrapper.may-not-disable .trash {
-  visibility: hidden;
 }
 
 .may-not-disable .optional-controls .optional-controls-disableable {
@@ -522,4 +541,23 @@ button[disabled]:active {
   border-color: rgba(0, 0, 0, 0.1);
   box-shadow: none;
   color: #888;
+}
+
+/* Pack dialog styling */
+#item-private-key-container {
+  display: -webkit-box;
+}
+
+#item-private-key-label {
+  margin: 20px 0 10px;
+  text-align: start;
+}
+
+#item-private-key {
+  -webkit-box-flex: 1;
+  display: block;
+}
+
+#browse-private-key {
+  margin-left: 10px;
 }

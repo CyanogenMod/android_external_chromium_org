@@ -24,7 +24,7 @@
 #include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "content/browser/renderer_host/input/input_router_client.h"
-#include "content/browser/renderer_host/smooth_scroll_gesture_controller.h"
+#include "content/browser/renderer_host/synthetic_gesture_controller.h"
 #include "content/common/browser_rendering_stats.h"
 #include "content/common/view_message_enums.h"
 #include "content/port/browser/event_with_latency_info.h"
@@ -78,7 +78,7 @@ class MockRenderWidgetHost;
 class OverscrollController;
 class RenderWidgetHostDelegate;
 class RenderWidgetHostViewPort;
-class SmoothScrollGestureController;
+class SyntheticGestureController;
 struct EditCommand;
 
 // This implements the RenderWidgetHost interface that is exposed to
@@ -173,8 +173,14 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   virtual void SetIgnoreInputEvents(bool ignore_input_events) OVERRIDE;
   virtual void Stop() OVERRIDE;
   virtual void WasResized() OVERRIDE;
-  virtual void AddKeyboardListener(KeyboardListener* listener) OVERRIDE;
-  virtual void RemoveKeyboardListener(KeyboardListener* listener) OVERRIDE;
+  virtual void AddKeyPressEventCallback(
+      const KeyPressEventCallback& callback) OVERRIDE;
+  virtual void RemoveKeyPressEventCallback(
+      const KeyPressEventCallback& callback) OVERRIDE;
+  virtual void AddMouseEventCallback(
+      const MouseEventCallback& callback) OVERRIDE;
+  virtual void RemoveMouseEventCallback(
+      const MouseEventCallback& callback) OVERRIDE;
   virtual void GetWebScreenInfo(WebKit::WebScreenInfo* result) OVERRIDE;
   virtual void GetSnapshotFromRenderer(
       const gfx::Rect& src_subrect,
@@ -200,7 +206,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // Called when a renderer object already been created for this host, and we
   // just need to be attached to it. Used for window.open, <select> dropdown
   // menus, and other times when the renderer initiates creating an object.
-  void Init();
+  virtual void Init();
 
   // Tells the renderer to die and then calls Destroy().
   virtual void Shutdown();
@@ -504,7 +510,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
     return overscroll_controller_.get();
   }
 
-  base::TimeDelta GetSyntheticScrollMessageInterval() const;
+  base::TimeDelta GetSyntheticGestureMessageInterval() const;
 
   // Sets whether the overscroll controller should be enabled for this page.
   void SetOverscrollControllerEnabled(bool enabled);
@@ -822,7 +828,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   AccessibilityMode accessibility_mode_;
 
   // Keyboard event listeners.
-  ObserverList<KeyboardListener> keyboard_listeners_;
+  std::vector<KeyPressEventCallback> key_press_event_callbacks_;
+
+  // Mouse event callbacks.
+  std::vector<MouseEventCallback> mouse_event_callbacks_;
 
   // If true, then we should repaint when restoring even if we have a
   // backingstore.  This flag is set to true if we receive a paint message
@@ -900,7 +909,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 
   base::WeakPtrFactory<RenderWidgetHostImpl> weak_factory_;
 
-  SmoothScrollGestureController smooth_scroll_gesture_controller_;
+  SyntheticGestureController synthetic_gesture_controller_;
 
   // Receives and handles all input events.
   scoped_ptr<InputRouter> input_router_;

@@ -65,11 +65,11 @@ class JobScheduler
 
   // Adds a GetAppList operation to the queue.
   // |callback| must not be null.
-  void GetAppList(const google_apis::GetAppListCallback& callback);
+  void GetAppList(const google_apis::AppListCallback& callback);
 
   // Adds a GetAboutResource operation to the queue.
   // |callback| must not be null.
-  void GetAboutResource(const google_apis::GetAboutResourceCallback& callback);
+  void GetAboutResource(const google_apis::AboutResourceCallback& callback);
 
   // Adds a GetAllResourceList operation to the queue.
   // |callback| must not be null.
@@ -95,6 +95,18 @@ class JobScheduler
   // |callback| must not be null.
   void ContinueGetResourceList(
       const GURL& next_url,
+      const google_apis::GetResourceListCallback& callback);
+
+  // Adds GetRemainingChangeList operation to the queue.
+  // |callback| must not be null.
+  void GetRemainingChangeList(
+      const std::string& page_token,
+      const google_apis::GetResourceListCallback& callback);
+
+  // Adds GetRemainingFileList operation to the queue.
+  // |callback| must not be null.
+  void GetRemainingFileList(
+      const std::string& page_token,
       const google_apis::GetResourceListCallback& callback);
 
   // Adds a GetResourceEntry operation to the queue.
@@ -160,8 +172,12 @@ class JobScheduler
                        const google_apis::GetResourceEntryCallback& callback);
 
   // Adds a DownloadFile operation to the queue.
+  // The first two arguments |virtual_path| and |expected_file_size| are used
+  // only for filling JobInfo for the operation so that observers can get the
+  // detail. The actual operation never refers these values.
   JobID DownloadFile(
       const base::FilePath& virtual_path,
+      int64 expected_file_size,
       const base::FilePath& local_cache_path,
       const std::string& resource_id,
       const ClientContext& context,
@@ -271,10 +287,10 @@ class JobScheduler
       google_apis::GDataErrorCode error,
       scoped_ptr<google_apis::ResourceEntry> entry);
 
-  // Callback for job finishing with a GetAboutResourceCallback.
+  // Callback for job finishing with a AboutResourceCallback.
   void OnGetAboutResourceJobDone(
       JobID job_id,
-      const google_apis::GetAboutResourceCallback& callback,
+      const google_apis::AboutResourceCallback& callback,
       google_apis::GDataErrorCode error,
       scoped_ptr<google_apis::AboutResource> about_resource);
 
@@ -285,10 +301,10 @@ class JobScheduler
       google_apis::GDataErrorCode error,
       const GURL& share_url);
 
-  // Callback for job finishing with a GetAppListCallback.
+  // Callback for job finishing with a AppListCallback.
   void OnGetAppListJobDone(
       JobID job_id,
-      const google_apis::GetAppListCallback& callback,
+      const google_apis::AppListCallback& callback,
       google_apis::GDataErrorCode error,
       scoped_ptr<google_apis::AppList> app_list);
 

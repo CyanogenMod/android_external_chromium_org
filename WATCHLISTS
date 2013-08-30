@@ -470,6 +470,9 @@
                    '|third_party/hunspell_dictionaries/'\
                    '|webkit/tools/test_shell/mock_spellcheck'
     },
+    'streams': {
+      'filepath': 'content/browser/streams/',
+    },
     'sync': {
       'filepath': 'chrome/browser/sync/|sync/',
     },
@@ -604,7 +607,6 @@
                       'ctguil+watch@chromium.org',
                       'aboxhall+watch@chromium.org',
                       'davidbarr+watch@chromium.org',
-                      'zork+watch@chromium.org',
                       'hashimoto+watch@chromium.org',
                       'yoshiki+watch@chromium.org',
                       'yuzo+watch@chromium.org'],
@@ -628,8 +630,7 @@
                         'sievers+watch@chromium.org'],
     'autofill': ['isherman@chromium.org',
                  'dyu@chromium.org', 'abodenha@chromium.org',
-                 'estade+watch@chromium.org', 'ahutter@chromium.org',
-                 'dgwallinga@chromium.org', 'ramankk@chromium.org',
+                 'estade+watch@chromium.org', 'dgwallinga@chromium.org',
                  'benquan@chromium.org', 'rouslan+autofillwatch@chromium.org'],
     'automation': ['robertshield@chromium.org'],
     'base': ['erikwright+watch@chromium.org'],
@@ -692,7 +693,7 @@
     'geolocation': ['mvanouwerkerk@chromium.org'],
     'gfx_geometry': ['cc-bugs@chromium.org'],
     'gfx_image': ['rsesek+watch@chromium.org'],
-    'gpu': ['apatrick@chromium.org'],
+    'gpu': ['apatrick@chromium.org', 'piman+watch@chromium.org'],
     'history_ui': ['dubroy@chromium.org', 'pam+watch@chromium.org'],
     'i18n': ['jshin+watch@chromium.org'],
     'imageburner': ['tbarzic+watch@chromium.org'],
@@ -761,6 +762,7 @@
     'spellcheck': ['groby+spellwatch@chromium.org',
                    'rlp@chromium.org',
                    'rouslan+spellwatch@chromium.org'],
+    'streams': ['zork+watch@chromium.org'],
     'sync': ['haitaol+watch@chromium.org',
              'rsimha+watch@chromium.org',
              'tim+watch@chromium.org'],

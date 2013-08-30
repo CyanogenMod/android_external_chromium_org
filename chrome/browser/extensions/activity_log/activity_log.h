@@ -84,6 +84,18 @@ class ActivityLog : public BrowserContextKeyedService,
                       <void(scoped_ptr<std::vector<scoped_refptr<Action> > >)>&
                       callback);
 
+  // Gets all actions that match the specified fields. URLs are treated like
+  // prefixes; other fields are exact matches. Empty strings are not matched to
+  // anything.
+  void GetFilteredActions(
+      const std::string& extension_id,
+      const Action::ActionType type,
+      const std::string& api_name,
+      const std::string& page_url,
+      const std::string& arg_url,
+      const base::Callback
+          <void(scoped_ptr<std::vector<scoped_refptr<Action> > >)>& callback);
+
   // Extension::InstallObserver
   // We keep track of whether the whitelisted extension is installed; if it is,
   // we want to recompute whether to have logging enabled.
@@ -109,6 +121,13 @@ class ActivityLog : public BrowserContextKeyedService,
   virtual void Shutdown() OVERRIDE;
 
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
+
+  // Clean up URLs from the activity log database.
+  // If restrict_urls is empty then all URLs in the activity log database are
+  // removed, otherwise only those in restrict_urls are removed.
+  virtual void RemoveURLs(const std::vector<GURL>& restrict_urls);
+  virtual void RemoveURLs(const std::set<GURL>& restrict_urls);
+  virtual void RemoveURL(const GURL& url);
 
  private:
   friend class ActivityLogFactory;

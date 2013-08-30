@@ -6,6 +6,7 @@
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
+#include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/test/simple_test_clock.h"
@@ -100,6 +101,43 @@ class CountingPolicyTest : public testing::Test {
     timeout.Cancel();
   }
 
+  // A helper function to call ReadFilteredData on a policy object and wait for
+  // the results to be processed.
+  void CheckReadFilteredData(
+      ActivityLogPolicy* policy,
+      const std::string& extension_id,
+      const Action::ActionType type,
+      const std::string& api_name,
+      const std::string& page_url,
+      const std::string& arg_url,
+      const base::Callback<void(scoped_ptr<Action::ActionVector>)>& checker) {
+    // Submit a request to the policy to read back some data, and call the
+    // checker function when results are available.  This will happen on the
+    // database thread.
+    policy->ReadFilteredData(
+        extension_id,
+        type,
+        api_name,
+        page_url,
+        arg_url,
+        base::Bind(&CountingPolicyTest::CheckWrapper,
+                   checker,
+                   base::MessageLoop::current()->QuitClosure()));
+
+    // Set up a timeout that will trigger after 5 seconds; if we haven't
+    // received any results by then assume that the test is broken.
+    base::CancelableClosure timeout(
+        base::Bind(&CountingPolicyTest::TimeoutCallback));
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE, timeout.callback(), base::TimeDelta::FromSeconds(5));
+
+    // Wait for results; either the checker or the timeout callbacks should
+    // cause the main loop to exit.
+    base::MessageLoop::current()->Run();
+
+    timeout.Cancel();
+  }
+
   // A helper function which verifies that the string_ids and url_ids tables in
   // the database have the specified sizes.
   static void CheckStringTableSizes(CountingPolicy* policy,
@@ -117,6 +155,14 @@ class CountingPolicyTest : public testing::Test {
     ASSERT_EQ(url_size, statement2.ColumnInt(0));
   }
 
+  // Checks that the number of queued actions to be written out does not exceed
+  // kSizeThresholdForFlush.  Runs on the database thread.
+  static void CheckQueueSize(CountingPolicy* policy) {
+    // This should be updated if kSizeThresholdForFlush in activity_database.cc
+    // changes.
+    ASSERT_LE(policy->queued_actions_.size(), 200U);
+  }
+
   static void CheckWrapper(
       const base::Callback<void(scoped_ptr<Action::ActionVector>)>& checker,
       const base::Closure& done,
@@ -128,6 +174,16 @@ class CountingPolicyTest : public testing::Test {
   static void TimeoutCallback() {
     base::MessageLoop::current()->QuitWhenIdle();
     FAIL() << "Policy test timed out waiting for results";
+  }
+
+  static void RetrieveActions_FetchFilteredActions1(
+      scoped_ptr<std::vector<scoped_refptr<Action> > > i) {
+    ASSERT_EQ(1, static_cast<int>(i->size()));
+  }
+
+  static void RetrieveActions_FetchFilteredActions2(
+      scoped_ptr<std::vector<scoped_refptr<Action> > > i) {
+    ASSERT_EQ(2, static_cast<int>(i->size()));
   }
 
   static void Arguments_Stripped(scoped_ptr<Action::ActionVector> i) {
@@ -192,6 +248,49 @@ class CountingPolicyTest : public testing::Test {
     } else {
       ASSERT_EQ(0u, actions->size());
     }
+  }
+
+  static void AllURLsRemoved(scoped_ptr<Action::ActionVector> actions) {
+    ASSERT_EQ(2, static_cast<int>(actions->size()));
+    CheckAction(*actions->at(0), "punky", Action::ACTION_DOM_ACCESS, "lets",
+                "[\"vamoose\"]", "", "", "");
+    CheckAction(*actions->at(1), "punky", Action::ACTION_DOM_ACCESS, "lets",
+                "[\"vamoose\"]", "", "", "");
+  }
+
+  static void SomeURLsRemoved(scoped_ptr<Action::ActionVector> actions) {
+    // These will be in the vector in reverse time order.
+    ASSERT_EQ(5, static_cast<int>(actions->size()));
+    CheckAction(*actions->at(0), "punky", Action::ACTION_DOM_ACCESS, "lets",
+                "[\"vamoose\"]", "http://www.google.com/", "Google",
+                "http://www.args-url.com/");
+    CheckAction(*actions->at(1), "punky", Action::ACTION_DOM_ACCESS, "lets",
+                "[\"vamoose\"]", "http://www.google.com/", "Google", "");
+    CheckAction(*actions->at(2), "punky", Action::ACTION_DOM_ACCESS, "lets",
+                "[\"vamoose\"]", "", "", "");
+    CheckAction(*actions->at(3), "punky", Action::ACTION_DOM_ACCESS, "lets",
+                "[\"vamoose\"]", "", "", "http://www.google.com/");
+    CheckAction(*actions->at(4), "punky", Action::ACTION_DOM_ACCESS, "lets",
+                "[\"vamoose\"]", "", "", "");
+  }
+
+  // TODO(karenlees): add checking for the count value.
+  static void CheckAction(const Action& action,
+                          const std::string& expected_id,
+                          const Action::ActionType& expected_type,
+                          const std::string& expected_api_name,
+                          const std::string& expected_args_str,
+                          const std::string& expected_page_url,
+                          const std::string& expected_page_title,
+                          const std::string& expected_arg_url) {
+    ASSERT_EQ(expected_id, action.extension_id());
+    ASSERT_EQ(expected_type, action.action_type());
+    ASSERT_EQ(expected_api_name, action.api_name());
+    ASSERT_EQ(expected_args_str,
+              ActivityLogPolicy::Util::Serialize(action.args()));
+    ASSERT_EQ(expected_page_url, action.SerializePageUrl());
+    ASSERT_EQ(expected_page_title, action.page_title());
+    ASSERT_EQ(expected_arg_url, action.SerializeArgUrl());
   }
 
  protected:
@@ -370,6 +469,97 @@ TEST_F(CountingPolicyTest, GetOlderActions) {
       "punky",
       3,
       base::Bind(&CountingPolicyTest::Arguments_GetOlderActions));
+
+  policy->Close();
+}
+
+TEST_F(CountingPolicyTest, LogAndFetchFilteredActions) {
+  ActivityLogPolicy* policy = new CountingPolicy(profile_.get());
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder()
+          .SetManifest(DictionaryBuilder()
+                       .Set("name", "Test extension")
+                       .Set("version", "1.0.0")
+                       .Set("manifest_version", 2))
+          .Build();
+  extension_service_->AddExtension(extension.get());
+  GURL gurl("http://www.google.com");
+
+  // Write some API calls
+  scoped_refptr<Action> action_api = new Action(extension->id(),
+                                                base::Time::Now(),
+                                                Action::ACTION_API_CALL,
+                                                "tabs.testMethod");
+  action_api->set_args(make_scoped_ptr(new base::ListValue()));
+  policy->ProcessAction(action_api);
+
+  scoped_refptr<Action> action_dom = new Action(extension->id(),
+                                                base::Time::Now(),
+                                                Action::ACTION_DOM_ACCESS,
+                                                "document.write");
+  action_dom->set_args(make_scoped_ptr(new base::ListValue()));
+  action_dom->set_page_url(gurl);
+  policy->ProcessAction(action_dom);
+
+  CheckReadFilteredData(
+      policy,
+      extension->id(),
+      Action::ACTION_API_CALL,
+      "tabs.testMethod",
+      "",
+      "",
+      base::Bind(
+          &CountingPolicyTest::RetrieveActions_FetchFilteredActions1));
+
+  CheckReadFilteredData(
+      policy,
+      "",
+      Action::ACTION_DOM_ACCESS,
+      "",
+      "",
+      "",
+      base::Bind(
+          &CountingPolicyTest::RetrieveActions_FetchFilteredActions1));
+
+  CheckReadFilteredData(
+      policy,
+      "",
+      Action::ACTION_DOM_ACCESS,
+      "",
+      "http://www.google.com/",
+      "",
+      base::Bind(
+          &CountingPolicyTest::RetrieveActions_FetchFilteredActions1));
+
+  CheckReadFilteredData(
+      policy,
+      "",
+      Action::ACTION_DOM_ACCESS,
+      "",
+      "http://www.google.com",
+      "",
+      base::Bind(
+          &CountingPolicyTest::RetrieveActions_FetchFilteredActions1));
+
+  CheckReadFilteredData(
+      policy,
+      "",
+      Action::ACTION_DOM_ACCESS,
+      "",
+      "http://www.goo",
+      "",
+      base::Bind(
+          &CountingPolicyTest::RetrieveActions_FetchFilteredActions1));
+
+  CheckReadFilteredData(
+      policy,
+      extension->id(),
+      Action::ACTION_ANY,
+      "",
+      "",
+      "",
+      base::Bind(
+          &CountingPolicyTest::RetrieveActions_FetchFilteredActions2));
 
   policy->Close();
 }
@@ -569,6 +759,143 @@ TEST_F(CountingPolicyTest, MoreMerging) {
       0,
       base::Bind(
           &CountingPolicyTest::Arguments_CheckMergeCountAndTime, 3, time5));
+  policy->Close();
+}
+
+// Check that actions are flushed to disk before letting too many accumulate in
+// memory.
+TEST_F(CountingPolicyTest, EarlyFlush) {
+  CountingPolicy* policy = new CountingPolicy(profile_.get());
+
+  for (int i = 0; i < 500; i++) {
+    scoped_refptr<Action> action =
+        new Action("punky",
+                   base::Time::Now(),
+                   Action::ACTION_API_CALL,
+                   base::StringPrintf("apicall_%d", i));
+    policy->ProcessAction(action);
+  }
+
+  policy->ScheduleAndForget(policy, &CountingPolicyTest::CheckQueueSize);
+  WaitOnThread(BrowserThread::DB);
+
+  policy->Close();
+}
+
+TEST_F(CountingPolicyTest, RemoveAllURLs) {
+  ActivityLogPolicy* policy = new CountingPolicy(profile_.get());
+
+  // Use a mock clock to ensure that events are not recorded on the wrong day
+  // when the test is run close to local midnight.
+  base::SimpleTestClock* mock_clock = new base::SimpleTestClock();
+  mock_clock->SetNow(base::Time::Now().LocalMidnight() +
+                     base::TimeDelta::FromHours(12));
+  policy->SetClockForTesting(scoped_ptr<base::Clock>(mock_clock));
+
+  // Record some actions
+  scoped_refptr<Action> action =
+      new Action("punky", mock_clock->Now(),
+                 Action::ACTION_DOM_ACCESS, "lets");
+  action->mutable_args()->AppendString("vamoose");
+  action->set_page_url(GURL("http://www.google.com"));
+  action->set_page_title("Google");
+  action->set_arg_url(GURL("http://www.args-url.com"));
+  policy->ProcessAction(action);
+
+  mock_clock->Advance(base::TimeDelta::FromSeconds(1));
+  action = new Action(
+      "punky", mock_clock->Now(), Action::ACTION_DOM_ACCESS, "lets");
+  action->mutable_args()->AppendString("vamoose");
+  action->set_page_url(GURL("http://www.google2.com"));
+  action->set_page_title("Google");
+  // Deliberately no arg url set to make sure it stills works if there is no arg
+  // url.
+  policy->ProcessAction(action);
+
+  // Clean all the URLs.
+  std::vector<GURL> no_url_restrictions;
+  policy->RemoveURLs(no_url_restrictions);
+
+  CheckReadData(
+      policy,
+      "punky",
+      0,
+      base::Bind(&CountingPolicyTest::AllURLsRemoved));
+  policy->Close();
+}
+
+TEST_F(CountingPolicyTest, RemoveSpecificURLs) {
+  ActivityLogPolicy* policy = new CountingPolicy(profile_.get());
+
+  // Use a mock clock to ensure that events are not recorded on the wrong day
+  // when the test is run close to local midnight.
+  base::SimpleTestClock* mock_clock = new base::SimpleTestClock();
+  mock_clock->SetNow(base::Time::Now().LocalMidnight() +
+                     base::TimeDelta::FromHours(12));
+  policy->SetClockForTesting(scoped_ptr<base::Clock>(mock_clock));
+
+  // Record some actions
+  // This should have the page url and args url cleared.
+  scoped_refptr<Action> action = new Action("punky", mock_clock->Now(),
+                                            Action::ACTION_DOM_ACCESS, "lets");
+  action->mutable_args()->AppendString("vamoose");
+  action->set_page_url(GURL("http://www.google1.com"));
+  action->set_page_title("Google");
+  action->set_arg_url(GURL("http://www.google1.com"));
+  policy->ProcessAction(action);
+
+  // This should have the page url cleared but not args url.
+  mock_clock->Advance(base::TimeDelta::FromSeconds(1));
+  action = new Action(
+      "punky", mock_clock->Now(), Action::ACTION_DOM_ACCESS, "lets");
+  action->mutable_args()->AppendString("vamoose");
+  action->set_page_url(GURL("http://www.google1.com"));
+  action->set_page_title("Google");
+  action->set_arg_url(GURL("http://www.google.com"));
+  policy->ProcessAction(action);
+
+  // This should have the page url cleared. The args url is deliberately not
+  // set to make sure this doesn't cause any issues.
+  mock_clock->Advance(base::TimeDelta::FromSeconds(1));
+  action = new Action(
+      "punky", mock_clock->Now(), Action::ACTION_DOM_ACCESS, "lets");
+  action->mutable_args()->AppendString("vamoose");
+  action->set_page_url(GURL("http://www.google2.com"));
+  action->set_page_title("Google");
+  policy->ProcessAction(action);
+
+  // This should have the args url cleared but not the page url or page title.
+  mock_clock->Advance(base::TimeDelta::FromSeconds(1));
+  action = new Action(
+      "punky", mock_clock->Now(), Action::ACTION_DOM_ACCESS, "lets");
+  action->mutable_args()->AppendString("vamoose");
+  action->set_page_url(GURL("http://www.google.com"));
+  action->set_page_title("Google");
+  action->set_arg_url(GURL("http://www.google1.com"));
+  policy->ProcessAction(action);
+
+  // This should have neither cleared.
+  mock_clock->Advance(base::TimeDelta::FromSeconds(1));
+  action = new Action(
+      "punky", mock_clock->Now(), Action::ACTION_DOM_ACCESS, "lets");
+  action->mutable_args()->AppendString("vamoose");
+  action->set_page_url(GURL("http://www.google.com"));
+  action->set_page_title("Google");
+  action->set_arg_url(GURL("http://www.args-url.com"));
+  policy->ProcessAction(action);
+
+    // Clean some URLs.
+  std::vector<GURL> urls;
+  urls.push_back(GURL("http://www.google1.com"));
+  urls.push_back(GURL("http://www.google2.com"));
+  urls.push_back(GURL("http://www.url_not_in_db.com"));
+  policy->RemoveURLs(urls);
+
+  CheckReadData(
+      policy,
+      "punky",
+      0,
+      base::Bind(&CountingPolicyTest::SomeURLsRemoved));
   policy->Close();
 }
 

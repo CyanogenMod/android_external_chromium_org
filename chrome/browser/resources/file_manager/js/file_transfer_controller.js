@@ -14,17 +14,18 @@ var DRAG_AND_DROP_GLOBAL_DATA = '__drag_and_drop_global_data';
 
 /**
  * @param {HTMLDocument} doc Owning document.
- * @param {FileCopyManager} copyManager Copy manager instance.
+ * @param {FileOperationManager} fileOperationManager File operation manager
+ *     instance.
  * @param {MetadataCache} metadataCache Metadata cache service.
  * @param {DirectoryModel} directoryModel Directory model instance.
  * @constructor
  */
 function FileTransferController(doc,
-                                copyManager,
+                                fileOperationManager,
                                 metadataCache,
                                 directoryModel) {
   this.document_ = doc;
-  this.copyManager_ = copyManager;
+  this.fileOperationManager_ = fileOperationManager;
   this.metadataCache_ = metadataCache;
   this.directoryModel_ = directoryModel;
 
@@ -206,7 +207,7 @@ FileTransferController.prototype = {
         (effectAllowed == 'copyMove' && opt_effect == 'move');
 
     // Start the pasting operation.
-    this.copyManager_.paste(sourcePaths, destinationPath, toMove);
+    this.fileOperationManager_.paste(sourcePaths, destinationPath, toMove);
     return toMove ? 'move' : 'copy';
   },
 
@@ -538,8 +539,9 @@ FileTransferController.prototype = {
     if (!this.isDocumentWideEvent_())
       return;
 
-    // queryCommandEnabled returns true if event.returnValue is false.
-    event.returnValue = !this.canCopyOrDrag_();
+    // queryCommandEnabled returns true if event.defaultPrevented is true.
+    if (this.canCopyOrDrag_())
+      event.preventDefault();
   },
 
   /**
@@ -574,8 +576,9 @@ FileTransferController.prototype = {
   onBeforeCut_: function(event) {
     if (!this.isDocumentWideEvent_())
       return;
-    // queryCommandEnabled returns true if event.returnValue is false.
-    event.returnValue = !this.canCutOrDrag_();
+    // queryCommandEnabled returns true if event.defaultPrevented is true.
+    if (this.canCutOrDrag_())
+      event.preventDefault();
   },
 
   /**
@@ -616,9 +619,11 @@ FileTransferController.prototype = {
   onBeforePaste_: function(event) {
     if (!this.isDocumentWideEvent_())
       return;
-    // queryCommandEnabled returns true if event.returnValue is false.
-    event.returnValue = !this.canPasteOrDrop_(
-        event.clipboardData, this.currentDirectoryContentPath);
+    // queryCommandEnabled returns true if event.defaultPrevented is true.
+    if (this.canPasteOrDrop_(event.clipboardData,
+                             this.currentDirectoryContentPath)) {
+      event.preventDefault();
+    }
   },
 
   /**

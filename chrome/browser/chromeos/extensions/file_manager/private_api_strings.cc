@@ -4,22 +4,22 @@
 
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_strings.h"
 
-#include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
+#include "chrome/browser/chromeos/extensions/file_manager/open_with_browser.h"
 #include "chrome/browser/chromeos/system/statistics_provider.h"
 #include "grit/app_locale_settings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/webui/web_ui_util.h"
 
-namespace file_manager {
+namespace extensions {
 
-GetStringsFunction::GetStringsFunction() {
+FileBrowserPrivateGetStringsFunction::FileBrowserPrivateGetStringsFunction() {
 }
 
-GetStringsFunction::~GetStringsFunction() {
+FileBrowserPrivateGetStringsFunction::~FileBrowserPrivateGetStringsFunction() {
 }
 
-bool GetStringsFunction::RunImpl() {
+bool FileBrowserPrivateGetStringsFunction::RunImpl() {
   DictionaryValue* dict = new DictionaryValue();
   SetResult(dict);
 
@@ -192,6 +192,12 @@ bool GetStringsFunction::RunImpl() {
              IDS_FILE_BROWSER_ACTION_CHOICE_LOADING_USB);
   SET_STRING("ACTION_CHOICE_LOADING_SD",
              IDS_FILE_BROWSER_ACTION_CHOICE_LOADING_SD);
+
+  SET_STRING("SUGGEST_DIALOG_TITLE", IDS_FILE_BROWSER_SUGGEST_DIALOG_TITLE);
+  SET_STRING("SUGGEST_DIALOG_LINK_TO_WEBSTORE",
+             IDS_FILE_BROWSER_SUGGEST_DIALOG_LINK_TO_WEBSTORE);
+  SET_STRING("SUGGEST_DIALOG_INSTALLATION_FAILED",
+             IDS_FILE_BROWSER_SUGGEST_DIALOG_INSTALLATION_FAILED);
 
   SET_STRING("PHOTO_IMPORT_TITLE", IDS_FILE_BROWSER_PHOTO_IMPORT_TITLE);
   SET_STRING("PHOTO_IMPORT_IMPORT_BUTTON",
@@ -503,10 +509,10 @@ bool GetStringsFunction::RunImpl() {
 #undef SET_STRING
 
   dict->SetBoolean("PDF_VIEW_ENABLED",
-                   util::ShouldBeOpenedWithPlugin(profile(),
+                   file_manager::util::ShouldBeOpenedWithPlugin(profile(),
                                                   FILE_PATH_LITERAL(".pdf")));
   dict->SetBoolean("SWF_VIEW_ENABLED",
-                   util::ShouldBeOpenedWithPlugin(profile(),
+                   file_manager::util::ShouldBeOpenedWithPlugin(profile(),
                                                   FILE_PATH_LITERAL(".swf")));
 
   webui::SetFontAndTextDirection(dict);
@@ -522,4 +528,4 @@ bool GetStringsFunction::RunImpl() {
   return true;
 }
 
-}  // namespace file_manager
+}  // namespace extensions

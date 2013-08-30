@@ -49,8 +49,9 @@ bool GetScreenWorkArea(gfx::Rect* out_rect) {
 
 gfx::Rect NativePrimaryMonitorBounds() {
   GdkScreen* screen = gdk_screen_get_default();
+  gint primary_monitor_index = gdk_screen_get_primary_monitor(screen);
   GdkRectangle rect;
-  gdk_screen_get_monitor_geometry(screen, 0, &rect);
+  gdk_screen_get_monitor_geometry(screen, primary_monitor_index, &rect);
   return gfx::Rect(rect);
 }
 
@@ -90,7 +91,7 @@ class ScreenGtk : public gfx::Screen {
   }
 
   // Returns the window under the cursor.
-  virtual gfx::NativeWindow GetWindowAtCursorScreenPoint() OVERRIDE {
+  virtual gfx::NativeWindow GetWindowUnderCursor() OVERRIDE {
     GdkWindow* window = gdk_window_at_pointer(NULL, NULL);
     if (!window)
       return NULL;
@@ -104,14 +105,25 @@ class ScreenGtk : public gfx::Screen {
     return GTK_IS_WINDOW(widget) ? GTK_WINDOW(widget) : NULL;
   }
 
+  virtual gfx::NativeWindow GetWindowAtScreenPoint(const gfx::Point& point)
+      OVERRIDE {
+    NOTIMPLEMENTED();
+    return NULL;
+  }
+
   // Returns the number of displays.
   // Mirrored displays are excluded; this method is intended to return the
   // number of distinct, usable displays.
-  virtual int GetNumDisplays() OVERRIDE {
+  virtual int GetNumDisplays() const OVERRIDE {
     // This query is kinda bogus for Linux -- do we want number of X screens?
     // The number of monitors Xinerama has?  We'll just use whatever GDK uses.
     GdkScreen* screen = gdk_screen_get_default();
     return gdk_screen_get_n_monitors(screen);
+  }
+
+  virtual std::vector<gfx::Display> GetAllDisplays() const OVERRIDE {
+    NOTIMPLEMENTED();
+    return std::vector<gfx::Display>(1, GetPrimaryDisplay());
   }
 
   // Returns the display nearest the specified window.

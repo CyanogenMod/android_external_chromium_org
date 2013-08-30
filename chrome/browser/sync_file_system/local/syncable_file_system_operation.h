@@ -12,7 +12,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
-#include "webkit/browser/fileapi/file_system_operation_impl.h"
+#include "webkit/browser/fileapi/file_system_operation.h"
+#include "webkit/browser/fileapi/file_system_url.h"
 
 namespace fileapi {
 class FileSystemContext;
@@ -24,10 +25,9 @@ namespace sync_file_system {
 
 class SyncableFileOperationRunner;
 
-// A wrapper class of FileSystemOperationImpl for syncable file system.
+// A wrapper class of FileSystemOperation for syncable file system.
 class SyncableFileSystemOperation
-    : public fileapi::FileSystemOperationImpl,
-      public base::SupportsWeakPtr<SyncableFileSystemOperation>,
+    : public NON_EXPORTED_BASE(fileapi::FileSystemOperation),
       public base::NonThreadSafe {
  public:
   virtual ~SyncableFileSystemOperation();
@@ -74,13 +74,22 @@ class SyncableFileSystemOperation
   virtual void CreateSnapshotFile(
       const fileapi::FileSystemURL& path,
       const SnapshotFileCallback& callback) OVERRIDE;
-
-  // FileSystemOperationImpl overrides.
   virtual void CopyInForeignFile(const base::FilePath& src_local_disk_path,
                                  const fileapi::FileSystemURL& dest_url,
                                  const StatusCallback& callback) OVERRIDE;
-
-  using base::SupportsWeakPtr<SyncableFileSystemOperation>::AsWeakPtr;
+  virtual void RemoveFile(const fileapi::FileSystemURL& url,
+                          const StatusCallback& callback) OVERRIDE;
+  virtual void RemoveDirectory(const fileapi::FileSystemURL& url,
+                               const StatusCallback& callback) OVERRIDE;
+  virtual void CopyFileLocal(const fileapi::FileSystemURL& src_url,
+                             const fileapi::FileSystemURL& dest_url,
+                             const StatusCallback& callback) OVERRIDE;
+  virtual void MoveFileLocal(const fileapi::FileSystemURL& src_url,
+                             const fileapi::FileSystemURL& dest_url,
+                             const StatusCallback& callback) OVERRIDE;
+  virtual base::PlatformFileError SyncGetPlatformPath(
+      const fileapi::FileSystemURL& url,
+      base::FilePath* platform_path) OVERRIDE;
 
  private:
   typedef SyncableFileSystemOperation self;
@@ -93,7 +102,6 @@ class SyncableFileSystemOperation
       const fileapi::FileSystemURL& url,
       fileapi::FileSystemContext* file_system_context,
       scoped_ptr<fileapi::FileSystemOperationContext> operation_context);
-  fileapi::FileSystemOperationImpl* NewOperation();
 
   void DidFinish(base::PlatformFileError status);
   void DidWrite(const WriteCallback& callback,
@@ -105,13 +113,15 @@ class SyncableFileSystemOperation
 
   const fileapi::FileSystemURL url_;
 
+  scoped_ptr<fileapi::FileSystemOperation> impl_;
   base::WeakPtr<SyncableFileOperationRunner> operation_runner_;
-  scoped_ptr<fileapi::FileSystemOperationImpl> inflight_operation_;
   std::vector<fileapi::FileSystemURL> target_paths_;
 
   StatusCallback completion_callback_;
 
   bool is_directory_operation_enabled_;
+
+  base::WeakPtrFactory<SyncableFileSystemOperation> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncableFileSystemOperation);
 };

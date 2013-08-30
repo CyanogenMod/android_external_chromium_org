@@ -13,8 +13,6 @@
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
 
-class GURL;
-
 namespace base {
 class SequencedTaskRunner;
 }  // namespace base
@@ -50,22 +48,20 @@ class SearchOperation {
   //
   // |callback| must not be null.
   void Search(const std::string& search_query,
-              const GURL& next_url,
+              const std::string& page_token,
               const SearchCallback& callback);
 
  private:
-  // Part of Search(). This is called after the ResourceList is fetched from
-  // the server.
+  // Part of Search(), called after the ResourceList is fetched from the server.
   void SearchAfterGetResourceList(
       const SearchCallback& callback,
       google_apis::GDataErrorCode gdata_error,
       scoped_ptr<google_apis::ResourceList> resource_list);
 
-  // Part of Search(). This is called after the RefreshEntryOnBlockingPool
-  // is completed.
-  void SearchAfterRefreshEntry(
+  // Part of Search(), called after |result| is filled on the blocking pool.
+  void SearchAfterResolveSearchResult(
       const SearchCallback& callback,
-      const GURL& next_url,
+      const std::string& page_token,
       scoped_ptr<std::vector<SearchResultInfo> > result,
       FileError error);
 

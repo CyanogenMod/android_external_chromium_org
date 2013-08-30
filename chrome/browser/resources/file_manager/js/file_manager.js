@@ -246,6 +246,16 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       }.bind(this));
     }.bind(this));
 
+    // TODO(yoshiki): Remove the flag when the feature is launched.
+    this.enableExperimentalWebstoreIntegration_ = false;
+    group.add(function(done) {
+      chrome.commandLinePrivate.hasSwitch(
+          'file-manager-enable-webstore-integration', function(flag) {
+        this.enableExperimentalWebstoreIntegration_ = flag;
+        done();
+      }.bind(this));
+    }.bind(this));
+
     group.run(callback);
   };
 
@@ -419,28 +429,28 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @private
    */
   FileManager.prototype.initDataTransferOperations_ = function() {
-    this.copyManager_ = new FileCopyManagerWrapper.getInstance();
+    this.fileOperationManager_ = new FileOperationManagerWrapper.getInstance();
 
-    this.butterBar_ = new ButterBar(this.dialogDom_, this.copyManager_);
+    this.butterBar_ = new ButterBar(
+        this.dialogDom_, this.fileOperationManager_);
 
     // CopyManager and ButterBar are required for 'Delete' operation in
     // Open and Save dialogs. But drag-n-drop and copy-paste are not needed.
     if (this.dialogType != DialogType.FULL_PAGE) return;
 
-    // TODO(hidehiko): Extract FileCopyManager related code from FileManager
-    // to simplify it.
+    // TODO(hidehiko): Extract FileOperationManager related code from
+    // FileManager to simplify it.
     this.onCopyProgressBound_ = this.onCopyProgress_.bind(this);
-    this.copyManager_.addEventListener(
+    this.fileOperationManager_.addEventListener(
         'copy-progress', this.onCopyProgressBound_);
 
-    this.onCopyManagerEntryChangedBound_ =
-        this.onCopyManagerEntryChanged_.bind(this);
-    this.copyManager_.addEventListener(
-        'entry-changed', this.onCopyManagerEntryChangedBound_);
+    this.onEntryChangedBound_ = this.onEntryChanged_.bind(this);
+    this.fileOperationManager_.addEventListener(
+        'entry-changed', this.onEntryChangedBound_);
 
     var controller = this.fileTransferController_ =
         new FileTransferController(this.document_,
-                                   this.copyManager_,
+                                   this.fileOperationManager_,
                                    this.metadataCache_,
                                    this.directoryModel_);
     controller.attachDragSource(this.table_.list);
@@ -856,6 +866,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.shareDialog_ = new ShareDialog(this.dialogDom_);
     this.defaultTaskPicker =
         new cr.filebrowser.DefaultActionDialog(this.dialogDom_);
+    this.suggestAppsDialog =
+        new SuggestAppsDialog(this.dialogDom_);
   };
 
   /**
@@ -935,9 +947,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.cancelButton_.addEventListener('click', this.onCancelBound_);
 
     this.decorateSplitter(
-        this.dialogDom_.querySelector('div#sidebar-splitter'));
+        this.dialogDom_.querySelector('#navigation-list-splitter'));
     this.decorateSplitter(
-        this.dialogDom_.querySelector('div#middlebar-splitter'));
+        this.dialogDom_.querySelector('#middlebar-splitter'));
 
     this.dialogContainer_ = this.dialogDom_.querySelector('.dialog-container');
 
@@ -1156,9 +1168,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     // published at the end of drag selection.
     this.table_.list.addEventListener('dragselectionend', dragEndBound);
 
-    // TODO(mtomasz, yoshiki): Create sidebar earlier, and here just attach
-    // the directory model.
-    this.initSidebar_();
+    // TODO(mtomasz, yoshiki): Create navigation list earlier, and here just
+    // attach the directory model.
+    this.initNavigationList_();
 
     this.table_.addEventListener('column-resize-end',
                                  this.updateStartupPrefs_.bind(this));
@@ -1197,11 +1209,11 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   /**
    * @private
    */
-  FileManager.prototype.initSidebar_ = function() {
+  FileManager.prototype.initNavigationList_ = function() {
     this.directoryTree_ = this.dialogDom_.querySelector('#directory-tree');
     DirectoryTree.decorate(this.directoryTree_, this.directoryModel_);
 
-    this.navigationList_ = this.dialogDom_.querySelector('#volume-list');
+    this.navigationList_ = this.dialogDom_.querySelector('#navigation-list');
     NavigationList.decorate(this.navigationList_,
                             this.volumeManager_,
                             this.directoryModel_);
@@ -1416,12 +1428,12 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * This updates directory model to reflect operation result immediately (not
    * waiting for directory update event). Also, preloads thumbnails for the
    * images of new entries.
-   * See also FileCopyManager.EventRouter.
+   * See also FileOperationManager.EventRouter.
    *
    * @param {cr.Event} event An event for the entry change.
    * @private
    */
-  FileManager.prototype.onCopyManagerEntryChanged_ = function(event) {
+  FileManager.prototype.onEntryChanged_ = function(event) {
     var kind = event.kind;
     var entry = event.entry;
     this.directoryModel_.onEntryChanged(kind, entry);
@@ -1968,7 +1980,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       self.initDateTimeFormatters_();
       self.refreshCurrentDirectoryMetadata_();
 
-      self.volumeManager_.setDriveEnabled(self.isDriveEnabled());
+      var isDriveEnabled = self.isDriveEnabled();
+      self.volumeManager_.setDriveEnabled(isDriveEnabled);
+      self.navigationList_.dataModel.showShortcuts(isDriveEnabled);
 
       if (prefs.cellularDisabled)
         self.syncButton.setAttribute('checked', '');
@@ -2159,7 +2173,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         strf('GALLERY_CONFIRM_DELETE_ONE', entries[0].name) :
         strf('GALLERY_CONFIRM_DELETE_SOME', entries.length);
     this.confirm.show(message, function() {
-      this.copyManager_.deleteEntries(entries);
+      this.fileOperationManager_.deleteEntries(entries);
     }.bind(this));
   };
 
@@ -2301,8 +2315,52 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    */
   FileManager.prototype.dispatchSelectionAction_ = function() {
     if (this.dialogType == DialogType.FULL_PAGE) {
-      var tasks = this.getSelection().tasks;
-      if (tasks) tasks.executeDefault();
+      var selection = this.getSelection();
+      var tasks = selection.tasks;
+      var urls = selection.urls;
+      var mimeTypes = selection.mimeTypes;
+      if (tasks) {
+        tasks.executeDefault(function(result) {
+          if (result)
+            return;
+
+          var showAlert = function() {
+            var filename = decodeURIComponent(urls[0]);
+            if (filename.indexOf('/') != -1)
+              filename = filename.substr(filename.lastIndexOf('/') + 1);
+            var extension = filename.lastIndexOf('.') != -1 ?
+                filename.substr(filename.lastIndexOf('.') + 1) : '';
+            var mimeType = mimeTypes && mimeTypes[0];
+
+            var messageString =
+                extension == 'exe' ? 'NO_ACTION_FOR_EXECUTABLE' :
+                                     'NO_ACTION_FOR_FILE';
+            var webStoreUrl = FileTasks.createWebStoreLink(extension, mimeType);
+            var text = loadTimeData.getStringF(
+                messageString,
+                webStoreUrl,
+                FileTasks.NO_ACTION_FOR_FILE_URL);
+            this.alert.showHtml(filename, text, function() {});
+          }.bind(this);
+
+          if (!this.enableExperimentalWebstoreIntegration_) {
+            showAlert();
+            return;
+          }
+
+          this.openSuggestAppsDialog_(urls,
+            // Success callback.
+            function() {
+              var tasks = new FileTasks(this);
+              tasks.init(urls, mimeTypes);
+              tasks.executeDefault();
+            }.bind(this),
+            // Failure callback.
+            function() {},
+            // Cancelled callback.
+            showAlert);
+        }.bind(this));
+      }
       return true;
     }
     if (!this.okButton_.disabled) {
@@ -2310,6 +2368,42 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       return true;
     }
     return false;
+  };
+
+  /**
+   * Opens the suggest file dialog.
+   *
+   * @param {Array.<string>} urls List of URLs of files.
+   * @param {function()} onSuccess Success callback.
+   * @param {function()} onCancelled User-cancelled callback.
+   * @param {function()} onFailure Failure callback.
+   * @private
+   */
+  FileManager.prototype.openSuggestAppsDialog_ =
+      function(urls, onSuccess, onCancelled, onFailure) {
+    if (!urls || urls.length != 1) {
+      onFailure();
+      return;
+    }
+
+    this.metadataCache_.get(urls, 'drive', function(props) {
+      if (!props || !props[0] || !props[0].contentMimeType) {
+        onFailure();
+        return;
+      }
+
+      var filename = util.extractFilePath(urls[0]);
+      var extension = PathUtil.extractExtension(filename);
+      var mime = props[0].contentMimeType;
+      this.suggestAppsDialog.show(
+          extension, mime,
+          function(installed) {
+            if (installed)
+              onSuccess();
+            else
+              onCancelled();
+          });
+    }.bind(this));
   };
 
   /**
@@ -2485,14 +2579,14 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       this.filePopup_.contentWindow.unload(true /* exiting */);
     if (this.butterBar_)
       this.butterBar_.dispose();
-    if (this.copyManager_) {
+    if (this.fileOperationManager_) {
       if (this.onCopyProgressBound_) {
-        this.copyManager_.removeEventListener(
+        this.fileOperationManager_.removeEventListener(
             'copy-progress', this.onCopyProgressBound_);
       }
-      if (this.onCopyManagerEntryChangedBound_) {
-        this.copyManager_.removeEventListener(
-            'entry-changed', this.onCopyManagerEntryChangedBound_);
+      if (this.onEntryChangedBound_) {
+        this.fileOperationManager_.removeEventListener(
+            'entry-changed', this.onEntryChangedBound_);
       }
     }
   };
@@ -2931,10 +3025,11 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         return;
 
       case '27':  // Escape => Cancel dialog.
-        if (this.copyManager_ && this.copyManager_.isRunning()) {
+        if (this.fileOperationManager_ &&
+            this.fileOperationManager_.isRunning()) {
           // If there is a copy in progress, ESC will cancel it.
           event.preventDefault();
-          this.copyManager_.requestCancel();
+          this.fileOperationManager_.requestCancel();
           return;
         }
 

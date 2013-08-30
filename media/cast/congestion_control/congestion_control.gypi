@@ -8,15 +8,15 @@
       'target_name': 'congestion_control',
       'type': 'static_library',
       'include_dirs': [
-        '../../../',
+        '<(DEPTH)/',
       ],
       'sources': [
         'congestion_control.h',
         'congestion_control.cc',
       ], # source
       'dependencies': [
-        '../../base/base.gyp:base',
-        '../../base/base.gyp:test_support_base',
+        '<(DEPTH)/base/base.gyp:base',
+        '<(DEPTH)/base/base.gyp:test_support_base',
       ],
   },
   ],

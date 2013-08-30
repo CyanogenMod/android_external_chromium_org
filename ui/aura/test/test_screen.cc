@@ -108,13 +108,20 @@ gfx::Point TestScreen::GetCursorScreenPoint() {
   return Env::GetInstance()->last_mouse_location();
 }
 
-gfx::NativeWindow TestScreen::GetWindowAtCursorScreenPoint() {
-  const gfx::Point point = GetCursorScreenPoint();
+gfx::NativeWindow TestScreen::GetWindowUnderCursor() {
+  return GetWindowAtScreenPoint(GetCursorScreenPoint());
+}
+
+gfx::NativeWindow TestScreen::GetWindowAtScreenPoint(const gfx::Point& point) {
   return root_window_->GetTopWindowContainingPoint(point);
 }
 
-int TestScreen::GetNumDisplays() {
+int TestScreen::GetNumDisplays() const {
   return 1;
+}
+
+std::vector<gfx::Display> TestScreen::GetAllDisplays() const {
+  return std::vector<gfx::Display>(1, display_);
 }
 
 gfx::Display TestScreen::GetDisplayNearestWindow(

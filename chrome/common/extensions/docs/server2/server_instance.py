@@ -7,11 +7,11 @@ from api_list_data_source import APIListDataSource
 from appengine_wrappers import IsDevServer
 from availability_finder import AvailabilityFinder
 from compiled_file_system import CompiledFileSystem
-from data_source_registry import DataSourceRegistry
+from data_source_registry import CreateDataSources
 from empty_dir_file_system import EmptyDirFileSystem
 from example_zipper import ExampleZipper
-from manifest_data_source import ManifestDataSource
 from host_file_system_creator import HostFileSystemCreator
+from host_file_system_iterator import HostFileSystemIterator
 from intro_data_source import IntroDataSource
 from object_store_creator import ObjectStoreCreator
 from path_canonicalizer import PathCanonicalizer
@@ -25,7 +25,9 @@ from template_data_source import TemplateDataSource
 from test_branch_utility import TestBranchUtility
 from test_object_store import TestObjectStore
 
+
 class ServerInstance(object):
+
   def __init__(self,
                object_store_creator,
                host_file_system,
@@ -44,11 +46,15 @@ class ServerInstance(object):
 
     self.host_file_system_creator = host_file_system_creator
 
-    self.availability_finder_factory = AvailabilityFinder.Factory(
+    self.host_file_system_iterator = HostFileSystemIterator(
+        host_file_system_creator,
+        host_file_system,
+        branch_utility)
+
+    self.availability_finder = AvailabilityFinder(
+        self.host_file_system_iterator,
         object_store_creator,
-        self.compiled_host_fs_factory,
-        branch_utility,
-        host_file_system_creator)
+        branch_utility)
 
     self.api_list_data_source_factory = APIListDataSource.Factory(
         self.compiled_host_fs_factory,
@@ -59,7 +65,8 @@ class ServerInstance(object):
     self.api_data_source_factory = APIDataSource.Factory(
         self.compiled_host_fs_factory,
         svn_constants.API_PATH,
-        self.availability_finder_factory)
+        self.availability_finder,
+        branch_utility)
 
     self.ref_resolver_factory = ReferenceResolver.Factory(
         self.api_data_source_factory,
@@ -97,12 +104,6 @@ class ServerInstance(object):
         self.compiled_host_fs_factory,
         svn_constants.JSON_PATH)
 
-    self.manifest_data_source = ManifestDataSource(
-        self.compiled_host_fs_factory,
-        host_file_system,
-        '/'.join((svn_constants.JSON_PATH, 'manifest.json')),
-        '/'.join((svn_constants.API_PATH, '_manifest_features.json')))
-
     self.permissions_data_source = PermissionsDataSource(
         self.compiled_host_fs_factory,
         self.host_file_system,
@@ -123,6 +124,10 @@ class ServerInstance(object):
         svn_constants.PUBLIC_TEMPLATE_PATH)
 
     self.strings_json_path = '/'.join((svn_constants.JSON_PATH, 'strings.json'))
+    self.manifest_json_path = '/'.join(
+        (svn_constants.JSON_PATH, 'manifest.json'))
+    self.manifest_features_path = '/'.join(
+        (svn_constants.API_PATH, '_manifest_features.json'))
 
     self.template_data_source_factory = TemplateDataSource.Factory(
         self.api_data_source_factory,
@@ -132,14 +137,13 @@ class ServerInstance(object):
         self.sidenav_data_source_factory,
         self.compiled_host_fs_factory,
         self.ref_resolver_factory,
-        self.manifest_data_source,
         self.permissions_data_source,
         svn_constants.PUBLIC_TEMPLATE_PATH,
         svn_constants.PRIVATE_TEMPLATE_PATH,
         base_path,
         # TODO(jshumway): Remove this hack after data source registry
         # transition, ServerInstance should not know about DataSourceRegistry.
-        DataSourceRegistry.AsTemplateData(self))
+        CreateDataSources(self))
 
     self.api_data_source_factory.SetTemplateDataSource(
         self.template_data_source_factory)

@@ -4,9 +4,12 @@
 
 #include "ash/test/test_launcher_delegate.h"
 
+#include "ash/launcher/launcher_item_delegate_manager.h"
 #include "ash/launcher/launcher_model.h"
 #include "ash/launcher/launcher_util.h"
+#include "ash/shell.h"
 #include "ash/wm/window_util.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "grit/ash_resources.h"
 #include "ui/aura/window.h"
@@ -20,6 +23,14 @@ TestLauncherDelegate::TestLauncherDelegate(LauncherModel* model)
     : model_(model) {
   CHECK(!instance_);
   instance_ = this;
+
+  ash::LauncherItemDelegateManager* manager =
+      ash::Shell::GetInstance()->launcher_item_delegate_manager();
+  manager->RegisterLauncherItemDelegate(ash::TYPE_APP_PANEL, this);
+  manager->RegisterLauncherItemDelegate(ash::TYPE_APP_SHORTCUT, this);
+  manager->RegisterLauncherItemDelegate(ash::TYPE_BROWSER_SHORTCUT, this);
+  manager->RegisterLauncherItemDelegate(ash::TYPE_PLATFORM_APP, this);
+  manager->RegisterLauncherItemDelegate(ash::TYPE_WINDOWED_APP, this);
 }
 
 TestLauncherDelegate::~TestLauncherDelegate() {
@@ -37,7 +48,7 @@ void TestLauncherDelegate::AddLauncherItem(
   if (window->type() == aura::client::WINDOW_TYPE_PANEL)
     item.type = ash::TYPE_APP_PANEL;
   else
-    item.type = ash::TYPE_TABBED;
+    item.type = ash::TYPE_PLATFORM_APP;
   DCHECK(window_to_id_.find(window) == window_to_id_.end());
   window_to_id_[window] = model_->next_id();
   item.status = status;
@@ -131,6 +142,10 @@ LauncherID TestLauncherDelegate::GetLauncherIDForAppID(
   return 0;
 }
 
+const std::string& TestLauncherDelegate::GetAppIDForLauncherID(LauncherID id) {
+  return EmptyString();
+}
+
 void TestLauncherDelegate::PinAppWithID(const std::string& app_id) {
 }
 
@@ -138,7 +153,7 @@ bool TestLauncherDelegate::IsAppPinned(const std::string& app_id) {
   return false;
 }
 
-void TestLauncherDelegate::UnpinAppsWithID(const std::string& app_id) {
+void TestLauncherDelegate::UnpinAppWithID(const std::string& app_id) {
 }
 
 }  // namespace test

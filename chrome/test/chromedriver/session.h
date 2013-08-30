@@ -12,6 +12,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/time/time.h"
 #include "chrome/test/chromedriver/basic_types.h"
 #include "chrome/test/chromedriver/chrome/geoposition.h"
 
@@ -35,7 +36,7 @@ struct FrameInfo {
 };
 
 struct Session {
-  static const int kDefaultPageLoadTimeoutMs;
+  static const base::TimeDelta kDefaultPageLoadTimeout;
 
   explicit Session(const std::string& id);
   Session(const std::string& id, scoped_ptr<Chrome> chrome);
@@ -51,6 +52,7 @@ struct Session {
   const std::string id;
   bool quit;
   bool detach;
+  bool force_devtools_screenshot;
   scoped_ptr<Chrome> chrome;
   std::string window;
   int sticky_modifiers;
@@ -59,9 +61,9 @@ struct Session {
   // this list will be empty.
   std::list<FrameInfo> frames;
   WebPoint mouse_position;
-  int implicit_wait;
-  int page_load_timeout;
-  int script_timeout;
+  base::TimeDelta implicit_wait;
+  base::TimeDelta page_load_timeout;
+  base::TimeDelta script_timeout;
   scoped_ptr<std::string> prompt_text;
   scoped_ptr<Geoposition> overridden_geoposition;
   // Logs that populate from DevTools events.

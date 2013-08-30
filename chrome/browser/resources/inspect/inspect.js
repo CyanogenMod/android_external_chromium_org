@@ -2,8 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+var MIN_VERSION_TAB_CLOSE = 25;
+var MIN_VERSION_TARGET_ID = 26;
+var MIN_VERSION_NEW_TAB = 29;
+var MIN_VERSION_TAB_ACTIVATE = 30;
+
 function inspect(data) {
   chrome.send('inspect', [data]);
+}
+
+function activate(data) {
+  chrome.send('activate', [data]);
 }
 
 function terminate(data) {
@@ -38,7 +47,7 @@ function onload() {
     $('navigation').appendChild(tabHeader);
   }
   var selectedTabName = window.location.hash.slice(1) || 'devices';
-  selectTab(selectedTabName + '-tab');
+  selectTab(selectedTabName);
   initPortForwarding();
   chrome.send('init-ui');
 }
@@ -57,13 +66,14 @@ function selectTab(id) {
       tabHeader.classList.remove('selected');
     }
   }
+  window.location.hash = id;
 }
 
 function populateLists(data) {
-  removeChildren('pages');
-  removeChildren('extensions');
-  removeChildren('apps');
-  removeChildren('others');
+  removeChildren('pages-list');
+  removeChildren('extensions-list');
+  removeChildren('apps-list');
+  removeChildren('others-list');
 
   for (var i = 0; i < data.length; i++) {
     if (data[i].type === 'page')
@@ -78,7 +88,7 @@ function populateLists(data) {
 }
 
 function populateWorkersList(data) {
-  removeChildren('workers');
+  removeChildren('workers-list');
 
   for (var i = 0; i < data.length; i++)
     addToWorkersList(data[i]);
@@ -108,7 +118,7 @@ function populateDeviceLists(devices) {
     parent.appendChild(child);
   }
 
-  var deviceList = $('devices');
+  var deviceList = $('devices-list');
   if (alreadyDisplayed(deviceList, devices))
     return;
 
@@ -134,7 +144,7 @@ function populateDeviceLists(devices) {
     } else {
       deviceSection = document.createElement('div');
       deviceSection.id = device.adbGlobalId;
-      deviceSection.className = 'device list';
+      deviceSection.className = 'device';
       deviceList.appendChild(deviceSection);
 
       var deviceHeader = document.createElement('div');
@@ -200,6 +210,13 @@ function populateDeviceLists(devices) {
       var isChrome = browser.adbBrowserProduct &&
           browser.adbBrowserProduct.match(/^Chrome/);
 
+      var majorChromeVersion = 0;
+      if (isChrome && browser.adbBrowserVersion) {
+        var match = browser.adbBrowserVersion.match(/^(\d+)/);
+        if (match)
+          majorChromeVersion = parseInt(match[1]);
+      }
+
       var pageList;
       var browserSection = $(browser.adbGlobalId);
       if (browserSection) {
@@ -212,22 +229,19 @@ function populateDeviceLists(devices) {
 
         var browserHeader = document.createElement('div');
         browserHeader.className = 'browser-header';
+
+        var browserName = document.createElement('div');
+        browserName.className = 'browser-name';
+        browserHeader.appendChild(browserName);
         if (browser.adbBrowserPackage && !isChrome)
-          browserHeader.textContent = browser.adbBrowserPackage;
+          browserName.textContent = browser.adbBrowserPackage;
         else
-          browserHeader.textContent = browser.adbBrowserProduct;
-        var majorChromeVersion = 0;
-        if (browser.adbBrowserVersion) {
-          browserHeader.textContent += ' (' + browser.adbBrowserVersion + ')';
-          if (isChrome) {
-            var match = browser.adbBrowserVersion.match(/^(\d+)/);
-            if (match)
-              majorChromeVersion = parseInt(match[1]);
-          }
-        }
+          browserName.textContent = browser.adbBrowserProduct;
+        if (browser.adbBrowserVersion)
+          browserName.textContent += ' (' + browser.adbBrowserVersion + ')';
         browserSection.appendChild(browserHeader);
 
-        if (majorChromeVersion >= 29) {
+        if (majorChromeVersion >= MIN_VERSION_NEW_TAB) {
           var newPage = document.createElement('div');
           newPage.className = 'open';
 
@@ -250,7 +264,7 @@ function populateDeviceLists(devices) {
           newPage.appendChild(newPageButton);
           newPageButton.addEventListener('click', openHandler, true);
 
-          browserSection.appendChild(newPage);
+          browserHeader.appendChild(newPage);
         }
 
         pageList = document.createElement('div');
@@ -264,13 +278,27 @@ function populateDeviceLists(devices) {
       pageList.textContent = '';
       for (var p = 0; p < browser.pages.length; p++) {
         var page = browser.pages[p];
+        // Attached targets have no unique id until Chrome 26.
+        // For such targets it is impossible:
+        //  - to issue 'close' command,
+        //  - to activate existing DevTools window.
+        page.hasUniqueId = !page.attached ||
+            majorChromeVersion >= MIN_VERSION_TARGET_ID;
         var row = addTargetToList(
             page, pageList, ['faviconUrl', 'name', 'url', 'description']);
         if (isChrome) {
+          if (majorChromeVersion >= MIN_VERSION_TAB_ACTIVATE) {
+            row.appendChild(createActionLink(
+                'activate', activate.bind(null, page), false));
+          }
           row.appendChild(createActionLink(
               'reload', reload.bind(null, page), page.attached));
-          row.appendChild(createActionLink(
-              'close', terminate.bind(null, page), page.attached));
+          if (majorChromeVersion >= MIN_VERSION_TAB_CLOSE) {
+            row.appendChild(createActionLink(
+                'close',
+                terminate.bind(null, page),
+                page.attached || !page.hasUniqueId));
+          }
         }
       }
     }
@@ -278,25 +306,25 @@ function populateDeviceLists(devices) {
 }
 
 function addToPagesList(data) {
-  addTargetToList(data, $('pages'), ['faviconUrl', 'name', 'url']);
+  addTargetToList(data, $('pages-list'), ['faviconUrl', 'name', 'url']);
 }
 
 function addToExtensionsList(data) {
-  addTargetToList(data, $('extensions'), ['name', 'url']);
+  addTargetToList(data, $('extensions-list'), ['name', 'url']);
 }
 
 function addToAppsList(data) {
-  addTargetToList(data, $('apps'), ['name', 'url']);
+  addTargetToList(data, $('apps-list'), ['name', 'url']);
 }
 
 function addToWorkersList(data) {
-  var row = addTargetToList(data, $('workers'), ['name', 'url', 'pid']);
+  var row = addTargetToList(data, $('workers-list'), ['pid', 'url']);
   row.appendChild(createActionLink(
       'terminate', terminate.bind(null, data), data.attached));
 }
 
 function addToOthersList(data) {
-  addTargetToList(data, $('others'), ['url']);
+  addTargetToList(data, $('others-list'), ['url']);
 }
 
 function formatValue(data, property) {
@@ -320,8 +348,8 @@ function formatValue(data, property) {
   if (property == 'pid')
     text = 'Pid:' + text;
 
-  var span = document.createElement('span');
-  span.textContent = ' ' + text + ' ';
+  var span = document.createElement('div');
+  span.textContent = text;
   span.className = property;
   return span;
 }
@@ -341,7 +369,7 @@ function addWebViewDescription(webview, list) {
   }
 
   var row = document.createElement('div');
-  row.className = 'subrow';
+  row.className = 'subrow webview';
   if (webview.empty || !webview.attached || !webview.visible)
     row.className += ' invisible-view';
   row.appendChild(formatValue(viewStatus, 'visibility'));
@@ -354,10 +382,15 @@ function addWebViewDescription(webview, list) {
 function addTargetToList(data, list, properties) {
   var row = document.createElement('div');
   row.className = 'row';
+
+  var subrow = document.createElement('div');
+  subrow.className = 'subrow';
+  row.appendChild(subrow);
+
   var description = null;
   for (var j = 0; j < properties.length; j++) {
     if (properties[j] != 'description')
-      row.appendChild(formatValue(data, properties[j]));
+      subrow.appendChild(formatValue(data, properties[j]));
     else if (data['description']) {
       try {
         description = JSON.parse(data['description']);
@@ -365,13 +398,11 @@ function addTargetToList(data, list, properties) {
     }
   }
 
-  row.appendChild(createActionLink('inspect', inspect.bind(null, data)));
-
   if (description)
     addWebViewDescription(description, row);
 
-  row.processId = data.processId;
-  row.routeId = data.routeId;
+  row.appendChild(createActionLink(
+      'inspect', inspect.bind(null, data), !data.hasUniqueId));
 
   list.appendChild(row);
   return row;

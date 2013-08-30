@@ -270,6 +270,17 @@ static const char kDispatchSubmitEventScript[] =
     "  true;"
     "}";
 
+static const char kDispatchSuggestionChangeEventScript[] =
+    "if (window.chrome &&"
+    "    window.chrome.embeddedSearch &&"
+    "    window.chrome.embeddedSearch.searchBox &&"
+    "    window.chrome.embeddedSearch.searchBox.onsuggestionchange &&"
+    "    typeof window.chrome.embeddedSearch.searchBox.onsuggestionchange =="
+    "        'function') {"
+    "  window.chrome.embeddedSearch.searchBox.onsuggestionchange();"
+    "  true;"
+    "}";
+
 static const char kDispatchThemeChangeEventScript[] =
     "if (window.chrome &&"
     "    window.chrome.embeddedSearch &&"
@@ -310,6 +321,9 @@ class SearchBoxExtensionWrapper : public v8::Extension {
   static void DeleteMostVisitedItem(
       const v8::FunctionCallbackInfo<v8::Value>& args);
 
+  // Focuses the omnibox.
+  static void Focus(const v8::FunctionCallbackInfo<v8::Value>& args);
+
   // Gets whether or not the app launcher is enabled.
   static void GetAppLauncherEnabled(
       const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -338,6 +352,10 @@ class SearchBoxExtensionWrapper : public v8::Extension {
 
   // Gets the start-edge margin to use with extended Instant.
   static void GetStartMargin(const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  // Gets the current top suggestion to prefetch search results.
+  static void GetSuggestionToPrefetch(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 
   // Gets the background info of the theme currently adopted by browser.
   // Call only when overlay is showing NTP page.
@@ -384,6 +402,10 @@ class SearchBoxExtensionWrapper : public v8::Extension {
 
   // Undoes the deletion of a Most Visited item.
   static void UndoMostVisitedDeletion(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  // Indicates whether the page supports Instant.
+  static void GetDisplayInstantResults(
       const v8::FunctionCallbackInfo<v8::Value>& args);
 
  private:
@@ -442,6 +464,11 @@ void SearchBoxExtension::DispatchSubmit(WebKit::WebFrame* frame) {
 }
 
 // static
+void SearchBoxExtension::DispatchSuggestionChange(WebKit::WebFrame* frame) {
+  Dispatch(frame, kDispatchSuggestionChangeEventScript);
+}
+
+// static
 void SearchBoxExtension::DispatchThemeChange(WebKit::WebFrame* frame) {
   Dispatch(frame, kDispatchThemeChangeEventScript);
 }
@@ -461,6 +488,8 @@ v8::Handle<v8::FunctionTemplate> SearchBoxExtensionWrapper::GetNativeFunction(
     v8::Handle<v8::String> name) {
   if (name->Equals(v8::String::New("DeleteMostVisitedItem")))
     return v8::FunctionTemplate::New(DeleteMostVisitedItem);
+  if (name->Equals(v8::String::New("Focus")))
+    return v8::FunctionTemplate::New(Focus);
   if (name->Equals(v8::String::New("GetAppLauncherEnabled")))
     return v8::FunctionTemplate::New(GetAppLauncherEnabled);
   if (name->Equals(v8::String::New("GetFont")))
@@ -477,6 +506,8 @@ v8::Handle<v8::FunctionTemplate> SearchBoxExtensionWrapper::GetNativeFunction(
     return v8::FunctionTemplate::New(GetRightToLeft);
   if (name->Equals(v8::String::New("GetStartMargin")))
     return v8::FunctionTemplate::New(GetStartMargin);
+  if (name->Equals(v8::String::New("GetSuggestionToPrefetch")))
+    return v8::FunctionTemplate::New(GetSuggestionToPrefetch);
   if (name->Equals(v8::String::New("GetThemeBackgroundInfo")))
     return v8::FunctionTemplate::New(GetThemeBackgroundInfo);
   if (name->Equals(v8::String::New("IsFocused")))
@@ -501,6 +532,8 @@ v8::Handle<v8::FunctionTemplate> SearchBoxExtensionWrapper::GetNativeFunction(
     return v8::FunctionTemplate::New(UndoAllMostVisitedDeletions);
   if (name->Equals(v8::String::New("UndoMostVisitedDeletion")))
     return v8::FunctionTemplate::New(UndoMostVisitedDeletion);
+  if (name->Equals(v8::String::New("GetDisplayInstantResults")))
+    return v8::FunctionTemplate::New(GetDisplayInstantResults);
   return v8::Handle<v8::FunctionTemplate>();
 }
 
@@ -523,6 +556,16 @@ void SearchBoxExtensionWrapper::DeleteMostVisitedItem(
 
   DVLOG(1) << render_view << " DeleteMostVisitedItem";
   SearchBox::Get(render_view)->DeleteMostVisitedItem(args[0]->IntegerValue());
+}
+
+// static
+void SearchBoxExtensionWrapper::Focus(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  content::RenderView* render_view = GetRenderView();
+  if (!render_view) return;
+
+  DVLOG(1) << render_view << " Focus";
+  SearchBox::Get(render_view)->Focus();
 }
 
 // static
@@ -622,6 +665,20 @@ void SearchBoxExtensionWrapper::GetStartMargin(
   if (!render_view) return;
   args.GetReturnValue().Set(static_cast<int32_t>(
       SearchBox::Get(render_view)->start_margin()));
+}
+
+// static
+void SearchBoxExtensionWrapper::GetSuggestionToPrefetch(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  content::RenderView* render_view = GetRenderView();
+  if (!render_view) return;
+
+  const InstantSuggestion& suggestion =
+      SearchBox::Get(render_view)->suggestion();
+  v8::Handle<v8::Object> data = v8::Object::New();
+  data->Set(v8::String::New("text"), UTF16ToV8String(suggestion.text));
+  data->Set(v8::String::New("metadata"), UTF8ToV8String(suggestion.metadata));
+  args.GetReturnValue().Set(data);
 }
 
 // static
@@ -918,6 +975,19 @@ void SearchBoxExtensionWrapper::UndoMostVisitedDeletion(
 
   DVLOG(1) << render_view << " UndoMostVisitedDeletion";
   SearchBox::Get(render_view)->UndoMostVisitedDeletion(args[0]->IntegerValue());
+}
+
+// static
+void SearchBoxExtensionWrapper::GetDisplayInstantResults(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  content::RenderView* render_view = GetRenderView();
+  if (!render_view) return;
+
+  bool display_instant_results =
+      SearchBox::Get(render_view)->display_instant_results();
+  DVLOG(1) << render_view << " GetDisplayInstantResults" <<
+      display_instant_results;
+  args.GetReturnValue().Set(display_instant_results);
 }
 
 }  // namespace extensions_v8

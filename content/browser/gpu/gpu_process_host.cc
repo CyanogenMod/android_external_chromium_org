@@ -6,8 +6,9 @@
 
 #include "base/base64.h"
 #include "base/base_switches.h"
+#include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
@@ -520,7 +521,8 @@ GpuProcessHost::~GpuProcessHost() {
   std::string message;
   if (!in_process_) {
     int exit_code;
-    base::TerminationStatus status = process_->GetTerminationStatus(&exit_code);
+    base::TerminationStatus status = process_->GetTerminationStatus(
+        false /* known_dead */, &exit_code);
     UMA_HISTOGRAM_ENUMERATION("GPU.GPUProcessTerminationStatus",
                               status,
                               base::TERMINATION_STATUS_MAX_ENUM);
@@ -899,7 +901,7 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
   // if the browser is waiting for a new frame. Otherwise the RenderWidgetHelper
   // will forward to the RenderWidgetHostView via RenderProcessHostImpl and
   // RenderWidgetHostImpl.
-  scoped_completion_runner.Release();
+  ignore_result(scoped_completion_runner.Release());
 
   ViewHostMsg_CompositorSurfaceBuffersSwapped_Params view_params;
   view_params.surface_id = params.surface_id;
@@ -935,7 +937,7 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
     TRACE_EVENT1("gpu", "SurfaceIDNotFound_RoutingToUI",
                  "surface_id", params.surface_id);
     // This is a content area swap, send it on to the UI thread.
-    scoped_completion_runner.Release();
+    ignore_result(scoped_completion_runner.Release());
     RouteOnUIThread(GpuHostMsg_AcceleratedSurfaceBuffersSwapped(params));
     return;
   }
@@ -949,7 +951,7 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
                  "EarlyOut_NativeWindowNotFound",
                  "handle",
                  handle.handle);
-    scoped_completion_runner.Release();
+    ignore_result(scoped_completion_runner.Release());
     AcceleratedSurfaceBuffersSwappedCompleted(host_id_,
                                               params.route_id,
                                               params.surface_id,
@@ -960,7 +962,7 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
     return;
   }
 
-  scoped_completion_runner.Release();
+  ignore_result(scoped_completion_runner.Release());
   presenter->AsyncPresentAndAcknowledge(
       params.size,
       params.surface_handle,
@@ -1045,7 +1047,7 @@ void GpuProcessHost::OnProcessLaunched() {
 void GpuProcessHost::OnProcessCrashed(int exit_code) {
   SendOutstandingReplies();
   GpuDataManagerImpl::GetInstance()->ProcessCrashed(
-      process_->GetTerminationStatus(NULL));
+      process_->GetTerminationStatus(true /* known_dead */, NULL));
 }
 
 GpuProcessHost::GpuProcessKind GpuProcessHost::kind() {

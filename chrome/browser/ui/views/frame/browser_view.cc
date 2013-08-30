@@ -36,6 +36,7 @@
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog_queue.h"
+#include "chrome/browser/ui/bookmarks/bookmark_bar_constants.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bubble_delegate.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bubble_sign_in_delegate.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
@@ -131,9 +132,6 @@
 #include "ash/launcher/launcher_model.h"
 #include "ash/shell.h"
 #include "chrome/browser/ui/ash/ash_util.h"
-#include "chrome/browser/ui/ash/chrome_shell_delegate.h"
-#include "chrome/browser/ui/ash/launcher/browser_launcher_item_controller.h"
-#include "chrome/browser/ui/ash/window_positioner.h"
 #endif
 
 #if defined(USE_AURA)
@@ -423,12 +421,6 @@ BrowserView::BrowserView()
 }
 
 BrowserView::~BrowserView() {
-#if defined(USE_ASH)
-  // Destroy BrowserLauncherItemController early on as it listens to the
-  // TabstripModel, which is destroyed by the browser.
-  launcher_item_controller_.reset();
-#endif
-
   // Immersive mode may need to reparent views before they are removed/deleted.
   immersive_mode_controller_.reset();
 
@@ -635,8 +627,6 @@ void BrowserView::Show() {
     return;
   }
 
-  CreateLauncherIcon();
-
   // Showing the window doesn't make the browser window active right away.
   // This can cause SetFocusToLocationBar() to skip setting focus to the
   // location bar. To avoid this we explicilty let SetFocusToLocationBar()
@@ -667,7 +657,6 @@ void BrowserView::Show() {
 void BrowserView::ShowInactive() {
   if (frame_->IsVisible())
     return;
-  CreateLauncherIcon();
   frame_->ShowInactive();
 }
 
@@ -1605,21 +1594,6 @@ bool BrowserView::GetSavedWindowPlacement(
     return false;
   chrome::GetSavedWindowBoundsAndShowState(browser_.get(), bounds, show_state);
 
-#if defined(USE_ASH)
-  if (chrome::IsNativeWindowInAsh(
-          const_cast<BrowserView*>(this)->GetNativeWindow())) {
-    if (browser_->is_type_popup()) {
-      // In case of a popup with an 'unspecified' location we are
-      // looking for a good screen location. We are interpreting (0,0) as an
-      // unspecified location.
-      if (bounds->x() == 0 && bounds->y() == 0) {
-        *bounds = ChromeShellDelegate::instance()->window_positioner()->
-            GetPopupPosition(*bounds);
-      }
-    }
-  }
-#endif
-
   if (browser_->is_type_popup() &&
       !browser_->is_app() &&
       !browser_->is_devtools()) {
@@ -1672,11 +1646,6 @@ views::ClientView* BrowserView::CreateClientView(views::Widget* widget) {
 
 void BrowserView::OnWidgetActivationChanged(views::Widget* widget,
                                             bool active) {
-#if defined(USE_ASH)
-  if (launcher_item_controller_.get())
-    launcher_item_controller_->BrowserActivationStateChanged();
-#endif
-
   if (active)
     BrowserList::SetLastActive(browser_.get());
 }
@@ -2540,16 +2509,6 @@ void BrowserView::UpdateAcceleratorMetrics(
 #endif
 }
 
-void BrowserView::CreateLauncherIcon() {
-#if defined(USE_ASH)
-  if (chrome::IsNativeWindowInAsh(GetNativeWindow()) &&
-      !launcher_item_controller_.get()) {
-    launcher_item_controller_.reset(
-        BrowserLauncherItemController::Create(browser_.get()));
-  }
-#endif  // defined(USE_ASH)
-}
-
 // static
 BrowserWindow* BrowserWindow::CreateBrowserWindow(Browser* browser) {
   // Create the view and the frame. The frame will attach itself via the view
@@ -2611,6 +2570,17 @@ void BrowserView::ShowPasswordGenerationBubble(
 void BrowserView::OverscrollUpdate(int delta_y) {
   if (scroll_end_effect_controller_)
     scroll_end_effect_controller_->OverscrollUpdate(delta_y);
+}
+
+int BrowserView::GetRenderViewHeightInsetWithDetachedBookmarkBar() {
+  if (browser_->bookmark_bar_state() != BookmarkBar::DETACHED ||
+      !bookmark_bar_view_.get() || !bookmark_bar_view_->IsDetached()) {
+    return 0;
+  }
+  // Don't use bookmark_bar_view_->height() which won't be the final height if
+  // the bookmark bar is animating.
+  return chrome::kNTPBookmarkBarHeight -
+      bookmark_bar_view_->GetFullyDetachedToolbarOverlap();
 }
 
 void BrowserView::DoCutCopyPaste(void (content::RenderWidgetHost::*method)(),

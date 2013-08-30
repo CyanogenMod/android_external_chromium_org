@@ -41,6 +41,12 @@ const char kBlacklistAcceleratedCompositing[] =
 // Blacklist the GPU for WebGL.
 const char kBlacklistWebGL[]                = "blacklist-webgl";
 
+// Block cross-site documents (i.e., HTML/XML/JSON) from being loaded in
+// subresources when a document is not supposed to read them.  This will later
+// allow us to block them from the entire renderer process when site isolation
+// is enabled.
+const char kBlockCrossSiteDocuments[]     = "block-cross-site-documents";
+
 // Causes the browser process to throw an assertion on startup.
 const char kBrowserAssertTest[]             = "assert-test";
 
@@ -408,6 +414,9 @@ extern const char kEnableHTMLImports[]      = "enable-html-imports";
 // Enables support for inband text tracks in media content.
 const char kEnableInbandTextTracks[]        = "enable-inband-text-tracks";
 
+// Enable inputmode attribute of HTML input or text element.
+extern const char kEnableInputModeAttribute[] = "enable-input-mode-attribute";
+
 // Force logging to be enabled.  Logging is disabled by default in release
 // builds.
 const char kEnableLogging[]                 = "enable-logging";
@@ -631,6 +640,10 @@ const char kNoReferrers[]                   = "no-referrers";
 // Disables the sandbox for all process types that are normally sandboxed.
 const char kNoSandbox[]                     = "no-sandbox";
 
+// Enables not sending touch events to renderer while scrolling.
+const char kNoTouchToRendererWhileScrolling[] =
+    "no-touch-to-renderer-while-scrolling";
+
 // Enables or disables history navigation in response to horizontal overscroll.
 // Set the value to '1' to enable the feature, and set to '0' to disable.
 // Defaults to enabled.
@@ -779,10 +792,6 @@ const char kTestingFixedHttpsPort[]         = "testing-fixed-https-port";
 
 // Runs the security test for the renderer sandbox.
 const char kTestSandbox[]                   = "test-sandbox";
-
-// Enables not sending touch events to renderer while scrolling.
-const char kNoTouchToRendererWhileScrolling[] =
-    "no-touch-to-renderer-while-scrolling";
 
 // Causes TRACE_EVENT flags to be recorded from startup. Optionally, can
 // specify the specific trace categories to include (e.g.

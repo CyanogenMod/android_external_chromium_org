@@ -176,25 +176,18 @@ bool GLRenderer::Initialize() {
       context_);
   context_->pushGroupMarkerEXT(unique_context_name.c_str());
 
-  std::string extensions_string =
-      UTF16ToASCII(context_->getString(GL_EXTENSIONS));
-  std::vector<std::string> extensions_list;
-  base::SplitString(extensions_string, ' ', &extensions_list);
-  std::set<std::string> extensions(extensions_list.begin(),
-                                   extensions_list.end());
+  ContextProvider::Capabilities context_caps =
+    output_surface_->context_provider()->ContextCapabilities();
 
   capabilities_.using_partial_swap =
       Settings().partial_swap_enabled &&
-      extensions.count("GL_CHROMIUM_post_sub_buffer");
+      context_caps.post_sub_buffer;
 
-  capabilities_.using_set_visibility =
-      extensions.count("GL_CHROMIUM_set_visibility") > 0;
+  capabilities_.using_set_visibility = context_caps.set_visibility;
 
-  if (extensions.count("GL_CHROMIUM_iosurface") > 0)
-    DCHECK_GT(extensions.count("GL_ARB_texture_rectangle"), 0u);
+  DCHECK(!context_caps.iosurface || context_caps.texture_rectangle);
 
-  capabilities_.using_egl_image =
-      extensions.count("GL_OES_EGL_image_external") > 0;
+  capabilities_.using_egl_image = context_caps.egl_image_external;
 
   capabilities_.max_texture_size = resource_provider_->max_texture_size();
   capabilities_.best_texture_format = resource_provider_->best_texture_format();
@@ -204,17 +197,14 @@ bool GLRenderer::Initialize() {
 
   // Check for texture fast paths. Currently we always use MO8 textures,
   // so we only need to avoid POT textures if we have an NPOT fast-path.
-  capabilities_.avoid_pow2_textures =
-      extensions.count("GL_CHROMIUM_fast_NPOT_MO8_textures") > 0;
+  capabilities_.avoid_pow2_textures = context_caps.fast_npot_mo8_textures;
 
   capabilities_.using_offscreen_context3d = true;
 
   capabilities_.using_map_image =
-      extensions.count("GL_CHROMIUM_map_image") > 0 &&
-      Settings().use_map_image;
+      Settings().use_map_image && context_caps.map_image;
 
-  is_using_bind_uniform_ =
-      extensions.count("GL_CHROMIUM_bind_uniform_location") > 0;
+  is_using_bind_uniform_ = context_caps.bind_uniform_location;
 
   if (!InitializeSharedObjects())
     return false;
@@ -243,7 +233,6 @@ GLRenderer::~GLRenderer() {
     pending_async_read_pixels_.pop_back();
   }
 
-  context_->setMemoryAllocationChangedCallbackCHROMIUM(NULL);
   CleanupSharedObjects();
 }
 
@@ -470,13 +459,12 @@ void GLRenderer::DrawDebugBorderQuad(const DrawingFrame* frame,
 }
 
 static inline SkBitmap ApplyFilters(GLRenderer* renderer,
+                                    ContextProvider* offscreen_contexts,
                                     const FilterOperations& filters,
                                     ScopedResource* source_texture_resource) {
   if (filters.IsEmpty())
     return SkBitmap();
 
-  ContextProvider* offscreen_contexts =
-      renderer->resource_provider()->offscreen_context_provider();
   if (!offscreen_contexts || !offscreen_contexts->GrContext())
     return SkBitmap();
 
@@ -492,7 +480,7 @@ static inline SkBitmap ApplyFilters(GLRenderer* renderer,
   offscreen_contexts->Context3d()->makeContextCurrent();
 
   // Lazily label this context.
-  renderer->LazyLabelOffscreenContext();
+  renderer->LazyLabelOffscreenContext(offscreen_contexts);
 
   SkBitmap source =
       RenderSurfaceFilters::Apply(filters,
@@ -514,13 +502,13 @@ static inline SkBitmap ApplyFilters(GLRenderer* renderer,
 }
 
 static SkBitmap ApplyImageFilter(GLRenderer* renderer,
+                                 ContextProvider* offscreen_contexts,
+                                 gfx::Point origin,
                                  SkImageFilter* filter,
                                  ScopedResource* source_texture_resource) {
   if (!filter)
     return SkBitmap();
 
-  ContextProvider* offscreen_contexts =
-      renderer->resource_provider()->offscreen_context_provider();
   if (!offscreen_contexts || !offscreen_contexts->GrContext())
     return SkBitmap();
 
@@ -536,7 +524,7 @@ static SkBitmap ApplyImageFilter(GLRenderer* renderer,
   offscreen_contexts->Context3d()->makeContextCurrent();
 
   // Lazily label this context.
-  renderer->LazyLabelOffscreenContext();
+  renderer->LazyLabelOffscreenContext(offscreen_contexts);
 
   // Wrap the source texture in a Ganesh platform texture.
   GrBackendTextureDesc backend_texture_description;
@@ -580,6 +568,11 @@ static SkBitmap ApplyImageFilter(GLRenderer* renderer,
   SkPaint paint;
   paint.setImageFilter(filter);
   canvas.clear(SK_ColorTRANSPARENT);
+
+  // TODO(senorblanco): in addition to the origin translation here, the canvas
+  // should also be scaled to accomodate device pixel ratio and pinch zoom. See
+  // crbug.com/281516 and crbug.com/281518.
+  canvas.translate(SkIntToScalar(-origin.x()), SkIntToScalar(-origin.y()));
   canvas.drawSprite(source, 0, 0, &paint);
 
   // Flush skia context so that all the rendered stuff appears on the
@@ -662,7 +655,10 @@ scoped_ptr<ScopedResource> GLRenderer::DrawBackgroundFilters(
   }
 
   SkBitmap filtered_device_background =
-      ApplyFilters(this, filters, device_background_texture.get());
+      ApplyFilters(this,
+                   frame->offscreen_context_provider,
+                   filters,
+                   device_background_texture.get());
   if (!filtered_device_background.getTexture())
     return scoped_ptr<ScopedResource>();
 
@@ -776,8 +772,11 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
       // in the compositor.
       use_color_matrix = true;
     } else {
-      filter_bitmap =
-          ApplyImageFilter(this, quad->filter.get(), contents_texture);
+      filter_bitmap = ApplyImageFilter(this,
+                                       frame->offscreen_context_provider,
+                                       quad->rect.origin(),
+                                       quad->filter.get(),
+                                       contents_texture);
     }
   } else if (!quad->filters.IsEmpty()) {
     FilterOperations optimized_filters =
@@ -789,7 +788,10 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
           color_matrix, optimized_filters.at(0).matrix(), sizeof(color_matrix));
       use_color_matrix = true;
     } else {
-      filter_bitmap = ApplyFilters(this, optimized_filters, contents_texture);
+      filter_bitmap = ApplyFilters(this,
+                                   frame->offscreen_context_provider,
+                                   optimized_filters,
+                                   contents_texture);
     }
   }
 
@@ -1323,20 +1325,11 @@ void GLRenderer::DrawContentQuad(const DrawingFrame* frame,
                                  ResourceProvider::ResourceId resource_id) {
   gfx::Rect tile_rect = quad->visible_rect;
 
-  gfx::RectF tex_coord_rect = quad->tex_coord_rect;
-  float tex_to_geom_scale_x = quad->rect.width() / tex_coord_rect.width();
-  float tex_to_geom_scale_y = quad->rect.height() / tex_coord_rect.height();
-
-  // tex_coord_rect corresponds to quad_rect, but quad_visible_rect may be
-  // smaller than quad_rect due to occlusion or clipping. Adjust
-  // tex_coord_rect to match.
-  gfx::Vector2d top_left_diff = tile_rect.origin() - quad->rect.origin();
-  gfx::Vector2d bottom_right_diff =
-      tile_rect.bottom_right() - quad->rect.bottom_right();
-  tex_coord_rect.Inset(top_left_diff.x() / tex_to_geom_scale_x,
-                       top_left_diff.y() / tex_to_geom_scale_y,
-                       -bottom_right_diff.x() / tex_to_geom_scale_x,
-                       -bottom_right_diff.y() / tex_to_geom_scale_y);
+  gfx::RectF tex_coord_rect = MathUtil::ScaleRectProportional(
+      quad->tex_coord_rect, quad->rect, tile_rect);
+  float tex_to_geom_scale_x = quad->rect.width() / quad->tex_coord_rect.width();
+  float tex_to_geom_scale_y =
+      quad->rect.height() / quad->tex_coord_rect.height();
 
   gfx::RectF clamp_geom_rect(tile_rect);
   gfx::RectF clamp_tex_rect(tex_coord_rect);
@@ -1705,7 +1698,7 @@ void GLRenderer::DrawPictureQuad(const DrawingFrame* frame,
         ResourceProvider::TextureUsageAny);
   }
 
-  SkDevice device(on_demand_tile_raster_bitmap_);
+  SkBitmapDevice device(on_demand_tile_raster_bitmap_);
   SkCanvas canvas(&device);
 
   quad->picture_pile->RasterToBitmap(&canvas, quad->content_rect,
@@ -2348,7 +2341,7 @@ void GLRenderer::DoGetFramebufferPixels(
   if (is_async) {
     query = context_->createQueryEXT();
     GLC(context_, context_->beginQueryEXT(
-        GL_ASYNC_READ_PIXELS_COMPLETED_CHROMIUM,
+        GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM,
         query));
   }
 
@@ -2389,7 +2382,7 @@ void GLRenderer::DoGetFramebufferPixels(
 
   if (is_async) {
     GLC(context_, context_->endQueryEXT(
-        GL_ASYNC_READ_PIXELS_COMPLETED_CHROMIUM));
+        GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM));
     SyncPointHelper::SignalQuery(
         context_,
         query,
@@ -3114,7 +3107,7 @@ void GLRenderer::ReinitializeGrCanvas() {
 
   skia::RefPtr<GrSurface> surface(
       skia::AdoptRef(gr_context_->wrapBackendRenderTarget(desc)));
-  skia::RefPtr<SkDevice> device(
+  skia::RefPtr<SkBaseDevice> device(
       skia::AdoptRef(SkGpuDevice::Create(surface.get())));
   sk_canvas_ = skia::AdoptRef(new SkCanvas(device.get()));
 }
@@ -3149,7 +3142,8 @@ bool GLRenderer::IsContextLost() {
   return (context_->getGraphicsResetStatusARB() != GL_NO_ERROR);
 }
 
-void GLRenderer::LazyLabelOffscreenContext() {
+void GLRenderer::LazyLabelOffscreenContext(
+    ContextProvider* offscreen_context_provider) {
   if (offscreen_context_labelled_)
     return;
   offscreen_context_labelled_ = true;
@@ -3157,8 +3151,8 @@ void GLRenderer::LazyLabelOffscreenContext() {
       "%s-Offscreen-%p",
       Settings().compositor_name.c_str(),
       context_);
-  resource_provider()->offscreen_context_provider()->Context3d()->
-    pushGroupMarkerEXT(unique_context_name.c_str());
+  offscreen_context_provider->Context3d()->pushGroupMarkerEXT(
+      unique_context_name.c_str());
 }
 
 

@@ -340,7 +340,7 @@ static bool SetUserInputMethodImpl(
   if (input_method.empty())
     return false;
 
-  if (!manager->IsFullLatinKeyboard(input_method)) {
+  if (!manager->IsLoginKeyboard(input_method)) {
     LOG(WARNING) << "SetUserInputMethod('" << username
                  << "'): stored user LRU input method '" << input_method
                  << "' is no longer Full Latin Keyboard Language"
@@ -933,7 +933,7 @@ void SigninScreenHandler::ShowErrorScreen(LoginDisplay::SigninError error_id) {
 }
 
 void SigninScreenHandler::ShowSigninUI(const std::string& email) {
-
+  core_oobe_actor_->ShowSignInUI(email);
 }
 
 void SigninScreenHandler::ShowGaiaPasswordChanged(const std::string& username) {
@@ -1018,20 +1018,10 @@ void SigninScreenHandler::OnDnsCleared() {
   ShowSigninScreenIfReady();
 }
 
-void SigninScreenHandler::SetUserInputMethodHWDefault() {
-  chromeos::input_method::InputMethodManager* manager =
-      chromeos::input_method::InputMethodManager::Get();
-  manager->ChangeInputMethod(
-      manager->GetInputMethodUtil()->GetHardwareInputMethodId());
-}
-
 // Update keyboard layout to least recently used by the user.
 void SigninScreenHandler::SetUserInputMethod(const std::string& username) {
   chromeos::input_method::InputMethodManager* const manager =
       chromeos::input_method::InputMethodManager::Get();
-
-  const chromeos::input_method::InputMethodUtil& ime_util =
-      *manager->GetInputMethodUtil();
 
   const bool succeed = SetUserInputMethodImpl(username, manager);
 
@@ -1040,10 +1030,9 @@ void SigninScreenHandler::SetUserInputMethod(const std::string& username) {
   // Otherwise they will end up using another user's locale to log in.
   if (!succeed) {
     DLOG(INFO) << "SetUserInputMethod('" << username
-               << "'): failed to set user layout. Switching to default '"
-               << ime_util.GetHardwareInputMethodId() << "'";
+               << "'): failed to set user layout. Switching to default.";
 
-    SetUserInputMethodHWDefault();
+    manager->SetInputMethodDefault();
   }
 }
 

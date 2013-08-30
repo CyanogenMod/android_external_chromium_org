@@ -164,6 +164,9 @@ class CHROMEOS_EXPORT InputMethodManager {
   // Sets the list of extension IME ids which should be enabled.
   virtual void SetEnabledExtensionImes(std::vector<std::string>* ids) = 0;
 
+  // Sets current input method to default (first owners, then hardware).
+  virtual void SetInputMethodDefault() = 0;
+
   // Gets the descriptor of the input method which is currently selected.
   virtual InputMethodDescriptor GetCurrentInputMethod() const = 0;
 
@@ -192,7 +195,7 @@ class CHROMEOS_EXPORT InputMethodManager {
   virtual bool SwitchInputMethod(const ui::Accelerator& accelerator) = 0;
 
   // If keyboard layout can be uset at login screen
-  virtual bool IsFullLatinKeyboard(const std::string& layout) const = 0;
+  virtual bool IsLoginKeyboard(const std::string& layout) const = 0;
 };
 
 }  // namespace input_method

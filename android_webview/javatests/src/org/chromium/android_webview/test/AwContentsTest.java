@@ -15,6 +15,7 @@ import android.test.suitebuilder.annotation.SmallTest;
 import android.util.Pair;
 
 import org.chromium.android_webview.AwContents;
+import org.chromium.android_webview.AwSettings;
 import org.chromium.android_webview.test.util.CommonResources;
 import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
@@ -57,7 +58,7 @@ public class AwContentsTest extends AwTestBase {
             return mContentDisposition;
         }
 
-        public String getMimeType() {
+       public String getMimeType() {
             assert getCallCount() > 0;
             return mMimeType;
         }
@@ -391,5 +392,63 @@ public class AwContentsTest extends AwTestBase {
         } finally {
             if (webServer != null) webServer.shutdown();
         }
+    }
+
+    @Feature({"AndroidWebView", "setNetworkAvailable"})
+    @SmallTest
+    public void testSetNetworkAvailable() throws Throwable {
+        AwTestContainerView testView = createAwTestContainerViewOnMainSync(mContentsClient);
+        AwContents awContents = testView.getAwContents();
+        String SCRIPT = "navigator.onLine";
+
+        enableJavaScriptOnUiThread(awContents);
+        loadUrlSync(awContents, mContentsClient.getOnPageFinishedHelper(), "about:blank");
+
+        // Default to "online".
+        assertEquals("true", executeJavaScriptAndWaitForResult(awContents, mContentsClient,
+              SCRIPT));
+
+        // Forcing "offline".
+        awContents.setNetworkAvailable(false);
+        assertEquals("false", executeJavaScriptAndWaitForResult(awContents, mContentsClient,
+              SCRIPT));
+
+        // Forcing "online".
+        awContents.setNetworkAvailable(true);
+        assertEquals("true", executeJavaScriptAndWaitForResult(awContents, mContentsClient,
+              SCRIPT));
+    }
+
+
+    static class JavaScriptObject {
+        private CallbackHelper mCallbackHelper;
+        public JavaScriptObject(CallbackHelper callbackHelper) {
+            mCallbackHelper = callbackHelper;
+        }
+
+        public void run() {
+            mCallbackHelper.notifyCalled();
+        }
+    };
+
+    @Feature({"AndroidWebView", "JavaBridge"})
+    @SmallTest
+    public void testJavaBridge() throws Throwable {
+        final AwTestContainerView testView = createAwTestContainerViewOnMainSync(mContentsClient);
+        final CallbackHelper callback = new CallbackHelper();
+
+        runTestOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                AwContents awContents = testView.getAwContents();
+                AwSettings awSettings = awContents.getSettings();
+                awSettings.setJavaScriptEnabled(true);
+                awContents.addPossiblyUnsafeJavascriptInterface(
+                        new JavaScriptObject(callback), "bridge", null);
+                awContents.evaluateJavaScriptEvenIfNotYetNavigated(
+                        "javascript:window.bridge.run();");
+            }
+        });
+        callback.waitForCallback(0, 1, 20, TimeUnit.SECONDS);
     }
 }

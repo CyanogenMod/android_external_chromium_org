@@ -6,6 +6,7 @@
   {
     "namespace":"fileBrowserPrivate",
     "description": "none",
+    "platforms": ["chromeos"],
     "types": [
       {
         "id": "FileTask",
@@ -67,39 +68,6 @@
         }
       },
       {
-        "id": "DriveWebApp",
-        "type": "object",
-        "description": "Drive WebApp properties.",
-        "properties": {
-          "appId": {
-            "type": "string",
-            "description": "WebApp ID."
-          },
-          "appName": {
-            "type": "string",
-            "description": "WebApp name."
-          },
-          "appIcon": {
-            "type": "string",
-            "optional": true,
-            "description": "URL to the Drive application icon for this application."
-          },
-          "docIcon": {
-            "type": "string",
-            "optional": true,
-            "description": "URL to the Drive document icon for documents associated with this application."
-          },
-          "objectType": {
-            "type": "string",
-            "description": "Object (file) type description."
-          },
-          "isPrimary": {
-            "type": "boolean",
-            "description": "True if this WebApp is the primary (default) open action for this file."
-          }
-        }
-      },
-      {
         "id": "DriveEntryProperties",
         "type": "object",
         "description": "Drive file properties.",
@@ -139,11 +107,10 @@
             "optional": true,
             "description": "The error code (from base::PlatformFileError) if fetching the properties for this file had an error."
           },
-          "driveApps" : {
-            "type": "array",
+          "customIconUrl": {
+            "type": "string",
             "optional": true,
-            "items": {"$ref": "DriveWebApp"},
-            "description": "An array of WebApps capable of opening this file."
+            "description": "URL to the custom icon for this file."
           },
           "contentMimeType": {
             "type": "string",
@@ -169,10 +136,12 @@
           },
           "sourcePath": {
             "type": "string",
+            "optional": true,
             "description": "The path to the mounted device, archive file or network resource."
           },
           "mountType": {
             "type": "string",
+            "optional": true,
             "enum": ["device", "file", "network"],
             "description": "Type of the mount."
           },
@@ -208,31 +177,38 @@
           },
           "devicePath": {
             "type": "string",
+            "optional": true,
             "description": "Disk volume device path."
           },
           "systemPath": {
             "type": "string",
+            "optional": true,
             "description": "Disk volume system path."
           },
           "filePath": {
             "type": "string",
+            "optional": true,
             "description": "Disk volume file path."
           },
           "deviceLabel": {
             "type": "string",
+            "optional": true,
             "description": "Volume label."
           },
           "driveLabel": {
             "type": "string",
+            "optional": true,
             "description": "Volume's disk label."
           },
           "deviceType": {
             "type": "string",
+            "optional": true,
             "enum": ["usb", "sd", "optical", "mobile", "unknown"],
             "description": "Device type."
           },
           "isParent": {
             "type": "boolean",
+            "optional": true,
             "description": "Flag that specifies if volume is a parent device."
           },
           "isReadOnly": {
@@ -241,14 +217,17 @@
           },
           "hasMedia": {
             "type": "boolean",
+            "optional": true,
             "description": "Flag that specifies if volume has any media."
           },
           "isOnBootDevice": {
             "type": "boolean",
+            "optional": true,
             "description": "Flag that specifies if volume is on boot device."
           },
           "totalSize": {
             "type": "integer",
+            "optional": true,
             "description": "Total disk volume size."
           }
         }
@@ -573,6 +552,7 @@
                 "name" : "fileSystem",
                 "type": "object",
                 "optional": true,
+                "additionalProperties": { "type": "any" },
                 "description": "A DOMFileSystem instance for local file system access. null if the caller has no appropriate permissions."
               }
             ]
@@ -631,30 +611,6 @@
             "name": "callback",
             "type": "function",
             "parameters": []
-          }
-        ]
-      },
-      {
-        "name": "viewFiles",
-        "type": "function",
-        "description": "Views multiple files.",
-        "parameters": [
-          {
-            "name": "fileUrls",
-            "type": "array",
-            "description": "Array of selected paths",
-            "items": {"type": "string"}
-          },
-          {
-            "name": "callback",
-            "type": "function",
-            "parameters": [
-              {
-                "name" : "success",
-                "type": "boolean",
-                "description": "True if the selected files can be viewed by the browser."
-              }
-            ]
           }
         ]
       },
@@ -768,6 +724,7 @@
           {
             "name": "options",
             "type": "object",
+            "additionalProperties": { "type": "any" },
             "description": "Name/value pairs for source specific options"
           },
           {
@@ -961,6 +918,7 @@
                 "items": {
                   "type": "object",
                   "isInstanceOf": "Entry",
+                  "additionalProperties": { "type": "any" },
                   "description": "An Entry object which represents a Drive file. The conversion into a kind of FileEntry object is done in file_browser_handler_custom_bindings.cc. For filesystem API's Entry interface, see <a href='http://www.w3.org/TR/file-system-api/#the-entry-interface'>The Entry interface</a>."
                 }
               },
@@ -1013,6 +971,7 @@
                     "entry": {
                       "type": "object",
                       "isInstanceOf": "Entry",
+                      "additionalProperties": { "type": "any" },
                       "description": "A dictionary object which represents a Drive file. This will be converted into a kind of FileEntry object. See file_browser_handler_custom_bindings.cc for details. For filesystem API's Entry interface, see <a href='http://www.w3.org/TR/file-system-api/#the-entry-interface'>The Entry interface</a>."
                     },
                     "highlightedBaseName": {

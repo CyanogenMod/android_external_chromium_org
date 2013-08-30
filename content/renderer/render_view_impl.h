@@ -448,16 +448,11 @@ class CONTENT_EXPORT RenderViewImpl
   virtual WebKit::WebStorageNamespace* createSessionStorageNamespace();
   virtual bool shouldReportDetailedMessageForSource(
       const WebKit::WebString& source);
-  // TODO(rdevlin.cronin): Remove this version once
-  // https://codereview.chromium.org/18822004/ lands.
   virtual void didAddMessageToConsole(
       const WebKit::WebConsoleMessage& message,
       const WebKit::WebString& source_name,
-      unsigned source_line);
-  virtual void didAddMessageToConsole(
-      const WebKit::WebConsoleMessage& message,
-      const WebKit::WebString& source_name,
-      unsigned source_line, const WebKit::WebString& stack_trace);
+      unsigned source_line,
+      const WebKit::WebString& stack_trace);
   virtual void printPage(WebKit::WebFrame* frame);
   virtual WebKit::WebNotificationPresenter* notificationPresenter();
   virtual bool enumerateChosenDirectory(
@@ -554,35 +549,15 @@ class CONTENT_EXPORT RenderViewImpl
 
   // WebKit::WebFrameClient implementation -------------------------------------
 
-  virtual WebKit::WebPlugin* createPlugin(
-      WebKit::WebFrame* frame,
-      const WebKit::WebPluginParams& params);
-  virtual WebKit::WebSharedWorker* createSharedWorker(
-      WebKit::WebFrame* frame, const WebKit::WebURL& url,
-      const WebKit::WebString& name, unsigned long long documentId);
   virtual WebKit::WebMediaPlayer* createMediaPlayer(
       WebKit::WebFrame* frame,
       const WebKit::WebURL& url,
       WebKit::WebMediaPlayerClient* client);
-  virtual WebKit::WebApplicationCacheHost* createApplicationCacheHost(
-      WebKit::WebFrame* frame,
-      WebKit::WebApplicationCacheHostClient* client);
   virtual WebKit::WebCookieJar* cookieJar(WebKit::WebFrame* frame);
   virtual void didAccessInitialDocument(WebKit::WebFrame* frame);
-  virtual void didCreateFrame(WebKit::WebFrame* parent,
-                              WebKit::WebFrame* child);
   virtual void didDisownOpener(WebKit::WebFrame* frame);
   virtual void frameDetached(WebKit::WebFrame* frame);
   virtual void willClose(WebKit::WebFrame* frame);
-  virtual void didChangeName(WebKit::WebFrame* frame,
-                             const WebKit::WebString& name);
-  virtual void loadURLExternally(WebKit::WebFrame* frame,
-                                 const WebKit::WebURLRequest& request,
-                                 WebKit::WebNavigationPolicy policy);
-  virtual void loadURLExternally(WebKit::WebFrame* frame,
-                                 const WebKit::WebURLRequest& request,
-                                 WebKit::WebNavigationPolicy policy,
-                                 const WebKit::WebString& suggested_name);
 
   // The WebDataSource::ExtraData* is assumed to be a DocumentState* subclass.
   virtual WebKit::WebNavigationPolicy decidePolicyForNavigation(
@@ -1092,6 +1067,9 @@ class CONTENT_EXPORT RenderViewImpl
   void CheckPreferredSize();
 
   // Initializes |media_stream_client_| if needed.
+  // TODO(qinmin): rename this function as it does not guarantee
+  // |media_stream_client_| will be created.
+  // http://crbug.com/278490.
   void EnsureMediaStreamClient();
 
   // This callback is triggered when DownloadFavicon completes, either

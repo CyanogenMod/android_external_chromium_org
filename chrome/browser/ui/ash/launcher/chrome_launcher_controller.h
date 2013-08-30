@@ -13,6 +13,7 @@
 
 #include "ash/display/display_controller.h"
 #include "ash/launcher/launcher_delegate.h"
+#include "ash/launcher/launcher_item_delegate.h"
 #include "ash/launcher/launcher_model_observer.h"
 #include "ash/launcher/launcher_types.h"
 #include "ash/shelf/shelf_layout_manager_observer.h"
@@ -28,7 +29,6 @@
 #include "chrome/browser/prefs/pref_service_syncable_observer.h"
 #include "chrome/browser/ui/ash/app_sync_ui_state_observer.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_app_menu_item.h"
-#include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow_delegate.h"
 #include "content/public/browser/notification_observer.h"
 #include "ui/aura/window_observer.h"
@@ -36,6 +36,7 @@
 class AppSyncUIState;
 class Browser;
 class BrowserShortcutLauncherItemController;
+class BrowserStatusMonitor;
 class ExtensionEnableFlow;
 class GURL;
 class LauncherItemController;
@@ -71,7 +72,10 @@ typedef ScopedVector<ChromeLauncherAppMenuItem> ChromeLauncherAppMenuItems;
 // * App shell windows have ShellWindowLauncherItemController, owned by
 //   ShellWindowLauncherController.
 // * Shortcuts have no LauncherItemController.
+// TODO(simon.hong81): Move LauncherItemDelegate out from
+// ChromeLauncherController and makes separate subclass with it.
 class ChromeLauncherController : public ash::LauncherDelegate,
+                                 public ash::LauncherItemDelegate,
                                  public ash::LauncherModelObserver,
                                  public ash::ShellObserver,
                                  public ash::DisplayController::Observer,
@@ -80,7 +84,6 @@ class ChromeLauncherController : public ash::LauncherDelegate,
                                  public PrefServiceSyncableObserver,
                                  public AppSyncUIStateObserver,
                                  public ExtensionEnableFlowDelegate,
-                                 public chrome::BrowserListObserver,
                                  public ash::ShelfLayoutManagerObserver {
  public:
   // Indicates if a launcher item is incognito or not.
@@ -195,8 +198,6 @@ class ChromeLauncherController : public ash::LauncherDelegate,
   // Returns the id of the app for the specified tab.
   std::string GetAppID(content::WebContents* tab);
 
-  std::string GetAppIDForLauncherID(ash::LauncherID id);
-
   // Set the image for a specific launcher item (e.g. when set by the app).
   void SetLauncherItemImage(ash::LauncherID launcher_id,
                             const gfx::ImageSkia& image);
@@ -267,6 +268,17 @@ class ChromeLauncherController : public ash::LauncherDelegate,
                                         bool allow_minimize);
 
   // ash::LauncherDelegate overrides:
+  virtual ash::LauncherID GetIDByWindow(aura::Window* window) OVERRIDE;
+  virtual void OnLauncherCreated(ash::Launcher* launcher) OVERRIDE;
+  virtual void OnLauncherDestroyed(ash::Launcher* launcher) OVERRIDE;
+  virtual ash::LauncherID GetLauncherIDForAppID(
+      const std::string& app_id) OVERRIDE;
+  virtual const std::string& GetAppIDForLauncherID(ash::LauncherID id) OVERRIDE;
+  virtual void PinAppWithID(const std::string& app_id) OVERRIDE;
+  virtual bool IsAppPinned(const std::string& app_id) OVERRIDE;
+  virtual void UnpinAppWithID(const std::string& app_id) OVERRIDE;
+
+  // ash::LauncherItemDelegate overrides:
   virtual void ItemSelected(const ash::LauncherItem& item,
                            const ui::Event& event) OVERRIDE;
   virtual string16 GetTitle(const ash::LauncherItem& item) OVERRIDE;
@@ -275,16 +287,8 @@ class ChromeLauncherController : public ash::LauncherDelegate,
   virtual ash::LauncherMenuModel* CreateApplicationMenu(
       const ash::LauncherItem& item,
       int event_flags) OVERRIDE;
-  virtual ash::LauncherID GetIDByWindow(aura::Window* window) OVERRIDE;
   virtual bool IsDraggable(const ash::LauncherItem& item) OVERRIDE;
   virtual bool ShouldShowTooltip(const ash::LauncherItem& item) OVERRIDE;
-  virtual void OnLauncherCreated(ash::Launcher* launcher) OVERRIDE;
-  virtual void OnLauncherDestroyed(ash::Launcher* launcher) OVERRIDE;
-  virtual ash::LauncherID GetLauncherIDForAppID(
-      const std::string& app_id) OVERRIDE;
-  virtual void PinAppWithID(const std::string& app_id) OVERRIDE;
-  virtual bool IsAppPinned(const std::string& app_id) OVERRIDE;
-  virtual void UnpinAppsWithID(const std::string& app_id) OVERRIDE;
 
   // ash::LauncherModelObserver overrides:
   virtual void LauncherItemAdded(int index) OVERRIDE;
@@ -356,15 +360,15 @@ class ChromeLauncherController : public ash::LauncherDelegate,
   // If |web_contents| has not loaded, returns "Net Tab".
   string16 GetAppListTitle(content::WebContents* web_contents) const;
 
-  // Overridden from chrome::BrowserListObserver.
-  virtual void OnBrowserRemoved(Browser* browser) OVERRIDE;
-
   // Returns true when the given |browser| is listed in the browser application
   // list.
   bool IsBrowserRepresentedInBrowserList(Browser* browser);
 
   // Returns the LauncherItemController of BrowserShortcut.
   LauncherItemController* GetBrowserShortcutLauncherItemController();
+
+  // Updates the activation state of the Broswer item.
+  void UpdateBrowserItemStatus();
 
  protected:
   // Creates a new app shortcut item and controller on the launcher at |index|.
@@ -396,9 +400,6 @@ class ChromeLauncherController : public ash::LauncherDelegate,
       int index,
       ash::LauncherItemType launcher_item_type);
 
-  // Updates the activation state of the Broswer item.
-  void UpdateBrowserItemStatus();
-
   // Returns the profile used for new windows.
   Profile* GetProfileForNewWindows();
 
@@ -408,7 +409,7 @@ class ChromeLauncherController : public ash::LauncherDelegate,
   // Internal helpers for pinning and unpinning that handle both
   // client-triggered and internal pinning operations.
   void DoPinAppWithID(const std::string& app_id);
-  void DoUnpinAppsWithID(const std::string& app_id);
+  void DoUnpinAppWithID(const std::string& app_id);
 
   // Re-syncs launcher model with prefs::kPinnedLauncherApps.
   void UpdateAppLaunchersFromPref();
@@ -466,6 +467,9 @@ class ChromeLauncherController : public ash::LauncherDelegate,
   void MoveItemWithoutPinnedStateChangeNotification(int source_index,
                                                     int target_index);
 
+  // Register LauncherItemDelegate.
+  void RegisterLauncherItemDelegate();
+
   static ChromeLauncherController* instance_;
 
   ash::LauncherModel* model_;
@@ -504,6 +508,9 @@ class ChromeLauncherController : public ash::LauncherDelegate,
 
   // The owned browser shortcut item.
   scoped_ptr<BrowserShortcutLauncherItemController> browser_item_controller_;
+
+  // The owned browser status monitor.
+  scoped_ptr<BrowserStatusMonitor> browser_status_monitor_;
 
   // If true, incoming pinned state changes should be ignored.
   bool ignore_persist_pinned_state_change_;

@@ -62,7 +62,7 @@ class ChromeDriver(object):
 
   def __init__(self, server_url, chrome_binary=None, android_package=None,
                chrome_switches=None, chrome_extensions=None,
-               chrome_log_path=None):
+               chrome_log_path=None, chrome_existing_browser=None):
     self._executor = command_executor.CommandExecutor(server_url)
 
     options = {}
@@ -83,13 +83,17 @@ class ChromeDriver(object):
       assert type(chrome_log_path) is str
       options['logPath'] = chrome_log_path
 
+    if chrome_existing_browser:
+      assert type(chrome_existing_browser) is str
+      options['useExistingBrowser'] = chrome_existing_browser
+
     params = {
       'desiredCapabilities': {
         'chromeOptions': options
       }
     }
 
-    self._session_id = self._executor.Execute(
+    self._session_id = self._ExecuteCommand(
         Command.NEW_SESSION, params)['sessionId']
 
   def _WrapValue(self, value):
@@ -122,12 +126,16 @@ class ChromeDriver(object):
     else:
       return value
 
-  def ExecuteCommand(self, command, params={}):
-    params['sessionId'] = self._session_id
+  def _ExecuteCommand(self, command, params={}):
     params = self._WrapValue(params)
     response = self._executor.Execute(command, params)
     if response['status'] != 0:
       raise _ExceptionForResponse(response)
+    return response
+
+  def ExecuteCommand(self, command, params={}):
+    params['sessionId'] = self._session_id
+    response = self._ExecuteCommand(command, params)
     return self._UnwrapValue(response['value'])
 
   def GetWindowHandles(self):

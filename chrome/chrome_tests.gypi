@@ -231,6 +231,7 @@
         'browser/notifications/notification_browsertest.cc',
         'browser/printing/print_dialog_cloud_interative_uitest.cc',
         'browser/task_manager/task_manager_browsertest_util.cc',
+        'browser/ui/autofill/autofill_popup_controller_interactive_uitest.cc',
         'browser/ui/browser_focus_uitest.cc',
         'browser/ui/cocoa/panels/panel_cocoa_browsertest.mm',
         'browser/ui/fullscreen/fullscreen_controller_interactive_browsertest.cc',
@@ -403,6 +404,9 @@
             'browser/chromeos/login/captive_portal_window_browsertest.cc',
             'browser/chromeos/login/eula_browsertest.cc',
             'browser/chromeos/login/login_browsertest.cc',
+            'browser/chromeos/login/login_manager_test.cc',
+            'browser/chromeos/login/login_manager_test.h',
+            'browser/chromeos/login/login_ui_browsertest.cc',
             'browser/chromeos/login/oobe_browsertest.cc',
             'browser/chromeos/login/screen_locker_browsertest.cc',
             'browser/chromeos/login/screen_locker_tester.cc',
@@ -799,6 +803,8 @@
         'test/chromedriver/chrome/chrome_android_impl.h',
         'test/chromedriver/chrome/chrome_desktop_impl.cc',
         'test/chromedriver/chrome/chrome_desktop_impl.h',
+        'test/chromedriver/chrome/chrome_existing_impl.cc',
+        'test/chromedriver/chrome/chrome_existing_impl.h',
         'test/chromedriver/chrome/chrome_finder.cc',
         'test/chromedriver/chrome/chrome_finder.h',
         'test/chromedriver/chrome/chrome_finder_mac.mm',
@@ -945,6 +951,7 @@
         'chrome_devtools_lib',
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../crypto/crypto.gyp:crypto',
         '../net/net.gyp:net',
         '../ui/ui.gyp:ui',
       ],
@@ -1162,6 +1169,7 @@
         '../components/autofill/content/renderer/test_password_autofill_agent.cc',
         '../remoting/test/auth_browsertest.cc',
         '../remoting/test/launch_browsertest.cc',
+        '../remoting/test/me2me_browsertest.cc',
         '../remoting/test/remote_desktop_browsertest.cc',
         '../remoting/test/remote_desktop_browsertest.h',
         'app/breakpad_mac_stubs.mm',
@@ -1227,6 +1235,7 @@
         'browser/chromeos/login/login_utils_browsertest.cc',
         'browser/chromeos/login/login_manager_test.cc',
         'browser/chromeos/login/login_manager_test.h',
+        'browser/chromeos/login/managed/supervised_user_creation_browsertest.cc',
         'browser/chromeos/login/mock_authenticator.cc',
         'browser/chromeos/login/mock_authenticator.h',
         'browser/chromeos/login/session_login_browsertest.cc',
@@ -1562,7 +1571,6 @@
         'browser/ui/ash/shelf_browsertest.cc',
         'browser/ui/ash/volume_controller_browsertest_chromeos.cc',
         'browser/ui/autofill/autofill_dialog_controller_browsertest.cc',
-        'browser/ui/autofill/autofill_popup_controller_browsertest.cc',
         'browser/ui/blocked_content/popup_blocker_browsertest.cc',
         'browser/ui/bookmarks/bookmark_browsertest.cc',
         'browser/ui/browser_browsertest.cc',
@@ -1573,7 +1581,9 @@
         'browser/ui/browser_navigator_browsertest_chromeos.cc',
         'browser/ui/cocoa/applescript/browsercrapplication+applescript_test.mm',
         'browser/ui/cocoa/applescript/window_applescript_test.mm',
-        'browser/ui/cocoa//autofill/autofill_dialog_cocoa_browsertest.mm',
+        'browser/ui/cocoa/apps/app_shim_menu_controller_mac_browsertest.mm',
+        'browser/ui/cocoa/apps/native_app_window_cocoa_browsertest.mm',
+        'browser/ui/cocoa/autofill/autofill_dialog_cocoa_browsertest.mm',
         'browser/ui/cocoa/browser_window_cocoa_browsertest.mm',
         'browser/ui/cocoa/browser_window_controller_browsertest.mm',
         'browser/ui/cocoa/certificate_viewer_mac_browsertest.mm',
@@ -1581,7 +1591,7 @@
         'browser/ui/cocoa/content_settings/collected_cookies_mac_browsertest.mm',
         'browser/ui/cocoa/content_settings/content_setting_bubble_cocoa_unittest.mm',
         'browser/ui/cocoa/dev_tools_controller_browsertest.mm',
-        'browser/ui/cocoa/extensions/extension_action_context_menu_browsertest.mm',
+        'browser/ui/cocoa/extensions/extension_action_context_menu_controller_browsertest.mm',
         'browser/ui/cocoa/extensions/extension_install_dialog_controller_browsertest.mm',
         'browser/ui/cocoa/extensions/extension_install_prompt_test_utils.h',
         'browser/ui/cocoa/extensions/extension_install_prompt_test_utils.mm',
@@ -1612,7 +1622,6 @@
         'browser/ui/tab_modal_confirm_dialog_browsertest.h',
         'browser/ui/toolbar/test_toolbar_model.cc',
         'browser/ui/toolbar/test_toolbar_model.h',
-        'browser/ui/views/app_list/app_list_controller_win_browsertest.cc',
         'browser/ui/views/avatar_menu_button_browsertest.cc',
         'browser/ui/views/browser_actions_container_browsertest.cc',
         'browser/ui/views/frame/app_non_client_frame_view_ash_browsertest.cc',
@@ -1778,6 +1787,11 @@
           'sources!': [
             'browser/ui/gtk/one_click_signin_bubble_gtk_browsertest.cc',
             'browser/ui/sync/one_click_signin_bubble_links_delegate_browsertest.cc',
+          ]
+        }],
+        ['enable_autofill_dialog==0', {
+          'sources!': [
+            'browser/ui/autofill/autofill_dialog_controller_browsertest.cc',
           ]
         }],
         ['disable_nacl==0', {
@@ -3162,7 +3176,6 @@
             # Disabling for now (enabled on linux/windows below).
             # 'browser_tests',
             '../ipc/ipc.gyp:ipc_tests',
-            '../media/media.gyp:media_unittests',
             '../net/net.gyp:net_unittests',
             '../printing/printing.gyp:printing_unittests',
             '../remoting/remoting.gyp:remoting_unittests',
@@ -3172,6 +3185,10 @@
             '../sync/sync.gyp:sync_unit_tests',
           ],  # 'dependencies'
           'conditions': [
+            ['OS!="ios"', {
+              'dependencies': [
+                '../media/media.gyp:media_unittests',
+              ]}],
             ['OS=="win"', {
               'dependencies': [
                 # Courgette has not been ported from Windows.
@@ -3294,6 +3311,7 @@
           'dependencies': [
             'chrome_java',
             'chromium_testshell_java',
+            'chrome_java_test_support',
             '../base/base.gyp:base',
             '../base/base.gyp:base_java_test_support',
             '../content/content.gyp:content_java_test_support',
@@ -3327,6 +3345,19 @@
             'chromium_testshell_uiautomator_tests_java',
           ],
           'includes': [ '../build/uiautomator_test.gypi' ],
+        },
+        {
+          'target_name': 'chrome_java_test_support',
+          'type': 'none',
+          'variables': {
+            'package_name': 'chrome_java_test_support',
+            'java_in_dir': '../chrome/test/android/javatests',
+          },
+          'dependencies': [
+            'chrome_java',
+            '../content/content.gyp:content_java_test_support',
+          ],
+          'includes': [ '../build/java.gypi' ],
         },
       ],
     }],

@@ -446,6 +446,8 @@ extern const char kMessageCenterEnabledSyncNotifierIds[];
 extern const char kExtensionsPref[];
 extern const char kExtensionsLastChromeVersion[];
 
+extern const char kFullscreenAllowed[];
+
 // Local state prefs. Please add Profile prefs above instead.
 extern const char kCertRevocationCheckingEnabled[];
 extern const char kCertRevocationCheckingRequiredLocalAnchors[];
@@ -789,6 +791,7 @@ extern const char kDeviceEnrollmentRequisition[];
 extern const char kDeviceEnrollmentAutoStart[];
 extern const char kDeviceEnrollmentCanExit[];
 extern const char kUsersLRUInputMethod[];
+extern const char kEchoCheckedOffers[];
 #endif
 
 extern const char kClearPluginLSODataEnabled[];
@@ -909,6 +912,7 @@ extern const char kFlingMaxTapGapTimeInMs[];
 extern const char kOverscrollHorizontalThresholdComplete[];
 extern const char kOverscrollVerticalThresholdComplete[];
 extern const char kOverscrollMinimumThresholdStart[];
+extern const char kOverscrollMinimumThresholdStartTouchpad[];
 extern const char kOverscrollVerticalThresholdStart[];
 extern const char kOverscrollHorizontalResistThreshold[];
 extern const char kOverscrollVerticalResistThreshold[];

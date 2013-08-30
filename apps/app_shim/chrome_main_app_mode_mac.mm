@@ -21,6 +21,7 @@
 #include "base/mac/scoped_nsobject.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/threading/thread.h"
 #include "chrome/common/chrome_constants.h"
@@ -33,6 +34,16 @@
 #include "ipc/ipc_message.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/l10n/l10n_util.h"
+
+// Replicate specific 10.7 SDK declarations for building with prior SDKs.
+#if !defined(MAC_OS_X_VERSION_10_7) || \
+    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
+
+@interface NSApplication (LionSDKDeclarations)
+- (void)disableRelaunchOnLogin;
+@end
+
+#endif  // MAC_OS_X_VERSION_10_7
 
 namespace {
 
@@ -88,6 +99,9 @@ class AppShimController : public IPC::Listener {
   // shim process should die.
   void OnLaunchAppDone(apps::AppShimLaunchResult result);
 
+  // Requests user attention.
+  void OnRequestUserAttention();
+
   // Terminates the app shim process.
   void Close();
 
@@ -106,6 +120,10 @@ void AppShimController::Init() {
 
   SetUpMenu();
 
+  // Chrome will relaunch shims when relaunching apps.
+  if (base::mac::IsOSLionOrLater())
+    [NSApp disableRelaunchOnLogin];
+
   // The user_data_dir for shims actually contains the app_data_path.
   // I.e. <user_data_dir>/<profile_dir>/Web Applications/_crx_extensionid/
   base::FilePath user_data_dir =
@@ -118,9 +136,12 @@ void AppShimController::Init() {
   channel_ = new IPC::ChannelProxy(handle, IPC::Channel::MODE_NAMED_CLIENT,
       this, g_io_thread->message_loop_proxy().get());
 
+  bool launched_by_chrome =
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          app_mode::kLaunchedByChromeProcessId);
   channel_->Send(new AppShimHostMsg_LaunchApp(
       g_info->profile_dir, g_info->app_mode_id,
-      CommandLine::ForCurrentProcess()->HasSwitch(app_mode::kNoLaunchApp) ?
+      launched_by_chrome ?
           apps::APP_SHIM_LAUNCH_REGISTER_ONLY : apps::APP_SHIM_LAUNCH_NORMAL));
 
   nsapp_delegate_.reset([[AppShimDelegate alloc] initWithController:this]);
@@ -170,6 +191,7 @@ bool AppShimController::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(AppShimController, message)
     IPC_MESSAGE_HANDLER(AppShimMsg_LaunchApp_Done, OnLaunchAppDone)
+    IPC_MESSAGE_HANDLER(AppShimMsg_RequestUserAttention, OnRequestUserAttention)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -187,6 +209,10 @@ void AppShimController::OnLaunchAppDone(apps::AppShimLaunchResult result) {
   }
 
   launch_app_done_ = true;
+}
+
+void AppShimController::OnRequestUserAttention() {
+  [NSApp requestUserAttention:NSInformationalRequest];
 }
 
 void AppShimController::Close() {
@@ -432,15 +458,24 @@ int ChromeAppModeStart(const app_mode::ChromeAppModeInfo* info) {
   g_io_thread = io_thread;
 
   // Find already running instances of Chrome.
-  NSString* chrome_bundle_id = [base::mac::OuterBundle() bundleIdentifier];
-  NSArray* existing_chrome = [NSRunningApplication
-      runningApplicationsWithBundleIdentifier:chrome_bundle_id];
+  pid_t pid = -1;
+  std::string chrome_process_id = CommandLine::ForCurrentProcess()->
+      GetSwitchValueASCII(app_mode::kLaunchedByChromeProcessId);
+  if (!chrome_process_id.empty()) {
+    if (!base::StringToInt(chrome_process_id, &pid))
+      LOG(FATAL) << "Invalid PID: " << chrome_process_id;
+  } else {
+    NSString* chrome_bundle_id = [base::mac::OuterBundle() bundleIdentifier];
+    NSArray* existing_chrome = [NSRunningApplication
+        runningApplicationsWithBundleIdentifier:chrome_bundle_id];
+    if ([existing_chrome count] > 0)
+      pid = [[existing_chrome objectAtIndex:0] processIdentifier];
+  }
 
   // Launch Chrome if it isn't already running.
   ProcessSerialNumber psn;
-  if ([existing_chrome count] > 0) {
-    OSStatus status = GetProcessForPID(
-        [[existing_chrome objectAtIndex:0] processIdentifier], &psn);
+  if (pid > -1) {
+    OSStatus status = GetProcessForPID(pid, &psn);
     if (status)
       return 1;
 

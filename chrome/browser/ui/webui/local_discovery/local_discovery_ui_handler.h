@@ -7,7 +7,9 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
+#include "chrome/browser/local_discovery/cloud_print_account_manager.h"
 #include "chrome/browser/local_discovery/privet_confirm_api_flow.h"
 #include "chrome/browser/local_discovery/privet_device_lister.h"
 #include "chrome/browser/local_discovery/privet_http.h"
@@ -17,6 +19,7 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
+// TODO(noamsml): Factor out full registration flow into single class
 namespace local_discovery {
 
 // UI Handler for chrome://devices/
@@ -24,8 +27,7 @@ namespace local_discovery {
 // into the Javascript to update the page.
 class LocalDiscoveryUIHandler : public content::WebUIMessageHandler,
                                 public PrivetRegisterOperation::Delegate,
-                                public PrivetDeviceLister::Delegate,
-                                public PrivetInfoOperation::Delegate {
+                                public PrivetDeviceLister::Delegate {
  public:
   class Factory {
    public:
@@ -41,6 +43,7 @@ class LocalDiscoveryUIHandler : public content::WebUIMessageHandler,
 
   static LocalDiscoveryUIHandler* Create();
   static void SetFactory(Factory* factory);
+  static bool GetHasVisible();
 
   // WebUIMessageHandler implementation.
   virtual void RegisterMessages() OVERRIDE;
@@ -69,46 +72,65 @@ class LocalDiscoveryUIHandler : public content::WebUIMessageHandler,
       const DeviceDescription& description) OVERRIDE;
   virtual void DeviceRemoved(const std::string& name) OVERRIDE;
 
-  // PrivetInfoOperation::Delegate implementation:
-  virtual void OnPrivetInfoDone(
-      PrivetInfoOperation* operation,
-      int http_code,
-      const base::DictionaryValue* json_value) OVERRIDE;
-
  private:
   // Message handlers:
   // For registering a device.
   void HandleRegisterDevice(const base::ListValue* args);
+
   // For when the page is ready to recieve device notifications.
-
   void HandleStart(const base::ListValue* args);
-  // For when info for a device is requested.
-  void HandleInfoRequested(const base::ListValue* args);
+
+  // For when a visibility change occurs.
+  void HandleIsVisible(const base::ListValue* args);
+
+  // For when a user choice is made.
+  void HandleChooseUser(const base::ListValue* args);
 
   // For when the IP address of the printer has been resolved for registration.
-  void StartRegisterHTTP(scoped_ptr<PrivetHTTPClient> http_client);
-
-  // For when the IP address of the printer has been resolved for registration.
-  void StartInfoHTTP(scoped_ptr<PrivetHTTPClient> http_client);
+  void StartRegisterHTTP(
+      const std::string& user,
+      scoped_ptr<PrivetHTTPClient> http_client);
 
   // For when the confirm operation on the cloudprint server has finished
   // executing.
   void OnConfirmDone(PrivetConfirmApiCallFlow::Status status);
 
-  // Log an error to the web interface.
-  void LogRegisterErrorToWeb(const std::string& error);
+  // For when the cloud print account list is resolved.
+  void OnCloudPrintAccountsResolved(const std::vector<std::string>& accounts,
+                                    const std::string& xsrf_token);
 
-  // Log a successful registration to the web inteface.
-  void LogRegisterDoneToWeb(const std::string& id);
+  // For when XSRF token is received for a secondary account.
+  void OnXSRFTokenForSecondaryAccount(
+      const GURL& automated_claim_url,
+      const std::vector<std::string>& accounts,
+      const std::string& xsrf_token);
 
-  // Log an error to the web interface.
-  void LogInfoErrorToWeb(const std::string& error);
+  // Signal to the web interface an error has ocurred while registering.
+  void SendRegisterError();
+
+  // Singal to the web interface that registration has finished.
+  void SendRegisterDone();
+
+  // Set the visibility of the page.
+  void SetIsVisible(bool visible);
+
+  // Get the sync account email.
+  std::string GetSyncAccount();
+
+  // Get the base cloud print URL for a given device.
+  const std::string& GetCloudPrintBaseUrl(const std::string& device_name);
+
+  // Start the confirm flow for a cookie based authentication.
+  void StartCookieConfirmFlow(
+      int user_index,
+      const std::string& xsrf_token,
+      const GURL& automatic_claim_url);
 
   // The current HTTP client (used for the current operation).
   scoped_ptr<PrivetHTTPClient> current_http_client_;
 
-  // The current info operation (operations are currently exclusive).
-  scoped_ptr<PrivetInfoOperation> current_info_operation_;
+  // Device currently registering.
+  std::string current_register_device_;
 
   // The current register operation. Only one allowed at any time.
   scoped_ptr<PrivetRegisterOperation> current_register_operation_;
@@ -130,6 +152,19 @@ class LocalDiscoveryUIHandler : public content::WebUIMessageHandler,
 
   // A map of current device descriptions provided by the PrivetDeviceLister.
   std::map<std::string, DeviceDescription> device_descriptions_;
+
+  // Whether or not the page is marked as visible.
+  bool is_visible_;
+
+  // Cloud print account manager to enumerate accounts and get XSRF token.
+  scoped_ptr<CloudPrintAccountManager> cloud_print_account_manager_;
+
+  // XSRF token.
+  std::string xsrf_token_for_primary_user_;
+
+  // Current user index (for multi-login), or kAccountIndexUseOAuth2 for sync
+  // credentials.
+  int current_register_user_index_;
 
   DISALLOW_COPY_AND_ASSIGN(LocalDiscoveryUIHandler);
 };

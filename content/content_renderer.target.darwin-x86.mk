@@ -117,7 +117,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/renderer_gpu_video_accelerator_factories.cc \
 	content/renderer/media/renderer_webaudiodevice_impl.cc \
 	content/renderer/media/renderer_webmidiaccessor_impl.cc \
-	content/renderer/media/rtc_video_renderer.cc \
 	content/renderer/media/texttrack_impl.cc \
 	content/renderer/media/video_capture_impl.cc \
 	content/renderer/media/video_capture_impl_manager.cc \
@@ -185,6 +184,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/web_ui_extension.cc \
 	content/renderer/web_ui_extension_data.cc \
 	content/renderer/webcrypto_impl.cc \
+	content/renderer/webcrypto_impl_openssl.cc \
 	content/renderer/websharedworker_proxy.cc \
 	content/renderer/websharedworkerrepository_impl.cc
 
@@ -314,6 +314,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/protoc_out \
 	$(LOCAL_PATH)/third_party/protobuf \
 	$(LOCAL_PATH)/third_party/protobuf/src \
+	$(LOCAL_PATH)/third_party/openssl/openssl/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -458,6 +459,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/protoc_out \
 	$(LOCAL_PATH)/third_party/protobuf \
 	$(LOCAL_PATH)/third_party/protobuf/src \
+	$(LOCAL_PATH)/third_party/openssl/openssl/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

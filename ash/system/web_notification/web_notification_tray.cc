@@ -55,6 +55,15 @@ MessageCenterTrayDelegate* CreateMessageCenterTray() {
 #endif  // defined(OS_CHROMEOS)
 
 namespace ash {
+namespace {
+
+// Menu commands
+const int kToggleQuietMode = 0;
+const int kEnableQuietModeHour = 1;
+const int kEnableQuietModeDay = 2;
+
+}
+
 namespace internal {
 namespace {
 
@@ -420,37 +429,6 @@ bool WebNotificationTray::ShouldShowMessageCenter() {
         status_area_widget()->system_tray()->HasNotificationBubble());
 }
 
-void WebNotificationTray::ShowQuietModeMenu(const ui::Event& event) {
-  base::AutoReset<bool> reset(&should_block_shelf_auto_hide_, true);
-  scoped_ptr<ui::MenuModel> menu_model(
-      message_center_tray_->CreateQuietModeMenu());
-  quiet_mode_menu_runner_.reset(new views::MenuRunner(menu_model.get()));
-  gfx::Point point;
-  views::View::ConvertPointToScreen(this, &point);
-  if (quiet_mode_menu_runner_->RunMenuAt(
-      GetWidget(),
-      NULL,
-      gfx::Rect(point, bounds().size()),
-      views::MenuItemView::BUBBLE_ABOVE,
-      ui::GetMenuSourceTypeForEvent(event),
-      views::MenuRunner::HAS_MNEMONICS) == views::MenuRunner::MENU_DELETED)
-    return;
-
-  quiet_mode_menu_runner_.reset();
-  GetShelfLayoutManager()->UpdateAutoHideState();
-}
-
-bool WebNotificationTray::ShouldShowQuietModeMenu(const ui::Event& event) {
-  // TODO(mukai): Add keyboard event handler.
-  if (!event.IsMouseEvent())
-    return false;
-
-  const ui::MouseEvent* mouse_event =
-      static_cast<const ui::MouseEvent*>(&event);
-
-  return mouse_event->IsRightMouseButton();
-}
-
 void WebNotificationTray::UpdateAfterLoginStatusChange(
     user::LoginStatus login_status) {
   if (login_status == user::LOGGED_IN_LOCKED) {
@@ -518,11 +496,6 @@ void WebNotificationTray::HideBubbleWithView(
 }
 
 bool WebNotificationTray::PerformAction(const ui::Event& event) {
-  if (ShouldShowQuietModeMenu(event)) {
-    ShowQuietModeMenu(event);
-    return true;
-  }
-
   if (message_center_bubble())
     message_center_tray_->HideMessageCenterBubble();
   else
@@ -565,6 +538,34 @@ bool WebNotificationTray::ShowNotifierSettings() {
 
 message_center::MessageCenterTray* WebNotificationTray::GetMessageCenterTray() {
   return message_center_tray_.get();
+}
+
+bool WebNotificationTray::IsCommandIdChecked(int command_id) const {
+  if (command_id != kToggleQuietMode)
+    return false;
+  return message_center()->IsQuietMode();
+}
+
+bool WebNotificationTray::IsCommandIdEnabled(int command_id) const {
+  return true;
+}
+
+bool WebNotificationTray::GetAcceleratorForCommandId(
+    int command_id,
+    ui::Accelerator* accelerator) {
+  return false;
+}
+
+void WebNotificationTray::ExecuteCommand(int command_id, int event_flags) {
+  if (command_id == kToggleQuietMode) {
+    bool in_quiet_mode = message_center()->IsQuietMode();
+    message_center()->SetQuietMode(!in_quiet_mode);
+    return;
+  }
+  base::TimeDelta expires_in = command_id == kEnableQuietModeDay ?
+      base::TimeDelta::FromDays(1):
+      base::TimeDelta::FromHours(1);
+  message_center()->EnterQuietModeWithExpire(expires_in);
 }
 
 bool WebNotificationTray::IsPressed() {
@@ -615,7 +616,7 @@ bool WebNotificationTray::ClickedOutsideBubble() {
   return true;
 }
 
-message_center::MessageCenter* WebNotificationTray::message_center() {
+message_center::MessageCenter* WebNotificationTray::message_center() const {
   return message_center_tray_->message_center();
 }
 

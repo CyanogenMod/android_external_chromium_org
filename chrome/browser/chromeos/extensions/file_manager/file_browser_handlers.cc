@@ -10,8 +10,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/extensions/file_manager/app_id.h"
-#include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
 #include "chrome/browser/chromeos/extensions/file_manager/fileapi_util.h"
+#include "chrome/browser/chromeos/extensions/file_manager/open_with_browser.h"
 #include "chrome/browser/chromeos/fileapi/file_system_backend.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_host.h"
@@ -479,23 +479,16 @@ bool ShouldBeOpenedWithBrowser(const std::string& extension_id,
            action_id == "open-hosted-gslides"));
 }
 
-// Opens the files specified by |file_urls| with the browser. |profile| is
-// used for finding an active browser. Returns true on success. It's a
-// failure if no files are opened.
+// Opens the files specified by |file_urls| with the browser for |profile|.
+// Returns true on success. It's a failure if no files are opened.
 bool OpenFilesWithBrowser(Profile* profile,
                           const std::vector<FileSystemURL>& file_urls) {
-  Browser* browser = chrome::FindLastActiveWithProfile(
-      profile,
-      chrome::HOST_DESKTOP_TYPE_ASH);
-  if (!browser)
-    return false;
-
   int num_opened = 0;
   for (size_t i = 0; i < file_urls.size(); ++i) {
     const FileSystemURL& file_url = file_urls[i];
     if (chromeos::FileSystemBackend::CanHandleURL(file_url)) {
       const base::FilePath& file_path = file_url.path();
-      num_opened += util::OpenFileWithBrowser(browser, file_path);
+      num_opened += util::OpenFileWithBrowser(profile, file_path);
     }
   }
   return num_opened > 0;
@@ -526,16 +519,16 @@ bool ExecuteFileBrowserHandler(
   return true;
 }
 
-bool IsFallbackFileBrowserHandler(const FileBrowserHandler* handler) {
-  const std::string& extension_id = handler->extension_id();
-  return (extension_id == kFileManagerAppId ||
-          extension_id == extension_misc::kQuickOfficeComponentExtensionId ||
-          extension_id == extension_misc::kQuickOfficeDevExtensionId ||
-          extension_id == extension_misc::kQuickOfficeExtensionId);
+bool IsFallbackFileBrowserHandler(const file_tasks::TaskDescriptor& task) {
+  return (task.task_type == file_tasks::TASK_TYPE_FILE_BROWSER_HANDLER &&
+          (task.app_id == kFileManagerAppId ||
+           task.app_id == extension_misc::kQuickOfficeComponentExtensionId ||
+           task.app_id == extension_misc::kQuickOfficeDevExtensionId ||
+           task.app_id == extension_misc::kQuickOfficeExtensionId));
 }
 
 FileBrowserHandlerList FindDefaultFileBrowserHandlers(
-    Profile* profile,
+    const PrefService& pref_service,
     const std::vector<base::FilePath>& file_list,
     const FileBrowserHandlerList& common_handlers) {
   FileBrowserHandlerList default_handlers;
@@ -544,7 +537,7 @@ FileBrowserHandlerList FindDefaultFileBrowserHandlers(
   for (std::vector<base::FilePath>::const_iterator it = file_list.begin();
        it != file_list.end(); ++it) {
     std::string task_id = file_tasks::GetDefaultTaskIdFromPrefs(
-        profile, "", it->Extension());
+        pref_service, "", it->Extension());
     if (!task_id.empty())
       default_ids.insert(task_id);
   }
@@ -554,10 +547,12 @@ FileBrowserHandlerList FindDefaultFileBrowserHandlers(
   // from common_handlers.
   for (size_t i = 0; i < common_handlers.size(); ++i) {
     const FileBrowserHandler* handler = common_handlers[i];
-    std::string task_id = file_tasks::MakeTaskID(
+    const file_tasks::TaskDescriptor task_descriptor(
         handler->extension_id(),
         file_tasks::TASK_TYPE_FILE_BROWSER_HANDLER,
         handler->id());
+    const std::string task_id =
+        file_tasks::TaskDescriptorToId(task_descriptor);
     std::set<std::string>::iterator default_iter = default_ids.find(task_id);
     if (default_iter != default_ids.end()) {
       default_handlers.push_back(handler);
@@ -565,7 +560,7 @@ FileBrowserHandlerList FindDefaultFileBrowserHandlers(
     }
 
     // Remember the first fallback handler.
-    if (!fallback_handler && IsFallbackFileBrowserHandler(handler))
+    if (!fallback_handler && IsFallbackFileBrowserHandler(task_descriptor))
       fallback_handler = handler;
   }
 
@@ -643,7 +638,9 @@ const FileBrowserHandler* FindFileBrowserHandlerForURLAndPath(
   file_paths.push_back(file_path);
 
   FileBrowserHandlerList default_handlers =
-      FindDefaultFileBrowserHandlers(profile, file_paths, common_handlers);
+      FindDefaultFileBrowserHandlers(*profile->GetPrefs(),
+                                     file_paths,
+                                     common_handlers);
 
   // If there's none, or more than one, then we don't have a canonical default.
   if (!default_handlers.empty()) {

@@ -11,8 +11,6 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/time/time.h"
 #include "ppapi/cpp/completion_callback.h"
-#include "ppapi/cpp/dev/graphics_2d_dev.h"
-#include "ppapi/cpp/dev/view_dev.h"
 #include "ppapi/cpp/image_data.h"
 #include "ppapi/cpp/point.h"
 #include "ppapi/cpp/rect.h"
@@ -22,7 +20,6 @@
 #include "remoting/client/client_context.h"
 #include "remoting/client/frame_producer.h"
 #include "remoting/client/plugin/chromoting_instance.h"
-#include "remoting/client/plugin/pepper_util.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_frame.h"
 
 using base::Passed;
@@ -80,7 +77,8 @@ PepperView::PepperView(ChromotingInstance* instance,
     source_dpi_(SkIPoint::Make(0, 0)),
     flush_pending_(false),
     is_initialized_(false),
-    frame_received_(false) {
+    frame_received_(false),
+    callback_factory_(this) {
   InitiateDrawing();
 }
 
@@ -104,8 +102,7 @@ void PepperView::SetView(const pp::View& view) {
 
   pp::Rect pp_size = view.GetRect();
   SkISize new_dips_size = SkISize::Make(pp_size.width(), pp_size.height());
-  pp::ViewDev view_dev(view);
-  float new_dips_to_device_scale = view_dev.GetDeviceScale();
+  float new_dips_to_device_scale = view.GetDeviceScale();
 
   if (dips_size_ != new_dips_size ||
       dips_to_device_scale_ != new_dips_to_device_scale) {
@@ -135,8 +132,7 @@ void PepperView::SetView(const pp::View& view) {
     graphics2d_ = pp::Graphics2D(instance_, pp_size, false);
 
     // Specify the scale from our coordinates to DIPs.
-    pp::Graphics2D_Dev graphics2d_dev(graphics2d_);
-    graphics2d_dev.SetScale(1.0f / dips_to_view_scale_);
+    graphics2d_.SetScale(1.0f / dips_to_view_scale_);
 
     bool result = instance_->BindGraphics(graphics2d_);
 
@@ -303,9 +299,11 @@ void PepperView::FlushBuffer(const SkIRect& clip_area,
   }
 
   // Flush the updated areas to the screen.
-  int error = graphics2d_.Flush(
-      PpCompletionCallback(base::Bind(
-          &PepperView::OnFlushDone, AsWeakPtr(), start_time, buffer)));
+  pp::CompletionCallback callback =
+      callback_factory_.NewCallback(&PepperView::OnFlushDone,
+                                    start_time,
+                                    buffer);
+  int error = graphics2d_.Flush(callback);
   CHECK(error == PP_OK_COMPLETIONPENDING);
   flush_pending_ = true;
 
@@ -315,9 +313,9 @@ void PepperView::FlushBuffer(const SkIRect& clip_area,
     instance_->SetDesktopShape(*buffer_shape);
 }
 
-void PepperView::OnFlushDone(base::Time paint_start,
-                             webrtc::DesktopFrame* buffer,
-                             int result) {
+void PepperView::OnFlushDone(int result,
+                             const base::Time& paint_start,
+                             webrtc::DesktopFrame* buffer) {
   DCHECK(context_->main_task_runner()->BelongsToCurrentThread());
   DCHECK(flush_pending_);
 

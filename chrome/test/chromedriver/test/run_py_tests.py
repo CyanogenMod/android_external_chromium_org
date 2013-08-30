@@ -7,9 +7,12 @@
 
 import base64
 import optparse
+import subprocess
 import os
 import sys
+import socket
 import tempfile
+import threading
 import time
 import unittest
 
@@ -104,6 +107,7 @@ _ANDROID_NEGATIVE_FILTER['com.google.android.apps.chrome'] = (
         'ChromeDriverTest.testWindowSize',
         'ChromeDriverTest.testWindowMaximize',
         'ChromeLogPathCapabilityTest.testChromeLogPath',
+        'ExistingBrowserTest.*',
         # Don't enable perf testing on Android yet.
         'PerfTest.testSessionStartTime',
         'PerfTest.testSessionStopTime',
@@ -635,14 +639,32 @@ class ChromeSwitchesCapabilityTest(ChromeDriverBaseTest):
 class ChromeExtensionsCapabilityTest(ChromeDriverBaseTest):
   """Tests that chromedriver properly processes chromeOptions.extensions."""
 
+  def _PackExtension(self, ext_path):
+    return base64.b64encode(open(ext_path, 'rb').read())
+
   def testExtensionsInstall(self):
     """Checks that chromedriver can take the extensions."""
     crx_1 = os.path.join(_TEST_DATA_DIR, 'ext_test_1.crx')
     crx_2 = os.path.join(_TEST_DATA_DIR, 'ext_test_2.crx')
-    crx_1_encoded = base64.b64encode(open(crx_1, 'rb').read())
-    crx_2_encoded = base64.b64encode(open(crx_2, 'rb').read())
-    extensions = [crx_1_encoded, crx_2_encoded]
-    self.CreateDriver(chrome_extensions=extensions)
+    self.CreateDriver(chrome_extensions=[self._PackExtension(crx_1),
+                                         self._PackExtension(crx_2)])
+
+  def testWaitsForExtensionToLoad(self):
+    did_load_event = threading.Event()
+    server = webserver.SyncWebServer()
+    def RunServer():
+      time.sleep(5)
+      server.RespondWithContent('<html>iframe</html>')
+      did_load_event.set()
+
+    thread = threading.Thread(target=RunServer)
+    thread.daemon = True
+    thread.start()
+    crx = os.path.join(_TEST_DATA_DIR, 'ext_slow_loader.crx')
+    driver = self.CreateDriver(
+        chrome_switches=['user-agent=' + server.GetUrl()],
+        chrome_extensions=[self._PackExtension(crx)])
+    self.assertTrue(did_load_event.is_set())
 
 
 class ChromeLogPathCapabilityTest(ChromeDriverBaseTest):
@@ -669,6 +691,36 @@ class SessionHandlingTest(ChromeDriverBaseTest):
     driver.Quit()
     driver.Quit()
 
+
+class ExistingBrowserTest(ChromeDriverBaseTest):
+  """Tests for ChromeDriver existing browser capability."""
+  def setUp(self):
+    self.assertTrue(_CHROME_BINARY is not None,
+                    'must supply a chrome binary arg')
+
+  def testConnectToExistingBrowser(self):
+    port = self.FindFreePort()
+    temp_dir = util.MakeTempDir()
+    process = subprocess.Popen([_CHROME_BINARY,
+                                '--remote-debugging-port=%d' % port,
+                                '--user-data-dir=%s' % temp_dir])
+    if process is None:
+      raise RuntimeError('Chrome could not be started with debugging port')
+    try:
+      hostAndPort = '127.0.0.1:%d' % port
+      driver = self.CreateDriver(chrome_existing_browser=hostAndPort)
+      driver.ExecuteScript('console.info("%s")' % 'connecting at %d!' % port)
+      driver.Quit()
+    finally:
+      process.terminate()
+
+  def FindFreePort(self):
+    for port in range(10000, 10100):
+      try:
+        socket.create_connection(('127.0.0.1', port), 0.2).close()
+      except socket.error:
+        return port
+    raise RuntimeError('Cannot find open port')
 
 class PerfTest(ChromeDriverBaseTest):
   """Tests for ChromeDriver perf."""

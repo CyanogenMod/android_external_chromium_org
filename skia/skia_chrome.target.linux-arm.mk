@@ -36,11 +36,13 @@ LOCAL_SRC_FILES := \
 	skia/ext/image_operations.cc \
 	skia/ext/lazy_pixel_ref.cc \
 	skia/ext/lazy_pixel_ref_utils.cc \
+	skia/ext/opacity_draw_filter.cc \
 	skia/ext/paint_simplifier.cc \
 	skia/ext/platform_canvas.cc \
 	skia/ext/platform_device.cc \
 	skia/ext/platform_device_linux.cc \
 	skia/ext/recursive_gaussian_convolution.cc \
+	skia/ext/SkDiscardableMemory_chrome.cc \
 	skia/ext/skia_utils_base.cc \
 	skia/ext/vector_canvas.cc
 

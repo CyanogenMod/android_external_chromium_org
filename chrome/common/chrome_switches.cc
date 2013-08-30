@@ -741,9 +741,6 @@ const char kEnableThumbnailRetargeting[]   = "enable-thumbnail-retargeting";
 // Enables Translate experimental new UX which replaces the infobar.
 const char kEnableTranslateNewUX[]         = "enable-translate-new-ux";
 
-// Enables Translate settings in chrome://settings/languages.
-const char kEnableTranslateSettings[]      = "enable-translate-settings";
-
 // Enables unrestricted SSL 3.0 fallback.
 // With this switch, SSL 3.0 fallback will be enabled for all sites.
 // Without this switch, SSL 3.0 fallback will be disabled for a site
@@ -1564,12 +1561,6 @@ const char kForceImmersive[]                = "force-immersive";
 // For the DelegateExecute verb handler to launch Chrome in desktop mode on
 // Windows 8 and higher.  Used when relaunching metro Chrome.
 const char kForceDesktop[]                  = "force-desktop";
-
-// Allows for disabling the overlapped I/O for TCP reads.
-// Possible values are "on" or "off".
-// The default is "on" which matches the existing behavior.
-// "off" switches to use non-blocking reads and WSAEventSelect.
-const char kOverlappedRead[]                = "overlapped-reads";
 
 // Relaunches metro Chrome on Windows 8 and higher using a given shortcut.
 const char kRelaunchShortcut[]              = "relaunch-shortcut";

@@ -93,7 +93,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, FileAccessIsSavedToPrefs) {
 }
 
 // Flaky: crbug.com/269613
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_WIN)
 #define MAYBE_FileAccessIsRestored DISABLED_FileAccessIsRestored
 #else
 #define MAYBE_FileAccessIsRestored FileAccessIsRestored
@@ -137,7 +137,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_FileAccessIsRestored) {
   for (std::vector<SavedFileEntry>::const_iterator it = file_entries.begin();
        it != file_entries.end(); ++it) {
     saved_files_service->RegisterFileEntry(
-        extension->id(), it->id, it->path, it->writable);
+        extension->id(), it->id, it->path, it->is_directory);
   }
 
   apps::AppRestoreServiceFactory::GetForProfile(browser()->profile())->

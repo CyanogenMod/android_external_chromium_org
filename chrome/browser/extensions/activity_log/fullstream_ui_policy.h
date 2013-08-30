@@ -39,7 +39,19 @@ class FullStreamUIPolicy : public ActivityLogDatabasePolicy {
       const base::Callback
           <void(scoped_ptr<Action::ActionVector>)>& callback) OVERRIDE;
 
+  virtual void ReadFilteredData(
+      const std::string& extension_id,
+      const Action::ActionType type,
+      const std::string& api_name,
+      const std::string& page_url,
+      const std::string& arg_url,
+      const base::Callback
+          <void(scoped_ptr<Action::ActionVector>)>& callback) OVERRIDE;
+
   virtual void Close() OVERRIDE;
+
+  // Clean the URL data stored for this policy.
+  virtual void RemoveURLs(const std::vector<GURL>& restrict_urls) OVERRIDE;
 
   // Database table schema.
   static const char* kTableName;
@@ -65,6 +77,10 @@ class FullStreamUIPolicy : public ActivityLogDatabasePolicy {
   virtual scoped_refptr<Action> ProcessArguments(
       scoped_refptr<Action> action) const;
 
+  // The implementation of RemoveURLs; this must only run on the database
+  // thread.
+  virtual void DoRemoveURLs(const std::vector<GURL>& restrict_urls);
+
   // Tracks any pending updates to be written to the database, if write
   // batching is turned on.  Should only be accessed from the database thread.
   Action::ActionVector queued_actions_;
@@ -77,6 +93,15 @@ class FullStreamUIPolicy : public ActivityLogDatabasePolicy {
   // The implementation of ReadData; this must only run on the database thread.
   scoped_ptr<Action::ActionVector> DoReadData(const std::string& extension_id,
                                               const int days_ago);
+
+  // Internal method to read data from the database; called on the database
+  // thread.
+  scoped_ptr<Action::ActionVector> DoReadFilteredData(
+      const std::string& extension_id,
+      const Action::ActionType type,
+      const std::string& api_name,
+      const std::string& page_url,
+      const std::string& arg_url);
 };
 
 }  // namespace extensions

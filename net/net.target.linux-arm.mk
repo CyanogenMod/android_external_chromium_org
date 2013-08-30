@@ -349,6 +349,7 @@ LOCAL_SRC_FILES := \
 	net/socket/client_socket_pool_histograms.cc \
 	net/socket/client_socket_pool_manager.cc \
 	net/socket/client_socket_pool_manager_impl.cc \
+	net/socket/socket_descriptor.cc \
 	net/socket/socket_net_log_params.cc \
 	net/socket/socks5_client_socket.cc \
 	net/socket/socks_client_socket.cc \

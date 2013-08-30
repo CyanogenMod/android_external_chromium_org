@@ -54,6 +54,8 @@ class AutofillDialogCocoa : public AutofillDialogView,
   virtual void GetUserInput(DialogSection section,
                             DetailOutputMap* output) OVERRIDE;
   virtual string16 GetCvc() OVERRIDE;
+  virtual bool HitTestInput(const DetailInput& input,
+                            const gfx::Point& screen_point) OVERRIDE;
   virtual bool SaveDetailsLocally() OVERRIDE;
   virtual const content::NavigationController* ShowSignIn() OVERRIDE;
   virtual void HideSignIn() OVERRIDE;
@@ -110,6 +112,7 @@ class AutofillDialogCocoa : public AutofillDialogView,
   base::scoped_nsobject<AutofillMainContainer> mainContainer_;
   base::scoped_nsobject<AutofillSignInContainer> signInContainer_;
   base::scoped_nsobject<AutofillAccountChooser> accountChooser_;
+  base::scoped_nsobject<NSTextField> loadingShieldTextField_;
 }
 
 // Designated initializer. The WebContents cannot be NULL.

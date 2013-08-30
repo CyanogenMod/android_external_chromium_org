@@ -51,25 +51,11 @@
 # Image scaling difference due to ongoing Skia image resizing changes
 crbug.com/263331 virtual/deferred/fast/images/webp-color-profile-lossy.html [ ImageOnlyFailure ]
 
-# With Skia r10399 Skia's Windows text metrics have been improved
-crbug.com/265448 [ Win ] svg/batik/text/textEffect3.svg [ ImageOnlyFailure ]
-crbug.com/265448 [ Win ] svg/custom/use-referencing-nonexisting-symbol.svg [ ImageOnlyFailure ]
-crbug.com/265448 [ Win ] svg/transforms/animated-path-inside-transformed-html.xhtml [ ImageOnlyFailure ]
-crbug.com/265448 [ Win ] svg/transforms/text-with-pattern-inside-transformed-html.xhtml [ ImageOnlyFailure ]
-crbug.com/265448 [ Win ] svg/transforms/text-with-pattern-with-svg-transform.svg [ ImageOnlyFailure ]
-
-# With skia r10444 some imperceptible differences on the edges of blurs were caused
-crbug.com/266315 fast/box-shadow/box-shadow-clipped-slices.html [ ImageOnlyFailure ]
-crbug.com/266315 fast/repaint/box-shadow-h.html [ ImageOnlyFailure ]
-crbug.com/266315 fast/repaint/box-shadow-v.html [ ImageOnlyFailure ]
-crbug.com/266315 fast/repaint/shadow-multiple-horizontal.html [ ImageOnlyFailure ]
-crbug.com/266315 fast/repaint/shadow-multiple-strict-horizontal.html [ ImageOnlyFailure ]
-crbug.com/266315 fast/repaint/shadow-multiple-strict-vertical.html [ ImageOnlyFailure ]
-crbug.com/266315 fast/repaint/shadow-multiple-vertical.html [ ImageOnlyFailure ]
-
-# With Skia r10769 the rendering of lines was slightly changed resulting in two
-# image layout differences
-crbug.com/275475 virtual/gpu/fast/canvas/canvas-transforms-during-path.html [ ImageOnlyFailure ]
-crbug.com/275475 virtual/gpu/fast/canvas/quadraticCurveTo.xml [ ImageOnlyFailure ]
+# With Skia r10936 several blur layout tests slightly changed [ ImageOnlyFailure ]
+crbug.com/280292 fast/forms/range/range-appearance-basic.html [ ImageOnlyFailure ]
+crbug.com/280292 fast/forms/textarea/textarea-appearance-basic.html [ ImageOnlyFailure ]
+crbug.com/280292 inspector/debugger/live-edit.html [ ImageOnlyFailure ]
+crbug.com/280292 virtual/gpu/fast/canvas/canvas-scale-strokePath-shadow.html [ Failure ]
+crbug.com/280292 fast/forms/input-appearance-height.html [ ImageOnlyFailure ]
 
 # END OVERRIDES HERE (this line ensures that the file is newline-terminated)

@@ -14,9 +14,9 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,gpu_gpu_gyp)/gpu.stamp \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp)/skia.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp)/skia_skia_library_gyp.a \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_minimal_gyp)/blink_minimal.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_minimal_gyp)/blink_minimal.stamp
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -97,6 +97,7 @@ LOCAL_SRC_FILES := \
 	cc/output/compositor_frame.cc \
 	cc/output/compositor_frame_ack.cc \
 	cc/output/compositor_frame_metadata.cc \
+	cc/output/context_provider.cc \
 	cc/output/copy_output_request.cc \
 	cc/output/copy_output_result.cc \
 	cc/output/delegated_frame_data.cc \
@@ -181,6 +182,7 @@ LOCAL_SRC_FILES := \
 	cc/scheduler/scheduler_settings.cc \
 	cc/scheduler/scheduler_state_machine.cc \
 	cc/scheduler/texture_uploader.cc \
+	cc/trees/blocking_task_runner.cc \
 	cc/trees/damage_tracker.cc \
 	cc/trees/layer_sorter.cc \
 	cc/trees/layer_tree_host.cc \
@@ -247,6 +249,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCC_IMPLEMENTATION=1' \
+	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
@@ -254,7 +257,6 @@ MY_DEFS_Debug := \
 	'-DUSE_CHROMIUM_SKIA' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
-	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -290,11 +292,11 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
+	$(LOCAL_PATH)/v8/include \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
-	$(LOCAL_PATH)/v8/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -364,6 +366,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCC_IMPLEMENTATION=1' \
+	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
@@ -371,7 +374,6 @@ MY_DEFS_Release := \
 	'-DUSE_CHROMIUM_SKIA' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
-	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -408,11 +410,11 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
+	$(LOCAL_PATH)/v8/include \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
-	$(LOCAL_PATH)/v8/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

@@ -236,6 +236,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   RenderSurface* render_surface() const {
     return draw_properties_.render_surface.get();
   }
+  int num_unclipped_descendants() const {
+    return draw_properties_.num_unclipped_descendants;
+  }
 
   void SetScrollOffset(gfx::Vector2d scroll_offset);
   gfx::Vector2d scroll_offset() const { return scroll_offset_; }
@@ -354,7 +357,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
                                       float* contents_scale_y,
                                       gfx::Size* content_bounds);
 
-  LayerTreeHost* layer_tree_host() const { return layer_tree_host_; }
+  LayerTreeHost* layer_tree_host() { return layer_tree_host_; }
+  const LayerTreeHost* layer_tree_host() const { return layer_tree_host_; }
 
   // Set the priority of all desired textures in this layer.
   virtual void SetTexturePriorities(const PriorityCalculator& priority_calc) {}
@@ -392,13 +396,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   virtual PaintedScrollbarLayer* ToScrollbarLayer();
 
   gfx::Rect LayerRectToContentRect(const gfx::RectF& layer_rect) const;
-
-  // In impl-side painting, this returns true if this layer type is not
-  // compatible with the main thread running freely, such as a double-buffered
-  // canvas that doesn't want to be triple-buffered across all three trees.
-  virtual bool BlocksPendingCommit() const;
-  // Returns true if anything in this tree blocksPendingCommit.
-  bool BlocksPendingCommitRecursive() const;
 
   virtual skia::RefPtr<SkPicture> GetPicture() const;
 
@@ -451,7 +448,11 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   // Called when there's been a change in layer structure.  Implies both
   // SetNeedsUpdate and SetNeedsCommit, but not SetNeedsPushProperties.
   void SetNeedsFullTreeSync();
-  bool IsPropertyChangeAllowed() const;
+
+  // Called when the next commit should wait until the pending tree is activated
+  // before finishing the commit and unblocking the main thread. Used to ensure
+  // unused resources on the impl thread are returned before commit completes.
+  void SetNextCommitWaitsForActivation();
 
   void SetNeedsPushProperties();
   void AddDependentNeedsPushProperties();
@@ -459,6 +460,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool parent_should_know_need_push_properties() const {
     return needs_push_properties() || descendant_needs_push_properties();
   }
+
+  bool IsPropertyChangeAllowed() const;
 
   // If this layer has a scroll parent, it removes |this| from its list of
   // scroll children.
@@ -538,7 +541,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   gfx::PointF position_;
   gfx::PointF anchor_point_;
   SkColor background_color_;
-  std::string debug_name_;
   CompositingReasons compositing_reasons_;
   float opacity_;
   skia::RefPtr<SkImageFilter> filter_;

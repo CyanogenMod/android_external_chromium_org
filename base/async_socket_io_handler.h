@@ -9,14 +9,7 @@
 #include "base/sync_socket.h"
 #include "base/threading/non_thread_safe.h"
 
-namespace media {
-
-// The message loop callback interface is different based on platforms.
-#if defined(OS_WIN)
-typedef base::MessageLoopForIO::IOHandler MessageLoopIOHandler;
-#elif defined(OS_POSIX)
-typedef base::MessageLoopForIO::Watcher MessageLoopIOHandler;
-#endif
+namespace base {
 
 // Extends the CancelableSyncSocket class to allow reading from a socket
 // asynchronously on a TYPE_IO message loop thread.  This makes it easy to share
@@ -46,14 +39,19 @@ typedef base::MessageLoopForIO::Watcher MessageLoopIOHandler;
 //     }
 //   }
 //
-//   media::AsyncSocketIoHandler io_handler;
+//   base::AsyncSocketIoHandler io_handler;
 //   base::CancelableSyncSocket* socket_;
 //   char buffer_[kBufferSize];
 // };
 //
 class BASE_EXPORT AsyncSocketIoHandler
     : public NON_EXPORTED_BASE(base::NonThreadSafe),
-      public NON_EXPORTED_BASE(MessageLoopIOHandler) {
+// The message loop callback interface is different based on platforms.
+#if defined(OS_WIN)
+      public NON_EXPORTED_BASE(base::MessageLoopForIO::IOHandler) {
+#else
+      public NON_EXPORTED_BASE(base::MessageLoopForIO::Watcher) {
+#endif
  public:
   AsyncSocketIoHandler();
   virtual ~AsyncSocketIoHandler();
@@ -107,6 +105,6 @@ class BASE_EXPORT AsyncSocketIoHandler
   DISALLOW_COPY_AND_ASSIGN(AsyncSocketIoHandler);
 };
 
-}  // namespace media.
+}  // namespace base.
 
 #endif  // BASE_ASYNC_SOCKET_IO_HANDLER_H_

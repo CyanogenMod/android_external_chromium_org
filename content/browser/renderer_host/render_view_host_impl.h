@@ -53,14 +53,9 @@ class Range;
 struct SelectedFileInfo;
 }
 
-#if defined(OS_ANDROID)
-namespace media {
-class MediaPlayerManager;
-}
-#endif
-
 namespace content {
 
+class BrowserMediaPlayerManager;
 class ChildProcessSecurityPolicyImpl;
 class PageState;
 class RenderFrameHostImpl;
@@ -356,6 +351,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   }
 
   // RenderWidgetHost public overrides.
+  virtual void Init() OVERRIDE;
   virtual void Shutdown() OVERRIDE;
   virtual bool IsRenderView() const OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
@@ -390,7 +386,7 @@ class CONTENT_EXPORT RenderViewHostImpl
 #endif
 
 #if defined(OS_ANDROID)
-  media::MediaPlayerManager* media_player_manager() {
+  BrowserMediaPlayerManager* media_player_manager() {
     return media_player_manager_;
   }
 
@@ -538,6 +534,7 @@ class CONTENT_EXPORT RenderViewHostImpl
                               const string16& default_prompt,
                               const GURL& frame_url,
                               JavaScriptMessageType type,
+                              bool user_gesture,
                               IPC::Message* reply_msg);
   void OnRunBeforeUnloadConfirm(const GURL& frame_url,
                                 const string16& message,
@@ -587,6 +584,11 @@ class CONTENT_EXPORT RenderViewHostImpl
  private:
   friend class TestRenderViewHost;
   FRIEND_TEST_ALL_PREFIXES(RenderViewHostTest, BasicRenderFrameHost);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewHostTest, RoutingIdSane);
+
+  // TODO(nasko): Remove this accessor once RenderFrameHost moves into the frame
+  // tree.
+  RenderFrameHostImpl* main_render_frame_host() const;
 
   // Sets whether this RenderViewHost is swapped out in favor of another,
   // and clears any waiting state that is no longer relevant.
@@ -702,7 +704,7 @@ class CONTENT_EXPORT RenderViewHostImpl
 #if defined(OS_ANDROID)
   // Manages all the android mediaplayer objects and handling IPCs for video.
   // This class inherits from RenderViewHostObserver.
-  media::MediaPlayerManager* media_player_manager_;
+  BrowserMediaPlayerManager* media_player_manager_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(RenderViewHostImpl);

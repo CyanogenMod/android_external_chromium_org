@@ -152,14 +152,11 @@ void Layer::SetNeedsFullTreeSync() {
   layer_tree_host_->SetNeedsFullTreeSync();
 }
 
-bool Layer::IsPropertyChangeAllowed() const {
+void Layer::SetNextCommitWaitsForActivation() {
   if (!layer_tree_host_)
-    return true;
+    return;
 
-  if (!layer_tree_host_->settings().strict_layer_property_change_checking)
-    return true;
-
-  return !layer_tree_host_->in_paint_layer_contents();
+  layer_tree_host_->SetNextCommitWaitsForActivation();
 }
 
 void Layer::SetNeedsPushProperties() {
@@ -187,6 +184,16 @@ void Layer::RemoveDependentNeedsPushProperties() {
       parent_->RemoveDependentNeedsPushProperties();
 }
 
+bool Layer::IsPropertyChangeAllowed() const {
+  if (!layer_tree_host_)
+    return true;
+
+  if (!layer_tree_host_->settings().strict_layer_property_change_checking)
+    return true;
+
+  return !layer_tree_host_->in_paint_layer_contents();
+}
+
 gfx::Rect Layer::LayerRectToContentRect(const gfx::RectF& layer_rect) const {
   gfx::RectF content_rect =
       gfx::ScaleRect(layer_rect, contents_scale_x(), contents_scale_y());
@@ -196,29 +203,11 @@ gfx::Rect Layer::LayerRectToContentRect(const gfx::RectF& layer_rect) const {
   return gfx::ToEnclosingRect(content_rect);
 }
 
-bool Layer::BlocksPendingCommit() const {
-  return false;
-}
-
 skia::RefPtr<SkPicture> Layer::GetPicture() const {
   return skia::RefPtr<SkPicture>();
 }
 
 bool Layer::CanClipSelf() const {
-  return false;
-}
-
-bool Layer::BlocksPendingCommitRecursive() const {
-  if (BlocksPendingCommit())
-    return true;
-  if (mask_layer() && mask_layer()->BlocksPendingCommitRecursive())
-    return true;
-  if (replica_layer() && replica_layer()->BlocksPendingCommitRecursive())
-    return true;
-  for (size_t i = 0; i < children_.size(); ++i) {
-    if (children_[i]->BlocksPendingCommitRecursive())
-      return true;
-  }
   return false;
 }
 
@@ -856,7 +845,6 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   DCHECK(!(TransformIsAnimating() && layer->TransformIsAnimatingOnImplOnly()));
 
   layer->SetScrollable(scrollable_);
-  layer->SetScrollOffset(scroll_offset_);
   layer->SetMaxScrollOffset(max_scroll_offset_);
 
   LayerImpl* scroll_parent = NULL;
@@ -890,6 +878,17 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
     layer->SetClipChildren(clip_children);
   }
 
+  // Adjust the scroll delta to be just the scrolls that have happened since
+  // the begin frame was sent.  This happens for impl-side painting
+  // in LayerImpl::ApplyScrollDeltasSinceBeginFrame in a separate tree walk.
+  if (layer->layer_tree_impl()->settings().impl_side_painting) {
+    layer->SetScrollOffset(scroll_offset_);
+  } else {
+    layer->SetScrollOffsetAndDelta(
+        scroll_offset_, layer->ScrollDelta() - layer->sent_scroll_delta());
+    layer->SetSentScrollDelta(gfx::Vector2d());
+  }
+
   // Wrap the copy_requests_ in a PostTask to the main thread.
   ScopedPtrVector<CopyOutputRequest> main_thread_copy_requests;
   for (ScopedPtrVector<CopyOutputRequest>::iterator it = copy_requests_.begin();
@@ -916,14 +915,6 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   // union) any update changes that have occurred on the main thread.
   update_rect_.Union(layer->update_rect());
   layer->set_update_rect(update_rect_);
-
-  // Adjust the scroll delta to be just the scrolls that have happened since
-  // the begin frame was sent.  This happens for impl-side painting
-  // in LayerImpl::ApplyScrollDeltasSinceBeginFrame in a separate tree walk.
-  if (!layer->layer_tree_impl()->settings().impl_side_painting) {
-    layer->SetScrollDelta(layer->ScrollDelta() - layer->sent_scroll_delta());
-    layer->SetSentScrollDelta(gfx::Vector2d());
-  }
 
   layer->SetStackingOrderChanged(stacking_order_changed_);
 

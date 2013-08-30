@@ -135,6 +135,9 @@ class DriveServiceInterface {
       int64 start_changestamp,
       const google_apis::GetResourceListCallback& callback) = 0;
 
+  // THIS METHOD IS DEPRECATED. NEW CLIENTS SHOULD USE GetRemainingChangeList()
+  // or GetRemainingFileList().
+  //
   // Requests returning GetResourceList may be paged. In such a case,
   // a URL to fetch remaining result is returned. The URL can be used for this
   // method. |callback| will be called upon completion.
@@ -143,6 +146,26 @@ class DriveServiceInterface {
   // |callback| must not be null.
   virtual google_apis::CancelCallback ContinueGetResourceList(
       const GURL& override_url,
+      const google_apis::GetResourceListCallback& callback) = 0;
+
+  // The result of GetChangeList() and GetAllResourceList() may be paged.
+  // In such a case, a page token to fetch remaining result is returned.
+  // The page token can be used for this method. |callback| will be called upon
+  // completion.
+  //
+  // |page_token| must not be empty. |callback| must not be null.
+  virtual google_apis::CancelCallback GetRemainingChangeList(
+      const std::string& page_token,
+      const google_apis::GetResourceListCallback& callback) = 0;
+
+  // The result of GetResourceListInDirectory(), Search() and SearchByTitle()
+  // may be paged. In such a case, a page token to fetch remaining result is
+  // returned. The page token can be used for this method. |callback| will be
+  // called upon completion.
+  //
+  // |page_token| must not be empty. |callback| must not be null.
+  virtual google_apis::CancelCallback GetRemainingFileList(
+      const std::string& page_token,
       const google_apis::GetResourceListCallback& callback) = 0;
 
   // Fetches single entry metadata from server. The entry's resource id equals
@@ -166,13 +189,13 @@ class DriveServiceInterface {
   // Upon completion, invokes |callback| with results on the calling thread.
   // |callback| must not be null.
   virtual google_apis::CancelCallback GetAboutResource(
-      const google_apis::GetAboutResourceCallback& callback) = 0;
+      const google_apis::AboutResourceCallback& callback) = 0;
 
   // Gets the application information from the server.
   // Upon completion, invokes |callback| with results on the calling thread.
   // |callback| must not be null.
   virtual google_apis::CancelCallback GetAppList(
-      const google_apis::GetAppListCallback& callback) = 0;
+      const google_apis::AppListCallback& callback) = 0;
 
   // Deletes a resource identified by its |resource_id|.
   // If |etag| is not empty and did not match, the deletion fails with

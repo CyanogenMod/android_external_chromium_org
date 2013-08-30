@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/location.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_sign_in_delegate.h"
@@ -32,6 +33,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/path.h"
+#include "ui/gfx/point.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/views/background.h"
 #include "ui/views/border.h"
@@ -39,9 +41,9 @@
 #include "ui/views/bubble/bubble_frame_view.h"
 #include "ui/views/controls/button/blue_button.h"
 #include "ui/views/controls/button/checkbox.h"
-#include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/button/label_button_border.h"
+#include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/combobox/combobox.h"
 #include "ui/views/controls/focusable_border.h"
 #include "ui/views/controls/image_view.h"
@@ -115,6 +117,7 @@ const SkColor kGreyTextColor = SkColorSetRGB(102, 102, 102);
 
 const char kNotificationAreaClassName[] = "autofill/NotificationArea";
 const char kOverlayViewClassName[] = "autofill/OverlayView";
+const char kSuggestedButtonClassName[] = "autofill/SuggestedButton";
 
 typedef ui::MultiAnimation::Part Part;
 typedef ui::MultiAnimation::Parts Parts;
@@ -507,19 +510,17 @@ gfx::Rect AutofillDialogViews::ErrorBubble::GetBoundsForWidget() {
 AutofillDialogViews::AccountChooser::AccountChooser(
     AutofillDialogViewDelegate* delegate)
     : image_(new views::ImageView()),
-      label_(new views::Label()),
-      arrow_(new views::ImageView()),
+      menu_button_(new views::MenuButton(NULL, base::string16(), this, true)),
       link_(new views::Link()),
       delegate_(delegate) {
   SetLayoutManager(
       new views::BoxLayout(views::BoxLayout::kHorizontal, 0, 0,
                            kAroundTextPadding));
   AddChildView(image_);
-  AddChildView(label_);
 
-  arrow_->SetImage(ui::ResourceBundle::GetSharedInstance().GetImageNamed(
-      IDR_MENU_DROPARROW).ToImageSkia());
-  AddChildView(arrow_);
+  menu_button_->set_background(NULL);
+  menu_button_->set_border(NULL);
+  AddChildView(menu_button_);
 
   link_->set_listener(this);
   AddChildView(link_);
@@ -532,11 +533,10 @@ void AutofillDialogViews::AccountChooser::Update() {
 
   gfx::Image icon = delegate_->AccountChooserImage();
   image_->SetImage(icon.AsImageSkia());
-  label_->SetText(delegate_->AccountChooserText());
+  menu_button_->SetText(delegate_->AccountChooserText());
 
   bool show_link = !delegate_->MenuModelForAccountChooser();
-  label_->SetVisible(!show_link);
-  arrow_->SetVisible(!show_link);
+  menu_button_->SetVisible(!show_link);
   link_->SetText(delegate_->SignInLinkText());
   link_->SetVisible(show_link);
 
@@ -545,32 +545,24 @@ void AutofillDialogViews::AccountChooser::Update() {
   PreferredSizeChanged();
 }
 
-bool AutofillDialogViews::AccountChooser::OnMousePressed(
-    const ui::MouseEvent& event) {
-  // Return true so we get the release event.
-  if (delegate_->MenuModelForAccountChooser())
-    return event.IsOnlyLeftMouseButton();
-
-  return false;
-}
-
-void AutofillDialogViews::AccountChooser::OnMouseReleased(
-    const ui::MouseEvent& event) {
-  if (!HitTestPoint(event.location()))
-    return;
+void AutofillDialogViews::AccountChooser::OnMenuButtonClicked(
+    views::View* source,
+    const gfx::Point& point) {
+  DCHECK_EQ(menu_button_, source);
 
   ui::MenuModel* model = delegate_->MenuModelForAccountChooser();
   if (!model)
     return;
 
   menu_runner_.reset(new views::MenuRunner(model));
-  ignore_result(
-      menu_runner_->RunMenuAt(GetWidget(),
+  if (menu_runner_->RunMenuAt(source->GetWidget(),
                               NULL,
-                              GetBoundsInScreen(),
+                              source->GetBoundsInScreen(),
                               views::MenuItemView::TOPRIGHT,
-                              ui::MENU_SOURCE_MOUSE,
-                              0));
+                              ui::MENU_SOURCE_NONE,
+                              0) == views::MenuRunner::MENU_DELETED) {
+    return;
+  }
 }
 
 void AutofillDialogViews::AccountChooser::LinkClicked(views::Link* source,
@@ -1003,7 +995,53 @@ ui::MouseEvent AutofillDialogViews::SectionContainer::ProxyEvent(
   return event_copy;
 }
 
-// AutofilDialogViews::SuggestionView ------------------------------------------
+// AutofillDialogViews::SuggestedButton ----------------------------------------
+
+AutofillDialogViews::SuggestedButton::SuggestedButton(
+    views::MenuButtonListener* listener)
+    : views::MenuButton(NULL, base::string16(), listener, false) {
+  set_border(views::Border::CreateEmptyBorder(kMenuButtonTopInset,
+                                              kDialogEdgePadding,
+                                              kMenuButtonBottomInset,
+                                              0));
+}
+
+AutofillDialogViews::SuggestedButton::~SuggestedButton() {}
+
+gfx::Size AutofillDialogViews::SuggestedButton::GetPreferredSize() {
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  gfx::Size size = rb.GetImageNamed(ResourceIDForState()).Size();
+  const gfx::Insets insets = GetInsets();
+  size.Enlarge(insets.width(), insets.height());
+  return size;
+}
+
+const char* AutofillDialogViews::SuggestedButton::GetClassName() const {
+  return kSuggestedButtonClassName;
+}
+
+void AutofillDialogViews::SuggestedButton::PaintChildren(gfx::Canvas* canvas) {}
+
+void AutofillDialogViews::SuggestedButton::OnPaint(gfx::Canvas* canvas) {
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  const gfx::Insets insets = GetInsets();
+  canvas->DrawImageInt(*rb.GetImageSkiaNamed(ResourceIDForState()),
+                       insets.left(), insets.top());
+}
+
+int AutofillDialogViews::SuggestedButton::ResourceIDForState() const {
+  views::Button::ButtonState button_state = state();
+  if (button_state == views::Button::STATE_PRESSED)
+    return IDR_AUTOFILL_DIALOG_MENU_BUTTON_P;
+  else if (button_state == views::Button::STATE_HOVERED)
+    return IDR_AUTOFILL_DIALOG_MENU_BUTTON_H;
+  else if (button_state == views::Button::STATE_DISABLED)
+    return IDR_AUTOFILL_DIALOG_MENU_BUTTON_D;
+  DCHECK_EQ(views::Button::STATE_NORMAL, button_state);
+  return IDR_AUTOFILL_DIALOG_MENU_BUTTON;
+}
+
+// AutofillDialogViews::SuggestionView -----------------------------------------
 
 AutofillDialogViews::SuggestionView::SuggestionView(
     AutofillDialogViews* autofill_dialog)
@@ -1393,6 +1431,22 @@ base::string16 AutofillDialogViews::GetCvc() {
       decorated_textfield()->text();
 }
 
+bool AutofillDialogViews::HitTestInput(const DetailInput& input,
+                                       const gfx::Point& screen_point) {
+  views::View* view = TextfieldForInput(input);
+  if (!view)
+    view = ComboboxForInput(input);
+
+  if (view) {
+    gfx::Point target_point(screen_point);
+    views::View::ConvertPointFromScreen(view, &target_point);
+    return view->HitTestPoint(target_point);
+  }
+
+  NOTREACHED();
+  return false;
+}
+
 bool AutofillDialogViews::SaveDetailsLocally() {
   DCHECK(save_in_chrome_checkbox_->visible());
   return save_in_chrome_checkbox_->checked();
@@ -1646,43 +1700,8 @@ views::NonClientFrameView* AutofillDialogViews::CreateNonClientFrameView(
 
 void AutofillDialogViews::ButtonPressed(views::Button* sender,
                                         const ui::Event& event) {
-  if (sender->GetAncestorWithClassName(kOverlayViewClassName)) {
-    delegate_->OverlayButtonPressed();
-    return;
-  }
-
-  // TODO(estade): Should the menu be shown on mouse down?
-  DetailsGroup* group = NULL;
-  for (DetailGroupMap::iterator iter = detail_groups_.begin();
-       iter != detail_groups_.end(); ++iter) {
-    if (sender == iter->second.suggested_button) {
-      group = &iter->second;
-      break;
-    }
-  }
-  DCHECK(group);
-
-  if (!group->suggested_button->visible())
-    return;
-
-  menu_runner_.reset(new views::MenuRunner(
-                         delegate_->MenuModelForSection(group->section)));
-
-  group->container->SetActive(true);
-  views::Button::ButtonState state = group->suggested_button->state();
-  group->suggested_button->SetState(views::Button::STATE_PRESSED);
-  // Ignore the result since we don't need to handle a deleted menu specially.
-  gfx::Rect bounds = group->suggested_button->GetBoundsInScreen();
-  bounds.Inset(group->suggested_button->GetInsets());
-  ignore_result(
-      menu_runner_->RunMenuAt(sender->GetWidget(),
-                              NULL,
-                              bounds,
-                              views::MenuItemView::TOPRIGHT,
-                              ui::GetMenuSourceTypeForEvent(event),
-                              0));
-  group->container->SetActive(false);
-  group->suggested_button->SetState(state);
+  DCHECK(sender->GetAncestorWithClassName(kOverlayViewClassName));
+  delegate_->OverlayButtonPressed();
 }
 
 void AutofillDialogViews::ContentsChanged(views::Textfield* sender,
@@ -1745,6 +1764,45 @@ void AutofillDialogViews::OnSelectedIndexChanged(views::Combobox* combobox) {
 void AutofillDialogViews::StyledLabelLinkClicked(const ui::Range& range,
                                                  int event_flags) {
   delegate_->LegalDocumentLinkClicked(range);
+}
+
+void AutofillDialogViews::OnMenuButtonClicked(views::View* source,
+                                              const gfx::Point& point) {
+  DCHECK_EQ(kSuggestedButtonClassName, source->GetClassName());
+
+  DetailsGroup* group = NULL;
+  for (DetailGroupMap::iterator iter = detail_groups_.begin();
+       iter != detail_groups_.end(); ++iter) {
+    if (source == iter->second.suggested_button) {
+      group = &iter->second;
+      break;
+    }
+  }
+  DCHECK(group);
+
+  if (!group->suggested_button->visible())
+    return;
+
+  menu_runner_.reset(new views::MenuRunner(
+                         delegate_->MenuModelForSection(group->section)));
+
+  group->container->SetActive(true);
+  views::Button::ButtonState state = group->suggested_button->state();
+  group->suggested_button->SetState(views::Button::STATE_PRESSED);
+
+  gfx::Rect screen_bounds = source->GetBoundsInScreen();
+  screen_bounds.Inset(source->GetInsets());
+  if (menu_runner_->RunMenuAt(source->GetWidget(),
+                              NULL,
+                              screen_bounds,
+                              views::MenuItemView::TOPRIGHT,
+                              ui::MENU_SOURCE_NONE,
+                              0) == views::MenuRunner::MENU_DELETED) {
+    return;
+  }
+
+  group->container->SetActive(false);
+  group->suggested_button->SetState(state);
 }
 
 gfx::Size AutofillDialogViews::CalculatePreferredSize() {
@@ -1909,28 +1967,13 @@ views::View* AutofillDialogViews::CreateInputsContainer(DialogSection section) {
   SuggestionView* suggested_info = new SuggestionView(this);
   info_view->AddChildView(suggested_info);
 
+  DetailsGroup* group = GroupForSection(section);
   // TODO(estade): It might be slightly more OO if this button were created
   // and listened to by the section container.
-  views::ImageButton* menu_button = new views::ImageButton(this);
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  menu_button->SetImage(views::Button::STATE_NORMAL,
-      rb.GetImageSkiaNamed(IDR_AUTOFILL_DIALOG_MENU_BUTTON));
-  menu_button->SetImage(views::Button::STATE_PRESSED,
-      rb.GetImageSkiaNamed(IDR_AUTOFILL_DIALOG_MENU_BUTTON_P));
-  menu_button->SetImage(views::Button::STATE_HOVERED,
-      rb.GetImageSkiaNamed(IDR_AUTOFILL_DIALOG_MENU_BUTTON_H));
-  menu_button->SetImage(views::Button::STATE_DISABLED,
-      rb.GetImageSkiaNamed(IDR_AUTOFILL_DIALOG_MENU_BUTTON_D));
-  menu_button->set_border(views::Border::CreateEmptyBorder(
-      kMenuButtonTopInset,
-      kDialogEdgePadding,
-      kMenuButtonBottomInset,
-      0));
-
-  DetailsGroup* group = GroupForSection(section);
-  group->suggested_button = menu_button;
+  group->suggested_button = new SuggestedButton(this);
   group->manual_input = manual_inputs;
   group->suggested_info = suggested_info;
+
   return info_view;
 }
 
@@ -2249,11 +2292,11 @@ void AutofillDialogViews::TextfieldEditedOrActivated(
     decorated = iter->second;
     if (decorated == textfield) {
       delegate_->UserEditedOrActivatedInput(group->section,
-                                              iter->first,
-                                              GetWidget()->GetNativeView(),
-                                              textfield->GetBoundsInScreen(),
-                                              textfield->text(),
-                                              was_edit);
+                                            iter->first,
+                                            GetWidget()->GetNativeView(),
+                                            textfield->GetBoundsInScreen(),
+                                            textfield->text(),
+                                            was_edit);
       type = iter->first->type;
       break;
     }

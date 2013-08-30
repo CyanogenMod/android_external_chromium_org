@@ -404,6 +404,96 @@ bool CountingPolicy::FlushDatabase(sql::Connection* db) {
   return true;
 }
 
+scoped_ptr<Action::ActionVector> CountingPolicy::DoReadFilteredData(
+    const std::string& extension_id,
+    const Action::ActionType type,
+    const std::string& api_name,
+    const std::string& page_url,
+    const std::string& arg_url) {
+  // Ensure data is flushed to the database first so that we query over all
+  // data.
+  activity_database()->AdviseFlush(ActivityDatabase::kFlushImmediately);
+  scoped_ptr<Action::ActionVector> actions(new Action::ActionVector());
+
+  sql::Connection* db = GetDatabaseConnection();
+  if (!db)
+    return actions.Pass();
+
+  // Build up the query based on which parameters were specified.
+  std::string where_str = "";
+  std::string where_next = "";
+  if (!extension_id.empty()) {
+    where_str += "extension_id=?";
+    where_next = " AND ";
+  }
+  if (!api_name.empty()) {
+    where_str += where_next + "api_name=?";
+    where_next = " AND ";
+  }
+  if (type != Action::ACTION_ANY) {
+    where_str += where_next + "action_type=?";
+    where_next = " AND ";
+  }
+  if (!page_url.empty()) {
+    where_str += where_next + "page_url LIKE ?";
+    where_next = " AND ";
+  }
+  if (!arg_url.empty())
+    where_str += where_next + "arg_url LIKE ?";
+  std::string query_str = base::StringPrintf(
+      "SELECT extension_id,time, action_type, api_name, args, page_url,"
+      "page_title, arg_url, other, count FROM %s WHERE %s ORDER BY time DESC",
+      kReadViewName,
+      where_str.c_str());
+  sql::Statement query(db->GetUniqueStatement(query_str.c_str()));
+  int i = -1;
+  if (!extension_id.empty())
+    query.BindString(++i, extension_id);
+  if (!api_name.empty())
+    query.BindString(++i, api_name);
+  if (type != Action::ACTION_ANY)
+    query.BindInt(++i, static_cast<int>(type));
+  if (!page_url.empty())
+    query.BindString(++i, page_url + "%");
+  if (!arg_url.empty())
+    query.BindString(++i, arg_url + "%");
+
+  // Execute the query and get results.
+  while (query.is_valid() && query.Step()) {
+    scoped_refptr<CountedAction> action =
+        new CountedAction(query.ColumnString(0),
+                   base::Time::FromInternalValue(query.ColumnInt64(1)),
+                   static_cast<Action::ActionType>(query.ColumnInt(2)),
+                   query.ColumnString(3));
+
+    if (query.ColumnType(4) != sql::COLUMN_TYPE_NULL) {
+      scoped_ptr<Value> parsed_value(
+          base::JSONReader::Read(query.ColumnString(4)));
+      if (parsed_value && parsed_value->IsType(Value::TYPE_LIST)) {
+        action->set_args(
+            make_scoped_ptr(static_cast<ListValue*>(parsed_value.release())));
+      }
+    }
+
+    action->ParsePageUrl(query.ColumnString(5));
+    action->set_page_title(query.ColumnString(6));
+    action->ParseArgUrl(query.ColumnString(7));
+
+    if (query.ColumnType(8) != sql::COLUMN_TYPE_NULL) {
+      scoped_ptr<Value> parsed_value(
+          base::JSONReader::Read(query.ColumnString(8)));
+      if (parsed_value && parsed_value->IsType(Value::TYPE_DICTIONARY)) {
+        action->set_other(make_scoped_ptr(
+            static_cast<DictionaryValue*>(parsed_value.release())));
+      }
+    }
+    action->set_count(query.ColumnInt(9));
+    actions->push_back(action);
+  }
+
+  return actions.Pass();
+}
+
 scoped_ptr<Action::ActionVector> CountingPolicy::DoReadData(
     const std::string& extension_id,
     const int days_ago) {
@@ -477,6 +567,78 @@ scoped_ptr<Action::ActionVector> CountingPolicy::DoReadData(
   return actions.Pass();
 }
 
+void CountingPolicy::DoRemoveURLs(const std::vector<GURL>& restrict_urls) {
+  sql::Connection* db = GetDatabaseConnection();
+  if (!db) {
+    LOG(ERROR) << "Unable to connect to database";
+    return;
+  }
+
+  // Flush data first so the URL clearing affects queued-up data as well.
+  activity_database()->AdviseFlush(ActivityDatabase::kFlushImmediately);
+
+  // If no restrictions then then all URLs need to be removed.
+  if (restrict_urls.empty()) {
+    std::string sql_str = base::StringPrintf(
+      "UPDATE %s SET page_url_x=NULL,page_title_x=NULL,arg_url_x=NULL",
+      kTableName);
+
+    sql::Statement statement;
+    statement.Assign(db->GetCachedStatement(
+        sql::StatementID(SQL_FROM_HERE), sql_str.c_str()));
+
+    if (!statement.Run()) {
+      LOG(ERROR) << "Removing all URLs from database failed: "
+                 << statement.GetSQLStatement();
+      return;
+    }
+  }
+
+  // If URLs are specified then restrict to only those URLs.
+  for (size_t i = 0; i < restrict_urls.size(); ++i) {
+    int64 url_id;
+    if (!restrict_urls[i].is_valid() ||
+        !url_table_.StringToInt(db, restrict_urls[i].spec(), &url_id)) {
+      continue;
+    }
+
+    // Remove any that match the page_url.
+    std::string sql_str = base::StringPrintf(
+      "UPDATE %s SET page_url_x=NULL,page_title_x=NULL WHERE page_url_x IS ?",
+      kTableName);
+
+    sql::Statement statement;
+    statement.Assign(db->GetCachedStatement(
+        sql::StatementID(SQL_FROM_HERE), sql_str.c_str()));
+    statement.BindInt64(0, url_id);
+
+    if (!statement.Run()) {
+      LOG(ERROR) << "Removing page URL from database failed: "
+                 << statement.GetSQLStatement();
+      return;
+    }
+
+    // Remove any that match the arg_url.
+    sql_str = base::StringPrintf(
+      "UPDATE %s SET arg_url_x=NULL WHERE arg_url_x IS ?", kTableName);
+
+    statement.Assign(db->GetCachedStatement(
+        sql::StatementID(SQL_FROM_HERE), sql_str.c_str()));
+    statement.BindInt64(0, url_id);
+
+    if (!statement.Run()) {
+      LOG(ERROR) << "Removing arg URL from database failed: "
+                 << statement.GetSQLStatement();
+      return;
+    }
+  }
+
+  // Clean up unused strings from the strings and urls table to really delete
+  // the urls and page titles. Should be called even if an error occured when
+  // removing a URL as there may some things to clean up.
+  CleanStringTables(db);
+}
+
 void CountingPolicy::ReadData(
     const std::string& extension_id,
     const int day,
@@ -489,6 +651,31 @@ void CountingPolicy::ReadData(
                  extension_id,
                  day),
       callback);
+}
+
+void CountingPolicy::ReadFilteredData(
+    const std::string& extension_id,
+    const Action::ActionType type,
+    const std::string& api_name,
+    const std::string& page_url,
+    const std::string& arg_url,
+    const base::Callback
+        <void(scoped_ptr<Action::ActionVector>)>& callback) {
+  BrowserThread::PostTaskAndReplyWithResult(
+      BrowserThread::DB,
+      FROM_HERE,
+      base::Bind(&CountingPolicy::DoReadFilteredData,
+                 base::Unretained(this),
+                 extension_id,
+                 type,
+                 api_name,
+                 page_url,
+                 arg_url),
+      callback);
+}
+
+void CountingPolicy::RemoveURLs(const std::vector<GURL>& restrict_urls) {
+  ScheduleAndForget(this, &CountingPolicy::DoRemoveURLs, restrict_urls);
 }
 
 void CountingPolicy::OnDatabaseFailure() {

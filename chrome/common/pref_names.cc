@@ -1305,6 +1305,11 @@ const char kExtensionsPref[] = "extensions.settings";
 // loaded.
 const char kExtensionsLastChromeVersion[] = "extensions.last_chrome_version";
 
+// Boolean pref that determines whether the user can enter fullscreen mode.
+// Disabling fullscreen mode also makes kiosk mode unavailable on desktop
+// platforms.
+extern const char kFullscreenAllowed[] = "fullscreen.allowed";
+
 // *************** LOCAL STATE ***************
 // These are attached to the machine/installation
 
@@ -2199,6 +2204,10 @@ const char kDeviceEnrollmentCanExit[] = "enrollment.can_exit";
 // Dictionary of per-user Least Recently Used input method (used at login
 // screen).
 extern const char kUsersLRUInputMethod[] = "UsersLRUInputMethod";
+
+// A dictionary pref of the echo offer check flag. It sets offer info when
+// an offer is checked.
+extern const char kEchoCheckedOffers[] = "EchoCheckedOffers";
 #endif
 
 // Whether there is a Flash version installed that supports clearing LSO data.
@@ -2500,6 +2509,8 @@ const char kOverscrollVerticalThresholdComplete[] =
     "overscroll.vertical_threshold_complete";
 const char kOverscrollMinimumThresholdStart[] =
     "overscroll.minimum_threshold_start";
+const char kOverscrollMinimumThresholdStartTouchpad[] =
+    "overscroll.minimum_threshold_start_touchpad";
 const char kOverscrollVerticalThresholdStart[] =
     "overscroll.vertical_threshold_start";
 const char kOverscrollHorizontalResistThreshold[] =

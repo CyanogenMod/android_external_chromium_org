@@ -28,8 +28,7 @@ PepperRendererConnection::PepperRendererConnection(int render_process_id)
                                                   "",
                                                   base::FilePath(),
                                                   base::FilePath(),
-                                                  false,
-                                                  NULL));
+                                                  false));
 }
 
 PepperRendererConnection::~PepperRendererConnection() {

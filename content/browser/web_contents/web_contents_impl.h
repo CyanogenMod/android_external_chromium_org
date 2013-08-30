@@ -275,7 +275,7 @@ class CONTENT_EXPORT WebContentsImpl
                          const Referrer& referrer) OVERRIDE;
   virtual void GenerateMHTML(
       const base::FilePath& file,
-      const base::Callback<void(const base::FilePath&, int64)>& callback)
+      const base::Callback<void(int64)>& callback)
           OVERRIDE;
   virtual bool IsActiveEntry(int32 page_id) OVERRIDE;
 
@@ -398,6 +398,7 @@ class CONTENT_EXPORT WebContentsImpl
                                     const string16& default_prompt,
                                     const GURL& frame_url,
                                     JavaScriptMessageType type,
+                                    bool user_gesture,
                                     IPC::Message* reply_msg,
                                     bool* did_suppress_message) OVERRIDE;
   virtual void RunBeforeUnloadConfirm(RenderViewHost* rvh,
@@ -759,6 +760,9 @@ class CONTENT_EXPORT WebContentsImpl
 
   // Clear all PowerSaveBlockers, leave power_save_blocker_ empty.
   void ClearAllPowerSaveBlockers();
+
+  // Helper function to invoke WebContentsDelegate::GetSizeForNewRenderView().
+  gfx::Size GetSizeForNewRenderView() const;
 
   // Data for core operation ---------------------------------------------------
 

@@ -48,6 +48,35 @@ CommandUtil.getCommandEntry = function(element) {
 };
 
 /**
+ * Extracts path on which command event was dispatched.
+ * TODO(yoshiki): Remove this method after adding automatically removing an
+ *                inactive shortcut on M31.
+ *
+ * @param {NavigationList|NavigationListItem} element Directory to extract a
+ *     path from.
+ * @return {string} Path of the found node.
+ */
+CommandUtil.getCommandPath = function(element) {
+  if (element instanceof NavigationList) {
+    // element is a NavigationList.
+
+    /** @type {NavigationModelItem} */
+    var selectedItem = element.selectedItem;
+    return selectedItem && selectedItem.path;
+  } else if (element instanceof NavigationListItem) {
+    // element is a subitem of NavigationList.
+    /** @type {NavigationList} */
+    var navigationList = element.parentElement;
+    var index = navigationList.getIndexOfListItem(element);
+    /** @type {NavigationModelItem} */
+    var item = (index != -1) ? navigationList.dataModel.item(index) : null;
+    return item && item.path;
+  }
+
+  console.error('Unsupported element.');
+};
+
+/**
  * @param {NavigationList} navigationList navigation list to extract root node.
  * @return {?RootType} Type of the found root.
  */
@@ -348,9 +377,9 @@ Commands.renameFileCommand = {
 Commands.volumeHelpCommand = {
   execute: function() {
     if (fileManager.isOnDrive())
-      chrome.windows.create({url: FileManager.GOOGLE_DRIVE_HELP});
+      util.visitURL(FileManager.GOOGLE_DRIVE_HELP);
     else
-      chrome.windows.create({url: FileManager.FILES_APP_HELP});
+      util.visitURL(FileManager.FILES_APP_HELP);
   },
   canExecute: CommandUtil.canExecuteAlways
 };
@@ -360,7 +389,7 @@ Commands.volumeHelpCommand = {
  */
 Commands.driveBuySpaceCommand = {
   execute: function() {
-    chrome.windows.create({url: FileManager.GOOGLE_DRIVE_BUY_STORAGE});
+    util.visitURL(FileManager.GOOGLE_DRIVE_BUY_STORAGE);
   },
   canExecute: CommandUtil.canExecuteVisibleOnDriveOnly
 };
@@ -380,7 +409,7 @@ Commands.driveClearCacheCommand = {
  */
 Commands.driveGoToDriveCommand = {
   execute: function() {
-    chrome.windows.create({url: FileManager.GOOGLE_DRIVE_ROOT});
+    util.visitURL(FileManager.GOOGLE_DRIVE_ROOT);
   },
   canExecute: CommandUtil.canExecuteVisibleOnDriveOnly
 };
@@ -534,7 +563,7 @@ Commands.zipSelectionCommand = {
   execute: function(event, fileManager, directoryModel) {
     var dirEntry = directoryModel.getCurrentDirEntry();
     var selectionEntries = fileManager.getSelection().entries;
-    fileManager.copyManager_.zipSelection(dirEntry, selectionEntries);
+    fileManager.fileOperationManager_.zipSelection(dirEntry, selectionEntries);
   },
   canExecute: function(event, fileManager) {
     var selection = fileManager.getSelection();
@@ -619,8 +648,10 @@ Commands.removeFolderShortcutCommand = {
    */
   execute: function(event, fileManager) {
     var entry = CommandUtil.getCommandEntry(event.target);
-    if (entry)
-      fileManager.removeFolderShortcut(entry.fullPath);
+    var path =
+        entry ? entry.fullPath : CommandUtil.getCommandPath(event.target);
+    if (path)
+      fileManager.removeFolderShortcut(path);
   },
 
   /**
@@ -638,9 +669,11 @@ Commands.removeFolderShortcutCommand = {
     }
 
     var entry = CommandUtil.getCommandEntry(target);
-    var eligible = entry &&
-                   PathUtil.isEligibleForFolderShortcut(entry.fullPath);
-    var isShortcut = entry && fileManager.folderShortcutExists(entry.fullPath);
+    var path =
+        entry ? entry.fullPath : CommandUtil.getCommandPath(event.target);
+
+    var eligible = path && PathUtil.isEligibleForFolderShortcut(path);
+    var isShortcut = path && fileManager.folderShortcutExists(path);
     event.canExecute = isShortcut && eligible;
     event.command.setHidden(!event.canExecute);
   }

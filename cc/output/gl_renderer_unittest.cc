@@ -117,19 +117,16 @@ TEST_F(GLRendererShaderPixelTest, AllShadersCompile) { TestShaders(); }
 
 class FrameCountingContext : public TestWebGraphicsContext3D {
  public:
-  FrameCountingContext() : frame_(0) {}
+  FrameCountingContext()
+      : frame_(0) {
+    test_capabilities_.set_visibility = true;
+    test_capabilities_.discard_backbuffer = true;
+  }
 
   // WebGraphicsContext3D methods.
 
   // This method would normally do a glSwapBuffers under the hood.
   virtual void prepareTexture() { frame_++; }
-  virtual WebString getString(WebKit::WGC3Denum name) {
-    if (name == GL_EXTENSIONS)
-      return WebString(
-          "GL_CHROMIUM_set_visibility GL_CHROMIUM_gpu_memory_manager "
-          "GL_CHROMIUM_discard_backbuffer");
-    return WebString();
-  }
 
   // Methods added for test.
   int frame_count() { return frame_; }
@@ -462,7 +459,7 @@ TEST_F(GLRendererTest, DiscardedBackbufferIsRecreatedForScopeDuration) {
   EXPECT_EQ(1, renderer_client_.set_full_root_layer_damage_count());
 
   renderer_->SetVisible(true);
-  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order(), NULL);
   EXPECT_FALSE(renderer_->IsBackbufferDiscarded());
 
   SwapBuffers();
@@ -476,7 +473,7 @@ TEST_F(GLRendererTest, FramebufferDiscardedAfterReadbackWhenNotVisible) {
   EXPECT_EQ(1, renderer_client_.set_full_root_layer_damage_count());
 
   char pixels[4];
-  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order(), NULL);
   EXPECT_FALSE(renderer_->IsBackbufferDiscarded());
 
   renderer_->GetFramebufferPixels(pixels, gfx::Rect(0, 0, 1, 1));
@@ -490,7 +487,7 @@ TEST_F(GLRendererTest, ExternalStencil) {
   renderer_client_.EnableExternalStencilTest();
   renderer_client_.root_render_pass()->has_transparent_background = false;
 
-  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order(), NULL);
   EXPECT_TRUE(renderer_->stencil_enabled());
 }
 
@@ -571,11 +568,7 @@ class ForbidSynchronousCallContext : public TestWebGraphicsContext3D {
   }
 
   virtual WebString getString(WGC3Denum name) {
-    // We allow querying the extension string.
-    // TODO(enne): It'd be better to check that we only do this before starting
-    // any other expensive work (like starting a compilation)
-    if (name != GL_EXTENSIONS)
-      ADD_FAILURE();
+    ADD_FAILURE() << name;
     return WebString();
   }
 
@@ -736,7 +729,7 @@ TEST(GLRendererTest2, OpaqueBackground) {
 
   EXPECT_TRUE(renderer.Initialize());
 
-  renderer.DrawFrame(renderer_client.render_passes_in_draw_order());
+  renderer.DrawFrame(renderer_client.render_passes_in_draw_order(), NULL);
 
 // On DEBUG builds, render passes with opaque background clear to blue to
 // easily see regions that were not drawn on the screen.
@@ -767,7 +760,7 @@ TEST(GLRendererTest2, TransparentBackground) {
 
   EXPECT_TRUE(renderer.Initialize());
 
-  renderer.DrawFrame(renderer_client.render_passes_in_draw_order());
+  renderer.DrawFrame(renderer_client.render_passes_in_draw_order(), NULL);
 
   EXPECT_EQ(1, context->clear_count());
 }
@@ -776,7 +769,10 @@ class VisibilityChangeIsLastCallTrackingContext
     : public TestWebGraphicsContext3D {
  public:
   VisibilityChangeIsLastCallTrackingContext()
-      : last_call_was_set_visibility_(false) {}
+      : last_call_was_set_visibility_(false) {
+    test_capabilities_.set_visibility = true;
+    test_capabilities_.discard_backbuffer = true;
+  }
 
   // WebGraphicsContext3D methods.
   virtual void setVisibilityCHROMIUM(bool visible) {
@@ -803,15 +799,6 @@ class VisibilityChangeIsLastCallTrackingContext
   }
   virtual void ensureBackbufferCHROMIUM() {
     last_call_was_set_visibility_ = false;
-  }
-
-  // This method would normally do a glSwapBuffers under the hood.
-  virtual WebString getString(WebKit::WGC3Denum name) {
-    if (name == GL_EXTENSIONS)
-      return WebString(
-          "GL_CHROMIUM_set_visibility GL_CHROMIUM_gpu_memory_manager "
-          "GL_CHROMIUM_discard_backbuffer");
-    return WebString();
   }
 
   // Methods added for test.
@@ -848,19 +835,16 @@ TEST(GLRendererTest2, VisibilityChangeIsLastCall) {
   // RenderClient and the Context by giving them both a pointer to a variable on
   // the stack.
   renderer.SetVisible(true);
-  renderer.DrawFrame(renderer_client.render_passes_in_draw_order());
+  renderer.DrawFrame(renderer_client.render_passes_in_draw_order(), NULL);
   renderer.SetVisible(false);
   EXPECT_TRUE(context->last_call_was_set_visibility());
 }
 
 class TextureStateTrackingContext : public TestWebGraphicsContext3D {
  public:
-  TextureStateTrackingContext() : active_texture_(GL_INVALID_ENUM) {}
-
-  virtual WebString getString(WGC3Denum name) {
-    if (name == GL_EXTENSIONS)
-      return WebString("GL_OES_EGL_image_external");
-    return WebString();
+  TextureStateTrackingContext()
+      : active_texture_(GL_INVALID_ENUM) {
+    test_capabilities_.egl_image_external = true;
   }
 
   MOCK_METHOD3(texParameteri,
@@ -1027,7 +1011,7 @@ TEST(GLRendererTest2, ShouldClearRootRenderPass) {
 
   renderer.DecideRenderPassAllocationsForFrame(
       *renderer_client.render_passes_in_draw_order());
-  renderer.DrawFrame(renderer_client.render_passes_in_draw_order());
+  renderer.DrawFrame(renderer_client.render_passes_in_draw_order(), NULL);
 
   // In multiple render passes all but the root pass should clear the
   // framebuffer.
@@ -1099,7 +1083,7 @@ TEST(GLRendererTest2, ScissorTestWhenClearing) {
 
   renderer.DecideRenderPassAllocationsForFrame(
       *renderer_client.render_passes_in_draw_order());
-  renderer.DrawFrame(renderer_client.render_passes_in_draw_order());
+  renderer.DrawFrame(renderer_client.render_passes_in_draw_order(), NULL);
 }
 
 class NonReshapableOutputSurface : public FakeOutputSurface {
@@ -1184,7 +1168,7 @@ TEST(GLRendererTest2, ScissorAndViewportWithinNonreshapableSurface) {
 
   renderer.DecideRenderPassAllocationsForFrame(
       *renderer_client.render_passes_in_draw_order());
-  renderer.DrawFrame(renderer_client.render_passes_in_draw_order());
+  renderer.DrawFrame(renderer_client.render_passes_in_draw_order(), NULL);
 }
 
 TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
@@ -1246,7 +1230,7 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
 
   renderer_->DecideRenderPassAllocationsForFrame(
       *renderer_client_.render_passes_in_draw_order());
-  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order(), NULL);
   TestRenderPassProgram();
 
   // RenderPassColorMatrixProgram
@@ -1262,7 +1246,7 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
 
   renderer_->DecideRenderPassAllocationsForFrame(
       *renderer_client_.render_passes_in_draw_order());
-  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order(), NULL);
   TestRenderPassColorMatrixProgram();
 
   // RenderPassMaskProgram
@@ -1282,7 +1266,7 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
 
   renderer_->DecideRenderPassAllocationsForFrame(
       *renderer_client_.render_passes_in_draw_order());
-  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order(), NULL);
   TestRenderPassMaskProgram();
 
   // RenderPassMaskColorMatrixProgram
@@ -1298,7 +1282,7 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
 
   renderer_->DecideRenderPassAllocationsForFrame(
       *renderer_client_.render_passes_in_draw_order());
-  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order(), NULL);
   TestRenderPassMaskColorMatrixProgram();
 
   // RenderPassProgramAA
@@ -1318,7 +1302,7 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
 
   renderer_->DecideRenderPassAllocationsForFrame(
       *renderer_client_.render_passes_in_draw_order());
-  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order(), NULL);
   TestRenderPassProgramAA();
 
   // RenderPassColorMatrixProgramAA
@@ -1334,7 +1318,7 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
 
   renderer_->DecideRenderPassAllocationsForFrame(
       *renderer_client_.render_passes_in_draw_order());
-  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order(), NULL);
   TestRenderPassColorMatrixProgramAA();
 
   // RenderPassMaskProgramAA
@@ -1351,7 +1335,7 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
 
   renderer_->DecideRenderPassAllocationsForFrame(
       *renderer_client_.render_passes_in_draw_order());
-  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order(), NULL);
   TestRenderPassMaskProgramAA();
 
   // RenderPassMaskColorMatrixProgramAA
@@ -1367,7 +1351,7 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
 
   renderer_->DecideRenderPassAllocationsForFrame(
       *renderer_client_.render_passes_in_draw_order());
-  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order(), NULL);
   TestRenderPassMaskColorMatrixProgramAA();
 }
 
@@ -1415,7 +1399,7 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadSkipsAAForClippingTransform) {
 
   renderer_->DecideRenderPassAllocationsForFrame(
       *renderer_client_.render_passes_in_draw_order());
-  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order(), NULL);
 
   // If use_aa incorrectly ignores clipping, it will use the
   // RenderPassProgramAA shader instead of the RenderPassProgram.
@@ -1445,13 +1429,18 @@ TEST_F(GLRendererShaderTest, DrawSolidColorShader) {
 
   renderer_->DecideRenderPassAllocationsForFrame(
       *renderer_client_.render_passes_in_draw_order());
-  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(renderer_client_.render_passes_in_draw_order(), NULL);
 
   TestSolidColorProgramAA();
 }
 
 class OutputSurfaceMockContext : public TestWebGraphicsContext3D {
  public:
+  OutputSurfaceMockContext() {
+    test_capabilities_.discard_backbuffer = true;
+    test_capabilities_.post_sub_buffer = true;
+  }
+
   // Specifically override methods even if they are unused (used in conjunction
   // with StrictMock). We need to make sure that GLRenderer does not issue
   // framebuffer-related GL calls directly. Instead these are supposed to go
@@ -1467,13 +1456,6 @@ class OutputSurfaceMockContext : public TestWebGraphicsContext3D {
                     WGC3Dsizei count,
                     WGC3Denum type,
                     WGC3Dintptr offset));
-
-  virtual WebString getString(WebKit::WGC3Denum name) {
-    if (name == GL_EXTENSIONS)
-      return WebString(
-          "GL_CHROMIUM_post_sub_buffer GL_CHROMIUM_discard_backbuffer");
-    return WebString();
-  }
 };
 
 class MockOutputSurface : public OutputSurface {
@@ -1530,7 +1512,7 @@ class MockOutputSurfaceTest : public testing::Test, public FakeRendererClient {
 
     renderer_->DecideRenderPassAllocationsForFrame(
         *render_passes_in_draw_order());
-    renderer_->DrawFrame(render_passes_in_draw_order());
+    renderer_->DrawFrame(render_passes_in_draw_order(), NULL);
   }
 
   OutputSurfaceMockContext* Context() {

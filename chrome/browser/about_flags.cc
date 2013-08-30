@@ -277,6 +277,14 @@ const Experiment::Choice kTabCaptureDownscaleQualityChoices[] = {
     switches::kTabCaptureDownscaleQuality, "best" },
 };
 
+const Experiment::Choice kMapImageChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED,
+    cc::switches::kEnableMapImage, ""},
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED,
+    cc::switches::kDisableMapImage, ""}
+};
+
 // RECORDING USER METRICS FOR FLAGS:
 // -----------------------------------------------------------------------------
 // The first line of the experiment is the internal name. If you'd like to
@@ -507,18 +515,18 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kEnableNaClDebug)
   },
   {
+    "disable-pnacl",  // FLAGS:RECORD_UMA
+    IDS_FLAGS_DISABLE_PNACL_NAME,
+    IDS_FLAGS_DISABLE_PNACL_DESCRIPTION,
+    kOsDesktop,
+    SINGLE_VALUE_TYPE(switches::kDisablePnacl)
+  },
+  {
     "nacl-debug-mask",  // FLAGS:RECORD_UMA
     IDS_FLAGS_NACL_DEBUG_MASK_NAME,
     IDS_FLAGS_NACL_DEBUG_MASK_DESCRIPTION,
     kOsDesktop,
     MULTI_VALUE_TYPE(kNaClDebugMaskChoices)
-  },
-  {
-    "disable-pnacl",  // FLAGS:RECORD_UMA
-    IDS_FLAGS_PNACL_NAME,
-    IDS_FLAGS_PNACL_DESCRIPTION,
-    kOsDesktop,
-    ENABLE_DISABLE_VALUE_TYPE("", switches::kDisablePnacl)
   },
   {
     "extension-apis",  // FLAGS:RECORD_UMA
@@ -916,6 +924,13 @@ const Experiment kExperiments[] = {
       IDS_FLAGS_ALTERNATE_SHELF_LAYOUT_DESCRIPTION,
       kOsCrOS,
       SINGLE_VALUE_TYPE(ash::switches::kAshUseAlternateShelfLayout)
+  },
+  {
+      "ash-enable-drag-off-shelf",
+      IDS_FLAGS_DRAG_OFF_SHELF_NAME,
+      IDS_FLAGS_DRAG_OFF_SHELF_DESCRIPTION,
+      kOsCrOS,
+      SINGLE_VALUE_TYPE(ash::switches::kAshEnableDragOffShelf)
   },
   {
     "enable-background-loader",
@@ -1562,13 +1577,6 @@ const Experiment kExperiments[] = {
   },
 #endif
   {
-    "enable-translate-settings",
-    IDS_FLAGS_ENABLE_TRANSLATE_SETTINGS_NAME,
-    IDS_FLAGS_ENABLE_TRANSLATE_SETTINGS_DESCRIPTION,
-    kOsAll,
-    SINGLE_VALUE_TYPE(switches::kEnableTranslateSettings)
-  },
-  {
     "enable-web-midi",
     IDS_FLAGS_ENABLE_WEB_MIDI_NAME,
     IDS_FLAGS_ENABLE_WEB_MIDI_DESCRIPTION,
@@ -1620,6 +1628,20 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_BATCHED_SHUTDOWN_DESCRIPTION,
     kOsDesktop,
     SINGLE_VALUE_TYPE(switches::kEnableBatchedShutdown)
+  },
+  {
+    "map-image",
+    IDS_FLAGS_MAP_IMAGE_NAME,
+    IDS_FLAGS_MAP_IMAGE_DESCRIPTION,
+    kOsAll,
+    MULTI_VALUE_TYPE(kMapImageChoices)
+  },
+  {
+    "enable-device-motion",
+    IDS_FLAGS_ENABLE_DEVICE_MOTION_NAME,
+    IDS_FLAGS_ENABLE_DEVICE_MOTION_DESCRIPTION,
+    kOsDesktop,
+    SINGLE_VALUE_TYPE(switches::kEnableDeviceMotion)
   },
 };
 
@@ -1987,6 +2009,7 @@ void FlagsState::ConvertFlagsToSwitches(
     const std::pair<std::string, std::string>&
         switch_and_value_pair = name_to_switch_it->second;
 
+    CHECK(!switch_and_value_pair.first.empty());
     command_line->AppendSwitchASCII(switch_and_value_pair.first,
                                     switch_and_value_pair.second);
     flags_switches_[switch_and_value_pair.first] = switch_and_value_pair.second;

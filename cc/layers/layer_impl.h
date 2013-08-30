@@ -317,6 +317,9 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   RenderSurfaceImpl* render_surface() const {
     return draw_properties_.render_surface.get();
   }
+  int num_unclipped_descendants() const {
+    return draw_properties_.num_unclipped_descendants;
+  }
 
   // The client should be responsible for setting bounds, content bounds and
   // contents scale to appropriate values. LayerImpl doesn't calculate any of
@@ -343,6 +346,8 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   void SetScrollOffsetDelegate(
       LayerScrollOffsetDelegate* scroll_offset_delegate);
   void SetScrollOffset(gfx::Vector2d scroll_offset);
+  void SetScrollOffsetAndDelta(gfx::Vector2d scroll_offset,
+                               gfx::Vector2dF scroll_delta);
   gfx::Vector2d scroll_offset() const { return scroll_offset_; }
 
   void SetMaxScrollOffset(gfx::Vector2d max_scroll_offset);

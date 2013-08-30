@@ -241,10 +241,12 @@
         'cc_test_support',
       ],
       'sources': [
+        'resources/picture_layer_tiling_perftest.cc',
         'resources/raster_worker_pool_perftest.cc',
         'resources/tile_manager_perftest.cc',
         'resources/worker_pool_perftest.cc',
         'test/cc_test_suite.cc',
+        'test/lap_timer.cc',
         'test/run_all_unittests.cc',
         'trees/layer_tree_host_perftest.cc',
       ],

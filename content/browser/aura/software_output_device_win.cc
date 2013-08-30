@@ -36,7 +36,7 @@ void SoftwareOutputDeviceWin::Resize(gfx::Size viewport_size) {
     return;
 
   viewport_size_ = viewport_size;
-  contents_.reset(new gfx::Canvas(viewport_size, ui::SCALE_FACTOR_100P, false));
+  contents_.reset(new gfx::Canvas(viewport_size, ui::SCALE_FACTOR_100P, true));
   memset(&bitmap_info_, 0, sizeof(bitmap_info_));
   gfx::CreateBitmapHeader(viewport_size_.width(), viewport_size_.height(),
                           &bitmap_info_.bmiHeader);
@@ -85,16 +85,9 @@ void SoftwareOutputDeviceWin::EndPaint(cc::SoftwareFrameData* frame_data) {
                           RGB(0xFF, 0xFF, 0xFF), &blend, ULW_ALPHA);
     skia::EndPlatformPaint(canvas);
   } else {
-    SkDevice* device = canvas->getDevice();
-    const SkBitmap& bitmap = device->accessBitmap(false);
     HDC hdc = ::GetDC(hwnd_);
-    gfx::StretchDIBits(hdc,
-                       rect.x(), rect.y(),
-                       rect.width(), rect.height(),
-                       rect.x(), rect.y(),
-                       rect.width(), rect.height(),
-                       bitmap.getPixels(),
-                       &bitmap_info_);
+    RECT src_rect = rect.ToRECT();
+    skia::DrawToNativeContext(canvas, hdc, rect.x(), rect.y(), &src_rect);
     ::ReleaseDC(hwnd_, hdc);
   }
 }
@@ -102,7 +95,7 @@ void SoftwareOutputDeviceWin::EndPaint(cc::SoftwareFrameData* frame_data) {
 void SoftwareOutputDeviceWin::CopyToBitmap(
     gfx::Rect rect, SkBitmap* output) {
   DCHECK(contents_);
-  SkDevice* device = contents_->sk_canvas()->getDevice();
+  SkBaseDevice* device = contents_->sk_canvas()->getDevice();
   const SkBitmap& bitmap = device->accessBitmap(false);
   bitmap.extractSubset(output, gfx::RectToSkIRect(rect));
 }

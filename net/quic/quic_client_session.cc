@@ -238,7 +238,16 @@ ReliableQuicStream* QuicClientSession::CreateIncomingReliableStream(
 
 void QuicClientSession::CloseStream(QuicStreamId stream_id) {
   QuicSession::CloseStream(stream_id);
+  OnClosedStream();
+}
 
+void QuicClientSession::SendRstStream(QuicStreamId id,
+                                      QuicRstStreamErrorCode error) {
+  QuicSession::SendRstStream(id, error);
+  OnClosedStream();
+}
+
+void QuicClientSession::OnClosedStream() {
   if (GetNumOpenStreams() < get_max_open_streams() &&
       !stream_requests_.empty() &&
       crypto_stream_->encryption_established() &&
@@ -285,6 +294,13 @@ void QuicClientSession::ConnectionClose(QuicErrorCode error, bool from_peer) {
     UMA_HISTOGRAM_SPARSE_SLOWLY(
         "Net.QuicSession.ConnectionCloseErrorCodeClient", error);
   }
+
+  if (error == QUIC_CONNECTION_TIMED_OUT) {
+    UMA_HISTOGRAM_SPARSE_SLOWLY(
+        "Net.QuicSession.ConnectionClose.NumOpenStreams.TimedOut",
+        GetNumOpenStreams());
+  }
+
   UMA_HISTOGRAM_SPARSE_SLOWLY("Net.QuicSession.QuicVersion",
                               connection()->version());
   if (!callback_.is_null()) {

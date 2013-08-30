@@ -45,6 +45,7 @@ LOCAL_SRC_FILES := \
 	ui/base/animation/slide_animation.cc \
 	ui/base/animation/throb_animation.cc \
 	ui/base/animation/tween.cc \
+	ui/base/base_window.cc \
 	ui/base/clipboard/clipboard.cc \
 	ui/base/clipboard/clipboard_android.cc \
 	ui/base/clipboard/clipboard_constants.cc \

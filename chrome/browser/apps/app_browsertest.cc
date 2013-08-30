@@ -31,6 +31,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/webui/print_preview/print_preview_ui.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/app_runtime.h"
 #include "chrome/common/pref_names.h"
@@ -611,7 +612,18 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, GetDisplayPath) {
       << message_;
 }
 
-#endif  // defined(OS_CHROMEOS)
+// Tests that the file is created if the file does not exist and the app has the
+// fileSystem.write permission.
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchNewFile) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  ClearCommandLineArgs();
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  command_line->AppendArgPath(temp_dir.path().AppendASCII("new_file.txt"));
+  ASSERT_TRUE(RunPlatformAppTest("platform_apps/launch_new_file")) << message_;
+}
+
+#endif  // !defined(OS_CHROMEOS)
 
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, OpenLink) {
   ASSERT_TRUE(StartEmbeddedTestServer());
@@ -1023,6 +1035,24 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_WebContentsHasFocus) {
       browser()->profile())->shell_windows();
   EXPECT_TRUE((*shell_windows.begin())->web_contents()->
       GetRenderWidgetHostView()->HasFocus());
+}
+
+// Currently this test only works if the PDF preview plug-in is available. This
+// will only happen in Chrome release builds or if the plug-in has been manually
+// copied from a Chrome release build. In the former case, this test will run
+// automatically. In the later case, it can be run manually by commenting out
+// the next three lines and the corresponding #endif and then running
+// browser_tests with a --enable-print-preview flag.
+#if !defined(GOOGLE_CHROME_BUILD)
+#define MAYBE_WindowDotPrintWorks DISABLED_WindowDotPrintWorks
+#else
+#define MAYBE_WindowDotPrintWorks WindowDotPrintWorks
+#endif
+
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_WindowDotPrintWorks) {
+  PrintPreviewUI::SetAutoCancelForTesting(true);
+  ASSERT_TRUE(RunPlatformAppTest("platform_apps/print_api")) << message_;
+  PrintPreviewUI::SetAutoCancelForTesting(false);
 }
 
 

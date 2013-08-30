@@ -201,7 +201,6 @@ include $(LOCAL_PATH)/ui/base/strings/ui_strings.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/gl/gl.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/gl/gl_jni_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/gl/surface_jni_headers.target.linux-mips.mk
-include $(LOCAL_PATH)/ui/gl/surface_texture_jni_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/native_theme/native_theme.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/shell_dialogs.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/snapshot/snapshot.target.linux-mips.mk

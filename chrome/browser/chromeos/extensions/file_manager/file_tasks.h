@@ -116,9 +116,15 @@
 
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
+#include "chrome/browser/extensions/api/file_handlers/app_file_handler_util.h"
+#include "url/gurl.h"
 
-class GURL;
+class PrefService;
 class Profile;
+
+namespace drive {
+class DriveAppRegistry;
+}
 
 namespace fileapi {
 class FileSystemURL;
@@ -153,9 +159,47 @@ struct TaskDescriptor {
   std::string action_id;
 };
 
+// Describes a task with extra information such as icon URL.
+class FullTaskDescriptor {
+ public:
+  FullTaskDescriptor(const TaskDescriptor& task_descriptor,
+                     const std::string& task_title,
+                     const GURL& icon_url,
+                     bool is_default);
+  // The icon URL for the task (ex. app icon)
+  const GURL& icon_url() const { return icon_url_; }
+
+  // True if this task is set as default.
+  bool is_default() const { return is_default_; }
+
+  // The title of the task.
+  const std::string& task_title() { return task_title_; }
+
+  // Returns a DictionaryValue representation, which looks like:
+  //
+  // {
+  //   "driveApp": true,
+  //   "iconUrl": "<app_icon_url>",
+  //   "isDefault": false,
+  //   "taskId": "<drive_app_id>|drive|open-with",
+  //   "title": "Drive App Name (ex. Pixlr Editor)"
+  // },
+  //
+  // "iconUrl" is omitted if icon_url_ is empty.
+  //
+  // This representation will be used to send task info to the JavaScript.
+  scoped_ptr<base::DictionaryValue> AsDictionaryValue() const;
+
+ private:
+  TaskDescriptor task_descriptor_;
+  std::string task_title_;
+  GURL icon_url_;
+  bool is_default_;
+};
+
 // Update the default file handler for the given sets of suffixes and MIME
 // types.
-void UpdateDefaultTask(Profile* profile,
+void UpdateDefaultTask(PrefService* pref_service,
                        const std::string& task_id,
                        const std::set<std::string>& suffixes,
                        const std::set<std::string>& mime_types);
@@ -164,7 +208,7 @@ void UpdateDefaultTask(Profile* profile,
 // combination. If it finds a MIME type match, then it prefers that over a
 // suffix match. If it a default can't be found, then it returns the empty
 // string.
-std::string GetDefaultTaskIdFromPrefs(Profile* profile,
+std::string GetDefaultTaskIdFromPrefs(const PrefService& pref_service,
                                       const std::string& mime_type,
                                       const std::string& suffix);
 
@@ -173,7 +217,7 @@ std::string GetDefaultTaskIdFromPrefs(Profile* profile,
 //
 // |app_id| is either of Chrome Extension/App ID or Drive App ID.
 // |action_id| is a free-form string ID for the action.
-std::string MakeTaskID(const std::string& extension_id,
+std::string MakeTaskID(const std::string& app_id,
                        TaskType task_type,
                        const std::string& action_id);
 
@@ -181,6 +225,9 @@ std::string MakeTaskID(const std::string& extension_id,
 // TODO(gspencer): For now, the action id is always "open-with", but we
 // could add any actions that the drive app supports.
 std::string MakeDriveAppTaskId(const std::string& app_id);
+
+// Converts |task_descriptor| to a task ID.
+std::string TaskDescriptorToId(const TaskDescriptor& task_descriptor);
 
 // Parses the task ID and extracts app ID, task type, and action ID into
 // |task|. On failure, returns false, and the contents of |task| are
@@ -217,6 +264,80 @@ bool ExecuteFileTask(Profile* profile,
                      const TaskDescriptor& task,
                      const std::vector<fileapi::FileSystemURL>& file_urls,
                      const FileTaskFinishedCallback& done);
+
+typedef extensions::app_file_handler_util::PathAndMimeTypeSet
+    PathAndMimeTypeSet;
+
+// Holds fields to build a task result.
+struct TaskInfo;
+
+// Map from a task id to TaskInfo.
+typedef std::map<std::string, TaskInfo> TaskInfoMap;
+
+// Looks up available apps for each file in |path_mime_set| in the
+// |registry|, and returns the intersection of all available apps as a
+// map from task id to TaskInfo.
+void GetAvailableDriveTasks(const drive::DriveAppRegistry& registry,
+                            const PathAndMimeTypeSet& path_mime_set,
+                            TaskInfoMap* task_info_map);
+
+// Looks in the preferences and finds any of the available apps that are
+// also listed as default apps for any of the files in the info list.
+void FindDefaultDriveTasks(const PrefService& pref_service,
+                           const PathAndMimeTypeSet& path_mime_set,
+                           const TaskInfoMap& task_info_map,
+                           std::set<std::string>* default_tasks);
+
+// Creates a list of each task in |task_info_map| and stores the result into
+// |result_list|. If a default task is set in the result list,
+// |default_already_set| is set to true.
+void CreateDriveTasks(const TaskInfoMap& task_info_map,
+                      const std::set<std::string>& default_tasks,
+                      std::vector<FullTaskDescriptor>* result_list,
+                      bool* default_already_set);
+
+// Finds the drive app tasks that can be used with the given files, and
+// append them to the |result_list|. |*default_already_set| indicates if
+// the |result_list| already contains the default task. If the value is
+// false, the function will find the default task and set the value to true
+// if found.
+//
+// "taskId" field in |result_list| will look like
+// "<drive-app-id>|drive|open-with" (See also file_tasks.h).
+// "driveApp" field in |result_list| will be set to "true".
+void FindDriveAppTasks(Profile* profile,
+                       const PathAndMimeTypeSet& path_mime_set,
+                       std::vector<FullTaskDescriptor>* result_list,
+                       bool* default_already_set);
+
+// Finds the file handler tasks (apps declaring "file_handlers" in
+// manifest.json) that can be used with the given files, appending them to
+// the |result_list|. See the comment at FindDriveAppTasks() about
+// |default_already_set|
+void FindFileHandlerTasks(Profile* profile,
+                          const PathAndMimeTypeSet& path_mime_set,
+                          std::vector<FullTaskDescriptor>* result_list,
+                          bool* default_already_set);
+
+// Finds the file browser handler tasks (app/extensions declaring
+// "file_browser_handlers" in manifest.json) that can be used with the
+// given files, appending them to the |result_list|. See the comment at
+// FindDriveAppTasks() about |default_already_set|
+void FindFileBrowserHandlerTasks(
+    Profile* profile,
+    const std::vector<GURL>& file_urls,
+    const std::vector<base::FilePath>& file_paths,
+    std::vector<FullTaskDescriptor>* result_list,
+    bool* default_already_set);
+
+// Finds all types (drive, file handlers, file browser handlers) of
+// tasks. See the comment at FindDriveAppTasks() about |result_list|.
+void FindAllTypesOfTasks(
+    Profile* profile,
+    const PathAndMimeTypeSet& path_mime_set,
+    const std::vector<GURL>& file_urls,
+    const std::vector<base::FilePath>& file_paths,
+    std::vector<FullTaskDescriptor>* result_list);
 
 }  // namespace file_tasks
 }  // namespace file_manager

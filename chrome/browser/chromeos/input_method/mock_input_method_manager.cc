@@ -113,6 +113,9 @@ void MockInputMethodManager::SetEnabledExtensionImes(
     std::vector<std::string>* ids) {
 }
 
+void MockInputMethodManager::SetInputMethodDefault() {
+}
+
 bool MockInputMethodManager::SwitchToNextInputMethod() {
   return true;
 }
@@ -135,6 +138,7 @@ InputMethodDescriptor MockInputMethodManager::GetCurrentInputMethod() const {
                                  descriptor.name(),
                                  descriptor.keyboard_layouts(),
                                  descriptor.language_codes(),
+                                 true,
                                  GURL());  // options page url.
   }
   return descriptor;
@@ -167,7 +171,7 @@ void MockInputMethodManager::set_hardware_keyboard_layout(
   delegate_.set_hardware_keyboard_layout(value);
 }
 
-bool MockInputMethodManager::IsFullLatinKeyboard(
+bool MockInputMethodManager::IsLoginKeyboard(
     const std::string& layout) const {
   return true;
 }

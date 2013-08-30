@@ -110,16 +110,8 @@ class ResourceMetadata {
   // Synchronous version of SetLargestChangestampOnUIThread.
   FileError SetLargestChangestamp(int64 value);
 
-  // Runs AddEntry() on blocking pool. Upon completion, the |callback| will be
-  // called with the new file path.
-  // |callback| must not be null.
-  // Must be called on the UI thread.
-  void AddEntryOnUIThread(const ResourceEntry& entry,
-                          const FileMoveCallback& callback);
-
-  // Adds |entry| to the metadata tree based on its parent_local_id
-  // synchronously.
-  FileError AddEntry(const ResourceEntry& entry);
+  // Adds |entry| to the metadata tree based on its parent_local_id.
+  FileError AddEntry(const ResourceEntry& entry, std::string* out_id);
 
   // Removes entry with |id| from its parent.
   FileError RemoveEntry(const std::string& id);
@@ -172,11 +164,11 @@ class ResourceMetadata {
   void GetSubDirectoriesRecursively(const std::string& id,
                                     std::set<base::FilePath>* sub_directories);
 
-  // Returns the resource id of the resource named |base_name| directly under
+  // Returns the id of the resource named |base_name| directly under
   // the directory with |parent_local_id|.
   // If not found, empty string will be returned.
-  std::string GetChildResourceId(const std::string& parent_local_id,
-                                 const std::string& base_name);
+  std::string GetChildId(const std::string& parent_local_id,
+                         const std::string& base_name);
 
   // Returns an object to iterate over entries.
   scoped_ptr<Iterator> GetIterator();
@@ -186,6 +178,10 @@ class ResourceMetadata {
 
   // Returns ID of the entry at the given path.
   FileError GetIdByPath(const base::FilePath& file_path, std::string* out_id);
+
+  // Returns the local ID associated with the given resource ID.
+  FileError GetIdByResourceId(const std::string& resource_id,
+                              std::string* out_local_id);
 
  private:
   // Note: Use Destroy() to delete this object.

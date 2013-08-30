@@ -16,7 +16,7 @@ from telemetry.core import util
 from telemetry.core import wpr_modes
 from telemetry.core.platform.profiler import profiler_finder
 
-class BrowserOptions(optparse.Values):
+class BrowserFinderOptions(optparse.Values):
   """Options to be used for discovering and launching a browser."""
 
   def __init__(self, browser_type=None):
@@ -38,6 +38,9 @@ class BrowserOptions(optparse.Values):
     self.show_stdout = False
     self.extensions_to_load = []
     self.clear_sytem_cache_for_browser_and_profile_on_start = False
+
+    # If set, copy the generated profile to this path on exit.
+    self.output_profile_path = None
 
     self.cros_remote = None
     self.wpr_mode = wpr_modes.WPR_OFF
@@ -219,9 +222,10 @@ class BrowserOptions(optparse.Values):
       # Parse repeat options
       self.repeat_options.UpdateFromParseResults(self, parser)
 
-      # TODO(jeremy): I'm in the process of adding explicit knowledge of profile
-      # directories to Telemetry. As part of this work profile_type needs to be
-      # reworked to not override profile_dir.
+      if self.profile_dir and self.profile_type != 'clean':
+        raise Exception("It's illegal to specify both --profile-type and"
+            " --profile-dir.")
+
       if not self.profile_dir:
         self.profile_dir = profile_types.GetProfileDir(self.profile_type)
 

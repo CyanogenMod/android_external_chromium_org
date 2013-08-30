@@ -105,7 +105,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS := \
 LOCAL_SRC_FILES := \
 	ui/gl/android/gl_jni_registrar.cc \
 	ui/gl/android/scoped_java_surface.cc \
-	ui/gl/android/surface_texture_bridge.cc \
+	ui/gl/android/surface_texture.cc \
 	ui/gl/android/surface_texture_listener.cc \
 	ui/gl/gl_bindings_skia_in_process.cc \
 	ui/gl/gl_context.cc \

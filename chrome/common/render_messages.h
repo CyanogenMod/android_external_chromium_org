@@ -162,6 +162,11 @@ IPC_STRUCT_TRAITS_BEGIN(ContentSettingPatternSource)
   IPC_STRUCT_TRAITS_MEMBER(incognito)
 IPC_STRUCT_TRAITS_END()
 
+IPC_STRUCT_TRAITS_BEGIN(InstantSuggestion)
+  IPC_STRUCT_TRAITS_MEMBER(text)
+  IPC_STRUCT_TRAITS_MEMBER(metadata)
+IPC_STRUCT_TRAITS_END()
+
 IPC_STRUCT_TRAITS_BEGIN(InstantMostVisitedItem)
   IPC_STRUCT_TRAITS_MEMBER(url)
   IPC_STRUCT_TRAITS_MEMBER(title)
@@ -291,6 +296,9 @@ IPC_MESSAGE_ROUTED3(ChromeViewMsg_HandleMessageFromExternalHost,
 
 IPC_MESSAGE_ROUTED0(ChromeViewMsg_DetermineIfPageSupportsInstant)
 
+IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxSetDisplayInstantResults,
+                    bool /* display_instant_results */)
+
 IPC_MESSAGE_ROUTED2(ChromeViewMsg_SearchBoxFocusChanged,
                     OmniboxFocusState /* new_focus_state */,
                     OmniboxFocusChangeReason /* reason */)
@@ -311,6 +319,9 @@ IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxPromoInformation,
 
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxSetInputInProgress,
                     bool /* input_in_progress */)
+
+IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxSetSuggestionToPrefetch,
+                    InstantSuggestion /* suggestion */)
 
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxSubmit,
                     string16 /* value */)
@@ -392,8 +403,9 @@ IPC_MESSAGE_ROUTED3(ChromeViewMsg_UpdateTopControlsState,
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_SetWindowFeatures,
                     WebKit::WebWindowFeatures /* window_features */)
 
-IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_RequestThumbnailForContextNode_ACK,
-                    SkBitmap /* thumbnail */)
+IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_RequestThumbnailForContextNode_ACK,
+                    SkBitmap /* thumbnail */,
+                    gfx::Size /* original size of the image */)
 
 #if defined(OS_ANDROID)
 // Asks the renderer to return information about whether the current page can
@@ -629,9 +641,10 @@ IPC_MESSAGE_ROUTED0(ChromeViewHostMsg_DidBlockRunningInsecureContent)
 
 #if defined(OS_ANDROID)
 // Contains info about whether the current page can be treated as a webapp.
-IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_DidRetrieveWebappInformation,
+IPC_MESSAGE_ROUTED3(ChromeViewHostMsg_DidRetrieveWebappInformation,
                     bool /* success */,
-                    bool /* is_webapp_capable */)
+                    bool /* is_webapp_capable */,
+                    GURL /* expected_url */)
 #endif  // defined(OS_ANDROID)
 
 // Message sent from renderer to the browser when the element that is focused

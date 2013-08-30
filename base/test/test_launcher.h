@@ -43,6 +43,10 @@ struct TestResult {
   // True if the test passed.
   bool success;
 
+  // True if the test binary crashed while executing this test (i.e. the test
+  // didn't actually finish).
+  bool crashed;
+
   // Time it took to run the test.
   base::TimeDelta elapsed_time;
 };
@@ -68,7 +72,8 @@ class TestLauncherDelegate {
   // If the delegate is running tests asynchronously, it must finish
   // running all pending tests and call their callbacks before returning
   // from this method.
-  virtual void RunRemainingTests() = 0;
+  typedef base::Closure RunRemainingTestsCallback;
+  virtual void RunRemainingTests(const RunRemainingTestsCallback& callback) = 0;
 
  protected:
   virtual ~TestLauncherDelegate();

@@ -497,13 +497,13 @@ void APIUtil::ListChanges(int64 start_changestamp,
       base::Bind(&APIUtil::DidGetResourceList, AsWeakPtr(), callback));
 }
 
-void APIUtil::ContinueListing(const GURL& feed_url,
+void APIUtil::ContinueListing(const std::string& page_token,
                               const ResourceListCallback& callback) {
   DCHECK(CalledOnValidThread());
-  DVLOG(2) << "Continue listing on feed: " << feed_url;
+  DVLOG(2) << "Continue listing on feed: " << page_token;
 
-  drive_service_->ContinueGetResourceList(
-      feed_url,
+  drive_service_->GetRemainingFileList(
+      page_token,
       base::Bind(&APIUtil::DidGetResourceList, AsWeakPtr(), callback));
 }
 
@@ -613,7 +613,7 @@ void APIUtil::DeleteFile(const std::string& resource_id,
 GURL APIUtil::ResourceIdToResourceLink(const std::string& resource_id) const {
   return IsDriveAPIDisabled()
       ? wapi_url_generator_.GenerateEditUrl(resource_id)
-      : drive_api_url_generator_.GetFileUrl(resource_id);
+      : drive_api_url_generator_.GetFilesGetUrl(resource_id);
 }
 
 void APIUtil::EnsureSyncRootIsNotInMyDrive(
@@ -715,6 +715,12 @@ void APIUtil::DidGetResourceEntry(
   if (error != google_apis::HTTP_SUCCESS) {
     DVLOG(2) << "Error on getting resource entry:" << error;
     callback.Run(error, scoped_ptr<google_apis::ResourceEntry>());
+    return;
+  }
+
+  if (entry->deleted()) {
+    DVLOG(2) << "Got resource entry, the entry was trashed.";
+    callback.Run(google_apis::HTTP_NOT_FOUND, entry.Pass());
     return;
   }
 

@@ -42,6 +42,7 @@
 #include "base/win/windows_version.h"
 #endif  // OS_WIN
 #if defined(OS_ANDROID)
+#include "base/android/build_info.h"
 #include "ui/gfx/android/device_display_info.h"
 #endif  // OS_ANDROID
 
@@ -229,7 +230,7 @@ std::string IntSetToString(const std::set<int>& list) {
 void DisplayReconfigCallback(CGDirectDisplayID display,
                              CGDisplayChangeSummaryFlags flags,
                              void* gpu_data_manager) {
-  if(flags == kCGDisplayBeginConfigurationFlag)
+  if (flags == kCGDisplayBeginConfigurationFlag)
     return; // This call contains no information about the display change
 
   GpuDataManagerImpl* manager =
@@ -278,12 +279,15 @@ void ApplyAndroidWorkarounds(const gpu::GPUInfo& gpu_info,
   bool is_nexus10 =
       gpu_info.machine_model.find("Nexus 10") != std::string::npos;
 
+  int sdk_int = base::android::BuildInfo::GetInstance()->sdk_int();
+
   // IMG: avoid context switching perf problems, crashes with share groups
   // Mali-T604: http://crbug.com/154715
   // QualComm, NVIDIA: Crashes with share groups
-  if (is_vivante || is_img || is_mali_t604 || is_nvidia || is_qualcomm ||
-      is_broadcom)
+  if (is_vivante || is_img || is_mali_t604 ||
+      ((is_nvidia || is_qualcomm) && sdk_int < 18) || is_broadcom) {
     command_line->AppendSwitch(switches::kEnableVirtualGLContexts);
+  }
 
   gfx::DeviceDisplayInfo info;
   int default_tile_size = 256;
@@ -307,7 +311,7 @@ void ApplyAndroidWorkarounds(const gpu::GPUInfo& gpu_info,
 
   // If we are using the MapImage API double the tile size to reduce
   // the number of zero-copy buffers being used.
-  if (command_line->HasSwitch(cc::switches::kUseMapImage))
+  if (command_line->HasSwitch(cc::switches::kEnableMapImage))
     default_tile_size *= 2;
 
   // Set the command line if it isn't already set and we changed
@@ -374,6 +378,10 @@ bool GpuDataManagerImplPrivate::IsFeatureBlacklisted(int feature) const {
   }
 
   return (blacklisted_features_.count(feature) == 1);
+}
+
+bool GpuDataManagerImplPrivate::IsDriverBugWorkaroundActive(int feature) const {
+  return (gpu_driver_bugs_.count(feature) == 1);
 }
 
 size_t GpuDataManagerImplPrivate::GetBlacklistedFeatureCount() const {
@@ -817,8 +825,9 @@ void GpuDataManagerImplPrivate::UpdateRendererWebPrefs(
     prefs->flash_stage3d_baseline_enabled = false;
   if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS))
     prefs->accelerated_2d_canvas_enabled = false;
-  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_MULTISAMPLING)
-      || display_count_ > 1)
+  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_MULTISAMPLING) ||
+      (IsDriverBugWorkaroundActive(gpu::DISABLE_MULTIMONITOR_MULTISAMPLING) &&
+          display_count_ > 1))
     prefs->gl_multisampling_enabled = false;
   if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_3D_CSS)) {
     prefs->accelerated_compositing_for_3d_transforms_enabled = false;

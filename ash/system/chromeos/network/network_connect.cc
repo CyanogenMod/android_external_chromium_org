@@ -6,6 +6,7 @@
 
 #include "ash/shell.h"
 #include "ash/system/chromeos/network/network_state_notifier.h"
+#include "ash/system/system_notifier.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/system_tray_notifier.h"
 #include "base/bind.h"
@@ -14,6 +15,7 @@
 #include "base/values.h"
 #include "chromeos/login/login_state.h"
 #include "chromeos/network/device_state.h"
+#include "chromeos/network/network_activation_handler.h"
 #include "chromeos/network/network_configuration_handler.h"
 #include "chromeos/network/network_connection_handler.h"
 #include "chromeos/network/network_event_log.h"
@@ -357,7 +359,7 @@ void ActivateCellular(const std::string& service_path) {
     return;
   }
 
-  NetworkHandler::Get()->network_connection_handler()->ActivateNetwork(
+  NetworkHandler::Get()->network_activation_handler()->Activate(
       service_path,
       "",  // carrier
       base::Bind(&OnActivateSucceeded, service_path),
@@ -382,6 +384,7 @@ void ShowMobileSetup(const std::string& service_path) {
                                        UTF8ToUTF16(cellular->name())),
             ui::ResourceBundle::GetSharedInstance().GetImageNamed(
                 IDR_AURA_UBER_TRAY_CELLULAR_NETWORK_FAILED),
+            ash::NOTIFIER_NETWORK,
             base::Bind(&ash::network_connect::ShowNetworkSettings,
                        service_path)));
     return;

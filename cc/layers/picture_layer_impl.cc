@@ -148,11 +148,6 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
 
   AppendDebugBorderQuad(quad_sink, shared_quad_state, append_quads_data);
 
-  bool clipped = false;
-  gfx::QuadF target_quad = MathUtil::MapQuad(
-      draw_transform(),
-      gfx::QuadF(rect),
-      &clipped);
   if (ShowDebugBorders()) {
     for (PictureLayerTilingSet::CoverageIterator iter(
         tilings_.get(), contents_scale_x(), rect, ideal_contents_scale_);
@@ -227,6 +222,7 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
 
     const ManagedTileState::TileVersion& tile_version =
         iter->GetTileVersionForDrawing();
+    scoped_ptr<DrawQuad> draw_quad;
     switch (tile_version.mode()) {
       case ManagedTileState::TileVersion::RESOURCE_MODE: {
         gfx::RectF texture_rect = iter.texture_rect();
@@ -244,7 +240,7 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
                      texture_rect,
                      iter.texture_size(),
                      tile_version.contents_swizzled());
-        quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
+        draw_quad = quad.PassAs<DrawQuad>();
         break;
       }
       case ManagedTileState::TileVersion::PICTURE_PILE_MODE: {
@@ -267,7 +263,7 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
                      iter->contents_scale(),
                      draw_direct_to_backbuffer,
                      pile_);
-        quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
+        draw_quad = quad.PassAs<DrawQuad>();
         break;
       }
       case ManagedTileState::TileVersion::SOLID_COLOR_MODE: {
@@ -276,14 +272,15 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
                      geometry_rect,
                      tile_version.get_solid_color(),
                      false);
-        quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
+        draw_quad = quad.PassAs<DrawQuad>();
         break;
       }
-      default:
-        NOTREACHED();
     }
 
-    if (!seen_tilings.size() || seen_tilings.back() != iter.CurrentTiling())
+    DCHECK(draw_quad);
+    quad_sink->Append(draw_quad.Pass(), append_quads_data);
+
+    if (seen_tilings.empty() || seen_tilings.back() != iter.CurrentTiling())
       seen_tilings.push_back(iter.CurrentTiling());
   }
 
@@ -578,6 +575,8 @@ void PictureLayerImpl::SyncFromActiveLayer(const PictureLayerImpl* other) {
   } else {
     tilings_->RemoveAllTilings();
   }
+
+  SanityCheckTilingState();
 }
 
 void PictureLayerImpl::SyncTiling(
@@ -754,6 +753,7 @@ void PictureLayerImpl::RemoveTiling(float contents_scale) {
       break;
     }
   }
+  SanityCheckTilingState();
 }
 
 namespace {
@@ -837,12 +837,13 @@ void PictureLayerImpl::ManageTilings(bool animating_transform_to_screen) {
       low_res != high_res)
     low_res = AddTiling(low_res_raster_contents_scale_);
 
-  if (high_res)
-    high_res->set_resolution(HIGH_RESOLUTION);
+  high_res->set_resolution(HIGH_RESOLUTION);
   if (low_res && low_res != high_res)
     low_res->set_resolution(LOW_RESOLUTION);
   else if (!low_res && previous_low_res)
     previous_low_res->set_resolution(LOW_RESOLUTION);
+
+  SanityCheckTilingState();
 }
 
 bool PictureLayerImpl::ShouldAdjustRasterScale(
@@ -955,6 +956,8 @@ void PictureLayerImpl::CleanUpTilingsOnActiveLayer(
       twin->RemoveTiling(to_remove[i]->contents_scale());
     tilings_->Remove(to_remove[i]);
   }
+
+  SanityCheckTilingState();
 }
 
 float PictureLayerImpl::MinimumContentsScale() const {
@@ -1008,6 +1011,22 @@ bool PictureLayerImpl::CanHaveTilingWithScale(float contents_scale) const {
   if (contents_scale < MinimumContentsScale())
     return false;
   return true;
+}
+
+void PictureLayerImpl::SanityCheckTilingState() const {
+  if (!DCHECK_IS_ON())
+    return;
+
+  if (!CanHaveTilings()) {
+    DCHECK_EQ(0u, tilings_->num_tilings());
+    return;
+  }
+  if (tilings_->num_tilings() == 0)
+    return;
+
+  // MarkVisibleResourcesAsRequired depends on having exactly 1 high res
+  // tiling to mark its tiles as being required for activation.
+  DCHECK_EQ(1, tilings_->NumHighResTilings());
 }
 
 void PictureLayerImpl::GetDebugBorderProperties(

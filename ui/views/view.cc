@@ -9,7 +9,6 @@
 #include <algorithm>
 #include <cmath>
 
-#include "base/auto_reset.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -177,7 +176,6 @@ View::View()
       focus_border_(FocusBorder::CreateDashedFocusBorder()),
       flip_canvas_on_paint_for_rtl_ui_(false),
       paint_to_layer_(false),
-      accelerator_registration_delayed_(false),
       accelerator_focus_manager_(NULL),
       registered_accelerator_count_(0),
       next_focusable_view_(NULL),
@@ -186,7 +184,6 @@ View::View()
       accessibility_focusable_(false),
       context_menu_controller_(NULL),
       drag_controller_(NULL),
-      currently_dragging_(false),
       post_dispatch_handler_(new internal::PostEventDispatchHandler(this)),
       native_view_accessibility_(NULL) {
   AddPostTargetHandler(post_dispatch_handler_.get());
@@ -195,10 +192,6 @@ View::View()
 View::~View() {
   if (parent_)
     parent_->RemoveChildView(this);
-
-  // If we destroy the view during a drag, AutoReset will probably write to
-  // freed memory.
-  DCHECK(!currently_dragging_);
 
   for (Views::const_iterator i(children_.begin()); i != children_.end(); ++i) {
     (*i)->parent_ = NULL;
@@ -1305,21 +1298,13 @@ void View::ViewHierarchyChanged(const ViewHierarchyChangedDetails& details) {
 void View::VisibilityChanged(View* starting_from, bool is_visible) {
 }
 
-void View::NativeViewHierarchyChanged(bool attached,
-                                      gfx::NativeView native_view,
-                                      internal::RootView* root_view) {
+void View::NativeViewHierarchyChanged() {
   FocusManager* focus_manager = GetFocusManager();
-  if (!accelerator_registration_delayed_ &&
-      accelerator_focus_manager_ &&
-      accelerator_focus_manager_ != focus_manager) {
+  if (accelerator_focus_manager_ != focus_manager) {
     UnregisterAccelerators(true);
-    accelerator_registration_delayed_ = true;
-  }
-  if (accelerator_registration_delayed_ && attached) {
-    if (focus_manager) {
+
+    if (focus_manager)
       RegisterPendingAccelerators();
-      accelerator_registration_delayed_ = false;
-    }
   }
 }
 
@@ -1821,14 +1806,10 @@ void View::PropagateAddNotifications(
   ViewHierarchyChangedImpl(true, details);
 }
 
-void View::PropagateNativeViewHierarchyChanged(bool attached,
-                                               gfx::NativeView native_view,
-                                               internal::RootView* root_view) {
+void View::PropagateNativeViewHierarchyChanged() {
   for (int i = 0, count = child_count(); i < count; ++i)
-    child_at(i)->PropagateNativeViewHierarchyChanged(attached,
-                                                           native_view,
-                                                           root_view);
-  NativeViewHierarchyChanged(attached, native_view, root_view);
+    child_at(i)->PropagateNativeViewHierarchyChanged();
+  NativeViewHierarchyChanged();
 }
 
 void View::ViewHierarchyChangedImpl(
@@ -1838,13 +1819,8 @@ void View::ViewHierarchyChangedImpl(
     if (details.is_add) {
       // If you get this registration, you are part of a subtree that has been
       // added to the view hierarchy.
-      if (GetFocusManager()) {
+      if (GetFocusManager())
         RegisterPendingAccelerators();
-      } else {
-        // Delay accelerator registration until visible as we do not have
-        // focus manager until then.
-        accelerator_registration_delayed_ = true;
-      }
     } else {
       if (details.child == this)
         UnregisterAccelerators(true);
@@ -1857,7 +1833,7 @@ void View::ViewHierarchyChangedImpl(
     if (widget)
       widget->UpdateRootLayers();
   } else if (!details.is_add && details.child == this) {
-    // Make sure the layers beloning to the subtree rooted at |child| get
+    // Make sure the layers belonging to the subtree rooted at |child| get
     // removed from layers that do not belong in the same subtree.
     OrphanLayers();
     if (use_acceleration_when_possible) {
@@ -2235,9 +2211,6 @@ void View::UnregisterAccelerators(bool leave_data_intact) {
 
   if (GetWidget()) {
     if (accelerator_focus_manager_) {
-      // We may not have a FocusManager if the window containing us is being
-      // closed, in which case the FocusManager is being deleted so there is
-      // nothing to unregister.
       accelerator_focus_manager_->UnregisterAccelerators(this);
       accelerator_focus_manager_ = NULL;
     }
@@ -2324,14 +2297,20 @@ bool View::DoDrag(const ui::LocatedEvent& event,
                   const gfx::Point& press_pt,
                   ui::DragDropTypes::DragEventSource source) {
 #if !defined(OS_MACOSX)
-  if (currently_dragging_)
-    return false;
-
   int drag_operations = GetDragOperations(press_pt);
   if (drag_operations == ui::DragDropTypes::DRAG_NONE)
     return false;
 
-  base::AutoReset<bool> updating_focus(&currently_dragging_, true);
+  Widget* widget = GetWidget();
+  // We should only start a drag from an event, implying we have a widget.
+  DCHECK(widget);
+
+  // Don't attempt to start a drag while in the process of dragging. This is
+  // especially important on X where we can get multiple mouse move events when
+  // we start the drag.
+  if (widget->dragged_view())
+    return false;
+
   OSExchangeData data;
   WriteDragData(press_pt, &data);
 
@@ -2339,9 +2318,8 @@ bool View::DoDrag(const ui::LocatedEvent& event,
   // the RootView can detect it and avoid calling us back.
   gfx::Point widget_location(event.location());
   ConvertPointToWidget(this, &widget_location);
-  GetWidget()->RunShellDrag(this, data, widget_location, drag_operations,
-      source);
-
+  widget->RunShellDrag(this, data, widget_location, drag_operations, source);
+  // WARNING: we may have been deleted.
   return true;
 #else
   return false;

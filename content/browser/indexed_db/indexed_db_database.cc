@@ -116,14 +116,14 @@ class IndexedDBDatabase::PendingDeleteCall {
 
 scoped_refptr<IndexedDBDatabase> IndexedDBDatabase::Create(
     const string16& name,
-    IndexedDBBackingStore* database,
+    IndexedDBBackingStore* backing_store,
     IndexedDBFactory* factory,
     const Identifier& unique_identifier) {
-  scoped_refptr<IndexedDBDatabase> backend =
-      new IndexedDBDatabase(name, database, factory, unique_identifier);
-  if (!backend->OpenInternal())
+  scoped_refptr<IndexedDBDatabase> database =
+      new IndexedDBDatabase(name, backing_store, factory, unique_identifier);
+  if (!database->OpenInternal())
     return 0;
-  return backend;
+  return database;
 }
 
 namespace {
@@ -1030,13 +1030,22 @@ void IndexedDBDatabase::OpenCursorOperation(
 
   scoped_ptr<IndexedDBBackingStore::Cursor> backing_store_cursor;
   if (params->index_id == IndexedDBIndexMetadata::kInvalidId) {
-    DCHECK_NE(params->cursor_type, indexed_db::CURSOR_KEY_ONLY);
-    backing_store_cursor = backing_store_->OpenObjectStoreCursor(
-        transaction->BackingStoreTransaction(),
-        id(),
-        params->object_store_id,
-        *params->key_range,
+    if (params->cursor_type == indexed_db::CURSOR_KEY_ONLY) {
+      DCHECK_EQ(params->task_type, IndexedDBDatabase::NORMAL_TASK);
+      backing_store_cursor = backing_store_->OpenObjectStoreKeyCursor(
+          transaction->BackingStoreTransaction(),
+          id(),
+          params->object_store_id,
+          *params->key_range,
+          params->direction);
+    } else {
+      backing_store_cursor = backing_store_->OpenObjectStoreCursor(
+          transaction->BackingStoreTransaction(),
+          id(),
+          params->object_store_id,
+          *params->key_range,
         params->direction);
+    }
   } else {
     DCHECK_EQ(params->task_type, IndexedDBDatabase::NORMAL_TASK);
     if (params->cursor_type == indexed_db::CURSOR_KEY_ONLY) {

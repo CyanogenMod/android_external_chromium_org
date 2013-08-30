@@ -14,6 +14,8 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
+#include "base/location.h"
+#include "base/message_loop/message_loop.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -318,8 +320,6 @@ void ExtensionSettingsHandler::GetLocalizedValues(
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_RELOAD_TERMINATED));
   source->AddString("extensionSettingsLaunch",
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_LAUNCH));
-  source->AddString("extensionSettingsRestart",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_RESTART));
   source->AddString("extensionSettingsReloadUnpacked",
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_RELOAD_UNPACKED));
   source->AddString("extensionSettingsOptions",
@@ -418,9 +418,6 @@ void ExtensionSettingsHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("extensionSettingsLaunch",
       base::Bind(&ExtensionSettingsHandler::HandleLaunchMessage,
                  base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("extensionSettingsRestart",
-      base::Bind(&ExtensionSettingsHandler::HandleRestartMessage,
-                 base::Unretained(this)));
   web_ui()->RegisterMessageCallback("extensionSettingsReload",
       base::Bind(&ExtensionSettingsHandler::HandleReloadMessage,
                  base::Unretained(this)));
@@ -499,6 +496,15 @@ void ExtensionSettingsHandler::Observe(
     case chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED:
       MaybeUpdateAfterNotification();
       break;
+    case chrome::NOTIFICATION_EXTENSION_HOST_DESTROYED:
+       // This notification is sent when the extension host destruction begins,
+       // not when it finishes. We use PostTask to delay the update until after
+       // the destruction finishes.
+       base::MessageLoop::current()->PostTask(
+           FROM_HERE,
+           base::Bind(&ExtensionSettingsHandler::MaybeUpdateAfterNotification,
+                      base::Unretained(this)));
+       break;
     default:
       NOTREACHED();
   }
@@ -721,15 +727,6 @@ void ExtensionSettingsHandler::HandleLaunchMessage(
                                                   NEW_WINDOW));
 }
 
-void ExtensionSettingsHandler::HandleRestartMessage(
-    const base::ListValue* args) {
-  CHECK_EQ(1U, args->GetSize());
-  std::string extension_id;
-  CHECK(args->GetString(0, &extension_id));
-  apps::AppLoadService::Get(extension_service_->profile())->RestartApplication(
-      extension_id);
-}
-
 void ExtensionSettingsHandler::HandleReloadMessage(
     const base::ListValue* args) {
   std::string extension_id = UTF16ToUTF8(ExtractStringValue(args));
@@ -772,10 +769,6 @@ void ExtensionSettingsHandler::HandleEnableMessage(
                      AsWeakPtr(), extension_id));
     } else {
       extension_service_->EnableExtension(extension_id);
-
-      // Make sure any browser action contained within it is not hidden.
-      ExtensionActionAPI::SetBrowserActionVisibility(
-          prefs, extension->id(), true);
     }
   } else {
     extension_service_->DisableExtension(
@@ -984,6 +977,9 @@ void ExtensionSettingsHandler::MaybeRegisterForNotifications() {
       chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
       content::Source<ExtensionPrefs>(
           profile->GetExtensionService()->extension_prefs()));
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_HOST_DESTROYED,
+                 content::NotificationService::AllBrowserContextsAndSources());
 
   content::RenderViewHost::AddCreatedCallback(rvh_created_callback_);
 
@@ -1009,6 +1005,7 @@ ExtensionSettingsHandler::GetInspectablePagesForExtension(
   ExtensionProcessManager* process_manager =
       ExtensionSystem::Get(extension_service_->profile())->process_manager();
   GetInspectablePagesForExtensionProcess(
+      extension,
       process_manager->GetRenderViewHostsForExtension(extension->id()),
       &result);
 
@@ -1036,6 +1033,7 @@ ExtensionSettingsHandler::GetInspectablePagesForExtension(
         ExtensionSystem::Get(extension_service_->profile()->
             GetOffTheRecordProfile())->process_manager();
     GetInspectablePagesForExtensionProcess(
+        extension,
         process_manager->GetRenderViewHostsForExtension(extension->id()),
         &result);
 
@@ -1055,8 +1053,11 @@ ExtensionSettingsHandler::GetInspectablePagesForExtension(
 }
 
 void ExtensionSettingsHandler::GetInspectablePagesForExtensionProcess(
+    const Extension* extension,
     const std::set<RenderViewHost*>& views,
     std::vector<ExtensionPage>* result) {
+  bool has_generated_background_page =
+      BackgroundInfo::HasGeneratedBackgroundPage(extension);
   for (std::set<RenderViewHost*>::const_iterator iter = views.begin();
        iter != views.end(); ++iter) {
     RenderViewHost* host = *iter;
@@ -1069,9 +1070,14 @@ void ExtensionSettingsHandler::GetInspectablePagesForExtensionProcess(
 
     GURL url = web_contents->GetURL();
     content::RenderProcessHost* process = host->GetProcess();
+    bool is_background_page =
+        (url == BackgroundInfo::GetBackgroundURL(extension));
     result->push_back(
-        ExtensionPage(url, process->GetID(), host->GetRoutingID(),
-                      process->GetBrowserContext()->IsOffTheRecord(), false));
+        ExtensionPage(url,
+                      process->GetID(),
+                      host->GetRoutingID(),
+                      process->GetBrowserContext()->IsOffTheRecord(),
+                      is_background_page && has_generated_background_page));
   }
 }
 
@@ -1085,16 +1091,22 @@ void ExtensionSettingsHandler::GetShellWindowPagesForExtensionProfile(
   const apps::ShellWindowRegistry::ShellWindowList windows =
       registry->GetShellWindowsForApp(extension->id());
 
+  bool has_generated_background_page =
+      BackgroundInfo::HasGeneratedBackgroundPage(extension);
   for (apps::ShellWindowRegistry::const_iterator it = windows.begin();
        it != windows.end(); ++it) {
     WebContents* web_contents = (*it)->web_contents();
     RenderViewHost* host = web_contents->GetRenderViewHost();
     content::RenderProcessHost* process = host->GetProcess();
 
+    bool is_background_page =
+        (web_contents->GetURL() == BackgroundInfo::GetBackgroundURL(extension));
     result->push_back(
-        ExtensionPage(web_contents->GetURL(), process->GetID(),
+        ExtensionPage(web_contents->GetURL(),
+                      process->GetID(),
                       host->GetRoutingID(),
-                      process->GetBrowserContext()->IsOffTheRecord(), false));
+                      process->GetBrowserContext()->IsOffTheRecord(),
+                      is_background_page && has_generated_background_page));
   }
 }
 

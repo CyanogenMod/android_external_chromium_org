@@ -131,13 +131,6 @@ bool IsDrag(const POINT& origin, const POINT& current) {
       gfx::Point(current) - gfx::Point(origin));
 }
 
-// Copies |selected_text| as text to the primary clipboard.
-void DoCopyText(const string16& selected_text) {
-  ui::ScopedClipboardWriter scw(ui::Clipboard::GetForCurrentThread(),
-                                ui::Clipboard::BUFFER_STANDARD);
-  scw.WriteText(selected_text);
-}
-
 // Writes |url| and |text| to the clipboard as a well-formed URL.
 void DoCopyURL(const GURL& url, const string16& text) {
   BookmarkNodeData data;
@@ -596,47 +589,26 @@ void OmniboxViewWin::SaveStateToTab(WebContents* tab) {
           State(selection, saved_selection_for_focus_change_)));
 }
 
-void OmniboxViewWin::Update(const WebContents* tab_for_state_restoring) {
-  const bool visibly_changed_permanent_text = model()->UpdatePermanentText(
-      controller()->GetToolbarModel()->GetText(true));
-
-  const ToolbarModel::SecurityLevel security_level =
-      controller()->GetToolbarModel()->GetSecurityLevel(false);
-  const bool changed_security_level = (security_level != security_level_);
-
-  // Bail early when no visible state will actually change (prevents an
-  // unnecessary ScopedFreeze, and thus UpdateWindow()).
-  if (!changed_security_level && !visibly_changed_permanent_text &&
-      !tab_for_state_restoring)
-    return;
-
-  // Update our local state as desired.  We set security_level_ here so it will
-  // already be correct before we get to any RevertAll()s below and use it.
-  security_level_ = security_level;
-
-  // When we're switching to a new tab, restore its state, if any.
+void OmniboxViewWin::OnTabChanged(const content::WebContents* web_contents) {
   ScopedFreeze freeze(this, GetTextObjectModel());
-  if (tab_for_state_restoring) {
-    // Make sure we reset our own state first.  The new tab may not have any
-    // saved state, or it may not have had input in progress, in which case we
-    // won't overwrite all our local state.
-    RevertAll();
+  security_level_ = controller()->GetToolbarModel()->GetSecurityLevel(false);
 
-    const AutocompleteEditState* state = static_cast<AutocompleteEditState*>(
-        tab_for_state_restoring->GetUserData(&kAutocompleteEditStateKey));
-    if (state) {
-      model()->RestoreState(state->model_state);
+  const AutocompleteEditState* state = static_cast<AutocompleteEditState*>(
+      web_contents->GetUserData(&kAutocompleteEditStateKey));
+  model()->RestoreState(state ? &state->model_state : NULL);
+  if (state) {
+    SetSelectionRange(state->view_state.selection);
+    saved_selection_for_focus_change_ =
+        state->view_state.saved_selection_for_focus_change;
+  }
+}
 
-      // Restore user's selection.  We do this after restoring the user_text
-      // above so we're selecting in the correct string.
-      SetSelectionRange(state->view_state.selection);
-      saved_selection_for_focus_change_ =
-          state->view_state.saved_selection_for_focus_change;
-    }
-  } else if (visibly_changed_permanent_text) {
-    // Not switching tabs, just updating the permanent text.  (In the case where
-    // we _were_ switching tabs, the RevertAll() above already drew the new
-    // permanent text.)
+void OmniboxViewWin::Update() {
+  const ToolbarModel::SecurityLevel old_security_level = security_level_;
+  security_level_ = controller()->GetToolbarModel()->GetSecurityLevel(false);
+  if (model()->UpdatePermanentText(
+      controller()->GetToolbarModel()->GetText(true))) {
+    ScopedFreeze freeze(this, GetTextObjectModel());
 
     // Tweak: if the user had all the text selected, select all the new text.
     // This makes one particular case better: the user clicks in the box to
@@ -659,8 +631,7 @@ void OmniboxViewWin::Update(const WebContents* tab_for_state_restoring) {
     // things when the omnibox isn't focused to begin with.
     if (was_select_all && model()->has_focus())
       SelectAll(sel.cpMin > sel.cpMax);
-  } else if (changed_security_level) {
-    // Only the security style changed, nothing else.  Redraw our text using it.
+  } else if (old_security_level != security_level_) {
     EmphasizeURLComponents();
   }
 }
@@ -1102,11 +1073,6 @@ int OmniboxViewWin::OnPerformDropImpl(const ui::DropTargetEvent& event,
   return ui::DragDropTypes::DRAG_NONE;
 }
 
-void OmniboxViewWin::CopyURL() {
-  DoCopyURL(controller()->GetToolbarModel()->GetURL(),
-            controller()->GetToolbarModel()->GetText(false));
-}
-
 bool OmniboxViewWin::SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) {
   // Skip processing of [Alt]+<num-pad digit> Unicode alt key codes.
   if (event.IsUnicodeKeyCode())
@@ -1214,17 +1180,21 @@ string16 OmniboxViewWin::GetLabelForCommandId(int command_id) const {
 void OmniboxViewWin::ExecuteCommand(int command_id, int event_flags) {
   ScopedFreeze freeze(this, GetTextObjectModel());
   // These commands don't invoke the popup via OnBefore/AfterPossibleChange().
+  if (command_id == IDC_COPY) {
+    Copy();
+    return;
+  }
+  if (command_id == IDC_COPY_URL) {
+    DoCopyURL(controller()->GetToolbarModel()->GetURL(),
+              controller()->GetToolbarModel()->GetText(false));
+    return;
+  }
   if (command_id == IDS_PASTE_AND_GO) {
     model()->PasteAndGo(GetClipboardText());
     return;
-  } else if (command_id == IDC_EDIT_SEARCH_ENGINES) {
+  }
+  if (command_id == IDC_EDIT_SEARCH_ENGINES) {
     command_updater()->ExecuteCommand(command_id);
-    return;
-  } else if (command_id == IDC_COPY) {
-    Copy();
-    return;
-  } else if (command_id == IDC_COPY_URL) {
-    CopyURL();
     return;
   }
 
@@ -1430,10 +1400,13 @@ void OmniboxViewWin::OnCopy() {
   // GetSel() doesn't preserve selection direction, so sel.cpMin will always be
   // the smaller value.
   model()->AdjustTextForCopy(sel.cpMin, IsSelectAll(), &text, &url, &write_url);
-  if (write_url)
+  if (write_url) {
     DoCopyURL(url, text);
-  else
-    DoCopyText(text);
+  } else {
+    ui::ScopedClipboardWriter scw(ui::Clipboard::GetForCurrentThread(),
+                                  ui::Clipboard::BUFFER_STANDARD);
+    scw.WriteText(text);
+  }
 }
 
 LRESULT OmniboxViewWin::OnCreate(const CREATESTRUCTW* /*create_struct*/) {
@@ -2772,22 +2745,24 @@ void OmniboxViewWin::BuildContextMenu() {
 
   context_menu_contents_.reset(new ui::SimpleMenuModel(this));
   // Set up context menu.
-  if (popup_window_mode_) {
-    context_menu_contents_->AddItemWithStringId(IDC_COPY, IDS_COPY);
-  } else {
+  if (!popup_window_mode_) {
     context_menu_contents_->AddItemWithStringId(IDS_UNDO, IDS_UNDO);
     context_menu_contents_->AddSeparator(ui::NORMAL_SEPARATOR);
     context_menu_contents_->AddItemWithStringId(IDC_CUT, IDS_CUT);
-    context_menu_contents_->AddItemWithStringId(IDC_COPY, IDS_COPY);
-    if (chrome::IsQueryExtractionEnabled())
-      context_menu_contents_->AddItemWithStringId(IDC_COPY_URL, IDS_COPY_URL);
+  }
+  context_menu_contents_->AddItemWithStringId(IDC_COPY, IDS_COPY);
+  if (chrome::IsQueryExtractionEnabled())
+    context_menu_contents_->AddItemWithStringId(IDC_COPY_URL, IDS_COPY_URL);
+  if (!popup_window_mode_) {
     context_menu_contents_->AddItemWithStringId(IDC_PASTE, IDS_PASTE);
     // GetContextualLabel() will override this next label with the
     // IDS_PASTE_AND_SEARCH label as needed.
     context_menu_contents_->AddItemWithStringId(IDS_PASTE_AND_GO,
                                                 IDS_PASTE_AND_GO);
-    context_menu_contents_->AddSeparator(ui::NORMAL_SEPARATOR);
-    context_menu_contents_->AddItemWithStringId(IDS_SELECT_ALL, IDS_SELECT_ALL);
+  }
+  context_menu_contents_->AddSeparator(ui::NORMAL_SEPARATOR);
+  context_menu_contents_->AddItemWithStringId(IDS_SELECT_ALL, IDS_SELECT_ALL);
+  if (!popup_window_mode_) {
     context_menu_contents_->AddSeparator(ui::NORMAL_SEPARATOR);
     context_menu_contents_->AddItemWithStringId(IDC_EDIT_SEARCH_ENGINES,
                                                 IDS_EDIT_SEARCH_ENGINES);
@@ -2799,8 +2774,7 @@ void OmniboxViewWin::SelectAllIfNecessary(MouseButton button,
   // When the user has clicked and released to give us focus, select all unless
   // we're doing search term replacement (in which case refining the existing
   // query is common enough that we do click-to-place-cursor).
-  if (tracking_click_[button] &&
-      !IsDrag(click_point_[button], point) &&
+  if (tracking_click_[button] && !IsDrag(click_point_[button], point) &&
       !controller()->GetToolbarModel()->WouldReplaceSearchURLWithSearchTerms(
           false)) {
     // Select all in the reverse direction so as not to scroll the caret

@@ -10,10 +10,14 @@
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "chrome/browser/ui/autofill/autofill_popup_controller.h"
-#include "content/public/browser/keyboard_listener.h"
+#include "content/public/browser/render_widget_host.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_f.h"
+
+namespace content {
+struct NativeWebKeyboardEvent;
+}
 
 namespace gfx {
 class Display;
@@ -31,8 +35,7 @@ class AutofillPopupView;
 // This class is a controller for an AutofillPopupView. It implements
 // AutofillPopupController to allow calls from AutofillPopupView. The
 // other, public functions are available to its instantiator.
-class AutofillPopupControllerImpl : public AutofillPopupController,
-                                    public content::KeyboardListener {
+class AutofillPopupControllerImpl : public AutofillPopupController {
  public:
   // Creates a new |AutofillPopupControllerImpl|, or reuses |previous| if
   // the construction arguments are the same. |previous| may be invalidated by
@@ -61,9 +64,10 @@ class AutofillPopupControllerImpl : public AutofillPopupController,
   // Invoked when the view was destroyed by by someone other than this class.
   virtual void ViewDestroyed() OVERRIDE;
 
-  // KeyboardListener implementation.
-  virtual bool HandleKeyPressEvent(
-      const content::NativeWebKeyboardEvent& event) OVERRIDE;
+  bool HandleKeyPressEvent(const content::NativeWebKeyboardEvent& event);
+
+  // Tells the view to capture mouse events. Must be called before |Show()|.
+  void set_hide_on_outside_click(bool hide_on_outside_click);
 
  protected:
   FRIEND_TEST_ALL_PREFIXES(AutofillExternalDelegateBrowserTest,
@@ -82,6 +86,7 @@ class AutofillPopupControllerImpl : public AutofillPopupController,
   virtual void MouseHovered(int x, int y) OVERRIDE;
   virtual void MouseClicked(int x, int y) OVERRIDE;
   virtual void MouseExitedPopup() OVERRIDE;
+  virtual bool ShouldRepostEvent(const ui::MouseEvent& event) OVERRIDE;
   virtual void AcceptSuggestion(size_t index) OVERRIDE;
   virtual int GetIconResourceID(const string16& resource_name) OVERRIDE;
   virtual bool CanDelete(size_t index) const OVERRIDE;
@@ -102,6 +107,7 @@ class AutofillPopupControllerImpl : public AutofillPopupController,
   virtual const gfx::Font& subtext_font() const OVERRIDE;
 #endif
   virtual int selected_line() const OVERRIDE;
+  virtual bool hide_on_outside_click() const OVERRIDE;
 
   // Change which line is currently selected by the user.
   void SetSelectedLine(int selected_line);
@@ -224,7 +230,12 @@ class AutofillPopupControllerImpl : public AutofillPopupController,
   // |kNoSelection| indicates that no line is currently selected.
   int selected_line_;
 
+  // Whether the popup view should hide on mouse presses outside of it.
+  bool hide_on_outside_click_;
+
   base::WeakPtrFactory<AutofillPopupControllerImpl> weak_ptr_factory_;
+
+  content::RenderWidgetHost::KeyPressEventCallback key_press_event_callback_;
 };
 
 }  // namespace autofill

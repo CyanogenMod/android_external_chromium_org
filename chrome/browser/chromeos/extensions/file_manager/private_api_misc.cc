@@ -18,26 +18,28 @@
 #include "content/public/common/page_zoom.h"
 #include "url/gurl.h"
 
-namespace file_manager {
+namespace extensions {
 
-LogoutUserFunction::LogoutUserFunction() {
+FileBrowserPrivateLogoutUserFunction::FileBrowserPrivateLogoutUserFunction() {
 }
 
-LogoutUserFunction::~LogoutUserFunction() {
+FileBrowserPrivateLogoutUserFunction::~FileBrowserPrivateLogoutUserFunction() {
 }
 
-bool LogoutUserFunction::RunImpl() {
+bool FileBrowserPrivateLogoutUserFunction::RunImpl() {
   chrome::AttemptUserExit();
   return true;
 }
 
-GetPreferencesFunction::GetPreferencesFunction() {
+FileBrowserPrivateGetPreferencesFunction::
+    FileBrowserPrivateGetPreferencesFunction() {
 }
 
-GetPreferencesFunction::~GetPreferencesFunction() {
+FileBrowserPrivateGetPreferencesFunction::
+    ~FileBrowserPrivateGetPreferencesFunction() {
 }
 
-bool GetPreferencesFunction::RunImpl() {
+bool FileBrowserPrivateGetPreferencesFunction::RunImpl() {
   scoped_ptr<DictionaryValue> value(new DictionaryValue());
 
   const PrefService* service = profile_->GetPrefs();
@@ -69,13 +71,15 @@ bool GetPreferencesFunction::RunImpl() {
   return true;
 }
 
-SetPreferencesFunction::SetPreferencesFunction() {
+FileBrowserPrivateSetPreferencesFunction::
+    FileBrowserPrivateSetPreferencesFunction() {
 }
 
-SetPreferencesFunction::~SetPreferencesFunction() {
+FileBrowserPrivateSetPreferencesFunction::
+    ~FileBrowserPrivateSetPreferencesFunction() {
 }
 
-bool SetPreferencesFunction::RunImpl() {
+bool FileBrowserPrivateSetPreferencesFunction::RunImpl() {
   base::DictionaryValue* value = NULL;
 
   if (!args_->GetDictionary(0, &value) || !value)
@@ -95,13 +99,15 @@ bool SetPreferencesFunction::RunImpl() {
   return true;
 }
 
-ZipSelectionFunction::ZipSelectionFunction() {
+FileBrowserPrivateZipSelectionFunction::
+    FileBrowserPrivateZipSelectionFunction() {
 }
 
-ZipSelectionFunction::~ZipSelectionFunction() {
+FileBrowserPrivateZipSelectionFunction::
+    ~FileBrowserPrivateZipSelectionFunction() {
 }
 
-bool ZipSelectionFunction::RunImpl() {
+bool FileBrowserPrivateZipSelectionFunction::RunImpl() {
   if (args_->GetSize() < 3) {
     return false;
   }
@@ -111,7 +117,7 @@ bool ZipSelectionFunction::RunImpl() {
   if (!args_->GetString(0, &dir_url) || dir_url.empty())
     return false;
 
-  base::FilePath src_dir = util::GetLocalPathFromURL(
+  base::FilePath src_dir = file_manager::util::GetLocalPathFromURL(
       render_view_host(), profile(), GURL(dir_url));
   if (src_dir.empty())
     return false;
@@ -126,7 +132,7 @@ bool ZipSelectionFunction::RunImpl() {
   for (size_t i = 0; i < selection_urls->GetSize(); ++i) {
     std::string file_url;
     selection_urls->GetString(i, &file_url);
-    base::FilePath path = util::GetLocalPathFromURL(
+    base::FilePath path = file_manager::util::GetLocalPathFromURL(
         render_view_host(), profile(), GURL(file_url));
     if (path.empty())
       return false;
@@ -155,10 +161,10 @@ bool ZipSelectionFunction::RunImpl() {
     src_relative_paths.push_back(relative_path);
   }
 
-  zip_file_creator_ = new ZipFileCreator(this,
-                                         src_dir,
-                                         src_relative_paths,
-                                         dest_file);
+  zip_file_creator_ = new file_manager::ZipFileCreator(this,
+                                                       src_dir,
+                                                       src_relative_paths,
+                                                       dest_file);
 
   // Keep the refcount until the zipping is complete on utility process.
   AddRef();
@@ -167,19 +173,19 @@ bool ZipSelectionFunction::RunImpl() {
   return true;
 }
 
-void ZipSelectionFunction::OnZipDone(bool success) {
+void FileBrowserPrivateZipSelectionFunction::OnZipDone(bool success) {
   SetResult(new base::FundamentalValue(success));
   SendResponse(true);
   Release();
 }
 
-ZoomFunction::ZoomFunction() {
+FileBrowserPrivateZoomFunction::FileBrowserPrivateZoomFunction() {
 }
 
-ZoomFunction::~ZoomFunction() {
+FileBrowserPrivateZoomFunction::~FileBrowserPrivateZoomFunction() {
 }
 
-bool ZoomFunction::RunImpl() {
+bool FileBrowserPrivateZoomFunction::RunImpl() {
   content::RenderViewHost* const view_host = render_view_host();
   std::string operation;
   args_->GetString(0, &operation);
@@ -198,4 +204,4 @@ bool ZoomFunction::RunImpl() {
   return true;
 }
 
-}  // namespace file_manager
+}  // namespace extensions

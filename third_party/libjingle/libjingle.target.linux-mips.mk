@@ -111,6 +111,7 @@ LOCAL_SRC_FILES := \
 	third_party/libjingle/source/talk/p2p/base/transport.cc \
 	third_party/libjingle/source/talk/p2p/base/transportchannel.cc \
 	third_party/libjingle/source/talk/p2p/base/transportchannelproxy.cc \
+	third_party/libjingle/source/talk/p2p/base/transportdescription.cc \
 	third_party/libjingle/source/talk/p2p/base/transportdescriptionfactory.cc \
 	third_party/libjingle/source/talk/p2p/base/turnport.cc \
 	third_party/libjingle/source/talk/p2p/client/basicportallocator.cc \

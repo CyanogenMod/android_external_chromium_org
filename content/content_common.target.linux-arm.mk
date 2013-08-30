@@ -16,7 +16,6 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp)/content_resources.stamp \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_minimal_gyp)/blink_minimal.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_glue_gyp)/webkit_support_glue_gyp.a \
 	$(call intermediates-dir-for,GYP,content_content_jni_headers_gyp)/content_jni_headers.stamp \
@@ -86,6 +85,7 @@ LOCAL_SRC_FILES := \
 	content/common/gpu/client/context_provider_command_buffer.cc \
 	content/common/gpu/client/gl_helper.cc \
 	content/common/gpu/client/gl_helper_scaling.cc \
+	content/common/gpu/client/gl_surface_capturer_host.cc \
 	content/common/gpu/client/gpu_channel_host.cc \
 	content/common/gpu/client/gpu_video_decode_accelerator_host.cc \
 	content/common/gpu/client/gpu_video_encode_accelerator_host.cc \
@@ -98,13 +98,16 @@ LOCAL_SRC_FILES := \
 	content/common/gpu/gpu_memory_tracking.cc \
 	content/common/gpu/gpu_rendering_stats.cc \
 	content/common/gpu/gpu_surface_lookup.cc \
-	content/common/gpu/stream_texture_manager_android.cc \
 	content/common/gpu/image_transport_surface.cc \
 	content/common/gpu/image_transport_surface_android.cc \
-	content/common/gpu/media/h264_bit_reader.cc \
-	content/common/gpu/media/h264_parser.cc \
+	content/common/gpu/media/gl_surface_capturer.cc \
 	content/common/gpu/media/gpu_video_decode_accelerator.cc \
 	content/common/gpu/media/gpu_video_encode_accelerator.cc \
+	content/common/gpu/media/video_decode_accelerator_impl.cc \
+	content/common/gpu/media/h264_bit_reader.cc \
+	content/common/gpu/media/h264_parser.cc \
+	content/common/gpu/stream_texture_manager_android.cc \
+	content/common/gpu/surface_capturer.cc \
 	content/common/gpu/sync_point_manager.cc \
 	content/common/gpu/texture_image_transport_surface.cc \
 	content/common/indexed_db/indexed_db_key.cc \
@@ -188,7 +191,6 @@ MY_DEFS_Debug := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
-	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -198,6 +200,7 @@ MY_DEFS_Debug := \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -235,7 +238,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
 	$(gyp_shared_intermediate_dir)/content \
-	$(LOCAL_PATH)/v8/include \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/frameworks/wilhelm/include \
@@ -304,7 +306,6 @@ MY_DEFS_Release := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
-	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -314,6 +315,7 @@ MY_DEFS_Release := \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -352,7 +354,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
 	$(gyp_shared_intermediate_dir)/content \
-	$(LOCAL_PATH)/v8/include \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/frameworks/wilhelm/include \

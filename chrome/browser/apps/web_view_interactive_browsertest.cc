@@ -467,8 +467,15 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, PointerLock) {
 
 #endif  // (defined(OS_WIN) || defined(OS_LINUX))
 
+// Fails on Windows. crbug.com/236040
+// Also flaky on ChromiumOS. crbug.com/281815
+#if defined(OS_WIN) || defined(OS_CHROMEOS)
+#define MAYBE_Focus DISABLED_Focus
+#else
+#define MAYBE_Focus Focus
+#endif
 // Tests that setting focus on the <webview> sets focus on the guest.
-IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, DISABLED_Focus) {
+IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, MAYBE_Focus) {
   ASSERT_TRUE(StartEmbeddedTestServer());  // For serving guest pages.
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/focus"))
       << message_;
@@ -556,6 +563,14 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, NewWindow_ExecuteScript) {
 
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, NewWindow_WebRequest) {
   TestHelper("testNewWindowWebRequest",
+             "DoneNewWindowTest.PASSED",
+             "DoneNewWindowTest.FAILED",
+             "web_view/newwindow");
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest,
+                       NewWindow_WebRequestRemoveElement) {
+  TestHelper("testNewWindowWebRequestRemoveElement",
              "DoneNewWindowTest.PASSED",
              "DoneNewWindowTest.FAILED",
              "web_view/newwindow");
@@ -667,12 +682,4 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest,
              "DonePointerLockTest.PASSED",
              "DonePointerLockTest.FAILED",
              "web_view/pointerlock");
-}
-
-// Currently re-adding a webview doesn't work. See http://crbug.com/260622
-IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest,
-                       AddRemoveWebView_AddRemoveWebView) {
-  ASSERT_TRUE(StartEmbeddedTestServer());  // For serving guest pages.
-  ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/addremove"))
-      << message_;
 }

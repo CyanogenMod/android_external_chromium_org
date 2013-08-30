@@ -7,20 +7,17 @@
 #include <string>
 #include <vector>
 
+#include "ash/shell.h"
+#include "ash/shell_window_ids.h"
+#include "ash/wm/window_animations.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "chrome/browser/chromeos/input_method/candidate_window_view.h"
 #include "chrome/browser/chromeos/input_method/delayable_widget.h"
 #include "chrome/browser/chromeos/input_method/infolist_window_view.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
 #include "ui/views/widget/widget.h"
 
-#if defined(USE_ASH)
-#include "ash/shell.h"
-#include "ash/shell_window_ids.h"
-#include "ash/wm/window_animations.h"
-#endif  // USE_ASH
 
 namespace chromeos {
 namespace input_method {
@@ -35,27 +32,15 @@ const int kInfolistHideDelayMilliSeconds = 500;
 gfx::Rect IBusRectToGfxRect(const ibus::Rect& rect) {
   return gfx::Rect(rect.x, rect.y, rect.width, rect.height);
 }
-
-// Returns pointer of IBusPanelService. This function returns NULL if it is not
-// ready.
-IBusPanelService* GetIBusPanelService() {
-  return DBusThreadManager::Get()->GetIBusPanelService();
-}
 }  // namespace
 
 bool CandidateWindowControllerImpl::Init() {
-  if (DBusThreadManager::Get()->GetIBusPanelService()) {
-    DBusThreadManager::Get()->GetIBusPanelService()->
-        SetUpCandidateWindowHandler(this);
-  }
-  IBusDaemonController::GetInstance()->AddObserver(this);
   // Create the candidate window view.
   CreateView();
   return true;
 }
 
 void CandidateWindowControllerImpl::Shutdown() {
-  IBusDaemonController::GetInstance()->RemoveObserver(this);
 }
 
 void CandidateWindowControllerImpl::CreateView() {
@@ -67,19 +52,14 @@ void CandidateWindowControllerImpl::CreateView() {
   // they should use WIDGET_OWNS_NATIVE_WIDGET ownership.
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   // Show the candidate window always on top
-#if defined(USE_ASH)
   params.parent = ash::Shell::GetContainer(
       ash::Shell::GetActiveRootWindow(),
       ash::internal::kShellWindowId_InputMethodContainer);
-#else
-  params.keep_on_top = true;
-#endif
   frame_->Init(params);
-#if defined(USE_ASH)
+
   views::corewm::SetWindowVisibilityAnimationType(
       frame_->GetNativeView(),
       views::corewm::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE);
-#endif  // USE_ASH
 
   // Create the candidate window.
   candidate_window_ = new CandidateWindowView(frame_.get());
@@ -92,11 +72,10 @@ void CandidateWindowControllerImpl::CreateView() {
   // Create the infolist window.
   infolist_window_.reset(new DelayableWidget);
   infolist_window_->Init(params);
-#if defined(USE_ASH)
+
   views::corewm::SetWindowVisibilityAnimationType(
       infolist_window_->GetNativeView(),
       views::corewm::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE);
-#endif  // USE_ASH
 
   InfolistWindowView* infolist_view = new InfolistWindowView;
   infolist_view->Init();
@@ -105,12 +84,12 @@ void CandidateWindowControllerImpl::CreateView() {
 
 CandidateWindowControllerImpl::CandidateWindowControllerImpl()
     : candidate_window_(NULL),
-      latest_infolist_focused_index_(InfolistWindowView::InvalidFocusIndex()) {}
+      latest_infolist_focused_index_(InfolistWindowView::InvalidFocusIndex()) {
+  IBusBridge::Get()->SetCandidateWindowHandler(this);
+}
 
 CandidateWindowControllerImpl::~CandidateWindowControllerImpl() {
-  if (DBusThreadManager::Get()->GetIBusPanelService())
-    DBusThreadManager::Get()->GetIBusPanelService()->
-        SetUpCandidateWindowHandler(NULL);
+  IBusBridge::Get()->SetCandidateWindowHandler(NULL);
   candidate_window_->RemoveObserver(this);
 }
 
@@ -300,10 +279,11 @@ void CandidateWindowControllerImpl::UpdatePreeditText(
 void CandidateWindowControllerImpl::OnCandidateCommitted(int index,
                                                          int button,
                                                          int flags) {
-  GetIBusPanelService()->CandidateClicked(
-      index,
-      static_cast<ibus::IBusMouseButton>(button),
-      flags);
+  IBusEngineHandlerInterface* engine = IBusBridge::Get()->GetEngineHandler();
+  if (engine)
+    engine->CandidateClicked(index,
+                             static_cast<ibus::IBusMouseButton>(button),
+                             flags);
 }
 
 void CandidateWindowControllerImpl::OnCandidateWindowOpened() {
@@ -324,18 +304,6 @@ void CandidateWindowControllerImpl::AddObserver(
 void CandidateWindowControllerImpl::RemoveObserver(
     CandidateWindowController::Observer* observer) {
   observers_.RemoveObserver(observer);
-}
-
-void CandidateWindowControllerImpl::OnConnected() {
-  DBusThreadManager::Get()->GetIBusPanelService()->SetUpCandidateWindowHandler(
-      this);
-}
-
-void CandidateWindowControllerImpl::OnDisconnected() {
-  candidate_window_->HideAll();
-  infolist_window_->Hide();
-  DBusThreadManager::Get()->GetIBusPanelService()->SetUpCandidateWindowHandler(
-      NULL);
 }
 
 // static

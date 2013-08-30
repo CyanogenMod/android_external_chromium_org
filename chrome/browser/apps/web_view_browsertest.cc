@@ -20,6 +20,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/fake_speech_recognition_manager.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -253,6 +254,17 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
             strlen("GeolocationAPI"))) {
       ui_test_utils::OverrideGeolocation(10, 20);
     }
+  }
+
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    const testing::TestInfo* const test_info =
+        testing::UnitTest::GetInstance()->current_test_info();
+
+    // Force SW rendering to check autosize bug.
+    if (!strncmp(test_info->name(), "AutoSizeSW", strlen("AutosizeSW")))
+      command_line->AppendSwitch(switches::kDisableForceCompositingMode);
+
+    extensions::PlatformAppBrowserTest::SetUpCommandLine(command_line);
   }
 
   // This method is responsible for initializing a packaged app, which contains
@@ -555,6 +567,29 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
       fake_speech_recognition_manager_;
 };
 
+// This test ensures JavaScript errors ("Cannot redefine property") do not
+// happen when a <webview> is removed from DOM and added back.
+IN_PROC_BROWSER_TEST_F(WebViewTest,
+                       AddRemoveWebView_AddRemoveWebView) {
+  ASSERT_TRUE(StartEmbeddedTestServer());  // For serving guest pages.
+  ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/addremove"))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, AutoSize) {
+  ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/autosize"))
+      << message_;
+}
+
+#if !defined(OS_CHROMEOS)
+// This test ensures <webview> doesn't crash in SW rendering when autosize is
+// turned on.
+IN_PROC_BROWSER_TEST_F(WebViewTest, AutoSizeSW) {
+  ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/autosize"))
+      << message_;
+}
+#endif
+
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestAutosizeAfterNavigation) {
   TestHelper("testAutosizeAfterNavigation",
              "DoneShimTest.PASSED",
@@ -575,7 +610,9 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestAutosizeRemoveAttributes) {
              "web_view/shim");
 }
 
-IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestAutosizeWithPartialAttributes) {
+// This test is flaky. crbug.com/282116
+IN_PROC_BROWSER_TEST_F(WebViewTest,
+                       DISABLED_Shim_TestAutosizeWithPartialAttributes) {
   TestHelper("testAutosizeWithPartialAttributes",
              "DoneShimTest.PASSED",
              "DoneShimTest.FAILED",
@@ -668,8 +705,30 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestAssignSrcAfterCrash) {
              "web_view/shim");
 }
 
+IN_PROC_BROWSER_TEST_F(WebViewTest,
+                       Shim_TestNavOnConsecutiveSrcAttributeChanges) {
+  TestHelper("testNavOnConsecutiveSrcAttributeChanges",
+             "DoneShimTest.PASSED",
+             "DoneShimTest.FAILED",
+             "web_view/shim");
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestNavOnSrcAttributeChange) {
+  TestHelper("testNavOnSrcAttributeChange",
+             "DoneShimTest.PASSED",
+             "DoneShimTest.FAILED",
+             "web_view/shim");
+}
+
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestRemoveSrcAttribute) {
   TestHelper("testRemoveSrcAttribute",
+             "DoneShimTest.PASSED",
+             "DoneShimTest.FAILED",
+             "web_view/shim");
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestReassignSrcAttribute) {
+  TestHelper("testReassignSrcAttribute",
              "DoneShimTest.PASSED",
              "DoneShimTest.FAILED",
              "web_view/shim");
@@ -834,6 +893,13 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestRemoveWebviewOnExit) {
 // This is a regression test for http://crbug.com/276023.
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestRemoveWebviewAfterNavigation) {
   TestHelper("testRemoveWebviewAfterNavigation",
+             "DoneShimTest.PASSED",
+             "DoneShimTest.FAILED",
+             "web_view/shim");
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestNavigationToExternalProtocol) {
+  TestHelper("testNavigationToExternalProtocol",
              "DoneShimTest.PASSED",
              "DoneShimTest.FAILED",
              "web_view/shim");

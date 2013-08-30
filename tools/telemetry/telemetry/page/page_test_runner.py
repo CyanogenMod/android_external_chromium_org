@@ -127,10 +127,11 @@ class PageTestRunner(object):
                     page_set_arg)
 
   def ParseCommandLine(self, args, base_dir, page_set_filenames):
-    # Need to collect profile creators before creating command line parser.
-    profile_types.FindProfileCreators(base_dir, base_dir)
+    # Need to collect generated profile names before creating command line
+    # parser.
+    profile_types.ScanForGeneratedProfiles()
 
-    self._options = browser_options.BrowserOptions()
+    self._options = browser_options.BrowserFinderOptions()
     self._parser = self._options.CreateParser(
         '%%prog [options] %s page_set' % self.test_class_name)
 

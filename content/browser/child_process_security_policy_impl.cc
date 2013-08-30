@@ -74,7 +74,8 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
  public:
   SecurityState()
     : enabled_bindings_(0),
-      can_read_raw_cookies_(false) { }
+      can_read_raw_cookies_(false),
+      can_send_midi_sysex_(false) { }
 
   ~SecurityState() {
     scheme_policy_.clear();
@@ -147,6 +148,10 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
 
   void RevokeReadRawCookies() {
     can_read_raw_cookies_ = false;
+  }
+
+  void GrantPermissionForMIDISysEx() {
+    can_send_midi_sysex_ = true;
   }
 
   // Determine whether permission has been granted to request |url|.
@@ -244,6 +249,10 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
     return can_read_raw_cookies_;
   }
 
+  bool can_send_midi_sysex() const {
+    return can_send_midi_sysex_;
+  }
+
  private:
   typedef std::map<std::string, bool> SchemeMap;
 
@@ -269,6 +278,8 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
 
   bool can_read_raw_cookies_;
 
+  bool can_send_midi_sysex_;
+
   GURL origin_lock_;
 
   // The set of isolated filesystems the child process is permitted to access.
@@ -280,7 +291,7 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
 ChildProcessSecurityPolicyImpl::ChildProcessSecurityPolicyImpl() {
   // We know about these schemes and believe them to be safe.
   RegisterWebSafeScheme(chrome::kHttpScheme);
-  RegisterWebSafeScheme(chrome::kHttpsScheme);
+  RegisterWebSafeScheme(kHttpsScheme);
   RegisterWebSafeScheme(chrome::kFtpScheme);
   RegisterWebSafeScheme(chrome::kDataScheme);
   RegisterWebSafeScheme("feed");
@@ -484,6 +495,16 @@ void ChildProcessSecurityPolicyImpl::GrantCopyIntoFileSystem(
   // We are fixing in http://crbug.com/262142 and associated CL.
   GrantPermissionsForFileSystem(child_id, filesystem_id,
                                 kCreateFilePermissions);
+}
+
+void ChildProcessSecurityPolicyImpl::GrantSendMIDISysExMessage(int child_id) {
+  base::AutoLock lock(lock_);
+
+  SecurityStateMap::iterator state = security_state_.find(child_id);
+  if (state == security_state_.end())
+    return;
+
+  state->second->GrantPermissionForMIDISysEx();
 }
 
 void ChildProcessSecurityPolicyImpl::GrantScheme(int child_id,
@@ -826,6 +847,16 @@ void ChildProcessSecurityPolicyImpl::RegisterFileSystemPermissionPolicy(
     int policy) {
   base::AutoLock lock(lock_);
   file_system_policy_map_[type] = policy;
+}
+
+bool ChildProcessSecurityPolicyImpl::CanSendMIDISysExMessage(int child_id) {
+  base::AutoLock lock(lock_);
+
+  SecurityStateMap::iterator state = security_state_.find(child_id);
+  if (state == security_state_.end())
+    return false;
+
+  return state->second->can_send_midi_sysex();
 }
 
 }  // namespace content

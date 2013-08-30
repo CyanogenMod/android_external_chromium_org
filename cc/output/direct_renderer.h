@@ -7,6 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/containers/scoped_ptr_hash_map.h"
 #include "cc/base/cc_export.h"
 #include "cc/output/renderer.h"
 #include "cc/resources/resource_provider.h"
@@ -30,7 +31,8 @@ class CC_EXPORT DirectRenderer : public Renderer {
       const RenderPassList& render_passes_in_draw_order) OVERRIDE;
   virtual bool HaveCachedResourcesForRenderPassId(RenderPass::Id id) const
       OVERRIDE;
-  virtual void DrawFrame(RenderPassList* render_passes_in_draw_order) OVERRIDE;
+  virtual void DrawFrame(RenderPassList* render_passes_in_draw_order,
+                         ContextProvider* offscreen_context_provider) OVERRIDE;
 
   struct CC_EXPORT DrawingFrame {
     DrawingFrame();
@@ -44,6 +46,8 @@ class CC_EXPORT DirectRenderer : public Renderer {
 
     gfx::Transform projection_matrix;
     gfx::Transform window_matrix;
+
+    ContextProvider* offscreen_context_provider;
   };
 
   void SetEnlargePassTextureAmountForTesting(gfx::Vector2d amount);
@@ -120,7 +124,7 @@ class CC_EXPORT DirectRenderer : public Renderer {
       DrawingFrame* frame,
       scoped_ptr<CopyOutputRequest> request) = 0;
 
-  ScopedPtrHashMap<RenderPass::Id, CachedResource> render_pass_textures_;
+  base::ScopedPtrHashMap<RenderPass::Id, CachedResource> render_pass_textures_;
   OutputSurface* output_surface_;
   ResourceProvider* resource_provider_;
 

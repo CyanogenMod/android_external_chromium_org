@@ -37,14 +37,12 @@ struct SearchResultInfo {
 
 // Struct to represent a search result for SearchMetadata().
 struct MetadataSearchResult {
-  MetadataSearchResult(const ResourceEntry& in_entry,
+  MetadataSearchResult(const base::FilePath& in_path,
+                       const ResourceEntry& in_entry,
                        const std::string& in_highlighted_base_name)
-      : entry(in_entry),
+      : path(in_path),
+        entry(in_entry),
         highlighted_base_name(in_highlighted_base_name) {
-    // Note: |path| is set separately from |entry| or other fields, because
-    // getting path typically takes longer time hence we want to fill it only
-    // when it is necessary. (I.e., not for temporary candidates, just for
-    // final user visible results.)
   }
 
   // The two members are used to create FileEntry object.
@@ -87,7 +85,7 @@ typedef base::Callback<void(FileError error,
 // If |error| is not FILE_ERROR_OK, |result_paths| is empty.
 typedef base::Callback<void(
     FileError error,
-    const GURL& next_url,
+    const std::string& page_token,
     scoped_ptr<std::vector<SearchResultInfo> > result_paths)> SearchCallback;
 
 // Callback for SearchMetadata(). On success, |error| is FILE_ERROR_OK, and
@@ -367,13 +365,14 @@ class FileSystemInterface {
       const ReadDirectoryCallback& callback) = 0;
 
   // Does server side content search for |search_query|.
-  // If |next_url| is set, this is the search result url that will be fetched.
-  // Search results will be returned as a list of results' |SearchResultInfo|
-  // structs, which contains file's path and is_directory flag.
+  // If |page_token| is set, this is the search result url that will be
+  // fetched. Search results will be returned as a list of results'
+  // |SearchResultInfo| structs, which contains file's path and is_directory
+  // flag.
   //
   // |callback| must not be null.
   virtual void Search(const std::string& search_query,
-                      const GURL& next_url,
+                      const std::string& page_token,
                       const SearchCallback& callback) = 0;
 
   // Searches the local resource metadata, and returns the entries
@@ -418,13 +417,12 @@ class FileSystemInterface {
       const base::FilePath& cache_file_path,
       const FileOperationCallback& callback) = 0;
 
-  // Gets the cache entry for file corresponding to |resource_id| and runs
+  // Gets the cache entry for file corresponding to |drive_file_path| and runs
   // |callback| with true and the found entry if the entry exists in the cache
   // map. Otherwise, runs |callback| with false.
   // |callback| must not be null.
-  virtual void GetCacheEntryByResourceId(
-      const std::string& resource_id,
-      const GetCacheEntryCallback& callback) = 0;
+  virtual void GetCacheEntryByPath(const base::FilePath& drive_file_path,
+                                   const GetCacheEntryCallback& callback) = 0;
 
   // Reloads the resource metadata from the server.
   virtual void Reload() = 0;

@@ -345,7 +345,101 @@ class DriveApiRequestsTest : public testing::Test {
   int64 content_length_;
 };
 
-TEST_F(DriveApiRequestsTest, GetAboutRequest_ValidJson) {
+TEST_F(DriveApiRequestsTest, FilesInsertRequest) {
+  // Set an expected data file containing the directory's entry data.
+  expected_data_file_path_ =
+      test_util::GetTestFilePath("drive/directory_entry.json");
+
+  GDataErrorCode error = GDATA_OTHER_ERROR;
+  scoped_ptr<FileResource> file_resource;
+
+  // Create "new directory" in the root directory.
+  {
+    base::RunLoop run_loop;
+    drive::FilesInsertRequest* request = new drive::FilesInsertRequest(
+        request_sender_.get(),
+        *url_generator_,
+        test_util::CreateQuitCallback(
+            &run_loop,
+            test_util::CreateCopyResultCallback(&error, &file_resource)));
+    request->set_mime_type("application/vnd.google-apps.folder");
+    request->add_parent("root");
+    request->set_title("new directory");
+    request_sender_->StartRequestWithRetry(request);
+    run_loop.Run();
+  }
+
+  EXPECT_EQ(HTTP_SUCCESS, error);
+  EXPECT_EQ(net::test_server::METHOD_POST, http_request_.method);
+  EXPECT_EQ("/drive/v2/files", http_request_.relative_url);
+  EXPECT_EQ("application/json", http_request_.headers["Content-Type"]);
+
+  EXPECT_TRUE(http_request_.has_content);
+
+  scoped_ptr<FileResource> expected(
+      FileResource::CreateFrom(
+          *test_util::LoadJSONFile("drive/directory_entry.json")));
+
+  // Sanity check.
+  ASSERT_TRUE(file_resource.get());
+
+  EXPECT_EQ(expected->file_id(), file_resource->file_id());
+  EXPECT_EQ(expected->title(), file_resource->title());
+  EXPECT_EQ(expected->mime_type(), file_resource->mime_type());
+  EXPECT_EQ(expected->parents().size(), file_resource->parents().size());
+}
+
+TEST_F(DriveApiRequestsTest, FilesPatchRequest) {
+  const base::Time::Exploded kModifiedDate = {2012, 7, 0, 19, 15, 59, 13, 123};
+  const base::Time::Exploded kLastViewedByMeDate =
+      {2013, 7, 0, 19, 15, 59, 13, 123};
+
+  // Set an expected data file containing valid result.
+  expected_data_file_path_ =
+      test_util::GetTestFilePath("drive/file_entry.json");
+
+  GDataErrorCode error = GDATA_OTHER_ERROR;
+  scoped_ptr<FileResource> file_resource;
+
+  {
+    base::RunLoop run_loop;
+    drive::FilesPatchRequest* request = new drive::FilesPatchRequest(
+        request_sender_.get(),
+        *url_generator_,
+        test_util::CreateQuitCallback(
+            &run_loop,
+            test_util::CreateCopyResultCallback(&error, &file_resource)));
+    request->set_file_id("resource_id");
+    request->set_set_modified_date(true);
+    request->set_update_viewed_date(false);
+
+    request->set_title("new title");
+    request->set_modified_date(base::Time::FromUTCExploded(kModifiedDate));
+    request->set_last_viewed_by_me_date(
+        base::Time::FromUTCExploded(kLastViewedByMeDate));
+    request->add_parent("parent_resource_id");
+
+    request_sender_->StartRequestWithRetry(request);
+    run_loop.Run();
+  }
+
+  EXPECT_EQ(HTTP_SUCCESS, error);
+  EXPECT_EQ(net::test_server::METHOD_PATCH, http_request_.method);
+  EXPECT_EQ("/drive/v2/files/resource_id"
+            "?setModifiedDate=true&updateViewedDate=false",
+            http_request_.relative_url);
+
+  EXPECT_EQ("application/json", http_request_.headers["Content-Type"]);
+  EXPECT_TRUE(http_request_.has_content);
+  EXPECT_EQ("{\"lastViewedByMeDate\":\"2013-07-19T15:59:13.123Z\","
+            "\"modifiedDate\":\"2012-07-19T15:59:13.123Z\","
+            "\"parents\":[{\"id\":\"parent_resource_id\"}],"
+            "\"title\":\"new title\"}",
+            http_request_.content);
+  EXPECT_TRUE(file_resource);
+}
+
+TEST_F(DriveApiRequestsTest, AboutGetRequest_ValidJson) {
   // Set an expected data file containing valid result.
   expected_data_file_path_ = test_util::GetTestFilePath(
       "drive/about.json");
@@ -355,7 +449,7 @@ TEST_F(DriveApiRequestsTest, GetAboutRequest_ValidJson) {
 
   {
     base::RunLoop run_loop;
-    GetAboutRequest* request = new GetAboutRequest(
+    drive::AboutGetRequest* request = new drive::AboutGetRequest(
         request_sender_.get(),
         *url_generator_,
         test_util::CreateQuitCallback(
@@ -379,7 +473,7 @@ TEST_F(DriveApiRequestsTest, GetAboutRequest_ValidJson) {
   EXPECT_EQ(expected->root_folder_id(), about_resource->root_folder_id());
 }
 
-TEST_F(DriveApiRequestsTest, GetAboutRequest_InvalidJson) {
+TEST_F(DriveApiRequestsTest, AboutGetRequest_InvalidJson) {
   // Set an expected data file containing invalid result.
   expected_data_file_path_ = test_util::GetTestFilePath(
       "gdata/testfile.txt");
@@ -389,7 +483,7 @@ TEST_F(DriveApiRequestsTest, GetAboutRequest_InvalidJson) {
 
   {
     base::RunLoop run_loop;
-    GetAboutRequest* request = new GetAboutRequest(
+    drive::AboutGetRequest* request = new drive::AboutGetRequest(
         request_sender_.get(),
         *url_generator_,
         test_util::CreateQuitCallback(
@@ -403,25 +497,25 @@ TEST_F(DriveApiRequestsTest, GetAboutRequest_InvalidJson) {
   EXPECT_EQ(GDATA_PARSE_ERROR, error);
   EXPECT_EQ(net::test_server::METHOD_GET, http_request_.method);
   EXPECT_EQ("/drive/v2/about", http_request_.relative_url);
-  EXPECT_FALSE(about_resource.get());
+  EXPECT_FALSE(about_resource);
 }
 
-TEST_F(DriveApiRequestsTest, GetApplistRequest) {
+TEST_F(DriveApiRequestsTest, AppsListRequest) {
   // Set an expected data file containing valid result.
   expected_data_file_path_ = test_util::GetTestFilePath(
       "drive/applist.json");
 
   GDataErrorCode error = GDATA_OTHER_ERROR;
-  scoped_ptr<base::Value> result;
+  scoped_ptr<AppList> app_list;
 
   {
     base::RunLoop run_loop;
-    GetApplistRequest* request = new GetApplistRequest(
+    drive::AppsListRequest* request = new drive::AppsListRequest(
         request_sender_.get(),
         *url_generator_,
         test_util::CreateQuitCallback(
             &run_loop,
-            test_util::CreateCopyResultCallback(&error, &result)));
+            test_util::CreateCopyResultCallback(&error, &app_list)));
     request_sender_->StartRequestWithRetry(request);
     run_loop.Run();
   }
@@ -429,57 +523,126 @@ TEST_F(DriveApiRequestsTest, GetApplistRequest) {
   EXPECT_EQ(HTTP_SUCCESS, error);
   EXPECT_EQ(net::test_server::METHOD_GET, http_request_.method);
   EXPECT_EQ("/drive/v2/apps", http_request_.relative_url);
-  EXPECT_TRUE(result);
+  EXPECT_TRUE(app_list);
 }
 
-TEST_F(DriveApiRequestsTest, GetChangelistRequest) {
+TEST_F(DriveApiRequestsTest, ChangesListRequest) {
   // Set an expected data file containing valid result.
   expected_data_file_path_ = test_util::GetTestFilePath(
       "drive/changelist.json");
 
   GDataErrorCode error = GDATA_OTHER_ERROR;
-  scoped_ptr<base::Value> result;
+  scoped_ptr<ChangeList> result;
 
   {
     base::RunLoop run_loop;
-    GetChangelistRequest* request = new GetChangelistRequest(
-        request_sender_.get(),
-        *url_generator_,
-        true,  // include deleted
-        100,  // start changestamp
-        500,  // max results
+    drive::ChangesListRequest* request = new drive::ChangesListRequest(
+        request_sender_.get(), *url_generator_,
         test_util::CreateQuitCallback(
             &run_loop,
             test_util::CreateCopyResultCallback(&error, &result)));
+    request->set_include_deleted(true);
+    request->set_start_change_id(100);
+    request->set_max_results(500);
     request_sender_->StartRequestWithRetry(request);
     run_loop.Run();
   }
 
   EXPECT_EQ(HTTP_SUCCESS, error);
   EXPECT_EQ(net::test_server::METHOD_GET, http_request_.method);
-  EXPECT_EQ("/drive/v2/changes?startChangeId=100&maxResults=500",
+  EXPECT_EQ("/drive/v2/changes?maxResults=500&startChangeId=100",
             http_request_.relative_url);
   EXPECT_TRUE(result);
 }
 
-TEST_F(DriveApiRequestsTest, GetFilelistRequest) {
+TEST_F(DriveApiRequestsTest, FilesCopyRequest) {
+  // Set an expected data file containing the dummy file entry data.
+  // It'd be returned if we copy a file.
+  expected_data_file_path_ =
+      test_util::GetTestFilePath("drive/file_entry.json");
+
+  GDataErrorCode error = GDATA_OTHER_ERROR;
+  scoped_ptr<FileResource> file_resource;
+
+  // Copy the file to a new file named "new title".
+  {
+    base::RunLoop run_loop;
+    drive::FilesCopyRequest* request = new drive::FilesCopyRequest(
+        request_sender_.get(),
+        *url_generator_,
+        test_util::CreateQuitCallback(
+            &run_loop,
+            test_util::CreateCopyResultCallback(&error, &file_resource)));
+    request->set_file_id("resource_id");
+    request->add_parent("parent_resource_id");
+    request->set_title("new title");
+    request_sender_->StartRequestWithRetry(request);
+    run_loop.Run();
+  }
+
+  EXPECT_EQ(HTTP_SUCCESS, error);
+  EXPECT_EQ(net::test_server::METHOD_POST, http_request_.method);
+  EXPECT_EQ("/drive/v2/files/resource_id/copy", http_request_.relative_url);
+  EXPECT_EQ("application/json", http_request_.headers["Content-Type"]);
+
+  EXPECT_TRUE(http_request_.has_content);
+  EXPECT_EQ(
+      "{\"parents\":[{\"id\":\"parent_resource_id\"}],\"title\":\"new title\"}",
+      http_request_.content);
+  EXPECT_TRUE(file_resource);
+}
+
+TEST_F(DriveApiRequestsTest, FilesCopyRequest_EmptyParentResourceId) {
+  // Set an expected data file containing the dummy file entry data.
+  // It'd be returned if we copy a file.
+  expected_data_file_path_ =
+      test_util::GetTestFilePath("drive/file_entry.json");
+
+  GDataErrorCode error = GDATA_OTHER_ERROR;
+  scoped_ptr<FileResource> file_resource;
+
+  // Copy the file to a new file named "new title".
+  {
+    base::RunLoop run_loop;
+    drive::FilesCopyRequest* request = new drive::FilesCopyRequest(
+        request_sender_.get(),
+        *url_generator_,
+        test_util::CreateQuitCallback(
+            &run_loop,
+            test_util::CreateCopyResultCallback(&error, &file_resource)));
+    request->set_file_id("resource_id");
+    request->set_title("new title");
+    request_sender_->StartRequestWithRetry(request);
+    run_loop.Run();
+  }
+
+  EXPECT_EQ(HTTP_SUCCESS, error);
+  EXPECT_EQ(net::test_server::METHOD_POST, http_request_.method);
+  EXPECT_EQ("/drive/v2/files/resource_id/copy", http_request_.relative_url);
+  EXPECT_EQ("application/json", http_request_.headers["Content-Type"]);
+
+  EXPECT_TRUE(http_request_.has_content);
+  EXPECT_EQ("{\"title\":\"new title\"}", http_request_.content);
+  EXPECT_TRUE(file_resource);
+}
+
+TEST_F(DriveApiRequestsTest, FilesListRequest) {
   // Set an expected data file containing valid result.
   expected_data_file_path_ = test_util::GetTestFilePath(
       "drive/filelist.json");
 
   GDataErrorCode error = GDATA_OTHER_ERROR;
-  scoped_ptr<base::Value> result;
+  scoped_ptr<FileList> result;
 
   {
     base::RunLoop run_loop;
-    GetFilelistRequest* request = new GetFilelistRequest(
-        request_sender_.get(),
-        *url_generator_,
-        "\"abcde\" in parents",
-        50,  // max results
+    drive::FilesListRequest* request = new drive::FilesListRequest(
+        request_sender_.get(), *url_generator_,
         test_util::CreateQuitCallback(
             &run_loop,
             test_util::CreateCopyResultCallback(&error, &result)));
+    request->set_max_results(50);
+    request->set_q("\"abcde\" in parents");
     request_sender_->StartRequestWithRetry(request);
     run_loop.Run();
   }
@@ -518,48 +681,34 @@ TEST_F(DriveApiRequestsTest, ContinueGetFileListRequest) {
   EXPECT_TRUE(result);
 }
 
-TEST_F(DriveApiRequestsTest, CreateDirectoryRequest) {
-  // Set an expected data file containing the directory's entry data.
+TEST_F(DriveApiRequestsTest, FilesTrashRequest) {
+  // Set data for the expected result. Directory entry should be returned
+  // if the trashing entry is a directory, so using it here should be fine.
   expected_data_file_path_ =
       test_util::GetTestFilePath("drive/directory_entry.json");
 
   GDataErrorCode error = GDATA_OTHER_ERROR;
   scoped_ptr<FileResource> file_resource;
 
-  // Create "new directory" in the root directory.
+  // Trash a resource with the given resource id.
   {
     base::RunLoop run_loop;
-    drive::CreateDirectoryRequest* request =
-        new drive::CreateDirectoryRequest(
-            request_sender_.get(),
-            *url_generator_,
-            "root",
-            "new directory",
-            test_util::CreateQuitCallback(
-                &run_loop,
-                test_util::CreateCopyResultCallback(&error, &file_resource)));
+    drive::FilesTrashRequest* request = new drive::FilesTrashRequest(
+        request_sender_.get(),
+        *url_generator_,
+        test_util::CreateQuitCallback(
+            &run_loop,
+            test_util::CreateCopyResultCallback(&error, &file_resource)));
+    request->set_file_id("resource_id");
     request_sender_->StartRequestWithRetry(request);
     run_loop.Run();
   }
 
   EXPECT_EQ(HTTP_SUCCESS, error);
   EXPECT_EQ(net::test_server::METHOD_POST, http_request_.method);
-  EXPECT_EQ("/drive/v2/files", http_request_.relative_url);
-  EXPECT_EQ("application/json", http_request_.headers["Content-Type"]);
-
+  EXPECT_EQ("/drive/v2/files/resource_id/trash", http_request_.relative_url);
   EXPECT_TRUE(http_request_.has_content);
-
-  scoped_ptr<FileResource> expected(
-      FileResource::CreateFrom(
-          *test_util::LoadJSONFile("drive/directory_entry.json")));
-
-  // Sanity check.
-  ASSERT_TRUE(file_resource.get());
-
-  EXPECT_EQ(expected->file_id(), file_resource->file_id());
-  EXPECT_EQ(expected->title(), file_resource->title());
-  EXPECT_EQ(expected->mime_type(), file_resource->mime_type());
-  EXPECT_EQ(expected->parents().size(), file_resource->parents().size());
+  EXPECT_TRUE(http_request_.content.empty());
 }
 
 TEST_F(DriveApiRequestsTest, TouchResourceRequest) {
@@ -601,80 +750,6 @@ TEST_F(DriveApiRequestsTest, TouchResourceRequest) {
   EXPECT_EQ("{\"lastViewedByMeDate\":\"2013-07-19T15:59:13.123Z\","
             "\"modifiedDate\":\"2012-07-19T15:59:13.123Z\"}",
             http_request_.content);
-}
-
-TEST_F(DriveApiRequestsTest, CopyResourceRequest) {
-  // Set an expected data file containing the dummy file entry data.
-  // It'd be returned if we copy a file.
-  expected_data_file_path_ =
-      test_util::GetTestFilePath("drive/file_entry.json");
-
-  GDataErrorCode error = GDATA_OTHER_ERROR;
-  scoped_ptr<FileResource> file_resource;
-
-  // Copy the file to a new file named "new title".
-  {
-    base::RunLoop run_loop;
-    drive::CopyResourceRequest* request =
-        new drive::CopyResourceRequest(
-            request_sender_.get(),
-            *url_generator_,
-            "resource_id",
-            "parent_resource_id",
-            "new title",
-            test_util::CreateQuitCallback(
-                &run_loop,
-                test_util::CreateCopyResultCallback(&error, &file_resource)));
-    request_sender_->StartRequestWithRetry(request);
-    run_loop.Run();
-  }
-
-  EXPECT_EQ(HTTP_SUCCESS, error);
-  EXPECT_EQ(net::test_server::METHOD_POST, http_request_.method);
-  EXPECT_EQ("/drive/v2/files/resource_id/copy", http_request_.relative_url);
-  EXPECT_EQ("application/json", http_request_.headers["Content-Type"]);
-
-  EXPECT_TRUE(http_request_.has_content);
-  EXPECT_EQ(
-      "{\"parents\":[{\"id\":\"parent_resource_id\"}],\"title\":\"new title\"}",
-      http_request_.content);
-  EXPECT_TRUE(file_resource);
-}
-
-TEST_F(DriveApiRequestsTest, CopyResourceRequest_EmptyParentResourceId) {
-  // Set an expected data file containing the dummy file entry data.
-  // It'd be returned if we copy a file.
-  expected_data_file_path_ =
-      test_util::GetTestFilePath("drive/file_entry.json");
-
-  GDataErrorCode error = GDATA_OTHER_ERROR;
-  scoped_ptr<FileResource> file_resource;
-
-  // Copy the file to a new file named "new title".
-  {
-    base::RunLoop run_loop;
-    drive::CopyResourceRequest* request =
-        new drive::CopyResourceRequest(
-            request_sender_.get(),
-            *url_generator_,
-            "resource_id",
-            std::string(),  // parent resource id.
-            "new title",
-            test_util::CreateQuitCallback(
-                &run_loop,
-                test_util::CreateCopyResultCallback(&error, &file_resource)));
-    request_sender_->StartRequestWithRetry(request);
-    run_loop.Run();
-  }
-
-  EXPECT_EQ(HTTP_SUCCESS, error);
-  EXPECT_EQ(net::test_server::METHOD_POST, http_request_.method);
-  EXPECT_EQ("/drive/v2/files/resource_id/copy", http_request_.relative_url);
-  EXPECT_EQ("application/json", http_request_.headers["Content-Type"]);
-
-  EXPECT_TRUE(http_request_.has_content);
-  EXPECT_EQ("{\"title\":\"new title\"}", http_request_.content);
-  EXPECT_TRUE(file_resource);
 }
 
 TEST_F(DriveApiRequestsTest, MoveResourceRequest) {
@@ -750,36 +825,6 @@ TEST_F(DriveApiRequestsTest, MoveResourceRequest_EmptyParentResourceId) {
   EXPECT_TRUE(http_request_.has_content);
   EXPECT_EQ("{\"title\":\"new title\"}", http_request_.content);
   EXPECT_TRUE(file_resource);
-}
-
-TEST_F(DriveApiRequestsTest, TrashResourceRequest) {
-  // Set data for the expected result. Directory entry should be returned
-  // if the trashing entry is a directory, so using it here should be fine.
-  expected_data_file_path_ =
-      test_util::GetTestFilePath("drive/directory_entry.json");
-
-  GDataErrorCode error = GDATA_OTHER_ERROR;
-
-  // Trash a resource with the given resource id.
-  {
-    base::RunLoop run_loop;
-    drive::TrashResourceRequest* request =
-        new drive::TrashResourceRequest(
-            request_sender_.get(),
-            *url_generator_,
-            "resource_id",
-            test_util::CreateQuitCallback(
-                &run_loop,
-                test_util::CreateCopyResultCallback(&error)));
-    request_sender_->StartRequestWithRetry(request);
-    run_loop.Run();
-  }
-
-  EXPECT_EQ(HTTP_SUCCESS, error);
-  EXPECT_EQ(net::test_server::METHOD_POST, http_request_.method);
-  EXPECT_EQ("/drive/v2/files/resource_id/trash", http_request_.relative_url);
-  EXPECT_TRUE(http_request_.has_content);
-  EXPECT_TRUE(http_request_.content.empty());
 }
 
 TEST_F(DriveApiRequestsTest, InsertResourceRequest) {

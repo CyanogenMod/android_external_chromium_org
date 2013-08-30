@@ -78,6 +78,8 @@
           'atomicops_internals_x86_gcc.cc',
           'atomicops_internals_x86_gcc.h',
           'atomicops_internals_x86_msvc.h',
+          'barrier_closure.cc',
+          'barrier_closure.h',
           'base_export.h',
           'base_paths.cc',
           'base_paths.h',
@@ -102,6 +104,7 @@
           'build_time.cc',
           'build_time.h',
           'callback.h',
+          'callback_helpers.cc',
           'callback_helpers.h',
           'callback_internal.cc',
           'callback_internal.h',
@@ -114,6 +117,7 @@
           'containers/hash_tables.h',
           'containers/linked_list.h',
           'containers/mru_cache.h',
+          'containers/scoped_ptr_hash_map.h',
           'containers/small_map.h',
           'containers/stack_container.h',
           'cpu.cc',
@@ -756,6 +760,13 @@
             'sources/': [
               # Pull in specific files for host builds.
               ['include', '^threading/platform_thread_linux\\.cc$'],
+            ],
+          }],
+          ['OS == "android" and <(android_webview_build)==1', {
+            'defines': [
+               # WebView builds as part of the system which already has sincos;
+               # avoid defining it again as it causes a linker warning.
+               'ANDROID_SINCOS_PROVIDED',
             ],
           }],
           ['OS == "ios" and _toolset != "host"', {

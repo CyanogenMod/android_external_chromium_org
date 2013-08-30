@@ -49,6 +49,8 @@ bool FileHandlerCanHandleFile(
 
 // Refers to a file entry that a renderer has been given access to.
 struct GrantedFileEntry {
+  GrantedFileEntry();
+
   std::string id;
   std::string filesystem_id;
   std::string registered_name;
@@ -58,10 +60,20 @@ struct GrantedFileEntry {
 // registers a new file system for |path|.
 GrantedFileEntry CreateFileEntry(
     Profile* profile,
-    const std::string& extension_id,
+    const Extension* extension,
     int renderer_id,
     const base::FilePath& path,
-    bool writable);
+    bool is_directory);
+
+void CheckWritableFiles(
+    const std::vector<base::FilePath>& paths,
+    Profile* profile,
+    bool is_directory,
+    const base::Closure& on_success,
+    const base::Callback<void(const base::FilePath&)>& on_failure);
+
+// Returns whether |extension| has the fileSystem.write permission.
+bool HasFileSystemWritePermission(const Extension* extension);
 
 }  // namespace app_file_handler_util
 

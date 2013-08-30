@@ -116,56 +116,93 @@ NavigationModelItem.prototype.isShortcut = function() {
  * A navigation list model. This model combines the 2 lists.
  * @param {FileSystem} filesystem FileSystem.
  * @param {cr.ui.ArrayDataModel} volumesList The first list of the model.
- * @param {cr.ui.ArrayDataModel} pinnedList The second list of the model.
+ * @param {cr.ui.ArrayDataModel} shortcutList The second list of the model.
  * @constructor
  * @extends {cr.EventTarget}
  */
-function NavigationListModel(filesystem, volumesList, pinnedList) {
+function NavigationListModel(filesystem, volumesList, shortcutList) {
   this.volumesListModel_ = volumesList;
-  this.pinnedListModel_ = pinnedList;
+  this.shortcutListModel_ = shortcutList;
+
+  // On default, shortcut list is disabled. It may be enabled on initializetion.
+  this.showShortcuts_ = false;
+
+  var entryToModelItem = function(entry) {
+    return NavigationModelItem.createWithEntry(entry);
+  };
+  var pathToModelItem = function(path) {
+    return NavigationModelItem.createWithPath(filesystem, path);
+  };
 
   /**
-   * (Re)generates this.volumesList_ and this.pinnedList_ from the models.
-   * This should be called whenever the models are updated.
+   * Type of updated list.
+   * @enum {number}
+   * @const
    */
-  var generateLists = function() {
-    this.volumesList_ =
-        this.volumesListModel_.slice(0).map(function(entry) {
-          return NavigationModelItem.createWithEntry(entry);
-        });
-    this.pinnedList_ =
-        this.pinnedListModel_.slice(0).map(function(path) {
-            return NavigationModelItem.createWithPath(filesystem, path);
-        });
-  }.bind(this);
+  var ListType = {
+    VOLUME_LIST: 1,
+    SHORTCUT_LIST: 2
+  };
+  Object.freeze(ListType);
 
-  generateLists();
+  // Generates this.volumesList_ and this.shortcutList_ from the models.
+  this.volumesList_ = this.volumesListModel_.slice(0).map(entryToModelItem);
+  this.shortcutList_ = this.shortcutListModel_.slice(0).map(pathToModelItem);
 
   // Generates a combined 'permuted' event from an event of either list.
-  var permutedHandler = function(listNum, e) {
-    generateLists();
-
+  var permutedHandler = function(listType, event) {
     var permutedEvent = new Event('permuted');
     var newPermutation = [];
     var newLength;
-    if (listNum == 1) {
-      newLength = e.newLength + this.pinnedList_.length;
-      for (var i = 0; i < e.permutation.length; i++) {
-        newPermutation[i] = e.permutation[i];
+    if (listType == ListType.VOLUME_LIST) {
+      // Creates new permutation array.
+      newLength = event.newLength;
+      for (var i = 0; i < event.permutation.length; i++) {
+        newPermutation[i] = event.permutation[i];
       }
-      for (var i = 0; i < this.pinnedList_.length; i++) {
-        newPermutation[i + e.permutation.length] = i + e.newLength;
+      if (this.showShortcuts_) {
+        newLength += this.shortcutList_.length;
+        for (var i = 0; i < this.shortcutList_.length; i++) {
+          newPermutation[i + event.permutation.length] = i + event.newLength;
+        }
       }
+
+      // Updates the list.
+      var newList = [];
+      for (var i = 0; i < event.permutation.length; i++) {
+        newList[event.permutation[i]] = this.volumesList_[i];
+      }
+      for (var i = 0; i < event.newLength; i++) {
+        if (!newList[i])
+          newList[i] = entryToModelItem(this.volumesListModel_.item(i));
+      }
+      this.volumesList_ = newList;
     } else {
+      // Creates new permutation array.
       var volumesLen = this.volumesList_.length;
-      newLength = e.newLength + volumesLen;
+      newLength = volumesLen;
       for (var i = 0; i < volumesLen; i++) {
         newPermutation[i] = i;
       }
-      for (var i = 0; i < e.permutation.length; i++) {
-        newPermutation[i + volumesLen] =
-            (e.permutation[i] !== -1) ? (e.permutation[i] + volumesLen) : -1;
+      if (this.showShortcuts_) {
+        newLength += event.newLength;
+        for (var i = 0; i < event.permutation.length; i++) {
+          newPermutation[i + volumesLen] = (event.permutation[i] !== -1) ?
+                                           (event.permutation[i] + volumesLen) :
+                                           -1;
+        }
       }
+
+      // Updates the list.
+      var newList = [];
+      for (var i = 0; i < event.permutation.length; i++) {
+        newList[event.permutation[i]] = this.shortcutList_[i];
+      }
+      for (var i = 0; i < event.newLength; i++) {
+        if (!newList[i])
+          newList[i] = pathToModelItem(this.shortcutListModel_.item(i));
+      }
+      this.shortcutList_ = newList;
     }
 
     permutedEvent.newLength = newLength;
@@ -173,23 +210,32 @@ function NavigationListModel(filesystem, volumesList, pinnedList) {
     this.dispatchEvent(permutedEvent);
   };
   this.volumesListModel_.addEventListener(
-      'permuted', permutedHandler.bind(this, 1));
-  this.pinnedListModel_.addEventListener(
-      'permuted', permutedHandler.bind(this, 2));
+      'permuted', permutedHandler.bind(this, ListType.VOLUME_LIST));
+  this.shortcutListModel_.addEventListener(
+      'permuted', permutedHandler.bind(this, ListType.SHORTCUT_LIST));
 
   // Generates a combined 'change' event from an event of either list.
-  var changeHandler = function(listNum, e) {
-    generateLists();
+  var changeHandler = function(listType, event) {
+    var i = event.index;
+
+    // Updates the list.
+    if (listType == ListType.VOLUME_LIST)
+      this.volumesList_[i] = entryToModelItem(this.volumesListModel_.item(i));
+    else
+      this.shortcutList_[i] = pathToModelItem(this.shortcutListModel_.item(i));
+
+    if (this.showShortcuts_ && listType == ListType.SHORTCUT_LIST)
+      return;
 
     var changeEvent = new Event('change');
     changeEvent.index =
-        (listNum == 1) ? e.index : (e.index + this.volumesList_.length);
+        (listType == ListType.VOLUME_LIST) ? i : (i + this.volumesList_.length);
     this.dispatchEvent(changeEvent);
   };
   this.volumesListModel_.addEventListener(
-      'change', changeHandler.bind(this, 1));
-  this.pinnedListModel_.addEventListener(
-      'change', changeHandler.bind(this, 2));
+      'change', changeHandler.bind(this, ListType.VOLUME_LIST));
+  this.shortcutListModel_.addEventListener(
+      'change', changeHandler.bind(this, ListType.SHORTCUT_LIST));
 
   // 'splice' and 'sorted' events are not implemented, since they are not used
   // in list.js.
@@ -201,7 +247,7 @@ function NavigationListModel(filesystem, volumesList, pinnedList) {
 NavigationListModel.prototype = {
   __proto__: cr.EventTarget.prototype,
   get length() { return this.length_(); },
-  get folderShortcutList() { return this.pinnedList_; }
+  get folderShortcutList() { return this.shortcutList_; }
 };
 
 /**
@@ -213,8 +259,45 @@ NavigationListModel.prototype.item = function(index) {
   var offset = this.volumesList_.length;
   if (index < offset)
     return this.volumesList_[index];
-  else
-    return this.pinnedList_[index - offset];
+  if (this.showShortcuts_)
+    return this.shortcutList_[index - offset];
+  return null;
+};
+
+/**
+ * Show/hide the shortcut list.
+ * @param {boolean} show True to show, false otherwise.
+ */
+NavigationListModel.prototype.showShortcuts = function(show) {
+  if (this.showShortcuts_ == show)
+    return;
+
+  this.showShortcuts_ = show;
+
+  if (show) {
+    var permutedEvent = new Event('permuted');
+    var permutation = [];
+    for (var i = 0; i < this.volumesList_.length; i++) {
+      permutation[i] = i;
+    }
+    permutedEvent.newLength =
+        this.volumesList_.length + this.shortcutList_.length;
+    permutedEvent.permutation = permutation;
+    this.dispatchEvent(permutedEvent);
+  } else {
+    var permutedEvent = new Event('permuted');
+    var permutation = [];
+    for (var i = 0; i < this.volumesList_.length; i++) {
+      permutation[i] = i;
+    }
+    var offset = this.volumesList_.length;
+    for (var i = 0; i < this.shortcutList_.length; i++) {
+      permutation[i + offset] = -1;
+    }
+    permutedEvent.newLength = this.volumesList_.length;
+    permutedEvent.permutation = permutation;
+    this.dispatchEvent(permutedEvent);
+  }
 };
 
 /**
@@ -223,7 +306,10 @@ NavigationListModel.prototype.item = function(index) {
  * @private
  */
 NavigationListModel.prototype.length_ = function() {
-  return this.volumesList_.length + this.pinnedList_.length;
+  var length = this.volumesList_.length;
+  if (this.showShortcuts_)
+    length += this.shortcutList_.length;
+  return length;
 };
 
 /**
@@ -290,9 +376,6 @@ NavigationListItem.prototype.setModelItem =
 
   this.modelItem_ = modelItem;
 
-  this.setAttribute('item-type',
-                    modelItem.isShortcut() ? 'shortcut' : 'volume');
-
   var rootType = PathUtil.getRootType(modelItem.path);
   this.iconDiv_.setAttribute('volume-type-icon', rootType);
   if (opt_deviceType) {
@@ -305,9 +388,9 @@ NavigationListItem.prototype.setModelItem =
     this.eject_ = cr.doc.createElement('div');
     // Block other mouse handlers.
     this.eject_.addEventListener(
-        'mouseup', function(e) { e.stopPropagation() });
+        'mouseup', function(event) { event.stopPropagation() });
     this.eject_.addEventListener(
-        'mousedown', function(e) { e.stopPropagation() });
+        'mousedown', function(event) { event.stopPropagation() });
 
     this.eject_.className = 'root-eject';
     this.eject_.addEventListener('click', function(event) {
@@ -317,6 +400,14 @@ NavigationListItem.prototype.setModelItem =
 
     this.appendChild(this.eject_);
   }
+};
+
+/**
+ * Add/remove fade-in animation.
+ * @param {boolean} animation True if adding animation, false if removing.
+ */
+NavigationListItem.prototype.setFadeinAnimation = function(animation) {
+  this.classList.toggle('fadein', animation);
 };
 
 /**
@@ -422,6 +513,23 @@ NavigationList.prototype.decorate = function(volumeManager, directoryModel) {
 };
 
 /**
+ * This overrides cr.ui.List.measureItem().
+ * In the method, a temporary element is added/removed from the list, and we
+ * need to omit animations for such temporary items.
+ *
+ * @param {ListItem=} opt_item The list item to be measured.
+ * @return {{height: number, marginTop: number, marginBottom:number,
+ *     width: number, marginLeft: number, marginRight:number}} Size.
+ * @override
+ */
+NavigationList.prototype.measureItem = function(opt_item) {
+  this.measuringTemporaryItemNow_ = true;
+  var result = cr.ui.List.prototype.measureItem.call(this, opt_item);
+  this.measuringTemporaryItemNow_ = false;
+  return result;
+};
+
+/**
  * This overrides Node.removeChild().
  * Instead of just removing the given child, this method adds a fade-out
  * animation and removes the child after animation completes.
@@ -432,14 +540,14 @@ NavigationList.prototype.decorate = function(volumeManager, directoryModel) {
 NavigationList.prototype.removeChild = function(item) {
   // TODO(yoshiki): Animation is temporary disabled for volumes. Add animation
   // back. crbug.com/276132.
-  if (!item.modelItem.isShortcut()) {
+  if (!item.modelItem.isShortcut() || this.measuringTemporaryItemNow_) {
     Node.prototype.removeChild.call(this, item);
     return;
   }
 
-  var removeElement = function(e) {
+  var removeElement = function(event) {
     // Must keep the animation name 'fadeOut' in sync with the css.
-    if (e.animationName == 'fadeOut')
+    if (event.animationName == 'fadeOut')
       // Checks if the element is still alive on the DOM tree.
       if (item.parentElement && item.parentElement == this)
         Node.prototype.removeChild.call(this, item);
@@ -464,6 +572,11 @@ NavigationList.prototype.renderRoot_ = function(modelItem) {
       PathUtil.isRootPath(modelItem.path) &&
       this.volumeManager_.getVolumeInfo(modelItem.path);
   item.setModelItem(modelItem, volumeInfo && volumeInfo.deviceType);
+
+  // TODO(yoshiki): Animation is temporary disabled for volumes. Add animation
+  // back. crbug.com/276132.
+  item.setFadeinAnimation(modelItem.isShortcut() &&
+                          !this.measuringTemporaryItemNow_);
 
   var handleClick = function() {
     if (item.selected &&
@@ -499,10 +612,8 @@ NavigationList.prototype.renderRoot_ = function(modelItem) {
  */
 NavigationList.prototype.changeDirectory_ = function(path) {
   var onErrorCallback = function() {
-    var e = new Event('shortcut-target-not-found');
-    e.path = path;
-    e.label = PathUtil.getFolderLabel(path);
-    this.dispatchEvent(e);
+    // TODO(yoshiki): Remove this if the teporary patch is merged to the M30.
+    // crbug.com/270436
   }.bind(this);
 
   this.directoryModel_.changeDirectory(path, onErrorCallback);
@@ -600,7 +711,7 @@ NavigationList.prototype.selectBestMatchItem_ = function() {
   if (!path)
     return;
 
-  // (1) Select the nearest parent directory (including the pinned directories).
+  // (1) Select the nearest parent directory (including the shortcut folders).
   var bestMatchIndex = -1;
   var bestMatchSubStringLen = 0;
   for (var i = 0; i < this.dataModel.length; i++) {

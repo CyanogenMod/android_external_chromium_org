@@ -167,7 +167,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::ContextMenuParams)
   IPC_STRUCT_TRAITS_MEMBER(link_text)
   IPC_STRUCT_TRAITS_MEMBER(unfiltered_link_url)
   IPC_STRUCT_TRAITS_MEMBER(src_url)
-  IPC_STRUCT_TRAITS_MEMBER(is_image_blocked)
+  IPC_STRUCT_TRAITS_MEMBER(has_image_contents)
   IPC_STRUCT_TRAITS_MEMBER(page_url)
   IPC_STRUCT_TRAITS_MEMBER(keyword_url)
   IPC_STRUCT_TRAITS_MEMBER(frame_url)
@@ -891,7 +891,7 @@ IPC_MESSAGE_ROUTED0(ViewMsg_UpdateRect_ACK)
 IPC_MESSAGE_ROUTED0(ViewMsg_SwapBuffers_ACK)
 
 // Tells the render widget that a smooth scroll completed.
-IPC_MESSAGE_ROUTED0(ViewMsg_SmoothScrollCompleted)
+IPC_MESSAGE_ROUTED0(ViewMsg_SyntheticGestureCompleted)
 
 // Tells the renderer to focus the first (last if reverse is true) focusable
 // node.
@@ -1800,11 +1800,12 @@ IPC_MESSAGE_ROUTED0(ViewHostMsg_RouteCloseEvent)
 IPC_MESSAGE_ROUTED1(ViewHostMsg_RouteMessageEvent,
                     ViewMsg_PostMessage_Params)
 
-IPC_SYNC_MESSAGE_ROUTED4_2(ViewHostMsg_RunJavaScriptMessage,
+IPC_SYNC_MESSAGE_ROUTED5_2(ViewHostMsg_RunJavaScriptMessage,
                            string16     /* in - alert message */,
                            string16     /* in - default prompt */,
                            GURL         /* in - originating page URL */,
                            content::JavaScriptMessageType /* in - type */,
+                           bool         /* in - user_gesture */,
                            bool         /* out - success */,
                            string16     /* out - user_input field */)
 

@@ -31,13 +31,13 @@
 #include "ppapi/proxy/ppb_graphics_3d_proxy.h"
 #include "ppapi/proxy/ppb_image_data_proxy.h"
 #include "ppapi/proxy/ppb_network_monitor_private_proxy.h"
-#include "ppapi/proxy/ppb_tcp_socket_private_proxy.h"
-#include "ppapi/proxy/ppb_tcp_socket_proxy.h"
 #include "ppapi/proxy/ppb_video_decoder_proxy.h"
 #include "ppapi/proxy/ppb_x509_certificate_private_proxy.h"
 #include "ppapi/proxy/printing_resource.h"
 #include "ppapi/proxy/talk_resource.h"
 #include "ppapi/proxy/tcp_server_socket_private_resource.h"
+#include "ppapi/proxy/tcp_socket_private_resource.h"
+#include "ppapi/proxy/tcp_socket_resource.h"
 #include "ppapi/proxy/truetype_font_resource.h"
 #include "ppapi/proxy/udp_socket_private_resource.h"
 #include "ppapi/proxy/udp_socket_resource.h"
@@ -94,15 +94,6 @@ PP_Resource ResourceCreationProxy::CreateFileSystem(
     PP_FileSystemType type) {
   return (new FileSystemResource(GetConnection(), instance,
                                  type))->GetReference();
-}
-
-PP_Resource ResourceCreationProxy::CreateIsolatedFileSystem(
-    PP_Instance instance,
-    const char* fsid) {
-  FileSystemResource* fs = new FileSystemResource(
-      GetConnection(), instance, PP_FILESYSTEMTYPE_ISOLATED);
-  fs->InitIsolatedFileSystem(fsid);
-  return fs->GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreateIMEInputEvent(
@@ -330,12 +321,13 @@ PP_Resource ResourceCreationProxy::CreateTCPServerSocketPrivate(
 
 PP_Resource ResourceCreationProxy::CreateTCPSocket(
     PP_Instance instance) {
-  return PPB_TCPSocket_Proxy::CreateProxyResource(instance);
+  return (new TCPSocketResource(GetConnection(), instance))->GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreateTCPSocketPrivate(
     PP_Instance instance) {
-  return PPB_TCPSocket_Private_Proxy::CreateProxyResource(instance);
+  return (new TCPSocketPrivateResource(GetConnection(), instance))->
+      GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreateUDPSocket(PP_Instance instance) {

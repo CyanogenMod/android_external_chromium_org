@@ -35,6 +35,7 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/codec/jpeg_codec.h"
+#include "ui/gfx/size.h"
 
 #if defined(OS_WIN)
 #include "base/win/win_util.h"
@@ -80,7 +81,7 @@ void ChromeRenderViewHostObserver::Navigate(const GURL& url) {
   if (!predictor_)
     return;
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kChromeFrame) &&
-     (url.SchemeIs(chrome::kHttpScheme) || url.SchemeIs(chrome::kHttpsScheme)))
+     (url.SchemeIs(chrome::kHttpScheme) || url.SchemeIs(content::kHttpsScheme)))
     predictor_->PreconnectUrlAndSubresources(url, GURL());
 }
 
@@ -197,7 +198,10 @@ void ChromeRenderViewHostObserver::OnFocusedNodeTouched(bool editable) {
 // Handles the image thumbnail for the context node, composes a image search
 // request based on the received thumbnail and opens the request in a new tab.
 void ChromeRenderViewHostObserver::OnRequestThumbnailForContextNodeACK(
-    const SkBitmap& bitmap) {
+    const SkBitmap& bitmap,
+    const gfx::Size& original_size) {
+  if (bitmap.isNull())
+    return;
   WebContents* web_contents =
       WebContents::FromRenderViewHost(render_view_host());
   const TemplateURL* const default_provider =
@@ -221,6 +225,7 @@ void ChromeRenderViewHostObserver::OnRequestThumbnailForContextNodeACK(
   // TODO(jnd): Add a method in WebContentsViewDelegate to get the image URL
   // from the ContextMenuParams which creates current context menu.
   search_args.image_url = GURL();
+  search_args.image_original_size = original_size;
   TemplateURLRef::PostContent post_content;
   GURL result(default_provider->image_url_ref().ReplaceSearchTerms(
       search_args, &post_content));

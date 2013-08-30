@@ -76,6 +76,7 @@
 #include "grit/webkit_resources.h"
 #include "net/cert/cert_status_flags.h"
 #include "ui/base/base_window.h"
+#include "ui/base/events/event.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/combobox_model.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -160,7 +161,8 @@ void FillFormGroupFromOutputs(const DetailOutputMap& detail_outputs,
                             iter->second,
                             g_browser_process->GetApplicationLocale());
       } else {
-        form_group->SetRawInfo(type, iter->second);
+        form_group->SetRawInfo(
+            AutofillType(type).GetStorableType(), iter->second);
       }
     }
   }
@@ -199,7 +201,8 @@ void GetBillingInfoFromOutputs(const DetailOutputMap& output,
         if (card)
           card->SetRawInfo(it->first->type, trimmed);
       } else if (profile) {
-        profile->SetRawInfo(it->first->type, trimmed);
+        profile->SetRawInfo(
+            AutofillType(it->first->type).GetStorableType(), trimmed);
       }
     }
   }
@@ -295,7 +298,7 @@ bool HasCompleteAndVerifiedData(const AutofillDataModel& data_model,
     ServerFieldType type = requested_fields[i].type;
     if (type != ADDRESS_HOME_LINE2 &&
         type != CREDIT_CARD_VERIFICATION_CODE &&
-        data_model.GetRawInfo(type).empty()) {
+        data_model.GetRawInfo(AutofillType(type).GetStorableType()).empty()) {
       return false;
     }
   }
@@ -1769,6 +1772,7 @@ void AutofillDialogControllerImpl::UserEditedOrActivatedInput(
       content_bounds,
       base::i18n::IsRTL() ?
           base::i18n::RIGHT_TO_LEFT : base::i18n::LEFT_TO_RIGHT);
+  popup_controller_->set_hide_on_outside_click(true);
   popup_controller_->Show(popup_values,
                           popup_labels,
                           popup_icons,
@@ -2013,13 +2017,19 @@ content::WebContents* AutofillDialogControllerImpl::GetWebContents() {
 // AutofillPopupDelegate implementation.
 
 void AutofillDialogControllerImpl::OnPopupShown(
-    content::KeyboardListener* listener) {
+    content::RenderWidgetHost::KeyPressEventCallback* callback) {
   GetMetricLogger().LogDialogPopupEvent(
       GetDialogType(), AutofillMetrics::DIALOG_POPUP_SHOWN);
 }
 
 void AutofillDialogControllerImpl::OnPopupHidden(
-    content::KeyboardListener* listener) {}
+    content::RenderWidgetHost::KeyPressEventCallback* callback) {}
+
+bool AutofillDialogControllerImpl::ShouldRepostEvent(
+    const ui::MouseEvent& event) {
+  // If the event would be reposted inside |input_showing_popup_|, just ignore.
+  return !view_->HitTestInput(*input_showing_popup_, event.location());
+}
 
 void AutofillDialogControllerImpl::DidSelectSuggestion(int identifier) {
   // TODO(estade): implement.
@@ -2321,7 +2331,7 @@ bool AutofillDialogControllerImpl::RequestingCreditCardInfo() const {
 }
 
 bool AutofillDialogControllerImpl::TransmissionWillBeSecure() const {
-  return source_url_.SchemeIs(chrome::kHttpsScheme);
+  return source_url_.SchemeIs(content::kHttpsScheme);
 }
 
 void AutofillDialogControllerImpl::ShowNewCreditCardBubble(
@@ -3497,8 +3507,8 @@ void AutofillDialogControllerImpl::MaybeShowCreditCardBubble() {
 #if !defined(OS_ANDROID)
   GeneratedCreditCardBubbleController::Show(
       web_contents(),
-      backing_last_four,
-      full_wallet_->TypeAndLastFourDigits());
+      full_wallet_->TypeAndLastFourDigits(),
+      backing_last_four);
 #endif
 }
 

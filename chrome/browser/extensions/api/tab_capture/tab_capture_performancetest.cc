@@ -234,7 +234,8 @@ class TabCapturePerformanceTest
 }  // namespace
 
 
-IN_PROC_BROWSER_TEST_P(TabCapturePerformanceTest, Performance) {
+// Disabled due to failures on GPU bots (crbug.com/279443)
+IN_PROC_BROWSER_TEST_P(TabCapturePerformanceTest, DISABLED_Performance) {
   RunTest("TabCapturePerformance");
 }
 

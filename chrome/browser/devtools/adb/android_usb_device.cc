@@ -48,12 +48,13 @@ base::LazyInstance<AndroidUsbDevices>::Leaky g_devices =
 scoped_refptr<AndroidUsbDevice> ClaimInterface(
     crypto::RSAPrivateKey* rsa_key,
     scoped_refptr<UsbDeviceHandle> usb_device,
-    const UsbInterface* interface) {
+    scoped_refptr<const UsbInterfaceDescriptor> interface,
+    int interface_id) {
   if (interface->GetNumAltSettings() == 0)
     return NULL;
 
-  scoped_refptr<const UsbInterfaceDescriptor> idesc =
-      interface->GetAltSetting(0).get();
+  scoped_refptr<const UsbInterfaceAltSettingDescriptor> idesc =
+      interface->GetAltSetting(0);
 
   if (idesc->GetInterfaceClass() != kAdbClass ||
       idesc->GetInterfaceSubclass() != kAdbSubclass ||
@@ -68,7 +69,7 @@ scoped_refptr<AndroidUsbDevice> ClaimInterface(
 
   for (size_t i = 0; i < idesc->GetNumEndpoints(); ++i) {
     scoped_refptr<const UsbEndpointDescriptor> edesc =
-        idesc->GetEndpoint(i).get();
+        idesc->GetEndpoint(i);
     if (edesc->GetTransferType() != USB_TRANSFER_BULK)
       continue;
     if (edesc->GetDirection() == USB_DIRECTION_INBOUND)
@@ -81,7 +82,7 @@ scoped_refptr<AndroidUsbDevice> ClaimInterface(
   if (inbound_address == 0 || outbound_address == 0)
     return NULL;
 
-  if (!usb_device->ClaimInterface(1))
+  if (!usb_device->ClaimInterface(interface_id))
     return NULL;
 
   base::string16 serial;
@@ -187,9 +188,8 @@ static void EnumerateOnFileThread(crypto::RSAPrivateKey* rsa_key,
     if (ContainsKey(claimed_devices, it->get()))
       continue;
 
-    scoped_refptr<UsbConfigDescriptor> config = new UsbConfigDescriptor();
-    bool success = (*it)->ListInterfaces(config.get());
-    if (!success)
+    scoped_refptr<UsbConfigDescriptor> config = (*it)->ListInterfaces();
+    if (!config)
       continue;
 
     scoped_refptr<UsbDeviceHandle> usb_device = (*it)->Open();
@@ -198,7 +198,7 @@ static void EnumerateOnFileThread(crypto::RSAPrivateKey* rsa_key,
 
     for (size_t j = 0; j < config->GetNumInterfaces(); ++j) {
       scoped_refptr<AndroidUsbDevice> device =
-          ClaimInterface(rsa_key, usb_device, config->GetInterface(j));
+          ClaimInterface(rsa_key, usb_device, config->GetInterface(j), j);
       if (device.get())
         devices.push_back(device);
     }

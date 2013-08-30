@@ -4,20 +4,21 @@
 
 import os
 
-from telemetry.core import profile_creator
+from telemetry.core import util
 from telemetry.page import page_set
+from telemetry.page import profile_creator
 
 class SmallProfileCreator(profile_creator.ProfileCreator):
   """
   Runs a browser through a series of operations to fill in a small test profile.
   """
 
-  def CreateProfile(self):
-    top_25 = os.path.join(os.path.dirname(__file__),
-                          '..', 'page_sets', 'top_25.json')
-    pages_to_load = page_set.PageSet.FromFile(top_25)
-    tab = self._browser.tabs[0]
-    for page in pages_to_load:
-      tab.Navigate(page.url)
-      tab.WaitForDocumentReadyStateToBeComplete()
-    tab.Disconnect()
+  def __init__(self):
+    super(SmallProfileCreator, self).__init__()
+    top_25 = os.path.join(util.GetBaseDir(), 'page_sets', 'top_25.json')
+    self._page_set = page_set.PageSet.FromFile(top_25)
+
+  def MeasurePage(self, _, tab, results):
+    # Multiple tabs would help make this faster, but that can't be done until
+    # crbug.com/258113 is fixed.
+    tab.WaitForDocumentReadyStateToBeComplete()

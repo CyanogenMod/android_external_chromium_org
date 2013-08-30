@@ -72,6 +72,10 @@ def PrintTestOutput(test_name):
 
   with file(file_name, 'r') as f:
     persisted_result = pickle.loads(f.read())
+  logging.info('*' * 80)
+  logging.info('Output from:')
+  logging.info(persisted_result['cmd'])
+  logging.info('*' * 80)
   print persisted_result['output']
 
   return persisted_result['exit_code']
@@ -115,6 +119,8 @@ class TestRunner(base_test_runner.BaseTestRunner):
         withexitstatus=True, logfile=sys.stdout, timeout=1800,
         env=os.environ)
     end_time = datetime.datetime.now()
+    if exit_code is None:
+      exit_code = -1
     logging.info('%s : exit_code=%d in %d secs at %s',
                  test_name, exit_code, (end_time - start_time).seconds,
                  self.device)
@@ -132,6 +138,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
         'result_type': result_type,
         'total_time': (end_time - start_time).seconds,
         'device': self.device,
+        'cmd': cmd,
     }
     self._SaveResult(persisted_result)
 

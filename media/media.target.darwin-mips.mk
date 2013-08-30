@@ -49,8 +49,6 @@ LOCAL_SRC_FILES := \
 	media/audio/audio_power_monitor.cc \
 	media/audio/audio_util.cc \
 	media/audio/clockless_audio_sink.cc \
-	media/audio/cross_process_notification.cc \
-	media/audio/cross_process_notification_posix.cc \
 	media/audio/fake_audio_consumer.cc \
 	media/audio/fake_audio_input_stream.cc \
 	media/audio/fake_audio_output_stream.cc \
@@ -135,6 +133,7 @@ LOCAL_SRC_FILES := \
 	media/filters/video_decoder_selector.cc \
 	media/filters/video_frame_stream.cc \
 	media/filters/video_renderer_base.cc \
+	media/filters/wsola_internals.cc \
 	media/midi/midi_manager.cc \
 	media/midi/midi_port_info.cc \
 	media/video/capture/android/video_capture_device_android.cc \

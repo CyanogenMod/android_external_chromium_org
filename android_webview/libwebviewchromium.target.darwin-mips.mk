@@ -30,56 +30,49 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_common_gyp)/content_content_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_tracing_gyp)/components_tracing_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ipc_ipc_gyp)/ipc_ipc_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,media_media_gyp)/media_media_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,net_net_gyp)/net_net_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,base_base_i18n_gyp)/base_base_i18n_gyp.a \
+	$(call intermediates-dir-for,GYP,third_party_icu_icui18n_gyp)/icui18n.stamp \
+	$(call intermediates-dir-for,GYP,third_party_icu_system_icu_gyp)/system_icu.stamp \
+	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,crypto_crypto_gyp)/crypto_crypto_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_openssl_openssl_gyp)/third_party_openssl_openssl_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,sdch_sdch_gyp)/sdch_sdch_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_zlib_zlib_gyp)/third_party_zlib_zlib_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,url_url_lib_gyp)/url_url_lib_gyp.a \
+	$(call intermediates-dir-for,GYP,third_party_icu_icudata_gyp)/icudata.stamp \
+	$(call intermediates-dir-for,GYP,net_net_resources_gyp)/net_resources.stamp \
+	$(call intermediates-dir-for,GYP,net_net_jni_headers_gyp)/net_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp)/skia.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp)/skia_skia_library_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_opts_gyp)/skia_skia_opts_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_zlib_zlib_gyp)/third_party_zlib_zlib_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_skia_config_gyp)/blink_skia_config.stamp \
 	$(call intermediates-dir-for,GYP,third_party_expat_expat_gyp)/expat.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_freetype_ft2_gyp)/third_party_freetype_ft2_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_chrome_gyp)/skia_skia_chrome_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_chrome_opts_gyp)/skia_skia_chrome_opts_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_opus_opus_gyp)/third_party_opus_opus_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,base_base_i18n_gyp)/base_base_i18n_gyp.a \
-	$(call intermediates-dir-for,GYP,third_party_icu_icui18n_gyp)/icui18n.stamp \
-	$(call intermediates-dir-for,GYP,third_party_icu_system_icu_gyp)/system_icu.stamp \
-	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,net_net_gyp)/net_net_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,sdch_sdch_gyp)/sdch_sdch_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,url_url_lib_gyp)/url_url_lib_gyp.a \
-	$(call intermediates-dir-for,GYP,third_party_icu_icudata_gyp)/icudata.stamp \
-	$(call intermediates-dir-for,GYP,net_net_resources_gyp)/net_resources.stamp \
-	$(call intermediates-dir-for,GYP,net_net_jni_headers_gyp)/net_jni_headers.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libpng_libpng_gyp)/third_party_libpng_libpng_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_shell_dialogs_gyp)/ui_shell_dialogs_gyp.a \
 	$(call intermediates-dir-for,GYP,ui_base_strings_ui_strings_gyp)/ui_strings.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libpng_libpng_gyp)/third_party_libpng_libpng_gyp.a \
 	$(call intermediates-dir-for,GYP,ui_ui_resources_gyp)/ui_resources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_libjpeg_libjpeg_gyp)/libjpeg.stamp \
 	$(call intermediates-dir-for,GYP,ui_ui_jni_headers_gyp)/ui_jni_headers.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_command_buffer_common_gyp)/gpu_command_buffer_common_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_command_buffer_gles2_utils_gyp)/gpu_command_buffer_gles2_utils_gyp.a \
-	$(call intermediates-dir-for,GYP,third_party_khronos_khronos_headers_gyp)/khronos_headers.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,media_shared_memory_support_gyp)/media_shared_memory_support_gyp.a \
-	$(call intermediates-dir-for,GYP,media_media_android_jni_headers_gyp)/media_android_jni_headers.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,media_player_android_gyp)/media_player_android_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
-	$(call intermediates-dir-for,GYP,third_party_mesa_mesa_headers_gyp)/mesa_headers.stamp \
-	$(call intermediates-dir-for,GYP,ui_gl_gl_jni_headers_gyp)/gl_jni_headers.stamp \
-	$(call intermediates-dir-for,GYP,ui_gl_surface_texture_jni_headers_gyp)/surface_texture_jni_headers.stamp \
-	$(call intermediates-dir-for,GYP,ui_gl_surface_jni_headers_gyp)/surface_jni_headers.stamp \
-	$(call intermediates-dir-for,GYP,media_video_capture_android_jni_headers_gyp)/video_capture_android_jni_headers.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_shell_dialogs_gyp)/ui_shell_dialogs_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_common_user_agent_user_agent_gyp)/webkit_common_user_agent_user_agent_gyp.a \
 	$(call intermediates-dir-for,GYP,webkit_common_user_agent_webkit_version_gyp)/webkit_version.stamp \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp)/content_resources.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,cc_cc_gyp)/cc_cc_gyp.a \
 	$(call intermediates-dir-for,GYP,gpu_gpu_gyp)/gpu.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_command_buffer_client_gyp)/gpu_command_buffer_client_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_command_buffer_common_gyp)/gpu_command_buffer_common_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_command_buffer_gles2_utils_gyp)/gpu_command_buffer_gles2_utils_gyp.a \
+	$(call intermediates-dir-for,GYP,third_party_khronos_khronos_headers_gyp)/khronos_headers.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_command_buffer_service_gyp)/gpu_command_buffer_service_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_disk_cache_proto_gyp)/gpu_disk_cache_proto_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
+	$(call intermediates-dir-for,GYP,third_party_mesa_mesa_headers_gyp)/mesa_headers.stamp \
+	$(call intermediates-dir-for,GYP,ui_gl_gl_jni_headers_gyp)/gl_jni_headers.stamp \
+	$(call intermediates-dir-for,GYP,ui_gl_surface_jni_headers_gyp)/surface_jni_headers.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_angle_dx11_src_translator_glsl_gyp)/third_party_angle_dx11_src_translator_glsl_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_angle_dx11_src_translator_common_gyp)/third_party_angle_dx11_src_translator_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_angle_dx11_src_preprocessor_gyp)/third_party_angle_dx11_src_preprocessor_gyp.a \
@@ -88,6 +81,12 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_gles2_cmd_helper_gyp)/gpu_gles2_cmd_helper_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_gpu_config_gyp)/gpu_gpu_config_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_gpu_ipc_gyp)/gpu_gpu_ipc_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,media_media_gyp)/media_media_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_opus_opus_gyp)/third_party_opus_opus_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,media_shared_memory_support_gyp)/media_shared_memory_support_gyp.a \
+	$(call intermediates-dir-for,GYP,media_media_android_jni_headers_gyp)/media_android_jni_headers.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,media_player_android_gyp)/media_player_android_gyp.a \
+	$(call intermediates-dir-for,GYP,media_video_capture_android_jni_headers_gyp)/video_capture_android_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_minimal_gyp)/blink_minimal.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_web_blink_common_gyp)/third_party_WebKit_Source_web_blink_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_wtf_wtf_gyp)/third_party_WebKit_Source_wtf_wtf_gyp.a \
@@ -297,9 +296,9 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
+	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
-	$(LOCAL_PATH) \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -381,9 +380,9 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
+	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
-	$(LOCAL_PATH) \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -460,33 +459,29 @@ LOCAL_STATIC_LIBRARIES := \
 	content_content_common_gyp \
 	components_tracing_gyp \
 	ipc_ipc_gyp \
-	media_media_gyp \
+	net_net_gyp \
+	base_base_i18n_gyp \
 	crypto_crypto_gyp \
 	third_party_openssl_openssl_gyp \
+	sdch_sdch_gyp \
+	third_party_zlib_zlib_gyp \
+	url_url_lib_gyp \
 	skia_skia_library_gyp \
 	skia_skia_opts_gyp \
-	third_party_zlib_zlib_gyp \
 	third_party_freetype_ft2_gyp \
 	skia_skia_chrome_gyp \
 	skia_skia_chrome_opts_gyp \
-	third_party_opus_opus_gyp \
-	ui_ui_gyp \
-	base_base_i18n_gyp \
-	net_net_gyp \
-	sdch_sdch_gyp \
-	url_url_lib_gyp \
-	third_party_libpng_libpng_gyp \
-	gpu_command_buffer_common_gyp \
-	gpu_command_buffer_gles2_utils_gyp \
-	media_shared_memory_support_gyp \
-	media_player_android_gyp \
-	ui_gl_gl_gyp \
 	ui_shell_dialogs_gyp \
+	ui_ui_gyp \
+	third_party_libpng_libpng_gyp \
 	webkit_common_user_agent_user_agent_gyp \
 	cc_cc_gyp \
 	gpu_command_buffer_client_gyp \
+	gpu_command_buffer_common_gyp \
+	gpu_command_buffer_gles2_utils_gyp \
 	gpu_command_buffer_service_gyp \
 	gpu_disk_cache_proto_gyp \
+	ui_gl_gl_gyp \
 	third_party_angle_dx11_src_translator_glsl_gyp \
 	third_party_angle_dx11_src_translator_common_gyp \
 	third_party_angle_dx11_src_preprocessor_gyp \
@@ -495,6 +490,10 @@ LOCAL_STATIC_LIBRARIES := \
 	gpu_gles2_cmd_helper_gyp \
 	gpu_gpu_config_gyp \
 	gpu_gpu_ipc_gyp \
+	media_media_gyp \
+	third_party_opus_opus_gyp \
+	media_shared_memory_support_gyp \
+	media_player_android_gyp \
 	third_party_WebKit_Source_web_blink_common_gyp \
 	third_party_WebKit_Source_wtf_wtf_gyp \
 	v8_tools_gyp_v8_base_mipsel_gyp \
@@ -575,12 +574,12 @@ LOCAL_SHARED_LIBRARIES := \
 	liblog \
 	libcutils \
 	libandroid \
-	libOpenSLES \
-	libexpat \
-	libjnigraphics \
 	libicui18n \
 	libicuuc \
+	libexpat \
+	libjnigraphics \
 	libjpeg \
+	libOpenSLES \
 	libstlport \
 	libdl
 

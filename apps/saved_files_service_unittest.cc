@@ -71,7 +71,7 @@ class SavedFilesServiceUnitTest : public testing::Test {
     ASSERT_TRUE(entry);
     EXPECT_EQ(id_string, entry->id);
     EXPECT_EQ(path_, entry->path);
-    EXPECT_TRUE(entry->writable);
+    EXPECT_TRUE(entry->is_directory);
     EXPECT_EQ(sequence_number, entry->sequence_number);
   }
 

@@ -52,6 +52,7 @@ class ThreadProxy : public Proxy,
   virtual void SetNeedsUpdateLayers() OVERRIDE;
   virtual void SetNeedsCommit() OVERRIDE;
   virtual void SetNeedsRedraw(gfx::Rect damage_rect) OVERRIDE;
+  virtual void SetNextCommitWaitsForActivation() OVERRIDE;
   virtual void NotifyInputThrottledUntilCommit() OVERRIDE;
   virtual void SetDeferCommits(bool defer_commits) OVERRIDE;
   virtual bool CommitRequested() const OVERRIDE;
@@ -66,14 +67,11 @@ class ThreadProxy : public Proxy,
   virtual scoped_ptr<base::Value> SchedulerStateAsValueForTesting() OVERRIDE;
 
   // LayerTreeHostImplClient implementation
-  virtual void DidTryInitializeRendererOnImplThread(
-      bool success,
-      scoped_refptr<ContextProvider> offscreen_context_provider) OVERRIDE;
   virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE;
   virtual void OnSwapBuffersCompleteOnImplThread() OVERRIDE;
   virtual void BeginFrameOnImplThread(const BeginFrameArgs& args) OVERRIDE;
   virtual void OnCanDrawStateChanged(bool can_draw) OVERRIDE;
-  virtual void OnHasPendingTreeStateChanged(bool has_pending_tree) OVERRIDE;
+  virtual void NotifyReadyToActivate() OVERRIDE;
   virtual void SetNeedsRedrawOnImplThread() OVERRIDE;
   virtual void SetNeedsRedrawRectOnImplThread(gfx::Rect dirty_rect) OVERRIDE;
   virtual void DidInitializeVisibleTileOnImplThread() OVERRIDE;
@@ -101,7 +99,7 @@ class ThreadProxy : public Proxy,
       OVERRIDE;
   virtual void ScheduledActionCommit() OVERRIDE;
   virtual void ScheduledActionUpdateVisibleTiles() OVERRIDE;
-  virtual void ScheduledActionActivatePendingTreeIfNeeded() OVERRIDE;
+  virtual void ScheduledActionActivatePendingTree() OVERRIDE;
   virtual void ScheduledActionBeginOutputSurfaceCreation() OVERRIDE;
   virtual void ScheduledActionAcquireLayerTexturesForMainThread() OVERRIDE;
   virtual void DidAnticipatedDrawTimeChange(base::TimeTicks time) OVERRIDE;
@@ -155,6 +153,7 @@ class ThreadProxy : public Proxy,
   void InitializeImplOnImplThread(CompletionEvent* completion);
   void SetLayerTreeHostClientReadyOnImplThread();
   void SetVisibleOnImplThread(CompletionEvent* completion, bool visible);
+  void UpdateBackgroundAnimateTicking();
   void HasInitializedOutputSurfaceOnImplThread(
       CompletionEvent* completion,
       bool* has_initialized_output_surface);
@@ -205,6 +204,10 @@ class ThreadProxy : public Proxy,
   // Holds the first output surface passed from Start. Should not be used for
   // anything else.
   scoped_ptr<OutputSurface> first_output_surface_;
+
+  // Accessed on the main thread, or when main thread is blocked.
+  bool commit_waits_for_activation_;
+  bool inside_commit_;
 
   base::WeakPtrFactory<ThreadProxy> weak_factory_on_impl_thread_;
 

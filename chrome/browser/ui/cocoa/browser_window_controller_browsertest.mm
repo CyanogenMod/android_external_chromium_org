@@ -21,6 +21,7 @@
 #import "chrome/browser/ui/cocoa/browser_window_controller_private.h"
 #import "chrome/browser/ui/cocoa/fast_resize_view.h"
 #import "chrome/browser/ui/cocoa/history_overlay_controller.h"
+#import "chrome/browser/ui/cocoa/infobars/infobar_cocoa.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_container_controller.h"
 #import "chrome/browser/ui/cocoa/nsview_additions.h"
 #import "chrome/browser/ui/cocoa/tab_contents/overlayable_contents_controller.h"
@@ -108,10 +109,8 @@ class BrowserWindowControllerTest : public InProcessBrowserTest {
         browser()->tab_strip_model()->GetActiveWebContents();
     InfoBarService* service =
         InfoBarService::FromWebContents(web_contents);
-    info_bar_delegate_.reset(new DummyInfoBar(service));
-    [[controller() infoBarContainerController]
-        addInfoBar:info_bar_delegate_->CreateInfoBar(service)
-           animate:NO];
+    scoped_ptr<InfoBarDelegate> info_bar_delegate(new DummyInfoBar(service));
+    service->AddInfoBar(info_bar_delegate.Pass());
   }
 
   NSView* GetViewWithID(ViewID view_id) const {
@@ -163,8 +162,6 @@ class BrowserWindowControllerTest : public InProcessBrowserTest {
   }
 
  private:
-  scoped_ptr<InfoBarDelegate> info_bar_delegate_;
-
   DISALLOW_COPY_AND_ASSIGN(BrowserWindowControllerTest);
 };
 
@@ -371,10 +368,7 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
       popup_browser->tab_strip_model()->GetActiveWebContents();
   InfoBarService* service = InfoBarService::FromWebContents(web_contents);
   scoped_ptr<InfoBarDelegate> info_bar_delegate(new DummyInfoBar(service));
-  [[popupController infoBarContainerController]
-      addInfoBar:info_bar_delegate->CreateInfoBar(service)
-         animate:NO];
-
+  service->AddInfoBar(info_bar_delegate.Pass());
   EXPECT_TRUE(
       [[popupController infoBarContainerController]
           shouldSuppressTopInfoBarTip]);
@@ -386,7 +380,7 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
                        AllowOverlappingViewsHistoryOverlay) {
   content::WebContentsView* web_contents_view =
       browser()->tab_strip_model()->GetActiveWebContents()->GetView();
-  EXPECT_FALSE(web_contents_view->GetAllowOverlappingViews());
+  EXPECT_TRUE(web_contents_view->GetAllowOverlappingViews());
 
   base::scoped_nsobject<HistoryOverlayController> overlay(
       [[HistoryOverlayController alloc] initForMode:kHistoryOverlayModeBack]);
@@ -394,5 +388,5 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
   EXPECT_TRUE(web_contents_view->GetAllowOverlappingViews());
 
   overlay.reset();
-  EXPECT_FALSE(web_contents_view->GetAllowOverlappingViews());
+  EXPECT_TRUE(web_contents_view->GetAllowOverlappingViews());
 }

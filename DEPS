@@ -8,12 +8,12 @@ vars = {
   "sourceforge_url": "http://svn.code.sf.net/p/%(repo)s/code",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "156598",
+  "webkit_revision": "156939",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "skia_git": "https://skia.googlesource.com",
   "swig_revision": "69281",
-  "nacl_revision": "12040",
+  "nacl_revision": "12072",
   # After changing nacl_revision, run 'glient sync' and check native_client/DEPS
   # to update other nacl_*_revision's.
   "nacl_tools_revision": "11437",  # native_client/DEPS: tools_rev
@@ -29,16 +29,16 @@ vars = {
   "ffmpeg_hash": "894e6f715645528e815aee2dad45b59704238dcd",
 
   "sfntly_revision": "134",
-  "skia_revision": "10884",
-  "skia_hash": "5ff3e8c7872eb5b840399b22fe4734b968f61a4b",
+  "skia_revision": "11007",
+  "skia_hash": "6ae54815276e1fd2f337798fd2badb45d5006308",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
-  "v8_revision": "16277",
+  "v8_revision": "16410",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
-  "webrtc_revision": "4595",
+  "webrtc_revision": "4632",
   "jsoncpp_revision": "248",
   "nss_revision": "209026",
   # Three lines of non-changing comments so that
@@ -66,7 +66,7 @@ deps = {
 
   "src/third_party/angle_dx11":
     Var("chromium_git") +
-    "/external/angle.git@827fb6ad615eca2755ae80789a02e1a5587832b6",
+    "/external/angle.git@41159326ab429bb88262f80118e79bb5a108f0db",
 
   "src/third_party/trace-viewer":
     (Var("googlecode_url") % "trace-viewer") + "/trunk@893",
@@ -97,13 +97,13 @@ deps = {
     (Var("googlecode_url") % "leveldb") + "/trunk@76",
 
   "src/third_party/snappy/src":
-    (Var("googlecode_url") % "snappy") + "/trunk@74",
+    (Var("googlecode_url") % "snappy") + "/trunk@80",
 
   "src/tools/grit":
     (Var("googlecode_url") % "grit-i18n") + "/trunk@129",
 
   "src/tools/gyp":
-    (Var("googlecode_url") % "gyp") + "/trunk@1700",
+    (Var("googlecode_url") % "gyp") + "/trunk@1707",
 
   "src/tools/swarm_client":
     "/trunk/tools/swarm_client@" + Var("swarm_revision"),
@@ -233,7 +233,7 @@ deps = {
     "/trunk/tools/deps2git@214390",
 
   "src/third_party/webpagereplay":
-    (Var("googlecode_url") % "web-page-replay") + "/trunk@519",
+    (Var("googlecode_url") % "web-page-replay") + "/trunk@520",
 
   "src/third_party/pywebsocket/src":
     (Var("googlecode_url") % "pywebsocket") + "/trunk/src@662",

@@ -71,7 +71,7 @@ class DummyFileSystem : public FileSystemInterface {
       const base::FilePath& file_path,
       const ReadDirectoryCallback& callback) OVERRIDE {}
   virtual void Search(const std::string& search_query,
-                      const GURL& next_url,
+                      const std::string& page_token,
                       const SearchCallback& callback) OVERRIDE {}
   virtual void SearchMetadata(
       const std::string& query,
@@ -92,8 +92,8 @@ class DummyFileSystem : public FileSystemInterface {
   virtual void MarkCacheFileAsUnmounted(
       const base::FilePath& cache_file_path,
       const FileOperationCallback& callback) OVERRIDE {}
-  virtual void GetCacheEntryByResourceId(
-      const std::string& resource_id,
+  virtual void GetCacheEntryByPath(
+      const base::FilePath& drive_file_path,
       const GetCacheEntryCallback& callback) OVERRIDE {}
   virtual void Reload() OVERRIDE {}
 };

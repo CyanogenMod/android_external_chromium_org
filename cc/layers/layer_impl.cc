@@ -140,6 +140,9 @@ void LayerImpl::SetScrollParent(LayerImpl* parent) {
   if (scroll_parent_ == parent)
     return;
 
+  // Having both a scroll parent and a scroll offset delegate is unsupported.
+  DCHECK(!scroll_offset_delegate_);
+
   if (scroll_parent_)
     scroll_parent_->RemoveScrollChild(this);
 
@@ -516,7 +519,10 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
   layer->SetTransform(transform_);
 
   layer->SetScrollable(scrollable_);
-  layer->SetScrollOffset(scroll_offset_);
+  layer->SetScrollOffsetAndDelta(
+      scroll_offset_, layer->ScrollDelta() - layer->sent_scroll_delta());
+  layer->SetSentScrollDelta(gfx::Vector2d());
+
   layer->SetMaxScrollOffset(max_scroll_offset_);
 
   LayerImpl* scroll_parent = NULL;
@@ -555,9 +561,6 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
   // union) any update changes that have occurred on the main thread.
   update_rect_.Union(layer->update_rect());
   layer->set_update_rect(update_rect_);
-
-  layer->SetScrollDelta(layer->ScrollDelta() - layer->sent_scroll_delta());
-  layer->SetSentScrollDelta(gfx::Vector2d());
 
   layer->SetStackingOrderChanged(stacking_order_changed_);
 
@@ -988,6 +991,8 @@ void LayerImpl::UpdateScrollbarPositions() {
 
 void LayerImpl::SetScrollOffsetDelegate(
     LayerScrollOffsetDelegate* scroll_offset_delegate) {
+  // Having both a scroll parent and a scroll offset delegate is unsupported.
+  DCHECK(!scroll_parent_);
   if (!scroll_offset_delegate && scroll_offset_delegate_) {
     scroll_delta_ =
         scroll_offset_delegate_->GetTotalScrollOffset() - scroll_offset_;
@@ -999,16 +1004,49 @@ void LayerImpl::SetScrollOffsetDelegate(
 }
 
 void LayerImpl::SetScrollOffset(gfx::Vector2d scroll_offset) {
-  if (scroll_offset_ == scroll_offset)
-    return;
+  SetScrollOffsetAndDelta(scroll_offset, ScrollDelta());
+}
 
-  scroll_offset_ = scroll_offset;
+void LayerImpl::SetScrollOffsetAndDelta(gfx::Vector2d scroll_offset,
+                                        gfx::Vector2dF scroll_delta) {
+  bool changed = false;
 
-  if (scroll_offset_delegate_)
-    scroll_offset_delegate_->SetTotalScrollOffset(TotalScrollOffset());
+  if (scroll_offset_ != scroll_offset) {
+    changed = true;
+    scroll_offset_ = scroll_offset;
 
-  NoteLayerPropertyChangedForSubtree();
-  UpdateScrollbarPositions();
+    if (scroll_offset_delegate_)
+      scroll_offset_delegate_->SetTotalScrollOffset(TotalScrollOffset());
+  }
+
+  if (ScrollDelta() != scroll_delta) {
+    changed = true;
+    if (layer_tree_impl()->IsActiveTree()) {
+      LayerImpl* pending_twin =
+          layer_tree_impl()->FindPendingTreeLayerById(id());
+      if (pending_twin) {
+        // The pending twin can't mirror the scroll delta of the active
+        // layer.  Although the delta - sent scroll delta difference is
+        // identical for both twins, the sent scroll delta for the pending
+        // layer is zero, as anything that has been sent has been baked
+        // into the layer's position/scroll offset as a part of commit.
+        DCHECK(pending_twin->sent_scroll_delta().IsZero());
+        pending_twin->SetScrollDelta(scroll_delta - sent_scroll_delta());
+      }
+    }
+
+    if (scroll_offset_delegate_) {
+      scroll_offset_delegate_->SetTotalScrollOffset(scroll_offset_ +
+                                                    scroll_delta);
+    } else {
+      scroll_delta_ = scroll_delta;
+    }
+  }
+
+  if (changed) {
+    NoteLayerPropertyChangedForSubtree();
+    UpdateScrollbarPositions();
+  }
 }
 
 gfx::Vector2dF LayerImpl::ScrollDelta() const {
@@ -1018,31 +1056,7 @@ gfx::Vector2dF LayerImpl::ScrollDelta() const {
 }
 
 void LayerImpl::SetScrollDelta(gfx::Vector2dF scroll_delta) {
-  if (ScrollDelta() == scroll_delta)
-    return;
-
-  if (layer_tree_impl()->IsActiveTree()) {
-    LayerImpl* pending_twin = layer_tree_impl()->FindPendingTreeLayerById(id());
-    if (pending_twin) {
-      // The pending twin can't mirror the scroll delta of the active
-      // layer.  Although the delta - sent scroll delta difference is
-      // identical for both twins, the sent scroll delta for the pending
-      // layer is zero, as anything that has been sent has been baked
-      // into the layer's position/scroll offset as a part of commit.
-      DCHECK(pending_twin->sent_scroll_delta().IsZero());
-      pending_twin->SetScrollDelta(scroll_delta - sent_scroll_delta());
-    }
-  }
-
-  if (scroll_offset_delegate_) {
-    scroll_offset_delegate_->SetTotalScrollOffset(
-        scroll_offset_ + scroll_delta);
-  } else {
-    scroll_delta_ = scroll_delta;
-  }
-
-  NoteLayerPropertyChangedForSubtree();
-  UpdateScrollbarPositions();
+  SetScrollOffsetAndDelta(scroll_offset_, scroll_delta);
 }
 
 gfx::Vector2dF LayerImpl::TotalScrollOffset() const {
@@ -1084,24 +1098,37 @@ void LayerImpl::SetScrollbarOpacity(float opacity) {
 }
 
 void LayerImpl::DidBecomeActive() {
-  if (!layer_tree_impl_->settings().use_linear_fade_scrollbar_animator)
+  if (layer_tree_impl_->settings().scrollbar_animator ==
+      LayerTreeSettings::NoAnimator) {
     return;
+  }
 
   bool need_scrollbar_animation_controller = horizontal_scrollbar_layer_ ||
                                              vertical_scrollbar_layer_;
-  if (need_scrollbar_animation_controller) {
-    if (!scrollbar_animation_controller_) {
-      base::TimeDelta fadeout_delay = base::TimeDelta::FromMilliseconds(
-          layer_tree_impl_->settings().scrollbar_linear_fade_delay_ms);
-      base::TimeDelta fadeout_length = base::TimeDelta::FromMilliseconds(
-          layer_tree_impl_->settings().scrollbar_linear_fade_length_ms);
-      scrollbar_animation_controller_ =
-          ScrollbarAnimationControllerLinearFade::Create(
-              this, fadeout_delay, fadeout_length)
-              .PassAs<ScrollbarAnimationController>();
-    }
-  } else {
+  if (!need_scrollbar_animation_controller) {
     scrollbar_animation_controller_.reset();
+    return;
+  }
+
+  if (scrollbar_animation_controller_)
+    return;
+
+  switch (layer_tree_impl_->settings().scrollbar_animator) {
+  case LayerTreeSettings::LinearFade: {
+    base::TimeDelta fadeout_delay = base::TimeDelta::FromMilliseconds(
+        layer_tree_impl_->settings().scrollbar_linear_fade_delay_ms);
+    base::TimeDelta fadeout_length = base::TimeDelta::FromMilliseconds(
+        layer_tree_impl_->settings().scrollbar_linear_fade_length_ms);
+
+    scrollbar_animation_controller_ =
+        ScrollbarAnimationControllerLinearFade::Create(
+            this, fadeout_delay, fadeout_length)
+            .PassAs<ScrollbarAnimationController>();
+    break;
+  }
+  case LayerTreeSettings::NoAnimator:
+    NOTREACHED();
+    break;
   }
 }
 void LayerImpl::SetHorizontalScrollbarLayer(

@@ -34,6 +34,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 using testing::_;
+using testing::AnyNumber;
+using testing::Return;
 
 namespace net {
 namespace test {
@@ -168,14 +170,17 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<bool> {
     runner_ = new TestTaskRunner(&clock_);
     send_algorithm_ = new MockSendAlgorithm();
     receive_algorithm_ = new TestReceiveAlgorithm(NULL);
+    EXPECT_CALL(*receive_algorithm_, RecordIncomingPacket(_, _, _, _)).
+        Times(AnyNumber());
+    EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _)).Times(AnyNumber());
     EXPECT_CALL(*send_algorithm_, RetransmissionDelay()).WillRepeatedly(
-        testing::Return(QuicTime::Delta::Zero()));
+        Return(QuicTime::Delta::Zero()));
     EXPECT_CALL(*send_algorithm_, TimeUntilSend(_, _, _, _)).
-        WillRepeatedly(testing::Return(QuicTime::Delta::Zero()));
+        WillRepeatedly(Return(QuicTime::Delta::Zero()));
     EXPECT_CALL(*send_algorithm_, SmoothedRtt()).WillRepeatedly(
-        testing::Return(QuicTime::Delta::Zero()));
+        Return(QuicTime::Delta::Zero()));
     EXPECT_CALL(*send_algorithm_, BandwidthEstimate()).WillRepeatedly(
-        testing::Return(QuicBandwidth::Zero()));
+        Return(QuicBandwidth::Zero()));
     helper_ = new QuicConnectionHelper(runner_.get(), &clock_,
                                        &random_generator_, socket);
     connection_ = new TestQuicConnection(guid_, peer_addr_, helper_);
@@ -203,7 +208,7 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<bool> {
     headers[":path"] = path;
     headers[":scheme"] = "http";
     headers[":version"] = "HTTP/1.1";
-    request_data_ = SerializeHeaderBlock(headers);
+    request_data_ = SerializeHeaderBlock(headers, true);
   }
 
   void SetResponseString(const std::string& status, const std::string& body) {
@@ -211,15 +216,19 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<bool> {
     headers[":status"] = status;
     headers[":version"] = "HTTP/1.1";
     headers["content-type"] = "text/plain";
-    response_data_ = SerializeHeaderBlock(headers) + body;
+    response_data_ = SerializeHeaderBlock(headers, false) + body;
   }
 
-  std::string SerializeHeaderBlock(const SpdyHeaderBlock& headers) {
+  std::string SerializeHeaderBlock(const SpdyHeaderBlock& headers,
+                                   bool write_priority) {
     QuicSpdyCompressor compressor;
+    if (framer_.version() >= QUIC_VERSION_9 && write_priority) {
+      return compressor.CompressHeadersWithPriority(0, headers);
+    }
     return compressor.CompressHeaders(headers);
   }
 
-  // Returns a newly created packet to send kData on stream 1.
+  // Returns a newly created packet to send kData on stream 3.
   QuicEncryptedPacket* ConstructDataPacket(
       QuicPacketSequenceNumber sequence_number,
       bool should_include_version,
@@ -228,6 +237,14 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<bool> {
       base::StringPiece data) {
     InitializeHeader(sequence_number, should_include_version);
     QuicStreamFrame frame(3, fin, offset, data);
+    return ConstructPacket(header_, QuicFrame(&frame));
+  }
+
+  // Returns a newly created packet to RST_STREAM stream 3.
+  QuicEncryptedPacket* ConstructRstStreamPacket(
+      QuicPacketSequenceNumber sequence_number) {
+    InitializeHeader(sequence_number, false);
+    QuicRstStreamFrame frame(3, QUIC_SERVER_ERROR_PROCESSING_STREAM);
     return ConstructPacket(header_, QuicFrame(&frame));
   }
 
@@ -533,6 +550,7 @@ TEST_F(QuicHttpStreamTest, SendChunkedPostRequest) {
 TEST_F(QuicHttpStreamTest, DestroyedEarly) {
   SetRequestString("GET", "/");
   AddWrite(SYNCHRONOUS, ConstructDataPacket(1, true, kFin, 0, request_data_));
+  AddWrite(SYNCHRONOUS, ConstructRstStreamPacket(2));
   use_closing_stream_ = true;
   Initialize();
 

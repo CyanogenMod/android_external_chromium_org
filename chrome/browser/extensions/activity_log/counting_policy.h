@@ -28,6 +28,15 @@ class CountingPolicy : public ActivityLogDatabasePolicy {
       const base::Callback
           <void(scoped_ptr<Action::ActionVector>)>& callback) OVERRIDE;
 
+  virtual void ReadFilteredData(
+      const std::string& extension_id,
+      const Action::ActionType type,
+      const std::string& api_name,
+      const std::string& page_url,
+      const std::string& arg_url,
+      const base::Callback
+          <void(scoped_ptr<Action::ActionVector>)>& callback) OVERRIDE;
+
   virtual void Close() OVERRIDE;
 
   // Gets or sets the amount of time that old records are kept in the database.
@@ -35,6 +44,9 @@ class CountingPolicy : public ActivityLogDatabasePolicy {
   void set_retention_time(const base::TimeDelta& delta) {
     retention_time_ = delta;
   }
+
+  // Clean the URL data stored for this policy.
+  virtual void RemoveURLs(const std::vector<GURL>&) OVERRIDE;
 
   // The main database table, and the name for a read-only view that
   // decompresses string values for easier parsing.
@@ -65,6 +77,19 @@ class CountingPolicy : public ActivityLogDatabasePolicy {
   scoped_ptr<Action::ActionVector> DoReadData(
       const std::string& extension_id,
       const int days_ago);
+
+  // Internal method to read data from the database; called on the database
+  // thread.
+  scoped_ptr<Action::ActionVector> DoReadFilteredData(
+      const std::string& extension_id,
+      const Action::ActionType type,
+      const std::string& api_name,
+      const std::string& page_url,
+      const std::string& arg_url);
+
+  // The implementation of RemoveURLs; this must only run on the database
+  // thread.
+  void DoRemoveURLs(const std::vector<GURL>& restrict_urls);
 
   // Cleans old records from the activity log database.
   bool CleanOlderThan(sql::Connection* db, const base::Time& cutoff);
@@ -104,6 +129,7 @@ class CountingPolicy : public ActivityLogDatabasePolicy {
   base::Time last_database_cleaning_time_;
 
   friend class CountingPolicyTest;
+  FRIEND_TEST_ALL_PREFIXES(CountingPolicyTest, EarlyFlush);
   FRIEND_TEST_ALL_PREFIXES(CountingPolicyTest, MergingAndExpiring);
   FRIEND_TEST_ALL_PREFIXES(CountingPolicyTest, StringTableCleaning);
 };

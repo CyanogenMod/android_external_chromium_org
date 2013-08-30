@@ -10,8 +10,10 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/input_method/candidate_window_controller.h"
 #include "chrome/browser/chromeos/input_method/component_extension_ime_manager_impl.h"
 #include "chrome/browser/chromeos/input_method/input_method_engine_ibus.h"
@@ -115,10 +117,11 @@ const struct MigrationHangulKeyboardToInputMethodID {
 
 }  // namespace
 
-bool InputMethodManagerImpl::IsFullLatinKeyboard(
+bool InputMethodManagerImpl::IsLoginKeyboard(
     const std::string& layout) const {
-  const std::string& lang = util_.GetLanguageCodeFromInputMethodId(layout);
-  return full_latin_keyboard_checker.IsFullLatinKeyboard(layout, lang);
+  const InputMethodDescriptor* ime =
+      util_.GetInputMethodDescriptorFromId(layout);
+  return ime ? ime->is_login_keyboard() : false;
 }
 
 InputMethodManagerImpl::InputMethodManagerImpl(
@@ -246,7 +249,7 @@ void InputMethodManagerImpl::EnableLayouts(const std::string& language_code,
   // layouts, so it appears first on the list of active input
   // methods at the input language status menu.
   if (util_.IsValidInputMethodId(initial_layout) &&
-      InputMethodUtil::IsKeyboardLayout(initial_layout)) {
+      IsLoginKeyboard(initial_layout)) {
     layouts.push_back(initial_layout);
   } else if (!initial_layout.empty()) {
     DVLOG(1) << "EnableLayouts: ignoring non-keyboard or invalid ID: "
@@ -258,7 +261,7 @@ void InputMethodManagerImpl::EnableLayouts(const std::string& language_code,
     const std::string& candidate = candidates[i];
     // Not efficient, but should be fine, as the two vectors are very
     // short (2-5 items).
-    if (!Contains(layouts, candidate))
+    if (!Contains(layouts, candidate) && IsLoginKeyboard(candidate))
       layouts.push_back(candidate);
   }
 
@@ -562,7 +565,7 @@ void InputMethodManagerImpl::AddInputMethodExtension(
   }
 
   extra_input_methods_[id] =
-      InputMethodDescriptor(id, name, layouts, languages, options_url);
+      InputMethodDescriptor(id, name, layouts, languages, false, options_url);
   if (Contains(enabled_extension_imes_, id) &&
       !ComponentExtensionIMEManager::IsComponentExtensionIMEId(id)) {
     if (!Contains(active_input_method_ids_, id)) {
@@ -665,6 +668,24 @@ void InputMethodManagerImpl::SetEnabledExtensionImes(
     // If |current_input_method| is no longer in |active_input_method_ids_|,
     // switch to the first one in |active_input_method_ids_|.
     ChangeInputMethod(current_input_method_.id());
+  }
+}
+
+void InputMethodManagerImpl::SetInputMethodDefault() {
+  // Set up keyboards. For example, when |locale| is "en-US", enable US qwerty
+  // and US dvorak keyboard layouts.
+  if (g_browser_process && g_browser_process->local_state()) {
+    const std::string locale = g_browser_process->GetApplicationLocale();
+    // If the preferred keyboard for the login screen has been saved, use it.
+    PrefService* prefs = g_browser_process->local_state();
+    std::string initial_input_method_id =
+        prefs->GetString(chromeos::language_prefs::kPreferredKeyboardLayout);
+    if (initial_input_method_id.empty()) {
+      // If kPreferredKeyboardLayout is not specified, use the hardware layout.
+      initial_input_method_id =
+          GetInputMethodUtil()->GetHardwareInputMethodId();
+    }
+    EnableLayouts(locale, initial_input_method_id);
   }
 }
 
@@ -925,7 +946,7 @@ void InputMethodManagerImpl::OnScreenLocked() {
     const std::string& input_method_id = saved_active_input_method_ids_[i];
     // Skip if it's not a keyboard layout. Drop input methods including
     // extension ones.
-    if (!InputMethodUtil::IsKeyboardLayout(input_method_id))
+    if (!IsLoginKeyboard(input_method_id))
       continue;
     active_input_method_ids_.push_back(input_method_id);
     if (input_method_id == hardware_keyboard_id)

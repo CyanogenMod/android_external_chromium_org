@@ -42,6 +42,7 @@
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_instructions_view.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_context_menu.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_drag_drop_views.h"
+#include "chrome/browser/ui/views/bookmarks/bookmark_menu_controller_views.h"
 #include "chrome/browser/ui/views/event_utils.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
@@ -470,6 +471,7 @@ BookmarkBarView::~BookmarkBarView() {
   if (bookmark_menu_) {
     bookmark_menu_->set_observer(NULL);
     bookmark_menu_->SetPageNavigator(NULL);
+    bookmark_menu_->clear_bookmark_bar();
   }
   if (context_menu_.get())
     context_menu_->SetPageNavigator(NULL);
@@ -607,14 +609,14 @@ string16 BookmarkBarView::CreateToolTipForURLAndTitle(
   int max_width = views::TooltipManager::GetMaxWidth(screen_loc.x(),
                                                      screen_loc.y(),
                                                      context);
-  gfx::Font tt_font = views::TooltipManager::GetDefaultFont();
+  const gfx::FontList& tt_fonts = views::TooltipManager::GetDefaultFontList();
   string16 result;
 
   // First the title.
   if (!title.empty()) {
     string16 localized_title = title;
     base::i18n::AdjustStringForLocaleDirection(&localized_title);
-    result.append(ui::ElideText(localized_title, tt_font, max_width,
+    result.append(ui::ElideText(localized_title, tt_fonts, max_width,
                                 ui::ELIDE_AT_END));
   }
 
@@ -631,7 +633,7 @@ string16 BookmarkBarView::CreateToolTipForURLAndTitle(
     // default.
     std::string languages = profile->GetPrefs()->GetString(
         prefs::kAcceptLanguages);
-    string16 elided_url(ui::ElideUrl(url, tt_font, max_width, languages));
+    string16 elided_url(ui::ElideUrl(url, tt_fonts, max_width, languages));
     elided_url = base::i18n::GetDisplayStringInLTRDirectionality(elided_url);
     result.append(elided_url);
   }
@@ -940,7 +942,8 @@ void BookmarkBarView::AnimationEnded(const ui::Animation* animation) {
   }
 }
 
-void BookmarkBarView::BookmarkMenuDeleted(BookmarkMenuController* controller) {
+void BookmarkBarView::BookmarkMenuControllerDeleted(
+    BookmarkMenuController* controller) {
   if (controller == bookmark_menu_)
     bookmark_menu_ = NULL;
   else if (controller == bookmark_drop_menu_)
@@ -1167,8 +1170,8 @@ void BookmarkBarView::OnMenuButtonClicked(views::View* view,
   }
 
   bookmark_utils::RecordBookmarkFolderOpen(GetBookmarkLaunchLocation());
-  bookmark_menu_ = new BookmarkMenuController(browser_,
-      page_navigator_, GetWidget(), node, start_index);
+  bookmark_menu_ = new BookmarkMenuController(
+      browser_, page_navigator_, GetWidget(), node, start_index);
   bookmark_menu_->set_observer(this);
   bookmark_menu_->RunMenuAt(this, false);
 }

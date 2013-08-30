@@ -9,14 +9,15 @@
 
 #include "base/compiler_specific.h"
 #include "base/containers/hash_tables.h"
+#include "base/containers/scoped_ptr_hash_map.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/stl_util.h"
 #include "base/synchronization/lock.h"
 #include "cc/base/cc_export.h"
-#include "cc/base/scoped_ptr_hash_map.h"
 #include "cc/debug/fake_web_graphics_context_3d.h"
+#include "cc/output/context_provider.h"
 #include "third_party/khronos/GLES2/gl2.h"
 
 namespace cc {
@@ -141,6 +142,10 @@ class CC_EXPORT TestWebGraphicsContext3D : public FakeWebGraphicsContext3D {
       WebKit::WGC3Denum access);
   virtual void unmapImageCHROMIUM(WebKit::WGC3Duint image_id);
 
+  const ContextProvider::Capabilities& test_capabilities() const {
+    return test_capabilities_;
+  }
+
   // When set, MakeCurrent() will fail after this many times.
   void set_times_make_current_succeeds(int times) {
     times_make_current_succeeds_ = times;
@@ -174,13 +179,16 @@ class CC_EXPORT TestWebGraphicsContext3D : public FakeWebGraphicsContext3D {
   void ResetUsedTextures() { used_textures_.clear(); }
 
   void set_support_swapbuffers_complete_callback(bool support) {
-    support_swapbuffers_complete_callback_ = support;
+    test_capabilities_.swapbuffers_complete_callback = support;
   }
   void set_have_extension_io_surface(bool have) {
-    have_extension_io_surface_ = have;
+    test_capabilities_.iosurface = have;
   }
   void set_have_extension_egl_image(bool have) {
-    have_extension_egl_image_ = have;
+    test_capabilities_.egl_image_external = have;
+  }
+  void set_have_post_sub_buffer(bool have) {
+    test_capabilities_.post_sub_buffer = have;
   }
 
   // When this context is lost, all contexts in its share group are also lost.
@@ -228,8 +236,8 @@ class CC_EXPORT TestWebGraphicsContext3D : public FakeWebGraphicsContext3D {
     unsigned next_image_id;
     unsigned next_texture_id;
     std::vector<WebKit::WebGLId> textures;
-    ScopedPtrHashMap<unsigned, Buffer> buffers;
-    ScopedPtrHashMap<unsigned, Image> images;
+    base::ScopedPtrHashMap<unsigned, Buffer> buffers;
+    base::ScopedPtrHashMap<unsigned, Image> images;
 
    private:
     friend class base::RefCountedThreadSafe<Namespace>;
@@ -247,9 +255,7 @@ class CC_EXPORT TestWebGraphicsContext3D : public FakeWebGraphicsContext3D {
 
   unsigned context_id_;
   Attributes attributes_;
-  bool support_swapbuffers_complete_callback_;
-  bool have_extension_io_surface_;
-  bool have_extension_egl_image_;
+  ContextProvider::Capabilities test_capabilities_;
   int times_make_current_succeeds_;
   int times_bind_texture_succeeds_;
   int times_end_query_succeeds_;

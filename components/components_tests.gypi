@@ -10,6 +10,8 @@
           'target_name': 'components_unittests',
           'type': '<(gtest_target_type)',
           'sources': [
+            'autofill/core/common/form_data_unittest.cc',
+            'autofill/core/common/form_field_data_unittest.cc',
             'auto_login_parser/auto_login_parser_unittest.cc',
             'browser_context_keyed_service/browser_context_dependency_manager_unittest.cc',
             'browser_context_keyed_service/dependency_graph_unittest.cc',
@@ -19,6 +21,11 @@
             'navigation_interception/intercept_navigation_resource_throttle_unittest.cc',
             'sessions/serialized_navigation_entry_unittest.cc',
             'test/run_all_unittests.cc',
+            # TODO(asvitkine): These should be tested on iOS too.
+            'variations/entropy_provider_unittest.cc',
+            'variations/metrics_util_unittest.cc',
+            'variations/variations_associated_data_unittest.cc',
+            'variations/variations_seed_processor_unittest.cc',
             'visitedlink/test/visitedlink_unittest.cc',
             'webdata/encryptor/encryptor_password_mac_unittest.cc',
             'webdata/encryptor/encryptor_unittest.cc',
@@ -31,6 +38,9 @@
             '../base/base.gyp:test_support_base',
             '../testing/gmock.gyp:gmock',
             '../testing/gtest.gyp:gtest',
+
+            # Dependencies of autofill
+            'autofill_core_common',
 
             # Dependencies of auto_login_parser
             'auto_login_parser',
@@ -56,6 +66,9 @@
             '../third_party/protobuf/protobuf.gyp:protobuf_lite',
             'sessions',
             'sessions_test_support',
+
+            # Dependencies of variations
+            'variations',
 
             # Dependencies of visitedlink
             'visitedlink_browser',

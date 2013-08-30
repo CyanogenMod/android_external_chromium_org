@@ -39,6 +39,13 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
     : public RenderViewHostObserver,
       public media::MediaPlayerManager {
  public:
+  // Permits embedders to provide an extended version of the class.
+  typedef BrowserMediaPlayerManager* (*Factory)(RenderViewHost*);
+  static void RegisterFactory(Factory factory);
+
+  // Returns a new instance using the registered factory if available.
+  static BrowserMediaPlayerManager* Create(RenderViewHost* rvh);
+
   virtual ~BrowserMediaPlayerManager();
 
   // RenderViewHostObserver overrides.
@@ -98,11 +105,7 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
 #endif
 
  protected:
-  friend MediaPlayerManager* MediaPlayerManager::Create(
-      content::RenderViewHost*);
-
-  // The instance of this class is supposed to be created by either Create()
-  // method of MediaPlayerManager or the derived classes constructors.
+  // Clients must use Create() or subclass constructor.
   explicit BrowserMediaPlayerManager(RenderViewHost* render_view_host);
 
   // Message handlers.
@@ -119,12 +122,10 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   virtual void OnSetVolume(int player_id, double volume);
   virtual void OnReleaseResources(int player_id);
   virtual void OnDestroyPlayer(int player_id);
-  virtual void OnDemuxerReady(
-      int player_id,
-      const media::MediaPlayerHostMsg_DemuxerReady_Params& params);
-  virtual void OnReadFromDemuxerAck(
-      int player_id,
-      const media::MediaPlayerHostMsg_ReadFromDemuxerAck_Params& params);
+  virtual void OnDemuxerReady(int player_id,
+                              const media::DemuxerConfigs& configs);
+  virtual void OnReadFromDemuxerAck(int player_id,
+                                    const media::DemuxerData& data);
   void OnMediaSeekRequestAck(int player_id, unsigned seek_request_id);
   void OnInitializeCDM(int media_keys_id, const std::vector<uint8>& uuid);
   void OnGenerateKeyRequest(int media_keys_id,

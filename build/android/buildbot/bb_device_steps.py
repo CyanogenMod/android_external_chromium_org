@@ -141,6 +141,14 @@ def InstallApk(options, test, print_step=False):
   """
   if print_step:
     bb_annotations.PrintNamedStep('install_%s' % test.name.lower())
+  # TODO(gkanwar): Quick hack to make sure AndroidWebViewTest.apk is replaced
+  # before AndroidWebView.apk is. This can be removed once the bots cycle.
+  args = ['--apk', '%s.apk' % test.test_apk]
+  if options.target == 'Release':
+    args.append('--release')
+
+  RunCmd(['build/android/adb_install_apk.py'] + args, halt_on_failure=True)
+
   args = ['--apk', test.apk, '--apk_package', test.apk_package]
   if options.target == 'Release':
     args.append('--release')
@@ -149,7 +157,7 @@ def InstallApk(options, test, print_step=False):
 
 
 def RunInstrumentationSuite(options, test, flunk_on_failure=True,
-                            python_only=False):
+                            python_only=False, official_build=False):
   """Manages an invocation of test_runner.py for instrumentation tests.
 
   Args:
@@ -157,6 +165,7 @@ def RunInstrumentationSuite(options, test, flunk_on_failure=True,
     test: An I_TEST namedtuple
     flunk_on_failure: Flunk the step if tests fail.
     Python: Run only host driven Python tests.
+    official_build: Run official-build tests.
   """
   bb_annotations.PrintNamedStep('%s_instrumentation_tests' % test.name.lower())
 
@@ -182,6 +191,10 @@ def RunInstrumentationSuite(options, test, flunk_on_failure=True,
     args.extend(test.extra_flags)
   if python_only:
     args.append('-p')
+  if official_build:
+    # The option needs to be assigned 'True' as it does not have an action
+    # associated with it.
+    args.append('--official-build')
 
   RunCmd(['build/android/test_runner.py', 'instrumentation'] + args,
          flunk_on_failure=flunk_on_failure)
@@ -268,7 +281,7 @@ def DeviceStatusCheck(_):
 def GetDeviceSetupStepCmds():
   return [
     ('provision_devices', ProvisionDevices),
-    ('device_status_check', DeviceStatusCheck)
+    ('device_status_check', DeviceStatusCheck),
   ]
 
 
@@ -336,6 +349,7 @@ def GenerateJavaCoverageReport(options):
   RunCmd(['build/android/generate_emma_html.py',
           '--coverage-dir', options.coverage_dir,
           '--metadata-dir', os.path.join(CHROME_SRC, 'out', options.target),
+          '--cleanup',
           '--output', os.path.join(coverage_html, 'index.html')])
   UploadCoverageData(options, coverage_html, 'java')
 

@@ -1349,6 +1349,432 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="DataReductionProxy.PromoAction"
+    enum="DataReductionProxyPromoAction">
+  <summary>
+    Samples which method was used by the user to dismiss the proxy promo. This
+    is sampled when the promo leaves view, with the sampled value depending on
+    which of four possible controls the user used.
+  </summary>
+</histogram>
+
+<histogram name="DataReductionProxy.SettingsConversion"
+    enum="DataReductionProxySettingsConversion">
+  <summary>
+    Samples of user interactions with the ON/OFF switch in the settings menu for
+    reducing data usage. Only the setting changes between entering the reducing
+    data usage setting menu and leaving the menu will be sampled. So if a user
+    enters the menu with OFF and leaves it with OFF, it is counted as one OFF to
+    OFF conversion regardless of how many times he or she toggles the ON/OFF
+    switch.
+  </summary>
+</histogram>
+
+<histogram name="DataReductionProxy.StartupState"
+    enum="DataReductionProxyStartupState">
+  <summary>
+    Samples of the state of the data reduction proxy on Chrome startup. The
+    proxy will either be unavailable (the feature hasn't been rolled out to this
+    user yet), not enabled (the feature is available but the user doesn't have
+    it turned on), or enabled (the feature is enabled and turned on).
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Recovery.ConflictingDlls" enum="DiagnosticsResult">
+  <summary>
+    TBD - Not run automatically yet, so this is just a placeholder for future
+    metrics collection.  Any samples collected here represent users running
+    diagnostics manually.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Recovery.DiskSpace" enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the DiskSpace recovery step that runs
+    on recovery startups.  The recovery step attempts to guarantee the DiskSpace
+    test, which checks that the disk space in the volume where the user data
+    directory normally lives is not dangerously low, would pass on the next
+    startup.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Recovery.InstallType" enum="DiagnosticsResult">
+  <summary>
+    TBD - Not run automatically yet, so this is just a placeholder for future
+    metrics collection.  Any samples collected here represent users running
+    diagnostics manually.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Recovery.JSONBookmarks" enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the JSONBookmarks recovery step that
+    runs on recovery startups. The recovery step attempts to guarantee the
+    JSONBookmarks test, which makes sure that the JSON-encoded Bookmarks file is
+    properly formed, would pass on the next startup.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Recovery.JSONLocalState" enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the JSONLocalState recovery step that
+    runs on recovery startups. The recovery step attempts to guarantee the
+    JSONLocalState test, which makes sure that the JSON-encoded Local State file
+    is properly formed, would pass on the next startup.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Recovery.JSONPreferences" enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the JSONPreferences recovery step
+    that runs on recovery startups. The recovery step attempts to guarantee the
+    JSONPreferences test, which makes sure that the JSON-encoded Preferences
+    file is properly formed, would pass on the next startup.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Recovery.OperatingSystem" enum="DiagnosticsResult">
+  <summary>
+    TBD - Not run automatically yet, so this is just a placeholder for future
+    metrics collection.  Any samples collected here represent users running
+    diagnostics manually.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Recovery.PathDictionaries"
+    enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the PathDictionaries recovery step
+    that runs on recovery startups. The recovery step attempts to guarantee the
+    PathDictionaries test, which makes sure that the path to the Dictionaries
+    directory exists and has the right permissions, would pass on the next
+    startup.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Recovery.PathLocalState" enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the PathLocalState recovery step that
+    runs on recovery startups. The recovery step attempts to guarantee the
+    PathLocalState test, which makes sure that the path to the Local State file
+    exists and has the right permissions, would pass on the next startup.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Recovery.PathResources" enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the PathResources recovery step that
+    runs on recovery startups. The recovery step attempts to guarantee the
+    PathResources test, which makes sure that the path to the Resources
+    directory exists and has the right permissions, would pass on the next
+    startup.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Recovery.PathUserData" enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the PathUserData recovery step that
+    runs on recovery startups. The recovery step attempts to guarantee the
+    PathUserData test, which makes sure that the path to the User Data directory
+    exists and has the right permissions, would pass on the next startup.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Recovery.SQLiteIntegrityAppCache"
+    enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the SQLiteIntegrityAppCache recovery
+    step that runs on recovery startups.  The recovery step attempts to
+    guarantee the SQLiteIntegrityAppCache test, which checks the integrity of
+    the App Cache database, would pass on the next startup.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Recovery.SQLiteIntegrityArchivedHistory"
+    enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the SQLiteIntegrityArchivedHistory
+    recovery step that runs on recovery startups.  The recovery step attempts to
+    guarantee the SQLiteIntegrityArchivedHistory test, which checks the
+    integrity of the Archived History database, would pass on the next startup.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Recovery.SQLiteIntegrityCookie"
+    enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the SQLiteIntegrityCookie recovery
+    step that runs on recovery startups.  The recovery step attempts to
+    guarantee the SQLiteIntegrityCookie test, which checks the integrity of the
+    Cookie database, would pass on the next startup.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Recovery.SQLiteIntegrityDatabaseTracker"
+    enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the SQLiteIntegrityDatabaseTracker
+    recovery step that runs on recovery startups.  The recovery step attempts to
+    guarantee the SQLiteIntegrityDatabaseTracker test, which checks the
+    integrity of the Database Tracker database, would pass on the next startup.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Recovery.SQLiteIntegrityHistory"
+    enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the SQLiteIntegrityHistory recovery
+    step that runs on recovery startups.  The recovery step attempts to
+    guarantee the SQLiteIntegrityHistory test, which checks the integrity of the
+    History database, would pass on the next startup.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Recovery.SQLiteIntegrityNSSCert"
+    enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the SQLiteIntegrityNSSCert recovery
+    step that runs on recovery startups.  The recovery step attempts to
+    guarantee the SQLiteIntegrityNSSCert test, which checks the integrity of the
+    NSS Certificate database, would pass on the next startup.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Recovery.SQLiteIntegrityNSSKey"
+    enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the SQLiteIntegrityNSSKey recovery
+    step that runs on recovery startups.  The recovery step attempts to
+    guarantee the SQLiteIntegrityNSSKey test, which checks the integrity of the
+    NSS Key database, would pass on the next startup.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Recovery.SQLiteIntegrityThumbnails"
+    enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the SQLiteIntegrityThumbnails
+    recovery step that runs on recovery startups.  The recovery step attempts to
+    guarantee the SQLiteIntegrityThumbnails test, which checks the integrity of
+    the Thumbnails database, would pass on the next startup.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Recovery.SQLiteIntegrityWebData"
+    enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the SQLiteIntegrityWebData recovery
+    step that runs on recovery startups.  The recovery step attempts to
+    guarantee the SQLiteIntegrityWebData test, which checks the integrity of the
+    Web Data database, would pass on the next startup.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Recovery.Version" enum="DiagnosticsResult">
+  <summary>
+    TBD - Not run automatically yet, so this is just a placeholder for future
+    metrics collection.  Any samples collected here represent users running
+    diagnostics manually.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.RecoveryRun" enum="DiagnosticsRecoveryRun">
+  <summary>
+    Count of the number of times diagnostics recovery is invoked or not, and how
+    it was invoked.  A sample is added to this histogram once for each startup
+    of Chrome.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Test.ConflictingDlls" enum="DiagnosticsResult">
+  <summary>
+    TBD - Not run automatically yet, so this is just a placeholder for future
+    metrics collection.  Any samples collected here represent users running
+    diagnostics manually.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Test.DiskSpace" enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of diagnostics for the DiskSpace test
+    that runs on recovery startups.  The DiskSpace test checks that the disk
+    space in the volume where the user data directory normally lives is not
+    dangerously low.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Test.InstallType" enum="DiagnosticsResult">
+  <summary>
+    TBD - Not run automatically yet, so this is just a placeholder for future
+    metrics collection.  Any samples collected here represent users running
+    diagnostics manually.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Test.JSONBookmarks" enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of diagnostics for the JSONBookmarks
+    test that runs on recovery startups.  The JSONBookmarks test checks to make
+    sure that the JSON encoded bookmarks file is properly formed.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Test.JSONLocalState" enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of diagnostics for the JSONLocalState
+    test that runs on recovery startups.  The JSONLocalState test checks to make
+    sure that the JSON encoded Local State file is properly formed.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Test.JSONPreferences" enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of diagnostics for the JSONPreferences
+    test that runs on recovery startups.  The JSONPreferences test checks to
+    make sure that the Preferences file is properly formed.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Test.OperatingSystem" enum="DiagnosticsResult">
+  <summary>
+    TBD - Not run automatically yet, so this is just a placeholder for future
+    metrics collection.  Any samples collected here represent users running
+    diagnostics manually.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Test.PathDictionaries" enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of diagnostics for the PathDictionaries
+    test that runs on recovery startups.  The PathDictionaries test checks makes
+    sure that the path to the Dictionaries folder exists and has the right
+    permissions.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Test.PathLocalState" enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of diagnostics for the PathLocalState
+    test that runs on recovery startups.   The PathLocalState test checks makes
+    sure that the path to the Local State folder exists and has the right
+    permissions.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Test.PathResources" enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of diagnostics for the PathResources
+    test that runs on recovery startups.  The PathResources test checks makes
+    sure that the path to the Resources folder exists and has the right
+    permissions.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Test.PathUserData" enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of diagnostics for the PathUserData test
+    that runs on recovery startups. The PathUserData test checks makes sure that
+    the path to the User Data folder exists and has the right permissions.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Test.SQLiteIntegrityAppCache"
+    enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the SQLiteIntegrityAppCache test that
+    runs on recovery startups.  The test checks the integrity of the App Cache
+    database.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Test.SQLiteIntegrityArchivedHistory"
+    enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the SQLiteIntegrityArchivedHistory
+    test that runs on recovery startups.  The test checks the integrity of the
+    Archived History database.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Test.SQLiteIntegrityCookie"
+    enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the SQLiteIntegrityCookie test that
+    runs on recovery startups.  The test checks the integrity of the Cookie
+    database.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Test.SQLiteIntegrityDatabaseTracker"
+    enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the SQLiteIntegrityDatabaseTracker
+    test that runs on recovery startups.  The test checks the integrity of the
+    Database Tracker database.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Test.SQLiteIntegrityHistory"
+    enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the SQLiteIntegrityHistory test that
+    runs on recovery startups.  The test checks the integrity of the History
+    database.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Test.SQLiteIntegrityNSSCert"
+    enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the SQLiteIntegrityNSSCert test that
+    runs on recovery startups.  The test checks the integrity of the NSS
+    Certificate database.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Test.SQLiteIntegrityNSSKey"
+    enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the SQLiteIntegrityNSSKey test that
+    runs on recovery startups.  The test checks the integrity of the NSS Key
+    database.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Test.SQLiteIntegrityThumbnails"
+    enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the SQLiteIntegrityThumbnails test
+    that runs on recovery startups.  The test checks the integrity of the
+    Thumbnails database.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Test.SQLiteIntegrityWebData"
+    enum="DiagnosticsResult">
+  <summary>
+    Shows the success and failure rates of the SQLiteIntegrityWebData test that
+    runs on recovery startups.  The test checks the integrity of the Web Data
+    database.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.Test.Version" enum="DiagnosticsResult">
+  <summary>
+    TBD - Not run automatically yet, so this is just a placeholder for future
+    metrics collection.  Any samples collected here represent users running
+    diagnostics manually.
+  </summary>
+</histogram>
+
+<histogram name="Diagnostics.TestFailures" enum="DiagnosticsTestName">
+  <summary>
+    Histogram comparing the various types of diagnostic test failures when
+    diagnostic tests are run.  Note that some types of test failures cause the
+    rest of the tests to be skipped.
+  </summary>
+</histogram>
+
 <histogram name="DisabledExtension.ExtensionWipedStatus" enum="BooleanWiped">
   <summary>Whether an extension has been wiped out.</summary>
 </histogram>
@@ -4092,6 +4518,14 @@ other types of suffix sets.
   <summary>Events in Google Now component extension.</summary>
 </histogram>
 
+<histogram name="History.DeleteFTSIndexDatabases">
+  <summary>
+    Count of &quot;History Index *&quot; databases deleted.  These databases
+    stored the full-text-search data for history, which was removed at r213442,
+    this histogram tracks cleanup.
+  </summary>
+</histogram>
+
 <histogram name="History.TopSitesVisitsByRank" units="rank">
   <summary>
     Page visits to each of a user's top 50 sites. Visits to all other sites go
@@ -4208,6 +4642,13 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Installer.AttemptsCount.Total" units="count">
+  <summary>
+    The number of update attempts until the update has been applied. This is
+    reported every time the device has completed an update.
+  </summary>
+</histogram>
+
 <histogram name="Installer.DevModeErrorCodes" enum="UpdateEngineErrorCode">
   <summary>Errors from update_engine process when running in dev mode.</summary>
 </histogram>
@@ -4228,15 +4669,58 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Installer.FullPayloadAttemptNumber" units="count">
+  <summary>
+    The number of update attempts with a full update payload until the update
+    has been applied. This is reported on every update attempt.
+  </summary>
+</histogram>
+
 <histogram name="Installer.NormalErrorCodes" enum="UpdateEngineErrorCode">
   <summary>
     Errors from update_engine process when running in normal mode.
   </summary>
 </histogram>
 
+<histogram name="Installer.PayloadAttemptNumber" units="count">
+  <summary>
+    The number of update attempts until the update has been applied. This is
+    reported on every update attempt.
+  </summary>
+</histogram>
+
+<histogram name="Installer.PayloadFormat" enum="UpdateEnginePayloadFormat">
+  <summary>
+    The type of update payload used to update the device. The difference between
+    &quot;Full&quot; and &quot;Forced Full&quot; is that in the latter, the
+    request sent to Omaha included a directive saying that a delta payload
+    wasn't accepted. A &quot;Full&quot; payload is one where a delta payload was
+    accepted but Omaha provided a full payload. This is reported every time the
+    device has completed an update.
+  </summary>
+</histogram>
+
+<histogram name="Installer.RebootToNewPartitionAttempt" units="count">
+  <summary>
+    The number of consecutive times a device has failed to boot an update that
+    successfully applied. This metric is reported every time the firmware fails
+    to boot the slot with the update and fell back to the slot it originally
+    updated from.
+  </summary>
+</histogram>
+
 <histogram name="Installer.SuccessfulMBsDownloadedFrom" units="MB">
   <summary>
     Number of MBs downloaded from during an update that completed successfully.
+  </summary>
+</histogram>
+
+<histogram name="Installer.TimeToRebootMinutes" units="Minutes">
+  <summary>
+    Wall-clock duration between when an update has successfully completed (and
+    the user is presented with the &quot;reboot arrow&quot;) and when the system
+    has booted into the new update. This is reported every time the device is
+    rebooted after an update has been applied.
   </summary>
 </histogram>
 
@@ -4249,9 +4733,9 @@ other types of suffix sets.
 
 <histogram name="Installer.UpdateDurationMinutes" units="Minutes">
   <summary>
-    Absolute wallclock time duration it took for the update to complete from the
-    time an update first began.  It includes not just the time the device was
-    up, but also includes the time the device spent sleeping.
+    Absolute wall-clock time duration it took for the update to complete from
+    the time an update first began.  It includes not just the time the device
+    was up, but also includes the time the device spent sleeping.
   </summary>
 </histogram>
 
@@ -4268,6 +4752,22 @@ other types of suffix sets.
   <summary>
     Number of times the device was rebooted by the user since an update began
     and until it completed successfully.
+  </summary>
+</histogram>
+
+<histogram name="Installer.UpdatesAbandonedCount" units="count">
+  <summary>
+    The number of update attempts that didn't complete because a newer update
+    was detected during the update operation. This is reported every time the
+    device has completed an update.
+  </summary>
+</histogram>
+
+<histogram name="Installer.UpdatesAbandonedEventCount" units="count">
+  <summary>
+    The number of consecutive different abandoned update payloads since the last
+    successful update. This is reported every time an update payload is
+    abandoned because a newer update payload is available.
   </summary>
 </histogram>
 
@@ -7150,6 +7650,10 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Net.QuicSession.ConnectionClose.NumOpenStreams.TimedOut">
+  <summary>The number of streams open when a QUIC session timed out.</summary>
+</histogram>
+
 <histogram name="Net.QuicSession.ConnectionCloseErrorCode"
     enum="QuicErrorCodes">
   <summary>
@@ -9650,6 +10154,126 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="P2P.Client.Canceled.WaitingTimeSeconds" units="seconds">
+  <summary>
+    The wall-clock time spent until a lookup was canceled.  This is reported
+    every time p2p is used to find a candidate but the request was canceled.
+  </summary>
+</histogram>
+
+<histogram name="P2P.Client.Found.CandidateCount" units="count">
+  <summary>
+    The number of candidates on the LAN, i.e. the number of peers on the LAN
+    offering at least N bytes of the requested file X. This is reported after
+    examining responses from all peers on the LAN and picking a candidate.
+  </summary>
+</histogram>
+
+<histogram name="P2P.Client.Found.ConnectionCount" units="count">
+  <summary>
+    The number of p2p downloads of the peer that the returned URL points to.
+    This is reported after examining responses from all peers on the LAN and
+    picking a candidate.
+  </summary>
+</histogram>
+
+<histogram name="P2P.Client.Found.WaitingTimeSeconds" units="seconds">
+  <summary>
+    The wall-clock time spent waiting for the LAN-wide number of p2p downloads
+    (i.e. the sum of p2p downloads from each peer on the LAN) to drop below the
+    threshold.  This is reported after examining responses from all peers on the
+    LAN and picking a candidate.
+  </summary>
+</histogram>
+
+<histogram name="P2P.Client.LookupResult" enum="P2PLookupResult">
+  <summary>
+    The result of the lookup. Possible values include &quot;Found&quot; (if a
+    candidate - i.e. a peer offering at least N bytes of file X - was chosen),
+    &quot;Not Found&quot; (if no candidate could be found), &quot;Vanished&quot;
+    (if a candidate was found but vanished while waiting in line),
+    &quot;Canceled&quot; (if a candidate was found but the request was canceled
+    while waiting in line), and &quot;Filtered&quot; (if it was detected that
+    mDNS was filtered). This is reported after examining responses from all
+    peers on the LAN when p2p is used to find a candidate.
+  </summary>
+</histogram>
+
+<histogram name="P2P.Client.NumPeers" units="count">
+  <summary>
+    The number of peers implementing p2p file sharing on the network. This is
+    reported every time p2p is used to look up a resource on a network where
+    mDNS is not filtered.
+  </summary>
+</histogram>
+
+<histogram name="P2P.Client.Vanished.WaitingTimeSeconds" units="seconds">
+  <summary>
+    The wall-clock time spent waiting for one or more candidates (i.e. peers
+    offering at least N bytes of file X) that all vanished before the LAN-wide
+    number of p2p downloads dropped below the threshold. This is reported every
+    time candidates were found using p2p but then vanished.
+  </summary>
+</histogram>
+
+<histogram name="P2P.Server.ClientCount" units="count">
+  <summary>
+    The number of currently connected HTTP clients. This is reported every time
+    a HTTP client connects.
+  </summary>
+</histogram>
+
+<histogram name="P2P.Server.ContentServedInterruptedMB" units="MB">
+  <summary>
+    Number of megabytes (1,000,000 bytes) served from the device (via HTTP)
+    where the client disconnects prematurely. This is reported every time a file
+    is served and the client disconnects before receiving all data.
+  </summary>
+</histogram>
+
+<histogram name="P2P.Server.ContentServedSuccessfullyMB" units="MB">
+  <summary>
+    Number of megabytes (1,000,000 bytes) served from the device (via HTTP).
+    This is reported every time a file have been served successfully.
+  </summary>
+</histogram>
+
+<histogram name="P2P.Server.DownloadSpeedKBps" units="kB/s">
+  <summary>
+    The average speed at which the download was served at, in kB/s. This is
+    reported every time a file have been served successfully.
+  </summary>
+</histogram>
+
+<histogram name="P2P.Server.FileCount" units="count">
+  <summary>
+    The number of files available via p2p. This is reported every time a file is
+    added or removed to the /var/cache/p2p directory.
+  </summary>
+</histogram>
+
+<histogram name="P2P.Server.RangeBeginPercentage" units="%">
+  <summary>
+    When a client resumes a download, the HTTP request includes range specifier
+    to skip the bytes it already has. This metric conveys this as a percentage
+    of the the file size.  This is reported every time a file is served, even if
+    the request does not include a range specifier (in which case 0 is
+    reported).
+  </summary>
+</histogram>
+
+<histogram name="P2P.Server.RequestResult" enum="P2PServerResult">
+  <summary>
+    The result of the HTTP request. Possible values include &quot;Response
+    Sent&quot; (the resource was found and the response was successfully sent),
+    &quot;Response Interrupted&quot; (the resource was found but the client
+    disconnected), &quot;Malformed&quot; (the request was malformed), &quot;Not
+    Found&quot; (the request was for a resource that was not found), and
+    &quot;Index&quot; (the request was for the '/' or '/index.html' resource).
+    This is reported for every HTTP request handled.
+  </summary>
+</histogram>
+
 <histogram name="PasswordManager.OtherPossibleUsernamesUsage"
     enum="OtherPossibleUsernamesUsage">
   <summary>
@@ -11890,6 +12514,13 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Quickoffice.xlsFormattedCellCount">
+  <summary>
+    Records the number of cells that contain formatting data in the default
+    worksheet when a compound binary format spreadsheet is opened.
+  </summary>
+</histogram>
+
 <histogram name="Quickoffice.xlsNonEmptyCellCount">
   <summary>
     Records the number of non-empty cells in the default worksheet when a
@@ -11901,6 +12532,13 @@ other types of suffix sets.
   <summary>
     Records the number of worksheets when a compound binary format spreadsheet
     is opened.
+  </summary>
+</histogram>
+
+<histogram name="Quickoffice.xlsxFormattedCellCount">
+  <summary>
+    Records the number of cells that contain formatting data in the default
+    worksheet when an OOXML format spreadsheet is opened.
   </summary>
 </histogram>
 
@@ -12266,6 +12904,15 @@ other types of suffix sets.
 
 <histogram name="Renderer4.Snapshot">
   <summary>Time to capture a renderer snapshot.</summary>
+</histogram>
+
+<histogram name="Renderer4.SoftwareCompositorThreadImplDrawDelay"
+    units="milliseconds">
+  <summary>
+    Time between frames when the software renderer is being used, as measured on
+    the compositor thread. This is collected once per frame while it is being
+    drawn to the screen in the compositor.
+  </summary>
 </histogram>
 
 <histogram name="Renderer4.SoftwareDoDeferredUpdateDelay">
@@ -13987,6 +14634,14 @@ other types of suffix sets.
   <summary>The outcome of Entry::WriteData in the simple cache.</summary>
 </histogram>
 
+<histogram name="SiteIsolation.AllResponses">
+  <summary>
+    The count of all network responses received by a renderer. Each response is
+    corresponding to one URL requested by a renderer. Incremented when the first
+    network packet of a response of this type is received.
+  </summary>
+</histogram>
+
 <histogram name="SiteIsolation.BrowsingInstanceCount">
   <summary>
     The count of all current BrowsingInstances.  Recorded once per UMA ping.
@@ -14056,6 +14711,332 @@ other types of suffix sets.
   <summary>
     The predicted total process count if we isolated only HTTPS (not HTTP)
     sites, subject to the process limit.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.DataLength" units="byte">
+  <summary>
+    The number of bytes in the first network packet for a response with headers
+    that imply potential illegal cross-site access. Recorded when the first
+    network packet of a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.HTML.Blocked">
+  <summary>
+    The count of blocked cross-site document responses due to having HTML
+    content type header and contents sniffed as HTML. Sampled with value of 1
+    when the first network packet of a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.HTML.Blocked.NonRenderableStatusCode">
+  <summary>
+    The count of responses with a nonrenderable HTTP status code among blocked
+    cross-site document responses due to their HTML contents. Sampled with value
+    1 when the first network packet of a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.HTML.Blocked.RenderableStatusCode"
+    enum="SiteIsolationResourceType">
+  <summary>
+    The count of responses with a renderable HTTP status code sub-categorized by
+    their requesting context type (e.g., image, script, etc.) among blocked
+    cross-site document responses due to their HTML contents. Sampled with a
+    resource type (0-14) when the first network packet of a response of this
+    type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.HTML.NoSniffBlocked.NonRenderableStatusCode">
+  <summary>
+    The count of responses with a nonrenderable HTTP status code among blocked
+    cross-site document responses due to having HTML content type and nosniff
+    headers. Sampled with value 1 when the first network packet of a response of
+    this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.HTML.NoSniffBlocked.RenderableStatusCode"
+    enum="SiteIsolationResourceType">
+  <summary>
+    The count of responses with a renderable HTTP status code sub-categorized by
+    their requesting context type (e.g., image, script, etc.), among blocked
+    cross-site document responses due to having HTML content type and nosniff
+    headers. Sampled with a resource type (0-14) when the first network packet
+    of a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.HTML.NotBlocked">
+  <summary>
+    The count of not blocked responses despite having an HTML content type
+    header due to the failure of content sniffing. Sampled with value 1 when the
+    first network packet of a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.HTML.NotBlocked.MaybeJS">
+  <summary>
+    The count of responses that may be parsed as JavaScript among not blocked
+    responses. Sampled with value 1 when the first network packet of a response
+    of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.JSON.Blocked">
+  <summary>
+    The count of blocked cross-site document responses due to having JSON
+    content type header and contents sniffed as JSON. Sampled with value 1 when
+    the first network packet of a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.JSON.Blocked.NonRenderableStatusCode">
+  <summary>
+    The count of responses with a nonrenderable HTTP status code among blocked
+    cross-site document responses due to their JSON contents. Sampled with value
+    1 when the first network packet of a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.JSON.Blocked.RenderableStatusCode"
+    enum="SiteIsolationResourceType">
+  <summary>
+    The count of responses with a renderable HTTP status code sub-categorized by
+    their requesting context type (e.g., image, script, etc.), among blocked
+    cross-site document responses due to their JSON contents. Sampled with a
+    resource type (0-14) when the first network packet of a response of this
+    type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.JSON.NoSniffBlocked.NonRenderableStatusCode">
+  <summary>
+    The count of responses with a nonrenderable HTTP status code among blocked
+    cross-site document responses due to having JSON content type and nosniff
+    headers. Sampled with value 1 when the first network packet of a response of
+    this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.JSON.NoSniffBlocked.RenderableStatusCode"
+    enum="SiteIsolationResourceType">
+  <summary>
+    The count of responses with a renderable HTTP status code sub-categorized by
+    their requesting context type (e.g., image, script, etc.), among blocked
+    cross-site document responses due to having JSON content type and nosniff
+    headers. Sampled with a resource type (0-14) when the first network packet
+    of a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.JSON.NotBlocked">
+  <summary>
+    The count of not blocked responses despite having an JSON content type
+    header due to the failure of content sniffing. Sampled with value 1 when the
+    first network packet of a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.JSON.NotBlocked.MaybeJS">
+  <summary>
+    The count of responses that may be parsed as JavaScript among not blocked
+    responses with a JSON content type header. Sampled with value 1 when the
+    first network packet of a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.MimeType" enum="SiteIsolationMimeType">
+  <summary>
+    MIME type codes for content type header values of potentially cross-site
+    document responses, excluding same-site or not http(s) urls. Sampled with a
+    MIME type code (0-4) when the first network packet of a response of this
+    type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.Plain.HTML.Blocked">
+  <summary>
+    The count of blocked cross-site document responses due to having Plain
+    content type header and contents sniffed as HTML. Sampled with value 1 when
+    the first network packet of a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.Plain.HTML.Blocked.NonRenderableStatusCode">
+  <summary>
+    The count of responses with a nonrenderable HTTP status code among blocked
+    responses due to their Plain.HTML contents. Sampled with value 1 when the
+    first network packet of a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.Plain.HTML.Blocked.RenderableStatusCode"
+    enum="SiteIsolationResourceType">
+  <summary>
+    The count of responses with a renderable HTTP status code sub-categorized by
+    their requesting context type (e.g., image, script, etc.), among blocked
+    cross-site document responses due to their Plain.HTML contents. Sampled with
+    a resource type (0-14) when the first network packet of a response of this
+    type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.Plain.JSON.Blocked">
+  <summary>
+    The count of blocked cross-site document responses due to having Plain
+    content type header and contents sniffed as JSON. Sampled with value 1 when
+    the first network packet of a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.Plain.JSON.Blocked.NonRenderableStatusCode">
+  <summary>
+    The count of responses with a nonrenderable HTTP status code among blocked
+    cross-site document responses due to their Plain.JSON contents. Sampled with
+    value 1 when the first network packet of a response of this type is
+    received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.Plain.JSON.Blocked.RenderableStatusCode"
+    enum="SiteIsolationResourceType">
+  <summary>
+    The count of responses with a renderable HTTP status code sub-categorized by
+    their requesting context type (e.g., image, script, etc.), among blocked
+    cross-site document responses due to their Plain.JSON contents. Sampled with
+    a resource type (0-14) when the first network packet of a response of this
+    type is received.
+  </summary>
+</histogram>
+
+<histogram
+    name="SiteIsolation.XSD.Plain.NoSniffBlocked.NonRenderableStatusCode">
+  <summary>
+    The count of responses with a nonrenderable HTTP status code among blocked
+    cross-site document responses due to having Plain content type and nosniff
+    headers. Sampled with value 1 when the first network packet of a response of
+    this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.Plain.NoSniffBlocked.RenderableStatusCode"
+    enum="SiteIsolationResourceType">
+  <summary>
+    The count of responses with a renderable HTTP status code sub-categorized by
+    their requesting context type (e.g., image, script, etc.), among blocked
+    cross-site document responses due to having Plain content type and nosniff
+    header. Sampled with a resource type (0-14) when the first network packet of
+    a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.Plain.NotBlocked">
+  <summary>
+    The count of not blocked responses despite having an Plain content type
+    header due to the failure of content sniffing. Sampled with value 1 when the
+    first network packet of a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.Plain.NotBlocked.MaybeJS">
+  <summary>
+    The count of responses that may be parsed as JavaScript among not blocked
+    responses with a Plain content type header. Sampled with value 1 when the
+    first network packet of a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.Plain.XML.Blocked">
+  <summary>
+    The count of blocked cross-site document responses due to having Plain
+    content type header and contents sniffed as XML. Sampled with value 1 when
+    the first network packet of a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.Plain.XML.Blocked.NonRenderableStatusCode">
+  <summary>
+    The count of responses with a nonrenderable HTTP status code among blocked
+    cross-site document responses due to their Plain.XML contents. Sampled with
+    value 1 when the first network packet of a response of this type is
+    received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.Plain.XML.Blocked.RenderableStatusCode"
+    enum="SiteIsolationResourceType">
+  <summary>
+    The count of responses with renderable HTTP status codes sub-categorized by
+    their requesting context type (e.g., image, script, etc.), among blocked
+    cross-site document responses due to their Plain.XML contents. Sampled with
+    a resource type (0-14) when the first network packet of a response of this
+    type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.XML.Blocked">
+  <summary>
+    The count of blocked cross-site document responses due to having XML content
+    type header and contents sniffed as XML. Sampled with value 1 when the first
+    network packet of a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.XML.Blocked.NonRenderableStatusCode">
+  <summary>
+    The count of responses with nonrenderable HTTP status codes among blocked
+    cross-site document responses due to their XML contents. Sampled with value
+    1 when the first network packet of a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.XML.Blocked.RenderableStatusCode"
+    enum="SiteIsolationResourceType">
+  <summary>
+    The count of responses with renderable HTTP status codes sub-categorized by
+    their requesting context type (e.g., image, script, etc.), among blocked
+    cross-site document responses due to their XML contents. Sampled with a
+    resource type (0-14) when the first network packet of a response of this
+    type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.XML.NoSniffBlocked.NonRenderableStatusCode">
+  <summary>
+    The count of responses with a nonrenderable HTTP status code among blocked
+    cross-site document responses due to having XML content type and nosniff
+    headers. Sampled with value 1 when the first network packet of a response of
+    this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.XML.NoSniffBlocked.RenderableStatusCode"
+    enum="SiteIsolationResourceType">
+  <summary>
+    The count of responses with a renderable HTTP status code sub-categorized by
+    their requesting context type (e.g., image, script, etc.), among blocked
+    cross-site document responses due to having XML content type and nosniff
+    headers. Sampled with a resource type (0-14) when the first network packet
+    of a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.XML.NotBlocked">
+  <summary>
+    The count of not blocked responses despite having an XML content type header
+    due to the failure of content sniffing. Sampled with value 1 when the first
+    network packet of a response of this type is received.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.XSD.XML.NotBlocked.MaybeJS">
+  <summary>
+    The count of responses that may be parsed as JavaScript among not blocked
+    responses with an XML content type. Sampled with value 1 when the first
+    network packet of a response of this type is received.
   </summary>
 </histogram>
 
@@ -14858,6 +15839,76 @@ other types of suffix sets.
   <summary>
     The time spent in freeing the XML writer and tree when closing a metrics log
     (Chrome OS).
+  </summary>
+</histogram>
+
+<histogram name="Uptime.ChromeExecToLoginPromptVisibleAfterLogout" units="ms">
+  <summary>
+    Measures the time elapsed on Chrome OS between when Chrome is started, and
+    when the login prompt is again visible after a logout.  This statistic is
+    only collected when preceeded by a logout.
+  </summary>
+</histogram>
+
+<histogram name="Uptime.LoginPromptSetupTimeAfterLogout" units="ms">
+  <summary>
+    Measures the time elapsed on Chrome OS for setting up for a login after a
+    logout. More specifically, it is the time between when the Cryptohome is
+    unmounted (the last step in the logout process) and when the login prompt is
+    again visible after a logout.
+  </summary>
+</histogram>
+
+<histogram name="Uptime.Logout" units="ms">
+  <summary>
+    Measures the time elapsed on Chrome OS when performing a logout. More
+    specifically, it is the time between when a logout is initiated and when the
+    Cryptohome is unmounted, signaling the last step in the logout process. This
+    statistic is not collected when the logout is part of a restart or shutdown.
+  </summary>
+</histogram>
+
+<histogram name="Uptime.LogoutToLoginPromptVisible" units="ms">
+  <summary>
+    Measures the time elapsed on Chrome OS between initiating a logout and the
+    next time the login prompt is visible again.  This statistic is not
+    collected if the machine is shutdown between the logout initiation and the
+    prompt becoming visible.
+  </summary>
+</histogram>
+
+<histogram name="Uptime.LogoutToUIStopAfterLogout" units="ms">
+  <summary>
+    Measures the time elapsed on Chrome OS between when a logout is initiated
+    and the UI has stopped (and Chrome has exited) during the logout process.
+    This statistic is not collected if the logout is part of a restart or
+    shutdown.
+  </summary>
+</histogram>
+
+<histogram name="Uptime.ProcessesTerminatedToXTerminatedAfterLogout" units="ms">
+  <summary>
+    Measures the time elapsed on Chrome OS between when all user-associated
+    processes (including the X server) have been terminated during the logout
+    process.  This statistic is not collected if the logout is part of a restart
+    or shutdown.
+  </summary>
+</histogram>
+
+<histogram name="Uptime.UIStopToProcessesTerminatedAfterLogout" units="ms">
+  <summary>
+    Measures the time elapsed on Chrome OS between when the UI has stopped
+    (Chrome has exited), and when all other associated processes have been
+    terminated during the logout process. This statistic is not collected if the
+    logout is part of a restart or shutdown.
+  </summary>
+</histogram>
+
+<histogram name="Uptime.XTerminatedToChromeExecAfterLogout" units="ms">
+  <summary>
+    Measures the time elapsed on Chrome OS between when the X server has been
+    terminated from a previous logout and when Chrome is started again to show
+    the login screen.
   </summary>
 </histogram>
 
@@ -16456,11 +17507,68 @@ other types of suffix sets.
   <int value="8" label="PlayMusic"/>
 </enum>
 
+<enum name="DataReductionProxyPromoAction" type="int">
+  <int value="0" label="Dismissed from first screen"/>
+  <int value="1" label="Dismissed from second screen"/>
+  <int value="2" label="Enabled from first screen"/>
+  <int value="3" label="Enabled from second screen"/>
+</enum>
+
+<enum name="DataReductionProxySettingsConversion" type="int">
+  <int value="0" label="OFF to OFF"/>
+  <int value="1" label="OFF to ON"/>
+  <int value="2" label="ON to OFF"/>
+  <int value="3" label="ON to ON"/>
+</enum>
+
+<enum name="DataReductionProxyStartupState" type="int">
+  <int value="0" label="Proxy not available"/>
+  <int value="1" label="Proxy available but not enabled"/>
+  <int value="2" label="Proxy available and enabled"/>
+</enum>
+
 <enum name="DevicePermissionActions" type="int">
   <int value="0" label="AllowHttps"/>
   <int value="1" label="AllowHttp"/>
   <int value="2" label="Deny"/>
   <int value="3" label="Cancel"/>
+</enum>
+
+<enum name="DiagnosticsRecoveryRun" type="int">
+  <int value="0" label="Recovery not run"/>
+  <int value="1" label="Recovery run because of crash"/>
+  <int value="2" label="Recovery run by user"/>
+</enum>
+
+<enum name="DiagnosticsResult" type="int">
+  <int value="0" label="Not run (regular startup)"/>
+  <int value="1" label="Success (crash startup)"/>
+  <int value="2" label="Failure (crash startup)"/>
+  <int value="3" label="Skipped (crash startup)"/>
+</enum>
+
+<enum name="DiagnosticsTestName" type="int">
+  <int value="0" label="Conflicting DLLs Test"/>
+  <int value="1" label="Disk Space Test"/>
+  <int value="2" label="Install Type Test"/>
+  <int value="3" label="JSON Bookmarks Test"/>
+  <int value="4" label="JSON Local State Test"/>
+  <int value="5" label="JSON Preferences Test"/>
+  <int value="6" label="Operating System Test"/>
+  <int value="7" label="Path Dictionaries Test"/>
+  <int value="8" label="Path Local State Test"/>
+  <int value="9" label="Path Resources Test"/>
+  <int value="10" label="Path User Data Test"/>
+  <int value="11" label="Version Test"/>
+  <int value="12" label="SQLite Integrity App Cache Test"/>
+  <int value="13" label="SQLite Integrity Archived History Test"/>
+  <int value="14" label="SQLite Integrity Cookie Test"/>
+  <int value="15" label="SQLite Integrity Database Tracker Test"/>
+  <int value="16" label="SQLite Integrity History Test"/>
+  <int value="17" label="SQLite Integrity Nss Cert Test"/>
+  <int value="18" label="SQLite Integrity Nss Key Test"/>
+  <int value="19" label="SQLite Integrity Thumbnails Test"/>
+  <int value="20" label="SQLite Integrity Web Data Test"/>
 </enum>
 
 <enum name="DNSEmptyAddressListAndNoError" type="int">
@@ -17640,7 +18748,7 @@ other types of suffix sets.
   <int value="306" label="TYPES_CHROMESETTING_SET"/>
   <int value="307" label="BROWSERACTION_SETICON"/>
   <int value="308" label="EXPERIMENTAL_ACCESSIBILITY_SETACCESSIBILITYENABLED"/>
-  <int value="309" label="FILEBROWSERPRIVATE_VIEWFILES"/>
+  <int value="309" label="DELETED_FILEBROWSERPRIVATE_VIEWFILES"/>
   <int value="310" label="BLUETOOTH_GETSERVICES"/>
   <int value="311" label="TABS_UPDATE"/>
   <int value="312" label="BROWSINGDATA_REMOVEFORMDATA"/>
@@ -18120,6 +19228,11 @@ other types of suffix sets.
   <int value="120" label="NodeNamespaceURI"/>
   <int value="121" label="NodePrefix"/>
   <int value="122" label="NodeLocalName"/>
+  <int value="123" label="NavigatorProductSub"/>
+  <int value="124" label="NavigatorVendor"/>
+  <int value="125" label="NavigatorVendorSub"/>
+  <int value="126" label="FileError"/>
+  <int value="127" label="DocumentCharset"/>
 </enum>
 
 <enum name="FFmpegCodecs" type="int">
@@ -20807,6 +21920,22 @@ other types of suffix sets.
   <int value="4" label="East">Scrolled from left towards right</int>
 </enum>
 
+<enum name="P2PLookupResult" type="int">
+  <int value="0" label="Found"/>
+  <int value="1" label="Not Found"/>
+  <int value="2" label="Vanished"/>
+  <int value="3" label="Canceled"/>
+  <int value="4" label="Filtered"/>
+</enum>
+
+<enum name="P2PServerResult" type="int">
+  <int value="0" label="Response Sent"/>
+  <int value="1" label="Response Interrupted"/>
+  <int value="2" label="Malformed"/>
+  <int value="3" label="Not Found"/>
+  <int value="4" label="Index"/>
+</enum>
+
 <enum name="ParsedCookieStatus" type="int">
   <int value="0" label="All cookie values valid and without control chars"/>
   <int value="1" label="Cookie contains control chars"/>
@@ -21860,6 +22989,32 @@ other types of suffix sets.
   <int value="3" label="Fresh index with cache updated since backend start"/>
 </enum>
 
+<enum name="SiteIsolationMimeType" type="int">
+  <int value="0" label="HTML"/>
+  <int value="1" label="XML"/>
+  <int value="2" label="JSON"/>
+  <int value="3" label="Plain"/>
+  <int value="4" label="Others"/>
+</enum>
+
+<enum name="SiteIsolationResourceType" type="int">
+  <int value="0" label="MAIN_FRAME"/>
+  <int value="1" label="SUB_FRAME"/>
+  <int value="2" label="STYLESHEET"/>
+  <int value="3" label="SCRIPT"/>
+  <int value="4" label="IMAGE"/>
+  <int value="5" label="FONT_RESOURCE"/>
+  <int value="6" label="SUB_RESOURCE"/>
+  <int value="7" label="OBJECT"/>
+  <int value="8" label="MEDIA"/>
+  <int value="9" label="WORKER"/>
+  <int value="10" label="SHARED_WORKER"/>
+  <int value="11" label="PREFETCH"/>
+  <int value="12" label="FAVICON"/>
+  <int value="13" label="XHR"/>
+  <int value="14" label="LAST_TYPE"/>
+</enum>
+
 <enum name="SocketStreamConnectionType" type="int">
   <int value="0" label="none"/>
   <int value="1" label="all connections"/>
@@ -22517,6 +23672,7 @@ other types of suffix sets.
   <int value="5" label="Reloaded due to incognito"/>
   <int value="6" label="Reloaded due to cold start (fg tab on start)"/>
   <int value="7" label="Reloaded due to cold start (bg tab on switch)"/>
+  <int value="8" label="Lazy load for 'Open in new tab'"/>
 </enum>
 
 <enum name="TabSwitchedToForegroundLaunchedWithURL" type="int">
@@ -22734,6 +23890,12 @@ other types of suffix sets.
   <int value="40" label="kErrorCodeOmahaUpdateDeferredForBackoff"/>
   <int value="41" label="kErrorCodePostinstallPowerwashError"/>
   <int value="42" label="kErrorCodeUpdateCanceledByChannelChange"/>
+</enum>
+
+<enum name="UpdateEnginePayloadFormat" type="int">
+  <int value="0" label="Full"/>
+  <int value="1" label="Delta"/>
+  <int value="2" label="Forced Full"/>
 </enum>
 
 <enum name="UrlResolutionResult" type="int">
@@ -25041,7 +26203,7 @@ other types of suffix sets.
   <group name="Predictor" label="Predictor"/>
   <group name="Quota" label="Quota"/>
   <group name="SyncDirectory" label="SyncDirectory"/>
-  <group name="Text" label="Text"/>
+  <group name="Text" label="Text (obsolete 7/24/13)"/>
   <group name="Thumbnail" label="Thumbnail"/>
   <group name="TopSites" label="TopSites"/>
   <group name="Web" label="Web"/>

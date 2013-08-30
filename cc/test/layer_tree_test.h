@@ -31,6 +31,8 @@ class TestHooks : public AnimationDelegate {
 
   void ReadSettings(const LayerTreeSettings& settings);
 
+  virtual void WillBeginImplFrameOnThread(LayerTreeHostImpl* host_impl,
+                                          const BeginFrameArgs& args) {}
   virtual void BeginCommitOnThread(LayerTreeHostImpl* host_impl) {}
   virtual void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) {}
   virtual void WillActivateTreeOnThread(LayerTreeHostImpl* host_impl) {}
@@ -64,10 +66,9 @@ class TestHooks : public AnimationDelegate {
   virtual void DidCompleteSwapBuffers() {}
   virtual void ScheduleComposite() {}
   virtual void DidDeferCommit() {}
-  virtual bool CanActivatePendingTree(LayerTreeHostImpl* host_impl);
-  virtual bool CanActivatePendingTreeIfNeeded(LayerTreeHostImpl* host_impl);
   virtual void DidSetVisibleOnImplTree(LayerTreeHostImpl* host_impl,
                                        bool visible) {}
+  virtual base::TimeDelta LowFrequencyAnimationInterval() const;
 
   // Implementation of AnimationDelegate:
   virtual void NotifyAnimationStarted(double time) OVERRIDE {}

@@ -831,12 +831,6 @@
    fun:message_center::MessageCenterViewTest::SetUp
 }
 {
-   bug_272083
-   Heapcheck:Leak
-   fun:ThemeService::SetManagedUserTheme
-   fun:ThemeService::OnManagedUserInitialized
-}
-{
    bug_272596
    Heapcheck:Leak
    fun:*
@@ -866,4 +860,28 @@
    fun:views::Widget::SetContentsView
    fun:views::Widget::Init
    fun:BrowserFrame::InitBrowserFrame
+}
+{
+   bug_280192
+   Heapcheck:Leak
+   ...
+   fun:GtkThemeService::GtkThemeService
+   ...
+   fun:SavedFilesServiceUnitTest::SavedFilesServiceUnitTest
+}
+{
+   bug_280931
+   Heapcheck:Leak
+   ...
+   fun:net::QuicFramer::BuildDataPacket
+   fun:net::QuicPacketCreator::SerializePacket
+   fun:net::QuicPacketGenerator::SerializeAndSendPacket
+   fun:net::QuicPacketGenerator::SendQueuedFrames
+   fun:net::QuicPacketGenerator::AddControlFrame
+   fun:net::QuicConnection::SendRstStream
+   fun:net::QuicSession::SendRstStream
+   fun:net::QuicClientSession::SendRstStream
+   fun:net::ReliableQuicStream::Close
+   fun:net::QuicHttpStream::Close
+   fun:net::test::QuicStreamFactoryTest_MaxOpenStream_Test::TestBody
 }

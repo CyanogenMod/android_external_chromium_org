@@ -53,6 +53,7 @@
 #include "chrome/browser/ui/browser_mac.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/chrome_pages.h"
+#import "chrome/browser/ui/cocoa/apps/app_shim_menu_controller_mac.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_bridge.h"
 #import "chrome/browser/ui/cocoa/browser_window_cocoa.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
@@ -165,6 +166,8 @@ void RecordLastRunAppBundlePath() {
   // real, user-visible app bundle directory. (The alternatives give either the
   // framework's path or the initial app's path, which may be an app mode shim
   // or a unit test.)
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+
   base::FilePath appBundlePath =
       chrome::GetVersionedDirectory().DirName().DirName().DirName();
   CFPreferencesSetAppValue(
@@ -433,6 +436,8 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   localPrefRegistrar_.RemoveAll();
 
   [self unregisterEventHandlers];
+
+  appShimMenuController_.reset();
 }
 
 - (void)didEndMainMessageLoop {
@@ -651,6 +656,11 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
 
   [self setUpdateCheckInterval];
 
+  // Start managing the menu for app windows. This needs to be done here because
+  // main menu item titles are not yet initialized in awakeFromNib.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableAppShims))
+    appShimMenuController_.reset([[AppShimMenuController alloc] init]);
+
   // Build up the encoding menu, the order of the items differs based on the
   // current locale (see http://crbug.com/7647 for details).
   // We need a valid g_browser_process to get the profile which is why we can't
@@ -671,8 +681,11 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   [NSApp setHelpMenu:helpMenu_];
 
   // Record the path to the (browser) app bundle; this is used by the app mode
-  // shim.
-  RecordLastRunAppBundlePath();
+  // shim.  It has to be done in FILE thread because getting the path requires
+  // I/O.
+  BrowserThread::PostTask(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&RecordLastRunAppBundlePath));
 
   // Makes "Services" menu items available.
   [self registerServicesMenuTypesTo:[notify object]];

@@ -37,7 +37,7 @@
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/download/download_shelf.h"
 #include "chrome/browser/download/download_stats.h"
-#include "chrome/browser/download/download_util.h"
+#include "chrome/browser/download/drag_download_item.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/extension_info_map.h"
@@ -1245,6 +1245,9 @@ DownloadsAcceptDangerFunction::DownloadsAcceptDangerFunction() {}
 
 DownloadsAcceptDangerFunction::~DownloadsAcceptDangerFunction() {}
 
+DownloadsAcceptDangerFunction::OnPromptCreatedCallback*
+    DownloadsAcceptDangerFunction::on_prompt_created_ = NULL;
+
 bool DownloadsAcceptDangerFunction::RunImpl() {
   scoped_ptr<downloads::AcceptDanger::Params> params(
       downloads::AcceptDanger::Params::Create(*args_));
@@ -1262,13 +1265,15 @@ bool DownloadsAcceptDangerFunction::RunImpl() {
   RecordApiFunctions(DOWNLOADS_FUNCTION_ACCEPT_DANGER);
   // DownloadDangerPrompt displays a modal dialog using native widgets that the
   // user must either accept or cancel. It cannot be scripted.
-  DownloadDangerPrompt::Create(
+  DownloadDangerPrompt* prompt = DownloadDangerPrompt::Create(
       download_item,
       web_contents,
       true,
       base::Bind(&DownloadsAcceptDangerFunction::DangerPromptCallback,
                  this, params->download_id));
   // DownloadDangerPrompt deletes itself
+  if (on_prompt_created_ && !on_prompt_created_->is_null())
+    on_prompt_created_->Run(prompt);
   return true;
 }
 
@@ -1370,7 +1375,7 @@ bool DownloadsDragFunction::RunImpl() {
     // Enable nested tasks during DnD, while |DragDownload()| blocks.
     base::MessageLoop::ScopedNestableTaskAllower allow(
         base::MessageLoop::current());
-    download_util::DragDownload(download_item, icon, view);
+    DragDownloadItem(download_item, icon, view);
   }
   return true;
 }

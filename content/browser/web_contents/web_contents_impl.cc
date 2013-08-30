@@ -1929,8 +1929,8 @@ void WebContentsImpl::SaveFrame(const GURL& url,
 
 void WebContentsImpl::GenerateMHTML(
     const base::FilePath& file,
-    const base::Callback<void(const base::FilePath&, int64)>& callback) {
-  MHTMLGenerationManager::GetInstance()->GenerateMHTML(this, file, callback);
+    const base::Callback<void(int64)>& callback) {
+  MHTMLGenerationManager::GetInstance()->SaveMHTML(this, file, callback);
 }
 
 bool WebContentsImpl::IsActiveEntry(int32 page_id) {
@@ -2873,16 +2873,14 @@ void WebContentsImpl::RenderViewCreated(RenderViewHost* render_view_host) {
       NOTIFICATION_WEB_CONTENTS_RENDER_VIEW_HOST_CREATED,
       Source<WebContents>(this),
       Details<RenderViewHost>(render_view_host));
-  NavigationEntry* entry = controller_.GetActiveEntry();
-  if (!entry)
-    return;
 
   // When we're creating views, we're still doing initial setup, so we always
   // use the pending Web UI rather than any possibly existing committed one.
   if (render_manager_.pending_web_ui())
     render_manager_.pending_web_ui()->RenderViewCreated(render_view_host);
 
-  if (entry->IsViewSourceMode()) {
+  NavigationEntry* entry = controller_.GetActiveEntry();
+  if (entry && entry->IsViewSourceMode()) {
     // Put the renderer in view source mode.
     render_view_host->Send(
         new ViewMsg_EnableViewSourceMode(render_view_host->GetRoutingID()));
@@ -3356,6 +3354,7 @@ void WebContentsImpl::RunJavaScriptMessage(
     const string16& default_prompt,
     const GURL& frame_url,
     JavaScriptMessageType javascript_message_type,
+    bool user_gesture,
     IPC::Message* reply_msg,
     bool* did_suppress_message) {
   // Suppress JavaScript dialogs when requested. Also suppress messages when
@@ -3379,6 +3378,7 @@ void WebContentsImpl::RunJavaScriptMessage(
         javascript_message_type,
         message,
         default_prompt,
+        user_gesture,
         base::Bind(&WebContentsImpl::OnDialogClosed,
                    base::Unretained(this),
                    rvh,
@@ -3552,7 +3552,7 @@ void WebContentsImpl::RenderProcessGoneFromRenderManager(
 
 void WebContentsImpl::UpdateRenderViewSizeForRenderManager() {
   // TODO(brettw) this is a hack. See WebContentsView::SizeContents.
-  gfx::Size size = view_->GetContainerSize();
+  gfx::Size size = GetSizeForNewRenderView();
   // 0x0 isn't a valid window size (minimal window size is 1x1) but it may be
   // here during container initialization and normal window size will be set
   // later. In case of tab duplication this resizing to 0x0 prevents setting
@@ -3647,7 +3647,7 @@ bool WebContentsImpl::CreateRenderViewForRenderManager(
 
   // Now that the RenderView has been created, we need to tell it its size.
   if (rwh_view)
-    rwh_view->SetSize(view_->GetContainerSize());
+    rwh_view->SetSize(GetSizeForNewRenderView());
 
   // Make sure we use the correct starting page_id in the new RenderView.
   UpdateMaxPageIDIfNecessary(render_view_host);
@@ -3749,6 +3749,15 @@ void WebContentsImpl::ClearAllPowerSaveBlockers() {
        i != power_save_blockers_.end(); ++i)
     STLDeleteValues(&power_save_blockers_[i->first]);
   power_save_blockers_.clear();
+}
+
+gfx::Size WebContentsImpl::GetSizeForNewRenderView() const {
+  gfx::Size size;
+  if (delegate_)
+    size = delegate_->GetSizeForNewRenderView(this);
+  if (size.IsEmpty())
+    size = view_->GetContainerSize();
+  return size;
 }
 
 }  // namespace content

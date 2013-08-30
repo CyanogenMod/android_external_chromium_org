@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <utime.h>
 
+#include "base/path_service.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/strings/stringprintf.h"
 #include "base/task_runner_util.h"
@@ -19,7 +20,6 @@
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/extensions/file_manager/event_router.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_browser_private_api.h"
-#include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
 #include "chrome/browser/chromeos/extensions/file_manager/fileapi_util.h"
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_util.h"
 #include "chrome/browser/chromeos/fileapi/file_system_backend.h"
@@ -44,7 +44,7 @@ using content::ChildProcessSecurityPolicy;
 using content::WebContents;
 using fileapi::FileSystemURL;
 
-namespace file_manager {
+namespace extensions {
 namespace {
 
 // Error messages.
@@ -73,7 +73,7 @@ base::DictionaryValue* CreateValueFromDisk(
   std::string mount_path;
   if (!volume->mount_path().empty()) {
     base::FilePath relative_mount_path;
-    util::ConvertAbsoluteFilePathToRelativeFileSystemPath(
+    file_manager::util::ConvertAbsoluteFilePathToRelativeFileSystemPath(
         profile, extension_id, base::FilePath(volume->mount_path()),
         &relative_mount_path);
     mount_path = relative_mount_path.value();
@@ -98,6 +98,13 @@ base::DictionaryValue* CreateValueFromDisk(
   return volume_info;
 }
 
+base::DictionaryValue* CreateDownloadsVolumeMetadata() {
+  base::DictionaryValue* volume_info = new base::DictionaryValue;
+  volume_info->SetString("mountPath", "Downloads");
+  volume_info->SetBoolean("isReadOnly", false);
+  return volume_info;
+}
+
 // Sets permissions for the Drive mount point so Files.app can access files
 // in the mount point directory. It's safe to call this function even if
 // Drive is disabled by the setting (i.e. prefs::kDisableDrive is true).
@@ -110,10 +117,9 @@ void SetDriveMountPointPermissions(
     return;
   }
 
-  content::SiteInstance* site_instance = render_view_host->GetSiteInstance();
   fileapi::ExternalFileSystemBackend* backend =
-      BrowserContext::GetStoragePartition(profile, site_instance)->
-      GetFileSystemContext()->external_backend();
+      file_manager::util::GetFileSystemContextForRenderViewHost(
+          profile, render_view_host)->external_backend();
   if (!backend)
     return;
 
@@ -172,13 +178,15 @@ bool SetLastModifiedOnBlockingPool(const base::FilePath& local_path,
 
 }  // namespace
 
-RequestFileSystemFunction::RequestFileSystemFunction() {
+FileBrowserPrivateRequestFileSystemFunction::
+    FileBrowserPrivateRequestFileSystemFunction() {
 }
 
-RequestFileSystemFunction::~RequestFileSystemFunction() {
+FileBrowserPrivateRequestFileSystemFunction::
+    ~FileBrowserPrivateRequestFileSystemFunction() {
 }
 
-void RequestFileSystemFunction::DidOpenFileSystem(
+void FileBrowserPrivateRequestFileSystemFunction::DidOpenFileSystem(
     scoped_refptr<fileapi::FileSystemContext> file_system_context,
     base::PlatformFileError result,
     const std::string& name,
@@ -222,7 +230,7 @@ void RequestFileSystemFunction::DidOpenFileSystem(
   SendResponse(true);
 }
 
-void RequestFileSystemFunction::DidFail(
+void FileBrowserPrivateRequestFileSystemFunction::DidFail(
     base::PlatformFileError error_code) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -230,10 +238,11 @@ void RequestFileSystemFunction::DidFail(
   SendResponse(false);
 }
 
-bool RequestFileSystemFunction::SetupFileSystemAccessPermissions(
-    scoped_refptr<fileapi::FileSystemContext> file_system_context,
-    int child_id,
-    scoped_refptr<const extensions::Extension> extension) {
+bool FileBrowserPrivateRequestFileSystemFunction::
+    SetupFileSystemAccessPermissions(
+        scoped_refptr<fileapi::FileSystemContext> file_system_context,
+        int child_id,
+        scoped_refptr<const extensions::Extension> extension) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   if (!extension.get())
@@ -265,7 +274,7 @@ bool RequestFileSystemFunction::SetupFileSystemAccessPermissions(
   return true;
 }
 
-bool RequestFileSystemFunction::RunImpl() {
+bool FileBrowserPrivateRequestFileSystemFunction::RunImpl() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   if (!dispatcher() || !render_view_host() || !render_view_host()->GetProcess())
@@ -274,7 +283,7 @@ bool RequestFileSystemFunction::RunImpl() {
   set_log_on_completion(true);
 
   scoped_refptr<fileapi::FileSystemContext> file_system_context =
-      util::GetFileSystemContextForRenderViewHost(
+      file_manager::util::GetFileSystemContextForRenderViewHost(
           profile(), render_view_host());
 
   const GURL origin_url = source_url_.GetOrigin();
@@ -282,7 +291,8 @@ bool RequestFileSystemFunction::RunImpl() {
       origin_url,
       fileapi::kFileSystemTypeExternal,
       fileapi::OPEN_FILE_SYSTEM_FAIL_IF_NONEXISTENT,
-      base::Bind(&RequestFileSystemFunction::DidOpenFileSystem,
+      base::Bind(&FileBrowserPrivateRequestFileSystemFunction::
+                     DidOpenFileSystem,
                  this,
                  file_system_context));
   return true;
@@ -313,7 +323,7 @@ bool FileWatchFunctionBase::RunImpl() {
     return false;
 
   scoped_refptr<fileapi::FileSystemContext> file_system_context =
-      util::GetFileSystemContextForRenderViewHost(
+      file_manager::util::GetFileSystemContextForRenderViewHost(
           profile(), render_view_host());
 
   FileSystemURL file_watch_url = file_system_context->CrackURL(GURL(url));
@@ -328,52 +338,58 @@ bool FileWatchFunctionBase::RunImpl() {
   return true;
 }
 
-AddFileWatchFunction::AddFileWatchFunction() {
+FileBrowserPrivateAddFileWatchFunction::
+    FileBrowserPrivateAddFileWatchFunction() {
 }
 
-AddFileWatchFunction::~AddFileWatchFunction() {
+FileBrowserPrivateAddFileWatchFunction::
+    ~FileBrowserPrivateAddFileWatchFunction() {
 }
 
-void AddFileWatchFunction::PerformFileWatchOperation(
+void FileBrowserPrivateAddFileWatchFunction::PerformFileWatchOperation(
     const base::FilePath& local_path,
     const base::FilePath& virtual_path,
     const std::string& extension_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  EventRouter* event_router =
-      FileBrowserPrivateAPI::Get(profile_)->event_router();
+  file_manager::EventRouter* event_router =
+      file_manager::FileBrowserPrivateAPI::Get(profile_)->event_router();
   event_router->AddFileWatch(
       local_path,
       virtual_path,
       extension_id,
-      base::Bind(&AddFileWatchFunction::Respond, this));
+      base::Bind(&FileBrowserPrivateAddFileWatchFunction::Respond, this));
 }
 
-RemoveFileWatchFunction::RemoveFileWatchFunction() {
+FileBrowserPrivateRemoveFileWatchFunction::
+    FileBrowserPrivateRemoveFileWatchFunction() {
 }
 
-RemoveFileWatchFunction::~RemoveFileWatchFunction() {
+FileBrowserPrivateRemoveFileWatchFunction::
+    ~FileBrowserPrivateRemoveFileWatchFunction() {
 }
 
-void RemoveFileWatchFunction::PerformFileWatchOperation(
+void FileBrowserPrivateRemoveFileWatchFunction::PerformFileWatchOperation(
     const base::FilePath& local_path,
     const base::FilePath& unused,
     const std::string& extension_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  EventRouter* event_router =
-      FileBrowserPrivateAPI::Get(profile_)->event_router();
+  file_manager::EventRouter* event_router =
+      file_manager::FileBrowserPrivateAPI::Get(profile_)->event_router();
   event_router->RemoveFileWatch(local_path, extension_id);
   Respond(true);
 }
 
-SetLastModifiedFunction::SetLastModifiedFunction() {
+FileBrowserPrivateSetLastModifiedFunction::
+    FileBrowserPrivateSetLastModifiedFunction() {
 }
 
-SetLastModifiedFunction::~SetLastModifiedFunction() {
+FileBrowserPrivateSetLastModifiedFunction::
+    ~FileBrowserPrivateSetLastModifiedFunction() {
 }
 
-bool SetLastModifiedFunction::RunImpl() {
+bool FileBrowserPrivateSetLastModifiedFunction::RunImpl() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   if (args_->GetSize() != 2) {
@@ -388,7 +404,7 @@ bool SetLastModifiedFunction::RunImpl() {
   if (!args_->GetString(1, &timestamp))
     return false;
 
-  base::FilePath local_path = util::GetLocalPathFromURL(
+  base::FilePath local_path = file_manager::util::GetLocalPathFromURL(
       render_view_host(), profile(), GURL(file_url));
 
   base::PostTaskAndReplyWithResult(
@@ -397,18 +413,20 @@ bool SetLastModifiedFunction::RunImpl() {
       base::Bind(&SetLastModifiedOnBlockingPool,
                  local_path,
                  strtoul(timestamp.c_str(), NULL, 0)),
-      base::Bind(&SetLastModifiedFunction::SendResponse,
+      base::Bind(&FileBrowserPrivateSetLastModifiedFunction::SendResponse,
                  this));
   return true;
 }
 
-GetSizeStatsFunction::GetSizeStatsFunction() {
+FileBrowserPrivateGetSizeStatsFunction::
+    FileBrowserPrivateGetSizeStatsFunction() {
 }
 
-GetSizeStatsFunction::~GetSizeStatsFunction() {
+FileBrowserPrivateGetSizeStatsFunction::
+    ~FileBrowserPrivateGetSizeStatsFunction() {
 }
 
-bool GetSizeStatsFunction::RunImpl() {
+bool FileBrowserPrivateGetSizeStatsFunction::RunImpl() {
   if (args_->GetSize() != 1) {
     return false;
   }
@@ -417,7 +435,7 @@ bool GetSizeStatsFunction::RunImpl() {
   if (!args_->GetString(0, &mount_url))
     return false;
 
-  base::FilePath file_path = util::GetLocalPathFromURL(
+  base::FilePath file_path = file_manager::util::GetLocalPathFromURL(
       render_view_host(), profile(), GURL(mount_url));
   if (file_path.empty())
     return false;
@@ -437,7 +455,8 @@ bool GetSizeStatsFunction::RunImpl() {
         integration_service->file_system();
 
     file_system->GetAvailableSpace(
-        base::Bind(&GetSizeStatsFunction::GetDriveAvailableSpaceCallback,
+        base::Bind(&FileBrowserPrivateGetSizeStatsFunction::
+                       GetDriveAvailableSpaceCallback,
                    this));
 
   } else {
@@ -449,7 +468,8 @@ bool GetSizeStatsFunction::RunImpl() {
                    file_path.value(),
                    total_size,
                    remaining_size),
-        base::Bind(&GetSizeStatsFunction::GetSizeStatsCallback,
+        base::Bind(&FileBrowserPrivateGetSizeStatsFunction::
+                       GetSizeStatsCallback,
                    this,
                    base::Owned(total_size),
                    base::Owned(remaining_size)));
@@ -457,7 +477,7 @@ bool GetSizeStatsFunction::RunImpl() {
   return true;
 }
 
-void GetSizeStatsFunction::GetDriveAvailableSpaceCallback(
+void FileBrowserPrivateGetSizeStatsFunction::GetDriveAvailableSpaceCallback(
     drive::FileError error,
     int64 bytes_total,
     int64 bytes_used) {
@@ -472,7 +492,7 @@ void GetSizeStatsFunction::GetDriveAvailableSpaceCallback(
   }
 }
 
-void GetSizeStatsFunction::GetSizeStatsCallback(
+void FileBrowserPrivateGetSizeStatsFunction::GetSizeStatsCallback(
     const uint64* total_size,
     const uint64* remaining_size) {
   base::DictionaryValue* sizes = new base::DictionaryValue();
@@ -484,13 +504,15 @@ void GetSizeStatsFunction::GetSizeStatsCallback(
   SendResponse(true);
 }
 
-GetVolumeMetadataFunction::GetVolumeMetadataFunction() {
+FileBrowserPrivateGetVolumeMetadataFunction::
+    FileBrowserPrivateGetVolumeMetadataFunction() {
 }
 
-GetVolumeMetadataFunction::~GetVolumeMetadataFunction() {
+FileBrowserPrivateGetVolumeMetadataFunction::
+    ~FileBrowserPrivateGetVolumeMetadataFunction() {
 }
 
-bool GetVolumeMetadataFunction::RunImpl() {
+bool FileBrowserPrivateGetVolumeMetadataFunction::RunImpl() {
   if (args_->GetSize() != 1) {
     error_ = "Invalid argument count";
     return false;
@@ -502,7 +524,7 @@ bool GetVolumeMetadataFunction::RunImpl() {
     return false;
   }
 
-  base::FilePath file_path = util::GetLocalPathFromURL(
+  base::FilePath file_path = file_manager::util::GetLocalPathFromURL(
       render_view_host(), profile(), GURL(volume_mount_url));
   if (file_path.empty()) {
     error_ = "Invalid mount path.";
@@ -511,24 +533,31 @@ bool GetVolumeMetadataFunction::RunImpl() {
 
   results_.reset();
 
-  const DiskMountManager::Disk* volume = GetVolumeAsDisk(file_path.value());
-  if (volume) {
-    DictionaryValue* volume_info =
-        CreateValueFromDisk(profile_, extension_->id(), volume);
-    SetResult(volume_info);
+  base::FilePath home_path;
+  // TODO(hidehiko): Return the volume info for Drive File System.
+  if (PathService::Get(base::DIR_HOME, &home_path) &&
+      file_path == home_path.AppendASCII("Downloads")) {
+    // Return simple (fake) volume metadata for Downloads volume.
+    SetResult(CreateDownloadsVolumeMetadata());
+  } else {
+    const DiskMountManager::Disk* volume = GetVolumeAsDisk(file_path.value());
+    if (volume)
+      SetResult(CreateValueFromDisk(profile_, extension_->id(), volume));
   }
 
   SendResponse(true);
   return true;
 }
 
-ValidatePathNameLengthFunction::ValidatePathNameLengthFunction() {
+FileBrowserPrivateValidatePathNameLengthFunction::
+    FileBrowserPrivateValidatePathNameLengthFunction() {
 }
 
-ValidatePathNameLengthFunction::~ValidatePathNameLengthFunction() {
+FileBrowserPrivateValidatePathNameLengthFunction::
+    ~FileBrowserPrivateValidatePathNameLengthFunction() {
 }
 
-bool ValidatePathNameLengthFunction::RunImpl() {
+bool FileBrowserPrivateValidatePathNameLengthFunction::RunImpl() {
   std::string parent_url;
   if (!args_->GetString(0, &parent_url))
     return false;
@@ -538,7 +567,7 @@ bool ValidatePathNameLengthFunction::RunImpl() {
     return false;
 
   scoped_refptr<fileapi::FileSystemContext> file_system_context =
-      util::GetFileSystemContextForRenderViewHost(
+      file_manager::util::GetFileSystemContextForRenderViewHost(
           profile(), render_view_host());
 
   fileapi::FileSystemURL filesystem_url(
@@ -558,25 +587,28 @@ bool ValidatePathNameLengthFunction::RunImpl() {
       FROM_HERE,
       base::Bind(&GetFileNameMaxLengthOnBlockingPool,
                  filesystem_url.path().AsUTF8Unsafe()),
-      base::Bind(&ValidatePathNameLengthFunction::OnFilePathLimitRetrieved,
+      base::Bind(&FileBrowserPrivateValidatePathNameLengthFunction::
+                     OnFilePathLimitRetrieved,
                  this, name.size()));
   return true;
 }
 
-void ValidatePathNameLengthFunction::OnFilePathLimitRetrieved(
+void FileBrowserPrivateValidatePathNameLengthFunction::OnFilePathLimitRetrieved(
     size_t current_length,
     size_t max_length) {
   SetResult(new base::FundamentalValue(current_length <= max_length));
   SendResponse(true);
 }
 
-FormatDeviceFunction::FormatDeviceFunction() {
+FileBrowserPrivateFormatDeviceFunction::
+    FileBrowserPrivateFormatDeviceFunction() {
 }
 
-FormatDeviceFunction::~FormatDeviceFunction() {
+FileBrowserPrivateFormatDeviceFunction::
+    ~FileBrowserPrivateFormatDeviceFunction() {
 }
 
-bool FormatDeviceFunction::RunImpl() {
+bool FileBrowserPrivateFormatDeviceFunction::RunImpl() {
   if (args_->GetSize() != 1) {
     return false;
   }
@@ -587,7 +619,7 @@ bool FormatDeviceFunction::RunImpl() {
     return false;
   }
 
-  base::FilePath file_path = util::GetLocalPathFromURL(
+  base::FilePath file_path = file_manager::util::GetLocalPathFromURL(
       render_view_host(), profile(), GURL(volume_file_url));
   if (file_path.empty())
     return false;
@@ -597,4 +629,4 @@ bool FormatDeviceFunction::RunImpl() {
   return true;
 }
 
-}  // namespace file_manager
+}  // namespace extensions

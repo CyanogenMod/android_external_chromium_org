@@ -93,6 +93,12 @@ class DriveAPIService : public DriveServiceInterface,
   virtual google_apis::CancelCallback ContinueGetResourceList(
       const GURL& override_url,
       const google_apis::GetResourceListCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback GetRemainingChangeList(
+      const std::string& page_token,
+      const google_apis::GetResourceListCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback GetRemainingFileList(
+      const std::string& page_token,
+      const google_apis::GetResourceListCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback GetResourceEntry(
       const std::string& resource_id,
       const google_apis::GetResourceEntryCallback& callback) OVERRIDE;
@@ -101,9 +107,9 @@ class DriveAPIService : public DriveServiceInterface,
       const GURL& embed_origin,
       const google_apis::GetShareUrlCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback GetAboutResource(
-      const google_apis::GetAboutResourceCallback& callback) OVERRIDE;
+      const google_apis::AboutResourceCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback GetAppList(
-      const google_apis::GetAppListCallback& callback) OVERRIDE;
+      const google_apis::AppListCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback DeleteResource(
       const std::string& resource_id,
       const std::string& etag,

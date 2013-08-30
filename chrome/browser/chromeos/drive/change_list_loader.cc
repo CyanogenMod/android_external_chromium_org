@@ -97,6 +97,19 @@ void ChangeListLoader::LoadIfNeeded(
   Load(directory_fetch_info, callback);
 }
 
+void ChangeListLoader::LoadDirectoryFromServer(
+    const std::string& directory_resource_id,
+    const FileOperationCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  scheduler_->GetAboutResource(
+      base::Bind(&ChangeListLoader::LoadDirectoryFromServerAfterGetAbout,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 directory_resource_id,
+                 callback));
+}
+
 void ChangeListLoader::Load(const DirectoryFetchInfo& directory_fetch_info,
                             const FileOperationCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -375,12 +388,13 @@ void ChangeListLoader::OnGetChangeList(
   DCHECK(resource_list);
   change_lists.push_back(new ChangeList(*resource_list));
 
+  // TODO(hidehiko): Use page token instead of next url.
   GURL next_url;
   if (resource_list->GetNextFeedURL(&next_url) &&
       !next_url.is_empty()) {
     // There is the remaining result so fetch it.
-    scheduler_->ContinueGetResourceList(
-        next_url,
+    scheduler_->GetRemainingChangeList(
+        next_url.spec(),
         base::Bind(&ChangeListLoader::OnGetChangeList,
                    weak_ptr_factory_.GetWeakPtr(),
                    base::Passed(&change_lists),
@@ -425,6 +439,22 @@ void ChangeListLoader::LoadChangeListFromServerAfterUpdate() {
   FOR_EACH_OBSERVER(ChangeListLoaderObserver,
                     observers_,
                     OnLoadFromServerComplete());
+}
+
+void ChangeListLoader::LoadDirectoryFromServerAfterGetAbout(
+    const std::string& directory_resource_id,
+    const FileOperationCallback& callback,
+    google_apis::GDataErrorCode status,
+    scoped_ptr<google_apis::AboutResource> about_resource) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  if (GDataToFileError(status) == FILE_ERROR_OK)
+    last_known_remote_changestamp_ = about_resource->largest_change_id();
+
+  DoLoadDirectoryFromServer(
+      DirectoryFetchInfo(directory_resource_id, last_known_remote_changestamp_),
+      callback);
 }
 
 void ChangeListLoader::CheckChangestampAndLoadDirectoryIfNeeded(
@@ -503,14 +533,48 @@ void ChangeListLoader::DoLoadDirectoryFromServer(
                  weak_ptr_factory_.GetWeakPtr(),
                  directory_fetch_info,
                  callback);
-  base::TimeTicks start_time = base::TimeTicks::Now();
   scheduler_->GetResourceListInDirectory(
       directory_fetch_info.resource_id(),
-      base::Bind(&ChangeListLoader::OnGetChangeList,
+      base::Bind(&ChangeListLoader::OnGetFileList,
                  weak_ptr_factory_.GetWeakPtr(),
                  base::Passed(ScopedVector<ChangeList>()),
-                 completion_callback,
-                 start_time));
+                 completion_callback));
+}
+
+void ChangeListLoader::OnGetFileList(
+    ScopedVector<ChangeList> change_lists,
+    const LoadChangeListCallback& callback,
+    google_apis::GDataErrorCode status,
+    scoped_ptr<google_apis::ResourceList> resource_list) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  FileError error = GDataToFileError(status);
+  if (error != FILE_ERROR_OK) {
+    callback.Run(ScopedVector<ChangeList>(), error);
+    return;
+  }
+
+  // Add the current change list to the list of collected lists.
+  DCHECK(resource_list);
+  change_lists.push_back(new ChangeList(*resource_list));
+
+  // TODO(hidehiko): Use page token instead of next url.
+  GURL next_url;
+  if (resource_list->GetNextFeedURL(&next_url) &&
+      !next_url.is_empty()) {
+    // There is the remaining result so fetch it.
+    scheduler_->GetRemainingFileList(
+        next_url.spec(),
+        base::Bind(&ChangeListLoader::OnGetFileList,
+                   weak_ptr_factory_.GetWeakPtr(),
+                   base::Passed(&change_lists),
+                   callback));
+    return;
+  }
+
+  // Run the callback so the client can process the retrieved change lists.
+  callback.Run(change_lists.Pass(), FILE_ERROR_OK);
 }
 
 void
@@ -556,22 +620,38 @@ void ChangeListLoader::DoLoadGrandRootDirectoryFromServerAfterGetAboutResource(
     return;
   }
 
-  // Grand root will be changed.
-  base::FilePath* changed_directory_path =
-      new base::FilePath(util::GetDriveGrandRootPath());
   // Add "My Drive".
   const std::string& root_resource_id = about_resource->root_folder_id();
+  std::string* local_id = new std::string;
   base::PostTaskAndReplyWithResult(
       blocking_task_runner_,
       FROM_HERE,
       base::Bind(&ResourceMetadata::AddEntry,
                  base::Unretained(resource_metadata_),
-                 util::CreateMyDriveRootEntry(root_resource_id)),
-      base::Bind(&ChangeListLoader::DoLoadDirectoryFromServerAfterRefresh,
+                 util::CreateMyDriveRootEntry(root_resource_id),
+                 local_id),
+      base::Bind(&ChangeListLoader::DoLoadDirectoryFromServerAfterAddMyDrive,
                  weak_ptr_factory_.GetWeakPtr(),
                  directory_fetch_info,
                  callback,
-                 base::Owned(changed_directory_path)));
+                 base::Owned(local_id)));
+}
+
+void ChangeListLoader::DoLoadDirectoryFromServerAfterAddMyDrive(
+    const DirectoryFetchInfo& directory_fetch_info,
+    const FileOperationCallback& callback,
+    std::string* local_id,
+    FileError error) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+  DCHECK_EQ(directory_fetch_info.resource_id(),
+            util::kDriveGrandRootSpecialResourceId);
+
+  const base::FilePath changed_directory_path(util::GetDriveGrandRootPath());
+  DoLoadDirectoryFromServerAfterRefresh(directory_fetch_info,
+                                        callback,
+                                        &changed_directory_path,
+                                        error);
 }
 
 void ChangeListLoader::DoLoadDirectoryFromServerAfterLoad(

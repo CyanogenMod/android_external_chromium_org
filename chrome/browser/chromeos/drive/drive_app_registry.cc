@@ -11,7 +11,6 @@
 
 #include "base/files/file_path.h"
 #include "base/strings/string_util.h"
-#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
@@ -56,8 +55,8 @@ DriveAppInfo::DriveAppInfo(
     const google_apis::InstalledApp::IconList& app_icons,
     const google_apis::InstalledApp::IconList& document_icons,
     const std::string& web_store_id,
-    const string16& app_name,
-    const string16& object_type,
+    const std::string& app_name,
+    const std::string& object_type,
     bool is_primary_selector)
     : app_id(app_id),
       app_icons(app_icons),
@@ -77,7 +76,7 @@ DriveAppRegistry::DriveAppFileSelector::DriveAppFileSelector(
     const GURL& product_link,
     const google_apis::InstalledApp::IconList& app_icons,
     const google_apis::InstalledApp::IconList& document_icons,
-    const string16& object_type,
+    const std::string& object_type,
     const std::string& app_id,
     bool is_primary_selector)
     : product_link(product_link),
@@ -107,7 +106,7 @@ DriveAppRegistry::~DriveAppRegistry() {
 void DriveAppRegistry::GetAppsForFile(
     const base::FilePath& file_path,
     const std::string& mime_type,
-    ScopedVector<DriveAppInfo>* apps) {
+    ScopedVector<DriveAppInfo>* apps) const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   SelectorAppList result_map;
@@ -163,12 +162,16 @@ void DriveAppRegistry::UpdateAfterGetAppList(
   }
 
   DCHECK(app_list);
+  UpdateFromAppList(*app_list);
+}
 
+void DriveAppRegistry::UpdateFromAppList(
+    const google_apis::AppList& app_list) {
   url_to_name_map_.clear();
   STLDeleteValues(&app_extension_map_);
   STLDeleteValues(&app_mimetypes_map_);
-  for (size_t i = 0; i < app_list->items().size(); ++i) {
-    const google_apis::AppResource& app = *app_list->items()[i];
+  for (size_t i = 0; i < app_list.items().size(); ++i) {
+    const google_apis::AppResource& app = *app_list.items()[i];
     if (app.product_url().is_empty())
       continue;
 
@@ -242,7 +245,7 @@ void DriveAppRegistry::AddAppSelectorList(
         *value, new DriveAppFileSelector(product_link,
                                          app_icons,
                                          document_icons,
-                                         UTF8ToUTF16(object_type),
+                                         object_type,
                                          app_id,
                                          is_primary_selector)));
   }
@@ -251,7 +254,7 @@ void DriveAppRegistry::AddAppSelectorList(
 void DriveAppRegistry::FindAppsForSelector(
     const std::string& file_selector,
     const DriveAppFileSelectorMap& map,
-    SelectorAppList* apps) {
+    SelectorAppList* apps) const {
   for (DriveAppFileSelectorMap::const_iterator it = map.find(file_selector);
        it != map.end() && it->first == file_selector; ++it) {
     const DriveAppFileSelector* web_app = it->second;
@@ -275,10 +278,30 @@ void DriveAppRegistry::FindAppsForSelector(
                          web_app->app_icons,
                          web_app->document_icons,
                          web_store_id,
-                         UTF8ToUTF16(product_iter->second),   // app name.
+                         product_iter->second,  // app name
                          web_app->object_type,
                          web_app->is_primary_selector)));
   }
 }
 
+namespace util {
+
+GURL FindPreferredIcon(
+    const google_apis::InstalledApp::IconList& icons,
+    int preferred_size) {
+  if (icons.empty())
+    return GURL();
+
+  google_apis::InstalledApp::IconList sorted_icons = icons;
+  std::sort(sorted_icons.begin(), sorted_icons.end());
+  GURL result = sorted_icons.rbegin()->second;
+  for (google_apis::InstalledApp::IconList::const_reverse_iterator
+           iter = sorted_icons.rbegin();
+       iter != sorted_icons.rend() && iter->first >= preferred_size; ++iter) {
+    result = iter->second;
+  }
+  return result;
+}
+
+}  // namespace util
 }  // namespace drive

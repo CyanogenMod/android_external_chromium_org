@@ -19,16 +19,11 @@
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
+#include "net/socket/socket_descriptor.h"
 #include "net/socket/socket_net_log_params.h"
 #include "net/socket/tcp_client_socket.h"
 
 namespace net {
-
-namespace {
-
-const int kInvalidSocket = -1;
-
-}  // namespace
 
 TCPServerSocketLibevent::TCPServerSocketLibevent(
     net::NetLog* net_log,
@@ -51,7 +46,8 @@ int TCPServerSocketLibevent::Listen(const IPEndPoint& address, int backlog) {
   DCHECK_GT(backlog, 0);
   DCHECK_EQ(socket_, kInvalidSocket);
 
-  socket_ = socket(address.GetSockAddrFamily(), SOCK_STREAM, IPPROTO_TCP);
+  socket_ = CreatePlatformSocket(address.GetSockAddrFamily(), SOCK_STREAM,
+                                 IPPROTO_TCP);
   if (socket_ < 0) {
     PLOG(ERROR) << "socket() returned an error";
     return MapSystemError(errno);

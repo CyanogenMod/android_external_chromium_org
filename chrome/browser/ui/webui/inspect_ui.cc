@@ -22,6 +22,7 @@
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "content/public/browser/browser_child_process_observer.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/devtools_agent_host.h"
@@ -74,6 +75,7 @@ static const char kAdbTargetType[]  = "adb_page";
 
 static const char kInitUICommand[]  = "init-ui";
 static const char kInspectCommand[]  = "inspect";
+static const char kActivateCommand[]  = "activate";
 static const char kTerminateCommand[]  = "terminate";
 static const char kReloadCommand[]  = "reload";
 static const char kOpenCommand[]  = "open";
@@ -134,6 +136,15 @@ bool HasClientHost(RenderViewHost* rvh) {
   return agent->IsAttached();
 }
 
+bool HasClientHost(int process_id, int route_id) {
+  if (!DevToolsAgentHost::HasForWorker(process_id, route_id))
+    return false;
+
+  scoped_refptr<DevToolsAgentHost> agent(
+      DevToolsAgentHost::GetForWorker(process_id, route_id));
+  return agent->IsAttached();
+}
+
 DictionaryValue* BuildTargetDescriptor(RenderViewHost* rvh, bool is_tab) {
   WebContents* web_contents = WebContents::FromRenderViewHost(rvh);
   std::string title;
@@ -188,6 +199,7 @@ class InspectMessageHandler : public WebUIMessageHandler {
 
   void HandleInitUICommand(const ListValue* args);
   void HandleInspectCommand(const ListValue* args);
+  void HandleActivateCommand(const ListValue* args);
   void HandleTerminateCommand(const ListValue* args);
   void HandleReloadCommand(const ListValue* args);
   void HandleOpenCommand(const ListValue* args);
@@ -211,6 +223,9 @@ void InspectMessageHandler::RegisterMessages() {
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback(kInspectCommand,
       base::Bind(&InspectMessageHandler::HandleInspectCommand,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(kActivateCommand,
+      base::Bind(&InspectMessageHandler::HandleActivateCommand,
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback(kTerminateCommand,
       base::Bind(&InspectMessageHandler::HandleTerminateCommand,
@@ -263,6 +278,12 @@ void InspectMessageHandler::HandleInspectCommand(const ListValue* args) {
     return;
 
   DevToolsWindow::OpenDevToolsWindowForWorker(profile, agent_host.get());
+}
+
+void InspectMessageHandler::HandleActivateCommand(const ListValue* args) {
+  std::string page_id;
+  if (GetRemotePageId(args, &page_id))
+    inspect_ui_->ActivateRemotePage(page_id);
 }
 
 static void TerminateWorker(int process_id, int route_id) {
@@ -351,6 +372,7 @@ bool InspectMessageHandler::GetRemotePageId(const ListValue* args,
 
 class InspectUI::WorkerCreationDestructionListener
     : public WorkerServiceObserver,
+      public content::BrowserChildProcessObserver,
       public base::RefCountedThreadSafe<WorkerCreationDestructionListener> {
  public:
   WorkerCreationDestructionListener()
@@ -360,6 +382,7 @@ class InspectUI::WorkerCreationDestructionListener
     DCHECK(workers_ui);
     DCHECK(!discovery_ui_);
     discovery_ui_ = workers_ui;
+    BrowserChildProcessObserver::Add(this);
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::Bind(&WorkerCreationDestructionListener::RegisterObserver,
@@ -369,13 +392,14 @@ class InspectUI::WorkerCreationDestructionListener
   void InspectUIDestroyed() {
     DCHECK(discovery_ui_);
     discovery_ui_ = NULL;
+    BrowserChildProcessObserver::Remove(this);
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::Bind(&WorkerCreationDestructionListener::UnregisterObserver,
                    this));
   }
 
-  void InitUI() {
+  void UpdateUI() {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::Bind(&WorkerCreationDestructionListener::CollectWorkersData,
@@ -398,28 +422,24 @@ class InspectUI::WorkerCreationDestructionListener
     CollectWorkersData();
   }
 
+  virtual void BrowserChildProcessHostConnected(
+      const content::ChildProcessData& data) OVERRIDE {
+    if (data.process_type == content::PROCESS_TYPE_WORKER)
+      UpdateUI();
+  }
+
+  virtual void BrowserChildProcessHostDisconnected(
+      const content::ChildProcessData& data) OVERRIDE {
+    if (data.process_type == content::PROCESS_TYPE_WORKER)
+      UpdateUI();
+  }
+
   void CollectWorkersData() {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-    scoped_ptr<ListValue> target_list(new ListValue());
-    std::vector<WorkerService::WorkerInfo> worker_info =
-        WorkerService::GetInstance()->GetWorkers();
-    for (size_t i = 0; i < worker_info.size(); ++i) {
-      target_list->Append(BuildTargetDescriptor(
-          kWorkerTargetType,
-          false,
-          worker_info[i].url,
-          UTF16ToUTF8(worker_info[i].name),
-          GURL(),
-          "",
-          worker_info[i].process_id,
-          worker_info[i].route_id,
-          worker_info[i].handle));
-    }
-
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
         base::Bind(&WorkerCreationDestructionListener::PopulateWorkersList,
-                   this, base::Owned(target_list.release())));
+                   this, WorkerService::GetInstance()->GetWorkers()));
   }
 
   void RegisterObserver() {
@@ -430,12 +450,29 @@ class InspectUI::WorkerCreationDestructionListener
     WorkerService::GetInstance()->RemoveObserver(this);
   }
 
-  void PopulateWorkersList(ListValue* target_list) {
+  void PopulateWorkersList(
+      const std::vector<WorkerService::WorkerInfo>& worker_info) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    if (discovery_ui_) {
-      discovery_ui_->web_ui()->CallJavascriptFunction(
-          "populateWorkersList", *target_list);
+    if (!discovery_ui_)
+      return;
+
+    ListValue target_list;
+    for (size_t i = 0; i < worker_info.size(); ++i) {
+      if (!worker_info[i].handle)
+        continue;  // Process is still being created.
+      target_list.Append(BuildTargetDescriptor(
+          kWorkerTargetType,
+          HasClientHost(worker_info[i].process_id, worker_info[i].route_id),
+          worker_info[i].url,
+          UTF16ToUTF8(worker_info[i].name),
+          GURL(),
+          "",
+          worker_info[i].process_id,
+          worker_info[i].route_id,
+          worker_info[i].handle));
     }
+    discovery_ui_->web_ui()->CallJavascriptFunction(
+        "populateWorkersList", target_list);
   }
 
   InspectUI* discovery_ui_;
@@ -461,7 +498,7 @@ void InspectUI::InitUI() {
   PopulateLists();
   UpdatePortForwardingEnabled();
   UpdatePortForwardingConfig();
-  observer_->InitUI();
+  observer_->UpdateUI();
 }
 
 void InspectUI::InspectRemotePage(const std::string& id) {
@@ -470,6 +507,12 @@ void InspectUI::InspectRemotePage(const std::string& id) {
     Profile* profile = Profile::FromWebUI(web_ui());
     it->second->Inspect(profile);
   }
+}
+
+void InspectUI::ActivateRemotePage(const std::string& id) {
+  RemotePages::iterator it = remote_pages_.find(id);
+  if (it != remote_pages_.end())
+    it->second->Activate();
 }
 
 void InspectUI::ReloadRemotePage(const std::string& id) {

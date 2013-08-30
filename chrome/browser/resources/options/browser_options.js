@@ -367,9 +367,6 @@ cr.define('options', function() {
       $('language-button').onclick = showLanguageOptions;
       $('manage-languages').onclick = showLanguageOptions;
 
-      if (!loadTimeData.getBoolean('enableTranslateSettings'))
-        $('manage-languages').hidden = true;
-
       // Downloads section.
       Preferences.getInstance().addEventListener('download.default_directory',
           this.onDefaultDownloadDirectoryChanged_.bind(this));
@@ -734,9 +731,15 @@ cr.define('options', function() {
       customizeSyncButton.hidden = !this.signedIn_ ||
                                    syncData.managed ||
                                    !syncData.syncSystemEnabled;
-      customizeSyncButton.textContent = syncData.setupCompleted ?
+
+      // Only modify the customize button's text if the new text is different.
+      // Otherwise, it can affect search-highlighting in the settings page.
+      // See http://crbug.com/268265.
+      var customizeSyncButtonNewText = syncData.setupCompleted ?
           loadTimeData.getString('customizeSync') :
           loadTimeData.getString('syncButtonTextStart');
+      if (customizeSyncButton.textContent != customizeSyncButtonNewText)
+        customizeSyncButton.textContent = customizeSyncButtonNewText;
 
       // Disable the "sign in" button if we're currently signing in, or if we're
       // already signed in and signout is not allowed.

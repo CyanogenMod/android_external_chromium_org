@@ -3533,6 +3533,9 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_TASK_MANAGER_TAB_PREFIX" desc="The prefix for a Task Manager Tab row">
         Tab: <ph name="TAB_NAME">$1<ex>Google</ex></ph>
       </message>
+      <message name="IDS_TASK_MANAGER_TAB_INCOGNITO_PREFIX" desc="The prefix for a Task Manager incognito Tab row (may not be visible if incognito is not open)">
+        Incognito Tab: <ph name="TAB_NAME">$1<ex>Google</ex></ph>
+      </message>
       <message name="IDS_TASK_MANAGER_BACKGROUND_PREFIX" desc="The prefix for a Task Manager background page row">
         Background Page: <ph name="BACKGROUND_PAGE_URL">$1<ex>http://www.google.com</ex></ph>
       </message>
@@ -4147,6 +4150,9 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_PROMPT_WARNING_DOWNLOADS_OPEN" desc="Permission string for access to downloads.">
         Open downloaded files
       </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_FILE_SYSTEM_DIRECTORY" desc="Permission string for access to directories and their contents.">
+        Access folders that you open, and all files and folders those folders contain.
+      </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_FILE_SYSTEM_WRITE" desc="Permission string for write access to the file system.">
         Write to files that you have opened in the application
       </message>
@@ -4524,6 +4530,15 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_APPS_DEVTOOL_DELETE_CONFIRMATION_MESSAGE_EXTENSION" desc="Text of the message of the apps/extension delete confirmation dialog in case the user is deleting an extension.">
         Do you really want to delete this extension?
       </message>
+      <message name="IDS_APPS_DEVTOOL_MANAGED_PROFILE_DIALOG_CLOSE_BUTTON" desc="Title of the button to close the dialog for managed profile.">
+        Close
+      </message>
+      <message name="IDS_APPS_DEVTOOL_MANAGED_PROFILE_DIALOG_TITLE" desc="Title of the dialog for managed profile.">
+        This user is supervised.
+      </message>
+      <message name="IDS_APPS_DEVTOOL_MANAGED_PROFILE_DIALOG_DESCRIPTION" desc="Content of the dialog for managed profile. It's informing a supervised user that extensions cannot be changed.">
+        Applications and extensions cannot be modified by supervised users. Apps Developer Tools will be closed.
+      </message>
       <message name="IDS_EXTENSIONS_NONE_INSTALLED_SUGGEST_GALLERY" desc="Text on next line after IDS_EXTENSIONS_NONE_INSTALLED that suggests the user look in the gallery for extensions to install.">
         Want to <ph name="BEGIN_LINK">&lt;a target="_blank" href="$1"&gt;</ph>browse the gallery<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> instead?
       </message>
@@ -4583,9 +4598,6 @@ Make sure you do not expose any sensitive information.
       </message>
       <message name="IDS_EXTENSIONS_LAUNCH" desc="The link for launching apps.">
         Launch
-      </message>
-      <message name="IDS_EXTENSIONS_RESTART" desc="The link for restarting apps.">
-        Restart
       </message>
       <if expr="is_macosx">
         <message name="IDS_EXTENSIONS_RELOAD_UNPACKED" desc="The link for reloading unpacked extensions.">
@@ -4656,7 +4668,7 @@ Make sure you do not expose any sensitive information.
         (This extension is managed and cannot be removed or disabled.)
       </message>
       <message name="IDS_EXTENSIONS_LOCKED_MANAGED_USER" desc="The error message (either shown in the extensions UI or logged) informing a supervised user that extensions cannot be changed.">
-        Extensions cannot be modified by supervised users.
+        Applications and extensions cannot be modified by supervised users.
       </message>
       <message name="IDS_EXTENSIONS_USE_APPS_DEV_TOOLS" desc="The message in the banner to invite people to use Apps Developer Tools.">
         The new Apps Developer Tools makes it easier than ever to manage and debug your apps and extensions. It's now available in the Chrome App Launcher.
@@ -4869,6 +4881,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_EXTENSIONS_DELETE" desc="Text for the link to delete the extension / app.">
         Delete
+      </message>
+      <message name="IDS_EXTENSIONS_ADT_DELETE" desc="Text for the link to uninstall the extension / app.">
+        Uninstall
       </message>
       <message name="IDS_EXTENSIONS_PACK" desc="Text for the link to pack the extension / app.">
         Pack
@@ -5312,6 +5327,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
         <message name="IDS_FLAGS_ALTERNATE_SHELF_LAYOUT_DESCRIPTION">
           Use the alternative shelf layout.
         </message>
+        <message name="IDS_FLAGS_DRAG_OFF_SHELF_NAME">
+          Dragging off items from shelf to unpin
+        </message>
+        <message name="IDS_FLAGS_DRAG_OFF_SHELF_DESCRIPTION">
+          Enable to allow items to be dragged off the shelf to unpin them.
+        </message>
         <message name="IDS_FLAGS_RELAUNCH_BUTTON" desc="Text on a button that restarts Chrome OS when clicked. ">
           Restart Now
         </message>
@@ -5371,11 +5392,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_NACL_DEBUG_MASK_CHOICE_EXCLUDE_UTILS">
         Debug everything except secure shell
       </message>
-      <message name="IDS_FLAGS_PNACL_NAME" desc="Name of the 'Portable Native Client' lab.">
-        Portable Native Client.
+      <message name="IDS_FLAGS_DISABLE_PNACL_NAME" desc="Name of the 'Disable Portable Native Client' lab.">
+        Disable Portable Native Client.
       </message>
-      <message name="IDS_FLAGS_PNACL_DESCRIPTION" desc="Description of the 'Portable Native Client' lab.">
-        Enable support for Portable Native Client.
+      <message name="IDS_FLAGS_DISABLE_PNACL_DESCRIPTION" desc="Description of the 'Disable Portable Native Client' lab.">
+        Disable support for Portable Native Client (PNaCl).
       </message>
       <message name="IDS_FLAGS_SAVE_PAGE_AS_MHTML_NAME" desc="Name of the 'Save Page as MHTML' lab.">
         Save Page as MHTML
@@ -6364,6 +6385,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_DELEGATED_RENDERER_DESCRIPTION" desc="Description of about:flags option for delegated renderer.">
         If enabled, the renderer delegates compositing to the browser, merging both compositing passes.
+      </message>
+      <message name="IDS_FLAGS_MAP_IMAGE_NAME" desc="Name of about:flags option for map-image rasterizer.">
+        Map-image rasterizer (AKA Zero-copy)
+      </message>
+      <message name="IDS_FLAGS_MAP_IMAGE_DESCRIPTION" desc="Description of about:flags option for map-image rasterizer.">
+        If enabled, raster threads write directly to GPU memory.
       </message>
       <message name="IDS_FLAGS_TRACK_ACTIVE_VISIT_TIME_NAME" desc="Name of about:flags option for tracking active time on a page.">
         Track time spent on each each page
@@ -9257,8 +9284,8 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       <message name="IDS_OPTIONS_LANGUAGES_ADD_SELECT_LABEL" desc="The label for the add language select control.">
         Language:
       </message>
-      <message name="IDS_OPTIONS_LANGUAGES_DONT_TRANSLATE_IN_THIS_LANGUAGE" desc="The label for a checkbox which indicates whether or not the language should be translated.">
-        Don't translate pages in this language
+      <message name="IDS_OPTIONS_LANGUAGES_OFFER_TO_TRANSLATE_IN_THIS_LANGUAGE" desc="The label for a checkbox which indicates whether or not the language should be translated.">
+        Offer to translate pages in this language
       </message>
       <message name="IDS_OPTIONS_LANGUAGES_CANNOT_TRANSLATE_IN_THIS_LANGUAGE" desc="The string displayed to user when the language cannot be translated.">
         This language cannot be translated
@@ -10116,7 +10143,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         Google Wallet is protecting your card
       </message>
       <message name="IDS_AUTOFILL_GENERATED_CREDIT_CARD_BUBBLE_CONTENTS" desc="Text in the bubble explaining that a temporary card has been generated for the user's security by Google Wallet.">
-        Don't worry, this purchase will still be charged to your |$1|. Your card has been protected with the Google Wallet Virtual Online Card (|$2|), this number will appear on your receipt.
+        Your card has been protected with the Google Wallet Virtual Online Card (<ph name="FRONTING_CREDIT_CARD">|$1|<ex>Visa - 1234</ex></ph>) and this number will appear on your receipt. This purchase will still be charged to your <ph name="BACKING_CREDIT_CARD">|$2|<ex>Visa - 5678</ex></ph>.
       </message>
       <message name="IDS_AUTOFILL_NEW_CREDIT_CARD_BUBBLE_LINK" desc="The text of a link at the bottom of the autofill dialog bubble that sends users to a Google Wallet billing/card management page.">
         Manage Saved Cards
@@ -10889,13 +10916,13 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         <message name="IDS_NEW_TAB_CONTEXT_MENU_REMOVE_ALL" desc="Context menu description for removing all items from a list">
           Remove all
         </message>
-        <message name="IDS_NEW_TAB_CONTEXT_MENU_EDIT_BOOKMARK" desc="Context menu description for editing the selected bookmark">
+        <message name="IDS_NEW_TAB_CONTEXT_MENU_EDIT_BOOKMARK" desc="Context menu description for editing the selected bookmark" formatter_data="android_java">
           Edit bookmark
         </message>
-        <message name="IDS_NEW_TAB_CONTEXT_MENU_DELETE_BOOKMARK" desc="Context menu description for deleting the selected bookmark">
+        <message name="IDS_NEW_TAB_CONTEXT_MENU_DELETE_BOOKMARK" desc="Context menu description for deleting the selected bookmark" formatter_data="android_java">
           Delete bookmark
         </message>
-        <message name="IDS_NEW_TAB_CONTEXT_MENU_BOOKMARK_SHORTCUT" desc="Context menu description for creating a shortcut to bookmark on home screen">
+        <message name="IDS_NEW_TAB_CONTEXT_MENU_BOOKMARK_SHORTCUT" desc="Context menu description for creating a shortcut to bookmark on home screen" formatter_data="android_java">
           Add to home screen
         </message>
         <message name="IDS_SYNC_PROMO_DESKTOP_INSTRUCTIONS" desc="Information about sync displayed on the NTP when the user has signed in on mobile but not on desktop">
@@ -12200,6 +12227,16 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
       <message name="IDS_FILE_BROWSER_FORMATTING_WARNING" desc="Displayed when you attempt to format device.">
         Formatting the removable media is going to erase all data. Do you wish to continue?
+      </message>
+
+      <message name="IDS_FILE_BROWSER_SUGGEST_DIALOG_TITLE" desc="Title of the suggest app dialog, which shows the list of the apps which supports the selected file.">
+        Select an app to open this file.
+      </message>
+      <message name="IDS_FILE_BROWSER_SUGGEST_DIALOG_LINK_TO_WEBSTORE" desc="Text of the link to the app list on Chrome Webstore, which shows the more apps than in the suggest app dialog.">
+        See more...
+      </message>
+      <message name="IDS_FILE_BROWSER_SUGGEST_DIALOG_INSTALLATION_FAILED" desc="Error message when the installation of the app from WebStore is failed.">
+        Installation failed.
       </message>
 
       <message name="IDS_FILE_BROWSER_SELECT_FOLDER_TITLE" desc="Select folder title.">
@@ -14922,52 +14959,20 @@ Do you accept?
       <message name="IDS_NETWORK_LOG_LEVEL_DEBUG" desc="Debug logging level checkbox">
         Debug
       </message>
+      <message name="IDS_NETWORK_LOG_LEVEL_FILEINFO" desc="Debug logging level checkbox">
+        File Info
+      </message>
       <message name="IDS_NETWORK_LOG_ENTRY" desc="The log entry displayed in network event log table.">
         [<ph name="TIMESTAMP">$1<ex>Timestamp</ex></ph>]
-        <ph name="EVENT_NAME">$2<ex>Event Name</ex></ph>
-        <ph name="DESCRIPTION">$3<ex>Description</ex></ph>
+        <ph name="FILE_INFO">$2<ex>file:123</ex></ph>
+        <ph name="EVENT_NAME">$3<ex>Event Name</ex></ph>
+        <ph name="DESCRIPTION">$4<ex>Description</ex></ph>
       </message>
     </if>
 
     <!-- Local Device Discovery display strings -->
-    <message name="IDS_LOCAL_DISCOVERY_SERVICE_NAME" desc="Table header for service name">
-      Name
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_SERVICE_DOMAIN" desc="Table header for service domain">
-      Domain
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_SERVICE_PORT" desc="Table header for service port">
-      Port
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_SERVICE_IP" desc="Table header for IP">
-      IP
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_SERVICE_LASTSEEN" desc="Table header for when a service was last seen">
-      Last seen
-    </message>
     <message name="IDS_LOCAL_DISCOVERY_SERVICE_REGISTER" desc="Table header for registering a service">
       Register
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_REGISTERING_SERVICE" desc="Message to indicate a service is being registered">
-      Registering <ph name="DEVICE_NAME">$1</ph>...
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_REGISTRATION_FAILED" desc="Message to indicate service registration has failed">
-      Registration failed: <ph name="ERROR_STRING">$1</ph>.
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_REGISTRATION_SUCCEEDED" desc="Message to indicate service registration has succeeded">
-      Successfully registered device with ID <ph name="DEVICE_ID">$1</ph>.
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_REGISTERED" desc="Message to show that a listed service has already been registered">
-      Registered
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_INFO_STARTED" desc="Message to show that a listed service is being asked for info">
-      Info request started for <ph name="DEVICE_NAME">$1</ph>...
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_INFO_FAILED" desc="Message to show that an info request has failed">
-      Info request failed: <ph name="ERROR_STRING">$1</ph>...
-    </message>
-    <message name="IDS_LOCAL_DISCOVERY_SERVICE_INFO" desc="Table header and button for info requests">
-      Info
     </message>
     <message name="IDS_LOCAL_DISOCVERY_NOTIFICATION_TITLE_PRINTER" desc="Title of notification for a new printer showing up on your network">
       New printer on your network
@@ -14977,6 +14982,42 @@ Do you accept?
     </message>
     <message name="IDS_LOCAL_DISOCVERY_NOTIFICATION_DISPLAY_SOURCE_PRINTER" desc="Display name for notification for a new printer showing up on your network">
       Google Cloud Print
+    </message>
+    <message name="IDS_LOCAL_DISOCVERY_NOTIFICATION_BUTTON_PRINTER" desc="Message on registration button for printer">
+      Add to Cloud Print
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_DEVICES_PAGE_TITLE" desc="Title for devices page">
+      Devices
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_REGISTER_CONFIRMATION" desc="Confirmation for registering a printer to Google Cloud Print">
+      Do you want to add <ph name="PRINTER_NAME">$1</ph> to Google Cloud Print?
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_REGISTER_USER" desc="Label for user picker in registration dialog">
+      User:
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_CONFIRM_REGISTRATION" desc="Title for 'confirm registration' page">
+      Confirm registration
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_ADDING_PRINTER" desc="Title for 'adding printer' page">
+      Adding printer...
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_ERROR_OCURRED" desc="Title for error page">
+      An error has occured
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_ADDING_PRINTER_MESSAGE1" desc="Message for adding printer number 1">
+      You must confirm registration on your printer to finish this process - check it now.
+    </message>
+     <message name="IDS_LOCAL_DISCOVERY_ADDING_PRINTER_MESSAGE2" desc="Message for adding printer number 2">
+      Adding the printer to your account - this may take a moment...
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_ERROR_OCURRED_MESSAGE" desc="Message for error page">
+      An error has occured. Please check your printer and try again.
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_REGISTERED_DEVICES_TITLE" desc="Title for registered devices">
+      Registered devices
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_UNREGISTERED_DEVICES_TITLE" desc="Title for unregistered devices">
+      Unregistered devices
     </message>
   </messages>
 

@@ -3,70 +3,79 @@
 # found in the LICENSE file.
 
 import os
+import tempfile
 
-from telemetry.core import discover
-from telemetry.core import profile_creator
 from telemetry.core import util
 
-BASE_PROFILE_TYPES = ['clean', 'default']
 
-PROFILE_CREATORS = {}
+BASE_PROFILE_TYPES = ['clean', 'default']
 
 PROFILE_TYPE_MAPPING = {
   'typical_user': 'chrome/test/data/extensions/profiles/content_scripts1',
   'power_user': 'chrome/test/data/extensions/profiles/extension_webrequest',
 }
 
-def _DiscoverCreateableProfiles(profile_creators_dir, base_dir):
-  """Returns a dictionary of all the profile creators we can use to create
-  a Chrome profile for testing located in |profile_creators_dir|.
-  The returned value consists of 'class_name' -> 'test class' dictionary where
-  class_name is the name of the class with the _creator suffix removed e.g.
-  'small_profile_creator will be 'small_profile'.
-  """
-  profile_creators_unfiltered = discover.DiscoverClasses(
-      profile_creators_dir, base_dir, profile_creator.ProfileCreator)
+GENERATED_PROFILE_TYPES = []
 
-  # Remove '_creator' suffix from keys.
-  profile_creators = {}
-  for test_name, test_class in profile_creators_unfiltered.iteritems():
-    assert test_name.endswith('_creator')
-    test_name = test_name[:-len('_creator')]
-    profile_creators[test_name] = test_class
+def _GetFirstExistingBuildDir():
+  # Look for the first build directory that exists, this is a bit weird because
+  # if a developer machine has both Debug and Release build directories this
+  # will return the first one, but on the bots this should not be an issue.
+  chrome_root = util.GetChromiumSrcDir()
+  for build_dir, build_type in util.GetBuildDirectories():
+    candidate = os.path.join(chrome_root, build_dir, build_type)
+    if os.path.isdir(candidate):
+      return candidate
+  return None
 
-  return profile_creators
+def GetGeneratedProfilesDir():
+  build_directory = _GetFirstExistingBuildDir()
+  if not build_directory:
+    build_directory = tempfile.gettempdir()
 
-def ClearProfieCreatorsForTests():
-  """Clears the discovered profile creator objects.  Used for unit tests."""
-  PROFILE_CREATORS.clear()
+  return os.path.abspath(os.path.join(build_directory, 'generated_profiles'))
 
-def FindProfileCreators(profile_creators_dir, base_dir):
-  """Discover all the ProfileCreator objects in |profile_creators_dir|."""
-  assert not PROFILE_CREATORS  # It's illegal to call this function twice.
-  PROFILE_CREATORS.update(_DiscoverCreateableProfiles(
-      profile_creators_dir, base_dir))
+def ScanForGeneratedProfiles():
+  # It's illegal to call this function twice.
+  assert not GENERATED_PROFILE_TYPES
+
+  generated_profiles_dir = GetGeneratedProfilesDir()
+  if not os.path.exists(generated_profiles_dir):
+    return
+
+  # Get list of subdirectories which are assumed to be generated profiles.
+  subdirs = os.listdir(generated_profiles_dir)
+  subdirs = filter(
+      lambda d:os.path.isdir(os.path.join(generated_profiles_dir, d)), subdirs)
+
+  # Make sure we don't have any conflics with hard coded profile names.
+  hardcoded_profile_names = BASE_PROFILE_TYPES + PROFILE_TYPE_MAPPING.keys()
+  for d in subdirs:
+    if d in hardcoded_profile_names:
+      raise Exception('Conflicting generated profile name: %s.' % d)
+
+  GENERATED_PROFILE_TYPES.extend(subdirs)
 
 def GetProfileTypes():
   """Returns a list of all command line options that can be specified for
   profile type."""
-  return (BASE_PROFILE_TYPES + PROFILE_TYPE_MAPPING.keys() +
-      PROFILE_CREATORS.keys())
+  return BASE_PROFILE_TYPES + PROFILE_TYPE_MAPPING.keys() + \
+      GENERATED_PROFILE_TYPES
 
 def GetProfileDir(profile_type):
   """Given a |profile_type| (as returned by GetProfileTypes()), return the
-  directory to use for that profile or None if the profile needs to be generated
-  or doesn't need a profile directory (e.g. using the browser default profile).
+  directory to use for that profile or None if the profile doesn't need a
+  profile directory (e.g. using the browser default profile).
   """
-  if (profile_type in BASE_PROFILE_TYPES or
-      profile_type in PROFILE_CREATORS):
+  if profile_type in BASE_PROFILE_TYPES:
     return None
 
-  path = os.path.join(
-    util.GetChromiumSrcDir(), *PROFILE_TYPE_MAPPING[profile_type].split('/'))
+  if profile_type in PROFILE_TYPE_MAPPING.keys():
+    path = os.path.join(
+      util.GetChromiumSrcDir(), *PROFILE_TYPE_MAPPING[profile_type].split('/'))
+  else:
+    # Generated profile.
+    path = os.path.join(GetGeneratedProfilesDir(), profile_type)
+
   assert os.path.exists(path)
   return path
-
-def GetProfileCreator(profile_type):
-  """Returns the profile creator object corresponding to the |profile_type|
-  string."""
-  return PROFILE_CREATORS.get(profile_type)

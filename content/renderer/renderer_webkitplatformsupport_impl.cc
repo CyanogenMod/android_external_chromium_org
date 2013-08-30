@@ -400,10 +400,6 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::supportsMediaMIMEType(
   if (!key_system.isEmpty()) {
     // Check whether the key system is supported with the mime_type and codecs.
 
-    // Not supporting the key system is a flat-out no.
-    if (!IsSupportedKeySystem(key_system))
-      return IsNotSupported;
-
     std::vector<std::string> strict_codecs;
     bool strip_suffix = !net::IsStrictMediaMimeType(mime_type_ascii);
     net::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, strip_suffix);
@@ -448,7 +444,7 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::supportsMediaSourceMIMEType(
   const std::string mime_type_ascii = ToASCIIOrEmpty(mime_type);
   std::vector<std::string> parsed_codec_ids;
   net::ParseCodecString(ToASCIIOrEmpty(codecs), &parsed_codec_ids, false);
-  if (mime_type_ascii.empty() || parsed_codec_ids.size() == 0)
+  if (mime_type_ascii.empty())
     return false;
   return media::StreamParserFactory::IsTypeSupported(
       mime_type_ascii, parsed_codec_ids);
@@ -621,12 +617,18 @@ long long RendererWebKitPlatformSupportImpl::databaseGetSpaceAvailableForOrigin(
 
 WebKit::WebSharedWorkerRepository*
 RendererWebKitPlatformSupportImpl::sharedWorkerRepository() {
+#if !defined(OS_ANDROID)
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableSharedWorkers)) {
     return shared_worker_repository_.get();
   } else {
     return NULL;
   }
+#else
+  // Shared workers are unsupported on Android. Returning NULL will prevent the
+  // window.SharedWorker constructor from being exposed. http://crbug.com/154571
+  return NULL;
+#endif
 }
 
 bool RendererWebKitPlatformSupportImpl::canAccelerate2dCanvas() {

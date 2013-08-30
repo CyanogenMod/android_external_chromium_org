@@ -26,6 +26,7 @@
 #include "net/base/net_log.h"
 #include "net/base/net_util.h"
 #include "net/base/network_change_notifier.h"
+#include "net/socket/socket_descriptor.h"
 #include "net/socket/socket_net_log_params.h"
 
 // If we don't have a definition for TCPI_OPT_SYN_DATA, create one.
@@ -37,7 +38,6 @@ namespace net {
 
 namespace {
 
-const int kInvalidSocket = -1;
 const int kTCPKeepAliveSeconds = 45;
 
 // SetTCPNoDelay turns on/off buffering in the kernel. By default, TCP sockets
@@ -90,7 +90,7 @@ int SetupSocket(int socket) {
 // Creates a new socket and sets default parameters for it. Returns
 // the OS error code (or 0 on success).
 int CreateSocket(int family, int* socket) {
-  *socket = ::socket(family, SOCK_STREAM, IPPROTO_TCP);
+  *socket = CreatePlatformSocket(family, SOCK_STREAM, IPPROTO_TCP);
   if (*socket == kInvalidSocket)
     return errno;
   int error = SetupSocket(*socket);

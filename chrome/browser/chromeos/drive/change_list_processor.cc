@@ -27,10 +27,15 @@ ChangeList::ChangeList(const google_apis::ResourceList& resource_list)
 
   entries_.resize(resource_list.entries().size());
   size_t entries_index = 0;
+  std::string parent_resource_id;
   for (size_t i = 0; i < resource_list.entries().size(); ++i) {
     if (ConvertToResourceEntry(*resource_list.entries()[i],
-                               &entries_[entries_index]))
+                               &entries_[entries_index],
+                               &parent_resource_id)) {
+      // TODO(hashimoto): Resolve local ID before use. crbug.com/260514
+      entries_[entries_index].set_parent_local_id(parent_resource_id);
       ++entries_index;
+    }
   }
   entries_.resize(entries_index);
 }
@@ -242,7 +247,8 @@ void ChangeListProcessor::ApplyEntry(const ResourceEntry& entry) {
 }
 
 void ChangeListProcessor::AddEntry(const ResourceEntry& entry) {
-  FileError error = resource_metadata_->AddEntry(entry);
+  std::string local_id;
+  FileError error = resource_metadata_->AddEntry(entry, &local_id);
 
   if (error == FILE_ERROR_OK)
     UpdateChangedDirs(entry);
@@ -323,8 +329,10 @@ FileError ChangeListProcessor::RefreshDirectory(
     }
 
     error = resource_metadata->RefreshEntry(it->first, entry);
-    if (error == FILE_ERROR_NOT_FOUND)  // If refreshing fails, try adding.
-      error = resource_metadata->AddEntry(entry);
+    if (error == FILE_ERROR_NOT_FOUND) {  // If refreshing fails, try adding.
+      std::string local_id;
+      error = resource_metadata->AddEntry(entry, &local_id);
+    }
 
     if (error != FILE_ERROR_OK)
       return error;

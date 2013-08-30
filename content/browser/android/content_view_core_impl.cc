@@ -577,15 +577,15 @@ void ContentViewCoreImpl::ShowDisambiguationPopup(
                                                java_bitmap.obj());
 }
 
-ScopedJavaLocalRef<jobject> ContentViewCoreImpl::CreateSmoothScroller(
-    bool scroll_down, int mouse_event_x, int mouse_event_y) {
+ScopedJavaLocalRef<jobject> ContentViewCoreImpl::CreateGenericTouchGesture(
+    int start_x, int start_y, int delta_x, int delta_y) {
   JNIEnv* env = AttachCurrentThread();
 
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
     return ScopedJavaLocalRef<jobject>();
-  return Java_ContentViewCore_createSmoothScroller(
-      env, obj.obj(), scroll_down, mouse_event_x, mouse_event_y);
+  return Java_ContentViewCore_createGenericTouchGesture(
+      env, obj.obj(), start_x, start_y, delta_x, delta_y);
 }
 
 void ContentViewCoreImpl::NotifyExternalSurface(
@@ -1301,12 +1301,8 @@ void ContentViewCoreImpl::AttachExternalVideoSurface(JNIEnv* env,
 #if defined(GOOGLE_TV)
   RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(
       web_contents_->GetRenderViewHost());
-  BrowserMediaPlayerManager* browser_media_player_manager =
-      rvhi ? static_cast<BrowserMediaPlayerManager*>(
-                 rvhi->media_player_manager())
-           : NULL;
-  if (browser_media_player_manager) {
-    browser_media_player_manager->AttachExternalVideoSurface(
+  if (rvhi && rvhi->media_player_manager()) {
+    rvhi->media_player_manager()->AttachExternalVideoSurface(
         static_cast<int>(player_id), jsurface);
   }
 #endif
@@ -1318,12 +1314,8 @@ void ContentViewCoreImpl::DetachExternalVideoSurface(JNIEnv* env,
 #if defined(GOOGLE_TV)
   RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(
       web_contents_->GetRenderViewHost());
-  BrowserMediaPlayerManager* browser_media_player_manager =
-      rvhi ? static_cast<BrowserMediaPlayerManager*>(
-                 rvhi->media_player_manager())
-           : NULL;
-  if (browser_media_player_manager) {
-    browser_media_player_manager->DetachExternalVideoSurface(
+  if (rvhi && rvhi->media_player_manager()) {
+    rvhi->media_player_manager()->DetachExternalVideoSurface(
         static_cast<int>(player_id));
   }
 #endif

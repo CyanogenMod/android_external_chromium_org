@@ -701,7 +701,8 @@ MULTI_THREAD_TEST_F(LayerTreeHostTestCommit);
 class LayerTreeHostTestFrameTimeUpdatesAfterActivationFails
     : public LayerTreeHostTest {
  public:
-  LayerTreeHostTestFrameTimeUpdatesAfterActivationFails() : frame_(0) {}
+  LayerTreeHostTestFrameTimeUpdatesAfterActivationFails()
+      : frame_count_with_pending_tree_(0) {}
 
   virtual void BeginTest() OVERRIDE {
     layer_tree_host()->SetViewportSize(gfx::Size(20, 20));
@@ -710,9 +711,18 @@ class LayerTreeHostTestFrameTimeUpdatesAfterActivationFails
     PostSetNeedsCommitToMainThread();
   }
 
+  virtual void WillBeginImplFrameOnThread(LayerTreeHostImpl* host_impl,
+                                          const BeginFrameArgs& args) OVERRIDE {
+    if (host_impl->pending_tree())
+      frame_count_with_pending_tree_++;
+    host_impl->BlockNotifyReadyToActivateForTesting(
+        frame_count_with_pending_tree_ <= 1);
+  }
+
   virtual void DrawLayersOnThread(LayerTreeHostImpl* impl) OVERRIDE {
-    if (frame_ >= 1) {
-      EXPECT_NE(first_frame_time_, impl->CurrentFrameTimeTicks());
+    if (frame_count_with_pending_tree_ > 1) {
+      EXPECT_NE(first_frame_time_.ToInternalValue(),
+                impl->CurrentFrameTimeTicks().ToInternalValue());
       EndTest();
       return;
     }
@@ -720,35 +730,15 @@ class LayerTreeHostTestFrameTimeUpdatesAfterActivationFails
     EXPECT_FALSE(impl->settings().impl_side_painting);
     EndTest();
   }
-
-  virtual bool CanActivatePendingTree(LayerTreeHostImpl* impl) OVERRIDE {
-    if (frame_ >= 1)
-      return true;
-
-    return false;
-  }
-
-  virtual bool CanActivatePendingTreeIfNeeded(LayerTreeHostImpl* impl)
-      OVERRIDE {
-    frame_++;
-    if (frame_ == 1) {
-      first_frame_time_ = impl->CurrentFrameTimeTicks();
-
-      // Since base::TimeTicks::Now() uses a low-resolution clock on
-      // Windows, we need to make sure that the clock has incremented past
-      // first_frame_time_.
-      while (first_frame_time_ == base::TimeTicks::Now()) {}
-
-      return false;
-    }
-
-    return true;
+  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* impl) OVERRIDE {
+    if (impl->settings().impl_side_painting)
+      EXPECT_NE(frame_count_with_pending_tree_, 1);
   }
 
   virtual void AfterTest() OVERRIDE {}
 
  private:
-  int frame_;
+  int frame_count_with_pending_tree_;
   base::TimeTicks first_frame_time_;
 };
 
@@ -806,9 +796,10 @@ SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestFrameTimeUpdatesAfterDraw);
 
 // Verifies that StartPageScaleAnimation events propagate correctly
 // from LayerTreeHost to LayerTreeHostImpl in the MT compositor.
-class LayerTreeHostTestStartPageScaleAnimation : public LayerTreeHostTest {
+class DISABLED_LayerTreeHostTestStartPageScaleAnimation
+    : public LayerTreeHostTest {
  public:
-  LayerTreeHostTestStartPageScaleAnimation() {}
+  DISABLED_LayerTreeHostTestStartPageScaleAnimation() {}
 
   virtual void SetupTree() OVERRIDE {
     LayerTreeHostTest::SetupTree();
@@ -868,7 +859,8 @@ class LayerTreeHostTestStartPageScaleAnimation : public LayerTreeHostTest {
   scoped_refptr<FakeContentLayer> scroll_layer_;
 };
 
-MULTI_THREAD_TEST_F(LayerTreeHostTestStartPageScaleAnimation);
+// Disabled. See: crbug.com/280508
+MULTI_THREAD_TEST_F(DISABLED_LayerTreeHostTestStartPageScaleAnimation);
 
 class LayerTreeHostTestSetVisible : public LayerTreeHostTest {
  public:
@@ -1117,7 +1109,7 @@ class LayerTreeHostTestDirectRendererAtomicCommit : public LayerTreeHostTest {
     // Make sure partial texture updates are turned off.
     settings->max_partial_texture_updates = 0;
     // Linear fade animator prevents scrollbars from drawing immediately.
-    settings->use_linear_fade_scrollbar_animator = false;
+    settings->scrollbar_animator = LayerTreeSettings::NoAnimator;
   }
 
   virtual void SetupTree() OVERRIDE {
@@ -2372,6 +2364,11 @@ SINGLE_THREAD_TEST_F(LayerTreeHostTestChangeLayerPropertiesInPaintContents);
 
 class MockIOSurfaceWebGraphicsContext3D : public TestWebGraphicsContext3D {
  public:
+  MockIOSurfaceWebGraphicsContext3D() {
+    test_capabilities_.iosurface = true;
+    test_capabilities_.texture_rectangle = true;
+  }
+
   virtual WebKit::WebGLId createTexture() OVERRIDE {
     return 1;
   }
@@ -2402,8 +2399,6 @@ class LayerTreeHostTestIOSurfaceDrawing : public LayerTreeHostTest {
     scoped_ptr<MockIOSurfaceWebGraphicsContext3D> mock_context_owned(
         new MockIOSurfaceWebGraphicsContext3D);
     mock_context_ = mock_context_owned.get();
-
-    mock_context_->set_have_extension_io_surface(true);
 
     scoped_ptr<OutputSurface> output_surface(FakeOutputSurface::Create3d(
         mock_context_owned.PassAs<TestWebGraphicsContext3D>()));

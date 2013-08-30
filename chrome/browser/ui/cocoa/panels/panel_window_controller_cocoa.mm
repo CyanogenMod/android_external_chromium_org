@@ -774,6 +774,15 @@ NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
                            panel::APPLY_TO_ALL : panel::NO_MODIFIER);
 }
 
+- (void)onTitlebarDoubleClicked:(int)modifierFlags {
+  // Double-clicking is only allowed to minimize docked panels.
+  Panel* panel = windowShim_->panel();
+  if (panel->collection()->type() != PanelCollection::DOCKED ||
+      panel->IsMinimized())
+    return;
+  [self minimizeButtonClicked:modifierFlags];
+}
+
 - (int)titlebarHeightInScreenCoordinates {
   NSView* titlebar = [self titlebarView];
   return NSHeight([titlebar convertRect:[titlebar bounds] toView:nil]);
@@ -831,8 +840,18 @@ NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
     if ([contentView superview])
       [contentView removeFromSuperview];
   } else {
-    if (![contentView superview])
+    if (![contentView superview]) {
       [[[self window] contentView] addSubview:contentView];
+
+      // When the web contents view is put back, we need to tell its render
+      // widget host view to accept focus.
+      content::RenderWidgetHostView* rwhv =
+          webContents->GetRenderWidgetHostView();
+      if (rwhv) {
+        [[self window] makeFirstResponder:rwhv->GetNativeView()];
+        rwhv->SetActive([[self window] isMainWindow]);
+      }
+    }
   }
 }
 

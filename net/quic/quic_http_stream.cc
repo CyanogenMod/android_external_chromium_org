@@ -86,7 +86,11 @@ int QuicHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
   SpdyHeaderBlock headers;
   CreateSpdyHeadersFromHttpRequest(*request_info_, request_headers,
                                    &headers, 3, /*direct=*/true);
-  request_ = stream_->compressor()->CompressHeaders(headers);
+  if (session_->connection()->version() < QUIC_VERSION_9) {
+    request_ = stream_->compressor()->CompressHeaders(headers);
+  } else {
+    request_ = stream_->compressor()->CompressHeadersWithPriority(0, headers);
+  }
   // Log the actual request with the URL Request's net log.
   stream_net_log_.AddEvent(
       NetLog::TYPE_HTTP_TRANSACTION_SPDY_SEND_REQUEST_HEADERS,
@@ -201,7 +205,9 @@ void QuicHttpStream::Close(bool not_reusable) {
   // Note: the not_reusable flag has no meaning for SPDY streams.
   if (stream_) {
     stream_->SetDelegate(NULL);
-    stream_->Close(QUIC_STREAM_NO_ERROR);
+    // TODO(rch): use new CANCELLED error code here once quic 11
+    // is everywhere.
+    stream_->Close(QUIC_SERVER_ERROR_PROCESSING_STREAM);
     stream_ = NULL;
   }
 }

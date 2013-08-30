@@ -43,6 +43,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/renderer_preferences.h"
 #include "content/public/common/ssl_status.h"
 #include "jni/AwContents_jni.h"
 #include "net/cert/x509_certificate.h"
@@ -145,6 +146,9 @@ AwContents::AwContents(scoped_ptr<WebContents> web_contents)
       AwAutofillManagerDelegate::FromWebContents(web_contents_.get());
   if (autofill_manager_delegate)
     InitAutofillIfNecessary(autofill_manager_delegate->GetSaveFormData());
+
+  web_contents_->GetMutableRendererPrefs()->tap_multiple_targets_strategy =
+      content::TAP_MULTIPLE_TARGETS_STRATEGY_NONE;
 }
 
 void AwContents::SetJavaPeers(JNIEnv* env,
@@ -302,9 +306,10 @@ void AwContents::GenerateMHTML(JNIEnv* env, jobject obj,
                                jstring jpath, jobject callback) {
   ScopedJavaGlobalRef<jobject>* j_callback = new ScopedJavaGlobalRef<jobject>();
   j_callback->Reset(env, callback);
+  base::FilePath target_path(ConvertJavaStringToUTF8(env, jpath));
   web_contents_->GenerateMHTML(
-      base::FilePath(ConvertJavaStringToUTF8(env, jpath)),
-      base::Bind(&GenerateMHTMLCallback, base::Owned(j_callback)));
+      target_path,
+      base::Bind(&GenerateMHTMLCallback, base::Owned(j_callback), target_path));
 }
 
 void AwContents::PerformLongClick() {
@@ -778,6 +783,12 @@ void AwContents::EnableOnNewPicture(JNIEnv* env,
                                     jobject obj,
                                     jboolean enabled) {
   browser_view_renderer_->EnableOnNewPicture(enabled);
+}
+
+void AwContents::SetJsOnlineProperty(JNIEnv* env,
+                                     jobject obj,
+                                     jboolean network_up) {
+  render_view_host_ext_->SetJsOnlineProperty(network_up);
 }
 
 }  // namespace android_webview

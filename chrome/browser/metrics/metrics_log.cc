@@ -13,7 +13,6 @@
 #include "base/cpu.h"
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/perftimer.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "base/profiler/alternate_timer.h"
@@ -21,6 +20,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
+#include "base/test/perftimer.h"
 #include "base/third_party/nspr/prtime.h"
 #include "base/time/time.h"
 #include "base/tracked_objects.h"
@@ -150,8 +150,8 @@ OmniboxEventProto::PageClassification AsOmniboxEventPageClassification(
       return OmniboxEventProto::NEW_TAB_PAGE;
     case AutocompleteInput::BLANK:
       return OmniboxEventProto::BLANK;
-    case AutocompleteInput::HOMEPAGE:
-      return OmniboxEventProto::HOMEPAGE;
+    case AutocompleteInput::HOME_PAGE:
+      return OmniboxEventProto::HOME_PAGE;
     case AutocompleteInput::OTHER:
       return OmniboxEventProto::OTHER;
     case AutocompleteInput::SEARCH_RESULT_PAGE_DOING_SEARCH_TERM_REPLACEMENT:

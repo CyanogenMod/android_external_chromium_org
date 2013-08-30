@@ -9,12 +9,13 @@
 
 'use strict';
 
-var eventBindings = require('event_bindings');
 var DocumentNatives = requireNative('document_natives');
-var messagingNatives = requireNative('messaging_natives');
+var EventBindings = require('event_bindings');
+var MessagingNatives = requireNative('messaging_natives');
 var WebRequestEvent = require('webRequestInternal').WebRequestEvent;
-var webRequestSchema =
+var WebRequestSchema =
     requireNative('schema_registry').GetSchema('webRequest');
+var WebView = require('binding').Binding.create('webview').generate();
 
 // This secret enables hiding <webview> private members from the outside scope.
 // Outside of this file, |secret| is inaccessible. The only way to access the
@@ -23,69 +24,75 @@ var webRequestSchema =
 // API can access it and not external developers.
 var secret = {};
 
+var WEB_VIEW_ATTRIBUTE_MAXHEIGHT = 'maxheight';
+var WEB_VIEW_ATTRIBUTE_MAXWIDTH = 'maxwidth';
+var WEB_VIEW_ATTRIBUTE_MINHEIGHT = 'minheight';
+var WEB_VIEW_ATTRIBUTE_MINWIDTH = 'minwidth';
+
 /** @type {Array.<string>} */
-var WEB_VIEW_ATTRIBUTES = ['name', 'src', 'partition', 'autosize', 'minheight',
-    'minwidth', 'maxheight', 'maxwidth'];
+var WEB_VIEW_ATTRIBUTES = [
+    'name',
+    'partition',
+    'autosize',
+    WEB_VIEW_ATTRIBUTE_MINHEIGHT,
+    WEB_VIEW_ATTRIBUTE_MINWIDTH,
+    WEB_VIEW_ATTRIBUTE_MAXHEIGHT,
+    WEB_VIEW_ATTRIBUTE_MAXWIDTH
+];
 
 var webViewInstanceIdCounter = 0;
 
-var createEvent = function(name) {
+var CreateEvent = function(name) {
   var eventOpts = {supportsListeners: true, supportsFilters: true};
-  return new eventBindings.Event(name, undefined, eventOpts);
+  return new EventBindings.Event(name, undefined, eventOpts);
 };
 
-var WEB_VIEW_EXT_EVENTS = {
+var WEB_VIEW_EVENTS = {
   'close': {
-    evt: createEvent('webview.onClose'),
+    evt: CreateEvent('webview.onClose'),
     fields: []
   },
   'consolemessage': {
-    evt: createEvent('webview.onConsoleMessage'),
+    evt: CreateEvent('webview.onConsoleMessage'),
     fields: ['level', 'message', 'line', 'sourceId']
   },
   'contentload': {
-    evt: createEvent('webview.onContentLoad'),
+    evt: CreateEvent('webview.onContentLoad'),
     fields: []
   },
   'exit': {
-     evt: createEvent('webview.onExit'),
+     evt: CreateEvent('webview.onExit'),
      fields: ['processId', 'reason']
   },
   'loadabort': {
-    evt: createEvent('webview.onLoadAbort'),
+    evt: CreateEvent('webview.onLoadAbort'),
     fields: ['url', 'isTopLevel', 'reason']
   },
   'loadcommit': {
-    customHandler: function(webview, event, webviewEvent) {
-      webview.currentEntryIndex_ = event.currentEntryIndex;
-      webview.entryCount_ = event.entryCount;
-      webview.processId_ = event.processId;
-      if (event.isTopLevel) {
-        webview.browserPluginNode_.setAttribute('src', event.url);
-      }
-      webview.webviewNode_.dispatchEvent(webviewEvent);
+    customHandler: function(webViewInternal, event, webViewEvent) {
+      webViewInternal.handleLoadCommitEvent_(event, webViewEvent);
     },
-    evt: createEvent('webview.onLoadCommit'),
+    evt: CreateEvent('webview.onLoadCommit'),
     fields: ['url', 'isTopLevel']
   },
   'loadredirect': {
-    evt: createEvent('webview.onLoadRedirect'),
+    evt: CreateEvent('webview.onLoadRedirect'),
     fields: ['isTopLevel', 'oldUrl', 'newUrl']
   },
   'loadstart': {
-    evt: createEvent('webview.onLoadStart'),
+    evt: CreateEvent('webview.onLoadStart'),
     fields: ['url', 'isTopLevel']
   },
   'loadstop': {
-    evt: createEvent('webview.onLoadStop'),
+    evt: CreateEvent('webview.onLoadStop'),
     fields: []
   },
   'newwindow': {
     cancelable: true,
-    customHandler: function(webview, event, webviewEvent) {
-      webview.setupExtNewWindowEvent_(event, webviewEvent);
+    customHandler: function(webViewInternal, event, webViewEvent) {
+      webViewInternal.handleNewWindowEvent_(event, webViewEvent);
     },
-    evt: createEvent('webview.onNewWindow'),
+    evt: CreateEvent('webview.onNewWindow'),
     fields: [
       'initialHeight',
       'initialWidth',
@@ -96,10 +103,10 @@ var WEB_VIEW_EXT_EVENTS = {
   },
   'permissionrequest': {
     cancelable: true,
-    customHandler: function(webview, event, webviewEvent) {
-      webview.setupExtPermissionEvent_(event, webviewEvent);
+    customHandler: function(webViewInternal, event, webViewEvent) {
+      webViewInternal.handlePermissionEvent_(event, webViewEvent);
     },
-    evt: createEvent('webview.onPermissionRequest'),
+    evt: CreateEvent('webview.onPermissionRequest'),
     fields: [
       'lastUnlockedBySelf',
       'permission',
@@ -109,15 +116,18 @@ var WEB_VIEW_EXT_EVENTS = {
     ]
   },
   'responsive': {
-    evt: createEvent('webview.onResponsive'),
+    evt: CreateEvent('webview.onResponsive'),
     fields: ['processId']
   },
   'sizechanged': {
-    evt: createEvent('webview.onSizeChanged'),
+    evt: CreateEvent('webview.onSizeChanged'),
+    customHandler: function(webViewInternal, event, webViewEvent) {
+      webViewInternal.handleSizeChangedEvent_(event, webViewEvent);
+    },
     fields: ['oldHeight', 'oldWidth', 'newHeight', 'newWidth']
   },
   'unresponsive': {
-    evt: createEvent('webview.onUnresponsive'),
+    evt: CreateEvent('webview.onUnresponsive'),
     fields: ['processId']
   }
 };
@@ -158,7 +168,8 @@ WebViewInternal.prototype.createBrowserPluginNode_ = function() {
     }.bind(this)
   });
 
-  $Array.forEach(WEB_VIEW_ATTRIBUTES, function(attributeName) {
+  var ALL_ATTRIBUTES = WEB_VIEW_ATTRIBUTES.concat(['src']);
+  $Array.forEach(ALL_ATTRIBUTES, function(attributeName) {
     // Only copy attributes that have been assigned values, rather than copying
     // a series of undefined attributes to BrowserPlugin.
     if (this.webviewNode_.hasAttribute(attributeName)) {
@@ -228,7 +239,7 @@ WebViewInternal.prototype.go_ = function(relativeIndex) {
   if (!this.instanceId_) {
     return;
   }
-  chrome.webview.go(this.instanceId_, relativeIndex);
+  WebView.go(this.instanceId_, relativeIndex);
 };
 
 /**
@@ -238,7 +249,7 @@ WebViewInternal.prototype.reload_ = function() {
   if (!this.instanceId_) {
     return;
   }
-  chrome.webview.reload(this.instanceId_);
+  WebView.reload(this.instanceId_);
 };
 
 /**
@@ -248,7 +259,7 @@ WebViewInternal.prototype.stop_ = function() {
   if (!this.instanceId_) {
     return;
   }
-  chrome.webview.stop(this.instanceId_);
+  WebView.stop(this.instanceId_);
 };
 
 /**
@@ -258,7 +269,7 @@ WebViewInternal.prototype.terminate_ = function() {
   if (!this.instanceId_) {
     return;
   }
-  chrome.webview.terminate(this.instanceId_);
+  WebView.terminate(this.instanceId_);
 };
 
 /**
@@ -278,7 +289,7 @@ WebViewInternal.prototype.validateExecuteCodeCall_  = function() {
 WebViewInternal.prototype.executeScript_ = function(var_args) {
   this.validateExecuteCodeCall_();
   var args = $Array.concat([this.instanceId_], $Array.slice(arguments));
-  $Function.apply(chrome.webview.executeScript, null, args);
+  $Function.apply(WebView.executeScript, null, args);
 };
 
 /**
@@ -287,7 +298,7 @@ WebViewInternal.prototype.executeScript_ = function(var_args) {
 WebViewInternal.prototype.insertCSS_ = function(var_args) {
   this.validateExecuteCodeCall_();
   var args = $Array.concat([this.instanceId_], $Array.slice(arguments));
-  $Function.apply(chrome.webview.insertCSS, null, args);
+  $Function.apply(WebView.insertCSS, null, args);
 };
 
 /**
@@ -298,6 +309,7 @@ WebViewInternal.prototype.setupWebviewNodeProperties_ = function() {
     'contentWindow is not available at this time. It will become available ' +
         'when the page has finished loading.';
 
+  var self = this;
   var browserPluginNode = this.browserPluginNode_;
   // Expose getters and setters for the attributes.
   $Array.forEach(WEB_VIEW_ATTRIBUTES, function(attributeName) {
@@ -322,6 +334,20 @@ WebViewInternal.prototype.setupWebviewNodeProperties_ = function() {
       enumerable: true
     });
   }, this);
+
+  // <webview> src does not quite behave the same as BrowserPlugin src, and so
+  // we don't simply keep the two in sync.
+  this.src_ = this.webviewNode_.getAttribute('src');
+  Object.defineProperty(this.webviewNode_, 'src', {
+    get: function() {
+      return self.src_;
+    },
+    set: function(value) {
+      self.webviewNode_.setAttribute('src', value);
+    },
+    // No setter.
+    enumerable: true
+  });
 
   // We cannot use {writable: true} property descriptor because we want a
   // dynamic getter value.
@@ -363,13 +389,15 @@ WebViewInternal.prototype.setupWebViewSrcAttributeMutationObserver_ =
   // where the webview guest has crashed and navigating to the same address
   // spawns off a new process.
   var self = this;
-  var observer = new MutationObserver(function(mutations) {
+  this.srcObserver_ = new MutationObserver(function(mutations) {
     $Array.forEach(mutations, function(mutation) {
+      var oldValue = mutation.oldValue;
       var newValue = self.webviewNode_.getAttribute(mutation.attributeName);
-      if (mutation.oldValue != newValue) {
+      if (oldValue != newValue) {
         return;
       }
-      self.handleWebviewAttributeMutation_(mutation.attributeName, newValue);
+      self.handleWebviewAttributeMutation_(
+          mutation.attributeName, oldValue, newValue);
     });
   });
   var params = {
@@ -377,19 +405,43 @@ WebViewInternal.prototype.setupWebViewSrcAttributeMutationObserver_ =
     attributeOldValue: true,
     attributeFilter: ['src']
   };
-  observer.observe(this.webviewNode_, params);
+  this.srcObserver_.observe(this.webviewNode_, params);
 };
 
 /**
  * @private
  */
 WebViewInternal.prototype.handleWebviewAttributeMutation_ =
-      function(name, newValue) {
+      function(name, oldValue, newValue) {
   // This observer monitors mutations to attributes of the <webview> and
   // updates the BrowserPlugin properties accordingly. In turn, updating
   // a BrowserPlugin property will update the corresponding BrowserPlugin
   // attribute, if necessary. See BrowserPlugin::UpdateDOMAttribute for more
   // details.
+  if (name == 'src') {
+    // We treat null attribute (attribute removed) and the empty string as
+    // one case.
+    oldValue = oldValue || '';
+    newValue = newValue || '';
+    // Once we have navigated, we don't allow clearing the src attribute.
+    // Once <webview> enters a navigated state, it cannot be return back to a
+    // placeholder state.
+    if (newValue == '' && oldValue != '') {
+      // src attribute changes normally initiate a navigation. We suppress
+      // the next src attribute handler call to avoid reloading the page
+      // on every guest-initiated navigation.
+      this.ignoreNextSrcAttributeChange_ = true;
+      this.webviewNode_.setAttribute('src', oldValue);
+      return;
+    }
+    this.src_ = newValue;
+    if (this.ignoreNextSrcAttributeChange_) {
+      // Don't allow the src mutation observer to see this change.
+      this.srcObserver_.takeRecords();
+      this.ignoreNextSrcAttributeChange_ = false;
+      return;
+    }
+  }
   if (this.browserPluginNode_.hasOwnProperty(name)) {
     this.browserPluginNode_[name] = newValue;
   } else {
@@ -401,7 +453,7 @@ WebViewInternal.prototype.handleWebviewAttributeMutation_ =
  * @private
  */
 WebViewInternal.prototype.handleBrowserPluginAttributeMutation_ =
-    function(name, oldValue, newValue) {
+    function(name, newValue) {
   // This observer monitors mutations to attributes of the BrowserPlugin and
   // updates the <webview> attributes accordingly.
   // |newValue| is null if the attribute |name| has been removed.
@@ -413,7 +465,7 @@ WebViewInternal.prototype.handleBrowserPluginAttributeMutation_ =
     // again (such as navigation when crashed), this could end up in an infinite
     // loop. Thus, we avoid this loop by only updating the <webview> attribute
     // if the BrowserPlugin attributes differs from it.
-    if (newValue != oldValue) {
+    if (newValue != this.webviewNode_.getAttribute(name)) {
       this.webviewNode_.setAttribute(name, newValue);
     }
   } else {
@@ -426,12 +478,60 @@ WebViewInternal.prototype.handleBrowserPluginAttributeMutation_ =
 /**
  * @private
  */
-WebViewInternal.prototype.getWebviewExtEvents_ = function() {
-  var experimentalExtEvents = this.maybeGetWebviewExperimentalExtEvents_();
-  for (var eventName in experimentalExtEvents) {
-    WEB_VIEW_EXT_EVENTS[eventName] = experimentalExtEvents[eventName];
+WebViewInternal.prototype.getEvents_ = function() {
+  var experimentalEvents = this.maybeGetExperimentalEvents_();
+  for (var eventName in experimentalEvents) {
+    WEB_VIEW_EVENTS[eventName] = experimentalEvents[eventName];
   }
-  return WEB_VIEW_EXT_EVENTS;
+  return WEB_VIEW_EVENTS;
+};
+
+WebViewInternal.prototype.handleSizeChangedEvent_ =
+    function(event, webViewEvent) {
+  var node = this.webviewNode_;
+
+  // Check the current bounds to make sure we do not resize <webview>
+  // outside of current constraints.
+  var minWidth = 0;
+  if (node.hasAttribute(WEB_VIEW_ATTRIBUTE_MINWIDTH) &&
+      node[WEB_VIEW_ATTRIBUTE_MINWIDTH]) {
+    minWidth = node[WEB_VIEW_ATTRIBUTE_MINWIDTH];
+  }
+  var maxWidth;
+  if (node.hasAttribute(WEB_VIEW_ATTRIBUTE_MAXWIDTH) &&
+      node[WEB_VIEW_ATTRIBUTE_MAXWIDTH]) {
+    maxWidth = node[WEB_VIEW_ATTRIBUTE_MAXWIDTH];
+  } else {
+    maxWidth = node.offsetWidth;
+  }
+  if (minWidth > maxWidth) {
+    minWidth = maxWidth;
+  }
+
+  var minHeight = 0;
+  if (node.hasAttribute(WEB_VIEW_ATTRIBUTE_MINHEIGHT) &&
+      node[WEB_VIEW_ATTRIBUTE_MINHEIGHT]) {
+    minHeight = node[WEB_VIEW_ATTRIBUTE_MINHEIGHT];
+  }
+  var maxHeight;
+  if (node.hasAttribute(WEB_VIEW_ATTRIBUTE_MAXHEIGHT) &&
+      node[WEB_VIEW_ATTRIBUTE_MAXHEIGHT]) {
+    maxHeight = node[WEB_VIEW_ATTRIBUTE_MAXHEIGHT];
+  } else {
+    maxHeight = node.offsetHeight;
+  }
+  if (minHeight > maxHeight) {
+    minHeight = maxHeight;
+  }
+
+  if (webViewEvent.newWidth >= minWidth &&
+      webViewEvent.newWidth <= maxWidth &&
+      webViewEvent.newHeight >= minHeight &&
+      webViewEvent.newHeight <= maxHeight) {
+    node.style.width = webViewEvent.newWidth + 'px';
+    node.style.height = webViewEvent.newHeight + 'px';
+  }
+  node.dispatchEvent(webViewEvent);
 };
 
 /**
@@ -449,9 +549,9 @@ WebViewInternal.prototype.setupWebviewNodeEvents_ = function() {
     };
     self.browserPluginNode_['-internal-attach'](params);
 
-    var extEvents = self.getWebviewExtEvents_();
-    for (var eventName in extEvents) {
-      self.setupExtEvent_(eventName, extEvents[eventName]);
+    var events = self.getEvents_();
+    for (var eventName in events) {
+      self.setupEvent_(eventName, events[eventName]);
     }
   };
   this.browserPluginNode_.addEventListener('-internal-instanceid-allocated',
@@ -462,32 +562,59 @@ WebViewInternal.prototype.setupWebviewNodeEvents_ = function() {
 /**
  * @private
  */
-WebViewInternal.prototype.setupExtEvent_ = function(eventName, eventInfo) {
+WebViewInternal.prototype.setupEvent_ = function(eventName, eventInfo) {
   var self = this;
   var webviewNode = this.webviewNode_;
   eventInfo.evt.addListener(function(event) {
     var details = {bubbles:true};
     if (eventInfo.cancelable)
       details.cancelable = true;
-    var webviewEvent = new Event(eventName, details);
+    var webViewEvent = new Event(eventName, details);
     $Array.forEach(eventInfo.fields, function(field) {
       if (event[field] !== undefined) {
-        webviewEvent[field] = event[field];
+        webViewEvent[field] = event[field];
       }
     });
     if (eventInfo.customHandler) {
-      eventInfo.customHandler(self, event, webviewEvent);
+      eventInfo.customHandler(self, event, webViewEvent);
       return;
     }
-    webviewNode.dispatchEvent(webviewEvent);
+    webviewNode.dispatchEvent(webViewEvent);
   }, {instanceId: self.instanceId_});
 };
 
 /**
  * @private
  */
-WebViewInternal.prototype.setupExtNewWindowEvent_ =
-    function(event, webviewEvent) {
+WebViewInternal.prototype.getPermissionTypes_ = function() {
+  return ['media', 'geolocation', 'pointerLock', 'download'];
+};
+
+/**
+ * @private
+ */
+WebViewInternal.prototype.handleLoadCommitEvent_ =
+    function(event, webViewEvent) {
+  this.currentEntryIndex_ = event.currentEntryIndex;
+  this.entryCount_ = event.entryCount;
+  this.processId_ = event.processId;
+  var oldValue = this.webviewNode_.getAttribute('src');
+  var newValue = event.url;
+  if (event.isTopLevel && (oldValue != newValue)) {
+    // Touching the src attribute triggers a navigation. To avoid
+    // triggering a page reload on every guest-initiated navigation,
+    // we use the flag ignoreNextSrcAttributeChange_ here.
+    this.ignoreNextSrcAttributeChange_ = true;
+    this.webviewNode_.setAttribute('src', newValue);
+  }
+  this.webviewNode_.dispatchEvent(webViewEvent);
+}
+
+/**
+ * @private
+ */
+WebViewInternal.prototype.handleNewWindowEvent_ =
+    function(event, webViewEvent) {
   var ERROR_MSG_NEWWINDOW_ACTION_ALREADY_TAKEN = '<webview>: ' +
       'An action has already been taken for this "newwindow" event.';
 
@@ -536,45 +663,41 @@ WebViewInternal.prototype.setupExtNewWindowEvent_ =
         // then we will fail and it will be treated as if the new window
         // was rejected. The permission API plumbing is used here to clean
         // up the state created for the new window if attaching fails.
-        chrome.webview.setPermission(self.instanceId_, requestId, attached, '');
+        WebView.setPermission(self.instanceId_, requestId, attached, '');
       }, 0);
     },
     discard: function() {
       validateCall();
-      chrome.webview.setPermission(self.instanceId_, requestId, false, '');
+      WebView.setPermission(self.instanceId_, requestId, false, '');
     }
   };
-  webviewEvent.window = window;
+  webViewEvent.window = window;
 
-  var defaultPrevented = !webviewNode.dispatchEvent(webviewEvent);
+  var defaultPrevented = !webviewNode.dispatchEvent(webViewEvent);
   if (actionTaken) {
     return;
   }
 
   if (defaultPrevented) {
     // Make browser plugin track lifetime of |window|.
-    messagingNatives.BindToGC(window, function() {
+    MessagingNatives.BindToGC(window, function() {
       // Avoid showing a warning message if the decision has already been made.
       if (actionTaken) {
         return;
       }
-      chrome.webview.setPermission(self.instanceId_, requestId, false, '');
+      WebView.setPermission(self.instanceId_, requestId, false, '');
       showWarningMessage();
     });
   } else {
     actionTaken = true;
     // The default action is to discard the window.
-    chrome.webview.setPermission(self.instanceId_, requestId, false, '');
+    WebView.setPermission(self.instanceId_, requestId, false, '');
     showWarningMessage();
   }
 };
 
-WebViewInternal.prototype.getPermissionTypes_ = function() {
-  return ['media', 'geolocation', 'pointerLock', 'download'];
-};
-
-WebViewInternal.prototype.setupExtPermissionEvent_ =
-    function(event, webviewEvent) {
+WebViewInternal.prototype.handlePermissionEvent_ =
+    function(event, webViewEvent) {
   var ERROR_MSG_PERMISSION_ALREADY_DECIDED = '<webview>: ' +
       'Permission has already been decided for this "permissionrequest" event.';
 
@@ -604,33 +727,33 @@ WebViewInternal.prototype.setupExtPermissionEvent_ =
   var request = {
     allow: function() {
       validateCall();
-      chrome.webview.setPermission(self.instanceId_, requestId, true, '');
+      WebView.setPermission(self.instanceId_, requestId, true, '');
     },
     deny: function() {
       validateCall();
-      chrome.webview.setPermission(self.instanceId_, requestId, false, '');
+      WebView.setPermission(self.instanceId_, requestId, false, '');
     }
   };
-  webviewEvent.request = request;
+  webViewEvent.request = request;
 
-  var defaultPrevented = !webviewNode.dispatchEvent(webviewEvent);
+  var defaultPrevented = !webviewNode.dispatchEvent(webViewEvent);
   if (decisionMade) {
     return;
   }
 
   if (defaultPrevented) {
     // Make browser plugin track lifetime of |request|.
-    messagingNatives.BindToGC(request, function() {
+    MessagingNatives.BindToGC(request, function() {
       // Avoid showing a warning message if the decision has already been made.
       if (decisionMade) {
         return;
       }
-      chrome.webview.setPermission(self.instanceId_, requestId, false, '');
+      WebView.setPermission(self.instanceId_, requestId, false, '');
       showWarningMessage(event.permission);
     });
   } else {
     decisionMade = true;
-    chrome.webview.setPermission(self.instanceId_, requestId, false, '');
+    WebView.setPermission(self.instanceId_, requestId, false, '');
     showWarningMessage(event.permission);
   }
 };
@@ -656,17 +779,17 @@ WebViewInternal.prototype.setupWebRequestEvents_ = function() {
   };
 
   // Populate the WebRequest events from the API definition.
-  for (var i = 0; i < webRequestSchema.events.length; ++i) {
-    var webRequestEvent = createWebRequestEvent(webRequestSchema.events[i]);
+  for (var i = 0; i < WebRequestSchema.events.length; ++i) {
+    var webRequestEvent = createWebRequestEvent(WebRequestSchema.events[i]);
     Object.defineProperty(
         request,
-        webRequestSchema.events[i].name,
+        WebRequestSchema.events[i].name,
         {
           get: webRequestEvent,
           enumerable: true
         }
     );
-    this.maybeAttachWebRequestEventToWebview_(webRequestSchema.events[i].name,
+    this.maybeAttachWebRequestEventToWebview_(WebRequestSchema.events[i].name,
                                               webRequestEvent);
   }
   Object.defineProperty(
@@ -696,7 +819,7 @@ function registerBrowserPluginElement() {
       return;
     }
     var internal = this.internal_(secret);
-    internal.handleBrowserPluginAttributeMutation_(name, oldValue, newValue);
+    internal.handleBrowserPluginAttributeMutation_(name, newValue);
   };
 
   WebViewInternal.BrowserPlugin =
@@ -718,7 +841,7 @@ function registerWebViewElement() {
 
   proto.attributeChangedCallback = function(name, oldValue, newValue) {
     var internal = this.internal_(secret);
-    internal.handleWebviewAttributeMutation_(name, newValue);
+    internal.handleWebviewAttributeMutation_(name, oldValue, newValue);
   };
 
   proto.back = function() {
@@ -793,13 +916,7 @@ window.addEventListener('readystatechange', function listener(event) {
  * Implemented when the experimental API is available.
  * @private
  */
-WebViewInternal.prototype.maybeSetupExtDialogEvent_ = function() {};
-
-/**
- * Implemented when the experimental API is available.
- * @private
- */
-WebViewInternal.prototype.maybeGetWebviewExperimentalExtEvents_ = function() {};
+WebViewInternal.prototype.maybeGetExperimentalEvents_ = function() {};
 
 /**
  * Implemented when the experimental API is available.
@@ -807,5 +924,6 @@ WebViewInternal.prototype.maybeGetWebviewExperimentalExtEvents_ = function() {};
  */
 WebViewInternal.prototype.maybeAttachWebRequestEventToWebview_ = function() {};
 
+exports.WebView = WebView;
 exports.WebViewInternal = WebViewInternal;
-exports.CreateEvent = createEvent;
+exports.CreateEvent = CreateEvent;

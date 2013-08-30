@@ -59,11 +59,13 @@ LOCAL_SRC_FILES := \
 	base/android/path_utils.cc \
 	base/android/sys_utils.cc \
 	base/at_exit.cc \
+	base/barrier_closure.cc \
 	base/base_paths.cc \
 	base/base_paths_android.cc \
 	base/base64.cc \
 	base/bind_helpers.cc \
 	base/build_time.cc \
+	base/callback_helpers.cc \
 	base/callback_internal.cc \
 	base/command_line.cc \
 	base/cpu.cc \
@@ -282,6 +284,7 @@ MY_DEFS_Debug := \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DBASE_IMPLEMENTATION' \
+	'-DANDROID_SINCOS_PROVIDED' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \
@@ -364,6 +367,7 @@ MY_DEFS_Release := \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DBASE_IMPLEMENTATION' \
+	'-DANDROID_SINCOS_PROVIDED' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \

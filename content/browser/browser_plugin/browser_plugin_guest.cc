@@ -1295,10 +1295,12 @@ void BrowserPluginGuest::OnNavigateGuest(
     // Do not allow navigating a guest to schemes other than known safe schemes.
     // This will block the embedder trying to load unwanted schemes, e.g.
     // chrome://settings.
-    if (!ChildProcessSecurityPolicyImpl::GetInstance()->IsWebSafeScheme(
+    bool scheme_is_blocked =
+        !ChildProcessSecurityPolicyImpl::GetInstance()->IsWebSafeScheme(
             url.scheme()) &&
         !ChildProcessSecurityPolicyImpl::GetInstance()->IsPseudoScheme(
-            url.scheme())) {
+            url.scheme());
+    if (scheme_is_blocked || !url.is_valid()) {
       if (delegate_) {
         std::string error_type;
         RemoveChars(net::ErrorToString(net::ERR_ABORTED), "net::", &error_type);
@@ -1312,8 +1314,8 @@ void BrowserPluginGuest::OnNavigateGuest(
     // other schemes (e.g., WebUI or extensions), and no permissions or bindings
     // can be granted to the guest process.
     GetWebContents()->GetController().LoadURL(url, Referrer(),
-                                            PAGE_TRANSITION_AUTO_TOPLEVEL,
-                                            std::string());
+                                              PAGE_TRANSITION_AUTO_TOPLEVEL,
+                                              std::string());
   }
 }
 
@@ -1391,6 +1393,7 @@ void BrowserPluginGuest::OnSetSize(
   if (auto_size_enabled_ && (!old_auto_size_enabled ||
                              (old_max_size != max_auto_size_) ||
                              (old_min_size != min_auto_size_))) {
+    RecordAction(UserMetricsAction("BrowserPlugin.Guest.EnableAutoResize"));
     GetWebContents()->GetRenderViewHost()->EnableAutoResize(
         min_auto_size_, max_auto_size_);
     // TODO(fsamuel): If we're changing autosize parameters, then we force
@@ -1549,6 +1552,7 @@ void BrowserPluginGuest::RunJavaScriptDialog(
     JavaScriptMessageType javascript_message_type,
     const string16& message_text,
     const string16& default_prompt_text,
+    bool user_gesture,
     const DialogClosedCallback& callback,
     bool* did_suppress_message) {
   if (permission_request_map_.size() >= kNumMaxOutstandingPermissionRequests) {

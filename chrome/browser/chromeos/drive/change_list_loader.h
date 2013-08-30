@@ -92,6 +92,12 @@ class ChangeListLoader {
   void LoadIfNeeded(const DirectoryFetchInfo& directory_fetch_info,
                     const FileOperationCallback& callback);
 
+  // Loads the directory content from the server, without comparing the
+  // changestamps. The purpose of this function is to update thumbnail URLs
+  // in the directory which can stale over time.
+  void LoadDirectoryFromServer(const std::string& directory_resource_id,
+                               const FileOperationCallback& callback);
+
  private:
   // Starts the resource metadata loading and calls |callback| when it's
   // done. |directory_fetch_info| is used for fast fetch. If there is already
@@ -172,6 +178,14 @@ class ChangeListLoader {
 
   // ================= Implementation for directory loading =================
 
+  // Part of LoadDirectoryFromServer(), called after the current remote
+  // changestamp is obtained as |about_resource|.
+  void LoadDirectoryFromServerAfterGetAbout(
+      const std::string& directory_resource_id,
+      const FileOperationCallback& callback,
+      google_apis::GDataErrorCode status,
+      scoped_ptr<google_apis::AboutResource> about_resource);
+
   // Compares the directory's changestamp and |last_known_remote_changestamp_|.
   // Starts DoLoadDirectoryFromServer() if the local data is old and runs
   // |callback| when finished. If it is up to date, calls back immediately.
@@ -199,6 +213,13 @@ class ChangeListLoader {
       google_apis::GDataErrorCode status,
       scoped_ptr<google_apis::AboutResource> about_resource);
 
+  // Part of DoLoadDirectoryFromServer() for the grand root ("/drive").
+  void DoLoadDirectoryFromServerAfterAddMyDrive(
+      const DirectoryFetchInfo& directory_fetch_info,
+      const FileOperationCallback& callback,
+      std::string* local_id,
+      FileError error);
+
   // Part of DoLoadDirectoryFromServer() for a normal directory.
   void DoLoadDirectoryFromServerAfterLoad(
       const DirectoryFetchInfo& directory_fetch_info,
@@ -216,8 +237,7 @@ class ChangeListLoader {
   // ================= Implementation for other stuff =================
 
   // This function is used to handle pagenation for the result from
-  // JobScheduler::GetChangeList/GetAllResourceList/ContinueGetResourceList/
-  // GetResourceListInDirectory().
+  // JobScheduler::GetChangeList()/GetAllResourceList().
   //
   // After all the change lists are fetched, |callback| will be invoked with
   // the collected change lists.
@@ -226,6 +246,16 @@ class ChangeListLoader {
                        base::TimeTicks start_time,
                        google_apis::GDataErrorCode status,
                        scoped_ptr<google_apis::ResourceList> resource_list);
+
+  // This function is used to handle pagenation for the result from
+  // JobScheduler::GetResourceListInDirectory().
+  //
+  // After all the file lists are fetched, |callback| will be invoked with
+  // the collected file lists.
+  void OnGetFileList(ScopedVector<ChangeList> change_lists,
+                     const LoadChangeListCallback& callback,
+                     google_apis::GDataErrorCode status,
+                     scoped_ptr<google_apis::ResourceList> resource_list);
 
   // Updates from the whole change list collected in |change_lists|.
   // Record file statistics as UMA histograms.

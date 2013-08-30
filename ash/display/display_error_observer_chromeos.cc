@@ -4,6 +4,7 @@
 
 #include "ash/display/display_error_observer_chromeos.h"
 
+#include "ash/system/system_notifier.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -20,25 +21,6 @@ namespace internal {
 namespace {
 
 const char kDisplayErrorNotificationId[] = "chrome://settings/display/error";
-
-class DisplayErrorNotificationDelegate
-    : public message_center::NotificationDelegate {
- public:
-  DisplayErrorNotificationDelegate() {}
-
-  // message_center::NotificationDelegate overrides:
-  virtual void Display() OVERRIDE {}
-  virtual void Error() OVERRIDE {}
-  virtual void Close(bool by_user) OVERRIDE {}
-  virtual bool HasClickedListener() OVERRIDE { return false; }
-  virtual void Click() OVERRIDE { }
-
- protected:
-  virtual ~DisplayErrorNotificationDelegate() {}
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(DisplayErrorNotificationDelegate);
-};
 
 }  // namespace
 
@@ -67,9 +49,9 @@ void DisplayErrorObserver::OnDisplayModeChangeFailed(
       base::string16(),  // message
       bundle.GetImageNamed(IDR_AURA_UBER_TRAY_DISPLAY),
       base::string16(),  // display_source
-      std::string(),  // extension_id
+      message_center::NotifierId(NOTIFIER_DISPLAY_ERROR),
       message_center::RichNotificationData(),
-      new DisplayErrorNotificationDelegate()));
+      NULL));
   message_center::MessageCenter::Get()->AddNotification(notification.Pass());
 }
 

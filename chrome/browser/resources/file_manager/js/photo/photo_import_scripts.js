@@ -33,11 +33,11 @@
 
 //<include src="../async_util.js"/>
 //<include src="../util.js"/>
+//<include src="../path_util.js"/>
 //<include src="../file_type.js"/>
 //<include src="../directory_contents.js"/>
 //<include src="../volume_manager.js"/>
-//<include src="../path_util.js"/>
-//<include src="../file_copy_manager_wrapper.js"/>
+//<include src="../file_operation_manager_wrapper.js"/>
 //<include src="../metadata/metadata_cache.js"/>
 //<include src="../metrics.js"/>
 //<include src="../image_editor/image_util.js"/>
@@ -49,6 +49,6 @@
 
 // Exports
 window.ImageUtil = ImageUtil;
-window.FileCopyManagerWrapper = FileCopyManagerWrapper;
+window.FileOperationManagerWrapper = FileOperationManagerWrapper;
 
 })();

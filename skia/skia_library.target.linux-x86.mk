@@ -97,6 +97,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkDebug.cpp \
 	third_party/skia/src/core/SkDeque.cpp \
 	third_party/skia/src/core/SkDevice.cpp \
+	third_party/skia/src/core/SkDeviceLooper.cpp \
 	third_party/skia/src/core/SkDeviceProfile.cpp \
 	third_party/skia/src/core/SkDither.cpp \
 	third_party/skia/src/core/SkDraw.cpp \
@@ -258,6 +259,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/effects/SkLayerRasterizer.cpp \
 	third_party/skia/src/effects/SkLerpXfermode.cpp \
 	third_party/skia/src/effects/SkLightingImageFilter.cpp \
+	third_party/skia/src/effects/SkLumaXfermode.cpp \
 	third_party/skia/src/effects/SkMagnifierImageFilter.cpp \
 	third_party/skia/src/effects/SkMatrixConvolutionImageFilter.cpp \
 	third_party/skia/src/effects/SkMergeImageFilter.cpp \

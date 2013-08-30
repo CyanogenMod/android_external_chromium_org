@@ -362,8 +362,8 @@ void RenderWidgetHostImpl::SendScreenRects() {
 }
 
 base::TimeDelta
-    RenderWidgetHostImpl::GetSyntheticScrollMessageInterval() const {
-  return smooth_scroll_gesture_controller_.GetSyntheticScrollMessageInterval();
+    RenderWidgetHostImpl::GetSyntheticGestureMessageInterval() const {
+  return synthetic_gesture_controller_.GetSyntheticGestureMessageInterval();
 }
 
 void RenderWidgetHostImpl::SetOverscrollControllerEnabled(bool enabled) {
@@ -1016,6 +1016,12 @@ void RenderWidgetHostImpl::ForwardMouseEventWithLatencyInfo(
     const MouseEventWithLatencyInfo& mouse_event) {
   TRACE_EVENT2("input", "RenderWidgetHostImpl::ForwardMouseEvent",
                "x", mouse_event.event.x, "y", mouse_event.event.y);
+
+  for (size_t i = 0; i < mouse_event_callbacks_.size(); ++i) {
+    if (mouse_event_callbacks_[i].Run(mouse_event.event))
+      return;
+  }
+
   input_router_->SendMouseEvent(mouse_event);
 }
 
@@ -1123,15 +1129,35 @@ ui::LatencyInfo RenderWidgetHostImpl::CreateRWHLatencyInfoIfNotExist(
 }
 
 
-void RenderWidgetHostImpl::AddKeyboardListener(KeyboardListener* listener) {
-  keyboard_listeners_.AddObserver(listener);
+void RenderWidgetHostImpl::AddKeyPressEventCallback(
+    const KeyPressEventCallback& callback) {
+  key_press_event_callbacks_.push_back(callback);
 }
 
-void RenderWidgetHostImpl::RemoveKeyboardListener(
-    KeyboardListener* listener) {
-  // Ensure that the element is actually an observer.
-  DCHECK(keyboard_listeners_.HasObserver(listener));
-  keyboard_listeners_.RemoveObserver(listener);
+void RenderWidgetHostImpl::RemoveKeyPressEventCallback(
+    const KeyPressEventCallback& callback) {
+  for (size_t i = 0; i < key_press_event_callbacks_.size(); ++i) {
+    if (key_press_event_callbacks_[i].Equals(callback)) {
+      key_press_event_callbacks_.erase(
+          key_press_event_callbacks_.begin() + i);
+      return;
+    }
+  }
+}
+
+void RenderWidgetHostImpl::AddMouseEventCallback(
+    const MouseEventCallback& callback) {
+  mouse_event_callbacks_.push_back(callback);
+}
+
+void RenderWidgetHostImpl::RemoveMouseEventCallback(
+    const MouseEventCallback& callback) {
+  for (size_t i = 0; i < mouse_event_callbacks_.size(); ++i) {
+    if (mouse_event_callbacks_[i].Equals(callback)) {
+      mouse_event_callbacks_.erase(mouse_event_callbacks_.begin() + i);
+      return;
+    }
+  }
 }
 
 void RenderWidgetHostImpl::GetWebScreenInfo(WebKit::WebScreenInfo* result) {
@@ -1675,7 +1701,7 @@ void RenderWidgetHostImpl::OnBeginSmoothScroll(
     const ViewHostMsg_BeginSmoothScroll_Params& params) {
   if (!view_)
     return;
-  smooth_scroll_gesture_controller_.BeginSmoothScroll(view_, params);
+  synthetic_gesture_controller_.BeginSmoothScroll(view_, params);
 }
 
 void RenderWidgetHostImpl::OnFocus() {
@@ -1889,10 +1915,8 @@ bool RenderWidgetHostImpl::KeyPressListenersHandleEvent(
   if (event.skip_in_browser || event.type != WebKeyboardEvent::RawKeyDown)
     return false;
 
-  ObserverList<KeyboardListener>::Iterator it(keyboard_listeners_);
-  KeyboardListener* listener;
-  while ((listener = it.GetNext()) != NULL) {
-    if (listener->HandleKeyPressEvent(event))
+  for (size_t i = 0; i < key_press_event_callbacks_.size(); i++) {
+    if (key_press_event_callbacks_[i].Run(event))
       return true;
   }
 

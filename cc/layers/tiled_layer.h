@@ -26,7 +26,6 @@ class CC_EXPORT TiledLayer : public ContentsScalingLayer {
   // Layer implementation.
   virtual void SetIsMask(bool is_mask) OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
-  virtual bool BlocksPendingCommit() const OVERRIDE;
   virtual bool DrawsContent() const OVERRIDE;
   virtual void ReduceMemoryUsage() OVERRIDE;
   virtual void SetNeedsDisplayRect(const gfx::RectF& dirty_rect) OVERRIDE;
@@ -68,7 +67,7 @@ class CC_EXPORT TiledLayer : public ContentsScalingLayer {
   bool SkipsDraw() const { return skips_draw_; }
 
   // Virtual for testing
-  virtual PrioritizedResourceManager* ResourceManager() const;
+  virtual PrioritizedResourceManager* ResourceManager();
   const LayerTilingData* TilerForTesting() const { return tiler_.get(); }
   const PrioritizedResource* ResourceAtForTesting(int i, int j) const;
 

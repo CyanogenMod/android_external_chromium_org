@@ -146,9 +146,6 @@ class ExtensionSettingsHandler
   // Callback for "launch" message.
   void HandleLaunchMessage(const ListValue* args);
 
-  // Callback for "restart" message.
-  void HandleRestartMessage(const ListValue* args);
-
   // Callback for "reload" message.
   void HandleReloadMessage(const base::ListValue* args);
 
@@ -196,6 +193,7 @@ class ExtensionSettingsHandler
   std::vector<ExtensionPage> GetInspectablePagesForExtension(
       const Extension* extension, bool extension_is_enabled);
   void GetInspectablePagesForExtensionProcess(
+      const Extension* extension,
       const std::set<content::RenderViewHost*>& views,
       std::vector<ExtensionPage>* result);
   void GetShellWindowPagesForExtensionProfile(

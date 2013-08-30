@@ -37,6 +37,7 @@ LOCAL_SRC_FILES := \
 	google_apis/gaia/oauth2_access_token_fetcher.cc \
 	google_apis/gaia/oauth2_api_call_flow.cc \
 	google_apis/gaia/oauth2_mint_token_flow.cc \
+	google_apis/gaia/oauth2_token_service.cc \
 	google_apis/google_api_keys.cc
 
 

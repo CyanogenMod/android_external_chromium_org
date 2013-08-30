@@ -65,16 +65,16 @@ const WebViewInfo* WebViewsInfo::GetForId(const std::string& id) const {
 }
 
 DevToolsHttpClient::DevToolsHttpClient(
-    int port,
+    const NetAddress& address,
     scoped_refptr<URLRequestContextGetter> context_getter,
     const SyncWebSocketFactory& socket_factory,
     Log* log)
     : context_getter_(context_getter),
       socket_factory_(socket_factory),
       log_(log),
-      server_url_(base::StringPrintf("http://127.0.0.1:%d", port)),
-      web_socket_url_prefix_(
-          base::StringPrintf("ws://127.0.0.1:%d/devtools/page/", port)) {}
+      server_url_("http://" + address.ToString()),
+      web_socket_url_prefix_(base::StringPrintf(
+          "ws://%s/devtools/page/", address.ToString().c_str())) {}
 
 DevToolsHttpClient::~DevToolsHttpClient() {}
 
@@ -164,6 +164,14 @@ Status DevToolsHttpClient::CloseWebView(const std::string& id) {
     base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(50));
   }
   return Status(kUnknownError, "failed to close window in 20 seconds");
+}
+
+Status DevToolsHttpClient::ActivateWebView(const std::string& id) {
+  std::string data;
+  if (!FetchUrlAndLog(
+          server_url_ + "/json/activate/" + id, context_getter_.get(), &data))
+    return Status(kUnknownError, "cannot activate web view");
+  return Status(kOk);
 }
 
 const std::string& DevToolsHttpClient::version() const {

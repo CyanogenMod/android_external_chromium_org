@@ -77,7 +77,7 @@ class FileSystem : public FileSystemInterface,
   virtual void RemoveObserver(FileSystemObserver* observer) OVERRIDE;
   virtual void CheckForUpdates() OVERRIDE;
   virtual void Search(const std::string& search_query,
-                      const GURL& next_url,
+                      const std::string& page_token,
                       const SearchCallback& callback) OVERRIDE;
   virtual void SearchMetadata(const std::string& query,
                               int options,
@@ -148,8 +148,8 @@ class FileSystem : public FileSystemInterface,
   virtual void MarkCacheFileAsUnmounted(
       const base::FilePath& cache_file_path,
       const FileOperationCallback& callback) OVERRIDE;
-  virtual void GetCacheEntryByResourceId(
-      const std::string& resource_id,
+  virtual void GetCacheEntryByPath(
+      const base::FilePath& drive_file_path,
       const GetCacheEntryCallback& callback) OVERRIDE;
   virtual void Reload() OVERRIDE;
 
@@ -157,7 +157,7 @@ class FileSystem : public FileSystemInterface,
   virtual void OnDirectoryChangedByOperation(
       const base::FilePath& directory_path) OVERRIDE;
   virtual void OnCacheFileUploadNeededByOperation(
-      const std::string& resource_id) OVERRIDE;
+      const std::string& local_id) OVERRIDE;
 
   // ChangeListLoader::Observer overrides.
   // Used to propagate events from ChangeListLoader.
@@ -190,20 +190,12 @@ class FileSystem : public FileSystemInterface,
                                 const FileOperationCallback& callback,
                                 FileError load_error);
 
-  // Used to implement Pin().
-  void PinAfterGetResourceEntryByPath(const FileOperationCallback& callback,
-                                      FileError error,
-                                      scoped_ptr<ResourceEntry> entry);
   void FinishPin(const FileOperationCallback& callback,
-                 const std::string& resource_id,
+                 const std::string* local_id,
                  FileError error);
 
-  // Used to implement Unpin().
-  void UnpinAfterGetResourceEntryByPath(const FileOperationCallback& callback,
-                                        FileError error,
-                                        scoped_ptr<ResourceEntry> entry);
   void FinishUnpin(const FileOperationCallback& callback,
-                   const std::string& resource_id,
+                   const std::string* local_id,
                    FileError error);
 
   // Callback for handling about resource fetch.
@@ -253,16 +245,10 @@ class FileSystem : public FileSystemInterface,
       const ReadDirectoryCallback& callback,
       FileError error);
   void ReadDirectoryByPathAfterRead(
+      const base::FilePath& directory_path,
       const ReadDirectoryCallback& callback,
       FileError error,
       scoped_ptr<ResourceEntryVector> entries);
-
-  // Part of MarkCacheFileAsMounted. Called after GetResourceEntryByPath is
-  // completed. |callback| must not be null.
-  void MarkCacheFileAsMountedAfterGetResourceEntry(
-      const MarkMountedCallback& callback,
-      FileError error,
-      scoped_ptr<ResourceEntry> entry);
 
   // Part of GetShareUrl. Resolves the resource entry to get the resource it,
   // and then uses it to ask for the share url. |callback| must not be null.
@@ -276,6 +262,13 @@ class FileSystem : public FileSystemInterface,
       const GetShareUrlCallback& callback,
       google_apis::GDataErrorCode status,
       const GURL& share_url);
+
+  // Reloads the metadata for the directory to refresh stale thumbnail URLs.
+  void RefreshDirectory(const base::FilePath& directory_path);
+  void RefreshDirectoryAfterGetResourceEntry(
+      const base::FilePath& directory_path,
+      FileError error,
+      scoped_ptr<ResourceEntry> entry);
 
   // Used to get Drive related preferences.
   PrefService* pref_service_;

@@ -72,7 +72,7 @@
 #if defined(OS_MACOSX)
 #include "content/browser/renderer_host/popup_menu_helper_mac.h"
 #elif defined(OS_ANDROID)
-#include "media/base/android/media_player_manager.h"
+#include "content/browser/android/browser_media_player_manager.h"
 #endif
 
 using base::TimeDelta;
@@ -116,11 +116,7 @@ g_created_callbacks = LAZY_INSTANCE_INITIALIZER;
 // static
 RenderViewHost* RenderViewHost::FromID(int render_process_id,
                                        int render_view_id) {
-  RenderWidgetHost* widget =
-      RenderWidgetHost::FromID(render_process_id, render_view_id);
-  if (!widget || !widget->IsRenderView())
-    return NULL;
-  return static_cast<RenderViewHostImpl*>(RenderWidgetHostImpl::From(widget));
+  return RenderViewHostImpl::FromID(render_process_id, render_view_id);
 }
 
 // static
@@ -143,8 +139,11 @@ void RenderViewHost::FilterURL(const RenderProcessHost* process,
 // static
 RenderViewHostImpl* RenderViewHostImpl::FromID(int render_process_id,
                                                int render_view_id) {
-  return static_cast<RenderViewHostImpl*>(
-      RenderViewHost::FromID(render_process_id, render_view_id));
+  RenderWidgetHost* widget =
+      RenderWidgetHost::FromID(render_process_id, render_view_id);
+  if (!widget || !widget->IsRenderView())
+    return NULL;
+  return static_cast<RenderViewHostImpl*>(RenderWidgetHostImpl::From(widget));
 }
 
 RenderViewHostImpl::RenderViewHostImpl(
@@ -195,7 +194,7 @@ RenderViewHostImpl::RenderViewHostImpl(
     instance_->increment_active_view_count();
 
 #if defined(OS_ANDROID)
-  media_player_manager_ = media::MediaPlayerManager::Create(this);
+  media_player_manager_ = BrowserMediaPlayerManager::Create(this);
 #endif
 }
 
@@ -1022,6 +1021,11 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
   return handled;
 }
 
+void RenderViewHostImpl::Init() {
+  RenderWidgetHostImpl::Init();
+  main_render_frame_host()->Init();
+}
+
 void RenderViewHostImpl::Shutdown() {
   // If we are being run modally (see RunModal), then we need to cleanup.
   if (run_modal_reply_msg_) {
@@ -1431,13 +1435,14 @@ void RenderViewHostImpl::OnRunJavaScriptMessage(
     const string16& default_prompt,
     const GURL& frame_url,
     JavaScriptMessageType type,
+    bool user_gesture,
     IPC::Message* reply_msg) {
   // While a JS message dialog is showing, tabs in the same process shouldn't
   // process input events.
   GetProcess()->SetIgnoreInputEvents(true);
   StopHangMonitorTimeout();
   delegate_->RunJavaScriptMessage(this, message, default_prompt, frame_url,
-                                  type, reply_msg,
+                                  type, user_gesture, reply_msg,
                                   &are_javascript_messages_suppressed_);
 }
 
@@ -2030,6 +2035,11 @@ void RenderViewHostImpl::OnShowPopup(
   }
 }
 #endif
+
+RenderFrameHostImpl* RenderViewHostImpl::main_render_frame_host() const {
+  DCHECK_EQ(GetProcess(), main_render_frame_host_->GetProcess());
+  return main_render_frame_host_.get();
+}
 
 void RenderViewHostImpl::SetSwappedOut(bool is_swapped_out) {
   // We update the number of RenderViews in a SiteInstance when the

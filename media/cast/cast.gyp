@@ -11,7 +11,7 @@
       'target_name': 'cast_config',
       'type': 'static_library',
       'include_dirs': [
-        '../..',
+        '<(DEPTH)/',
       ],
       'sources': [
         'cast_config.h',
@@ -44,15 +44,30 @@
           'dependencies': [
             'cast_sender',
             'cast_receiver',
-            '../../base/base.gyp:run_all_unittests',
+            'rtcp/rtcp.gyp:cast_rtcp_test',
+            '<(DEPTH)/base/base.gyp:run_all_unittests',
+            '<(DEPTH)/net/net.gyp:net',
             '<(DEPTH)/testing/gmock.gyp:gmock',
             '<(DEPTH)/testing/gtest.gyp:gtest',
           ],
           'include_dirs': [
-            '../..',
+            '<(DEPTH)/',
+            '<(DEPTH)/third_party/',
+            '<(DEPTH)/third_party/webrtc/',
           ],
           'sources': [
             'congestion_control/congestion_control_unittest.cc',
+            'framer/cast_message_builder_unittest.cc',
+            'framer/frame_buffer_unittest.cc',
+            'framer/framer_unittest.cc',
+            'rtp_sender/packet_storage/packet_storage_unittest.cc',
+            'rtp_sender/rtp_packetizer/rtp_packetizer_unittest.cc',
+            'rtp_sender/rtp_packetizer/test/rtp_header_parser.cc',
+            'rtp_sender/rtp_packetizer/test/rtp_header_parser.h',
+            'pacing/paced_sender_unittest.cc',
+            'rtcp/rtcp_receiver_unittest.cc',
+            'rtcp/rtcp_sender_unittest.cc',
+            'rtcp/rtcp_unittest.cc',
           ], # source
         },
       ],  # targets

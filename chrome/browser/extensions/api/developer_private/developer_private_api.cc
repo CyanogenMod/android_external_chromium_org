@@ -128,7 +128,6 @@ namespace GetItemsInfo = api::developer_private::GetItemsInfo;
 namespace Inspect = api::developer_private::Inspect;
 namespace PackDirectory = api::developer_private::PackDirectory;
 namespace Reload = api::developer_private::Reload;
-namespace Restart = api::developer_private::Restart;
 
 DeveloperPrivateAPI* DeveloperPrivateAPI::Get(Profile* profile) {
   return DeveloperPrivateAPIFactory::GetForProfile(profile);
@@ -343,8 +342,11 @@ scoped_ptr<developer::ItemInfo>
 
 void DeveloperPrivateGetItemsInfoFunction::
     GetInspectablePagesForExtensionProcess(
+        const Extension* extension,
         const std::set<content::RenderViewHost*>& views,
         ItemInspectViewList* result) {
+  bool has_generated_background_page =
+      BackgroundInfo::HasGeneratedBackgroundPage(extension);
   for (std::set<content::RenderViewHost*>::const_iterator iter = views.begin();
        iter != views.end(); ++iter) {
     content::RenderViewHost* host = *iter;
@@ -356,12 +358,14 @@ void DeveloperPrivateGetItemsInfoFunction::
       continue;
 
     content::RenderProcessHost* process = host->GetProcess();
-    result->push_back(
-        constructInspectView(web_contents->GetURL(),
-                             process->GetID(),
-                             host->GetRoutingID(),
-                             process->GetBrowserContext()->IsOffTheRecord(),
-                             false));
+    bool is_background_page =
+        (web_contents->GetURL() == BackgroundInfo::GetBackgroundURL(extension));
+    result->push_back(constructInspectView(
+        web_contents->GetURL(),
+        process->GetID(),
+        host->GetRoutingID(),
+        process->GetBrowserContext()->IsOffTheRecord(),
+        is_background_page && has_generated_background_page));
   }
 }
 
@@ -375,17 +379,21 @@ void DeveloperPrivateGetItemsInfoFunction::
   const ShellWindowRegistry::ShellWindowList windows =
       registry->GetShellWindowsForApp(extension->id());
 
+  bool has_generated_background_page =
+      BackgroundInfo::HasGeneratedBackgroundPage(extension);
   for (ShellWindowRegistry::const_iterator it = windows.begin();
        it != windows.end(); ++it) {
     content::WebContents* web_contents = (*it)->web_contents();
     RenderViewHost* host = web_contents->GetRenderViewHost();
     content::RenderProcessHost* process = host->GetProcess();
-    result->push_back(
-        constructInspectView(web_contents->GetURL(),
-                             process->GetID(),
-                             host->GetRoutingID(),
-                             process->GetBrowserContext()->IsOffTheRecord(),
-                             false));
+    bool is_background_page =
+        (web_contents->GetURL() == BackgroundInfo::GetBackgroundURL(extension));
+    result->push_back(constructInspectView(
+        web_contents->GetURL(),
+        process->GetID(),
+        host->GetRoutingID(),
+        process->GetBrowserContext()->IsOffTheRecord(),
+        is_background_page && has_generated_background_page));
   }
 }
 
@@ -423,6 +431,7 @@ ItemInspectViewList DeveloperPrivateGetItemsInfoFunction::
   ExtensionProcessManager* process_manager =
       ExtensionSystem::Get(profile())->process_manager();
   GetInspectablePagesForExtensionProcess(
+      extension,
       process_manager->GetRenderViewHostsForExtension(extension->id()),
       &result);
 
@@ -449,6 +458,7 @@ ItemInspectViewList DeveloperPrivateGetItemsInfoFunction::
     process_manager = ExtensionSystem::Get(
         service->profile()->GetOffTheRecordProfile())->process_manager();
     GetInspectablePagesForExtensionProcess(
+        extension,
         process_manager->GetRenderViewHostsForExtension(extension->id()),
         &result);
 
@@ -626,23 +636,6 @@ DeveloperPrivateShowPermissionsDialogFunction::
 
 DeveloperPrivateShowPermissionsDialogFunction::
     ~DeveloperPrivateShowPermissionsDialogFunction() {}
-
-bool DeveloperPrivateRestartFunction::RunImpl() {
-  scoped_ptr<Restart::Params> params(Restart::Params::Create(*args_));
-  EXTENSION_FUNCTION_VALIDATE(params.get());
-
-  apps::AppLoadService* service = apps::AppLoadService::Get(profile());
-  EXTENSION_FUNCTION_VALIDATE(!params->item_id.empty());
-  ExtensionService* extension_service = profile()->GetExtensionService();
-  // Don't restart disabled applications.
-  if (!extension_service->IsExtensionEnabled(params->item_id))
-    return false;
-
-  service->RestartApplication(params->item_id);
-  return true;
-}
-
-DeveloperPrivateRestartFunction::~DeveloperPrivateRestartFunction() {}
 
 DeveloperPrivateEnableFunction::DeveloperPrivateEnableFunction() {}
 
@@ -1210,7 +1203,6 @@ bool DeveloperPrivateGetStringsFunction::RunImpl() {
   SET_STRING("extensionSettingsReloadUnpacked",
              IDS_APPS_DEV_TOOLS_RELOAD_UNPACKED);
   SET_STRING("extensionSettingsLaunch", IDS_EXTENSIONS_LAUNCH);
-  SET_STRING("extensionSettingsRestart", IDS_EXTENSIONS_RESTART);
   SET_STRING("extensionSettingsOptions", IDS_EXTENSIONS_OPTIONS_LINK);
   SET_STRING("extensionSettingsPermissions", IDS_EXTENSIONS_PERMISSIONS_LINK);
   SET_STRING("extensionSettingsVisitWebsite", IDS_EXTENSIONS_VISIT_WEBSITE);
@@ -1237,7 +1229,7 @@ bool DeveloperPrivateGetStringsFunction::RunImpl() {
   SET_STRING("extensionSettingsShowLogsButton", IDS_EXTENSIONS_SHOW_LOGS);
   SET_STRING("extensionSettingsMoreDetailsButton", IDS_EXTENSIONS_MORE_DETAILS);
   SET_STRING("extensionSettingsVersion", IDS_EXTENSIONS_VERSION);
-  SET_STRING("extensionSettingsDelete", IDS_EXTENSIONS_DELETE);
+  SET_STRING("extensionSettingsDelete", IDS_EXTENSIONS_ADT_DELETE);
   SET_STRING("extensionSettingsPack", IDS_EXTENSIONS_PACK);
 
 // Pack Extension strings
@@ -1267,11 +1259,28 @@ bool DeveloperPrivateGetStringsFunction::RunImpl() {
   SET_STRING("deleteConfirmationMessageExtension",
       IDS_APPS_DEVTOOL_DELETE_CONFIRMATION_MESSAGE_EXTENSION);
 
+// Dialog when profile is managed.
+  SET_STRING("managedProfileDialogCloseButton",
+      IDS_APPS_DEVTOOL_MANAGED_PROFILE_DIALOG_CLOSE_BUTTON);
+  SET_STRING("managedProfileDialogTitle",
+      IDS_APPS_DEVTOOL_MANAGED_PROFILE_DIALOG_TITLE);
+  SET_STRING("managedProfileDialogDescription",
+      IDS_APPS_DEVTOOL_MANAGED_PROFILE_DIALOG_DESCRIPTION);
+
   #undef   SET_STRING
   return true;
 }
 
 DeveloperPrivateGetStringsFunction::~DeveloperPrivateGetStringsFunction() {}
+
+bool DeveloperPrivateIsProfileManagedFunction::RunImpl() {
+  SetResult(new base::FundamentalValue(profile_->IsManaged()));
+  return true;
+}
+
+DeveloperPrivateIsProfileManagedFunction::
+    ~DeveloperPrivateIsProfileManagedFunction() {
+}
 
 } // namespace api
 

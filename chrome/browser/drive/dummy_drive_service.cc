@@ -4,13 +4,13 @@
 
 #include "chrome/browser/drive/dummy_drive_service.h"
 
+using google_apis::AboutResourceCallback;
+using google_apis::AppListCallback;
 using google_apis::AuthStatusCallback;
 using google_apis::AuthorizeAppCallback;
 using google_apis::CancelCallback;
 using google_apis::DownloadActionCallback;
 using google_apis::EntryActionCallback;
-using google_apis::GetAboutResourceCallback;
-using google_apis::GetAppListCallback;
 using google_apis::GetContentCallback;
 using google_apis::GetResourceEntryCallback;
 using google_apis::GetResourceListCallback;
@@ -78,6 +78,14 @@ CancelCallback DummyDriveService::ContinueGetResourceList(
     const GURL& override_url,
     const GetResourceListCallback& callback) { return CancelCallback(); }
 
+CancelCallback DummyDriveService::GetRemainingChangeList(
+    const std::string& page_token,
+    const GetResourceListCallback& callback) { return CancelCallback(); }
+
+CancelCallback DummyDriveService::GetRemainingFileList(
+    const std::string& page_token,
+    const GetResourceListCallback& callback) { return CancelCallback(); }
+
 CancelCallback DummyDriveService::GetResourceEntry(
     const std::string& resource_id,
     const GetResourceEntryCallback& callback) { return CancelCallback(); }
@@ -88,10 +96,10 @@ CancelCallback DummyDriveService::GetShareUrl(
     const GetShareUrlCallback& callback) { return CancelCallback(); }
 
 CancelCallback DummyDriveService::GetAboutResource(
-    const GetAboutResourceCallback& callback) { return CancelCallback(); }
+    const AboutResourceCallback& callback) { return CancelCallback(); }
 
 CancelCallback DummyDriveService::GetAppList(
-    const GetAppListCallback& callback) { return CancelCallback(); }
+    const AppListCallback& callback) { return CancelCallback(); }
 
 CancelCallback DummyDriveService::DeleteResource(
     const std::string& resource_id,

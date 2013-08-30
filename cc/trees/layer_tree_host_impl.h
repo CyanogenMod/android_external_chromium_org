@@ -54,14 +54,11 @@ struct UIResourceRequest;
 // LayerTreeHost->Proxy callback interface.
 class LayerTreeHostImplClient {
  public:
-  virtual void DidTryInitializeRendererOnImplThread(
-      bool success,
-      scoped_refptr<ContextProvider> offscreen_context_provider) = 0;
   virtual void DidLoseOutputSurfaceOnImplThread() = 0;
   virtual void OnSwapBuffersCompleteOnImplThread() = 0;
   virtual void BeginFrameOnImplThread(const BeginFrameArgs& args) = 0;
   virtual void OnCanDrawStateChanged(bool can_draw) = 0;
-  virtual void OnHasPendingTreeStateChanged(bool has_pending_tree) = 0;
+  virtual void NotifyReadyToActivate() = 0;
   virtual void SetNeedsRedrawOnImplThread() = 0;
   virtual void SetNeedsRedrawRectOnImplThread(gfx::Rect damage_rect) = 0;
   virtual void DidInitializeVisibleTileOnImplThread() = 0;
@@ -184,6 +181,11 @@ class CC_EXPORT LayerTreeHostImpl
   // Evict all textures by enforcing a memory policy with an allocation of 0.
   void EvictTexturesForTesting();
 
+  // When blocking, this prevents client_->NotifyReadyToActivate() from being
+  // called. When disabled, it calls client_->NotifyReadyToActivate()
+  // immediately if any notifications had been blocked while blocking.
+  virtual void BlockNotifyReadyToActivateForTesting(bool block);
+
   // RendererClient implementation
   virtual gfx::Rect DeviceViewport() const OVERRIDE;
  private:
@@ -219,9 +221,15 @@ class CC_EXPORT LayerTreeHostImpl
   // Called from LayerTreeImpl.
   void OnCanDrawStateChangedForTree();
 
-  // Implementation
+  // Implementation.
   bool CanDraw() const;
   OutputSurface* output_surface() const { return output_surface_.get(); }
+
+  void SetOffscreenContextProvider(
+      const scoped_refptr<ContextProvider>& offscreen_context_provider);
+  ContextProvider* offscreen_context_provider() const {
+    return offscreen_context_provider_.get();
+  }
 
   std::string LayerTreeAsJson() const;
 
@@ -247,7 +255,7 @@ class CC_EXPORT LayerTreeHostImpl
   const LayerTreeImpl* recycle_tree() const { return recycle_tree_.get(); }
   virtual void CreatePendingTree();
   void UpdateVisibleTiles();
-  virtual void ActivatePendingTreeIfNeeded();
+  virtual void ActivatePendingTree();
 
   // Shortcuts to layers on the active tree.
   LayerImpl* RootLayer() const;
@@ -391,7 +399,6 @@ class CC_EXPORT LayerTreeHostImpl
       LayerTreeHostImplClient* client,
       Proxy* proxy,
       RenderingStatsInstrumentation* rendering_stats_instrumentation);
-  virtual void ActivatePendingTree();
 
   // Virtual for testing.
   virtual void AnimateLayers(base::TimeTicks monotonic_time,
@@ -409,9 +416,10 @@ class CC_EXPORT LayerTreeHostImpl
   Proxy* proxy_;
 
  private:
-  void CreateAndSetRenderer(OutputSurface* output_surface,
-                            ResourceProvider* resource_provider,
-                            bool skip_gl_renderer);
+  void CreateAndSetRenderer(
+      OutputSurface* output_surface,
+      ResourceProvider* resource_provider,
+      bool skip_gl_renderer);
   void CreateAndSetTileManager(ResourceProvider* resource_provider,
                                bool using_map_image);
   void ReleaseTreeResources();
@@ -460,6 +468,7 @@ class CC_EXPORT LayerTreeHostImpl
   UIResourceMap ui_resource_map_;
 
   scoped_ptr<OutputSurface> output_surface_;
+  scoped_refptr<ContextProvider> offscreen_context_provider_;
 
   // |resource_provider_| and |tile_manager_| can be NULL, e.g. when using tile-
   // free rendering - see OutputSurface::ForcedDrawToSoftwareDevice().
@@ -471,7 +480,7 @@ class CC_EXPORT LayerTreeHostImpl
   scoped_ptr<LayerTreeImpl> active_tree_;
 
   // In impl-side painting mode, tree with possibly incomplete rasterized
-  // content. May be promoted to active by ActivatePendingTreeIfNeeded().
+  // content. May be promoted to active by ActivatePendingTree().
   scoped_ptr<LayerTreeImpl> pending_tree_;
 
   // In impl-side painting mode, inert tree with layers that can be recycled

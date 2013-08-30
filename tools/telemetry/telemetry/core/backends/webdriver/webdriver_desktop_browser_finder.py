@@ -12,6 +12,7 @@ from telemetry.core import possible_browser
 from telemetry.core import platform
 from telemetry.core import util
 from telemetry.core.backends.webdriver import webdriver_browser_backend
+from telemetry.page import cloud_storage
 
 # Try to import the selenium python lib which may be not available.
 util.AddDirToPythonPath(
@@ -35,8 +36,8 @@ else:
 class PossibleWebDriverBrowser(possible_browser.PossibleBrowser):
   """A browser that can be controlled through webdriver API."""
 
-  def __init__(self, browser_type, options):
-    super(PossibleWebDriverBrowser, self).__init__(browser_type, options)
+  def __init__(self, browser_type, finder_options):
+    super(PossibleWebDriverBrowser, self).__init__(browser_type, finder_options)
 
   def CreateWebDriverBackend(self):
     raise NotImplementedError()
@@ -46,7 +47,7 @@ class PossibleWebDriverBrowser(possible_browser.PossibleBrowser):
     b = browser.Browser(backend, platform.CreatePlatformBackendForCurrentOS())
     return b
 
-  def SupportsOptions(self, options):
+  def SupportsOptions(self, finder_options):
     # TODO(chrisgao): Check if some options are not supported.
     return True
 
@@ -56,23 +57,25 @@ class PossibleWebDriverBrowser(possible_browser.PossibleBrowser):
 
 
 class PossibleDesktopIE(PossibleWebDriverBrowser):
-  def __init__(self, browser_type, options, architecture):
-    super(PossibleDesktopIE, self).__init__(browser_type, options)
+  def __init__(self, browser_type, finder_options, architecture):
+    super(PossibleDesktopIE, self).__init__(browser_type, finder_options)
     self._architecture = architecture
 
   def CreateWebDriverBackend(self):
     assert webdriver
     def DriverCreator():
-      # TODO(chrisgao): Check in IEDriverServer.exe and specify path to it when
-      # creating the webdriver instance. crbug.com/266170
-      return webdriver.Ie()
+      ie_driver_exe = os.path.join(util.GetTelemetryDir(), 'bin',
+                                   'IEDriverServer_%s.exe' % self._architecture)
+      cloud_storage.GetIfChanged(cloud_storage.CHROMIUM_TELEMETRY_BUCKET,
+                                 ie_driver_exe)
+      return webdriver.Ie(executable_path=ie_driver_exe)
     return webdriver_browser_backend.WebDriverBrowserBackend(
-        DriverCreator, False, self.options)
+        DriverCreator, False, self.finder_options)
 
 def SelectDefaultBrowser(_):
   return None
 
-def FindAllAvailableBrowsers(options):
+def FindAllAvailableBrowsers(finder_options):
   """Finds all the desktop browsers available on this machine."""
   browsers = []
   if not webdriver:
@@ -91,6 +94,6 @@ def FindAllAvailableBrowsers(options):
         continue
       if os.path.exists(os.path.join(ie_info['path'], ie_path)):
         browsers.append(
-            PossibleDesktopIE(ie_info['type'], options, architecture))
+            PossibleDesktopIE(ie_info['type'], finder_options, architecture))
 
   return browsers

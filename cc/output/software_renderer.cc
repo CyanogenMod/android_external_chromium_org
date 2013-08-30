@@ -19,9 +19,9 @@
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
+#include "skia/ext/opacity_draw_filter.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "third_party/skia/include/core/SkDevice.h"
 #include "third_party/skia/include/core/SkMatrix.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "third_party/skia/include/effects/SkLayerRasterizer.h"
@@ -128,7 +128,7 @@ void SoftwareRenderer::EnsureScissorTestDisabled() {
   // clipRect on the current SkCanvas. This is done by setting clipRect to
   // the viewport's dimensions.
   is_scissor_enabled_ = false;
-  SkDevice* device = current_canvas_->getDevice();
+  SkBaseDevice* device = current_canvas_->getDevice();
   SetClipRect(gfx::Rect(device->width(), device->height()));
 }
 
@@ -277,9 +277,11 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
 
 void SoftwareRenderer::DrawCheckerboardQuad(const DrawingFrame* frame,
                                             const CheckerboardDrawQuad* quad) {
+  gfx::RectF visible_quad_vertex_rect = MathUtil::ScaleRectProportional(
+      QuadVertexRect(), quad->rect, quad->visible_rect);
   current_paint_.setColor(quad->color);
   current_paint_.setAlpha(quad->opacity() * SkColorGetA(quad->color));
-  current_canvas_->drawRect(gfx::RectFToSkRect(QuadVertexRect()),
+  current_canvas_->drawRect(gfx::RectFToSkRect(visible_quad_vertex_rect),
                             current_paint_);
 }
 
@@ -311,34 +313,28 @@ void SoftwareRenderer::DrawPictureQuad(const DrawingFrame* frame,
       SkMatrix::kFill_ScaleToFit);
   current_canvas_->concat(content_matrix);
 
-  if (quad->ShouldDrawWithBlending()) {
-    TRACE_EVENT0("cc", "SoftwareRenderer::DrawPictureQuad with blending");
-    SkBitmap temp_bitmap;
-    temp_bitmap.setConfig(SkBitmap::kARGB_8888_Config,
-                          quad->texture_size.width(),
-                          quad->texture_size.height());
-    temp_bitmap.allocPixels();
-    SkDevice temp_device(temp_bitmap);
-    SkCanvas temp_canvas(&temp_device);
+  // TODO(aelias): This isn't correct in all cases. We should detect these
+  // cases and fall back to a persistent bitmap backing
+  // (http://crbug.com/280374).
+  DCHECK(!current_canvas_->getDrawFilter());
+  current_canvas_->setDrawFilter(new skia::OpacityDrawFilter(quad->opacity(),
+                                                             true));
 
-    quad->picture_pile->RasterToBitmap(
-        &temp_canvas, quad->content_rect, quad->contents_scale, NULL);
+  TRACE_EVENT0("cc",
+               "SoftwareRenderer::DrawPictureQuad");
+  quad->picture_pile->RasterDirect(
+      current_canvas_, quad->content_rect, quad->contents_scale, NULL);
 
-    current_paint_.setFilterBitmap(true);
-    current_canvas_->drawBitmap(temp_bitmap, 0, 0, &current_paint_);
-  } else {
-    TRACE_EVENT0("cc",
-                 "SoftwareRenderer::DrawPictureQuad direct from PicturePile");
-    quad->picture_pile->RasterDirect(
-        current_canvas_, quad->content_rect, quad->contents_scale, NULL);
-  }
+  current_canvas_->setDrawFilter(NULL);
 }
 
 void SoftwareRenderer::DrawSolidColorQuad(const DrawingFrame* frame,
                                           const SolidColorDrawQuad* quad) {
+  gfx::RectF visible_quad_vertex_rect = MathUtil::ScaleRectProportional(
+      QuadVertexRect(), quad->rect, quad->visible_rect);
   current_paint_.setColor(quad->color);
   current_paint_.setAlpha(quad->opacity() * SkColorGetA(quad->color));
-  current_canvas_->drawRect(gfx::RectFToSkRect(QuadVertexRect()),
+  current_canvas_->drawRect(gfx::RectFToSkRect(visible_quad_vertex_rect),
                             current_paint_);
 }
 
@@ -357,8 +353,12 @@ void SoftwareRenderer::DrawTextureQuad(const DrawingFrame* frame,
                                                         quad->uv_bottom_right),
                                       bitmap->width(),
                                       bitmap->height());
-  SkRect sk_uv_rect = gfx::RectFToSkRect(uv_rect);
-  SkRect quad_rect = gfx::RectFToSkRect(QuadVertexRect());
+  gfx::RectF visible_uv_rect =
+      MathUtil::ScaleRectProportional(uv_rect, quad->rect, quad->visible_rect);
+  SkRect sk_uv_rect = gfx::RectFToSkRect(visible_uv_rect);
+  gfx::RectF visible_quad_vertex_rect = MathUtil::ScaleRectProportional(
+      QuadVertexRect(), quad->rect, quad->visible_rect);
+  SkRect quad_rect = gfx::RectFToSkRect(visible_quad_vertex_rect);
 
   if (quad->flipped)
     current_canvas_->scale(1, -1);
@@ -391,12 +391,18 @@ void SoftwareRenderer::DrawTileQuad(const DrawingFrame* frame,
   DCHECK(IsSoftwareResource(quad->resource_id));
   ResourceProvider::ScopedReadLockSoftware lock(resource_provider_,
                                                 quad->resource_id);
+  gfx::RectF visible_tex_coord_rect = MathUtil::ScaleRectProportional(
+      quad->tex_coord_rect, quad->rect, quad->visible_rect);
+  gfx::RectF visible_quad_vertex_rect = MathUtil::ScaleRectProportional(
+      QuadVertexRect(), quad->rect, quad->visible_rect);
 
-  SkRect uv_rect = gfx::RectFToSkRect(quad->tex_coord_rect);
+  SkRect uv_rect = gfx::RectFToSkRect(visible_tex_coord_rect);
   current_paint_.setFilterBitmap(true);
-  current_canvas_->drawBitmapRectToRect(*lock.sk_bitmap(), &uv_rect,
-                                        gfx::RectFToSkRect(QuadVertexRect()),
-                                        &current_paint_);
+  current_canvas_->drawBitmapRectToRect(
+      *lock.sk_bitmap(),
+      &uv_rect,
+      gfx::RectFToSkRect(visible_quad_vertex_rect),
+      &current_paint_);
 }
 
 void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
@@ -411,6 +417,8 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
                                                 content_texture->id());
 
   SkRect dest_rect = gfx::RectFToSkRect(QuadVertexRect());
+  SkRect dest_visible_rect = gfx::RectFToSkRect(MathUtil::ScaleRectProportional(
+      QuadVertexRect(), quad->rect, quad->visible_rect));
   SkRect content_rect = SkRect::MakeWH(quad->rect.width(), quad->rect.height());
 
   SkMatrix content_mat;
@@ -458,10 +466,10 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
     mask_rasterizer->addLayer(mask_paint);
 
     current_paint_.setRasterizer(mask_rasterizer.get());
-    current_canvas_->drawRect(dest_rect, current_paint_);
+    current_canvas_->drawRect(dest_visible_rect, current_paint_);
   } else {
     // TODO(skaslev): Apply background filters and blend with content
-    current_canvas_->drawRect(dest_rect, current_paint_);
+    current_canvas_->drawRect(dest_visible_rect, current_paint_);
   }
 }
 

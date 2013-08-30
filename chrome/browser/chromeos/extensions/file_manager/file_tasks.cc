@@ -6,22 +6,30 @@
 
 #include "apps/launcher.h"
 #include "base/bind.h"
+#include "base/prefs/pref_service.h"
 #include "base/strings/stringprintf.h"
+#include "chrome/browser/chromeos/drive/drive_app_registry.h"
+#include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_task_executor.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_browser_handlers.h"
-#include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
 #include "chrome/browser/chromeos/extensions/file_manager/fileapi_util.h"
+#include "chrome/browser/chromeos/extensions/file_manager/open_util.h"
 #include "chrome/browser/chromeos/fileapi/file_system_backend.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
+#include "chrome/common/extensions/api/file_browser_handlers/file_browser_handler.h"
 #include "chrome/common/pref_names.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 
 using extensions::Extension;
+using extensions::app_file_handler_util::FindFileHandlersForFiles;
 using fileapi::FileSystemURL;
 
 namespace file_manager {
@@ -38,6 +46,9 @@ namespace {
 const char kFileBrowserHandlerTaskType[] = "file";
 const char kFileHandlerTaskType[] = "app";
 const char kDriveAppTaskType[] = "drive";
+
+// Default icon path for drive docs.
+const char kDefaultIcon[] = "images/filetype_generic.png";
 
 // Converts a TaskType to a string.
 std::string TaskTypeToString(TaskType task_type) {
@@ -100,15 +111,39 @@ bool FileBrowserHasAccessPermissionForFiles(
 
 }  // namespace
 
-void UpdateDefaultTask(Profile* profile,
+FullTaskDescriptor::FullTaskDescriptor(
+    const TaskDescriptor& task_descriptor,
+    const std::string& task_title,
+    const GURL& icon_url,
+    bool is_default)
+    : task_descriptor_(task_descriptor),
+      task_title_(task_title),
+      icon_url_(icon_url),
+      is_default_(is_default){
+}
+
+scoped_ptr<base::DictionaryValue>
+FullTaskDescriptor::AsDictionaryValue() const {
+  scoped_ptr<base::DictionaryValue> dictionary(new base::DictionaryValue);
+  dictionary->SetString("taskId", TaskDescriptorToId(task_descriptor_));
+  if (!icon_url_.is_empty())
+    dictionary->SetString("iconUrl", icon_url_.spec());
+  dictionary->SetBoolean("driveApp",
+                         task_descriptor_.task_type == TASK_TYPE_DRIVE_APP);
+  dictionary->SetString("title", task_title_);
+  dictionary->SetBoolean("isDefault", is_default_);
+  return dictionary.Pass();
+}
+
+void UpdateDefaultTask(PrefService* pref_service,
                        const std::string& task_id,
                        const std::set<std::string>& suffixes,
                        const std::set<std::string>& mime_types) {
-  if (!profile || !profile->GetPrefs())
+  if (!pref_service)
     return;
 
   if (!mime_types.empty()) {
-    DictionaryPrefUpdate mime_type_pref(profile->GetPrefs(),
+    DictionaryPrefUpdate mime_type_pref(pref_service,
                                         prefs::kDefaultTasksByMimeType);
     for (std::set<std::string>::const_iterator iter = mime_types.begin();
         iter != mime_types.end(); ++iter) {
@@ -118,7 +153,7 @@ void UpdateDefaultTask(Profile* profile,
   }
 
   if (!suffixes.empty()) {
-    DictionaryPrefUpdate mime_type_pref(profile->GetPrefs(),
+    DictionaryPrefUpdate mime_type_pref(pref_service,
                                         prefs::kDefaultTasksBySuffix);
     for (std::set<std::string>::const_iterator iter = suffixes.begin();
         iter != suffixes.end(); ++iter) {
@@ -130,7 +165,7 @@ void UpdateDefaultTask(Profile* profile,
   }
 }
 
-std::string GetDefaultTaskIdFromPrefs(Profile* profile,
+std::string GetDefaultTaskIdFromPrefs(const PrefService& pref_service,
                                       const std::string& mime_type,
                                       const std::string& suffix) {
   VLOG(1) << "Looking for default for MIME type: " << mime_type
@@ -138,7 +173,7 @@ std::string GetDefaultTaskIdFromPrefs(Profile* profile,
   std::string task_id;
   if (!mime_type.empty()) {
     const DictionaryValue* mime_task_prefs =
-        profile->GetPrefs()->GetDictionary(prefs::kDefaultTasksByMimeType);
+        pref_service.GetDictionary(prefs::kDefaultTasksByMimeType);
     DCHECK(mime_task_prefs);
     LOG_IF(ERROR, !mime_task_prefs) << "Unable to open MIME type prefs";
     if (mime_task_prefs &&
@@ -149,7 +184,7 @@ std::string GetDefaultTaskIdFromPrefs(Profile* profile,
   }
 
   const DictionaryValue* suffix_task_prefs =
-      profile->GetPrefs()->GetDictionary(prefs::kDefaultTasksBySuffix);
+      pref_service.GetDictionary(prefs::kDefaultTasksBySuffix);
   DCHECK(suffix_task_prefs);
   LOG_IF(ERROR, !suffix_task_prefs) << "Unable to open suffix prefs";
   std::string lower_suffix = StringToLowerASCII(suffix);
@@ -159,17 +194,23 @@ std::string GetDefaultTaskIdFromPrefs(Profile* profile,
   return task_id;
 }
 
-std::string MakeTaskID(const std::string& extension_id,
+std::string MakeTaskID(const std::string& app_id,
                        TaskType task_type,
                        const std::string& action_id) {
   return base::StringPrintf("%s|%s|%s",
-                            extension_id.c_str(),
+                            app_id.c_str(),
                             TaskTypeToString(task_type).c_str(),
                             action_id.c_str());
 }
 
 std::string MakeDriveAppTaskId(const std::string& app_id) {
   return MakeTaskID(app_id, TASK_TYPE_DRIVE_APP, "open-with");
+}
+
+std::string TaskDescriptorToId(const TaskDescriptor& task_descriptor) {
+  return MakeTaskID(task_descriptor.app_id,
+                    task_descriptor.task_type,
+                    task_descriptor.action_id);
 }
 
 bool ParseTaskID(const std::string& task_id, TaskDescriptor* task) {
@@ -259,6 +300,317 @@ bool ExecuteFileTask(Profile* profile,
   }
   NOTREACHED();
   return false;
+}
+
+struct TaskInfo {
+  TaskInfo(const std::string& app_name, const GURL& icon_url)
+      : app_name(app_name), icon_url(icon_url) {
+  }
+
+  std::string app_name;
+  GURL icon_url;
+};
+
+void GetAvailableDriveTasks(
+    const drive::DriveAppRegistry& drive_app_registry,
+    const PathAndMimeTypeSet& path_mime_set,
+    TaskInfoMap* task_info_map) {
+  DCHECK(task_info_map);
+  DCHECK(task_info_map->empty());
+
+  bool is_first = true;
+  for (PathAndMimeTypeSet::const_iterator it = path_mime_set.begin();
+       it != path_mime_set.end(); ++it) {
+    const base::FilePath& file_path = it->first;
+    const std::string& mime_type = it->second;
+    if (file_path.empty())
+      continue;
+
+    ScopedVector<drive::DriveAppInfo> app_info_list;
+    drive_app_registry.GetAppsForFile(file_path, mime_type, &app_info_list);
+
+    if (is_first) {
+      // For the first file, we store all the info.
+      for (size_t j = 0; j < app_info_list.size(); ++j) {
+        const drive::DriveAppInfo& app_info = *app_info_list[j];
+        GURL icon_url = drive::util::FindPreferredIcon(
+            app_info.app_icons,
+            drive::util::kPreferredIconSize);
+        task_info_map->insert(std::pair<std::string, TaskInfo>(
+            file_tasks::MakeDriveAppTaskId(app_info.app_id),
+            TaskInfo(app_info.app_name, icon_url)));
+      }
+    } else {
+      // For remaining files, take the intersection with the current result,
+      // based on the task id.
+      std::set<std::string> task_id_set;
+      for (size_t j = 0; j < app_info_list.size(); ++j) {
+        task_id_set.insert(
+            file_tasks::MakeDriveAppTaskId(app_info_list[j]->app_id));
+      }
+      for (TaskInfoMap::iterator iter = task_info_map->begin();
+           iter != task_info_map->end(); ) {
+        if (task_id_set.find(iter->first) == task_id_set.end()) {
+          task_info_map->erase(iter++);
+        } else {
+          ++iter;
+        }
+      }
+    }
+
+    is_first = false;
+  }
+}
+
+void FindDefaultDriveTasks(
+    const PrefService& pref_service,
+    const PathAndMimeTypeSet& path_mime_set,
+    const TaskInfoMap& task_info_map,
+    std::set<std::string>* default_tasks) {
+  DCHECK(default_tasks);
+
+  for (PathAndMimeTypeSet::const_iterator it = path_mime_set.begin();
+       it != path_mime_set.end(); ++it) {
+    const base::FilePath& file_path = it->first;
+    const std::string& mime_type = it->second;
+    std::string task_id = file_tasks::GetDefaultTaskIdFromPrefs(
+        pref_service, mime_type, file_path.Extension());
+    if (task_info_map.find(task_id) != task_info_map.end())
+      default_tasks->insert(task_id);
+  }
+}
+
+void CreateDriveTasks(
+    const TaskInfoMap& task_info_map,
+    const std::set<std::string>& default_tasks,
+    std::vector<FullTaskDescriptor>* result_list,
+    bool* default_already_set) {
+  DCHECK(result_list);
+  DCHECK(default_already_set);
+
+  for (TaskInfoMap::const_iterator iter = task_info_map.begin();
+       iter != task_info_map.end(); ++iter) {
+    bool is_default = false;
+    // Once we set a default app, we don't want to set any more.
+    if (!(*default_already_set) &&
+        default_tasks.find(iter->first) != default_tasks.end()) {
+      is_default = true;
+      *default_already_set = true;
+    }
+
+    TaskDescriptor descriptor;
+    DCHECK(ParseTaskID(iter->first, &descriptor));
+    result_list->push_back(
+        FullTaskDescriptor(descriptor,
+                           iter->second.app_name,
+                           iter->second.icon_url,
+                           is_default));
+  }
+}
+
+void FindDriveAppTasks(
+    Profile* profile,
+    const PathAndMimeTypeSet& path_mime_set,
+    std::vector<FullTaskDescriptor>* result_list,
+    bool* default_already_set) {
+  DCHECK(!path_mime_set.empty());
+  DCHECK(result_list);
+  DCHECK(default_already_set);
+
+  drive::DriveIntegrationService* integration_service =
+      drive::DriveIntegrationServiceFactory::GetForProfile(profile);
+  // |integration_service| is NULL if Drive is disabled.
+  if (!integration_service || !integration_service->drive_app_registry())
+    return;
+
+  // Map of task_id to TaskInfo of available tasks.
+  TaskInfoMap task_info_map;
+  GetAvailableDriveTasks(*integration_service->drive_app_registry(),
+                         path_mime_set,
+                         &task_info_map);
+
+  std::set<std::string> default_tasks;
+  FindDefaultDriveTasks(*profile->GetPrefs(),
+                        path_mime_set,
+                        task_info_map,
+                        &default_tasks);
+  CreateDriveTasks(
+      task_info_map, default_tasks, result_list, default_already_set);
+}
+
+void FindFileHandlerTasks(
+    Profile* profile,
+    const PathAndMimeTypeSet& path_mime_set,
+    std::vector<FullTaskDescriptor>* result_list,
+    bool* default_already_set) {
+  DCHECK(!path_mime_set.empty());
+  DCHECK(result_list);
+  DCHECK(default_already_set);
+
+  ExtensionService* service = profile->GetExtensionService();
+  if (!service)
+    return;
+
+  std::set<std::string> default_tasks;
+  for (PathAndMimeTypeSet::iterator it = path_mime_set.begin();
+       it != path_mime_set.end(); ++it) {
+    default_tasks.insert(file_tasks::GetDefaultTaskIdFromPrefs(
+        *profile->GetPrefs(), it->second, it->first.Extension()));
+  }
+
+  for (ExtensionSet::const_iterator iter = service->extensions()->begin();
+       iter != service->extensions()->end();
+       ++iter) {
+    const Extension* extension = iter->get();
+
+    // We don't support using hosted apps to open files.
+    if (!extension->is_platform_app())
+      continue;
+
+    if (profile->IsOffTheRecord() &&
+        !service->IsIncognitoEnabled(extension->id()))
+      continue;
+
+    typedef std::vector<const extensions::FileHandlerInfo*> FileHandlerList;
+    FileHandlerList file_handlers =
+        FindFileHandlersForFiles(*extension, path_mime_set);
+    if (file_handlers.empty())
+      continue;
+
+    for (FileHandlerList::iterator i = file_handlers.begin();
+         i != file_handlers.end(); ++i) {
+      std::string task_id = file_tasks::MakeTaskID(
+          extension->id(), file_tasks::TASK_TYPE_FILE_HANDLER, (*i)->id);
+
+      bool is_default = false;
+      if (!(*default_already_set) && ContainsKey(default_tasks, task_id)) {
+        is_default = true;
+        *default_already_set = true;
+      }
+
+      GURL best_icon = extensions::ExtensionIconSource::GetIconURL(
+          extension,
+          drive::util::kPreferredIconSize,
+          ExtensionIconSet::MATCH_BIGGER,
+          false,  // grayscale
+          NULL);  // exists
+
+      result_list->push_back(FullTaskDescriptor(
+          TaskDescriptor(extension->id(),
+                         file_tasks::TASK_TYPE_FILE_HANDLER,
+                         (*i)->id),
+          (*i)->title,
+          best_icon,
+          is_default));
+    }
+  }
+}
+
+void FindFileBrowserHandlerTasks(
+    Profile* profile,
+    const std::vector<GURL>& file_urls,
+    const std::vector<base::FilePath>& file_paths,
+    std::vector<FullTaskDescriptor>* result_list,
+    bool* default_already_set) {
+  DCHECK(!file_paths.empty());
+  DCHECK(!file_urls.empty());
+  DCHECK(result_list);
+  DCHECK(default_already_set);
+
+  file_browser_handlers::FileBrowserHandlerList common_tasks =
+      file_browser_handlers::FindCommonFileBrowserHandlers(profile, file_urls);
+  if (common_tasks.empty())
+    return;
+  file_browser_handlers::FileBrowserHandlerList default_tasks =
+      file_browser_handlers::FindDefaultFileBrowserHandlers(
+          *profile->GetPrefs(), file_paths, common_tasks);
+
+  ExtensionService* service =
+      extensions::ExtensionSystem::Get(profile)->extension_service();
+  for (file_browser_handlers::FileBrowserHandlerList::const_iterator iter =
+           common_tasks.begin();
+       iter != common_tasks.end();
+       ++iter) {
+    const FileBrowserHandler* handler = *iter;
+    const std::string extension_id = handler->extension_id();
+    const Extension* extension = service->GetExtensionById(extension_id, false);
+    DCHECK(extension);
+
+    // TODO(zelidrag): Figure out how to expose icon URL that task defined in
+    // manifest instead of the default extension icon.
+    const GURL icon_url = extensions::ExtensionIconSource::GetIconURL(
+        extension,
+        extension_misc::EXTENSION_ICON_BITTY,
+        ExtensionIconSet::MATCH_BIGGER,
+        false,  // grayscale
+        NULL);  // exists
+
+    // Only set the default if there isn't already a default set.
+    bool is_default = false;
+    if (!*default_already_set &&
+        std::find(default_tasks.begin(), default_tasks.end(), *iter) !=
+        default_tasks.end()) {
+      is_default = true;
+      *default_already_set = true;
+    }
+
+    result_list->push_back(FullTaskDescriptor(
+        TaskDescriptor(extension_id,
+                       file_tasks::TASK_TYPE_FILE_BROWSER_HANDLER,
+                       handler->id()),
+        handler->title(),
+        icon_url,
+        is_default));
+  }
+}
+
+void FindAllTypesOfTasks(
+    Profile* profile,
+    const PathAndMimeTypeSet& path_mime_set,
+    const std::vector<GURL>& file_urls,
+    const std::vector<base::FilePath>& file_paths,
+    std::vector<FullTaskDescriptor>* result_list) {
+  DCHECK(profile);
+  DCHECK(result_list);
+
+  // Check if file_paths contain a google document.
+  bool has_google_document = false;
+  for (size_t i = 0; i < file_paths.size(); ++i) {
+    if (google_apis::ResourceEntry::ClassifyEntryKindByFileExtension(
+            file_paths[i]) &
+        google_apis::ResourceEntry::KIND_OF_GOOGLE_DOCUMENT) {
+      has_google_document = true;
+      break;
+    }
+  }
+
+  // Find the Drive app tasks first, because we want them to take precedence
+  // when setting the default app.
+  bool default_already_set = false;
+  // Google document are not opened by drive apps but file manager.
+  if (!has_google_document) {
+    FindDriveAppTasks(profile,
+                      path_mime_set,
+                      result_list,
+                      &default_already_set);
+  }
+
+  // Find and append file handler tasks. We know there aren't duplicates
+  // because Drive apps and platform apps are entirely different kinds of
+  // tasks.
+  FindFileHandlerTasks(profile,
+                       path_mime_set,
+                       result_list,
+                       &default_already_set);
+
+  // Find and append file browser handler tasks. We know there aren't
+  // duplicates because "file_browser_handlers" and "file_handlers" shouldn't
+  // be used in the same manifest.json.
+  FindFileBrowserHandlerTasks(profile,
+                              file_urls,
+                              file_paths,
+                              result_list,
+                              &default_already_set);
 }
 
 }  // namespace file_tasks

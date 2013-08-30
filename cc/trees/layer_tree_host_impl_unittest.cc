@@ -9,6 +9,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/containers/hash_tables.h"
+#include "base/containers/scoped_ptr_hash_map.h"
 #include "cc/base/math_util.h"
 #include "cc/debug/test_web_graphics_context_3d.h"
 #include "cc/input/top_controls_manager.h"
@@ -66,12 +67,12 @@ class LayerTreeHostImplTest : public testing::Test,
       : proxy_(),
         always_impl_thread_(&proxy_),
         always_main_thread_blocked_(&proxy_),
-        did_try_initialize_renderer_(false),
         on_can_draw_state_changed_called_(false),
-        has_pending_tree_(false),
+        did_notify_ready_to_activate_(false),
         did_request_commit_(false),
         did_request_redraw_(false),
         did_upload_visible_tile_(false),
+        did_lose_output_surface_(false),
         reduce_memory_result_(true),
         current_limit_bytes_(0),
         current_priority_cutoff_value_(0) {
@@ -94,20 +95,18 @@ class LayerTreeHostImplTest : public testing::Test,
 
   virtual void TearDown() OVERRIDE {}
 
-  virtual void DidTryInitializeRendererOnImplThread(
-      bool success,
-      scoped_refptr<ContextProvider> offscreen_context_provider) OVERRIDE {
-    did_try_initialize_renderer_ = true;
+  virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE {
+    did_lose_output_surface_ = true;
   }
-  virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE {}
   virtual void OnSwapBuffersCompleteOnImplThread() OVERRIDE {}
   virtual void BeginFrameOnImplThread(const BeginFrameArgs& args)
       OVERRIDE {}
   virtual void OnCanDrawStateChanged(bool can_draw) OVERRIDE {
     on_can_draw_state_changed_called_ = true;
   }
-  virtual void OnHasPendingTreeStateChanged(bool has_pending_tree) OVERRIDE {
-    has_pending_tree_ = has_pending_tree;
+  virtual void NotifyReadyToActivate() OVERRIDE {
+    did_notify_ready_to_activate_ = true;
+    host_impl_->ActivatePendingTree();
   }
   virtual void SetNeedsRedrawOnImplThread() OVERRIDE {
     did_request_redraw_ = true;
@@ -351,12 +350,12 @@ class LayerTreeHostImplTest : public testing::Test,
 
   scoped_ptr<LayerTreeHostImpl> host_impl_;
   FakeRenderingStatsInstrumentation stats_instrumentation_;
-  bool did_try_initialize_renderer_;
   bool on_can_draw_state_changed_called_;
-  bool has_pending_tree_;
+  bool did_notify_ready_to_activate_;
   bool did_request_commit_;
   bool did_request_redraw_;
   bool did_upload_visible_tile_;
+  bool did_lose_output_surface_;
   bool reduce_memory_result_;
   base::TimeDelta requested_scrollbar_animation_delay_;
   size_t current_limit_bytes_;
@@ -1090,7 +1089,7 @@ class LayerTreeHostImplOverridePhysicalTime : public LayerTreeHostImpl {
 
 TEST_F(LayerTreeHostImplTest, ScrollbarLinearFadeScheduling) {
   LayerTreeSettings settings;
-  settings.use_linear_fade_scrollbar_animator = true;
+  settings.scrollbar_animator = LayerTreeSettings::LinearFade;
   settings.scrollbar_linear_fade_delay_ms = 20;
   settings.scrollbar_linear_fade_length_ms = 20;
 
@@ -3022,7 +3021,7 @@ TEST_F(LayerTreeHostImplViewportCoveredTest, ActiveTreeShrinkViewportInvalid) {
   host_impl_->SetViewportSize(larger_viewport);
   EXPECT_TRUE(host_impl_->active_tree()->ViewportSizeInvalid());
   did_activate_pending_tree_ = false;
-  host_impl_->ActivatePendingTreeIfNeeded();
+  host_impl_->ActivatePendingTree();
   EXPECT_TRUE(did_activate_pending_tree_);
   EXPECT_FALSE(host_impl_->active_tree()->ViewportSizeInvalid());
 
@@ -3133,7 +3132,11 @@ TEST_F(LayerTreeHostImplTest, ReshapeNotCalledUntilDraw) {
 
 class SwapTrackerContext : public TestWebGraphicsContext3D {
  public:
-  SwapTrackerContext() : last_update_type_(NoUpdate) {}
+  SwapTrackerContext()
+      : last_update_type_(NoUpdate) {
+    test_capabilities_.post_sub_buffer = true;
+    test_capabilities_.set_visibility = true;
+  }
 
   virtual void prepareTexture() OVERRIDE {
     update_rect_ = gfx::Rect(width_, height_);
@@ -3144,15 +3147,6 @@ class SwapTrackerContext : public TestWebGraphicsContext3D {
       OVERRIDE {
     update_rect_ = gfx::Rect(x, y, width, height);
     last_update_type_ = PostSubBuffer;
-  }
-
-  virtual WebKit::WebString getString(WebKit::WGC3Denum name) OVERRIDE {
-    if (name == GL_EXTENSIONS) {
-      return WebKit::WebString(
-          "GL_CHROMIUM_post_sub_buffer GL_CHROMIUM_set_visibility");
-    }
-
-    return WebKit::WebString();
   }
 
   gfx::Rect update_rect() const { return update_rect_; }
@@ -3329,7 +3323,6 @@ class MockContext : public TestWebGraphicsContext3D {
                                   WebKit::WGC3Dsizei count,
                                   WebKit::WGC3Denum type,
                                   WebKit::WGC3Dintptr offset));
-  MOCK_METHOD1(getString, WebKit::WebString(WebKit::WGC3Denum name));
   MOCK_METHOD0(getRequestableExtensionsCHROMIUM, WebKit::WebString());
   MOCK_METHOD1(enable, void(WebKit::WGC3Denum cap));
   MOCK_METHOD1(disable, void(WebKit::WGC3Denum cap));
@@ -3346,6 +3339,8 @@ class MockContextHarness {
  public:
   explicit MockContextHarness(MockContext* context)
       : context_(context) {
+    context_->set_have_post_sub_buffer(true);
+
     // Catch "uninteresting" calls
     EXPECT_CALL(*context_, useProgram(_))
         .Times(0);
@@ -3359,19 +3354,6 @@ class MockContextHarness {
 
     EXPECT_CALL(*context_, uniform4f(_, _, _, _, _))
         .WillRepeatedly(Return());
-
-    // Any other strings are empty
-    EXPECT_CALL(*context_, getString(_))
-        .WillRepeatedly(Return(WebKit::WebString()));
-
-    // Support for partial swap, if needed
-    EXPECT_CALL(*context_, getString(GL_EXTENSIONS))
-        .WillRepeatedly(Return(
-            WebKit::WebString("GL_CHROMIUM_post_sub_buffer")));
-
-    EXPECT_CALL(*context_, getRequestableExtensionsCHROMIUM())
-        .WillRepeatedly(Return(
-            WebKit::WebString("GL_CHROMIUM_post_sub_buffer")));
 
     // Any un-sanctioned calls to enable() are OK
     EXPECT_CALL(*context_, enable(_))
@@ -3489,14 +3471,8 @@ TEST_F(LayerTreeHostImplTest, PartialSwap) {
 
 class PartialSwapContext : public TestWebGraphicsContext3D {
  public:
-  virtual WebKit::WebString getString(WebKit::WGC3Denum name) OVERRIDE {
-    if (name == GL_EXTENSIONS)
-      return WebKit::WebString("GL_CHROMIUM_post_sub_buffer");
-    return WebKit::WebString();
-  }
-
-  virtual WebKit::WebString getRequestableExtensionsCHROMIUM() OVERRIDE {
-    return WebKit::WebString("GL_CHROMIUM_post_sub_buffer");
+  PartialSwapContext() {
+    test_capabilities_.post_sub_buffer = true;
   }
 
   // Unlimited texture size.
@@ -3632,7 +3608,10 @@ class TrackingWebGraphicsContext3D : public TestWebGraphicsContext3D {
  public:
   TrackingWebGraphicsContext3D()
       : TestWebGraphicsContext3D(),
-        num_textures_(0) {}
+        num_textures_(0) {
+    test_capabilities_.iosurface = true;
+    test_capabilities_.texture_rectangle = true;
+  }
 
   virtual WebKit::WebGLId createTexture() OVERRIDE {
     WebKit::WebGLId id = TestWebGraphicsContext3D::createTexture();
@@ -3648,15 +3627,6 @@ class TrackingWebGraphicsContext3D : public TestWebGraphicsContext3D {
 
     textures_[id] = false;
     --num_textures_;
-  }
-
-  virtual WebKit::WebString getString(WebKit::WGC3Denum name) OVERRIDE {
-    if (name == GL_EXTENSIONS) {
-      return WebKit::WebString(
-          "GL_CHROMIUM_iosurface GL_ARB_texture_rectangle");
-    }
-
-    return WebKit::WebString();
   }
 
   unsigned num_textures() const { return num_textures_; }
@@ -4915,7 +4885,7 @@ TEST_F(LayerTreeHostImplTest, ReleaseContentsTextureShouldTriggerCommit) {
 }
 
 struct RenderPassRemovalTestData : public LayerTreeHostImpl::FrameData {
-  ScopedPtrHashMap<RenderPass::Id, TestRenderPass> render_pass_cache;
+  base::ScopedPtrHashMap<RenderPass::Id, TestRenderPass> render_pass_cache;
   scoped_ptr<SharedQuadState> shared_quad_state;
 };
 
@@ -6181,54 +6151,152 @@ TEST_F(LayerTreeHostImplTest,
   EXPECT_EQ(host_impl_->active_tree()->root_layer(), frame.will_draw_layers[0]);
 }
 
-TEST_F(LayerTreeHostImplTest, DeferredInitializeSmoke) {
-  set_reduce_memory_result(false);
-  scoped_ptr<FakeOutputSurface> output_surface(
-      FakeOutputSurface::CreateDeferredGL(
-          scoped_ptr<SoftwareOutputDevice>(new CountingSoftwareDevice())));
-  FakeOutputSurface* output_surface_ptr = output_surface.get();
-  EXPECT_TRUE(
-      host_impl_->InitializeRenderer(output_surface.PassAs<OutputSurface>()));
+class LayerTreeHostImplTestDeferredInitialize : public LayerTreeHostImplTest {
+ protected:
+  virtual void SetUp() OVERRIDE {
+    LayerTreeHostImplTest::SetUp();
 
-  // Add two layers.
-  scoped_ptr<SolidColorLayerImpl> root_layer =
-      SolidColorLayerImpl::Create(host_impl_->active_tree(), 1);
-  FakeVideoFrameProvider provider;
-  scoped_ptr<VideoLayerImpl> video_layer =
-      VideoLayerImpl::Create(host_impl_->active_tree(), 2, &provider);
-  video_layer->SetBounds(gfx::Size(10, 10));
-  video_layer->SetContentBounds(gfx::Size(10, 10));
-  video_layer->SetDrawsContent(true);
-  root_layer->AddChild(video_layer.PassAs<LayerImpl>());
-  SetupRootLayerImpl(root_layer.PassAs<LayerImpl>());
+    set_reduce_memory_result(false);
 
+    scoped_ptr<FakeOutputSurface> output_surface(
+        FakeOutputSurface::CreateDeferredGL(
+            scoped_ptr<SoftwareOutputDevice>(new CountingSoftwareDevice())));
+    output_surface_ = output_surface.get();
+
+    EXPECT_TRUE(host_impl_->InitializeRenderer(
+        output_surface.PassAs<OutputSurface>()));
+
+    scoped_ptr<SolidColorLayerImpl> root_layer =
+        SolidColorLayerImpl::Create(host_impl_->active_tree(), 1);
+    SetupRootLayerImpl(root_layer.PassAs<LayerImpl>());
+
+    onscreen_context_provider_ = TestContextProvider::Create();
+    offscreen_context_provider_ = TestContextProvider::Create();
+  }
+
+  FakeOutputSurface* output_surface_;
+  scoped_refptr<TestContextProvider> onscreen_context_provider_;
+  scoped_refptr<TestContextProvider> offscreen_context_provider_;
+};
+
+
+TEST_F(LayerTreeHostImplTestDeferredInitialize, Success) {
   // Software draw.
   DrawFrame();
 
+  EXPECT_FALSE(host_impl_->output_surface()->context_provider());
+  EXPECT_FALSE(host_impl_->offscreen_context_provider());
+
   // DeferredInitialize and hardware draw.
-  EXPECT_FALSE(did_try_initialize_renderer_);
-  EXPECT_TRUE(output_surface_ptr->InitializeAndSetContext3d(
-      TestContextProvider::Create(), NULL));
-  EXPECT_TRUE(did_try_initialize_renderer_);
+  EXPECT_TRUE(output_surface_->InitializeAndSetContext3d(
+      onscreen_context_provider_, offscreen_context_provider_));
+  EXPECT_EQ(onscreen_context_provider_,
+            host_impl_->output_surface()->context_provider());
+  EXPECT_EQ(offscreen_context_provider_,
+            host_impl_->offscreen_context_provider());
 
   // Defer intialized GL draw.
   DrawFrame();
 
   // Revert back to software.
-  did_try_initialize_renderer_ = false;
-  output_surface_ptr->ReleaseGL();
-  EXPECT_TRUE(did_try_initialize_renderer_);
+  output_surface_->ReleaseGL();
+  EXPECT_FALSE(host_impl_->output_surface()->context_provider());
+  EXPECT_FALSE(host_impl_->offscreen_context_provider());
+
+  // Software draw again.
   DrawFrame();
 }
 
-class ContextThatDoesNotSupportMemoryManagmentExtensions
-    : public TestWebGraphicsContext3D {
- public:
-  // WebGraphicsContext3D methods.
-  virtual WebKit::WebString getString(WebKit::WGC3Denum name) {
-    return WebKit::WebString();
-  }
-};
+TEST_F(LayerTreeHostImplTestDeferredInitialize, Fails_OnscreenContext_0) {
+  // Software draw.
+  DrawFrame();
+
+  // Fail initialization of the onscreen context before the OutputSurface binds
+  // it to the thread.
+  onscreen_context_provider_->UnboundTestContext3d()
+      ->set_times_make_current_succeeds(0);
+
+  EXPECT_FALSE(host_impl_->output_surface()->context_provider());
+  EXPECT_FALSE(host_impl_->offscreen_context_provider());
+  EXPECT_FALSE(did_lose_output_surface_);
+
+  // DeferredInitialize fails.
+  EXPECT_FALSE(output_surface_->InitializeAndSetContext3d(
+      onscreen_context_provider_, offscreen_context_provider_));
+  EXPECT_FALSE(host_impl_->output_surface()->context_provider());
+  EXPECT_FALSE(host_impl_->offscreen_context_provider());
+
+  // Software draw again.
+  DrawFrame();
+}
+
+TEST_F(LayerTreeHostImplTestDeferredInitialize, Fails_OnscreenContext_1) {
+  // Software draw.
+  DrawFrame();
+
+  // Fail initialization of the onscreen context after the OutputSurface binds
+  // it to the thread.
+  onscreen_context_provider_->UnboundTestContext3d()
+      ->set_times_make_current_succeeds(2);
+
+  EXPECT_FALSE(host_impl_->output_surface()->context_provider());
+  EXPECT_FALSE(host_impl_->offscreen_context_provider());
+  EXPECT_FALSE(did_lose_output_surface_);
+
+  // DeferredInitialize fails.
+  EXPECT_FALSE(output_surface_->InitializeAndSetContext3d(
+      onscreen_context_provider_, offscreen_context_provider_));
+  EXPECT_FALSE(host_impl_->output_surface()->context_provider());
+  EXPECT_FALSE(host_impl_->offscreen_context_provider());
+
+  // We lose the output surface.
+  EXPECT_TRUE(did_lose_output_surface_);
+}
+
+TEST_F(LayerTreeHostImplTestDeferredInitialize, Fails_OnscreenContext_2) {
+  // Software draw.
+  DrawFrame();
+
+  // Fail initialization of the onscreen context after the OutputSurface binds
+  // it to the thread and during renderer initialization.
+  onscreen_context_provider_->UnboundTestContext3d()
+      ->set_times_make_current_succeeds(1);
+
+  EXPECT_FALSE(host_impl_->output_surface()->context_provider());
+  EXPECT_FALSE(host_impl_->offscreen_context_provider());
+  EXPECT_FALSE(did_lose_output_surface_);
+
+  // DeferredInitialize fails.
+  EXPECT_FALSE(output_surface_->InitializeAndSetContext3d(
+      onscreen_context_provider_, offscreen_context_provider_));
+  EXPECT_FALSE(host_impl_->output_surface()->context_provider());
+  EXPECT_FALSE(host_impl_->offscreen_context_provider());
+
+  // We lose the output surface.
+  EXPECT_TRUE(did_lose_output_surface_);
+}
+
+TEST_F(LayerTreeHostImplTestDeferredInitialize, Fails_OffscreenContext) {
+  // Software draw.
+  DrawFrame();
+
+  // Fail initialization of the offscreen context.
+  offscreen_context_provider_->UnboundTestContext3d()
+      ->set_times_make_current_succeeds(0);
+
+  EXPECT_FALSE(host_impl_->output_surface()->context_provider());
+  EXPECT_FALSE(host_impl_->offscreen_context_provider());
+  EXPECT_FALSE(did_lose_output_surface_);
+
+  // DeferredInitialize fails.
+  EXPECT_FALSE(output_surface_->InitializeAndSetContext3d(
+      onscreen_context_provider_, offscreen_context_provider_));
+  EXPECT_FALSE(host_impl_->output_surface()->context_provider());
+  EXPECT_FALSE(host_impl_->offscreen_context_provider());
+
+  // We lose the output surface.
+  EXPECT_TRUE(did_lose_output_surface_);
+}
 
 // Checks that we have a non-0 default allocation if we pass a context that
 // doesn't support memory management extensions.
@@ -6240,8 +6308,7 @@ TEST_F(LayerTreeHostImplTest, DefaultMemoryAllocation) {
                                          &stats_instrumentation_);
 
   scoped_ptr<OutputSurface> output_surface(
-      FakeOutputSurface::Create3d(scoped_ptr<TestWebGraphicsContext3D>(
-          new ContextThatDoesNotSupportMemoryManagmentExtensions)));
+      FakeOutputSurface::Create3d(TestWebGraphicsContext3D::Create()));
   host_impl_->InitializeRenderer(output_surface.Pass());
   EXPECT_LT(0ul, host_impl_->memory_allocation_limit_bytes());
 }

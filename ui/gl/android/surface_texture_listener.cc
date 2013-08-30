@@ -8,22 +8,9 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "jni/SurfaceTextureListener_jni.h"
-#include "ui/gl/android/surface_texture_bridge.h"
+#include "ui/gl/android/surface_texture.h"
 
 namespace gfx {
-
-// static
-jobject SurfaceTextureListener::CreateSurfaceTextureListener(
-    JNIEnv* env,
-    const base::Closure& callback) {
-  // The java listener object owns and releases the native instance.
-  // This is necessary to avoid races with incoming notifications.
-  ScopedJavaLocalRef<jobject> listener(Java_SurfaceTextureListener_create(env,
-      reinterpret_cast<int>(new SurfaceTextureListener(callback))));
-
-  DCHECK(!listener.is_null());
-  return listener.Release();
-}
 
 SurfaceTextureListener::SurfaceTextureListener(const base::Closure& callback)
     : callback_(callback),

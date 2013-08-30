@@ -12,7 +12,6 @@
 #include "chrome/browser/chromeos/drive/logging.h"
 #include "chrome/browser/chromeos/extensions/file_manager/event_router.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_browser_private_api.h"
-#include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
 #include "chrome/browser/chromeos/extensions/file_manager/fileapi_util.h"
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -23,7 +22,7 @@
 using chromeos::disks::DiskMountManager;
 using content::BrowserThread;
 
-namespace file_manager {
+namespace extensions {
 namespace {
 
 // Creates a dictionary describing the mount point of |mount_point_info|.
@@ -42,7 +41,7 @@ base::DictionaryValue* CreateValueFromMountPoint(
   base::FilePath relative_mount_path;
   // Convert mount point path to relative path with the external file system
   // exposed within File API.
-  if (util::ConvertAbsoluteFilePathToRelativeFileSystemPath(
+  if (file_manager::util::ConvertAbsoluteFilePathToRelativeFileSystemPath(
           profile,
           extension_id,
           base::FilePath(mount_point_info.mount_path),
@@ -57,15 +56,25 @@ base::DictionaryValue* CreateValueFromMountPoint(
   return mount_info;
 }
 
+base::DictionaryValue* CreateDownloadsMountPointInfo() {
+  base::DictionaryValue* result = new base::DictionaryValue;
+  result->SetString("mountPath", "Downloads");
+  result->SetString(
+      "mountCondition",
+      DiskMountManager::MountConditionToString(
+          chromeos::disks::MOUNT_CONDITION_NONE));
+  return result;
+}
+
 }  // namespace
 
-AddMountFunction::AddMountFunction() {
+FileBrowserPrivateAddMountFunction::FileBrowserPrivateAddMountFunction() {
 }
 
-AddMountFunction::~AddMountFunction() {
+FileBrowserPrivateAddMountFunction::~FileBrowserPrivateAddMountFunction() {
 }
 
-bool AddMountFunction::RunImpl() {
+bool FileBrowserPrivateAddMountFunction::RunImpl() {
   // The third argument is simply ignored.
   if (args_->GetSize() != 2 && args_->GetSize() != 3) {
     error_ = "Invalid argument count";
@@ -104,7 +113,7 @@ bool AddMountFunction::RunImpl() {
     case chromeos::MOUNT_TYPE_GOOGLE_DRIVE: {
       // Dispatch fake 'mounted' event because JS code depends on it.
       // TODO(hashimoto): Remove this redanduncy.
-      FileBrowserPrivateAPI::Get(profile_)->event_router()->
+      file_manager::FileBrowserPrivateAPI::Get(profile_)->event_router()->
           OnFileSystemMounted();
 
       // Pass back the drive mount point path as source path.
@@ -115,7 +124,7 @@ bool AddMountFunction::RunImpl() {
       break;
     }
     default: {
-      const base::FilePath path = util::GetLocalPathFromURL(
+      const base::FilePath path = file_manager::util::GetLocalPathFromURL(
           render_view_host(), profile(), GURL(file_url));
 
       if (path.empty()) {
@@ -137,7 +146,7 @@ bool AddMountFunction::RunImpl() {
         }
         file_system->MarkCacheFileAsMounted(
             drive::util::ExtractDrivePath(path),
-            base::Bind(&AddMountFunction::OnMountedStateSet,
+            base::Bind(&FileBrowserPrivateAddMountFunction::OnMountedStateSet,
                        this, mount_type_str, display_name));
       } else {
         OnMountedStateSet(mount_type_str, display_name,
@@ -150,7 +159,7 @@ bool AddMountFunction::RunImpl() {
   return true;
 }
 
-void AddMountFunction::OnMountedStateSet(
+void FileBrowserPrivateAddMountFunction::OnMountedStateSet(
     const std::string& mount_type,
     const base::FilePath::StringType& file_name,
     drive::FileError error,
@@ -172,13 +181,14 @@ void AddMountFunction::OnMountedStateSet(
       file_name, DiskMountManager::MountTypeFromString(mount_type));
 }
 
-RemoveMountFunction::RemoveMountFunction() {
+FileBrowserPrivateRemoveMountFunction::FileBrowserPrivateRemoveMountFunction() {
 }
 
-RemoveMountFunction::~RemoveMountFunction() {
+FileBrowserPrivateRemoveMountFunction::
+    ~FileBrowserPrivateRemoveMountFunction() {
 }
 
-bool RemoveMountFunction::RunImpl() {
+bool FileBrowserPrivateRemoveMountFunction::RunImpl() {
   if (args_->GetSize() != 1) {
     return false;
   }
@@ -197,16 +207,17 @@ bool RemoveMountFunction::RunImpl() {
 
   std::vector<GURL> file_paths;
   file_paths.push_back(GURL(mount_path));
-  util::GetSelectedFileInfo(
+  file_manager::util::GetSelectedFileInfo(
       render_view_host(),
       profile(),
       file_paths,
-      util::NEED_LOCAL_PATH_FOR_OPENING,
-      base::Bind(&RemoveMountFunction::GetSelectedFileInfoResponse, this));
+      file_manager::util::NEED_LOCAL_PATH_FOR_OPENING,
+      base::Bind(&FileBrowserPrivateRemoveMountFunction::
+                     GetSelectedFileInfoResponse, this));
   return true;
 }
 
-void RemoveMountFunction::GetSelectedFileInfoResponse(
+void FileBrowserPrivateRemoveMountFunction::GetSelectedFileInfoResponse(
     const std::vector<ui::SelectedFileInfo>& files) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -225,13 +236,15 @@ void RemoveMountFunction::GetSelectedFileInfoResponse(
   SendResponse(true);
 }
 
-GetMountPointsFunction::GetMountPointsFunction() {
+FileBrowserPrivateGetMountPointsFunction::
+    FileBrowserPrivateGetMountPointsFunction() {
 }
 
-GetMountPointsFunction::~GetMountPointsFunction() {
+FileBrowserPrivateGetMountPointsFunction::
+    ~FileBrowserPrivateGetMountPointsFunction() {
 }
 
-bool GetMountPointsFunction::RunImpl() {
+bool FileBrowserPrivateGetMountPointsFunction::RunImpl() {
   if (args_->GetSize())
     return false;
 
@@ -243,7 +256,14 @@ bool GetMountPointsFunction::RunImpl() {
       disk_mount_manager->mount_points();
 
   std::string log_string = "[";
-  const char *separator = "";
+
+  // TODO(hidehiko): Returns Drive if available.
+
+  // Always return "Downloads".
+  log_string += "Downloads";
+  mounts->Append(CreateDownloadsMountPointInfo());
+
+  const char *kSeparator = ", ";
   for (DiskMountManager::MountPointMap::const_iterator it =
            mount_points.begin();
        it != mount_points.end();
@@ -251,8 +271,7 @@ bool GetMountPointsFunction::RunImpl() {
     mounts->Append(CreateValueFromMountPoint(profile_,
                                              it->second,
                                              extension_->id()));
-    log_string += separator + it->first;
-    separator = ", ";
+    log_string += kSeparator + it->first;
   }
 
   log_string += "]";
@@ -268,4 +287,4 @@ bool GetMountPointsFunction::RunImpl() {
   return true;
 }
 
-}  // namespace file_manager
+}  // namespace extensions

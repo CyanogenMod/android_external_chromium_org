@@ -10,9 +10,9 @@
 #include "base/logging.h"
 #include "base/memory/shared_memory.h"
 #include "base/metrics/histogram.h"
-#include "base/perftimer.h"
 #include "base/pickle.h"
 #include "base/strings/stringprintf.h"
+#include "base/test/perftimer.h"
 #include "chrome/common/extensions/csp_handler.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_messages.h"
@@ -105,7 +105,7 @@ void UserScriptSlave::InitializeIsolatedWorld(int isolated_world_id,
        i != permissions.end(); ++i) {
     const char* schemes[] = {
       chrome::kHttpScheme,
-      chrome::kHttpsScheme,
+      content::kHttpsScheme,
       chrome::kFileScheme,
       chrome::kChromeUIScheme,
     };

@@ -45,10 +45,12 @@ def DictDiff(d1, d2):
   return '\n'.join(diff)
 
 
-def GetEnvironment(host_obj, testing):
+def GetEnvironment(host_obj, testing, extra_env_vars=None):
   init_env = dict(os.environ)
   init_env['GYP_GENERATORS'] = 'ninja'
   init_env['GOMA_DIR'] = bb_utils.GOMA_DIR
+  if extra_env_vars:
+    init_env.update(extra_env_vars)
   envsetup_cmd = '. build/android/envsetup.sh'
   if host_obj.target_arch:
     envsetup_cmd += ' --target-arch=%s' % host_obj.target_arch
@@ -169,7 +171,8 @@ def GetBotStepMap():
         H(std_build_steps,
           extra_args=['--build-targets=android_builder_webrtc'],
           extra_gyp='include_tests=1 enable_tracing=1')),
-      B('webrtc-tests', H(std_test_steps), T(['webrtc'], [flakiness_server])),
+      B('webrtc-tests', H(['download_webrtc_resources'] + std_test_steps),
+        T(['webrtc'], [flakiness_server])),
 
       # Generic builder config (for substring match).
       B('builder', H(std_build_steps)),

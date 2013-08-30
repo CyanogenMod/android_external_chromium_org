@@ -161,8 +161,8 @@ class MessageCenterImpl : public MessageCenter {
   virtual void SetNotificationButtonIcon(const std::string& notification_id,
                                          int button_index,
                                          const gfx::Image& image) OVERRIDE;
-  virtual void DisableNotificationsByExtension(const std::string& id) OVERRIDE;
-  virtual void DisableNotificationsByUrl(const std::string& id) OVERRIDE;
+  virtual void DisableNotificationsByNotifier(
+      const NotifierId& notifier_id) OVERRIDE;
   virtual void ShowNotificationSettings(const std::string& id) OVERRIDE;
   virtual void ExpandNotification(const std::string& id) OVERRIDE;
   virtual void ClickOnNotification(const std::string& id) OVERRIDE;
@@ -187,6 +187,7 @@ class MessageCenterImpl : public MessageCenter {
   scoped_ptr<NotificationList> notification_list_;
   ObserverList<MessageCenterObserver> observer_list_;
   scoped_ptr<internal::PopupTimersController> popup_timers_controller_;
+  scoped_ptr<base::OneShotTimer<MessageCenterImpl> > quiet_mode_timer_;
   Delegate* delegate_;
   NotifierSettingsProvider* settings_provider_;
 

@@ -15,6 +15,7 @@
 #include "base/debug/alias.h"
 #include "base/debug/trace_event.h"
 #include "base/files/file_path.h"
+#include "base/i18n/char_iterator.h"
 #include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
@@ -518,7 +519,7 @@ static bool IsNonLocalTopLevelNavigation(const GURL& url,
   // 2. The origin of the url and the opener is the same in which case the
   //    opener relationship is maintained.
   // 3. Reloads/form submits/back forward navigations
-  if (!url.SchemeIs(chrome::kHttpScheme) && !url.SchemeIs(chrome::kHttpsScheme))
+  if (!url.SchemeIs(chrome::kHttpScheme) && !url.SchemeIs(kHttpsScheme))
     return false;
 
   if (type != WebKit::WebNavigationTypeReload &&
@@ -2226,13 +2227,16 @@ bool RenderViewImpl::RunJavaScriptMessage(JavaScriptMessageType type,
                                           const string16& default_value,
                                           const GURL& frame_url,
                                           string16* result) {
+  bool user_gesture = WebUserGestureIndicator::isProcessingUserGesture();
   bool success = false;
   string16 result_temp;
   if (!result)
     result = &result_temp;
 
   SendAndRunNestedMessageLoop(new ViewHostMsg_RunJavaScriptMessage(
-      routing_id_, message, default_value, frame_url, type, &success, result));
+      routing_id_, message, default_value, frame_url, type, user_gesture,
+      &success, result));
+  WebUserGestureIndicator::consumeUserGesture();
   return success;
 }
 
@@ -2387,12 +2391,6 @@ bool RenderViewImpl::shouldReportDetailedMessageForSource(
     const WebString& source) {
   return GetContentClient()->renderer()->ShouldReportDetailedMessageForSource(
       source);
-}
-
-void RenderViewImpl::didAddMessageToConsole(
-    const WebConsoleMessage& message, const WebString& source_name,
-    unsigned source_line) {
-  didAddMessageToConsole(message, source_name, source_line, WebString());
 }
 
 void RenderViewImpl::didAddMessageToConsole(
@@ -2980,19 +2978,6 @@ void RenderViewImpl::initializeLayerTreeView() {
 
 // WebKit::WebFrameClient -----------------------------------------------------
 
-WebKit::WebPlugin* RenderViewImpl::createPlugin(WebFrame* frame,
-                                                const WebPluginParams& params) {
-  NOTREACHED();
-  return NULL;
-}
-
-WebSharedWorker* RenderViewImpl::createSharedWorker(
-    WebFrame* frame, const WebURL& url, const WebString& name,
-    unsigned long long document_id) {
-  NOTREACHED();
-  return NULL;
-}
-
 WebMediaPlayer* RenderViewImpl::createMediaPlayer(
     WebFrame* frame, const WebKit::WebURL& url, WebMediaPlayerClient* client) {
   FOR_EACH_OBSERVER(
@@ -3002,7 +2987,7 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
 #if defined(ENABLE_WEBRTC)
   EnsureMediaStreamClient();
 #if !defined(GOOGLE_TV)
-  if (media_stream_client_->IsMediaStream(url)) {
+  if (media_stream_client_ && media_stream_client_->IsMediaStream(url)) {
 #if defined(OS_ANDROID) && defined(ARCH_CPU_ARMEL)
     bool found_neon =
         (android_getCpuFeatures() & ANDROID_CPU_ARM_FEATURE_NEON) != 0;
@@ -3097,12 +3082,6 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
   return new WebMediaPlayerImpl(frame, client, AsWeakPtr(), params);
 }
 
-WebApplicationCacheHost* RenderViewImpl::createApplicationCacheHost(
-    WebFrame* frame, WebApplicationCacheHostClient* client) {
-  NOTREACHED();
-  return NULL;
-}
-
 WebCookieJar* RenderViewImpl::cookieJar(WebFrame* frame) {
   return &cookie_jar_;
 }
@@ -3112,10 +3091,6 @@ void RenderViewImpl::didAccessInitialDocument(WebFrame* frame) {
   // URL of the main frame, since a URL spoof is now possible.
   if (!frame->parent() && page_id_ == -1)
     Send(new ViewHostMsg_DidAccessInitialDocument(routing_id_));
-}
-
-void RenderViewImpl::didCreateFrame(WebFrame* parent, WebFrame* child) {
-  NOTREACHED();
 }
 
 void RenderViewImpl::didDisownOpener(WebKit::WebFrame* frame) {
@@ -3136,17 +3111,6 @@ void RenderViewImpl::frameDetached(WebFrame* frame) {
 
 void RenderViewImpl::willClose(WebFrame* frame) {
   FOR_EACH_OBSERVER(RenderViewObserver, observers_, FrameWillClose(frame));
-}
-
-void RenderViewImpl::didChangeName(WebFrame* frame,
-                                   const WebString& name)  {
-  NOTREACHED();
-}
-
-void RenderViewImpl::loadURLExternally(
-    WebFrame* frame, const WebURLRequest& request,
-    WebNavigationPolicy policy) {
-  NOTREACHED();
 }
 
 void RenderViewImpl::Repaint(const gfx::Size& size) {
@@ -3176,13 +3140,6 @@ SSLStatus RenderViewImpl::GetSSLStatusOfFrame(WebKit::WebFrame* frame) const {
                           &ssl_status.security_bits,
                           &ssl_status.connection_status);
   return ssl_status;
-}
-
-void RenderViewImpl::loadURLExternally(
-    WebFrame* frame, const WebURLRequest& request,
-    WebNavigationPolicy policy,
-    const WebString& suggested_name) {
-  NOTREACHED();
 }
 
 WebNavigationPolicy RenderViewImpl::decidePolicyForNavigation(
@@ -4227,13 +4184,17 @@ bool RenderViewImpl::ShouldUpdateSelectionTextFromContextMenuParams(
 void RenderViewImpl::reportFindInPageMatchCount(int request_id,
                                                 int count,
                                                 bool final_update) {
-  NOTREACHED();
+  // TODO(jam): switch PepperPluginInstanceImpl to take a RenderFrame
+  main_render_frame_->reportFindInPageMatchCount(
+      request_id, count, final_update);
 }
 
 void RenderViewImpl::reportFindInPageSelection(int request_id,
                                                int active_match_ordinal,
                                                const WebRect& selection_rect) {
-  NOTREACHED();
+  // TODO(jam): switch PepperPluginInstanceImpl to take a RenderFrame
+  main_render_frame_->reportFindInPageSelection(
+      request_id, active_match_ordinal, selection_rect);
 }
 
 void RenderViewImpl::requestStorageQuota(
@@ -5936,15 +5897,22 @@ void RenderViewImpl::OnImeConfirmComposition(const string16& text,
       return;
 
     if (!IsPepperAcceptingCompositionEvents()) {
-      for (size_t i = 0; i < text.size(); ++i) {
+      base::i18n::UTF16CharIterator iterator(&last_text);
+      int32 i = 0;
+      while (iterator.Advance()) {
         WebKit::WebKeyboardEvent char_event;
         char_event.type = WebKit::WebInputEvent::Char;
         char_event.timeStampSeconds = base::Time::Now().ToDoubleT();
         char_event.modifiers = 0;
         char_event.windowsKeyCode = last_text[i];
         char_event.nativeKeyCode = last_text[i];
-        char_event.text[0] = last_text[i];
-        char_event.unmodifiedText[0] = last_text[i];
+
+        const int32 char_start = i;
+        for (; i < iterator.array_pos(); ++i) {
+          char_event.text[i - char_start] = last_text[i];
+          char_event.unmodifiedText[i - char_start] = last_text[i];
+        }
+
         if (webwidget())
           webwidget()->handleInputEvent(char_event);
       }
@@ -6418,11 +6386,12 @@ bool RenderViewImpl::didTapMultipleTargets(
   if (!new_total_scale)
     return false;
 
-  TapMultipleTargetsStrategy multitarget_strategy =
-    renderer_preferences_.tap_multiple_targets_strategy;
-  if (multitarget_strategy == TAP_MULTIPLE_TARGETS_STRATEGY_ZOOM) {
-      return webview()->zoomToMultipleTargetsRect(zoom_rect);
-  } else if (multitarget_strategy == TAP_MULTIPLE_TARGETS_STRATEGY_POPUP) {
+  bool handled = false;
+  switch (renderer_preferences_.tap_multiple_targets_strategy) {
+    case TAP_MULTIPLE_TARGETS_STRATEGY_ZOOM:
+      handled = webview()->zoomToMultipleTargetsRect(zoom_rect);
+      break;
+    case TAP_MULTIPLE_TARGETS_STRATEGY_POPUP: {
       gfx::Size canvas_size =
           gfx::ToCeiledSize(gfx::ScaleSize(zoom_rect.size(), new_total_scale));
       TransportDIB* transport_dib = NULL;
@@ -6430,8 +6399,10 @@ bool RenderViewImpl::didTapMultipleTargets(
         scoped_ptr<skia::PlatformCanvas> canvas(
             RenderProcess::current()->GetDrawingCanvas(&transport_dib,
                                                        gfx::Rect(canvas_size)));
-        if (!canvas)
-          return false;
+        if (!canvas) {
+          handled = false;
+          break;
+        }
 
         // TODO(trchen): Cleanup the device scale factor mess.
         // device scale will be applied in WebKit
@@ -6454,11 +6425,15 @@ bool RenderViewImpl::didTapMultipleTargets(
                                                    physical_window_zoom_rect,
                                                    canvas_size,
                                                    transport_dib->id()));
-  } else {
-    return false;
+      handled = true;
+      break;
+    }
+    case TAP_MULTIPLE_TARGETS_STRATEGY_NONE:
+      // No-op.
+      break;
   }
 
-  return true;
+  return handled;
 }
 #endif
 
@@ -6542,6 +6517,5 @@ void RenderViewImpl::DidStopLoadingIcons() {
   }
   SendUpdateFaviconURL(urls);
 }
-
 
 }  // namespace content

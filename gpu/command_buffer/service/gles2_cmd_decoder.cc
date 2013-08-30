@@ -68,6 +68,10 @@
 #include "ui/gl/io_surface_support_mac.h"
 #endif
 
+#if defined(OS_WIN)
+#include "base/win/win_util.h"
+#endif
+
 // TODO(zmo): we can't include "City.h" due to type def conflicts.
 extern uint64 CityHash64(const char*, size_t);
 
@@ -2720,6 +2724,9 @@ bool GLES2DecoderImpl::MakeCurrent() {
     if (workarounds().exit_on_context_lost) {
       LOG(ERROR) << "Exiting GPU process because some drivers cannot reset"
                  << " a D3D device in the Chrome GPU process sandbox.";
+#if defined(OS_WIN)
+      base::win::SetShouldCrashOnProcessDetach(false);
+#endif
       exit(0);
     }
 
@@ -6716,7 +6723,13 @@ void GLES2DecoderImpl::FinishReadPixels(
 
   if (buffer != 0) {
     glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, buffer);
-    void* data = glMapBuffer(GL_PIXEL_PACK_BUFFER_ARB, GL_READ_ONLY);
+    void* data;
+    if (features().map_buffer_range) {
+      data = glMapBufferRange(
+          GL_PIXEL_PACK_BUFFER_ARB, 0, pixels_size, GL_MAP_READ_BIT);
+    } else {
+      data = glMapBuffer(GL_PIXEL_PACK_BUFFER_ARB, GL_READ_ONLY);
+    }
     memcpy(pixels, data, pixels_size);
     // GL_PIXEL_PACK_BUFFER_ARB is currently unused, so we don't
     // have to restore the state.
@@ -9010,8 +9023,8 @@ error::Error GLES2DecoderImpl::HandleBeginQueryEXT(
   switch (target) {
     case GL_COMMANDS_ISSUED_CHROMIUM:
     case GL_LATENCY_QUERY_CHROMIUM:
-    case GL_ASYNC_PIXEL_TRANSFERS_COMPLETED_CHROMIUM:
-    case GL_ASYNC_READ_PIXELS_COMPLETED_CHROMIUM:
+    case GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM:
+    case GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM:
     case GL_GET_ERROR_QUERY_CHROMIUM:
       break;
     default:
@@ -9479,7 +9492,6 @@ void GLES2DecoderImpl::DoCopyTextureCHROMIUM(
   }
 
   if (source_texture->target() == GL_TEXTURE_EXTERNAL_OES) {
-    UpdateStreamTextureIfNeeded(source_texture);
     DCHECK(stream_texture_manager());
     StreamTexture* stream_tex =
         stream_texture_manager()->LookupStreamTexture(

@@ -63,6 +63,7 @@ const char kUseRemoteNTPOnStartupFlagName[] = "use_remote_ntp_on_startup";
 const char kShowNtpFlagName[] = "show_ntp";
 const char kRecentTabsOnNTPFlagName[] = "show_recent_tabs";
 const char kUseCacheableNTP[] = "use_cacheable_ntp";
+const char kPrefetchSearchResultsOnSRP[] = "prefetch_results_srp";
 
 // Constants for the field trial name and group prefix.
 const char kInstantExtendedFieldTrialName[] = "InstantExtended";
@@ -140,7 +141,7 @@ bool MatchesOrigin(const GURL& my_url, const GURL& other_url) {
   return my_url.host() == other_url.host() &&
          my_url.port() == other_url.port() &&
          (my_url.scheme() == other_url.scheme() ||
-          (my_url.SchemeIs(chrome::kHttpsScheme) &&
+          (my_url.SchemeIs(content::kHttpsScheme) &&
            other_url.SchemeIs(chrome::kHttpScheme)));
 }
 
@@ -430,7 +431,7 @@ GURL GetInstantURL(Profile* profile, int start_margin) {
       google_util::StartsWithCommandLineGoogleBaseURL(instant_url))
     return instant_url;
   GURL::Replacements replacements;
-  const std::string secure_scheme(chrome::kHttpsScheme);
+  const std::string secure_scheme(content::kHttpsScheme);
   replacements.SetSchemeStr(secure_scheme);
   return instant_url.ReplaceComponents(replacements);
 }
@@ -630,6 +631,25 @@ InstantSupportState GetInstantSupportStateFromNavigationEntry(
     return INSTANT_SUPPORT_UNKNOWN;
 
   return StringToInstantSupportState(value);
+}
+
+bool ShouldPrefetchSearchResultsOnSRP() {
+  // Check the command-line/about:flags setting first, which should have
+  // precedence and allows the trial to not be reported (if it's never queried).
+  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kDisableInstantExtendedAPI) ||
+      command_line->HasSwitch(switches::kEnableInstantExtendedAPI)) {
+    return false;
+  }
+
+  FieldTrialFlags flags;
+  if (GetFieldTrialInfo(
+          base::FieldTrialList::FindFullName(kInstantExtendedFieldTrialName),
+          &flags, NULL)) {
+    return GetBoolValueForFlagWithDefault(kPrefetchSearchResultsOnSRP, false,
+                                          flags);
+  }
+  return false;
 }
 
 void EnableInstantExtendedAPIForTesting() {

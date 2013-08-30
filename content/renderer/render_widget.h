@@ -15,7 +15,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
-#include "cc/debug/rendering_stats.h"
+#include "cc/debug/rendering_stats_instrumentation.h"
 #include "content/common/browser_rendering_stats.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
@@ -176,15 +176,15 @@ class CONTENT_EXPORT RenderWidget
 
   virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(bool fallback);
 
-  // Callback for use with BeginSmoothScroll.
-  typedef base::Callback<void()> SmoothScrollCompletionCallback;
+  // Callback for use with synthetic gestures (e.g. BeginSmoothScroll).
+  typedef base::Callback<void()> SyntheticGestureCompletionCallback;
 
   // Directs the host to begin a smooth scroll. This scroll should have the same
   // performance characteristics as a user-initiated scroll. Returns an ID of
   // the scroll gesture. |mouse_event_x| and |mouse_event_y| are expected to be
   // in local DIP coordinates.
   void BeginSmoothScroll(bool scroll_down,
-                         const SmoothScrollCompletionCallback& callback,
+                         const SyntheticGestureCompletionCallback& callback,
                          int pixels_to_scroll,
                          int mouse_event_x,
                          int mouse_event_y);
@@ -314,7 +314,7 @@ class CONTENT_EXPORT RenderWidget
                      const gfx::Size& page_size,
                      const gfx::Size& desired_size);
   void OnRepaint(gfx::Size size_to_paint);
-  void OnSmoothScrollCompleted();
+  void OnSyntheticGestureCompleted();
   void OnSetTextDirection(WebKit::WebTextDirection direction);
   void OnGetFPS();
   void OnUpdateScreenRects(const gfx::Rect& view_screen_rect,
@@ -693,7 +693,8 @@ class CONTENT_EXPORT RenderWidget
   bool has_disable_gpu_vsync_switch_;
   base::TimeTicks last_do_deferred_update_time_;
 
-  cc::RenderingStats software_stats_;
+  // Stats for legacy software mode
+  scoped_ptr<cc::RenderingStatsInstrumentation> legacy_software_mode_stats_;
 
   // UpdateRect parameters for the current compositing pass. This is used to
   // pass state between DoDeferredUpdate and OnSwapBuffersPosted.
@@ -713,8 +714,9 @@ class CONTENT_EXPORT RenderWidget
   // |screen_info_| on some platforms, and defaults to 1 on other platforms.
   float device_scale_factor_;
 
-  // State associated with the BeginSmoothScroll synthetic scrolling function.
-  SmoothScrollCompletionCallback pending_smooth_scroll_gesture_;
+  // State associated with the synthetic gestures function
+  // (e.g. BeginSmoothScroll).
+  SyntheticGestureCompletionCallback pending_synthetic_gesture_;
 
   // Specified whether the compositor will run in its own thread.
   bool is_threaded_compositing_enabled_;

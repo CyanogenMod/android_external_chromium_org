@@ -13,6 +13,8 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "chrome/browser/autocomplete/autocomplete_classifier.h"
+#include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
@@ -296,7 +298,7 @@ void ZeroSuggestProvider::FillResults(
       }
     } else {
       suggest_results->push_back(SearchProvider::SuggestResult(
-          result, false, relevance, relevances != NULL));
+          result, false, relevance, relevances != NULL, false));
     }
   }
 }
@@ -390,7 +392,7 @@ void ZeroSuggestProvider::Run() {
       ReplaceSearchTerms(search_term_args);
   GURL suggest_url(req_url);
   // Make sure we are sending the suggest request through HTTPS.
-  if (!suggest_url.SchemeIs(chrome::kHttpsScheme)) {
+  if (!suggest_url.SchemeIs(content::kHttpsScheme)) {
     Stop(true);
     return;
   }
@@ -460,9 +462,9 @@ AutocompleteMatch ZeroSuggestProvider::MatchForCurrentURL() {
                           GURL(current_query_), current_page_classification_,
                           false, false, true, AutocompleteInput::ALL_MATCHES);
 
-  AutocompleteMatch match(
-      HistoryURLProvider::SuggestExactInput(this, input,
-                                            !HasHTTPScheme(input.text())));
+  AutocompleteMatch match;
+  AutocompleteClassifierFactory::GetForProfile(profile_)->Classify(
+      permanent_text_, false, true, &match, NULL);
   match.is_history_what_you_typed_match = false;
   match.allowed_to_be_default_match = true;
 

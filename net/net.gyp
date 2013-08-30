@@ -869,6 +869,8 @@
         'socket/nss_ssl_util.cc',
         'socket/nss_ssl_util.h',
         'socket/server_socket.h',
+        'socket/socket_descriptor.cc',
+        'socket/socket_descriptor.h',
         'socket/socket_net_log_params.cc',
         'socket/socket_net_log_params.h',
         'socket/socket.h',
@@ -2908,6 +2910,21 @@
             'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)net_unittests<(SHARED_LIB_SUFFIX)',
           },
           'includes': [ '../build/apk_test.gypi' ],
+        },
+      ],
+    }],
+    ['OS == "android" or OS == "linux"', {
+      'targets': [
+        {
+          'target_name': 'disk_cache_memory_test',
+          'type': 'executable',
+          'dependencies': [
+            '../base/base.gyp:base',
+            'net',
+          ],
+          'sources': [
+            'tools/disk_cache_memory_test/disk_cache_memory_test.cc',
+          ],
         },
       ],
     }],

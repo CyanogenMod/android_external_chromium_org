@@ -80,7 +80,6 @@ LOCAL_SRC_FILES := \
 	content/browser/accessibility/browser_accessibility_manager.cc \
 	content/browser/accessibility/browser_accessibility_manager_android.cc \
 	content/browser/accessibility/browser_accessibility_state_impl.cc \
-	content/browser/android/android_browser_process.cc \
 	content/browser/android/browser_jni_registrar.cc \
 	content/browser/android/browser_media_player_manager.cc \
 	content/browser/android/browser_startup_controller.cc \
@@ -203,14 +202,15 @@ LOCAL_SRC_FILES := \
 	content/browser/font_list_async.cc \
 	content/browser/gamepad/gamepad_provider.cc \
 	content/browser/gamepad/gamepad_service.cc \
-	content/browser/geolocation/device_data_provider.cc \
-	content/browser/geolocation/empty_device_data_provider.cc \
+	content/browser/geolocation/empty_wifi_data_provider.cc \
 	content/browser/geolocation/geolocation_dispatcher_host.cc \
 	content/browser/geolocation/geolocation_provider_impl.cc \
 	content/browser/geolocation/location_api_adapter_android.cc \
 	content/browser/geolocation/location_arbitrator_impl.cc \
 	content/browser/geolocation/location_provider_android.cc \
 	content/browser/geolocation/location_provider_base.cc \
+	content/browser/geolocation/wifi_data.cc \
+	content/browser/geolocation/wifi_data_provider.cc \
 	content/browser/geolocation/wifi_data_provider_common.cc \
 	content/browser/gpu/browser_gpu_channel_host_factory.cc \
 	content/browser/gpu/compositor_util.cc \
@@ -357,12 +357,12 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/render_widget_host_view_android.cc \
 	content/browser/renderer_host/render_widget_host_view_base.cc \
 	content/browser/renderer_host/render_widget_host_view_guest.cc \
-	content/browser/renderer_host/smooth_scroll_calculator.cc \
-	content/browser/renderer_host/smooth_scroll_gesture_controller.cc \
+	content/browser/renderer_host/synthetic_gesture_calculator.cc \
+	content/browser/renderer_host/synthetic_gesture_controller.cc \
 	content/browser/renderer_host/socket_stream_dispatcher_host.cc \
 	content/browser/renderer_host/socket_stream_host.cc \
 	content/browser/renderer_host/surface_texture_transport_client_android.cc \
-	content/browser/renderer_host/touch_smooth_scroll_gesture_android.cc \
+	content/browser/renderer_host/generic_touch_gesture_android.cc \
 	content/browser/resolve_proxy_msg_helper.cc \
 	content/browser/resource_context_impl.cc \
 	content/browser/site_instance_impl.cc \

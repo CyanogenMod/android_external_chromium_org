@@ -6,9 +6,10 @@
 
 #include "base/bind.h"
 #include "base/location.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/synchronization/lock.h"
 #include "cc/layers/texture_layer_client.h"
 #include "cc/layers/texture_layer_impl.h"
+#include "cc/trees/blocking_task_runner.h"
 #include "cc/trees/layer_tree_host.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 
@@ -124,6 +125,9 @@ void TextureLayer::SetTextureId(unsigned id) {
     layer_tree_host()->AcquireLayerTextures();
   texture_id_ = id;
   SetNeedsCommit();
+  // The texture id needs to be removed from the active tree before the
+  // commit is called complete.
+  SetNextCommitWaitsForActivation();
 }
 
 void TextureLayer::SetTextureMailbox(const TextureMailbox& mailbox) {
@@ -137,6 +141,9 @@ void TextureLayer::SetTextureMailbox(const TextureMailbox& mailbox) {
     holder_ref_.reset();
   needs_set_mailbox_ = true;
   SetNeedsCommit();
+  // The active frame needs to be replaced and the mailbox returned before the
+  // commit is called complete.
+  SetNextCommitWaitsForActivation();
 }
 
 void TextureLayer::WillModifyTexture() {
@@ -160,16 +167,24 @@ void TextureLayer::SetLayerTreeHost(LayerTreeHost* host) {
   }
 
   if (layer_tree_host()) {
-    if (texture_id_)
+    if (texture_id_) {
       layer_tree_host()->AcquireLayerTextures();
+      // The texture id needs to be removed from the active tree before the
+      // commit is called complete.
+      SetNextCommitWaitsForActivation();
+    }
     if (rate_limit_context_ && client_)
       layer_tree_host()->StopRateLimiter(client_->Context3d());
   }
   // If we're removed from the tree, the TextureLayerImpl will be destroyed, and
   // we will need to set the mailbox again on a new TextureLayerImpl the next
   // time we push.
-  if (!host && uses_mailbox_ && holder_ref_)
+  if (!host && uses_mailbox_ && holder_ref_) {
     needs_set_mailbox_ = true;
+    // The active frame needs to be replaced and the mailbox returned before the
+    // commit is called complete.
+    SetNextCommitWaitsForActivation();
+  }
   Layer::SetLayerTreeHost(host);
 }
 
@@ -195,6 +210,9 @@ bool TextureLayer::Update(ResourceUpdateQueue* queue,
           client_->Context3d()->getGraphicsResetStatusARB() != GL_NO_ERROR)
         texture_id_ = 0;
       updated = true;
+      // The texture id needs to be removed from the active tree before the
+      // commit is called complete.
+      SetNextCommitWaitsForActivation();
     }
   }
 
@@ -240,13 +258,6 @@ Region TextureLayer::VisibleContentOpaqueRegion() const {
   return Region();
 }
 
-bool TextureLayer::BlocksPendingCommit() const {
-  // Double-buffered texture layers need to be blocked until they can be made
-  // triple-buffered.  Single-buffered layers already prevent draws, so
-  // can block too for simplicity.
-  return DrawsContent();
-}
-
 bool TextureLayer::CanClipSelf() const {
   return true;
 }
@@ -262,7 +273,7 @@ TextureLayer::MailboxHolder::MainThreadReference::~MainThreadReference() {
 }
 
 TextureLayer::MailboxHolder::MailboxHolder(const TextureMailbox& mailbox)
-    : message_loop_(base::MessageLoopProxy::current()),
+    : message_loop_(BlockingTaskRunner::current()),
       internal_references_(0),
       mailbox_(mailbox),
       sync_point_(mailbox.sync_point()),
@@ -280,6 +291,7 @@ TextureLayer::MailboxHolder::Create(const TextureMailbox& mailbox) {
 }
 
 void TextureLayer::MailboxHolder::Return(unsigned sync_point, bool is_lost) {
+  base::AutoLock lock(arguments_lock_);
   sync_point_ = sync_point;
   is_lost_ = is_lost;
 }
@@ -301,22 +313,15 @@ void TextureLayer::MailboxHolder::InternalRelease() {
   DCHECK(message_loop_->BelongsToCurrentThread());
   if (!--internal_references_) {
     mailbox_.RunReleaseCallback(sync_point_, is_lost_);
-    mailbox_ = TextureMailbox();
+    DCHECK(mailbox_.callback().is_null());
   }
-}
-
-void TextureLayer::MailboxHolder::ReturnAndReleaseOnMainThread(
-    unsigned sync_point, bool is_lost) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-  Return(sync_point, is_lost);
-  InternalRelease();
 }
 
 void TextureLayer::MailboxHolder::ReturnAndReleaseOnImplThread(
     unsigned sync_point, bool is_lost) {
-  message_loop_->PostTask(FROM_HERE, base::Bind(
-      &MailboxHolder::ReturnAndReleaseOnMainThread,
-      this, sync_point, is_lost));
+  Return(sync_point, is_lost);
+  message_loop_->PostTask(FROM_HERE,
+                          base::Bind(&MailboxHolder::InternalRelease, this));
 }
 
 }  // namespace cc

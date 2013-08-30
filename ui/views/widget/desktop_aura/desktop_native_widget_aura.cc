@@ -29,13 +29,13 @@
 #include "ui/views/corewm/input_method_event_filter.h"
 #include "ui/views/corewm/shadow_controller.h"
 #include "ui/views/corewm/shadow_types.h"
-#include "ui/views/corewm/tooltip_controller.h"
 #include "ui/views/corewm/visibility_controller.h"
 #include "ui/views/corewm/window_modality_controller.h"
 #include "ui/views/drag_utils.h"
 #include "ui/views/ime/input_method.h"
 #include "ui/views/ime/input_method_bridge.h"
 #include "ui/views/widget/desktop_aura/desktop_root_window_host.h"
+#include "ui/views/widget/desktop_aura/scoped_tooltip_client.h"
 #include "ui/views/widget/drop_helper.h"
 #include "ui/views/widget/native_widget_aura.h"
 #include "ui/views/widget/native_widget_aura_window_observer.h"
@@ -56,38 +56,41 @@ DEFINE_WINDOW_PROPERTY_KEY(DesktopNativeWidgetAura*,
 
 namespace {
 
-// This class provides functionality to create a top level fullscreen widget to
-// host a child window.
-class DesktopNativeWidgetFullscreenHandler : public aura::WindowObserver {
+// This class provides functionality to create a top level widget to host a
+// child window.
+class DesktopNativeWidgetTopLevelHandler : public aura::WindowObserver {
  public:
-  // This function creates a full screen widget with the bounds passed in
-  // which eventually becomes the parent of the child window passed in.
+  // This function creates a widget with the bounds passed in which eventually
+  // becomes the parent of the child window passed in.
   static aura::Window* CreateParentWindow(aura::Window* child_window,
-                                          const gfx::Rect& bounds) {
-    // This instance will get deleted when the fullscreen widget is destroyed.
-    DesktopNativeWidgetFullscreenHandler* full_screen_handler =
-        new DesktopNativeWidgetFullscreenHandler;
+                                          const gfx::Rect& bounds,
+                                          bool full_screen) {
+    // This instance will get deleted when the widget is destroyed.
+    DesktopNativeWidgetTopLevelHandler* top_level_handler =
+        new DesktopNativeWidgetTopLevelHandler;
 
     child_window->SetBounds(gfx::Rect(bounds.size()));
 
     Widget::InitParams init_params;
-    init_params.type = Widget::InitParams::TYPE_WINDOW;
+    init_params.type = full_screen ? Widget::InitParams::TYPE_WINDOW :
+        Widget::InitParams::TYPE_POPUP;
     init_params.bounds = bounds;
     init_params.ownership = Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET;
     init_params.layer_type = ui::LAYER_NOT_DRAWN;
+    init_params.accept_events = full_screen;
 
-    // This widget instance will get deleted when the fullscreen window is
+    // This widget instance will get deleted when the window is
     // destroyed.
-    full_screen_handler->full_screen_widget_ = new Widget();
-    full_screen_handler->full_screen_widget_->Init(init_params);
+    top_level_handler->top_level_widget_ = new Widget();
+    top_level_handler->top_level_widget_->Init(init_params);
 
-    full_screen_handler->full_screen_widget_->SetFullscreen(true);
-    full_screen_handler->full_screen_widget_->Show();
+    top_level_handler->top_level_widget_->SetFullscreen(full_screen);
+    top_level_handler->top_level_widget_->Show();
 
     aura::Window* native_window =
-        full_screen_handler->full_screen_widget_->GetNativeView();
-    child_window->AddObserver(full_screen_handler);
-    native_window->AddObserver(full_screen_handler);
+        top_level_handler->top_level_widget_->GetNativeView();
+    child_window->AddObserver(top_level_handler);
+    native_window->AddObserver(top_level_handler);
     return native_window;
   }
 
@@ -97,33 +100,33 @@ class DesktopNativeWidgetFullscreenHandler : public aura::WindowObserver {
 
     // If the widget is being destroyed by the OS then we should not try and
     // destroy it again.
-    if (full_screen_widget_ &&
-        window == full_screen_widget_->GetNativeView()) {
-      full_screen_widget_ = NULL;
+    if (top_level_widget_ &&
+        window == top_level_widget_->GetNativeView()) {
+      top_level_widget_ = NULL;
       return;
     }
 
-    if (full_screen_widget_) {
-      DCHECK(full_screen_widget_->GetNativeView());
-      full_screen_widget_->GetNativeView()->RemoveObserver(this);
-      // When we receive a notification that the child of the fullscreen window
-      // created above is being destroyed we go ahead and initiate the
-      // destruction of the corresponding widget.
-      full_screen_widget_->Close();
-      full_screen_widget_ = NULL;
+    if (top_level_widget_) {
+      DCHECK(top_level_widget_->GetNativeView());
+      top_level_widget_->GetNativeView()->RemoveObserver(this);
+      // When we receive a notification that the child of the window created
+      // above is being destroyed we go ahead and initiate the destruction of
+      // the corresponding widget.
+      top_level_widget_->Close();
+      top_level_widget_ = NULL;
     }
     delete this;
   }
 
  private:
-  DesktopNativeWidgetFullscreenHandler()
-      : full_screen_widget_(NULL) {}
+  DesktopNativeWidgetTopLevelHandler()
+      : top_level_widget_(NULL) {}
 
-  virtual ~DesktopNativeWidgetFullscreenHandler() {}
+  virtual ~DesktopNativeWidgetTopLevelHandler() {}
 
-  Widget* full_screen_widget_;
+  Widget* top_level_widget_;
 
-  DISALLOW_COPY_AND_ASSIGN(DesktopNativeWidgetFullscreenHandler);
+  DISALLOW_COPY_AND_ASSIGN(DesktopNativeWidgetTopLevelHandler);
 };
 
 class DesktopNativeWidgetAuraStackingClient :
@@ -141,10 +144,11 @@ class DesktopNativeWidgetAuraStackingClient :
   virtual aura::Window* GetDefaultParent(aura::Window* context,
                                          aura::Window* window,
                                          const gfx::Rect& bounds) OVERRIDE {
-    if (window->GetProperty(aura::client::kShowStateKey) ==
-            ui::SHOW_STATE_FULLSCREEN) {
-      return DesktopNativeWidgetFullscreenHandler::CreateParentWindow(window,
-                                                                      bounds);
+    bool full_screen = window->GetProperty(aura::client::kShowStateKey) ==
+        ui::SHOW_STATE_FULLSCREEN;
+    if (full_screen || window->type() == aura::client::WINDOW_TYPE_MENU) {
+      return DesktopNativeWidgetTopLevelHandler::CreateParentWindow(
+          window, bounds, full_screen);
     }
     return root_window_;
   }
@@ -256,11 +260,8 @@ void DesktopNativeWidgetAura::InitNativeWidget(
   aura::client::SetDragDropDelegate(window_, this);
 
   tooltip_manager_.reset(new views::TooltipManagerAura(window_, GetWidget()));
-  tooltip_controller_.reset(
-      new corewm::TooltipController(gfx::SCREEN_TYPE_NATIVE));
-  aura::client::SetTooltipClient(root_window_.get(),
-                                 tooltip_controller_.get());
-  root_window_->AddPreTargetHandler(tooltip_controller_.get());
+
+  scoped_tooltip_client_.reset(new ScopedTooltipClient(root_window_.get()));
 
   if (params.opacity == Widget::InitParams::TRANSLUCENT_WINDOW) {
     visibility_controller_.reset(new views::corewm::VisibilityController);
@@ -716,11 +717,7 @@ void DesktopNativeWidgetAura::OnWindowDestroying() {
   shadow_controller_.reset();
   // The DesktopRootWindowHost implementation sends OnNativeWidgetDestroying().
   tooltip_manager_.reset();
-  if (tooltip_controller_.get()) {
-    root_window_->RemovePreTargetHandler(tooltip_controller_.get());
-    tooltip_controller_.reset();
-    aura::client::SetTooltipClient(root_window_.get(), NULL);
-  }
+  scoped_tooltip_client_.reset();
   if (window_modality_controller_) {
     root_window_->RemovePreTargetHandler(window_modality_controller_.get());
     window_modality_controller_.reset();

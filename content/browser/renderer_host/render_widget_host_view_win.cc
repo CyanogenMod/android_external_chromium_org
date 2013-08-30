@@ -12,8 +12,9 @@
 #include <map>
 #include <stack>
 
+#include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/i18n/rtl.h"
@@ -885,7 +886,7 @@ void RenderWidgetHostViewWin::CopyFromCompositingSurface(
   if (dst_size.IsEmpty() || src_subrect.IsEmpty())
     return;
 
-  scoped_callback_runner.Release();
+  ignore_result(scoped_callback_runner.Release());
   accelerated_surface_->AsyncCopyTo(src_subrect, dst_size, callback);
 }
 
@@ -904,7 +905,7 @@ void RenderWidgetHostViewWin::CopyFromCompositingSurfaceToVideoFrame(
   if (src_subrect.IsEmpty())
     return;
 
-  scoped_callback_runner.Release();
+  ignore_result(scoped_callback_runner.Release());
   accelerated_surface_->AsyncCopyToVideoFrame(src_subrect, target, callback);
 }
 
@@ -1050,7 +1051,7 @@ ui::TextInputMode RenderWidgetHostViewWin::GetTextInputMode() const {
     NOTREACHED();
     return ui::TEXT_INPUT_MODE_DEFAULT;
   }
-  return ui::TEXT_INPUT_MODE_DEFAULT;
+  return text_input_mode_;
 }
 
 bool RenderWidgetHostViewWin::CanComposeInline() const {
@@ -2169,18 +2170,20 @@ bool WebTouchState::UpdateTouchPoint(
     WebKit::WebTouchPoint* touch_point,
     TOUCHINPUT* touch_input) {
   CPoint coordinates(
-    TOUCH_COORD_TO_PIXEL(touch_input->x) / ui::win::GetUndocumentedDPIScale(),
-    TOUCH_COORD_TO_PIXEL(touch_input->y) / ui::win::GetUndocumentedDPIScale());
+      TOUCH_COORD_TO_PIXEL(touch_input->x) /
+      ui::win::GetUndocumentedDPITouchScale(),
+      TOUCH_COORD_TO_PIXEL(touch_input->y) /
+      ui::win::GetUndocumentedDPITouchScale());
   int radius_x = 1;
   int radius_y = 1;
   if (touch_input->dwMask & TOUCHINPUTMASKF_CONTACTAREA) {
     // Some touch drivers send a contact area of "-1", yet flag it as valid.
     radius_x = std::max(1,
         static_cast<int>(TOUCH_COORD_TO_PIXEL(touch_input->cxContact) /
-                         ui::win::GetUndocumentedDPIScale()));
+                         ui::win::GetUndocumentedDPITouchScale()));
     radius_y = std::max(1,
         static_cast<int>(TOUCH_COORD_TO_PIXEL(touch_input->cyContact) /
-                         ui::win::GetUndocumentedDPIScale()));
+                         ui::win::GetUndocumentedDPITouchScale()));
   }
 
   // Detect and exclude stationary moves.
@@ -2243,8 +2246,10 @@ LRESULT RenderWidgetHostViewWin::OnTouchEvent(UINT message, WPARAM wparam,
   if (total == 1 && (points[0].dwFlags & TOUCHEVENTF_DOWN)) {
     pointer_down_context_ = true;
     last_touch_location_ = gfx::Point(
-        TOUCH_COORD_TO_PIXEL(points[0].x) / ui::win::GetUndocumentedDPIScale(),
-        TOUCH_COORD_TO_PIXEL(points[0].y) / ui::win::GetUndocumentedDPIScale());
+        TOUCH_COORD_TO_PIXEL(points[0].x) /
+        ui::win::GetUndocumentedDPITouchScale(),
+        TOUCH_COORD_TO_PIXEL(points[0].y) /
+        ui::win::GetUndocumentedDPITouchScale());
   }
 
   bool should_forward = render_widget_host_->ShouldForwardTouchEvent() &&
@@ -3182,7 +3187,7 @@ void RenderWidgetHostViewWin::UpdateInputScopeIfNecessary(
     return;
 
   ui::tsf_inputscope::SetInputScopeForTsfUnawareWindow(
-      m_hWnd, text_input_type, ui::TEXT_INPUT_MODE_DEFAULT);
+      m_hWnd, text_input_type, text_input_mode_);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

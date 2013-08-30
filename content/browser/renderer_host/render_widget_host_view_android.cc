@@ -6,8 +6,9 @@
 
 #include <android/bitmap.h>
 
+#include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
@@ -28,10 +29,10 @@
 #include "content/browser/gpu/gpu_surface_tracker.h"
 #include "content/browser/renderer_host/compositor_impl_android.h"
 #include "content/browser/renderer_host/dip_util.h"
+#include "content/browser/renderer_host/generic_touch_gesture_android.h"
 #include "content/browser/renderer_host/image_transport_factory_android.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/surface_texture_transport_client_android.h"
-#include "content/browser/renderer_host/touch_smooth_scroll_gesture_android.h"
 #include "content/common/gpu/client/gl_helper.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/input_messages.h"
@@ -420,9 +421,9 @@ void RenderWidgetHostViewAndroid::OnTextInputStateChanged(
   // If an acknowledgement is required for this event, regardless of how we exit
   // from this method, we must acknowledge that we processed the input state
   // change.
-  base::ScopedClosureRunner ack_caller(base::Bind(&SendImeEventAck, host_));
-  if (!params.require_ack)
-    ack_caller.Release();
+  base::ScopedClosureRunner ack_caller;
+  if (params.require_ack)
+    ack_caller.Reset(base::Bind(&SendImeEventAck, host_));
 
   if (!IsShowing())
     return;
@@ -606,14 +607,14 @@ void RenderWidgetHostViewAndroid::ShowDisambiguationPopup(
   content_view_core_->ShowDisambiguationPopup(target_rect, zoomed_bitmap);
 }
 
-SmoothScrollGesture* RenderWidgetHostViewAndroid::CreateSmoothScrollGesture(
+SyntheticGesture* RenderWidgetHostViewAndroid::CreateSmoothScrollGesture(
     bool scroll_down, int pixels_to_scroll, int mouse_event_x,
     int mouse_event_y) {
-  return new TouchSmoothScrollGestureAndroid(
-      pixels_to_scroll,
+  return new GenericTouchGestureAndroid(
       GetRenderWidgetHost(),
-      content_view_core_->CreateSmoothScroller(
-          scroll_down, mouse_event_x, mouse_event_y));
+      content_view_core_->CreateGenericTouchGesture(
+          mouse_event_x, mouse_event_y,
+          0, scroll_down ? -pixels_to_scroll : pixels_to_scroll));
 }
 
 void RenderWidgetHostViewAndroid::OnAcceleratedCompositingStateChange() {
@@ -1228,7 +1229,7 @@ void RenderWidgetHostViewAndroid::PrepareTextureCopyOutputResult(
   if (!texture_mailbox->IsTexture())
     return;
 
-  scoped_callback_runner.Release();
+  ignore_result(scoped_callback_runner.Release());
 
   gl_helper->CropScaleReadbackAndCleanMailbox(
       texture_mailbox->name(),
@@ -1264,7 +1265,7 @@ void RenderWidgetHostViewAndroid::PrepareBitmapCopyOutputResult(
   DCHECK_EQ(source->width(), dst_size_in_pixel.width());
   DCHECK_EQ(source->height(), dst_size_in_pixel.height());
 
-  scoped_callback_runner.Release();
+  ignore_result(scoped_callback_runner.Release());
   callback.Run(true, *source);
 }
 

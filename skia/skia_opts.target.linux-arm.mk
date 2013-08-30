@@ -24,6 +24,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 LOCAL_SRC_FILES := \
 	third_party/skia/src/opts/SkBitmapProcState_opts_arm.cpp \
 	third_party/skia/src/opts/memset.arm.S \
+	third_party/skia/src/opts/SkBlitMask_opts_arm.cpp \
 	third_party/skia/src/opts/SkBlitRow_opts_arm.cpp \
 	third_party/skia/src/opts/opts_check_arm.cpp
 

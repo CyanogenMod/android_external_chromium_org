@@ -243,15 +243,6 @@ cr.define('apps_dev_tool', function() {
           ItemsList.launchApp(item.id);
         });
         launch.hidden = false;
-
-        // The 'Restart' link.
-        var restart = node.querySelector('.restart-link');
-        restart.addEventListener('click', function(e) {
-          chrome.developerPrivate.restart(item.id, function() {
-            ItemsList.loadItemsInfo();
-          });
-        });
-        restart.hidden = false;
       }
       // The terminated reload link.
       if (!item.terminated)
@@ -599,17 +590,16 @@ cr.define('apps_dev_tool', function() {
 
     // Scroll relatively to the position of the first item.
     var header = tabNode.querySelector('.unpacked-list .list-header');
-    var container = $('container');
-    if (node.offsetTop - header.offsetTop < container.scrollTop) {
+    if (node.offsetTop - header.offsetTop < tabNode.scrollTop) {
       // Some padding between the top edge and the node is already provided
       // by the HTML layout.
-      container.scrollTop = node.offsetTop - header.offsetTop;
-    } else if (node.offsetTop + node.offsetHeight > container.scrollTop +
-        container.offsetHeight + 20) {
+      tabNode.scrollTop = node.offsetTop - header.offsetTop;
+    } else if (node.offsetTop + node.offsetHeight > tabNode.scrollTop +
+        tabNode.offsetHeight + 20) {
       // Adds padding of 20px between the bottom edge and the bottom of the
       // node.
-      container.scrollTop = node.offsetTop + node.offsetHeight -
-          container.offsetHeight + 20;
+      tabNode.scrollTop = node.offsetTop + node.offsetHeight -
+          tabNode.offsetHeight + 20;
     }
   };
 

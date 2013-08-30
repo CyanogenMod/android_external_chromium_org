@@ -585,7 +585,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       media_internals,
       media_stream_manager));
   channel_->AddFilter(
-      new MIDIHost(BrowserMainLoop::GetInstance()->midi_manager()));
+      new MIDIHost(GetID(), BrowserMainLoop::GetInstance()->midi_manager()));
   channel_->AddFilter(new MIDIDispatcherHost(GetID(), browser_context));
   channel_->AddFilter(new VideoCaptureHost(media_stream_manager));
   channel_->AddFilter(new AppCacheDispatcherHost(
@@ -623,7 +623,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
 #endif
 #if defined(ENABLE_PLUGINS)
   // TODO(raymes): PepperMessageFilter should be removed from here.
-  channel_->AddFilter(new PepperMessageFilter(GetID(), browser_context));
+  channel_->AddFilter(PepperMessageFilter::CreateForRendererProcess());
   channel_->AddFilter(new PepperRendererConnection(GetID()));
 #endif
 #if defined(ENABLE_INPUT_SPEECH)
@@ -840,6 +840,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kAudioBufferSize,
     switches::kAuditAllHandles,
     switches::kAuditHandles,
+    switches::kBlockCrossSiteDocuments,
     switches::kDisable3DAPIs,
     switches::kDisableAcceleratedCompositing,
     switches::kDisableAcceleratedVideoDecode,
@@ -996,6 +997,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kWebCoreLogChannels,
     switches::kEnableWebGLDraftExtensions,
     switches::kEnableHTMLImports,
+    switches::kEnableInputModeAttribute,
     switches::kTraceToConsole,
     switches::kEnableDeviceMotion,
 #if defined(OS_ANDROID)
@@ -1007,8 +1009,10 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     cc::switches::kCompositeToMailbox,
     cc::switches::kDisableCompositedAntialiasing,
     cc::switches::kDisableImplSidePainting,
+    cc::switches::kDisableMapImage,
     cc::switches::kDisableThreadedAnimation,
     cc::switches::kEnableImplSidePainting,
+    cc::switches::kEnableMapImage,
     cc::switches::kEnablePartialSwap,
     cc::switches::kEnablePerTilePainting,
     cc::switches::kEnablePinchVirtualViewport,
@@ -1032,7 +1036,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     cc::switches::kTopControlsHideThreshold,
     cc::switches::kTopControlsShowThreshold,
     cc::switches::kTraceOverdraw,
-    cc::switches::kUseMapImage,
   };
   renderer_cmd->CopySwitchesFrom(browser_cmd, kSwitchNames,
                                  arraysize(kSwitchNames));

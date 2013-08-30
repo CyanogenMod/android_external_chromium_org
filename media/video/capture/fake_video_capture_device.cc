@@ -57,7 +57,8 @@ FakeVideoCaptureDevice::FakeVideoCaptureDevice(const Name& device_name)
       observer_(NULL),
       state_(kIdle),
       capture_thread_("CaptureThread"),
-      frame_count_(0) {
+      frame_count_(0),
+      capabilities_roster_index_(0) {
 }
 
 FakeVideoCaptureDevice::~FakeVideoCaptureDevice() {
@@ -91,8 +92,9 @@ void FakeVideoCaptureDevice::Allocate(
     capture_format_.frame_rate = 30;
   }
 
-  size_t fake_frame_size =
-      capture_format_.width * capture_format_.height * 3 / 2;
+  const size_t fake_frame_size = VideoFrame::AllocationSize(
+      VideoFrame::I420,
+      gfx::Size(capture_format_.width, capture_format_.height));
   fake_frame_.reset(new uint8[fake_frame_size]);
 
   state_ = kAllocated;
@@ -107,8 +109,9 @@ void FakeVideoCaptureDevice::Reallocate() {
   DVLOG(3) << "Reallocating FakeVideoCaptureDevice, new capture resolution ("
            << capture_format_.width << "x" << capture_format_.height << ")";
 
-  size_t fake_frame_size =
-      capture_format_.width * capture_format_.height * 3 / 2;
+  const size_t fake_frame_size = VideoFrame::AllocationSize(
+      VideoFrame::I420,
+      gfx::Size(capture_format_.width, capture_format_.height));
   fake_frame_.reset(new uint8[fake_frame_size]);
 
   observer_->OnFrameInfoChanged(capture_format_);
@@ -151,7 +154,9 @@ void FakeVideoCaptureDevice::OnCaptureTask() {
     return;
   }
 
-  int frame_size = capture_format_.width * capture_format_.height * 3 / 2;
+  const size_t frame_size = VideoFrame::AllocationSize(
+      VideoFrame::I420,
+      gfx::Size(capture_format_.width, capture_format_.height));
   memset(fake_frame_.get(), 0, frame_size);
 
   SkBitmap bitmap;

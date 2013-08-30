@@ -1541,27 +1541,28 @@ TEST_F(WidgetTest, DesktopNativeWidgetAuraNoPaintAfterHideTest) {
   widget.Close();
 }
 
-// This class provides functionality to test whether the destruction of full
-// screen child windows occurs correctly in desktop AURA without crashing.
+// This class provides functionality to create fullscreen and top level popup
+// windows. It additionally tests whether the destruction of these windows
+// occurs correctly in desktop AURA without crashing.
 // It provides facilities to test the following cases:-
 // 1. Child window destroyed which should lead to the destruction of the
 //    parent.
 // 2. Parent window destroyed which should lead to the child being destroyed.
-class DesktopAuraFullscreenChildWindowDestructionTest
+class DesktopAuraTopLevelWindowTest
     : public views::TestViewsDelegate,
       public aura::WindowObserver {
  public:
-  DesktopAuraFullscreenChildWindowDestructionTest()
-      : full_screen_widget_(NULL),
-        child_window_(NULL),
-        parent_destroyed_(false),
-        child_destroyed_(false) {}
+  DesktopAuraTopLevelWindowTest()
+      : top_level_widget_(NULL),
+        owned_window_(NULL),
+        owner_destroyed_(false),
+        owned_window_destroyed_(false) {}
 
-  virtual ~DesktopAuraFullscreenChildWindowDestructionTest() {
-    EXPECT_TRUE(parent_destroyed_);
-    EXPECT_TRUE(child_destroyed_);
-    full_screen_widget_ = NULL;
-    child_window_ = NULL;
+  virtual ~DesktopAuraTopLevelWindowTest() {
+    EXPECT_TRUE(owner_destroyed_);
+    EXPECT_TRUE(owned_window_destroyed_);
+    top_level_widget_ = NULL;
+    owned_window_ = NULL;
   }
 
   // views::TestViewsDelegate overrides.
@@ -1572,50 +1573,55 @@ class DesktopAuraFullscreenChildWindowDestructionTest
       params->native_widget = new views::DesktopNativeWidgetAura(delegate);
   }
 
-  void CreateFullscreenChildWindow(const gfx::Rect& bounds) {
+  void CreateTopLevelWindow(const gfx::Rect& bounds, bool fullscreen) {
     Widget::InitParams init_params;
     init_params.type = Widget::InitParams::TYPE_WINDOW;
     init_params.bounds = bounds;
     init_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
     init_params.layer_type = ui::LAYER_NOT_DRAWN;
+    init_params.accept_events = fullscreen;
 
     widget_.Init(init_params);
 
-    child_window_ = new aura::Window(&child_window_delegate_);
-    child_window_->SetType(aura::client::WINDOW_TYPE_NORMAL);
-    child_window_->Init(ui::LAYER_TEXTURED);
-    child_window_->SetName("TestFullscreenChildWindow");
-    child_window_->SetProperty(aura::client::kShowStateKey,
-                              ui::SHOW_STATE_FULLSCREEN);
-    child_window_->SetDefaultParentByRootWindow(
+    owned_window_ = new aura::Window(&child_window_delegate_);
+    owned_window_->SetType(aura::client::WINDOW_TYPE_NORMAL);
+    owned_window_->SetName("TestTopLevelWindow");
+    if (fullscreen) {
+      owned_window_->SetProperty(aura::client::kShowStateKey,
+                                 ui::SHOW_STATE_FULLSCREEN);
+    } else {
+      owned_window_->SetType(aura::client::WINDOW_TYPE_MENU);
+    }
+    owned_window_->Init(ui::LAYER_TEXTURED);
+    owned_window_->SetDefaultParentByRootWindow(
         widget_.GetNativeView()->GetRootWindow(), gfx::Rect(0, 0, 1900, 1600));
-    child_window_->Show();
-    child_window_->AddObserver(this);
+    owned_window_->Show();
+    owned_window_->AddObserver(this);
 
-    ASSERT_TRUE(child_window_->parent() != NULL);
-    child_window_->parent()->AddObserver(this);
+    ASSERT_TRUE(owned_window_->parent() != NULL);
+    owned_window_->parent()->AddObserver(this);
 
-    full_screen_widget_ =
-        views::Widget::GetWidgetForNativeView(child_window_->parent());
-    ASSERT_TRUE(full_screen_widget_ != NULL);
+    top_level_widget_ =
+        views::Widget::GetWidgetForNativeView(owned_window_->parent());
+    ASSERT_TRUE(top_level_widget_ != NULL);
   }
 
-  void DestroyChildWindow() {
-    ASSERT_TRUE(child_window_ != NULL);
-    delete child_window_;
+  void DestroyOwnedWindow() {
+    ASSERT_TRUE(owned_window_ != NULL);
+    delete owned_window_;
   }
 
-  void DestroyParentWindow() {
-    ASSERT_TRUE(full_screen_widget_ != NULL);
-    full_screen_widget_->CloseNow();
+  void DestroyOwnerWindow() {
+    ASSERT_TRUE(top_level_widget_ != NULL);
+    top_level_widget_->CloseNow();
   }
 
   virtual void OnWindowDestroying(aura::Window* window) OVERRIDE {
     window->RemoveObserver(this);
-    if (window == child_window_) {
-      child_destroyed_ = true;
-    } else if (window == full_screen_widget_->GetNativeView()) {
-      parent_destroyed_ = true;
+    if (window == owned_window_) {
+      owned_window_destroyed_ = true;
+    } else if (window == top_level_widget_->GetNativeView()) {
+      owner_destroyed_ = true;
     } else {
       ADD_FAILURE() << "Unexpected window destroyed callback: " << window;
     }
@@ -1623,35 +1629,46 @@ class DesktopAuraFullscreenChildWindowDestructionTest
 
  private:
   views::Widget widget_;
-  views::Widget* full_screen_widget_;
-  aura::Window* child_window_;
-  bool parent_destroyed_;
-  bool child_destroyed_;
+  views::Widget* top_level_widget_;
+  aura::Window* owned_window_;
+  bool owner_destroyed_;
+  bool owned_window_destroyed_;
   aura::test::TestWindowDelegate child_window_delegate_;
 
-  DISALLOW_COPY_AND_ASSIGN(DesktopAuraFullscreenChildWindowDestructionTest);
+  DISALLOW_COPY_AND_ASSIGN(DesktopAuraTopLevelWindowTest);
 };
 
-TEST_F(WidgetTest, DesktopAuraFullscreenChildDestroyedBeforeParentTest) {
+TEST_F(WidgetTest, DesktopAuraFullscreenWindowDestroyedBeforeOwnerTest) {
   ViewsDelegate::views_delegate = NULL;
-  DesktopAuraFullscreenChildWindowDestructionTest full_screen_child_test;
-  ASSERT_NO_FATAL_FAILURE(full_screen_child_test.CreateFullscreenChildWindow(
-      gfx::Rect(0, 0, 200, 200)));
+  DesktopAuraTopLevelWindowTest fullscreen_window;
+  ASSERT_NO_FATAL_FAILURE(fullscreen_window.CreateTopLevelWindow(
+      gfx::Rect(0, 0, 200, 200), true));
 
   RunPendingMessages();
-  ASSERT_NO_FATAL_FAILURE(full_screen_child_test.DestroyChildWindow());
+  ASSERT_NO_FATAL_FAILURE(fullscreen_window.DestroyOwnedWindow());
   RunPendingMessages();
 }
 
-TEST_F(WidgetTest, DesktopAuraFullscreenChildParentDestroyed) {
+TEST_F(WidgetTest, DesktopAuraFullscreenWindowOwnerDestroyed) {
   ViewsDelegate::views_delegate = NULL;
 
-  DesktopAuraFullscreenChildWindowDestructionTest full_screen_child_test;
-  ASSERT_NO_FATAL_FAILURE(full_screen_child_test.CreateFullscreenChildWindow(
-      gfx::Rect(0, 0, 200, 200)));
+  DesktopAuraTopLevelWindowTest fullscreen_window;
+  ASSERT_NO_FATAL_FAILURE(fullscreen_window.CreateTopLevelWindow(
+      gfx::Rect(0, 0, 200, 200), true));
 
   RunPendingMessages();
-  ASSERT_NO_FATAL_FAILURE(full_screen_child_test.DestroyParentWindow());
+  ASSERT_NO_FATAL_FAILURE(fullscreen_window.DestroyOwnerWindow());
+  RunPendingMessages();
+}
+
+TEST_F(WidgetTest, DesktopAuraTopLevelOwnedPopupTest) {
+  ViewsDelegate::views_delegate = NULL;
+  DesktopAuraTopLevelWindowTest popup_window;
+  ASSERT_NO_FATAL_FAILURE(popup_window.CreateTopLevelWindow(
+      gfx::Rect(0, 0, 200, 200), false));
+
+  RunPendingMessages();
+  ASSERT_NO_FATAL_FAILURE(popup_window.DestroyOwnedWindow());
   RunPendingMessages();
 }
 
@@ -1676,6 +1693,116 @@ TEST_F(WidgetTest, TestWindowVisibilityAfterHide) {
   EXPECT_FALSE(widget.GetNativeView()->IsVisible());
   widget.Show();
   EXPECT_TRUE(widget.GetNativeView()->IsVisible());
+}
+
+// The following code verifies we can correctly destroy a Widget from a mouse
+// enter/exit. We could test move/drag/enter/exit but in general we don't run
+// nested message loops from such events, nor has the code ever really dealt
+// with this situation.
+
+// Class that closes the widget (which ends up deleting it immediately) when the
+// appropriate event is received.
+class CloseWidgetView : public View {
+ public:
+  explicit CloseWidgetView(ui::EventType event_type)
+      : event_type_(event_type) {
+  }
+
+  // View overrides:
+  virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE {
+    if (!CloseWidget(event))
+      View::OnMousePressed(event);
+    return true;
+  }
+  virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE {
+    if (!CloseWidget(event))
+      View::OnMouseDragged(event);
+    return true;
+  }
+  virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE {
+    if (!CloseWidget(event))
+      View::OnMouseReleased(event);
+  }
+  virtual void OnMouseMoved(const ui::MouseEvent& event) OVERRIDE {
+    if (!CloseWidget(event))
+      View::OnMouseMoved(event);
+  }
+  virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE {
+    if (!CloseWidget(event))
+      View::OnMouseEntered(event);
+  }
+
+ private:
+  bool CloseWidget(const ui::LocatedEvent& event) {
+    if (event.type() == event_type_) {
+      // Go through NativeWidgetPrivate to simulate what happens if the OS
+      // deletes the NativeWindow out from under us.
+      GetWidget()->native_widget_private()->CloseNow();
+      return true;
+    }
+    return false;
+  }
+
+  const ui::EventType event_type_;
+
+  DISALLOW_COPY_AND_ASSIGN(CloseWidgetView);
+};
+
+// Generates two moves (first generates enter, second real move), a press, drag
+// and release stopping at |last_event_type|.
+void GenerateMouseEvents(Widget* widget, ui::EventType last_event_type) {
+  const gfx::Rect screen_bounds(widget->GetWindowBoundsInScreen());
+  ui::MouseEvent move_event(ui::ET_MOUSE_MOVED, screen_bounds.CenterPoint(),
+                            screen_bounds.CenterPoint(), 0);
+  aura::RootWindowHostDelegate* rwhd =
+      widget->GetNativeWindow()->GetRootWindow()->AsRootWindowHostDelegate();
+  rwhd->OnHostMouseEvent(&move_event);
+  if (last_event_type == ui::ET_MOUSE_ENTERED)
+    return;
+  rwhd->OnHostMouseEvent(&move_event);
+  if (last_event_type == ui::ET_MOUSE_MOVED)
+    return;
+
+  ui::MouseEvent press_event(ui::ET_MOUSE_PRESSED, screen_bounds.CenterPoint(),
+                             screen_bounds.CenterPoint(), 0);
+  rwhd->OnHostMouseEvent(&press_event);
+  if (last_event_type == ui::ET_MOUSE_PRESSED)
+    return;
+
+  gfx::Point end_point(screen_bounds.CenterPoint());
+  end_point.Offset(1, 1);
+  ui::MouseEvent drag_event(ui::ET_MOUSE_DRAGGED, end_point, end_point, 0);
+  rwhd->OnHostMouseEvent(&drag_event);
+  if (last_event_type == ui::ET_MOUSE_DRAGGED)
+    return;
+
+  ui::MouseEvent release_event(ui::ET_MOUSE_RELEASED, end_point, end_point, 0);
+  rwhd->OnHostMouseEvent(&release_event);
+}
+
+// Creates a widget and invokes GenerateMouseEvents() with |last_event_type|.
+void RunCloseWidgetDuringDispatchTest(WidgetTest* test,
+                                      ui::EventType last_event_type) {
+  // |widget| is deleted by CloseWidgetView.
+  Widget* widget = new Widget;
+  Widget::InitParams params =
+      test->CreateParams(Widget::InitParams::TYPE_POPUP);
+  params.native_widget = new DesktopNativeWidgetAura(widget);
+  params.bounds = gfx::Rect(0, 0, 50, 100);
+  widget->Init(params);
+  widget->SetContentsView(new CloseWidgetView(last_event_type));
+  widget->Show();
+  GenerateMouseEvents(widget, last_event_type);
+}
+
+// Verifies deleting the widget from a mouse pressed event doesn't crash.
+TEST_F(WidgetTest, CloseWidgetDuringMousePress) {
+  RunCloseWidgetDuringDispatchTest(this, ui::ET_MOUSE_PRESSED);
+}
+
+// Verifies deleting the widget from a mouse released event doesn't crash.
+TEST_F(WidgetTest, CloseWidgetDuringMouseReleased) {
+  RunCloseWidgetDuringDispatchTest(this, ui::ET_MOUSE_RELEASED);
 }
 
 #endif  // !defined(OS_CHROMEOS)

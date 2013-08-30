@@ -85,7 +85,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "2.5",
+  "version": "2.8",
   "entries": [
     {
       "id": 1,
@@ -424,6 +424,43 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
                     "0x0a04", "0x0a16", "0x0a22", "0x0a26", "0x0a2a"],
       "features": [
         "swizzle_rgba_for_async_readpixels"
+      ]
+    },
+    {
+      "id": 28,
+      "cr_bugs": [277817],
+      "description": "Disable use of ANGLE_instanced_arrays on Windows",
+      "os": {
+        "type": "win"
+      },
+      "features": [
+        "disable_angle_instanced_arrays"
+      ]
+    },
+    {
+      "id": 29,
+      "cr_bugs": [278606],
+      "description": "Testing fences is broken on QualComm.",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "Qualcomm"
+      },
+      "features": [
+        "disable_async_readpixels"
+      ]
+    },
+    {
+      "id": 30,
+      "cr_bugs": [237931],
+      "description": "Multisampling is buggy on OSX when multiple monitors are connected",
+      "os": {
+        "type": "macosx"
+      },
+      "features": [
+        "disable_multimonitor_multisampling"
       ]
     }
   ]

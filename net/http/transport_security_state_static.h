@@ -42,6 +42,10 @@ static const char kSPKIHash_GoogleG2[] =
     "\x43\xda\xd6\x30\xee\x53\xf8\xa9\x80\xca"
     "\x6e\xfd\x85\xf4\x6a\xa3\x79\x90\xe0\xea";
 
+static const char kSPKIHash_ThawteSGCCA[] =
+    "\x87\x31\xea\x0e\x3d\xf5\xe8\x70\x3e\x83"
+    "\x72\x57\x77\xa9\x65\x3b\x3b\xfa\x5e\x14";
+
 static const char kSPKIHash_EquifaxSecureCA[] =
     "\x48\xe6\x68\xf9\x2b\xd2\xb2\x95\xd7\x47"
     "\xd8\x23\x20\x10\x4f\x33\x98\x90\x9f\xd4";
@@ -264,6 +268,7 @@ static const char* const kGoogleRejectedCerts[] = {
   kSPKIHash_Intel,
   kSPKIHash_TCTrustCenter,
   kSPKIHash_Vodafone,
+  kSPKIHash_ThawteSGCCA,
   NULL,
 };
 #define kGooglePins { \
@@ -415,12 +420,12 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {17, true, "\004code\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {16, true, "\012googlecode\003com", false, kGooglePins, DOMAIN_GOOGLECODE_COM },
   {15, true, "\002dl\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
+  {26, true, "\011translate\012googleapis\003com", true, kGooglePins, DOMAIN_GOOGLEAPIS_COM },
   {23, true, "\005chart\004apis\006google\003com", false, kGooglePins, DOMAIN_GOOGLE_COM },
   {11, true, "\005ytimg\003com", false, kGooglePins, DOMAIN_YTIMG_COM },
   {23, true, "\021googleusercontent\003com", false, kGooglePins, DOMAIN_GOOGLEUSERCONTENT_COM },
   {13, true, "\007youtube\003com", false, kGooglePins, DOMAIN_YOUTUBE_COM },
   {16, true, "\012googleapis\003com", false, kGooglePins, DOMAIN_GOOGLEAPIS_COM },
-  {26, true, "\011translate\012googleapis\003com", true, kGooglePins, DOMAIN_GOOGLEAPIS_COM },
   {22, true, "\020googleadservices\003com", false, kGooglePins, DOMAIN_GOOGLEADSERVICES_COM },
   {13, true, "\007appspot\003com", false, kGooglePins, DOMAIN_APPSPOT_COM },
   {23, true, "\021googlesyndication\003com", false, kGooglePins, DOMAIN_GOOGLESYNDICATION_COM },
@@ -836,6 +841,9 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {10, true, "\005haste\002ch", true, kNoPins, DOMAIN_NOT_PINNED },
   {12, true, "\007mudcrab\002us", true, kNoPins, DOMAIN_NOT_PINNED },
   {13, true, "\010mediacru\002sh", true, kNoPins, DOMAIN_NOT_PINNED },
+  {13, true, "\010lolicore\002ch", true, kNoPins, DOMAIN_NOT_PINNED },
+  {16, true, "\007cloudns\003com\002au", true, kNoPins, DOMAIN_NOT_PINNED },
+  {19, true, "\005oplop\007appspot\003com", true, kNoPins, DOMAIN_NOT_PINNED },
 };
 static const size_t kNumPreloadedSTS = ARRAYSIZE_UNSAFE(kPreloadedSTS);
 

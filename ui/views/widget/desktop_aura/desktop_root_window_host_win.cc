@@ -108,9 +108,8 @@ aura::RootWindow* DesktopRootWindowHostWin::Init(
                         native_widget_delegate_);
 
   HWND parent_hwnd = NULL;
-  aura::Window* parent_window = params.parent;
-  if (parent_window)
-    parent_hwnd = parent_window->GetRootWindow()->GetAcceleratedWidget();
+  if (params.parent && params.parent->GetRootWindow())
+    parent_hwnd = params.parent->GetRootWindow()->GetAcceleratedWidget();
 
   message_handler_->set_remove_standard_frame(params.remove_standard_frame);
 
@@ -123,13 +122,7 @@ aura::RootWindow* DesktopRootWindowHostWin::Init(
   rw_params.host = this;
   root_window_ = new aura::RootWindow(rw_params);
 
-  // TODO(beng): We probably need to move these two calls to some function that
-  //             can change depending on the native-ness of the frame. For right
-  //             now in the hack-n-slash days of win-aura, we can just
-  //             unilaterally turn this on.
-  root_window_->compositor()->SetHostHasTransparentBackground(true);
-  root_window_->SetTransparent(true);
-
+  SetWindowTransparency();
   root_window_->Init();
   root_window_->AddChild(content_window_);
 
@@ -345,6 +338,7 @@ bool DesktopRootWindowHostWin::ShouldUseNativeFrame() {
 
 void DesktopRootWindowHostWin::FrameTypeChanged() {
   message_handler_->FrameTypeChanged();
+  SetWindowTransparency();
 }
 
 NonClientFrameView* DesktopRootWindowHostWin::CreateNonClientFrameView() {
@@ -354,6 +348,7 @@ NonClientFrameView* DesktopRootWindowHostWin::CreateNonClientFrameView() {
 
 void DesktopRootWindowHostWin::SetFullscreen(bool fullscreen) {
   message_handler_->fullscreen_handler()->SetFullscreen(fullscreen);
+  SetWindowTransparency();
 }
 
 bool DesktopRootWindowHostWin::IsFullscreen() const {
@@ -413,6 +408,7 @@ void DesktopRootWindowHostWin::Hide() {
 }
 
 void DesktopRootWindowHostWin::ToggleFullScreen() {
+  SetWindowTransparency();
 }
 
 // GetBounds and SetBounds work in pixel coordinates, whereas other get/set
@@ -862,6 +858,12 @@ const Widget* DesktopRootWindowHostWin::GetWidget() const {
 
 HWND DesktopRootWindowHostWin::GetHWND() const {
   return message_handler_->hwnd();
+}
+
+void DesktopRootWindowHostWin::SetWindowTransparency() {
+  bool transparent = ShouldUseNativeFrame() && !IsFullscreen();
+  root_window_->compositor()->SetHostHasTransparentBackground(transparent);
+  root_window_->SetTransparent(transparent);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

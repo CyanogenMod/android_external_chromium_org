@@ -286,15 +286,27 @@ TEST_PPAPI_NACL(Graphics2D_Flush)
 TEST_PPAPI_NACL(Graphics2D_FlushOffscreenUpdate)
 TEST_PPAPI_NACL(Graphics2D_BindNull)
 
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
+// In-process and NaCl tests are having flaky failures on Win: crbug.com/242252
+#define MAYBE_IN_Graphics3D DISABLED_Graphics3D
+#define MAYBE_OUT_Graphics3D Graphics3D
+#define MAYBE_NACL_Graphics3D DISABLED_Graphics3D
+#elif defined(OS_WIN) && defined(USE_AURA)
 // These tests fail with the test compositor which is what's used by default for
 // browser tests on Windows Aura. Renable when the software compositor is
 // available.
-// In-process and NaCl tests are having flaky failures on Win: crbug.com/242252
-TEST_PPAPI_IN_PROCESS(DISABLED_Graphics3D)
-TEST_PPAPI_OUT_OF_PROCESS(Graphics3D)
-TEST_PPAPI_NACL(DISABLED_Graphics3D)
+#define MAYBE_IN_Graphics3D DISABLED_Graphics3D
+#define MAYBE_OUT_Graphics3D DISABLED_Graphics3D
+#define MAYBE_NACL_Graphics3D DISABLED_Graphics3D
+#else
+// The tests are failing in-process. crbug.com/280282
+#define MAYBE_IN_Graphics3D DISABLED_Graphics3D
+#define MAYBE_OUT_Graphics3D Graphics3D
+#define MAYBE_NACL_Graphics3D Graphics3D
 #endif
+TEST_PPAPI_IN_PROCESS(MAYBE_IN_Graphics3D)
+TEST_PPAPI_OUT_OF_PROCESS(MAYBE_OUT_Graphics3D)
+TEST_PPAPI_NACL(MAYBE_NACL_Graphics3D)
 
 TEST_PPAPI_IN_PROCESS(ImageData)
 TEST_PPAPI_OUT_OF_PROCESS(ImageData)
@@ -337,11 +349,9 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, TCPSocket) {
 }
 
 TEST_PPAPI_OUT_OF_PROCESS_WITH_SSL_SERVER(TCPSocketPrivate)
-TEST_PPAPI_IN_PROCESS_WITH_SSL_SERVER(TCPSocketPrivate)
 TEST_PPAPI_NACL_WITH_SSL_SERVER(TCPSocketPrivate)
 
 TEST_PPAPI_OUT_OF_PROCESS_WITH_SSL_SERVER(TCPSocketPrivateTrusted)
-TEST_PPAPI_IN_PROCESS_WITH_SSL_SERVER(TCPSocketPrivateTrusted)
 
 // UDPSocket tests.
 // UDPSocket_Broadcast is disabled for OSX because it requires root permissions
@@ -620,7 +630,9 @@ TEST_PPAPI_IN_PROCESS_VIA_HTTP(URLRequest_AppendDataToBody)
 TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(URLRequest_AppendDataToBody)
 TEST_PPAPI_NACL(URLRequest_AppendDataToBody)
 TEST_PPAPI_IN_PROCESS_VIA_HTTP(URLRequest_AppendFileToBody)
+#if !defined(OS_MACOSX)  // TODO(teravest): http://crbug.com/280570
 TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(URLRequest_AppendFileToBody)
+#endif
 TEST_PPAPI_NACL(URLRequest_AppendFileToBody)
 TEST_PPAPI_IN_PROCESS_VIA_HTTP(URLRequest_Stress)
 TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(URLRequest_Stress)
@@ -762,7 +774,9 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, FileIO) {
       LIST_TEST(FileIO_NotAllowMixedReadWrite)
       LIST_TEST(FileIO_ReadWriteSetLength)
       LIST_TEST(FileIO_ReadToArrayWriteSetLength)
+#if !defined(OS_MACOSX)  // TODO(teravest): http://crbug.com/280570
       LIST_TEST(FileIO_TouchQuery)
+#endif
       LIST_TEST(FileIO_WillWriteWillSetLength)
       LIST_TEST(FileIO_RequestOSFileHandle)
       LIST_TEST(FileIO_RequestOSFileHandleWithOpenExclusive)
