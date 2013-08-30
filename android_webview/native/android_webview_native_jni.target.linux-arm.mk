@@ -13,7 +13,6 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,android_webview_native_android_jar_jni_headers_gyp)/android_jar_jni_headers.stamp \
-	$(call intermediates-dir-for,GYP,android_webview_native_output_stream_android_jar_jni_headers_gyp)/output_stream_android_jar_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,android_webview_native_cancellation_signal_android_jar_jni_headers_gyp)/cancellation_signal_android_jar_jni_headers.stamp
 
 
@@ -273,6 +272,7 @@ MY_DEFS_Debug := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DENABLE_PRINTING=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -351,6 +351,7 @@ MY_DEFS_Release := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DENABLE_PRINTING=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \

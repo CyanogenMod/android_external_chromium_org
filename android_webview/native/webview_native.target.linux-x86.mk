@@ -48,7 +48,6 @@ LOCAL_SRC_FILES := \
 	android_webview/native/java_browser_view_renderer_helper.cc \
 	android_webview/native/net_init_native_callback.cc \
 	android_webview/native/aw_pdf_exporter.cc \
-	android_webview/native/skia_java_output_stream.cc \
 	android_webview/native/state_serializer.cc
 
 
@@ -101,6 +100,7 @@ MY_DEFS_Debug := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -196,6 +196,7 @@ MY_DEFS_Release := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
