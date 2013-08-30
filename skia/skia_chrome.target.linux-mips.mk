@@ -42,7 +42,8 @@ LOCAL_SRC_FILES := \
 	skia/ext/platform_device_linux.cc \
 	skia/ext/recursive_gaussian_convolution.cc \
 	skia/ext/skia_utils_base.cc \
-	skia/ext/vector_canvas.cc
+	skia/ext/vector_canvas.cc \
+	skia/ext/vector_platform_device_skia.cc
 
 
 # Flags passed to both C and C++ files.
@@ -95,6 +96,7 @@ MY_DEFS_Debug := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \
@@ -179,6 +181,7 @@ MY_DEFS_Release := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DENABLE_PRINTING=1' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \
