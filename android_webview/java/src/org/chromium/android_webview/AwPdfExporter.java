@@ -1,10 +1,12 @@
-// Copyright 2012 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.android_webview;
 
 import android.os.CancellationSignal;
+import android.os.ParcelFileDescriptor;
+import android.util.Log;
 import android.webkit.ValueCallback;
 
 import java.io.OutputStream;
@@ -19,29 +21,35 @@ import org.chromium.base.JNINamespace;
 @JNINamespace("android_webview")
 public class AwPdfExporter {
 
-    private AwContents mAwContents;
+    private static final String TAG = "AwPdfExporter";
     private int mNativeAwPdfExporter;
+    // TODO(sgurun) result callback should return an int/object indicating errors.
+    // potential errors: invalid print parameters, already pending, IO error
+    private ValueCallback<Boolean> mResultCallback;
 
-    AwPdfExporter(AwContents awContents) {
-        mAwContents = awContents;
-    }
+    private AwPdfExportAttributes mAttributes;
 
-    public void exportToPdf(final OutputStream stream, int width, int height,
-            ValueCallback<Boolean> resultCallback, CancellationSignal cancellationSignal) {
+    private ParcelFileDescriptor mFd;
 
-        if (stream == null) {
-            throw new IllegalArgumentException("Stream cannot be null");
-        }
-        if (width < 1 || height < 1) {
-            throw new IllegalArgumentException("width and height must be larger than 0");
+    AwPdfExporter() { }
+
+    public void exportToPdf(final ParcelFileDescriptor fd, AwPdfExportAttributes attributes,
+            ValueCallback<Boolean> resultCallback, CancellationSignal cancellationSignal)
+            throws java.io.IOException {
+
+        if (fd == null) {
+            throw new IllegalArgumentException("fd cannot be null");
         }
         if (resultCallback == null) {
-            throw new IllegalArgumentException("Callback cannot be null");
+            throw new IllegalArgumentException("resultCallback cannot be null");
         }
-        nativeExportToPdf(mNativeAwPdfExporter, stream, width, height,
-                mAwContents.computeHorizontalScrollRange(),
-                mAwContents.computeVerticalScrollRange(),
-                resultCallback, cancellationSignal);
+        if (mResultCallback != null) {
+            throw new IllegalStateException("printing is already pending");
+        }
+        mResultCallback = resultCallback;
+        mAttributes = attributes;
+        mFd = fd;
+        nativeExportToPdf(mNativeAwPdfExporter, mFd.getFd(), cancellationSignal);
     }
 
     @CalledByNative
@@ -50,12 +58,49 @@ public class AwPdfExporter {
     }
 
     @CalledByNative
-    private void didExportPdf(ValueCallback<Boolean> resultCallback, boolean success) {
-        resultCallback.onReceiveValue(success);
+    private void didExportPdf(boolean success) {
+        mResultCallback.onReceiveValue(success);
+        mResultCallback = null;
+        mAttributes = null;
+        // The caller should close the file.
+        mFd = null;
     }
 
-    private native void nativeExportToPdf(int nativeAwPdfExporter, OutputStream outStream,
-            int width, int height, int horizontal_scroll_range, int vertical_scroll_range,
-            ValueCallback<Boolean> resultCallback, CancellationSignal cancellationSignal);
+    @CalledByNative
+    private int getPageWidth() {
+        return mAttributes.pageWidth;
+    }
 
+    @CalledByNative
+    private int getPageHeight() {
+        return mAttributes.pageHeight;
+    }
+
+    @CalledByNative
+    private int getDpi() {
+        return mAttributes.dpi;
+    }
+
+    @CalledByNative
+    private int getLeftMargin() {
+        return mAttributes.leftMargin;
+    }
+
+    @CalledByNative
+    private int getRightMargin() {
+        return mAttributes.rightMargin;
+    }
+
+    @CalledByNative
+    private int getTopMargin() {
+        return mAttributes.topMargin;
+    }
+
+    @CalledByNative
+    private int getBottomMargin() {
+        return mAttributes.bottomMargin;
+    }
+
+    private native void nativeExportToPdf(int nativeAwPdfExporter, int fd,
+            CancellationSignal cancellationSignal);
 }

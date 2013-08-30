@@ -1,11 +1,12 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/renderer/printing/print_web_view_helper.h"
+#include "android_webview/renderer/print_web_view_helper.h"
 
 #include <string>
 
+#include "android_webview/common/print_messages.h"
 #include "base/auto_reset.h"
 #include "base/command_line.h"
 #include "base/json/json_writer.h"
@@ -16,14 +17,8 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/common/chrome_switches.h"
-#include "chrome/common/print_messages.h"
-#include "chrome/common/render_messages.h"
-#include "chrome/renderer/prerender/prerender_helper.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
-#include "grit/browser_resources.h"
-#include "grit/generated_resources.h"
 #include "printing/metafile.h"
 #include "printing/metafile_impl.h"
 #include "printing/units.h"
@@ -389,13 +384,11 @@ PrintMsg_Print_Params CalculatePrintParamsForCss(
 }
 
 bool IsPrintPreviewEnabled() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kRendererPrintPreview);
+  return false;
 }
 
 bool IsPrintThrottlingDisabled() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableScriptedPrintThrottling);
+  return true;
 }
 
 }  // namespace
@@ -438,6 +431,8 @@ void PrintWebViewHelper::PrintHeaderAndFooter(
     const PageSizeMargins& page_layout,
     const base::DictionaryValue& header_footer_info,
     const PrintMsg_Print_Params& params) {
+#if 0
+  // TODO(sgurun) android_webview hack
   skia::VectorPlatformDeviceSkia* device =
       static_cast<skia::VectorPlatformDeviceSkia*>(canvas->getTopDevice());
   device->setDrawingArea(SkPDFDevice::kMargin_DrawingArea);
@@ -455,7 +450,6 @@ void PrintWebViewHelper::PrintHeaderAndFooter(
   web_view->initializeMainFrame(NULL);
 
   WebKit::WebFrame* frame = web_view->mainFrame();
-
   base::StringValue html(
       ResourceBundle::GetSharedInstance().GetLocalizedString(
           IDR_PRINT_PREVIEW_PAGE));
@@ -482,6 +476,7 @@ void PrintWebViewHelper::PrintHeaderAndFooter(
   web_view->close();
 
   device->setDrawingArea(SkPDFDevice::kContent_DrawingArea);
+#endif
 }
 
 // static - Not anonymous so that platform implementations can use it.
@@ -766,11 +761,14 @@ void PrintWebViewHelper::PrintPage(WebKit::WebFrame* frame,
                                    bool user_initiated) {
   DCHECK(frame);
 
+#if !defined(OS_ANDROID)
+  // TODO(sgurun) android_webview hack
   // Allow Prerendering to cancel this print request if necessary.
   if (prerender::PrerenderHelper::IsPrerendering(render_view())) {
     Send(new ChromeViewHostMsg_CancelPrerenderForPrinting(routing_id()));
     return;
   }
+#endif  // !defined(OS_ANDROID)
 
   if (!IsScriptInitiatedPrintAllowed(frame, user_initiated))
     return;
@@ -1233,12 +1231,15 @@ void PrintWebViewHelper::Print(WebKit::WebFrame* frame,
     return;
   }
 
+#if !defined(OS_ANDROID)
+  // TODO(sgurun) android_webview hack
   // Ask the browser to show UI to retrieve the final print settings.
   if (!GetPrintSettingsFromUser(frame_ref.GetFrame(), node,
                                 expected_page_count)) {
     DidFinishPrinting(OK);  // Release resources and fail silently.
     return;
   }
+#endif  // !defined(OS_ANDROID)
 
   // Render Pages for printing.
   if (!RenderPagesForPrint(frame_ref.GetFrame(), node)) {
@@ -1426,9 +1427,12 @@ bool PrintWebViewHelper::CalculateNumberOfPages(WebKit::WebFrame* frame,
   bool fit_to_paper_size = !(PrintingNodeOrPdfFrame(frame, node));
   if (!InitPrintSettings(fit_to_paper_size)) {
     notify_browser_of_print_failure_ = false;
+#if !defined(OS_ANDROID)
+    // TODO(sgurun) android_webview hack
     render_view()->RunModalAlertDialog(
         frame,
         l10n_util::GetStringUTF16(IDS_PRINT_PREVIEW_INVALID_PRINTER_SETTINGS));
+#endif  //  !defined(OS_ANDROID)
     return false;
   }
 
@@ -1484,6 +1488,8 @@ bool PrintWebViewHelper::UpdatePrintSettings(
     if (!print_for_preview_) {
       print_preview_context_.set_error(PREVIEW_ERROR_INVALID_PRINTER_SETTINGS);
     } else {
+#if !defined(OS_ANDROID)
+      // TODO(sgurun) android_webview hack
       // PrintForPrintPreview
       WebKit::WebFrame* print_frame = NULL;
       // This may not be the right frame, but the alert will be modal,
@@ -1495,6 +1501,7 @@ bool PrintWebViewHelper::UpdatePrintSettings(
             l10n_util::GetStringUTF16(
                 IDS_PRINT_PREVIEW_INVALID_PRINTER_SETTINGS));
       }
+#endif  // !defined(OS_ANDROID)
     }
     return false;
   }
@@ -1702,6 +1709,7 @@ void PrintWebViewHelper::RequestPrintPreview(PrintPreviewRequestType type) {
 bool PrintWebViewHelper::CheckForCancel() {
   const PrintMsg_Print_Params& print_params = print_pages_params_->params;
   bool cancel = false;
+
   Send(new PrintHostMsg_CheckForCancel(routing_id(),
                                        print_params.preview_ui_id,
                                        print_params.preview_request_id,

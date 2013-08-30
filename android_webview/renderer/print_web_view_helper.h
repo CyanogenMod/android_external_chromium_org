@@ -1,9 +1,9 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CHROME_RENDERER_PRINTING_PRINT_WEB_VIEW_HELPER_H_
-#define CHROME_RENDERER_PRINTING_PRINT_WEB_VIEW_HELPER_H_
+#ifndef AW_RENDERER_PRINT_WEB_VIEW_HELPER_H_
+#define AW_RENDERER_PRINT_WEB_VIEW_HELPER_H_
 
 #include <vector>
 
@@ -185,9 +185,12 @@ class PrintWebViewHelper
 
   void OnPrintingDone(bool success);
 
+public:
+  // TODO(sgurun) android_webview disables scripted prints by default.
   // Enable/Disable window.print calls.  If |blocked| is true window.print
   // calls will silently fail.  Call with |blocked| set to false to reenable.
   void SetScriptedPrintBlocked(bool blocked);
+private:
 
   // Main printing code -------------------------------------------------------
 
@@ -483,4 +486,4 @@ class PrintWebViewHelper
 
 }  // namespace printing
 
-#endif  // CHROME_RENDERER_PRINTING_PRINT_WEB_VIEW_HELPER_H_
+#endif  // AW_RENDERER_PRINT_WEB_VIEW_HELPER_H_

@@ -655,7 +655,7 @@ public class AwContents {
 
     public AwPdfExporter getPdfExporter() {
         if (mAwPdfExporter == null) {
-            mAwPdfExporter = new AwPdfExporter(this);
+            mAwPdfExporter = new AwPdfExporter();
             nativeCreatePdfExporter(mNativeAwContents, mAwPdfExporter);
         }
         return mAwPdfExporter;
