@@ -36,6 +36,7 @@ LOCAL_SRC_FILES := \
 	skia/ext/image_operations.cc \
 	skia/ext/lazy_pixel_ref.cc \
 	skia/ext/lazy_pixel_ref_utils.cc \
+	skia/ext/opacity_draw_filter.cc \
 	skia/ext/paint_simplifier.cc \
 	skia/ext/platform_canvas.cc \
 	skia/ext/platform_device.cc \
@@ -231,7 +232,9 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
+	-Wl,--fatal-warnings \
 	-Wl,--gc-sections \
+	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed
 
@@ -248,7 +251,9 @@ LOCAL_LDFLAGS_Release := \
 	-Wl,--exclude-libs=ALL \
 	-Wl,-O1 \
 	-Wl,--as-needed \
-	-Wl,--gc-sections
+	-Wl,--gc-sections \
+	-Wl,--fatal-warnings \
+	-Wl,--warn-shared-textrel
 
 
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
