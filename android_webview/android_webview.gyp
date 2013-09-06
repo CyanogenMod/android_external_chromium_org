@@ -24,10 +24,11 @@
           'dependencies': [
             '../base/allocator/allocator.gyp:allocator', ],
         }],
-        [ 'android_webview_build==1 and use_system_skia==0', {
+        [ 'android_webview_build==1 and (use_system_skia==0 or target_arch=="ia32")', {
           # When not using the system skia there are linker warnings about
           # overriden hidden symbols which there's no easy way to eliminate;
-          # disable them. http://crbug.com/157326
+          # disable them. There are also problems with x86 builds.
+          # http://crbug.com/157326
           'ldflags': [
             '-Wl,--no-fatal-warnings',
           ],
